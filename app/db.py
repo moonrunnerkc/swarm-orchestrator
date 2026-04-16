@@ -7,6 +7,8 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
+from .security import redact_error_message
+
 
 @dataclass(frozen=True)
 class DatabaseStatus:
@@ -16,7 +18,14 @@ class DatabaseStatus:
 
 
 def make_engine(database_url: str) -> Engine:
-    return create_engine(database_url, pool_pre_ping=False, future=True)
+    # hide_parameters prevents SQLAlchemy from embedding bind parameters in
+    # exception messages, which can carry caller-supplied secrets into logs.
+    return create_engine(
+        database_url,
+        pool_pre_ping=False,
+        future=True,
+        hide_parameters=True,
+    )
 
 
 def ping_database(engine: Engine) -> DatabaseStatus:
@@ -27,7 +36,11 @@ def ping_database(engine: Engine) -> DatabaseStatus:
     except SQLAlchemyError as exc:
         cause = exc.__cause__ or exc
         message = str(cause).strip() or exc.__class__.__name__
-        return DatabaseStatus(connected=False, latency_ms=None, error=message)
+        return DatabaseStatus(
+            connected=False,
+            latency_ms=None,
+            error=redact_error_message(message),
+        )
 
     elapsed_ms = (time.perf_counter() - start) * 1000
     return DatabaseStatus(
