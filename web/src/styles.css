@@ -519,6 +519,36 @@ textarea {
 #savestate[data-state="dirty"] { color: var(--accent); }
 #savestate[data-state="saved"] { color: var(--text-muted); }
 
+.toast {
+  position: fixed;
+  bottom: calc(var(--statusbar-h) + var(--space-4));
+  left: 50%;
+  transform: translateX(-50%);
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-md);
+  font-size: var(--fs-sm);
+  z-index: 30;
+  box-shadow: var(--shadow-md);
+  max-width: min(90vw, 480px);
+  text-align: center;
+  animation: toast-in 200ms ease;
+}
+.toast[data-variant="error"] {
+  background: var(--danger-weak);
+  color: var(--danger);
+  border: 1px solid var(--danger);
+}
+.toast[data-variant="info"] {
+  background: var(--accent-weak);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
 @media (max-width: 860px) {
   .workspace {
     grid-template-columns: 1fr;

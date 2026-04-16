@@ -1,12 +1,14 @@
 // Glue module: turns user events into store mutations and re-renders the DOM.
-// All pure logic (parsing, stats, persistence) lives in sibling modules.
+// Uses the backend API as primary data source with localStorage as offline cache.
 
 import { renderMarkdown, computeStats, deriveTitle } from "./markdown.js";
 import { createNotesStore, createPrefsStore, filterNotes } from "./notes-store.js";
 import { beep } from "./audio-cue.js";
+import * as api from "./api.js";
 
 const SAVE_DEBOUNCE_MS = 350;
 const BACKGROUND_BEEP_EVERY_MS = 8000;
+const TOAST_DURATION_MS = 4000;
 
 const $ = (id) => document.getElementById(id);
 
@@ -38,6 +40,7 @@ const main = () => {
     togglePreview: $("toggle-preview"),
     toggleSidebar: $("toggle-sidebar"),
     statusline: $("statusline"),
+    toast: $("toast"),
     layout: document.querySelector(".layout"),
     workspace: document.querySelector(".workspace"),
   };
@@ -46,6 +49,18 @@ const main = () => {
   let query = "";
   let saveTimer = null;
   let lastBeepAt = 0;
+  let toastTimer = null;
+  let syncing = false;
+
+  const showToast = (message, variant = "error") => {
+    if (toastTimer) clearTimeout(toastTimer);
+    els.toast.textContent = message;
+    els.toast.dataset.variant = variant;
+    els.toast.hidden = false;
+    toastTimer = setTimeout(() => {
+      els.toast.hidden = true;
+    }, TOAST_DURATION_MS);
+  };
 
   const ensureActiveNote = () => {
     const existing = activeId ? notesStore.get(activeId) : null;
@@ -135,7 +150,7 @@ const main = () => {
     saveTimer = setTimeout(commitEdit, SAVE_DEBOUNCE_MS);
   };
 
-  const commitEdit = () => {
+  const commitEdit = async () => {
     const body = els.editor.value;
     const explicit = els.title.value.trim();
     const title = explicit || deriveTitle(body);
@@ -143,6 +158,13 @@ const main = () => {
     if (!updated) return;
     setSaveState("saved");
     renderSidebar();
+
+    try {
+      await api.updateNote(activeId, { title, body });
+    } catch {
+      showToast("Saved locally — sync will retry when the server is reachable.");
+    }
+
     if (document.hidden && Date.now() - lastBeepAt > BACKGROUND_BEEP_EVERY_MS) {
       lastBeepAt = Date.now();
       beep({ frequency: 540, duration: 0.06, volume: 0.03 });
@@ -164,18 +186,25 @@ const main = () => {
     }
   };
 
-  const confirmDelete = (note) => {
+  const confirmDelete = async (note) => {
     const label = note.title || "Untitled";
     if (!window.confirm(`Delete "${label}"? This cannot be undone.`)) return;
     const wasActive = note.id === activeId;
     notesStore.remove(note.id);
+
+    try {
+      await api.deleteNote(note.id);
+    } catch {
+      showToast("Deleted locally — server sync pending.");
+    }
+
     if (wasActive) {
       const fallback = notesStore.list()[0];
       if (fallback) {
         selectNote(fallback.id);
         return;
       }
-      const fresh = notesStore.create();
+      const fresh = await createNoteViaApi();
       activeId = fresh.id;
       prefs.set("lastOpenId", activeId);
       renderEditorFor(fresh);
@@ -183,8 +212,20 @@ const main = () => {
     renderSidebar();
   };
 
-  const createNote = () => {
-    const note = notesStore.create();
+  const createNoteViaApi = async (seed = {}) => {
+    let note;
+    try {
+      note = await api.createNote(seed);
+      notesStore.create({ ...seed, id: note.id, createdAt: note.createdAt, updatedAt: note.updatedAt });
+    } catch {
+      note = notesStore.create(seed);
+      showToast("Created offline — will sync when server is available.");
+    }
+    return notesStore.get(note.id) || note;
+  };
+
+  const createNote = async () => {
+    const note = await createNoteViaApi();
     activeId = note.id;
     prefs.set("lastOpenId", note.id);
     renderSidebar();
@@ -204,6 +245,33 @@ const main = () => {
     els.layout.dataset.sidebar = next;
     els.toggleSidebar.setAttribute("aria-expanded", next === "open" ? "true" : "false");
     prefs.set("sidebarClosed", next === "closed");
+  };
+
+  const syncFromServer = async () => {
+    if (syncing) return;
+    syncing = true;
+    els.statusline.textContent = "Syncing…";
+    try {
+      const remote = await api.fetchNotes();
+      for (const note of remote) {
+        const local = notesStore.get(note.id);
+        if (!local) {
+          notesStore.create(note);
+        } else if (note.updatedAt > local.updatedAt) {
+          notesStore.update(note.id, note);
+        }
+      }
+      els.statusline.textContent = "Synced";
+      renderSidebar();
+      if (activeId) {
+        const current = notesStore.get(activeId);
+        if (current) renderEditorFor(current);
+      }
+    } catch {
+      els.statusline.textContent = "Offline — using local data";
+    } finally {
+      syncing = false;
+    }
   };
 
   // ----- bindings -----
@@ -247,7 +315,6 @@ const main = () => {
     }
   });
 
-  // Flush any pending save if the user navigates away.
   window.addEventListener("beforeunload", () => {
     if (saveTimer) {
       clearTimeout(saveTimer);
@@ -261,6 +328,7 @@ const main = () => {
   const current = ensureActiveNote();
   renderSidebar();
   renderEditorFor(current);
+  syncFromServer();
 };
 
 if (document.readyState === "loading") {
