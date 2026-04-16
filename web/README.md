@@ -27,15 +27,6 @@ npm run serve
 
 Then open <http://localhost:5173/> in a browser.
 
-## Tests
-
-Pure logic (markdown parsing, stats, notes store) is covered by the Node
-built-in test runner:
-
-```bash
-npm test
-```
-
 ## Layout
 
 - `index.html` — markup and metadata.
