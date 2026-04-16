@@ -2,6 +2,8 @@
 // Every error response has the same shape:
 //   { error: { code, message, details? } }
 
+import { sanitiseForReflection } from "./security.js";
+
 export class ApiError extends Error {
   constructor(status, code, message, details) {
     super(message);
@@ -37,10 +39,13 @@ export class EvaluationError extends ApiError {
 }
 
 export function notFoundHandler(req, res) {
+  // Sanitise the reflected URL to prevent XSS / response bloat when the
+  // JSON body is rendered by a browser or log viewer.
+  const safeUrl = sanitiseForReflection(req.originalUrl);
   res.status(404).json({
     error: {
       code: "ROUTE_NOT_FOUND",
-      message: `No route matches ${req.method} ${req.originalUrl}`,
+      message: `No route matches ${req.method} ${safeUrl}`,
     },
   });
 }
