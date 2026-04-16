@@ -93,7 +93,7 @@ All errors follow this shape:
 ```json
 {
   "error": {
-    "code": "VALIDATION_ERROR | NOT_FOUND | ROUTE_NOT_FOUND | INVALID_JSON | PAYLOAD_TOO_LARGE | INTERNAL_ERROR",
+    "code": "VALIDATION_ERROR | NOT_FOUND | ROUTE_NOT_FOUND | INVALID_JSON | PAYLOAD_TOO_LARGE | RATE_LIMITED | UNSUPPORTED_MEDIA_TYPE | INTERNAL_ERROR",
     "message": "Human-readable description",
     "details": {}
   }
