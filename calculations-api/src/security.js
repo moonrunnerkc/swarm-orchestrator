@@ -14,6 +14,7 @@ const SECURITY_HEADERS = Object.freeze({
   "Cache-Control": "no-store",
   // HSTS — browsers ignore it on plain HTTP, safe to always advertise.
   "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
 });
 
 /**
@@ -41,6 +42,73 @@ export function sanitiseForReflection(value) {
   const cleaned = value.replace(/[\x00-\x1f\x7f]/g, "");
   if (cleaned.length <= MAX_REFLECTED_LENGTH) return cleaned;
   return cleaned.slice(0, MAX_REFLECTED_LENGTH) + "...";
+}
+
+// Reject mutation requests that do not declare a JSON content type.
+// Prevents accidental or malicious submission of form-encoded data.
+const METHODS_REQUIRING_JSON = new Set(["POST", "PUT", "PATCH"]);
+
+export function requireJsonContentType(req, res, next) {
+  if (METHODS_REQUIRING_JSON.has(req.method)) {
+    const ct = req.headers["content-type"] || "";
+    if (!ct.includes("application/json")) {
+      return res.status(415).json({
+        error: {
+          code: "UNSUPPORTED_MEDIA_TYPE",
+          message: "Content-Type must be application/json",
+        },
+      });
+    }
+  }
+  next();
+}
+
+// Simple in-memory rate limiter. No external dependencies.
+// Tracks request counts per IP in a sliding window.
+export function createRateLimiter({
+  windowMs = 60_000,
+  maxRequests = 100,
+} = {}) {
+  const hits = new Map();
+
+  // Periodically purge expired entries to prevent memory growth.
+  const cleanup = setInterval(() => {
+    const now = Date.now();
+    for (const [key, entry] of hits) {
+      if (now - entry.start >= windowMs) hits.delete(key);
+    }
+  }, windowMs).unref();
+
+  function middleware(req, res, next) {
+    const ip = req.ip || req.socket?.remoteAddress || "unknown";
+    const now = Date.now();
+    let entry = hits.get(ip);
+
+    if (!entry || now - entry.start >= windowMs) {
+      entry = { start: now, count: 0 };
+      hits.set(ip, entry);
+    }
+
+    entry.count += 1;
+
+    res.setHeader("X-RateLimit-Limit", String(maxRequests));
+    res.setHeader("X-RateLimit-Remaining", String(Math.max(0, maxRequests - entry.count)));
+
+    if (entry.count > maxRequests) {
+      res.setHeader("Retry-After", String(Math.ceil(windowMs / 1000)));
+      return res.status(429).json({
+        error: {
+          code: "RATE_LIMITED",
+          message: "Too many requests — try again later",
+        },
+      });
+    }
+
+    next();
+  }
+
+  middleware.destroy = () => clearInterval(cleanup);
+  return middleware;
 }
 
 export { SECURITY_HEADERS };

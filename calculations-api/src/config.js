@@ -13,6 +13,8 @@ const DEFAULTS = Object.freeze({
   maxExpressionLength: 200,
   maxTitleLength: 100,
   maxBodyBytes: 16 * 1024,
+  rateLimitWindowMs: 60_000,
+  rateLimitMax: 100,
 });
 
 function parsePort(raw, fallback) {
@@ -46,6 +48,8 @@ export function loadConfig(env = process.env) {
     maxExpressionLength: DEFAULTS.maxExpressionLength,
     maxTitleLength: DEFAULTS.maxTitleLength,
     maxBodyBytes: DEFAULTS.maxBodyBytes,
+    rateLimitWindowMs: DEFAULTS.rateLimitWindowMs,
+    rateLimitMax: DEFAULTS.rateLimitMax,
   });
 }
 

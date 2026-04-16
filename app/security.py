@@ -27,6 +27,8 @@ SECURITY_HEADERS: dict[str, str] = {
     "Cache-Control": "no-store",
     # HSTS is safe to advertise — browsers ignore it on plain HTTP.
     "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
+    # Restrict browser features this API has no business requesting.
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
     # Remove server fingerprinting surface.
     "Server": "api",
 }
