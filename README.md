@@ -30,7 +30,7 @@ _This is not an autonomous system builder. It orchestrates external AI agents (C
 
 <br>
 
-[Quick Start](#quick-start) · [What Is This](#what-is-this) · [Quality Benchmarks](#quality-benchmarks) · [Usage](#usage) · [GitHub Action](#github-action) · [Recipes](#recipes) · [Architecture](#architecture) · [Contributing](#contributing)
+[Quick Start](#quick-start) · [What Is This](#what-is-this) · [Benchmarking](#benchmarking) · [Usage](#usage) · [GitHub Action](#github-action) · [Recipes](#recipes) · [Architecture](#architecture) · [Contributing](#contributing)
 
 <br>
 
@@ -127,29 +127,29 @@ Started as a submission for the GitHub Copilot CLI Challenge in early 2026 and h
 
 <br>
 
-## Quality Benchmarks
+## Benchmarking
 
-The orchestrator's prompt injection and quality gates front-load requirements that developers normally discover through iterative reprompting.
+Evaluation uses **standardized public tasks**, **automated metrics**, and **statistical reporting**. No subjective rubrics, no author-chosen scoring dimensions.
 
-Seven head-to-head comparisons across three agent CLIs, three frontend projects, three backend APIs, and one CLI tool. Full attribute tables, gap analysis, and reprompt projections in [docs/benchmarks.md](docs/benchmarks.md).
+| Component | Description |
+|-----------|-------------|
+| [benchmarks/README.md](benchmarks/README.md) | Central hub — methodology, quick start, evidence links |
+| [benchmarks/swe-bench/](benchmarks/swe-bench/) | SWE-bench Lite integration (Dockerized, real GitHub issues) |
+| [benchmarks/ABC-compliance.md](benchmarks/ABC-compliance.md) | Agentic Benchmark Checklist audit — 30/30 items addressed |
+| [benchmarks/harness/](benchmarks/harness/) | Scoring scripts, exact prompts, raw data, statistical summary |
+| [.github/workflows/continuous-benchmark.yml](.github/workflows/continuous-benchmark.yml) | CI workflow — nightly + release, tracked via Bencher |
 
-| # | Agent | Project Type | Criteria | Agent Score | Orchestrator Score |
-|---|-------|-------------|----------|:-----------:|:------------------:|
-| 1 | Copilot CLI | Frontend (Markdown Notes) | 30 | 3 | 30 |
-| 2 | Claude Code | Frontend (Tic-Tac-Toe) | 24 | 5 | 23 |
-| 3 | Codex | Frontend (Calculator) | 34 | 6 | 32 |
-| 4 | Claude Code | Backend (REST API) | 36 | 12 | 34 |
-| 5 | Copilot CLI | Backend (REST API) | 44 | 13 | 41 |
-| 6 | Codex | Backend (REST API) | 48 | 14 | 46 |
-| 7 | Claude Code | CLI Tool (Logwatch) | 50 | 30 | 35 |
+**Latest (9 runs scored 2026-04-16):** 87 % verification pass rate (20/23), 50 % task-completion rate (3/6), mean wall-clock 873.8 s (σ = 901 s), 0 repair iterations triggered. Full results with confidence intervals → [benchmarks/README.md § Latest Results](benchmarks/README.md#latest-results--legacy-tasks-9-runs-2026-04-16).
 
-**Disclosure:** These benchmarks were conducted by the project author, not an independent evaluator. The scoring rubric rewards the same dimensions the orchestrator's quality gates enforce (security, test coverage, production readiness, documentation). Standalone agents are penalized for omitting requirements that were never in the goal prompt. This measures system-level output completeness, not raw model coding ability. See [docs/benchmarks.md](docs/benchmarks.md) for the full assessment with evidence and methodology notes.
+**Metrics (automated only):** test-pass rate, test coverage, security scan issues (SARIF), premium request cost, wall-clock time, repair-loop iterations. Results report mean ± 95% CI.
 
-**One empirical validation:** The Benchmark 5 gap (Copilot CLI, REST API) was tested with real iterative prompting. Predicted: 13-15 follow-up prompts to reach parity. Actual: 14. See [docs/orchestrator-copilot-benchmarks.md](docs/orchestrator-copilot-benchmarks.md) Part 4.
+```bash
+# Score a completed run
+./benchmarks/harness/scoring/score.sh ./runs/<execution-id>
 
-The orchestrator consistently wins on security hardening (headers, body limits, ID validation), test depth (dedicated unit suites per module, not just integration), configuration externalization (env vars with validation), and production scaffolding (Docker, CI scripts, README, coverage reporting). Standalone agents consistently miss these categories regardless of which CLI is used.
-
-Benchmark 7 (Claude Code CLI tool) was the narrowest gap overall: Claude Code scored 30/50 with an async tailer, log rotation handling, word-boundary level detection, and 5 end-to-end CLI tests. The orchestrator won 35/50, primarily on module structure, project scaffolding, and unit test depth, but Claude Code's core implementation was more production-resilient. This is the only benchmark where the standalone agent produced arguably stronger systems-level engineering than the orchestrator's output.
+# Run SWE-bench evaluation (Docker required)
+cd benchmarks/swe-bench && docker compose up --build
+```
 
 <br>
 

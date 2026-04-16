@@ -1,0 +1,223 @@
+name: Continuous Benchmark
+
+on:
+  release:
+    types: [published]
+  schedule:
+    # Nightly at 03:00 UTC
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      subset_size:
+        description: 'Number of SWE-bench tasks to evaluate'
+        required: false
+        default: '10'
+
+permissions:
+  contents: read
+  checks: write
+
+env:
+  BENCHER_PROJECT: swarm-orchestrator
+  BENCHER_TESTBED: ci-ubuntu-latest
+
+jobs:
+  # ──────────────────────────────────────────────────────────────
+  # Job 1: Unit tests + quality gates (fast, every run)
+  # ──────────────────────────────────────────────────────────────
+  unit-and-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run build
+
+      # ── Run tests and capture counts ──
+      - name: Run tests
+        id: tests
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee test-output.txt
+          PASS=$(grep -oP '\d+(?= passing)' test-output.txt || echo '0')
+          FAIL=$(grep -oP '\d+(?= failing)' test-output.txt || echo '0')
+          TOTAL=$((PASS + FAIL))
+          PCT=$(( TOTAL > 0 ? (PASS * 100 / TOTAL) : 0 ))
+          echo "pass_count=$PASS" >> "$GITHUB_OUTPUT"
+          echo "fail_count=$FAIL" >> "$GITHUB_OUTPUT"
+          echo "pass_pct=$PCT" >> "$GITHUB_OUTPUT"
+
+      # ── Quality gates with SARIF ──
+      - name: Run quality gates
+        id: gates
+        run: |
+          node dist/src/cli.js gates . --sarif quality-gates.sarif 2>&1 | tee gates-output.txt || true
+          GATE_ISSUES=$(jq '[.runs[].results[]] | length' quality-gates.sarif 2>/dev/null || echo '0')
+          echo "gate_issues=$GATE_ISSUES" >> "$GITHUB_OUTPUT"
+
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: quality-gates.sarif
+        continue-on-error: true
+
+      # ── Bencher tracking ──
+      - name: Install Bencher CLI
+        uses: bencherdev/bencher@main
+
+      - name: Track metrics with Bencher
+        env:
+          BENCHER_API_TOKEN: ${{ secrets.BENCHER_API_TOKEN }}
+        run: |
+          # Create a BMF (Bencher Metric Format) JSON file
+          cat > bench-results.json <<EOF
+          {
+            "test_pass_rate": {
+              "latency": {
+                "value": ${{ steps.tests.outputs.pass_pct }},
+                "lower_value": ${{ steps.tests.outputs.pass_pct }},
+                "upper_value": ${{ steps.tests.outputs.pass_pct }}
+              }
+            },
+            "quality_gate_issues": {
+              "latency": {
+                "value": ${{ steps.gates.outputs.gate_issues }},
+                "lower_value": ${{ steps.gates.outputs.gate_issues }},
+                "upper_value": ${{ steps.gates.outputs.gate_issues }}
+              }
+            },
+            "tests_passing": {
+              "latency": {
+                "value": ${{ steps.tests.outputs.pass_count }},
+                "lower_value": ${{ steps.tests.outputs.pass_count }},
+                "upper_value": ${{ steps.tests.outputs.pass_count }}
+              }
+            }
+          }
+          EOF
+
+          bencher run \
+            --project "$BENCHER_PROJECT" \
+            --testbed "$BENCHER_TESTBED" \
+            --branch main \
+            --adapter json \
+            --file bench-results.json \
+            --err \
+            || echo "::warning::Bencher tracking failed (API token may not be configured)"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### Continuous Benchmark Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Metric | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|--------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Tests passing | ${{ steps.tests.outputs.pass_count }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Test pass rate | ${{ steps.tests.outputs.pass_pct }}% |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Quality gate issues | ${{ steps.gates.outputs.gate_issues }} |" >> "$GITHUB_STEP_SUMMARY"
+
+  # ──────────────────────────────────────────────────────────────
+  # Job 2: SWE-bench evaluation (nightly only, resource-intensive)
+  # ──────────────────────────────────────────────────────────────
+  swe-bench-eval:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    needs: unit-and-gates
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci && npm run build
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install SWE-bench dependencies
+        run: pip install -r benchmarks/swe-bench/requirements.txt
+
+      - name: Run SWE-bench evaluation
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SWEBENCH_SUBSET_SIZE: ${{ github.event.inputs.subset_size || '10' }}
+          RESULTS_DIR: ${{ github.workspace }}/benchmarks/swe-bench/results
+        run: |
+          python3 benchmarks/swe-bench/evaluation-scripts/run_swebench.py
+
+      - name: Collect results
+        run: |
+          python3 benchmarks/swe-bench/evaluation-scripts/collect_results.py \
+            benchmarks/swe-bench/results/
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swe-bench-results-${{ github.run_id }}
+          path: benchmarks/swe-bench/results/
+          retention-days: 90
+
+      - name: Track SWE-bench with Bencher
+        env:
+          BENCHER_API_TOKEN: ${{ secrets.BENCHER_API_TOKEN }}
+        run: |
+          # Extract metrics from latest result
+          LATEST=$(ls -t benchmarks/swe-bench/results/eval-*.json | head -1)
+          if [ -n "$LATEST" ]; then
+            PCT=$(jq '.percent_resolved' "$LATEST")
+            LAT=$(jq '.mean_latency_seconds' "$LATEST")
+
+            cat > swebench-bench.json <<EOF
+          {
+            "swebench_resolve_rate": {
+              "latency": {
+                "value": $PCT,
+                "lower_value": $PCT,
+                "upper_value": $PCT
+              }
+            },
+            "swebench_mean_latency": {
+              "latency": {
+                "value": $LAT,
+                "lower_value": $LAT,
+                "upper_value": $LAT
+              }
+            }
+          }
+          EOF
+
+            bencher run \
+              --project "$BENCHER_PROJECT" \
+              --testbed "$BENCHER_TESTBED" \
+              --branch main \
+              --adapter json \
+              --file swebench-bench.json \
+              --err \
+              || echo "::warning::Bencher tracking failed"
+          fi
+
+      - name: SWE-bench Summary
+        if: always()
+        run: |
+          LATEST=$(ls -t benchmarks/swe-bench/results/eval-*.json 2>/dev/null | head -1)
+          echo "### SWE-bench Evaluation Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$LATEST" ]; then
+            jq -r '"| Metric | Value |\n|--------|-------|\n| Resolved | \(.resolved)/\(.total) |\n| Resolve rate | \(.percent_resolved)% |\n| Mean latency | \(.mean_latency_seconds)s |"' "$LATEST" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No results found." >> "$GITHUB_STEP_SUMMARY"
+          fi

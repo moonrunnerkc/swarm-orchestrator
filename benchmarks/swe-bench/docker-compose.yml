@@ -1,0 +1,24 @@
+services:
+  swe-bench-eval:
+    build:
+      context: .
+      dockerfile: Dockerfile.eval
+    env_file: .env
+    environment:
+      - ANTHROPIC_API_KEY
+      - OPENAI_API_KEY
+      - GITHUB_TOKEN
+      - SWEBENCH_SUBSET_SIZE=${SWEBENCH_SUBSET_SIZE:-10}
+      - SWEBENCH_DATASET=${SWEBENCH_DATASET:-princeton-nlp/SWE-bench_Lite}
+      - SWARM_TOOL=${SWARM_TOOL:-claude-code}
+      - SWARM_MODEL=${SWARM_MODEL:-claude-sonnet-4}
+      - BASELINE_MODE=${BASELINE_MODE:-false}
+      - TASK_TIMEOUT_SECONDS=${TASK_TIMEOUT_SECONDS:-1800}
+    volumes:
+      - ./results:/app/results
+      - swebench-cache:/app/.cache
+    working_dir: /app
+    command: ["python3", "evaluation-scripts/run_swebench.py"]
+
+volumes:
+  swebench-cache:
