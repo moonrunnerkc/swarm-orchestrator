@@ -28,7 +28,12 @@
     "test:ci": "mocha --recursive 'dist/test/**/*.test.js'",
     "start": "node dist/src/cli.js",
     "docker:build": "docker build -t swarm-orchestrator .",
-    "docker:run": "docker run --rm --env-file .env swarm-orchestrator"
+    "docker:build:health": "docker build -t health-service -f app/Dockerfile .",
+    "docker:run": "docker run --rm --env-file .env swarm-orchestrator",
+    "docker:up": "docker compose up --build -d",
+    "docker:down": "docker compose down",
+    "deploy": "bash scripts/deploy.sh",
+    "test:python": "pytest app/tests/ -v"
   },
   "repository": {
     "type": "git",
