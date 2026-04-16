@@ -130,7 +130,7 @@ export const DEFAULT_QUALITY_GATES_CONFIG: QualityGatesConfig = {
         'webpack\\.config\\.(js|ts)$',
         '\\.env(\\.example|\\.local)?$',
         '^docker-compose[^/]*\\.ya?ml$',
-        '^Dockerfile',
+        '(^|/)Dockerfile',
         '\\.dockerfile$'
       ]
     },

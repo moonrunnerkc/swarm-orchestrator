@@ -26,7 +26,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     HOST=0.0.0.0 \
-    PORT=8000
+    PORT=8000 \
+    HEALTHCHECK_HOST=127.0.0.1
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
@@ -47,6 +48,6 @@ USER health
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl --fail --silent "http://127.0.0.1:${PORT}/api/health" || exit 1
+    CMD curl --fail --silent "http://${HEALTHCHECK_HOST}:${PORT}/api/health" || exit 1
 
 CMD ["sh", "-c", "uvicorn app.main:app --host ${HOST} --port ${PORT}"]
