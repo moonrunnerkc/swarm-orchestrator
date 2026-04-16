@@ -315,4 +315,39 @@ body { font-size: 1rem; }
     assert.strictEqual(result.stats?.htmlFiles, 1, 'without baseline all HTML files should be scanned');
     assert.ok(result.issues.length > 0, 'without baseline, issues should be flagged');
   });
+
+  it('resolves relative asset refs against the HTML file directory', async () => {
+    // web/index.html sitting next to web/src/styles.css and web/src/app.js —
+    // the browser resolves src="src/styles.css" to web/src/styles.css, and the
+    // gate must do the same instead of looking for a top-level src/styles.css.
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Nested app">
+  <meta name="theme-color" content="#333">
+  <title>Nested</title>
+  <link rel="stylesheet" href="src/styles.css" />
+</head>
+<body>
+  <a href="#main-content" class="skip-link">Skip</a>
+  <header><h1>Hi</h1></header>
+  <main id="main-content"><p>Body</p></main>
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>`;
+    const css = `:root { --bg: #fff; }
+button:focus-visible { outline: 2px solid blue; }
+body { font-size: 1rem; }
+@media (prefers-color-scheme: dark) { :root { --bg: #000; } }`;
+    const ctx = makeCtx([
+      makeFile('web/index.html', html),
+      makeFile('web/src/styles.css', css),
+      makeFile('web/src/app.js', 'export const app = true;'),
+    ]);
+
+    const result = await run_accessibility_gate(ctx, fullConfig(), MAX_FILE_SIZE);
+    const phantomIssues = result.issues.filter(i => i.message.includes('does not exist'));
+    assert.deepStrictEqual(phantomIssues, [], `nested refs should resolve; got: ${phantomIssues.map(i => i.message).join('; ')}`);
+  });
 });
