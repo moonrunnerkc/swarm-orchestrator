@@ -3,10 +3,29 @@
 import { ValidationError } from "./errors.js";
 import { sanitiseForReflection } from "./security.js";
 
+// Reject JSON keys that could trigger prototype pollution when spread into
+// objects. JSON.parse itself is safe in modern Node, but downstream code
+// using Object.assign / spread could propagate these as own-properties on
+// plain objects, confusing libraries that walk the prototype chain.
+const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+function rejectDangerousKeys(obj) {
+  if (!obj || typeof obj !== "object") return;
+  for (const key of Object.keys(obj)) {
+    if (DANGEROUS_KEYS.has(key)) {
+      throw new ValidationError(
+        `request body must not contain the key '${key}'`,
+        { field: key },
+      );
+    }
+  }
+}
+
 export function validateCreateBody(body, cfg) {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     throw new ValidationError("request body must be a JSON object");
   }
+  rejectDangerousKeys(body);
 
   const title = validateTitle(body.title, cfg, { required: true });
   const content = validateContent(body.content, cfg);
@@ -18,6 +37,7 @@ export function validateUpdateBody(body, cfg) {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     throw new ValidationError("request body must be a JSON object");
   }
+  rejectDangerousKeys(body);
 
   const hasTitle = "title" in body;
   const hasContent = "content" in body;

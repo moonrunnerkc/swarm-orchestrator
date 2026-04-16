@@ -1,5 +1,7 @@
 // Security middleware: headers, input sanitisation, and request hardening.
 
+import { randomUUID } from "node:crypto";
+
 // Conservative security headers for a JSON-only API. Mirrors the hardening
 // applied to the Python health-service so both backends present a consistent
 // security posture to scanners and browsers.
@@ -109,6 +111,17 @@ export function createRateLimiter({
 
   middleware.destroy = () => clearInterval(cleanup);
   return middleware;
+}
+
+// Attach a unique correlation ID to every request so errors logged
+// server-side can be traced back to the originating HTTP request.
+// Clients may supply their own via X-Correlation-Id; otherwise one is
+// generated. The ID is echoed in the response for client-side correlation.
+export function correlationId(req, res, next) {
+  const id = req.headers["x-correlation-id"] || randomUUID();
+  req.correlationId = id;
+  res.setHeader("X-Correlation-Id", id);
+  next();
 }
 
 export { SECURITY_HEADERS };

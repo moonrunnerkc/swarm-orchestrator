@@ -37,7 +37,7 @@ export function createStore({ dataFile, now = () => new Date().toISOString() }) 
     const dir = path.dirname(dataFile);
     await fs.mkdir(dir, { recursive: true });
     const tmp = `${dataFile}.${process.pid}.${Date.now()}.tmp`;
-    await fs.writeFile(tmp, JSON.stringify(state, null, 2), "utf8");
+    await fs.writeFile(tmp, JSON.stringify(state, null, 2), { encoding: "utf8", mode: 0o600 });
     await fs.rename(tmp, dataFile);
   }
 
