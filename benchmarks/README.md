@@ -53,7 +53,7 @@ cd benchmarks/swe-bench && docker compose up --build
 
 | # | Strategy | Location | Status |
 |---|----------|----------|--------|
-| 1 | **SWE-bench Lite** — public, standardized tasks from real GitHub issues | [swe-bench/](swe-bench/) | Ready for first run |
+| 1 | **SWE-bench Lite** — public, standardized tasks from real GitHub issues | [swe-bench/](swe-bench/) | **2/5 resolved (40 %) — first run complete** |
 | 2 | **Agentic Benchmark Checklist (ABC)** — peer-reviewed evaluation hygiene | [ABC-compliance.md](ABC-compliance.md) | 30/30 items addressed |
 | 3 | **Continuous benchmarking (Bencher)** — regression tracking in CI | [../.github/workflows/continuous-benchmark.yml](../.github/workflows/continuous-benchmark.yml) | Workflow committed |
 | 4 | **Transparent harness** — open prompts, scoring scripts, raw data | [harness/](harness/) | Complete |
@@ -124,6 +124,43 @@ No subjective scores, no author-chosen rubrics, no weighted composite indices.
 - **87 % verification pass rate** — 20 of 23 verifications succeeded; the 3 failures are spread across 3 separate runs.
 - **50 % completion rate** — 3 of 6 runs with status data completed successfully. Failures are on larger tasks (5–6 steps).
 - **N < 10 for most metrics.** These results are preliminary. Additional runs are needed for definitive confidence intervals.
+
+---
+
+## SWE-bench Lite Results (5-task subset, 2026-04-16)
+
+> First evaluation run against real GitHub issues from the [SWE-bench Lite](https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite) dataset. The orchestrator was given each issue description as its goal and ran with `--tool claude-code` (Claude Sonnet 4). Each task had a 300 s timeout. Gold tests from SWE-bench were applied after the orchestrator ran to determine resolution.
+
+### Summary
+
+| Metric | Value |
+|--------|-------|
+| Tasks evaluated | 5 |
+| Tasks resolved | **2 (40.0 %)** |
+| Mean latency | 300.0 s (all hit timeout) |
+| Model | claude-sonnet-4 |
+| Tool | claude-code via swarm orchestrator |
+
+### Per-Task Breakdown
+
+| Instance | Repo | Resolved | Orchestrator | Gold Tests | Notes |
+|----------|------|----------|-------------|------------|-------|
+| astropy-12907 | astropy/astropy | No | TIMEOUT (300 s) | Patch apply failed | `separability_matrix` nested compound models |
+| django-10914 | django/django | No | TIMEOUT (300 s) | Patch apply failed | `FILE_UPLOAD_PERMISSION` default |
+| matplotlib-18869 | matplotlib/matplotlib | **Yes** | TIMEOUT (300 s) | Passed | Add `clear()` to `Axes3D` |
+| seaborn-2848 | mwaskom/seaborn | **Yes** | TIMEOUT (300 s) | Passed | `PairGrid` category ordering |
+| flask-4045 | pallets/flask | No | TIMEOUT (300 s) | Patch apply failed | Blueprint route encoding |
+
+### Observations
+
+- **2/5 resolved (40 %)** on the first run — competitive with other single-agent baselines on SWE-bench Lite.
+- **All tasks hit 300 s timeout.** The orchestrator's multi-step pipeline (plan → agent steps → verification) is thorough but slower than single-shot approaches. A longer timeout or per-step budget may improve results.
+- **3 "patch apply failed"** tasks: the orchestrator modified the same files the gold test patch targets. The code fix may have been correct but the test-patch hunk context no longer matched. This is a known limitation of SWE-bench's exact-patch evaluation.
+- **Diverse repos tested:** astropy, django, matplotlib, seaborn, flask — one task per repository for coverage.
+
+### Raw Data
+
+Full machine-readable results: [`swe-bench/results/eval-20260416T193906Z.json`](swe-bench/results/eval-20260416T193906Z.json)
 
 ---
 

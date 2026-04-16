@@ -12,18 +12,18 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
 WORKDIR /app
 
 # Python dependencies
-COPY requirements.txt .
+COPY benchmarks/swe-bench/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy evaluation scripts
-COPY evaluation-scripts/ evaluation-scripts/
+COPY benchmarks/swe-bench/evaluation-scripts/ evaluation-scripts/
 
-# Copy swarm-orchestrator from parent (built)
-COPY ../../package.json ../../package-lock.json ./swarm/
-COPY ../../dist/ ./swarm/dist/
-COPY ../../config/ ./swarm/config/
-COPY ../../agents/ ./swarm/agents/
-COPY ../../templates/ ./swarm/templates/
+# Copy swarm-orchestrator (built)
+COPY package.json package-lock.json ./swarm/
+COPY dist/ ./swarm/dist/
+COPY config/ ./swarm/config/
+COPY agents/ ./swarm/agents/
+COPY templates/ ./swarm/templates/
 
 RUN cd swarm && npm ci --omit=dev 2>/dev/null || true
 

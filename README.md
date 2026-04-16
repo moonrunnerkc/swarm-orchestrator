@@ -141,6 +141,8 @@ Evaluation uses **standardized public tasks**, **automated metrics**, and **stat
 
 **Latest (9 runs scored 2026-04-16):** 87 % verification pass rate (20/23), 50 % task-completion rate (3/6), mean wall-clock 873.8 s (σ = 901 s), 0 repair iterations triggered. Full results with confidence intervals → [benchmarks/README.md § Latest Results](benchmarks/README.md#latest-results--legacy-tasks-9-runs-2026-04-16).
 
+**SWE-bench Lite (first run, 2026-04-16):** 2/5 tasks resolved (40 %) against real GitHub issues from astropy, django, matplotlib, seaborn, and flask. All tasks ran with Claude Sonnet 4 via the orchestrator. → [benchmarks/README.md § SWE-bench Results](benchmarks/README.md#swe-bench-lite-results-5-task-subset-2026-04-16).
+
 **Metrics (automated only):** test-pass rate, test coverage, security scan issues (SARIF), premium request cost, wall-clock time, repair-loop iterations. Results report mean ± 95% CI.
 
 ```bash

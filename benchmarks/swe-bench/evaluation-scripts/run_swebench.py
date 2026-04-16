@@ -40,7 +40,9 @@ SWARM_MODEL = os.environ.get("SWARM_MODEL", "claude-sonnet-4")
 BASELINE_MODE = os.environ.get("BASELINE_MODE", "false").lower() == "true"
 TASK_TIMEOUT = int(os.environ.get("TASK_TIMEOUT_SECONDS", "1800"))
 RESULTS_DIR = Path(os.environ.get("RESULTS_DIR", "/app/results"))
-SWARM_BIN = Path("/app/swarm/dist/src/cli.js")
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+_LOCAL_BIN = _REPO_ROOT / "dist" / "src" / "cli.js"
+SWARM_BIN = Path(os.environ.get("SWARM_BIN", str(_LOCAL_BIN) if _LOCAL_BIN.exists() else "/app/swarm/dist/src/cli.js"))
 CACHE_DIR = Path(os.environ.get("HF_HOME", "/app/.cache"))
 
 
@@ -48,9 +50,28 @@ def load_tasks():
     """Load and return a subset of SWE-bench tasks."""
     print(f"Loading dataset: {DATASET_ID} (subset: {SUBSET_SIZE})")
     ds = load_dataset(DATASET_ID, split="test", cache_dir=str(CACHE_DIR))
-    tasks = list(ds.select(range(min(SUBSET_SIZE, len(ds)))))
-    print(f"  Loaded {len(tasks)} tasks")
-    return tasks
+
+    # Pick tasks from diverse repos for better coverage
+    seen_repos = set()
+    diverse_tasks = []
+    for item in ds:
+        repo = item["repo"]
+        if repo not in seen_repos:
+            seen_repos.add(repo)
+            diverse_tasks.append(item)
+        if len(diverse_tasks) >= SUBSET_SIZE:
+            break
+
+    # If not enough diverse repos, fill from remaining
+    if len(diverse_tasks) < SUBSET_SIZE:
+        for item in ds:
+            if item not in diverse_tasks:
+                diverse_tasks.append(item)
+            if len(diverse_tasks) >= SUBSET_SIZE:
+                break
+
+    print(f"  Selected {len(diverse_tasks)} tasks from {len(seen_repos)} repos")
+    return diverse_tasks
 
 
 def checkout_repo(task, workdir: Path) -> Path:
@@ -58,8 +79,10 @@ def checkout_repo(task, workdir: Path) -> Path:
     repo_url = f"https://github.com/{task['repo']}.git"
     repo_dir = workdir / task["instance_id"]
 
+    # Use treeless partial clone — downloads all commits but fetches blobs on demand.
+    # Much faster than full clone for large repos like django/astropy.
     subprocess.run(
-        ["git", "clone", "--depth", "50", repo_url, str(repo_dir)],
+        ["git", "clone", "--filter=blob:none", repo_url, str(repo_dir)],
         check=True,
         capture_output=True,
         timeout=300,
@@ -69,7 +92,7 @@ def checkout_repo(task, workdir: Path) -> Path:
         cwd=str(repo_dir),
         check=True,
         capture_output=True,
-        timeout=60,
+        timeout=120,
     )
     return repo_dir
 

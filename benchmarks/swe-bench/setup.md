@@ -36,12 +36,17 @@ SWE-bench is a public benchmark of **real GitHub issues** paired with their huma
 
 ## First Run (Small Subset)
 
-To keep the first evaluation feasible, we start with **10 tasks** from SWE-bench Lite:
+The first evaluation used **5 diverse tasks** from SWE-bench Lite (one per repository):
 
 ```bash
 cd benchmarks/swe-bench
 docker compose up --build
+# — or run locally —
+source ../../.venv/bin/activate
+python3 evaluation-scripts/run_swebench.py
 ```
+
+**First run result (2026-04-16):** 2/5 resolved (40 %) — matplotlib and seaborn tasks fixed successfully. Full results in `results/eval-20260416T193906Z.json`.
 
 This will:
 
