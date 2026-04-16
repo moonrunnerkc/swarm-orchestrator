@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="A lightweight 3x3 tic-tac-toe game for two players with running score, keyboard play, and local persistence." />
+    <meta name="theme-color" content="#2563eb" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%232563eb'/><path d='M8 12h16M8 20h16M14 6v20M20 6v20' fill='none' stroke='white' stroke-width='2' stroke-linecap='round'/></svg>" />
+    <title>Tic-Tac-Toe</title>
+    <link rel="stylesheet" href="src/styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#board">Skip to board</a>
+
+    <header class="topbar">
+      <h1 class="title">Tic-Tac-Toe</h1>
+      <p class="tagline">Two players, one browser.</p>
+    </header>
+
+    <main class="stage">
+      <section class="panel" aria-labelledby="turn-heading">
+        <h2 id="turn-heading" class="visually-hidden">Current turn</h2>
+        <p class="turn">
+          <span class="turn__label">Next:</span>
+          <span class="turn__mark" id="turn" aria-live="polite">X</span>
+        </p>
+        <p class="status" id="status" role="status" aria-live="polite">X to move.</p>
+      </section>
+
+      <section
+        id="board"
+        class="board"
+        role="grid"
+        aria-label="Tic-tac-toe board, 3 by 3. Use arrow keys to move, Enter or Space to place."
+        data-state="playing"
+      >
+        <button type="button" class="cell" data-cell="0" role="gridcell" aria-label="Row 1, column 1, empty"></button>
+        <button type="button" class="cell" data-cell="1" role="gridcell" aria-label="Row 1, column 2, empty"></button>
+        <button type="button" class="cell" data-cell="2" role="gridcell" aria-label="Row 1, column 3, empty"></button>
+        <button type="button" class="cell" data-cell="3" role="gridcell" aria-label="Row 2, column 1, empty"></button>
+        <button type="button" class="cell" data-cell="4" role="gridcell" aria-label="Row 2, column 2, empty"></button>
+        <button type="button" class="cell" data-cell="5" role="gridcell" aria-label="Row 2, column 3, empty"></button>
+        <button type="button" class="cell" data-cell="6" role="gridcell" aria-label="Row 3, column 1, empty"></button>
+        <button type="button" class="cell" data-cell="7" role="gridcell" aria-label="Row 3, column 2, empty"></button>
+        <button type="button" class="cell" data-cell="8" role="gridcell" aria-label="Row 3, column 3, empty"></button>
+      </section>
+
+      <section class="controls" aria-label="Game controls">
+        <button type="button" id="reset" class="btn btn--primary">New round</button>
+        <button type="button" id="clear-score" class="btn btn--ghost">Reset score</button>
+      </section>
+
+      <section class="scoreboard" aria-label="Running score">
+        <dl class="score">
+          <div class="score__row">
+            <dt>X wins</dt>
+            <dd data-score="X">0</dd>
+          </div>
+          <div class="score__row">
+            <dt>O wins</dt>
+            <dd data-score="O">0</dd>
+          </div>
+          <div class="score__row">
+            <dt>Draws</dt>
+            <dd data-score="draw">0</dd>
+          </div>
+        </dl>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <p>Keyboard: arrows to move, Enter or Space to place, R for new round.</p>
+    </footer>
+
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>
