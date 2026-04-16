@@ -45,6 +45,20 @@ services:
       - calc-data:/app/data
     restart: unless-stopped
 
+  notes-api:
+    build:
+      context: ./notes-api
+    ports:
+      - "${NOTES_API_PORT:-3002}:3002"
+    environment:
+      - PORT=3002
+      - HOST=0.0.0.0
+      - DATA_FILE=./data/notes.json
+      - CORS_ORIGIN=${CORS_ORIGIN:-}
+    volumes:
+      - notes-data:/app/data
+    restart: unless-stopped
+
   db:
     image: postgres:16-alpine
     environment:
@@ -65,3 +79,4 @@ volumes:
   workspace:
   pgdata:
   calc-data:
+  notes-data:
