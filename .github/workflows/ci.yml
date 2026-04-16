@@ -55,6 +55,40 @@ jobs:
         rm -f test-output.txt
         node dist/src/cli.js gates .
 
+  subproject-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [20, 22]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+
+    - name: Test calculations-api
+      working-directory: calculations-api
+      run: |
+        npm ci
+        npm test
+
+    - name: Test calculator
+      working-directory: calculator
+      run: |
+        npm install
+        npm test
+
+    - name: Test web
+      working-directory: web
+      run: npm test
+
+    - name: Test tictactoe
+      working-directory: tictactoe
+      run: npm test
+
   python-tests:
     runs-on: ubuntu-latest
     strategy:
@@ -84,7 +118,7 @@ jobs:
 
   docker:
     runs-on: ubuntu-latest
-    needs: [build-and-test, python-tests]
+    needs: [build-and-test, subproject-tests, python-tests]
     steps:
     - uses: actions/checkout@v4
 
@@ -104,3 +138,14 @@ jobs:
         docker logs health-test
         docker stop health-test
         docker rm health-test
+
+    - name: Build calculations-api image
+      run: docker build -t calculations-api:ci ./calculations-api
+
+    - name: Verify calculations-api container starts
+      run: |
+        docker run -d --name calc-test calculations-api:ci
+        sleep 3
+        docker logs calc-test
+        docker stop calc-test
+        docker rm calc-test

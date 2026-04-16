@@ -31,6 +31,20 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  calculations-api:
+    build:
+      context: ./calculations-api
+    ports:
+      - "${CALC_API_PORT:-3001}:3001"
+    environment:
+      - PORT=3001
+      - HOST=0.0.0.0
+      - DATA_FILE=./data/calculations.json
+      - CORS_ORIGIN=${CORS_ORIGIN:-}
+    volumes:
+      - calc-data:/app/data
+    restart: unless-stopped
+
   db:
     image: postgres:16-alpine
     environment:
@@ -50,3 +64,4 @@ services:
 volumes:
   workspace:
   pgdata:
+  calc-data:
