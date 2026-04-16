@@ -69,6 +69,16 @@ jobs:
       with:
         node-version: ${{ matrix.node-version }}
 
+    - name: Cache subproject dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          calculations-api/node_modules
+          notes-api/node_modules
+        key: subprojects-${{ runner.os }}-node${{ matrix.node-version }}-${{ hashFiles('calculations-api/package-lock.json', 'notes-api/package-lock.json') }}
+        restore-keys: |
+          subprojects-${{ runner.os }}-node${{ matrix.node-version }}-
+
     - name: Test calculations-api
       working-directory: calculations-api
       run: |
@@ -143,30 +153,36 @@ jobs:
 
     - name: Verify health-service container starts
       run: |
-        docker run -d --name health-test -e DATABASE_URL=sqlite:///./app.db health-service:ci
-        sleep 3
-        docker logs health-test
-        docker stop health-test
-        docker rm health-test
+        docker run -d --name health-test -p 8000:8000 -e DATABASE_URL=sqlite:///./app.db health-service:ci
+        for i in $(seq 1 10); do
+          if curl -sf http://127.0.0.1:8000/api/health; then echo " Health-service is healthy"; break; fi
+          if [ "$i" = "10" ]; then echo "Health-service failed to start"; docker logs health-test; exit 1; fi
+          sleep 1
+        done
+        docker stop health-test && docker rm health-test
 
     - name: Build calculations-api image
       run: docker build -t calculations-api:ci ./calculations-api
 
     - name: Verify calculations-api container starts
       run: |
-        docker run -d --name calc-test calculations-api:ci
-        sleep 3
-        docker logs calc-test
-        docker stop calc-test
-        docker rm calc-test
+        docker run -d --name calc-test -p 3001:3001 calculations-api:ci
+        for i in $(seq 1 10); do
+          if curl -sf http://127.0.0.1:3001/api/health; then echo " Calculations-api is healthy"; break; fi
+          if [ "$i" = "10" ]; then echo "Calculations-api failed to start"; docker logs calc-test; exit 1; fi
+          sleep 1
+        done
+        docker stop calc-test && docker rm calc-test
 
     - name: Build notes-api image
       run: docker build -t notes-api:ci ./notes-api
 
     - name: Verify notes-api container starts
       run: |
-        docker run -d --name notes-test notes-api:ci
-        sleep 3
-        docker logs notes-test
-        docker stop notes-test
-        docker rm notes-test
+        docker run -d --name notes-test -p 3002:3002 notes-api:ci
+        for i in $(seq 1 10); do
+          if curl -sf http://127.0.0.1:3002/health; then echo " Notes-api is healthy"; break; fi
+          if [ "$i" = "10" ]; then echo "Notes-api failed to start"; docker logs notes-test; exit 1; fi
+          sleep 1
+        done
+        docker stop notes-test && docker rm notes-test
