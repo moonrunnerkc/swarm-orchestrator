@@ -10,6 +10,43 @@ services:
       - OPENAI_API_KEY
       - GITHUB_TOKEN
       - COPILOT_TOKEN
+    depends_on:
+      health-service:
+        condition: service_healthy
+
+  health-service:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    env_file: .env
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///./app.db}
+      - CORS_ORIGINS=${CORS_ORIGINS:-}
+      - HOST=0.0.0.0
+      - PORT=8000
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-health}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-health}
+      POSTGRES_DB: ${POSTGRES_DB:-health_service}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-health}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   workspace:
+  pgdata:
