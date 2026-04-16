@@ -22,7 +22,7 @@ _This is not an autonomous system builder. It orchestrates external AI agents (C
 &nbsp;&nbsp;
 [![CI](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml/badge.svg)](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml)
 &nbsp;&nbsp;
-![Tests: 50 passing](https://img.shields.io/badge/tests-50%20passing-brightgreen.svg)
+![Tests: 1836 passing](https://img.shields.io/badge/tests-1836%20passing-brightgreen.svg)
 &nbsp;&nbsp;
 ![Node.js 20+](https://img.shields.io/badge/node-20%2B-green.svg)
 &nbsp;&nbsp;
@@ -610,9 +610,23 @@ npm start demo api-quick     # REST API with tests and Dockerfile, ~5 min
 
 ## Status
 
-Actively maintained. 89 source files, 102 test files, 1,386 tests passing. Development is ongoing with regular updates.
+Actively maintained. 89 source files, 102 test files, 1,836 tests passing across all packages. Development is ongoing with regular updates.
 
 See [Releases](https://github.com/moonrunnerkc/swarm-orchestrator/releases) for version history.
+
+<br>
+
+---
+
+<br>
+
+## Common Issues
+
+- **`gh` CLI not found** — the PR manager requires [GitHub CLI](https://cli.github.com/). Install it and run `gh auth login` before using PR-related features.
+- **Agent subprocess hangs** — ensure the agent CLI (`copilot`, `claude-code`, or `codex`) is installed, authenticated, and responds to `--help`. The orchestrator invokes it as a child process.
+- **Docker Compose fails to start** — verify Docker is running and port 5432 (PostgreSQL) is free. Use `docker compose logs <service>` to diagnose.
+- **Python tests fail with import errors** — install Python dependencies: `pip install fastapi pydantic sqlalchemy uvicorn httpx pytest` or use the `.venv` if present.
+- **Sub-project tests fail with `ERR_MODULE_NOT_FOUND`** — run `npm install` inside the sub-project directory (`calculations-api/`, `notes-api/`) before running tests.
 
 <br>
 
@@ -624,6 +638,17 @@ See [Releases](https://github.com/moonrunnerkc/swarm-orchestrator/releases) for 
 
 ```bash
 npm install && npm run build && npm test
+```
+
+Sub-project tests run independently inside their directories:
+
+```bash
+cd calculations-api && npm install && npm test
+cd notes-api && npm install && npm test
+cd calculator && npm test
+cd web && npm test
+cd tictactoe && npm test
+pytest app/tests/ -v
 ```
 
 Before submitting a PR: run `npm test`, run `swarm gates .`, and keep commits descriptive. TypeScript strict mode, ES2020 target.

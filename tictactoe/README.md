@@ -42,5 +42,10 @@ plain `node --test` and never touch the DOM.
 ## Tests
 
 ```sh
-npm test
+npm test            # 17 tests covering game rules and sound cues
 ```
+
+## Troubleshooting
+
+- **No sound on first click** — browsers require a user gesture before playing audio. The first tap unlocks the AudioContext; sounds play from the second move onward.
+- **Scores reset** — scores are stored in `localStorage`, which is per-origin. Changing the port or clearing browser data resets them.
