@@ -11,6 +11,12 @@ RUN npm run build
 # ── Stage 2: Production ──
 FROM node:20-slim
 
+LABEL org.opencontainers.image.title="swarm-orchestrator" \
+      org.opencontainers.image.description="Verification and governance layer for AI coding agents" \
+      org.opencontainers.image.source="https://github.com/moonrunnerkc/swarm-orchestrator" \
+      org.opencontainers.image.licenses="ISC" \
+      org.opencontainers.image.vendor="Bradley R. Kinnard"
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/*
