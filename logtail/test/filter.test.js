@@ -46,3 +46,47 @@ test("isValidLevel rejects unknown strings", () => {
   assert.equal(isValidLevel(""), false);
   assert.equal(isValidLevel("WARNING"), false);
 });
+
+// --- Edge cases ---
+
+test("parseSeverity handles mixed case like [Error] or [Warn]", () => {
+  assert.equal(parseSeverity("[Error] mixed case"), "error");
+  assert.equal(parseSeverity("[Warn] mixed case"), "warn");
+  assert.equal(parseSeverity("[Fatal] crash"), "fatal");
+});
+
+test("parseSeverity detects severity mid-line with context prefix", () => {
+  assert.equal(parseSeverity("2024-01-01T00:00:00Z [ERROR] something"), "error");
+  assert.equal(parseSeverity("app: info: booting"), "info");
+});
+
+test("parseSeverity returns null for partial matches", () => {
+  // "information" contains "info" but not in the expected format
+  assert.equal(parseSeverity("information about topic"), null);
+  // "warning" alone (no bracket or colon suffix)
+  assert.equal(parseSeverity("this is a warning sign"), null);
+});
+
+test("meetsThreshold handles all level combinations at boundaries", () => {
+  // debug is lowest, everything meets debug threshold
+  for (const l of LEVELS) {
+    assert.equal(meetsThreshold(l, "debug"), true, `${l} should meet debug threshold`);
+  }
+  // fatal is highest, only fatal meets fatal threshold
+  for (const l of LEVELS) {
+    if (l === "fatal") {
+      assert.equal(meetsThreshold(l, "fatal"), true);
+    } else {
+      assert.equal(meetsThreshold(l, "fatal"), false, `${l} should not meet fatal threshold`);
+    }
+  }
+});
+
+test("meetsThreshold handles unknown severity gracefully", () => {
+  // Unknown severity gets rank -1, should fail any threshold
+  assert.equal(meetsThreshold("unknown", "debug"), false);
+});
+
+test("LEVELS has exactly 5 entries in expected order", () => {
+  assert.deepEqual(LEVELS, ["debug", "info", "warn", "error", "fatal"]);
+});
