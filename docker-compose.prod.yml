@@ -1,0 +1,19 @@
+# Production override — uses pre-built images from GHCR instead of building.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Required env vars:
+#   REGISTRY   — e.g. ghcr.io/moonrunnerkc
+#   DEPLOY_TAG — e.g. 5.0.0, latest, sha-abc1234
+
+services:
+  swarm:
+    image: ${REGISTRY:-ghcr.io/moonrunnerkc}/swarm-orchestrator:${DEPLOY_TAG:-latest}
+
+  health-service:
+    image: ${REGISTRY:-ghcr.io/moonrunnerkc}/health-service:${DEPLOY_TAG:-latest}
+
+  calculations-api:
+    image: ${REGISTRY:-ghcr.io/moonrunnerkc}/calculations-api:${DEPLOY_TAG:-latest}
+
+  notes-api:
+    image: ${REGISTRY:-ghcr.io/moonrunnerkc}/notes-api:${DEPLOY_TAG:-latest}
