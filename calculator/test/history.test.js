@@ -1,3 +1,7 @@
+// Unit tests for the bounded history store (src/history.js): storage-adapter
+// injection, size capping, whitespace trimming, corrupt/malformed JSON
+// recovery, entry-shape validation, and persistence across re-instantiation.
+
 import test from "node:test";
 import assert from "node:assert/strict";
 
