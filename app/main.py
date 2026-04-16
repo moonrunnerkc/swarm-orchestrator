@@ -9,6 +9,23 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import Settings, load_settings
 from .db import DatabaseStatus, make_engine, ping_database
 from .routes.health import build_health_router
+from .security import install_security
+
+
+def _validate_cors_origins(origins: tuple[str, ...]) -> list[str]:
+    # Wildcard + credentials is a well-known CSRF footgun; refuse the combo
+    # rather than silently letting the browser drop credentials.
+    if "*" in origins:
+        raise ValueError(
+            "CORS_ORIGINS cannot include '*' when credentials are allowed. "
+            "List explicit origins instead."
+        )
+    for origin in origins:
+        if not (origin.startswith("https://") or origin.startswith("http://")):
+            raise ValueError(
+                f"CORS origin {origin!r} must start with http:// or https://"
+            )
+    return list(origins)
 
 
 def create_app(
@@ -25,10 +42,12 @@ def create_app(
 
     app = FastAPI(title="health-service", version="0.1.0")
 
+    install_security(app)
+
     if resolved.cors_origins:
         app.add_middleware(
             CORSMiddleware,
-            allow_origins=list(resolved.cors_origins),
+            allow_origins=_validate_cors_origins(resolved.cors_origins),
             allow_credentials=True,
             allow_methods=["GET"],
             allow_headers=["*"],
