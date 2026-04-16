@@ -1,3 +1,7 @@
+// Unit tests for the keyboard-to-action lookup (src/keymap.js): digit mapping,
+// operator aliases (including Unicode ×/÷), Enter/=, Escape/Delete/Backspace,
+// percent/underscore, and safe null return for unrecognised keys.
+
 import test from "node:test";
 import assert from "node:assert/strict";
 

@@ -1,3 +1,8 @@
+// Unit tests for the pure calculator engine (src/calculator.js): state
+// transitions for digit entry, operators, chaining, evaluate (with repeated
+// `=`), clear/backspace/negate/percent, division-by-zero error handling, and
+// state-freezing invariants.
+
 import test from "node:test";
 import assert from "node:assert/strict";
 
