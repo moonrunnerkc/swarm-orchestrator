@@ -1,6 +1,7 @@
 // Request body validation for calculation endpoints.
 
 import { ValidationError } from "./errors.js";
+import { sanitiseForReflection } from "./security.js";
 
 export function validateCreateBody(body, cfg) {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
@@ -78,9 +79,10 @@ function validateTitle(value, cfg) {
 export function validateUuid(raw, paramName = "id") {
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   if (!UUID_RE.test(raw)) {
+    const safeRaw = sanitiseForReflection(raw);
     throw new ValidationError(
-      `'${paramName}' must be a valid UUID v4 (got "${raw}")`,
-      { field: paramName, received: raw },
+      `'${paramName}' must be a valid UUID v4 (got "${safeRaw}")`,
+      { field: paramName, received: safeRaw },
     );
   }
   return raw.toLowerCase();

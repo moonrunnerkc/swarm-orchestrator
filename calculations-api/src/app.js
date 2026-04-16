@@ -8,6 +8,7 @@ import { createStore } from "./store.js";
 import { healthRouter } from "./routes/health.js";
 import { calculationsRouter } from "./routes/calculations.js";
 import { notFoundHandler, errorHandler } from "./errors.js";
+import { securityHeaders } from "./security.js";
 
 export function makeApp(overrides = {}) {
   const cfg = overrides.config ?? loadConfig();
@@ -16,6 +17,7 @@ export function makeApp(overrides = {}) {
 
   const app = express();
 
+  app.use(securityHeaders);
   app.use(cors({ origin: cfg.corsOrigin }));
   app.use(express.json({ limit: cfg.maxBodyBytes }));
 
