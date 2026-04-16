@@ -18,6 +18,7 @@ npm start              # http://127.0.0.1:3001
 | ------ | --------------------- | -------------------------- |
 | GET    | `/health`             | Liveness probe             |
 | GET    | `/calculations`       | List all calculations      |
+| GET    | `/calculations/stats` | Aggregate statistics       |
 | POST   | `/calculations`       | Create a new calculation   |
 | GET    | `/calculations/:id`   | Get a single calculation   |
 | PUT    | `/calculations/:id`   | Update a calculation       |
@@ -41,6 +42,20 @@ npm start              # http://127.0.0.1:3001
   "updatedAt": "2026-04-16T21:00:00.000Z"
 }
 ```
+
+**GET /calculations/stats**
+
+```json
+{
+  "totalCalculations": 3,
+  "averageResult": 12,
+  "minResult": 6,
+  "maxResult": 20,
+  "lastCalculatedAt": "2026-04-16T21:05:00.000Z"
+}
+```
+
+All values are `null` when no calculations exist (except `totalCalculations` which is `0`).
 
 **PUT /calculations/:id** — send any combination of `title` and `expression`.
 When `expression` changes the `result` is recalculated.
@@ -96,6 +111,6 @@ All config is read from environment variables (see `.env.example`):
 ## Tests
 
 ```sh
-npm test            # 118 tests, ~540ms
+npm test            # 123 tests, ~400ms
 npm run test:coverage
 ```
