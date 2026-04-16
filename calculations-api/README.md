@@ -95,6 +95,6 @@ All config is read from environment variables (see `.env.example`):
 ## Tests
 
 ```sh
-npm test            # 60 tests, ~350ms
+npm test            # 118 tests, ~540ms
 npm run test:coverage
 ```

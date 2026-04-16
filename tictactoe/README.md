@@ -32,7 +32,8 @@ tictactoe/
 │   ├── sound.js    # Web Audio cue for move / win / draw
 │   └── styles.css  # custom-property-driven theme, dark mode, responsive
 └── test/
-    └── game.test.js
+    ├── game.test.js
+    └── sound.test.js
 ```
 
 The rules live in `src/game.js` as pure functions, so they are testable with
