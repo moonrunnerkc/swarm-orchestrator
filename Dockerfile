@@ -35,7 +35,12 @@ COPY plugin/ plugin/
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh && chmod +x dist/src/cli.js
 
+ENV NODE_ENV=production
+
 # Run as non-root
 USER swarm
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD node -e "try { require('./dist/src/cli.js'); process.exit(0); } catch { process.exit(1); }"
 
 ENTRYPOINT ["/entrypoint.sh"]
