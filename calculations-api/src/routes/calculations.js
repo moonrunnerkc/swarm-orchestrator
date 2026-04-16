@@ -14,6 +14,36 @@ import {
 export function calculationsRouter(store, cfg) {
   const router = Router();
 
+  router.get("/stats", async (_req, res, next) => {
+    try {
+      const items = await store.list();
+      if (items.length === 0) {
+        return res.json({
+          totalCalculations: 0,
+          averageResult: null,
+          minResult: null,
+          maxResult: null,
+          lastCalculatedAt: null,
+        });
+      }
+      const results = items.map((c) => c.result);
+      const sum = results.reduce((a, b) => a + b, 0);
+      const sorted = items
+        .map((c) => c.updatedAt)
+        .sort()
+        .reverse();
+      res.json({
+        totalCalculations: items.length,
+        averageResult: Number.parseFloat((sum / items.length).toPrecision(12)),
+        minResult: Math.min(...results),
+        maxResult: Math.max(...results),
+        lastCalculatedAt: sorted[0],
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
   router.get("/", async (_req, res, next) => {
     try {
       const items = await store.list();

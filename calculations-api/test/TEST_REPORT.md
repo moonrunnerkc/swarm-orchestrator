@@ -8,11 +8,11 @@
 
 | Metric     | Value  |
 |------------|--------|
-| Total tests | 118   |
-| Passing    | 118    |
+| Total tests | 123   |
+| Passing    | 123    |
 | Failing    | 0      |
 | Skipped    | 0      |
-| Duration   | ~540ms |
+| Duration   | ~400ms |
 
 ## Coverage
 
@@ -41,6 +41,7 @@
 | test/errors.test.js | 12 | Error classes, notFoundHandler, errorHandler middleware |
 | test/edge-cases.test.js | 18 | Field names, length limits, lifecycle, boundary inputs |
 | test/integration-http.test.js | 7 | Real HTTP server: full CRUD, errors, CORS, security |
+| test/stats.test.js | 5 | Stats endpoint: empty state, aggregations, negatives, field shape |
 
 ## Notes
 
