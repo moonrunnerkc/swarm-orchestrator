@@ -81,6 +81,12 @@ jobs:
         npm install
         npm test
 
+    - name: Test notes-api
+      working-directory: notes-api
+      run: |
+        npm ci
+        npm test
+
     - name: Test web
       working-directory: web
       run: npm test
@@ -149,3 +155,14 @@ jobs:
         docker logs calc-test
         docker stop calc-test
         docker rm calc-test
+
+    - name: Build notes-api image
+      run: docker build -t notes-api:ci ./notes-api
+
+    - name: Verify notes-api container starts
+      run: |
+        docker run -d --name notes-test notes-api:ci
+        sleep 3
+        docker logs notes-test
+        docker stop notes-test
+        docker rm notes-test
