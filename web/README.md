@@ -27,15 +27,6 @@ npm run serve
 
 Then open <http://localhost:5173/> in a browser.
 
-## Tests
-
-Pure logic (markdown parsing, stats, notes store) is covered by the Node
-built-in test runner:
-
-```bash
-npm test
-```
-
 ## Layout
 
 - `index.html` — markup and metadata.
@@ -46,3 +37,14 @@ npm test
   storage adapter for testing.
 - `src/audio-cue.js` — Web Audio beep for background-tab autosave feedback.
 - `src/app.js` — thin glue between DOM events and the pure modules.
+
+## Tests
+
+```sh
+npm test            # 20 tests covering markdown rendering, stats, and note store
+```
+
+## Troubleshooting
+
+- **Styles not loading** — open `index.html` via a local server (`npm run serve`), not as a `file://` URL. Some browsers block module scripts from the filesystem.
+- **Notes disappear** — notes are stored in `localStorage`, which is per-origin. Switching ports or domains starts a fresh store.

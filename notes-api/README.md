@@ -99,3 +99,9 @@ All errors follow this shape:
   }
 }
 ```
+
+## Troubleshooting
+
+- **EADDRINUSE** — another process is using port 3002. Set `PORT` to a different value or stop the other process.
+- **Tests fail with `ERR_MODULE_NOT_FOUND`** — run `npm install` to install dev dependencies (`supertest`).
+- **Data file not writable** — ensure the `data/` directory exists and the process has write permission.
