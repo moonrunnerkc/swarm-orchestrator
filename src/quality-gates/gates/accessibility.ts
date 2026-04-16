@@ -205,14 +205,29 @@ export async function run_accessibility_gate(
 
       // Match src="..." and href="..." that look like local paths (not URLs, not anchors, not data URIs)
       const refRegex = /(?:src|href)\s*=\s*["']([^"']+)["']/gi;
+      // Resolve references against the HTML file's own directory so a nested
+      // page (e.g. web/index.html) correctly points at web/src/styles.css.
+      const slashIdx = file.relativePath.lastIndexOf('/');
+      const htmlDir = slashIdx >= 0 ? file.relativePath.substring(0, slashIdx) : '';
       let refMatch: RegExpExecArray | null;
       while ((refMatch = refRegex.exec(text)) !== null) {
         const ref = refMatch[1];
         // Skip external URLs, anchors, data URIs, template expressions
         if (/^(https?:|mailto:|#|data:|javascript:|\{|%|\/)/.test(ref)) continue;
-        // Normalize: strip leading ./ 
-        const normalized = ref.replace(/^\.\//g, '');
-        if (!knownFiles.has(normalized)) {
+
+        // Resolve ./ and ../ segments against the HTML file's directory.
+        let remaining = ref.replace(/^\.\//g, '');
+        let dir = htmlDir;
+        while (remaining.startsWith('../')) {
+          remaining = remaining.substring(3);
+          const parent = dir.lastIndexOf('/');
+          dir = parent >= 0 ? dir.substring(0, parent) : '';
+        }
+        const resolved = dir ? `${dir}/${remaining}` : remaining;
+
+        // Fall back to the bare reference for flat projects where HTML sits
+        // alongside its assets without a shared parent directory.
+        if (!knownFiles.has(resolved) && !knownFiles.has(remaining)) {
           issues.push({
             message: `references "${ref}" which does not exist in the project`,
             filePath: file.relativePath,
