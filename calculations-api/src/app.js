@@ -8,7 +8,7 @@ import { createStore } from "./store.js";
 import { healthRouter } from "./routes/health.js";
 import { calculationsRouter } from "./routes/calculations.js";
 import { notFoundHandler, errorHandler } from "./errors.js";
-import { securityHeaders, createRateLimiter, requireJsonContentType } from "./security.js";
+import { securityHeaders, createRateLimiter, requireJsonContentType, correlationId } from "./security.js";
 
 export function makeApp(overrides = {}) {
   const cfg = overrides.config ?? loadConfig();
@@ -17,6 +17,7 @@ export function makeApp(overrides = {}) {
 
   const app = express();
 
+  app.use(correlationId);
   app.use(securityHeaders);
   app.use(createRateLimiter({
     windowMs: cfg.rateLimitWindowMs,

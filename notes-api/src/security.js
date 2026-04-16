@@ -1,5 +1,7 @@
 // Security middleware: headers and input sanitisation for a JSON-only API.
 
+import { randomUUID } from "node:crypto";
+
 const SECURITY_HEADERS = Object.freeze({
   "X-Content-Type-Options": "nosniff",
   "X-Frame-Options": "DENY",
@@ -94,6 +96,17 @@ export function createRateLimiter({
 
   middleware.destroy = () => clearInterval(cleanup);
   return middleware;
+}
+
+// Attach a unique correlation ID to every request so errors logged
+// server-side can be traced back to the originating HTTP request.
+// Clients may supply their own via X-Correlation-Id; otherwise one is
+// generated. The ID is echoed in the response for client-side correlation.
+export function correlationId(req, res, next) {
+  const id = req.headers["x-correlation-id"] || randomUUID();
+  req.correlationId = id;
+  res.setHeader("X-Correlation-Id", id);
+  next();
 }
 
 export { SECURITY_HEADERS };
