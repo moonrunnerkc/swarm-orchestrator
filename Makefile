@@ -1,4 +1,4 @@
-.PHONY: help install build test clean \
+.PHONY: help init install build test clean \
        docker-build docker-up docker-down docker-logs \
        test-all test-python test-subprojects \
        deploy healthcheck lint audit
@@ -13,7 +13,7 @@ CALC_API_PORT       ?= 3001
 NOTES_API_PORT      ?= 3002
 
 HEALTH_SERVICE_URL ?= http://$(HEALTH_SERVICE_HOST):$(HEALTH_SERVICE_PORT)/api/health
-CALC_API_URL       ?= http://$(HEALTH_SERVICE_HOST):$(CALC_API_PORT)/api/health
+CALC_API_URL       ?= http://$(HEALTH_SERVICE_HOST):$(CALC_API_PORT)/health
 NOTES_API_URL      ?= http://$(HEALTH_SERVICE_HOST):$(NOTES_API_PORT)/health
 WEB_PORT            ?= 5173
 WEB_URL             ?= http://$(HEALTH_SERVICE_HOST):$(WEB_PORT)/
@@ -24,7 +24,11 @@ help: ## Show this help
 
 # ── Development ──
 
-install: ## Install all dependencies
+init: ## Create .env from .env.example if it doesn't exist
+	@test -f .env || (cp .env.example .env && echo "Created .env from .env.example — edit it to add your API keys")
+	@test -f .env && echo ".env already exists" || true
+
+install: init ## Install all dependencies
 	npm ci
 	cd calculations-api && npm ci
 	cd notes-api && npm ci

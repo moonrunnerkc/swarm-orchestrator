@@ -1,7 +1,9 @@
 services:
   swarm:
     build: .
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     volumes:
       - workspace:/workspace
     working_dir: /workspace
@@ -18,7 +20,9 @@ services:
     build:
       context: .
       dockerfile: app/Dockerfile
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     ports:
       - "${PORT:-8000}:8000"
     environment:
