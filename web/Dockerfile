@@ -1,4 +1,4 @@
-FROM node:20-slim
+FROM node:25-slim
 
 LABEL org.opencontainers.image.title="inkwell" \
       org.opencontainers.image.description="Browser-based markdown editor with live preview and notes API proxy." \
