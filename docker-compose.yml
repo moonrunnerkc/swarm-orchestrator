@@ -77,6 +77,25 @@ services:
       retries: 3
     restart: unless-stopped
 
+  web:
+    build:
+      context: ./web
+    ports:
+      - "${WEB_PORT:-5173}:5173"
+    environment:
+      - DEV_PORT=5173
+      - API_URL=http://notes-api:3002
+    depends_on:
+      notes-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "const h=require('http');h.get('http://127.0.0.1:5173/',r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+
   db:
     image: postgres:16-alpine
     environment:

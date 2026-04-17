@@ -38,6 +38,9 @@ jobs:
           - image: notes-api
             context: ./notes-api
             dockerfile: notes-api/Dockerfile
+          - image: inkwell
+            context: ./web
+            dockerfile: web/Dockerfile
 
     steps:
       - uses: actions/checkout@v4
@@ -128,6 +131,18 @@ jobs:
           done
           docker stop notes-verify && docker rm notes-verify
 
+      - name: Verify inkwell image
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ env.OWNER }}/inkwell:sha-${GITHUB_SHA::7}"
+          docker pull "$IMAGE"
+          docker run -d --name web-verify -p 5173:5173 "$IMAGE"
+          for i in $(seq 1 15); do
+            if curl -sf http://127.0.0.1:5173/; then echo " Inkwell OK"; break; fi
+            if [ "$i" = "15" ]; then echo "Inkwell failed"; docker logs web-verify; exit 1; fi
+            sleep 2
+          done
+          docker stop web-verify && docker rm web-verify
+
       - name: Summary
         if: always()
         run: |
@@ -139,3 +154,4 @@ jobs:
           echo "| health-service | sha-${GITHUB_SHA::7} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| calculations-api | sha-${GITHUB_SHA::7} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| notes-api | sha-${GITHUB_SHA::7} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| inkwell | sha-${GITHUB_SHA::7} |" >> "$GITHUB_STEP_SUMMARY"
