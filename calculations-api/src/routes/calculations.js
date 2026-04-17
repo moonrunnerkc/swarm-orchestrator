@@ -1,6 +1,17 @@
 // CRUD routes for Calculation records.
 // POST evaluates an arithmetic expression and persists the result.
 // PUT re-evaluates when the expression changes.
+//
+// API field reference (for frontend consumers):
+//   POST   /calculations       — body: { expression: string, title?: string }
+//   PUT    /calculations/:id   — body: { expression?: string, title?: string }  (at least one required)
+//   GET    /calculations       — returns: { items: Calculation[], count: number }
+//   GET    /calculations/:id   — returns: Calculation
+//   GET    /calculations/stats — returns: { totalCalculations, averageResult, minResult, maxResult, lastCalculatedAt }
+//   DELETE /calculations/:id   — returns: 204 No Content
+//
+//   Calculation shape: { id, title, expression, result, createdAt, updatedAt }
+//   Field names: 'expression' (not 'formula'), 'title' (nullable), 'result' (computed number)
 
 import { Router } from "express";
 import { evaluateExpression } from "../evaluate.js";
