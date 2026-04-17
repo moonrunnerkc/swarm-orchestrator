@@ -13,6 +13,7 @@ const SECURITY_HEADERS = Object.freeze({
   "Cache-Control": "no-store",
   "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
+  "Server": "api",
 });
 
 export function securityHeaders(_req, res, next) {
