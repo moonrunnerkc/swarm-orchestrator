@@ -14,7 +14,7 @@ Environment variables:
   SWARM_TOOL             Agent backend: copilot | claude-code | codex (default: claude-code)
   SWARM_MODEL            Model override (default: claude-sonnet-4)
   BASELINE_MODE          If "true", run agent directly without orchestrator
-  TASK_TIMEOUT_SECONDS   Per-task timeout (default: 1800)
+  TASK_TIMEOUT_SECONDS   Per-task timeout (default: 900)
 """
 
 import json
@@ -38,7 +38,7 @@ DATASET_ID = os.environ.get("SWEBENCH_DATASET", "princeton-nlp/SWE-bench_Lite")
 SWARM_TOOL = os.environ.get("SWARM_TOOL", "claude-code")
 SWARM_MODEL = os.environ.get("SWARM_MODEL", "claude-sonnet-4")
 BASELINE_MODE = os.environ.get("BASELINE_MODE", "false").lower() == "true"
-TASK_TIMEOUT = int(os.environ.get("TASK_TIMEOUT_SECONDS", "1800"))
+TASK_TIMEOUT = int(os.environ.get("TASK_TIMEOUT_SECONDS", "900"))
 RESULTS_DIR = Path(os.environ.get("RESULTS_DIR", "/app/results"))
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 _LOCAL_BIN = _REPO_ROOT / "dist" / "src" / "cli.js"
@@ -103,12 +103,11 @@ def run_orchestrator(repo_dir: Path, problem_statement: str) -> dict:
     env = {**os.environ, "NODE_NO_WARNINGS": "1"}
 
     if BASELINE_MODE:
-        # Direct single-agent execution
+        # Direct single-agent execution — run Claude CLI directly, bypassing orchestrator.
+        # This tests the raw agent capability without orchestrator's planning/verification.
         cmd = [
-            "node", str(SWARM_BIN), "quick",
-            problem_statement,
-            "--tool", SWARM_TOOL,
-            "--yes",
+            "claude", "--dangerously-skip-permissions",
+            "-p", f"Fix this issue. Only edit source code files, do not edit tests.\n\n{problem_statement}",
         ]
     else:
         # Full orchestrator pipeline
@@ -146,7 +145,17 @@ def run_orchestrator(repo_dir: Path, problem_statement: str) -> dict:
 
 
 def run_gold_tests(repo_dir: Path, task: dict) -> dict:
-    """Apply the gold test patch and run the test suite."""
+    """Apply the gold test patch and run the FAIL_TO_PASS test suite.
+
+    SWE-bench defines resolution as: the FAIL_TO_PASS tests must pass after
+    the agent's fix is applied. If any of these tests still fail, the task
+    is not resolved.
+
+    Test IDs come in two formats:
+      - pytest-style:   "path/to/test.py::TestClass::test_method"
+      - unittest-style: "test_method (module.path.TestClass)"
+    Both are handled and routed to pytest.
+    """
     test_patch = task.get("test_patch", "")
     if not test_patch:
         return {"passed": False, "reason": "no test patch available"}
@@ -166,39 +175,83 @@ def run_gold_tests(repo_dir: Path, task: dict) -> dict:
     except subprocess.TimeoutExpired:
         return {"passed": False, "reason": "test patch apply timed out"}
 
-    # Detect test runner and execute
-    test_cmd = _detect_test_command(repo_dir, task)
+    # Install the repo in editable mode so tests can import it.
+    # Timeout at 300s — large scientific packages (astropy, matplotlib) can
+    # take a while to build C extensions.
+    try:
+        subprocess.run(
+            ["python3", "-m", "pip", "install", "-e", ".", "--quiet", "--no-build-isolation"],
+            cwd=str(repo_dir),
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass  # Best-effort — tests may still work if deps are already installed
+
+    # Parse FAIL_TO_PASS — JSON-encoded list of test identifiers
+    fail_to_pass_raw = task.get("FAIL_TO_PASS", "")
+    if isinstance(fail_to_pass_raw, str):
+        fail_to_pass = json.loads(fail_to_pass_raw) if fail_to_pass_raw else []
+    elif isinstance(fail_to_pass_raw, list):
+        fail_to_pass = fail_to_pass_raw
+    else:
+        fail_to_pass = []
+
+    if not fail_to_pass:
+        return {"passed": False, "reason": "no FAIL_TO_PASS tests specified"}
+
+    # Convert test IDs to pytest-compatible format.
+    # unittest-style "test_method (module.Class)" → "module/path.py::Class::test_method" via -k
+    pytest_targets = []
+    k_filters = []
+    for tid in fail_to_pass:
+        if "::" in tid:
+            # Already pytest-style path
+            pytest_targets.append(tid)
+        elif "(" in tid and ")" in tid:
+            # unittest-style: "test_method (module.path.TestClass)"
+            method, rest = tid.split("(", 1)
+            method = method.strip()
+            module_class = rest.rstrip(")").strip()
+            parts = module_class.rsplit(".", 1)
+            if len(parts) == 2:
+                module_path = parts[0].replace(".", "/")
+                class_name = parts[1]
+                k_filters.append(f"{class_name} and {method}")
+            else:
+                k_filters.append(method)
+        else:
+            # Plain test name — use as -k filter
+            k_filters.append(tid)
+
+    # Build pytest command.
+    # Use "python3" (system) for test execution. In Docker, dependencies are pre-installed.
+    # Locally, tests may fail due to missing dependencies — this is documented.
+    cmd_parts = ["python3", "-m", "pytest", "--tb=short", "-q"]
+    cmd_parts.extend(pytest_targets)
+    if k_filters:
+        k_expr = " or ".join(f"({f})" for f in k_filters)
+        cmd_parts.extend(["-k", k_expr])
+
     try:
         result = subprocess.run(
-            test_cmd,
+            cmd_parts,
             cwd=str(repo_dir),
             capture_output=True,
             text=True,
             timeout=600,
-            shell=True,
         )
         return {
             "passed": result.returncode == 0,
             "returncode": result.returncode,
+            "fail_to_pass_ids": fail_to_pass,
+            "test_command": " ".join(cmd_parts),
             "stdout_tail": result.stdout[-3000:] if result.stdout else "",
             "stderr_tail": result.stderr[-1000:] if result.stderr else "",
         }
     except subprocess.TimeoutExpired:
         return {"passed": False, "reason": "test execution timed out"}
-
-
-def _detect_test_command(repo_dir: Path, task: dict) -> str:
-    """Detect the appropriate test command for the repository."""
-    # Use SWE-bench's test_cmd if available
-    if task.get("test_cmd"):
-        return task["test_cmd"]
-
-    # Fallback heuristics
-    if (repo_dir / "setup.py").exists() or (repo_dir / "pyproject.toml").exists():
-        return "python -m pytest --tb=short -q 2>&1 || true"
-    if (repo_dir / "package.json").exists():
-        return "npm test 2>&1 || true"
-    return "echo 'No test runner detected'"
 
 
 def evaluate_tasks():

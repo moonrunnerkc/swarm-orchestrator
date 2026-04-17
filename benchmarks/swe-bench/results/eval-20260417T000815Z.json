@@ -1,0 +1,144 @@
+{
+  "timestamp": "20260417T000815Z",
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "subset_size": 5,
+  "mode": "baseline",
+  "tool": "claude-code",
+  "model": "claude-sonnet-4",
+  "resolved": 0,
+  "total": 5,
+  "percent_resolved": 0.0,
+  "mean_latency_seconds": 55.38,
+  "tasks": [
+    {
+      "instance_id": "astropy__astropy-12907",
+      "repo": "astropy/astropy",
+      "base_commit": "d16bfe05a744909de4b27f5875fe0d4ed41ce607",
+      "mode": "baseline",
+      "tool": "claude-code",
+      "model": "claude-sonnet-4",
+      "run": {
+        "returncode": 0,
+        "stdout": "Numpy version incompatibility prevents running directly. The fix is correct though \u2014 on line 245 of `_cstack`, when the right operand is an already-computed matrix (from a nested CompoundModel), the code was filling the submatrix with `1` instead of copying the actual separability values from `right`. Changing `= 1` to `= right` preserves the separability information from the nested model.\n\n**The bug**: In `_cstack` (the `&` operator handler), when `right` is a numpy array (already-computed separability matrix from a nested CompoundModel), line 245 set `cright[-right.shape[0]:, -right.shape[1]:] = 1`, which overwrites all entries with 1, making everything appear non-separable.\n\n**The fix**: Changed `= 1` to `= right` so the actual separability matrix values are preserved, matching how `cleft` is handled on line 240.\n",
+        "stderr": "",
+        "elapsed_seconds": 72.86
+      },
+      "tests": {
+        "passed": false,
+        "returncode": 4,
+        "fail_to_pass_ids": [
+          "astropy/modeling/tests/test_separable.py::test_separable[compound_model6-result6]",
+          "astropy/modeling/tests/test_separable.py::test_separable[compound_model9-result9]"
+        ],
+        "test_command": "python3 -m pytest --tb=short -q astropy/modeling/tests/test_separable.py::test_separable[compound_model6-result6] astropy/modeling/tests/test_separable.py::test_separable[compound_model9-result9]",
+        "stdout_tail": "",
+        "stderr_tail": "/tmp/swebench-b3bnaioa/astropy__astropy-12907/astropy/version.py:11: UserWarning: could not determine astropy package version; this indicates a broken installation\n  warnings.warn(\nImportError while loading conftest '/tmp/swebench-b3bnaioa/astropy__astropy-12907/conftest.py'.\nconftest.py:11: in <module>\n    from astropy import __version__\nastropy/__init__.py:174: in <module>\n    log = _init_log()\n          ^^^^^^^^^^^\nastropy/logger.py:108: in _init_log\n    log._set_defaults()\nastropy/logger.py:475: in _set_defaults\n    self.disable_warnings_logging()\nastropy/logger.py:245: in disable_warnings_logging\n    raise LoggingError(\"Cannot disable warnings logging: \"\nE   astropy.logger.LoggingError: Cannot disable warnings logging: warnings.showwarning was not set by this logger, or has been overridden\n"
+      },
+      "resolved": false
+    },
+    {
+      "instance_id": "django__django-10914",
+      "repo": "django/django",
+      "base_commit": "e7fd69d051eaa67cb17f172a39b57253e9cb831a",
+      "mode": "baseline",
+      "tool": "claude-code",
+      "model": "claude-sonnet-4",
+      "run": {
+        "returncode": 0,
+        "stdout": "The fix is applied. The default `FILE_UPLOAD_PERMISSIONS` in `django/conf/global_settings.py:307` has been changed from `None` to `0o644`. \n\nThis ensures that uploaded files always get consistent `0o644` permissions regardless of whether they went through `MemoryUploadedFile` or `TemporaryUploadedFile`, fixing the issue where `tempfile.NamedTemporaryFile` would result in `0o600` permissions on some systems.\n",
+        "stderr": "",
+        "elapsed_seconds": 17.35
+      },
+      "tests": {
+        "passed": false,
+        "returncode": 2,
+        "fail_to_pass_ids": [
+          "test_override_file_upload_permissions (test_utils.tests.OverrideSettingsTests)"
+        ],
+        "test_command": "python3 -m pytest --tb=short -q -k (OverrideSettingsTests and test_override_file_upload_permissions)",
+        "stdout_tail": "ngo.core.exceptions.Improperl...\nERROR tests/postgres_tests/test_unaccent.py - django.core.exceptions.Improper...\nERROR tests/prefetch_related/test_prefetch_related_objects.py - django.core.e...\nERROR tests/prefetch_related/test_uuid.py - django.core.exceptions.Improperly...\nERROR tests/queries/test_bulk_update.py - django.core.exceptions.ImproperlyCo...\nERROR tests/queries/test_explain.py - django.core.exceptions.ImproperlyConfig...\nERROR tests/queries/test_iterator.py - django.core.exceptions.ImproperlyConfi...\nERROR tests/queries/test_qs_combinators.py - django.core.exceptions.Improperl...\nERROR tests/queries/test_query.py - django.core.exceptions.ImproperlyConfigur...\nERROR tests/serializers/test_data.py - django.core.exceptions.ImproperlyConfi...\nERROR tests/serializers/test_deserializedobject.py - django.core.exceptions.I...\nERROR tests/serializers/test_json.py - django.core.exceptions.ImproperlyConfi...\nERROR tests/serializers/test_natural.py - django.core.exceptions.ImproperlyCo...\nERROR tests/serializers/test_xml.py - django.core.exceptions.ImproperlyConfig...\nERROR tests/serializers/test_yaml.py - django.core.exceptions.ImproperlyConfi...\nERROR tests/sitemaps_tests/test_generic.py - django.core.exceptions.Improperl...\nERROR tests/sitemaps_tests/test_http.py - django.core.exceptions.ImproperlyCo...\nERROR tests/sitemaps_tests/test_https.py - django.core.exceptions.ImproperlyC...\nERROR tests/sitemaps_tests/test_management.py - django.core.exceptions.Improp...\nERROR tests/sitemaps_tests/test_utils.py - django.core.exceptions.ImproperlyC...\nERROR tests/staticfiles_tests/test_checks.py - django.core.exceptions.Imprope...\nERROR tests/template_tests/syntax_tests/i18n/test_blocktrans.py - django.core...\nERROR tests/template_tests/syntax_tests/i18n/test_trans.py - django.core.exce...\nERROR tests/template_tests/syntax_tests/i18n/test_underscore_syntax.py - djan...\nERROR tests/template_tests/test_custom.py - django.core.exceptions.Improperly...\nERROR tests/test_runner/test_debug_sql.py - django.core.exceptions.Improperly...\nERROR tests/test_utils/test_testcase.py - django.core.exceptions.ImproperlyCo...\nERROR tests/test_utils/test_transactiontestcase.py - django.core.exceptions.I...\nERROR tests/utils_tests/test_lazyobject.py - django.core.exceptions.Improperl...\nERROR tests/utils_tests/test_simplelazyobject.py - django.core.exceptions.Imp...\nERROR tests/validation/test_custom_messages.py - django.core.exceptions.Impro...\nERROR tests/validation/test_unique.py - django.core.exceptions.ImproperlyConf...\nERROR tests/validation/test_validators.py - django.core.exceptions.Improperly...\nERROR tests/view_tests/tests/test_defaults.py - django.core.exceptions.Improp...\nERROR tests/view_tests/tests/test_i18n.py - django.core.exceptions.Improperly...\nERROR tests/view_tests/tests/test_static.py - django.core.exceptions.Improper...\n!!!!!!!!!!!!!!!!!! Interrupted: 228 errors during collection !!!!!!!!!!!!!!!!!!!\n3362 deselected, 11 warnings, 228 errors in 19.82s\n",
+        "stderr_tail": ""
+      },
+      "resolved": false
+    },
+    {
+      "instance_id": "matplotlib__matplotlib-18869",
+      "repo": "matplotlib/matplotlib",
+      "base_commit": "b7d05919865fc0c37a0164cf467d5d5513bd0ede",
+      "mode": "baseline",
+      "tool": "claude-code",
+      "model": "claude-sonnet-4",
+      "run": {
+        "returncode": 0,
+        "stdout": "The changes look correct. Here's what I did:\n\n1. **Added `_VersionInfo` namedtuple** (line 114-115) with fields `major, minor, micro, releaselevel, serial` \u2014 matching the convention of `sys.version_info`.\n\n2. **Added `_parse_to_version_info()`** (lines 136-155) that uses `packaging.version.parse` to convert a version string into a `_VersionInfo` tuple. It maps:\n   - Final releases (e.g. `3.4.3`) \u2192 `releaselevel='final', serial=0`\n   - Dev releases (e.g. `3.4.3.dev0`) \u2192 `releaselevel='alpha', serial=dev_number`\n   - Pre-releases (`a`/`b`/`rc`) \u2192 appropriate `releaselevel` and serial\n   - Post releases \u2192 `releaselevel='final', serial=post_number`\n\n3. **Updated `__getattr__`** (line 159) to also handle `\"__version_info__\"`, computing and caching it alongside `__version__`.\n\nNow `matplotlib.__version_info__` is available as a comparable namedtuple, e.g. `matplotlib.__version_info__ >= (3, 4)`.\n",
+        "stderr": "",
+        "elapsed_seconds": 62.09
+      },
+      "tests": {
+        "passed": false,
+        "returncode": 4,
+        "fail_to_pass_ids": [
+          "lib/matplotlib/tests/test_matplotlib.py::test_parse_to_version_info[3.5.0-version_tuple0]",
+          "lib/matplotlib/tests/test_matplotlib.py::test_parse_to_version_info[3.5.0rc2-version_tuple1]",
+          "lib/matplotlib/tests/test_matplotlib.py::test_parse_to_version_info[3.5.0.dev820+g6768ef8c4c-version_tuple2]",
+          "lib/matplotlib/tests/test_matplotlib.py::test_parse_to_version_info[3.5.0.post820+g6768ef8c4c-version_tuple3]"
+        ],
+        "test_command": "python3 -m pytest --tb=short -q lib/matplotlib/tests/test_matplotlib.py::test_parse_to_version_info[3.5.0-version_tuple0] lib/matplotlib/tests/test_matplotlib.py::test_parse_to_version_info[3.5.0rc2-version_tuple1] lib/matplotlib/tests/test_matplotlib.py::test_parse_to_version_info[3.5.0.dev820+g6768ef8c4c-version_tuple2] lib/matplotlib/tests/test_matplotlib.py::test_parse_to_version_info[3.5.0.post820+g6768ef8c4c-version_tuple3]",
+        "stdout_tail": "",
+        "stderr_tail": "ImportError while loading conftest '/tmp/swebench-b3bnaioa/matplotlib__matplotlib-18869/lib/matplotlib/tests/conftest.py'.\nlib/matplotlib/__init__.py:109: in <module>\n    from . import _api, _version, cbook, docstring, rcsetup\nlib/matplotlib/cbook/__init__.py:30: in <module>\n    from matplotlib import _api, _c_internal_utils\nE   ImportError: cannot import name '_c_internal_utils' from partially initialized module 'matplotlib' (most likely due to a circular import) (/tmp/swebench-b3bnaioa/matplotlib__matplotlib-18869/lib/matplotlib/__init__.py)\n"
+      },
+      "resolved": false
+    },
+    {
+      "instance_id": "mwaskom__seaborn-2848",
+      "repo": "mwaskom/seaborn",
+      "base_commit": "94621cef29f80282436d73e8d2c0aa76dab81273",
+      "mode": "baseline",
+      "tool": "claude-code",
+      "model": "claude-sonnet-4",
+      "run": {
+        "returncode": 0,
+        "stdout": "The fix is in `seaborn/_oldcore.py` at the `_lookup_single` method (line 146). \n\n**The problem:** When `hue_order` doesn't include all hue values, data points with excluded hue values aren't in the `lookup_table`. The KeyError fallback path calls `np.isnan(key)`, which raises `TypeError` when `key` is a string (like a species name).\n\n**The fix:** Wrap `np.isnan(key)` in a try/except for `(TypeError, ValueError)`. When `np.isnan` fails because the key is a non-numeric type (string), we return a fully transparent color `(0, 0, 0, 0)`, effectively hiding those data points \u2014 matching the pre-0.11 behavior.\n",
+        "stderr": "",
+        "elapsed_seconds": 94.68
+      },
+      "tests": {
+        "passed": false,
+        "returncode": 4,
+        "fail_to_pass_ids": [
+          "tests/test_relational.py::TestScatterPlotter::test_hue_order"
+        ],
+        "test_command": "python3 -m pytest --tb=short -q tests/test_relational.py::TestScatterPlotter::test_hue_order",
+        "stdout_tail": "\n==================================== ERRORS ====================================\n__________________ ERROR collecting tests/test_relational.py ___________________\ntests/test_relational.py:10: in <module>\n    from seaborn.external.version import Version\nseaborn/__init__.py:9: in <module>\n    from .matrix import *  # noqa: F401,F403\n    ^^^^^^^^^^^^^^^^^^^^^\nseaborn/matrix.py:16: in <module>\n    from . import cm\nseaborn/cm.py:1582: in <module>\n    mpl_cm.register_cmap(_name, _cmap)\n    ^^^^^^^^^^^^^^^^^^^^\nE   AttributeError: module 'matplotlib.cm' has no attribute 'register_cmap'\n=========================== short test summary info ============================\nERROR tests/test_relational.py - AttributeError: module 'matplotlib.cm' has n...\n1 error in 0.53s\n",
+        "stderr_tail": "ERROR: found no collectors for /tmp/swebench-b3bnaioa/mwaskom__seaborn-2848/tests/test_relational.py::TestScatterPlotter::test_hue_order\n\n"
+      },
+      "resolved": false
+    },
+    {
+      "instance_id": "pallets__flask-4045",
+      "repo": "pallets/flask",
+      "base_commit": "d8c37f43724cd9fb0870f77877b7c4c7e38a19e0",
+      "mode": "baseline",
+      "tool": "claude-code",
+      "model": "claude-sonnet-4",
+      "run": {
+        "returncode": 0,
+        "stdout": "The fix adds a `ValueError` at the start of `Blueprint.__init__` (line 184 in `src/flask/blueprints.py`) that raises an error if the blueprint `name` contains a dot character. This prevents issues with blueprint name resolution since dots are now significant for nested blueprints.\n",
+        "stderr": "",
+        "elapsed_seconds": 29.91
+      },
+      "tests": {
+        "passed": false,
+        "returncode": 4,
+        "fail_to_pass_ids": [
+          "tests/test_blueprints.py::test_dotted_name_not_allowed",
+          "tests/test_blueprints.py::test_route_decorator_custom_endpoint_with_dots"
+        ],
+        "test_command": "python3 -m pytest --tb=short -q tests/test_blueprints.py::test_dotted_name_not_allowed tests/test_blueprints.py::test_route_decorator_custom_endpoint_with_dots",
+        "stdout_tail": "",
+        "stderr_tail": "ImportError while loading conftest '/tmp/swebench-b3bnaioa/pallets__flask-4045/tests/conftest.py'.\ntests/conftest.py:9: in <module>\n    import flask\nE   ModuleNotFoundError: No module named 'flask'\n"
+      },
+      "resolved": false
+    }
+  ]
+}
