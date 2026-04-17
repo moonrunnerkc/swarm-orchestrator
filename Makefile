@@ -6,6 +6,16 @@
 REGISTRY ?= ghcr.io/moonrunnerkc
 TAG      ?= latest
 
+# ── Service URLs (override via env or make args) ──
+HEALTH_SERVICE_HOST ?= $(or $(HOST),localhost)
+HEALTH_SERVICE_PORT ?= $(or $(PORT),8000)
+CALC_API_PORT       ?= 3001
+NOTES_API_PORT      ?= 3002
+
+HEALTH_SERVICE_URL ?= http://$(HEALTH_SERVICE_HOST):$(HEALTH_SERVICE_PORT)/api/health
+CALC_API_URL       ?= http://$(HEALTH_SERVICE_HOST):$(CALC_API_PORT)/api/health
+NOTES_API_URL      ?= http://$(HEALTH_SERVICE_HOST):$(NOTES_API_PORT)/health
+
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -65,6 +75,6 @@ deploy: ## Build and push images (REGISTRY and TAG configurable)
 	bash scripts/deploy.sh "$(TAG)"
 
 healthcheck: ## Run health check against local services
-	bash scripts/healthcheck.sh http://localhost:8000/api/health 5
-	bash scripts/healthcheck.sh http://localhost:3001/api/health 5
-	bash scripts/healthcheck.sh http://localhost:3002/health 5
+	bash scripts/healthcheck.sh $(HEALTH_SERVICE_URL) 5
+	bash scripts/healthcheck.sh $(CALC_API_URL) 5
+	bash scripts/healthcheck.sh $(NOTES_API_URL) 5
