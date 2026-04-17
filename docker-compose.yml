@@ -15,6 +15,8 @@ services:
     depends_on:
       health-service:
         condition: service_healthy
+    networks:
+      - backend
 
   health-service:
     build:
@@ -40,6 +42,8 @@ services:
       start_period: 10s
       retries: 3
     restart: unless-stopped
+    networks:
+      - backend
 
   calculations-api:
     build:
@@ -60,6 +64,8 @@ services:
       start_period: 10s
       retries: 3
     restart: unless-stopped
+    networks:
+      - frontend
 
   notes-api:
     build:
@@ -80,6 +86,8 @@ services:
       start_period: 10s
       retries: 3
     restart: unless-stopped
+    networks:
+      - frontend
 
   web:
     build:
@@ -99,6 +107,8 @@ services:
       start_period: 10s
       retries: 3
     restart: unless-stopped
+    networks:
+      - frontend
 
   db:
     image: postgres:16-alpine
@@ -115,6 +125,13 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
+    networks:
+      - backend
+
+networks:
+  frontend:
+  backend:
 
 volumes:
   workspace:
