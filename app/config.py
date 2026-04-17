@@ -11,7 +11,7 @@ class Settings:
 
 
 def load_settings() -> Settings:
-    database_url = os.getenv("DATABASE_URL", "sqlite:///./app.db")
+    database_url = os.getenv("DATABASE_URL", "sqlite:////data/app.db")
 
     raw_origins = os.getenv("CORS_ORIGINS", "")
     origins = tuple(o.strip() for o in raw_origins.split(",") if o.strip())

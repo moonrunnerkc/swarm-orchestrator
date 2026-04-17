@@ -15,7 +15,7 @@ def clean_env(monkeypatch):
 def test_defaults_are_applied_when_env_unset(clean_env):
     settings = load_settings()
 
-    assert settings.database_url == "sqlite:///./app.db"
+    assert settings.database_url == "sqlite:////data/app.db"
     assert settings.cors_origins == ()
 
 

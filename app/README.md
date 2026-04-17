@@ -39,7 +39,7 @@ All config is read from environment variables — nothing is hardcoded.
 
 | variable        | default                  | purpose                                                 |
 | --------------- | ------------------------ | ------------------------------------------------------- |
-| `DATABASE_URL`  | `sqlite:///./app.db`     | SQLAlchemy URL probed by the health endpoint.           |
+| `DATABASE_URL`  | `sqlite:////data/app.db` | SQLAlchemy URL probed by the health endpoint.           |
 | `CORS_ORIGINS`  | *(empty)*                | Comma-separated list of origins allowed to call the API. CORS middleware is only installed when at least one origin is set. Origins must include scheme; `*` is rejected because credentials are enabled. |
 
 ## Security posture

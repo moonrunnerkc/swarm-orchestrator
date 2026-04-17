@@ -99,7 +99,7 @@ jobs:
         run: |
           IMAGE="${{ env.REGISTRY }}/${{ env.OWNER }}/health-service:sha-${GITHUB_SHA::7}"
           docker pull "$IMAGE"
-          docker run -d --name health-verify -p 8000:8000 -e DATABASE_URL=sqlite:///./app.db "$IMAGE"
+          docker run -d --name health-verify -p 8000:8000 "$IMAGE"
           for i in $(seq 1 15); do
             if curl -sf http://127.0.0.1:8000/api/health; then echo " Health-service OK"; break; fi
             if [ "$i" = "15" ]; then echo "Health-service failed"; docker logs health-verify; exit 1; fi

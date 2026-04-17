@@ -43,6 +43,9 @@ RUN pip install --no-index --find-links=/wheels \
 
 COPY app/ ./app/
 
+# SQLite needs a writable directory; /data is the canonical mount-point.
+RUN mkdir -p /data && chown health:health /data /app
+
 USER health
 
 EXPOSE 8000

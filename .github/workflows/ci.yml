@@ -213,7 +213,7 @@ jobs:
 
     - name: Verify health-service container starts
       run: |
-        docker run -d --name health-test -p 8000:8000 -e DATABASE_URL=sqlite:///./app.db health-service:ci
+        docker run -d --name health-test -p 8000:8000 health-service:ci
         for i in $(seq 1 10); do
           if curl -sf http://127.0.0.1:8000/api/health; then echo " Health-service is healthy"; break; fi
           if [ "$i" = "10" ]; then echo "Health-service failed to start"; docker logs health-test; exit 1; fi
