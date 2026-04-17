@@ -53,6 +53,14 @@ jobs:
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "Node.js ${{ matrix.node-version }} on ubuntu-latest" >> $GITHUB_STEP_SUMMARY
 
+    - name: Upload test output
+      if: always() && matrix.node-version == 22
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-output-node${{ matrix.node-version }}
+        path: test-output.txt
+        retention-days: 7
+
     - name: Run quality gates on self
       if: matrix.node-version == 22
       run: |
@@ -235,3 +243,16 @@ jobs:
           sleep 1
         done
         docker stop notes-test && docker rm notes-test
+
+    - name: Build web (inkwell) image
+      run: docker build -t inkwell:ci ./web
+
+    - name: Verify web container starts
+      run: |
+        docker run -d --name web-test -p 5173:5173 -e API_URL=http://127.0.0.1:3002 inkwell:ci
+        for i in $(seq 1 10); do
+          if curl -sf http://127.0.0.1:5173/; then echo " Web (inkwell) is healthy"; break; fi
+          if [ "$i" = "10" ]; then echo "Web failed to start"; docker logs web-test; exit 1; fi
+          sleep 1
+        done
+        docker stop web-test && docker rm web-test
