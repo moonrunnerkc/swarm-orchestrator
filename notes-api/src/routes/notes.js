@@ -1,4 +1,14 @@
 // CRUD routes for Note records.
+//
+// API field reference (for frontend consumers):
+//   POST   /notes        — body: { title: string, content?: string }
+//   PUT    /notes/:id    — body: { title?: string, content?: string }  (at least one required)
+//   GET    /notes        — returns: { items: Note[], count: number }
+//   GET    /notes/:id    — returns: Note
+//   DELETE /notes/:id    — returns: 204 No Content
+//
+//   Note shape: { id, title, content, createdAt, updatedAt }
+//   Field names: 'title' (not 'text'), 'content' (not 'body')
 
 import { Router } from "express";
 import { NotFoundError } from "../errors.js";
