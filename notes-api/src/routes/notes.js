@@ -22,6 +22,14 @@ import {
 
 const SORTABLE_FIELDS = new Set(["updatedAt", "createdAt", "title"]);
 
+// Coerce query parameter to a single string. Express parses duplicate
+// query keys (?a=1&a=2) as arrays, which can cause type confusion in
+// downstream comparisons and parseInt calls.
+function qstr(value) {
+  if (Array.isArray(value)) return value[0] ?? "";
+  return typeof value === "string" ? value : "";
+}
+
 export function notesRouter(store, cfg) {
   const router = Router();
 
@@ -30,7 +38,7 @@ export function notesRouter(store, cfg) {
       let items = await store.list();
 
       // Full-text search across title and content (case-insensitive)
-      const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+      const q = qstr(req.query.q).trim();
       if (q) {
         const lower = q.toLowerCase();
         items = items.filter(
@@ -43,10 +51,10 @@ export function notesRouter(store, cfg) {
       const total = items.length;
 
       // Sort (default: updatedAt descending — most recent first)
-      const sortField = SORTABLE_FIELDS.has(req.query.sort)
-        ? req.query.sort
+      const sortField = SORTABLE_FIELDS.has(qstr(req.query.sort))
+        ? qstr(req.query.sort)
         : "updatedAt";
-      const order = req.query.order === "asc" ? 1 : -1;
+      const order = qstr(req.query.order) === "asc" ? 1 : -1;
       items.sort((a, b) => {
         const av = a[sortField];
         const bv = b[sortField];
@@ -57,8 +65,8 @@ export function notesRouter(store, cfg) {
 
       // Pagination (cap limit to prevent unbounded responses)
       const MAX_PAGE_SIZE = 100;
-      const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
-      const rawLimit = parseInt(req.query.limit, 10);
+      const offset = Math.max(0, parseInt(qstr(req.query.offset), 10) || 0);
+      const rawLimit = parseInt(qstr(req.query.limit), 10);
       const limit = rawLimit > 0 ? Math.min(rawLimit, MAX_PAGE_SIZE) : 0;
       if (limit > 0) {
         items = items.slice(offset, offset + limit);

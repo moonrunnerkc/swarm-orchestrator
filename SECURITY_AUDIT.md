@@ -6,7 +6,72 @@
 
 ---
 
-## Fixes Applied in This Audit (2026-04-17)
+## Fixes Applied in This Audit — Step 3 (2026-04-17)
+
+### 5. HIGH: Shallow prototype pollution check (CWE-1321)
+
+**Before:** `rejectDangerousKeys()` in both Express APIs only checked top-level
+object keys for dangerous properties (`__proto__`, `constructor`, `prototype`).
+Nested objects bypassed the check entirely, allowing payloads like
+`{"title": "ok", "nested": {"__proto__": {"isAdmin": true}}}` to pass.
+
+**Fix:** Made `rejectDangerousKeys()` recursive with a max depth of 10 to
+prevent stack overflow on maliciously deep payloads. Objects nested beyond
+the limit are rejected with a validation error.
+
+- Files: `notes-api/src/validation.js`, `calculations-api/src/validation.js`
+
+---
+
+### 6. HIGH: Dev-server crash on malformed URLs (CWE-20)
+
+**Before:** `decodeURIComponent()` throws `URIError` on malformed percent-
+encoding (e.g., `/%zz`). No try-catch existed, causing the server process to
+crash on a single malformed request — a trivial denial-of-service vector.
+
+**Fix:** Wrapped `decodeURIComponent` in try-catch, returning HTTP 400 with
+security headers on malformed URLs.
+
+- File: `web/dev-server.js`
+
+---
+
+### 7. MEDIUM: Missing Server header in Node.js APIs (CWE-200)
+
+**Before:** The Python health-service set `Server: api` to prevent technology
+fingerprinting, but both Node.js APIs did not override this header, creating
+an inconsistent security posture across services.
+
+**Fix:** Added `Server: api` to the `SECURITY_HEADERS` object in both APIs.
+
+- Files: `notes-api/src/security.js`, `calculations-api/src/security.js`
+
+---
+
+### 8. MEDIUM: Query parameter type confusion (CWE-843)
+
+**Before:** Express parses duplicate query keys (`?sort=a&sort=b`) as arrays.
+Direct comparison (`=== "asc"`) and `parseInt()` on arrays produce unexpected
+results, potentially bypassing intended sorting/pagination logic.
+
+**Fix:** Added `qstr()` helper to coerce query parameters to single strings.
+
+- Files: `notes-api/src/routes/notes.js`, `calculations-api/src/routes/calculations.js`
+
+---
+
+### 9. MEDIUM: Proxy error responses missing security headers (CWE-693)
+
+**Before:** When the upstream notes-api was unreachable, the web dev-server
+returned HTTP 502 without security headers, unlike all other response paths.
+
+**Fix:** Added `SECURITY_HEADERS` spread to the proxy error response.
+
+- File: `web/dev-server.js`
+
+---
+
+## Fixes Applied in This Audit — Step 2 (2026-04-17)
 
 ### 1. HIGH: Path traversal in `web/dev-server.js`
 
@@ -174,13 +239,10 @@ Added `sanitiseForReflection()` — control char stripping + 200-char truncation
 
 ## Test Results
 
-All existing tests pass after security changes:
+All existing tests pass after security changes (Step 3):
 
-- **notes-api:** 145/145 passed
-- **calculations-api:** 123/123 passed
+- **notes-api:** 160/160 passed
+- **calculations-api:** 158/158 passed
 - **web:** 64/64 passed
 - **app/ (Python):** 59/59 passed
-- **Root orchestrator:** 1390/1390 passed
 - **calculator:** 83/83 passed
-- **tictactoe:** 17/17 passed
-- **Total:** 1881 tests, 0 failures

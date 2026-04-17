@@ -30,7 +30,14 @@ const SECURITY_HEADERS = {
 };
 
 function serveStatic(req, res) {
-  const urlPath = decodeURIComponent(req.url.split("?")[0]);
+  let urlPath;
+  try {
+    urlPath = decodeURIComponent(req.url.split("?")[0]);
+  } catch {
+    res.writeHead(400, { "Content-Type": "text/plain", ...SECURITY_HEADERS });
+    res.end("Bad Request");
+    return;
+  }
   const filePath = path.resolve(path.join(__dirname, urlPath === "/" ? "index.html" : urlPath));
 
   // Prevent path traversal — resolved path must stay within the web root.
@@ -69,7 +76,7 @@ function proxyApi(req, res) {
   });
 
   proxyReq.on("error", () => {
-    res.writeHead(502, { "Content-Type": "application/json" });
+    res.writeHead(502, { "Content-Type": "application/json", ...SECURITY_HEADERS });
     res.end(JSON.stringify({ error: { code: "PROXY_ERROR", message: "notes-api unreachable" } }));
   });
 

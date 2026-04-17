@@ -8,15 +8,22 @@ import { sanitiseForReflection } from "./security.js";
 // using Object.assign / spread could propagate these as own-properties on
 // plain objects, confusing libraries that walk the prototype chain.
 const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+const MAX_NESTED_DEPTH = 10;
 
-function rejectDangerousKeys(obj) {
+function rejectDangerousKeys(obj, depth = 0) {
   if (!obj || typeof obj !== "object") return;
+  if (depth > MAX_NESTED_DEPTH) {
+    throw new ValidationError("request body nesting exceeds maximum depth");
+  }
   for (const key of Object.keys(obj)) {
     if (DANGEROUS_KEYS.has(key)) {
       throw new ValidationError(
         `request body must not contain the key '${key}'`,
         { field: key },
       );
+    }
+    if (typeof obj[key] === "object" && obj[key] !== null && !Array.isArray(obj[key])) {
+      rejectDangerousKeys(obj[key], depth + 1);
     }
   }
 }

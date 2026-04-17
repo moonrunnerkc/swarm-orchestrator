@@ -17,6 +17,7 @@ const SECURITY_HEADERS = Object.freeze({
   // HSTS — browsers ignore it on plain HTTP, safe to always advertise.
   "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
+  "Server": "api",
 });
 
 /**
