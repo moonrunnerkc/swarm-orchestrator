@@ -33,7 +33,7 @@ end
 # Unset irrelevant variables.
 deactivate nondestructive
 
-set -gx VIRTUAL_ENV /home/brad/projects/swarm-orchestrator/runs/swarm-2026-04-16T21-57-15-497Z/worktrees/step-3/.venv
+set -gx VIRTUAL_ENV /home/brad/projects/swarm-orchestrator/runs/swarm-2026-04-17T03-19-26-481Z/worktrees/step-2/.venv
 
 set -gx _OLD_VIRTUAL_PATH $PATH
 set -gx PATH "$VIRTUAL_ENV/"bin $PATH
