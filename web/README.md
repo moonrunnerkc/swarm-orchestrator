@@ -17,15 +17,24 @@ local persistence. No build step, no runtime dependencies.
 
 ## Running
 
-No install required. Serve the directory with any static file server:
+No install required. For full functionality (editor + notes-api backend):
 
 ```bash
-python3 -m http.server 5173
-# or
-npm run serve
+# Terminal 1 — start the notes API
+cd ../notes-api && npm start
+
+# Terminal 2 — start the dev server (serves static files + proxies /api to notes-api)
+npm run dev
 ```
 
-Then open <http://localhost:5173/> in a browser.
+Then open <http://localhost:5173/> in a browser. The dev server proxies
+`/api/notes` requests to the notes-api backend on port 3002.
+
+For static-only mode (localStorage only, no backend sync):
+
+```bash
+npm run serve
+```
 
 ## Layout
 
@@ -37,14 +46,10 @@ Then open <http://localhost:5173/> in a browser.
   storage adapter for testing.
 - `src/audio-cue.js` — Web Audio beep for background-tab autosave feedback.
 - `src/app.js` — thin glue between DOM events and the pure modules.
+- `dev-server.js` — zero-dependency Node.js dev server with `/api` proxy.
 
 ## Tests
 
 ```sh
-npm test            # 20 tests covering markdown rendering, stats, and note store
+npm test            # 46 tests covering API client, markdown rendering, store, audio, and integration
 ```
-
-## Troubleshooting
-
-- **Styles not loading** — open `index.html` via a local server (`npm run serve`), not as a `file://` URL. Some browsers block module scripts from the filesystem.
-- **Notes disappear** — notes are stored in `localStorage`, which is per-origin. Switching ports or domains starts a fresh store.
