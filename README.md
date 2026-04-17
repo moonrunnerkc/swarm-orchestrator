@@ -141,7 +141,7 @@ Evaluation uses **standardized public tasks**, **automated metrics**, and **stat
 
 **Latest (10 runs scored 2026-04-16):** 92 % verification pass rate (35/38), 67 % task-completion rate (6/9), mean wall-clock 1216.8 s ± [737, 1697] 95 % CI, 0 repair iterations triggered. Full results with confidence intervals → [benchmarks/README.md § Latest Results](benchmarks/README.md#latest-results--fresh-runs-10-runs-2026-04-16).
 
-**SWE-bench Lite (5-task subset, 2026-04-16):** 0/5 tasks resolved for both orchestrator and baseline (Claude CLI) in local (non-Docker) environment. Failure modes: dependency/import errors in all 5 repos. Docker required for valid resolution numbers. → [benchmarks/README.md § SWE-bench Results](benchmarks/README.md#swe-bench-lite-results-5-task-subset-2026-04-16).
+**SWE-bench Lite (5-task subset, Docker, 2026-04-17):** 0/5 tasks resolved for both orchestrator (mean 199.8 s) and baseline Claude CLI (mean 215.9 s) in Docker. Orchestrator agents did real work on 3/5 tasks (178–576 s); failures due to test-patch conflicts and 2 infrastructure issues (E2BIG, git worktree). → [benchmarks/README.md § SWE-bench Results](benchmarks/README.md#swe-bench-lite-results--docker-5-task-subset-2026-04-17).
 
 **Metrics (automated only):** test-pass rate, test coverage, security scan issues (SARIF), premium request cost, wall-clock time, repair-loop iterations. Results report mean ± 95% CI.
 
@@ -150,6 +150,7 @@ Evaluation uses **standardized public tasks**, **automated metrics**, and **stat
 ./benchmarks/harness/scoring/score.sh ./runs/<execution-id>
 
 # Run SWE-bench evaluation (Docker required)
+export CLAUDE_CONFIG_DIR="$HOME/.claude" CLAUDE_CONFIG_JSON="$HOME/.claude.json"
 cd benchmarks/swe-bench && docker compose up --build
 ```
 

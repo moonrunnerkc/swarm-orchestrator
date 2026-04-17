@@ -175,19 +175,48 @@ def run_gold_tests(repo_dir: Path, task: dict) -> dict:
     except subprocess.TimeoutExpired:
         return {"passed": False, "reason": "test patch apply timed out"}
 
-    # Install the repo in editable mode so tests can import it.
-    # Timeout at 300s — large scientific packages (astropy, matplotlib) can
-    # take a while to build C extensions.
+    # Install the repo in an isolated virtualenv so tests can import it
+    # without polluting the global env or conflicting across tasks.
+    # In Docker, build-essential + scientific deps are pre-installed.
+    venv_dir = repo_dir / ".venv"
+    venv_python = "python3"  # Default fallback
     try:
         subprocess.run(
-            ["python3", "-m", "pip", "install", "-e", ".", "--quiet", "--no-build-isolation"],
+            ["python3", "-m", "venv", str(venv_dir)],
             cwd=str(repo_dir),
             capture_output=True,
             text=True,
-            timeout=300,
+            timeout=60,
         )
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass  # Best-effort — tests may still work if deps are already installed
+        venv_python = str(venv_dir / "bin" / "python3")
+        # Upgrade pip and install build tools inside the venv
+        subprocess.run(
+            [venv_python, "-m", "pip", "install", "--quiet", "--upgrade",
+             "pip", "setuptools", "wheel", "cython"],
+            cwd=str(repo_dir),
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        # Install the repo in editable mode
+        install_result = subprocess.run(
+            [venv_python, "-m", "pip", "install", "-e", ".", "--quiet",
+             "--no-build-isolation"],
+            cwd=str(repo_dir),
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        # Also install pytest inside the venv
+        subprocess.run(
+            [venv_python, "-m", "pip", "install", "--quiet", "pytest"],
+            cwd=str(repo_dir),
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        venv_python = "python3"  # Fall back to system Python
 
     # Parse FAIL_TO_PASS — JSON-encoded list of test identifiers
     fail_to_pass_raw = task.get("FAIL_TO_PASS", "")
@@ -226,9 +255,9 @@ def run_gold_tests(repo_dir: Path, task: dict) -> dict:
             k_filters.append(tid)
 
     # Build pytest command.
-    # Use "python3" (system) for test execution. In Docker, dependencies are pre-installed.
-    # Locally, tests may fail due to missing dependencies — this is documented.
-    cmd_parts = ["python3", "-m", "pytest", "--tb=short", "-q"]
+    # Use the per-repo venv python so imports resolve correctly.
+    # Falls back to system python3 when venv creation failed.
+    cmd_parts = [venv_python, "-m", "pytest", "--tb=short", "-q"]
     cmd_parts.extend(pytest_targets)
     if k_filters:
         k_expr = " or ".join(f"({f})" for f in k_filters)

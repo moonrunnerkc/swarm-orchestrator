@@ -1,0 +1,144 @@
+{
+  "timestamp": "20260417T021758Z",
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "subset_size": 5,
+  "mode": "baseline",
+  "tool": "claude-code",
+  "model": "claude-sonnet-4",
+  "resolved": 0,
+  "total": 5,
+  "percent_resolved": 0.0,
+  "mean_latency_seconds": 215.89,
+  "tasks": [
+    {
+      "instance_id": "astropy__astropy-12907",
+      "repo": "astropy/astropy",
+      "base_commit": "d16bfe05a744909de4b27f5875fe0d4ed41ce607",
+      "mode": "baseline",
+      "tool": "claude-code",
+      "model": "claude-sonnet-4",
+      "run": {
+        "returncode": 0,
+        "stdout": "Fix applied at `astropy/modeling/separable.py:245`. \n\n**Bug**: In `_cstack`, when the right operand of `&` was already a computed separability matrix (from a nested CompoundModel), line 245 set `cright[-right.shape[0]:, -right.shape[1]:] = 1`, overwriting the computed structure with all-ones and breaking separability. This mirrored the symmetric left branch (line 240) which correctly used `= left`.\n\n**Fix**: Changed `= 1` to `= right` so the right branch preserves the nested matrix, matching the left branch's behavior.\n\nCouldn't execute verification (Bash shell is blocked by an infrastructure error creating a session-env directory), but the logic is straightforward and walking through the example by hand confirms it produces the expected diagonal block output for the nested case.\n",
+        "stderr": "",
+        "elapsed_seconds": 735.94
+      },
+      "tests": {
+        "passed": false,
+        "returncode": 4,
+        "fail_to_pass_ids": [
+          "astropy/modeling/tests/test_separable.py::test_separable[compound_model6-result6]",
+          "astropy/modeling/tests/test_separable.py::test_separable[compound_model9-result9]"
+        ],
+        "test_command": "/tmp/swebench-3r9koapo/astropy__astropy-12907/.venv/bin/python3 -m pytest --tb=short -q astropy/modeling/tests/test_separable.py::test_separable[compound_model6-result6] astropy/modeling/tests/test_separable.py::test_separable[compound_model9-result9]",
+        "stdout_tail": "",
+        "stderr_tail": "ImportError while loading conftest '/tmp/swebench-3r9koapo/astropy__astropy-12907/conftest.py'.\nconftest.py:9: in <module>\n    import hypothesis\nE   ModuleNotFoundError: No module named 'hypothesis'\n"
+      },
+      "resolved": false
+    },
+    {
+      "instance_id": "django__django-10914",
+      "repo": "django/django",
+      "base_commit": "e7fd69d051eaa67cb17f172a39b57253e9cb831a",
+      "mode": "baseline",
+      "tool": "claude-code",
+      "model": "claude-sonnet-4",
+      "run": {
+        "returncode": 0,
+        "stdout": "Fix applied. Changed `FILE_UPLOAD_PERMISSIONS` default from `None` to `0o644` in `django/conf/global_settings.py:307` and updated the docs accordingly at `docs/ref/settings.txt:1487`.\n",
+        "stderr": "",
+        "elapsed_seconds": 31.87
+      },
+      "tests": {
+        "passed": false,
+        "returncode": 2,
+        "fail_to_pass_ids": [
+          "test_override_file_upload_permissions (test_utils.tests.OverrideSettingsTests)"
+        ],
+        "test_command": "/tmp/swebench-3r9koapo/django__django-10914/.venv/bin/python3 -m pytest --tb=short -q -k (OverrideSettingsTests and test_override_file_upload_permissions)",
+        "stdout_tail": "ngo.core.exceptions.Improperl...\nERROR tests/postgres_tests/test_unaccent.py - django.core.exceptions.Improper...\nERROR tests/prefetch_related/test_prefetch_related_objects.py - django.core.e...\nERROR tests/prefetch_related/test_uuid.py - django.core.exceptions.Improperly...\nERROR tests/queries/test_bulk_update.py - django.core.exceptions.ImproperlyCo...\nERROR tests/queries/test_explain.py - django.core.exceptions.ImproperlyConfig...\nERROR tests/queries/test_iterator.py - django.core.exceptions.ImproperlyConfi...\nERROR tests/queries/test_qs_combinators.py - django.core.exceptions.Improperl...\nERROR tests/queries/test_query.py - django.core.exceptions.ImproperlyConfigur...\nERROR tests/serializers/test_data.py - django.core.exceptions.ImproperlyConfi...\nERROR tests/serializers/test_deserializedobject.py - django.core.exceptions.I...\nERROR tests/serializers/test_json.py - django.core.exceptions.ImproperlyConfi...\nERROR tests/serializers/test_natural.py - django.core.exceptions.ImproperlyCo...\nERROR tests/serializers/test_xml.py - django.core.exceptions.ImproperlyConfig...\nERROR tests/serializers/test_yaml.py - django.core.exceptions.ImproperlyConfi...\nERROR tests/sitemaps_tests/test_generic.py - django.core.exceptions.Improperl...\nERROR tests/sitemaps_tests/test_http.py - django.core.exceptions.ImproperlyCo...\nERROR tests/sitemaps_tests/test_https.py - django.core.exceptions.ImproperlyC...\nERROR tests/sitemaps_tests/test_management.py - django.core.exceptions.Improp...\nERROR tests/sitemaps_tests/test_utils.py - django.core.exceptions.ImproperlyC...\nERROR tests/staticfiles_tests/test_checks.py - django.core.exceptions.Imprope...\nERROR tests/template_tests/syntax_tests/i18n/test_blocktrans.py - django.core...\nERROR tests/template_tests/syntax_tests/i18n/test_trans.py - django.core.exce...\nERROR tests/template_tests/syntax_tests/i18n/test_underscore_syntax.py - djan...\nERROR tests/template_tests/test_custom.py - django.core.exceptions.Improperly...\nERROR tests/test_runner/test_debug_sql.py - django.core.exceptions.Improperly...\nERROR tests/test_utils/test_testcase.py - django.core.exceptions.ImproperlyCo...\nERROR tests/test_utils/test_transactiontestcase.py - django.core.exceptions.I...\nERROR tests/utils_tests/test_lazyobject.py - django.core.exceptions.Improperl...\nERROR tests/utils_tests/test_simplelazyobject.py - django.core.exceptions.Imp...\nERROR tests/validation/test_custom_messages.py - django.core.exceptions.Impro...\nERROR tests/validation/test_unique.py - django.core.exceptions.ImproperlyConf...\nERROR tests/validation/test_validators.py - django.core.exceptions.Improperly...\nERROR tests/view_tests/tests/test_defaults.py - django.core.exceptions.Improp...\nERROR tests/view_tests/tests/test_i18n.py - django.core.exceptions.Improperly...\nERROR tests/view_tests/tests/test_static.py - django.core.exceptions.Improper...\n!!!!!!!!!!!!!!!!!! Interrupted: 228 errors during collection !!!!!!!!!!!!!!!!!!!\n3362 deselected, 10 warnings, 228 errors in 19.48s\n",
+        "stderr_tail": ""
+      },
+      "resolved": false
+    },
+    {
+      "instance_id": "matplotlib__matplotlib-18869",
+      "repo": "matplotlib/matplotlib",
+      "base_commit": "b7d05919865fc0c37a0164cf467d5d5513bd0ede",
+      "mode": "baseline",
+      "tool": "claude-code",
+      "model": "claude-sonnet-4",
+      "run": {
+        "returncode": 0,
+        "stdout": "The implementation looks correct. I've added:\n\n- `_VersionInfo` namedtuple (`major, minor, micro, releaselevel, serial`) mirroring `sys.version_info`\n- `_parse_to_version_info()` converts version strings via `packaging.version.parse`\n- `_get_version()` / `_get_and_cache_version()` factor out version-string resolution\n- `__getattr__` now also serves `__version_info__`, so `matplotlib.__version_info__ >= (3, 3)` works\n",
+        "stderr": "",
+        "elapsed_seconds": 127.59
+      },
+      "tests": {
+        "passed": false,
+        "returncode": 4,
+        "fail_to_pass_ids": [
+          "lib/matplotlib/tests/test_matplotlib.py::test_parse_to_version_info[3.5.0-version_tuple0]",
+          "lib/matplotlib/tests/test_matplotlib.py::test_parse_to_version_info[3.5.0rc2-version_tuple1]",
+          "lib/matplotlib/tests/test_matplotlib.py::test_parse_to_version_info[3.5.0.dev820+g6768ef8c4c-version_tuple2]",
+          "lib/matplotlib/tests/test_matplotlib.py::test_parse_to_version_info[3.5.0.post820+g6768ef8c4c-version_tuple3]"
+        ],
+        "test_command": "/tmp/swebench-3r9koapo/matplotlib__matplotlib-18869/.venv/bin/python3 -m pytest --tb=short -q lib/matplotlib/tests/test_matplotlib.py::test_parse_to_version_info[3.5.0-version_tuple0] lib/matplotlib/tests/test_matplotlib.py::test_parse_to_version_info[3.5.0rc2-version_tuple1] lib/matplotlib/tests/test_matplotlib.py::test_parse_to_version_info[3.5.0.dev820+g6768ef8c4c-version_tuple2] lib/matplotlib/tests/test_matplotlib.py::test_parse_to_version_info[3.5.0.post820+g6768ef8c4c-version_tuple3]",
+        "stdout_tail": "",
+        "stderr_tail": "ImportError while loading conftest '/tmp/swebench-3r9koapo/matplotlib__matplotlib-18869/lib/matplotlib/tests/conftest.py'.\nlib/matplotlib/__init__.py:104: in <module>\n    import numpy\nE   ModuleNotFoundError: No module named 'numpy'\n"
+      },
+      "resolved": false
+    },
+    {
+      "instance_id": "mwaskom__seaborn-2848",
+      "repo": "mwaskom/seaborn",
+      "base_commit": "94621cef29f80282436d73e8d2c0aa76dab81273",
+      "mode": "baseline",
+      "tool": "claude-code",
+      "model": "claude-sonnet-4",
+      "run": {
+        "returncode": 0,
+        "stdout": "The fix filters data at the PairGrid level so that only rows whose hue value is in `hue_order` reach the underlying plotting function. This restores the pre-0.11 behavior: points with hue values not in `hue_order` are silently excluded, avoiding the `KeyError` \u2192 `TypeError` chain in `_oldcore._lookup_single`.\n\nChanges in `seaborn/axisgrid.py`:\n- `map_diag` (hue path): filter `vector`/`hue` by `hue.isin(self._hue_order)` before dropna handling.\n- `_plot_bivariate` (hue path): filter `data` by `data[self._hue_var].isin(self._hue_order)`.\n\n`_plot_bivariate_iter_hue` and `_map_diag_iter_hue` already iterate `self._hue_order`, so they were unaffected.\n",
+        "stderr": "",
+        "elapsed_seconds": 145.42
+      },
+      "tests": {
+        "passed": false,
+        "returncode": 4,
+        "fail_to_pass_ids": [
+          "tests/test_relational.py::TestScatterPlotter::test_hue_order"
+        ],
+        "test_command": "/tmp/swebench-3r9koapo/mwaskom__seaborn-2848/.venv/bin/python3 -m pytest --tb=short -q tests/test_relational.py::TestScatterPlotter::test_hue_order",
+        "stdout_tail": "\n==================================== ERRORS ====================================\n__________________ ERROR collecting tests/test_relational.py ___________________\ntests/test_relational.py:10: in <module>\n    from seaborn.external.version import Version\nseaborn/__init__.py:9: in <module>\n    from .matrix import *  # noqa: F401,F403\n    ^^^^^^^^^^^^^^^^^^^^^\nseaborn/matrix.py:16: in <module>\n    from . import cm\nseaborn/cm.py:1582: in <module>\n    mpl_cm.register_cmap(_name, _cmap)\n    ^^^^^^^^^^^^^^^^^^^^\nE   AttributeError: module 'matplotlib.cm' has no attribute 'register_cmap'\n=========================== short test summary info ============================\nERROR tests/test_relational.py - AttributeError: module 'matplotlib.cm' has n...\n1 error in 0.46s\n",
+        "stderr_tail": "ERROR: found no collectors for /tmp/swebench-3r9koapo/mwaskom__seaborn-2848/tests/test_relational.py::TestScatterPlotter::test_hue_order\n\n"
+      },
+      "resolved": false
+    },
+    {
+      "instance_id": "pallets__flask-4045",
+      "repo": "pallets/flask",
+      "base_commit": "d8c37f43724cd9fb0870f77877b7c4c7e38a19e0",
+      "mode": "baseline",
+      "tool": "claude-code",
+      "model": "claude-sonnet-4",
+      "run": {
+        "returncode": 0,
+        "stdout": "Bash isn't available in this environment. The change is complete. Added a `ValueError` raise in `Blueprint.__init__` at `src/flask/blueprints.py:192-193` when the blueprint name contains a dot, and updated `CHANGES.rst`.\n",
+        "stderr": "",
+        "elapsed_seconds": 38.61
+      },
+      "tests": {
+        "passed": false,
+        "returncode": 4,
+        "fail_to_pass_ids": [
+          "tests/test_blueprints.py::test_dotted_name_not_allowed",
+          "tests/test_blueprints.py::test_route_decorator_custom_endpoint_with_dots"
+        ],
+        "test_command": "/tmp/swebench-3r9koapo/pallets__flask-4045/.venv/bin/python3 -m pytest --tb=short -q tests/test_blueprints.py::test_dotted_name_not_allowed tests/test_blueprints.py::test_route_decorator_custom_endpoint_with_dots",
+        "stdout_tail": "",
+        "stderr_tail": "ImportError while loading conftest '/tmp/swebench-3r9koapo/pallets__flask-4045/tests/conftest.py'.\ntests/conftest.py:9: in <module>\n    import flask\nsrc/flask/__init__.py:7: in <module>\n    from .app import Flask as Flask\nsrc/flask/app.py:28: in <module>\n    from . import cli\nsrc/flask/cli.py:18: in <module>\n    from .helpers import get_debug_flag\nsrc/flask/helpers.py:15: in <module>\n    from werkzeug.urls import url_quote\nE   ImportError: cannot import name 'url_quote' from 'werkzeug.urls' (/tmp/swebench-3r9koapo/pallets__flask-4045/.venv/lib/python3.11/site-packages/werkzeug/urls.py)\n"
+      },
+      "resolved": false
+    }
+  ]
+}

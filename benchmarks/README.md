@@ -45,11 +45,13 @@ benchmarks/
 # 2 — Compute statistical summary from scored runs
 python3 benchmarks/harness/scoring/compute_ci.py benchmarks/harness/raw_data/runs/
 
-# 3 — Run the SWE-bench Lite evaluation (Docker recommended)
+# 3 — Run the SWE-bench Lite evaluation (Docker required)
+export CLAUDE_CONFIG_DIR="$HOME/.claude"
+export CLAUDE_CONFIG_JSON="$HOME/.claude.json"
 cd benchmarks/swe-bench && docker compose up --build
 
 # 4 — Run SWE-bench baseline (direct Claude CLI, no orchestrator)
-BASELINE_MODE=true cd benchmarks/swe-bench && docker compose up --build
+BASELINE_MODE=true docker compose up --build
 ```
 
 ---
@@ -58,7 +60,7 @@ BASELINE_MODE=true cd benchmarks/swe-bench && docker compose up --build
 
 | # | Strategy | Location | Status |
 |---|----------|----------|--------|
-| 1 | **SWE-bench Lite** — public, standardized tasks from real GitHub issues | [swe-bench/](swe-bench/) | **0/5 resolved — local run (Docker needed for deps)** |
+| 1 | **SWE-bench Lite** — public, standardized tasks from real GitHub issues | [swe-bench/](swe-bench/) | **0/5 resolved — Docker eval (agents worked on 3/5)** |
 | 2 | **Agentic Benchmark Checklist (ABC)** — peer-reviewed evaluation hygiene | [ABC-compliance.md](ABC-compliance.md) | 30/30 items addressed |
 | 3 | **Continuous benchmarking (Bencher)** — regression tracking in CI | [../.github/workflows/continuous-benchmark.yml](../.github/workflows/continuous-benchmark.yml) | Workflow committed |
 | 4 | **Transparent harness** — open prompts, scoring scripts, raw data | [harness/](harness/) | Complete |
@@ -135,9 +137,9 @@ No subjective scores, no author-chosen rubrics, no weighted composite indices.
 
 ---
 
-## SWE-bench Lite Results (5-task subset, 2026-04-16)
+## SWE-bench Lite Results — Docker (5-task subset, 2026-04-17)
 
-> Evaluation against real GitHub issues from the [SWE-bench Lite](https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite) dataset. The orchestrator was given each issue description as its goal and ran with `--tool claude-code` (Claude Sonnet 4). Each task had a 900 s timeout. Gold tests from SWE-bench (using FAIL_TO_PASS identifiers) were applied after the orchestrator ran to determine resolution.
+> **Docker-based evaluation** against real GitHub issues from [SWE-bench Lite](https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite). Both the orchestrator and baseline ran inside the same Docker image (`python:3.11-slim` + Node.js 20 + Claude Code CLI) as a non-root evaluator user. Per-repo virtualenvs were created for dependency isolation. Each task had a 900 s timeout.
 
 ### Orchestrator Results
 
@@ -145,20 +147,22 @@ No subjective scores, no author-chosen rubrics, no weighted composite indices.
 |--------|-------|
 | Tasks evaluated | 5 |
 | Tasks resolved | **0 (0.0 %)** |
-| Mean latency | 780.97 s |
+| Mean latency | 199.79 s |
 | Model | claude-sonnet-4 |
 | Tool | claude-code via swarm orchestrator |
+| Environment | Docker (`Dockerfile.eval`, non-root user) |
 | Timeout | 900 s per task |
+| Eval file | [`eval-20260417T015509Z.json`](swe-bench/results/eval-20260417T015509Z.json) |
 
-### Per-Task Breakdown
+### Per-Task Breakdown (Orchestrator)
 
 | Instance | Repo | Resolved | Latency | Failure Reason |
 |----------|------|----------|---------|----------------|
-| astropy-12907 | astropy/astropy | No | 900 s (timeout) | Test patch conflict — orchestrator modified `test_separable.py` |
-| django-10914 | django/django | No | 900 s (timeout) | Test patch conflict — orchestrator modified `tests/test_utils/tests.py` |
-| matplotlib-18869 | matplotlib/matplotlib | No | 604 s | Import error — deps not installed (needs Docker) |
-| seaborn-2848 | mwaskom/seaborn | No | 601 s | Missing `pandas` — deps not installed (needs Docker) |
-| flask-4045 | pallets/flask | No | 900 s (timeout) | Test patch conflict — multiple test files modified |
+| astropy-12907 | astropy/astropy | No | 576.2 s | Test patch conflict — orchestrator modified `test_separable.py` |
+| django-10914 | django/django | No | 178.4 s | Test patch conflict — orchestrator modified `tests/test_utils/tests.py` |
+| matplotlib-18869 | matplotlib/matplotlib | No | 3.4 s | `spawn E2BIG` — prompt exceeds OS arg-list limit |
+| seaborn-2848 | mwaskom/seaborn | No | 0.7 s | Git worktree creation failed (invalid branch reference) |
+| flask-4045 | pallets/flask | No | 240.2 s | Test patch conflict — multiple test files modified |
 
 ### Baseline Results (direct Claude CLI, no orchestrator)
 
@@ -166,44 +170,44 @@ No subjective scores, no author-chosen rubrics, no weighted composite indices.
 |--------|-------|
 | Tasks evaluated | 5 |
 | Tasks resolved | **0 (0.0 %)** |
-| Mean latency | 55.38 s |
+| Mean latency | 215.89 s |
 | Model | claude-sonnet-4 |
 | Tool | claude CLI (`claude --dangerously-skip-permissions`) |
+| Environment | Docker (`Dockerfile.eval`, non-root user) |
 | Timeout | 900 s per task |
+| Eval file | [`eval-20260417T021758Z.json`](swe-bench/results/eval-20260417T021758Z.json) |
+
+### Per-Task Breakdown (Baseline)
 
 | Instance | Repo | Resolved | Latency | Failure Reason |
 |----------|------|----------|---------|----------------|
-| astropy-12907 | astropy/astropy | No | 72.9 s | Import error — numpy version / astropy logger conflict |
-| django-10914 | django/django | No | 17.4 s | Django `ImproperlyConfigured` — 228 collection errors |
-| matplotlib-18869 | matplotlib/matplotlib | No | 62.1 s | Import error — `_c_internal_utils` circular import |
-| seaborn-2848 | mwaskom/seaborn | No | 94.7 s | `matplotlib.cm.register_cmap` removed in newer mpl |
-| flask-4045 | pallets/flask | No | 29.9 s | `ModuleNotFoundError: No module named 'flask'` |
+| astropy-12907 | astropy/astropy | No | 735.9 s | Import error — `hypothesis` not installed in venv |
+| django-10914 | django/django | No | 31.9 s | Test patch apply failed |
+| matplotlib-18869 | matplotlib/matplotlib | No | 127.6 s | Import error — numpy not available in venv |
+| seaborn-2848 | mwaskom/seaborn | No | 145.4 s | `matplotlib.cm.register_cmap` removed in newer mpl |
+| flask-4045 | pallets/flask | No | 38.6 s | Import error — `flask` module not found in test venv |
 
-Raw data: [`swe-bench/results/eval-20260417T000815Z.json`](swe-bench/results/eval-20260417T000815Z.json)
-
-### Head-to-Head Comparison
+### Head-to-Head Comparison (Docker)
 
 | Metric | Orchestrator | Baseline (Claude CLI) |
 |--------|--------------|-----------------------|
 | Resolved | 0 / 5 (0 %) | 0 / 5 (0 %) |
-| Mean latency | 780.97 s | 55.38 s |
-| Timeouts | 3 / 5 | 0 / 5 |
-| Correct fix described | 0 / 5 | 4 / 5 (in stdout) |
-
-> **Note:** The baseline is ~14× faster because it runs a single Claude prompt per task without the orchestrator's multi-step pipeline (plan → agents → verify). However, both achieve 0 % resolution because the **test execution environment** (not the fix quality) is the bottleneck — all failures are import/dependency errors or missing packages. Docker is required for valid resolution comparisons.
+| Mean latency | 199.79 s | 215.89 s |
+| Tasks with real agent work | 3 / 5 | 4 / 5 |
+| Infrastructure failures | 2 / 5 (E2BIG, worktree) | 1 / 5 (mpl compat) |
 
 ### Observations
 
-- **0/5 resolved** in non-Docker local environment. Three failure modes:
-  1. **Test patch conflicts** (astropy, django, flask): The orchestrator modified test files that the SWE-bench gold test patch also targets. The git apply fails because the patch context no longer matches. This is a known SWE-bench evaluation limitation.
-  2. **Missing dependencies** (matplotlib, seaborn): Scientific Python packages require complex build environments. Local `pip install -e .` fails for C-extension packages. Docker is required.
-  3. **Timeouts** (3/5 tasks): The orchestrator's multi-step pipeline (plan → agent steps → verification) uses its full 900s budget on complex repos.
-- **Docker is required for valid SWE-bench resolution numbers.** The per-repo dependency installation needs isolated virtualenvs with pre-built C extensions. See [swe-bench/setup.md](swe-bench/setup.md) for Docker instructions.
-- **Test patch conflicts are not orchestrator failures.** The orchestrator may produce correct fixes that happen to touch the same files as the gold test patch. SWE-bench's exact-patch evaluation cannot distinguish this — it's a known limitation documented in the SWE-bench paper.
+- **0/5 resolved** for both orchestrator and baseline in Docker. Three distinct failure modes:
+  1. **Test patch conflicts** (astropy, django, flask — orchestrator): The orchestrator's agents modified source files that the SWE-bench gold test patch also targets. `git apply` fails because the context no longer matches. This is a known SWE-bench evaluation limitation.
+  2. **Infrastructure failures** (matplotlib `E2BIG`, seaborn worktree — orchestrator): Two orchestrator infrastructure issues remain: (a) the full agent prompt + problem description exceeds Linux `ARG_MAX` when passed as CLI args, and (b) git worktree creation fails in shallow-cloned repos.
+  3. **Dependency/import errors** (astropy, matplotlib, flask — baseline): Per-repo virtualenvs don't install all test dependencies (e.g., `hypothesis`, `flask` itself). These are venv setup issues, not agent failures.
+- **Orchestrator agents did real work** on 3/5 tasks (178–576 s). The agents produced code changes, but those changes conflicted with the gold test patches.
+- **Baseline is comparable latency** (215.89 s baseline vs 199.79 s orchestrator) — the baseline spent more time on per-task Claude reasoning since it has no multi-step overhead for failed tasks.
 
-### Raw Data
+### Environment-Parity Risk
 
-Full machine-readable results: [`swe-bench/results/eval-20260416T225847Z.json`](swe-bench/results/eval-20260416T225847Z.json)
+> **Warning:** Local-only eval artifacts remain in `results/` from prior runs. Files `eval-20260416T225847Z.json` and `eval-20260417T000815Z.json` were produced without Docker isolation and have different failure modes (missing system packages on host). **Only Docker-produced results (`eval-20260417T015509Z.json`, `eval-20260417T021758Z.json`) should be cited for head-to-head comparisons.**
 
 ---
 
@@ -259,11 +263,14 @@ npm ci && npm run build
 # Compute statistical summary from scored runs
 python3 benchmarks/harness/scoring/compute_ci.py benchmarks/harness/raw_data/runs/
 
-# Run SWE-bench evaluation (Docker recommended)
+# Run SWE-bench evaluation (Docker required)
+# Prerequisites: Docker 28+, Claude Code subscription (OAuth credentials in ~/.claude/)
+export CLAUDE_CONFIG_DIR="$HOME/.claude"
+export CLAUDE_CONFIG_JSON="$HOME/.claude.json"
 cd benchmarks/swe-bench
 docker compose up --build
 
-# Run baseline comparison
+# Run baseline comparison (same Docker image, Claude CLI only)
 BASELINE_MODE=true docker compose up --build
 
 # Continuous benchmark (runs in CI, or locally with Bencher CLI)

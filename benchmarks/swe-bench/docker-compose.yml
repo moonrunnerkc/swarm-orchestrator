@@ -8,17 +8,24 @@ services:
       - ANTHROPIC_API_KEY
       - OPENAI_API_KEY
       - GITHUB_TOKEN
-      - SWEBENCH_SUBSET_SIZE=${SWEBENCH_SUBSET_SIZE:-10}
+      - SWEBENCH_SUBSET_SIZE=${SWEBENCH_SUBSET_SIZE:-5}
       - SWEBENCH_DATASET=${SWEBENCH_DATASET:-princeton-nlp/SWE-bench_Lite}
       - SWARM_TOOL=${SWARM_TOOL:-claude-code}
       - SWARM_MODEL=${SWARM_MODEL:-claude-sonnet-4}
       - BASELINE_MODE=${BASELINE_MODE:-false}
       - TASK_TIMEOUT_SECONDS=${TASK_TIMEOUT_SECONDS:-900}
+      - HOME=/home/evaluator
+      - HF_HOME=/home/evaluator/.cache/huggingface
     volumes:
       - ./results:/app/results
-      - swebench-cache:/app/.cache
+      - swebench-cache:/home/evaluator/.cache
+      # Mount Claude Code credentials for both orchestrator and baseline modes.
+      # CLAUDE_CONFIG_DIR must be set in the shell or a .env file next to this compose file.
+      # Both the .claude/ directory (credentials) and .claude.json (config) are required.
+      - ${CLAUDE_CONFIG_DIR}:/home/evaluator/.claude:ro
+      - ${CLAUDE_CONFIG_JSON:-${HOME}/.claude.json}:/home/evaluator/.claude.json:ro
     working_dir: /app
-    command: ["python3", "evaluation-scripts/run_swebench.py"]
+    command: ["evaluation-scripts/run_swebench.py"]
 
 volumes:
   swebench-cache:

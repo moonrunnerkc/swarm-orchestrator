@@ -1,7 +1,9 @@
 FROM python:3.11-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git curl build-essential && \
+    git curl build-essential pkg-config sudo \
+    libfreetype6-dev libpng-dev libjpeg-dev \
+    gfortran libopenblas-dev liblapack-dev && \
     rm -rf /var/lib/apt/lists/*
 
 # Install Node.js 20 for swarm-orchestrator
@@ -9,11 +11,26 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y nodejs && \
     rm -rf /var/lib/apt/lists/*
 
+# Install Claude Code CLI (npm package)
+RUN npm install -g @anthropic-ai/claude-code 2>/dev/null || \
+    echo 'WARN: Claude CLI install failed — baseline mode will not work without it'
+
+# ── Non-root user ──────────────────────────────────────────────────────────
+# Claude Code refuses --dangerously-skip-permissions when running as root.
+# Create a dedicated evaluator user with sudo access for package installs.
+RUN useradd -m -s /bin/bash evaluator && \
+    echo 'evaluator ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers.d/evaluator
+
 WORKDIR /app
 
-# Python dependencies
+# Python dependencies for evaluation harness
 COPY benchmarks/swe-bench/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Pre-install common scientific deps so per-repo pip install -e . is faster
+RUN pip install --no-cache-dir \
+    numpy==1.24.4 scipy cython setuptools-scm wheel \
+    matplotlib pandas pytest 2>/dev/null || true
 
 # Copy evaluation scripts
 COPY benchmarks/swe-bench/evaluation-scripts/ evaluation-scripts/
@@ -27,8 +44,17 @@ COPY templates/ ./swarm/templates/
 
 RUN cd swarm && npm ci --omit=dev 2>/dev/null || true
 
-# Results directory
-RUN mkdir -p /app/results /app/.cache
+# Results directory — owned by evaluator
+RUN mkdir -p /app/results /home/evaluator/.cache && \
+    chown -R evaluator:evaluator /app /home/evaluator/.cache
+
+# Git config for evaluator
+RUN su evaluator -c '\
+    git config --global user.email "swarm@localhost" && \
+    git config --global user.name "swarm-orchestrator" && \
+    git config --global init.defaultBranch main'
+
+USER evaluator
 
 ENTRYPOINT ["python3"]
 CMD ["evaluation-scripts/run_swebench.py"]
