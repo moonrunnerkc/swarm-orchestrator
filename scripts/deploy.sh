@@ -11,6 +11,7 @@ IMAGES=(
     health-service
     calculations-api
     notes-api
+    inkwell
 )
 
 usage() {
@@ -28,6 +29,7 @@ build_and_push() {
     docker build -t "${REGISTRY}/health-service:${TAG}" -f app/Dockerfile .
     docker build -t "${REGISTRY}/calculations-api:${TAG}" ./calculations-api
     docker build -t "${REGISTRY}/notes-api:${TAG}" ./notes-api
+    docker build -t "${REGISTRY}/inkwell:${TAG}" ./web
 
     echo "==> Pushing images to ${REGISTRY}"
     for img in "${IMAGES[@]}"; do
