@@ -190,6 +190,10 @@ const main = () => {
     const label = note.title || "Untitled";
     if (!window.confirm(`Delete "${label}"? This cannot be undone.`)) return;
     const wasActive = note.id === activeId;
+
+    const deleteBtn = els.list.querySelector(`[data-id="${note.id}"] .note-item__delete`);
+    if (deleteBtn) deleteBtn.disabled = true;
+
     notesStore.remove(note.id);
 
     try {
@@ -225,12 +229,19 @@ const main = () => {
   };
 
   const createNote = async () => {
-    const note = await createNoteViaApi();
-    activeId = note.id;
-    prefs.set("lastOpenId", note.id);
-    renderSidebar();
-    renderEditorFor(note);
-    els.title.focus();
+    els.newNote.disabled = true;
+    els.newNote.setAttribute("aria-busy", "true");
+    try {
+      const note = await createNoteViaApi();
+      activeId = note.id;
+      prefs.set("lastOpenId", note.id);
+      renderSidebar();
+      renderEditorFor(note);
+      els.title.focus();
+    } finally {
+      els.newNote.disabled = false;
+      els.newNote.removeAttribute("aria-busy");
+    }
   };
 
   const togglePreview = () => {
