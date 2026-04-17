@@ -5,7 +5,9 @@
 // API field reference (for frontend consumers):
 //   POST   /calculations       — body: { expression: string, title?: string }
 //   PUT    /calculations/:id   — body: { expression?: string, title?: string }  (at least one required)
-//   GET    /calculations       — returns: { items: Calculation[], count: number }
+//   GET    /calculations       — returns: { items: Calculation[], count: number, total: number }
+//                                query params: ?sort=updatedAt|createdAt|result|title&order=asc|desc
+//                                              &limit=<number>&offset=<number>
 //   GET    /calculations/:id   — returns: Calculation
 //   GET    /calculations/stats — returns: { totalCalculations, averageResult, minResult, maxResult, lastCalculatedAt }
 //   DELETE /calculations/:id   — returns: 204 No Content
@@ -21,6 +23,8 @@ import {
   validateUpdateBody,
   validateUuid,
 } from "../validation.js";
+
+const SORTABLE_FIELDS = new Set(["updatedAt", "createdAt", "result", "title"]);
 
 export function calculationsRouter(store, cfg) {
   const router = Router();
@@ -55,10 +59,34 @@ export function calculationsRouter(store, cfg) {
     }
   });
 
-  router.get("/", async (_req, res, next) => {
+  router.get("/", async (req, res, next) => {
     try {
-      const items = await store.list();
-      res.json({ items, count: items.length });
+      let items = await store.list();
+      const total = items.length;
+
+      // Sort (default: updatedAt descending — most recent first)
+      const sortField = SORTABLE_FIELDS.has(req.query.sort)
+        ? req.query.sort
+        : "updatedAt";
+      const order = req.query.order === "asc" ? 1 : -1;
+      items.sort((a, b) => {
+        const av = a[sortField] ?? "";
+        const bv = b[sortField] ?? "";
+        if (av < bv) return -1 * order;
+        if (av > bv) return 1 * order;
+        return 0;
+      });
+
+      // Pagination
+      const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
+      const limit = parseInt(req.query.limit, 10);
+      if (limit > 0) {
+        items = items.slice(offset, offset + limit);
+      } else if (offset > 0) {
+        items = items.slice(offset);
+      }
+
+      res.json({ items, count: items.length, total });
     } catch (err) {
       next(err);
     }
