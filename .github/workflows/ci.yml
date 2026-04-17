@@ -95,11 +95,14 @@ jobs:
         restore-keys: |
           subprojects-${{ runner.os }}-node${{ matrix.node-version }}-
 
+    - name: Install subproject dependencies
+      run: |
+        (cd calculations-api && npm ci)
+        (cd notes-api && npm ci)
+
     - name: Test calculations-api
       working-directory: calculations-api
-      run: |
-        npm ci
-        npm test
+      run: npm test
 
     - name: Test calculator
       working-directory: calculator
@@ -111,9 +114,7 @@ jobs:
 
     - name: Test notes-api
       working-directory: notes-api
-      run: |
-        npm ci
-        npm test
+      run: npm test
 
     - name: Test web
       working-directory: web
