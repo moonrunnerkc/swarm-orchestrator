@@ -1,11 +1,3 @@
-# ── Stage 1: Install dependencies ──
-FROM node:20-slim AS deps
-
-WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev && npm cache clean --force
-
-# ── Stage 2: Runtime ──
 FROM node:20-slim
 
 LABEL org.opencontainers.image.title="inkwell" \
@@ -16,7 +8,6 @@ RUN groupadd --system inkwell && useradd --system --gid inkwell --home /app inkw
 
 WORKDIR /app
 
-COPY --from=deps /app/node_modules ./node_modules
 COPY package.json ./
 COPY dev-server.js ./
 COPY index.html ./
