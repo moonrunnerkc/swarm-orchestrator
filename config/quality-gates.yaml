@@ -63,3 +63,21 @@ gates:
       - '^src/dashboard\.tsx?$'
     minTestAssertions: 1
     requireComponentTests: true
+
+  # D4: Reject modifications to pre-existing test files.
+  # Agents should ADD new tests, not weaken existing ones.
+  testFileProtection:
+    enabled: true
+    testFileGlobs:
+      - 'tests/**'
+      - 'test/**'
+      - '**/__tests__/**'
+      - '**/*.test.ts'
+      - '**/*.test.tsx'
+      - '**/*.test.js'
+      - '**/*.test.jsx'
+      - '**/*.spec.ts'
+      - '**/*.spec.js'
+      - '**/test_*.py'
+      - '**/*_test.py'
+    maxFindings: 25

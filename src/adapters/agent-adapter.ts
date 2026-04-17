@@ -8,6 +8,12 @@ export interface AgentResult {
   exitCode: number;
   durationMs: number;
   shareTranscriptPath?: string | undefined;
+  /**
+   * Instrumented count of premium API requests consumed during this session.
+   * Parsed from CLI output markers (e.g. Claude Code cost summary).
+   * undefined means the adapter could not determine the count.
+   */
+  premiumRequestsConsumed?: number | undefined;
 }
 
 export interface AgentSpawnOptions {

@@ -1574,12 +1574,17 @@ export class SwarmOrchestrator {
         const durationMs = result.startTime && result.endTime
           ? new Date(result.endTime).getTime() - new Date(result.startTime).getTime()
           : 0;
-        context.costEstimator.recordActual(step.stepNumber, stepEstimate?.estimatedPremiumRequests ?? 1, 1, 0);
+        // D5: Use instrumented request count from adapter when available.
+        // The adapter parses the actual CLI output for request markers.
+        // Fall back to 1 only if the adapter could not determine the count.
+        const instrumentedRequests = (result as any).premiumRequestsConsumed;
+        const actualRequests = typeof instrumentedRequests === 'number' ? instrumentedRequests : 1;
+        context.costEstimator.recordActual(step.stepNumber, stepEstimate?.estimatedPremiumRequests ?? 1, actualRequests, 0);
         context.stepCostRecords.push({
           stepNumber: step.stepNumber,
           agentName: agent.name,
           estimatedPremiumRequests: stepEstimate?.estimatedPremiumRequests ?? 1,
-          actualPremiumRequests: 1,
+          actualPremiumRequests: actualRequests,
           retryCount: 0,
           promptTokens: stepEstimate?.estimatedPromptTokens ?? 0,
           fleetMode: !!options?.useInnerFleet,

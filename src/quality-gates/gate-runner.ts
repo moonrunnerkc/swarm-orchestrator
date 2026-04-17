@@ -9,6 +9,7 @@ import { run_test_isolation_gate } from './gates/test-isolation';
 import { run_runtime_checks_gate } from './gates/runtime-checks';
 import { run_accessibility_gate } from './gates/accessibility';
 import { run_test_coverage_gate } from './gates/test-coverage';
+import { run_test_file_protection_gate } from './gates/test-file-protection';
 import {
     GateContext,
     GateResult,
@@ -100,6 +101,10 @@ export async function run_quality_gates(
 
   if (config.gates.testCoverage.enabled) {
     gateResults.push(await run_test_coverage_gate(ctx, config.gates.testCoverage, config.maxFileSizeBytes));
+  }
+
+  if (config.gates.testFileProtection.enabled) {
+    gateResults.push(await run_test_file_protection_gate(projectRoot, config.gates.testFileProtection, baseCommit));
   }
 
   // Downgrade gate failures when the entire gate covers requirements that are

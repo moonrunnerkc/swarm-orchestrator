@@ -118,6 +118,7 @@ export const DEFAULT_QUALITY_GATES_CONFIG: QualityGatesConfig = {
         '^vendor/',
         '^target/',
         '^__pycache__/',
+        '^benchmarks/',
         '^test/fixtures/',
         '(^|/)tests?/',
         '(^|/)__tests__/',
@@ -220,7 +221,22 @@ export const DEFAULT_QUALITY_GATES_CONFIG: QualityGatesConfig = {
         '^src/dashboard\\.tsx?$'
       ],
       minTestAssertions: 1,
-      requireComponentTests: true
-    }
+      requireComponentTests: true    },
+    testFileProtection: {
+      enabled: true,
+      testFileGlobs: [
+        'tests/**',
+        'test/**',
+        '**/__tests__/**',
+        '**/*.test.ts',
+        '**/*.test.tsx',
+        '**/*.test.js',
+        '**/*.test.jsx',
+        '**/*.spec.ts',
+        '**/*.spec.js',
+        '**/test_*.py',
+        '**/*_test.py'
+      ],
+      maxFindings: 25    }
   }
 };

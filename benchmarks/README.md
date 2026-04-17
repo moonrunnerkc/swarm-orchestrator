@@ -1,6 +1,13 @@
 # Swarm Orchestrator — Benchmark Hub
 
-> **Purpose:** Reproducible, transparent, objective benchmarking for the swarm-orchestrator project. This directory replaces the legacy author-conducted benchmarks with public tasks, automated metrics, statistical reporting, and full disclosure.
+> **Purpose:** Reproducible, transparent, objective benchmarking for the swarm-orchestrator project. The primary question is: **how many premium requests does each approach need to reach what level of completeness?**
+>
+> Three producers are compared head-to-head on the same rubric tasks:
+> - **ORCHESTRATOR** — full swarm bootstrap (multi-agent coordination)
+> - **SINGLE_SHOT** — one Claude Code request, no iteration
+> - **LADDER** — deterministic prompt sequence, capped at 30 requests
+>
+> Scoring uses a [22-attribute binary completeness rubric](harness/scoring/completeness-rubric.md) — no subjective scores, no weighted composites. Statistical comparisons use paired Wilcoxon signed-rank tests with Bonferroni correction.
 
 ---
 
@@ -8,30 +15,38 @@
 
 ```
 benchmarks/
-├── README.md                  ← you are here (central hub)
-├── ABC-compliance.md          ← Agentic Benchmark Checklist audit
-├── swe-bench/
-│   ├── setup.md               ← installation & first-run guide
-│   ├── docker-compose.yml     ← Dockerized eval environment
-│   ├── run-eval.sh            ← one-command evaluation runner
+├── README.md                      ← you are here (central hub)
+├── ABC-compliance.md              ← Agentic Benchmark Checklist (30/30)
+├── ladder/
+│   ├── run_ladder.sh              ← iterative ladder baseline runner
+│   └── PROMPT_FAIRNESS.md         ← fairness policy (PRs welcome)
+├── swe-bench/                     ← secondary: reproducibility on public tasks
+│   ├── setup.md
+│   ├── docker-compose.yml
+│   ├── timeout-inventory.md       ← explains the 600s cluster (D8)
 │   ├── evaluation-scripts/
-│   │   ├── run_swebench.py    ← SWE-bench Lite orchestrator adapter
-│   │   └── collect_results.py ← post-run result aggregator
 │   └── results/
-│       └── eval-*.json        ← machine-readable results
 ├── harness/
-│   ├── run_fresh.sh           ← automated fresh-run harness (cycles tasks, scores)
+│   ├── run_fresh.sh               ← three-producer harness (D6)
 │   ├── prompts/
-│   │   ├── orchestrator.md    ← exact system prompt for orchestrator runs
-│   │   └── baselines.md       ← exact prompts for Copilot CLI / Claude Code / Codex
+│   │   ├── orchestrator.md
+│   │   └── baselines.md
 │   ├── scoring/
-│   │   ├── score.sh           ← automated scoring (test-pass, coverage, security, cost)
-│   │   └── compute_ci.py      ← mean ± 95 % CI from repeated runs
+│   │   ├── score.sh               ← per-run scoring
+│   │   ├── rubric_runner.py       ← 22-attribute rubric evaluator
+│   │   ├── compute_ci.py          ← mean ± 95% CI
+│   │   ├── stat_test.py           ← paired Wilcoxon + Bonferroni (D1)
+│   │   ├── sampler_audit.py       ← chi-square task uniformity (D2)
+│   │   ├── completeness-rubric.md ← 22 binary attributes × 6 groups
+│   │   ├── exclusion-policy.md    ← infrastructure failure handling (D7)
+│   │   ├── run-states.md          ← run state machine (D12)
+│   │   └── checks/               ← 22 attribute check scripts
 │   ├── raw_data/
-│   │   ├── legacy_tasks.json  ← 8 standardized benchmark tasks
-│   │   └── runs/              ← one directory per scored run
-│   └── statistical_summary.md ← mean ± 95 % CI over ≥ 10 runs
-└── .gitkeep
+│   │   ├── rubric_tasks.json      ← 8 tasks with ladder_prompts
+│   │   ├── legacy_tasks.json      ← archived original tasks
+│   │   └── runs/                  ← per-producer run directories
+│   └── statistical_summary.md
+└── inventory.md                   ← grounding document
 ```
 
 ---
@@ -39,19 +54,28 @@ benchmarks/
 ## Quick Start
 
 ```bash
-# 1 — Run fresh benchmarks (10 runs, cycles through 8 tasks)
-./benchmarks/harness/run_fresh.sh 10
+# 1 — Run all three producers (8 tasks each, default)
+./benchmarks/harness/run_fresh.sh 8
 
-# 2 — Compute statistical summary from scored runs
+# 2 — Run only the orchestrator (16 runs = 2 full cycles)
+PRODUCER=ORCHESTRATOR ./benchmarks/harness/run_fresh.sh 16
+
+# 3 — Run only the ladder baseline
+PRODUCER=LADDER ./benchmarks/harness/run_fresh.sh 8
+
+# 4 — Compute statistical summary from scored runs
 python3 benchmarks/harness/scoring/compute_ci.py benchmarks/harness/raw_data/runs/
 
-# 3 — Run the SWE-bench Lite evaluation (Docker required)
+# 5 — Run pairwise statistical tests
+python3 benchmarks/harness/scoring/stat_test.py benchmarks/harness/raw_data/runs/
+
+# 6 — Audit task sampling uniformity
+python3 benchmarks/harness/scoring/sampler_audit.py benchmarks/harness/raw_data/runs/
+
+# 7 — SWE-bench Lite evaluation (Docker required, secondary)
 export CLAUDE_CONFIG_DIR="$HOME/.claude"
 export CLAUDE_CONFIG_JSON="$HOME/.claude.json"
 cd benchmarks/swe-bench && docker compose up --build
-
-# 4 — Run SWE-bench baseline (direct Claude CLI, no orchestrator)
-BASELINE_MODE=true docker compose up --build
 ```
 
 ---
@@ -60,33 +84,186 @@ BASELINE_MODE=true docker compose up --build
 
 | # | Strategy | Location | Status |
 |---|----------|----------|--------|
-| 1 | **SWE-bench Lite** — public, standardized tasks from real GitHub issues | [swe-bench/](swe-bench/) | **0/5 resolved — all 5 now run to completion (post-RC fixes)** |
-| 2 | **Agentic Benchmark Checklist (ABC)** — peer-reviewed evaluation hygiene | [ABC-compliance.md](ABC-compliance.md) | 30/30 items addressed |
-| 3 | **Continuous benchmarking (Bencher)** — regression tracking in CI | [../.github/workflows/continuous-benchmark.yml](../.github/workflows/continuous-benchmark.yml) | Workflow committed |
-| 4 | **Transparent harness** — open prompts, scoring scripts, raw data | [harness/](harness/) | Complete |
-| 5 | **Objective metrics & statistics** — automated, no subjective rubric | [harness/scoring/](harness/scoring/) | **10 post-RC-fix runs scored — results below** |
+| 1 | **Cost-to-Completion Rubric** — primary metric: how many premium requests to reach what completeness? | [harness/scoring/](harness/scoring/) | **Active** |
+| 2 | **Three-Producer Comparison** — orchestrator vs single-shot vs iterative ladder baseline | [harness/run_fresh.sh](harness/run_fresh.sh), [ladder/](ladder/) | **Active** |
+| 3 | **Agentic Benchmark Checklist (ABC)** — peer-reviewed evaluation hygiene | [ABC-compliance.md](ABC-compliance.md) | 30/30 items addressed |
+| 4 | **Transparent harness** — open prompts, scoring scripts, raw data, ladder [fairness policy](ladder/PROMPT_FAIRNESS.md) | [harness/](harness/) | Complete |
+| 5 | **Objective metrics & statistics** — automated, paired Wilcoxon + Bonferroni | [harness/scoring/](harness/scoring/) | **Active** |
+| 6 | **Continuous benchmarking (Bencher)** — regression tracking in CI | [../.github/workflows/continuous-benchmark.yml](../.github/workflows/continuous-benchmark.yml) | Workflow committed |
+| 7 | **SWE-bench Lite** _(secondary)_ — reproducibility on public tasks | [swe-bench/](swe-bench/) | 0/5 resolved — see note below |
 
 ---
 
 ## Metrics Collected (Automated Only)
 
-| Metric | Source | Units |
-|--------|--------|-------|
-| Tests passing | `npm test` / `pytest` exit code + count | % |
-| Test coverage | `c8` / `coverage.py` report | % |
-| Security scan results | SARIF from `swarm gates --sarif` | issue count |
-| Cost attribution | `cost-attribution.json` per run | premium requests |
-| Wall-clock time | `session-state.json` timestamps | seconds |
-| Premium request count | `cost-attribution.json` | count |
-| Repair-loop iterations | `session-state.json` retry/repair metadata | count |
+| Metric | Source | Units | Primary? |
+|--------|--------|-------|----------|
+| **Rubric completeness** | `rubric-score.json` (22 binary attributes) | ratio [0, 1] | **Yes** |
+| **Premium requests consumed** | `cost-attribution.json` | count | **Broken — see [D5 status](#d5-premium-request-counting-is-broken)** |
+| **Cost per rubric point** | premium_requests / rubric_score | requests/point | Blocked on D5 |
+| Wall-clock time | `metrics.json` timestamps (D9) | seconds | |
+| Tests passing | `npm test` / `pytest` exit code | % | |
+| Test coverage | `c8` / `coverage.py` report | % | |
+| Security scan results | SARIF from `swarm gates --sarif` | issue count | |
+| Repair-loop iterations | `session-state.json` metadata | count | |
+| Run label | `label.json` (D12: state machine) | enum | |
+| Test-file protection | quality gate `test-file-protection` (D4) | pass/fail | |
 
-No subjective scores, no author-chosen rubrics, no weighted composite indices.
+No subjective scores, no weighted composite indices. The intended headline comparison is **cost (premium requests) vs completeness (rubric score)** across three producers. However, premium request counting is currently broken (see [D5 status](#d5-premium-request-counting-is-broken)), so rubric completeness is the only reliable primary metric.
 
 ---
 
-## Latest Results — Post-RC-Fix Fresh Runs (10 runs, 2026-04-17)
+## Three-Producer Comparison — Smoke Tests (2026-04-17)
 
-> 10 fresh orchestrator runs after implementing root-cause fixes RC1–RC5. Tasks cycle through 8 standardized benchmarks. Metrics extracted automatically by `score.sh`; confidence intervals computed by `compute_ci.py`.
+> **Preliminary: N = 1 per producer per task.** These are smoke-test results confirming the harness works end-to-end. They are not statistically meaningful. Do not cite these numbers as the project's benchmark results. The full comparison (≥ 10 runs × 8 tasks with confidence intervals) has not been run yet.
+
+### Results
+
+**Task: `task-rest-api`** (15 applicable attributes — simple CRUD API)
+
+| Producer | Rubric Score | Wall-clock (s) | Run Label |
+|----------|-------------|----------------|-----------|
+| **ORCHESTRATOR** | 12 / 15 (80 %) | 463 | VERIFICATION_FAILED |
+| **SINGLE_SHOT** | 12 / 15 (80 %) | 144 | COMPLETED |
+| **LADDER** | 15 / 15 (100 %) | 245 | COMPLETED |
+
+**Task: `task-auth-route`** (17 applicable attributes — JWT auth with RBAC)
+
+| Producer | Rubric Score | Wall-clock (s) | Run Label |
+|----------|-------------|----------------|-----------|
+| **ORCHESTRATOR** | 14 / 17 (82 %) | 582 | COMPLETED |
+| **SINGLE_SHOT** | 14 / 17 (82 %) | 137 | COMPLETED |
+| **LADDER** | 17 / 17 (100 %) | 287 | COMPLETED |
+
+> **Premium request counts omitted.** The `premium_requests_actual` field is broken — `parseRequestCount()` always returns 1 per step. See [D5 status](#d5-premium-request-counting-is-broken). Until D5 is fixed, cost-per-rubric-point comparisons are meaningless.
+
+### What this data shows
+
+**The orchestrator does not win on either task.** The pattern is consistent across both:
+
+- Orchestrator ties SINGLE_SHOT on rubric score (80% and 82%)
+- Orchestrator takes 3–4× longer (463s/582s vs 144s/137s)
+- LADDER hits 100% on its first prompt, never needing its rubric-targeted follow-ups
+- The orchestrator's multi-agent machinery adds wall-clock cost without measurable rubric benefit
+
+The failing attributes shift between tasks (WIRE-ENV, TEST-NOMOD, ERR-UNHANDLED, TEST-PASS, PROD-README) but the pattern holds: both the orchestrator and SINGLE_SHOT miss 2–3 "hygiene" attributes, and the gap between them is zero.
+
+### Why this is happening
+
+**The rubric is too permissive.** Claude handles production-readiness natively for the task complexity represented in the current pool. Evidence:
+
+1. LADDER hits 100% from a bare task prompt (no rubric-targeted follow-ups consumed) on **both tasks**. The rubric cannot distinguish "orchestrator added value" from "Claude's default behavior" if a single prompt already saturates the scale.
+
+2. SINGLE_SHOT achieves 80–82% on first attempt. The rubric attributes that are missed (WIRE-ENV, ERR-UNHANDLED, PROD-README) are "professional hygiene" items — configurable port, unhandled-rejection handler, README — that Claude sometimes includes and sometimes doesn't, independent of whether an orchestrator coordinates agents.
+
+3. The checks are **existence checks**, not **correctness checks**. SEC-INPUT passes if `zod` appears in imports, not if every user-facing route has a validator applied. ERR-UNHANDLED greps for `process.on('uncaughtException')` without verifying the handler logs structured output. The rubric measures "did you think of X" not "did you implement X correctly."
+
+### Three possible interpretations
+
+1. **The rubric needs hardening.** Existence checks should become correctness checks. SEC-INPUT should verify per-route validator application. ERR-UNHANDLED should verify structured logging. TEST-COV should enforce a minimum coverage threshold, not just "assertions exist." This would lower SINGLE_SHOT and LADDER scores and potentially reveal orchestrator value.
+
+2. **The task pool needs harder tasks.** Both test tasks are single-service Node.js projects that Claude handles well by default. Tasks where the orchestrator could differentiate: multi-service systems with inter-service auth, database migrations, webhook signature verification, observability instrumentation, and dependency injection. Tasks where coordination between specialized agents (security, testing, backend, devops) adds genuine value.
+
+3. **The orchestrator may not add measurable value for tasks below a complexity threshold.** If this holds after harder tasks and stricter rubrics, the honest claim is: "the orchestrator is valuable for complex multi-concern projects where a single prompt reliably misses critical production requirements — not for well-scoped single-service builds." That is a real product thesis. It is narrower than "orchestrator wins everywhere."
+
+### LADDER's 100% on prompt 1: confirmed rubric smell
+
+LADDER achieved 100% after **only prompt 1** on both tasks— prompts 2–17 were never sent. Prompt 1 is the bare task description, identical to what SINGLE_SHOT receives.
+
+This means Claude Code is capable of producing all rubric attributes from a bare task prompt in a single request. The 2–3 point gap between SINGLE_SHOT (80–82%) and LADDER (100%) on the identical prompt is pure LLM non-determinism. With N=1, this gap is noise.
+
+The conclusion: **the rubric's difficulty ceiling is at or below Claude's default capability.** Until the rubric is hardened or the task pool includes genuinely harder tasks, the three-producer comparison cannot detect orchestrator value.
+
+### Per-Attribute Breakdown (task-rest-api)
+
+| Group | Attribute | ORCHESTRATOR | SINGLE_SHOT | LADDER |
+|-------|-----------|:-----------:|:-----------:|:------:|
+| SEC | SEC-INPUT (input validation) | PASS | PASS | PASS |
+| SEC | SEC-HELMET (security headers) | PASS | PASS | PASS |
+| SEC | SEC-NOSQL (no SQL injection) | PASS | PASS | PASS |
+| WIRE | WIRE-START (server boots) | PASS | PASS | PASS |
+| WIRE | WIRE-ROUTES (route definitions) | PASS | PASS | PASS |
+| WIRE | WIRE-ENV (configurable port) | **FAIL** | **FAIL** | PASS |
+| WIRE | WIRE-JSON (JSON middleware) | PASS | PASS | PASS |
+| TEST | TEST-EXIST (test files exist) | PASS | PASS | PASS |
+| TEST | TEST-PASS (tests pass) | PASS | PASS | PASS |
+| TEST | TEST-COV (assertions present) | PASS | PASS | PASS |
+| TEST | TEST-NOMOD (no test modification) | **FAIL** | PASS | PASS |
+| ERR | ERR-MIDDLE (error middleware) | PASS | PASS | PASS |
+| ERR | ERR-UNHANDLED (uncaught handlers) | **FAIL** | **FAIL** | PASS |
+| PROD | PROD-LINT (lint-clean) | PASS | PASS | PASS |
+| PROD | PROD-README (README present) | PASS | **FAIL** | PASS |
+
+### Per-Attribute Breakdown (task-auth-route)
+
+| Group | Attribute | ORCHESTRATOR | SINGLE_SHOT | LADDER |
+|-------|-----------|:-----------:|:-----------:|:------:|
+| SEC | SEC-INPUT (input validation) | PASS | PASS | PASS |
+| SEC | SEC-NOSECRETS (no hardcoded secrets) | PASS | PASS | PASS |
+| SEC | SEC-SARIF (npm audit clean) | PASS | PASS | PASS |
+| SEC | SEC-DEPS (dependency audit) | PASS | PASS | PASS |
+| SEC | SEC-AUTHN (authentication middleware) | PASS | PASS | PASS |
+| SEC | SEC-AUTHZ (role-based access control) | PASS | PASS | PASS |
+| WIRE | WIRE-START (server boots) | PASS | PASS | PASS |
+| WIRE | WIRE-ROUTES (route definitions) | PASS | PASS | PASS |
+| WIRE | WIRE-ENV (configurable port) | PASS | **FAIL** | PASS |
+| TEST | TEST-EXIST (test files exist) | PASS | PASS | PASS |
+| TEST | TEST-COV (assertions present) | PASS | PASS | PASS |
+| TEST | TEST-PASS (tests pass) | **FAIL** | PASS | PASS |
+| TEST | TEST-NOMOD (no test modification) | PASS | PASS | PASS |
+| ERR | ERR-NOBARE (no empty catch blocks) | PASS | PASS | PASS |
+| ERR | ERR-STRUCT (structured error responses) | PASS | PASS | PASS |
+| ERR | ERR-UNHANDLED (uncaught handlers) | **FAIL** | **FAIL** | PASS |
+| PROD | PROD-README (README present) | **FAIL** | **FAIL** | PASS |
+
+### Known Issues in This Smoke Test
+
+**TEST-NOMOD fails for ORCHESTRATOR but D4 gate passed.** The test-file-protection quality gate compares against the pre-orchestration HEAD SHA and sees all files as **additions** (greenfield project). The rubric check uses `git diff HEAD~1` which catches cross-step modifications (SecurityAuditor modifying TesterElite's test file). For greenfield tasks, the gate and rubric test different things. This is a genuine gap — the gate is irrelevant for greenfield projects. See [D4 status](#d4-test-file-protection-greenfield-gap).
+
+### Check-Script Bug Fixes (2026-04-17)
+
+Five bugs in the check scripts were causing false negatives and false positives. All were fixed before this smoke test.
+
+| Bug | Script | Symptom | Root Cause | Fix |
+|-----|--------|---------|------------|-----|
+| **B1** | `sec_input.sh` | Sporadic FAIL on valid code | `grep -rl \| head -1` under `set -eo pipefail` → exit 141 (SIGPIPE) | `_first_match()` helper disabling pipefail in subshell |
+| **B2** | `sec_input.sh` | False PASS (matched `node_modules`) | No `--exclude-dir` on grep | Added `--exclude-dir=node_modules --exclude-dir=.git` to all greps |
+| **B3** | `wire_start.sh` | All producers FAIL (server won't boot) | ntopng occupies port 3000; Express 5 silently exits on bind failure | Random high port `PORT=$((RANDOM % 10000 + 20000))` |
+| **B4** | `wire_routes.sh` | False FAIL (routes not found) | `cd "$DIR"` then `grep "$DIR"` — relative path invalid after cd | Changed to `"."` after cd |
+| **B5** | `test_cov.sh` | False FAIL (coverage not found) | Same cd + `$DIR` relative path bug | Changed to `"."` after cd |
+| **Global** | `rubric_runner.py` | All path bugs triggered | Relative paths passed from `run_fresh.sh` | `os.path.abspath()` on `artifact_dir` in `main()` |
+
+---
+
+## Known Defect Status
+
+### D5: Premium Request Counting Is Broken
+
+`parseRequestCount()` in `claude-code-adapter.ts` tries three strategies to extract the premium request count from Claude Code's stdout:
+1. Look for `"total cost: $X.XX"` — Claude Code doesn't print this.
+2. Count `Human:` / `User:` turn markers — Claude Code in `-p` mode doesn't emit these.
+3. If stdout is non-empty, return `1`.
+
+**Result: every successfully completed step records exactly 1 premium request.** `totalActualPremiumRequests` in `cost-attribution.json` equals the number of completed steps — identical to `verificationsPassed` (both are 1.7778 in the aggregate metrics, to four decimals). The `premium_requests_estimated` field is an independent pre-execution estimate and diverges, but it is not an actual count.
+
+**Impact:** All "cost per rubric point" and "premium requests consumed" numbers in this document are untrustworthy. The cost axis of the primary comparison (cost vs completeness) is not functional until `parseRequestCount()` is fixed to extract real consumption data from Claude Code's output or billing API.
+
+### D4: Test-File Protection Greenfield Gap
+
+The `test-file-protection` quality gate diffs against the pre-orchestration HEAD SHA. For greenfield tasks (where the orchestrator creates all files from scratch), every file is an **addition**, never a **modification**. The gate always passes.
+
+The `TEST-NOMOD` rubric check uses `git diff --diff-filter=M HEAD~1`, which catches modifications between intermediate orchestration commits (e.g., SecurityAuditor modifying a test file created by TesterElite). This is a real cross-agent coordination failure that the gate structurally cannot detect on greenfield projects.
+
+**Fix needed:** Either (a) the gate needs to track inter-step diffs (comparing each step's output against the previous step's), or (b) a post-orchestration rubric-style check should supplement the gate for greenfield tasks.
+
+---
+
+## Release Engineering History
+
+<details>
+<summary>Orchestrator-only runs (10 runs, pre-rubric-comparison, 2026-04-17) — click to expand</summary>
+
+> These are internal orchestrator-only runs used to validate root-cause fixes RC1–RC5. They predate the three-producer rubric comparison and use the old scoring pipeline (not the 22-attribute rubric). Retained for engineering reference.
 
 ### Root-Cause Fixes Applied
 
@@ -107,9 +284,9 @@ No subjective scores, no author-chosen rubrics, no weighted composite indices.
 | Verifications passed | 9 | 1.78 | [0.30, 3.26] | 1.92 |
 | Verifications failed | 9 | 0.89 | [0.43, 1.35] | 0.60 |
 | Quality-gate issues | 10 | 0.10 | [−0.13, 0.33] | 0.32 |
-| Premium requests (actual) | 9 | 1.78 | [0.30, 3.26] | 1.92 |
-| Premium requests (estimated) | 9 | 7.67 | [6.90, 8.44] | 1.00 |
 | Repair-loop iterations | 9 | 0.00 | [0.00, 0.00] | 0.00 |
+
+> **Premium request rows removed.** The "actual" row was broken (identical to verifications\_passed due to the D5 bug). The "estimated" row was a pre-execution estimate. Neither measured real premium request consumption.
 
 ### Completion & Pass Rates
 
@@ -121,7 +298,7 @@ No subjective scores, no author-chosen rubrics, no weighted composite indices.
 | Replan steps fired | **3** (across 2 runs) | **0** (replan was broken) |
 | "Unknown agent" errors | **0** | systemic (every remediation attempt) |
 
-> **Note on completion rate:** The post-RC-fix 20% completion rate is lower than pre-fix 67%. This is due to natural LLM variance across different task draw order and model non-determinism, not a regression from the fixes. The key structural improvements are: (1) the repair loop now functions (3 remediation steps fired vs 0), (2) zero "unknown agent" errors, and (3) quality gates 100% pass rate. The repair loop still cannot overcome fundamental step verification failures, which require deeper agent capability improvements.
+> **Completion rate drop:** Fisher exact test on the 2×2 contingency table (pre: 6/9 completed, post: 2/9 completed) gives **p = 0.153** (two-sided). Not significant at α = 0.05 or α = 0.10. The observed difference is consistent with sampling variance at N = 9 per batch. A definitive comparison requires N ≥ 30 per batch.
 
 ### Per-Run Breakdown
 
@@ -140,16 +317,18 @@ No subjective scores, no author-chosen rubrics, no weighted composite indices.
 
 ### Key Observations
 
-- **RC5 fix confirmed working** — Replan successfully added 3 remediation steps across 2 runs (run 1 and run 9). Zero "unknown agent" errors in any run. This is the first time the self-repair mechanism has ever fired successfully.
-- **Run 9 is the strongest evidence of RC5** — Quality gates detected a hardcoded-config issue, replan added step 6 (completed and verified), gates re-ran, found remaining issues, added step 7 (failed verification). The full repair loop executed end-to-end.
-- **Quality gates 100% pass rate** — all 9 runs with session data passed quality gates.
-- **Completion rate lower** (20% vs 67%) — driven by natural variance in task draw order and LLM non-determinism. Runs 4–7 drew harder tasks and had shorter runtimes.
-- **Mean 890s wall-clock** (σ = 652s) — high variance reflects task difficulty spread.
+- **RC5 fix confirmed working** — 3 remediation steps across 2 runs, zero "unknown agent" errors.
+- **Run 9: full repair loop end-to-end** — Quality gates detected hardcoded-config, replan added step 6 (verified), gates re-ran, added step 7 (failed).
+- **Quality gates 100% pass rate** — all 9 runs with session data.
+
+</details>
 
 ---
 
 ## SWE-bench Lite Results — Docker (5-task subset)
 
+> **Secondary benchmark.** SWE-bench provides reproducibility on public tasks but is not the primary measure of orchestrator value. The primary comparison is cost-to-completion rubric completeness (above). SWE-bench is retained for transparency and to validate infrastructure on real-world GitHub issues.
+>
 > **Docker-based evaluation** against real GitHub issues from [SWE-bench Lite](https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite). Orchestrator ran inside Docker (`python:3.11-slim` + Node.js 20 + Claude Code CLI) as a non-root evaluator user. Per-repo virtualenvs with test extras (RC4 fix). Each task had a 900 s timeout.
 
 ### Post-RC-Fix Orchestrator Results (2026-04-17)
@@ -216,7 +395,7 @@ No subjective scores, no author-chosen rubrics, no weighted composite indices.
 
 ### Environment-Parity Risk
 
-> **Warning:** Local-only eval artifacts remain in `results/` from prior runs. Files `eval-20260416T225847Z.json` and `eval-20260417T000815Z.json` were produced without Docker isolation. **Only Docker-produced results should be cited for comparisons.**
+> **Note:** Pre-Docker eval artifacts (`eval-20260416T*`, `eval-20260417T000815Z`) have been deleted (D10). Only Docker-produced results remain in `results/`. Future eval runs should include a `docker_image_digest` field for provenance tracking.
 
 ---
 
@@ -247,42 +426,44 @@ No subjective scores, no author-chosen rubrics, no weighted composite indices.
 
 | Risk | Mitigation |
 |------|-----------|
-| **Non-determinism** of LLM outputs | ≥ 10 repeated runs; report mean ± 95 % CI; seed where available |
-| **CI cost** — each SWE-bench run consumes API credits | Nightly schedule (not per-push); budget cap via `--max-premium-requests` |
-| **Dependency drift** — SWE-bench / Bencher version changes | Pin versions in Docker images and `package.json`; Renovate / Dependabot for alerts |
-| **Dataset contamination** — LLMs may have trained on SWE-bench tasks | Acknowledged in ABC compliance; use SWE-bench Verified where available |
-| **Environment parity** — local vs CI differences | Docker Compose provides identical environments; local runs documented as approximate |
-| **Test patch conflicts** — orchestrator changes conflict with gold patches | Known SWE-bench limitation; Docker runs with proper isolation mitigate this |
+| **Non-determinism** of LLM outputs | ≥ 30 runs per producer (N≥30 for Wilcoxon); report mean ± 95% CI |
+| **Ladder prompt fairness** | [PROMPT_FAIRNESS.md](ladder/PROMPT_FAIRNESS.md); community PRs welcome |
+| **600s timeout cluster** | Documented in [timeout-inventory.md](swe-bench/timeout-inventory.md); stalled runs labeled correctly (D12) |
+| **CI cost** — each run consumes API credits | Budget cap (30 requests for ladder); nightly schedule |
+| **Dependency drift** | Pin versions in Docker; Renovate/Dependabot for alerts |
+| **Dataset contamination** | Acknowledged in ABC compliance; use SWE-bench Verified where available |
+| **Environment parity** | Docker Compose for identical environments; local runs documented as approximate |
+| **Test-file modification** | Quality gate `test-file-protection` (D4) fails if agents modify existing tests |
 
 ---
 
 ## How to Reproduce
 
 ```bash
-# Clone the repo
+# Clone and build
 git clone https://github.com/moonrunnerkc/swarm-orchestrator.git
 cd swarm-orchestrator
-
-# Install dependencies
 npm ci && npm run build
 
-# Run 10 fresh benchmark runs (automated, takes ~3-4 hours)
-./benchmarks/harness/run_fresh.sh 10
+# Run all three producers (8 tasks each ≈ 24 runs total)
+./benchmarks/harness/run_fresh.sh 8
 
-# Compute statistical summary from scored runs
+# Or run 30+ per producer for statistical power
+PRODUCER=ORCHESTRATOR ./benchmarks/harness/run_fresh.sh 32
+PRODUCER=SINGLE_SHOT  ./benchmarks/harness/run_fresh.sh 32
+PRODUCER=LADDER       ./benchmarks/harness/run_fresh.sh 32
+
+# Statistical comparison
+python3 benchmarks/harness/scoring/stat_test.py benchmarks/harness/raw_data/runs/
+
+# Confidence intervals
 python3 benchmarks/harness/scoring/compute_ci.py benchmarks/harness/raw_data/runs/
 
-# Run SWE-bench evaluation (Docker required)
-# Prerequisites: Docker 28+, Claude Code subscription (OAuth credentials in ~/.claude/)
+# Task sampling audit
+python3 benchmarks/harness/scoring/sampler_audit.py benchmarks/harness/raw_data/runs/
+
+# SWE-bench evaluation (secondary, Docker required)
 export CLAUDE_CONFIG_DIR="$HOME/.claude"
 export CLAUDE_CONFIG_JSON="$HOME/.claude.json"
-cd benchmarks/swe-bench
-docker compose up --build
-
-# Run baseline comparison (same Docker image, Claude CLI only)
-BASELINE_MODE=true docker compose up --build
-
-# Continuous benchmark (runs in CI, or locally with Bencher CLI)
-bencher run --project swarm-orchestrator \
-  "npm test 2>&1 | tail -1"
+cd benchmarks/swe-bench && docker compose up --build
 ```

@@ -92,22 +92,36 @@ TOTAL_COST_ESTIMATE=$(jq_or_null "$COST_FILE" \
    else 0 end')
 
 # ──────────────────────────────────────────────────────────────
-# Metric 5: Wall-clock time and premium request count
+# Metric 5: Wall-clock time derived from metrics.json timestamps
+# D9: Every wall-clock value must come from recorded timestamps.
+#     No external-stopwatch values allowed.
 # ──────────────────────────────────────────────────────────────
 SESSION_FILE="$RUN_DIR/session-state.json"
-WALL_CLOCK_MS=$(jq_or_null "$SESSION_FILE" '.totalDurationMs // .duration_ms // .elapsed_ms')
-# Fallback: nested .metrics in session-state.json
-if [ "$WALL_CLOCK_MS" = "null" ]; then
-  WALL_CLOCK_MS=$(jq_or_null "$SESSION_FILE" '.metrics.totalTimeMs // .metrics.totalDurationMs')
+WALL_CLOCK_MS=$(jq_or_null "$METRICS_FILE" '.totalTimeMs')
+START_TS=$(jq_or_null "$METRICS_FILE" '.startTime')
+END_TS=$(jq_or_null "$METRICS_FILE" '.endTime')
+
+if [ "$WALL_CLOCK_MS" = "null" ] && [ "$START_TS" != "null" ] && [ "$END_TS" != "null" ]; then
+  # Derive from timestamps if totalTimeMs missing
+  START_EPOCH=$(date -d "$START_TS" +%s%N 2>/dev/null | head -c 13 || echo "null")
+  END_EPOCH=$(date -d "$END_TS" +%s%N 2>/dev/null | head -c 13 || echo "null")
+  if [ "$START_EPOCH" != "null" ] && [ "$END_EPOCH" != "null" ]; then
+    WALL_CLOCK_MS=$((END_EPOCH - START_EPOCH))
+  fi
 fi
-# Fallback: top-level metrics.json
-if [ "$WALL_CLOCK_MS" = "null" ]; then
-  WALL_CLOCK_MS=$(jq_or_null "$METRICS_FILE" '.totalTimeMs // .totalDurationMs')
-fi
+
 if [ "$WALL_CLOCK_MS" != "null" ]; then
   WALL_CLOCK_SEC=$(echo "scale=2; $WALL_CLOCK_MS / 1000" | bc)
 else
-  WALL_CLOCK_SEC="null"
+  # Fallback: check run-meta.json elapsed_seconds (set by harness stopwatch)
+  RUN_META_FILE="$RUN_DIR/run-meta.json"
+  ELAPSED_FROM_META=$(jq_or_null "$RUN_META_FILE" '.elapsed_seconds')
+  if [ "$ELAPSED_FROM_META" != "null" ] && [ "$ELAPSED_FROM_META" != "0" ]; then
+    WALL_CLOCK_SEC="$ELAPSED_FROM_META"
+  else
+    echo "WARNING: No wall-clock data in $RUN_DIR (missing metrics.json timestamps)" >&2
+    WALL_CLOCK_SEC="null"
+  fi
 fi
 
 # ──────────────────────────────────────────────────────────────
@@ -160,6 +174,69 @@ EOF
 
 # Write to file
 echo "$SCORE_JSON" | jq '.' > "$RUN_DIR/benchmark-score.json"
+
+# ──────────────────────────────────────────────────────────────
+# D12: Run label derivation (see run-states.md)
+#
+# For ORCHESTRATOR runs: session-state.json is the primary signal.
+# For SINGLE_SHOT / LADDER: no session-state.json exists —
+#   derive label from cost-attribution.json and workspace contents.
+# ──────────────────────────────────────────────────────────────
+# Read budget_cap from run-meta.json (set by harness); default 30
+RUN_META_FILE_LABEL="$RUN_DIR/run-meta.json"
+BUDGET_CAP=$(jq_or_null "$RUN_META_FILE_LABEL" '.budget_cap')
+if [ "$BUDGET_CAP" = "null" ] || [ -z "$BUDGET_CAP" ]; then
+  BUDGET_CAP=30
+fi
+SESSION_PRESENT=true
+if [ ! -f "$SESSION_FILE" ]; then
+  SESSION_PRESENT=false
+fi
+
+# Check if code artifacts were produced (workspace dir has files)
+HAS_WORKSPACE=false
+if [ -d "$RUN_DIR/workspace" ]; then
+  WS_FILE_COUNT=$(find "$RUN_DIR/workspace" -maxdepth 2 -name "*.js" -o -name "*.ts" -o -name "*.py" -o -name "*.json" -not -name ".rubric_task_meta.json" -not -name "rubric-score.json" 2>/dev/null | head -5 | wc -l)
+  [ "$WS_FILE_COUNT" -gt 0 ] && HAS_WORKSPACE=true
+fi
+
+# Derive label
+if [ "$SESSION_PRESENT" = "false" ] && [ "$HAS_WORKSPACE" = "false" ]; then
+  # No session state AND no code produced — genuine infrastructure failure
+  RUN_LABEL="INFRASTRUCTURE_FAILURE"
+elif [ "$SESSION_PRESENT" = "false" ] && [ "$HAS_WORKSPACE" = "true" ]; then
+  # Baseline producer (SINGLE_SHOT or LADDER) — no session-state expected
+  if [ "$TOTAL_PREMIUM_REQUESTS" != "null" ] && [ "$TOTAL_PREMIUM_REQUESTS" -ge "$BUDGET_CAP" ] 2>/dev/null; then
+    RUN_LABEL="BUDGET_EXHAUSTED"
+  else
+    RUN_LABEL="COMPLETED"
+  fi
+elif [ "$RUN_STATUS" = "completed" ] && [ "$QG_PASSED" = "true" ]; then
+  RUN_LABEL="COMPLETED"
+elif [ "$TOTAL_PREMIUM_REQUESTS" != "null" ] && [ "$TOTAL_PREMIUM_REQUESTS" -ge "$BUDGET_CAP" ] 2>/dev/null; then
+  RUN_LABEL="BUDGET_EXHAUSTED"
+elif [ "$RUN_STATUS" = "failed" ]; then
+  RUN_LABEL="VERIFICATION_FAILED"
+else
+  RUN_LABEL="BUDGET_EXHAUSTED"
+fi
+
+LABEL_JSON=$(cat <<LEOF
+{
+  "run_id": "$(basename "$RUN_DIR")",
+  "label": "$RUN_LABEL",
+  "cost": $TOTAL_PREMIUM_REQUESTS,
+  "source_signals": {
+    "session_state_present": $SESSION_PRESENT,
+    "session_state_status": "$RUN_STATUS",
+    "premium_requests": $TOTAL_PREMIUM_REQUESTS,
+    "budget_cap": $BUDGET_CAP
+  }
+}
+LEOF
+)
+
+echo "$LABEL_JSON" | jq '.' > "$RUN_DIR/label.json"
 
 # Output to stdout
 echo "$SCORE_JSON" | jq '.'

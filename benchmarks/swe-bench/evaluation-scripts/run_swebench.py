@@ -17,6 +17,8 @@ Environment variables:
   TASK_TIMEOUT_SECONDS   Per-task timeout (default: 900)
 """
 
+import fnmatch
+import glob
 import json
 import os
 import subprocess
@@ -44,6 +46,129 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 _LOCAL_BIN = _REPO_ROOT / "dist" / "src" / "cli.js"
 SWARM_BIN = Path(os.environ.get("SWARM_BIN", str(_LOCAL_BIN) if _LOCAL_BIN.exists() else "/app/swarm/dist/src/cli.js"))
 CACHE_DIR = Path(os.environ.get("HF_HOME", "/app/.cache"))
+
+
+# ---------------------------------------------------------------------------
+# RC fixes — helper functions
+# ---------------------------------------------------------------------------
+
+
+def revert_test_files(repo_dir: Path) -> list:
+    """[RC6] Revert any test files modified by the agent before gold patch apply.
+
+    LLM agents sometimes modify test files despite prompt instructions. This
+    causes `git apply` of the gold test patch to fail. We detect modified test
+    files via `git diff --name-only HEAD` and revert them with `git checkout`.
+    Runs unconditionally for all tasks.
+    """
+    try:
+        diff_result = subprocess.run(
+            ["git", "diff", "--name-only", "HEAD"],
+            cwd=str(repo_dir),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if diff_result.returncode != 0:
+            return []
+
+        modified = [f.strip() for f in diff_result.stdout.splitlines() if f.strip()]
+        test_patterns = ["**/test_*.py", "**/tests/**/*.py"]
+        test_files = []
+        for f in modified:
+            for pat in test_patterns:
+                if fnmatch.fnmatch(f, pat):
+                    test_files.append(f)
+                    break
+
+        if test_files:
+            subprocess.run(
+                ["git", "checkout", "--"] + test_files,
+                cwd=str(repo_dir),
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            for tf in test_files:
+                print(f"  [RC6] reverted {tf}")
+
+        return test_files
+    except (subprocess.TimeoutExpired, Exception) as exc:
+        print(f"  [RC6] warning: revert_test_files failed: {exc}")
+        return []
+
+
+def setuptools_scm_env(base_env: dict) -> dict:
+    """[RC7] Add SETUPTOOLS_SCM_PRETEND_VERSION to the environment.
+
+    astropy (and other repos) use setuptools_scm to derive version info from
+    git tags. SWE-bench checkouts are detached commits without tags, causing
+    broken version.py. Setting SETUPTOOLS_SCM_PRETEND_VERSION is harmless for
+    repos that don't use setuptools_scm.
+    Applied globally.
+    """
+    env = {**base_env, "SETUPTOOLS_SCM_PRETEND_VERSION": "0.0.dev0"}
+    print("  [RC7] set SETUPTOOLS_SCM_PRETEND_VERSION=0.0.dev0")
+    return env
+
+
+def detect_django_settings(repo_dir: Path, task_id: str, base_env: dict) -> dict:
+    """[RC9] Set DJANGO_SETTINGS_MODULE for Django repos.
+
+    Django tasks fail with ImproperlyConfigured when no settings module is
+    configured. SWE-bench's official harness uses 'test_sqlite'.
+    """
+    is_django = task_id.startswith("django__") or (repo_dir / "django").is_dir()
+    if is_django:
+        env = {**base_env, "DJANGO_SETTINGS_MODULE": "test_sqlite"}
+        print(f"  [RC9] set DJANGO_SETTINGS_MODULE=test_sqlite for {task_id}")
+        return env
+    return base_env
+
+
+def install_seaborn_deps(repo_dir: Path, task_id: str, venv_python: str) -> None:
+    """[RC8] Install matplotlib+pandas for seaborn tasks.
+
+    seaborn's __init__.py imports matplotlib at import time, but the per-task
+    venv often doesn't get a compatible version via extras.
+    Also checks for seaborn/external/version.py existence.
+    """
+    if not task_id.startswith("mwaskom__seaborn"):
+        return
+
+    print(f"  [RC8] installing matplotlib pandas for seaborn task {task_id}")
+    subprocess.run(
+        [venv_python, "-m", "pip", "install", "--quiet", "matplotlib", "pandas"],
+        cwd=str(repo_dir),
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+    version_file = repo_dir / "seaborn" / "external" / "version.py"
+    if not version_file.exists():
+        print(f"  [RC8] WARNING: seaborn/external/version.py not found at this "
+              f"base commit — gold test patch may reference code not present. "
+              f"Task may be unsolvable as configured.")
+
+
+def pin_flask_dependencies(repo_dir: Path, task_id: str, venv_python: str) -> None:
+    """[RC10] Pin werkzeug<3.0 for flask tasks.
+
+    flask-4045's base commit expects an older werkzeug that had `url_quote`
+    in `werkzeug.urls`. Latest werkzeug removed that symbol.
+    """
+    if not task_id.startswith("pallets__flask"):
+        return
+
+    print(f"  [RC10] pinning werkzeug<3.0 for flask task {task_id}")
+    subprocess.run(
+        [venv_python, "-m", "pip", "install", "--quiet", "werkzeug<3.0"],
+        cwd=str(repo_dir),
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
 
 
 def load_tasks():
@@ -172,9 +297,13 @@ def run_gold_tests(repo_dir: Path, task: dict) -> dict:
       - unittest-style: "test_method (module.path.TestClass)"
     Both are handled and routed to pytest.
     """
+    task_id = task.get("instance_id", "")
     test_patch = task.get("test_patch", "")
     if not test_patch:
         return {"passed": False, "reason": "no test patch available"}
+
+    # [RC6] Revert test files the agent may have modified
+    revert_test_files(repo_dir)
 
     # Apply the test patch
     try:
@@ -194,6 +323,11 @@ def run_gold_tests(repo_dir: Path, task: dict) -> dict:
     # Install the repo in an isolated virtualenv so tests can import it
     # without polluting the global env or conflicting across tasks.
     # In Docker, build-essential + scientific deps are pre-installed.
+    # [RC7] Build env with setuptools_scm fallback (global, harmless for non-scm repos)
+    pip_env = setuptools_scm_env(os.environ.copy())
+    # [RC9] Add Django settings if applicable
+    pip_env = detect_django_settings(repo_dir, task_id, pip_env)
+
     venv_dir = repo_dir / ".venv"
     venv_python = "python3"  # Default fallback
     try:
@@ -213,7 +347,11 @@ def run_gold_tests(repo_dir: Path, task: dict) -> dict:
             capture_output=True,
             text=True,
             timeout=120,
+            env=pip_env,
         )
+        # [RC10] Pin werkzeug for flask tasks BEFORE editable install
+        pin_flask_dependencies(repo_dir, task_id, venv_python)
+
         # Install the repo in editable mode with test extras.
         # Try [test,dev,testing] first (covers most projects), fall back to
         # [test] only, then bare editable install as last resort.
@@ -226,6 +364,7 @@ def run_gold_tests(repo_dir: Path, task: dict) -> dict:
                 text=True,
                 timeout=600,
                 shell=True,
+                env=pip_env,
             )
             if install_result.returncode == 0:
                 installed = True
@@ -238,7 +377,11 @@ def run_gold_tests(repo_dir: Path, task: dict) -> dict:
                 capture_output=True,
                 text=True,
                 timeout=600,
+                env=pip_env,
             )
+
+        # [RC8] Install seaborn-specific deps after editable install
+        install_seaborn_deps(repo_dir, task_id, venv_python)
 
         # Install per-repo pinned test requirements if they exist
         for req_file in ["requirements-dev.txt", "requirements-test.txt",
@@ -252,6 +395,7 @@ def run_gold_tests(repo_dir: Path, task: dict) -> dict:
                     capture_output=True,
                     text=True,
                     timeout=300,
+                    env=pip_env,
                 )
 
         # Also install pytest and hypothesis (common test dependency) inside the venv
@@ -261,6 +405,7 @@ def run_gold_tests(repo_dir: Path, task: dict) -> dict:
             capture_output=True,
             text=True,
             timeout=60,
+            env=pip_env,
         )
     except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
         venv_python = "python3"  # Fall back to system Python
@@ -317,6 +462,7 @@ def run_gold_tests(repo_dir: Path, task: dict) -> dict:
             capture_output=True,
             text=True,
             timeout=600,
+            env=pip_env,
         )
         return {
             "passed": result.returncode == 0,

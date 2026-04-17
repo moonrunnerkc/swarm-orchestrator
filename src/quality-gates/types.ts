@@ -114,6 +114,18 @@ export interface TestCoverageConfig {
   requireComponentTests: boolean;
 }
 
+/**
+ * D4: Detects modifications to pre-existing test files.
+ * Agents should write NEW tests, not modify existing ones.
+ */
+export interface TestFileProtectionConfig {
+  enabled: boolean;
+  /** Glob patterns that identify test files (matched against relative paths) */
+  testFileGlobs: string[];
+  /** Maximum number of findings to report */
+  maxFindings?: number;
+}
+
 export interface QualityGatesConfig {
   enabled: boolean;
   failOnIssues: boolean;
@@ -134,5 +146,6 @@ export interface QualityGatesConfig {
     runtimeChecks: RuntimeChecksConfig;
     accessibility: AccessibilityConfig;
     testCoverage: TestCoverageConfig;
+    testFileProtection: TestFileProtectionConfig;
   };
 }

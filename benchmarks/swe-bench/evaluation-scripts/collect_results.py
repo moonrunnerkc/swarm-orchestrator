@@ -23,12 +23,21 @@ except ImportError:
 
 
 def load_runs(results_dir: Path) -> list[dict]:
-    """Load all evaluation result files."""
+    """Load all evaluation result files.
+
+    D10: Warns when docker_image_digest is missing (indicates the run
+    may not have been produced in a controlled Docker environment).
+    """
     files = sorted(results_dir.glob("eval-*.json"))
     runs = []
     for f in files:
         with open(f) as fh:
-            runs.append(json.load(fh))
+            data = json.load(fh)
+        if "docker_image_digest" not in data:
+            print(f"WARNING: {f.name} has no docker_image_digest — "
+                  "provenance cannot be verified. Consider re-running "
+                  "under Docker.", file=sys.stderr)
+        runs.append(data)
     return runs
 
 

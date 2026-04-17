@@ -129,29 +129,29 @@ Started as a submission for the GitHub Copilot CLI Challenge in early 2026 and h
 
 ## Benchmarking
 
-Evaluation uses **standardized public tasks**, **automated metrics**, and **statistical reporting**. No subjective rubrics, no author-chosen scoring dimensions.
+The primary benchmark question: **how many premium requests does each approach need to reach what level of completeness?** Three producers are compared head-to-head on the same tasks using a 22-attribute binary completeness rubric. No subjective scores, no weighted composites.
 
 | Component | Description |
 |-----------|-------------|
-| [benchmarks/README.md](benchmarks/README.md) | Central hub — methodology, quick start, evidence links |
-| [benchmarks/swe-bench/](benchmarks/swe-bench/) | SWE-bench Lite integration (Dockerized, real GitHub issues) |
+| [benchmarks/README.md](benchmarks/README.md) | Central hub — methodology, quick start, all evidence links |
+| [benchmarks/harness/](benchmarks/harness/) | Three-producer harness, 22-attribute rubric, scoring scripts, raw data |
+| [benchmarks/ladder/](benchmarks/ladder/) | Iterative ladder baseline with [fairness policy](benchmarks/ladder/PROMPT_FAIRNESS.md) |
 | [benchmarks/ABC-compliance.md](benchmarks/ABC-compliance.md) | Agentic Benchmark Checklist audit — 30/30 items addressed |
-| [benchmarks/harness/](benchmarks/harness/) | Scoring scripts, exact prompts, raw data, statistical summary |
+| [benchmarks/swe-bench/](benchmarks/swe-bench/) | SWE-bench Lite _(secondary)_ — reproducibility on public tasks |
 | [.github/workflows/continuous-benchmark.yml](.github/workflows/continuous-benchmark.yml) | CI workflow — nightly + release, tracked via Bencher |
 
-**Latest (10 post-RC-fix runs, 2026-04-17):** 20% completion rate (2/10), quality gates 100%, **3 replan remediation steps fired** (vs 0 pre-fix — RC5 fix confirmed working), 0 unknown-agent errors. Mean wall-clock 889.7 s ± [388, 1391] 95% CI. → [benchmarks/README.md § Latest Results](benchmarks/README.md#latest-results--post-rc-fix-fresh-runs-10-runs-2026-04-17).
+**Producers:** ORCHESTRATOR (full swarm), SINGLE_SHOT (1 request), LADDER (deterministic prompt sequence, ≤30 requests). Statistical comparison via paired Wilcoxon signed-rank with Bonferroni correction.
 
-**SWE-bench Lite (5-task subset, Docker, 2026-04-17):** 0/5 resolved, but **all 5 tasks now run to completion** (mean 640 s) — was 3/5 with 2 instant crashes pre-fix. RC2 (E2BIG) and RC3 (worktree) infrastructure fixes confirmed. Remaining failures: test-patch conflicts (LLM compliance limitation). → [benchmarks/README.md § SWE-bench Results](benchmarks/README.md#swe-bench-lite-results--docker-5-task-subset).
+**Metrics (automated only):** rubric completeness (22 binary attributes), premium request count (instrumented), cost per rubric point, wall-clock time, test-pass rate, coverage, security scans, repair-loop iterations. All reported as mean ± 95% CI.
 
-**Metrics (automated only):** test-pass rate, test coverage, security scan issues (SARIF), premium request cost, wall-clock time, repair-loop iterations. Results report mean ± 95% CI.
+**Latest smoke tests** (N=1, two tasks, 2026-04-17): Orchestrator ties SINGLE_SHOT on both tasks (80–82%), LADDER hits 100% from a bare prompt. The orchestrator does not currently win — see [honest analysis](benchmarks/README.md#what-this-data-shows). Harder tasks, stricter rubrics, and N≥30 needed.
 
 ```bash
-# Score a completed run
-./benchmarks/harness/scoring/score.sh ./runs/<execution-id>
+# Run all three producers (8 tasks each)
+./benchmarks/harness/run_fresh.sh 8
 
-# Run SWE-bench evaluation (Docker required)
-export CLAUDE_CONFIG_DIR="$HOME/.claude" CLAUDE_CONFIG_JSON="$HOME/.claude.json"
-cd benchmarks/swe-bench && docker compose up --build
+# Statistical comparison
+python3 benchmarks/harness/scoring/stat_test.py benchmarks/harness/raw_data/runs/
 ```
 
 <br>

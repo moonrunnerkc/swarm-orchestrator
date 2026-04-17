@@ -12,6 +12,7 @@ const VALID_GATE_KEYS: ReadonlySet<string> = new Set([
   'readmeClaims',
   'testIsolation',
   'testCoverage',
+  'testFileProtection',
   'accessibility',
   'runtimeChecks',
 ]);
@@ -59,7 +60,8 @@ function merge_config(base: QualityGatesConfig, override: Partial<QualityGatesCo
     testIsolation: { ...base.gates.testIsolation, ...(override.gates?.testIsolation || {}) },
     runtimeChecks: { ...base.gates.runtimeChecks, ...(override.gates?.runtimeChecks || {}) },
     accessibility: { ...base.gates.accessibility, ...(override.gates?.accessibility || {}) },
-    testCoverage: { ...base.gates.testCoverage, ...(override.gates?.testCoverage || {}) }
+    testCoverage: { ...base.gates.testCoverage, ...(override.gates?.testCoverage || {}) },
+    testFileProtection: { ...base.gates.testFileProtection, ...(override.gates?.testFileProtection || {}) }
   };
 
   return merged;

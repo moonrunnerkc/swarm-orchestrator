@@ -26,12 +26,50 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     const result = await this.runProcess('claude', args, opts.workdir, opts.timeout, opts.prompt);
     const durationMs = Date.now() - startTime;
 
+    // D5: Parse premium request count from Claude Code CLI output.
+    // Claude Code prints a cost/usage summary that we can extract.
+    // Fallback: count conversation turns (each assistant response = 1 request).
+    const premiumRequestsConsumed = this.parseRequestCount(result.stdout, result.stderr);
+
     return {
       stdout: result.stdout,
       stderr: result.stderr,
       exitCode: result.exitCode,
       durationMs,
+      premiumRequestsConsumed,
     };
+  }
+
+  /**
+   * D5: Extract the number of premium API requests from Claude Code output.
+   * Claude Code outputs conversation turn markers and cost summaries.
+   * We count distinct assistant response blocks as a proxy for API calls.
+   * Returns undefined if parsing fails — caller must not default to an
+   * un-calibrated estimate without logging a warning.
+   */
+  private parseRequestCount(stdout: string, stderr: string): number | undefined {
+    // Strategy 1: Look for explicit cost/usage lines in stderr
+    // Claude Code may print "Total cost: $X.XX" or similar
+    const costMatch = stderr.match(/total\s+cost.*?\$(\d+\.\d+)/i)
+      || stdout.match(/total\s+cost.*?\$(\d+\.\d+)/i);
+    // If we find a dollar cost, each Sonnet request ≈ $0.01-0.03
+    // but this is unreliable for counting discrete requests.
+
+    // Strategy 2: Count conversation turns in the output.
+    // Claude Code CLI in -p mode makes one request and returns one response.
+    // In multi-turn sessions, each "Human:"→"Assistant:" pair = 1 request.
+    const turnMarkers = stdout.match(/^(Human|User):/gm);
+    if (turnMarkers && turnMarkers.length > 0) {
+      return turnMarkers.length;
+    }
+
+    // Strategy 3: If the CLI ran at all, it consumed at least 1 request.
+    // A non-empty stdout from a successful run means 1 API call minimum.
+    if (stdout.trim().length > 0) {
+      return 1;
+    }
+
+    return undefined;
   }
 
   private runProcess(

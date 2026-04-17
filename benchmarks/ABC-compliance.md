@@ -1,8 +1,9 @@
 # Agentic Benchmark Checklist (ABC) — Compliance Audit
 
 > **Reference:** Agentic Benchmark Checklist (ABC), arXiv:2507.02825, July 2025.
-> **Audit date:** 2026-04-16
+> **Audit date:** 2026-04-17 (updated from 2026-04-16)
 > **Auditor:** Automated compliance via copilot-instructions.md directives
+> **Update scope:** D1–D12 defect remediations, three-producer harness, completeness rubric, statistical testing
 
 This document transcribes every ABC checklist item and marks each as **Addressed**, **Partially Addressed**, or **Not Addressed** with justification and evidence pointers.
 
@@ -33,8 +34,8 @@ This document transcribes every ABC checklist item and marks each as **Addressed
 ### 1.2 Avoid author-created or curated tasks as the sole evaluation
 
 - **Status:** ✅ Addressed
-- **Justification:** Legacy author-created benchmarks (8 custom tasks) are supplemented by SWE-bench Lite. The original tasks are preserved as raw data for reference but are no longer the primary evaluation.
-- **Evidence:** [benchmarks/harness/raw_data/legacy_tasks.json](harness/raw_data/legacy_tasks.json) (archived); SWE-bench is primary.
+- **Justification:** Primary evaluation uses 8 rubric tasks ([rubric_tasks.json](harness/raw_data/rubric_tasks.json)) scored by 22 binary attributes from the [completeness rubric](harness/scoring/completeness-rubric.md). SWE-bench Lite provides secondary reproducibility on public tasks. Legacy tasks preserved for reference only.
+- **Evidence:** [rubric_tasks.json](harness/raw_data/rubric_tasks.json); [completeness-rubric.md](harness/scoring/completeness-rubric.md); [swe-bench/](swe-bench/).
 
 ### 1.3 Document task provenance and licensing
 
@@ -67,8 +68,8 @@ This document transcribes every ABC checklist item and marks each as **Addressed
 ### 2.2 Use identical environments across systems being compared
 
 - **Status:** ✅ Addressed
-- **Justification:** Docker Compose ensures identical OS, runtime versions, and dependencies for both orchestrator and baseline runs.
-- **Evidence:** [benchmarks/swe-bench/docker-compose.yml](swe-bench/docker-compose.yml); [benchmarks/swe-bench/Dockerfile.eval](swe-bench/Dockerfile.eval).
+- **Justification:** Docker Compose ensures identical OS, runtime versions, and dependencies. The three-producer harness (ORCHESTRATOR, SINGLE_SHOT, LADDER) runs all producers under the same conditions via [run_fresh.sh](harness/run_fresh.sh). Ladder prompts follow a [fairness policy](ladder/PROMPT_FAIRNESS.md) that invites community PRs to strengthen baselines.
+- **Evidence:** [docker-compose.yml](swe-bench/docker-compose.yml); [run_fresh.sh](harness/run_fresh.sh); [PROMPT_FAIRNESS.md](ladder/PROMPT_FAIRNESS.md).
 
 ### 2.3 Document all environment variables and configuration
 
@@ -101,8 +102,8 @@ This document transcribes every ABC checklist item and marks each as **Addressed
 ### 3.1 Use only automated, objective metrics
 
 - **Status:** ✅ Addressed
-- **Justification:** All metrics are machine-computed: test-pass rate (exit code), coverage (c8/coverage.py), security scan (SARIF), cost (cost-attribution.json), wall-clock time (timestamps), repair iterations (session-state.json).
-- **Evidence:** [benchmarks/harness/scoring/score.sh](harness/scoring/score.sh) — no human judgment in the pipeline.
+- **Justification:** All metrics are machine-computed: 22-attribute rubric completeness score (binary checks), premium request count (D5: instrumented from adapter), wall-clock time (metrics.json timestamps, D9), security scan (SARIF), test-pass rate, coverage, repair iterations. No subjective scores.
+- **Evidence:** [score.sh](harness/scoring/score.sh); [rubric_runner.py](harness/scoring/rubric_runner.py); 22 check scripts in [checks/](harness/scoring/checks/).
 
 ### 3.2 Do not use weighted composite scores
 
@@ -113,8 +114,8 @@ This document transcribes every ABC checklist item and marks each as **Addressed
 ### 3.3 Include cost metrics (API calls, tokens, dollars)
 
 - **Status:** ✅ Addressed
-- **Justification:** Premium request count, estimated vs actual cost, and per-step attribution are tracked from cost-attribution.json.
-- **Evidence:** `score.sh` extracts `total_premium_requests` and `total_cost_estimate` from run artifacts.
+- **Justification:** Premium request count is instrumented at the adapter level (D5: `parseRequestCount()` in claude-code-adapter.ts replaces the hardcoded `actualPremiumRequests: 1`). Per-step attribution tracked in cost-attribution.json. Ladder and single-shot baselines record exact request counts by construction.
+- **Evidence:** [claude-code-adapter.ts](../src/adapters/claude-code-adapter.ts) `parseRequestCount()`; `score.sh`; [run_ladder.sh](ladder/run_ladder.sh) cost output.
 
 ### 3.4 Include latency / wall-clock time
 
@@ -209,8 +210,8 @@ This document transcribes every ABC checklist item and marks each as **Addressed
 ### 6.2 Use appropriate statistical tests for comparisons
 
 - **Status:** ✅ Addressed
-- **Justification:** t-distribution-based CI with degrees of freedom adjustment. Welch's t-test available for comparing two configurations.
-- **Evidence:** `compute_ci.py` — `confidence_interval_95()` function.
+- **Justification:** Paired Wilcoxon signed-rank tests (D1) with Bonferroni correction for multiple comparisons across three producers × three metrics. Effect size reported as r = Z/√N. Minimum N ≥ 30 recommended. Task-draw uniformity verified with chi-square test (D2: [sampler_audit.py](harness/scoring/sampler_audit.py)).
+- **Evidence:** [stat_test.py](harness/scoring/stat_test.py); [sampler_audit.py](harness/scoring/sampler_audit.py); [compute_ci.py](harness/scoring/compute_ci.py).
 
 ### 6.3 Report sample sizes
 
