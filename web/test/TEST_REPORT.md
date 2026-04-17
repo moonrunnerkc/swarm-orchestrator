@@ -12,7 +12,9 @@
 | audio-cue.test.js | 5 | 5 | 0 |
 | markdown.test.js | 8 | 8 | 0 |
 | notes-store.test.js | 7 | 7 | 0 |
-| **Total** | **46** | **46** | **0** |
+| dev-server-proxy.test.js (proxy + static serving) | 11 | 11 | 0 |
+| store-sync.test.js (store↔API sync) | 7 | 7 | 0 |
+| **Total** | **64** | **64** | **0** |
 
 ## New Tests Added
 
@@ -36,6 +38,25 @@ Starts a real `notes-api` HTTP server and exercises the frontend API client over
 - Edge cases: empty arguments, empty body, multiple rapid concurrent creates
 - Validation: rejects invalid title type with proper error
 - Verifies `body` ↔ `content` field mapping works end-to-end
+
+### dev-server-proxy.test.js — Dev Server Proxy Tests (11 tests)
+
+Tests the dev-server proxy and static file serving with real HTTP calls:
+
+- **Static serving**: index.html at `/`, CSS/JS with correct MIME types, 404 for missing files
+- **API proxying**: Full CRUD through proxy (`/api/notes` → `/notes` rewrite)
+- **Round-trip**: Creates note through proxy, verifies backend field names (`content`, not `body`)
+- **Edge cases**: Non-notes API paths forwarded to backend
+
+### store-sync.test.js — Store↔API Sync Integration Tests (7 tests)
+
+Tests the frontend notes-store working together with the backend API over real HTTP:
+
+- **Create + import**: Note created via API is correctly stored locally
+- **Sync merge**: Remote notes imported; newer remote overwrites local; newer local preserved
+- **Filter**: `filterNotes` works on synced data (case-insensitive title/body search)
+- **Field mapping round-trip**: `body` in store maps to `content` in API and back
+- **Delete reconciliation**: Server-side deletion detected and local copy removed
 
 ## Coverage
 
