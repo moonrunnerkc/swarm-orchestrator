@@ -116,8 +116,3 @@ npm test            # 123 tests, ~400ms
 npm run test:coverage
 ```
 
-## Troubleshooting
-
-- **EADDRINUSE** — another process is using port 3001. Set `PORT` to a different value or stop the other process.
-- **Tests fail with `ERR_MODULE_NOT_FOUND`** — run `npm install` to install dev dependencies (`supertest`).
-- **Data file not writable** — ensure the `data/` directory exists and the process has write permission. The server creates the directory automatically on first write, but a read-only filesystem will cause 500 errors.
