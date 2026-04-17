@@ -1,5 +1,5 @@
 # ── Stage 1: Build ──
-FROM node:20-slim AS build
+FROM node:25-slim AS build
 
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -9,7 +9,7 @@ COPY src/ src/
 RUN npm run build
 
 # ── Stage 2: Production ──
-FROM node:20-slim
+FROM node:25-slim
 
 LABEL org.opencontainers.image.title="swarm-orchestrator" \
       org.opencontainers.image.description="Verification and governance layer for AI coding agents" \
