@@ -20,18 +20,35 @@ const MIME = {
   ".ico": "image/x-icon",
 };
 
+const SECURITY_HEADERS = {
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+  "Referrer-Policy": "no-referrer",
+  "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'",
+  "X-Permitted-Cross-Domain-Policies": "none",
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
+};
+
 function serveStatic(req, res) {
-  const urlPath = req.url.split("?")[0];
-  const filePath = path.join(__dirname, urlPath === "/" ? "index.html" : urlPath);
+  const urlPath = decodeURIComponent(req.url.split("?")[0]);
+  const filePath = path.resolve(path.join(__dirname, urlPath === "/" ? "index.html" : urlPath));
+
+  // Prevent path traversal — resolved path must stay within the web root.
+  if (!filePath.startsWith(__dirname + path.sep) && filePath !== __dirname) {
+    res.writeHead(403, { "Content-Type": "text/plain", ...SECURITY_HEADERS });
+    res.end("Forbidden");
+    return;
+  }
+
   const ext = path.extname(filePath);
 
   fs.readFile(filePath, (err, data) => {
     if (err) {
-      res.writeHead(404, { "Content-Type": "text/plain" });
+      res.writeHead(404, { "Content-Type": "text/plain", ...SECURITY_HEADERS });
       res.end("Not Found");
       return;
     }
-    res.writeHead(200, { "Content-Type": MIME[ext] || "application/octet-stream" });
+    res.writeHead(200, { "Content-Type": MIME[ext] || "application/octet-stream", ...SECURITY_HEADERS });
     res.end(data);
   });
 }

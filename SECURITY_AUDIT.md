@@ -1,71 +1,97 @@
 # Security Audit Report
 
-**Date:** 2026-04-16
-**Scope:** `app/` (Python/FastAPI health service), `calculations-api/` (Node.js/Express CRUD API), `notes-api/` (Node.js/Express CRUD API)
+**Date:** 2026-04-17 (Step 3 audit)
+**Prior audit:** 2026-04-16
+**Scope:** `app/` (Python/FastAPI), `calculations-api/` (Node.js/Express), `notes-api/` (Node.js/Express), `web/` (dev server + frontend)
 
 ---
 
-## Fixes Applied in This Audit
+## Fixes Applied in This Audit (2026-04-17)
 
-### 1. MEDIUM: Missing `Permissions-Policy` header (all services)
+### 1. HIGH: Path traversal in `web/dev-server.js`
 
-**Before:** None of the three services set the `Permissions-Policy` header,
-leaving browser-side feature access unrestricted when responses are rendered
-in a browser context.
+**Before:** The `serveStatic` function joined the user-supplied URL path with
+`__dirname` using `path.join()` but never validated the resolved path stayed
+within the web root. Encoded `/../` sequences (e.g., `GET /%2e%2e/etc/passwd`)
+could read arbitrary files from the filesystem.
 
-**Fix:** Added `Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()`
-to the security headers middleware in all three services:
+**Fix:** Resolve with `path.resolve()` and verify the result starts with
+`__dirname + path.sep`. Returns 403 Forbidden for any path that escapes the
+web root. Also added `decodeURIComponent()` to ensure encoded traversal
+sequences are caught.
 
-- `notes-api/src/security.js`
-- `calculations-api/src/security.js`
-- `app/security.py`
-
-This restricts browser APIs that a JSON-only API has no business requesting.
+- File: `web/dev-server.js`
 
 ---
 
-### 2. MEDIUM: No rate limiting (Express services)
+### 2. MEDIUM: Missing security headers on `web/dev-server.js`
 
-**Before:** Both Express APIs accepted unlimited requests per client, making
-them vulnerable to denial-of-service and brute-force attacks.
+**Before:** The dev server served HTML, CSS, and JS without any security
+headers, leaving the frontend vulnerable to clickjacking, MIME-sniffing, and
+other browser-side attacks.
 
-**Fix:** Added an in-memory sliding-window rate limiter to both Express apps
-(no new dependencies). Configurable via `rateLimitWindowMs` (default 60s) and
-`rateLimitMax` (default 100 requests/window).
+**Fix:** Added security headers to all responses from the dev server:
+`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`,
+`Content-Security-Policy`, `X-Permitted-Cross-Domain-Policies`,
+`Permissions-Policy`.
 
-- Returns `429 Too Many Requests` with `Retry-After` header when limit exceeded
-- Exposes `X-RateLimit-Limit` and `X-RateLimit-Remaining` headers on every response
-- Periodic cleanup prevents memory growth from stale entries
+- File: `web/dev-server.js`
+
+---
+
+### 3. MEDIUM: Unsanitised correlation ID header (Express APIs)
+
+**Before:** Both Express APIs accepted arbitrary `X-Correlation-Id` header
+values from clients and echoed them verbatim in response headers and error
+logs. Malicious values containing control characters, newlines, or excessive
+length could enable HTTP header injection or log injection attacks.
+
+**Fix:** Validate client-supplied correlation IDs against a strict pattern:
+printable ASCII only (`[\x20-\x7e]`), max 128 characters. Invalid or missing
+values fall back to a generated UUID.
+
 - Files: `notes-api/src/security.js`, `calculations-api/src/security.js`
 
 ---
 
-### 3. MEDIUM: No Content-Type enforcement on mutation routes (Express services)
+### 4. MEDIUM: No upper bound on pagination `limit` parameter
 
-**Before:** POST/PUT/PATCH requests without `Content-Type: application/json`
-would pass through to `express.json()` which silently skips parsing, leaving
-`req.body` as `undefined`. While downstream validation catches this, the error
-message is confusing ("request body must be a JSON object" instead of a clear
-media type error).
+**Before:** Both Express APIs accepted arbitrarily large `limit` query
+parameter values, allowing clients to request the entire dataset in a single
+response regardless of size.
 
-**Fix:** Added `requireJsonContentType` middleware that returns `415 Unsupported
-Media Type` for POST/PUT/PATCH requests missing `application/json` content type.
-Applied before `express.json()` in both Express apps.
+**Fix:** Capped `limit` at 100 items per page (`MAX_PAGE_SIZE`). Requests
+exceeding this are silently clamped rather than rejected, preserving backward
+compatibility.
 
-- Files: `notes-api/src/security.js`, `calculations-api/src/security.js`
+- Files: `notes-api/src/routes/notes.js`, `calculations-api/src/routes/calculations.js`
 
 ---
 
-## Previously Applied Fixes (from earlier audit pass)
+## Fixes Applied in Prior Audit (2026-04-16)
 
-### HIGH: Missing security headers on calculations-api responses
+### MEDIUM: Missing `Permissions-Policy` header (all services)
 
-Added `securityHeaders` middleware with the full OWASP-recommended header set.
+Added `Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()`
+to all three backend services.
+
+### MEDIUM: No rate limiting (Express services)
+
+Added in-memory sliding-window rate limiter (100 req/60s per IP) to both
+Express APIs.
+
+### MEDIUM: No Content-Type enforcement on mutation routes
+
+Added `requireJsonContentType` middleware returning 415 for non-JSON mutation
+requests.
+
+### HIGH: Missing security headers on calculations-api
+
+Added full OWASP-recommended security header set.
 
 ### MEDIUM: Unsanitised user input reflected in error responses
 
-Added `sanitiseForReflection()` to strip control characters and truncate
-reflected input. Applied to 404 handler and UUID validation in both Express APIs.
+Added `sanitiseForReflection()` — control char stripping + 200-char truncation.
 
 ---
 
@@ -73,30 +99,36 @@ reflected input. Applied to 404 handler and UUID validation in both Express APIs
 
 ### Python health service (`app/`)
 
-- **Security headers middleware** -- all OWASP-recommended headers
-- **Body-size enforcement** -- 1 MiB limit via Content-Length check
-- **Error redaction** -- credentials stripped from SQLAlchemy error messages,
-  truncated to 200 chars
-- **Generic 500 handler** -- tracebacks never leak to clients
-- **CORS validation** -- rejects wildcard origins with credentials, requires
-  scheme prefix
-- **Database parameter hiding** -- `hide_parameters=True` on SQLAlchemy engine
-- **Pydantic validation** -- Literal enums, ge=0 constraints, typed fields
+- **Security headers middleware** — all OWASP-recommended headers
+- **Body-size enforcement** — 1 MiB limit via Content-Length check
+- **Error redaction** — credentials stripped from error messages, truncated to 200 chars
+- **Generic 500 handler** — tracebacks never leak to clients
+- **CORS validation** — rejects wildcard origins with credentials
+- **Database parameter hiding** — `hide_parameters=True` on SQLAlchemy engine
+- **Pydantic validation** — typed fields with constraints
 
-### Express APIs (notes-api, calculations-api) -- pre-existing strengths
+### Express APIs (notes-api, calculations-api)
 
-- **Safe expression evaluator** (calculations-api) -- recursive-descent parser,
-  no `eval()` or `Function()`, division-by-zero caught
-- **Input validation** -- type checking, length limits, UUID v4 format enforcement
-- **Atomic file writes** -- rename-over prevents data corruption
-- **Structured error responses** -- consistent `{ error: { code, message } }` shape
-- **Body-size limits** -- 16 KB (calculations) / 64 KB (notes)
-- **Frozen configuration** -- `Object.freeze()` prevents runtime mutation
-- **x-powered-by disabled** -- no server fingerprinting
+- **Safe expression evaluator** (calculations-api) — recursive-descent parser, no `eval()`
+- **Input validation** — type checking, length limits, UUID v4 format enforcement
+- **Prototype pollution protection** — rejects `__proto__`, `constructor`, `prototype` keys
+- **Atomic file writes** — rename-over prevents data corruption
+- **Structured error responses** — consistent `{ error: { code, message } }` shape
+- **Body-size limits** — 16 KB (calculations) / 64 KB (notes)
+- **Frozen configuration** — `Object.freeze()` prevents runtime mutation
+- **x-powered-by disabled** — no server fingerprinting
+
+### Frontend (`web/`)
+
+- **HTML escaping** — markdown renderer escapes all HTML before expansion
+- **URL scheme allowlist** — only `https:`, `http:`, `mailto:`, relative paths allowed
+- **Safe link attributes** — `rel="noopener noreferrer"` on external links
 
 ---
 
-## Security Headers Summary (all services)
+## Security Headers Summary
+
+### Backend APIs (all three services)
 
 | Header | Value |
 |---|---|
@@ -111,23 +143,32 @@ reflected input. Applied to 404 handler and UUID validation in both Express APIs
 | Strict-Transport-Security | max-age=63072000; includeSubDomains |
 | Permissions-Policy | camera=(), microphone=(), geolocation=(), payment=() |
 
+### Dev server (`web/`)
+
+| Header | Value |
+|---|---|
+| X-Content-Type-Options | nosniff |
+| X-Frame-Options | DENY |
+| Referrer-Policy | no-referrer |
+| Content-Security-Policy | default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none' |
+| X-Permitted-Cross-Domain-Policies | none |
+| Permissions-Policy | camera=(), microphone=(), geolocation=(), payment=() |
+
 ---
 
 ## Recommendations (future work)
 
-1. **CORS tightening** -- Both Express APIs default CORS origin to `*`. For
+1. **CORS tightening** — Both Express APIs default CORS origin to `*`. For
    production, set `CORS_ORIGIN` to explicit allowed origins.
 
-2. **Correlation IDs** -- The error handler references `x-correlation-id` but
-   no middleware generates it. Consider adding correlation-ID middleware for
-   request traceability.
-
-3. **Dependency scanning** -- Set up `npm audit` and `pip-audit` in CI to catch
+2. **Dependency scanning** — Set up `npm audit` and `pip-audit` in CI to catch
    known vulnerabilities in transitive dependencies.
 
-4. **Distributed rate limiting** -- The current in-memory rate limiter is
-   per-process. For multi-instance deployments, consider Redis-backed rate
-   limiting.
+3. **Distributed rate limiting** — The current in-memory rate limiter is
+   per-process. For multi-instance deployments, consider Redis-backed limiting.
+
+4. **HTTPS enforcement** — Dev server listens on plain HTTP. Production
+   deployments should terminate TLS upstream or add HTTPS support.
 
 ---
 
@@ -135,7 +176,11 @@ reflected input. Applied to 404 handler and UUID validation in both Express APIs
 
 All existing tests pass after security changes:
 
-- **notes-api:** 100/100 passed
-- **calculations-api:** 118/118 passed
+- **notes-api:** 145/145 passed
+- **calculations-api:** 123/123 passed
+- **web:** 64/64 passed
 - **app/ (Python):** 59/59 passed
-- **Total:** 277 tests, 0 failures
+- **Root orchestrator:** 1390/1390 passed
+- **calculator:** 83/83 passed
+- **tictactoe:** 17/17 passed
+- **Total:** 1881 tests, 0 failures

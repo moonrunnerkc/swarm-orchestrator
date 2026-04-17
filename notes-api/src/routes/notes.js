@@ -55,9 +55,11 @@ export function notesRouter(store, cfg) {
         return 0;
       });
 
-      // Pagination
+      // Pagination (cap limit to prevent unbounded responses)
+      const MAX_PAGE_SIZE = 100;
       const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
-      const limit = parseInt(req.query.limit, 10);
+      const rawLimit = parseInt(req.query.limit, 10);
+      const limit = rawLimit > 0 ? Math.min(rawLimit, MAX_PAGE_SIZE) : 0;
       if (limit > 0) {
         items = items.slice(offset, offset + limit);
       } else if (offset > 0) {
