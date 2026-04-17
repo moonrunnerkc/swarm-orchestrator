@@ -55,3 +55,12 @@ npm run serve
 ```sh
 npm test            # 64 tests covering API client, markdown rendering, store, audio, proxy, and integration
 ```
+
+## Troubleshooting
+
+- **Preview pane is blank** — toggle the preview button (eye icon) or press
+  `Ctrl/Cmd+Shift+P`. The pane may be hidden from a previous session's
+  preference stored in `localStorage`.
+- **Notes don't sync to the backend** — start notes-api first (`cd ../notes-api && npm start`), then use `npm run dev` (not `npm run serve`). The dev server proxies `/api/notes` to `http://127.0.0.1:3002`. A toast will appear if the backend is unreachable; the app continues working offline via localStorage.
+- **`ERR_CONNECTION_REFUSED` in the console** — the dev server's API proxy cannot reach notes-api. Check that notes-api is running on port 3002 or set `API_URL` to the correct address before starting the dev server.
+- **Styles look wrong after editing CSS** — hard-refresh (`Ctrl+Shift+R`) to clear the browser cache. The dev server does not set cache-busting headers.

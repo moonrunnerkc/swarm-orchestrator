@@ -50,7 +50,7 @@ services:
     volumes:
       - calc-data:/app/data
     healthcheck:
-      test: ["CMD", "node", "-e", "const h=require('http');h.get('http://127.0.0.1:3001/api/health',r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"]
+      test: ["CMD", "node", "--input-type=commonjs", "-e", "const h=require('http');h.get('http://127.0.0.1:3001/health',r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       start_period: 10s
@@ -70,7 +70,7 @@ services:
     volumes:
       - notes-data:/app/data
     healthcheck:
-      test: ["CMD", "node", "-e", "const h=require('http');h.get('http://127.0.0.1:3002/health',r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"]
+      test: ["CMD", "node", "--input-type=commonjs", "-e", "const h=require('http');h.get('http://127.0.0.1:3002/health',r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       start_period: 10s
@@ -89,7 +89,7 @@ services:
       notes-api:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "node", "-e", "const h=require('http');h.get('http://127.0.0.1:5173/',r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"]
+      test: ["CMD", "node", "--input-type=commonjs", "-e", "const h=require('http');h.get('http://127.0.0.1:5173/',r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       start_period: 10s
