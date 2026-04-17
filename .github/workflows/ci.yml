@@ -223,7 +223,7 @@ jobs:
       run: |
         docker run -d --name calc-test -p 3001:3001 calculations-api:ci
         for i in $(seq 1 10); do
-          if curl -sf http://127.0.0.1:3001/api/health; then echo " Calculations-api is healthy"; break; fi
+          if curl -sf http://127.0.0.1:3001/health; then echo " Calculations-api is healthy"; break; fi
           if [ "$i" = "10" ]; then echo "Calculations-api failed to start"; docker logs calc-test; exit 1; fi
           sleep 1
         done
