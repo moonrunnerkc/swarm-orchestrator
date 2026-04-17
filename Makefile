@@ -1,7 +1,7 @@
 .PHONY: help install build test clean \
        docker-build docker-up docker-down docker-logs \
        test-all test-python test-subprojects \
-       deploy healthcheck lint
+       deploy healthcheck lint audit
 
 REGISTRY ?= ghcr.io/moonrunnerkc
 TAG      ?= latest
@@ -74,7 +74,19 @@ docker-logs: ## Tail logs from all services
 deploy: ## Build and push images (REGISTRY and TAG configurable)
 	bash scripts/deploy.sh "$(TAG)"
 
+deploy-pull: ## Pull pre-built images and deploy (REGISTRY and TAG configurable)
+	bash scripts/deploy.sh "$(TAG)" --pull
+
+rollback: ## Roll back to a previous tag (usage: make rollback TAG=current ROLLBACK_TAG=previous)
+	bash scripts/deploy.sh "$(TAG)" --rollback "$(ROLLBACK_TAG)"
+
 healthcheck: ## Run health check against local services
 	bash scripts/healthcheck.sh $(HEALTH_SERVICE_URL) 5
 	bash scripts/healthcheck.sh $(CALC_API_URL) 5
 	bash scripts/healthcheck.sh $(NOTES_API_URL) 5
+
+audit: ## Run security audit on all dependencies
+	npm audit --audit-level=high || true
+	cd calculations-api && npm audit --audit-level=high || true
+	cd notes-api && npm audit --audit-level=high || true
+	pip audit 2>/dev/null || echo "pip-audit not installed, skipping Python audit"

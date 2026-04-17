@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ main ]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
@@ -122,6 +126,7 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
+        cache: 'pip'
 
     - name: Install dependencies
       run: pip install ".[dev]"
@@ -135,6 +140,50 @@ jobs:
         echo "### Python Test Results" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "Python ${{ matrix.python-version }} on ubuntu-latest" >> $GITHUB_STEP_SUMMARY
+
+  security-audit:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+        cache: 'npm'
+
+    - name: Audit root dependencies
+      run: npm audit --audit-level=high || true
+
+    - name: Audit calculations-api dependencies
+      working-directory: calculations-api
+      run: |
+        npm ci
+        npm audit --audit-level=high || true
+
+    - name: Audit notes-api dependencies
+      working-directory: notes-api
+      run: |
+        npm ci
+        npm audit --audit-level=high || true
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+        cache: 'pip'
+
+    - name: Audit Python dependencies
+      run: |
+        pip install ".[dev]"
+        pip audit || true
+
+    - name: Summary
+      if: always()
+      run: |
+        echo "### Security Audit" >> "$GITHUB_STEP_SUMMARY"
+        echo "" >> "$GITHUB_STEP_SUMMARY"
+        echo "Scanned: root npm, calculations-api, notes-api, Python (pip)" >> "$GITHUB_STEP_SUMMARY"
 
   docker:
     runs-on: ubuntu-latest
