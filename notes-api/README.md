@@ -30,9 +30,19 @@ Returns service status, version, and uptime.
 
 ### `GET /notes`
 
-List all notes.
+List all notes. Supports search, sorting, and pagination via query parameters.
 
-**Response:** `{ items: Note[], count: number }`
+| Parameter | Default | Description |
+|---|---|---|
+| `q` | — | Case-insensitive search across title and content |
+| `sort` | `updatedAt` | Sort field: `updatedAt`, `createdAt`, or `title` |
+| `order` | `desc` | Sort order: `asc` or `desc` |
+| `limit` | — | Max items to return (capped at 100) |
+| `offset` | `0` | Number of items to skip |
+
+**Response:** `{ items: Note[], count: number, total: number }`
+
+`total` is the number of notes matching the query (before pagination). `count` is the length of `items` in the current page.
 
 ### `GET /notes/:id`
 
