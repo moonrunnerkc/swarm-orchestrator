@@ -44,6 +44,8 @@ npm run serve
 - `src/markdown.js` — pure renderer and stats helpers.
 - `src/notes-store.js` — notes CRUD and preferences, with an injectable
   storage adapter for testing.
+- `src/api.js` — fetch-based client for the notes-api backend, with
+  `body`/`content` field mapping and graceful offline fallback.
 - `src/audio-cue.js` — Web Audio beep for background-tab autosave feedback.
 - `src/app.js` — thin glue between DOM events and the pure modules.
 - `dev-server.js` — zero-dependency Node.js dev server with `/api` proxy.
@@ -51,5 +53,5 @@ npm run serve
 ## Tests
 
 ```sh
-npm test            # 46 tests covering API client, markdown rendering, store, audio, and integration
+npm test            # 64 tests covering API client, markdown rendering, store, audio, proxy, and integration
 ```
