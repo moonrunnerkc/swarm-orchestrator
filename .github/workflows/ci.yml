@@ -35,7 +35,7 @@ jobs:
     - name: Test
       run: |
         set -o pipefail
-        npm test 2>&1 | tee test-output.txt
+        npm run test:ci 2>&1 | tee test-output.txt
 
     - name: Publish test summary
       if: always() && matrix.node-version == 22
@@ -99,9 +99,7 @@ jobs:
 
     - name: Test calculator
       working-directory: calculator
-      run: |
-        npm install
-        npm test
+      run: npm test
 
     - name: Test logtail
       working-directory: logtail
