@@ -32,6 +32,6 @@ USER calc
 EXPOSE 3001
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD node -e "const http=require('http');const r=http.get('http://127.0.0.1:'+process.env.PORT+'/api/health',s=>{process.exit(s.statusCode===200?0:1)});r.on('error',()=>process.exit(1))"
+    CMD node -e "const http=require('http');const r=http.get('http://127.0.0.1:'+process.env.PORT+'/health',s=>{process.exit(s.statusCode===200?0:1)});r.on('error',()=>process.exit(1))"
 
 CMD ["node", "src/server.js"]
