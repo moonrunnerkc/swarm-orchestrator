@@ -1,0 +1,70 @@
+.PHONY: help install build test clean \
+       docker-build docker-up docker-down docker-logs \
+       test-all test-python test-subprojects \
+       deploy healthcheck lint
+
+REGISTRY ?= ghcr.io/moonrunnerkc
+TAG      ?= latest
+
+help: ## Show this help
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
+		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
+
+# ── Development ──
+
+install: ## Install all dependencies
+	npm ci
+	cd calculations-api && npm ci
+	cd notes-api && npm ci
+	pip install ".[dev]" 2>/dev/null || true
+
+build: ## Build TypeScript
+	npm run build
+
+clean: ## Remove build artifacts
+	npm run clean
+
+# ── Testing ──
+
+test: build ## Run main test suite
+	npm run test:ci
+
+test-python: ## Run Python (health-service) tests
+	pytest app/tests/ -v
+
+test-subprojects: ## Run all subproject test suites
+	cd calculations-api && npm test
+	cd notes-api && npm test
+	cd calculator && npm test
+	cd logtail && npm test
+	cd tictactoe && npm test
+	cd web && npm test
+
+test-all: test test-python test-subprojects ## Run every test suite
+
+# ── Docker ──
+
+docker-build: ## Build all Docker images
+	docker build -t $(REGISTRY)/swarm-orchestrator:$(TAG) .
+	docker build -t $(REGISTRY)/health-service:$(TAG) -f app/Dockerfile .
+	docker build -t $(REGISTRY)/calculations-api:$(TAG) ./calculations-api
+	docker build -t $(REGISTRY)/notes-api:$(TAG) ./notes-api
+
+docker-up: ## Start all services via docker compose
+	docker compose up --build -d
+
+docker-down: ## Stop all services
+	docker compose down
+
+docker-logs: ## Tail logs from all services
+	docker compose logs -f
+
+# ── Deployment ──
+
+deploy: ## Build and push images (REGISTRY and TAG configurable)
+	bash scripts/deploy.sh "$(TAG)"
+
+healthcheck: ## Run health check against local services
+	bash scripts/healthcheck.sh http://localhost:8000/api/health 5
+	bash scripts/healthcheck.sh http://localhost:3001/api/health 5
+	bash scripts/healthcheck.sh http://localhost:3002/health 5
