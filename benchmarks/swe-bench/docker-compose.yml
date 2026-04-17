@@ -20,9 +20,9 @@ services:
       - ./results:/app/results
       - swebench-cache:/home/evaluator/.cache
       # Mount Claude Code credentials for both orchestrator and baseline modes.
-      # CLAUDE_CONFIG_DIR must be set in the shell or a .env file next to this compose file.
-      # Both the .claude/ directory (credentials) and .claude.json (config) are required.
-      - ${CLAUDE_CONFIG_DIR}:/home/evaluator/.claude:ro
+      # Uses $HOME/.claude and $HOME/.claude.json by default.
+      # Override with CLAUDE_CONFIG_DIR / CLAUDE_CONFIG_JSON env vars if needed.
+      - ${CLAUDE_CONFIG_DIR:-${HOME}/.claude}:/home/evaluator/.claude:ro
       - ${CLAUDE_CONFIG_JSON:-${HOME}/.claude.json}:/home/evaluator/.claude.json:ro
     working_dir: /app
     command: ["evaluation-scripts/run_swebench.py"]

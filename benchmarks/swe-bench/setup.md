@@ -60,7 +60,28 @@ This will:
 
 ## Environment Variables
 
-Create a `.env` file in `benchmarks/swe-bench/` (gitignored):
+Create a `.env` file in `benchmarks/swe-bench/` (gitignored). A template is provided:
+
+```bash
+cp .env.template .env
+# Then edit .env with your actual home directory path
+```
+
+The `.env` file handles two things:
+
+### 1. Claude Code Credentials (Required for Docker)
+
+Docker (especially snap-installed Docker) overrides `$HOME`, so credential mounts must use explicit paths:
+
+```bash
+# Replace /home/YOUR_USER with your real home directory
+CLAUDE_CONFIG_DIR=/home/YOUR_USER/.claude
+CLAUDE_CONFIG_JSON=/home/YOUR_USER/.claude.json
+```
+
+These mount your host `~/.claude/` (OAuth tokens) and `~/.claude.json` (config) read-only into the container. UID 1000 is used for both the host user and container's `evaluator` user, so file permissions are preserved.
+
+### 2. API Keys & Settings (Optional)
 
 ```bash
 # Required — at least one agent backend

@@ -185,18 +185,28 @@ No subjective scores, no author-chosen rubrics, no weighted composite indices.
 | Resolved | 0 / 5 | 0 / 5 |
 | Remaining failure mode | Test patch conflicts (3/5) | Test patch conflicts (4/5), collector error (1/5) |
 
-### Baseline Results (direct Claude CLI, pre-fix reference)
+### Baseline Results (direct Claude CLI, post-credential-fix)
 
 | Metric | Value |
 |--------|-------|
 | Tasks evaluated | 5 |
 | Tasks resolved | **0 (0.0 %)** |
-| Mean latency | 215.89 s |
+| Mean latency | **177.3 s** |
 | Model | claude-sonnet-4 |
 | Tool | claude CLI (`claude --dangerously-skip-permissions`) |
-| Eval file | [`eval-20260417T021758Z.json`](swe-bench/results/eval-20260417T021758Z.json) |
+| Eval file | [`eval-20260417T181946Z.json`](swe-bench/results/eval-20260417T181946Z.json) |
 
-> **Note:** Baseline was run pre-RC-fix; baseline agent (Claude CLI) is unaffected by RC1–RC5 fixes since those target orchestrator-specific code. Baseline failures were import errors (hypothesis, numpy, flask) and test patch conflicts.
+### Per-Task Breakdown (Baseline)
+
+| Instance | Repo | Resolved | Latency | Failure Reason |
+|----------|------|----------|---------|----------------|
+| astropy-12907 | astropy/astropy | No | 79.9 s | Broken install — `could not determine astropy package version` |
+| django-10914 | django/django | No | 46.1 s | Test patch conflict |
+| matplotlib-18869 | matplotlib/matplotlib | No | 131.7 s | Test patch conflict |
+| seaborn-2848 | mwaskom/seaborn | No | 590.3 s | Test collector error — `found no collectors` |
+| flask-4045 | pallets/flask | No | 38.6 s | Import error — `cannot import name 'url_quote' from 'werkzeug.urls'` |
+
+> **Note:** Previous baseline (eval-20260417T021758Z) failed instantly with "Not logged in" due to missing credential mounts (snap Docker `$HOME` override). This run confirms credentials now work. Baseline agent (Claude CLI) did real work on all 5 tasks — astropy agent even found the correct fix (79.9s) but the test environment had a broken install.
 
 ### Remaining SWE-bench Limitations
 
