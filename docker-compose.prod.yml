@@ -8,15 +8,102 @@
 services:
   swarm:
     image: ${REGISTRY:-ghcr.io/moonrunnerkc}/swarm-orchestrator:${DEPLOY_TAG:-latest}
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1024M
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   health-service:
     image: ${REGISTRY:-ghcr.io/moonrunnerkc}/health-service:${DEPLOY_TAG:-latest}
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   calculations-api:
     image: ${REGISTRY:-ghcr.io/moonrunnerkc}/calculations-api:${DEPLOY_TAG:-latest}
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   notes-api:
     image: ${REGISTRY:-ghcr.io/moonrunnerkc}/notes-api:${DEPLOY_TAG:-latest}
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   web:
     image: ${REGISTRY:-ghcr.io/moonrunnerkc}/inkwell:${DEPLOY_TAG:-latest}
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  db:
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
