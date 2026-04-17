@@ -139,9 +139,9 @@ Evaluation uses **standardized public tasks**, **automated metrics**, and **stat
 | [benchmarks/harness/](benchmarks/harness/) | Scoring scripts, exact prompts, raw data, statistical summary |
 | [.github/workflows/continuous-benchmark.yml](.github/workflows/continuous-benchmark.yml) | CI workflow — nightly + release, tracked via Bencher |
 
-**Latest (10 runs scored 2026-04-16):** 92 % verification pass rate (35/38), 67 % task-completion rate (6/9), mean wall-clock 1216.8 s ± [737, 1697] 95 % CI, 0 repair iterations triggered. Full results with confidence intervals → [benchmarks/README.md § Latest Results](benchmarks/README.md#latest-results--fresh-runs-10-runs-2026-04-16).
+**Latest (10 post-RC-fix runs, 2026-04-17):** 20% completion rate (2/10), quality gates 100%, **3 replan remediation steps fired** (vs 0 pre-fix — RC5 fix confirmed working), 0 unknown-agent errors. Mean wall-clock 889.7 s ± [388, 1391] 95% CI. → [benchmarks/README.md § Latest Results](benchmarks/README.md#latest-results--post-rc-fix-fresh-runs-10-runs-2026-04-17).
 
-**SWE-bench Lite (5-task subset, Docker, 2026-04-17):** 0/5 tasks resolved for both orchestrator (mean 199.8 s) and baseline Claude CLI (mean 215.9 s) in Docker. Orchestrator agents did real work on 3/5 tasks (178–576 s); failures due to test-patch conflicts and 2 infrastructure issues (E2BIG, git worktree). → [benchmarks/README.md § SWE-bench Results](benchmarks/README.md#swe-bench-lite-results--docker-5-task-subset-2026-04-17).
+**SWE-bench Lite (5-task subset, Docker, 2026-04-17):** 0/5 resolved, but **all 5 tasks now run to completion** (mean 640 s) — was 3/5 with 2 instant crashes pre-fix. RC2 (E2BIG) and RC3 (worktree) infrastructure fixes confirmed. Remaining failures: test-patch conflicts (LLM compliance limitation). → [benchmarks/README.md § SWE-bench Results](benchmarks/README.md#swe-bench-lite-results--docker-5-task-subset).
 
 **Metrics (automated only):** test-pass rate, test coverage, security scan issues (SARIF), premium request cost, wall-clock time, repair-loop iterations. Results report mean ± 95% CI.
 

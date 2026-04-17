@@ -50,19 +50,21 @@ export class WorktreeManager {
       }
     }
 
-    // Resolve fromBranch: the target repo may not have the same branch name
+    // Resolve fromBranch: the target repo may not have the same branch name.
+    // Also handle detached-HEAD repos (SWE-bench checks out a specific commit).
     let resolvedFromBranch = fromBranch;
-    if (gitDir !== this.workingDir) {
-      try {
-        const targetBranch = execSync('git branch --show-current', { cwd: gitDir, encoding: 'utf8', stdio: 'pipe' }).trim();
-        if (targetBranch) {
-          resolvedFromBranch = targetBranch;
-        } else {
-          resolvedFromBranch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: gitDir, encoding: 'utf8', stdio: 'pipe' }).trim();
-        }
-      } catch {
-        // Keep the original fromBranch as best-effort fallback
+    try {
+      const targetBranch = execSync('git branch --show-current', { cwd: gitDir, encoding: 'utf8', stdio: 'pipe' }).trim();
+      if (targetBranch) {
+        resolvedFromBranch = targetBranch;
+      } else {
+        // Detached HEAD — use the commit SHA directly as the start point.
+        // `git rev-parse --abbrev-ref HEAD` returns literal "HEAD" in detached state,
+        // which is valid as a start point, but using the full SHA is more explicit.
+        resolvedFromBranch = execSync('git rev-parse HEAD', { cwd: gitDir, encoding: 'utf8', stdio: 'pipe' }).trim();
       }
+    } catch {
+      // Keep the original fromBranch as best-effort fallback
     }
 
     // Create the branch without checkout

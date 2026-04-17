@@ -13,13 +13,17 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
   async spawn(opts: AgentSpawnOptions): Promise<AgentResult> {
     const startTime = Date.now();
-    const args: string[] = ['--dangerously-skip-permissions', '-p', opts.prompt];
+    // Pipe the prompt via stdin instead of passing it as a CLI argument.
+    // Long prompts (SWE-bench issue descriptions with embedded code) can
+    // exceed Linux ARG_MAX (~2 MB total argv+env), causing spawn E2BIG.
+    // Claude Code supports: echo "prompt" | claude --dangerously-skip-permissions -p -
+    const args: string[] = ['--dangerously-skip-permissions', '-p', '-'];
 
     if (opts.model) {
       args.push('--model', opts.model);
     }
 
-    const result = await this.runProcess('claude', args, opts.workdir, opts.timeout);
+    const result = await this.runProcess('claude', args, opts.workdir, opts.timeout, opts.prompt);
     const durationMs = Date.now() - startTime;
 
     return {
@@ -34,7 +38,8 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     command: string,
     args: string[],
     workdir: string,
-    timeout?: number
+    timeout?: number,
+    stdinData?: string
   ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
     return new Promise((resolve) => {
       // Forward ANTHROPIC_API_KEY if available; Claude Code also supports
@@ -47,6 +52,9 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       const proc = spawn(command, args, spawnOpts);
 
       if (proc.stdin) {
+        if (stdinData) {
+          proc.stdin.write(stdinData);
+        }
         proc.stdin.end();
       }
 

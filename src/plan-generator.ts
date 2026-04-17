@@ -948,9 +948,14 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
     // append new steps if any
     if (replanPayload.addSteps && replanPayload.addSteps.length > 0) {
       for (const addReq of replanPayload.addSteps) {
-        // validate agent exists
+        // validate agent exists — use normalized name comparison so snake_case
+        // (integrator_finalizer) matches PascalCase YAML names (IntegratorFinalizer)
         const agentNames = new Set(this.availableAgents.map(a => a.name));
-        if (!agentNames.has(addReq.agent)) {
+        const normalizedAgentNames = new Set(this.availableAgents.map(a => ConfigLoader.normalizeAgentName(a.name)));
+        const matchedAgent = agentNames.has(addReq.agent)
+          ? addReq.agent
+          : this.availableAgents.find(a => ConfigLoader.normalizeAgentName(a.name) === ConfigLoader.normalizeAgentName(addReq.agent))?.name;
+        if (!matchedAgent) {
           console.warn(`replan: unknown agent "${addReq.agent}", skipping`);
           continue;
         }
@@ -958,7 +963,7 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
         maxStepNumber++;
         const newStep: PlanStep = {
           stepNumber: maxStepNumber,
-          agentName: addReq.agent,
+          agentName: matchedAgent,
           task: addReq.task,
           // depend on afterStep if provided, else last existing step
           dependencies: addReq.afterStep

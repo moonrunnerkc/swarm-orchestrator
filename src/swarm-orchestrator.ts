@@ -1730,6 +1730,8 @@ export class SwarmOrchestrator {
       for (const f of baseline.testFiles) {
         sections.push('- ' + f);
       }
+      sections.push('Do NOT modify, delete, or rewrite any test files. Only edit source code.');
+      sections.push('Test files are verified by an external harness and your edits will cause patch conflicts.');
       sections.push('');
     }
 

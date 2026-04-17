@@ -105,15 +105,30 @@ def run_orchestrator(repo_dir: Path, problem_statement: str) -> dict:
     if BASELINE_MODE:
         # Direct single-agent execution — run Claude CLI directly, bypassing orchestrator.
         # This tests the raw agent capability without orchestrator's planning/verification.
+        # Truncate the prompt to avoid E2BIG — baseline evaluates raw agent capability,
+        # not the orchestrator's prompt-management. Keep first 100K chars.
+        truncated = problem_statement[:100_000]
+        prompt_text = f"Fix this issue. Only edit source code files, do not edit tests.\n\n{truncated}"
         cmd = [
             "claude", "--dangerously-skip-permissions",
-            "-p", f"Fix this issue. Only edit source code files, do not edit tests.\n\n{problem_statement}",
+            "-p", prompt_text,
         ]
+        prompt_text = None  # Don't pipe via stdin for baseline
     else:
-        # Full orchestrator pipeline
+        # Full orchestrator pipeline.
+        # Prepend a constraint to avoid editing test files — SWE-bench applies
+        # a gold test patch after the agent runs, and edits to test files cause
+        # git-apply conflicts that always fail the evaluation.
+        goal_with_constraint = (
+            "IMPORTANT: Do NOT modify, delete, or rewrite any test files. "
+            "Only edit source code to fix the issue. Test files are verified "
+            "by an external harness and your edits will cause patch conflicts.\n\n"
+            + problem_statement
+        )
+        prompt_text = None
         cmd = [
             "node", str(SWARM_BIN), "run",
-            "--goal", problem_statement,
+            "--goal", goal_with_constraint,
             "--tool", SWARM_TOOL,
             "--yes",
         ]
@@ -123,6 +138,7 @@ def run_orchestrator(repo_dir: Path, problem_statement: str) -> dict:
             cmd,
             cwd=str(repo_dir),
             env=env,
+            input=prompt_text,
             capture_output=True,
             text=True,
             timeout=TASK_TIMEOUT,
@@ -198,18 +214,49 @@ def run_gold_tests(repo_dir: Path, task: dict) -> dict:
             text=True,
             timeout=120,
         )
-        # Install the repo in editable mode
-        install_result = subprocess.run(
-            [venv_python, "-m", "pip", "install", "-e", ".", "--quiet",
-             "--no-build-isolation"],
-            cwd=str(repo_dir),
-            capture_output=True,
-            text=True,
-            timeout=600,
-        )
-        # Also install pytest inside the venv
+        # Install the repo in editable mode with test extras.
+        # Try [test,dev,testing] first (covers most projects), fall back to
+        # [test] only, then bare editable install as last resort.
+        installed = False
+        for extras in ['".[test,dev,testing]"', '".[test]"', '".[dev]"', '"."']:
+            install_result = subprocess.run(
+                f'{venv_python} -m pip install -e {extras} --quiet --no-build-isolation',
+                cwd=str(repo_dir),
+                capture_output=True,
+                text=True,
+                timeout=600,
+                shell=True,
+            )
+            if install_result.returncode == 0:
+                installed = True
+                break
+        if not installed:
+            # Last resort: bare install without extras
+            subprocess.run(
+                [venv_python, "-m", "pip", "install", "-e", ".", "--quiet"],
+                cwd=str(repo_dir),
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+
+        # Install per-repo pinned test requirements if they exist
+        for req_file in ["requirements-dev.txt", "requirements-test.txt",
+                         "requirements_dev.txt", "requirements_test.txt",
+                         "test-requirements.txt", "test_requirements.txt"]:
+            req_path = repo_dir / req_file
+            if req_path.exists():
+                subprocess.run(
+                    [venv_python, "-m", "pip", "install", "--quiet", "-r", str(req_path)],
+                    cwd=str(repo_dir),
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                )
+
+        # Also install pytest and hypothesis (common test dependency) inside the venv
         subprocess.run(
-            [venv_python, "-m", "pip", "install", "--quiet", "pytest"],
+            [venv_python, "-m", "pip", "install", "--quiet", "pytest", "hypothesis"],
             cwd=str(repo_dir),
             capture_output=True,
             text=True,
