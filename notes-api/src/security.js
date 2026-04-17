@@ -102,8 +102,13 @@ export function createRateLimiter({
 // server-side can be traced back to the originating HTTP request.
 // Clients may supply their own via X-Correlation-Id; otherwise one is
 // generated. The ID is echoed in the response for client-side correlation.
+// Correlation IDs must be safe for headers and log output. Accept only
+// printable ASCII, capped at 128 chars, to prevent header/log injection.
+const SAFE_CORRELATION_RE = /^[\x20-\x7e]{1,128}$/;
+
 export function correlationId(req, res, next) {
-  const id = req.headers["x-correlation-id"] || randomUUID();
+  const supplied = req.headers["x-correlation-id"];
+  const id = (supplied && SAFE_CORRELATION_RE.test(supplied)) ? supplied : randomUUID();
   req.correlationId = id;
   res.setHeader("X-Correlation-Id", id);
   next();
