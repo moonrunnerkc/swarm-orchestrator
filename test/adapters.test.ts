@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 import { AgentAdapter, AgentResult, AgentSpawnOptions, buildRestrictedEnv } from '../src/adapters/agent-adapter';
-import { CopilotAdapter, hasFatalStderrError, scrubCopilotHostileTokens } from '../src/adapters/copilot-adapter';
+import { CopilotAdapter, hasFatalStderrError, parseCopilotRequestCount, scrubCopilotHostileTokens } from '../src/adapters/copilot-adapter';
 import { ClaudeCodeAdapter } from '../src/adapters/claude-code-adapter';
 import { CodexAdapter } from '../src/adapters/codex-adapter';
 import { resolveAdapter } from '../src/adapters';
@@ -280,6 +280,65 @@ describe('Agent Adapters', () => {
       assert.strictEqual(
         hasFatalStderrError('Your token is invalid or expired'),
         true
+      );
+    });
+  });
+
+  describe('parseCopilotRequestCount (P3/D5)', () => {
+    // Resolve relative to the test source tree, not the dist/ compiled output.
+    // __dirname at runtime is dist/test/, so repo root is two levels up.
+    const fixturesDir = path.resolve(__dirname, '..', '..', 'test', 'fixtures', 'transcripts');
+
+    it('extracts N=1 from a real short Copilot session', () => {
+      const stderr = fs.readFileSync(
+        path.join(fixturesDir, 'copilot-short-1premium.stderr.txt'),
+        'utf8'
+      );
+      assert.strictEqual(parseCopilotRequestCount(stderr), 1);
+    });
+
+    it('extracts N=1 from a real multi-tool-use Copilot session (billing-accurate)', () => {
+      const stderr = fs.readFileSync(
+        path.join(fixturesDir, 'copilot-multi-step-1premium.stderr.txt'),
+        'utf8'
+      );
+      // Copilot bills a multi-tool-use session as a single premium request,
+      // even though the underlying session log shows multiple model calls.
+      // The parser must match the user's actual bill, not the model-call count.
+      assert.strictEqual(parseCopilotRequestCount(stderr), 1);
+    });
+
+    it('extracts N=4 from a multi-premium-request fixture', () => {
+      const stderr = fs.readFileSync(
+        path.join(fixturesDir, 'copilot-synthetic-4premium.stderr.txt'),
+        'utf8'
+      );
+      assert.strictEqual(parseCopilotRequestCount(stderr), 4);
+    });
+
+    it('returns undefined when the Requests line is absent (auth failure)', () => {
+      const stderr = fs.readFileSync(
+        path.join(fixturesDir, 'copilot-auth-fail.stderr.txt'),
+        'utf8'
+      );
+      assert.strictEqual(parseCopilotRequestCount(stderr), undefined);
+    });
+
+    it('returns undefined for empty input', () => {
+      assert.strictEqual(parseCopilotRequestCount(''), undefined);
+    });
+
+    it('handles large two-digit counts', () => {
+      assert.strictEqual(
+        parseCopilotRequestCount('\nChanges +0 -0\nRequests  27 Premium (612s)\nTokens ...'),
+        27
+      );
+    });
+
+    it('handles zero request count without collapsing to undefined', () => {
+      assert.strictEqual(
+        parseCopilotRequestCount('\nRequests  0 Premium (1s)\n'),
+        0
       );
     });
   });
