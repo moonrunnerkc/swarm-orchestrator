@@ -6,7 +6,7 @@ Downloads tasks from SWE-bench Lite (or Verified), checks out each repo
 at its base commit, runs the orchestrator (or a baseline agent), applies
 the resulting patch, and executes the gold test suite.
 
-Results are written to /app/results/<timestamp>.json.
+Results are written to benchmarks/swe-bench/results/<timestamp>.json.
 
 Environment variables:
   SWEBENCH_SUBSET_SIZE   Number of tasks to evaluate (default: 10)
@@ -41,11 +41,11 @@ SWARM_TOOL = os.environ.get("SWARM_TOOL", "claude-code")
 SWARM_MODEL = os.environ.get("SWARM_MODEL", "claude-sonnet-4")
 BASELINE_MODE = os.environ.get("BASELINE_MODE", "false").lower() == "true"
 TASK_TIMEOUT = int(os.environ.get("TASK_TIMEOUT_SECONDS", "900"))
-RESULTS_DIR = Path(os.environ.get("RESULTS_DIR", "/app/results"))
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+RESULTS_DIR = Path(os.environ.get("RESULTS_DIR", str(_REPO_ROOT / "benchmarks" / "swe-bench" / "results")))
 _LOCAL_BIN = _REPO_ROOT / "dist" / "src" / "cli.js"
 SWARM_BIN = Path(os.environ.get("SWARM_BIN", str(_LOCAL_BIN) if _LOCAL_BIN.exists() else "/app/swarm/dist/src/cli.js"))
-CACHE_DIR = Path(os.environ.get("HF_HOME", "/app/.cache"))
+CACHE_DIR = Path(os.environ.get("HF_HOME", str(_REPO_ROOT / ".cache" / "huggingface")))
 
 
 # ---------------------------------------------------------------------------
@@ -174,6 +174,7 @@ def pin_flask_dependencies(repo_dir: Path, task_id: str, venv_python: str) -> No
 def load_tasks():
     """Load and return a subset of SWE-bench tasks."""
     print(f"Loading dataset: {DATASET_ID} (subset: {SUBSET_SIZE})")
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
     ds = load_dataset(DATASET_ID, split="test", cache_dir=str(CACHE_DIR))
 
     # Pick tasks from diverse repos for better coverage
