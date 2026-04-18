@@ -114,8 +114,8 @@ This document transcribes every ABC checklist item and marks each as **Addressed
 ### 3.3 Include cost metrics (API calls, tokens, dollars)
 
 - **Status:** ✅ Addressed
-- **Justification:** Premium request count is instrumented at the adapter level (D5: `parseRequestCount()` in claude-code-adapter.ts replaces the hardcoded `actualPremiumRequests: 1`). Per-step attribution tracked in cost-attribution.json. Ladder and single-shot baselines record exact request counts by construction.
-- **Evidence:** [claude-code-adapter.ts](../src/adapters/claude-code-adapter.ts) `parseRequestCount()`; `score.sh`; [run_ladder.sh](ladder/run_ladder.sh) cost output.
+- **Justification:** Premium request count is instrumented at the adapter level. The authoritative parser is `parseCopilotRequestCount` in [copilot-adapter.ts](../src/adapters/copilot-adapter.ts), which extracts Copilot's billing-accurate `Requests N Premium` stderr summary and propagates it through `SessionResult.premiumRequestsConsumed`. Claude Code's `-p` mode does not expose a stable marker, so `parseRequestCount` in [claude-code-adapter.ts](../src/adapters/claude-code-adapter.ts) now returns `undefined` rather than the old hardcoded `1`. Per-step attribution is still tracked in cost-attribution.json; ladder and single-shot baselines record exact request counts by construction.
+- **Evidence:** [copilot-adapter.ts](../src/adapters/copilot-adapter.ts) `parseCopilotRequestCount()`; [claude-code-adapter.ts](../src/adapters/claude-code-adapter.ts) `parseRequestCount()`; [test/adapters.test.ts](../test/adapters.test.ts) `parseCopilotRequestCount (P3/D5)` suite; `score.sh`; [run_ladder.sh](ladder/run_ladder.sh) cost output.
 
 ### 3.4 Include latency / wall-clock time
 

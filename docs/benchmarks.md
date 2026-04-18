@@ -19,8 +19,8 @@ All benchmarking for this project is now centralized in the **[benchmarks/](../b
 | Metric | Source | Units | Status |
 |--------|--------|-------|--------|
 | **Rubric completeness** | `rubric-score.json` (22 binary attributes) | ratio [0, 1] | Working |
-| **Premium requests** | `cost-attribution.json` | count | **Broken (D5)** — see note |
-| **Cost per rubric point** | premium_requests / rubric_score | requests/point | Blocked on D5 |
+| **Premium requests** | `cost-attribution.json` | count | Working for the Copilot producer (D5 fixed via `parseCopilotRequestCount`); undefined on Claude Code until a stable marker exists |
+| **Cost per rubric point** | premium_requests / rubric_score | requests/point | Usable for Copilot-producer runs; requires fallback for Claude Code |
 | Tests passing | `npm test` / `pytest` exit code + count | % | Working |
 | Test coverage | `c8` / `coverage.py` | % | Working |
 | Security scan issues | SARIF from `swarm gates --sarif` | count | Working |
@@ -29,7 +29,15 @@ All benchmarking for this project is now centralized in the **[benchmarks/](../b
 
 No subjective scores. No weighted composite indices. Rubric attributes are binary (pass/fail) checks evaluated by automated shell scripts — see [completeness-rubric.md](../benchmarks/harness/scoring/completeness-rubric.md).
 
-> **D5 note:** `parseRequestCount()` always returns 1 per step because Claude Code doesn't emit the markers it looks for. `premium_requests_actual` = number of completed steps, not actual API requests. All cost numbers are untrustworthy until this is fixed.
+> **D5 status (FIXED for Copilot producer):** The authoritative parser is now
+> `parseCopilotRequestCount` in [src/adapters/copilot-adapter.ts](../src/adapters/copilot-adapter.ts),
+> which extracts the billing-accurate count from Copilot's
+> "Requests N Premium" stderr summary. See
+> [benchmarks/harness/statistical_summary.md](../benchmarks/harness/statistical_summary.md)
+> for the first N=10 dataset to use the real parser.
+> Claude Code `-p` mode still does not emit a per-session premium-request
+> marker, so `parseRequestCount` in `claude-code-adapter.ts` intentionally
+> returns undefined rather than a synthetic 1.
 
 ## Three-Producer Smoke Tests (2026-04-17)
 

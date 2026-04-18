@@ -109,7 +109,7 @@ cd benchmarks/swe-bench && docker compose up --build
 | Run label | `label.json` (D12: state machine) | enum | |
 | Test-file protection | quality gate `test-file-protection` (D4) | pass/fail | |
 
-No subjective scores, no weighted composite indices. The intended headline comparison is **cost (premium requests) vs completeness (rubric score)** across three producers. However, premium request counting is currently broken (see [D5 status](#d5-premium-request-counting-is-broken)), so rubric completeness is the only reliable primary metric.
+No subjective scores, no weighted composite indices. The intended headline comparison is **cost (premium requests) vs completeness (rubric score)** across three producers. Premium request counting is fixed for the Copilot producer as of the D5 remediation (see [D5 status](#d5-premium-request-counting--fixed-for-copilot)); Claude Code's producer still reports `undefined` where no marker is available.
 
 ---
 
@@ -135,7 +135,12 @@ No subjective scores, no weighted composite indices. The intended headline compa
 | **SINGLE_SHOT** | 14 / 17 (82 %) | 137 | COMPLETED |
 | **LADDER** | 17 / 17 (100 %) | 287 | COMPLETED |
 
-> **Premium request counts omitted.** The `premium_requests_actual` field is broken — `parseRequestCount()` always returns 1 per step. See [D5 status](#d5-premium-request-counting-is-broken). Until D5 is fixed, cost-per-rubric-point comparisons are meaningless.
+> **Premium request counts omitted from the 2026-04-17 table above** because
+> that dataset was captured before the D5 fix landed. New Copilot-producer
+> runs (see `benchmarks/harness/raw_data/demo-fast/` and the N=10 statistical
+> summary) use `parseCopilotRequestCount` and report the billing-accurate
+> count. See [D5 status](#d5-premium-request-counting-is-broken) for the
+> narrow remaining gap on the Claude Code producer.
 
 ### What this data shows
 
@@ -237,16 +242,32 @@ Five bugs in the check scripts were causing false negatives and false positives.
 
 ## Known Defect Status
 
-### D5: Premium Request Counting Is Broken
+### D5: Premium Request Counting — Fixed for Copilot
 
-`parseRequestCount()` in `claude-code-adapter.ts` tries three strategies to extract the premium request count from Claude Code's stdout:
-1. Look for `"total cost: $X.XX"` — Claude Code doesn't print this.
-2. Count `Human:` / `User:` turn markers — Claude Code in `-p` mode doesn't emit these.
-3. If stdout is non-empty, return `1`.
+**Status:** Fixed for the Copilot producer. Open-but-documented for Claude Code.
 
-**Result: every successfully completed step records exactly 1 premium request.** `totalActualPremiumRequests` in `cost-attribution.json` equals the number of completed steps — identical to `verificationsPassed` (both are 1.7778 in the aggregate metrics, to four decimals). The `premium_requests_estimated` field is an independent pre-execution estimate and diverges, but it is not an actual count.
+The current parser is `parseCopilotRequestCount` in
+[src/adapters/copilot-adapter.ts](../src/adapters/copilot-adapter.ts).
+It extracts the count from Copilot's `Requests N Premium (Xs)` stderr
+summary line and propagates it through `SessionResult.premiumRequestsConsumed`
+to the orchestrator's cost recorder. The fallback value of `1` still exists
+but is only reached when the adapter genuinely cannot determine the count
+(e.g. auth failure, stall-timeout kill before the summary printed).
 
-**Impact:** All "cost per rubric point" and "premium requests consumed" numbers in this document are untrustworthy. The cost axis of the primary comparison (cost vs completeness) is not functional until `parseRequestCount()` is fixed to extract real consumption data from Claude Code's output or billing API.
+The old three-strategy `parseRequestCount` in `claude-code-adapter.ts` was
+dishonest: it always fell through to returning `1` for any successful run
+because the markers it looked for (`Human:` turn markers, a `total cost`
+line) are not present in Claude Code `-p` output. That function now returns
+`undefined` rather than fabricate a count. Until Claude Code exposes a
+stable per-session premium-request marker, runs against the Claude Code
+producer will have `actualPremiumRequests` = undefined and the orchestrator
+will record the 1-per-step fallback (plainly labeled in the summary).
+
+**Impact on historical data:** the 2026-04-17 three-producer table above
+was captured before this fix. Do not extract new conclusions from that
+row about cost efficiency. The N=10 demo-fast dataset at
+`benchmarks/harness/raw_data/demo-fast/metrics.jsonl` is the first dataset
+to use the real parser.
 
 ### D4: Test-File Protection Greenfield Gap
 
