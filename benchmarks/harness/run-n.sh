@@ -56,7 +56,7 @@ extract_metrics() {
   local idx="$1" stdout_log="$2" start_ms="$3" exit_status="$4"
   local run_out="$OUT_DIR/run-$idx"
   mkdir -p "$run_out"
-  cp "$stdout_log" "$run_out/stdout.log"
+  # stdout_log is already inside $run_out; nothing to copy
 
   local run_dir
   run_dir=$(grep -oP 'Run Directory:\s*\K\S+' "$stdout_log" | head -1 || true)
