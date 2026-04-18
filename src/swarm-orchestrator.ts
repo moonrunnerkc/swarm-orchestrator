@@ -1424,7 +1424,8 @@ export class SwarmOrchestrator {
             success: agentResult.exitCode === 0,
             output: agentResult.stdout + agentResult.stderr,
             exitCode: agentResult.exitCode,
-            duration: agentResult.durationMs
+            duration: agentResult.durationMs,
+            premiumRequestsConsumed: agentResult.premiumRequestsConsumed,
           };
           if (agentResult.exitCode !== 0) {
             (sessionResult as SessionResult).error = agentResult.stderr;
@@ -1592,9 +1593,10 @@ export class SwarmOrchestrator {
           ? new Date(result.endTime).getTime() - new Date(result.startTime).getTime()
           : 0;
         // D5: Use instrumented request count from adapter when available.
-        // The adapter parses the actual CLI output for request markers.
-        // Fall back to 1 only if the adapter could not determine the count.
-        const instrumentedRequests = (result as any).premiumRequestsConsumed;
+        // The adapter parses the actual CLI output for request markers
+        // (e.g. Copilot's "Requests N Premium" stderr summary).
+        // Fall back to 1 only when the adapter could not determine the count.
+        const instrumentedRequests = result.sessionResult?.premiumRequestsConsumed;
         const actualRequests = typeof instrumentedRequests === 'number' ? instrumentedRequests : 1;
         context.costEstimator.recordActual(step.stepNumber, stepEstimate?.estimatedPremiumRequests ?? 1, actualRequests, 0);
         context.stepCostRecords.push({

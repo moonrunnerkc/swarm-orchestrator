@@ -45,6 +45,13 @@ export interface SessionResult {
   transcriptPath?: string;
   exitCode: number;
   duration: number;
+  /**
+   * Instrumented count of premium API requests reported by the underlying
+   * CLI tool (e.g. Copilot's "Requests N Premium" stderr summary).
+   * undefined when the tool produced no such marker — callers must not
+   * silently assume 1.
+   */
+  premiumRequestsConsumed?: number | undefined;
 }
 
 /**
@@ -192,6 +199,7 @@ export class SessionExecutor {
       output: agentResult.stdout + agentResult.stderr,
       exitCode: agentResult.exitCode,
       duration: agentResult.durationMs,
+      premiumRequestsConsumed: agentResult.premiumRequestsConsumed,
     };
     if (agentResult.exitCode !== 0) {
       sessionResult.error = agentResult.stderr;

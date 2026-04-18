@@ -37,6 +37,27 @@ export function scrubCopilotHostileTokens(env: NodeJS.ProcessEnv): NodeJS.Proces
   return copy;
 }
 
+// Billing-accurate premium-request count, as reported by the Copilot CLI
+// on its stderr summary block. Format example:
+//
+//   Changes   +2 -0
+//   Requests  4 Premium (112s)
+//   Tokens    ↑ ...
+//
+// Copilot bills by Premium requests, not raw model invocations, and a
+// multi-tool-use session is usually billed as 1. Parsing this line is
+// the only way to get a number that matches the user's actual bill.
+// Returns undefined when the marker is absent (e.g. auth failure).
+const COPILOT_REQUEST_LINE_RE = /^\s*Requests\s+(\d+)\s+Premium\b/m;
+
+export function parseCopilotRequestCount(stderr: string): number | undefined {
+  if (!stderr) return undefined;
+  const m = stderr.match(COPILOT_REQUEST_LINE_RE);
+  if (!m) return undefined;
+  const n = parseInt(m[1], 10);
+  return Number.isFinite(n) && n >= 0 ? n : undefined;
+}
+
 // Copilot CLI sometimes exits 0 even on fatal errors like invalid model
 // names or auth failures. These patterns on stderr indicate the session
 // never ran at all.
@@ -91,6 +112,7 @@ export class CopilotAdapter implements AgentAdapter {
       stderr: result.stderr,
       exitCode,
       durationMs,
+      premiumRequestsConsumed: parseCopilotRequestCount(result.stderr),
     };
   }
 

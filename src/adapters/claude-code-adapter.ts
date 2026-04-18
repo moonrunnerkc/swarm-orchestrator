@@ -42,33 +42,15 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
   /**
    * D5: Extract the number of premium API requests from Claude Code output.
-   * Claude Code outputs conversation turn markers and cost summaries.
-   * We count distinct assistant response blocks as a proxy for API calls.
-   * Returns undefined if parsing fails — caller must not default to an
-   * un-calibrated estimate without logging a warning.
+   * Claude Code's `claude -p` does not currently emit a stable per-session
+   * "premium requests consumed" marker on stdout or stderr — the turn
+   * markers the old version counted never appear in non-interactive mode.
+   *
+   * Return undefined rather than a synthetic "1" so the orchestrator can
+   * fall back honestly and `premium_requests_actual` does not silently
+   * encode "one per step" when the real count is unknown.
    */
-  private parseRequestCount(stdout: string, stderr: string): number | undefined {
-    // Strategy 1: Look for explicit cost/usage lines in stderr
-    // Claude Code may print "Total cost: $X.XX" or similar
-    const costMatch = stderr.match(/total\s+cost.*?\$(\d+\.\d+)/i)
-      || stdout.match(/total\s+cost.*?\$(\d+\.\d+)/i);
-    // If we find a dollar cost, each Sonnet request ≈ $0.01-0.03
-    // but this is unreliable for counting discrete requests.
-
-    // Strategy 2: Count conversation turns in the output.
-    // Claude Code CLI in -p mode makes one request and returns one response.
-    // In multi-turn sessions, each "Human:"→"Assistant:" pair = 1 request.
-    const turnMarkers = stdout.match(/^(Human|User):/gm);
-    if (turnMarkers && turnMarkers.length > 0) {
-      return turnMarkers.length;
-    }
-
-    // Strategy 3: If the CLI ran at all, it consumed at least 1 request.
-    // A non-empty stdout from a successful run means 1 API call minimum.
-    if (stdout.trim().length > 0) {
-      return 1;
-    }
-
+  private parseRequestCount(_stdout: string, _stderr: string): number | undefined {
     return undefined;
   }
 
