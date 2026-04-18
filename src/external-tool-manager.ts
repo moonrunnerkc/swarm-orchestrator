@@ -1,6 +1,8 @@
 import { spawn, SpawnOptions } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { getLogger } from './logger';
+const logger = getLogger('external-tool-manager');
 
 export interface ExternalToolConfig {
   enableExternal: boolean;
@@ -99,8 +101,8 @@ export class ExternalToolManager {
 
     // Dry run mode: log but don't execute
     if (this.config.dryRun) {
-      console.log(`[DRY RUN] Would execute: ${command} ${args.join(' ')}`);
-      console.log(`  Working dir: ${execution.workingDir}`);
+      logger.info(`[DRY RUN] Would execute: ${command} ${args.join(' ')}`);
+      logger.info(`  Working dir: ${execution.workingDir}`);
       execution.exitCode = 0;
       execution.output = '[DRY RUN - not executed]';
       this.logExecution(execution);

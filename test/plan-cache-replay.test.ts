@@ -147,8 +147,8 @@ describe('Upgrade 7: Plan Template Caching + Replay', () => {
   });
 
   describe('CLI help lists --plan-cache and --replay', () => {
-    // Help text lives in cli-handlers.ts after CLI decomposition
-    const cliPath = path.join(process.cwd(), 'src', 'cli-handlers.ts');
+    // Help text now lives in cli/usage.ts after CLI decomposition
+    const cliPath = path.join(process.cwd(), 'src', 'cli', 'usage.ts');
 
     it('--plan-cache appears in help text', () => {
       const cli = fs.readFileSync(cliPath, 'utf8');

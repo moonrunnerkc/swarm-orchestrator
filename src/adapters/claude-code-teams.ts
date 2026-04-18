@@ -1,6 +1,8 @@
 import { AgentAdapter, AgentResult, AgentSpawnOptions } from './agent-adapter';
 import { ClaudeCodeAdapter } from './claude-code-adapter';
 import { supervisedSpawn } from './process-supervisor';
+import { getLogger } from '../logger';
+const logger = getLogger('claude-code-teams');
 
 export interface TeamWaveResult {
   results: AgentResult[];
@@ -122,7 +124,7 @@ export class ClaudeCodeTeamsAdapter implements AgentAdapter {
     steps: AgentSpawnOptions[],
     error: Error
   ): Promise<AgentResult[]> {
-    console.warn(`Teams fallback: ${error.message}`);
+    logger.warn(`Teams fallback: ${error.message}`);
 
     // Execute each step individually via the standard claude-code adapter
     const results: AgentResult[] = [];

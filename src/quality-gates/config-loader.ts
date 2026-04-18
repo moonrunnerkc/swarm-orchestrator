@@ -2,20 +2,15 @@ import * as fs from 'fs';
 import * as yaml from 'js-yaml';
 import * as path from 'path';
 import { DEFAULT_QUALITY_GATES_CONFIG } from './default-config';
-import { QualityGatesConfig } from './types';
+import { GenericGateConfig, QualityGatesConfig } from './types';
+import {
+  getRegisteredGates,
+  getRegisteredGateKeys,
+  loadProjectGateRegistrations,
+} from './registry';
+import { getLogger } from '../logger';
 
-/** Gate config keys that correspond to actual quality gates. */
-const VALID_GATE_KEYS: ReadonlySet<string> = new Set([
-  'scaffoldDefaults',
-  'duplicateBlocks',
-  'hardcodedConfig',
-  'readmeClaims',
-  'testIsolation',
-  'testCoverage',
-  'testFileProtection',
-  'accessibility',
-  'runtimeChecks',
-]);
+const logger = getLogger('quality-gates:config');
 
 function is_object(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -31,9 +26,10 @@ function validate_gate_keys(parsed: Record<string, unknown>, sourcePath: string)
   const gates = parsed.gates;
   if (!is_object(gates)) return;
 
-  const unknownKeys = Object.keys(gates).filter(k => !VALID_GATE_KEYS.has(k));
+  const validKeys = new Set(getRegisteredGateKeys());
+  const unknownKeys = Object.keys(gates).filter(k => !validKeys.has(k));
   if (unknownKeys.length > 0) {
-    const validList = Array.from(VALID_GATE_KEYS).sort().join(', ');
+    const validList = getRegisteredGateKeys().sort().join(', ');
     throw new Error(
       `Unknown gate key(s) in ${sourcePath}: ${unknownKeys.join(', ')}. ` +
       `Valid gate keys: ${validList}`
@@ -42,26 +38,22 @@ function validate_gate_keys(parsed: Record<string, unknown>, sourcePath: string)
 }
 
 function merge_config(base: QualityGatesConfig, override: Partial<QualityGatesConfig>): QualityGatesConfig {
+  const mergedGates: Record<string, GenericGateConfig> = {
+    ...base.gates,
+    ...(override.gates || {})
+  };
+
+  for (const gate of getRegisteredGates()) {
+    mergedGates[gate.key] = {
+      ...(base.gates[gate.key] || gate.defaultConfig),
+      ...((override.gates?.[gate.key] as GenericGateConfig | undefined) || {})
+    };
+  }
+
   const merged: QualityGatesConfig = {
     ...base,
     ...override,
-    gates: {
-      ...base.gates,
-      ...(override.gates || {})
-    }
-  };
-
-  // deep merge for each gate
-  merged.gates = {
-    scaffoldDefaults: { ...base.gates.scaffoldDefaults, ...(override.gates?.scaffoldDefaults || {}) },
-    duplicateBlocks: { ...base.gates.duplicateBlocks, ...(override.gates?.duplicateBlocks || {}) },
-    hardcodedConfig: { ...base.gates.hardcodedConfig, ...(override.gates?.hardcodedConfig || {}) },
-    readmeClaims: { ...base.gates.readmeClaims, ...(override.gates?.readmeClaims || {}) },
-    testIsolation: { ...base.gates.testIsolation, ...(override.gates?.testIsolation || {}) },
-    runtimeChecks: { ...base.gates.runtimeChecks, ...(override.gates?.runtimeChecks || {}) },
-    accessibility: { ...base.gates.accessibility, ...(override.gates?.accessibility || {}) },
-    testCoverage: { ...base.gates.testCoverage, ...(override.gates?.testCoverage || {}) },
-    testFileProtection: { ...base.gates.testFileProtection, ...(override.gates?.testFileProtection || {}) }
+    gates: mergedGates as QualityGatesConfig['gates']
   };
 
   return merged;
@@ -109,12 +101,18 @@ function load_yaml_config(filePath: string): Partial<QualityGatesConfig> {
  * @returns Fully resolved quality gates configuration
  */
 export function load_quality_gates_config(projectRoot: string, explicitPath?: string): QualityGatesConfig {
+  const projectGateSources = loadProjectGateRegistrations(projectRoot);
+  for (const source of projectGateSources) {
+    logger.debug(`loaded project gate registration from ${source}`);
+  }
+
   // Start with a defensive copy so callers never mutate the shared default
   let config = merge_config(DEFAULT_QUALITY_GATES_CONFIG, {});
 
   // Layer 2: per-project .swarm/gates.yaml
   const perProjectPath = path.join(projectRoot, '.swarm', 'gates.yaml');
   if (fs.existsSync(perProjectPath)) {
+    logger.debug(`loading gate config ${perProjectPath}`);
     const perProject = load_yaml_config(perProjectPath);
     if (Object.keys(perProject).length > 0) {
       config = merge_config(config, perProject);
@@ -127,6 +125,7 @@ export function load_quality_gates_config(projectRoot: string, explicitPath?: st
     if (!fs.existsSync(resolved)) {
       throw new Error(`Quality gates config file not found: ${resolved}`);
     }
+    logger.debug(`loading explicit gate config ${resolved}`);
     const explicit = load_yaml_config(resolved);
     if (Object.keys(explicit).length > 0) {
       config = merge_config(config, explicit);
@@ -138,6 +137,7 @@ export function load_quality_gates_config(projectRoot: string, explicitPath?: st
   if (!explicitPath && !fs.existsSync(perProjectPath)) {
     const legacyPath = path.join(projectRoot, 'config', 'quality-gates.yaml');
     if (fs.existsSync(legacyPath)) {
+      logger.debug(`loading legacy gate config ${legacyPath}`);
       const legacy = load_yaml_config(legacyPath);
       if (Object.keys(legacy).length > 0) {
         config = merge_config(config, legacy);

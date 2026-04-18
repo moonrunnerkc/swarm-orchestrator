@@ -2,6 +2,14 @@ import { randomBytes } from 'crypto';
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import * as path from 'path';
+import {
+  DEFAULT_CONTEXT_LOCK_WAIT_MS,
+  DEFAULT_CONTEXT_STALE_LOCK_MS,
+  DEFAULT_DEPENDENCY_WAIT_MS,
+  DEFAULT_SIGKILL_DELAY_MS,
+} from './defaults';
+import { getLogger } from './logger';
+const logger = getLogger('context-broker');
 
 /**
  * Shared context entry for cross-agent communication
@@ -38,7 +46,7 @@ export class ContextBroker extends EventEmitter {
   private contextDir: string;
   private lockDir: string;
   private contextFile: string;
-  private maxLockWaitMs: number = 30000; // 30 seconds max wait for lock
+  private maxLockWaitMs: number = DEFAULT_CONTEXT_LOCK_WAIT_MS;
 
   constructor(runDir: string) {
     super();
@@ -103,7 +111,7 @@ export class ContextBroker extends EventEmitter {
             const existingLock = JSON.parse(fs.readFileSync(lockFile, 'utf8')) as GitLock;
             const lockAge = Date.now() - new Date(existingLock.acquiredAt).getTime();
 
-            if (lockAge > 300000) {
+            if (lockAge > DEFAULT_CONTEXT_STALE_LOCK_MS) {
               // stale lock, force remove
               fs.unlinkSync(lockFile);
               continue;
@@ -137,12 +145,12 @@ export class ContextBroker extends EventEmitter {
       if (lock.lockId === lockId) {
         fs.unlinkSync(lockFile);
       } else {
-        console.warn(`Lock mismatch: expected ${lockId}, got ${lock.lockId}`);
+        logger.warn(`Lock mismatch: expected ${lockId}, got ${lock.lockId}`);
       }
     } catch (err: unknown) {
       const error = err as NodeJS.ErrnoException;
       if (error.code !== 'ENOENT') {
-        console.error('Failed to release lock:', error);
+        logger.error('Failed to release lock:', error);
       }
     }
   }
@@ -213,7 +221,7 @@ export class ContextBroker extends EventEmitter {
         if (error.code === 'EEXIST') {
           try {
             const stat = fs.statSync(lockFile);
-            if (Date.now() - stat.mtimeMs > 5000) {
+            if (Date.now() - stat.mtimeMs > DEFAULT_SIGKILL_DELAY_MS) {
               fs.unlinkSync(lockFile);
               continue;
             }
@@ -258,7 +266,7 @@ export class ContextBroker extends EventEmitter {
       return JSON.parse(content) as ContextEntry[];
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[context-broker] Failed to parse ${this.contextFile}: ${msg}`);
+      logger.warn(`[context-broker] Failed to parse ${this.contextFile}: ${msg}`);
       return [];
     }
   }
@@ -342,7 +350,7 @@ export class ContextBroker extends EventEmitter {
    */
   async waitForDependencies(
     dependencies: number[],
-    timeoutMs: number = 600000 // 10 minutes
+    timeoutMs: number = DEFAULT_DEPENDENCY_WAIT_MS
   ): Promise<boolean> {
     if (this.areDependenciesSatisfied(dependencies)) {
       return true;

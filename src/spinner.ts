@@ -1,6 +1,9 @@
 // Author: Bradley R. Kinnard
 // Terminal spinner for visual feedback during long operations
 
+import { getLogger } from './logger';
+const logger = getLogger('spinner');
+
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 const DOTS_FRAMES = ['⣾', '⣽', '⣻', '⢿', '⡿', '⣟', '⣯', '⣷'];
 const BOUNCE_FRAMES = ['⠁', '⠂', '⠄', '⡀', '⢀', '⠠', '⠐', '⠈'];
@@ -68,7 +71,7 @@ export class Spinner {
     process.stdout.write('\x1B[?25h');
 
     if (finalMessage) {
-      console.log(`${this.prefix}${finalMessage}`);
+      logger.info(`${this.prefix}${finalMessage}`);
     }
   }
 

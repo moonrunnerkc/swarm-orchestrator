@@ -1,6 +1,7 @@
 import { ExecutionPlan, PlanStep } from './plan-generator';
 import { KnowledgeBaseManager } from './knowledge-base';
 import { CostHistoryEvidence } from './metrics-types';
+import { DEFAULT_REMEDIATION_RATE, DEFAULT_RETRY_PROBABILITY } from './defaults';
 
 /**
  * Model multipliers for premium request consumption.
@@ -20,7 +21,6 @@ export const MODEL_MULTIPLIERS: Record<string, number> = {
   'o4-mini': 5,
 };
 
-const DEFAULT_RETRY_PROBABILITY = 0.15;
 const MAX_RETRY_PROBABILITY = 0.50;
 const OVERAGE_COST_PER_REQUEST = 0.04;
 
@@ -29,7 +29,6 @@ const OVERAGE_COST_PER_REQUEST = 0.04;
 // where ~29% of total requests were gate-triggered remediation steps.
 // Rounded down to 0.25 as a conservative default. Applied per-step, then
 // ceiled to whole requests since partial agent invocations aren't possible.
-const DEFAULT_REMEDIATION_RATE = 0.25;
 const MAX_REMEDIATION_RATE = 0.50;
 
 // Rough token count for the static boilerplate injected by buildSwarmPrompt.

@@ -1,4 +1,6 @@
 import * as assert from 'assert';
+import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 
 import { load_quality_gates_config, run_quality_gates } from '../src/quality-gates';
@@ -39,5 +41,34 @@ describe('QualityGates', () => {
     assert.ok(failed.includes('hardcoded-config'));
     assert.ok(failed.includes('readme-claims'));
     assert.ok(failed.includes('test-isolation'));
+  });
+
+  it('runs explicitly registered custom project gates', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'custom-gate-run-'));
+    try {
+      fs.mkdirSync(path.join(root, '.swarm', 'gates'), { recursive: true });
+      fs.writeFileSync(
+        path.join(root, '.swarm', 'gates', 'index.cjs'),
+        [
+          'module.exports.registerGates = ({ registerGate }) => {',
+          '  registerGate({',
+          '    key: "customGate",',
+          '    title: "Custom Gate",',
+          '    defaultConfig: { enabled: true },',
+          '    async run() {',
+          '      return { id: "custom-gate", title: "Custom Gate", status: "pass", durationMs: 0, issues: [] };',
+          '    }',
+          '  });',
+          '};',
+        ].join('\n'),
+        'utf8'
+      );
+
+      const cfg = load_quality_gates_config(root);
+      const result = await run_quality_gates(root, cfg);
+      assert.ok(result.results.some(r => r.id === 'custom-gate'));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });

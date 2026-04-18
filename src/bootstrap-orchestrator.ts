@@ -12,6 +12,8 @@ import {
   GitHubIssueReference
 } from './bootstrap-types';
 import { ExecutionPlan } from './plan-generator';
+import { getLogger } from './logger';
+const logger = getLogger('bootstrap-orchestrator');
 
 /**
  * Bootstrap Orchestrator - main entry point for bootstrap mode
@@ -43,49 +45,49 @@ export class BootstrapOrchestrator {
     goal: string,
     runDir: string
   ): Promise<{ evidencePath: string; plan: ExecutionPlan & { steps: AnnotatedPlanStep[] } }> {
-    console.log('🔍 Bootstrap Analysis Starting...\n');
+    logger.info('🔍 Bootstrap Analysis Starting...\n');
 
     // Step 1: Analyze all repos
-    console.log(`Analyzing ${repoPaths.length} repository(ies)...`);
+    logger.info(`Analyzing ${repoPaths.length} repository(ies)...`);
     const repoAnalyses = await Promise.all(
       repoPaths.map(p => this.repoAnalyzer.analyzeRepo(p))
     );
     
     for (const analysis of repoAnalyses) {
-      console.log(`  ✓ ${analysis.repoName}: ${analysis.languages.join(', ')}`);
-      console.log(`    Build scripts: ${analysis.buildScripts.length}`);
-      console.log(`    Test scripts: ${analysis.testScripts.length}`);
-      console.log(`    Dependencies: ${analysis.dependencies.length}`);
-      console.log(`    Tech debt markers: ${analysis.techDebtMarkers.length}`);
-      console.log(`    Baseline concerns: ${analysis.baselineConcerns.length}`);
+      logger.info(`  ✓ ${analysis.repoName}: ${analysis.languages.join(', ')}`);
+      logger.info(`    Build scripts: ${analysis.buildScripts.length}`);
+      logger.info(`    Test scripts: ${analysis.testScripts.length}`);
+      logger.info(`    Dependencies: ${analysis.dependencies.length}`);
+      logger.info(`    Tech debt markers: ${analysis.techDebtMarkers.length}`);
+      logger.info(`    Baseline concerns: ${analysis.baselineConcerns.length}`);
     }
-    console.log();
+    logger.info();
 
     // Step 2: Identify cross-repo relationships
-    console.log('Identifying cross-repo relationships...');
+    logger.info('Identifying cross-repo relationships...');
     const relationships = this.multiRepoCoordinator.identifyRelationships(repoAnalyses);
-    console.log(`  Found ${relationships.length} relationship(s)`);
+    logger.info(`  Found ${relationships.length} relationship(s)`);
     for (const rel of relationships) {
-      console.log(`    ${rel.sourceRepo} → ${rel.targetRepo} (${rel.type})`);
+      logger.info(`    ${rel.sourceRepo} → ${rel.targetRepo} (${rel.type})`);
     }
-    console.log();
+    logger.info();
 
     // Step 3: Ingest GitHub issues
-    console.log('Fetching GitHub issues...');
+    logger.info('Fetching GitHub issues...');
     let allIssues: GitHubIssueReference[] = [];
     for (const repoPath of repoPaths) {
       const issues = await this.issuesIngester.fetchIssues(repoPath);
       allIssues.push(...issues);
     }
-    console.log(`  Found ${allIssues.length} open issue(s)`);
+    logger.info(`  Found ${allIssues.length} open issue(s)`);
     
     // Link relevant issues to goal
     const relevantIssues = this.issuesIngester.linkIssuesToTasks(allIssues, goal);
-    console.log(`  ${relevantIssues.length} issue(s) relevant to goal`);
+    logger.info(`  ${relevantIssues.length} issue(s) relevant to goal`);
     for (const issue of relevantIssues.slice(0, 5)) {
-      console.log(`    #${issue.number}: ${issue.title}`);
+      logger.info(`    #${issue.number}: ${issue.title}`);
     }
-    console.log();
+    logger.info();
 
     // Step 4: Build analysis result
     const analysisResult: BootstrapAnalysisResult = {
@@ -97,19 +99,19 @@ export class BootstrapOrchestrator {
     };
 
     // Step 5: Generate annotated plan
-    console.log('Generating execution plan...');
+    logger.info('Generating execution plan...');
     const plan = this.generateAnnotatedPlan(goal, analysisResult, repoPaths);
-    console.log(`  Generated ${plan.steps.length} step(s)`);
-    console.log();
+    logger.info(`  Generated ${plan.steps.length} step(s)`);
+    logger.info();
 
     // Step 6: Save evidence
-    console.log('Saving bootstrap evidence...');
+    logger.info('Saving bootstrap evidence...');
     const evidence = this.evidenceManager.createEvidence(goal, analysisResult, plan);
     const evidencePath = this.evidenceManager.saveEvidence(evidence, runDir);
-    console.log(`  ✓ Evidence saved: ${evidencePath}`);
-    console.log();
+    logger.info(`  ✓ Evidence saved: ${evidencePath}`);
+    logger.info();
 
-    console.log('✅ Bootstrap analysis complete!\n');
+    logger.info('✅ Bootstrap analysis complete!\n');
 
     return { evidencePath, plan };
   }

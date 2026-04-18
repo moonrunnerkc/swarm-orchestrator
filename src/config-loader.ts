@@ -1,6 +1,9 @@
 import * as fs from 'fs';
 import * as yaml from 'js-yaml';
 import * as path from 'path';
+import { getLogger } from './logger';
+
+const logger = getLogger('config-loader');
 
 export interface AgentProfile {
   name: string;
@@ -46,6 +49,8 @@ export class ConfigLoader {
 
     this.configDir = configDir || this.resolveConfigDir(cwd, packageRoot);
     this.customAgentsDir = this.resolveCustomAgentsDir(cwd, packageRoot);
+    logger.debug(`agent config dir: ${this.configDir}`);
+    logger.debug(`custom agents dir: ${this.customAgentsDir}`);
   }
 
   private findPackageRoot(startDir: string): string {
@@ -115,16 +120,18 @@ export class ConfigLoader {
     // Load YAML configs first (legacy/fallback)
     try {
       const defaultAgents = this.loadDefaultAgents();
+      logger.debug(`loaded default agents from ${path.join(this.configDir, 'default-agents.yaml')}`);
       defaultAgents.agents.forEach(agent => {
         agentMap.set(agent.name, agent);
       });
     } catch (error: unknown) {
       const err = error as Error;
-      console.warn(`Failed to load default agents: ${err.message}`);
+      logger.warn(`Failed to load default agents: ${err.message}`);
     }
 
     try {
       const userAgents = this.loadUserAgents();
+      logger.debug(`loaded user agents from ${path.join(this.configDir, 'user-agents.yaml')}`);
       userAgents.agents.forEach(agent => {
         agentMap.set(agent.name, agent);
       });
@@ -146,6 +153,7 @@ export class ConfigLoader {
    */
   loadCustomAgents(): AgentProfile[] {
     if (!fs.existsSync(this.customAgentsDir)) {
+      logger.debug(`no custom agents directory at ${this.customAgentsDir}`);
       return [];
     }
 
@@ -163,7 +171,7 @@ export class ConfigLoader {
         }
       } catch (error: unknown) {
         const err = error as Error;
-        console.warn(`Failed to load custom agent ${file}: ${err.message}`);
+        logger.warn(`Failed to load custom agent ${file}: ${err.message}`);
       }
     }
 
@@ -179,7 +187,7 @@ export class ConfigLoader {
     // Extract frontmatter (YAML between --- markers)
     const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
     if (!frontmatterMatch || !frontmatterMatch[1]) {
-      console.warn(`No frontmatter found in ${filePath}`);
+      logger.warn(`No frontmatter found in ${filePath}`);
       return null;
     }
 

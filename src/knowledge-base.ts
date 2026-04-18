@@ -1,6 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { levenshtein } from './text-similarity';
+import { getLogger } from './logger';
+const logger = getLogger('knowledge-base');
 
 // Auto-prune triggers when pattern count exceeds this threshold
 const MAX_PATTERNS = 500;
@@ -52,7 +54,7 @@ export class KnowledgeBaseManager {
         const content = fs.readFileSync(this.knowledgeBasePath, 'utf8');
         return JSON.parse(content);
       } catch (error) {
-        console.warn(`Failed to load knowledge base, creating new: ${error}`);
+        logger.warn(`Failed to load knowledge base, creating new: ${error}`);
       }
     }
 
@@ -79,7 +81,7 @@ export class KnowledgeBaseManager {
         'utf8'
       );
     } catch (error) {
-      console.error(`Failed to save knowledge base: ${error}`);
+      logger.error(`Failed to save knowledge base: ${error}`);
     }
   }
 

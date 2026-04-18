@@ -9,6 +9,8 @@
  */
 
 import { spawn } from 'child_process';
+import { getLogger } from './logger';
+const logger = getLogger('copilot-cli-wrapper');
 
 export interface CliCapabilities {
   available: boolean;
@@ -102,12 +104,12 @@ export class CopilotCliWrapper {
   ): Promise<ExecutionResult> {
     // Strict isolation guard: log when active so transcript captures the mode
     if (this.options.strictIsolation) {
-      console.log('[strict-isolation] Per-task branch isolation active. Context restricted to transcript evidence only.');
+      logger.info('[strict-isolation] Per-task branch isolation active. Context restricted to transcript evidence only.');
     }
 
     // Inner fleet toggle: prepend /fleet to prompt input
     if (this.options.useInnerFleet && options.input) {
-      console.log('[inner-fleet] Inner fleet mode active. External safety rail enforced.');
+      logger.info('[inner-fleet] Inner fleet mode active. External safety rail enforced.');
       options = { ...options, input: `/fleet ${options.input}` };
     }
 

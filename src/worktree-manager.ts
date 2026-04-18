@@ -1,6 +1,9 @@
 import { execSync, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { DEFAULT_BRANCH_SWITCH_TIMEOUT_MS } from './defaults';
+import { getLogger } from './logger';
+const logger = getLogger('worktree-manager');
 
 /**
  * Manages git worktrees, branches, and initial repo setup for parallel agent isolation.
@@ -174,7 +177,7 @@ export class WorktreeManager {
       const timeout = setTimeout(() => {
         proc.kill('SIGKILL');
         reject(new Error(`Timeout switching to branch ${branchName}`));
-      }, 15000);
+      }, DEFAULT_BRANCH_SWITCH_TIMEOUT_MS);
 
       proc.on('close', (code) => {
         clearTimeout(timeout);
@@ -221,7 +224,7 @@ export class WorktreeManager {
       // rev-parse fails when repo has no commits; fall through to create one
     }
 
-    console.log('  \u{1F4DD} Empty repo detected, creating initial commit...');
+    logger.info('  \u{1F4DD} Empty repo detected, creating initial commit...');
 
     const gitignorePath = path.join(this.workingDir, '.gitignore');
 
@@ -240,15 +243,15 @@ node_modules/
     try {
       execSync('git add .gitignore', { cwd: this.workingDir, stdio: 'pipe' });
       execSync('git commit -m "chore: initialize repository"', { cwd: this.workingDir, stdio: 'pipe' });
-      console.log('  \u2705 Initial commit created');
+      logger.info('  \u2705 Initial commit created');
     } catch {
       try {
         execSync('git add -A', { cwd: this.workingDir, stdio: 'pipe' });
         execSync('git commit --allow-empty -m "chore: initialize repository"', { cwd: this.workingDir, stdio: 'pipe' });
-        console.log('  \u2705 Initial commit created (empty)');
+        logger.info('  \u2705 Initial commit created (empty)');
       } catch (innerErr: unknown) {
         const msg = innerErr instanceof Error ? innerErr.message : String(innerErr);
-        console.warn(`[init] Could not create initial commit: ${msg}`);
+        logger.warn(`[init] Could not create initial commit: ${msg}`);
       }
     }
   }
@@ -273,10 +276,10 @@ node_modules/
 
       // Git resolved to a parent directory; targetDir is not its own repo.
       // Initialize a fresh repo so worktrees use the right history.
-      console.log(`  ⚠️  ${resolved} is inside parent repo ${gitRoot}; initializing dedicated git repo`);
+      logger.info(`  ⚠️  ${resolved} is inside parent repo ${gitRoot}; initializing dedicated git repo`);
     } catch {
       // No git repo found at all; initialize one
-      console.log(`  📂 No git repo at ${resolved}; initializing`);
+      logger.info(`  📂 No git repo at ${resolved}; initializing`);
     }
 
     execSync('git init', { cwd: resolved, stdio: 'pipe' });

@@ -238,6 +238,7 @@ describe('McpServer', () => {
       assert.ok(names.includes('swarm_plan'));
       assert.ok(names.includes('swarm_gates'));
       assert.ok(names.includes('swarm_export_agents'));
+      assert.ok(names.includes('swarm_cost'));
     });
   });
 
@@ -272,6 +273,39 @@ describe('McpServer', () => {
       assert.ok(!(response instanceof Promise));
       const typed = response as { error: { code: number; message: string } };
       assert.strictEqual(typed.error.code, -32602);
+    });
+
+    it('returns actual cost for a completed run', () => {
+      const runDir = path.join(tmpDir, 'runs', 'exec-cost');
+      fs.mkdirSync(runDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(runDir, 'cost-attribution.json'),
+        JSON.stringify({ totalActualPremiumRequests: 7 }),
+        'utf8'
+      );
+
+      const response = server.handleToolsCall(1, {
+        name: 'swarm_cost',
+        arguments: { runId: 'exec-cost' }
+      });
+      assert.ok(!(response instanceof Promise));
+      const result = (response as { result: { content: { text: string }[] } }).result;
+      const data = JSON.parse(result.content[0].text);
+      assert.strictEqual(data.mode, 'actual');
+      assert.strictEqual(data.cost.totalActualPremiumRequests, 7);
+    });
+
+    it('returns a cost estimate for a goal', () => {
+      const response = server.handleToolsCall(1, {
+        name: 'swarm_cost',
+        arguments: { goal: 'build a CLI tool' }
+      });
+      assert.ok(!(response instanceof Promise));
+      const result = (response as { result: { content: { text: string }[] } }).result;
+      const data = JSON.parse(result.content[0].text);
+      assert.strictEqual(data.mode, 'estimate');
+      assert.strictEqual(typeof data.estimate.totalPremiumRequests, 'number');
+      assert.ok(Array.isArray(data.plan.steps));
     });
   });
 

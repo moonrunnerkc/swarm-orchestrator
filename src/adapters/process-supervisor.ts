@@ -4,6 +4,13 @@
 // reliability guarantees.
 
 import { ChildProcess, spawn, SpawnOptions } from 'child_process';
+import {
+  DEFAULT_COMMAND_TIMEOUT_MS,
+  DEFAULT_HEARTBEAT_INTERVAL_MS,
+  DEFAULT_SIGKILL_DELAY_MS,
+} from '../defaults';
+import { getLogger } from '../logger';
+const logger = getLogger('process-supervisor');
 
 export interface SupervisedSpawnOptions {
   command: string;
@@ -26,19 +33,19 @@ export interface SupervisedResult {
 // Maximum silence before killing a stalled subprocess.
 // Agent CLIs can go quiet during extended tool-use or thinking phases,
 // so this needs headroom beyond typical inference latency.
-const DEFAULT_STALL_TIMEOUT_MS = 300_000; // 5 minutes
+const DEFAULT_STALL_TIMEOUT_MS = DEFAULT_COMMAND_TIMEOUT_MS * 2 + 60_000; // 5 minutes
 
 // How often to check for stalls (ms)
-const STALL_CHECK_INTERVAL_MS = 10_000;
+const STALL_CHECK_INTERVAL_MS = DEFAULT_HEARTBEAT_INTERVAL_MS * 2;
 
 // Grace period after SIGTERM before escalating to SIGKILL (ms)
-const KILL_GRACE_MS = 5_000;
+const KILL_GRACE_MS = DEFAULT_SIGKILL_DELAY_MS;
 
 // Only show heartbeat during quiet periods longer than this (ms)
-const HEARTBEAT_QUIET_THRESHOLD_MS = 15_000;
+const HEARTBEAT_QUIET_THRESHOLD_MS = DEFAULT_HEARTBEAT_INTERVAL_MS * 3;
 
 // Heartbeat display interval (ms)
-const HEARTBEAT_INTERVAL_MS = 15_000;
+const HEARTBEAT_INTERVAL_MS = DEFAULT_HEARTBEAT_INTERVAL_MS * 3;
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
@@ -101,7 +108,7 @@ export function supervisedSpawn(opts: SupervisedSpawnOptions): Promise<Supervise
         const elapsed = Math.round((Date.now() - startTime) / 1000);
         const stallSec = Math.round(silentMs / 1000);
         if (opts.logPrefix) {
-          console.log(
+          logger.info(
             `${opts.logPrefix} ⚠ STALL DETECTED: no output for ${stallSec}s ` +
             `(total ${elapsed}s, ${lineCount} lines). Killing process.`
           );
@@ -130,7 +137,7 @@ export function supervisedSpawn(opts: SupervisedSpawnOptions): Promise<Supervise
         const secs = elapsed % 60;
         const timeStr = mins > 0 ? `${mins}m${secs}s` : `${secs}s`;
 
-        console.log(`${opts.logPrefix} ${frame} ${timeStr} elapsed | ${lineCount} lines`);
+        logger.info(`${opts.logPrefix} ${frame} ${timeStr} elapsed | ${lineCount} lines`);
       }, HEARTBEAT_INTERVAL_MS);
     }
 
@@ -146,9 +153,9 @@ export function supervisedSpawn(opts: SupervisedSpawnOptions): Promise<Supervise
           if (opts.onLine) opts.onLine(line, stream);
           if (opts.logPrefix && !killed) {
             if (stream === 'stderr') {
-              console.error(`${opts.logPrefix} ${line}`);
+              logger.error(`${opts.logPrefix} ${line}`);
             } else {
-              console.log(`${opts.logPrefix} ${line}`);
+              logger.info(`${opts.logPrefix} ${line}`);
             }
           }
         }
@@ -179,11 +186,11 @@ export function supervisedSpawn(opts: SupervisedSpawnOptions): Promise<Supervise
       if (opts.logPrefix && !killed) {
         if (stdoutBuffer.trim()) {
           lineCount++;
-          console.log(`${opts.logPrefix} ${stdoutBuffer}`);
+          logger.info(`${opts.logPrefix} ${stdoutBuffer}`);
         }
         if (stderrBuffer.trim()) {
           lineCount++;
-          console.error(`${opts.logPrefix} ${stderrBuffer}`);
+          logger.error(`${opts.logPrefix} ${stderrBuffer}`);
         }
       }
 
@@ -194,10 +201,10 @@ export function supervisedSpawn(opts: SupervisedSpawnOptions): Promise<Supervise
       // Flush buffers on error too
       if (opts.logPrefix && !killed) {
         if (stdoutBuffer.trim()) {
-          console.log(`${opts.logPrefix} ${stdoutBuffer}`);
+          logger.info(`${opts.logPrefix} ${stdoutBuffer}`);
         }
         if (stderrBuffer.trim()) {
-          console.error(`${opts.logPrefix} ${stderrBuffer}`);
+          logger.error(`${opts.logPrefix} ${stderrBuffer}`);
         }
       }
 

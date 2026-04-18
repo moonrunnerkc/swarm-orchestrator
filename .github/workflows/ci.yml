@@ -164,19 +164,19 @@ jobs:
         cache: 'npm'
 
     - name: Audit root dependencies
-      run: npm audit --audit-level=high || true
+      run: npm audit --audit-level=critical --omit=dev
 
     - name: Audit calculations-api dependencies
       working-directory: calculations-api
       run: |
         npm ci
-        npm audit --audit-level=high || true
+        npm audit --audit-level=critical --omit=dev
 
     - name: Audit notes-api dependencies
       working-directory: notes-api
       run: |
         npm ci
-        npm audit --audit-level=high || true
+        npm audit --audit-level=critical --omit=dev
 
     - name: Setup Python
       uses: actions/setup-python@v5
@@ -187,7 +187,7 @@ jobs:
     - name: Audit Python dependencies
       run: |
         pip install ".[dev]"
-        pip audit || true
+        pip audit
 
     - name: Summary
       if: always()

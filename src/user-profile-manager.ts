@@ -2,6 +2,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { UserProfile } from './metrics-types';
 import { AgentProfile } from './config-loader';
+import { getLogger } from './logger';
+const logger = getLogger('user-profile-manager');
 
 const PROFILE_SCHEMA_VERSION = 1;
 
@@ -39,7 +41,7 @@ export default class UserProfileManager {
       
       // Validate schema version
       if (parsed.schemaVersion !== PROFILE_SCHEMA_VERSION) {
-        console.warn(`Profile schema mismatch: expected ${PROFILE_SCHEMA_VERSION}, got ${parsed.schemaVersion}`);
+        logger.warn(`Profile schema mismatch: expected ${PROFILE_SCHEMA_VERSION}, got ${parsed.schemaVersion}`);
         const defaultProfile = this.createDefaultProfile();
         this.profile = defaultProfile;
         this.saveProfile();
@@ -49,7 +51,7 @@ export default class UserProfileManager {
       this.profile = parsed as UserProfile;
       return this.profile;
     } catch (error) {
-      console.warn('Failed to load user profile, using defaults:', error instanceof Error ? error.message : error);
+      logger.warn('Failed to load user profile, using defaults:', error instanceof Error ? error.message : error);
       const defaultProfile = this.createDefaultProfile();
       this.profile = defaultProfile;
       this.saveProfile();

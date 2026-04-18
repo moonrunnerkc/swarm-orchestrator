@@ -2,6 +2,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
 import ExternalToolManager from './external-tool-manager';
+import { getLogger } from './logger';
+const logger = getLogger('deployment-manager');
 
 export interface DeploymentResult {
   success: boolean;
@@ -221,10 +223,10 @@ export class DeploymentManager {
       try {
         const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
         if (response.ok) return true;
-        console.log(`  [health-check] Attempt ${attempt}/${retries}: HTTP ${response.status}`);
+        logger.info(`  [health-check] Attempt ${attempt}/${retries}: HTTP ${response.status}`);
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.log(`  [health-check] Attempt ${attempt}/${retries}: ${msg}`);
+        logger.info(`  [health-check] Attempt ${attempt}/${retries}: ${msg}`);
       }
       if (attempt < retries) {
         await new Promise(resolve => setTimeout(resolve, intervalMs));
@@ -241,7 +243,7 @@ export class DeploymentManager {
     execSync(`git commit -m "rollback: revert to ${tag} after failed health check"`, {
       cwd: this.workingDir, encoding: 'utf8'
     });
-    console.log(`  [rollback] Reverted HEAD, tagged from ${tag}`);
+    logger.info(`  [rollback] Reverted HEAD, tagged from ${tag}`);
   }
 }
 

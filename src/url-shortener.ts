@@ -2,10 +2,9 @@
  * In-memory URL shortener primitives with URL validation, base62 short codes, and hit statistics.
  */
 import { createHash } from 'crypto';
+import { DEFAULT_SHORT_CODE_MIN_LENGTH, DEFAULT_URL_MAX_LENGTH } from './defaults';
 
 const BASE62_ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
-const DEFAULT_URL_MAX_LENGTH = 2048;
-const DEFAULT_CODE_MIN_LENGTH = 7;
 
 export interface URLShortenerOptions {
   codeMinLength?: number;
@@ -76,7 +75,7 @@ export class URLShortener {
 
   constructor(options: URLShortenerOptions = {}) {
     this.maxURLLength = options.maxURLLength ?? DEFAULT_URL_MAX_LENGTH;
-    this.codeMinLength = options.codeMinLength ?? DEFAULT_CODE_MIN_LENGTH;
+    this.codeMinLength = options.codeMinLength ?? DEFAULT_SHORT_CODE_MIN_LENGTH;
     this.statistics = new StatisticsTracker();
   }
 

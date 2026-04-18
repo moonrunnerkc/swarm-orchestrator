@@ -179,6 +179,38 @@ describe('gate-config-resolver', () => {
     });
   });
 
+  describe('project gate registry', () => {
+    it('loads explicitly registered custom gates from .swarm/gates/index.cjs', () => {
+      const gatesDir = path.join(tmpDir, '.swarm', 'gates');
+      fs.mkdirSync(gatesDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(gatesDir, 'index.cjs'),
+        [
+          'module.exports.registerGates = ({ registerGate }) => {',
+          '  registerGate({',
+          '    key: "customGate",',
+          '    title: "Custom Gate",',
+          '    defaultConfig: { enabled: true, threshold: 2 },',
+          '    async run() {',
+          '      return { id: "custom-gate", title: "Custom Gate", status: "pass", durationMs: 0, issues: [] };',
+          '    }',
+          '  });',
+          '};',
+        ].join('\n'),
+        'utf8'
+      );
+      fs.writeFileSync(
+        path.join(tmpDir, '.swarm', 'gates.yaml'),
+        'gates:\n  customGate:\n    threshold: 5\n',
+        'utf8'
+      );
+
+      const config = load_quality_gates_config(tmpDir);
+      assert.strictEqual(config.gates.customGate.enabled, true);
+      assert.strictEqual(config.gates.customGate.threshold, 5);
+    });
+  });
+
   describe('YAML syntax errors', () => {
     it('throws descriptive error with file path on YAML syntax error', () => {
       const swarmDir = path.join(tmpDir, '.swarm');

@@ -2,6 +2,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { RecoveryEvent, RunMetrics } from './metrics-types';
 import { SessionState } from './types';
+import { getLogger } from './logger';
+const logger = getLogger('metrics-collector');
 
 /**
  * Collects metrics during orchestrator execution
@@ -135,7 +137,7 @@ export default class MetricsCollector {
       return JSON.parse(fs.readFileSync(filePath, 'utf8')) as SessionState;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[metrics] Failed to load session ${id}: ${msg}`);
+      logger.warn(`[metrics] Failed to load session ${id}: ${msg}`);
       return null;
     }
   }

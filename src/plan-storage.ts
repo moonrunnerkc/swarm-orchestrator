@@ -2,6 +2,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ExecutionPlan } from './plan-generator';
 import { levenshtein } from './text-similarity';
+import { getLogger } from './logger';
+const logger = getLogger('plan-storage');
 
 export class PlanStorage {
   private planDir: string;
@@ -124,9 +126,9 @@ export class PlanStorage {
     }
 
     if (bestMatch) {
-      console.log(`  [plan-cache] Cache hit (score: ${bestScore.toFixed(2)})`);
+      logger.info(`  [plan-cache] Cache hit (score: ${bestScore.toFixed(2)})`);
     } else {
-      console.log(`  [plan-cache] Cache miss for: "${goal.slice(0, 60)}"`);
+      logger.info(`  [plan-cache] Cache miss for: "${goal.slice(0, 60)}"`);
     }
     return bestMatch;
   }

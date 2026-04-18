@@ -3,6 +3,8 @@
 // which requirements get injected, recommended, or suppressed.
 
 import { TaskType } from './task-classifier';
+import { getLogger } from './logger';
+const logger = getLogger('tier-maps');
 
 export type TierLevel = 'enforce' | 'recommend' | 'skip';
 

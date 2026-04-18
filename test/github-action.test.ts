@@ -248,9 +248,9 @@ describe('GitHub Action', () => {
 
   describe('GITHUB_ACTIONS env detection', () => {
     it('writeCIOutputs is only invoked when GITHUB_ACTIONS is set', () => {
-      // Verify the source code checks for the env var
-      const srcPath = path.resolve(__dirname, '..', 'cli-handlers.ts');
-      const srcAlt = path.resolve(__dirname, '..', '..', 'src', 'cli-handlers.ts');
+      // Verify the source code checks for the env var (now in cli/swarm-handlers.ts)
+      const srcPath = path.resolve(__dirname, '..', 'cli', 'swarm-handlers.ts');
+      const srcAlt = path.resolve(__dirname, '..', '..', 'src', 'cli', 'swarm-handlers.ts');
       const filePath = fs.existsSync(srcPath) ? srcPath : srcAlt;
       const content = fs.readFileSync(filePath, 'utf8');
       assert.ok(

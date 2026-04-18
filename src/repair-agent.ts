@@ -3,6 +3,10 @@ import * as path from 'path';
 import { execSync } from 'child_process';
 import SessionExecutor, { SessionOptions, SessionResult } from './session-executor';
 import VerifierEngine, { VerificationResult } from './verifier-engine';
+import {
+  DEFAULT_REPAIR_REPORT_CHARS,
+  DEFAULT_REPAIR_TRANSCRIPT_CHARS,
+} from './defaults';
 
 /**
  * Context provided to the repair agent for a single failed step.
@@ -112,7 +116,9 @@ export class RepairAgent {
     if (context.verificationReportPath && fs.existsSync(context.verificationReportPath)) {
       const report = fs.readFileSync(context.verificationReportPath, 'utf8');
       // Cap at 4000 chars to stay within prompt budget
-      const trimmed = report.length > 4000 ? report.slice(0, 4000) + '\n... (truncated)' : report;
+      const trimmed = report.length > DEFAULT_REPAIR_REPORT_CHARS
+        ? report.slice(0, DEFAULT_REPAIR_REPORT_CHARS) + '\n... (truncated)'
+        : report;
       sections.push('--- VERIFICATION REPORT ---');
       sections.push(trimmed);
       sections.push('');
@@ -123,7 +129,9 @@ export class RepairAgent {
     if (context.transcriptPath && fs.existsSync(context.transcriptPath)) {
       const transcript = fs.readFileSync(context.transcriptPath, 'utf8');
       // Cap at 6000 chars
-      const trimmed = transcript.length > 6000 ? transcript.slice(0, 6000) + '\n... (truncated)' : transcript;
+      const trimmed = transcript.length > DEFAULT_REPAIR_TRANSCRIPT_CHARS
+        ? transcript.slice(0, DEFAULT_REPAIR_TRANSCRIPT_CHARS) + '\n... (truncated)'
+        : transcript;
       sections.push('--- PRIOR SESSION TRANSCRIPT ---');
       sections.push(trimmed);
       sections.push('');
@@ -132,7 +140,9 @@ export class RepairAgent {
     // Include git diff on the branch so the agent sees current state
     const diff = this.getGitDiff(context.branchName);
     if (diff) {
-      const trimmed = diff.length > 4000 ? diff.slice(0, 4000) + '\n... (truncated)' : diff;
+      const trimmed = diff.length > DEFAULT_REPAIR_REPORT_CHARS
+        ? diff.slice(0, DEFAULT_REPAIR_REPORT_CHARS) + '\n... (truncated)'
+        : diff;
       sections.push('--- GIT DIFF ON BRANCH ---');
       sections.push(trimmed);
       sections.push('');

@@ -1,15 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { list_project_files, maybe_read_text } from './file-utils';
-import { run_duplicate_blocks_gate } from './gates/duplicate-blocks';
-import { run_hardcoded_config_gate } from './gates/hardcoded-config';
-import { run_readme_claims_gate } from './gates/readme-claims';
-import { run_scaffold_defaults_gate } from './gates/scaffold-defaults';
-import { run_test_isolation_gate } from './gates/test-isolation';
-import { run_runtime_checks_gate } from './gates/runtime-checks';
-import { run_accessibility_gate } from './gates/accessibility';
-import { run_test_coverage_gate } from './gates/test-coverage';
-import { run_test_file_protection_gate } from './gates/test-file-protection';
+import { getRegisteredGates } from './registry';
 import {
     GateContext,
     GateResult,
@@ -67,44 +59,15 @@ export async function run_quality_gates(
     }),
     baselineFiles,
     skippedRequirementIds,
+    baseCommit,
   };
 
   const gateResults: GateResult[] = [];
 
-  if (config.gates.scaffoldDefaults.enabled) {
-    gateResults.push(await run_scaffold_defaults_gate(ctx, config.gates.scaffoldDefaults, config.maxFileSizeBytes));
-  }
-
-  if (config.gates.duplicateBlocks.enabled) {
-    gateResults.push(await run_duplicate_blocks_gate(ctx, config.gates.duplicateBlocks, config.maxFileSizeBytes));
-  }
-
-  if (config.gates.hardcodedConfig.enabled) {
-    gateResults.push(await run_hardcoded_config_gate(ctx, config.gates.hardcodedConfig, config.maxFileSizeBytes));
-  }
-
-  if (config.gates.readmeClaims.enabled) {
-    gateResults.push(await run_readme_claims_gate(ctx, config.gates.readmeClaims, config.maxFileSizeBytes));
-  }
-
-  if (config.gates.testIsolation.enabled) {
-    gateResults.push(await run_test_isolation_gate(ctx, config.gates.testIsolation, config.maxFileSizeBytes));
-  }
-
-  if (config.gates.runtimeChecks.enabled) {
-    gateResults.push(await run_runtime_checks_gate(projectRoot, config.gates.runtimeChecks, baseCommit));
-  }
-
-  if (config.gates.accessibility.enabled) {
-    gateResults.push(await run_accessibility_gate(ctx, config.gates.accessibility, config.maxFileSizeBytes));
-  }
-
-  if (config.gates.testCoverage.enabled) {
-    gateResults.push(await run_test_coverage_gate(ctx, config.gates.testCoverage, config.maxFileSizeBytes));
-  }
-
-  if (config.gates.testFileProtection.enabled) {
-    gateResults.push(await run_test_file_protection_gate(projectRoot, config.gates.testFileProtection, baseCommit));
+  for (const gate of getRegisteredGates()) {
+    const gateConfig = config.gates[gate.key];
+    if (!gateConfig?.enabled) continue;
+    gateResults.push(await gate.run(ctx, gateConfig, config.maxFileSizeBytes));
   }
 
   // Downgrade gate failures when the entire gate covers requirements that are

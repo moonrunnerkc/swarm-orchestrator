@@ -1,5 +1,7 @@
 import { spawn } from 'child_process';
 import { GitHubIssueReference } from './bootstrap-types';
+import { getLogger } from './logger';
+const logger = getLogger('github-issues-ingester');
 
 /**
  * GitHub Issues Ingester - fetch open issues via gh CLI
@@ -25,7 +27,7 @@ export class GitHubIssuesIngester {
   async fetchIssues(repoPath: string): Promise<GitHubIssueReference[]> {
     const ghAvailable = await this.isGhCliAvailable();
     if (!ghAvailable) {
-      console.warn('gh CLI not available, skipping issue ingestion');
+      logger.warn('gh CLI not available, skipping issue ingestion');
       return [];
     }
 
@@ -48,7 +50,7 @@ export class GitHubIssuesIngester {
 
       proc.on('close', (code) => {
         if (code !== 0) {
-          console.warn(`gh issue list failed: ${stderr}`);
+          logger.warn(`gh issue list failed: ${stderr}`);
           resolve([]);
           return;
         }
@@ -66,7 +68,7 @@ export class GitHubIssuesIngester {
           
           resolve(issues);
         } catch (error) {
-          console.warn(`Failed to parse gh issue output: ${error}`);
+          logger.warn(`Failed to parse gh issue output: ${error}`);
           resolve([]);
         }
       });
@@ -166,10 +168,10 @@ export class GitHubIssuesIngester {
       const result = await this.closeIssue(issueNumber, comment, repoPath);
       if (result.success) {
         closed++;
-        console.log(`  ✓ Closed issue #${issueNumber}`);
+        logger.info(`  ✓ Closed issue #${issueNumber}`);
       } else {
         failed++;
-        console.warn(`  ✗ Failed to close issue #${issueNumber}: ${result.error}`);
+        logger.warn(`  ✗ Failed to close issue #${issueNumber}: ${result.error}`);
       }
     }
 

@@ -24,6 +24,8 @@ export interface GateContext {
   baselineFiles?: Set<string> | undefined;
   /** Requirement IDs classified as 'skip' for the current task type, used to downgrade gate failures */
   skippedRequirementIds?: Set<string> | undefined;
+  /** Base commit used for diff-aware gates. */
+  baseCommit?: string | undefined;
 }
 
 export interface ProjectFile {
@@ -33,7 +35,11 @@ export interface ProjectFile {
   text?: string;
 }
 
-export interface QualityGate<TConfig> {
+export interface GenericGateConfig {
+  enabled: boolean;
+}
+
+export interface QualityGate<TConfig extends GenericGateConfig> {
   id: string;
   title: string;
   run(ctx: GateContext, config: TConfig): Promise<GateResult>;
@@ -126,6 +132,18 @@ export interface TestFileProtectionConfig {
   maxFindings?: number;
 }
 
+export interface BuiltInQualityGateConfigs {
+  scaffoldDefaults: ScaffoldDefaultsConfig;
+  duplicateBlocks: DuplicateBlocksConfig;
+  hardcodedConfig: HardcodeConfig;
+  readmeClaims: ReadmeClaimsConfig;
+  testIsolation: TestIsolationConfig;
+  runtimeChecks: RuntimeChecksConfig;
+  accessibility: AccessibilityConfig;
+  testCoverage: TestCoverageConfig;
+  testFileProtection: TestFileProtectionConfig;
+}
+
 export interface QualityGatesConfig {
   enabled: boolean;
   failOnIssues: boolean;
@@ -137,15 +155,5 @@ export interface QualityGatesConfig {
   maxFileSizeBytes: number;
   autoAddAccessibilityFixStepOnAccessibility: boolean;
   autoAddTestCoverageStepOnTestCoverage: boolean;
-  gates: {
-    scaffoldDefaults: ScaffoldDefaultsConfig;
-    duplicateBlocks: DuplicateBlocksConfig;
-    hardcodedConfig: HardcodeConfig;
-    readmeClaims: ReadmeClaimsConfig;
-    testIsolation: TestIsolationConfig;
-    runtimeChecks: RuntimeChecksConfig;
-    accessibility: AccessibilityConfig;
-    testCoverage: TestCoverageConfig;
-    testFileProtection: TestFileProtectionConfig;
-  };
+  gates: BuiltInQualityGateConfigs & Record<string, any>;
 }

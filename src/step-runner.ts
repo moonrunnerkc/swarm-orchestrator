@@ -5,6 +5,8 @@ import { AgentProfile } from './config-loader';
 import { ExecutionOptions } from './types';
 import { GitHubMcpIntegrator } from './github-mcp-integrator';
 import SessionExecutor, { SessionResult, SessionOptions } from './session-executor';
+import { getLogger } from './logger';
+const logger = getLogger('step-runner');
 
 export interface StepResult {
   stepNumber: number;
@@ -225,7 +227,7 @@ export class StepRunner {
       retries?: number;
     }
   ): Promise<SessionResult> {
-    console.log(`\nExecuting Step ${step.stepNumber} (${agent.name}) programmatically...`);
+    logger.info(`\nExecuting Step ${step.stepNumber} (${agent.name}) programmatically...`);
     
     const sessionOptions = {
       model: options?.model || undefined,
@@ -242,12 +244,12 @@ export class StepRunner {
     );
 
     if (result.success && result.transcriptPath) {
-      console.log(`✓ Step ${step.stepNumber} completed`);
-      console.log(`  Transcript: ${result.transcriptPath}`);
+      logger.info(`✓ Step ${step.stepNumber} completed`);
+      logger.info(`  Transcript: ${result.transcriptPath}`);
     } else {
-      console.error(`✗ Step ${step.stepNumber} failed after ${maxRetries} attempts`);
+      logger.error(`✗ Step ${step.stepNumber} failed after ${maxRetries} attempts`);
       if (result.error) {
-        console.error(`  Error: ${result.error}`);
+        logger.error(`  Error: ${result.error}`);
       }
     }
 
@@ -264,22 +266,22 @@ export class StepRunner {
   ): void {
     const prompt = this.generateSessionPrompt(step, agent, context);
     
-    console.log('\n' + '='.repeat(70));
-    console.log(`Step ${step.stepNumber}: ${step.task}`);
-    console.log(`Agent: ${agent.name}`);
-    console.log('='.repeat(70));
-    console.log('');
-    console.log('INSTRUCTIONS:');
-    console.log('-------------');
-    console.log('1. Open a new GitHub Copilot CLI session in this repository');
-    console.log('2. Copy the prompt below and paste it into the session');
-    console.log('3. Work with Copilot to complete the task');
-    console.log('4. When done, run /share and save the transcript');
-    console.log('');
-    console.log('SESSION PROMPT (copy everything below):');
-    console.log('');
-    console.log(prompt);
-    console.log('');
+    logger.info('\n' + '='.repeat(70));
+    logger.info(`Step ${step.stepNumber}: ${step.task}`);
+    logger.info(`Agent: ${agent.name}`);
+    logger.info('='.repeat(70));
+    logger.info('');
+    logger.info('INSTRUCTIONS:');
+    logger.info('-------------');
+    logger.info('1. Open a new GitHub Copilot CLI session in this repository');
+    logger.info('2. Copy the prompt below and paste it into the session');
+    logger.info('3. Work with Copilot to complete the task');
+    logger.info('4. When done, run /share and save the transcript');
+    logger.info('');
+    logger.info('SESSION PROMPT (copy everything below):');
+    logger.info('');
+    logger.info(prompt);
+    logger.info('');
   }
 
   /**

@@ -1,9 +1,19 @@
 import { spawn } from 'child_process';
-import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import ShareParser, { ShareIndex } from './share-parser';
-import { HookGenerator, EvidenceEntry } from './hook-generator';
+import { DEFAULT_FAILURE_CONTEXT_CHARS } from './defaults';
+import { runOutcomeChecks as runOutcomeChecksImpl } from './verifier/outcome-checks';
+import {
+  buildSummary as buildSummaryImpl,
+  crossReferenceEvidence as crossReferenceEvidenceImpl,
+  verifyAllClaims as verifyAllClaimsImpl,
+  verifyBuild as verifyBuildImpl,
+  verifyCommits as verifyCommitsImpl,
+  verifyTests as verifyTestsImpl,
+} from './verifier/transcript-checks';
+import { getLogger } from './logger';
+const logger = getLogger('verifier-engine');
 
 export interface VerificationCheck {
   type: 'test' | 'build' | 'lint' | 'commit' | 'claim' | 'output'
@@ -79,8 +89,8 @@ export function buildFailureContext(checks: VerificationCheck[]): string {
   const joined = lines.join('\n');
 
   // ~500 tokens at 4 chars/token = 2000 chars
-  if (joined.length > 2000) {
-    return joined.slice(0, 2000) + '\n... (truncated)';
+  if (joined.length > DEFAULT_FAILURE_CONTEXT_CHARS) {
+    return joined.slice(0, DEFAULT_FAILURE_CONTEXT_CHARS) + '\n... (truncated)';
   }
   return joined;
 }
@@ -225,522 +235,31 @@ export class VerifierEngine {
     return result;
   }
 
-  /**
-   * Run outcome-based checks against the actual worktree state.
-   * These checks verify what the agent actually produced, independent of
-   * what the transcript claims.
-   */
   private runOutcomeChecks(opts: OutcomeVerificationOpts): VerificationCheck[] {
-    const checks: VerificationCheck[] = [];
-
-    checks.push(this.checkGitDiff(opts.workdir, opts.baseSha));
-
-    if (opts.expectedFiles && opts.expectedFiles.length > 0) {
-      checks.push(this.checkFileExistence(opts.workdir, opts.expectedFiles));
-    }
-
-    const buildCheck = this.checkBuildExec(opts.workdir);
-    if (buildCheck) {
-      checks.push(buildCheck);
-    }
-
-    const testCheck = this.checkTestExec(opts.workdir);
-    if (testCheck) {
-      checks.push(testCheck);
-    }
-
-    return checks;
+    return runOutcomeChecksImpl(opts, this.workingDir);
   }
 
-  /**
-   * git_diff: verifies the agent made at least one change since baseSha.
-   */
-  private checkGitDiff(workdir: string, baseSha: string): VerificationCheck {
-    try {
-      const diffOutput = execSync(
-        `git diff --stat ${baseSha}..HEAD`,
-        { cwd: workdir, encoding: 'utf8', timeout: 10_000 }
-      ).trim();
-
-      if (!diffOutput) {
-        return {
-          type: 'git_diff',
-          description: 'Agent produced code changes',
-          required: true,
-          passed: false,
-          reason: `No changes detected since ${baseSha.slice(0, 8)}`,
-        };
-      }
-
-      // Parse summary line (e.g. "3 files changed, 42 insertions(+), 5 deletions(-)")
-      const lines = diffOutput.split('\n');
-      const summaryLine = lines[lines.length - 1] || '';
-
-      return {
-        type: 'git_diff',
-        description: 'Agent produced code changes',
-        required: true,
-        passed: true,
-        evidence: summaryLine.trim(),
-      };
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return {
-        type: 'git_diff',
-        description: 'Agent produced code changes',
-        required: true,
-        passed: false,
-        reason: `git diff failed: ${msg.split('\n')[0]}`,
-      };
-    }
-  }
-
-  /**
-   * file_existence: checks that expected files exist in the worktree.
-   */
-  private checkFileExistence(workdir: string, expectedFiles: string[]): VerificationCheck {
-    const missing: string[] = [];
-    const present: string[] = [];
-
-    for (const file of expectedFiles) {
-      const fullPath = path.join(workdir, file);
-      if (fs.existsSync(fullPath)) {
-        present.push(file);
-      } else {
-        missing.push(file);
-      }
-    }
-
-    if (missing.length > 0) {
-      return {
-        type: 'file_existence',
-        description: 'Expected files exist in worktree',
-        required: true,
-        passed: false,
-        reason: `Missing files: ${missing.join(', ')}`,
-        evidence: `${present.length}/${expectedFiles.length} present`,
-      };
-    }
-
-    return {
-      type: 'file_existence',
-      description: 'Expected files exist in worktree',
-      required: true,
-      passed: true,
-      evidence: `All ${expectedFiles.length} expected file(s) found`,
-    };
-  }
-
-  /**
-   * build_exec: detects and runs the build command in the worktree.
-   * Returns null if no build script detected (no check generated).
-   */
-  private checkBuildExec(workdir: string): VerificationCheck | null {
-    const buildCmd = this.detectBuildCommand(workdir);
-    if (!buildCmd) return null;
-
-    try {
-      execSync(buildCmd, {
-        cwd: workdir,
-        encoding: 'utf8',
-        timeout: 60_000,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
-      return {
-        type: 'build_exec',
-        description: `Build succeeded (${buildCmd})`,
-        required: true,
-        passed: true,
-        evidence: `Ran "${buildCmd}" in worktree`,
-      };
-    } catch (err: unknown) {
-      const output = this.extractCommandOutput(err);
-      return {
-        type: 'build_exec',
-        description: `Build failed (${buildCmd})`,
-        required: true,
-        passed: false,
-        reason: last20Lines(output),
-      };
-    }
-  }
-
-  /**
-   * test_exec: detects and runs the test command in the worktree.
-   * Returns null if no test script detected (no check generated).
-   */
-  private checkTestExec(workdir: string): VerificationCheck | null {
-    const testCmd = this.detectTestCommand(workdir);
-    if (!testCmd) return null;
-
-    try {
-      execSync(testCmd, {
-        cwd: workdir,
-        encoding: 'utf8',
-        timeout: 120_000,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
-      return {
-        type: 'test_exec',
-        description: `Tests passed (${testCmd})`,
-        required: true,
-        passed: true,
-        evidence: `Ran "${testCmd}" in worktree`,
-      };
-    } catch (err: unknown) {
-      const output = this.extractCommandOutput(err);
-
-      // Node.js v24+ has a bug where `node --test <dir>` fails with
-      // MODULE_NOT_FOUND in ESM projects ("type": "module"). The CJS
-      // loader tries to resolve the directory as a require path instead
-      // of discovering test files. Fall back to `node --test` which uses
-      // auto-discovery and works correctly in both CJS and ESM projects.
-      if (testCmd === 'npm test' && output.includes('MODULE_NOT_FOUND')) {
-        const fallback = this.retryTestWithAutoDiscovery(workdir);
-        if (fallback) return fallback;
-      }
-
-      return {
-        type: 'test_exec',
-        description: `Tests failed (${testCmd})`,
-        required: true,
-        passed: false,
-        reason: last20Lines(output),
-      };
-    }
-  }
-
-  /**
-   * Retry test execution using `node --test` auto-discovery when `npm test`
-   * fails due to the ESM directory resolution bug in Node.js v24+.
-   * Returns null if the fallback also fails or is not applicable.
-   */
-  private retryTestWithAutoDiscovery(workdir: string): VerificationCheck | null {
-    const pkgPath = path.join(workdir, 'package.json');
-    try {
-      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-      const testScript: string = pkg.scripts?.test || '';
-      // Only retry when the test script passes a directory to node --test
-      if (!/node\s+--test\s+\S+/.test(testScript)) return null;
-    } catch {
-      return null;
-    }
-
-    const fallbackCmd = 'node --test';
-    try {
-      execSync(fallbackCmd, {
-        cwd: workdir,
-        encoding: 'utf8',
-        timeout: 120_000,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
-      return {
-        type: 'test_exec',
-        description: `Tests passed (${fallbackCmd}, auto-discovery fallback)`,
-        required: true,
-        passed: true,
-        evidence: `Original npm test hit ESM directory bug; retried with "${fallbackCmd}"`,
-      };
-    } catch {
-      // Fallback also failed; let the original error propagate
-      return null;
-    }
-  }
-
-  /**
-   * Detect build command from project config files.
-   */
-  private detectBuildCommand(workdir: string): string | null {
-    const pkgPath = path.join(workdir, 'package.json');
-    if (fs.existsSync(pkgPath)) {
-      try {
-        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-        if (pkg.scripts?.build) return 'npm run build';
-      } catch { /* malformed package.json; skip */ }
-    }
-
-    const makefilePath = path.join(workdir, 'Makefile');
-    if (fs.existsSync(makefilePath)) {
-      const content = fs.readFileSync(makefilePath, 'utf8');
-      if (/^build\s*:/m.test(content)) return 'make build';
-    }
-
-    return null;
-  }
-
-  /**
-   * Resolve the best Python binary for a project directory.
-   * Checks local venvs first (where pytest is likely installed),
-   * then the main repo root venv (worktrees don't include gitignored dirs),
-   * then falls back to system python3/python.
-   */
-  private resolvePythonBinary(workdir: string): string {
-    // Check venvs in the worktree itself
-    for (const venvDir of ['venv', '.venv', 'env', '.env']) {
-      const venvPython = path.join(workdir, venvDir, 'bin', 'python');
-      if (fs.existsSync(venvPython)) return venvPython;
-    }
-
-    // Worktrees created by git won't have the venv; check the main repo root
-    if (workdir !== this.workingDir) {
-      for (const venvDir of ['venv', '.venv', 'env', '.env']) {
-        const venvPython = path.join(this.workingDir, venvDir, 'bin', 'python');
-        if (fs.existsSync(venvPython)) return venvPython;
-      }
-    }
-
-    // No venv found; prefer python3 since many Linux systems lack a bare "python"
-    try {
-      execSync('python3 --version', { stdio: 'pipe', timeout: 5000 });
-      return 'python3';
-    } catch { /* python3 not available */ }
-
-    return 'python';
-  }
-
-  /**
-   * Detect test command from project config files.
-   */
-  private detectTestCommand(workdir: string): string | null {
-    const pkgPath = path.join(workdir, 'package.json');
-    if (fs.existsSync(pkgPath)) {
-      try {
-        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-        const testScript: string = pkg.scripts?.test || '';
-        // npm init and yarn init both set a placeholder that exits 1.
-        // Treating it as a real test command causes false verification failures
-        // on steps that create a project but delegate testing to a later step.
-        const isPlaceholder = /no test(s)? specified/i.test(testScript)
-          || /exit\s+1/.test(testScript) && testScript.includes('echo');
-        if (testScript && !isPlaceholder) return 'npm test';
-      } catch { /* malformed package.json; skip */ }
-    }
-
-    const makefilePath = path.join(workdir, 'Makefile');
-
-    // Python projects: check for pytest markers in common config files,
-    // then fall back to checking for a test directory with conftest or test files.
-    // Checked BEFORE Makefile because Makefile test targets often run bare `pytest`
-    // without activating the venv, which fails in git worktrees where venv/
-    // is not present. resolvePythonBinary handles worktree-to-repo-root fallback.
-    const pytestCmd = () => `${this.resolvePythonBinary(workdir)} -m pytest`;
-
-    const pyprojectPath = path.join(workdir, 'pyproject.toml');
-    if (fs.existsSync(pyprojectPath)) {
-      const content = fs.readFileSync(pyprojectPath, 'utf8');
-      if (content.includes('[tool.pytest') || content.includes('pytest')) {
-        return pytestCmd();
-      }
-    }
-
-    const setupCfgPath = path.join(workdir, 'setup.cfg');
-    if (fs.existsSync(setupCfgPath)) {
-      const content = fs.readFileSync(setupCfgPath, 'utf8');
-      if (content.includes('[tool:pytest]')) {
-        return pytestCmd();
-      }
-    }
-
-    // If a requirements file mentions pytest, that's strong enough signal
-    for (const reqFile of ['requirements.txt', 'requirements-dev.txt', 'requirements-test.txt']) {
-      const reqPath = path.join(workdir, reqFile);
-      if (fs.existsSync(reqPath)) {
-        const content = fs.readFileSync(reqPath, 'utf8');
-        if (/^pytest/m.test(content)) {
-          return pytestCmd();
-        }
-      }
-    }
-
-    // Makefile test target: checked after Python-specific signals so that
-    // projects with a venv get the correct interpreter via resolvePythonBinary
-    if (fs.existsSync(makefilePath)) {
-      const content = fs.readFileSync(makefilePath, 'utf8');
-      if (/^test\s*:/m.test(content)) return 'make test';
-    }
-
-    // Last resort: test directory with Python test files present
-    for (const testDir of ['tests', 'test']) {
-      const testDirPath = path.join(workdir, testDir);
-      if (fs.existsSync(testDirPath) && fs.statSync(testDirPath).isDirectory()) {
-        try {
-          const entries = fs.readdirSync(testDirPath);
-          const hasPyTests = entries.some(f => f.startsWith('test_') && f.endsWith('.py'));
-          if (hasPyTests) return pytestCmd();
-        } catch { /* unreadable dir; skip */ }
-      }
-    }
-
-    return null;
-  }
-
-  /**
-   * Extract stdout+stderr from a child_process error for truncated display.
-   */
-  private extractCommandOutput(err: unknown): string {
-    if (err && typeof err === 'object') {
-      const e = err as { stdout?: string; stderr?: string; message?: string };
-      const parts: string[] = [];
-      if (e.stdout) parts.push(e.stdout);
-      if (e.stderr) parts.push(e.stderr);
-      if (parts.length > 0) return parts.join('\n');
-      if (e.message) return e.message;
-    }
-    return String(err);
-  }
-
-  /**
-   * One-line summary of verification outcome.
-   */
   private buildSummary(checks: VerificationCheck[], passed: boolean): string {
-    const total = checks.length;
-    const passedCount = checks.filter(c => c.passed).length;
-    const requiredFailed = checks.filter(c => c.required && !c.passed).length;
-    if (passed) {
-      return `${passedCount}/${total} checks passed`;
-    }
-    return `${requiredFailed} required check(s) failed out of ${total} total`;
+    return buildSummaryImpl(checks, passed);
   }
 
-  /**
-   * Verify that tests were actually executed
-   */
   private verifyTests(shareIndex: ShareIndex): VerificationCheck {
-    const testsRun = shareIndex.testsRun;
-
-    if (testsRun.length === 0) {
-      return {
-        type: 'test',
-        description: 'Tests executed',
-        required: true,
-        passed: false,
-        reason: 'No test commands found in transcript'
-      };
-    }
-
-    const verifiedTests = testsRun.filter(t => t.verified);
-
-    if (verifiedTests.length === 0) {
-      return {
-        type: 'test',
-        description: 'Tests executed with output',
-        required: true,
-        passed: false,
-        reason: 'Test commands found but no test output detected',
-        evidence: `Commands: ${testsRun.map(t => t.command).join(', ')}`
-      };
-    }
-
-    return {
-      type: 'test',
-      description: 'Tests executed successfully',
-      required: true,
-      passed: true,
-      evidence: `${verifiedTests.length} test(s) verified: ${verifiedTests.map(t => t.command).join(', ')}`
-    };
+    return verifyTestsImpl(shareIndex);
   }
 
-  /**
-   * Verify that build succeeded
-   */
   private verifyBuild(shareIndex: ShareIndex): VerificationCheck {
-    const builds = shareIndex.buildOperations;
-
-    if (builds.length === 0) {
-      return {
-        type: 'build',
-        description: 'Build executed',
-        required: true,
-        passed: false,
-        reason: 'No build commands found in transcript'
-      };
-    }
-
-    const verifiedBuilds = builds.filter(b => b.verified);
-
-    if (verifiedBuilds.length === 0) {
-      return {
-        type: 'build',
-        description: 'Build succeeded',
-        required: true,
-        passed: false,
-        reason: 'Build commands found but no success output detected',
-        evidence: `Tools: ${builds.map(b => b.tool).join(', ')}`
-      };
-    }
-
-    return {
-      type: 'build',
-      description: 'Build succeeded',
-      required: true,
-      passed: true,
-      evidence: `Verified builds: ${verifiedBuilds.map(b => b.tool).join(', ')}`
-    };
+    return verifyBuildImpl(shareIndex);
   }
 
-  /**
-   * Verify that commits were made
-   */
   private verifyCommits(shareIndex: ShareIndex): VerificationCheck {
-    const commits = shareIndex.gitCommits;
-
-    if (commits.length === 0) {
-      return {
-        type: 'commit',
-        description: 'Git commits made',
-        required: true,
-        passed: false,
-        reason: 'No git commits found in transcript'
-      };
-    }
-
-    const verifiedCommits = commits.filter(c => c.verified);
-
-    if (verifiedCommits.length === 0) {
-      return {
-        type: 'commit',
-        description: 'Git commits verified',
-        required: true,
-        passed: false,
-        reason: 'Commit messages found but not verified in output'
-      };
-    }
-
-    return {
-      type: 'commit',
-      description: 'Git commits verified',
-      required: true,
-      passed: true,
-      evidence: `${verifiedCommits.length} commit(s): ${verifiedCommits.map(c => c.message).slice(0, 3).join('; ')}${verifiedCommits.length > 3 ? '...' : ''}`
-    };
+    return verifyCommitsImpl(shareIndex);
   }
 
-  /**
-   * Verify all claims made in transcript against evidence
-   */
   private verifyAllClaims(shareIndex: ShareIndex): {
     checks: VerificationCheck[];
     unverifiedClaims: string[];
   } {
-    const checks: VerificationCheck[] = [];
-    const unverifiedClaims: string[] = [];
-
-    // Check all claims from parser
-    shareIndex.claims.forEach(claim => {
-      if (!claim.verified) {
-        checks.push({
-          type: 'claim',
-          description: `Verify claim: "${claim.claim.substring(0, 50)}..."`,
-          required: false,
-          passed: false,
-          reason: claim.evidence || 'No evidence found',
-          evidence: claim.claim
-        });
-        unverifiedClaims.push(claim.claim);
-      }
-    });
-
-    return { checks, unverifiedClaims };
+    return verifyAllClaimsImpl(shareIndex);
   }
 
   /**
@@ -1085,7 +604,7 @@ export class VerifierEngine {
       // Verification reports are nice-to-have in git, not required for success
       const error = err as Error;
       if (!error.message.includes('nothing to commit')) {
-        console.warn(`  ⚠️  Could not commit verification report: ${error.message.split('\n')[0]}`);
+        logger.warn(`  ⚠️  Could not commit verification report: ${error.message.split('\n')[0]}`);
       }
     }
   }
@@ -1096,95 +615,7 @@ export class VerifierEngine {
    * mention, the step fails (defense in depth).
    */
   private crossReferenceEvidence(shareIndex: ShareIndex, evidenceLogPath: string): VerificationCheck[] {
-    const hookGen = new HookGenerator();
-    const entries = hookGen.parseEvidenceLog(evidenceLogPath);
-
-    if (entries.length === 0) {
-      return [{
-        type: 'claim',
-        description: 'Hook evidence log exists and is non-empty',
-        required: false,
-        passed: false,
-        reason: `No hook evidence entries found at ${evidenceLogPath}`
-      }];
-    }
-
-    const checks: VerificationCheck[] = [];
-
-    // Check for errors captured by hooks that transcript might not mention
-    const errorEntries = entries.filter(e => e.event === 'errorOccurred');
-    // Transcript error signals: failed tests, failed builds, or unverified claims
-    const transcriptHasErrors = shareIndex.testsRun.some(t => !t.verified)
-      || shareIndex.buildOperations.some(b => !b.verified)
-      || shareIndex.claims.some(c => !c.verified);
-
-    if (errorEntries.length > 0 && !transcriptHasErrors) {
-      checks.push({
-        type: 'claim',
-        description: 'Hook error evidence cross-references transcript',
-        required: true,
-        passed: false,
-        evidence: `Hooks captured ${errorEntries.length} error(s) but transcript reports none`,
-        reason: `Hook evidence contradicts transcript: ${errorEntries.length} error(s) captured by hooks were not mentioned in transcript`
-      });
-    } else if (errorEntries.length > 0) {
-      checks.push({
-        type: 'claim',
-        description: 'Hook error evidence cross-references transcript',
-        required: false,
-        passed: true,
-        evidence: `Both hooks (${errorEntries.length}) and transcript acknowledge errors`
-      });
-    }
-
-    // Verify file operations recorded by hooks match transcript claims
-    const hookFiles = new Set(
-      entries
-        .filter(e => e.filePath)
-        .map(e => e.filePath as string)
-    );
-    const transcriptFiles = new Set(shareIndex.changedFiles || []);
-
-    // Scope violation enforcement: if hooks logged any scope_violation entries,
-    // the step fails verification. This compensates for the Copilot CLI SDK not
-    // honoring deny decisions at execution time (SDK <=1.0.7).
-    const scopeViolations = entries.filter(e => e.event === 'scope_violation');
-    if (scopeViolations.length > 0) {
-      const violatedFiles = scopeViolations.map(v => v.filePath || 'unknown').join(', ');
-      const agents = [...new Set(scopeViolations.map(v => v.agentName || 'unknown'))];
-      const rules = [...new Set(scopeViolations.map(v => v.boundaryRule || 'unknown'))];
-      checks.push({
-        type: 'claim',
-        description: 'No scope violations detected during execution',
-        required: true,
-        passed: false,
-        evidence: `${scopeViolations.length} scope violation(s) logged by hooks`,
-        reason: `Agent ${agents.join(', ')} wrote to files outside its declared scope: ${violatedFiles}. Violated boundary rule(s): ${rules.join(', ')}`
-      });
-    }
-
-    // Hook-only files that transcript didn't mention (informational, not blocking)
-    const hookOnlyFiles = [...hookFiles].filter(f => !transcriptFiles.has(f));
-    if (hookOnlyFiles.length > 0) {
-      checks.push({
-        type: 'claim',
-        description: 'Hook file evidence has unmentioned files',
-        required: false,
-        passed: true,
-        evidence: `Hooks captured ${hookOnlyFiles.length} file(s) not mentioned in transcript: ${hookOnlyFiles.slice(0, 5).join(', ')}`
-      });
-    }
-
-    // Overall: hooks corroborate transcript
-    checks.push({
-      type: 'claim',
-      description: 'Hook evidence corroborates transcript',
-      required: false,
-      passed: true,
-      evidence: `${entries.length} hook evidence entries, ${hookFiles.size} files tracked`
-    });
-
-    return checks;
+    return crossReferenceEvidenceImpl(shareIndex, evidenceLogPath);
   }
 }
 

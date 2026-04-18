@@ -4,6 +4,8 @@ import * as path from 'path';
 import { Spinner } from './spinner';
 import { WorktreeManager } from './worktree-manager';
 import ContextBroker from './context-broker';
+import { getLogger } from './logger';
+const logger = getLogger('branch-merger');
 
 /** Tracking data for branches that failed to merge. */
 export interface UnmergedBranch {
@@ -104,35 +106,35 @@ export class BranchMerger {
 
         if (prResult.success && prResult.url) {
           prUrls?.set(result.stepNumber, prResult.url);
-          console.log(`  \u{1F4CB} PR created for step ${result.stepNumber}: ${prResult.url}`);
+          logger.info(`  \u{1F4CB} PR created for step ${result.stepNumber}: ${prResult.url}`);
 
           if (prMode === 'auto' && prResult.number) {
             const merged = context.prManager.autoMergePR(prResult.number);
             if (merged) {
-              console.log(`  \u2705 Auto-merged PR #${prResult.number}`);
+              logger.info(`  \u2705 Auto-merged PR #${prResult.number}`);
             } else {
-              console.warn(`  \u26A0\uFE0F  Auto-merge failed for PR #${prResult.number}; manual merge required`);
+              logger.warn(`  \u26A0\uFE0F  Auto-merge failed for PR #${prResult.number}; manual merge required`);
             }
           } else if (prMode === 'review' && prResult.number) {
-            console.log(`  \u23F3 Waiting for approval on PR #${prResult.number}...`);
+            logger.info(`  \u23F3 Waiting for approval on PR #${prResult.number}...`);
             const status = await context.prManager.waitForApproval(prResult.number);
             if (status.approved || status.state === 'MERGED') {
-              console.log(`  \u2705 PR #${prResult.number} approved`);
+              logger.info(`  \u2705 PR #${prResult.number} approved`);
               if (status.state !== 'MERGED') {
                 context.prManager.autoMergePR(prResult.number);
               }
             } else {
-              console.warn(`  \u26A0\uFE0F  PR #${prResult.number} review timed out or was not approved`);
+              logger.warn(`  \u26A0\uFE0F  PR #${prResult.number} review timed out or was not approved`);
             }
           }
         } else {
-          console.warn(`  \u26A0\uFE0F  PR creation failed for ${result.branchName}: ${prResult.error}`);
+          logger.warn(`  \u26A0\uFE0F  PR creation failed for ${result.branchName}: ${prResult.error}`);
           try {
             await this.mergeBranch(result.branchName, context);
-            console.log(`  \u2705 Merged ${result.branchName} (fallback)`);
+            logger.info(`  \u2705 Merged ${result.branchName} (fallback)`);
           } catch (error: unknown) {
             const err = error as Error;
-            console.warn(`  \u26A0\uFE0F  Merge conflict for ${result.branchName}: ${err.message}`);
+            logger.warn(`  \u26A0\uFE0F  Merge conflict for ${result.branchName}: ${err.message}`);
           }
         }
       }
@@ -159,20 +161,20 @@ export class BranchMerger {
         if (result.branchName) {
           try {
             await this.mergeBranch(result.branchName, context);
-            console.log(`  \u2705 Merged ${result.branchName}`);
+            logger.info(`  \u2705 Merged ${result.branchName}`);
           } catch (error: unknown) {
             const err = error as Error;
             try {
               execSync('git merge --abort', { cwd: this.workingDir, stdio: 'pipe' });
             } catch { /* no merge in progress */ }
 
-            console.log(`  \u{1F504} Merge conflict for ${result.branchName}, rebasing onto ${context.mainBranch}...`);
+            logger.info(`  \u{1F504} Merge conflict for ${result.branchName}, rebasing onto ${context.mainBranch}...`);
             const rebased = this.tryRebaseAndMerge(result.branchName, context);
             if (rebased) {
-              console.log(`  \u2705 Merged ${result.branchName} (rebased)`);
+              logger.info(`  \u2705 Merged ${result.branchName} (rebased)`);
             } else {
-              console.warn(`  \u26A0\uFE0F  Could not merge ${result.branchName} after rebase: ${err.message}`);
-              console.warn(`     Step ${result.stepNumber} work preserved on branch ${result.branchName}`);
+              logger.warn(`  \u26A0\uFE0F  Could not merge ${result.branchName} after rebase: ${err.message}`);
+              logger.warn(`     Step ${result.stepNumber} work preserved on branch ${result.branchName}`);
               unmerged.push({
                 stepNumber: result.stepNumber,
                 branchName: result.branchName,
@@ -252,7 +254,7 @@ export class BranchMerger {
     for (const result of results) {
       if (result.status === 'completed' && result.branchName) {
         if (mergedBranches.includes(result.branchName)) {
-          console.log(`  \u2705 ${result.branchName} (already merged)`);
+          logger.info(`  \u2705 ${result.branchName} (already merged)`);
           continue;
         }
         const mergeSpinner = new Spinner(`Merging ${result.branchName}...`, { style: 'dots', prefix: '  ' });
@@ -271,7 +273,7 @@ export class BranchMerger {
             mergeSpinner.succeed(`Merged ${result.branchName} (rebased)`);
           } else {
             mergeSpinner.fail(`Conflict merging ${result.branchName}: ${err.message}`);
-            console.error(`     Work preserved on branch ${result.branchName}`);
+            logger.error(`     Work preserved on branch ${result.branchName}`);
             unmerged.push({
               stepNumber: result.stepNumber,
               branchName: result.branchName,
@@ -325,7 +327,7 @@ export class BranchMerger {
 
     // Strategy 2: -X theirs auto-resolution
     try {
-      console.log(`  \u{1F500} Retrying merge of ${branchName} with conflict auto-resolution...`);
+      logger.info(`  \u{1F500} Retrying merge of ${branchName} with conflict auto-resolution...`);
       execSync(`git merge -X theirs --no-ff "${branchName}" -m "Merge ${branchName} (auto-resolved)"`, {
         cwd: this.workingDir, stdio: 'pipe', timeout: 120000, env: mergeEnv
       });
@@ -362,7 +364,7 @@ export class BranchMerger {
             `git commit --no-edit -m "Merge ${branchName} (auto-resolved conflicts)"`,
             { cwd: this.workingDir, stdio: 'pipe', env: mergeEnv }
           );
-          console.log(`  \u2705 Resolved merge conflicts for ${branchName}`);
+          logger.info(`  \u2705 Resolved merge conflicts for ${branchName}`);
           return true;
         }
       } catch {

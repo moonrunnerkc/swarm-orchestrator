@@ -2,6 +2,8 @@ import { AgentProfile, ConfigLoader } from './config-loader';
 import { getGateRequirements, requiresTestStep } from './gate-prompt-builder';
 import { PlanStorage } from './plan-storage';
 import { QualityGatesConfig } from './quality-gates/types';
+import { getLogger } from './logger';
+const logger = getLogger('plan-generator');
 
 export interface PlanStep {
   stepNumber: number;
@@ -956,7 +958,7 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
           ? addReq.agent
           : this.availableAgents.find(a => ConfigLoader.normalizeAgentName(a.name) === ConfigLoader.normalizeAgentName(addReq.agent))?.name;
         if (!matchedAgent) {
-          console.warn(`replan: unknown agent "${addReq.agent}", skipping`);
+          logger.warn(`replan: unknown agent "${addReq.agent}", skipping`);
           continue;
         }
 

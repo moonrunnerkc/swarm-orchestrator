@@ -22,7 +22,7 @@ _This is not an autonomous system builder. It orchestrates external AI agents (C
 &nbsp;&nbsp;
 [![CI](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml/badge.svg)](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml)
 &nbsp;&nbsp;
-![Tests: 1857 passing](https://img.shields.io/badge/tests-1857%20passing-brightgreen.svg)
+![Tests: 1398 passing](https://img.shields.io/badge/tests-1398%20passing-brightgreen.svg)
 &nbsp;&nbsp;
 ![Node.js 20+](https://img.shields.io/badge/node-20%2B-green.svg)
 &nbsp;&nbsp;
@@ -96,30 +96,38 @@ The orchestrator wraps `copilot -p` (or `/fleet` for native parallel subagent di
 
 Before execution begins, the cost estimator predicts premium request consumption based on the plan, model multipliers, and historical failure rates from the knowledge base. You can preview the estimate, set a hard budget, or run without limits.
 
-Started as a submission for the GitHub Copilot CLI Challenge in early 2026 and has grown into a verification, cost governance, and quality gate system for Copilot CLI runs.
+_Originally a submission for the [GitHub Copilot CLI Challenge](https://github.com) in early 2026._
 
 <br>
 
 ## Features
 
-- **Evidence-based verification** parsing Copilot `/share` transcripts for commit SHAs, test output, build markers, and file changes. No unverified code merges.
-- **Quality gates** checking for scaffold leftovers, duplicate code, hardcoded config, README claim drift, test isolation, test coverage, accessibility, and runtime correctness
-- **Failure-classified repair** categorizing failures (build, test, missing-artifact, dependency, timeout) and applying targeted fix strategies, up to 3 retries with accumulating context
-- **Governance mode** with a Critic agent that scores steps on weighted axes (build, test, lint, commit, claim) and auto-pauses on flags for human approval
-- **Strict isolation** forcing per-task branching with cross-wave context restricted to transcript-verified entries only
-- **Human-in-the-loop steering** with pause, resume, approve, reject commands and a conflict approval queue
-- **Pre-execution cost estimation** predicting premium request consumption per step, factoring in model multipliers (1x for claude-sonnet-4/gpt-4o, 5x for o4-mini, 20x for o3), retry probability from historical failure rates, and overage cost at $0.04 per request over allowance
-- **Per-step cost attribution** recording estimated vs actual premium requests, retry counts, prompt tokens, and fleet mode per step, saved to `cost-attribution.json` alongside metrics
-- **Greedy as-soon-as-ready scheduling** launching steps the moment their dependencies are satisfied (not when an entire wave finishes), with event-driven dependency resolution, adaptive concurrency, and octopus merge for multi-branch completion
-- **Fleet wrapper mode** (`--wrap-fleet`) prefixing step prompts with `/fleet` for Copilot CLI's native parallel subagent dispatch, with version detection and automatic fallback
-- **Multi-repo orchestration** with per-repo wave loops, cross-repo verification, and grouped merge
-- **Eight agent profiles** (six executing, one repair, one PM) with YAML-defined scope, boundaries, done-definitions, and refusal rules; custom agents supported
-- **Persistent sessions** with resume from last completed step, full audit trail, and Markdown report generation
-- **Lean mode (Delta Context Engine)** scanning the knowledge base pre-wave for similar past tasks and appending reference blocks to prompts
-- **Plan caching and replay** reusing stored plans above 0.85 similarity, or replaying prior verified transcripts for identical steps
-- **Deployment rollback** with tag-deploy-verify-rollback cycle and HTTP health checks
-- **Knowledge base** capturing execution patterns and cost history across runs for confidence-scored future planning and cost calibration
-- **Web dashboard** (single HTML page, dark theme, no build step) with real-time auto-refresh, step badges, wave health, learned patterns, and cost attribution panel with sortable per-step breakdown
+### Verification & Quality
+
+- **Evidence-based verification** — every agent transcript is parsed for commit SHAs, test output, build markers, and file changes. Steps that can't prove their work don't merge.
+- **Eight quality gates** — scaffold leftovers, duplicate code, hardcoded config, README claim drift, test isolation, test coverage, accessibility, runtime correctness. SARIF output for GitHub code scanning.
+- **Failure-classified repair** — failures are categorized (build, test, missing-artifact, dependency, timeout) and retried with targeted strategies, up to 3 attempts with accumulating context.
+- **Governance mode** — Critic agent scores steps on weighted axes, auto-pauses on flags for human approval. Supports pause, resume, approve, reject during execution.
+
+### Cost Governance
+
+- **Pre-execution cost estimation** — predicts premium request consumption factoring in model multipliers (1× for claude-sonnet-4/gpt-4o, 5× for o4-mini, 20× for o3), retry probability from historical failure rates, and overage cost.
+- **Per-step cost attribution** — records estimated vs actual premium requests, retry counts, and prompt tokens per step, saved to `cost-attribution.json`.
+- **Budget enforcement** — hard cap via `--max-premium-requests`, preview-only mode via `--cost-estimate-only`.
+
+### Execution
+
+- **Greedy scheduling** — steps launch the moment dependencies resolve, not when a wave finishes. Adaptive concurrency with octopus merge for multi-branch completion.
+- **Branch isolation** — each step runs in its own git worktree and branch. `--strict-isolation` restricts cross-step context to transcript-verified entries only.
+- **Multi-agent support** — Copilot CLI, Claude Code, Codex, and Claude Code Teams as backends. Eight built-in agent profiles; custom agents via YAML.
+- **Persistent sessions** — resume from last completed step, full audit trail, Markdown and JSON report generation.
+
+### Integrations
+
+- **Fleet wrapper** (`--wrap-fleet`) — Copilot CLI native parallel subagent dispatch with version detection and fallback.
+- **Web dashboard** — real-time TUI with step badges, wave health, cost attribution panel. Single HTML page, no build step.
+- **Lean mode** — Delta Context Engine scans the knowledge base for similar past tasks, appending reference blocks to prompts.
+- **Multi-repo orchestration** — per-repo wave loops, cross-repo verification, grouped merge. _(Experimental — see [limitations](#multi-repo).)_
 
 <br>
 
@@ -170,7 +178,7 @@ The primary workflow is pointing the orchestrator at an existing repo. `bootstra
 # Analyze a repo and generate a plan
 npm start bootstrap ./your-repo "Add comprehensive test coverage"
 
-# Multi-repo orchestration
+# Multi-repo orchestration (experimental — see limitations below)
 npm start bootstrap ./frontend ./backend "Add shared auth layer"
 
 # Generate a plan without executing (review first)
@@ -179,6 +187,8 @@ npm start plan "Refactor database layer to use Prisma"
 # Execute a reviewed plan
 npm start swarm plan.json
 ```
+
+> <a id="multi-repo"></a> **Multi-repo is experimental.** Relationship detection does not yet enforce cross-repo execution ordering. Merges are not atomic across repositories. PR automation is per-repo; there is no coordinated multi-repo PR set.
 
 ### Single Tasks
 
@@ -194,33 +204,64 @@ npm start quick "Fix the race condition in src/worker.ts"
 |---------|-------------|
 | `npm start bootstrap ./repo "goal"` | Analyze repo(s) and generate a plan |
 | `npm start run --goal "goal"` | Generate plan and execute in one step |
-| `npm start plan "goal"` | Generate an execution plan from a goal |
+| `npm start plan "goal"` | Generate an execution plan from a goal (`--output json`) |
 | `npm start swarm plan.json` | Execute a plan with parallel agents |
 | `npm start quick "task"` | Single-agent quick task |
-| `npm start gates [path]` | Run quality gates on a project |
+| `npm start gates [path]` | Run quality gates on a project (`--output json`) |
+| `npm start dashboard [port]` | Start the web dashboard (default: 3002) |
+| `npm start demo <name>` | Run a demo scenario |
+
+<details>
+<summary><strong>All commands</strong></summary>
+
+<br>
+
+| Command | Description |
+|---------|-------------|
 | `npm start use <recipe>` | Run a built-in recipe against current project |
 | `npm start recipes` | List available recipes |
 | `npm start recipe-info <name>` | Show recipe details and parameters |
 | `npm start report <run-dir>` | Generate structured run report from artifacts |
 | `npm start audit <session-id>` | Generate Markdown audit report |
-| `npm start metrics <session-id>` | Show metrics summary (supports `--json`) |
-| `npm start dashboard [port]` | Start the web dashboard (default: 3002) |
+| `npm start metrics <session-id>` | Show metrics summary (`--output json` or `--json`) |
 | `npm start templates` | List available plan templates |
-| `npm start status <id>` | Check execution status |
+| `npm start status <id>` | Check execution status (`--output json`) |
 | `npm start agents` | List configured agent profiles |
-| `npm start demo <name>` | Run a demo scenario |
+
+</details>
 
 
 ### Key Flags
 
 | Flag | Effect |
 |------|--------|
+| `--tool <name>` | Agent backend: `copilot` (default), `claude-code`, `codex`, `claude-code-teams` |
+| `--governance` | Enable advisory Critic review wave with scoring and auto-pause |
+| `--lean` | Enable Delta Context Engine (KB-backed prompt references) |
+| `--cost-estimate-only` | Print pre-execution cost estimate and exit without running |
+| `--max-premium-requests <n>` | Abort if estimated premium requests exceed budget |
+| `--verbose` | Enable debug-level logging (loaded config files, resolution paths, etc.) |
+| `--output json` | Print machine-readable JSON for supported commands |
+| `--resume <session-id>` | Resume a previously paused or failed session |
+
+<details>
+<summary><strong>All flags</strong></summary>
+
+<br>
+
+| Flag | Effect |
+|------|--------|
+| `--tool <name>` | Agent backend: `copilot` (default), `claude-code`, `codex`, `claude-code-teams` |
+| `--governance` | Enable advisory Critic review wave with scoring and auto-pause |
+| `--lean` | Enable Delta Context Engine (KB-backed prompt references) |
+| `--cost-estimate-only` | Print pre-execution cost estimate and exit without running |
+| `--max-premium-requests <n>` | Abort if estimated premium requests exceed budget |
+| `--verbose` | Enable debug-level logging (loaded config files, resolution paths, etc.) |
+| `--output json` | Print machine-readable JSON for supported commands |
+| `--resume <session-id>` | Resume a previously paused or failed session |
 | `--pm` | Enable PM Agent plan review before execution |
 | `--model <name>` | Override the Copilot model |
-| `--governance` | Enable advisory Critic review wave with scoring and auto-pause |
 | `--strict-isolation` | Force per-task branching; restrict context to transcript evidence |
-| `--lean` | Enable Delta Context Engine (KB-backed prompt references) |
-| `--resume <session-id>` | Resume a previously paused or failed session |
 | `--skip-verify` | Skip transcript verification (not recommended) |
 | `--no-quality-gates` | Disable quality gate checks |
 | `--confirm-deploy` | Enable deployment steps with tag/health-check/rollback (opt-in) |
@@ -228,16 +269,15 @@ npm start quick "Fix the race condition in src/worker.ts"
 | `--replay` | Reuse prior verified transcript for identical steps |
 | `--mcp` | Enable MCP integration |
 | `--quality-gates-config <path>` | Custom quality gates config file |
-| `--cost-estimate-only` | Print pre-execution cost estimate and exit without running |
-| `--max-premium-requests <n>` | Abort if estimated premium requests exceed budget |
 | `--wrap-fleet` | Prefix step prompts with `/fleet` for native parallel subagent dispatch |
-| `--tool <name>` | Agent backend: `copilot` (default), `claude-code`, `codex`, `claude-code-teams` |
 | `--param key=value` | Set recipe parameters (with `use` command) |
 | `--team-size <n>` | Max concurrent teammates per wave with `claude-code-teams` (1-5) |
 | `--owasp-report` | Generate OWASP ASI compliance report after verification |
 | `--sarif <path>` | Write quality gate results as SARIF 2.1.0 JSON (use `-` for stdout) |
 | `--yes` / `-y` | Skip interactive confirmation prompts |
 | `--pr auto\|review` | PR behavior after execution |
+
+</details>
 
 <br>
 
@@ -259,6 +299,7 @@ Run quality gates and produce SARIF for GitHub code scanning:
 swarm gates ./your-repo --sarif results.sarif
 swarm gates ./your-repo --sarif -  # write to stdout
 swarm gates ./your-repo --sarif results.sarif --quality-gates-config custom.yaml
+swarm gates ./your-repo --output json
 ```
 
 Run a recipe:
@@ -277,6 +318,7 @@ Plan with caching:
 
 ```bash
 npm start plan "Build a CLI tool" --plan-cache
+npm start plan "Build a CLI tool" --output json
 ```
 
 Preview cost before running:
@@ -384,19 +426,31 @@ gates:
 
 Resolution order: built-in defaults, then `.swarm/gates.yaml`, then `--quality-gates-config <path>`. Each layer deep-merges over the previous one. Unknown gate keys cause an error listing valid names.
 
+You can also register custom executable gates without patching the orchestrator. Add `.swarm/gates/index.js` or `.swarm/gates/index.cjs` in the target project and export a `registerGates({ registerGate })` function.
+
+```js
+module.exports.registerGates = ({ registerGate }) => {
+  registerGate({
+    key: 'customGate',
+    title: 'Custom Gate',
+    defaultConfig: { enabled: true, threshold: 2 },
+    async run() {
+      return { id: 'custom-gate', title: 'Custom Gate', status: 'pass', durationMs: 0, issues: [] };
+    }
+  });
+};
+```
+
+#### Config precedence
+
+- Agent config: project `config/default-agents.yaml` overrides install-level `config/default-agents.yaml`; custom `.github/agents/*.agent.md` overrides both.
+- Quality gates: built-in defaults, then `.swarm/gates.yaml`, then `--quality-gates-config`.
+- Environment files: current project `.env`, then orchestrator install `.env`, then `~/.env`.
+- Run with `--verbose` to log which config files and directories were resolved at startup.
+
 #### SARIF output
 
-The `--sarif <path>` flag on the `gates` command writes results as a SARIF 2.1.0 JSON file compatible with GitHub code scanning. Upload it via `github/codeql-action/upload-sarif@v3` for inline PR annotations.
-
-In the GitHub Action, set `sarif: true` to automatically run gates and produce SARIF output:
-
-```yaml
-- uses: moonrunnerkc/swarm-orchestrator@swarm-orchestrator
-  with:
-    goal: "Add unit tests for all untested modules"
-    tool: claude-code
-    sarif: true
-```
+The `--sarif <path>` flag on the `gates` command writes results as a SARIF 2.1.0 JSON file compatible with GitHub code scanning. See [GitHub Action](#github-action) for CI integration.
 
 <br>
 
@@ -426,6 +480,28 @@ npm start use add-auth --param strategy=session --tool claude-code
 | `refactor-modularize` | 4 | Break monolithic code into modules | |
 
 Create custom recipes by adding JSON files to `templates/recipes/`. See [docs/recipes.md](docs/recipes.md) for the schema and examples.
+
+<br>
+
+---
+
+<br>
+
+## GitHub Action
+
+Run the orchestrator in CI with the reusable GitHub Action. Set `sarif: true` to run quality gates and upload results to GitHub code scanning.
+
+```yaml
+- uses: moonrunnerkc/swarm-orchestrator@main
+  with:
+    goal: "Add unit tests for all untested modules"
+    tool: claude-code
+    sarif: true
+```
+
+SARIF results are written as SARIF 2.1.0 JSON and uploaded via `github/codeql-action/upload-sarif@v3` for inline PR annotations.
+
+See [docs/github-action.md](docs/github-action.md) for full inputs/outputs reference, agent CLI setup, and workflow examples.
 
 <br>
 
@@ -502,69 +578,24 @@ Goal ──> Plan ──> Waves ──> Branches ──> Agents ──> Verify �
 <br>
 
 <details>
-<summary><strong>Key modules</strong> (84 source files, 23,522 lines of TypeScript)</summary>
+<summary><strong>Key modules</strong> (112 source files, 26,653 lines of TypeScript — <a href="ARCHITECTURE.md">full inventory</a>)</summary>
 
 <br>
 
 | Module | Lines | Responsibility |
 |--------|-------|----------------|
-| `swarm-orchestrator.ts` | 2,348 | Greedy scheduler, event-driven dependency resolution, octopus merge, multi-repo grouping, governance, lean mode, replay, cost tracking, merge orchestration |
-| `cli-handlers.ts` | 2,119 | Command handlers for all CLI subcommands, flag parsing, report/recipe/OWASP dispatch |
-| `cli.ts` | 196 | Command dispatch entry point, routes to cli-handlers |
-| `verifier-engine.ts` | 1,106 | Evidence checking against transcripts (accepts pre-parsed index to avoid double parse), verification report generation |
-| `plan-generator.ts` | 938 | Plan creation, dependency validation, Copilot-assisted generation, plan-cache short-circuit |
-| `share-parser.ts` | 673 | Transcript parsing: files, commands, tests, commits, claims, MCP evidence |
-| `demo-mode.ts` | 166 | Two demo scenarios (demo-fast, api-quick) with agent prompts and expected outputs |
-| `session-executor.ts` | 657 | Copilot CLI subprocess management, transcript capture, /fleet prompt wrapping |
-| `dashboard.tsx` | 558 | TUI dashboard with real-time progress, repo status, per-axis critic scores, lean savings |
-| `repair-agent.ts` | 442 | Self-repair loop with failure classification, targeted strategies, context accumulation |
-| `step-runner.ts` | 432 | Single-step execution with branch setup, context injection, cleanup |
-| `context-broker.ts` | 404 | Shared state, EventEmitter-based step completion signaling, git locking, dependency context injection, strict isolation filter |
-| `config-loader.ts` | 382 | YAML agent profile loading with validation and merge |
-| `repo-analyzer.ts` | 354 | Codebase scanning for languages, deps, build scripts, tech debt |
-| `knowledge-base.ts` | 338 | Persistent cross-run pattern storage (including cost history), Levenshtein similarity, findSimilarTasks |
-| `quick-fix-mode.ts` | 319 | Single-agent quick task runner |
-| `copilot-cli-wrapper.ts` | 315 | CLI wrapper with strict isolation guard and degraded fallback |
-| `meta-analyzer.ts` | 305 | Wave health scoring, pattern detection, replan decisions |
-| `pm-agent.ts` | 303 | Plan validation: cycles, unknown agents, stale metadata |
-| `steering-router.ts` | 290 | Human-in-the-loop commands during execution |
-| `deployment-manager.ts` | 249 | Preview deployment, tag/health-check/rollback cycle, deployment metadata persistence |
-| `cost-estimator.ts` | 247 | Pre-execution cost prediction with model multipliers, retry calibration, knowledge base integration |
-| `owasp-mapper.ts` | 206 | Maps verification results to OWASP ASI Top 10 risk assessments |
-| `metrics-collector.ts` | 182 | Metrics tracking, session save/load, audit report generation |
-| `wave-resizer.ts` | 166 | Adaptive wave splitting, merging, and concurrency adjustment |
-| `adapters/claude-code-teams.ts` | 159 | Claude Code Agent Teams adapter with fallback to standard adapter |
-| `recipe-loader.ts` | 123 | Recipe loading, parameterization, listing |
-| `report-generator.ts` | 183 | Assembles structured run reports from execution artifacts |
-| `report-renderer.ts` | 89 | Renders run reports to Markdown, JSON, and single-line TUI summary |
-| `fleet-wrapper.ts` | 101 | /fleet prompt prefix, version detection, subagent count heuristic |
-| `owasp-report-renderer.ts` | 43 | Renders OWASP compliance reports to Markdown and JSON |
+| `swarm-orchestrator.ts` | 2,090 | Greedy scheduler, dependency resolution, octopus merge, governance, cost tracking, merge orchestration |
+| `verifier-engine.ts` | 622 | Evidence checking against transcripts, verification report generation |
+| `share-parser.ts` | 715 | Transcript parsing: files, commands, tests, commits, claims, MCP evidence |
+| `repair-agent.ts` | 452 | Failure classification, targeted repair strategies, context accumulation |
+| `cost-estimator.ts` | 300 | Pre-execution cost prediction with model multipliers and KB calibration |
+| `knowledge-base.ts` | 340 | Cross-run pattern storage, cost history, similarity matching |
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete module reference across all 112 source files.
 
 </details>
 
-<details>
-<summary><strong>Output artifacts</strong></summary>
-
-<br>
-
-```
-runs/<execution-id>/
-  session-state.json                    # full execution state (resumable)
-  metrics.json                          # timing, commit count, verification stats
-  cost-attribution.json                 # per-step estimated vs actual premium requests
-  knowledge-base.json                   # patterns learned from this run (including cost history)
-  wave-N-analysis.json                  # per-wave health assessment
-  report.md                             # structured run report (with swarm report)
-  report.json                           # machine-readable run report
-  owasp-compliance.md                   # OWASP ASI compliance report (with --owasp-report)
-  owasp-compliance.json                 # machine-readable OWASP report
-  steps/
-    step-N/share.md           # raw agent transcript
-  verification/
-    step-N-verification.md    # outcome-based pass/fail report
-```
-
-</details>
+Output artifacts are written to `runs/<execution-id>/`. See [ARCHITECTURE.md — Output Artifacts](ARCHITECTURE.md#output-artifacts) for the full directory layout.
 
 <br>
 
@@ -589,31 +620,7 @@ npm start demo api-quick     # REST API with tests and Dockerfile, ~5 min
 | `demo-fast` | 2 | 1 | Two independent utility modules (parallel proof) | ~1 min |
 | `api-quick` | 3 | 2 | REST API with health/CRUD endpoints, tests, and Dockerfile | ~5 min |
 
-`demo-fast` proves parallel execution with zero dependencies. `api-quick` shows wave-based scheduling: BackendMaster builds the API first, then TesterElite and DevOpsPro run in parallel on wave 2.
-
-<details>
-<summary><strong>Cost reference</strong></summary>
-
-<br>
-
-| Scenario | Steps | Min requests (1x model) | Max requests (all retries + repairs) |
-|----------|-------|-------------------------|--------------------------------------|
-| `demo-fast` | 2 | 2 | ~14 |
-| `api-quick` | 3 | 3 | ~21 |
-
-</details>
-
-<br>
-
----
-
-<br>
-
-## Status
-
-Actively maintained. 89 source files, 102 test files, 1,857 tests passing across all packages. Development is ongoing with regular updates.
-
-See [Releases](https://github.com/moonrunnerkc/swarm-orchestrator/releases) for version history.
+`demo-fast` proves parallel execution with zero dependencies. `api-quick` shows wave-based scheduling: BackendMaster builds the API first, then TesterElite and DevOpsPro run in parallel on wave 2. Each step consumes at least one premium request — see [Cost and Premium Requests](#cost-and-premium-requests).
 
 <br>
 
@@ -635,25 +642,25 @@ See [Releases](https://github.com/moonrunnerkc/swarm-orchestrator/releases) for 
 
 <br>
 
+## Status
+
+Actively maintained. 112 source files, 92 test files, 1,398 tests passing across all packages. Development is ongoing with regular updates.
+
+See [Releases](https://github.com/moonrunnerkc/swarm-orchestrator/releases) for version history.
+
+<br>
+
+---
+
+<br>
+
 ## Contributing
 
 ```bash
 npm install && npm run build && npm test
 ```
 
-Sub-project tests run independently inside their directories:
-
-```bash
-cd calculations-api && npm install && npm test
-cd notes-api && npm install && npm test
-cd calculator && npm test
-cd logtail && npm test
-cd web && npm test
-cd tictactoe && npm test
-pytest app/tests/ -v
-```
-
-Before submitting a PR: run `npm test`, run `swarm gates .`, and keep commits descriptive. TypeScript strict mode, ES2020 target.
+Run `npm test`, run `swarm gates .`, and keep commits descriptive. See [CONTRIBUTING.md](CONTRIBUTING.md) for sub-project tests, coding standards, and development guidelines.
 
 <br>
 

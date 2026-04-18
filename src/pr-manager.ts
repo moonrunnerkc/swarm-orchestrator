@@ -2,6 +2,10 @@ import { execSync } from 'child_process';
 import { VerificationResult } from './verifier-engine';
 import { StepCostRecord } from './metrics-types';
 import { GateResult } from './quality-gates';
+import {
+  DEFAULT_CONTEXT_LOCK_WAIT_MS,
+  DEFAULT_BRANCH_SWITCH_TIMEOUT_MS,
+} from './defaults';
 
 /**
  * PR merge mode controls the merge phase behavior.
@@ -59,7 +63,7 @@ export class PRManager {
       execSync('gh auth status', {
         cwd: this.workingDir,
         stdio: 'pipe',
-        timeout: 10000
+        timeout: DEFAULT_CONTEXT_LOCK_WAIT_MS
       });
       this.ghAvailable = true;
     } catch {
@@ -92,7 +96,7 @@ export class PRManager {
         execSync(`git push -u origin "${branchName}"`, {
           cwd: this.workingDir,
           stdio: 'pipe',
-          timeout: 30000
+          timeout: DEFAULT_CONTEXT_LOCK_WAIT_MS
         });
       } catch (pushErr: unknown) {
         const pushMsg = pushErr instanceof Error ? pushErr.message : String(pushErr);
@@ -108,7 +112,7 @@ export class PRManager {
           cwd: this.workingDir,
           encoding: 'utf8',
           stdio: 'pipe',
-          timeout: 30000
+          timeout: DEFAULT_CONTEXT_LOCK_WAIT_MS
         }
       );
 
@@ -151,7 +155,7 @@ export class PRManager {
         {
           cwd: this.workingDir,
           stdio: 'pipe',
-          timeout: 15000
+          timeout: DEFAULT_BRANCH_SWITCH_TIMEOUT_MS
         }
       );
       return true;
@@ -163,7 +167,7 @@ export class PRManager {
           {
             cwd: this.workingDir,
             stdio: 'pipe',
-            timeout: 15000
+            timeout: DEFAULT_BRANCH_SWITCH_TIMEOUT_MS
           }
         );
         return true;
@@ -178,7 +182,11 @@ export class PRManager {
    * Returns once the PR leaves the OPEN+unapproved state.
    * Times out after maxWaitMs (default: 30 minutes).
    */
-  async waitForApproval(prNumber: number, pollIntervalMs: number = 15000, maxWaitMs: number = 1800000): Promise<PRStatusResult> {
+  async waitForApproval(
+    prNumber: number,
+    pollIntervalMs: number = DEFAULT_BRANCH_SWITCH_TIMEOUT_MS,
+    maxWaitMs: number = 1_800_000
+  ): Promise<PRStatusResult> {
     const deadline = Date.now() + maxWaitMs;
 
     while (Date.now() < deadline) {
@@ -209,7 +217,7 @@ export class PRManager {
           cwd: this.workingDir,
           encoding: 'utf8',
           stdio: 'pipe',
-          timeout: 10000
+          timeout: DEFAULT_CONTEXT_LOCK_WAIT_MS
         }
       );
 
@@ -375,7 +383,7 @@ export class PRManager {
         {
           cwd: this.workingDir,
           stdio: 'pipe',
-          timeout: 15000
+          timeout: DEFAULT_BRANCH_SWITCH_TIMEOUT_MS
         }
       );
       return true;

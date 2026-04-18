@@ -49,7 +49,7 @@ Producer: [src/sarif-formatter.ts](../src/sarif-formatter.ts)
 Rule IDs emitted: `swarm/scaffold-defaults`, `swarm/duplicate-blocks`,
 `swarm/hardcoded-config`, `swarm/readme-claims`, `swarm/test-isolation`,
 `swarm/test-coverage`, `swarm/accessibility`, `swarm/runtime-checks`.  
-CLI flag: `--sarif` in [src/cli-handlers.ts](../src/cli-handlers.ts).
+CLI flag: `--sarif` in [src/cli/misc-handlers.ts](../src/cli/misc-handlers.ts) (re-exported via [src/cli-handlers.ts](../src/cli-handlers.ts)).
 
 **Verification command:**
 ```bash

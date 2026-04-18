@@ -1,6 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { AnalyticsEntry, RunMetrics, MetricsComparison } from './metrics-types';
+import { getLogger } from './logger';
+const logger = getLogger('analytics-log');
 
 const ANALYTICS_SCHEMA_VERSION = 1;
 
@@ -34,11 +36,11 @@ export default class AnalyticsLog {
         
         // Validate schema
         if (!Array.isArray(entries)) {
-          console.warn('Analytics log is not an array, resetting');
+          logger.warn('Analytics log is not an array, resetting');
           entries = [];
         }
       } catch (error) {
-        console.warn('Failed to parse analytics log, resetting:', error instanceof Error ? error.message : error);
+        logger.warn('Failed to parse analytics log, resetting:', error instanceof Error ? error.message : error);
         entries = [];
       }
     }
@@ -76,7 +78,7 @@ export default class AnalyticsLog {
       // Return most recent entries
       return entries.slice(-count).reverse();
     } catch (error) {
-      console.warn('Failed to read analytics log:', error instanceof Error ? error.message : error);
+      logger.warn('Failed to read analytics log:', error instanceof Error ? error.message : error);
       return [];
     }
   }
@@ -99,7 +101,7 @@ export default class AnalyticsLog {
 
       return entries;
     } catch (error) {
-      console.warn('Failed to read analytics log:', error instanceof Error ? error.message : error);
+      logger.warn('Failed to read analytics log:', error instanceof Error ? error.message : error);
       return [];
     }
   }

@@ -1,9 +1,14 @@
 import * as assert from 'assert';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import {
+  handlePlanCommand,
   parseSwarmFlags,
   showUsage,
   ExecuteSwarmCliOptions,
 } from '../src/cli-handlers';
+import { extractPositionalArgs, normalizeLeadingGlobalFlags } from '../src/cli/flags';
 
 describe('CLI Handlers', () => {
   // -----------------------------------------------------------------------
@@ -154,6 +159,75 @@ describe('CLI Handlers', () => {
       assert.ok(captured.includes('--lean'), 'should list --lean');
       assert.ok(captured.includes('--plan-cache'), 'should list --plan-cache');
       assert.ok(captured.includes('--replay'), 'should list --replay');
+    });
+  });
+
+  describe('global flag normalization', () => {
+    it('moves leading global flags behind the command', () => {
+      const normalized = normalizeLeadingGlobalFlags([
+        '--verbose',
+        '--output',
+        'json',
+        'plan',
+        'Build a REST API',
+      ]);
+      assert.deepStrictEqual(normalized, [
+        'plan',
+        '--verbose',
+        '--output',
+        'json',
+        'Build a REST API',
+      ]);
+    });
+
+    it('treats help as the command when only global flags are provided', () => {
+      const normalized = normalizeLeadingGlobalFlags(['--verbose', '--help']);
+      assert.deepStrictEqual(normalized, ['--help', '--verbose']);
+    });
+
+    it('extracts positional args without leaking output-format values', () => {
+      const positional = extractPositionalArgs(
+        ['--output', 'json', '--verbose', '--plan-cache', 'Build a REST API'],
+        {
+          booleanFlags: ['--verbose', '--plan-cache'],
+          valueFlags: ['--output'],
+        }
+      );
+      assert.deepStrictEqual(positional, ['Build a REST API']);
+    });
+  });
+
+  describe('handlePlanCommand', () => {
+    const originalStdoutWrite = process.stdout.write;
+    let capturedStdout = '';
+    let tempDir = '';
+    let originalCwd = '';
+
+    beforeEach(() => {
+      capturedStdout = '';
+      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-plan-test-'));
+      originalCwd = process.cwd();
+      process.chdir(tempDir);
+      process.stdout.write = ((chunk: string | Uint8Array) => {
+        capturedStdout += typeof chunk === 'string' ? chunk : chunk.toString();
+        return true;
+      }) as typeof process.stdout.write;
+    });
+
+    afterEach(() => {
+      process.stdout.write = originalStdoutWrite;
+      process.chdir(originalCwd);
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    });
+
+    it('keeps --output json out of the generated goal text', async () => {
+      const code = await handlePlanCommand(['plan', '--output', 'json', 'Build a REST API']);
+      assert.strictEqual(code, 0);
+
+      const payload = JSON.parse(capturedStdout);
+      assert.strictEqual(payload.goal, 'Build a REST API');
+      assert.strictEqual(payload.plan.goal, 'Build a REST API');
+      assert.ok(!payload.goal.includes('json'));
     });
   });
 });

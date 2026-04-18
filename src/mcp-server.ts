@@ -10,6 +10,7 @@ import { ConfigLoader, AgentProfile } from './config-loader';
 import { KnowledgeBaseManager } from './knowledge-base';
 import { PlanStorage } from './plan-storage';
 import AgentsExporter from './agents-exporter';
+import { defaultModelForAdapter } from './adapters';
 
 // ---------------------------------------------------------------------------
 // JSON-RPC types
@@ -355,6 +356,19 @@ export class McpServer {
           },
           required: []
         }
+      },
+      {
+        name: 'swarm_cost',
+        description: 'Estimate cost for a goal or read actual cost for a completed run',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            goal: { type: 'string', description: 'Goal to estimate cost for' },
+            runId: { type: 'string', description: 'Completed run ID to read actual cost from' },
+            model: { type: 'string', description: 'Model name for estimates (default: adapter default)' }
+          },
+          required: []
+        }
       }
     ];
 
@@ -386,6 +400,9 @@ export class McpServer {
 
         case 'swarm_export_agents':
           return this.toolExportAgents(id, params.arguments as { outputDir?: string; minRuns?: number } | undefined);
+
+        case 'swarm_cost':
+          return this.toolCost(id, params.arguments as { goal?: string; runId?: string; model?: string } | undefined);
 
         default:
           return {
@@ -659,6 +676,81 @@ export class McpServer {
             agentsExported: result.agentsExported,
             outputDir: result.outputDir,
             fromData: result.fromData
+          })
+        }]
+      }
+    };
+  }
+
+  private toolCost(
+    id: number | string,
+    args?: { goal?: string; runId?: string; model?: string }
+  ): JsonRpcResponse {
+    if (args?.runId) {
+      const runDir = path.join(this.workingDir, 'runs', args.runId);
+      if (!fs.existsSync(runDir)) {
+        return {
+          jsonrpc: '2.0',
+          id,
+          error: { code: -32602, message: `Run not found: ${args.runId}` }
+        };
+      }
+
+      const costPath = path.join(runDir, 'cost-attribution.json');
+      if (!fs.existsSync(costPath)) {
+        return {
+          jsonrpc: '2.0',
+          id,
+          error: { code: -32602, message: `No cost attribution found for run: ${args.runId}` }
+        };
+      }
+
+      const cost = JSON.parse(fs.readFileSync(costPath, 'utf8'));
+      return {
+        jsonrpc: '2.0',
+        id,
+        result: {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              mode: 'actual',
+              runId: args.runId,
+              cost,
+            })
+          }]
+        }
+      };
+    }
+
+    if (!args?.goal) {
+      return {
+        jsonrpc: '2.0',
+        id,
+        error: { code: -32602, message: 'Missing required argument: goal or runId' }
+      };
+    }
+
+    const agents = this.configLoader.loadAllAgents();
+    const { PlanGenerator } = require('./plan-generator');
+    const { CostEstimator } = require('./cost-estimator');
+    const generator = new PlanGenerator(agents);
+    const plan = generator.createPlan(args.goal);
+    const estimator = new CostEstimator();
+    const modelName = args.model || defaultModelForAdapter('copilot');
+    const estimate = estimator.estimate(plan, { modelName });
+
+    return {
+      jsonrpc: '2.0',
+      id,
+      result: {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            mode: 'estimate',
+            goal: args.goal,
+            model: modelName,
+            estimate,
+            plan,
           })
         }]
       }

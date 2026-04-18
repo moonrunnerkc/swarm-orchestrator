@@ -16,6 +16,8 @@ import * as path from 'path';
 import { AgentProfile, ConfigLoader } from './config-loader';
 import SessionExecutor, { SessionOptions, SessionResult } from './session-executor';
 import VerifierEngine from './verifier-engine';
+import { getLogger } from './logger';
+const logger = getLogger('quick-fix-mode');
 
 export interface QuickFixOptions {
   model?: string;
@@ -168,9 +170,9 @@ export class QuickFixMode {
       };
     }
 
-    console.log(`⚡ Quick-fix mode: ${eligibility.reason}`);
-    console.log(`   Agent: ${agentProfile.name}`);
-    console.log(`   Task: ${task}\n`);
+    logger.info(`⚡ Quick-fix mode: ${eligibility.reason}`);
+    logger.info(`   Agent: ${agentProfile.name}`);
+    logger.info(`   Task: ${task}\n`);
 
     // Build prompt for the agent
     const prompt = this.buildQuickFixPrompt(task, agentProfile);
@@ -253,7 +255,7 @@ export class QuickFixMode {
         verificationPassed = verificationResult.passed;
       } catch (error: unknown) {
         // Verification error - don't fail hard in quick-fix mode
-        console.warn(`⚠️  Verification skipped: ${error instanceof Error ? error.message : String(error)}`);
+        logger.warn(`⚠️  Verification skipped: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
 

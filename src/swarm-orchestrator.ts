@@ -15,6 +15,7 @@ import MetricsCollector from './metrics-collector';
 import { ExecutionPlan, PlanGenerator, PlanStep, ReplanPayload } from './plan-generator';
 import PRAutomation from './pr-automation';
 import { load_quality_gates_config, run_quality_gates } from './quality-gates';
+import type { GateResult } from './quality-gates';
 import RepairAgent, { RepairContext } from './repair-agent';
 import SessionExecutor, { SessionOptions, SessionResult } from './session-executor';
 import ShareParser, { ShareIndex } from './share-parser';
@@ -33,6 +34,18 @@ import { BaselineSnapshot, scanBaseline, formatPreservationRules } from './basel
 import { TaskClassifier } from './task-classifier';
 import { TIER_MAPS } from './tier-maps';
 import { RequirementFilter, FilteredRequirements } from './requirement-filter';
+import {
+  DEFAULT_DEPENDENCY_WAIT_MS,
+  DEFAULT_HEARTBEAT_INTERVAL_MS,
+} from './defaults';
+import { getLogger } from './logger';
+import { buildSwarmPrompt as _buildSwarmPrompt, writeSharedInstructions as _writeSharedInstructions } from './prompt-builder';
+import { buildDependencyGraph as _buildDependencyGraph, identifyExecutionWaves as _identifyExecutionWaves } from './wave-scheduler';
+import { runCriticReview as _runCriticReview } from './critic-reviewer';
+import { executeOptionalDeployment as _executeOptionalDeployment } from './deployment-handler';
+import { analyzeCommitQuality as _analyzeCommitQuality } from './commit-quality-analyzer';
+
+const logger = getLogger('orchestrator');
 
 export interface ParallelStepResult {
   stepNumber: number;
@@ -116,6 +129,7 @@ export interface SwarmExecutionContext {
   stepCostRecords?: StepCostRecord[];
   prManager?: PRManager;
   prUrls?: Map<number, string>;
+  finalGateResults?: GateResult[];
   unmergedBranches?: Array<{
     stepNumber: number;
     branchName: string;
@@ -278,23 +292,23 @@ export class SwarmOrchestrator {
     if (options?.prMode) {
       const prManager = new PRManager(this.workingDir);
       if (!prManager.isGhAvailable()) {
-        console.error('  ❌ --pr requires gh CLI installed and authenticated. Run "gh auth login" first.');
+        logger.error('  ❌ --pr requires gh CLI installed and authenticated. Run "gh auth login" first.');
         process.exit(1);
       }
       context.prManager = prManager;
       context.prUrls = new Map();
     }
 
-    console.log('\n🚀 Starting Parallel Swarm Execution');
-    console.log(`${'─'.repeat(50)}`);
-    console.log(`  Execution ID:    ${context.executionId}`);
-    console.log(`  Main branch:     ${context.mainBranch}`);
-    console.log(`  Steps:           ${plan.steps.length}`);
-    console.log(`  Max concurrency: ${options?.maxConcurrency || 'unlimited'}`);
+    logger.info('\n🚀 Starting Parallel Swarm Execution');
+    logger.info(`${'─'.repeat(50)}`);
+    logger.info(`  Execution ID:    ${context.executionId}`);
+    logger.info(`  Main branch:     ${context.mainBranch}`);
+    logger.info(`  Steps:           ${plan.steps.length}`);
+    logger.info(`  Max concurrency: ${options?.maxConcurrency || 'unlimited'}`);
     if (options?.confirmDeploy) {
-      console.log('  ⚠️  Deployment enabled (--confirm-deploy)');
+      logger.info('  ⚠️  Deployment enabled (--confirm-deploy)');
     }
-    console.log(`${'─'.repeat(50)}`);
+    logger.info(`${'─'.repeat(50)}`);
 
     // Group steps by repo for multi-repo orchestration
     const repoGroups = new Map<string, PlanStep[]>();
@@ -305,9 +319,9 @@ export class SwarmOrchestrator {
     }
 
     if (repoGroups.size > 1) {
-      console.log(`\n📂 Multi-repo plan detected: ${repoGroups.size} repo(s)`);
+      logger.info(`\n📂 Multi-repo plan detected: ${repoGroups.size} repo(s)`);
       for (const [repo, steps] of repoGroups) {
-        console.log(`  - ${path.basename(repo)}: ${steps.length} step(s)`);
+        logger.info(`  - ${path.basename(repo)}: ${steps.length} step(s)`);
       }
     }
 
@@ -318,7 +332,7 @@ export class SwarmOrchestrator {
     const executionWaves = this.identifyExecutionWaves(dependencyGraph);
 
     context.totalWaves = executionWaves.length;
-    console.log(`Execution will proceed in ${executionWaves.length} wave(s)\n`);
+    logger.info(`Execution will proceed in ${executionWaves.length} wave(s)\n`);
 
     // Pre-execution cost estimation
     const costEstimator = new CostEstimator(context.knowledgeBase);
@@ -368,7 +382,7 @@ export class SwarmOrchestrator {
           const commitRef = ref.evidence[0] || 'unknown';
           step.task += `\nReference: similar task completed in session ${ref.id}, commit ${commitRef}.`;
           context.leanSavedRequests = (context.leanSavedRequests || 0) + 1;
-          console.log(`  [lean] Step ${step.stepNumber}: found similar pattern "${ref.insight.slice(0, 50)}"`);
+          logger.info(`  [lean] Step ${step.stepNumber}: found similar pattern "${ref.insight.slice(0, 50)}"`);
         }
       }
     }
@@ -440,9 +454,9 @@ export class SwarmOrchestrator {
     while (pending.size > 0) {
       // Check for pause
       if (this.pauseRequested) {
-        console.log('\n⏸️  Pause requested. Waiting for resume...');
+        logger.info('\n⏸️  Pause requested. Waiting for resume...');
         await this.waitForResume();
-        console.log('\n▶️  Resuming execution...');
+        logger.info('\n▶️  Resuming execution...');
       }
 
       const ready = getReadySteps();
@@ -450,7 +464,7 @@ export class SwarmOrchestrator {
       if (ready.length === 0 && inFlight.size === 0) {
         // Nothing ready and nothing in flight: remaining steps are blocked by failures
         const blocked = Array.from(pending);
-        console.error(`\n❌ ${blocked.length} step(s) blocked by failed dependencies: ${blocked.join(', ')}`);
+        logger.error(`\n❌ ${blocked.length} step(s) blocked by failed dependencies: ${blocked.join(', ')}`);
         break;
       }
 
@@ -459,7 +473,7 @@ export class SwarmOrchestrator {
         context.metricsCollector?.startWave(waveCounter);
         options?.onProgress?.(context, `wave-start:${waveCounter}`);
 
-        console.log(`\n📊 Batch ${waveCounter}: launching ${ready.length} step(s) [${ready.join(', ')}]`);
+        logger.info(`\n📊 Batch ${waveCounter}: launching ${ready.length} step(s) [${ready.join(', ')}]`);
 
         // Fleet wave mode: attempt single /fleet dispatch for the batch, fall back on failure
         let fleetHandled = false;
@@ -522,10 +536,10 @@ export class SwarmOrchestrator {
           if (!context.criticResults) context.criticResults = [];
           const criticResult = this.runCriticReview(completedInBatch, context, plan);
           context.criticResults.push(criticResult);
-          console.log(`  🎭 Critic score: ${criticResult.score}/100 (${criticResult.recommendation})`);
+          logger.info(`  🎭 Critic score: ${criticResult.score}/100 (${criticResult.recommendation})`);
           if (criticResult.flags.length > 0) {
-            console.log(`  ⚠️  Critic flags: ${criticResult.flags.join(', ')}`);
-            console.log('  ⏸️  Governance pause: awaiting human approval...');
+            logger.info(`  ⚠️  Critic flags: ${criticResult.flags.join(', ')}`);
+            logger.info('  ⏸️  Governance pause: awaiting human approval...');
             this.pauseRequested = true;
             await this.waitForResume();
           }
@@ -544,7 +558,7 @@ export class SwarmOrchestrator {
           setTimeout(() => {
             context.contextBroker.removeListener('step-completed', handler);
             resolve();
-          }, 5000);
+          }, DEFAULT_HEARTBEAT_INTERVAL_MS);
         });
       }
     }
@@ -561,24 +575,24 @@ export class SwarmOrchestrator {
     // Execution summary
     const completedResults = context.results.filter(r => r.status === 'completed');
     const failedResults = context.results.filter(r => r.status === 'failed');
-    console.log(`\n📊 Execution Summary:`);
-    console.log(`  ${'─'.repeat(40)}`);
+    logger.info(`\n📊 Execution Summary:`);
+    logger.info(`  ${'─'.repeat(40)}`);
     completedResults.forEach(r => {
       const durationMs = r.startTime && r.endTime
         ? new Date(r.endTime).getTime() - new Date(r.startTime).getTime()
         : 0;
-      console.log(`  ✅ ${r.agentName}:${r.stepNumber} (${Math.round(durationMs / 1000)}s)`);
+      logger.info(`  ✅ ${r.agentName}:${r.stepNumber} (${Math.round(durationMs / 1000)}s)`);
     });
     failedResults.forEach(r => {
-      console.log(`  ❌ ${r.agentName}:${r.stepNumber} - ${r.error || 'unknown error'}`);
+      logger.info(`  ❌ ${r.agentName}:${r.stepNumber} - ${r.error || 'unknown error'}`);
     });
-    console.log(`  ${'─'.repeat(40)}`);
-    console.log(`  ${completedResults.length} passed, ${failedResults.length} failed, ${waveCounter} batch(es)`);
+    logger.info(`  ${'─'.repeat(40)}`);
+    logger.info(`  ${completedResults.length} passed, ${failedResults.length} failed, ${waveCounter} batch(es)`);
 
     if (context.unmergedBranches && context.unmergedBranches.length > 0) {
-      console.log(`\n⚠️  ${context.unmergedBranches.length} branch(es) could not merge (work preserved on branch):`);
+      logger.info(`\n⚠️  ${context.unmergedBranches.length} branch(es) could not merge (work preserved on branch):`);
       for (const um of context.unmergedBranches) {
-        console.log(`  • Step ${um.stepNumber} (${um.agentName}): ${um.branchName}`);
+        logger.info(`  • Step ${um.stepNumber} (${um.agentName}): ${um.branchName}`);
       }
     }
 
@@ -596,7 +610,7 @@ export class SwarmOrchestrator {
     // this happens before auto-PR so we don't create a PR for a failing run
     const gatesEnabled = options?.qualityGates !== false;
     if (gatesEnabled) {
-      console.log('\n🧪 Running final quality gates...');
+      logger.info('\n🧪 Running final quality gates...');
       const gatesOut = options?.qualityGatesOutDir
         ? path.isAbsolute(options.qualityGatesOutDir)
           ? options.qualityGatesOutDir
@@ -614,6 +628,7 @@ export class SwarmOrchestrator {
         ? new Set(context.filteredRequirements.skipped.map(r => r.id))
         : undefined;
       let gatesResult = await run_quality_gates(this.workingDir, gatesConfig, gatesOut, baselineFiles, baseCommit, skippedReqIds);
+      context.finalGateResults = gatesResult.results;
 
       if (!gatesResult.passed && gatesConfig.failOnIssues) {
         const failedIds = new Set(gatesResult.results.filter(r => r.status === 'fail').map(r => r.id));
@@ -716,15 +731,16 @@ export class SwarmOrchestrator {
             }
             addSteps.length = 0;
             addSteps.push(singleStep);
-            console.warn(`⚠️  Final quality gates failed (${failedIds.size} gates); scheduling single consolidated remediation step...`);
+            logger.warn(`⚠️  Final quality gates failed (${failedIds.size} gates); scheduling single consolidated remediation step...`);
           } else if (addSteps.length === 1) {
-            console.warn('⚠️  Final quality gates failed; attempting one remediation pass...');
+            logger.warn('⚠️  Final quality gates failed; attempting one remediation pass...');
           }
 
           if (addSteps.length > 0) {
             remediationAttempted = true;
             await this.executeReplan(context, { retrySteps: [], addSteps }, agentMap, options);
             gatesResult = await run_quality_gates(this.workingDir, gatesConfig, gatesOut, baselineFiles, baseCommit, skippedReqIds);
+            context.finalGateResults = gatesResult.results;
 
             // Second remediation attempt if gates still fail after first fix
             if (!gatesResult.passed && gatesConfig.failOnIssues) {
@@ -754,13 +770,14 @@ export class SwarmOrchestrator {
                   : lastAgent;
                 const retryMaxStep = Math.max(...context.plan.steps.map(s => s.stepNumber));
 
-                console.warn('⚠️  First remediation did not resolve all gate failures. Running second attempt with specific findings...');
+                logger.warn('⚠️  First remediation did not resolve all gate failures. Running second attempt with specific findings...');
                 await this.executeReplan(context, {
                   retrySteps: [],
                   addSteps: [{ agent: retryAgent, task: retryTask, afterStep: retryMaxStep }]
                 }, agentMap, options);
 
                 gatesResult = await run_quality_gates(this.workingDir, gatesConfig, gatesOut, baselineFiles, baseCommit, skippedReqIds);
+                context.finalGateResults = gatesResult.results;
               }
             }
           }
@@ -774,10 +791,10 @@ export class SwarmOrchestrator {
             const remaining = gatesResult.results
               .filter(r => r.status === 'fail')
               .map(r => `${r.id} (${r.issues.length} issues)`);
-            console.warn(`⚠️  Quality gates still have issues after remediation: ${remaining.join(', ')}`);
-            console.warn('   Treating as warning since all plan steps passed.');
+            logger.warn(`⚠️  Quality gates still have issues after remediation: ${remaining.join(', ')}`);
+            logger.warn('   Treating as warning since all plan steps passed.');
           } else {
-            console.error('❌ Quality gates failed. See report in:', gatesOut);
+            logger.error('❌ Quality gates failed. See report in:', gatesOut);
             throw new Error('Quality gates failed');
           }
         }
@@ -785,7 +802,7 @@ export class SwarmOrchestrator {
     }
 
     // merge all agent branches back to main
-    console.log('\n🔀 Merging agent branches to main...');
+    logger.info('\n🔀 Merging agent branches to main...');
     // Clean up any stale locks before final merge (e.g. from cancelled runs)
     context.contextBroker.forceReleaseStaleLocks();
     await this.mergeAllBranches(context);
@@ -802,7 +819,7 @@ export class SwarmOrchestrator {
       const analyticsLog = new AnalyticsLog();
       analyticsLog.appendRun(metrics);
 
-      console.log(`\n📊 Metrics saved: ${metricsPath}`);
+      logger.info(`\n📊 Metrics saved: ${metricsPath}`);
 
       // Save cost attribution alongside metrics
       if (context.costEstimate && context.stepCostRecords) {
@@ -844,7 +861,7 @@ export class SwarmOrchestrator {
             .map(r => [String(r.stepNumber), r.sessionResult!.transcriptPath!])
         ),
         metrics: metrics as unknown as Record<string, unknown>,
-        gateResults: [],
+        gateResults: context.finalGateResults || [],
         status: completedSteps.length === plan.steps.length ? 'completed' : 'failed',
         lastCompletedStep: Math.max(0, ...completedSteps.map(r => r.stepNumber))
       };
@@ -911,9 +928,9 @@ export class SwarmOrchestrator {
           'utf8'
         );
 
-        console.log(`  OWASP ASI: ${complianceReport.mitigatedRisks}/${complianceReport.applicableRisks} applicable risks mitigated`);
+        logger.info(`  OWASP ASI: ${complianceReport.mitigatedRisks}/${complianceReport.applicableRisks} applicable risks mitigated`);
       } catch (owaspErr) {
-        console.warn(`  OWASP report generation failed: ${owaspErr instanceof Error ? owaspErr.message : owaspErr}`);
+        logger.warn(`  OWASP report generation failed: ${owaspErr instanceof Error ? owaspErr.message : owaspErr}`);
       }
     }
 
@@ -950,7 +967,7 @@ export class SwarmOrchestrator {
 
     // Auto-create PR if requested
     if (options?.autoPR) {
-      console.log('\n📝 Creating PR...');
+      logger.info('\n📝 Creating PR...');
       try {
         const toolManager = new ExternalToolManager({
           enableExternal: options.enableExternal || false,
@@ -966,12 +983,12 @@ export class SwarmOrchestrator {
         const prResult = await prAutomation.createPR(summary);
 
         if (prResult.success) {
-          console.log(`✅ PR created: ${prResult.url}`);
+          logger.info(`✅ PR created: ${prResult.url}`);
         } else {
-          console.warn(`⚠️  PR creation failed: ${prResult.error}`);
+          logger.warn(`⚠️  PR creation failed: ${prResult.error}`);
         }
       } catch (error) {
-        console.warn(`⚠️  PR automation error: ${error instanceof Error ? error.message : error}`);
+        logger.warn(`⚠️  PR automation error: ${error instanceof Error ? error.message : error}`);
       }
     }
 
@@ -1003,7 +1020,7 @@ export class SwarmOrchestrator {
       ? 'integrator_finalizer'
       : fallbackAgent;
 
-    console.warn(warningMessage);
+    logger.warn(warningMessage);
     context.qualityGatesTriggered[triggeredFlag] = true;
 
     // Append specific findings so the remediation agent knows exactly what to fix
@@ -1031,7 +1048,7 @@ export class SwarmOrchestrator {
     agents: Map<string, AgentProfile>,
     options?: SwarmExecutionOptions
   ): Promise<void> {
-    console.log('\n🔄 Executing replan...');
+    logger.info('\n🔄 Executing replan...');
 
     // initialize replan state
     context.replanState = {
@@ -1053,13 +1070,13 @@ export class SwarmOrchestrator {
     for (const stepNumber of replanPayload.retrySteps) {
       const step = context.plan.steps.find(s => s.stepNumber === stepNumber);
       if (!step) {
-        console.warn(`  replan: step ${stepNumber} not found, skipping`);
+        logger.warn(`  replan: step ${stepNumber} not found, skipping`);
         continue;
       }
 
       const agent = this.resolveAgent(agents, step.agentName);
       if (!agent) {
-        console.warn(`  replan: agent ${step.agentName} not found, skipping`);
+        logger.warn(`  replan: agent ${step.agentName} not found, skipping`);
         continue;
       }
 
@@ -1070,11 +1087,11 @@ export class SwarmOrchestrator {
 
       // max 3 retries to avoid infinite loops
       if (retryCount > 3) {
-        console.error(`  step ${stepNumber} exceeded max retries (3), skipping`);
+        logger.error(`  step ${stepNumber} exceeded max retries (3), skipping`);
         continue;
       }
 
-      console.log(`  🔧 Spawning repair agent for step ${stepNumber} (${agent.name}) - attempt ${retryCount}`);
+      logger.info(`  🔧 Spawning repair agent for step ${stepNumber} (${agent.name}) - attempt ${retryCount}`);
 
       // create retry branch with suffix
       const retryBranchName = `swarm/${context.executionId}/step-${stepNumber}-${agent.name.toLowerCase()}-retry${retryCount}`;
@@ -1157,7 +1174,7 @@ export class SwarmOrchestrator {
         );
 
         // Log repair cost
-        console.log(`  📊 Repair cost: ~${repairResult.estimatedTokenCost} tokens, ${repairResult.attempts} attempt(s), ${Math.round(repairResult.totalDurationMs / 1000)}s`);
+        logger.info(`  📊 Repair cost: ~${repairResult.estimatedTokenCost} tokens, ${repairResult.attempts} attempt(s), ${Math.round(repairResult.totalDurationMs / 1000)}s`);
 
         // Save repair result to run directory
         const repairResultPath = path.join(context.runDir, `repair-step-${stepNumber}.json`);
@@ -1168,17 +1185,17 @@ export class SwarmOrchestrator {
             result.status = 'completed';
             result.endTime = new Date().toISOString();
           }
-          console.log(`  ✅ Repair succeeded for step ${stepNumber} after ${repairResult.attempts} attempt(s)`);
+          logger.info(`  ✅ Repair succeeded for step ${stepNumber} after ${repairResult.attempts} attempt(s)`);
         } else {
           // Repair failed - fall back to standard re-execution as last resort
-          console.warn(`  ⚠️  Repair agent failed; falling back to full re-execution for step ${stepNumber}`);
+          logger.warn(`  ⚠️  Repair agent failed; falling back to full re-execution for step ${stepNumber}`);
           const retryStep = { ...step, task: `[RETRY ${retryCount}] ${step.task}` };
           await this.executeStepInSwarm(retryStep, agent, context, options);
-          console.log(`  ✅ Fallback retry succeeded for step ${stepNumber}`);
+          logger.info(`  ✅ Fallback retry succeeded for step ${stepNumber}`);
         }
       } catch (error: unknown) {
         const err = error as Error;
-        console.error(`  ❌ Retry ${retryCount} failed for step ${stepNumber}: ${err.message}`);
+        logger.error(`  ❌ Retry ${retryCount} failed for step ${stepNumber}: ${err.message}`);
       }
     }
 
@@ -1201,7 +1218,7 @@ export class SwarmOrchestrator {
         });
       }
 
-      console.log(`  ➕ Replan added ${newSteps.length} new step(s)`);
+      logger.info(`  ➕ Replan added ${newSteps.length} new step(s)`);
 
       // Notify dashboard immediately so totalSteps and progress bar update
       // before the replan steps start executing
@@ -1211,16 +1228,16 @@ export class SwarmOrchestrator {
       const replanPromises = newSteps.map(async (added: PlanStep) => {
         const agent = this.resolveAgent(agents, added.agentName);
         if (!agent) {
-          console.warn(`  replan: agent ${added.agentName} not found for step ${added.stepNumber}, skipping`);
+          logger.warn(`  replan: agent ${added.agentName} not found for step ${added.stepNumber}, skipping`);
           return;
         }
 
-        console.log(`  🧩 Executing added step ${added.stepNumber} (${agent.name})`);
+        logger.info(`  🧩 Executing added step ${added.stepNumber} (${agent.name})`);
         try {
           await this.executeStepInSwarm(added, agent, context, options);
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
-          console.error(`  ❌ Replan step ${added.stepNumber} failed: ${msg}`);
+          logger.error(`  ❌ Replan step ${added.stepNumber} failed: ${msg}`);
         }
       });
       await Promise.allSettled(replanPromises);
@@ -1246,7 +1263,7 @@ export class SwarmOrchestrator {
       retryBranches: Object.fromEntries(context.replanState.retryBranches)
     }, null, 2), 'utf8');
 
-    console.log('  📝 Replan state saved');
+    logger.info('  📝 Replan state saved');
   }
 
   /**
@@ -1274,7 +1291,7 @@ export class SwarmOrchestrator {
         depSpinner.start();
 
         try {
-          const satisfied = await context.contextBroker.waitForDependencies(step.dependencies, 600000);
+          const satisfied = await context.contextBroker.waitForDependencies(step.dependencies, DEFAULT_DEPENDENCY_WAIT_MS);
           if (!satisfied) {
             depSpinner.fail(`Step ${step.stepNumber} — Dependencies timeout`);
             throw new Error('Dependencies timeout after 10 minutes');
@@ -1301,7 +1318,7 @@ export class SwarmOrchestrator {
       // Use git worktree so each agent has its own isolated working directory
       const stepRepoDir = step.repo || this.workingDir;
       const worktreePath = await this.createAgentWorktree(branchName, context.mainBranch, context.runDir, step.stepNumber, stepRepoDir);
-      console.log(`  🌿 Step ${step.stepNumber} (${agent.name}) on branch: ${branchName}`);
+      logger.info(`  🌿 Step ${step.stepNumber} (${agent.name}) on branch: ${branchName}`);
 
       // Capture baseline SHA before agent execution for outcome-based verification
       const baseSha = execSync('git rev-parse HEAD', { cwd: worktreePath, encoding: 'utf8' }).trim();
@@ -1316,7 +1333,7 @@ export class SwarmOrchestrator {
         ? `/fleet ${enhancedPrompt}`
         : enhancedPrompt;
       if (options?.useInnerFleet) {
-        console.log(`  ⚡ [inner-fleet] Step ${step.stepNumber} dispatched via /fleet`);
+        logger.info(`  ⚡ [inner-fleet] Step ${step.stepNumber} dispatched via /fleet`);
       }
 
       // execute session on agent branch - IN THE WORKTREE DIRECTORY
@@ -1366,7 +1383,7 @@ export class SwarmOrchestrator {
         if (match) {
           const priorTranscript = match.evidence[0];
           if (priorTranscript && fs.existsSync(priorTranscript)) {
-            console.log(`  ♻️  [replay] Step ${step.stepNumber}: replaying from cached transcript`);
+            logger.info(`  ♻️  [replay] Step ${step.stepNumber}: replaying from cached transcript`);
             fs.copyFileSync(priorTranscript, transcriptPath);
             result.sessionResult = {
               output: 'replayed from cache',
@@ -1386,8 +1403,8 @@ export class SwarmOrchestrator {
       if (!result.sessionResult) {
         // Print static header instead of animated spinner when live logging
         // This prevents spinner animation from interleaving with agent output
-        console.log(`  🐝 Step ${step.stepNumber} (${agent.name}) — Agent working...`);
-        console.log(`  ${'─'.repeat(60)}`);
+        logger.info(`  🐝 Step ${step.stepNumber} (${agent.name}) — Agent working...`);
+        logger.info(`  ${'─'.repeat(60)}`);
 
         const toolName = options?.cliAgent || 'copilot';
         let sessionResult: SessionResult;
@@ -1421,7 +1438,7 @@ export class SwarmOrchestrator {
 
         // Print completion with timing; differentiate success from failure
         const durationSec = Math.round(sessionResult.duration / 1000);
-        console.log(`  ${'─'.repeat(60)}`);
+        logger.info(`  ${'─'.repeat(60)}`);
 
         result.sessionResult = sessionResult;
 
@@ -1430,9 +1447,9 @@ export class SwarmOrchestrator {
         // (e.g., cleanup command fails, permission prompt at exit).
         // Let the verification pipeline judge whether the work is acceptable.
         if (!sessionResult.success) {
-          console.warn(`  ⚠️  Step ${step.stepNumber} (${agent.name}) exited with code ${sessionResult.exitCode}; checking committed work`);
+          logger.warn(`  ⚠️  Step ${step.stepNumber} (${agent.name}) exited with code ${sessionResult.exitCode}; checking committed work`);
         }
-        console.log(`  ✅ Step ${step.stepNumber} (${agent.name}) complete (${durationSec}s)`);
+        logger.info(`  ✅ Step ${step.stepNumber} (${agent.name}) complete (${durationSec}s)`);
       }
 
       // Clean up hook files after session completes (evidence log in runDir persists)
@@ -1557,7 +1574,7 @@ export class SwarmOrchestrator {
         );
 
         if (rollbackResult.success) {
-          console.log(`  🔄 Rollback complete: ${rollbackResult.filesRestored.length} file(s) restored`);
+          logger.info(`  🔄 Rollback complete: ${rollbackResult.filesRestored.length} file(s) restored`);
         }
 
         throw new Error('Step failed verification - see verification report');
@@ -1595,7 +1612,7 @@ export class SwarmOrchestrator {
       // Notify progress: step completed
       options?.onProgress?.(context, `step-done:${step.stepNumber}`);
 
-      console.log(`  ✅ Step ${step.stepNumber} (${agent.name}) completed and merged`);
+      logger.info(`  ✅ Step ${step.stepNumber} (${agent.name}) completed and merged`);
 
     } catch (error: unknown) {
       const err = error as Error;
@@ -1624,190 +1641,30 @@ export class SwarmOrchestrator {
       // Notify progress: step failed
       options?.onProgress?.(context, `step-failed:${step.stepNumber}`);
 
-      console.error(`  ❌ Step ${step.stepNumber} (${agent.name}) failed: ${err.message}`);
+      logger.error(`  ❌ Step ${step.stepNumber} (${agent.name}) failed: ${err.message}`);
       throw error;
     }
   }
 
   /**
-   * Run critic review on completed wave results.
-   * Scores per check axis (test/build/lint/commit/claim) with weighted deductions.
-   * Grounded in structured verifier output, not raw pass/fail booleans.
-   */
-  private runCriticReview(
-    completedResults: ParallelStepResult[],
-    context: SwarmExecutionContext,
-    plan: ExecutionPlan
-  ): CriticResult {
-    const flags: string[] = [];
-    let score = 100;
-
-    // per-axis deduction weights
-    const weights: Record<string, number> = {
-      test: 20, build: 25, lint: 5, commit: 10, claim: 5
-    };
-
-    for (const result of completedResults) {
-      const step = plan.steps.find(s => s.stepNumber === result.stepNumber);
-      if (!step) continue;
-
-      // aggregate checks by type for this step
-      if (result.verificationResult) {
-        const byType = new Map<string, { passed: number; failed: number; reasons: string[] }>();
-        for (const check of result.verificationResult.checks) {
-          const entry = byType.get(check.type) || { passed: 0, failed: 0, reasons: [] };
-          if (check.passed) {
-            entry.passed++;
-          } else {
-            entry.failed++;
-            if (check.reason) entry.reasons.push(check.reason);
-          }
-          byType.set(check.type, entry);
-        }
-
-        // score each axis and generate typed flags
-        for (const [type, counts] of byType) {
-          if (counts.failed > 0) {
-            const deduction = (weights[type] || 10) * counts.failed;
-            score -= deduction;
-            const total = counts.passed + counts.failed;
-            const detail = counts.reasons.length > 0 ? ` (${counts.reasons[0]})` : '';
-            flags.push(`step-${result.stepNumber}: ${counts.failed}/${total} ${type} checks failed${detail}`);
-          }
-        }
-      }
-
-      // missing session output
-      if (step.expectedOutputs.length > 0 && !result.sessionResult) {
-        flags.push(`step-${result.stepNumber}: no session output captured`);
-        score -= 10;
-      }
-    }
-
-    score = Math.max(0, Math.min(100, score));
-    const recommendation = flags.length === 0 ? 'approve' : score >= 60 ? 'revise' : 'reject';
-
-    return { score, flags, recommendation };
+  /** Critic review on completed wave results. Delegates to critic-reviewer module. */
+  private runCriticReview(completedResults: ParallelStepResult[], _context: SwarmExecutionContext, plan: ExecutionPlan): CriticResult {
+    return _runCriticReview(completedResults, plan);
   }
 
-  /**
-   * Build prompt for swarm step execution.
-   * Shared boilerplate lives in .copilot-instructions.md (written once per run via
-   * writeSharedInstructions). This prompt carries only task-specific content to keep
-   * token cost low.
-   */
-  private buildSwarmPrompt(
-    step: PlanStep,
-    agent: AgentProfile,
-    context: SwarmExecutionContext,
-    dependencyContext: string
-  ): string {
-    const sections: string[] = [];
-
-    sections.push(`Step ${step.stepNumber}/${context.plan.steps.length} | Agent: ${agent.name}`);
-    sections.push(`Role: ${agent.purpose}\n`);
-
-    sections.push('TASK:');
-    sections.push(step.task + '\n');
-
-    if (dependencyContext && dependencyContext.trim().length > 0) {
-      sections.push('DEPENDENCY CONTEXT:');
-      sections.push(dependencyContext + '\n');
-    }
-
-    sections.push('BRANCH: you are already on your correct branch in a dedicated git worktree.');
-    sections.push('Do NOT run git checkout or switch branches.\n');
-
-    sections.push('Scope (what you ARE responsible for):');
-    agent.scope.forEach(item => sections.push('- ' + item));
-    sections.push('');
-
-    sections.push('Boundaries (what you must NOT do):');
-    agent.boundaries.forEach(item => sections.push('- ' + item));
-    sections.push('');
-
-    // Surface existing test files so agents know what they must not break.
-    // Full preservation rules live in .copilot-instructions.md; this is a
-    // per-step reminder with the actual filenames.
-    const baseline = context.baselineSnapshot;
-    if (baseline && baseline.testFiles.length > 0) {
-      sections.push('EXISTING TESTS (must still pass after your changes):');
-      for (const f of baseline.testFiles) {
-        sections.push('- ' + f);
-      }
-      sections.push('Do NOT modify, delete, or rewrite any test files. Only edit source code.');
-      sections.push('Test files are verified by an external harness and your edits will cause patch conflicts.');
-      sections.push('');
-    }
-
-    sections.push('Done when:');
-    agent.done_definition.forEach(item => sections.push('- ' + item));
-    sections.push('');
-
-    if (agent.refusal_rules.length > 0) {
-      sections.push('Refusal rules (stop and explain instead of proceeding):');
-      agent.refusal_rules.forEach(rule => sections.push('- ' + rule));
-      sections.push('');
-    }
-
-    // Hard rules, quality standards, git/comment conventions live in
-    // .copilot-instructions.md (written once per run). Not duplicated here
-    // to keep prompt tokens low and avoid double-loading by Claude Code.
-
-    sections.push('Expected outputs:');
-    step.expectedOutputs.forEach(output => sections.push('- ' + output));
-    sections.push('');
-
-    sections.push('When finished, verify your work actually works before committing. Run tests if applicable. Check that files you created are syntactically valid.');
-
-    return sections.join('\n');
+  /** Build prompt for swarm step execution. Delegates to prompt-builder module. */
+  private buildSwarmPrompt(step: PlanStep, agent: AgentProfile, context: SwarmExecutionContext, dependencyContext: string): string {
+    return _buildSwarmPrompt(step, agent, context, dependencyContext);
   }
 
-  /**
-   * Build dependency graph from plan
-   */
+  /** Build dependency graph from plan. Delegates to wave-scheduler module. */
   private buildDependencyGraph(plan: ExecutionPlan): Map<number, number[]> {
-    const graph = new Map<number, number[]>();
-
-    plan.steps.forEach(step => {
-      graph.set(step.stepNumber, step.dependencies);
-    });
-
-    return graph;
+    return _buildDependencyGraph(plan);
   }
 
-  /**
-   * Identify waves of parallel execution (topological sort by levels)
-   */
+  /** Identify waves of parallel execution (topological sort by levels). Delegates to wave-scheduler module. */
   private identifyExecutionWaves(graph: Map<number, number[]>): number[][] {
-    const waves: number[][] = [];
-    const completed = new Set<number>();
-    const allSteps = Array.from(graph.keys());
-
-    while (completed.size < allSteps.length) {
-      const currentWave: number[] = [];
-
-      // find steps whose dependencies are all completed
-      for (const step of allSteps) {
-        if (completed.has(step)) continue;
-
-        const deps = graph.get(step) || [];
-        const allDepsCompleted = deps.every(dep => completed.has(dep));
-
-        if (allDepsCompleted) {
-          currentWave.push(step);
-        }
-      }
-
-      if (currentWave.length === 0) {
-        throw new Error('Circular dependency detected or graph issue');
-      }
-
-      waves.push(currentWave);
-      currentWave.forEach(step => completed.add(step));
-    }
-
-    return waves;
+    return _identifyExecutionWaves(graph);
   }
 
   /**
@@ -1844,7 +1701,7 @@ export class SwarmOrchestrator {
     const remainingDirs = entries.filter(e => e.isDirectory());
     if (remainingDirs.length === 0) return;
 
-    console.log(`\n🧹 Cleaning up ${remainingDirs.length} remaining worktree(s) before quality gates...`);
+    logger.info(`\n🧹 Cleaning up ${remainingDirs.length} remaining worktree(s) before quality gates...`);
     for (const dir of remainingDirs) {
       const worktreePath = path.join(worktreesDir, dir.name);
       try {
@@ -1855,7 +1712,7 @@ export class SwarmOrchestrator {
           fs.rmSync(worktreePath, { recursive: true, force: true });
         } catch {
           // Best-effort cleanup; log but don't block execution
-          console.warn(`  ⚠️  Could not remove worktree ${dir.name}: ${(err as Error).message}`);
+          logger.warn(`  ⚠️  Could not remove worktree ${dir.name}: ${(err as Error).message}`);
         }
       }
     }
@@ -1883,7 +1740,7 @@ export class SwarmOrchestrator {
     const fleetExecutor = new FleetExecutor(this.workingDir);
 
     if (!fleetExecutor.isAvailable()) {
-      console.log('  ⚠️  Fleet mode requested but copilot CLI does not support /fleet. Falling back to subprocess mode.');
+      logger.info('  ⚠️  Fleet mode requested but copilot CLI does not support /fleet. Falling back to subprocess mode.');
       return false;
     }
 
@@ -1893,7 +1750,7 @@ export class SwarmOrchestrator {
 
     if (steps.length === 0) return false;
 
-    console.log(`  ⚡ [fleet] Dispatching ${steps.length} step(s) via /fleet`);
+    logger.info(`  ⚡ [fleet] Dispatching ${steps.length} step(s) via /fleet`);
 
     const transcriptDir = path.join(context.runDir, 'steps');
 
@@ -1907,7 +1764,7 @@ export class SwarmOrchestrator {
       });
 
       if (!waveResult.success) {
-        console.log('  ⚠️  Fleet dispatch failed. Falling back to subprocess mode.');
+        logger.info('  ⚠️  Fleet dispatch failed. Falling back to subprocess mode.');
         return false;
       }
 
@@ -1915,10 +1772,10 @@ export class SwarmOrchestrator {
       const completedCount = waveResult.subtaskResults.filter(r => r.completed).length;
       const failedCount = waveResult.subtaskResults.filter(r => !r.completed).length;
 
-      console.log(`  ⚡ [fleet] ${completedCount} subtask(s) completed, ${failedCount} incomplete`);
+      logger.info(`  ⚡ [fleet] ${completedCount} subtask(s) completed, ${failedCount} incomplete`);
 
       if (failedCount > 0) {
-        console.log('  ⚠️  Some fleet subtasks incomplete. Falling back to subprocess mode for all steps.');
+        logger.info('  ⚠️  Some fleet subtasks incomplete. Falling back to subprocess mode for all steps.');
         return false;
       }
 
@@ -1943,7 +1800,7 @@ export class SwarmOrchestrator {
       return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      console.log(`  ⚠️  Fleet dispatch error: ${message}. Falling back to subprocess mode.`);
+      logger.info(`  ⚠️  Fleet dispatch error: ${message}. Falling back to subprocess mode.`);
       return false;
     }
   }
@@ -2030,7 +1887,7 @@ export class SwarmOrchestrator {
 
       if (missing.length === 0) return;
 
-      console.log(`\n\ud83d\udce6 Installing ${missing.length} new dependenc${missing.length === 1 ? 'y' : 'ies'}: ${missing.join(', ')}`);
+      logger.info(`\n\ud83d\udce6 Installing ${missing.length} new dependenc${missing.length === 1 ? 'y' : 'ies'}: ${missing.join(', ')}`);
 
       // Use the right package manager for the project
       const installCmd = fs.existsSync(path.join(this.workingDir, 'yarn.lock'))
@@ -2044,10 +1901,10 @@ export class SwarmOrchestrator {
         stdio: ['pipe', 'pipe', 'pipe'],
         timeout: 120_000,
       });
-      console.log('  \u2705 Dependencies installed');
+      logger.info('  \u2705 Dependencies installed');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`  \u26a0\ufe0f  Dependency install failed (quality gates may report test failures): ${msg}`);
+      logger.warn(`  \u26a0\ufe0f  Dependency install failed (quality gates may report test failures): ${msg}`);
     }
   }
 
@@ -2125,7 +1982,7 @@ export class SwarmOrchestrator {
 
     try {
       execSync('git merge --abort', opts);
-      console.log('  [cleanup] Aborted in-progress merge from previous run');
+      logger.info('  [cleanup] Aborted in-progress merge from previous run');
     } catch { /* no merge in progress; expected */ }
 
     // Check for unmerged or staged entries that would block new operations
@@ -2135,7 +1992,7 @@ export class SwarmOrchestrator {
       if (hasUnmerged) {
         execSync('git reset HEAD', opts);
         execSync('git checkout -- .', opts);
-        console.log('  [cleanup] Reset unmerged files from previous crashed run');
+        logger.info('  [cleanup] Reset unmerged files from previous crashed run');
       }
     } catch { /* status check failed; not critical */ }
 
@@ -2150,55 +2007,9 @@ export class SwarmOrchestrator {
   }
 
   /**
-   * Analyze commit quality and flag anti-patterns
-   */
-  private async analyzeCommitQuality(
-    commits: ShareIndex['gitCommits'],
-    stepNumber: number,
-    agentName: string,
-    context: SwarmExecutionContext
-  ): Promise<void> {
-    if (commits.length === 0) return;
-
-    const detector = new CommitPatternDetector();
-
-    // Convert to CommitMessage format; parsed commits may carry extra
-    // fields (timestamp, files) beyond the ShareIndex schema
-    const commitMessages: CommitMessage[] = commits.map(c => {
-      const extra = c as Record<string, unknown>;
-      return {
-        hash: c.sha || 'unknown',
-        message: c.message || '',
-        timestamp: extra.timestamp ? new Date(extra.timestamp as string) : new Date(),
-        files: (extra.files as string[]) || []
-      };
-    });
-
-    const result = detector.analyzeCommits(commitMessages);
-
-    // Log analysis results if anti-patterns detected
-    if (result.hasAntiPatterns) {
-      console.log(`  ⚠️  Commit quality warnings for Step ${stepNumber} (${agentName}):`);
-      console.log(`      Quality score: ${result.score}/100`);
-      result.warnings.forEach(warning => {
-        console.log(`      - ${warning}`);
-      });
-
-      // Get suggestions
-      const suggestions = detector.getSuggestions(result);
-      if (suggestions.length > 0) {
-        console.log(`      Suggestions:`);
-        suggestions.forEach(suggestion => {
-          console.log(`        • ${suggestion}`);
-        });
-      }
-
-      // Just log warnings - don't store in context (data type mismatch)
-      // Meta-analyzer will detect commit quality issues from transcripts
-    } else if (result.score >= 90) {
-      // Acknowledge good commit practices
-      console.log(`  ✨ Excellent commit quality: ${result.score}/100 (${commitMessages.length} commits)`);
-    }
+  /** Analyze commit quality and flag anti-patterns. Delegates to commit-quality-analyzer module. */
+  private async analyzeCommitQuality(commits: ShareIndex['gitCommits'], stepNumber: number, agentName: string, _context: SwarmExecutionContext): Promise<void> {
+    return _analyzeCommitQuality(commits, stepNumber, agentName);
   }
 
   /**
@@ -2206,76 +2017,7 @@ export class SwarmOrchestrator {
    * Copilot CLI picks this up automatically, so per-step prompts stay minimal.
    */
   private writeSharedInstructions(baseline?: BaselineSnapshot, tierInjection?: string): void {
-    const instructionsPath = path.join(this.workingDir, '.copilot-instructions.md');
-    // Only write if the file does not already exist (avoid overwriting user content)
-    if (fs.existsSync(instructionsPath)) return;
-
-    const contentParts = [
-      '# Swarm Agent Instructions',
-      '',
-      '## Parallel Execution Context',
-      'You are running inside a git worktree on a dedicated branch. Do NOT run `git checkout`.',
-      'Make incremental commits with natural, varied messages.',
-      '',
-      '## Hard Rules',
-      '- Do not invent features, flags, APIs, or tool behavior not in your task.',
-      '- Do not claim tests passed unless you ran them and can show the output.',
-      '- Do not say "done" unless all required artifacts exist and you verified them.',
-      '- If uncertain about anything, say so explicitly.',
-      '- Never reference files, images, fonts, or assets that do not exist in the repo.',
-      '- Encapsulate JS: wrap in IIFE, module, or DOMContentLoaded. No bare globals in script scope.',
-      '',
-    ];
-
-    // Tier-filtered requirements replace the old flat "Quality Bar" section.
-    // Only requirements relevant to the detected task type get injected.
-    if (tierInjection && tierInjection.trim().length > 0) {
-      contentParts.push(tierInjection);
-      contentParts.push('');
-    }
-
-    contentParts.push(
-      '## Quality Bar',
-      '- Code reads as human-written. No AI-typical patterns: no over-commented obvious logic, no generic variable names, no boilerplate filler.',
-      '- Extract before repeat: if you copy the same logic more than twice, refactor into a shared util/hook/middleware.',
-      '- Config first: do not hardcode API base URLs, timeouts, retry counts, or environment-specific values.',
-      '- README truth: do not claim features that are not implemented. Do not add sections that do not apply (no troubleshooting tables for trivial projects).',
-      '- Error messages must be specific and actionable with relevant values.',
-      '',
-      '## Code Comments',
-      '- Add a 1-2 line purpose comment at the top of each new file.',
-      '- Add brief inline comments for non-obvious logic (not every line).',
-      '- Use natural, casual language. Good: "// bail early if empty". Bad: "// Check if the array has zero length".',
-      '',
-      '## Commit Messages',
-      'Use varied, natural messages like:',
-      '  "add user authentication module"',
-      '  "fix: handle null case in parser"',
-      '  "update config and deps"',
-      '  "implement todo API with tests"',
-      '',
-    );
-
-    // Append baseline preservation rules when the repo has existing files
-    if (baseline && baseline.allFiles.length > 0) {
-      const rules = formatPreservationRules(baseline);
-      if (rules) contentParts.push(rules);
-    }
-
-    const content = contentParts.join('\n');
-
-    fs.writeFileSync(instructionsPath, content, 'utf8');
-
-    // Commit so worktrees (branched from main) inherit the instructions file
-    try {
-      execSync('git add .copilot-instructions.md', { cwd: this.workingDir, stdio: 'pipe' });
-      execSync('git commit -m "add shared copilot instructions for swarm agents"', {
-        cwd: this.workingDir, stdio: 'pipe',
-        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
-      });
-    } catch {
-      // Commit may fail if repo has no initial commit yet; non-fatal
-    }
+    _writeSharedInstructions(this.workingDir, baseline, tierInjection);
   }
 
   /**
@@ -2322,7 +2064,7 @@ export class SwarmOrchestrator {
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[analytics] Wave analysis failed (non-fatal): ${msg}`);
+      logger.warn(`[analytics] Wave analysis failed (non-fatal): ${msg}`);
     }
   }
 
@@ -2336,75 +2078,12 @@ export class SwarmOrchestrator {
     context: SwarmExecutionContext,
     options: { confirmDeploy?: boolean; enableExternal?: boolean; dryRun?: boolean }
   ): Promise<void> {
-    console.log(`  🚀 Deploying preview (--confirm-deploy)...`);
-
-    const toolManager = new ExternalToolManager({
-      enableExternal: options.enableExternal || true,
-      dryRun: options.dryRun || false,
-      logFile: path.join(context.runDir, 'deployment-commands.log')
-    });
-
-    const deploymentManager = new DeploymentManager(toolManager, this.workingDir);
-
-    try {
-      const branchName = context.results.find(r => r.stepNumber === step.stepNumber)?.branchName || 'unknown';
-
-      // tag HEAD before deploy for rollback safety
-      let preDeployTag: string | undefined;
-      try {
-        preDeployTag = deploymentManager.tagPreDeploy(context.executionId);
-        console.log(`  🏷️  Tagged: ${preDeployTag}`);
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.log(`  [deploy] Could not tag pre-deploy (non-fatal): ${msg}`);
-      }
-
-      const deployResult = await deploymentManager.deployPreview(branchName);
-
-      if (deployResult.success && deployResult.previewUrl) {
-        console.log(`  ✅ Preview deployed: ${deployResult.previewUrl}`);
-
-        // health check the preview URL
-        const healthy = await deploymentManager.runHealthCheck(deployResult.previewUrl);
-        if (!healthy && preDeployTag) {
-          console.warn(`  ⚠️  Health check failed, rolling back...`);
-          try {
-            deploymentManager.rollbackToTag(preDeployTag);
-          } catch (rollbackErr: unknown) {
-            const msg = rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr);
-            console.warn(`  ⚠️  Rollback failed: ${msg}`);
-          }
-          return;
-        } else if (healthy) {
-          console.log(`  ✅ Health check passed`);
-        }
-
-        // store deployment metadata
-        const metadata: DeploymentMetadata = {
-          stepNumber: step.stepNumber,
-          agentName: agent.name,
-          timestamp: new Date().toISOString(),
-          platform: deployResult.platform,
-          previewUrl: deployResult.previewUrl,
-          branchName
-        };
-
-        deploymentManager.saveDeploymentMetadata(context.runDir, metadata);
-
-        // add to context deployments
-        if (!context.deployments) {
-          context.deployments = [];
-        }
-        context.deployments.push(metadata);
-      } else if (deployResult.platform === 'none') {
-        console.log(`  ℹ️  No deployment platform detected (vercel/netlify), skipping`);
-      } else {
-        console.warn(`  ⚠️  Deployment failed: ${deployResult.error}`);
-      }
-    } catch (error: unknown) {
-      const err = error as Error;
-      console.warn(`  ⚠️  Deployment error: ${err.message}`);
-    }
+    await _executeOptionalDeployment(this.workingDir, step, agent, {
+      runDir: context.runDir,
+      executionId: context.executionId,
+      results: context.results,
+      deployments: context.deployments,
+    }, options);
   }
 }
 

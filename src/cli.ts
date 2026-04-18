@@ -2,6 +2,15 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { normalizeLeadingGlobalFlags, parseOutputFormat } from './cli/flags';
+import { configureLogger, getLogger } from './logger';
+
+const startupArgs = process.argv.slice(2);
+configureLogger({
+  level: startupArgs.includes('--verbose') ? 'debug' : 'info',
+  outputFormat: parseOutputFormat(startupArgs),
+});
+const logger = getLogger('cli');
 
 /**
  * Parse a single .env file and set any variables not already in process.env.
@@ -12,6 +21,7 @@ function parseDotenvFile(filePath: string): void {
   if (!fs.existsSync(filePath)) return;
 
   const content = fs.readFileSync(filePath, 'utf-8');
+  logger.debug(`loading env file ${filePath}`);
   for (const raw of content.split('\n')) {
     const line = raw.trim();
     if (!line || line.startsWith('#')) continue;
@@ -94,7 +104,7 @@ import {
 import { startMcpServer } from './mcp-server';
 
 async function main(): Promise<void> {
-  const args = process.argv.slice(2);
+  const args = normalizeLeadingGlobalFlags(process.argv.slice(2));
 
   if (args.length === 0) {
     showUsage();
@@ -174,12 +184,12 @@ async function main(): Promise<void> {
         startMcpServer(process.cwd());
         break;
       default:
-        console.log(`Unknown command: ${command}\n`);
+        logger.error(`Unknown command: ${command}\n`);
         showUsage();
         exitCode = 1;
     }
   } catch (error) {
-    console.error('Fatal error:', error instanceof Error ? error.message : String(error));
+    logger.error('Fatal error:', error instanceof Error ? error.message : String(error));
     exitCode = 1;
   }
 
@@ -193,4 +203,3 @@ if (require.main === module) {
 }
 
 export { generatePlan, main };
-

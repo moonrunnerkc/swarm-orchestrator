@@ -3,6 +3,8 @@ import * as path from 'path';
 import { AgentProfile, ConfigLoader } from './config-loader';
 import { ExecutionPlan, PlanStep } from './plan-generator';
 import SessionExecutor, { SessionOptions, SessionResult } from './session-executor';
+import { getLogger } from './logger';
+const logger = getLogger('pm-agent');
 
 /**
  * Result of a PM agent review pass.
@@ -213,7 +215,7 @@ export class PMAgent {
 
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[pm-agent] LLM review failed, using local review only: ${msg}`);
+      logger.warn(`[pm-agent] LLM review failed, using local review only: ${msg}`);
       return {
         ...localResult,
         reviewNotes: [...localResult.reviewNotes, 'LLM review unavailable, using local review only'],

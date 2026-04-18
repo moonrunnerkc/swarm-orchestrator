@@ -9,6 +9,14 @@ import { HookGenerator, GeneratedHooks } from './hook-generator';
 import { PlanStep } from './plan-generator';
 import { redactFile } from './secret-redactor';
 import { ExecutionContext } from './step-runner';
+import {
+  DEFAULT_COMMAND_TIMEOUT_MS,
+  DEFAULT_HEARTBEAT_INTERVAL_MS,
+  DEFAULT_HEARTBEAT_QUIET_THRESHOLD_MS,
+  DEFAULT_SIGKILL_DELAY_MS,
+} from './defaults';
+import { getLogger } from './logger';
+const logger = getLogger('session-executor');
 
 export interface SessionOptions {
   model?: string | undefined;
@@ -443,7 +451,7 @@ export class SessionExecutor {
   // Maximum seconds of silence before killing a stalled subprocess.
   // Copilot CLI can go quiet for several minutes during extended tool-use
   // or thinking phases, so this needs headroom beyond typical inference time.
-  private static readonly STALL_TIMEOUT_MS = 300_000; // 5 minutes of no output
+  private static readonly STALL_TIMEOUT_MS = DEFAULT_COMMAND_TIMEOUT_MS * 2 + 60_000;
 
   private runCommand(
     command: string,
@@ -498,14 +506,14 @@ export class SessionExecutor {
           const elapsed = Math.round((Date.now() - cmdStartTime) / 1000);
           const stallSec = Math.round(silentMs / 1000);
           if (logPrefix) {
-            console.log(`${logPrefix} STALL DETECTED: no output for ${stallSec}s (total ${elapsed}s, ${lineCount} lines). Killing process.`);
+            logger.info(`${logPrefix} STALL DETECTED: no output for ${stallSec}s (total ${elapsed}s, ${lineCount} lines). Killing process.`);
           }
           cleanup();
           proc.kill('SIGTERM');
           // give it 5s to exit gracefully, then force kill
           setTimeout(() => {
             try { proc.kill('SIGKILL'); } catch { /* already dead */ }
-          }, 5000);
+          }, DEFAULT_SIGKILL_DELAY_MS);
           if (!resolved) {
             resolved = true;
             resolve({
@@ -515,17 +523,17 @@ export class SessionExecutor {
             });
           }
         }
-      }, 10_000);
+      }, DEFAULT_HEARTBEAT_QUIET_THRESHOLD_MS);
 
       if (logPrefix) {
         heartbeatInterval = setInterval(() => {
           const silentMs = Date.now() - lastOutputTime;
-          if (silentMs >= 10000) {
+          if (silentMs >= DEFAULT_HEARTBEAT_QUIET_THRESHOLD_MS) {
             const elapsed = Math.round((Date.now() - cmdStartTime) / 1000);
-            console.log(`${logPrefix} ... still working (${elapsed}s, ${lineCount} lines so far)`);
+            logger.info(`${logPrefix} ... still working (${elapsed}s, ${lineCount} lines so far)`);
             lastOutputTime = Date.now(); // reset so we don't spam
           }
-        }, 5000);
+        }, DEFAULT_HEARTBEAT_INTERVAL_MS);
       }
 
       if (proc.stdout) {
@@ -545,7 +553,7 @@ export class SessionExecutor {
               if (line.trim() && !this.isScopeEnforcementNoise(line)) {
                 lineCount++;
                 const prefixed = `${logPrefix} ${line}`;
-                console.log(prefixed);
+                logger.info(prefixed);
                 if (onAgentLine) onAgentLine(prefixed);
               }
             }
@@ -570,7 +578,7 @@ export class SessionExecutor {
               if (line.trim() && !this.isScopeEnforcementNoise(line)) {
                 lineCount++;
                 const prefixed = `${logPrefix} ${line}`;
-                console.error(prefixed);
+                logger.error(prefixed);
                 if (onAgentLine) onAgentLine(prefixed);
               }
             }
@@ -585,11 +593,11 @@ export class SessionExecutor {
         if (logPrefix) {
           if (stdoutBuffer.trim()) {
             lineCount++;
-            console.log(`${logPrefix} ${stdoutBuffer}`);
+            logger.info(`${logPrefix} ${stdoutBuffer}`);
           }
           if (stderrBuffer.trim()) {
             lineCount++;
-            console.error(`${logPrefix} ${stderrBuffer}`);
+            logger.error(`${logPrefix} ${stderrBuffer}`);
           }
         }
 
@@ -609,10 +617,10 @@ export class SessionExecutor {
         // flush buffers on error too
         if (logPrefix) {
           if (stdoutBuffer.trim()) {
-            console.log(`${logPrefix} ${stdoutBuffer}`);
+            logger.info(`${logPrefix} ${stdoutBuffer}`);
           }
           if (stderrBuffer.trim()) {
-            console.error(`${logPrefix} ${stderrBuffer}`);
+            logger.error(`${logPrefix} ${stderrBuffer}`);
           }
         }
 
@@ -646,7 +654,7 @@ export class SessionExecutor {
       }
 
       if (attempt < maxRetries) {
-        console.error(`Attempt ${attempt} failed, retrying... (${maxRetries - attempt} left)`);
+        logger.error(`Attempt ${attempt} failed, retrying... (${maxRetries - attempt} left)`);
         // wait before retry (exponential backoff)
         await this.sleep(Math.pow(2, attempt) * 1000);
       }
