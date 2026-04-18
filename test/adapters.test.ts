@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 import { AgentAdapter, AgentResult, AgentSpawnOptions, buildRestrictedEnv } from '../src/adapters/agent-adapter';
-import { CopilotAdapter, hasFatalStderrError } from '../src/adapters/copilot-adapter';
+import { CopilotAdapter, hasFatalStderrError, scrubCopilotHostileTokens } from '../src/adapters/copilot-adapter';
 import { ClaudeCodeAdapter } from '../src/adapters/claude-code-adapter';
 import { CodexAdapter } from '../src/adapters/codex-adapter';
 import { resolveAdapter } from '../src/adapters';
@@ -267,6 +267,53 @@ describe('Agent Adapters', () => {
         hasFatalStderrError('Permission denied and could not request permission'),
         false
       );
+    });
+
+    it('detects authentication failed error', () => {
+      assert.strictEqual(
+        hasFatalStderrError('Error: Authentication failed (Request ID: 98F0:2EA3FB:2CD219C:37F0BEE:69E3DC73)'),
+        true
+      );
+    });
+
+    it('detects token invalid/expired error', () => {
+      assert.strictEqual(
+        hasFatalStderrError('Your token is invalid or expired'),
+        true
+      );
+    });
+  });
+
+  describe('scrubCopilotHostileTokens', () => {
+    it('removes GITHUB_TOKEN, GH_TOKEN, COPILOT_GITHUB_TOKEN by default', () => {
+      const cleaned = scrubCopilotHostileTokens({
+        PATH: '/usr/bin',
+        GITHUB_TOKEN: 'ghp_xyz',
+        GH_TOKEN: 'gho_xyz',
+        COPILOT_GITHUB_TOKEN: 'ghc_xyz',
+        HOME: '/home/u',
+      });
+      assert.strictEqual(cleaned.GITHUB_TOKEN, undefined);
+      assert.strictEqual(cleaned.GH_TOKEN, undefined);
+      assert.strictEqual(cleaned.COPILOT_GITHUB_TOKEN, undefined);
+      assert.strictEqual(cleaned.PATH, '/usr/bin');
+      assert.strictEqual(cleaned.HOME, '/home/u');
+    });
+
+    it('preserves tokens when SWARM_USE_ENV_GITHUB_TOKEN=1 is set', () => {
+      const cleaned = scrubCopilotHostileTokens({
+        GITHUB_TOKEN: 'ghp_keep',
+        SWARM_USE_ENV_GITHUB_TOKEN: '1',
+      });
+      assert.strictEqual(cleaned.GITHUB_TOKEN, 'ghp_keep');
+    });
+
+    it('returns a fresh object (does not mutate the input)', () => {
+      const source = { GITHUB_TOKEN: 'ghp_xyz', FOO: 'bar' };
+      const cleaned = scrubCopilotHostileTokens(source);
+      assert.strictEqual(source.GITHUB_TOKEN, 'ghp_xyz', 'source should be untouched');
+      assert.strictEqual(cleaned.GITHUB_TOKEN, undefined);
+      assert.strictEqual(cleaned.FOO, 'bar');
     });
   });
 

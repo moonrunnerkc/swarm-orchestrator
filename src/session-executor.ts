@@ -2,6 +2,7 @@ import { spawn, SpawnOptions } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { AgentAdapter } from './adapters/agent-adapter';
+import { scrubCopilotHostileTokens } from './adapters/copilot-adapter';
 import { scanBaseline } from './baseline-scanner';
 import { AgentProfile } from './config-loader';
 import { FleetWrapper } from './fleet-wrapper';
@@ -464,7 +465,7 @@ export class SessionExecutor {
       const options: SpawnOptions = {
         cwd: this.workingDir,
         env: {
-          ...process.env,
+          ...scrubCopilotHostileTokens(process.env),
           // ensure copilot can authenticate
           COPILOT_ALLOW_ALL: 'true',
           ...additionalEnv

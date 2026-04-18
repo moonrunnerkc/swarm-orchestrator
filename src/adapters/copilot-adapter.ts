@@ -17,11 +17,34 @@ const SCOPE_NOISE_PATTERNS = [
   /could not request permission from user/i,
 ];
 
+// Env vars Copilot CLI prefers over its keyring OAuth for authentication.
+// If the user has a repo-scoped PAT (e.g. GITHUB_TOKEN in .env) that lacks
+// "Copilot Requests" permission, Copilot picks it up and every session 401s
+// before a single tool call runs. Scrub these by default so Copilot falls
+// back to the keyring token the user already authenticated with via
+// `copilot /login`. Opt back in by setting SWARM_USE_ENV_GITHUB_TOKEN=1
+// when you do have a Copilot-capable PAT and want to force env-based auth.
+const COPILOT_AUTH_ENV_VARS = ['COPILOT_GITHUB_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN'];
+
+export function scrubCopilotHostileTokens(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  if (env.SWARM_USE_ENV_GITHUB_TOKEN === '1') {
+    return { ...env };
+  }
+  const copy = { ...env };
+  for (const key of COPILOT_AUTH_ENV_VARS) {
+    delete copy[key];
+  }
+  return copy;
+}
+
 // Copilot CLI sometimes exits 0 even on fatal errors like invalid model
-// names. These patterns on stderr indicate the session never ran at all.
+// names or auth failures. These patterns on stderr indicate the session
+// never ran at all.
 const FATAL_STDERR_PATTERNS = [
   /Model ".*" from --model flag is not available/i,
   /Error:.*not available/i,
+  /Authentication failed/i,
+  /token.*(?:invalid|expired|lacking)/i,
 ];
 
 function isScopeNoise(line: string): boolean {
@@ -85,7 +108,7 @@ export class CopilotAdapter implements AgentAdapter {
           // It needs the full user environment (XDG_CONFIG_HOME, DBUS_SESSION_BUS_ADDRESS,
           // keyring paths, etc.) to locate stored credentials. Restricting the env
           // like we do for API-key-based adapters breaks auth silently.
-          ...process.env,
+          ...scrubCopilotHostileTokens(process.env),
           GIT_AUTHOR_NAME: 'swarm-orchestrator',
           GIT_AUTHOR_EMAIL: 'swarm@localhost',
           GIT_COMMITTER_NAME: 'swarm-orchestrator',
