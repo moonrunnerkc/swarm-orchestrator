@@ -488,21 +488,59 @@ export async function startDashboard(
   });
 
   // ── stdout.write interception ──────────────────────────────────────────
+  // Ink splits a single frame across multiple synchronous stdout.write()
+  // calls: typically [cursor-up escape] → [body] → [erase-below escape].
+  // An interceptor that reacts to each chunk independently either leaks
+  // body chunks (stacked frames — seen on ≥80-col terminals when any
+  // rendered line soft-wraps) or nukes frames when an escape-only chunk
+  // fires a clear-screen.
+  //
+  // Fix: buffer every write within a single event-loop tick, then flush
+  // the concatenated string as one frame paint — cursor home, per-line
+  // clear, body, erase-below. The whole frame lives or dies together.
+  //
+  // Safe because: while the dashboard is active, no other code should be
+  // writing to stdout — the logger routes non-error output to stderr via
+  // the isDashboardActive() guard.
   const _origWrite = process.stdout.write.bind(process.stdout) as typeof process.stdout.write;
-  const _cursorUpRe = /\x1b\[\d*A/;
+  // All cursor-move and erase escapes that Ink / log-update might emit.
+  // We strip them all and replace with our own home + per-line clear.
+  const _cursorMoveRe = /\x1b\[\d*[ABFG]|\x1b\[\d*;\d*[Hf]|\x1b\[[0-9]*[JK]/g;
+
+  let frameBuf = '';
+  let frameScheduled = false;
+
+  const flushFrame = () => {
+    frameScheduled = false;
+    const buf = frameBuf;
+    frameBuf = '';
+    if (!buf) return;
+    // 1. Strip every cursor-move / erase Ink emitted; we do our own.
+    // 2. Drop trailing newlines — a '\n' at the last viewport row scrolls
+    //    the terminal, pushing earlier content into scrollback where
+    //    subsequent \x1b[H home positions can't reach it.
+    // 3. Per-line \x1b[K so each row fully overwrites the previous frame.
+    const stripped = buf.replace(_cursorMoveRe, '');
+    if (!stripped) return; // nothing to paint (pure cursor/erase chunk)
+    const trimmed = stripped.replace(/\n+$/, '');
+    const padded = trimmed.replace(/\n/g, '\x1b[K\n');
+    _origWrite('\x1b[H' + padded + '\x1b[K\x1b[0J');
+  };
 
   (process.stdout as any).write = function (
     chunk: any,
-    encodingOrCb?: any,
+    _encodingOrCb?: any,
     cb?: any,
   ): boolean {
     const str = typeof chunk === 'string' ? chunk : chunk.toString();
-    if (_cursorUpRe.test(str)) {
-      // Strip cursor-up, add per-line clear, render from home, clear below
-      const cleaned = str.replace(_cursorUpRe, '').replace(/\n/g, '\x1b[K\n');
-      return _origWrite('\x1b[H' + cleaned + '\x1b[K\x1b[0J', encodingOrCb, cb);
+    frameBuf += str;
+    if (!frameScheduled) {
+      frameScheduled = true;
+      setImmediate(flushFrame);
     }
-    return _origWrite(chunk, encodingOrCb, cb);
+    if (typeof cb === 'function') setImmediate(cb);
+    else if (typeof _encodingOrCb === 'function') setImmediate(_encodingOrCb);
+    return true;
   };
 
   // Prepare screen: clear viewport, position at top-left, hide text cursor
@@ -532,7 +570,10 @@ export async function startDashboard(
       if (stopped) return;
       stopped = true;
       unmount();
-      // Restore original stdout.write, show cursor, move below last frame
+      // Flush any pending frame buffered by our interceptor, then restore
+      // the original stdout.write, show the cursor, and drop below the
+      // last frame so post-dashboard logs don't overwrite it.
+      flushFrame();
       (process.stdout as any).write = _origWrite;
       _origWrite('\x1b[?25h\n');
     },
