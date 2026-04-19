@@ -132,3 +132,69 @@ The run directories are on the local workstation; each contains
 `metrics.json`, `cost-attribution.json`, per-step share transcripts, and
 verification outputs. Copies of `metrics.json` and `cost-attribution.json`
 are preserved under the repo at `benchmarks/harness/raw_data/demo-fast/run-<i>/`.
+
+---
+
+# Statistical Summary — api-quick (N=5)
+
+- **Benchmark:** `api-quick` (3-step REST API with tests and Dockerfile; 2 waves with dependency ordering)
+- **Source:** `benchmarks/harness/raw_data/api-quick/metrics.jsonl` (5 lines)
+- **Runs (N):** **5** — chosen because per-run wall clock is ~5–7 minutes; N=5 fit the remaining Copilot budget after the demo-fast N=10 cycle
+- **Scope limit:** 5 < 10; intentional, not padded with synthetic runs
+- **Harness:** `benchmarks/harness/run-n.sh api-quick 5` → `benchmarks/harness/scoring/compute-stats.py`
+
+## Why N=5 and not 10
+
+`api-quick` runs three agents in two waves (backend → {tests, Docker}) and
+consumes ~3 premium requests per run at ~6 min wall clock. Running N=10
+would cost ~60 min of Copilot time and ~30 premium requests. N=5 already
+gives a usable CI on wall-clock and confirms the per-step counts are
+stable. If you need N=10 later, re-run the harness — metrics.jsonl will
+be overwritten cleanly.
+
+## Aggregate metrics
+
+| Metric | n | Mean | Std | 95% CI (bootstrap) | Min | Max |
+| --- | --- | --- | --- | --- | --- | --- |
+| wall_clock_ms | 5 | 359067.4 | 57411.7598 | [310753.2, 402196.0] | 273496 | 433251 |
+| exit_status | 5 | 0.0 | 0.0 | [0.0, 0.0] | 0 | 0 |
+| completed_steps | 5 | 3.0 | 0.0 | [3.0, 3.0] | 3 | 3 |
+| total_steps | 5 | 3.0 | 0.0 | [3.0, 3.0] | 3 | 3 |
+| commit_count | 5 | 3.6 | 1.1402 | [2.6, 4.4] | 2 | 5 |
+| actual_premium_requests | 5 | 3.0 | 0.0 | [3.0, 3.0] | 3 | 3 |
+| estimated_premium_requests | 5 | 4.0 | 0.0 | [4.0, 4.0] | 4 | 4 |
+
+### Reading the table
+
+- **wall_clock_ms:** mean 6.0 min, 95% CI [5.2 min, 6.7 min]. Variance
+  (~1 min std) is dominated by Copilot inference on the tester and
+  devops steps running in parallel in wave 2. Min 4.6 min (run 3, which
+  happened to get fast inference on both wave-2 steps) vs max 7.2 min.
+- **exit_status / completed_steps / total_steps:** flat — every run
+  completed all three steps. A harder task would surface failures here.
+- **commit_count:** 3.6 ± 1.1 agent commits, range 2–5. Consistent with
+  three agents each producing 1–2 commits plus incidental merge commits.
+- **actual_premium_requests:** 3 per run (1 per step), reported by
+  `parseCopilotRequestCount` from the live stderr.
+- **estimated_premium_requests:** constant 4 — estimator's 15% retry
+  buffer on top of 3 steps rounds up.
+
+## Appendix: per-run raw values
+
+| run_index | wall_clock_ms | exit_status | completed_steps | total_steps | commit_count | actual_premium_requests | estimated_premium_requests |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 355915 | 0 | 3 | 3 | 4 | 3 | 4 |
+| 2 | 377363 | 0 | 3 | 3 | 3 | 3 | 4 |
+| 3 | 273496 | 0 | 3 | 3 | 4 | 3 | 4 |
+| 4 | 355312 | 0 | 3 | 3 | 5 | 3 | 4 |
+| 5 | 433251 | 0 | 3 | 3 | 2 | 3 | 4 |
+
+### Run directories
+
+| run_index | run_dir |
+| --- | --- |
+| 1 | `/tmp/swarm-demo-api-quick-Rpx3tp/runs/swarm-2026-04-19T00-27-49-643Z` |
+| 2 | `/tmp/swarm-demo-api-quick-mEnPvH/runs/swarm-2026-04-19T00-33-45-452Z` |
+| 3 | `/tmp/swarm-demo-api-quick-PIKw7M/runs/swarm-2026-04-19T00-40-02-765Z` |
+| 4 | `/tmp/swarm-demo-api-quick-WGehWE/runs/swarm-2026-04-19T00-44-41-046Z` |
+| 5 | `/tmp/swarm-demo-api-quick-N76Ali/runs/swarm-2026-04-19T00-50-31-663Z` |
