@@ -22,7 +22,7 @@ import {
 } from './flags';
 import { showUsage } from './usage';
 import { Spinner } from '../spinner';
-import { getLogger, writeStructuredOutput } from '../logger';
+import { getLogger, setDashboardActive, writeStructuredOutput } from '../logger';
 
 const logger = getLogger('cli:swarm');
 
@@ -147,6 +147,20 @@ export async function executeSwarm(
     return 1;
   }
 
+  // Pre-flight auth check: verify credentials before asking the user to confirm cost.
+  // This prevents the confusing UX of confirming a spend and then immediately failing on auth.
+  if (selectedTool === 'copilot') {
+    try {
+      const { execSync } = await import('child_process');
+      execSync('gh auth status', { stdio: 'pipe', timeout: 10_000 });
+    } catch {
+      logger.error('❌ GitHub authentication check failed.');
+      logger.error('   Run `gh auth login` or `copilot /login` to re-authenticate.');
+      logger.error('   If using a token, ensure GH_TOKEN / GITHUB_TOKEN is set and valid.');
+      return 1;
+    }
+  }
+
   // Gate: require explicit user confirmation before spending tokens
   const confirmed = await confirmCostPrompt(
     costEstimate.lowEstimate,
@@ -199,15 +213,21 @@ export async function executeSwarm(
         goal: plan.goal,
         totalSteps: plan.steps.length,
         currentWave: 0,
-        totalWaves: 0,
-        results: [],
+        totalWaves: plan.steps.length > 0 ? 1 : 0,
+        results: plan.steps.map(s => ({
+          stepNumber: s.stepNumber,
+          agentName: s.agentName,
+          status: 'pending' as const,
+        })),
         recentCommits: [],
         prLinks: [],
         startTime: new Date().toISOString(),
+        agentLog: [],
         costSummary: `Cost Estimate: ${costEstimate.lowEstimate}-${costEstimate.totalPremiumRequests} premium requests | ${modelName} (${costEstimate.modelMultiplier}x) | ${plan.steps.length} steps`
       });
       if (result) {
         dashboard = result;
+        setDashboardActive(true);
         logger.info('📊 Live TUI dashboard started\n');
       }
     } catch (err: unknown) {
@@ -276,6 +296,7 @@ export async function executeSwarm(
       });
       await new Promise(resolve => setTimeout(resolve, 2000));
       dashboard.stop();
+      setDashboardActive(false);
     }
 
     const completed = context.results.filter(r => r.status === 'completed').length;
@@ -354,6 +375,7 @@ export async function executeSwarm(
   } catch (error) {
     if (dashboard) {
       dashboard.stop();
+      setDashboardActive(false);
     }
     throw error;
   }

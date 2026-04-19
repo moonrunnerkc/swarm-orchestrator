@@ -21,9 +21,10 @@ const LEVEL_RANK: Record<LogLevel, number> = {
   debug: 3,
 };
 
-const state: Required<LoggerConfig> = {
+const state: Required<LoggerConfig> & { dashboardActive: boolean } = {
   level: 'info',
   outputFormat: 'text',
+  dashboardActive: false,
 };
 
 function normalizeArgs(args: unknown[]): string {
@@ -61,7 +62,8 @@ function emit(level: LogLevel, scope: string | undefined, args: unknown[]): void
   }
 
   const prefix = scope ? `[${scope}] ` : '';
-  const stream = level === 'error' || level === 'warn'
+  // When the Ink dashboard owns stdout, route everything to stderr.
+  const stream = (level === 'error' || level === 'warn' || state.dashboardActive)
     ? process.stderr
     : process.stdout;
   writeLine(stream, `${prefix}${message}`);
@@ -80,6 +82,18 @@ function createLogger(scope?: string): Logger {
 export function configureLogger(config: LoggerConfig): void {
   if (config.level) state.level = config.level;
   if (config.outputFormat) state.outputFormat = config.outputFormat;
+}
+
+/**
+ * When true, the Ink TUI dashboard owns stdout.
+ * All logger output is routed to stderr and Spinner becomes a no-op.
+ */
+export function setDashboardActive(active: boolean): void {
+  state.dashboardActive = active;
+}
+
+export function isDashboardActive(): boolean {
+  return state.dashboardActive;
 }
 
 export function getLogger(scope?: string): Logger {

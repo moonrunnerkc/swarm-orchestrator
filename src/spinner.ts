@@ -1,7 +1,7 @@
 // Author: Bradley R. Kinnard
 // Terminal spinner for visual feedback during long operations
 
-import { getLogger } from './logger';
+import { getLogger, isDashboardActive } from './logger';
 const logger = getLogger('spinner');
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -40,6 +40,8 @@ export class Spinner {
 
   start(): void {
     if (this.isRunning) return;
+    // Ink TUI owns stdout when the dashboard is active; skip raw writes.
+    if (isDashboardActive()) return;
     this.isRunning = true;
     this.frameIndex = 0;
 
@@ -58,7 +60,13 @@ export class Spinner {
   }
 
   stop(finalMessage?: string): void {
-    if (!this.isRunning) return;
+    if (!this.isRunning) {
+      // Even when start() was skipped (dashboard mode), emit the final message via logger.
+      if (finalMessage) {
+        logger.info(`${this.prefix}${finalMessage}`);
+      }
+      return;
+    }
     this.isRunning = false;
 
     if (this.interval) {

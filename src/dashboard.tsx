@@ -29,6 +29,7 @@ interface DashboardProps {
   leanSavedRequests?: number;
   costSummary?: string;
   agentLog?: string[];
+  maxRows?: number;
 }
 
 interface StatusIconProps {
@@ -175,12 +176,19 @@ const SwarmDashboard: React.FC<DashboardProps> = ({
   criticResults,
   leanSavedRequests,
   costSummary,
-  agentLog
+  agentLog,
+  maxRows = 24
 }) => {
   const [elapsedTime, setElapsedTime] = useState('0s');
   const [input, setInput] = useState('');
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [showInput, setShowInput] = useState(!readOnly);
+
+  // Compact mode: hide verbose sections when terminal is small.
+  // Fixed overhead: header(1) + info(3) + progress(3) + status-box(3) + step-header(1)
+  //   + footer(1) + margins(~4) = ~16 lines before step rows.
+  // Each step row = 1 line.  Keep at least 2 visible.
+  const compact = maxRows < (16 + results.length + 6);
 
   // Handle keyboard input
   useInput((inputChar: string, key: any) => {
@@ -225,44 +233,44 @@ const SwarmDashboard: React.FC<DashboardProps> = ({
   // Progress denominator: steps that ran or will run (exclude permanently blocked steps)
   const effectiveTotal = totalSteps - blockedSteps;
 
+  // How many agent-log lines we can afford after fixed chrome + step rows.
+  // Fixed lines: header(1) + goal(1) + progress(3) + step-header(1) + footer(1) + margins(~5) = ~12
+  const fixedLines = 12;
+  const agentLogBudget = compact ? 0 : Math.max(0, maxRows - fixedLines - results.length - 5);
+  const agentLogLines = Math.min(agentLogBudget, 6);
+  const needsConflictInput = orchestratorState && orchestratorState.pendingConflicts.length > 0;
+  const isFinished = runningSteps === 0 && completedSteps + failedSteps + blockedSteps === totalSteps;
+
   return (
-    <Box flexDirection="column" padding={1}>
-      {/* Header */}
-      <Box marginBottom={1}>
-        <Text bold color="magenta">
-          🐝 Swarm Orchestrator
-        </Text>
-        <Text color="gray"> | Verification & Governance Layer</Text>
-      </Box>
+    <Box flexDirection="column" paddingX={1} height={maxRows} overflow="hidden">
+      {/* Header — single truncated line (prevents terminal wrapping ⇒ Ink cursor-up mismatch) */}
+      <Text wrap="truncate-end">
+        <Text bold color="magenta">🐝 Swarm Orchestrator</Text>
+        <Text color="gray"> | </Text>
+        <Text color="yellow">{elapsedTime}</Text>
+        <Text color="gray"> | Wave {currentWave}/{totalWaves}</Text>
+        {costSummary && <Text color="gray"> | 💰 {costSummary}</Text>}
+      </Text>
 
-      {/* Execution Info */}
-      <Box flexDirection="column" marginBottom={1}>
-        <Text>
-          <Text bold>Goal: </Text>
-          <Text color="cyan">{goal}</Text>
-        </Text>
-        <Text>
-          <Text bold>Execution ID: </Text>
-          <Text color="gray">{executionId}</Text>
-        </Text>
-        <Text>
-          <Text bold>Elapsed Time: </Text>
-          <Text color="yellow">{elapsedTime}</Text>
-        </Text>
-      </Box>
+      {/* Goal — truncated to single line */}
+      <Text wrap="truncate-end">
+        <Text bold>Goal: </Text>
+        <Text color="cyan">{goal}</Text>
+      </Text>
 
-      {/* Overall Progress */}
-      <Box flexDirection="column" marginBottom={1}>
-        <Text bold>Progress: </Text>
+      {/* Progress bar + counts */}
+      <Box flexDirection="column" marginTop={1}>
         <ProgressBar completed={completedSteps + failedSteps} total={effectiveTotal} />
         <Text color="gray">
           {completedSteps} passed{failedSteps > 0 ? <Text color="red"> | {failedSteps} failed</Text> : ''}{blockedSteps > 0 ? <Text color="yellow"> | {blockedSteps} blocked</Text> : ''} / {totalSteps} total
+          {'  '}<Text color="blue">{runningSteps} running</Text>
+          {'  '}<Text color="gray">{results.filter(r => r.status === 'pending').length} pending</Text>
         </Text>
       </Box>
 
-      {/* Repo-Level Status (multi-repo orchestration) */}
-      {repoGroups && repoGroups.length > 1 && (
-        <Box flexDirection="column" marginBottom={1}>
+      {/* Repo-Level Status (multi-repo orchestration) — only in non-compact */}
+      {!compact && repoGroups && repoGroups.length > 1 && (
+        <Box flexDirection="column" marginTop={1}>
           <Text bold underline>Repositories:</Text>
           {repoGroups.map((rg, idx) => (
             <Box key={idx}>
@@ -274,182 +282,98 @@ const SwarmDashboard: React.FC<DashboardProps> = ({
         </Box>
       )}
 
-      {/* Metrics Comparison */}
-      {metricsComparison && <ProductivitySummary comparison={metricsComparison} />}
-
-      {/* Execution Status */}
-      <Box marginBottom={1} borderStyle="single" borderColor="gray" paddingX={1}>
-        <Text>
-          <Text color="blue" bold>{runningSteps}</Text> running
-          {'  '}<Text color="gray" bold>{results.filter(r => r.status === 'pending').length}</Text> pending
-          {'  '}<Text color="green" bold>{completedSteps}</Text> passed
-          {failedSteps > 0 && <Text>{'  '}<Text color="red" bold>{failedSteps}</Text> failed</Text>}
-          {'  '}<Text color="gray">|</Text>{'  '}max concurrency: <Text color="cyan" bold>{queueStats?.maxConcurrency ?? 3}</Text>
-        </Text>
-      </Box>
-
-      {/* Wave Progress */}
-      <Box marginBottom={1}>
-        <Text>
-          <Text bold>Wave: </Text>
-          <Text color="cyan">
-            {currentWave}/{totalWaves}
-          </Text>
-        </Text>
-      </Box>
-
-      {/* Cost Summary */}
-      {costSummary && (
-        <Box marginBottom={1}>
-          <Text color="yellow">
-            💰 {costSummary}
-          </Text>
-        </Box>
-      )}
-
       {/* Step Status Table */}
-      <Box flexDirection="column" marginBottom={1}>
-        <Text bold underline>
-          Agent Status:
-        </Text>
+      <Box flexDirection="column" marginTop={1}>
+        <Text bold underline>Agent Status:</Text>
         {results.map(result => (
-          <Box key={result.stepNumber} marginTop={0}>
-            <Box width={3}>
-              <StatusIcon status={result.status} />
-            </Box>
-            <Box width={8}>
-              <Text color="gray">Step {result.stepNumber}</Text>
-            </Box>
+          <Box key={result.stepNumber}>
+            <Box width={3}><StatusIcon status={result.status} /></Box>
+            <Box width={8}><Text color="gray">Step {result.stepNumber}</Text></Box>
             <Box width={22}>
               <Text color={result.status === 'completed' ? 'green' : 'white'}>
                 {result.agentName}
               </Text>
             </Box>
-            <Box width={12}>
-              <Text color="gray">{result.status}</Text>
-            </Box>
-            {result.error && (
-              <Box>
-                <Text color="red">({result.error.substring(0, 30)}...)</Text>
-              </Box>
-            )}
-            {result.verificationResult && !result.verificationResult.passed && (
-              <Box>
-                <Text color="yellow">(verification failed)</Text>
-              </Box>
-            )}
+            <Box width={12}><Text color="gray">{result.status}</Text></Box>
+            {result.error ? (
+              <Box flexGrow={1}><Text color="red" wrap="truncate-end">({result.error})</Text></Box>
+            ) : result.verificationResult && !result.verificationResult.passed ? (
+              <Box><Text color="yellow">(verification failed)</Text></Box>
+            ) : null}
           </Box>
         ))}
       </Box>
 
-      {/* Live Agent Output */}
-      {agentLog && agentLog.length > 0 && (
-        <Box flexDirection="column" marginBottom={1} borderStyle="single" borderColor="gray" paddingX={1}>
+      {/* Live Agent Output — only when there's vertical budget */}
+      {agentLogLines > 0 && (
+        <Box flexDirection="column" marginTop={1} borderStyle="single" borderColor="gray" paddingX={1}>
           <Text bold color="cyan">Agent Log:</Text>
-          {agentLog.slice(-12).map((line, idx) => (
-            <Text key={idx} color="gray" wrap="truncate-end">{line}</Text>
-          ))}
-        </Box>
-      )}
-
-      {/* Critic Scores (governance mode) */}
-      {criticResults && criticResults.length > 0 && (
-        <Box flexDirection="column" marginBottom={1}>
-          <Text bold underline>Critic Review:</Text>
-          {criticResults.map((cr, idx) => (
-            <Box key={idx} flexDirection="column">
-              <Text color={cr.score >= 80 ? 'green' : cr.score >= 60 ? 'yellow' : 'red'}>
-                Wave {idx + 1}: {cr.score}/100 ({cr.recommendation}) {cr.flags.length > 0 ? `- ${cr.flags.length} flag(s)` : ''}
-              </Text>
-              {cr.flags.length > 0 && cr.flags.map((flag, fi) => (
-                <Text key={fi} color="gray">  {flag}</Text>
-              ))}
-            </Box>
-          ))}
-        </Box>
-      )}
-
-      {/* Recent Commits */}
-      {recentCommits.length > 0 && (
-        <Box flexDirection="column" marginBottom={1}>
-          <Text bold underline>
-            Recent Commits (Human-Like History):
-          </Text>
-          {recentCommits.slice(0, 5).map((commit, idx) => (
-            <Box key={idx}>
-              <Text color="gray">
-                {commit.sha?.substring(0, 7) || 'xxxxxxx'}
-              </Text>
-              {' '}
-              <Text color="white">{commit.message}</Text>
-              {commit.agent && (
-                <Text color="cyan"> ({commit.agent})</Text>
-              )}
-            </Box>
-          ))}
-          {recentCommits.length > 5 && (
-            <Text color="gray">... and {recentCommits.length - 5} more commits</Text>
+          {agentLog && agentLog.length > 0 ? (
+            agentLog.slice(-agentLogLines).map((line, idx) => (
+              <Text key={idx} color="gray" wrap="truncate-end">{line}</Text>
+            ))
+          ) : (
+            <Text color="gray" dimColor>Waiting for agent output…</Text>
           )}
         </Box>
       )}
 
-      {/* PR Links */}
-      {prLinks.length > 0 && (
-        <Box flexDirection="column" marginBottom={1}>
-          <Text bold underline>
-            Pull Requests:
-          </Text>
-          {prLinks.map((link, idx) => (
+      {/* Critic Scores — only in non-compact */}
+      {!compact && criticResults && criticResults.length > 0 && (
+        <Box flexDirection="column" marginTop={1}>
+          <Text bold underline>Critic Review:</Text>
+          {criticResults.map((cr, idx) => (
             <Box key={idx}>
-              <Text color="blue">{link}</Text>
+              <Text color={cr.score >= 80 ? 'green' : cr.score >= 60 ? 'yellow' : 'red'}>
+                Wave {idx + 1}: {cr.score}/100 ({cr.recommendation}) {cr.flags.length > 0 ? `- ${cr.flags.length} flag(s)` : ''}
+              </Text>
             </Box>
+          ))}
+        </Box>
+      )}
+
+      {/* Recent Commits — only in non-compact and when finished */}
+      {!compact && isFinished && recentCommits.length > 0 && (
+        <Box flexDirection="column" marginTop={1}>
+          <Text bold underline>Recent Commits:</Text>
+          {recentCommits.slice(0, 3).map((commit, idx) => (
+            <Box key={idx}>
+              <Text color="gray">{commit.sha?.substring(0, 7) || 'xxxxxxx'} </Text>
+              <Text color="white">{commit.message}</Text>
+              {commit.agent && <Text color="cyan"> ({commit.agent})</Text>}
+            </Box>
+          ))}
+        </Box>
+      )}
+
+      {/* PR Links — only in non-compact */}
+      {!compact && prLinks.length > 0 && (
+        <Box flexDirection="column" marginTop={1}>
+          <Text bold underline>Pull Requests:</Text>
+          {prLinks.map((link, idx) => (
+            <Box key={idx}><Text color="blue">{link}</Text></Box>
           ))}
         </Box>
       )}
 
       {/* Pending Conflicts */}
       {orchestratorState && orchestratorState.pendingConflicts.length > 0 && (
-        <Box flexDirection="column" marginBottom={1}>
+        <Box flexDirection="column" marginTop={1}>
           <Text bold underline color="yellow">
-            ⚠️ Pending Conflicts ({orchestratorState.pendingConflicts.length}):
+            ⚠️ Conflicts ({orchestratorState.pendingConflicts.length}):
           </Text>
           {orchestratorState.pendingConflicts.slice(0, 3).map((conflict, idx) => (
-            <Box key={conflict.id} flexDirection="column" marginLeft={2}>
+            <Box key={conflict.id} marginLeft={2}>
               <Text color="yellow">
                 {idx + 1}. Step {conflict.stepNumber} ({conflict.agentName}): {conflict.type}
               </Text>
-              <Text color="gray">   {conflict.description}</Text>
-            </Box>
-          ))}
-          {orchestratorState.pendingConflicts.length > 3 && (
-            <Text color="gray" marginLeft={2}>
-              ... and {orchestratorState.pendingConflicts.length - 3} more conflicts
-            </Text>
-          )}
-          {!readOnly && (
-            <Text color="cyan" marginTop={1} marginLeft={2}>
-              Type 'approve' or 'reject' to resolve
-            </Text>
-          )}
-        </Box>
-      )}
-
-      {/* Steering History */}
-      {!readOnly && commandHistory.length > 0 && (
-        <Box flexDirection="column" marginBottom={1}>
-          <Text bold underline>
-            Recent Commands:
-          </Text>
-          {commandHistory.map((cmd, idx) => (
-            <Box key={idx}>
-              <Text color="gray">{cmd}</Text>
             </Box>
           ))}
         </Box>
       )}
 
-      {/* Live Input */}
-      {showInput && !readOnly && (
+      {/* Command input — only when conflicts need resolving or orchestrator paused */}
+      {showInput && !readOnly && (needsConflictInput || orchestratorState?.status === 'paused') && (
         <Box marginTop={1} borderStyle="single" borderColor="cyan" paddingX={1}>
           <Text color="cyan">Command: </Text>
           <Text>{input}</Text>
@@ -457,45 +381,42 @@ const SwarmDashboard: React.FC<DashboardProps> = ({
         </Box>
       )}
 
-      {/* Productivity Summary - shown at end of run */}
-      {metricsComparison && runningSteps === 0 && completedSteps + failedSteps + blockedSteps === totalSteps && (
+      {/* Steering History */}
+      {!readOnly && commandHistory.length > 0 && (
+        <Box flexDirection="column">
+          {commandHistory.slice(-2).map((cmd, idx) => (
+            <Box key={idx}><Text color="gray">» {cmd}</Text></Box>
+          ))}
+        </Box>
+      )}
+
+      {/* Metrics Comparison — only in non-compact and when finished */}
+      {!compact && metricsComparison && isFinished && (
         <ProductivitySummary comparison={metricsComparison} />
       )}
 
       {/* Lean Mode Savings */}
       {leanSavedRequests != null && leanSavedRequests > 0 && (
-        <Box marginBottom={1}>
+        <Box>
           <Text color="green" bold>Saved: {leanSavedRequests} request(s), ~${(leanSavedRequests * 0.03).toFixed(2)}</Text>
         </Box>
       )}
 
+      {/* Spacer — fills remaining height, keeps frame size constant */}
+      <Box flexGrow={1} />
+
       {/* Footer */}
-      <Box marginTop={1}>
+      <Box>
         {readOnly ? (
-          <Text bold color="blue">
-            👁️  Read-only mode - Observing execution
-          </Text>
+          <Text bold color="blue">👁️  Read-only mode</Text>
         ) : orchestratorState?.status === 'paused' ? (
-          <Text bold color="yellow">
-            ⏸️  Execution paused - Type 'resume' to continue
-          </Text>
-        ) : runningSteps === 0 && completedSteps + failedSteps + blockedSteps === totalSteps && failedSteps === 0 ? (
-          <Text bold color="green">
-            All {completedSteps} steps verified.
-          </Text>
-        ) : runningSteps === 0 && completedSteps + failedSteps + blockedSteps === totalSteps && failedSteps > 0 ? (
-          <Text bold color="yellow">
-            Done: {completedSteps} passed, {failedSteps} failed{blockedSteps > 0 ? `, ${blockedSteps} blocked` : ''}
-          </Text>
+          <Text bold color="yellow">⏸️  Paused - Type 'resume' to continue</Text>
+        ) : isFinished && failedSteps === 0 ? (
+          <Text bold color="green">All {completedSteps} steps verified.</Text>
+        ) : isFinished && failedSteps > 0 ? (
+          <Text bold color="yellow">Run complete — see summary below.</Text>
         ) : (
-          <Box flexDirection="column">
-            {!readOnly && (
-              <Text color="gray">Commands: pause, resume, approve, reject, help | Ctrl+C to exit</Text>
-            )}
-            {readOnly && (
-              <Text color="gray">Press Ctrl+C to exit</Text>
-            )}
-          </Box>
+          <Text color="gray">Ctrl+C to exit</Text>
         )}
       </Box>
     </Box>
@@ -510,6 +431,29 @@ export interface DashboardManager {
 
 /**
  * Start the live dashboard. Falls back gracefully in non-TTY environments.
+ *
+ * ## Why we patch stdout.write
+ *
+ * Ink re-renders by emitting  \x1b[<N>A  (cursor-up N lines) followed by
+ * the new frame.  N = number of '\n' characters in the *previous* output.
+ * When any rendered line is wider than `process.stdout.columns` the
+ * terminal soft-wraps it into two (or more) visual rows.  Ink has no
+ * knowledge of these extra rows, so N is too small, the cursor doesn't
+ * reach the top of the old frame, and the new frame is pasted *below*
+ * the remnant → the "stacked duplicate header" bug.
+ *
+ * Fix: we monkey-patch `process.stdout.write` while the dashboard is
+ * alive.  Every chunk that contains a cursor-up escape (only Ink emits
+ * these) is rewritten:
+ *
+ *   \x1b[H        – cursor to absolute row 1, col 1  (home)
+ *   <frame body>  – new frame  (with \x1b[K before every \n to wipe
+ *                   any trailing remnants of previously longer lines)
+ *   \x1b[0J       – erase from cursor to end of screen
+ *
+ * The frame always paints from the top-left corner of the viewport,
+ * making it immune to width-miscounting, emoji-width bugs, and any
+ * other source of line-count drift.
  */
 export async function startDashboard(
   initialProps: DashboardProps,
@@ -533,27 +477,75 @@ export async function startDashboard(
 
   let currentProps = { ...initialProps };
   let currentCommandHandler = commandHandler;
+  let stopped = false;
+
+  const getMaxRows = () => Math.max((process.stdout.rows || 24) - 2, 12);
 
   const getProps = () => ({
     ...currentProps,
+    maxRows: getMaxRows(),
     ...(currentCommandHandler ? { onCommand: currentCommandHandler } : {})
   });
 
-  const { rerender, unmount, waitUntilExit } = inkRender(
-    <SwarmDashboard {...getProps()} />
+  // ── stdout.write interception ──────────────────────────────────────────
+  const _origWrite = process.stdout.write.bind(process.stdout) as typeof process.stdout.write;
+  const _cursorUpRe = /\x1b\[\d*A/;
+
+  (process.stdout as any).write = function (
+    chunk: any,
+    encodingOrCb?: any,
+    cb?: any,
+  ): boolean {
+    const str = typeof chunk === 'string' ? chunk : chunk.toString();
+    if (_cursorUpRe.test(str)) {
+      // Strip cursor-up, add per-line clear, render from home, clear below
+      const cleaned = str.replace(_cursorUpRe, '').replace(/\n/g, '\x1b[K\n');
+      return _origWrite('\x1b[H' + cleaned + '\x1b[K\x1b[0J', encodingOrCb, cb);
+    }
+    return _origWrite(chunk, encodingOrCb, cb);
+  };
+
+  // Prepare screen: clear viewport, position at top-left, hide text cursor
+  _origWrite('\x1b[2J\x1b[H\x1b[?25l');
+
+  const { rerender, unmount } = inkRender(
+    <SwarmDashboard {...getProps()} />,
+    { patchConsole: false }
   );
+
+  // Batch rapid-fire update() calls into a single rerender per event-loop tick.
+  let dirty = false;
 
   return {
     update: (updates: Partial<DashboardProps>) => {
+      if (stopped) return;
       currentProps = { ...currentProps, ...updates };
-      rerender(<SwarmDashboard {...getProps()} />);
+      if (!dirty) {
+        dirty = true;
+        setImmediate(() => {
+          dirty = false;
+          if (!stopped) rerender(<SwarmDashboard {...getProps()} />);
+        });
+      }
     },
     stop: () => {
+      if (stopped) return;
+      stopped = true;
       unmount();
+      // Restore original stdout.write, show cursor, move below last frame
+      (process.stdout as any).write = _origWrite;
+      _origWrite('\x1b[?25h\n');
     },
     setCommandHandler: (handler: (command: SteeringCommand) => void) => {
+      if (stopped) return;
       currentCommandHandler = handler;
-      rerender(<SwarmDashboard {...getProps()} />);
+      if (!dirty) {
+        dirty = true;
+        setImmediate(() => {
+          dirty = false;
+          if (!stopped) rerender(<SwarmDashboard {...getProps()} />);
+        });
+      }
     }
   };
 }
