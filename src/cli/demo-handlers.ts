@@ -9,7 +9,18 @@ import { DemoMode } from '../demo-mode';
 import { PlanStorage } from '../plan-storage';
 import { ExecuteSwarmCliOptions, parseSwarmFlags } from './flags';
 import { showUsage } from './usage';
-import { getLogger } from '../logger';
+import { getLogger, setPrettyMode } from '../logger';
+
+// Minimal ANSI helpers for a cleaner demo UX. No chalk dep to keep the
+// dist footprint unchanged. NO_COLOR env disables coloring for CI / pipes.
+const colorOn = process.stdout.isTTY && !process.env.NO_COLOR;
+const c = {
+  bold: (s: string) => colorOn ? `\x1b[1m${s}\x1b[22m` : s,
+  dim: (s: string) => colorOn ? `\x1b[2m${s}\x1b[22m` : s,
+  cyan: (s: string) => colorOn ? `\x1b[36m${s}\x1b[39m` : s,
+  magenta: (s: string) => colorOn ? `\x1b[35m${s}\x1b[39m` : s,
+  green: (s: string) => colorOn ? `\x1b[32m${s}\x1b[39m` : s,
+};
 
 const logger = getLogger('cli:demo');
 
@@ -153,10 +164,12 @@ export async function handleDemoCommand(args: string[]): Promise<number> {
 }
 
 export async function runDemo(scenarioName: string): Promise<number> {
-  // Import from the extracted swarm-handlers module
-  const { executeSwarm } = await import('./swarm-handlers');
+  // Demos get a cleaner UX: drop `[scope]` log prefixes and skip the
+  // Ink TUI by default (the full-screen takeover is visually noisy and
+  // interacts badly with soft-wrapping on narrow terminals).
+  setPrettyMode(true);
 
-  logger.info('🐝 Swarm Orchestrator - Demo Mode\n');
+  const { executeSwarm } = await import('./swarm-handlers');
 
   const demoMode = new DemoMode();
   const scenario = demoMode.getScenario(scenarioName);
@@ -170,11 +183,10 @@ export async function runDemo(scenarioName: string): Promise<number> {
   let isExternalTarget = false;
 
   if (parsedFlags.targetDir) {
-    // Use provided target directory instead of creating a temp one
     demoDir = path.resolve(parsedFlags.targetDir);
     isExternalTarget = true;
     if (!fs.existsSync(demoDir)) {
-      logger.error(`❌ Target directory does not exist: ${demoDir}`);
+      logger.error(`${c.bold('error:')} target directory does not exist: ${demoDir}`);
       return 1;
     }
   } else {
@@ -186,7 +198,6 @@ export async function runDemo(scenarioName: string): Promise<number> {
     fs.writeFileSync(path.join(demoDir, 'README.md'), `# Swarm Demo: ${scenarioName}\n`);
     execSync('git add . && git commit -m "init demo"', { cwd: demoDir, stdio: 'pipe' });
   }
-  logger.info(`📂 Demo folder: ${demoDir}\n`);
 
   // Run the demo in the target directory; restore cwd when done
   const originalDir = process.cwd();
@@ -194,38 +205,39 @@ export async function runDemo(scenarioName: string): Promise<number> {
 
   try {
     if (!scenario) {
-      logger.error(`❌ Demo scenario "${scenarioName}" not found\n`);
+      logger.error(`${c.bold('error:')} demo scenario "${scenarioName}" not found`);
+      logger.info('');
       logger.info('Available scenarios:');
       demoMode.getAvailableScenarios().forEach(s => {
-        logger.info(`  - ${s.name}: ${s.description}`);
+        logger.info(`  ${c.cyan(s.name.padEnd(12))}  ${c.dim(s.description)}`);
       });
-      logger.info('\nRun: swarm demo list\n');
+      logger.info('');
+      logger.info(`Run: ${c.bold('swarm demo list')}`);
       return 1;
     }
 
-    logger.info(`📋 Scenario: ${scenario.name}`);
-    logger.info(`Description: ${scenario.description}`);
-    logger.info(`Estimated Duration: ${scenario.expectedDuration}`);
-    logger.info(`Steps: ${scenario.steps.length}\n`);
-
-    logger.info('This demo will:');
-    logger.info('  1. Execute all steps in parallel based on dependencies');
-    logger.info('  2. Show progress via structured console output');
-    logger.info('  3. Verify each step with evidence-based checks');
-    logger.info('  4. Demonstrate human-like git commit history\n');
-
-    logger.info('ℹ️  NOTE: This will execute real Copilot CLI sessions.');
-    logger.info(`    Running in ${isExternalTarget ? 'target' : 'temp'} folder: ${process.cwd()}\n`);
+    // Compact banner — goal + scope on screen, no filler.
+    logger.info('');
+    logger.info(`${c.magenta(c.bold('🐝 Swarm Orchestrator'))}  ${c.dim('·')}  ${c.bold(scenario.name)}`);
+    logger.info(`${c.dim(scenario.description)}`);
+    logger.info('');
+    logger.info(`${c.dim('Steps:')}     ${scenario.steps.length}`);
+    logger.info(`${c.dim('Duration:')}  ${scenario.expectedDuration}`);
+    logger.info(`${c.dim('Folder:')}    ${demoDir} ${c.dim(isExternalTarget ? '(target)' : '(temp)')}`);
+    logger.info('');
 
     const plan = demoMode.scenarioToPlan(scenario);
 
     const storage = new PlanStorage();
     const planPath = storage.savePlan(plan);
 
-    logger.info(`✅ Demo plan saved to: ${planPath}\n`);
-
-    // Forward all parsed CLI flags to the swarm executor
-    const execOpts: ExecuteSwarmCliOptions = { ...parsedFlags, noQualityGates: true };
+    // Demo commands default to --no-dashboard for a clean streaming UX.
+    // Users who want the Ink TUI can still pass --dashboard explicitly.
+    const execOpts: ExecuteSwarmCliOptions = {
+      ...parsedFlags,
+      noQualityGates: true,
+      noDashboard: parsedFlags.noDashboard !== false ? true : false,
+    };
     const exitCode = await executeSwarm(path.basename(planPath), execOpts);
 
     await installDemoDependencies(demoDir);

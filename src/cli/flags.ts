@@ -116,6 +116,9 @@ export function parseSwarmFlags(args: string[]): ExecuteSwarmCliOptions {
   if (modelIndex !== -1 && args[modelIndex + 1]) opts.model = args[modelIndex + 1];
 
   if (args.includes('--no-dashboard')) opts.noDashboard = true;
+  // --dashboard explicitly opts INTO the TUI (used to override callers that
+  // default noDashboard=true, e.g. `swarm demo`).
+  if (args.includes('--dashboard')) opts.noDashboard = false;
   if (args.includes('--confirm-deploy')) opts.confirmDeploy = true;
   if (args.includes('--no-quality-gates')) opts.noQualityGates = true;
   if (args.includes('--pm')) opts.pm = true;

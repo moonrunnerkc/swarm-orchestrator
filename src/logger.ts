@@ -21,10 +21,13 @@ const LEVEL_RANK: Record<LogLevel, number> = {
   debug: 3,
 };
 
-const state: Required<LoggerConfig> & { dashboardActive: boolean } = {
+const state: Required<LoggerConfig> & { dashboardActive: boolean; prettyMode: boolean } = {
   level: 'info',
   outputFormat: 'text',
   dashboardActive: false,
+  // Pretty mode: hide `[scope]` prefixes for a cleaner CLI UX.
+  // Enabled by demo commands. Scope still shown in JSON output.
+  prettyMode: false,
 };
 
 function normalizeArgs(args: unknown[]): string {
@@ -61,7 +64,7 @@ function emit(level: LogLevel, scope: string | undefined, args: unknown[]): void
     return;
   }
 
-  const prefix = scope ? `[${scope}] ` : '';
+  const prefix = (!state.prettyMode && scope) ? `[${scope}] ` : '';
   // When the Ink dashboard owns stdout, route everything to stderr.
   const stream = (level === 'error' || level === 'warn' || state.dashboardActive)
     ? process.stderr
@@ -94,6 +97,18 @@ export function setDashboardActive(active: boolean): void {
 
 export function isDashboardActive(): boolean {
   return state.dashboardActive;
+}
+
+/**
+ * Hide `[scope]` prefixes for a cleaner user-facing CLI UX.
+ * Called by demo commands; structured JSON output is unaffected.
+ */
+export function setPrettyMode(pretty: boolean): void {
+  state.prettyMode = pretty;
+}
+
+export function isPrettyMode(): boolean {
+  return state.prettyMode;
 }
 
 export function getLogger(scope?: string): Logger {

@@ -22,7 +22,7 @@ import {
 } from './flags';
 import { showUsage } from './usage';
 import { Spinner } from '../spinner';
-import { getLogger, setDashboardActive, writeStructuredOutput } from '../logger';
+import { getLogger, isPrettyMode, setDashboardActive, writeStructuredOutput } from '../logger';
 
 const logger = getLogger('cli:swarm');
 
@@ -71,13 +71,16 @@ export async function executeSwarm(
   const selectedTool = options?.cliAgent || 'copilot';
   validateAdapterSecrets(selectedTool);
 
-  logger.info('🐝 Swarm Orchestrator - Parallel Execution\n');
-
   const storage = new PlanStorage();
   let plan = storage.loadPlan(planFilename);
 
-  logger.info(`Goal: ${plan.goal}`);
-  logger.info(`Total Steps: ${plan.steps.length}\n`);
+  // In pretty mode (demo commands) the caller has already printed its own
+  // banner with the goal + step count — don't duplicate.
+  if (!isPrettyMode()) {
+    logger.info('🐝 Swarm Orchestrator - Parallel Execution\n');
+    logger.info(`Goal: ${plan.goal}`);
+    logger.info(`Total Steps: ${plan.steps.length}\n`);
+  }
 
   const configLoader = new ConfigLoader();
   const agents = configLoader.loadAllAgents();
@@ -199,8 +202,13 @@ export async function executeSwarm(
   const baseDir = targetDir || process.cwd();
   const runDir = path.join(baseDir, 'runs', runId);
 
-  logger.info(`Run ID: ${runId}`);
-  logger.info(`Run Directory: ${runDir}\n`);
+  if (isPrettyMode()) {
+    // Demo: only the run dir is useful, and dim so it doesn't compete.
+    logger.info(`  Run: ${runDir}\n`);
+  } else {
+    logger.info(`Run ID: ${runId}`);
+    logger.info(`Run Directory: ${runDir}\n`);
+  }
 
   // Dashboard: Ink 4+ is ESM-only; bridge via dynamic import()
   let dashboard: { update: (updates: Record<string, unknown>) => void; stop: () => void } | undefined;
@@ -238,7 +246,9 @@ export async function executeSwarm(
         logger.info('ℹ️  Live dashboard unavailable (Ink ESM import failed); continuing without dashboard\n');
       }
     }
-  } else {
+  } else if (!isPrettyMode()) {
+    // Demo commands set noDashboard=true internally; no need to surface
+    // the disabled-dashboard banner to end users.
     logger.info('ℹ️  Dashboard disabled via --no-dashboard\n');
   }
 

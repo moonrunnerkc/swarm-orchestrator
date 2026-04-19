@@ -38,7 +38,7 @@ import {
   DEFAULT_DEPENDENCY_WAIT_MS,
   DEFAULT_HEARTBEAT_INTERVAL_MS,
 } from './defaults';
-import { getLogger } from './logger';
+import { getLogger, isPrettyMode } from './logger';
 import { buildSwarmPrompt as _buildSwarmPrompt, writeSharedInstructions as _writeSharedInstructions } from './prompt-builder';
 import { buildDependencyGraph as _buildDependencyGraph, identifyExecutionWaves as _identifyExecutionWaves } from './wave-scheduler';
 import { runCriticReview as _runCriticReview } from './critic-reviewer';
@@ -299,16 +299,21 @@ export class SwarmOrchestrator {
       context.prUrls = new Map();
     }
 
-    logger.info('\n🚀 Starting Parallel Swarm Execution');
-    logger.info(`${'─'.repeat(50)}`);
-    logger.info(`  Execution ID:    ${context.executionId}`);
-    logger.info(`  Main branch:     ${context.mainBranch}`);
-    logger.info(`  Steps:           ${plan.steps.length}`);
-    logger.info(`  Max concurrency: ${options?.maxConcurrency || 'unlimited'}`);
-    if (options?.confirmDeploy) {
+    // Verbose execution-header block: useful for real runs, noisy for demos.
+    if (!isPrettyMode()) {
+      logger.info('\n🚀 Starting Parallel Swarm Execution');
+      logger.info(`${'─'.repeat(50)}`);
+      logger.info(`  Execution ID:    ${context.executionId}`);
+      logger.info(`  Main branch:     ${context.mainBranch}`);
+      logger.info(`  Steps:           ${plan.steps.length}`);
+      logger.info(`  Max concurrency: ${options?.maxConcurrency || 'unlimited'}`);
+      if (options?.confirmDeploy) {
+        logger.info('  ⚠️  Deployment enabled (--confirm-deploy)');
+      }
+      logger.info(`${'─'.repeat(50)}`);
+    } else if (options?.confirmDeploy) {
       logger.info('  ⚠️  Deployment enabled (--confirm-deploy)');
     }
-    logger.info(`${'─'.repeat(50)}`);
 
     // Group steps by repo for multi-repo orchestration
     const repoGroups = new Map<string, PlanStep[]>();
@@ -1450,7 +1455,10 @@ export class SwarmOrchestrator {
         if (!sessionResult.success) {
           logger.warn(`  ⚠️  Step ${step.stepNumber} (${agent.name}) exited with code ${sessionResult.exitCode}; checking committed work`);
         }
-        logger.info(`  ✅ Step ${step.stepNumber} (${agent.name}) complete (${durationSec}s)`);
+        // Session-complete log line is intentionally omitted — the
+        // subsequent verification spinner ("Step N verified ✓") is the
+        // user-visible marker of step completion. Printing both produced
+        // back-to-back redundant lines in demo output.
       }
 
       // Clean up hook files after session completes (evidence log in runDir persists)
@@ -1614,7 +1622,9 @@ export class SwarmOrchestrator {
       // Notify progress: step completed
       options?.onProgress?.(context, `step-done:${step.stepNumber}`);
 
-      logger.info(`  ✅ Step ${step.stepNumber} (${agent.name}) completed and merged`);
+      // The per-branch merge confirmation ("✅ Merged swarm/...") is
+      // already emitted by BranchMerger. No need to announce the step's
+      // completion a third time after the verification spinner.
 
     } catch (error: unknown) {
       const err = error as Error;
