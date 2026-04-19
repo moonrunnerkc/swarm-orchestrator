@@ -4,7 +4,15 @@ This file audits the 30 claims in [benchmarks/ABC-compliance.md](../../benchmark
 For each item: the cited artifact was checked for existence, and the text claim
 was cross-referenced against the repository contents.
 
-**Result totals:** 28 verified, 2 partial, 0 missing. Per-item detail below.
+**Result totals (initial, 2026-04-18 17:18):** 28 verified, 2 partial, 0 missing.
+**After follow-up commits (2026-04-18 17:40):** 30 verified, 0 partial, 0 missing.
+
+Follow-up history:
+- Item 3.3 closed by commit `37b47d4` — ABC evidence pointer updated to
+  `parseCopilotRequestCount` in `copilot-adapter.ts` (the code that does
+  the real work after the P3 fix).
+- Item 5.2 closed by commit adding a named `## Conflicts of Interest`
+  section in [benchmarks/README.md](../../benchmarks/README.md).
 
 Verification was done by command (see "Verified by" column). A single transcript of
 the checks lives at the end of this file.
@@ -24,7 +32,7 @@ the checks lives at the end of this file.
 | 2.6 | Model + tool fields in every result | run_swebench.py | `"tool"` + `"model"` fields at L501/502, L536/537 | verified |
 | 3.1 | Automated objective metrics | score.sh; rubric_runner.py; checks/ | checks/ contains 22 entries | verified |
 | 3.2 | No weighted composite score | benchmarks/README.md "Metrics Collected" table | Table lists independent metrics; no composite formula | verified |
-| 3.3 | Cost metrics included (premium requests) | Originally cited claude-code-adapter.ts `parseRequestCount`; after P3/D5 fix the authoritative parser is `parseCopilotRequestCount` in copilot-adapter.ts + `parseRequestCount` kept as documented undefined-return in claude-code-adapter.ts; score.sh and run_ladder.sh both still exist | partial — evidence pointer in ABC-compliance.md should be updated to copilot-adapter.ts after the P3 fix, which moved the real parsing there |
+| 3.3 | Cost metrics included (premium requests) | After the P3/D5 fix the authoritative parser is `parseCopilotRequestCount` in copilot-adapter.ts; `parseRequestCount` in claude-code-adapter.ts honestly returns undefined; ABC evidence pointer updated in commit `37b47d4` | verified (was partial before follow-up) |
 | 3.4 | Wall-clock time reported | run_swebench.py | `"elapsed_seconds"` recorded at L277 / L285 | verified |
 | 3.5 | Per-task results in output | run_swebench.py | `results` array iterated in `"resolved": sum(...)` at L538 | verified |
 | 4.1 | All prompts published | benchmarks/harness/prompts/orchestrator.md; baselines.md | Both files exist | verified |
@@ -33,7 +41,7 @@ the checks lives at the end of this file.
 | 4.4 | Docker for environment parity | benchmarks/swe-bench/docker-compose.yml; Dockerfile.eval | Both files exist | verified |
 | 4.5 | Dependency versions pinned | benchmarks/swe-bench/requirements.txt; Dockerfile.eval (python:3.11-slim + setup_20.x) | requirements.txt exists; Dockerfile.eval exists | verified |
 | 5.1 | Evaluator identity (author vs automated) disclosed | docs/benchmarks.md; benchmarks/ABC-compliance.md | docs/benchmarks.md exists, auditor listed as "Automated compliance via copilot-instructions.md directives" in ABC-compliance.md header | verified |
-| 5.2 | Conflicts of interest disclosed | benchmarks/README.md Benchmarking section ("discloses author origins; new system is fully automated") | README has "Full disclosure" bullet at line 408 and Docker-based automation throughout. There is no explicit "Conflicts of Interest" heading, but the claim that the system is fully automated is testable and true. | partial — claim is substantively correct but README does not have an explicit named COI heading. A later cleanup pass should add one to make this unambiguously verifiable. |
+| 5.2 | Conflicts of interest disclosed | benchmarks/README.md now has a named `## Conflicts of Interest` section listing authorship, automation, openness, and absence of paid relationships; ABC-compliance.md 5.2 evidence pointer updated to cite it | verified (was partial before follow-up) |
 | 5.3 | Failures + negative results reported | run_swebench.py | `"resolved": false` written at L521; aggregated at L538; collect_results.py L87 treats absence as failed | verified |
 | 5.4 | How-to-reproduce section | benchmarks/README.md; benchmarks/swe-bench/setup.md | Both files exist and contain reproduction steps | verified |
 | 5.5 | Known limitations + risks | benchmarks/README.md Risks table | Risks table present around L425; entries include Non-determinism, Ladder fairness, CI cost, dataset contamination, env parity | verified |
@@ -44,9 +52,14 @@ the checks lives at the end of this file.
 
 ---
 
-## Partial entries — detail
+## Partial entries — detail (historical, both now closed)
 
-### 3.3 — Cost metrics (premium requests)
+### 3.3 — Cost metrics (premium requests) — closed
+
+> Closed 2026-04-18 by commit `37b47d4`. Original analysis preserved below
+> because the reasoning still documents how the pointer drifted.
+
+### 3.3 (original) — Cost metrics (premium requests)
 
 The cited pointer in ABC-compliance.md is
 "`claude-code-adapter.ts` `parseRequestCount()`". After the P3/D5 fix:
@@ -70,7 +83,13 @@ the claim as written. Recommended follow-up: update the evidence pointer in
 ABC-compliance.md to reference `parseCopilotRequestCount` in
 `copilot-adapter.ts`.
 
-### 5.2 — Conflicts of interest
+### 5.2 — Conflicts of interest — closed
+
+> Closed 2026-04-18 by a follow-up commit that added a named
+> `## Conflicts of Interest` section to [benchmarks/README.md](../../benchmarks/README.md).
+> Original analysis below.
+
+### 5.2 (original) — Conflicts of interest
 
 The ABC-compliance.md claim is "README.md Benchmarking section discloses
 author origins; new system is fully automated." The README has a "Full

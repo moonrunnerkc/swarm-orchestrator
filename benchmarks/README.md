@@ -443,6 +443,22 @@ The `TEST-NOMOD` rubric check uses `git diff --diff-filter=M HEAD~1`, which catc
 
 ---
 
+## Conflicts of Interest
+
+- **Authorship.** This benchmark harness and the orchestrator under test are
+  both authored by the same person (repo owner). The comparison is therefore
+  not third-party — treat results as a vendor self-evaluation.
+- **Automation.** Scoring is fully automated (see
+  [harness/scoring/score.sh](harness/scoring/score.sh),
+  [harness/scoring/rubric_runner.py](harness/scoring/rubric_runner.py),
+  and the 22 binary check scripts in [harness/scoring/checks/](harness/scoring/checks/)).
+  No subjective grading step exists in the pipeline.
+- **Openness.** All prompts, scoring code, Docker environments, raw run
+  artifacts, and statistical summaries are committed to this repository.
+  Readers can reproduce locally and disagree in public.
+- **Undisclosed financial relationships.** None. No paid placements,
+  sponsorships, or undisclosed dependencies tilt this comparison.
+
 ## Risks
 
 | Risk | Mitigation |

@@ -176,8 +176,8 @@ This document transcribes every ABC checklist item and marks each as **Addressed
 ### 5.2 Disclose any conflicts of interest
 
 - **Status:** ✅ Addressed
-- **Justification:** The orchestrator's author created the original benchmarks. This is explicitly disclosed. The new system removes author judgment from scoring.
-- **Evidence:** README.md Benchmarking section discloses author origins; new system is fully automated.
+- **Justification:** The orchestrator's author created both the benchmark harness and the system under test; readers should treat results as a vendor self-evaluation. Scoring is fully automated; no undisclosed financial relationships.
+- **Evidence:** [benchmarks/README.md § Conflicts of Interest](README.md#conflicts-of-interest) states authorship, automation, openness, and absence of paid relationships; scoring code at [harness/scoring/score.sh](harness/scoring/score.sh) and [harness/scoring/rubric_runner.py](harness/scoring/rubric_runner.py).
 
 ### 5.3 Report failures and negative results
 
