@@ -43,6 +43,9 @@ invoke() {
     demo-fast)
       node "$REPO_ROOT/dist/src/cli.js" demo demo-fast --yes --no-dashboard
       ;;
+    api-quick)
+      node "$REPO_ROOT/dist/src/cli.js" demo api-quick --yes --no-dashboard
+      ;;
     *)
       echo "ERROR: unsupported benchmark '$1'" >&2
       return 2
