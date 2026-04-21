@@ -9,6 +9,9 @@ import {
   DEFAULT_COMMAND_TIMEOUT_MS,
   DEFAULT_SIGKILL_DELAY_MS,
 } from '../defaults';
+import { checkCrossStepContract } from './cross-step-checks';
+import { checkBehavioralPreservation } from './behavioral-checks';
+import { checkSchemaEvolution } from './schema-evolution-checks';
 
 function last20Lines(output: string): string {
   const lines = output.split('\n');
@@ -26,6 +29,25 @@ export function runOutcomeChecks(
 
   if (opts.expectedFiles && opts.expectedFiles.length > 0) {
     checks.push(checkFileExistence(opts.workdir, opts.expectedFiles));
+  }
+
+  if (opts.requiredInputs && opts.requiredInputs.length > 0) {
+    checks.push(
+      checkCrossStepContract({ workdir: opts.workdir, requiredInputs: opts.requiredInputs }),
+    );
+  }
+
+  if (opts.preTestSnapshot) {
+    checks.push(
+      checkBehavioralPreservation({
+        workdir: opts.workdir,
+        preSnapshot: opts.preTestSnapshot,
+      }),
+    );
+  }
+
+  if (opts.schemaEvolution) {
+    checks.push(checkSchemaEvolution(opts.schemaEvolution));
   }
 
   const buildCheck = checkBuildExec(opts.workdir);

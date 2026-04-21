@@ -5,12 +5,20 @@ import { QualityGatesConfig } from './quality-gates/types';
 import { getLogger } from './logger';
 const logger = getLogger('plan-generator');
 
+export type StepIntent = 'implement' | 'refactor' | 'migration' | 'test' | 'docs';
+
 export interface PlanStep {
   stepNumber: number;
   agentName: string;
   task: string;
   dependencies: number[];
   expectedOutputs: string[];
+  /** Declared artifacts this step expects to consume (file paths or `file:symbol` refs). */
+  inputs?: string[];
+  /** Declared artifacts this step produces; consumable by downstream `inputs`. */
+  outputs?: string[];
+  /** Semantic tag driving which outcome checks apply (refactor, migration, etc.). */
+  intent?: StepIntent;
   repo?: string; // git URL or local path; defaults to cwd
   cliAgent?: string; // per-step adapter override (copilot, claude-code, codex)
 }
@@ -241,6 +249,24 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
 
       if (step.expectedOutputs.length === 0) {
         throw new Error(`Step ${index}: expectedOutputs cannot be empty`);
+      }
+
+      if (step.inputs !== undefined && !Array.isArray(step.inputs)) {
+        throw new Error(`Step ${index}: inputs must be an array of strings when present`);
+      }
+
+      if (step.outputs !== undefined && !Array.isArray(step.outputs)) {
+        throw new Error(`Step ${index}: outputs must be an array of strings when present`);
+      }
+
+      if (step.intent !== undefined) {
+        const validIntents: StepIntent[] = ['implement', 'refactor', 'migration', 'test', 'docs'];
+        if (typeof step.intent !== 'string' || !validIntents.includes(step.intent as StepIntent)) {
+          throw new Error(
+            `Step ${index}: intent must be one of ${validIntents.join(', ')} when present; ` +
+              `got "${String(step.intent)}"`,
+          );
+        }
       }
     });
 

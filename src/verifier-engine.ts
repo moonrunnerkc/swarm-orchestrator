@@ -21,7 +21,8 @@ const logger = getLogger('verifier-engine');
 
 export interface VerificationCheck {
   type: 'test' | 'build' | 'lint' | 'commit' | 'claim' | 'output'
-    | 'git_diff' | 'file_existence' | 'build_exec' | 'test_exec';
+    | 'git_diff' | 'file_existence' | 'build_exec' | 'test_exec'
+    | 'cross_step_contract' | 'behavioral_preservation' | 'schema_evolution';
   description: string;
   required: boolean;
   passed: boolean;
@@ -48,6 +49,12 @@ export interface OutcomeVerificationOpts {
   workdir: string;
   baseSha: string;
   expectedFiles?: string[];
+  /** Cross-step contract inputs (file paths or `file:symbol` refs). */
+  requiredInputs?: string[];
+  /** Pre-step test snapshot for behavioral preservation on refactor steps. */
+  preTestSnapshot?: import('./verifier/behavioral-checks').TestSnapshot;
+  /** Schema evolution config for migration-intent steps. */
+  schemaEvolution?: import('./verifier/schema-evolution-checks').SchemaEvolutionOpts;
 }
 
 export interface RollbackResult {
@@ -69,10 +76,13 @@ export function last20Lines(output: string): string {
 
 // Ordering for failure context: more actionable types first
 const FAILURE_TYPE_PRIORITY: Record<string, number> = {
-  file_existence: 0,
-  test_exec: 1,
-  build_exec: 2,
-  git_diff: 3,
+  cross_step_contract: 0,
+  file_existence: 1,
+  behavioral_preservation: 2,
+  schema_evolution: 3,
+  test_exec: 4,
+  build_exec: 5,
+  git_diff: 6,
 };
 
 /**

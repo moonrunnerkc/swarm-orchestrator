@@ -1,0 +1,96 @@
+# Phase 2 Verification
+# Branch: feat/verifier-extensions
+# Date: 2026-04-21T14:26:15Z
+# Node: v24.12.0
+
+## New files
+  205 src/verifier/cross-step-checks.ts
+  191 src/verifier/behavioral-checks.ts
+  274 src/verifier/schema-evolution-checks.ts
+  342 test/verifier/outcome-checks-extensions.test.ts
+ 1012 total
+
+## Modified files
+ M package.json                       (typescript moved from devDeps to deps)
+ M package-lock.json
+ M src/plan-generator.ts              (PlanStep + StepIntent, validator extensions)
+ M src/swarm-orchestrator.ts          (cross-step contract gate in getReadySteps)
+ M src/verifier-engine.ts             (check-type union, opts, failure priority)
+ M src/verifier/outcome-checks.ts     (dispatch for three new checks)
+
+## Typecheck
+> swarm-orchestrator@5.0.0 typecheck
+> tsc --noEmit -p tsconfig.build.json
+
+
+## Build
+> swarm-orchestrator@5.0.0 build
+> tsc -p tsconfig.build.json && node -e "require('fs').chmodSync('dist/src/cli.js', 0o755)"
+
+
+## Lint
+> swarm-orchestrator@5.0.0 lint
+> eslint 'src/**/*.{ts,tsx}' 'test/**/*.ts'
+
+
+## New extension tests (3 per check plus framework detection = 10 total)
+    cross-step contract check
+      ✔ passes when every declared input resolves to a real, non-trivial artifact
+      ✔ fails and names the missing input when a required file is absent
+      ✔ catches the adversarial case: transcript claims success but export is undefined stub
+    behavioral preservation check
+      ✔ passes when every pre-step passing test still passes after the change (3381ms)
+      ✔ fails and names the regressed test when a previously-passing assertion now throws (3290ms)
+      ✔ catches the adversarial case: agent deletes a test and claims all pass (3253ms)
+    schema evolution check
+      ✔ passes when migration applies cleanly and probe query returns
+      ✔ fails and reports the phase when migration SQL has a syntax error
+      ✔ catches the adversarial case: migration is a no-op comment but agent claims it added the column
+    captureTestSnapshot
+      ✔ throws a descriptive error when no supported framework is detected
+
+
+  10 passing (10s)
+
+
+## Full suite
+  1430 passing (42s)
+  6 pending
+
+
+## Grep targets from the spec
+# --grep cross-step
+      ✔ fails and names the missing input when a required file is absent
+      ✔ catches the adversarial case: transcript claims success but export is undefined stub
+
+
+  3 passing (29ms)
+
+# --grep behavioral
+      ✔ fails and names the regressed test when a previously-passing assertion now throws (3275ms)
+      ✔ catches the adversarial case: agent deletes a test and claims all pass (3254ms)
+
+
+  3 passing (10s)
+
+# --grep schema-evolution
+      ✔ fails and reports the phase when migration SQL has a syntax error
+      ✔ catches the adversarial case: migration is a no-op comment but agent claims it added the column
+
+
+  3 passing (91ms)
+
+# --grep adversarial
+    schema evolution check
+      ✔ catches the adversarial case: migration is a no-op comment but agent claims it added the column
+
+
+  3 passing (3s)
+
+
+## Self-gate note
+runtime-checks reports an issue against a gitignored local benchmark artifact
+(benchmarks/harness/raw_data/runs/.../workspace/src/app.js). The failure
+reproduces on unmodified main — it is NOT introduced by this PR and will
+not trip CI, which runs on a clean checkout without that on-disk artifact.
+Pre-existing gate-scoping bug, out of Phase 2's scope.

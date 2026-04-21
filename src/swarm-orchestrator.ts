@@ -21,6 +21,7 @@ import ShareParser, { ShareIndex } from './share-parser';
 import { Spinner } from './spinner';
 import { CriticResult, SessionState } from './types';
 import VerifierEngine, { VerificationResult } from './verifier-engine';
+import { checkCrossStepContract } from './verifier/cross-step-checks';
 import { AdaptiveConcurrencyManager, WaveResizer } from './wave-resizer';
 import { CostEstimator, CostEstimate } from './cost-estimator';
 import { HookGenerator, GeneratedHooks } from './hook-generator';
@@ -440,16 +441,40 @@ export class SwarmOrchestrator {
       options?.onProgress?.(context, `step-failed:${stepNumber}`);
     };
 
-    // Returns step numbers whose dependencies are all satisfied
+    // Returns step numbers whose dependencies are all satisfied AND whose declared
+    // inputs (if any) resolve to real artifacts in the worktree. The second gate
+    // is the cross-step contract check: a step declaring `inputs: ['src/x.ts']`
+    // cannot launch until an upstream step has actually produced that file.
     const getReadySteps = (): number[] => {
       const ready: number[] = [];
       for (const stepNum of pending) {
         if (inFlight.has(stepNum)) continue;
         const step = plan.steps.find(s => s.stepNumber === stepNum);
         if (!step) continue;
-        if (step.dependencies.every(dep => completed.has(dep))) {
-          ready.push(stepNum);
+        if (!step.dependencies.every(dep => completed.has(dep))) continue;
+
+        if (step.inputs && step.inputs.length > 0) {
+          const contract = checkCrossStepContract({
+            workdir: this.workingDir,
+            requiredInputs: step.inputs,
+          });
+          if (!contract.passed) {
+            logger.warn(
+              `Step ${stepNum} blocked by cross-step contract: ${contract.reason ?? 'unknown'}`,
+            );
+            const culprits = step.dependencies.filter(dep => completed.has(dep));
+            for (const dep of culprits) {
+              completed.delete(dep);
+              failed.add(dep);
+            }
+            pending.delete(stepNum);
+            failed.add(stepNum);
+            onStepFailed(stepNum, `contract violation: ${contract.reason ?? 'unknown'}`);
+            continue;
+          }
         }
+
+        ready.push(stepNum);
       }
       return ready.sort((a, b) => a - b);
     };
