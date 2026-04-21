@@ -265,7 +265,26 @@ function detectTestCommand(workdir: string, workingDir: string): string | null {
   }
 
   const makefilePath = path.join(workdir, 'Makefile');
-  const pytestCmd = () => `${resolvePythonBinary(workdir, workingDir)} -m pytest`;
+  // pytest is invoked by the verifier, NOT the agent. When the agent runs
+  // tests inside its worktree, it does so via its own shell commands; those
+  // are transcribed and transcript-parsed by the verifyTests path. This pytest
+  // invocation is the outcome-check path, and it must be isolated from
+  // orchestrator-generated artifact trees:
+  //   - --rootdir="<workdir>" scopes pytest's rootdir search to the repo root
+  //     instead of walking up to a common ancestor with parent worktrees (the
+  //     shape that caused sympy__sympy-12481 to fail on double-collection of
+  //     conftest.py).
+  //   - --ignore paths prevent pytest from descending into orchestrator
+  //     artifact trees whose own conftest.py would re-register options.
+  const pytestCmd = () => {
+    const py = resolvePythonBinary(workdir, workingDir);
+    const runsDir = path.join(workdir, 'runs');
+    const swarmDir = path.join(workdir, '.swarm');
+    return (
+      `${py} -m pytest --rootdir="${workdir}" ` +
+      `--ignore="${runsDir}" --ignore="${swarmDir}"`
+    );
+  };
 
   const pyprojectPath = path.join(workdir, 'pyproject.toml');
   if (fs.existsSync(pyprojectPath)) {

@@ -622,4 +622,105 @@ Compiled successfully
       assert.strictEqual(testCheck!.passed, true);
     });
   });
+
+  describe('pytest rootdir isolation (defect c regression)', function () {
+    // Spawns real pytest; allow headroom
+    this.timeout(30_000);
+
+    function pytestAvailable(): boolean {
+      try {
+        execSync('python3 -m pytest --version', { stdio: ['pipe', 'pipe', 'pipe'] });
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    before(function () {
+      if (!pytestAvailable()) this.skip();
+    });
+
+    it('does not double-collect a conftest.py hidden inside an orchestrator runs/ subtree', async () => {
+      // Reproduces the sympy__sympy-12481 pilot failure: a repo whose conftest
+      // defines pytest options, with a worktree under `runs/` that contains a
+      // copy of the same conftest. Without --rootdir + --ignore, pytest's
+      // rootdir search walks up and registers BOTH conftests, tripping
+      // `ValueError: option names {'--slow'} already added`.
+      const dir = tmpDir();
+      tempDirs.push(dir);
+      const baseSha = initGitRepo(dir);
+
+      const conftest = `
+import pytest
+def pytest_addoption(parser):
+    parser.addoption("--slow", dest="runslow", action="store_true",
+                     default=False, help="run slow tests")
+`;
+      fs.writeFileSync(path.join(dir, 'conftest.py'), conftest);
+      fs.writeFileSync(
+        path.join(dir, 'test_trivial.py'),
+        'def test_two_plus_two():\n    assert 2 + 2 == 4\n',
+      );
+      fs.writeFileSync(
+        path.join(dir, 'requirements.txt'),
+        'pytest\n',
+      );
+
+      // Simulate the orchestrator's worktree shape: runs/swarm-*/worktrees/step-1
+      // gets the same conftest (because the worktree is effectively a copy of
+      // the repo tree for that branch). Pre-fix, pytest discovered both.
+      const worktreePath = path.join(dir, 'runs', 'swarm-regression', 'worktrees', 'step-1');
+      fs.mkdirSync(worktreePath, { recursive: true });
+      fs.writeFileSync(path.join(worktreePath, 'conftest.py'), conftest);
+      fs.writeFileSync(
+        path.join(worktreePath, 'test_trivial.py'),
+        'def test_three_plus_three():\n    assert 3 + 3 == 6\n',
+      );
+
+      execSync('git add . && git commit -m "seed"', {
+        cwd: dir,
+        env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t',
+               GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' },
+      });
+
+      // Sanity check: the pre-fix invocation (no flags) actually errors on
+      // the double-registration. This locks in *why* the fix is needed.
+      let preFixRaised = false;
+      try {
+        execSync('python3 -m pytest', {
+          cwd: dir, stdio: ['pipe', 'pipe', 'pipe'], timeout: 15_000,
+        });
+      } catch (err: unknown) {
+        const out = (err as { stdout?: Buffer; stderr?: Buffer });
+        const msg =
+          (out.stdout ? out.stdout.toString() : '') +
+          (out.stderr ? out.stderr.toString() : '');
+        if (/option names \{'--slow'\} already added/.test(msg)) {
+          preFixRaised = true;
+        }
+      }
+      assert.ok(
+        preFixRaised,
+        'precondition: the raw `python3 -m pytest` invocation must trip the ' +
+          'double-registration error for this test to prove anything',
+      );
+
+      // Now run via the verifier — the fixed pytestCmd includes --rootdir and
+      // --ignore, which must suppress the double-collection.
+      const transcript = writeTranscript(dir);
+      const verifier = new VerifierEngine(dir);
+      const result = await verifier.verifyStep(
+        1, 'dev', transcript, undefined, undefined, undefined,
+        { workdir: dir, baseSha },
+      );
+
+      const testCheck = result.checks.find(c => c.type === 'test_exec');
+      assert.ok(testCheck, 'verifier should have produced a test_exec check');
+      assert.strictEqual(
+        testCheck!.passed,
+        true,
+        `verifier must succeed despite the parent-worktree conftest: ${testCheck!.reason ?? ''}`,
+      );
+    });
+  });
 });
