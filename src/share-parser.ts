@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { extractClaims } from './share/transcript-verification';
 
 export interface ShareTranscript {
   stepNumber: number;
@@ -94,7 +95,7 @@ export class ShareParser {
     index.mcpSections = this.extractMcpSections(lines);
 
     // extract and verify claims
-    index.claims = this.extractClaims(lines, index);
+    index.claims = extractClaims(lines, index);
 
     return index;
   }
@@ -577,139 +578,6 @@ export class ShareParser {
     return sections;
   }
 
-  private extractClaims(lines: string[], index: ShareIndex): ShareIndex['claims'] {
-    const claims: ShareIndex['claims'] = [];
-
-    // skip lines that are part of the agent prompt/instructions rather than actual output
-    const instructionPrefixes = [
-      'scope:', 'done when:', 'role:', 'rules:', 'rule:', 'context:',
-      'you are ', 'your task', 'your job', 'your goal',
-      'important:', 'note:', 'constraints:', 'requirements:',
-    ];
-
-    for (const line of lines) {
-      const lowerLine = line.toLowerCase();
-      const trimmedLower = lowerLine.trim().toLowerCase();
-
-      // skip agent instruction/profile lines that produce false positive claims
-      if (instructionPrefixes.some(prefix => trimmedLower.startsWith(prefix))) {
-        continue;
-      }
-      // skip lines that look like bullet-point instructions (e.g. "- Ensure all tests pass")
-      if (trimmedLower.match(/^[-*]\s+(ensure|make sure|verify|confirm|must|should)\b/)) {
-        continue;
-      }
-
-      // check for test passing claims
-      if ((lowerLine.match(/\btests?\b/) && lowerLine.match(/\b(pass|passed|passing)\b/)) ||
-          lowerLine.includes('all tests passed') ||
-          lowerLine.includes('tests are passing')) {
-
-        const hasVerifiedTests = index.testsRun.some(t => t.verified);
-
-        claims.push({
-          claim: line.trim(),
-          verified: hasVerifiedTests,
-          evidence: hasVerifiedTests
-            ? `verified test command: ${index.testsRun.find(t => t.verified)?.command}`
-            : 'no test execution found in transcript'
-        });
-      }
-
-      // check for build success claims
-      if (lowerLine.match(/\b(build|builds)\s+(succeed|succeeded|passed|successful)/i) ||
-          lowerLine.includes('compiled successfully')) {
-
-        const hasBuildCommand = index.buildOperations.some(b => b.verified);
-
-        claims.push({
-          claim: line.trim(),
-          verified: hasBuildCommand,
-          evidence: hasBuildCommand
-            ? `verified build with: ${index.buildOperations.find(b => b.verified)?.tool}`
-            : 'no build command found in transcript'
-        });
-      }
-
-      // check for lint claims
-      if (lowerLine.match(/\b(lint|linting)\s+(pass|passed|succeeded)/i) ||
-          lowerLine.match(/no\s+lint\s+errors?/i)) {
-
-        const hasLintCommand = index.lintOperations.some(l => l.verified);
-
-        claims.push({
-          claim: line.trim(),
-          verified: hasLintCommand,
-          evidence: hasLintCommand
-            ? `verified lint with: ${index.lintOperations.find(l => l.verified)?.tool}`
-            : 'no lint command found in transcript'
-        });
-      }
-
-      // check for deployment claims
-      if (lowerLine.match(/\b(deploy|deployed|deployment)\s+(succeed|succeeded|successful)/i)) {
-
-        const hasDeployCommand = index.commandsExecuted.some(cmd =>
-          cmd.includes('deploy') || cmd.includes('publish')
-        );
-
-        claims.push({
-          claim: line.trim(),
-          verified: hasDeployCommand,
-          evidence: hasDeployCommand
-            ? 'verified deployment command found'
-            : 'no deployment command found in transcript'
-        });
-      }
-
-      // check for package install claims
-      if (lowerLine.match(/\b(installed|added)\s+package/i) ||
-          lowerLine.match(/\bnpm\s+install/i)) {
-
-        const hasPackageOp = index.packageOperations.some(op => op.operation === 'install');
-
-        claims.push({
-          claim: line.trim(),
-          verified: hasPackageOp,
-          evidence: hasPackageOp
-            ? `verified package install: ${index.packageOperations.find(op => op.operation === 'install')?.packages.join(', ')}`
-            : 'no package install command found'
-        });
-      }
-
-      // check for git commit claims
-      if (lowerLine.match(/\bcommitted\s+(the\s+)?changes?/i) ||
-          lowerLine.match(/\bgit\s+commit/i)) {
-
-        const hasCommit = index.gitCommits.length > 0;
-
-        claims.push({
-          claim: line.trim(),
-          verified: hasCommit,
-          evidence: hasCommit
-            ? `verified commit: ${index.gitCommits[0]?.message}`
-            : 'no git commit found in transcript'
-        });
-      }
-
-      // check for MCP usage claims
-      if (lowerLine.match(/\b(consulted|checked|reviewed)\s+(mcp|github|issues?)/i) &&
-          (lowerLine.includes('mcp') || lowerLine.includes('github') || lowerLine.includes('context'))) {
-
-        const hasMcp = index.mcpSections.some(m => m.verified);
-
-        claims.push({
-          claim: line.trim(),
-          verified: hasMcp,
-          evidence: hasMcp
-            ? 'verified MCP Evidence section found'
-            : 'no MCP Evidence section or insufficient evidence'
-        });
-      }
-    }
-
-    return claims;
-  }
 }
 
 export default ShareParser;
