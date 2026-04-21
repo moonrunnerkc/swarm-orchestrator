@@ -388,4 +388,118 @@ describe('PlanGenerator', () => {
       assert.strictEqual(revised.metadata?.totalSteps, 2);
     });
   });
+
+  describe('classifier preamble hygiene (issue #27 fix 1)', () => {
+    // The exact goal text Phase 4a smoke3 used for sympy__sympy-12481.
+    // Reproducing it verbatim — any fuzzing risks changing the pattern match
+    // that poisoned the classifier.
+    const SYMPY_GOAL = [
+      '`Permutation` constructor fails with non-disjoint cycles',
+      'Calling `Permutation([[0,1],[0,1]])` raises a `ValueError` instead of',
+      'constructing the identity permutation. If the cycles passed in are',
+      'non-disjoint, they should be applied in left-to-right order and the',
+      'resulting permutation should be returned.',
+      '',
+      "This should be easy to compute. I don't see a reason why non-disjoint",
+      'cycles should be forbidden.',
+    ].join('\n');
+
+    const SWE_BENCH_PREAMBLE =
+      'IMPORTANT: Do NOT modify, delete, or rewrite any test files. ' +
+      'Only edit source code to fix the issue. Test files are verified ' +
+      'by an external harness and your edits will cause patch conflicts.';
+
+    it('LOCKS IN THE BUG: concatenated preamble+goal makes the classifier pick TesterElite', () => {
+      // This is the precondition test. If this test stops returning TesterElite,
+      // the classifier changed in a way that may have broken the mechanism this
+      // fix targets, and the positive-case test below becomes vacuous.
+      // The bug was: run_swebench.py concatenated the "do not edit tests"
+      // preamble onto the goal before passing it to --goal. The word "test"
+      // in the preamble matched assignAgent's TesterElite keyword regex.
+      const poisonedGoal = `${SWE_BENCH_PREAMBLE}\n\n${SYMPY_GOAL}`;
+      assert.strictEqual(
+        generator.assignAgent(poisonedGoal),
+        'TesterElite',
+        'precondition: without the layer split, preamble+goal returns TesterElite ' +
+          '(the classifier-poisoning mechanism this fix targets). If this stops ' +
+          'reproducing, the downstream test loses meaning.',
+      );
+    });
+
+    it('CAPTURES THE FIX: the raw task intent alone classifies away from TesterElite', () => {
+      // The mechanism of the fix: the classifier is called with the raw goal,
+      // not the preamble-wrapped goal. On the raw sympy intent, assignAgent
+      // must NOT return TesterElite — regardless of what specific agent it
+      // does pick (that's fix 2's territory; this test asserts the isolation
+      // property, not the correctness of the fallback).
+      const primary = generator.assignAgent(SYMPY_GOAL);
+      assert.notStrictEqual(
+        primary,
+        'TesterElite',
+        'raw bug-fix goal (no preamble) must not be classified as a testing task. ' +
+          `Got primary=${primary}.`,
+      );
+    });
+
+    it('createPlan with agentGuidance routes preamble to steps, not to classifier', () => {
+      // End-to-end: the layer split through createPlan. The classifier sees
+      // the raw goal (no preamble), so primary-agent selection is based on
+      // task intent. The preamble is still reachable by executing agents
+      // because it's prepended to every step's task text.
+      const plan = generator.createPlan(SYMPY_GOAL, undefined, {
+        agentGuidance: SWE_BENCH_PREAMBLE,
+      });
+      const primary = plan.steps[0].agentName;
+      assert.notStrictEqual(
+        primary,
+        'TesterElite',
+        'primary agent must not be TesterElite when guidance is routed via agentGuidance',
+      );
+      for (const step of plan.steps) {
+        assert.ok(
+          step.task.startsWith(SWE_BENCH_PREAMBLE),
+          'each step task must begin with the guidance so executing agents see it',
+        );
+      }
+      assert.strictEqual(
+        plan.goal,
+        SYMPY_GOAL,
+        'plan.goal records the raw task intent, unchanged by guidance',
+      );
+    });
+
+    it('createPlan without agentGuidance emits step tasks unchanged (backward compat)', () => {
+      const plan = generator.createPlan('Build a REST API');
+      for (const step of plan.steps) {
+        assert.ok(
+          !step.task.startsWith('IMPORTANT:'),
+          'no guidance → no preamble prepended to step tasks',
+        );
+      }
+    });
+
+    it('agentGuidance is layer-split even when userProvidedSteps is supplied', () => {
+      const userSteps: PlanStep[] = [
+        {
+          stepNumber: 1,
+          agentName: 'BackendMaster',
+          task: 'Implement the fix',
+          dependencies: [],
+          expectedOutputs: ['Fix'],
+        },
+      ];
+      const plan = generator.createPlan(SYMPY_GOAL, userSteps, {
+        agentGuidance: SWE_BENCH_PREAMBLE,
+      });
+      assert.strictEqual(
+        plan.steps[0].agentName,
+        'BackendMaster',
+        'explicit userProvidedSteps survives guidance injection',
+      );
+      assert.ok(
+        plan.steps[0].task.startsWith(SWE_BENCH_PREAMBLE),
+        'guidance still prepends to user-provided step tasks',
+      );
+    });
+  });
 });
