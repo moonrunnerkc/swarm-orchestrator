@@ -1,7 +1,7 @@
 import { AgentAdapter } from './agent-adapter';
 import { CopilotAdapter } from './copilot-adapter';
 import { ClaudeCodeAdapter } from './claude-code-adapter';
-import { ClaudeCodeTeamsAdapter, TeamsAdapterOptions } from './claude-code-teams';
+import { ClaudeCodeTeamsAdapter } from './claude-code-teams';
 
 export interface AdapterFactoryOptions {
   teamSize?: number | undefined;
