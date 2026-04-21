@@ -29,8 +29,7 @@ export default tseslint.config(
         'warn',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
-      // Addressed in Stage 3 (silent catch audit); re-enable after cleanup.
-      'preserve-caught-error': 'off',
+      'preserve-caught-error': 'error',
       'no-empty': ['error', { allowEmptyCatch: false }],
       'no-control-regex': 'off',
       'no-useless-escape': 'off',

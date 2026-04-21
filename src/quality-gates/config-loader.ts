@@ -72,7 +72,7 @@ function load_yaml_config(filePath: string): Partial<QualityGatesConfig> {
     parsed = yaml.load(raw);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(`YAML syntax error in ${filePath}: ${msg}`);
+    throw new Error(`YAML syntax error in ${filePath}: ${msg}`, { cause: err });
   }
 
   if (!parsed || (is_object(parsed) && Object.keys(parsed).length === 0)) {

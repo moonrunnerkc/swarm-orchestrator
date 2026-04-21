@@ -176,7 +176,10 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
     try {
       plan = JSON.parse(jsonMatch[1]);
     } catch (error) {
-      throw new Error(`Invalid JSON in transcript: ${error instanceof Error ? error.message : 'parse error'}`);
+      throw new Error(
+        `Invalid JSON in transcript: ${error instanceof Error ? error.message : 'parse error'}`,
+        { cause: error },
+      );
     }
 
     // validate schema

@@ -400,9 +400,12 @@ export class BranchMerger {
     } catch (err: unknown) {
       const e = err as { killed?: boolean; stderr?: Buffer | string; message?: string };
       if (e.killed) {
-        throw new Error(`Timeout merging ${branchName}`);
+        throw new Error(`Timeout merging ${branchName}`, { cause: err });
       }
-      throw new Error(`Merge conflict: ${e.stderr?.toString() || e.message || 'unknown error'}`);
+      throw new Error(
+        `Merge conflict: ${e.stderr?.toString() || e.message || 'unknown error'}`,
+        { cause: err },
+      );
     } finally {
       context.contextBroker.releaseGitLock(lockId);
     }
