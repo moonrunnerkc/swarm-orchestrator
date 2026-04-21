@@ -49,6 +49,78 @@ CACHE_DIR = Path(os.environ.get("HF_HOME", str(_REPO_ROOT / ".cache" / "huggingf
 
 
 # ---------------------------------------------------------------------------
+# Diff capture (bytes-safe, with size guardrails)
+# ---------------------------------------------------------------------------
+
+# Soft ceiling on agent-diff size. A diff this large is almost always scope
+# pollution (build output, vendor trees, upstream source re-emitted) rather
+# than the agent's actual work, and shipping it downstream would either fail
+# to apply or waste real money on a doomed evaluation. Fail loud instead.
+MAX_DIFF_BYTES = 10 * 1024 * 1024
+
+
+class DiffCaptureError(RuntimeError):
+    """Raised when capture_agent_diff produces a diff that cannot be trusted.
+
+    Empty diffs mean the agent made no changes — a real failure mode worth
+    surfacing rather than handing a zero-byte patch to the downstream
+    evaluator. Oversized diffs mean the intent-to-add scope pulled in noise
+    that would waste cycles (and potentially premium requests) on apply
+    failures.
+    """
+
+
+def capture_agent_diff(repo_dir: Path, base_commit: str) -> bytes:
+    """Collect the agent's changes as a unified diff against the base commit.
+
+    Returns raw bytes. `git diff` output can contain non-UTF-8 content —
+    filenames in legacy encodings, binary-file marker lines with byte-level
+    metadata, or text files that aren't clean UTF-8 (latin-1 residue in
+    older repos, test fixtures with arbitrary byte sequences). Decoding at
+    capture time raises UnicodeDecodeError on real-world workdirs; callers
+    that need a string should decode at the point of use with
+    errors='replace' so a mangled filename doesn't crash the whole eval.
+
+    Intent-to-add staging picks up untracked files agents sometimes create
+    (new modules, fresh tests) so they show up in the diff instead of being
+    silently dropped.
+
+    @raises DiffCaptureError when the diff is empty (no changes — real
+            failure) or larger than MAX_DIFF_BYTES (scope pollution).
+    """
+    subprocess.run(
+        ["git", "add", "-A", "-N"],
+        cwd=str(repo_dir),
+        capture_output=True,
+        timeout=30,
+    )
+    result = subprocess.run(
+        ["git", "diff", base_commit, "HEAD"],
+        cwd=str(repo_dir),
+        capture_output=True,
+        timeout=60,
+    )
+    diff = result.stdout or b""
+
+    if len(diff) == 0:
+        raise DiffCaptureError(
+            f"capture_agent_diff: empty diff for {repo_dir} vs {base_commit[:12]}. "
+            f"The agent produced no changes against the base commit — real "
+            f"failure mode worth surfacing rather than shipping a zero-byte "
+            f"patch downstream."
+        )
+    if len(diff) > MAX_DIFF_BYTES:
+        raise DiffCaptureError(
+            f"capture_agent_diff: diff is {len(diff):,} bytes (> {MAX_DIFF_BYTES:,}). "
+            f"Intent-to-add scope is probably pulling in noise (build output, "
+            f"vendor dirs, upstream source re-emitted by the orchestrator's "
+            f"run tree). Refusing to hand this to the evaluator — it would "
+            f"fail to apply and burn real money."
+        )
+    return diff
+
+
+# ---------------------------------------------------------------------------
 # RC fixes — helper functions
 # ---------------------------------------------------------------------------
 
