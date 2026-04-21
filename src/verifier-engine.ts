@@ -12,6 +12,10 @@ import {
   verifyCommits as verifyCommitsImpl,
   verifyTests as verifyTestsImpl,
 } from './verifier/transcript-checks';
+import {
+  generateVerificationReport as generateVerificationReportImpl,
+  commitVerificationReport as commitVerificationReportImpl,
+} from './verifier/verification-reporters';
 import { getLogger } from './logger';
 const logger = getLogger('verifier-engine');
 
@@ -413,73 +417,7 @@ export class VerifierEngine {
     result: VerificationResult,
     outputPath: string
   ): Promise<void> {
-    const lines: string[] = [];
-
-    lines.push('# Verification Report');
-    lines.push('');
-    lines.push(`**Step**: ${result.stepNumber}`);
-    lines.push(`**Agent**: ${result.agentName}`);
-    lines.push(`**Status**: ${result.passed ? '✅ PASSED' : '❌ FAILED'}`);
-    lines.push(`**Timestamp**: ${result.timestamp}`);
-    lines.push(`**Transcript**: ${result.transcriptPath}`);
-    lines.push('');
-
-    lines.push('## Verification Checks');
-    lines.push('');
-
-    result.checks.forEach(check => {
-      const icon = check.passed ? '✅' : '❌';
-      const req = check.required ? '(required)' : '(optional)';
-      lines.push(`### ${icon} ${check.description} ${req}`);
-      lines.push('');
-      lines.push(`**Type**: ${check.type}`);
-      lines.push(`**Passed**: ${check.passed}`);
-
-      if (check.evidence) {
-        lines.push(`**Evidence**: ${check.evidence}`);
-      }
-
-      if (check.reason) {
-        lines.push(`**Reason**: ${check.reason}`);
-      }
-
-      lines.push('');
-    });
-
-    if (result.unverifiedClaims.length > 0) {
-      lines.push('## ⚠️ Unverified Claims (Drift Detection)');
-      lines.push('');
-      lines.push('The following claims were made without supporting evidence:');
-      lines.push('');
-      result.unverifiedClaims.forEach(claim => {
-        lines.push(`- ${claim}`);
-      });
-      lines.push('');
-    }
-
-    lines.push('## Summary');
-    lines.push('');
-    const passedCount = result.checks.filter(c => c.passed).length;
-    const totalCount = result.checks.length;
-    lines.push(`**Checks Passed**: ${passedCount}/${totalCount}`);
-    lines.push(`**Unverified Claims**: ${result.unverifiedClaims.length}`);
-    lines.push('');
-
-    if (!result.passed) {
-      lines.push('**Action Required**: This step failed verification. Review the issues above and retry.');
-    } else {
-      lines.push('**Result**: All required checks passed. Step verified successfully.');
-    }
-
-    const reportContent = lines.join('\n');
-
-    // Ensure directory exists
-    const dir = path.dirname(outputPath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-
-    fs.writeFileSync(outputPath, reportContent, 'utf8');
+    return generateVerificationReportImpl(result, outputPath);
   }
 
   /**
@@ -576,37 +514,14 @@ export class VerifierEngine {
     agentName: string,
     passed: boolean
   ): Promise<void> {
-    const status = passed ? 'verified' : 'failed verification';
-    const messages = [
-      `verify step ${stepNumber} (${agentName}) - ${status}`,
-      `add verification report for step ${stepNumber}`,
-      `verification: step ${stepNumber} ${status}`,
-      `step ${stepNumber} verification ${passed ? 'passed' : 'failed'}`
-    ];
-
-    // Pick a random message for variety
-    const message = messages[Math.floor(Math.random() * messages.length)];
-
-    // Skip committing when the report lives outside the target repo (e.g. bootstrap
-    // targeting an external project stores runs/ under the orchestrator's directory)
-    const resolvedReport = path.resolve(reportPath);
-    const resolvedWorkDir = path.resolve(this.workingDir);
-    if (!resolvedReport.startsWith(resolvedWorkDir + path.sep)) {
-      return;
-    }
-
-    // Use git add -f to force-add files in gitignored paths (like runs/)
-    try {
-      await this.runGitCommand(['add', '-f', reportPath]);
-      await this.runGitCommand(['commit', '-m', message]);
-    } catch (err: unknown) {
-      // If commit fails (nothing to commit, or other issue), just log and continue
-      // Verification reports are nice-to-have in git, not required for success
-      const error = err as Error;
-      if (!error.message.includes('nothing to commit')) {
-        logger.warn(`  ⚠️  Could not commit verification report: ${error.message.split('\n')[0]}`);
-      }
-    }
+    return commitVerificationReportImpl(
+      reportPath,
+      this.workingDir,
+      stepNumber,
+      agentName,
+      passed,
+      logger,
+    );
   }
 
   /**
