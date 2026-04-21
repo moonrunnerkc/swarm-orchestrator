@@ -1,0 +1,30 @@
+id: rename-then-update-callers-001
+name: "Rename isPlainObject to isPureObject across is-plain-obj"
+pattern: rename-then-update-callers
+pre_state:
+  fixture_tarball: rename-then-update-callers-001.tar.gz
+  source_repo: https://github.com/sindresorhus/is-plain-obj
+  source_sha: 97f38e8836f86a642cce98fc6ab3058bc36df181
+  fixture_sha256: ff44ff6c44872cf3cfd59f7f62ee19f586eef96ecf01f2904a9407feece55b03
+prompt: |
+  In this repo, rename the default-exported function currently named
+  `isPlainObject` to `isPureObject`. Update every call site in the repo,
+  update the test file, update the TypeScript type definitions, and update
+  every reference in README.md. Do not change the function's behavior. The
+  test suite (`npm test`) must still pass unchanged when the implementation
+  is behaviourally equivalent.
+expected_steps_min: 3
+post_state_validators:
+  - name: "no references to the old name remain in source files"
+    cmd: |
+      if grep -rn --include='*.js' --include='*.ts' --include='*.mjs' --include='*.cjs' \
+          'isPlainObject' . >/dev/null; then exit 1; fi
+  - name: "the new name is used in at least the expected places"
+    cmd: |
+      count=$(grep -rn --include='*.js' --include='*.ts' --include='*.mjs' \
+        'isPureObject' . | wc -l)
+      test "$count" -ge 3
+  - name: "package installs and tests pass"
+    cmd: |
+      npm install --no-audit --no-fund --silent >/dev/null 2>&1
+      npm test

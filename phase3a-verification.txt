@@ -1,0 +1,90 @@
+# Phase 3a Verification
+# Branch: feat/constraint-binding-suite
+# Date: 2026-04-21T15:00:10Z
+# Node: v24.12.0
+
+## Scope note
+PR 3a = scaffolding + 4 pilot tasks (one per pattern). PR 3b = the
+remaining 16 tasks plus the producer sweep. Fixture strategy is
+fetch-on-demand per Brad's direction: tarballs live only in
+benchmarks/constraint-binding/fixtures/ (gitignored); SOURCES.md
+carries the pinned SHAs + sha256 fingerprints.
+
+## New files
+   81 benchmarks/constraint-binding/SCHEMA.md
+   47 benchmarks/constraint-binding/SOURCES.md
+   57 benchmarks/constraint-binding/COMPARATOR-STATUS.md
+  261 benchmarks/constraint-binding/validator-engine.js
+  111 benchmarks/constraint-binding/scoring/per-pattern-rates.py
+  154 scripts/fetch-fixtures.sh
+   33 benchmarks/constraint-binding/tasks/contract-change-then-client-001.yaml
+   40 benchmarks/constraint-binding/tasks/lift-then-reuse-001.yaml
+   30 benchmarks/constraint-binding/tasks/rename-then-update-callers-001.yaml
+   33 benchmarks/constraint-binding/tasks/schema-then-query-001.yaml
+  174 test/constraint-binding/pipeline-smoke.test.ts
+  133 test/constraint-binding/prompt-invariant.test.ts
+  170 test/constraint-binding/task-schema.test.ts
+ 1324 total
+
+## Task YAML lint
+✓ 4 task(s) in benchmarks/constraint-binding/tasks passed schema validation
+
+## Fixture verify (bash scripts/fetch-fixtures.sh --verify-only)
+
+───────────────────────────────────────────────────────
+Verify: 4 matched, 0 drifted
+
+## Baseline-rejection smoke (validators reject un-modified fixtures)
+  lift-then-reuse-001 (lift-then-reuse) — baseline rejected at "resolveScheduler helper is declared in index.js"
+  rename-then-update-callers-001 (rename-then-update-callers) — baseline rejected at "no references to the old name remain in source files"
+  schema-then-query-001 (schema-then-query) — baseline rejected at "schema declares publishedAt on Post"
+    ✔ every pilot fixture extracts and every validator is rejected on the un-modified baseline (78ms)
+
+
+  1 passing (83ms)
+
+
+## Adversarial validator-engine tests
+    ✔ times out a runaway validator instead of hanging forever (1004ms)
+    ✔ runs validators in the declared order, not in parallel or reversed (40ms)
+    ✔ CLI `run` emits exit-1 on validator failure so CI can gate on it (71ms)
+
+
+  3 passing (1s)
+
+
+## Byte-identical prompt invariant
+    ✔ harness passes $task_prompt unchanged to each producer
+    ✔ cb_field pulls prompt bytes out of YAML without loss (67ms)
+    ✔ every shipped task has a non-empty prompt
+
+
+  3 passing (74ms)
+
+
+## Typecheck
+> tsc --noEmit -p tsconfig.build.json
+
+
+## Lint
+  > eslint 'src/**/*.{ts,tsx}' 'test/**/*.ts'
+  
+  (clean)
+
+## Full suite
+  1435 passing (31s)
+  6 pending
+
+
+## Harness smoke — run_fresh.sh --help recognises new flag
+Usage: run_fresh.sh [N] [--task-source RUBRIC|CONSTRAINT_BINDING]
+                    [--producer ORCHESTRATOR|SINGLE_SHOT|LADDER|ALL]
+                    [--tool claude-code|copilot|codex]
+                    [--budget-cap N]
+
+## Deferred to PR 3b
+- 16 additional task YAMLs (4 per remaining slot across 4 patterns)
+- Fetch fixtures for the 16 + update SOURCES.md hashes
+- N=1 producer sweep (4 or 20 × 3 producers) → decide N=3 based on result
+- If the N=1 gap is < 5 points, skip N=3 and publish null
+- Honest framing per the gap-size rules

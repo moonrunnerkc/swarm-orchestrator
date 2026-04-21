@@ -1,0 +1,40 @@
+id: lift-then-reuse-001
+name: "Extract queue-microtask's fallback chain into a reusable helper"
+pattern: lift-then-reuse
+pre_state:
+  fixture_tarball: lift-then-reuse-001.tar.gz
+  source_repo: https://github.com/feross/queue-microtask
+  source_sha: 2a5e7b9874c5f075e62975862e5e4a673f149786
+  fixture_sha256: 5b92963c012911b5f3d9a183626d847808c1e3195111c413127b8371410d01d2
+prompt: |
+  `queue-microtask` falls back through multiple microtask scheduling
+  primitives (native queueMicrotask, Promise.then, process.nextTick,
+  setTimeout) depending on what's available. Refactor `index.js` so the
+  environment-detection/fallback chain is lifted into a small internal
+  helper function `resolveScheduler()` that returns the function to use.
+  The default export must still be a function with the same observable
+  behavior and the same signature. The test suite must continue to pass
+  without any test modifications. Do not change package.json's main entry
+  point or add new exports.
+expected_steps_min: 2
+post_state_validators:
+  - name: "resolveScheduler helper is declared in index.js"
+    cmd: |
+      grep -E "function resolveScheduler\\(|resolveScheduler\\s*=\\s*" index.js
+  - name: "default export is still a function"
+    cmd: |
+      node -e "const f = require('./index.js'); if (typeof f !== 'function') process.exit(1)"
+  - name: "behavioural preservation: microtask actually fires"
+    cmd: |
+      node -e "
+        const qm = require('./index.js');
+        let called = false;
+        qm(() => { called = true; });
+        Promise.resolve().then(() => {
+          if (!called) { console.error('scheduler did not fire'); process.exit(1); }
+        });
+      "
+  - name: "no test files were modified"
+    cmd: |
+      npm install --no-audit --no-fund --silent >/dev/null 2>&1
+      npm test
