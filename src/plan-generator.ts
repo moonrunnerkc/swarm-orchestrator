@@ -524,16 +524,33 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
   }
 
   private detectGoalType(goal: string): GoalType {
+    // CLASSIFIER DISPATCH ORDER — do not reorder without re-reading this.
+    //
+    // Structural discriminators (contract-change, bug-fix) run BEFORE the
+    // keyword-based domain classifiers (api, library, frontend, etc.).
+    // Domain keywords are commonly present in goals that are actually
+    // coordinated-change or bug-report tasks — "update the `foo` library
+    // to ..." mentions "library" but should never route to the rigid
+    // library template because its step shape is wrong for a contract
+    // change. Centralizing the structural discrimination at the top of
+    // the chain means the decision lives in one place, audit-able and
+    // non-duplicated across templates. See #27 Fixes 2 and 3 for the
+    // two failure modes the ordering prevents.
+    //
+    // Precedence when a goal has BOTH structural shapes (≥2 backticks +
+    // failure verb AND ≥2 change verbs — e.g., "fix this: update foo,
+    // rename bar, modify baz"): contract-change wins because it runs
+    // first. That's the intended precedence — a goal with multi-target
+    // imperative change verbs is better served by the bundled impl+tests
+    // shape than by the bug-fix 3-step shape, even when it opens with a
+    // failure description. If a counter-example surfaces where this
+    // precedence produces the wrong plan shape, that's the evidence to
+    // revisit here.
     const goalLower = goal.toLowerCase();
 
     // contract-change: coordinated modification of existing code (impl +
     // callers + tests). Must run BEFORE the domain classifiers (api, library,
-    // etc.) because a contract-change goal often mentions the domain as
-    // context ("update the `foo` library to make X required") — if we
-    // classified it as 'library' first, the rigid library template would
-    // put impl in step 1 and tests in step 2, and step 1's verifier would
-    // catch failing-but-about-to-be-updated tests and roll back. See #27
-    // Fix 3 (contract-change-then-client-001 failure mode from PR #22).
+    // etc.) — see ordering note above.
     if (this.hasContractChangeShape(goal)) {
       return 'contract-change';
     }
@@ -1042,10 +1059,13 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
         agentName: 'BackendMaster',
         task:
           `Apply the following contract change as a single atomic step. ` +
-          `Land the impl change, every caller update, and the corresponding ` +
-          `test updates in this step — the verifier runs tests against the ` +
-          `combined state, and splitting the change across steps will cause ` +
-          `mid-plan test failures and rollback.\n\n` +
+          `This step must update the implementation, every call site, AND ` +
+          `every affected test so the test suite passes against the new ` +
+          `contract when the step completes. Updating impl + callers while ` +
+          `leaving pre-existing tests unchanged is a failure mode of this ` +
+          `step: pre-existing tests assert the OLD contract and will fail ` +
+          `verification against the NEW impl. Updating tests is not ` +
+          `optional; it is part of the atomic bundle.\n\n` +
           `Contract change:\n${goal}\n\n` +
           `Acceptance criteria:\n${criteria}`,
         dependencies: [],
