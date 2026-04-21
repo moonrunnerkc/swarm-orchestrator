@@ -488,6 +488,22 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
     }
   }
 
+  /**
+   * Classify a raw goal string. Public for test — consumers in production
+   * code should call `createPlan` and read `plan.metadata` or inspect step
+   * shape instead of depending on this classification directly, so the
+   * classifier's keyword/structural heuristics remain an implementation
+   * detail of the planner. The test suite uses this directly to assert
+   * classification decisions in isolation from template behavior, per the
+   * #30 review on separating classifier correctness from template
+   * correctness.
+   *
+   * @internal
+   */
+  classifyGoal(goal: string): GoalType {
+    return this.detectGoalType(goal);
+  }
+
   private detectGoalType(goal: string): GoalType {
     const goalLower = goal.toLowerCase();
 
@@ -855,11 +871,23 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
    * never produce a plan without an impl-editing step, which was exactly
    * the sympy-12481 failure mode in Phase 4a smoke3.
    *
-   * We don't attempt to pick between BackendMaster and FrontendExpert from
-   * the goal text — bug reports rarely name their domain cleanly. For
-   * UI-specific bugs a future refinement can route to FrontendExpert; for
-   * now BackendMaster covers the dominant case (source-code edits in
-   * logic/data/API layers).
+   * **BackendMaster as fixed primary — deferred decision.** The current
+   * benchmark corpus (SWE-bench Verified) is backend-dominant: the 500
+   * Verified instances are drawn from sympy, sphinx, django, scikit-learn,
+   * matplotlib, astropy, xarray, pytest, pylint, requests — all Python
+   * libraries and frameworks whose issues are predominantly source-code
+   * bugs in logic/data/API layers. Routing every bug report to
+   * BackendMaster matches that distribution. It will misroute a true UI
+   * bug (one that names React components or describes rendering-specific
+   * failure) to BackendMaster.
+   *
+   * The trigger for adding UI routing: observe a bug-report goal in a
+   * future corpus (or a SWE-bench instance) where the BackendMaster-
+   * primary plan produces a broken result specifically because the wrong
+   * agent was allocated — i.e., the fix requires FrontendExpert's
+   * rendering-model knowledge and BackendMaster can't make progress.
+   * Until that evidence surfaces, hardcoding BackendMaster keeps the
+   * template simple and correct for the dominant case. See #27.
    */
   private generateBugFixSteps(goal: string, startNumber: number): PlanStep[] {
     const criteria = this.getAcceptanceCriteria('bug-fix');

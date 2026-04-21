@@ -526,6 +526,74 @@ describe('PlanGenerator', () => {
     });
   });
 
+  describe('classifyGoal — direct classifier contract (issue #27 fix 2)', () => {
+    // Direct unit tests on the classifier. These isolate classifier
+    // correctness from template correctness: if detectGoalType regresses
+    // (e.g., a future edit to the keyword regexes or structural
+    // discriminator), these tests fail at the classifier layer and name
+    // the bug precisely, instead of firing as cascading "plan shape looks
+    // wrong" failures in the indirect tests below.
+
+    const BUG_FIX_POSITIVES = [
+      {
+        name: 'sympy-12481 (Permutation constructor)',
+        goal: [
+          '`Permutation` constructor fails with non-disjoint cycles',
+          'Calling `Permutation([[0,1],[0,1]])` raises a `ValueError` instead of',
+          'constructing the identity permutation.',
+        ].join('\n'),
+      },
+      {
+        name: 'django-style HttpResponse header',
+        goal:
+          '`HttpResponseRedirect` with empty `Location` header raises ' +
+          '`InternalError` instead of the documented `ValueError` when the ' +
+          'redirect target is missing.',
+      },
+      {
+        name: 'matplotlib-style axis scale',
+        goal:
+          '`ax.set_xscale("log")` crashes with zero-valued data. ' +
+          '`set_xscale` throws a `ValueError` during redraw.',
+      },
+    ];
+
+    for (const { name, goal } of BUG_FIX_POSITIVES) {
+      it(`classifyGoal("${name}") === 'bug-fix'`, () => {
+        assert.strictEqual(generator.classifyGoal(goal), 'bug-fix');
+      });
+    }
+
+    const BUG_FIX_NEGATIVES = [
+      {
+        name: 'greenfield REST API mentioning "fix"',
+        goal: 'Build a REST API that fixes common patterns and handles errors gracefully',
+      },
+      {
+        name: 'greenfield library build, no backticks no failure verbs',
+        goal: 'Build a small utility library for parsing dates',
+      },
+      {
+        name: 'single backtick + failure verb',
+        goal:
+          'The `parse` function fails on empty input — build a new parser ' +
+          'that handles this correctly',
+      },
+      {
+        name: 'failure verbs without backtick references',
+        goal:
+          'Build a parser that never fails on malformed JSON — it should ' +
+          'raise a clear error',
+      },
+    ];
+
+    for (const { name, goal } of BUG_FIX_NEGATIVES) {
+      it(`classifyGoal("${name}") !== 'bug-fix'`, () => {
+        assert.notStrictEqual(generator.classifyGoal(goal), 'bug-fix');
+      });
+    }
+  });
+
   describe('bug-fix goal type (issue #27 fix 2)', () => {
     // Representative bug-report-shaped goals sourced from real SWE-bench
     // Verified instance bodies. Kept small: the discriminator's behavior
