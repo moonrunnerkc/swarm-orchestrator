@@ -1,4 +1,4 @@
-import { spawn } from 'child_process';
+import { execSync, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import ShareParser, { ShareIndex } from './share-parser';
@@ -426,14 +426,20 @@ export class VerifierEngine {
   async rollback(
     stepNumber: number,
     branchName?: string,
-    filesChanged?: string[]
+    filesChanged?: string[],
+    baseBranch?: string,
   ): Promise<RollbackResult> {
     const filesRestored: string[] = [];
 
     try {
-      // If on a branch, switch back and delete the branch
+      // If on a branch, switch back and delete the branch. Use the caller's
+      // explicit base branch when provided; otherwise resolve it from origin/HEAD
+      // so this works on `master` repos too, not just `main`. Never resolve to
+      // the branch we're about to delete — git refuses to delete the current
+      // branch, so the fallback must exclude it.
       if (branchName) {
-        await this.runGitCommand(['checkout', 'main']);
+        const target = baseBranch ?? this.resolveBaseBranch(branchName);
+        await this.runGitCommand(['checkout', target]);
         await this.runGitCommand(['branch', '-D', branchName]);
       }
 
@@ -464,6 +470,40 @@ export class VerifierEngine {
         error: err.message
       };
     }
+  }
+
+  /**
+   * Resolve the repo's integration branch synchronously. Mirrors
+   * WorktreeManager.resolveDefaultBranch's contract: origin/HEAD first, then
+   * the currently checked-out branch, then the literal "main" as a last resort.
+   *
+   * @param excludeBranch When rollback() is deleting a branch, the caller
+   *        passes that branch here so the current-branch fallback never
+   *        resolves to it (git refuses to delete the checked-out branch).
+   */
+  private resolveBaseBranch(excludeBranch?: string): string {
+    try {
+      const head = execSync('git symbolic-ref refs/remotes/origin/HEAD', {
+        cwd: this.workingDir,
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }).trim();
+      const prefix = 'refs/remotes/origin/';
+      if (head.startsWith(prefix)) return head.slice(prefix.length);
+    } catch {
+      // origin/HEAD not set; fall through
+    }
+    try {
+      const current = execSync('git branch --show-current', {
+        cwd: this.workingDir,
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }).trim();
+      if (current && current !== excludeBranch) return current;
+    } catch {
+      // fall through
+    }
+    return 'main';
   }
 
   /**

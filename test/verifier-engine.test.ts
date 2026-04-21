@@ -328,6 +328,56 @@ Output:
       const branches = await verifier['runGitCommand'](['branch']);
       assert.ok(!branches.includes('test-branch'));
     });
+
+    it('rolls back cleanly on a master-default repo when baseBranch is passed explicitly', async () => {
+      // Regression for the SWE-bench pilot failure: sympy (default=master) +
+      // detached-HEAD checkout caused `rollback(_, branch)` to try `checkout
+      // main` and fail. With the caller supplying the resolved default branch,
+      // rollback must complete against any default name.
+      await verifier['runGitCommand'](['init', '-b', 'master']);
+      await verifier['runGitCommand'](['config', 'user.email', 'test@test.com']);
+      await verifier['runGitCommand'](['config', 'user.name', 'Test User']);
+
+      fs.writeFileSync(path.join(testDir, 'seed.txt'), 'seed');
+      await verifier['runGitCommand'](['add', '.']);
+      await verifier['runGitCommand'](['commit', '-m', 'seed']);
+      await verifier['runGitCommand'](['checkout', '-b', 'swarm/step-1']);
+
+      const result = await verifier.rollback(1, 'swarm/step-1', undefined, 'master');
+
+      assert.strictEqual(result.success, true, result.error ?? '');
+      const current = (await verifier['runGitCommand'](['branch', '--show-current'])).trim();
+      assert.strictEqual(current, 'master');
+      const branches = await verifier['runGitCommand'](['branch']);
+      assert.ok(!branches.includes('swarm/step-1'));
+    });
+
+    it('resolves base branch via origin/HEAD when caller omits it, even if current is the to-delete branch', async () => {
+      // Mirrors SWE-bench's cloned-then-checked-out-detached shape, using a
+      // bare upstream so origin/HEAD resolves. Ensures the resolver doesn't
+      // hand back the branch we're about to delete.
+      const origin = path.join(testDir, 'origin.git');
+      fs.mkdirSync(origin);
+      await verifier['runGitCommand'](['init', '--bare', '-b', 'master', origin]);
+      await verifier['runGitCommand'](['init', '-b', 'master']);
+      await verifier['runGitCommand'](['config', 'user.email', 'test@test.com']);
+      await verifier['runGitCommand'](['config', 'user.name', 'Test User']);
+
+      fs.writeFileSync(path.join(testDir, 'seed.txt'), 'seed');
+      await verifier['runGitCommand'](['add', '.']);
+      await verifier['runGitCommand'](['commit', '-m', 'seed']);
+      await verifier['runGitCommand'](['remote', 'add', 'origin', origin]);
+      await verifier['runGitCommand'](['push', '-u', 'origin', 'master']);
+      await verifier['runGitCommand'](['remote', 'set-head', 'origin', 'master']);
+      await verifier['runGitCommand'](['checkout', '-b', 'swarm/step-1']);
+
+      // No baseBranch arg — the resolver must hit origin/HEAD and return 'master'.
+      const result = await verifier.rollback(1, 'swarm/step-1');
+
+      assert.strictEqual(result.success, true, result.error ?? '');
+      const current = (await verifier['runGitCommand'](['branch', '--show-current'])).trim();
+      assert.strictEqual(current, 'master');
+    });
   });
 
   describe('commitVerificationReport', () => {

@@ -204,6 +204,53 @@ export class WorktreeManager {
   }
 
   /**
+   * Resolve the repo's default branch — the one the orchestrator treats as the
+   * integration target for merges and rebases.
+   *
+   * Resolution order:
+   *   1. `git symbolic-ref refs/remotes/origin/HEAD` — the repo's upstream default
+   *      (returns `refs/remotes/origin/master` or `refs/remotes/origin/main` etc.)
+   *   2. `git branch --show-current` — whatever branch is currently checked out
+   *   3. The literal "main" as a last resort for brand-new empty repos where
+   *      neither of the above resolves.
+   *
+   * This is what replaced the old `getCurrentBranch() || 'main'` shortcut. The
+   * shortcut broke on any repo whose default isn't `main` (sympy, scikit-learn,
+   * numpy pre-2022, astropy pre-2022, and anything else that predates the
+   * main-rename wave) and on detached-HEAD checkouts like SWE-bench's, where
+   * `git branch --show-current` returns empty.
+   */
+  resolveDefaultBranch(): string {
+    try {
+      const head = execSync('git symbolic-ref refs/remotes/origin/HEAD', {
+        cwd: this.workingDir,
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }).trim();
+      // format: refs/remotes/origin/<branch>
+      const prefix = 'refs/remotes/origin/';
+      if (head.startsWith(prefix)) {
+        return head.slice(prefix.length);
+      }
+    } catch {
+      // origin/HEAD not set — repo has no remote or never fetched it; fall through
+    }
+
+    try {
+      const current = execSync('git branch --show-current', {
+        cwd: this.workingDir,
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }).trim();
+      if (current) return current;
+    } catch {
+      // current-branch lookup failed; fall through to default
+    }
+
+    return 'main';
+  }
+
+  /**
    * Ensure repo has at least one commit (required for branch creation).
    * Creates an initial commit with a .gitignore if repo is empty.
    * Also verifies the working directory is its own git root first.

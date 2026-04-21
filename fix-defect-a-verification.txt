@@ -1,0 +1,34 @@
+# Defect (a) Verification — default-branch detection
+# Branch: fix/detect-default-branch
+# Date: 2026-04-21T18:36:22Z
+
+## What changed
+
+## Typecheck
+> tsc --noEmit -p tsconfig.build.json
+
+
+## Lint
+> eslint 'src/**/*.{ts,tsx}' 'test/**/*.ts'
+
+
+## New tests (5 resolveDefaultBranch + 2 rollback regressions)
+    resolveDefaultBranch
+      ✔ returns the upstream default when origin/HEAD resolves to master (84ms)
+      ✔ returns the upstream default when origin/HEAD resolves to main (74ms)
+      ✔ still works on a detached HEAD checkout of a master-default repo (90ms)
+      ✔ falls back to the current branch when origin/HEAD is unset
+      ✔ falls back to "main" for an empty repo with no commits and no remote
+
+
+  5 passing (311ms)
+
+
+
+  0 passing (1ms)
+
+
+## Full suite
+  1427 passing (29s)
+  6 pending
+
