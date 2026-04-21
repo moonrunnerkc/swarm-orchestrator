@@ -1,4 +1,5 @@
 import * as assert from 'assert';
+import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -327,6 +328,119 @@ Output:
       // Verify branch is deleted
       const branches = await verifier['runGitCommand'](['branch']);
       assert.ok(!branches.includes('test-branch'));
+    });
+
+    it('rolls back cleanly on a master-default repo when baseBranch is passed explicitly', async () => {
+      // Regression for the SWE-bench pilot failure: sympy (default=master) +
+      // detached-HEAD checkout caused `rollback(_, branch)` to try `checkout
+      // main` and fail. With the caller supplying the resolved default branch,
+      // rollback must complete against any default name.
+      await verifier['runGitCommand'](['init', '-b', 'master']);
+      await verifier['runGitCommand'](['config', 'user.email', 'test@test.com']);
+      await verifier['runGitCommand'](['config', 'user.name', 'Test User']);
+
+      fs.writeFileSync(path.join(testDir, 'seed.txt'), 'seed');
+      await verifier['runGitCommand'](['add', '.']);
+      await verifier['runGitCommand'](['commit', '-m', 'seed']);
+      await verifier['runGitCommand'](['checkout', '-b', 'swarm/step-1']);
+
+      const result = await verifier.rollback(1, 'swarm/step-1', undefined, 'master');
+
+      assert.strictEqual(result.success, true, result.error ?? '');
+      const current = (await verifier['runGitCommand'](['branch', '--show-current'])).trim();
+      assert.strictEqual(current, 'master');
+      const branches = await verifier['runGitCommand'](['branch']);
+      assert.ok(!branches.includes('swarm/step-1'));
+    });
+
+    it('resolves base branch via origin/HEAD when caller omits it, even if current is the to-delete branch', async () => {
+      // Mirrors SWE-bench's cloned-then-checked-out-detached shape, using a
+      // bare upstream so origin/HEAD resolves. Ensures the resolver doesn't
+      // hand back the branch we're about to delete.
+      const origin = path.join(testDir, 'origin.git');
+      fs.mkdirSync(origin);
+      await verifier['runGitCommand'](['init', '--bare', '-b', 'master', origin]);
+      await verifier['runGitCommand'](['init', '-b', 'master']);
+      await verifier['runGitCommand'](['config', 'user.email', 'test@test.com']);
+      await verifier['runGitCommand'](['config', 'user.name', 'Test User']);
+
+      fs.writeFileSync(path.join(testDir, 'seed.txt'), 'seed');
+      await verifier['runGitCommand'](['add', '.']);
+      await verifier['runGitCommand'](['commit', '-m', 'seed']);
+      await verifier['runGitCommand'](['remote', 'add', 'origin', origin]);
+      await verifier['runGitCommand'](['push', '-u', 'origin', 'master']);
+      await verifier['runGitCommand'](['remote', 'set-head', 'origin', 'master']);
+      await verifier['runGitCommand'](['checkout', '-b', 'swarm/step-1']);
+
+      // No baseBranch arg — the resolver must hit origin/HEAD and return 'master'.
+      const result = await verifier.rollback(1, 'swarm/step-1');
+
+      assert.strictEqual(result.success, true, result.error ?? '');
+      const current = (await verifier['runGitCommand'](['branch', '--show-current'])).trim();
+      assert.strictEqual(current, 'master');
+    });
+  });
+
+  describe('resolveBaseBranch contract (defect-a unit)', () => {
+    // Direct unit test on the private resolver so the
+    // "never hand back the branch being deleted" contract is explicit at the
+    // unit boundary, not only observable from rollback integration tests.
+    // Brad's follow-up nudge on PR #23.
+    it('never returns excludeBranch, even when excludeBranch is the current branch', async () => {
+      await verifier['runGitCommand'](['init', '-b', 'main']);
+      await verifier['runGitCommand'](['config', 'user.email', 'test@test.com']);
+      await verifier['runGitCommand'](['config', 'user.name', 'Test User']);
+      fs.writeFileSync(path.join(testDir, 'seed.txt'), 'seed');
+      await verifier['runGitCommand'](['add', '.']);
+      await verifier['runGitCommand'](['commit', '-m', 'seed']);
+      await verifier['runGitCommand'](['checkout', '-b', 'swarm/step-1']);
+
+      // No remote, no origin/HEAD — the current-branch fallback is the only
+      // non-literal source. It MUST skip `swarm/step-1` (the branch being
+      // deleted) and fall through to the literal "main".
+      const resolved = verifier['resolveBaseBranch']('swarm/step-1');
+      assert.notStrictEqual(
+        resolved,
+        'swarm/step-1',
+        'resolver must refuse to hand back the branch the caller is about to delete',
+      );
+      // Empty-repo fallback is the literal "main" string.
+      assert.strictEqual(resolved, 'main');
+    });
+
+    it('returns origin/HEAD even when excludeBranch is the current branch', async () => {
+      const origin = path.join(testDir, 'origin.git');
+      fs.mkdirSync(origin);
+      await verifier['runGitCommand'](['init', '--bare', '-b', 'master', origin]);
+      await verifier['runGitCommand'](['init', '-b', 'master']);
+      await verifier['runGitCommand'](['config', 'user.email', 'test@test.com']);
+      await verifier['runGitCommand'](['config', 'user.name', 'Test User']);
+      fs.writeFileSync(path.join(testDir, 'seed.txt'), 'seed');
+      await verifier['runGitCommand'](['add', '.']);
+      await verifier['runGitCommand'](['commit', '-m', 'seed']);
+      await verifier['runGitCommand'](['remote', 'add', 'origin', origin]);
+      await verifier['runGitCommand'](['push', '-u', 'origin', 'master']);
+      await verifier['runGitCommand'](['remote', 'set-head', 'origin', 'master']);
+      await verifier['runGitCommand'](['checkout', '-b', 'swarm/step-1']);
+
+      // origin/HEAD returns 'master'. Even though current branch is
+      // 'swarm/step-1', the resolver hits origin/HEAD FIRST and never
+      // reaches the fallback that would exclude the current branch.
+      const resolved = verifier['resolveBaseBranch']('swarm/step-1');
+      assert.strictEqual(resolved, 'master');
+    });
+
+    it('returns the current branch when excludeBranch does not match it', () => {
+      execSync(`git init -b trunk "${testDir}"`, { stdio: 'pipe' });
+      execSync('git config user.email "test@test.com"', { cwd: testDir });
+      execSync('git config user.name "Test User"', { cwd: testDir });
+      fs.writeFileSync(path.join(testDir, 'seed.txt'), 'seed');
+      execSync('git add . && git commit -m seed', { cwd: testDir });
+
+      // Current branch is 'trunk', caller says excludeBranch='something-else'.
+      // No origin/HEAD; fallback lands on the current branch as expected.
+      const resolved = verifier['resolveBaseBranch']('something-else');
+      assert.strictEqual(resolved, 'trunk');
     });
   });
 

@@ -213,8 +213,11 @@ export class SwarmOrchestrator {
     // ensure repo has at least one commit (required for branch creation)
     this.ensureInitialCommit();
 
-    // get current git branch and snapshot HEAD so quality gates can diff later
-    const mainBranch = this.getCurrentBranch();
+    // resolve the integration branch: prefer origin/HEAD's symbolic ref (so repos
+    // whose default is `master` or `trunk` work), fall back to the currently
+    // checked-out branch, then fall back to 'main'. See worktree-manager
+    // .resolveDefaultBranch() for the rationale.
+    const mainBranch = this.worktreeManager.resolveDefaultBranch();
     let baseCommitSha: string | undefined;
     try {
       baseCommitSha = execSync('git rev-parse HEAD', {
@@ -1577,7 +1580,8 @@ export class SwarmOrchestrator {
         const rollbackResult = await this.verifier.rollback(
           step.stepNumber,
           branchName,
-          shareIndex.changedFiles
+          shareIndex.changedFiles,
+          context.mainBranch,
         );
 
         if (rollbackResult.success) {

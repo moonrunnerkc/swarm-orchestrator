@@ -117,4 +117,86 @@ describe('WorktreeManager', () => {
       assert.ok(tracked.includes('README.md'), 'README.md should be tracked');
     });
   });
+
+  describe('resolveDefaultBranch', () => {
+    const GIT_ENV = {
+      ...process.env,
+      GIT_AUTHOR_NAME: 'test', GIT_AUTHOR_EMAIL: 'test@test.com',
+      GIT_COMMITTER_NAME: 'test', GIT_COMMITTER_EMAIL: 'test@test.com',
+    };
+
+    function initRepoWithUpstream(dir: string, initialBranch: string): string {
+      // Build a bare repo that acts as `origin`, with HEAD pointed at initialBranch.
+      const origin = path.join(dir, 'origin.git');
+      fs.mkdirSync(origin);
+      execSync(`git init --bare -b ${initialBranch} "${origin}"`, { stdio: 'pipe' });
+
+      // Seed the bare repo by pushing one commit from a disposable working copy.
+      const seed = path.join(dir, 'seed');
+      execSync(`git init -b ${initialBranch} "${seed}"`, { stdio: 'pipe' });
+      fs.writeFileSync(path.join(seed, 'seed.txt'), 'seed');
+      execSync('git add . && git commit -m seed',
+        { cwd: seed, stdio: 'pipe', env: GIT_ENV });
+      execSync(`git remote add origin "${origin}"`, { cwd: seed, stdio: 'pipe' });
+      execSync(`git push -u origin ${initialBranch}`, { cwd: seed, stdio: 'pipe' });
+
+      // Clone into the working copy the test will operate on.
+      const work = path.join(dir, 'work');
+      execSync(`git clone "${origin}" "${work}"`, { stdio: 'pipe' });
+      execSync(`git remote set-head origin ${initialBranch}`,
+        { cwd: work, stdio: 'pipe' });
+      return work;
+    }
+
+    it('returns the upstream default when origin/HEAD resolves to master', () => {
+      const work = initRepoWithUpstream(tempDir, 'master');
+      const manager = new WorktreeManager(work);
+      assert.strictEqual(manager.resolveDefaultBranch(), 'master');
+    });
+
+    it('returns the upstream default when origin/HEAD resolves to main', () => {
+      const work = initRepoWithUpstream(tempDir, 'main');
+      const manager = new WorktreeManager(work);
+      assert.strictEqual(manager.resolveDefaultBranch(), 'main');
+    });
+
+    it('still works on a detached HEAD checkout of a master-default repo', () => {
+      // SWE-bench harness behavior: clone, then checkout a specific commit,
+      // which puts HEAD in detached state. `git branch --show-current` returns
+      // empty in this state; the old fallback would have returned "main"
+      // (wrong for master repos). The new resolver must catch this via
+      // origin/HEAD regardless.
+      const work = initRepoWithUpstream(tempDir, 'master');
+      const sha = execSync('git rev-parse HEAD', { cwd: work, encoding: 'utf8' }).trim();
+      execSync(`git checkout --detach ${sha}`, { cwd: work, stdio: 'pipe' });
+
+      const current = execSync('git branch --show-current',
+        { cwd: work, encoding: 'utf8' }).trim();
+      assert.strictEqual(current, '', 'precondition: HEAD is detached');
+
+      const manager = new WorktreeManager(work);
+      assert.strictEqual(manager.resolveDefaultBranch(), 'master',
+        'detached-HEAD master repos must resolve via origin/HEAD, not the literal "main"');
+    });
+
+    it('falls back to the current branch when origin/HEAD is unset', () => {
+      execSync(`git init -b trunk "${tempDir}"`, { stdio: 'pipe' });
+      fs.writeFileSync(path.join(tempDir, 'x.txt'), '');
+      execSync('git add . && git commit -m init',
+        { cwd: tempDir, stdio: 'pipe', env: GIT_ENV });
+
+      const manager = new WorktreeManager(tempDir);
+      assert.strictEqual(manager.resolveDefaultBranch(), 'trunk');
+    });
+
+    it('falls back to "main" for an empty repo with no commits and no remote', () => {
+      execSync(`git init "${tempDir}"`, { stdio: 'pipe' });
+      const manager = new WorktreeManager(tempDir);
+      // init branch name is whatever git's init.defaultBranch is; on modern git
+      // it's usually "main" or "master". Either way, resolveDefaultBranch
+      // should return *some* non-empty string, not blow up.
+      const resolved = manager.resolveDefaultBranch();
+      assert.ok(resolved.length > 0, 'must return a non-empty branch name');
+    });
+  });
 });
