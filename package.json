@@ -27,20 +27,12 @@
     "test": "npm run build && mocha --recursive 'dist/test/**/*.test.js'",
     "test:ci": "mocha --recursive 'dist/test/**/*.test.js'",
     "start": "node dist/src/cli.js",
-    "test:all": "npm test && npm run test:python && npm run test:subprojects",
-    "test:subprojects": "cd calculations-api && npm test && cd ../notes-api && npm test && cd ../calculator && npm test && cd ../logtail && npm test && cd ../tictactoe && npm test && cd ../web && npm test",
     "docker:build": "docker build -t swarm-orchestrator .",
-    "docker:build:health": "docker build -t health-service -f app/Dockerfile .",
-    "docker:build:calc": "docker build -t calculations-api ./calculations-api",
-    "docker:build:notes": "docker build -t notes-api ./notes-api",
-    "docker:build:web": "docker build -t inkwell ./web",
-    "docker:build:all": "npm run docker:build && npm run docker:build:health && npm run docker:build:calc && npm run docker:build:notes && npm run docker:build:web",
     "docker:run": "docker run --rm --env-file .env swarm-orchestrator",
     "docker:up": "docker compose up --build -d",
     "docker:down": "docker compose down",
     "docker:dev": "docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build -d",
-    "deploy": "bash scripts/deploy.sh",
-    "test:python": "pytest app/tests/ -v"
+    "deploy": "bash scripts/deploy.sh"
   },
   "repository": {
     "type": "git",
