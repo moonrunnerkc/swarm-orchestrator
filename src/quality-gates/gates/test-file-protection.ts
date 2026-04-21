@@ -1,5 +1,5 @@
 import { execSync } from 'child_process';
-import { GateContext, GateIssue, GateResult, TestFileProtectionConfig } from '../types';
+import { GateIssue, GateResult, TestFileProtectionConfig } from '../types';
 
 /**
  * D4: Test-File Protection Gate

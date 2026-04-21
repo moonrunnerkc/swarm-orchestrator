@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { ShareParser, ShareTranscript, ShareIndex } from './share-parser';
+import { ShareParser, ShareIndex } from './share-parser';
 
 export interface StepShare {
   stepNumber: number;
@@ -64,19 +64,16 @@ export class SessionManager {
 
     // determine if input is path or content
     let content: string;
-    let sourcePath: string;
 
     if (fs.existsSync(transcriptPathOrContent)) {
       // it's a file path
       content = fs.readFileSync(transcriptPathOrContent, 'utf8');
-      sourcePath = transcriptPathOrContent;
     } else if (transcriptPathOrContent.startsWith('http')) {
       // it's a URL - not supported yet
       throw new Error('URL import not yet implemented');
     } else {
       // treat as raw content
       content = transcriptPathOrContent;
-      sourcePath = 'inline';
     }
 
     // parse the share transcript

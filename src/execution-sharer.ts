@@ -68,7 +68,7 @@ export class ExecutionSharer {
       }
 
       return share;
-    } catch (error) {
+    } catch {
       return null;
     }
   }

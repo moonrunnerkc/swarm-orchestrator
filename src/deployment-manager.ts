@@ -80,7 +80,7 @@ export class DeploymentManager {
   /**
    * Deploy Vercel preview
    */
-  private async deployVercelPreview(branchName: string): Promise<DeploymentResult> {
+  private async deployVercelPreview(_branchName: string): Promise<DeploymentResult> {
     const execution = await this.toolManager.executeCommand(
       'vercel',
       ['deploy', '--yes'],
@@ -113,7 +113,7 @@ export class DeploymentManager {
   /**
    * Deploy Netlify preview
    */
-  private async deployNetlifyPreview(branchName: string): Promise<DeploymentResult> {
+  private async deployNetlifyPreview(_branchName: string): Promise<DeploymentResult> {
     const execution = await this.toolManager.executeCommand(
       'netlify',
       ['deploy', '--build'],

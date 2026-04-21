@@ -202,7 +202,7 @@ export class KnowledgeBaseManager {
   /**
    * record execution run
    */
-  recordRun(patternsDetected: number): void {
+  recordRun(_patternsDetected: number): void {
     this.knowledgeBase.statistics.totalRuns++;
     const { totalRuns, totalPatterns } = this.knowledgeBase.statistics;
     this.knowledgeBase.statistics.avgPatternsPerRun = totalPatterns / totalRuns;

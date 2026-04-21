@@ -130,7 +130,7 @@ export class ConflictResolver {
         conflictsArray.forEach(conflict => {
           this.conflicts.set(conflict.id, conflict);
         });
-      } catch (error) {
+      } catch {
         // If file is corrupted, start fresh
         this.conflicts.clear();
       }

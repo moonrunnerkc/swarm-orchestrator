@@ -1,4 +1,3 @@
-import * as path from 'path';
 import ExternalToolManager from './external-tool-manager';
 import { SwarmExecutionContext } from './swarm-orchestrator';
 import { DeploymentMetadata } from './deployment-manager';

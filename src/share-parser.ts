@@ -1,5 +1,3 @@
-import * as fs from 'fs';
-import * as path from 'path';
 import { extractClaims } from './share/transcript-verification';
 
 export interface ShareTranscript {

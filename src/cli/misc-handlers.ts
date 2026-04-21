@@ -7,7 +7,6 @@ import * as path from 'path';
 import { PlanStorage } from '../plan-storage';
 import { loadRecipe, listRecipeDetails, parameterizeRecipe } from '../recipe-loader';
 import AgentsExporter from '../agents-exporter';
-import { showUsage } from './usage';
 import { parseSwarmFlags } from './flags';
 import { getLogger } from '../logger';
 

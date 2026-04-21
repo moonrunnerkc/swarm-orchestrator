@@ -3,7 +3,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { resolveAdapter, defaultModelForAdapter, AgentSpawnOptions } from './adapters';
 import AnalyticsLog from './analytics-log';
-import CommitPatternDetector, { CommitMessage } from './commit-pattern-detector';
 import { AgentProfile, ConfigLoader } from './config-loader';
 import ContextBroker, { ContextEntry } from './context-broker';
 import DeploymentManager, { DeploymentMetadata } from './deployment-manager';
@@ -30,7 +29,7 @@ import { CostAttribution, CostHistoryEvidence, StepCostRecord } from './metrics-
 import PRManager from './pr-manager';
 import { WorktreeManager } from './worktree-manager';
 import { BranchMerger, MergeContext } from './branch-merger';
-import { BaselineSnapshot, scanBaseline, formatPreservationRules } from './baseline-scanner';
+import { BaselineSnapshot, scanBaseline } from './baseline-scanner';
 import { TaskClassifier } from './task-classifier';
 import { TIER_MAPS } from './tier-maps';
 import { RequirementFilter, FilteredRequirements } from './requirement-filter';
@@ -1443,7 +1442,6 @@ export class SwarmOrchestrator {
         }
 
         // Print completion with timing; differentiate success from failure
-        const durationSec = Math.round(sessionResult.duration / 1000);
         logger.info(`  ${'─'.repeat(60)}`);
 
         result.sessionResult = sessionResult;

@@ -1,7 +1,5 @@
 import { ParallelStepResult } from './swarm-orchestrator';
-import { VerificationResult } from './verifier-engine';
 import { ExecutionPlan, PlanStep } from './plan-generator';
-import { AgentProfile } from './config-loader';
 
 export interface MetaReviewResult {
   analysisTimestamp: string;
@@ -206,7 +204,7 @@ export class MetaAnalyzer {
    */
   private generateSuggestedChanges(
     stepReviews: StepReview[],
-    plan: ExecutionPlan
+    _plan: ExecutionPlan
   ): SuggestedChange[] {
     const changes: SuggestedChange[] = [];
 
@@ -278,8 +276,8 @@ export class MetaAnalyzer {
    */
   makeReplanDecision(
     analysis: MetaReviewResult,
-    plan: ExecutionPlan,
-    completedSteps: number[]
+    _plan: ExecutionPlan,
+    _completedSteps: number[]
   ): ReplanDecision {
     if (!analysis.replanNeeded) {
       return {

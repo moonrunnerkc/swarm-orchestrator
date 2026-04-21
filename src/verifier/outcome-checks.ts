@@ -7,7 +7,6 @@ import type {
 } from '../verifier-engine';
 import {
   DEFAULT_COMMAND_TIMEOUT_MS,
-  DEFAULT_FAILURE_CONTEXT_CHARS,
   DEFAULT_SIGKILL_DELAY_MS,
 } from '../defaults';
 

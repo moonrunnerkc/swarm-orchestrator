@@ -31,7 +31,7 @@ export class GitHubIssuesIngester {
       return [];
     }
 
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve, _reject) => {
       const proc = spawn('gh', ['issue', 'list', '--json', 'number,title,url,labels,createdAt', '--limit', '50'], {
         cwd: repoPath,
         stdio: ['pipe', 'pipe', 'pipe']

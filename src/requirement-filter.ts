@@ -2,7 +2,7 @@
 // filtered requirements for agent prompt injection.
 
 import { TaskClassification, TaskType } from './task-classifier';
-import { TierLevel, TierMap, TierRequirement } from './tier-maps';
+import { TierMap, TierRequirement } from './tier-maps';
 
 export interface FilteredRequirements {
   taskType: TaskType;

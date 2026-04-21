@@ -4,7 +4,6 @@
  */
 
 import * as fs from 'fs';
-import * as path from 'path';
 import { MCPEvidence } from './types';
 
 export class GitHubMcpIntegrator {

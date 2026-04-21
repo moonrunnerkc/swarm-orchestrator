@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { AgentProfile, ConfigLoader } from './config-loader';
 import { ExecutionPlan, PlanStep } from './plan-generator';
-import SessionExecutor, { SessionOptions, SessionResult } from './session-executor';
+import SessionExecutor, { SessionOptions } from './session-executor';
 import { getLogger } from './logger';
 const logger = getLogger('pm-agent');
 

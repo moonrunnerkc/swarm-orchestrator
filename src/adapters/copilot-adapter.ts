@@ -4,7 +4,7 @@
 // logic from the original implementation.
 
 import { spawn, SpawnOptions } from 'child_process';
-import { AgentAdapter, AgentResult, AgentSpawnOptions, buildRestrictedEnv } from './agent-adapter';
+import { AgentAdapter, AgentResult, AgentSpawnOptions } from './agent-adapter';
 
 // Maximum silence before killing a stalled copilot subprocess.
 // Copilot CLI can go quiet for several minutes during extended tool-use

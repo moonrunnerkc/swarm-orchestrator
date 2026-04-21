@@ -97,7 +97,7 @@ export class SteeringRouter {
   /**
    * Handle pause command
    */
-  private handlePause(command: SteeringCommand): { success: boolean; message: string; action: 'pause' } {
+  private handlePause(_command: SteeringCommand): { success: boolean; message: string; action: 'pause' } {
     if (this.state.status === 'paused') {
       return {
         success: false,
@@ -126,7 +126,7 @@ export class SteeringRouter {
   /**
    * Handle resume command
    */
-  private handleResume(command: SteeringCommand): { success: boolean; message: string; action: 'resume' } {
+  private handleResume(_command: SteeringCommand): { success: boolean; message: string; action: 'resume' } {
     if (this.state.status !== 'paused') {
       return {
         success: false,
@@ -272,7 +272,7 @@ export class SteeringRouter {
         const data = fs.readFileSync(logPath, 'utf8');
         this.steeringLog = JSON.parse(data);
         this.state.steeringHistory = [...this.steeringLog];
-      } catch (error) {
+      } catch {
         this.steeringLog = [];
         this.state.steeringHistory = [];
       }

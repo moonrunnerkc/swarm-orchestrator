@@ -151,7 +151,7 @@ export class ProgressTracker {
   }
 
   stopAll(): void {
-    for (const [id, spinner] of this.activeSpinners) {
+    for (const spinner of this.activeSpinners.values()) {
       spinner.stop();
     }
     this.activeSpinners.clear();

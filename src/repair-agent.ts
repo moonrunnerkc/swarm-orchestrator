@@ -433,7 +433,7 @@ export class RepairAgent {
   /**
    * Get git diff for a branch. Returns empty string on failure.
    */
-  private getGitDiff(branchName: string): string {
+  private getGitDiff(_branchName: string): string {
     try {
       const diff = execSync(`git diff HEAD~1 --stat 2>/dev/null || echo ""`, {
         cwd: this.workingDir,

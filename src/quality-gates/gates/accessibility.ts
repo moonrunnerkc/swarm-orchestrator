@@ -18,7 +18,6 @@ export async function run_accessibility_gate(
   const htmlFiles = ctx.files.filter(f => /\.html?$/i.test(f.relativePath) && isAgentFile(f));
   const jsxFiles = ctx.files.filter(f => /\.(jsx|tsx)$/i.test(f.relativePath) && isAgentFile(f));
   const cssFiles = ctx.files.filter(f => /\.css$/i.test(f.relativePath) && isAgentFile(f));
-  const componentFiles = [...jsxFiles, ...ctx.files.filter(f => /\.(js|ts)$/i.test(f.relativePath) && !f.relativePath.startsWith('test') && isAgentFile(f))];
 
   // 1. Check lang attribute on <html> in all .html files
   for (const file of htmlFiles) {

@@ -1,4 +1,4 @@
-import { ExecutionPlan, PlanStep } from './plan-generator';
+import { ExecutionPlan } from './plan-generator';
 import { KnowledgeBaseManager } from './knowledge-base';
 import { CostHistoryEvidence } from './metrics-types';
 import { DEFAULT_REMEDIATION_RATE, DEFAULT_RETRY_PROBABILITY } from './defaults';

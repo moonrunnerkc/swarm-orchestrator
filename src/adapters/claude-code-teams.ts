@@ -89,7 +89,7 @@ export class ClaudeCodeTeamsAdapter implements AgentAdapter {
 
     // Map the single team lead output to per-step results.
     // Each step gets the same transcript since the team lead orchestrated all work.
-    return steps.map((_step, i) => ({
+    return steps.map((_step, _i) => ({
       stdout: result.stdout,
       stderr: result.stderr,
       exitCode: result.exitCode,

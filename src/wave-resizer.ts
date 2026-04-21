@@ -1,5 +1,4 @@
-import { ExecutionQueue, QueueStats } from './execution-queue';
-import { PlanStep } from './plan-generator';
+import { QueueStats } from './execution-queue';
 
 export interface WaveResizeEvent {
   originalWave: number[];

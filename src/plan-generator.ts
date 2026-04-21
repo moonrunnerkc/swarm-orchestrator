@@ -956,7 +956,6 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
         // validate agent exists — use normalized name comparison so snake_case
         // (integrator_finalizer) matches PascalCase YAML names (IntegratorFinalizer)
         const agentNames = new Set(this.availableAgents.map(a => a.name));
-        const normalizedAgentNames = new Set(this.availableAgents.map(a => ConfigLoader.normalizeAgentName(a.name)));
         const matchedAgent = agentNames.has(addReq.agent)
           ? addReq.agent
           : this.availableAgents.find(a => ConfigLoader.normalizeAgentName(a.name) === ConfigLoader.normalizeAgentName(addReq.agent))?.name;

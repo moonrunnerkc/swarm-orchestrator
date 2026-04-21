@@ -85,7 +85,7 @@ export class CopilotCliWrapper {
         capabilities.supportsAgents = helpResult.stdout.includes('--agent');
         capabilities.supportsMcp = helpResult.stdout.includes('--mcp');
       }
-    } catch (error) {
+    } catch {
       // CLI not available
       capabilities.available = false;
     }

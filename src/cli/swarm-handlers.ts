@@ -10,19 +10,16 @@ import { ConfigLoader } from '../config-loader';
 import { ExecutionPlan, PlanGenerator } from '../plan-generator';
 import { PlanStorage } from '../plan-storage';
 import QuickFixMode, { QuickFixOptions } from '../quick-fix-mode';
-import { SessionManager } from '../session-manager';
 import { SwarmOrchestrator, SwarmExecutionOptions, SwarmExecutionContext } from '../swarm-orchestrator';
-import { ExecutionOptions } from '../types';
 import { defaultModelForAdapter } from '../adapters';
 import { confirmCostPrompt } from './cost-prompt';
 import {
   ExecuteSwarmCliOptions,
-  normalizeLeadingGlobalFlags,
   parseSwarmFlags,
 } from './flags';
 import { showUsage } from './usage';
 import { Spinner } from '../spinner';
-import { getLogger, isPrettyMode, setDashboardActive, writeStructuredOutput } from '../logger';
+import { getLogger, isPrettyMode, setDashboardActive } from '../logger';
 
 const logger = getLogger('cli:swarm');
 

@@ -158,7 +158,7 @@ const ProductivitySummary: React.FC<ProductivitySummaryProps> = ({ comparison })
 };
 
 const SwarmDashboard: React.FC<DashboardProps> = ({
-  executionId,
+  executionId: _executionId,
   goal,
   totalSteps,
   currentWave,
@@ -171,7 +171,7 @@ const SwarmDashboard: React.FC<DashboardProps> = ({
   onCommand,
   readOnly = false,
   metricsComparison,
-  queueStats,
+  queueStats: _queueStats,
   repoGroups,
   criticResults,
   leanSavedRequests,
@@ -182,7 +182,7 @@ const SwarmDashboard: React.FC<DashboardProps> = ({
   const [elapsedTime, setElapsedTime] = useState('0s');
   const [input, setInput] = useState('');
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
-  const [showInput, setShowInput] = useState(!readOnly);
+  const [showInput] = useState(!readOnly);
 
   // Compact mode: hide verbose sections when terminal is small.
   // Fixed overhead: header(1) + info(3) + progress(3) + status-box(3) + step-header(1)

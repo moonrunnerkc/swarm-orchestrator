@@ -8,7 +8,6 @@ import * as path from 'path';
 import { DemoMode } from '../demo-mode';
 import { PlanStorage } from '../plan-storage';
 import { ExecuteSwarmCliOptions, parseSwarmFlags } from './flags';
-import { showUsage } from './usage';
 import { getLogger, setPrettyMode } from '../logger';
 
 // Minimal ANSI helpers for a cleaner demo UX. No chalk dep to keep the
