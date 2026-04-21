@@ -43,6 +43,10 @@ from worktree_reserved_paths import git_pathspec_excludes  # noqa: E402
 
 SUBSET_SIZE = int(os.environ.get("SWEBENCH_SUBSET_SIZE", "10"))
 DATASET_ID = os.environ.get("SWEBENCH_DATASET", "princeton-nlp/SWE-bench_Lite")
+# When set, load the exact instance_ids listed in this JSON file (produced by
+# benchmarks/swe-bench/sample_instances.py). Overrides SUBSET_SIZE's ad-hoc
+# diverse-repo walk and makes the sample deterministic + auditable.
+INSTANCES_FILE = os.environ.get("SWEBENCH_INSTANCES_FILE", "")
 SWARM_TOOL = os.environ.get("SWARM_TOOL", "claude-code")
 SWARM_MODEL = os.environ.get("SWARM_MODEL", "claude-sonnet-4")
 BASELINE_MODE = os.environ.get("BASELINE_MODE", "false").lower() == "true"
@@ -340,12 +344,48 @@ def pin_flask_dependencies(repo_dir: Path, task_id: str, venv_python: str) -> No
 
 
 def load_tasks():
-    """Load and return a subset of SWE-bench tasks."""
-    print(f"Loading dataset: {DATASET_ID} (subset: {SUBSET_SIZE})")
+    """Load and return SWE-bench tasks.
+
+    Two modes:
+      (1) SWEBENCH_INSTANCES_FILE set — load the exact instance_ids from the
+          JSON manifest. This is the deterministic path used by PR 3a+ and
+          the full sweep. Sample-size check enforced.
+      (2) Legacy path — SUBSET_SIZE-based diverse-repo walk. Kept for
+          backwards compatibility with older scripts.
+    """
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     ds = load_dataset(DATASET_ID, split="test", cache_dir=str(CACHE_DIR))
 
-    # Pick tasks from diverse repos for better coverage
+    if INSTANCES_FILE:
+        manifest_path = Path(INSTANCES_FILE)
+        if not manifest_path.exists():
+            raise SystemExit(
+                f"SWEBENCH_INSTANCES_FILE={INSTANCES_FILE} does not exist. "
+                f"Produce it with benchmarks/swe-bench/sample_instances.py."
+            )
+        manifest = json.loads(manifest_path.read_text())
+        wanted = set(manifest["instance_ids"])
+        if not wanted:
+            raise SystemExit(f"{INSTANCES_FILE}: instance_ids is empty")
+
+        by_id = {item["instance_id"]: item for item in ds}
+        missing = wanted - set(by_id)
+        if missing:
+            raise SystemExit(
+                f"{len(missing)} instance_ids from {INSTANCES_FILE} not in "
+                f"dataset {DATASET_ID}. Sample (first 3): {sorted(missing)[:3]}"
+            )
+
+        tasks = [by_id[i] for i in manifest["instance_ids"]]
+        repos = sorted({t["repo"] for t in tasks})
+        print(
+            f"Loaded {len(tasks)} tasks from {manifest_path} "
+            f"(seed={manifest.get('seed')}, repos={len(repos)})"
+        )
+        return tasks
+
+    # Legacy ad-hoc selection path.
+    print(f"Loading dataset: {DATASET_ID} (subset: {SUBSET_SIZE})")
     seen_repos = set()
     diverse_tasks = []
     for item in ds:
@@ -356,7 +396,6 @@ def load_tasks():
         if len(diverse_tasks) >= SUBSET_SIZE:
             break
 
-    # If not enough diverse repos, fill from remaining
     if len(diverse_tasks) < SUBSET_SIZE:
         for item in ds:
             if item not in diverse_tasks:
