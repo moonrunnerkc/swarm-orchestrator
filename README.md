@@ -12,9 +12,9 @@
 
 # Swarm Orchestrator
 
-**Verification and governance layer for AI coding agents. Parallel execution with evidence-based quality gates, not autonomous code generation.**
+**CI/CD for AI-generated code. Run Copilot, Claude Code, or Codex in parallel; verify every claim against evidence; gate merges on 8 automated quality checks.**
 
-_This is not an autonomous system builder. It orchestrates external AI agents (Copilot, Claude Code, Codex) across isolated branches, verifies every step with outcome-based checks (git diff, build, test), and only merges work that proves itself. The value is trust in the output, not speed of generation._
+_Not an autonomous system builder — an accountability layer around agents you already trust enough to run, but not enough to merge blind. Each step runs on its own isolated branch. Each claim (tests pass, build clean, commit made) is cross-referenced against the transcript and the actual filesystem. Failures are auto-classified, repaired with targeted strategies, and re-verified. Nothing reaches main without passing both the verification engine and the quality gate pipeline. The metric that matters is **cost per rubric point**, not wall-clock time._
 
 <br>
 
@@ -22,7 +22,7 @@ _This is not an autonomous system builder. It orchestrates external AI agents (C
 &nbsp;&nbsp;
 [![CI](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml/badge.svg)](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml)
 &nbsp;&nbsp;
-![Tests: 1398 passing](https://img.shields.io/badge/tests-1398%20passing-brightgreen.svg)
+![Tests: 1420 passing](https://img.shields.io/badge/tests-1420%20passing-brightgreen.svg)
 &nbsp;&nbsp;
 ![Node.js 20+](https://img.shields.io/badge/node-20%2B-green.svg)
 &nbsp;&nbsp;
@@ -46,39 +46,47 @@ _This is not an autonomous system builder. It orchestrates external AI agents (C
 
 ## Quick Start
 
+### See it run end-to-end
+
 ```bash
-# Install globally
 npm install -g swarm-orchestrator
-# Or clone and build from source
-git clone https://github.com/moonrunnerkc/swarm-orchestrator.git
-cd swarm-orchestrator
-npm install && npm run build && npm link
+# then set up any one of the agent CLIs below, and:
+swarm demo demo-fast    # two parallel agents writing throwaway utilities, ~1 min
 ```
 
+The demo runs the full orchestration pipeline end-to-end against two trivial tasks (write a `greet()` function, write a `double()` function) — you see the TUI dashboard, parallel waves, verification reports, and the auditable trail that a real run produces. It uses real agents, so one of the CLIs below must be installed and authenticated; pick whichever you already have.
+
+### Run it against your own code
+
 ```bash
-# Run against your project with any supported agent
+# Default: GitHub Copilot CLI
 swarm bootstrap ./your-repo "Add JWT auth and role-based access control"
 
-# Use Claude Code instead of Copilot
+# Claude Code
 swarm bootstrap ./your-repo "Add JWT auth" --tool claude-code
 
-# Use Codex
+# Codex
 swarm bootstrap ./your-repo "Add JWT auth" --tool codex
 ```
 
-See it work before pointing it at your code:
-
-```bash
-swarm demo demo-fast    # two parallel agents, ~1 min
-```
-
-Requires Node.js 20+, Git, and at least one supported agent CLI installed.
+Requires Node.js 20+, Git, and at least one supported agent CLI:
 
 | Agent | Install | Auth |
 |-------|---------|------|
 | GitHub Copilot CLI | `npm install -g @github/copilot` | Launch `copilot` and run `/login` (requires Node.js 22+) |
 | Claude Code | `npm install -g @anthropic-ai/claude-code` | `ANTHROPIC_API_KEY` |
 | Codex | `npm install -g @openai/codex` | `OPENAI_API_KEY` |
+
+<details>
+<summary><strong>Build from source</strong></summary>
+
+```bash
+git clone https://github.com/moonrunnerkc/swarm-orchestrator.git
+cd swarm-orchestrator
+npm install && npm run build && npm link
+```
+
+</details>
 
 <br>
 
@@ -137,7 +145,9 @@ _Originally a submission for the [GitHub Copilot CLI Challenge](https://github.c
 
 ## Benchmarking
 
-The primary benchmark question: **how many premium requests does each approach need to reach what level of completeness?** Three producers are compared head-to-head on the same tasks using a 22-attribute binary completeness rubric. No subjective scores, no weighted composites.
+Most agent-framework benchmarks report win rates on completeness — "we finished more tasks than them." That's the wrong metric. An approach that burns 10× the premium requests to get 5% more completeness isn't winning; it's just spending. The metric that matters is **cost per rubric point**: how many premium requests does each approach spend per attribute it actually delivers?
+
+Three producers are compared head-to-head on the same tasks using a 22-attribute binary completeness rubric. No subjective scores, no weighted composites.
 
 | Component | Description |
 |-----------|-------------|
@@ -152,7 +162,7 @@ The primary benchmark question: **how many premium requests does each approach n
 
 **Metrics (automated only):** rubric completeness (22 binary attributes), premium request count (instrumented), cost per rubric point, wall-clock time, test-pass rate, coverage, security scans, repair-loop iterations. All reported as mean ± 95% CI.
 
-**Latest smoke tests** (N=1, two tasks, 2026-04-17): Orchestrator ties SINGLE_SHOT on both tasks (80–82%), LADDER hits 100% from a bare prompt. The orchestrator does not currently win — see [honest analysis](benchmarks/README.md#what-this-data-shows). Harder tasks, stricter rubrics, and N≥30 needed.
+**Current state (N=1 smoke tests, two tasks, 2026-04-17):** on simple tasks, all three producers converge on high completeness — ORCHESTRATOR and SINGLE_SHOT tie at 80–82%, LADDER hits 100%. The orchestrator's architecture is built for the regime this smoke test doesn't yet exercise: harder tasks where SINGLE_SHOT fails outright and LADDER burns compute unproductively. Harder tasks, stricter rubrics, and N≥30 are needed to measure the intended advantage. See [honest analysis](benchmarks/README.md#what-this-data-shows) for the full methodology and what's missing.
 
 ```bash
 # Run all three producers (8 tasks each)
