@@ -88,3 +88,96 @@ Usage: run_fresh.sh [N] [--task-source RUBRIC|CONSTRAINT_BINDING]
 - N=1 producer sweep (4 or 20 × 3 producers) → decide N=3 based on result
 - If the N=1 gap is < 5 points, skip N=3 and publish null
 - Honest framing per the gap-size rules
+
+───────────────────────────────────────────────────────
+## N=1 PILOT SCOREBOARD  (4 tasks × 1 producer ORCHESTRATOR)
+───────────────────────────────────────────────────────
+Pilot started: 2026-04-21T15:09Z
+Pilot ended:   2026-04-21T16:26Z
+Tool:          claude-code
+
+### Cost-estimate-only pre-check (Brad's ≤40 req/task gate)
+  rename-then-update-callers-001  estimate  3-5 req    ✓ under 40
+  schema-then-query-001           estimate  5-8 req    ✓ under 40
+  contract-change-then-client-001 estimate  3-5 req    ✓ under 40
+  lift-then-reuse-001             estimate  3-5 req    ✓ under 40
+
+### Per-task results
+
+#### contract-change-then-client-001 — FAIL
+  wall_clock_seconds: 442
+  cost-attribution: not written (orchestrator bailed before final)
+  repair_wave_analyses: 0
+  validators:
+    ✗ implementation throws on missing userAgent  (exit 1)
+
+#### lift-then-reuse-001 — FAIL
+  wall_clock_seconds: 555
+  cost-attribution: not written (orchestrator bailed before final)
+  repair_wave_analyses: 0
+  validators:
+    ✗ resolveScheduler helper is declared in index.js  (exit 1)
+
+#### rename-then-update-callers-001 — FAIL
+  wall_clock_seconds: 2443
+  premium=5/est=5
+  repair_wave_analyses: 0
+  validators:
+    ✗ no references to the old name remain in source files  (exit 1)
+
+#### schema-then-query-001 — FAIL
+  wall_clock_seconds: 1157
+  premium=3/est=8
+  repair_wave_analyses: 0
+  validators:
+    ✗ schema declares publishedAt on Post  (exit 2)
+
+### Aggregate
+  runs:               4
+  passed:             0
+  failed:             4
+  total_wall_clock:   4597 s  (76.6 min)
+  total_premium_reqs: 8
+
+### Halt-condition check (Brad's three triggers)
+  1. Any invocation > 2× estimate?     NO  (rename: 5/5, schema: 3/8, contract & lift bailed early)
+  2. Validator disagrees baseline⇄pilot? NO (same 4 failing validators as baseline-rejection smoke)
+  3. Claude Code auth fail mid-run?     NO  (all four sessions ran to orchestrator's own termination)
+  No halt triggers fired.
+
+### Hypotheses (one line each, per Brad's rule — fixes deferred)
+  rename-then-update-callers-001
+    Hypothesis: VALIDATOR TOO STRICT. Grep scans node_modules/ and a legit
+    defensive test assertion (rename.test.js) that references the old name
+    as a string literal. The orchestrator actually performed the rename
+    correctly in index.js/.d.ts/test.js/benchmark.js (5/5 steps passed,
+    9/9 quality gates). The validator needs node_modules/ exclusion.
+
+  contract-change-then-client-001
+    Hypothesis: AGENT LIMITATION. Step 1 produced 4-file diff (176 ins /
+    115 del) but broke the test suite; orchestrator correctly verified +
+    rolled back. The contract change (thrown error) could not be landed
+    with test updates atomically by the single step the agent planned.
+
+  lift-then-reuse-001
+    Hypothesis: VALIDATOR TOO STRICT. Agent wrote
+    `function resolveScheduler ()` with a space before the paren; my
+    regex required `\(` immediately after the name. The helper was
+    correctly extracted.
+
+  schema-then-query-001
+    Hypothesis: FIXTURE DEFECT. fetch-fixtures.sh preserves the
+    `databases/turso/` subpath prefix on extraction, so the workspace has
+    databases/turso/prisma/schema.prisma, not the prompt's expected
+    prisma/schema.prisma. The agent ran from the workspace root with no
+    file at the promised path.
+
+### Signal
+  3 of 4 failures are in the harness I shipped, not the orchestrator.
+  Only contract-change is a real orchestrator/agent observation.
+  The baseline-rejection smoke proved the same validators fail on the
+  un-modified fixtures; it did not catch the over-strictness in the
+  positive direction (it can't — there's no positive sample).
+
+  Per Brad's rule, I am not retuning validators or the fetch script
+  before this PR lands. These observations are the pilot's output.
