@@ -409,13 +409,19 @@ describe('PlanGenerator', () => {
       'Only edit source code to fix the issue. Test files are verified ' +
       'by an external harness and your edits will cause patch conflicts.';
 
+    // PRECONDITION CONTRACT: the test below reproduces the original classifier-
+    // poisoning bug to prove the fixture captures the real failure mode. If
+    // this assertion stops holding, the classifier's keyword logic has
+    // changed and the downstream "CAPTURES THE FIX" test's negation no longer
+    // proves the Fix-1 isolation mechanism — it could be passing for an
+    // unrelated reason (e.g. Fix 2 made assignAgent route bug-fix shapes
+    // differently). Update BOTH tests together or neither.
+    //
+    // The original bug: run_swebench.py concatenated the "do not edit tests"
+    // preamble onto the goal before passing it to --goal. The word "test" in
+    // the preamble matched assignAgent's TesterElite keyword regex, and the
+    // planner allocated TesterElite as primary for a bug-fix task.
     it('LOCKS IN THE BUG: concatenated preamble+goal makes the classifier pick TesterElite', () => {
-      // This is the precondition test. If this test stops returning TesterElite,
-      // the classifier changed in a way that may have broken the mechanism this
-      // fix targets, and the positive-case test below becomes vacuous.
-      // The bug was: run_swebench.py concatenated the "do not edit tests"
-      // preamble onto the goal before passing it to --goal. The word "test"
-      // in the preamble matched assignAgent's TesterElite keyword regex.
       const poisonedGoal = `${SWE_BENCH_PREAMBLE}\n\n${SYMPY_GOAL}`;
       assert.strictEqual(
         generator.assignAgent(poisonedGoal),
@@ -478,6 +484,23 @@ describe('PlanGenerator', () => {
       }
     });
 
+    it('Fix 1 + Fix 2 together: raw bug-fix goal routes to an impl-editing agent', () => {
+      // Cross-check that Fix 1's isolation + Fix 2's bug-fix goal type
+      // compose correctly on the sympy-12481 shape. The goal alone has bug-
+      // report structural shape (backtick references + present-tense failure
+      // verb), so detectGoalType should return 'bug-fix' and the template
+      // puts BackendMaster first. With guidance routed through agentGuidance,
+      // that remains true because classification runs on the raw goal.
+      const plan = generator.createPlan(SYMPY_GOAL, undefined, {
+        agentGuidance: SWE_BENCH_PREAMBLE,
+      });
+      const implAgents = new Set(['BackendMaster', 'FrontendExpert']);
+      assert.ok(
+        implAgents.has(plan.steps[0].agentName),
+        `primary agent must be impl-editing; got ${plan.steps[0].agentName}`,
+      );
+    });
+
     it('agentGuidance is layer-split even when userProvidedSteps is supplied', () => {
       const userSteps: PlanStep[] = [
         {
@@ -500,6 +523,225 @@ describe('PlanGenerator', () => {
         plan.steps[0].task.startsWith(SWE_BENCH_PREAMBLE),
         'guidance still prepends to user-provided step tasks',
       );
+    });
+  });
+
+  describe('classifyGoal — direct classifier contract (issue #27 fix 2)', () => {
+    // Direct unit tests on the classifier. These isolate classifier
+    // correctness from template correctness: if detectGoalType regresses
+    // (e.g., a future edit to the keyword regexes or structural
+    // discriminator), these tests fail at the classifier layer and name
+    // the bug precisely, instead of firing as cascading "plan shape looks
+    // wrong" failures in the indirect tests below.
+
+    const BUG_FIX_POSITIVES = [
+      {
+        name: 'sympy-12481 (Permutation constructor)',
+        goal: [
+          '`Permutation` constructor fails with non-disjoint cycles',
+          'Calling `Permutation([[0,1],[0,1]])` raises a `ValueError` instead of',
+          'constructing the identity permutation.',
+        ].join('\n'),
+      },
+      {
+        name: 'django-style HttpResponse header',
+        goal:
+          '`HttpResponseRedirect` with empty `Location` header raises ' +
+          '`InternalError` instead of the documented `ValueError` when the ' +
+          'redirect target is missing.',
+      },
+      {
+        name: 'matplotlib-style axis scale',
+        goal:
+          '`ax.set_xscale("log")` crashes with zero-valued data. ' +
+          '`set_xscale` throws a `ValueError` during redraw.',
+      },
+    ];
+
+    for (const { name, goal } of BUG_FIX_POSITIVES) {
+      it(`classifyGoal("${name}") === 'bug-fix'`, () => {
+        assert.strictEqual(generator.classifyGoal(goal), 'bug-fix');
+      });
+    }
+
+    const BUG_FIX_NEGATIVES = [
+      {
+        name: 'greenfield REST API mentioning "fix"',
+        goal: 'Build a REST API that fixes common patterns and handles errors gracefully',
+      },
+      {
+        name: 'greenfield library build, no backticks no failure verbs',
+        goal: 'Build a small utility library for parsing dates',
+      },
+      {
+        name: 'single backtick + failure verb',
+        goal:
+          'The `parse` function fails on empty input — build a new parser ' +
+          'that handles this correctly',
+      },
+      {
+        name: 'failure verbs without backtick references',
+        goal:
+          'Build a parser that never fails on malformed JSON — it should ' +
+          'raise a clear error',
+      },
+    ];
+
+    for (const { name, goal } of BUG_FIX_NEGATIVES) {
+      it(`classifyGoal("${name}") !== 'bug-fix'`, () => {
+        assert.notStrictEqual(generator.classifyGoal(goal), 'bug-fix');
+      });
+    }
+  });
+
+  describe('bug-fix goal type (issue #27 fix 2)', () => {
+    // Representative bug-report-shaped goals sourced from real SWE-bench
+    // Verified instance bodies. Kept small: the discriminator's behavior
+    // across the full 500-instance set is an integration concern, not a
+    // unit test's job. These are samples chosen for structural diversity
+    // (different domain, different failure vocabulary, different backtick
+    // density).
+    const BUG_FIX_GOALS: { name: string; goal: string }[] = [
+      {
+        name: 'sympy-12481 (Permutation constructor)',
+        goal: [
+          '`Permutation` constructor fails with non-disjoint cycles',
+          'Calling `Permutation([[0,1],[0,1]])` raises a `ValueError` instead of',
+          'constructing the identity permutation.',
+        ].join('\n'),
+      },
+      {
+        name: 'django-10914 style (HttpResponse)',
+        goal: [
+          '`HttpResponse` headers returning wrong content-type',
+          '`response.headers["Content-Type"]` returns `application/octet-stream`',
+          'when no content type is set, instead of the expected text/html.',
+        ].join('\n'),
+      },
+      {
+        name: 'matplotlib style (axis scale)',
+        goal: [
+          '`ax.set_xscale("log")` crashes with zero-valued data',
+          'Calling `ax.set_xscale("log")` on an axis whose data contains zeros',
+          'throws a `ValueError` during redraw instead of clamping to a positive',
+          'epsilon or raising a clearer message.',
+        ].join('\n'),
+      },
+    ];
+
+    // Invariant-focused assertions. We do NOT pin the plan to a specific
+    // agent sequence — that would make the test brittle to future tuning
+    // of which impl agent leads (BackendMaster vs FrontendExpert vs future
+    // additions). The contract of Fix 2 is: every bug-fix goal produces a
+    // plan with at least one impl-editing step. That's the testable
+    // invariant.
+    const IMPL_EDITING_AGENTS = new Set(['BackendMaster', 'FrontendExpert']);
+
+    for (const { name, goal } of BUG_FIX_GOALS) {
+      it(`classifies "${name}" as bug-fix`, () => {
+        // Direct test of the classifier contract. detectGoalType is private
+        // but we can infer its output by observing the plan shape: a
+        // non-bug-fix classification would route through one of the other
+        // templates.
+        const plan = generator.createPlan(goal);
+        const agents = plan.steps.map(s => s.agentName);
+        assert.ok(
+          agents.some(a => IMPL_EDITING_AGENTS.has(a)),
+          `bug-fix goal must produce a plan with at least one impl-editing ` +
+            `step (BackendMaster or FrontendExpert). Got agents: ${agents.join(', ')}`,
+        );
+      });
+
+      it(`"${name}" primary agent is impl-editing, not a tester or integrator`, () => {
+        const plan = generator.createPlan(goal);
+        const primary = plan.steps[0].agentName;
+        assert.ok(
+          IMPL_EDITING_AGENTS.has(primary),
+          `primary must be impl-editing for a bug-fix goal. Got ${primary}.`,
+        );
+      });
+    }
+
+    // Discriminator robustness — false-positive guardrails
+    it('greenfield "build a REST API that fixes common patterns" does NOT trip bug-fix classification', () => {
+      // Contains "fix" as a verb but is a greenfield goal — no backticked
+      // existing-symbol references, no present-tense failure observation.
+      // The structural discriminator should reject this.
+      const plan = generator.createPlan(
+        'Build a REST API that fixes common patterns and handles errors gracefully',
+      );
+      // Expected template: the API one. Primary agent: BackendMaster (by the
+      // API template). So the primary alone doesn't distinguish. Discriminator
+      // check: the template's step shape should not be the 3-step bug-fix
+      // shape. bug-fix template always produces exactly BackendMaster +
+      // TesterElite + IntegratorFinalizer in that order. The API template
+      // produces 5 steps.
+      assert.notStrictEqual(
+        plan.steps.length,
+        3,
+        'greenfield goal should not route to the bug-fix 3-step template',
+      );
+    });
+
+    it('greenfield "build a library" with no backticks and no failure verb does NOT trip bug-fix', () => {
+      const plan = generator.createPlan('Build a small utility library for parsing dates');
+      // library template is 3 steps too, coincidentally. Distinguish by
+      // checking the step-1 task template — bug-fix says "Diagnose and fix",
+      // library says "Implement library core API".
+      assert.ok(
+        !plan.steps[0].task.includes('Diagnose and fix'),
+        'greenfield library goal should not use the bug-fix step-1 task template',
+      );
+    });
+
+    it('single backtick reference is not enough to classify as bug-fix', () => {
+      // One backtick + failure verb is ambiguous (could be a greenfield
+      // description citing one symbol). Require at least two.
+      const plan = generator.createPlan(
+        'The `parse` function fails on empty input — build a new parser that handles this correctly',
+      );
+      assert.ok(
+        !plan.steps[0].task.includes('Diagnose and fix'),
+        'single backtick reference must not route to bug-fix template',
+      );
+    });
+
+    it('failure verbs without backtick references do not trip bug-fix', () => {
+      // "fails" / "raises" / "errors" can appear in forward-looking goal
+      // descriptions ("must not fail on empty input"). Without structural
+      // backtick signals that reference existing code, this is greenfield.
+      const plan = generator.createPlan(
+        'Build a parser that never fails on malformed JSON — it should raise a clear error',
+      );
+      assert.ok(
+        !plan.steps[0].task.includes('Diagnose and fix'),
+        'failure verbs alone must not route to bug-fix template',
+      );
+    });
+
+    // Template shape invariants — what bug-fix plans look like structurally
+    it('bug-fix plan includes at least one impl-editing step AND a test step', () => {
+      const plan = generator.createPlan(BUG_FIX_GOALS[0].goal);
+      const agents = new Set(plan.steps.map(s => s.agentName));
+      assert.ok(
+        [...agents].some(a => IMPL_EDITING_AGENTS.has(a)),
+        'must have at least one impl-editing agent',
+      );
+      assert.ok(agents.has('TesterElite'), 'must have a TesterElite step');
+    });
+
+    it('bug-fix plan preserves the raw goal text in every step task for agent context', () => {
+      const plan = generator.createPlan(BUG_FIX_GOALS[0].goal);
+      const uniqueFragment = 'non-disjoint cycles';
+      for (const step of plan.steps) {
+        // The integrator step doesn't need to re-paste the goal (it sees
+        // upstream step outputs). BackendMaster and TesterElite do.
+        if (step.agentName === 'IntegratorFinalizer') continue;
+        assert.ok(
+          step.task.includes(uniqueFragment),
+          `step ${step.stepNumber} (${step.agentName}) must preserve the reported failure context in its task; missing "${uniqueFragment}"`,
+        );
+      }
     });
   });
 });

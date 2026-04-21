@@ -32,7 +32,7 @@ export interface ReplanPayload {
   addSteps?: { agent: string; task: string; afterStep?: number }[];
 }
 
-export type GoalType = 'api' | 'web-app' | 'cli-tool' | 'library' | 'infrastructure' | 'data-pipeline' | 'mobile-app' | 'generic';
+export type GoalType = 'api' | 'web-app' | 'cli-tool' | 'library' | 'infrastructure' | 'data-pipeline' | 'mobile-app' | 'bug-fix' | 'generic';
 
 export class PlanGenerator {
   private gateConfig: QualityGatesConfig | undefined;
@@ -358,6 +358,12 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
         'If the project produces HTML, include <meta name="description"> and a meaningful <title>.',
         'Never reference files, images, fonts, or icons that do not exist in the repo.',
       ],
+      'bug-fix': [
+        'Diagnose the root cause before editing. State your hypothesis, then verify it against the reported failure — do not patch symptoms.',
+        'Apply the smallest change that resolves the reported failure. Refactors and unrelated improvements do not belong in a bug fix.',
+        'Preserve observable behavior for every code path the fix does not target. A bug fix that changes behavior elsewhere is a regression.',
+        'Error messages and exception types must match what downstream callers already depend on, unless the issue explicitly asks to change them.',
+      ],
     };
 
     const criteria = [...shared, ...(byType[goalType] || [])];
@@ -426,6 +432,10 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
         steps.push(...this.generateMobileAppSteps(goal, stepNumber));
         break;
 
+      case 'bug-fix':
+        steps.push(...this.generateBugFixSteps(goal, stepNumber));
+        break;
+
       default:
         steps.push(...this.generateGenericSteps(goal, stepNumber));
     }
@@ -478,6 +488,22 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
     }
   }
 
+  /**
+   * Classify a raw goal string. Public for test — consumers in production
+   * code should call `createPlan` and read `plan.metadata` or inspect step
+   * shape instead of depending on this classification directly, so the
+   * classifier's keyword/structural heuristics remain an implementation
+   * detail of the planner. The test suite uses this directly to assert
+   * classification decisions in isolation from template behavior, per the
+   * #30 review on separating classifier correctness from template
+   * correctness.
+   *
+   * @internal
+   */
+  classifyGoal(goal: string): GoalType {
+    return this.detectGoalType(goal);
+  }
+
   private detectGoalType(goal: string): GoalType {
     const goalLower = goal.toLowerCase();
 
@@ -514,7 +540,54 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
       return 'mobile-app';
     }
 
+    // bug-fix: the task operates on pre-existing state with an observed
+    // failure. Structural discriminator (not keyword matching on "fix" /
+    // "bug" / "broken" — those produce false positives on greenfield goals
+    // like "fix common patterns" and false negatives on issue bodies that
+    // describe failure without using trigger words). Two structural signals:
+    //   1. backtick-wrapped code references — symbols, methods, expressions
+    //      — indicating the task already knows about specific identifiers
+    //      in the existing codebase
+    //   2. present-tense failure verbs describing current broken behavior
+    //      (fails/raises/throws/errors/crashes/returns X instead of Y)
+    // Both must be present for a goal to count as a bug report shape. See
+    // issue #27 Fix 2.
+    if (this.hasBugReportShape(goal)) {
+      return 'bug-fix';
+    }
+
     return 'generic';
+  }
+
+  /**
+   * Structural discriminator for bug-report-shaped goals. Implementation
+   * detail of detectGoalType — exposed as its own method so the classifier
+   * contract stays testable in isolation.
+   */
+  private hasBugReportShape(goal: string): boolean {
+    // 1. Backtick density — at least two distinct backtick-wrapped references.
+    //    Single backticks around one term (`API` in "Build an API") are common
+    //    in imperative goals too, so we require at least two.
+    const backtickMatches = goal.match(/`[^`\n]+`/g) ?? [];
+    if (backtickMatches.length < 2) return false;
+
+    // 2. Present-tense failure verb describing current broken behavior.
+    //    Explicitly not matching "fix" / "bug" / "broken" as keywords — those
+    //    describe the PROPOSED WORK, not the OBSERVED FAILURE, and produce
+    //    false positives on greenfield goals like "fix common patterns".
+    const failurePattern = new RegExp(
+      [
+        '\\b(fails?|failing|raises?|raising)\\b',
+        '\\b(throws?|throwing|errors?|erroring)\\b',
+        '\\b(crashes?|crashing|hangs?|hanging)\\b',
+        '\\b(leaks?|leaking)\\b',
+        '\\b(returns?\\s+\\S+\\s+instead\\b)',
+        '(does\\s?n[’\']?t\\s+(work|match|behave|handle))',
+        '(is\\s+incorrect|is\\s+wrong|incorrectly\\s+\\w+)',
+      ].join('|'),
+      'i',
+    );
+    return failurePattern.test(goal);
   }
 
   private generateApiSteps(goal: string, startNumber: number): PlanStep[] {
@@ -783,6 +856,84 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
         dependencies: [startNumber + 2],
         expectedOutputs: ['Cleaned-up code', 'App metadata', 'Quality review notes']
       }
+    ];
+  }
+
+  /**
+   * Template for goals that describe a failing behavior in pre-existing code
+   * and ask for it to be corrected. Structural shape:
+   *   1. BackendMaster — locate root cause and apply a minimal fix
+   *   2. TesterElite — verify the fix with a regression test
+   *   3. IntegratorFinalizer — review scope and quality
+   *
+   * The primary step is an impl-editing agent by construction. That's the
+   * invariant the bug-fix template exists to guarantee: a bug report will
+   * never produce a plan without an impl-editing step, which was exactly
+   * the sympy-12481 failure mode in Phase 4a smoke3.
+   *
+   * **BackendMaster as fixed primary — deferred decision.** The current
+   * benchmark corpus (SWE-bench Verified) is backend-dominant: the 500
+   * Verified instances are drawn from sympy, sphinx, django, scikit-learn,
+   * matplotlib, astropy, xarray, pytest, pylint, requests — all Python
+   * libraries and frameworks whose issues are predominantly source-code
+   * bugs in logic/data/API layers. Routing every bug report to
+   * BackendMaster matches that distribution. It will misroute a true UI
+   * bug (one that names React components or describes rendering-specific
+   * failure) to BackendMaster.
+   *
+   * The trigger for adding UI routing: observe a bug-report goal in a
+   * future corpus (or a SWE-bench instance) where the BackendMaster-
+   * primary plan produces a broken result specifically because the wrong
+   * agent was allocated — i.e., the fix requires FrontendExpert's
+   * rendering-model knowledge and BackendMaster can't make progress.
+   * Until that evidence surfaces, hardcoding BackendMaster keeps the
+   * template simple and correct for the dominant case. See #27.
+   */
+  private generateBugFixSteps(goal: string, startNumber: number): PlanStep[] {
+    const criteria = this.getAcceptanceCriteria('bug-fix');
+    const reviewCriteria = this.getIntegratorReviewCriteria();
+    return [
+      {
+        stepNumber: startNumber,
+        agentName: 'BackendMaster',
+        task:
+          `Diagnose and fix the reported bug.\n\nReported issue:\n${goal}\n\n` +
+          `Acceptance criteria:\n${criteria}`,
+        dependencies: [],
+        expectedOutputs: [
+          'Root cause identification',
+          'Minimal source-code fix targeting the reported failure',
+          'Brief justification of why the fix addresses the root cause, not a symptom',
+        ],
+      },
+      {
+        stepNumber: startNumber + 1,
+        agentName: 'TesterElite',
+        task:
+          `Write a regression test that reproduces the reported failure and ` +
+          `now passes with the fix applied. Do not modify pre-existing test ` +
+          `assertions — add new coverage targeted at the bug.\n\n` +
+          `Reported issue (for context):\n${goal}`,
+        dependencies: [startNumber],
+        expectedOutputs: [
+          'Regression test that would have failed pre-fix',
+          'Confirmation existing tests still pass',
+        ],
+      },
+      {
+        stepNumber: startNumber + 2,
+        agentName: 'IntegratorFinalizer',
+        task:
+          `Review the fix's scope, quality, and documentation. Confirm the ` +
+          `change does not drift beyond the reported failure and that any ` +
+          `public API or error message changes are documented.\n\n${reviewCriteria}`,
+        dependencies: [startNumber, startNumber + 1],
+        expectedOutputs: [
+          'Scope review notes',
+          'Documentation updates if public surface changed',
+          'Quality review notes',
+        ],
+      },
     ];
   }
 
