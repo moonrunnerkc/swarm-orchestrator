@@ -314,19 +314,24 @@ def run_orchestrator(repo_dir: Path, problem_statement: str) -> dict:
         prompt_text = None  # Don't pipe via stdin for baseline
     else:
         # Full orchestrator pipeline.
-        # Prepend a constraint to avoid editing test files — SWE-bench applies
-        # a gold test patch after the agent runs, and edits to test files cause
-        # git-apply conflicts that always fail the evaluation.
-        goal_with_constraint = (
+        # The "do not edit tests" constraint goes through --agent-guidance, NOT
+        # --goal. --goal is the raw SWE-bench problem_statement; --agent-guidance
+        # is appended to each plan step's task by the orchestrator AFTER
+        # classification. Previously we concatenated the constraint into --goal,
+        # which poisoned the planner's classifier (the word "tests" in the
+        # constraint matched TesterElite's keyword patterns and the planner
+        # allocated a tester as primary agent for bug-fix tasks). See issue
+        # #27 Fix 1 / sympy__sympy-12481 smoke3 findings.
+        agent_guidance = (
             "IMPORTANT: Do NOT modify, delete, or rewrite any test files. "
             "Only edit source code to fix the issue. Test files are verified "
-            "by an external harness and your edits will cause patch conflicts.\n\n"
-            + problem_statement
+            "by an external harness and your edits will cause patch conflicts."
         )
         prompt_text = None
         cmd = [
             "node", str(SWARM_BIN), "run",
-            "--goal", goal_with_constraint,
+            "--goal", problem_statement,
+            "--agent-guidance", agent_guidance,
             "--tool", SWARM_TOOL,
             "--yes",
         ]

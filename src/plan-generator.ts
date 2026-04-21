@@ -45,22 +45,51 @@ export class PlanGenerator {
    * Creates an execution plan from a high-level goal.
    * If userProvidedSteps is given, validates and uses them.
    * Otherwise, generates intelligent default steps based on goal analysis.
+   *
+   * **Layer boundary on `goal` vs `agentGuidance`.** The classifier
+   * (detectGoalType + assignAgent) uses ONLY the raw task intent. Callers
+   * that need to inject guidance the executing agent should see (e.g.
+   * "do not edit test files" constraints from a benchmark harness) pass
+   * that text through `options.agentGuidance` — it prepends to each
+   * step's task string so agents see it, but never reaches the
+   * classifier. This isolates goal-interpretation from agent-execution
+   * guidance; without the split, preamble text about "tests" or
+   * "security" misdirects the classifier into picking the wrong primary
+   * agent. See issue #27 (Fix 1) for the sympy-12481 failure mode this
+   * prevents.
    */
-  createPlan(goal: string, userProvidedSteps?: PlanStep[], options?: { planCache?: boolean }): ExecutionPlan {
+  createPlan(
+    goal: string,
+    userProvidedSteps?: PlanStep[],
+    options?: { planCache?: boolean; agentGuidance?: string },
+  ): ExecutionPlan {
     if (!goal || goal.trim() === '') {
       throw new Error('Goal cannot be empty');
     }
 
-    // plan cache: short-circuit if a similar plan already exists
+    // plan cache: short-circuit if a similar plan already exists. Cache key
+    // is the raw goal; agentGuidance doesn't affect step shape, only task
+    // text, and can be reapplied to a cached plan.
     if (options?.planCache && !userProvidedSteps) {
       const storage = new PlanStorage();
       const cached = storage.findCachedPlan(goal);
       if (cached) {
-        return { ...cached, goal: goal.trim(), createdAt: new Date().toISOString() };
+        const steps = options.agentGuidance
+          ? this.applyAgentGuidance(cached.steps, options.agentGuidance)
+          : cached.steps;
+        return {
+          ...cached,
+          goal: goal.trim(),
+          steps,
+          createdAt: new Date().toISOString(),
+        };
       }
     }
 
-    const steps = userProvidedSteps || this.generateIntelligentSteps(goal);
+    const rawSteps = userProvidedSteps || this.generateIntelligentSteps(goal);
+    const steps = options?.agentGuidance
+      ? this.applyAgentGuidance(rawSteps, options.agentGuidance)
+      : rawSteps;
 
     // validate that all assigned agents exist
     this.validateAgentAssignments(steps);
@@ -76,6 +105,20 @@ export class PlanGenerator {
         totalSteps: steps.length,
       }
     };
+  }
+
+  /**
+   * Prepend guidance text to every step's task so the executing agent sees
+   * it. Runs AFTER classification so the guidance never influences agent
+   * selection or step-shape decisions.
+   */
+  private applyAgentGuidance(steps: PlanStep[], guidance: string): PlanStep[] {
+    const trimmed = guidance.trim();
+    if (!trimmed) return steps;
+    return steps.map(step => ({
+      ...step,
+      task: `${trimmed}\n\n${step.task}`,
+    }));
   }
 
   /**

@@ -660,7 +660,7 @@ export async function handleRunCommand(args: string[]): Promise<number> {
   const valuedFlags = new Set([
     '--model', '--resume', '--quality-gates-config', '--quality-gates-out',
     '--pr', '--target', '--dir', '--tool', '--team-size', '--max-premium-requests',
-    '--sarif', '--goal', '--base-commit',
+    '--sarif', '--goal', '--base-commit', '--agent-guidance',
   ]);
 
   // Extract positional tokens: skip the command name (args[0]) and any flag + value pairs
@@ -738,11 +738,25 @@ export async function handleRunCommand(args: string[]): Promise<number> {
   logger.info('🐝 Swarm Orchestrator - Plan & Execute\n');
   logger.info(`Goal: ${goal}\n`);
 
+  // --agent-guidance: text that the planner prepends to every step's task
+  // but does NOT feed into goal classification. Used by benchmark harnesses
+  // (e.g. run_swebench.py's "do not modify test files" constraint) so the
+  // guidance doesn't poison the classifier into picking the wrong agent.
+  // See issue #27 Fix 1.
+  const guidanceIndex = args.indexOf('--agent-guidance');
+  let agentGuidance = '';
+  if (guidanceIndex !== -1 && guidanceIndex + 1 < args.length) {
+    agentGuidance = args[guidanceIndex + 1];
+  }
+
   const configLoader = new ConfigLoader();
   const agents = configLoader.loadAllAgents();
   const generator = new PlanGenerator(agents);
   const usePlanCache = args.includes('--plan-cache');
-  const plan = generator.createPlan(goal, undefined, { planCache: usePlanCache });
+  const plan = generator.createPlan(goal, undefined, {
+    planCache: usePlanCache,
+    ...(agentGuidance ? { agentGuidance } : {}),
+  });
 
   const storage = new PlanStorage();
   const planFilename = storage.savePlan(plan);
