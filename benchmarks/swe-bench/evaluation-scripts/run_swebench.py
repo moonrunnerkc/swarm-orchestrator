@@ -47,6 +47,20 @@ DATASET_ID = os.environ.get("SWEBENCH_DATASET", "princeton-nlp/SWE-bench_Lite")
 # benchmarks/swe-bench/sample_instances.py). Overrides SUBSET_SIZE's ad-hoc
 # diverse-repo walk and makes the sample deterministic + auditable.
 INSTANCES_FILE = os.environ.get("SWEBENCH_INSTANCES_FILE", "")
+# Per-instance Docker image registry (Epoch AI's public ghcr.io mirror of the
+# SWE-bench Verified env images). Each image name resolves to
+#   ghcr.io/epoch-research/swe-bench.eval.x86_64.<instance_id>:latest
+# and contains /testbed pre-checked-out at the base commit with the correct
+# Python version + dependencies pre-installed. Using these images is the only
+# honest way to run the eval: SWE-bench instances span multi-year base commits
+# whose Python 3.8/3.9/3.10-era APIs cannot all be satisfied by a single host
+# env, and a single-image approach silently biases results toward whichever
+# Python version the host happens to have.
+PERINSTANCE_IMAGE_REGISTRY = os.environ.get(
+    "SWEBENCH_PERINSTANCE_IMAGE_REGISTRY",
+    "ghcr.io/epoch-research/swe-bench.eval.x86_64",
+)
+PERINSTANCE_ARCH = os.environ.get("SWEBENCH_PERINSTANCE_ARCH", "x86_64")
 SWARM_TOOL = os.environ.get("SWARM_TOOL", "claude-code")
 SWARM_MODEL = os.environ.get("SWARM_MODEL", "claude-sonnet-4")
 BASELINE_MODE = os.environ.get("BASELINE_MODE", "false").lower() == "true"
@@ -689,6 +703,188 @@ def run_gold_tests(repo_dir: Path, task: dict) -> dict:
         return {"passed": False, "reason": "test execution timed out"}
 
 
+def build_pytest_args(fail_to_pass: list[str]) -> tuple[list[str], list[str]]:
+    """Convert SWE-bench FAIL_TO_PASS test IDs into pytest targets + -k filters.
+
+    SWE-bench records test IDs in two formats:
+      pytest-style:   "path/to/test.py::TestClass::test_method"
+      unittest-style: "test_method (module.path.TestClass)"
+    Both are routed to pytest. Targets are run directly; -k filters handle the
+    unittest-style cases where there's no on-disk path to point pytest at.
+    """
+    pytest_targets: list[str] = []
+    k_filters: list[str] = []
+    for tid in fail_to_pass:
+        if "::" in tid:
+            pytest_targets.append(tid)
+        elif "(" in tid and ")" in tid:
+            method, rest = tid.split("(", 1)
+            method = method.strip()
+            module_class = rest.rstrip(")").strip()
+            parts = module_class.rsplit(".", 1)
+            if len(parts) == 2:
+                class_name = parts[1]
+                k_filters.append(f"{class_name} and {method}")
+            else:
+                k_filters.append(method)
+        else:
+            k_filters.append(tid)
+    return pytest_targets, k_filters
+
+
+def docker_available() -> bool:
+    try:
+        subprocess.run(
+            ["docker", "ps"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+            check=True,
+        )
+        return True
+    except (subprocess.SubprocessError, FileNotFoundError):
+        return False
+
+
+def perinstance_image(instance_id: str) -> str:
+    return f"{PERINSTANCE_IMAGE_REGISTRY}.{instance_id}:latest"
+
+
+def run_gold_tests_in_container(task: dict, agent_diff: bytes) -> dict:
+    """Apply agent diff + gold test patch inside the per-instance image and run pytest.
+
+    This is the honest eval path. Every SWE-bench instance ships with an
+    env image pinned to the Python/dep versions the base commit expects,
+    so test collection and import semantics match the era the issue was
+    filed against. Contrast with the host-venv path (run_gold_tests),
+    which re-uses the evaluator host's Python interpreter and therefore
+    misattributes collection errors from e.g. `from collections import Mapping`
+    removed in 3.10 as orchestrator failures.
+    """
+    instance_id = task["instance_id"]
+    image = perinstance_image(instance_id)
+    test_patch = task.get("test_patch", "")
+    if not test_patch:
+        return {"passed": False, "reason": "no test patch available", "backend": "container"}
+
+    fail_to_pass_raw = task.get("FAIL_TO_PASS", "")
+    if isinstance(fail_to_pass_raw, str):
+        fail_to_pass = json.loads(fail_to_pass_raw) if fail_to_pass_raw else []
+    elif isinstance(fail_to_pass_raw, list):
+        fail_to_pass = fail_to_pass_raw
+    else:
+        fail_to_pass = []
+    if not fail_to_pass:
+        return {"passed": False, "reason": "no FAIL_TO_PASS tests specified", "backend": "container"}
+
+    pytest_targets, k_filters = build_pytest_args(fail_to_pass)
+
+    # Build the in-container script. Patches come in via stdin split by sentinels.
+    # Keeping this as one bash -lc string is the simplest way to hit the shared
+    # test invocation semantics across instances without baking assumptions
+    # into the Dockerfile.
+    target_args = " ".join(f"'{t}'" for t in pytest_targets) or ""
+    k_expr = " or ".join(f"({f})" for f in k_filters)
+    k_arg = f"-k '{k_expr}'" if k_expr else ""
+    script = (
+        "set -eo pipefail\n"
+        "cd /testbed\n"
+        "python -m pip install --quiet pytest hypothesis 2>&1 | tail -1 || true\n"
+        "awk '/^__AGENT_PATCH__$/,/^__END_AGENT_PATCH__$/' /dev/stdin "
+        "  | sed '1d;$d' > /tmp/agent.patch\n"
+        "awk '/^__TEST_PATCH__$/,/^__END_TEST_PATCH__$/' /dev/stdin "
+        "  | sed '1d;$d' > /tmp/test.patch\n"
+        "if [ -s /tmp/agent.patch ]; then\n"
+        "  git apply --allow-empty /tmp/agent.patch 2>/tmp/apply.err || {\n"
+        "    echo '__AGENT_PATCH_APPLY_FAILED__' >&2; cat /tmp/apply.err >&2; exit 42;\n"
+        "  }\n"
+        "fi\n"
+        "git apply --allow-empty /tmp/test.patch 2>/tmp/test-apply.err || {\n"
+        "  echo '__TEST_PATCH_APPLY_FAILED__' >&2; cat /tmp/test-apply.err >&2; exit 43;\n"
+        "}\n"
+        f"python -m pytest --tb=short -q {target_args} {k_arg}\n"
+    )
+
+    # Agent diff stays bytes through the pipe — it may contain non-UTF-8
+    # content. Test patch comes from the dataset (always valid UTF-8) so
+    # bytes-encoding it is straightforward.
+    stdin_payload = (
+        b"__AGENT_PATCH__\n" + agent_diff + b"\n__END_AGENT_PATCH__\n"
+        b"__TEST_PATCH__\n" + test_patch.encode("utf-8") + b"\n__END_TEST_PATCH__\n"
+    )
+
+    try:
+        result = subprocess.run(
+            ["docker", "run", "--rm", "-i", "--platform", "linux/amd64", image,
+             "bash", "-lc", script],
+            input=stdin_payload,
+            capture_output=True,
+            timeout=900,
+        )
+    except subprocess.TimeoutExpired:
+        return {"passed": False, "reason": "test execution timed out in container",
+                "backend": "container", "image": image}
+    except FileNotFoundError:
+        return {"passed": False, "reason": "docker CLI not available",
+                "backend": "container", "image": image}
+
+    # Decode container output at use-time with errors='replace' so non-UTF-8
+    # bytes in pytest stderr (file-path diffs, unicode test names) don't crash
+    # the reporter.
+    stdout = (result.stdout or b"").decode("utf-8", errors="replace")
+    stderr = (result.stderr or b"").decode("utf-8", errors="replace")
+    reason = None
+    if result.returncode == 42:
+        reason = "agent patch did not apply cleanly against /testbed"
+    elif result.returncode == 43:
+        reason = "gold test patch did not apply cleanly"
+
+    return {
+        "passed": result.returncode == 0,
+        "returncode": result.returncode,
+        "backend": "container",
+        "image": image,
+        "fail_to_pass_ids": fail_to_pass,
+        "test_command": (
+            f"(in container) python -m pytest --tb=short -q "
+            f"{target_args} {k_arg}"
+        ).strip(),
+        "stdout_tail": stdout[-3000:],
+        "stderr_tail": stderr[-1000:],
+        "reason": reason,
+    }
+
+
+def run_tests_dispatch(task: dict, repo_dir: Path) -> dict:
+    """Prefer per-instance container eval; fall back to host venv when Docker
+    is unreachable. The fallback is dev-only; sweeps that land in fallback
+    mode must be tagged as such so results aren't mixed with container runs.
+
+    The capture_agent_diff call passes the orchestrator's per-step changed-
+    files manifest via load_agent_manifest. That's the "source 1" half of
+    the #27 Issue 2 / option 1b union — explicit agent claims staged no
+    matter where they live, complemented by source 2's OS-observed staging
+    outside reserved paths.
+    """
+    if docker_available():
+        try:
+            manifest = load_agent_manifest(repo_dir)
+            agent_diff = capture_agent_diff(
+                repo_dir, task["base_commit"], manifest_files=manifest,
+            )
+        except DiffCaptureError as exc:
+            return {
+                "passed": False,
+                "reason": str(exc),
+                "backend": "container",
+                "image": perinstance_image(task["instance_id"]),
+            }
+        return run_gold_tests_in_container(task, agent_diff)
+    result = run_gold_tests(repo_dir, task)
+    result["backend"] = "host-venv-fallback"
+    return result
+
+
 def evaluate_tasks():
     """Main evaluation loop."""
     tasks = load_tasks()
@@ -727,8 +923,9 @@ def evaluate_tasks():
             run_result = run_orchestrator(repo_dir, task["problem_statement"])
             task_result["run"] = run_result
 
-            # Step 3: Run gold tests
-            test_result = run_gold_tests(repo_dir, task)
+            # Step 3: Run gold tests via per-instance container (or host-venv
+            # fallback when Docker is unavailable; sweeps MUST run on Docker).
+            test_result = run_tests_dispatch(task, repo_dir)
             task_result["tests"] = test_result
             task_result["resolved"] = test_result.get("passed", False)
 
