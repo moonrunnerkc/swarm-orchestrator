@@ -54,7 +54,7 @@ export class PMAgent {
     const start = Date.now();
     const reviewNotes: string[] = [];
     const changesApplied: string[] = [];
-    let revisedPlan = this.deepCopyPlan(plan);
+    const revisedPlan = this.deepCopyPlan(plan);
 
     // 1. Check for duplicate step numbers
     const stepNumbers = revisedPlan.steps.map(s => s.stepNumber);

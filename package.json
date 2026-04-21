@@ -26,6 +26,11 @@
     "prepublishOnly": "npm run build && npm test",
     "test": "npm run build && mocha --recursive 'dist/test/**/*.test.js'",
     "test:ci": "mocha --recursive 'dist/test/**/*.test.js'",
+    "lint": "eslint 'src/**/*.{ts,tsx}' 'test/**/*.ts'",
+    "lint:fix": "eslint --fix 'src/**/*.{ts,tsx}' 'test/**/*.ts'",
+    "typecheck": "tsc --noEmit -p tsconfig.build.json",
+    "format": "prettier --write 'src/**/*.{ts,tsx}' 'test/**/*.ts'",
+    "format:check": "prettier --check 'src/**/*.{ts,tsx}' 'test/**/*.ts'",
     "start": "node dist/src/cli.js",
     "docker:build": "docker build -t swarm-orchestrator .",
     "docker:run": "docker run --rm --env-file .env swarm-orchestrator",
@@ -57,13 +62,17 @@
   },
   "homepage": "https://github.com/moonrunnerkc/swarm-orchestrator#readme",
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/js-yaml": "^4.0.9",
     "@types/mocha": "^10.0.10",
     "@types/node": "^25.0.10",
     "@types/react": "^18.2.79",
+    "eslint": "^10.2.1",
     "mocha": "^11.7.5",
+    "prettier": "^3.8.3",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.59.0"
   },
   "dependencies": {
     "ink": "^4.4.1",

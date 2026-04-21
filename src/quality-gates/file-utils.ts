@@ -84,7 +84,7 @@ export function list_project_files(projectRoot: string, excludeDirNames: string[
         continue;
       }
 
-      let sizeBytes = 0;
+      let sizeBytes: number;
       try {
         sizeBytes = fs.statSync(absPath).size;
       } catch {

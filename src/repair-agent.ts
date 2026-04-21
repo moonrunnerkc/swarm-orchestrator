@@ -246,7 +246,6 @@ export class RepairAgent {
       };
 
       let sessionResult: SessionResult;
-      let verificationPassed = false;
 
       try {
         // Create session executor for the working directory (may be a worktree)
@@ -283,7 +282,7 @@ export class RepairAgent {
           verificationRequirements
         );
 
-        verificationPassed = verificationResult.passed;
+        const verificationPassed = verificationResult.passed;
 
         attemptDetails.push({
           attempt,

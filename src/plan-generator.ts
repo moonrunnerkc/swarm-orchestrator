@@ -348,7 +348,7 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
   private generateIntelligentSteps(goal: string): PlanStep[] {
     const goalType = this.detectGoalType(goal);
     const steps: PlanStep[] = [];
-    let stepNumber = 1;
+    const stepNumber = 1;
 
     // determine project phases based on goal type
     switch (goalType) {

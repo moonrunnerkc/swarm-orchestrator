@@ -85,7 +85,6 @@ export function parameterizeRecipe(
   // Validate: every placeholder in step tasks must be resolvable
   const placeholderRegex = /\{\{(\w[\w-]*)\}\}/g;
   const steps: PlanStep[] = recipe.steps.map(step => {
-    let task = step.task;
     let match: RegExpExecArray | null;
     // Reset lastIndex since we reuse the regex
     placeholderRegex.lastIndex = 0;
@@ -99,7 +98,7 @@ export function parameterizeRecipe(
     }
 
     // Replace all placeholders
-    task = step.task.replace(placeholderRegex, (_full, paramName: string) => {
+    const task = step.task.replace(placeholderRegex, (_full, paramName: string) => {
       return merged[paramName] ?? paramName;
     });
 

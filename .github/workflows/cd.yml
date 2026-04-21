@@ -23,25 +23,6 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - image: swarm-orchestrator
-            context: .
-            dockerfile: Dockerfile
-          - image: health-service
-            context: .
-            dockerfile: app/Dockerfile
-          - image: calculations-api
-            context: ./calculations-api
-            dockerfile: calculations-api/Dockerfile
-          - image: notes-api
-            context: ./notes-api
-            dockerfile: notes-api/Dockerfile
-          - image: inkwell
-            context: ./web
-            dockerfile: web/Dockerfile
-
     steps:
       - uses: actions/checkout@v4
 
@@ -56,7 +37,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.OWNER }}/${{ matrix.image }}
+          images: ${{ env.REGISTRY }}/${{ env.OWNER }}/swarm-orchestrator
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -71,8 +52,8 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.dockerfile }}
+          context: .
+          file: Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -95,54 +76,6 @@ jobs:
           docker pull ${{ env.REGISTRY }}/${{ env.OWNER }}/swarm-orchestrator:sha-${GITHUB_SHA::7}
           docker run --rm ${{ env.REGISTRY }}/${{ env.OWNER }}/swarm-orchestrator:sha-${GITHUB_SHA::7} node /app/dist/src/cli.js --help
 
-      - name: Verify health-service image
-        run: |
-          IMAGE="${{ env.REGISTRY }}/${{ env.OWNER }}/health-service:sha-${GITHUB_SHA::7}"
-          docker pull "$IMAGE"
-          docker run -d --name health-verify -p 8000:8000 "$IMAGE"
-          for i in $(seq 1 15); do
-            if curl -sf http://127.0.0.1:8000/api/health; then echo " Health-service OK"; break; fi
-            if [ "$i" = "15" ]; then echo "Health-service failed"; docker logs health-verify; exit 1; fi
-            sleep 2
-          done
-          docker stop health-verify && docker rm health-verify
-
-      - name: Verify calculations-api image
-        run: |
-          IMAGE="${{ env.REGISTRY }}/${{ env.OWNER }}/calculations-api:sha-${GITHUB_SHA::7}"
-          docker pull "$IMAGE"
-          docker run -d --name calc-verify -p 3001:3001 "$IMAGE"
-          for i in $(seq 1 15); do
-            if curl -sf http://127.0.0.1:3001/health; then echo " Calculations-api OK"; break; fi
-            if [ "$i" = "15" ]; then echo "Calculations-api failed"; docker logs calc-verify; exit 1; fi
-            sleep 2
-          done
-          docker stop calc-verify && docker rm calc-verify
-
-      - name: Verify notes-api image
-        run: |
-          IMAGE="${{ env.REGISTRY }}/${{ env.OWNER }}/notes-api:sha-${GITHUB_SHA::7}"
-          docker pull "$IMAGE"
-          docker run -d --name notes-verify -p 3002:3002 "$IMAGE"
-          for i in $(seq 1 15); do
-            if curl -sf http://127.0.0.1:3002/health; then echo " Notes-api OK"; break; fi
-            if [ "$i" = "15" ]; then echo "Notes-api failed"; docker logs notes-verify; exit 1; fi
-            sleep 2
-          done
-          docker stop notes-verify && docker rm notes-verify
-
-      - name: Verify inkwell image
-        run: |
-          IMAGE="${{ env.REGISTRY }}/${{ env.OWNER }}/inkwell:sha-${GITHUB_SHA::7}"
-          docker pull "$IMAGE"
-          docker run -d --name web-verify -p 5173:5173 "$IMAGE"
-          for i in $(seq 1 15); do
-            if curl -sf http://127.0.0.1:5173/; then echo " Inkwell OK"; break; fi
-            if [ "$i" = "15" ]; then echo "Inkwell failed"; docker logs web-verify; exit 1; fi
-            sleep 2
-          done
-          docker stop web-verify && docker rm web-verify
-
       - name: Summary
         if: always()
         run: |
@@ -151,7 +84,3 @@ jobs:
           echo "| Image | Tag |" >> "$GITHUB_STEP_SUMMARY"
           echo "|-------|-----|" >> "$GITHUB_STEP_SUMMARY"
           echo "| swarm-orchestrator | sha-${GITHUB_SHA::7} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| health-service | sha-${GITHUB_SHA::7} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| calculations-api | sha-${GITHUB_SHA::7} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| notes-api | sha-${GITHUB_SHA::7} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| inkwell | sha-${GITHUB_SHA::7} |" >> "$GITHUB_STEP_SUMMARY"

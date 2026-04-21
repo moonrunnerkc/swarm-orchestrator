@@ -39,6 +39,8 @@ export interface GenericGateConfig {
   enabled: boolean;
 }
 
+export type CustomGateConfig = GenericGateConfig & { [key: string]: unknown };
+
 export interface QualityGate<TConfig extends GenericGateConfig> {
   id: string;
   title: string;
@@ -155,5 +157,5 @@ export interface QualityGatesConfig {
   maxFileSizeBytes: number;
   autoAddAccessibilityFixStepOnAccessibility: boolean;
   autoAddTestCoverageStepOnTestCoverage: boolean;
-  gates: BuiltInQualityGateConfigs & Record<string, any>;
+  gates: BuiltInQualityGateConfigs & Record<string, CustomGateConfig>;
 }

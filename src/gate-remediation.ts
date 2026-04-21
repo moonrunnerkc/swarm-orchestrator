@@ -1,7 +1,9 @@
 import { getLogger } from './logger';
 import { AgentProfile } from './config-loader';
 import { run_quality_gates } from './quality-gates';
-import type { GateResult } from './quality-gates';
+import type { GateResult, QualityGatesConfig } from './quality-gates/types';
+import type { ReplanPayload } from './plan-generator';
+import type { SwarmExecutionOptions } from './swarm-orchestrator';
 
 const logger = getLogger('gate-remediation');
 
@@ -19,7 +21,7 @@ export interface RemediationContext {
   plan: { steps: Array<{ stepNumber: number; agentName: string }> };
   qualityGatesTriggered?: Record<string, boolean>;
   finalGateResults?: GateResult[];
-  [key: string]: any; // allow context pass-through
+  [key: string]: unknown;
 }
 
 // ---------------------------------------------------------------------------
@@ -83,16 +85,21 @@ export function buildRemediationStep(
  */
 export async function runQualityGateRemediation(params: {
   workingDir: string;
-  gatesConfig: any;
+  gatesConfig: QualityGatesConfig;
   gatesOut: string;
   baselineFiles?: Set<string>;
   baseCommit?: string;
   skippedReqIds?: Set<string>;
   context: RemediationContext;
   agents: Map<string, AgentProfile>;
-  options?: any;
+  options?: SwarmExecutionOptions;
   resolveAgent: (agents: Map<string, AgentProfile>, name: string) => AgentProfile | undefined;
-  executeReplan: (context: any, payload: any, agents: Map<string, AgentProfile>, options?: any) => Promise<void>;
+  executeReplan: (
+    context: RemediationContext,
+    payload: ReplanPayload,
+    agents: Map<string, AgentProfile>,
+    options?: SwarmExecutionOptions,
+  ) => Promise<void>;
 }): Promise<{ passed: boolean; results: GateResult[] }> {
   const {
     workingDir,

@@ -74,7 +74,7 @@ export class BootstrapOrchestrator {
 
     // Step 3: Ingest GitHub issues
     logger.info('Fetching GitHub issues...');
-    let allIssues: GitHubIssueReference[] = [];
+    const allIssues: GitHubIssueReference[] = [];
     for (const repoPath of repoPaths) {
       const issues = await this.issuesIngester.fetchIssues(repoPath);
       allIssues.push(...issues);

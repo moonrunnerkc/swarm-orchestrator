@@ -35,7 +35,7 @@ describe('PRAutomation', () => {
         agentName: 'BackendMaster',
         status: 'completed',
         startTime: new Date().toISOString(),
-        ...(true && {
+        ...({
           endTime: new Date().toISOString(),
           verificationResult: {
             stepNumber: 1,
@@ -53,7 +53,7 @@ describe('PRAutomation', () => {
         agentName: 'SecurityAuditor',
         status: 'completed',
         startTime: new Date().toISOString(),
-        ...(true && {
+        ...({
           endTime: new Date().toISOString(),
           verificationResult: {
             stepNumber: 2,
@@ -130,7 +130,7 @@ describe('PRAutomation', () => {
       agentName: 'TesterElite',
       status: 'failed',
       startTime: new Date().toISOString(),
-      ...(true && {
+      ...({
         endTime: new Date().toISOString(),
         verificationResult: {
           stepNumber: 3,

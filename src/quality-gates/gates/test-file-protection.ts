@@ -93,7 +93,7 @@ function result(
  * Patterns are matched against the full relative path.
  */
 function glob_to_regex(glob: string): RegExp {
-  let re = glob
+  const re = glob
     .replace(/[.+^${}()|[\]\\]/g, '\\$&')  // escape regex specials (except * and ?)
     .replace(/\*\*/g, '$$GLOBSTAR$$')        // placeholder for **
     .replace(/\*/g, '[^/]*')                 // * = anything except /
