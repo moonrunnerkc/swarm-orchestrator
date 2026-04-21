@@ -154,10 +154,17 @@ Tool:          claude-code
     9/9 quality gates). The validator needs node_modules/ exclusion.
 
   contract-change-then-client-001
-    Hypothesis: AGENT LIMITATION. Step 1 produced 4-file diff (176 ins /
-    115 del) but broke the test suite; orchestrator correctly verified +
-    rolled back. The contract change (thrown error) could not be landed
-    with test updates atomically by the single step the agent planned.
+    Hypothesis: PLAN-GENERATOR ORDERING. The plan put the breaking impl
+    change in step 1 (BackendMaster: add required-option throw) and the
+    test update in step 2 (TesterElite). Step 1's verifier ran
+    `npm test` AFTER the impl but BEFORE step 2 got to update the
+    existing tests that called simple-get without userAgent. Those
+    existing tests failed, the verifier correctly rolled back, step 2
+    never ran. Falsifiable: a plan that (a) bundles impl + test update
+    in one step, or (b) defers `npm test` verification until after the
+    test-update step, would pass. The actual plan saved at
+    workspace/plans/plan-*.json confirms the 3-step ordering:
+    BackendMaster → TesterElite → IntegratorFinalizer.
 
   lift-then-reuse-001
     Hypothesis: VALIDATOR TOO STRICT. Agent wrote
