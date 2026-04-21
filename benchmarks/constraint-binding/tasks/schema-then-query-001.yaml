@@ -1,0 +1,33 @@
+id: schema-then-query-001
+name: "Add a published_at column to the Prisma Turso example and query it"
+pattern: schema-then-query
+pre_state:
+  fixture_tarball: schema-then-query-001.tar.gz
+  source_repo: https://github.com/prisma/prisma-examples
+  source_sha: 663c23ca1a6c6f03d2ad0c67868020b560a172e4
+  fixture_sha256: 1cbb0eba91f8e0662849bc6de629134f61c7c56709b4318a965f323c673a2af8
+prompt: |
+  This fixture is the `databases/turso` example from prisma-examples — a
+  small TypeScript project that uses Prisma against a Turso/libSQL backend.
+  Add a `publishedAt DateTime?` field to the `Post` model in
+  `prisma/schema.prisma`. Create a Prisma migration for the change. Update
+  `src/index.ts` (or whichever entry script the project uses) so that one
+  of the demo queries filters posts on `publishedAt` (e.g., posts published
+  in the last 30 days). Leave existing behavior intact.
+expected_steps_min: 3
+post_state_validators:
+  - name: "schema declares publishedAt on Post"
+    cmd: |
+      grep -E 'publishedAt\s+DateTime' prisma/schema.prisma
+  - name: "a migration file references publishedAt"
+    cmd: |
+      migration_dir="prisma/migrations"
+      test -d "$migration_dir"
+      grep -rE 'publishedAt|published_at' "$migration_dir" >/dev/null
+  - name: "entry script queries on publishedAt"
+    cmd: |
+      grep -rE 'publishedAt' src/ >/dev/null
+  - name: "typescript compiles"
+    cmd: |
+      npm install --no-audit --no-fund --silent >/dev/null 2>&1
+      npx --no-install tsc --noEmit

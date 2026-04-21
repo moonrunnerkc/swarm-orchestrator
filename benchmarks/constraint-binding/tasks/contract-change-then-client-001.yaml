@@ -1,0 +1,33 @@
+id: contract-change-then-client-001
+name: "Make the userAgent option required in simple-get and update all call sites"
+pattern: contract-change-then-client
+pre_state:
+  fixture_tarball: contract-change-then-client-001.tar.gz
+  source_repo: https://github.com/feross/simple-get
+  source_sha: e7a74115ca9dd28720f186275c5a67df81985426
+  fixture_sha256: 6d208d19be4d09d0a9d249e255a9db1d85376700e34aa28f2262002265f4f726
+prompt: |
+  `simple-get` is an HTTP client library with an options object. Make the
+  `userAgent` string a required option: the module must throw
+  `Error('simple-get: userAgent option is required')` when it is missing
+  from a call. Update `index.js` (the main entry point), update the
+  TypeScript types if present, update README.md's examples to supply
+  `userAgent`, and update the existing test file so every call passes
+  `userAgent: 'simple-get-test'` or similar. Do not weaken the check to
+  'warn' — it must throw.
+expected_steps_min: 3
+post_state_validators:
+  - name: "implementation throws on missing userAgent"
+    cmd: |
+      grep -E "userAgent option is required" index.js
+  - name: "every test call passes userAgent"
+    cmd: |
+      if grep -rE "simpleGet\(|simpleGet\.post\(|simpleGet\.concat\(" test/ | \
+          grep -v userAgent >/dev/null; then exit 1; fi
+  - name: "readme examples include userAgent"
+    cmd: |
+      grep -E "userAgent" README.md
+  - name: "tests pass (library under test enforces the contract)"
+    cmd: |
+      npm install --no-audit --no-fund --silent >/dev/null 2>&1
+      npm test

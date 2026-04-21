@@ -13,6 +13,22 @@ export default tseslint.config(
       'coverage/**',
       'scripts/**',
       'test/fixtures/**',
+      // Benchmark fetch caches and harness run artifacts: generated trees
+      // containing upstream OSS code or agent-produced workspaces. Gitignored
+      // on CI, but may be present in local dev environments. Never our code;
+      // never lint.
+      '**/.cache/**',
+      'benchmarks/constraint-binding/fixtures/**',
+      'benchmarks/harness/raw_data/runs/**',
+      // Gitignored demo subprojects per CLAUDE.md (orchestrator-regenerated
+      // scaffolds). Match the top-level paths listed in .gitignore.
+      'app/**',
+      'calculator/**',
+      'calculations-api/**',
+      'logtail/**',
+      'notes-api/**',
+      'tictactoe/**',
+      'web/**',
       '*.config.mjs',
       '*.config.js',
     ],
@@ -47,6 +63,35 @@ export default tseslint.config(
     files: ['src/dashboard.tsx'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
+    },
+  },
+  {
+    // Plain-JS files (no TypeScript compilation) are CommonJS Node scripts.
+    // Declare Node globals so `require`/`module`/`process`/`__dirname` do not
+    // fire `no-undef`. The runtime-checks quality gate runs `npx eslint` on
+    // agent-changed files directly, so *.js files reached by that gate also
+    // need this language-options block — it cannot rely on the npm-script's
+    // scoped file glob.
+    files: ['**/*.js', '**/*.cjs'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: {
+        require: 'readonly',
+        module: 'readonly',
+        exports: 'readonly',
+        process: 'readonly',
+        __dirname: 'readonly',
+        __filename: 'readonly',
+        Buffer: 'readonly',
+        console: 'readonly',
+        setTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearTimeout: 'readonly',
+        clearInterval: 'readonly',
+        setImmediate: 'readonly',
+        clearImmediate: 'readonly',
+        global: 'readonly',
+      },
     },
   },
 );

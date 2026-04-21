@@ -30,7 +30,7 @@ export async function run_test_coverage_gate(
     if (/^tests?\.(tsx?|jsx?|mjs)$/i.test(f.relativePath)) return false;
     // Integration/e2e test files at root level
     if (/^(integration|e2e)[.-]/i.test(f.relativePath)) return false;
-    if (/^(server|config|scripts|examples?|deploy)\//.test(f.relativePath)) return false;
+    if (/^(server|config|scripts|examples?|deploy|benchmarks)\//.test(f.relativePath)) return false;
     // Test setup/config files nested inside src/ (e.g. src/test/setup.js,
     // src/setupTests.ts, frontend/src/test/setup.js) are test infrastructure
     if (/\btest\/setup\b|\bsetup[Tt]ests?\b|\btestSetup\b/i.test(f.relativePath)) return false;

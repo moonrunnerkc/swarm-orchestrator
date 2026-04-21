@@ -32,17 +32,50 @@ LADDER_SCRIPT="$SCRIPT_DIR/../ladder/run_ladder.sh"
 SWARM_BIN="$REPO_ROOT/dist/src/cli.js"
 TOOL="${TOOL:-claude-code}"
 PRODUCER="${PRODUCER:-ALL}"
-TARGET_RUNS="${1:-8}"
+TASK_SOURCE="${TASK_SOURCE:-RUBRIC}"   # RUBRIC | CONSTRAINT_BINDING
 BUDGET_CAP="${BUDGET_CAP:-30}"
 
-# Prefer rubric tasks; fall back to legacy
-if [ -f "$RUBRIC_TASKS" ]; then
-  TASKS_FILE="$RUBRIC_TASKS"
-else
-  TASKS_FILE="$LEGACY_TASKS"
-fi
+# Parse positional + long flags. TARGET_RUNS is still the first positional arg
+# for backwards compatibility.
+TARGET_RUNS=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --task-source) TASK_SOURCE="$2"; shift 2 ;;
+    --producer)    PRODUCER="$2"; shift 2 ;;
+    --tool)        TOOL="$2"; shift 2 ;;
+    --budget-cap)  BUDGET_CAP="$2"; shift 2 ;;
+    --help|-h)
+      cat <<HELP
+Usage: run_fresh.sh [N] [--task-source RUBRIC|CONSTRAINT_BINDING]
+                    [--producer ORCHESTRATOR|SINGLE_SHOT|LADDER|ALL]
+                    [--tool claude-code|copilot|codex]
+                    [--budget-cap N]
+HELP
+      exit 0 ;;
+    --*) echo "ERROR: unknown flag: $1" >&2; exit 2 ;;
+    *)   TARGET_RUNS="$1"; shift ;;
+  esac
+done
+TARGET_RUNS="${TARGET_RUNS:-8}"
 
-TASK_COUNT=$(python3 -c "import json; print(len(json.load(open('$TASKS_FILE'))))")
+if [ "$TASK_SOURCE" = "CONSTRAINT_BINDING" ]; then
+  CB_TASKS_DIR="$REPO_ROOT/benchmarks/constraint-binding/tasks"
+  CB_FIXTURES_DIR="$REPO_ROOT/benchmarks/constraint-binding/fixtures"
+  CB_VALIDATOR="$REPO_ROOT/benchmarks/constraint-binding/validator-engine.js"
+  TASK_COUNT=$(ls -1 "$CB_TASKS_DIR"/*.yaml 2>/dev/null | wc -l)
+  if [ "$TASK_COUNT" -eq 0 ]; then
+    echo "ERROR: no constraint-binding task YAMLs found in $CB_TASKS_DIR" >&2
+    exit 1
+  fi
+else
+  # Prefer rubric tasks; fall back to legacy
+  if [ -f "$RUBRIC_TASKS" ]; then
+    TASKS_FILE="$RUBRIC_TASKS"
+  else
+    TASKS_FILE="$LEGACY_TASKS"
+  fi
+  TASK_COUNT=$(python3 -c "import json; print(len(json.load(open('$TASKS_FILE'))))")
+fi
 
 # D2: Warn on partial cycles
 if [ $(( TARGET_RUNS % TASK_COUNT )) -ne 0 ]; then
@@ -51,7 +84,11 @@ fi
 
 mkdir -p "$RESULTS_DIR"
 
-echo "Tasks:    $TASK_COUNT  ($(basename "$TASKS_FILE"))"
+if [ "$TASK_SOURCE" = "CONSTRAINT_BINDING" ]; then
+  echo "Source:   CONSTRAINT_BINDING ($TASK_COUNT tasks under $CB_TASKS_DIR)"
+else
+  echo "Source:   $TASK_SOURCE ($TASK_COUNT tasks, $(basename "$TASKS_FILE"))"
+fi
 echo "Producer: $PRODUCER"
 echo "Runs:     $TARGET_RUNS per producer"
 echo "Budget:   $BUDGET_CAP (ladder cap)"
@@ -67,6 +104,70 @@ t = json.load(open('$TASKS_FILE'))[$1]
 val = t.get('$2', t.get('goal' if '$2' == 'prompt' else '$2', ''))
 print(val)
 "
+}
+
+# ── constraint-binding helpers ────────────────────────────────
+cb_task_path() {
+  # cb_task_path <index> -> prints absolute YAML path
+  local idx="$1"
+  ls -1 "$CB_TASKS_DIR"/*.yaml | sort | awk -v i="$idx" 'NR == i+1'
+}
+
+cb_field() {
+  # cb_field <task.yaml> <dotted.path> -> prints scalar value
+  local yaml_path="$1" key="$2"
+  node -e "
+    const y = require('js-yaml');
+    const fs = require('fs');
+    const t = y.load(fs.readFileSync('$yaml_path','utf8'));
+    const parts = '$key'.split('.');
+    let v = t;
+    for (const p of parts) v = v[p];
+    process.stdout.write(typeof v === 'string' ? v : JSON.stringify(v));
+  "
+}
+
+cb_extract_fixture() {
+  # cb_extract_fixture <task.yaml> <workspace>
+  local yaml_path="$1" ws="$2"
+  local tarball
+  tarball=$(cb_field "$yaml_path" "pre_state.fixture_tarball")
+  local full="$CB_FIXTURES_DIR/$tarball"
+  if [ ! -f "$full" ]; then
+    echo "ERROR: fixture not found: $full. Run scripts/fetch-fixtures.sh first." >&2
+    return 1
+  fi
+  # Verify sha256 before extraction
+  local expected actual
+  expected=$(cb_field "$yaml_path" "pre_state.fixture_sha256")
+  actual=$(sha256sum "$full" | awk '{print $1}')
+  if [ "$expected" != "$actual" ] && [ "$expected" != "pending" ]; then
+    echo "ERROR: fixture sha256 mismatch for $tarball" >&2
+    echo "  recorded: $expected" >&2
+    echo "  actual:   $actual"   >&2
+    return 1
+  fi
+  tar -xzf "$full" -C "$ws"
+}
+
+cb_score() {
+  # cb_score <task.yaml> <workspace> <run_dir>
+  local yaml_path="$1" ws="$2" run_dir="$3"
+  node "$CB_VALIDATOR" run "$yaml_path" "$ws" \
+    > "$run_dir/validator-report.json" 2>"$run_dir/validator-report.stderr"
+  local rc=$?
+  # Emit a simple pass/fail score artifact mirroring the rubric runner shape
+  local passed="false"
+  [ "$rc" -eq 0 ] && passed="true"
+  cat > "$run_dir/constraint-binding-score.json" <<SCORE
+{
+  "task_id": "$(cb_field "$yaml_path" id)",
+  "pattern": "$(cb_field "$yaml_path" pattern)",
+  "passed": $passed,
+  "report_path": "validator-report.json"
+}
+SCORE
+  return $rc
 }
 
 # ── ORCHESTRATOR ──────────────────────────────────────────────
@@ -189,10 +290,17 @@ run_producer() {
     else
       tidx=$(( (n - 1) % TASK_COUNT ))
     fi
-    local task_id task_prompt task_name
-    task_id=$(task_field "$tidx" "id")
-    task_prompt=$(task_field "$tidx" "prompt")
-    task_name=$(task_field "$tidx" "name")
+    local task_id task_prompt task_name task_yaml=""
+    if [ "$TASK_SOURCE" = "CONSTRAINT_BINDING" ]; then
+      task_yaml="$(cb_task_path "$tidx")"
+      task_id=$(cb_field "$task_yaml" id)
+      task_prompt=$(cb_field "$task_yaml" prompt)
+      task_name=$(cb_field "$task_yaml" name)
+    else
+      task_id=$(task_field "$tidx" "id")
+      task_prompt=$(task_field "$tidx" "prompt")
+      task_name=$(task_field "$tidx" "name")
+    fi
     [ -z "$task_name" ] && task_name="$task_id"
 
     local ts
@@ -209,6 +317,17 @@ run_producer() {
     echo "  $rdir"
     echo "  workspace: $workspace"
     echo "════════════════════════════════════════════════════"
+
+    # Extract the constraint-binding fixture into the workspace before the
+    # producer sees it. This is what lets the producer operate on a real OSS
+    # snapshot instead of an empty dir.
+    if [ "$TASK_SOURCE" = "CONSTRAINT_BINDING" ]; then
+      cb_extract_fixture "$task_yaml" "$workspace" || {
+        echo "  fixture extraction failed; skipping run" >&2
+        n=$((n + 1))
+        continue
+      }
+    fi
 
     local t0
     t0=$(date +%s)
@@ -240,12 +359,15 @@ run_producer() {
     # Score (metadata-based metrics)
     bash "$SCORE_SCRIPT" "$rdir" 2>/dev/null || true
 
-    # Rubric score (code-artifact completeness)
-    if [ -f "$RUBRIC_RUNNER" ]; then
-      python3 "$RUBRIC_RUNNER" "$workspace" "$TASKS_FILE" "$tidx" \
-        > /dev/null 2>&1 || true
-      # Copy rubric-score.json from workspace to run dir
-      [ -f "$workspace/rubric-score.json" ] && cp "$workspace/rubric-score.json" "$rdir/"
+    if [ "$TASK_SOURCE" = "CONSTRAINT_BINDING" ]; then
+      cb_score "$task_yaml" "$workspace" "$rdir" || true
+    else
+      # Rubric score (code-artifact completeness)
+      if [ -f "$RUBRIC_RUNNER" ]; then
+        python3 "$RUBRIC_RUNNER" "$workspace" "$TASKS_FILE" "$tidx" \
+          > /dev/null 2>&1 || true
+        [ -f "$workspace/rubric-score.json" ] && cp "$workspace/rubric-score.json" "$rdir/"
+      fi
     fi
 
     echo "  Done in ${elapsed}s"
