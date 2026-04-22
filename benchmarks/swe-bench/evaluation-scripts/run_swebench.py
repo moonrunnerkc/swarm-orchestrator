@@ -476,11 +476,20 @@ def run_orchestrator(repo_dir: Path, problem_statement: str) -> dict:
             "Only edit source code to fix the issue. Test files are verified "
             "by an external harness and your edits will cause patch conflicts."
         )
+        # --target makes the target-mode discriminator fire. The orchestrator's
+        # cwd during this subprocess IS repo_dir, but that alone is not a
+        # structural signal — `swarm run` invoked from inside the orchestrator's
+        # own repo also has cwd == repo root. Passing --target explicitly tells
+        # the orchestrator "this is an external-repo run" so SELF_IMPROVEMENT
+        # quality gates (accessibility, duplicate-blocks, etc.) skip instead
+        # of firing nonsensically against sympy and triggering replan churn.
+        # See #27 PR 1 (target-mode gate scoping) and smoke5 follow-up.
         prompt_text = None
         cmd = [
             "node", str(SWARM_BIN), "run",
             "--goal", problem_statement,
             "--agent-guidance", agent_guidance,
+            "--target", str(repo_dir),
             "--tool", SWARM_TOOL,
             "--yes",
         ]
