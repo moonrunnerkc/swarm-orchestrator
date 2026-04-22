@@ -29,6 +29,7 @@ import FleetExecutor from './fleet-executor';
 import { CostAttribution, CostHistoryEvidence, StepCostRecord } from './metrics-types';
 import PRManager from './pr-manager';
 import { WorktreeManager } from './worktree-manager';
+import { gitPathspecExcludes } from './worktree-reserved-paths';
 import { BranchMerger, MergeContext } from './branch-merger';
 import { BaselineSnapshot, scanBaseline } from './baseline-scanner';
 import { TaskClassifier } from './task-classifier';
@@ -1532,7 +1533,17 @@ export class SwarmOrchestrator {
       try {
         const status = execSync('git status --porcelain', { cwd: worktreePath, encoding: 'utf8' }).trim();
         if (status) {
-          execSync('git add -A', { cwd: worktreePath, stdio: 'pipe' });
+          // Exclude orchestrator-reserved and build-artifact paths from per-step commits.
+          // Bare `git add -A` captures orchestrator state written to runs/, plans/,
+          // .quickfix/, node_modules/, __pycache__, etc., bloating commit diffs with
+          // noise unrelated to the agent's actual work (smoke5c failure mode, issue #27).
+          // gitPathspecExcludes() mirrors the Python-side capture exclusion from
+          // worktree_reserved_paths.py so both sides stay in sync. See PR 2.
+          const excludes = gitPathspecExcludes();
+          execSync(
+            `git add -A -- . ${excludes.map(e => `'${e}'`).join(' ')}`,
+            { cwd: worktreePath, stdio: 'pipe' }
+          );
           execSync(
             `git commit -m "auto-commit uncommitted work from step ${step.stepNumber} (${agent.name})"`,
             { cwd: worktreePath, stdio: 'pipe', env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } }
