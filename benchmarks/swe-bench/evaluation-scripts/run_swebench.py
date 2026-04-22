@@ -185,14 +185,11 @@ def capture_agent_diff(
     add_cmd = ["git", "add", "-A", "-N", "--", "."] + git_pathspec_excludes()
     subprocess.run(add_cmd, cwd=str(repo_dir), capture_output=True, timeout=30)
 
-    # Diff working-tree-vs-base rather than HEAD-vs-base. The orchestrator
-    # normally commits each step's work before this runs, so in the happy
-    # path either form gives the same result. But when an agent's edit
-    # landed in the working tree via intent-to-add (-N) without being
-    # committed — which happens when the orchestrator rolls back a step's
-    # commit but leaves the files, or when the agent writes uncommitted
-    # scratch files — `git diff <base>` still surfaces it while
-    # `git diff <base> HEAD` would miss it.
+    # Intentionally omits HEAD so working-tree changes (including intent-to-
+    # add silent edits staged by source 2 above) are captured. The `git diff
+    # <base> HEAD` form would silently exclude them — which is exactly the
+    # silent-edit case the union approach exists to surface. See #27 for
+    # context. Do not "fix" this to include HEAD without re-reading.
     result = subprocess.run(
         ["git", "diff", base_commit],
         cwd=str(repo_dir),
