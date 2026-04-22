@@ -31,6 +31,12 @@ from pathlib import Path
 from datasets import load_dataset
 from tqdm import tqdm
 
+# Local import — reserved-path list consumed by capture_agent_diff.
+_HERE = Path(__file__).resolve().parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
+from worktree_reserved_paths import git_pathspec_excludes  # noqa: E402
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -70,32 +76,125 @@ class DiffCaptureError(RuntimeError):
     """
 
 
-def capture_agent_diff(repo_dir: Path, base_commit: str) -> bytes:
+def load_agent_manifest(repo_dir: Path) -> list[str]:
+    """Aggregate per-step `filesChanged` lists from the orchestrator's
+    context-broker state. Returns a sorted list of repo-relative paths the
+    orchestrator recorded as agent-touched across every completed step.
+
+    Source of truth: `<repo_dir>/runs/swarm-*/.context/shared-context.json`.
+    That file is written by `ContextBroker.addStepContext()` after each
+    step's verification passes, with `data.filesChanged` populated from the
+    agent's `/share` transcript.
+
+    Completeness caveat (issue #27 Issue 2): this manifest is agent-self-
+    reported. Files the agent modified without recording in the transcript
+    are NOT listed here. capture_agent_diff compensates by additionally
+    staging OS-observed changes outside reserved paths — the "∪ OS-observed"
+    half of the option-1b union.
+
+    Missing or malformed manifest files are not fatal; returns [].
+    """
+    runs_root = repo_dir / "runs"
+    if not runs_root.is_dir():
+        return []
+    # Most-recent swarm-* run dir wins — one eval invocation produces one
+    # orchestrator run, but tests and dev environments may have leftovers.
+    candidates = sorted(
+        (p for p in runs_root.iterdir() if p.is_dir() and p.name.startswith("swarm-")),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    if not candidates:
+        return []
+    ctx_file = candidates[0] / ".context" / "shared-context.json"
+    if not ctx_file.exists():
+        return []
+    try:
+        entries = json.loads(ctx_file.read_text(encoding="utf-8", errors="replace"))
+    except (json.JSONDecodeError, OSError):
+        return []
+    files: set[str] = set()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        data = entry.get("data") or {}
+        for f in data.get("filesChanged") or []:
+            if isinstance(f, str) and f:
+                files.add(f)
+    return sorted(files)
+
+
+def capture_agent_diff(
+    repo_dir: Path,
+    base_commit: str,
+    manifest_files: list[str] | None = None,
+) -> bytes:
     """Collect the agent's changes as a unified diff against the base commit.
 
-    Returns raw bytes. `git diff` output can contain non-UTF-8 content —
-    filenames in legacy encodings, binary-file marker lines with byte-level
-    metadata, or text files that aren't clean UTF-8 (latin-1 residue in
-    older repos, test fixtures with arbitrary byte sequences). Decoding at
-    capture time raises UnicodeDecodeError on real-world workdirs; callers
-    that need a string should decode at the point of use with
-    errors='replace' so a mangled filename doesn't crash the whole eval.
+    Union-based capture (issue #27 Issue 2 / option 1b). Two sources:
 
-    Intent-to-add staging picks up untracked files agents sometimes create
-    (new modules, fresh tests) so they show up in the diff instead of being
-    silently dropped.
+      1. **manifest_files** — files the agent claimed to touch, loaded
+         from the orchestrator's context-broker state. Each is staged for
+         intent-to-add directly, with no exclusion applied — an agent-
+         claimed modification inside an orchestrator-reserved path is
+         still intentional agent work and should appear in the diff.
+      2. **OS-observed changes outside reserved paths** — everything else
+         in the worktree that git sees as modified or untracked, minus
+         the reserved-path set from worktree_reserved_paths. Picks up
+         silent agent edits the transcript might have missed, without
+         letting orchestrator scratch (runs/, node_modules/, etc.) leak
+         into the diff.
+
+    The union covers both completeness gaps identified in the issue #27
+    halt report:
+      - agent silent edits → caught by source 2
+      - orchestrator-internal worktree writes → excluded by source 2's
+        reserved-path filter, and source 1's manifest never includes them
+        because the orchestrator doesn't write to its own transcripts.
+
+    Returns raw bytes. `git diff` output can contain non-UTF-8 content —
+    filenames in legacy encodings, binary-file markers, text files with
+    latin-1 residue. Decoding at capture time raises UnicodeDecodeError
+    on real-world workdirs; callers that need a string should decode at
+    the point of use with errors='replace'.
 
     @raises DiffCaptureError when the diff is empty (no changes — real
             failure) or larger than MAX_DIFF_BYTES (scope pollution).
     """
-    subprocess.run(
-        ["git", "add", "-A", "-N"],
-        cwd=str(repo_dir),
-        capture_output=True,
-        timeout=30,
-    )
+    # Source 1: explicit manifest files (no exclusion — agent claim wins).
+    if manifest_files:
+        for rel in manifest_files:
+            # Skip paths that traverse upward or escape the repo.
+            if rel.startswith("/") or ".." in Path(rel).parts:
+                continue
+            full = repo_dir / rel
+            # Only stage files that actually exist — a missing file means
+            # the agent claimed a deletion (git add -A picks that up via
+            # source 2) or hallucinated the claim (not our bug to fix).
+            if full.exists():
+                subprocess.run(
+                    ["git", "add", "-N", "--", rel],
+                    cwd=str(repo_dir),
+                    capture_output=True,
+                    timeout=30,
+                )
+
+    # Source 2: `-A -N` over the whole worktree, minus reserved paths.
+    # A positive pathspec (`.`) is required alongside negative excludes —
+    # an exclude-only pathspec list matches nothing in git.
+    add_cmd = ["git", "add", "-A", "-N", "--", "."] + git_pathspec_excludes()
+    subprocess.run(add_cmd, cwd=str(repo_dir), capture_output=True, timeout=30)
+
+    # Diff working-tree-vs-base rather than HEAD-vs-base. The orchestrator
+    # normally commits each step's work before this runs, so in the happy
+    # path either form gives the same result. But when an agent's edit
+    # landed in the working tree via intent-to-add (-N) without being
+    # committed — which happens when the orchestrator rolls back a step's
+    # commit but leaves the files, or when the agent writes uncommitted
+    # scratch files — `git diff <base>` still surfaces it while
+    # `git diff <base> HEAD` would miss it.
     result = subprocess.run(
-        ["git", "diff", base_commit, "HEAD"],
+        ["git", "diff", base_commit],
         cwd=str(repo_dir),
         capture_output=True,
         timeout=60,
