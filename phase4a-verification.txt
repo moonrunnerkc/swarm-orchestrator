@@ -1,0 +1,134 @@
+# Phase 4a Verification
+# Branch: feat/swe-bench-setup
+# Date: 2026-04-21T16:46:56Z
+# Node: v24.12.0
+# Docker: Docker version 28.4.0, build d8eb465
+
+## Scope note
+PR 4a = setup only. No 50-instance sweep in this PR. Per Brad's
+order-of-operations, this PR opens after PR #22 lands. Verification
+below covers: Dockerfile.eval builds, instances-50.json with
+documented seed, baseline-citations.json with dated URLs,
+orchestrator-as-solver wiring via SWEBENCH_INSTANCES_FILE, and a
+1-instance smoke run.
+
+## Dockerfile.eval build
+REPOSITORY       TAG       SIZE      CREATED
+swe-bench-eval   phase4a   1.81GB    14 minutes ago
+  Build: clean on first try, no modifications needed.
+
+## instances-50.json
+  source:      princeton-nlp/SWE-bench_Verified
+  sample_size: 50
+  seed:        42 (documented in benchmarks/swe-bench/sample_instances.py)
+  generated:   2026-04-21T16:32:56+00:00
+  method:      proportional by repo, largest-remainders rounding
+  per-repo breakdown:
+     23  django/django
+      8  sympy/sympy
+      5  sphinx-doc/sphinx
+      3  matplotlib/matplotlib
+      3  scikit-learn/scikit-learn
+      2  astropy/astropy
+      2  pydata/xarray
+      2  pytest-dev/pytest
+      1  psf/requests
+      1  pylint-dev/pylint
+  Reproducibility: re-running sample_instances.py with seed=42 against the
+  same 500-instance Verified set produces the same 50 instance_ids.
+
+## baseline-citations.json
+  baselines recorded: 6
+    Claude Sonnet 4.6 (Anthropic)            79.2% on 500                   [pulled 2026-04-21]
+    Claude Sonnet 4.6 (alt prompt)           80.2% on 500                   [pulled 2026-04-21]
+    mini-SWE-agent                           65.0% on 500                   [pulled 2026-04-21]
+    Cursor (agent mode)                      not published on Verified      [pulled 2026-04-21]
+    Aider                                    not published on Verified      [pulled 2026-04-21]
+    Claude Code (agent CLI)                  not published on Verified      [pulled 2026-04-21]
+
+## orchestrator-as-solver wiring
+  SWEBENCH_INSTANCES_FILE env var now drives run_swebench.py's load_tasks().
+  When set, the exact instance_ids from the manifest are loaded; when unset,
+  falls back to the legacy ad-hoc diverse-repo walk. Unit-testable at the
+  load_tasks() boundary.
+    43:INSTANCES_FILE = os.environ.get("SWEBENCH_INSTANCES_FILE", "")
+    182:      (1) SWEBENCH_INSTANCES_FILE set — load the exact instance_ids from the
+    195:                f"SWEBENCH_INSTANCES_FILE={INSTANCES_FILE} does not exist. "
+
+## 1-instance smoke run
+  instance:     sympy__sympy-12481  (repo: sympy/sympy)
+  base_commit:  c807dfe7569692cad24f02a08477b70c1679a4dd
+  mode:         orchestrator  tool=claude-code  model=claude-sonnet-4
+  resolved:     0/1  (0.0%)
+  latency:      265.4s
+  orchestrator returncode: 1
+  orchestrator stderr: [cli:swarm] Error: Failed to switch to branch main
+  tests_passed: False  returncode=2
+
+### Smoke-finding-1 (ORCHESTRATOR BUG): main/master branch assumption
+  The orchestrator bailed with stderr 'Error: Failed to switch to branch main'.
+  sympy/sympy's default branch is 'master', not 'main'. The orchestrator's
+  branch manager assumes 'main' exists and errors when it doesn't. This will
+  break on ALL older OSS repos (sympy, scikit-learn pre-2022, etc.).
+  Impact on the sweep: 23/50 instances are django (main), 27/50 are likely
+  master-default repos. Without a fix, ~half the sweep is a pre-verified
+  null outcome.
+
+### Smoke-finding-2 (HARNESS ENV MISMATCH): Python 3.12 vs old-sympy
+  Test collection errored with "ImportError: cannot import name 'Mapping'
+  from 'collections'". sympy@c807dfe (2017) uses the pre-3.10 collections
+  import path that was removed in 3.10. The eval container runs Python 3.12.
+  Impact: older snapshots need per-instance Python version selection.
+  SWE-bench's own harness handles this via per-instance docker images;
+  our benchmarks/swe-bench/Dockerfile.eval does not. A sweep using our
+  current harness will false-negative on old-snapshot instances.
+
+### Smoke-finding-3 (HARNESS TEST ISOLATION): conftest double-registration
+  pytest hit "ValueError: option names {'--slow'} already added" because
+  BOTH the repo's conftest.py AND the conftest.py in the swarm worktree
+  subdirectory get collected. Pytest's default rootdir discovery isn't
+  scoped to the repo's own tests.
+
+## Cost estimate for the full 50-instance sweep
+  Smoke baseline was non-representative (orchestrator bailed pre-agent-work).
+  Using Phase 3a pilot data as a stronger prior:
+    - 4 pilot tasks: 8 actual premium reqs total, 77 min total wall clock
+    - 2 tasks completed full orchestrator loop (rename=5 reqs @ 41min,
+      schema=3 reqs @ 19min); 2 bailed early (contract, lift)
+    - Per-task full-loop cost: ~4 reqs / ~30 min
+  SWE-bench tasks are larger than constraint-binding pilots (real bug-fix,
+  often requires repair loops). Adjust by:
+    - Step count probably 3-5, repair rate ~30% (higher than 15% baseline)
+    - Per-instance estimate: 8-15 premium reqs, 30-90 min wall clock
+  Full 50-instance sweep midpoints:
+    - premium requests: 500-750  (dominated by repair loops)
+    - wall clock:       25-75 hours serial, 8-25 hours with 3-wide parallelism
+  Cost estimate CONFIDENCE: LOW. Smoke did not execute a full orchestrator
+  loop, so this is extrapolated from constraint-binding pilots with
+  adjusted difficulty factor, not directly measured. Confidence improves
+  substantially after even 3-5 clean orchestrator-loop smokes on
+  main-branch repos (django).
+
+## Halt-condition check
+  1. Any invocation > 2× estimate?           NO (orch used ~0 premium reqs)
+  2. Validator disagreement smoke/sweep?     N/A at this stage
+  3. Claude Code CLI auth fail mid-run?      NO (orch error was branch-mgmt,
+                                                 not auth; claude CLI reachable)
+  No halt triggers fired, but smoke-finding-1 and smoke-finding-2 are
+  genuine orchestrator/harness defects that should be fixed BEFORE the
+  50-instance sweep, otherwise results will systematically under-report.
+
+## Recommendation to Brad (for the next-sweep decision)
+  Before authorizing the 50-instance sweep:
+  (a) Fix the main/master branch assumption in the orchestrator (one-line
+      change to detect default branch via 'git symbolic-ref refs/remotes/
+      origin/HEAD'). Without this, ~27/50 instances pre-fail.
+  (b) Decide on Python version strategy: adopt SWE-bench's official
+      per-instance Docker images, or restrict the 50 to instances whose
+      base commits are Python 3.11+ compatible.
+  (c) Fix the pytest conftest double-registration by invoking pytest with
+      an explicit --rootdir pointing at the repo, not the worktree parent.
+  After (a)-(c), run a 3-instance smoke (1 django, 1 sympy, 1 matplotlib)
+  to get real per-task cost numbers. That number drives the sweep budget.
+
+## Files new/changed in this branch
