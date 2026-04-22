@@ -20,7 +20,7 @@ Columns: `task-id | repo | sha | subpath | sha256 | license`
 
 | task-id | repo | sha | subpath | sha256 | license |
 |---------|------|-----|---------|--------|---------|
-| schema-then-query-001 | https://github.com/prisma/prisma-examples | 663c23ca1a6c6f03d2ad0c67868020b560a172e4 | databases/turso | 1cbb0eba91f8e0662849bc6de629134f61c7c56709b4318a965f323c673a2af8 | Apache-2.0 |
+| schema-then-query-001 | https://github.com/prisma/prisma-examples | 663c23ca1a6c6f03d2ad0c67868020b560a172e4 | databases/turso | de86f10a22619212b8098f03cb813dae259b556515e52c40b6b7c979a9800be3 | Apache-2.0 |
 | rename-then-update-callers-001 | https://github.com/sindresorhus/is-plain-obj | 97f38e8836f86a642cce98fc6ab3058bc36df181 | . | ff44ff6c44872cf3cfd59f7f62ee19f586eef96ecf01f2904a9407feece55b03 | MIT |
 | contract-change-then-client-001 | https://github.com/feross/simple-get | e7a74115ca9dd28720f186275c5a67df81985426 | . | 6d208d19be4d09d0a9d249e255a9db1d85376700e34aa28f2262002265f4f726 | MIT |
 | lift-then-reuse-001 | https://github.com/feross/queue-microtask | 2a5e7b9874c5f075e62975862e5e4a673f149786 | . | 5b92963c012911b5f3d9a183626d847808c1e3195111c413127b8371410d01d2 | MIT |

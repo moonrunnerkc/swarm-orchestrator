@@ -16,12 +16,22 @@ prompt: |
 expected_steps_min: 3
 post_state_validators:
   - name: "no references to the old name remain in source files"
+    # Excludes: node_modules (upstream deps may legitimately reference the
+    # pre-rename name — that's not the agent's code), and rename.test.js
+    # (a defensive test an agent might write to ASSERT the rename happened;
+    # such a test needs to reference the old name as a string literal).
+    # Pilot hypothesis from smoke3: without these exclusions the validator
+    # fails correct rename implementations. See #27 pilot scoreboard.
     cmd: |
       if grep -rn --include='*.js' --include='*.ts' --include='*.mjs' --include='*.cjs' \
+          --exclude-dir=node_modules \
+          --exclude='rename*.test.*' \
+          --exclude='*rename-check*' \
           'isPlainObject' . >/dev/null; then exit 1; fi
   - name: "the new name is used in at least the expected places"
     cmd: |
       count=$(grep -rn --include='*.js' --include='*.ts' --include='*.mjs' \
+        --exclude-dir=node_modules \
         'isPureObject' . | wc -l)
       test "$count" -ge 3
   - name: "package installs and tests pass"
