@@ -17,10 +17,12 @@ Environment variables:
   TASK_TIMEOUT_SECONDS   Per-task timeout (default: 900)
 """
 
+import argparse
 import fnmatch
 import glob
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -894,15 +896,35 @@ def run_tests_dispatch(task: dict, repo_dir: Path) -> dict:
     return result
 
 
-def evaluate_tasks():
-    """Main evaluation loop."""
+def _print_workspace_preserved(workdir: Path) -> None:
+    """Print the preserved workspace path and ready-to-paste diagnostic commands."""
+    print(f"\n{'='*60}")
+    print(f"Workspace preserved at: {workdir}")
+    print("Diagnostic commands:")
+    print(f"  cd {workdir}/<instance_id>")
+    print("  git status --short | wc -l")
+    print("  git diff HEAD --stat | tail -30")
+    print("  git diff HEAD --name-only | awk -F/ '{print $1}' | sort | uniq -c | sort -rn | head -20")
+    print("  git diff HEAD --name-only | awk -F. '{print $NF}' | sort | uniq -c | sort -rn | head -20")
+    print("  git diff HEAD --numstat | sort -rn | head -10")
+    print(f"{'='*60}")
+
+
+def evaluate_tasks(*, keep_workdir: bool = False) -> dict:
+    """Main evaluation loop.
+
+    Args:
+        keep_workdir: When True, the temporary workspace directory is NOT
+            deleted after the run. The path is printed prominently with
+            ready-to-paste diagnostic commands. Default is False (clean up
+            on exit, matching the original behavior).
+    """
     tasks = load_tasks()
     results = []
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
-    with tempfile.TemporaryDirectory(prefix="swebench-") as tmpdir:
-        workdir = Path(tmpdir)
-
+    workdir = Path(tempfile.mkdtemp(prefix="swebench-"))
+    try:
         for task in tqdm(tasks, desc="Evaluating"):
             instance_id = task["instance_id"]
             print(f"\n{'='*60}")
@@ -941,6 +963,11 @@ def evaluate_tasks():
             results.append(task_result)
             print(f"  → {'RESOLVED' if task_result['resolved'] else 'FAILED'}"
                   f" ({run_result['elapsed_seconds']:.1f}s)")
+    finally:
+        if keep_workdir:
+            _print_workspace_preserved(workdir)
+        else:
+            shutil.rmtree(workdir, ignore_errors=True)
 
     # Write results
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -980,4 +1007,19 @@ def evaluate_tasks():
 
 
 if __name__ == "__main__":
-    evaluate_tasks()
+    parser = argparse.ArgumentParser(
+        description="SWE-bench evaluation runner for swarm-orchestrator."
+    )
+    parser.add_argument(
+        "--keep-workdir",
+        action="store_true",
+        default=False,
+        help=(
+            "Preserve the temporary workspace directory after the run instead of "
+            "deleting it. The path is printed at the end with ready-to-paste "
+            "diagnostic commands. Useful for post-run inspection of git state. "
+            "Default: off (workdir is deleted on exit)."
+        ),
+    )
+    args = parser.parse_args()
+    evaluate_tasks(keep_workdir=args.keep_workdir)
