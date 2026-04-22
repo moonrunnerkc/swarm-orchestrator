@@ -64,6 +64,11 @@ export const FILE_GLOB_EXCLUDES: ReadonlyArray<string> = [
   '**/*.pyo',
   '**/*.egg-info',
   '**/*.egg-info/**',
+  // .copilot-instructions.md — written to the repo root by prompt-builder.ts
+  // and committed before step-1 runs. Orchestrator scaffolding, not agent work.
+  // Must be excluded from SWE-bench patches or `git apply` fails in /testbed.
+  // Mirrors Python _FILE_GLOB_EXCLUDES entry added in smoke8 post-mortem fix.
+  '.copilot-instructions.md',
 ];
 
 /**

@@ -73,6 +73,12 @@ _FILE_GLOB_EXCLUDES: tuple[str, ...] = (
     "**/*.pyo",
     "**/*.egg-info",
     "**/*.egg-info/**",
+    # .copilot-instructions.md — written to the repo root by
+    # src/prompt-builder.ts and committed via `git add .copilot-instructions.md`
+    # before step-1 runs. It is orchestrator scaffolding, not agent work.
+    # Without this exclude it appears in every SWE-bench patch and breaks
+    # `git apply` in the /testbed container (smoke8 failure mode).
+    ".copilot-instructions.md",
 )
 
 

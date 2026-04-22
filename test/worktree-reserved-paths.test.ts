@@ -169,7 +169,7 @@ describe('worktree-reserved-paths: bounded-list invariants', () => {
     );
   });
 
-  it('gitPathspecExcludes() emits the expected number of args (14 dirs × 2 + 4 globs = 32)', () => {
+  it('gitPathspecExcludes() emits the expected number of args (14 dirs × 2 + 5 globs = 33)', () => {
     const excludes = gitPathspecExcludes();
     const expectedDirCount = ORCHESTRATOR_RESERVED_PATHS.length + BUILD_ARTIFACT_RESERVED_PATHS.length;
     const expected = expectedDirCount * 2 + FILE_GLOB_EXCLUDES.length;

@@ -196,8 +196,16 @@ def capture_agent_diff(
     # <base> HEAD` form would silently exclude them — which is exactly the
     # silent-edit case the union approach exists to surface. See #27 for
     # context. Do not "fix" this to include HEAD without re-reading.
+    #
+    # Pathspec excludes are applied here for the same reason they are applied
+    # to the source 2 `git add -A -N` above: orchestrator-reserved content
+    # that was *committed* into the history above base_commit (e.g. runs/,
+    # .copilot-instructions.md) would otherwise appear in `git diff base_commit`
+    # because it exists in HEAD's tree. The `-- . :(exclude)...` form requires
+    # a positive pathspec (`.`) alongside the excludes; an exclude-only list
+    # matches nothing in git, same as with `git add`. See smoke8 post-mortem.
     result = subprocess.run(
-        ["git", "diff", base_commit],
+        ["git", "diff", base_commit, "--", "."] + git_pathspec_excludes(),
         cwd=str(repo_dir),
         capture_output=True,
         timeout=60,
