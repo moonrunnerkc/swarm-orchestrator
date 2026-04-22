@@ -107,6 +107,39 @@ export function loadProjectGateRegistrations(projectRoot: string): string[] {
   return [entryPath];
 }
 
+/**
+ * Gate keys that are "self-improvement" gates — the orchestrator applies
+ * them to its OWN generated code to enforce quality on code it produced.
+ * When the orchestrator is running against a target repo (swarm bootstrap
+ * against an external codebase), these gates should NOT fire: the target
+ * has its own conventions and the gates misattribute target-repo features
+ * as agent defects. Phase 4a smoke4 evidence: the accessibility gate
+ * flagged sympy (computer-algebra library, no UI) and triggered replan
+ * churn that wasted cycles and polluted the diff-capture.
+ *
+ * Gates NOT in this set are "universal" — they enforce agent-behavior
+ * contracts that apply regardless of whose codebase is being modified:
+ *   - hardcodedConfig       agent must not add secrets / hardcoded config
+ *                           (the gate scopes to baselineFiles, so it only
+ *                           flags what the agent added, not pre-existing
+ *                           target state — safe in target mode)
+ *   - testFileProtection    agent must not modify pre-existing test files
+ *                           (SWE-bench evaluation integrity + general
+ *                           safety property; always fires)
+ *
+ * `run_quality_gates` consults this set via the `skippedGateKeys` param
+ * the orchestrator passes when `targetMode === true`.
+ */
+export const SELF_IMPROVEMENT_GATE_KEYS: ReadonlySet<string> = new Set([
+  'scaffoldDefaults',
+  'duplicateBlocks',
+  'readmeClaims',
+  'testIsolation',
+  'runtimeChecks',
+  'accessibility',
+  'testCoverage',
+]);
+
 registerBuiltInGate({
   key: 'scaffoldDefaults',
   title: 'Scaffold Defaults',

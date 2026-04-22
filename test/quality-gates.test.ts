@@ -43,6 +43,94 @@ describe('QualityGates', () => {
     assert.ok(failed.includes('test-isolation'));
   });
 
+  describe('target-mode gate scoping (issue #27 PR 1)', () => {
+    // Uses bad-scaffold fixture which is known to fail multiple gates.
+    // In self-mode the fail set includes self-improvement gates
+    // (scaffold-defaults, readme-claims, test-isolation) plus the
+    // universal gate hardcoded-config. Target-mode must skip the
+    // self-improvement ones while still running hardcoded-config and
+    // test-file-protection.
+    const root = fixture('bad-scaffold');
+
+    it('self-mode (default): all enabled gates fire including self-improvement ones', async () => {
+      const cfg = load_quality_gates_config(root);
+      const result = await run_quality_gates(root, cfg);
+      const resultById = new Map(result.results.map(r => [r.id, r]));
+
+      // Self-improvement gates: were they executed (any status != skip)?
+      for (const id of ['scaffold-defaults', 'readme-claims', 'test-isolation']) {
+        const r = resultById.get(id);
+        assert.ok(r, `self-mode must report ${id}`);
+        assert.notStrictEqual(
+          r.status, 'skip',
+          `self-mode must RUN ${id}, not skip it`,
+        );
+      }
+    });
+
+    it('target-mode: self-improvement gates are skipped; universal gates run', async () => {
+      // Import here to avoid polluting the other tests' import surface.
+      const { SELF_IMPROVEMENT_GATE_KEYS } = require('../src/quality-gates/registry');
+      const cfg = load_quality_gates_config(root);
+      const result = await run_quality_gates(
+        root, cfg, undefined, undefined, undefined, undefined,
+        SELF_IMPROVEMENT_GATE_KEYS,
+      );
+      const resultById = new Map(result.results.map(r => [r.id, r]));
+
+      // Self-improvement gates must be present with status=skip.
+      for (const id of [
+        'scaffold-defaults', 'duplicate-blocks', 'readme-claims',
+        'test-isolation', 'runtime-checks', 'accessibility', 'test-coverage',
+      ]) {
+        const r = resultById.get(id);
+        assert.ok(r, `target-mode must still REPORT ${id}, with status=skip`);
+        assert.strictEqual(
+          r.status, 'skip',
+          `target-mode must skip ${id} (self-improvement)`,
+        );
+        assert.strictEqual(
+          r.issues.length, 0,
+          `target-mode skipped gates must have zero issues`,
+        );
+      }
+
+      // Universal gates must still run (not skip).
+      for (const id of ['hardcoded-config', 'test-file-protection']) {
+        const r = resultById.get(id);
+        assert.ok(r, `target-mode must still run universal gate ${id}`);
+        assert.notStrictEqual(
+          r.status, 'skip',
+          `target-mode must NOT skip universal gate ${id}`,
+        );
+      }
+    });
+
+    it('SELF_IMPROVEMENT_GATE_KEYS has the exact expected membership', async () => {
+      // Lock in the classification — any change to this set changes gate
+      // behavior in target-mode runs (SWE-bench eval, bootstrap against
+      // external repos). Test forces the decision to be explicit.
+      const { SELF_IMPROVEMENT_GATE_KEYS } = require('../src/quality-gates/registry');
+      const actual = new Set(SELF_IMPROVEMENT_GATE_KEYS);
+
+      const expected = new Set([
+        'scaffoldDefaults',
+        'duplicateBlocks',
+        'readmeClaims',
+        'testIsolation',
+        'runtimeChecks',
+        'accessibility',
+        'testCoverage',
+      ]);
+
+      assert.deepStrictEqual(
+        [...actual].sort(), [...expected].sort(),
+        'classification drift — confirm each added/removed gate is genuinely ' +
+        'self-improvement (target-mode skip) vs universal (target-mode fire)',
+      );
+    });
+  });
+
   it('runs explicitly registered custom project gates', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'custom-gate-run-'));
     try {

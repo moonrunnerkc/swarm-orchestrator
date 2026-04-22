@@ -14,6 +14,7 @@ import MetricsCollector from './metrics-collector';
 import { ExecutionPlan, PlanGenerator, PlanStep, ReplanPayload } from './plan-generator';
 import PRAutomation from './pr-automation';
 import { load_quality_gates_config, run_quality_gates } from './quality-gates';
+import { SELF_IMPROVEMENT_GATE_KEYS } from './quality-gates/registry';
 import type { GateResult } from './quality-gates';
 import RepairAgent, { RepairContext } from './repair-agent';
 import SessionExecutor, { SessionOptions, SessionResult } from './session-executor';
@@ -153,8 +154,31 @@ export class SwarmOrchestrator {
   private pauseRequested: boolean = false;
   private resumeRequested: boolean = false;
 
-  constructor(workingDir?: string) {
+  /**
+   * `targetMode` is true when the orchestrator is operating on an external
+   * target repo (e.g. `swarm bootstrap ./external-repo`, the SWE-bench
+   * harness). False when operating on its own codebase (self-improvement
+   * runs). Structural signal, not keyword-based: the caller passes a
+   * truthy `workingDir` that is not the orchestrator's own cwd, and the
+   * CLI dispatcher sets `targetMode = true` at that boundary.
+   *
+   * Drives two behaviors:
+   *   1. Orchestrator-internal quality gates (scaffoldDefaults,
+   *      duplicateBlocks, readmeClaims, testIsolation, runtimeChecks,
+   *      accessibility, testCoverage) are skipped when targetMode is
+   *      true — those enforce conventions on the orchestrator's own
+   *      generated code, not on arbitrary target repos. See #27 Phase-4a
+   *      smoke4 for the failure mode this prevents.
+   *   2. Verifier per-step outcome checks (git_diff, file_existence,
+   *      build_exec, test_exec) are NOT affected by targetMode. Those
+   *      are the orchestrator's verification contract for detecting
+   *      agent lies about their own work, and apply universally.
+   */
+  private targetMode: boolean;
+
+  constructor(workingDir?: string, targetMode: boolean = false) {
     this.workingDir = workingDir || process.cwd();
+    this.targetMode = targetMode;
     this.sessionExecutor = new SessionExecutor(this.workingDir);
     this.shareParser = new ShareParser();
     this.verifier = new VerifierEngine(this.workingDir);
@@ -634,7 +658,15 @@ export class SwarmOrchestrator {
       const skippedReqIds = context.filteredRequirements
         ? new Set(context.filteredRequirements.skipped.map(r => r.id))
         : undefined;
-      let gatesResult = await run_quality_gates(this.workingDir, gatesConfig, gatesOut, baselineFiles, baseCommit, skippedReqIds);
+      // targetMode: skip orchestrator-internal self-improvement gates when
+      // we're operating on an external repo. Universal gates
+      // (hardcodedConfig, testFileProtection) continue to fire. See
+      // registry.ts for the classification rationale.
+      const skippedGateKeys = this.targetMode ? SELF_IMPROVEMENT_GATE_KEYS : undefined;
+      let gatesResult = await run_quality_gates(
+        this.workingDir, gatesConfig, gatesOut, baselineFiles, baseCommit,
+        skippedReqIds, skippedGateKeys,
+      );
       context.finalGateResults = gatesResult.results;
 
       if (!gatesResult.passed && gatesConfig.failOnIssues) {
@@ -746,7 +778,10 @@ export class SwarmOrchestrator {
           if (addSteps.length > 0) {
             remediationAttempted = true;
             await this.executeReplan(context, { retrySteps: [], addSteps }, agentMap, options);
-            gatesResult = await run_quality_gates(this.workingDir, gatesConfig, gatesOut, baselineFiles, baseCommit, skippedReqIds);
+            gatesResult = await run_quality_gates(
+              this.workingDir, gatesConfig, gatesOut, baselineFiles, baseCommit,
+              skippedReqIds, skippedGateKeys,
+            );
             context.finalGateResults = gatesResult.results;
 
             // Second remediation attempt if gates still fail after first fix
@@ -783,7 +818,10 @@ export class SwarmOrchestrator {
                   addSteps: [{ agent: retryAgent, task: retryTask, afterStep: retryMaxStep }]
                 }, agentMap, options);
 
-                gatesResult = await run_quality_gates(this.workingDir, gatesConfig, gatesOut, baselineFiles, baseCommit, skippedReqIds);
+                gatesResult = await run_quality_gates(
+                  this.workingDir, gatesConfig, gatesOut, baselineFiles, baseCommit,
+                  skippedReqIds, skippedGateKeys,
+                );
                 context.finalGateResults = gatesResult.results;
               }
             }
