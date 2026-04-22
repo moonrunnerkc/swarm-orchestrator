@@ -644,7 +644,6 @@ npm start demo api-quick     # REST API with tests and Dockerfile, ~5 min
 - **Agent subprocess hangs** — ensure the agent CLI (`copilot`, `claude-code`, or `codex`) is installed, authenticated, and responds to `--help`. The orchestrator invokes it as a child process.
 - **Docker Compose fails to start** — verify Docker is running and port 5432 (PostgreSQL) is free. Use `docker compose logs <service>` to diagnose.
 - **Python tests fail with import errors** — install Python dependencies: `pip install fastapi pydantic sqlalchemy uvicorn httpx pytest` or use the `.venv` if present.
-- **Sub-project tests fail with `ERR_MODULE_NOT_FOUND`** — run `npm install` inside the sub-project directory (`calculations-api/`, `notes-api/`) before running tests. Sub-projects that use only Node.js built-ins (`calculator/`, `logtail/`, `tictactoe/`) need no install step.
 
 <br>
 
