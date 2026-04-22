@@ -123,11 +123,25 @@ for row in "${ROWS[@]}"; do
     continue
   fi
 
-  # Deterministic export: git archive --format=tar emits tar entries with mtime
-  # set to the commit date, so the tar stream is bit-identical for a given SHA.
-  # Piping through `gzip -n` strips the gzip header's filename + mtime, making
-  # the .tar.gz reproducible too.
-  ( cd "$repo_cache" && git archive --format=tar "$sha" -- "$sub" ) | gzip -n > "$tar_out"
+  # Deterministic export: `git archive --format=tar <sha>[:<subpath>]` emits tar
+  # entries with mtime set to the commit date, so the tar stream is bit-identical
+  # for a given SHA. `gzip -n` strips the gzip header's filename + mtime so the
+  # .tar.gz is reproducible too.
+  #
+  # Subpath handling: `git archive <sha> -- <subpath>` preserves the subpath
+  # as a prefix on every tar entry (files appear as `databases/turso/...`).
+  # That's wrong for our use case — the task prompt tells the agent about
+  # files at `prisma/schema.prisma`, not `databases/turso/prisma/schema.prisma`,
+  # and the extracted workspace should match. `git archive <sha>:<subpath>`
+  # uses a tree-ish reference that treats the subpath as the archive root,
+  # producing entries without the prefix. Smoke3's schema-then-query pilot
+  # failure was the prefix-preserved variant masking the fixture's actual
+  # shape.
+  if [ "$sub" = "." ]; then
+    ( cd "$repo_cache" && git archive --format=tar "$sha" ) | gzip -n > "$tar_out"
+  else
+    ( cd "$repo_cache" && git archive --format=tar "${sha}:${sub}" ) | gzip -n > "$tar_out"
+  fi
 
   actual="$(sha256sum "$tar_out" | awk '{print $1}')"
   if [ "$hash" = "pending" ] || [ -z "$hash" ]; then
