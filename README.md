@@ -14,7 +14,7 @@
 
 **CI/CD for AI-generated code. Run Copilot, Claude Code, or Codex in parallel; verify every claim against evidence; gate merges on 8 automated quality checks.**
 
-_Not an autonomous system builder — an accountability layer around agents you already trust enough to run, but not enough to merge blind. Each step runs on its own isolated branch. Each claim (tests pass, build clean, commit made) is cross-referenced against the transcript and the actual filesystem. Failures are auto-classified, repaired with targeted strategies, and re-verified. Nothing reaches main without passing both the verification engine and the quality gate pipeline. The metric that matters is **cost per rubric point**, not wall-clock time._
+_Not an autonomous system builder: an accountability layer around agents you already trust enough to run, but not enough to merge blind. Each step runs on its own isolated branch. Each claim (tests pass, build clean, commit made) is cross-referenced against the transcript and the actual filesystem. Failures are auto-classified, repaired with targeted strategies, and re-verified. Nothing reaches main without passing both the verification engine and the quality gate pipeline. The metric that matters is **cost per rubric point**, not wall-clock time._
 
 <br>
 
@@ -22,7 +22,7 @@ _Not an autonomous system builder — an accountability layer around agents you 
 &nbsp;&nbsp;
 [![CI](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml/badge.svg)](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml)
 &nbsp;&nbsp;
-![Tests: 1420 passing](https://img.shields.io/badge/tests-1420%20passing-brightgreen.svg)
+![Tests: 1497 passing](https://img.shields.io/badge/tests-1497%20passing-brightgreen.svg)
 &nbsp;&nbsp;
 ![Node.js 20+](https://img.shields.io/badge/node-20%2B-green.svg)
 &nbsp;&nbsp;
@@ -54,7 +54,7 @@ npm install -g swarm-orchestrator
 swarm demo demo-fast    # two parallel agents writing throwaway utilities, ~1 min
 ```
 
-The demo runs the full orchestration pipeline end-to-end against two trivial tasks (write a `greet()` function, write a `double()` function) — you see the TUI dashboard, parallel waves, verification reports, and the auditable trail that a real run produces. It uses real agents, so one of the CLIs below must be installed and authenticated; pick whichever you already have.
+The demo runs the full orchestration pipeline end-to-end against two trivial tasks (write a `greet()` function, write a `double()` function). You see the TUI dashboard, parallel waves, verification reports, and the auditable trail that a real run produces. It uses real agents, so one of the CLIs below must be installed and authenticated; pick whichever you already have.
 
 ### Run it against your own code
 
@@ -108,34 +108,46 @@ _Originally a submission for the [GitHub Copilot CLI Challenge](https://github.c
 
 <br>
 
+## What's New in v6.0.0
+
+Three themes on top of v5.0.0's foundation:
+
+1. **Statistical benchmarking rigor**: bootstrap CI harness, demo-fast and api-quick benchmarks fully populated, 30/30 ABC-compliance audit closed, constraint-binding pilot harness, SWE-bench Verified harness ready-to-run.
+2. **Planner fidelity**: three structural fixes to goal classification and template selection (preamble hygiene, bug-fix goal type, contract-change goal type), all driven by observed benchmark failures.
+3. **Verifier and capture correctness**: target-mode gate scoping, union-based capture, commit-time reserved-path excludes, capture-time diff excludes.
+
+Full detail in the [v6.0.0 release notes](docs/releases/RELEASE-v6.0.0.md).
+
+<br>
+
 ## Features
 
 ### Verification & Quality
 
-- **Evidence-based verification** — every agent transcript is parsed for commit SHAs, test output, build markers, and file changes. Steps that can't prove their work don't merge.
-- **Eight quality gates** — scaffold leftovers, duplicate code, hardcoded config, README claim drift, test isolation, test coverage, accessibility, runtime correctness. SARIF output for GitHub code scanning.
-- **Failure-classified repair** — failures are categorized (build, test, missing-artifact, dependency, timeout) and retried with targeted strategies, up to 3 attempts with accumulating context.
-- **Governance mode** — Critic agent scores steps on weighted axes, auto-pauses on flags for human approval. Supports pause, resume, approve, reject during execution.
+- **Evidence-based verification**: every agent transcript is parsed for commit SHAs, test output, build markers, and file changes. Steps that can't prove their work don't merge.
+- **Eight quality gates**: scaffold leftovers, duplicate code, hardcoded config, README claim drift, test isolation, test coverage, accessibility, runtime correctness. SARIF output for GitHub code scanning.
+- **Failure-classified repair**: failures are categorized (build, test, missing-artifact, dependency, timeout) and retried with targeted strategies, up to 3 attempts with accumulating context.
+- **Governance mode**: Critic agent scores steps on weighted axes, auto-pauses on flags for human approval. Supports pause, resume, approve, reject during execution.
 
 ### Cost Governance
 
-- **Pre-execution cost estimation** — predicts premium request consumption factoring in model multipliers (1× for claude-sonnet-4/gpt-4o, 5× for o4-mini, 20× for o3), retry probability from historical failure rates, and overage cost.
-- **Per-step cost attribution** — records estimated vs actual premium requests, retry counts, and prompt tokens per step, saved to `cost-attribution.json`.
-- **Budget enforcement** — hard cap via `--max-premium-requests`, preview-only mode via `--cost-estimate-only`.
+- **Pre-execution cost estimation**: predicts premium request consumption factoring in model multipliers (1× for claude-sonnet-4/gpt-4o, 5× for o4-mini, 20× for o3), retry probability from historical failure rates, and overage cost.
+- **Per-step cost attribution**: records estimated vs actual premium requests, retry counts, and prompt tokens per step, saved to `cost-attribution.json`.
+- **Budget enforcement**: hard cap via `--max-premium-requests`, preview-only mode via `--cost-estimate-only`.
 
 ### Execution
 
-- **Greedy scheduling** — steps launch the moment dependencies resolve, not when a wave finishes. Adaptive concurrency with octopus merge for multi-branch completion.
-- **Branch isolation** — each step runs in its own git worktree and branch. `--strict-isolation` restricts cross-step context to transcript-verified entries only.
-- **Multi-agent support** — Copilot CLI, Claude Code, Codex, and Claude Code Teams as backends. Eight built-in agent profiles; custom agents via YAML.
-- **Persistent sessions** — resume from last completed step, full audit trail, Markdown and JSON report generation.
+- **Greedy scheduling**: steps launch the moment dependencies resolve, not when a wave finishes. Adaptive concurrency with octopus merge for multi-branch completion.
+- **Branch isolation**: each step runs in its own git worktree and branch. `--strict-isolation` restricts cross-step context to transcript-verified entries only.
+- **Multi-agent support**: Copilot CLI, Claude Code, Codex, and Claude Code Teams as backends. Eight built-in agent profiles; custom agents via YAML.
+- **Persistent sessions**: resume from last completed step, full audit trail, Markdown and JSON report generation.
 
 ### Integrations
 
-- **Fleet wrapper** (`--wrap-fleet`) — Copilot CLI native parallel subagent dispatch with version detection and fallback.
-- **Web dashboard** — real-time TUI with step badges, wave health, cost attribution panel. Single HTML page, no build step.
-- **Lean mode** — Delta Context Engine scans the knowledge base for similar past tasks, appending reference blocks to prompts.
-- **Multi-repo orchestration** — per-repo wave loops, cross-repo verification, grouped merge. _(Experimental — see [limitations](#multi-repo).)_
+- **Fleet wrapper** (`--wrap-fleet`): Copilot CLI native parallel subagent dispatch with version detection and fallback.
+- **Web dashboard**: real-time TUI with step badges, wave health, cost attribution panel. Single HTML page, no build step.
+- **Lean mode**: Delta Context Engine scans the knowledge base for similar past tasks, appending reference blocks to prompts.
+- **Multi-repo orchestration**: per-repo wave loops, cross-repo verification, grouped merge. _(Experimental; see [limitations](#multi-repo).)_
 
 <br>
 
@@ -145,24 +157,24 @@ _Originally a submission for the [GitHub Copilot CLI Challenge](https://github.c
 
 ## Benchmarking
 
-Most agent-framework benchmarks report win rates on completeness — "we finished more tasks than them." That's the wrong metric. An approach that burns 10× the premium requests to get 5% more completeness isn't winning; it's just spending. The metric that matters is **cost per rubric point**: how many premium requests does each approach spend per attribute it actually delivers?
+Most agent-framework benchmarks report win rates on completeness: "we finished more tasks than them." That's the wrong metric. An approach that burns 10× the premium requests to get 5% more completeness isn't winning; it's just spending. The metric that matters is **cost per rubric point**: how many premium requests does each approach spend per attribute it actually delivers?
 
 Three producers are compared head-to-head on the same tasks using a 22-attribute binary completeness rubric. No subjective scores, no weighted composites.
 
 | Component | Description |
 |-----------|-------------|
-| [benchmarks/README.md](benchmarks/README.md) | Central hub — methodology, quick start, all evidence links |
+| [benchmarks/README.md](benchmarks/README.md) | Central hub: methodology, quick start, all evidence links |
 | [benchmarks/harness/](benchmarks/harness/) | Three-producer harness, 22-attribute rubric, scoring scripts, raw data |
 | [benchmarks/ladder/](benchmarks/ladder/) | Iterative ladder baseline with [fairness policy](benchmarks/ladder/PROMPT_FAIRNESS.md) |
-| [benchmarks/ABC-compliance.md](benchmarks/ABC-compliance.md) | Agentic Benchmark Checklist audit — 30/30 items addressed |
-| [benchmarks/swe-bench/](benchmarks/swe-bench/) | SWE-bench Lite _(secondary)_ — reproducibility on public tasks |
-| [.github/workflows/continuous-benchmark.yml](.github/workflows/continuous-benchmark.yml) | CI workflow — nightly + release, tracked via Bencher |
+| [benchmarks/ABC-compliance.md](benchmarks/ABC-compliance.md) | Agentic Benchmark Checklist audit: 30/30 items addressed |
+| [benchmarks/swe-bench/](benchmarks/swe-bench/) | SWE-bench Lite _(secondary)_: reproducibility on public tasks |
+| [.github/workflows/continuous-benchmark.yml](.github/workflows/continuous-benchmark.yml) | CI workflow: nightly + release, tracked via Bencher |
 
 **Producers:** ORCHESTRATOR (full swarm), SINGLE_SHOT (1 request), LADDER (deterministic prompt sequence, ≤30 requests). Statistical comparison via paired Wilcoxon signed-rank with Bonferroni correction.
 
 **Metrics (automated only):** rubric completeness (22 binary attributes), premium request count (instrumented), cost per rubric point, wall-clock time, test-pass rate, coverage, security scans, repair-loop iterations. All reported as mean ± 95% CI.
 
-**Current state (N=1 smoke tests, two tasks, 2026-04-17):** on simple tasks, all three producers converge on high completeness — ORCHESTRATOR and SINGLE_SHOT tie at 80–82%, LADDER hits 100%. The orchestrator's architecture is built for the regime this smoke test doesn't yet exercise: harder tasks where SINGLE_SHOT fails outright and LADDER burns compute unproductively. Harder tasks, stricter rubrics, and N≥30 are needed to measure the intended advantage. See [honest analysis](benchmarks/README.md#what-this-data-shows) for the full methodology and what's missing.
+**Current state (v6.0.0, 2026-04-22):** Three concurrent benchmark tracks. The 22-attribute rubric harness remains available. The constraint-binding pilot (4 tasks, N=1) produced 0/4 pass with structured failure hypotheses that drove three plan-generator fixes this release cycle. The SWE-bench Verified harness is ready-to-run; container-path execution is pending v6.1 (see release notes). Honest null results across these tracks are the input to v6.1's work, not a failure mode. See [what this data shows](benchmarks/README.md#what-this-data-shows) for methodology.
 
 ```bash
 # Run all three producers (8 tasks each)
@@ -188,7 +200,7 @@ The primary workflow is pointing the orchestrator at an existing repo. `bootstra
 # Analyze a repo and generate a plan
 npm start bootstrap ./your-repo "Add comprehensive test coverage"
 
-# Multi-repo orchestration (experimental — see limitations below)
+# Multi-repo orchestration (experimental; see limitations below)
 npm start bootstrap ./frontend ./backend "Add shared auth layer"
 
 # Generate a plan without executing (review first)
@@ -588,7 +600,7 @@ Goal ──> Plan ──> Waves ──> Branches ──> Agents ──> Verify �
 <br>
 
 <details>
-<summary><strong>Key modules</strong> (112 source files, 26,653 lines of TypeScript — <a href="ARCHITECTURE.md">full inventory</a>)</summary>
+<summary><strong>Key modules</strong> (114 source files, 26,653 lines of TypeScript; <a href="ARCHITECTURE.md">full inventory</a>)</summary>
 
 <br>
 
@@ -605,7 +617,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete module reference across 
 
 </details>
 
-Output artifacts are written to `runs/<execution-id>/`. See [ARCHITECTURE.md — Output Artifacts](ARCHITECTURE.md#output-artifacts) for the full directory layout.
+Output artifacts are written to `runs/<execution-id>/`. See [ARCHITECTURE.md: Output Artifacts](ARCHITECTURE.md#output-artifacts) for the full directory layout.
 
 <br>
 
@@ -630,7 +642,7 @@ npm start demo api-quick     # REST API with tests and Dockerfile, ~5 min
 | `demo-fast` | 2 | 1 | Two independent utility modules (parallel proof) | ~1 min |
 | `api-quick` | 3 | 2 | REST API with health/CRUD endpoints, tests, and Dockerfile | ~5 min |
 
-`demo-fast` proves parallel execution with zero dependencies. `api-quick` shows wave-based scheduling: BackendMaster builds the API first, then TesterElite and DevOpsPro run in parallel on wave 2. Each step consumes at least one premium request — see [Cost and Premium Requests](#cost-and-premium-requests).
+`demo-fast` proves parallel execution with zero dependencies. `api-quick` shows wave-based scheduling: BackendMaster builds the API first, then TesterElite and DevOpsPro run in parallel on wave 2. Each step consumes at least one premium request; see [Cost and Premium Requests](#cost-and-premium-requests).
 
 <br>
 
@@ -640,10 +652,10 @@ npm start demo api-quick     # REST API with tests and Dockerfile, ~5 min
 
 ## Common Issues
 
-- **`gh` CLI not found** — the PR manager requires [GitHub CLI](https://cli.github.com/). Install it and run `gh auth login` before using PR-related features.
-- **Agent subprocess hangs** — ensure the agent CLI (`copilot`, `claude-code`, or `codex`) is installed, authenticated, and responds to `--help`. The orchestrator invokes it as a child process.
-- **Docker Compose fails to start** — verify Docker is running and port 5432 (PostgreSQL) is free. Use `docker compose logs <service>` to diagnose.
-- **Python tests fail with import errors** — install Python dependencies: `pip install fastapi pydantic sqlalchemy uvicorn httpx pytest` or use the `.venv` if present.
+- **`gh` CLI not found**: the PR manager requires [GitHub CLI](https://cli.github.com/). Install it and run `gh auth login` before using PR-related features.
+- **Agent subprocess hangs**: ensure the agent CLI (`copilot`, `claude-code`, or `codex`) is installed, authenticated, and responds to `--help`. The orchestrator invokes it as a child process.
+- **Docker Compose fails to start**: verify Docker is running and port 5432 (PostgreSQL) is free. Use `docker compose logs <service>` to diagnose.
+- **Python tests fail with import errors**: install Python dependencies: `pip install fastapi pydantic sqlalchemy uvicorn httpx pytest` or use the `.venv` if present.
 
 <br>
 
@@ -653,7 +665,7 @@ npm start demo api-quick     # REST API with tests and Dockerfile, ~5 min
 
 ## Status
 
-Actively maintained. 112 source files, 92 test files, 1,398 tests passing across all packages. Development is ongoing with regular updates.
+Actively maintained. 114 source files, 109 test files, 1,497 tests passing across all packages. Development is ongoing with regular updates.
 
 See [Releases](https://github.com/moonrunnerkc/swarm-orchestrator/releases) for version history.
 
