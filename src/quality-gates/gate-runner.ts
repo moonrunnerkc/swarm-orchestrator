@@ -30,7 +30,8 @@ export async function run_quality_gates(
   outDir?: string,
   baselineFiles?: Set<string>,
   baseCommit?: string,
-  skippedRequirementIds?: Set<string>
+  skippedRequirementIds?: Set<string>,
+  skippedGateKeys?: ReadonlySet<string>,
 ): Promise<QualityGatesRunResult> {
   const start = Date.now();
 
@@ -67,6 +68,26 @@ export async function run_quality_gates(
   for (const gate of getRegisteredGates()) {
     const gateConfig = config.gates[gate.key];
     if (!gateConfig?.enabled) continue;
+    // Target-mode skip: self-improvement gates the caller has opted out of
+    // for this run (orchestrator passes SELF_IMPROVEMENT_GATE_KEYS when
+    // targetMode === true — running against an external repo whose
+    // conventions aren't ours to enforce). Universal gates (hardcodedConfig,
+    // testFileProtection) are never in this set. See registry.ts.
+    if (skippedGateKeys?.has(gate.key)) {
+      // Match the kebab-case id convention that the fired gates emit
+      // (e.g. 'duplicateBlocks' registry key → 'duplicate-blocks' id).
+      // Downstream consumers look gates up by id, so skipped entries need
+      // the same id shape as run entries for the same gate.
+      const id = gate.key.replace(/[A-Z]/g, m => '-' + m.toLowerCase());
+      gateResults.push({
+        id,
+        title: gate.title,
+        status: 'skip',
+        durationMs: 0,
+        issues: [],
+      });
+      continue;
+    }
     gateResults.push(await gate.run(ctx, gateConfig, config.maxFileSizeBytes));
   }
 

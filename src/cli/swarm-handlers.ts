@@ -193,7 +193,14 @@ export async function executeSwarm(
     logger.info(`📂 Target directory: ${targetDir}`);
   }
 
-  const orchestrator = new SwarmOrchestrator(targetDir);
+  // targetMode: structural discriminator for whether this run is against an
+  // external repo (bootstrap / swarm against a target dir) vs the
+  // orchestrator's own cwd (self-improvement). Drives quality-gate scoping:
+  // orchestrator-internal gates (duplicateBlocks, accessibility, etc.) skip
+  // in target mode; universal gates (hardcodedConfig, testFileProtection)
+  // always fire. See SELF_IMPROVEMENT_GATE_KEYS and #27 Phase-4a smoke4.
+  const targetMode = Boolean(targetDir);
+  const orchestrator = new SwarmOrchestrator(targetDir, targetMode);
 
   const runId = `swarm-${new Date().toISOString().replace(/[:.]/g, '-')}`;
   const baseDir = targetDir || process.cwd();
