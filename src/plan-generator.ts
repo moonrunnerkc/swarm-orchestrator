@@ -32,7 +32,7 @@ export interface ReplanPayload {
   addSteps?: { agent: string; task: string; afterStep?: number }[];
 }
 
-export type GoalType = 'api' | 'web-app' | 'cli-tool' | 'library' | 'infrastructure' | 'data-pipeline' | 'mobile-app' | 'bug-fix' | 'generic';
+export type GoalType = 'api' | 'web-app' | 'cli-tool' | 'library' | 'infrastructure' | 'data-pipeline' | 'mobile-app' | 'bug-fix' | 'contract-change' | 'generic';
 
 export class PlanGenerator {
   private gateConfig: QualityGatesConfig | undefined;
@@ -364,6 +364,12 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
         'Preserve observable behavior for every code path the fix does not target. A bug fix that changes behavior elsewhere is a regression.',
         'Error messages and exception types must match what downstream callers already depend on, unless the issue explicitly asks to change them.',
       ],
+      'contract-change': [
+        'Apply the contract change and every caller/test update in this single step. The post-step verifier runs tests against the combined state — an impl change without its matching test updates will fail verification and force a rollback.',
+        'Enumerate every call site before editing. A caller the agent missed is a broken build; use the repo\'s own tools (grep, TypeScript references) to find them all.',
+        'Update tests alongside the impl so existing tests that exercised the pre-change contract become tests of the post-change contract. Adding entirely new tests is fine; leaving stale tests in place is not.',
+        'Do not introduce unrelated refactors while touching each file. The only changes that belong in this step are the ones the contract change requires.',
+      ],
     };
 
     const criteria = [...shared, ...(byType[goalType] || [])];
@@ -436,20 +442,28 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
         steps.push(...this.generateBugFixSteps(goal, stepNumber));
         break;
 
+      case 'contract-change':
+        steps.push(...this.generateContractChangeSteps(goal, stepNumber));
+        break;
+
       default:
         steps.push(...this.generateGenericSteps(goal, stepNumber));
     }
 
-    this.applyGateRequirements(steps, goal);
+    this.applyGateRequirements(steps, goal, goalType);
 
     return steps;
   }
 
   /**
    * Append gate-derived requirements to step prompts when gate config is available.
-   * Also injects a test step if testCoverage is enabled and no TesterElite step exists.
+   * Also injects a test step if testCoverage is enabled and no TesterElite step exists —
+   * EXCEPT for contract-change plans, where tests are updated in the same step as the
+   * impl change by template design (see generateContractChangeSteps). Injecting a
+   * separate TesterElite step on a contract-change plan would re-introduce the exact
+   * impl-vs-test split that #27 Fix 3 exists to prevent.
    */
-  private applyGateRequirements(steps: PlanStep[], goal: string): void {
+  private applyGateRequirements(steps: PlanStep[], goal: string, goalType?: GoalType): void {
     if (!this.gateConfig) return;
 
     for (const step of steps) {
@@ -459,7 +473,12 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
       }
     }
 
-    // Inject a test step when testCoverage is enabled and no test step exists
+    // Inject a test step when testCoverage is enabled and no test step exists.
+    // Contract-change plans bundle tests into their impl step; a separate
+    // TesterElite step here would re-create the broken mid-plan `npm test`
+    // against a half-updated state.
+    if (goalType === 'contract-change') return;
+
     if (requiresTestStep(this.gateConfig)) {
       const hasTestStep = steps.some(s => s.agentName === 'TesterElite');
       if (!hasTestStep) {
@@ -505,7 +524,36 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
   }
 
   private detectGoalType(goal: string): GoalType {
+    // CLASSIFIER DISPATCH ORDER — do not reorder without re-reading this.
+    //
+    // Structural discriminators (contract-change, bug-fix) run BEFORE the
+    // keyword-based domain classifiers (api, library, frontend, etc.).
+    // Domain keywords are commonly present in goals that are actually
+    // coordinated-change or bug-report tasks — "update the `foo` library
+    // to ..." mentions "library" but should never route to the rigid
+    // library template because its step shape is wrong for a contract
+    // change. Centralizing the structural discrimination at the top of
+    // the chain means the decision lives in one place, audit-able and
+    // non-duplicated across templates. See #27 Fixes 2 and 3 for the
+    // two failure modes the ordering prevents.
+    //
+    // Precedence when a goal has BOTH structural shapes (≥2 backticks +
+    // failure verb AND ≥2 change verbs — e.g., "fix this: update foo,
+    // rename bar, modify baz"): contract-change wins because it runs
+    // first. That's the intended precedence — a goal with multi-target
+    // imperative change verbs is better served by the bundled impl+tests
+    // shape than by the bug-fix 3-step shape, even when it opens with a
+    // failure description. If a counter-example surfaces where this
+    // precedence produces the wrong plan shape, that's the evidence to
+    // revisit here.
     const goalLower = goal.toLowerCase();
+
+    // contract-change: coordinated modification of existing code (impl +
+    // callers + tests). Must run BEFORE the domain classifiers (api, library,
+    // etc.) — see ordering note above.
+    if (this.hasContractChangeShape(goal)) {
+      return 'contract-change';
+    }
 
     if (goalLower.match(/\b(rest|api|endpoint|graphql|microservice|backend|server)\b/)) {
       return 'api';
@@ -557,6 +605,43 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
     }
 
     return 'generic';
+  }
+
+  /**
+   * Structural discriminator for contract-change goals: coordinated
+   * modifications to existing code across impl + callers + tests, with
+   * explicit "update X, update Y" language. Two signals required:
+   *   1. At least two backtick-wrapped code references (existing symbols,
+   *      files, or APIs the task names). Same floor as hasBugReportShape
+   *      to keep the greenfield false-positive rate low.
+   *   2. At least two imperative change verbs — "update X" / "rename X" /
+   *      "modify X" / "change X" — which signals the author expects work
+   *      distributed across multiple artifacts rather than a single new
+   *      build.
+   *
+   * The second signal is what distinguishes contract-change from bug-fix:
+   * bug-fix describes OBSERVED failure; contract-change prescribes
+   * INTENDED multi-artifact change. Both can match the same existing code
+   * backtick-density signal, but only one uses multi-target update verbs.
+   *
+   * Kept deliberately narrow. A single "update X" clause isn't enough —
+   * "fix this: update index.js" is closer to bug-fix shape. Two separate
+   * update clauses ("update X ... update Y") is what marks the
+   * coordinated-change intent that the contract-change template exists
+   * to handle.
+   *
+   * See issue #27 Fix 3.
+   */
+  private hasContractChangeShape(goal: string): boolean {
+    const backtickMatches = goal.match(/`[^`\n]+`/g) ?? [];
+    if (backtickMatches.length < 2) return false;
+
+    // Count distinct imperative change clauses. `\b(update|rename|...)\s+\S+`
+    // matches "update X" / "rename X" etc.; we require ≥2 so a lone
+    // "update index.js" in a bug-fix description doesn't misroute.
+    const changeVerbRe = /\b(update|rename|modify|change|convert)\s+[^\s.,;]+/gi;
+    const verbCount = (goal.match(changeVerbRe) ?? []).length;
+    return verbCount >= 2;
   }
 
   /**
@@ -931,6 +1016,78 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
         expectedOutputs: [
           'Scope review notes',
           'Documentation updates if public surface changed',
+          'Quality review notes',
+        ],
+      },
+    ];
+  }
+
+  /**
+   * Template for coordinated modifications to an existing codebase — the
+   * "contract change" shape. Structural invariant of this template:
+   *
+   *   The impl change, the caller updates, and the test updates all land
+   *   in ONE step. There is NO separate TesterElite-owned test-update step
+   *   between impl-change and IntegratorFinalizer.
+   *
+   * Rationale (#27 Fix 3 root-cause analysis). The library template and
+   * bug-fix template both place BackendMaster → TesterElite as two
+   * separate steps. Between them, the per-step verifier runs `npm test`.
+   * For a contract-change task, step 1 lands the impl change that
+   * intentionally breaks the pre-existing tests (they assert the OLD
+   * contract); `npm test` fails; verifier rolls step 1 back; step 2
+   * never runs. This template removes that failure mode by bundling
+   * impl + callers + tests into one step whose post-step verification
+   * sees a coherent post-contract-change state.
+   *
+   * Verifier contract is unchanged. The orchestrator's per-step
+   * verification discipline is what catches agent lies; weakening it to
+   * "defer `npm test` to end-of-plan" would defeat that discipline. The
+   * plan generator's job is to shape plans the per-step verifier can
+   * successfully evaluate.
+   *
+   * Why only 2 steps. For a bundled change, there's no coherent handoff
+   * to a second impl-editing step. IntegratorFinalizer stays as the
+   * scope/quality reviewer.
+   */
+  private generateContractChangeSteps(goal: string, startNumber: number): PlanStep[] {
+    const criteria = this.getAcceptanceCriteria('contract-change');
+    const reviewCriteria = this.getIntegratorReviewCriteria();
+    return [
+      {
+        stepNumber: startNumber,
+        agentName: 'BackendMaster',
+        task:
+          `Apply the following contract change as a single atomic step. ` +
+          `This step must update the implementation, every call site, AND ` +
+          `every affected test so the test suite passes against the new ` +
+          `contract when the step completes. Updating impl + callers while ` +
+          `leaving pre-existing tests unchanged is a failure mode of this ` +
+          `step: pre-existing tests assert the OLD contract and will fail ` +
+          `verification against the NEW impl. Updating tests is not ` +
+          `optional; it is part of the atomic bundle.\n\n` +
+          `Contract change:\n${goal}\n\n` +
+          `Acceptance criteria:\n${criteria}`,
+        dependencies: [],
+        expectedOutputs: [
+          'Updated implementation',
+          'All call sites updated',
+          'Tests updated to exercise the post-change contract',
+          'Docs/examples updated where the contract surfaces publicly',
+        ],
+      },
+      {
+        stepNumber: startNumber + 1,
+        agentName: 'IntegratorFinalizer',
+        task:
+          `Review the contract change's scope, quality, and documentation. ` +
+          `Confirm every call site was updated (no stale pre-change callers) ` +
+          `and the test suite now exercises the post-change contract rather ` +
+          `than asserting on the old one.\n\n${reviewCriteria}`,
+        dependencies: [startNumber],
+        expectedOutputs: [
+          'Scope review notes',
+          'Caller-update completeness check',
           'Quality review notes',
         ],
       },

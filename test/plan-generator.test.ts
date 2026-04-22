@@ -594,6 +594,188 @@ describe('PlanGenerator', () => {
     }
   });
 
+  describe('contract-change goal type (issue #27 fix 3)', () => {
+    // The exact PR #22 pilot goal that produced the broken shape: simple-get's
+    // userAgent-required contract change. Pre-Fix-3, this classified as
+    // 'library' and the rigid library template put impl in step 1 with tests
+    // in step 2 — step 1's verifier ran npm test against pre-existing tests
+    // that expected the old contract, failed, rolled back, step 2 never ran.
+    const SIMPLE_GET_GOAL =
+      '`simple-get` is an HTTP client library with an options object. ' +
+      'Make the `userAgent` string a required option: the module must throw ' +
+      "`Error('simple-get: userAgent option is required')` when it is missing " +
+      'from a call. Update `index.js` (the main entry point), update the ' +
+      "TypeScript types if present, update README.md's examples to supply " +
+      '`userAgent`, and update the existing test file so every call passes ' +
+      "`userAgent: 'simple-get-test'` or similar. Do not weaken the check to " +
+      "'warn' — it must throw.";
+
+    const RENAME_CALLERS_GOAL =
+      'Rename the default-exported function currently named `isPlainObject` ' +
+      'to `isPureObject`. Update every call site in the repo, update the test ' +
+      'file, update the TypeScript type definitions, and update every ' +
+      'reference in README.md.';
+
+    const SCHEMA_UPDATE_GOAL =
+      'Add a `publishedAt DateTime?` field to the `Post` model in ' +
+      '`prisma/schema.prisma`. Update the migration file and update ' +
+      '`src/index.ts` so one of the demo queries filters posts on ' +
+      '`publishedAt`.';
+
+    // Direct classifier tests — tied to classifyGoal, not plan shape,
+    // so they keep signaling if future tuning breaks the contract.
+    it('classifyGoal(simple-get contract change) === "contract-change"', () => {
+      assert.strictEqual(generator.classifyGoal(SIMPLE_GET_GOAL), 'contract-change');
+    });
+
+    it('classifyGoal(rename-then-update-callers) === "contract-change"', () => {
+      assert.strictEqual(generator.classifyGoal(RENAME_CALLERS_GOAL), 'contract-change');
+    });
+
+    it('classifyGoal(schema-then-query update) === "contract-change"', () => {
+      assert.strictEqual(generator.classifyGoal(SCHEMA_UPDATE_GOAL), 'contract-change');
+    });
+
+    // False-positive guardrails
+    it('greenfield "update docs" without multi-target updates does NOT trip contract-change', () => {
+      // Single "update" clause, greenfield otherwise — not a contract change.
+      assert.notStrictEqual(
+        generator.classifyGoal(
+          'Build a new documentation site and update the README to describe it',
+        ),
+        'contract-change',
+      );
+    });
+
+    it('bug-fix description with one "update" clause does NOT trip contract-change', () => {
+      // Bug report with a single "update" in the proposed work doesn't become
+      // contract-change — only multi-target update clauses do.
+      const bugWithUpdate =
+        '`parse()` raises `TypeError` when given None. Update `parse()` to ' +
+        'return an empty result for None inputs.';
+      assert.notStrictEqual(generator.classifyGoal(bugWithUpdate), 'contract-change');
+    });
+
+    it('backtick-free multi-update goal does NOT trip contract-change', () => {
+      // Without backtick refs to existing symbols, a greenfield multi-part
+      // build ("update the backend ... update the frontend") shouldn't route
+      // to contract-change. It'd be a multi-module new-build, not a
+      // coordinated-change-to-existing.
+      assert.notStrictEqual(
+        generator.classifyGoal(
+          'Build and deploy. Update the backend configs, update the frontend ' +
+            'build, update the documentation.',
+        ),
+        'contract-change',
+      );
+    });
+
+    // Template shape invariants — the heart of Fix 3
+    const IMPL_EDITING_AGENTS = new Set(['BackendMaster', 'FrontendExpert']);
+
+    it('plan has no impl→test-update split: there is never a TesterElite step between an impl step and IntegratorFinalizer', () => {
+      // The exact observed broken shape from smoke3 / PR #22 pilot was
+      // BackendMaster (impl) → TesterElite (test update) — with the verifier
+      // running `npm test` between them against a half-updated codebase.
+      // The contract-change template must NOT produce that sequence.
+      const plan = generator.createPlan(SIMPLE_GET_GOAL);
+      for (let i = 0; i < plan.steps.length - 1; i++) {
+        const here = plan.steps[i];
+        const next = plan.steps[i + 1];
+        if (IMPL_EDITING_AGENTS.has(here.agentName) && next.agentName === 'TesterElite') {
+          assert.fail(
+            `step ${here.stepNumber} (${here.agentName}) is followed by a ` +
+              `separate TesterElite step. That's the broken shape: ` +
+              `per-step verification will run tests against a half-applied ` +
+              `contract change and roll back. See #27 Fix 3.`,
+          );
+        }
+      }
+    });
+
+    it('the single impl step bundles impl + callers + tests (task prompt mentions all three)', () => {
+      const plan = generator.createPlan(SIMPLE_GET_GOAL);
+      const implStep = plan.steps.find(s => IMPL_EDITING_AGENTS.has(s.agentName));
+      assert.ok(implStep, 'plan must contain an impl-editing step');
+      const task = implStep!.task.toLowerCase();
+      // The task prompt must make the bundle explicit — otherwise the agent
+      // might ship impl alone and call it done.
+      assert.ok(
+        task.includes('caller') || task.includes('call site'),
+        'task prompt must direct the agent to update call sites',
+      );
+      assert.ok(
+        task.includes('test'),
+        'task prompt must direct the agent to update tests in the same step',
+      );
+      assert.ok(
+        task.includes('atomic') || task.includes('single') || task.includes('combined'),
+        'task prompt must signal single-step atomicity of the bundle',
+      );
+    });
+
+    it('exactly one impl-editing step, so there is nothing after it for npm test to trip on', () => {
+      const plan = generator.createPlan(SIMPLE_GET_GOAL);
+      const implSteps = plan.steps.filter(s => IMPL_EDITING_AGENTS.has(s.agentName));
+      assert.strictEqual(
+        implSteps.length,
+        1,
+        `contract-change plans bundle all editing into one step. Got ` +
+          `${implSteps.length} impl-editing steps: ` +
+          `${implSteps.map(s => `${s.stepNumber}:${s.agentName}`).join(', ')}`,
+      );
+    });
+
+    it('plan does NOT contain a TesterElite step at all for contract-change', () => {
+      // TesterElite writes tests as a separate step. For contract-change,
+      // the impl step updates the tests in-place; a TesterElite step after
+      // would be redundant OR reintroduce the impl/test split.
+      const plan = generator.createPlan(SIMPLE_GET_GOAL);
+      const testerSteps = plan.steps.filter(s => s.agentName === 'TesterElite');
+      assert.strictEqual(
+        testerSteps.length,
+        0,
+        'contract-change template must not allocate TesterElite as its own step',
+      );
+    });
+
+    it('greenfield library goal still routes to the library template (no regression)', () => {
+      // Classifying "contract-change" before "library" is correct only if the
+      // contract-change discriminator is strict enough that greenfield library
+      // builds still reach the library template.
+      const plan = generator.createPlan(
+        'Build a small utility library for date formatting with date, time, and timezone helpers',
+      );
+      // library template is 3 steps; contract-change is 2
+      assert.notStrictEqual(
+        plan.steps.length,
+        2,
+        'greenfield library should not route to the 2-step contract-change template',
+      );
+    });
+
+    it('applyGateRequirements with testCoverage enabled does NOT re-inject TesterElite on contract-change plans', () => {
+      // Production configs load gate configs with testCoverage: enabled. Before
+      // the applyGateRequirements guard, the auto-inject path would add a
+      // TesterElite step to any plan missing one — re-creating the exact
+      // impl→test-update split Fix 3 prevents.
+      const { DEFAULT_QUALITY_GATES_CONFIG } = require('../src/quality-gates/default-config');
+      const configLoader = new ConfigLoader();
+      const agents = configLoader.loadAllAgents();
+      const gatedGenerator = new PlanGenerator(agents, DEFAULT_QUALITY_GATES_CONFIG);
+
+      const plan = gatedGenerator.createPlan(SIMPLE_GET_GOAL);
+      const testerSteps = plan.steps.filter(s => s.agentName === 'TesterElite');
+      assert.strictEqual(
+        testerSteps.length,
+        0,
+        'contract-change plan must stay free of TesterElite even with ' +
+          'testCoverage gate enabled; found: ' +
+          testerSteps.map(s => `step ${s.stepNumber}`).join(', '),
+      );
+    });
+  });
+
   describe('bug-fix goal type (issue #27 fix 2)', () => {
     // Representative bug-report-shaped goals sourced from real SWE-bench
     // Verified instance bodies. Kept small: the discriminator's behavior
