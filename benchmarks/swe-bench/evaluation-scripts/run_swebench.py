@@ -422,8 +422,12 @@ def checkout_repo(task, workdir: Path) -> Path:
         capture_output=True,
         timeout=300,
     )
+    # Reset the local master branch to base_commit rather than just checking out a
+    # detached HEAD. Without -B, master stays at the clone tip (potentially tens of
+    # thousands of commits ahead), and the branch-merger later merges the swarm branch
+    # into that tip, causing git diff base_commit..HEAD to capture all upstream history.
     subprocess.run(
-        ["git", "checkout", task["base_commit"]],
+        ["git", "checkout", "-B", "master", task["base_commit"]],
         cwd=str(repo_dir),
         check=True,
         capture_output=True,
