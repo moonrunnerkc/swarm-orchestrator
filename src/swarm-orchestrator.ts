@@ -45,6 +45,7 @@ import { buildDependencyGraph as _buildDependencyGraph, identifyExecutionWaves a
 import { runCriticReview as _runCriticReview } from './critic-reviewer';
 import { executeOptionalDeployment as _executeOptionalDeployment } from './deployment-handler';
 import { analyzeCommitQuality as _analyzeCommitQuality } from './commit-quality-analyzer';
+import { PauseController } from './orchestrator/pause-controller';
 
 const logger = getLogger('orchestrator');
 
@@ -163,8 +164,7 @@ export class SwarmOrchestrator {
   private workingDir: string;
   private worktreeManager: WorktreeManager;
   private branchMerger: BranchMerger;
-  private pauseRequested: boolean = false;
-  private resumeRequested: boolean = false;
+  private pauseController: PauseController = new PauseController();
 
   /**
    * `targetMode` is true when the orchestrator is operating on an external
@@ -216,22 +216,21 @@ export class SwarmOrchestrator {
    * Request pause of current execution
    */
   requestPause(): void {
-    this.pauseRequested = true;
+    this.pauseController.requestPause();
   }
 
   /**
    * Request resume of paused execution
    */
   requestResume(): void {
-    this.resumeRequested = true;
-    this.pauseRequested = false;
+    this.pauseController.requestResume();
   }
 
   /**
    * Check if pause is requested
    */
   isPauseRequested(): boolean {
-    return this.pauseRequested;
+    return this.pauseController.isPauseRequested();
   }
 
   /**
@@ -496,7 +495,7 @@ export class SwarmOrchestrator {
     // Main scheduling loop: keep launching ready steps until everything is done or blocked
     while (pending.size > 0) {
       // Check for pause
-      if (this.pauseRequested) {
+      if (this.pauseController.isPauseRequested()) {
         logger.info('\n⏸️  Pause requested. Waiting for resume...');
         await this.waitForResume();
         logger.info('\n▶️  Resuming execution...');
@@ -583,7 +582,7 @@ export class SwarmOrchestrator {
           if (criticResult.flags.length > 0) {
             logger.info(`  ⚠️  Critic flags: ${criticResult.flags.join(', ')}`);
             logger.info('  ⏸️  Governance pause: awaiting human approval...');
-            this.pauseRequested = true;
+            this.pauseController.requestPause();
             await this.waitForResume();
           }
         }
@@ -2050,18 +2049,10 @@ export class SwarmOrchestrator {
    * Merge a branch with conflict detection
    */
   /**
-   * Wait for resume signal
+   * Wait for resume signal - delegates to PauseController.
    */
   private async waitForResume(): Promise<void> {
-    return new Promise((resolve) => {
-      const checkInterval = setInterval(() => {
-        if (this.resumeRequested || !this.pauseRequested) {
-          clearInterval(checkInterval);
-          this.resumeRequested = false;
-          resolve();
-        }
-      }, 500); // Check every 500ms
-    });
+    return this.pauseController.waitForResume();
   }
 
   /**
