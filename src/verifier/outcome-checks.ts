@@ -38,35 +38,83 @@ export function runOutcomeChecks(
     checks.push(testCheck);
   }
 
+  // Idempotency resolution: if the diff check failed (no new commits) but the
+  // build and tests both pass, the goal state is demonstrably achieved. Downgrade
+  // git_diff from a hard failure to an advisory warning so an agent that found
+  // its work already present does not block the step from merging.
+  // Requires at least one exec check to be present; absence of scripts is not
+  // treated as a pass since that would mask genuinely empty agent runs.
+  const diffCheck = checks.find((c) => c.type === 'git_diff');
+  if (diffCheck && !diffCheck.passed) {
+    const buildExecCheck = checks.find((c) => c.type === 'build_exec');
+    const testExecCheck = checks.find((c) => c.type === 'test_exec');
+    const hasExecEvidence = buildExecCheck !== undefined || testExecCheck !== undefined;
+    const buildPassed = buildExecCheck ? buildExecCheck.passed : true;
+    const testsPassed = testExecCheck ? testExecCheck.passed : true;
+    if (hasExecEvidence && buildPassed && testsPassed) {
+      diffCheck.required = false;
+      diffCheck.passed = true;
+      diffCheck.evidence =
+        `${diffCheck.reason ?? 'No new commits'} — build and tests confirm goal already achieved (idempotent)`;
+      delete diffCheck.reason;
+    }
+  }
+
   return checks;
 }
 
 function checkGitDiff(workdir: string, baseSha: string): VerificationCheck {
+  const timeout = DEFAULT_SIGKILL_DELAY_MS * 2;
   try {
-    const diffOutput = execSync(
+    // Primary: committed changes since baseline
+    const committedDiff = execSync(
       `git diff --stat ${baseSha}..HEAD`,
-      { cwd: workdir, encoding: 'utf8', timeout: DEFAULT_SIGKILL_DELAY_MS * 2 }
+      { cwd: workdir, encoding: 'utf8', timeout }
     ).trim();
 
-    if (!diffOutput) {
+    if (committedDiff) {
+      const lines = committedDiff.split('\n');
+      const summaryLine = lines[lines.length - 1] || '';
       return {
         type: 'git_diff',
         description: 'Agent produced code changes',
         required: true,
-        passed: false,
-        reason: `No changes detected since ${baseSha.slice(0, 8)}`,
+        passed: true,
+        evidence: summaryLine.trim(),
       };
     }
 
-    const lines = diffOutput.split('\n');
-    const summaryLine = lines[lines.length - 1] || '';
+    // Secondary: uncommitted working-tree changes (agent wrote files but did not commit)
+    const unstagedDiff = execSync(
+      `git diff --stat HEAD`,
+      { cwd: workdir, encoding: 'utf8', timeout }
+    ).trim();
 
+    // Use -uno to exclude untracked files; transcript files and other orchestrator
+    // artifacts dropped into the worktree should not count as "agent made changes".
+    const statusOutput = execSync(
+      `git status --porcelain -uno`,
+      { cwd: workdir, encoding: 'utf8', timeout }
+    ).trim();
+
+    if (unstagedDiff || statusOutput) {
+      const fileCount = statusOutput ? statusOutput.split('\n').filter(Boolean).length : 0;
+      return {
+        type: 'git_diff',
+        description: 'Agent produced code changes',
+        required: true,
+        passed: true,
+        evidence: `${fileCount} file(s) modified in working tree (uncommitted) — agent completed work without committing`,
+      };
+    }
+
+    // No committed or uncommitted changes: record for idempotency resolution above
     return {
       type: 'git_diff',
       description: 'Agent produced code changes',
       required: true,
-      passed: true,
-      evidence: summaryLine.trim(),
+      passed: false,
+      reason: `No changes detected since ${baseSha.slice(0, 8)}`,
     };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

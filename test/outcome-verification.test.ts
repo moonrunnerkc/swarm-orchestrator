@@ -399,6 +399,56 @@ Compiled successfully
       const result = await verifier.verifyStep(1, 'dev', transcript);
       assert.strictEqual(result.passed, true);
     });
+
+    it('passes when agent modified tracked files without committing (uncommitted changes)', async () => {
+      const dir = tmpDir();
+      tempDirs.push(dir);
+
+      const pkg = { name: 'proj', scripts: { build: 'echo ok', test: 'echo ok' } };
+      fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(pkg));
+      const baseSha = initGitRepo(dir);
+
+      // Agent modified a tracked file but did not stage or commit it
+      fs.writeFileSync(path.join(dir, 'seed.txt'), 'modified by agent');
+
+      const transcript = writeTranscript(dir);
+      const verifier = new VerifierEngine(dir);
+
+      const result = await verifier.verifyStep(
+        1, 'dev', transcript, undefined, undefined, undefined,
+        { workdir: dir, baseSha }
+      );
+
+      const diffCheck = result.checks.find((c) => c.type === 'git_diff');
+      assert.ok(diffCheck, 'git_diff check should exist');
+      assert.strictEqual(diffCheck!.passed, true, 'should pass on uncommitted working-tree changes');
+      assert.ok(diffCheck!.evidence?.includes('uncommitted'), 'evidence should note uncommitted changes');
+    });
+
+    it('passes when agent produced no commits but build and tests confirm goal achieved (idempotent)', async () => {
+      const dir = tmpDir();
+      tempDirs.push(dir);
+
+      const pkg = { name: 'proj', scripts: { build: 'echo built', test: 'echo ok' } };
+      fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(pkg));
+      const baseSha = initGitRepo(dir);
+      // No new commits — work was already present from a prior run
+
+      const transcript = writeTranscript(dir);
+      const verifier = new VerifierEngine(dir);
+
+      const result = await verifier.verifyStep(
+        1, 'dev', transcript, undefined, undefined, undefined,
+        { workdir: dir, baseSha }
+      );
+
+      const diffCheck = result.checks.find((c) => c.type === 'git_diff');
+      assert.ok(diffCheck, 'git_diff check should exist');
+      assert.strictEqual(diffCheck!.passed, true, 'should pass via idempotency resolution');
+      assert.strictEqual(diffCheck!.required, false, 'should be downgraded to non-required');
+      assert.ok(diffCheck!.evidence?.includes('idempotent'), 'evidence should note idempotent resolution');
+      assert.strictEqual(result.passed, true, 'overall result should pass');
+    });
   });
 
   // ── result fields ─────────────────────────────────────────────
