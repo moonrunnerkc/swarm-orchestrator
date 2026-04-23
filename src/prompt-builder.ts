@@ -8,6 +8,7 @@ import { AgentProfile } from './config-loader';
 import { ExecutionPlan, PlanStep } from './plan-generator';
 import { BaselineSnapshot, formatPreservationRules } from './baseline-scanner';
 import { getLogger } from './logger';
+import { discoverTestCommand, renderVerifyCommandSection } from './test-command-discovery';
 
 const logger = getLogger('prompt-builder');
 
@@ -18,6 +19,13 @@ const logger = getLogger('prompt-builder');
 export interface PromptBuildContext {
   plan: ExecutionPlan;
   baselineSnapshot?: BaselineSnapshot;
+  /**
+   * Absolute path to the target project. Used to discover the full test
+   * command (pnpm/npm/yarn test) from its package.json so agents run the
+   * project's real gate instead of picking a subset like `npx vitest --run`.
+   * When undefined, discovery falls back to `process.cwd()`.
+   */
+  targetProjectRoot?: string;
 }
 
 /**
@@ -85,7 +93,14 @@ export function buildSwarmPrompt(
   step.expectedOutputs.forEach(output => sections.push('- ' + output));
   sections.push('');
 
-  sections.push('When finished, verify your work actually works before committing. Run tests if applicable. Check that files you created are syntactically valid.');
+  // Discover the target project's real test gate (pnpm/npm/yarn test) so the
+  // agent runs the full script rather than picking a subset like
+  // `npx vitest --run`, which masks lint/type-check failures.
+  const testDiscovery = discoverTestCommand(context.targetProjectRoot || process.cwd());
+  if (testDiscovery.warning) {
+    logger.warn(`test command discovery: ${testDiscovery.warning}`);
+  }
+  sections.push(renderVerifyCommandSection(testDiscovery));
 
   return sections.join('\n');
 }
@@ -126,6 +141,28 @@ export function writeSharedInstructions(
     contentParts.push(tierInjection);
     contentParts.push('');
   }
+
+  // Pin the target project's real test gate into the shared instructions so
+  // every agent that inherits this file knows which single command to run
+  // instead of reaching for a subset runner like `npx vitest --run`.
+  const testDiscovery = discoverTestCommand(workingDir);
+  if (testDiscovery.warning) {
+    logger.warn(`test command discovery (shared instructions): ${testDiscovery.warning}`);
+  }
+  contentParts.push(
+    '## Verify Before Committing',
+    `Before committing, run \`${testDiscovery.command}\` and verify it passes.`,
+    'Do not run individual test tools directly. Run the project\'s full test script.',
+  );
+  if (testDiscovery.hasScript && testDiscovery.rawScript) {
+    contentParts.push(
+      `This project's "${testDiscovery.command}" runs: ${testDiscovery.rawScript}`,
+      'Running a subset (e.g. `npx vitest --run`) will miss lint and type checks and your commit may fail.',
+    );
+  } else if (testDiscovery.warning) {
+    contentParts.push(`WARNING: ${testDiscovery.warning}`);
+  }
+  contentParts.push('');
 
   contentParts.push(
     '## Quality Bar',

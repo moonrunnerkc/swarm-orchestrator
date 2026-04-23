@@ -5,6 +5,7 @@ import { AgentProfile } from './config-loader';
 import { ExecutionOptions } from './types';
 import { GitHubMcpIntegrator } from './github-mcp-integrator';
 import SessionExecutor, { SessionResult, SessionOptions } from './session-executor';
+import { discoverTestCommand, renderVerifyCommandSection } from './test-command-discovery';
 import { getLogger } from './logger';
 const logger = getLogger('step-runner');
 
@@ -34,10 +35,12 @@ export interface ExecutionContext {
 export class StepRunner {
   private proofDir: string;
   private sessionExecutor: SessionExecutor;
+  private workingDir: string;
 
-  constructor(proofDir?: string) {
-    this.proofDir = proofDir || path.join(process.cwd(), 'proof');
-    this.sessionExecutor = new SessionExecutor(process.cwd());
+  constructor(proofDir?: string, workingDir?: string) {
+    this.workingDir = workingDir || process.cwd();
+    this.proofDir = proofDir || path.join(this.workingDir, 'proof');
+    this.sessionExecutor = new SessionExecutor(this.workingDir);
   }
 
   /**
@@ -140,6 +143,12 @@ export class StepRunner {
     lines.push('4. Do not say "done" unless all required artifacts listed below exist.');
     lines.push('5. Prefer small, reviewable changes over large refactors.');
     lines.push('');
+
+    const testDiscovery = discoverTestCommand(this.workingDir);
+    if (testDiscovery.warning) {
+      logger.warn(`test command discovery: ${testDiscovery.warning}`);
+    }
+    lines.push(renderVerifyCommandSection(testDiscovery));
 
     lines.push('Refusal rules (when to stop and ask)');
     lines.push('-------------------------------------');

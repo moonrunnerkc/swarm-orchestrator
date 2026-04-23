@@ -10,6 +10,7 @@ import { HookGenerator, GeneratedHooks } from './hook-generator';
 import { PlanStep } from './plan-generator';
 import { redactFile } from './secret-redactor';
 import { ExecutionContext } from './step-runner';
+import { discoverTestCommand, renderVerifyCommandSection } from './test-command-discovery';
 import {
   DEFAULT_COMMAND_TIMEOUT_MS,
   DEFAULT_HEARTBEAT_INTERVAL_MS,
@@ -342,6 +343,15 @@ export class SessionExecutor {
       }
       sections.push('');
     }
+
+    // Discover the target project's full test gate so the agent runs
+    // `pnpm test` (or equivalent) instead of a subset like `npx vitest --run`
+    // that would skip lint and type checks.
+    const testDiscovery = discoverTestCommand(this.workingDir);
+    if (testDiscovery.warning) {
+      logger.warn(`test command discovery: ${testDiscovery.warning}`);
+    }
+    sections.push(renderVerifyCommandSection(testDiscovery));
 
     // CRITICAL: Human-like commit instructions
     sections.push('Git Commit Requirements (CRITICAL)');

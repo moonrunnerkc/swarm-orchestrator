@@ -3,10 +3,14 @@ import * as path from 'path';
 import { execSync } from 'child_process';
 import SessionExecutor, { SessionOptions, SessionResult } from './session-executor';
 import VerifierEngine, { VerificationResult } from './verifier-engine';
+import { discoverTestCommand, renderVerifyCommandSection } from './test-command-discovery';
+import { getLogger } from './logger';
 import {
   DEFAULT_REPAIR_REPORT_CHARS,
   DEFAULT_REPAIR_TRANSCRIPT_CHARS,
 } from './defaults';
+
+const logger = getLogger('repair-agent');
 
 /**
  * Context provided to the repair agent for a single failed step.
@@ -154,6 +158,14 @@ export class RepairAgent {
       sections.push(context.failureContext);
       sections.push('');
     }
+
+    // Discover the target project's full test gate before the repair
+    // instructions so the agent commits only after running the real script.
+    const testDiscovery = discoverTestCommand(this.workingDir);
+    if (testDiscovery.warning) {
+      logger.warn(`test command discovery: ${testDiscovery.warning}`);
+    }
+    sections.push(renderVerifyCommandSection(testDiscovery));
 
     sections.push('--- REPAIR INSTRUCTIONS ---');
 

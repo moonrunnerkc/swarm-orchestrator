@@ -1778,7 +1778,14 @@ export class SwarmOrchestrator {
 
   /** Build prompt for swarm step execution. Delegates to prompt-builder module. */
   private buildSwarmPrompt(step: PlanStep, agent: AgentProfile, context: SwarmExecutionContext, dependencyContext: string): string {
-    return _buildSwarmPrompt(step, agent, context, dependencyContext);
+    // Pass the orchestrator's working dir so prompt-builder can read the
+    // target project's package.json to discover the real test gate.
+    return _buildSwarmPrompt(
+      step,
+      agent,
+      { ...context, targetProjectRoot: this.workingDir },
+      dependencyContext,
+    );
   }
 
   /** Build dependency graph from plan. Delegates to wave-scheduler module. */
