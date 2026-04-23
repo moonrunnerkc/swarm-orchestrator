@@ -476,8 +476,10 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
     // Inject a test step when testCoverage is enabled and no test step exists.
     // Contract-change plans bundle tests into their impl step; a separate
     // TesterElite step here would re-create the broken mid-plan `npm test`
-    // against a half-updated state.
+    // against a half-updated state. Trivial single-file tasks also bundle
+    // tests into the one step their template emits.
     if (goalType === 'contract-change') return;
+    if (goalType === 'generic' && this.isTrivialTask(goal)) return;
 
     if (requiresTestStep(this.gateConfig)) {
       const hasTestStep = steps.some(s => s.agentName === 'TesterElite');
@@ -1095,6 +1097,33 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
   }
 
   /**
+   * Detect whether the goal describes a trivial single-file modification —
+   * something like "add X to index.js", "export Y from utils.ts", "rename foo
+   * in bar.py". These tasks are fully completed by one agent in one pass;
+   * the generic 3-step template (primary → TesterElite → IntegratorFinalizer)
+   * would wait on 2 more Codex invocations that re-do Step 1's work.
+   *
+   * Three signals required so greenfield goals don't misroute:
+   *   1. An additive/modifying verb ("add", "export", "rename", ...).
+   *   2. A single code-file reference (foo.js / utils/bar.ts / etc.).
+   *   3. The goal stays short (≤20 words) — multi-requirement goals that
+   *      mention one file in passing are still multi-step work.
+   */
+  private isTrivialTask(goal: string): boolean {
+    const lower = goal.toLowerCase();
+    const hasTrivialVerb = /\b(add|append|export|rename|remove|replace|inline|extract)\b/.test(lower);
+    if (!hasTrivialVerb) return false;
+
+    const fileRefs = lower.match(/\b[\w./-]+\.(?:js|mjs|cjs|jsx|ts|tsx|py|rb|go|rs|java|kt|php|swift|cs|sh|css|scss|html|json|yaml|yml|md)\b/g) ?? [];
+    if (fileRefs.length < 1 || fileRefs.length > 2) return false;
+
+    const wordCount = goal.trim().split(/\s+/).length;
+    if (wordCount > 20) return false;
+
+    return true;
+  }
+
+  /**
    * Detect whether the goal describes a small, self-contained project that
    * doesn't need a separate testing step. Indicators: explicit file list,
    * "no framework", "no build step", or very short goal with few deliverables.
@@ -1119,6 +1148,21 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
     const primaryAgent = this.assignAgent(goal);
     const criteria = this.getAcceptanceCriteria('generic');
     const reviewCriteria = this.getIntegratorReviewCriteria();
+
+    // Trivial single-file modifications collapse to one step. The default
+    // 3-step generic template paid a full extra Codex invocation per added
+    // step for work the primary agent already does in-pass (impl + tests).
+    if (this.isTrivialTask(goal)) {
+      return [
+        {
+          stepNumber: startNumber,
+          agentName: primaryAgent,
+          task: `Implement with tests for: ${goal}\n\nAcceptance criteria:\n${criteria}\n\nWrite or update tests in the same commit; the project's test command (npm test, pytest, go test, ...) must pass before you finish.`,
+          dependencies: [],
+          expectedOutputs: ['Implementation', 'Tests', 'Working functionality'],
+        },
+      ];
+    }
 
     // For simple projects (few files, no framework, no build step), skip
     // the dedicated TesterElite step. The primary agent's acceptance criteria
