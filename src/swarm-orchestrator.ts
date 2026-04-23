@@ -11,8 +11,7 @@ import { MetaAnalyzer, MetaReviewResult } from './meta-analyzer';
 import MetricsCollector from './metrics-collector';
 import { ExecutionPlan, PlanGenerator, PlanStep, ReplanPayload } from './plan-generator';
 import { runPostExecution, PostRunContext } from './post-run-reporter';
-import { load_quality_gates_config, run_quality_gates } from './quality-gates';
-import { SELF_IMPROVEMENT_GATE_KEYS } from './quality-gates/registry';
+import { load_quality_gates_config } from './quality-gates';
 import type { GateResult } from './quality-gates';
 import RepairAgent, { RepairContext } from './repair-agent';
 import SessionExecutor, { SessionOptions, SessionResult } from './session-executor';
@@ -46,6 +45,12 @@ import { analyzeCommitQuality as _analyzeCommitQuality } from './commit-quality-
 import { PauseController } from './orchestrator/pause-controller';
 import { sanitizeGitState as _sanitizeGitState, installDependenciesIfNeeded as _installDependenciesIfNeeded } from './orchestrator/git-state-utils';
 import { runAsyncMetaAnalysis as _runAsyncMetaAnalysis } from './orchestrator/async-meta-analysis';
+import {
+  runFinalGatesPipeline as _runFinalGatesPipeline,
+  buildRemediationStepForDelegate as _buildRemediationStepForDelegate,
+  RemediationHost,
+  QualityGatesTriggeredFlags,
+} from './orchestrator/final-gates-remediation';
 
 const logger = getLogger('orchestrator');
 
@@ -157,11 +162,11 @@ export interface SwarmExecutionContext {
  * Swarm Orchestrator - coordinates parallel execution of independent Copilot CLI sessions
  * Manages concurrent sessions, per-agent branches, and automatic merging
  */
-export class SwarmOrchestrator {
+export class SwarmOrchestrator implements RemediationHost {
   private sessionExecutor: SessionExecutor;
   private shareParser: ShareParser;
   private verifier: VerifierEngine;
-  private workingDir: string;
+  public readonly workingDir: string;
   private worktreeManager: WorktreeManager;
   private branchMerger: BranchMerger;
   private pauseController: PauseController = new PauseController();
@@ -186,7 +191,7 @@ export class SwarmOrchestrator {
    *      are the orchestrator's verification contract for detecting
    *      agent lies about their own work, and apply universally.
    */
-  private targetMode: boolean;
+  public readonly targetMode: boolean;
 
   constructor(workingDir?: string, targetMode: boolean = false) {
     this.workingDir = workingDir || process.cwd();
@@ -201,8 +206,10 @@ export class SwarmOrchestrator {
   /**
    * Look up an agent by name, falling back to normalized (snake_case) matching.
    * Handles plans using snake_case (frontend_expert) against YAML agents (FrontendExpert).
+   * Public to satisfy `RemediationHost`; callers outside the class should still
+   * treat it as an internal helper.
    */
-  private resolveAgent(agents: Map<string, AgentProfile>, name: string): AgentProfile | undefined {
+  resolveAgent(agents: Map<string, AgentProfile>, name: string): AgentProfile | undefined {
     const exact = agents.get(name);
     if (exact) return exact;
     const normalized = ConfigLoader.normalizeAgentName(name);
@@ -701,207 +708,23 @@ export class SwarmOrchestrator {
     // this happens before auto-PR so we don't create a PR for a failing run
     const gatesEnabled = options?.qualityGates !== false;
     if (gatesEnabled) {
-      logger.info('\n🧪 Running final quality gates...');
-      const gatesOut = options?.qualityGatesOutDir
-        ? path.isAbsolute(options.qualityGatesOutDir)
-          ? options.qualityGatesOutDir
-          : path.join(runDir, options.qualityGatesOutDir)
-        : path.join(runDir, 'quality-gates');
-
-      // Reuse cached gatesConfig from top of executeSwarm.
-      // Pass baseline so gates only flag issues on agent-created files,
-      // not pre-existing project code the agents weren't asked to change.
-      const baselineFiles = context.baselineSnapshot
-        ? new Set(context.baselineSnapshot.allFiles)
-        : undefined;
-      const baseCommit = context.baselineSnapshot?.headCommit || undefined;
-      const skippedReqIds = context.filteredRequirements
-        ? new Set(context.filteredRequirements.skipped.map(r => r.id))
-        : undefined;
-      // targetMode: skip orchestrator-internal self-improvement gates when
-      // we're operating on an external repo. Universal gates
-      // (hardcodedConfig, testFileProtection) continue to fire. See
-      // registry.ts for the classification rationale.
-      const skippedGateKeys = this.targetMode ? SELF_IMPROVEMENT_GATE_KEYS : undefined;
-      let gatesResult = await run_quality_gates(
-        this.workingDir, gatesConfig, gatesOut, baselineFiles, baseCommit,
-        skippedReqIds, skippedGateKeys,
+      const pipelineResult = await _runFinalGatesPipeline(
+        this, context, runDir, agents, gatesConfig, options,
       );
-      context.finalGateResults = gatesResult.results;
 
-      if (!gatesResult.passed && gatesConfig.failOnIssues) {
-        const failedIds = new Set(gatesResult.results.filter(r => r.status === 'fail').map(r => r.id));
-        const agentMap = context.agents || agents;
-        let remediationAttempted = false;
-
-        const canAutoFix = !!context.qualityGatesTriggered && (
-          (failedIds.has('duplicate-blocks') && gatesConfig.autoAddRefactorStepOnDuplicateBlocks && !context.qualityGatesTriggered.duplicateRefactorAdded) ||
-          (failedIds.has('readme-claims') && gatesConfig.autoAddReadmeTruthStepOnReadmeClaims && !context.qualityGatesTriggered.readmeTruthAdded) ||
-          (failedIds.has('scaffold-defaults') && gatesConfig.autoAddScaffoldFixStepOnScaffoldDefaults && !context.qualityGatesTriggered.scaffoldFixAdded) ||
-          (failedIds.has('hardcoded-config') && gatesConfig.autoAddConfigFixStepOnHardcodedConfig && !context.qualityGatesTriggered.configFixAdded) ||
-          (failedIds.has('accessibility') && gatesConfig.autoAddAccessibilityFixStepOnAccessibility && !context.qualityGatesTriggered.accessibilityFixAdded) ||
-          (failedIds.has('test-coverage') && gatesConfig.autoAddTestCoverageStepOnTestCoverage && !context.qualityGatesTriggered.testCoverageFixAdded)
-        );
-
-        if (canAutoFix) {
-          // Remediation steps should depend only on steps that actually completed.
-          // Using the max step number can create dependencies on failed/blocked steps,
-          // causing the remediation to wait forever then timeout.
-          const completedStepNumbers = context.results
-            .filter(r => r.status === 'completed')
-            .map(r => r.stepNumber);
-          const maxCompletedStep = completedStepNumbers.length > 0
-            ? Math.max(...completedStepNumbers)
-            : 0; // no dependency if nothing completed
-          const lastAgent = context.plan.steps[context.plan.steps.length - 1]?.agentName || 'integrator_finalizer';
-
-          const addSteps: Array<{ agent: string; task: string; afterStep?: number }> = [];
-
-          const dupStep = this.buildRemediationStep(
-            gatesResult.results.find(r => r.id === 'duplicate-blocks'),
-            gatesConfig.autoAddRefactorStepOnDuplicateBlocks,
-            'duplicateRefactorAdded', context, agentMap,
-            'Quality gates flagged repeated code blocks. Extract shared utilities/hooks/middleware and refactor duplicates away. Use the gate report as the source of truth. Re-run tests and ensure quality gates pass.',
-            '⚠️  Final quality gates: duplicate blocks detected; scheduling refactor',
-            maxCompletedStep, lastAgent,
-          );
-          if (dupStep) addSteps.push(dupStep);
-
-          const readmeStep = this.buildRemediationStep(
-            gatesResult.results.find(r => r.id === 'readme-claims'),
-            gatesConfig.autoAddReadmeTruthStepOnReadmeClaims,
-            'readmeTruthAdded', context, agentMap,
-            'Quality gates flagged README claims that are not backed by code. Either implement the missing features or downgrade/remove the claims. Use the gate report as the source of truth. Re-run tests and ensure quality gates pass.',
-            '⚠️  Final quality gates: README claims mismatch; scheduling truth step',
-            maxCompletedStep, lastAgent,
-          );
-          if (readmeStep) addSteps.push(readmeStep);
-
-          const scaffoldStep = this.buildRemediationStep(
-            gatesResult.results.find(r => r.id === 'scaffold-defaults'),
-            gatesConfig.autoAddScaffoldFixStepOnScaffoldDefaults,
-            'scaffoldFixAdded', context, agentMap,
-            'Quality gates flagged scaffold defaults. Remove placeholder assets and generic scaffold README sections, and ensure HTML title/app metadata are meaningful. Use the gate report as the source of truth. Re-run tests and ensure quality gates pass.',
-            '⚠️  Final quality gates: scaffold defaults detected; scheduling cleanup',
-            maxCompletedStep, lastAgent,
-          );
-          if (scaffoldStep) addSteps.push(scaffoldStep);
-
-          const configStep = this.buildRemediationStep(
-            gatesResult.results.find(r => r.id === 'hardcoded-config'),
-            gatesConfig.autoAddConfigFixStepOnHardcodedConfig,
-            'configFixAdded', context, agentMap,
-            'Quality gates flagged hardcoded config values. Move API base URLs, ports, retry counts, timeouts, and environment-specific values into env/typed config. For Vite proxy targets, prefer import.meta.env with a safe default. Use the gate report as the source of truth. Re-run tests and ensure quality gates pass.',
-            '⚠️  Final quality gates: hardcoded config detected; scheduling cleanup',
-            maxCompletedStep, lastAgent,
-          );
-          if (configStep) addSteps.push(configStep);
-
-          const a11yStep = this.buildRemediationStep(
-            gatesResult.results.find(r => r.id === 'accessibility'),
-            gatesConfig.autoAddAccessibilityFixStepOnAccessibility,
-            'accessibilityFixAdded', context, agentMap,
-            'Quality gates flagged accessibility issues. Fix all items from the gate report: skip-to-content link, heading hierarchy, aria-labels, focus-visible styles, meta description + theme-color tags, responsive CSS (viewport meta, media queries or relative units), CSS custom properties on :root with prefers-color-scheme:dark override, semantic HTML landmarks (main, nav, header), img alt attributes. Use the gate report as the source of truth. Re-run tests and ensure quality gates pass.',
-            '⚠️  Final quality gates: accessibility issues detected; scheduling fix',
-            maxCompletedStep, lastAgent,
-          );
-          if (a11yStep) addSteps.push(a11yStep);
-
-          const testCovStep = this.buildRemediationStep(
-            gatesResult.results.find(r => r.id === 'test-coverage'),
-            gatesConfig.autoAddTestCoverageStepOnTestCoverage,
-            'testCoverageFixAdded', context, agentMap,
-            'Quality gates flagged missing test coverage. Add tests for uncovered source files, ensure each test file contains real assertions, and add component-level tests for React projects. Use the gate report as the source of truth. Re-run tests and ensure quality gates pass.',
-            '⚠️  Final quality gates: test coverage gaps detected; scheduling fix',
-            maxCompletedStep, lastAgent,
-          );
-          if (testCovStep) addSteps.push(testCovStep);
-
-          // Consolidate multiple gate failures into a single remediation step
-          // to avoid burning one premium request per gate failure.
-          if (addSteps.length > 1) {
-            const combinedTask = addSteps.map(s => s.task).join('\n\nALSO: ');
-            const singleStep: { agent: string; task: string; afterStep?: number } = {
-              agent: addSteps[0].agent,
-              task: combinedTask,
-            };
-            if (addSteps[0].afterStep !== undefined) {
-              singleStep.afterStep = addSteps[0].afterStep;
-            }
-            addSteps.length = 0;
-            addSteps.push(singleStep);
-            logger.warn(`⚠️  Final quality gates failed (${failedIds.size} gates); scheduling single consolidated remediation step...`);
-          } else if (addSteps.length === 1) {
-            logger.warn('⚠️  Final quality gates failed; attempting one remediation pass...');
-          }
-
-          if (addSteps.length > 0) {
-            remediationAttempted = true;
-            await this.executeReplan(context, { retrySteps: [], addSteps }, agentMap, options);
-            gatesResult = await run_quality_gates(
-              this.workingDir, gatesConfig, gatesOut, baselineFiles, baseCommit,
-              skippedReqIds, skippedGateKeys,
-            );
-            context.finalGateResults = gatesResult.results;
-
-            // Second remediation attempt if gates still fail after first fix
-            if (!gatesResult.passed && gatesConfig.failOnIssues) {
-              const stillFailed = gatesResult.results.filter(r => r.status === 'fail');
-              if (stillFailed.length > 0) {
-                const findings = stillFailed.flatMap(gate =>
-                  gate.issues.map(issue => {
-                    let desc = `[${gate.id}] ${issue.message}`;
-                    if (issue.filePath) desc += ` (${issue.filePath})`;
-                    if (issue.hint) desc += ` -- hint: ${issue.hint}`;
-                    return desc;
-                  })
-                ).join('\n');
-
-                const retryTask = [
-                  'The previous remediation attempt did not fully resolve the quality gate failures.',
-                  'The following issues remain. Fix each one specifically:',
-                  '',
-                  findings,
-                  '',
-                  'Verify your fixes by checking that the specific issues listed above are resolved.',
-                  'Run tests to ensure nothing is broken.',
-                ].join('\n');
-
-                const retryAgent = this.resolveAgent(agentMap, 'integrator_finalizer')
-                  ? 'integrator_finalizer'
-                  : lastAgent;
-                const retryMaxStep = Math.max(...context.plan.steps.map(s => s.stepNumber));
-
-                logger.warn('⚠️  First remediation did not resolve all gate failures. Running second attempt with specific findings...');
-                await this.executeReplan(context, {
-                  retrySteps: [],
-                  addSteps: [{ agent: retryAgent, task: retryTask, afterStep: retryMaxStep }]
-                }, agentMap, options);
-
-                gatesResult = await run_quality_gates(
-                  this.workingDir, gatesConfig, gatesOut, baselineFiles, baseCommit,
-                  skippedReqIds, skippedGateKeys,
-                );
-                context.finalGateResults = gatesResult.results;
-              }
-            }
-          }
-        }
-
-        if (!gatesResult.passed) {
-          if (remediationAttempted && failedResults.length === 0) {
-            // All plan steps passed but remediation couldn't fully resolve
-            // pre-existing quality gaps. Downgrade to a warning so the run
-            // isn't marked failed for issues outside the plan's scope.
-            const remaining = gatesResult.results
-              .filter(r => r.status === 'fail')
-              .map(r => `${r.id} (${r.issues.length} issues)`);
-            logger.warn(`⚠️  Quality gates still have issues after remediation: ${remaining.join(', ')}`);
-            logger.warn('   Treating as warning since all plan steps passed.');
-          } else {
-            logger.error('❌ Quality gates failed. See report in:', gatesOut);
-            throw new Error('Quality gates failed');
-          }
+      if (!pipelineResult.passed && gatesConfig.failOnIssues) {
+        if (pipelineResult.remediationAttempted && failedResults.length === 0) {
+          // All plan steps passed but remediation couldn't fully resolve
+          // pre-existing quality gaps. Downgrade to a warning so the run
+          // isn't marked failed for issues outside the plan's scope.
+          const remaining = pipelineResult.finalGateResults
+            .filter(r => r.status === 'fail')
+            .map(r => `${r.id} (${r.issues.length} issues)`);
+          logger.warn(`⚠️  Quality gates still have issues after remediation: ${remaining.join(', ')}`);
+          logger.warn('   Treating as warning since all plan steps passed.');
+        } else {
+          logger.error('❌ Quality gates failed. See report in:', pipelineResult.gatesOut);
+          throw new Error('Quality gates failed');
         }
       }
     }
@@ -932,15 +755,15 @@ export class SwarmOrchestrator {
   }
 
   /**
-   * Shared auto-remediation logic for quality gate failures.
-   * Returns a remediation step descriptor if the gate failed and auto-fix
-   * is both enabled and not already triggered; otherwise returns null.
-   * Includes specific gate findings in the task so the fix agent knows exactly what to address.
+   * Shared auto-remediation logic for quality gate failures -
+   * delegates to final-gates-remediation module. Kept as a thin private
+   * method so tests that invoke it via `(orch as any).buildRemediationStep`
+   * continue to work unchanged.
    */
   private buildRemediationStep(
     gateResult: { status: string; issues?: Array<{ message: string; filePath?: string; hint?: string }> } | undefined,
     configEnabled: boolean,
-    triggeredFlag: keyof NonNullable<SwarmExecutionContext['qualityGatesTriggered']>,
+    triggeredFlag: keyof QualityGatesTriggeredFlags,
     context: SwarmExecutionContext,
     agents: Map<string, AgentProfile>,
     taskDescription: string,
@@ -948,37 +771,19 @@ export class SwarmOrchestrator {
     afterStep: number,
     fallbackAgent: string,
   ): { agent: string; task: string; afterStep: number } | null {
-    if (!gateResult || gateResult.status !== 'fail') return null;
-    if (!configEnabled) return null;
-    if (!context.qualityGatesTriggered || context.qualityGatesTriggered[triggeredFlag]) return null;
-
-    const preferredAgent = this.resolveAgent(agents, 'integrator_finalizer')
-      ? 'integrator_finalizer'
-      : fallbackAgent;
-
-    logger.warn(warningMessage);
-    context.qualityGatesTriggered[triggeredFlag] = true;
-
-    // Append specific findings so the remediation agent knows exactly what to fix
-    let taskWithFindings = taskDescription;
-    if (gateResult.issues && gateResult.issues.length > 0) {
-      const findings = gateResult.issues.map(issue => {
-        let finding = `- ${issue.message}`;
-        if (issue.filePath) finding += ` (${issue.filePath})`;
-        if (issue.hint) finding += ` -- hint: ${issue.hint}`;
-        return finding;
-      }).join('\n');
-      taskWithFindings += `\n\nSpecific findings from the gate:\n${findings}`;
-    }
-
-    return { agent: preferredAgent, task: taskWithFindings, afterStep };
+    return _buildRemediationStepForDelegate(
+      this, gateResult, configEnabled, triggeredFlag, context, agents,
+      taskDescription, warningMessage, afterStep, fallbackAgent,
+    );
   }
 
   /**
    * execute replan: retry failed steps on new branches with suffix
-   * preserves completed work, only re-runs what failed
+   * preserves completed work, only re-runs what failed.
+   * Public to satisfy `RemediationHost`; callers outside the class should
+   * still treat it as an internal helper.
    */
-  private async executeReplan(
+  async executeReplan(
     context: SwarmExecutionContext,
     replanPayload: ReplanPayload,
     agents: Map<string, AgentProfile>,
