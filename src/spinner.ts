@@ -42,6 +42,9 @@ export class Spinner {
     if (this.isRunning) return;
     // Ink TUI owns stdout when the dashboard is active; skip raw writes.
     if (isDashboardActive()) return;
+    // When stdout is not a TTY (piped to a file, CI log, etc.) cursor-control
+    // escapes show up as literal bytes and corrupt the captured output.
+    if (!process.stdout.isTTY) return;
     this.isRunning = true;
     this.frameIndex = 0;
 
