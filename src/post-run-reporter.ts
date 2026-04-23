@@ -230,11 +230,10 @@ export async function runPostExecution(
       const prAutomation = new PRAutomation(toolManager, workingDir);
 
       const deployments = deploymentManager.loadDeploymentMetadata(runDir);
-      // generatePRSummary expects SwarmExecutionContext; supply the subset it reads.
-      // mainBranch is required for PRSummary.baseBranch; plan and runDir round out
-      // the fields generatePRSummary reads beyond the PostRunContext shape.
-      const prContext = { ...context, plan, runDir } as unknown as import('./swarm-orchestrator').SwarmExecutionContext;
-      const summary = prAutomation.generatePRSummary(prContext, deployments);
+      // generatePRSummary accepts a narrow PRSummaryContext (duck-typed in
+      // pr-automation.ts). `mainBranch` on the PostRunContext feeds
+      // PRSummary.baseBranch; plan fills in plan.goal.
+      const summary = prAutomation.generatePRSummary({ ...context, plan }, deployments);
       const prResult = await prAutomation.createPR(summary);
 
       if (prResult.success) {

@@ -1,5 +1,4 @@
 import ExternalToolManager from './external-tool-manager';
-import { SwarmExecutionContext } from './swarm-orchestrator';
 import { DeploymentMetadata } from './deployment-manager';
 
 export interface PRSummary {
@@ -7,6 +6,25 @@ export interface PRSummary {
   body: string;
   baseBranch: string;
   headBranch: string;
+}
+
+/**
+ * Structural subset of `SwarmExecutionContext` that `generatePRSummary`
+ * reads. Defined locally so `pr-automation.ts` does not import from
+ * `swarm-orchestrator.ts`; otherwise the two form a circular dependency
+ * through the class's type import. `SwarmExecutionContext` and
+ * `PostRunContext`-plus-spread both satisfy this shape structurally.
+ */
+export interface PRSummaryContext {
+  executionId: string;
+  mainBranch: string;
+  plan: { goal: string };
+  results: ReadonlyArray<{
+    stepNumber: number;
+    agentName: string;
+    status: string;
+    verificationResult?: { passed: boolean };
+  }>;
 }
 
 /**
@@ -25,7 +43,7 @@ export class PRAutomation {
    * Generate PR summary from execution context
    */
   generatePRSummary(
-    context: SwarmExecutionContext,
+    context: PRSummaryContext,
     deployments: DeploymentMetadata[]
   ): PRSummary {
     const completedSteps = context.results.filter(r => r.status === 'completed').length;

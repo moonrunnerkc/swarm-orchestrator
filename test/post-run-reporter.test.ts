@@ -114,9 +114,9 @@ describe('post-run-reporter', () => {
     // dryRun in ExternalToolManager short-circuits the subprocess, so PRAutomation
     // never spawns gh — we only need the summary-build step to fire with the right ctx.
     const originalGenerate = PRAutomation.prototype.generatePRSummary;
-    const calls: Array<{ mainBranch: unknown; plan: unknown; runDir: unknown }> = [];
+    const calls: Array<{ mainBranch: unknown; plan: unknown }> = [];
     PRAutomation.prototype.generatePRSummary = function(ctx: any, deps: any) {
-      calls.push({ mainBranch: ctx.mainBranch, plan: ctx.plan, runDir: ctx.runDir });
+      calls.push({ mainBranch: ctx.mainBranch, plan: ctx.plan });
       return originalGenerate.call(this, ctx, deps);
     };
 
@@ -134,7 +134,6 @@ describe('post-run-reporter', () => {
 
       assert.equal(calls.length, 1, 'generatePRSummary should be called exactly once');
       assert.equal(calls[0].mainBranch, 'trunk', 'mainBranch must flow into generatePRSummary');
-      assert.equal((calls[0].runDir as string), runDir, 'runDir should be passed through');
       assert.ok(calls[0].plan, 'plan should be passed through');
     } finally {
       PRAutomation.prototype.generatePRSummary = originalGenerate;
