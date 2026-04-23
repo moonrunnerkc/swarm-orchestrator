@@ -47,6 +47,7 @@ import { executeOptionalDeployment as _executeOptionalDeployment } from './deplo
 import { analyzeCommitQuality as _analyzeCommitQuality } from './commit-quality-analyzer';
 import { PauseController } from './orchestrator/pause-controller';
 import { sanitizeGitState as _sanitizeGitState, installDependenciesIfNeeded as _installDependenciesIfNeeded } from './orchestrator/git-state-utils';
+import { runAsyncMetaAnalysis as _runAsyncMetaAnalysis } from './orchestrator/async-meta-analysis';
 
 const logger = getLogger('orchestrator');
 
@@ -2079,8 +2080,7 @@ export class SwarmOrchestrator {
   }
 
   /**
-   * Run meta-analysis off the critical path. Fires asynchronously via setImmediate
-   * so the scheduler can launch the next step without waiting for KB updates.
+   * Run meta-analysis off the critical path - delegates to async-meta-analysis module.
    */
   private runAsyncMetaAnalysis(
     context: SwarmExecutionContext,
@@ -2088,42 +2088,7 @@ export class SwarmOrchestrator {
     runDir: string,
     completedSteps: number[]
   ): void {
-    if (!context.metaAnalyzer || !context.knowledgeBase) return;
-
-    // Use the most recent completed step as the "wave" we are analyzing
-    const waveIndex = completedSteps.length;
-
-    try {
-      const waveAnalysis = context.metaAnalyzer.analyzeWave(
-        waveIndex,
-        completedSteps,
-        context.results,
-        plan,
-        context.executionId
-      );
-
-      context.waveAnalyses?.push(waveAnalysis);
-
-      // Persist analysis snapshot
-      const analysisPath = path.join(runDir, `analysis-batch-${waveIndex}.json`);
-      fs.writeFileSync(analysisPath, JSON.stringify(waveAnalysis, null, 2), 'utf8');
-
-      // Feed insights back into the knowledge base
-      if (waveAnalysis.knowledgeUpdates.length > 0) {
-        waveAnalysis.knowledgeUpdates.forEach(update => {
-          context.knowledgeBase!.addOrUpdatePattern({
-            category: update.category,
-            insight: update.insight,
-            confidence: update.confidence,
-            evidence: [update.evidence],
-            impact: update.confidence === 'high' ? 'high' : 'medium'
-          });
-        });
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.warn(`[analytics] Wave analysis failed (non-fatal): ${msg}`);
-    }
+    _runAsyncMetaAnalysis(context, plan, runDir, completedSteps);
   }
 
   /**
