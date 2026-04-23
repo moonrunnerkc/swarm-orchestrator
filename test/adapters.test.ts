@@ -9,7 +9,7 @@ import { ClaudeCodeAdapter } from '../src/adapters/claude-code-adapter';
 import { CodexAdapter } from '../src/adapters/codex-adapter';
 import { resolveAdapter } from '../src/adapters';
 import SessionExecutor, { SessionResult } from '../src/session-executor';
-import { parseSwarmFlags } from '../src/cli-handlers';
+import { parseSwarmFlags } from '../src/cli/index';
 
 function tmpDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'adapters-test-'));

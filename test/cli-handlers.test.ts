@@ -5,7 +5,7 @@ import {
   handleRecipesCommand,
   handleRecipeInfoCommand,
   ExecuteSwarmCliOptions,
-} from '../src/cli-handlers';
+} from '../src/cli/index';
 
 describe('cli-handlers', () => {
 

@@ -7,7 +7,7 @@ import {
   parseSwarmFlags,
   showUsage,
   ExecuteSwarmCliOptions,
-} from '../src/cli-handlers';
+} from '../src/cli/index';
 import { extractPositionalArgs, normalizeLeadingGlobalFlags } from '../src/cli/flags';
 
 describe('CLI Handlers', () => {

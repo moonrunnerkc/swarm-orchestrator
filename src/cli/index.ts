@@ -13,7 +13,7 @@ export {
   executePlan,
   handlePlanCommand,
   handleExecuteCommand,
-} from './cli/plan-handlers';
+} from './plan-handlers';
 
 // ── Swarm / execution handlers ────────────────────────────────────────────
 export {
@@ -24,7 +24,7 @@ export {
   handleSwarmCommand,
   handleQuickCommand,
   handleRunCommand,
-} from './cli/swarm-handlers';
+} from './swarm-handlers';
 
 // ── Status / reporting handlers ───────────────────────────────────────────
 export {
@@ -35,7 +35,7 @@ export {
   handleMetricsCommand,
   handleDashboardCommand,
   handleReportCommand,
-} from './cli/status-handlers';
+} from './status-handlers';
 
 // ── Demo / template handlers ─────────────────────────────────────────────
 export {
@@ -43,10 +43,10 @@ export {
   handleDemoCommand,
   runDemo,
   handleTemplatesCommand,
-} from './cli/demo-handlers';
+} from './demo-handlers';
 
 // ── Share handlers ───────────────────────────────────────────────────────
-export { handleShareCommand } from './cli/share-handlers';
+export { handleShareCommand } from './share-handlers';
 
 // ── Misc handlers (recipes, agents, use) ─────────────────────────────────
 export {
@@ -54,9 +54,9 @@ export {
   handleRecipesCommand,
   handleRecipeInfoCommand,
   handleAgentsCommand,
-} from './cli/misc-handlers';
+} from './misc-handlers';
 
 // ── Already-split modules (re-export for convenience) ────────────────────
-export { showUsage } from './cli/usage';
-export { parseSwarmFlags } from './cli/flags';
-export type { ExecuteSwarmCliOptions } from './cli/flags';
+export { showUsage } from './usage';
+export { parseSwarmFlags } from './flags';
+export type { ExecuteSwarmCliOptions } from './flags';

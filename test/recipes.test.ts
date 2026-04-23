@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 import { loadRecipe, listRecipes, listRecipeDetails, parameterizeRecipe } from '../src/recipe-loader';
-import { handleRecipesCommand, handleRecipeInfoCommand } from '../src/cli-handlers';
+import { handleRecipesCommand, handleRecipeInfoCommand } from '../src/cli/index';
 
 function tmpDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'recipe-test-'));

@@ -100,7 +100,7 @@ import {
   handleTemplatesCommand,
   handleUseCommand,
   showUsage,
-} from './cli-handlers';
+} from './cli/index';
 import { startMcpServer } from './mcp-server';
 
 async function main(): Promise<void> {
