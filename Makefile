@@ -1,22 +1,6 @@
 .PHONY: help init install build test clean \
-       docker-build docker-up docker-down docker-logs \
        test-all test-python test-subprojects \
-       deploy healthcheck lint audit
-
-REGISTRY ?= ghcr.io/moonrunnerkc
-TAG      ?= latest
-
-# ── Service URLs (override via env or make args) ──
-HEALTH_SERVICE_HOST ?= $(or $(HOST),localhost)
-HEALTH_SERVICE_PORT ?= $(or $(PORT),8000)
-CALC_API_PORT       ?= 3001
-NOTES_API_PORT      ?= 3002
-
-HEALTH_SERVICE_URL ?= http://$(HEALTH_SERVICE_HOST):$(HEALTH_SERVICE_PORT)/api/health
-CALC_API_URL       ?= http://$(HEALTH_SERVICE_HOST):$(CALC_API_PORT)/health
-NOTES_API_URL      ?= http://$(HEALTH_SERVICE_HOST):$(NOTES_API_PORT)/health
-WEB_PORT            ?= 5173
-WEB_URL             ?= http://$(HEALTH_SERVICE_HOST):$(WEB_PORT)/
+       lint audit
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -57,44 +41,6 @@ test-subprojects: ## Run all subproject test suites
 	cd web && npm test
 
 test-all: test test-python test-subprojects ## Run every test suite
-
-# ── Docker ──
-
-docker-build: ## Build all Docker images
-	docker build -t $(REGISTRY)/swarm-orchestrator:$(TAG) .
-	docker build -t $(REGISTRY)/health-service:$(TAG) -f app/Dockerfile .
-	docker build -t $(REGISTRY)/calculations-api:$(TAG) ./calculations-api
-	docker build -t $(REGISTRY)/notes-api:$(TAG) ./notes-api
-	docker build -t $(REGISTRY)/inkwell:$(TAG) ./web
-
-docker-up: ## Start all services via docker compose
-	docker compose up --build -d
-
-docker-down: ## Stop all services
-	docker compose down
-
-docker-dev: ## Start services with hot-reload source mounts
-	docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build -d
-
-docker-logs: ## Tail logs from all services
-	docker compose logs -f
-
-# ── Deployment ──
-
-deploy: ## Build and push images (REGISTRY and TAG configurable)
-	bash scripts/deploy.sh "$(TAG)"
-
-deploy-pull: ## Pull pre-built images and deploy (REGISTRY and TAG configurable)
-	bash scripts/deploy.sh "$(TAG)" --pull
-
-rollback: ## Roll back to a previous tag (usage: make rollback TAG=current ROLLBACK_TAG=previous)
-	bash scripts/deploy.sh "$(TAG)" --rollback "$(ROLLBACK_TAG)"
-
-healthcheck: ## Run health check against local services
-	bash scripts/healthcheck.sh $(HEALTH_SERVICE_URL) 5
-	bash scripts/healthcheck.sh $(CALC_API_URL) 5
-	bash scripts/healthcheck.sh $(NOTES_API_URL) 5
-	@curl -sf $(WEB_URL) > /dev/null && echo "OK: $(WEB_URL)" || echo "WARN: web frontend not reachable at $(WEB_URL)"
 
 audit: ## Run security audit on all dependencies
 	npm audit --audit-level=high || true
