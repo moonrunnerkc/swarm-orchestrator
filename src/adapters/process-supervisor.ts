@@ -22,6 +22,11 @@ export interface SupervisedSpawnOptions {
   // Called on each complete stdout/stderr line for action detection.
   // Optional: only used by adapters that want to surface agent activity.
   onLine?: ((line: string, stream: 'stdout' | 'stderr') => void) | undefined;
+  // stdin handling. Default 'pipe' keeps existing behavior for copilot /
+  // claude-code adapters (piped then immediately ended). 'ignore' wires
+  // stdin to /dev/null, required for Codex which otherwise prints
+  // "Reading additional input from stdin..." when it sees a pipe.
+  stdinMode?: 'pipe' | 'ignore';
 }
 
 export interface SupervisedResult {
@@ -58,17 +63,20 @@ export function supervisedSpawn(opts: SupervisedSpawnOptions): Promise<Supervise
   const stallTimeoutMs = opts.stallTimeoutMs ?? DEFAULT_STALL_TIMEOUT_MS;
 
   return new Promise((resolve) => {
+    const stdinMode = opts.stdinMode ?? 'pipe';
     const spawnOpts: SpawnOptions = {
       cwd: opts.cwd,
       env: {
         ...process.env,
         ...opts.env
-      }
+      },
+      stdio: [stdinMode, 'pipe', 'pipe'],
     };
 
     const proc = spawn(opts.command, opts.args, spawnOpts);
 
-    // Close stdin so the subprocess never blocks waiting for interactive input
+    // Close piped stdin so the subprocess never blocks waiting for interactive input.
+    // When stdinMode is 'ignore' there is no proc.stdin to end.
     if (proc.stdin) {
       proc.stdin.end();
     }

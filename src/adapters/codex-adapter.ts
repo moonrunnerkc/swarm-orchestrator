@@ -2,11 +2,12 @@
 // Uses --dangerously-bypass-approvals-and-sandbox because git worktrees have
 // .git references to the parent repo, which --full-auto's sandbox blocks.
 
-import { spawn, SpawnOptions } from 'child_process';
 import { AgentAdapter, AgentResult, AgentSpawnOptions, buildRestrictedEnv } from './agent-adapter';
+import { supervisedSpawn } from './process-supervisor';
 
 // Codex can spend significant time on reasoning and file operations
-// without producing stdout, similar to Claude Code.
+// without producing stdout, similar to Claude Code. supervisedSpawn's
+// heartbeat surfaces progress during these quiet periods.
 const STALL_TIMEOUT_MS = 600_000;
 
 export class CodexAdapter implements AgentAdapter {
@@ -26,7 +27,20 @@ export class CodexAdapter implements AgentAdapter {
 
     args.push(opts.prompt);
 
-    const result = await this.runProcess('codex', args, opts.workdir, opts.timeout);
+    // stdinMode: 'ignore' prevents Codex from printing
+    // "Reading additional input from stdin..." into the transcript when it
+    // detects a piped (but empty) stdin. With stdin wired to /dev/null Codex
+    // treats the prompt arg as the full instruction.
+    const result = await supervisedSpawn({
+      command: 'codex',
+      args,
+      cwd: opts.workdir,
+      env: buildRestrictedEnv(['OPENAI_API_KEY']),
+      logPrefix: '[codex]',
+      stallTimeoutMs: opts.timeout ?? STALL_TIMEOUT_MS,
+      stdinMode: 'ignore',
+    });
+
     const durationMs = Date.now() - startTime;
 
     return {
@@ -35,87 +49,5 @@ export class CodexAdapter implements AgentAdapter {
       exitCode: result.exitCode,
       durationMs,
     };
-  }
-
-  private runProcess(
-    command: string,
-    args: string[],
-    workdir: string,
-    timeout?: number
-  ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-    return new Promise((resolve) => {
-      const spawnOpts: SpawnOptions = {
-        cwd: workdir,
-        env: buildRestrictedEnv(['OPENAI_API_KEY']),
-      };
-
-      const proc = spawn(command, args, spawnOpts);
-
-      if (proc.stdin) {
-        proc.stdin.end();
-      }
-
-      let stdout = '';
-      let stderr = '';
-      let resolved = false;
-      let lastOutputTime = Date.now();
-      let stallCheckInterval: NodeJS.Timeout | null = null;
-
-      const cleanup = () => {
-        if (stallCheckInterval) clearInterval(stallCheckInterval);
-      };
-
-      const effectiveTimeout = timeout || STALL_TIMEOUT_MS;
-
-      stallCheckInterval = setInterval(() => {
-        const silentMs = Date.now() - lastOutputTime;
-        if (silentMs >= effectiveTimeout) {
-          cleanup();
-          proc.kill('SIGTERM');
-          setTimeout(() => {
-            try { proc.kill('SIGKILL'); } catch { /* already dead */ }
-          }, 5000);
-          if (!resolved) {
-            resolved = true;
-            resolve({
-              stdout,
-              stderr: stderr + `\nProcess killed after ${Math.round(silentMs / 1000)}s of no output (stall timeout)`,
-              exitCode: 1,
-            });
-          }
-        }
-      }, 10_000);
-
-      if (proc.stdout) {
-        proc.stdout.on('data', (data) => {
-          stdout += data.toString();
-          lastOutputTime = Date.now();
-        });
-      }
-
-      if (proc.stderr) {
-        proc.stderr.on('data', (data) => {
-          stderr += data.toString();
-          lastOutputTime = Date.now();
-        });
-      }
-
-      proc.on('close', (code) => {
-        cleanup();
-        if (!resolved) {
-          resolved = true;
-          // null exit code means process was killed by a signal; treat as failure
-          resolve({ stdout, stderr, exitCode: code ?? 1 });
-        }
-      });
-
-      proc.on('error', (err) => {
-        cleanup();
-        if (!resolved) {
-          resolved = true;
-          resolve({ stdout, stderr: stderr + '\n' + err.message, exitCode: 1 });
-        }
-      });
-    });
   }
 }
