@@ -22,6 +22,13 @@ const logger = getLogger('post-run');
 
 export interface PostRunContext {
   executionId: string;
+  /**
+   * Integration branch name (e.g. "main", "master", "trunk"). Flows into
+   * `generatePRSummary` as `baseBranch` when `options.autoPR` is set.
+   * Required even when autoPR is not used so the type stays explicit about
+   * the orchestrator invariant.
+   */
+  mainBranch: string;
   results: ParallelStepResult[];
   metricsCollector?: MetricsCollector;
   costEstimator?: CostEstimator;
@@ -223,7 +230,9 @@ export async function runPostExecution(
       const prAutomation = new PRAutomation(toolManager, workingDir);
 
       const deployments = deploymentManager.loadDeploymentMetadata(runDir);
-      // generatePRSummary expects SwarmExecutionContext; supply the subset it reads
+      // generatePRSummary expects SwarmExecutionContext; supply the subset it reads.
+      // mainBranch is required for PRSummary.baseBranch; plan and runDir round out
+      // the fields generatePRSummary reads beyond the PostRunContext shape.
       const prContext = { ...context, plan, runDir } as unknown as import('./swarm-orchestrator').SwarmExecutionContext;
       const summary = prAutomation.generatePRSummary(prContext, deployments);
       const prResult = await prAutomation.createPR(summary);

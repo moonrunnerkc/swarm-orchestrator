@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { runPostExecution, PostRunContext } from '../src/post-run-reporter';
 import type { ExecutionPlan } from '../src/plan-generator';
+import PRAutomation from '../src/pr-automation';
 
 function tmpDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'post-run-'));
@@ -57,6 +58,7 @@ describe('post-run-reporter', () => {
   it('writes metrics.json and session-state.json when metricsCollector is provided', async () => {
     const context: PostRunContext = {
       executionId: 'test-run',
+      mainBranch: 'main',
       results: [
         { stepNumber: 1, status: 'completed' } as any,
         { stepNumber: 2, status: 'completed' } as any,
@@ -80,6 +82,7 @@ describe('post-run-reporter', () => {
   it('sets session status to failed when not all steps completed', async () => {
     const context: PostRunContext = {
       executionId: 'test-run',
+      mainBranch: 'main',
       results: [
         { stepNumber: 1, status: 'completed' } as any,
         { stepNumber: 2, status: 'failed' } as any,
@@ -97,11 +100,44 @@ describe('post-run-reporter', () => {
   it('skips metrics when no metricsCollector is provided', async () => {
     const context: PostRunContext = {
       executionId: 'test-run',
+      mainBranch: 'main',
       results: [{ stepNumber: 1, status: 'completed' } as any],
     };
 
     await runPostExecution(workDir, runDir, context, makePlan(1));
 
     assert.ok(!fs.existsSync(path.join(runDir, 'metrics.json')), 'metrics.json should not exist');
+  });
+
+  it('threads mainBranch into generatePRSummary when autoPR is set', async () => {
+    // Capture what generatePRSummary receives without running the real gh CLI.
+    // dryRun in ExternalToolManager short-circuits the subprocess, so PRAutomation
+    // never spawns gh — we only need the summary-build step to fire with the right ctx.
+    const originalGenerate = PRAutomation.prototype.generatePRSummary;
+    const calls: Array<{ mainBranch: unknown; plan: unknown; runDir: unknown }> = [];
+    PRAutomation.prototype.generatePRSummary = function(ctx: any, deps: any) {
+      calls.push({ mainBranch: ctx.mainBranch, plan: ctx.plan, runDir: ctx.runDir });
+      return originalGenerate.call(this, ctx, deps);
+    };
+
+    try {
+      const context: PostRunContext = {
+        executionId: 'test-run',
+        mainBranch: 'trunk',
+        results: [{ stepNumber: 1, status: 'completed', agentName: 'A' } as any],
+      };
+
+      await runPostExecution(workDir, runDir, context, makePlan(1), {
+        autoPR: true,
+        dryRun: true,
+      });
+
+      assert.equal(calls.length, 1, 'generatePRSummary should be called exactly once');
+      assert.equal(calls[0].mainBranch, 'trunk', 'mainBranch must flow into generatePRSummary');
+      assert.equal((calls[0].runDir as string), runDir, 'runDir should be passed through');
+      assert.ok(calls[0].plan, 'plan should be passed through');
+    } finally {
+      PRAutomation.prototype.generatePRSummary = originalGenerate;
+    }
   });
 });
