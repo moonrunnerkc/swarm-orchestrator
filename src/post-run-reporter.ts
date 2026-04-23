@@ -1,7 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { getLogger } from './logger';
-import { ParallelStepResult } from './swarm-orchestrator';
 import { ExecutionPlan } from './plan-generator';
 import MetricsCollector from './metrics-collector';
 import { CostEstimator, CostEstimate } from './cost-estimator';
@@ -20,6 +19,24 @@ import { BaselineSnapshot } from './baseline-scanner';
 
 const logger = getLogger('post-run');
 
+/**
+ * Structural subset of `ParallelStepResult` that this module consumes.
+ * Mirrored locally so post-run-reporter does not import from
+ * swarm-orchestrator, which — now that swarm-orchestrator imports
+ * `runPostExecution` — would form a circular dependency.
+ * `ParallelStepResult` (the orchestrator's full type) is assignable to
+ * this narrower shape, so existing callers need no changes.
+ */
+export interface PostRunStepResult {
+  stepNumber: number;
+  agentName: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'blocked';
+  branchName?: string;
+  sessionResult?: { transcriptPath?: string };
+  verificationResult?: VerificationResult;
+  retryCount?: number;
+}
+
 export interface PostRunContext {
   executionId: string;
   /**
@@ -29,7 +46,7 @@ export interface PostRunContext {
    * the orchestrator invariant.
    */
   mainBranch: string;
-  results: ParallelStepResult[];
+  results: PostRunStepResult[];
   metricsCollector?: MetricsCollector;
   costEstimator?: CostEstimator;
   costEstimate?: CostEstimate;

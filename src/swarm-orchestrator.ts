@@ -2,17 +2,15 @@ import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { resolveAdapter, defaultModelForAdapter, AgentSpawnOptions } from './adapters';
-import AnalyticsLog from './analytics-log';
 import { AgentProfile, ConfigLoader } from './config-loader';
 import ContextBroker, { ContextEntry } from './context-broker';
-import DeploymentManager, { DeploymentMetadata } from './deployment-manager';
+import { DeploymentMetadata } from './deployment-manager';
 import { ExecutionQueue, QueueStats } from './execution-queue';
-import ExternalToolManager from './external-tool-manager';
 import { KnowledgeBaseManager } from './knowledge-base';
 import { MetaAnalyzer, MetaReviewResult } from './meta-analyzer';
 import MetricsCollector from './metrics-collector';
 import { ExecutionPlan, PlanGenerator, PlanStep, ReplanPayload } from './plan-generator';
-import PRAutomation from './pr-automation';
+import { runPostExecution, PostRunContext } from './post-run-reporter';
 import { load_quality_gates_config, run_quality_gates } from './quality-gates';
 import { SELF_IMPROVEMENT_GATE_KEYS } from './quality-gates/registry';
 import type { GateResult } from './quality-gates';
@@ -20,13 +18,13 @@ import RepairAgent, { RepairContext } from './repair-agent';
 import SessionExecutor, { SessionOptions, SessionResult } from './session-executor';
 import ShareParser, { ShareIndex } from './share-parser';
 import { Spinner } from './spinner';
-import { CriticResult, SessionState } from './types';
+import { CriticResult } from './types';
 import VerifierEngine, { VerificationResult } from './verifier-engine';
 import { AdaptiveConcurrencyManager, WaveResizer } from './wave-resizer';
 import { CostEstimator, CostEstimate } from './cost-estimator';
 import { HookGenerator, GeneratedHooks } from './hook-generator';
 import FleetExecutor from './fleet-executor';
-import { CostAttribution, CostHistoryEvidence, StepCostRecord } from './metrics-types';
+import { StepCostRecord } from './metrics-types';
 import PRManager from './pr-manager';
 import { WorktreeManager } from './worktree-manager';
 import { gitPathspecExcludes } from './worktree-reserved-paths';
@@ -914,190 +912,21 @@ export class SwarmOrchestrator {
     context.contextBroker.forceReleaseStaleLocks();
     await this.mergeAllBranches(context);
 
-    // Finalize metrics and save to analytics log
-    if (context.metricsCollector) {
-      const metrics = context.metricsCollector.finalize();
-
-      // Save metrics to run directory
-      const metricsPath = path.join(runDir, 'metrics.json');
-      fs.writeFileSync(metricsPath, JSON.stringify(metrics, null, 2), 'utf8');
-
-      // Append to analytics log
-      const analyticsLog = new AnalyticsLog();
-      analyticsLog.appendRun(metrics);
-
-      logger.info(`\n📊 Metrics saved: ${metricsPath}`);
-
-      // Save cost attribution alongside metrics
-      if (context.costEstimate && context.stepCostRecords) {
-        const modelName = options?.model || defaultModelForAdapter(options?.cliAgent);
-        const totalEstimated = context.costEstimate.totalPremiumRequests;
-        const totalActual = context.stepCostRecords.reduce((s, r) => s + r.actualPremiumRequests, 0);
-        const attribution: CostAttribution = {
-          totalEstimatedPremiumRequests: totalEstimated,
-          totalActualPremiumRequests: totalActual,
-          estimateAccuracy: context.costEstimator?.getAccuracy() ?? 1.0,
-          modelUsed: modelName,
-          modelMultiplier: context.costEstimate.modelMultiplier,
-          overageTriggered: context.costEstimate.overageCostUSD > 0,
-          perStep: context.stepCostRecords,
-        };
-        const costPath = path.join(runDir, 'cost-attribution.json');
-        fs.writeFileSync(costPath, JSON.stringify(attribution, null, 2), 'utf8');
-      }
-
-      // Persist session state for audit/resume support
-      // Use the runDir basename as session ID so it matches the directory
-      // the CLI created (context.executionId differs by a few ms)
-      const runDirId = path.basename(runDir);
-      const completedSteps = context.results.filter(r => r.status === 'completed');
-      const sessionState: SessionState = {
-        sessionId: runDirId,
-        graph: {
-          goal: plan.goal,
-          steps: plan.steps.map(s => ({ stepNumber: s.stepNumber, task: s.task, agent: s.agentName }))
-        },
-        branchMap: Object.fromEntries(
-          context.results
-            .filter(r => r.branchName)
-            .map(r => [String(r.stepNumber), r.branchName!])
-        ),
-        transcripts: Object.fromEntries(
-          context.results
-            .filter(r => r.sessionResult?.transcriptPath)
-            .map(r => [String(r.stepNumber), r.sessionResult!.transcriptPath!])
-        ),
-        metrics: metrics as unknown as Record<string, unknown>,
-        gateResults: context.finalGateResults || [],
-        status: completedSteps.length === plan.steps.length ? 'completed' : 'failed',
-        lastCompletedStep: Math.max(0, ...completedSteps.map(r => r.stepNumber))
-      };
-      // Write directly to runDir (saveSession uses cwd which differs for demos)
-      fs.writeFileSync(
-        path.join(runDir, 'session-state.json'),
-        JSON.stringify(sessionState, null, 2),
-        'utf8'
-      );
-      // Also persist via collector so audit/metrics CLI can find it from project root
-      context.metricsCollector.saveSession(runDirId, sessionState);
-    }
-
-    // OWASP ASI compliance report (when --owasp-report is set)
-    if (options?.owaspReport) {
-      try {
-        const { OwaspMapper } = await import('./owasp-mapper');
-        const { OwaspReportRenderer } = await import('./owasp-report-renderer');
-
-        const verificationResults = context.results
-          .map(r => r.verificationResult)
-          .filter((v): v is VerificationResult => v !== undefined);
-
-        const repaired = context.results.filter(r => (r.retryCount ?? 0) > 0 && r.status === 'completed').length;
-        const failed = context.results.filter(r => r.status === 'failed').length;
-        const completed = context.results.filter(r => r.status === 'completed').length;
-        const passed = completed - repaired;
-        const exhausted = context.results.filter(r => r.status === 'failed' && (r.retryCount ?? 0) > 0).length;
-
-        // Read version from package.json at project root
-        let toolVersion = '4.1.0';
-        try {
-          const pkgPath = path.join(__dirname, '..', 'package.json');
-          const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-          toolVersion = pkg.version || toolVersion;
-        } catch {
-          // Fall back to hardcoded version if package.json is unavailable
-        }
-
-        const meta = {
-          executionId: context.executionId,
-          toolVersion,
-          governanceEnabled: !!options.governance,
-          strictIsolation: !!options.strictIsolation,
-          adapterType: options.cliAgent || 'copilot',
-          totalSteps: plan.steps.length,
-          passedSteps: passed,
-          repairedSteps: repaired,
-          failedSteps: failed,
-          retriesExhausted: exhausted,
-        };
-
-        const mapper = new OwaspMapper();
-        const complianceReport = mapper.map(verificationResults, meta);
-
-        fs.writeFileSync(
-          path.join(runDir, 'owasp-compliance.md'),
-          OwaspReportRenderer.toMarkdown(complianceReport),
-          'utf8'
-        );
-        fs.writeFileSync(
-          path.join(runDir, 'owasp-compliance.json'),
-          OwaspReportRenderer.toJson(complianceReport),
-          'utf8'
-        );
-
-        logger.info(`  OWASP ASI: ${complianceReport.mitigatedRisks}/${complianceReport.applicableRisks} applicable risks mitigated`);
-      } catch (owaspErr) {
-        logger.warn(`  OWASP report generation failed: ${owaspErr instanceof Error ? owaspErr.message : owaspErr}`);
-      }
-    }
-
-    // Record execution in knowledge base
-    if (context.knowledgeBase) {
-      const totalPatternsDetected = context.waveAnalyses?.reduce(
-        (sum, analysis) => sum + analysis.detectedPatterns.length, 0
-      ) || 0;
-      context.knowledgeBase.recordRun(totalPatternsDetected);
-
-      // Record cost history for future estimation calibration
-      if (context.costEstimate && context.stepCostRecords) {
-        const modelName = options?.model || defaultModelForAdapter(options?.cliAgent);
-        const totalRetries = context.stepCostRecords.reduce((s, r) => s + r.retryCount, 0);
-        const totalActual = context.stepCostRecords.reduce((s, r) => s + r.actualPremiumRequests, 0);
-        const totalEstimated = context.costEstimate.totalPremiumRequests;
-        const evidence: CostHistoryEvidence = {
-          runId: context.executionId,
-          estimated: totalEstimated,
-          actual: totalActual,
-          retries: totalRetries,
-          steps: plan.steps.length,
-          model: modelName,
-        };
-        context.knowledgeBase.addOrUpdatePattern({
-          category: 'cost_history',
-          insight: `${plan.steps.length} steps, model ${modelName}, ${totalActual} premium requests, ${totalRetries} retries`,
-          confidence: 'high',
-          evidence: [JSON.stringify(evidence)],
-          impact: 'medium',
-        });
-      }
-    }
-
-    // Auto-create PR if requested
-    if (options?.autoPR) {
-      logger.info('\n📝 Creating PR...');
-      try {
-        const toolManager = new ExternalToolManager({
-          enableExternal: options.enableExternal || false,
-          dryRun: options.dryRun || false,
-          logFile: path.join(runDir, 'external-commands.log')
-        });
-
-        const deploymentManager = new DeploymentManager(toolManager, this.workingDir);
-        const prAutomation = new PRAutomation(toolManager, this.workingDir);
-
-        const deployments = deploymentManager.loadDeploymentMetadata(runDir);
-        const summary = prAutomation.generatePRSummary(context, deployments);
-        const prResult = await prAutomation.createPR(summary);
-
-        if (prResult.success) {
-          logger.info(`✅ PR created: ${prResult.url}`);
-        } else {
-          logger.warn(`⚠️  PR creation failed: ${prResult.error}`);
-        }
-      } catch (error) {
-        logger.warn(`⚠️  PR automation error: ${error instanceof Error ? error.message : error}`);
-      }
-    }
+    // Metrics, cost attribution, session state, OWASP, KB recordRun, auto-PR.
+    // All of this lives in src/post-run-reporter.ts; the inline block was a
+    // pre-existing duplicate. See docs/post-run-diff-report.md for the
+    // behavioral diff that preceded this swap.
+    const postRunContext: PostRunContext = context;
+    const postRunOptions: Parameters<typeof runPostExecution>[4] = {};
+    if (options?.model !== undefined) postRunOptions.model = options.model;
+    if (options?.cliAgent !== undefined) postRunOptions.cliAgent = options.cliAgent;
+    if (options?.owaspReport !== undefined) postRunOptions.owaspReport = options.owaspReport;
+    if (options?.governance !== undefined) postRunOptions.governance = options.governance;
+    if (options?.strictIsolation !== undefined) postRunOptions.strictIsolation = options.strictIsolation;
+    if (options?.enableExternal !== undefined) postRunOptions.enableExternal = options.enableExternal;
+    if (options?.dryRun !== undefined) postRunOptions.dryRun = options.dryRun;
+    if (options?.autoPR !== undefined) postRunOptions.autoPR = options.autoPR;
+    await runPostExecution(this.workingDir, runDir, postRunContext, plan, postRunOptions);
 
     return context;
   }
