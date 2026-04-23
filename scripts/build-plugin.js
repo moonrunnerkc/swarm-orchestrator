@@ -116,8 +116,29 @@ function validateSkillFiles() {
   return { skillDirs, issues };
 }
 
+function syncAgentsFromCanonical() {
+  const canonicalDir = path.join(ROOT, 'agents');
+  const pluginAgentsDir = path.join(PLUGIN_DIR, 'agents');
+
+  if (!fs.existsSync(canonicalDir)) {
+    console.error(`Canonical agents directory not found: ${canonicalDir}`);
+    process.exit(1);
+  }
+
+  fs.mkdirSync(pluginAgentsDir, { recursive: true });
+
+  const agentFiles = fs.readdirSync(canonicalDir).filter(f => f.endsWith('.agent.md'));
+  for (const file of agentFiles) {
+    fs.copyFileSync(path.join(canonicalDir, file), path.join(pluginAgentsDir, file));
+  }
+
+  console.log(`  agents/: synced ${agentFiles.length} file(s) from canonical agents/`);
+}
+
 function main() {
   console.log('Validating plugin structure...\n');
+
+  syncAgentsFromCanonical();
 
   // Validate manifest
   const { manifest, missing } = validateManifest();

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "bash": "node -e \"let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const ctx=JSON.parse(d);const scope=JSON.parse(process.env.SWARM_STEP_SCOPE||'[]');if(scope.length===0){process.stdout.write(JSON.stringify({decision:'approve'}));return;}const p=(ctx.toolArgs||{}).path||(ctx.toolArgs||{}).filePath||'';const allowed=scope.some(s=>p.includes(s));if(!allowed&&p){process.stdout.write(JSON.stringify({decision:'deny',reason:'File '+p+' is outside agent scope: '+scope.join(', ')}));}else{process.stdout.write(JSON.stringify({decision:'approve'}));}}catch(e){process.stdout.write(JSON.stringify({decision:'approve'}))}})\"",
+        "timeoutSec": 10
+      }
+    ],
+    "postToolUse": [
+      {
+        "type": "command",
+        "bash": "node -e \"let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const ctx=JSON.parse(d);const logPath=process.env.SWARM_EVIDENCE_LOG||'';if(!logPath)return;const entry={timestamp:new Date().toISOString(),event:'postToolUse',tool:ctx.toolName||'unknown',filePath:(ctx.toolArgs||{}).path||(ctx.toolArgs||{}).filePath};require('fs').appendFileSync(logPath,JSON.stringify(entry)+'\\n')}catch(e){}})\"",
+        "timeoutSec": 10
+      }
+    ]
+  }
+}

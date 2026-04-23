@@ -1,0 +1,9 @@
+{
+  "name": "swarm-evidence-capture",
+  "description": "Capture structured evidence after tool operations for verification",
+  "event": "postToolUse",
+  "tools": ["git", "editFile", "createFile", "runCommand"],
+  "command": "node -e \"const ctx = JSON.parse(process.env.COPILOT_HOOK_CONTEXT || '{}'); const logPath = process.env.SWARM_EVIDENCE_LOG || ''; if (!logPath) { process.exit(0); } const entry = { timestamp: new Date().toISOString(), tool: ctx.tool || 'unknown', arguments: ctx.arguments || {}, result: ctx.result ? 'completed' : 'unknown' }; require('fs').appendFileSync(logPath, JSON.stringify(entry) + '\\n');\"",
+  "enabled": false,
+  "_comment": "Stub for Upgrade 3 (Hooks Injection). Enable when hook generator is implemented."
+}
