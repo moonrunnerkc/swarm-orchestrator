@@ -649,6 +649,55 @@ export class SwarmOrchestrator {
     // for newly-added packages like express or cors.
     await this.installDependenciesIfNeeded();
 
+    // Re-queue failed steps before quality gates so their objectives aren't silently
+    // dropped. A step that fails verification doesn't disappear — its required work
+    // is still in scope. Build a targeted repair task per failed step, include the
+    // original task text and the verification failure context, and run a replan pass
+    // so the repair executes on the current merged state before gates run against it.
+    const retriableFailures = context.results.filter(
+      r => r.status === 'failed' && (r.retryCount ?? 0) < 3
+    );
+    if (retriableFailures.length > 0) {
+      const completedStepNumbers = context.results
+        .filter(r => r.status === 'completed')
+        .map(r => r.stepNumber);
+      const maxCompletedStep = completedStepNumbers.length > 0
+        ? Math.max(...completedStepNumbers)
+        : 0;
+
+      const failedStepRetries: Array<{ agent: string; task: string; afterStep?: number }> = [];
+      for (const failed of retriableFailures) {
+        const originalStep = context.plan.steps.find(s => s.stepNumber === failed.stepNumber);
+        if (!originalStep) continue;
+
+        const failureDetail = failed.verificationResult?.failureContext ?? failed.error ?? 'Verification failed';
+        const retryTask = [
+          `The previous attempt by ${originalStep.agentName} failed verification.`,
+          `Failure reason:\n${failureDetail}`,
+          ``,
+          `Original task:`,
+          originalStep.task,
+        ].join('\n');
+        failedStepRetries.push({
+          agent: originalStep.agentName,
+          task: retryTask,
+          ...(maxCompletedStep > 0 ? { afterStep: maxCompletedStep } : {}),
+        });
+      }
+
+      if (failedStepRetries.length > 0) {
+        logger.info(`\n🔁 Re-queuing ${failedStepRetries.length} failed step(s) with original objectives...`);
+        await this.executeReplan(
+          context,
+          { retrySteps: [], addSteps: failedStepRetries },
+          agents,
+          options,
+        );
+        // Re-run dep install in case the repair step added packages.
+        await this.installDependenciesIfNeeded();
+      }
+    }
+
     // final quality gates run on the merged state (hard gate)
     // this happens before auto-PR so we don't create a PR for a failing run
     const gatesEnabled = options?.qualityGates !== false;

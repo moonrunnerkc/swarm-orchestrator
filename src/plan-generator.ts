@@ -557,7 +557,7 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
       return 'contract-change';
     }
 
-    if (goalLower.match(/\b(rest|api|endpoint|graphql|microservice|backend|server)\b/)) {
+    if (goalLower.match(/\b(rest|api|endpoint|graphql|microservice|backend|server|middleware)\b/)) {
       return 'api';
     }
 
@@ -1250,8 +1250,11 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
   assignAgent(task: string): string {
     const taskLower = task.toLowerCase();
 
-    // SecurityAuditor keywords (30+ patterns) - check FIRST for security-specific terms
-    if (taskLower.match(/\b(security|vulnerability|audit|penetration|owasp|xss|csrf|sql.injection|oauth|saml|encryption|hashing|ssl|tls|certificate|secrets|key.management|rbac|permission|access.control|compliance|gdpr|hipaa|pci|sanitize|validate.input|escape|csp|cors|rate.limit|ddos|firewall)\b/)) {
+    // SecurityAuditor keywords: audit/review/hardening tasks only.
+    // Deliberately excludes implementation terms (sanitize, validate.input, cors, rate.limit, csp, escape)
+    // because those appear in goals that ask you to BUILD those features, which BackendMaster handles.
+    // SecurityAuditor fires when the task is reviewing, auditing, or hardening — not constructing.
+    if (taskLower.match(/\b(security|vulnerability|audit|penetration|owasp|xss|csrf|sql.injection|oauth|saml|encryption|hashing|ssl|tls|certificate|secrets|key.management|rbac|access.control|compliance|gdpr|hipaa|pci|ddos|firewall)\b/)) {
       return 'SecurityAuditor';
     }
 
