@@ -33,7 +33,7 @@ const logger = getLogger('cli:swarm');
 // so it has no hard env var requirement. GITHUB_TOKEN is only used
 // in CI where Actions provides it automatically.
 // Claude Code supports both API key auth and subscription auth (via `claude login`).
-// Only codex strictly requires an env var.
+// Codex supports both OPENAI_API_KEY env var and ~/.codex/auth.json (via `codex login`).
 const ADAPTER_REQUIRED_KEYS: Record<string, string[]> = {
   codex: ['OPENAI_API_KEY'],
 };
@@ -46,7 +46,12 @@ export function validateAdapterSecrets(tool: string): void {
   const required = ADAPTER_REQUIRED_KEYS[tool];
   if (!required) return;
 
-  const missing = required.filter(k => !process.env[k]);
+  // Codex can auth via ~/.codex/auth.json (written by `codex login`) instead of
+  // OPENAI_API_KEY. If the auth file exists, treat the key requirement as satisfied.
+  const codexAuthFile = path.join(process.env.HOME || '/tmp', '.codex', 'auth.json');
+  const codexLoggedIn = tool === 'codex' && fs.existsSync(codexAuthFile);
+
+  const missing = required.filter(k => !process.env[k] && !codexLoggedIn);
   if (missing.length === 0) return;
 
   const lines = [
