@@ -48,6 +48,17 @@ import { analyzeCommitQuality as _analyzeCommitQuality } from './commit-quality-
 
 const logger = getLogger('orchestrator');
 
+// Human-readable label for a CLI agent tool, used in transcript headers.
+function transcriptToolLabel(tool: string): string {
+  switch (tool) {
+    case 'codex': return 'Codex';
+    case 'claude-code': return 'Claude Code';
+    case 'claude-code-teams': return 'Claude Code Teams';
+    case 'copilot': return 'Copilot';
+    default: return tool.charAt(0).toUpperCase() + tool.slice(1);
+  }
+}
+
 export interface ParallelStepResult {
   stepNumber: number;
   agentName: string;
@@ -1509,7 +1520,8 @@ export class SwarmOrchestrator {
 
       // Check if transcript was created, create fallback if not
       if (!fs.existsSync(transcriptPath)) {
-        const fallbackContent = `# Copilot Session Transcript\n\nSession output:\n\`\`\`\n${result.sessionResult?.output || 'No output captured'}\n\`\`\`\n`;
+        const toolLabel = transcriptToolLabel(options?.cliAgent || 'copilot');
+        const fallbackContent = `# ${toolLabel} Session Transcript\n\nSession output:\n\`\`\`\n${result.sessionResult?.output || 'No output captured'}\n\`\`\`\n`;
         fs.writeFileSync(transcriptPath, fallbackContent, 'utf8');
       }
 
