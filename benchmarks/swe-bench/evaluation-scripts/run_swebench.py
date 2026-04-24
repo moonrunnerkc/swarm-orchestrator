@@ -808,20 +808,36 @@ def run_gold_tests_in_container(task: dict, agent_diff: bytes) -> dict:
     target_args = " ".join(f"'{t}'" for t in pytest_targets) or ""
     k_expr = " or ".join(f"({f})" for f in k_filters)
     k_arg = f"-k '{k_expr}'" if k_expr else ""
+    # Notes on the bash plumbing below:
+    #   - Stdin is buffered to /tmp/payload first, then awk-ed twice. Reading
+    #     /dev/stdin from two separate awk invocations drops the test patch:
+    #     the first awk drains the pipe and the second sees EOF, leaving
+    #     /tmp/test.patch empty. --allow-empty previously masked this by
+    #     accepting the zero-byte patch silently; removing --allow-empty
+    #     (next bullet) would surface it as an exit-43 if left unfixed.
+    #     Buffering to a file lets both extractions see the full payload.
+    #   - `git apply` runs without --allow-empty because the per-instance
+    #     images ship git 2.34.1 (Ubuntu 22.04) and the flag was added in
+    #     git 2.39. capture_agent_diff raises on an empty agent diff so a
+    #     zero-byte /tmp/agent.patch cannot reach here; the enclosing
+    #     `-s` test additionally short-circuits if it somehow does. The
+    #     test_patch is populated from the SWE-bench dataset and always
+    #     contains hunks for a FAIL_TO_PASS-bearing instance.
     script = (
         "set -eo pipefail\n"
         "cd /testbed\n"
         "python -m pip install --quiet pytest hypothesis 2>&1 | tail -1 || true\n"
-        "awk '/^__AGENT_PATCH__$/,/^__END_AGENT_PATCH__$/' /dev/stdin "
+        "cat > /tmp/payload\n"
+        "awk '/^__AGENT_PATCH__$/,/^__END_AGENT_PATCH__$/' /tmp/payload "
         "  | sed '1d;$d' > /tmp/agent.patch\n"
-        "awk '/^__TEST_PATCH__$/,/^__END_TEST_PATCH__$/' /dev/stdin "
+        "awk '/^__TEST_PATCH__$/,/^__END_TEST_PATCH__$/' /tmp/payload "
         "  | sed '1d;$d' > /tmp/test.patch\n"
         "if [ -s /tmp/agent.patch ]; then\n"
-        "  git apply --allow-empty /tmp/agent.patch 2>/tmp/apply.err || {\n"
+        "  git apply /tmp/agent.patch 2>/tmp/apply.err || {\n"
         "    echo '__AGENT_PATCH_APPLY_FAILED__' >&2; cat /tmp/apply.err >&2; exit 42;\n"
         "  }\n"
         "fi\n"
-        "git apply --allow-empty /tmp/test.patch 2>/tmp/test-apply.err || {\n"
+        "git apply /tmp/test.patch 2>/tmp/test-apply.err || {\n"
         "  echo '__TEST_PATCH_APPLY_FAILED__' >&2; cat /tmp/test-apply.err >&2; exit 43;\n"
         "}\n"
         f"python -m pytest --tb=short -q {target_args} {k_arg}\n"
