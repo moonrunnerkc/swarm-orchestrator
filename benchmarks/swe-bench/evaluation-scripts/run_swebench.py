@@ -59,6 +59,19 @@ _LOCAL_BIN = _REPO_ROOT / "dist" / "src" / "cli.js"
 SWARM_BIN = Path(os.environ.get("SWARM_BIN", str(_LOCAL_BIN) if _LOCAL_BIN.exists() else "/app/swarm/dist/src/cli.js"))
 CACHE_DIR = Path(os.environ.get("HF_HOME", str(_REPO_ROOT / ".cache" / "huggingface")))
 
+# Per-instance eval image registry. perinstance_image() appends
+# `.<instance_id>:latest` to this prefix. Default is the Epoch Research
+# mirror on GHCR, which publishes pre-built SWE-bench eval images keyed
+# on the official swebench `sweb.eval.x86_64.<instance_id>` naming (with
+# the `sweb` → `swe-bench` rewrite their mirror uses). Override with
+# PERINSTANCE_IMAGE_REGISTRY to point at a private registry or a different
+# mirror — the string is expected to be the full prefix up to (but not
+# including) `.<instance_id>:latest`.
+PERINSTANCE_IMAGE_REGISTRY = os.environ.get(
+    "PERINSTANCE_IMAGE_REGISTRY",
+    "ghcr.io/epoch-research/swe-bench.eval.x86_64",
+)
+
 
 # ---------------------------------------------------------------------------
 # Diff capture (bytes-safe, with size guardrails)
