@@ -728,29 +728,11 @@ def run_gold_tests(repo_dir: Path, task: dict) -> dict:
     if not fail_to_pass:
         return {"passed": False, "reason": "no FAIL_TO_PASS tests specified"}
 
-    # Convert test IDs to pytest-compatible format.
-    # unittest-style "test_method (module.Class)" → "module/path.py::Class::test_method" via -k
-    pytest_targets = []
-    k_filters = []
-    for tid in fail_to_pass:
-        if "::" in tid:
-            # Already pytest-style path
-            pytest_targets.append(tid)
-        elif "(" in tid and ")" in tid:
-            # unittest-style: "test_method (module.path.TestClass)"
-            method, rest = tid.split("(", 1)
-            method = method.strip()
-            module_class = rest.rstrip(")").strip()
-            parts = module_class.rsplit(".", 1)
-            if len(parts) == 2:
-                module_path = parts[0].replace(".", "/")
-                class_name = parts[1]
-                k_filters.append(f"{class_name} and {method}")
-            else:
-                k_filters.append(method)
-        else:
-            # Plain test name — use as -k filter
-            k_filters.append(tid)
+    # Convert test IDs to pytest-compatible format via the shared helper
+    # so the host-venv and container paths apply the same scoping rules.
+    # Without this, bare function names in FAIL_TO_PASS would use an
+    # unbounded `-k` filter here while the container path scopes it.
+    pytest_targets, k_filters = build_pytest_args(fail_to_pass, test_patch)
 
     # Build pytest command.
     # Use the per-repo venv python so imports resolve correctly.
@@ -782,17 +764,54 @@ def run_gold_tests(repo_dir: Path, task: dict) -> dict:
         return {"passed": False, "reason": "test execution timed out"}
 
 
-def build_pytest_args(fail_to_pass: list[str]) -> tuple[list[str], list[str]]:
+def extract_test_patch_files(test_patch: str) -> list[str]:
+    """Return b-side file paths from a unified diff, in order of appearance.
+
+    Used to bound pytest's -k substring match to the files the gold test
+    patch actually touches. Parsing is permissive: no header means no
+    files, no exception — the caller decides whether that's fatal.
+    """
+    if not test_patch:
+        return []
+    return [m.group(1) for m in re.finditer(r"(?m)^diff --git a/\S+ b/(\S+)", test_patch)]
+
+
+def build_pytest_args(
+    fail_to_pass: list[str],
+    test_patch: str = "",
+) -> tuple[list[str], list[str]]:
     """Convert SWE-bench FAIL_TO_PASS test IDs into pytest targets + -k filters.
 
-    SWE-bench records test IDs in two formats:
-      pytest-style:   "path/to/test.py::TestClass::test_method"
-      unittest-style: "test_method (module.path.TestClass)"
-    Both are routed to pytest. Targets are run directly; -k filters handle the
-    unittest-style cases where there's no on-disk path to point pytest at.
+    SWE-bench records test IDs in three formats we have to map onto pytest:
+      1. pytest-style node ID: "path/to/test.py::TestClass::test_method"
+      2. unittest-style:       "test_method (module.path.TestClass)"
+      3. bare function name:   "test_args"  (case we must scope)
+
+    (1) becomes a direct pytest positional target. (2) becomes a `-k`
+    filter that ands the class and method. (3) is the ambiguous case:
+    `-k 'test_args'` tells pytest "run any test whose node ID contains
+    'test_args'", and pytest's node ID includes the module path — so a
+    bare name collides with every test in any module whose *filename*
+    contains the string. Observed on sympy__sympy-12481: bare
+    "test_args" matched all 732 tests in sympy/core/tests/test_args.py
+    (a file named after that string but unrelated to the fix), 78 of
+    which had pre-existing unrelated failures, and the instance was
+    scored 0/1 despite the orchestrator's patch being correct.
+
+    Scoping: when a bare name appears, the files extracted from the
+    gold test_patch are passed as pytest positionals so `-k` is bounded
+    to tests in those files. Option A from the RC6-port rationale:
+    `pytest <file> -k <name>` rather than a fully qualified node ID,
+    so class-nested tests still resolve.
+
+    If no test_patch is provided (defensive — host-venv and container
+    paths both supply one), the bare name falls through to the legacy
+    unbounded `-k` to preserve prior behavior on any caller that
+    forgets to pass test_patch.
     """
     pytest_targets: list[str] = []
     k_filters: list[str] = []
+    bare_names: list[str] = []
     for tid in fail_to_pass:
         if "::" in tid:
             pytest_targets.append(tid)
@@ -807,7 +826,21 @@ def build_pytest_args(fail_to_pass: list[str]) -> tuple[list[str], list[str]]:
             else:
                 k_filters.append(method)
         else:
-            k_filters.append(tid)
+            bare_names.append(tid)
+
+    if bare_names:
+        test_patch_files = extract_test_patch_files(test_patch)
+        if test_patch_files:
+            pytest_targets.extend(test_patch_files)
+            k_filters.extend(bare_names)
+            print(
+                f"  [pytest-scoping] scoped {len(bare_names)} bare test "
+                f"name(s) to {len(test_patch_files)} test_patch file(s): "
+                f"names={bare_names} files={test_patch_files}"
+            )
+        else:
+            # No test_patch available — legacy unbounded -k.
+            k_filters.extend(bare_names)
     return pytest_targets, k_filters
 
 
@@ -876,7 +909,7 @@ def run_gold_tests_in_container(task: dict, agent_diff: bytes) -> dict:
             "stripped_test_files": stripped_test_files,
         }
 
-    pytest_targets, k_filters = build_pytest_args(fail_to_pass)
+    pytest_targets, k_filters = build_pytest_args(fail_to_pass, test_patch)
 
     # Build the in-container script. Patches come in via stdin split by sentinels.
     # Keeping this as one bash -lc string is the simplest way to hit the shared
