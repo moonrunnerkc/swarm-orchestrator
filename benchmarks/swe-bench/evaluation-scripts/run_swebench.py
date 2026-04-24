@@ -965,8 +965,14 @@ def evaluate_tasks(*, keep_workdir: bool = False) -> dict:
             run_result = run_orchestrator(repo_dir, task["problem_statement"])
             task_result["run"] = run_result
 
-            # Step 3: Run gold tests
-            test_result = run_gold_tests(repo_dir, task)
+            # Step 3: Run gold tests via the dispatcher so we pick the
+            # per-instance container (honest eval) when Docker is available
+            # and fall back to the host venv only when it is not. Calling
+            # run_gold_tests directly skips that choice and silently pins
+            # every run to host-venv mode, where Python-version drift against
+            # the task's base commit misattributes stdlib ImportErrors (e.g.
+            # `collections.Mapping` in Python 3.10+) as orchestrator failures.
+            test_result = run_tests_dispatch(task, repo_dir)
             task_result["tests"] = test_result
             task_result["resolved"] = test_result.get("passed", False)
 
