@@ -600,20 +600,24 @@ Goal ──> Plan ──> Waves ──> Branches ──> Agents ──> Verify �
 <br>
 
 <details>
-<summary><strong>Key modules</strong> (114 source files, 26,653 lines of TypeScript; <a href="ARCHITECTURE.md">full inventory</a>)</summary>
+<summary><strong>Key modules</strong> (119 source files, 27,825 lines of TypeScript; <a href="ARCHITECTURE.md">full inventory</a>)</summary>
 
 <br>
 
 | Module | Lines | Responsibility |
 |--------|-------|----------------|
-| `swarm-orchestrator.ts` | 2,090 | Greedy scheduler, dependency resolution, octopus merge, governance, cost tracking, merge orchestration |
-| `verifier-engine.ts` | 622 | Evidence checking against transcripts, verification report generation |
-| `share-parser.ts` | 715 | Transcript parsing: files, commands, tests, commits, claims, MCP evidence |
-| `repair-agent.ts` | 452 | Failure classification, targeted repair strategies, context accumulation |
+| `swarm-orchestrator.ts` | 870 | Coordinator: owns shared state, delegates scheduling, step execution, replan, and final-gate remediation to `src/orchestrator/` submodules (v6.1.0 decomposition) |
+| `orchestrator/wave-scheduler-loop.ts` | 485 | Greedy per-wave dispatch loop, event-driven dependency resolution, adaptive concurrency |
+| `orchestrator/step-executor.ts` | 563 | Single-step execution pipeline: session launch, verification, repair, cost attribution |
+| `orchestrator/final-gates-remediation.ts` | 432 | Post-merge quality-gate pipeline and remediation-step synthesis |
+| `orchestrator/replan-runner.ts` | 369 | Replan execution, retry-branch bookkeeping, failed-step objective carry-forward |
+| `verifier-engine.ts` | 577 | Evidence-checking orchestration; delegates to `verifier/` submodules |
+| `share-parser.ts` | 581 | Transcript parsing: files, commands, tests, commits, claims, MCP evidence |
+| `repair-agent.ts` | 463 | Failure classification, targeted repair strategies, context accumulation |
 | `cost-estimator.ts` | 300 | Pre-execution cost prediction with model multipliers and KB calibration |
 | `knowledge-base.ts` | 340 | Cross-run pattern storage, cost history, similarity matching |
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete module reference across all 112 source files.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete module reference across all 119 source files.
 
 </details>
 
@@ -665,7 +669,7 @@ npm start demo api-quick     # REST API with tests and Dockerfile, ~5 min
 
 ## Status
 
-Actively maintained. 114 source files, 109 test files, 1,497 tests passing across all packages. Development is ongoing with regular updates.
+Actively maintained. 119 source files, 109 test files, 1,497 tests passing across all packages. Development is ongoing with regular updates.
 
 See [Releases](https://github.com/moonrunnerkc/swarm-orchestrator/releases) for version history.
 

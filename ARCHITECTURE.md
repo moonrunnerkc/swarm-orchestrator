@@ -1,32 +1,49 @@
-# Architecture — Module Reference
+# Architecture: Module Reference
 
 > For a project overview, see [README.md](README.md). For the high-level pipeline and system diagram, see [Architecture](README.md#architecture).
 
-112 source files, 26,653 lines of TypeScript.
+119 source files, 27,825 lines of TypeScript.
 
 ## Core Orchestration
 
+`SwarmOrchestrator` is a coordinator class that implements four host interfaces (`RemediationHost`, `ReplanHost`, `StepExecutorHost`, `SchedulerHost`) and delegates their work to submodules under `src/orchestrator/`. It owns shared state: `ContextBroker`, `MetricsCollector`, `WorktreeManager`, `BranchMerger`, `PauseController`. See the v6.1.0 release notes for the decomposition rationale.
+
 | Module | Lines | Responsibility |
 |--------|-------|----------------|
-| `swarm-orchestrator.ts` | 2,090 | Greedy scheduler, event-driven dependency resolution, octopus merge, multi-repo grouping, governance, lean mode, replay, cost tracking, merge orchestration |
-| `plan-generator.ts` | 996 | Plan creation, dependency validation, Copilot-assisted generation, plan-cache short-circuit |
-| `session-executor.ts` | 671 | Copilot CLI subprocess management, transcript capture, /fleet prompt wrapping |
-| `step-runner.ts` | 434 | Single-step execution with branch setup, context injection, cleanup |
-| `branch-merger.ts` | 412 | Branch merge operations: octopus merge, sequential fallback, conflict detection |
+| `swarm-orchestrator.ts` | 870 | Coordinator: owns shared state, wires host interfaces, holds merge and worktree-cleanup helpers. Delegates scheduling, step execution, replan, and final-gate remediation to `orchestrator/` submodules |
+| `plan-generator.ts` | 1,396 | Plan creation, dependency validation, Copilot-assisted generation, plan-cache short-circuit |
+| `session-executor.ts` | 690 | Copilot CLI subprocess management, transcript capture, /fleet prompt wrapping |
+| `step-runner.ts` | 443 | Single-step execution with branch setup, context injection, cleanup |
+| `branch-merger.ts` | 415 | Branch merge operations: octopus merge, sequential fallback, conflict detection |
 | `context-broker.ts` | 412 | Shared state, EventEmitter-based step completion signaling, git locking, dependency context injection, strict isolation filter |
-| `steering-router.ts` | 290 | Human-in-the-loop commands during execution |
 | `bootstrap-orchestrator.ts` | 208 | Multi-repo bootstrap coordination, relationship detection, grouped execution |
-| `prompt-builder.ts` | 173 | Prompt construction for agent steps: context assembly, template rendering |
-| `wave-resizer.ts` | 166 | Adaptive wave splitting, merging, and concurrency adjustment |
-| `wave-scheduler.ts` | 51 | Wave scheduling: topological sort, dependency grouping, greedy dispatch |
+| `prompt-builder.ts` | 210 | Prompt construction for agent steps: context assembly, template rendering |
+| `wave-resizer.ts` | 165 | Adaptive wave splitting, merging, and concurrency adjustment |
+| `wave-scheduler.ts` | 51 | Pure topological-sort helper: dependency grouping, wave identification |
+
+### `src/orchestrator/` (extracted in v6.1.0)
+
+| Module | Lines | Responsibility |
+|--------|-------|----------------|
+| `step-executor.ts` | 563 | `StepExecutorHost`: single-step execution pipeline including session launch, verification, repair, and cost attribution |
+| `wave-scheduler-loop.ts` | 485 | `SchedulerHost`: greedy per-wave dispatch loop, event-driven dependency resolution, adaptive concurrency |
+| `final-gates-remediation.ts` | 432 | `RemediationHost`: post-merge quality-gate pipeline plus remediation-step synthesis |
+| `replan-runner.ts` | 369 | `ReplanHost`: replan execution, retry-branch bookkeeping, failed-step objective carry-forward |
+| `async-meta-analysis.ts` | 121 | Fire-and-forget wave health analysis |
+| `git-state-utils.ts` | 89 | Pre-run git sanitize plus `npm install` gating |
+| `pause-controller.ts` | 55 | Pause/resume signal coordination for steering |
 
 ## Verification & Quality
 
 | Module | Lines | Responsibility |
 |--------|-------|----------------|
-| `share-parser.ts` | 715 | Transcript parsing: files, commands, tests, commits, claims, MCP evidence |
-| `verifier-engine.ts` | 622 | Evidence checking against transcripts (accepts pre-parsed index to avoid double parse), verification report generation |
-| `repair-agent.ts` | 452 | Self-repair loop with failure classification, targeted strategies, context accumulation |
+| `share-parser.ts` | 581 | Transcript parsing: files, commands, tests, commits, claims, MCP evidence. Claim-verification logic extracted to `share/transcript-verification.ts` (stage-4b) |
+| `verifier-engine.ts` | 577 | Evidence checking orchestration (accepts pre-parsed index to avoid double parse); delegates outcome and transcript checks plus report generation to `verifier/` submodules (stage-4a) |
+| `repair-agent.ts` | 463 | Self-repair loop with failure classification, targeted strategies, context accumulation |
+| `share/transcript-verification.ts` | 148 | Claim-verification logic extracted from `share-parser.ts` |
+| `verifier/outcome-checks.ts` | 395 | Filesystem and runtime evidence checks |
+| `verifier/transcript-checks.ts` | 225 | Transcript-derived evidence checks |
+| `verifier/verification-reporters.ts` | 136 | Markdown and JSON verification report rendering |
 | `meta-analyzer.ts` | 305 | Wave health scoring, pattern detection, replan decisions |
 | `gate-remediation.ts` | 284 | Quality-gate failure remediation: auto-fix strategies for gate violations |
 | `critic-reviewer.ts` | 65 | Governance critic scoring: weighted axis evaluation, approve/reject/revise |
@@ -54,7 +71,7 @@
 | `cli/flags.ts` | 200 | Centralized flag parsing and validation |
 | `cli/share-handlers.ts` | 183 | Share/transcript import and export |
 | `cli/usage.ts` | 75 | Help text and usage formatting |
-| `cli-handlers.ts` | 62 | Legacy barrel — re-exports from `src/cli/` sub-modules (no logic) |
+| `cli/index.ts` | 62 | Barrel re-exporting `src/cli/` sub-modules (replaces the former `src/cli-handlers.ts`; no logic) |
 | `cli/cost-prompt.ts` | 24 | Interactive cost confirmation prompt |
 
 ## Agents & Adapters
