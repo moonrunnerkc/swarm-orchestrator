@@ -22,6 +22,7 @@ import fnmatch
 import glob
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -247,6 +248,14 @@ def capture_agent_diff(
 # RC fixes — helper functions
 # ---------------------------------------------------------------------------
 
+# Globs identifying paths that belong to the gold test patch, not to the
+# implementation the agent should edit. Shared between revert_test_files
+# (host-venv, RC6) and strip_test_file_hunks (container path). Keeping both
+# paths in sync on a single list prevents drift where one backend thinks a
+# file is a test and the other doesn't — that kind of split was the v6.0.0
+# smoke9 failure mode multiplied across 50 instances.
+TEST_FILE_PATTERNS = ["**/test_*.py", "**/tests/**/*.py"]
+
 
 def revert_test_files(repo_dir: Path) -> list:
     """[RC6] Revert any test files modified by the agent before gold patch apply.
@@ -268,10 +277,9 @@ def revert_test_files(repo_dir: Path) -> list:
             return []
 
         modified = [f.strip() for f in diff_result.stdout.splitlines() if f.strip()]
-        test_patterns = ["**/test_*.py", "**/tests/**/*.py"]
         test_files = []
         for f in modified:
-            for pat in test_patterns:
+            for pat in TEST_FILE_PATTERNS:
                 if fnmatch.fnmatch(f, pat):
                     test_files.append(f)
                     break
@@ -291,6 +299,55 @@ def revert_test_files(repo_dir: Path) -> list:
     except (subprocess.TimeoutExpired, Exception) as exc:
         print(f"  [RC6] warning: revert_test_files failed: {exc}")
         return []
+
+
+def strip_test_file_hunks(agent_diff: bytes) -> tuple[bytes, list[str]]:
+    """[RC6 container port] Drop per-file hunks targeting test files.
+
+    The container eval applies the agent diff against /testbed, then applies
+    the gold test patch on top. The gold test patch was built against the
+    pristine base_commit, so if the agent also edited the same test file
+    the gold patch's context no longer matches and `git apply` rejects it.
+
+    The host-venv path's `revert_test_files` (RC6) fixes this by reverting
+    the worktree's test files with `git checkout` before the gold apply.
+    The container has no live worktree to operate on, so the equivalent
+    is to filter the diff in Python before writing the stdin payload.
+
+    Detection uses TEST_FILE_PATTERNS, the same globs RC6 uses, so the
+    two backends stay aligned.
+
+    Returns (filtered_diff, [stripped_b_paths]). `agent_diff` is bytes
+    in, bytes out — the orchestrator's diff can contain non-UTF-8 content
+    and downstream consumers expect bytes. A diff that doesn't start with
+    a `diff --git` header is passed through unchanged.
+    """
+    if not agent_diff or not agent_diff.lstrip().startswith(b"diff --git"):
+        return agent_diff, []
+
+    # `(?m)(?=^diff --git )` partitions on per-file boundaries without
+    # consuming the header — every non-empty chunk after the split starts
+    # with `diff --git ...`. Any preamble bytes before the first header
+    # come through as the leading chunk and are preserved in `kept` when
+    # they don't match the header regex (defensive: real orchestrator
+    # diffs won't have preamble, but don't silently eat bytes if they do).
+    parts = re.split(b"(?m)(?=^diff --git )", agent_diff)
+    kept: list[bytes] = []
+    stripped: list[str] = []
+    header_re = re.compile(rb"^diff --git a/(\S+) b/(\S+)")
+    for chunk in parts:
+        if not chunk.strip():
+            continue
+        m = header_re.match(chunk)
+        if not m:
+            kept.append(chunk)
+            continue
+        b_path = m.group(2).decode("utf-8", errors="replace")
+        if any(fnmatch.fnmatch(b_path, pat) for pat in TEST_FILE_PATTERNS):
+            stripped.append(b_path)
+        else:
+            kept.append(chunk)
+    return b"".join(kept), stripped
 
 
 def setuptools_scm_env(base_env: dict) -> dict:
@@ -798,6 +855,26 @@ def run_gold_tests_in_container(task: dict, agent_diff: bytes) -> dict:
         fail_to_pass = []
     if not fail_to_pass:
         return {"passed": False, "reason": "no FAIL_TO_PASS tests specified", "backend": "container"}
+
+    # RC6 port for the container path. The host-venv side reverts agent
+    # test-file edits on the live worktree before gold apply; here there
+    # is no worktree, so we drop test-file hunks from the diff instead.
+    # Without this step any instance where the agent also touched tests
+    # fails gold-patch apply (exit 43) with a context-mismatch error.
+    agent_diff, stripped_test_files = strip_test_file_hunks(agent_diff)
+    if stripped_test_files:
+        print(
+            f"  [RC6-container] stripped {len(stripped_test_files)} test-file "
+            f"hunk(s) from agent patch: {stripped_test_files}"
+        )
+    if not agent_diff:
+        return {
+            "passed": False,
+            "reason": "agent produced test-only changes, no implementation patch",
+            "backend": "container",
+            "image": image,
+            "stripped_test_files": stripped_test_files,
+        }
 
     pytest_targets, k_filters = build_pytest_args(fail_to_pass)
 
