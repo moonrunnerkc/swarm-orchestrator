@@ -175,35 +175,62 @@ def test_four_quadrant_union():
         )
 
 
-def test_manifest_file_under_reserved_path_is_staged_explicitly():
-    """Edge case: agent claims modification to a file that happens to live
-    under an orchestrator-reserved path. Source 1 (manifest) stages it
-    regardless; source 2 would have excluded it. The union includes it
-    because agent claim wins.
+def test_manifest_file_under_reserved_path_is_filtered_out():
+    """Reserved-path filter is unconditional at diff time, even for files
+    the agent's manifest claims.
 
-    This is unusual in practice but covers the fairness question: if the
-    orchestrator's reserved-path list ever overlaps with something the
-    agent legitimately needs to touch, the manifest-based source 1 keeps
-    that work visible.
+    Semantic change: PR #38 (commit 148bd7c) added git_pathspec_excludes()
+    to the `git diff base_commit` invocation so orchestrator scaffolding
+    committed above base_commit (.copilot-instructions.md, runs/) does not
+    leak into the captured patch. That filter fires regardless of what the
+    manifest reports, because the downstream /testbed container has no
+    concept of reserved paths and would reject an apply referencing them.
+
+    Consequence: an agent claim on a file under a reserved directory
+    (plans/, runs/, dist/, etc.) is dropped from the final diff. This is
+    intentional. In practice, agents should not be writing to orchestrator-
+    reserved directories; if that becomes a routine failure mode, the fix
+    is to narrow the reserved-path list, not to punch through the filter
+    per-claim.
+
+    Prior to #38 the assertion read the other way ("agent claim wins"),
+    matching the #33 union-capture design. #38 superseded that when the
+    smoke8 scaffolding-leak was traced to the diff step not applying the
+    same excludes as the staging step. See docs/releases/RELEASE-v6.0.0.md
+    Problem B.
     """
     with tempfile.TemporaryDirectory(prefix="union-reserved-") as t:
         tmp = Path(t)
         base = _seed_repo(tmp)
 
+        # Also commit a non-reserved agent change so the capture has a
+        # reason to succeed (capture_agent_diff raises DiffCaptureError on
+        # an empty diff — a zero-byte patch is never a valid outcome).
+        (tmp / "src").mkdir()
+        (tmp / "src" / "fix.py").write_text("def fixed(): pass\n")
+
         # Agent modifies a file inside a reserved directory. `plans/` is
-        # reserved; the agent claims it.
+        # reserved; the agent claims it via the manifest.
         (tmp / "plans").mkdir()
         (tmp / "plans" / "agent-owned.json").write_text('{"agent":"wrote this"}\n')
-        _git(tmp, "add", "plans/agent-owned.json")
-        _git(tmp, "commit", "-m", "agent work under reserved path")
+
+        _git(tmp, "add", "src/fix.py", "plans/agent-owned.json")
+        _git(tmp, "commit", "-m", "agent work including reserved path")
 
         diff = capture_agent_diff(
-            tmp, base, manifest_files=["plans/agent-owned.json"]
+            tmp, base, manifest_files=["plans/agent-owned.json", "src/fix.py"]
         ).decode("utf-8", errors="replace")
 
-        assert "plans/agent-owned.json" in diff, (
-            "manifest-claimed file under reserved path must still appear in "
-            "the diff — agent claim overrides the reserved-path filter"
+        assert "src/fix.py" in diff, (
+            "non-reserved manifest file must still appear in the diff — "
+            "this is the control case proving capture_agent_diff ran"
+        )
+        assert "plans/agent-owned.json" not in diff, (
+            "manifest-claimed file under reserved path must NOT appear in "
+            "the diff — PR #38 applies git_pathspec_excludes() at diff time "
+            "unconditionally, overriding any source-1 manifest claim. "
+            "Changing this assertion without coordinating with the smoke8 "
+            "fix will resurrect the scaffolding-leak into /testbed."
         )
 
 
