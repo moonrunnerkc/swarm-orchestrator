@@ -515,23 +515,36 @@ def checkout_repo(task, workdir: Path) -> Path:
     return repo_dir
 
 
+def build_baseline_command(repo_dir: Path, problem_statement: str) -> tuple[list[str], str | None]:
+    """Build the direct-agent baseline command for the configured CLI."""
+    truncated = problem_statement[:100_000]
+    prompt_text = f"Fix this issue. Only edit source code files, do not edit tests.\n\n{truncated}"
+
+    if SWARM_TOOL == "claude-code":
+        return ["claude", "--dangerously-skip-permissions", "-p", "-"], prompt_text
+    if SWARM_TOOL == "copilot":
+        return ["copilot", "-p", prompt_text, "--allow-all"], None
+    if SWARM_TOOL == "codex":
+        return [
+            "codex",
+            "exec",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "-C",
+            str(repo_dir),
+            prompt_text,
+        ], None
+    raise ValueError(
+        f"unsupported SWARM_TOOL={SWARM_TOOL!r}; use copilot, claude-code, or codex"
+    )
+
+
 def run_orchestrator(repo_dir: Path, problem_statement: str) -> dict:
-    """Run swarm-orchestrator (or baseline) against the task."""
+    """Run swarm-orchestrator or a direct-agent baseline against the task."""
     start = time.monotonic()
     env = {**os.environ, "NODE_NO_WARNINGS": "1"}
 
     if BASELINE_MODE:
-        # Direct single-agent execution — run Claude CLI directly, bypassing orchestrator.
-        # This tests the raw agent capability without orchestrator's planning/verification.
-        # Truncate the prompt to avoid E2BIG — baseline evaluates raw agent capability,
-        # not the orchestrator's prompt-management. Keep first 100K chars.
-        truncated = problem_statement[:100_000]
-        prompt_text = f"Fix this issue. Only edit source code files, do not edit tests.\n\n{truncated}"
-        cmd = [
-            "claude", "--dangerously-skip-permissions",
-            "-p", prompt_text,
-        ]
-        prompt_text = None  # Don't pipe via stdin for baseline
+        cmd, prompt_text = build_baseline_command(repo_dir, problem_statement)
     else:
         # Full orchestrator pipeline.
         # The "do not edit tests" constraint goes through --agent-guidance, NOT
