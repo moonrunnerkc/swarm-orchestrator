@@ -8,6 +8,8 @@ export interface AgentResult {
   exitCode: number;
   durationMs: number;
   shareTranscriptPath?: string | undefined;
+  executionMode?: 'cold-start' | 'persistent-interactive' | undefined;
+  fallbackReason?: string | undefined;
   /**
    * Instrumented count of premium API requests consumed during this session.
    * Parsed from CLI output markers (e.g. Claude Code cost summary).
@@ -22,11 +24,17 @@ export interface AgentSpawnOptions {
   model?: string | undefined;
   timeout?: number | undefined;
   copilotAgent?: string | undefined;
+  executionMode?: 'cold-start' | 'persistent-interactive' | 'auto' | undefined;
+  persistentSessionId?: string | undefined;
+  persistentTurnTimeoutMs?: number | undefined;
+  onAgentLine?: ((line: string) => void) | undefined;
 }
 
 export interface AgentAdapter {
   name: string;
+  supportsPersistentInteractive?: boolean | undefined;
   spawn(opts: AgentSpawnOptions): Promise<AgentResult>;
+  shutdown?(): Promise<void>;
 }
 
 // Builds a minimal process.env for agent subprocesses. Only the keys the

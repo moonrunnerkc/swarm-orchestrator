@@ -15,6 +15,32 @@ function tmpDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'adapters-test-'));
 }
 
+let tempDirs: string[] = [];
+
+function writeExecutable(filePath: string, content: string): void {
+  fs.writeFileSync(filePath, content, 'utf8');
+  fs.chmodSync(filePath, 0o755);
+}
+
+async function withFakeCliOnPath<T>(
+  commandName: string,
+  script: string,
+  runTest: (workdir: string) => Promise<T>
+): Promise<T> {
+  const binDir = tmpDir();
+  const workdir = tmpDir();
+  const originalPath = process.env.PATH;
+  tempDirs.push(binDir, workdir);
+  writeExecutable(path.join(binDir, commandName), script);
+  process.env.PATH = `${binDir}${path.delimiter}${originalPath ?? ''}`;
+  try {
+    return await runTest(workdir);
+  } finally {
+    if (originalPath === undefined) delete process.env.PATH;
+    else process.env.PATH = originalPath;
+  }
+}
+
 // Stub adapter for testing SessionExecutor delegation without spawning real processes
 class StubAdapter implements AgentAdapter {
   readonly name = 'stub';
@@ -38,8 +64,6 @@ class StubAdapter implements AgentAdapter {
 }
 
 describe('Agent Adapters', () => {
-  let tempDirs: string[] = [];
-
   afterEach(() => {
     for (const dir of tempDirs) {
       if (fs.existsSync(dir)) {
@@ -405,6 +429,105 @@ describe('Agent Adapters', () => {
       assert.ok(content.includes('actual output'), 'stdout should be in transcript');
       // stderr is not included in transcript body when stdout has content
       assert.ok(!content.includes('some warning'), 'stderr should not be in transcript body when stdout present');
+    });
+  });
+
+  describe('persistent interactive fallback', () => {
+    const originalPersistentFlag = process.env.SWARM_ENABLE_PERSISTENT_INTERACTIVE;
+
+    beforeEach(() => {
+      process.env.SWARM_ENABLE_PERSISTENT_INTERACTIVE = '1';
+    });
+
+    afterEach(() => {
+      if (originalPersistentFlag === undefined) delete process.env.SWARM_ENABLE_PERSISTENT_INTERACTIVE;
+      else process.env.SWARM_ENABLE_PERSISTENT_INTERACTIVE = originalPersistentFlag;
+    });
+
+    it('falls back to cold-start Copilot when the persistent turn never completes', async () => {
+      const script = [
+        '#!/usr/bin/env bash',
+        'if [[ "$1" == "-p" ]]; then',
+        '  echo "copilot cold-start fallback"',
+        '  echo "Requests  2 Premium (1s)" >&2',
+        '  exit 0',
+        'fi',
+        'while IFS= read -r _line; do :; done',
+      ].join('\n');
+
+      await withFakeCliOnPath('copilot', script, async (workdir) => {
+        const adapter = new CopilotAdapter();
+        const result = await adapter.spawn({
+          prompt: 'finish the task',
+          workdir,
+          executionMode: 'auto',
+          persistentTurnTimeoutMs: 25,
+          timeout: 2_000,
+        });
+        await adapter.shutdown();
+
+        assert.strictEqual(result.exitCode, 0);
+        assert.strictEqual(result.executionMode, 'cold-start');
+        assert.ok(result.stdout.includes('copilot cold-start fallback'));
+        assert.strictEqual(result.premiumRequestsConsumed, 2);
+      });
+    });
+
+    it('falls back to cold-start Claude Code when the persistent marker is missing', async () => {
+      const script = [
+        '#!/usr/bin/env bash',
+        'for arg in "$@"; do',
+        '  if [[ "$arg" == "-p" ]]; then',
+        '    cat >/dev/null',
+        '    echo "claude cold-start fallback"',
+        '    exit 0',
+        '  fi',
+        'done',
+        'while IFS= read -r _line; do :; done',
+      ].join('\n');
+
+      await withFakeCliOnPath('claude', script, async (workdir) => {
+        const adapter = new ClaudeCodeAdapter();
+        const result = await adapter.spawn({
+          prompt: 'finish the task',
+          workdir,
+          executionMode: 'auto',
+          persistentTurnTimeoutMs: 25,
+          timeout: 2_000,
+        });
+        await adapter.shutdown();
+
+        assert.strictEqual(result.exitCode, 0);
+        assert.strictEqual(result.executionMode, 'cold-start');
+        assert.ok(result.stdout.includes('claude cold-start fallback'));
+      });
+    });
+
+    it('falls back to cold-start Codex when interactive mode stalls', async () => {
+      const script = [
+        '#!/usr/bin/env bash',
+        'if [[ "$1" == "exec" ]]; then',
+        '  echo "codex cold-start fallback"',
+        '  exit 0',
+        'fi',
+        'while IFS= read -r _line; do :; done',
+      ].join('\n');
+
+      await withFakeCliOnPath('codex', script, async (workdir) => {
+        const adapter = new CodexAdapter();
+        const result = await adapter.spawn({
+          prompt: 'finish the task',
+          workdir,
+          executionMode: 'auto',
+          persistentTurnTimeoutMs: 25,
+          timeout: 2_000,
+        });
+        await adapter.shutdown();
+
+        assert.strictEqual(result.exitCode, 0);
+        assert.strictEqual(result.executionMode, 'cold-start');
+        assert.ok(result.stdout.includes('codex cold-start fallback'));
+      });
     });
   });
 

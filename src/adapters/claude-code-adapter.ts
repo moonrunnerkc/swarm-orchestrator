@@ -3,6 +3,7 @@
 
 import { spawn, SpawnOptions } from 'child_process';
 import { AgentAdapter, AgentResult, AgentSpawnOptions, buildRestrictedEnv } from './agent-adapter';
+import { PersistentInteractiveSession } from './persistent-session';
 
 // Claude Code can spend several minutes on internal reasoning and multi-file
 // operations without producing stdout, unlike streaming CLI tools.
@@ -10,8 +11,13 @@ const STALL_TIMEOUT_MS = 600_000;
 
 export class ClaudeCodeAdapter implements AgentAdapter {
   readonly name = 'claude-code';
+  readonly supportsPersistentInteractive = true;
+  private readonly persistentSessions = new Map<string, PersistentInteractiveSession>();
 
   async spawn(opts: AgentSpawnOptions): Promise<AgentResult> {
+    const persistent = await this.tryPersistent(opts);
+    if (persistent) return persistent;
+
     const startTime = Date.now();
     // Pipe the prompt via stdin instead of passing it as a CLI argument.
     // Long prompts (SWE-bench issue descriptions with embedded code) can
@@ -36,8 +42,59 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       stderr: result.stderr,
       exitCode: result.exitCode,
       durationMs,
+      executionMode: 'cold-start',
       premiumRequestsConsumed,
     };
+  }
+
+  async shutdown(): Promise<void> {
+    await Promise.all(Array.from(this.persistentSessions.values()).map(session => session.shutdown()));
+    this.persistentSessions.clear();
+  }
+
+  private async tryPersistent(opts: AgentSpawnOptions): Promise<AgentResult | undefined> {
+    if (!shouldAttemptPersistent(opts)) return undefined;
+
+    const startTime = Date.now();
+    const sessionKey = opts.persistentSessionId ?? `${opts.workdir}:${opts.model ?? 'default'}`;
+    const args = ['--dangerously-skip-permissions'];
+    if (opts.model) args.push('--model', opts.model);
+
+    let session = this.persistentSessions.get(sessionKey);
+    if (!session || session.unavailable) {
+      session = new PersistentInteractiveSession({
+        command: 'claude',
+        args,
+        cwd: opts.workdir,
+        env: buildRestrictedEnv(['ANTHROPIC_API_KEY']),
+        onLine: (line) => opts.onAgentLine?.(`[claude-code:persistent] ${line}`),
+      });
+      this.persistentSessions.set(sessionKey, session);
+    }
+
+    const result = await session.send(opts.prompt, opts.persistentTurnTimeoutMs ?? opts.timeout ?? STALL_TIMEOUT_MS);
+    if (result.exitCode === 0) {
+      return {
+        ...result,
+        executionMode: 'persistent-interactive',
+        premiumRequestsConsumed: this.parseRequestCount(result.stdout, result.stderr),
+      };
+    }
+
+    const reason = session.reason ?? (result.stderr || 'persistent interactive mode failed');
+    this.persistentSessions.delete(sessionKey);
+    await session.shutdown();
+    if (opts.executionMode === 'persistent-interactive') {
+      return {
+        stdout: result.stdout,
+        stderr: result.stderr,
+        exitCode: result.exitCode,
+        durationMs: Date.now() - startTime,
+        executionMode: 'persistent-interactive',
+        fallbackReason: reason,
+      };
+    }
+    return undefined;
   }
 
   /**
@@ -141,4 +198,9 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       });
     });
   }
+}
+
+function shouldAttemptPersistent(opts: AgentSpawnOptions): boolean {
+  if (opts.executionMode === 'persistent-interactive') return true;
+  return opts.executionMode === 'auto' && process.env.SWARM_ENABLE_PERSISTENT_INTERACTIVE === '1';
 }

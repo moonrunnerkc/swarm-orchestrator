@@ -36,6 +36,9 @@ export interface SessionOptions {
   additionalEnv?: Record<string, string>; // extra env vars for the spawned process (e.g., COPILOT_HOOKS_DIR)
   additionalArgs?: string[]; // extra CLI args for the copilot subprocess (e.g., --plugin-dir)
   onAgentLine?: (prefixedLine: string) => void; // callback for each output line
+  executionMode?: 'cold-start' | 'persistent-interactive' | 'auto';
+  persistentSessionId?: string;
+  persistentTurnTimeoutMs?: number;
 }
 
 export interface SessionResult {
@@ -162,6 +165,10 @@ export class SessionExecutor {
       workdir: this.workingDir,
       model: options.model,
       copilotAgent: options.agent,
+      executionMode: options.executionMode,
+      persistentSessionId: options.persistentSessionId,
+      persistentTurnTimeoutMs: options.persistentTurnTimeoutMs,
+      onAgentLine: options.onAgentLine,
     });
 
     // Write transcript to the share file if the adapter produced one,

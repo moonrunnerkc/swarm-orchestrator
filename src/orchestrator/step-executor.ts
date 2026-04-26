@@ -1,7 +1,7 @@
 import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { resolveAdapter, AgentSpawnOptions } from '../adapters';
+import { resolveAdapter } from '../adapters';
 import { AgentProfile } from '../config-loader';
 import { BaselineSnapshot } from '../baseline-scanner';
 import { analyzeCommitQuality as _analyzeCommitQuality } from '../commit-quality-analyzer';
@@ -245,6 +245,8 @@ export async function executeStepInSwarm(
       allowAllTools: true,
       shareToFile: transcriptPath,
       logPrefix: `[${agent.name}:${step.stepNumber}]`, // live console logging for parallelism proof
+      executionMode: 'auto',
+      persistentSessionId: `${context.executionId}:${adapterName}:${worktreePath}`,
       ...(options?.model && { model: options.model }),
       ...(options?.onAgentLine && { onAgentLine: options.onAgentLine }),
     };
@@ -273,36 +275,7 @@ export async function executeStepInSwarm(
       logger.info(`  🐝 Step ${step.stepNumber} (${agent.name}) — Agent working...`);
       logger.info(`  ${'─'.repeat(60)}`);
 
-      const toolName = options?.cliAgent || 'copilot';
-      let sessionResult: SessionResult;
-
-      if (toolName !== 'copilot') {
-        // Non-copilot tools route through the adapter layer, which provides
-        // stall detection, heartbeat, and tool-specific CLI flag handling.
-        const adapter = resolveAdapter(toolName);
-        const spawnOpts: AgentSpawnOptions = {
-          prompt: finalPrompt,
-          workdir: worktreePath,
-        };
-        if (options?.model) spawnOpts.model = options.model;
-
-        const agentResult = await adapter.spawn(spawnOpts);
-        sessionResult = {
-          success: agentResult.exitCode === 0,
-          output: agentResult.stdout + agentResult.stderr,
-          exitCode: agentResult.exitCode,
-          duration: agentResult.durationMs,
-          premiumRequestsConsumed: agentResult.premiumRequestsConsumed,
-        };
-        if (agentResult.exitCode !== 0) {
-          (sessionResult as SessionResult).error = agentResult.stderr;
-        }
-        if (agentResult.shareTranscriptPath) {
-          sessionResult.transcriptPath = agentResult.shareTranscriptPath;
-        }
-      } else {
-        sessionResult = await worktreeExecutor.executeSession(finalPrompt, sessionOptions);
-      }
+      const sessionResult = await worktreeExecutor.executeSession(finalPrompt, sessionOptions);
 
       // Print completion with timing; differentiate success from failure
       logger.info(`  ${'─'.repeat(60)}`);

@@ -5,6 +5,7 @@
 
 import { spawn, SpawnOptions } from 'child_process';
 import { AgentAdapter, AgentResult, AgentSpawnOptions } from './agent-adapter';
+import { PersistentInteractiveSession } from './persistent-session';
 
 // Maximum silence before killing a stalled copilot subprocess.
 // Copilot CLI can go quiet for several minutes during extended tool-use
@@ -79,8 +80,13 @@ export function hasFatalStderrError(stderr: string): boolean {
 
 export class CopilotAdapter implements AgentAdapter {
   readonly name = 'copilot';
+  readonly supportsPersistentInteractive = true;
+  private readonly persistentSessions = new Map<string, PersistentInteractiveSession>();
 
   async spawn(opts: AgentSpawnOptions): Promise<AgentResult> {
+    const persistent = await this.tryPersistent(opts);
+    if (persistent) return persistent;
+
     const startTime = Date.now();
     const args: string[] = ['-p', opts.prompt];
 
@@ -112,8 +118,67 @@ export class CopilotAdapter implements AgentAdapter {
       stderr: result.stderr,
       exitCode,
       durationMs,
+      executionMode: 'cold-start',
       premiumRequestsConsumed: parseCopilotRequestCount(result.stderr),
     };
+  }
+
+  async shutdown(): Promise<void> {
+    await Promise.all(Array.from(this.persistentSessions.values()).map(session => session.shutdown()));
+    this.persistentSessions.clear();
+  }
+
+  private async tryPersistent(opts: AgentSpawnOptions): Promise<AgentResult | undefined> {
+    if (!shouldAttemptPersistent(opts)) return undefined;
+
+    const startTime = Date.now();
+    const sessionKey = opts.persistentSessionId ?? `${opts.workdir}:${opts.model ?? 'default'}:${opts.copilotAgent ?? ''}`;
+    const args = ['--allow-all', '--no-ask-user', '--stream', 'on'];
+    if (opts.model) args.push('--model', opts.model);
+    if (opts.copilotAgent) args.push('--agent', opts.copilotAgent);
+
+    let session = this.persistentSessions.get(sessionKey);
+    if (!session || session.unavailable) {
+      session = new PersistentInteractiveSession({
+        command: 'copilot',
+        args,
+        cwd: opts.workdir,
+        env: {
+          ...scrubCopilotHostileTokens(process.env),
+          GIT_AUTHOR_NAME: 'swarm-orchestrator',
+          GIT_AUTHOR_EMAIL: 'swarm@localhost',
+          GIT_COMMITTER_NAME: 'swarm-orchestrator',
+          GIT_COMMITTER_EMAIL: 'swarm@localhost',
+          COPILOT_ALLOW_ALL: 'true',
+        },
+        onLine: (line) => opts.onAgentLine?.(`[copilot:persistent] ${line}`),
+      });
+      this.persistentSessions.set(sessionKey, session);
+    }
+
+    const result = await session.send(opts.prompt, opts.persistentTurnTimeoutMs ?? opts.timeout ?? STALL_TIMEOUT_MS);
+    if (result.exitCode === 0) {
+      return {
+        ...result,
+        executionMode: 'persistent-interactive',
+        premiumRequestsConsumed: parseCopilotRequestCount(result.stderr),
+      };
+    }
+
+    const reason = session.reason ?? (result.stderr || 'persistent interactive mode failed');
+    this.persistentSessions.delete(sessionKey);
+    await session.shutdown();
+    if (opts.executionMode === 'persistent-interactive') {
+      return {
+        stdout: result.stdout,
+        stderr: result.stderr,
+        exitCode: result.exitCode,
+        durationMs: Date.now() - startTime,
+        executionMode: 'persistent-interactive',
+        fallbackReason: reason,
+      };
+    }
+    return undefined;
   }
 
   private runProcess(
@@ -220,4 +285,9 @@ export class CopilotAdapter implements AgentAdapter {
       });
     });
   }
+}
+
+function shouldAttemptPersistent(opts: AgentSpawnOptions): boolean {
+  if (opts.executionMode === 'persistent-interactive') return true;
+  return opts.executionMode === 'auto' && process.env.SWARM_ENABLE_PERSISTENT_INTERACTIVE === '1';
 }

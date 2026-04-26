@@ -18,6 +18,7 @@ import { SessionResult } from '../session-executor';
 import { VerificationResult } from '../verifier-engine';
 import { DEFAULT_HEARTBEAT_INTERVAL_MS } from '../defaults';
 import { getLogger } from '../logger';
+import { WorkStealingQueue } from '../scheduling/work-stealing-queue';
 
 const logger = getLogger('orchestrator');
 
@@ -124,11 +125,12 @@ export async function runWaveLoop(
   context: SchedulerContext,
   options?: SchedulerOptions,
 ): Promise<void> {
-  const pending = new Set(context.plan.steps.map((step) => step.stepNumber));
   const completed = new Set<number>();
-  const failed = new Set<number>();
-  const inFlight = new Set<number>();
-  let waveCounter = 0;
+  const scheduler = new WorkStealingQueue(context.plan, {
+    maxWorkers: context.executionQueue?.getStats().maxConcurrency ?? 1,
+  });
+  const runningPromises = new Map<number, Promise<void>>();
+  let dispatchCounter = 0;
 
   if (options?.lean && context.knowledgeBase) {
     for (const step of context.plan.steps) {
@@ -146,8 +148,7 @@ export async function runWaveLoop(
   const pendingMerge: SchedulerStepResult[] = [];
 
   const onStepComplete = async (stepNumber: number) => {
-    pending.delete(stepNumber);
-    inFlight.delete(stepNumber);
+    scheduler.markCompleted(stepNumber);
     completed.add(stepNumber);
     context.adaptiveConcurrency?.recordSuccess();
 
@@ -156,7 +157,7 @@ export async function runWaveLoop(
       pendingMerge.push(result);
     }
 
-    if (inFlight.size === 0 || pendingMerge.length >= 3) {
+    if (scheduler.stats().running === 0 || pendingMerge.length >= 3) {
       if (pendingMerge.length > 0) {
         context.contextBroker.forceReleaseStaleLocks();
         await host.mergeWaveBranches(pendingMerge, context, options);
@@ -174,66 +175,44 @@ export async function runWaveLoop(
   };
 
   const onStepFailed = (stepNumber: number, errorMsg: string) => {
-    pending.delete(stepNumber);
-    inFlight.delete(stepNumber);
-    failed.add(stepNumber);
+    scheduler.markFailed(stepNumber);
 
     const isRateLimit = /rate limit|quota|429|throttle/i.test(errorMsg);
     context.adaptiveConcurrency?.recordFailure(isRateLimit ? 'rate_limit' : 'error');
 
     const newLimit = context.adaptiveConcurrency?.getCurrentLimit() || 3;
     context.executionQueue?.setMaxConcurrency(newLimit);
+    scheduler.setMaxWorkers(newLimit);
 
     options?.onProgress?.(context, `step-failed:${stepNumber}`);
   };
 
-  const getReadySteps = (): number[] => {
-    const ready: number[] = [];
-    for (const stepNum of pending) {
-      if (inFlight.has(stepNum)) continue;
-      const step = context.plan.steps.find((candidate) => candidate.stepNumber === stepNum);
-      if (!step) continue;
-      if (step.dependencies.every((dep) => completed.has(dep))) {
-        ready.push(stepNum);
-      }
-    }
-    return ready.sort((a, b) => a - b);
-  };
-
-  while (pending.size > 0) {
+  while (scheduler.hasPendingWork()) {
     if (host.pauseController.isPauseRequested()) {
       logger.info('\n⏸️  Pause requested. Waiting for resume...');
       await host.pauseController.waitForResume();
       logger.info('\n▶️  Resuming execution...');
     }
 
-    for (const step of context.plan.steps) {
-      if (
-        !pending.has(step.stepNumber) &&
-        !completed.has(step.stepNumber) &&
-        !failed.has(step.stepNumber) &&
-        !inFlight.has(step.stepNumber)
-      ) {
-        pending.add(step.stepNumber);
-      }
-    }
+    scheduler.syncPlan(context.plan);
+    const ready = scheduler.nextDispatches();
 
-    const ready = getReadySteps();
-
-    if (ready.length === 0 && inFlight.size === 0) {
-      const blocked = Array.from(pending);
+    if (ready.length === 0 && scheduler.isBlocked()) {
+      const blocked = scheduler.blockedSteps();
       logger.error(`\n❌ ${blocked.length} step(s) blocked by failed dependencies: ${blocked.join(', ')}`);
       break;
     }
 
     if (ready.length > 0) {
-      waveCounter++;
-      context.metricsCollector?.startWave(waveCounter);
-      options?.onProgress?.(context, `wave-start:${waveCounter}`);
+      dispatchCounter++;
+      context.metricsCollector?.startWave(dispatchCounter);
+      options?.onProgress?.(context, `wave-start:${dispatchCounter}`);
 
-      logger.info(`\n📊 Batch ${waveCounter}: launching ${ready.length} step(s) [${ready.join(', ')}]`);
+      const stats = scheduler.stats();
+      const label = stats.parallelEnabled ? 'parallel work-stealing' : 'linear work queue';
+      logger.info(`\n📊 Batch ${dispatchCounter}: launching ${ready.length} step(s) [${ready.join(', ')}] via ${label}`);
 
-      const batchPromises = ready.map((stepNumber) => {
+      for (const stepNumber of ready) {
         const step = context.plan.steps.find((candidate) => candidate.stepNumber === stepNumber);
         if (!step) {
           throw new Error(`Step ${stepNumber} disappeared from the active plan; rerun planning before scheduling`);
@@ -244,9 +223,9 @@ export async function runWaveLoop(
           throw new Error(`Agent ${step.agentName} not found for step ${stepNumber}`);
         }
 
-        inFlight.add(stepNumber);
+        scheduler.markRunning(stepNumber);
 
-        return context.executionQueue!
+        const promise = context.executionQueue!
           .enqueue(
             `step-${stepNumber}`,
             () => host.executeStepInSwarm(step, agent, context, options),
@@ -256,22 +235,26 @@ export async function runWaveLoop(
               metadata: {
                 stepNumber: step.stepNumber,
                 agentName: agent.name,
-                wave: waveCounter,
+                wave: dispatchCounter,
               },
             },
           )
           .then(
             () => onStepComplete(stepNumber),
             (err: Error) => onStepFailed(stepNumber, err.message),
-          );
-      });
-
-      await Promise.race(batchPromises);
-      await Promise.allSettled(batchPromises);
+          )
+          .finally(() => {
+            runningPromises.delete(stepNumber);
+          });
+        runningPromises.set(stepNumber, promise);
+      }
 
       context.queueStats = context.executionQueue!.getStats();
 
-      options?.onProgress?.(context, `wave-done:${waveCounter}`);
+      options?.onProgress?.(context, `wave-done:${dispatchCounter}`);
+      if (runningPromises.size > 0) {
+        await Promise.race(runningPromises.values());
+      }
     } else {
       await new Promise<void>((resolve) => {
         const handler = () => {
@@ -287,7 +270,11 @@ export async function runWaveLoop(
     }
   }
 
-  context.totalWaves = waveCounter;
+  if (runningPromises.size > 0) {
+    await Promise.allSettled(runningPromises.values());
+  }
+
+  context.totalWaves = dispatchCounter;
 
   if (pendingMerge.length > 0) {
     context.contextBroker.forceReleaseStaleLocks();
