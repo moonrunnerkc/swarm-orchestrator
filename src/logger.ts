@@ -21,10 +21,9 @@ const LEVEL_RANK: Record<LogLevel, number> = {
   debug: 3,
 };
 
-const state: Required<LoggerConfig> & { dashboardActive: boolean; prettyMode: boolean } = {
+const state: Required<LoggerConfig> & { prettyMode: boolean } = {
   level: 'info',
   outputFormat: 'text',
-  dashboardActive: false,
   // Pretty mode: hide `[scope]` prefixes for a cleaner CLI UX.
   // Enabled by demo commands. Scope still shown in JSON output.
   prettyMode: false,
@@ -65,10 +64,7 @@ function emit(level: LogLevel, scope: string | undefined, args: unknown[]): void
   }
 
   const prefix = (!state.prettyMode && scope) ? `[${scope}] ` : '';
-  // When the Ink dashboard owns stdout, route everything to stderr.
-  const stream = (level === 'error' || level === 'warn' || state.dashboardActive)
-    ? process.stderr
-    : process.stdout;
+  const stream = level === 'error' || level === 'warn' ? process.stderr : process.stdout;
   writeLine(stream, `${prefix}${message}`);
 }
 
@@ -85,18 +81,6 @@ function createLogger(scope?: string): Logger {
 export function configureLogger(config: LoggerConfig): void {
   if (config.level) state.level = config.level;
   if (config.outputFormat) state.outputFormat = config.outputFormat;
-}
-
-/**
- * When true, the Ink TUI dashboard owns stdout.
- * All logger output is routed to stderr and Spinner becomes a no-op.
- */
-export function setDashboardActive(active: boolean): void {
-  state.dashboardActive = active;
-}
-
-export function isDashboardActive(): boolean {
-  return state.dashboardActive;
 }
 
 /**

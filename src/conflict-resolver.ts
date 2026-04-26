@@ -1,6 +1,19 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { Conflict } from './steering-types';
+
+export interface Conflict {
+  id: string;
+  stepNumber: number;
+  type: 'merge' | 'verification' | 'quality-gate' | 'user-input' | 'plan';
+  agentName: string;
+  description: string;
+  evidence: string[];
+  timestamp: string;
+  resolved: boolean;
+  resolution?: 'approved' | 'rejected';
+  resolvedBy?: string;
+  resolvedAt?: string;
+}
 
 /**
  * Conflict Resolver - manages conflict approval queue

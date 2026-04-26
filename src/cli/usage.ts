@@ -16,7 +16,6 @@ Usage:
   swarm demo list                        List available demo scenarios
   swarm gates [path]                     Run quality gates on a repo (default: cwd)
   swarm status <execid>                  Show execution status
-  swarm dashboard <execid>               Show TUI dashboard for a run
   swarm templates                        List available plan templates
   swarm share import <runid> <step> <agent> <path>
                                          Import /share transcript for a step
@@ -34,7 +33,6 @@ Flags:
   --delegate       Instruct agents to use /delegate for PR creation
   --mcp            Require MCP evidence from GitHub context in verification
   --model          Specify model for sessions (e.g., claude-sonnet-4.5)
-  --no-dashboard   Disable live TUI dashboard during swarm execution
   --resume <id>    Resume a previously paused/failed swarm session
   --agent          Specify agent for quick-fix mode
   --skip-verify    Skip verification in quick-fix mode (faster)

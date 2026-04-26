@@ -301,33 +301,6 @@ export async function handleMetricsCommand(args: string[]): Promise<number> {
   return 0;
 }
 
-export async function handleDashboardCommand(args: string[]): Promise<number> {
-  if (args.length < 2 || !args[1]) {
-    logger.error('Error: Execution ID required\n');
-    showUsage();
-    return 1;
-  }
-
-  const executionId = args[1];
-  try {
-    const dashboardModule = await import('../dashboard') as Record<string, unknown>;
-    const renderDashboard = dashboardModule.renderDashboard || dashboardModule.startDashboard;
-    if (typeof renderDashboard === 'function') {
-      renderDashboard(executionId);
-      return 0;
-    } else {
-      logger.error('Dashboard module loaded but renderDashboard not found.');
-      logger.error('Use `swarm status <execid>` to check execution status.');
-      return 1;
-    }
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    logger.error('Dashboard unavailable:', msg);
-    logger.error('Use `swarm status <execid>` to check execution status instead.');
-    return 1;
-  }
-}
-
 export async function handleReportCommand(args: string[]): Promise<number> {
   if (args.includes('--help') || args.includes('-h')) {
     logger.info(`

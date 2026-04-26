@@ -322,7 +322,7 @@ export async function executeReplan(
 
     logger.info(`  ➕ Replan added ${newSteps.length} new step(s)`);
 
-    // Notify dashboard immediately so totalSteps and progress bar update
+    // Notify listeners immediately so totalSteps and progress state update
     // before the replan steps start executing
     options?.onProgress?.(context, `replan-added:${newSteps.length}`);
 

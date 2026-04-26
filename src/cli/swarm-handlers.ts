@@ -19,7 +19,7 @@ import {
 } from './flags';
 import { showUsage } from './usage';
 import { Spinner } from '../spinner';
-import { getLogger, isPrettyMode, setDashboardActive } from '../logger';
+import { getLogger, isPrettyMode } from '../logger';
 
 const logger = getLogger('cli:swarm');
 
@@ -218,183 +218,95 @@ export async function executeSwarm(
     logger.info(`Run Directory: ${runDir}\n`);
   }
 
-  // Dashboard: Ink 4+ is ESM-only; bridge via dynamic import()
-  let dashboard: { update: (updates: Record<string, unknown>) => void; stop: () => void } | undefined;
-  if (!options?.noDashboard) {
-    try {
-      const dashboardModule = await import('../dashboard');
-      const startDashboard = dashboardModule.startDashboard;
-      const result = await startDashboard({
-        executionId: runId,
-        goal: plan.goal,
-        totalSteps: plan.steps.length,
-        currentWave: 0,
-        totalWaves: plan.steps.length > 0 ? 1 : 0,
-        results: plan.steps.map(s => ({
-          stepNumber: s.stepNumber,
-          agentName: s.agentName,
-          status: 'pending' as const,
-        })),
-        recentCommits: [],
-        prLinks: [],
-        startTime: new Date().toISOString(),
-        agentLog: [],
-        costSummary: `Cost Estimate: ${costEstimate.lowEstimate}-${costEstimate.totalPremiumRequests} premium requests | ${modelName} (${costEstimate.modelMultiplier}x) | ${plan.steps.length} steps`
+  const swarmOptions: SwarmExecutionOptions = {};
+  if (options?.model) swarmOptions.model = options.model;
+  if (options?.confirmDeploy) swarmOptions.confirmDeploy = true;
+  if (options?.noQualityGates) swarmOptions.qualityGates = false;
+  if (options?.strictIsolation) swarmOptions.strictIsolation = true;
+  if (options?.lean) swarmOptions.lean = true;
+  if (options?.useInnerFleet) swarmOptions.useInnerFleet = true;
+  if (options?.fleetWaveMode) swarmOptions.fleetWaveMode = true;
+  if (options?.prMode) swarmOptions.prMode = options.prMode;
+  if (options?.hooksEnabled !== undefined) swarmOptions.hooksEnabled = options.hooksEnabled;
+  if (options?.owaspReport) swarmOptions.owaspReport = true;
+  if (options?.cliAgent) swarmOptions.cliAgent = options.cliAgent;
+  if (options?.teamSize) swarmOptions.teamSize = options.teamSize;
+
+  const context = await orchestrator.executeSwarm(plan, agentMap, runDir, swarmOptions);
+
+  const completed = context.results.filter(r => r.status === 'completed').length;
+  const failed = context.results.filter(r => r.status === 'failed').length;
+  const totalSteps = context.results.length;
+  const actualPremiumRequests = context.stepCostRecords?.reduce((sum, record) => sum + record.actualPremiumRequests, 0) ?? 0;
+  const estimateDeltaRatio = costEstimate.totalPremiumRequests > 0
+    ? (actualPremiumRequests - costEstimate.totalPremiumRequests) / costEstimate.totalPremiumRequests
+    : 0;
+  const gateResults = context.finalGateResults || [];
+  const gatesPassed = gateResults.filter(g => g.status === 'pass').length;
+  const gatesFailed = gateResults.filter(g => g.status === 'fail').length;
+  const remediationSteps = Math.max(0, totalSteps - plan.steps.length);
+
+  logger.info('\n' + '═'.repeat(60));
+  logger.info('  SWARM EXECUTION COMPLETE');
+  logger.info('═'.repeat(60));
+  logger.info(`\n  ✅ Completed: ${completed}/${totalSteps}`);
+
+  if (failed > 0) {
+    logger.info(`  ❌ Failed: ${failed}/${totalSteps}`);
+    logger.info('\n  Failed steps:');
+    context.results
+      .filter(r => r.status === 'failed')
+      .forEach(r => {
+        logger.info(`    - Step ${r.stepNumber} (${r.agentName}): ${r.error}`);
       });
-      if (result) {
-        dashboard = result;
-        setDashboardActive(true);
-        logger.info('📊 Live TUI dashboard started\n');
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : '';
-      if (msg.includes('raw mode') || msg.includes('setRawMode')) {
-        logger.info('ℹ️  TUI dashboard unavailable (terminal does not support raw mode); continuing without dashboard\n');
-      } else {
-        logger.info('ℹ️  Live dashboard unavailable (Ink ESM import failed); continuing without dashboard\n');
-      }
-    }
-  } else if (!isPrettyMode()) {
-    // Demo commands set noDashboard=true internally; no need to surface
-    // the disabled-dashboard banner to end users.
-    logger.info('ℹ️  Dashboard disabled via --no-dashboard\n');
   }
 
-  try {
-    const swarmOptions: SwarmExecutionOptions = {};
-    if (options?.model) swarmOptions.model = options.model;
-    if (options?.confirmDeploy) swarmOptions.confirmDeploy = true;
-    if (options?.noQualityGates) swarmOptions.qualityGates = false;
-    if (options?.strictIsolation) swarmOptions.strictIsolation = true;
-    if (options?.lean) swarmOptions.lean = true;
-    if (options?.useInnerFleet) swarmOptions.useInnerFleet = true;
-    if (options?.fleetWaveMode) swarmOptions.fleetWaveMode = true;
-    if (options?.prMode) swarmOptions.prMode = options.prMode;
-    if (options?.hooksEnabled !== undefined) swarmOptions.hooksEnabled = options.hooksEnabled;
-    if (options?.owaspReport) swarmOptions.owaspReport = true;
-    if (options?.cliAgent) swarmOptions.cliAgent = options.cliAgent;
-    if (options?.teamSize) swarmOptions.teamSize = options.teamSize;
-
-    if (dashboard) {
-      // Capture live agent output lines for the dashboard log panel
-      const agentLogLines: string[] = [];
-      swarmOptions.onAgentLine = (line: string) => {
-        agentLogLines.push(line);
-        // Keep a rolling window to avoid unbounded memory growth
-        if (agentLogLines.length > 200) agentLogLines.splice(0, agentLogLines.length - 200);
-        dashboard!.update({ agentLog: agentLogLines.slice(-12) });
-      };
-
-      swarmOptions.onProgress = (ctx: SwarmExecutionContext, event: string) => {
-        const waveMatch = event.match(/^wave-(?:start|done):(\d+)/);
-        const currentWave = waveMatch ? parseInt(waveMatch[1], 10) : undefined;
-
-        const liveQueueStats = ctx.executionQueue?.getStats?.() || ctx.queueStats;
-
-        dashboard!.update({
-          results: ctx.results,
-          totalSteps: ctx.plan.steps.length,
-          ...(currentWave !== undefined && { currentWave }),
-          ...(ctx.totalWaves && { totalWaves: ctx.totalWaves }),
-          ...(ctx.leanSavedRequests && { leanSavedRequests: ctx.leanSavedRequests }),
-          ...(liveQueueStats && { queueStats: liveQueueStats }),
-        });
-      };
-    }
-
-    const context = await orchestrator.executeSwarm(plan, agentMap, runDir, swarmOptions);
-
-    if (dashboard) {
-      dashboard.update({
-        currentWave: context.totalWaves || 1,
-        totalSteps: context.results.length,
-        results: context.results
-      });
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      dashboard.stop();
-      setDashboardActive(false);
-    }
-
-    const completed = context.results.filter(r => r.status === 'completed').length;
-    const failed = context.results.filter(r => r.status === 'failed').length;
-    const totalSteps = context.results.length;
-    const actualPremiumRequests = context.stepCostRecords?.reduce((sum, record) => sum + record.actualPremiumRequests, 0) ?? 0;
-    const estimateDeltaRatio = costEstimate.totalPremiumRequests > 0
-      ? (actualPremiumRequests - costEstimate.totalPremiumRequests) / costEstimate.totalPremiumRequests
-      : 0;
-    const gateResults = context.finalGateResults || [];
-    const gatesPassed = gateResults.filter(g => g.status === 'pass').length;
-    const gatesFailed = gateResults.filter(g => g.status === 'fail').length;
-    const remediationSteps = Math.max(0, totalSteps - plan.steps.length);
-
-    logger.info('\n' + '═'.repeat(60));
-    logger.info('  SWARM EXECUTION COMPLETE');
-    logger.info('═'.repeat(60));
-    logger.info(`\n  ✅ Completed: ${completed}/${totalSteps}`);
-
-    if (failed > 0) {
-      logger.info(`  ❌ Failed: ${failed}/${totalSteps}`);
-      logger.info('\n  Failed steps:');
-      context.results
-        .filter(r => r.status === 'failed')
-        .forEach(r => {
-          logger.info(`    - Step ${r.stepNumber} (${r.agentName}): ${r.error}`);
-        });
-    }
-
-    const starts = context.results.filter(r => r.startTime).map(r => new Date(r.startTime!).getTime());
-    const ends = context.results.filter(r => r.endTime).map(r => new Date(r.endTime!).getTime());
-    if (starts.length > 0 && ends.length > 0) {
-      const totalSec = Math.round((Math.max(...ends) - Math.min(...starts)) / 1000);
-      const min = Math.floor(totalSec / 60);
-      const sec = totalSec % 60;
-      logger.info(`  ⏱  Total time: ${min > 0 ? `${min}m ${sec}s` : `${sec}s`}`);
-    }
-
-    logger.info(`\n  💰 Actual cost: ${actualPremiumRequests} premium requests`);
-    logger.info(`     estimate: ${costEstimate.lowEstimate}-${costEstimate.totalPremiumRequests} | ${modelName} (${costEstimate.modelMultiplier}x) | ${totalSteps} steps${remediationSteps > 0 ? ` (${plan.steps.length} planned + ${remediationSteps} remediation)` : ''} | ${retryPct}% retry buffer`);
-    if (estimateDeltaRatio > 0.2) {
-      logger.info(`     ⚠ exceeded estimate by ${Math.round(estimateDeltaRatio * 100)}%`);
-    }
-
-    logger.info(`\n  📁 Artifacts: ${runDir}`);
-    logger.info(`  📊 Reports: ${runDir}/verification/`);
-    if (gateResults.length > 0) {
-      logger.info(`  🧪 Quality gates: ${gatesPassed} passed, ${gatesFailed} failed`);
-    }
-
-    // Show PR URLs if --pr mode was active
-    if (context.prUrls && context.prUrls.size > 0) {
-      logger.info('\n  Pull Requests:');
-      for (const [stepNum, url] of context.prUrls) {
-        logger.info(`    Step ${stepNum}: ${url}`);
-      }
-    }
-
-    logger.info('═'.repeat(60));
-
-    if (failed > 0) {
-      logger.info(`\nInspect failed run: swarm report ${runId}`);
-    } else if (completed === totalSteps) {
-      logger.info('\n🎉 All steps completed successfully!');
-      logger.info('   Review the git log to see the natural commit history:');
-      logger.info('   git log --oneline -20\n');
-    }
-
-    // CI output: write structured result when running inside GitHub Actions
-    const allPassed = context.results.every(r => r.verificationResult?.passed) && gatesFailed === 0;
-    if (process.env.GITHUB_ACTIONS) {
-      writeCIOutputs(context, plan, allPassed);
-    }
-
-    return allPassed ? 0 : 1;
-  } catch (error) {
-    if (dashboard) {
-      dashboard.stop();
-      setDashboardActive(false);
-    }
-    throw error;
+  const starts = context.results.filter(r => r.startTime).map(r => new Date(r.startTime!).getTime());
+  const ends = context.results.filter(r => r.endTime).map(r => new Date(r.endTime!).getTime());
+  if (starts.length > 0 && ends.length > 0) {
+    const totalSec = Math.round((Math.max(...ends) - Math.min(...starts)) / 1000);
+    const min = Math.floor(totalSec / 60);
+    const sec = totalSec % 60;
+    logger.info(`  ⏱  Total time: ${min > 0 ? `${min}m ${sec}s` : `${sec}s`}`);
   }
+
+  logger.info(`\n  💰 Actual cost: ${actualPremiumRequests} premium requests`);
+  logger.info(`     estimate: ${costEstimate.lowEstimate}-${costEstimate.totalPremiumRequests} | ${modelName} (${costEstimate.modelMultiplier}x) | ${totalSteps} steps${remediationSteps > 0 ? ` (${plan.steps.length} planned + ${remediationSteps} remediation)` : ''} | ${retryPct}% retry buffer`);
+  if (estimateDeltaRatio > 0.2) {
+    logger.info(`     ⚠ exceeded estimate by ${Math.round(estimateDeltaRatio * 100)}%`);
+  }
+
+  logger.info(`\n  📁 Artifacts: ${runDir}`);
+  logger.info(`  📊 Reports: ${runDir}/verification/`);
+  if (gateResults.length > 0) {
+    logger.info(`  🧪 Quality gates: ${gatesPassed} passed, ${gatesFailed} failed`);
+  }
+
+  // Show PR URLs if --pr mode was active
+  if (context.prUrls && context.prUrls.size > 0) {
+    logger.info('\n  Pull Requests:');
+    for (const [stepNum, url] of context.prUrls) {
+      logger.info(`    Step ${stepNum}: ${url}`);
+    }
+  }
+
+  logger.info('═'.repeat(60));
+
+  if (failed > 0) {
+    logger.info(`\nInspect failed run: swarm report ${runId}`);
+  } else if (completed === totalSteps) {
+    logger.info('\n🎉 All steps completed successfully!');
+    logger.info('   Review the git log to see the natural commit history:');
+    logger.info('   git log --oneline -20\n');
+  }
+
+  // CI output: write structured result when running inside GitHub Actions
+  const allPassed = context.results.every(r => r.verificationResult?.passed) && gatesFailed === 0;
+  if (process.env.GITHUB_ACTIONS) {
+    writeCIOutputs(context, plan, allPassed);
+  }
+
+  return allPassed ? 0 : 1;
 }
 
 /**
@@ -535,7 +447,6 @@ Arguments:
 
 Flags:
   --model <name>             Model to use (e.g., claude-opus-4.5, o3)
-  --no-dashboard             Disable the live TUI dashboard
   --pm                       Run PM agent plan review before execution
   --strict-isolation         Force per-task branch isolation
   --lean                     Enable Delta Context Engine (reuse KB patterns)

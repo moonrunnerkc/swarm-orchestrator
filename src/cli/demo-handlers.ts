@@ -163,9 +163,7 @@ export async function handleDemoCommand(args: string[]): Promise<number> {
 }
 
 export async function runDemo(scenarioName: string): Promise<number> {
-  // Demos get a cleaner UX: drop `[scope]` log prefixes and skip the
-  // Ink TUI by default (the full-screen takeover is visually noisy and
-  // interacts badly with soft-wrapping on narrow terminals).
+  // Demos get a cleaner UX: drop `[scope]` log prefixes.
   setPrettyMode(true);
 
   const { executeSwarm } = await import('./swarm-handlers');
@@ -229,12 +227,9 @@ export async function runDemo(scenarioName: string): Promise<number> {
 
     const planPath = savePlanFile(plan);
 
-    // Demo commands default to --no-dashboard for a clean streaming UX.
-    // Users who want the Ink TUI can still pass --dashboard explicitly.
     const execOpts: ExecuteSwarmCliOptions = {
       ...parsedFlags,
       noQualityGates: true,
-      noDashboard: parsedFlags.noDashboard !== false ? true : false,
     };
     const exitCode = await executeSwarm(path.basename(planPath), execOpts);
 

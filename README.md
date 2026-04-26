@@ -34,7 +34,7 @@ _Not an autonomous system builder: an accountability layer around agents you alr
 
 <br>
 
-<img src="docs/media/swarm.png" alt="Swarm Orchestrator TUI dashboard showing parallel agent execution across waves" width="700">
+<img src="docs/media/swarm.png" alt="Swarm Orchestrator parallel agent execution across waves" width="700">
 
 <br>
 
@@ -54,7 +54,7 @@ npm install -g swarm-orchestrator
 swarm demo demo-fast    # two parallel agents writing throwaway utilities, ~1 min
 ```
 
-The demo runs the full orchestration pipeline end-to-end against two trivial tasks (write a `greet()` function, write a `double()` function). You see the TUI dashboard, parallel waves, verification reports, and the auditable trail that a real run produces. It uses real agents, so one of the CLIs below must be installed and authenticated; pick whichever you already have.
+The demo runs the full orchestration pipeline end-to-end against two trivial tasks (write a `greet()` function, write a `double()` function). You see parallel waves, verification reports, and the auditable trail that a real run produces. It uses real agents, so one of the CLIs below must be installed and authenticated; pick whichever you already have.
 
 ### Run it against your own code
 
@@ -144,7 +144,6 @@ Full detail in the [v6.0.0 release notes](docs/releases/RELEASE-v6.0.0.md).
 ### Integrations
 
 - **Fleet wrapper** (`--wrap-fleet`): Copilot CLI native parallel subagent dispatch with version detection and fallback.
-- **Web dashboard**: real-time TUI with step badges, wave health, cost attribution panel. Single HTML page, no build step.
 - **Lean mode**: Delta Context Engine scans the knowledge base for similar past tasks, appending reference blocks to prompts.
 - **Multi-repo orchestration**: per-repo wave loops, cross-repo verification, grouped merge. _(Experimental; see [limitations](#multi-repo).)_
 
@@ -229,7 +228,6 @@ npm start quick "Fix the race condition in src/worker.ts"
 | `npm start swarm plan.json` | Execute a plan with parallel agents |
 | `npm start quick "task"` | Single-agent quick task |
 | `npm start gates [path]` | Run quality gates on a project (`--output json`) |
-| `npm start dashboard [port]` | Start the web dashboard (default: 3002) |
 | `npm start demo <name>` | Run a demo scenario |
 
 <details>
@@ -379,7 +377,7 @@ To set a hard budget that aborts execution if the estimate exceeds it:
 swarm swarm plan.json --max-premium-requests 20
 ```
 
-After execution, per-step cost attribution (estimated vs actual requests, retry counts, prompt tokens, fleet mode, duration) is saved to `cost-attribution.json` in the run directory and displayed in the web dashboard.
+After execution, per-step cost attribution (estimated vs actual requests, retry counts, prompt tokens, fleet mode, duration) is saved to `cost-attribution.json` in the run directory.
 
 </details>
 

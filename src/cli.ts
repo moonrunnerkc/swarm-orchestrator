@@ -83,7 +83,6 @@ import {
   handleAgentsCommand,
   handleAuditCommand,
   handleBootstrapCommand,
-  handleDashboardCommand,
   handleDemoCommand,
   handleExecuteCommand,
   handleGatesCommand,
@@ -141,9 +140,6 @@ async function main(): Promise<void> {
         break;
       case 'demo':
         exitCode = await handleDemoCommand(args);
-        break;
-      case 'dashboard':
-        exitCode = await handleDashboardCommand(args);
         break;
       case 'templates':
         exitCode = await handleTemplatesCommand();

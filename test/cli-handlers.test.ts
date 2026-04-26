@@ -13,7 +13,6 @@ describe('cli-handlers', () => {
     it('should return empty options for no flags', () => {
       const opts = parseSwarmFlags([]);
       assert.strictEqual(opts.model, undefined);
-      assert.strictEqual(opts.noDashboard, undefined);
       assert.strictEqual(opts.costEstimateOnly, undefined);
     });
 
@@ -29,7 +28,6 @@ describe('cli-handlers', () => {
 
     it('should parse boolean flags', () => {
       const flags: Array<[string, keyof ExecuteSwarmCliOptions]> = [
-        ['--no-dashboard', 'noDashboard'],
         ['--confirm-deploy', 'confirmDeploy'],
         ['--no-quality-gates', 'noQualityGates'],
         ['--pm', 'pm'],

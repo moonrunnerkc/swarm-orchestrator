@@ -35,7 +35,7 @@ export interface SessionOptions {
   hooksBranch?: string;   // step branch name for hook context
   additionalEnv?: Record<string, string>; // extra env vars for the spawned process (e.g., COPILOT_HOOKS_DIR)
   additionalArgs?: string[]; // extra CLI args for the copilot subprocess (e.g., --plugin-dir)
-  onAgentLine?: (prefixedLine: string) => void; // callback for each output line, used by dashboard
+  onAgentLine?: (prefixedLine: string) => void; // callback for each output line
 }
 
 export interface SessionResult {

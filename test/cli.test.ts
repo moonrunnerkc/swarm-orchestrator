@@ -28,7 +28,6 @@ describe('CLI Handlers', () => {
     it('sets boolean flags correctly', () => {
       const opts = parseSwarmFlags([
         'swarm', 'plan.json',
-        '--no-dashboard',
         '--confirm-deploy',
         '--no-quality-gates',
         '--pm',
@@ -36,7 +35,6 @@ describe('CLI Handlers', () => {
         '--lean',
         '--cost-estimate-only',
       ]);
-      assert.strictEqual(opts.noDashboard, true);
       assert.strictEqual(opts.confirmDeploy, true);
       assert.strictEqual(opts.noQualityGates, true);
       assert.strictEqual(opts.pm, true);

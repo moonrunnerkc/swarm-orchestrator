@@ -33,7 +33,6 @@ export {
   handleGatesCommand,
   handleAuditCommand,
   handleMetricsCommand,
-  handleDashboardCommand,
   handleReportCommand,
 } from './status-handlers';
 
