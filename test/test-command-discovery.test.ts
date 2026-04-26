@@ -115,12 +115,12 @@ describe('test command discovery + prompt injection', () => {
     const step = {
       stepNumber: 1,
       task: 'Add auth',
-      agentName: 'BackendMaster',
+      agentName: 'worker',
       dependencies: [],
       expectedOutputs: ['src/auth.ts'],
     };
     const agent = {
-      name: 'BackendMaster',
+      name: 'worker',
       purpose: 'Backend',
       scope: ['Backend code'],
       boundaries: ['No frontend'],

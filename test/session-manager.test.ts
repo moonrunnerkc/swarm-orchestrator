@@ -75,10 +75,10 @@ All tests passed.
 
       fs.writeFileSync(transcriptPath, transcript, 'utf8');
 
-      const stepShare = manager.importShare('test-run-001', 1, 'BackendMaster', transcriptPath);
+      const stepShare = manager.importShare('test-run-001', 1, 'worker', transcriptPath);
 
       assert.strictEqual(stepShare.stepNumber, 1);
-      assert.strictEqual(stepShare.agentName, 'BackendMaster');
+      assert.strictEqual(stepShare.agentName, 'worker');
       assert.ok(stepShare.index);
       assert.ok(stepShare.index.testsRun.length > 0);
     });
@@ -88,7 +88,7 @@ All tests passed.
 
       const transcript = '$ npm test\n\n14 passing';
 
-      const stepShare = manager.importShare('test-run-001', 1, 'TesterElite', transcript);
+      const stepShare = manager.importShare('test-run-001', 1, 'worker', transcript);
 
       assert.ok(stepShare.index);
       assert.ok(fs.existsSync(stepShare.transcriptPath));
@@ -98,7 +98,7 @@ All tests passed.
       manager.createRun('test-run-001');
 
       const transcript = '$ npm test\n\n14 passing';
-      const stepShare = manager.importShare('test-run-001', 1, 'TesterElite', transcript);
+      const stepShare = manager.importShare('test-run-001', 1, 'worker', transcript);
 
       const stepDir = path.dirname(stepShare.transcriptPath);
       const indexPath = path.join(stepDir, 'index.json');
@@ -112,7 +112,7 @@ All tests passed.
     it('should update run context', () => {
       manager.createRun('test-run-001');
 
-      manager.importShare('test-run-001', 1, 'BackendMaster', '$ npm test\n\n14 passing');
+      manager.importShare('test-run-001', 1, 'worker', '$ npm test\n\n14 passing');
 
       const contextPath = path.join(testRunsDir, 'test-run-001', 'context.json');
       assert.ok(fs.existsSync(contextPath));
@@ -135,7 +135,7 @@ All tests passed.
     it('should return previous step for step 2', () => {
       manager.createRun('test-run-001');
 
-      manager.importShare('test-run-001', 1, 'BackendMaster', '$ npm test\n\n14 passing');
+      manager.importShare('test-run-001', 1, 'worker', '$ npm test\n\n14 passing');
 
       const priorContext = manager.getPriorContext('test-run-001', 2);
 
@@ -146,9 +146,9 @@ All tests passed.
     it('should return all previous steps in order', () => {
       manager.createRun('test-run-001');
 
-      manager.importShare('test-run-001', 1, 'BackendMaster', '$ npm test');
-      manager.importShare('test-run-001', 2, 'FrontendExpert', '$ npm test');
-      manager.importShare('test-run-001', 3, 'TesterElite', '$ npm test');
+      manager.importShare('test-run-001', 1, 'worker', '$ npm test');
+      manager.importShare('test-run-001', 2, 'worker', '$ npm test');
+      manager.importShare('test-run-001', 3, 'worker', '$ npm test');
 
       const priorContext = manager.getPriorContext('test-run-001', 4);
 
@@ -176,12 +176,12 @@ modified: src/api.ts
 modified: src/db.ts
 `;
 
-      manager.importShare('test-run-001', 1, 'BackendMaster', transcript);
+      manager.importShare('test-run-001', 1, 'worker', transcript);
 
       const summary = manager.generateContextSummary('test-run-001', 2);
 
       assert.ok(summary.includes('step 1'));
-      assert.ok(summary.includes('BackendMaster'));
+      assert.ok(summary.includes('worker'));
     });
 
     it('should include verified tests from prior steps', () => {
@@ -193,7 +193,7 @@ $ npm test
   14 passing
 `;
 
-      manager.importShare('test-run-001', 1, 'BackendMaster', transcript);
+      manager.importShare('test-run-001', 1, 'worker', transcript);
 
       const summary = manager.generateContextSummary('test-run-001', 2);
 
@@ -209,7 +209,7 @@ All tests passed.
 Build succeeded.
 `;
 
-      manager.importShare('test-run-001', 1, 'BackendMaster', transcript);
+      manager.importShare('test-run-001', 1, 'worker', transcript);
 
       const summary = manager.generateContextSummary('test-run-001', 2);
 
@@ -229,7 +229,7 @@ $ npm test
 All tests passed.
 `;
 
-      manager.importShare('test-run-001', 1, 'BackendMaster', transcript);
+      manager.importShare('test-run-001', 1, 'worker', transcript);
 
       const unverified = manager.getUnverifiedClaims('test-run-001');
 
@@ -239,8 +239,8 @@ All tests passed.
     it('should return unverified claims across steps', () => {
       manager.createRun('test-run-001');
 
-      manager.importShare('test-run-001', 1, 'BackendMaster', 'All tests passed.');
-      manager.importShare('test-run-001', 2, 'FrontendExpert', 'Build succeeded.');
+      manager.importShare('test-run-001', 1, 'worker', 'All tests passed.');
+      manager.importShare('test-run-001', 2, 'worker', 'Build succeeded.');
 
       const unverified = manager.getUnverifiedClaims('test-run-001');
 

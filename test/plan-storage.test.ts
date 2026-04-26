@@ -50,7 +50,7 @@ describe('PlanStorage', () => {
         steps: [
           {
             stepNumber: 1,
-            agentName: 'BackendMaster',
+            agentName: 'worker',
             task: 'Do something',
             dependencies: [],
             expectedOutputs: ['Output']
@@ -119,7 +119,7 @@ describe('PlanStorage', () => {
         steps: [
           {
             stepNumber: 1,
-            agentName: 'BackendMaster',
+            agentName: 'worker',
             task: 'Task',
             dependencies: [],
             expectedOutputs: ['Output']
@@ -133,7 +133,7 @@ describe('PlanStorage', () => {
 
       assert.strictEqual(loadedPlan.goal, originalPlan.goal);
       assert.strictEqual(loadedPlan.steps.length, 1);
-      assert.strictEqual(loadedPlan.steps[0]?.agentName, 'BackendMaster');
+      assert.strictEqual(loadedPlan.steps[0]?.agentName, 'worker');
     });
 
     it('should throw error if plan file does not exist', () => {

@@ -5,7 +5,7 @@ describe('CostAttribution types', () => {
   it('constructs a valid StepCostRecord', () => {
     const record: StepCostRecord = {
       stepNumber: 1,
-      agentName: 'BackendMaster',
+      agentName: 'worker',
       estimatedPremiumRequests: 5,
       actualPremiumRequests: 7,
       retryCount: 1,
@@ -15,7 +15,7 @@ describe('CostAttribution types', () => {
     };
 
     assert.strictEqual(record.stepNumber, 1);
-    assert.strictEqual(record.agentName, 'BackendMaster');
+    assert.strictEqual(record.agentName, 'worker');
     assert.strictEqual(record.estimatedPremiumRequests, 5);
     assert.strictEqual(record.actualPremiumRequests, 7);
     assert.strictEqual(record.retryCount, 1);
@@ -26,7 +26,7 @@ describe('CostAttribution types', () => {
     const stepRecords: StepCostRecord[] = [
       {
         stepNumber: 1,
-        agentName: 'BackendMaster',
+        agentName: 'worker',
         estimatedPremiumRequests: 5,
         actualPremiumRequests: 7,
         retryCount: 1,

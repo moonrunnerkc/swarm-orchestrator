@@ -37,13 +37,13 @@ describe('SessionExecutor', () => {
       const step = {
         stepNumber: 1,
         task: 'Add user authentication',
-        agentName: 'BackendMaster',
+        agentName: 'worker',
         dependencies: [],
         expectedOutputs: ['Auth module', 'Tests']
       };
 
       const agent = {
-        name: 'BackendMaster',
+        name: 'worker',
         purpose: 'Server-side development',
         scope: ['Backend code', 'APIs'],
         boundaries: ['No frontend'],
@@ -59,7 +59,7 @@ describe('SessionExecutor', () => {
         plan: {
           goal: 'Build auth system',
           steps: [step],
-          agentAssignments: ['BackendMaster']
+          agentAssignments: ['worker']
         },
         planFilename: 'test-plan.json',
         executionId: 'test-123',

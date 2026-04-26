@@ -463,8 +463,9 @@ export async function executeStepInSwarm(
       // spawning extra Copilot sessions mid-execution. The final gates block handles
       // auto-remediation for every gate type, making per-step checks redundant.
 
-      // optional deployment for devops_pro when --confirm-deploy is set
-      if (agent.name === 'DevOpsPro' && options?.confirmDeploy) {
+      // optional deployment for deployment-focused steps when --confirm-deploy is set
+      const isDeploymentStep = /\b(deploy|deployment|vercel|netlify)\b/i.test(step.task);
+      if (isDeploymentStep && options?.confirmDeploy) {
         await _executeOptionalDeployment(host.workingDir, step, agent, {
           runDir: context.runDir,
           executionId: context.executionId,

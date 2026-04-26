@@ -8,8 +8,8 @@ import { PlanStep } from '../src/plan-generator';
 
 function makeAgent(overrides?: Partial<AgentProfile>): AgentProfile {
   return {
-    name: 'BackendMaster',
-    purpose: 'Implement server-side logic',
+    name: 'worker',
+    purpose: 'Implement code changes',
     scope: ['Backend code', 'API endpoints'],
     boundaries: ['Do not modify frontend'],
     done_definition: ['All endpoints work'],
@@ -23,7 +23,7 @@ function makeStep(overrides?: Partial<PlanStep>): PlanStep {
   return {
     stepNumber: 1,
     task: 'Build REST API',
-    agentName: 'BackendMaster',
+    agentName: 'worker',
     dependencies: [],
     expectedOutputs: ['src/api.ts'],
     ...overrides
@@ -45,21 +45,21 @@ describe('FleetExecutor', () => {
     it('should map plan steps and agents to subtask descriptors', () => {
       const executor = new FleetExecutor(tempDir);
       const agents = new Map<string, AgentProfile>();
-      agents.set('BackendMaster', makeAgent());
-      agents.set('TesterElite', makeAgent({ name: 'TesterElite', scope: ['Tests'] }));
+      agents.set('worker', makeAgent());
+      agents.set('reviewer', makeAgent({ name: 'reviewer', scope: ['Reviews'] }));
 
       const steps = [
-        makeStep({ stepNumber: 1, agentName: 'BackendMaster' }),
-        makeStep({ stepNumber: 2, agentName: 'TesterElite', task: 'Write tests' })
+        makeStep({ stepNumber: 1, agentName: 'worker' }),
+        makeStep({ stepNumber: 2, agentName: 'reviewer', task: 'Review tests' })
       ];
 
       const subtasks = executor.buildSubtasks(steps, agents);
       assert.strictEqual(subtasks.length, 2);
       assert.strictEqual(subtasks[0].stepNumber, 1);
-      assert.strictEqual(subtasks[0].agentName, 'BackendMaster');
+      assert.strictEqual(subtasks[0].agentName, 'worker');
       assert.strictEqual(subtasks[1].stepNumber, 2);
-      assert.strictEqual(subtasks[1].agentName, 'TesterElite');
-      assert.deepStrictEqual(subtasks[1].scope, ['Tests']);
+      assert.strictEqual(subtasks[1].agentName, 'reviewer');
+      assert.deepStrictEqual(subtasks[1].scope, ['Reviews']);
     });
 
     it('should handle missing agent gracefully with empty scope', () => {
@@ -80,7 +80,7 @@ describe('FleetExecutor', () => {
       const subtasks: FleetSubtask[] = [
         {
           stepNumber: 1,
-          agentName: 'BackendMaster',
+          agentName: 'worker',
           task: 'Build REST API for users',
           scope: ['Backend code'],
           boundaries: ['Do not modify frontend'],
@@ -88,7 +88,7 @@ describe('FleetExecutor', () => {
         },
         {
           stepNumber: 2,
-          agentName: 'TesterElite',
+          agentName: 'reviewer',
           task: 'Write unit tests',
           scope: ['Tests'],
           boundaries: [],
@@ -101,9 +101,9 @@ describe('FleetExecutor', () => {
       assert.ok(prompt.includes('FLEET DISPATCH'));
       assert.ok(prompt.includes('exec-123'));
       assert.ok(prompt.includes('Total subtasks: 2'));
-      assert.ok(prompt.includes('Subtask 1 (BackendMaster)'));
+      assert.ok(prompt.includes('Subtask 1 (worker)'));
       assert.ok(prompt.includes('Build REST API for users'));
-      assert.ok(prompt.includes('Subtask 2 (TesterElite)'));
+      assert.ok(prompt.includes('Subtask 2 (reviewer)'));
       assert.ok(prompt.includes('Write unit tests'));
       assert.ok(prompt.includes('Do not modify frontend'));
       assert.ok(prompt.includes('src/api/users.ts'));

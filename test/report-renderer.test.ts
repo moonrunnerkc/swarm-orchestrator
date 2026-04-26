@@ -14,7 +14,7 @@ function buildRunReport(overrides: Partial<RunReport> = {}): RunReport {
     steps: [
       {
         stepNumber: 1,
-        agentName: 'BackendMaster',
+        agentName: 'worker',
         task: 'Add JWT middleware',
         verificationStatus: 'passed',
         checksPassed: ['git_diff', 'build', 'test'],
@@ -26,7 +26,7 @@ function buildRunReport(overrides: Partial<RunReport> = {}): RunReport {
       },
       {
         stepNumber: 2,
-        agentName: 'TesterElite',
+        agentName: 'worker',
         task: 'Write auth tests',
         verificationStatus: 'passed',
         checksPassed: ['git_diff', 'test'],
@@ -75,7 +75,7 @@ describe('ReportRenderer', () => {
       const md = ReportRenderer.toMarkdown(buildRunReport());
 
       assert.ok(md.includes('| Step | Agent | Task | Status | Checks Passed | Repairs | Cost (est/actual) |'));
-      assert.ok(md.includes('BackendMaster'));
+      assert.ok(md.includes('worker'));
       assert.ok(md.includes('Add JWT middleware'));
       assert.ok(md.includes('passed'));
     });

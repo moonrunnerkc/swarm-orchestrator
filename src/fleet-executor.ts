@@ -219,7 +219,7 @@ export class FleetExecutor {
         `subtask ${sub.stepNumber}:`,
       ];
 
-      // Also match markdown-formatted completion like "**Subtask 1 (BackendMaster):** ... ✅"
+      // Also match markdown-formatted completion like "**Subtask 1 (worker):** ... ✅"
       // The agent name, parentheses, colons, and other text may appear between
       // the step number and the completion indicator.
       const checkmarkPattern = new RegExp(

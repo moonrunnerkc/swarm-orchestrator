@@ -42,7 +42,7 @@ describe('Upgrade 3: Critic Agent + Governance', () => {
       // Simulate data the critic would receive
       const diff = 'diff --git a/src/api.ts b/src/api.ts\n+export function getUsers() {}';
       const transcripts = { 'step-1': 'Created API endpoints with tests' };
-      const plan = { goal: 'Build REST API', steps: [{ stepNumber: 1, task: 'Build API', agent: 'BackendMaster' }] };
+      const plan = { goal: 'Build REST API', steps: [{ stepNumber: 1, task: 'Build API', agent: 'worker' }] };
       const gateResults = [{ id: 'scaffold', title: 'Scaffold Defaults', status: 'pass', issues: [] }];
 
       // Verify all components present for critic construction

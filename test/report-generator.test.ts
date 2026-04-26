@@ -25,8 +25,8 @@ function seedRunDir(runDir: string, opts: {
       graph: {
         goal: 'Add JWT authentication',
         steps: [
-          { stepNumber: 1, task: 'Add JWT middleware', agent: 'BackendMaster' },
-          { stepNumber: 2, task: 'Write auth tests', agent: 'TesterElite' }
+          { stepNumber: 1, task: 'Add JWT middleware', agent: 'worker' },
+          { stepNumber: 2, task: 'Write auth tests', agent: 'worker' }
         ]
       },
       branchMap: { '1': 'swarm/step-1', '2': 'swarm/step-2' },
@@ -51,7 +51,7 @@ function seedRunDir(runDir: string, opts: {
       verificationsPassed: 2,
       verificationsFailed: 0,
       recoveryEvents: [],
-      agentsUsed: ['BackendMaster', 'TesterElite']
+      agentsUsed: ['worker', 'worker']
     }, null, 2));
   }
 
@@ -64,8 +64,8 @@ function seedRunDir(runDir: string, opts: {
       modelMultiplier: 1.0,
       overageTriggered: false,
       perStep: [
-        { stepNumber: 1, agentName: 'BackendMaster', estimatedPremiumRequests: 8, actualPremiumRequests: 7, retryCount: 0, promptTokens: 3200, fleetMode: false, durationMs: 240000 },
-        { stepNumber: 2, agentName: 'TesterElite', estimatedPremiumRequests: 6, actualPremiumRequests: 5, retryCount: 0, promptTokens: 2100, fleetMode: false, durationMs: 180000 }
+        { stepNumber: 1, agentName: 'worker', estimatedPremiumRequests: 8, actualPremiumRequests: 7, retryCount: 0, promptTokens: 3200, fleetMode: false, durationMs: 240000 },
+        { stepNumber: 2, agentName: 'worker', estimatedPremiumRequests: 6, actualPremiumRequests: 5, retryCount: 0, promptTokens: 2100, fleetMode: false, durationMs: 180000 }
       ]
     }, null, 2));
   }
@@ -190,7 +190,7 @@ describe('ReportGenerator', () => {
       const report = gen.generate(runDir);
 
       assert.strictEqual(report.steps[0].stepNumber, 1);
-      assert.strictEqual(report.steps[0].agentName, 'BackendMaster');
+      assert.strictEqual(report.steps[0].agentName, 'worker');
       assert.strictEqual(report.steps[0].task, 'Add JWT middleware');
       assert.strictEqual(report.steps[0].estimatedCost, 8);
       assert.strictEqual(report.steps[0].actualCost, 7);
@@ -251,7 +251,7 @@ describe('ReportGenerator', () => {
       // Override metrics with recovery events
       const metricsRaw = JSON.parse(fs.readFileSync(path.join(runDir, 'metrics.json'), 'utf8'));
       metricsRaw.recoveryEvents = [
-        { stepNumber: 1, agentName: 'BackendMaster', failedAt: '2026-04-08T12:01:00Z', recoveredAt: '2026-04-08T12:03:00Z', recoveryMethod: 'retry' }
+        { stepNumber: 1, agentName: 'worker', failedAt: '2026-04-08T12:01:00Z', recoveredAt: '2026-04-08T12:03:00Z', recoveryMethod: 'retry' }
       ];
       fs.writeFileSync(path.join(runDir, 'metrics.json'), JSON.stringify(metricsRaw, null, 2));
 

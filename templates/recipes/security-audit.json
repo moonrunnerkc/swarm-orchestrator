@@ -12,21 +12,21 @@
   "steps": [
     {
       "stepNumber": 1,
-      "agentName": "BackendMaster",
+      "agentName": "worker",
       "task": "Run npm audit (or equivalent) and review all dependencies for known vulnerabilities. Identify all findings at {{severity}} level or above. List each vulnerability, affected package, and recommended fix.",
       "dependencies": [],
       "expectedOutputs": ["security audit report"]
     },
     {
       "stepNumber": 2,
-      "agentName": "BackendMaster",
+      "agentName": "worker",
       "task": "Fix the vulnerabilities found in step 1: update affected packages, apply patches, or replace insecure dependencies. For code-level issues (SQL injection, XSS, path traversal), fix the vulnerable code patterns. Do not introduce breaking changes.",
       "dependencies": [1],
       "expectedOutputs": ["updated package.json", "fixed source files"]
     },
     {
       "stepNumber": 3,
-      "agentName": "IntegratorFinalizer",
+      "agentName": "reviewer",
       "task": "Re-run the security audit and verify all findings at {{severity}} level or above are resolved. Run the test suite to confirm no regressions. Document the fixes in a SECURITY-FIXES.md file.",
       "dependencies": [2],
       "expectedOutputs": ["clean audit result", "all tests passing", "SECURITY-FIXES.md"]

@@ -30,7 +30,7 @@ describe('Upgrade 7: Plan Template Caching + Replay', () => {
       createdAt: new Date().toISOString(),
       steps: Array.from({ length: steps || 2 }, (_, i) => ({
         stepNumber: i + 1,
-        agentName: 'BackendMaster',
+        agentName: 'worker',
         task: `Step ${i + 1} for ${goal}`,
         dependencies: [],
         expectedOutputs: []
@@ -106,7 +106,7 @@ describe('Upgrade 7: Plan Template Caching + Replay', () => {
         createdAt: '2026-01-01T00:00:00.000Z',
         steps: [{
           stepNumber: 1,
-          agentName: 'BackendMaster',
+          agentName: 'worker',
           task: 'Build CLI',
           dependencies: [],
           expectedOutputs: ['dist/cli.js']
@@ -116,7 +116,7 @@ describe('Upgrade 7: Plan Template Caching + Replay', () => {
       storage.savePlan(original);
 
       // create a generator with a dummy agent so validation passes
-      const agents = [{ name: 'BackendMaster', purpose: 'test', scope: [], doneWhen: [], refuses: [] }];
+      const agents = [{ name: 'worker', purpose: 'test', scope: [], doneWhen: [], refuses: [] }];
       const generator = new PlanGenerator(agents as any);
 
       // monkey-patch storage path so createPlan's internal PlanStorage reads from our tmpDir

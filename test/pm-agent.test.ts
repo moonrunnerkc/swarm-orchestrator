@@ -7,9 +7,8 @@ import { ExecutionPlan, PlanStep } from '../src/plan-generator';
 
 describe('PMAgent', () => {
   const testAgents: AgentProfile[] = [
-    { name: 'FrontendExpert', purpose: 'UI work', scope: [], boundaries: [], done_definition: [], output_contract: { transcript: '', artifacts: [] }, refusal_rules: [] },
-    { name: 'BackendMaster', purpose: 'API work', scope: [], boundaries: [], done_definition: [], output_contract: { transcript: '', artifacts: [] }, refusal_rules: [] },
-    { name: 'IntegratorFinalizer', purpose: 'Integration', scope: [], boundaries: [], done_definition: [], output_contract: { transcript: '', artifacts: [] }, refusal_rules: [] }
+    { name: 'worker', purpose: 'Implementation work', scope: [], boundaries: [], done_definition: [], output_contract: { transcript: '', artifacts: [] }, refusal_rules: [] },
+    { name: 'reviewer', purpose: 'Review work', scope: [], boundaries: [], done_definition: [], output_contract: { transcript: '', artifacts: [] }, refusal_rules: [] }
   ];
 
   function makePlan(steps: Partial<PlanStep>[]): ExecutionPlan {
@@ -18,7 +17,7 @@ describe('PMAgent', () => {
       createdAt: new Date().toISOString(),
       steps: steps.map((s, i) => ({
         stepNumber: s.stepNumber ?? (i + 1),
-        agentName: s.agentName ?? 'FrontendExpert',
+        agentName: s.agentName ?? 'worker',
         task: s.task ?? `Task ${i + 1}`,
         dependencies: s.dependencies ?? [],
         expectedOutputs: s.expectedOutputs ?? []
@@ -30,9 +29,9 @@ describe('PMAgent', () => {
   describe('reviewPlan', () => {
     it('should approve a valid plan with no issues', () => {
       const plan = makePlan([
-        { stepNumber: 1, agentName: 'BackendMaster', task: 'Build API', dependencies: [] },
-        { stepNumber: 2, agentName: 'FrontendExpert', task: 'Build UI', dependencies: [1] },
-        { stepNumber: 3, agentName: 'IntegratorFinalizer', task: 'Integrate', dependencies: [1, 2] }
+        { stepNumber: 1, agentName: 'worker', task: 'Build API', dependencies: [] },
+        { stepNumber: 2, agentName: 'worker', task: 'Build UI', dependencies: [1] },
+        { stepNumber: 3, agentName: 'reviewer', task: 'Integrate', dependencies: [1, 2] }
       ]);
 
       const pm = new PMAgent(testAgents);
@@ -45,8 +44,8 @@ describe('PMAgent', () => {
 
     it('should detect duplicate step numbers', () => {
       const plan = makePlan([
-        { stepNumber: 1, agentName: 'BackendMaster', dependencies: [] },
-        { stepNumber: 1, agentName: 'FrontendExpert', dependencies: [] }
+        { stepNumber: 1, agentName: 'worker', dependencies: [] },
+        { stepNumber: 1, agentName: 'reviewer', dependencies: [] }
       ]);
 
       const pm = new PMAgent(testAgents);
@@ -68,8 +67,8 @@ describe('PMAgent', () => {
 
     it('should detect circular dependencies', () => {
       const plan = makePlan([
-        { stepNumber: 1, agentName: 'BackendMaster', dependencies: [2] },
-        { stepNumber: 2, agentName: 'FrontendExpert', dependencies: [1] }
+        { stepNumber: 1, agentName: 'worker', dependencies: [2] },
+        { stepNumber: 2, agentName: 'reviewer', dependencies: [1] }
       ]);
 
       const pm = new PMAgent(testAgents);
@@ -80,7 +79,7 @@ describe('PMAgent', () => {
 
     it('should detect dependencies on non-existent steps', () => {
       const plan = makePlan([
-        { stepNumber: 1, agentName: 'BackendMaster', dependencies: [99] }
+        { stepNumber: 1, agentName: 'worker', dependencies: [99] }
       ]);
 
       const pm = new PMAgent(testAgents);
@@ -89,10 +88,10 @@ describe('PMAgent', () => {
       assert.ok(result.reviewNotes.some(n => n.includes('non-existent step 99')));
     });
 
-    it('should note missing integration step when IntegratorFinalizer is available', () => {
+    it('should note missing integration step when reviewer is available', () => {
       const plan = makePlan([
-        { stepNumber: 1, agentName: 'BackendMaster', dependencies: [] },
-        { stepNumber: 2, agentName: 'FrontendExpert', dependencies: [1] }
+        { stepNumber: 1, agentName: 'worker', dependencies: [] },
+        { stepNumber: 2, agentName: 'worker', dependencies: [1] }
       ]);
 
       const pm = new PMAgent(testAgents);
@@ -101,10 +100,10 @@ describe('PMAgent', () => {
       assert.ok(result.reviewNotes.some(n => n.includes('missing a final integration')));
     });
 
-    it('should not flag missing integration step if last step is IntegratorFinalizer', () => {
+    it('should not flag missing integration step if last step is reviewer', () => {
       const plan = makePlan([
-        { stepNumber: 1, agentName: 'BackendMaster', dependencies: [] },
-        { stepNumber: 2, agentName: 'IntegratorFinalizer', dependencies: [1] }
+        { stepNumber: 1, agentName: 'worker', dependencies: [] },
+        { stepNumber: 2, agentName: 'reviewer', dependencies: [1] }
       ]);
 
       const pm = new PMAgent(testAgents);
@@ -115,7 +114,7 @@ describe('PMAgent', () => {
 
     it('should update metadata.totalSteps if incorrect', () => {
       const plan = makePlan([
-        { stepNumber: 1, agentName: 'BackendMaster', dependencies: [] }
+        { stepNumber: 1, agentName: 'worker', dependencies: [] }
       ]);
       plan.metadata = { totalSteps: 999 };
 
@@ -128,7 +127,7 @@ describe('PMAgent', () => {
 
     it('should not mutate the original plan', () => {
       const plan = makePlan([
-        { stepNumber: 1, agentName: 'BackendMaster', dependencies: [] }
+        { stepNumber: 1, agentName: 'worker', dependencies: [] }
       ]);
       plan.metadata = { totalSteps: 999 };
 
@@ -140,7 +139,7 @@ describe('PMAgent', () => {
 
     it('should report duration in result', () => {
       const plan = makePlan([
-        { stepNumber: 1, agentName: 'BackendMaster', dependencies: [] }
+        { stepNumber: 1, agentName: 'worker', dependencies: [] }
       ]);
 
       const pm = new PMAgent(testAgents);
@@ -152,7 +151,7 @@ describe('PMAgent', () => {
 
     it('should report estimated token cost', () => {
       const plan = makePlan([
-        { stepNumber: 1, agentName: 'BackendMaster', dependencies: [] }
+        { stepNumber: 1, agentName: 'worker', dependencies: [] }
       ]);
 
       const pm = new PMAgent(testAgents);
@@ -203,7 +202,7 @@ describe('PMAgent', () => {
   describe('buildReviewPrompt', () => {
     it('should include plan JSON in the prompt', () => {
       const plan = makePlan([
-        { stepNumber: 1, agentName: 'BackendMaster', task: 'Build API', dependencies: [] }
+        { stepNumber: 1, agentName: 'worker', task: 'Build API', dependencies: [] }
       ]);
 
       const pm = new PMAgent(testAgents);
@@ -218,9 +217,8 @@ describe('PMAgent', () => {
       const pm = new PMAgent(testAgents);
       const prompt = pm.buildReviewPrompt(plan);
 
-      assert.ok(prompt.includes('FrontendExpert'));
-      assert.ok(prompt.includes('BackendMaster'));
-      assert.ok(prompt.includes('IntegratorFinalizer'));
+      assert.ok(prompt.includes('worker'));
+      assert.ok(prompt.includes('reviewer'));
     });
 
     it('should include PM AGENT header', () => {

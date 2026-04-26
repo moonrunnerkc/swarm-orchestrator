@@ -5,11 +5,11 @@ for your project, or use them as-is with `swarm swarm <template>.json`.
 
 | Template | Steps | Agents Used | Estimated Time |
 |----------|-------|-------------|----------------|
-| [rest-api](rest-api.json) | 4 | BackendMaster, TesterElite, DevOpsPro, IntegratorFinalizer | 8-12 min |
-| [react-app](react-app.json) | 5 | FrontendExpert, BackendMaster, TesterElite, DevOpsPro, IntegratorFinalizer | 10-15 min |
-| [cli-tool](cli-tool.json) | 3 | BackendMaster, TesterElite, IntegratorFinalizer | 6-10 min |
-| [fullstack](fullstack.json) | 6 | FrontendExpert, BackendMaster, TesterElite, SecurityAuditor, DevOpsPro, IntegratorFinalizer | 15-20 min |
-| [library](library.json) | 4 | BackendMaster, TesterElite, DevOpsPro, IntegratorFinalizer | 8-12 min |
+| [rest-api](rest-api.json) | 4 | worker, reviewer | 8-12 min |
+| [react-app](react-app.json) | 5 | worker, reviewer | 10-15 min |
+| [cli-tool](cli-tool.json) | 3 | worker, reviewer | 6-10 min |
+| [fullstack](fullstack.json) | 6 | worker, reviewer | 15-20 min |
+| [library](library.json) | 4 | worker, reviewer | 8-12 min |
 
 ## Usage
 

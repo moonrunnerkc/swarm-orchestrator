@@ -14,12 +14,12 @@ describe('Upgrade 2: Persistent Sessions + Audit', () => {
     graph: {
       goal: 'Build REST API',
       steps: [
-        { stepNumber: 1, task: 'Scaffold project', agent: 'BackendMaster' },
-        { stepNumber: 2, task: 'Add auth', agent: 'BackendMaster' },
-        { stepNumber: 3, task: 'Write tests', agent: 'TesterElite' },
-        { stepNumber: 4, task: 'Add docs', agent: 'FrontendExpert' },
-        { stepNumber: 5, task: 'Deploy', agent: 'DevOpsPro' },
-        { stepNumber: 6, task: 'Final review', agent: 'TesterElite' },
+        { stepNumber: 1, task: 'Scaffold project', agent: 'worker' },
+        { stepNumber: 2, task: 'Add auth', agent: 'worker' },
+        { stepNumber: 3, task: 'Write tests', agent: 'worker' },
+        { stepNumber: 4, task: 'Add docs', agent: 'worker' },
+        { stepNumber: 5, task: 'Deploy', agent: 'worker' },
+        { stepNumber: 6, task: 'Final review', agent: 'worker' },
       ]
     },
     branchMap: { 'step-1': 'swarm/exec-1/step-1', 'step-2': 'swarm/exec-1/step-2' },

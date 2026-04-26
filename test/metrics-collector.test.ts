@@ -26,25 +26,24 @@ describe('MetricsCollector', () => {
   it('should track steps and agents', () => {
     const collector = new MetricsCollector('exec-789', 'Test goal');
     
-    collector.trackStep(1, 'FrontendExpert');
-    collector.trackStep(2, 'BackendMaster');
-    collector.trackStep(3, 'TesterElite');
+    collector.trackStep(1, 'worker');
+    collector.trackStep(2, 'worker');
+    collector.trackStep(3, 'reviewer');
     
     const snapshot = collector.getSnapshot();
     assert.strictEqual(snapshot.stepCount, 3);
     assert.ok(snapshot.agentsUsed);
-    assert.strictEqual(snapshot.agentsUsed.length, 3);
-    assert.ok(snapshot.agentsUsed.includes('FrontendExpert'));
-    assert.ok(snapshot.agentsUsed.includes('BackendMaster'));
-    assert.ok(snapshot.agentsUsed.includes('TesterElite'));
+    assert.strictEqual(snapshot.agentsUsed.length, 2);
+    assert.ok(snapshot.agentsUsed.includes('worker'));
+    assert.ok(snapshot.agentsUsed.includes('reviewer'));
   });
 
   it('should track commits', () => {
     const collector = new MetricsCollector('exec-101', 'Test goal');
     
-    collector.trackCommit('FrontendExpert');
-    collector.trackCommit('BackendMaster');
-    collector.trackCommit('BackendMaster');
+    collector.trackCommit('worker');
+    collector.trackCommit('worker');
+    collector.trackCommit('worker');
     collector.trackCommit();
     
     const snapshot = collector.getSnapshot();
@@ -69,7 +68,7 @@ describe('MetricsCollector', () => {
     
     const recovery: RecoveryEvent = {
       stepNumber: 2,
-      agentName: 'BackendMaster',
+      agentName: 'worker',
       failedAt: new Date().toISOString(),
       recoveredAt: new Date().toISOString(),
       recoveryMethod: 'retry'
@@ -87,8 +86,8 @@ describe('MetricsCollector', () => {
   it('should finalize metrics with end time', () => {
     const collector = new MetricsCollector('exec-404', 'Test goal');
     
-    collector.trackStep(1, 'FrontendExpert');
-    collector.trackCommit('FrontendExpert');
+    collector.trackStep(1, 'worker');
+    collector.trackCommit('worker');
     collector.trackVerification(true);
     
     const metrics = collector.finalize();

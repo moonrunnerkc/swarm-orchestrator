@@ -39,7 +39,7 @@ Flags:
   --resume <id>    Resume a previously paused/failed swarm session
   --agent          Specify agent for quick-fix mode
   --skip-verify    Skip verification in quick-fix mode (faster)
-  --confirm-deploy Enable opt-in deployment for DevOpsPro (vercel, netlify)
+  --confirm-deploy Enable opt-in deployment for deployment steps (vercel, netlify)
   --no-quality-gates Disable quality gates (swarm mode)
   --pm               Run PM agent plan review before swarm execution
   --governance       Enable critic review + governance pause before merge

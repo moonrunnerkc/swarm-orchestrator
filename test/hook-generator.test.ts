@@ -8,7 +8,7 @@ import { PlanStep } from '../src/plan-generator';
 
 function makeAgent(overrides?: Partial<AgentProfile>): AgentProfile {
   return {
-    name: 'BackendMaster',
+    name: 'worker',
     purpose: 'Implement server-side logic, APIs, and data processing',
     scope: [
       'Backend code (Node.js, Python, Go, Java, etc.)',
@@ -30,7 +30,7 @@ function makeStep(overrides?: Partial<PlanStep>): PlanStep {
   return {
     stepNumber: 1,
     task: 'Build REST API for user management',
-    agentName: 'BackendMaster',
+    agentName: 'worker',
     dependencies: [],
     expectedOutputs: ['src/api/users.ts', 'test/users.test.ts'],
     ...overrides
@@ -61,7 +61,7 @@ describe('HookGenerator', () => {
         agent: makeAgent(),
         executionId: 'test-exec-1',
         runDir,
-        stepBranch: 'swarm/test/step-1-BackendMaster',
+        stepBranch: 'swarm/test/step-1-worker',
         workingDir
       });
 
@@ -96,7 +96,7 @@ describe('HookGenerator', () => {
         agent: makeAgent(),
         executionId: 'test-exec-2',
         runDir,
-        stepBranch: 'swarm/test/step-3-BackendMaster',
+        stepBranch: 'swarm/test/step-3-worker',
         workingDir
       });
 
@@ -150,7 +150,7 @@ describe('HookGenerator', () => {
     it('should map frontend agent to frontend path patterns', () => {
       const gen = new HookGenerator();
       const agent = makeAgent({
-        name: 'FrontendExpert',
+        name: 'worker',
         scope: ['Frontend code (React, Vue, Angular, HTML, CSS)', 'UI/UX implementation'],
         boundaries: ['Do not modify backend API endpoints or server logic', 'Do not change database schemas']
       });
@@ -165,7 +165,7 @@ describe('HookGenerator', () => {
     it('should map tester agent to test path patterns', () => {
       const gen = new HookGenerator();
       const agent = makeAgent({
-        name: 'TesterElite',
+        name: 'worker',
         scope: ['Unit tests', 'Integration tests', 'Test coverage analysis', 'Quality assurance validation'],
         boundaries: ['Do not modify application logic to make tests pass']
       });
@@ -177,7 +177,7 @@ describe('HookGenerator', () => {
     it('should map devops agent to CI/CD and Docker patterns', () => {
       const gen = new HookGenerator();
       const agent = makeAgent({
-        name: 'DevOpsPro',
+        name: 'worker',
         scope: ['CI/CD pipelines', 'Docker configuration', 'Deployment automation'],
         boundaries: ['Do not modify application business logic']
       });
@@ -276,7 +276,7 @@ describe('HookGenerator', () => {
       const script = gen.buildPreToolUseScript(
         { allow: ['src/api'], deny: ['src/components'] },
         '/tmp/evidence.jsonl',
-        'BackendMaster'
+        'worker'
       );
 
       assert.ok(script.includes('src/api'));
@@ -295,7 +295,7 @@ describe('HookGenerator', () => {
       const script = gen.buildPreToolUseScript(
         { allow: ['src'], deny: [] },
         '/tmp/evidence.jsonl',
-        'BackendMaster'
+        'worker'
       );
 
       // With no deny rules, the script approves all operations
@@ -348,7 +348,7 @@ describe('HookGenerator', () => {
 
       // Generate a preToolUse script for backend_master with !src/components/ boundary
       const agent = makeAgent({
-        name: 'BackendMaster',
+        name: 'worker',
         scope: ['Backend code (Node.js, Python, Go, Java, etc.)', 'API endpoints and business logic'],
         boundaries: ['Do not modify frontend components or UI code']
       });
@@ -356,7 +356,7 @@ describe('HookGenerator', () => {
       // Confirm deny rules include components
       assert.ok(scopeRules.deny.some(r => r.includes('components')), 'deny rules should include component paths');
 
-      const script = gen.buildPreToolUseScript(scopeRules, evidenceLog, 'BackendMaster');
+      const script = gen.buildPreToolUseScript(scopeRules, evidenceLog, 'worker');
 
       // Simulate a preToolUse event where the tool writes to src/components/Button.tsx
       const context = JSON.stringify({
@@ -383,7 +383,7 @@ describe('HookGenerator', () => {
       assert.strictEqual(violations.length, 1, 'should have exactly one scope violation');
       assert.strictEqual(violations[0].tool, 'editFile');
       assert.strictEqual(violations[0].filePath, 'src/components/Button.tsx');
-      assert.strictEqual(violations[0].agentName, 'BackendMaster');
+      assert.strictEqual(violations[0].agentName, 'worker');
       assert.ok(violations[0].boundaryRule, 'violation should include the boundary rule');
 
       done();
@@ -394,12 +394,12 @@ describe('HookGenerator', () => {
       const evidenceLog = path.join(tempDir, 'no-violation-evidence.jsonl');
 
       const agent = makeAgent({
-        name: 'BackendMaster',
+        name: 'worker',
         scope: ['Backend code (Node.js, Python, Go, Java, etc.)', 'API endpoints and business logic'],
         boundaries: ['Do not modify frontend components or UI code']
       });
       const scopeRules = gen.deriveScopeRules(agent);
-      const script = gen.buildPreToolUseScript(scopeRules, evidenceLog, 'BackendMaster');
+      const script = gen.buildPreToolUseScript(scopeRules, evidenceLog, 'worker');
 
       // Simulate a preToolUse event for a file in the allowed scope
       const context = JSON.stringify({
@@ -434,7 +434,7 @@ describe('HookGenerator', () => {
         event: 'scope_violation',
         tool: 'editFile',
         filePath: 'src/components/Button.tsx',
-        agentName: 'BackendMaster',
+        agentName: 'worker',
         boundaryRule: 'src/components'
       };
       fs.writeFileSync(evidenceLog, JSON.stringify(violation) + '\n');
@@ -448,7 +448,7 @@ describe('HookGenerator', () => {
       const verifier = new VerifierEngine(tempDir);
       const result = await verifier.verifyStep(
         1,
-        'BackendMaster',
+        'worker',
         transcriptPath,
         { requireTests: false, requireBuild: false, requireCommits: false },
         undefined,
@@ -465,7 +465,7 @@ describe('HookGenerator', () => {
       assert.ok(scopeCheck, 'should have a scope violation check');
       assert.strictEqual(scopeCheck.passed, false);
       assert.ok(scopeCheck.reason.includes('src/components/Button.tsx'), 'reason should mention the violated file');
-      assert.ok(scopeCheck.reason.includes('BackendMaster'), 'reason should mention the agent');
+      assert.ok(scopeCheck.reason.includes('worker'), 'reason should mention the agent');
     });
   });
 });

@@ -89,10 +89,7 @@ describe('Demo Templates Gallery', () => {
         const filePath = path.join(templatesDir, templateFile);
         const plan = JSON.parse(fs.readFileSync(filePath, 'utf8'));
 
-        const knownAgents = new Set([
-          'FrontendExpert', 'BackendMaster', 'DevOpsPro',
-          'SecurityAuditor', 'TesterElite', 'IntegratorFinalizer'
-        ]);
+        const knownAgents = new Set(['worker', 'reviewer']);
 
         for (const step of plan.steps) {
           assert.ok(

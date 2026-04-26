@@ -54,7 +54,7 @@ describe('PRManager', () => {
       const mgr = new PRManager(tempDir);
       const result: VerificationResult = {
         stepNumber: 1,
-        agentName: 'BackendMaster',
+        agentName: 'worker',
         passed: true,
         checks: [
           { type: 'commit', description: 'Has commits', required: true, passed: true, evidence: 'abc1234' },
@@ -76,7 +76,7 @@ describe('PRManager', () => {
       const mgr = new PRManager(tempDir);
       const result: VerificationResult = {
         stepNumber: 2,
-        agentName: 'FrontendExpert',
+        agentName: 'worker',
         passed: false,
         checks: [
           { type: 'build', description: 'Build succeeds', required: true, passed: false, reason: 'No build output found' }
@@ -97,7 +97,7 @@ describe('PRManager', () => {
       const mgr = new PRManager(tempDir);
       const result: VerificationResult = {
         stepNumber: 3,
-        agentName: 'TesterElite',
+        agentName: 'worker',
         passed: false,
         checks: [],
         unverifiedClaims: [],
@@ -118,7 +118,7 @@ describe('PRManager', () => {
       const mgr = new PRManager(tempDir);
       const record: StepCostRecord = {
         stepNumber: 1,
-        agentName: 'BackendMaster',
+        agentName: 'worker',
         estimatedPremiumRequests: 2,
         actualPremiumRequests: 3,
         retryCount: 1,
@@ -140,7 +140,7 @@ describe('PRManager', () => {
       const mgr = new PRManager(tempDir);
       const record: StepCostRecord = {
         stepNumber: 1,
-        agentName: 'FrontendExpert',
+        agentName: 'worker',
         estimatedPremiumRequests: 5,
         actualPremiumRequests: 4,
         retryCount: 0,
@@ -227,7 +227,7 @@ describe('PRManager', () => {
       const mgr = new PRManager(tempDir);
       const verification: VerificationResult = {
         stepNumber: 1,
-        agentName: 'BackendMaster',
+        agentName: 'worker',
         passed: true,
         checks: [
           { type: 'commit', description: 'Has commits', required: true, passed: true, evidence: 'abc123' }
@@ -239,7 +239,7 @@ describe('PRManager', () => {
 
       const costRecord: StepCostRecord = {
         stepNumber: 1,
-        agentName: 'BackendMaster',
+        agentName: 'worker',
         estimatedPremiumRequests: 1,
         actualPremiumRequests: 1,
         retryCount: 0,
@@ -252,13 +252,13 @@ describe('PRManager', () => {
         { id: 'scaffold', title: 'Scaffold Defaults', status: 'pass', durationMs: 50, issues: [] }
       ];
 
-      const body = mgr.formatPRBody(1, 'BackendMaster', 'Build REST API', {
+      const body = mgr.formatPRBody(1, 'worker', 'Build REST API', {
         verification,
         costRecord,
         gateResults: gates
       });
 
-      assert.ok(body.includes('Swarm Step 1: BackendMaster'));
+      assert.ok(body.includes('Swarm Step 1: worker'));
       assert.ok(body.includes('Build REST API'));
       assert.ok(body.includes('Verification'));
       assert.ok(body.includes('Cost Attribution'));
@@ -268,9 +268,9 @@ describe('PRManager', () => {
 
     it('should omit sections when evidence is not provided', () => {
       const mgr = new PRManager(tempDir);
-      const body = mgr.formatPRBody(2, 'FrontendExpert', 'Build UI', {});
+      const body = mgr.formatPRBody(2, 'worker', 'Build UI', {});
 
-      assert.ok(body.includes('Swarm Step 2: FrontendExpert'));
+      assert.ok(body.includes('Swarm Step 2: worker'));
       assert.ok(body.includes('Build UI'));
       assert.ok(!body.includes('### Verification'));
       assert.ok(!body.includes('### Cost Attribution'));
@@ -286,7 +286,7 @@ describe('PRManager', () => {
         'swarm/test-branch',
         'main',
         1,
-        'BackendMaster',
+        'worker',
         'Build API',
         {}
       );

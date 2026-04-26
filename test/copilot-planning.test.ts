@@ -18,8 +18,8 @@ describe('Copilot-Driven Planning', () => {
       assert.ok(prompt.includes('Build a REST API'));
       assert.ok(prompt.includes('OUTPUT ONLY THE JSON'));
       assert.ok(prompt.includes('stepNumber'));
-      assert.ok(prompt.includes('BackendMaster'));
-      assert.ok(prompt.includes('FrontendExpert'));
+      assert.ok(prompt.includes('worker'));
+      assert.ok(prompt.includes('reviewer'));
     });
   });
 
@@ -32,7 +32,7 @@ describe('Copilot-Driven Planning', () => {
         steps: [
           {
             stepNumber: 1,
-            agentName: 'BackendMaster',
+            agentName: 'worker',
             task: 'Create API endpoints',
             dependencies: [],
             expectedOutputs: ['src/api/routes.ts']
@@ -48,7 +48,7 @@ describe('Copilot-Driven Planning', () => {
       assert.ok(plan !== null);
       assert.strictEqual(plan!.goal, 'Build a REST API');
       assert.strictEqual(plan!.steps.length, 1);
-      assert.strictEqual(plan!.steps[0].agentName, 'BackendMaster');
+      assert.strictEqual(plan!.steps[0].agentName, 'worker');
     });
 
     it('should reject transcript without valid JSON', () => {
@@ -84,12 +84,14 @@ describe('Copilot-Driven Planning', () => {
       });
     });
 
-    it('should assign appropriate agents for different domains', () => {
+    it('should use worker and reviewer roles for different domains', () => {
       const apiPlan = generator.createPlan('Build REST API');
       const uiPlan = generator.createPlan('Create React dashboard');
 
-      assert.ok(apiPlan.steps.some((s: any) => s.agentName === 'BackendMaster'));
-      assert.ok(uiPlan.steps.some((s: any) => s.agentName === 'FrontendExpert'));
+      assert.ok(apiPlan.steps.some((s: any) => s.agentName === 'worker'));
+      assert.ok(uiPlan.steps.some((s: any) => s.agentName === 'worker'));
+      assert.ok(apiPlan.steps.some((s: any) => s.agentName === 'reviewer'));
+      assert.ok(uiPlan.steps.some((s: any) => s.agentName === 'reviewer'));
     });
   });
 });
