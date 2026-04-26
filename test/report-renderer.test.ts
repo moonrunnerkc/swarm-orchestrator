@@ -48,6 +48,7 @@ function buildRunReport(overrides: Partial<RunReport> = {}): RunReport {
     },
     owaspSummary: { applicableRisks: 6, mitigatedRisks: 5, partialRisks: 1 },
     verification: { totalGitDiffs: 4, buildPasses: 2, testPasses: 2, transcriptMatches: 0 },
+    falsificationBattery: null,
     ...overrides
   };
 }
@@ -115,6 +116,22 @@ describe('ReportRenderer', () => {
       assert.ok(md.includes('## Verification Evidence'));
       assert.ok(md.includes('Git diffs: 4'));
       assert.ok(md.includes('Build passes: 2'));
+    });
+
+    it('includes falsification battery section when present', () => {
+      const md = ReportRenderer.toMarkdown(buildRunReport({
+        falsificationBattery: {
+          compositeScore: 0.82,
+          humanReviewRequired: false,
+          layers: [
+            { layer: 'intent', status: 'PASS', evidenceSummary: 'differential test passed', durationMs: 20 }
+          ],
+        },
+      }));
+
+      assert.ok(md.includes('## Falsification Battery'));
+      assert.ok(md.includes('Composite score: 0.82'));
+      assert.ok(md.includes('intent: PASS'));
     });
   });
 

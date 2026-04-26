@@ -53,6 +53,18 @@ export interface RunReport {
     testPasses: number;
     transcriptMatches: number;
   };
+  falsificationBattery: FalsificationBatteryReport | null;
+}
+
+export interface FalsificationBatteryReport {
+  compositeScore: number;
+  humanReviewRequired: boolean;
+  layers: Array<{
+    layer: string;
+    status: string;
+    evidenceSummary: string;
+    durationMs: number;
+  }>;
 }
 
 function readJsonSafe<T>(filePath: string): T | null {
@@ -94,6 +106,9 @@ export class ReportGenerator {
       mitigatedRisks: number;
       partialRisks: number;
     }>(path.join(runDir, 'owasp-compliance.json'));
+    const falsificationBattery = readJsonSafe<FalsificationBatteryReport>(
+      path.join(runDir, 'falsification-battery.json')
+    );
 
     // Build a lookup for per-step cost data
     const costByStep = new Map<number, StepCostRecord>();
@@ -177,7 +192,8 @@ export class ReportGenerator {
         buildPasses: metrics.verificationsPassed,
         testPasses: metrics.verificationsPassed,
         transcriptMatches: 0
-      }
+      },
+      falsificationBattery
     };
   }
 }

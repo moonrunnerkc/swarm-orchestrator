@@ -23,6 +23,7 @@ import glob
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -776,6 +777,54 @@ def extract_test_patch_files(test_patch: str) -> list[str]:
     return [m.group(1) for m in re.finditer(r"(?m)^diff --git a/\S+ b/(\S+)", test_patch)]
 
 
+def parse_fail_to_pass(task: dict) -> list[str]:
+    """Return SWE-bench FAIL_TO_PASS test ids from either JSON or list form."""
+    fail_to_pass_raw = task.get("FAIL_TO_PASS", "")
+    if isinstance(fail_to_pass_raw, str):
+        return json.loads(fail_to_pass_raw) if fail_to_pass_raw else []
+    if isinstance(fail_to_pass_raw, list):
+        return [item for item in fail_to_pass_raw if isinstance(item, str)]
+    return []
+
+
+def build_swebench_differential_gate_input(
+    task: dict,
+    agent_branch: str = "HEAD",
+    python_executable: str = "python",
+) -> dict:
+    """Build the layer-1 differential gate input from SWE-bench FAIL_TO_PASS.
+
+    The TypeScript gate needs a concrete test command. SWE-bench supplies
+    FAIL_TO_PASS ids, so this helper applies the same pytest scoping logic as
+    run_gold_tests/run_gold_tests_in_container and packages the base commit,
+    patch ref, and command in one auditable record.
+    """
+    fail_to_pass = parse_fail_to_pass(task)
+    if not fail_to_pass:
+        return {
+            "ready": False,
+            "reason": "no FAIL_TO_PASS tests specified",
+            "fail_to_pass_ids": [],
+        }
+
+    pytest_targets, k_filters = build_pytest_args(
+        fail_to_pass,
+        task.get("test_patch", ""),
+    )
+    parts = [python_executable, "-m", "pytest", "--tb=short", "-q"]
+    parts.extend(pytest_targets)
+    if k_filters:
+        parts.extend(["-k", " or ".join(f"({f})" for f in k_filters)])
+
+    return {
+        "ready": True,
+        "base_commit": task["base_commit"],
+        "agent_branch": agent_branch,
+        "test_command": " ".join(shlex.quote(part) for part in parts),
+        "fail_to_pass_ids": fail_to_pass,
+    }
+
+
 def build_pytest_args(
     fail_to_pass: list[str],
     test_patch: str = "",
@@ -1076,6 +1125,7 @@ def evaluate_tasks(*, keep_workdir: bool = False) -> dict:
                 "mode": "baseline" if BASELINE_MODE else "orchestrator",
                 "tool": SWARM_TOOL,
                 "model": SWARM_MODEL,
+                "differential_gate": build_swebench_differential_gate_input(task),
             }
 
             # Step 1: Checkout

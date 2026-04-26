@@ -55,6 +55,17 @@ export class ReportRenderer {
     lines.push(`Git diffs: ${report.verification.totalGitDiffs} | Build passes: ${report.verification.buildPasses} | Test passes: ${report.verification.testPasses} | Transcript matches: ${report.verification.transcriptMatches}`);
     lines.push('');
 
+    if (report.falsificationBattery) {
+      lines.push('## Falsification Battery');
+      lines.push('');
+      lines.push(`Composite score: ${report.falsificationBattery.compositeScore}`);
+      lines.push(`Human review: ${report.falsificationBattery.humanReviewRequired ? 'yes' : 'no'}`);
+      for (const layer of report.falsificationBattery.layers) {
+        lines.push(`- ${layer.layer}: ${layer.status} (${layer.durationMs}ms) ${layer.evidenceSummary}`);
+      }
+      lines.push('');
+    }
+
     if (report.owaspSummary) {
       lines.push('## OWASP Compliance');
       lines.push('');

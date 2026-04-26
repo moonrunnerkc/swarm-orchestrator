@@ -9,6 +9,7 @@ function seedRunDir(runDir: string, opts: {
   metrics?: boolean;
   costAttribution?: boolean;
   owaspCompliance?: boolean;
+  falsificationBattery?: boolean;
   verification?: Record<number, { passed: boolean }>;
 } = {}): void {
   const {
@@ -16,6 +17,7 @@ function seedRunDir(runDir: string, opts: {
     metrics = true,
     costAttribution = false,
     owaspCompliance = false,
+    falsificationBattery = false,
     verification = {}
   } = opts;
 
@@ -83,6 +85,16 @@ function seedRunDir(runDir: string, opts: {
     }, null, 2));
   }
 
+  if (falsificationBattery) {
+    fs.writeFileSync(path.join(runDir, 'falsification-battery.json'), JSON.stringify({
+      compositeScore: 0.82,
+      humanReviewRequired: false,
+      layers: [
+        { layer: 'intent', status: 'PASS', evidenceSummary: 'differential test passed', durationMs: 20 }
+      ]
+    }, null, 2));
+  }
+
   // Verification reports
   for (const [stepNum, result] of Object.entries(verification)) {
     const verDir = path.join(runDir, 'verification');
@@ -134,6 +146,20 @@ describe('ReportGenerator', () => {
       assert.strictEqual(report.cost!.actualPremiumRequests, 12);
       assert.ok(report.owaspSummary !== null);
       assert.strictEqual(report.owaspSummary!.applicableRisks, 6);
+      assert.strictEqual(report.falsificationBattery, null);
+    });
+
+    it('includes falsification battery results when present', () => {
+      const runDir = path.join(tmpDir, 'swarm-falsification');
+      fs.mkdirSync(runDir);
+      seedRunDir(runDir, { falsificationBattery: true });
+
+      const gen = new ReportGenerator();
+      const report = gen.generate(runDir);
+
+      assert.ok(report.falsificationBattery !== null);
+      assert.strictEqual(report.falsificationBattery!.compositeScore, 0.82);
+      assert.strictEqual(report.falsificationBattery!.layers[0].layer, 'intent');
     });
 
     it('returns null cost when cost-attribution.json is missing', () => {

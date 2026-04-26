@@ -81,6 +81,7 @@ loadDotenv();
 import {
   generatePlan,
   handleAgentsCommand,
+  handleAttestCommand,
   handleAuditCommand,
   handleBootstrapCommand,
   handleDemoCommand,
@@ -165,6 +166,9 @@ async function main(): Promise<void> {
         break;
       case 'agents':
         exitCode = await handleAgentsCommand(args);
+        break;
+      case 'attest':
+        exitCode = await handleAttestCommand(args);
         break;
       case 'use':
         exitCode = await handleUseCommand(args);

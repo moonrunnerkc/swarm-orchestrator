@@ -1,0 +1,13 @@
+rules:
+  - id: swarm-agent-exception-swallowing
+    message: Catch handler appears empty or log-only.
+    severity: ERROR
+    languages: [javascript, typescript]
+    patterns:
+      - pattern-either:
+          - pattern: |
+              try { ... } catch ($E) {}
+          - pattern: |
+              try { ... } catch ($E) { console.$LOG(...); }
+          - pattern: |
+              try { ... } catch ($E) { logger.$LOG(...); }

@@ -137,6 +137,7 @@ describe('CLI Handlers', () => {
       assert.ok(captured.includes('swarm swarm'), 'should mention swarm command');
       assert.ok(captured.includes('swarm quick'), 'should mention quick command');
       assert.ok(captured.includes('swarm demo'), 'should mention demo command');
+      assert.ok(captured.includes('swarm attest verify'), 'should mention attestation verification');
     });
 
     it('documents cost-related flags', () => {

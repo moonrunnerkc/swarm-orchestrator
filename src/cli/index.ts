@@ -55,6 +55,9 @@ export {
   handleAgentsCommand,
 } from './misc-handlers';
 
+// ── Attestation handlers ─────────────────────────────────────────────────
+export { handleAttestCommand } from './attest-handlers';
+
 // ── Already-split modules (re-export for convenience) ────────────────────
 export { showUsage } from './usage';
 export { parseSwarmFlags } from './flags';

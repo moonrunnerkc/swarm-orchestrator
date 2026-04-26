@@ -27,6 +27,7 @@ Usage:
   swarm recipes                          List available recipes
   swarm recipe-info <name>               Show recipe details and parameters
   swarm report <run-id>                  Generate structured run report from artifacts
+  swarm attest verify <commit>           Verify swarm attestation git note
   swarm --help                           Show this help message
 
 Flags:

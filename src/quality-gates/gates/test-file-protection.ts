@@ -25,7 +25,7 @@ export async function run_test_file_protection_gate(
     // Get all MODIFIED (not Added) files relative to the base commit
     const raw = execSync(
       `git diff --name-only --diff-filter=M ${base}`,
-      { cwd: projectRoot, encoding: 'utf8', timeout: 30_000 }
+      { cwd: projectRoot, encoding: 'utf8', timeout: 30_000, stdio: ['ignore', 'pipe', 'pipe'] }
     ).trim();
 
     if (raw.length === 0) {
