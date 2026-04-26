@@ -28,7 +28,6 @@ Usage:
   swarm recipes                          List available recipes
   swarm recipe-info <name>               Show recipe details and parameters
   swarm report <run-id>                  Generate structured run report from artifacts
-  swarm mcp-server                       Start MCP server (JSON-RPC over stdio)
   swarm --help                           Show this help message
 
 Flags:

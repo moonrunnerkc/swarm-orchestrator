@@ -101,7 +101,6 @@ import {
   handleUseCommand,
   showUsage,
 } from './cli/index';
-import { startMcpServer } from './mcp-server';
 
 async function main(): Promise<void> {
   const args = normalizeLeadingGlobalFlags(process.argv.slice(2));
@@ -179,9 +178,6 @@ async function main(): Promise<void> {
         break;
       case 'recipe-info':
         exitCode = handleRecipeInfoCommand(args);
-        break;
-      case 'mcp-server':
-        startMcpServer(process.cwd());
         break;
       default:
         logger.error(`Unknown command: ${command}\n`);
