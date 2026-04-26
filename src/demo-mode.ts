@@ -66,9 +66,9 @@ export class DemoMode {
 
   /**
    * API Quick: 3-step REST API build showing wave dependencies.
-   * Wave 1: BackendMaster builds the endpoints.
-   * Wave 2: TesterElite adds tests (depends on step 1).
-   * Wave 3: DevOpsPro adds a Dockerfile (depends on step 1).
+   * Step 1: Worker builds the endpoints.
+   * Step 2: Worker adds tests (depends on step 1).
+   * Step 3: Worker adds a Dockerfile (depends on step 1).
    */
   private getApiQuickScenario(): DemoScenario {
     return {

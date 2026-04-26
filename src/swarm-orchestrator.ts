@@ -197,7 +197,7 @@ export class SwarmOrchestrator implements RemediationHost, ReplanHost, StepExecu
 
   /**
    * Look up an agent by name, falling back to normalized (snake_case) matching.
-   * Handles plans using snake_case (frontend_expert) against YAML agents (FrontendExpert).
+   * Handles plans using lowercase ('worker', 'reviewer') against YAML agents.
    * Public to satisfy `RemediationHost`; callers outside the class should still
    * treat it as an internal helper.
    */

@@ -16,13 +16,13 @@ interface GateClause {
 }
 
 /** Agent names that indicate frontend-facing work. */
-const FRONTEND_AGENTS = new Set(['FrontendExpert']);
+const FRONTEND_AGENTS = new Set<string>();
 
 /** Agent names that indicate test-writing work. */
-const TEST_AGENTS = new Set(['TesterElite']);
+const TEST_AGENTS = new Set<string>();
 
 /** Agent names that indicate documentation/review work. */
-const DOC_AGENTS = new Set(['IntegratorFinalizer']);
+const DOC_AGENTS = new Set(['reviewer']);
 
 /**
  * Classify a step by its agent name to determine which gate requirements apply.
@@ -134,7 +134,7 @@ export function getGateRequirements(config: QualityGatesConfig, agentName: strin
 /**
  * Check whether the gate config indicates a need for an explicit test step.
  * Returns true when testCoverage is enabled, which signals the planner
- * should verify a TesterElite step exists in the plan.
+ * should verify a worker test step exists in the plan.
  * @param config - Resolved quality gates configuration
  * @returns Whether a test step should be ensured
  */

@@ -201,10 +201,10 @@ export class HookGenerator {
       }
     }
 
-    // Protect pre-existing test files from non-testing agents.
-    // TesterElite and IntegratorFinalizer can modify tests; others cannot.
-    const agentLower = agent.name.toLowerCase();
-    const canModifyTests = agentLower.includes('tester') || agentLower.includes('integrator');
+    // Protect pre-existing test files from modification by default.
+    // Reviewer steps are read-only and do not write to any files.
+    // Worker steps must not modify existing tests unless the goal explicitly requires it.
+    const canModifyTests = agent.name === 'reviewer';
     if (!canModifyTests && existingTestFiles && existingTestFiles.length > 0) {
       for (const testFile of existingTestFiles) {
         deny.push(testFile);
