@@ -12,11 +12,9 @@ import { KnowledgeBaseManager } from '../src/knowledge-base';
 import MetricsCollector from '../src/metrics-collector';
 import { ExecutionPlan, PlanStep } from '../src/plan-generator';
 import SwarmOrchestrator, {
-    ParallelStepResult,
     SwarmExecutionContext
 } from '../src/swarm-orchestrator';
-import { CriticResult, ExecutionOptions, SessionState } from '../src/types';
-import { VerificationResult } from '../src/verifier-engine';
+import { ExecutionOptions, SessionState } from '../src/types';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -206,14 +204,12 @@ describe('Baseline: Upgrade 1 - Multi-Repo Orchestration', () => {
     assert.strictEqual(step.repo, undefined);
   });
 
-  it('SwarmOrchestrator exports SwarmExecutionContext with leanSavedRequests and criticResults', () => {
+  it('SwarmOrchestrator exports SwarmExecutionContext with leanSavedRequests', () => {
     // verify the context shape is correctly typed
     const ctx: Partial<SwarmExecutionContext> = {
       leanSavedRequests: 0,
-      criticResults: []
     };
     assert.strictEqual(ctx.leanSavedRequests, 0);
-    assert.strictEqual(ctx.criticResults!.length, 0);
   });
 
   it('should group multi-repo plan steps correctly (verify real orchestrator groupBy logic)', () => {
@@ -289,132 +285,6 @@ describe('Baseline: Upgrade 5 - Inner Fleet Toggle (via execute)', function() {
   it('should accept strictIsolation on WrapperOptions (real constructor)', () => {
     const wrapper = new CopilotCliWrapper({ gracefulDegradation: true, strictIsolation: true });
     assert.ok(wrapper, 'wrapper should instantiate with strictIsolation');
-  });
-});
-
-// ===========================================================================
-// UPGRADE 3: Critic / Governance (real runCriticReview via bracket access)
-// ===========================================================================
-describe('Baseline: Upgrade 3 - Governance Critic (real runCriticReview)', () => {
-  let orchestrator: SwarmOrchestrator;
-  let tmpWorkDir: string;
-
-  before(() => {
-    tmpWorkDir = tmpDir('u3');
-    orchestrator = new SwarmOrchestrator(tmpWorkDir);
-  });
-
-  after(() => cleanup(tmpWorkDir));
-
-  function callCritic(
-    results: Partial<ParallelStepResult>[],
-    plan: ExecutionPlan
-  ): CriticResult {
-    const ctx: Partial<SwarmExecutionContext> = { criticResults: [] };
-    return (orchestrator as any).runCriticReview(results, ctx, plan);
-  }
-
-  function makePlan(steps: Partial<PlanStep>[]): ExecutionPlan {
-    return {
-      goal: 'test',
-      createdAt: new Date().toISOString(),
-      steps: steps.map((s, i) => ({
-        stepNumber: s.stepNumber ?? i + 1,
-        agentName: s.agentName ?? 'Agent',
-        task: s.task ?? 'task',
-        dependencies: s.dependencies ?? [],
-        expectedOutputs: s.expectedOutputs ?? [],
-        ...s
-      }))
-    };
-  }
-
-  function vr(passed: boolean): VerificationResult {
-    // when verification fails, include a typed check so per-axis scoring works
-    const checks = passed ? [] : [
-      { type: 'test' as const, description: 'Tests must pass', required: true, passed: false, reason: 'verification failed' }
-    ];
-    return {
-      stepNumber: 0, agentName: '', passed, checks,
-      unverifiedClaims: [], timestamp: new Date().toISOString(), transcriptPath: ''
-    };
-  }
-
-  it('should score 100 and approve when all verifications pass', () => {
-    const plan = makePlan([{ stepNumber: 1 }]);
-    const results: Partial<ParallelStepResult>[] = [
-      { stepNumber: 1, verificationResult: vr(true), sessionResult: { output: 'ok' } as any }
-    ];
-    const cr = callCritic(results, plan);
-    assert.strictEqual(cr.score, 100);
-    assert.strictEqual(cr.flags.length, 0);
-    assert.strictEqual(cr.recommendation, 'approve');
-  });
-
-  it('should deduct per-axis points per failed verification check', () => {
-    const plan = makePlan([{ stepNumber: 1 }, { stepNumber: 2 }]);
-    const results: Partial<ParallelStepResult>[] = [
-      { stepNumber: 1, verificationResult: vr(false), sessionResult: { output: 'ok' } as any },
-      { stepNumber: 2, verificationResult: vr(false), sessionResult: { output: 'ok' } as any },
-    ];
-    const cr = callCritic(results, plan);
-    // each vr(false) now carries 1 failed test check at -20 each
-    assert.strictEqual(cr.score, 60);
-    assert.strictEqual(cr.flags.length, 2);
-    assert.ok(cr.flags[0].includes('step-1'));
-    assert.ok(cr.flags[1].includes('step-2'));
-  });
-
-  it('should deduct 10 points for missing session output on expected-output steps', () => {
-    const plan = makePlan([{ stepNumber: 1, expectedOutputs: ['api/'] }]);
-    const results: Partial<ParallelStepResult>[] = [
-      { stepNumber: 1, verificationResult: vr(true) }
-    ];
-    const cr = callCritic(results, plan);
-    assert.strictEqual(cr.score, 90);
-    assert.ok(cr.flags[0].includes('no session output'));
-  });
-
-  it('should recommend reject when score drops below 60', () => {
-    const plan = makePlan([
-      { stepNumber: 1, expectedOutputs: ['a/'] },
-      { stepNumber: 2, expectedOutputs: ['b/'] },
-      { stepNumber: 3, expectedOutputs: ['c/'] },
-    ]);
-    const results: Partial<ParallelStepResult>[] = [
-      { stepNumber: 1, verificationResult: vr(false) },
-      { stepNumber: 2, verificationResult: vr(false) },
-      { stepNumber: 3, verificationResult: vr(false) },
-    ];
-    const cr = callCritic(results, plan);
-    // 100 - 20*3 (test fails) - 10*3 (missing session output) = 10
-    assert.strictEqual(cr.score, 10);
-    assert.strictEqual(cr.recommendation, 'reject');
-  });
-
-  it('should recommend revise when score >= 60 with flags', () => {
-    const plan = makePlan([{ stepNumber: 1 }]);
-    const results: Partial<ParallelStepResult>[] = [
-      { stepNumber: 1, verificationResult: vr(false), sessionResult: { output: 'ok' } as any }
-    ];
-    const cr = callCritic(results, plan);
-    // 100 - 20 (1 failed test check) = 80
-    assert.strictEqual(cr.score, 80);
-    assert.strictEqual(cr.recommendation, 'revise');
-  });
-
-  it('should clamp score to 0 minimum', () => {
-    const steps = Array.from({ length: 10 }, (_, i) => ({
-      stepNumber: i + 1, expectedOutputs: ['x/']
-    }));
-    const plan = makePlan(steps);
-    const results: Partial<ParallelStepResult>[] = steps.map(s => ({
-      stepNumber: s.stepNumber,
-      verificationResult: vr(false),
-    }));
-    const cr = callCritic(results, plan);
-    assert.strictEqual(cr.score, 0, 'score should floor at 0');
-    assert.strictEqual(cr.recommendation, 'reject');
   });
 });
 
@@ -522,11 +392,10 @@ describe('Baseline: Upgrade 6 - Delta Context Engine', () => {
 // ===========================================================================
 describe('Baseline: Cross-Upgrade Type Integrity', () => {
 
-  it('ExecutionOptions should have all six upgrade flags', () => {
+  it('ExecutionOptions should have active orchestration flags', () => {
     const opts: ExecutionOptions = {
       strictIsolation: true,
       useInnerFleet: true,
-      governance: true,
       lean: true,
       delegate: false,
       mcp: false,
@@ -536,15 +405,7 @@ describe('Baseline: Cross-Upgrade Type Integrity', () => {
     };
     assert.strictEqual(opts.strictIsolation, true);
     assert.strictEqual(opts.useInnerFleet, true);
-    assert.strictEqual(opts.governance, true);
     assert.strictEqual(opts.lean, true);
-  });
-
-  it('CriticResult should have score, flags, recommendation', () => {
-    const cr: CriticResult = { score: 88, flags: ['drift'], recommendation: 'revise' };
-    assert.strictEqual(typeof cr.score, 'number');
-    assert.ok(Array.isArray(cr.flags));
-    assert.ok(['approve', 'reject', 'revise'].includes(cr.recommendation));
   });
 
   it('SessionState should have all required fields', () => {
@@ -584,10 +445,6 @@ describe('Baseline: CLI Surface Validation', () => {
 
   it('CLI help should list --resume flag', () => {
     assert.ok(cliHelp().includes('--resume'), 'CLI help should mention --resume flag');
-  });
-
-  it('CLI help should list --governance flag', () => {
-    assert.ok(cliHelp().includes('--governance'), 'CLI help should mention --governance flag');
   });
 
   it('CLI help should list --strict-isolation flag', () => {

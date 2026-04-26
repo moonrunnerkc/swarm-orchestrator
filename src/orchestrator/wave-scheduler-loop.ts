@@ -18,7 +18,6 @@ import { SessionResult } from '../session-executor';
 import { VerificationResult } from '../verifier-engine';
 import { DEFAULT_HEARTBEAT_INTERVAL_MS } from '../defaults';
 import { getLogger } from '../logger';
-import { CriticResult } from '../types';
 
 const logger = getLogger('orchestrator');
 
@@ -65,7 +64,6 @@ export interface SchedulerContext {
   metaAnalyzer?: MetaAnalyzer;
   knowledgeBase?: KnowledgeBaseManager;
   waveAnalyses?: MetaReviewResult[];
-  criticResults?: CriticResult[];
   leanSavedRequests?: number;
   totalWaves?: number;
 }
@@ -76,7 +74,6 @@ export interface SchedulerContext {
 export interface SchedulerOptions {
   model?: string;
   lean?: boolean;
-  governance?: boolean;
   fleetWaveMode?: boolean;
   cliAgent?: string;
   strictIsolation?: boolean;
@@ -107,11 +104,6 @@ export interface SchedulerHost {
     context: SchedulerContext,
     options?: SchedulerOptions,
   ): Promise<void>;
-  runCriticReview(
-    completedResults: SchedulerStepResult[],
-    context: SchedulerContext,
-    plan: ExecutionPlan,
-  ): CriticResult;
 }
 
 /**
@@ -278,22 +270,6 @@ export async function runWaveLoop(
       await Promise.allSettled(batchPromises);
 
       context.queueStats = context.executionQueue!.getStats();
-
-      const completedInBatch = context.results.filter(
-        (result) => ready.includes(result.stepNumber) && result.status === 'completed',
-      );
-      if (options?.governance && completedInBatch.length > 0) {
-        if (!context.criticResults) context.criticResults = [];
-        const criticResult = host.runCriticReview(completedInBatch, context, context.plan);
-        context.criticResults.push(criticResult);
-        logger.info(`  🎭 Critic score: ${criticResult.score}/100 (${criticResult.recommendation})`);
-        if (criticResult.flags.length > 0) {
-          logger.info(`  ⚠️  Critic flags: ${criticResult.flags.join(', ')}`);
-          logger.info('  ⏸️  Governance pause: awaiting human approval...');
-          host.pauseController.requestPause();
-          await host.pauseController.waitForResume();
-        }
-      }
 
       options?.onProgress?.(context, `wave-done:${waveCounter}`);
     } else {

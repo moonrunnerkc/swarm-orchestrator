@@ -15,7 +15,6 @@ import { load_quality_gates_config } from './quality-gates';
 import type { GateResult } from './quality-gates';
 import SessionExecutor, { SessionResult } from './session-executor';
 import ShareParser, { ShareIndex } from './share-parser';
-import { CriticResult } from './types';
 import VerifierEngine, { VerificationResult } from './verifier-engine';
 import { AdaptiveConcurrencyManager, WaveResizer } from './wave-resizer';
 import { CostEstimator, CostEstimate } from './cost-estimator';
@@ -30,7 +29,6 @@ import { RequirementFilter, FilteredRequirements } from './requirement-filter';
 import { getLogger, isPrettyMode } from './logger';
 import { buildSwarmPrompt as _buildSwarmPrompt, writeSharedInstructions as _writeSharedInstructions } from './prompt-builder';
 import { buildDependencyGraph as _buildDependencyGraph, identifyExecutionWaves as _identifyExecutionWaves } from './wave-scheduler';
-import { runCriticReview as _runCriticReview } from './critic-reviewer';
 import { executeOptionalDeployment as _executeOptionalDeployment } from './deployment-handler';
 import { analyzeCommitQuality as _analyzeCommitQuality } from './commit-quality-analyzer';
 import { PauseController } from './orchestrator/pause-controller';
@@ -90,7 +88,6 @@ export interface SwarmExecutionOptions {
   qualityGatesConfigPath?: string;
   qualityGatesOutDir?: string;
   strictIsolation?: boolean;
-  governance?: boolean;
   lean?: boolean;
   useInnerFleet?: boolean;
   prMode?: 'auto' | 'review';
@@ -130,7 +127,6 @@ export interface SwarmExecutionContext {
     accessibilityFixAdded: boolean;
     testCoverageFixAdded: boolean;
   };
-  criticResults?: CriticResult[];
   leanSavedRequests?: number;
   totalWaves?: number;
   costEstimator?: CostEstimator;
@@ -406,8 +402,8 @@ export class SwarmOrchestrator implements RemediationHost, ReplanHost, StepExecu
     const gatesConfig = load_quality_gates_config(this.workingDir, options?.qualityGatesConfigPath);
 
     // Scheduler loop: greedy as-soon-as-ready scheduling, lean-mode KB
-    // injection, optional /fleet dispatch, governance critic review,
-    // adaptive concurrency. See src/orchestrator/wave-scheduler-loop.ts
+    // injection, optional /fleet dispatch, adaptive concurrency.
+    // See src/orchestrator/wave-scheduler-loop.ts
     // for the INVARIANT on context.plan re-read (executeReplan may swap
     // it mid-run; scheduler re-reads context.plan.steps every iteration).
     await _runWaveLoop(this, plan, agents, context, options);
@@ -535,7 +531,6 @@ export class SwarmOrchestrator implements RemediationHost, ReplanHost, StepExecu
     if (options?.model !== undefined) postRunOptions.model = options.model;
     if (options?.cliAgent !== undefined) postRunOptions.cliAgent = options.cliAgent;
     if (options?.owaspReport !== undefined) postRunOptions.owaspReport = options.owaspReport;
-    if (options?.governance !== undefined) postRunOptions.governance = options.governance;
     if (options?.strictIsolation !== undefined) postRunOptions.strictIsolation = options.strictIsolation;
     if (options?.enableExternal !== undefined) postRunOptions.enableExternal = options.enableExternal;
     if (options?.dryRun !== undefined) postRunOptions.dryRun = options.dryRun;
@@ -598,17 +593,6 @@ export class SwarmOrchestrator implements RemediationHost, ReplanHost, StepExecu
   ): Promise<void> {
     return _executeStepInSwarm(this, step, agent, context, options);
   }
-
-
-  /**
-  /**
-   * Critic review on completed wave results. Delegates to critic-reviewer module.
-   * Public to satisfy `SchedulerHost`; tests access via `(orch as any).runCriticReview`.
-   */
-  runCriticReview(completedResults: ParallelStepResult[], _context: SwarmExecutionContext, plan: ExecutionPlan): CriticResult {
-    return _runCriticReview(completedResults, plan);
-  }
-
   /** Build prompt for swarm step execution. Delegates to prompt-builder module. */
   private buildSwarmPrompt(step: PlanStep, agent: AgentProfile, context: SwarmExecutionContext, dependencyContext: string): string {
     // Pass the orchestrator's working dir so prompt-builder can read the

@@ -12,7 +12,6 @@ import {
   SchedulerOptions,
   SchedulerStepResult,
 } from '../src/orchestrator/wave-scheduler-loop';
-import { CriticResult } from '../src/types';
 
 /**
  * Locks the plan-swap invariant documented at the top of
@@ -136,9 +135,6 @@ describe('wave-scheduler-loop: plan-swap invariant', () => {
       },
       async mergeWaveBranches(_completed: SchedulerStepResult[], _ctx: SchedulerContext, _opts?: SchedulerOptions) {
         // No-op: merging is not exercised in this test.
-      },
-      runCriticReview(_completed: SchedulerStepResult[], _ctx: SchedulerContext, _plan: ExecutionPlan): CriticResult {
-        return { score: 100, flags: [], recommendation: 'approve' };
       },
     };
 

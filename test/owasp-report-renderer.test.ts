@@ -16,8 +16,8 @@ function buildReport(overrides: Partial<OwaspComplianceReport> = {}): OwaspCompl
         asiId: 'ASI-01',
         riskName: 'Agent Goal Hijack',
         status: 'mitigated',
-        evidence: ['Governance mode enabled', 'Bounded agent scopes'],
-        rationale: 'Governance Critic scoring active.'
+        evidence: ['Strict isolation enabled', 'Bounded worker and reviewer roles'],
+        rationale: 'Strict isolation and bounded role prompts reduce goal-hijack blast radius.'
       },
       {
         asiId: 'ASI-03',
@@ -79,8 +79,8 @@ describe('OwaspReportRenderer', () => {
     it('includes evidence for applicable risks', () => {
       const md = OwaspReportRenderer.toMarkdown(buildReport());
 
-      assert.ok(md.includes('Governance mode enabled'));
-      assert.ok(md.includes('Bounded agent scopes'));
+      assert.ok(md.includes('Strict isolation enabled'));
+      assert.ok(md.includes('Bounded worker and reviewer roles'));
     });
 
     it('omits evidence section for not_applicable risks', () => {
@@ -93,7 +93,7 @@ describe('OwaspReportRenderer', () => {
     it('includes rationale for every risk', () => {
       const md = OwaspReportRenderer.toMarkdown(buildReport());
 
-      assert.ok(md.includes('Governance Critic scoring active.'));
+      assert.ok(md.includes('Strict isolation and bounded role prompts reduce goal-hijack blast radius.'));
       assert.ok(md.includes('Agents are stateless subprocesses on local branches.'));
     });
   });

@@ -33,7 +33,6 @@ describe('cli-handlers', () => {
         ['--confirm-deploy', 'confirmDeploy'],
         ['--no-quality-gates', 'noQualityGates'],
         ['--pm', 'pm'],
-        ['--governance', 'governance'],
         ['--strict-isolation', 'strictIsolation'],
         ['--lean', 'lean'],
         ['--cost-estimate-only', 'costEstimateOnly'],
@@ -141,14 +140,12 @@ describe('cli-handlers', () => {
       const opts = parseSwarmFlags([
         '--model', 'o3',
         '--lean',
-        '--governance',
         '--pr', 'review',
         '--max-premium-requests', '100',
         '-y',
       ]);
       assert.strictEqual(opts.model, 'o3');
       assert.strictEqual(opts.lean, true);
-      assert.strictEqual(opts.governance, true);
       assert.strictEqual(opts.prMode, 'review');
       assert.strictEqual(opts.maxPremiumRequests, 100);
       assert.strictEqual(opts.yes, true);

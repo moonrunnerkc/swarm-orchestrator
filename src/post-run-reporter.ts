@@ -61,7 +61,6 @@ export interface PostRunOptions {
   model?: string;
   cliAgent?: string;
   owaspReport?: boolean;
-  governance?: boolean;
   strictIsolation?: boolean;
   enableExternal?: boolean;
   dryRun?: boolean;
@@ -172,7 +171,6 @@ export async function runPostExecution(
       const meta = {
         executionId: context.executionId,
         toolVersion,
-        governanceEnabled: !!options.governance,
         strictIsolation: !!options.strictIsolation,
         adapterType: options.cliAgent || 'copilot',
         totalSteps: plan.steps.length,

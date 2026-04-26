@@ -32,7 +32,6 @@ describe('CLI Handlers', () => {
         '--confirm-deploy',
         '--no-quality-gates',
         '--pm',
-        '--governance',
         '--strict-isolation',
         '--lean',
         '--cost-estimate-only',
@@ -41,7 +40,6 @@ describe('CLI Handlers', () => {
       assert.strictEqual(opts.confirmDeploy, true);
       assert.strictEqual(opts.noQualityGates, true);
       assert.strictEqual(opts.pm, true);
-      assert.strictEqual(opts.governance, true);
       assert.strictEqual(opts.strictIsolation, true);
       assert.strictEqual(opts.lean, true);
       assert.strictEqual(opts.costEstimateOnly, true);

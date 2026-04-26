@@ -41,7 +41,6 @@ Flags:
   --confirm-deploy Enable opt-in deployment for deployment steps (vercel, netlify)
   --no-quality-gates Disable quality gates (swarm mode)
   --pm               Run PM agent plan review before swarm execution
-  --governance       Enable critic review + governance pause before merge
   --strict-isolation Force per-task branch isolation, transcript-only context
   --lean             Enable Delta Context Engine (reuse prior KB patterns)
   --useInnerFleet    Prefix prompts with /fleet for parallel sub-agent dispatch

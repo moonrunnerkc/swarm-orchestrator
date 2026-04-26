@@ -2,11 +2,9 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { SwarmOrchestrator, SwarmExecutionContext, ParallelStepResult } from '../src/swarm-orchestrator';
+import { SwarmOrchestrator, SwarmExecutionContext } from '../src/swarm-orchestrator';
 import { ExecutionPlan, PlanStep } from '../src/plan-generator';
-import { VerificationResult, VerificationCheck } from '../src/verifier-engine';
 import { AgentProfile } from '../src/config-loader';
-import { CriticResult } from '../src/types';
 
 /**
  * Tests for SwarmOrchestrator's pure/nearly-pure private methods.
@@ -39,44 +37,6 @@ function makeAgent(name: string): AgentProfile {
     refusal_rules: [],
     output_contract: { transcript: 'transcript.md', artifacts: [] },
   };
-}
-
-function makeCheck(type: VerificationCheck['type'], passed: boolean, reason?: string): VerificationCheck {
-  const check: VerificationCheck = {
-    type,
-    description: `${type} check`,
-    required: true,
-    passed,
-  };
-  if (reason !== undefined) {
-    check.reason = reason;
-  }
-  return check;
-}
-
-function makeVerificationResult(stepNumber: number, checks: VerificationCheck[]): VerificationResult {
-  return {
-    stepNumber,
-    agentName: 'backend_master',
-    passed: checks.every(c => c.passed),
-    checks,
-    unverifiedClaims: [],
-    timestamp: new Date().toISOString(),
-    transcriptPath: '/tmp/transcript.md',
-  };
-}
-
-function makeStepResult(stepNumber: number, verification?: VerificationResult): ParallelStepResult {
-  const result: ParallelStepResult = {
-    stepNumber,
-    agentName: 'backend_master',
-    status: 'completed',
-    sessionResult: { exitCode: 0, output: 'done', error: '' } as any,
-  };
-  if (verification !== undefined) {
-    result.verificationResult = verification;
-  }
-  return result;
 }
 
 describe('SwarmOrchestrator', () => {
@@ -284,109 +244,6 @@ describe('SwarmOrchestrator', () => {
       );
 
       assert.ok(prompt.includes('Do NOT run git checkout'));
-    });
-  });
-
-  describe('runCriticReview', () => {
-    it('returns score 100 and approve when all checks pass', () => {
-      const plan = makePlan([{ stepNumber: 1, expectedOutputs: ['file.ts'] }]);
-      const checks = [makeCheck('test', true), makeCheck('build', true)];
-      const results = [makeStepResult(1, makeVerificationResult(1, checks))];
-      const context: Partial<SwarmExecutionContext> = { plan };
-
-      const critic: CriticResult = orchestrator.runCriticReview(results, context, plan);
-      assert.strictEqual(critic.score, 100);
-      assert.strictEqual(critic.recommendation, 'approve');
-      assert.strictEqual(critic.flags.length, 0);
-    });
-
-    it('deducts for failed test checks', () => {
-      const plan = makePlan([{ stepNumber: 1, expectedOutputs: [] }]);
-      const checks = [makeCheck('test', false, 'npm test failed')];
-      const results = [makeStepResult(1, makeVerificationResult(1, checks))];
-      const context: Partial<SwarmExecutionContext> = { plan };
-
-      const critic: CriticResult = orchestrator.runCriticReview(results, context, plan);
-      assert.ok(critic.score < 100);
-      assert.ok(critic.flags.length > 0);
-      assert.ok(critic.flags[0].includes('test'));
-    });
-
-    it('deducts more heavily for build failures than lint', () => {
-      const plan = makePlan([
-        { stepNumber: 1, expectedOutputs: [] },
-        { stepNumber: 2, expectedOutputs: [] },
-      ]);
-
-      const buildFail = [makeCheck('build', false, 'tsc failed')];
-      const lintFail = [makeCheck('lint', false, 'eslint warning')];
-
-      const buildResults = [makeStepResult(1, makeVerificationResult(1, buildFail))];
-      const lintResults = [makeStepResult(2, makeVerificationResult(2, lintFail))];
-
-      const buildCritic: CriticResult = orchestrator.runCriticReview(buildResults, {}, plan);
-      const lintCritic: CriticResult = orchestrator.runCriticReview(lintResults, {}, plan);
-
-      // Build weight=25 vs lint weight=5
-      assert.ok(buildCritic.score < lintCritic.score,
-        `Build score ${buildCritic.score} should be lower than lint score ${lintCritic.score}`);
-    });
-
-    it('recommends reject for score below 60', () => {
-      const plan = makePlan([{ stepNumber: 1, expectedOutputs: [] }]);
-      // 3 test failures (20 each = 60 points) + 1 build = 25 => score ~15
-      const checks = [
-        makeCheck('test', false), makeCheck('test', false), makeCheck('test', false),
-        makeCheck('build', false),
-      ];
-      const results = [makeStepResult(1, makeVerificationResult(1, checks))];
-
-      const critic: CriticResult = orchestrator.runCriticReview(results, {}, plan);
-      assert.strictEqual(critic.recommendation, 'reject');
-      assert.ok(critic.score < 60);
-    });
-
-    it('recommends revise for score between 60 and 100 with flags', () => {
-      const plan = makePlan([{ stepNumber: 1, expectedOutputs: [] }]);
-      const checks = [makeCheck('lint', false, 'minor warning')]; // only -5
-      const results = [makeStepResult(1, makeVerificationResult(1, checks))];
-
-      const critic: CriticResult = orchestrator.runCriticReview(results, {}, plan);
-      assert.strictEqual(critic.recommendation, 'revise');
-      assert.ok(critic.score >= 60);
-    });
-
-    it('clamps score to 0-100 range', () => {
-      const plan = makePlan([{ stepNumber: 1, expectedOutputs: [] }]);
-      // Many failures to drive score well below 0
-      const checks: VerificationCheck[] = [];
-      for (let i = 0; i < 10; i++) {
-        checks.push(makeCheck('build', false));
-      }
-      const results = [makeStepResult(1, makeVerificationResult(1, checks))];
-
-      const critic: CriticResult = orchestrator.runCriticReview(results, {}, plan);
-      assert.strictEqual(critic.score, 0);
-    });
-
-    it('flags missing session output when expectedOutputs exist', () => {
-      const plan = makePlan([{ stepNumber: 1, expectedOutputs: ['index.ts'] }]);
-      const result: ParallelStepResult = {
-        stepNumber: 1,
-        agentName: 'backend_master',
-        status: 'completed',
-        // no sessionResult
-      };
-
-      const critic: CriticResult = orchestrator.runCriticReview([result], {}, plan);
-      assert.ok(critic.flags.some(f => f.includes('no session output')));
-    });
-
-    it('handles empty results array', () => {
-      const plan = makePlan([]);
-      const critic: CriticResult = orchestrator.runCriticReview([], {}, plan);
-      assert.strictEqual(critic.score, 100);
-      assert.strictEqual(critic.recommendation, 'approve');
     });
   });
 

@@ -100,7 +100,7 @@ AI coding agents produce code fast. The problem is knowing whether that code act
 
 Every agent runs on its own isolated git branch. Every claim an agent makes is cross-referenced against its Copilot session transcript for concrete evidence: commit SHAs, test output, build results, file changes. Steps that can't prove their work don't merge. Steps that fail get classified, repaired with targeted strategies, and re-verified. After merge, eight automated quality gates check the generated code for scaffold leftovers, duplicate blocks, hardcoded config, README claim accuracy, test isolation, test coverage, accessibility, and runtime correctness. Nothing reaches main without passing through both the verification engine and the quality gate pipeline.
 
-The orchestrator wraps `copilot -p` (or `/fleet` for native parallel subagent dispatch) as an independent subprocess per step. It runs outside of Copilot's own execution model. You define a goal, it builds a dependency graph, launches steps as dependencies resolve, and manages the full lifecycle: branch creation, agent execution, transcript capture, evidence verification, failure repair, governance review, cost tracking, and merge. The entire execution produces an auditable trail of transcripts, verification reports, and cost attribution that you can inspect after every run.
+The orchestrator wraps `copilot -p` (or `/fleet` for native parallel subagent dispatch) as an independent subprocess per step. It runs outside of Copilot's own execution model. You define a goal, it builds a dependency graph, launches steps as dependencies resolve, and manages the full lifecycle: branch creation, agent execution, transcript capture, evidence verification, failure repair, cost tracking, and merge. The entire execution produces an auditable trail of transcripts, verification reports, and cost attribution that you can inspect after every run.
 
 Before execution begins, the cost estimator predicts premium request consumption based on the plan, model multipliers, and historical failure rates from the knowledge base. You can preview the estimate, set a hard budget, or run without limits.
 
@@ -127,7 +127,6 @@ Full detail in the [v6.0.0 release notes](docs/releases/RELEASE-v6.0.0.md).
 - **Evidence-based verification**: every agent transcript is parsed for commit SHAs, test output, build markers, and file changes. Steps that can't prove their work don't merge.
 - **Eight quality gates**: scaffold leftovers, duplicate code, hardcoded config, README claim drift, test isolation, test coverage, accessibility, runtime correctness. SARIF output for GitHub code scanning.
 - **Failure-classified repair**: failures are categorized (build, test, missing-artifact, dependency, timeout) and retried with targeted strategies, up to 3 attempts with accumulating context.
-- **Governance mode**: Critic agent scores steps on weighted axes, auto-pauses on flags for human approval. Supports pause, resume, approve, reject during execution.
 
 ### Cost Governance
 
@@ -258,7 +257,6 @@ npm start quick "Fix the race condition in src/worker.ts"
 | Flag | Effect |
 |------|--------|
 | `--tool <name>` | Agent backend: `copilot` (default), `claude-code`, `codex`, `claude-code-teams` |
-| `--governance` | Enable advisory Critic review wave with scoring and auto-pause |
 | `--lean` | Enable Delta Context Engine (KB-backed prompt references) |
 | `--cost-estimate-only` | Print pre-execution cost estimate and exit without running |
 | `--max-premium-requests <n>` | Abort if estimated premium requests exceed budget |
@@ -274,7 +272,6 @@ npm start quick "Fix the race condition in src/worker.ts"
 | Flag | Effect |
 |------|--------|
 | `--tool <name>` | Agent backend: `copilot` (default), `claude-code`, `codex`, `claude-code-teams` |
-| `--governance` | Enable advisory Critic review wave with scoring and auto-pause |
 | `--lean` | Enable Delta Context Engine (KB-backed prompt references) |
 | `--cost-estimate-only` | Print pre-execution cost estimate and exit without running |
 | `--max-premium-requests <n>` | Abort if estimated premium requests exceed budget |
@@ -304,13 +301,13 @@ npm start quick "Fix the race condition in src/worker.ts"
 ### Examples
 
 ```bash
-npm start swarm plan.json --governance --lean --strict-isolation --pm
+npm start swarm plan.json --lean --strict-isolation --pm
 ```
 
 Run with Claude Code and OWASP compliance report:
 
 ```bash
-npm start swarm plan.json --tool claude-code --governance --owasp-report
+npm start swarm plan.json --tool claude-code --owasp-report
 ```
 
 Run quality gates and produce SARIF for GitHub code scanning:
@@ -331,7 +328,7 @@ npm start use add-tests --tool codex --param framework=vitest --param coverage-t
 Plan and execute in one step:
 
 ```bash
-npm start run --goal "Build a REST API with JWT auth" --lean --governance
+npm start run --goal "Build a REST API with JWT auth" --lean
 ```
 
 Generate a plan:
@@ -540,9 +537,8 @@ Goal ──> Plan ──> Waves ──> Branches ──> Agents ──> Verify �
 3. **Branch isolation.** Each step gets its own git worktree and branch (`swarm/<run-id>/step-N-agent`). With `--strict-isolation`, cross-step context is restricted to transcript-verified entries only.
 4. **Copilot execution.** The orchestrator invokes `copilot -p` as a subprocess for each step, injecting the agent prompt plus dependency context from completed steps. Transcripts are captured via `/share` export.
 5. **Verification.** The verifier parses each transcript for concrete evidence: commit SHAs, test runner output, build markers, file-change records. Agent claims are cross-referenced against this evidence. Missing required evidence fails the step.
-6. **Critic review** (with `--governance`). A Critic wave runs after execution, before merge. The Critic scores each step using weighted deductions (build: -25, test: -20, commit: -10, lint: -5, claim: -5), produces a recommendation (approve/reject/revise), and auto-pauses on any flags for human approval. Scores are advisory; final merge decisions rest with the operator.
-7. **Self-repair.** Failed steps are retried up to three times. The Repair Agent classifies each failure (build, test, missing-artifact, dependency, timeout) and applies a targeted strategy. Context accumulates across attempts.
-8. **Merge.** Verified branches merge to main in wave order. For multi-repo plans, each repo group is verified independently before cross-repo verification and final merge.
+6. **Self-repair.** Failed steps are retried up to three times. The Repair Agent classifies each failure (build, test, missing-artifact, dependency, timeout) and applies a targeted strategy. Context accumulates across attempts.
+7. **Merge.** Verified branches merge to main in wave order. For multi-repo plans, each repo group is verified independently before cross-repo verification and final merge.
 
 <br>
 
@@ -576,10 +572,6 @@ Goal ──> Plan ──> Waves ──> Branches ──> Agents ──> Verify �
               │                 │                  │
               │     ┌───────────▼──────────┐      │
               └────>│   Repair Agent       │<─────┘  (up to 3 retries)
-                    └───────────┬──────────┘
-                                │
-                    ┌───────────▼──────────┐
-                    │   Critic Review      │  (optional --governance)
                     └───────────┬──────────┘
                                 │
                     ┌───────────▼──────────┐

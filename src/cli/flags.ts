@@ -8,7 +8,6 @@ export interface ExecuteSwarmCliOptions {
   qualityGatesConfigPath?: string;
   qualityGatesOutDir?: string;
   pm?: boolean;
-  governance?: boolean;
   strictIsolation?: boolean;
   lean?: boolean;
   useInnerFleet?: boolean;
@@ -120,7 +119,6 @@ export function parseSwarmFlags(args: string[]): ExecuteSwarmCliOptions {
   if (args.includes('--confirm-deploy')) opts.confirmDeploy = true;
   if (args.includes('--no-quality-gates')) opts.noQualityGates = true;
   if (args.includes('--pm')) opts.pm = true;
-  if (args.includes('--governance')) opts.governance = true;
   if (args.includes('--strict-isolation')) opts.strictIsolation = true;
   if (args.includes('--lean')) opts.lean = true;
   if (args.includes('--verbose')) opts.verbose = true;

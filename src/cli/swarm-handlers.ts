@@ -265,7 +265,6 @@ export async function executeSwarm(
     if (options?.model) swarmOptions.model = options.model;
     if (options?.confirmDeploy) swarmOptions.confirmDeploy = true;
     if (options?.noQualityGates) swarmOptions.qualityGates = false;
-    if (options?.governance) swarmOptions.governance = true;
     if (options?.strictIsolation) swarmOptions.strictIsolation = true;
     if (options?.lean) swarmOptions.lean = true;
     if (options?.useInnerFleet) swarmOptions.useInnerFleet = true;
@@ -297,7 +296,6 @@ export async function executeSwarm(
           totalSteps: ctx.plan.steps.length,
           ...(currentWave !== undefined && { currentWave }),
           ...(ctx.totalWaves && { totalWaves: ctx.totalWaves }),
-          ...(ctx.criticResults && { criticResults: ctx.criticResults }),
           ...(ctx.leanSavedRequests && { leanSavedRequests: ctx.leanSavedRequests }),
           ...(liveQueueStats && { queueStats: liveQueueStats }),
         });
@@ -539,7 +537,6 @@ Flags:
   --model <name>             Model to use (e.g., claude-opus-4.5, o3)
   --no-dashboard             Disable the live TUI dashboard
   --pm                       Run PM agent plan review before execution
-  --governance               Enable critic review + governance pause before merge
   --strict-isolation         Force per-task branch isolation
   --lean                     Enable Delta Context Engine (reuse KB patterns)
   --useInnerFleet            Prefix all prompts with /fleet
@@ -558,7 +555,7 @@ Examples:
   swarm swarm plan.json
   swarm swarm plan.json --model claude-opus-4.5 --pm
   swarm swarm plan.json --cost-estimate-only
-  swarm swarm plan.json --pr auto --governance
+  swarm swarm plan.json --pr auto
 `);
     return 0;
   }

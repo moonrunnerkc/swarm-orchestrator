@@ -23,7 +23,6 @@ function buildMeta(overrides: Partial<ExecutionMetadata> = {}): ExecutionMetadat
   return {
     executionId: 'swarm-2026-04-08T12-00-00',
     toolVersion: '4.1.0',
-    governanceEnabled: true,
     strictIsolation: true,
     adapterType: 'copilot',
     totalSteps: 3,
@@ -58,7 +57,7 @@ describe('OwaspMapper', () => {
     });
 
     it('marks ASI-03 as mitigated always (branch isolation is structural)', () => {
-      const report = mapper.map([], buildMeta({ governanceEnabled: false, strictIsolation: false }));
+      const report = mapper.map([], buildMeta({ strictIsolation: false }));
       const asi03 = report.risks.find(r => r.asiId === 'ASI-03');
 
       assert.ok(asi03);
@@ -74,15 +73,15 @@ describe('OwaspMapper', () => {
       assert.deepStrictEqual(naIds, ['ASI-04', 'ASI-06', 'ASI-07', 'ASI-09']);
     });
 
-    it('marks ASI-01 as mitigated when governance is on', () => {
-      const report = mapper.map([buildVerificationResult()], buildMeta({ governanceEnabled: true }));
+    it('marks ASI-01 as mitigated when strict isolation is on', () => {
+      const report = mapper.map([buildVerificationResult()], buildMeta({ strictIsolation: true }));
       const asi01 = report.risks.find(r => r.asiId === 'ASI-01');
 
       assert.strictEqual(asi01!.status, 'mitigated');
     });
 
-    it('marks ASI-01 as partial when governance is off', () => {
-      const report = mapper.map([buildVerificationResult()], buildMeta({ governanceEnabled: false }));
+    it('marks ASI-01 as partial when strict isolation is off', () => {
+      const report = mapper.map([buildVerificationResult()], buildMeta({ strictIsolation: false }));
       const asi01 = report.risks.find(r => r.asiId === 'ASI-01');
 
       assert.strictEqual(asi01!.status, 'partial');
@@ -136,30 +135,20 @@ describe('OwaspMapper', () => {
       assert.strictEqual(asi08!.status, 'partial');
     });
 
-    it('marks ASI-10 as mitigated when governance on and all steps verified', () => {
+    it('marks ASI-10 as mitigated when all steps verified', () => {
       const report = mapper.map(
         [buildVerificationResult()],
-        buildMeta({ governanceEnabled: true, passedSteps: 3, failedSteps: 0 })
+        buildMeta({ passedSteps: 3, failedSteps: 0 })
       );
       const asi10 = report.risks.find(r => r.asiId === 'ASI-10');
 
       assert.strictEqual(asi10!.status, 'mitigated');
     });
 
-    it('marks ASI-10 as partial when governance off', () => {
-      const report = mapper.map(
-        [buildVerificationResult()],
-        buildMeta({ governanceEnabled: false })
-      );
-      const asi10 = report.risks.find(r => r.asiId === 'ASI-10');
-
-      assert.strictEqual(asi10!.status, 'partial');
-    });
-
-    it('marks ASI-10 as partial when steps failed even with governance', () => {
+    it('marks ASI-10 as partial when steps failed', () => {
       const report = mapper.map(
         [buildVerificationResult({ passed: false })],
-        buildMeta({ governanceEnabled: true, failedSteps: 1 })
+        buildMeta({ failedSteps: 1 })
       );
       const asi10 = report.risks.find(r => r.asiId === 'ASI-10');
 

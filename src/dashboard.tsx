@@ -25,7 +25,6 @@ interface DashboardProps {
   readOnly?: boolean;
   metricsComparison?: MetricsComparison | null;
   queueStats?: QueueStats;
-  criticResults?: { score: number; flags: string[]; recommendation: string }[];
   leanSavedRequests?: number;
   costSummary?: string;
   agentLog?: string[];
@@ -173,7 +172,6 @@ const SwarmDashboard: React.FC<DashboardProps> = ({
   metricsComparison,
   queueStats: _queueStats,
   repoGroups,
-  criticResults,
   leanSavedRequests,
   costSummary,
   agentLog,
@@ -315,20 +313,6 @@ const SwarmDashboard: React.FC<DashboardProps> = ({
           ) : (
             <Text color="gray" dimColor>Waiting for agent output…</Text>
           )}
-        </Box>
-      )}
-
-      {/* Critic Scores — only in non-compact */}
-      {!compact && criticResults && criticResults.length > 0 && (
-        <Box flexDirection="column" marginTop={1}>
-          <Text bold underline>Critic Review:</Text>
-          {criticResults.map((cr, idx) => (
-            <Box key={idx}>
-              <Text color={cr.score >= 80 ? 'green' : cr.score >= 60 ? 'yellow' : 'red'}>
-                Wave {idx + 1}: {cr.score}/100 ({cr.recommendation}) {cr.flags.length > 0 ? `- ${cr.flags.length} flag(s)` : ''}
-              </Text>
-            </Box>
-          ))}
         </Box>
       )}
 
