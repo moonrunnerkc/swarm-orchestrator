@@ -152,6 +152,9 @@ function parseCount(text: string, labels: string[]): number | undefined {
     const pattern = new RegExp(`${label}\\s*[:=]?\\s*(\\d+)`, 'i');
     const match = text.match(pattern);
     if (match?.[1]) return Number.parseInt(match[1], 10);
+    const leadingPattern = new RegExp(`(\\d+)\\s+(?:mutant\\(s\\)|mutants?)\\s+${label}`, 'i');
+    const leadingMatch = text.match(leadingPattern);
+    if (leadingMatch?.[1]) return Number.parseInt(leadingMatch[1], 10);
   }
   return undefined;
 }
@@ -173,7 +176,7 @@ export function parseMutationOutput(stdout: string, stderr = ''): {
   const scoreMatch = text.match(/(?:mutation\s+score|score)\s*[:=]?\s*(\d+(?:\.\d+)?)\s*%/i);
   const killed = parseCount(text, ['killed mutants', 'killed']);
   const survived = parseCount(text, ['survived mutants', 'survived', 'survivors']);
-  const total = parseCount(text, ['total mutants', 'total']);
+  const total = parseCount(text, ['total mutants', 'mutant\\(s\\) generated', 'generated', 'total']);
   const derivedTotal = total ?? (
     killed !== undefined && survived !== undefined ? killed + survived : undefined
   );

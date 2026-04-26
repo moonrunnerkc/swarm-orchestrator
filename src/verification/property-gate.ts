@@ -113,8 +113,8 @@ export function discoverPropertyTargets(repoPath: string, changedFiles: string[]
   return targets;
 }
 
-function jsHarness(target: PropertyTarget, targetRel: string): string {
-  const importPath = './' + targetRel.replace(/\\/g, '/');
+function jsHarness(target: PropertyTarget, importRel: string): string {
+  const importPath = importRel.startsWith('.') ? importRel : './' + importRel;
   return [
     "const fc = require('fast-check');",
     `const mod = require('${importPath}');`,
@@ -160,7 +160,9 @@ function buildPropertyCommand(repoPath: string, target: PropertyTarget): string 
 
   const extension = target.language === 'typescript' ? '.ts' : '.js';
   const harness = path.join(outDir, `${base}${extension}`);
-  fs.writeFileSync(harness, jsHarness(target, target.filePath), 'utf8');
+  const targetPath = path.join(repoPath, target.filePath);
+  const importRel = path.relative(path.dirname(harness), targetPath).replace(/\\/g, '/');
+  fs.writeFileSync(harness, jsHarness(target, importRel), 'utf8');
   return target.language === 'typescript'
     ? `npx tsx ${path.relative(repoPath, harness)}`
     : `node ${path.relative(repoPath, harness)}`;

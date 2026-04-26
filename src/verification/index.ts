@@ -73,9 +73,13 @@ export {
   type AttestationSignature,
   type AttestationSigner,
   type AttestationVerificationResult,
+  type CosignKeySigningOptions,
   type InTotoStatement,
   type SignedAttestation,
 } from './attestation';
+export {
+  signWithCosignKey,
+} from './cosign-attestation';
 export {
   DEFAULT_COMPOSITE_CONFIG,
   computeCompositeScore,

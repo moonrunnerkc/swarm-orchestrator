@@ -1,9 +1,8 @@
 import { createHash } from 'crypto';
 import { execFileSync } from 'child_process';
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
-import { runVerificationCommand } from './command-runner';
+import { signWithCosign, verifyCosignSignature } from './cosign-attestation';
+
+export { signWithCosign, signWithCosignKey } from './cosign-attestation';
 
 export interface AttestationLayerResult {
   layer: string;
@@ -60,6 +59,8 @@ export interface AttestationSignature {
   kind: 'cosign' | 'unsigned-test';
   signature: string;
   bundlePath?: string;
+  signaturePath?: string;
+  publicKeyPath?: string;
 }
 
 export interface SignedAttestation {
@@ -71,6 +72,12 @@ export type AttestationSigner = (
   envelope: InTotoStatement,
   repoPath: string,
 ) => Promise<AttestationSignature>;
+
+export interface CosignKeySigningOptions {
+  privateKeyPath: string;
+  publicKeyPath: string;
+  password?: string;
+}
 
 export interface AttestationVerificationResult {
   found: boolean;
@@ -84,10 +91,6 @@ const BUILD_TYPE = 'https://github.com/moonrunnerkc/swarm-orchestrator/attestati
 
 function sha256(text: string): string {
   return createHash('sha256').update(text).digest('hex');
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 function git(repoPath: string, args: string[]): string {
@@ -141,35 +144,6 @@ export function createAttestationEnvelope(input: AttestationInput): InTotoStatem
         timestamp,
       },
     },
-  };
-}
-
-/**
- * Sign an attestation envelope with cosign keyless signing.
- *
- * @param envelope - In-toto statement to sign.
- * @param repoPath - Repository root for temporary signing files.
- * @returns Cosign signature metadata.
- */
-export async function signWithCosign(
-  envelope: InTotoStatement,
-  repoPath: string,
-): Promise<AttestationSignature> {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-attest-'));
-  const envelopePath = path.join(tmp, 'envelope.json');
-  const bundlePath = path.join(tmp, 'bundle.json');
-  fs.writeFileSync(envelopePath, JSON.stringify(envelope, null, 2), 'utf8');
-
-  const command = `cosign sign-blob --yes --bundle ${shellQuote(bundlePath)} ${shellQuote(envelopePath)}`;
-  const result = await runVerificationCommand(command, repoPath, 300_000);
-  if (result.exitCode !== 0) {
-    throw new Error(`cosign sign-blob failed: ${(result.stderr || result.stdout).trim()}`);
-  }
-
-  return {
-    kind: 'cosign',
-    signature: result.stdout.trim(),
-    bundlePath,
   };
 }
 
@@ -280,21 +254,5 @@ export async function verifyAttestation(
     };
   }
 
-  if (!attestation.signature.bundlePath) {
-    return { found: true, verified: false, reason: 'cosign bundle path missing', attestation };
-  }
-
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-attest-verify-'));
-  const envelopePath = path.join(tmp, 'envelope.json');
-  fs.writeFileSync(envelopePath, JSON.stringify(attestation.envelope, null, 2), 'utf8');
-  const command = `cosign verify-blob --bundle ${shellQuote(attestation.signature.bundlePath)} ${shellQuote(envelopePath)}`;
-  const result = await runVerificationCommand(command, repoPath, 300_000);
-  fs.rmSync(tmp, { recursive: true, force: true });
-
-  return {
-    found: true,
-    verified: result.exitCode === 0,
-    reason: result.exitCode === 0 ? 'cosign signature verified' : (result.stderr || result.stdout).trim(),
-    attestation,
-  };
+  return verifyCosignSignature(repoPath, attestation);
 }
