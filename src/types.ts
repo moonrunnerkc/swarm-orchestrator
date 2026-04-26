@@ -12,8 +12,6 @@ export interface ExecutionOptions {
   useInnerFleet?: boolean;   // Prefix prompts with /fleet for inner parallelism
   governance?: boolean;      // Insert critic review wave before merge
   lean?: boolean;            // Delta context engine: reuse similar past tasks
-  planCache?: boolean;       // Skip planning call when cached template matches
-  replay?: boolean;          // Reuse prior transcript for identical steps
   wrapFleet?: boolean;       // Enable /fleet prefix on all step prompts
   maxPremiumRequests?: number; // Abort if estimated premium requests exceed this
   costEstimateOnly?: boolean;  // Print cost estimate and exit without executing

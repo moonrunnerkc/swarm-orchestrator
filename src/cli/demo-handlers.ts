@@ -6,7 +6,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { DemoMode } from '../demo-mode';
-import { PlanStorage } from '../plan-storage';
+import { savePlanFile } from '../plan-files';
 import { ExecuteSwarmCliOptions, parseSwarmFlags } from './flags';
 import { getLogger, setPrettyMode } from '../logger';
 
@@ -227,8 +227,7 @@ export async function runDemo(scenarioName: string): Promise<number> {
 
     const plan = demoMode.scenarioToPlan(scenario);
 
-    const storage = new PlanStorage();
-    const planPath = storage.savePlan(plan);
+    const planPath = savePlanFile(plan);
 
     // Demo commands default to --no-dashboard for a clean streaming UX.
     // Users who want the Ink TUI can still pass --dashboard explicitly.

@@ -105,7 +105,6 @@ export interface StepExecutorOptions {
   strictIsolation?: boolean;
   useInnerFleet?: boolean;
   hooksEnabled?: boolean;
-  replay?: boolean;
   confirmDeploy?: boolean;
   enableExternal?: boolean;
   dryRun?: boolean;
@@ -135,7 +134,7 @@ export interface StepExecutorHost {
 
 /**
  * Execute a single step end-to-end: wait for deps, create worktree,
- * build prompt, run the agent session (or replay from cache), commit
+ * build prompt, run the agent session, commit
  * uncommitted work, verify, record context / cost / metrics, optional
  * deployment on success, rollback on failure.
  *
@@ -267,30 +266,7 @@ export async function executeStepInSwarm(
       // Hooks are auto-loaded by Copilot CLI from <gitRoot>/.github/hooks/
     }
 
-    // replay mode: reuse a matching prior transcript instead of calling Copilot
-    if (options?.replay && context.knowledgeBase) {
-      const patterns = context.knowledgeBase.findSimilarTasks(step.task, 0.9);
-      const match = patterns.find(p => p.evidence.length > 0);
-      if (match) {
-        const priorTranscript = match.evidence[0];
-        if (priorTranscript && fs.existsSync(priorTranscript)) {
-          logger.info(`  ♻️  [replay] Step ${step.stepNumber}: replaying from cached transcript`);
-          fs.copyFileSync(priorTranscript, transcriptPath);
-          result.sessionResult = {
-            output: 'replayed from cache',
-            success: true,
-            duration: 0,
-            exitCode: 0,
-            transcriptPath: transcriptPath,
-          };
-          result.status = 'completed';
-          result.endTime = new Date().toISOString();
-          // skip to verification (fall through below)
-        }
-      }
-    }
-
-    // only call the agent if we don't already have a session result (e.g. from replay)
+    // only call the agent if we don't already have a session result
     if (!result.sessionResult) {
       // Print static header instead of animated spinner when live logging
       // This prevents spinner animation from interleaving with agent output

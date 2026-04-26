@@ -1,6 +1,5 @@
 import { AgentProfile, ConfigLoader } from './config-loader';
 import { getGateRequirements, requiresTestStep } from './gate-prompt-builder';
-import { PlanStorage } from './plan-storage';
 import { QualityGatesConfig } from './quality-gates/types';
 import { getLogger } from './logger';
 const logger = getLogger('plan-generator');
@@ -61,29 +60,10 @@ export class PlanGenerator {
   createPlan(
     goal: string,
     userProvidedSteps?: PlanStep[],
-    options?: { planCache?: boolean; agentGuidance?: string },
+    options?: { agentGuidance?: string },
   ): ExecutionPlan {
     if (!goal || goal.trim() === '') {
       throw new Error('Goal cannot be empty');
-    }
-
-    // plan cache: short-circuit if a similar plan already exists. Cache key
-    // is the raw goal; agentGuidance doesn't affect step shape, only task
-    // text, and can be reapplied to a cached plan.
-    if (options?.planCache && !userProvidedSteps) {
-      const storage = new PlanStorage();
-      const cached = storage.findCachedPlan(goal);
-      if (cached) {
-        const steps = options.agentGuidance
-          ? this.applyAgentGuidance(cached.steps, options.agentGuidance)
-          : cached.steps;
-        return {
-          ...cached,
-          goal: goal.trim(),
-          steps,
-          createdAt: new Date().toISOString(),
-        };
-      }
     }
 
     const rawSteps = userProvidedSteps || this.generateIntelligentSteps(goal);

@@ -35,8 +35,8 @@ export const ORCHESTRATOR_RESERVED_PATHS: ReadonlyArray<string> = [
   'runs',
   // quick-fix-mode session scratch (src/quick-fix-mode.ts)
   '.quickfix',
-  // PlanStorage default writes plan-*.json here when planDir is unset
-  // (src/plan-storage.ts)
+  // CLI plan commands write plan-*.json here
+  // (src/plan-files.ts)
   'plans',
 ];
 

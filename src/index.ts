@@ -15,7 +15,6 @@ export type { SessionResult } from './session-executor';
 export { VerifierEngine } from './verifier-engine';
 export type { VerificationResult } from './verifier-engine';
 export { ShareParser } from './share-parser';
-export { PlanStorage } from './plan-storage';
 export { DemoMode } from './demo-mode';
 export { RepairAgent } from './repair-agent';
 export type { RepairContext, RepairResult } from './repair-agent';

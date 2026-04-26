@@ -37,8 +37,6 @@ describe('cli-handlers', () => {
         ['--strict-isolation', 'strictIsolation'],
         ['--lean', 'lean'],
         ['--cost-estimate-only', 'costEstimateOnly'],
-        ['--plan-cache', 'planCache'],
-        ['--replay', 'replay'],
         ['--fleet', 'fleetWaveMode'],
       ];
 

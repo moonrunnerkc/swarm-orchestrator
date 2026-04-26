@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ConfigLoader } from '../config-loader';
 import { ExecutionPlan, PlanGenerator } from '../plan-generator';
-import { PlanStorage } from '../plan-storage';
+import { loadPlanFile, savePlanFile } from '../plan-files';
 import QuickFixMode, { QuickFixOptions } from '../quick-fix-mode';
 import { SwarmOrchestrator, SwarmExecutionOptions, SwarmExecutionContext } from '../swarm-orchestrator';
 import { defaultModelForAdapter } from '../adapters';
@@ -73,8 +73,7 @@ export async function executeSwarm(
   const selectedTool = options?.cliAgent || 'copilot';
   validateAdapterSecrets(selectedTool);
 
-  const storage = new PlanStorage();
-  let plan = storage.loadPlan(planFilename);
+  let plan = loadPlanFile(planFilename);
 
   // In pretty mode (demo commands) the caller has already printed its own
   // banner with the goal + step count — don't duplicate.
@@ -487,7 +486,6 @@ export async function handleBootstrapCommand(args: string[]): Promise<number> {
   logger.info('╚══════════════════════════════════════════════════════════════════════╝\n');
 
   const BootstrapOrchestrator = require('../bootstrap-orchestrator').default;
-  const storage = new PlanStorage();
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const goalSlug = goal.toLowerCase().replace(/[^a-z0-9]+/g, '-').substring(0, 30);
@@ -509,7 +507,7 @@ export async function handleBootstrapCommand(args: string[]): Promise<number> {
     }
     const { evidencePath, plan } = bootstrapResult;
 
-    const planPath = storage.savePlan(plan, runId);
+    const planPath = savePlanFile(plan, runId);
 
     logger.info('📋 Bootstrap Results:');
     logger.info(`  Evidence: ${evidencePath}`);
@@ -548,8 +546,6 @@ Flags:
   --fleet                    Dispatch waves via /fleet (hybrid mode)
   --cost-estimate-only       Print cost estimate and exit without executing
   --max-premium-requests <n> Abort if estimated cost exceeds budget
-  --plan-cache               Skip planning when a cached template matches
-  --replay                   Reuse prior transcripts for identical steps
   --pr <auto|review>         Create PRs instead of direct merge
   --target <dir>             Run in specified directory instead of cwd
   --resume <id>              Resume a paused or failed session
@@ -716,9 +712,8 @@ export async function handleRunCommand(args: string[]): Promise<number> {
 
     // Check under plans/ directory for bare filenames
     if (!isPlanFile) {
-      const storage = new PlanStorage();
       try {
-        storage.loadPlan(firstPositional);
+        loadPlanFile(firstPositional);
         isPlanFile = true;
       } catch {
         // Not found in plans/ either; not a plan file
@@ -764,14 +759,11 @@ export async function handleRunCommand(args: string[]): Promise<number> {
   const configLoader = new ConfigLoader();
   const agents = configLoader.loadAllAgents();
   const generator = new PlanGenerator(agents);
-  const usePlanCache = args.includes('--plan-cache');
   const plan = generator.createPlan(goal, undefined, {
-    planCache: usePlanCache,
     ...(agentGuidance ? { agentGuidance } : {}),
   });
 
-  const storage = new PlanStorage();
-  const planFilename = storage.savePlan(plan);
+  const planFilename = savePlanFile(plan);
   logger.info(`Plan saved: ${planFilename} (${plan.steps.length} steps)\n`);
 
   try {

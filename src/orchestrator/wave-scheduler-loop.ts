@@ -82,7 +82,6 @@ export interface SchedulerOptions {
   strictIsolation?: boolean;
   useInnerFleet?: boolean;
   hooksEnabled?: boolean;
-  replay?: boolean;
   confirmDeploy?: boolean;
   enableExternal?: boolean;
   dryRun?: boolean;

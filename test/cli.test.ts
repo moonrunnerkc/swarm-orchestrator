@@ -36,8 +36,6 @@ describe('CLI Handlers', () => {
         '--strict-isolation',
         '--lean',
         '--cost-estimate-only',
-        '--plan-cache',
-        '--replay',
       ]);
       assert.strictEqual(opts.noDashboard, true);
       assert.strictEqual(opts.confirmDeploy, true);
@@ -47,8 +45,6 @@ describe('CLI Handlers', () => {
       assert.strictEqual(opts.strictIsolation, true);
       assert.strictEqual(opts.lean, true);
       assert.strictEqual(opts.costEstimateOnly, true);
-      assert.strictEqual(opts.planCache, true);
-      assert.strictEqual(opts.replay, true);
     });
 
     it('maps --wrap-fleet to useInnerFleet', () => {
@@ -154,11 +150,9 @@ describe('CLI Handlers', () => {
       assert.ok(captured.includes('--wrap-fleet'), 'should list --wrap-fleet');
     });
 
-    it('documents lean and replay flags', () => {
+    it('documents lean flag', () => {
       showUsage();
       assert.ok(captured.includes('--lean'), 'should list --lean');
-      assert.ok(captured.includes('--plan-cache'), 'should list --plan-cache');
-      assert.ok(captured.includes('--replay'), 'should list --replay');
     });
   });
 
@@ -187,9 +181,9 @@ describe('CLI Handlers', () => {
 
     it('extracts positional args without leaking output-format values', () => {
       const positional = extractPositionalArgs(
-        ['--output', 'json', '--verbose', '--plan-cache', 'Build a REST API'],
+        ['--output', 'json', '--verbose', '--json', 'Build a REST API'],
         {
-          booleanFlags: ['--verbose', '--plan-cache'],
+          booleanFlags: ['--verbose', '--json'],
           valueFlags: ['--output'],
         }
       );

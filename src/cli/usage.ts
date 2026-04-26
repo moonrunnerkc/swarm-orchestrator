@@ -49,8 +49,6 @@ Flags:
   --fleet            Dispatch entire waves via /fleet (hybrid mode, falls back on failure)
   --cost-estimate-only Run plan generation and cost estimation, print result, exit
   --max-premium-requests <n> Abort if estimated premium requests exceed budget
-  --plan-cache       Skip planning when a cached plan template matches (>85% similar)
-  --replay           Reuse prior transcript for identical steps (skip Copilot call)
   --quality-gates-config <path> Path to quality gates YAML (default: config/quality-gates.yaml)
   --quality-gates-out <dir>    Where to write gate reports (default: <runDir>/quality-gates)
   --pr <auto|review>   Create PRs instead of direct merge (auto: merge on pass, review: wait for approval)

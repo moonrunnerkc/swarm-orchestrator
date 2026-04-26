@@ -15,8 +15,6 @@ export interface ExecuteSwarmCliOptions {
   session?: string;
   costEstimateOnly?: boolean;
   maxPremiumRequests?: number;
-  planCache?: boolean;
-  replay?: boolean;
   prMode?: 'auto' | 'review';
   hooksEnabled?: boolean;
   fleetWaveMode?: boolean;
@@ -130,8 +128,6 @@ export function parseSwarmFlags(args: string[]): ExecuteSwarmCliOptions {
   if (args.includes('--fleet')) opts.fleetWaveMode = true;
   if (args.includes('--cost-estimate-only')) opts.costEstimateOnly = true;
   if (args.includes('--yes') || args.includes('-y')) opts.yes = true;
-  if (args.includes('--plan-cache')) opts.planCache = true;
-  if (args.includes('--replay')) opts.replay = true;
 
   if (args.includes('--no-hooks')) {
     opts.hooksEnabled = false;

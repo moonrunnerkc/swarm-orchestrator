@@ -287,8 +287,6 @@ npm start quick "Fix the race condition in src/worker.ts"
 | `--skip-verify` | Skip transcript verification (not recommended) |
 | `--no-quality-gates` | Disable quality gate checks |
 | `--confirm-deploy` | Enable deployment steps with tag/health-check/rollback (opt-in) |
-| `--plan-cache` | Skip planning when a cached plan template matches (>85% similarity) |
-| `--replay` | Reuse prior verified transcript for identical steps |
 | `--mcp` | Enable MCP integration |
 | `--quality-gates-config <path>` | Custom quality gates config file |
 | `--wrap-fleet` | Prefix step prompts with `/fleet` for native parallel subagent dispatch |
@@ -336,10 +334,10 @@ Plan and execute in one step:
 npm start run --goal "Build a REST API with JWT auth" --lean --governance
 ```
 
-Plan with caching:
+Generate a plan:
 
 ```bash
-npm start plan "Build a CLI tool" --plan-cache
+npm start plan "Build a CLI tool"
 npm start plan "Build a CLI tool" --output json
 ```
 
@@ -355,7 +353,7 @@ Run with /fleet and a budget cap:
 npm start swarm plan.json --wrap-fleet --max-premium-requests 30
 ```
 
-> **Note:** When using `npm start`, flags pass through automatically. If npm warns about an unknown flag, use the `--` separator: `npm start -- plan "goal" --plan-cache`. Not needed with the global `swarm` command.
+> **Note:** When using `npm start`, flags pass through automatically. If npm warns about an unknown flag, use the `--` separator. Not needed with the global `swarm` command.
 
 <br>
 

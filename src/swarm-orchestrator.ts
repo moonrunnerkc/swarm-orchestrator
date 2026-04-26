@@ -93,7 +93,6 @@ export interface SwarmExecutionOptions {
   governance?: boolean;
   lean?: boolean;
   useInnerFleet?: boolean;
-  replay?: boolean;
   prMode?: 'auto' | 'review';
   hooksEnabled?: boolean;
   fleetWaveMode?: boolean;
