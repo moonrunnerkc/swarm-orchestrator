@@ -5,7 +5,6 @@ import { AgentAdapter } from './adapters/agent-adapter';
 import { scrubCopilotHostileTokens } from './adapters/copilot-adapter';
 import { scanBaseline } from './baseline-scanner';
 import { AgentProfile } from './config-loader';
-import { FleetWrapper } from './fleet-wrapper';
 import { HookGenerator, GeneratedHooks } from './hook-generator';
 import { PlanStep } from './plan-generator';
 import { redactFile } from './secret-redactor';
@@ -226,7 +225,7 @@ export class SessionExecutor {
 
     // /fleet prefix for inner parallelism when enabled
     if (options.useInnerFleet) {
-      prompt = FleetWrapper.wrapPrompt(prompt);
+      prompt = `/fleet ${prompt}`;
     }
 
     // Generate per-step hooks for scope enforcement and evidence capture
