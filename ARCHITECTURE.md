@@ -127,7 +127,7 @@ The following ship in v6 and earlier but are deleted in v7. Any reference to the
 - Plan cache and replay system.
 - Critic governance wave.
 - Web TUI dashboard (`src/dashboard.tsx`) and its dependencies (`react`, `ink`, `express`, `cors`, `body-parser`).
-- The 22-attribute completeness rubric harness as the primary benchmark; superseded by the falsification catch rate.
+- The legacy completeness-rubric harness as the primary benchmark; superseded by the falsification catch rate.
 
 ## Output Artifacts
 
