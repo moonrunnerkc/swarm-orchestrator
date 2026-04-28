@@ -2,15 +2,85 @@
 
 ## Development
 
-Get started: `npm install && npm run build && npm test`
+```bash
+npm install && npm run build && npm test
+```
 
-- TypeScript strict mode, ES2020 target
-- All source files use the structured logger (`src/logger.ts`) — no raw `console.log/error/warn`
-- Before submitting a PR: run `npm test`, run `swarm gates .`, and keep commits descriptive
+Before any PR: `npm test`, then `node dist/src/cli.js gates .`, then a descriptive commit. The self-gate runs in CI; orchestrator regressions fail their own gates.
+
+## Code Style
+
+- **TypeScript strict mode**, ES2022 target, CommonJS modules. `exactOptionalPropertyTypes` is on.
+- **Named exports only.** No `export default`.
+- **Kebab-case filenames.** `share-parser.ts`, not `ShareParser.ts` or `shareParser.ts`.
+- **No `any`** in `src/`. Tests and `src/dashboard.tsx` are the only exceptions; the linter enforces this.
+- **Full JSDoc on public functions.** What it does, params, return, throws. Internal helpers can be lighter.
+- **300-line soft limit per file.** If a file is pushing 300, decompose along natural seams, not arbitrary splits.
+- **Structured logger only.** `getLogger(scope?)` from `src/logger.ts`. No `console.log/error/warn` in `src/`.
+- **Preserve caught errors.** `throw new Error('context', { cause: err })` when rethrowing.
+- **No empty catch blocks.** No `_` underscore prefixes except for genuinely unused params.
+- **No TODO comments.** If it is a real issue, file it or fix it.
+- **No defensive coding** for cases that cannot happen. Trust internal invariants; validate at system boundaries.
+- **Tests validate real behavior**, not wiring. A test that asserts "function X was called" without verifying the result is worse than no test.
+- **Root cause only in commit messages.** Conventional-commits style, scoped stage tags where they apply.
+
+Prettier: semi, single quotes, trailing-comma all, 100 cols, 2 spaces, LF, `arrowParens: 'always'`. EditorConfig: 2-space indent, LF, UTF-8, trim trailing whitespace, final newline (markdown exempt).
+
+## Falsification Battery Development
+
+The five-layer battery lives under `src/verification/`. Each layer has an entry point, an input type, and a result type exported from `src/verification/index.ts`.
+
+### Adding a new advisory rule
+
+Layer 3 (cheat-detector) is the rule extension point. To add a rule:
+
+1. Add the heuristic in `src/verification/cheat-detector.ts` as a `detectXxx(files, ...)` helper that returns `CheatFinding[]`. Keep it under 30 lines.
+2. Wire it into `runCheatDetector` in the same file alongside the existing `detect*` calls.
+3. Add a Semgrep rule pack file under `config/semgrep-rules/` with the matching `id` (`swarm-agent-<rule-name>`).
+4. Add a unit test under `test/verification/cheat-detector.test.ts` that asserts the heuristic fires on a hand-crafted minimal diff and does not fire on a clean control diff.
+5. Add a synthetic fixture under `docs/p1-eval-fixtures/cheat-detector/` and an entry in the eval input JSON. The fixture proves the rule fires on real diff text, not just on the unit test's hand-crafted strings.
+
+Do not add new layers to the battery. The five-layer structure is fixed for the 7.x line.
+
+### Extending the composite scoring
+
+The composite is computed by `computeCompositeScore` in `src/verification/composite-score.ts` from three layer scores (cheat detector, property gate, attestation) and an advisory-gate penalty. Defaults live in `DEFAULT_COMPOSITE_CONFIG`; `.swarm/gates.yaml` overrides them per project.
+
+To change the default weighting, edit `DEFAULT_COMPOSITE_CONFIG` and the corresponding test in `test/verification/composite-score.test.ts`. Do not change weights without an explicit reason in the commit message; downstream operators tune per-project via `.swarm/gates.yaml`.
+
+To penalise a specific advisory gate ID more than the default, project operators set `gateWeights.<gateId>` in `.swarm/gates.yaml`. The orchestrator does not need code changes for new gate-ID-specific weights.
+
+### Eval scripts
+
+Eval harnesses are under `scripts/eval/`:
+
+- `synthesizer-eval.ts` — Layer 1 false-positive and false-negative rates against a labelled instance set.
+- `cheat-detector-eval.ts` — Layer 3 false-positive rate on gold patches and true-positive rate on synthetic cheats.
+- `property-gate-eval.ts` — Layer 4 signal-to-noise ratio of counterexamples.
+
+Halt thresholds and current results: see [docs/p1-eval-results.md](docs/p1-eval-results.md). Inputs and fixtures: `docs/p1-eval-fixtures/`. The cheat-detector eval is the most tractable to run locally; the other two need the SWE-bench Docker harness for dep-installed checkouts. Run the eval inside that harness as part of the P4 sweep.
+
+```bash
+npx tsx scripts/eval/cheat-detector-eval.ts \
+  --patches docs/p1-eval-fixtures/eval-output/cheat-detector-input.json \
+  --out /tmp/cheat-detector-results.json
+```
+
+Any change to a gate's heuristic must include a re-run of the corresponding eval and an updated entry in `docs/p1-eval-results.md`.
+
+## Adapters
+
+The three current adapters (`copilot-adapter.ts`, `claude-code-adapter.ts`, `codex-adapter.ts`) are the supported set for v7. Do not add a new agent adapter as part of v7 work. Adapter capability matrix lives in [docs/adapters.md](docs/adapters.md). All three default to cold-start; persistent-interactive mode is experimental and requires `SWARM_ENABLE_PERSISTENT_INTERACTIVE=1`.
+
+## Attestation Signing
+
+Cosign keyless signing is the supported path: Fulcio issues short-lived certificates via OIDC, no long-lived keys are stored anywhere. The signing helper is in `src/verification/cosign-attestation.ts`; the unsigned fallback (`unsignedTestSigner`) is for tests only.
+
+Do not commit cosign keypairs to the repository. `.gitignore` blocks `*.pem`, `*.key`, `*.p12`, `*.pfx`. Service-account JSON for any adjacent infra must use Workload Identity Federation; long-lived service-account keys are not allowed.
 
 ## Sub-Project Tests
 
-Sub-project tests run independently inside their directories:
+Sub-project test commands run independently inside their directories:
 
 ```bash
 cd calculations-api && npm install && npm test
@@ -22,22 +92,14 @@ cd tictactoe && npm test
 pytest app/tests/ -v
 ```
 
-Sub-projects that use only Node.js built-ins (`calculator/`, `logtail/`, `tictactoe/`) need no install step. Others require `npm install` first.
+`calculator/`, `logtail/`, `tictactoe/` use only Node built-ins, no install. `app/`, `calculator/`, `calculations-api/`, `logtail/`, `notes-api/`, `tictactoe/`, `web/` are generated demo scaffolds, gitignored as top-level paths, regenerated by the orchestrator. Do not edit them by hand expecting changes to stick.
 
-## Troubleshooting CI self-gates
+## Troubleshooting CI Self-Gates
 
-The `build-and-test (22)` CI job runs a self-gate step (`node dist/src/cli.js gates .`) that `build-and-test (20)` skips (see `.github/workflows/ci.yml`, `if: matrix.node-version == 22`). If Node-20 passes and Node-22 fails, the failure is almost always a self-gate issue, not a Node-version incompatibility. Pull the failing step's log before debugging Node runtime differences.
+The Node-22 CI matrix runs the project's own quality-gate self-check (`node dist/src/cli.js gates .`); the Node-20 matrix skips it. If Node-20 passes and Node-22 fails, look at the self-gate output before suspecting Node-version drift.
 
 Two specific gate failures to watch for:
 
-**`runtime-checks`: `'require' is not defined  no-undef`**
+**`runtime-checks`: `'require' is not defined  no-undef`** — the runtime-checks gate runs ESLint on agent-changed files. The flat config (`eslint.config.mjs`) sets language options per file glob; the `files: ['**/*.js', '**/*.cjs']` block sets `sourceType: 'commonjs'` and declares Node globals. New JS or CJS files outside that pattern need to be added there or excluded via the top-level `ignores` array.
 
-The `runtime-checks` gate runs `npx eslint <changed-files>` on agent-changed files. The project's flat eslint config (`eslint.config.mjs`) sets language options per file glob. If you add a new plain-JS file (`*.js` / `*.cjs`) outside `src/`/`test/`, the gate will lint it and fail unless the file is covered by a block that enables Node globals.
-
-The fix lives in `eslint.config.mjs`: the `files: ['**/*.js', '**/*.cjs']` block sets `sourceType: 'commonjs'` and declares Node globals (`require`, `module`, `process`, etc.). Any new JS file under a tracked path will be covered automatically. If you need to opt a path out of linting entirely (fetch caches, generated scaffolds), add a glob to the top-level `ignores` array.
-
-**`test-coverage`: `no test coverage for <file>`**
-
-The `test-coverage` gate treats `*.js`/`*.ts`/`*.jsx`/`*.tsx` files as product code unless they match a known tooling-dir regex in `src/quality-gates/gates/test-coverage.ts`. The regex currently excludes `server|config|scripts|examples?|deploy|benchmarks`. If you add tooling under a new top-level path (e.g. a new `tools/` directory), the gate will flag it unless you extend the regex.
-
-Dynamic `require(variable)` imports are invisible to the gate's coverage-tracing regex (`(?:from\s+['"]|require\s*\(\s*['"])([^'"]+)['"]`), so a test that does `require(ENGINE_PATH)` won't register as covering `ENGINE_PATH`. Either switch to a static relative path (`require('../../../benchmarks/.../engine')`) or move the file under one of the excluded tooling dirs.
+**`test-coverage`: `no test coverage for <file>`** — the test-coverage gate treats `*.js`/`*.ts`/`*.jsx`/`*.tsx` as product code unless they match the tooling-dir regex in `src/quality-gates/gates/test-coverage.ts` (currently `server|config|scripts|examples?|deploy|benchmarks`). Dynamic `require(variable)` imports are invisible to its coverage tracer; switch to a static path or move the file under one of the excluded tooling dirs.
