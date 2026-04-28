@@ -11,32 +11,36 @@ the first run against real data.
 - Harness commits referenced: 014eb8f (eval scaffolding), this commit (eval
   inputs/outputs and cheat-detector defect fix).
 
-## B.1 — Layer 1 synthesizer eval — HALTED
+## B.1 — Layer 1 synthesizer eval — WIRED, RUN PENDING
 
-**Status:** HALTED — cannot produce evidence in this session.
+**Status:** WIRED — runs in-loop with the SWE-bench harness once the
+harness is invoked from a bare shell.
 
-**Blocker:** The synthesizer eval requires, per instance: (a) a checkout of
-the SWE-bench repo at `base_commit`, (b) a working language test runner with
-all dependencies installed, (c) a successful Claude Code CLI synthesis call,
-(d) a worktree with the gold patch applied and the synthesized test executed
-inside it. Steps (a) and (b) for SWE-bench instances are exactly what the
-SWE-bench Docker harness exists to provide; the project's own
-`benchmarks/swe-bench/setup.md` builds a Docker image because direct
-host-side `pip install` for repos like django/django, sympy/sympy, and
-matplotlib/matplotlib at historical commits is unreliable.
+**Wiring (this branch):** `scripts/eval/swebench-instance-evaluator.ts`
+exports `evaluateInstanceSynthesizer`. The Python harness
+(`benchmarks/swe-bench/evaluation-scripts/run_swebench.py`) calls it via
+`scripts/eval/swebench-eval-cli.ts` per instance, after checkout but
+before the agent runs. `materialize_gold_branch` commits the SWE-bench
+gold patch on a side branch named `swarm-gold-eval` so the synth eval
+can run the synthesized test against gold-applied state via
+`git worktree add`. Records land at
+`benchmarks/swe-bench/results/synthesizer-eval-<run-id>.jsonl`, one
+line per instance, fields `{instanceId, status, attempts, basePass,
+goldPass, fp, fn, testFilePath, testCommand, testSource,
+wallClockMs, error?}`.
 
-Running B.1 against the seed=42 stratified 15-instance subset would need:
+**Earlier halt context (historical):** The original halt in this doc
+was that a synth eval outside the SWE-bench harness would need to
+reproduce the harness's per-instance Python venv plus historical
+dependency pinning (RC7 setuptools_scm, RC8 seaborn, RC9 Django
+settings, RC10 flask-werkzeug). Wiring the eval into the harness flow
+sidesteps that — the harness already does the dep-install work for
+its own gold tests, so the synth eval reuses that environment.
 
-- 10+ Python repos cloned at specific historical commits (~1.5 GB).
-- A working Python venv per repo with pinned historical dependencies.
-- 15 Claude Code synthesis subprocess invocations (live API spend).
-- Wall-clock on the order of several hours, with cascading failure modes
-  on any single dep-install failure.
-
-These are out of scope for this session. The eval scaffolding itself
-(input shape, harness wiring, result structure) was reviewed line-by-line
-and is correct; it just needs the SWE-bench harness environment to drive
-real synthesis calls.
+**Halt threshold (FP > 15% or FN > 10%):** not yet evaluated. Will be
+checked at full N=50 in the P4 sweep. The 5-instance smoke sweep is a
+directional check at sub-statistical N; halt thresholds at full N are
+authoritative.
 
 **Halt threshold (FP > 15% or FN > 10%):** not evaluated.
 
@@ -46,7 +50,7 @@ infrastructure, since that environment already has dep-installed checkouts
 in scope. Add a synth-only mode that reuses the same instance JSON and
 produces a per-instance synth report.
 
-**Layer 1 release-readiness:** UNKNOWN — eval not yet executed.
+**Layer 1 release-readiness:** WIRED, awaiting first sweep run.
 
 ## B.2 — Layer 3 cheat detector eval — PASSED (post-fix)
 
@@ -137,67 +141,64 @@ suite is 1336 passing / 9 pending, unchanged from baseline.
 coverage gap to track separately, not a release blocker — the rule
 catches the strict shape it was designed for.
 
-## B.3 — Layer 4 property gate eval — HALTED
+## B.3 — Layer 4 property gate eval — WIRED, RUN PENDING
 
-**Status:** HALTED — cannot produce evidence in this session.
+**Status:** WIRED — runs in-loop with the SWE-bench harness once the
+harness is invoked from a bare shell.
 
-**Blocker:** The property gate generates per-target test harness files
-(JS/TS via fast-check, Python via Hypothesis) and executes them inside
-the target repo with `npx tsx` or `python`. To exercise this against
-SWE-bench Verified gold patches the runner needs:
+**Wiring (this branch):** `scripts/eval/swebench-instance-evaluator.ts`
+exports `evaluateInstancePropertyGate`. The harness calls it after
+gold tests run via `run_property_eval_hook`. The eval applies the gold
+patch in a fresh worktree internally (so the harness's HEAD state is
+preserved), discovers modified functions from the gold diff, and runs
+the property gate against them. Records land at
+`benchmarks/swe-bench/results/property-gate-eval-<run-id>.jsonl`, one
+line per instance, fields `{instanceId, status, modifiedFunctions[],
+counterexamples[], wallClockMs, error?}`. Counterexample classification
+(real bug vs. false alarm) is deferred to manual review on the
+collected JSONL.
 
-- A worktree at `base_commit` with the gold patch applied.
-- The repo's full historical Python dependency set installed so that
-  `from <module_dot_path> import <function>` resolves.
-- A consistent module-path layout — the harness writes
-  `from <pythonModuleName> import <functionName>` based on the relative
-  file path. For SWE-bench packages where target functions live deep
-  inside the package (e.g. `django/db/models/fields/__init__.py`,
-  `sympy/core/expr.py`), the `from`-import line resolves only when the
-  package root is on `sys.path` via an editable install or equivalent.
+**Earlier halt context (historical):** The standalone property-gate
+eval halted because running the gate outside the SWE-bench harness
+needed a host-side editable install of each repo (`pip install -e .`)
+so `from <module> import <function>` would resolve. Wiring into the
+harness flow means the per-instance Docker image / host venv that the
+harness already builds is reused.
 
-The same dep-install issue that blocks B.1 blocks B.3, plus the
-sys.path/module-resolution issue specific to deep SWE-bench packages.
+**Type-coverage caveat:** the seed=42 50-instance manifest is entirely
+Python (django, sympy, matplotlib, astropy, scikit-learn, pytest,
+sphinx, pylint, requests, xarray). The property gate's TS / JS code
+paths get zero exercise from this sample. A separate type-coverage
+pass on a TS sample is tracked as a follow-up after the 7.0.0 tag.
 
-The 50-instance manifest is also entirely Python — the property gate's
-TypeScript and JS code paths get zero coverage from this sample. Per
-the implementation guide ("Skip patches that target untyped JavaScript;
-that case is documented as advisory-only with reduced coverage"), the
-remaining surface for B.3 is type-hinted Python, and within SWE-bench
-that overlap is limited.
-
-**Halt threshold (SNR < 2:1):** not evaluated.
-
-**Recommendation:** Run B.3 inside the SWE-bench Docker harness for the
-same reason as B.1. Once dep-installed checkouts are available the
-property gate can be invoked per modified function. A second eval pass
-should also include a TS-typed sample, e.g. drawn from the orchestrator's
-own commit history or a small TS open-source project, to exercise the
-TypeScript and type-directed code paths.
-
-**Layer 4 release-readiness:** UNKNOWN — eval not yet executed.
+**Halt threshold (SNR < 2:1):** not yet evaluated. Will be checked at
+full N=50 in the P4 sweep.
 
 ## Overall verdict
 
 | Layer | Eval | Status | Release-ready? |
 |---|---|---|---|
-| 1 — Synthesizer | B.1 | HALTED — env blocker | UNKNOWN |
+| 1 — Synthesizer | B.1 | WIRED, run pending | DATA PENDING |
 | 3 — Cheat detector | B.2 | PASSED post-fix | YES |
-| 4 — Property gate | B.3 | HALTED — env blocker | UNKNOWN |
+| 4 — Property gate | B.3 | WIRED, run pending | DATA PENDING |
 
 The cheat detector layer is release-ready: zero false positives on a
 20-patch stratified SWE-bench Verified gold sample after the
 `complexity-mismatch` root-cause fix. The known coverage gap on
 return-fallback exception swallowing is tracked but not a blocker.
 
-The synthesizer and property gate evals could not be run in this session
-because the SWE-bench Docker harness was out of scope for this work
-(P4 territory). Layer 1 and layer 4 release-readiness is therefore
-**unknown**, not "passed" — the gates exist and are wired in, but their
-behaviour against real data has not been measured. The cleanest path
-forward is to bolt B.1 and B.3 onto P4's harness so they reuse the
-already-instrumented checkouts.
+The synthesizer and property-gate evals are wired into the SWE-bench
+harness flow: every harness run now writes per-instance JSONL records
+to `benchmarks/swe-bench/results/{synthesizer,property-gate}-eval-<run-id>.jsonl`
+without any extra invocation. Their first real-data run lands when the
+harness next runs against a bare host. The 5-instance smoke sweep was
+not run inside this Claude Code session because the harness's
+`claude --dangerously-skip-permissions` agent flag is denied from
+inside a Claude Code session (it would create an unsandboxed sub-agent
+loop) and a 15-run sweep also exceeds the session's wall-clock and
+API-spend budget.
 
-For v7.0.0 release-readiness this means: layer 3 is verified;
-layers 1 and 4 ship with measured-quality unknown until the P4 sweep
-also runs B.1 and B.3.
+For v7.0.0 release-readiness this means: layer 3 is verified; layers
+1 and 4 ship with eval scaffolding wired in but with measured-quality
+data pending the P4 sweep. The 7.0.0 tag is gated on at least one
+smoke-pass sweep with the new wiring active.
