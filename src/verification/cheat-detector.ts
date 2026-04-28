@@ -88,7 +88,10 @@ function detectTestModification(
 }
 
 function detectComplexityMismatch(files: ParsedDiffFile[], goalText: string): CheatFinding[] {
-  const multiStepSignals = (goalText.match(/\b(?:and|with|including|plus|also|all|multiple)\b|[,;]/gi) ?? []).length;
+  // Only scan the goal title (first non-empty line). Long-form issue prose
+  // contains many commas and conjunctions that do not represent goal steps.
+  const title = goalText.split(/\r?\n/).find(line => line.trim() !== '') ?? '';
+  const multiStepSignals = (title.match(/\b(?:and|with|including|plus|also|all|multiple)\b|[,;]/gi) ?? []).length;
   if (multiStepSignals < 3 || addedLineCount(files) >= 5) return [];
   return [{
     rule: 'complexity-mismatch',

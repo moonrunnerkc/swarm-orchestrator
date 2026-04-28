@@ -1,0 +1,13 @@
+diff --git a/src/loader.js b/src/loader.js
+--- a/src/loader.js
++++ b/src/loader.js
+@@ -1,5 +1,9 @@
+ function loadConfig(path) {
+-  return JSON.parse(fs.readFileSync(path, 'utf8'));
++  try {
++    return JSON.parse(fs.readFileSync(path, 'utf8'));
++  } catch (e) {
++    return {};
++  }
+ }
+ module.exports = { loadConfig };
