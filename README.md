@@ -1,84 +1,52 @@
 <div align="center">
 
-<br>
-
-<p>
-  <img src="docs/media/wasp.svg" alt="" width="36" height="36">
-  <img src="docs/media/wasp.svg" alt="" width="52" height="52">
-  <img src="docs/media/wasp.svg" alt="Swarm Orchestrator" width="72" height="72">
-  <img src="docs/media/wasp.svg" alt="" width="52" height="52">
-  <img src="docs/media/wasp.svg" alt="" width="36" height="36">
-</p>
+<img src="docs/media/wasp.svg" alt="Swarm Orchestrator" width="72" height="72">
 
 # Swarm Orchestrator
 
-**CI/CD for AI-generated code. Run Copilot, Claude Code, or Codex in parallel; verify every claim against evidence; gate merges on 8 automated quality checks.**
-
-_Not an autonomous system builder: an accountability layer around agents you already trust enough to run, but not enough to merge blind. Each step runs on its own isolated branch. Each claim (tests pass, build clean, commit made) is cross-referenced against the transcript and the actual filesystem. Failures are auto-classified, repaired with targeted strategies, and re-verified. Nothing reaches main without passing both the verification engine and the quality gate pipeline. The metric that matters is **cost per rubric point**, not wall-clock time._
-
-<br>
+**A composable falsification and attestation layer for AI coding agents.**
 
 [![License: ISC](https://img.shields.io/badge/license-ISC-blue.svg)](LICENSE)
-&nbsp;&nbsp;
+&nbsp;
 [![CI](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml/badge.svg)](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml)
-&nbsp;&nbsp;
-![Tests: 1497 passing](https://img.shields.io/badge/tests-1497%20passing-brightgreen.svg)
-&nbsp;&nbsp;
+&nbsp;
+![Tests: 1336 passing](https://img.shields.io/badge/tests-1336%20passing-brightgreen.svg)
+&nbsp;
 ![Node.js 20+](https://img.shields.io/badge/node-20%2B-green.svg)
-&nbsp;&nbsp;
-![TypeScript 5.x](https://img.shields.io/badge/TypeScript-5.x-blue.svg)
-
-<br>
-
-[Quick Start](#quick-start) · [What Is This](#what-is-this) · [Benchmarking](#benchmarking) · [Usage](#usage) · [GitHub Action](#github-action) · [Recipes](#recipes) · [Architecture](#architecture) · [Contributing](#contributing)
-
-<br>
-
-<img src="docs/media/swarm.png" alt="Swarm Orchestrator parallel agent execution across waves" width="700">
-
-<br>
+&nbsp;
+![Version: 7.0.0-alpha.0](https://img.shields.io/badge/version-7.0.0--alpha.0-orange.svg)
 
 </div>
 
 ---
 
-<br>
+## What This Does
 
-## Quick Start
+Swarm Orchestrator wraps GitHub Copilot CLI, Claude Code, or Codex and runs a five-layer falsification battery against every patch the agent produces. Layers 1 and 2 are hard gates: a synthesized regression test must transition fail to pass and existing tests plus mutation score must hold. Layers 3, 4, and 5 (cheat-detector, property gate, signed attestation) feed an advisory composite score that flags patches for human review without blocking merge.
 
-### See it run end-to-end
+## Install
 
 ```bash
 npm install -g swarm-orchestrator
-# then set up any one of the agent CLIs below, and:
-swarm demo demo-fast    # two parallel agents writing throwaway utilities, ~1 min
-```
-
-The demo runs the full orchestration pipeline end-to-end against two trivial tasks (write a `greet()` function, write a `double()` function). You see parallel waves, verification reports, and the auditable trail that a real run produces. It uses real agents, so one of the CLIs below must be installed and authenticated; pick whichever you already have.
-
-### Run it against your own code
-
-```bash
-# Default: GitHub Copilot CLI
-swarm bootstrap ./your-repo "Add JWT auth and role-based access control"
-
-# Claude Code
-swarm bootstrap ./your-repo "Add JWT auth" --tool claude-code
-
-# Codex
-swarm bootstrap ./your-repo "Add JWT auth" --tool codex
 ```
 
 Requires Node.js 20+, Git, and at least one supported agent CLI:
 
 | Agent | Install | Auth |
-|-------|---------|------|
-| GitHub Copilot CLI | `npm install -g @github/copilot` | Launch `copilot` and run `/login` (requires Node.js 22+) |
+|---|---|---|
+| GitHub Copilot CLI | `npm install -g @github/copilot` | `copilot` then `/login` (Node.js 22+) |
 | Claude Code | `npm install -g @anthropic-ai/claude-code` | `ANTHROPIC_API_KEY` |
 | Codex | `npm install -g @openai/codex` | `OPENAI_API_KEY` |
 
-<details>
-<summary><strong>Build from source</strong></summary>
+### Quick start
+
+```bash
+swarm bootstrap ./your-repo "Add JWT auth and role-based access control"
+swarm bootstrap ./your-repo "Add JWT auth" --tool claude-code
+swarm bootstrap ./your-repo "Add JWT auth" --tool codex
+```
+
+Build from source:
 
 ```bash
 git clone https://github.com/moonrunnerkc/swarm-orchestrator.git
@@ -86,586 +54,88 @@ cd swarm-orchestrator
 npm install && npm run build && npm link
 ```
 
-</details>
+## The Falsification Battery
 
-<br>
+Every agent-authored patch passes through five layers in order. The composite score is computed once at the end across layers 3 through 5; the threshold gate (default 0.7) decides whether the patch needs human review.
 
----
+**Layer 1 — Intent verification (hard gate).** Before the worker step runs, the reviewer role generates a regression test that fails against the goal's pre-state. After the worker commits, the test must transition fail to pass. If the synthesizer reports `AMBIGUOUS_GOAL` or the test still fails, the patch is rejected.
 
-<br>
+**Layer 2 — Regression and mutation (hard gate).** The full existing test suite runs against the patched code and must pass. Modified source files also run mutation testing (Stryker for JS/TS, mutmut for Python). The mutation score must clear the configured `failBelow` threshold (default 0.6).
 
-## What Is This
+**Layer 3 — Cheat detector (advisory).** Heuristic rules plus an optional Semgrep rule pack scan the diff for hardcoded answers, swallowed exceptions, unauthorised test-file edits, complexity mismatch, and mock mutation. Findings score down the patch but do not block merge on their own.
 
-AI coding agents produce code fast. The problem is knowing whether that code actually works before it reaches your codebase. This orchestrator exists to answer that question with evidence, not assumptions.
+**Layer 4 — Property gate (advisory).** For each modified function, the gate generates property-based tests (fast-check for JS/TS, Hypothesis for Python) and runs them for 60 seconds per function. Counterexamples are advisory; untyped JavaScript runs in reduced-coverage advisory mode by design.
 
-Every agent runs on its own isolated git branch. Every claim an agent makes is cross-referenced against its Copilot session transcript for concrete evidence: commit SHAs, test output, build results, file changes. Steps that can't prove their work don't merge. Steps that fail get classified, repaired with targeted strategies, and re-verified. After merge, eight automated quality gates check the generated code for scaffold leftovers, duplicate blocks, hardcoded config, README claim accuracy, test isolation, test coverage, accessibility, and runtime correctness. Nothing reaches main without passing through both the verification engine and the quality gate pipeline.
+**Layer 5 — Provenance (advisory).** A signed in-toto SLSA v1.0 attestation envelope is produced for every patch, signed via cosign keyless (Fulcio + OIDC), and attached as a git note. Verification later replays the envelope and confirms identity. Unsigned envelopes drop the attestation score; failed verification flags the patch.
 
-The orchestrator wraps `copilot -p` (or `/fleet` for native parallel subagent dispatch) as an independent subprocess per step. It runs outside of Copilot's own execution model. You define a goal, it builds a dependency graph, launches steps as dependencies resolve, and manages the full lifecycle: branch creation, agent execution, transcript capture, evidence verification, failure repair, cost tracking, and merge. The entire execution produces an auditable trail of transcripts, verification reports, and cost attribution that you can inspect after every run.
+The advisory composite is `(0.4 × cheatDetector + 0.4 × propertyGate + 0.2 × attestation) − advisoryGatePenalty`. Below threshold, the patch goes to human review; the patch still merges, the operator decides whether to revert.
 
-Before execution begins, the cost estimator predicts premium request consumption based on the plan, model multipliers, and historical failure rates from the knowledge base. You can preview the estimate, set a hard budget, or run without limits.
+## Agent Roles
 
-_Originally a submission for the [GitHub Copilot CLI Challenge](https://github.com) in early 2026._
+Two roles, no personas:
 
-<br>
+- **Worker** — full file access, writes implementation code, runs tests, commits incrementally. Boundaries forbid touching pre-existing test files unless the goal authorises it.
+- **Reviewer** — read-only. Generates synthesised regression tests pre-worker (Layer 1) and reviews diffs post-worker (security, accessibility, or general policy). Cannot write implementation.
 
-## What's New in v6.0.0
+Domain specialisation is a reviewer policy, not a separate agent. Backend, frontend, security, and accessibility reviews are policies on the reviewer role; they do not require persona files.
 
-Three themes on top of v5.0.0's foundation:
+## Attestation and Audit
 
-1. **Statistical benchmarking rigor**: bootstrap CI harness, demo-fast and api-quick benchmarks fully populated, 30/30 ABC-compliance audit closed, constraint-binding pilot harness, SWE-bench Verified harness ready-to-run.
-2. **Planner fidelity**: three structural fixes to goal classification and template selection (preamble hygiene, bug-fix goal type, contract-change goal type), all driven by observed benchmark failures.
-3. **Verifier and capture correctness**: target-mode gate scoping, union-based capture, commit-time reserved-path excludes, capture-time diff excludes.
+Every patch produces a signed in-toto v1.0 envelope:
 
-Full detail in the [v6.0.0 release notes](docs/releases/RELEASE-v6.0.0.md).
-
-<br>
-
-## Features
-
-### Verification & Quality
-
-- **Evidence-based verification**: every agent transcript is parsed for commit SHAs, test output, build markers, and file changes. Steps that can't prove their work don't merge.
-- **Eight quality gates**: scaffold leftovers, duplicate code, hardcoded config, README claim drift, test isolation, test coverage, accessibility, runtime correctness. SARIF output for GitHub code scanning.
-- **Failure-classified repair**: failures are categorized (build, test, missing-artifact, dependency, timeout) and retried with targeted strategies, up to 3 attempts with accumulating context.
-
-### Cost Governance
-
-- **Pre-execution cost estimation**: predicts premium request consumption factoring in model multipliers (1× for claude-sonnet-4/gpt-4o, 5× for o4-mini, 20× for o3), retry probability from historical failure rates, and overage cost.
-- **Per-step cost attribution**: records estimated vs actual premium requests, retry counts, and prompt tokens per step, saved to `cost-attribution.json`.
-- **Budget enforcement**: hard cap via `--max-premium-requests`, preview-only mode via `--cost-estimate-only`.
-
-### Execution
-
-- **Greedy scheduling**: steps launch the moment dependencies resolve, not when a wave finishes. Adaptive concurrency with octopus merge for multi-branch completion.
-- **Branch isolation**: each step runs in its own git worktree and branch. `--strict-isolation` restricts cross-step context to transcript-verified entries only.
-- **Multi-agent support**: Copilot CLI, Claude Code, Codex, and Claude Code Teams as backends. Eight built-in agent profiles; custom agents via YAML.
-- **Persistent sessions**: resume from last completed step, full audit trail, Markdown and JSON report generation.
-
-### Integrations
-
-- **Fleet wrapper** (`--wrap-fleet`): Copilot CLI native parallel subagent dispatch with version detection and fallback.
-- **Lean mode**: Delta Context Engine scans the knowledge base for similar past tasks, appending reference blocks to prompts.
-- **Multi-repo orchestration**: per-repo wave loops, cross-repo verification, grouped merge. _(Experimental; see [limitations](#multi-repo).)_
-
-<br>
-
----
-
-<br>
-
-## Benchmarking
-
-Most agent-framework benchmarks report win rates on completeness: "we finished more tasks than them." That's the wrong metric. An approach that burns 10× the premium requests to get 5% more completeness isn't winning; it's just spending. The metric that matters is **cost per rubric point**: how many premium requests does each approach spend per attribute it actually delivers?
-
-Three producers are compared head-to-head on the same tasks using a 22-attribute binary completeness rubric. No subjective scores, no weighted composites.
-
-| Component | Description |
-|-----------|-------------|
-| [benchmarks/README.md](benchmarks/README.md) | Central hub: methodology, quick start, all evidence links |
-| [benchmarks/harness/](benchmarks/harness/) | Three-producer harness, 22-attribute rubric, scoring scripts, raw data |
-| [benchmarks/ladder/](benchmarks/ladder/) | Iterative ladder baseline with [fairness policy](benchmarks/ladder/PROMPT_FAIRNESS.md) |
-| [benchmarks/ABC-compliance.md](benchmarks/ABC-compliance.md) | Agentic Benchmark Checklist audit: 30/30 items addressed |
-| [benchmarks/swe-bench/](benchmarks/swe-bench/) | SWE-bench Lite _(secondary)_: reproducibility on public tasks |
-| [.github/workflows/continuous-benchmark.yml](.github/workflows/continuous-benchmark.yml) | CI workflow: nightly + release, tracked via Bencher |
-
-**Producers:** ORCHESTRATOR (full swarm), SINGLE_SHOT (1 request), LADDER (deterministic prompt sequence, ≤30 requests). Statistical comparison via paired Wilcoxon signed-rank with Bonferroni correction.
-
-**Metrics (automated only):** rubric completeness (22 binary attributes), premium request count (instrumented), cost per rubric point, wall-clock time, test-pass rate, coverage, security scans, repair-loop iterations. All reported as mean ± 95% CI.
-
-**Current state (v6.0.0, 2026-04-22):** Three concurrent benchmark tracks. The 22-attribute rubric harness remains available. The constraint-binding pilot (4 tasks, N=1) produced 0/4 pass with structured failure hypotheses that drove three plan-generator fixes this release cycle. The SWE-bench Verified harness is ready-to-run; container-path execution is pending v6.1 (see release notes). Honest null results across these tracks are the input to v6.1's work, not a failure mode. See [what this data shows](benchmarks/README.md#what-this-data-shows) for methodology.
-
-```bash
-# Run all three producers (8 tasks each)
-./benchmarks/harness/run_fresh.sh 8
-
-# Statistical comparison
-python3 benchmarks/harness/scoring/stat_test.py benchmarks/harness/raw_data/runs/
+```json
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "subject": [{ "name": "...", "digest": { "sha256": "..." } }],
+  "predicateType": "https://swarm-orchestrator.dev/falsification/v1",
+  "predicate": { "layers": [...], "compositeScore": ... }
+}
 ```
 
-<br>
+Signing uses cosign keyless (Fulcio identity issuance via OIDC). No long-lived keys. The envelope attaches to the commit as a git note under `refs/notes/swarm-attestation`.
 
----
-
-<br>
-
-## Usage
-
-### Working With Your Codebase
-
-The primary workflow is pointing the orchestrator at an existing repo. `bootstrap` analyzes the codebase (languages, dependencies, build scripts, tech debt), generates a dependency-aware plan scoped to what's already there, and executes it.
+Verify a commit's attestation:
 
 ```bash
-# Analyze a repo and generate a plan
-npm start bootstrap ./your-repo "Add comprehensive test coverage"
-
-# Multi-repo orchestration (experimental; see limitations below)
-npm start bootstrap ./frontend ./backend "Add shared auth layer"
-
-# Generate a plan without executing (review first)
-npm start plan "Refactor database layer to use Prisma"
-
-# Execute a reviewed plan
-npm start swarm plan.json
+swarm attest verify <commit-sha>
 ```
 
-> <a id="multi-repo"></a> **Multi-repo is experimental.** Relationship detection does not yet enforce cross-repo execution ordering. Merges are not atomic across repositories. PR automation is per-repo; there is no coordinated multi-repo PR set.
+The verify command replays the envelope, re-checks each layer's recorded score, and confirms the cosign signature against the issuing identity. Mismatch or absence is reported per-layer.
 
-### Single Tasks
+## Configuration
 
-For quick, focused work that doesn't need the full orchestration pipeline:
-
-```bash
-npm start quick "Fix the race condition in src/worker.ts"
-```
-
-### Commands
-
-| Command | Description |
-|---------|-------------|
-| `npm start bootstrap ./repo "goal"` | Analyze repo(s) and generate a plan |
-| `npm start run --goal "goal"` | Generate plan and execute in one step |
-| `npm start plan "goal"` | Generate an execution plan from a goal (`--output json`) |
-| `npm start swarm plan.json` | Execute a plan with parallel agents |
-| `npm start quick "task"` | Single-agent quick task |
-| `npm start gates [path]` | Run quality gates on a project (`--output json`) |
-| `npm start demo <name>` | Run a demo scenario |
-
-<details>
-<summary><strong>All commands</strong></summary>
-
-<br>
-
-| Command | Description |
-|---------|-------------|
-| `npm start use <recipe>` | Run a built-in recipe against current project |
-| `npm start recipes` | List available recipes |
-| `npm start recipe-info <name>` | Show recipe details and parameters |
-| `npm start report <run-dir>` | Generate structured run report from artifacts |
-| `npm start audit <session-id>` | Generate Markdown audit report |
-| `npm start metrics <session-id>` | Show metrics summary (`--output json` or `--json`) |
-| `npm start templates` | List available plan templates |
-| `npm start status <id>` | Check execution status (`--output json`) |
-| `npm start agents` | List configured agent profiles |
-
-</details>
-
-
-### Key Flags
-
-| Flag | Effect |
-|------|--------|
-| `--tool <name>` | Agent backend: `copilot` (default), `claude-code`, `codex`, `claude-code-teams` |
-| `--lean` | Enable Delta Context Engine (KB-backed prompt references) |
-| `--cost-estimate-only` | Print pre-execution cost estimate and exit without running |
-| `--max-premium-requests <n>` | Abort if estimated premium requests exceed budget |
-| `--verbose` | Enable debug-level logging (loaded config files, resolution paths, etc.) |
-| `--output json` | Print machine-readable JSON for supported commands |
-| `--resume <session-id>` | Resume a previously paused or failed session |
-
-<details>
-<summary><strong>All flags</strong></summary>
-
-<br>
-
-| Flag | Effect |
-|------|--------|
-| `--tool <name>` | Agent backend: `copilot` (default), `claude-code`, `codex`, `claude-code-teams` |
-| `--lean` | Enable Delta Context Engine (KB-backed prompt references) |
-| `--cost-estimate-only` | Print pre-execution cost estimate and exit without running |
-| `--max-premium-requests <n>` | Abort if estimated premium requests exceed budget |
-| `--verbose` | Enable debug-level logging (loaded config files, resolution paths, etc.) |
-| `--output json` | Print machine-readable JSON for supported commands |
-| `--resume <session-id>` | Resume a previously paused or failed session |
-| `--pm` | Enable PM Agent plan review before execution |
-| `--model <name>` | Override the Copilot model |
-| `--strict-isolation` | Force per-task branching; restrict context to transcript evidence |
-| `--skip-verify` | Skip transcript verification (not recommended) |
-| `--no-quality-gates` | Disable quality gate checks |
-| `--confirm-deploy` | Enable deployment steps with tag/health-check/rollback (opt-in) |
-| `--mcp` | Enable MCP integration |
-| `--quality-gates-config <path>` | Custom quality gates config file |
-| `--wrap-fleet` | Prefix step prompts with `/fleet` for native parallel subagent dispatch |
-| `--param key=value` | Set recipe parameters (with `use` command) |
-| `--team-size <n>` | Max concurrent teammates per wave with `claude-code-teams` (1-5) |
-| `--owasp-report` | Generate OWASP ASI compliance report after verification |
-| `--sarif <path>` | Write quality gate results as SARIF 2.1.0 JSON (use `-` for stdout) |
-| `--yes` / `-y` | Skip interactive confirmation prompts |
-| `--pr auto\|review` | PR behavior after execution |
-
-</details>
-
-<br>
-
-### Examples
-
-```bash
-npm start swarm plan.json --lean --strict-isolation --pm
-```
-
-Run with Claude Code and OWASP compliance report:
-
-```bash
-npm start swarm plan.json --tool claude-code --owasp-report
-```
-
-Run quality gates and produce SARIF for GitHub code scanning:
-
-```bash
-swarm gates ./your-repo --sarif results.sarif
-swarm gates ./your-repo --sarif -  # write to stdout
-swarm gates ./your-repo --sarif results.sarif --quality-gates-config custom.yaml
-swarm gates ./your-repo --output json
-```
-
-Run a recipe:
-
-```bash
-npm start use add-tests --tool codex --param framework=vitest --param coverage-target=90
-```
-
-Plan and execute in one step:
-
-```bash
-npm start run --goal "Build a REST API with JWT auth" --lean
-```
-
-Generate a plan:
-
-```bash
-npm start plan "Build a CLI tool"
-npm start plan "Build a CLI tool" --output json
-```
-
-Preview cost before running:
-
-```bash
-npm start swarm plan.json --cost-estimate-only
-```
-
-Run with /fleet and a budget cap:
-
-```bash
-npm start swarm plan.json --wrap-fleet --max-premium-requests 30
-```
-
-> **Note:** When using `npm start`, flags pass through automatically. If npm warns about an unknown flag, use the `--` separator. Not needed with the global `swarm` command.
-
-<br>
-
-### Cost and Premium Requests
-
-Every agent step consumes its own premium request, multiplied by the model's premium request multiplier (1x for claude-sonnet-4, gpt-4o, claude-opus-4; 5x for o4-mini; 20x for o3). A plan with 6 agents on a 1x model uses a minimum of 6 premium requests. When agents run in parallel within a wave, each one simultaneously consumes a request.
-
-The multiplier comes from up to 3 automatic retries per step (exponential backoff), the Repair Agent spawning up to 3 additional sessions on verification failure, and fallback re-execution if all repair attempts fail. In practice, most steps succeed on the first attempt.
-
-<details>
-<summary><strong>Pre-execution cost estimation and budgets</strong></summary>
-
-<br>
-
-Before running a plan, the cost estimator predicts premium request consumption:
-
-```bash
-swarm swarm plan.json --cost-estimate-only
-```
-
-This prints a breakdown showing per-step estimates, retry buffer based on historical failure rates from the knowledge base, model multiplier, and projected overage cost, then exits without executing.
-
-To set a hard budget that aborts execution if the estimate exceeds it:
-
-```bash
-swarm swarm plan.json --max-premium-requests 20
-```
-
-After execution, per-step cost attribution (estimated vs actual requests, retry counts, prompt tokens, fleet mode, duration) is saved to `cost-attribution.json` in the run directory.
-
-</details>
-
-To minimize usage: use `--cost-estimate-only` to preview costs before committing, review your plan with `--pm` before execution, and start with a single `quick` task to verify your setup.
-
-<br>
-
-### Configuration
-
-Agent behavior is defined in YAML config files under `config/`:
-
-| File | Purpose |
-|------|---------|
-| `default-agents.yaml` | Six built-in step-executing agents |
-| `repair-agent.yaml` | Repair Agent for failed-step retries |
-| `pm-agent.yaml` | PM Agent for plan validation |
-| `user-agents.yaml` | Your custom agents (template included) |
-
-Each profile specifies purpose, scope, boundaries, done-definitions, output contracts, and refusal rules. Add custom agents by editing `user-agents.yaml`:
+Per-project verification thresholds and weights live at `.swarm/gates.yaml`:
 
 ```yaml
-agents:
-  - name: MyAgent
-    purpose: "What this agent does"
-    scope:
-      - "Area of responsibility"
-    boundaries:
-      - "What it should not touch"
-    done_definition:
-      - "Completion criteria"
+verification:
+  mutation:
+    failBelow: 0.6
+    warnBelow: 0.8
+  composite:
+    threshold: 0.7
+    weights:
+      cheatDetector: 0.4
+      propertyGate: 0.4
+      attestation: 0.2
+    advisoryGatePenalty: 0.02
 ```
 
-Quality gate behavior is configured in `config/quality-gates.yaml`:
+Resolution order: built-in defaults, then `.swarm/gates.yaml`, then `--quality-gates-config <path>`. Each layer deep-merges; unknown keys error.
 
-```yaml
-enabled: true
-failOnIssues: true
-autoAddRefactorStepOnDuplicateBlocks: true
-autoAddReadmeTruthStepOnReadmeClaims: true
+Custom advisory rules belong under `.swarm/gates/index.js` exporting `registerGates({ registerGate })`. Built-in falsification layers cannot be overridden, only their thresholds.
 
-gates:
-  duplicateBlocks:
-    enabled: true
-    minLines: 12
-    maxOccurrences: 2
-```
+## Benchmarks
 
-#### Per-project gate configuration
+Primary metric: **falsification catch rate** — the percentage of patches the agent claimed succeeded that fail at least one battery layer. Measured against the `princeton-nlp/SWE-bench_Verified` test split, 50-instance stratified subset, seed=42 (manifest at `benchmarks/swe-bench/instances-50.json`).
 
-Place a `.swarm/gates.yaml` file in your repository root to override gate defaults for that project. The schema is identical to `config/quality-gates.yaml`. Only include the fields you want to change; everything else inherits from built-in defaults.
+| Benchmark | Sample | Catch rate | Notes |
+|---|---|---|---|
+| SWE-bench Verified (50, seed=42) | 50 instances | _pending P4 sweep_ | Layer 3 cheat-detector eval passed independently with 0% FP on a 20-patch gold sample (`docs/p1-eval-results.md`). |
+| SWE-bench Verified pass@1 | 50 instances | _pending P4 sweep_ | Secondary metric. |
+| Mean wall clock per instance | 50 instances | _pending P4 sweep_ | |
+| Mean premium requests per instance | 50 instances | _pending P4 sweep_ | |
 
-```yaml
-# .swarm/gates.yaml
-gates:
-  duplicateBlocks:
-    minLines: 20
-    maxOccurrences: 3
-  accessibility:
-    enabled: false
-```
-
-Resolution order: built-in defaults, then `.swarm/gates.yaml`, then `--quality-gates-config <path>`. Each layer deep-merges over the previous one. Unknown gate keys cause an error listing valid names.
-
-You can also register custom executable gates without patching the orchestrator. Add `.swarm/gates/index.js` or `.swarm/gates/index.cjs` in the target project and export a `registerGates({ registerGate })` function.
-
-```js
-module.exports.registerGates = ({ registerGate }) => {
-  registerGate({
-    key: 'customGate',
-    title: 'Custom Gate',
-    defaultConfig: { enabled: true, threshold: 2 },
-    async run() {
-      return { id: 'custom-gate', title: 'Custom Gate', status: 'pass', durationMs: 0, issues: [] };
-    }
-  });
-};
-```
-
-#### Config precedence
-
-- Agent config: project `config/default-agents.yaml` overrides install-level `config/default-agents.yaml`; custom `.github/agents/*.agent.md` overrides both.
-- Quality gates: built-in defaults, then `.swarm/gates.yaml`, then `--quality-gates-config`.
-- Environment files: current project `.env`, then orchestrator install `.env`, then `~/.env`.
-- Run with `--verbose` to log which config files and directories were resolved at startup.
-
-#### SARIF output
-
-The `--sarif <path>` flag on the `gates` command writes results as a SARIF 2.1.0 JSON file compatible with GitHub code scanning. See [GitHub Action](#github-action) for CI integration.
-
-<br>
-
----
-
-<br>
-
-## Recipes
-
-Reusable, parameterized plans for common tasks. Recipes modify existing projects (unlike templates, which create new ones).
-
-```bash
-npm start recipes                                        # list all
-npm start recipe-info add-tests                          # show details
-npm start use add-tests                                  # run with defaults
-npm start use add-auth --param strategy=session --tool claude-code
-```
-
-| Recipe | Steps | Description | Key Parameters |
-|--------|-------|-------------|----------------|
-| `add-tests` | 3 | Add unit tests for untested modules | `framework` (jest/vitest/mocha), `coverage-target` |
-| `add-auth` | 4 | Add authentication | `strategy` (jwt/session) |
-| `add-ci` | 3 | Add GitHub Actions CI pipeline | |
-| `migrate-to-ts` | 4 | Migrate JavaScript to TypeScript | `strict` (true/false) |
-| `add-api-docs` | 3 | Generate OpenAPI spec and docs | `format` (openapi/markdown) |
-| `security-audit` | 3 | Run security audit and fix findings | |
-| `refactor-modularize` | 4 | Break monolithic code into modules | |
-
-Create custom recipes by adding JSON files to `templates/recipes/`. See [docs/recipes.md](docs/recipes.md) for the schema and examples.
-
-<br>
-
----
-
-<br>
-
-## GitHub Action
-
-Run the orchestrator in CI with the reusable GitHub Action. Set `sarif: true` to run quality gates and upload results to GitHub code scanning.
-
-```yaml
-- uses: moonrunnerkc/swarm-orchestrator@main
-  with:
-    goal: "Add unit tests for all untested modules"
-    tool: claude-code
-    sarif: true
-```
-
-SARIF results are written as SARIF 2.1.0 JSON and uploaded via `github/codeql-action/upload-sarif@v3` for inline PR annotations.
-
-See [docs/github-action.md](docs/github-action.md) for full inputs/outputs reference, agent CLI setup, and workflow examples.
-
-<br>
-
----
-
-<br>
-
-## Architecture
-
-```
-Goal ──> Plan ──> Waves ──> Branches ──> Agents ──> Verify ──> Repair? ──> Merge
-```
-
-1. **Plan generation.** A goal becomes numbered steps, each assigned to a specialized agent with declared dependencies. Plans can be generated interactively, imported from a transcript, loaded from a template, or bootstrapped from repo analysis.
-2. **Greedy scheduling.** Steps launch the moment their dependencies are satisfied, not when an entire wave finishes. The context broker emits events on step completion; the scheduler picks up newly-ready steps immediately. Adaptive concurrency adjusts limits based on success rates and rate-limit signals. Completed branches merge in batches via octopus merge when possible (one merge commit instead of N).
-3. **Branch isolation.** Each step gets its own git worktree and branch (`swarm/<run-id>/step-N-agent`). With `--strict-isolation`, cross-step context is restricted to transcript-verified entries only.
-4. **Copilot execution.** The orchestrator invokes `copilot -p` as a subprocess for each step, injecting the agent prompt plus dependency context from completed steps. Transcripts are captured via `/share` export.
-5. **Verification.** The verifier parses each transcript for concrete evidence: commit SHAs, test runner output, build markers, file-change records. Agent claims are cross-referenced against this evidence. Missing required evidence fails the step.
-6. **Self-repair.** Failed steps are retried up to three times. The Repair Agent classifies each failure (build, test, missing-artifact, dependency, timeout) and applies a targeted strategy. Context accumulates across attempts.
-7. **Merge.** Verified branches merge to main in wave order. For multi-repo plans, each repo group is verified independently before cross-repo verification and final merge.
-
-<br>
-
-```
-                     ┌─────────────────────┐
-                     │     Goal / Plan      │
-                     └──────────┬───────────┘
-                                │
-                     ┌──────────▼───────────┐
-                     │   PM Agent Review    │  (optional --pm)
-                     └──────────┬───────────┘
-                                │
-                     ┌──────────▼───────────┐
-                     │  Multi-Repo Grouping │  (optional repo field)
-                     └──────────┬───────────┘
-                                │
-                     ┌──────────▼───────────┐
-                     │   Wave Scheduler     │  topological sort + lean KB scan
-                     └──────────┬───────────┘
-                                │
-              ┌─────────────────┼─────────────────┐
-              │                 │                  │
-     ┌────────▼──────┐  ┌──────▼───────┐  ┌──────▼───────┐
-     │  Agent on     │  │  Agent on    │  │  Agent on    │
-     │  branch step-1│  │  branch step-2│  │  branch step-3│
-     └────────┬──────┘  └──────┬───────┘  └──────┬───────┘
-              │                 │                  │
-     ┌────────▼──────┐  ┌──────▼───────┐  ┌──────▼───────┐
-     │   Verifier    │  │   Verifier   │  │   Verifier   │
-     └────────┬──────┘  └──────┬───────┘  └──────┬───────┘
-              │                 │                  │
-              │     ┌───────────▼──────────┐      │
-              └────>│   Repair Agent       │<─────┘  (up to 3 retries)
-                    └───────────┬──────────┘
-                                │
-                    ┌───────────▼──────────┐
-                    │   Merge to main      │
-                    └───────────┬──────────┘
-                                │
-                     ┌──────────▼───────────┐
-                     │   Quality Gates      │  (8 automated checks)
-                     └──────────┬───────────┘
-                                │
-                     ┌──────────▼───────────┐
-                     │   Meta Analyzer      │  health + pattern detection
-                     └──────────────────────┘
-```
-
-<br>
-
-<details>
-<summary><strong>Key modules</strong> (119 source files, 27,825 lines of TypeScript; <a href="ARCHITECTURE.md">full inventory</a>)</summary>
-
-<br>
-
-| Module | Lines | Responsibility |
-|--------|-------|----------------|
-| `swarm-orchestrator.ts` | 870 | Coordinator: owns shared state, delegates scheduling, step execution, replan, and final-gate remediation to `src/orchestrator/` submodules (v6.1.0 decomposition) |
-| `orchestrator/wave-scheduler-loop.ts` | 485 | Greedy per-wave dispatch loop, event-driven dependency resolution, adaptive concurrency |
-| `orchestrator/step-executor.ts` | 563 | Single-step execution pipeline: session launch, verification, repair, cost attribution |
-| `orchestrator/final-gates-remediation.ts` | 432 | Post-merge quality-gate pipeline and remediation-step synthesis |
-| `orchestrator/replan-runner.ts` | 369 | Replan execution, retry-branch bookkeeping, failed-step objective carry-forward |
-| `verifier-engine.ts` | 577 | Evidence-checking orchestration; delegates to `verifier/` submodules |
-| `share-parser.ts` | 581 | Transcript parsing: files, commands, tests, commits, claims, MCP evidence |
-| `repair-agent.ts` | 463 | Failure classification, targeted repair strategies, context accumulation |
-| `cost-estimator.ts` | 300 | Pre-execution cost prediction with model multipliers and KB calibration |
-| `knowledge-base.ts` | 340 | Cross-run pattern storage, cost history, similarity matching |
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the complete module reference across all 119 source files.
-
-</details>
-
-Output artifacts are written to `runs/<execution-id>/`. See [ARCHITECTURE.md: Output Artifacts](ARCHITECTURE.md#output-artifacts) for the full directory layout.
-
-<br>
-
----
-
-<br>
-
-## Demos
-
-Two built-in scenarios for verifying your setup or seeing the pipeline end-to-end.
-
-> **Cost note:** Demos run real agent sessions against real APIs. Each step consumes at least one premium request (or API call for Claude Code / Codex). Use `--cost-estimate-only` to preview costs before committing.
-
-```bash
-npm start demo list          # see all scenarios
-npm start demo-fast          # quickest: two parallel agents, ~1 min
-npm start demo api-quick     # REST API with tests and Dockerfile, ~5 min
-```
-
-| Scenario | Agents | Waves | What gets built | Time |
-|----------|--------|-------|-----------------|------|
-| `demo-fast` | 2 | 1 | Two independent utility modules (parallel proof) | ~1 min |
-| `api-quick` | 3 | 2 | REST API with health/CRUD endpoints, tests, and Dockerfile | ~5 min |
-
-`demo-fast` proves parallel execution with zero dependencies. `api-quick` shows wave-based scheduling: BackendMaster builds the API first, then TesterElite and DevOpsPro run in parallel on wave 2. Each step consumes at least one premium request; see [Cost and Premium Requests](#cost-and-premium-requests).
-
-<br>
-
----
-
-<br>
-
-## Common Issues
-
-- **`gh` CLI not found**: the PR manager requires [GitHub CLI](https://cli.github.com/). Install it and run `gh auth login` before using PR-related features.
-- **Agent subprocess hangs**: ensure the agent CLI (`copilot`, `claude-code`, or `codex`) is installed, authenticated, and responds to `--help`. The orchestrator invokes it as a child process.
-- **Docker Compose fails to start**: verify Docker is running and port 5432 (PostgreSQL) is free. Use `docker compose logs <service>` to diagnose.
-- **Python tests fail with import errors**: install Python dependencies: `pip install fastapi pydantic sqlalchemy uvicorn httpx pytest` or use the `.venv` if present.
-
-<br>
-
----
-
-<br>
-
-## Status
-
-Actively maintained. 119 source files, 109 test files, 1,497 tests passing across all packages. Development is ongoing with regular updates.
-
-See [Releases](https://github.com/moonrunnerkc/swarm-orchestrator/releases) for version history.
-
-<br>
-
----
-
-<br>
+The full sweep harness is at `benchmarks/swe-bench/`; it runs in a Docker image with all instance dependencies pinned. Numbers above will land with the 7.0.0 release notes after the sweep completes.
 
 ## Contributing
 
@@ -673,16 +143,8 @@ See [Releases](https://github.com/moonrunnerkc/swarm-orchestrator/releases) for 
 npm install && npm run build && npm test
 ```
 
-Run `npm test`, run `swarm gates .`, and keep commits descriptive. See [CONTRIBUTING.md](CONTRIBUTING.md) for sub-project tests, coding standards, and development guidelines.
-
-<br>
-
----
-
-<br>
+Before any PR: `npm test`, then `node dist/src/cli.js gates .`, then a descriptive commit. The self-gate runs in CI; orchestrator regressions fail their own gates. See [CONTRIBUTING.md](CONTRIBUTING.md) for code style, the falsification-battery development workflow, and the eval harness.
 
 ## License
 
-[ISC](LICENSE)
-
-Built by [Bradley R. Kinnard](https://github.com/moonrunnerkc).
+[ISC](LICENSE) — built by [Bradley R. Kinnard](https://github.com/moonrunnerkc).
