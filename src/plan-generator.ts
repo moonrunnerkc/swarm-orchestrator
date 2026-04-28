@@ -25,7 +25,7 @@ export interface ExecutionPlan {
   };
 }
 
-// replan structure returned by meta_reviewer analysis
+// replan structure returned by reviewer analysis
 export interface ReplanPayload {
   retrySteps: number[];
   addSteps?: { agent: string; task: string; afterStep?: number }[];
@@ -1264,7 +1264,7 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
   }
 
   /**
-   * revise plan based on replan payload from meta_reviewer
+   * revise plan based on replan payload from reviewer
    * preserves completed steps, marks retries with suffix, appends new steps
    */
   revisePlan(
