@@ -74,6 +74,16 @@ PERINSTANCE_IMAGE_REGISTRY = os.environ.get(
     "ghcr.io/epoch-research/swe-bench.eval.x86_64",
 )
 
+# Path to the per-instance evaluator CLI. Subprocessed once per instance per
+# eval mode so the harness doesn't have to embed the synthesizer / property-
+# gate logic; both live in scripts/eval/swebench-instance-evaluator.ts and
+# are tested under npm test.
+EVAL_CLI = _REPO_ROOT / "scripts" / "eval" / "swebench-eval-cli.ts"
+RUN_ID = os.environ.get(
+    "SWEBENCH_RUN_ID",
+    datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"),
+)
+
 
 # ---------------------------------------------------------------------------
 # Diff capture (bytes-safe, with size guardrails)
@@ -1095,6 +1105,178 @@ def run_tests_dispatch(task: dict, repo_dir: Path) -> dict:
     return result
 
 
+def materialize_gold_branch(repo_dir: Path, gold_patch: str) -> str | None:
+    """Commit the SWE-bench gold patch on a side branch so it has a git ref.
+
+    Returns the branch name on success, None if the patch couldn't apply
+    against the base checkout (rare; usually a sign of dataset drift).
+    The eval scripts use the ref via `git worktree add` in
+    `scripts/eval/swebench-instance-evaluator.ts`.
+
+    The branch is created from the current HEAD (which is the base commit
+    after checkout_repo). Returning to base is the caller's responsibility.
+    """
+    if not gold_patch:
+        return None
+    branch = "swarm-gold-eval"
+    try:
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(repo_dir),
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True,
+        ).stdout.strip()
+
+        subprocess.run(
+            ["git", "checkout", "-B", branch],
+            cwd=str(repo_dir),
+            capture_output=True,
+            timeout=15,
+            check=True,
+        )
+
+        apply = subprocess.run(
+            ["git", "apply", "--whitespace=nowarn", "-"],
+            cwd=str(repo_dir),
+            input=gold_patch,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if apply.returncode != 0:
+            subprocess.run(
+                ["git", "checkout", "-B", "master", head],
+                cwd=str(repo_dir),
+                capture_output=True,
+                timeout=15,
+            )
+            return None
+
+        subprocess.run(
+            ["git", "add", "-A"],
+            cwd=str(repo_dir),
+            capture_output=True,
+            timeout=30,
+        )
+        subprocess.run(
+            ["git", "-c", "user.email=eval@swarm", "-c", "user.name=swarm-eval",
+             "commit", "-m", "[swarm-eval] gold patch", "--allow-empty"],
+            cwd=str(repo_dir),
+            capture_output=True,
+            timeout=30,
+        )
+
+        subprocess.run(
+            ["git", "checkout", "-B", "master", head],
+            cwd=str(repo_dir),
+            capture_output=True,
+            timeout=15,
+            check=True,
+        )
+        return branch
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return None
+
+
+def _run_eval_cli(mode: str, task_payload: dict, out_path: Path) -> dict:
+    """Subprocess to scripts/eval/swebench-eval-cli.ts and return the appended record.
+
+    The CLI appends a single JSONL line to out_path. Returns the parsed
+    record on success, or a synthetic ERROR record so the JSONL stays
+    one-record-per-instance even when the CLI itself crashes.
+    """
+    if not EVAL_CLI.exists():
+        return {
+            "instanceId": task_payload.get("instanceId"),
+            "status": "ERROR",
+            "error": f"eval CLI missing: {EVAL_CLI}",
+        }
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    before = out_path.stat().st_size if out_path.exists() else 0
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".json", prefix="swarm-eval-task-", delete=False
+    ) as tf:
+        json.dump(task_payload, tf)
+        task_file = Path(tf.name)
+    try:
+        result = subprocess.run(
+            ["npx", "tsx", str(EVAL_CLI), "--mode", mode,
+             "--task", str(task_file), "--out", str(out_path)],
+            cwd=str(_REPO_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        if result.returncode != 0:
+            return {
+                "instanceId": task_payload.get("instanceId"),
+                "status": "ERROR",
+                "error": (result.stderr or result.stdout or "eval CLI exited non-zero")[:500],
+            }
+    except subprocess.TimeoutExpired:
+        return {
+            "instanceId": task_payload.get("instanceId"),
+            "status": "ERROR",
+            "error": "eval CLI timed out",
+        }
+    finally:
+        task_file.unlink(missing_ok=True)
+
+    if not out_path.exists() or out_path.stat().st_size <= before:
+        return {
+            "instanceId": task_payload.get("instanceId"),
+            "status": "ERROR",
+            "error": "eval CLI did not append a record",
+        }
+    last_line = out_path.read_text(encoding="utf-8").splitlines()[-1]
+    try:
+        return json.loads(last_line)
+    except json.JSONDecodeError:
+        return {
+            "instanceId": task_payload.get("instanceId"),
+            "status": "ERROR",
+            "error": "appended JSONL line is not valid JSON",
+        }
+
+
+def run_synth_eval_hook(task: dict, repo_dir: Path, gold_branch: str | None) -> dict:
+    """B.1: Run synthesizer eval for one SWE-bench instance.
+
+    Writes one JSONL line to RESULTS_DIR/synthesizer-eval-<run-id>.jsonl
+    and returns the parsed record. Never raises; failure shows up in the
+    record as status=ERROR with a populated error field.
+    """
+    out_path = RESULTS_DIR / f"synthesizer-eval-{RUN_ID}.jsonl"
+    payload: dict = {
+        "instanceId": task["instance_id"],
+        "problemStatement": task.get("problem_statement", ""),
+        "repoPath": str(repo_dir.resolve()),
+    }
+    if gold_branch:
+        payload["goldPatchRef"] = gold_branch
+    return _run_eval_cli("synth", payload, out_path)
+
+
+def run_property_eval_hook(task: dict, repo_dir: Path) -> dict:
+    """B.3: Run property-gate eval for one SWE-bench instance.
+
+    Writes one JSONL line to RESULTS_DIR/property-gate-eval-<run-id>.jsonl
+    and returns the parsed record. The eval applies the gold patch in a
+    fresh worktree internally (see swebench-instance-evaluator.ts) so the
+    harness's HEAD state is preserved.
+    """
+    out_path = RESULTS_DIR / f"property-gate-eval-{RUN_ID}.jsonl"
+    payload = {
+        "instanceId": task["instance_id"],
+        "repoPath": str(repo_dir.resolve()),
+        "goldPatchText": task.get("patch", ""),
+        "baseCommit": task["base_commit"],
+    }
+    return _run_eval_cli("property", payload, out_path)
+
+
 def _print_workspace_preserved(workdir: Path) -> None:
     """Print the preserved workspace path and ready-to-paste diagnostic commands."""
     print(f"\n{'='*60}")
@@ -1150,6 +1332,21 @@ def evaluate_tasks(*, keep_workdir: bool = False) -> dict:
                 results.append(task_result)
                 continue
 
+            # Step 1.5: B.1 — synthesizer eval. Materialize the gold patch on
+            # a side branch so the eval can run the synthesized test against
+            # the gold-applied state. Errors here never block the harness;
+            # the record's `status` field carries the failure mode.
+            gold_branch = materialize_gold_branch(repo_dir, task.get("patch", ""))
+            try:
+                synth_record = run_synth_eval_hook(task, repo_dir, gold_branch)
+                task_result["synth_eval"] = synth_record
+            except Exception as exc:  # eval hook bug shouldn't tank the sweep
+                task_result["synth_eval"] = {
+                    "instanceId": instance_id,
+                    "status": "ERROR",
+                    "error": f"hook crashed: {exc}",
+                }
+
             # Step 2: Run orchestrator / baseline
             run_result = run_orchestrator(repo_dir, task["problem_statement"])
             task_result["run"] = run_result
@@ -1164,6 +1361,19 @@ def evaluate_tasks(*, keep_workdir: bool = False) -> dict:
             test_result = run_tests_dispatch(task, repo_dir)
             task_result["tests"] = test_result
             task_result["resolved"] = test_result.get("passed", False)
+
+            # Step 4: B.3 — property-gate eval. Runs against the gold-applied
+            # state in a fresh worktree (the eval CLI handles that), so it
+            # works whether the sweep ran in container or host-venv mode.
+            try:
+                property_record = run_property_eval_hook(task, repo_dir)
+                task_result["property_eval"] = property_record
+            except Exception as exc:
+                task_result["property_eval"] = {
+                    "instanceId": instance_id,
+                    "status": "ERROR",
+                    "error": f"hook crashed: {exc}",
+                }
 
             results.append(task_result)
             print(f"  → {'RESOLVED' if task_result['resolved'] else 'FAILED'}"
