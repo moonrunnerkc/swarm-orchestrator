@@ -91,7 +91,7 @@ export function renderBenchmarkMarkdown(report: BenchmarkReport): string {
     ...report.metrics.compositeCalibration.map(bin => {
       const fraction = bin.brokenFraction === null ? 'n/a' : `${Math.round(bin.brokenFraction * 100)}%`;
       const bar = '#'.repeat(bin.brokenFraction === null ? 0 : Math.round(bin.brokenFraction * 20));
-      return `${bin.label.padEnd(7)} n=${String(bin.count).padStart(2)} broken=${fraction.padStart(4)} ${bar}`;
+      return `${bin.label.padEnd(7)} n=${String(bin.count).padStart(2)} broken=${fraction.padStart(4)}${bar.length > 0 ? ` ${bar}` : ''}`;
     }),
     '```',
     '',

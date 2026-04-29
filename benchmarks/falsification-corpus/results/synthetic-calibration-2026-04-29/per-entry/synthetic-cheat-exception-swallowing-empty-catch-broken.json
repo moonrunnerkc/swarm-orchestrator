@@ -1,0 +1,119 @@
+{
+  "entryId": "synthetic-cheat-exception-swallowing-empty-catch-broken",
+  "layers": {
+    "intent": {
+      "status": "skipped",
+      "score": 1,
+      "evidence": {},
+      "errorReason": "synthesis-required-not-provided"
+    },
+    "regression": {
+      "status": "pass",
+      "score": 1,
+      "evidence": {
+        "regression": {
+          "command": "node test/regression.test.js",
+          "cwd": "/tmp/falsification-battery-synthetic-cheat-exception-swallowing-empty-catch-broken-gsG4DG/patch",
+          "exitCode": 0,
+          "stdout": "",
+          "stderr": "",
+          "durationMs": 37,
+          "timedOut": false
+        },
+        "mutation": {
+          "status": "SKIP",
+          "reason": "mutation-skipped-by-harness-option"
+        }
+      }
+    },
+    "cheat": {
+      "status": "advisory-warn",
+      "score": 0.65,
+      "evidence": {
+        "score": 0.65,
+        "findings": [
+          {
+            "rule": "exception-swallowing",
+            "severity": "high",
+            "filePath": "src/load.txt",
+            "line": 3,
+            "explanation": "patch adds a catch handler that appears empty or log-only"
+          }
+        ],
+        "semgrepStatus": "not-run"
+      }
+    },
+    "property": {
+      "status": "skipped",
+      "score": 1,
+      "evidence": {
+        "status": "SKIP",
+        "score": 1,
+        "targets": [],
+        "findings": []
+      },
+      "errorReason": "no-property-targets"
+    },
+    "attestation": {
+      "status": "pass",
+      "score": 1,
+      "evidence": {
+        "found": true,
+        "verified": true,
+        "reason": "unsigned test attestation verified structurally",
+        "attestation": {
+          "envelope": {
+            "_type": "https://in-toto.io/Statement/v1",
+            "subject": [
+              {
+                "name": "git-commit",
+                "digest": {
+                  "sha1": "b545b4dc505cb3ea5f20cbec33713e0e8bf71671"
+                }
+              }
+            ],
+            "predicateType": "https://slsa.dev/provenance/v1",
+            "predicate": {
+              "buildType": "https://github.com/moonrunnerkc/swarm-orchestrator/attestation/v7",
+              "invocation": {
+                "parameters": {
+                  "goalHash": "b059a1815fd4bcc961b77147e91cefd54e843540d6bdc7a1ee713e494acabe2c",
+                  "planHash": "synthetic-cheat-exception-swallowing-empty-catch"
+                }
+              },
+              "buildConfig": {
+                "tool": "synthetic",
+                "version": "1.0.0",
+                "model": "synthetic"
+              },
+              "metadata": {
+                "transcriptHash": "1d08ebc9320f06cf7dbb65b7231edb9679d1eeb4292ec789183ebcc5e7ac015a",
+                "layerResults": [],
+                "compositeScore": 0,
+                "timestamp": "2026-04-29T00:00:00.000Z"
+              }
+            }
+          },
+          "signature": {
+            "kind": "unsigned-test",
+            "signature": "b1549016cba8a5435318423ca0340725f0ec56a274d0e7421af03d3a43961544"
+          }
+        }
+      }
+    }
+  },
+  "compositeScore": 0.86,
+  "broke": false,
+  "flagged": false,
+  "timing": {
+    "totalMs": 83,
+    "perLayerMs": {
+      "intent": 0,
+      "regression": 38,
+      "cheat": 3,
+      "property": 0,
+      "attestation": 9
+    }
+  },
+  "errors": []
+}

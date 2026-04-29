@@ -228,7 +228,7 @@ export function isEnvironmentalCommandFailure(result: VerificationCommandResult)
 
 /** Detects common missing-tool and missing-dependency text. */
 export function isEnvironmentalText(text: string): boolean {
-  return /(?:command not found|not recognized|ENOENT|MODULE_NOT_FOUND|Cannot find module|missing script|No such file or directory|could not determine executable|No tests found|pytest: not found|hypothesis|fast-check)/i.test(text);
+  return /(?:command not found|not recognized|ENOENT|MODULE_NOT_FOUND|Cannot find module ['"]fast-check['"]|No module named ['"]?hypothesis|missing script|No such file or directory|could not determine executable|No tests found|pytest: not found)/i.test(text);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

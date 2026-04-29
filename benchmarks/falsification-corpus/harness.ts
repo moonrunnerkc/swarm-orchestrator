@@ -67,6 +67,7 @@ export interface BatteryHarnessOptions {
   testSpecDir?: string;
   worktreeRoot?: string;
   runSemgrep?: boolean;
+  skipMutation?: boolean;
   layerTimeoutMs?: Partial<Record<LayerName, number>>;
 }
 
@@ -163,6 +164,15 @@ async function runRegressionLayer(
       return envError(entry.id, 'regression', 'regression command failed due to missing runner, dependency, or setup', { regression });
     }
     return fail(0, { regression });
+  }
+  if (options.skipMutation === true) {
+    return pass(1, {
+      regression,
+      mutation: {
+        status: 'SKIP',
+        reason: 'mutation-skipped-by-harness-option',
+      },
+    });
   }
 
   try {
