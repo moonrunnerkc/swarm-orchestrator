@@ -144,3 +144,66 @@ harness fix were dead data. After the fix, the data starts mattering.
 - The cheat detector (Layer 3) and attestation (Layer 5) are exercised by
   the falsification-corpus harness, not the SWE-bench harness. Their per-
   layer FN rates from the 2026-04-29 corpus run are 0%.
+
+---
+
+## Addendum (2026-04-30): primary blocker is upstream of the import path
+
+The Reading B classification above is right about Layer 1's failure mode
+being environmental rather than a capability ceiling, but it identified
+the wrong environment. After the candidate-relocation fix landed
+(`15c33ac`) and a re-run on the same `psf__requests-1766` instance
+still produced AMBIGUOUS_GOAL, the per-attempt JSONL surfaced a
+higher-priority filter the original investigation missed entirely.
+
+`validateSynthesizedTestCandidate` in `src/verification/test-synthesizer.ts`
+was a structural preflight that ran *before* `runVerificationCommand`
+and rejected any candidate whose source did not match a hard-coded
+JavaScript assertion-pattern allowlist (node `assert.X(`, jest/chai
+`expect(`, should.js). Python `unittest` idioms (`self.assertRegex`,
+`self.assertNotRegex`, `self.assertIsNotNone`, `self.assertEqual`,
+etc.) match none of those patterns. Every Python candidate has been
+getting the synthetic rejection "generated test has no clear assertion
+or explicit failure mode" before ever being written to disk or
+executed. After three such structural rejections in a row the
+synthesizer falls through to `AMBIGUOUS_GOAL` because at least one
+adapter call returned exit 0 with parseable JSON.
+
+The relocation fix is still mechanically correct (a candidate that
+runs needs `__file__` resolving to the worktree root) but its
+effect on the synth_eval result is currently zero, because no Python
+candidate reaches the run stage. Both fixes are needed for Layer 1
+to function on Python: drop the structural validator so the candidate
+runs, plus relocate the candidate so its imports resolve to the local
+source instead of the host's site-packages copy.
+
+The audit-trail correction is bigger than a single instance.
+**Layer 1 has been non-functional on Python codebases since the
+validator was written.** Every prior P1 eval JSONL claiming a Python
+result was reporting validator-reject, not synthesis quality. The
+2026-04-28 smokes' uniform GENERATION_FAILED across copilot, codex,
+and claude was one bug (the period-form model ID, fixed in `fdbe243`)
+masking a second bug (the JS-only validator) which would have masked
+a third bug (the candidate-location import resolution) which was
+itself only verifiable via a manual run that bypassed the validator.
+Three layers of accidental masking.
+
+**Discovery sequence**:
+1. Pre-fix runs returned `GENERATION_FAILED` (model-ID typo). Validator
+   never ran because the adapter call exited non-zero.
+2. After `fdbe243`, runs returned `AMBIGUOUS_GOAL`. The capability-vs-
+   environment investigation produced this document, classifying as
+   Reading B (environment) based on a manual run that wrote the test
+   at the repo root and bypassed the synth eval's harness path
+   entirely. The Reading B framing was right about *kind* (environment)
+   but the manual run did not exercise the validator, so it pointed at
+   the wrong environment bug.
+3. After `15c33ac` (relocation), the diagnostic re-run still returned
+   `AMBIGUOUS_GOAL`. The per-attempt JSONL preserved `testSource`;
+   running `validateSynthesizedTestCandidate` against that source
+   directly returned the "no clear assertion" rejection, confirming
+   the validator was the active filter.
+4. The validator was dropped (commit forthcoming). The downstream
+   gate — does the test fail against base and pass against the patch
+   — is now the only structural check, which is also the one that
+   has been authoritative all along.
