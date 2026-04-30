@@ -658,4 +658,46 @@ Output:
       }
     });
   });
+
+  describe('crossReferenceEvidence (hook log handling)', () => {
+    // Copilot CLI is the only adapter that loads hooks from
+    // <gitRoot>/.github/hooks/. Other adapters (claude-code, codex,
+    // claude-code-teams) do not produce a hook evidence file. The
+    // verifier should suppress the cross-reference check entirely in that
+    // case rather than emitting a misleading "Hook evidence log exists
+    // and is non-empty: false" record.
+    const { crossReferenceEvidence } = require('../src/verifier/transcript-checks');
+    const emptyShareIndex = {
+      testsRun: [],
+      buildOperations: [],
+      claims: [],
+      changedFiles: [],
+    };
+
+    it('returns no checks when the evidence file does not exist (non-Copilot adapter)', () => {
+      const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hook-evidence-missing-'));
+      try {
+        const checks = crossReferenceEvidence(emptyShareIndex, path.join(tmp, 'step-1.jsonl'));
+        assert.deepStrictEqual(checks, [], 'no file means no hook adapter; no synthesized failure');
+      } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+      }
+    });
+
+    it('emits a failed optional check when the evidence file exists but is empty', () => {
+      const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hook-evidence-empty-'));
+      try {
+        const file = path.join(tmp, 'step-1.jsonl');
+        fs.writeFileSync(file, '', 'utf8');
+        const checks = crossReferenceEvidence(emptyShareIndex, file);
+        assert.strictEqual(checks.length, 1);
+        assert.strictEqual(checks[0].passed, false);
+        assert.strictEqual(checks[0].required, false);
+        assert.match(checks[0].reason, /empty/i,
+          'reason should mention the log was empty, not missing');
+      } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+      }
+    });
+  });
 });

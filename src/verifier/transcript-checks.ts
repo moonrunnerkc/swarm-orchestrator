@@ -141,6 +141,16 @@ export function verifyAllClaims(shareIndex: ShareIndex): {
 }
 
 export function crossReferenceEvidence(shareIndex: ShareIndex, evidenceLogPath: string): VerificationCheck[] {
+  const fs = require('fs') as typeof import('fs');
+  // Hook evidence is only produced by adapters that load hooks from
+  // <gitRoot>/.github/hooks/ (currently only Copilot CLI). If the file does
+  // not exist, the adapter is not wired for hooks; suppress the check
+  // instead of synthesizing a failed "should have but didn't" record that
+  // misleads users on claude-code, codex, or claude-code-teams runs.
+  if (!fs.existsSync(evidenceLogPath)) {
+    return [];
+  }
+
   const hookGen = new HookGenerator();
   const entries = hookGen.parseEvidenceLog(evidenceLogPath);
 
@@ -150,7 +160,7 @@ export function crossReferenceEvidence(shareIndex: ShareIndex, evidenceLogPath: 
       description: 'Hook evidence log exists and is non-empty',
       required: false,
       passed: false,
-      reason: `No hook evidence entries found at ${evidenceLogPath}`
+      reason: `Hook evidence log at ${evidenceLogPath} is empty; hooks ran but recorded no events.`
     }];
   }
 
