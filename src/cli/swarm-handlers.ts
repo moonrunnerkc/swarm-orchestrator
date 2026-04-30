@@ -13,7 +13,6 @@ import QuickFixMode, { QuickFixOptions } from '../quick-fix-mode';
 import { SwarmOrchestrator, SwarmExecutionOptions, SwarmExecutionContext } from '../swarm-orchestrator';
 import { defaultModelForAdapter } from '../adapters';
 import { confirmCostPrompt } from './cost-prompt';
-import { getLiveStatus } from './live-status';
 import {
   ExecuteSwarmCliOptions,
   parseSwarmFlags,
@@ -21,7 +20,6 @@ import {
 import { showUsage } from './usage';
 import { Spinner } from '../spinner';
 import { getLogger, isPrettyMode } from '../logger';
-import { getPresenter } from '../presenter';
 
 const logger = getLogger('cli:swarm');
 
@@ -76,11 +74,14 @@ export async function executeSwarm(
   validateAdapterSecrets(selectedTool);
 
   let plan = loadPlanFile(planFilename);
-  const presenter = getPresenter();
 
-  // The presenter owns the user-facing surface in all modes. Verbose adds
-  // diagnostic logger lines on stderr; it does not duplicate the header.
-  presenter.swarmHeader(plan.goal);
+  // In pretty mode (demo commands) the caller has already printed its own
+  // banner with the goal + step count — don't duplicate.
+  if (!isPrettyMode()) {
+    logger.info('🐝 Swarm Orchestrator - Parallel Execution\n');
+    logger.info(`Goal: ${plan.goal}`);
+    logger.info(`Total Steps: ${plan.steps.length}\n`);
+  }
 
   const configLoader = new ConfigLoader();
   const agents = configLoader.loadAllAgents();
@@ -120,9 +121,15 @@ export async function executeSwarm(
   });
 
   const retryPct = Math.round((costEstimate.perStep[0]?.retryProbability ?? 0.15) * 100);
-  const costRange = costEstimate.lowEstimate === costEstimate.totalPremiumRequests
-    ? `${costEstimate.totalPremiumRequests}`
-    : `${costEstimate.lowEstimate}–${costEstimate.totalPremiumRequests}`;
+  logger.info(`\n💰 Cost Estimate: ${costEstimate.lowEstimate}-${costEstimate.totalPremiumRequests} premium requests`);
+  logger.info(`   ${plan.steps.length} steps | ${modelName} (${costEstimate.modelMultiplier}x) | ${retryPct}% retry buffer`);
+  if (costEstimate.remediationBuffer > 0) {
+    logger.info(`   includes ${costEstimate.remediationBuffer} remediation buffer (quality gates enabled)`);
+  }
+  if (options?.useInnerFleet) {
+    logger.info(`   /fleet mode: subagent multiplier applied`);
+  }
+  logger.info('');
 
   if (options?.costEstimateOnly) {
     logger.info(`Cost Estimate for: ${plan.goal}`);
@@ -151,9 +158,9 @@ export async function executeSwarm(
       const { execSync } = await import('child_process');
       execSync('gh auth status', { stdio: 'pipe', timeout: 10_000 });
     } catch {
-      logger.error('GitHub authentication check failed.');
-      logger.error('  Run `gh auth login` or `copilot /login` to re-authenticate.');
-      logger.error('  If using a token, ensure GH_TOKEN / GITHUB_TOKEN is set and valid.');
+      logger.error('❌ GitHub authentication check failed.');
+      logger.error('   Run `gh auth login` or `copilot /login` to re-authenticate.');
+      logger.error('   If using a token, ensure GH_TOKEN / GITHUB_TOKEN is set and valid.');
       return 1;
     }
   }
@@ -166,7 +173,7 @@ export async function executeSwarm(
     !!options?.yes
   );
   if (!confirmed) {
-    presenter.cancelled();
+    logger.info('Cancelled.');
     return 0;
   }
 
@@ -186,17 +193,9 @@ export async function executeSwarm(
     || inferredFromPlan
     || undefined;
 
-  // Emit the unified plan/cost/target block via the presenter.
-  presenter.planSummary({
-    steps: plan.steps.length,
-    model: modelName,
-    modelMultiplier: costEstimate.modelMultiplier,
-    retryPct,
-    costRange,
-    remediationBuffer: costEstimate.remediationBuffer,
-    innerFleet: !!options?.useInnerFleet,
-    target: targetDir,
-  });
+  if (targetDir) {
+    logger.info(`📂 Target directory: ${targetDir}`);
+  }
 
   // targetMode: structural discriminator for whether this run is against an
   // external repo (bootstrap / swarm against a target dir) vs the
@@ -211,9 +210,13 @@ export async function executeSwarm(
   const baseDir = targetDir || process.cwd();
   const runDir = path.join(baseDir, 'runs', runId);
 
-  presenter.runStarted({ runDir });
-  // run id is for `swarm report <id>` and is developer-facing; debug-only.
-  logger.debug(`run id ${runId}`);
+  if (isPrettyMode()) {
+    // Demo: only the run dir is useful, and dim so it doesn't compete.
+    logger.info(`  Run: ${runDir}\n`);
+  } else {
+    logger.info(`Run ID: ${runId}`);
+    logger.info(`Run Directory: ${runDir}\n`);
+  }
 
   const swarmOptions: SwarmExecutionOptions = {};
   if (options?.model) swarmOptions.model = options.model;
@@ -228,17 +231,8 @@ export async function executeSwarm(
   if (options?.owaspReport) swarmOptions.owaspReport = true;
   if (options?.cliAgent) swarmOptions.cliAgent = options.cliAgent;
   if (options?.teamSize) swarmOptions.teamSize = options.teamSize;
-  if (options?.maxRetries !== undefined) swarmOptions.maxRetries = options.maxRetries;
-  if (options?.streamAgent) swarmOptions.streamAgent = true;
 
-  const liveStatus = getLiveStatus();
-  liveStatus.start();
-  let context;
-  try {
-    context = await orchestrator.executeSwarm(plan, agentMap, runDir, swarmOptions);
-  } finally {
-    liveStatus.stop();
-  }
+  const context = await orchestrator.executeSwarm(plan, agentMap, runDir, swarmOptions);
 
   const completed = context.results.filter(r => r.status === 'completed').length;
   const failed = context.results.filter(r => r.status === 'failed').length;
@@ -252,44 +246,59 @@ export async function executeSwarm(
   const gatesFailed = gateResults.filter(g => g.status === 'fail').length;
   const remediationSteps = Math.max(0, totalSteps - plan.steps.length);
 
+  logger.info('\n' + '═'.repeat(60));
+  logger.info('  SWARM EXECUTION COMPLETE');
+  logger.info('═'.repeat(60));
+  logger.info(`\n  ✅ Completed: ${completed}/${totalSteps}`);
+
+  if (failed > 0) {
+    logger.info(`  ❌ Failed: ${failed}/${totalSteps}`);
+    logger.info('\n  Failed steps:');
+    context.results
+      .filter(r => r.status === 'failed')
+      .forEach(r => {
+        logger.info(`    - Step ${r.stepNumber} (${r.agentName}): ${r.error}`);
+      });
+  }
+
   const starts = context.results.filter(r => r.startTime).map(r => new Date(r.startTime!).getTime());
   const ends = context.results.filter(r => r.endTime).map(r => new Date(r.endTime!).getTime());
-  let durationLabel = '';
   if (starts.length > 0 && ends.length > 0) {
     const totalSec = Math.round((Math.max(...ends) - Math.min(...starts)) / 1000);
     const min = Math.floor(totalSec / 60);
     const sec = totalSec % 60;
-    durationLabel = min > 0 ? `${min}m${sec}s` : `${sec}s`;
+    logger.info(`  ⏱  Total time: ${min > 0 ? `${min}m ${sec}s` : `${sec}s`}`);
   }
 
-  presenter.blank();
-  presenter.finalSummary({
-    ok: failed === 0,
-    completed,
-    total: totalSteps,
-    duration: durationLabel || undefined,
-    premiumRequests: actualPremiumRequests,
-    ...(gateResults.length > 0 ? { gatesPassed, gatesFailed } : {}),
-    ...(estimateDeltaRatio > 0.2 ? {
-      estimateExceededPct: Math.round(estimateDeltaRatio * 100),
-      estimateLow: costEstimate.lowEstimate,
-      estimateHigh: costEstimate.totalPremiumRequests,
-    } : {}),
-    ...(remediationSteps > 0 ? {
-      remediationSteps,
-      plannedSteps: plan.steps.length,
-    } : {}),
-    artifactsDir: runDir,
-    prUrls: context.prUrls,
-    failedSteps: context.results
-      .filter(r => r.status === 'failed')
-      .map(r => ({
-        stepNumber: r.stepNumber,
-        agentName: r.agentName,
-        reason: r.error ?? 'failed',
-      })),
-    inspectCommand: failed > 0 ? `swarm report ${runId}` : undefined,
-  });
+  logger.info(`\n  💰 Actual cost: ${actualPremiumRequests} premium requests`);
+  logger.info(`     estimate: ${costEstimate.lowEstimate}-${costEstimate.totalPremiumRequests} | ${modelName} (${costEstimate.modelMultiplier}x) | ${totalSteps} steps${remediationSteps > 0 ? ` (${plan.steps.length} planned + ${remediationSteps} remediation)` : ''} | ${retryPct}% retry buffer`);
+  if (estimateDeltaRatio > 0.2) {
+    logger.info(`     ⚠ exceeded estimate by ${Math.round(estimateDeltaRatio * 100)}%`);
+  }
+
+  logger.info(`\n  📁 Artifacts: ${runDir}`);
+  logger.info(`  📊 Reports: ${runDir}/verification/`);
+  if (gateResults.length > 0) {
+    logger.info(`  🧪 Quality gates: ${gatesPassed} passed, ${gatesFailed} failed`);
+  }
+
+  // Show PR URLs if --pr mode was active
+  if (context.prUrls && context.prUrls.size > 0) {
+    logger.info('\n  Pull Requests:');
+    for (const [stepNum, url] of context.prUrls) {
+      logger.info(`    Step ${stepNum}: ${url}`);
+    }
+  }
+
+  logger.info('═'.repeat(60));
+
+  if (failed > 0) {
+    logger.info(`\nInspect failed run: swarm report ${runId}`);
+  } else if (completed === totalSteps) {
+    logger.info('\n🎉 All steps completed successfully!');
+    logger.info('   Review the git log to see the natural commit history:');
+    logger.info('   git log --oneline -20\n');
+  }
 
   // CI output: write structured result when running inside GitHub Actions
   const allPassed = context.results.every(r => r.verificationResult?.passed) && gatesFailed === 0;
@@ -355,7 +364,7 @@ export async function handleBootstrapCommand(args: string[]): Promise<number> {
   // Extract positional args, skipping flags and their values
   const flagsWithValues = new Set([
     '--tool', '--model', '--resume', '--pr', '--target', '--dir',
-    '--quality-gates-config', '--quality-gates-out', '--max-premium-requests', '--max-retries',
+    '--quality-gates-config', '--quality-gates-out', '--max-premium-requests',
   ]);
   const positional: string[] = [];
   const raw = args.slice(1);
@@ -430,11 +439,8 @@ export async function handleSwarmCommand(args: string[]): Promise<number> {
     logger.info(`
 Usage: swarm swarm <planfile> [flags]
 
-Execute a plan through the verified branch/worktree workflow: each step
-runs on its own branch, captures a /share transcript, is checked by the
-falsification battery between checkpoints, and merges only if it passes.
-Concurrency is greedy as-ready, but two ready steps run together only
-when the static dependency analyzer clears them.
+Execute a plan in parallel swarm mode. Runs steps concurrently based on
+their dependency graph, verifying each step with evidence-based checks.
 
 Arguments:
   <planfile>   Path to a plan JSON file (from \`swarm plan\` or \`swarm run\`)
@@ -445,15 +451,16 @@ Flags:
   --strict-isolation         Force per-task branch isolation
   --lean                     Enable Delta Context Engine (reuse KB patterns)
   --useInnerFleet            Prefix all prompts with /fleet
+  --fleet                    Dispatch waves via /fleet (hybrid mode)
   --cost-estimate-only       Print cost estimate and exit without executing
   --max-premium-requests <n> Abort if estimated cost exceeds budget
-  --max-retries <n>          Max retry attempts for queued and repair retries
   --pr <auto|review>         Create PRs instead of direct merge
   --target <dir>             Run in specified directory instead of cwd
   --resume <id>              Resume a paused or failed session
   --hooks / --no-hooks       Enable/disable per-step hook injection
   --owasp-report             Generate OWASP ASI compliance report
-  --tool <name>              Agent tool: copilot, claude-code, codex, claude-code-teams
+  --tool <name>              Agent tool: copilot, claude-code, claude-code-teams
+  --team-size <n>            Max concurrent teammates (claude-code-teams, 1-5)
 
 Examples:
   swarm swarm plan.json
@@ -568,7 +575,7 @@ export async function handleRunCommand(args: string[]): Promise<number> {
   // Flags that consume the next token as a value (must be skipped during goal extraction)
   const valuedFlags = new Set([
     '--model', '--resume', '--quality-gates-config', '--quality-gates-out',
-    '--pr', '--target', '--dir', '--tool', '--team-size', '--max-premium-requests', '--max-retries',
+    '--pr', '--target', '--dir', '--tool', '--team-size', '--max-premium-requests',
     '--sarif', '--goal', '--base-commit', '--agent-guidance',
   ]);
 
@@ -622,8 +629,7 @@ export async function handleRunCommand(args: string[]): Promise<number> {
     }
 
     if (isPlanFile) {
-      // The presenter prints the swarm header inside executeSwarm via the
-      // plan summary block. No extra banner here.
+      logger.info('🐝 Swarm Orchestrator - Execute Plan\n');
       try {
         const options = parseSwarmFlags(args);
         return await executeSwarm(firstPositional, options);
@@ -644,8 +650,8 @@ export async function handleRunCommand(args: string[]): Promise<number> {
     return 1;
   }
 
-  // The header is printed inside executeSwarm via presenter.swarmHeader so
-  // both `swarm run` and `swarm swarm` flows get the same shape.
+  logger.info('🐝 Swarm Orchestrator - Plan & Execute\n');
+  logger.info(`Goal: ${goal}\n`);
 
   // --agent-guidance: text that the planner prepends to every step's task
   // but does NOT feed into goal classification. Used by benchmark harnesses
@@ -666,9 +672,7 @@ export async function handleRunCommand(args: string[]): Promise<number> {
   });
 
   const planFilename = savePlanFile(plan);
-  // The plan path is forensic detail; the plan summary block emitted next
-  // shows the user step count, model, and cost.
-  logger.debug(`plan saved: ${planFilename} (${plan.steps.length} step${plan.steps.length === 1 ? '' : 's'})`);
+  logger.info(`Plan saved: ${planFilename} (${plan.steps.length} steps)\n`);
 
   try {
     const options = parseSwarmFlags(args);
