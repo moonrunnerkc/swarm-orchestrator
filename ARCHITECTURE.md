@@ -26,14 +26,6 @@
 | `dependency-analyzer.ts` | Static dependency analysis between plan steps. Identifies independent steps that can run in parallel. The planner does not declare independence; the analyzer detects it. |
 | `work-stealing-queue.ts` | Bounded work-stealing queue used by the parallel executor for steps the analyzer cleared. |
 
-### `src/types/plan.ts`
-
-Three step types:
-
-- `WorkerStep` — implementation work assigned to the worker role.
-- `ReviewerStep` — review or test-synthesis work assigned to the reviewer role.
-- `RoleStep` — discriminated union of the two.
-
 ### `src/adapters/`
 
 One adapter per agent backend. All adapters use `process-supervisor.ts` for subprocess lifecycle and the shared `AgentAdapter` interface.
