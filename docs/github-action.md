@@ -1,8 +1,14 @@
 # GitHub Action
 
-Run the Swarm Orchestrator as a GitHub Action for automated parallel AI coding in CI/CD.
+Swarm Orchestrator includes a Docker action contract in [action.yml](../action.yml), with the runtime entrypoint in [entrypoint.sh](../entrypoint.sh).
 
-## Quick Start
+Important current limitation: the Docker image in [Dockerfile](../Dockerfile) ships Node.js 20 and git, but it does not install `gh`, GitHub Copilot CLI, Claude Code, or Codex. Docker actions run in their own container, so installing an agent CLI in an earlier workflow step installs it on the runner, not inside the action container.
+
+For live agent execution today, use the local CLI workflow below or build a custom action image that installs the selected agent CLI inside the image. The input contract remains documented here for maintainers and custom-image users.
+
+## Local CLI workflow
+
+This is the currently reliable GitHub Actions pattern for live agent execution. It builds `swarm-orchestrator` in the runner, installs the selected agent CLI in the same runner, then runs `node dist/src/cli.js`.
 
 ```yaml
 name: AI Swarm
@@ -10,8 +16,16 @@ on:
   workflow_dispatch:
     inputs:
       goal:
-        description: 'What should the swarm build?'
+        description: What should the swarm build or fix?
         required: true
+      tool:
+        description: CLI agent to use
+        required: true
+        default: codex
+        type: choice
+        options:
+          - claude-code
+          - codex
 
 jobs:
   swarm:
@@ -21,39 +35,64 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
-      - name: Install Copilot CLI
-        run: npm install -g @github/copilot
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - uses: moonrunnerkc/swarm-orchestrator@main
+
+      - uses: actions/setup-node@v4
         with:
-          goal: ${{ inputs.goal }}
-          pr: review
+          node-version: '22'
+
+      - name: Build Swarm Orchestrator
+        run: |
+          npm install
+          npm run build
+
+      - name: Install Claude Code
+        if: inputs.tool == 'claude-code'
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Install Codex
+        if: inputs.tool == 'codex'
+        run: npm install -g @openai/codex
+
+      - name: Run Swarm Orchestrator
+        run: |
+          CMD=(node dist/src/cli.js run --goal "$GOAL" --tool "$TOOL" --pr review --yes)
+          "${CMD[@]}"
+        env:
+          GOAL: ${{ inputs.goal }}
+          TOOL: ${{ inputs.tool }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 ```
 
-## Inputs
+Copilot CLI requires Node.js 22 or newer and an interactive `copilot` then `/login` flow. That flow is not practical on hosted GitHub Actions unless you provide a pre-authenticated custom runner or custom container.
 
-| Input | Required | Default | Description |
-|-------|----------|---------|-------------|
-| `goal` | One of goal/plan/recipe | | Natural language goal |
-| `plan` | One of goal/plan/recipe | | Path to plan JSON file |
-| `recipe` | One of goal/plan/recipe | | Built-in recipe name |
-| `tool` | No | `copilot` | CLI agent: copilot, claude-code, codex |
-| `model` | No | | Model override (e.g., claude-sonnet-4, o3) |
-| `max-retries` | No | `3` | Max retry attempts per failed step |
-| `pr` | No | `review` | PR mode: auto, review, or none |
+## Docker action inputs
 
 Exactly one of `goal`, `plan`, or `recipe` must be provided.
+
+| Input | Required | Default | Description |
+| --- | --- | --- | --- |
+| `goal` | One of `goal`, `plan`, `recipe` | | Natural language goal. The entrypoint runs `swarm run --goal`. |
+| `plan` | One of `goal`, `plan`, `recipe` | | Path to an existing plan file. The entrypoint runs `swarm swarm <plan>`. |
+| `recipe` | One of `goal`, `plan`, `recipe` | | Built-in recipe name. The entrypoint runs `swarm use <recipe>`. |
+| `tool` | No | `copilot` | CLI adapter: `copilot`, `claude-code`, `codex`, or `claude-code-teams`. |
+| `model` | No | | Model override passed through as `--model`. |
+| `max-retries` | No | `3` | Maximum retry attempts for queued and repair retries, passed through as `--max-retries`. |
+| `pr` | No | `review` | PR mode, `auto` or `review`. |
+| `sarif` | No | `false` | When `true`, runs `swarm gates . --sarif /tmp/swarm-gates.sarif` after the swarm command. |
+
+The entrypoint also passes `--tool`, `--pr`, and `--max-retries` for `goal`, `plan`, and `recipe` modes.
 
 ## Outputs
 
 | Output | Description |
-|--------|-------------|
-| `result` | JSON summary: steps, pass/fail, timing |
-| `plan-path` | Path to the plan file used |
-| `pr-url` | URL of the created pull request (if PR mode active) |
+| --- | --- |
+| `result` | JSON summary from `/tmp/swarm-result.json` when the CLI writes it. |
+| `plan-path` | Path to `/tmp/swarm-plan.json` when the CLI writes it. |
+| `pr-url` | URL from `/tmp/swarm-pr-url.txt` when PR automation writes it. |
+| `sarif-path` | Path to the generated SARIF file when `sarif=true`. |
 
-### Result JSON Shape
+### Result JSON shape
 
 ```json
 {
@@ -65,7 +104,7 @@ Exactly one of `goal`, `plan`, or `recipe` must be provided.
   "steps": [
     {
       "stepNumber": 1,
-      "agentName": "BackendMaster",
+      "agentName": "worker",
       "status": "completed",
       "passed": true,
       "retryCount": 0
@@ -74,150 +113,61 @@ Exactly one of `goal`, `plan`, or `recipe` must be provided.
 }
 ```
 
-## Agent CLI Setup
+## Agent auth
 
-The GitHub Action does not install agent CLIs. You must install them in a prior step.
+These install and auth strings apply to local CLI workflows and custom action images.
 
-### Copilot CLI
+| Adapter | Install | Auth |
+| --- | --- | --- |
+| `copilot` | `npm install -g @github/copilot` | Run `copilot`, then `/login`. Requires Node.js 22 or newer. |
+| `claude-code` | `npm install -g @anthropic-ai/claude-code` | Run `claude` for browser login, or set `ANTHROPIC_API_KEY`. |
+| `claude-code-teams` | `npm install -g @anthropic-ai/claude-code` | Same auth as `claude-code`. Concurrency between steps is decided by the orchestrator's static dependency analyzer; there is no `--team-size` knob to pass through. |
+| `codex` | `npm install -g @openai/codex` | Run `codex --login`, or set `OPENAI_API_KEY`. |
 
-```yaml
-- name: Install Copilot CLI
-  run: npm install -g @github/copilot
-  env:
-    GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-```
-
-Requires the `GITHUB_TOKEN` secret (available by default in Actions).
-
-### Claude Code
+Never pass secrets through `with:` inputs. Use `env:` so GitHub masks repository secrets in logs.
 
 ```yaml
-- name: Install Claude Code
-  run: npm install -g @anthropic-ai/claude-code
+- name: Run Swarm Orchestrator
+  run: node dist/src/cli.js run --goal "$GOAL" --tool codex --pr review --yes
   env:
-    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-```
-
-Requires an `ANTHROPIC_API_KEY` repository secret.
-
-### Codex
-
-```yaml
-- name: Install Codex
-  run: npm install -g @openai/codex
-  env:
+    GOAL: ${{ inputs.goal }}
     OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 ```
 
-Requires an `OPENAI_API_KEY` repository secret.
+## Exit codes
 
-## Exit Codes
+The entrypoint exits with the wrapped CLI command status.
 
-The action exits 0 when all steps pass verification, and exits 1 when any step fails. This integrates with GitHub Actions status checks: a failed swarm blocks the workflow.
+The CLI returns nonzero when step verification fails. It can also report a nonzero CI result when final quality-gate statuses include failed findings, even though those gate findings are advisory and do not block branch merges.
 
-## Examples
+## SARIF
 
-### Goal-Based Execution
+When `sarif=true`, the entrypoint runs quality gates after the main command:
 
-```yaml
-- uses: moonrunnerkc/swarm-orchestrator@main
-  with:
-    goal: "Add comprehensive unit tests for all modules"
-    tool: copilot
-    pr: auto
+```bash
+node /app/dist/src/cli.js gates . --sarif /tmp/swarm-gates.sarif
 ```
 
-### Plan-Based Execution
+The gate command is allowed to fail without failing the entrypoint at that point, and the file path is written to the `sarif-path` output when the file exists. Uploading that SARIF to GitHub code scanning still requires a workflow step such as `github/codeql-action/upload-sarif`.
 
-```yaml
-- uses: moonrunnerkc/swarm-orchestrator@main
-  with:
-    plan: plans/api-migration.json
-    tool: claude-code
-    model: claude-sonnet-4
-```
+## Secret redaction
 
-### Recipe-Based Execution
+At the end of the Docker action entrypoint, known secret values are replaced in files under `/tmp` and `runs/` with tagged placeholders.
 
-```yaml
-- uses: moonrunnerkc/swarm-orchestrator@main
-  with:
-    recipe: add-tests
-    tool: copilot
-    pr: review
-```
+Redacted keys:
 
-### Using the Result Output
+- `ANTHROPIC_API_KEY`
+- `OPENAI_API_KEY`
+- `GITHUB_TOKEN`
+- `COPILOT_TOKEN`
+- `GOOGLE_APPLICATION_CREDENTIALS`
 
-```yaml
-- uses: moonrunnerkc/swarm-orchestrator@main
-  id: swarm
-  with:
-    goal: "Fix all linting errors"
+This redaction is best effort. It does not replace good secret hygiene in agent prompts and workflow logs.
 
-- name: Check result
-  run: |
-    RESULT='${{ steps.swarm.outputs.result }}'
-    PASSED=$(echo "$RESULT" | jq -r '.allPassed')
-    if [ "$PASSED" != "true" ]; then
-      echo "Swarm had failures"
-      exit 1
-    fi
-```
+## Maintainer checklist for making the Docker action live-agent ready
 
-### Multi-Agent Workflow
-
-```yaml
-- uses: moonrunnerkc/swarm-orchestrator@main
-  with:
-    goal: "Migrate codebase from JavaScript to TypeScript"
-    tool: claude-code
-    model: claude-sonnet-4
-    max-retries: 5
-    pr: review
-```
-
-## Permissions
-
-The action needs write access to create branches and PRs:
-
-```yaml
-permissions:
-  contents: write
-  pull-requests: write
-```
-
-## Secret Handling
-
-**Never pass secrets as `with:` inputs.** GitHub Actions may expose input values in workflow logs. Use the `env:` block exclusively.
-
-Each `--tool` value requires its own API key, passed as a repository secret:
-
-| `--tool` Value | Required Secret | Where to Get It |
-|----------------|----------------|-----------------|
-| `copilot` | `GITHUB_TOKEN` | Available by default in Actions |
-| `claude-code` | `ANTHROPIC_API_KEY` | [Anthropic Console](https://console.anthropic.com/) |
-| `codex` | `OPENAI_API_KEY` | [OpenAI Platform](https://platform.openai.com/) |
-
-### Correct Usage
-
-```yaml
-- uses: moonrunnerkc/swarm-orchestrator@main
-  with:
-    goal: ${{ inputs.goal }}
-    tool: claude-code
-    pr: review
-  env:
-    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-```
-
-### Artifact Redaction
-
-The Action's Docker entrypoint automatically redacts known secret values from all session artifacts (transcripts, session state files) at the end of every run. This covers `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GITHUB_TOKEN`, `COPILOT_TOKEN`, and `GOOGLE_APPLICATION_CREDENTIALS`.
-
-## Limitations
-
-- The Docker container uses Node.js 20 with git installed
-- Agent CLIs must be installed separately (see Agent CLI Setup above)
-- The action runs in the repository checkout directory
-- Long-running swarms may exceed GitHub Actions job time limits (6 hours for public repos)
+- Use a Node.js base image compatible with every bundled agent CLI. Copilot CLI currently needs Node.js 22 or newer.
+- Install `gh` if `copilot` remains a supported Docker-action default.
+- Install the agent CLIs inside the Docker image, or provide separate published images per adapter.
+- Revisit the default `tool` input after the image contains the corresponding CLI and auth path.
+- Add an integration workflow that runs at least one non-interactive API-key adapter in the action container.

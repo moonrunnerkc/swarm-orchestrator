@@ -1,6 +1,6 @@
 export function showUsage(): void {
   console.log(`
-Swarm Orchestrator - Parallel AI Workflow Tool
+Swarm Orchestrator - Falsification and Audit-Ready Orchestration for AI Coding Agents
 
 Usage:
   swarm bootstrap <path(s)> "Goal"       Deep analysis and plan generation (multi-repo)
@@ -8,7 +8,7 @@ Usage:
   swarm plan --copilot <goal>            Generate Copilot CLI prompt for planning
   swarm plan import <runid> <transcript> Parse plan from Copilot /share transcript
   swarm execute <planfile>               Execute a saved plan step-by-step
-  swarm swarm <planfile>                 Execute plan in parallel swarm mode
+  swarm swarm <planfile>                 Execute plan with verified branch/worktree workflow (analyzer-gated concurrency)
   swarm run --goal "description"          Plan + execute in one step (convenience)
   swarm quick "task"                     Quick-fix mode for simple single-agent tasks
   swarm demo <scenario>                  Run pre-configured demo scenario
@@ -42,17 +42,16 @@ Flags:
   --pm               Run PM agent plan review before swarm execution
   --strict-isolation Force per-task branch isolation, transcript-only context
   --lean             Enable Delta Context Engine (reuse prior KB patterns)
-  --useInnerFleet    Prefix prompts with /fleet for parallel sub-agent dispatch
+  --useInnerFleet    Prefix prompts with /fleet for inner sub-agent dispatch
   --wrap-fleet       Enable /fleet prefix on all step prompts (alias for --useInnerFleet)
-  --fleet            Dispatch entire waves via /fleet (hybrid mode, falls back on failure)
   --cost-estimate-only Run plan generation and cost estimation, print result, exit
   --max-premium-requests <n> Abort if estimated premium requests exceed budget
+  --max-retries <n>    Max retry attempts for queued and repair retries (default 3)
   --quality-gates-config <path> Path to quality gates YAML (default: config/quality-gates.yaml)
   --quality-gates-out <dir>    Where to write gate reports (default: <runDir>/quality-gates)
   --pr <auto|review>   Create PRs instead of direct merge (auto: merge on pass, review: wait for approval)
   --owasp-report       Generate OWASP ASI compliance report after verification
-  --tool <name>        Agent tool: copilot, claude-code, claude-code-teams
-  --team-size <n>      Max concurrent teammates per wave with claude-code-teams (1-5, default 5)
+  --tool <name>        Agent tool: copilot, claude-code, codex, claude-code-teams
   --target <dir>       Run execution in specified directory instead of cwd (alias: --dir)
   --hooks              Enable per-step hook injection for scope enforcement (default: on)
   --no-hooks           Disable hook injection for debugging

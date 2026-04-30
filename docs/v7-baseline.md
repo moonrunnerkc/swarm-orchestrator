@@ -1,5 +1,7 @@
 # v7 Overhaul Baseline Metrics
 
+> Baseline snapshot pre-v7 cleanup. Files referenced here may no longer exist; numbers are historical and not updated as the v7-overhaul branch progresses.
+
 Captured: 2026-04-25, before any v7 code changes.
 Branch created from HEAD `83d1d93` (main, post-v6.1.0 release commit).
 
