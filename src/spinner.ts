@@ -85,19 +85,25 @@ export class Spinner {
   }
 
   succeed(message?: string): void {
-    this.stop(`✅ ${message || this.message}`);
+    this.stop(`${this.color('✓', '32', '39')} ${message || this.message}`);
   }
 
   fail(message?: string): void {
-    this.stop(`❌ ${message || this.message}`);
+    this.stop(`${this.color('✗', '31', '39')} ${message || this.message}`);
   }
 
   warn(message?: string): void {
-    this.stop(`⚠️  ${message || this.message}`);
+    this.stop(`${this.color('!', '33', '39')} ${message || this.message}`);
   }
 
   info(message?: string): void {
-    this.stop(`ℹ️  ${message || this.message}`);
+    this.stop(`${this.color('·', '2', '22')} ${message || this.message}`);
+  }
+
+  /** Wrap a glyph in ANSI color/style codes when stdout supports them. */
+  private color(ch: string, open: string, close: string): string {
+    if (!process.stdout.isTTY || process.env.NO_COLOR) return ch;
+    return `\x1b[${open}m${ch}\x1b[${close}m`;
   }
 }
 
