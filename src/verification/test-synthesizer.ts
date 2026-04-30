@@ -39,7 +39,7 @@ export interface TestSynthesisResult {
   testCommand?: string;
 }
 
-const DEFAULT_MODEL = 'claude-sonnet-4.6';
+const DEFAULT_MODEL = 'claude-sonnet-4-6';
 const SYNTH_TEST_DIR = '.swarm/synthesized-tests';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
