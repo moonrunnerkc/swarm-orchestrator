@@ -34,7 +34,6 @@ describe('cli-handlers', () => {
         ['--strict-isolation', 'strictIsolation'],
         ['--lean', 'lean'],
         ['--cost-estimate-only', 'costEstimateOnly'],
-        ['--fleet', 'fleetWaveMode'],
       ];
 
       for (const [flag, key] of flags) {

@@ -15,7 +15,6 @@ export interface ExecuteSwarmCliOptions {
   maxPremiumRequests?: number;
   prMode?: 'auto' | 'review';
   hooksEnabled?: boolean;
-  fleetWaveMode?: boolean;
   targetDir?: string;
   cliAgent?: string;
   teamSize?: number;
@@ -118,7 +117,6 @@ export function parseSwarmFlags(args: string[]): ExecuteSwarmCliOptions {
   if (args.includes('--lean')) opts.lean = true;
   if (args.includes('--verbose')) opts.verbose = true;
   if (args.includes('--useInnerFleet') || args.includes('--wrap-fleet')) opts.useInnerFleet = true;
-  if (args.includes('--fleet')) opts.fleetWaveMode = true;
   if (args.includes('--cost-estimate-only')) opts.costEstimateOnly = true;
   if (args.includes('--yes') || args.includes('-y')) opts.yes = true;
 

@@ -92,7 +92,6 @@ export interface SwarmExecutionOptions {
   useInnerFleet?: boolean;
   prMode?: 'auto' | 'review';
   hooksEnabled?: boolean;
-  fleetWaveMode?: boolean;
   cliAgent?: string;
   owaspReport?: boolean;
   teamSize?: number;

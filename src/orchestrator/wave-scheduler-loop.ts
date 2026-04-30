@@ -75,7 +75,6 @@ export interface SchedulerContext {
 export interface SchedulerOptions {
   model?: string;
   lean?: boolean;
-  fleetWaveMode?: boolean;
   cliAgent?: string;
   strictIsolation?: boolean;
   useInnerFleet?: boolean;

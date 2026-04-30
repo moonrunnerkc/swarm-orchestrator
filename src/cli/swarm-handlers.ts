@@ -225,7 +225,6 @@ export async function executeSwarm(
   if (options?.strictIsolation) swarmOptions.strictIsolation = true;
   if (options?.lean) swarmOptions.lean = true;
   if (options?.useInnerFleet) swarmOptions.useInnerFleet = true;
-  if (options?.fleetWaveMode) swarmOptions.fleetWaveMode = true;
   if (options?.prMode) swarmOptions.prMode = options.prMode;
   if (options?.hooksEnabled !== undefined) swarmOptions.hooksEnabled = options.hooksEnabled;
   if (options?.owaspReport) swarmOptions.owaspReport = true;
@@ -451,7 +450,6 @@ Flags:
   --strict-isolation         Force per-task branch isolation
   --lean                     Enable Delta Context Engine (reuse KB patterns)
   --useInnerFleet            Prefix all prompts with /fleet
-  --fleet                    Dispatch waves via /fleet (hybrid mode)
   --cost-estimate-only       Print cost estimate and exit without executing
   --max-premium-requests <n> Abort if estimated cost exceeds budget
   --pr <auto|review>         Create PRs instead of direct merge
