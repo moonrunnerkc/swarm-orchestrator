@@ -334,4 +334,62 @@ describe('PlanGenerator', () => {
       }
     });
   });
+
+  describe('createSwebenchPlan', () => {
+    it('emits exactly two steps: worker then reviewer', () => {
+      const goal = 'quote qop options in Digest Auth — server-side rejects the unquoted form';
+      const plan = generator.createSwebenchPlan(goal);
+
+      assert.strictEqual(plan.steps.length, 2);
+      assert.deepStrictEqual(
+        plan.steps.map((s) => s.agentName),
+        ['worker', 'reviewer'],
+      );
+      assert.deepStrictEqual(plan.steps[1].dependencies, [1]);
+    });
+
+    it('bypasses the keyword classifier for goals that would route to api', () => {
+      // Prose containing "server", "endpoint", "API" would route to
+      // generateApiSteps via the keyword classifier and produce the
+      // 5-step greenfield template. The bypass must ignore that.
+      const apiKeywordGoals = [
+        'fix the bug where the server returns 500 on POST /api/users',
+        'rest endpoint /v1/items returns the wrong shape',
+        'middleware swallows graphql errors silently',
+      ];
+
+      for (const goal of apiKeywordGoals) {
+        const plan = generator.createSwebenchPlan(goal);
+        assert.strictEqual(
+          plan.steps.length,
+          2,
+          `expected 2 steps for goal "${goal}", got ${plan.steps.length}`,
+        );
+      }
+    });
+
+    it('preserves the raw goal text in the worker step', () => {
+      const goal = 'Fix `parseExpr` because `parseExpr("x")` returns null instead of an AST';
+      const plan = generator.createSwebenchPlan(goal);
+
+      assert.ok(plan.steps[0].task.includes(goal));
+    });
+
+    it('rejects empty goals', () => {
+      assert.throws(() => generator.createSwebenchPlan(''), /Goal cannot be empty/);
+      assert.throws(() => generator.createSwebenchPlan('   '), /Goal cannot be empty/);
+    });
+
+    it('applies agentGuidance to every step when provided', () => {
+      const guidance = 'Do not edit test files';
+      const plan = generator.createSwebenchPlan('fix the bug', { agentGuidance: guidance });
+
+      for (const step of plan.steps) {
+        assert.ok(
+          step.task.includes(guidance),
+          `step ${step.stepNumber} missing guidance: ${step.task.slice(0, 100)}`,
+        );
+      }
+    });
+  });
 });

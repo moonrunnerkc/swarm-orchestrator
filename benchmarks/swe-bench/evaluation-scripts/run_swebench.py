@@ -622,12 +622,19 @@ def run_orchestrator(repo_dir: Path, problem_statement: str) -> dict:
         # of firing nonsensically against sympy and triggering replan churn.
         # See #27 PR 1 (target-mode gate scoping) and smoke5 follow-up.
         prompt_text = None
+        # --task-type swebench bypasses the orchestrator's keyword classifier
+        # (which misroutes bug-fix prose containing words like "server-side"
+        # or "endpoint" to the greenfield API template) and emits a fixed
+        # two-step worker/reviewer plan. SWE-bench tasks are fully-specified
+        # bug fixes; there is nothing for the heuristic classifier to add.
+        # See docs/known-gaps.md for the classifier limitation.
         cmd = [
             "node", str(SWARM_BIN), "run",
             "--goal", problem_statement,
             "--agent-guidance", agent_guidance,
             "--target", str(repo_dir),
             "--tool", SWARM_TOOL,
+            "--task-type", "swebench",
             "--yes",
         ]
 

@@ -572,7 +572,7 @@ export async function handleRunCommand(args: string[]): Promise<number> {
   const valuedFlags = new Set([
     '--model', '--resume', '--quality-gates-config', '--quality-gates-out',
     '--pr', '--target', '--dir', '--tool', '--max-premium-requests',
-    '--sarif', '--goal', '--base-commit', '--agent-guidance',
+    '--sarif', '--goal', '--base-commit', '--agent-guidance', '--task-type',
   ]);
 
   // Extract positional tokens: skip the command name (args[0]) and any flag + value pairs
@@ -660,12 +660,27 @@ export async function handleRunCommand(args: string[]): Promise<number> {
     agentGuidance = args[guidanceIndex + 1];
   }
 
+  // --task-type swebench: bypass the heuristic keyword classifier and emit
+  // an explicit two-step worker/reviewer plan. SWE-bench instances are
+  // fully-specified bug-fix tasks; the classifier misroutes prose
+  // containing keywords like "server" or "endpoint" to greenfield templates
+  // (see docs/known-gaps.md). Other --task-type values are not recognized
+  // in this release and fall through to the classifier path.
+  const taskTypeIndex = args.indexOf('--task-type');
+  const taskType = taskTypeIndex !== -1 && taskTypeIndex + 1 < args.length
+    ? args[taskTypeIndex + 1]
+    : '';
+
   const configLoader = new ConfigLoader();
   const agents = configLoader.loadAllAgents();
   const generator = new PlanGenerator(agents);
-  const plan = generator.createPlan(goal, undefined, {
-    ...(agentGuidance ? { agentGuidance } : {}),
-  });
+  const plan = taskType === 'swebench'
+    ? generator.createSwebenchPlan(goal, {
+        ...(agentGuidance ? { agentGuidance } : {}),
+      })
+    : generator.createPlan(goal, undefined, {
+        ...(agentGuidance ? { agentGuidance } : {}),
+      });
 
   const planFilename = savePlanFile(plan);
   logger.info(`Plan saved: ${planFilename} (${plan.steps.length} steps)\n`);

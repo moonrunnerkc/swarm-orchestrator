@@ -183,6 +183,87 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
   }
 
   /**
+   * Build a fixed two-step plan for SWE-bench instances.
+   *
+   * Bypasses detectGoalType entirely. SWE-bench tasks are fully-specified
+   * bug-fix work (issue text + base commit + an external FAIL_TO_PASS test
+   * suite that gates resolution); there is nothing for the heuristic
+   * keyword classifier to discover, and on bug-fix prose the classifier
+   * misroutes — text containing "server-side", "API", or "endpoint"
+   * triggers the greenfield API template and produces five steps' worth
+   * of irrelevant scaffolding the agent then writes into the agent's
+   * worktree. See docs/known-gaps.md for the classifier limitation; the
+   * structural fix is deferred to v7.1.
+   *
+   * The general-purpose CLI path (`swarm run --goal ...`) still uses
+   * createPlan and the heuristic classifier.
+   *
+   * @param goal - Issue text from the SWE-bench instance.
+   * @param options - Optional agent-guidance text appended to every step.
+   * @returns Two-step plan: one worker (apply minimal fix), one reviewer
+   *          (confirm scope).
+   */
+  createSwebenchPlan(
+    goal: string,
+    options?: { agentGuidance?: string },
+  ): ExecutionPlan {
+    if (!goal || goal.trim() === '') {
+      throw new Error('Goal cannot be empty');
+    }
+
+    const reviewCriteria = this.getIntegratorReviewCriteria();
+    const rawSteps: PlanStep[] = [
+      {
+        stepNumber: 1,
+        agentName: 'worker',
+        task:
+          `Apply a minimal fix that resolves the reported failure described below. ` +
+          `An external harness will run the project's failing-test set against ` +
+          `your changes — the fix is correct exactly when those tests pass. ` +
+          `Touch only what is required to fix the reported behavior. Do not refactor ` +
+          `unrelated code, do not add framework files (Dockerfile, package configs, ` +
+          `task runners, environment templates), and do not modify pre-existing test ` +
+          `assertions.\n\nReported issue:\n${goal}`,
+        dependencies: [],
+        expectedOutputs: [
+          'Minimal source-code fix targeting the reported failure',
+          'No changes outside the files implicated by the reported behavior',
+        ],
+      },
+      {
+        stepNumber: 2,
+        agentName: 'reviewer',
+        task:
+          `Review the worker's fix for scope. Confirm the change does not ` +
+          `drift beyond the reported failure (no scaffolding files added, no ` +
+          `unrelated refactors, no test-file edits) and that it is the smallest ` +
+          `change consistent with the reported issue.\n\n${reviewCriteria}`,
+        dependencies: [1],
+        expectedOutputs: [
+          'Scope review notes',
+          'Confirmation no scaffolding or unrelated changes were introduced',
+        ],
+      },
+    ];
+
+    const steps = options?.agentGuidance
+      ? this.applyAgentGuidance(rawSteps, options.agentGuidance)
+      : rawSteps;
+
+    this.validateAgentAssignments(steps);
+    this.validateDependencies(steps);
+
+    return {
+      goal: goal.trim(),
+      createdAt: new Date().toISOString(),
+      steps,
+      metadata: {
+        totalSteps: steps.length,
+      },
+    };
+  }
+
+  /**
    * Parse Copilot-generated plan from /share transcript
    * Extracts JSON from transcript and validates against schema
    */
