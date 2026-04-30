@@ -194,16 +194,6 @@ npm install
 npm test
 ```
 
-## Star History
-
-<a href="https://www.star-history.com/#moonrunnerkc/swarm-orchestrator&type=date">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=moonrunnerkc/swarm-orchestrator&type=date&theme=dark" />
-    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=moonrunnerkc/swarm-orchestrator&type=date" />
-    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=moonrunnerkc/swarm-orchestrator&type=date" />
-  </picture>
-</a>
-
 ## License
 
 [ISC](LICENSE) © 2026 Bradley R. Kinnard / moonrunnerkc
