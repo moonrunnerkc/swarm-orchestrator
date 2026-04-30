@@ -9,6 +9,7 @@ import {
   DEFAULT_COMMAND_TIMEOUT_MS,
   DEFAULT_SIGKILL_DELAY_MS,
 } from '../defaults';
+import { gitPathspecExcludes } from '../worktree-reserved-paths';
 
 function last20Lines(output: string): string {
   const lines = output.split('\n');
@@ -65,12 +66,28 @@ export function runOutcomeChecks(
   return checks;
 }
 
-function checkGitDiff(workdir: string, baseSha: string): VerificationCheck {
+/**
+ * Check whether the worker step actually committed agent work.
+ *
+ * Excludes orchestrator-injected paths (`.copilot-instructions.md`,
+ * `runs/`, etc.) from the diff so the prompt-builder's pre-step commits
+ * do not count as "agent produced code changes." Without this exclusion
+ * a worker that talked through the fix and ran tests locally but never
+ * committed would still pass the verifier — observed on
+ * astropy__astropy-13579 (2026-04-30 smoke), where `.copilot-instructions.md`
+ * (736 lines, committed by `src/prompt-builder.ts` before step 1 runs)
+ * was the only thing in the diff and the verifier passed the step.
+ */
+export function checkGitDiff(workdir: string, baseSha: string): VerificationCheck {
   const timeout = DEFAULT_SIGKILL_DELAY_MS * 2;
+  // Each pathspec like `:(exclude)runs` and `:(exclude)runs/**` is shell-safe
+  // because the only special characters are ` ` and `()` — wrap in single
+  // quotes for the execSync (shell: true) invocation.
+  const pathspecArgs = gitPathspecExcludes().map(a => `'${a}'`).join(' ');
   try {
-    // Primary: committed changes since baseline
+    // Primary: committed changes since baseline, excluding orchestrator scaffolding.
     const committedDiff = execSync(
-      `git diff --stat ${baseSha}..HEAD`,
+      `git diff --stat ${baseSha}..HEAD -- . ${pathspecArgs}`,
       { cwd: workdir, encoding: 'utf8', timeout }
     ).trim();
 
@@ -86,16 +103,17 @@ function checkGitDiff(workdir: string, baseSha: string): VerificationCheck {
       };
     }
 
-    // Secondary: uncommitted working-tree changes (agent wrote files but did not commit)
+    // Secondary: uncommitted working-tree changes (agent wrote files but did
+    // not commit), with the same exclusions.
     const unstagedDiff = execSync(
-      `git diff --stat HEAD`,
+      `git diff --stat HEAD -- . ${pathspecArgs}`,
       { cwd: workdir, encoding: 'utf8', timeout }
     ).trim();
 
-    // Use -uno to exclude untracked files; transcript files and other orchestrator
-    // artifacts dropped into the worktree should not count as "agent made changes".
+    // -uno excludes untracked files; the pathspec excludes orchestrator
+    // scaffolding that is tracked but agent-irrelevant.
     const statusOutput = execSync(
-      `git status --porcelain -uno`,
+      `git status --porcelain -uno -- . ${pathspecArgs}`,
       { cwd: workdir, encoding: 'utf8', timeout }
     ).trim();
 
@@ -110,7 +128,8 @@ function checkGitDiff(workdir: string, baseSha: string): VerificationCheck {
       };
     }
 
-    // No committed or uncommitted changes: record for idempotency resolution above
+    // No committed or uncommitted changes outside reserved paths: record for
+    // idempotency resolution above.
     return {
       type: 'git_diff',
       description: 'Agent produced code changes',
