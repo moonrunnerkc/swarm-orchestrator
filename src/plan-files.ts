@@ -64,12 +64,26 @@ export function savePlanFile(plan: ExecutionPlan, filename?: string): string {
   return planPath;
 }
 
+function isExecutionPlanShape(value: unknown): value is ExecutionPlan {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as { goal?: unknown; steps?: unknown };
+  return typeof candidate.goal === 'string' && Array.isArray(candidate.steps);
+}
+
 /**
  * Loads an execution plan from an absolute path, relative path, or plans directory filename.
  *
+ * Accepts two on-disk shapes:
+ *   - Bare ExecutionPlan: `{ goal, createdAt, steps, metadata? }` (the format
+ *     `savePlanFile` writes under `plans/`).
+ *   - Structured-output envelope: `{ goal, planFile, plan: ExecutionPlan }` (the
+ *     format `swarm plan --output json` and `swarm plan import --output json`
+ *     emit). The envelope is unwrapped to the inner plan.
+ *
  * @param planRef - Plan filename or path.
  * @returns Parsed execution plan.
- * @throws Error when the plan file does not exist or cannot be parsed as JSON.
+ * @throws Error when the file is missing, not parseable as JSON, or matches
+ *   neither the bare nor the envelope shape.
  */
 export function loadPlanFile(planRef: string): ExecutionPlan {
   const planPath = resolvePlanPath(planRef);
@@ -86,5 +100,29 @@ export function loadPlanFile(planRef: string): ExecutionPlan {
     throw new Error(`Plan file not found: ${planPath}${hint}`);
   }
 
-  return JSON.parse(fs.readFileSync(planPath, 'utf8')) as ExecutionPlan;
+  const raw = fs.readFileSync(planPath, 'utf8');
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(
+      `Plan file is not valid JSON: ${planPath}; check the file for syntax errors or stray prose mixed into the JSON output`,
+      { cause: err },
+    );
+  }
+
+  if (isExecutionPlanShape(parsed)) {
+    return parsed;
+  }
+
+  if (parsed && typeof parsed === 'object' && 'plan' in parsed) {
+    const inner = (parsed as { plan: unknown }).plan;
+    if (isExecutionPlanShape(inner)) {
+      return inner;
+    }
+  }
+
+  throw new Error(
+    `Plan file at ${planPath} does not match the expected schema; expected either a plan object with "goal" and "steps" fields, or a structured-output envelope with a "plan" field containing the same. Regenerate via \`swarm plan\` or \`swarm bootstrap\`.`,
+  );
 }

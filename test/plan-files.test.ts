@@ -4,12 +4,22 @@ import * as os from 'os';
 import * as path from 'path';
 import { ExecutionPlan } from '../src/plan-generator';
 import { loadPlanFile, savePlanFile } from '../src/plan-files';
+import { handlePlanCommand } from '../src/cli/plan-handlers';
 
 function makePlan(goal = 'demo goal'): ExecutionPlan {
   return {
     goal,
-    steps: [],
-  } as unknown as ExecutionPlan;
+    createdAt: new Date('2026-04-29T00:00:00.000Z').toISOString(),
+    steps: [
+      {
+        stepNumber: 1,
+        agentName: 'worker',
+        task: 'do the thing',
+        dependencies: [],
+        expectedOutputs: ['result'],
+      },
+    ],
+  };
 }
 
 describe('plan-files', () => {
@@ -97,6 +107,69 @@ describe('plan-files', () => {
           return true;
         }
       );
+    });
+
+    it('unwraps a structured-output envelope produced by `swarm plan --output json`', () => {
+      const inner = makePlan('envelope inner');
+      const envelope = {
+        goal: inner.goal,
+        planFile: '/tmp/some/plans/wrapper.json',
+        plan: inner,
+      };
+      fs.writeFileSync(path.join(tmpDir, 'envelope.json'), JSON.stringify(envelope), 'utf8');
+
+      const loaded = loadPlanFile('./envelope.json');
+
+      assert.strictEqual(loaded.goal, 'envelope inner');
+      assert.strictEqual(loaded.steps.length, 1);
+      assert.strictEqual(loaded.steps[0].agentName, 'worker');
+    });
+
+    it('rejects JSON that matches neither the bare plan nor the envelope shape', () => {
+      fs.writeFileSync(path.join(tmpDir, 'bogus.json'), JSON.stringify({ goal: 'x' }), 'utf8');
+
+      assert.throws(
+        () => loadPlanFile('./bogus.json'),
+        (err: Error) => {
+          assert.match(err.message, /does not match the expected schema/);
+          assert.match(err.message, /goal.*steps|"plan"/);
+          return true;
+        },
+      );
+    });
+
+    it('round-trips the output of `swarm plan --output json` (BUG 2 contract)', async () => {
+      const stdoutWrite = process.stdout.write;
+      let captured = '';
+      process.stdout.write = ((chunk: string | Uint8Array) => {
+        captured += typeof chunk === 'string' ? chunk : chunk.toString();
+        return true;
+      }) as typeof process.stdout.write;
+
+      let exitCode: number;
+      try {
+        exitCode = await handlePlanCommand([
+          'plan',
+          '--output',
+          'json',
+          'Add a function called greet that returns Hello world',
+        ]);
+      } finally {
+        process.stdout.write = stdoutWrite;
+      }
+      assert.strictEqual(exitCode, 0);
+
+      const planJsonPath = path.join(tmpDir, 'plan.json');
+      fs.writeFileSync(planJsonPath, captured, 'utf8');
+
+      const loaded = loadPlanFile('plan.json');
+      assert.strictEqual(loaded.goal, 'Add a function called greet that returns Hello world');
+      assert.ok(Array.isArray(loaded.steps), 'expected steps array on loaded plan');
+      assert.ok(loaded.steps.length > 0, 'expected at least one generated step');
+      for (const step of loaded.steps) {
+        assert.ok(step.agentName, `step ${step.stepNumber} missing agentName`);
+        assert.ok(typeof step.task === 'string' && step.task.length > 0);
+      }
     });
   });
 
