@@ -229,7 +229,6 @@ export async function executeSwarm(
   if (options?.hooksEnabled !== undefined) swarmOptions.hooksEnabled = options.hooksEnabled;
   if (options?.owaspReport) swarmOptions.owaspReport = true;
   if (options?.cliAgent) swarmOptions.cliAgent = options.cliAgent;
-  if (options?.teamSize) swarmOptions.teamSize = options.teamSize;
 
   const context = await orchestrator.executeSwarm(plan, agentMap, runDir, swarmOptions);
 
@@ -458,7 +457,6 @@ Flags:
   --hooks / --no-hooks       Enable/disable per-step hook injection
   --owasp-report             Generate OWASP ASI compliance report
   --tool <name>              Agent tool: copilot, claude-code, claude-code-teams
-  --team-size <n>            Max concurrent teammates (claude-code-teams, 1-5)
 
 Examples:
   swarm swarm plan.json
@@ -573,7 +571,7 @@ export async function handleRunCommand(args: string[]): Promise<number> {
   // Flags that consume the next token as a value (must be skipped during goal extraction)
   const valuedFlags = new Set([
     '--model', '--resume', '--quality-gates-config', '--quality-gates-out',
-    '--pr', '--target', '--dir', '--tool', '--team-size', '--max-premium-requests',
+    '--pr', '--target', '--dir', '--tool', '--max-premium-requests',
     '--sarif', '--goal', '--base-commit', '--agent-guidance',
   ]);
 

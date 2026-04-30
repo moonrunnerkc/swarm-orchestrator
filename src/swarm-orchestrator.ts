@@ -94,7 +94,6 @@ export interface SwarmExecutionOptions {
   hooksEnabled?: boolean;
   cliAgent?: string;
   owaspReport?: boolean;
-  teamSize?: number;
   onProgress?: (context: SwarmExecutionContext, event: string) => void;
   onAgentLine?: (line: string) => void;
 }

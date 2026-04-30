@@ -17,7 +17,6 @@ export interface ExecuteSwarmCliOptions {
   hooksEnabled?: boolean;
   targetDir?: string;
   cliAgent?: string;
-  teamSize?: number;
   owaspReport?: boolean;
   yes?: boolean;
   verbose?: boolean;
@@ -173,17 +172,6 @@ export function parseSwarmFlags(args: string[]): ExecuteSwarmCliOptions {
   const toolIndex = args.indexOf('--tool');
   if (toolIndex !== -1 && args[toolIndex + 1]) {
     opts.cliAgent = args[toolIndex + 1];
-  }
-
-  const teamSizeIdx = args.indexOf('--team-size');
-  if (teamSizeIdx !== -1 && args[teamSizeIdx + 1]) {
-    const parsed = parseInt(args[teamSizeIdx + 1], 10);
-    if (isNaN(parsed) || parsed < 1 || parsed > 5) {
-      throw new Error(
-        `--team-size requires an integer between 1 and 5, got "${args[teamSizeIdx + 1]}"`
-      );
-    }
-    opts.teamSize = parsed;
   }
 
   return opts;

@@ -10,21 +10,11 @@ export interface TeamWaveResult {
   fallbackReason?: string | undefined;
 }
 
-export interface TeamsAdapterOptions {
-  teamSize?: number | undefined;
-}
-
-// Maximum concurrent teammates per wave. Agent Teams performance degrades
-// beyond 5 concurrent teammates based on Anthropic's documentation.
-const MAX_TEAM_SIZE = 5;
-
 export class ClaudeCodeTeamsAdapter implements AgentAdapter {
   readonly name = 'claude-code-teams';
-  private teamSize: number;
   private fallbackAdapter: ClaudeCodeAdapter;
 
-  constructor(options?: TeamsAdapterOptions) {
-    this.teamSize = Math.min(options?.teamSize ?? MAX_TEAM_SIZE, MAX_TEAM_SIZE);
+  constructor() {
     this.fallbackAdapter = new ClaudeCodeAdapter();
   }
 
@@ -99,10 +89,9 @@ export class ClaudeCodeTeamsAdapter implements AgentAdapter {
   }
 
   private buildTeamLeadPrompt(steps: AgentSpawnOptions[]): string {
-    const batchSize = Math.min(steps.length, this.teamSize);
     const sections: string[] = [
-      `You are the team lead for a wave of ${steps.length} parallel tasks.`,
-      `Spawn up to ${batchSize} teammates to execute these tasks concurrently.`,
+      `You are the team lead for ${steps.length} task(s).`,
+      'Spawn one teammate per task and execute them concurrently.',
       '',
       'For each task below, spawn a teammate with the given prompt.',
       'Wait for all teammates to complete before reporting results.',

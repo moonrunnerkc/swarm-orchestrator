@@ -17,7 +17,6 @@ export interface ExecutionOptions {
   cliAgent?: string;           // CLI agent adapter: copilot, claude-code, codex
   prMode?: 'auto' | 'review'; // Create PRs instead of direct merge ('auto' or 'review')
   owaspReport?: boolean;       // Generate OWASP ASI compliance report after verification
-  teamSize?: number;           // Max concurrent teammates per wave with claude-code-teams (default 5, max 5)
 }
 
 export interface SessionState {

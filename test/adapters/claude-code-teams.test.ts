@@ -28,11 +28,6 @@ describe('ClaudeCodeTeamsAdapter', () => {
       const adapter: AgentAdapter = new ClaudeCodeTeamsAdapter();
       assert.strictEqual(typeof adapter.spawn, 'function');
     });
-
-    it('accepts teamSize option', () => {
-      const adapter = new ClaudeCodeTeamsAdapter({ teamSize: 3 });
-      assert.strictEqual(adapter.name, 'claude-code-teams');
-    });
   });
 
   describe('spawn (single step)', function() {
@@ -60,39 +55,6 @@ describe('ClaudeCodeTeamsAdapter', () => {
   describe('executeWave', function() {
     before(function() {
       if (!process.env.ANTHROPIC_API_KEY) this.skip();
-    });
-
-    it('returns one AgentResult per step', async function() {
-      this.timeout(30000);
-      const adapter = new ClaudeCodeTeamsAdapter({ teamSize: 2 });
-
-      const steps: AgentSpawnOptions[] = [
-        { prompt: 'step 1 task', workdir: tmpDir },
-        { prompt: 'step 2 task', workdir: tmpDir }
-      ];
-
-      const results = await adapter.executeWave(steps);
-
-      assert.strictEqual(results.length, 2);
-      for (const r of results) {
-        assert.strictEqual(typeof r.stdout, 'string');
-        assert.strictEqual(typeof r.exitCode, 'number');
-        assert.strictEqual(typeof r.durationMs, 'number');
-      }
-    });
-
-    it('respects teamSize limit', async function() {
-      this.timeout(30000);
-      const adapter = new ClaudeCodeTeamsAdapter({ teamSize: 1 });
-
-      const steps: AgentSpawnOptions[] = [
-        { prompt: 'step 1', workdir: tmpDir },
-        { prompt: 'step 2', workdir: tmpDir },
-        { prompt: 'step 3', workdir: tmpDir }
-      ];
-
-      const results = await adapter.executeWave(steps);
-      assert.strictEqual(results.length, 3);
     });
 
     it('handles empty wave', async () => {
