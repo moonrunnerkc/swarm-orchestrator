@@ -62,7 +62,7 @@ npm link
 ### First run
 
 ```bash
-node dist/src/cli.js run --goal "Add a /health endpoint that returns 200 OK" \
+swarm run --goal "Add a /health endpoint that returns 200 OK" \
   --tool claude-code --target ./my-repo
 ```
 
