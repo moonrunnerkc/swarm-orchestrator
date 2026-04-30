@@ -103,7 +103,7 @@ describe('DeploymentManager', () => {
 
     const metadata = {
       stepNumber: 3,
-      agentName: 'DevOpsPro',
+      agentName: 'worker',
       timestamp: new Date().toISOString(),
       platform: 'vercel',
       previewUrl: 'https://app-preview.vercel.app',
@@ -131,7 +131,7 @@ describe('DeploymentManager', () => {
     // Save multiple deployments
     manager.saveDeploymentMetadata(tmpRunDir, {
       stepNumber: 1,
-      agentName: 'DevOpsPro',
+      agentName: 'worker',
       timestamp: new Date().toISOString(),
       platform: 'vercel',
       branchName: 'test'
@@ -139,7 +139,7 @@ describe('DeploymentManager', () => {
 
     manager.saveDeploymentMetadata(tmpRunDir, {
       stepNumber: 3,
-      agentName: 'DevOpsPro',
+      agentName: 'worker',
       timestamp: new Date().toISOString(),
       platform: 'netlify',
       previewUrl: 'https://app.netlify.app',

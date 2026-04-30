@@ -1,6 +1,6 @@
 /**
  * Shared text similarity utilities.
- * Extracted from knowledge-base.ts and plan-storage.ts to eliminate the
+ * Extracted from knowledge-base.ts to eliminate the
  * duplicate Levenshtein implementation.
  */
 

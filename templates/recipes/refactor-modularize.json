@@ -14,28 +14,28 @@
   "steps": [
     {
       "stepNumber": 1,
-      "agentName": "BackendMaster",
+      "agentName": "worker",
       "task": "Analyze {{target}} and identify logical boundaries for extraction. Group related functions, classes, and types. Produce a refactoring plan listing each new module, what it will contain, and which imports change. Target {{max-lines}} lines per module.",
       "dependencies": [],
       "expectedOutputs": ["refactoring plan"]
     },
     {
       "stepNumber": 2,
-      "agentName": "BackendMaster",
+      "agentName": "worker",
       "task": "Execute the refactoring plan from step 1: extract modules, move code, update imports and exports. Each new module should have a single clear responsibility. Preserve all existing public API surface (re-export from the original file if needed).",
       "dependencies": [1],
       "expectedOutputs": ["new module files", "updated imports"]
     },
     {
       "stepNumber": 3,
-      "agentName": "TesterElite",
+      "agentName": "worker",
       "task": "Run the full test suite and verify no regressions. If tests reference internal functions that moved, update the imports. Add tests for any newly exposed module boundaries.",
       "dependencies": [2],
       "expectedOutputs": ["all tests passing"]
     },
     {
       "stepNumber": 4,
-      "agentName": "IntegratorFinalizer",
+      "agentName": "reviewer",
       "task": "Verify the build compiles cleanly with no errors or warnings. Check that no circular dependencies were introduced. Update documentation to reflect the new module structure.",
       "dependencies": [3],
       "expectedOutputs": ["clean build", "updated documentation"]

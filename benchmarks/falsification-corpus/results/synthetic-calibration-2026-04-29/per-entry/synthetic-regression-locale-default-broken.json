@@ -1,0 +1,107 @@
+{
+  "entryId": "synthetic-regression-locale-default-broken",
+  "layers": {
+    "intent": {
+      "status": "skipped",
+      "score": 1,
+      "evidence": {},
+      "errorReason": "synthesis-required-not-provided"
+    },
+    "regression": {
+      "status": "fail",
+      "score": 0,
+      "evidence": {
+        "regression": {
+          "command": "node test/regression.test.js",
+          "cwd": "/tmp/falsification-battery-synthetic-regression-locale-default-broken-F96xml/patch",
+          "exitCode": 1,
+          "stdout": "",
+          "stderr": "node:assert:152\n  throw new AssertionError(obj);\n  ^\n\nAssertionError [ERR_ASSERTION]: 'tr' == 'en'\n    at Object.<anonymous> (/tmp/falsification-battery-synthetic-regression-locale-default-broken-F96xml/patch/test/regression.test.js:4:8)\n    at Module._compile (node:internal/modules/cjs/loader:1761:14)\n    at Object..js (node:internal/modules/cjs/loader:1893:10)\n    at Module.load (node:internal/modules/cjs/loader:1481:32)\n    at Module._load (node:internal/modules/cjs/loader:1300:12)\n    at TracingChannel.traceSync (node:diagnostics_channel:328:14)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:245:24)\n    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)\n    at node:internal/main/run_main_module:33:47 {\n  generatedMessage: true,\n  code: 'ERR_ASSERTION',\n  actual: 'tr',\n  expected: 'en',\n  operator: '==',\n  diff: 'simple'\n}\n\nNode.js v24.12.0\n",
+          "durationMs": 38,
+          "timedOut": false
+        }
+      }
+    },
+    "cheat": {
+      "status": "pass",
+      "score": 1,
+      "evidence": {
+        "score": 1,
+        "findings": [],
+        "semgrepStatus": "not-run"
+      }
+    },
+    "property": {
+      "status": "skipped",
+      "score": 1,
+      "evidence": {
+        "status": "SKIP",
+        "score": 1,
+        "targets": [],
+        "findings": []
+      },
+      "errorReason": "no-property-targets"
+    },
+    "attestation": {
+      "status": "pass",
+      "score": 1,
+      "evidence": {
+        "found": true,
+        "verified": true,
+        "reason": "unsigned test attestation verified structurally",
+        "attestation": {
+          "envelope": {
+            "_type": "https://in-toto.io/Statement/v1",
+            "subject": [
+              {
+                "name": "git-commit",
+                "digest": {
+                  "sha1": "ad0894fe989867bc4a41e4f6af5aade9acab18c9"
+                }
+              }
+            ],
+            "predicateType": "https://slsa.dev/provenance/v1",
+            "predicate": {
+              "buildType": "https://github.com/moonrunnerkc/swarm-orchestrator/attestation/v7",
+              "invocation": {
+                "parameters": {
+                  "goalHash": "9917290cdbda78ed4156bdf65f5f17639c5e81a11bd3ed308a7958cb25cd49ba",
+                  "planHash": "synthetic-regression-locale-default"
+                }
+              },
+              "buildConfig": {
+                "tool": "synthetic",
+                "version": "1.0.0",
+                "model": "synthetic"
+              },
+              "metadata": {
+                "transcriptHash": "a651f6c9e9a4873c5e30f792dc289a1434ecdcbabc0ce73b3a9204eb3eacbd3d",
+                "layerResults": [],
+                "compositeScore": 0,
+                "timestamp": "2026-04-29T00:00:00.000Z"
+              }
+            }
+          },
+          "signature": {
+            "kind": "unsigned-test",
+            "signature": "00204010b9564d3b3e54a6765be03d36fd0302f809865838add75ca7de31f098"
+          }
+        }
+      }
+    }
+  },
+  "compositeScore": 1,
+  "broke": true,
+  "flagged": false,
+  "timing": {
+    "totalMs": 78,
+    "perLayerMs": {
+      "intent": 0,
+      "regression": 38,
+      "cheat": 0,
+      "property": 0,
+      "attestation": 8
+    }
+  },
+  "errors": []
+}

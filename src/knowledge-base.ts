@@ -33,7 +33,7 @@ export interface KnowledgeBase {
 
 /**
  * knowledge base for learning from execution patterns
- * stores insights from meta-reviewer analysis
+ * stores insights from reviewer-role analysis
  */
 export class KnowledgeBaseManager {
   private knowledgeBasePath: string;

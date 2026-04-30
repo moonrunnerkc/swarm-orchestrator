@@ -38,8 +38,8 @@ export class DemoMode {
   private getDemoFastScenario(): DemoScenario {
     return {
       name: 'demo-fast',
-      description: 'Two-step hello-world swarm proving parallel execution (one wave)',
-      goal: 'Quick swarm hello-world: two independent micro-tasks running in parallel',
+      description: 'Two independent utility files, one wave',
+      goal: 'Two independent micro-tasks: each agent adds one small TypeScript utility file.',
       expectedDuration: '20-30 seconds',
       steps: [
         {
@@ -66,14 +66,14 @@ export class DemoMode {
 
   /**
    * API Quick: 3-step REST API build showing wave dependencies.
-   * Wave 1: BackendMaster builds the endpoints.
-   * Wave 2: TesterElite adds tests (depends on step 1).
-   * Wave 3: DevOpsPro adds a Dockerfile (depends on step 1).
+   * Step 1: Worker builds the endpoints.
+   * Step 2: Worker adds tests (depends on step 1).
+   * Step 3: Worker adds a Dockerfile (depends on step 1).
    */
   private getApiQuickScenario(): DemoScenario {
     return {
       name: 'api-quick',
-      description: 'REST API with tests and Dockerfile (3 agents, 2 waves, ~5 min)',
+      description: 'REST API with tests and Dockerfile, dependency-chained across two waves',
       goal: 'Build a minimal REST API with health and items CRUD, add tests, and containerize with Docker',
       expectedDuration: '4-6 minutes',
       steps: [

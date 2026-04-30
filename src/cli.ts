@@ -3,13 +3,36 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { normalizeLeadingGlobalFlags, parseOutputFormat } from './cli/flags';
-import { configureLogger, getLogger } from './logger';
+import { configureLogger, getLogger, setPrettyMode } from './logger';
+import { configurePresenter } from './presenter';
 
 const startupArgs = process.argv.slice(2);
+
+// User-facing commands enable a clean presenter surface by default:
+// pretty-mode hides `[scope]` prefixes, diagnostic logger output is routed to
+// stderr, and --quiet suppresses everything except errors and the result line.
+// `--verbose` keeps the legacy diagnostic-on-stdout shape for developers.
+const USER_FACING_COMMANDS = new Set(['run', 'swarm', 'quick', 'demo', 'demo-fast', 'bootstrap']);
+const firstNonFlag = startupArgs.find((a) => !a.startsWith('-'));
+const isUserFacingCommand = firstNonFlag ? USER_FACING_COMMANDS.has(firstNonFlag) : false;
+const isVerbose = startupArgs.includes('--verbose');
+const isQuiet = startupArgs.includes('--quiet') || startupArgs.includes('-q');
+
 configureLogger({
-  level: startupArgs.includes('--verbose') ? 'debug' : 'info',
+  level: isQuiet ? 'warn' : (isVerbose ? 'debug' : 'info'),
   outputFormat: parseOutputFormat(startupArgs),
+  // Diagnostic output (info/debug/trace) routes to stderr when the presenter
+  // owns stdout. Without pretty mode (developer / non-user-facing commands),
+  // diagnostics keep flowing to stdout so tooling that scrapes stdout works.
+  diagnosticsToStderr: isUserFacingCommand && !isVerbose,
 });
+
+if (isUserFacingCommand && !isVerbose) {
+  setPrettyMode(true);
+}
+
+configurePresenter({ quiet: isQuiet });
+
 const logger = getLogger('cli');
 
 /**
@@ -81,9 +104,9 @@ loadDotenv();
 import {
   generatePlan,
   handleAgentsCommand,
+  handleAttestCommand,
   handleAuditCommand,
   handleBootstrapCommand,
-  handleDashboardCommand,
   handleDemoCommand,
   handleExecuteCommand,
   handleGatesCommand,
@@ -101,7 +124,6 @@ import {
   handleUseCommand,
   showUsage,
 } from './cli/index';
-import { startMcpServer } from './mcp-server';
 
 async function main(): Promise<void> {
   const args = normalizeLeadingGlobalFlags(process.argv.slice(2));
@@ -143,9 +165,6 @@ async function main(): Promise<void> {
       case 'demo':
         exitCode = await handleDemoCommand(args);
         break;
-      case 'dashboard':
-        exitCode = await handleDashboardCommand(args);
-        break;
       case 'templates':
         exitCode = await handleTemplatesCommand();
         break;
@@ -171,6 +190,9 @@ async function main(): Promise<void> {
       case 'agents':
         exitCode = await handleAgentsCommand(args);
         break;
+      case 'attest':
+        exitCode = await handleAttestCommand(args);
+        break;
       case 'use':
         exitCode = await handleUseCommand(args);
         break;
@@ -179,9 +201,6 @@ async function main(): Promise<void> {
         break;
       case 'recipe-info':
         exitCode = handleRecipeInfoCommand(args);
-        break;
-      case 'mcp-server':
-        startMcpServer(process.cwd());
         break;
       default:
         logger.error(`Unknown command: ${command}\n`);

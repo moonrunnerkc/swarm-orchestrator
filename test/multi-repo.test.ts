@@ -8,7 +8,7 @@ describe('Upgrade 1: Multi-Repo Orchestration', () => {
     it('should accept optional repo field', () => {
       const step: PlanStep = {
         stepNumber: 1,
-        agentName: 'BackendMaster',
+        agentName: 'worker',
         task: 'Build API',
         dependencies: [],
         expectedOutputs: ['api/'],
@@ -20,7 +20,7 @@ describe('Upgrade 1: Multi-Repo Orchestration', () => {
     it('should work without repo field (defaults to undefined)', () => {
       const step: PlanStep = {
         stepNumber: 1,
-        agentName: 'FrontendExpert',
+        agentName: 'worker',
         task: 'Build UI',
         dependencies: [],
         expectedOutputs: ['src/']

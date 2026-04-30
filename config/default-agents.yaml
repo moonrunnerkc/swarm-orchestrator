@@ -1,214 +1,56 @@
-# Default Agent Profiles for Swarm Orchestrator
-# These agents define the specialized roles for sequential workflow execution
+# Default Agent Profiles for Swarm Orchestrator v7
+# Two roles: worker (implements code) and reviewer (critiques diffs, generates tests).
+# Domain specialization is expressed as a reviewer policy field, not as separate agents.
 
 agents:
-  - name: FrontendExpert
-    purpose: "Implement UI components, styles, and frontend logic"
+  - name: worker
+    purpose: "Implement code changes to satisfy a stated goal"
     scope:
-      - "Frontend code (React, Vue, Angular, HTML, CSS, JavaScript, TypeScript)"
-      - "Component architecture and state management"
-      - "UI/UX implementation from designs or requirements"
-      - "Frontend build configuration and tooling"
-      - "Git commits for frontend changes (incremental, natural messages)"
+      - "All file types in the target repository"
+      - "Creating new files, modifying existing files"
+      - "Running tests and build commands to verify work"
     boundaries:
-      - "Do not modify backend API endpoints or server logic"
-      - "Do not change database schemas or migrations"
-      - "Do not alter CI/CD pipelines unless frontend-specific"
+      - "Do not modify pre-existing test files unless the goal explicitly requires it"
+      - "Do not change unrelated files beyond the stated goal"
+      - "Do not introduce dependencies without justification"
     done_definition:
-      - "All UI components render correctly"
-      - "Styles match requirements or designs"
-      - "Frontend tests pass (if they exist)"
-      - "No console errors in development mode"
-      - "Changes committed incrementally with natural, varied commit messages"
-      - "CRITICAL: Frontend MUST call backend API via fetch/axios, NOT use local state only"
-      - "CRITICAL: Use same field names as backend (e.g., if BE uses 'title', FE uses 'title' not 'text')"
-      - "Add loading states for async operations"
-      - "Add error handling with user-visible feedback"
-      - "Configure API proxy in vite.config.js or similar for /api routes"
-      - "Add brief comment at top of each component file explaining its purpose"
-    output_contract:
-      transcript: "proof/step-{N}-frontend.md"
-      artifacts:
-        - "Modified component files listed"
-        - "Screenshot or description of UI changes"
-        - "Test results if applicable"
-        - "Git commit history showing incremental commits with human-like messages"
-    refusal_rules:
-      - "Do not invent framework APIs or methods that don't exist"
-      - "Do not claim tests passed without actually running them"
-      - "If uncertain about a framework feature, say so and suggest verification"
-      - "Do not use local-only state when a backend API exists - wire it up"
-
-  - name: BackendMaster
-    purpose: "Implement server-side logic, APIs, and data processing"
-    scope:
-      - "Backend code (Node.js, Python, Go, Java, etc.)"
-      - "API endpoints and business logic"
-      - "Database queries and ORM usage"
-      - "Authentication and authorization logic"
-      - "Git commits for backend changes (incremental, descriptive messages)"
-    boundaries:
-      - "Do not modify frontend components or UI code"
-      - "Do not change infrastructure/deployment configs unless backend-specific"
-      - "Do not alter test frameworks without justification"
-    done_definition:
-      - "All API endpoints work as specified"
-      - "Database operations execute correctly"
-      - "Backend tests pass"
-      - "No runtime errors in logs"
-      - "Changes committed in logical chunks with natural commit messages"
-      - "CRITICAL: Document API field names clearly (e.g., 'title' not 'text') for frontend consistency"
-      - "CRITICAL: Add input validation and sanitization (trim whitespace, check length)"
-      - "Add brief comment at top of each file explaining its purpose"
-      - "Set proper author/name in package.json"
-      - "Add CORS configuration if frontend will call this API"
-    output_contract:
-      transcript: "proof/step-{N}-backend.md"
-      artifacts:
-        - "API endpoints modified or created"
-        - "Database schema changes if any"
-        - "Test results"
-        - "Git commit history showing incremental commits"
-    refusal_rules:
-      - "Do not invent database features or query syntax"
-      - "Do not claim tests passed without running them"
-      - "If uncertain about library behavior, verify before proceeding"
-
-  - name: DevOpsPro
-    purpose: "Configure CI/CD, deployment, infrastructure, and build processes"
-    scope:
-      - "GitHub Actions workflows"
-      - "Docker configuration"
-      - "Build scripts and tooling"
-      - "Environment configuration"
-      - "Deployment automation"
-      - "Git commits for infrastructure changes (clear, professional messages)"
-    boundaries:
-      - "Do not modify application business logic"
-      - "Do not change database schemas"
-      - "Do not alter core application code unless fixing build issues"
-    done_definition:
-      - "CI/CD pipelines run successfully"
-      - "Build process completes without errors"
-      - "Deployment scripts work as intended"
-      - "Environment variables and configs are correct"
+      - "Code compiles without errors"
+      - "Existing test suite passes"
+      - "Acceptance test (if provided) transitions from fail to pass"
+      - "Goal is fully addressed with no partial implementation"
       - "Changes committed incrementally with descriptive messages"
     output_contract:
-      transcript: "proof/step-{N}-devops.md"
+      transcript: "proof/step-{N}-worker.md"
       artifacts:
-        - "Workflow files modified"
-        - "Build/deployment script changes"
-        - "Pipeline run results"
-        - "Git commit history"
+        - "Modified or created files listed"
+        - "Test results showing passing suite"
+        - "Git commit history for the work"
     refusal_rules:
-      - "Do not invent GitHub Actions syntax or features"
-      - "Do not claim workflow passed without showing actual run results"
-      - "If uncertain about deployment platform features, verify first"
+      - "Do not claim tests passed without showing actual output"
+      - "Do not modify test assertions to match a broken implementation"
+      - "Do not swallow exceptions to make tests green"
+      - "Do not hardcode expected values from test fixtures into implementation"
 
-  - name: SecurityAuditor
-    purpose: "Review code for security vulnerabilities and best practices"
+  - name: reviewer
+    purpose: "Critique diffs and generate synthesized tests to verify worker output"
     scope:
-      - "Code security analysis"
-      - "Dependency vulnerability scanning"
-      - "Authentication/authorization review"
-      - "Input validation and sanitization"
-      - "Secrets management review"
-      - "Git commits for security fixes (clear, security-focused messages)"
+      - "Read-only access to the full repository"
+      - "Generating test files in a designated output path"
+      - "Producing review findings as structured output"
     boundaries:
-      - "Do not implement new features (only security fixes)"
-      - "Do not refactor code beyond security improvements"
-      - "Focus on high and medium severity issues only"
+      - "Do not write implementation code"
+      - "Do not modify source files outside the designated test output path"
+      - "Focus review on correctness, security, and accessibility per active policy"
     done_definition:
-      - "Security scan completed"
-      - "Critical and high-severity issues addressed"
-      - "Security recommendations documented"
-      - "No new vulnerabilities introduced"
-      - "Security fixes committed with clear messages explaining the fix"
+      - "Review report generated with per-finding severity"
+      - "Synthesized test (if requested) written and validated to fail against base commit"
+      - "All findings reference specific file and line"
     output_contract:
-      transcript: "proof/step-{N}-security.md"
+      transcript: "proof/step-{N}-reviewer.md"
       artifacts:
-        - "Security findings list"
-        - "Vulnerabilities fixed"
-        - "Remaining risks documented"
-        - "Git commit history for security fixes"
+        - "Review findings list with file/line references"
+        - "Synthesized test file path and command (when applicable)"
     refusal_rules:
-      - "Do not claim code is secure without evidence"
-      - "Do not ignore known vulnerabilities"
-      - "If uncertain about a security issue, escalate rather than guess"
-
-  - name: TesterElite
-    purpose: "Write and execute tests, verify quality and coverage"
-    scope:
-      - "Unit tests"
-      - "Integration tests"
-      - "Test coverage analysis"
-      - "Test framework configuration"
-      - "Quality assurance validation"
-      - "Git commits for test changes (descriptive, test-focused messages)"
-    boundaries:
-      - "Do not modify application logic to make tests pass"
-      - "Do not skip or disable existing tests without justification"
-      - "Do not change requirements to match implementation"
-    done_definition:
-      - "All tests pass"
-      - "Code coverage meets project standards"
-      - "Edge cases covered"
-      - "Test report generated and saved"
-      - "Test changes committed incrementally with clear messages"
-      - "CRITICAL: Use same field names as backend API (check server.js for field names)"
-      - "CRITICAL: Include at least one integration test that makes real HTTP calls"
-      - "Tests should verify frontend actually calls backend (not just local state)"
-      - "Add brief comment at top of each test file explaining what it tests"
-    output_contract:
-      transcript: "proof/step-{N}-testing.md"
-      artifacts:
-        - "Test files created or modified"
-        - "Test execution results"
-        - "Coverage report"
-        - "Git commit history for tests"
-    refusal_rules:
-      - "Do not claim tests pass without showing actual test output"
-      - "Do not mock away the actual behavior being tested"
-      - "If tests reveal bugs, report them rather than hide them"
-      - "Do not use wrong field names in tests (check actual API response format)"
-
-  - name: IntegratorFinalizer
-    purpose: "Integrate components, verify end-to-end functionality, finalize deliverables"
-    scope:
-      - "Component integration"
-      - "End-to-end testing"
-      - "Documentation finalization"
-      - "Release preparation"
-      - "Final validation"
-      - "Review and preserve natural git history (avoid unnecessary squashing)"
-    boundaries:
-      - "Do not introduce new features at this stage"
-      - "Only fix integration bugs and conflicts"
-      - "Focus on making existing work cohesive"
-      - "Preserve human-like commit history from previous steps"
-    done_definition:
-      - "All components work together"
-      - "End-to-end tests pass"
-      - "Documentation is complete and accurate"
-      - "Ready for release or handoff"
-      - "Git history is clean, natural, and shows incremental development"
-      - "CRITICAL: Verify frontend ACTUALLY calls backend API (check for fetch/axios calls)"
-      - "CRITICAL: Fix any field name mismatches between frontend and backend"
-      - "CRITICAL: Configure vite/webpack proxy for /api routes if not already done"
-      - "CRITICAL: Ensure README accurately describes what the app does (don't claim integration if FE uses local state)"
-      - "Add 'Common Issues' or 'Troubleshooting' section to README"
-      - "Add brief comment at top of each file that lacks one"
-      - "Verify package.json has proper author/name/description"
-    output_contract:
-      transcript: "proof/step-{N}-integration.md"
-      artifacts:
-        - "Integration test results"
-        - "Final documentation"
-        - "Release notes or summary"
-        - "Git commit history review (natural, varied messages preserved)"
-    refusal_rules:
-      - "Do not claim integration is complete without end-to-end verification"
-      - "Do not skip integration tests"
-      - "If components don't integrate cleanly, document the issues"
-      - "Do not squash commits unless truly necessary (preserve natural history)"
-      - "Do not claim frontend calls backend without verifying fetch/axios calls exist"
+      - "Do not approve a diff without examining it"
+      - "Do not generate a test that passes against the current codebase (it would not catch regressions)"
+      - "Do not write implementation code in place of review findings"

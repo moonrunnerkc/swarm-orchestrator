@@ -1,9 +1,11 @@
-export type LogLevel = 'error' | 'warn' | 'info' | 'debug';
+export type LogLevel = 'error' | 'warn' | 'info' | 'debug' | 'trace' | 'silent';
 export type OutputFormat = 'text' | 'json';
 
 export interface LoggerConfig {
   level?: LogLevel;
   outputFormat?: OutputFormat;
+  /** Route info/debug/trace to stderr instead of stdout (text mode). */
+  diagnosticsToStderr?: boolean;
 }
 
 export interface Logger {
@@ -11,22 +13,24 @@ export interface Logger {
   warn: (...args: unknown[]) => void;
   info: (...args: unknown[]) => void;
   debug: (...args: unknown[]) => void;
+  trace: (...args: unknown[]) => void;
   child: (scope: string) => Logger;
 }
 
-const LEVEL_RANK: Record<LogLevel, number> = {
+const LEVEL_RANK: Record<Exclude<LogLevel, 'silent'>, number> = {
   error: 0,
   warn: 1,
   info: 2,
   debug: 3,
+  trace: 4,
 };
 
-const state: Required<LoggerConfig> & { dashboardActive: boolean; prettyMode: boolean } = {
+const state: Required<Pick<LoggerConfig, 'level' | 'outputFormat' | 'diagnosticsToStderr'>> & { prettyMode: boolean } = {
   level: 'info',
   outputFormat: 'text',
-  dashboardActive: false,
+  diagnosticsToStderr: false,
   // Pretty mode: hide `[scope]` prefixes for a cleaner CLI UX.
-  // Enabled by demo commands. Scope still shown in JSON output.
+  // Auto-enabled by user-facing commands. Scope still shown in JSON output.
   prettyMode: false,
 };
 
@@ -42,7 +46,8 @@ function normalizeArgs(args: unknown[]): string {
   }).join(' ');
 }
 
-function shouldLog(level: LogLevel): boolean {
+function shouldLog(level: Exclude<LogLevel, 'silent'>): boolean {
+  if (state.level === 'silent') return false;
   return LEVEL_RANK[level] <= LEVEL_RANK[state.level];
 }
 
@@ -50,7 +55,7 @@ function writeLine(stream: NodeJS.WriteStream, line: string): void {
   stream.write(line + '\n');
 }
 
-function emit(level: LogLevel, scope: string | undefined, args: unknown[]): void {
+function emit(level: Exclude<LogLevel, 'silent'>, scope: string | undefined, args: unknown[]): void {
   if (!shouldLog(level)) return;
 
   const message = normalizeArgs(args);
@@ -65,10 +70,12 @@ function emit(level: LogLevel, scope: string | undefined, args: unknown[]): void
   }
 
   const prefix = (!state.prettyMode && scope) ? `[${scope}] ` : '';
-  // When the Ink dashboard owns stdout, route everything to stderr.
-  const stream = (level === 'error' || level === 'warn' || state.dashboardActive)
+  // Diagnostic levels (info/debug/trace) go to stderr when explicitly routed there
+  // so the presenter owns stdout cleanly. Error/warn always to stderr.
+  const isDiagnostic = level === 'info' || level === 'debug' || level === 'trace';
+  const stream = level === 'error' || level === 'warn'
     ? process.stderr
-    : process.stdout;
+    : (state.diagnosticsToStderr && isDiagnostic ? process.stderr : process.stdout);
   writeLine(stream, `${prefix}${message}`);
 }
 
@@ -78,6 +85,7 @@ function createLogger(scope?: string): Logger {
     warn: (...args: unknown[]) => emit('warn', scope, args),
     info: (...args: unknown[]) => emit('info', scope, args),
     debug: (...args: unknown[]) => emit('debug', scope, args),
+    trace: (...args: unknown[]) => emit('trace', scope, args),
     child: (childScope: string) => createLogger(scope ? `${scope}:${childScope}` : childScope),
   };
 }
@@ -85,23 +93,12 @@ function createLogger(scope?: string): Logger {
 export function configureLogger(config: LoggerConfig): void {
   if (config.level) state.level = config.level;
   if (config.outputFormat) state.outputFormat = config.outputFormat;
-}
-
-/**
- * When true, the Ink TUI dashboard owns stdout.
- * All logger output is routed to stderr and Spinner becomes a no-op.
- */
-export function setDashboardActive(active: boolean): void {
-  state.dashboardActive = active;
-}
-
-export function isDashboardActive(): boolean {
-  return state.dashboardActive;
+  if (config.diagnosticsToStderr !== undefined) state.diagnosticsToStderr = config.diagnosticsToStderr;
 }
 
 /**
  * Hide `[scope]` prefixes for a cleaner user-facing CLI UX.
- * Called by demo commands; structured JSON output is unaffected.
+ * Auto-enabled by user-facing commands; structured JSON output is unaffected.
  */
 export function setPrettyMode(pretty: boolean): void {
   state.prettyMode = pretty;
@@ -115,7 +112,7 @@ export function getLogger(scope?: string): Logger {
   return createLogger(scope);
 }
 
-export function getLoggerConfig(): Required<LoggerConfig> {
+export function getLoggerConfig(): Required<Pick<LoggerConfig, 'level' | 'outputFormat' | 'diagnosticsToStderr'>> & { prettyMode: boolean } {
   return { ...state };
 }
 
@@ -129,4 +126,3 @@ export function writeStructuredOutput(payload: unknown): void {
     : JSON.stringify(payload, null, 2);
   process.stdout.write(content + '\n');
 }
-

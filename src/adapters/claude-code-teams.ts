@@ -10,21 +10,11 @@ export interface TeamWaveResult {
   fallbackReason?: string | undefined;
 }
 
-export interface TeamsAdapterOptions {
-  teamSize?: number | undefined;
-}
-
-// Maximum concurrent teammates per wave. Agent Teams performance degrades
-// beyond 5 concurrent teammates based on Anthropic's documentation.
-const MAX_TEAM_SIZE = 5;
-
 export class ClaudeCodeTeamsAdapter implements AgentAdapter {
   readonly name = 'claude-code-teams';
-  private teamSize: number;
   private fallbackAdapter: ClaudeCodeAdapter;
 
-  constructor(options?: TeamsAdapterOptions) {
-    this.teamSize = Math.min(options?.teamSize ?? MAX_TEAM_SIZE, MAX_TEAM_SIZE);
+  constructor() {
     this.fallbackAdapter = new ClaudeCodeAdapter();
   }
 
@@ -89,20 +79,23 @@ export class ClaudeCodeTeamsAdapter implements AgentAdapter {
 
     // Map the single team lead output to per-step results.
     // Each step gets the same transcript since the team lead orchestrated all work.
+    // fatalError is propagated identically across mapped results because
+    // a usage-limit / auth error on the team lead applies to every teammate
+    // it would have spawned — they share the same underlying account.
     return steps.map((_step, _i) => ({
       stdout: result.stdout,
       stderr: result.stderr,
       exitCode: result.exitCode,
       durationMs,
-      shareTranscriptPath: undefined
+      shareTranscriptPath: undefined,
+      ...(result.fatalError ? { fatalError: result.fatalError } : {}),
     }));
   }
 
   private buildTeamLeadPrompt(steps: AgentSpawnOptions[]): string {
-    const batchSize = Math.min(steps.length, this.teamSize);
     const sections: string[] = [
-      `You are the team lead for a wave of ${steps.length} parallel tasks.`,
-      `Spawn up to ${batchSize} teammates to execute these tasks concurrently.`,
+      `You are the team lead for ${steps.length} task(s).`,
+      'Spawn one teammate per task and execute them concurrently.',
       '',
       'For each task below, spawn a teammate with the given prompt.',
       'Wait for all teammates to complete before reporting results.',

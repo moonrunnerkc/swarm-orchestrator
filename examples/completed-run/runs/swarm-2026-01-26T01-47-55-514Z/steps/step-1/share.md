@@ -9,19 +9,19 @@
 
 ### 👤 User
 
-=== COPILOT SWARM ORCHESTRATOR - Parallel Execution ===
+=== COPILOT SWARM ORCHESTRATOR - Verified Step Execution ===
 
 Step 1 of 2
 Agent: backend_master
 Branch: swarm/swarm-2026-01-26T01-47-55-515Z/step-1-backend_master
-Execution Mode: PARALLEL
 
 YOUR TASK:
 Create a tiny TypeScript utility module at src/math-utils.ts that exports a single function add(a: number, b: number): number. Keep it boring. No new deps. Add a short top-of-file comment.
 
-PARALLEL EXECUTION CONTEXT:
-You are running in parallel with other agents. Your changes are isolated
-on a dedicated branch and will be auto-merged when complete.
+WORKTREE ISOLATION:
+You are working in a dedicated git worktree on the branch above. Other
+steps may be running concurrently in their own worktrees; you cannot see
+their unmerged files. Your changes are merged when this step verifies.
 
 DEPENDENCY CONTEXT:
 No dependencies - you are starting fresh.
@@ -67,7 +67,7 @@ BOUNDARIES: Do not modify frontend components or UI code, Do not change infrastr
 
 DONE WHEN: All API endpoints work as specified, Database operations execute correctly, Backend tests pass, No runtime errors in logs, Changes committed in logical chunks with natural commit messages
 
-=== BEGIN PARALLEL WORK ===
+=== BEGIN WORK ===
 
 ---
 

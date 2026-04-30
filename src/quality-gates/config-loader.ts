@@ -17,9 +17,46 @@ function is_object(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * Convert kebab-case identifiers (e.g. `duplicate-blocks`) to the camelCase
+ * canonical form the registry stores (`duplicateBlocks`). Identifiers that
+ * are already camelCase pass through unchanged. This bridges the README's
+ * Quality gates table (which displays kebab) and `.swarm/gates.yaml`
+ * (which historically required camel).
+ */
+function kebab_to_camel(key: string): string {
+  return key.replace(/-([a-z])/g, (_match, ch: string) => ch.toUpperCase());
+}
+
+/**
+ * Normalize the `gates` map so callers can write either kebab-case
+ * (`runtime-checks`) or camelCase (`runtimeChecks`) keys in YAML. Mutates a
+ * fresh copy of the parsed config; the original object is not altered.
+ * Throws if the same gate is configured under both spellings, since the
+ * intent is ambiguous.
+ */
+function normalize_gate_keys(parsed: Record<string, unknown>, sourcePath: string): void {
+  const gates = parsed.gates;
+  if (!is_object(gates)) return;
+
+  const normalized: Record<string, unknown> = {};
+  for (const rawKey of Object.keys(gates)) {
+    const camelKey = kebab_to_camel(rawKey);
+    if (Object.prototype.hasOwnProperty.call(normalized, camelKey)) {
+      throw new Error(
+        `Duplicate gate config in ${sourcePath}: "${rawKey}" collides with another spelling that resolves to "${camelKey}". Use one form, not both.`
+      );
+    }
+    normalized[camelKey] = gates[rawKey];
+  }
+  parsed.gates = normalized;
+}
+
+/**
  * Validate that all gate keys in a user-provided config are recognized.
  * Throws a descriptive error listing valid names when unknown keys are found.
- * @param parsed - The parsed YAML object
+ * Runs after `normalize_gate_keys`, so the validation set is the camelCase
+ * registry keys.
+ * @param parsed - The parsed YAML object (already normalized)
  * @param sourcePath - File path for error messages
  */
 function validate_gate_keys(parsed: Record<string, unknown>, sourcePath: string): void {
@@ -83,6 +120,7 @@ function load_yaml_config(filePath: string): Partial<QualityGatesConfig> {
     throw new Error(`Quality gates config must be a YAML object: ${filePath}`);
   }
 
+  normalize_gate_keys(parsed, filePath);
   validate_gate_keys(parsed, filePath);
   return parsed as Partial<QualityGatesConfig>;
 }

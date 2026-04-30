@@ -1,13 +1,6 @@
 # Swarm Orchestrator — Benchmark Hub
 
-> **Purpose:** Reproducible, transparent, objective benchmarking for the swarm-orchestrator project. The primary question is: **how many premium requests does each approach need to reach what level of completeness?**
->
-> Three producers are compared head-to-head on the same rubric tasks:
-> - **ORCHESTRATOR** — full swarm bootstrap (multi-agent coordination)
-> - **SINGLE_SHOT** — one Claude Code request, no iteration
-> - **LADDER** — deterministic prompt sequence, capped at 30 requests
->
-> Scoring uses a [22-attribute binary completeness rubric](harness/scoring/completeness-rubric.md) — no subjective scores, no weighted composites. Statistical comparisons use paired Wilcoxon signed-rank tests with Bonferroni correction.
+> **Historical doc.** This directory describes a pre-v7 benchmarking harness. The v7 primary metric is the falsification catch rate measured against the SWE-bench Verified 50-instance stratified subset; see [docs/benchmarks.md](../docs/benchmarks.md) and the project README. The rubric-based three-producer harness below is retained on disk for archival reference; it is not the current release benchmark.
 
 ---
 

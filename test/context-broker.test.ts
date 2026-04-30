@@ -101,7 +101,7 @@ describe('ContextBroker', () => {
 
       broker.addStepContext({
         stepNumber: 1,
-        agentName: 'FrontendExpert',
+        agentName: 'worker',
         timestamp: new Date().toISOString(),
         data: {
           filesChanged: ['src/app.tsx', 'src/styles.css'],
@@ -114,7 +114,7 @@ describe('ContextBroker', () => {
       const allContext = broker.getAllContext();
       assert.strictEqual(allContext.length, 1);
       assert.strictEqual(allContext[0]?.stepNumber, 1);
-      assert.strictEqual(allContext[0]?.agentName, 'FrontendExpert');
+      assert.strictEqual(allContext[0]?.agentName, 'worker');
     });
 
     it('should retrieve context for specific steps', () => {
@@ -161,7 +161,7 @@ describe('ContextBroker', () => {
 
       broker.addStepContext({
         stepNumber: 1,
-        agentName: 'BackendMaster',
+        agentName: 'worker',
         timestamp: new Date().toISOString(),
         data: {
           filesChanged: ['api/users.ts', 'api/auth.ts'],
@@ -174,7 +174,7 @@ describe('ContextBroker', () => {
       const summary = broker.getDependencyContext([1]);
 
       assert(summary.includes('Step 1'), 'should mention step number');
-      assert(summary.includes('BackendMaster'), 'should mention agent');
+      assert(summary.includes('worker'), 'should mention agent');
       assert(summary.includes('User API endpoints created'), 'should include summary');
       assert(summary.includes('api/users.ts'), 'should list files');
       assert(summary.includes('Commits: 2'), 'should show commit count');

@@ -91,11 +91,11 @@ export class PMAgent {
       }
     }
 
-    // 5. Check for missing integration step (last step should be IntegratorFinalizer)
+    // 5. Check for missing reviewer step (last step should be reviewer)
     if (revisedPlan.steps.length > 1) {
       const lastStep = revisedPlan.steps[revisedPlan.steps.length - 1];
-      const hasIntegrator = /integrator|finalizer/i.test(lastStep.agentName);
-      if (!hasIntegrator && agentNames.has('IntegratorFinalizer')) {
+      const hasReviewer = lastStep.agentName === 'reviewer';
+      if (!hasReviewer && agentNames.has('reviewer')) {
         reviewNotes.push('Plan is missing a final integration/finalization step');
       }
     }

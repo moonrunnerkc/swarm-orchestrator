@@ -12,28 +12,28 @@
   "steps": [
     {
       "stepNumber": 1,
-      "agentName": "BackendMaster",
+      "agentName": "worker",
       "task": "Initialize TypeScript: install typescript and @types packages, create tsconfig.json with {{strictness}} settings (strict: all strict flags on, moderate: strict but no exactOptionalPropertyTypes, loose: noImplicitAny only). Configure paths, outDir, and include/exclude patterns.",
       "dependencies": [],
       "expectedOutputs": ["tsconfig.json", "package.json updated with typescript dependency"]
     },
     {
       "stepNumber": 2,
-      "agentName": "BackendMaster",
+      "agentName": "worker",
       "task": "Rename .js files to .ts (or .jsx to .tsx). Add type annotations to function parameters and return types. Fix any 'any' types with proper interfaces. Do not change runtime behavior.",
       "dependencies": [1],
       "expectedOutputs": ["renamed .ts files", "type annotations added"]
     },
     {
       "stepNumber": 3,
-      "agentName": "TesterElite",
+      "agentName": "worker",
       "task": "Update test configuration for TypeScript (ts-node, ts-jest, or vitest). Rename test files to .test.ts. Fix type errors in tests. Verify all tests still pass after migration.",
       "dependencies": [2],
       "expectedOutputs": ["renamed test files", "all tests passing"]
     },
     {
       "stepNumber": 4,
-      "agentName": "IntegratorFinalizer",
+      "agentName": "reviewer",
       "task": "Run tsc with zero errors. Update build scripts in package.json. Update CI configuration if present. Remove any leftover .js source files that have .ts equivalents. Update README with TypeScript build instructions.",
       "dependencies": [3],
       "expectedOutputs": ["clean tsc compilation", "updated package.json scripts", "updated README"]

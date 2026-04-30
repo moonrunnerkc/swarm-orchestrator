@@ -5,7 +5,6 @@ import { AgentAdapter } from './adapters/agent-adapter';
 import { scrubCopilotHostileTokens } from './adapters/copilot-adapter';
 import { scanBaseline } from './baseline-scanner';
 import { AgentProfile } from './config-loader';
-import { FleetWrapper } from './fleet-wrapper';
 import { HookGenerator, GeneratedHooks } from './hook-generator';
 import { PlanStep } from './plan-generator';
 import { redactFile } from './secret-redactor';
@@ -17,7 +16,7 @@ import {
   DEFAULT_HEARTBEAT_QUIET_THRESHOLD_MS,
   DEFAULT_SIGKILL_DELAY_MS,
 } from './defaults';
-import { getLogger } from './logger';
+import { getLogger, isPrettyMode } from './logger';
 const logger = getLogger('session-executor');
 
 export interface SessionOptions {
@@ -36,7 +35,10 @@ export interface SessionOptions {
   hooksBranch?: string;   // step branch name for hook context
   additionalEnv?: Record<string, string>; // extra env vars for the spawned process (e.g., COPILOT_HOOKS_DIR)
   additionalArgs?: string[]; // extra CLI args for the copilot subprocess (e.g., --plugin-dir)
-  onAgentLine?: (prefixedLine: string) => void; // callback for each output line, used by dashboard
+  onAgentLine?: (prefixedLine: string) => void; // callback for each output line
+  executionMode?: 'cold-start' | 'persistent-interactive' | 'auto';
+  persistentSessionId?: string;
+  persistentTurnTimeoutMs?: number;
 }
 
 export interface SessionResult {
@@ -53,6 +55,13 @@ export interface SessionResult {
    * silently assume 1.
    */
   premiumRequestsConsumed?: number | undefined;
+  /**
+   * Forwarded from AgentResult.fatalError when the underlying agent CLI
+   * reported an unrecoverable account-level failure (usage-limit, auth,
+   * extended rate-limit). The orchestrator inspects this to abort the
+   * run early instead of replanning into the same wall.
+   */
+  fatalError?: import('./adapters/agent-adapter').AgentResult['fatalError'];
 }
 
 /**
@@ -163,6 +172,11 @@ export class SessionExecutor {
       workdir: this.workingDir,
       model: options.model,
       copilotAgent: options.agent,
+      executionMode: options.executionMode,
+      persistentSessionId: options.persistentSessionId,
+      persistentTurnTimeoutMs: options.persistentTurnTimeoutMs,
+      onAgentLine: options.onAgentLine,
+      logPrefix: options.logPrefix,
     });
 
     // Write transcript to the share file if the adapter produced one,
@@ -208,6 +222,9 @@ export class SessionExecutor {
     if (transcriptPath) {
       sessionResult.transcriptPath = transcriptPath;
     }
+    if (agentResult.fatalError) {
+      sessionResult.fatalError = agentResult.fatalError;
+    }
     return sessionResult;
   }
 
@@ -226,7 +243,7 @@ export class SessionExecutor {
 
     // /fleet prefix for inner parallelism when enabled
     if (options.useInnerFleet) {
-      prompt = FleetWrapper.wrapPrompt(prompt);
+      prompt = `/fleet ${prompt}`;
     }
 
     // Generate per-step hooks for scope enforcement and evidence capture
@@ -348,7 +365,7 @@ export class SessionExecutor {
     // `pnpm test` (or equivalent) instead of a subset like `npx vitest --run`
     // that would skip lint and type checks.
     const testDiscovery = discoverTestCommand(this.workingDir);
-    if (testDiscovery.warning) {
+    if (testDiscovery.warning && !isPrettyMode()) {
       logger.warn(`test command discovery: ${testDiscovery.warning}`);
     }
     sections.push(renderVerifyCommandSection(testDiscovery));

@@ -61,7 +61,6 @@ export interface PostRunOptions {
   model?: string;
   cliAgent?: string;
   owaspReport?: boolean;
-  governance?: boolean;
   strictIsolation?: boolean;
   enableExternal?: boolean;
   dryRun?: boolean;
@@ -87,7 +86,7 @@ export async function runPostExecution(
     const analyticsLog = new AnalyticsLog();
     analyticsLog.appendRun(metrics);
 
-    logger.info(`\n📊 Metrics saved: ${metricsPath}`);
+    logger.debug(`metrics ${metricsPath}`);
 
     // Save cost attribution alongside metrics
     if (context.costEstimate && context.stepCostRecords) {
@@ -172,7 +171,6 @@ export async function runPostExecution(
       const meta = {
         executionId: context.executionId,
         toolVersion,
-        governanceEnabled: !!options.governance,
         strictIsolation: !!options.strictIsolation,
         adapterType: options.cliAgent || 'copilot',
         totalSteps: plan.steps.length,

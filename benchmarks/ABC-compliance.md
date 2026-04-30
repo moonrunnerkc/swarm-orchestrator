@@ -1,5 +1,12 @@
 # Agentic Benchmark Checklist (ABC) — Compliance Audit
 
+> **Historical artifact.** This audit was performed against the pre-v7
+> three-producer rubric harness, which is no longer the project's primary
+> benchmark. The v7 falsification catch rate (see project README and
+> `docs/benchmarks.md`) supersedes the rubric-based methodology audited
+> below. The body of this document is retained as a historical record
+> of the earlier methodology's compliance posture.
+>
 > **Reference:** Agentic Benchmark Checklist (ABC), arXiv:2507.02825, July 2025.
 > **Audit date:** 2026-04-17 (updated from 2026-04-16)
 > **Auditor:** Automated compliance via copilot-instructions.md directives

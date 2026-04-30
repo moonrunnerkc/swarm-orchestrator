@@ -2,30 +2,27 @@ import { OutputFormat } from '../logger';
 
 export interface ExecuteSwarmCliOptions {
   model?: string;
-  noDashboard?: boolean;
   confirmDeploy?: boolean;
   noQualityGates?: boolean;
   qualityGatesConfigPath?: string;
   qualityGatesOutDir?: string;
   pm?: boolean;
-  governance?: boolean;
   strictIsolation?: boolean;
   lean?: boolean;
   useInnerFleet?: boolean;
   session?: string;
   costEstimateOnly?: boolean;
   maxPremiumRequests?: number;
-  planCache?: boolean;
-  replay?: boolean;
+  maxRetries?: number;
   prMode?: 'auto' | 'review';
   hooksEnabled?: boolean;
-  fleetWaveMode?: boolean;
   targetDir?: string;
   cliAgent?: string;
-  teamSize?: number;
   owaspReport?: boolean;
   yes?: boolean;
   verbose?: boolean;
+  quiet?: boolean;
+  streamAgent?: boolean;
   outputFormat?: OutputFormat;
 }
 
@@ -71,7 +68,7 @@ export function normalizeLeadingGlobalFlags(args: string[]): string[] {
 
   while (index < args.length) {
     const arg = args[index];
-    if (arg === '--verbose' || arg === '--json' || arg === '--help' || arg === '-h') {
+    if (arg === '--verbose' || arg === '--quiet' || arg === '-q' || arg === '--json' || arg === '--help' || arg === '-h') {
       reorderedFlags.push(arg);
       index += 1;
       continue;
@@ -115,23 +112,17 @@ export function parseSwarmFlags(args: string[]): ExecuteSwarmCliOptions {
   const modelIndex = args.indexOf('--model');
   if (modelIndex !== -1 && args[modelIndex + 1]) opts.model = args[modelIndex + 1];
 
-  if (args.includes('--no-dashboard')) opts.noDashboard = true;
-  // --dashboard explicitly opts INTO the TUI (used to override callers that
-  // default noDashboard=true, e.g. `swarm demo`).
-  if (args.includes('--dashboard')) opts.noDashboard = false;
   if (args.includes('--confirm-deploy')) opts.confirmDeploy = true;
   if (args.includes('--no-quality-gates')) opts.noQualityGates = true;
   if (args.includes('--pm')) opts.pm = true;
-  if (args.includes('--governance')) opts.governance = true;
   if (args.includes('--strict-isolation')) opts.strictIsolation = true;
   if (args.includes('--lean')) opts.lean = true;
   if (args.includes('--verbose')) opts.verbose = true;
   if (args.includes('--useInnerFleet') || args.includes('--wrap-fleet')) opts.useInnerFleet = true;
-  if (args.includes('--fleet')) opts.fleetWaveMode = true;
   if (args.includes('--cost-estimate-only')) opts.costEstimateOnly = true;
   if (args.includes('--yes') || args.includes('-y')) opts.yes = true;
-  if (args.includes('--plan-cache')) opts.planCache = true;
-  if (args.includes('--replay')) opts.replay = true;
+  if (args.includes('--quiet') || args.includes('-q')) opts.quiet = true;
+  if (args.includes('--stream-agent')) opts.streamAgent = true;
 
   if (args.includes('--no-hooks')) {
     opts.hooksEnabled = false;
@@ -148,6 +139,17 @@ export function parseSwarmFlags(args: string[]): ExecuteSwarmCliOptions {
       );
     }
     opts.maxPremiumRequests = parsed;
+  }
+
+  const maxRetriesIdx = args.indexOf('--max-retries');
+  if (maxRetriesIdx !== -1 && args[maxRetriesIdx + 1]) {
+    const parsed = parseInt(args[maxRetriesIdx + 1], 10);
+    if (isNaN(parsed) || parsed < 0) {
+      throw new Error(
+        `--max-retries requires a non-negative integer, got "${args[maxRetriesIdx + 1]}"`
+      );
+    }
+    opts.maxRetries = parsed;
   }
 
   const resumeIndex = args.indexOf('--resume');
@@ -186,17 +188,6 @@ export function parseSwarmFlags(args: string[]): ExecuteSwarmCliOptions {
   const toolIndex = args.indexOf('--tool');
   if (toolIndex !== -1 && args[toolIndex + 1]) {
     opts.cliAgent = args[toolIndex + 1];
-  }
-
-  const teamSizeIdx = args.indexOf('--team-size');
-  if (teamSizeIdx !== -1 && args[teamSizeIdx + 1]) {
-    const parsed = parseInt(args[teamSizeIdx + 1], 10);
-    if (isNaN(parsed) || parsed < 1 || parsed > 5) {
-      throw new Error(
-        `--team-size requires an integer between 1 and 5, got "${args[teamSizeIdx + 1]}"`
-      );
-    }
-    opts.teamSize = parsed;
   }
 
   return opts;

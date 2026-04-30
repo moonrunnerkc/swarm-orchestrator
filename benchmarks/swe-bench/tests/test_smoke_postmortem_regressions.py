@@ -1,12 +1,13 @@
 """Regression tests for the smoke6/smoke8 post-mortem defects.
 
-Problem A (smoke6/7 root cause):
-  git clone --filter=blob:none leaves master pointing at the upstream tip,
-  potentially tens of thousands of commits ahead of base_commit. A bare
-  git checkout base_commit creates detached HEAD but leaves master at tip.
-  The branch-merger merges the swarm branch into master-at-tip, so
-  git diff base_commit..HEAD captures all upstream history.
-  Fix: git checkout -B master base_commit resets master to the anchor.
+Problem A (smoke6/7 root cause, v7 smoke recurrence):
+    git clone --filter=blob:none leaves the upstream default branch pointing
+    at tip, potentially tens of thousands of commits ahead of base_commit. A
+    bare git checkout base_commit creates detached HEAD but leaves the default
+    branch at tip. The branch-merger merges the swarm branch into default-at-tip,
+    so git diff base_commit..HEAD captures all upstream history.
+    Fix: git checkout -B <origin HEAD branch> base_commit resets the integration
+    branch to the anchor.
 
 Problem B (smoke8 failure):
   capture_agent_diff ran git diff base_commit without pathspec excludes.
@@ -42,6 +43,8 @@ except Exception as exc:  # pragma: no cover
 
 capture_agent_diff = _module.capture_agent_diff
 DiffCaptureError = _module.DiffCaptureError
+build_pytest_args = _module.build_pytest_args
+build_django_test_labels = _module.build_django_test_labels
 
 _RESERVED_SPEC = importlib.util.spec_from_file_location(
     "worktree_reserved_paths",
@@ -107,6 +110,19 @@ def _seed_upstream(tmp: Path) -> tuple[Path, str, str]:
     return upstream, base_sha, tip_sha
 
 
+def _seed_upstream_with_branch(tmp: Path, branch_name: str) -> tuple[Path, str, str]:
+    """Create a bare upstream repo whose default branch is branch_name."""
+    upstream, base_sha, tip_sha = _seed_upstream(tmp)
+    work = tmp / "work"
+    r = _git(work, "checkout", "-B", branch_name, "master")
+    assert r.returncode == 0, f"checkout branch failed: {r.stderr}"
+    r = _git(work, "push", "origin", f"{branch_name}:{branch_name}")
+    assert r.returncode == 0, f"push branch failed: {r.stderr}"
+    r = _git(upstream, "symbolic-ref", "HEAD", f"refs/heads/{branch_name}")
+    assert r.returncode == 0, f"set upstream HEAD failed: {r.stderr}"
+    return upstream, base_sha, tip_sha
+
+
 # ---------------------------------------------------------------------------
 # Problem A regression
 # ---------------------------------------------------------------------------
@@ -157,6 +173,40 @@ def test_checkout_resets_master_to_base_commit():
         assert count != upstream_count, (
             "commit count from HEAD should differ from count from upstream tip "
             "(otherwise master was not actually reset)"
+        )
+
+
+def test_checkout_resets_origin_head_branch_to_base_commit():
+    """The checkout fix must reset the branch selected by origin/HEAD.
+
+    The orchestrator resolves its integration branch from origin/HEAD before
+    falling back to the current branch. A clone whose upstream default is main
+    will still merge into main-at-tip if the harness only resets master.
+    """
+    with tempfile.TemporaryDirectory(prefix="pma-main-") as t:
+        tmp = Path(t)
+        upstream, base_sha, tip_sha = _seed_upstream_with_branch(tmp, "main")
+
+        clone_dir = tmp / "clone"
+        r = _git(tmp, "clone", str(upstream), str(clone_dir))
+        assert r.returncode == 0, f"clone failed: {r.stderr}"
+
+        default_ref = _git(clone_dir, "symbolic-ref", "refs/remotes/origin/HEAD")
+        assert default_ref.stdout.strip() == "refs/remotes/origin/main"
+        assert _sha(clone_dir, "main") == tip_sha, (
+            "pre-condition: after clone, origin/HEAD branch should be at tip_sha"
+        )
+
+        r = _git(clone_dir, "checkout", "-B", "main", base_sha)
+        assert r.returncode == 0, f"checkout -B failed: {r.stderr}"
+
+        assert _sha(clone_dir, "HEAD") == base_sha, (
+            "HEAD must point at base_commit after checkout -B main base_commit"
+        )
+        assert _sha(clone_dir, "main") == base_sha, (
+            "origin/HEAD branch must be reset to base_commit, not left at clone tip. "
+            "Without this, the branch-merger merges the swarm branch into the "
+            "upstream tip and git diff base_commit..HEAD captures all upstream history."
         )
 
 
@@ -267,3 +317,42 @@ def test_copilot_instructions_in_reserved_file_glob_excludes():
         "Without it, .copilot-instructions.md leaks into SWE-bench patches "
         "and breaks git apply in the evaluation container."
     )
+
+
+def test_unittest_style_fail_to_pass_scopes_to_test_patch_files():
+    """Unittest-style FAIL_TO_PASS IDs must not collect the whole suite."""
+    test_patch = """diff --git a/tests/test_utils/tests.py b/tests/test_utils/tests.py
+--- a/tests/test_utils/tests.py
++++ b/tests/test_utils/tests.py
+@@ -1,2 +1,5 @@
+ class OverrideSettingsTests:
+     pass
++
++def test_override_file_upload_permissions():
++    pass
+"""
+
+    targets, filters = build_pytest_args(
+        ["test_override_file_upload_permissions (test_utils.tests.OverrideSettingsTests)"],
+        test_patch,
+    )
+
+    assert targets == ["tests/test_utils/tests.py"]
+    assert filters == [
+        "OverrideSettingsTests and test_override_file_upload_permissions",
+    ]
+
+
+def test_django_test_labels_use_runtests_module_paths():
+    """Django FAIL_TO_PASS IDs must map to tests/runtests.py labels."""
+    labels = build_django_test_labels(
+        [
+            "test_negative (utils_tests.test_dateparse.DurationParseTests)",
+            "tests/test_utils/tests.py::OverrideSettingsTests::test_upload",
+        ]
+    )
+
+    assert labels == [
+        "utils_tests.test_dateparse.DurationParseTests.test_negative",
+        "test_utils.tests.OverrideSettingsTests.test_upload",
+    ]

@@ -1,7 +1,7 @@
 import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { resolveAdapter, AgentSpawnOptions } from '../adapters';
+import { resolveAdapter } from '../adapters';
 import { AgentProfile } from '../config-loader';
 import { BaselineSnapshot } from '../baseline-scanner';
 import { analyzeCommitQuality as _analyzeCommitQuality } from '../commit-quality-analyzer';
@@ -20,9 +20,8 @@ import { Spinner } from '../spinner';
 import { DEFAULT_DEPENDENCY_WAIT_MS } from '../defaults';
 import VerifierEngine, { VerificationResult } from '../verifier-engine';
 import { gitPathspecExcludes } from '../worktree-reserved-paths';
-import { getLogger } from '../logger';
-
-const logger = getLogger('orchestrator');
+import { getLiveStatus } from '../cli/live-status';
+import { FatalRunError } from './fatal-run-error';
 
 /**
  * Human-readable label for a CLI agent tool, used in fallback transcript headers.
@@ -105,10 +104,11 @@ export interface StepExecutorOptions {
   strictIsolation?: boolean;
   useInnerFleet?: boolean;
   hooksEnabled?: boolean;
-  replay?: boolean;
   confirmDeploy?: boolean;
   enableExternal?: boolean;
   dryRun?: boolean;
+  /** When true, full agent narration prints above the live block. Otherwise only the live action line shows. */
+  streamAgent?: boolean;
   onProgress?(context: StepExecutorContext, event: string): void;
   onAgentLine?(line: string): void;
 }
@@ -135,7 +135,7 @@ export interface StepExecutorHost {
 
 /**
  * Execute a single step end-to-end: wait for deps, create worktree,
- * build prompt, run the agent session (or replay from cache), commit
+ * build prompt, run the agent session, commit
  * uncommitted work, verify, record context / cost / metrics, optional
  * deployment on success, rollback on failure.
  *
@@ -204,7 +204,9 @@ export async function executeStepInSwarm(
     // Use git worktree so each agent has its own isolated working directory
     const stepRepoDir = step.repo || host.workingDir;
     const worktreePath = await host.createAgentWorktree(branchName, context.mainBranch, context.runDir, step.stepNumber, stepRepoDir);
-    logger.info(`  🌿 Step ${step.stepNumber} (${agent.name}) on branch: ${branchName}`);
+    const liveStatus = getLiveStatus();
+    const liveStepId = `step-${step.stepNumber}`;
+    const liveLabel = `step-${step.stepNumber} ${agent.name}`;
 
     // Capture baseline SHA before agent execution for outcome-based verification
     const baseSha = execSync('git rev-parse HEAD', { cwd: worktreePath, encoding: 'utf8' }).trim();
@@ -223,9 +225,6 @@ export async function executeStepInSwarm(
     const finalPrompt = options?.useInnerFleet
       ? `/fleet ${enhancedPrompt}`
       : enhancedPrompt;
-    if (options?.useInnerFleet) {
-      logger.info(`  ⚡ [inner-fleet] Step ${step.stepNumber} dispatched via /fleet`);
-    }
 
     // execute session on agent branch - IN THE WORKTREE DIRECTORY
     const stepDir = path.join(context.runDir, 'steps', `step-${step.stepNumber}`);
@@ -242,12 +241,33 @@ export async function executeStepInSwarm(
     const stepAdapter = resolveAdapter(adapterName);
     const worktreeExecutor = new SessionExecutor(worktreePath, stepAdapter);
 
+    // Route agent stdout/stderr lines through LiveStatus.print so they appear
+    // above the live block, prefixed with `step-N ›` (dim). When LiveStatus is
+    // inactive (CI / non-TTY where it was never started, or piped output), the
+    // print falls through to a plain stdout write, so behavior degrades.
+    const dimOpen = process.stdout.isTTY && !process.env.NO_COLOR ? '\x1b[2m' : '';
+    const dimClose = process.stdout.isTTY && !process.env.NO_COLOR ? '\x1b[22m' : '';
+    const linePrefix = `${dimOpen}${liveStepId} ›${dimClose}`;
+    const actionRe = /^\s*●\s+(.+?)\s*$/;
     const sessionOptions: SessionOptions = {
       allowAllTools: true,
       shareToFile: transcriptPath,
-      logPrefix: `[${agent.name}:${step.stepNumber}]`, // live console logging for parallelism proof
+      executionMode: 'auto',
+      persistentSessionId: `${context.executionId}:${adapterName}:${worktreePath}`,
+      onAgentLine: (line) => {
+        // Always update the live action from `●` markers so the user sees what
+        // the agent is currently doing. Only print the full narration line when
+        // --stream-agent is set; otherwise the firehose stays in the run
+        // transcript at runs/<id>/steps/step-N/share.md.
+        const match = actionRe.exec(line);
+        if (match) {
+          liveStatus.setAction(liveStepId, match[1]!);
+        }
+        if (options?.streamAgent) {
+          liveStatus.print(`${linePrefix} ${line}`);
+        }
+      },
       ...(options?.model && { model: options.model }),
-      ...(options?.onAgentLine && { onAgentLine: options.onAgentLine }),
     };
 
     // Generate per-step hooks for scope enforcement and evidence capture
@@ -267,83 +287,34 @@ export async function executeStepInSwarm(
       // Hooks are auto-loaded by Copilot CLI from <gitRoot>/.github/hooks/
     }
 
-    // replay mode: reuse a matching prior transcript instead of calling Copilot
-    if (options?.replay && context.knowledgeBase) {
-      const patterns = context.knowledgeBase.findSimilarTasks(step.task, 0.9);
-      const match = patterns.find(p => p.evidence.length > 0);
-      if (match) {
-        const priorTranscript = match.evidence[0];
-        if (priorTranscript && fs.existsSync(priorTranscript)) {
-          logger.info(`  ♻️  [replay] Step ${step.stepNumber}: replaying from cached transcript`);
-          fs.copyFileSync(priorTranscript, transcriptPath);
-          result.sessionResult = {
-            output: 'replayed from cache',
-            success: true,
-            duration: 0,
-            exitCode: 0,
-            transcriptPath: transcriptPath,
-          };
-          result.status = 'completed';
-          result.endTime = new Date().toISOString();
-          // skip to verification (fall through below)
-        }
-      }
-    }
-
-    // only call the agent if we don't already have a session result (e.g. from replay)
+    // only call the agent if we don't already have a session result
     if (!result.sessionResult) {
-      // Print static header instead of animated spinner when live logging
-      // This prevents spinner animation from interleaving with agent output
-      logger.info(`  🐝 Step ${step.stepNumber} (${agent.name}) — Agent working...`);
-      logger.info(`  ${'─'.repeat(60)}`);
+      liveStatus.addStep(liveStepId, liveLabel);
 
-      const toolName = options?.cliAgent || 'copilot';
-      let sessionResult: SessionResult;
-
-      if (toolName !== 'copilot') {
-        // Non-copilot tools route through the adapter layer, which provides
-        // stall detection, heartbeat, and tool-specific CLI flag handling.
-        const adapter = resolveAdapter(toolName);
-        const spawnOpts: AgentSpawnOptions = {
-          prompt: finalPrompt,
-          workdir: worktreePath,
-        };
-        if (options?.model) spawnOpts.model = options.model;
-
-        const agentResult = await adapter.spawn(spawnOpts);
-        sessionResult = {
-          success: agentResult.exitCode === 0,
-          output: agentResult.stdout + agentResult.stderr,
-          exitCode: agentResult.exitCode,
-          duration: agentResult.durationMs,
-          premiumRequestsConsumed: agentResult.premiumRequestsConsumed,
-        };
-        if (agentResult.exitCode !== 0) {
-          (sessionResult as SessionResult).error = agentResult.stderr;
-        }
-        if (agentResult.shareTranscriptPath) {
-          sessionResult.transcriptPath = agentResult.shareTranscriptPath;
-        }
-      } else {
-        sessionResult = await worktreeExecutor.executeSession(finalPrompt, sessionOptions);
-      }
-
-      // Print completion with timing; differentiate success from failure
-      logger.info(`  ${'─'.repeat(60)}`);
+      const sessionResult = await worktreeExecutor.executeSession(finalPrompt, sessionOptions);
 
       result.sessionResult = sessionResult;
 
+      // Account-level fatal error: usage-limit, auth, or extended rate-limit.
+      // No replan or repair can recover, so abort the run before the
+      // verification + replan loop wastes the per-instance budget. The
+      // catch block at the bottom of this function records the failure
+      // and signals the broker so any waiting dependents unblock.
+      if (sessionResult.fatalError) {
+        throw new FatalRunError(sessionResult.fatalError, {
+          stepNumber: step.stepNumber,
+          agentName: agent.name,
+        });
+      }
+
       // Non-zero exit code does not mean the agent failed its task.
       // Claude Code often exits non-zero after completing file changes
-      // (e.g., cleanup command fails, permission prompt at exit).
-      // Let the verification pipeline judge whether the work is acceptable.
+      // (e.g., cleanup command fails, permission prompt at exit). The
+      // verification pipeline below judges whether the work is acceptable;
+      // surface the exit code as a non-fatal note via the live block action.
       if (!sessionResult.success) {
-        logger.warn(`  ⚠️  Step ${step.stepNumber} (${agent.name}) exited with code ${sessionResult.exitCode}; checking committed work`);
+        liveStatus.setAction(liveStepId, `non-zero exit ${sessionResult.exitCode}; checking work`);
       }
-      // Session-complete log line is intentionally omitted — the
-      // subsequent verification spinner ("Step N verified ✓") is the
-      // user-visible marker of step completion. Printing both produced
-      // back-to-back redundant lines in demo output.
     }
 
     // Clean up hook files after session completes (evidence log in runDir persists)
@@ -399,9 +370,14 @@ export async function executeStepInSwarm(
       // Commit may fail if working tree is truly clean or in detached HEAD; non-fatal
     }
 
-    // verify the step with spinner feedback
-    const verifySpinner = new Spinner(`Step ${step.stepNumber} — Verifying work...`, { style: 'dots', prefix: '  ' });
-    verifySpinner.start();
+    // Verification phase: surface as a sub-action on the step's live line.
+    // When LiveStatus is inactive (non-TTY where it never started, tests),
+    // fall back to the legacy spinner so progress is still visible.
+    liveStatus.setAction(liveStepId, 'verifying work');
+    const verifySpinner = liveStatus.isTTY()
+      ? null
+      : new Spinner(`Step ${step.stepNumber} — Verifying work...`, { style: 'dots', prefix: '  ' });
+    verifySpinner?.start();
 
     const verificationResult = await host.verifier.verifyStep(
       step.stepNumber,
@@ -435,7 +411,8 @@ export async function executeStepInSwarm(
     await host.verifier.generateVerificationReport(verificationResult, reportPath);
 
     if (verificationResult.passed) {
-      verifySpinner.succeed(`Step ${step.stepNumber} (${agent.name}) verified ✓`);
+      verifySpinner?.stop();
+      liveStatus.finishStep(liveStepId, 'done', 'verified');
 
       // add to shared context BEFORE advisory gates so replan steps can depend on this step
       context.contextBroker.addStepContext({
@@ -463,8 +440,9 @@ export async function executeStepInSwarm(
       // spawning extra Copilot sessions mid-execution. The final gates block handles
       // auto-remediation for every gate type, making per-step checks redundant.
 
-      // optional deployment for devops_pro when --confirm-deploy is set
-      if (agent.name === 'DevOpsPro' && options?.confirmDeploy) {
+      // optional deployment for deployment-focused steps when --confirm-deploy is set
+      const isDeploymentStep = /\b(deploy|deployment|vercel|netlify)\b/i.test(step.task);
+      if (isDeploymentStep && options?.confirmDeploy) {
         await _executeOptionalDeployment(host.workingDir, step, agent, {
           runDir: context.runDir,
           executionId: context.executionId,
@@ -478,7 +456,8 @@ export async function executeStepInSwarm(
       }
     } else {
       // verification failed - attempt rollback
-      verifySpinner.warn(`Step ${step.stepNumber} verification failed, rolling back...`);
+      verifySpinner?.stop();
+      liveStatus.setAction(liveStepId, 'verification failed; rolling back');
 
       const rollbackResult = await host.verifier.rollback(
         step.stepNumber,
@@ -487,9 +466,10 @@ export async function executeStepInSwarm(
         context.mainBranch,
       );
 
-      if (rollbackResult.success) {
-        logger.info(`  🔄 Rollback complete: ${rollbackResult.filesRestored.length} file(s) restored`);
-      }
+      const rollbackNote = rollbackResult.success
+        ? `verification failed · rolled back ${rollbackResult.filesRestored.length} file${rollbackResult.filesRestored.length === 1 ? '' : 's'}`
+        : 'verification failed';
+      liveStatus.finishStep(liveStepId, 'failed', rollbackNote);
 
       throw new Error('Step failed verification - see verification report');
     }
@@ -557,7 +537,11 @@ export async function executeStepInSwarm(
     // Notify progress: step failed
     options?.onProgress?.(context, `step-failed:${step.stepNumber}`);
 
-    logger.error(`  ❌ Step ${step.stepNumber} (${agent.name}) failed: ${err.message}`);
+    // Move the step out of the live block with a failure marker. finishStep
+    // is idempotent on an already-finished step (it returns silently when the
+    // id is gone), so calling it here covers both fail-before-verify and
+    // verify-already-finished paths.
+    getLiveStatus().finishStep(`step-${step.stepNumber}`, 'failed', err.message);
     throw error;
   }
 }

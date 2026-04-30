@@ -1,5 +1,5 @@
 name: 'Swarm Orchestrator'
-description: 'Agent-agnostic parallel AI coding with dependency-aware scheduling and outcome-verified results'
+description: 'Falsification battery and signed attestation for AI-authored code; verified branch and worktree workflow with audit-ready run artifacts'
 branding:
   icon: 'cpu'
   color: 'blue'
@@ -15,18 +15,18 @@ inputs:
     description: 'Name of a built-in recipe (e.g., add-tests, add-auth)'
     required: false
   tool:
-    description: 'CLI agent to use (copilot, claude-code, codex). Default: copilot'
+    description: 'CLI agent to use (copilot, claude-code, codex, claude-code-teams). Default: copilot'
     required: false
     default: 'copilot'
   model:
     description: 'Model name for agent sessions (e.g., claude-sonnet-4, o3)'
     required: false
   max-retries:
-    description: 'Maximum retry attempts per failed step'
+    description: 'Maximum retry attempts for queued and repair retries'
     required: false
     default: '3'
   pr:
-    description: 'PR mode: auto (merge on pass), review (wait for approval), none'
+    description: 'PR mode: auto (merge on pass) or review (wait for approval)'
     required: false
     default: 'review'
   sarif:
@@ -41,6 +41,8 @@ outputs:
     description: 'Path to the generated or used plan file'
   pr-url:
     description: 'URL of the created pull request (if --pr mode was active)'
+  sarif-path:
+    description: 'Path to the SARIF file when sarif=true'
 
 runs:
   using: 'docker'

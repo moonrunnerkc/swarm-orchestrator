@@ -194,7 +194,7 @@ describe('Upgrade 10: Deployment Rollback', () => {
 
       dm.saveDeploymentMetadata(runDir, {
         stepNumber: 1,
-        agentName: 'DevOpsPro',
+        agentName: 'worker',
         timestamp: new Date().toISOString(),
         platform: 'vercel',
         previewUrl: 'https://preview.example.com',

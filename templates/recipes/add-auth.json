@@ -17,28 +17,28 @@
   "steps": [
     {
       "stepNumber": 1,
-      "agentName": "BackendMaster",
+      "agentName": "worker",
       "task": "Add user registration and login endpoints using {{auth-type}} authentication. Create user model/schema, password hashing with bcrypt, and token generation. If provider is not 'none', add OAuth flow for {{provider}}.",
       "dependencies": [],
       "expectedOutputs": ["auth routes", "user model", "auth middleware"]
     },
     {
       "stepNumber": 2,
-      "agentName": "BackendMaster",
+      "agentName": "worker",
       "task": "Add auth middleware that protects existing routes. Add role-based access control if the app has admin functionality. Ensure unauthenticated requests return 401.",
       "dependencies": [1],
       "expectedOutputs": ["auth middleware applied to routes", "401 responses for unauthenticated requests"]
     },
     {
       "stepNumber": 3,
-      "agentName": "TesterElite",
+      "agentName": "worker",
       "task": "Write tests for authentication: registration, login, token validation, protected route access (valid token, expired token, no token), and logout if applicable. All tests must pass.",
       "dependencies": [2],
       "expectedOutputs": ["auth test files", "all tests passing"]
     },
     {
       "stepNumber": 4,
-      "agentName": "IntegratorFinalizer",
+      "agentName": "reviewer",
       "task": "Verify end-to-end auth flow works. Create .env.example with required auth environment variables. Update README with authentication setup instructions and API endpoint documentation.",
       "dependencies": [3],
       "expectedOutputs": [".env.example", "updated README"]

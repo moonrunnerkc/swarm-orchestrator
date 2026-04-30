@@ -12,7 +12,6 @@ import {
   SchedulerOptions,
   SchedulerStepResult,
 } from '../src/orchestrator/wave-scheduler-loop';
-import { CriticResult } from '../src/types';
 
 /**
  * Locks the plan-swap invariant documented at the top of
@@ -60,12 +59,27 @@ function makeAgent(name: string): AgentProfile {
  */
 class StubContextBroker implements SchedulerContextBroker {
   private readonly emitter = new EventEmitter();
+  readonly stepContextEntries: Array<{
+    stepNumber: number;
+    agentName: string;
+    timestamp: string;
+    data: Record<string, unknown>;
+  }> = [];
   forceReleaseStaleLocks(): void { /* no-op */ }
   once(event: string, handler: () => void): void {
     this.emitter.once(event, handler);
   }
   removeListener(event: string, handler: () => void): void {
     this.emitter.removeListener(event, handler);
+  }
+  addStepContext(entry: {
+    stepNumber: number;
+    agentName: string;
+    timestamp: string;
+    data: Record<string, unknown>;
+  }): void {
+    this.stepContextEntries.push(entry);
+    this.emitter.emit('step-completed', entry.stepNumber);
   }
 }
 
@@ -136,9 +150,6 @@ describe('wave-scheduler-loop: plan-swap invariant', () => {
       },
       async mergeWaveBranches(_completed: SchedulerStepResult[], _ctx: SchedulerContext, _opts?: SchedulerOptions) {
         // No-op: merging is not exercised in this test.
-      },
-      runCriticReview(_completed: SchedulerStepResult[], _ctx: SchedulerContext, _plan: ExecutionPlan): CriticResult {
-        return { score: 100, flags: [], recommendation: 'approve' };
       },
     };
 

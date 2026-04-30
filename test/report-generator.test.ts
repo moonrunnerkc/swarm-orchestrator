@@ -9,6 +9,7 @@ function seedRunDir(runDir: string, opts: {
   metrics?: boolean;
   costAttribution?: boolean;
   owaspCompliance?: boolean;
+  falsificationBattery?: boolean;
   verification?: Record<number, { passed: boolean }>;
 } = {}): void {
   const {
@@ -16,6 +17,7 @@ function seedRunDir(runDir: string, opts: {
     metrics = true,
     costAttribution = false,
     owaspCompliance = false,
+    falsificationBattery = false,
     verification = {}
   } = opts;
 
@@ -25,8 +27,8 @@ function seedRunDir(runDir: string, opts: {
       graph: {
         goal: 'Add JWT authentication',
         steps: [
-          { stepNumber: 1, task: 'Add JWT middleware', agent: 'BackendMaster' },
-          { stepNumber: 2, task: 'Write auth tests', agent: 'TesterElite' }
+          { stepNumber: 1, task: 'Add JWT middleware', agent: 'worker' },
+          { stepNumber: 2, task: 'Write auth tests', agent: 'worker' }
         ]
       },
       branchMap: { '1': 'swarm/step-1', '2': 'swarm/step-2' },
@@ -51,7 +53,7 @@ function seedRunDir(runDir: string, opts: {
       verificationsPassed: 2,
       verificationsFailed: 0,
       recoveryEvents: [],
-      agentsUsed: ['BackendMaster', 'TesterElite']
+      agentsUsed: ['worker', 'worker']
     }, null, 2));
   }
 
@@ -64,8 +66,8 @@ function seedRunDir(runDir: string, opts: {
       modelMultiplier: 1.0,
       overageTriggered: false,
       perStep: [
-        { stepNumber: 1, agentName: 'BackendMaster', estimatedPremiumRequests: 8, actualPremiumRequests: 7, retryCount: 0, promptTokens: 3200, fleetMode: false, durationMs: 240000 },
-        { stepNumber: 2, agentName: 'TesterElite', estimatedPremiumRequests: 6, actualPremiumRequests: 5, retryCount: 0, promptTokens: 2100, fleetMode: false, durationMs: 180000 }
+        { stepNumber: 1, agentName: 'worker', estimatedPremiumRequests: 8, actualPremiumRequests: 7, retryCount: 0, promptTokens: 3200, fleetMode: false, durationMs: 240000 },
+        { stepNumber: 2, agentName: 'worker', estimatedPremiumRequests: 6, actualPremiumRequests: 5, retryCount: 0, promptTokens: 2100, fleetMode: false, durationMs: 180000 }
       ]
     }, null, 2));
   }
@@ -80,6 +82,16 @@ function seedRunDir(runDir: string, opts: {
       partialRisks: 1,
       notApplicableRisks: 4,
       risks: []
+    }, null, 2));
+  }
+
+  if (falsificationBattery) {
+    fs.writeFileSync(path.join(runDir, 'falsification-battery.json'), JSON.stringify({
+      compositeScore: 0.82,
+      humanReviewRequired: false,
+      layers: [
+        { layer: 'intent', status: 'PASS', evidenceSummary: 'differential test passed', durationMs: 20 }
+      ]
     }, null, 2));
   }
 
@@ -134,6 +146,20 @@ describe('ReportGenerator', () => {
       assert.strictEqual(report.cost!.actualPremiumRequests, 12);
       assert.ok(report.owaspSummary !== null);
       assert.strictEqual(report.owaspSummary!.applicableRisks, 6);
+      assert.strictEqual(report.falsificationBattery, null);
+    });
+
+    it('includes falsification battery results when present', () => {
+      const runDir = path.join(tmpDir, 'swarm-falsification');
+      fs.mkdirSync(runDir);
+      seedRunDir(runDir, { falsificationBattery: true });
+
+      const gen = new ReportGenerator();
+      const report = gen.generate(runDir);
+
+      assert.ok(report.falsificationBattery !== null);
+      assert.strictEqual(report.falsificationBattery!.compositeScore, 0.82);
+      assert.strictEqual(report.falsificationBattery!.layers[0].layer, 'intent');
     });
 
     it('returns null cost when cost-attribution.json is missing', () => {
@@ -190,7 +216,7 @@ describe('ReportGenerator', () => {
       const report = gen.generate(runDir);
 
       assert.strictEqual(report.steps[0].stepNumber, 1);
-      assert.strictEqual(report.steps[0].agentName, 'BackendMaster');
+      assert.strictEqual(report.steps[0].agentName, 'worker');
       assert.strictEqual(report.steps[0].task, 'Add JWT middleware');
       assert.strictEqual(report.steps[0].estimatedCost, 8);
       assert.strictEqual(report.steps[0].actualCost, 7);
@@ -251,7 +277,7 @@ describe('ReportGenerator', () => {
       // Override metrics with recovery events
       const metricsRaw = JSON.parse(fs.readFileSync(path.join(runDir, 'metrics.json'), 'utf8'));
       metricsRaw.recoveryEvents = [
-        { stepNumber: 1, agentName: 'BackendMaster', failedAt: '2026-04-08T12:01:00Z', recoveredAt: '2026-04-08T12:03:00Z', recoveryMethod: 'retry' }
+        { stepNumber: 1, agentName: 'worker', failedAt: '2026-04-08T12:01:00Z', recoveredAt: '2026-04-08T12:03:00Z', recoveryMethod: 'retry' }
       ];
       fs.writeFileSync(path.join(runDir, 'metrics.json'), JSON.stringify(metricsRaw, null, 2));
 

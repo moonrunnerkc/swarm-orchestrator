@@ -87,6 +87,7 @@ export interface ReplanContext {
  */
 export interface ReplanOptions {
   model?: string;
+  maxRetries?: number;
   // Method-shorthand form (not arrow property) so parameter types are
   // bivariant, letting callers pass a SwarmExecutionOptions whose
   // onProgress takes the wider SwarmExecutionContext.
@@ -151,6 +152,7 @@ export async function executeReplan(
   options?: ReplanOptions
 ): Promise<void> {
   logger.info('\n🔄 Executing replan...');
+  const maxRetries = options?.maxRetries ?? 3;
 
   // initialize replan state
   context.replanState = {
@@ -187,9 +189,8 @@ export async function executeReplan(
     const result = context.results[resultIndex];
     const retryCount = (result?.retryCount || 0) + 1;
 
-    // max 3 retries to avoid infinite loops
-    if (retryCount > 3) {
-      logger.error(`  step ${stepNumber} exceeded max retries (3), skipping`);
+    if (retryCount > maxRetries) {
+      logger.error(`  step ${stepNumber} exceeded max retries (${maxRetries}), skipping`);
       continue;
     }
 
@@ -229,7 +230,7 @@ export async function executeReplan(
       const failedChecks: string[] = [];
       let rootCause = 'Verification checks failed';
       if (result?.verificationResult) {
-        const repairAgentHelper = new RepairAgent(host.workingDir);
+        const repairAgentHelper = new RepairAgent(host.workingDir, maxRetries);
         const extracted = repairAgentHelper.extractFailedChecks(result.verificationResult);
         failedChecks.push(...extracted);
 
@@ -259,7 +260,7 @@ export async function executeReplan(
         failureContext: result.verificationResult?.failureContext,
       };
 
-      const repairAgent = new RepairAgent(host.workingDir, 3);
+      const repairAgent = new RepairAgent(host.workingDir, maxRetries);
       const sessionOpts: SessionOptions = {
         allowAllTools: true,
         ...(options?.model && { model: options.model })
@@ -322,7 +323,7 @@ export async function executeReplan(
 
     logger.info(`  ➕ Replan added ${newSteps.length} new step(s)`);
 
-    // Notify dashboard immediately so totalSteps and progress bar update
+    // Notify listeners immediately so totalSteps and progress state update
     // before the replan steps start executing
     options?.onProgress?.(context, `replan-added:${newSteps.length}`);
 

@@ -3,7 +3,6 @@ import { VerificationResult } from './verifier-engine';
 export interface ExecutionMetadata {
   executionId: string;
   toolVersion: string;
-  governanceEnabled: boolean;
   strictIsolation: boolean;
   adapterType: string;
   totalSteps: number;
@@ -39,13 +38,13 @@ const riskAssessors: StatusFn[] = [
   (_results, meta) => ({
     asiId: 'ASI-01',
     riskName: 'Agent Goal Hijack',
-    status: meta.governanceEnabled ? 'mitigated' : 'partial',
-    evidence: meta.governanceEnabled
-      ? ['Governance mode enabled', 'Bounded agent scopes with persona prompts and refusal rules']
-      : ['Governance mode not enabled; agent scopes bounded by persona prompts only'],
-    rationale: meta.governanceEnabled
-      ? 'Governance Critic scoring active. Agent scopes bounded by persona prompts with refusal rules in agent config.'
-      : 'Agent scopes are bounded by persona prompts, but governance Critic scoring was not enabled for this run.'
+    status: meta.strictIsolation ? 'mitigated' : 'partial',
+    evidence: meta.strictIsolation
+      ? ['Strict isolation enabled', 'Bounded worker and reviewer roles with refusal rules']
+      : ['Worker and reviewer roles bounded by prompts; strict isolation not enabled'],
+    rationale: meta.strictIsolation
+      ? 'Strict isolation and bounded role prompts reduce goal-hijack blast radius.'
+      : 'Role prompts bound agent scope, but strict isolation was not enabled for this run.'
   }),
 
   // ASI-02: Tool Misuse
@@ -152,34 +151,25 @@ const riskAssessors: StatusFn[] = [
 
   // ASI-10: Rogue Agents
   (_results, meta) => {
-    const fullyVerified = meta.governanceEnabled && meta.failedSteps === 0;
+    const fullyVerified = meta.failedSteps === 0;
     return {
       asiId: 'ASI-10',
       riskName: 'Rogue Agents',
       status: fullyVerified ? 'mitigated' : 'partial',
       evidence: fullyVerified
         ? [
-            'Governance Critic scoring active',
             'Transcript analysis as secondary verification signal',
             'All steps passed outcome-based verification',
             'Max retry limits enforced'
           ]
-        : meta.governanceEnabled
-          ? [
-              'Governance Critic scoring active',
-              `${meta.failedSteps} step(s) failed verification`,
-              'Outcome checks gated merges'
-            ]
-          : [
-              'Governance mode not enabled',
-              'Transcript analysis as secondary signal only',
-              'Outcome checks gated merges'
-            ],
+        : [
+            'Transcript analysis as secondary signal only',
+            `${meta.failedSteps} step(s) failed verification`,
+            'Outcome checks gated merges'
+          ],
       rationale: fullyVerified
-        ? 'Governance Critic scoring and outcome-based verification both active. All steps verified successfully.'
-        : meta.governanceEnabled
-          ? 'Governance active but some steps failed verification. Outcome checks prevented unverified merges.'
-          : 'Governance mode was not enabled. Outcome checks served as the primary gate against rogue behavior.'
+        ? 'Outcome verification and transcript analysis completed successfully for all steps.'
+        : 'Outcome checks served as the primary gate against rogue behavior.'
     };
   }
 ];

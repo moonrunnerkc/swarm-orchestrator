@@ -267,7 +267,7 @@ export class ConfigLoader {
       return agent.name; // already in correct format from frontmatter
     }
 
-    // Otherwise convert "FrontendExpert" -> "frontend_expert"
+    // Otherwise normalize to lowercase (e.g. 'Worker' -> 'worker')
     return agentName
       .replace(/([A-Z])/g, '_$1')
       .toLowerCase()
@@ -357,8 +357,8 @@ export class ConfigLoader {
   }
 
   /**
-   * Build an agent map keyed by name, with snake_case aliases for PascalCase names.
-   * Plans and demos use snake_case (frontend_expert), YAML uses PascalCase (FrontendExpert).
+   * Build an agent map keyed by name, with lowercase aliases for mixed-case names.
+   * Plans use lowercase ('worker', 'reviewer'); YAML may use mixed case.
    * Both must resolve to the same agent profile.
    */
   buildAgentMap(): Map<string, AgentProfile> {
@@ -375,8 +375,8 @@ export class ConfigLoader {
   }
 
   /**
-   * Normalize agent name to snake_case for consistent lookups.
-   * FrontendExpert -> frontend_expert, frontend_expert -> frontend_expert
+   * Normalize agent name for consistent lookups.
+   * 'Worker' -> 'worker', 'worker' -> 'worker'
    */
   static normalizeAgentName(name: string): string {
     return name

@@ -12,14 +12,14 @@ describe('PRAutomation', () => {
         {
           stepNumber: 1,
           task: 'Setup project',
-          agentName: 'BackendMaster',
+          agentName: 'worker',
           dependencies: [],
           expectedOutputs: []
         },
         {
           stepNumber: 2,
           task: 'Add authentication',
-          agentName: 'SecurityAuditor',
+          agentName: 'worker',
           dependencies: [1],
           expectedOutputs: []
         }
@@ -32,14 +32,14 @@ describe('PRAutomation', () => {
     results: [
       {
         stepNumber: 1,
-        agentName: 'BackendMaster',
+        agentName: 'worker',
         status: 'completed',
         startTime: new Date().toISOString(),
         ...({
           endTime: new Date().toISOString(),
           verificationResult: {
             stepNumber: 1,
-            agentName: 'BackendMaster',
+            agentName: 'worker',
             passed: true,
             checks: [],
             unverifiedClaims: [],
@@ -50,14 +50,14 @@ describe('PRAutomation', () => {
       },
       {
         stepNumber: 2,
-        agentName: 'SecurityAuditor',
+        agentName: 'worker',
         status: 'completed',
         startTime: new Date().toISOString(),
         ...({
           endTime: new Date().toISOString(),
           verificationResult: {
             stepNumber: 2,
-            agentName: 'SecurityAuditor',
+            agentName: 'worker',
             passed: true,
             checks: [],
             unverifiedClaims: [],
@@ -101,7 +101,7 @@ describe('PRAutomation', () => {
     const deployments: DeploymentMetadata[] = [
       {
         stepNumber: 2,
-        agentName: 'DevOpsPro',
+        agentName: 'worker',
         timestamp: new Date().toISOString(),
         platform: 'vercel',
         previewUrl: 'https://app-preview.vercel.app',
@@ -127,14 +127,14 @@ describe('PRAutomation', () => {
     // Add a failed step
     context.results.push({
       stepNumber: 3,
-      agentName: 'TesterElite',
+      agentName: 'worker',
       status: 'failed',
       startTime: new Date().toISOString(),
       ...({
         endTime: new Date().toISOString(),
         verificationResult: {
           stepNumber: 3,
-          agentName: 'TesterElite',
+          agentName: 'worker',
           passed: false,
           checks: [],
           unverifiedClaims: ['Tests failed'],

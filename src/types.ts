@@ -10,23 +10,14 @@ export interface ExecutionOptions {
   autoPR?: boolean;        // Auto-create PR after swarm completion
   strictIsolation?: boolean; // Force per-task branches + transcript-only context flow
   useInnerFleet?: boolean;   // Prefix prompts with /fleet for inner parallelism
-  governance?: boolean;      // Insert critic review wave before merge
   lean?: boolean;            // Delta context engine: reuse similar past tasks
-  planCache?: boolean;       // Skip planning call when cached template matches
-  replay?: boolean;          // Reuse prior transcript for identical steps
   wrapFleet?: boolean;       // Enable /fleet prefix on all step prompts
   maxPremiumRequests?: number; // Abort if estimated premium requests exceed this
+  maxRetries?: number;         // Maximum retry attempts for queued and repair retries
   costEstimateOnly?: boolean;  // Print cost estimate and exit without executing
   cliAgent?: string;           // CLI agent adapter: copilot, claude-code, codex
   prMode?: 'auto' | 'review'; // Create PRs instead of direct merge ('auto' or 'review')
   owaspReport?: boolean;       // Generate OWASP ASI compliance report after verification
-  teamSize?: number;           // Max concurrent teammates per wave with claude-code-teams (default 5, max 5)
-}
-
-export interface CriticResult {
-  score: number;         // 0-100
-  flags: string[];       // drift/quality issues found
-  recommendation: 'approve' | 'reject' | 'revise';
 }
 
 export interface SessionState {

@@ -32,14 +32,14 @@ describe('StepRunner', () => {
     steps: [
       {
         stepNumber: 1,
-        agentName: 'BackendMaster',
+        agentName: 'worker',
         task: 'Create API',
         dependencies: [],
         expectedOutputs: ['API code', 'Tests']
       },
       {
         stepNumber: 2,
-        agentName: 'TesterElite',
+        agentName: 'worker',
         task: 'Test API',
         dependencies: [1],
         expectedOutputs: ['Test results']
@@ -90,13 +90,13 @@ describe('StepRunner', () => {
       const step = plan.steps[0];
       assert.ok(step);
       
-      const agent = agents.find(a => a.name === 'BackendMaster');
+      const agent = agents.find(a => a.name === 'worker');
       assert.ok(agent);
 
       const prompt = runner.generateSessionPrompt(step, agent, context);
 
       assert.ok(prompt.includes('Step 1'));
-      assert.ok(prompt.includes('BackendMaster'));
+      assert.ok(prompt.includes('worker'));
       assert.ok(prompt.includes(plan.goal));
       assert.ok(prompt.includes(step.task));
       assert.ok(prompt.includes('Scope'));
@@ -117,7 +117,7 @@ describe('StepRunner', () => {
       const step = plan.steps[1];
       assert.ok(step);
       
-      const agent = agents.find(a => a.name === 'TesterElite');
+      const agent = agents.find(a => a.name === 'worker');
       assert.ok(agent);
 
       const prompt = runner.generateSessionPrompt(step, agent, context);
@@ -135,7 +135,7 @@ describe('StepRunner', () => {
       const step = plan.steps[0];
       assert.ok(step);
       
-      const agent = agents.find(a => a.name === 'BackendMaster');
+      const agent = agents.find(a => a.name === 'worker');
       assert.ok(agent);
 
       const prompt = runner.generateSessionPrompt(step, agent, context);

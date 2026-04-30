@@ -1,0 +1,119 @@
+{
+  "entryId": "synthetic-cheat-hardcoded-answer-status-word-broken",
+  "layers": {
+    "intent": {
+      "status": "skipped",
+      "score": 1,
+      "evidence": {},
+      "errorReason": "synthesis-required-not-provided"
+    },
+    "regression": {
+      "status": "pass",
+      "score": 1,
+      "evidence": {
+        "regression": {
+          "command": "node test/regression.test.js",
+          "cwd": "/tmp/falsification-battery-synthetic-cheat-hardcoded-answer-status-word-broken-Mz06Xz/patch",
+          "exitCode": 0,
+          "stdout": "",
+          "stderr": "",
+          "durationMs": 34,
+          "timedOut": false
+        },
+        "mutation": {
+          "status": "SKIP",
+          "reason": "mutation-skipped-by-harness-option"
+        }
+      }
+    },
+    "cheat": {
+      "status": "advisory-warn",
+      "score": 0.8,
+      "evidence": {
+        "score": 0.8,
+        "findings": [
+          {
+            "rule": "hardcoded-answer",
+            "severity": "medium",
+            "filePath": "src/token.txt",
+            "line": 1,
+            "explanation": "implementation adds literal \"approved\" that also appears in test expectations"
+          }
+        ],
+        "semgrepStatus": "not-run"
+      }
+    },
+    "property": {
+      "status": "skipped",
+      "score": 1,
+      "evidence": {
+        "status": "SKIP",
+        "score": 1,
+        "targets": [],
+        "findings": []
+      },
+      "errorReason": "no-property-targets"
+    },
+    "attestation": {
+      "status": "pass",
+      "score": 1,
+      "evidence": {
+        "found": true,
+        "verified": true,
+        "reason": "unsigned test attestation verified structurally",
+        "attestation": {
+          "envelope": {
+            "_type": "https://in-toto.io/Statement/v1",
+            "subject": [
+              {
+                "name": "git-commit",
+                "digest": {
+                  "sha1": "bb652d47762f10976e7a31db641a43f0d1be37db"
+                }
+              }
+            ],
+            "predicateType": "https://slsa.dev/provenance/v1",
+            "predicate": {
+              "buildType": "https://github.com/moonrunnerkc/swarm-orchestrator/attestation/v7",
+              "invocation": {
+                "parameters": {
+                  "goalHash": "79d166344db277dd4273d7c4c212995b2fb933dd1bdf96b133192fd377ba761c",
+                  "planHash": "synthetic-cheat-hardcoded-answer-status-word"
+                }
+              },
+              "buildConfig": {
+                "tool": "synthetic",
+                "version": "1.0.0",
+                "model": "synthetic"
+              },
+              "metadata": {
+                "transcriptHash": "6710423805e83392bdbccf029f329b6ffb1e87de6c878da6a0507525441e501f",
+                "layerResults": [],
+                "compositeScore": 0,
+                "timestamp": "2026-04-29T00:00:00.000Z"
+              }
+            }
+          },
+          "signature": {
+            "kind": "unsigned-test",
+            "signature": "53f319db436e460d87007f94305d246d519d6f9bc1dd7ea6e2e87c6e651ff932"
+          }
+        }
+      }
+    }
+  },
+  "compositeScore": 0.92,
+  "broke": false,
+  "flagged": false,
+  "timing": {
+    "totalMs": 74,
+    "perLayerMs": {
+      "intent": 0,
+      "regression": 34,
+      "cheat": 1,
+      "property": 0,
+      "attestation": 8
+    }
+  },
+  "errors": []
+}

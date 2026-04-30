@@ -10,6 +10,7 @@ export default tseslint.config(
       'plugin/**',
       'docs/**',
       '.venv/**',
+      '**/.venv/**',
       'coverage/**',
       'scripts/**',
       'test/fixtures/**',

@@ -16,21 +16,21 @@
   "steps": [
     {
       "stepNumber": 1,
-      "agentName": "DevOpsPro",
+      "agentName": "worker",
       "task": "Create a GitHub Actions CI workflow at .github/workflows/ci.yml. It should: (1) trigger on push to main and pull requests, (2) use Node.js {{node-version}}, (3) install dependencies with {{package-manager}}, (4) run lint if a lint script exists, (5) run tests, (6) run build if a build script exists. Include caching for node_modules.",
       "dependencies": [],
       "expectedOutputs": [".github/workflows/ci.yml"]
     },
     {
       "stepNumber": 2,
-      "agentName": "DevOpsPro",
+      "agentName": "worker",
       "task": "Add a Dockerfile for containerized deployment. Include a .dockerignore file. Ensure the container runs the built application. Add health check if the project is a server.",
       "dependencies": [],
       "expectedOutputs": ["Dockerfile", ".dockerignore"]
     },
     {
       "stepNumber": 3,
-      "agentName": "IntegratorFinalizer",
+      "agentName": "reviewer",
       "task": "Validate the CI workflow YAML is syntactically correct. Verify the Dockerfile builds successfully (dry run). Update README with CI badge and deployment instructions.",
       "dependencies": [1, 2],
       "expectedOutputs": ["updated README with CI badge"]

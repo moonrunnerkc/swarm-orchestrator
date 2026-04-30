@@ -1,5 +1,6 @@
-# Example: Using Swarm Orchestrator as a GitHub Action
-# Copy this workflow to your own repo's .github/workflows/ directory
+# Example: Running Swarm Orchestrator from source in GitHub Actions.
+# The Docker action image does not currently include agent CLIs, so this
+# workflow builds the CLI in the runner where the selected agent CLI is installed.
 name: AI Swarm - Add Tests
 on:
   workflow_dispatch:
@@ -11,7 +12,7 @@ on:
       tool:
         description: 'CLI agent to use'
         required: false
-        default: 'copilot'
+        default: 'codex'
         type: choice
         options:
           - copilot
@@ -30,11 +31,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Copilot CLI requires an authenticated gh CLI
-      - name: Set up GitHub CLI
-        run: gh auth setup-git
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build Swarm Orchestrator
+        run: |
+          npm install
+          npm run build
 
       # Install the agent CLI you chose
       - name: Install Copilot CLI
@@ -44,23 +48,37 @@ jobs:
       - name: Install Claude Code
         if: inputs.tool == 'claude-code'
         run: npm install -g @anthropic-ai/claude-code
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
       - name: Install Codex
         if: inputs.tool == 'codex'
         run: npm install -g @openai/codex
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
-      - name: Run Swarm Orchestrator
-        uses: moonrunnerkc/swarm-orchestrator@v5
+      - name: Set up GitHub CLI for Copilot
+        if: inputs.tool == 'copilot'
+        run: gh auth setup-git
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run Swarm Orchestrator from local build
         id: swarm
-        with:
-          goal: ${{ inputs.goal }}
-          tool: ${{ inputs.tool }}
-          model: ${{ inputs.model }}
-          pr: review
+        run: |
+          CMD=(node dist/src/cli.js run --goal "$GOAL" --tool "$TOOL" --pr review --yes)
+          if [ -n "$MODEL" ]; then
+            CMD+=(--model "$MODEL")
+          fi
+          "${CMD[@]}"
+        env:
+          GOAL: ${{ inputs.goal }}
+          TOOL: ${{ inputs.tool }}
+          MODEL: ${{ inputs.model }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Show result
-        run: echo "${{ steps.swarm.outputs.result }}"
+        run: |
+          if [ -f /tmp/swarm-result.json ]; then
+            cat /tmp/swarm-result.json
+          else
+            echo "No /tmp/swarm-result.json was written"
+          fi

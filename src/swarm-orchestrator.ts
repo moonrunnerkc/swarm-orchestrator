@@ -15,7 +15,6 @@ import { load_quality_gates_config } from './quality-gates';
 import type { GateResult } from './quality-gates';
 import SessionExecutor, { SessionResult } from './session-executor';
 import ShareParser, { ShareIndex } from './share-parser';
-import { CriticResult } from './types';
 import VerifierEngine, { VerificationResult } from './verifier-engine';
 import { AdaptiveConcurrencyManager, WaveResizer } from './wave-resizer';
 import { CostEstimator, CostEstimate } from './cost-estimator';
@@ -27,10 +26,9 @@ import { BaselineSnapshot, scanBaseline } from './baseline-scanner';
 import { TaskClassifier } from './task-classifier';
 import { TIER_MAPS } from './tier-maps';
 import { RequirementFilter, FilteredRequirements } from './requirement-filter';
-import { getLogger, isPrettyMode } from './logger';
+import { getLogger } from './logger';
 import { buildSwarmPrompt as _buildSwarmPrompt, writeSharedInstructions as _writeSharedInstructions } from './prompt-builder';
 import { buildDependencyGraph as _buildDependencyGraph, identifyExecutionWaves as _identifyExecutionWaves } from './wave-scheduler';
-import { runCriticReview as _runCriticReview } from './critic-reviewer';
 import { executeOptionalDeployment as _executeOptionalDeployment } from './deployment-handler';
 import { analyzeCommitQuality as _analyzeCommitQuality } from './commit-quality-analyzer';
 import { PauseController } from './orchestrator/pause-controller';
@@ -54,6 +52,7 @@ import {
   runWaveLoop as _runWaveLoop,
   SchedulerHost,
 } from './orchestrator/wave-scheduler-loop';
+import { isFatalRunError } from './orchestrator/fatal-run-error';
 
 const logger = getLogger('orchestrator');
 
@@ -90,16 +89,15 @@ export interface SwarmExecutionOptions {
   qualityGatesConfigPath?: string;
   qualityGatesOutDir?: string;
   strictIsolation?: boolean;
-  governance?: boolean;
   lean?: boolean;
   useInnerFleet?: boolean;
-  replay?: boolean;
   prMode?: 'auto' | 'review';
   hooksEnabled?: boolean;
-  fleetWaveMode?: boolean;
   cliAgent?: string;
   owaspReport?: boolean;
-  teamSize?: number;
+  maxRetries?: number;
+  /** When true, full agent narration prints to stdout (firehose). Default: collapsed to live action line. */
+  streamAgent?: boolean;
   onProgress?: (context: SwarmExecutionContext, event: string) => void;
   onAgentLine?: (line: string) => void;
 }
@@ -131,7 +129,6 @@ export interface SwarmExecutionContext {
     accessibilityFixAdded: boolean;
     testCoverageFixAdded: boolean;
   };
-  criticResults?: CriticResult[];
   leanSavedRequests?: number;
   totalWaves?: number;
   costEstimator?: CostEstimator;
@@ -197,7 +194,7 @@ export class SwarmOrchestrator implements RemediationHost, ReplanHost, StepExecu
 
   /**
    * Look up an agent by name, falling back to normalized (snake_case) matching.
-   * Handles plans using snake_case (frontend_expert) against YAML agents (FrontendExpert).
+   * Handles plans using lowercase ('worker', 'reviewer') against YAML agents.
    * Public to satisfy `RemediationHost`; callers outside the class should still
    * treat it as an internal helper.
    */
@@ -328,27 +325,21 @@ export class SwarmOrchestrator implements RemediationHost, ReplanHost, StepExecu
     if (options?.prMode) {
       const prManager = new PRManager(this.workingDir);
       if (!prManager.isGhAvailable()) {
-        logger.error('  ❌ --pr requires gh CLI installed and authenticated. Run "gh auth login" first.');
+        logger.error('  --pr requires gh CLI installed and authenticated. Run "gh auth login" first.');
         process.exit(1);
       }
       context.prManager = prManager;
       context.prUrls = new Map();
     }
 
-    // Verbose execution-header block: useful for real runs, noisy for demos.
-    if (!isPrettyMode()) {
-      logger.info('\n🚀 Starting Parallel Swarm Execution');
-      logger.info(`${'─'.repeat(50)}`);
-      logger.info(`  Execution ID:    ${context.executionId}`);
-      logger.info(`  Main branch:     ${context.mainBranch}`);
-      logger.info(`  Steps:           ${plan.steps.length}`);
-      logger.info(`  Max concurrency: ${options?.maxConcurrency || 'unlimited'}`);
-      if (options?.confirmDeploy) {
-        logger.info('  ⚠️  Deployment enabled (--confirm-deploy)');
-      }
-      logger.info(`${'─'.repeat(50)}`);
-    } else if (options?.confirmDeploy) {
-      logger.info('  ⚠️  Deployment enabled (--confirm-deploy)');
+    // Execution-header scaffolding (exec id, main branch, concurrency) is
+    // diagnostic detail; emit at debug level so --verbose surfaces it on
+    // stderr while default user output stays uncluttered.
+    logger.debug(`exec id ${context.executionId}`);
+    logger.debug(`main ${context.mainBranch}`);
+    logger.debug(`concurrency ${options?.maxConcurrency || 'unlimited'}`);
+    if (options?.confirmDeploy) {
+      logger.info(`  deployment   enabled (--confirm-deploy)`);
     }
 
     // Group steps by repo for multi-repo orchestration
@@ -360,9 +351,11 @@ export class SwarmOrchestrator implements RemediationHost, ReplanHost, StepExecu
     }
 
     if (repoGroups.size > 1) {
-      logger.info(`\n📂 Multi-repo plan detected: ${repoGroups.size} repo(s)`);
+      const presenter = require('./presenter') as typeof import('./presenter');
+      const p = presenter.getPresenter();
+      p.print(`  ${p.dim('multi-repo')}  ${repoGroups.size} repos`);
       for (const [repo, steps] of repoGroups) {
-        logger.info(`  - ${path.basename(repo)}: ${steps.length} step(s)`);
+        p.print(`    ${path.basename(repo)}  ${p.dim(`${steps.length} step${steps.length === 1 ? '' : 's'}`)}`);
       }
     }
 
@@ -373,7 +366,12 @@ export class SwarmOrchestrator implements RemediationHost, ReplanHost, StepExecu
     const executionWaves = this.identifyExecutionWaves(dependencyGraph);
 
     context.totalWaves = executionWaves.length;
-    logger.info(`Execution will proceed in ${executionWaves.length} wave(s)\n`);
+    if (executionWaves.length > 1) {
+      const presenter = require('./presenter') as typeof import('./presenter');
+      const p = presenter.getPresenter();
+      p.print(`  ${p.dim('plan')}     ${executionWaves.length} waves`);
+      p.blank();
+    }
 
     // Pre-execution cost estimation
     const costEstimator = new CostEstimator(context.knowledgeBase);
@@ -407,33 +405,58 @@ export class SwarmOrchestrator implements RemediationHost, ReplanHost, StepExecu
     const gatesConfig = load_quality_gates_config(this.workingDir, options?.qualityGatesConfigPath);
 
     // Scheduler loop: greedy as-soon-as-ready scheduling, lean-mode KB
-    // injection, optional /fleet dispatch, governance critic review,
-    // adaptive concurrency. See src/orchestrator/wave-scheduler-loop.ts
+    // injection, optional /fleet dispatch, adaptive concurrency.
+    // See src/orchestrator/wave-scheduler-loop.ts
     // for the INVARIANT on context.plan re-read (executeReplan may swap
     // it mid-run; scheduler re-reads context.plan.steps every iteration).
-    await _runWaveLoop(this, plan, agents, context, options);
+    try {
+      await _runWaveLoop(this, plan, agents, context, options);
+    } catch (err) {
+      if (isFatalRunError(err)) {
+        // Account-level wall (usage-limit, auth, extended rate-limit) reached.
+        // Skip the failed-step replan, the quality-gate pipeline, and the
+        // post-run reporter — none of those can recover from "no agent
+        // calls will succeed". Persist a sentinel for the SWE-bench harness
+        // and rethrow so the CLI exits non-zero with the fatal kind.
+        const sentinel = {
+          kind: err.fatalKind,
+          message: err.message,
+          evidence: err.evidence,
+          stepNumber: err.stepNumber ?? null,
+          agentName: err.agentName ?? null,
+          executionId: context.executionId,
+          timestamp: new Date().toISOString(),
+        };
+        try {
+          fs.writeFileSync(
+            path.join(runDir, 'fatal-run-error.json'),
+            JSON.stringify(sentinel, null, 2),
+            'utf8',
+          );
+        } catch {
+          // Sentinel-write failure is non-fatal; the rethrown error still
+          // surfaces the abort to the CLI exit handler.
+        }
+        logger.error(
+          `\n  aborting: agent CLI reported unrecoverable ${err.fatalKind} error`,
+        );
+        logger.error(`  evidence: ${err.evidence}`);
+        logger.error(`  no replan or quality gate can recover from an account-level wall.`);
+        throw err;
+      }
+      throw err;
+    }
 
-    // Execution summary
-    const completedResults = context.results.filter(r => r.status === 'completed');
+    // Per-step execution summary. The wave-loop already prints the per-step
+    // verified/failed lines via LiveStatus; this block is intentionally
+    // suppressed to keep the post-run section quiet, leaving the final
+    // headline (printed by the CLI handler) as the user-visible signal.
     const failedResults = context.results.filter(r => r.status === 'failed');
-    logger.info(`\n📊 Execution Summary:`);
-    logger.info(`  ${'─'.repeat(40)}`);
-    completedResults.forEach(r => {
-      const durationMs = r.startTime && r.endTime
-        ? new Date(r.endTime).getTime() - new Date(r.startTime).getTime()
-        : 0;
-      logger.info(`  ✅ ${r.agentName}:${r.stepNumber} (${Math.round(durationMs / 1000)}s)`);
-    });
-    failedResults.forEach(r => {
-      logger.info(`  ❌ ${r.agentName}:${r.stepNumber} - ${r.error || 'unknown error'}`);
-    });
-    logger.info(`  ${'─'.repeat(40)}`);
-    logger.info(`  ${completedResults.length} passed, ${failedResults.length} failed, ${context.totalWaves ?? 0} batch(es)`);
 
     if (context.unmergedBranches && context.unmergedBranches.length > 0) {
-      logger.info(`\n⚠️  ${context.unmergedBranches.length} branch(es) could not merge (work preserved on branch):`);
+      logger.warn(`\n  ${context.unmergedBranches.length} branch${context.unmergedBranches.length === 1 ? '' : 'es'} could not merge (work preserved):`);
       for (const um of context.unmergedBranches) {
-        logger.info(`  • Step ${um.stepNumber} (${um.agentName}): ${um.branchName}`);
+        logger.warn(`    step-${um.stepNumber} ${um.agentName} on ${um.branchName}`);
       }
     }
 
@@ -484,7 +507,7 @@ export class SwarmOrchestrator implements RemediationHost, ReplanHost, StepExecu
       }
 
       if (failedStepRetries.length > 0) {
-        logger.info(`\n🔁 Re-queuing ${failedStepRetries.length} failed step(s) with original objectives...`);
+        logger.info(`\n  re-queuing ${failedStepRetries.length} failed step${failedStepRetries.length === 1 ? '' : 's'}`);
         await this.executeReplan(
           context,
           { retrySteps: [], addSteps: failedStepRetries },
@@ -512,17 +535,19 @@ export class SwarmOrchestrator implements RemediationHost, ReplanHost, StepExecu
           const remaining = pipelineResult.finalGateResults
             .filter(r => r.status === 'fail')
             .map(r => `${r.id} (${r.issues.length} issues)`);
-          logger.warn(`⚠️  Quality gates still have issues after remediation: ${remaining.join(', ')}`);
-          logger.warn('   Treating as warning since all plan steps passed.');
+          logger.warn(`  quality gates still have issues after remediation: ${remaining.join(', ')}`);
+          logger.warn('  treating as warning since all plan steps passed.');
         } else {
-          logger.error('❌ Quality gates failed. See report in:', pipelineResult.gatesOut);
+          logger.error('  quality gates failed. See report in:', pipelineResult.gatesOut);
           throw new Error('Quality gates failed');
         }
       }
     }
 
-    // merge all agent branches back to main
-    logger.info('\n🔀 Merging agent branches to main...');
+    // Final merge pass: sweep any branches the wave loop did not already
+    // merge. Header is suppressed because the wave loop's per-branch
+    // "merged step-N <agent>" lines (and any "(already merged)" follow-ups
+    // below) carry the signal on their own.
     // Clean up any stale locks before final merge (e.g. from cancelled runs)
     context.contextBroker.forceReleaseStaleLocks();
     await this.mergeAllBranches(context);
@@ -536,7 +561,6 @@ export class SwarmOrchestrator implements RemediationHost, ReplanHost, StepExecu
     if (options?.model !== undefined) postRunOptions.model = options.model;
     if (options?.cliAgent !== undefined) postRunOptions.cliAgent = options.cliAgent;
     if (options?.owaspReport !== undefined) postRunOptions.owaspReport = options.owaspReport;
-    if (options?.governance !== undefined) postRunOptions.governance = options.governance;
     if (options?.strictIsolation !== undefined) postRunOptions.strictIsolation = options.strictIsolation;
     if (options?.enableExternal !== undefined) postRunOptions.enableExternal = options.enableExternal;
     if (options?.dryRun !== undefined) postRunOptions.dryRun = options.dryRun;
@@ -599,17 +623,6 @@ export class SwarmOrchestrator implements RemediationHost, ReplanHost, StepExecu
   ): Promise<void> {
     return _executeStepInSwarm(this, step, agent, context, options);
   }
-
-
-  /**
-  /**
-   * Critic review on completed wave results. Delegates to critic-reviewer module.
-   * Public to satisfy `SchedulerHost`; tests access via `(orch as any).runCriticReview`.
-   */
-  runCriticReview(completedResults: ParallelStepResult[], _context: SwarmExecutionContext, plan: ExecutionPlan): CriticResult {
-    return _runCriticReview(completedResults, plan);
-  }
-
   /** Build prompt for swarm step execution. Delegates to prompt-builder module. */
   private buildSwarmPrompt(step: PlanStep, agent: AgentProfile, context: SwarmExecutionContext, dependencyContext: string): string {
     // Pass the orchestrator's working dir so prompt-builder can read the
@@ -678,7 +691,7 @@ export class SwarmOrchestrator implements RemediationHost, ReplanHost, StepExecu
           fs.rmSync(worktreePath, { recursive: true, force: true });
         } catch {
           // Best-effort cleanup; log but don't block execution
-          logger.warn(`  ⚠️  Could not remove worktree ${dir.name}: ${(err as Error).message}`);
+          logger.warn(`  could not remove worktree ${dir.name}: ${(err as Error).message}`);
         }
       }
     }

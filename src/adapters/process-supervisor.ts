@@ -16,7 +16,7 @@ export interface SupervisedSpawnOptions {
   command: string;
   args: string[];
   cwd: string;
-  env?: Record<string, string> | undefined;
+  env?: NodeJS.ProcessEnv | undefined;
   logPrefix?: string | undefined;
   stallTimeoutMs?: number | undefined;
   // Called on each complete stdout/stderr line for action detection.
@@ -27,6 +27,11 @@ export interface SupervisedSpawnOptions {
   // stdin to /dev/null, required for Codex which otherwise prints
   // "Reading additional input from stdin..." when it sees a pipe.
   stdinMode?: 'pipe' | 'ignore';
+  // Optional payload to write to the child's stdin before closing it.
+  // Required by adapters that pipe the prompt over stdin (e.g. Claude Code's
+  // `claude -p -` form, used to avoid ARG_MAX on long prompts). Ignored when
+  // stdinMode is 'ignore'.
+  stdinData?: string | undefined;
 }
 
 export interface SupervisedResult {
@@ -64,11 +69,16 @@ export function supervisedSpawn(opts: SupervisedSpawnOptions): Promise<Supervise
 
   return new Promise((resolve) => {
     const stdinMode = opts.stdinMode ?? 'pipe';
+    // process.env is merged in first so callers that pass partial env overrides
+    // (e.g. buildRestrictedEnv) still inherit PATH, locale, keyring vars, and
+    // OAuth state the agent CLI needs at runtime. opts.env is spread last so
+    // explicit values, including `undefined` to scrub a key, win over the
+    // inherited base.
     const spawnOpts: SpawnOptions = {
       cwd: opts.cwd,
       env: {
         ...process.env,
-        ...opts.env
+        ...opts.env,
       },
       stdio: [stdinMode, 'pipe', 'pipe'],
     };
@@ -78,6 +88,9 @@ export function supervisedSpawn(opts: SupervisedSpawnOptions): Promise<Supervise
     // Close piped stdin so the subprocess never blocks waiting for interactive input.
     // When stdinMode is 'ignore' there is no proc.stdin to end.
     if (proc.stdin) {
+      if (opts.stdinData) {
+        proc.stdin.write(opts.stdinData);
+      }
       proc.stdin.end();
     }
 

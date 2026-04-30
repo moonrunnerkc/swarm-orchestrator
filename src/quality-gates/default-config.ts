@@ -217,9 +217,7 @@ export const DEFAULT_QUALITY_GATES_CONFIG: QualityGatesConfig = {
     },
     testCoverage: {
       enabled: true,
-      entryPointPatterns: [
-        '^src/dashboard\\.tsx?$'
-      ],
+      entryPointPatterns: [],
       minTestAssertions: 1,
       requireComponentTests: true    },
     testFileProtection: {

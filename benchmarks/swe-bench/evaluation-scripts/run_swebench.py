@@ -23,6 +23,7 @@ import glob
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -71,6 +72,16 @@ CACHE_DIR = Path(os.environ.get("HF_HOME", str(_REPO_ROOT / ".cache" / "huggingf
 PERINSTANCE_IMAGE_REGISTRY = os.environ.get(
     "PERINSTANCE_IMAGE_REGISTRY",
     "ghcr.io/epoch-research/swe-bench.eval.x86_64",
+)
+
+# Path to the per-instance evaluator CLI. Subprocessed once per instance per
+# eval mode so the harness doesn't have to embed the synthesizer / property-
+# gate logic; both live in scripts/eval/swebench-instance-evaluator.ts and
+# are tested under npm test.
+EVAL_CLI = _REPO_ROOT / "scripts" / "eval" / "swebench-eval-cli.ts"
+RUN_ID = os.environ.get(
+    "SWEBENCH_RUN_ID",
+    datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"),
 )
 
 
@@ -500,12 +511,25 @@ def checkout_repo(task, workdir: Path) -> Path:
         capture_output=True,
         timeout=300,
     )
-    # Reset the local master branch to base_commit rather than just checking out a
-    # detached HEAD. Without -B, master stays at the clone tip (potentially tens of
-    # thousands of commits ahead), and the branch-merger later merges the swarm branch
-    # into that tip, causing git diff base_commit..HEAD to capture all upstream history.
+    default_branch = "master"
+    default_ref = subprocess.run(
+        ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
+        cwd=str(repo_dir),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    prefix = "refs/remotes/origin/"
+    if default_ref.returncode == 0 and default_ref.stdout.strip().startswith(prefix):
+        default_branch = default_ref.stdout.strip()[len(prefix) :]
+
+    # Reset the same local branch the orchestrator will resolve from origin/HEAD
+    # to base_commit rather than just checking out a detached HEAD. Without -B,
+    # the default branch stays at the clone tip, potentially tens of thousands
+    # of commits ahead, and the branch-merger later merges the swarm branch into
+    # that tip, causing git diff base_commit..HEAD to capture upstream history.
     subprocess.run(
-        ["git", "checkout", "-B", "master", task["base_commit"]],
+        ["git", "checkout", "-B", default_branch, task["base_commit"]],
         cwd=str(repo_dir),
         check=True,
         capture_output=True,
@@ -514,23 +538,66 @@ def checkout_repo(task, workdir: Path) -> Path:
     return repo_dir
 
 
+def build_baseline_command(repo_dir: Path, problem_statement: str) -> tuple[list[str], str | None]:
+    """Build the direct-agent baseline command for the configured CLI."""
+    truncated = problem_statement[:100_000]
+    prompt_text = f"Fix this issue. Only edit source code files, do not edit tests.\n\n{truncated}"
+
+    if SWARM_TOOL == "claude-code":
+        return ["claude", "--dangerously-skip-permissions", "-p", "-"], prompt_text
+    if SWARM_TOOL == "copilot":
+        return ["copilot", "-p", prompt_text, "--allow-all"], None
+    if SWARM_TOOL == "codex":
+        return [
+            "codex",
+            "exec",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "-C",
+            str(repo_dir),
+            prompt_text,
+        ], None
+    raise ValueError(
+        f"unsupported SWARM_TOOL={SWARM_TOOL!r}; use copilot, claude-code, or codex"
+    )
+
+
+def find_fatal_run_sentinel(repo_dir: Path) -> dict | None:
+    """Locate the orchestrator's fatal-run-error.json for the just-finished run.
+
+    The orchestrator writes this file under runs/<execution-id>/ when an
+    agent CLI reports an unrecoverable account-level failure (usage-limit,
+    auth, extended rate-limit). Returns the parsed payload, or None when
+    no sentinel was produced.
+    """
+    runs_root = repo_dir / "runs"
+    if not runs_root.is_dir():
+        return None
+    candidates = sorted(
+        (p for p in runs_root.iterdir() if p.is_dir() and p.name.startswith("swarm-")),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    for run_dir in candidates:
+        sentinel = run_dir / "fatal-run-error.json"
+        if sentinel.exists():
+            try:
+                return json.loads(sentinel.read_text(encoding="utf-8", errors="replace"))
+            except json.JSONDecodeError:
+                return {"kind": "unknown", "message": "sentinel exists but is not valid JSON"}
+    return None
+
+
 def run_orchestrator(repo_dir: Path, problem_statement: str) -> dict:
-    """Run swarm-orchestrator (or baseline) against the task."""
+    """Run swarm-orchestrator or a direct-agent baseline against the task."""
     start = time.monotonic()
-    env = {**os.environ, "NODE_NO_WARNINGS": "1"}
+    env = {
+        **os.environ,
+        "NODE_NO_WARNINGS": "1",
+        "SWARM_SKIP_OUTCOME_TEST_EXEC": "1",
+    }
 
     if BASELINE_MODE:
-        # Direct single-agent execution — run Claude CLI directly, bypassing orchestrator.
-        # This tests the raw agent capability without orchestrator's planning/verification.
-        # Truncate the prompt to avoid E2BIG — baseline evaluates raw agent capability,
-        # not the orchestrator's prompt-management. Keep first 100K chars.
-        truncated = problem_statement[:100_000]
-        prompt_text = f"Fix this issue. Only edit source code files, do not edit tests.\n\n{truncated}"
-        cmd = [
-            "claude", "--dangerously-skip-permissions",
-            "-p", prompt_text,
-        ]
-        prompt_text = None  # Don't pipe via stdin for baseline
+        cmd, prompt_text = build_baseline_command(repo_dir, problem_statement)
     else:
         # Full orchestrator pipeline.
         # The "do not edit tests" constraint goes through --agent-guidance, NOT
@@ -575,12 +642,16 @@ def run_orchestrator(repo_dir: Path, problem_statement: str) -> dict:
             timeout=TASK_TIMEOUT,
         )
         elapsed = time.monotonic() - start
-        return {
+        run_record: dict = {
             "returncode": result.returncode,
             "stdout": result.stdout[-5000:] if result.stdout else "",
             "stderr": result.stderr[-2000:] if result.stderr else "",
             "elapsed_seconds": round(elapsed, 2),
         }
+        sentinel = find_fatal_run_sentinel(repo_dir)
+        if sentinel:
+            run_record["fatal_run_error"] = sentinel
+        return run_record
     except subprocess.TimeoutExpired:
         elapsed = time.monotonic() - start
         return {
@@ -776,6 +847,54 @@ def extract_test_patch_files(test_patch: str) -> list[str]:
     return [m.group(1) for m in re.finditer(r"(?m)^diff --git a/\S+ b/(\S+)", test_patch)]
 
 
+def parse_fail_to_pass(task: dict) -> list[str]:
+    """Return SWE-bench FAIL_TO_PASS test ids from either JSON or list form."""
+    fail_to_pass_raw = task.get("FAIL_TO_PASS", "")
+    if isinstance(fail_to_pass_raw, str):
+        return json.loads(fail_to_pass_raw) if fail_to_pass_raw else []
+    if isinstance(fail_to_pass_raw, list):
+        return [item for item in fail_to_pass_raw if isinstance(item, str)]
+    return []
+
+
+def build_swebench_differential_gate_input(
+    task: dict,
+    agent_branch: str = "HEAD",
+    python_executable: str = "python",
+) -> dict:
+    """Build the layer-1 differential gate input from SWE-bench FAIL_TO_PASS.
+
+    The TypeScript gate needs a concrete test command. SWE-bench supplies
+    FAIL_TO_PASS ids, so this helper applies the same pytest scoping logic as
+    run_gold_tests/run_gold_tests_in_container and packages the base commit,
+    patch ref, and command in one auditable record.
+    """
+    fail_to_pass = parse_fail_to_pass(task)
+    if not fail_to_pass:
+        return {
+            "ready": False,
+            "reason": "no FAIL_TO_PASS tests specified",
+            "fail_to_pass_ids": [],
+        }
+
+    pytest_targets, k_filters = build_pytest_args(
+        fail_to_pass,
+        task.get("test_patch", ""),
+    )
+    parts = [python_executable, "-m", "pytest", "--tb=short", "-q"]
+    parts.extend(pytest_targets)
+    if k_filters:
+        parts.extend(["-k", " or ".join(f"({f})" for f in k_filters)])
+
+    return {
+        "ready": True,
+        "base_commit": task["base_commit"],
+        "agent_branch": agent_branch,
+        "test_command": " ".join(shlex.quote(part) for part in parts),
+        "fail_to_pass_ids": fail_to_pass,
+    }
+
+
 def build_pytest_args(
     fail_to_pass: list[str],
     test_patch: str = "",
@@ -798,13 +917,13 @@ def build_pytest_args(
     which had pre-existing unrelated failures, and the instance was
     scored 0/1 despite the orchestrator's patch being correct.
 
-    Scoping: when a bare name appears, the files extracted from the
-    gold test_patch are passed as pytest positionals so `-k` is bounded
-    to tests in those files. Option A from the RC6-port rationale:
+    Scoping: when a bare name or unittest-style ID appears, the files
+    extracted from the gold test_patch are passed as pytest positionals
+    so `-k` is bounded to tests in those files. Option A from the RC6-port rationale:
     `pytest <file> -k <name>` rather than a fully qualified node ID,
     so class-nested tests still resolve.
 
-    If no test_patch is provided (defensive — host-venv and container
+    If no test_patch is provided (defensive, host-venv and container
     paths both supply one), the bare name falls through to the legacy
     unbounded `-k` to preserve prior behavior on any caller that
     forgets to pass test_patch.
@@ -839,9 +958,40 @@ def build_pytest_args(
                 f"names={bare_names} files={test_patch_files}"
             )
         else:
-            # No test_patch available — legacy unbounded -k.
+            # No test_patch available, legacy unbounded -k.
             k_filters.extend(bare_names)
+
+    if k_filters and not pytest_targets:
+        test_patch_files = extract_test_patch_files(test_patch)
+        if test_patch_files:
+            pytest_targets.extend(test_patch_files)
+            print(
+                f"  [pytest-scoping] scoped {len(k_filters)} unittest-style "
+                f"filter(s) to {len(test_patch_files)} test_patch file(s): "
+                f"filters={k_filters} files={test_patch_files}"
+            )
     return pytest_targets, k_filters
+
+
+def build_django_test_labels(fail_to_pass: list[str]) -> list[str]:
+    """Convert SWE-bench test IDs into Django tests/runtests.py labels."""
+    labels: list[str] = []
+    for tid in fail_to_pass:
+        if "(" in tid and ")" in tid:
+            method, rest = tid.split("(", 1)
+            module_class = rest.rstrip(")").strip()
+            labels.append(f"{module_class}.{method.strip()}")
+            continue
+        if "::" in tid:
+            path_part, *node_parts = tid.split("::")
+            module = path_part.removesuffix(".py")
+            if module.startswith("tests/"):
+                module = module[len("tests/") :]
+            module = module.replace("/", ".")
+            labels.append(".".join([module, *node_parts]))
+            continue
+        labels.append(tid)
+    return labels
 
 
 def docker_available() -> bool:
@@ -910,6 +1060,7 @@ def run_gold_tests_in_container(task: dict, agent_diff: bytes) -> dict:
         }
 
     pytest_targets, k_filters = build_pytest_args(fail_to_pass, test_patch)
+    django_labels = build_django_test_labels(fail_to_pass)
 
     # Build the in-container script. Patches come in via stdin split by sentinels.
     # Keeping this as one bash -lc string is the simplest way to hit the shared
@@ -918,6 +1069,12 @@ def run_gold_tests_in_container(task: dict, agent_diff: bytes) -> dict:
     target_args = " ".join(f"'{t}'" for t in pytest_targets) or ""
     k_expr = " or ".join(f"({f})" for f in k_filters)
     k_arg = f"-k '{k_expr}'" if k_expr else ""
+    django_target_args = " ".join(f"'{t}'" for t in django_labels)
+    test_invocation = (
+        f"python tests/runtests.py --verbosity 1 --noinput {django_target_args}"
+        if task.get("repo") == "django/django"
+        else f"python -m pytest --tb=short -q {target_args} {k_arg}"
+    )
     # Notes on the bash plumbing below:
     #   - Stdin is buffered to /tmp/payload first, then awk-ed twice. Reading
     #     /dev/stdin from two separate awk invocations drops the test patch:
@@ -933,9 +1090,15 @@ def run_gold_tests_in_container(task: dict, agent_diff: bytes) -> dict:
     #     `-s` test additionally short-circuits if it somehow does. The
     #     test_patch is populated from the SWE-bench dataset and always
     #     contains hunks for a FAIL_TO_PASS-bearing instance.
+    django_settings = (
+        "export DJANGO_SETTINGS_MODULE=test_sqlite\n"
+        if task.get("repo") == "django/django"
+        else ""
+    )
     script = (
         "set -eo pipefail\n"
         "cd /testbed\n"
+        f"{django_settings}"
         "python -m pip install --quiet pytest hypothesis 2>&1 | tail -1 || true\n"
         "cat > /tmp/payload\n"
         "awk '/^__AGENT_PATCH__$/,/^__END_AGENT_PATCH__$/' /tmp/payload "
@@ -950,7 +1113,7 @@ def run_gold_tests_in_container(task: dict, agent_diff: bytes) -> dict:
         "git apply /tmp/test.patch 2>/tmp/test-apply.err || {\n"
         "  echo '__TEST_PATCH_APPLY_FAILED__' >&2; cat /tmp/test-apply.err >&2; exit 43;\n"
         "}\n"
-        f"python -m pytest --tb=short -q {target_args} {k_arg}\n"
+        f"{test_invocation}\n"
     )
 
     # Agent diff stays bytes through the pipe — it may contain non-UTF-8
@@ -994,8 +1157,7 @@ def run_gold_tests_in_container(task: dict, agent_diff: bytes) -> dict:
         "image": image,
         "fail_to_pass_ids": fail_to_pass,
         "test_command": (
-            f"(in container) python -m pytest --tb=short -q "
-            f"{target_args} {k_arg}"
+            f"(in container) {test_invocation}"
         ).strip(),
         "stdout_tail": stdout[-3000:],
         "stderr_tail": stderr[-1000:],
@@ -1033,6 +1195,178 @@ def run_tests_dispatch(task: dict, repo_dir: Path) -> dict:
     return result
 
 
+def materialize_gold_branch(repo_dir: Path, gold_patch: str) -> str | None:
+    """Commit the SWE-bench gold patch on a side branch so it has a git ref.
+
+    Returns the branch name on success, None if the patch couldn't apply
+    against the base checkout (rare; usually a sign of dataset drift).
+    The eval scripts use the ref via `git worktree add` in
+    `scripts/eval/swebench-instance-evaluator.ts`.
+
+    The branch is created from the current HEAD (which is the base commit
+    after checkout_repo). Returning to base is the caller's responsibility.
+    """
+    if not gold_patch:
+        return None
+    branch = "swarm-gold-eval"
+    try:
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(repo_dir),
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True,
+        ).stdout.strip()
+
+        subprocess.run(
+            ["git", "checkout", "-B", branch],
+            cwd=str(repo_dir),
+            capture_output=True,
+            timeout=15,
+            check=True,
+        )
+
+        apply = subprocess.run(
+            ["git", "apply", "--whitespace=nowarn", "-"],
+            cwd=str(repo_dir),
+            input=gold_patch,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if apply.returncode != 0:
+            subprocess.run(
+                ["git", "checkout", "-B", "master", head],
+                cwd=str(repo_dir),
+                capture_output=True,
+                timeout=15,
+            )
+            return None
+
+        subprocess.run(
+            ["git", "add", "-A"],
+            cwd=str(repo_dir),
+            capture_output=True,
+            timeout=30,
+        )
+        subprocess.run(
+            ["git", "-c", "user.email=eval@swarm", "-c", "user.name=swarm-eval",
+             "commit", "-m", "[swarm-eval] gold patch", "--allow-empty"],
+            cwd=str(repo_dir),
+            capture_output=True,
+            timeout=30,
+        )
+
+        subprocess.run(
+            ["git", "checkout", "-B", "master", head],
+            cwd=str(repo_dir),
+            capture_output=True,
+            timeout=15,
+            check=True,
+        )
+        return branch
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return None
+
+
+def _run_eval_cli(mode: str, task_payload: dict, out_path: Path) -> dict:
+    """Subprocess to scripts/eval/swebench-eval-cli.ts and return the appended record.
+
+    The CLI appends a single JSONL line to out_path. Returns the parsed
+    record on success, or a synthetic ERROR record so the JSONL stays
+    one-record-per-instance even when the CLI itself crashes.
+    """
+    if not EVAL_CLI.exists():
+        return {
+            "instanceId": task_payload.get("instanceId"),
+            "status": "ERROR",
+            "error": f"eval CLI missing: {EVAL_CLI}",
+        }
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    before = out_path.stat().st_size if out_path.exists() else 0
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".json", prefix="swarm-eval-task-", delete=False
+    ) as tf:
+        json.dump(task_payload, tf)
+        task_file = Path(tf.name)
+    try:
+        result = subprocess.run(
+            ["npx", "tsx", str(EVAL_CLI), "--mode", mode,
+             "--task", str(task_file), "--out", str(out_path)],
+            cwd=str(_REPO_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        if result.returncode != 0:
+            return {
+                "instanceId": task_payload.get("instanceId"),
+                "status": "ERROR",
+                "error": (result.stderr or result.stdout or "eval CLI exited non-zero")[:500],
+            }
+    except subprocess.TimeoutExpired:
+        return {
+            "instanceId": task_payload.get("instanceId"),
+            "status": "ERROR",
+            "error": "eval CLI timed out",
+        }
+    finally:
+        task_file.unlink(missing_ok=True)
+
+    if not out_path.exists() or out_path.stat().st_size <= before:
+        return {
+            "instanceId": task_payload.get("instanceId"),
+            "status": "ERROR",
+            "error": "eval CLI did not append a record",
+        }
+    last_line = out_path.read_text(encoding="utf-8").splitlines()[-1]
+    try:
+        return json.loads(last_line)
+    except json.JSONDecodeError:
+        return {
+            "instanceId": task_payload.get("instanceId"),
+            "status": "ERROR",
+            "error": "appended JSONL line is not valid JSON",
+        }
+
+
+def run_synth_eval_hook(task: dict, repo_dir: Path, gold_branch: str | None) -> dict:
+    """B.1: Run synthesizer eval for one SWE-bench instance.
+
+    Writes one JSONL line to RESULTS_DIR/synthesizer-eval-<run-id>.jsonl
+    and returns the parsed record. Never raises; failure shows up in the
+    record as status=ERROR with a populated error field.
+    """
+    out_path = RESULTS_DIR / f"synthesizer-eval-{RUN_ID}.jsonl"
+    payload: dict = {
+        "instanceId": task["instance_id"],
+        "problemStatement": task.get("problem_statement", ""),
+        "repoPath": str(repo_dir.resolve()),
+    }
+    if gold_branch:
+        payload["goldPatchRef"] = gold_branch
+    return _run_eval_cli("synth", payload, out_path)
+
+
+def run_property_eval_hook(task: dict, repo_dir: Path) -> dict:
+    """B.3: Run property-gate eval for one SWE-bench instance.
+
+    Writes one JSONL line to RESULTS_DIR/property-gate-eval-<run-id>.jsonl
+    and returns the parsed record. The eval applies the gold patch in a
+    fresh worktree internally (see swebench-instance-evaluator.ts) so the
+    harness's HEAD state is preserved.
+    """
+    out_path = RESULTS_DIR / f"property-gate-eval-{RUN_ID}.jsonl"
+    payload = {
+        "instanceId": task["instance_id"],
+        "repoPath": str(repo_dir.resolve()),
+        "goldPatchText": task.get("patch", ""),
+        "baseCommit": task["base_commit"],
+    }
+    return _run_eval_cli("property", payload, out_path)
+
+
 def _print_workspace_preserved(workdir: Path) -> None:
     """Print the preserved workspace path and ready-to-paste diagnostic commands."""
     print(f"\n{'='*60}")
@@ -1061,9 +1395,29 @@ def evaluate_tasks(*, keep_workdir: bool = False) -> dict:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
     workdir = Path(tempfile.mkdtemp(prefix="swebench-"))
+    fatal_abort: dict | None = None
     try:
         for task in tqdm(tasks, desc="Evaluating"):
             instance_id = task["instance_id"]
+            if fatal_abort is not None:
+                # Skip remaining instances after a fatal account-level wall.
+                # Continuing would just record more "agent did nothing"
+                # failures — the sweep result is already determined.
+                print(f"\n  ⏭  Skipping {instance_id}: sweep aborted "
+                      f"({fatal_abort['kind']}) at {fatal_abort['at_instance']}")
+                results.append({
+                    "instance_id": instance_id,
+                    "repo": task["repo"],
+                    "base_commit": task["base_commit"],
+                    "mode": "baseline" if BASELINE_MODE else "orchestrator",
+                    "tool": SWARM_TOOL,
+                    "model": SWARM_MODEL,
+                    "status": "skipped_after_fatal",
+                    "fatal_run_error": fatal_abort,
+                    "resolved": False,
+                })
+                continue
+
             print(f"\n{'='*60}")
             print(f"Task: {instance_id}")
             print(f"Repo: {task['repo']} @ {task['base_commit'][:12]}")
@@ -1076,6 +1430,7 @@ def evaluate_tasks(*, keep_workdir: bool = False) -> dict:
                 "mode": "baseline" if BASELINE_MODE else "orchestrator",
                 "tool": SWARM_TOOL,
                 "model": SWARM_MODEL,
+                "differential_gate": build_swebench_differential_gate_input(task),
             }
 
             # Step 1: Checkout
@@ -1087,9 +1442,41 @@ def evaluate_tasks(*, keep_workdir: bool = False) -> dict:
                 results.append(task_result)
                 continue
 
+            # Step 1.5: B.1 — synthesizer eval. Materialize the gold patch on
+            # a side branch so the eval can run the synthesized test against
+            # the gold-applied state. Errors here never block the harness;
+            # the record's `status` field carries the failure mode.
+            gold_branch = materialize_gold_branch(repo_dir, task.get("patch", ""))
+            try:
+                synth_record = run_synth_eval_hook(task, repo_dir, gold_branch)
+                task_result["synth_eval"] = synth_record
+            except Exception as exc:  # eval hook bug shouldn't tank the sweep
+                task_result["synth_eval"] = {
+                    "instanceId": instance_id,
+                    "status": "ERROR",
+                    "error": f"hook crashed: {exc}",
+                }
+
             # Step 2: Run orchestrator / baseline
             run_result = run_orchestrator(repo_dir, task["problem_statement"])
             task_result["run"] = run_result
+            if run_result.get("fatal_run_error"):
+                fatal_abort = {
+                    **run_result["fatal_run_error"],
+                    "at_instance": instance_id,
+                }
+                print(
+                    f"\n  🛑 Fatal {fatal_abort.get('kind', 'unknown')} error "
+                    f"at {instance_id}: {fatal_abort.get('evidence', '')[:200]}"
+                )
+                print(
+                    f"     Aborting remaining {SWARM_TOOL} sweep — replan and "
+                    f"quality gates cannot recover from an account-level wall."
+                )
+                task_result["status"] = "fatal_run_error"
+                task_result["resolved"] = False
+                results.append(task_result)
+                continue
 
             # Step 3: Run gold tests via the dispatcher so we pick the
             # per-instance container (honest eval) when Docker is available
@@ -1102,6 +1489,19 @@ def evaluate_tasks(*, keep_workdir: bool = False) -> dict:
             task_result["tests"] = test_result
             task_result["resolved"] = test_result.get("passed", False)
 
+            # Step 4: B.3 — property-gate eval. Runs against the gold-applied
+            # state in a fresh worktree (the eval CLI handles that), so it
+            # works whether the sweep ran in container or host-venv mode.
+            try:
+                property_record = run_property_eval_hook(task, repo_dir)
+                task_result["property_eval"] = property_record
+            except Exception as exc:
+                task_result["property_eval"] = {
+                    "instanceId": instance_id,
+                    "status": "ERROR",
+                    "error": f"hook crashed: {exc}",
+                }
+
             results.append(task_result)
             print(f"  → {'RESOLVED' if task_result['resolved'] else 'FAILED'}"
                   f" ({run_result['elapsed_seconds']:.1f}s)")
@@ -1113,7 +1513,7 @@ def evaluate_tasks(*, keep_workdir: bool = False) -> dict:
 
     # Write results
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    output_file = RESULTS_DIR / f"eval-{timestamp}.json"
+    output_file = RESULTS_DIR / f"{RUN_ID}-results.json"
 
     summary = {
         "timestamp": timestamp,
@@ -1134,6 +1534,9 @@ def evaluate_tasks(*, keep_workdir: bool = False) -> dict:
         ),
         "tasks": results,
     }
+    if fatal_abort is not None:
+        summary["aborted"] = True
+        summary["fatal_run_error"] = fatal_abort
 
     with open(output_file, "w") as f:
         json.dump(summary, f, indent=2)

@@ -240,6 +240,40 @@ describe('Outcome-Based Verification', () => {
   });
 
   describe('test_exec check', () => {
+    it('skips test execution when SWARM_SKIP_OUTCOME_TEST_EXEC is set', async () => {
+      const dir = tmpDir();
+      tempDirs.push(dir);
+
+      const pkg = { name: 'test-proj', scripts: { test: 'node -e "process.exit(1)"' } };
+      fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(pkg));
+
+      const baseSha = initGitRepo(dir);
+      fs.writeFileSync(path.join(dir, 'index.ts'), 'export {}');
+      execSync('git add . && git commit -m "feat"', { cwd: dir });
+
+      const previous = process.env.SWARM_SKIP_OUTCOME_TEST_EXEC;
+      process.env.SWARM_SKIP_OUTCOME_TEST_EXEC = '1';
+      try {
+        const transcript = writeTranscript(dir);
+        const verifier = new VerifierEngine(dir);
+
+        const result = await verifier.verifyStep(
+          1, 'dev', transcript, undefined, undefined, undefined,
+          { workdir: dir, baseSha }
+        );
+
+        const testCheck = result.checks.find(c => c.type === 'test_exec');
+        assert.strictEqual(testCheck, undefined);
+        assert.strictEqual(result.passed, true);
+      } finally {
+        if (previous === undefined) {
+          delete process.env.SWARM_SKIP_OUTCOME_TEST_EXEC;
+        } else {
+          process.env.SWARM_SKIP_OUTCOME_TEST_EXEC = previous;
+        }
+      }
+    });
+
     it('passes when test script exits 0', async () => {
       const dir = tmpDir();
       tempDirs.push(dir);

@@ -1,35 +1,31 @@
 # Swarm Orchestrate
 
-Parallel wave-based execution of multi-step plans using specialized agents.
+Worker and reviewer step execution with analyzer-gated greedy scheduling. Steps run on isolated branches; ready steps run together only when the static dependency analyzer clears them.
 
 ## Trigger
 
 This skill activates when you need to:
-- Execute a multi-step development plan in parallel
-- Coordinate multiple specialized agents working on different parts of a codebase
-- Build a full-stack application from a high-level goal
+- Execute a multi-step development plan with verified per-step branches
+- Run worker and reviewer roles against discrete tasks in a goal
+- Build a feature from a high-level goal with audit-ready run artifacts
 
 ## Instructions
 
-1. Parse the goal into discrete, dependency-ordered steps
-2. Assign each step to the most appropriate specialized agent based on scope
-3. Group independent steps into waves for parallel execution
-4. Execute each wave: spawn agent sessions, capture transcripts, verify outputs
-5. Merge verified work before advancing to the next wave
-6. Track metrics (timing, commits, verification status) throughout execution
+1. Parse the goal into discrete, dependency-ordered steps.
+2. Assign each step a role (worker for implementation, reviewer for synthesized tests and diff review). Reviewer mode (security, accessibility, general) is a policy, not a separate role.
+3. Push steps onto the work-stealing queue. The queue dispatches greedy as-ready: a step starts as soon as its dependencies complete and the static dependency analyzer says it cannot conflict with anything currently running.
+4. Each step runs in its own git worktree on a per-step branch, capturing a `/share` transcript.
+5. Verify the step against transcript evidence and the falsification battery, then merge the branch.
+6. Track metrics (timing, commits, verification status) throughout the run.
 
-## Available Agents
+## Roles
 
-- **BackendMaster**: Server-side logic, APIs, database operations
-- **FrontendExpert**: UI components, styles, client-side logic
-- **TesterElite**: Tests, coverage, quality assurance
-- **SecurityAuditor**: Vulnerability scanning, security fixes
-- **DevOpsPro**: CI/CD, deployment, infrastructure
-- **IntegratorFinalizer**: Component integration, end-to-end validation
+- **Worker**: writes implementation code, runs tests, commits changes, and does not edit pre-existing test files unless the goal explicitly authorizes it.
+- **Reviewer**: read-only. Synthesizes tests before worker execution and reviews diffs after worker execution. Security, accessibility, and general review modes are reviewer policies, not separate agent roles.
 
-## Wave Scheduling
+## Scheduling
 
-Steps with no unmet dependencies run in the same wave. Each wave completes (all steps verified) before the next wave begins. Failed steps trigger repair sessions with classified failure context before retry.
+Steps with satisfied dependencies are eligible to run. The work-stealing queue dispatches up to its concurrency cap; the static dependency analyzer must prove two eligible steps cannot conflict before they run together. Otherwise execution is serial. Failed steps trigger repair sessions with classified failure context before retry.
 
 ## Resources
 

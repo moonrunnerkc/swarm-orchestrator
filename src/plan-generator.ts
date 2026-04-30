@@ -1,6 +1,5 @@
 import { AgentProfile, ConfigLoader } from './config-loader';
 import { getGateRequirements, requiresTestStep } from './gate-prompt-builder';
-import { PlanStorage } from './plan-storage';
 import { QualityGatesConfig } from './quality-gates/types';
 import { getLogger } from './logger';
 const logger = getLogger('plan-generator');
@@ -26,7 +25,7 @@ export interface ExecutionPlan {
   };
 }
 
-// replan structure returned by meta_reviewer analysis
+// replan structure returned by reviewer analysis
 export interface ReplanPayload {
   retrySteps: number[];
   addSteps?: { agent: string; task: string; afterStep?: number }[];
@@ -61,29 +60,10 @@ export class PlanGenerator {
   createPlan(
     goal: string,
     userProvidedSteps?: PlanStep[],
-    options?: { planCache?: boolean; agentGuidance?: string },
+    options?: { agentGuidance?: string },
   ): ExecutionPlan {
     if (!goal || goal.trim() === '') {
       throw new Error('Goal cannot be empty');
-    }
-
-    // plan cache: short-circuit if a similar plan already exists. Cache key
-    // is the raw goal; agentGuidance doesn't affect step shape, only task
-    // text, and can be reapplied to a cached plan.
-    if (options?.planCache && !userProvidedSteps) {
-      const storage = new PlanStorage();
-      const cached = storage.findCachedPlan(goal);
-      if (cached) {
-        const steps = options.agentGuidance
-          ? this.applyAgentGuidance(cached.steps, options.agentGuidance)
-          : cached.steps;
-        return {
-          ...cached,
-          goal: goal.trim(),
-          steps,
-          createdAt: new Date().toISOString(),
-        };
-      }
     }
 
     const rawSteps = userProvidedSteps || this.generateIntelligentSteps(goal);
@@ -164,10 +144,10 @@ Requirements:
 5. Each task must be specific and actionable (not vague like "do everything")
 6. expectedOutputs should list concrete artifacts (files, test results, PRs, etc.)
 7. Consider typical software workflow: design/implement in parallel where possible, then test, then integrate
-8. If goal involves security, include a SecurityAuditor step
-9. If goal involves infrastructure/deployment, include a DevOpsPro step
-10. Always include a testing step with TesterElite
-11. Final step should be IntegratorFinalizer for verification and integration
+8. Use agentName 'worker' for all implementation steps
+9. Use agentName 'reviewer' for all verification, review, and integration steps
+10. Always include a testing step (agentName: 'worker', task focused on tests)
+11. Final step should use agentName 'reviewer' for quality verification and integration review
 
 OUTPUT ONLY THE JSON, NOTHING ELSE.`;
   }
@@ -457,10 +437,10 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
 
   /**
    * Append gate-derived requirements to step prompts when gate config is available.
-   * Also injects a test step if testCoverage is enabled and no TesterElite step exists —
+   * Also injects a test step if testCoverage is enabled and no worker test step exists —
    * EXCEPT for contract-change plans, where tests are updated in the same step as the
    * impl change by template design (see generateContractChangeSteps). Injecting a
-   * separate TesterElite step on a contract-change plan would re-introduce the exact
+   * separate test step on a contract-change plan would re-introduce the exact
    * impl-vs-test split that #27 Fix 3 exists to prevent.
    */
   private applyGateRequirements(steps: PlanStep[], goal: string, goalType?: GoalType): void {
@@ -475,33 +455,33 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
 
     // Inject a test step when testCoverage is enabled and no test step exists.
     // Contract-change plans bundle tests into their impl step; a separate
-    // TesterElite step here would re-create the broken mid-plan `npm test`
+    // worker test step here would re-create the broken mid-plan `npm test`
     // against a half-updated state. Trivial single-file tasks also bundle
     // tests into the one step their template emits.
     if (goalType === 'contract-change') return;
     if (goalType === 'generic' && this.isTrivialTask(goal)) return;
 
     if (requiresTestStep(this.gateConfig)) {
-      const hasTestStep = steps.some(s => s.agentName === 'TesterElite');
+      const hasTestStep = steps.some(s => s.agentName === 'worker' && /\btest/i.test(s.task));
       if (!hasTestStep) {
         const maxStep = steps.reduce((max, s) => Math.max(max, s.stepNumber), 0);
         const codeStepNumbers = steps
-          .filter(s => s.agentName !== 'IntegratorFinalizer')
+          .filter(s => s.agentName !== 'reviewer')
           .map(s => s.stepNumber);
 
         const testStep: PlanStep = {
           stepNumber: maxStep + 1,
-          agentName: 'TesterElite',
+          agentName: 'worker',
           task: `Write comprehensive tests for: ${goal}` +
-            getGateRequirements(this.gateConfig, 'TesterElite'),
+            getGateRequirements(this.gateConfig, 'worker'),
           dependencies: codeStepNumbers,
           expectedOutputs: ['Unit tests', 'Integration tests', 'Test coverage report'],
         };
         steps.push(testStep);
 
-        // Update integrator dependencies to include the new test step
+        // Update reviewer step dependencies to include the new test step
         for (const step of steps) {
-          if (step.agentName === 'IntegratorFinalizer' && !step.dependencies.includes(testStep.stepNumber)) {
+          if (step.agentName === 'reviewer' && !step.dependencies.includes(testStep.stepNumber)) {
             step.dependencies.push(testStep.stepNumber);
           }
         }
@@ -683,35 +663,35 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
     return [
       {
         stepNumber: startNumber,
-        agentName: 'BackendMaster',
+        agentName: 'worker',
         task: `Design and implement API routes, controllers, and data models for: ${goal}\n\nAcceptance criteria:\n${criteria}`,
         dependencies: [],
         expectedOutputs: ['API endpoint definitions', 'Request/response schemas', 'Database models']
       },
       {
         stepNumber: startNumber + 1,
-        agentName: 'DevOpsPro',
+        agentName: 'worker',
         task: 'Setup project configuration, environment handling, and containerization',
         dependencies: [],
         expectedOutputs: ['Docker configuration', 'Environment config', 'Package scripts']
       },
       {
         stepNumber: startNumber + 2,
-        agentName: 'SecurityAuditor',
+        agentName: 'worker',
         task: 'Implement input validation, error handling middleware, and security hardening',
         dependencies: [startNumber],
         expectedOutputs: ['Input validation middleware', 'Error handling', 'Security headers']
       },
       {
         stepNumber: startNumber + 3,
-        agentName: 'TesterElite',
+        agentName: 'worker',
         task: 'Create comprehensive API test suite with unit and integration tests',
         dependencies: [startNumber],
         expectedOutputs: ['Unit tests', 'Integration tests', 'Test coverage report']
       },
       {
         stepNumber: startNumber + 4,
-        agentName: 'IntegratorFinalizer',
+        agentName: 'reviewer',
         task: `Review API implementation, verify integration, and write accurate documentation.\n\n${reviewCriteria}`,
         dependencies: [startNumber + 1, startNumber + 2, startNumber + 3],
         expectedOutputs: ['Cleaned-up code', 'Accurate API documentation', 'Quality review notes']
@@ -731,14 +711,14 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
       return [
         {
           stepNumber: startNumber,
-          agentName: 'FrontendExpert',
+          agentName: 'worker',
           task: `Build the complete application with tests for: ${goal}\n\nAcceptance criteria:\n${criteria}\n\nYou must also write tests. Include a test file and a package.json with a working npm test script.`,
           dependencies: [],
           expectedOutputs: ['UI components', 'Styling', 'Accessible markup', 'Tests', 'Working functionality']
         },
         {
           stepNumber: startNumber + 1,
-          agentName: 'IntegratorFinalizer',
+          agentName: 'reviewer',
           task: `Review all code for quality, then write accurate documentation.\n\n${reviewCriteria}`,
           dependencies: [startNumber],
           expectedOutputs: ['Cleaned-up code', 'Accurate documentation', 'Quality review notes']
@@ -749,35 +729,35 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
     return [
       {
         stepNumber: startNumber,
-        agentName: 'FrontendExpert',
+        agentName: 'worker',
         task: `Build UI components and pages for: ${goal}\n\nAcceptance criteria:\n${criteria}`,
         dependencies: [],
         expectedOutputs: ['UI components', 'Page layouts', 'Styling', 'Accessible markup']
       },
       {
         stepNumber: startNumber + 1,
-        agentName: 'BackendMaster',
+        agentName: 'worker',
         task: 'Implement backend API and data layer',
         dependencies: [],
         expectedOutputs: ['API endpoints', 'Database schema', 'Business logic']
       },
       {
         stepNumber: startNumber + 2,
-        agentName: 'TesterElite',
+        agentName: 'worker',
         task: 'Create frontend and integration tests',
         dependencies: [startNumber, startNumber + 1],
         expectedOutputs: ['Component tests', 'E2E tests', 'Test coverage']
       },
       {
         stepNumber: startNumber + 3,
-        agentName: 'DevOpsPro',
+        agentName: 'worker',
         task: 'Setup CI/CD pipeline and deployment',
         dependencies: [startNumber + 2],
         expectedOutputs: ['CI workflow', 'Build pipeline', 'Deployment config']
       },
       {
         stepNumber: startNumber + 4,
-        agentName: 'IntegratorFinalizer',
+        agentName: 'reviewer',
         task: `Final integration review, cleanup, and documentation.\n\n${reviewCriteria}`,
         dependencies: [startNumber + 3],
         expectedOutputs: ['Cleaned-up code', 'Accurate documentation', 'Quality review notes']
@@ -791,21 +771,21 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
     return [
       {
         stepNumber: startNumber,
-        agentName: 'BackendMaster',
+        agentName: 'worker',
         task: `Implement CLI core functionality for: ${goal}\n\nAcceptance criteria:\n${criteria}`,
         dependencies: [],
         expectedOutputs: ['CLI commands', 'Argument parsing', 'Core logic']
       },
       {
         stepNumber: startNumber + 1,
-        agentName: 'TesterElite',
+        agentName: 'worker',
         task: 'Create CLI tests and validation',
         dependencies: [startNumber],
         expectedOutputs: ['Unit tests', 'CLI integration tests', 'Test coverage']
       },
       {
         stepNumber: startNumber + 2,
-        agentName: 'IntegratorFinalizer',
+        agentName: 'reviewer',
         task: `Review implementation, add accurate documentation and examples.\n\n${reviewCriteria}`,
         dependencies: [startNumber],
         expectedOutputs: ['Cleaned-up code', 'README with examples', 'Quality review notes']
@@ -819,21 +799,21 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
     return [
       {
         stepNumber: startNumber,
-        agentName: 'BackendMaster',
+        agentName: 'worker',
         task: `Implement library core API for: ${goal}\n\nAcceptance criteria:\n${criteria}`,
         dependencies: [],
         expectedOutputs: ['Public API', 'Type definitions', 'Core implementation']
       },
       {
         stepNumber: startNumber + 1,
-        agentName: 'TesterElite',
+        agentName: 'worker',
         task: 'Create comprehensive test suite',
         dependencies: [startNumber],
         expectedOutputs: ['Unit tests', 'Integration tests', 'Coverage report']
       },
       {
         stepNumber: startNumber + 2,
-        agentName: 'IntegratorFinalizer',
+        agentName: 'reviewer',
         task: `Review implementation, write accurate documentation with usage examples.\n\n${reviewCriteria}`,
         dependencies: [startNumber],
         expectedOutputs: ['Cleaned-up code', 'API documentation with examples', 'Quality review notes']
@@ -847,28 +827,28 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
     return [
       {
         stepNumber: startNumber,
-        agentName: 'DevOpsPro',
+        agentName: 'worker',
         task: `Design and implement infrastructure for: ${goal}\n\nAcceptance criteria:\n${criteria}`,
         dependencies: [],
         expectedOutputs: ['Infrastructure as code', 'Configuration files', 'Deployment scripts']
       },
       {
         stepNumber: startNumber + 1,
-        agentName: 'SecurityAuditor',
+        agentName: 'worker',
         task: 'Review security configuration and access controls',
         dependencies: [startNumber],
         expectedOutputs: ['Security audit', 'Access policies', 'Secrets management']
       },
       {
         stepNumber: startNumber + 2,
-        agentName: 'TesterElite',
+        agentName: 'worker',
         task: 'Create infrastructure tests and validation',
         dependencies: [startNumber],
         expectedOutputs: ['Infrastructure tests', 'Validation scripts', 'Test results']
       },
       {
         stepNumber: startNumber + 3,
-        agentName: 'IntegratorFinalizer',
+        agentName: 'reviewer',
         task: `Verify deployment, review configs, and write accurate runbooks.\n\n${reviewCriteria}`,
         dependencies: [startNumber + 1, startNumber + 2],
         expectedOutputs: ['Deployment verification', 'Accurate runbooks', 'Quality review notes']
@@ -882,28 +862,28 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
     return [
       {
         stepNumber: startNumber,
-        agentName: 'BackendMaster',
+        agentName: 'worker',
         task: `Implement data pipeline for: ${goal}\n\nAcceptance criteria:\n${criteria}`,
         dependencies: [],
         expectedOutputs: ['Pipeline code', 'Data transformations', 'Storage layer']
       },
       {
         stepNumber: startNumber + 1,
-        agentName: 'TesterElite',
+        agentName: 'worker',
         task: 'Create data validation and pipeline tests',
         dependencies: [startNumber],
         expectedOutputs: ['Data quality tests', 'Pipeline tests', 'Test coverage']
       },
       {
         stepNumber: startNumber + 2,
-        agentName: 'DevOpsPro',
+        agentName: 'worker',
         task: 'Setup pipeline orchestration and monitoring',
         dependencies: [startNumber],
         expectedOutputs: ['Orchestration config', 'Monitoring setup', 'Alerting']
       },
       {
         stepNumber: startNumber + 3,
-        agentName: 'IntegratorFinalizer',
+        agentName: 'reviewer',
         task: `Verify end-to-end pipeline and write accurate documentation.\n\n${reviewCriteria}`,
         dependencies: [startNumber + 1, startNumber + 2],
         expectedOutputs: ['Pipeline verification', 'Accurate documentation', 'Quality review notes']
@@ -917,28 +897,28 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
     return [
       {
         stepNumber: startNumber,
-        agentName: 'FrontendExpert',
+        agentName: 'worker',
         task: `Build mobile UI and screens for: ${goal}\n\nAcceptance criteria:\n${criteria}`,
         dependencies: [],
         expectedOutputs: ['Mobile screens', 'Navigation', 'Accessible UI components']
       },
       {
         stepNumber: startNumber + 1,
-        agentName: 'BackendMaster',
+        agentName: 'worker',
         task: 'Implement mobile backend and API integration',
         dependencies: [],
         expectedOutputs: ['API client', 'State management', 'Backend integration']
       },
       {
         stepNumber: startNumber + 2,
-        agentName: 'TesterElite',
+        agentName: 'worker',
         task: 'Create mobile app tests',
         dependencies: [startNumber, startNumber + 1],
         expectedOutputs: ['Component tests', 'Integration tests', 'Test coverage']
       },
       {
         stepNumber: startNumber + 3,
-        agentName: 'IntegratorFinalizer',
+        agentName: 'reviewer',
         task: `Review app quality, prepare store metadata, and write accurate documentation.\n\n${reviewCriteria}`,
         dependencies: [startNumber + 2],
         expectedOutputs: ['Cleaned-up code', 'App metadata', 'Quality review notes']
@@ -949,32 +929,28 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
   /**
    * Template for goals that describe a failing behavior in pre-existing code
    * and ask for it to be corrected. Structural shape:
-   *   1. BackendMaster — locate root cause and apply a minimal fix
-   *   2. TesterElite — verify the fix with a regression test
-   *   3. IntegratorFinalizer — review scope and quality
+   *   1. worker — locate root cause and apply a minimal fix
+   *   2. worker — verify the fix with a regression test
+   *   3. reviewer — review scope and quality
    *
-   * The primary step is an impl-editing agent by construction. That's the
+   * The primary step is an implementation step by construction. That's the
    * invariant the bug-fix template exists to guarantee: a bug report will
-   * never produce a plan without an impl-editing step, which was exactly
+   * never produce a plan without an implementation step, which was exactly
    * the sympy-12481 failure mode in Phase 4a smoke3.
    *
-   * **BackendMaster as fixed primary — deferred decision.** The current
+   * **Worker as fixed primary — deferred decision.** The current
    * benchmark corpus (SWE-bench Verified) is backend-dominant: the 500
    * Verified instances are drawn from sympy, sphinx, django, scikit-learn,
    * matplotlib, astropy, xarray, pytest, pylint, requests — all Python
    * libraries and frameworks whose issues are predominantly source-code
-   * bugs in logic/data/API layers. Routing every bug report to
-   * BackendMaster matches that distribution. It will misroute a true UI
-   * bug (one that names React components or describes rendering-specific
-   * failure) to BackendMaster.
+   * bugs in logic/data/API layers. The worker handles all of these.
    *
-   * The trigger for adding UI routing: observe a bug-report goal in a
-   * future corpus (or a SWE-bench instance) where the BackendMaster-
-   * primary plan produces a broken result specifically because the wrong
-   * agent was allocated — i.e., the fix requires FrontendExpert's
-   * rendering-model knowledge and BackendMaster can't make progress.
-   * Until that evidence surfaces, hardcoding BackendMaster keeps the
-   * template simple and correct for the dominant case. See #27.
+   * The trigger for adding domain-specific routing: observe a bug-report
+   * goal in a future corpus where the worker-primary plan produces a
+   * broken result specifically because the task requires specialized
+   * knowledge the worker lacks. Until that evidence surfaces, the single
+   * worker role keeps the template simple and correct for the dominant
+   * case. See #27.
    */
   private generateBugFixSteps(goal: string, startNumber: number): PlanStep[] {
     const criteria = this.getAcceptanceCriteria('bug-fix');
@@ -982,7 +958,7 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
     return [
       {
         stepNumber: startNumber,
-        agentName: 'BackendMaster',
+        agentName: 'worker',
         task:
           `Diagnose and fix the reported bug.\n\nReported issue:\n${goal}\n\n` +
           `Acceptance criteria:\n${criteria}`,
@@ -995,7 +971,7 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
       },
       {
         stepNumber: startNumber + 1,
-        agentName: 'TesterElite',
+        agentName: 'worker',
         task:
           `Write a regression test that reproduces the reported failure and ` +
           `now passes with the fix applied. Do not modify pre-existing test ` +
@@ -1009,7 +985,7 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
       },
       {
         stepNumber: startNumber + 2,
-        agentName: 'IntegratorFinalizer',
+        agentName: 'reviewer',
         task:
           `Review the fix's scope, quality, and documentation. Confirm the ` +
           `change does not drift beyond the reported failure and that any ` +
@@ -1029,11 +1005,11 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
    * "contract change" shape. Structural invariant of this template:
    *
    *   The impl change, the caller updates, and the test updates all land
-   *   in ONE step. There is NO separate TesterElite-owned test-update step
-   *   between impl-change and IntegratorFinalizer.
+   *   in ONE step. There is NO separate test-update step
+   *   between the implementation change and the reviewer step.
    *
    * Rationale (#27 Fix 3 root-cause analysis). The library template and
-   * bug-fix template both place BackendMaster → TesterElite as two
+   * bug-fix template both place worker (implement) → worker (tests) as two
    * separate steps. Between them, the per-step verifier runs `npm test`.
    * For a contract-change task, step 1 lands the impl change that
    * intentionally breaks the pre-existing tests (they assert the OLD
@@ -1049,7 +1025,7 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
    * successfully evaluate.
    *
    * Why only 2 steps. For a bundled change, there's no coherent handoff
-   * to a second impl-editing step. IntegratorFinalizer stays as the
+   * to a second implementation step. Reviewer stays as the
    * scope/quality reviewer.
    */
   private generateContractChangeSteps(goal: string, startNumber: number): PlanStep[] {
@@ -1058,7 +1034,7 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
     return [
       {
         stepNumber: startNumber,
-        agentName: 'BackendMaster',
+        agentName: 'worker',
         task:
           `Apply the following contract change as a single atomic step. ` +
           `This step must update the implementation, every call site, AND ` +
@@ -1080,7 +1056,7 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
       },
       {
         stepNumber: startNumber + 1,
-        agentName: 'IntegratorFinalizer',
+        agentName: 'reviewer',
         task:
           `Review the contract change's scope, quality, and documentation. ` +
           `Confirm every call site was updated (no stale pre-change callers) ` +
@@ -1100,8 +1076,8 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
    * Detect whether the goal describes a trivial single-file modification —
    * something like "add X to index.js", "export Y from utils.ts", "rename foo
    * in bar.py". These tasks are fully completed by one agent in one pass;
-   * the generic 3-step template (primary → TesterElite → IntegratorFinalizer)
-   * would wait on 2 more Codex invocations that re-do Step 1's work.
+   * the generic 3-step template (worker → worker (tests) → reviewer)
+   * would wait on 2 more agent invocations that re-do Step 1's work.
    *
    * Three signals required so greenfield goals don't misroute:
    *   1. An additive/modifying verb ("add", "export", "rename", ...).
@@ -1165,8 +1141,8 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
     }
 
     // For simple projects (few files, no framework, no build step), skip
-    // the dedicated TesterElite step. The primary agent's acceptance criteria
-    // already require tests, and the IntegratorFinalizer verifies test coverage.
+    // the dedicated test step. The primary worker's acceptance criteria
+    // already require tests, and the reviewer verifies test coverage.
     if (this.isSimpleProject(goal)) {
       return [
         {
@@ -1178,7 +1154,7 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
         },
         {
           stepNumber: startNumber + 1,
-          agentName: 'IntegratorFinalizer',
+          agentName: 'reviewer',
           task: `Review all code for quality, then write accurate documentation.\n\n${reviewCriteria}`,
           dependencies: [startNumber],
           expectedOutputs: ['Cleaned-up code', 'Accurate documentation', 'Quality review notes']
@@ -1196,14 +1172,14 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
       },
       {
         stepNumber: startNumber + 1,
-        agentName: 'TesterElite',
+        agentName: 'worker',
         task: 'Create tests and verify functionality',
         dependencies: [startNumber],
         expectedOutputs: ['Tests', 'Test results', 'Coverage report']
       },
       {
         stepNumber: startNumber + 2,
-        agentName: 'IntegratorFinalizer',
+        agentName: 'reviewer',
         task: `Review all code for quality, then write accurate documentation.\n\n${reviewCriteria}`,
         dependencies: [startNumber + 1],
         expectedOutputs: ['Cleaned-up code', 'Accurate documentation', 'Quality review notes']
@@ -1245,46 +1221,16 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
   }
 
   /**
-   * Enhanced agent assignment with comprehensive keyword matching
+   * Assigns the role for generic task steps. In v7, all implementation work
+   * is done by the worker role regardless of domain keywords. Domain
+   * specialization (security policy, accessibility review) is expressed as
+   * a reviewer policy field, not as separate agent names.
+   *
+   * @param task - The task text (unused in v7; retained for call-site compatibility).
+   * @returns Always 'worker'.
    */
-  assignAgent(task: string): string {
-    const taskLower = task.toLowerCase();
-
-    // SecurityAuditor keywords: audit/review/hardening tasks only.
-    // Deliberately excludes implementation terms (sanitize, validate.input, cors, rate.limit, csp, escape)
-    // because those appear in goals that ask you to BUILD those features, which BackendMaster handles.
-    // SecurityAuditor fires when the task is reviewing, auditing, or hardening — not constructing.
-    if (taskLower.match(/\b(security|vulnerability|audit|penetration|owasp|xss|csrf|sql.injection|oauth|saml|encryption|hashing|ssl|tls|certificate|secrets|key.management|rbac|access.control|compliance|gdpr|hipaa|pci|ddos|firewall)\b/)) {
-      return 'SecurityAuditor';
-    }
-
-    // FrontendExpert keywords (30+ patterns)
-    if (taskLower.match(/\b(ui|ux|frontend|react|vue|angular|svelte|next\.js|nuxt|component|page|layout|css|scss|tailwind|styled|material.ui|chakra|responsive|mobile.first|accessibility|a11y|seo|animation|transitions|dom|browser|webpack|vite|parcel)\b/)) {
-      return 'FrontendExpert';
-    }
-
-    // BackendMaster keywords (30+ patterns)
-    if (taskLower.match(/\b(backend|server|api|rest|graphql|endpoint|route|controller|service|database|schema|sql|nosql|postgres|postgresql|mongodb|mysql|redis|orm|prisma|sequelize|typeorm|authentication|authorization|jwt|session|middleware|express|fastify|koa|nest\.js|microservice|websocket|grpc|message.queue|kafka|rabbitmq|lambda|serverless)\b/)) {
-      return 'BackendMaster';
-    }
-
-    // DevOpsPro keywords (30+ patterns)
-    if (taskLower.match(/\b(devops|deploy|deployment|ci\/cd|pipeline|github.actions|jenkins|circleci|travis|docker|container|kubernetes|k8s|helm|terraform|ansible|cloud|aws|azure|gcp|nginx|apache|load.balancer|cdn|monitoring|prometheus|grafana|logging|elk|observability|infrastructure|iac|provision|scaling|orchestration)\b/)) {
-      return 'DevOpsPro';
-    }
-
-    // TesterElite keywords (30+ patterns)
-    if (taskLower.match(/\b(tests?|testing|qa|quality|jest|mocha|chai|vitest|cypress|playwright|selenium|unit.test|integration.test|e2e|end.to.end|coverage|tdd|bdd|assertion|mock|stub|spy|fixture|snapshot|regression|performance.test|load.test|stress.test|benchmark|validation|verification)\b/)) {
-      return 'TesterElite';
-    }
-
-    // Generic app/system/implementation tasks should go to BackendMaster
-    if (taskLower.match(/\b(implement|create|build|develop|system|app|application|service|functionality|core|main)\b/)) {
-      return 'BackendMaster';
-    }
-
-    // IntegratorFinalizer as last resort fallback
-    return 'IntegratorFinalizer';
+  assignAgent(_task: string): string {
+    return 'worker';
   }
 
   getExecutionOrder(plan: ExecutionPlan): number[] {
@@ -1318,7 +1264,7 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
   }
 
   /**
-   * revise plan based on replan payload from meta_reviewer
+   * revise plan based on replan payload from reviewer
    * preserves completed steps, marks retries with suffix, appends new steps
    */
   revisePlan(
@@ -1352,7 +1298,7 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
     if (replanPayload.addSteps && replanPayload.addSteps.length > 0) {
       for (const addReq of replanPayload.addSteps) {
         // validate agent exists — use normalized name comparison so snake_case
-        // (integrator_finalizer) matches PascalCase YAML names (IntegratorFinalizer)
+        // variants (e.g. 'worker', 'reviewer') match YAML agent names case-insensitively
         const agentNames = new Set(this.availableAgents.map(a => a.name));
         const matchedAgent = agentNames.has(addReq.agent)
           ? addReq.agent
@@ -1363,14 +1309,31 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
         }
 
         maxStepNumber++;
+        // Dependency resolution for replan-added steps:
+        //   1. If the caller specified afterStep explicitly, use it.
+        //   2. Otherwise, anchor to the highest completed step. The previous
+        //      "last existing step" fallback was the codex-quota smoke
+        //      regression: when every original step had failed (no
+        //      completed steps at all, last step in plan was failed), the
+        //      replan step inherited a dependency on that failed step,
+        //      which never satisfies in waitForDependencies and burned
+        //      DEFAULT_DEPENDENCY_WAIT_MS (10 min) per replan attempt.
+        //   3. If no steps completed, the replan step has no dependency
+        //      and runs immediately — the safest fallback when prior
+        //      state is unusable.
+        let dependencies: number[];
+        if (addReq.afterStep !== undefined) {
+          dependencies = [addReq.afterStep];
+        } else if (completedSteps.length > 0) {
+          dependencies = [Math.max(...completedSteps)];
+        } else {
+          dependencies = [];
+        }
         const newStep: PlanStep = {
           stepNumber: maxStepNumber,
           agentName: matchedAgent,
           task: addReq.task,
-          // depend on afterStep if provided, else last existing step
-          dependencies: addReq.afterStep
-            ? [addReq.afterStep]
-            : plan.steps.length > 0 ? [plan.steps[plan.steps.length - 1].stepNumber] : [],
+          dependencies,
           expectedOutputs: ['Replan-generated output']
         };
         revisedSteps.push(newStep);

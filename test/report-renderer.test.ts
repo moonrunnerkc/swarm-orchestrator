@@ -14,7 +14,7 @@ function buildRunReport(overrides: Partial<RunReport> = {}): RunReport {
     steps: [
       {
         stepNumber: 1,
-        agentName: 'BackendMaster',
+        agentName: 'worker',
         task: 'Add JWT middleware',
         verificationStatus: 'passed',
         checksPassed: ['git_diff', 'build', 'test'],
@@ -26,7 +26,7 @@ function buildRunReport(overrides: Partial<RunReport> = {}): RunReport {
       },
       {
         stepNumber: 2,
-        agentName: 'TesterElite',
+        agentName: 'worker',
         task: 'Write auth tests',
         verificationStatus: 'passed',
         checksPassed: ['git_diff', 'test'],
@@ -38,7 +38,7 @@ function buildRunReport(overrides: Partial<RunReport> = {}): RunReport {
       }
     ],
     results: { attempted: 2, passed: 2, failed: 0, repaired: 0 },
-    waves: { count: 1, maxParallelism: 2 },
+    waves: { count: 1 },
     cost: {
       estimatedPremiumRequests: 14,
       actualPremiumRequests: 12,
@@ -48,6 +48,7 @@ function buildRunReport(overrides: Partial<RunReport> = {}): RunReport {
     },
     owaspSummary: { applicableRisks: 6, mitigatedRisks: 5, partialRisks: 1 },
     verification: { totalGitDiffs: 4, buildPasses: 2, testPasses: 2, transcriptMatches: 0 },
+    falsificationBattery: null,
     ...overrides
   };
 }
@@ -75,7 +76,7 @@ describe('ReportRenderer', () => {
       const md = ReportRenderer.toMarkdown(buildRunReport());
 
       assert.ok(md.includes('| Step | Agent | Task | Status | Checks Passed | Repairs | Cost (est/actual) |'));
-      assert.ok(md.includes('BackendMaster'));
+      assert.ok(md.includes('worker'));
       assert.ok(md.includes('Add JWT middleware'));
       assert.ok(md.includes('passed'));
     });
@@ -115,6 +116,30 @@ describe('ReportRenderer', () => {
       assert.ok(md.includes('## Verification Evidence'));
       assert.ok(md.includes('Git diffs: 4'));
       assert.ok(md.includes('Build passes: 2'));
+    });
+
+    it('includes falsification battery section when present', () => {
+      const md = ReportRenderer.toMarkdown(buildRunReport({
+        falsificationBattery: {
+          compositeScore: 0.82,
+          humanReviewRequired: false,
+          layers: [
+            { layer: 'intent', status: 'PASS', evidenceSummary: 'differential test passed', durationMs: 20 }
+          ],
+        },
+      }));
+
+      assert.ok(md.includes('## Falsification Battery'));
+      assert.ok(md.includes('Composite score: 0.82'));
+      assert.ok(md.includes('intent: PASS'));
+    });
+
+    it('does not print a maxParallelism / max parallelism metric (the prior stepCount-based value was wrong for serial runs)', () => {
+      const md = ReportRenderer.toMarkdown(buildRunReport());
+      assert.ok(
+        !/max\s*parallelism/i.test(md),
+        'rendered report must not advertise maxParallelism (or "max parallelism") until peak-concurrency tracking has a real consumer'
+      );
     });
   });
 

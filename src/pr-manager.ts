@@ -7,6 +7,8 @@ import {
   DEFAULT_BRANCH_SWITCH_TIMEOUT_MS,
 } from './defaults';
 
+const GH_AUTH_CHECK_TIMEOUT_MS = 1_000;
+
 /**
  * PR merge mode controls the merge phase behavior.
  * 'auto' creates a PR with evidence, auto-merges when checks pass.
@@ -63,7 +65,7 @@ export class PRManager {
       execSync('gh auth status', {
         cwd: this.workingDir,
         stdio: 'pipe',
-        timeout: DEFAULT_CONTEXT_LOCK_WAIT_MS
+        timeout: GH_AUTH_CHECK_TIMEOUT_MS,
       });
       this.ghAvailable = true;
     } catch {

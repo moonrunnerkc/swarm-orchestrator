@@ -6,7 +6,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { DemoMode } from '../demo-mode';
-import { PlanStorage } from '../plan-storage';
+import { savePlanFile } from '../plan-files';
 import { ExecuteSwarmCliOptions, parseSwarmFlags } from './flags';
 import { getLogger, setPrettyMode } from '../logger';
 
@@ -56,9 +56,14 @@ export async function installDemoDependencies(demoDir: string): Promise<void> {
     return;
   }
 
-  logger.info('\n📦 Installing dependencies for demo output...\n');
-
   packageJsonPaths.sort((a, b) => a.length - b.length);
+
+  const colorOn = process.stdout.isTTY && !process.env.NO_COLOR;
+  const dim = (s: string) => colorOn ? `\x1b[2m${s}\x1b[22m` : s;
+  const green = (s: string) => colorOn ? `\x1b[32m${s}\x1b[39m` : s;
+  const red = (s: string) => colorOn ? `\x1b[31m${s}\x1b[39m` : s;
+
+  logger.info(`\n  ${dim(`installing dependencies (${packageJsonPaths.length} location${packageJsonPaths.length === 1 ? '' : 's'})`)}`);
 
   let successCount = 0;
   let failCount = 0;
@@ -66,55 +71,50 @@ export async function installDemoDependencies(demoDir: string): Promise<void> {
   for (const pkgDir of packageJsonPaths) {
     const relativePath = path.relative(demoDir, pkgDir) || '.';
     try {
-      logger.info(`  📂 ${relativePath}/`);
       execSync('npm install --loglevel=error', {
         cwd: pkgDir,
         stdio: ['pipe', 'pipe', 'pipe'],
         timeout: 120000
       });
-      logger.info(`     ✅ Dependencies installed\n`);
+      logger.info(`  ${green('✓')} ${relativePath}`);
       successCount++;
     } catch {
-      logger.warn(`     ⚠️  npm install failed (run manually)\n`);
+      logger.warn(`  ${red('✗')} ${relativePath} ${dim('(run npm install manually)')}`);
       failCount++;
     }
   }
 
-  logger.info('━'.repeat(60));
-  if (failCount === 0) {
-    logger.info(`✅ All dependencies installed (${successCount} location${successCount > 1 ? 's' : ''})`);
-  } else {
-    logger.warn(`⚠️  Installed ${successCount}/${packageJsonPaths.length} - some may need manual install`);
+  if (failCount > 0) {
+    logger.warn(`  ${dim(`installed ${successCount}/${packageJsonPaths.length}; resolve failures before running`)}`);
   }
 
-  logger.info('\n🚀 To run the demo:\n');
-  logger.info(`   cd ${demoDir}`);
+  logger.info(`\n  ${dim('to run:')}`);
+  logger.info(`    cd ${demoDir}`);
 
   const rootPkgPath = path.join(demoDir, 'package.json');
   if (fs.existsSync(rootPkgPath)) {
     try {
       const pkg = JSON.parse(fs.readFileSync(rootPkgPath, 'utf8'));
       if (pkg.scripts?.['start:server']) {
-        logger.info('   npm run start:server   # Start backend');
+        logger.info(`    npm run start:server   ${dim('# backend')}`);
       } else if (pkg.scripts?.start) {
-        logger.info('   npm start              # Start server');
+        logger.info(`    npm start              ${dim('# server')}`);
       }
       if (pkg.scripts?.dev) {
-        logger.info('   npm run dev            # Start dev server');
+        logger.info(`    npm run dev            ${dim('# dev server')}`);
       }
       if (pkg.scripts?.test) {
-        logger.info('   npm test               # Run tests');
+        logger.info(`    npm test               ${dim('# tests')}`);
       }
     } catch {
-      // package.json unreadable or malformed; show generic start command
-      logger.info('   npm start');
+      logger.info('    npm start');
     }
   }
 
   const frontendPkgPath = path.join(demoDir, 'frontend', 'package.json');
   if (fs.existsSync(frontendPkgPath)) {
-    logger.info('\n   # Frontend (in separate terminal):');
-    logger.info('   cd frontend && npm run dev');
+    logger.info(`\n    ${dim('# frontend (separate terminal)')}`);
+    logger.info('    cd frontend && npm run dev');
   }
 
   logger.info('');
@@ -124,32 +124,29 @@ export async function handleDemoCommand(args: string[]): Promise<number> {
   const subcommand = args[1];
 
   if (!subcommand || subcommand === '--help') {
-    logger.info('\nAvailable demo scenarios:');
-    logger.info('  demo-fast      - Hello-world swarm (2 steps, ~1 min)');
-    logger.info('  api-quick      - REST API with tests and Dockerfile (3 steps, ~5 min)\n');
-    logger.info('Usage:');
-    logger.info('  swarm demo <scenario-name>');
-    logger.info('  swarm demo list\n');
+    setPrettyMode(true);
+    logger.info('\n  demo scenarios');
+    logger.info('    demo-fast    two independent utility files, one wave');
+    logger.info('    api-quick    REST API + tests + Dockerfile, two waves');
+    logger.info('\n  run:  swarm demo <name>');
+    logger.info('  list: swarm demo list\n');
     return 0;
   }
 
   if (subcommand === 'list') {
+    setPrettyMode(true);
     const demoMode = new DemoMode();
     const scenarios = demoMode.getAvailableScenarios();
 
-    logger.info('\n╔══════════════════════════════════════════════════════════════════════╗');
-    logger.info('║  Available Demo Scenarios                                            ║');
-    logger.info('╚══════════════════════════════════════════════════════════════════════╝\n');
+    logger.info(`\n  ${c.bold('demo scenarios')}\n`);
 
     scenarios.forEach(scenario => {
-      logger.info(`📋 ${scenario.name}`);
-      logger.info(`   ${scenario.description}`);
-      logger.info(`   Duration: ${scenario.expectedDuration}`);
-      logger.info(`   Steps: ${scenario.steps.length}\n`);
+      logger.info(`  ${c.bold(scenario.name)}`);
+      logger.info(`    ${c.dim(scenario.description)}`);
+      logger.info(`    ${c.dim(`${scenario.steps.length} step${scenario.steps.length === 1 ? '' : 's'} · ${scenario.expectedDuration}`)}\n`);
     });
 
-    logger.info('To run a demo:');
-    logger.info('  swarm demo <scenario-name>\n');
+    logger.info(`  ${c.dim('run:')} swarm demo <name>\n`);
     return 0;
   }
 
@@ -163,9 +160,7 @@ export async function handleDemoCommand(args: string[]): Promise<number> {
 }
 
 export async function runDemo(scenarioName: string): Promise<number> {
-  // Demos get a cleaner UX: drop `[scope]` log prefixes and skip the
-  // Ink TUI by default (the full-screen takeover is visually noisy and
-  // interacts badly with soft-wrapping on narrow terminals).
+  // Demos get a cleaner UX: drop `[scope]` log prefixes.
   setPrettyMode(true);
 
   const { executeSwarm } = await import('./swarm-handlers');
@@ -215,27 +210,22 @@ export async function runDemo(scenarioName: string): Promise<number> {
       return 1;
     }
 
-    // Compact banner — goal + scope on screen, no filler.
     logger.info('');
-    logger.info(`${c.magenta(c.bold('🐝 Swarm Orchestrator'))}  ${c.dim('·')}  ${c.bold(scenario.name)}`);
-    logger.info(`${c.dim(scenario.description)}`);
+    logger.info(`  ${c.bold('swarm')} ${c.dim('·')} ${scenario.name}`);
+    logger.info(`  ${c.dim(scenario.description)}`);
     logger.info('');
-    logger.info(`${c.dim('Steps:')}     ${scenario.steps.length}`);
-    logger.info(`${c.dim('Duration:')}  ${scenario.expectedDuration}`);
-    logger.info(`${c.dim('Folder:')}    ${demoDir} ${c.dim(isExternalTarget ? '(target)' : '(temp)')}`);
+    logger.info(`  steps     ${scenario.steps.length}`);
+    logger.info(`  duration  ${c.dim(scenario.expectedDuration)}`);
+    logger.info(`  folder    ${demoDir} ${c.dim(isExternalTarget ? '(target)' : '(temp)')}`);
     logger.info('');
 
     const plan = demoMode.scenarioToPlan(scenario);
 
-    const storage = new PlanStorage();
-    const planPath = storage.savePlan(plan);
+    const planPath = savePlanFile(plan);
 
-    // Demo commands default to --no-dashboard for a clean streaming UX.
-    // Users who want the Ink TUI can still pass --dashboard explicitly.
     const execOpts: ExecuteSwarmCliOptions = {
       ...parsedFlags,
       noQualityGates: true,
-      noDashboard: parsedFlags.noDashboard !== false ? true : false,
     };
     const exitCode = await executeSwarm(path.basename(planPath), execOpts);
 

@@ -1,0 +1,125 @@
+{
+  "entryId": "synthetic-edge-case-failure-empty-code-broken",
+  "layers": {
+    "intent": {
+      "status": "skipped",
+      "score": 1,
+      "evidence": {},
+      "errorReason": "synthesis-required-not-provided"
+    },
+    "regression": {
+      "status": "pass",
+      "score": 1,
+      "evidence": {
+        "regression": {
+          "command": "node test/regression.test.js",
+          "cwd": "/tmp/falsification-battery-synthetic-edge-case-failure-empty-code-broken-9FNgSR/patch",
+          "exitCode": 0,
+          "stdout": "",
+          "stderr": "",
+          "durationMs": 43,
+          "timedOut": false
+        },
+        "mutation": {
+          "status": "SKIP",
+          "reason": "mutation-skipped-by-harness-option"
+        }
+      }
+    },
+    "cheat": {
+      "status": "pass",
+      "score": 1,
+      "evidence": {
+        "score": 1,
+        "findings": [],
+        "semgrepStatus": "not-run"
+      }
+    },
+    "property": {
+      "status": "advisory-warn",
+      "score": 0.75,
+      "evidence": {
+        "status": "ADVISORY",
+        "score": 0.75,
+        "targets": [
+          {
+            "language": "javascript",
+            "filePath": "src/text.js",
+            "functionName": "parseCode",
+            "typed": false,
+            "advisoryOnly": true
+          }
+        ],
+        "findings": [
+          {
+            "filePath": "src/text.js",
+            "functionName": "parseCode",
+            "counterexample": "' + JSON.stringify([a, b]) + ' -> ' + err.message); }",
+            "explanation": "generic advisory fuzzing found a failure or the property tool could not run"
+          }
+        ]
+      }
+    },
+    "attestation": {
+      "status": "pass",
+      "score": 1,
+      "evidence": {
+        "found": true,
+        "verified": true,
+        "reason": "unsigned test attestation verified structurally",
+        "attestation": {
+          "envelope": {
+            "_type": "https://in-toto.io/Statement/v1",
+            "subject": [
+              {
+                "name": "git-commit",
+                "digest": {
+                  "sha1": "4d0e89e8f7b3afabd9a371af86a022f83113dd33"
+                }
+              }
+            ],
+            "predicateType": "https://slsa.dev/provenance/v1",
+            "predicate": {
+              "buildType": "https://github.com/moonrunnerkc/swarm-orchestrator/attestation/v7",
+              "invocation": {
+                "parameters": {
+                  "goalHash": "6bc5e934cbd3e81e54a7b3343e960a9a508321dc045cc2e632f2122be135e1b7",
+                  "planHash": "synthetic-edge-case-failure-empty-code"
+                }
+              },
+              "buildConfig": {
+                "tool": "synthetic",
+                "version": "1.0.0",
+                "model": "synthetic"
+              },
+              "metadata": {
+                "transcriptHash": "2d617f847bae0d50e5e17750f3f480116edea62fe5438dee661d7bc8c2cd9faa",
+                "layerResults": [],
+                "compositeScore": 0,
+                "timestamp": "2026-04-29T00:00:00.000Z"
+              }
+            }
+          },
+          "signature": {
+            "kind": "unsigned-test",
+            "signature": "43ae173af1e2519ad5f0f4c139fba8a4d4a2e6db8379557038ebf6120c05beec"
+          }
+        }
+      }
+    }
+  },
+  "compositeScore": 0.9,
+  "broke": false,
+  "flagged": false,
+  "timing": {
+    "totalMs": 129,
+    "perLayerMs": {
+      "intent": 0,
+      "regression": 43,
+      "cheat": 0,
+      "property": 40,
+      "attestation": 10
+    }
+  },
+  "errors": []
+}

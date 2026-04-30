@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ConfigLoader } from '../config-loader';
 import { PlanGenerator } from '../plan-generator';
-import { PlanStorage } from '../plan-storage';
+import { loadPlanFile, savePlanFile } from '../plan-files';
 import { StepRunner } from '../step-runner';
 import { ExecutionOptions } from '../types';
 import { defaultModelForAdapter } from '../adapters';
@@ -26,7 +26,7 @@ const logger = getLogger('cli:plan');
 // Plan helpers (exported from this module; called by the handle* functions)
 // ---------------------------------------------------------------------------
 
-export function generatePlan(goal: string, copilotMode: boolean = false, opts?: { planCache?: boolean }): void {
+export function generatePlan(goal: string, copilotMode: boolean = false): void {
   const configLoader = new ConfigLoader();
   const agents = configLoader.loadAllAgents();
   const generator = new PlanGenerator(agents);
@@ -71,7 +71,7 @@ export function generatePlan(goal: string, copilotMode: boolean = false, opts?: 
   });
   logger.info();
 
-  const plan = generator.createPlan(goal, undefined, opts?.planCache ? { planCache: true } : undefined);
+  const plan = generator.createPlan(goal);
 
   logger.info('Generated Execution Plan:');
   logger.info('═'.repeat(70));
@@ -93,8 +93,7 @@ export function generatePlan(goal: string, copilotMode: boolean = false, opts?: 
   const executionOrder = generator.getExecutionOrder(plan);
   logger.info(`🔄 Execution Order: ${executionOrder.join(' → ')}\n`);
 
-  const storage = new PlanStorage();
-  const planPath = storage.savePlan(plan);
+  const planPath = savePlanFile(plan);
   logger.info(`✅ Plan saved to: ${planPath}`);
   logger.info(`\n▶  To execute: swarm swarm ${path.basename(planPath)}\n`);
 }
@@ -143,8 +142,7 @@ export function importPlanFromTranscript(runId: string, transcriptPath: string):
     const executionOrder = generator.getExecutionOrder(plan);
     logger.info(`\n🔄 Execution Order: ${executionOrder.join(' → ')}`);
 
-    const storage = new PlanStorage();
-    const planPath = storage.savePlan(plan);
+    const planPath = savePlanFile(plan);
     logger.info(`\n✅ Plan saved to: ${planPath}`);
     logger.info(`\n▶  To execute: swarm swarm ${path.basename(planPath)}\n`);
 
@@ -164,8 +162,7 @@ export function importPlanFromTranscript(runId: string, transcriptPath: string):
 export function executePlan(planFilename: string, options?: ExecutionOptions): number {
   logger.info('Swarm Orchestrator - Plan Execution\n');
 
-  const storage = new PlanStorage();
-  const plan = storage.loadPlan(planFilename);
+  const plan = loadPlanFile(planFilename);
 
   logger.info(`Plan: ${plan.goal}`);
   logger.info(`Steps: ${plan.steps.length}`);
@@ -246,7 +243,7 @@ export async function handlePlanCommand(args: string[]): Promise<number> {
   const normalizedArgs = normalizeLeadingGlobalFlags(args);
   const outputFormat = parseOutputFormat(normalizedArgs);
   const positional = extractPositionalArgs(normalizedArgs.slice(1), {
-    booleanFlags: ['--help', '-h', '--verbose', '--json', '--plan-cache', '--copilot'],
+    booleanFlags: ['--help', '-h', '--verbose', '--json', '--copilot'],
     valueFlags: ['--output'],
   });
 
@@ -280,8 +277,7 @@ export async function handlePlanCommand(args: string[]): Promise<number> {
         const agents = configLoader.loadAllAgents();
         const generator = new PlanGenerator(agents);
         const plan = generator.parseCopilotPlanFromTranscript(transcriptContent);
-        const storage = new PlanStorage();
-        const planPath = storage.savePlan(plan);
+        const planPath = savePlanFile(plan);
         writeStructuredOutput({ runId, transcriptPath, planFile: planPath, plan });
         return 0;
       } catch (error) {
@@ -320,20 +316,18 @@ export async function handlePlanCommand(args: string[]): Promise<number> {
   }
 
   // plan <goal> (regular mode)
-  const usePlanCache = normalizedArgs.includes('--plan-cache');
   const goal = positional.join(' ');
   try {
     if (outputFormat === 'json') {
       const configLoader = new ConfigLoader();
       const agents = configLoader.loadAllAgents();
       const generator = new PlanGenerator(agents);
-      const plan = generator.createPlan(goal, undefined, usePlanCache ? { planCache: true } : undefined);
-      const storage = new PlanStorage();
-      const planPath = storage.savePlan(plan);
+      const plan = generator.createPlan(goal);
+      const planPath = savePlanFile(plan);
       writeStructuredOutput({ goal: plan.goal, planFile: planPath, plan });
       return 0;
     }
-    generatePlan(goal, false, { planCache: usePlanCache });
+    generatePlan(goal, false);
     return 0;
   } catch (error) {
     logger.error('Error generating plan:', error instanceof Error ? error.message : error);

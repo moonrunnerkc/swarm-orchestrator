@@ -9,7 +9,7 @@ import { AgentProfile } from '../src/config-loader';
 // Stable agent fixture matching the base config structure
 function makeAgent(overrides?: Partial<AgentProfile>): AgentProfile {
   return {
-    name: 'BackendMaster',
+    name: 'worker',
     purpose: 'Implement server-side logic',
     scope: ['Backend code', 'API endpoints'],
     boundaries: ['Do not modify frontend'],
@@ -63,7 +63,7 @@ describe('AgentsExporter', () => {
       const content = exporter.generateAgentMd(agent, undefined, false, 0);
 
       assert.ok(content.startsWith('---\n'), 'should start with YAML frontmatter');
-      assert.ok(content.includes('name: BackendMaster'));
+      assert.ok(content.includes('name: worker'));
       assert.ok(content.includes('## Purpose'));
       assert.ok(content.includes('## Scope'));
       assert.ok(content.includes('## Boundaries'));
@@ -88,7 +88,7 @@ describe('AgentsExporter', () => {
     it('should include failure prevention section when stats have failure modes', () => {
       const exporter = new AgentsExporter(tempDir);
       const stats: AgentStats = {
-        agentName: 'BackendMaster',
+        agentName: 'worker',
         totalMentions: 5,
         failureModes: ['Timeout when database migrations run concurrently'],
         successPatterns: [],
@@ -107,7 +107,7 @@ describe('AgentsExporter', () => {
     it('should include proven patterns section', () => {
       const exporter = new AgentsExporter(tempDir);
       const stats: AgentStats = {
-        agentName: 'BackendMaster',
+        agentName: 'worker',
         totalMentions: 3,
         failureModes: [],
         successPatterns: ['Mock database calls for unit tests'],
@@ -126,7 +126,7 @@ describe('AgentsExporter', () => {
     it('should skip learned sections when totalMentions is 0', () => {
       const exporter = new AgentsExporter(tempDir);
       const stats: AgentStats = {
-        agentName: 'BackendMaster',
+        agentName: 'worker',
         totalMentions: 0,
         failureModes: ['something'],
         successPatterns: [],
@@ -144,7 +144,7 @@ describe('AgentsExporter', () => {
     it('should include anti-patterns section when boundary violations exist', () => {
       const exporter = new AgentsExporter(tempDir);
       const stats: AgentStats = {
-        agentName: 'BackendMaster',
+        agentName: 'worker',
         totalMentions: 2,
         failureModes: [],
         successPatterns: [],
@@ -163,7 +163,7 @@ describe('AgentsExporter', () => {
     it('should include cost hints when available', () => {
       const exporter = new AgentsExporter(tempDir);
       const stats: AgentStats = {
-        agentName: 'BackendMaster',
+        agentName: 'worker',
         totalMentions: 1,
         failureModes: [],
         successPatterns: [],
@@ -218,13 +218,13 @@ describe('AgentsExporter', () => {
       const bases = [makeKnowledgeBase([
         {
           category: 'failure_mode',
-          insight: 'BackendMaster fails when running parallel DB migrations',
+          insight: 'worker fails when running parallel DB migrations',
           evidence: ['run:exec-123']
         }
       ], 5)];
 
       const stats = exporter.aggregatePerAgent(bases, agents);
-      const agentStats = stats.get('BackendMaster');
+      const agentStats = stats.get('worker');
       assert.ok(agentStats);
       assert.strictEqual(agentStats.failureModes.length, 1);
       assert.ok(agentStats.failureModes[0].includes('parallel DB migrations'));
@@ -236,13 +236,13 @@ describe('AgentsExporter', () => {
       const bases = [makeKnowledgeBase([
         {
           category: 'best_practice',
-          insight: 'BackendMaster succeeds when using mocks for DB calls',
+          insight: 'worker succeeds when using mocks for DB calls',
           evidence: []
         }
       ], 5)];
 
       const stats = exporter.aggregatePerAgent(bases, agents);
-      const agentStats = stats.get('BackendMaster');
+      const agentStats = stats.get('worker');
       assert.ok(agentStats);
       assert.strictEqual(agentStats.successPatterns.length, 1);
     });
@@ -253,13 +253,13 @@ describe('AgentsExporter', () => {
       const bases = [makeKnowledgeBase([
         {
           category: 'failure_mode',
-          insight: 'TesterElite fails when fixtures are missing',
+          insight: 'reviewer fails when fixtures are missing',
           evidence: []
         }
       ], 5)];
 
       const stats = exporter.aggregatePerAgent(bases, agents);
-      const agentStats = stats.get('BackendMaster');
+      const agentStats = stats.get('worker');
       assert.ok(agentStats);
       assert.strictEqual(agentStats.failureModes.length, 0);
     });
@@ -271,14 +271,14 @@ describe('AgentsExporter', () => {
       const bases = [makeKnowledgeBase([
         {
           category: 'failure_mode',
-          insight: 'BackendMaster timeout',
+          insight: 'worker timeout',
           evidence: [],
           lastSeen: veryOld
         }
       ], 5)];
 
       const stats = exporter.aggregatePerAgent(bases, agents);
-      const agentStats = stats.get('BackendMaster');
+      const agentStats = stats.get('worker');
       assert.ok(agentStats);
       assert.strictEqual(agentStats.failureModes.length, 0);
     });
@@ -289,13 +289,13 @@ describe('AgentsExporter', () => {
       const bases = [makeKnowledgeBase([
         {
           category: 'anti_pattern',
-          insight: 'BackendMaster modified CSS files directly',
+          insight: 'worker modified CSS files directly',
           evidence: []
         }
       ], 5)];
 
       const stats = exporter.aggregatePerAgent(bases, agents);
-      const agentStats = stats.get('BackendMaster');
+      const agentStats = stats.get('worker');
       assert.ok(agentStats);
       assert.strictEqual(agentStats.boundaryViolations.length, 1);
     });
@@ -398,7 +398,7 @@ describe('AgentsExporter', () => {
         const kb = makeKnowledgeBase([
           {
             category: 'failure_mode',
-            insight: 'BackendMaster timeout on large payloads',
+            insight: 'worker timeout on large payloads',
             evidence: ['run:test']
           }
         ], 2);
@@ -433,7 +433,7 @@ describe('AgentsExporter', () => {
         const kb = makeKnowledgeBase([
           {
             category: 'best_practice',
-            insight: 'BackendMaster: use mocks for DB calls',
+            insight: 'worker: use mocks for DB calls',
             evidence: ['run:proven']
           }
         ], 1);
@@ -443,9 +443,9 @@ describe('AgentsExporter', () => {
       // Second export with diff (minRuns=5, totalRuns=6 so fromData=true)
       const second = exporter.export({ outputDir, minRuns: 5, diff: true });
       assert.ok(second.fromData);
-      // The BackendMaster agent should have diffs since learned sections were added
-      const backendDiffs = second.diffs.filter(d => d.agentName === 'BackendMaster');
-      assert.ok(backendDiffs.length > 0, 'Should detect changes in BackendMaster after adding data');
+      // The worker agent should have diffs since learned sections were added
+      const backendDiffs = second.diffs.filter(d => d.agentName === 'worker');
+      assert.ok(backendDiffs.length > 0, 'Should detect changes in worker after adding data');
     });
   });
 });

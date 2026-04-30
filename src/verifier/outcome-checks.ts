@@ -33,9 +33,11 @@ export function runOutcomeChecks(
     checks.push(buildCheck);
   }
 
-  const testCheck = checkTestExec(opts.workdir, workingDir);
-  if (testCheck) {
-    checks.push(testCheck);
+  if (process.env.SWARM_SKIP_OUTCOME_TEST_EXEC !== '1') {
+    const testCheck = checkTestExec(opts.workdir, workingDir);
+    if (testCheck) {
+      checks.push(testCheck);
+    }
   }
 
   // Idempotency resolution: if the diff check failed (no new commits) but the

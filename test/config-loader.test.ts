@@ -18,18 +18,11 @@ describe('ConfigLoader', () => {
       assert.ok(config.agents.length > 0);
     });
 
-    it('should load all expected default agents', () => {
+    it('should load all expected default roles', () => {
       const loader = new ConfigLoader(configDir);
       const config = loader.loadDefaultAgents();
 
-      const expectedAgents = [
-        'FrontendExpert',
-        'BackendMaster',
-        'DevOpsPro',
-        'SecurityAuditor',
-        'TesterElite',
-        'IntegratorFinalizer'
-      ];
+      const expectedAgents = ['worker', 'reviewer'];
 
       const agentNames = config.agents.map(a => a.name);
 
@@ -96,36 +89,28 @@ describe('ConfigLoader', () => {
       const allAgents = loader.loadAllAgents();
 
       assert.ok(Array.isArray(allAgents));
-      assert.ok(allAgents.length >= 6); // At least the 6 default agents
+      assert.ok(allAgents.length >= 2); // At least the 2 default roles
     });
   });
 
   describe('getAgentByName', () => {
     it('should find agent by name', () => {
       const loader = new ConfigLoader(configDir);
-      const agent = loader.getAgentByName('FrontendExpert');
+      const agent = loader.getAgentByName('worker');
 
       assert.ok(agent);
-      assert.strictEqual(agent?.name, 'FrontendExpert');
+      assert.strictEqual(agent?.name, 'worker');
     });
 
-    it('should find agent by snake_case name even when only YAML provides PascalCase', () => {
-      // Whether .agent.md files exist or not, snake_case lookup should resolve
+    it('should find reviewer by normalized name', () => {
       const loader = new ConfigLoader(configDir);
-      const agent = loader.getAgentByName('frontend_expert');
-      assert.ok(agent, 'Should resolve frontend_expert (either from .agent.md or YAML normalization)');
+      const agent = loader.getAgentByName('reviewer');
+      assert.ok(agent, 'Should resolve reviewer');
     });
 
-    it('should resolve all 6 default agents by snake_case name', () => {
+    it('should resolve both default roles by normalized name', () => {
       const loader = new ConfigLoader(configDir);
-      const snakeNames = [
-        'frontend_expert',
-        'backend_master',
-        'dev_ops_pro',
-        'security_auditor',
-        'tester_elite',
-        'integrator_finalizer'
-      ];
+      const snakeNames = ['worker', 'reviewer'];
       for (const sn of snakeNames) {
         const agent = loader.getAgentByName(sn);
         assert.ok(agent, `Should resolve snake_case name: ${sn}`);
@@ -141,18 +126,14 @@ describe('ConfigLoader', () => {
   });
 
   describe('normalizeAgentName', () => {
-    it('should convert PascalCase to snake_case', () => {
-      assert.strictEqual(ConfigLoader.normalizeAgentName('FrontendExpert'), 'frontend_expert');
-      assert.strictEqual(ConfigLoader.normalizeAgentName('BackendMaster'), 'backend_master');
-      assert.strictEqual(ConfigLoader.normalizeAgentName('DevOpsPro'), 'dev_ops_pro');
-      assert.strictEqual(ConfigLoader.normalizeAgentName('SecurityAuditor'), 'security_auditor');
-      assert.strictEqual(ConfigLoader.normalizeAgentName('TesterElite'), 'tester_elite');
-      assert.strictEqual(ConfigLoader.normalizeAgentName('IntegratorFinalizer'), 'integrator_finalizer');
+    it('normalizes role names', () => {
+      assert.strictEqual(ConfigLoader.normalizeAgentName('Worker'), 'worker');
+      assert.strictEqual(ConfigLoader.normalizeAgentName('Reviewer'), 'reviewer');
     });
 
     it('should leave snake_case unchanged', () => {
-      assert.strictEqual(ConfigLoader.normalizeAgentName('frontend_expert'), 'frontend_expert');
-      assert.strictEqual(ConfigLoader.normalizeAgentName('backend_master'), 'backend_master');
+      assert.strictEqual(ConfigLoader.normalizeAgentName('worker'), 'worker');
+      assert.strictEqual(ConfigLoader.normalizeAgentName('reviewer'), 'reviewer');
     });
 
     it('should handle single word', () => {
@@ -165,37 +146,28 @@ describe('ConfigLoader', () => {
   });
 
   describe('buildAgentMap', () => {
-    it('should return a map with both PascalCase and snake_case keys', () => {
+    it('should return a map with role keys', () => {
       const loader = new ConfigLoader(configDir);
       const map = loader.buildAgentMap();
 
-      // PascalCase keys from YAML
-      assert.ok(map.has('FrontendExpert'), 'Should have PascalCase key');
-      assert.ok(map.has('BackendMaster'), 'Should have PascalCase key');
-
-      // snake_case aliases
-      assert.ok(map.has('frontend_expert'), 'Should have snake_case alias');
-      assert.ok(map.has('backend_master'), 'Should have snake_case alias');
-      assert.ok(map.has('integrator_finalizer'), 'Should have snake_case alias');
+      assert.ok(map.has('worker'), 'Should have worker key');
+      assert.ok(map.has('reviewer'), 'Should have reviewer key');
     });
 
-    it('should map snake_case keys to agent profiles', () => {
+    it('should map role keys to agent profiles', () => {
       const loader = new ConfigLoader(configDir);
       const map = loader.buildAgentMap();
 
-      // Verify snake_case keys exist and resolve to valid agents
-      const snake = map.get('frontend_expert');
-      assert.ok(snake, 'snake_case key should resolve to an agent');
-      // The profile name could be PascalCase (YAML) or snake_case (.agent.md)
-      const normalized = ConfigLoader.normalizeAgentName(snake.name);
-      assert.strictEqual(normalized, 'frontend_expert');
+      const worker = map.get('worker');
+      assert.ok(worker, 'worker key should resolve to an agent');
+      assert.strictEqual(ConfigLoader.normalizeAgentName(worker.name), 'worker');
     });
 
-    it('should include at least 12 entries for 6 agents (PascalCase + snake_case)', () => {
+    it('should include at least 2 entries for default roles', () => {
       const loader = new ConfigLoader(configDir);
       const map = loader.buildAgentMap();
 
-      assert.ok(map.size >= 12, `Expected at least 12 entries, got ${map.size}`);
+      assert.ok(map.size >= 2, `Expected at least 2 entries, got ${map.size}`);
     });
   });
 

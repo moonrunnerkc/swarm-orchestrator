@@ -148,6 +148,43 @@ describe('gate-config-resolver', () => {
       );
     });
 
+    it('accepts kebab-case gate keys and normalizes them to camelCase', () => {
+      const swarmDir = path.join(tmpDir, '.swarm');
+      fs.mkdirSync(swarmDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(swarmDir, 'gates.yaml'),
+        'gates:\n  duplicate-blocks:\n    minLines: 99\n  runtime-checks:\n    enabled: false\n',
+        'utf8'
+      );
+
+      const config = load_quality_gates_config(tmpDir);
+      assert.strictEqual(config.gates.duplicateBlocks.minLines, 99,
+        'kebab-case "duplicate-blocks" should set duplicateBlocks.minLines');
+      assert.strictEqual(config.gates.runtimeChecks.enabled, false,
+        'kebab-case "runtime-checks" should set runtimeChecks.enabled');
+    });
+
+    it('rejects YAML that mixes kebab-case and camelCase for the same gate', () => {
+      const swarmDir = path.join(tmpDir, '.swarm');
+      fs.mkdirSync(swarmDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(swarmDir, 'gates.yaml'),
+        'gates:\n  duplicate-blocks:\n    minLines: 5\n  duplicateBlocks:\n    minLines: 7\n',
+        'utf8'
+      );
+
+      assert.throws(
+        () => load_quality_gates_config(tmpDir),
+        (err: Error) => {
+          assert.ok(err.message.includes('Duplicate gate config'),
+            'error should call out the duplicate spelling');
+          assert.ok(err.message.includes('duplicateBlocks'),
+            'error should mention the canonical key');
+          return true;
+        }
+      );
+    });
+
     it('accepts all valid gate key names without error', () => {
       const swarmDir = path.join(tmpDir, '.swarm');
       fs.mkdirSync(swarmDir, { recursive: true });

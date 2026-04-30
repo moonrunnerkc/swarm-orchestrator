@@ -4,7 +4,7 @@
  */
 
 import * as path from 'path';
-import { PlanStorage } from '../plan-storage';
+import { savePlanFile } from '../plan-files';
 import { loadRecipe, listRecipeDetails, parameterizeRecipe } from '../recipe-loader';
 import AgentsExporter from '../agents-exporter';
 import { parseSwarmFlags } from './flags';
@@ -68,8 +68,7 @@ export async function handleUseCommand(args: string[]): Promise<number> {
   logger.info('');
 
   // Save the parameterized plan, then delegate to executeSwarm
-  const storage = new PlanStorage();
-  const planPath = storage.savePlan(plan, `recipe-${recipeName}-${Date.now()}.json`);
+  const planPath = savePlanFile(plan, `recipe-${recipeName}-${Date.now()}.json`);
   logger.info(`Plan saved: ${planPath}\n`);
 
   try {

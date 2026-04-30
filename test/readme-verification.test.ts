@@ -229,10 +229,10 @@ describe('README Verification', () => {
     it('README should mention key features', () => {
       const readmePath = path.join(rootDir, 'README.md');
       const content = fs.readFileSync(readmePath, 'utf-8');
-      
-      assert.match(content, /parallel/i, 'README should mention parallel execution');
-      assert.match(content, /wave/i, 'README should mention wave execution');
-      assert.match(content, /branch/i, 'README should mention git branches');
+
+      assert.match(content, /falsification/i, 'README should mention the falsification battery');
+      assert.match(content, /attestation/i, 'README should mention attestation');
+      assert.match(content, /worker.*reviewer|reviewer.*worker/is, 'README should mention worker and reviewer roles');
       assert.match(content, /verification/i, 'README should mention verification');
     });
   });

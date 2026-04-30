@@ -228,7 +228,11 @@ export async function runFinalGatesPipeline(
   gatesConfig: QualityGatesConfig,
   options: RemediationOptions | undefined,
 ): Promise<FinalGatesPipelineResult> {
-  logger.info('\n🧪 Running final quality gates...');
+  // Live status presents this transition as a single in-place line; the
+  // logger entry is the forensic record visible with --verbose.
+  logger.debug('running final quality gates');
+  const presenter = require('../presenter') as typeof import('../presenter');
+  presenter.getPresenter().gateRunningStart();
   const gatesOut = options?.qualityGatesOutDir
     ? path.isAbsolute(options.qualityGatesOutDir)
       ? options.qualityGatesOutDir

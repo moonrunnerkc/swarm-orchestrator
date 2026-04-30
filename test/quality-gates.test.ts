@@ -28,12 +28,13 @@ describe('QualityGates', () => {
     }
   });
 
-  it('fails on a known bad scaffold fixture', async () => {
+  it('reports advisory findings on a known bad scaffold fixture without blocking', async () => {
     const root = fixture('bad-scaffold');
     const cfg = load_quality_gates_config(root);
     const result = await run_quality_gates(root, cfg);
 
-    assert.strictEqual(result.passed, false);
+    assert.strictEqual(result.passed, true);
+    assert.strictEqual(result.advisory, true);
 
     const failed = result.results.filter(r => r.status === 'fail').map(r => r.id);
     // make sure our core gates trip
@@ -95,8 +96,8 @@ describe('QualityGates', () => {
         );
       }
 
-      // Universal gates must still run (not skip).
-      for (const id of ['hardcoded-config', 'test-file-protection']) {
+      // Universal gates that do not need git history must still run (not skip).
+      for (const id of ['hardcoded-config']) {
         const r = resultById.get(id);
         assert.ok(r, `target-mode must still run universal gate ${id}`);
         assert.notStrictEqual(
@@ -104,6 +105,9 @@ describe('QualityGates', () => {
           `target-mode must NOT skip universal gate ${id}`,
         );
       }
+
+      const testFileProtection = resultById.get('test-file-protection');
+      assert.ok(testFileProtection, 'target-mode must still report test-file-protection');
     });
 
     it('SELF_IMPROVEMENT_GATE_KEYS has the exact expected membership', async () => {
