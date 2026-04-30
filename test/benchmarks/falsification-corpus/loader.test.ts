@@ -66,6 +66,8 @@ describe('falsification corpus loader', () => {
     const branchName = 'swarm/swarm-2026-04-29T00-00-00-001Z/step-1-worker';
     fs.mkdirSync(repoPath, { recursive: true });
     git(repoPath, ['init', '-b', 'master']);
+    git(repoPath, ['config', 'user.name', 'Falsification Corpus Test']);
+    git(repoPath, ['config', 'user.email', 'corpus-test@example.com']);
     write(path.join(repoPath, 'index.js'), 'module.exports = () => "old";\n');
     commitAll(repoPath, 'initial');
     git(repoPath, ['switch', '-c', branchName]);
