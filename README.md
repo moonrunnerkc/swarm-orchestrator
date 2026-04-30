@@ -56,7 +56,7 @@ npm install && npm run build && npm link
 
 ## The Falsification Battery
 
-Every agent-authored patch passes through five layers in order. The composite score is computed once at the end across layers 3 through 5; the threshold gate (default 0.7) decides whether the patch needs human review.
+Every agent-authored patch passes through five layers in order. Any layer that reports `advisory-warn` or `fail` sends the patch to human review independently; the composite score reports overall confidence to the operator.
 
 **Layer 1 — Intent verification (hard gate).** Before the worker step runs, the reviewer role generates a regression test that fails against the goal's pre-state. After the worker commits, the test must transition fail to pass. If the synthesizer reports `AMBIGUOUS_GOAL` or the test still fails, the patch is rejected.
 
@@ -68,7 +68,7 @@ Every agent-authored patch passes through five layers in order. The composite sc
 
 **Layer 5 — Provenance (advisory).** A signed in-toto SLSA v1.0 attestation envelope is produced for every patch, signed via cosign keyless (Fulcio + OIDC), and attached as a git note. Verification later replays the envelope and confirms identity. Unsigned envelopes drop the attestation score; failed verification flags the patch.
 
-The advisory composite is `(0.4 × cheatDetector + 0.4 × propertyGate + 0.2 × attestation) − advisoryGatePenalty`. Below threshold, the patch goes to human review; the patch still merges, the operator decides whether to revert.
+The advisory composite is `(0.4 × cheatDetector + 0.4 × propertyGate + 0.2 × attestation) − advisoryGatePenalty`. It is reported as confidence alongside layer statuses; it does not override `advisory-warn` or `fail` review signals.
 
 ## Agent Roles
 
@@ -112,6 +112,7 @@ verification:
     failBelow: 0.6
     warnBelow: 0.8
   composite:
+    # Confidence threshold for reporting; advisory-warn or fail statuses force human review independently.
     threshold: 0.7
     weights:
       cheatDetector: 0.4
