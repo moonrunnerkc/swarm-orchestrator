@@ -16,10 +16,22 @@ export interface CompositeScoreConfig {
   gateWeights: Record<string, number>;
 }
 
+export type CompositeLayerStatus =
+  | 'pass'
+  | 'fail'
+  | 'advisory-warn'
+  | 'skipped'
+  | 'env-error'
+  | 'PASS'
+  | 'FAIL'
+  | 'WARNING'
+  | 'SKIP';
+
 export interface CompositeScoreInput {
   cheatDetectorScore: number;
   propertyGateScore: number;
   attestationScore: number;
+  advisoryLayerStatuses?: readonly CompositeLayerStatus[] | Record<string, CompositeLayerStatus>;
   advisoryGateResults?: GateResult[];
   config?: Partial<CompositeScoreConfig>;
 }
@@ -28,6 +40,7 @@ export interface CompositeScoreResult {
   score: number;
   threshold: number;
   humanReviewRequired: boolean;
+  advisoryLayerTriggered: boolean;
   advisoryPenalty: number;
   weightedLayerScore: number;
 }
@@ -125,6 +138,14 @@ function advisoryPenalty(gates: GateResult[] | undefined, config: CompositeScore
     .reduce((sum, gate) => sum + (config.gateWeights[gate.id] ?? config.advisoryGatePenalty), 0);
 }
 
+function advisoryLayerTriggered(
+  statuses: CompositeScoreInput['advisoryLayerStatuses'],
+): boolean {
+  if (statuses === undefined) return false;
+  const values = Array.isArray(statuses) ? statuses : Object.values(statuses);
+  return values.some(status => status === 'advisory-warn' || status === 'WARNING');
+}
+
 /**
  * Compute the P1 advisory composite score.
  *
@@ -136,11 +157,13 @@ export function computeCompositeScore(input: CompositeScoreInput): CompositeScor
   const weightedLayerScore = layerScore(input, config);
   const penalty = advisoryPenalty(input.advisoryGateResults, config);
   const score = Number(clampScore(weightedLayerScore - penalty).toFixed(3));
+  const advisoryTriggered = advisoryLayerTriggered(input.advisoryLayerStatuses);
 
   return {
     score,
     threshold: config.threshold,
-    humanReviewRequired: score < config.threshold,
+    humanReviewRequired: score < config.threshold || advisoryTriggered,
+    advisoryLayerTriggered: advisoryTriggered,
     advisoryPenalty: Number(penalty.toFixed(3)),
     weightedLayerScore: Number(weightedLayerScore.toFixed(3)),
   };

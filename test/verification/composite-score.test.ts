@@ -31,6 +31,23 @@ describe('composite score', () => {
     assert.strictEqual(result.humanReviewRequired, false);
   });
 
+  it('requires human review when an advisory layer fires above threshold', () => {
+    const result = computeCompositeScore({
+      cheatDetectorScore: 0.65,
+      propertyGateScore: 1,
+      attestationScore: 1,
+      advisoryLayerStatuses: {
+        cheat: 'advisory-warn',
+        property: 'pass',
+        attestation: 'pass',
+      },
+    });
+
+    assert.strictEqual(result.score, 0.86);
+    assert.strictEqual(result.humanReviewRequired, true);
+    assert.strictEqual(result.advisoryLayerTriggered, true);
+  });
+
   it('computes the documented 0.28 example and triggers review', () => {
     const result = computeCompositeScore({
       cheatDetectorScore: 0,

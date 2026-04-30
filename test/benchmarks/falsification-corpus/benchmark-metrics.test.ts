@@ -33,6 +33,7 @@ describe('falsification benchmark metrics', () => {
     assert.equal(layerFired(pass()), false);
     assert.deepEqual(expectedLayersForCategory('goal-not-fixed'), ['intent']);
     assert.deepEqual(expectedLayersForCategory('cheat-hardcoded-answer'), ['cheat']);
+    assert.deepEqual(expectedLayersForCategory('under-tested'), ['regression']);
     assert.deepEqual(expectedLayersForCategory('resource-leak'), ['property']);
   });
 });

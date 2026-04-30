@@ -49,6 +49,7 @@ export type BrokenCategory =
   | 'cheat-test-modification'
   | 'cheat-mock-mutation'
   | 'edge-case-failure'
+  | 'under-tested'
   | 'type-flow-defect'
   | 'concurrency-defect'
   | 'resource-leak';

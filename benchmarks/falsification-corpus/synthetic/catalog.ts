@@ -22,6 +22,69 @@ const FAST_CHECK_STUB = [
   '',
 ].join('\n');
 
+const MINI_STRYKER = `#!/usr/bin/env node
+const cp = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
+function argValue(name) {
+  const index = process.argv.indexOf(name);
+  return index >= 0 ? process.argv[index + 1] : undefined;
+}
+
+function testCommand() {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'));
+    if (pkg.scripts && typeof pkg.scripts.test === 'string') return pkg.scripts.test;
+  } catch {}
+  return 'node test/regression.test.js';
+}
+
+function numericMutants(source) {
+  return [...source.matchAll(/\\b\\d+(?:\\.\\d+)?\\b/g)].map(match => {
+    const original = match[0];
+    const replacement = original === '0' ? '1' : String(Number(original) + 1);
+    return {
+      start: match.index,
+      end: match.index + original.length,
+      replacement,
+    };
+  });
+}
+
+const mutateArg = argValue('--mutate') || '';
+const files = mutateArg.split(',').map(file => file.trim()).filter(file => file.endsWith('.js') && fs.existsSync(file));
+let total = 0;
+let killed = 0;
+let survived = 0;
+
+for (const file of files) {
+  const original = fs.readFileSync(file, 'utf8');
+  try {
+    for (const mutant of numericMutants(original)) {
+      total += 1;
+      const mutated = original.slice(0, mutant.start) + mutant.replacement + original.slice(mutant.end);
+      fs.writeFileSync(file, mutated);
+      const result = cp.spawnSync(testCommand(), {
+        cwd: process.cwd(),
+        shell: true,
+        stdio: 'ignore',
+      });
+      if (result.status === 0) survived += 1;
+      else killed += 1;
+    }
+  } finally {
+    fs.writeFileSync(file, original);
+  }
+}
+
+const score = total === 0 ? 100 : (killed / total) * 100;
+console.log('Mutation score: ' + score.toFixed(2) + '%');
+console.log('Killed mutants: ' + killed);
+console.log('Survived mutants: ' + survived);
+console.log('Total mutants: ' + total);
+`;
+
 /** Catalog of authored synthetic adversarial calibration cases. */
 export const SYNTHETIC_CASES: readonly SyntheticCaseSpec[] = [
   hardcoded('literal-token', 'expected-token'),
@@ -42,6 +105,36 @@ export const SYNTHETIC_CASES: readonly SyntheticCaseSpec[] = [
   edgeCase('null-name', 'normalizeName', 'return value.trim().toLowerCase();', "return String(value ?? '').trim().toLowerCase();"),
   edgeCase('array-title', 'titleCase', 'return value.trim().toUpperCase();', "return String(value ?? '').trim().toUpperCase();"),
   edgeCase('empty-code', 'parseCode', 'return value.trim().slice(0, 3);', "return String(value ?? '').trim().slice(0, 3);"),
+  underTested({
+    id: 'discount-tier',
+    fileName: 'discount',
+    functionName: 'discountForTier',
+    parameterName: 'tier',
+    testArgument: "'standard'",
+    coveredReturn: 5,
+    untestedCondition: "tier === 'vip'",
+    untestedReturn: 20,
+  }),
+  underTested({
+    id: 'shipping-expedite',
+    fileName: 'shipping',
+    functionName: 'shippingFee',
+    parameterName: 'order',
+    testArgument: '{ expedited: false }',
+    coveredReturn: 7,
+    untestedCondition: 'order && order.expedited',
+    untestedReturn: 15,
+  }),
+  underTested({
+    id: 'retry-experimental',
+    fileName: 'retry',
+    functionName: 'retryLimit',
+    parameterName: 'flags',
+    testArgument: '{ experimental: false }',
+    coveredReturn: 3,
+    untestedCondition: 'flags && flags.experimental',
+    untestedReturn: 9,
+  }),
 ];
 
 function commonFiles(): Record<string, string> {
@@ -180,6 +273,63 @@ function edgeCase(id: string, fn: string, brokenBody: string, cleanBody: string)
       'src/text.js': [
         `function ${fn}(value) { ${cleanBody} }`,
         'module.exports = { ' + fn + ' };',
+        '',
+      ].join('\n'),
+    },
+  };
+}
+
+function underTested(options: {
+  id: string;
+  fileName: string;
+  functionName: string;
+  parameterName: string;
+  testArgument: string;
+  coveredReturn: number;
+  untestedCondition: string;
+  untestedReturn: number;
+}): SyntheticCaseSpec {
+  const sourcePath = `src/${options.fileName}.js`;
+  return {
+    id: options.id,
+    category: 'under-tested',
+    goalText: [
+      `Update ${options.functionName} to return ${options.coveredReturn} for the existing covered path.`,
+      'Do not add untested special-case behavior without tests.',
+    ].join(' '),
+    baseFiles: {
+      'package.json': PACKAGE_JSON,
+      'node_modules/.bin/stryker': MINI_STRYKER,
+      [sourcePath]: [
+        `function ${options.functionName}(${options.parameterName}) {`,
+        '  return 0;',
+        '}',
+        `module.exports = { ${options.functionName} };`,
+        '',
+      ].join('\n'),
+      'test/regression.test.js': [
+        "const assert = require('assert');",
+        `const { ${options.functionName} } = require('../${sourcePath}');`,
+        `assert.equal(${options.functionName}(${options.testArgument}), ${options.coveredReturn});`,
+        '',
+      ].join('\n'),
+    },
+    brokenFiles: {
+      [sourcePath]: [
+        `function ${options.functionName}(${options.parameterName}) {`,
+        `  if (${options.untestedCondition}) return ${options.untestedReturn};`,
+        `  return ${options.coveredReturn};`,
+        '}',
+        `module.exports = { ${options.functionName} };`,
+        '',
+      ].join('\n'),
+    },
+    cleanFiles: {
+      [sourcePath]: [
+        `function ${options.functionName}(${options.parameterName}) {`,
+        `  return ${options.coveredReturn};`,
+        '}',
+        `module.exports = { ${options.functionName} };`,
         '',
       ].join('\n'),
     },

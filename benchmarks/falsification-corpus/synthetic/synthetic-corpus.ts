@@ -8,7 +8,7 @@ import {
   type SignedAttestation,
 } from '../../../src/verification';
 import { validateGroundTruthLabel } from '../label-rules';
-import type { CorpusEntry, GroundTruthLabel } from '../schema';
+import type { BrokenCategory, CorpusEntry, GroundTruthLabel } from '../schema';
 import { SYNTHETIC_CASES, type SyntheticCaseSpec } from './catalog';
 
 export interface SyntheticCorpus {
@@ -17,11 +17,15 @@ export interface SyntheticCorpus {
 }
 
 /** Materializes synthetic git repos and returns labeled corpus entries. */
-export function loadSyntheticCorpus(syntheticRoot: string): SyntheticCorpus {
+export function loadSyntheticCorpus(syntheticRoot: string, options: {
+  categories?: readonly BrokenCategory[];
+} = {}): SyntheticCorpus {
   const root = path.resolve(syntheticRoot);
   const testSpecDir = path.join(root, 'test-specs');
   fs.mkdirSync(testSpecDir, { recursive: true });
-  const entries = SYNTHETIC_CASES.flatMap(spec => materializeCase(root, testSpecDir, spec));
+  const categories = options.categories === undefined ? undefined : new Set(options.categories);
+  const specs = SYNTHETIC_CASES.filter(spec => categories === undefined || categories.has(spec.category));
+  const entries = specs.flatMap(spec => materializeCase(root, testSpecDir, spec));
   return { entries: entries.sort((left, right) => left.id.localeCompare(right.id)), testSpecDir };
 }
 
@@ -172,6 +176,9 @@ function writeFiles(repoPath: string, files: Record<string, string>): void {
 function write(filePath: string, content: string): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, content, 'utf8');
+  if (filePath.includes(`${path.sep}node_modules${path.sep}.bin${path.sep}`)) {
+    fs.chmodSync(filePath, 0o755);
+  }
 }
 
 function commitAll(repoPath: string, message: string): void {

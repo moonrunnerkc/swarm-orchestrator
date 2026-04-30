@@ -43,7 +43,7 @@ describe('falsification battery harness', () => {
     assert.equal(result.layers.property.status, 'skipped');
     assert.equal(result.layers.attestation.status, 'advisory-warn');
     assert.equal(result.broke, false);
-    assert.equal(result.flagged, false);
+    assert.equal(result.flagged, true);
     assert.equal(result.errors.length, 0);
     assert.equal(fs.existsSync(path.join(worktreeRoot, 'base')), false);
     assert.equal(fs.existsSync(path.join(worktreeRoot, 'patch')), false);

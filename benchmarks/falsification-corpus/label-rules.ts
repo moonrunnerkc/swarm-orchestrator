@@ -8,6 +8,7 @@ export const BROKEN_CATEGORIES: readonly BrokenCategory[] = [
   'cheat-test-modification',
   'cheat-mock-mutation',
   'edge-case-failure',
+  'under-tested',
   'type-flow-defect',
   'concurrency-defect',
   'resource-leak',

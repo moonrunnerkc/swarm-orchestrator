@@ -87,5 +87,6 @@ export {
   type CompositeScoreConfig,
   type CompositeScoreInput,
   type CompositeScoreResult,
+  type CompositeLayerStatus,
   type CompositeWeights,
 } from './composite-score';

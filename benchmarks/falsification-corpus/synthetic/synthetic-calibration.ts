@@ -25,17 +25,22 @@ export async function runSyntheticCalibration(input: {
   syntheticRoot: string;
   outputDir: string;
   commitHash: string;
+  categories?: readonly BrokenCategory[];
+  skipMutation?: boolean;
 }): Promise<SyntheticCalibrationSummary> {
   const outputDir = path.resolve(input.outputDir);
   const perEntryDir = path.join(outputDir, 'per-entry');
   await fs.mkdir(perEntryDir, { recursive: true });
-  const corpus = loadSyntheticCorpus(input.syntheticRoot);
+  const corpus = loadSyntheticCorpus(
+    input.syntheticRoot,
+    input.categories === undefined ? {} : { categories: input.categories },
+  );
   const records: BenchmarkRecord[] = [];
 
   for (const entry of corpus.entries) {
     const result = await runBattery(entry, {
       testSpecDir: corpus.testSpecDir,
-      skipMutation: true,
+      skipMutation: input.skipMutation ?? true,
       layerTimeoutMs: { intent: 5_000, regression: 10_000, property: 10_000 },
     });
     await writeJson(path.join(perEntryDir, `${entry.id}.json`), result);

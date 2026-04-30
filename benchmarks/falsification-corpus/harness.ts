@@ -100,6 +100,9 @@ export async function runBattery(
       cheatDetectorScore: compositeLayerScore(layers.cheat),
       propertyGateScore: compositeLayerScore(layers.property),
       attestationScore: compositeLayerScore(layers.attestation),
+      advisoryLayerStatuses: Object.fromEntries(
+        Object.entries(layers).map(([layer, result]) => [layer, result.status]),
+      ),
       config: loadCompositeScoreConfig(activeWorktrees.patch),
     });
     collectLayerErrors(entry.id, layers, errors);

@@ -75,6 +75,7 @@ export function layerFired(layer: LayerResult): boolean {
 export function expectedLayersForCategory(category: BrokenCategory): LayerName[] {
   if (category === 'goal-not-fixed') return ['intent'];
   if (category === 'regression') return ['regression'];
+  if (category === 'under-tested') return ['regression'];
   if (category.startsWith('cheat-')) return ['cheat'];
   if (category === 'edge-case-failure' || category === 'type-flow-defect') return ['property'];
   if (category === 'concurrency-defect' || category === 'resource-leak') return ['property'];

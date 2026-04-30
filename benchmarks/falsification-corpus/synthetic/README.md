@@ -23,3 +23,4 @@ Current categories:
 - `cheat-mock-mutation`
 - `regression`
 - `edge-case-failure`
+- `under-tested`
