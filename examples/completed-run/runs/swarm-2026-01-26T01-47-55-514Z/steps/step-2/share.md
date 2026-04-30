@@ -9,19 +9,19 @@
 
 ### 👤 User
 
-=== COPILOT SWARM ORCHESTRATOR - Parallel Execution ===
+=== COPILOT SWARM ORCHESTRATOR - Verified Step Execution ===
 
 Step 2 of 2
 Agent: tester_elite
 Branch: swarm/swarm-2026-01-26T01-47-55-515Z/step-2-tester_elite
-Execution Mode: PARALLEL
 
 YOUR TASK:
 Create a mocha test at test/math-utils.test.ts that imports add() from src/math-utils.ts and asserts add(2, 3) === 5. Run npm test and include the output in the transcript. No extra tests.
 
-PARALLEL EXECUTION CONTEXT:
-You are running in parallel with other agents. Your changes are isolated
-on a dedicated branch and will be auto-merged when complete.
+WORKTREE ISOLATION:
+You are working in a dedicated git worktree on the branch above. Other
+steps may be running concurrently in their own worktrees; you cannot see
+their unmerged files. Your changes are merged when this step verifies.
 
 DEPENDENCY CONTEXT:
 No dependencies - you are starting fresh.
@@ -67,7 +67,7 @@ BOUNDARIES: Do not modify application logic to make tests pass, Do not skip or d
 
 DONE WHEN: All tests pass, Code coverage meets project standards, Edge cases covered, Test report generated and saved, Test changes committed incrementally with clear messages
 
-=== BEGIN PARALLEL WORK ===
+=== BEGIN WORK ===
 
 ---
 
@@ -238,7 +238,7 @@ File does not exist yet
 
 ### 💬 Copilot
 
-The file doesn't exist yet. Since I'm running in parallel with another agent who is supposed to create it, let me wait a moment and check again:
+The file doesn't exist in this worktree yet. The implementer step writes it on its own branch; my branch will see it after it merges. Let me wait a moment and check again:
 
 ---
 
