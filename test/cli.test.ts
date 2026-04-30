@@ -43,6 +43,22 @@ describe('CLI Handlers', () => {
       assert.strictEqual(opts.costEstimateOnly, true);
     });
 
+    it('parses --quiet and -q as quiet=true', () => {
+      assert.strictEqual(parseSwarmFlags(['swarm', 'plan.json', '--quiet']).quiet, true);
+      assert.strictEqual(parseSwarmFlags(['swarm', 'plan.json', '-q']).quiet, true);
+    });
+
+    it('parses --stream-agent as streamAgent=true', () => {
+      const opts = parseSwarmFlags(['swarm', 'plan.json', '--stream-agent']);
+      assert.strictEqual(opts.streamAgent, true);
+    });
+
+    it('does not set streamAgent or quiet when flags are absent', () => {
+      const opts = parseSwarmFlags(['swarm', 'plan.json']);
+      assert.strictEqual(opts.streamAgent, undefined);
+      assert.strictEqual(opts.quiet, undefined);
+    });
+
     it('maps --wrap-fleet to useInnerFleet', () => {
       const opts = parseSwarmFlags(['swarm', 'plan.json', '--wrap-fleet']);
       assert.strictEqual(opts.useInnerFleet, true);
@@ -61,6 +77,18 @@ describe('CLI Handlers', () => {
     it('accepts zero for --max-premium-requests', () => {
       const opts = parseSwarmFlags(['swarm', 'plan.json', '--max-premium-requests', '0']);
       assert.strictEqual(opts.maxPremiumRequests, 0);
+    });
+
+    it('parses --max-retries as integer', () => {
+      const opts = parseSwarmFlags(['swarm', 'plan.json', '--max-retries', '5']);
+      assert.strictEqual(opts.maxRetries, 5);
+    });
+
+    it('throws on negative --max-retries', () => {
+      assert.throws(
+        () => parseSwarmFlags(['swarm', 'plan.json', '--max-retries', '-1']),
+        /non-negative integer/
+      );
     });
 
     it('throws on non-numeric --max-premium-requests', () => {
@@ -98,6 +126,7 @@ describe('CLI Handlers', () => {
         '--model', 'o3',
         '--pm',
         '--max-premium-requests', '100',
+        '--max-retries', '4',
         '--lean',
         '--wrap-fleet',
         '--resume', 'prev-session',
@@ -105,6 +134,7 @@ describe('CLI Handlers', () => {
       assert.strictEqual(opts.model, 'o3');
       assert.strictEqual(opts.pm, true);
       assert.strictEqual(opts.maxPremiumRequests, 100);
+      assert.strictEqual(opts.maxRetries, 4);
       assert.strictEqual(opts.lean, true);
       assert.strictEqual(opts.useInnerFleet, true);
       assert.strictEqual(opts.session, 'prev-session');
@@ -144,6 +174,7 @@ describe('CLI Handlers', () => {
       showUsage();
       assert.ok(captured.includes('--cost-estimate-only'), 'should list --cost-estimate-only');
       assert.ok(captured.includes('--max-premium-requests'), 'should list --max-premium-requests');
+      assert.ok(captured.includes('--max-retries'), 'should list --max-retries');
       assert.ok(captured.includes('--wrap-fleet'), 'should list --wrap-fleet');
     });
 

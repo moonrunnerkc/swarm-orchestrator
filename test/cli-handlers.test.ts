@@ -1,9 +1,13 @@
 import * as assert from 'assert';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import {
   parseSwarmFlags,
   showUsage,
   handleRecipesCommand,
   handleRecipeInfoCommand,
+  handleMetricsCommand,
   ExecuteSwarmCliOptions,
 } from '../src/cli/index';
 
@@ -63,6 +67,22 @@ describe('cli-handlers', () => {
     it('should parse --max-premium-requests with zero', () => {
       const opts = parseSwarmFlags(['--max-premium-requests', '0']);
       assert.strictEqual(opts.maxPremiumRequests, 0);
+    });
+
+    it('should parse --max-retries with valid integer', () => {
+      const opts = parseSwarmFlags(['--max-retries', '5']);
+      assert.strictEqual(opts.maxRetries, 5);
+    });
+
+    it('should throw for --max-retries with negative value', () => {
+      assert.throws(
+        () => parseSwarmFlags(['--max-retries', '-1']),
+        (err: Error) => {
+          assert.ok(err.message.includes('non-negative integer'));
+          assert.ok(err.message.includes('-1'));
+          return true;
+        }
+      );
     });
 
     it('should throw for --max-premium-requests with negative value', () => {
@@ -139,12 +159,14 @@ describe('cli-handlers', () => {
         '--lean',
         '--pr', 'review',
         '--max-premium-requests', '100',
+        '--max-retries', '4',
         '-y',
       ]);
       assert.strictEqual(opts.model, 'o3');
       assert.strictEqual(opts.lean, true);
       assert.strictEqual(opts.prMode, 'review');
       assert.strictEqual(opts.maxPremiumRequests, 100);
+      assert.strictEqual(opts.maxRetries, 4);
       assert.strictEqual(opts.yes, true);
     });
   });
@@ -176,6 +198,119 @@ describe('cli-handlers', () => {
         assert.strictEqual(code, 0);
       } finally {
         console.log = originalLog;
+      }
+    });
+  });
+
+  describe('handleMetricsCommand', () => {
+    function setupSession(opts: { gateStatuses: Array<'pass' | 'fail' | 'skip'>; actualPremium?: number; metricsPremium?: number }) {
+      const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-metrics-'));
+      const sessionId = 'swarm-fixture-001';
+      const runDir = path.join(tmp, 'runs', sessionId);
+      fs.mkdirSync(runDir, { recursive: true });
+
+      const state = {
+        sessionId,
+        executionId: sessionId,
+        status: 'completed' as const,
+        graph: { steps: [{ stepNumber: 1 }, { stepNumber: 2 }, { stepNumber: 3 }] },
+        lastCompletedStep: 3,
+        branchMap: { '1': 'b1', '2': 'b2', '3': 'b3' },
+        transcripts: { '1': 't1', '2': 't2', '3': 't3' },
+        gateResults: opts.gateStatuses.map((status, idx) => ({
+          id: `gate-${idx}`,
+          title: `Gate ${idx}`,
+          status,
+          durationMs: 0,
+          issues: [],
+        })),
+        metrics: opts.metricsPremium === undefined ? {} : { premiumRequests: opts.metricsPremium },
+      };
+      fs.writeFileSync(path.join(runDir, 'session-state.json'), JSON.stringify(state), 'utf8');
+
+      if (opts.actualPremium !== undefined) {
+        fs.writeFileSync(
+          path.join(runDir, 'cost-attribution.json'),
+          JSON.stringify({ totalActualPremiumRequests: opts.actualPremium }),
+          'utf8'
+        );
+      }
+
+      return { tmp, sessionId };
+    }
+
+    async function captureLogger<T>(fn: () => Promise<T>): Promise<{ output: string; result: T }> {
+      const lines: string[] = [];
+      // Logger.info ultimately writes to process.stderr (when Ink owns stdout)
+      // or stdout. Capture both to be robust across modes.
+      const origStdout = process.stdout.write.bind(process.stdout);
+      const origStderr = process.stderr.write.bind(process.stderr);
+      process.stdout.write = ((chunk: Uint8Array | string) => {
+        lines.push(typeof chunk === 'string' ? chunk : chunk.toString());
+        return true;
+      }) as typeof process.stdout.write;
+      process.stderr.write = ((chunk: Uint8Array | string) => {
+        lines.push(typeof chunk === 'string' ? chunk : chunk.toString());
+        return true;
+      }) as typeof process.stderr.write;
+      try {
+        const result = await fn();
+        return { output: lines.join(''), result };
+      } finally {
+        process.stdout.write = origStdout;
+        process.stderr.write = origStderr;
+      }
+    }
+
+    it('counts skipped gates separately from failed gates', async () => {
+      const { tmp, sessionId } = setupSession({
+        gateStatuses: ['pass', 'pass', 'skip', 'skip', 'skip', 'skip', 'skip', 'skip', 'skip'],
+        actualPremium: 3,
+      });
+      const cwd = process.cwd();
+      try {
+        process.chdir(tmp);
+        const { output, result } = await captureLogger(() => handleMetricsCommand(['metrics', sessionId]));
+        assert.strictEqual(result, 0);
+        assert.match(output, /Gates:\s+2 passed, 0 failed, 7 skipped/,
+          'gates line should report skipped separately, not lump skip into failed');
+      } finally {
+        process.chdir(cwd);
+        fs.rmSync(tmp, { recursive: true, force: true });
+      }
+    });
+
+    it('reads actual premium requests from cost-attribution.json', async () => {
+      const { tmp, sessionId } = setupSession({
+        gateStatuses: ['pass'],
+        actualPremium: 3,
+        metricsPremium: 0,
+      });
+      const cwd = process.cwd();
+      try {
+        process.chdir(tmp);
+        const { output } = await captureLogger(() => handleMetricsCommand(['metrics', sessionId]));
+        assert.match(output, /Premium requests:\s*3/,
+          'should pull totalActualPremiumRequests from cost-attribution.json, not the stale metrics map');
+      } finally {
+        process.chdir(cwd);
+        fs.rmSync(tmp, { recursive: true, force: true });
+      }
+    });
+
+    it('falls back to state.metrics.premiumRequests when cost-attribution.json is missing', async () => {
+      const { tmp, sessionId } = setupSession({
+        gateStatuses: ['pass'],
+        metricsPremium: 5,
+      });
+      const cwd = process.cwd();
+      try {
+        process.chdir(tmp);
+        const { output } = await captureLogger(() => handleMetricsCommand(['metrics', sessionId]));
+        assert.match(output, /Premium requests:\s*5/);
+      } finally {
+        process.chdir(cwd);
+        fs.rmSync(tmp, { recursive: true, force: true });
       }
     });
   });

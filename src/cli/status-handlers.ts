@@ -272,8 +272,9 @@ export async function handleMetricsCommand(args: string[]): Promise<number> {
   const branches = Object.keys(state.branchMap).length;
   const transcripts = Object.keys(state.transcripts).length;
   const gatesPassed = state.gateResults.filter(g => g.status === 'pass').length;
-  const gatesFailed = state.gateResults.filter(g => g.status !== 'pass').length;
-  const premiumReqs = Number(state.metrics['premiumRequests'] ?? 0);
+  const gatesFailed = state.gateResults.filter(g => g.status === 'fail').length;
+  const gatesSkipped = state.gateResults.filter(g => g.status === 'skip').length;
+  const premiumReqs = readActualPremiumRequests(sessionId, state);
   const totalMs = Number(state.metrics['totalTimeMs'] ?? 0);
 
   if (parseOutputFormat(args) === 'json') {
@@ -281,7 +282,7 @@ export async function handleMetricsCommand(args: string[]): Promise<number> {
       sessionId: state.sessionId,
       status: state.status,
       steps, completed, branches, transcripts,
-      gatesPassed, gatesFailed, premiumReqs,
+      gatesPassed, gatesFailed, gatesSkipped, premiumReqs,
       totalTimeMs: totalMs
     });
   } else {
@@ -290,7 +291,10 @@ export async function handleMetricsCommand(args: string[]): Promise<number> {
     logger.info(`  Steps:           ${completed}/${steps} completed`);
     logger.info(`  Branches:        ${branches}`);
     logger.info(`  Transcripts:     ${transcripts}`);
-    logger.info(`  Gates:           ${gatesPassed} passed, ${gatesFailed} failed`);
+    const gateLine = gatesSkipped > 0
+      ? `${gatesPassed} passed, ${gatesFailed} failed, ${gatesSkipped} skipped`
+      : `${gatesPassed} passed, ${gatesFailed} failed`;
+    logger.info(`  Gates:           ${gateLine}`);
     logger.info(`  Premium requests:${premiumReqs}`);
     if (totalMs > 0) {
       const sec = Math.round(totalMs / 1000);
@@ -299,6 +303,32 @@ export async function handleMetricsCommand(args: string[]): Promise<number> {
     logger.info(`  ${'─'.repeat(50)}\n`);
   }
   return 0;
+}
+
+/**
+ * Pull the actual premium-request count for a session from
+ * `cost-attribution.json`, which the post-run reporter writes from
+ * `CostAttributor`. Falls back to `state.metrics.premiumRequests` and then 0.
+ *
+ * The session-state metrics map is populated incrementally during the run and
+ * has historically been missing this field; cost-attribution is the
+ * authoritative post-run record.
+ */
+function readActualPremiumRequests(sessionId: string, state: SessionState): number {
+  const fs = require('fs') as typeof import('fs');
+  const path = require('path') as typeof import('path');
+  const candidate = path.join(process.cwd(), 'runs', sessionId, 'cost-attribution.json');
+  if (fs.existsSync(candidate)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(candidate, 'utf8')) as { totalActualPremiumRequests?: number };
+      if (typeof parsed.totalActualPremiumRequests === 'number') {
+        return parsed.totalActualPremiumRequests;
+      }
+    } catch {
+      // fall through to metrics-map fallback
+    }
+  }
+  return Number(state.metrics['premiumRequests'] ?? 0);
 }
 
 export async function handleReportCommand(args: string[]): Promise<number> {

@@ -13,6 +13,7 @@ export interface ExecuteSwarmCliOptions {
   session?: string;
   costEstimateOnly?: boolean;
   maxPremiumRequests?: number;
+  maxRetries?: number;
   prMode?: 'auto' | 'review';
   hooksEnabled?: boolean;
   targetDir?: string;
@@ -20,6 +21,8 @@ export interface ExecuteSwarmCliOptions {
   owaspReport?: boolean;
   yes?: boolean;
   verbose?: boolean;
+  quiet?: boolean;
+  streamAgent?: boolean;
   outputFormat?: OutputFormat;
 }
 
@@ -65,7 +68,7 @@ export function normalizeLeadingGlobalFlags(args: string[]): string[] {
 
   while (index < args.length) {
     const arg = args[index];
-    if (arg === '--verbose' || arg === '--json' || arg === '--help' || arg === '-h') {
+    if (arg === '--verbose' || arg === '--quiet' || arg === '-q' || arg === '--json' || arg === '--help' || arg === '-h') {
       reorderedFlags.push(arg);
       index += 1;
       continue;
@@ -118,6 +121,8 @@ export function parseSwarmFlags(args: string[]): ExecuteSwarmCliOptions {
   if (args.includes('--useInnerFleet') || args.includes('--wrap-fleet')) opts.useInnerFleet = true;
   if (args.includes('--cost-estimate-only')) opts.costEstimateOnly = true;
   if (args.includes('--yes') || args.includes('-y')) opts.yes = true;
+  if (args.includes('--quiet') || args.includes('-q')) opts.quiet = true;
+  if (args.includes('--stream-agent')) opts.streamAgent = true;
 
   if (args.includes('--no-hooks')) {
     opts.hooksEnabled = false;
@@ -134,6 +139,17 @@ export function parseSwarmFlags(args: string[]): ExecuteSwarmCliOptions {
       );
     }
     opts.maxPremiumRequests = parsed;
+  }
+
+  const maxRetriesIdx = args.indexOf('--max-retries');
+  if (maxRetriesIdx !== -1 && args[maxRetriesIdx + 1]) {
+    const parsed = parseInt(args[maxRetriesIdx + 1], 10);
+    if (isNaN(parsed) || parsed < 0) {
+      throw new Error(
+        `--max-retries requires a non-negative integer, got "${args[maxRetriesIdx + 1]}"`
+      );
+    }
+    opts.maxRetries = parsed;
   }
 
   const resumeIndex = args.indexOf('--resume');
