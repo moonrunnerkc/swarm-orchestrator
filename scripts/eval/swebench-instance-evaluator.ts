@@ -173,6 +173,12 @@ export async function evaluateInstanceSynthesizer(input: SynthEvalInput): Promis
       error: err instanceof Error ? err.message : String(err),
     };
   } finally {
+    // The candidate file lives at the worktree root and would otherwise
+    // surface in capture_agent_diff downstream. The per-attempt testSource
+    // is preserved on the JSONL record, so the candidate is reconstructable
+    // from results — if a future debug pass wants the file kept on disk,
+    // remove this cleanup or guard it on a debug flag, do not bypass it
+    // by deleting the JSONL record.
     if (acceptedTestPath) {
       try { fs.unlinkSync(acceptedTestPath); } catch { /* best-effort */ }
     }
