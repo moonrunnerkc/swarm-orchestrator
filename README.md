@@ -184,7 +184,7 @@ Full flag reference: [`docs/cli.md`](docs/cli.md).
 | [Quality gates](docs/quality-gates.md) | The nine built-in gates and how to register custom ones. |
 | [Configuration](docs/configuration.md) | Config file precedence, schema, and overrides. |
 | [CLI](docs/cli.md) | Full command and flag reference. |
-| [Benchmarks](docs/benchmarks.md) | SWE-bench harness, scoring, and methodology. |
+| [Benchmarks](docs/benchmarks.md) | Verification corpus methodology, falsification catch rate per agent, scoring. |
 | [Contributing](CONTRIBUTING.md) | Development setup, code style, PR workflow. |
 
 ## Contributing
