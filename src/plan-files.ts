@@ -35,6 +35,15 @@ function resolvePlanPath(planRef: string): string {
     return path.resolve(process.cwd(), planRef);
   }
 
+  // Bare filename: prefer the file in cwd if it exists, otherwise fall back
+  // to the workspace plans/ directory. This matches the help text examples
+  // (`swarm swarm plan.json`) without breaking the historical `plans/<name>`
+  // shortcut.
+  const cwdCandidate = path.resolve(process.cwd(), planRef);
+  if (fs.existsSync(cwdCandidate)) {
+    return cwdCandidate;
+  }
+
   return path.join(getPlanDir(), planRef);
 }
 
@@ -66,7 +75,15 @@ export function loadPlanFile(planRef: string): ExecutionPlan {
   const planPath = resolvePlanPath(planRef);
 
   if (!fs.existsSync(planPath)) {
-    throw new Error(`Plan file not found: ${planPath}`);
+    const isBareName =
+      !path.isAbsolute(planRef) &&
+      !planRef.includes(path.sep) &&
+      !planRef.startsWith('./') &&
+      !planRef.startsWith('../');
+    const hint = isBareName
+      ? ` (looked in cwd and ${getPlanDir()}); pass an explicit path like ./${planRef} or plans/${planRef} if the file lives elsewhere`
+      : '';
+    throw new Error(`Plan file not found: ${planPath}${hint}`);
   }
 
   return JSON.parse(fs.readFileSync(planPath, 'utf8')) as ExecutionPlan;
