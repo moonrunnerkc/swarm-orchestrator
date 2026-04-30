@@ -26,7 +26,7 @@ import { BaselineSnapshot, scanBaseline } from './baseline-scanner';
 import { TaskClassifier } from './task-classifier';
 import { TIER_MAPS } from './tier-maps';
 import { RequirementFilter, FilteredRequirements } from './requirement-filter';
-import { getLogger, isPrettyMode } from './logger';
+import { getLogger } from './logger';
 import { buildSwarmPrompt as _buildSwarmPrompt, writeSharedInstructions as _writeSharedInstructions } from './prompt-builder';
 import { buildDependencyGraph as _buildDependencyGraph, identifyExecutionWaves as _identifyExecutionWaves } from './wave-scheduler';
 import { executeOptionalDeployment as _executeOptionalDeployment } from './deployment-handler';
