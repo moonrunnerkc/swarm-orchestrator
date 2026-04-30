@@ -45,14 +45,18 @@ You run this around an agent CLI, not instead of one. The agent produces the pat
 
 ### Install
 
-The npm package is not published yet. Install from source:
+```bash
+npm install -g swarm-orchestrator
+```
+
+Or build from source:
 
 ```bash
 git clone https://github.com/moonrunnerkc/swarm-orchestrator.git
 cd swarm-orchestrator
 npm install
 npm run build
-node dist/src/cli.js --help
+npm link
 ```
 
 ### First run
