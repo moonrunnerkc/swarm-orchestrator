@@ -82,7 +82,9 @@ describe('test synthesizer', () => {
     assert.strictEqual(adapter.callCount, 2);
     assert.strictEqual(result.attempts[0].validation, 'rejected');
     assert.match(result.attempts[0].rejectionReason ?? '', /no clear assertion/);
-    assert.ok(result.testFilePath?.includes(path.join('.swarm', 'synthesized-tests')));
+    assert.ok(result.testFilePath?.startsWith(repo));
+    assert.ok(path.basename(result.testFilePath ?? '').startsWith('swarm-synth-attempt-'));
+    assert.strictEqual(path.dirname(result.testFilePath ?? ''), repo);
   });
 
   it('regenerates when a candidate passes against the base codebase', async () => {

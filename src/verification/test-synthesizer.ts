@@ -40,7 +40,16 @@ export interface TestSynthesisResult {
 }
 
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
-const SYNTH_TEST_DIR = '.swarm/synthesized-tests';
+
+// Candidates are written at repo root (not a subdirectory) so the test's
+// computed __file__/dirname resolves to the worktree root. The prior
+// `.swarm/synthesized-tests/` location pushed __file__ one directory deep,
+// which broke any candidate whose import logic computed paths from
+// __file__ (e.g. `<dirname>/requests/auth.py`) — those paths missed the
+// local source and fell through to the host-installed package, producing
+// false-pass-against-base on instances whose target package was already
+// installed system-wide. See docs/p1-real-data-findings.md.
+const SYNTH_TEST_PREFIX = 'swarm-synth-attempt';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -113,7 +122,7 @@ export function validateSynthesizedTestCandidate(
 function safeOutputPath(repoPath: string, candidatePath: string, attemptNumber: number): string {
   const safeName = path.basename(candidatePath).replace(/[^a-zA-Z0-9._-]/g, '-')
     || 'synthesized-regression.test.js';
-  return path.join(repoPath, SYNTH_TEST_DIR, `attempt-${attemptNumber}-${safeName}`);
+  return path.join(repoPath, `${SYNTH_TEST_PREFIX}-${attemptNumber}-${safeName}`);
 }
 
 function writeCandidate(repoPath: string, candidate: SynthesizedTestCandidate, attemptNumber: number): {
@@ -257,6 +266,11 @@ export async function synthesizeRegressionTest(
       candidate,
       commandResult,
     });
+    // The rejected candidate file lives at the repo root and would
+    // otherwise leak into capture_agent_diff at the end of the
+    // orchestrator's run. Best-effort cleanup; the next attempt writes
+    // its own file with a different attemptNumber.
+    try { fs.unlinkSync(written.absolutePath); } catch { /* file already gone or unwritable */ }
   }
 
   return {

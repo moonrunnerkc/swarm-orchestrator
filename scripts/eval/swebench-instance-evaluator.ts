@@ -102,12 +102,19 @@ export async function evaluateInstanceSynthesizer(input: SynthEvalInput): Promis
   const runCommand = input.runCommand ?? defaultRunCommand;
   const withWorktreeFn = input.withWorktreeFn ?? defaultWithWorktree;
 
+  // Held outside the try so the finally can clean up the candidate file
+  // on every exit path: success, eval throw, or rethrow. Leaving the file
+  // at the repo root would otherwise surface in capture_agent_diff as
+  // agent-attributed work the agent never authored.
+  let acceptedTestPath: string | undefined;
+
   try {
     const synthesis = await synthesizeFn({
       goalText: input.problemStatement,
       targetRepoPath: input.repoPath,
       ...(input.adapter ? { adapter: input.adapter } : {}),
     });
+    acceptedTestPath = synthesis.testFilePath;
 
     let basePass: boolean | null = null;
     let goldPass: boolean | null = null;
@@ -165,6 +172,10 @@ export async function evaluateInstanceSynthesizer(input: SynthEvalInput): Promis
       wallClockMs: Date.now() - start,
       error: err instanceof Error ? err.message : String(err),
     };
+  } finally {
+    if (acceptedTestPath) {
+      try { fs.unlinkSync(acceptedTestPath); } catch { /* best-effort */ }
+    }
   }
 }
 
