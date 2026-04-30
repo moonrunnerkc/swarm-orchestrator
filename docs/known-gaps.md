@@ -70,3 +70,52 @@ suffix (the synthesizer is one consumer; per-agent comparison was never
 the point), or actually wire the adapter selection through the eval
 CLI. Until then, release notes must not claim per-agent synthesizer
 comparison.
+
+## Synth eval's basePass / goldPass signal is host-Python-sensitive
+
+**Symptom.** On SWE-bench instances whose dependency chain doesn't
+import cleanly in modern Python (e.g. `psf__requests-1766` at base
+commit `847735553aed`, where `requests/packages/urllib3/packages/ssl_match_hostname/__init__.py`
+uses a Python-2-style implicit relative import that fails in Python 3),
+the synth eval's `basePass` and `goldPass` fields report exit-code
+status from pytest collection errors, not from the synthesizer's
+actual assertions. A test that's mechanically correct (asserts the
+right thing about the right code path) returns `basePass: false` and
+`goldPass: false` because pytest never gets past the import chain
+on either side. The synth concludes `fp: false, fn: true` even though
+the test the synthesizer produced is sound.
+
+**Cause.** The synth eval runs `python -m pytest <candidate>` in a
+subprocess against the orchestrator host's Python interpreter. The
+`runCommand` in `scripts/eval/swebench-instance-evaluator.ts` does not
+pin a Python version or set up the testbed's environment — it inherits
+`process.env`. When the host is Python 3.12 and the SWE-bench instance
+ships a 2014-era codebase that depends on Python-2 import syntax in a
+transitive package, the import chain breaks before the test's
+assertions run. Pytest exits 2 (collection error) on both base and
+gold worktrees regardless of patch state.
+
+**Important narrowing.** This is a *signal-validity* limitation, not a
+*synthesizer-quality* one. The 2026-04-30 diagnostic on
+`psf__requests-1766` confirmed the synthesizer produces a discriminating
+test for the qop-quoting bug — manually running the same testSource
+against a fresh worktree at base shows the test fail on the
+`assert 'qop="auth"' in header` line (correct) and pass against the
+gold patch (correct). The "synth produces wrong tests" reading is
+wrong; the synth's *self-attestation* about whether its own test
+passed/failed is unreliable on this class of codebase.
+
+**Resolution gate is unaffected.** Layer 2 (FAIL_TO_PASS in the
+per-instance container) runs in the SWE-bench evaluation Docker image
+where the testbed has the correct Python version and the local source
+imports cleanly. That's the gate that decides "resolved" or "failed"
+on the headline number. The synth's basePass/goldPass is supplemental
+observation, not the resolution gate.
+
+**Planned fix.** Run the synth eval inside the per-instance SWE-bench
+container so it inherits the testbed's Python version, the same way
+Layer 2 does. The wiring already exists for FAIL_TO_PASS evaluation
+(`benchmarks/swe-bench/Dockerfile.eval`); the v7.1 work is to extend
+it to host the synth-eval CLI subprocess. Until then, the
+`synth_eval.basePass` / `goldPass` fields on instances whose host-side
+import chain breaks should be read as advisory only.
