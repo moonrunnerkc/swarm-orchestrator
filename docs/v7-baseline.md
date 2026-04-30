@@ -100,3 +100,66 @@ Version bumped to `7.0.0-alpha.0` as first commit on `v7-overhaul`.
 | `fleet-executor.ts` | 222 | Comment (removal target) |
 
 No unexpected routing dependencies. No halt condition triggered.
+
+---
+
+## Post-overhaul phase-evidence audit
+
+Captured 2026-04-30 to reconcile the v7-overhaul phase claims against
+committed evidence. Documents what backs each claim and where the
+commit trail lives, so future audits don't re-derive the same map.
+
+### P0 — Worker/reviewer collapse
+
+Commits tagged `feat(v7-P0):`, found cleanly under `git log --grep=v7-P0`:
+
+- `c4bc45c feat(v7-P0): replace 6 persona agents with worker/reviewer in config and agents/`
+- `1821102 feat(v7-P0): update downstream persona consumers to worker/reviewer roles`
+- `dfaefc4 feat(v7-P0): collapse plan-generator.ts from 6 personas to worker/reviewer roles`
+- `b3af342 feat(v7-P0): add WorkerStep/ReviewerStep/RoleStep types in src/types/plan.ts`
+
+Deliverable: `src/types/plan.ts` (`WorkerStep | ReviewerStep | RoleStep`),
+`src/plan-generator.ts` (worker/reviewer assignment), `config/default-agents.yaml`.
+
+### P0.5 — Named-session stress test
+
+Commit: `ffd4035 test(stage-p0): record named session stress result`
+(2026-04-26). The `git log --grep=P0.5` filter misses this because the
+scope tag is `stage-p0`, not `v7-P0.5`. Future searches that need to
+locate stage-tagged commits should grep for the deliverable filename
+instead of guessing the scope tag.
+
+Deliverable: `docs/stress-test-results.md`.
+
+### P1 — Falsification battery layers
+
+Wiring commits land under multiple scope tags (`feat(v7-P1)`, `chore(v7)`,
+plus the eval-script work that landed as part of the swebench harness
+buildout). Status doc: `docs/p1-eval-results.md`. Per-layer source:
+`src/verification/{differential-gate,test-synthesizer,mutation-gate,cheat-detector,property-gate,attestation,cosign-attestation}.ts`.
+
+The 2026-04-29 falsification-corpus run (`benchmarks/falsification-corpus/results/synthetic-calibration-2026-04-29/`)
+exercises all five layers with per-layer FN rates of 0% on the synthetic
+target sets (intent, regression, cheat, property, attestation). The
+SWE-bench harness wires only B.1 (synth) and B.3 (property) as spot-checks
+by design — see `docs/p1-real-data-findings.md` for the real-data
+behaviour of Layer 1 specifically.
+
+### P2 — Benchmark guardrails
+
+Doc: `docs/p2-benchmark-results.md` (2026-04-26). Baseline numbers
+verified against raw data on 2026-04-30:
+
+| Benchmark | Doc value | Raw mean (`wall_clock_ms / 1000`) | Source |
+|---|---:|---:|---|
+| demo-fast | 84.3s | 84.27s | `benchmarks/harness/raw_data/demo-fast/metrics.jsonl` (n=10) |
+| api-quick | 359.1s | 359.07s | `benchmarks/harness/raw_data/api-quick/metrics.jsonl` (n=5) |
+
+No drift. The 0.03-0.05s differences are expected rounding (doc rounds
+to 1 decimal, raw is full precision).
+
+### P3 — Context broker (deferred)
+
+Commit: `6354e48 docs(v7): document P3 context broker deferral past 7.0.0`.
+Deliverable: `docs/p3-deferral.md`. The `src/context/embedding-store.ts`
+slot is reserved in the v7 module layout but not implemented in 7.0.0.
