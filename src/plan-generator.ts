@@ -1309,14 +1309,31 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
         }
 
         maxStepNumber++;
+        // Dependency resolution for replan-added steps:
+        //   1. If the caller specified afterStep explicitly, use it.
+        //   2. Otherwise, anchor to the highest completed step. The previous
+        //      "last existing step" fallback was the codex-quota smoke
+        //      regression: when every original step had failed (no
+        //      completed steps at all, last step in plan was failed), the
+        //      replan step inherited a dependency on that failed step,
+        //      which never satisfies in waitForDependencies and burned
+        //      DEFAULT_DEPENDENCY_WAIT_MS (10 min) per replan attempt.
+        //   3. If no steps completed, the replan step has no dependency
+        //      and runs immediately — the safest fallback when prior
+        //      state is unusable.
+        let dependencies: number[];
+        if (addReq.afterStep !== undefined) {
+          dependencies = [addReq.afterStep];
+        } else if (completedSteps.length > 0) {
+          dependencies = [Math.max(...completedSteps)];
+        } else {
+          dependencies = [];
+        }
         const newStep: PlanStep = {
           stepNumber: maxStepNumber,
           agentName: matchedAgent,
           task: addReq.task,
-          // depend on afterStep if provided, else last existing step
-          dependencies: addReq.afterStep
-            ? [addReq.afterStep]
-            : plan.steps.length > 0 ? [plan.steps[plan.steps.length - 1].stepNumber] : [],
+          dependencies,
           expectedOutputs: ['Replan-generated output']
         };
         revisedSteps.push(newStep);

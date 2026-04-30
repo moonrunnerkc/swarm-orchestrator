@@ -19,6 +19,7 @@ import { VerificationResult } from '../verifier-engine';
 import { DEFAULT_HEARTBEAT_INTERVAL_MS } from '../defaults';
 import { getLogger } from '../logger';
 import { WorkStealingQueue } from '../scheduling/work-stealing-queue';
+import { isFatalRunError } from './fatal-run-error';
 
 const logger = getLogger('orchestrator');
 
@@ -45,6 +46,19 @@ export interface SchedulerContextBroker {
   forceReleaseStaleLocks(): void;
   once(event: string, handler: () => void): void;
   removeListener(event: string, handler: () => void): void;
+  /**
+   * Mark a step as terminally completed in the broker so any pending
+   * waitForDependencies listeners resolve immediately. Used when the
+   * scheduler decides a blocked step will never run — without this,
+   * later replan steps would wait the full DEFAULT_DEPENDENCY_WAIT_MS
+   * (10 min) for a step that is structurally impossible to satisfy.
+   */
+  addStepContext(entry: {
+    stepNumber: number;
+    agentName: string;
+    timestamp: string;
+    data: Record<string, unknown>;
+  }): void;
 }
 
 /**
@@ -82,6 +96,7 @@ export interface SchedulerOptions {
   confirmDeploy?: boolean;
   enableExternal?: boolean;
   dryRun?: boolean;
+  maxRetries?: number;
   onProgress?(context: SchedulerContext, event: string): void;
   onAgentLine?(line: string): void;
 }
@@ -173,8 +188,18 @@ export async function runWaveLoop(
     options?.onProgress?.(context, `step-done:${stepNumber}`);
   };
 
-  const onStepFailed = (stepNumber: number, errorMsg: string) => {
+  // Set when any in-flight step throws FatalRunError. Causes the loop to
+  // stop dispatching new work and exit as soon as running steps drain.
+  // Re-thrown by runWaveLoop after the drain so swarm-orchestrator's
+  // top-level handler can record the abort and skip the post-run pipeline.
+  let fatalRunError: Error | undefined;
+
+  const onStepFailed = (stepNumber: number, errorMsg: string, err?: unknown) => {
     scheduler.markFailed(stepNumber);
+
+    if (err && isFatalRunError(err) && !fatalRunError) {
+      fatalRunError = err;
+    }
 
     const isRateLimit = /rate limit|quota|429|throttle/i.test(errorMsg);
     context.adaptiveConcurrency?.recordFailure(isRateLimit ? 'rate_limit' : 'error');
@@ -193,12 +218,47 @@ export async function runWaveLoop(
       logger.info('\n▶️  Resuming execution...');
     }
 
+    if (fatalRunError) {
+      // A fatal account-level error was raised by an in-flight step. Drain
+      // anything still running, then exit — dispatching further steps would
+      // hit the same wall and waste the per-instance budget.
+      break;
+    }
+
     scheduler.syncPlan(context.plan);
     const ready = scheduler.nextDispatches();
 
     if (ready.length === 0 && scheduler.isBlocked()) {
       const blocked = scheduler.blockedSteps();
       logger.error(`\n❌ ${blocked.length} step(s) blocked by failed dependencies: ${blocked.join(', ')}`);
+      // Mark each blocked step as failed AND emit step-completed via the
+      // broker so any later replan step that depends on this number
+      // resolves its waitForDependencies immediately instead of timing out
+      // after DEFAULT_DEPENDENCY_WAIT_MS (10 min). Without this, every
+      // failed top-level step costs ~10 minutes per replan attempt.
+      const ts = new Date().toISOString();
+      for (const stepNumber of blocked) {
+        scheduler.markFailed(stepNumber);
+        const result = context.results.find((r) => r.stepNumber === stepNumber);
+        if (result && result.status === 'pending') {
+          result.status = 'failed';
+          result.error = 'blocked by failed dependencies';
+          result.endTime = ts;
+        }
+        const stepDef = context.plan.steps.find((s) => s.stepNumber === stepNumber);
+        context.contextBroker.addStepContext({
+          stepNumber,
+          agentName: stepDef?.agentName ?? result?.agentName ?? 'unknown',
+          timestamp: ts,
+          data: {
+            filesChanged: [],
+            outputsSummary: 'step blocked by failed dependencies',
+            branchName: result?.branchName ?? '',
+            commitShas: [],
+            verificationPassed: false,
+          },
+        });
+      }
       break;
     }
 
@@ -208,8 +268,17 @@ export async function runWaveLoop(
       options?.onProgress?.(context, `wave-start:${dispatchCounter}`);
 
       const stats = scheduler.stats();
-      const label = stats.parallelEnabled ? 'parallel work-stealing' : 'linear work queue';
-      logger.info(`\n📊 Batch ${dispatchCounter}: launching ${ready.length} step(s) [${ready.join(', ')}] via ${label}`);
+      const stepsLabel = ready.length === 1 ? `step ${ready[0]}` : `steps ${ready.join(', ')}`;
+      const modeLabel = stats.parallelEnabled ? 'parallel' : 'sequential';
+      // Wave header is presenter-owned. Suppress the line for single-step,
+      // single-wave runs where it adds noise without information.
+      logger.debug(`wave ${dispatchCounter}: ${stepsLabel} (${modeLabel})`);
+      const totalWaves = context.totalWaves ?? 0;
+      if (totalWaves > 1 || ready.length > 1) {
+        const presenter = require('../presenter') as typeof import('../presenter');
+        const p = presenter.getPresenter();
+        p.print(`  ${p.dim(`wave ${dispatchCounter}`)}  ${stepsLabel} ${p.dim(p.glyph('sep'))} ${modeLabel}`);
+      }
 
       for (const stepNumber of ready) {
         const step = context.plan.steps.find((candidate) => candidate.stepNumber === stepNumber);
@@ -230,7 +299,7 @@ export async function runWaveLoop(
             () => host.executeStepInSwarm(step, agent, context, options),
             {
               priority: 100 - stepNumber,
-              maxRetries: 3,
+              maxRetries: options?.maxRetries ?? 3,
               metadata: {
                 stepNumber: step.stepNumber,
                 agentName: agent.name,
@@ -240,7 +309,7 @@ export async function runWaveLoop(
           )
           .then(
             () => onStepComplete(stepNumber),
-            (err: Error) => onStepFailed(stepNumber, err.message),
+            (err: Error) => onStepFailed(stepNumber, err.message, err),
           )
           .finally(() => {
             runningPromises.delete(stepNumber);
@@ -279,5 +348,12 @@ export async function runWaveLoop(
     context.contextBroker.forceReleaseStaleLocks();
     await host.mergeWaveBranches(pendingMerge, context, options);
     pendingMerge.length = 0;
+  }
+
+  if (fatalRunError) {
+    // Re-throw after the in-flight drain and the merge of any successful
+    // pre-fatal work, so swarm-orchestrator's top-level handler sees a
+    // FatalRunError rather than a generic step failure.
+    throw fatalRunError;
   }
 }

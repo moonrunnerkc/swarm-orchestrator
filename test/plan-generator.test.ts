@@ -186,6 +186,53 @@ describe('PlanGenerator', () => {
 
       assert.strictEqual(revised.steps.length, 1);
     });
+
+    // Regression for the codex-quota smoke run: when every step in the
+    // original plan has failed, the previous fallback set the new step's
+    // dependency to plan.steps[last].stepNumber — the failed step itself.
+    // The replan step then waited DEFAULT_DEPENDENCY_WAIT_MS (10 minutes)
+    // for a step that could never satisfy. Anchoring to the highest
+    // *completed* step (or no dependency when none completed) lets the
+    // replan step run immediately.
+    it('appends replan steps with no dependency when nothing completed', () => {
+      const plan = generator.createPlan('Goal', [
+        makeStep({ stepNumber: 1, task: 'failed step A' }),
+        makeStep({ stepNumber: 2, task: 'failed step B' }),
+      ]);
+
+      const revised = generator.revisePlan(
+        plan,
+        { retrySteps: [], addSteps: [{ agent: 'worker', task: 'recover from quota wall' }] },
+        [], // no completed steps
+      );
+
+      assert.strictEqual(revised.steps.length, 3);
+      assert.deepStrictEqual(
+        revised.steps[2].dependencies,
+        [],
+        'replan step should NOT depend on a failed step when nothing completed',
+      );
+    });
+
+    it('appends replan steps anchored to the highest completed step', () => {
+      const plan = generator.createPlan('Goal', [
+        makeStep({ stepNumber: 1, task: 'completed step' }),
+        makeStep({ stepNumber: 2, task: 'failed step', dependencies: [1] }),
+      ]);
+
+      const revised = generator.revisePlan(
+        plan,
+        { retrySteps: [], addSteps: [{ agent: 'worker', task: 'fix from completed state' }] },
+        [1], // step 1 completed; step 2 failed
+      );
+
+      assert.strictEqual(revised.steps.length, 3);
+      assert.deepStrictEqual(
+        revised.steps[2].dependencies,
+        [1],
+        'replan step should anchor to the highest completed step, not the failed last step',
+      );
+    });
   });
 
   describe('guidance routing', () => {

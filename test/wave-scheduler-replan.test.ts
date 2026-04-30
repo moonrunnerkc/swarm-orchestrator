@@ -59,12 +59,27 @@ function makeAgent(name: string): AgentProfile {
  */
 class StubContextBroker implements SchedulerContextBroker {
   private readonly emitter = new EventEmitter();
+  readonly stepContextEntries: Array<{
+    stepNumber: number;
+    agentName: string;
+    timestamp: string;
+    data: Record<string, unknown>;
+  }> = [];
   forceReleaseStaleLocks(): void { /* no-op */ }
   once(event: string, handler: () => void): void {
     this.emitter.once(event, handler);
   }
   removeListener(event: string, handler: () => void): void {
     this.emitter.removeListener(event, handler);
+  }
+  addStepContext(entry: {
+    stepNumber: number;
+    agentName: string;
+    timestamp: string;
+    data: Record<string, unknown>;
+  }): void {
+    this.stepContextEntries.push(entry);
+    this.emitter.emit('step-completed', entry.stepNumber);
   }
 }
 
