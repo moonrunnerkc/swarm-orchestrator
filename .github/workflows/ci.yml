@@ -89,6 +89,46 @@ jobs:
         rm -f test-output.txt
         node dist/src/cli.js gates .
 
+  synthetic-falsification-calibration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      REGULAR_SYNTHETIC_CATEGORIES: goal-not-fixed,regression,cheat-hardcoded-answer,cheat-exception-swallowing,cheat-test-modification,cheat-mock-mutation,edge-case-failure,type-flow-defect,concurrency-defect,resource-leak
+      SYNTHETIC_OUTPUT_ROOT: /tmp/swarm-synthetic-calibration-ci
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run regular synthetic calibration
+      run: |
+        ./node_modules/.bin/tsx benchmarks/falsification-corpus/cli/run-synthetic-calibration.ts \
+          --synthetic-root /tmp/swarm-synthetic-regular-ci \
+          --output "$SYNTHETIC_OUTPUT_ROOT/regular" \
+          --category "$REGULAR_SYNTHETIC_CATEGORIES" \
+          --skip-mutation true
+
+    - name: Run under-tested synthetic calibration
+      run: |
+        ./node_modules/.bin/tsx benchmarks/falsification-corpus/cli/run-synthetic-calibration.ts \
+          --synthetic-root /tmp/swarm-synthetic-under-tested-ci \
+          --output "$SYNTHETIC_OUTPUT_ROOT/under-tested" \
+          --category under-tested \
+          --skip-mutation false
+
+    - name: Assert synthetic corpus contract
+      run: |
+        ./node_modules/.bin/tsx benchmarks/falsification-corpus/cli/assert-synthetic-calibration.ts \
+          --regular "$SYNTHETIC_OUTPUT_ROOT/regular" \
+          --under-tested "$SYNTHETIC_OUTPUT_ROOT/under-tested"
+
   security-audit:
     runs-on: ubuntu-latest
     steps:

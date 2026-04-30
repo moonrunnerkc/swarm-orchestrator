@@ -36,3 +36,9 @@ node dist/benchmarks/falsification-corpus/cli/run-synthetic-calibration.js \
 ```
 
 Synthetic reports calibrate layer behavior. They are not averaged into agent-authored catch-rate claims.
+
+## CI Contract
+
+The synthetic corpus is a regression fixture for verification-layer behavior. CI runs the regular synthetic categories plus the `under-tested` mutation category and fails unless all 21 broken patches are caught and all 21 clean controls clear without target-layer false positives.
+
+If a verification layer is intentionally relaxed or a new pattern is added, update the synthetic corpus in the same PR and keep the CI assertion at 100%.
