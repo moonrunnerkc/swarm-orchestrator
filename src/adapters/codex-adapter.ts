@@ -3,6 +3,7 @@
 // .git references to the parent repo, which --full-auto's sandbox blocks.
 
 import { AgentAdapter, AgentResult, AgentSpawnOptions, buildRestrictedEnv } from './agent-adapter';
+import { classifyFatalAgentError } from './fatal-error-classifier';
 import { PersistentInteractiveSession } from './persistent-session';
 import { supervisedSpawn } from './process-supervisor';
 
@@ -42,12 +43,14 @@ export class CodexAdapter implements AgentAdapter {
       args,
       cwd: opts.workdir,
       env: buildRestrictedEnv(['OPENAI_API_KEY']),
-      logPrefix: '[codex]',
+      logPrefix: opts.logPrefix ?? '[codex]',
       stallTimeoutMs: opts.timeout ?? STALL_TIMEOUT_MS,
       stdinMode: 'ignore',
+      onLine: opts.onAgentLine ? (line) => opts.onAgentLine!(line) : undefined,
     });
 
     const durationMs = Date.now() - startTime;
+    const fatalError = classifyFatalAgentError(result.stdout, result.stderr, result.exitCode);
 
     return {
       stdout: result.stdout,
@@ -55,6 +58,7 @@ export class CodexAdapter implements AgentAdapter {
       exitCode: result.exitCode,
       durationMs,
       executionMode: 'cold-start',
+      ...(fatalError ? { fatalError } : {}),
     };
   }
 
@@ -95,10 +99,14 @@ export class CodexAdapter implements AgentAdapter {
       };
     }
 
+    const fatalError = classifyFatalAgentError(result.stdout, result.stderr, result.exitCode);
     const reason = session.reason ?? (result.stderr || 'persistent interactive mode failed');
     this.persistentSessions.delete(sessionKey);
     await session.shutdown();
-    if (opts.executionMode === 'persistent-interactive') {
+    // A fatal account-level error short-circuits the cold-start fallback —
+    // a fresh subprocess will hit the same usage-limit / auth wall, just
+    // ten seconds later and after another wasted spawn. Surface it now.
+    if (opts.executionMode === 'persistent-interactive' || fatalError) {
       return {
         stdout: result.stdout,
         stderr: result.stderr,
@@ -106,6 +114,7 @@ export class CodexAdapter implements AgentAdapter {
         durationMs: Date.now() - startTime,
         executionMode: 'persistent-interactive',
         fallbackReason: reason,
+        ...(fatalError ? { fatalError } : {}),
       };
     }
     return undefined;

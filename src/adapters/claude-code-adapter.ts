@@ -1,9 +1,10 @@
 // Claude Code CLI adapter: spawns `claude` with --dangerously-skip-permissions
 // for non-interactive use. No transcript sharing; stdout/stderr captured directly.
 
-import { spawn, SpawnOptions } from 'child_process';
 import { AgentAdapter, AgentResult, AgentSpawnOptions, buildRestrictedEnv } from './agent-adapter';
+import { classifyFatalAgentError } from './fatal-error-classifier';
 import { PersistentInteractiveSession } from './persistent-session';
+import { supervisedSpawn } from './process-supervisor';
 
 // Claude Code can spend several minutes on internal reasoning and multi-file
 // operations without producing stdout, unlike streaming CLI tools.
@@ -29,13 +30,23 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       args.push('--model', opts.model);
     }
 
-    const result = await this.runProcess('claude', args, opts.workdir, opts.timeout, opts.prompt);
+    const result = await supervisedSpawn({
+      command: 'claude',
+      args,
+      cwd: opts.workdir,
+      env: buildRestrictedEnv(['ANTHROPIC_API_KEY']),
+      logPrefix: opts.logPrefix,
+      stallTimeoutMs: opts.timeout ?? STALL_TIMEOUT_MS,
+      stdinData: opts.prompt,
+      onLine: opts.onAgentLine ? (line) => opts.onAgentLine!(line) : undefined,
+    });
     const durationMs = Date.now() - startTime;
 
     // D5: Parse premium request count from Claude Code CLI output.
     // Claude Code prints a cost/usage summary that we can extract.
     // Fallback: count conversation turns (each assistant response = 1 request).
     const premiumRequestsConsumed = this.parseRequestCount(result.stdout, result.stderr);
+    const fatalError = classifyFatalAgentError(result.stdout, result.stderr, result.exitCode);
 
     return {
       stdout: result.stdout,
@@ -44,6 +55,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       durationMs,
       executionMode: 'cold-start',
       premiumRequestsConsumed,
+      ...(fatalError ? { fatalError } : {}),
     };
   }
 
@@ -81,10 +93,14 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       };
     }
 
+    const fatalError = classifyFatalAgentError(result.stdout, result.stderr, result.exitCode);
     const reason = session.reason ?? (result.stderr || 'persistent interactive mode failed');
     this.persistentSessions.delete(sessionKey);
     await session.shutdown();
-    if (opts.executionMode === 'persistent-interactive') {
+    // Fatal account-level errors short-circuit the cold-start fallback for
+    // the same reason as in the codex adapter: another spawn cannot recover
+    // from a usage-limit or auth wall.
+    if (opts.executionMode === 'persistent-interactive' || fatalError) {
       return {
         stdout: result.stdout,
         stderr: result.stderr,
@@ -92,6 +108,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
         durationMs: Date.now() - startTime,
         executionMode: 'persistent-interactive',
         fallbackReason: reason,
+        ...(fatalError ? { fatalError } : {}),
       };
     }
     return undefined;
@@ -111,93 +128,6 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     return undefined;
   }
 
-  private runProcess(
-    command: string,
-    args: string[],
-    workdir: string,
-    timeout?: number,
-    stdinData?: string
-  ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-    return new Promise((resolve) => {
-      // Forward ANTHROPIC_API_KEY if available; Claude Code also supports
-      // subscription auth via ~/.claude/ when no key is set.
-      const spawnOpts: SpawnOptions = {
-        cwd: workdir,
-        env: buildRestrictedEnv(['ANTHROPIC_API_KEY']),
-      };
-
-      const proc = spawn(command, args, spawnOpts);
-
-      if (proc.stdin) {
-        if (stdinData) {
-          proc.stdin.write(stdinData);
-        }
-        proc.stdin.end();
-      }
-
-      let stdout = '';
-      let stderr = '';
-      let resolved = false;
-      let lastOutputTime = Date.now();
-      let stallCheckInterval: NodeJS.Timeout | null = null;
-
-      const cleanup = () => {
-        if (stallCheckInterval) clearInterval(stallCheckInterval);
-      };
-
-      const effectiveTimeout = timeout || STALL_TIMEOUT_MS;
-
-      stallCheckInterval = setInterval(() => {
-        const silentMs = Date.now() - lastOutputTime;
-        if (silentMs >= effectiveTimeout) {
-          cleanup();
-          proc.kill('SIGTERM');
-          setTimeout(() => {
-            try { proc.kill('SIGKILL'); } catch { /* already dead */ }
-          }, 5000);
-          if (!resolved) {
-            resolved = true;
-            resolve({
-              stdout,
-              stderr: stderr + `\nProcess killed after ${Math.round(silentMs / 1000)}s of no output (stall timeout)`,
-              exitCode: 1,
-            });
-          }
-        }
-      }, 10_000);
-
-      if (proc.stdout) {
-        proc.stdout.on('data', (data) => {
-          stdout += data.toString();
-          lastOutputTime = Date.now();
-        });
-      }
-
-      if (proc.stderr) {
-        proc.stderr.on('data', (data) => {
-          stderr += data.toString();
-          lastOutputTime = Date.now();
-        });
-      }
-
-      proc.on('close', (code) => {
-        cleanup();
-        if (!resolved) {
-          resolved = true;
-          // null exit code means process was killed by a signal; treat as failure
-          resolve({ stdout, stderr, exitCode: code ?? 1 });
-        }
-      });
-
-      proc.on('error', (err) => {
-        cleanup();
-        if (!resolved) {
-          resolved = true;
-          resolve({ stdout, stderr: stderr + '\n' + err.message, exitCode: 1 });
-        }
-      });
-    });
-  }
 }
 
 function shouldAttemptPersistent(opts: AgentSpawnOptions): boolean {

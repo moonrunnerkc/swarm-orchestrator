@@ -16,7 +16,7 @@ import {
   DEFAULT_HEARTBEAT_QUIET_THRESHOLD_MS,
   DEFAULT_SIGKILL_DELAY_MS,
 } from './defaults';
-import { getLogger } from './logger';
+import { getLogger, isPrettyMode } from './logger';
 const logger = getLogger('session-executor');
 
 export interface SessionOptions {
@@ -55,6 +55,13 @@ export interface SessionResult {
    * silently assume 1.
    */
   premiumRequestsConsumed?: number | undefined;
+  /**
+   * Forwarded from AgentResult.fatalError when the underlying agent CLI
+   * reported an unrecoverable account-level failure (usage-limit, auth,
+   * extended rate-limit). The orchestrator inspects this to abort the
+   * run early instead of replanning into the same wall.
+   */
+  fatalError?: import('./adapters/agent-adapter').AgentResult['fatalError'];
 }
 
 /**
@@ -169,6 +176,7 @@ export class SessionExecutor {
       persistentSessionId: options.persistentSessionId,
       persistentTurnTimeoutMs: options.persistentTurnTimeoutMs,
       onAgentLine: options.onAgentLine,
+      logPrefix: options.logPrefix,
     });
 
     // Write transcript to the share file if the adapter produced one,
@@ -213,6 +221,9 @@ export class SessionExecutor {
     }
     if (transcriptPath) {
       sessionResult.transcriptPath = transcriptPath;
+    }
+    if (agentResult.fatalError) {
+      sessionResult.fatalError = agentResult.fatalError;
     }
     return sessionResult;
   }
@@ -354,7 +365,7 @@ export class SessionExecutor {
     // `pnpm test` (or equivalent) instead of a subset like `npx vitest --run`
     // that would skip lint and type checks.
     const testDiscovery = discoverTestCommand(this.workingDir);
-    if (testDiscovery.warning) {
+    if (testDiscovery.warning && !isPrettyMode()) {
       logger.warn(`test command discovery: ${testDiscovery.warning}`);
     }
     sections.push(renderVerifyCommandSection(testDiscovery));

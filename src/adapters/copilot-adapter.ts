@@ -3,9 +3,10 @@
 // new behavior; it preserves the stall detection, line buffering, and heartbeat
 // logic from the original implementation.
 
-import { spawn, SpawnOptions } from 'child_process';
 import { AgentAdapter, AgentResult, AgentSpawnOptions } from './agent-adapter';
+import { classifyFatalAgentError } from './fatal-error-classifier';
 import { PersistentInteractiveSession } from './persistent-session';
+import { supervisedSpawn } from './process-supervisor';
 
 // Maximum silence before killing a stalled copilot subprocess.
 // Copilot CLI can go quiet for several minutes during extended tool-use
@@ -36,6 +37,28 @@ export function scrubCopilotHostileTokens(env: NodeJS.ProcessEnv): NodeJS.Proces
     delete copy[key];
   }
   return copy;
+}
+
+// Build the env spread the spawn helpers feed Copilot. The supervisor merges
+// process.env first, so the scrubbed tokens have to be set to `undefined`
+// here (not just deleted from a copy) to actually unset them in the child.
+// Returns the same shape for cold-start and persistent paths so they stay
+// in sync. Respects SWARM_USE_ENV_GITHUB_TOKEN=1 by leaving the tokens
+// alone when the user has explicitly opted into env-based Copilot auth.
+function copilotChildEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    GIT_AUTHOR_NAME: 'swarm-orchestrator',
+    GIT_AUTHOR_EMAIL: 'swarm@localhost',
+    GIT_COMMITTER_NAME: 'swarm-orchestrator',
+    GIT_COMMITTER_EMAIL: 'swarm@localhost',
+    COPILOT_ALLOW_ALL: 'true',
+  };
+  if (process.env.SWARM_USE_ENV_GITHUB_TOKEN !== '1') {
+    for (const key of COPILOT_AUTH_ENV_VARS) {
+      env[key] = undefined;
+    }
+  }
+  return env;
 }
 
 // Billing-accurate premium-request count, as reported by the Copilot CLI
@@ -102,24 +125,49 @@ export class CopilotAdapter implements AgentAdapter {
       args.push('--agent', opts.copilotAgent);
     }
 
-    const result = await this.runProcess('copilot', args, opts.workdir, opts.timeout);
+    const result = await supervisedSpawn({
+      command: 'copilot',
+      args,
+      cwd: opts.workdir,
+      // Copilot CLI authenticates via gh's local keyring, not env-var API keys.
+      // It needs the full user environment (XDG_CONFIG_HOME, DBUS_SESSION_BUS_ADDRESS,
+      // keyring paths, etc.) to locate stored credentials. Restricting the env
+      // like we do for API-key-based adapters breaks auth silently.
+      env: copilotChildEnv(),
+      logPrefix: opts.logPrefix,
+      stallTimeoutMs: opts.timeout ?? STALL_TIMEOUT_MS,
+      onLine: opts.onAgentLine ? (line) => opts.onAgentLine!(line) : undefined,
+    });
     const durationMs = Date.now() - startTime;
+
+    // Copilot prints scope-enforcement messages on stderr when an agent tries
+    // to access paths outside its sandbox. These add no diagnostic value to
+    // verification or fatal-error parsing, so strip them from the captured
+    // stderr before downstream consumers see it. Live streaming via logPrefix
+    // may still surface them in real time, which is the correct UX.
+    const filteredStderr = result.stderr
+      .split('\n')
+      .filter((l) => !isScopeNoise(l))
+      .join('\n');
 
     // Copilot CLI exits 0 for certain fatal errors (e.g. invalid model name)
     // that produce no stdout. Detect these and correct the exit code so the
     // orchestrator treats the session as failed rather than empty-but-successful.
     let exitCode = result.exitCode;
-    if (exitCode === 0 && !result.stdout.trim() && hasFatalStderrError(result.stderr)) {
+    if (exitCode === 0 && !result.stdout.trim() && hasFatalStderrError(filteredStderr)) {
       exitCode = 1;
     }
 
+    const fatalError = classifyFatalAgentError(result.stdout, filteredStderr, exitCode);
+
     return {
       stdout: result.stdout,
-      stderr: result.stderr,
+      stderr: filteredStderr,
       exitCode,
       durationMs,
       executionMode: 'cold-start',
-      premiumRequestsConsumed: parseCopilotRequestCount(result.stderr),
+      premiumRequestsConsumed: parseCopilotRequestCount(filteredStderr),
+      ...(fatalError ? { fatalError } : {}),
     };
   }
 
@@ -165,10 +213,13 @@ export class CopilotAdapter implements AgentAdapter {
       };
     }
 
+    const fatalError = classifyFatalAgentError(result.stdout, result.stderr, result.exitCode);
     const reason = session.reason ?? (result.stderr || 'persistent interactive mode failed');
     this.persistentSessions.delete(sessionKey);
     await session.shutdown();
-    if (opts.executionMode === 'persistent-interactive') {
+    // Same short-circuit rationale as in codex / claude adapters: a fatal
+    // account-level error makes the cold-start fallback equally doomed.
+    if (opts.executionMode === 'persistent-interactive' || fatalError) {
       return {
         stdout: result.stdout,
         stderr: result.stderr,
@@ -176,115 +227,12 @@ export class CopilotAdapter implements AgentAdapter {
         durationMs: Date.now() - startTime,
         executionMode: 'persistent-interactive',
         fallbackReason: reason,
+        ...(fatalError ? { fatalError } : {}),
       };
     }
     return undefined;
   }
 
-  private runProcess(
-    command: string,
-    args: string[],
-    workdir: string,
-    timeout?: number
-  ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-    return new Promise((resolve) => {
-      const spawnOpts: SpawnOptions = {
-        cwd: workdir,
-        env: {
-          // Copilot CLI authenticates via gh's local keyring, not env-var API keys.
-          // It needs the full user environment (XDG_CONFIG_HOME, DBUS_SESSION_BUS_ADDRESS,
-          // keyring paths, etc.) to locate stored credentials. Restricting the env
-          // like we do for API-key-based adapters breaks auth silently.
-          ...scrubCopilotHostileTokens(process.env),
-          GIT_AUTHOR_NAME: 'swarm-orchestrator',
-          GIT_AUTHOR_EMAIL: 'swarm@localhost',
-          GIT_COMMITTER_NAME: 'swarm-orchestrator',
-          GIT_COMMITTER_EMAIL: 'swarm@localhost',
-          COPILOT_ALLOW_ALL: 'true',
-        },
-      };
-
-      const proc = spawn(command, args, spawnOpts);
-
-      // Close stdin so the subprocess never blocks on interactive input
-      if (proc.stdin) {
-        proc.stdin.end();
-      }
-
-      let stdout = '';
-      let stderr = '';
-      let resolved = false;
-      let lastOutputTime = Date.now();
-
-      let stallCheckInterval: NodeJS.Timeout | null = null;
-
-      const cleanup = () => {
-        if (stallCheckInterval) clearInterval(stallCheckInterval);
-      };
-
-      const effectiveStallTimeout = timeout || STALL_TIMEOUT_MS;
-
-      stallCheckInterval = setInterval(() => {
-        const silentMs = Date.now() - lastOutputTime;
-        if (silentMs >= effectiveStallTimeout) {
-          cleanup();
-          proc.kill('SIGTERM');
-          setTimeout(() => {
-            try { proc.kill('SIGKILL'); } catch { /* already dead */ }
-          }, 5000);
-          if (!resolved) {
-            resolved = true;
-            const stallSec = Math.round(silentMs / 1000);
-            resolve({
-              stdout,
-              stderr: stderr + `\nProcess killed after ${stallSec}s of no output (stall timeout)`,
-              exitCode: 1,
-            });
-          }
-        }
-      }, 10_000);
-
-      if (proc.stdout) {
-        proc.stdout.on('data', (data) => {
-          const text = data.toString();
-          stdout += text;
-          lastOutputTime = Date.now();
-        });
-      }
-
-      if (proc.stderr) {
-        proc.stderr.on('data', (data) => {
-          const text = data.toString();
-          // Filter scope enforcement noise from captured stderr
-          const lines = text.split('\n');
-          const filtered = lines.filter((l: string) => !isScopeNoise(l)).join('\n');
-          stderr += filtered;
-          lastOutputTime = Date.now();
-        });
-      }
-
-      proc.on('close', (code) => {
-        cleanup();
-        if (!resolved) {
-          resolved = true;
-          // null exit code means process was killed by a signal; treat as failure
-          resolve({ stdout, stderr, exitCode: code ?? 1 });
-        }
-      });
-
-      proc.on('error', (err) => {
-        cleanup();
-        if (!resolved) {
-          resolved = true;
-          resolve({
-            stdout,
-            stderr: stderr + '\n' + err.message,
-            exitCode: 1,
-          });
-        }
-      });
-    });
-  }
 }
 
 function shouldAttemptPersistent(opts: AgentSpawnOptions): boolean {

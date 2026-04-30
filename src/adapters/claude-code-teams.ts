@@ -79,12 +79,16 @@ export class ClaudeCodeTeamsAdapter implements AgentAdapter {
 
     // Map the single team lead output to per-step results.
     // Each step gets the same transcript since the team lead orchestrated all work.
+    // fatalError is propagated identically across mapped results because
+    // a usage-limit / auth error on the team lead applies to every teammate
+    // it would have spawned — they share the same underlying account.
     return steps.map((_step, _i) => ({
       stdout: result.stdout,
       stderr: result.stderr,
       exitCode: result.exitCode,
       durationMs,
-      shareTranscriptPath: undefined
+      shareTranscriptPath: undefined,
+      ...(result.fatalError ? { fatalError: result.fatalError } : {}),
     }));
   }
 

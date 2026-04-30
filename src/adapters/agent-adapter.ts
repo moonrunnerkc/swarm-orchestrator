@@ -2,6 +2,8 @@
 // Each adapter wraps a specific tool (Copilot, Claude Code, Codex)
 // behind a common contract so the orchestrator can drive any of them.
 
+import type { FatalAgentError } from './fatal-error-classifier';
+
 export interface AgentResult {
   stdout: string;
   stderr: string;
@@ -16,6 +18,14 @@ export interface AgentResult {
    * undefined means the adapter could not determine the count.
    */
   premiumRequestsConsumed?: number | undefined;
+  /**
+   * Set when the agent CLI reported an unrecoverable, account-level failure
+   * (usage-limit hit, expired auth, multi-hour rate-limit window). Replan
+   * and repair cannot recover from these, so the orchestrator must abort
+   * the run instead of consuming the remaining per-instance budget on
+   * doomed retries. Populated by the adapter via classifyFatalAgentError.
+   */
+  fatalError?: FatalAgentError | undefined;
 }
 
 export interface AgentSpawnOptions {
@@ -28,6 +38,13 @@ export interface AgentSpawnOptions {
   persistentSessionId?: string | undefined;
   persistentTurnTimeoutMs?: number | undefined;
   onAgentLine?: ((line: string) => void) | undefined;
+  /**
+   * Step-aware label printed alongside live agent output and the heartbeat
+   * spinner during quiet periods. When set, the cold-start subprocess
+   * surfaces stdout/stderr lines and "Ns elapsed" ticks instead of running
+   * silently. Format is the caller's choice (e.g. "[backend_master:1]").
+   */
+  logPrefix?: string | undefined;
 }
 
 export interface AgentAdapter {
