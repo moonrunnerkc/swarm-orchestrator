@@ -6,7 +6,7 @@ import { ExecutionOptions } from './types';
 import { GitHubMcpIntegrator } from './github-mcp-integrator';
 import SessionExecutor, { SessionResult, SessionOptions } from './session-executor';
 import { discoverTestCommand, renderVerifyCommandSection } from './test-command-discovery';
-import { getLogger } from './logger';
+import { getLogger, isPrettyMode } from './logger';
 const logger = getLogger('step-runner');
 
 export interface StepResult {
@@ -145,7 +145,7 @@ export class StepRunner {
     lines.push('');
 
     const testDiscovery = discoverTestCommand(this.workingDir);
-    if (testDiscovery.warning) {
+    if (testDiscovery.warning && !isPrettyMode()) {
       logger.warn(`test command discovery: ${testDiscovery.warning}`);
     }
     lines.push(renderVerifyCommandSection(testDiscovery));

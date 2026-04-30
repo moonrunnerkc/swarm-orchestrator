@@ -86,7 +86,7 @@ export async function runPostExecution(
     const analyticsLog = new AnalyticsLog();
     analyticsLog.appendRun(metrics);
 
-    logger.info(`\n📊 Metrics saved: ${metricsPath}`);
+    logger.debug(`metrics ${metricsPath}`);
 
     // Save cost attribution alongside metrics
     if (context.costEstimate && context.stepCostRecords) {

@@ -98,7 +98,9 @@ export function buildSwarmPrompt(
   // `npx vitest --run`, which masks lint/type-check failures.
   const testDiscovery = discoverTestCommand(context.targetProjectRoot || process.cwd());
   if (testDiscovery.warning) {
-    logger.warn(`test command discovery: ${testDiscovery.warning}`);
+    // Diagnostic only: the fallback to `npm test` is correct in 99% of repos
+    // and not actionable for the user. Surfaces on stderr with --verbose.
+    logger.debug(`test command discovery: ${testDiscovery.warning}`);
   }
   sections.push(renderVerifyCommandSection(testDiscovery));
 
@@ -147,7 +149,7 @@ export function writeSharedInstructions(
   // instead of reaching for a subset runner like `npx vitest --run`.
   const testDiscovery = discoverTestCommand(workingDir);
   if (testDiscovery.warning) {
-    logger.warn(`test command discovery (shared instructions): ${testDiscovery.warning}`);
+    logger.debug(`test command discovery (shared instructions): ${testDiscovery.warning}`);
   }
   contentParts.push(
     '## Verify Before Committing',

@@ -27,27 +27,19 @@ export async function analyzeCommitQuality(
 
   const result = detector.analyzeCommits(commitMessages);
 
-  // Log analysis results if anti-patterns detected
+  // Surface anti-patterns; suppress the "all good" announcement so passing
+  // steps stay quiet and the live status block carries the success signal.
   if (result.hasAntiPatterns) {
-    logger.info(`  ⚠️  Commit quality warnings for Step ${stepNumber} (${agentName}):`);
-    logger.info(`      Quality score: ${result.score}/100`);
+    logger.warn(`  commit-quality warnings · step ${stepNumber} (${agentName}) · score ${result.score}/100`);
     result.warnings.forEach(warning => {
-      logger.info(`      - ${warning}`);
+      logger.warn(`    - ${warning}`);
     });
-
-    // Get suggestions
     const suggestions = detector.getSuggestions(result);
     if (suggestions.length > 0) {
-      logger.info(`      Suggestions:`);
+      logger.warn(`    suggestions:`);
       suggestions.forEach(suggestion => {
-        logger.info(`        • ${suggestion}`);
+        logger.warn(`      - ${suggestion}`);
       });
     }
-
-    // Just log warnings - don't store in context (data type mismatch)
-    // Meta-analyzer will detect commit quality issues from transcripts
-  } else if (result.score >= 90) {
-    // Acknowledge good commit practices
-    logger.info(`  ✨ Excellent commit quality: ${result.score}/100 (${commitMessages.length} commits)`);
   }
 }

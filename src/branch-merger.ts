@@ -7,6 +7,17 @@ import ContextBroker from './context-broker';
 import { getLogger } from './logger';
 const logger = getLogger('branch-merger');
 
+/**
+ * Render a long swarm branch name as `step-N agent` so log lines stay readable.
+ * The full ref `swarm/<execId>/step-N-<agent>` is unwieldy; the user already
+ * knows which run they triggered, so the per-step segment is the meaningful
+ * part. Falls back to the raw name when the convention does not match.
+ */
+function shortBranchLabel(branchName: string): string {
+  const m = branchName.match(/\/step-(\d+)-(.+?)$/);
+  return m ? `step-${m[1]} ${m[2]}` : branchName;
+}
+
 /** Tracking data for branches that failed to merge. */
 export interface UnmergedBranch {
   stepNumber: number;
@@ -106,35 +117,37 @@ export class BranchMerger {
 
         if (prResult.success && prResult.url) {
           prUrls?.set(result.stepNumber, prResult.url);
-          logger.info(`  \u{1F4CB} PR created for step ${result.stepNumber}: ${prResult.url}`);
+          // PR URL goes into the final-summary footer; this debug line is the
+          // forensic record of when each PR was created.
+          logger.debug(`pr step-${result.stepNumber} ${prResult.url}`);
 
           if (prMode === 'auto' && prResult.number) {
             const merged = context.prManager.autoMergePR(prResult.number);
             if (merged) {
-              logger.info(`  \u2705 Auto-merged PR #${prResult.number}`);
+              logger.debug(`merged pr #${prResult.number}`);
             } else {
-              logger.warn(`  \u26A0\uFE0F  Auto-merge failed for PR #${prResult.number}; manual merge required`);
+              logger.warn(`auto-merge failed for pr #${prResult.number}; manual merge required`);
             }
           } else if (prMode === 'review' && prResult.number) {
-            logger.info(`  \u23F3 Waiting for approval on PR #${prResult.number}...`);
+            logger.info(`waiting on review for pr #${prResult.number}...`);
             const status = await context.prManager.waitForApproval(prResult.number);
             if (status.approved || status.state === 'MERGED') {
-              logger.info(`  \u2705 PR #${prResult.number} approved`);
+              logger.debug(`approved pr #${prResult.number}`);
               if (status.state !== 'MERGED') {
                 context.prManager.autoMergePR(prResult.number);
               }
             } else {
-              logger.warn(`  \u26A0\uFE0F  PR #${prResult.number} review timed out or was not approved`);
+              logger.warn(`pr #${prResult.number} review timed out or was not approved`);
             }
           }
         } else {
-          logger.warn(`  \u26A0\uFE0F  PR creation failed for ${result.branchName}: ${prResult.error}`);
+          logger.warn(`pr creation failed for ${shortBranchLabel(result.branchName)}: ${prResult.error}`);
           try {
             await this.mergeBranch(result.branchName, context);
-            logger.info(`  \u2705 Merged ${result.branchName} (fallback)`);
+            logger.debug(`merged ${shortBranchLabel(result.branchName)} (fallback)`);
           } catch (error: unknown) {
             const err = error as Error;
-            logger.warn(`  \u26A0\uFE0F  Merge conflict for ${result.branchName}: ${err.message}`);
+            logger.warn(`merge conflict on ${shortBranchLabel(result.branchName)}: ${err.message}`);
           }
         }
       }
@@ -159,22 +172,25 @@ export class BranchMerger {
 
       for (const result of completedResults) {
         if (result.branchName) {
+          const label = shortBranchLabel(result.branchName);
           try {
             await this.mergeBranch(result.branchName, context);
-            logger.info(`  \u2705 Merged ${result.branchName}`);
+            // Per-step merge confirmations are diagnostic; the final summary
+            // already reports completed/total. Keep them visible with --verbose.
+            logger.debug(`merged ${label}`);
           } catch (error: unknown) {
             const err = error as Error;
             try {
               execSync('git merge --abort', { cwd: this.workingDir, stdio: 'pipe' });
             } catch { /* no merge in progress */ }
 
-            logger.info(`  \u{1F504} Merge conflict for ${result.branchName}, rebasing onto ${context.mainBranch}...`);
+            logger.debug(`rebasing ${label} onto ${context.mainBranch}`);
             const rebased = this.tryRebaseAndMerge(result.branchName, context);
             if (rebased) {
-              logger.info(`  \u2705 Merged ${result.branchName} (rebased)`);
+              logger.debug(`merged ${label} (rebased)`);
             } else {
-              logger.warn(`  \u26A0\uFE0F  Could not merge ${result.branchName} after rebase: ${err.message}`);
-              logger.warn(`     Step ${result.stepNumber} work preserved on branch ${result.branchName}`);
+              logger.warn(`  could not merge ${label} after rebase: ${err.message}`);
+              logger.warn(`    step ${result.stepNumber} work preserved on ${result.branchName}`);
               unmerged.push({
                 stepNumber: result.stepNumber,
                 branchName: result.branchName,
@@ -253,15 +269,17 @@ export class BranchMerger {
 
     for (const result of results) {
       if (result.status === 'completed' && result.branchName) {
+        const label = shortBranchLabel(result.branchName);
         if (mergedBranches.includes(result.branchName)) {
-          logger.info(`  \u2705 ${result.branchName} (already merged)`);
+          // Skip silently. The wave loop already announced this merge; a
+          // second "(already merged)" line on top is just noise.
           continue;
         }
-        const mergeSpinner = new Spinner(`Merging ${result.branchName}...`, { style: 'dots', prefix: '  ' });
+        const mergeSpinner = new Spinner(`merging ${label}...`, { style: 'dots', prefix: '  ' });
         mergeSpinner.start();
         try {
           await this.mergeBranch(result.branchName, context);
-          mergeSpinner.succeed(`Merged ${result.branchName}`);
+          mergeSpinner.stop(`merged ${label}`);
         } catch (error: unknown) {
           const err = error as Error;
           try {
@@ -270,10 +288,10 @@ export class BranchMerger {
 
           const rebased = this.tryRebaseAndMerge(result.branchName, context);
           if (rebased) {
-            mergeSpinner.succeed(`Merged ${result.branchName} (rebased)`);
+            mergeSpinner.stop(`merged ${label} (rebased)`);
           } else {
-            mergeSpinner.fail(`Conflict merging ${result.branchName}: ${err.message}`);
-            logger.error(`     Work preserved on branch ${result.branchName}`);
+            mergeSpinner.stop(`conflict on ${label}: ${err.message}`);
+            logger.error(`    work preserved on ${result.branchName}`);
             unmerged.push({
               stepNumber: result.stepNumber,
               branchName: result.branchName,
