@@ -90,34 +90,17 @@ function parseCandidate(stdout: string): SynthesizedTestCandidate {
   };
 }
 
-/**
- * Validate that a generated test has meaningful assertions.
- *
- * @param candidate - Generated test candidate.
- * @returns Rejection reason, or undefined when the test is structurally usable.
- */
-export function validateSynthesizedTestCandidate(
-  candidate: SynthesizedTestCandidate,
-): string | undefined {
-  const source = candidate.testSource;
-  const assertionPatterns = [
-    /\bassert\.(?:strictEqual|deepStrictEqual|notStrictEqual|throws|rejects|ok)\s*\(/,
-    /\bexpect\s*\(/,
-    /\bshould\b/,
-  ];
-  const weakPatterns = [
-    /\bassert\.ok\s*\(\s*true\s*\)/,
-    /\bexpect\s*\(\s*true\s*\)/,
-  ];
-
-  if (!assertionPatterns.some(pattern => pattern.test(source))) {
-    return 'generated test has no clear assertion or explicit failure mode';
-  }
-  if (weakPatterns.some(pattern => pattern.test(source))) {
-    return 'generated test only asserts an unconditional truth';
-  }
-  return undefined;
-}
+// validateSynthesizedTestCandidate was removed in 39c6f5b's follow-up.
+// The previous structural preflight matched only JS assertion patterns
+// (node `assert.X`, jest/chai `expect(`, should.js); Python `unittest`
+// idioms (`self.assertRegex`, etc.) failed the check and every Python
+// candidate was rejected before it ever ran. The authoritative gate is
+// downstream — does the test fail against base and pass against the
+// fix — and the test runner reports that exit code directly. Keeping
+// a hand-rolled assertion-pattern allowlist would have re-created the
+// Python-non-functional failure mode for the next language to land
+// (pytest's bare `assert`, hamcrest, doctest, …). See
+// docs/p1-real-data-findings.md for the discovery sequence.
 
 function safeOutputPath(repoPath: string, candidatePath: string, attemptNumber: number): string {
   const safeName = path.basename(candidatePath).replace(/[^a-zA-Z0-9._-]/g, '-')
@@ -216,19 +199,6 @@ export async function synthesizeRegressionTest(
         adapterExitCode: adapterResult.exitCode,
         validation: 'rejected',
         rejectionReason: feedback,
-      });
-      continue;
-    }
-
-    const structuralRejection = validateSynthesizedTestCandidate(candidate);
-    if (structuralRejection) {
-      feedback = structuralRejection;
-      attempts.push({
-        attemptNumber,
-        adapterExitCode: adapterResult.exitCode,
-        validation: 'rejected',
-        rejectionReason: structuralRejection,
-        candidate,
       });
       continue;
     }

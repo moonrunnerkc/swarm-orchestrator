@@ -3,10 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { AgentAdapter, AgentResult, AgentSpawnOptions } from '../../src/adapters/agent-adapter';
-import {
-  synthesizeRegressionTest,
-  validateSynthesizedTestCandidate,
-} from '../../src/verification';
+import { synthesizeRegressionTest } from '../../src/verification';
 
 class FakeAdapter implements AgentAdapter {
   readonly name = 'fake';
@@ -52,41 +49,6 @@ describe('test synthesizer', () => {
     dirs = [];
   });
 
-  it('rejects candidates without clear assertions before running them', () => {
-    const rejection = validateSynthesizedTestCandidate({
-      testFilePath: 'regression.test.js',
-      testCommand: 'node {{TEST_FILE}}',
-      testSource: 'console.log("no assertion");',
-    });
-
-    assert.match(rejection ?? '', /no clear assertion/);
-  });
-
-  it('regenerates when the first candidate has no assertions', async () => {
-    const repo = tmpRepo();
-    dirs.push(repo);
-    const adapter = new FakeAdapter([
-      candidate('console.log("not a real test");'),
-      candidate("const assert = require('assert');\nassert.strictEqual(1, 2);\n"),
-    ]);
-
-    const result = await synthesizeRegressionTest({
-      goalText: 'Expose the broken behavior',
-      targetRepoPath: repo,
-      adapter,
-      maxAttempts: 2,
-      timeoutMs: 30_000,
-    });
-
-    assert.strictEqual(result.status, 'GENERATED');
-    assert.strictEqual(adapter.callCount, 2);
-    assert.strictEqual(result.attempts[0].validation, 'rejected');
-    assert.match(result.attempts[0].rejectionReason ?? '', /no clear assertion/);
-    assert.ok(result.testFilePath?.startsWith(repo));
-    assert.ok(path.basename(result.testFilePath ?? '').startsWith('swarm-synth-attempt-'));
-    assert.strictEqual(path.dirname(result.testFilePath ?? ''), repo);
-  });
-
   it('regenerates when a candidate passes against the base codebase', async () => {
     const repo = tmpRepo();
     dirs.push(repo);
@@ -108,6 +70,12 @@ describe('test synthesizer', () => {
     assert.strictEqual(result.attempts[0].commandResult?.exitCode, 0);
     assert.match(result.attempts[0].rejectionReason ?? '', /passed against the base/);
     assert.notStrictEqual(result.attempts[1].commandResult?.exitCode, 0);
+    // Candidates land at repo root with the swarm-synth-attempt prefix so
+    // their __file__ resolves to the worktree root, not a subdirectory the
+    // candidate's import workarounds can't reach. See docs/p1-real-data-findings.md.
+    assert.ok(result.testFilePath?.startsWith(repo));
+    assert.ok(path.basename(result.testFilePath ?? '').startsWith('swarm-synth-attempt-'));
+    assert.strictEqual(path.dirname(result.testFilePath ?? ''), repo);
   });
 
   it('returns AMBIGUOUS_GOAL when every candidate passes against base', async () => {

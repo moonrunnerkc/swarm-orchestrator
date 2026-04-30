@@ -10,7 +10,6 @@ export {
 } from './differential-gate';
 export {
   synthesizeRegressionTest,
-  validateSynthesizedTestCandidate,
   type SynthesizedTestCandidate,
   type TestSynthesisAttempt,
   type TestSynthesisInput,
