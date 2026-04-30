@@ -22,7 +22,7 @@ export class ReportRenderer {
       '## Results',
       '',
       `Steps: ${report.results.attempted} attempted, ${report.results.passed} passed, ${report.results.failed} failed, ${report.results.repaired} repaired`,
-      `Waves: ${report.waves.count} waves, max parallelism ${report.waves.maxParallelism}`,
+      `Waves: ${report.waves.count} waves`,
       '',
       '## Per-Step Detail',
       '',

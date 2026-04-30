@@ -33,7 +33,6 @@ export interface RunReport {
   };
   waves: {
     count: number;
-    maxParallelism: number;
   };
   cost: {
     estimatedPremiumRequests: number;
@@ -172,8 +171,7 @@ export class ReportGenerator {
         repaired: repairedCount
       },
       waves: {
-        count: metrics.waveCount,
-        maxParallelism: metrics.stepCount
+        count: metrics.waveCount
       },
       cost: costAttribution ? {
         estimatedPremiumRequests: costAttribution.totalEstimatedPremiumRequests,
