@@ -124,6 +124,42 @@ import {
   handleUseCommand,
   showUsage,
 } from './cli/index';
+import { initActiveRules, readRuleLoaderConfig } from './rules/loader';
+
+/**
+ * Commands that consume cheat rules or other rule-pack data and benefit from
+ * a startup summary of what loaded. Read-only commands (--help, version,
+ * status, audit, metrics, report, agents, attest, use, recipes, recipe-info,
+ * share, plan, templates) skip the loader to keep their cold path fast.
+ */
+const RULE_LOADING_COMMANDS = new Set([
+  'demo-fast',
+  'gates',
+  'quick',
+  'bootstrap',
+  'execute',
+  'swarm',
+  'demo',
+  'run',
+]);
+
+/**
+ * Initialize the process-wide active rule set and log a one-line summary so
+ * the operator sees which packs and rule counts the orchestrator is about
+ * to use. Errors from the loader (configured-but-missing pack, schema
+ * failures) are surfaced individually but do not crash the CLI; the run
+ * proceeds with whatever loaded successfully.
+ */
+function loadAndAnnounceRules(projectRoot: string): void {
+  const options = readRuleLoaderConfig(projectRoot);
+  const result = initActiveRules(options);
+  const packIds = result.packs.map((p) => `${p.author}/${p.name}`).join(', ') || '(none)';
+  logger.info(`Loaded ${result.rules.length} rules from ${result.packs.length} packs: ${packIds}`);
+  for (const err of result.errors) {
+    const prefix = err.packId ? `pack ${err.packId}` : 'rule file';
+    logger.error(`${prefix}: ${err.message}`);
+  }
+}
 
 async function main(): Promise<void> {
   const args = normalizeLeadingGlobalFlags(process.argv.slice(2));
@@ -135,6 +171,10 @@ async function main(): Promise<void> {
 
   const command = args[0];
   let exitCode = 0;
+
+  if (command !== undefined && RULE_LOADING_COMMANDS.has(command)) {
+    loadAndAnnounceRules(process.cwd());
+  }
 
   try {
     switch (command) {

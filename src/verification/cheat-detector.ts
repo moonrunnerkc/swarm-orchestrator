@@ -13,7 +13,7 @@ import {
 import { runVerificationCommand } from './command-runner';
 import { createFinding, type Finding, type FindingSeverity } from '../types/finding';
 import { normalizeSemgrepResults } from './semgrep-normalizer';
-import { type LoadedRule, loadRules } from '../rules/loader';
+import { type LoadedRule, getActiveRules } from '../rules/loader';
 
 export type CheatFindingSeverity = FindingSeverity;
 export type CheatFinding = Finding;
@@ -85,7 +85,7 @@ function resolveSemgrepConfigPath(input: CheatDetectorInput): string | undefined
   if (input.semgrepConfigDir && fs.existsSync(input.semgrepConfigDir)) {
     return input.semgrepConfigDir;
   }
-  const loaded = loadRules();
+  const loaded = getActiveRules();
   const cheatRules = loaded.rules.filter((r) => r.kind === 'cheat-rule');
   if (cheatRules.length === 0) return undefined;
   const config = { rules: cheatRules.map(ruleToSemgrep) };

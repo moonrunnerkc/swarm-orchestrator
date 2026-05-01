@@ -261,6 +261,46 @@ export function getLoadedPacks(result: RuleLoaderResult): LoadedPack[] {
 }
 
 /**
+ * Process-wide cached load. Set by `initActiveRules` once at CLI startup so
+ * downstream consumers (cheat detector, future regression falsifier, …) all
+ * see the same rule set the operator opted into via `.swarm/config.yaml`.
+ * Without this cache, each consumer's independent `loadRules()` call would
+ * default to built-in only and silently drop community packs.
+ */
+let activeRulesCache: RuleLoaderResult | undefined;
+
+/**
+ * Initialize the process-wide active rule set. Idempotent: a second call with
+ * the same arguments overwrites the cache. The CLI entry point calls this
+ * after parsing config; consumers downstream call `getActiveRules()` to read.
+ *
+ * @param options - Same overrides accepted by `loadRules`.
+ * @returns The result of the underlying `loadRules` invocation, also cached.
+ */
+export function initActiveRules(options: RuleLoaderOptions = {}): RuleLoaderResult {
+  activeRulesCache = loadRules(options);
+  return activeRulesCache;
+}
+
+/**
+ * Read the cached active rule set. If `initActiveRules` was never called
+ * (e.g., a unit test that imports the cheat detector without going through
+ * the CLI startup path), falls back to a default-options load so behavior
+ * remains correct, just without community-pack visibility.
+ */
+export function getActiveRules(): RuleLoaderResult {
+  if (!activeRulesCache) {
+    activeRulesCache = loadRules();
+  }
+  return activeRulesCache;
+}
+
+/** Reset the cache. Test-only. Not exported beyond the package boundary in spirit. */
+export function resetActiveRulesForTests(): void {
+  activeRulesCache = undefined;
+}
+
+/**
  * Read `.swarm/config.yaml` from a project root and extract the rule-loader
  * fields. Returns the empty object when no config file or no relevant fields
  * exist; never throws on missing or malformed config so the loader stays
