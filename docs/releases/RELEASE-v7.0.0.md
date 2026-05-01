@@ -9,8 +9,8 @@ attestation), and produces signed SLSA v1.0 attestations for every patch
 that clears the battery. Validated end-to-end on Claude Code on a
 worst-case Python bug-fix subset of SWE-bench Verified.
 
-Tag: `v7.0.0` at commit `<bump-commit>` (2026-04-30). Commit range:
-`v6.1.0..v7.0.0` (84 commits).
+Tag: `v7.0.0` at commit `cd84e83` (2026-04-30). Commit range:
+`v6.1.0..v7.0.0` (88 commits).
 
 ## Validated Metrics
 
@@ -196,7 +196,7 @@ breaking-change list. Highlights:
   relied on gate-failure-blocks-merge needs to switch to composite
   score thresholds via `.swarm/gates.yaml`.
 
-## Themes Across the 84 Commits
+## Themes Across the 88 Commits
 
 The commit range `v6.1.0..v7.0.0` covers four workstreams:
 
