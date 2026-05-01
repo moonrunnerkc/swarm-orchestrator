@@ -229,12 +229,22 @@ correctly and resolution works. The failure mode here is "agent did
 the work, orchestrator lost it before merge" — a tail-risk that
 manifested as 1-of-4 in the 2026-04-30 5-instance smoke.
 
-**Planned fix.** Two complementary changes in v7.1:
+**Planned fix.** Two complementary changes in v7.1, with priority on
+the first:
 
-1. Tighten the auto-commit catch to distinguish "truly clean (legit
-   no-op)" from "commit failed (actionable)". Log the error on the
-   second case so the silent-loss class is debuggable. Possibly
-   retry with explicit identity if the failure was identity-missing.
+1. **(Priority within v7.1 verifier work.)** Tighten the auto-commit
+   catch to log the swallowed error to the run's structured log
+   instead of silently discarding it. The current catch loses the
+   exact error class — staging conflict, locked index, identity
+   missing, working-tree race — so every future investigation of "why
+   didn't this run land cleanly" hits the same wall the 2026-04-30
+   investigation did. Logging is a small change with high diagnostic
+   value: post-hoc investigation gets signal, the catch can still
+   continue execution non-fatally for cases that are legitimately
+   no-ops, and the failure-mode distribution becomes measurable across
+   future runs. Once the error class is observable, distinguishing
+   "truly clean" from "commit failed for actionable reason" becomes
+   evidence-driven instead of code-reading-driven.
 2. Tighten the verifier's secondary uncommitted-changes branch to
    require committed evidence for steps whose work needs to survive
    the worker-branch merge. The current "agent completed work
@@ -242,10 +252,14 @@ manifested as 1-of-4 in the 2026-04-30 5-instance smoke.
    lands; that assumption is what makes the silent-failure mode
    merge-survivable.
 
-The two fixes are paired: either alone would close some of the failure
-surface but leave a different class open. Both together make
-"work-but-not-committed" a hard fail at the verifier with a
-diagnosable error from the auto-commit step.
+The two fixes are paired: (1) makes the failure class observable; (2)
+prevents it from masquerading as success. Either alone would close
+some of the failure surface but leave a different class open. Both
+together make "work-but-not-committed" a hard fail at the verifier
+with a diagnosable error from the auto-commit step. (1) is the
+priority because it converts an unknown-unknown into a known-unknown,
+which is what the rest of the verifier work needs in order to be
+evidence-driven.
 
 ## installDependenciesIfNeeded lockfile leak on Node-shipping repos
 
