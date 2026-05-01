@@ -7,7 +7,7 @@
 **Independent verification battery for patches written by AI coding agents.**
 
 [![License](https://img.shields.io/badge/license-ISC-blue?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/version-7.0.0--alpha.0-orange?style=flat-square)](package.json)
+[![Version](https://img.shields.io/badge/version-7.0.0-blue?style=flat-square)](package.json)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-339933?style=flat-square)](package.json)
 [![CI](https://img.shields.io/github/actions/workflow/status/moonrunnerkc/swarm-orchestrator/ci.yml?branch=main&label=ci&style=flat-square)](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml)
 [![Stars](https://img.shields.io/github/stars/moonrunnerkc/swarm-orchestrator?style=flat-square)](https://github.com/moonrunnerkc/swarm-orchestrator/stargazers)
