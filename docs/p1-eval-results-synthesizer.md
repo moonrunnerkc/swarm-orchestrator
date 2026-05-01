@@ -189,3 +189,59 @@ report and stop, do not retune the synthesizer to clear it. If
 results are within 5pp of either threshold at N=10, that is the
 trigger to consider expanding to N=20 (per Phase 2 step 1 decision
 2), not an automatic action.
+
+## Known limitation: Python-version filter
+
+The first N=10 sweep on 2026-05-01 surfaced a structural mismatch
+between the host Python and the SWE-bench Verified corpus: the head
+of `instances-50.json` (astropy x2, django x8) is all
+pre-Python-3.12 source, and the host Python is 3.12. The astropy
+slice fails to compile its Cython extensions because the generated
+`.c` files reference `PyThreadState->curexc_traceback`, which was
+removed in CPython 3.12. The Django 2.x slice fails before pip even
+starts because `setup.py` imports `distutils`, also removed in
+Python 3.12.
+
+The round-3 fix to `scripts/eval/p1-run-evals.py` makes the harness
+honest about this:
+
+1. After the editable install loop, every instance gets a
+   `python -c "import <pkg>"` verification step run from `/tmp` (so
+   a stranded source tree on the cwd cannot mask a missing
+   editable install).
+2. Failure of that import flips `prep_ok=false` and appends the
+   captured stderr to `prep_errors`.
+3. The driver's main loop walks `instance_ids` in order and skips
+   any instance whose prep fails, until the first `--n` accept the
+   prep. Skipped instances are recorded in
+   `summary["skipped_for_prep_failure"]` with their per-instance
+   `prep_errors` so the audit trail is preserved.
+
+The mechanical effect: on a Python 3.12 host, the driver may report
+`accepted_count < requested_n` or even `accepted_count == 0` for
+`instances-50.json`, with every skipped record naming the import
+failure. This is the truthful signal — the harness is not silently
+dropping bad runs into the JSONL.
+
+To fully unblock the eval, one of the following must happen
+externally:
+
+- **(a)** Install `python3.11-venv` on the host (`apt install
+  python3.11-venv`) and update `setup_venv()` to use `python3.11`
+  by default for SWE-bench instances. SWE-bench Verified was
+  collected against Python 3.11 and earlier, so this is the
+  benchmark-aligned path.
+- **(b)** Adopt a `uv`/`pyenv`-managed Python toolchain at the repo
+  level so the eval driver picks an interpreter compatible with
+  each instance's `version` metadata.
+- **(c)** Re-stratify `instances-50.json` away from Python 2.x/3.0-
+  only repos. This is brittle (most SWE-bench Verified Python repos
+  predate 3.12 in some way) and is not recommended.
+
+Until path (a) or (b) ships, treat any Layer 1 number as a number
+about a *filtered* corpus: only instances whose source still builds
+on the host's Python 3.12. The summary's `skipped_for_prep_failure`
+list is the audit trail for which instances were dropped and why.
+
+See `docs/p1-eval-harness-diagnostic.md` section 5 ("Cumulative
+harness fragility") for the larger Phase 3 readiness implications.
