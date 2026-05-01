@@ -10,7 +10,7 @@ that clears the battery. Validated end-to-end on Claude Code on a
 worst-case Python bug-fix subset of SWE-bench Verified.
 
 Tag: `v7.0.0` at commit `cd84e83` (2026-04-30). Commit range:
-`v6.1.0..v7.0.0` (88 commits).
+`v6.1.0..v7.0.0` (90 commits).
 
 ## Validated Metrics
 
@@ -54,7 +54,7 @@ bypass via `--task-type swebench`, validator drop, candidate
 relocation, verifier-fix excludes).
 
 - 4 instances executed, 1 skipped due to transient network failure
-  during `git clone` (astropy-8872, exit 128 on the harness's clone)
+  during `git clone` (astropy-9072, exit 128 on the harness's clone)
 - 2/4 effective resolution rate
 - Mean wall-clock 291s (vs 700-996s on the pre-bypass 04-28 baseline)
 - Diff-capture stayed under the 10MB cap on every instance (largest:
@@ -196,7 +196,7 @@ breaking-change list. Highlights:
   relied on gate-failure-blocks-merge needs to switch to composite
   score thresholds via `.swarm/gates.yaml`.
 
-## Themes Across the 88 Commits
+## Themes Across the 90 Commits
 
 The commit range `v6.1.0..v7.0.0` covers four workstreams:
 
