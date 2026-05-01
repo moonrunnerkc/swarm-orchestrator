@@ -2,6 +2,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { runVerificationCommand, VerificationCommandResult } from './command-runner';
 import { createFinding, type Finding } from '../types/finding';
+import { parsePythonParams, parseTSParams } from './property-param-parsing';
+import { buildPropertyCommand } from './property-harness';
+import {
+  pythonTypeToStrategy,
+  tsTypeToArbitrary,
+  type PropertyParameter,
+} from './property-strategies';
 
 export type PropertyGateStatus = 'PASS' | 'ADVISORY' | 'SKIP';
 export type PropertyLanguage = 'typescript' | 'javascript' | 'python';
@@ -13,6 +20,19 @@ export interface PropertyTarget {
   functionName: string;
   typed: boolean;
   advisoryOnly: boolean;
+  /**
+   * Source-order parameters with derived strategies. Each entry's `strategy`
+   * is undefined when the parameter is untyped or has an unsupported type;
+   * `unsupportedReason` describes why the gate had to skip the function in
+   * that case.
+   */
+  parameters: PropertyParameter[];
+  /**
+   * When set, the gate skipped this target rather than running a harness
+   * against it. Surfaced verbatim into a low-severity advisory finding so
+   * the run report explains the skip.
+   */
+  unsupportedReason?: string;
 }
 
 export type PropertyFinding = Finding;
@@ -41,10 +61,6 @@ function isSupportedFile(filePath: string): boolean {
   return /\.(?:ts|tsx|js|jsx|py)$/.test(filePath) && !filePath.endsWith('.d.ts');
 }
 
-function safeName(value: string): string {
-  return value.replace(/[^a-zA-Z0-9._-]/g, '-');
-}
-
 function isTypedTypeScriptSignature(params: string, suffix: string): boolean {
   return /:\s*[\w.[\]<>|]+/.test(params) || /^\s*:\s*[\w.[\]<>|]+/.test(suffix);
 }
@@ -63,24 +79,102 @@ function declarationLine(source: string, matchIndex: number, matchedText: string
   return line;
 }
 
+/**
+ * Resolve strategies for a parameter list. Returns the parameters with
+ * `strategy` populated where possible, plus an `unsupportedReason` when
+ * the gate cannot run a harness against this target.
+ *
+ * The reason is "no type hints" for an untyped target and "type X is not
+ * supported" for the first unmappable type. We surface only the first
+ * unmappable type so the advisory message stays inside the 200-char
+ * finding-message budget.
+ */
+function resolveStrategies(
+  parameters: PropertyParameter[],
+  mapper: (rawType: string) => string | undefined,
+): { resolved: PropertyParameter[]; unsupportedReason?: string } {
+  if (parameters.length === 0) {
+    return { resolved: [], unsupportedReason: 'function has no parameters; nothing to fuzz' };
+  }
+  const untyped = parameters.find((p) => p.rawType === '');
+  if (untyped) {
+    return {
+      resolved: parameters,
+      unsupportedReason: `parameter '${untyped.name}' has no type hint; cannot generate inputs`,
+    };
+  }
+  const resolved: PropertyParameter[] = [];
+  for (const p of parameters) {
+    const strategy = mapper(p.rawType);
+    if (!strategy) {
+      return {
+        resolved: parameters,
+        unsupportedReason: `parameter '${p.name}' has unsupported type '${p.rawType}'; cannot generate inputs`,
+      };
+    }
+    resolved.push({ name: p.name, rawType: p.rawType, strategy });
+  }
+  return { resolved };
+}
+
+function buildPythonTarget(
+  filePath: string,
+  source: string,
+  match: RegExpMatchArray,
+): PropertyTarget {
+  const params = match[2] ?? '';
+  const suffix = match[3] ?? '';
+  const typed = isTypedPythonSignature(params, suffix);
+  const parsed = parsePythonParams(params);
+  const { resolved, unsupportedReason } = resolveStrategies(parsed, pythonTypeToStrategy);
+  const target: PropertyTarget = {
+    language: 'python',
+    filePath,
+    line: declarationLine(source, match.index ?? 0, match[0]),
+    functionName: match[1] ?? 'unknown',
+    typed,
+    advisoryOnly: !typed,
+    parameters: resolved,
+  };
+  if (unsupportedReason) target.unsupportedReason = unsupportedReason;
+  return target;
+}
+
+function buildTSTarget(
+  filePath: string,
+  source: string,
+  match: RegExpMatchArray,
+  language: PropertyLanguage,
+): PropertyTarget {
+  const params = match[2] ?? '';
+  const suffix = match[3] ?? '';
+  const typed = language === 'typescript' ? isTypedTypeScriptSignature(params, suffix) : false;
+  const parsed = parseTSParams(params);
+  const { resolved, unsupportedReason } = language === 'typescript'
+    ? resolveStrategies(parsed, tsTypeToArbitrary)
+    : { resolved: parsed, unsupportedReason: 'untyped JavaScript; using generic fuzzing' };
+  const target: PropertyTarget = {
+    language,
+    filePath,
+    line: declarationLine(source, match.index ?? 0, match[0]),
+    functionName: match[1] ?? 'unknown',
+    typed,
+    advisoryOnly: language === 'javascript' || !typed,
+    parameters: resolved,
+  };
+  if (unsupportedReason) target.unsupportedReason = unsupportedReason;
+  return target;
+}
+
 function discoverInSource(filePath: string, source: string): PropertyTarget[] {
   const ext = path.extname(filePath);
   const targets: PropertyTarget[] = [];
   if (ext === '.py') {
     for (const match of source.matchAll(/(?:^|\n)def\s+([A-Za-z_]\w*)\s*\(([^)]*)\)\s*([^:]*):/g)) {
-      const typed = isTypedPythonSignature(match[2] ?? '', match[3] ?? '');
-      targets.push({
-        language: 'python',
-        filePath,
-        line: declarationLine(source, match.index ?? 0, match[0]),
-        functionName: match[1] ?? 'unknown',
-        typed,
-        advisoryOnly: !typed,
-      });
+      targets.push(buildPythonTarget(filePath, source, match));
     }
     return targets;
   }
-
   const language: PropertyLanguage = ext === '.ts' || ext === '.tsx' ? 'typescript' : 'javascript';
   const patterns = [
     /(?:export\s+)?function\s+([A-Za-z_]\w*)\s*\(([^)]*)\)\s*([^ {=>]*)/g,
@@ -88,17 +182,7 @@ function discoverInSource(filePath: string, source: string): PropertyTarget[] {
   ];
   for (const pattern of patterns) {
     for (const match of source.matchAll(pattern)) {
-      const typed = language === 'typescript'
-        ? isTypedTypeScriptSignature(match[2] ?? '', match[3] ?? '')
-        : false;
-      targets.push({
-        language,
-        filePath,
-        line: declarationLine(source, match.index ?? 0, match[0]),
-        functionName: match[1] ?? 'unknown',
-        typed,
-        advisoryOnly: language === 'javascript' || !typed,
-      });
+      targets.push(buildTSTarget(filePath, source, match, language));
     }
   }
   return targets;
@@ -109,7 +193,9 @@ function discoverInSource(filePath: string, source: string): PropertyTarget[] {
  *
  * @param repoPath - Target repository root.
  * @param changedFiles - Repo-relative changed file paths.
- * @returns Function targets with type-system coverage metadata.
+ * @returns Function targets with type-system coverage metadata, including
+ *          parsed parameter types and resolved strategies (or an
+ *          unsupportedReason when the function cannot be fuzzed).
  */
 export function discoverPropertyTargets(repoPath: string, changedFiles: string[]): PropertyTarget[] {
   const targets: PropertyTarget[] = [];
@@ -120,61 +206,6 @@ export function discoverPropertyTargets(repoPath: string, changedFiles: string[]
     targets.push(...discoverInSource(rel, fs.readFileSync(full, 'utf8')));
   }
   return targets;
-}
-
-function jsHarness(target: PropertyTarget, importRel: string): string {
-  const importPath = importRel.startsWith('.') ? importRel : './' + importRel;
-  return [
-    "const fc = require('fast-check');",
-    `const mod = require('${importPath}');`,
-    `const fn = mod.${target.functionName};`,
-    "if (typeof fn !== 'function') throw new Error('target function is not exported');",
-    'fc.assert(fc.property(fc.anything(), fc.anything(), (a, b) => {',
-    '  try { fn(a, b); return true; }',
-    "  catch (err) { throw new Error('Counterexample: ' + JSON.stringify([a, b]) + ' -> ' + err.message); }",
-    '}), { numRuns: 100 });',
-    '',
-  ].join('\n');
-}
-
-function pythonHarness(target: PropertyTarget, moduleName: string): string {
-  return [
-    'from hypothesis import given, strategies as st',
-    `from ${moduleName} import ${target.functionName}`,
-    '',
-    '@given(st.integers(), st.integers())',
-    'def test_generated_property(a, b):',
-    `    ${target.functionName}(a, b)`,
-    '',
-    'if __name__ == "__main__":',
-    '    test_generated_property()',
-    '',
-  ].join('\n');
-}
-
-function pythonModuleName(filePath: string): string {
-  return filePath.replace(/\.py$/, '').replace(/[\\/]/g, '.').replace(/^\.+/, '');
-}
-
-function buildPropertyCommand(repoPath: string, target: PropertyTarget): string {
-  const outDir = path.join(repoPath, '.swarm', 'property-tests');
-  fs.mkdirSync(outDir, { recursive: true });
-  const base = `${safeName(target.filePath)}-${safeName(target.functionName)}`;
-
-  if (target.language === 'python') {
-    const harness = path.join(outDir, `${base}.py`);
-    fs.writeFileSync(harness, pythonHarness(target, pythonModuleName(target.filePath)), 'utf8');
-    return `python ${path.relative(repoPath, harness)}`;
-  }
-
-  const extension = target.language === 'typescript' ? '.ts' : '.js';
-  const harness = path.join(outDir, `${base}${extension}`);
-  const targetPath = path.join(repoPath, target.filePath);
-  const importRel = path.relative(path.dirname(harness), targetPath).replace(/\\/g, '/');
-  fs.writeFileSync(harness, jsHarness(target, importRel), 'utf8');
-  return target.language === 'typescript'
-    ? `npx tsx ${path.relative(repoPath, harness)}`
-    : `node ${path.relative(repoPath, harness)}`;
 }
 
 function extractCounterexample(output: string): string | undefined {
@@ -199,12 +230,30 @@ function propertyFinding(target: PropertyTarget, counterexample: string | undefi
   });
 }
 
+function unsupportedFinding(target: PropertyTarget): PropertyFinding {
+  const reason = target.unsupportedReason ?? 'unknown';
+  const rawMessage = `Property gate skipped ${target.functionName}: ${reason}.`;
+  const message = rawMessage.length <= 200 ? rawMessage : `${rawMessage.slice(0, 197)}...`;
+  return createFinding({
+    scope: 'line',
+    producerId: 'property-gate',
+    ruleId: 'property-skip-unsupported',
+    severity: 'low',
+    filePath: target.filePath,
+    line: target.line,
+    message,
+  });
+}
+
 /**
  * Run generated property-based tests for modified functions.
  *
- * Untyped JavaScript is intentionally advisory-only because generators cannot
- * be type-directed; the gate still fuzzes with generic values and reports a
- * reduced-confidence finding when a counterexample appears.
+ * Each typed function gets a Hypothesis (Python) or fast-check (TS)
+ * harness whose generators are derived from the function's parameter
+ * type hints. Functions whose signatures contain unsupported types are
+ * skipped with a low-severity advisory naming the offending type, so
+ * downstream readers can tell tooling skips apart from real
+ * counterexamples. Untyped JavaScript falls back to generic fuzzing.
  *
  * @param input - Target repo, changed files, timeout, and optional runner.
  * @returns Advisory property-testing result.
@@ -218,6 +267,10 @@ export async function runPropertyGate(input: PropertyGateInput): Promise<Propert
   const runner = input.commandRunner ?? runVerificationCommand;
   const findings: PropertyFinding[] = [];
   for (const target of targets) {
+    if (target.unsupportedReason && target.language !== 'javascript') {
+      findings.push(unsupportedFinding(target));
+      continue;
+    }
     const command = buildPropertyCommand(input.targetRepoPath, target);
     const result = await runner(command, input.targetRepoPath, input.timeoutMsPerFunction ?? 60_000);
     if (result.exitCode !== 0) {
@@ -227,9 +280,12 @@ export async function runPropertyGate(input: PropertyGateInput): Promise<Propert
     }
   }
 
+  // Skip findings are advisory-only and do not count against the score.
+  const failureCount = findings.filter((f) => f.ruleId !== 'property-skip-unsupported').length;
+  const status: PropertyGateStatus = findings.length > 0 ? 'ADVISORY' : 'PASS';
   return {
-    status: findings.length > 0 ? 'ADVISORY' : 'PASS',
-    score: Math.max(0, Number((1 - findings.length * 0.25).toFixed(3))),
+    status,
+    score: Math.max(0, Number((1 - failureCount * 0.25).toFixed(3))),
     targets,
     findings,
   };

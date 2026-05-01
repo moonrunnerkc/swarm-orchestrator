@@ -66,6 +66,16 @@ export {
   type PropertyTarget,
 } from './property-gate';
 export {
+  pythonTypeToStrategy,
+  splitTopLevelArgs,
+  tsTypeToArbitrary,
+  type PropertyParameter,
+} from './property-strategies';
+export {
+  parsePythonParams,
+  parseTSParams,
+} from './property-param-parsing';
+export {
   attachAttestationNote,
   createAttestationEnvelope,
   generateSignedAttestation,
