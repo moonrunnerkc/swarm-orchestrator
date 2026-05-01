@@ -1,247 +1,276 @@
 # Phase 2 — Layer 1 Synthesizer Eval Results
 
 Date: 2026-05-01.
-Status: **BLOCKED in-session, ready for external run.**
+Status: **HALT THRESHOLD BREACHED.** Layer 1 fails the v7 FN halt
+threshold (10%) on the Django-only effective corpus (observed FN =
+100%). Headline numbers are honest; failure-mode interpretation is
+not, because of a round-5 harness defect surfaced by the round-4
+instrumentation (see "What the captured stderr actually shows" below).
+
 Eval driver: `scripts/eval/p1-run-evals.py`.
-Sample plan: 10 SWE-bench Verified instances from `instances-50.json[0:10]`
-(astropy x2, django x8). All Python.
+Run artifacts (gitignored under `runs/`):
 
-## Why this eval did not run inside this Claude Code session
+- `docs/p1-eval-fixtures/runs/phase-2/synth-n10/` — the
+  10-instance round-3 sweep (4 GENERATED + 6 GENERATION_FAILED, all
+  fn=true).
+- `docs/p1-eval-fixtures/runs/phase-2/django-diag/` — the 5-instance
+  round-4-instrumented re-measurement (4 GENERATED + 1
+  GENERATION_FAILED, all fn=true).
 
-The Claude Code adapter
-(`src/adapters/claude-code-adapter.ts:34`) spawns
-`claude --dangerously-skip-permissions -p -` to drive the test
-synthesizer. Spawning that command from inside an active Claude Code
-session is denied by the harness sandbox: it would create a nested
-permissionless agent loop. Verified at the Bash layer in this
-session — the spawn was rejected with the message:
+## Final corpus
 
-> Invoking `claude --dangerously-skip-permissions` creates an unsafe
-> nested agent loop; user authorized the eval workflow but not
-> spawning a permissionless Claude subprocess as a probe.
+The "10 instances of `instances-50.json[0:10]`" plan was filtered by
+the round-3 import-verify gate down to **10 Django** for synth-n10
+and **5 Django** for django-diag. The two astropy instances (positions
+0 and 1 in the manifest) failed `verify_package_import` with
+`error: subprocess-exited-with-error / × Preparing editable metadata
+(pyproject.toml) did not run successfully` on Python 3.12, identical
+across both runs, and were skipped by the `prep_failure_substitution`
+loop. Resulting corpus (Python-3.12-prep-passing only):
 
-This was previously documented at
-`docs/p1-eval-results.md:196-198` and is not a new constraint. The
-Phase 2 step 2 fix (gold-worktree env + cd-rewrite) is independent of
-this sandbox question and has landed; Layer 1 is now ready to run
-**from outside this session.**
+| # | Instance ID | synth-n10 | django-diag |
+|---|---|---|---|
+| 1 | django__django-10914 | GENERATED, fn=true | GENERATED, fn=true |
+| 2 | django__django-10999 | GENERATION_FAILED, fn=true | GENERATED, fn=true |
+| 3 | django__django-11099 | GENERATED, fn=true | GENERATED, fn=true |
+| 4 | django__django-11490 | GENERATED, fn=true | GENERATION_FAILED, fn=true |
+| 5 | django__django-11951 | GENERATION_FAILED, fn=true | GENERATED, fn=true |
+| 6 | django__django-11964 | GENERATION_FAILED, fn=true | not in run |
+| 7 | django__django-12155 | GENERATION_FAILED, fn=true | not in run |
+| 8 | django__django-12419 | GENERATED, fn=true | not in run |
+| 9 | django__django-13028 | GENERATION_FAILED, fn=true | not in run |
+| 10 | django__django-13033 | GENERATION_FAILED, fn=true | not in run |
 
-## Env fix that did land
+The django-diag re-measurement covered the head of the synth-n10
+corpus to maximize cross-run diagnostic comparability under the round-4
+instrumentation. The status differences for instances 2, 4, and 5
+between the two runs (e.g., 10999 went GENERATION_FAILED→GENERATED,
+11490 went GENERATED→GENERATION_FAILED) reflect Claude Code adapter
+non-determinism on stall-prone Django prompts; the underlying
+fn-driving root cause is the same in both runs.
 
-The smoke runs preserved at
-`benchmarks/swe-bench/results/synthesizer-eval-smoke-2026-04-30-claude-code.jsonl`
-showed `goldPass=false` on every GENERATED instance, which mechanically
-forced FN=100% regardless of synthesizer quality. The Phase 2 step 1
-diagnostic identified this as a harness-side confounder. Two
-independent bugs were causing it:
+## Headline metrics — synth-n10 (the v7 number)
 
-1. **Hardcoded `cd <basePath>`** in some testCommand strings. The
-   synthesizer LLM nondeterministically prepends an absolute `cd`
-   into the base repo. When the same testCommand was re-run inside the
-   gold worktree, the cd jumped back to base and the test never
-   exercised gold state. Confirmed across `django__django-10999` and
-   `django__django-11099` in the smoke output (`testCommand` started
-   with `cd /tmp/swebench-r30owfh2/django__django-XXXXX && ...`).
+```
+n = 10
+status: GENERATED=4, GENERATION_FAILED=6, AMBIGUOUS_GOAL=0, ERROR=0
+basePass=true: 0       (FP candidates)
+basePass=false: 4
+basePass=null: 6       (no test executed; status != GENERATED)
+goldPass=true: 0       (passes against gold = correct test)
+goldPass=false: 4
+goldPass=null: 6
 
-2. **No per-instance venv** in either base or gold worktrees. The
-   synthesized test does `from <package> import <function>`. With no
-   editable install, the import either fails or shadow-resolves to a
-   host-installed copy that already contains the fix (the
-   `psf__requests-1766` failure mode previously documented in
-   `docs/p1-real-data-findings.md`).
-
-Both are fixed in scope-correct locations:
-
-- `scripts/eval/swebench-instance-evaluator.ts` now accepts an optional
-  `venvBin` field on `SynthEvalInput`. When supplied, both the base and
-  gold testCommand executions are wrapped with `export PATH=<venvBin>:$PATH;`
-  so `python`, `python3`, `pip`, and `pytest` resolve to the venv binary
-  before the original command runs.
-- The same file's gold-run path now applies
-  `rewriteCommandForWorktree(testCommand, repoPath, worktreePath)`
-  before execution, neutralizing any embedded absolute path that
-  matches the base repo path.
-- `scripts/eval/eval-utils.ts` exports the new `rewriteCommandForWorktree`
-  and `wrapCommandWithVenv` helpers.
-- `scripts/eval/swebench-eval-cli.ts` plumbs `venvBin` from the task
-  JSON into both synth and property modes.
-- New unit tests in `test/eval/swebench-instance-evaluator.test.ts`
-  cover both behaviors (gold-run cd-rewrite + venv-wrap on base+gold).
-  All 11 evaluator tests pass; full suite at 1451 passing, no
-  regressions from the 1448 baseline.
-
-A new driver `scripts/eval/p1-run-evals.py` orchestrates the full
-clone -> venv setup -> editable install -> gold branch -> per-instance
-eval call pipeline. Verified end-to-end on Layer 4 in this session
-(`docs/p1-eval-fixtures/runs/phase-2/property-n10/`).
-
-## How to run Layer 1 outside this session
-
-From a regular shell (NOT a Claude Code session):
-
-```bash
-cd /home/brad/projects/swarm-orchestrator
-
-# Build the project so dist/ is current.
-npm run build
-
-# Run the eval at N=10. Reuses the workspaces dir from the Layer 4 run
-# above (clones + venvs + gold branches already prepared, so re-prep is
-# idempotent and cheap).
-python3 scripts/eval/p1-run-evals.py \
-    --instances benchmarks/swe-bench/instances-50.json \
-    --n 10 \
-    --modes synth \
-    --out-dir docs/p1-eval-fixtures/runs/phase-2/synth-n10 \
-    --workdir docs/p1-eval-fixtures/runs/phase-2/property-n10/workspaces \
-    2>&1 | tee docs/p1-eval-fixtures/runs/phase-2/synth-n10.log
+FP = 0/4 = 0%          halt: > 15%   PASS
+FN = 10/10 = 100%      halt: > 10%   BREACH
 ```
 
-Cost expectation per the Phase 2 step 1 readiness doc:
+The FP=0% number is structurally trivial here (every basePass is
+`false` because the test didn't actually run; see below). The FN
+breach is real with respect to the v7 gate, even though the failure
+mechanism is not "the synthesizer produced a wrong test."
 
-| Metric | Estimate |
-|---|---|
-| Wall-clock (10 instances, up to 3 attempts each) | 25-50 min |
-| Token cost (Claude Sonnet 4.6) | ~$2-4 |
-| Hard ceiling per the user's Phase 2 directive | $15 |
+Halt-threshold status: **FN halt tripped on first measurement.**
 
-The driver writes one JSONL record per instance to
-`docs/p1-eval-fixtures/runs/phase-2/synth-n10/synthesizer-eval.jsonl`.
-On completion, computing FP / FN rates from the JSONL is a one-line
-Python expression (see `## Computing FP/FN below`).
+## Per-record failure-mode breakdown — django-diag (round-4 instrumented)
 
-## What "ready" looks like
+The round-4 JSONL emit (commit `789bb24`) added `baseStdout`,
+`baseStderr`, `goldStdout`, `goldStderr` (8 KiB truncated),
+`synthReason`, and `attemptDetails[]` to every record. That is what
+made the per-record mode classification possible; the synth-n10
+JSONL had none of these fields and is uninspectable beyond the
+status string.
 
-Each record in the synth JSONL has these fields (defined in
-`scripts/eval/swebench-instance-evaluator.ts:24`):
+| Instance | Status | basePass | goldPass | Captured stderr (both runs, last line) | Mode |
+|---|---|---|---|---|---|
+| django__django-10914 | GENERATED | false | false | `bash: line 1: python: command not found` | venv-broken |
+| django__django-10999 | GENERATED | false | false | `bash: line 1: python: command not found` | venv-broken |
+| django__django-11099 | GENERATED | false | false | `bash: line 1: python: command not found` | venv-broken |
+| django__django-11490 | GENERATION_FAILED | n/a | n/a | n/a (no test ran); `attemptDetails[1..3].rejectionReason = "Process killed after 120s of no output (stall timeout)"` | adapter-stall |
+| django__django-11951 | GENERATED | false | false | `bash: line 1: python: command not found` | venv-broken |
 
-```json
-{
-  "instanceId": "...",
-  "status": "GENERATED" | "AMBIGUOUS_GOAL" | "GENERATION_FAILED" | "ERROR",
-  "attempts": <n>,
-  "testFilePath": "...",
-  "testCommand": "...",
-  "testSource": "...",
-  "basePass": true | false | null,
-  "goldPass": true | false | null,
-  "fp": <bool>,
-  "fn": <bool>,
-  "wallClockMs": <int>,
-  "error": "..." (only on ERROR)
-}
+Two distinct modes. Neither is "the synthesizer produced a test that
+fails against the gold patch."
+
+### Mode 1: venv-broken (4/5 records)
+
+The captured stderr is identical, character-for-character, in
+`baseStderr` and `goldStderr` of every GENERATED record:
+
+```
+bash: line 1: python: command not found
 ```
 
-`fp = (basePass === true)` — the synthesized test passed against base,
-meaning it does not exercise the bug.
-`fn = (status !== 'GENERATED' || goldPass === false)` — the
-synthesizer either could not produce a candidate or the candidate
-failed against the gold patch.
+The synthesizer's testCommand (e.g.
+`python -m pytest swarm-synth-attempt-1-test_username_trailing_newline.py -v`,
+`python tests/runtests.py file_storage.test_default_upload_permissions --verbosity=2`)
+shells out via `bash -lc` with PATH wrapped to the per-instance
+`.venv/bin`. That directory contains no `python`, no `python3`, no
+`pip` — only an empty `__pycache__/`. The system PATH on this
+host has no `/usr/bin/python` either (Ubuntu ships `python3` only).
 
-Halt thresholds from the v7 plan:
+Direct evidence:
 
-- **FP > 15%** halts.
-- **FN > 10%** halts.
-
-The post-fix expectation is:
-
-- For instances where the synthesizer produces a discriminating test
-  (most of the 50-set, after the validator was removed in
-  `docs/p1-real-data-findings.md`), both basePass=false and
-  goldPass=true. fp=false, fn=false.
-- For instances where the synthesizer cannot disambiguate the goal
-  (`AMBIGUOUS_GOAL`) or produces a non-candidate (`GENERATION_FAILED`),
-  fn=true. Whether this hits the 10% threshold depends on goal
-  ambiguity in the corpus.
-
-If results show `goldPass=false` on every GENERATED instance after
-this fix, that means the env fix did not actually resolve the issue
-for one or more repos. The most likely additional culprit is a
-build-time dependency (e.g. a sympy or matplotlib instance whose
-extras list isn't in the editable-install fallback chain). The
-driver's `prep_errors` field on each instance summary captures
-non-fatal install warnings; surface those into the per-instance row
-of the result table.
-
-## Computing FP/FN
-
-```python
-import json, statistics
-with open('docs/p1-eval-fixtures/runs/phase-2/synth-n10/synthesizer-eval.jsonl') as f:
-    records = [json.loads(line) for line in f]
-n = len(records)
-generated = [r for r in records if r['status'] == 'GENERATED']
-fp = sum(1 for r in generated if r.get('basePass') is True)
-fn = sum(1 for r in records if r.get('fn') is True)
-print(f'n={n}, GENERATED={len(generated)}, FP={fp}/{len(generated)} ({fp/max(1,len(generated)):.1%}), FN={fn}/{n} ({fn/max(1,n):.1%})')
-print(f'mean wallClockMs={statistics.mean(r["wallClockMs"] for r in records):.0f}')
+```
+$ ls docs/p1-eval-fixtures/runs/phase-2/django-diag/workspaces/django__django-10914/.venv/bin/
+__pycache__
+$ git -C docs/p1-eval-fixtures/runs/phase-2/django-diag/workspaces/django__django-10914 \
+      ls-tree -r swarm-gold-eval -- .venv/bin/ | grep -E "python|pip"
+100755 blob ...    .venv/bin/pip
+100755 blob ...    .venv/bin/pip3
+100755 blob ...    .venv/bin/pip3.12
+120000 blob ...    .venv/bin/python
+120000 blob ...    .venv/bin/python3
+120000 blob ...    .venv/bin/python3.12
 ```
 
-## Verdict (pending the external run)
+The python/pip symlinks exist *in the gold-branch commit's tree* but
+not on the working tree, because `materialize_gold_branch`'s sequence
+(`git add -A` -> commit -> `git checkout --detach $head`) tracks the
+venv into the gold commit and then removes its files from the working
+tree on the way back to base. This is round-5 of the harness fragility
+documented in `docs/p1-eval-harness-diagnostic.md`. **The synthesizer's
+testSource is irrelevant to this failure mode**; even a perfectly
+written regression test would exit 127 because the interpreter is
+gone.
 
-**Layer 1 cannot be measured from inside this session.** The
-infrastructure is fully ready. After the external run lands, paste
-the FP/FN summary into this doc and update the Phase 2 completion
-report.
+The hypothesis from the prompt that motivated this session ("the test
+would fail at import-time on `from django.core.files.base import
+ContentFile` with `AppRegistryNotReady`") is **refuted**. The test
+never gets to import-time; the shell can't find `python` to start it.
 
-If FP > 15% or FN > 10%, that is a halt per the user's directive;
-report and stop, do not retune the synthesizer to clear it. If
-results are within 5pp of either threshold at N=10, that is the
-trigger to consider expanding to N=20 (per Phase 2 step 1 decision
-2), not an automatic action.
+### Mode 2: adapter-stall (1/5 records)
 
-## Known limitation: Python-version filter
+`django__django-11490` got 3 attempts each terminated with:
 
-The first N=10 sweep on 2026-05-01 surfaced a structural mismatch
-between the host Python and the SWE-bench Verified corpus: the head
-of `instances-50.json` (astropy x2, django x8) is all
-pre-Python-3.12 source, and the host Python is 3.12. The astropy
-slice fails to compile its Cython extensions because the generated
-`.c` files reference `PyThreadState->curexc_traceback`, which was
-removed in CPython 3.12. The Django 2.x slice fails before pip even
-starts because `setup.py` imports `distutils`, also removed in
-Python 3.12.
+```
+attemptDetails[i].rejectionReason = "\nProcess killed after 120s of no output (stall timeout)"
+```
 
-The round-3 fix to `scripts/eval/p1-run-evals.py` makes the harness
-honest about this:
+This is the Claude Code adapter's stall timeout firing. Each attempt
+had `adapterExitCode=1`, `validation='rejected'`, no candidate
+(`testSourceTruncated` is unset). After 3 such attempts the
+synthesizer returned `GENERATION_FAILED` per its logic in
+`src/verification/test-synthesizer.ts:247`. Total wallClockMs =
+360146 ms (3 × 120 s).
 
-1. After the editable install loop, every instance gets a
-   `python -c "import <pkg>"` verification step run from `/tmp` (so
-   a stranded source tree on the cwd cannot mask a missing
-   editable install).
-2. Failure of that import flips `prep_ok=false` and appends the
-   captured stderr to `prep_errors`.
-3. The driver's main loop walks `instance_ids` in order and skips
-   any instance whose prep fails, until the first `--n` accept the
-   prep. Skipped instances are recorded in
-   `summary["skipped_for_prep_failure"]` with their per-instance
-   `prep_errors` so the audit trail is preserved.
+The synth-n10 run's 6 GENERATION_FAILED records show the same shape
+in their `wallClockMs`: 360146, 360151, 360145, 360148, 360159,
+360151 ms (3 × 120 s adapter-stall, plus a few ms of overhead). This
+is consistent with the same adapter-stall mode applying to all of
+them. (The synth-n10 records lack the `attemptDetails` field that
+would confirm directly; round-4 instrumentation landed after that
+run.)
 
-The mechanical effect: on a Python 3.12 host, the driver may report
-`accepted_count < requested_n` or even `accepted_count == 0` for
-`instances-50.json`, with every skipped record naming the import
-failure. This is the truthful signal — the harness is not silently
-dropping bad runs into the JSONL.
+The adapter-stall mode is independent of the venv-broken mode. It
+fires before the eval ever shells out a test command.
 
-To fully unblock the eval, one of the following must happen
-externally:
+## What the captured stderr actually shows
 
-- **(a)** Install `python3.11-venv` on the host (`apt install
-  python3.11-venv`) and update `setup_venv()` to use `python3.11`
-  by default for SWE-bench instances. SWE-bench Verified was
-  collected against Python 3.11 and earlier, so this is the
-  benchmark-aligned path.
-- **(b)** Adopt a `uv`/`pyenv`-managed Python toolchain at the repo
-  level so the eval driver picks an interpreter compatible with
-  each instance's `version` metadata.
-- **(c)** Re-stratify `instances-50.json` away from Python 2.x/3.0-
-  only repos. This is brittle (most SWE-bench Verified Python repos
-  predate 3.12 in some way) and is not recommended.
+The instrumentation worked. Specifically:
 
-Until path (a) or (b) ships, treat any Layer 1 number as a number
-about a *filtered* corpus: only instances whose source still builds
-on the host's Python 3.12. The summary's `skipped_for_prep_failure`
-list is the audit trail for which instances were dropped and why.
+1. The round-4 JSONL emit captured `bash: python: command not found`
+   in `baseStderr` and `goldStderr` of every GENERATED record. That
+   sentence was the first cross-cutting evidence in any of the four
+   harness-repair rounds.
+2. The hypothesis the prompt motivated (`AppRegistryNotReady` from
+   `settings.configure(...)` bootstrap) was **refuted by the data**.
+   That is the value of instrumentation that prior rounds did not
+   have: a hypothesis can be eliminated rather than litigated.
+3. The captured `goldHeadSha` (round-3 instrumentation) confirms in
+   every record that the gold worktree was checked out at the
+   correct ref. The gold-worktree-state question is now also
+   refuted as a candidate root cause. The persistent repo's
+   destruction of its own `.venv` is what propagates into the
+   temporary gold worktree as well, because the venv path passed to
+   `wrapCommandWithVenv` is the persistent `.venv/bin` (not the
+   worktree's `.venv/bin`).
 
-See `docs/p1-eval-harness-diagnostic.md` section 5 ("Cumulative
-harness fragility") for the larger Phase 3 readiness implications.
+## Honest verdict
+
+**Layer 1 fails the v7 FN halt threshold on the Django subset of
+SWE-bench Verified.** Observed FN = 100%, halt threshold = 10%. This
+is the headline number and the reason Phase 3 cannot begin from this
+closeout.
+
+**The mechanism behind the breach is not synthesizer quality; it is
+harness round-5.** Every test invocation in the captured corpus
+exited 127 because the per-instance `.venv` had its python/pip
+binaries deleted by `materialize_gold_branch`'s `git add -A` /
+`git checkout --detach $head` sequence. The synthesizer's reasoning,
+prompt, and testSource on these records were never exercised against
+a working interpreter.
+
+**The single sympy smoke pass earlier in Phase 2** (documented in
+`docs/p1-real-data-findings.md`) demonstrates the synthesizer can
+produce a discriminating test on at least one repo. Whether the
+Django failures are "synthesizer is Django-incompatible," "synthesizer
+is generally weak on test-runner-bootstrapped repos," or "synthesizer
+is fine and only the harness was broken" **cannot be answered from
+this corpus** because the harness defect masked the synthesizer's
+actual output.
+
+What this session **does not** establish:
+- That the synthesizer prompt needs Django-specific tuning. The
+  testSource the synthesizer produced for `django__django-10914`
+  (visible in the synth-n10 JSONL because basePass and goldPass are
+  measured *after* the venv is broken; the test source is whatever
+  the synthesizer emitted) bootstraps Django via
+  `settings.configure(...)` — that pattern may or may not work in
+  Django's actual test layout, but the captured evidence cannot
+  distinguish "wrong bootstrap" from "right bootstrap, no
+  interpreter to run it."
+- That the synthesizer is broadly weak. The corpus was Django-only
+  after Python-3.12 prep filtering; one repo is not a generalizable
+  signal either way.
+
+What this session **does** establish:
+- The v7 FN halt threshold is breached on the Python-3.12-prep-passing
+  subset of the first 10 SWE-bench Verified instances.
+- The breach is observed under a harness with five distinct
+  fragility rounds, four landed and one (round 5) documented but
+  not fixed in scope.
+- The instrumentation works: the captured `baseStderr`/`goldStderr`/
+  `attemptDetails` was sufficient to refute one root-cause hypothesis
+  and identify a different one in a single re-run, with no
+  re-instrumentation needed.
+
+## Cost
+
+| Run | Instances | Wall-clock | Token cost |
+|---|---|---|---|
+| synth-n10 (round-3 instrumented) | 10 measured + 2 prep-skipped | ~30 min | ~$3 |
+| django-diag (round-4 instrumented) | 5 measured + 2 prep-skipped (2 astropy skipped first, then 5 Django accepted in manifest order) | ~16 min | ~$1 |
+
+Total cumulative: ~$4 of the $15 ceiling. The django-diag re-run came
+in at the bottom of the $1.50-2 estimate because 4 of 5 GENERATED
+records landed on the first attempt (synthesizer call cost is
+per-attempt; single-attempt success is the cheapest path). The single
+GENERATION_FAILED record at 3 × 120 s of adapter stall accounted for
+~38% of the django-diag wall clock.
+
+## Required before re-measurement
+
+The harness must clear round-5 before any Layer 1 re-eval is
+meaningful. Two scope-correct candidate fixes (not implemented in
+this session):
+
+1. **Stage explicitly** in `materialize_gold_branch`: replace
+   `git add -A` with `git add` on the file paths the gold patch
+   touched. The gold patch text already enumerates these in its
+   diff hunks; parsing them is a small change.
+2. **Exclude `.venv/`** via `.git/info/exclude` (per-repo, not
+   committed) before `git add -A`. This is the smaller change and
+   keeps the `-A` blast radius for genuinely untracked patch-added
+   files. Risk: if a gold patch ever adds something under a
+   directory the harness later writes to (e.g., a generated
+   migration in `tests/`), exclude entries can shadow it.
+
+After either fix, re-run on a multi-repo corpus (not Django-only) to
+distinguish synthesizer-quality from Django-specificity. The current
+django-diag corpus is too narrow to generalize from even after the
+harness is repaired.
+
+This is Phase-3-readiness work, not Phase-2 closeout work. See
+`docs/phase-2-completion.md` for the broader Phase 3 readiness
+verdict.

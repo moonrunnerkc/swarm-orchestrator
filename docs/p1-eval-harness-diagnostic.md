@@ -505,8 +505,95 @@ readiness, not about synthesizer quality.
    in order until N pass, and a `goldHeadSha` field on every synth
    record so future audits can verify gold-worktree state directly.
 
-4. **(Reserved.)** This slot is for the next round, which Phase 3
-   readiness should anticipate rather than discover.
+4. **Round 4 — JSONL emit drops captured stdout/stderr and per-attempt
+   detail (this session, 2026-05-01).** The round-3 fixes shipped a
+   honest harness, and the synth-n10 run produced 4 GENERATED records
+   (all `goldPass=false`) and 6 GENERATION_FAILED records. For both
+   shapes, the JSONL was undiagnosable: `evaluateInstanceSynthesizer`
+   captured the test runs' `stdout`/`stderr` (helpers' `CommandResult`
+   already returns them) but the emit shape dropped them on the floor.
+   GENERATION_FAILED records carried only `attempts: <int>`, no
+   per-attempt validation reason, no per-attempt `testSource`. So
+   "synthesizer hit a 3-attempt timeout" was indistinguishable from
+   "synthesizer produced wrong tests that failed validation," and a
+   `goldPass=false` record was indistinguishable from a test that
+   crashed at import-time. Re-running individual instances after the
+   fact was no longer possible because the persistent `repo_dir`
+   survives but the synthesizer's per-attempt test files at the
+   worktree root get unlinked in `evaluateInstanceSynthesizer`'s
+   `finally` block (the cleanup that prevents `capture_agent_diff`
+   from attributing them to the agent). Fixed in commit `789bb24` by
+   extending `SynthEvalRecord` with `baseStdout`/`baseStderr`/
+   `goldStdout`/`goldStderr` (8 KiB truncated), `synthReason` (the
+   synthesizer's terminal `reason`), and `attemptDetails[]` (per-
+   attempt `validation` + `rejectionReason` + `testSourceTruncated`
+   to 4 KiB) so each record is self-contained for failure-mode
+   classification.
+
+5. **Round 5 — `materialize_gold_branch` destroys the venv it depends on
+   (this session, 2026-05-01, surfaced *by* the round-4 instrumentation).**
+   The N=5 django-diag re-measurement under round-4 instrumentation
+   captured `bash: line 1: python: command not found` in
+   `baseStderr` AND `goldStderr` of every GENERATED record, refuting
+   the prior `AppRegistryNotReady` hypothesis that motivated this
+   session. Root cause is in
+   `scripts/eval/p1-run-evals.py::materialize_gold_branch`:
+
+   ```python
+   run(["git", "checkout", "-B", GOLD_BRANCH], cwd=repo_dir, check=True)
+   subprocess.run(["git", "apply", ...], input=gold_patch, ...)
+   run(["git", "add", "-A"], cwd=repo_dir, check=True)        # ← stages .venv/
+   run(["git", "...", "commit", ...], cwd=repo_dir, check=True)
+   run(["git", "checkout", "--detach", head], cwd=repo_dir, check=True)
+   ```
+
+   `setup_venv` runs *before* `materialize_gold_branch` and creates
+   `.venv/` with python/pip symlinks under the persistent `repo_dir`.
+   The subsequent `git add -A` stages that entire `.venv/` tree (2549
+   files in `django__django-10914`'s case) into the gold-branch commit.
+   `git checkout --detach $head` then restores the working tree to
+   `base_commit` and **deletes** every file that was tracked in
+   GOLD_BRANCH but not in base — including `.venv/bin/python`,
+   `.venv/bin/python3`, `.venv/bin/pip`, all of them. The persistent
+   `.venv/lib/python3.12/site-packages/` keeps its contents (because
+   site-packages was populated *before* the checkout), but the bin/
+   directory is left holding only `__pycache__/` from when
+   `verify_package_import` had run python earlier.
+
+   Mechanical effect: every base- and gold-run shell-out resolves
+   `python` against the venv's PATH, finds nothing, exits 127 with
+   `python: command not found`. The synthesizer's pre-check (in
+   `src/verification/test-synthesizer.ts`) treats any non-zero
+   exit as "test fails against base" and accepts the candidate, so
+   the JSONL records report `basePass=false` and `goldPass=false`
+   on every GENERATED instance — but neither boolean reflects
+   anything about the candidate test's logic; both reflect a missing
+   interpreter.
+
+   This is why `goldHeadSha` lined up with the gold ref in every
+   record (the worktree was correctly checked out at gold) and the
+   captured stderr was identical between base and gold runs (same
+   missing-python failure either side). The round-4 instrumentation
+   is what made this diagnosable from the JSONL alone; without it,
+   round 5 would have been another re-run.
+
+   **Not fixed in this session, by design.** The fix is small (use
+   `git add` with explicit paths from the gold patch, or stash
+   `.venv/` before commit, or add a `.git/info/exclude` entry for
+   `.venv/` inside the per-instance repo before staging) but it is
+   downstream of the Phase 2 closeout and would constitute "engineer
+   the harness past the halt threshold" if applied without a
+   subsequent honest-verdict re-eval. It is documented here as a
+   precondition for any Phase 3 Layer 1 re-measurement.
+
+The harness has now had five rounds of repairs (four landed, one
+documented) to produce diagnosable output. Each round was scoped to
+a distinct failure mode in the harness itself, none in the
+synthesizer's logic. The pattern is explicit Phase 3 signal: a
+"primary verifier" depends on observability infrastructure that the
+eval harness has been ad-hoc-ing into existence one round at a time,
+and production wiring needs that infrastructure designed up-front
+rather than discovered through breakage.
 
 ### Why this is a Phase 3 signal, not a synthesizer signal
 
