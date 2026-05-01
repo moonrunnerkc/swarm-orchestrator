@@ -1,0 +1,59 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://swarm-orchestrator.dev/schemas/property-template.schema.json",
+  "title": "Property Template",
+  "description": "A property-based test template. The orchestrator's property gate compiles a template into an executable harness by binding parameter types to generators and substituting placeholders into the invariant string.",
+  "type": "object",
+  "required": ["ruleId", "version", "languages", "targetType", "generators", "invariant", "severity", "message"],
+  "additionalProperties": false,
+  "properties": {
+    "ruleId": {
+      "type": "string",
+      "pattern": "^[a-z](?:[a-z0-9]+(?:-[a-z0-9]+)*)?$",
+      "description": "kebab-case template identifier."
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+    },
+    "languages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "enum": ["typescript", "javascript", "python", "go", "java"]
+      },
+      "uniqueItems": true,
+      "description": "Languages this template supports. The property gate selects a template whose language list contains the discovered target's language."
+    },
+    "targetType": {
+      "type": "string",
+      "enum": ["pure-function", "mutation", "invariant"],
+      "description": "Shape of the target the template applies to. Pure-function: deterministic input→output, no side effects. Mutation: in-place modification of an argument. Invariant: a property that must hold across a sequence of operations."
+    },
+    "generators": {
+      "type": "object",
+      "minProperties": 1,
+      "description": "Map of parameter type names → generator references. Type names match the discovered target's parameter type hints (e.g. 'int', 'str', 'any'). Generator references are language-specific symbol paths the property gate resolves at harness compile time (e.g. 'hypothesis.strategies.integers', 'fast-check.anything').",
+      "patternProperties": {
+        "^[A-Za-z_][A-Za-z0-9_.<>\\[\\]| ]*$": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "invariant": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Template string describing the invariant the harness asserts. May contain {{fn}}, {{args}}, and other placeholders the property gate substitutes when emitting the harness body."
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["high", "medium", "low"]
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "Finding message emitted on counterexample. May contain {{fn}} and {{counterexample}} placeholders."
+    }
+  }
+}

@@ -1,0 +1,13 @@
+ruleId: exception-swallowing
+version: 1.0.0
+severity: high
+message: Catch handler appears empty or log-only.
+languages: [javascript, typescript]
+patterns:
+  - pattern-either:
+      - pattern: |
+          try { ... } catch ($E) {}
+      - pattern: |
+          try { ... } catch ($E) { console.$LOG(...); }
+      - pattern: |
+          try { ... } catch ($E) { logger.$LOG(...); }

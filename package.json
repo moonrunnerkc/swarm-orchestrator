@@ -20,7 +20,7 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && node -e \"require('fs').chmodSync('dist/src/cli.js', 0o755)\"",
+    "build": "tsc -p tsconfig.build.json && node scripts/copy-non-ts-assets.js && node -e \"require('fs').chmodSync('dist/src/cli.js', 0o755)\"",
     "build-plugin": "node scripts/build-plugin.js",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "prebuild": "npm run clean",
@@ -77,6 +77,7 @@
   },
   "dependencies": {
     "@octokit/rest": "^20",
+    "ajv": "^8.20.0",
     "js-yaml": "^4.1.1",
     "parse-diff": "^0.12.0"
   }
