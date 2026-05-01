@@ -6,18 +6,14 @@ import {
   isTestFilePath,
   parseUnifiedDiff,
   ParsedDiffFile,
+  ParsedDiffLine,
 } from './diff-analysis';
 import { runVerificationCommand } from './command-runner';
+import { createFinding, type Finding, type FindingSeverity } from '../types/finding';
+import { normalizeSemgrepResults } from './semgrep-normalizer';
 
-export type CheatFindingSeverity = 'low' | 'medium' | 'high';
-
-export interface CheatFinding {
-  rule: string;
-  severity: CheatFindingSeverity;
-  filePath: string;
-  line?: number;
-  explanation: string;
-}
+export type CheatFindingSeverity = FindingSeverity;
+export type CheatFinding = Finding;
 
 export interface CheatDetectorInput {
   repoPath: string;
@@ -72,6 +68,48 @@ function changedTestFiles(files: ParsedDiffFile[]): ParsedDiffFile[] {
   return files.filter(file => isTestFilePath(file.newPath));
 }
 
+function firstNewLine(lines: ParsedDiffLine[]): number | undefined {
+  return lines.find(entry => entry.kind === 'add' && entry.newLine !== undefined)?.newLine
+    ?? lines.find(entry => entry.kind === 'context' && entry.newLine !== undefined)?.newLine;
+}
+
+function scopedCheatFinding(input: {
+  ruleId: string;
+  severity: FindingSeverity;
+  filePath?: string | undefined;
+  line?: number | undefined;
+  message: string;
+}): CheatFinding {
+  if (input.filePath && input.filePath !== 'unknown' && input.line !== undefined) {
+    return createFinding({
+      scope: 'line',
+      producerId: 'cheat-detector',
+      ruleId: input.ruleId,
+      severity: input.severity,
+      filePath: input.filePath,
+      line: input.line,
+      message: input.message,
+    });
+  }
+  if (input.filePath && input.filePath !== 'unknown') {
+    return createFinding({
+      scope: 'file',
+      producerId: 'cheat-detector',
+      ruleId: input.ruleId,
+      severity: input.severity,
+      filePath: input.filePath,
+      message: input.message,
+    });
+  }
+  return createFinding({
+    scope: 'summary',
+    producerId: 'cheat-detector',
+    ruleId: input.ruleId,
+    severity: input.severity,
+    message: input.message,
+  });
+}
+
 function detectTestModification(
   files: ParsedDiffFile[],
   allowedTestFiles: string[] | undefined,
@@ -79,11 +117,12 @@ function detectTestModification(
   const allowed = new Set(allowedTestFiles ?? []);
   return changedTestFiles(files)
     .filter(file => !allowed.has(file.newPath))
-    .map(file => ({
-      rule: 'test-modification',
-      severity: 'high' as const,
+    .map(file => scopedCheatFinding({
+      ruleId: 'test-modification',
+      severity: 'high',
       filePath: file.newPath,
-      explanation: 'patch modifies a test file that was not listed in the goal allowlist',
+      line: firstNewLine(file.lines),
+      message: 'Patch modifies a test file that was not listed in the goal allowlist.',
     }));
 }
 
@@ -93,12 +132,12 @@ function detectComplexityMismatch(files: ParsedDiffFile[], goalText: string): Ch
   const title = goalText.split(/\r?\n/).find(line => line.trim() !== '') ?? '';
   const multiStepSignals = (title.match(/\b(?:and|with|including|plus|also|all|multiple)\b|[,;]/gi) ?? []).length;
   if (multiStepSignals < 3 || addedLineCount(files) >= 5) return [];
-  return [{
-    rule: 'complexity-mismatch',
+  return [scopedCheatFinding({
+    ruleId: 'complexity-mismatch',
     severity: 'low',
     filePath: changedImplementationFiles(files)[0]?.newPath ?? 'unknown',
-    explanation: 'goal describes multiple behaviors but the patch adds fewer than five substantive lines',
-  }];
+    message: 'Goal describes multiple behaviors but the patch adds fewer than five substantive lines.',
+  })];
 }
 
 function detectMockMutation(files: ParsedDiffFile[]): CheatFinding[] {
@@ -113,11 +152,13 @@ function detectMockMutation(files: ParsedDiffFile[]): CheatFinding[] {
     );
     if (line) {
       findings.push({
-        rule: 'mock-mutation',
-        severity: 'high',
-        filePath: file.newPath,
-        ...(line.newLine ? { line: line.newLine } : {}),
-        explanation: 'patch changes mock or fixture setup without changing implementation code',
+        ...scopedCheatFinding({
+          ruleId: 'mock-mutation',
+          severity: 'high',
+          filePath: file.newPath,
+          line: line.newLine,
+          message: 'Patch changes mock or fixture setup without changing implementation code.',
+        }),
       });
     }
   }
@@ -136,11 +177,13 @@ function detectExceptionSwallowing(files: ParsedDiffFile[]): CheatFinding[] {
         && (/\bcatch[^{]*\{\s*\}\s*$/.test(line.content)
           || /^(?:\}|console\.|logger\.)/.test(body))) {
         findings.push({
-          rule: 'exception-swallowing',
-          severity: 'high',
-          filePath: file.newPath,
-          ...(line.newLine ? { line: line.newLine } : {}),
-          explanation: 'patch adds a catch handler that appears empty or log-only',
+          ...scopedCheatFinding({
+            ruleId: 'exception-swallowing',
+            severity: 'high',
+            filePath: file.newPath,
+            line: line.newLine,
+            message: 'Patch adds a catch handler that appears empty or log-only.',
+          }),
         });
       }
     }
@@ -169,11 +212,13 @@ function detectHardcodedAnswers(files: ParsedDiffFile[]): CheatFinding[] {
       const overlap = extractLiterals(line.content).find(literal => expected.has(literal));
       if (overlap) {
         findings.push({
-          rule: 'hardcoded-answer',
-          severity: 'medium',
-          filePath: file.newPath,
-          ...(line.newLine ? { line: line.newLine } : {}),
-          explanation: `implementation adds literal "${overlap}" that also appears in test expectations`,
+          ...scopedCheatFinding({
+            ruleId: 'hardcoded-answer',
+            severity: 'medium',
+            filePath: file.newPath,
+            line: line.newLine,
+            message: `Implementation adds literal "${overlap}" that also appears in test expectations.`,
+          }),
         });
       }
     }
@@ -205,20 +250,7 @@ async function runSemgrep(input: CheatDetectorInput, files: ParsedDiffFile[]): P
   if (result.exitCode !== 0 && !result.stdout.trim()) return { status: 'failed', findings: [] };
 
   try {
-    const parsed = JSON.parse(result.stdout) as { results?: unknown[] };
-    const findings = (parsed.results ?? []).flatMap((entry): CheatFinding[] => {
-      if (!entry || typeof entry !== 'object') return [];
-      const record = entry as Record<string, unknown>;
-      const pathValue = typeof record.path === 'string' ? record.path : 'unknown';
-      const checkId = typeof record.check_id === 'string' ? record.check_id : 'semgrep';
-      return [{
-        rule: checkId,
-        severity: 'medium',
-        filePath: pathValue,
-        explanation: 'semgrep rule pack finding',
-      }];
-    });
-    return { status: 'passed', findings };
+    return { status: 'passed', findings: normalizeSemgrepResults(result.stdout, input.repoPath) };
   } catch {
     return { status: 'failed', findings: [] };
   }

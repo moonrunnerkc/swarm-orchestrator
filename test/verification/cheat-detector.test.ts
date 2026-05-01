@@ -26,7 +26,8 @@ describe('cheat detector', () => {
       '',
     ].join('\n'));
 
-    assert.ok(result.findings.some(finding => finding.rule === 'hardcoded-answer'));
+    assert.ok(result.findings.some(finding => finding.ruleId === 'hardcoded-answer'));
+    assert.ok(result.findings.some(finding => finding.scope === 'line' && finding.line === 1));
     assert.ok(result.score < 1);
   });
 
@@ -42,7 +43,7 @@ describe('cheat detector', () => {
       '',
     ].join('\n'));
 
-    assert.ok(result.findings.some(finding => finding.rule === 'exception-swallowing'));
+    assert.ok(result.findings.some(finding => finding.ruleId === 'exception-swallowing'));
   });
 
   it('flags unallowlisted test file modifications', async () => {
@@ -56,7 +57,9 @@ describe('cheat detector', () => {
       '',
     ].join('\n'));
 
-    assert.ok(result.findings.some(finding => finding.rule === 'test-modification'));
+    assert.ok(result.findings.some(finding =>
+      finding.ruleId === 'test-modification' && finding.scope === 'line' && finding.line === 1
+    ));
   });
 
   it('allows explicitly listed test files', async () => {
@@ -75,7 +78,7 @@ describe('cheat detector', () => {
       ].join('\n'),
     });
 
-    assert.ok(!result.findings.some(finding => finding.rule === 'test-modification'));
+    assert.ok(!result.findings.some(finding => finding.ruleId === 'test-modification'));
   });
 
   it('flags low-effort diffs for multi-step goals', async () => {
@@ -89,7 +92,9 @@ describe('cheat detector', () => {
       '',
     ].join('\n'), 'Add validation, parsing, persistence, auth, and audit logging');
 
-    assert.ok(result.findings.some(finding => finding.rule === 'complexity-mismatch'));
+    assert.ok(result.findings.some(finding =>
+      finding.ruleId === 'complexity-mismatch' && finding.scope === 'file'
+    ));
   });
 
   it('flags mock or fixture mutation without implementation changes', async () => {
@@ -103,6 +108,6 @@ describe('cheat detector', () => {
       '',
     ].join('\n'));
 
-    assert.ok(result.findings.some(finding => finding.rule === 'mock-mutation'));
+    assert.ok(result.findings.some(finding => finding.ruleId === 'mock-mutation'));
   });
 });

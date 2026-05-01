@@ -3,6 +3,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { runVerificationCommand, VerificationCommandResult } from './command-runner';
+import { createFinding, type Finding } from '../types/finding';
+import { extractSourceLocations } from './source-locations';
 
 export type DifferentialGateStatus = 'PASS' | 'FAIL' | 'INVALID_TEST';
 
@@ -21,6 +23,7 @@ export interface DifferentialGateResult {
   base?: VerificationCommandResult;
   patch?: VerificationCommandResult;
   durationMs: number;
+  findings: Finding[];
 }
 
 function git(repoPath: string, args: string[]): string {
@@ -66,11 +69,44 @@ function removeWorktree(repoPath: string, worktreePath: string): void {
   }
 }
 
+function summaryFinding(ruleId: string, reason: string): Finding {
+  return createFinding({
+    scope: 'summary',
+    producerId: 'differential-gate',
+    ruleId,
+    severity: 'high',
+    message: reason.length <= 200 ? reason : `${reason.slice(0, 197)}...`,
+  });
+}
+
+function commandFinding(
+  ruleId: string,
+  result: VerificationCommandResult,
+  worktreePath: string,
+  fallbackMessage: string,
+): Finding {
+  const output = `${result.stdout}\n${result.stderr}`;
+  const location = extractSourceLocations(output, worktreePath)[0];
+  if (location) {
+    return createFinding({
+      scope: 'line',
+      producerId: 'differential-gate',
+      ruleId,
+      severity: 'high',
+      filePath: location.filePath,
+      line: location.line,
+      message: fallbackMessage,
+    });
+  }
+  return summaryFinding(ruleId, fallbackMessage);
+}
+
 function setupFailure(started: number, reason: string): DifferentialGateResult {
   return {
     status: 'FAIL',
     reason,
     durationMs: Date.now() - started,
+    findings: [summaryFinding('differential-setup-failed', reason)],
   };
 }
 
@@ -124,6 +160,12 @@ export async function runDifferentialGate(
         reason: 'test command passed against the base commit',
         base,
         durationMs: Date.now() - started,
+        findings: [commandFinding(
+          'invalid-regression-test',
+          base,
+          baseWorktree,
+          'Regression test already passes at the base commit.',
+        )],
       };
     }
 
@@ -137,6 +179,7 @@ export async function runDifferentialGate(
         base,
         patch,
         durationMs: Date.now() - started,
+        findings: [],
       };
     }
 
@@ -146,6 +189,12 @@ export async function runDifferentialGate(
       base,
       patch,
       durationMs: Date.now() - started,
+      findings: [commandFinding(
+        'patch-regression-test-failed',
+        patch,
+        patchWorktree,
+        'Regression test still fails against the patch.',
+      )],
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -155,6 +204,7 @@ export async function runDifferentialGate(
       ...(base ? { base } : {}),
       ...(patch ? { patch } : {}),
       durationMs: Date.now() - started,
+      findings: [summaryFinding('differential-execution-failed', 'Differential gate execution failed.')],
     };
   } finally {
     if (fs.existsSync(baseWorktree)) removeWorktree(repoPath, baseWorktree);

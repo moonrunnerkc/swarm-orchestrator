@@ -94,7 +94,9 @@ describe('property gate', () => {
 
     assert.strictEqual(result.status, 'ADVISORY');
     assert.strictEqual(result.findings.length, 1);
-    assert.strictEqual(result.findings[0].counterexample, '[0] -> division by zero');
+    assert.strictEqual(result.findings[0].scope, 'file');
+    assert.strictEqual(result.findings[0].ruleId, 'property-counterexample');
+    assert.match(result.findings[0].message, /\[0\] -> division by zero/);
     assert.ok(result.score < 1);
   });
 

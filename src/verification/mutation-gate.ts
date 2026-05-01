@@ -2,6 +2,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
 import { runVerificationCommand, VerificationCommandResult } from './command-runner';
+import { type Finding } from '../types/finding';
+import { buildMutationFindings } from './mutation-findings';
 
 export type MutationLanguage = 'javascript-typescript' | 'python' | 'java';
 export type MutationGateStatus = 'PASS' | 'WARNING' | 'FAIL' | 'SKIP';
@@ -28,6 +30,7 @@ export interface MutationToolResult {
   killedMutants: number;
   survivedMutants: number;
   mutationScore: number;
+  findings: Finding[];
 }
 
 export interface MutationGateInput {
@@ -47,6 +50,7 @@ export interface MutationGateResult {
   killedMutants: number;
   survivedMutants: number;
   results: MutationToolResult[];
+  findings: Finding[];
 }
 
 export type MutationCommandRunner = (
@@ -229,6 +233,7 @@ export async function runMutationGate(input: MutationGateInput): Promise<Mutatio
       killedMutants: 0,
       survivedMutants: 0,
       results: [],
+      findings: [],
     };
   }
 
@@ -238,7 +243,7 @@ export async function runMutationGate(input: MutationGateInput): Promise<Mutatio
     const command = buildMutationCommand(input.targetRepoPath, target);
     const commandResult = await runner(command, input.targetRepoPath, input.timeoutMs ?? 600_000);
     const metrics = parseMutationOutput(commandResult.stdout, commandResult.stderr);
-    results.push({
+    const toolResult = {
       language: target.language,
       files: target.files,
       command,
@@ -247,6 +252,10 @@ export async function runMutationGate(input: MutationGateInput): Promise<Mutatio
       stderr: commandResult.stderr,
       durationMs: commandResult.durationMs,
       ...metrics,
+    };
+    results.push({
+      ...toolResult,
+      findings: [],
     });
   }
 
@@ -256,6 +265,16 @@ export async function runMutationGate(input: MutationGateInput): Promise<Mutatio
   const mutationScore = totalMutants > 0 ? killedMutants / totalMutants : 0;
   const toolFailed = results.some(result => result.exitCode !== 0 && result.totalMutants === 0);
   const status = toolFailed ? 'FAIL' : evaluateMutationScore(mutationScore, thresholds);
+  const resultsWithFindings = results.map(result => ({
+    ...result,
+    findings: buildMutationFindings({
+      repoPath: input.targetRepoPath,
+      result,
+      status,
+      toolFailed: result.exitCode !== 0 && result.totalMutants === 0,
+    }),
+  }));
+  const findings = resultsWithFindings.flatMap(result => result.findings);
 
   return {
     status,
@@ -267,6 +286,7 @@ export async function runMutationGate(input: MutationGateInput): Promise<Mutatio
     totalMutants,
     killedMutants,
     survivedMutants,
-    results,
+    results: resultsWithFindings,
+    findings,
   };
 }

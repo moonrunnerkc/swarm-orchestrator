@@ -90,6 +90,7 @@ describe('mutation gate', () => {
       cwd,
       exitCode: 0,
       stdout: [
+        'Survived mutant: src/a.ts:4:12',
         'Killed: 13',
         'Survived: 7',
         'Total mutants: 20',
@@ -111,6 +112,10 @@ describe('mutation gate', () => {
       assert.strictEqual(result.killedMutants, 13);
       assert.strictEqual(result.survivedMutants, 7);
       assert.strictEqual(result.mutationScore, 0.65);
+      assert.strictEqual(result.findings.length, 1);
+      assert.strictEqual(result.findings[0].scope, 'line');
+      assert.strictEqual(result.findings[0].filePath, 'src/a.ts');
+      assert.strictEqual(result.findings[0].line, 4);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

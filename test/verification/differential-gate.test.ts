@@ -85,6 +85,7 @@ describe('runDifferentialGate', () => {
     assert.ok(result.patch, 'patch command evidence should be captured');
     assert.notStrictEqual(result.base.exitCode, 0);
     assert.strictEqual(result.patch.exitCode, 0);
+    assert.deepStrictEqual(result.findings, []);
   });
 
   it('marks a test invalid when it already passes at the base commit', async () => {
@@ -103,6 +104,7 @@ describe('runDifferentialGate', () => {
     assert.ok(result.base, 'base command evidence should be captured');
     assert.strictEqual(result.base.exitCode, 0);
     assert.strictEqual(result.patch, undefined);
+    assert.strictEqual(result.findings[0].ruleId, 'invalid-regression-test');
   });
 
   it('fails when the test fails at both base and patch', async () => {
@@ -122,5 +124,8 @@ describe('runDifferentialGate', () => {
     assert.ok(result.patch, 'patch command evidence should be captured');
     assert.notStrictEqual(result.base.exitCode, 0);
     assert.notStrictEqual(result.patch.exitCode, 0);
+    assert.strictEqual(result.findings[0].scope, 'line');
+    assert.strictEqual(result.findings[0].filePath, 'calc.test.js');
+    assert.strictEqual(result.findings[0].line, 3);
   });
 });

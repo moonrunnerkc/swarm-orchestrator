@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { runVerificationCommand, VerificationCommandResult } from './command-runner';
+import { createFinding, type Finding } from '../types/finding';
 
 export type PropertyGateStatus = 'PASS' | 'ADVISORY' | 'SKIP';
 export type PropertyLanguage = 'typescript' | 'javascript' | 'python';
@@ -13,12 +14,7 @@ export interface PropertyTarget {
   advisoryOnly: boolean;
 }
 
-export interface PropertyFinding {
-  filePath: string;
-  functionName: string;
-  counterexample?: string;
-  explanation: string;
-}
+export type PropertyFinding = Finding;
 
 export interface PropertyGateInput {
   targetRepoPath: string;
@@ -173,6 +169,22 @@ function extractCounterexample(output: string): string | undefined {
   return match?.[1]?.trim();
 }
 
+function propertyFinding(target: PropertyTarget, counterexample: string | undefined): PropertyFinding {
+  const suffix = counterexample ? `: ${counterexample}` : '';
+  const rawMessage = target.advisoryOnly
+    ? `Generic advisory fuzzing found a failure in ${target.functionName}${suffix}.`
+    : `Property-based test found a counterexample in ${target.functionName}${suffix}.`;
+  const message = rawMessage.length <= 200 ? rawMessage : `${rawMessage.slice(0, 197)}...`;
+  return createFinding({
+    scope: 'file',
+    producerId: 'property-gate',
+    ruleId: target.advisoryOnly ? 'generic-property-fuzzing' : 'property-counterexample',
+    severity: target.advisoryOnly ? 'low' : 'medium',
+    filePath: target.filePath,
+    message,
+  });
+}
+
 /**
  * Run generated property-based tests for modified functions.
  *
@@ -197,14 +209,7 @@ export async function runPropertyGate(input: PropertyGateInput): Promise<Propert
     if (result.exitCode !== 0) {
       const output = `${result.stdout}\n${result.stderr}`;
       const counterexample = extractCounterexample(output);
-      findings.push({
-        filePath: target.filePath,
-        functionName: target.functionName,
-        ...(counterexample ? { counterexample } : {}),
-        explanation: target.advisoryOnly
-          ? 'generic advisory fuzzing found a failure or the property tool could not run'
-          : 'property-based test found a counterexample or tool failure',
-      });
+      findings.push(propertyFinding(target, counterexample));
     }
   }
 

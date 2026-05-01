@@ -233,7 +233,7 @@ describe('swebench instance evaluator', () => {
         assert.equal(record.modifiedFunctions[0]?.functionName, 'add');
         assert.equal(record.modifiedFunctions[0]?.typed, true);
         assert.equal(record.counterexamples.length, 1);
-        assert.match(record.counterexamples[0]?.counterexample ?? '', /TypeError/);
+        assert.match(record.counterexamples[0]?.message ?? '', /TypeError/);
         assert.ok(captured[0]?.includes('add'), 'harness command should reference function name');
       } finally {
         fs.rmSync(repoPath, { recursive: true, force: true });

@@ -41,12 +41,19 @@ export {
   type CheatFindingSeverity,
 } from './cheat-detector';
 export {
+  normalizeSemgrepResults,
+} from './semgrep-normalizer';
+export {
   extractLiterals,
   isTestFilePath,
   parseUnifiedDiff,
   type ParsedDiffFile,
   type ParsedDiffLine,
 } from './diff-analysis';
+export {
+  extractSourceLocations,
+  type SourceLocation,
+} from './source-locations';
 export {
   discoverPropertyTargets,
   runPropertyGate,
@@ -89,3 +96,15 @@ export {
   type CompositeLayerStatus,
   type CompositeWeights,
 } from './composite-score';
+export {
+  createFinding,
+  isFinding,
+  type FileFinding,
+  type Finding,
+  type FindingInput,
+  type FindingProducerId,
+  type FindingScope,
+  type FindingSeverity,
+  type LineFinding,
+  type SummaryFinding,
+} from '../types/finding';
