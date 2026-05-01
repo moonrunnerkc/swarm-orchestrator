@@ -724,3 +724,48 @@ driver to use Python 3.11 explicitly, or (b) substitute different
 SWE-bench instances whose source still builds on Python 3.12, or (c)
 treat the smoke as a "known-fail with truthful prep_errors" sanity
 check rather than a pass/fail gate.
+
+## 8. Resolution
+
+All harness rounds documented in this diagnostic and discovered
+since are now fixed. Recorded here as the canonical resolution log
+so future eval failures can quickly distinguish "we already saw this
+shape" from "this is a new round."
+
+| Round | Symptom | Root cause | Fix commit |
+|---|---|---|---|
+| 1 | 100% pass on Phase 1 sweep | Validator step removed from property hook | (pre-Phase-2) |
+| 2 | `goldPass=false` on every GENERATED instance; tests imported the wrong package | Synthesizer `cd <basePath>` rewrote gold worktree's cwd; no per-instance venv plumbed through | (Phase 2 step 2) `rewriteCommandForWorktree` and `wrapCommandWithVenv` plus `venvBin` plumbing in `swebench-instance-evaluator.ts` |
+| 3 | Editable-install failures silently passed `prep_ok`; relative `--workdir` produced doubly-nested `<repo>/<repo>/.venv` trees on Django; gold-worktree state non-falsifiable from JSONL | (a) `prep_ok` only checked `bool(venv_bin) and bool(gold_branch)`; (b) `args.workdir` not resolved; (c) gold worktree HEAD not captured | `093a84c` (Defects A + B), `ff6aca4` (gold HEAD instrumentation) |
+| 4 | Per-record failure-mode classification was impossible | JSONL only carried status; no captured stderr | (Phase 2 instrumentation, commit `789bb24`) `baseStdout`/`baseStderr`/`goldStdout`/`goldStderr` (8 KiB truncated), `synthReason`, `attemptDetails[]` |
+| 5 | `goldPass=false` on every Django GENERATED record; `bash: line 1: python: command not found` in `baseStderr` AND `goldStderr` | `materialize_gold_branch`'s `git add -A` after `setup_venv` staged untracked `.venv/` into the gold-branch commit; final `git checkout --detach <head>` deleted the venv from the working tree | `73e258a` (`git apply --index` replaces the `git apply` + `git add -A` shape) |
+| 6 | 4/10 GENERATION_FAILED on multi-repo eval, all with `wallClockMs=360s` (3 × 120 s adapter-stall × 3 attempts) | Synthesizer's default `timeoutMs=120_000` overrode the Claude Code adapter's own `STALL_TIMEOUT_MS=600_000` budget; hard SWE-bench prompts produce no stdout for 2-5 minutes during reasoning and got SIGKILLed before emitting the candidate JSON | `344fe22` (`DEFAULT_TIMEOUT_MS=600_000` exported alongside `synthesizeRegressionTest`; default raised to match the adapter's expectation) |
+
+Validation that the rounds are closed:
+
+- Round 5 + round 6 jointly verified by the multi-repo Layer 1 sweep
+  (`docs/p1-eval-fixtures/runs/v7-critical-path/multi-repo-l1-rerun/`).
+  All 10 instances produced GENERATED records, none with the
+  round-5 `python: command not found` shape, none with round-6
+  `Process killed after 120s` rejection. The residual 4/10 fn=true
+  records are synthesizer-side (Django runtests.py file-placement,
+  sphinx pytest collection error, pylint hardcoded `.venv/bin/python`
+  in `testCommand`) and are tracked in
+  `docs/p1-eval-results-synthesizer.md` for the next session's
+  synth-quality work.
+- Rounds 1-4 verified before the round-5 fix landed; the closure is
+  recorded in `docs/p1-eval-results-synthesizer.md`'s historical
+  Phase 2 section.
+
+### Phase 3 readiness: harness is no longer the blocker
+
+Phase 2's "harness is fragile in unanticipated ways" caveat applied
+through round 5. After rounds 5 + 6 landed, the harness has produced
+two consecutive multi-repo measurements with stable per-record
+classification and no new round emerging. The remaining Layer 1
+breach is attributable to the synthesizer's prompt and acceptance
+criteria, not to the harness. The bullet in the original "Cumulative
+harness fragility" section that read "the harness is fragile in ways
+the v7 plan did not anticipate" is closed; the harness has reached
+the "boring infrastructure" phase the plan assumed it would arrive
+at.

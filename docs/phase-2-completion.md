@@ -1,5 +1,86 @@
 # Phase 2 Completion Report
 
+Date: 2026-05-01 (original); 2026-05-02 (v7 critical-path amendment
+prepended below).
+
+This is a closeout report. The 2026-05-02 amendment updates the
+Phase 3 readiness verdict with results from the multi-repo Layer 1
+re-eval, the round-5 + round-6 harness fixes that preceded it, and
+the Layer 4 arity-aware property-gate fix landed in v7 critical-path
+session 1.
+
+## v7 critical-path amendment (2026-05-02)
+
+The Phase 2 closeout below records two Phase 3 blockers: Layer 1
+FN=100% on a Django-only corpus, attributed to round-5 harness state;
+and Layer 4 untyped-corpus tooling artifacts. Three commits across
+sessions 1 and 2 of v7 critical-path changed the picture:
+
+| Commit | Subject | Effect on Phase 2 blocker |
+|---|---|---|
+| `73e258a` | `fix(eval-driver): exclude venv from gold branch …` | Round-5 harness fix; `git apply --index` replaces `git add -A` so untracked `.venv/` is no longer committed and post-checkout-deleted |
+| `61f2d04` | `feat(property-gate): arity-aware generator selection from type hints` | Layer 4 arity-aware harness; the 28/28-tooling-artifact problem on the Phase 2 corpus is structurally resolved (skips with a low-severity `property-skip-unsupported` finding when types are absent or unmappable, no more `@given(st.integers(), st.integers())` crashes on arity ≠ 2) |
+| `344fe22` | `fix(synthesizer): bump default per-attempt timeout to match Claude Code stall budget` | Round-6 harness fix; raised synthesizer's default `timeoutMs` from 120 s to 600 s to match `claude-code-adapter.ts`'s `STALL_TIMEOUT_MS`, eliminating the `Process killed after 120s` adapter-stall mode that drove 4/10 GENERATION_FAILED records on the multi-repo eval |
+
+### Updated per-eval status
+
+| Layer | Eval | Result | Halt-threshold status | Phase 3 readiness |
+|---|---|---|---|---|
+| Layer 1 — Synthesizer | multi-repo n=10 (4 repos) | FP = 0/10 = 0%; FN = 4/10 = 40% | FP **PASS**; FN **BREACH**, classification synthesizer-side | NO (synth-quality work, not harness) |
+| Layer 3 — Cheat detector | (unchanged from Phase 2) | FP = 0/20 (0%) | **PASS** | YES (with rule-pack follow-up) |
+| Layer 4 — Property gate | structural fix landed; re-eval pending | n/a (consumer infra ready, re-eval is session 3) | n/a | NO (typed-corpus re-eval needed) |
+
+### What changed about the Phase 3 blocker
+
+**Phase 2 closeout said**: Layer 1 fails because the harness is
+broken; the synthesizer's actual quality is unmeasured.
+
+**Multi-repo amendment says**: the synthesizer's actual quality is
+now measured. FN=40% on a 4-repo corpus, with all 4 fn=true records
+classified as synthesizer-side: 2 Django runtests.py file-placement
+mismatches, 1 sphinx pytest collection-time error, 1 pylint hardcoded
+relative `.venv/bin/python` path. The breach is real, the headline is
+honest, and the work to clear it is synth-side prompt/contract
+changes, not harness fixes.
+
+Cumulative harness rounds: 6, all closed. The harness is no longer
+the bottleneck.
+
+### Required before Phase 3 (revised)
+
+1. **Layer 1 synthesizer-side work** (the new blocker):
+   - Prompt edits to make the synthesizer aware of repo-specific
+     test-runner placement conventions (Django's `tests/<app>/test_*.py`
+     dotted-path discovery is the obvious worked example; pytest's
+     conftest-based discovery is the other major shape).
+   - Reject candidates whose `pytest -m collection` step exits non-zero
+     before accepting them as GENERATED. Currently the synthesizer
+     accepts on `commandResult.exitCode !== 0` against base, which
+     conflates "test fails because it tests a real bug" with "test
+     fails because it cannot be collected."
+   - Forbid relative venv references (`.venv/bin/python`,
+     `./venv/bin/...`) in generated `testCommand`. The harness's
+     `wrapCommandWithVenv` only fixes PATH lookup, not literal-path
+     execution.
+   - Estimate: 2-4 days. Not in scope for v7 critical-path session 2.
+2. **Layer 4 re-eval on a typed corpus** (session 3 in this critical
+   path). Structural fix is in place; the measurement is the next
+   session.
+3. **Phase 3 promotion** (session 4) — gated on (1) and (2) clearing.
+
+### Cost cumulative
+
+- Across all v7 critical-path sessions to date: ~$8 of $15 ceiling.
+
+The 2026-05-01 closeout below is preserved as historical record. Its
+attribution of Layer 1's breach to round-5 harness state was correct;
+that root cause is now fixed, and the residual breach is a different
+animal.
+
+---
+
+# Phase 2 Completion Report (historical, 2026-05-01)
+
 Date: 2026-05-01.
 Scope: P1 evals on real data (Layer 1 synthesizer, Layer 3 cheat
 detector, Layer 4 property gate) per the v7 plan precondition for

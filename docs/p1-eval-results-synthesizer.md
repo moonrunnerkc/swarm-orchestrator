@@ -1,4 +1,193 @@
-# Phase 2 — Layer 1 Synthesizer Eval Results
+# Layer 1 Synthesizer Eval Results
+
+Date: 2026-05-02 (multi-repo amendment); 2026-05-01 (original Phase 2
+write-up below).
+Status: **FN halt threshold still breached on the multi-repo corpus
+(40%, threshold 10%). Breach is now classified as synthesizer-side, not
+harness-side.** FP halt threshold cleared at 0% (threshold 15%).
+
+## v7 critical-path session 2 — multi-repo amendment (2026-05-02)
+
+The Phase 2 write-up below records FN = 100% on a Django-only corpus,
+attributed to round-5 harness defects (venv binaries deleted by
+`materialize_gold_branch`'s `git add -A` flow). Two follow-up fixes
+landed before this measurement:
+
+- **Round-5 (commit `73e258a`, session 1):** replaced the `git apply` +
+  `git add -A` shape in `materialize_gold_branch` with `git apply
+  --index`. The patch is staged inline; untracked `.venv/` is no longer
+  scanned, so it cannot be tracked into the gold branch and cannot be
+  deleted by the post-commit `git checkout --detach`. Validated by the
+  session-1 smoke (sympy + django, both `goldPass=true`).
+- **Round-6 (commit `344fe22`, this session):** raised the
+  synthesizer's default `timeoutMs` from 120 s to 600 s
+  (`DEFAULT_TIMEOUT_MS`), aligning with `claude-code-adapter.ts`'s
+  `STALL_TIMEOUT_MS`. The Phase 2 corpus's six `GENERATION_FAILED`
+  records were `Process killed after 120s of no output (stall
+  timeout)` — Claude Code spends several minutes on internal reasoning
+  for hard prompts and was being killed before producing the candidate
+  JSON. With the longer ceiling, all 10 multi-repo instances produced
+  a candidate; aggregate FN dropped from 60% (first multi-repo run,
+  pre-fix) to 40% (rerun, post-fix) on the same corpus.
+
+### Multi-repo corpus
+
+`benchmarks/swe-bench/instances-multi-repo-15.json` enumerates 15
+candidate instances across 8 repos chosen for Python 3.12
+compatibility. Five fail prep on the host's Python 3.12 toolchain
+(both pytest editable installs, plus the Cython-removed-distutils
+issue on requests / scikit-learn / matplotlib) and are recorded under
+`summary.skipped_for_prep_failure`. The actually measured corpus is
+**10 instances across 4 repos**:
+
+| Repo | Instances |
+|---|---|
+| django | django__django-10914, django__django-11099, django__django-15022 |
+| sympy | sympy__sympy-23950, sympy__sympy-24443, sympy__sympy-24661 |
+| sphinx-doc | sphinx-doc__sphinx-9281, sphinx-doc__sphinx-10466, sphinx-doc__sphinx-10673 |
+| pylint-dev | pylint-dev__pylint-6528 |
+
+Run artifacts (gitignored under `runs/`):
+`docs/p1-eval-fixtures/runs/v7-critical-path/multi-repo-l1/` (pre-
+round-6) and `…/multi-repo-l1-rerun/` (post-round-6).
+
+### Headline metrics — multi-repo, post-round-6
+
+```
+n = 10 (4 distinct repos)
+status: GENERATED=10, GENERATION_FAILED=0, AMBIGUOUS_GOAL=0, ERROR=0
+basePass=true: 0       (all candidates fail against base — good)
+basePass=false: 10
+goldPass=true: 6
+goldPass=false: 4
+
+FP = 0/10 = 0%         halt: > 15%   PASS
+FN = 4/10 = 40%        halt: > 10%   BREACH
+```
+
+Per-repo:
+
+| Repo | n | GENERATED | fp | fn |
+|---|---:|---:|---:|---:|
+| django | 3 | 3 | 0 | 2 |
+| sympy | 3 | 3 | 0 | 0 |
+| sphinx-doc | 3 | 3 | 0 | 1 |
+| pylint-dev | 1 | 1 | 0 | 1 |
+
+Sympy is clean (3/3 GENERATED, all goldPass=true). The breach is
+concentrated in django (2/3) plus one each from sphinx-doc and
+pylint-dev.
+
+### Failure-mode classification of the 4 fn=true records
+
+The round-4 instrumentation (`baseStdout`/`baseStderr`/`goldStdout`/
+`goldStderr`/`attemptDetails`) plus the round-3 `goldHeadSha` was
+sufficient to classify each fn=true record from JSONL alone, no
+re-run needed.
+
+**1. django__django-10914 (Django framework requirement)**
+
+`testCommand: python tests/runtests.py file_storage.test_default_upload_permissions --verbosity=2`
+Both base and gold stderr:
+`ModuleNotFoundError: No module named 'file_storage.test_default_upload_permissions'`.
+
+The synthesizer chose Django's own `tests/runtests.py` harness — the
+canonical way to run a Django test — and named the test module by
+dotted path. But Django's loader expects the file at
+`tests/file_storage/test_default_upload_permissions.py`, while the
+synthesizer placed it at the repo root as
+`swarm-synth-attempt-1-test_default_upload_permissions.py`. The same
+shape on both base and gold confirms it is not a gold-branch issue
+but a synthesizer file-placement-vs-test-runner-convention mismatch.
+
+**2. django__django-15022 (Django framework requirement)**
+
+`testCommand: python tests/runtests.py admin_changelist.test_search_joins`
+Identical mode: Django runtests.py needs the file at
+`tests/admin_changelist/test_search_joins.py`, synthesizer placed it
+at repo root.
+
+**3. sphinx-doc__sphinx-9281 (synthesized test has a collection-time error)**
+
+`testCommand: python -m pytest swarm-synth-attempt-1-test_regression_9281_enum_defaults.py -v`
+baseStdout / goldStdout: `Interrupted: 1 error during collection`.
+pytest aborts before any test executes; the candidate file has an
+import-time or fixture-discovery error. The synthesizer's
+`testSource` is structurally invalid for sphinx's test environment.
+
+**4. pylint-dev__pylint-6528 (synthesizer hardcoded relative venv path)**
+
+`testCommand: .venv/bin/python -m pytest swarm-synth-attempt-1-test_recursive_ignore.py -v`
+baseStdout shows the test ran (and 2 of 4 sub-cases passed against
+base — basePass=false because not all sub-cases passed). goldStderr:
+`bash: line 1: .venv/bin/python: No such file or directory`. The gold
+worktree lives in `/tmp/swarm-eval-worktree-*` (per
+`defaultWithWorktree`); the persistent repo's `.venv/` is not copied
+in. The synthesizer hardcoded a relative path that resolves only in
+the persistent repo, not in the temporary gold worktree. PATH-wrapping
+via `wrapCommandWithVenv` does not help because the literal
+`.venv/bin/python` is interpreted as a path, not as a name to look up
+on PATH.
+
+### Verdict
+
+All four fn=true records are synthesizer-side: 2 framework-convention
+mismatches, 1 structural test-source error, 1 prompt bug (relative
+venv path baked into testCommand). The harness is not the
+bottleneck. The breach is real and the headline is honest.
+
+Per the v7 critical-path directive ("If it's synthesizer-side,
+document and halt — synthesizer redesign is its own session"), the
+next-session work is a synthesizer-side change: prompt edits to (a)
+match each repo's test-runner placement convention, (b) prevent
+collection-time errors from landing as accepted candidates, (c)
+forbid relative venv paths in `testCommand`. None of these is in
+scope for this session.
+
+### Adapter non-determinism observed in re-runs
+
+Same instance, same prompt, same harness produced different
+`testSource` and different `goldPass` between the pre-round-6 run
+and the post-round-6 rerun on three instances:
+
+| Instance | Pre-round-6 | Post-round-6 |
+|---|---|---|
+| django__django-10914 | GENERATED, goldPass=true | GENERATED, goldPass=false (Django framework) |
+| django__django-11099 | GENERATED, goldPass=false | GENERATED, goldPass=true |
+| sympy__sympy-23950 | GENERATED, goldPass=false | GENERATED, goldPass=true |
+
+The aggregate FN moves only because adapter non-determinism flips
+particular instances; the underlying class of synth-side weaknesses
+is consistent across runs. The next-session synth-quality work
+should not assume any single instance's outcome is reproducible
+without explicit seed control on the adapter.
+
+### Cost
+
+| Run | Instances | Wall-clock | Token cost (est.) |
+|---|---|---|---|
+| multi-repo-l1 (pre-round-6) | 10 measured + 5 prep-skipped | ~47 min | ~$3.0 |
+| multi-repo-l1-rerun (post-round-6) | 10 measured + 5 prep-skipped | ~26 min | ~$2.0 |
+
+Cumulative across all sessions: ~$8 of $15 ceiling. The rerun came in
+faster than the first run because all 10 instances completed in 1
+attempt (no 3 × adapter-stall multiplier).
+
+### Phase 2 → multi-repo, summary
+
+The Phase 2 100% FN headline was harness-driven (round-5). Round-5 fix
+exposed adapter-stall (round-6). Round-6 fix exposed synthesizer-side
+quality issues. After two scope-bounded fixes, Layer 1's residual
+breach (FN = 40%) is no longer attributable to harness defects and is
+the legitimate measurement to act on going forward.
+
+The Phase 2 corpus narrative below is preserved as historical record;
+its harness-state attribution still holds, just with the round-5 fix
+no longer pending.
+
+---
+
+# Phase 2 — Layer 1 Synthesizer Eval Results (historical, 2026-05-01)
 
 Date: 2026-05-01.
 Status: **HALT THRESHOLD BREACHED.** Layer 1 fails the v7 FN halt
