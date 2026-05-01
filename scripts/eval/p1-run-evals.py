@@ -292,8 +292,19 @@ def materialize_gold_branch(repo_dir: Path, gold_patch: str) -> str | None:
     head = run(["git", "rev-parse", "HEAD"], cwd=repo_dir, check=True).stdout.strip()
 
     run(["git", "checkout", "-B", GOLD_BRANCH], cwd=repo_dir, check=True)
+    # `git apply --index` writes the patch to the working tree AND stages
+    # exactly its diff in the index, with no scan of untracked files. The
+    # earlier `git apply` + `git add -A` shape staged the entire untracked
+    # corpus alongside the patch — including .venv/, which setup_venv()
+    # populates before this function runs. The venv binaries (bin/python,
+    # bin/python3, bin/pip) ended up tracked on the gold branch, and the
+    # final `git checkout --detach <head>` deleted them from the working
+    # tree because the base commit didn't carry them. The next basePass /
+    # goldPass run then exited 127 with `python: command not found`. This
+    # is round-5 of the harness fragility tracked in
+    # docs/p1-eval-harness-diagnostic.md.
     apply = subprocess.run(
-        ["git", "apply", "--whitespace=nowarn", "-"],
+        ["git", "apply", "--index", "--whitespace=nowarn", "-"],
         cwd=str(repo_dir),
         input=gold_patch,
         capture_output=True,
@@ -304,7 +315,6 @@ def materialize_gold_branch(repo_dir: Path, gold_patch: str) -> str | None:
         run(["git", "checkout", "--detach", head], cwd=repo_dir)
         return None
 
-    run(["git", "add", "-A"], cwd=repo_dir, check=True)
     run(
         ["git", "-c", "user.email=p1-eval@swarm", "-c", "user.name=p1-eval",
          "commit", "-m", "[p1-eval] gold patch", "--allow-empty"],
