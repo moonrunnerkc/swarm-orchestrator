@@ -69,22 +69,29 @@ swarm run --goal "Add a /health endpoint that returns 200 OK" \
 Expected output shape:
 
 ```text
-[cli:swarm] Total Steps: 3
-[cli:swarm] Cost Estimate: 3-5 premium requests
-[orchestrator] Starting Parallel Swarm Execution
-[orchestrator]   Step 1 (worker) on branch: swarm/<run-id>/step-1-worker
-[orchestrator]   Step 1 (worker) - Agent working...
-[orchestrator]   Step 1 verified, merging...
-[cli:swarm] SWARM EXECUTION COMPLETE
-[cli:swarm]   Completed: 3/3
-[cli:swarm]   Artifacts: ./runs/<run-id>/
+🐝 Swarm Orchestrator - Plan & Execute
+
+Goal: Add a /health endpoint that returns 200 OK
+
+  plan     2 waves
+
+  wave 1  step 1 · sequential
+  › step-1 worker started
+  ✓ step-1 worker 4m32s · verified
+  wave 2  step 2 · sequential
+  › step-2 reviewer started
+  ✓ step-2 reviewer 3m18s · verified
+  running quality gates...
+
+  ✅ Completed: 2/2
+  📁 Artifacts: ./runs/<run-id>/
 ```
 
 ## How It Works
 
 The CLI takes a goal, calls `swarm bootstrap` or `swarm plan` to produce a plan file, then `swarm swarm <planfile>` runs each step. A worker step is a git branch and worktree where the configured agent CLI executes against the goal; the worker writes a `/share` transcript and commits its changes. A reviewer step is read-only, runs either before the worker (synthesises a differential test from the goal's `FAIL_TO_PASS` description) or after (reviews the diff against a configured policy: general, security, or accessibility).
 
-After each step, the verifier runs. The active per-step path is `src/verifier-engine.ts`, which parses the transcript, cross-references hook-recorded file evidence, and runs outcome checks (`git_diff`, `file_existence`, `build_exec`, `test_exec`) against the worktree. The v7 falsification battery code lives under `src/verification/` and is wired in for differential gating, mutation testing, cheat detection, property testing, and attestation; the migration to make it the sole per-step path is in progress.
+After each step, the verifier runs. The active per-step path is `src/verifier-engine.ts`, which parses the transcript, cross-references hook-recorded file evidence, and runs outcome checks (`git_diff`, `file_existence`, `build_exec`, `test_exec`) against the worktree. The v7 falsification battery (`src/verification/`) is wired and exercised by the synthetic calibration corpus at `benchmarks/falsification-corpus/`; the SWE-bench harness wires Layers 1 (synthesizer) and 4 (property) as spot-checks, with Layers 3 (cheat) and 5 (attestation) covered by the corpus harness.
 
 Steps that pass verification merge to `main` via octopus merge; steps that fail are rolled back. After all step branches merge, the nine-gate quality engine scans the merged result and writes a report. Quality-gate findings are advisory in the current code: they do not block the merge path.
 
@@ -94,12 +101,12 @@ For deeper detail, see [`ARCHITECTURE.md`](ARCHITECTURE.md) and [`docs/verificat
 
 | Agent CLI | Status | Notes |
 |---|---|---|
-| `copilot` | shipped | GitHub Copilot CLI. Cold-start spawn per step. Adapter: `src/adapters/copilot-adapter.ts`. |
-| `claude-code` | shipped | Anthropic Claude Code CLI. Supports persistent interactive sessions. Adapter: `src/adapters/claude-code-adapter.ts`. |
-| `claude-code-teams` | shipped | Claude Code in teams configuration. Adapter: `src/adapters/claude-code-teams.ts`. |
-| `codex` | shipped | OpenAI Codex CLI. Spawns `codex exec` with sandbox bypass for git worktrees. Adapter: `src/adapters/codex-adapter.ts`. |
+| `claude-code` | validated | Anthropic Claude Code CLI. Supports persistent interactive sessions. End-to-end validation in v7.0.0 (5-instance SWE-bench Verified smoke, 2026-04-30). Adapter: `src/adapters/claude-code-adapter.ts`. |
+| `copilot` | adapter ships | GitHub Copilot CLI. Adapter compiles and the spawn path works. Re-validation against the post-bypass pipeline deferred to v8 per the multi-adapter validation roadmap. Adapter: `src/adapters/copilot-adapter.ts`. |
+| `codex` | adapter ships | OpenAI Codex CLI. Adapter compiles and the spawn path works. Same v8 deferral as Copilot. Adapter: `src/adapters/codex-adapter.ts`. |
+| `claude-code-teams` | adapter ships | Claude Code in teams configuration. Same v8 deferral. Adapter: `src/adapters/claude-code-teams.ts`. |
 
-Pass `--tool <name>` to select. The agent CLI must be installed and authenticated by the user; the orchestrator does not bundle credentials.
+Pass `--tool <name>` to select. The agent CLI must be installed and authenticated by the user; the orchestrator does not bundle credentials. The `validated` row is the only one that ships with end-to-end SWE-bench evidence in v7.0.0.
 
 ## Configuration
 
@@ -174,6 +181,17 @@ Full reference: [`docs/configuration.md`](docs/configuration.md).
 Full flag reference: [`docs/cli.md`](docs/cli.md).
 </details>
 
+## Limitations
+
+v7.0.0 ships with documented limitations. Each entry in [`docs/known-gaps.md`](docs/known-gaps.md) names the symptom, structural cause, and v7.1 fix shape:
+
+- The keyword classifier in `detectGoalType` misroutes bug-fix prose that mentions API/server/endpoint/etc. SWE-bench mode bypasses via `--task-type swebench`; the general-purpose `swarm run --goal` path is affected.
+- The verifier's required-check list isn't task-type-aware. SWE-bench mode rejects acceptable agent fixes for missing build/test invocations in the transcript.
+- Auto-commit silently catches git errors. The verifier's secondary uncommitted-changes branch passes the step on the assumption that auto-commit lands. When it doesn't, the agent's work is lost. The exact failure cause is currently unknowable; the v7.1 priority is to log the swallowed error so the failure class becomes observable.
+- Synth eval's `basePass` / `goldPass` signal is host-Python-sensitive on legacy codebases. Layer 2 (FAIL_TO_PASS in the per-instance container) is unaffected and remains the authoritative resolution gate.
+- `installDependenciesIfNeeded` produces a `package-lock.json` (~100KB) at repo root on Node-shipping repos like django. Cosmetic; doesn't break resolution.
+- Synthesizer per-agent JSONL filenames don't reflect actual per-agent execution; the synthesizer hardcodes `ClaudeCodeAdapter` regardless of the orchestrator-level tool. Release notes do not claim per-agent synthesis comparison.
+
 ## Documentation
 
 | Section | What's covered |
@@ -184,7 +202,9 @@ Full flag reference: [`docs/cli.md`](docs/cli.md).
 | [Quality gates](docs/quality-gates.md) | The nine built-in gates and how to register custom ones. |
 | [Configuration](docs/configuration.md) | Config file precedence, schema, and overrides. |
 | [CLI](docs/cli.md) | Full command and flag reference. |
-| [Benchmarks](docs/benchmarks.md) | Verification corpus methodology, falsification catch rate per agent, scoring. |
+| [Benchmarks](docs/benchmarks.md) | Falsification corpus methodology and per-layer FN rates from the 2026-04-29 calibration run. |
+| [Known gaps](docs/known-gaps.md) | v7.0.0 limitations with discovery sequences and v7.1 fix shapes. |
+| [Migration](docs/v6-to-v7-migration.md) | Breaking changes from v6 to v7. |
 | [Contributing](CONTRIBUTING.md) | Development setup, code style, PR workflow. |
 
 ## Contributing
