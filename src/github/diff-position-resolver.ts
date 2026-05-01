@@ -3,10 +3,11 @@ import type { LineFinding } from '../types/finding';
 
 export type ParsedPullRequestDiff = parseDiff.File[];
 
-export interface DiffPositionResolution {
-  path: string;
-  position: number;
+export type DiffSide = 'RIGHT';
+
+export interface DiffLineResolution {
   line: number;
+  side: DiffSide;
   originalLine: number;
   relocated: boolean;
 }
@@ -14,7 +15,6 @@ export interface DiffPositionResolution {
 interface IndexedDiffLine {
   path: string;
   line: number;
-  position: number;
 }
 
 function normalizePath(filePath: string | undefined): string | undefined {
@@ -31,14 +31,12 @@ function indexFileLines(file: parseDiff.File): IndexedDiffLine[] {
   if (!path) return [];
 
   const indexed: IndexedDiffLine[] = [];
-  let position = 0;
   for (const chunk of file.chunks) {
     for (const change of chunk.changes) {
-      position += 1;
       if (change.type === 'normal') {
-        indexed.push({ path, line: change.ln2, position });
+        indexed.push({ path, line: change.ln2 });
       } else if (change.type === 'add') {
-        indexed.push({ path, line: change.ln, position });
+        indexed.push({ path, line: change.ln });
       }
     }
   }
@@ -64,20 +62,19 @@ export function parsePullRequestDiff(diffText: string): ParsedPullRequestDiff {
 }
 
 /**
- * Resolve a line-scoped finding to the GitHub review API diff position.
+ * Resolve a line-scoped finding to the GitHub review API line and side anchor.
  *
- * GitHub review `position` values count hunk body lines within a file diff,
- * including deleted lines, while comments can only target added or context
- * lines in the new file.
+ * GitHub review `line` and `side` values target file line numbers on the
+ * pull request diff. Findings always target the post-patch side.
  *
  * @param finding - Line-scoped finding with repo-relative path and 1-indexed line.
  * @param diff - Parsed PR diff.
- * @returns Inline comment position, relocated position, or null when no nearby hunk line exists.
+ * @returns Inline comment anchor, relocated anchor, or null when no nearby hunk line exists.
  */
 export function resolveDiffPosition(
   finding: LineFinding,
   diff: ParsedPullRequestDiff,
-): DiffPositionResolution | null {
+): DiffLineResolution | null {
   const targetPath = normalizePath(finding.filePath);
   if (!targetPath) return null;
 
@@ -88,9 +85,8 @@ export function resolveDiffPosition(
   const exact = lines.find(line => line.line === finding.line);
   if (exact) {
     return {
-      path: exact.path,
-      position: exact.position,
       line: exact.line,
+      side: 'RIGHT',
       originalLine: finding.line,
       relocated: false,
     };
@@ -102,9 +98,8 @@ export function resolveDiffPosition(
   if (!nearest) return null;
 
   return {
-    path: nearest.path,
-    position: nearest.position,
     line: nearest.line,
+    side: 'RIGHT',
     originalLine: finding.line,
     relocated: true,
   };

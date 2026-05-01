@@ -29,14 +29,13 @@ function finding(line: number): LineFinding {
 }
 
 describe('diff position resolver', () => {
-  it('returns the direct diff position for a finding on an added hunk line', () => {
+  it('returns the direct diff line and side for a finding on an added hunk line', () => {
     const diff = parsePullRequestDiff(fixture('in-hunk.diff'));
     const resolution = resolveDiffPosition(finding(2), diff);
 
     assert.deepStrictEqual(resolution, {
-      path: 'src/example.ts',
-      position: 2,
       line: 2,
+      side: 'RIGHT',
       originalLine: 2,
       relocated: false,
     });
@@ -47,9 +46,8 @@ describe('diff position resolver', () => {
     const resolution = resolveDiffPosition(finding(14), diff);
 
     assert.deepStrictEqual(resolution, {
-      path: 'src/example.ts',
-      position: 2,
       line: 10,
+      side: 'RIGHT',
       originalLine: 14,
       relocated: true,
     });
