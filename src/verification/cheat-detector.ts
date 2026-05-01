@@ -1,6 +1,8 @@
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
+import * as yaml from 'js-yaml';
 import {
   extractLiterals,
   isTestFilePath,
@@ -11,6 +13,7 @@ import {
 import { runVerificationCommand } from './command-runner';
 import { createFinding, type Finding, type FindingSeverity } from '../types/finding';
 import { normalizeSemgrepResults } from './semgrep-normalizer';
+import { type LoadedRule, loadRules } from '../rules/loader';
 
 export type CheatFindingSeverity = FindingSeverity;
 export type CheatFinding = Finding;
@@ -44,14 +47,52 @@ function gitDiff(input: CheatDetectorInput): string {
   });
 }
 
-function findSemgrepConfig(input: CheatDetectorInput): string | undefined {
-  const candidates = [
-    input.semgrepConfigDir,
-    path.join(process.cwd(), 'config', 'semgrep-rules'),
-    path.join(__dirname, '..', '..', '..', 'config', 'semgrep-rules'),
-    path.join(__dirname, '..', '..', 'config', 'semgrep-rules'),
-  ].filter((candidate): candidate is string => Boolean(candidate));
-  return candidates.find(candidate => fs.existsSync(candidate));
+/** Map orchestrator severity onto Semgrep's severity vocabulary. */
+const ORCHESTRATOR_TO_SEMGREP_SEVERITY: Readonly<Record<FindingSeverity, string>> = Object.freeze({
+  high: 'ERROR',
+  medium: 'WARNING',
+  low: 'INFO',
+});
+
+/**
+ * Convert a loaded cheat rule into the Semgrep rule object shape. Pass-through
+ * fields (pattern, pattern-regex, patterns, pattern-either) are preserved
+ * verbatim so contributors only need to learn one schema, not two.
+ */
+function ruleToSemgrep(rule: LoadedRule): Record<string, unknown> {
+  const data = rule.data;
+  const out: Record<string, unknown> = {
+    id: rule.ruleId,
+    message: typeof data['message'] === 'string' ? data['message'] : '',
+    severity: ORCHESTRATOR_TO_SEMGREP_SEVERITY[data['severity'] as FindingSeverity] ?? 'WARNING',
+    languages: Array.isArray(data['languages']) ? data['languages'] : [],
+  };
+  for (const key of ['pattern', 'pattern-regex', 'patterns', 'pattern-either'] as const) {
+    if (data[key] !== undefined) out[key] = data[key];
+  }
+  return out;
+}
+
+/**
+ * If a per-call override directory was supplied, return that. Otherwise build
+ * a transient Semgrep config from cheat rules loaded via the rules loader so
+ * Semgrep sees one valid `rules:` array containing every built-in (and any
+ * future opted-in community) cheat rule. The transient file lives in os.tmpdir
+ * and is rewritten on every call; this keeps the loader as the source of
+ * truth and means a new built-in pack drops in without touching this module.
+ */
+function resolveSemgrepConfigPath(input: CheatDetectorInput): string | undefined {
+  if (input.semgrepConfigDir && fs.existsSync(input.semgrepConfigDir)) {
+    return input.semgrepConfigDir;
+  }
+  const loaded = loadRules();
+  const cheatRules = loaded.rules.filter((r) => r.kind === 'cheat-rule');
+  if (cheatRules.length === 0) return undefined;
+  const config = { rules: cheatRules.map(ruleToSemgrep) };
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-cheat-rules-'));
+  const file = path.join(dir, 'rules.yaml');
+  fs.writeFileSync(file, yaml.dump(config), 'utf8');
+  return file;
 }
 
 function addedLineCount(files: ParsedDiffFile[]): number {
@@ -240,12 +281,12 @@ async function runSemgrep(input: CheatDetectorInput, files: ParsedDiffFile[]): P
   findings: CheatFinding[];
 }> {
   if (input.runSemgrep === false) return { status: 'not-run', findings: [] };
-  const configDir = findSemgrepConfig(input);
-  if (!configDir) return { status: 'unavailable', findings: [] };
+  const configPath = resolveSemgrepConfigPath(input);
+  if (!configPath) return { status: 'unavailable', findings: [] };
   const fileArgs = files.map(file => `'${file.newPath.replace(/'/g, `'\\''`)}'`).join(' ');
   if (!fileArgs) return { status: 'not-run', findings: [] };
 
-  const command = `semgrep --config '${configDir.replace(/'/g, `'\\''`)}' --json ${fileArgs}`;
+  const command = `semgrep --config '${configPath.replace(/'/g, `'\\''`)}' --json ${fileArgs}`;
   const result = await runVerificationCommand(command, input.repoPath, 120_000);
   if (result.exitCode !== 0 && !result.stdout.trim()) return { status: 'failed', findings: [] };
 
