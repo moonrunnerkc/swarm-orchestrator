@@ -74,3 +74,11 @@ Production use: not used in production today. The corpus harness computes the sc
 
 Integration note: the current scorer is advisory-layer oriented. Hard-gate outcomes from differential and mutation need to gate independently of the advisory composite score, matching the harness behavior where `broke` is set from intent or regression failures (`benchmarks/falsification-corpus/harness.ts:114`).
 
+## Open downstream question: attestation findings
+
+Attestation currently belongs in `LayerResult` evidence, not `Finding[]`, because `FindingProducerId` does not include an attestation producer and the attestation verifier reports repository-level provenance state rather than a source line. Before PR-diff comment posting consumes battery results, choose one of two explicit paths:
+
+- Keep attestation in `LayerResult` and skip it from Finding-based inline PR comments.
+- Extend the unified `Finding` schema with an attestation-capable producer/rule so failures such as `cannot-attest` can be surfaced as summary comments.
+
+This is intentionally unresolved in Phase 1 and should be decided before the battery becomes the primary production verifier.

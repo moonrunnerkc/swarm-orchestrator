@@ -159,6 +159,7 @@ describe('ReportGenerator', () => {
 
       assert.ok(report.falsificationBattery !== null);
       assert.strictEqual(report.falsificationBattery!.compositeScore, 0.82);
+      assert.ok(report.falsificationBattery!.layers);
       assert.strictEqual(report.falsificationBattery!.layers[0].layer, 'intent');
     });
 

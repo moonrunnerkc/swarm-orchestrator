@@ -1,4 +1,5 @@
 import { RunReport } from './report-generator';
+import type { Finding } from './types/finding';
 
 function formatDuration(ms: number): string {
   const seconds = Math.floor(ms / 1000);
@@ -6,6 +7,19 @@ function formatDuration(ms: number): string {
   const remainingSeconds = seconds % 60;
   if (minutes === 0) return `${seconds}s`;
   return `${minutes}m ${remainingSeconds}s`;
+}
+
+function formatFindingLocation(finding: Finding): string {
+  if (finding.scope === 'line') return `${finding.filePath}:${finding.line}`;
+  if (finding.scope === 'file') return finding.filePath;
+  return 'summary';
+}
+
+function batteryFindingCounts(findings: Finding[]): string {
+  const high = findings.filter(finding => finding.severity === 'high').length;
+  const medium = findings.filter(finding => finding.severity === 'medium').length;
+  const low = findings.filter(finding => finding.severity === 'low').length;
+  return `Findings: ${high} high, ${medium} medium, ${low} low`;
 }
 
 export class ReportRenderer {
@@ -56,12 +70,31 @@ export class ReportRenderer {
     lines.push('');
 
     if (report.falsificationBattery) {
+      const battery = report.falsificationBattery;
+      const layers = battery.layerResults ?? battery.layers ?? [];
+      const findings = battery.findings ?? [];
       lines.push('## Falsification Battery');
       lines.push('');
-      lines.push(`Composite score: ${report.falsificationBattery.compositeScore}`);
-      lines.push(`Human review: ${report.falsificationBattery.humanReviewRequired ? 'yes' : 'no'}`);
-      for (const layer of report.falsificationBattery.layers) {
+      lines.push(`Composite score: ${battery.compositeScore}`);
+      if (battery.hardGatePassed !== undefined) {
+        lines.push(`Hard gates: ${battery.hardGatePassed ? 'passed' : 'failed'}`);
+      }
+      lines.push(`Human review: ${battery.humanReviewRequired ? 'yes' : 'no'}`);
+      if (battery.wallClock !== undefined) lines.push(`Wall clock: ${formatDuration(battery.wallClock)}`);
+      if (battery.failedLayers && battery.failedLayers.length > 0) {
+        lines.push(`Failed layers: ${battery.failedLayers.join(', ')}`);
+      }
+      lines.push(batteryFindingCounts(findings));
+      for (const layer of layers) {
         lines.push(`- ${layer.layer}: ${layer.status} (${layer.durationMs}ms) ${layer.evidenceSummary}`);
+      }
+      if (findings.length > 0) {
+        lines.push('');
+        lines.push('| Severity | Rule | Location | Message |');
+        lines.push('|----------|------|----------|---------|');
+        for (const finding of findings) {
+          lines.push(`| ${finding.severity} | ${finding.ruleId} | ${formatFindingLocation(finding)} | ${finding.message} |`);
+        }
       }
       lines.push('');
     }

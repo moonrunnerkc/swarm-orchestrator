@@ -97,6 +97,15 @@ export {
   type CompositeWeights,
 } from './composite-score';
 export {
+  runBatteryVerification,
+  type BatteryCommandRunner,
+  type BatteryLayerName,
+  type BatteryLayerStatus,
+  type BatteryResult,
+  type BatteryRunnerInput,
+  type LayerResult,
+} from './battery-runner';
+export {
   createFinding,
   isFinding,
   type FileFinding,

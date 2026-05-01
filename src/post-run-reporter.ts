@@ -16,6 +16,7 @@ import DeploymentManager from './deployment-manager';
 import PRAutomation from './pr-automation';
 import { defaultModelForAdapter } from './adapters';
 import { BaselineSnapshot } from './baseline-scanner';
+import type { BatteryResult } from './verification/battery-runner';
 
 const logger = getLogger('post-run');
 
@@ -54,6 +55,7 @@ export interface PostRunContext {
   knowledgeBase?: KnowledgeBaseManager;
   waveAnalyses?: MetaReviewResult[];
   finalGateResults?: GateResult[];
+  batteryResult?: BatteryResult;
   baselineSnapshot?: BaselineSnapshot;
 }
 
@@ -74,6 +76,14 @@ export async function runPostExecution(
   plan: ExecutionPlan,
   options?: PostRunOptions
 ): Promise<void> {
+  if (context.batteryResult) {
+    fs.writeFileSync(
+      path.join(runDir, 'falsification-battery.json'),
+      JSON.stringify(context.batteryResult, null, 2),
+      'utf8'
+    );
+  }
+
   // Finalize metrics and save to analytics log
   if (context.metricsCollector) {
     const metrics = context.metricsCollector.finalize();

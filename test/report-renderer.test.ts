@@ -122,16 +122,42 @@ describe('ReportRenderer', () => {
       const md = ReportRenderer.toMarkdown(buildRunReport({
         falsificationBattery: {
           compositeScore: 0.82,
-          humanReviewRequired: false,
-          layers: [
-            { layer: 'intent', status: 'PASS', evidenceSummary: 'differential test passed', durationMs: 20 }
+          humanReviewRequired: true,
+          hardGatePassed: true,
+          wallClock: 1250,
+          failedLayers: ['property-gate'],
+          findings: [
+            {
+              id: 'finding-1',
+              scope: 'line',
+              producerId: 'cheat-detector',
+              ruleId: 'hardcoded-answer',
+              severity: 'medium',
+              filePath: 'src/auth.ts',
+              line: 12,
+              message: 'Implementation literal also appears in test expectations.',
+            },
+          ],
+          layerResults: [
+            {
+              layer: 'differential-gate',
+              status: 'pass',
+              score: 1,
+              evidenceSummary: 'differential test passed',
+              durationMs: 20,
+              findings: [],
+            },
           ],
         },
       }));
 
       assert.ok(md.includes('## Falsification Battery'));
       assert.ok(md.includes('Composite score: 0.82'));
-      assert.ok(md.includes('intent: PASS'));
+      assert.ok(md.includes('Hard gates: passed'));
+      assert.ok(md.includes('Failed layers: property-gate'));
+      assert.ok(md.includes('Findings: 0 high, 1 medium, 0 low'));
+      assert.ok(md.includes('differential-gate: pass'));
+      assert.ok(md.includes('| medium | hardcoded-answer | src/auth.ts:12 |'));
     });
 
     it('does not print a maxParallelism / max parallelism metric (the prior stepCount-based value was wrong for serial runs)', () => {

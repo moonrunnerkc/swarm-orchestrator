@@ -48,11 +48,13 @@ import {
   executeStepInSwarm as _executeStepInSwarm,
   StepExecutorHost,
 } from './orchestrator/step-executor';
+import { runEndOfRunBattery as _runEndOfRunBattery } from './orchestrator/end-of-run-battery';
 import {
   runWaveLoop as _runWaveLoop,
   SchedulerHost,
 } from './orchestrator/wave-scheduler-loop';
 import { isFatalRunError } from './orchestrator/fatal-run-error';
+import type { BatteryResult } from './verification/battery-runner';
 
 const logger = getLogger('orchestrator');
 
@@ -137,6 +139,7 @@ export interface SwarmExecutionContext {
   prManager?: PRManager;
   prUrls?: Map<number, string>;
   finalGateResults?: GateResult[];
+  batteryResult?: BatteryResult;
   unmergedBranches?: Array<{
     stepNumber: number;
     branchName: string;
@@ -518,6 +521,17 @@ export class SwarmOrchestrator implements RemediationHost, ReplanHost, StepExecu
         await this.installDependenciesIfNeeded();
       }
     }
+
+    const batteryResult = await _runEndOfRunBattery({
+      workingDir: this.workingDir,
+      plan,
+      context,
+    });
+    context.batteryResult = batteryResult;
+    logger.info(
+      `  falsification battery: composite ${batteryResult.compositeScore.toFixed(3)}, ` +
+      `${batteryResult.findings.length} finding(s), ${batteryResult.failedLayers.length} failed layer(s)`,
+    );
 
     // final quality gates run on the merged state (hard gate)
     // this happens before auto-PR so we don't create a PR for a failing run

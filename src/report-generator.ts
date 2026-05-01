@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { RunMetrics, CostAttribution, StepCostRecord } from './metrics-types';
 import { SessionState } from './types';
+import type { Finding } from './types/finding';
 
 export interface StepSummary {
   stepNumber: number;
@@ -58,11 +59,24 @@ export interface RunReport {
 export interface FalsificationBatteryReport {
   compositeScore: number;
   humanReviewRequired: boolean;
-  layers: Array<{
+  hardGatePassed?: boolean;
+  wallClock?: number;
+  failedLayers?: string[];
+  findings?: Finding[];
+  layers?: Array<{
     layer: string;
     status: string;
     evidenceSummary: string;
     durationMs: number;
+  }>;
+  layerResults?: Array<{
+    layer: string;
+    status: string;
+    score: number;
+    evidenceSummary: string;
+    durationMs: number;
+    findings?: Finding[];
+    errorReason?: string;
   }>;
 }
 

@@ -5,6 +5,7 @@ import * as path from 'path';
 import { runPostExecution, PostRunContext } from '../src/post-run-reporter';
 import type { ExecutionPlan } from '../src/plan-generator';
 import PRAutomation from '../src/pr-automation';
+import type { BatteryResult } from '../src/verification';
 
 function tmpDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'post-run-'));
@@ -107,6 +108,41 @@ describe('post-run-reporter', () => {
     await runPostExecution(workDir, runDir, context, makePlan(1));
 
     assert.ok(!fs.existsSync(path.join(runDir, 'metrics.json')), 'metrics.json should not exist');
+  });
+
+  it('writes falsification-battery.json when battery results are present', async () => {
+    const batteryResult: BatteryResult = {
+      findings: [],
+      compositeScore: 0.9,
+      layerResults: [
+        {
+          layer: 'cheat-detector',
+          status: 'pass',
+          score: 1,
+          evidenceSummary: 'no findings',
+          durationMs: 5,
+          findings: [],
+        },
+      ],
+      wallClock: 5,
+      failedLayers: [],
+      hardGatePassed: true,
+      humanReviewRequired: false,
+    };
+    const context: PostRunContext = {
+      executionId: 'test-run',
+      mainBranch: 'main',
+      results: [],
+      batteryResult,
+    };
+
+    await runPostExecution(workDir, runDir, context, makePlan(0));
+
+    const filePath = path.join(runDir, 'falsification-battery.json');
+    assert.ok(fs.existsSync(filePath), 'falsification-battery.json should exist');
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8')) as BatteryResult;
+    assert.equal(parsed.compositeScore, 0.9);
+    assert.equal(parsed.layerResults[0].layer, 'cheat-detector');
   });
 
   it('threads mainBranch into generatePRSummary when autoPR is set', async () => {
