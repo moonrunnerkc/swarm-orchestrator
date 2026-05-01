@@ -48,7 +48,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -67,6 +66,12 @@ DEFAULT_TIMEOUT_S = 600
 DEFAULT_PER_INSTANCE_TIMEOUT_S = 900
 
 EXTRAS_ATTEMPTS = ['".[test,dev,testing]"', '".[test]"', '".[dev]"', '"."']
+
+# Mapping for repos whose Python import name does not match the GitHub repo
+# slug. Most are 1:1 (django/django -> django), but a handful diverge.
+IMPORT_NAME_OVERRIDES: dict[str, str] = {
+    "scikit-learn": "sklearn",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -127,6 +132,7 @@ class InstancePrepResult:
     venv_bin: str | None
     gold_branch: str | None
     prep_ok: bool
+    import_ok: bool = False
     prep_errors: list[str] = field(default_factory=list)
 
 
@@ -226,6 +232,53 @@ def setup_venv(repo_dir: Path, task_id: str) -> tuple[Path | None, list[str]]:
     return venv_python, errors
 
 
+def derive_import_name(repo: str) -> str:
+    """Map a SWE-bench repo slug to its top-level Python import name.
+
+    Most SWE-bench Verified repos publish under the same import name as the
+    GitHub repo basename (django/django -> django, astropy/astropy -> astropy).
+    The known exceptions live in IMPORT_NAME_OVERRIDES.
+
+    @param repo - Repo slug as produced by SWE-bench, in `owner/name` form.
+    @returns The package name to pass to `python -c "import <name>"`.
+    """
+    parts = repo.split("/", 1)
+    base = parts[1] if len(parts) == 2 else repo
+    return IMPORT_NAME_OVERRIDES.get(base, base)
+
+
+def verify_package_import(venv_python: Path, repo: str, task_id: str) -> tuple[bool, str | None]:
+    """Run `python -c "import <pkg>"` from outside the repo to confirm the install worked.
+
+    The check runs from /tmp so a stranded source-tree (no editable install
+    completed, but the repo's own package directory still on sys.path via
+    cwd) cannot mask the failure. Editable installs add a .pth file in
+    site-packages, so the import resolves regardless of cwd when prep
+    actually succeeded; if the .pth was never written, the import fails
+    cleanly with ModuleNotFoundError.
+
+    @param venv_python - Absolute path to the per-instance venv's python3.
+    @param repo - SWE-bench repo slug, used to derive the import name.
+    @param task_id - Instance id; used to set DJANGO_SETTINGS_MODULE for
+                     Django repos so a top-level import does not raise
+                     ImproperlyConfigured.
+    @returns (ok, error_text). error_text is None on success, otherwise the
+             stderr from the failed import (truncated to 500 chars).
+    """
+    name = derive_import_name(repo)
+    env = env_with_setuptools_scm(os.environ.copy())
+    env = env_with_django_settings(Path("/tmp"), task_id, env)
+    result = run(
+        [str(venv_python), "-c", f"import {name}"],
+        cwd=Path("/tmp"),
+        env=env,
+        timeout=60,
+    )
+    if result.returncode == 0:
+        return True, None
+    return False, (result.stderr or result.stdout).strip()[:500]
+
+
 def materialize_gold_branch(repo_dir: Path, gold_patch: str) -> str | None:
     """Apply gold_patch on a swarm-gold-eval branch and return its name.
 
@@ -262,18 +315,36 @@ def materialize_gold_branch(repo_dir: Path, gold_patch: str) -> str | None:
 
 
 def prepare_instance(task: dict[str, Any], workdir: Path) -> InstancePrepResult:
-    """Run clone + venv + gold-branch for one SWE-bench instance."""
+    """Run clone + venv + import-verify + gold-branch for one SWE-bench instance.
+
+    `prep_ok` is gated on three independent conditions: the venv exists, the
+    target package can be imported from outside the repo (proving the
+    editable install actually succeeded), and the gold patch applied. A
+    venv that exists but cannot import its package is treated as a prep
+    failure rather than silently feeding broken state to downstream tests.
+    """
     instance_id = task["instance_id"]
+    repo = task["repo"]
     errors: list[str] = []
     repo_dir = clone_repo(task, workdir)
     venv_python, venv_errs = setup_venv(repo_dir, instance_id)
     errors.extend(venv_errs)
     venv_bin = str(venv_python.parent) if venv_python else None
+
+    import_ok = False
+    if venv_python:
+        import_ok, import_err = verify_package_import(venv_python, repo, instance_id)
+        if not import_ok:
+            errors.append(
+                f"package import verification failed for '{derive_import_name(repo)}': "
+                f"{import_err or 'no stderr captured'}"
+            )
+
     gold_branch = materialize_gold_branch(repo_dir, task.get("patch", ""))
     if not gold_branch:
         errors.append("gold patch did not apply; goldPass cannot be measured")
 
-    prep_ok = bool(venv_bin) and bool(gold_branch)
+    prep_ok = bool(venv_bin) and import_ok and bool(gold_branch)
     return InstancePrepResult(
         instance_id=instance_id,
         repo=task["repo"],
@@ -282,6 +353,7 @@ def prepare_instance(task: dict[str, Any], workdir: Path) -> InstancePrepResult:
         venv_bin=venv_bin,
         gold_branch=gold_branch,
         prep_ok=prep_ok,
+        import_ok=import_ok,
         prep_errors=errors,
     )
 
@@ -426,7 +498,12 @@ def main() -> int:
 
     out_dir = Path(args.out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
-    workdir = Path(args.workdir) if args.workdir else out_dir / "workspaces"
+    # Resolve workdir to absolute up-front. Subprocess `cwd` plus a relative
+    # path argument resolve against different roots (parent CWD vs subprocess
+    # CWD), and that mismatch silently created doubly-nested .venv trees in
+    # the 2026-05-01 synth-n10 run. Absolute paths everywhere prevents the
+    # double-nest deterministically.
+    workdir = (Path(args.workdir).resolve() if args.workdir else out_dir / "workspaces")
     workdir.mkdir(parents=True, exist_ok=True)
 
     modes = parse_modes(args.modes)
@@ -435,10 +512,10 @@ def main() -> int:
     if not manifest_path.exists():
         raise SystemExit(f"instances manifest not found: {manifest_path}")
     manifest = json.loads(manifest_path.read_text())
-    instance_ids = manifest["instance_ids"][: args.n]
+    all_instance_ids = manifest["instance_ids"]
 
-    print(f"Loading {len(instance_ids)} instances from {manifest_path.name} ...")
-    tasks = load_dataset_instances(instance_ids, Path(args.hf_home))
+    print(f"Loading {len(all_instance_ids)} candidate instances from {manifest_path.name} ...")
+    all_tasks = load_dataset_instances(all_instance_ids, Path(args.hf_home))
 
     synth_jsonl = out_dir / "synthesizer-eval.jsonl"
     prop_jsonl = out_dir / "property-gate-eval.jsonl"
@@ -446,17 +523,32 @@ def main() -> int:
     summary: dict[str, Any] = {
         "started_at": datetime.now(timezone.utc).isoformat(),
         "manifest": str(manifest_path),
-        "n": len(tasks),
+        "requested_n": args.n,
         "modes": modes,
         "instances": [],
+        "skipped_for_prep_failure": [],
     }
 
-    for task in tasks:
+    accepted = 0
+    for task in all_tasks:
+        if accepted >= args.n:
+            break
         print(f"\n=== {task['instance_id']} ({task['repo']}) ===")
         prep = prepare_instance(task, workdir)
-        instance_summary: dict[str, Any] = {"prep": asdict(prep)}
         if not prep.prep_ok:
-            print(f"  prep incomplete: {prep.prep_errors}")
+            print(f"  SKIP: prep failed ({len(prep.prep_errors)} errors)")
+            for err in prep.prep_errors:
+                print(f"    - {err.splitlines()[0][:200]}")
+            summary["skipped_for_prep_failure"].append({
+                "instance_id": prep.instance_id,
+                "repo": prep.repo,
+                "import_ok": prep.import_ok,
+                "prep_errors": prep.prep_errors,
+            })
+            continue
+
+        accepted += 1
+        instance_summary: dict[str, Any] = {"prep": asdict(prep)}
         if "synth" in modes:
             print("  -> synth")
             record = run_synth_eval(prep, task, synth_jsonl, task.get("problem_statement", ""))
@@ -470,10 +562,22 @@ def main() -> int:
         summary["instances"].append(instance_summary)
 
     summary["finished_at"] = datetime.now(timezone.utc).isoformat()
+    summary["accepted_count"] = accepted
+    summary["skipped_count"] = len(summary["skipped_for_prep_failure"])
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
-    print(f"\nSummary: {out_dir / 'summary.json'}")
+    print(
+        f"\nSummary: accepted={accepted}/{args.n} requested; "
+        f"skipped_for_prep_failure={summary['skipped_count']}"
+    )
+    print(f"Summary: {out_dir / 'summary.json'}")
     print(f"Synth JSONL: {synth_jsonl}")
     print(f"Property JSONL: {prop_jsonl}")
+    if accepted < args.n:
+        print(
+            f"WARNING: requested n={args.n} but only {accepted} instances passed prep. "
+            f"Manifest exhausted before quota was filled.",
+            file=sys.stderr,
+        )
     return 0
 
 
