@@ -52,31 +52,33 @@ Produces `PropertyGateResult.findings: Finding[]`.
 Fields:
 
 - `id`: stable hash.
-- `scope`: `file`.
+- `scope`: `line`.
 - `producerId`: `property-gate`.
 - `ruleId`: `property-counterexample` or `generic-property-fuzzing`.
 - `severity`: `medium` for typed targets, `low` for advisory untyped targets.
 - `message`: includes the function name and counterexample when available.
 - `filePath`: repo-relative target file path.
+- `line`: function declaration line, 1-indexed in the patched file.
 
 Example:
 
 ```json
 {
-  "scope": "file",
+  "scope": "line",
   "producerId": "property-gate",
   "ruleId": "property-counterexample",
   "severity": "medium",
   "filePath": "src/math.ts",
+  "line": 1,
   "message": "Property-based test found a counterexample in reciprocal: [0] -> division by zero."
 }
 ```
 
 Diff mapping:
 
-- Known gap: property findings are function-scoped by discovery but the current
-  target model does not store function declaration lines. They are deferred to
-  file-scope review comments or the review summary.
+- Property findings use the parsed function declaration line. If the function
+  declaration is not present in the PR diff, the diff resolver can still
+  relocate within the configured hunk distance or fall back to the review body.
 
 ## mutation-gate
 

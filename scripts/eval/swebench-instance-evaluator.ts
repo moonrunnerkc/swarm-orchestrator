@@ -40,7 +40,7 @@ export interface SynthEvalRecord {
 export interface PropertyEvalRecord {
   instanceId: string;
   status: 'PASS' | 'ADVISORY' | 'SKIP' | 'ERROR';
-  modifiedFunctions: Array<Pick<PropertyTarget, 'filePath' | 'functionName' | 'language' | 'typed' | 'advisoryOnly'>>;
+  modifiedFunctions: Array<Pick<PropertyTarget, 'filePath' | 'line' | 'functionName' | 'language' | 'typed' | 'advisoryOnly'>>;
   counterexamples: PropertyFinding[];
   wallClockMs: number;
   error?: string;
@@ -239,6 +239,7 @@ export async function evaluateInstancePropertyGate(input: PropertyEvalInput): Pr
       status: result.status,
       modifiedFunctions: result.targets.map(t => ({
         filePath: t.filePath,
+        line: t.line,
         functionName: t.functionName,
         language: t.language,
         typed: t.typed,

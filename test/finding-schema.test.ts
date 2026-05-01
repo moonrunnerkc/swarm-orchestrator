@@ -101,7 +101,7 @@ describe('finding schema', () => {
     assert.strictEqual(findings[0].line, 7);
   });
 
-  it('validates property gate file-scoped findings from a fixture run', async () => {
+  it('validates property gate line-scoped findings from a fixture run', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'property-findings-'));
     dirs.push(root);
     writeFile(root, 'src/math.ts', [
@@ -127,7 +127,8 @@ describe('finding schema', () => {
     });
 
     assertFindings('property gate', result.findings);
-    assert.strictEqual(result.findings[0].scope, 'file');
+    assert.strictEqual(result.findings[0].scope, 'line');
+    assert.strictEqual(result.findings[0].line, 1);
   });
 
   it('validates mutation gate line-scoped findings from tool output', async () => {

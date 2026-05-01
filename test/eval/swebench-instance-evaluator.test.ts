@@ -231,6 +231,7 @@ describe('swebench instance evaluator', () => {
         assert.equal(record.instanceId, 'fake-prop');
         assert.equal(applyCalls.length, 1, 'gold patch should be applied once');
         assert.equal(record.modifiedFunctions[0]?.functionName, 'add');
+        assert.equal(record.modifiedFunctions[0]?.line, 1);
         assert.equal(record.modifiedFunctions[0]?.typed, true);
         assert.equal(record.counterexamples.length, 1);
         assert.match(record.counterexamples[0]?.message ?? '', /TypeError/);

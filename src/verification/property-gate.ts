@@ -9,6 +9,7 @@ export type PropertyLanguage = 'typescript' | 'javascript' | 'python';
 export interface PropertyTarget {
   language: PropertyLanguage;
   filePath: string;
+  line: number;
   functionName: string;
   typed: boolean;
   advisoryOnly: boolean;
@@ -52,6 +53,16 @@ function isTypedPythonSignature(params: string, suffix: string): boolean {
   return /:\s*[\w.[\]<>|]+/.test(params) || /->\s*[\w.[\]<>|]+/.test(suffix);
 }
 
+function declarationLine(source: string, matchIndex: number, matchedText: string): number {
+  const offset = matchedText.startsWith('\n') ? 1 : 0;
+  const declarationIndex = matchIndex + offset;
+  let line = 1;
+  for (let i = 0; i < declarationIndex; i += 1) {
+    if (source[i] === '\n') line += 1;
+  }
+  return line;
+}
+
 function discoverInSource(filePath: string, source: string): PropertyTarget[] {
   const ext = path.extname(filePath);
   const targets: PropertyTarget[] = [];
@@ -61,6 +72,7 @@ function discoverInSource(filePath: string, source: string): PropertyTarget[] {
       targets.push({
         language: 'python',
         filePath,
+        line: declarationLine(source, match.index ?? 0, match[0]),
         functionName: match[1] ?? 'unknown',
         typed,
         advisoryOnly: !typed,
@@ -82,6 +94,7 @@ function discoverInSource(filePath: string, source: string): PropertyTarget[] {
       targets.push({
         language,
         filePath,
+        line: declarationLine(source, match.index ?? 0, match[0]),
         functionName: match[1] ?? 'unknown',
         typed,
         advisoryOnly: language === 'javascript' || !typed,
@@ -176,11 +189,12 @@ function propertyFinding(target: PropertyTarget, counterexample: string | undefi
     : `Property-based test found a counterexample in ${target.functionName}${suffix}.`;
   const message = rawMessage.length <= 200 ? rawMessage : `${rawMessage.slice(0, 197)}...`;
   return createFinding({
-    scope: 'file',
+    scope: 'line',
     producerId: 'property-gate',
     ruleId: target.advisoryOnly ? 'generic-property-fuzzing' : 'property-counterexample',
     severity: target.advisoryOnly ? 'low' : 'medium',
     filePath: target.filePath,
+    line: target.line,
     message,
   });
 }

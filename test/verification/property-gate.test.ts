@@ -43,6 +43,7 @@ describe('property gate', () => {
     assert.deepStrictEqual(targets, [{
       language: 'typescript',
       filePath: 'src/math.ts',
+      line: 1,
       functionName: 'divide',
       typed: true,
       advisoryOnly: false,
@@ -62,6 +63,7 @@ describe('property gate', () => {
 
     assert.strictEqual(targets.length, 1);
     assert.strictEqual(targets[0].language, 'javascript');
+    assert.strictEqual(targets[0].line, 1);
     assert.strictEqual(targets[0].typed, false);
     assert.strictEqual(targets[0].advisoryOnly, true);
   });
@@ -94,7 +96,8 @@ describe('property gate', () => {
 
     assert.strictEqual(result.status, 'ADVISORY');
     assert.strictEqual(result.findings.length, 1);
-    assert.strictEqual(result.findings[0].scope, 'file');
+    assert.strictEqual(result.findings[0].scope, 'line');
+    assert.strictEqual(result.findings[0].line, 1);
     assert.strictEqual(result.findings[0].ruleId, 'property-counterexample');
     assert.match(result.findings[0].message, /\[0\] -> division by zero/);
     assert.ok(result.score < 1);
@@ -128,6 +131,7 @@ describe('property gate', () => {
     assert.strictEqual(result.status, 'PASS');
     assert.strictEqual(result.findings.length, 0);
     assert.strictEqual(result.targets[0].typed, true);
+    assert.strictEqual(result.targets[0].line, 1);
   });
 
   it('skips when no supported functions are found', async () => {
