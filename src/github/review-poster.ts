@@ -3,28 +3,30 @@ import {
   parsePullRequestDiff,
   resolveDiffPosition,
 } from './diff-position-resolver';
+import {
+  appendFindingMarker,
+  computeFindingId,
+  reconcileFindings,
+  type ExistingComment,
+} from './comment-dedup';
+import {
+  bodyReason,
+  buildReviewBody,
+  formatReviewCommentBody,
+  type BodyFinding,
+} from './comment-body-builder';
+import { fetchExistingReviewComments } from './review-comment-fetcher';
 import type {
   Finding,
-  FindingProducerId,
-  FindingSeverity,
   LineFinding,
 } from '../types/finding';
+
+export { formatReviewCommentBody } from './comment-body-builder';
 
 type CreateReviewParameters = RestEndpointMethodTypes['pulls']['createReview']['parameters'];
 type ReviewComment = NonNullable<CreateReviewParameters['comments']>[number];
 type ReviewEvent = 'REQUEST_CHANGES' | 'COMMENT';
-type BodyFindingReason = 'low-severity' | 'file-scoped' | 'summary-scoped' | 'outside-diff';
-
-interface BodyFinding {
-  finding: Finding;
-  reason: BodyFindingReason;
-}
-
-interface SeverityCounts {
-  high: number;
-  medium: number;
-  low: number;
-}
+const RESOLUTION_NOTICE = '**Resolved in newer run** — original finding below.';
 
 export interface ReviewPosterInput {
   owner: string;
@@ -49,132 +51,12 @@ function normalizePath(filePath: string): string {
   return filePath.replace(/\\/g, '/').replace(/^\.\//, '');
 }
 
-function severityLabel(severity: FindingSeverity): string {
-  if (severity === 'high') return 'High';
-  if (severity === 'medium') return 'Medium';
-  return 'Low';
-}
-
-function emptyCounts(): SeverityCounts {
-  return { high: 0, medium: 0, low: 0 };
-}
-
-function countsByProducer(findings: Finding[]): Map<FindingProducerId, SeverityCounts> {
-  const counts = new Map<FindingProducerId, SeverityCounts>();
-  for (const finding of findings) {
-    const current = counts.get(finding.producerId) ?? emptyCounts();
-    current[finding.severity] += 1;
-    counts.set(finding.producerId, current);
-  }
-  return counts;
-}
-
 function reviewEvent(findings: Finding[]): ReviewEvent {
   return findings.some(finding => finding.severity === 'high') ? 'REQUEST_CHANGES' : 'COMMENT';
 }
 
-function reportUrlFor(finding: Finding, fullReportUrl: string | undefined): string | undefined {
-  return finding.evidenceUrl ?? fullReportUrl;
-}
-
-function codeFenceFor(content: string): string {
-  const runs = content.match(/`+/g) ?? [];
-  const size = Math.max(3, ...runs.map(run => run.length + 1));
-  return '`'.repeat(size);
-}
-
-function formatLocation(finding: Finding): string {
-  if (finding.scope === 'line') return `${finding.filePath}:${finding.line}`;
-  if (finding.scope === 'file') return finding.filePath;
-  return 'summary';
-}
-
-function bodyReason(finding: Finding): BodyFindingReason {
-  if (finding.scope === 'file') return 'file-scoped';
-  if (finding.scope === 'summary') return 'summary-scoped';
-  return 'low-severity';
-}
-
-function reasonLabel(reason: BodyFindingReason): string {
-  if (reason === 'low-severity') return 'low severity';
-  if (reason === 'file-scoped') return 'file scoped';
-  if (reason === 'summary-scoped') return 'summary scoped';
-  return 'outside diff';
-}
-
 function inlineCandidate(finding: Finding): finding is LineFinding {
   return finding.scope === 'line' && finding.severity !== 'low';
-}
-
-/**
- * Format the markdown body for one inline GitHub review comment.
- *
- * @param finding - Line-scoped finding to render.
- * @param relocated - Whether the resolver had to anchor near the original line.
- * @param fullReportUrl - Optional run-level report URL.
- * @returns Markdown for the GitHub review comment body.
- */
-export function formatReviewCommentBody(
-  finding: LineFinding,
-  relocated: boolean,
-  fullReportUrl?: string,
-): string {
-  const lines = [`${severityLabel(finding.severity)} \`${finding.ruleId}\`: ${finding.message}`];
-  if (relocated) {
-    lines.push(`Anchored near original line ${finding.line} because that line is outside the diff hunk.`);
-  }
-  const reportUrl = reportUrlFor(finding, fullReportUrl);
-  if (reportUrl) lines.push(`[See full report](${reportUrl})`);
-  if (finding.suggestedEdit) {
-    const fence = codeFenceFor(finding.suggestedEdit);
-    lines.push(`${fence}suggestion`);
-    lines.push(finding.suggestedEdit);
-    lines.push(fence);
-  }
-  return lines.join('\n');
-}
-
-/**
- * Build the top-level GitHub review summary body.
- *
- * @param findings - All findings from the verification battery.
- * @param bodyFindings - Findings that are intentionally represented in the body.
- * @param fullReportUrl - Optional run-level report URL.
- * @returns Markdown review summary.
- */
-function buildReviewBody(
-  findings: Finding[],
-  bodyFindings: BodyFinding[],
-  fullReportUrl?: string,
-): string {
-  const lines = ['## Swarm verification review', ''];
-  lines.push(`Findings: ${findings.length}. Inline comments: ${findings.length - bodyFindings.length}.`);
-  if (fullReportUrl) lines.push(`Full report: [open report](${fullReportUrl}).`);
-  lines.push('', '### Counts by layer', '');
-  lines.push('| Layer | High | Medium | Low | Total |');
-  lines.push('| --- | ---: | ---: | ---: | ---: |');
-  for (const [producerId, counts] of countsByProducer(findings)) {
-    const total = counts.high + counts.medium + counts.low;
-    lines.push(`| ${producerId} | ${counts.high} | ${counts.medium} | ${counts.low} | ${total} |`);
-  }
-  if (findings.length === 0) lines.push('| none | 0 | 0 | 0 | 0 |');
-
-  lines.push('', '### Other findings', '');
-  if (bodyFindings.length === 0) {
-    lines.push('No file-scoped, summary-scoped, low-severity, or unanchored findings.');
-  } else {
-    for (const bodyFinding of bodyFindings) {
-      const finding = bodyFinding.finding;
-      const reportUrl = reportUrlFor(finding, fullReportUrl);
-      const reportLink = reportUrl ? ` [full report](${reportUrl})` : '';
-      lines.push(
-        `- ${severityLabel(finding.severity)} ${reasonLabel(bodyFinding.reason)} `
-        + `${formatLocation(finding)} \`${finding.ruleId}\`: ${finding.message}${reportLink}`,
-      );
-    }
-  }
-
-  return lines.join('\n');
 }
 
 function validateInput(input: ReviewPosterInput): void {
@@ -195,19 +77,15 @@ function validateInput(input: ReviewPosterInput): void {
   }
 }
 
-/**
- * Post one GitHub pull request review for verification findings.
- *
- * @param input - Repository, pull request, diff, token, and finding details.
- * @returns Metadata for the posted review.
- */
-export async function postPullRequestReview(input: ReviewPosterInput): Promise<PostedPullRequestReview> {
-  validateInput(input);
+function buildReviewComments(input: ReviewPosterInput, findingsToPost: Finding[]): {
+  comments: ReviewComment[];
+  bodyFindings: BodyFinding[];
+} {
   const parsedDiff = parsePullRequestDiff(input.diffText);
   const comments: ReviewComment[] = [];
   const bodyFindings: BodyFinding[] = [];
 
-  for (const finding of input.findings) {
+  for (const finding of findingsToPost) {
     if (!inlineCandidate(finding)) {
       bodyFindings.push({ finding, reason: bodyReason(finding) });
       continue;
@@ -219,17 +97,66 @@ export async function postPullRequestReview(input: ReviewPosterInput): Promise<P
       continue;
     }
 
+    const body = formatReviewCommentBody(finding, resolution.relocated, input.fullReportUrl);
     comments.push({
       path: normalizePath(finding.filePath),
       line: resolution.line,
       side: resolution.side,
-      body: formatReviewCommentBody(finding, resolution.relocated, input.fullReportUrl),
+      body: appendFindingMarker(body, computeFindingId(finding)),
     });
   }
 
+  return { comments, bodyFindings };
+}
+
+async function resolveStaleComments(
+  octokit: Octokit,
+  input: ReviewPosterInput,
+  comments: ExistingComment[],
+): Promise<void> {
+  for (const comment of comments) {
+    if (comment.body.startsWith(RESOLUTION_NOTICE)) continue;
+    try {
+      await octokit.rest.pulls.updateReviewComment({
+        owner: input.owner,
+        repo: input.repo,
+        comment_id: comment.id,
+        body: `${RESOLUTION_NOTICE}\n\n${comment.body}`,
+      });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `failed to resolve GitHub review comment ${comment.id}: GitHub API update review comment failed (${detail}); `
+        + 'verify the token has pull-requests:write and the comment still exists',
+        { cause: error },
+      );
+    }
+  }
+}
+
+/**
+ * Post one GitHub pull request review for verification findings.
+ *
+ * @param input - Repository, pull request, diff, token, and finding details.
+ * @returns Metadata for the posted review.
+ */
+export async function postPullRequestReview(input: ReviewPosterInput): Promise<PostedPullRequestReview> {
+  validateInput(input);
+  const octokit = new Octokit({ auth: input.githubToken });
+  const existingComments = await fetchExistingReviewComments(octokit, {
+    owner: input.owner,
+    repo: input.repo,
+    pullNumber: input.pullNumber,
+  });
+  const reconciled = reconcileFindings({
+    existingComments,
+    currentFindings: input.findings,
+  });
+  await resolveStaleComments(octokit, input, reconciled.toResolve);
+  const { comments, bodyFindings } = buildReviewComments(input, reconciled.toPost);
+
   const event = reviewEvent(input.findings);
   const body = buildReviewBody(input.findings, bodyFindings, input.fullReportUrl);
-  const octokit = new Octokit({ auth: input.githubToken });
   const payload: CreateReviewParameters = {
     owner: input.owner,
     repo: input.repo,

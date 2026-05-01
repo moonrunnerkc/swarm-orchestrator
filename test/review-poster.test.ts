@@ -3,21 +3,20 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
+import { appendFindingMarker, computeFindingId } from '../src/github/comment-dedup';
 import { postPullRequestReview } from '../src/github/review-poster';
 import { createFinding, type Finding, type FindingInput } from '../src/types/finding';
 
+type LineFindingInput = Extract<FindingInput, { scope: 'line' }>;
 const apiUrl = 'https://api.github.com/repos/:owner/:repo/pulls/:pullNumber/reviews';
-const recordedReviewResponse = {
-  id: 7788,
-  html_url: 'https://github.com/octo/swarm/pull/12#pullrequestreview-7788',
-};
+const commentsApiUrl = 'https://api.github.com/repos/:owner/:repo/pulls/:pullNumber/comments';
+const commentApiUrl = 'https://api.github.com/repos/:owner/:repo/pulls/comments/:commentId';
+const resolutionNotice = '**Resolved in newer run** — original finding below.';
+const recordedReviewResponse = { id: 7788, html_url: 'https://github.com/octo/swarm/pull/12#pullrequestreview-7788' };
 const server = setupServer();
 
 function fixture(name: string): string {
-  return fs.readFileSync(
-    path.join(process.cwd(), 'test', 'fixtures', 'sample-diffs', name),
-    'utf8',
-  );
+  return fs.readFileSync(path.join(process.cwd(), 'test', 'fixtures', 'sample-diffs', name), 'utf8');
 }
 
 function asRecord(value: unknown, name: string): Record<string, unknown> {
@@ -39,15 +38,56 @@ function asString(value: unknown, name: string): string {
   return value;
 }
 
-function captureCreateReviewRequests(captured: Record<string, unknown>[]): void {
-  server.use(http.post(apiUrl, async ({ request }) => {
-    captured.push(asRecord(await request.json(), 'review request body'));
-    return HttpResponse.json(recordedReviewResponse, { status: 201 });
-  }));
+function useReviewPosterApi(args: {
+  createRequests: Record<string, unknown>[];
+  existingComments?: Record<string, unknown>[];
+  updateRequests?: Record<string, unknown>[];
+}): void {
+  server.use(
+    http.get(commentsApiUrl, () => HttpResponse.json(args.existingComments ?? [])),
+    http.post(apiUrl, async ({ request }) => {
+      args.createRequests.push(asRecord(await request.json(), 'review request body'));
+      return HttpResponse.json(recordedReviewResponse, { status: 201 });
+    }),
+    http.patch(commentApiUrl, async ({ params, request }) => {
+      const body = asRecord(await request.json(), 'update review comment body');
+      args.updateRequests?.push({ ...body, commentId: String(params.commentId) });
+      return HttpResponse.json({ id: Number(params.commentId), body: body.body });
+    }),
+  );
 }
 
 function finding(input: FindingInput): Finding {
   return createFinding(input);
+}
+
+function lineFinding(overrides: Partial<Omit<LineFindingInput, 'scope'>> = {}): Finding {
+  return finding({
+    scope: 'line',
+    producerId: 'cheat-detector',
+    ruleId: 'hardcoded-answer',
+    severity: 'high',
+    filePath: 'src/example.ts',
+    line: 2,
+    message: 'Implementation copied an expected literal from a test.',
+    ...overrides,
+  });
+}
+
+function markedBody(body: string, target: Finding): string {
+  return appendFindingMarker(body, computeFindingId(target));
+}
+
+async function postFindings(findings: Finding[]): Promise<void> {
+  await postPullRequestReview({
+    owner: 'octo',
+    repo: 'swarm',
+    pullNumber: 12,
+    commitSha: 'abc1234',
+    diffText: fixture('in-hunk.diff'),
+    findings,
+    githubToken: 'test-token',
+  });
 }
 
 describe('review poster', () => {
@@ -57,7 +97,7 @@ describe('review poster', () => {
 
   it('posts line findings as line-side comments and body-scoped findings in the summary', async () => {
     const captured: Record<string, unknown>[] = [];
-    captureCreateReviewRequests(captured);
+    useReviewPosterApi({ createRequests: captured });
     const findings = [
       finding({
         scope: 'line',
@@ -127,6 +167,7 @@ describe('review poster', () => {
     const commentBody = asString(comment.body, 'comment body');
     assert.match(commentBody, /High `hardcoded-answer`: Implementation copied an expected literal/);
     assert.match(commentBody, /```suggestion\nexport const inserted = buildValue\(\);\n```/);
+    assert.match(commentBody, /<!-- swarm-finding-id:[a-f0-9]{16} -->$/);
 
     const reviewBody = asString(payload.body, 'review body');
     assert.match(reviewBody, /\| cheat-detector \| 1 \| 0 \| 0 \| 1 \|/);
@@ -138,7 +179,7 @@ describe('review poster', () => {
 
   it('uses COMMENT reviews and records relocated anchors in inline comment bodies', async () => {
     const captured: Record<string, unknown>[] = [];
-    captureCreateReviewRequests(captured);
+    useReviewPosterApi({ createRequests: captured });
     const findings = [
       finding({
         scope: 'line',
@@ -171,5 +212,88 @@ describe('review poster', () => {
     assert.equal(comment.line, 10);
     assert.equal(comment.side, 'RIGHT');
     assert.match(asString(comment.body, 'comment body'), /Anchored near original line 14/);
+  });
+
+  it('does not post a duplicate inline comment for an existing finding', async () => {
+    const captured: Record<string, unknown>[] = [];
+    const updates: Record<string, unknown>[] = [];
+    const existingFinding = lineFinding({
+      producerId: 'property-gate',
+      ruleId: 'property-counterexample',
+      severity: 'medium',
+      message: 'Property-based test found a counterexample in normalize.',
+    });
+    useReviewPosterApi({
+      createRequests: captured,
+      updateRequests: updates,
+      existingComments: [{ id: 101, body: markedBody('Existing review comment', existingFinding) }],
+    });
+
+    const result = await postPullRequestReview({
+      owner: 'octo',
+      repo: 'swarm',
+      pullNumber: 12,
+      commitSha: 'abc1234',
+      diffText: fixture('in-hunk.diff'),
+      findings: [existingFinding],
+      githubToken: 'test-token',
+    });
+
+    assert.equal(result.inlineCommentCount, 0);
+    assert.equal(updates.length, 0);
+    const comments = asArray(captured[0].comments, 'comments');
+    assert.equal(comments.length, 0);
+  });
+
+  it('prepends a resolution notice when a finding disappears', async () => {
+    const captured: Record<string, unknown>[] = [];
+    const updates: Record<string, unknown>[] = [];
+    const staleFinding = lineFinding();
+    const originalBody = markedBody('Original finding body', staleFinding);
+    useReviewPosterApi({
+      createRequests: captured,
+      updateRequests: updates,
+      existingComments: [{ id: 202, body: originalBody }],
+    });
+
+    await postFindings([]);
+
+    assert.equal(updates.length, 1);
+    assert.equal(updates[0].commentId, '202');
+    assert.equal(updates[0].body, `${resolutionNotice}\n\n${originalBody}`);
+    assert.equal(asArray(captured[0].comments, 'comments').length, 0);
+  });
+
+  it('does not prepend the resolution notice twice', async () => {
+    const captured: Record<string, unknown>[] = [];
+    const updates: Record<string, unknown>[] = [];
+    const staleFinding = lineFinding();
+    const resolvedBody = `${resolutionNotice}\n\n${markedBody('Original finding body', staleFinding)}`;
+    useReviewPosterApi({
+      createRequests: captured,
+      updateRequests: updates,
+      existingComments: [{ id: 303, body: resolvedBody }],
+    });
+
+    await postFindings([]);
+
+    assert.equal(updates.length, 0);
+  });
+
+  it('preserves human edits when resolving a stale finding', async () => {
+    const captured: Record<string, unknown>[] = [];
+    const updates: Record<string, unknown>[] = [];
+    const staleFinding = lineFinding();
+    const editedBody = markedBody('Human-added context\n\nOriginal finding body', staleFinding);
+    useReviewPosterApi({
+      createRequests: captured,
+      updateRequests: updates,
+      existingComments: [{ id: 404, body: editedBody }],
+    });
+
+    await postFindings([]);
+
+    assert.equal(updates.length, 1);
+    assert.equal(updates[0].body, `${resolutionNotice}\n\n${editedBody}`);
   });
 });
