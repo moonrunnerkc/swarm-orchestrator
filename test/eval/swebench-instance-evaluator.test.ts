@@ -1,4 +1,5 @@
 import { strict as assert } from 'assert';
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -202,6 +203,74 @@ describe('swebench instance evaluator', () => {
             `expected PATH wrap on ${cmd}`,
           );
         }
+      } finally {
+        fs.rmSync(repoPath, { recursive: true, force: true });
+      }
+    });
+
+    it('captures goldHeadSha from the gold worktree HEAD when withWorktreeFn yields a real git dir', async () => {
+      // Build a real git repo with two commits so HEAD resolves to a
+      // deterministic SHA. The withWorktreeFn override yields that repo
+      // directly to the synthesizer's gold-run closure, so the assertion
+      // mirrors what defaultWithWorktree produces in production.
+      const repoPath = fs.mkdtempSync(path.join(os.tmpdir(), 'evalhook-repo-'));
+      const goldRepoPath = fs.mkdtempSync(path.join(os.tmpdir(), 'evalhook-gold-'));
+      const testFile = path.join(repoPath, 'regression.test.js');
+      fs.writeFileSync(testFile, '// candidate');
+      const gitOpts = { cwd: goldRepoPath, encoding: 'utf8' as const, stdio: ['ignore', 'pipe', 'pipe'] as ['ignore', 'pipe', 'pipe'] };
+      execFileSync('git', ['init', '--quiet', '--initial-branch=main'], gitOpts);
+      execFileSync('git', ['config', 'user.email', 'eval@test'], gitOpts);
+      execFileSync('git', ['config', 'user.name', 'eval'], gitOpts);
+      fs.writeFileSync(path.join(goldRepoPath, 'a.txt'), 'a\n');
+      execFileSync('git', ['add', 'a.txt'], gitOpts);
+      execFileSync('git', ['commit', '--quiet', '-m', 'base'], gitOpts);
+      fs.writeFileSync(path.join(goldRepoPath, 'a.txt'), 'a\nb\n');
+      execFileSync('git', ['add', 'a.txt'], gitOpts);
+      execFileSync('git', ['commit', '--quiet', '-m', 'gold'], gitOpts);
+      const expectedSha = execFileSync('git', ['rev-parse', 'HEAD'], gitOpts).trim();
+
+      try {
+        const record = await evaluateInstanceSynthesizer({
+          instanceId: 'fake-gold-head',
+          problemStatement: 'goal',
+          repoPath,
+          goldPatchRef: 'gold-eval',
+          synthesizeFn: async () => fakeSynth('GENERATED', {
+            testFilePath: testFile,
+            testCommand: 'node ./regression.test.js',
+          }),
+          runCommand: async () => ({ exitCode: 1, stdout: '', stderr: 'fail' }),
+          withWorktreeFn: async (_repo, _ref, fn) => fn(goldRepoPath),
+        });
+
+        assert.equal(record.goldHeadSha, expectedSha,
+          'goldHeadSha must record the SHA of HEAD inside the gold worktree');
+      } finally {
+        fs.rmSync(repoPath, { recursive: true, force: true });
+        fs.rmSync(goldRepoPath, { recursive: true, force: true });
+      }
+    });
+
+    it('omits goldHeadSha when the worktree is not a git repository', async () => {
+      // The existing noopWorktree yields a plain tempdir; rev-parse must
+      // fail there and the record must omit the field rather than crash.
+      const repoPath = fs.mkdtempSync(path.join(os.tmpdir(), 'evalhook-repo-'));
+      const testFile = path.join(repoPath, 'regression.test.js');
+      fs.writeFileSync(testFile, '// candidate');
+      try {
+        const record = await evaluateInstanceSynthesizer({
+          instanceId: 'fake-no-git',
+          problemStatement: 'goal',
+          repoPath,
+          goldPatchRef: 'gold-eval',
+          synthesizeFn: async () => fakeSynth('GENERATED', {
+            testFilePath: testFile,
+            testCommand: 'node ./regression.test.js',
+          }),
+          runCommand: async () => ({ exitCode: 1, stdout: '', stderr: 'fail' }),
+          withWorktreeFn: noopWorktree,
+        });
+        assert.equal(record.goldHeadSha, undefined);
       } finally {
         fs.rmSync(repoPath, { recursive: true, force: true });
       }

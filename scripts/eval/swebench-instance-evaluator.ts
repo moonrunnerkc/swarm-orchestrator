@@ -1,3 +1,4 @@
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { AgentAdapter } from '../../src/adapters/agent-adapter';
@@ -31,10 +32,39 @@ export interface SynthEvalRecord {
   testSource?: string;
   basePass: boolean | null;
   goldPass: boolean | null;
+  /**
+   * SHA of HEAD inside the temporary gold worktree at the moment the gold
+   * test ran. Captured to make the assertion "the gold worktree was at
+   * gold-patch state" auditable on every record. Cross-reference against
+   * `git rev-parse swarm-gold-eval` in the persistent repo to confirm the
+   * worktree resolved the gold ref correctly. Undefined when goldPatchRef
+   * was not supplied or rev-parse on the worktree failed.
+   */
+  goldHeadSha?: string;
   fp: boolean;
   fn: boolean;
   wallClockMs: number;
   error?: string;
+}
+
+/**
+ * Best-effort capture of the worktree's current HEAD SHA. Returns undefined
+ * when the path isn't a git worktree or rev-parse fails for any reason
+ * (e.g., test stubs that pass non-git tempdirs to withWorktreeFn). Not
+ * intended to fail the run; the goldHeadSha field is observability, not a
+ * gating assertion.
+ */
+function tryReadWorktreeHead(worktreePath: string): string | undefined {
+  try {
+    const sha = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: worktreePath,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+    return sha === '' ? undefined : sha;
+  } catch {
+    return undefined;
+  }
 }
 
 /** One property-gate-eval record per SWE-bench instance. */
@@ -134,6 +164,7 @@ export async function evaluateInstanceSynthesizer(input: SynthEvalInput): Promis
 
     let basePass: boolean | null = null;
     let goldPass: boolean | null = null;
+    let goldHeadSha: string | undefined;
 
     if (
       synthesis.status === 'GENERATED' &&
@@ -150,6 +181,12 @@ export async function evaluateInstanceSynthesizer(input: SynthEvalInput): Promis
         const venvBin = input.venvBin;
         const repoPath = input.repoPath;
         goldPass = await withWorktreeFn(repoPath, input.goldPatchRef, async (worktreePath) => {
+          // Capture the worktree's resolved HEAD before doing any work in
+          // it, so even if the test crashes the record carries proof of
+          // which commit the gold run actually pointed at. This is the
+          // observability hook for the "gold worktree at base_commit?"
+          // concern raised in p1-eval-harness-diagnostic.md section 3.
+          goldHeadSha = tryReadWorktreeHead(worktreePath);
           const rel = path.relative(repoPath, testFilePath);
           if (rel.startsWith('..')) return false;
           const target = path.join(worktreePath, rel);
@@ -185,6 +222,7 @@ export async function evaluateInstanceSynthesizer(input: SynthEvalInput): Promis
     if (synthesis.testCommand) record.testCommand = synthesis.testCommand;
     const testSource = lastAttemptCandidate(synthesis);
     if (testSource) record.testSource = testSource;
+    if (goldHeadSha) record.goldHeadSha = goldHeadSha;
     return record;
   } catch (err) {
     return {
