@@ -120,3 +120,41 @@ export function applyPatchFile(repoPath: string, patchFile: string): void {
     throw new Error(`git apply failed for ${patchFile}: ${result.stderr || result.stdout}`);
   }
 }
+
+/**
+ * Rewrite hardcoded absolute paths in a synthesized testCommand so it runs in
+ * the worktree path instead of the original repo path.
+ *
+ * The synthesizer occasionally prepends `cd <abs-repo-path> && ...` to its
+ * generated testCommand. When that command is then run inside a fresh git
+ * worktree (e.g. the gold-applied side), the cd jumps back to the original
+ * repo and the test never exercises the worktree state. Replacing every
+ * literal occurrence of `fromPath` with `toPath` neutralizes that.
+ *
+ * @param command - The original testCommand string.
+ * @param fromPath - Absolute path of the source repo to be replaced.
+ * @param toPath - Absolute path of the worktree the command should target.
+ * @returns The rewritten command. Unchanged when fromPath does not appear.
+ */
+export function rewriteCommandForWorktree(command: string, fromPath: string, toPath: string): string {
+  if (!fromPath || fromPath === toPath) return command;
+  return command.split(fromPath).join(toPath);
+}
+
+/**
+ * Wrap a shell command so a per-instance venv is on PATH for its execution.
+ *
+ * Setting `export PATH=<venvBin>:$PATH` at the front of the compound command
+ * ensures `python`, `python3`, `pip`, and `pytest` resolve to the venv binary
+ * even when the testCommand contains its own subshell `cd` or chain of `&&`.
+ * Returning the original command when no venv path is supplied keeps the
+ * fast-path for ad-hoc / non-Python evals.
+ *
+ * @param command - The raw shell command (may contain cd, &&, env vars).
+ * @param venvBin - Absolute path to the venv's bin/Scripts directory, or undefined.
+ * @returns The wrapped command, or the original when venvBin is undefined.
+ */
+export function wrapCommandWithVenv(command: string, venvBin: string | undefined): string {
+  if (!venvBin) return command;
+  return `export PATH=${venvBin}:$PATH; ${command}`;
+}

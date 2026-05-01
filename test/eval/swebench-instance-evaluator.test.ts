@@ -131,6 +131,82 @@ describe('swebench instance evaluator', () => {
       }
     });
 
+    it('rewrites a hardcoded cd <repoPath> in testCommand to point at the worktree on the gold run', async () => {
+      const repoPath = fs.mkdtempSync(path.join(os.tmpdir(), 'evalhook-repo-'));
+      const testFile = path.join(repoPath, 'regression.test.js');
+      fs.writeFileSync(testFile, '// candidate');
+      // testCommand contains an absolute cd into repoPath. Without rewrite,
+      // the gold-run cwd is overridden by the cd and the test runs against
+      // base, masking goldPass measurement (the real failure mode in the
+      // 2026-04-30 smoke for django__django-10999 / 11099).
+      const testCommand = `cd ${repoPath} && node ./regression.test.js`;
+      const observedCommands: Array<{ command: string; cwd: string }> = [];
+      try {
+        const record = await evaluateInstanceSynthesizer({
+          instanceId: 'fake-cd',
+          problemStatement: 'goal',
+          repoPath,
+          goldPatchRef: 'gold-eval',
+          synthesizeFn: async () => fakeSynth('GENERATED', {
+            testFilePath: testFile,
+            testCommand,
+          }),
+          runCommand: async (command: string, cwd: string) => {
+            observedCommands.push({ command, cwd });
+            return { exitCode: 1, stdout: '', stderr: 'fail' };
+          },
+          withWorktreeFn: noopWorktree,
+        });
+
+        assert.equal(observedCommands.length, 2, 'base + gold runs');
+        assert.equal(observedCommands[0]?.command, testCommand, 'base run uses original testCommand');
+        const goldCommand = observedCommands[1]?.command ?? '';
+        assert.ok(
+          !goldCommand.includes(repoPath) || goldCommand.split(repoPath).length === 1,
+          `gold-run command must not still reference base repoPath. command=${goldCommand}`,
+        );
+        assert.ok(goldCommand.startsWith('cd '), 'gold command preserves leading cd');
+        assert.equal(record.fn, true);
+      } finally {
+        fs.rmSync(repoPath, { recursive: true, force: true });
+      }
+    });
+
+    it('wraps base and gold testCommand with venvBin PATH when supplied', async () => {
+      const repoPath = fs.mkdtempSync(path.join(os.tmpdir(), 'evalhook-repo-'));
+      const testFile = path.join(repoPath, 'regression.test.js');
+      fs.writeFileSync(testFile, '// candidate');
+      const observedCommands: string[] = [];
+      try {
+        await evaluateInstanceSynthesizer({
+          instanceId: 'fake-venv',
+          problemStatement: 'goal',
+          repoPath,
+          goldPatchRef: 'gold-eval',
+          venvBin: '/srv/p1-venvs/example/.venv/bin',
+          synthesizeFn: async () => fakeSynth('GENERATED', {
+            testFilePath: testFile,
+            testCommand: 'python -m pytest regression.test.py',
+          }),
+          runCommand: async (command: string) => {
+            observedCommands.push(command);
+            return { exitCode: 1, stdout: '', stderr: 'fail' };
+          },
+          withWorktreeFn: noopWorktree,
+        });
+
+        assert.equal(observedCommands.length, 2);
+        for (const cmd of observedCommands) {
+          assert.ok(
+            cmd.startsWith('export PATH=/srv/p1-venvs/example/.venv/bin:$PATH;'),
+            `expected PATH wrap on ${cmd}`,
+          );
+        }
+      } finally {
+        fs.rmSync(repoPath, { recursive: true, force: true });
+      }
+    });
+
     it('returns ERROR record without throwing when synthesizer raises', async () => {
       const repoPath = fs.mkdtempSync(path.join(os.tmpdir(), 'evalhook-repo-'));
       try {
@@ -236,6 +312,68 @@ describe('swebench instance evaluator', () => {
         assert.equal(record.counterexamples.length, 1);
         assert.match(record.counterexamples[0]?.message ?? '', /TypeError/);
         assert.ok(captured[0]?.includes('add'), 'harness command should reference function name');
+      } finally {
+        fs.rmSync(repoPath, { recursive: true, force: true });
+      }
+    });
+
+    it('wraps the property-gate command runner with venvBin PATH when supplied', async () => {
+      const repoPath = fs.mkdtempSync(path.join(os.tmpdir(), 'evalhook-repo-'));
+      const goldPatch = [
+        'diff --git a/src/util.ts b/src/util.ts',
+        '--- a/src/util.ts',
+        '+++ b/src/util.ts',
+        '@@ -1,1 +1,3 @@',
+        '+export function add(a: number, b: number): number {',
+        '+  return a + b;',
+        '+}',
+        '',
+      ].join('\n');
+
+      const seenCommands: string[] = [];
+      const gateRunner: PropertyCommandRunner = async (command, cwd) => {
+        seenCommands.push(command);
+        return {
+          command,
+          cwd,
+          exitCode: 0,
+          stdout: '',
+          stderr: '',
+          durationMs: 1,
+          timedOut: false,
+        };
+      };
+
+      try {
+        await evaluateInstancePropertyGate({
+          instanceId: 'fake-prop-venv',
+          repoPath,
+          goldPatchText: goldPatch,
+          baseCommit: 'HEAD',
+          venvBin: '/srv/p1-venvs/example/.venv/bin',
+          commandRunner: gateRunner,
+          withWorktreeFn: async (_repo, _ref, fn) => {
+            const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evalhook-wt-'));
+            fs.mkdirSync(path.join(dir, 'src'));
+            try {
+              return await fn(dir);
+            } finally {
+              fs.rmSync(dir, { recursive: true, force: true });
+            }
+          },
+          applyPatchFn: (worktreePath) => {
+            const file = path.join(worktreePath, 'src', 'util.ts');
+            fs.writeFileSync(file, 'export function add(a: number, b: number): number {\n  return a + b;\n}\n');
+          },
+        });
+
+        assert.ok(seenCommands.length > 0, 'gate runner must be invoked');
+        for (const cmd of seenCommands) {
+          assert.ok(
+            cmd.startsWith('export PATH=/srv/p1-venvs/example/.venv/bin:$PATH;'),
+            `expected PATH wrap on ${cmd}`,
+          );
+        }
       } finally {
         fs.rmSync(repoPath, { recursive: true, force: true });
       }

@@ -15,14 +15,16 @@ function usage(): void {
     '  "instanceId": "...",',
     '  "problemStatement": "...",',
     '  "repoPath": "/abs/path/to/checkout",',
-    '  "goldPatchRef": "gold-eval"  // optional git ref carrying the gold patch',
+    '  "goldPatchRef": "gold-eval",  // optional git ref carrying the gold patch',
+    '  "venvBin": "/abs/path/.venv/bin"  // optional per-instance venv bin dir',
     '}',
     '',
     'task.json (property mode): {',
     '  "instanceId": "...",',
     '  "repoPath": "/abs/path/to/checkout",',
     '  "goldPatchText": "diff --git ...",',
-    '  "baseCommit": "abc123"',
+    '  "baseCommit": "abc123",',
+    '  "venvBin": "/abs/path/.venv/bin"  // optional per-instance venv bin dir',
     '}',
   ].join('\n'));
 }
@@ -34,6 +36,7 @@ interface RawTaskInput {
   goldPatchRef?: unknown;
   goldPatchText?: unknown;
   baseCommit?: unknown;
+  venvBin?: unknown;
 }
 
 function readTask(taskPath: string): RawTaskInput {
@@ -63,6 +66,10 @@ async function main(): Promise<void> {
 
   const task = readTask(taskPath);
 
+  const venvBin = typeof task.venvBin === 'string' && task.venvBin.trim() !== ''
+    ? task.venvBin
+    : undefined;
+
   if (mode === 'synth') {
     const record = await evaluateInstanceSynthesizer({
       instanceId: asString(task.instanceId, 'instanceId'),
@@ -71,6 +78,7 @@ async function main(): Promise<void> {
       ...(typeof task.goldPatchRef === 'string' && task.goldPatchRef.trim() !== ''
         ? { goldPatchRef: task.goldPatchRef }
         : {}),
+      ...(venvBin ? { venvBin } : {}),
     });
     appendJsonlRecord(outPath, record);
     return;
@@ -84,6 +92,7 @@ async function main(): Promise<void> {
       ...(typeof task.baseCommit === 'string' && task.baseCommit.trim() !== ''
         ? { baseCommit: task.baseCommit }
         : {}),
+      ...(venvBin ? { venvBin } : {}),
     });
     appendJsonlRecord(outPath, record);
     return;
