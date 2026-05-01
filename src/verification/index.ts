@@ -9,6 +9,7 @@ export {
   type DifferentialGateStatus,
 } from './differential-gate';
 export {
+  DEFAULT_TIMEOUT_MS,
   synthesizeRegressionTest,
   type SynthesizedTestCandidate,
   type TestSynthesisAttempt,

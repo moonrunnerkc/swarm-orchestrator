@@ -27,6 +27,17 @@ export interface TestSynthesisInput {
   adapter?: AgentAdapter;
   model?: string;
   maxAttempts?: number;
+  /**
+   * Per-attempt budget in milliseconds: caps both the adapter spawn (the
+   * underlying CLI's stall-without-output watchdog) and the candidate
+   * test execution. Defaults to {@link DEFAULT_TIMEOUT_MS} (10 minutes),
+   * matching `claude-code-adapter.ts`'s STALL_TIMEOUT_MS, because Claude
+   * Code can spend several minutes on internal reasoning before producing
+   * stdout on hard SWE-bench prompts. The earlier 2-minute default
+   * silently failed the v7-critical-path multi-repo Layer 1 sweep on
+   * sphinx, pylint, and one Django instance with `Process killed after
+   * 120s of no output (stall timeout)` rejections.
+   */
   timeoutMs?: number;
   relevantFiles?: string[];
 }
@@ -40,6 +51,15 @@ export interface TestSynthesisResult {
 }
 
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
+
+/**
+ * Default per-attempt budget for the synthesizer. Aligned with
+ * `claude-code-adapter.ts`'s STALL_TIMEOUT_MS so a hard prompt that
+ * keeps the LLM thinking for several minutes is not cut short by a
+ * shorter default in this layer. Tests that need a snappier ceiling
+ * pass an explicit `timeoutMs` (the existing fixture tests use 30_000).
+ */
+export const DEFAULT_TIMEOUT_MS = 600_000;
 
 // Candidates are written at repo root (not a subdirectory) so the test's
 // computed __file__/dirname resolves to the worktree root. The prior
@@ -166,7 +186,7 @@ export async function synthesizeRegressionTest(
 ): Promise<TestSynthesisResult> {
   const adapter = input.adapter ?? new ClaudeCodeAdapter();
   const maxAttempts = input.maxAttempts ?? 3;
-  const timeoutMs = input.timeoutMs ?? 120_000;
+  const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const attempts: TestSynthesisAttempt[] = [];
   let feedback: string | undefined;
 
