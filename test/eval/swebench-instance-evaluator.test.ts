@@ -276,6 +276,170 @@ describe('swebench instance evaluator', () => {
       }
     });
 
+    it('captures base+gold stdout/stderr and synthReason on a GENERATED record', async () => {
+      const repoPath = fs.mkdtempSync(path.join(os.tmpdir(), 'evalhook-repo-'));
+      const testFile = path.join(repoPath, 'regression.test.js');
+      fs.writeFileSync(testFile, '// candidate');
+      let call = 0;
+      try {
+        const record = await evaluateInstanceSynthesizer({
+          instanceId: 'fake-stdout-capture',
+          problemStatement: 'goal',
+          repoPath,
+          goldPatchRef: 'gold-eval',
+          synthesizeFn: async () => fakeSynth('GENERATED', {
+            reason: 'generated test fails against the base codebase',
+            testFilePath: testFile,
+            testCommand: 'node ./regression.test.js',
+            attempts: [{
+              attemptNumber: 1,
+              adapterExitCode: 0,
+              validation: 'accepted',
+              candidate: { testFilePath: testFile, testCommand: 'node ./regression.test.js', testSource: 'assert(false)' },
+            }],
+          }),
+          runCommand: async () => {
+            call += 1;
+            if (call === 1) {
+              return { exitCode: 1, stdout: 'BASE-OUT', stderr: 'BASE-ERR' };
+            }
+            return { exitCode: 0, stdout: 'GOLD-OUT', stderr: 'GOLD-ERR' };
+          },
+          withWorktreeFn: noopWorktree,
+        });
+
+        assert.equal(record.synthReason, 'generated test fails against the base codebase');
+        assert.equal(record.baseStdout, 'BASE-OUT');
+        assert.equal(record.baseStderr, 'BASE-ERR');
+        assert.equal(record.goldStdout, 'GOLD-OUT');
+        assert.equal(record.goldStderr, 'GOLD-ERR');
+        assert.equal(record.basePass, false);
+        assert.equal(record.goldPass, true);
+        assert.equal(record.fn, false);
+        assert.ok(record.attemptDetails);
+        assert.equal(record.attemptDetails!.length, 1);
+        assert.equal(record.attemptDetails![0]?.validation, 'accepted');
+        assert.equal(record.attemptDetails![0]?.testSourceTruncated, 'assert(false)');
+      } finally {
+        fs.rmSync(repoPath, { recursive: true, force: true });
+      }
+    });
+
+    it('truncates oversized stdout/stderr to RUN_OUTPUT_TRUNCATE_BYTES with a marker', async () => {
+      const repoPath = fs.mkdtempSync(path.join(os.tmpdir(), 'evalhook-repo-'));
+      const testFile = path.join(repoPath, 'regression.test.js');
+      fs.writeFileSync(testFile, '// candidate');
+      const huge = 'X'.repeat(20 * 1024);
+      try {
+        const record = await evaluateInstanceSynthesizer({
+          instanceId: 'fake-truncate',
+          problemStatement: 'goal',
+          repoPath,
+          goldPatchRef: 'gold-eval',
+          synthesizeFn: async () => fakeSynth('GENERATED', {
+            testFilePath: testFile,
+            testCommand: 'node ./regression.test.js',
+          }),
+          runCommand: async () => ({ exitCode: 1, stdout: huge, stderr: huge }),
+          withWorktreeFn: noopWorktree,
+        });
+
+        assert.ok(record.baseStdout, 'baseStdout must be present');
+        assert.ok(record.baseStdout!.length < huge.length, 'baseStdout must be shorter than the raw output');
+        assert.match(record.baseStdout!, /\[\.\.\.truncated \d+ bytes\]$/);
+        assert.match(record.goldStderr ?? '', /\[\.\.\.truncated \d+ bytes\]$/);
+      } finally {
+        fs.rmSync(repoPath, { recursive: true, force: true });
+      }
+    });
+
+    it('emits attemptDetails[] with rejectionReason and testSourceTruncated for GENERATION_FAILED', async () => {
+      // Emulates the real failure mode from the synth-n10 run: three
+      // attempts, each rejected by the base-run gate (test passed against
+      // base), so the synthesizer returns GENERATION_FAILED with no
+      // accepted candidate. Driver-side diagnosis needs the per-attempt
+      // testSource AND rejection reason to classify the failure mode
+      // without re-running the synthesizer.
+      const repoPath = fs.mkdtempSync(path.join(os.tmpdir(), 'evalhook-repo-'));
+      try {
+        const record = await evaluateInstanceSynthesizer({
+          instanceId: 'fake-genfail',
+          problemStatement: 'goal',
+          repoPath,
+          synthesizeFn: async () => fakeSynth('GENERATION_FAILED', {
+            reason: 'generated test passed against the base codebase; make it expose the bug or missing behavior',
+            attempts: [
+              {
+                attemptNumber: 1,
+                adapterExitCode: 0,
+                validation: 'rejected',
+                rejectionReason: 'generated test passed against the base codebase',
+                candidate: { testFilePath: 't.py', testCommand: 'pytest t.py', testSource: 'def test_one(): assert True' },
+              },
+              {
+                attemptNumber: 2,
+                adapterExitCode: 1,
+                validation: 'rejected',
+                rejectionReason: 'adapter exited non-zero',
+              },
+              {
+                attemptNumber: 3,
+                adapterExitCode: 0,
+                validation: 'rejected',
+                rejectionReason: 'candidate JSON must include non-empty testSource',
+              },
+            ],
+          }),
+          runCommand: fakePassRunner,
+          withWorktreeFn: noopWorktree,
+        });
+
+        assert.equal(record.status, 'GENERATION_FAILED');
+        assert.equal(record.attempts, 3);
+        assert.ok(record.attemptDetails);
+        assert.equal(record.attemptDetails!.length, 3);
+        assert.equal(record.attemptDetails![0]?.testSourceTruncated, 'def test_one(): assert True');
+        assert.equal(record.attemptDetails![1]?.testSourceTruncated, undefined,
+          'attempt 2 had no candidate, must omit testSourceTruncated');
+        assert.equal(record.attemptDetails![1]?.rejectionReason, 'adapter exited non-zero');
+        assert.equal(record.attemptDetails![2]?.rejectionReason, 'candidate JSON must include non-empty testSource');
+        assert.match(record.synthReason ?? '', /passed against the base/);
+        assert.equal(record.baseStdout, undefined,
+          'GENERATION_FAILED never executes a test, so base stdout/stderr must be omitted');
+      } finally {
+        fs.rmSync(repoPath, { recursive: true, force: true });
+      }
+    });
+
+    it('truncates per-attempt testSource at ATTEMPT_SOURCE_TRUNCATE_BYTES', async () => {
+      const repoPath = fs.mkdtempSync(path.join(os.tmpdir(), 'evalhook-repo-'));
+      const huge = 'Y'.repeat(10 * 1024);
+      try {
+        const record = await evaluateInstanceSynthesizer({
+          instanceId: 'fake-attempt-trunc',
+          problemStatement: 'goal',
+          repoPath,
+          synthesizeFn: async () => fakeSynth('GENERATION_FAILED', {
+            attempts: [{
+              attemptNumber: 1,
+              adapterExitCode: 0,
+              validation: 'rejected',
+              rejectionReason: 'too big',
+              candidate: { testFilePath: 't.py', testCommand: 'pytest t.py', testSource: huge },
+            }],
+          }),
+          runCommand: fakePassRunner,
+          withWorktreeFn: noopWorktree,
+        });
+
+        const trunc = record.attemptDetails?.[0]?.testSourceTruncated ?? '';
+        assert.ok(trunc.length < huge.length);
+        assert.match(trunc, /\[\.\.\.truncated \d+ bytes\]$/);
+      } finally {
+        fs.rmSync(repoPath, { recursive: true, force: true });
+      }
+    });
+
     it('returns ERROR record without throwing when synthesizer raises', async () => {
       const repoPath = fs.mkdtempSync(path.join(os.tmpdir(), 'evalhook-repo-'));
       try {

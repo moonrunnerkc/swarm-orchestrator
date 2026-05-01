@@ -8,6 +8,7 @@ import {
   PropertyTarget,
   runPropertyGate,
   synthesizeRegressionTest,
+  type TestSynthesisAttempt,
   type TestSynthesisStatus,
 } from '../../src/verification';
 import { parseUnifiedDiff } from '../../src/verification/diff-analysis';
@@ -21,6 +22,27 @@ import {
 import { rewriteCommandForWorktree, wrapCommandWithVenv } from './eval-utils';
 
 export { appendJsonlRecord };
+
+/** Per-attempt diagnostic preserved on the JSONL record. */
+export interface SynthAttemptRecord {
+  attemptNumber: number;
+  adapterExitCode: number;
+  validation: 'accepted' | 'rejected';
+  /**
+   * The synthesizer's own reason for rejecting this attempt (parse error,
+   * adapter non-zero exit, "test passed against base"). Present when the
+   * attempt did not produce an accepted candidate.
+   */
+  rejectionReason?: string;
+  /**
+   * Generated test source for this attempt, truncated to ATTEMPT_SOURCE_TRUNCATE_BYTES.
+   * Captured for both accepted and rejected attempts when the synthesizer produced
+   * one, so a GENERATION_FAILED record carries the candidates that almost worked.
+   * Omitted when the synthesizer failed to produce any candidate (e.g. adapter
+   * exit before stdout was emitted).
+   */
+  testSourceTruncated?: string;
+}
 
 /** One synth-eval record per SWE-bench instance. Written one-per-line to JSONL. */
 export interface SynthEvalRecord {
@@ -45,6 +67,70 @@ export interface SynthEvalRecord {
   fn: boolean;
   wallClockMs: number;
   error?: string;
+  /**
+   * The synthesizer's terminal `reason` string. Present on every record where
+   * synthesis ran (i.e. not on catch-block ERROR records). For GENERATION_FAILED
+   * and AMBIGUOUS_GOAL this is the only signal explaining why no candidate
+   * landed; for GENERATED it documents the success branch ("generated test
+   * fails against the base codebase").
+   */
+  synthReason?: string;
+  /**
+   * Captured stdout/stderr of the base-checkout test run, truncated to
+   * RUN_OUTPUT_TRUNCATE_BYTES. Populated only when status='GENERATED' and the
+   * base run actually executed. Required for diagnosing goldPass=false cases
+   * where a basePass=false record alone is ambiguous between "test exposed
+   * the bug" and "test crashed at import-time".
+   */
+  baseStdout?: string;
+  baseStderr?: string;
+  /** Captured stdout/stderr of the gold-worktree test run. Same truncation. */
+  goldStdout?: string;
+  goldStderr?: string;
+  /**
+   * Per-attempt diagnostic for non-GENERATED outcomes (and a one-element array
+   * for GENERATED, recording the accepted attempt). Each entry includes
+   * rejectionReason and testSourceTruncated when available, so a
+   * GENERATION_FAILED record is self-contained for failure-mode classification
+   * without re-running the synthesizer.
+   */
+  attemptDetails?: SynthAttemptRecord[];
+}
+
+/** 8 KiB ceiling for captured stdout/stderr per run. Keeps JSONL lines bounded. */
+const RUN_OUTPUT_TRUNCATE_BYTES = 8 * 1024;
+/** 4 KiB ceiling for per-attempt testSource. Mirrors the synthesizer's prompt budget. */
+const ATTEMPT_SOURCE_TRUNCATE_BYTES = 4 * 1024;
+
+/**
+ * Truncate a string to `maxBytes` UTF-16 code units (the JS string length unit).
+ * Appends a single `\n[...truncated N bytes]` marker so a downstream reader can
+ * distinguish a real-empty capture from a clipped-to-zero capture.
+ */
+function truncateForRecord(value: string, maxBytes: number): string {
+  if (value.length <= maxBytes) return value;
+  const dropped = value.length - maxBytes;
+  return `${value.slice(0, maxBytes)}\n[...truncated ${dropped} bytes]`;
+}
+
+function buildAttemptDetails(
+  attempts: TestSynthesisAttempt[],
+): SynthAttemptRecord[] {
+  return attempts.map((attempt) => {
+    const detail: SynthAttemptRecord = {
+      attemptNumber: attempt.attemptNumber,
+      adapterExitCode: attempt.adapterExitCode,
+      validation: attempt.validation,
+    };
+    if (attempt.rejectionReason) {
+      detail.rejectionReason = truncateForRecord(attempt.rejectionReason, ATTEMPT_SOURCE_TRUNCATE_BYTES);
+    }
+    const source = attempt.candidate?.testSource;
+    if (source) {
+      detail.testSourceTruncated = truncateForRecord(source, ATTEMPT_SOURCE_TRUNCATE_BYTES);
+    }
+    return detail;
+  });
 }
 
 /**
@@ -165,6 +251,10 @@ export async function evaluateInstanceSynthesizer(input: SynthEvalInput): Promis
     let basePass: boolean | null = null;
     let goldPass: boolean | null = null;
     let goldHeadSha: string | undefined;
+    let baseStdout: string | undefined;
+    let baseStderr: string | undefined;
+    let goldStdout: string | undefined;
+    let goldStderr: string | undefined;
 
     if (
       synthesis.status === 'GENERATED' &&
@@ -174,13 +264,15 @@ export async function evaluateInstanceSynthesizer(input: SynthEvalInput): Promis
       const baseCommand = wrapCommandWithVenv(synthesis.testCommand, input.venvBin);
       const baseResult = await runCommand(baseCommand, input.repoPath, DEFAULT_TEST_TIMEOUT_MS);
       basePass = baseResult.exitCode === 0;
+      baseStdout = truncateForRecord(baseResult.stdout, RUN_OUTPUT_TRUNCATE_BYTES);
+      baseStderr = truncateForRecord(baseResult.stderr, RUN_OUTPUT_TRUNCATE_BYTES);
 
       if (input.goldPatchRef) {
         const testCommand = synthesis.testCommand;
         const testFilePath = synthesis.testFilePath;
         const venvBin = input.venvBin;
         const repoPath = input.repoPath;
-        goldPass = await withWorktreeFn(repoPath, input.goldPatchRef, async (worktreePath) => {
+        const goldRun = await withWorktreeFn(repoPath, input.goldPatchRef, async (worktreePath) => {
           // Capture the worktree's resolved HEAD before doing any work in
           // it, so even if the test crashes the record carries proof of
           // which commit the gold run actually pointed at. This is the
@@ -188,7 +280,9 @@ export async function evaluateInstanceSynthesizer(input: SynthEvalInput): Promis
           // concern raised in p1-eval-harness-diagnostic.md section 3.
           goldHeadSha = tryReadWorktreeHead(worktreePath);
           const rel = path.relative(repoPath, testFilePath);
-          if (rel.startsWith('..')) return false;
+          if (rel.startsWith('..')) {
+            return { exitCode: 1, stdout: '', stderr: 'test file path escapes repoPath; gold run skipped' };
+          }
           const target = path.join(worktreePath, rel);
           fs.mkdirSync(path.dirname(target), { recursive: true });
           fs.copyFileSync(testFilePath, target);
@@ -199,9 +293,11 @@ export async function evaluateInstanceSynthesizer(input: SynthEvalInput): Promis
           // or not the cd is present.
           const rewritten = rewriteCommandForWorktree(testCommand, repoPath, worktreePath);
           const wrapped = wrapCommandWithVenv(rewritten, venvBin);
-          const result = await runCommand(wrapped, worktreePath, DEFAULT_TEST_TIMEOUT_MS);
-          return result.exitCode === 0;
+          return runCommand(wrapped, worktreePath, DEFAULT_TEST_TIMEOUT_MS);
         });
+        goldPass = goldRun.exitCode === 0;
+        goldStdout = truncateForRecord(goldRun.stdout, RUN_OUTPUT_TRUNCATE_BYTES);
+        goldStderr = truncateForRecord(goldRun.stderr, RUN_OUTPUT_TRUNCATE_BYTES);
       }
     }
 
@@ -223,6 +319,14 @@ export async function evaluateInstanceSynthesizer(input: SynthEvalInput): Promis
     const testSource = lastAttemptCandidate(synthesis);
     if (testSource) record.testSource = testSource;
     if (goldHeadSha) record.goldHeadSha = goldHeadSha;
+    if (synthesis.reason) record.synthReason = synthesis.reason;
+    if (baseStdout !== undefined) record.baseStdout = baseStdout;
+    if (baseStderr !== undefined) record.baseStderr = baseStderr;
+    if (goldStdout !== undefined) record.goldStdout = goldStdout;
+    if (goldStderr !== undefined) record.goldStderr = goldStderr;
+    if (synthesis.attempts.length > 0) {
+      record.attemptDetails = buildAttemptDetails(synthesis.attempts);
+    }
     return record;
   } catch (err) {
     return {
