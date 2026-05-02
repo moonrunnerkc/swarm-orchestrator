@@ -245,6 +245,7 @@ export async function evaluateInstanceSynthesizer(input: SynthEvalInput): Promis
       goalText: input.problemStatement,
       targetRepoPath: input.repoPath,
       ...(input.adapter ? { adapter: input.adapter } : {}),
+      ...(input.venvBin ? { venvBin: input.venvBin } : {}),
     });
     acceptedTestPath = synthesis.testFilePath;
 
@@ -261,7 +262,7 @@ export async function evaluateInstanceSynthesizer(input: SynthEvalInput): Promis
       synthesis.testFilePath &&
       synthesis.testCommand
     ) {
-      const baseCommand = wrapCommandWithVenv(synthesis.testCommand, input.venvBin);
+      const baseCommand = wrapCommandWithVenv(synthesis.testCommand, input.venvBin, input.repoPath);
       const baseResult = await runCommand(baseCommand, input.repoPath, DEFAULT_TEST_TIMEOUT_MS);
       basePass = baseResult.exitCode === 0;
       baseStdout = truncateForRecord(baseResult.stdout, RUN_OUTPUT_TRUNCATE_BYTES);
@@ -292,7 +293,7 @@ export async function evaluateInstanceSynthesizer(input: SynthEvalInput): Promis
           // state. Rewriting fromPath -> toPath neutralizes that whether
           // or not the cd is present.
           const rewritten = rewriteCommandForWorktree(testCommand, repoPath, worktreePath);
-          const wrapped = wrapCommandWithVenv(rewritten, venvBin);
+          const wrapped = wrapCommandWithVenv(rewritten, venvBin, worktreePath);
           return runCommand(wrapped, worktreePath, DEFAULT_TEST_TIMEOUT_MS);
         });
         goldPass = goldRun.exitCode === 0;
@@ -402,7 +403,7 @@ export async function evaluateInstancePropertyGate(input: PropertyEvalInput): Pr
     const baseRunner = input.commandRunner;
     const venvAwareRunner = venvBin
       ? (async (command, cwd, timeoutMs) => {
-        const wrapped = wrapCommandWithVenv(command, venvBin);
+        const wrapped = wrapCommandWithVenv(command, venvBin, cwd);
         if (baseRunner) return baseRunner(wrapped, cwd, timeoutMs);
         const r = await defaultRunCommand(wrapped, cwd, timeoutMs);
         return {

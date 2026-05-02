@@ -18,6 +18,12 @@ export {
   type TestSynthesisStatus,
 } from './test-synthesizer';
 export {
+  detectTestFramework,
+  getFrameworkProfile,
+  type FrameworkProfile,
+  type TestFramework,
+} from './test-framework-detection';
+export {
   DEFAULT_MUTATION_THRESHOLDS,
   buildMutationCommand,
   detectMutationLanguages,
