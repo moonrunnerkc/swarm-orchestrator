@@ -33,7 +33,7 @@ blockers:
 |---|---|---|---|---|
 | Layer 1 — Synthesizer | multi-repo n=10 (4 repos) | FP = 0/10 = 0%; FN = 0/10 = 0% | **PASS** | **YES** |
 | Layer 3 — Cheat detector | (unchanged from Phase 2) | FP = 0/20 (0%) | **PASS** | YES (with rule-pack follow-up) |
-| Layer 4 — Property gate | structural fix landed (`61f2d04`); typed-corpus re-eval pending | n/a (consumer infra ready, re-eval is session 3) | n/a | NO (typed-corpus re-eval needed) |
+| Layer 4 — Property gate | typed-corpus re-eval (session 3) on 8 instances, 8 ran-harness targets, 6 counterexamples | tooling artifacts = 0 PASS; SNR = 0/6 = 0:1 **BREACH** (threshold > 2:1); breach is gate's-fundamental-limitation, not a regression | NO (open: pick a design direction — constrained strategies, threshold adjustment, or precondition-assertion reframing) |
 
 ### Updated Phase 3 readiness checklist
 
@@ -41,9 +41,46 @@ blockers:
 2. ~~Layer 1 multi-repo re-eval~~: closed (`docs/p1-eval-fixtures/runs/v7-critical-path/multi-repo-l1-rerun-2.5-round7/`).
 3. ~~Layer 1 prompt/environment-aware generation work~~: closed
    (commits `4667187`, `8c97955`).
-4. **Layer 4 SNR re-eval on typed corpus**: pending. The structural
-   fix (arity-aware harness, commit `61f2d04`) is in place; running
-   it against a typed sample is the open work for session 3.
+4. **Layer 4 SNR re-eval on typed corpus**: ran (session 3).
+   Result: tooling artifacts = 0 (PASS — arity-aware fix
+   structurally sound), but SNR = 0:1 (BREACH — every
+   counterexample on this corpus is a contract-violating-but-
+   type-matching false alarm). Halted for design conversation
+   per the v7 critical-path session 3 directive. See
+   `docs/p1-eval-results-property-gate.md` for the per-finding
+   classification.
+
+### Phase 3 readiness verdict (revised after session 3)
+
+**NOT READY** on the v7-plan halt-threshold reading. Layer 1
+clears (FP=0, FN=0); Layer 3 clears (FP=0%); Layer 4 breaches
+(SNR=0:1 < 2:1).
+
+The Layer 4 breach has an unusual shape that the v7 plan did not
+anticipate: the gate's findings are factually correct
+(Hypothesis-derived inputs match the type signature and trigger
+exceptions in the function under test) but not actionable
+(callers validate upstream; the function's contract is narrower
+than its type, and that's idiomatic Python). Three design
+directions for Layer 4 readiness, listed in
+`p1-eval-results-property-gate.md`:
+
+- Constrained strategies driven by docstring or precondition
+  parsing — significant new work, smart-fuzzer territory.
+- Threshold adjustment — measurement-design conversation about
+  whether 2:1 SNR is the right gate for this kind of finding.
+- Pre-condition assertion as the recommended fix — reframes
+  property-gate findings from "bug" to "missing precondition";
+  changes how SNR categorizes them.
+
+Picking among these three is user judgment. Phase 3 promotion is
+blocked on that decision, not on more code work in this session.
+
+**Soft Phase 3 path**: if Layer 4 is treated as advisory-only
+(score-feeding, not halting) in Phase 3, the strict halt-threshold
+reading no longer blocks promotion. Layer 4's value as a primary
+verifier is then conditional on the design direction picked above.
+This is a v7-plan amendment, not a code change.
 
 The Phase 2 closeout below is preserved as historical record. Its
 attribution of Layer 1's breach to round-5 harness state was
@@ -51,8 +88,10 @@ correct; the multi-repo re-eval surfaced two more harness rounds
 (6 + 7) and three synthesizer-side modes that needed independent
 fixes. All seven harness rounds are now closed. See
 `docs/p1-eval-harness-diagnostic.md` section 8 for the full
-resolution log and `docs/p1-eval-results-synthesizer.md` for the
-session 2.5 closeout numbers.
+resolution log, `docs/p1-eval-results-synthesizer.md` for the
+session 2.5 Layer 1 closeout numbers, and
+`docs/p1-eval-results-property-gate.md` for the session 3 Layer
+4 SNR measurement.
 
 ## v7 critical-path amendment (2026-05-02, superseded by session 2.5 above)
 
