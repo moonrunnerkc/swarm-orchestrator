@@ -69,17 +69,25 @@ export async function installDependenciesIfNeeded(workingDir: string): Promise<v
 
     logger.info(`\n📦 Installing ${missing.length} new dependenc${missing.length === 1 ? 'y' : 'ies'}: ${missing.join(', ')}`);
 
-    // Use the right package manager for the project
+    // Use the right package manager for the project. Force devDependencies
+    // to install regardless of NODE_ENV — the orchestrator's .env or the
+    // user's shell may set NODE_ENV=production, which would otherwise skip
+    // devDependencies that downstream gates (e.g. the battery's mutation
+    // layer pulling in Stryker) actually need.
     const installCmd = fs.existsSync(path.join(workingDir, 'yarn.lock'))
-      ? 'yarn install --frozen-lockfile 2>/dev/null || yarn install'
+      ? 'yarn install --frozen-lockfile --production=false 2>/dev/null || yarn install --production=false'
       : fs.existsSync(path.join(workingDir, 'pnpm-lock.yaml'))
-        ? 'pnpm install --no-frozen-lockfile'
-        : 'npm install --loglevel=error';
+        ? 'pnpm install --no-frozen-lockfile --prod=false'
+        : 'npm install --include=dev --loglevel=error';
+
+    const installEnv = { ...process.env };
+    delete installEnv.NODE_ENV;
 
     execSync(installCmd, {
       cwd: workingDir,
       stdio: ['pipe', 'pipe', 'pipe'],
       timeout: 120_000,
+      env: installEnv,
     });
     logger.info('  ✅ Dependencies installed');
   } catch (err: unknown) {
