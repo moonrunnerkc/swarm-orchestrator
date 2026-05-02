@@ -40,7 +40,7 @@ You run this around an agent CLI, not instead of one. The agent produces the pat
 |---|---|---|
 | [Node.js](https://nodejs.org/) | >= 20 | Engines-enforced. CI runs 20 and 22. |
 | [git](https://git-scm.com/) | >= 2.40 | Worktrees are required; older git is not tested. |
-| One agent CLI | latest | One of: `copilot`, `claude`, `codex`. Must be installed and authenticated separately. |
+| One agent CLI | latest | One of: `copilot`, `claude-code`, `codex`. Must be installed and authenticated separately. |
 | [Docker](https://www.docker.com/) | latest | Optional. Required only for SWE-bench evaluation containers. |
 
 ### Install
