@@ -45,6 +45,7 @@ export class LiveStatus {
   private spinnerFrame = 0;
   private renderTimer?: NodeJS.Timeout | undefined;
   private active = false;
+  private exitHandlerInstalled = false;
 
   constructor(opts: LiveStatusOptions = {}) {
     this.out = opts.out ?? process.stdout;
@@ -60,6 +61,16 @@ export class LiveStatus {
       this.out.write(HIDE_CURSOR);
       this.renderTimer = setInterval(() => this.render(), RENDER_INTERVAL_MS);
       this.renderTimer.unref?.();
+      // Best-effort cursor restore on abnormal exit so a SIGINT or thrown
+      // error does not leave the terminal with the cursor hidden.
+      if (!this.exitHandlerInstalled) {
+        const restore = (): void => {
+          if (this.tty) this.out.write(SHOW_CURSOR);
+        };
+        process.once('exit', restore);
+        process.once('SIGINT', () => { restore(); process.exit(130); });
+        this.exitHandlerInstalled = true;
+      }
     }
   }
 
@@ -84,6 +95,10 @@ export class LiveStatus {
     if (!this.tty) {
       this.out.write(`  ${this.dim('›')} ${label} ${this.dim('started')}\n`);
     } else {
+      // Self-start the render loop the first time a step appears so the
+      // spinner animates and the elapsed-time field ticks. The interval is
+      // unref'd in start(), so it does not pin the event loop on its own.
+      if (!this.active) this.start();
       this.render();
     }
   }
@@ -105,6 +120,11 @@ export class LiveStatus {
     this.steps.delete(id);
     const idx = this.order.indexOf(id);
     if (idx >= 0) this.order.splice(idx, 1);
+    // Tear down the render loop and restore the cursor when the last step
+    // finishes; the next addStep will start it again.
+    if (this.tty && this.steps.size === 0 && this.active) {
+      this.stop();
+    }
   }
 
   /** Print a line as static output above the live block. */
