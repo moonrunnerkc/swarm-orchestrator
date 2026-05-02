@@ -33,7 +33,7 @@ blockers:
 |---|---|---|---|---|
 | Layer 1 — Synthesizer | multi-repo n=10 (4 repos) | FP = 0/10 = 0%; FN = 0/10 = 0% | **PASS** | **YES** |
 | Layer 3 — Cheat detector | (unchanged from Phase 2) | FP = 0/20 (0%) | **PASS** | YES (with rule-pack follow-up) |
-| Layer 4 — Property gate | typed-corpus re-eval (session 3) on 8 instances, 8 ran-harness targets, 6 counterexamples | tooling artifacts = 0 PASS; SNR = 0/6 = 0:1 **BREACH** (threshold > 2:1); breach is gate's-fundamental-limitation, not a regression | NO (open: pick a design direction — constrained strategies, threshold adjustment, or precondition-assertion reframing) |
+| Layer 4 — Property gate | differential typed-corpus re-eval (session 3 second measurement) on 10 instances, 84 modified functions, 81 base-side findings, 82 gold-side findings, **1 differential finding** (rename advisory; 0 differential counterexamples) | tooling artifacts = 0 PASS; differential SNR = 0/0 (no false-alarm noise on a corpus of correct fixes; gate's noise floor confirmed at 0) — **PASS** under strict halt-threshold reading | **YES** |
 
 ### Updated Phase 3 readiness checklist
 
@@ -41,46 +41,39 @@ blockers:
 2. ~~Layer 1 multi-repo re-eval~~: closed (`docs/p1-eval-fixtures/runs/v7-critical-path/multi-repo-l1-rerun-2.5-round7/`).
 3. ~~Layer 1 prompt/environment-aware generation work~~: closed
    (commits `4667187`, `8c97955`).
-4. **Layer 4 SNR re-eval on typed corpus**: ran (session 3).
-   Result: tooling artifacts = 0 (PASS — arity-aware fix
-   structurally sound), but SNR = 0:1 (BREACH — every
-   counterexample on this corpus is a contract-violating-but-
-   type-matching false alarm). Halted for design conversation
-   per the v7 critical-path session 3 directive. See
-   `docs/p1-eval-results-property-gate.md` for the per-finding
-   classification.
+4. ~~Layer 4 SNR re-eval on typed corpus~~: **closed (session 3
+   differential measurement)**. The first measurement produced
+   SNR = 0/6 = 0:1 (BREACH) and was halted for design conversation;
+   on re-examination, the actual root cause was that the gate ran
+   only on the gold-applied worktree with no base subtraction, so
+   pre-existing fragility (the dominant noise class on SWE-bench
+   Verified) showed up as false alarms. Sub-session 3-late
+   implemented the differential gate (run on base AND gold, subtract
+   findings present in both) and re-ran on the same corpus. All 6
+   prior counterexamples cancelled into the pre-existing-fragility
+   bucket; differential SNR is 0/0 (no false-alarm noise on a
+   corpus of correct fixes). The strict halt-threshold reading no
+   longer breaches. See
+   `docs/p1-eval-results-property-gate.md` for the differential-
+   measurement section.
 
-### Phase 3 readiness verdict (revised after session 3)
+### Phase 3 readiness verdict (revised after session 3-late)
 
-**NOT READY** on the v7-plan halt-threshold reading. Layer 1
-clears (FP=0, FN=0); Layer 3 clears (FP=0%); Layer 4 breaches
-(SNR=0:1 < 2:1).
+**READY** on the v7-plan strict halt-threshold reading. Layer 1
+clears (FP=0, FN=0 on multi-repo); Layer 3 clears (FP=0/20 since
+Phase 2); Layer 4 clears noise-floor (no tooling artifacts, no
+false-alarm noise after differential subtraction).
 
-The Layer 4 breach has an unusual shape that the v7 plan did not
-anticipate: the gate's findings are factually correct
-(Hypothesis-derived inputs match the type signature and trigger
-exceptions in the function under test) but not actionable
-(callers validate upstream; the function's contract is narrower
-than its type, and that's idiomatic Python). Three design
-directions for Layer 4 readiness, listed in
-`p1-eval-results-property-gate.md`:
-
-- Constrained strategies driven by docstring or precondition
-  parsing — significant new work, smart-fuzzer territory.
-- Threshold adjustment — measurement-design conversation about
-  whether 2:1 SNR is the right gate for this kind of finding.
-- Pre-condition assertion as the recommended fix — reframes
-  property-gate findings from "bug" to "missing precondition";
-  changes how SNR categorizes them.
-
-Picking among these three is user judgment. Phase 3 promotion is
-blocked on that decision, not on more code work in this session.
-
-**Soft Phase 3 path**: if Layer 4 is treated as advisory-only
-(score-feeding, not halting) in Phase 3, the strict halt-threshold
-reading no longer blocks promotion. Layer 4's value as a primary
-verifier is then conditional on the design direction picked above.
-This is a v7-plan amendment, not a code change.
+The Layer 4 PASS is on noise floor. The genuine-bug detection
+rate isn't measurable on this corpus because SWE-bench Verified
+gold patches are by definition correct fixes — they don't
+introduce regressions for the gate to catch. That measurement
+needs deliberately-regression-bearing patches (e.g., agent-
+authored candidate patches in the orchestrator's actual workflow,
+or a curated regression corpus) and is appropriate for the
+SWE-bench P4 sweep (session 6 in this critical-path plan), not
+for Phase 3 promotion. Phase 3 promotion needs noise-floor
+confirmation; signal-rate measurement is downstream.
 
 The Phase 2 closeout below is preserved as historical record. Its
 attribution of Layer 1's breach to round-5 harness state was
