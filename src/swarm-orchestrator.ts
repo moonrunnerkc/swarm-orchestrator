@@ -50,6 +50,7 @@ import {
 } from './orchestrator/step-executor';
 import { runEndOfRunBattery as _runEndOfRunBattery } from './orchestrator/end-of-run-battery';
 import { runPreWorkerSynthesis } from './orchestrator/pre-worker-synthesis';
+import { generateAndAttachAttestation } from './orchestrator/post-battery-attestation';
 import {
   runWaveLoop as _runWaveLoop,
   SchedulerHost,
@@ -580,6 +581,17 @@ export class SwarmOrchestrator implements RemediationHost, ReplanHost, StepExecu
           'fix the implementation or supply a valid differential test command',
       );
     }
+
+    // Generate and attach SLSA v1.0 attestation. Best-effort: errors are logged
+    // and swallowed so a missing cosign binary does not block the run.
+    await generateAndAttachAttestation({
+      repoPath: this.workingDir,
+      runDir,
+      plan,
+      batteryResult,
+      agentTool: options?.cliAgent ?? 'copilot',
+      agentModel: options?.model ?? 'default',
+    });
 
     // final quality gates run on the merged state (hard gate)
     // this happens before auto-PR so we don't create a PR for a failing run
