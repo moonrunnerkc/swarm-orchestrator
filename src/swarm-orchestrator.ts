@@ -49,6 +49,7 @@ import {
   StepExecutorHost,
 } from './orchestrator/step-executor';
 import { runEndOfRunBattery as _runEndOfRunBattery } from './orchestrator/end-of-run-battery';
+import { runPreWorkerSynthesis } from './orchestrator/pre-worker-synthesis';
 import {
   runWaveLoop as _runWaveLoop,
   SchedulerHost,
@@ -98,6 +99,11 @@ export interface SwarmExecutionOptions {
   cliAgent?: string;
   owaspReport?: boolean;
   maxRetries?: number;
+  /**
+   * Bypass pre-worker synthesis and use this command as the Layer 1 differential-test command.
+   * Useful for CI callers that already have a FAIL_TO_PASS command ready.
+   */
+  differentialTestCommand?: string;
   /** When true, full agent narration prints to stdout (firehose). Default: collapsed to live action line. */
   streamAgent?: boolean;
   onProgress?: (context: SwarmExecutionContext, event: string) => void;
@@ -140,6 +146,12 @@ export interface SwarmExecutionContext {
   prUrls?: Map<number, string>;
   finalGateResults?: GateResult[];
   batteryResult?: BatteryResult;
+  /** Command produced by pre-worker synthesis; fed to the battery Layer 1 differential gate. */
+  synthesizedTestCommand?: string;
+  /** Absolute path to the synthesized test file preserved in the run evidence directory. */
+  synthesizedTestFilePath?: string;
+  /** How the Layer 1 intent test was sourced for this run. */
+  intentTestSource?: 'synthesized' | 'fail-to-pass' | 'externally-supplied' | 'absent';
   unmergedBranches?: Array<{
     stepNumber: number;
     branchName: string;
@@ -412,6 +424,30 @@ export class SwarmOrchestrator implements RemediationHost, ReplanHost, StepExecu
     // See src/orchestrator/wave-scheduler-loop.ts
     // for the INVARIANT on context.plan re-read (executeReplan may swap
     // it mid-run; scheduler re-reads context.plan.steps every iteration).
+    // Phase B: synthesize a failing intent test before any worker touches the repo.
+    // The resulting command is passed to the end-of-run battery as the Layer 1
+    // differential-test command. Without a test command Layer 1 fails closed.
+    if (options?.differentialTestCommand) {
+      context.synthesizedTestCommand = options.differentialTestCommand;
+      context.intentTestSource = 'externally-supplied';
+    } else {
+      const synthResult = await runPreWorkerSynthesis({
+        goal: plan.goal,
+        repoPath: this.workingDir,
+        runDir,
+      });
+      if (synthResult.status !== 'success') {
+        throw new Error(
+          `pre-worker synthesis failed (${synthResult.status}): ${synthResult.reason}; ` +
+            'add differentialTestCommand to options or check that the goal is specific enough',
+          { cause: synthResult },
+        );
+      }
+      context.synthesizedTestCommand = synthResult.testCommand;
+      context.synthesizedTestFilePath = synthResult.testFilePath;
+      context.intentTestSource = 'synthesized';
+    }
+
     try {
       await _runWaveLoop(this, plan, agents, context, options);
     } catch (err) {
@@ -526,6 +562,7 @@ export class SwarmOrchestrator implements RemediationHost, ReplanHost, StepExecu
       workingDir: this.workingDir,
       plan,
       context,
+      options: { differentialTestCommand: context.synthesizedTestCommand },
     });
     context.batteryResult = batteryResult;
     logger.info(
