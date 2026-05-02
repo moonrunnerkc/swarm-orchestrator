@@ -1,6 +1,6 @@
 # v6.0.0 Release Notes
 
-v6.0.0 consolidates three workstreams on top of v5.0.0's foundation: statistical benchmarking rigor, planner-fidelity improvements, and orchestrator output-correctness. Work spans 260 commits across 11 days (April 11–22, 2026), with detailed progress documented in the [April 18 session report](../session-report-20260418T172049.md) for Tranche 1 and in the PR history for Tranche 2.
+v6.0.0 consolidates three workstreams on top of v5.0.0's foundation: statistical benchmarking rigor, planner-fidelity improvements, and orchestrator output-correctness. Work spans 260 commits across 11 days (April 11–22, 2026), with detailed progress documented in the April 18 session report for Tranche 1 and in the PR history for Tranche 2. The session report was an internal build artifact and is not retained in the public repository.
 
 ## Theme 1: Statistical Benchmarking Rigor
 
@@ -8,15 +8,15 @@ The benchmark infrastructure was rebuilt from subjective author-scored rubrics t
 
 ### Statistical Harness and Benchmarks
 
-A bootstrap CI harness (`benchmarks/harness/run-n.sh` + `benchmarks/harness/scoring/bootstrap_ci.py`) runs any benchmark scenario N times and reports mean ± 95% CI over 10k resamples. Two benchmarks landed this cycle: `demo-fast` at N=10 and `api-quick` at N=5. Both are fully populated in `benchmarks/harness/statistical_summary.md`. All benchmark data comes from real orchestrator runs against real project code; no synthetic or author-selected tasks.
+A bootstrap CI harness (`benchmarks/harness/run-n.sh` + `benchmarks/harness/scoring/bootstrap_ci.py`) runs any benchmark scenario N times and reports mean ± 95% CI over 10k resamples. Two benchmarks landed this cycle: `demo-fast` at N=10 and `api-quick` at N=5. Their generated summaries and raw outputs are excluded from Git. All benchmark data came from real orchestrator runs against real project code; no synthetic or author-selected tasks.
 
-See: [April 18 session report](../session-report-20260418T172049.md) §§ P2-P5 for raw data, per-metric tables, and the parseCopilotRequestCount fix that makes premium-request counts real instead of hardcoded.
+The April 18 session report covered raw data, per-metric tables, and the parseCopilotRequestCount fix that makes premium-request counts real instead of hardcoded. That report is archived outside the public repository.
 
 Commits: `85fe1c7` (harness), `b5afb40` (demo-fast N=10 run), `9e93bf7` + `5b7dad2` (api-quick N=5 run)
 
 ### ABC-Compliance Audit
 
-The Agentic Benchmark Checklist (ABC) — 30 items covering fixed public tasks, multiple runs, automated metrics, and full disclosure — was audited item by item. Initial state per the session report: 28 verified, 2 partial (items 3.3 and 5.2). Two post-report commits closed the remaining partials: `23fc541` updated D5/3.3 evidence pointers after the parseCopilotRequestCount fix, and `ab2d03c` added a named Conflicts of Interest section closing 5.2. Final state: 30 verified, 0 partial, 0 missing. Full audit with per-item justification and evidence pointers lives at `docs/verification/abc-audit.md`. The ABC-compliance summary is at `benchmarks/ABC-compliance.md`.
+The Agentic Benchmark Checklist (ABC) — 30 items covering fixed public tasks, multiple runs, automated metrics, and full disclosure — was audited item by item. Initial state per the session report: 28 verified, 2 partial (items 3.3 and 5.2). Two post-report commits closed the remaining partials: `23fc541` updated D5/3.3 evidence pointers after the parseCopilotRequestCount fix, and `ab2d03c` added a named Conflicts of Interest section closing 5.2. Final state: 30 verified, 0 partial, 0 missing. The detailed audit and ABC-compliance summary are historical artifacts archived outside the public repository.
 
 Commit: `7cecd8b` (initial audit), `23fc541` + `ab2d03c` (closeout)
 

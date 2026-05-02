@@ -72,7 +72,7 @@ describe('test synthesizer', () => {
     assert.notStrictEqual(result.attempts[1].commandResult?.exitCode, 0);
     // Candidates land at repo root with the swarm-synth-attempt prefix so
     // their __file__ resolves to the worktree root, not a subdirectory the
-    // candidate's import workarounds can't reach. See docs/p1-real-data-findings.md.
+    // candidate's import workarounds can't reach.
     assert.ok(result.testFilePath?.startsWith(repo));
     assert.ok(path.basename(result.testFilePath ?? '').startsWith('swarm_synth_attempt_'));
     assert.strictEqual(path.dirname(result.testFilePath ?? ''), repo);

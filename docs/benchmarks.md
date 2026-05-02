@@ -10,6 +10,6 @@ Secondary metrics from the same sweep:
 - Mean wall clock per instance
 - Mean premium requests per instance
 
-Per-layer eval results for the falsification battery itself live at [`docs/p1-eval-results.md`](p1-eval-results.md). Layer 3 (cheat detector) has been independently evaluated against the seed=42 sample; layers 1 and 4 evals are gated on the same Docker harness as P4.
+Per-layer eval harnesses for the falsification battery live under `scripts/eval/` and `benchmarks/swe-bench/`. Historical raw outputs are not kept in the repository; regenerate them locally or attach them as release artifacts when publishing benchmark evidence.
 
-The earlier three-producer rubric harness under `benchmarks/harness/` predates v7 and is no longer the primary benchmark. It is retained on disk for archival reference.
+The earlier three-producer rubric harness under `benchmarks/harness/` predates v7 and is no longer the primary benchmark. The harness code is retained for archival reference; generated run data is excluded from Git.

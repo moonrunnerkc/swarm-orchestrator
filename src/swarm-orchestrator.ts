@@ -568,7 +568,8 @@ export class SwarmOrchestrator implements RemediationHost, ReplanHost, StepExecu
     context.batteryResult = batteryResult;
     logger.info(
       `  falsification battery: composite ${batteryResult.compositeScore.toFixed(3)}, ` +
-      `${batteryResult.findings.length} finding(s), ${batteryResult.failedLayers.length} failed layer(s)`,
+      `${batteryResult.findings.length} finding(s), ${batteryResult.failedHardLayers.length} hard gate failed, ` +
+      `${batteryResult.advisoryWarningLayers.length} advisory warning(s), source: ${context.intentTestSource ?? 'absent'}`,
     );
 
     // Hard gate: any failed hard layer blocks the run. The patch must not merge.
@@ -628,8 +629,7 @@ export class SwarmOrchestrator implements RemediationHost, ReplanHost, StepExecu
 
     // Metrics, cost attribution, session state, OWASP, KB recordRun, auto-PR.
     // All of this lives in src/post-run-reporter.ts; the inline block was a
-    // pre-existing duplicate. See docs/post-run-diff-report.md for the
-    // behavioral diff that preceded this swap.
+    // pre-existing duplicate removed after a behavioral diff audit.
     const postRunContext: PostRunContext = context;
     const postRunOptions: Parameters<typeof runPostExecution>[4] = {};
     if (options?.model !== undefined) postRunOptions.model = options.model;

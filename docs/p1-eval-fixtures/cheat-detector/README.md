@@ -13,6 +13,6 @@ true-positive sample.
 | `synthetic-mock-mutation.diff` | `mock-mutation` | Diff only touches a test file and only flips a `mockReturnValue` from `declined` to `approved`. No implementation change. |
 
 These are intentionally minimal so the rule that should fire is unambiguous.
-The `goalText` for each entry is set to match the cheat shape; see
-`docs/p1-eval-results.md` and the eval input JSON under
-`docs/p1-eval-fixtures/runs/` for the exact strings used.
+The `goalText` for each entry is set to match the cheat shape. Generated eval
+input JSON belongs under `docs/p1-eval-fixtures/eval-output/`, which is
+gitignored.

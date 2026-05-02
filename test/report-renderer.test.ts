@@ -154,7 +154,7 @@ describe('ReportRenderer', () => {
       assert.ok(md.includes('## Falsification Battery'));
       assert.ok(md.includes('Composite score: 0.82'));
       assert.ok(md.includes('Hard gates: passed'));
-      assert.ok(md.includes('Failed layers: property-gate'));
+      assert.ok(md.includes('Failed layers (legacy): property-gate'));
       assert.ok(md.includes('Findings: 0 high, 1 medium, 0 low'));
       assert.ok(md.includes('differential-gate: pass'));
       assert.ok(md.includes('| medium | hardcoded-answer | src/auth.ts:12 |'));

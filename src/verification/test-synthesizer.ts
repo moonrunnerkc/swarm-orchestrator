@@ -60,8 +60,7 @@ function wrapWithVenv(command: string, venvBin: string | undefined, cwd: string)
 // fix — and the test runner reports that exit code directly. Keeping
 // a hand-rolled assertion-pattern allowlist would have re-created the
 // Python-non-functional failure mode for the next language to land
-// (pytest's bare `assert`, hamcrest, doctest, …). See
-// docs/p1-real-data-findings.md for the discovery sequence.
+// (pytest's bare `assert`, hamcrest, doctest, …).
 //
 // Round-7 (v7-critical-path session 2.5) reintroduces a structural
 // preflight, but in framework-aware form: `pytest --collect-only` for

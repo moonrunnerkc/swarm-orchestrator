@@ -81,8 +81,16 @@ export class ReportRenderer {
       }
       lines.push(`Human review: ${battery.humanReviewRequired ? 'yes' : 'no'}`);
       if (battery.wallClock !== undefined) lines.push(`Wall clock: ${formatDuration(battery.wallClock)}`);
-      if (battery.failedLayers && battery.failedLayers.length > 0) {
-        lines.push(`Failed layers: ${battery.failedLayers.join(', ')}`);
+      if (battery.failedHardLayers && battery.failedHardLayers.length > 0) {
+        lines.push(`Failed hard layers: ${battery.failedHardLayers.join(', ')}`);
+      } else if (battery.failedLayers && battery.failedLayers.length > 0) {
+        lines.push(`Failed layers (legacy): ${battery.failedLayers.join(', ')}`);
+      }
+      if (battery.advisoryWarningLayers && battery.advisoryWarningLayers.length > 0) {
+        lines.push(`Advisory warnings: ${battery.advisoryWarningLayers.join(', ')}`);
+      }
+      if (battery.environmentErrorLayers && battery.environmentErrorLayers.length > 0) {
+        lines.push(`Environment errors: ${battery.environmentErrorLayers.join(', ')}`);
       }
       lines.push(batteryFindingCounts(findings));
       for (const layer of layers) {

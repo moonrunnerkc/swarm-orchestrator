@@ -71,7 +71,7 @@ Every execution writes to `runs/<execution-id>/`: `session-state.json`, `metrics
 
 ## Hard don't-do rules
 
-- Don't commit anything listed in `.gitignore`. Run artifacts (`runs/`, `reports/`, `plans/`, `test-runs/`, `knowledge-base.json`, `.context/`, `.locks/`, `.quickfix/`) are gitignored on purpose. `examples/completed-run/` is force-included for judges; don't extend that exception.
+- Don't commit anything listed in `.gitignore`. Run artifacts (`runs/`, `reports/`, `plans/`, `test-runs/`, `knowledge-base.json`, `.context/`, `.locks/`, `.quickfix/`) are gitignored on purpose. Generated completed-run examples are local artifacts; publish them separately only when a release or review needs that evidence.
 - Don't commit secrets. `.env`, `.env.*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `service-account*.json` are blocked. Secrets come from environment only. Never from config files, CLI args, or GitHub Actions `with:` inputs. Use the `env:` block.
 - Don't commit internal planning docs: `.github/copilot-instructions.md`, `.github/cso-upgrade-plan.md`, `.github/cso-upgrade.md`, `.github/security-recommendations.md`, `.copilot-instructions.md`, `docs/orchestrator-copilot-benchmarks.md`, `IMPROVEMENTS.md`, `plans/`.
 - Don't use long-lived Google service-account JSON keys. Prefer Workload Identity Federation. If unavoidable, TTL must be ≤ 1 hour.

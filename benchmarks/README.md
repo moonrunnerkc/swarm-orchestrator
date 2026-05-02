@@ -9,7 +9,6 @@
 ```
 benchmarks/
 ├── README.md                      ← you are here (central hub)
-├── ABC-compliance.md              ← Agentic Benchmark Checklist (30/30)
 ├── ladder/
 │   ├── run_ladder.sh              ← iterative ladder baseline runner
 │   └── PROMPT_FAIRNESS.md         ← fairness policy (PRs welcome)
@@ -37,9 +36,8 @@ benchmarks/
 │   ├── raw_data/
 │   │   ├── rubric_tasks.json      ← 8 tasks with ladder_prompts
 │   │   ├── legacy_tasks.json      ← archived original tasks
-│   │   └── runs/                  ← per-producer run directories
-│   └── statistical_summary.md
-└── inventory.md                   ← grounding document
+│   │   └── runs/                  ← local per-producer run directories (gitignored)
+│   └── statistical_summary.md     ← generated locally (gitignored)
 ```
 
 ---
@@ -79,7 +77,7 @@ cd benchmarks/swe-bench && docker compose up --build
 |---|----------|----------|--------|
 | 1 | **Cost-to-Completion Rubric** — primary metric: how many premium requests to reach what completeness? | [harness/scoring/](harness/scoring/) | **Active** |
 | 2 | **Three-Producer Comparison** — orchestrator vs single-shot vs iterative ladder baseline | [harness/run_fresh.sh](harness/run_fresh.sh), [ladder/](ladder/) | **Active** |
-| 3 | **Agentic Benchmark Checklist (ABC)** — peer-reviewed evaluation hygiene | [ABC-compliance.md](ABC-compliance.md) | 30/30 items addressed |
+| 3 | **Agentic Benchmark Checklist (ABC)** — peer-reviewed evaluation hygiene | historical audit artifact | Not committed |
 | 4 | **Transparent harness** — open prompts, scoring scripts, raw data, ladder [fairness policy](ladder/PROMPT_FAIRNESS.md) | [harness/](harness/) | Complete |
 | 5 | **Objective metrics & statistics** — automated, paired Wilcoxon + Bonferroni | [harness/scoring/](harness/scoring/) | **Active** |
 | 6 | **Continuous benchmarking (Bencher)** — regression tracking in CI | [../.github/workflows/continuous-benchmark.yml](../.github/workflows/continuous-benchmark.yml) | Workflow committed |
@@ -130,8 +128,7 @@ No subjective scores, no weighted composite indices. The intended headline compa
 
 > **Premium request counts omitted from the 2026-04-17 table above** because
 > that dataset was captured before the D5 fix landed. New Copilot-producer
-> runs (see `benchmarks/harness/raw_data/demo-fast/` and the N=10 statistical
-> summary) use `parseCopilotRequestCount` and report the billing-accurate
+> runs use `parseCopilotRequestCount` and report the billing-accurate
 > count. See [D5 status](#d5-premium-request-counting-is-broken) for the
 > narrow remaining gap on the Claude Code producer.
 
@@ -419,7 +416,7 @@ The `TEST-NOMOD` rubric check uses `git diff --diff-filter=M HEAD~1`, which catc
 2. **≥ 10 runs per configuration.** Non-determinism is addressed with repeated trials.
 3. **Automated scoring only.** The scoring script ([score.sh](harness/scoring/score.sh)) reads machine-parseable outputs; no human judgment enters the pipeline.
 4. **95 % confidence intervals.** [compute_ci.py](harness/scoring/compute_ci.py) reports mean ± CI for every metric.
-5. **Full disclosure.** Raw data, prompts, Docker environments, and scripts are committed to this directory.
+5. **Artifact handling.** Prompts, Docker environments, and scripts are committed to this directory. Generated raw data is gitignored; publish it as a release artifact or external archive when a benchmark claim depends on it.
 
 ---
 
@@ -446,9 +443,9 @@ The `TEST-NOMOD` rubric check uses `git diff --diff-filter=M HEAD~1`, which catc
   [harness/scoring/rubric_runner.py](harness/scoring/rubric_runner.py),
   and the 22 binary check scripts in [harness/scoring/checks/](harness/scoring/checks/)).
   No subjective grading step exists in the pipeline.
-- **Openness.** All prompts, scoring code, Docker environments, raw run
-  artifacts, and statistical summaries are committed to this repository.
-  Readers can reproduce locally and disagree in public.
+- **Openness.** Prompts, scoring code, and Docker environments are committed
+  to this repository. Raw run artifacts and statistical summaries are
+  generated locally and should be published separately when cited.
 - **Undisclosed financial relationships.** None. No paid placements,
   sponsorships, or undisclosed dependencies tilt this comparison.
 

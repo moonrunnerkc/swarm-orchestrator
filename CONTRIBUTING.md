@@ -38,7 +38,7 @@ Layer 3 (cheat-detector) is the rule extension point. To add a rule:
 2. Wire it into `runCheatDetector` in the same file alongside the existing `detect*` calls.
 3. Add a Semgrep rule pack file under `config/semgrep-rules/` with the matching `id` (`swarm-agent-<rule-name>`).
 4. Add a unit test under `test/verification/cheat-detector.test.ts` that asserts the heuristic fires on a hand-crafted minimal diff and does not fire on a clean control diff.
-5. Add a synthetic fixture under `docs/p1-eval-fixtures/cheat-detector/` and an entry in the eval input JSON. The fixture proves the rule fires on real diff text, not just on the unit test's hand-crafted strings.
+5. Add a synthetic fixture under `docs/p1-eval-fixtures/cheat-detector/` and include it in the local eval input JSON you generate for the run. The fixture proves the rule fires on real diff text, not just on the unit test's hand-crafted strings.
 
 Do not add new layers to the battery. The five-layer structure is fixed for the 7.x line.
 
@@ -58,7 +58,7 @@ Eval harnesses are under `scripts/eval/`:
 - `cheat-detector-eval.ts` — Layer 3 false-positive rate on gold patches and true-positive rate on synthetic cheats.
 - `property-gate-eval.ts` — Layer 4 signal-to-noise ratio of counterexamples.
 
-Halt thresholds and current results: see [docs/p1-eval-results.md](docs/p1-eval-results.md). Inputs and fixtures: `docs/p1-eval-fixtures/`. The cheat-detector eval is the most tractable to run locally; the other two need the SWE-bench Docker harness for dep-installed checkouts. Run the eval inside that harness as part of the P4 sweep.
+Inputs and fixtures live under `docs/p1-eval-fixtures/`. Generated eval inputs and outputs live under `docs/p1-eval-fixtures/eval-output/`, which is gitignored. The cheat-detector eval is the most tractable to run locally; the other two need the SWE-bench Docker harness for dep-installed checkouts. Run the eval inside that harness as part of the P4 sweep.
 
 ```bash
 npx tsx scripts/eval/cheat-detector-eval.ts \
@@ -66,7 +66,7 @@ npx tsx scripts/eval/cheat-detector-eval.ts \
   --out /tmp/cheat-detector-results.json
 ```
 
-Any change to a gate's heuristic must include a re-run of the corresponding eval and an updated entry in `docs/p1-eval-results.md`.
+Any change to a gate's heuristic must include a re-run of the corresponding eval. Publish result artifacts in the PR, release notes, or an external archive when they are needed for review.
 
 ## Adapters
 

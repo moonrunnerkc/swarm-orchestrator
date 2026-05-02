@@ -62,6 +62,9 @@ export interface FalsificationBatteryReport {
   hardGatePassed?: boolean;
   wallClock?: number;
   failedLayers?: string[];
+  failedHardLayers?: string[];
+  advisoryWarningLayers?: string[];
+  environmentErrorLayers?: string[];
   findings?: Finding[];
   layers?: Array<{
     layer: string;

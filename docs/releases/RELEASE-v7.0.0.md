@@ -19,10 +19,11 @@ the corpus, do not generalize.
 
 ### Falsification corpus (synthetic, calibration set)
 
-`benchmarks/falsification-corpus/results/synthetic-calibration-2026-04-29/`:
-36-entry synthetic adversarial corpus, 18 broken / 18 clean. Run on
+Synthetic calibration run, 36-entry synthetic adversarial corpus, 18
+broken / 18 clean. Run on
 2026-04-29 with all five layers wired through the corpus harness
-(`benchmarks/falsification-corpus/harness.ts`).
+(`benchmarks/falsification-corpus/harness.ts`). Generated result files
+are archived outside the public repository.
 
 | Layer | False positive rate | False negative rate |
 |---|---:|---:|
@@ -166,7 +167,7 @@ v7.0.0 thesis. Each of these is gone, not deprecated:
 - **Persona collapse.** The six personas (`BackendMaster`,
   `FrontendExpert`, `TesterElite`, `SecurityAuditor`, `DevopsPro`,
   `IntegratorFinalizer`) collapsed to two: `worker` and `reviewer`.
-  See [docs/v7-baseline.md](../v7-baseline.md) for the audit trail.
+  The v7 baseline audit trail is archived outside the public repository.
 - **Fleet executor.** `src/fleet-executor.ts` and the `--fleet`,
   `--team-size` flags removed. Wave-of-N parallel mode removed.
 - **MCP server.** `src/mcp-server.ts` and the JSON-RPC stdio
@@ -216,9 +217,8 @@ The commit range `v6.1.0..v7.0.0` covers four workstreams:
   verifier-fix re-run that produced the resolution numbers above.
 - **Documentation that survives the audit trail**. Six known-gaps
   entries with full discovery sequences (`docs/known-gaps.md`).
-  Layer 1 real-data findings (`docs/p1-real-data-findings.md`).
-  Phase-evidence audit appended to `docs/v7-baseline.md` mapping
-  P0/P0.5/P1/P2/P3 claims to commits and deliverable files.
+  Layer 1 real-data findings and the v7 phase-evidence audit are
+  archived outside the public repository.
 
 ## Acknowledgements
 
