@@ -1,8 +1,18 @@
 # Verification
 
-This page describes what runs in production today and what exists as v7 verification library code.
+This page describes the two verification surfaces that run in production: the per-step evidence verifier and the end-of-run falsification battery. Both are wired into the live orchestrator path.
 
-## Production path today
+## Pipeline ordering
+
+A `swarm run` (or `swarm swarm`) executes the following verification surfaces in order, all in `src/swarm-orchestrator.ts`:
+
+1. **Pre-worker test synthesis.** Before any agent writes code, `runPreWorkerSynthesis` (`src/orchestrator/pre-worker-synthesis.ts`) generates a regression test that fails against the base repo. The resulting command becomes the Layer 1 differential-test command. Without one, Layer 1 fails closed.
+2. **Per-step evidence verifier.** Inside the wave scheduler loop, `src/verifier-engine.ts` runs after each agent step writes a transcript. It gates whether that step's branch is accepted. Octopus-merge of accepted step branches happens inside the loop.
+3. **End-of-run falsification battery.** After the final merge, `runEndOfRunBattery` (`src/orchestrator/end-of-run-battery.ts`) runs all five battery layers against the merged working tree. Layer 1 (differential gate) and Layer 2 (mutation gate) are hard gates: if either fails, the orchestrator throws and the run fails. Layers 3–5 (cheat detector, property gate, attestation) feed an advisory composite score.
+4. **Signed attestation.** When the hard gate passes, `generateAndAttachAttestation` (`src/orchestrator/post-battery-attestation.ts`) creates a signed in-toto SLSA v1.0 envelope and attaches it under `refs/notes/swarm-attestation`. Attestation only ever covers patches that survived the battery.
+5. **Final quality gates.** `runFinalGatesPipeline` runs the nine-gate engine against the merged result. Findings are advisory by default; `failOnIssues` upgrades them to hard.
+
+## Per-step evidence verifier
 
 The active per-step verifier is `src/verifier-engine.ts`. It runs after an agent step writes a transcript to `steps/step-N/share.md` and before that step branch is accepted.
 
@@ -61,27 +71,25 @@ Gate findings do not block branch merges today. The runner returns an advisory r
 
 See [quality-gates.md](quality-gates.md) for gate details.
 
-## v7 falsification battery
+## End-of-run falsification battery
 
-The v7 battery exists as library code under `src/verification/`. It is not wired into the automatic per-step run loop yet.
+The battery runs once per execution against the final merged tree, between the per-step loop and final quality gates. Entry point: `runBatteryVerification` in `src/verification/battery-runner.ts`, invoked from `src/orchestrator/end-of-run-battery.ts`. The five layers run sequentially in the order below.
 
-| Layer | Source | Status | What it checks |
+| Layer | Source | Role | What it checks |
 | --- | --- | --- | --- |
-| Test synthesis | `src/verification/test-synthesizer.ts` | Library code | Asks an agent adapter to generate a regression test that fails against the base repo. |
-| Differential gate | `src/verification/differential-gate.ts` | Library code | Runs the same test command against the base commit and the agent branch. The test must fail at base and pass at patch. |
-| Mutation gate | `src/verification/mutation-gate.ts` | Library code | Runs mutation tooling for changed JavaScript, TypeScript, Python, or Java files and compares the mutation score to thresholds. |
-| Cheat detector | `src/verification/cheat-detector.ts` | Library code | Scans diffs for hardcoded answers, swallowed exceptions, unauthorized test edits, mock-only changes, and complexity mismatch. Optional Semgrep support exists when rules are present. |
-| Property gate | `src/verification/property-gate.ts` | Library code | Generates fast-check, tsx, node, or Hypothesis harnesses for modified functions and reports counterexamples as advisory findings. |
-| Attestation | `src/verification/attestation.ts` | Library code plus one CLI verifier | Creates and verifies signed in-toto SLSA v1.0 provenance envelopes attached as git notes. |
-| Composite score | `src/verification/composite-score.ts` | Library code | Combines cheat-detector, property-gate, attestation, and advisory gate scores into a human-review decision. |
+| Test synthesis | `src/verification/test-synthesizer.ts` | Pre-worker | Generates a regression test that fails against the base repo. The synthesized command feeds Layer 1 as `differentialTestCommand`. |
+| 1. Differential gate | `src/verification/differential-gate.ts` | Hard gate | Runs the synthesized or `FAIL_TO_PASS` test command at the base commit and the patch commit. Must fail at base and pass at patch. Missing command fails closed. |
+| 2. Mutation gate | `src/verification/mutation-gate.ts` | Hard gate | Runs the regression command first; on success runs mutation tooling for changed JavaScript, TypeScript, Python, or Java files and compares the mutation score to thresholds. |
+| 3. Cheat detector | `src/verification/cheat-detector.ts` | Advisory | Scans diffs for hardcoded answers, swallowed exceptions, unauthorized test edits, mock-only changes, and complexity mismatch. Optional Semgrep support when rules are present. |
+| 4. Property gate | `src/verification/property-gate.ts` | Advisory | Generates fast-check, tsx, node, or Hypothesis harnesses for modified functions and reports counterexamples as advisory findings. |
+| 5. Attestation | `src/verification/attestation.ts` | Advisory | Verifies a signed in-toto SLSA v1.0 attestation note. The note is generated and attached after the battery passes. |
+| Composite score | `src/verification/composite-score.ts` | Aggregator | Combines cheat-detector, property-gate, attestation, and advisory quality-gate scores; sets `humanReviewRequired` when below threshold. |
 
-The only v7 battery command exposed through the shipped CLI today is:
+Hard-gate semantics are enforced in `src/swarm-orchestrator.ts`: when `batteryResult.hardGatePassed` is false, the orchestrator throws `falsification battery blocked the patch`, which blocks attestation, blocks the final-gate pipeline, and surfaces a failed run to the caller.
 
-```bash
-swarm attest verify <commit>
-```
+Synthetic calibration runs the full battery against `benchmarks/falsification-corpus/synthetic/` and asserts each broken patch trips its labelled target layer. The SWE-bench harness wires Layers 1 (synthesizer) and 4 (property) as spot-checks via `scripts/eval/swebench-instance-evaluator.ts`; Layers 3 and 5 are exercised by the corpus harness.
 
-Automatic per-step test synthesis, differential verification, mutation testing, property checks, composite scoring, and attestation generation are still integration work.
+CLI surface for the battery is `swarm attest verify <commit>`, which calls `verifyAttestation` against an attached note.
 
 ## Attestation details
 
@@ -102,7 +110,7 @@ The envelope records:
 
 ## Configuration
 
-The v7 library reads verification thresholds from `.swarm/gates.yaml`.
+The end-of-run battery reads thresholds from `.swarm/gates.yaml` via `loadMutationThresholds` (`src/verification/mutation-gate.ts`) and `loadCompositeScoreConfig` (`src/verification/composite-score.ts`). Defaults match the schema below.
 
 ```yaml
 verification:
@@ -118,7 +126,7 @@ verification:
     advisoryGatePenalty: 0.02
 ```
 
-The production evidence verifier does not read these v7 thresholds yet.
+These thresholds govern the end-of-run battery only. The per-step evidence verifier uses its own pass/fail rules described above and does not consult `.swarm/gates.yaml`.
 
 ## Source map
 
@@ -128,6 +136,12 @@ The production evidence verifier does not read these v7 thresholds yet.
 | Outcome checks | `src/verifier/outcome-checks.ts` |
 | Transcript checks | `src/verifier/transcript-checks.ts` |
 | Verification report renderer | `src/verifier/verification-reporters.ts` |
+| Pre-worker test synthesis | `src/orchestrator/pre-worker-synthesis.ts` |
+| End-of-run battery hook | `src/orchestrator/end-of-run-battery.ts` |
+| Battery runner | `src/verification/battery-runner.ts` |
+| Battery layer dispatch | `src/verification/battery-layer-runners.ts` |
+| Post-battery attestation hook | `src/orchestrator/post-battery-attestation.ts` |
 | Final gate runner | `src/quality-gates/gate-runner.ts` |
-| v7 battery exports | `src/verification/index.ts` |
+| Battery exports | `src/verification/index.ts` |
 | Attestation CLI handler | `src/cli/attest-handlers.ts` |
+| Synthetic calibration | `benchmarks/falsification-corpus/synthetic/synthetic-calibration.ts` |
