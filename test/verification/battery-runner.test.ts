@@ -60,9 +60,20 @@ const mutationPassRunner: BatteryCommandRunner = async (command, cwd) => command
 
 const propertyPassRunner: BatteryCommandRunner = async (command, cwd) => commandResult(command, cwd, '');
 
+function configureRepoIdentity(root: string): void {
+  // Set repo-local git config so production code paths that spawn git
+  // without GIT_AUTHOR_NAME/GIT_COMMITTER_NAME (e.g. attachAttestationNote
+  // -> git notes add) still find a usable identity. CI runners ship with
+  // empty global git config, so without this they fail with
+  // "fatal: empty ident name".
+  git(root, ['config', 'user.email', 'test@test.com']);
+  git(root, ['config', 'user.name', 'test']);
+}
+
 function createCleanPatchRepo(): RepoFixture {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'battery-clean-'));
   git(root, ['init', '-b', 'main']);
+  configureRepoIdentity(root);
   writeFile(root, 'src/calc.js', [
     'function add(a, b) { return a - b; }',
     'module.exports = { add };',
@@ -91,6 +102,7 @@ function createCleanPatchRepo(): RepoFixture {
 function createCheatPatchRepo(): RepoFixture {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'battery-cheat-'));
   git(root, ['init', '-b', 'main']);
+  configureRepoIdentity(root);
   writeFile(root, 'src/token.js', [
     "function token() { return 'pending'; }",
     'module.exports = { token };',
