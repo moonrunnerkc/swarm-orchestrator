@@ -173,19 +173,51 @@ describe('DemoMode', () => {
   });
 
   describe('demo-fast scenario specifics', () => {
-    it('has two independent steps (no dependencies)', () => {
+    it('exercises the verification battery with a single worker step', () => {
       const demo = new DemoMode();
       const scenario = demo.getScenario('demo-fast')!;
-      assert.strictEqual(scenario.steps.length, 2);
+      assert.strictEqual(scenario.steps.length, 1);
       assert.strictEqual(scenario.steps[0].dependencies.length, 0);
-      assert.strictEqual(scenario.steps[1].dependencies.length, 0);
+      assert.strictEqual(scenario.steps[0].agentName, 'worker');
     });
 
-    it('uses different agents for each step', () => {
+    it('seeds a FAIL_TO_PASS test and supplies a differential test command', () => {
       const demo = new DemoMode();
       const scenario = demo.getScenario('demo-fast')!;
-      const agents = scenario.steps.map(s => s.agentName);
-      assert.notStrictEqual(agents[0], agents[1], 'demo-fast should use different agents');
+      assert.ok(scenario.seedFiles, 'demo-fast should seed verification files');
+      const seededPaths = scenario.seedFiles!.map(f => f.path);
+      assert.ok(seededPaths.includes('package.json'), 'demo-fast should seed package.json');
+      assert.ok(
+        seededPaths.includes('test/math.test.js'),
+        'demo-fast should seed the FAIL_TO_PASS test',
+      );
+      assert.ok(
+        seededPaths.includes('stryker.conf.json'),
+        'demo-fast should seed Stryker config so the Layer 2 mutation gate has a real tool',
+      );
+      assert.ok(
+        scenario.differentialTestCommand && scenario.differentialTestCommand.includes('node --test'),
+        'demo-fast should pin the Layer 1 differential test command',
+      );
+
+      const pkg = scenario.seedFiles!.find(f => f.path === 'package.json')!;
+      const parsed = JSON.parse(pkg.content);
+      assert.ok(
+        parsed.devDependencies && parsed.devDependencies['@stryker-mutator/core'],
+        'demo-fast package.json should declare @stryker-mutator/core so the orchestrator installs it before the battery',
+      );
+    });
+
+    it('only references agent roles defined in the default agent config', () => {
+      const demo = new DemoMode();
+      const scenario = demo.getScenario('demo-fast')!;
+      const validRoles = new Set(['worker', 'reviewer']);
+      for (const step of scenario.steps) {
+        assert.ok(
+          validRoles.has(step.agentName),
+          `demo-fast step ${step.stepNumber} uses unknown agent "${step.agentName}"`,
+        );
+      }
     });
   });
 
@@ -199,11 +231,16 @@ describe('DemoMode', () => {
       assert.ok(scenario.steps[2].dependencies.includes(1), 'step 3 should depend on step 1');
     });
 
-    it('uses three different agents', () => {
+    it('only references agent roles defined in the default agent config', () => {
       const demo = new DemoMode();
       const scenario = demo.getScenario('api-quick')!;
-      const agents = new Set(scenario.steps.map(s => s.agentName));
-      assert.strictEqual(agents.size, 3, 'api-quick should use 3 distinct agents');
+      const validRoles = new Set(['worker', 'reviewer']);
+      for (const step of scenario.steps) {
+        assert.ok(
+          validRoles.has(step.agentName),
+          `api-quick step ${step.stepNumber} uses unknown agent "${step.agentName}"`,
+        );
+      }
     });
   });
 });

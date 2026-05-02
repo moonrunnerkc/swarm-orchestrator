@@ -2,12 +2,29 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ExecutionPlan, PlanStep } from './plan-generator';
 
+export interface DemoSeedFile {
+  path: string;
+  content: string;
+}
+
 export interface DemoScenario {
   name: string;
   description: string;
   goal: string;
   steps: PlanStep[];
   expectedDuration: string;
+  /**
+   * Files to materialize in the demo working directory before the initial
+   * git commit. Used to seed verification artifacts (e.g. a FAIL_TO_PASS
+   * test that the worker must turn green).
+   */
+  seedFiles?: DemoSeedFile[];
+  /**
+   * Command passed to the end-of-run falsification battery as the Layer 1
+   * differential test. When set, the orchestrator skips pre-worker test
+   * synthesis and uses this command directly.
+   */
+  differentialTestCommand?: string;
 }
 
 /**
@@ -31,33 +48,90 @@ export class DemoMode {
   }
 
   /**
-   * Demo Fast - "hello world" swarm
-   * Two agents, one wave, minimal work.
-   * Both steps are truly independent - no shared files.
+   * Demo Fast: a single worker step that has to pass a pre-seeded
+   * FAIL_TO_PASS test, then runs the full falsification battery against the
+   * resulting patch. Showcases the verification-first pipeline (differential
+   * gate, mutation gate, cheat detector, property gate, attestation) end to
+   * end on a tiny, deterministic example.
    */
   private getDemoFastScenario(): DemoScenario {
+    const packageJson = JSON.stringify(
+      {
+        name: 'swarm-demo-fast',
+        version: '0.0.0',
+        private: true,
+        type: 'module',
+        scripts: {
+          test: 'node --test test/math.test.js'
+        },
+        devDependencies: {
+          // Stryker drives the battery's Layer 2 mutation gate. Pinning a
+          // recent major keeps the demo reproducible and lets the
+          // orchestrator's installDependenciesIfNeeded hook bring it in
+          // automatically before the battery runs.
+          '@stryker-mutator/core': '^8.6.0'
+        }
+      },
+      null,
+      2
+    ) + '\n';
+
+    const failToPassTest = `import { test } from 'node:test';
+import { strict as assert } from 'node:assert';
+import { add } from '../src/math.js';
+
+test('add returns the sum of two integers', () => {
+  assert.equal(add(2, 3), 5);
+  assert.equal(add(-1, 1), 0);
+  assert.equal(add(0, 0), 0);
+  assert.equal(add(100, -50), 50);
+});
+`;
+
+    // Stryker's "command" test runner just spawns the configured shell
+    // command for each mutant. That sidesteps Stryker's per-runner
+    // adapters (mocha, jest, ...) and keeps the demo's dependency tree to
+    // a single package.
+    const strykerConf = JSON.stringify(
+      {
+        mutate: ['src/**/*.js'],
+        testRunner: 'command',
+        commandRunner: { command: 'node --test test/math.test.js' },
+        reporters: ['clear-text'],
+        timeoutMS: 15000,
+        tempDirName: '.stryker-tmp'
+      },
+      null,
+      2
+    ) + '\n';
+
     return {
       name: 'demo-fast',
-      description: 'Two independent utility files, one wave',
-      goal: 'Two independent micro-tasks: each agent adds one small TypeScript utility file.',
-      expectedDuration: '20-30 seconds',
+      description: 'Single worker step + full falsification battery on a FAIL_TO_PASS test',
+      goal:
+        'Implement the missing add(a, b) function at src/math.js so the pre-seeded test/math.test.js transitions from FAIL on the base commit to PASS on the patch commit.',
+      expectedDuration: '2-4 minutes',
+      seedFiles: [
+        { path: 'package.json', content: packageJson },
+        { path: 'stryker.conf.json', content: strykerConf },
+        { path: 'test/math.test.js', content: failToPassTest }
+      ],
+      differentialTestCommand: 'node --test test/math.test.js',
       steps: [
         {
           stepNumber: 1,
-          agentName: 'backend_master',
-          task: 'Create a tiny TypeScript utility module at src/string-utils.ts that exports a function greet(name: string): string which returns "Hello, <name>!". Keep it boring. No new deps. Add a short top-of-file comment. Commit your work.',
+          agentName: 'worker',
+          task:
+            'Create src/math.js exporting a function add(a, b) that returns a + b. ' +
+            'The pre-seeded test at test/math.test.js imports add from "../src/math.js" — keep that import path. ' +
+            'Do not modify the test file. Do not add new dependencies. ' +
+            'Run `node --test test/math.test.js` from the repo root and confirm the test passes before you finish. ' +
+            'Commit the new src/math.js with a short message.',
           dependencies: [],
           expectedOutputs: [
-            'src/string-utils.ts with exported greet() function'
-          ]
-        },
-        {
-          stepNumber: 2,
-          agentName: 'frontend_expert',
-          task: 'Create a tiny TypeScript utility module at src/number-utils.ts that exports a function double(n: number): number which returns n * 2. Keep it boring. No new deps. Add a short top-of-file comment. Commit your work.',
-          dependencies: [],
-          expectedOutputs: [
-            'src/number-utils.ts with exported double() function'
+            'src/math.js exporting add(a, b) = a + b',
+            'node --test test/math.test.js exits 0 with all assertions passing',
+            'Single commit adding src/math.js'
           ]
         }
       ]
@@ -67,7 +141,7 @@ export class DemoMode {
   /**
    * API Quick: 3-step REST API build showing wave dependencies.
    * Step 1: Worker builds the endpoints.
-   * Step 2: Worker adds tests (depends on step 1).
+   * Step 2: Reviewer adds tests against the worker's output (depends on step 1).
    * Step 3: Worker adds a Dockerfile (depends on step 1).
    */
   private getApiQuickScenario(): DemoScenario {
@@ -79,7 +153,7 @@ export class DemoMode {
       steps: [
         {
           stepNumber: 1,
-          agentName: 'backend_master',
+          agentName: 'worker',
           task: 'Create a Node.js REST API with Express. Endpoints: GET /health returning { status: "ok" }, GET /api/items returning an in-memory array, POST /api/items accepting { name } and returning the created item with a generated id. Add input validation (reject empty name). Export the app for testing. Add a start script to package.json. Commit your work.',
           dependencies: [],
           expectedOutputs: [
@@ -90,7 +164,7 @@ export class DemoMode {
         },
         {
           stepNumber: 2,
-          agentName: 'tester_elite',
+          agentName: 'reviewer',
           task: 'Add tests for the REST API created in step 1. Use the Node.js built-in test runner (node:test and node:assert/strict). Test: GET /health returns 200 and { status: "ok" }, GET /api/items returns empty array initially, POST /api/items with valid name returns 201, POST /api/items with empty name returns 400, GET /api/items after POST includes the new item. Import the app from server.js and start/stop it in before/after hooks. Add a test script to package.json. Commit your work.',
           dependencies: [1],
           expectedOutputs: [
@@ -101,7 +175,7 @@ export class DemoMode {
         },
         {
           stepNumber: 3,
-          agentName: 'devops_pro',
+          agentName: 'worker',
           task: 'Add a Dockerfile for the Node.js REST API. Use node:20-alpine base image, copy package.json first for layer caching, run npm ci --omit=dev, copy source files, expose port 3000, set NODE_ENV=production, and use CMD ["node", "server.js"]. Add a .dockerignore excluding node_modules, .git, and test/. Commit your work.',
           dependencies: [1],
           expectedOutputs: [

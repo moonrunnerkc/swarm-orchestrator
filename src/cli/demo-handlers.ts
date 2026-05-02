@@ -68,13 +68,21 @@ export async function installDemoDependencies(demoDir: string): Promise<void> {
   let successCount = 0;
   let failCount = 0;
 
+  // The orchestrator's own .env can set NODE_ENV=production for production
+  // runs; left in place for the demo's post-run install it would prune the
+  // devDependencies the demo seeded for verification (Stryker, etc.). Drop
+  // it for this scoped install and pass --include=dev belt-and-suspenders.
+  const installEnv = { ...process.env };
+  delete installEnv.NODE_ENV;
+
   for (const pkgDir of packageJsonPaths) {
     const relativePath = path.relative(demoDir, pkgDir) || '.';
     try {
-      execSync('npm install --loglevel=error', {
+      execSync('npm install --include=dev --loglevel=error', {
         cwd: pkgDir,
         stdio: ['pipe', 'pipe', 'pipe'],
-        timeout: 120000
+        timeout: 120000,
+        env: installEnv
       });
       logger.info(`  ${green('✓')} ${relativePath}`);
       successCount++;
@@ -168,6 +176,18 @@ export async function runDemo(scenarioName: string): Promise<number> {
   const demoMode = new DemoMode();
   const scenario = demoMode.getScenario(scenarioName);
 
+  if (!scenario) {
+    logger.error(`${c.bold('error:')} demo scenario "${scenarioName}" not found`);
+    logger.info('');
+    logger.info('Available scenarios:');
+    demoMode.getAvailableScenarios().forEach(s => {
+      logger.info(`  ${c.cyan(s.name.padEnd(12))}  ${c.dim(s.description)}`);
+    });
+    logger.info('');
+    logger.info(`Run: ${c.bold('swarm demo list')}`);
+    return 1;
+  }
+
   // Parse all CLI flags (including --target, --pr, --hooks, etc.)
   const cliArgs = process.argv.slice(2);
   const parsedFlags = parseSwarmFlags(cliArgs);
@@ -190,6 +210,18 @@ export async function runDemo(scenarioName: string): Promise<number> {
     execSync('git config user.email "demo@swarm.local"', { cwd: demoDir, stdio: 'pipe' });
     execSync('git config user.name "Swarm Demo"', { cwd: demoDir, stdio: 'pipe' });
     fs.writeFileSync(path.join(demoDir, 'README.md'), `# Swarm Demo: ${scenarioName}\n`);
+
+    // Seed files materialize at the base commit so the verification battery
+    // can use them as FAIL_TO_PASS evidence (the worker's patch must turn
+    // them green).
+    if (scenario.seedFiles && scenario.seedFiles.length > 0) {
+      for (const seed of scenario.seedFiles) {
+        const seedPath = path.join(demoDir, seed.path);
+        fs.mkdirSync(path.dirname(seedPath), { recursive: true });
+        fs.writeFileSync(seedPath, seed.content);
+      }
+    }
+
     execSync('git add . && git commit -m "init demo"', { cwd: demoDir, stdio: 'pipe' });
   }
 
@@ -198,18 +230,6 @@ export async function runDemo(scenarioName: string): Promise<number> {
   process.chdir(demoDir);
 
   try {
-    if (!scenario) {
-      logger.error(`${c.bold('error:')} demo scenario "${scenarioName}" not found`);
-      logger.info('');
-      logger.info('Available scenarios:');
-      demoMode.getAvailableScenarios().forEach(s => {
-        logger.info(`  ${c.cyan(s.name.padEnd(12))}  ${c.dim(s.description)}`);
-      });
-      logger.info('');
-      logger.info(`Run: ${c.bold('swarm demo list')}`);
-      return 1;
-    }
-
     logger.info('');
     logger.info(`  ${c.bold('swarm')} ${c.dim('·')} ${scenario.name}`);
     logger.info(`  ${c.dim(scenario.description)}`);
@@ -217,6 +237,12 @@ export async function runDemo(scenarioName: string): Promise<number> {
     logger.info(`  steps     ${scenario.steps.length}`);
     logger.info(`  duration  ${c.dim(scenario.expectedDuration)}`);
     logger.info(`  folder    ${demoDir} ${c.dim(isExternalTarget ? '(target)' : '(temp)')}`);
+    if (scenario.seedFiles && scenario.seedFiles.length > 0) {
+      logger.info(`  seeded    ${scenario.seedFiles.map(f => f.path).join(', ')}`);
+    }
+    if (scenario.differentialTestCommand) {
+      logger.info(`  battery   layer-1 test: ${c.dim(scenario.differentialTestCommand)}`);
+    }
     logger.info('');
 
     const plan = demoMode.scenarioToPlan(scenario);
@@ -227,6 +253,9 @@ export async function runDemo(scenarioName: string): Promise<number> {
       ...parsedFlags,
       noQualityGates: true,
     };
+    if (scenario.differentialTestCommand && !execOpts.differentialTestCommand) {
+      execOpts.differentialTestCommand = scenario.differentialTestCommand;
+    }
     const exitCode = await executeSwarm(path.basename(planPath), execOpts);
 
     await installDemoDependencies(demoDir);
