@@ -177,9 +177,20 @@ describe('test synthesizer', () => {
   it('preserves directory structure for Django runtests-shaped repos', async () => {
     const repo = tmpRepo();
     dirs.push(repo);
-    // Marker for django-runtests detection.
+    // Marker for django-runtests detection. The file body must exit
+    // non-zero when invoked so the synthesizer's base run sees the
+    // candidate as a failing regression test (and therefore reaches
+    // GENERATED). A bare comment exits 0 on any host where `python` is
+    // resolvable (e.g. CI runners with setup-python installed), which
+    // would make the synthesizer reject the candidate as "passes against
+    // base" and break this placement contract for environment reasons
+    // unrelated to the actual contract under test.
     fs.mkdirSync(path.join(repo, 'tests'), { recursive: true });
-    fs.writeFileSync(path.join(repo, 'tests', 'runtests.py'), '# django runner', 'utf8');
+    fs.writeFileSync(
+      path.join(repo, 'tests', 'runtests.py'),
+      'import sys\nsys.exit(1)\n',
+      'utf8',
+    );
 
     const adapter = new FakeAdapter([
       JSON.stringify({
