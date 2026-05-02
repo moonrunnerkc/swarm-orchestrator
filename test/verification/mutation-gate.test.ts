@@ -50,6 +50,26 @@ describe('mutation gate', () => {
     assert.strictEqual(result.mutationScore, 0.85);
   });
 
+  it('parses the Stryker clear-text reporter table layout', () => {
+    const result = parseMutationOutput([
+      'INFO Instrumenter Instrumented 1 source file(s) with 8 mutant(s)',
+      'All tests',
+      '  ✓ All tests (killed 6)',
+      '----------|------------------|----------|-----------|------------|----------|----------|',
+      '          | % Mutation score |          |           |            |          |          |',
+      'File      |  total | covered | # killed | # timeout | # survived | # no cov | # errors |',
+      '----------|--------|---------|----------|-----------|------------|----------|----------|',
+      'All files |  75.00 |  100.00 |        6 |         0 |          2 |        0 |        0 |',
+      ' math.js  |  75.00 |  100.00 |        6 |         0 |          2 |        0 |        0 |',
+      '----------|--------|---------|----------|-----------|------------|----------|----------|',
+    ].join('\n'));
+
+    assert.strictEqual(result.totalMutants, 8);
+    assert.strictEqual(result.killedMutants, 6);
+    assert.strictEqual(result.survivedMutants, 2);
+    assert.strictEqual(result.mutationScore, 0.75);
+  });
+
   it('loads mutation thresholds from .swarm/gates.yaml', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mutation-config-'));
     try {

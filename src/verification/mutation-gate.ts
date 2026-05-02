@@ -178,17 +178,40 @@ export function parseMutationOutput(stdout: string, stderr = ''): {
 } {
   const text = `${stdout}\n${stderr}`;
   const scoreMatch = text.match(/(?:mutation\s+score|score)\s*[:=]?\s*(\d+(?:\.\d+)?)\s*%/i);
-  const killed = parseCount(text, ['killed mutants', 'killed']);
-  const survived = parseCount(text, ['survived mutants', 'survived', 'survivors']);
-  const total = parseCount(text, ['total mutants', 'mutant\\(s\\) generated', 'generated', 'total']);
+  let killed = parseCount(text, ['killed mutants', 'killed']);
+  let survived = parseCount(text, ['survived mutants', 'survived', 'survivors']);
+  let total = parseCount(text, ['total mutants', 'mutant\\(s\\) generated', 'generated', 'total']);
+
+  // Stryker's clear-text reporter emits a pipe-separated table whose summary
+  // row ("All files | % | covered | killed | timeout | survived | no cov | errors |")
+  // is not picked up by the key/value patterns above. Fall back to
+  // Stryker-specific extractors so a successful Stryker run still produces
+  // valid metrics.
+  if (total === undefined) {
+    const instrumented = text.match(/instrumented\s+\d+\s+source\s+file\(s\)\s+with\s+(\d+)\s+mutant\(s\)/i);
+    if (instrumented?.[1]) total = Number.parseInt(instrumented[1], 10);
+  }
+  const allFilesRow = text.match(
+    /All\s+files\s*\|\s*([\d.]+|N\/A|n\/a)\s*\|\s*[^|]*\|\s*(\d+)\s*\|\s*\d+\s*\|\s*(\d+)\s*\|\s*\d+\s*\|\s*\d+\s*\|/,
+  );
+  if (allFilesRow) {
+    if (killed === undefined) killed = Number.parseInt(allFilesRow[2], 10);
+    if (survived === undefined) survived = Number.parseInt(allFilesRow[3], 10);
+  }
+
   const derivedTotal = total ?? (
     killed !== undefined && survived !== undefined ? killed + survived : undefined
   );
+  const tableScore = allFilesRow?.[1] && allFilesRow[1].toUpperCase() !== 'N/A'
+    ? Number.parseFloat(allFilesRow[1]) / 100
+    : undefined;
   const mutationScore = scoreMatch?.[1]
     ? Number.parseFloat(scoreMatch[1]) / 100
-    : derivedTotal && killed !== undefined
-      ? killed / derivedTotal
-      : 0;
+    : tableScore !== undefined
+      ? tableScore
+      : derivedTotal && killed !== undefined
+        ? killed / derivedTotal
+        : 0;
 
   return {
     totalMutants: derivedTotal ?? 0,
