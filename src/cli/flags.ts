@@ -19,6 +19,7 @@ export interface ExecuteSwarmCliOptions {
   targetDir?: string;
   cliAgent?: string;
   owaspReport?: boolean;
+  differentialTestCommand?: string;
   yes?: boolean;
   verbose?: boolean;
   quiet?: boolean;
@@ -188,6 +189,11 @@ export function parseSwarmFlags(args: string[]): ExecuteSwarmCliOptions {
   const toolIndex = args.indexOf('--tool');
   if (toolIndex !== -1 && args[toolIndex + 1]) {
     opts.cliAgent = args[toolIndex + 1];
+  }
+
+  const diffTestCmdIdx = args.indexOf('--differential-test-command');
+  if (diffTestCmdIdx !== -1 && args[diffTestCmdIdx + 1]) {
+    opts.differentialTestCommand = args[diffTestCmdIdx + 1];
   }
 
   return opts;

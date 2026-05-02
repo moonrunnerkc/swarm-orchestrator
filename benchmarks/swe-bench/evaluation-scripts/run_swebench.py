@@ -587,7 +587,7 @@ def find_fatal_run_sentinel(repo_dir: Path) -> dict | None:
     return None
 
 
-def run_orchestrator(repo_dir: Path, problem_statement: str) -> dict:
+def run_orchestrator(repo_dir: Path, problem_statement: str, task: dict | None = None) -> dict:
     """Run swarm-orchestrator or a direct-agent baseline against the task."""
     start = time.monotonic()
     env = {
@@ -637,6 +637,12 @@ def run_orchestrator(repo_dir: Path, problem_statement: str) -> dict:
             "--task-type", "swebench",
             "--yes",
         ]
+        # Pass the FAIL_TO_PASS test command so the battery Layer 1 gate has a
+        # concrete differential command instead of invoking the AI synthesizer.
+        if task is not None:
+            gate_input = build_swebench_differential_gate_input(task)
+            if gate_input.get("ready") and gate_input.get("test_command"):
+                cmd.extend(["--differential-test-command", gate_input["test_command"]])
 
     try:
         result = subprocess.run(
@@ -1465,7 +1471,7 @@ def evaluate_tasks(*, keep_workdir: bool = False) -> dict:
                 }
 
             # Step 2: Run orchestrator / baseline
-            run_result = run_orchestrator(repo_dir, task["problem_statement"])
+            run_result = run_orchestrator(repo_dir, task["problem_statement"], task=task)
             task_result["run"] = run_result
             if run_result.get("fatal_run_error"):
                 fatal_abort = {

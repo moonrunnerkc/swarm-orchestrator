@@ -229,6 +229,7 @@ export async function executeSwarm(
   if (options?.hooksEnabled !== undefined) swarmOptions.hooksEnabled = options.hooksEnabled;
   if (options?.owaspReport) swarmOptions.owaspReport = true;
   if (options?.cliAgent) swarmOptions.cliAgent = options.cliAgent;
+  if (options?.differentialTestCommand) swarmOptions.differentialTestCommand = options.differentialTestCommand;
 
   const context = await orchestrator.executeSwarm(plan, agentMap, runDir, swarmOptions);
 
@@ -573,6 +574,7 @@ export async function handleRunCommand(args: string[]): Promise<number> {
     '--model', '--resume', '--quality-gates-config', '--quality-gates-out',
     '--pr', '--target', '--dir', '--tool', '--max-premium-requests',
     '--sarif', '--goal', '--base-commit', '--agent-guidance', '--task-type',
+    '--differential-test-command',
   ]);
 
   // Extract positional tokens: skip the command name (args[0]) and any flag + value pairs
