@@ -645,6 +645,145 @@ describe('swebench instance evaluator', () => {
         fs.rmSync(repoPath, { recursive: true, force: true });
       }
     });
+
+    it('drops pre-existing findings from differentialCounterexamples (base subtraction)', async () => {
+      // Both base and gold have the same util.ts, so the gate's findings
+      // appear in both runs and cancel out of the differential. The patch
+      // under test introduced no regression on this function; the
+      // pre-existing fragility is real but pre-existing — exactly the
+      // SWE-bench-Verified noise class the differential subtracts.
+      const repoPath = fs.mkdtempSync(path.join(os.tmpdir(), 'evalhook-repo-'));
+      const goldPatch = [
+        'diff --git a/src/util.ts b/src/util.ts',
+        '--- a/src/util.ts',
+        '+++ b/src/util.ts',
+        '@@ -1,1 +1,3 @@',
+        '+export function add(a: number, b: number): number {',
+        '+  return a + b;',
+        '+}',
+        '',
+      ].join('\n');
+
+      const gateRunner: PropertyCommandRunner = async (command, cwd) => ({
+        command, cwd,
+        exitCode: 1,
+        stdout: 'Counterexample: [0, 0] -> SomeError',
+        stderr: '',
+        durationMs: 1,
+        timedOut: false,
+      });
+
+      try {
+        const record = await evaluateInstancePropertyGate({
+          instanceId: 'fake-prop-diff',
+          repoPath,
+          goldPatchText: goldPatch,
+          baseCommit: 'HEAD',
+          commandRunner: gateRunner,
+          withWorktreeFn: async (_repo, _ref, fn) => {
+            const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evalhook-wt-'));
+            fs.mkdirSync(path.join(dir, 'src'));
+            // Pre-populate the file in BOTH base and gold worktrees so the
+            // function is discovered both times. This simulates a function
+            // that exists pre-patch and is also present post-patch with no
+            // material change.
+            fs.writeFileSync(
+              path.join(dir, 'src', 'util.ts'),
+              'export function add(a: number, b: number): number {\n  return a + b;\n}\n',
+            );
+            try {
+              return await fn(dir);
+            } finally {
+              fs.rmSync(dir, { recursive: true, force: true });
+            }
+          },
+          applyPatchFn: () => {
+            // No-op; the file is already populated by withWorktreeFn so
+            // the gold worktree mirrors the base worktree shape.
+          },
+        });
+
+        assert.ok((record.counterexamples ?? []).length > 0,
+          'gold-side raw counterexamples must be present (pre-existing fragility)');
+        assert.ok((record.baseCounterexamples ?? []).length > 0,
+          'base-side counterexamples must be present (same fragility, pre-patch)');
+        assert.equal((record.differentialCounterexamples ?? []).length, 0,
+          'differential must subtract findings that appeared in BOTH runs (no patch-introduced regression)');
+        assert.equal(record.status, 'PASS',
+          'PASS when targets ran but the differential is empty');
+      } finally {
+        fs.rmSync(repoPath, { recursive: true, force: true });
+      }
+    });
+
+    it('keeps gold-only findings in differentialCounterexamples', async () => {
+      // Base worktree has no util.ts → no targets discovered → no base
+      // findings. Gold worktree has the file (added by the patch) → 1
+      // target → 1 counterexample. Differential = gold (since nothing in
+      // base subtracts), so the patch-introduced regression surfaces.
+      const repoPath = fs.mkdtempSync(path.join(os.tmpdir(), 'evalhook-repo-'));
+      const goldPatch = [
+        'diff --git a/src/util.ts b/src/util.ts',
+        '--- /dev/null',
+        '+++ b/src/util.ts',
+        '@@ -0,0 +1,3 @@',
+        '+export function add(a: number, b: number): number {',
+        '+  return a + b;',
+        '+}',
+        '',
+      ].join('\n');
+
+      let applyCount = 0;
+      const gateRunner: PropertyCommandRunner = async (command, cwd) => ({
+        command, cwd,
+        exitCode: 1,
+        stdout: 'Counterexample: [1, "x"] -> TypeError',
+        stderr: '',
+        durationMs: 1,
+        timedOut: false,
+      });
+
+      try {
+        const record = await evaluateInstancePropertyGate({
+          instanceId: 'fake-prop-gold-only',
+          repoPath,
+          goldPatchText: goldPatch,
+          baseCommit: 'HEAD',
+          commandRunner: gateRunner,
+          withWorktreeFn: async (_repo, _ref, fn) => {
+            const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'evalhook-wt-'));
+            fs.mkdirSync(path.join(dir, 'src'));
+            try {
+              return await fn(dir);
+            } finally {
+              fs.rmSync(dir, { recursive: true, force: true });
+            }
+          },
+          applyPatchFn: (worktreePath) => {
+            applyCount += 1;
+            fs.writeFileSync(
+              path.join(worktreePath, 'src', 'util.ts'),
+              'export function add(a: number, b: number): number {\n  return a + b;\n}\n',
+            );
+          },
+        });
+
+        assert.equal(applyCount, 1, 'patch must be applied once (gold worktree only)');
+        assert.equal((record.baseCounterexamples ?? []).length, 0,
+          'base run finds nothing because the file did not exist pre-patch');
+        assert.ok((record.counterexamples ?? []).length > 0,
+          'gold-side raw counterexamples are present');
+        assert.equal(
+          (record.differentialCounterexamples ?? []).length,
+          (record.counterexamples ?? []).length,
+          'differential equals gold when base is empty — patch-introduced regression surfaces',
+        );
+        assert.equal(record.status, 'ADVISORY',
+          'ADVISORY when the differential has at least one finding');
+      } finally {
+        fs.rmSync(repoPath, { recursive: true, force: true });
+      }
+    });
   });
 
   describe('appendJsonlRecord', () => {

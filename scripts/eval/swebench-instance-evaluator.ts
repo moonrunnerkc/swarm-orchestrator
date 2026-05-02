@@ -158,7 +158,29 @@ export interface PropertyEvalRecord {
   instanceId: string;
   status: 'PASS' | 'ADVISORY' | 'SKIP' | 'ERROR';
   modifiedFunctions: Array<Pick<PropertyTarget, 'filePath' | 'line' | 'functionName' | 'language' | 'typed' | 'advisoryOnly'>>;
+  /**
+   * Findings produced by running the property gate against the gold-applied
+   * worktree. Includes both `property-skip-unsupported` advisories and
+   * actual counterexamples. The legacy field name "counterexamples" is
+   * preserved for compatibility; downstream SNR analysis should consume
+   * `differentialCounterexamples` instead.
+   */
   counterexamples: PropertyFinding[];
+  /**
+   * Findings produced by running the same gate against the BASE worktree
+   * (no gold patch applied). Same shape as `counterexamples`. Used to
+   * subtract pre-existing failures from the gold-side findings so the SNR
+   * measurement only sees regressions introduced by the patch under test.
+   */
+  baseCounterexamples?: PropertyFinding[];
+  /**
+   * Differential findings = `counterexamples` ∖ `baseCounterexamples`,
+   * matched by (filePath, functionName, ruleId). A finding here is a
+   * NEW failure introduced by the patch and is the right input for the
+   * v7 SNR halt-threshold computation. Empty list = no patch-introduced
+   * regressions on the discovered targets.
+   */
+  differentialCounterexamples?: PropertyFinding[];
   wallClockMs: number;
   error?: string;
 }
@@ -365,6 +387,60 @@ function changedImplementationFiles(goldPatchText: string): string[] {
   return Array.from(new Set(out));
 }
 
+// Property-gate message templates put the function name as the first
+// identifier-like token after a fixed lead phrase ("found a counterexample
+// in <name>", "found a failure in <name>", "Property gate skipped <name>").
+// Re-extracting from the message rather than threading a structured field
+// through the Finding type avoids polluting the shared Finding shape with a
+// property-gate-specific concern, since (filePath, ruleId) alone is
+// insufficient — line shifts between base and gold whenever upstream hunks
+// added or removed lines, so we cannot key on line.
+const FUNCTION_NAME_FROM_MESSAGE = /(?:counterexample in |failure in |Property gate skipped )([A-Za-z_][\w]*)/;
+
+function functionNameFromFinding(f: PropertyFinding): string {
+  if ('message' in f) {
+    const match = f.message.match(FUNCTION_NAME_FROM_MESSAGE);
+    if (match) return match[1] ?? '';
+  }
+  return '';
+}
+
+function findingFilePath(f: PropertyFinding): string {
+  if ('filePath' in f && typeof f.filePath === 'string') return f.filePath;
+  return '';
+}
+
+/**
+ * Stable identity for finding-matching across the base and gold runs. Line
+ * numbers shift between base and gold whenever an upstream patch hunk added
+ * or removed lines, so line is intentionally NOT part of the key. The
+ * (filePath, functionName, ruleId) triple matches the same logical finding
+ * across runs even when the function moved within the file.
+ */
+function findingKey(f: PropertyFinding): string {
+  return `${findingFilePath(f)}::${functionNameFromFinding(f)}::${f.ruleId}`;
+}
+
+/**
+ * Subtract base-run findings from gold-run findings by stable key. The
+ * remaining set is the "agent-introduced regression" surface — findings
+ * that the gold patch (i.e. the patch under test) caused.
+ *
+ * Pre-existing fragility (the dominant noise class on SWE-bench Verified)
+ * appears in both runs and drops out by construction. The result is the
+ * input to the v7 SNR halt-threshold computation; a finding here is what
+ * the rubric calls (a) genuine bug or (b) false alarm, never (c) tooling
+ * artifact (those are filtered by `property-skip-unsupported` ruleId in
+ * the gate's own output).
+ */
+function differentialFindings(
+  goldFindings: PropertyFinding[],
+  baseFindings: PropertyFinding[],
+): PropertyFinding[] {
+  const baseKeys = new Set(baseFindings.map(findingKey));
+  return goldFindings.filter((f) => !baseKeys.has(findingKey(f)));
+}
+
 /**
  * Property-gate hook for one SWE-bench instance.
  *
@@ -418,21 +494,44 @@ export async function evaluateInstancePropertyGate(input: PropertyEvalInput): Pr
       }) satisfies PropertyCommandRunner
       : undefined;
 
-    const result = await withWorktreeFn(input.repoPath, baseRef, async (worktreePath) => {
+    const runnerOpts = venvAwareRunner
+      ? { commandRunner: venvAwareRunner }
+      : (input.commandRunner ? { commandRunner: input.commandRunner } : {});
+
+    // Base run: same baseRef, same changedFiles, NO gold patch applied.
+    // Captures pre-existing fragility on functions the patch will modify.
+    // Files that the gold patch ADDS won't exist in base; the gate's
+    // existing fs.existsSync gate skips them silently, which is the
+    // desired behavior — there is nothing in base to subtract for a
+    // newly-added function.
+    const baseRun = await withWorktreeFn(input.repoPath, baseRef, async (worktreePath) => {
+      return runPropertyGate({
+        targetRepoPath: worktreePath,
+        changedFiles,
+        ...runnerOpts,
+      });
+    });
+
+    // Gold run: same baseRef, gold patch applied. Captures the state the
+    // patch under test claims to produce.
+    const goldRun = await withWorktreeFn(input.repoPath, baseRef, async (worktreePath) => {
       applyPatchFn(worktreePath, input.goldPatchText);
       return runPropertyGate({
         targetRepoPath: worktreePath,
         changedFiles,
-        ...(venvAwareRunner
-          ? { commandRunner: venvAwareRunner }
-          : (input.commandRunner ? { commandRunner: input.commandRunner } : {})),
+        ...runnerOpts,
       });
     });
 
+    const differential = differentialFindings(goldRun.findings, baseRun.findings);
+
     return {
       instanceId: input.instanceId,
-      status: result.status,
-      modifiedFunctions: result.targets.map(t => ({
+      // Status reflects the differential, not the gold-side raw findings:
+      // a clean differential means no patch-introduced regressions, even
+      // if base and gold both produced the same pre-existing findings.
+      status: differential.length > 0 ? 'ADVISORY' : (goldRun.targets.length > 0 ? 'PASS' : goldRun.status),
+      modifiedFunctions: goldRun.targets.map(t => ({
         filePath: t.filePath,
         line: t.line,
         functionName: t.functionName,
@@ -440,7 +539,9 @@ export async function evaluateInstancePropertyGate(input: PropertyEvalInput): Pr
         typed: t.typed,
         advisoryOnly: t.advisoryOnly,
       })),
-      counterexamples: result.findings,
+      counterexamples: goldRun.findings,
+      baseCounterexamples: baseRun.findings,
+      differentialCounterexamples: differential,
       wallClockMs: Date.now() - start,
     };
   } catch (err) {
