@@ -740,19 +740,21 @@ shape" from "this is a new round."
 | 4 | Per-record failure-mode classification was impossible | JSONL only carried status; no captured stderr | (Phase 2 instrumentation, commit `789bb24`) `baseStdout`/`baseStderr`/`goldStdout`/`goldStderr` (8 KiB truncated), `synthReason`, `attemptDetails[]` |
 | 5 | `goldPass=false` on every Django GENERATED record; `bash: line 1: python: command not found` in `baseStderr` AND `goldStderr` | `materialize_gold_branch`'s `git add -A` after `setup_venv` staged untracked `.venv/` into the gold-branch commit; final `git checkout --detach <head>` deleted the venv from the working tree | `73e258a` (`git apply --index` replaces the `git apply` + `git add -A` shape) |
 | 6 | 4/10 GENERATION_FAILED on multi-repo eval, all with `wallClockMs=360s` (3 × 120 s adapter-stall × 3 attempts) | Synthesizer's default `timeoutMs=120_000` overrode the Claude Code adapter's own `STALL_TIMEOUT_MS=600_000` budget; hard SWE-bench prompts produce no stdout for 2-5 minutes during reasoning and got SIGKILLed before emitting the candidate JSON | `344fe22` (`DEFAULT_TIMEOUT_MS=600_000` exported alongside `synthesizeRegressionTest`; default raised to match the adapter's expectation) |
+| 7 | After framework-aware placement made Django runtests actually find tests, all 3 Django records had `basePass=false ∧ goldPass=false` with character-for-character identical `baseStderr` and `goldStderr` — gold reading base-state imports despite the worktree-add | `python tests/runtests.py` puts the script's directory (`tests/`) on `sys.path[0]`, NOT cwd. `import django` fell through to site-packages where the persistent venv's editable-install `.pth` pinned the resolution to the persistent base repo's `django/`. The gold worktree's gold-patched `django/` was never on sys.path | `8c97955` (`wrapCommandWithVenv` extended to prepend `export PYTHONPATH=<cwd>:$PYTHONPATH` so the cwd — gold worktree on gold runs, persistent repo on base runs — wins over the `.pth`) |
 
 Validation that the rounds are closed:
 
-- Round 5 + round 6 jointly verified by the multi-repo Layer 1 sweep
-  (`docs/p1-eval-fixtures/runs/v7-critical-path/multi-repo-l1-rerun/`).
-  All 10 instances produced GENERATED records, none with the
-  round-5 `python: command not found` shape, none with round-6
-  `Process killed after 120s` rejection. The residual 4/10 fn=true
-  records are synthesizer-side (Django runtests.py file-placement,
-  sphinx pytest collection error, pylint hardcoded `.venv/bin/python`
-  in `testCommand`) and are tracked in
-  `docs/p1-eval-results-synthesizer.md` for the next session's
-  synth-quality work.
+- Round 7 verified by the multi-repo Layer 1 round-7 re-eval
+  (`docs/p1-eval-fixtures/runs/v7-critical-path/multi-repo-l1-rerun-2.5-round7/`).
+  All 10 instances `basePass=false ∧ goldPass=true ∧ fp=false ∧
+  fn=false`. FP=0% PASS, FN=0% PASS — the first run that clears
+  both v7 halt thresholds across a multi-repo corpus.
+- Rounds 5 + 6 jointly verified earlier by the multi-repo Layer 1
+  sweep (`.../multi-repo-l1-rerun/`): 10/10 GENERATED, no
+  `python: command not found`, no `Process killed after 120s`. The
+  residual 4/10 fn=true records there were the synthesizer-side
+  modes that session 2.5's `4667187` redesign and round-7's
+  `8c97955` wrap eliminated.
 - Rounds 1-4 verified before the round-5 fix landed; the closure is
   recorded in `docs/p1-eval-results-synthesizer.md`'s historical
   Phase 2 section.
@@ -760,12 +762,13 @@ Validation that the rounds are closed:
 ### Phase 3 readiness: harness is no longer the blocker
 
 Phase 2's "harness is fragile in unanticipated ways" caveat applied
-through round 5. After rounds 5 + 6 landed, the harness has produced
-two consecutive multi-repo measurements with stable per-record
-classification and no new round emerging. The remaining Layer 1
-breach is attributable to the synthesizer's prompt and acceptance
-criteria, not to the harness. The bullet in the original "Cumulative
-harness fragility" section that read "the harness is fragile in ways
-the v7 plan did not anticipate" is closed; the harness has reached
-the "boring infrastructure" phase the plan assumed it would arrive
-at.
+through round 5. The session 2.5 multi-repo re-eval chain surfaced
+two more rounds (6, 7) that weren't visible until the prior round's
+fix unblocked the next failure mode. After all seven rounds landed,
+the harness produced a clean run with FP=0% and FN=0% across 4
+distinct repos. The remaining Layer 1 work is upstream of the
+harness (synthesizer prompts, framework profiles, acceptance
+criteria — all addressed in `4667187`); future Layer 1 sweeps
+should expect a stable harness baseline. The "harness is fragile in
+ways the v7 plan did not anticipate" caveat is closed; the harness
+has reached the "boring infrastructure" phase the plan assumed.

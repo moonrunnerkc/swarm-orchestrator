@@ -1,15 +1,60 @@
 # Phase 2 Completion Report
 
-Date: 2026-05-01 (original); 2026-05-02 (v7 critical-path amendment
-prepended below).
+Date: 2026-05-01 (original); 2026-05-02 (v7 critical-path session 2.5
+closeout prepended below).
 
-This is a closeout report. The 2026-05-02 amendment updates the
-Phase 3 readiness verdict with results from the multi-repo Layer 1
-re-eval, the round-5 + round-6 harness fixes that preceded it, and
-the Layer 4 arity-aware property-gate fix landed in v7 critical-path
-session 1.
+This is a closeout report. The 2026-05-02 closeout updates the Phase
+3 readiness verdict with results from the multi-repo Layer 1 re-eval
+chain (sessions 1, 2, and 2.5 of the v7 critical-path).
 
-## v7 critical-path amendment (2026-05-02)
+## v7 critical-path session 2.5 closeout (2026-05-02)
+
+**Layer 1 clears both v7 halt thresholds for the first time.** FP =
+0/10 = 0% (threshold 15%, PASS). FN = 0/10 = 0% (threshold 10%,
+PASS). 10 instances across 4 repos (django x3, sympy x3, sphinx-doc
+x3, pylint-dev x1), all GENERATED, all `basePass=false ∧
+goldPass=true`. Run artifact:
+`docs/p1-eval-fixtures/runs/v7-critical-path/multi-repo-l1-rerun-2.5-round7/`.
+
+Five commits across sessions 1, 2, and 2.5 closed the Phase 2
+blockers:
+
+| Commit | Session | Subject | Phase 2 issue addressed |
+|---|---|---|---|
+| `73e258a` | 1 | `fix(eval-driver): exclude venv from gold branch …` | Round-5 harness: `git apply --index` replaces the `git add -A` flow that committed untracked `.venv/` into the gold branch and got the venv binary deleted by the final detach checkout |
+| `61f2d04` | 1 | `feat(property-gate): arity-aware generator selection from type hints` | Layer 4 28/28-tooling-artifact problem on the Phase 2 corpus is structurally resolved (skips with a low-severity `property-skip-unsupported` finding when types are absent or unmappable; no more `@given(st.integers(), st.integers())` crashes on arity ≠ 2) |
+| `344fe22` | 2 | `fix(synthesizer): bump default per-attempt timeout to match Claude Code stall budget` | Round-6 harness: synthesizer's `timeoutMs` default was 120 s, shorter than `claude-code-adapter.ts`'s `STALL_TIMEOUT_MS=600_000`. Hard SWE-bench prompts produced 4/10 `GENERATION_FAILED` records with `Process killed after 120s of no output`. Default raised to 600 s |
+| `4667187` | 2.5 | `feat(synthesizer): framework-aware placement, --collect-only preflight, sanitization` | Modes 1, 2, 3 from session 2's breach: Django runtests.py placement, pylint hardcoded `.venv/bin/python`, sphinx pytest collection-time error |
+| `8c97955` | 2.5 | `fix(eval-harness): round-7 PYTHONPATH wrap so worktree wins over editable .pth` | Round-7 harness: `python tests/runtests.py` puts script's directory (not cwd) on `sys.path[0]`; `import django` fell through to site-packages where the editable `.pth` pinned the gold run to base-state imports. PYTHONPATH wrap puts the cwd ahead |
+
+### Updated per-eval status
+
+| Layer | Eval | Result | Halt-threshold status | Phase 3 readiness |
+|---|---|---|---|---|
+| Layer 1 — Synthesizer | multi-repo n=10 (4 repos) | FP = 0/10 = 0%; FN = 0/10 = 0% | **PASS** | **YES** |
+| Layer 3 — Cheat detector | (unchanged from Phase 2) | FP = 0/20 (0%) | **PASS** | YES (with rule-pack follow-up) |
+| Layer 4 — Property gate | structural fix landed (`61f2d04`); typed-corpus re-eval pending | n/a (consumer infra ready, re-eval is session 3) | n/a | NO (typed-corpus re-eval needed) |
+
+### Updated Phase 3 readiness checklist
+
+1. ~~Layer 1 round-5 fix~~: closed (commit `73e258a`).
+2. ~~Layer 1 multi-repo re-eval~~: closed (`docs/p1-eval-fixtures/runs/v7-critical-path/multi-repo-l1-rerun-2.5-round7/`).
+3. ~~Layer 1 prompt/environment-aware generation work~~: closed
+   (commits `4667187`, `8c97955`).
+4. **Layer 4 SNR re-eval on typed corpus**: pending. The structural
+   fix (arity-aware harness, commit `61f2d04`) is in place; running
+   it against a typed sample is the open work for session 3.
+
+The Phase 2 closeout below is preserved as historical record. Its
+attribution of Layer 1's breach to round-5 harness state was
+correct; the multi-repo re-eval surfaced two more harness rounds
+(6 + 7) and three synthesizer-side modes that needed independent
+fixes. All seven harness rounds are now closed. See
+`docs/p1-eval-harness-diagnostic.md` section 8 for the full
+resolution log and `docs/p1-eval-results-synthesizer.md` for the
+session 2.5 closeout numbers.
+
+## v7 critical-path amendment (2026-05-02, superseded by session 2.5 above)
 
 The Phase 2 closeout below records two Phase 3 blockers: Layer 1
 FN=100% on a Django-only corpus, attributed to round-5 harness state;

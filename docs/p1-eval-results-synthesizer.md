@@ -1,10 +1,183 @@
 # Layer 1 Synthesizer Eval Results
 
-Date: 2026-05-02 (multi-repo amendment); 2026-05-01 (original Phase 2
-write-up below).
-Status: **FN halt threshold still breached on the multi-repo corpus
-(40%, threshold 10%). Breach is now classified as synthesizer-side, not
-harness-side.** FP halt threshold cleared at 0% (threshold 15%).
+Date: 2026-05-02 (session 2.5 closeout); earlier amendments preserved
+below.
+Status: **Both v7 halt thresholds clear.** FP = 0/10 = 0% (threshold
+15%, PASS). FN = 0/10 = 0% (threshold 10%, PASS). 10 instances across
+4 repos, all GENERATED, all basePass=false (test catches the bug),
+all goldPass=true (gold patch fixes it). First clean Layer 1
+measurement; Phase 3 promotion is unblocked from the Layer 1 side.
+
+## v7 critical-path session 2.5 closeout (2026-05-02)
+
+Session 2.5 redesigned the synthesizer to be framework-aware and
+surfaced + fixed two more harness defects (rounds 6 and 7 of the
+diagnostic log) along the way. Three commits land Session 2.5:
+
+| Commit | Subject | What it addressed |
+|---|---|---|
+| `4667187` | `feat(synthesizer): framework-aware placement, --collect-only preflight, sanitization` | Modes 1, 2, 3 from Session 2's breach |
+| `8c97955` | `fix(eval-harness): round-7 PYTHONPATH wrap so worktree wins over editable .pth` | Round 7: editable `.pth` pinned `import django` to base on the gold run |
+| (this docs commit) | `docs(eval): session 2.5 closeout — Layer 1 clears v7 halt thresholds` | Records the final number and the progression |
+
+### Headline metrics — multi-repo, post-round-7
+
+```
+n = 10 (4 distinct repos: django x3, sympy x3, sphinx-doc x3, pylint-dev x1)
+status: GENERATED=10, GENERATION_FAILED=0, AMBIGUOUS_GOAL=0, ERROR=0
+basePass=true: 0       (no false positives)
+basePass=false: 10
+goldPass=true: 10      (every test passes after the gold patch is applied)
+goldPass=false: 0
+
+FP = 0/10 = 0%         halt: > 15%   PASS
+FN = 0/10 = 0%         halt: > 10%   PASS
+```
+
+Per-repo:
+
+| Repo | n | GENERATED | fp | fn |
+|---|---:|---:|---:|---:|
+| django | 3 | 3 | 0 | 0 |
+| sympy | 3 | 3 | 0 | 0 |
+| sphinx-doc | 3 | 3 | 0 | 0 |
+| pylint-dev | 1 | 1 | 0 | 0 |
+
+Run artifact (gitignored under `runs/`):
+`docs/p1-eval-fixtures/runs/v7-critical-path/multi-repo-l1-rerun-2.5-round7/`.
+
+### Full progression
+
+| Run | Corpus | FP | FN | Status |
+|---|---|---:|---:|---|
+| Phase 2 (2026-05-01) | 10 Django (effective) | 0% | 100% | BREACH (round-5 harness) |
+| Session 2 multi-repo (post-round-6) | 10 instances, 4 repos | 0% | 40% | BREACH (mixed harness + synth) |
+| Session 2.5 framework-aware | 10 instances, 4 repos | 0% | 30% | BREACH (Django Mode 1 file-placement) |
+| Session 2.5 + Django prefix fix | 10 instances, 4 repos | 0% | 30% | BREACH (Mode 5 venv `.pth` pinning) |
+| **Session 2.5 + round-7 PYTHONPATH wrap** | **10 instances, 4 repos** | **0%** | **0%** | **PASS** |
+
+Each step's residual breach was attributable to a single mode that
+the next step's fix neutralized:
+
+- Round-6 fix (timeout) eliminated the `Process killed after 120s`
+  adapter-stall mode.
+- Framework-aware prompt + Django dotted-name rewrite +
+  `--collect-only` preflight + `.venv/bin/<exe>` sanitization
+  eliminated Modes 1, 2, and 3.
+- Round-7 PYTHONPATH wrap eliminated Mode 5 (editable-install `.pth`
+  pinning the gold run to base-state imports).
+
+### How the modes were classified, then fixed
+
+**Mode 1 — Django runtests.py file-placement (Session 2):**
+synthesizer wrote the test at repo root, but Django's loader needed
+the file under `tests/<app>/` to resolve the dotted module name.
+Fixed by `framework-aware placement`: detected `django-runtests`
+profile preserves the LLM's directory structure, basename gets the
+prefix.
+
+**Mode 1 follow-on — Python module name constraints (Session 2.5
+mid-session):** the original `swarm-synth-attempt-N-` prefix used
+hyphens, which Python module names forbid; Django's
+`__import__('file_storage.swarm-synth-attempt-1-test_<name>')`
+raised `ModuleNotFoundError`. Fixed by switching the prefix to
+underscores (`swarm_synth_attempt_<N>_`) and rewriting the
+testCommand's bare module stem to the prefixed stem so the dotted
+reference matches the on-disk identifier. Documented deviation from
+session 2.5's precision-1 specification of the hyphenated prefix;
+the deviation is mandatory because Python module names are not
+negotiable.
+
+**Mode 2 — pylint hardcoded relative `.venv/bin/python` (Session
+2):** synthesizer baked a relative venv path into testCommand;
+worked in the persistent worktree, failed in the gold worktree at
+`/tmp/swarm-eval-worktree-*` where no `.venv/` exists. Fixed two
+ways: (a) every framework profile's prompt guidance includes
+"do NOT hardcode `.venv/bin/...`"; (b) `sanitizeHardcodedVenv`
+regex rewrites any leftover hardcoded path to bare `python` /
+`pytest`, with a WARN log so the prompt's effectiveness is
+observable. The session 2.5 re-eval observed zero WARN firings,
+indicating the prompt guidance is sufficient and the rewrite is
+defense in depth.
+
+**Mode 3 — sphinx-doc test pytest could not collect (Session 2):**
+synthesizer's testSource had an import or fixture defect that
+caused `pytest` to abort with `Interrupted: 1 error during
+collection` — a non-zero exit, accepted by the synthesizer as "test
+catches a real bug." Fixed by adding `python3 -m pytest
+--collect-only <file>` as a structural preflight before the base
+run, on pytest-shape frameworks. Collection failure is a
+`collection-error` rejection that feeds back to the next attempt
+with category-specific guidance (`fix imports and module
+structure`). The earlier validateSynthesizedTestCandidate (removed
+in `39c6f5b`) had been a hand-rolled assertion-pattern allowlist
+that rejected all Python candidates; the new preflight uses
+pytest's own collector as the authority, which avoids that failure
+mode.
+
+**Mode 5 — editable-install `.pth` pinned gold run to base imports
+(Session 2.5 mid-session):** after Modes 1+2+3 cleared, all three
+Django records had basePass=false and goldPass=false with
+character-for-character identical baseStderr/goldStderr — the
+giveaway that gold was reading base-state Django. Root cause:
+`python tests/runtests.py` puts the script's directory on
+`sys.path[0]`, not the cwd; `import django` falls through to
+site-packages, where the persistent venv's editable `.pth` points
+at the persistent base repo. The gold worktree's gold-patched
+`django/` was never on sys.path. Fixed by `wrapCommandWithVenv`
+prepending `export PYTHONPATH=<cwd>:$PYTHONPATH` to every
+synthesizer-driven shell-out — the cwd (gold worktree on gold runs,
+persistent repo on base runs) wins over the `.pth`. Round 7 in the
+harness diagnostic log.
+
+### Adapter non-determinism still present, no longer dispositive
+
+Run-to-run variance on the same instance was visible in Session 2's
+data (django__django-10914 flipped goldPass between runs). The
+round-7 re-eval's 10/10 clean measurement was on a single seed; a
+second clean measurement on a different seed would tighten the
+confidence interval. Sample size remains small (n=10, 4 repos), and
+the v7 plan's halt thresholds are absolute rates rather than
+confidence-interval bounds, so a single clean run is sufficient for
+the gate. Larger sweeps (e.g., the SWE-bench P4 100-instance run
+queued for session 6) will validate at scale.
+
+### Cost
+
+| Run | Wall-clock | Token cost (est.) |
+|---|---|---|
+| Session 2.5 framework-aware re-eval (pre-Django-fix) | ~26 min | ~$2.0 |
+| Session 2.5 + Django prefix fix re-eval | ~16 min | ~$1.5 |
+| Session 2.5 + round-7 PYTHONPATH wrap re-eval | ~17 min | ~$1.5 |
+
+Cumulative across all v7 critical-path sessions: ~$13 of $15 ceiling.
+Two re-evals were necessary to surface and fix Modes 5/round-7; the
+diagnostic per-record instrumentation made each round's classification
+unambiguous from JSONL alone, no extra debugging runs required.
+
+### Phase 3 implications
+
+Layer 1 is no longer a Phase 3 blocker. The remaining Phase 3
+preconditions (per `docs/phase-2-completion.md`):
+
+1. ~~Layer 1 round-5 fix~~: closed (session 1).
+2. ~~Layer 1 multi-repo re-eval~~: closed, this session.
+3. ~~Layer 1 prompt/environment-aware generation work~~: closed,
+   this session.
+4. Layer 4 SNR re-eval on a typed corpus: pending session 3.
+
+The Phase 2 narrative below is preserved as historical record.
+
+---
+
+# Earlier amendments
+
+## v7 critical-path session 2 — multi-repo amendment (2026-05-02, superseded by session 2.5)
+
+The Phase 2 write-up below records FN = 100% on a Django-only corpus,
+attributed to round-5 harness defects (venv binaries deleted by
+`materialize_gold_branch`'s `git add -A` flow). Two follow-up fixes
+landed before this measurement:
 
 ## v7 critical-path session 2 — multi-repo amendment (2026-05-02)
 
