@@ -27,6 +27,7 @@ function elapsed(started: number): number {
 function layerResult(input: {
   layer: BatteryLayerName;
   status: BatteryLayerStatus;
+  skipReason?: string;
   score: number;
   evidenceSummary: string;
   durationMs: number;
@@ -40,6 +41,7 @@ function layerResult(input: {
     evidenceSummary: input.evidenceSummary,
     durationMs: input.durationMs,
     findings: input.findings ?? [],
+    ...(input.skipReason !== undefined ? { skipReason: input.skipReason } : {}),
     ...(input.errorReason !== undefined ? { errorReason: input.errorReason } : {}),
   };
 }
@@ -53,6 +55,18 @@ function crashResult(layer: BatteryLayerName, started: number, error: unknown): 
     evidenceSummary: `${layer} crashed; inspect the layer error and fix the runner environment`,
     durationMs: elapsed(started),
     errorReason: message,
+  });
+}
+
+function missingIntentTestFinding(): Finding {
+  return createFinding({
+    scope: 'summary',
+    producerId: 'differential-gate',
+    ruleId: 'missing-intent-test',
+    severity: 'high',
+    message:
+      'Layer 1 had no synthesized or FAIL_TO_PASS test command; the gate fails closed by policy.' +
+      ' Supply differentialTestCommand via pre-worker synthesis or an externally provided test.',
   });
 }
 
@@ -71,10 +85,12 @@ async function runDifferentialLayer(state: BatteryRunnerState, started: number):
   if (!command) {
     return layerResult({
       layer: 'differential-gate',
-      status: 'skipped',
-      score: 1,
-      evidenceSummary: 'no synthesized FAIL_TO_PASS test command was available for Layer 1',
+      status: 'fail',
+      score: 0,
+      evidenceSummary:
+        'no synthesized FAIL_TO_PASS test command was available for Layer 1; gate fails closed by policy',
       durationMs: elapsed(started),
+      findings: [missingIntentTestFinding()],
     });
   }
 
@@ -121,7 +137,8 @@ async function runMutationLayer(state: BatteryRunnerState, started: number): Pro
     return layerResult({
       layer: 'mutation-gate',
       status: 'skipped',
-      score: 1,
+      skipReason: 'mutation-skipped-by-option',
+      score: 0,
       evidenceSummary: 'regression command passed; mutation testing skipped by runner option',
       durationMs: elapsed(started),
     });
@@ -143,6 +160,7 @@ async function runMutationLayer(state: BatteryRunnerState, started: number): Pro
   return layerResult({
     layer: 'mutation-gate',
     status,
+    ...(mutation.status === 'SKIP' ? { skipReason: 'no-supported-targets' } : {}),
     score: mutation.mutationScore,
     evidenceSummary: mutation.reason,
     durationMs: elapsed(started),

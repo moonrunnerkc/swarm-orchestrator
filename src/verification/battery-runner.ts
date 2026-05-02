@@ -6,6 +6,7 @@ import type {
   BatteryResult,
   BatteryRunnerInput,
   BatteryRunnerState,
+  LayerResult,
 } from './battery-types';
 
 export type {
@@ -52,6 +53,9 @@ function setupFailure(started: number, reason: string): BatteryResult {
     compositeScore: 0,
     layerResults: [],
     wallClock: elapsed(started),
+    failedHardLayers: ['battery-setup'],
+    advisoryWarningLayers: [],
+    environmentErrorLayers: [],
     failedLayers: ['battery-setup'],
     hardGatePassed: false,
     humanReviewRequired: true,
@@ -106,18 +110,39 @@ export async function runBatteryVerification(input: BatteryRunnerInput): Promise
   const prepared = prepareState(input, started);
   if (isBatteryResult(prepared)) return prepared;
 
-  const layerResults = [];
+  const layerResults: LayerResult[] = [];
   for (const layer of LAYERS) {
     layerResults.push(await runBatteryLayer(layer, prepared));
   }
 
   const findings = layerResults.flatMap(result => result.findings);
-  const failedLayers = layerResults
+
+  const HARD_GATE_LAYERS = new Set<string>(['differential-gate', 'mutation-gate']);
+  const ADVISORY_LAYERS = new Set<string>(['cheat-detector', 'property-gate', 'attestation']);
+  const ALLOWLISTED_SKIP_REASONS = new Set<string>(['no-supported-targets']);
+
+  function isHardGatePass(result: (typeof layerResults)[number]): boolean {
+    if (result.status === 'pass') return true;
+    if (result.status === 'skipped' && result.skipReason !== undefined && ALLOWLISTED_SKIP_REASONS.has(result.skipReason)) return true;
+    return false;
+  }
+
+  const failedHardLayers = layerResults
+    .filter(result => HARD_GATE_LAYERS.has(result.layer) && !isHardGatePass(result))
+    .map(result => result.layer);
+
+  const advisoryWarningLayers = layerResults
+    .filter(result => ADVISORY_LAYERS.has(result.layer) && (result.status === 'fail' || result.status === 'advisory-warn'))
+    .map(result => result.layer);
+
+  const environmentErrorLayers = layerResults
     .filter(result => result.status === 'env-error')
     .map(result => result.layer);
-  const hardGatePassed = layerResults
-    .filter(result => result.layer === 'differential-gate' || result.layer === 'mutation-gate')
-    .every(result => result.status !== 'fail' && result.status !== 'env-error');
+
+  // Deprecated: union of failedHardLayers and environmentErrorLayers for backward compat.
+  const failedLayers = [...new Set([...failedHardLayers, ...environmentErrorLayers])];
+
+  const hardGatePassed = failedHardLayers.length === 0;
   const score = computeCompositeScore({
     cheatDetectorScore: layerResults.find(result => result.layer === 'cheat-detector')?.score ?? 1,
     propertyGateScore: layerResults.find(result => result.layer === 'property-gate')?.score ?? 1,
@@ -132,8 +157,11 @@ export async function runBatteryVerification(input: BatteryRunnerInput): Promise
     compositeScore: hardGatePassed ? score.score : 0,
     layerResults,
     wallClock: elapsed(started),
+    failedHardLayers,
+    advisoryWarningLayers,
+    environmentErrorLayers,
     failedLayers,
     hardGatePassed,
-    humanReviewRequired: !hardGatePassed || failedLayers.length > 0 || score.humanReviewRequired,
+    humanReviewRequired: !hardGatePassed || environmentErrorLayers.length > 0 || score.humanReviewRequired,
   };
 }

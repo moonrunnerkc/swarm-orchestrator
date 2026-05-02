@@ -22,6 +22,8 @@ export type BatteryCommandRunner = (
 export interface LayerResult {
   layer: BatteryLayerName;
   status: BatteryLayerStatus;
+  /** Populated on `skipped` results to distinguish allowlisted skips from error skips. */
+  skipReason?: string;
   score: number;
   evidenceSummary: string;
   durationMs: number;
@@ -34,6 +36,23 @@ export interface BatteryResult {
   compositeScore: number;
   layerResults: LayerResult[];
   wallClock: number;
+  /**
+   * Hard-gate layers (1 and 2) that did not pass: returned `fail`, `env-error`,
+   * or `skipped` without an allowlisted skip reason.
+   */
+  failedHardLayers: string[];
+  /**
+   * Advisory layers (3, 4, 5) that returned `fail` or `advisory-warn`.
+   */
+  advisoryWarningLayers: string[];
+  /**
+   * Every layer that returned `env-error`, regardless of layer class.
+   */
+  environmentErrorLayers: string[];
+  /**
+   * @deprecated Use `failedHardLayers` and `environmentErrorLayers` instead.
+   * Kept for backward compatibility. Returns the union of `failedHardLayers` and `environmentErrorLayers`.
+   */
   failedLayers: string[];
   hardGatePassed: boolean;
   humanReviewRequired: boolean;

@@ -194,11 +194,15 @@ describe('runBatteryVerification', () => {
     const repo = createCheatPatchRepo();
     roots.push(repo.root);
 
+    // Differential: fails on base (token='pending'), passes on patch (token='SECRET').
+    const diffCmd = `node -e "const {token}=require('./src/token');if(token()!=='SECRET')process.exit(1)"`;
+
     const result = await runBatteryVerification({
       repoPath: repo.root,
       baseCommit: repo.baseCommit,
       patchCommit: repo.patchCommit,
       goalText: 'Return a generated token',
+      differentialTestCommand: diffCmd,
       regressionCommand: 'node -e "process.exit(0)"',
       mutationCommandRunner: mutationPassRunner,
       propertyCommandRunner: async () => {
@@ -212,6 +216,168 @@ describe('runBatteryVerification', () => {
       result.findings.some(finding => finding.producerId === 'cheat-detector'),
       'cheat-detector findings should survive an advisory property crash',
     );
+    assert.equal(result.humanReviewRequired, true);
+  });
+
+  it('fails closed with missing differentialTestCommand — Layer 1 hard gate', async () => {
+    const repo = createCleanPatchRepo();
+    roots.push(repo.root);
+
+    const result = await runBatteryVerification({
+      repoPath: repo.root,
+      baseCommit: repo.baseCommit,
+      patchCommit: repo.patchCommit,
+      goalText: 'Fix add',
+      regressionCommand: 'node test.js',
+      mutationCommandRunner: mutationPassRunner,
+      propertyCommandRunner: propertyPassRunner,
+    });
+
+    assert.equal(result.hardGatePassed, false);
+    assert.ok(result.failedHardLayers.includes('differential-gate'), 'differential-gate in failedHardLayers');
+    assert.ok(result.findings.some(f => f.ruleId === 'missing-intent-test'), 'missing-intent-test finding required');
+  });
+
+  it('hardGatePassed true when mutation skips with no-supported-targets skipReason', async () => {
+    const repo = createCleanPatchRepo();
+    roots.push(repo.root);
+    await attachPassingAttestation(repo);
+
+    // changedFiles: [] causes mutation gate to return SKIP with skipReason 'no-supported-targets'.
+    const result = await runBatteryVerification({
+      repoPath: repo.root,
+      baseCommit: repo.baseCommit,
+      patchCommit: repo.patchCommit,
+      goalText: 'Fix add',
+      differentialTestCommand: 'node test.js',
+      regressionCommand: 'node test.js',
+      changedFiles: [],
+      propertyCommandRunner: propertyPassRunner,
+    });
+
+    const mutationLayer = result.layerResults.find(l => l.layer === 'mutation-gate');
+    assert.equal(mutationLayer?.status, 'skipped');
+    assert.equal(mutationLayer?.skipReason, 'no-supported-targets');
+    assert.equal(result.hardGatePassed, true);
+    assert.ok(!result.failedHardLayers.includes('mutation-gate'));
+  });
+
+  it('fails closed when mutation is skipped without an allowlisted skip reason', async () => {
+    const repo = createCleanPatchRepo();
+    roots.push(repo.root);
+
+    const result = await runBatteryVerification({
+      repoPath: repo.root,
+      baseCommit: repo.baseCommit,
+      patchCommit: repo.patchCommit,
+      goalText: 'Fix add',
+      differentialTestCommand: 'node test.js',
+      regressionCommand: 'node test.js',
+      skipMutation: true,
+      propertyCommandRunner: propertyPassRunner,
+    });
+
+    const mutationLayer = result.layerResults.find(l => l.layer === 'mutation-gate');
+    assert.equal(mutationLayer?.status, 'skipped');
+    assert.equal(mutationLayer?.skipReason, 'mutation-skipped-by-option');
+    assert.equal(result.hardGatePassed, false);
+    assert.ok(result.failedHardLayers.includes('mutation-gate'));
+  });
+
+  it('fails closed on mutation tool crash with env-error in failedHardLayers', async () => {
+    const repo = createCleanPatchRepo();
+    roots.push(repo.root);
+
+    const result = await runBatteryVerification({
+      repoPath: repo.root,
+      baseCommit: repo.baseCommit,
+      patchCommit: repo.patchCommit,
+      goalText: 'Fix add',
+      differentialTestCommand: 'node test.js',
+      regressionCommand: 'node test.js',
+      mutationCommandRunner: async () => {
+        throw new Error('mutation tool exploded');
+      },
+      propertyCommandRunner: propertyPassRunner,
+    });
+
+    assert.equal(result.hardGatePassed, false);
+    assert.ok(result.failedHardLayers.includes('mutation-gate'), 'mutation-gate in failedHardLayers');
+    assert.ok(result.environmentErrorLayers.includes('mutation-gate'), 'mutation-gate in environmentErrorLayers');
+  });
+
+  it('fails closed on regression command timeout (simulates mutation timeout)', async () => {
+    const repo = createCleanPatchRepo();
+    roots.push(repo.root);
+
+    const timeoutRunner: BatteryCommandRunner = async (command, cwd) => ({
+      command, cwd, exitCode: 1, stdout: '', stderr: '', durationMs: 1, timedOut: true,
+    });
+
+    const result = await runBatteryVerification({
+      repoPath: repo.root,
+      baseCommit: repo.baseCommit,
+      patchCommit: repo.patchCommit,
+      goalText: 'Fix add',
+      differentialTestCommand: 'node test.js',
+      regressionCommand: 'node test.js',
+      regressionCommandRunner: timeoutRunner,
+      propertyCommandRunner: propertyPassRunner,
+    });
+
+    assert.equal(result.hardGatePassed, false);
+    assert.ok(result.failedHardLayers.includes('mutation-gate'), 'mutation-gate in failedHardLayers on timeout');
+  });
+
+  it('fails closed on sub-threshold mutation score', async () => {
+    const repo = createCleanPatchRepo();
+    roots.push(repo.root);
+
+    const lowScoreRunner: BatteryCommandRunner = async (command, cwd) => ({
+      command,
+      cwd,
+      exitCode: 0,
+      stdout: 'total mutants: 10\nkilled mutants: 1\nsurvived mutants: 9\nmutation score 10%',
+      stderr: '',
+      durationMs: 1,
+      timedOut: false,
+    });
+
+    const result = await runBatteryVerification({
+      repoPath: repo.root,
+      baseCommit: repo.baseCommit,
+      patchCommit: repo.patchCommit,
+      goalText: 'Fix add',
+      differentialTestCommand: 'node test.js',
+      regressionCommand: 'node test.js',
+      mutationCommandRunner: lowScoreRunner,
+      propertyCommandRunner: propertyPassRunner,
+    });
+
+    assert.equal(result.hardGatePassed, false);
+    assert.ok(result.failedHardLayers.includes('mutation-gate'), 'mutation-gate in failedHardLayers on low score');
+  });
+
+  it('advisory layer failure does not affect hardGatePassed but populates advisoryWarningLayers', async () => {
+    const repo = createCheatPatchRepo();
+    roots.push(repo.root);
+
+    const diffCmd = `node -e "const {token}=require('./src/token');if(token()!=='SECRET')process.exit(1)"`;
+
+    const result = await runBatteryVerification({
+      repoPath: repo.root,
+      baseCommit: repo.baseCommit,
+      patchCommit: repo.patchCommit,
+      goalText: 'Return a generated token',
+      differentialTestCommand: diffCmd,
+      regressionCommand: 'node -e "process.exit(0)"',
+      mutationCommandRunner: mutationPassRunner,
+      propertyCommandRunner: propertyPassRunner,
+    });
+
+    assert.equal(result.hardGatePassed, true);
+    assert.equal(result.failedHardLayers.length, 0);
+    assert.ok(result.advisoryWarningLayers.includes('cheat-detector'), 'cheat-detector in advisoryWarningLayers');
     assert.equal(result.humanReviewRequired, true);
   });
 });
