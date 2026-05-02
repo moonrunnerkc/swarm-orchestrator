@@ -142,19 +142,40 @@ export function rewriteCommandForWorktree(command: string, fromPath: string, toP
 }
 
 /**
- * Wrap a shell command so a per-instance venv is on PATH for its execution.
+ * Wrap a shell command so a per-instance venv is on PATH and the command's
+ * working directory is on PYTHONPATH for its execution.
  *
- * Setting `export PATH=<venvBin>:$PATH` at the front of the compound command
- * ensures `python`, `python3`, `pip`, and `pytest` resolve to the venv binary
- * even when the testCommand contains its own subshell `cd` or chain of `&&`.
- * Returning the original command when no venv path is supplied keeps the
- * fast-path for ad-hoc / non-Python evals.
+ * `export PATH=<venvBin>:$PATH` ensures `python`, `python3`, `pip`, and
+ * `pytest` resolve to the venv binary even when the testCommand contains
+ * its own subshell `cd` or chain of `&&`.
+ *
+ * `export PYTHONPATH=<cwd>:$PYTHONPATH` ensures `import <package>` from
+ * inside the gold worktree resolves to the worktree's source, not to the
+ * persistent venv's editable-install `.pth` (which still points at the
+ * persistent base repo). Without this, `python tests/runtests.py` in the
+ * gold worktree silently imports `django` from the BASE source — `python
+ * <script>` puts the script's directory on `sys.path[0]`, not the cwd, so
+ * site-packages `.pth` wins. This is round-7 of harness fragility,
+ * surfaced by the v7 critical-path session 2.5 multi-repo Layer 1 sweep
+ * after the framework-aware placement fix made Django tests actually
+ * runnable. Both base-run and gold-run get the wrap; redundant on base
+ * (cwd === editable-install source), required on gold.
  *
  * @param command - The raw shell command (may contain cd, &&, env vars).
  * @param venvBin - Absolute path to the venv's bin/Scripts directory, or undefined.
- * @returns The wrapped command, or the original when venvBin is undefined.
+ * @param cwd - Absolute path to the working directory the command runs in,
+ *              used to seed PYTHONPATH. Optional; omit for cases where no
+ *              python import-resolution is in play.
+ * @returns The wrapped command, or the original when neither venvBin nor cwd is supplied.
  */
-export function wrapCommandWithVenv(command: string, venvBin: string | undefined): string {
-  if (!venvBin) return command;
-  return `export PATH=${venvBin}:$PATH; ${command}`;
+export function wrapCommandWithVenv(
+  command: string,
+  venvBin: string | undefined,
+  cwd?: string,
+): string {
+  const exports: string[] = [];
+  if (cwd) exports.push(`export PYTHONPATH=${cwd}:$PYTHONPATH`);
+  if (venvBin) exports.push(`export PATH=${venvBin}:$PATH`);
+  if (exports.length === 0) return command;
+  return `${exports.join('; ')}; ${command}`;
 }

@@ -160,13 +160,21 @@ describe('swebench instance evaluator', () => {
         });
 
         assert.equal(observedCommands.length, 2, 'base + gold runs');
-        assert.equal(observedCommands[0]?.command, testCommand, 'base run uses original testCommand');
+        // Base run keeps the LLM's testCommand intact (no cd-rewrite). The
+        // round-7 PYTHONPATH wrap prepends an `export ...;` clause, so the
+        // assertion is "ends with the original testCommand," not strict
+        // equality.
+        assert.ok(
+          (observedCommands[0]?.command ?? '').endsWith(testCommand),
+          `base run must end with the original testCommand; got ${observedCommands[0]?.command}`,
+        );
         const goldCommand = observedCommands[1]?.command ?? '';
         assert.ok(
-          !goldCommand.includes(repoPath) || goldCommand.split(repoPath).length === 1,
-          `gold-run command must not still reference base repoPath. command=${goldCommand}`,
+          !goldCommand.includes(`cd ${repoPath} `) && !goldCommand.endsWith(`cd ${repoPath}`),
+          `gold-run command must not still reference base repoPath in a cd. command=${goldCommand}`,
         );
-        assert.ok(goldCommand.startsWith('cd '), 'gold command preserves leading cd');
+        assert.match(goldCommand, /(?:^|;\s*)cd /,
+          'gold command preserves leading cd somewhere after the env-export prefix');
         assert.equal(record.fn, true);
       } finally {
         fs.rmSync(repoPath, { recursive: true, force: true });
@@ -198,10 +206,15 @@ describe('swebench instance evaluator', () => {
 
         assert.equal(observedCommands.length, 2);
         for (const cmd of observedCommands) {
-          assert.ok(
-            cmd.startsWith('export PATH=/srv/p1-venvs/example/.venv/bin:$PATH;'),
+          assert.match(
+            cmd,
+            /export PATH=\/srv\/p1-venvs\/example\/\.venv\/bin:\$PATH;/,
             `expected PATH wrap on ${cmd}`,
           );
+          // Round-7: PYTHONPATH is also set so import resolution finds the
+          // worktree's source before the persistent venv's editable .pth.
+          assert.match(cmd, /export PYTHONPATH=[^:]+:\$PYTHONPATH;/,
+            `expected PYTHONPATH wrap on ${cmd}`);
         }
       } finally {
         fs.rmSync(repoPath, { recursive: true, force: true });
@@ -602,8 +615,9 @@ describe('swebench instance evaluator', () => {
 
         assert.ok(seenCommands.length > 0, 'gate runner must be invoked');
         for (const cmd of seenCommands) {
-          assert.ok(
-            cmd.startsWith('export PATH=/srv/p1-venvs/example/.venv/bin:$PATH;'),
+          assert.match(
+            cmd,
+            /export PATH=\/srv\/p1-venvs\/example\/\.venv\/bin:\$PATH;/,
             `expected PATH wrap on ${cmd}`,
           );
         }
