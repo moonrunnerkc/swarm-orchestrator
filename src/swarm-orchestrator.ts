@@ -570,6 +570,17 @@ export class SwarmOrchestrator implements RemediationHost, ReplanHost, StepExecu
       `${batteryResult.findings.length} finding(s), ${batteryResult.failedLayers.length} failed layer(s)`,
     );
 
+    // Hard gate: any failed hard layer blocks the run. The patch must not merge.
+    // Layers 1 (differential) and 2 (mutation/regression) are hard gates.
+    // Advisory layers (cheat-detector, property-gate, attestation) do not block.
+    if (!batteryResult.hardGatePassed) {
+      const failedLayerList = batteryResult.failedHardLayers.join(', ');
+      throw new Error(
+        `falsification battery blocked the patch: hard gate failed (layers: ${failedLayerList}); ` +
+          'fix the implementation or supply a valid differential test command',
+      );
+    }
+
     // final quality gates run on the merged state (hard gate)
     // this happens before auto-PR so we don't create a PR for a failing run
     const gatesEnabled = options?.qualityGates !== false;
