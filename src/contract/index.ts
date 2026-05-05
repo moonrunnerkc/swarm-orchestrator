@@ -14,8 +14,21 @@
  * @packageDocumentation
  */
 
-/**
- * Placeholder export to satisfy named exports only rule.
- * @internal
- */
-export const placeholder = {};
+export type {
+  ContractEnvelope,
+  FileMustExistObligation,
+  BuildMustPassObligation,
+  TestMustPassObligation,
+  ObligationKind,
+  Obligation,
+} from "./types";
+
+export {
+  isFileMustExist,
+  isBuildMustPass,
+  isTestMustPass,
+} from "./types";
+
+export type { ValidationResult, ValidationError } from "./validate-schema";
+
+export { validateContract } from "./validate-schema";
