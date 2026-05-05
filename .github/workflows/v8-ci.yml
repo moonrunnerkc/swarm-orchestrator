@@ -1,0 +1,154 @@
+name: v8 CI
+
+on:
+  push:
+    branches: [ v8-dev ]
+  pull_request:
+    branches: [ v8-dev ]
+
+concurrency:
+  group: v8-ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+  typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+  unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: |
+          set -o pipefail
+          npm run test:ci 2>&1 | tee test-output.txt
+
+      - name: Publish test summary
+        if: always()
+        run: |
+          PASS_COUNT=$(grep -oP '\d+(?= passing)' test-output.txt 2>/dev/null || echo '0')
+          FAIL_COUNT=$(grep -oP '\d+(?= failing)' test-output.txt 2>/dev/null || echo '0')
+          PEND_COUNT=$(grep -oP '\d+(?= pending)' test-output.txt 2>/dev/null || echo '0')
+          echo "### Unit Test Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Metric | Count |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|--------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Passing | $PASS_COUNT |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Failing | $FAIL_COUNT |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Pending | $PEND_COUNT |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Node.js 20 on ubuntu-latest" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload test output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v8-unit-test-output
+          path: test-output.txt
+          retention-days: 7
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install pytest
+        run: pip install pytest
+
+      - name: Configure git identity
+        run: |
+          git config --global user.email "ci@swarm-orchestrator.local"
+          git config --global user.name "swarm-ci"
+
+      - name: Run Phase 0 integration smoke test
+        run: |
+          set -euo pipefail
+
+          FIXTURE_DIR="fixtures/v8-empty"
+
+          # Assert fixture directory exists
+          test -d "$FIXTURE_DIR" || { echo "FAIL: $FIXTURE_DIR directory not found"; exit 1; }
+
+          # Assert package.json exists and is valid JSON
+          test -f "$FIXTURE_DIR/package.json" || { echo "FAIL: package.json not found"; exit 1; }
+          node -e "JSON.parse(require('fs').readFileSync('$FIXTURE_DIR/package.json', 'utf8'))" \
+            || { echo "FAIL: package.json is not valid JSON"; exit 1; }
+
+          # Assert tsconfig.json exists and is valid JSON
+          test -f "$FIXTURE_DIR/tsconfig.json" || { echo "FAIL: tsconfig.json not found"; exit 1; }
+          node -e "JSON.parse(require('fs').readFileSync('$FIXTURE_DIR/tsconfig.json', 'utf8'))" \
+            || { echo "FAIL: tsconfig.json is not valid JSON"; exit 1; }
+
+          # Assert src/index.ts exists (TS project marker)
+          test -f "$FIXTURE_DIR/src/index.ts" || { echo "FAIL: src/index.ts not found"; exit 1; }
+
+          # Assert fixture is a valid git repo
+          test -d "$FIXTURE_DIR/.git" || { echo "FAIL: .git directory not found"; exit 1; }
+
+          # Assert tsconfig compiles the fixture (tsc --noEmit)
+          cd "$FIXTURE_DIR"
+          npx tsc --noEmit 2>&1 || { echo "FAIL: tsconfig.json does not compile"; exit 1; }
+
+          echo "PASS: Phase 0 integration smoke test passed"
