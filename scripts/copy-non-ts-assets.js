@@ -3,9 +3,10 @@
  * Copy non-TS assets from src/ into dist/ after `tsc -p tsconfig.build.json`.
  *
  * tsc only emits .ts/.tsx output. JSON Schema files under src/rules/schemas/
- * are loaded at runtime (via fs.readFileSync from a sibling __dirname/schemas/
- * lookup), so they must exist next to the compiled .js. Symlinking is avoided
- * for portability across CI runners that mount dist/ as a separate volume.
+ * and src/contract/schema/ are loaded at runtime (via fs.readFileSync from a
+ * sibling __dirname/schemas/ lookup), so they must exist next to the compiled
+ * .js. Symlinking is avoided for portability across CI runners that mount dist/
+ * as a separate volume.
  */
 const fs = require('fs');
 const path = require('path');
@@ -15,6 +16,11 @@ const PAIRS = [
     src: path.join(__dirname, '..', 'src', 'rules', 'schemas'),
     dst: path.join(__dirname, '..', 'dist', 'src', 'rules', 'schemas'),
     pattern: /\.schema\.json$/,
+  },
+  {
+    src: path.join(__dirname, '..', 'src', 'contract', 'schema'),
+    dst: path.join(__dirname, '..', 'dist', 'src', 'contract', 'schema'),
+    pattern: /\.json$/,
   },
 ];
 

@@ -1,0 +1,86 @@
+{
+  "$id": "https://swarm-orchestrator.dev/schemas/contract/v1.json",
+  "$defs": {
+    "file-must-exist": {
+      "type": "object",
+      "required": ["type", "path"],
+      "properties": {
+        "type": {
+          "const": "file-must-exist"
+        },
+        "path": {
+          "type": "string",
+          "description": "Relative file path that must exist after generation"
+        },
+        "description": {
+          "type": "string",
+          "description": "Optional description of the obligation"
+        }
+      },
+      "additionalProperties": false
+    },
+    "build-must-pass": {
+      "type": "object",
+      "required": ["type", "command"],
+      "properties": {
+        "type": {
+          "const": "build-must-pass"
+        },
+        "command": {
+          "type": "string",
+          "description": "Build command that must succeed"
+        },
+        "description": {
+          "type": "string",
+          "description": "Optional description of the obligation"
+        }
+      },
+      "additionalProperties": false
+    },
+    "test-must-pass": {
+      "type": "object",
+      "required": ["type", "command"],
+      "properties": {
+        "type": {
+          "const": "test-must-pass"
+        },
+        "command": {
+          "type": "string",
+          "description": "Test command that must succeed"
+        },
+        "description": {
+          "type": "string",
+          "description": "Optional description of the obligation"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "type": "object",
+  "required": ["$id", "version", "obligations"],
+  "properties": {
+    "$id": {
+      "type": "string",
+      "format": "uri",
+      "description": "Unique identifier for this contract definition"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "Schema version string (semver)"
+    },
+    "obligations": {
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {"$ref": "#/$defs/file-must-exist"},
+          {"$ref": "#/$defs/build-must-pass"},
+          {"$ref": "#/$defs/test-must-pass"}
+        ]
+      },
+      "minItems": 1,
+      "description": "Array of obligations that must be satisfied"
+    }
+  },
+  "additionalProperties": false
+}
