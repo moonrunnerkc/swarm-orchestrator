@@ -144,10 +144,15 @@ jobs:
           # Assert src/index.ts exists (TS project marker)
           test -f "$FIXTURE_DIR/src/index.ts" || { echo "FAIL: src/index.ts not found"; exit 1; }
 
-          # Assert fixture is a valid git repo
-          test -d "$FIXTURE_DIR/.git" || { echo "FAIL: .git directory not found"; exit 1; }
+           # Assert fixture is a valid git repo (initialize if needed)
+          if [ ! -d "$FIXTURE_DIR/.git" ]; then
+            cd "$FIXTURE_DIR"
+            git init && git add -A && git commit -m "initial" --no-verify
+            cd -
+          fi
+          test -d "$FIXTURE_DIR/.git" || { echo "FAIL: .git directory not found after init"; exit 1; }
 
-          # Assert tsconfig compiles the fixture (tsc --noEmit)
+           # Assert tsconfig compiles the fixture (tsc --noEmit)
           cd "$FIXTURE_DIR"
           npx tsc --noEmit 2>&1 || { echo "FAIL: tsconfig.json does not compile"; exit 1; }
 
