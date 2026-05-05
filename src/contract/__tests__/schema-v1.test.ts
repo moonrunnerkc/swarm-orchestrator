@@ -82,8 +82,7 @@ function buildContract(
 function assertValid(contract: Record<string, unknown>): void {
   const valid = validate(contract);
   if (!valid) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    console.error("Validation errors:", (validate as any).errors);
+    console.error("Validation errors:", (validate as unknown as { errors: unknown[] }).errors);
     assert.fail(
       `Expected valid but got errors: ${JSON.stringify((validate as any)?.errors)}`,
     );
