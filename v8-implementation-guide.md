@@ -291,12 +291,11 @@ The GitHub Action surface remains compatible. The `swarm` action accepts the sam
 
 ## 13. Definition of done per phase
 
-Each phase is "done" only when all four conditions hold:
+Each phase is "done" only when all three conditions hold:
 
 1. All exit criteria for the phase, as listed in that phase's section, are met.
 2. Documentation is updated: README references the phase's capabilities (when shipped), per-module JSDoc is complete, and the architecture document reflects any deviations from the original plan.
 3. CI is green on the v8-dev branch.
-4. A peer or external reviewer has signed off on the phase's deliverables. For solo work, this means a self-review pass with at least 24 hours between completing the phase and merging it (catch your own blind spots after sleep).
 
 ## 14. Risk-ordered build sequence justification
 

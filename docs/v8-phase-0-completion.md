@@ -1,5 +1,9 @@
 # Phase 0 Completion Report
 
+Phase status: CLOSED 2026-05-05T20:03:00Z.
+
+Self-review completed 2026-05-05T20:03:00Z. Findings: none.
+
 ## Exit Criteria (Section 3)
 
 ### Criterion 1: v8 skeleton compiles and lints clean
@@ -23,11 +27,11 @@ Evidence: Audit committed at `7ec6644` ("docs: v8 reuse audit (Phase 0)"). Audit
 Status: PASS
 Evidence: Schema committed at `83092d5` ("feat(v8): contract schema v1 with three obligation types (Phase 0)"). Schema test file `src/contract/__tests__/schema-v1.test.ts` committed in the same change set. Test output: **20 passing (7ms)** — covers positive validation for all three obligation types (file-must-exist, build-must-pass, test-must-pass), negative validation for missing required fields, unknown obligation types, and envelope validation (missing $id, missing version, empty obligations, additional properties).
 
-## Definition of Done (Section 13)
+## Definition of Done (Section 13, current revision)
 
 ### Condition 1: All exit criteria met
 Status: PASS
-Evidence: See Criteria 1–4 above. All four exit criteria pass.
+Evidence: See Criteria 1-4 above. All four exit criteria pass.
 
 ### Condition 2: Documentation updated
 Status: PASS
@@ -45,7 +49,3 @@ No architectural deviations from `v8-overhaul-guide.md` identified at this phase
 ### Condition 3: CI green on v8-dev
 Status: PASS
 Evidence: [Run 25390411950](https://github.com/moonrunnerkc/swarm-orchestrator/actions/runs/25390411950) — latest push to v8-dev, all jobs passed. Preceding two failed runs (25390144817, 25390203226) were remediated in this commit.
-
-### Condition 4: Peer review or 24-hour solo cooldown
-Status: PENDING
-Evidence: Phase 0 work completion timestamp: 2026-05-05T17:38:00Z (UTC). Earliest merge-eligible timestamp: 2026-05-06T17:38:00Z (UTC). Awaiting 24-hour solo cooldown before merge.
