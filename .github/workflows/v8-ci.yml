@@ -61,23 +61,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install pytest
-        run: pip install pytest
-
-      - name: Configure git identity
-        run: |
-          git config --global user.email "ci@swarm-orchestrator.local"
-          git config --global user.name "swarm-ci"
-
       - name: Run unit tests
         run: |
-          set -o pipefail
-          npx mocha --recursive 'src/**/__tests__/**/*.test.ts' 2>&1 | tee test-output.txt
+          npx tsx node_modules/mocha/bin/mocha.js \
+            --recursive 'src/**/__tests__/**/*.test.ts' \
+            --reporter spec 2>&1 | tee test-output.txt
           FAIL_COUNT=$(grep -oP '\d+(?= failing)' test-output.txt || echo '0')
           if [ "$FAIL_COUNT" -gt 0 ]; then
             echo "FAIL: $FAIL_COUNT unit test(s) failed"
@@ -120,12 +108,12 @@ jobs:
           # Assert package.json exists and is valid JSON
           test -f "$FIXTURE_DIR/package.json" || { echo "FAIL: package.json not found"; exit 1; }
           node -e "JSON.parse(require('fs').readFileSync('$FIXTURE_DIR/package.json', 'utf8'))" \
-               || { echo "FAIL: package.json is not valid JSON"; exit 1; }
+            || { echo "FAIL: package.json is not valid JSON"; exit 1; }
 
           # Assert tsconfig.json exists and is valid JSON
           test -f "$FIXTURE_DIR/tsconfig.json" || { echo "FAIL: tsconfig.json not found"; exit 1; }
           node -e "JSON.parse(require('fs').readFileSync('$FIXTURE_DIR/tsconfig.json', 'utf8'))" \
-               || { echo "FAIL: tsconfig.json is not valid JSON"; exit 1; }
+            || { echo "FAIL: tsconfig.json is not valid JSON"; exit 1; }
 
           # Assert src/index.ts exists (TS project marker)
           test -f "$FIXTURE_DIR/src/index.ts" || { echo "FAIL: src/index.ts not found"; exit 1; }
