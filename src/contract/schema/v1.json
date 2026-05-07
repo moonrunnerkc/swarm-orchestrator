@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/moonrunnerkc/swarm-orchestrator/contract/v1.json",
+  "title": "Swarm Orchestrator v8 Contract Obligation",
+  "description": "Single contract obligation. Contracts serialize as JSONL where each line is one obligation. See docs/v8-overhaul-guide.md §5.1 and docs/v8-implementation-guide.md §4.",
+  "type": "object",
+  "oneOf": [
+    {
+      "title": "file-must-exist",
+      "type": "object",
+      "required": ["type", "path"],
+      "properties": {
+        "type": { "const": "file-must-exist" },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Filesystem path that must exist after execution. Relative to repository root."
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "title": "build-must-pass",
+      "type": "object",
+      "required": ["type", "command"],
+      "properties": {
+        "type": { "const": "build-must-pass" },
+        "command": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Shell command whose exit code must be zero. Run from repository root."
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "title": "test-must-pass",
+      "type": "object",
+      "required": ["type", "command"],
+      "properties": {
+        "type": { "const": "test-must-pass" },
+        "command": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Shell command whose exit code must be zero. Run from repository root."
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}
