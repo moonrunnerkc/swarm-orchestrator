@@ -6,6 +6,9 @@ import type {
   CandidateDiscardedEntry,
   CandidateRecordedEntry,
   ObligationAttemptedEntry,
+  ObligationDeterministicAppliedEntry,
+  ObligationDeterministicAttemptedEntry,
+  ObligationDeterministicFailedEntry,
   ObligationFailedEntry,
   ObligationMemoizedEntry,
   ObligationSatisfiedEntry,
@@ -21,6 +24,7 @@ import { selectPersonaForState } from '../persona/predicates';
 import type { Session, SessionUsage } from '../session/types';
 import { addUsage, emptyUsage } from '../session/types';
 import { verifyObligation } from '../verification/run-verifier';
+import type { WasmRuntime } from '../wasm/wasm-runtime';
 import { applyFileEmit } from './diff-applier';
 import { applyUnifiedDiff, looksLikeUnifiedDiff } from './unified-diff';
 import { PopulationStateBuilder } from './state';
@@ -74,6 +78,21 @@ export interface RunPopulationOptions {
    * null/undefined disables in-run memoization.
    */
   memoStore?: MemoStore;
+  /**
+   * Phase 5: optional WASM deterministic-floor runtime. When supplied,
+   * obligations whose `deterministicStrategy` resolves to a registered
+   * strategy are dispatched through the runtime instead of the
+   * synthesis path. A failure on the deterministic side reroutes the
+   * obligation to synthesis (impl guide §8 misclassification recovery)
+   * — the exact synthesis path that runs depends on `mode`.
+   */
+  wasmRuntime?: WasmRuntime;
+  /**
+   * Phase 5: optional per-strategy wall-time budget, ms. Forwarded to
+   * `WasmRuntime.dispatch`. Default per-strategy timeout in
+   * `wasm-runtime.ts` applies when omitted.
+   */
+  strategyTimeoutMs?: number;
 }
 
 /** Per-obligation outcome the manager hands back to the caller. */
@@ -104,6 +123,19 @@ export interface RunPopulationResult {
   memoizedObligations: number;
   /** Phase 4: total verifier calls saved via in-run candidate-hash dedup. */
   verifierCallsSavedByMemoization: number;
+  /**
+   * Phase 5: number of obligations satisfied via the WASM deterministic
+   * floor (zero LLM tokens consumed). Counted separately from
+   * `memoizedObligations` so the §8 cost benchmark can attribute savings.
+   */
+  deterministicObligations: number;
+  /**
+   * Phase 5: number of obligations whose deterministic strategy ran but
+   * was rerouted to synthesis (misclassification recovery). The
+   * obligation may still end up satisfied via synthesis; this counter
+   * captures the runtime's miss rate.
+   */
+  deterministicReroutes: number;
 }
 
 /**
@@ -126,6 +158,15 @@ export async function runPopulation(
   const builder = new PopulationStateBuilder(contract.obligations);
   const skip = options.skipObligationIndexes ?? new Set<number>();
   const memoStore = options.memoStore;
+  const wasmRuntime = options.wasmRuntime;
+  const strategyTimeoutMs = options.strategyTimeoutMs;
+  /**
+   * Phase 5: track which obligation indexes have already failed their
+   * deterministic dispatch this run. Used to prevent re-attempting the
+   * strategy after we've rerouted to synthesis (§8: "no retry of the
+   * WASM module").
+   */
+  const deterministicTried = new Set<number>();
 
   ledger.append<RunStartedEntry>({
     type: 'run-started',
@@ -158,7 +199,48 @@ export async function runPopulation(
   const outcomes: ObligationOutcome[] = [];
   let totalUsage = emptyUsage();
   let verifierCallsSavedByMemoization = 0;
+  let deterministicObligations = 0;
+  let deterministicReroutes = 0;
   let attempted = 0;
+
+  // Phase 5: deterministic-floor pre-pass. Walk every pending obligation
+  // tagged with a registered strategy and dispatch through the runtime
+  // before the predicate loop fires. Successful dispatches mark the
+  // obligation `satisfied` and the predicate loop never picks it up;
+  // failures fall through to synthesis.
+  if (wasmRuntime) {
+    for (let i = 0; i < contract.obligations.length; i += 1) {
+      if (skip.has(i)) continue;
+      const o = contract.obligations[i];
+      if (!o || !o.deterministicStrategy) continue;
+      if (!wasmRuntime.has(o.deterministicStrategy)) continue;
+      if (deterministicTried.has(i)) continue;
+      const detOutcome = await dispatchDeterministic({
+        obligation: o,
+        obligationIndex: i,
+        runtime: wasmRuntime,
+        repoRoot,
+        commandTimeoutMs,
+        strategyTimeoutMs,
+        ledger,
+      });
+      deterministicTried.add(i);
+      if (detOutcome.satisfied) {
+        builder.setStatus(i, 'satisfied');
+        deterministicObligations += 1;
+        outcomes.push({
+          obligationIndex: i,
+          obligation: o,
+          personaId: null,
+          satisfied: true,
+          detail: detOutcome.detail,
+          tournament: null,
+        });
+      } else {
+        deterministicReroutes += 1;
+      }
+    }
+  }
 
   while (attempted < cap) {
     const selection = selectPersonaForState(registry, builder.view());
@@ -300,7 +382,120 @@ export async function runPopulation(
     mode,
     memoizedObligations,
     verifierCallsSavedByMemoization,
+    deterministicObligations,
+    deterministicReroutes,
   };
+}
+
+interface DispatchDeterministicArgs {
+  obligation: ObligationV1;
+  obligationIndex: number;
+  runtime: WasmRuntime;
+  repoRoot: string;
+  commandTimeoutMs: number | undefined;
+  strategyTimeoutMs: number | undefined;
+  ledger: JsonlLedger;
+}
+
+interface DispatchDeterministicResult {
+  satisfied: boolean;
+  detail: string;
+}
+
+/**
+ * Phase 5: dispatch a single deterministic-tagged obligation through
+ * the WASM runtime. Emits the trio
+ * `obligation-deterministic-attempted` (always),
+ * `obligation-deterministic-applied` (on success), and
+ * `obligation-deterministic-failed` (on any failure). On success also
+ * emits `obligation-satisfied` so memoization and downstream tooling
+ * see the same shape they see for synthesis-satisfied obligations.
+ *
+ * §8 misclassification recovery: this helper never retries a failing
+ * strategy. The caller (the manager pre-pass) tracks attempted indexes
+ * and lets the predicate loop reroute the obligation to synthesis.
+ */
+async function dispatchDeterministic(
+  args: DispatchDeterministicArgs,
+): Promise<DispatchDeterministicResult> {
+  const {
+    obligation,
+    obligationIndex,
+    runtime,
+    repoRoot,
+    commandTimeoutMs,
+    strategyTimeoutMs,
+    ledger,
+  } = args;
+  const strategyName = obligation.deterministicStrategy ?? '';
+
+  ledger.append<ObligationDeterministicAttemptedEntry>({
+    type: 'obligation-deterministic-attempted',
+    obligationIndex,
+    obligationType: obligation.type,
+    strategyName,
+  });
+
+  const dispatchOpts: { strategyName?: string; timeoutMs?: number } = {};
+  if (strategyTimeoutMs !== undefined) dispatchOpts.timeoutMs = strategyTimeoutMs;
+  const outcome = await runtime.dispatch(obligation, repoRoot, dispatchOpts);
+
+  if (outcome.error !== null) {
+    ledger.append<ObligationDeterministicFailedEntry>({
+      type: 'obligation-deterministic-failed',
+      obligationIndex,
+      obligationType: obligation.type,
+      strategyName,
+      reason: 'error',
+      detail: outcome.detail,
+    });
+    return { satisfied: false, detail: outcome.detail };
+  }
+
+  if (!outcome.applied) {
+    ledger.append<ObligationDeterministicFailedEntry>({
+      type: 'obligation-deterministic-failed',
+      obligationIndex,
+      obligationType: obligation.type,
+      strategyName,
+      reason: 'not-applied',
+      detail: outcome.detail,
+    });
+    return { satisfied: false, detail: outcome.detail };
+  }
+
+  // Strategy applied; run the standard verifier.
+  const verifyOpts: Parameters<typeof verifyObligation>[1] = { repoRoot };
+  if (commandTimeoutMs !== undefined) verifyOpts.commandTimeoutMs = commandTimeoutMs;
+  const verifyResult = verifyObligation(obligation, verifyOpts);
+  if (!verifyResult.satisfied) {
+    ledger.append<ObligationDeterministicFailedEntry>({
+      type: 'obligation-deterministic-failed',
+      obligationIndex,
+      obligationType: obligation.type,
+      strategyName,
+      reason: 'verifier-rejected',
+      detail: `${outcome.detail}; verifier said: ${verifyResult.detail}`,
+    });
+    return { satisfied: false, detail: verifyResult.detail };
+  }
+
+  ledger.append<ObligationDeterministicAppliedEntry>({
+    type: 'obligation-deterministic-applied',
+    obligationIndex,
+    obligationType: obligation.type,
+    strategyName,
+    filesAffected: outcome.filesAffected,
+    wallTimeMs: outcome.wallTimeMs,
+    detail: outcome.detail,
+  });
+  ledger.append<ObligationSatisfiedEntry>({
+    type: 'obligation-satisfied',
+    obligationIndex,
+    obligationType: obligation.type,
+    detail: `deterministic ${strategyName}: ${outcome.detail}`,
+  });
+  return { satisfied: true, detail: outcome.detail };
 }
 
 /**

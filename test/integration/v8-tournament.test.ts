@@ -70,6 +70,11 @@ describe('integration: swarm v8 run --mode tournament', () => {
         '--run-id', 'fixed-tour-id',
         '--mode', 'tournament',
         '--candidates', '2',
+        // Phase 5: disable the deterministic floor so this test exercises
+        // tournament evidence on every obligation, including the file
+        // obligation that the auto-tagger would otherwise route to
+        // scaffold-template.
+        '--no-deterministic',
       ],
       { session },
     );

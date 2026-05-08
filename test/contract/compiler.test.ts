@@ -291,6 +291,7 @@ describe('contract/compiler — 22 goal-to-contract transformations', () => {
         goal: t.goal,
         repoContext: t.repoContext,
         extractor,
+        autoTagDeterministic: false,
       });
       // Canonically sorted: matches canonicalSort applied to the same inputs.
       assert.deepEqual(draft.obligations, canonicalSort(t.extracted));

@@ -16,6 +16,13 @@ export interface FileMustExistObligation {
   type: 'file-must-exist';
   /** Path relative to repository root. */
   path: string;
+  /**
+   * Phase 5: optional deterministic-strategy tag. Names a strategy
+   * registered with the WASM runtime; when set, the population manager
+   * dispatches this obligation to the runtime instead of the synthesis
+   * tournament. See impl guide §8 and overhaul guide §5.6.
+   */
+  deterministicStrategy?: string;
 }
 
 /** Obligation: a build command that must exit zero. */
@@ -23,6 +30,8 @@ export interface BuildMustPassObligation {
   type: 'build-must-pass';
   /** Shell command, run from repository root. */
   command: string;
+  /** Phase 5: optional deterministic-strategy tag. */
+  deterministicStrategy?: string;
 }
 
 /** Obligation: a test command that must exit zero. */
@@ -30,6 +39,8 @@ export interface TestMustPassObligation {
   type: 'test-must-pass';
   /** Shell command, run from repository root. */
   command: string;
+  /** Phase 5: optional deterministic-strategy tag. */
+  deterministicStrategy?: string;
 }
 
 /** Discriminated union of every v1 obligation type. */

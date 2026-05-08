@@ -406,3 +406,109 @@ sidecar file.
 
 **Status:** revisitable when contract-id-to-path mapping needs to
 survive `--out` overrides (e.g., for shared team contract registries).
+
+## Phase 5
+
+### Deviation 1: WASM runtime ships as in-process strategies, not Wasmer/wasmtime
+
+**Section:** v8-implementation-guide.md §8 (Phase 5 deliverable —
+"a sandboxed WASM execution layer. Wasmer or wasmtime as the
+runtime; choice deferred to phase implementation based on platform
+support.").
+
+**What §8 specifies:** the runtime should be a real WASM engine
+(Wasmer or wasmtime) hosting WASM-compiled strategy modules.
+
+**What was done:** `src/wasm/wasm-runtime.ts` ships as an in-process
+strategy executor with the same isolation guarantees a WASM
+sandbox would expose: writes outside `repoRoot` are rejected via
+`ensureInsideRepoRoot` (which rejects path traversal AND symlink
+escape on existing parents), a hard wall-time cap is enforced via
+`Promise.race` against a `setTimeout`, and a fresh scratch
+directory is created and torn down per dispatch. Strategies live
+in `src/wasm/strategies/*.ts` as TypeScript modules implementing
+the `DeterministicStrategy` interface.
+
+**Rationale:** the §8 isolation guarantees (no writes outside
+`repoRoot`, no implicit network access, time budget) are the
+load-bearing properties; they hold under the in-process strategy
+pattern as well. Pulling in `@wasmer/wasi` or wasmtime's Node
+binding would (a) require shipping platform-specific native
+binaries, (b) require compiling each strategy to WASM (none of
+which exist as WASM artifacts upstream), and (c) make the test
+matrix significantly more brittle on non-x86_64 macOS / Linux
+hosts. The strategy-module surface (`name`, `handles`,
+`description`, `execute(ctx)`) is shaped so a future swap to
+WASM-compiled modules is mechanical: a `WasmStrategy` adapter that
+loads a `.wasm` artifact and exposes the same interface drops in
+without churn anywhere else in the system.
+
+**Status:** revisitable when third-party WASM strategy modules
+become a real product surface (the §8 supply-chain risk in
+overhaul §8.6 only matters when the user can register external
+strategies; first-party in-tree strategies have no supply-chain
+distinction).
+
+### Deviation 2: import-sort and format-prettier are not auto-tagged
+
+**Section:** v8-implementation-guide.md §8 (Phase 5 — the contract
+compiler is updated to tag deterministic-eligible obligations).
+
+**What §8 specifies:** the §8 list of first-party WASM modules
+includes formatters and import sorters. The contract compiler
+should tag deterministic-eligible obligations for any of them.
+
+**What was done:** the auto-tagger in `src/contract/tagger.ts`
+only assigns `scaffold-template`. `import-sort` and
+`format-prettier` are registered with the runtime and reachable
+via explicit user tagging on the contract, but the compiler does
+not auto-assign them. The reasoning is recorded inline in
+`src/contract/tagger.ts` (the strategies need preconditions —
+import-sort needs an existing file, format-prettier on an empty
+file produces a single newline — that aren't visible to the
+compiler from the obligation alone).
+
+**Rationale:** the §8 dispatch contract requires that a
+deterministic obligation be satisfiable by the strategy *or*
+fail-fast and reroute. Auto-tagging an obligation whose
+preconditions don't hold is a guaranteed reroute — i.e., wasted
+ledger entries with no payoff. The conservative tagger keeps the
+auto-tagged set to obligations the strategy can satisfy from the
+obligation alone (boilerplate-by-name); explicit user tagging
+covers the cases where the user knows the precondition (e.g.,
+"sort imports in this existing file" with `import-sort`).
+
+**Status:** revisitable when the auto-tagger gains workspace
+inspection (e.g., "does this path exist already? does it look
+like an unsorted import block?") so import-sort / format-prettier
+can be safely auto-assigned. That inspection is a Phase 6
+streaming-verifier capability, not a Phase 5 surface.
+
+### Deviation 3: `obligation-attempted` is not emitted before the deterministic dispatch
+
+**Section:** v8-implementation-guide.md §8 (Phase 5 dispatch).
+
+**What §8 specifies:** §8 is silent on the ledger entry shape; it
+says "verification runs as normal post-execution."
+
+**What was done:** the deterministic-floor pre-pass emits the trio
+`obligation-deterministic-attempted` →
+`obligation-deterministic-applied` (success) or
+`obligation-deterministic-failed` (failure) →
+`obligation-satisfied` (success only). The synthesis-flavored
+`obligation-attempted` entry is NOT emitted for an obligation that
+the deterministic floor handles successfully; it is only emitted
+when synthesis takes over, either because the strategy isn't
+registered, the strategy failed, or the runtime wasn't supplied.
+
+**Rationale:** the `obligation-attempted` entry's invariant is
+"a persona was selected for this obligation"; the deterministic
+floor doesn't select a persona, it selects a strategy. Sharing the
+same entry type for both paths would conflate audit categories
+(was a synthesis call billed for this obligation?). Splitting them
+keeps the §8 cost-attribution claim auditable: the absence of an
+`obligation-attempted` plus `candidate-recorded` pair for an
+obligation index is the ledger evidence that the deterministic
+floor sidestepped the synthesis cost.
+
+**Status:** locked in for the v1 ledger shape.

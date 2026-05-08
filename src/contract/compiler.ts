@@ -1,7 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { DEFAULT_STRATEGY_NAMES } from '../wasm/registry';
 import { canonicalSort, contractHash, contractIdFromHash } from './canonicalize';
 import { type Extractor } from './extractor/types';
+import { tagObligations } from './tagger';
 import {
   CONTRACT_SCHEMA_VERSION,
   type ContractManifest,
@@ -20,6 +22,19 @@ export interface CompileOptions {
   repoContext: RepoContext;
   /** Extractor implementation to use. */
   extractor: Extractor;
+  /**
+   * Phase 5: when set to false, skip the deterministic-strategy
+   * auto-tagger. Default true — tagging is opt-out so production
+   * compilation always considers the deterministic floor. Tests that
+   * want to inspect raw extractor output use this flag.
+   */
+  autoTagDeterministic?: boolean;
+  /**
+   * Phase 5: explicit list of strategy names available to the tagger.
+   * Defaults to `DEFAULT_STRATEGY_NAMES` (the three first-party
+   * strategies). Custom runtimes pass their own list.
+   */
+  availableStrategies?: readonly string[];
 }
 
 /**
@@ -62,7 +77,13 @@ export async function compileGoal(options: CompileOptions): Promise<DraftContrac
   if (!validation.valid) {
     throw new ContractValidationError(extracted.obligations, validation.errors);
   }
-  const canonical = canonicalSort(extracted.obligations);
+  const autoTag = options.autoTagDeterministic ?? true;
+  const tagged = autoTag
+    ? tagObligations(extracted.obligations, {
+        availableStrategies: options.availableStrategies ?? DEFAULT_STRATEGY_NAMES,
+      })
+    : extracted.obligations.slice();
+  const canonical = canonicalSort(tagged);
   return {
     schemaVersion: CONTRACT_SCHEMA_VERSION,
     goal: options.goal,

@@ -8,6 +8,7 @@ import { runPopulation } from '../../population/manager';
 import { AnthropicSession } from '../../session/anthropic-session';
 import { StubSession } from '../../session/stub-session';
 import { cacheHitRate, effectiveInputTokens, type Session } from '../../session/types';
+import { createDefaultRuntime, WasmRuntime } from '../../wasm';
 
 const logger = getLogger('cli:v8:run');
 
@@ -28,12 +29,21 @@ export interface RunFlags {
   mode: 'single' | 'tournament';
   /** Optional override for tournament candidates per round. */
   candidates: number | null;
+  /**
+   * Phase 5: when false, the WASM deterministic runtime is not
+   * supplied to the population manager. Default true — the §8 floor
+   * is enabled by default. Useful for benchmarks that compare
+   * tournament-only vs. deterministic-floor cost.
+   */
+  deterministic: boolean;
 }
 
-/** Test seam: lets tests inject a custom session and/or registry. */
+/** Test seam: lets tests inject a custom session, registry, or WASM runtime. */
 export interface RunHandlerInjections {
   session?: Session;
   registry?: PersonaRegistry;
+  /** Phase 5: override the deterministic-floor runtime. */
+  wasmRuntime?: WasmRuntime;
 }
 
 const DEFAULT_PROJECT_CONTEXT_PREAMBLE =
@@ -88,6 +98,8 @@ export async function handleRun(
   const registry = injections.registry ?? createDefaultRegistry();
   const ledger = new JsonlLedger(ledgerPath, runId);
 
+  const wasmRuntime = injections.wasmRuntime ?? (flags.deterministic ? createDefaultRuntime() : undefined);
+
   const runOptions: Parameters<typeof runPopulation>[0] = {
     contract,
     repoRoot,
@@ -96,6 +108,7 @@ export async function handleRun(
     ledger,
     mode: flags.mode,
   };
+  if (wasmRuntime) runOptions.wasmRuntime = wasmRuntime;
   if (flags.maxObligations !== null) runOptions.maxObligations = flags.maxObligations;
   if (flags.commandTimeoutMs !== null) runOptions.commandTimeoutMs = flags.commandTimeoutMs;
   if (flags.candidates !== null && flags.mode === 'tournament') {
@@ -130,6 +143,9 @@ export async function handleRun(
   logger.info(`mode:          ${result.mode}`);
   logger.info(`obligations:   ${result.satisfied}/${result.outcomes.length} satisfied`);
   logger.info(
+    `deterministic: ${result.deterministicObligations} satisfied / ${result.deterministicReroutes} rerouted`,
+  );
+  logger.info(
     `tokens (in):   ${result.totalUsage.inputTokens} std + ${result.totalUsage.cacheReadTokens} cache-read + ${result.totalUsage.cacheCreationTokens} cache-write`,
   );
   logger.info(`effective in:  ${eff.toFixed(2)} tokens`);
@@ -149,6 +165,8 @@ export async function handleRun(
       failed: result.failed,
       memoizedObligations: result.memoizedObligations,
       verifierCallsSavedByMemoization: result.verifierCallsSavedByMemoization,
+      deterministicObligations: result.deterministicObligations,
+      deterministicReroutes: result.deterministicReroutes,
       totalUsage: result.totalUsage,
       effectiveInputTokens: eff,
       cacheHitRate: rate,
@@ -227,6 +245,7 @@ export function parseRunFlags(argv: string[]): RunFlags {
     resultPath: null,
     mode: 'single',
     candidates: null,
+    deterministic: true,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -276,6 +295,8 @@ export function parseRunFlags(argv: string[]): RunFlags {
         throw new Error(`invalid --candidates "${raw}"; must be a positive integer ≤ 8`);
       }
       flags.candidates = n;
+    } else if (arg === '--no-deterministic') {
+      flags.deterministic = false;
     } else if (arg === '--help' || arg === '-h') {
       printRunUsage();
       throw new Error('help requested');
@@ -331,6 +352,7 @@ function printRunUsage(): void {
       '  --result <path>              write structured run result to this JSON file',
       '  --mode single|tournament     execution mode (default single)',
       '  --candidates <n>             tournament candidates per round (1-8, type-default otherwise)',
+      '  --no-deterministic           disable the WASM deterministic floor (default: enabled)',
       '  --help, -h                   show this message',
       '',
     ].join('\n'),

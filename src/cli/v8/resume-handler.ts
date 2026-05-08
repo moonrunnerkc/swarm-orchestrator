@@ -18,6 +18,7 @@ import { runPopulation } from '../../population/manager';
 import { AnthropicSession } from '../../session/anthropic-session';
 import { StubSession } from '../../session/stub-session';
 import { cacheHitRate, effectiveInputTokens, type Session } from '../../session/types';
+import { createDefaultRuntime, WasmRuntime } from '../../wasm';
 
 const logger = getLogger('cli:v8:resume');
 
@@ -34,12 +35,16 @@ export interface ResumeFlags {
   resultPath: string | null;
   mode: 'single' | 'tournament';
   candidates: number | null;
+  /** Phase 5: enable the WASM deterministic floor on resume. Default true. */
+  deterministic: boolean;
 }
 
-/** Test seam: lets tests inject a custom session and/or registry. */
+/** Test seam: lets tests inject a custom session, registry, or WASM runtime. */
 export interface ResumeHandlerInjections {
   session?: Session;
   registry?: PersonaRegistry;
+  /** Phase 5: override the deterministic-floor runtime. */
+  wasmRuntime?: WasmRuntime;
 }
 
 const DEFAULT_PROJECT_CONTEXT_PREAMBLE =
@@ -161,6 +166,7 @@ export async function handleResume(
 
   const registry = injections.registry ?? createDefaultRegistry();
   const memoStore = new MemoStore(priorEntries);
+  const wasmRuntime = injections.wasmRuntime ?? (flags.deterministic ? createDefaultRuntime() : undefined);
 
   const runOptions: Parameters<typeof runPopulation>[0] = {
     contract,
@@ -172,6 +178,7 @@ export async function handleResume(
     skipObligationIndexes: resumeState.satisfiedIndexes,
     memoStore,
   };
+  if (wasmRuntime) runOptions.wasmRuntime = wasmRuntime;
   if (flags.commandTimeoutMs !== null) runOptions.commandTimeoutMs = flags.commandTimeoutMs;
   if (flags.candidates !== null && flags.mode === 'tournament') {
     runOptions.tournamentConfig = {
@@ -205,6 +212,7 @@ export async function handleResume(
   logger.info(`obligations:   ${result.satisfied}/${result.outcomes.length + result.memoizedObligations} satisfied`);
   logger.info(`memoized:      ${result.memoizedObligations} obligations skipped`);
   logger.info(`verifier saved:${result.verifierCallsSavedByMemoization} calls`);
+  logger.info(`deterministic: ${result.deterministicObligations} satisfied / ${result.deterministicReroutes} rerouted`);
   logger.info(`tokens (in):   ${result.totalUsage.inputTokens} std + ${result.totalUsage.cacheReadTokens} cache-read + ${result.totalUsage.cacheCreationTokens} cache-write`);
   logger.info(`effective in:  ${eff.toFixed(2)} tokens`);
   logger.info(`tokens (out):  ${result.totalUsage.outputTokens}`);
@@ -224,6 +232,8 @@ export async function handleResume(
       failed: result.failed,
       memoizedObligations: result.memoizedObligations,
       verifierCallsSavedByMemoization: result.verifierCallsSavedByMemoization,
+      deterministicObligations: result.deterministicObligations,
+      deterministicReroutes: result.deterministicReroutes,
       totalUsage: result.totalUsage,
       effectiveInputTokens: eff,
       cacheHitRate: rate,
@@ -318,6 +328,7 @@ export function parseResumeFlags(argv: string[]): ResumeFlags {
     resultPath: null,
     mode: 'single',
     candidates: null,
+    deterministic: true,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -360,6 +371,8 @@ export function parseResumeFlags(argv: string[]): ResumeFlags {
         throw new Error(`invalid --candidates "${raw}"; must be a positive integer ≤ 8`);
       }
       flags.candidates = n;
+    } else if (arg === '--no-deterministic') {
+      flags.deterministic = false;
     } else if (arg === '--help' || arg === '-h') {
       printResumeUsage();
       throw new Error('help requested');
@@ -409,6 +422,7 @@ function printResumeUsage(): void {
       '  --result <path>              write structured run result to this JSON file',
       '  --mode single|tournament     execution mode (default single)',
       '  --candidates <n>             tournament candidates per round (1-8)',
+      '  --no-deterministic           disable the WASM deterministic floor (default: enabled)',
       '  --help, -h                   show this message',
       '',
     ].join('\n'),

@@ -53,10 +53,27 @@ export function canonicalSerialize(obligations: ObligationV1[]): string {
 }
 
 function stableStringifyObligation(o: ObligationV1): string {
+  // Phase 5: emit `deterministicStrategy` last so untagged obligations
+  // round-trip to the same bytes Phase 4 produced (back-compat for the
+  // contract-hash function and for any ledger entries that captured a
+  // pre-Phase-5 contract hash).
   if (o.type === 'file-must-exist') {
+    if (o.deterministicStrategy !== undefined) {
+      return JSON.stringify({
+        type: o.type,
+        path: o.path,
+        deterministicStrategy: o.deterministicStrategy,
+      });
+    }
     return JSON.stringify({ type: o.type, path: o.path });
   }
-  // build-must-pass and test-must-pass
+  if (o.deterministicStrategy !== undefined) {
+    return JSON.stringify({
+      type: o.type,
+      command: o.command,
+      deterministicStrategy: o.deterministicStrategy,
+    });
+  }
   return JSON.stringify({ type: o.type, command: o.command });
 }
 

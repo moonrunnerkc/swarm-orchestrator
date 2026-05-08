@@ -77,3 +77,11 @@ export {
   loadObligationSchema,
   obligationValidator,
 } from './schema/loader';
+
+export {
+  isKnownBoilerplate,
+  pickStrategyForFile,
+  tagObligations,
+  tagSummary,
+  type TaggerOptions,
+} from './tagger';

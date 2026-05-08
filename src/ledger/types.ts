@@ -201,6 +201,60 @@ export interface TournamentEscalatedEntry extends LedgerEntryHeader {
   detail: string;
 }
 
+/**
+ * Phase 5: a deterministic strategy was dispatched against an
+ * obligation. Always emitted before either an
+ * `obligation-deterministic-applied` or
+ * `obligation-deterministic-failed` entry.
+ */
+export interface ObligationDeterministicAttemptedEntry extends LedgerEntryHeader {
+  type: 'obligation-deterministic-attempted';
+  obligationIndex: number;
+  obligationType: string;
+  strategyName: string;
+}
+
+/**
+ * Phase 5: a deterministic strategy applied successfully and the
+ * verifier confirmed the obligation. Zero LLM tokens were consumed.
+ * Counted via `runResult.deterministicObligations` and used by the
+ * §8 cost benchmark.
+ */
+export interface ObligationDeterministicAppliedEntry extends LedgerEntryHeader {
+  type: 'obligation-deterministic-applied';
+  obligationIndex: number;
+  obligationType: string;
+  strategyName: string;
+  /** Repo-relative paths the strategy wrote or modified. */
+  filesAffected: string[];
+  /** Wall time spent in the strategy, ms. */
+  wallTimeMs: number;
+  /** Free-form note for the audit trail. */
+  detail: string;
+}
+
+/**
+ * Phase 5: a deterministic strategy ran and the obligation is being
+ * rerouted to synthesis. Logged whether the strategy errored, the
+ * verifier rejected its output, or the strategy declined to apply.
+ * The §8 misclassification recovery path: "no retry of the WASM
+ * module" — synthesis takes over from here.
+ */
+export interface ObligationDeterministicFailedEntry extends LedgerEntryHeader {
+  type: 'obligation-deterministic-failed';
+  obligationIndex: number;
+  obligationType: string;
+  strategyName: string;
+  /**
+   * Why the strategy failed. `error` for thrown / sandbox failures;
+   * `verifier-rejected` when the strategy applied but the verifier
+   * still failed; `not-applied` when the strategy declined to write
+   * anything.
+   */
+  reason: 'error' | 'verifier-rejected' | 'not-applied';
+  detail: string;
+}
+
 /** Discriminated union of every ledger entry shape. */
 export type LedgerEntry =
   | RunStartedEntry
@@ -214,7 +268,10 @@ export type LedgerEntry =
   | TournamentWinnerSelectedEntry
   | TournamentEscalatedEntry
   | RunResumedEntry
-  | ObligationMemoizedEntry;
+  | ObligationMemoizedEntry
+  | ObligationDeterministicAttemptedEntry
+  | ObligationDeterministicAppliedEntry
+  | ObligationDeterministicFailedEntry;
 
 /** Type tag union for all ledger entries. */
 export type LedgerEntryType = LedgerEntry['type'];
