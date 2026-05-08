@@ -1,0 +1,20 @@
+=== F15: CLI fallback mode (v6 CLI-subprocess path) ===
+(Per overhaul guide §4.1: 'CLI execution is preserved as an opt-in fallback mode')
+
+--- 15.1 swarm run --help (v6 path) ---
+Loaded 5 rules from 1 packs: swarm-orchestrator/cheat-defaults
+Error: goal required
+Usage: swarm run --goal "Build a REST API"
+       swarm run <planfile> [flags]
+
+--- 15.2 swarm run --tool claude-code dispatches to CLI subprocess via adapter ---
+Top-level dispatch:
+225:      case 'run':
+
+handleRunCommand definition:
+
+Adapter dispatch (CLI-subprocess wrapping):
+
+=== Note: per defect D1, the v6 CLI-subprocess path is currently the default,
+not the opt-in fallback. The overhaul guide §4.1 framing 'opt-in fallback'
+depends on D1 being fixed (v8 becoming dispatch default).

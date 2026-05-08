@@ -1,0 +1,31 @@
+============== F10: resume after partial completion (stub) ==================
+[cli:v8:run] failed to read contract at /tmp/v8-e2e-fixture/.swarm/contracts/ALL8_ID=48a50791b3e52140: contract manifest not found at /tmp/v8-e2e-fixture/.swarm/contracts/ALL8_ID=48a50791b3e52140/manifest.json
+partial outcomes count:
+jq: error: Could not open file /tmp/v8-e2e-fixture/post-partial.json: No such file or directory
+--- resume the run ---
+[cli:v8:resume] ledger not found at /tmp/v8-e2e-fixture/.swarm/ledger/post-resume.jsonl
+memoization counters after resume:
+jq: error: Could not open file /tmp/v8-e2e-fixture/post-resumed.json: No such file or directory
+
+============== F11: memoization (resume same run-id; everything memoized) ==================
+[cli:v8:resume] ledger not found at /tmp/v8-e2e-fixture/.swarm/ledger/post-resume.jsonl
+memoization counters (second resume):
+jq: error: Could not open file /tmp/v8-e2e-fixture/post-memo.json: No such file or directory
+
+============== F12: cost benchmark + SDK usage cross-check ==================
+[bench7] history: /Users/brad/projects/swarm-orchestrator/docs/benchmarks/v8-history.jsonl
+[bench7] personas >= 7: PASS
+[bench7] obligation types >= 8: PASS
+[bench7] dispatch correct: PASS
+[bench7] failure suite catches every new type: PASS
+
+v8-history.jsonl tail (2 most recent rows):
+{"ts":"2026-05-08T21:15:46.591Z","suite":"phase7-milestone"}
+{"ts":"2026-05-08T21:45:01.206Z","suite":"phase7-milestone"}
+
+F2 real-API SDK usage from the F3 run (real response.usage values):
+{"persona":"architect","model":"claude-sonnet-4-6","usage":{"inputTokens":301,"cacheReadTokens":0,"cacheCreationTokens":0,"outputTokens":98}}
+{"persona":"architect","model":"claude-sonnet-4-6","usage":{"inputTokens":297,"cacheReadTokens":0,"cacheCreationTokens":0,"outputTokens":67}}
+{"persona":"implementer","model":"claude-sonnet-4-6","usage":{"inputTokens":273,"cacheReadTokens":0,"cacheCreationTokens":0,"outputTokens":1206}}
+{"persona":"verifier","model":"claude-sonnet-4-6","usage":{"inputTokens":250,"cacheReadTokens":0,"cacheCreationTokens":0,"outputTokens":838}}
+(input/output tokens come from anthropic-session.ts:88 readAnthropicUsage)

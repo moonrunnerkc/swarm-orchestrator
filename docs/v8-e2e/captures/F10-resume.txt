@@ -1,0 +1,92 @@
+=== F10: resume after partial completion ===
+--- 10.1 first run with --max-obligations 4 (force partial) ---
+[cli:v8:run] obligations:   3/4 satisfied
+[cli:v8:run] deterministic: 0 satisfied / 0 rerouted
+[cli:v8:run] pre-verified:  0 obligations
+[cli:v8:run] streaming:     0 aborted (0 chars before abort)
+[cli:v8:run] tokens (in):   842 std + 216 cache-read + 72 cache-write
+[cli:v8:run] effective in:  953.60 tokens
+[cli:v8:run] tokens (out):  54
+[cli:v8:run] cache hit:     19.1%
+[cli:v8:run] wall time:     309ms
+[cli:v8:run] ledger:        /private/tmp/v8-e2e-fixture/.swarm/ledger/e2e-resume.jsonl
+
+--- partial result outcomes ---
+{
+  "satisfied": 3,
+  "failed": 1,
+  "outcomes": [
+    {
+      "type": "file-must-exist",
+      "satisfied": true
+    },
+    {
+      "type": "build-must-pass",
+      "satisfied": false
+    },
+    {
+      "type": "test-must-pass",
+      "satisfied": true
+    },
+    {
+      "type": "property-must-hold",
+      "satisfied": true
+    }
+  ]
+}
+
+--- 10.2 resume the run ---
+[cli:v8:resume] prior failed:  1 (will retry)
+[cli:v8:resume] run id:        e2e-resume (resumed)
+[cli:v8:resume] mode:          single
+[cli:v8:resume] obligations:   6/8 satisfied
+[cli:v8:resume] memoized:      3 obligations skipped
+[cli:v8:resume] verifier saved:0 calls
+[cli:v8:resume] deterministic: 0 satisfied / 0 rerouted
+[cli:v8:resume] pre-verified:  0 obligations
+[cli:v8:resume] streaming:     0 aborted (0 chars before abort)
+[cli:v8:resume] tokens (in):   1259 std + 280 cache-read + 70 cache-write
+[cli:v8:resume] effective in:  1374.50 tokens
+[cli:v8:resume] tokens (out):  73
+[cli:v8:resume] cache hit:     17.4%
+[cli:v8:resume] wall time:     204ms
+[cli:v8:resume] ledger:        /tmp/v8-e2e-fixture/.swarm/ledger/e2e-resume.jsonl
+
+--- resumed result ---
+{
+  "satisfied": 6,
+  "failed": 2,
+  "memoizedObligations": 3,
+  "outcomes": [
+    {
+      "type": "build-must-pass",
+      "satisfied": false
+    },
+    {
+      "type": "import-graph-must-satisfy",
+      "satisfied": true
+    },
+    {
+      "type": "function-must-have-signature",
+      "satisfied": false
+    },
+    {
+      "type": "performance-must-not-regress",
+      "satisfied": true
+    },
+    {
+      "type": "coverage-must-exceed",
+      "satisfied": true
+    }
+  ]
+}
+
+--- ledger entry types after resume ---
+   9 candidate-recorded
+   9 obligation-attempted
+   3 obligation-failed
+   3 obligation-memoized
+   6 obligation-satisfied
+   2 run-finished
+   1 run-resumed
+   2 run-started

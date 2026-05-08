@@ -1,0 +1,14 @@
+=== F9: ledger tamper detection ===
+--- 9.1 chain valid before tamper ---
+VALID
+
+--- 9.2 tamper one entry: change goal in run-started ---
+--- 9.3 chain validation after tamper ---
+TAMPER DETECTED: ledger entry at line 1 fails entry-hash check: stored 3103662b…f62c but recomputed 676b536b…80d6
+
+--- 9.4 try to resume the tampered ledger ---
+[cli:v8:resume] ledger chain integrity check failed at line 1: ledger entry at line 1 fails entry-hash check: stored 3103662b…f62c but recomputed 676b536b…80d6
+(exit code captured as part of integration test; CLI returns 4 on tamper)
+
+--- 9.5 restore the ledger ---
+RESTORED VALID

@@ -1,0 +1,76 @@
+=== F2.1 compile with stub-heuristic extractor ===
+[cli:v8:compile] contract written: /private/tmp/v8-e2e-fixture/.swarm/contracts/121589162d4121e1
+[cli:v8:compile] contract id:      121589162d4121e1
+[cli:v8:compile] contract hash:    121589162d4121e15890cad52ee0aa659ccdd57d95f3eb2b5a0aa7eaf82c079a
+
+=== F2.2 inspect contract ===
+total 0
+drwxr-xr-x  3 brad  wheel   96 May  8 15:10 .
+drwxr-xr-x  3 brad  wheel   96 May  8 15:10 ..
+drwxr-xr-x  4 brad  wheel  128 May  8 15:10 121589162d4121e1
+contract dir: .swarm/contracts/121589162d4121e1/
+--- manifest.json ---
+{
+  "schemaVersion": "v1",
+  "contractHash": "121589162d4121e15890cad52ee0aa659ccdd57d95f3eb2b5a0aa7eaf82c079a",
+  "contractId": "121589162d4121e1",
+  "goal": "add a /health endpoint to api/health.ts that returns 200 and add a test for it",
+  "repoContext": {
+    "repoRoot": "/private/tmp/v8-e2e-fixture",
+    "buildCommand": "npm run build",
+    "testCommand": "npm test",
+    "language": "typescript"
+  },
+  "extractor": {
+    "name": "stub",
+    "model": null,
+    "temperature": null,
+    "promptSha256": null
+  },
+  "createdAt": "2026-05-08T21:10:18.262Z"
+}
+
+--- obligations.json ---
+cat: .swarm/contracts/121589162d4121e1//obligations.json: No such file or directory
+
+=== F2.3 hash-stability: re-run with same inputs ===
+first run hash: 121589162d4121e15890cad52ee0aa659ccdd57d95f3eb2b5a0aa7eaf82c079a
+second run hash: 121589162d4121e15890cad52ee0aa659ccdd57d95f3eb2b5a0aa7eaf82c079a
+HASH STABLE: PASS
+
+=== F2.4 stub-heuristic emits only Phase 1 types — Phase 7 types via hand-edit ===
+(per Phase 7 deferral X2: Anthropic extractor prompt expansion)
+
+--- composing a hand-written contract with 5 obligation types incl. Phase 7 ---
+/Users/brad/projects/swarm-orchestrator/dist/src/contract/canonicalize.js:56
+    const copy = obligations.slice();
+                             ^
+
+TypeError: obligations.slice is not a function
+    at canonicalSort (/Users/brad/projects/swarm-orchestrator/dist/src/contract/canonicalize.js:56:30)
+    at canonicalSerialize (/Users/brad/projects/swarm-orchestrator/dist/src/contract/canonicalize.js:98:20)
+    at contractHash (/Users/brad/projects/swarm-orchestrator/dist/src/contract/canonicalize.js:174:23)
+    at [eval]:7:14
+    at runScriptInThisContext (node:internal/vm:219:10)
+    at node:internal/process/execution:451:12
+    at [eval]-wrapper:6:24
+    at runScriptInContext (node:internal/process/execution:449:60)
+    at evalFunction (node:internal/process/execution:283:30)
+    at evalTypeScript (node:internal/process/execution:295:3)
+
+Node.js v24.15.0
+total 0
+drwxr-xr-x  4 brad  wheel  128 May  8 15:10 .
+drwxr-xr-x  3 brad  wheel   96 May  8 15:10 ..
+drwxr-xr-x  4 brad  wheel  128 May  8 15:10 121589162d4121e1
+drwxr-xr-x  4 brad  wheel  128 May  8 15:10 handwritten-mixed
+
+=== F2.4 retry — compute contractHash properly ===
+hand-written contract id: 03c0f9e5643be487
+hand-written contract hash: 03c0f9e5643be487c2da7038dc62324473bba75eab0cfdc1b489b8bf0840b692
+dir: /tmp/v8-e2e-fixture/.swarm/contracts/03c0f9e5643be487
+total 0
+drwxr-xr-x  4 brad  wheel  128 May  8 15:11 .
+drwxr-xr-x  3 brad  wheel   96 May  8 15:10 ..
+drwxr-xr-x  4 brad  wheel  128 May  8 15:11 03c0f9e5643be487
+drwxr-xr-x  4 brad  wheel  128 May  8 15:10 121589162d4121e1
