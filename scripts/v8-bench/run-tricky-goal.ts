@@ -112,6 +112,18 @@ export async function runTrickyGoal(
   // when the same candidate text reappears across rounds.
   const qualityByText = new Map<string, 'good' | 'bad'>();
 
+  // Route the responder by *obligation type* rather than persona id so
+  // the bench is invariant to the size of the registry. Phase 7 (impl
+  // guide §10) expands the default registry to eight personas; rounds
+  // beyond round 0 draw from the broader fallback pool, and the older
+  // persona-id-keyed responder would accidentally route Phase 7 personas
+  // through the catch-all 'no-op' branch — coupling the rng-advance
+  // count to the registry size and changing tournament outcomes for
+  // reasons unrelated to the bench's stated invariant. Routing by
+  // obligation type eliminates that coupling: every synthesis persona
+  // produces a marker-bearing candidate for file obligations, and every
+  // synthesis persona produces 'no-op' for build/test obligations,
+  // regardless of which slot in the fallback pool they occupy.
   const responder = (req: SessionRequest): string => {
     if (req.personaId === 'tournament-verifier') {
       const m = req.userMessage.match(/<<<CANDIDATE\n([\s\S]*?)\nCANDIDATE>>>/);
@@ -120,7 +132,11 @@ export async function runTrickyGoal(
       const score = tag === 'good' ? 0.9 : 0.1;
       return JSON.stringify({ score, rationale: `tricky-${tag}` });
     }
-    if (req.personaId === 'architect') {
+    // Detect obligation type by inspecting the rendered user message.
+    // `renderDynamicMessage` embeds `JSON.stringify(obligation)` on the
+    // second line, which contains the type tag.
+    const isFileObligation = req.userMessage.includes('"type":"file-must-exist"');
+    if (isFileObligation) {
       const isBad = rng() < goal.expectedFailureRate;
       const tag = isBad ? 'bad' : 'good';
       // The "good" candidate emits the marker the build-must-pass
@@ -140,9 +156,10 @@ export async function runTrickyGoal(
       qualityByText.set(candidate, tag);
       return candidate;
     }
-    // implementer / verifier personas: simple no-op for build/test —
-    // the architect-emitted file content is what determines whether
-    // the marker grep passes.
+    // Build/test obligations: every persona emits 'no-op'. The build
+    // verification grep's the architect-emitted file body, so what
+    // matters is whether the file-must-exist tournament committed a
+    // good candidate.
     return 'no-op';
   };
 
