@@ -25,6 +25,7 @@
 import type { FinalContract, ObligationV1 } from '../contract/types';
 import type { LedgerEntry, RunStartedEntry } from './types';
 import {
+  obligationKey,
   priorSatisfiedIndexes,
   priorFailedIndexes,
 } from './memoization';
@@ -169,6 +170,7 @@ export function memoizedEntriesForResume(
 }
 
 function keyForObligation(o: ObligationV1): string {
-  if (o.type === 'file-must-exist') return `${o.type}|${o.path}`;
-  return `${o.type}|${o.command}`;
+  // Delegate to memoization.obligationKey to avoid drift between the two
+  // call sites; both paths land in the same key shape.
+  return obligationKey(o);
 }

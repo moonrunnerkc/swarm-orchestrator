@@ -67,7 +67,9 @@ export interface TournamentConfig {
  * Default tournament configurations per obligation type. File-must-exist
  * uses a smaller candidate pool (architect personas tend to converge);
  * build/test obligations get the wider pool because they involve more
- * subtle decisions.
+ * subtle decisions. Phase 7 obligation types reuse the build/test shape
+ * (3 candidates, threshold 0.5) since each requires a unified-diff
+ * patch under the same cost-curve as build/test obligations.
  */
 export const DEFAULT_TOURNAMENT_CONFIG: Record<ObligationV1['type'], TournamentConfig> = {
   'file-must-exist': {
@@ -87,6 +89,36 @@ export const DEFAULT_TOURNAMENT_CONFIG: Record<ObligationV1['type'], TournamentC
     roundCap: 3,
     scoreThreshold: 0.5,
     temperatureSchedule: [0.1, 0.4, 0.7],
+  },
+  'function-must-have-signature': {
+    candidatesPerRound: 2,
+    roundCap: 3,
+    scoreThreshold: 0.5,
+    temperatureSchedule: [0.1, 0.3, 0.6],
+  },
+  'property-must-hold': {
+    candidatesPerRound: 3,
+    roundCap: 3,
+    scoreThreshold: 0.5,
+    temperatureSchedule: [0.1, 0.4, 0.7],
+  },
+  'import-graph-must-satisfy': {
+    candidatesPerRound: 2,
+    roundCap: 3,
+    scoreThreshold: 0.5,
+    temperatureSchedule: [0.1, 0.4, 0.7],
+  },
+  'coverage-must-exceed': {
+    candidatesPerRound: 3,
+    roundCap: 3,
+    scoreThreshold: 0.5,
+    temperatureSchedule: [0.2, 0.5, 0.8],
+  },
+  'performance-must-not-regress': {
+    candidatesPerRound: 2,
+    roundCap: 3,
+    scoreThreshold: 0.5,
+    temperatureSchedule: [0.1, 0.3, 0.6],
   },
 };
 

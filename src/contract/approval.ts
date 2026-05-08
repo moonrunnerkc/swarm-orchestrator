@@ -117,8 +117,23 @@ function renderDraft(draft: DraftContract, io: ApprovalIO): void {
 }
 
 function formatObligation(o: ObligationV1): string {
-  if (o.type === 'file-must-exist') return `file-must-exist: ${o.path}`;
-  return `${o.type}: ${o.command}`;
+  switch (o.type) {
+    case 'file-must-exist':
+      return `file-must-exist: ${o.path}`;
+    case 'build-must-pass':
+    case 'test-must-pass':
+      return `${o.type}: ${o.command}`;
+    case 'function-must-have-signature':
+      return `function-must-have-signature: ${o.file}::${o.name}${o.signature}`;
+    case 'property-must-hold':
+      return `property-must-hold: ${o.target} via "${o.predicate}"`;
+    case 'import-graph-must-satisfy':
+      return `import-graph-must-satisfy: ${o.scope} (${o.constraint})`;
+    case 'coverage-must-exceed':
+      return `coverage-must-exceed: ${o.scope} ${o.metric} >= ${o.threshold}%`;
+    case 'performance-must-not-regress':
+      return `performance-must-not-regress: "${o.benchmark}" vs ${o.baseline} (≤${(o.threshold * 100).toFixed(1)}%)`;
+  }
 }
 
 function defaultApprovalIO(): ApprovalIO {

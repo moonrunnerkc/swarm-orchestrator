@@ -743,21 +743,75 @@ export function renderDynamicMessage(obligation: ObligationV1, repoRoot: string)
     `Repository root: ${repoRoot}`,
     '',
   ];
-  if (obligation.type === 'file-must-exist') {
-    lines.push(`Emit the file content for ${obligation.path}.`);
-    lines.push(
-      'Wrap the file body in a single fenced code block. No prose outside the fences.',
-    );
-  } else if (obligation.type === 'build-must-pass') {
-    lines.push(`The repository must satisfy: ${obligation.command}`);
-    lines.push('If the build is already passing, output the literal text "no-op".');
-    lines.push(
-      'Otherwise output a unified diff against repo root that makes the build pass.',
-    );
-  } else {
-    lines.push(`The repository must satisfy: ${obligation.command}`);
-    lines.push('If tests already pass, output the literal text "no-op".');
-    lines.push('Otherwise output a unified diff against repo root that makes tests pass.');
+  switch (obligation.type) {
+    case 'file-must-exist':
+      lines.push(`Emit the file content for ${obligation.path}.`);
+      lines.push(
+        'Wrap the file body in a single fenced code block. No prose outside the fences.',
+      );
+      break;
+    case 'build-must-pass':
+      lines.push(`The repository must satisfy: ${obligation.command}`);
+      lines.push('If the build is already passing, output the literal text "no-op".');
+      lines.push(
+        'Otherwise output a unified diff against repo root that makes the build pass.',
+      );
+      break;
+    case 'test-must-pass':
+      lines.push(`The repository must satisfy: ${obligation.command}`);
+      lines.push('If tests already pass, output the literal text "no-op".');
+      lines.push('Otherwise output a unified diff against repo root that makes tests pass.');
+      break;
+    case 'function-must-have-signature':
+      lines.push(
+        `Function "${obligation.name}" in ${obligation.file} must declare the signature ` +
+          `"${obligation.signature}".`,
+      );
+      lines.push('If the file already declares the function with this signature, output "no-op".');
+      lines.push(
+        'Otherwise output a unified diff against repo root that brings the file into compliance.',
+      );
+      break;
+    case 'property-must-hold':
+      lines.push(
+        `The property over "${obligation.target}" asserted by predicate "${obligation.predicate}" ` +
+          `must hold (predicate exits zero).`,
+      );
+      lines.push('If the property already holds, output "no-op".');
+      lines.push(
+        'Otherwise output a unified diff against repo root that makes the predicate pass.',
+      );
+      break;
+    case 'import-graph-must-satisfy':
+      lines.push(
+        `Import graph rooted at ${obligation.scope} must satisfy "${obligation.constraint}".`,
+      );
+      lines.push('If the constraint already holds, output "no-op".');
+      lines.push(
+        'Otherwise output a unified diff against repo root that removes the offending edges.',
+      );
+      break;
+    case 'coverage-must-exceed':
+      lines.push(
+        `Coverage report ${obligation.scope} must report ${obligation.metric} pct >= ` +
+          `${obligation.threshold}%.`,
+      );
+      lines.push('If coverage already meets the threshold, output "no-op".');
+      lines.push(
+        'Otherwise output a unified diff against repo root that adds tests until coverage clears the threshold.',
+      );
+      break;
+    case 'performance-must-not-regress':
+      lines.push(
+        `Benchmark "${obligation.benchmark}" must not regress past ` +
+          `${(obligation.threshold * 100).toFixed(1)}% versus the baseline value at ` +
+          `${obligation.baseline}.`,
+      );
+      lines.push('If the benchmark already meets the budget, output "no-op".');
+      lines.push(
+        'Otherwise output a unified diff against repo root that recovers the regression.',
+      );
+      break;
   }
   return lines.join('\n');
 }

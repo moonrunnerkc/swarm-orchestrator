@@ -37,16 +37,30 @@ import type {
 import type { ObligationV1, ObligationType } from '../contract/types';
 
 /**
- * Build a stable string identity for an obligation. `file-must-exist`
- * obligations are keyed by path; `build-must-pass` and `test-must-pass`
- * by command. Two obligations with the same key MUST have identical
- * effect on the workspace, which is what memoization counts on.
+ * Build a stable string identity for an obligation. `file-must-exist` is
+ * keyed by path; `build-must-pass` / `test-must-pass` by command; the
+ * Phase 7 types each have their own canonical tuple. Two obligations with
+ * the same key MUST have identical effect on the workspace, which is
+ * what memoization counts on.
  */
 export function obligationKey(obligation: ObligationV1): string {
-  if (obligation.type === 'file-must-exist') {
-    return `${obligation.type}|${obligation.path}`;
+  switch (obligation.type) {
+    case 'file-must-exist':
+      return `${obligation.type}|${obligation.path}`;
+    case 'build-must-pass':
+    case 'test-must-pass':
+      return `${obligation.type}|${obligation.command}`;
+    case 'function-must-have-signature':
+      return `${obligation.type}|${obligation.file}|${obligation.name}|${obligation.signature}`;
+    case 'property-must-hold':
+      return `${obligation.type}|${obligation.target}|${obligation.predicate}`;
+    case 'import-graph-must-satisfy':
+      return `${obligation.type}|${obligation.scope}|${obligation.constraint}`;
+    case 'coverage-must-exceed':
+      return `${obligation.type}|${obligation.scope}|${obligation.metric}|${obligation.threshold}`;
+    case 'performance-must-not-regress':
+      return `${obligation.type}|${obligation.benchmark}|${obligation.baseline}|${obligation.threshold}`;
   }
-  return `${obligation.type}|${obligation.command}`;
 }
 
 /** Memoization hit, returned by the various lookup methods. */

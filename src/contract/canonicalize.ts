@@ -11,8 +11,8 @@ import {
  *
  * Order is:
  *   1. By type, in the order declared by `OBLIGATION_TYPES`.
- *   2. Within each type, by the obligation's payload field (path or command)
- *      using JS string comparison (UTF-16 code units).
+ *   2. Within each type, by the obligation's payload key (path / command /
+ *      structured tuple) using JS string comparison.
  *
  * The validator already rejects duplicates within a type, so within-type
  * ties cannot occur in valid input.
@@ -31,8 +31,28 @@ export function canonicalSort(obligations: ObligationV1[]): ObligationV1[] {
   return copy;
 }
 
+/**
+ * Stable per-type payload string used as the within-type sort key. Pure
+ * derivation from the obligation fields; no I/O.
+ */
 function payloadValue(o: ObligationV1): string {
-  return o.type === 'file-must-exist' ? o.path : o.command;
+  switch (o.type) {
+    case 'file-must-exist':
+      return o.path;
+    case 'build-must-pass':
+    case 'test-must-pass':
+      return o.command;
+    case 'function-must-have-signature':
+      return `${o.file}|${o.name}|${o.signature}`;
+    case 'property-must-hold':
+      return `${o.target}|${o.predicate}`;
+    case 'import-graph-must-satisfy':
+      return `${o.scope}|${o.constraint}`;
+    case 'coverage-must-exceed':
+      return `${o.scope}|${o.metric}|${o.threshold}`;
+    case 'performance-must-not-regress':
+      return `${o.benchmark}|${o.baseline}|${o.threshold}`;
+  }
 }
 
 /**
@@ -56,25 +76,59 @@ function stableStringifyObligation(o: ObligationV1): string {
   // Phase 5: emit `deterministicStrategy` last so untagged obligations
   // round-trip to the same bytes Phase 4 produced (back-compat for the
   // contract-hash function and for any ledger entries that captured a
-  // pre-Phase-5 contract hash).
-  if (o.type === 'file-must-exist') {
-    if (o.deterministicStrategy !== undefined) {
-      return JSON.stringify({
-        type: o.type,
-        path: o.path,
-        deterministicStrategy: o.deterministicStrategy,
-      });
+  // pre-Phase-5 contract hash). Phase 7 follows the same convention for
+  // the five new types.
+  const det = o.deterministicStrategy;
+  switch (o.type) {
+    case 'file-must-exist': {
+      const base = { type: o.type, path: o.path };
+      return det !== undefined
+        ? JSON.stringify({ ...base, deterministicStrategy: det })
+        : JSON.stringify(base);
     }
-    return JSON.stringify({ type: o.type, path: o.path });
+    case 'build-must-pass':
+    case 'test-must-pass': {
+      const base = { type: o.type, command: o.command };
+      return det !== undefined
+        ? JSON.stringify({ ...base, deterministicStrategy: det })
+        : JSON.stringify(base);
+    }
+    case 'function-must-have-signature': {
+      const base = { type: o.type, file: o.file, name: o.name, signature: o.signature };
+      return det !== undefined
+        ? JSON.stringify({ ...base, deterministicStrategy: det })
+        : JSON.stringify(base);
+    }
+    case 'property-must-hold': {
+      const base = { type: o.type, predicate: o.predicate, target: o.target };
+      return det !== undefined
+        ? JSON.stringify({ ...base, deterministicStrategy: det })
+        : JSON.stringify(base);
+    }
+    case 'import-graph-must-satisfy': {
+      const base = { type: o.type, constraint: o.constraint, scope: o.scope };
+      return det !== undefined
+        ? JSON.stringify({ ...base, deterministicStrategy: det })
+        : JSON.stringify(base);
+    }
+    case 'coverage-must-exceed': {
+      const base = { type: o.type, scope: o.scope, metric: o.metric, threshold: o.threshold };
+      return det !== undefined
+        ? JSON.stringify({ ...base, deterministicStrategy: det })
+        : JSON.stringify(base);
+    }
+    case 'performance-must-not-regress': {
+      const base = {
+        type: o.type,
+        benchmark: o.benchmark,
+        baseline: o.baseline,
+        threshold: o.threshold,
+      };
+      return det !== undefined
+        ? JSON.stringify({ ...base, deterministicStrategy: det })
+        : JSON.stringify(base);
+    }
   }
-  if (o.deterministicStrategy !== undefined) {
-    return JSON.stringify({
-      type: o.type,
-      command: o.command,
-      deterministicStrategy: o.deterministicStrategy,
-    });
-  }
-  return JSON.stringify({ type: o.type, command: o.command });
 }
 
 /**
