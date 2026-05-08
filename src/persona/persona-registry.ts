@@ -2,8 +2,10 @@ import type { PersonaSpec } from './types';
 
 /**
  * Registry of persona specs. Phase 2 ships three: `architect`, `implementer`,
- * `verifier` (impl guide §5). Phase 3 expands the population to 5–7; Phase 7
- * adds security-reviewer, dependency-auditor, documentation-writer, etc.
+ * `verifier` (impl guide §5). Phase 7 expands the population to eight by
+ * adding `security-reviewer`, `dependency-auditor`, `documentation-writer`,
+ * `migration-specialist`, and `test-author` (impl guide §10), one per
+ * Phase 7 obligation type.
  *
  * The registry is a pure in-memory key/value store; persistence happens in
  * the ledger and the contract, not here.
@@ -66,7 +68,9 @@ export class PersonaRegistry {
  * Phase 2 trigger-predicate input: each obligation type maps to at most one
  * persona via `handles`. The split is deliberately simple — Phase 2 runs one
  * persona at a time per obligation, so multiple personas claiming the same
- * obligation type would just race needlessly here.
+ * obligation type would just race needlessly here. Phase 7 adds five more
+ * personas, each owning exactly one of the Phase 7 obligation types so the
+ * predicate evaluator dispatches them unambiguously.
  */
 export const ARCHITECT_PERSONA: PersonaSpec = {
   id: 'architect',
@@ -129,12 +133,185 @@ export const VERIFIER_PERSONA: PersonaSpec = {
 };
 
 /**
- * Build the Phase 2 default registry: architect, implementer, verifier.
- * Returns a fresh registry per call so callers may mutate freely.
+ * Phase 7: security-reviewer. Owns property-must-hold obligations
+ * (impl guide §10 priority-1 persona). Frames the property as a security
+ * predicate: when the predicate fails, propose a patch that restores the
+ * property without weakening other security checks.
+ */
+export const SECURITY_REVIEWER_PERSONA: PersonaSpec = {
+  id: 'security-reviewer',
+  role: 'security-reviewer',
+  systemSuffix: [
+    'You are the security-reviewer persona in the swarm-orchestrator v8',
+    'population. Your job is to satisfy property-must-hold obligations,',
+    'which assert security or invariant predicates over the workspace.',
+    'When a predicate is failing, propose the smallest patch that makes',
+    'it hold without weakening other security checks.',
+    '',
+    'Output one of:',
+    '- A unified diff against repo root that makes the predicate exit zero.',
+    '- The literal text "no-op" when the predicate already holds.',
+    '',
+    'Constraints:',
+    '- Do not disable lint, sast, or test rules to clear a violation.',
+    '- Prefer narrowing input over broadening output (least-privilege).',
+    '- Never weaken authentication or authorization paths.',
+  ].join('\n'),
+  sampling: { temperature: 0.1, maxTokens: 4096 },
+  tier: 'sonnet',
+  handles: ['property-must-hold'] as const,
+};
+
+/**
+ * Phase 7: dependency-auditor. Owns import-graph-must-satisfy obligations
+ * (impl guide §10 priority-2 persona). Reasons about cross-module
+ * structure (cycles, upward imports, layering) and proposes patches that
+ * restore the asserted graph constraint.
+ */
+export const DEPENDENCY_AUDITOR_PERSONA: PersonaSpec = {
+  id: 'dependency-auditor',
+  role: 'dependency-auditor',
+  systemSuffix: [
+    'You are the dependency-auditor persona in the swarm-orchestrator v8',
+    'population. Your job is to satisfy import-graph-must-satisfy',
+    'obligations, which assert structural constraints over the import',
+    'graph (no cycles, no upward imports, etc.). Reason about module',
+    'boundaries before patching.',
+    '',
+    'Output one of:',
+    '- A unified diff against repo root that breaks the offending edges.',
+    '- The literal text "no-op" when the constraint already holds.',
+    '',
+    'Constraints:',
+    '- Prefer extracting a shared module over inlining duplicate code.',
+    '- Never resolve a cycle by introducing dynamic require/import.',
+    '- Do not silence the constraint by renaming the offending file.',
+  ].join('\n'),
+  sampling: { temperature: 0.1, maxTokens: 4096 },
+  tier: 'sonnet',
+  handles: ['import-graph-must-satisfy'] as const,
+};
+
+/**
+ * Phase 7: documentation-writer. Owns function-must-have-signature
+ * obligations (impl guide §10 priority-3 persona). API surface contracts
+ * are a documentation concern: the signature obligation captures the
+ * intended public-facing shape, and this persona keeps the source aligned
+ * with it.
+ */
+export const DOCUMENTATION_WRITER_PERSONA: PersonaSpec = {
+  id: 'documentation-writer',
+  role: 'documentation-writer',
+  systemSuffix: [
+    'You are the documentation-writer persona in the swarm-orchestrator v8',
+    'population. Your job is to satisfy function-must-have-signature',
+    'obligations: ensure named functions declare the contract-specified',
+    'signature in the contract-specified file.',
+    '',
+    'Output one of:',
+    '- A unified diff against repo root that brings the signature into',
+    '  compliance.',
+    '- The literal text "no-op" when the signature already matches.',
+    '',
+    'Constraints:',
+    '- Preserve existing function bodies; only the signature line should',
+    '  change unless the body genuinely depends on a removed parameter.',
+    '- Update doc comments adjacent to the signature so docs and source agree.',
+    '- Never delete an existing public function to silence the obligation.',
+  ].join('\n'),
+  sampling: { temperature: 0.1, maxTokens: 4096 },
+  tier: 'sonnet',
+  handles: ['function-must-have-signature'] as const,
+};
+
+/**
+ * Phase 7: migration-specialist. Owns performance-must-not-regress
+ * obligations (impl guide §10 priority-4 persona). Migrations should
+ * preserve performance budgets; this persona reasons about hot-path
+ * regressions introduced by language/framework moves and patches them.
+ */
+export const MIGRATION_SPECIALIST_PERSONA: PersonaSpec = {
+  id: 'migration-specialist',
+  role: 'migration-specialist',
+  systemSuffix: [
+    'You are the migration-specialist persona in the swarm-orchestrator v8',
+    'population. Your job is to satisfy performance-must-not-regress',
+    'obligations: ensure benchmark output stays within the contract-',
+    'specified threshold versus the recorded baseline. Cross-language /',
+    'cross-framework migrations are a common regression source.',
+    '',
+    'Output one of:',
+    '- A unified diff against repo root that recovers the regression.',
+    '- The literal text "no-op" when the benchmark already meets the budget.',
+    '',
+    'Constraints:',
+    '- Never tamper with the baseline file or the benchmark command itself.',
+    '- Prefer hot-path microsurgery (caching, memoization, fewer allocations)',
+    '  over global rewrites.',
+    '- Surface trade-offs in the diff message when behavior changes are',
+    '  needed to recover the regression.',
+  ].join('\n'),
+  sampling: { temperature: 0.1, maxTokens: 4096 },
+  tier: 'sonnet',
+  handles: ['performance-must-not-regress'] as const,
+};
+
+/**
+ * Phase 7: test-author. Owns coverage-must-exceed obligations (impl guide
+ * §10 priority-5 persona). Specializes in test generation; works
+ * alongside the legacy `verifier` persona which still owns
+ * `test-must-pass`.
+ */
+export const TEST_AUTHOR_PERSONA: PersonaSpec = {
+  id: 'test-author',
+  role: 'test-author',
+  systemSuffix: [
+    'You are the test-author persona in the swarm-orchestrator v8',
+    'population. Your job is to satisfy coverage-must-exceed obligations:',
+    'add or extend tests so the configured coverage metric meets the',
+    'threshold reported in the coverage-summary.json file.',
+    '',
+    'Output one of:',
+    '- A unified diff against repo root that adds tests covering the gap.',
+    '- The literal text "no-op" when coverage already meets the threshold.',
+    '',
+    'Constraints:',
+    '- Tests must exercise real behavior; do not assert tautologies.',
+    '- Never lower the threshold or rewrite the coverage file directly.',
+    '- Prefer black-box tests over implementation-coupled tests.',
+  ].join('\n'),
+  sampling: { temperature: 0.2, maxTokens: 4096 },
+  tier: 'haiku',
+  handles: ['coverage-must-exceed'] as const,
+};
+
+/**
+ * Build the Phase 7 default registry: architect, implementer, verifier,
+ * security-reviewer, dependency-auditor, documentation-writer,
+ * migration-specialist, test-author. Returns a fresh registry per call so
+ * callers may mutate freely.
  */
 export function createDefaultRegistry(): PersonaRegistry {
-  return new PersonaRegistry([ARCHITECT_PERSONA, IMPLEMENTER_PERSONA, VERIFIER_PERSONA]);
+  return new PersonaRegistry([
+    ARCHITECT_PERSONA,
+    IMPLEMENTER_PERSONA,
+    VERIFIER_PERSONA,
+    SECURITY_REVIEWER_PERSONA,
+    DEPENDENCY_AUDITOR_PERSONA,
+    DOCUMENTATION_WRITER_PERSONA,
+    MIGRATION_SPECIALIST_PERSONA,
+    TEST_AUTHOR_PERSONA,
+  ]);
 }
 
-/** The three default persona ids, exported for convenience. */
-export const DEFAULT_PERSONA_IDS = ['architect', 'implementer', 'verifier'] as const;
+/** The eight default persona ids, exported for convenience. */
+export const DEFAULT_PERSONA_IDS = [
+  'architect',
+  'implementer',
+  'verifier',
+  'security-reviewer',
+  'dependency-auditor',
+  'documentation-writer',
+  'migration-specialist',
+  'test-author',
+] as const;

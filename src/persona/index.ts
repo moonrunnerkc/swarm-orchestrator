@@ -10,8 +10,13 @@ export type { ModelTier, PersonaSampling, PersonaSpec } from './types';
 export {
   ARCHITECT_PERSONA,
   DEFAULT_PERSONA_IDS,
+  DEPENDENCY_AUDITOR_PERSONA,
+  DOCUMENTATION_WRITER_PERSONA,
   IMPLEMENTER_PERSONA,
+  MIGRATION_SPECIALIST_PERSONA,
   PersonaRegistry,
+  SECURITY_REVIEWER_PERSONA,
+  TEST_AUTHOR_PERSONA,
   VERIFIER_PERSONA,
   createDefaultRegistry,
 } from './persona-registry';
