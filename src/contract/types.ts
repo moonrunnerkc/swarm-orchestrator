@@ -197,6 +197,15 @@ export interface RepoContext {
   testCommand: string | null;
   /** Detected primary language, or 'unknown' when no signal. */
   language: 'typescript' | 'javascript' | 'python' | 'unknown';
+  /**
+   * Detected test framework, or null when no signal. Populated by
+   * `discoverRepoContext` from package.json devDependencies / dependencies
+   * and the test script. Architects rendering test files use this to pick
+   * the right test API (assert/expect/test/it shape) instead of guessing.
+   * Optional for back-compat with manifests written before this field was
+   * added; new manifests always set it (possibly to null).
+   */
+  testFramework?: 'jest' | 'mocha' | 'vitest' | 'node-test' | 'pytest' | null;
 }
 
 /**

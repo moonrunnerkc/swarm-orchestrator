@@ -1,5 +1,5 @@
 import * as crypto from 'crypto';
-import type { FinalContract, ObligationV1 } from '../contract/types';
+import type { ContractManifest, FinalContract, ObligationV1, RepoContext } from '../contract/types';
 import type { JsonlLedger } from '../ledger/jsonl-ledger';
 import { MemoStore, obligationKey } from '../ledger/memoization';
 import type {
@@ -386,6 +386,12 @@ export async function runPopulation(
     });
 
     if (mode === 'tournament') {
+      const tournamentRenderCtx = buildRenderContext(
+        obligation,
+        repoRoot,
+        contract.manifest,
+        commandTimeoutMs,
+      );
       const result = await executeTournament({
         obligation,
         obligationIndex,
@@ -397,6 +403,7 @@ export async function runPopulation(
         commandTimeoutMs,
         tournamentConfig: options.tournamentConfig,
         memoStore,
+        renderContext: tournamentRenderCtx,
       });
       totalUsage = addUsage(totalUsage, result.tournament.usage);
       verifierCallsSavedByMemoization += result.tournament.verifierCallsSavedByMemoization;
@@ -430,7 +437,13 @@ export async function runPopulation(
     }
 
     // Single mode (Phase 2 path; Phase 6 layers streaming on top).
-    const dynamic = renderDynamicMessage(obligation, repoRoot);
+    const renderCtx = buildRenderContext(
+      obligation,
+      repoRoot,
+      contract.manifest,
+      commandTimeoutMs,
+    );
+    const dynamic = renderDynamicMessage(obligation, repoRoot, renderCtx);
     const sessionRequest = {
       personaId: persona.id,
       personaSystemSuffix: persona.systemSuffix,
@@ -517,7 +530,30 @@ export async function runPopulation(
 
     const verifyOpts: Parameters<typeof verifyObligation>[1] = { repoRoot };
     if (commandTimeoutMs !== undefined) verifyOpts.commandTimeoutMs = commandTimeoutMs;
-    const verifyResult = verifyObligation(obligation, verifyOpts);
+    let verifyResult = verifyObligation(obligation, verifyOpts);
+
+    // Defense-in-depth: when the architect just wrote a test file and the
+    // contract knows the project's test framework, sanity-check the file
+    // against that framework. The standard verifier only checks file
+    // existence; without this guard a test file written with the wrong
+    // framework's API passes file-must-exist, breaks build/test in
+    // confusing ways downstream, and post-merge has to surface the
+    // failure with a stack trace instead of "wrong test framework". This
+    // promotes the misalignment into a precise, persona-attributable
+    // obligation failure.
+    if (
+      verifyResult.satisfied &&
+      obligation.type === 'file-must-exist' &&
+      renderCtx.testFramework &&
+      isTestFilePath(obligation.path)
+    ) {
+      const misuse = detectTestFrameworkMisuse(
+        repoRoot,
+        obligation.path,
+        renderCtx.testFramework,
+      );
+      if (misuse) verifyResult = { satisfied: false, detail: misuse };
+    }
 
     if (verifyResult.satisfied) {
       builder.setStatus(obligationIndex, 'satisfied');
@@ -732,11 +768,48 @@ async function dispatchDeterministic(
 }
 
 /**
+ * Optional pre-computed context the manager builds and threads into the
+ * persona prompt. Each field addresses a real failure mode observed in
+ * production runs:
+ *
+ *   - `commandFailureTail`: for command-shaped obligations (build / test /
+ *     property / coverage / performance) the manager pre-runs the verifier
+ *     once and embeds the failure tail. Without this, the implementer is
+ *     told to "make build pass" with zero signal about why it's failing,
+ *     and historically responded with off-target diffs (e.g. creating new
+ *     files at unrelated paths). Pre-running is cheap because the
+ *     post-merge check already pays for it.
+ *
+ *   - `testFramework`: for `file-must-exist` targeting a test file
+ *     (`.test.`, `.spec.`, `__tests__/`, `_test.py`), the architect needs
+ *     to know which test API is in scope. Without this hint the architect
+ *     defaults to the most-common-on-the-internet API (Jest) and writes
+ *     `expect(x).toBe(y)` into projects that use `node --test` /
+ *     `node:assert` and don't have Jest installed. Discovered by
+ *     `discoverRepoContext` from package.json deps; passed through
+ *     verbatim.
+ */
+export interface RenderContext {
+  commandFailureTail?: string;
+  testFramework?: 'jest' | 'mocha' | 'vitest' | 'node-test' | 'pytest' | null;
+}
+
+/**
  * Build the per-call user message for an obligation. The contract context
  * (goal, repo summary) is sent once via the cached system block; only the
  * per-obligation specifics go here so cache hits dominate.
+ *
+ * The optional `context` parameter carries pre-computed diagnostics
+ * (command failure tail, test-framework hint). The fallback shape (no
+ * context) is preserved for callers — tests, the tournament harness's
+ * default `renderUserMessage`, and any future caller that wants the
+ * minimal prompt.
  */
-export function renderDynamicMessage(obligation: ObligationV1, repoRoot: string): string {
+export function renderDynamicMessage(
+  obligation: ObligationV1,
+  repoRoot: string,
+  context?: RenderContext,
+): string {
   const lines = [
     `Obligation:`,
     JSON.stringify(obligation),
@@ -745,23 +818,52 @@ export function renderDynamicMessage(obligation: ObligationV1, repoRoot: string)
     '',
   ];
   switch (obligation.type) {
-    case 'file-must-exist':
+    case 'file-must-exist': {
+      // For test files, the framework hint goes FIRST and is the most
+      // important line in the prompt: it has historically been the
+      // single highest-impact instruction (Sonnet defaults to Jest API
+      // when unhinted, breaking node:test / Mocha / Vitest projects).
+      // Promoting the hint above the generic "emit a fenced block"
+      // instruction makes it structurally salient.
+      const fwHint = renderTestFrameworkHint(obligation.path, context?.testFramework ?? null);
+      if (fwHint) {
+        lines.push('REQUIRED:', fwHint, '');
+      }
       lines.push(`Emit the file content for ${obligation.path}.`);
       lines.push(
         'Wrap the file body in a single fenced code block. No prose outside the fences.',
       );
       break;
+    }
     case 'build-must-pass':
       lines.push(`The repository must satisfy: ${obligation.command}`);
       lines.push('If the build is already passing, output the literal text "no-op".');
       lines.push(
         'Otherwise output a unified diff against repo root that makes the build pass.',
       );
+      lines.push(
+        'Use repo-relative paths in diff headers (`--- a/path` and `+++ b/path`); never write outside existing files unless the diff explicitly creates a new path the obligation requires.',
+      );
+      if (context?.testFramework) {
+        lines.push(renderFrameworkPreservationHint(context.testFramework));
+      }
+      if (context?.commandFailureTail) {
+        lines.push('', renderFailureBlock(obligation.command, context.commandFailureTail));
+      }
       break;
     case 'test-must-pass':
       lines.push(`The repository must satisfy: ${obligation.command}`);
       lines.push('If tests already pass, output the literal text "no-op".');
       lines.push('Otherwise output a unified diff against repo root that makes tests pass.');
+      lines.push(
+        'Use repo-relative paths in diff headers; never write outside existing files unless the diff explicitly creates a path the obligation requires.',
+      );
+      if (context?.testFramework) {
+        lines.push(renderFrameworkPreservationHint(context.testFramework));
+      }
+      if (context?.commandFailureTail) {
+        lines.push('', renderFailureBlock(obligation.command, context.commandFailureTail));
+      }
       break;
     case 'function-must-have-signature':
       lines.push(
@@ -782,6 +884,9 @@ export function renderDynamicMessage(obligation: ObligationV1, repoRoot: string)
       lines.push(
         'Otherwise output a unified diff against repo root that makes the predicate pass.',
       );
+      if (context?.commandFailureTail) {
+        lines.push('', renderFailureBlock(obligation.predicate, context.commandFailureTail));
+      }
       break;
     case 'import-graph-must-satisfy':
       lines.push(
@@ -812,9 +917,208 @@ export function renderDynamicMessage(obligation: ObligationV1, repoRoot: string)
       lines.push(
         'Otherwise output a unified diff against repo root that recovers the regression.',
       );
+      if (context?.commandFailureTail) {
+        lines.push('', renderFailureBlock(obligation.benchmark, context.commandFailureTail));
+      }
       break;
   }
   return lines.join('\n');
+}
+
+/**
+ * Decide whether a `file-must-exist` path looks like a test file, and if
+ * so render a one-line hint naming the project's test framework. The hint
+ * is deliberately prescriptive: when we know the framework, the architect
+ * MUST use that framework's API, because the default-without-hint is
+ * Jest-shaped (test/expect) and lands broken in node:test / Mocha /
+ * Vitest projects. When framework is null we say nothing — over-specifying
+ * is worse than under-specifying.
+ */
+function renderTestFrameworkHint(
+  relPath: string,
+  framework: RepoContext['testFramework'],
+): string | null {
+  if (!isTestFilePath(relPath)) return null;
+  switch (framework) {
+    case 'jest':
+      return 'This is a test file. Use Jest API: `import { ... } from \'@jest/globals\'` (or rely on globals), `describe`, `test`/`it`, `expect(x).toBe(y)`. Do NOT mix in node:test or Mocha imports.';
+    case 'vitest':
+      return 'This is a test file. Use Vitest API: `import { describe, it, expect } from \'vitest\'`. Do NOT mix in Jest, node:test, or Mocha imports.';
+    case 'mocha':
+      return 'This is a test file. Use Mocha API: `import { describe, it } from \'mocha\'` plus an assertion library that the project already depends on (typically `chai` or `node:assert`). Do NOT use Jest `expect(x).toBe(y)`.';
+    case 'node-test':
+      return 'This is a test file. Use Node.js built-in test runner: `import { describe, it } from \'node:test\'` and `import assert from \'node:assert/strict\'`. Use `assert.equal(actual, expected)` (or `assert.deepEqual`); do NOT use Jest `expect(...).toBe(...)` — node:test has no `expect`. Import source files using extension-less paths that match the project\'s tsconfig moduleResolution.';
+    case 'pytest':
+      return 'This is a test file. Use pytest API: `def test_xxx():` with plain `assert <expr>`. Do NOT use unittest.TestCase classes unless the project already does.';
+    case null:
+    case undefined:
+      return null;
+  }
+}
+
+const TEST_FILE_PATTERN = /(\.|_)(test|spec)\.[a-zA-Z0-9]+$|(^|\/)__tests__\//;
+
+/** Predicate used by the architect's test-framework hint and by tests. */
+export function isTestFilePath(relPath: string): boolean {
+  return TEST_FILE_PATTERN.test(relPath);
+}
+
+/**
+ * Detect when a freshly-written test file uses a different framework's
+ * API than the project's. Returns a human-readable failure detail when a
+ * misuse is found, or `null` when the file aligns with the framework.
+ *
+ * The check is deliberately conservative: only obvious cross-framework
+ * imports / API references trip it. Two frameworks that look identical
+ * at the API surface (e.g. Jest and Vitest both use `describe`/`it`/
+ * `expect`) are not flagged against each other; the cost of a false
+ * positive — telling the architect to rewrite a perfectly valid file —
+ * is higher than the cost of letting an ambiguous case through.
+ */
+function detectTestFrameworkMisuse(
+  repoRoot: string,
+  relPath: string,
+  framework: NonNullable<RenderContext['testFramework']>,
+): string | null {
+  const fs = require('fs') as typeof import('fs');
+  const path = require('path') as typeof import('path');
+  const abs = path.isAbsolute(relPath) ? relPath : path.join(repoRoot, relPath);
+  let body: string;
+  try {
+    body = fs.readFileSync(abs, 'utf8');
+  } catch {
+    return null;
+  }
+  const usesJestExpect = /\bexpect\s*\(/.test(body) && /\.\s*to(Be|Equal|StrictEqual|HaveLength|Contain|MatchObject|Throw)/i.test(body);
+  const importsNodeTest = /from\s+['"]node:test['"]/.test(body) || /from\s+['"]node:assert/.test(body);
+  const importsJestGlobals = /from\s+['"]@jest\/globals['"]/.test(body);
+  const importsVitest = /from\s+['"]vitest['"]/.test(body);
+  const importsMocha = /from\s+['"]mocha['"]/.test(body);
+
+  const wrong = (msg: string): string =>
+    `architect wrote ${relPath} using the wrong test framework for this project (project uses ${framework}). ${msg} Re-emit using the project's framework API.`;
+
+  switch (framework) {
+    case 'node-test':
+      if (usesJestExpect) return wrong('File uses Jest-style `expect(x).toBe(y)`, which node:test does not support.');
+      if (importsJestGlobals) return wrong('File imports from `@jest/globals`.');
+      if (importsVitest) return wrong('File imports from `vitest`.');
+      if (importsMocha) return wrong('File imports from `mocha`.');
+      return null;
+    case 'jest':
+      if (importsNodeTest) return wrong('File imports from `node:test` / `node:assert`.');
+      if (importsVitest) return wrong('File imports from `vitest`.');
+      if (importsMocha) return wrong('File imports from `mocha`.');
+      return null;
+    case 'vitest':
+      if (importsNodeTest) return wrong('File imports from `node:test` / `node:assert`.');
+      if (importsJestGlobals) return wrong('File imports from `@jest/globals`.');
+      if (importsMocha) return wrong('File imports from `mocha`.');
+      return null;
+    case 'mocha':
+      if (usesJestExpect) return wrong('File uses Jest-style `expect(x).toBe(y)`; Mocha + chai uses `expect(x).to.equal(y)`.');
+      if (importsNodeTest) return wrong('File imports from `node:test` / `node:assert`.');
+      if (importsJestGlobals) return wrong('File imports from `@jest/globals`.');
+      if (importsVitest) return wrong('File imports from `vitest`.');
+      return null;
+    case 'pytest':
+      // Python misuse detection deferred — pytest doesn't have a single
+      // confusable peer to flag against, and the LLM-emitted-Python path
+      // is rare enough not to justify hard-coding rules here yet.
+      return null;
+  }
+}
+
+/**
+ * For build/test obligations, tell the implementer/verifier to preserve
+ * the project's existing test framework. Without this, the verifier
+ * historically rewrote the architect's already-correct test files into a
+ * different framework's API (typically Jest) on the assumption that
+ * Jest is the universal default. The result was a "test-must-pass" diff
+ * that broke "build-must-pass" and required manual fixup.
+ */
+function renderFrameworkPreservationHint(
+  framework: NonNullable<RenderContext['testFramework']>,
+): string {
+  return (
+    `This project uses the **${framework}** test framework. Preserve it. ` +
+    'Do not switch test frameworks (no Jest in node:test projects, no node:test in Jest projects, etc.) ' +
+    'and do not add a different framework to package.json. Fix the failure within the existing framework.'
+  );
+}
+
+function renderFailureBlock(command: string, tail: string): string {
+  // Cap tail length so the prompt stays bounded; the tail is meant to
+  // surface error messages and stack frames, not a full log.
+  const capped = tail.length > 2000 ? tail.slice(-2000) : tail;
+  return [
+    `The verifier ran \`${command}\` against the current workspace and it failed. Tail of stderr+stdout:`,
+    '```',
+    capped,
+    '```',
+    'Diagnose the failure from this output and produce the smallest diff that fixes the root cause. Do not write speculative files.',
+  ].join('\n');
+}
+
+/**
+ * Pre-run a command-shaped obligation's verifier to capture failure
+ * detail. Returns null when the obligation already passes (no failure
+ * tail to surface) or when the obligation type is not command-shaped.
+ *
+ * Used by the manager to build a `RenderContext` immediately before
+ * dispatching the obligation. Cost: one verifier call per command-shaped
+ * obligation that's about to be synthesized. The post-merge check already
+ * runs every verifier once, so the marginal cost is one extra
+ * pre-dispatch run per command obligation. In return, the persona prompt
+ * carries the actual error, which collapses round-after-round
+ * misdiagnosis into a single targeted patch.
+ */
+function preRunCommandVerifier(
+  obligation: ObligationV1,
+  options: Parameters<typeof verifyObligation>[1],
+): string | null {
+  if (
+    obligation.type !== 'build-must-pass' &&
+    obligation.type !== 'test-must-pass' &&
+    obligation.type !== 'property-must-hold' &&
+    obligation.type !== 'performance-must-not-regress'
+  ) {
+    return null;
+  }
+  const r = verifyObligation(obligation, options);
+  if (r.satisfied) return null;
+  // verifyObligation's `detail` already contains "command \"X\" exited N;
+  // tail: <up to 512 chars>" — we surface that tail directly to the
+  // persona because re-running here would double the wall time.
+  const m = r.detail.match(/tail:\s*([\s\S]+)$/);
+  if (m && m[1]) return m[1].trim();
+  return r.detail;
+}
+
+/**
+ * Build a `RenderContext` for a single obligation. Pure for
+ * `file-must-exist` (just consults the manifest); side-effecting for
+ * command-shaped obligations (runs the verifier once to capture the
+ * failure tail). The verify call is bounded by the manager's
+ * `commandTimeoutMs`.
+ */
+function buildRenderContext(
+  obligation: ObligationV1,
+  repoRoot: string,
+  manifest: ContractManifest,
+  commandTimeoutMs: number | undefined,
+): RenderContext {
+  const ctx: RenderContext = {};
+  if (obligation.type === 'file-must-exist') {
+    const fw = manifest.repoContext.testFramework ?? null;
+    if (fw !== null) ctx.testFramework = fw;
+  } else {
+    const verifyOpts: Parameters<typeof verifyObligation>[1] = { repoRoot };
+    if (commandTimeoutMs !== undefined) verifyOpts.commandTimeoutMs = commandTimeoutMs;
+    const tail = preRunCommandVerifier(obligation, verifyOpts);
+    if (tail) ctx.commandFailureTail = tail;
+  }
+  return ctx;
 }
 
 function sha256(s: string): string {
@@ -837,6 +1141,12 @@ interface ExecuteTournamentArgs {
   commandTimeoutMs: number | undefined;
   tournamentConfig: RunPopulationOptions['tournamentConfig'];
   memoStore: MemoStore | undefined;
+  /**
+   * Pre-computed render context (command failure tail, test framework
+   * hint). Threaded through to the per-candidate prompt so every
+   * tournament candidate sees the same diagnostic input as single mode.
+   */
+  renderContext: RenderContext;
 }
 
 interface ExecuteTournamentResult {
@@ -914,7 +1224,7 @@ async function executeTournament(args: ExecuteTournamentArgs): Promise<ExecuteTo
     session,
     personas,
     config,
-    renderUserMessage: (o) => renderDynamicMessage(o, repoRoot),
+    renderUserMessage: (o) => renderDynamicMessage(o, repoRoot, args.renderContext),
     applyCandidate: async (candidate: TournamentCandidate, ob: ObligationV1) => {
       const applyDetail = applyTournamentCandidate(repoRoot, ob, candidate.response.text);
       const verifyOpts: Parameters<typeof verifyObligation>[1] = { repoRoot };

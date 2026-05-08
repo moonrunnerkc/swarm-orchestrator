@@ -226,14 +226,19 @@ describe('README Verification', () => {
       assert.ok(content.length > 1000, 'README should have substantial content');
     });
 
-    it('README should mention key features', () => {
+    it('README should mention v8 architecture features', () => {
       const readmePath = path.join(rootDir, 'README.md');
       const content = fs.readFileSync(readmePath, 'utf-8');
 
-      assert.match(content, /falsification/i, 'README should mention the falsification battery');
-      assert.match(content, /attestation/i, 'README should mention attestation');
-      assert.match(content, /worker.*reviewer|reviewer.*worker/is, 'README should mention worker and reviewer roles');
-      assert.match(content, /verification/i, 'README should mention verification');
+      // The v8 README is the surface truth post-2026-05 cutover.
+      // Claims here track the headline v8 capabilities documented in
+      // docs/v8-implementation-guide.md and verified by the e2e report.
+      assert.match(content, /contract/i, 'README should mention the contract compiler');
+      assert.match(content, /persona/i, 'README should mention personas');
+      assert.match(content, /tournament/i, 'README should mention tournament synthesis');
+      assert.match(content, /ledger/i, 'README should mention the hash-chained ledger');
+      assert.match(content, /verification|verifier/i, 'README should mention verification');
+      assert.match(content, /streaming/i, 'README should mention streaming verification');
     });
   });
 });
