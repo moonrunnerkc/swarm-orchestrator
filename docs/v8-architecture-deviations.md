@@ -512,3 +512,160 @@ obligation index is the ledger evidence that the deterministic
 floor sidestepped the synthesis cost.
 
 **Status:** locked in for the v1 ledger shape.
+
+## Phase 6
+
+### Deviation 1: streaming applies to single mode only; tournament mode skips streaming
+
+**Section:** v8-implementation-guide.md §9 (Phase 6 deliverable —
+"`src/verification/streaming-verifier.ts`: receives partial
+generation output from the Anthropic streaming API at intervals.").
+
+**What §9 specifies:** §9 is silent on whether streaming layers on
+top of tournament-mode generation as well as single-mode.
+
+**What was done:** the population manager routes streaming through
+`session.stream()` only when `mode === 'single'`. Tournament-mode
+candidate generation continues to use `session.complete()`. The
+streaming-verifier module itself is mode-agnostic; the manager
+chooses where to wire it in.
+
+**Rationale:** tournament mode races N candidates in parallel and
+the cheap verifier picks the winner. Mid-stream abort during a
+tournament round breaks the race fairness — the aborted candidate's
+generation cost is finalized at abort time while sibling candidates
+continue, so a "doomed" candidate that aborts early would
+artificially bias the tournament outcome by appearing cheaper without
+the verifier ever seeing its full content. Tournament mode already
+discards losing candidates after scoring, so the streaming-abort
+savings duplicates work the cheap verifier's score-then-discard path
+already captures. Streaming for tournament mode is logged as a
+Phase 7 follow-up.
+
+**Status:** revisitable at Phase 7 once the tournament loop has a
+mid-round abort path that doesn't break the race fairness.
+
+### Deviation 2: post-merge failure marks the run failed without auto-rollback
+
+**Section:** v8-implementation-guide.md §9 (Phase 6 — "If post-merge
+verification fails, the entire run is marked failed and rolled
+back.").
+
+**What §9 specifies:** post-merge failure should "roll back" the
+run.
+
+**What was done:** post-merge failure flips the run's `failed`
+counter to non-zero (the CLI exit code becomes 2) and emits a
+`post-merge-verified` ledger entry with per-obligation outcomes.
+The workspace is **not** auto-reverted to its pre-run state.
+
+**Rationale:** rolling back the workspace would require either (a)
+a per-obligation snapshot stack the manager unwinds on failure or
+(b) a git-level reset (`git reset --hard HEAD`) that erases the
+user's pre-existing uncommitted work. (a) doubles every obligation's
+write surface and grows linearly with run length; (b) is destructive
+in ways the user can't anticipate. The Phase 6 substitute — exit
+code 2 plus a ledger entry that names every regressed obligation —
+gives the user every piece of evidence they need to decide whether
+to `git reset` themselves, re-run with a refined contract, or
+hand-fix the regression. The audit trail is symmetric with the
+deterministic / synthesis success paths; rollback policy is a user
+decision, not a manager decision.
+
+**Status:** revisitable when the manager gains a per-obligation
+snapshot primitive (e.g., a Phase 7 git-worktree-per-obligation
+strategy). At that point auto-rollback becomes cheap and the
+deviation can flip.
+
+### Deviation 3: streaming verifier ships only the forbidden-imports assertion by default
+
+**Section:** v8-implementation-guide.md §9 (Phase 6 — checkable
+assertions on partial output).
+
+**What §9 specifies:** §9 names "imports must include X" as an
+example assertion class; the language implies the streaming
+verifier should ship a richer default library.
+
+**What was done:** the default streaming-verifier configuration
+ships exactly one assertion: `forbidden-imports`, configurable per
+run via `--forbid-import <names>` and the
+`StreamingVerifierConfig.forbiddenImports` field. The
+`StreamingVerifierConfig.extraAssertions` extension point lets
+callers register additional assertions programmatically.
+
+**Rationale:** §9's exit criterion ("a run with a deliberately
+doomed obligation aborts mid-generation") only requires that the
+abort mechanism work end-to-end with one demonstrable assertion.
+Shipping a richer assertion library would invite false positives on
+production code without the benchmark coverage to back the defaults
+up. The forbidden-imports assertion is the demonstrable one (it
+matches the §9 example phrasing), and the extension point keeps the
+surface open for project-specific assertions without committing v8
+to a one-size-fits-all default.
+
+**Status:** revisitable at Phase 7. Likely additions:
+`required-exports` (target signature must appear by the end of
+generation), `forbidden-tokens` (security-sensitive APIs the
+contract forbids), `path-shape-coherence` (file body matches the
+expected file extension's syntactic shape).
+
+### Deviation 4: streaming-verifier output-token attribution understates input billing on abort
+
+**Section:** v8-implementation-guide.md §9 (Phase 6 — "Tokens
+generated to that point are still billed; tokens not generated are
+saved.").
+
+**What §9 specifies:** the abort path bills tokens generated up to
+the abort point.
+
+**What was done:** when the Anthropic streaming abort path can't
+recover a final-message usage payload, the manager records a
+`candidate-stream-aborted` entry with `usageAtAbort` that may report
+zero input tokens (the cached prefix is still billed at the provider
+level but the SDK's post-abort accounting may not surface it). The
+StubSession path reports input tokens normally.
+
+**Rationale:** the SDK abort behavior on `controller.abort()` is
+not contractually guaranteed to produce a usage-bearing final
+message. Reporting zero input on abort is conservative for the
+cost-saving claim (it understates billing, never overstates) and
+keeps the ledger entry shape stable. The Phase 6 benchmark measures
+**output** tokens specifically because the input side has this
+provider-dependent quirk; the §9 (b) "Token savings on aborted
+generations" claim holds on the output axis without depending on
+input attribution.
+
+**Status:** revisitable when the Anthropic SDK guarantees
+usage-on-abort, or when v8 implements its own provider-side token
+accounting for abort cases.
+
+### Deviation 5: pre-generation pass is opt-in via runPopulation; opt-out via CLI flag
+
+**Section:** v8-implementation-guide.md §9 (Phase 6 — "Pre-generation
+verification: skip obligations already satisfied. Implemented in
+Phase 4 memoization, formalized here.").
+
+**What §9 specifies:** §9 frames pre-generation as a formalization
+of Phase 4 memoization.
+
+**What was done:** pre-generation verification ships as a separate
+manager option (`preGeneration: boolean`) emitting a distinct
+ledger entry type (`obligation-pre-verified`) — not folded into the
+existing memoization layer. The CLI defaults `preGeneration` to ON
+and exposes `--no-pre-generation` to opt out.
+
+**Rationale:** Phase 4 memoization queries the **prior ledger** for
+identical obligation keys; pre-generation queries the **live
+workspace** for already-satisfied obligations. Same audit category
+("the obligation is satisfied without synthesis"), distinct evidence
+sources. Sharing a ledger entry type would conflate "I trust the
+prior run's result" with "I checked the workspace right now"; the
+governance audience cares about which one fired. Pre-existing tests
+that assert pre-Phase-6 behaviour (specific session call counts,
+specific cache hit rates) opt out via the CLI flags so their
+assertions hold.
+
+**Status:** locked in for the v1 ledger shape. The two paths can
+share a downstream "skipped synthesis" rollup metric without
+collapsing the on-disk evidence.
+
