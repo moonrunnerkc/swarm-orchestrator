@@ -77,6 +77,11 @@ describe('integration: swarm v8 resume', () => {
         '--result', result1Path,
         '--run-id', 'partial-run',
         '--max-obligations', '5',
+        // Phase 6 features add pre-generation + post-merge passes; this
+        // test asserts Phase 4 behavior (memoization), so opt out.
+        '--no-streaming',
+        '--no-pre-generation',
+        '--no-post-merge',
       ],
       { session: session1 },
     );
@@ -106,6 +111,9 @@ describe('integration: swarm v8 resume', () => {
         '--repo-root', work,
         '--session', 'stub',
         '--result', result2Path,
+        '--no-streaming',
+        '--no-pre-generation',
+        '--no-post-merge',
       ],
       { session: session2 },
     );
@@ -161,6 +169,9 @@ describe('integration: swarm v8 resume', () => {
         '--ledger', ledgerPath,
         '--run-id', 'orig',
         '--max-obligations', '2',
+        '--no-streaming',
+        '--no-pre-generation',
+        '--no-post-merge',
       ],
       { session: session1 },
     );

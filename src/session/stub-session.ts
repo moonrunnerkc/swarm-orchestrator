@@ -1,4 +1,13 @@
-import { addUsage, emptyUsage, type Session, type SessionRequest, type SessionResponse, type SessionUsage } from './types';
+import {
+  addUsage,
+  emptyUsage,
+  type Session,
+  type SessionRequest,
+  type SessionResponse,
+  type SessionStreamObserver,
+  type SessionStreamResult,
+  type SessionUsage,
+} from './types';
 
 /**
  * Generator function: given the persona id and the dynamic user message,
@@ -19,6 +28,13 @@ export interface StubSessionOptions {
    * that assert calls happened, not specific text.
    */
   responder?: StubResponder;
+  /**
+   * Phase 6: chunk size used by the simulated streaming path. The stub
+   * splits the responder's output into chunks of this size and feeds the
+   * observer one chunk at a time. Defaults to 32 chars; tests may shrink
+   * to 1 to exercise per-character abort timing.
+   */
+  streamChunkSize?: number;
 }
 
 /**
@@ -39,11 +55,13 @@ export class StubSession implements Session {
   private readonly contextText: string;
   private readonly modelId: string;
   private readonly responder: StubResponder;
+  private readonly streamChunkSize: number;
 
   constructor(options: StubSessionOptions) {
     this.contextText = options.projectContext;
     this.modelId = options.model ?? 'stub-model';
     this.responder = options.responder ?? defaultResponder;
+    this.streamChunkSize = options.streamChunkSize ?? 32;
   }
 
   projectContext(): string {
@@ -89,6 +107,76 @@ export class StubSession implements Session {
       usage,
       model: this.modelId,
       stopReason: 'end_turn',
+    };
+  }
+
+  /**
+   * Phase 6: simulated streaming. The stub computes the full responder
+   * output up front and slices it into `streamChunkSize`-character
+   * chunks, feeding the observer one chunk at a time. When the observer
+   * returns `abort`, only the partial text observed up to that chunk
+   * counts toward output usage; cache reads/writes for the prefix are
+   * billed identically to `complete()`.
+   */
+  async stream(
+    request: SessionRequest,
+    observer: SessionStreamObserver,
+  ): Promise<SessionStreamResult> {
+    const callIndex = this.callCount;
+    this.callCount += 1;
+    const fullText = this.responder(request, callIndex);
+
+    const contextTokens = estimateTokens(this.contextText);
+    const personaTokens = estimateTokens(request.personaSystemSuffix);
+    const dynamicTokens = estimateTokens(request.userMessage);
+    const nonCacheInput = personaTokens + dynamicTokens;
+
+    let partialText = '';
+    let aborted = false;
+    let abortReason: string | null = null;
+    const chunkSize = Math.max(1, this.streamChunkSize);
+    for (let i = 0; i < fullText.length; i += chunkSize) {
+      const chunk = fullText.slice(i, i + chunkSize);
+      partialText += chunk;
+      const decision = observer({
+        partialText,
+        chunk,
+        charsObserved: partialText.length,
+      });
+      if (decision.kind === 'abort') {
+        aborted = true;
+        abortReason = decision.reason;
+        break;
+      }
+    }
+
+    const finalText = aborted ? partialText : fullText;
+    const outputTokens = estimateTokens(finalText);
+    const usage: SessionUsage =
+      callIndex === 0
+        ? {
+            inputTokens: nonCacheInput,
+            cacheReadTokens: 0,
+            cacheCreationTokens: contextTokens,
+            outputTokens,
+          }
+        : {
+            inputTokens: nonCacheInput,
+            cacheReadTokens: contextTokens,
+            cacheCreationTokens: 0,
+            outputTokens,
+          };
+    this.cumulative = addUsage(this.cumulative, usage);
+
+    return {
+      response: {
+        text: finalText,
+        usage,
+        model: this.modelId,
+        stopReason: aborted ? 'observer_abort' : 'end_turn',
+      },
+      aborted,
+      abortReason,
     };
   }
 }

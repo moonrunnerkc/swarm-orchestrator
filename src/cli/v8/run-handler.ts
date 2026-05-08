@@ -36,6 +36,28 @@ export interface RunFlags {
    * tournament-only vs. deterministic-floor cost.
    */
   deterministic: boolean;
+  /**
+   * Phase 6: when false, the streaming-verifier path is disabled and
+   * single-mode generation falls back to non-streaming
+   * `session.complete()`. Default true.
+   */
+  streaming: boolean;
+  /**
+   * Phase 6: when false, the post-merge integration check is skipped.
+   * Default true.
+   */
+  postMerge: boolean;
+  /**
+   * Phase 6: when false, the pre-generation verification pass is
+   * skipped. Default true.
+   */
+  preGeneration: boolean;
+  /**
+   * Phase 6: comma-separated forbidden-import names. The streaming
+   * verifier aborts mid-generation when any is observed in the partial
+   * output. Empty list disables the assertion.
+   */
+  forbiddenImports: string[];
 }
 
 /** Test seam: lets tests inject a custom session, registry, or WASM runtime. */
@@ -107,7 +129,12 @@ export async function handleRun(
     session,
     ledger,
     mode: flags.mode,
+    preGeneration: flags.preGeneration,
+    postMerge: flags.postMerge,
   };
+  if (flags.streaming) {
+    runOptions.streaming = { forbiddenImports: flags.forbiddenImports };
+  }
   if (wasmRuntime) runOptions.wasmRuntime = wasmRuntime;
   if (flags.maxObligations !== null) runOptions.maxObligations = flags.maxObligations;
   if (flags.commandTimeoutMs !== null) runOptions.commandTimeoutMs = flags.commandTimeoutMs;
@@ -145,6 +172,15 @@ export async function handleRun(
   logger.info(
     `deterministic: ${result.deterministicObligations} satisfied / ${result.deterministicReroutes} rerouted`,
   );
+  logger.info(`pre-verified:  ${result.preVerifiedObligations} obligations`);
+  logger.info(
+    `streaming:     ${result.streamingAbortedCandidates} aborted (${result.streamingCharsBeforeAbort} chars before abort)`,
+  );
+  if (result.postMerge) {
+    logger.info(
+      `post-merge:    ${result.postMerge.passed ? 'PASS' : 'FAIL'} (${result.postMerge.failedCount}/${result.postMerge.obligationCount} regressed)`,
+    );
+  }
   logger.info(
     `tokens (in):   ${result.totalUsage.inputTokens} std + ${result.totalUsage.cacheReadTokens} cache-read + ${result.totalUsage.cacheCreationTokens} cache-write`,
   );
@@ -167,6 +203,10 @@ export async function handleRun(
       verifierCallsSavedByMemoization: result.verifierCallsSavedByMemoization,
       deterministicObligations: result.deterministicObligations,
       deterministicReroutes: result.deterministicReroutes,
+      preVerifiedObligations: result.preVerifiedObligations,
+      streamingAbortedCandidates: result.streamingAbortedCandidates,
+      streamingCharsBeforeAbort: result.streamingCharsBeforeAbort,
+      postMerge: result.postMerge,
       totalUsage: result.totalUsage,
       effectiveInputTokens: eff,
       cacheHitRate: rate,
@@ -246,6 +286,10 @@ export function parseRunFlags(argv: string[]): RunFlags {
     mode: 'single',
     candidates: null,
     deterministic: true,
+    streaming: true,
+    postMerge: true,
+    preGeneration: true,
+    forbiddenImports: [],
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -297,6 +341,18 @@ export function parseRunFlags(argv: string[]): RunFlags {
       flags.candidates = n;
     } else if (arg === '--no-deterministic') {
       flags.deterministic = false;
+    } else if (arg === '--no-streaming') {
+      flags.streaming = false;
+    } else if (arg === '--no-post-merge') {
+      flags.postMerge = false;
+    } else if (arg === '--no-pre-generation') {
+      flags.preGeneration = false;
+    } else if (arg === '--forbid-import') {
+      const v = requireValue(argv, ++i, '--forbid-import');
+      for (const part of v.split(',')) {
+        const p = part.trim();
+        if (p.length > 0) flags.forbiddenImports.push(p);
+      }
     } else if (arg === '--help' || arg === '-h') {
       printRunUsage();
       throw new Error('help requested');
@@ -353,6 +409,10 @@ function printRunUsage(): void {
       '  --mode single|tournament     execution mode (default single)',
       '  --candidates <n>             tournament candidates per round (1-8, type-default otherwise)',
       '  --no-deterministic           disable the WASM deterministic floor (default: enabled)',
+      '  --no-streaming               disable Phase 6 streaming verification (default: enabled)',
+      '  --no-pre-generation          disable Phase 6 pre-generation skip pass (default: enabled)',
+      '  --no-post-merge              disable Phase 6 post-merge integration check (default: enabled)',
+      '  --forbid-import <names>      comma-separated module names the streaming verifier rejects',
       '  --help, -h                   show this message',
       '',
     ].join('\n'),

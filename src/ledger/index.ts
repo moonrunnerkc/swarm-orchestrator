@@ -33,6 +33,7 @@ export {
 export type {
   CandidateDiscardedEntry,
   CandidateRecordedEntry,
+  CandidateStreamAbortedEntry,
   LedgerEntry,
   LedgerEntryHeader,
   LedgerEntryType,
@@ -42,7 +43,9 @@ export type {
   ObligationDeterministicFailedEntry,
   ObligationFailedEntry,
   ObligationMemoizedEntry,
+  ObligationPreVerifiedEntry,
   ObligationSatisfiedEntry,
+  PostMergeVerifiedEntry,
   RunFinishedEntry,
   RunResumedEntry,
   RunStartedEntry,

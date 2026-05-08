@@ -37,6 +37,14 @@ export interface ResumeFlags {
   candidates: number | null;
   /** Phase 5: enable the WASM deterministic floor on resume. Default true. */
   deterministic: boolean;
+  /** Phase 6: enable streaming verification on resume. Default true. */
+  streaming: boolean;
+  /** Phase 6: enable post-merge integration check on resume. Default true. */
+  postMerge: boolean;
+  /** Phase 6: enable the pre-generation skip pass on resume. Default true. */
+  preGeneration: boolean;
+  /** Phase 6: comma-separated forbidden-import names. */
+  forbiddenImports: string[];
 }
 
 /** Test seam: lets tests inject a custom session, registry, or WASM runtime. */
@@ -177,7 +185,12 @@ export async function handleResume(
     mode: flags.mode,
     skipObligationIndexes: resumeState.satisfiedIndexes,
     memoStore,
+    preGeneration: flags.preGeneration,
+    postMerge: flags.postMerge,
   };
+  if (flags.streaming) {
+    runOptions.streaming = { forbiddenImports: flags.forbiddenImports };
+  }
   if (wasmRuntime) runOptions.wasmRuntime = wasmRuntime;
   if (flags.commandTimeoutMs !== null) runOptions.commandTimeoutMs = flags.commandTimeoutMs;
   if (flags.candidates !== null && flags.mode === 'tournament') {
@@ -213,6 +226,15 @@ export async function handleResume(
   logger.info(`memoized:      ${result.memoizedObligations} obligations skipped`);
   logger.info(`verifier saved:${result.verifierCallsSavedByMemoization} calls`);
   logger.info(`deterministic: ${result.deterministicObligations} satisfied / ${result.deterministicReroutes} rerouted`);
+  logger.info(`pre-verified:  ${result.preVerifiedObligations} obligations`);
+  logger.info(
+    `streaming:     ${result.streamingAbortedCandidates} aborted (${result.streamingCharsBeforeAbort} chars before abort)`,
+  );
+  if (result.postMerge) {
+    logger.info(
+      `post-merge:    ${result.postMerge.passed ? 'PASS' : 'FAIL'} (${result.postMerge.failedCount}/${result.postMerge.obligationCount} regressed)`,
+    );
+  }
   logger.info(`tokens (in):   ${result.totalUsage.inputTokens} std + ${result.totalUsage.cacheReadTokens} cache-read + ${result.totalUsage.cacheCreationTokens} cache-write`);
   logger.info(`effective in:  ${eff.toFixed(2)} tokens`);
   logger.info(`tokens (out):  ${result.totalUsage.outputTokens}`);
@@ -234,6 +256,10 @@ export async function handleResume(
       verifierCallsSavedByMemoization: result.verifierCallsSavedByMemoization,
       deterministicObligations: result.deterministicObligations,
       deterministicReroutes: result.deterministicReroutes,
+      preVerifiedObligations: result.preVerifiedObligations,
+      streamingAbortedCandidates: result.streamingAbortedCandidates,
+      streamingCharsBeforeAbort: result.streamingCharsBeforeAbort,
+      postMerge: result.postMerge,
       totalUsage: result.totalUsage,
       effectiveInputTokens: eff,
       cacheHitRate: rate,
@@ -329,6 +355,10 @@ export function parseResumeFlags(argv: string[]): ResumeFlags {
     mode: 'single',
     candidates: null,
     deterministic: true,
+    streaming: true,
+    postMerge: true,
+    preGeneration: true,
+    forbiddenImports: [],
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -373,6 +403,18 @@ export function parseResumeFlags(argv: string[]): ResumeFlags {
       flags.candidates = n;
     } else if (arg === '--no-deterministic') {
       flags.deterministic = false;
+    } else if (arg === '--no-streaming') {
+      flags.streaming = false;
+    } else if (arg === '--no-post-merge') {
+      flags.postMerge = false;
+    } else if (arg === '--no-pre-generation') {
+      flags.preGeneration = false;
+    } else if (arg === '--forbid-import') {
+      const v = requireValue(argv, ++i, '--forbid-import');
+      for (const part of v.split(',')) {
+        const p = part.trim();
+        if (p.length > 0) flags.forbiddenImports.push(p);
+      }
     } else if (arg === '--help' || arg === '-h') {
       printResumeUsage();
       throw new Error('help requested');
@@ -423,6 +465,10 @@ function printResumeUsage(): void {
       '  --mode single|tournament     execution mode (default single)',
       '  --candidates <n>             tournament candidates per round (1-8)',
       '  --no-deterministic           disable the WASM deterministic floor (default: enabled)',
+      '  --no-streaming               disable Phase 6 streaming verification (default: enabled)',
+      '  --no-pre-generation          disable Phase 6 pre-generation skip pass (default: enabled)',
+      '  --no-post-merge              disable Phase 6 post-merge integration check (default: enabled)',
+      '  --forbid-import <names>      comma-separated module names the streaming verifier rejects',
       '  --help, -h                   show this message',
       '',
     ].join('\n'),

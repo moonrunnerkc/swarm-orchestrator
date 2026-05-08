@@ -107,6 +107,47 @@ export interface SessionResponse {
 }
 
 /**
+ * Phase 6 streaming primitives. The streaming verifier (see
+ * `src/verification/streaming-verifier.ts`) observes partial output as it
+ * arrives and may signal early abort when a contract violation is
+ * detected. The session's `stream` method is the substrate for that
+ * observation.
+ */
+export type StreamDecision = { kind: 'continue' } | { kind: 'abort'; reason: string };
+
+/** A single observation point during a streaming completion. */
+export interface SessionStreamEvent {
+  /** Accumulated text so far. */
+  partialText: string;
+  /** The new chunk appended in this event. */
+  chunk: string;
+  /** Total character count of `partialText`. */
+  charsObserved: number;
+}
+
+/**
+ * Streaming observer the session calls on each text chunk. Returning
+ * `{ kind: 'abort', reason }` cancels the in-flight generation; the
+ * session settles by returning a `SessionStreamResult` with `aborted: true`.
+ */
+export type SessionStreamObserver = (event: SessionStreamEvent) => StreamDecision;
+
+/** Result of a streaming completion call. */
+export interface SessionStreamResult {
+  /**
+   * The provider response. When `aborted` is true, `text` is the partial
+   * text observed up to abort and `usage` reflects tokens billed up to
+   * that point. When `aborted` is false, `text` and `usage` match the
+   * non-streaming `complete()` shape.
+   */
+  response: SessionResponse;
+  /** True when the observer aborted the stream. */
+  aborted: boolean;
+  /** Reason the observer gave for aborting, or null when not aborted. */
+  abortReason: string | null;
+}
+
+/**
  * The session abstraction. Implementations: AnthropicSession (real API,
  * prompt-cache-native), StubSession (deterministic, used by tests and the
  * synthetic-mode benchmark).
@@ -121,4 +162,15 @@ export interface Session {
    * so callers and tests can introspect what is being cached.
    */
   projectContext(): string;
+  /**
+   * Phase 6: streaming variant. The session emits text chunks to the
+   * observer; returning `{ kind: 'abort', reason }` from the observer
+   * cancels generation early and the result reflects tokens billed up to
+   * the abort point. Implementations that don't natively stream may
+   * simulate it by chunking a non-streaming response.
+   */
+  stream(
+    request: SessionRequest,
+    observer: SessionStreamObserver,
+  ): Promise<SessionStreamResult>;
 }

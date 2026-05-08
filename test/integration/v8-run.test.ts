@@ -57,6 +57,12 @@ describe('integration: swarm v8 run', () => {
         '--ledger', ledgerPath,
         '--result', resultPath,
         '--run-id', 'fixed-run-id',
+        // Phase 6 features change session-call shape (pre-gen skips
+        // commands, post-merge re-runs); this Phase 2 test asserts the
+        // baseline call pattern, so opt out.
+        '--no-streaming',
+        '--no-pre-generation',
+        '--no-post-merge',
       ],
       { session },
     );

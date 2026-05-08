@@ -75,6 +75,13 @@ describe('integration: swarm v8 run --mode tournament', () => {
         // obligation that the auto-tagger would otherwise route to
         // scaffold-template.
         '--no-deterministic',
+        // Phase 6: pre-generation would skip the build/test obligations
+        // (commands pass on the empty fixture) before the tournament
+        // ever runs; opt out so the assertion that every obligation
+        // carries tournament evidence holds.
+        '--no-pre-generation',
+        '--no-streaming',
+        '--no-post-merge',
       ],
       { session },
     );

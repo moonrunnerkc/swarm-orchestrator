@@ -255,6 +255,77 @@ export interface ObligationDeterministicFailedEntry extends LedgerEntryHeader {
   detail: string;
 }
 
+/**
+ * Phase 6: a candidate generation was aborted mid-stream because the
+ * streaming verifier detected a contract violation that could not be
+ * repaired by continuing. The aborted-at offset is the character offset
+ * within the partial response where the early-abort signal fired; tokens
+ * generated up to that point are still billed (`usageAtAbort`), but the
+ * remaining generation cost was avoided. See impl guide §9 ("Token
+ * savings on aborted generations measurable in run output").
+ */
+export interface CandidateStreamAbortedEntry extends LedgerEntryHeader {
+  type: 'candidate-stream-aborted';
+  obligationIndex: number;
+  /** Round index when emitted from a tournament; 0 for single mode. */
+  roundIndex: number;
+  candidateIndex: number;
+  personaId: string;
+  /** Sha256 of the partial response observed before abort. */
+  partialResponseSha256: string;
+  /** Character offset in the partial response where the abort fired. */
+  abortedAtChars: number;
+  /** Free-form reason; matches the streaming verifier's violation rationale. */
+  reason: string;
+  /** Token usage observed up to the abort point. */
+  usageAtAbort: SessionUsage;
+  model: string;
+}
+
+/**
+ * Phase 6: an obligation was skipped by pre-generation verification —
+ * no synthesis attempt, no deterministic dispatch. Distinct from
+ * `obligation-memoized` (Phase 4) because pre-generation skipping
+ * checks the live workspace (the file already exists, the build/test
+ * already passes) rather than a prior ledger state. Together with
+ * memoization this formalizes impl guide §9 "Pre-generation
+ * verification: skip obligations already satisfied".
+ */
+export interface ObligationPreVerifiedEntry extends LedgerEntryHeader {
+  type: 'obligation-pre-verified';
+  obligationIndex: number;
+  obligationType: string;
+  /** Free-form note describing how the live workspace already satisfies it. */
+  detail: string;
+}
+
+/**
+ * Phase 6: a post-merge integration check ran across every committed
+ * obligation. Emitted exactly once per run, after the population loop
+ * finishes and before `run-finished`. `passed` reflects the aggregate
+ * outcome; per-obligation results live in `outcomes`. Catches the
+ * "two obligations that individually pass but together produce a broken
+ * build" class (impl guide §9).
+ */
+export interface PostMergeVerifiedEntry extends LedgerEntryHeader {
+  type: 'post-merge-verified';
+  /** True when every obligation re-passed end-to-end. */
+  passed: boolean;
+  /** Number of obligations re-checked. */
+  obligationCount: number;
+  /** Number of obligations whose post-merge re-check failed. */
+  failedCount: number;
+  /** Per-obligation outcomes; index parallels the contract list. */
+  outcomes: ReadonlyArray<{
+    obligationIndex: number;
+    obligationType: string;
+    passed: boolean;
+    detail: string;
+  }>;
+  /** Free-form summary detail. */
+  detail: string;
+}
+
 /** Discriminated union of every ledger entry shape. */
 export type LedgerEntry =
   | RunStartedEntry
@@ -271,7 +342,10 @@ export type LedgerEntry =
   | ObligationMemoizedEntry
   | ObligationDeterministicAttemptedEntry
   | ObligationDeterministicAppliedEntry
-  | ObligationDeterministicFailedEntry;
+  | ObligationDeterministicFailedEntry
+  | CandidateStreamAbortedEntry
+  | ObligationPreVerifiedEntry
+  | PostMergeVerifiedEntry;
 
 /** Type tag union for all ledger entries. */
 export type LedgerEntryType = LedgerEntry['type'];

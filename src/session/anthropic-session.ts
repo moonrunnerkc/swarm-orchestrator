@@ -5,6 +5,8 @@ import {
   type Session,
   type SessionRequest,
   type SessionResponse,
+  type SessionStreamObserver,
+  type SessionStreamResult,
   type SessionUsage,
 } from './types';
 
@@ -91,6 +93,102 @@ export class AnthropicSession implements Session {
       usage,
       model: message.model,
       stopReason: message.stop_reason ?? null,
+    };
+  }
+
+  /**
+   * Phase 6: streaming variant. Wraps `client.messages.stream()` and
+   * routes text deltas through the observer. When the observer returns
+   * `abort`, the in-flight stream is cancelled and the call settles
+   * with `aborted: true`. Tokens generated up to the abort point are
+   * captured in `response.usage` from the SDK's final `message_delta`
+   * event (or are zero-output when abort lands before the first delta).
+   *
+   * The cached system prefix is sent identically to `complete()` so
+   * cache hits are preserved across streaming and non-streaming calls.
+   */
+  async stream(
+    request: SessionRequest,
+    observer: SessionStreamObserver,
+  ): Promise<SessionStreamResult> {
+    const model = request.model ?? this.model;
+    const stream = this.client.messages.stream({
+      model,
+      max_tokens: request.sampling.maxTokens,
+      temperature: request.sampling.temperature,
+      ...(request.sampling.topP !== undefined ? { top_p: request.sampling.topP } : {}),
+      system: [
+        {
+          type: 'text',
+          text: this.contextText,
+          cache_control: { type: 'ephemeral' },
+        },
+        { type: 'text', text: request.personaSystemSuffix },
+      ],
+      messages: [{ role: 'user', content: request.userMessage }],
+    });
+
+    let partialText = '';
+    let aborted = false;
+    let abortReason: string | null = null;
+    try {
+      for await (const event of stream) {
+        if (aborted) break;
+        if (
+          event.type === 'content_block_delta' &&
+          event.delta.type === 'text_delta'
+        ) {
+          const chunk = event.delta.text;
+          partialText += chunk;
+          const decision = observer({
+            partialText,
+            chunk,
+            charsObserved: partialText.length,
+          });
+          if (decision.kind === 'abort') {
+            aborted = true;
+            abortReason = decision.reason;
+            stream.controller.abort();
+            break;
+          }
+        }
+      }
+    } catch (err) {
+      // The SDK throws an APIUserAbortError when controller.abort() is
+      // called. That is the expected path on observer-driven abort, so
+      // we swallow it here. Any other error is genuine and rethrows.
+      if (!aborted) throw err;
+    }
+
+    let usage: SessionUsage;
+    let modelUsed = model;
+    let stopReason: string | null = aborted ? 'observer_abort' : null;
+    try {
+      const finalMessage = await stream.finalMessage();
+      usage = readAnthropicUsage(finalMessage.usage);
+      modelUsed = finalMessage.model;
+      if (!aborted) stopReason = finalMessage.stop_reason ?? null;
+      if (!aborted) partialText = extractText(finalMessage.content);
+    } catch {
+      // After an observer abort the SDK may not surface a final message.
+      // Estimate usage from what we observed: input tokens are unknown
+      // mid-stream, so we report the partial-text-only output side and
+      // leave input zero. Cost-attribution treats this as a free abort,
+      // which understates billing by the prompt portion; the ledger
+      // captures the abort fact, and Anthropic still bills the prompt.
+      usage = emptyUsage();
+    }
+
+    this.cumulative = addUsage(this.cumulative, usage);
+    return {
+      response: {
+        text: partialText,
+        usage,
+        model: modelUsed,
+        stopReason,
+      },
+      aborted,
+      abortReason,
     };
   }
 }

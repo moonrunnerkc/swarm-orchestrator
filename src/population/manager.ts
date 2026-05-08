@@ -5,13 +5,16 @@ import { MemoStore, obligationKey } from '../ledger/memoization';
 import type {
   CandidateDiscardedEntry,
   CandidateRecordedEntry,
+  CandidateStreamAbortedEntry,
   ObligationAttemptedEntry,
   ObligationDeterministicAppliedEntry,
   ObligationDeterministicAttemptedEntry,
   ObligationDeterministicFailedEntry,
   ObligationFailedEntry,
   ObligationMemoizedEntry,
+  ObligationPreVerifiedEntry,
   ObligationSatisfiedEntry,
+  PostMergeVerifiedEntry,
   RunFinishedEntry,
   RunStartedEntry,
   TournamentEscalatedEntry,
@@ -23,7 +26,16 @@ import type { PersonaSpec } from '../persona/types';
 import { selectPersonaForState } from '../persona/predicates';
 import type { Session, SessionUsage } from '../session/types';
 import { addUsage, emptyUsage } from '../session/types';
+import { postMergeVerify } from '../verification/post-merge';
+import { preVerifyObligations } from '../verification/pre-generation';
 import { verifyObligation } from '../verification/run-verifier';
+import {
+  buildAssertions,
+  runStreamingCompletion,
+  type StreamingAssertion,
+  type StreamingVerifierConfig,
+  type StreamingVerifierOutcome,
+} from '../verification/streaming-verifier';
 import type { WasmRuntime } from '../wasm/wasm-runtime';
 import { applyFileEmit } from './diff-applier';
 import { applyUnifiedDiff, looksLikeUnifiedDiff } from './unified-diff';
@@ -93,6 +105,32 @@ export interface RunPopulationOptions {
    * `wasm-runtime.ts` applies when omitted.
    */
   strategyTimeoutMs?: number;
+  /**
+   * Phase 6: streaming-verification configuration. When supplied, the
+   * single-mode generation path uses `session.stream()` with the
+   * configured assertions and may abort mid-generation. When omitted,
+   * the manager falls back to non-streaming `session.complete()` (the
+   * Phase 2/3 behaviour). Tournament candidate generation is
+   * intentionally NOT streaming-routed: tournaments race candidates in
+   * parallel and the cheap verifier picks the winner; mid-stream abort
+   * inside a tournament round breaks the race fairness. Streaming for
+   * tournament candidates is logged as a Phase 7 follow-up.
+   */
+  streaming?: StreamingVerifierConfig;
+  /**
+   * Phase 6: when true, run a pre-generation verification pass over
+   * every still-pending obligation (after memoization and the
+   * deterministic floor) and skip any that the live workspace already
+   * satisfies. Defaults to false to preserve Phase 2/3/4/5 wall-time.
+   */
+  preGeneration?: boolean;
+  /**
+   * Phase 6: when true, run a post-merge integration check after the
+   * synthesis loop completes. Failure flips the run's `failed` count
+   * to non-zero and emits a `post-merge-verified` ledger entry.
+   * Defaults to false.
+   */
+  postMerge?: boolean;
 }
 
 /** Per-obligation outcome the manager hands back to the caller. */
@@ -136,6 +174,45 @@ export interface RunPopulationResult {
    * captures the runtime's miss rate.
    */
   deterministicReroutes: number;
+  /**
+   * Phase 6: number of obligations satisfied by the pre-generation pass
+   * (live workspace already passes; no LLM tokens, no deterministic
+   * strategy, no memoization hit). Counted separately so the §9 cost
+   * benchmark can attribute savings.
+   */
+  preVerifiedObligations: number;
+  /**
+   * Phase 6: number of streaming candidate generations the streaming
+   * verifier aborted mid-stream. Each abort saves the cost of the
+   * remaining (un-generated) tokens; the ledger captures token usage
+   * up to the abort point per candidate.
+   */
+  streamingAbortedCandidates: number;
+  /**
+   * Phase 6: total characters of partial output generated before the
+   * streaming verifier fired its abort. Only counts aborted candidates;
+   * a proxy for "tokens billed before abort" and a denominator for the
+   * §9 savings claim.
+   */
+  streamingCharsBeforeAbort: number;
+  /**
+   * Phase 6: post-merge integration-check result. `null` when the
+   * manager was run with `postMerge: false` (the default).
+   */
+  postMerge: PostMergeRunOutcome | null;
+}
+
+/** Phase 6: post-merge result the manager hands back. */
+export interface PostMergeRunOutcome {
+  passed: boolean;
+  obligationCount: number;
+  failedCount: number;
+  outcomes: Array<{
+    obligationIndex: number;
+    obligationType: string;
+    passed: boolean;
+    detail: string;
+  }>;
 }
 
 /**
@@ -160,6 +237,11 @@ export async function runPopulation(
   const memoStore = options.memoStore;
   const wasmRuntime = options.wasmRuntime;
   const strategyTimeoutMs = options.strategyTimeoutMs;
+  const streamingConfig = options.streaming;
+  const streamingAssertions: readonly StreamingAssertion[] = streamingConfig
+    ? buildAssertions(streamingConfig)
+    : [];
+  const usingStreaming = streamingAssertions.length > 0;
   /**
    * Phase 5: track which obligation indexes have already failed their
    * deterministic dispatch this run. Used to prevent re-attempting the
@@ -201,6 +283,9 @@ export async function runPopulation(
   let verifierCallsSavedByMemoization = 0;
   let deterministicObligations = 0;
   let deterministicReroutes = 0;
+  let preVerifiedObligations = 0;
+  let streamingAbortedCandidates = 0;
+  let streamingCharsBeforeAbort = 0;
   let attempted = 0;
 
   // Phase 5: deterministic-floor pre-pass. Walk every pending obligation
@@ -239,6 +324,47 @@ export async function runPopulation(
       } else {
         deterministicReroutes += 1;
       }
+    }
+  }
+
+  // Phase 6: pre-generation verification pass. Walk every pending
+  // obligation (after memoization + deterministic) and check whether
+  // the live workspace already satisfies it. Skips with an
+  // `obligation-pre-verified` ledger entry. Order matters: memoization
+  // and the deterministic floor are cheaper than running build / test
+  // commands; pre-generation only inspects obligations that survived
+  // both prior cheap paths.
+  if (options.preGeneration) {
+    const alreadyExcluded = new Set<number>(skip);
+    for (const o of outcomes) alreadyExcluded.add(o.obligationIndex);
+    const verifyOpts: Parameters<typeof verifyObligation>[1] = { repoRoot };
+    if (commandTimeoutMs !== undefined) verifyOpts.commandTimeoutMs = commandTimeoutMs;
+    const preResult = preVerifyObligations({
+      obligations: contract.obligations,
+      skipIndexes: alreadyExcluded,
+      verifyOptions: verifyOpts,
+    });
+    for (const idx of preResult.satisfiedIndexes) {
+      const o = contract.obligations[idx];
+      if (!o) continue;
+      builder.setStatus(idx, 'satisfied');
+      const check = preResult.checks.find((c) => c.obligationIndex === idx);
+      const detail = check?.detail ?? 'pre-generation check satisfied';
+      ledger.append<ObligationPreVerifiedEntry>({
+        type: 'obligation-pre-verified',
+        obligationIndex: idx,
+        obligationType: o.type,
+        detail,
+      });
+      outcomes.push({
+        obligationIndex: idx,
+        obligation: o,
+        personaId: null,
+        satisfied: true,
+        detail: `pre-verified: ${detail}`,
+        tournament: null,
+      });
+      preVerifiedObligations += 1;
     }
   }
 
@@ -302,30 +428,87 @@ export async function runPopulation(
       continue;
     }
 
-    // Single mode (Phase 2 path).
+    // Single mode (Phase 2 path; Phase 6 layers streaming on top).
     const dynamic = renderDynamicMessage(obligation, repoRoot);
-    const response = await session.complete({
+    const sessionRequest = {
       personaId: persona.id,
       personaSystemSuffix: persona.systemSuffix,
       sampling: { ...persona.sampling },
       userMessage: dynamic,
-    });
-    totalUsage = addUsage(totalUsage, response.usage);
+    } as const;
+
+    let responseText: string;
+    let responseUsage: SessionUsage;
+    let responseModel: string;
+    let streamingOutcome: StreamingVerifierOutcome | null = null;
+    if (usingStreaming) {
+      streamingOutcome = await runStreamingCompletion(
+        session,
+        sessionRequest,
+        obligation,
+        streamingAssertions,
+      );
+      responseText = streamingOutcome.streamResult.response.text;
+      responseUsage = streamingOutcome.streamResult.response.usage;
+      responseModel = streamingOutcome.streamResult.response.model;
+    } else {
+      const response = await session.complete(sessionRequest);
+      responseText = response.text;
+      responseUsage = response.usage;
+      responseModel = response.model;
+    }
+    totalUsage = addUsage(totalUsage, responseUsage);
+
+    if (streamingOutcome?.aborted) {
+      streamingAbortedCandidates += 1;
+      streamingCharsBeforeAbort += streamingOutcome.abortedAtChars;
+      ledger.append<CandidateStreamAbortedEntry>({
+        type: 'candidate-stream-aborted',
+        obligationIndex,
+        roundIndex: 0,
+        candidateIndex: 0,
+        personaId: persona.id,
+        partialResponseSha256: sha256(responseText),
+        abortedAtChars: streamingOutcome.abortedAtChars,
+        reason: streamingOutcome.abortReason ?? 'streaming verifier aborted',
+        usageAtAbort: responseUsage,
+        model: responseModel,
+      });
+      builder.setStatus(obligationIndex, 'failed');
+      const failDetail = `streaming verifier aborted: ${streamingOutcome.abortReason ?? 'unspecified violation'}`;
+      ledger.append<ObligationFailedEntry>({
+        type: 'obligation-failed',
+        obligationIndex,
+        obligationType: obligation.type,
+        detail: failDetail,
+      });
+      outcomes.push({
+        obligationIndex,
+        obligation,
+        personaId: persona.id,
+        satisfied: false,
+        detail: failDetail,
+        tournament: null,
+      });
+      continue;
+    }
 
     ledger.append<CandidateRecordedEntry>({
       type: 'candidate-recorded',
       obligationIndex,
       personaId: persona.id,
-      responseSha256: sha256(response.text),
-      usage: response.usage,
-      model: response.model,
+      responseSha256: sha256(responseText),
+      usage: responseUsage,
+      model: responseModel,
     });
 
     if (obligation.type === 'file-must-exist') {
-      applyFileEmit(repoRoot, obligation.path, response.text);
-    } else if (looksLikeUnifiedDiff(response.text)) {
+      applyFileEmit(repoRoot, obligation.path, responseText);
+    } else if (responseText.trim() === 'no-op') {
+      // No-op declared — leave the workspace unchanged; verifier decides.
+    } else if (looksLikeUnifiedDiff(responseText)) {
       try {
-        applyUnifiedDiff(repoRoot, response.text);
+        applyUnifiedDiff(repoRoot, responseText);
       } catch {
         // The verifier will detect the failure; manager surfaces it.
       }
@@ -363,8 +546,53 @@ export async function runPopulation(
     });
   }
 
-  const satisfied = builder.countInStatus('satisfied');
-  const failed = builder.countInStatus('failed');
+  let satisfied = builder.countInStatus('satisfied');
+  let failed = builder.countInStatus('failed');
+
+  // Phase 6: post-merge integration verification. Re-runs every
+  // obligation in the contract end-to-end against the workspace as it
+  // actually is once everyone has committed. Failure at this layer
+  // promotes any previously-satisfied obligation that no longer holds
+  // into the failed bucket and emits an audit-trail entry.
+  let postMerge: PostMergeRunOutcome | null = null;
+  if (options.postMerge) {
+    const verifyOpts: Parameters<typeof verifyObligation>[1] = { repoRoot };
+    if (commandTimeoutMs !== undefined) verifyOpts.commandTimeoutMs = commandTimeoutMs;
+    const pm = postMergeVerify({ contract, verifyOptions: verifyOpts });
+    const slimOutcomes = pm.outcomes.map((o) => ({
+      obligationIndex: o.obligationIndex,
+      obligationType: o.obligation.type,
+      passed: o.passed,
+      detail: o.detail,
+    }));
+    ledger.append<PostMergeVerifiedEntry>({
+      type: 'post-merge-verified',
+      passed: pm.passed,
+      obligationCount: pm.obligationCount,
+      failedCount: pm.failedCount,
+      outcomes: slimOutcomes,
+      detail: pm.passed
+        ? `post-merge integration check passed across ${pm.obligationCount} obligation(s)`
+        : `post-merge integration check failed: ${pm.failedCount}/${pm.obligationCount} obligation(s) regressed`,
+    });
+    postMerge = {
+      passed: pm.passed,
+      obligationCount: pm.obligationCount,
+      failedCount: pm.failedCount,
+      outcomes: slimOutcomes,
+    };
+    if (!pm.passed) {
+      // Promote the regression into the run's failure count. We don't
+      // mutate the per-obligation outcomes (those reflect the apply-time
+      // result) but we make sure `run.failed > 0` so the CLI exit code
+      // reflects the integration failure.
+      const regressionGap = pm.failedCount;
+      if (failed === 0 && regressionGap > 0) {
+        failed = regressionGap;
+        satisfied = Math.max(0, satisfied - regressionGap);
+      }
+    }
+  }
 
   ledger.append<RunFinishedEntry>({
     type: 'run-finished',
@@ -384,6 +612,10 @@ export async function runPopulation(
     verifierCallsSavedByMemoization,
     deterministicObligations,
     deterministicReroutes,
+    preVerifiedObligations,
+    streamingAbortedCandidates,
+    streamingCharsBeforeAbort,
+    postMerge,
   };
 }
 
