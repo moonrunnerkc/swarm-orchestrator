@@ -72,7 +72,8 @@ export interface RunPopulationOptions {
    * per obligation, one candidate); `tournament` runs the Phase 3 path
    * (N candidates per obligation, scored by the tournament-verifier
    * persona, winner applied). Defaults to `single` for back-compat with
-   * existing tests; the v8 CLI defaults to `tournament` post-Phase 3.
+   * existing tests; the v8 CLI defaults to `single` for cost-efficiency
+   * and pass `--mode tournament` to opt into the parallel-candidate path.
    */
   mode?: PopulationMode;
   /** Optional per-obligation-type tournament config override. */

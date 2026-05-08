@@ -126,6 +126,7 @@ import {
 } from './cli/index';
 import { initActiveRules, readRuleLoaderConfig } from './rules/loader';
 import { handleV8Command } from './cli/v8/index';
+import { handleRunV8 } from './cli/v8/run-wrapper';
 
 /**
  * Commands that consume cheat rules or other rule-pack data and benefit from
@@ -222,9 +223,21 @@ async function main(): Promise<void> {
       case 'metrics':
         exitCode = await handleMetricsCommand(args);
         break;
-      case 'run':
-        exitCode = await handleRunCommand(args);
+      case 'run': {
+        // Per impl guide §12 line 275: "After Phase 4, v8 becomes
+        // opt-out: default switches to v8, --v6 flag preserves old
+        // behavior." The dispatch here implements that flip. --v6 is
+        // stripped before forwarding.
+        const v6Index = args.indexOf('--v6');
+        if (v6Index >= 0) {
+          const v6Args = args.slice();
+          v6Args.splice(v6Index, 1);
+          exitCode = await handleRunCommand(v6Args);
+        } else {
+          exitCode = await handleRunV8(args.slice(1));
+        }
         break;
+      }
       case 'report':
         exitCode = await handleReportCommand(args);
         break;

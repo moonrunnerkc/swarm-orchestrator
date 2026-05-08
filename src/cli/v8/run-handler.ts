@@ -7,7 +7,12 @@ import { createDefaultRegistry, PersonaRegistry } from '../../persona/persona-re
 import { runPopulation } from '../../population/manager';
 import { AnthropicSession } from '../../session/anthropic-session';
 import { StubSession } from '../../session/stub-session';
-import { cacheHitRate, effectiveInputTokens, type Session } from '../../session/types';
+import {
+  cacheHitRate,
+  effectiveInputTokens,
+  type Session,
+  type SessionUsage,
+} from '../../session/types';
 import { createDefaultRuntime, WasmRuntime } from '../../wasm';
 
 const logger = getLogger('cli:v8:run');
@@ -58,6 +63,13 @@ export interface RunFlags {
    * output. Empty list disables the assertion.
    */
   forbiddenImports: string[];
+  /**
+   * Hard cost ceiling in USD. After the run completes, if the
+   * Anthropic-priced estimate from `totalUsage` exceeds the cap, the CLI
+   * exits 6 (cost-cap-exceeded). Null disables the cap. Wired by the
+   * GitHub Action's `cost-cap` input per impl guide §12 line 290.
+   */
+  costCapUsd: number | null;
 }
 
 /** Test seam: lets tests inject a custom session, registry, or WASM runtime. */
@@ -231,7 +243,44 @@ export async function handleRun(
     });
   }
 
+  if (flags.costCapUsd !== null) {
+    const spentUsd = estimateUsageCostUsd(result.totalUsage);
+    logger.info(`cost cap:      $${flags.costCapUsd.toFixed(4)} USD (spent: $${spentUsd.toFixed(4)} USD)`);
+    if (spentUsd > flags.costCapUsd) {
+      logger.error(
+        `cost cap $${flags.costCapUsd.toFixed(4)} exceeded; estimated spend $${spentUsd.toFixed(4)}`,
+      );
+      return 6;
+    }
+  }
+
   return result.failed === 0 ? 0 : 2;
+}
+
+/**
+ * Approximate Anthropic Claude Sonnet 4 pricing in USD per token. Cache
+ * reads are 90% off the input rate; cache creation is 1.25× the input
+ * rate. Pricing reference: https://www.anthropic.com/pricing (Claude
+ * Sonnet 4 series, 2026 schedule).
+ */
+const SONNET4_PRICE_PER_TOKEN_USD = {
+  input: 3 / 1_000_000,
+  cacheRead: 0.3 / 1_000_000,
+  cacheCreation: 3.75 / 1_000_000,
+  output: 15 / 1_000_000,
+};
+
+/**
+ * Estimate the USD spend implied by a `SessionUsage`. Used for the
+ * --cost-cap post-run gate.
+ */
+export function estimateUsageCostUsd(usage: SessionUsage): number {
+  return (
+    usage.inputTokens * SONNET4_PRICE_PER_TOKEN_USD.input +
+    usage.cacheReadTokens * SONNET4_PRICE_PER_TOKEN_USD.cacheRead +
+    usage.cacheCreationTokens * SONNET4_PRICE_PER_TOKEN_USD.cacheCreation +
+    usage.outputTokens * SONNET4_PRICE_PER_TOKEN_USD.output
+  );
 }
 
 function buildSession(flags: RunFlags, projectContext: string): Session {
@@ -290,6 +339,7 @@ export function parseRunFlags(argv: string[]): RunFlags {
     postMerge: true,
     preGeneration: true,
     forbiddenImports: [],
+    costCapUsd: null,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -353,6 +403,13 @@ export function parseRunFlags(argv: string[]): RunFlags {
         const p = part.trim();
         if (p.length > 0) flags.forbiddenImports.push(p);
       }
+    } else if (arg === '--cost-cap') {
+      const raw = requireValue(argv, ++i, '--cost-cap');
+      const n = Number.parseFloat(raw);
+      if (!Number.isFinite(n) || n <= 0) {
+        throw new Error(`invalid --cost-cap "${raw}"; must be a positive number (USD)`);
+      }
+      flags.costCapUsd = n;
     } else if (arg === '--help' || arg === '-h') {
       printRunUsage();
       throw new Error('help requested');
@@ -413,6 +470,7 @@ function printRunUsage(): void {
       '  --no-pre-generation          disable Phase 6 pre-generation skip pass (default: enabled)',
       '  --no-post-merge              disable Phase 6 post-merge integration check (default: enabled)',
       '  --forbid-import <names>      comma-separated module names the streaming verifier rejects',
+      '  --cost-cap <usd>             hard cost ceiling in USD; exit 6 if exceeded',
       '  --help, -h                   show this message',
       '',
     ].join('\n'),

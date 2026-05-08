@@ -11,6 +11,7 @@ import { runApproval, ContractRejectedError } from '../../contract/approval';
 import { type Extractor } from '../../contract/extractor/types';
 import { AnthropicExtractor } from '../../contract/extractor/anthropic-extractor';
 import { StubExtractor } from '../../contract/extractor/stub-extractor';
+import { loadRecipe, listRecipes } from '../../recipe-loader';
 
 const logger = getLogger('cli:v8:compile');
 
@@ -25,6 +26,14 @@ export interface CompileFlags {
   model: string | null;
   temperature: number | null;
   apiKey: string | null;
+  /**
+   * Name of a built-in recipe (e.g. `add-tests`, `add-auth`). When set,
+   * the goal is composed from the recipe's description plus its step
+   * tasks; any positional argument is appended as a free-form goal
+   * suffix. Per impl guide §12 line 288, recipes ship as contract
+   * templates in v8.
+   */
+  recipe: string | null;
 }
 
 /** Test seam: lets tests inject a custom extractor without touching env. */
@@ -140,6 +149,7 @@ export function parseCompileFlags(argv: string[]): CompileFlags {
     model: null,
     temperature: null,
     apiKey: null,
+    recipe: null,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -168,6 +178,8 @@ export function parseCompileFlags(argv: string[]): CompileFlags {
       flags.temperature = n;
     } else if (arg === '--api-key') {
       flags.apiKey = requireValue(argv, ++i, '--api-key');
+    } else if (arg === '--recipe') {
+      flags.recipe = requireValue(argv, ++i, '--recipe');
     } else if (arg === '--help' || arg === '-h') {
       printCompileUsage();
       throw new Error('help requested');
@@ -178,6 +190,11 @@ export function parseCompileFlags(argv: string[]): CompileFlags {
     }
   }
 
+  if (flags.recipe !== null) {
+    flags.goal = composeRecipeGoal(flags.recipe, positionals.join(' ').trim());
+    return flags;
+  }
+
   if (positionals.length === 0) {
     throw new Error('missing goal: usage `swarm v8 compile <goal> [flags]`');
   }
@@ -186,6 +203,33 @@ export function parseCompileFlags(argv: string[]): CompileFlags {
     throw new Error('goal is empty');
   }
   return flags;
+}
+
+/**
+ * Build a goal string from a recipe name. The recipe's description is the
+ * primary goal; each step's task contributes additional context. A free-form
+ * positional suffix (e.g. `swarm v8 compile --recipe add-tests "for the
+ * payments module"`) is appended verbatim so users can scope the recipe.
+ */
+export function composeRecipeGoal(recipeName: string, suffix: string): string {
+  let recipe;
+  try {
+    recipe = loadRecipe(recipeName);
+  } catch (err) {
+    const known = listRecipes();
+    throw new Error(
+      `unknown recipe "${recipeName}". Available recipes: ${known.join(', ')}`,
+      { cause: err },
+    );
+  }
+  const parts: string[] = [recipe.description];
+  for (const step of recipe.steps) {
+    parts.push(step.task);
+  }
+  if (suffix.length > 0) {
+    parts.push(`Scope: ${suffix}`);
+  }
+  return parts.join('. ');
 }
 
 function requireValue(argv: string[], index: number, flag: string): string {
@@ -210,6 +254,7 @@ function printCompileUsage(): void {
       '  --model <id>          Anthropic model id override (default claude-sonnet-4-6)',
       '  --temperature <n>     sampling temperature override (default 0)',
       '  --api-key <key>       Anthropic API key override (default $ANTHROPIC_API_KEY)',
+      '  --recipe <name>       compile from a built-in recipe (see `swarm recipes`)',
       '  --help, -h            show this message',
       '',
     ].join('\n'),

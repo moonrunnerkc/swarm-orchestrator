@@ -19,6 +19,7 @@ import { AnthropicSession } from '../../session/anthropic-session';
 import { StubSession } from '../../session/stub-session';
 import { cacheHitRate, effectiveInputTokens, type Session } from '../../session/types';
 import { createDefaultRuntime, WasmRuntime } from '../../wasm';
+import { estimateUsageCostUsd } from './run-handler';
 
 const logger = getLogger('cli:v8:resume');
 
@@ -45,6 +46,12 @@ export interface ResumeFlags {
   preGeneration: boolean;
   /** Phase 6: comma-separated forbidden-import names. */
   forbiddenImports: string[];
+  /**
+   * Hard cost ceiling in USD. After the run completes, if Anthropic-priced
+   * spend from `totalUsage` exceeds the cap, the CLI exits 6
+   * (cost-cap-exceeded). Wired by the GitHub Action's `cost-cap` input.
+   */
+  costCapUsd: number | null;
 }
 
 /** Test seam: lets tests inject a custom session, registry, or WASM runtime. */
@@ -284,6 +291,17 @@ export async function handleResume(
     });
   }
 
+  if (flags.costCapUsd !== null) {
+    const spentUsd = estimateUsageCostUsd(result.totalUsage);
+    logger.info(`cost cap:      $${flags.costCapUsd.toFixed(4)} USD (spent: $${spentUsd.toFixed(4)} USD)`);
+    if (spentUsd > flags.costCapUsd) {
+      logger.error(
+        `cost cap $${flags.costCapUsd.toFixed(4)} exceeded; estimated spend $${spentUsd.toFixed(4)}`,
+      );
+      return 6;
+    }
+  }
+
   return result.failed === 0 ? 0 : 2;
 }
 
@@ -359,6 +377,7 @@ export function parseResumeFlags(argv: string[]): ResumeFlags {
     postMerge: true,
     preGeneration: true,
     forbiddenImports: [],
+    costCapUsd: null,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -415,6 +434,13 @@ export function parseResumeFlags(argv: string[]): ResumeFlags {
         const p = part.trim();
         if (p.length > 0) flags.forbiddenImports.push(p);
       }
+    } else if (arg === '--cost-cap') {
+      const raw = requireValue(argv, ++i, '--cost-cap');
+      const n = Number.parseFloat(raw);
+      if (!Number.isFinite(n) || n <= 0) {
+        throw new Error(`invalid --cost-cap "${raw}"; must be a positive number (USD)`);
+      }
+      flags.costCapUsd = n;
     } else if (arg === '--help' || arg === '-h') {
       printResumeUsage();
       throw new Error('help requested');
@@ -469,6 +495,7 @@ function printResumeUsage(): void {
       '  --no-pre-generation          disable Phase 6 pre-generation skip pass (default: enabled)',
       '  --no-post-merge              disable Phase 6 post-merge integration check (default: enabled)',
       '  --forbid-import <names>      comma-separated module names the streaming verifier rejects',
+      '  --cost-cap <usd>             hard cost ceiling in USD; exit 6 if exceeded',
       '  --help, -h                   show this message',
       '',
     ].join('\n'),

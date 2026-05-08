@@ -9,11 +9,22 @@ RECIPE="${INPUT_RECIPE:-}"
 MAX_RETRIES="${INPUT_MAX_RETRIES:-3}"
 PR="${INPUT_PR:-review}"
 SARIF="${INPUT_SARIF:-false}"
+CONTRACT_ONLY="${INPUT_CONTRACT_ONLY:-false}"
+COST_CAP="${INPUT_COST_CAP:-}"
 
 # Build command as safe array; no string concatenation, no eval
 CMD=("node" "/app/dist/src/cli.js")
 
-if [ -n "$RECIPE" ]; then
+# v8 contract-only short-circuits the action: compile the goal to a contract
+# and stop. The contract directory under .swarm/contracts/ is the artifact.
+# The behavior is documented at v8-implementation-guide.md §12 (line 290).
+if [ "$CONTRACT_ONLY" = "true" ]; then
+  if [ -z "$GOAL" ]; then
+    echo "Error: contract-only=true requires a goal input"
+    exit 1
+  fi
+  CMD+=("v8" "compile" "$GOAL" "--yes" "--no-editor")
+elif [ -n "$RECIPE" ]; then
   CMD+=("use" "$RECIPE" "--tool" "$TOOL" "--max-retries" "$MAX_RETRIES" "--pr" "$PR")
 elif [ -n "$PLAN" ]; then
   CMD+=("swarm" "$PLAN" "--tool" "$TOOL" "--max-retries" "$MAX_RETRIES" "--pr" "$PR")
@@ -26,6 +37,13 @@ fi
 
 if [ -n "$MODEL" ]; then
   CMD+=("--model" "$MODEL")
+fi
+
+# v8 hard cost ceiling. Forwarded to whichever subcommand the action is
+# dispatching to; v8 run/resume parse it and abort the run when cumulative
+# estimated spend exceeds the cap. The legacy v6 path ignores it.
+if [ -n "$COST_CAP" ]; then
+  CMD+=("--cost-cap" "$COST_CAP")
 fi
 
 # Log mode without echoing raw user input (prevents secret leaks via goal text)
