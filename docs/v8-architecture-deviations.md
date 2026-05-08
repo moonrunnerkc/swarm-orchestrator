@@ -669,3 +669,158 @@ assertions hold.
 share a downstream "skipped synthesis" rollup metric without
 collapsing the on-disk evidence.
 
+## Phase 7
+
+### Deviation 1: function-must-have-signature uses a substring match, not an AST parser
+
+**Section:** v8-implementation-guide.md §10 (Phase 7 — contract type
+expansion list, item 1: "function-must-have-signature(file, name,
+signature): type-level check against the AST.").
+
+**What §10 specifies:** "type-level check against the AST" — the
+guide implies AST-aware verification per language.
+
+**What was done:** the verifier reads the file as text, strips
+whitespace from both haystack and needle, and looks for the literal
+substring `<name><signature>`. The persona prompt is explicit about
+the expected shape so the LLM emits a matching signature. Whitespace
+stripping handles formatter variation across `( req , res )` /
+`(req,res)` / `( req: Request ): void`.
+
+**Rationale:** an AST-aware check requires per-language parsers
+(tree-sitter or equivalent) bundled into the runtime; that's a Phase
+8 surface. Substring matching is good enough to enforce a contract
+the persona is told about: the LLM emits the exact signature, the
+verifier confirms it appears. The cost of false positives (the
+substring appears in a string literal, e.g.) is bounded by the
+tournament verifier's structured score — but in practice the
+contract-stamped name is rare enough in source bodies that the
+collision rate is near zero. Misses (whitespace mangled across
+lines) are caught by the streaming verifier or the build/test
+obligations downstream.
+
+**Status:** revisitable at Phase 8 when tree-sitter integration
+lands (impl guide §15 references it as the deterministic-floor AST
+parser library).
+
+### Deviation 2: import-graph-must-satisfy parses imports with regex, not a language-aware module resolver
+
+**Section:** v8-implementation-guide.md §10 (Phase 7 — contract type
+expansion list, item 3: "import-graph-must-satisfy(constraint):
+dependency-graph constraints (no cycles, no upward imports).").
+
+**What §10 specifies:** "dependency-graph constraints" — the guide
+is silent on parser choice.
+
+**What was done:** the verifier walks `.ts/.tsx/.js/.mjs/.cjs/.py`
+files under the obligation's scope and runs simple regexes for
+JavaScript/TypeScript imports (`import ... from`, `require(...)`)
+and Python imports (`from <pkg> import`, `import <pkg>`). Local
+specifiers (relative paths) are resolved against the file set on
+disk; bare specifiers (npm packages, Python packages) and path
+aliases are ignored. Cycle detection runs DFS over the resolved
+local graph with back-edge reconstruction.
+
+**Rationale:** the contract obligation asserts a structural property
+("no cycles", "no upward imports") that does not depend on resolved
+module identity for non-local imports — it only depends on the local
+graph the regex extracts. A full language-aware resolver (including
+TS path aliases, package.json `exports`, Python sys.path) would
+quadruple the verifier's surface and its dependency graph, while
+catching a class of false negatives the contract doesn't actually
+care about (`import 'lodash'` does not contribute to a project-local
+cycle). The two shipped constraints — `no-cycles` and
+`no-upward-imports` — are local-only by definition.
+
+**Status:** locked in for v8.0. Additional constraints that need
+non-local resolution land as separate constraint identifiers with
+their own resolver layers.
+
+### Deviation 3: each Phase 7 persona owns exactly one new obligation type, 1:1
+
+**Section:** v8-implementation-guide.md §10 (Phase 7 — persona library
+expansion targets and contract type expansion targets are listed as
+separate, parallel priority lists; no explicit mapping).
+
+**What §10 specifies:** §10 lists 5 personas and 5 obligation types
+without prescribing which persona owns which type.
+
+**What was done:** each Phase 7 persona's `handles` declares one
+Phase 7 obligation type, 1:1:
+
+- security-reviewer → property-must-hold
+- dependency-auditor → import-graph-must-satisfy
+- documentation-writer → function-must-have-signature
+- migration-specialist → performance-must-not-regress
+- test-author → coverage-must-exceed
+
+**Rationale:** the Phase 2 predicate evaluator (`personaTrigger`)
+fires the first registered persona whose `handles` includes the
+pending obligation's type. Multiple personas claiming the same type
+either race needlessly (tournament mode) or shadow each other
+(single mode — only the first fires). 1:1 mapping makes dispatch
+unambiguous and lets the Phase 7 milestone benchmark assert "every
+type dispatches to its owning persona" as a structural gate.
+Cross-type personas (e.g., test-author also owning test-must-pass)
+would muddy the gate without architectural payoff in the milestone
+release.
+
+**Status:** revisitable post-v8.0 when the predicate language grows
+beyond Phase 2's "wake on type X" shape (impl guide §5 anticipates
+ledger-state predicates per overhaul guide §4.3). At that point one
+persona can own multiple types disambiguated by ledger conditions.
+
+### Deviation 4: the Anthropic extractor's prompt is unchanged from Phase 1; Phase 7 obligation types are user-edited or stub-emitted
+
+**Section:** v8-implementation-guide.md §10 (Phase 7 — contract type
+expansion).
+
+**What §10 specifies:** §10 is silent on whether the LLM extractor
+should automatically emit Phase 7 types from natural-language goals.
+
+**What was done:** the `AnthropicExtractor`'s system prompt and tool
+schema continue to reference only the three Phase 1 types
+(file-must-exist, build-must-pass, test-must-pass). Phase 7 types
+are added to a contract via user editing in the approval step, via
+custom extractors, or via the stub extractor's explicit
+goal-to-obligations mapping.
+
+**Rationale:** Phase 7 is open-ended (impl guide §10 status:
+"ongoing"). Teaching the production extractor to emit a richer set
+of obligation types from natural language requires per-type prompt
+engineering plus a calibration pass that the Phase 7 milestone
+doesn't gate. Keeping the extractor stable through the v8.0
+milestone preserves Phase 1's hash-stability guarantee for goals
+that still produce three-type contracts. The contract validator and
+canonicalizer accept all eight types regardless of source, so any
+caller that wants Phase 7 types in its contract just emits them.
+
+**Status:** the extractor will grow Phase 7-aware prompts when the
+new types' real-world frequency warrants it; this is post-v8.0
+roadmap, not a milestone gate.
+
+### Deviation 5: tricky-bench responder routes by obligation type, not by persona id
+
+**Section:** scripts/v8-bench/run-tricky-goal.ts (Phase 3 §6 ship
+gate — not a §10 line item, but Phase 7 surfaced the issue).
+
+**What §6 specifies:** the Phase 3 ship gate asserts tournament mode
+does not regress versus single mode on the tricky suite.
+
+**What was done:** the synthetic responder used by the Phase 3
+tricky-bench was updated to route by **obligation type** (inspected
+from the rendered user message) rather than **persona id**. Phase 7's
+default registry expands from 3 personas to 8; the persona-id-keyed
+responder routed the new personas through a catch-all 'no-op'
+branch, coupling rng-advance counts to registry size and breaking the
+Phase 3 ship gate for reasons unrelated to the tournament invariant.
+
+**Rationale:** the bench's invariant is "tournament does not regress
+versus single on a tricky obligation"; that invariant should hold
+regardless of how many personas the registry exposes. Routing by
+obligation type makes the bench's stub responder invariant to
+registry composition. Future persona expansion (Phase 8+) does not
+re-trigger the same coupling.
+
+**Status:** locked in. The bench responder is internal to the
+benchmark; the change does not affect production dispatch behaviour.
