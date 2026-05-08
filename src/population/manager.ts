@@ -1,11 +1,13 @@
 import * as crypto from 'crypto';
 import type { FinalContract, ObligationV1 } from '../contract/types';
 import type { JsonlLedger } from '../ledger/jsonl-ledger';
+import { MemoStore, obligationKey } from '../ledger/memoization';
 import type {
   CandidateDiscardedEntry,
   CandidateRecordedEntry,
   ObligationAttemptedEntry,
   ObligationFailedEntry,
+  ObligationMemoizedEntry,
   ObligationSatisfiedEntry,
   RunFinishedEntry,
   RunStartedEntry,
@@ -59,6 +61,19 @@ export interface RunPopulationOptions {
   mode?: PopulationMode;
   /** Optional per-obligation-type tournament config override. */
   tournamentConfig?: Partial<Record<ObligationV1['type'], TournamentConfig>>;
+  /**
+   * Phase 4: obligation indexes to skip via memoization. Used by the
+   * resume path: indexes already satisfied in a prior run are recorded
+   * as `obligation-memoized` and the synthesis path is bypassed.
+   */
+  skipObligationIndexes?: ReadonlySet<number>;
+  /**
+   * Phase 4: optional memo store. The manager populates it during the
+   * run and hands it to each tournament. Callers that want
+   * cross-obligation in-run memoization pass an empty store; passing
+   * null/undefined disables in-run memoization.
+   */
+  memoStore?: MemoStore;
 }
 
 /** Per-obligation outcome the manager hands back to the caller. */
@@ -85,6 +100,10 @@ export interface RunPopulationResult {
   wallTimeMs: number;
   /** Mode the run executed under. */
   mode: PopulationMode;
+  /** Phase 4: number of obligations satisfied via memoization (no synthesis). */
+  memoizedObligations: number;
+  /** Phase 4: total verifier calls saved via in-run candidate-hash dedup. */
+  verifierCallsSavedByMemoization: number;
 }
 
 /**
@@ -105,6 +124,8 @@ export async function runPopulation(
   const cap = options.maxObligations ?? contract.obligations.length;
   const mode: PopulationMode = options.mode ?? 'single';
   const builder = new PopulationStateBuilder(contract.obligations);
+  const skip = options.skipObligationIndexes ?? new Set<number>();
+  const memoStore = options.memoStore;
 
   ledger.append<RunStartedEntry>({
     type: 'run-started',
@@ -114,8 +135,29 @@ export async function runPopulation(
     goal: contract.manifest.goal,
   });
 
+  // Phase 4: pre-mark skipped obligations as satisfied via memoization.
+  // The audit trail records one `obligation-memoized` entry per skip.
+  let memoizedObligations = 0;
+  for (let i = 0; i < contract.obligations.length; i += 1) {
+    if (!skip.has(i)) continue;
+    const o = contract.obligations[i];
+    if (!o) continue;
+    builder.setStatus(i, 'satisfied');
+    ledger.append<ObligationMemoizedEntry>({
+      type: 'obligation-memoized',
+      obligationIndex: i,
+      obligationType: o.type,
+      obligationKey: obligationKey(o),
+      source: 'prior-run',
+      responseSha256: null,
+      detail: `obligation index ${i} satisfied by prior run; skipping synthesis`,
+    });
+    memoizedObligations += 1;
+  }
+
   const outcomes: ObligationOutcome[] = [];
   let totalUsage = emptyUsage();
+  let verifierCallsSavedByMemoization = 0;
   let attempted = 0;
 
   while (attempted < cap) {
@@ -145,8 +187,10 @@ export async function runPopulation(
         repoRoot,
         commandTimeoutMs,
         tournamentConfig: options.tournamentConfig,
+        memoStore,
       });
       totalUsage = addUsage(totalUsage, result.tournament.usage);
+      verifierCallsSavedByMemoization += result.tournament.verifierCallsSavedByMemoization;
       const winnerPersonaId = result.tournament.winner?.personaId ?? null;
       if (result.satisfied) {
         builder.setStatus(obligationIndex, 'satisfied');
@@ -254,6 +298,8 @@ export async function runPopulation(
     totalUsage,
     wallTimeMs: Date.now() - start,
     mode,
+    memoizedObligations,
+    verifierCallsSavedByMemoization,
   };
 }
 
@@ -308,6 +354,7 @@ interface ExecuteTournamentArgs {
   repoRoot: string;
   commandTimeoutMs: number | undefined;
   tournamentConfig: RunPopulationOptions['tournamentConfig'];
+  memoStore: MemoStore | undefined;
 }
 
 interface ExecuteTournamentResult {
@@ -333,6 +380,7 @@ async function executeTournament(args: ExecuteTournamentArgs): Promise<ExecuteTo
     repoRoot,
     commandTimeoutMs,
     tournamentConfig,
+    memoStore,
   } = args;
 
   const config = {
@@ -378,7 +426,7 @@ async function executeTournament(args: ExecuteTournamentArgs): Promise<ExecuteTo
     },
   };
 
-  const result = await runTournament({
+  const tournamentOpts: Parameters<typeof runTournament>[0] = {
     obligation,
     obligationIndex,
     session,
@@ -396,7 +444,9 @@ async function executeTournament(args: ExecuteTournamentArgs): Promise<ExecuteTo
       };
     },
     ledgerSink: sink,
-  });
+  };
+  if (memoStore !== undefined) tournamentOpts.memoStore = memoStore;
+  const result = await runTournament(tournamentOpts);
 
   if (result.satisfied) {
     return {

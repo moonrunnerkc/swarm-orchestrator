@@ -313,3 +313,96 @@ keeps both surfaces simple and prevents accidental dispatch.
 ledger-state predicates (overhaul guide §4.3), the verifier may
 participate in those predicates without re-entering the obligation-
 type predicate walk.
+
+## Phase 4
+
+### Deviation 1: IRONROOT primitive replicated in-tree, not imported
+
+**Section:** v8-implementation-guide.md §7 (Phase 4 — "use existing
+IRONROOT primitives for the hash-chain implementation. No
+reimplementation.").
+
+**What §7 specifies:** the hash-chain implementation should use
+existing IRONROOT primitives from
+https://github.com/moonrunnerkc/ironroot.
+
+**What was done:** `src/ledger/ledger.ts` implements the hash-chain
+semantics (`HashChainedLedger`, `verifyChainEntries`, `canonicalJson`,
+`computeEntryHash`) using only Node's `crypto.createHash('sha256')`
+and a small canonical-JSON serializer. The pattern matches IRONROOT's
+approach: each entry carries `prevHash` (sha256 of the previous
+entry's `entryHash`, all-zero digest at genesis) and `entryHash`
+(sha256 of the canonical JSON form of the entry with `entryHash`
+stripped). Tampering at any line breaks the chain and `verifyChain`
+rejects with the 1-indexed offending line plus a divergence kind.
+
+**Rationale:** IRONROOT is a personal OSS project not yet published
+to npm. Pulling it in via git submodule or unpublished tarball would
+add release friction without changing the on-disk semantics — the
+sha256-of-canonical-JSON pattern is the same either way. The
+in-tree implementation is a one-file module with no external
+runtime dependencies, which is the smallest surface that matches
+the §7 contract and keeps `npm install` clean.
+
+**Status:** revisitable when IRONROOT lands on npm. The swap is
+mechanical: replace the `crypto.createHash` calls with
+`ironroot.sha256` and `canonicalJson` with `ironroot.canonicalJSON`
+(if/when those exist with stable export names); no caller of
+`HashChainedLedger` needs to change.
+
+### Deviation 2: in-tournament candidate-hash dedup is implicit, not gated on `memoStore`
+
+**Section:** v8-implementation-guide.md §7 (Phase 4 deliverable —
+"If two candidates are diff-identical, the second is a free skip.").
+
+**What §7 specifies:** the §7 sentence pairs in-tournament dedup with
+the broader memoization layer ("`src/ledger/memoization.ts`").
+
+**What was done:** `runTournament` always deduplicates within a
+round: candidates whose `responseSha256` matches another candidate
+already scored in the same round inherit that candidate's verdict
+without a fresh verifier call. A separate path — gated on
+`memoStore` — handles cross-obligation memoization (a candidate's
+hash matches a prior tournament winner of the same obligation type
+from earlier in the run, or from a prior run). Both paths increment
+`verifierCallsSavedByMemoization` on the returned `TournamentResult`.
+
+**Rationale:** §7's "free skip" language is property-of-the-tournament,
+not opt-in: making it conditional on `memoStore` would mean the
+tournament harness ran two parallel verifier calls on identical
+inputs whenever a caller forgot to pass a store. The Phase 4
+benchmark accounts for the always-on dedup by comparing
+**baseline** (no `memoStore`, in-round dedup only) against
+**memoized** (with `memoStore`, in-round + cross-obligation), so the
+§7 measurable-savings gate measures the *delta* memoization
+contributes beyond the always-on dedup floor.
+
+**Status:** locked in for the v1 tournament shape. The accounting
+distinction (in-round vs. cross-obligation savings) is preserved on
+the returned counter so future telemetry can split them.
+
+### Deviation 3: `swarm v8 resume` infers contract path from `<repo>/.swarm/contracts/<contractId>/`
+
+**Section:** v8-implementation-guide.md §7 (Phase 4 — `swarm v8
+resume <run-id>`).
+
+**What §7 specifies:** the resume CLI takes a run id and "reconstructs
+population state and continues."
+
+**What was done:** the CLI walks the ledger backwards for a
+`run-started` entry and looks for the contract at
+`<repo>/.swarm/contracts/<contractId>/manifest.json`. When the user
+ran `swarm v8 compile` with a custom `--out` path, the inference
+fails and the user must pass `--contract <dir>` explicitly.
+
+**Rationale:** §7 is silent on contract-discovery semantics. The
+default case — `swarm v8 compile` writes to the same well-known
+directory `swarm v8 run` reads from by default — is what the
+inference is sized for. Custom output directories are not the
+default path; surfacing the inference failure with a clear error
+message and the explicit-flag escape hatch is a smaller surface
+than building a contract-id-to-path index in the ledger or a
+sidecar file.
+
+**Status:** revisitable when contract-id-to-path mapping needs to
+survive `--out` overrides (e.g., for shared team contract registries).

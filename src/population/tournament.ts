@@ -27,6 +27,7 @@
 
 import * as crypto from 'crypto';
 import type { ObligationV1 } from '../contract/types';
+import type { MemoStore } from '../ledger/memoization';
 import type { Session, SessionResponse, SessionUsage } from '../session/types';
 import { addUsage, emptyUsage } from '../session/types';
 import type { PersonaSpec } from './../persona/types';
@@ -142,6 +143,12 @@ export interface TournamentResult {
   escalated: boolean;
   /** Best score observed across every round (for the escalation report). */
   bestScore: number;
+  /**
+   * Phase 4: number of verifier calls saved by memoization across all
+   * rounds of this tournament. Sum of in-round duplicate-hash dedup
+   * plus prior-winner-hash matches from the memo store.
+   */
+  verifierCallsSavedByMemoization: number;
 }
 
 /** Persona slate the harness draws from per round. */
@@ -187,6 +194,17 @@ export interface RunTournamentOptions {
   ) => Promise<ApplyOutcome>;
   /** Optional ledger sink. The harness emits round/winner/discard entries via this. */
   ledgerSink?: TournamentLedgerSink;
+  /**
+   * Phase 4: optional memo store. When supplied, the harness consults the
+   * store before scoring each candidate. A candidate whose responseSha256
+   * matches a prior tournament winner of the same obligation type
+   * inherits that prior verdict and skips its verifier call. Within a
+   * single round, candidates with duplicate hashes share one verdict.
+   *
+   * The store is mutated after each won round so subsequent obligations
+   * benefit from in-run memoization.
+   */
+  memoStore?: MemoStore;
 }
 
 /**
@@ -250,11 +268,12 @@ export interface TournamentLedgerSink {
 export async function runTournament(
   options: RunTournamentOptions,
 ): Promise<TournamentResult> {
-  const { obligation, obligationIndex, session, personas, config, ledgerSink } = options;
+  const { obligation, obligationIndex, session, personas, config, ledgerSink, memoStore } = options;
   const cap = Math.min(Math.max(1, config.roundCap), 3);
   const rounds: TournamentRound[] = [];
   let totalUsage = emptyUsage();
   let bestScore = 0;
+  let verifierCallsSavedByMemoization = 0;
 
   for (let roundIndex = 0; roundIndex < cap; roundIndex += 1) {
     const slate = pickPersonaSlate(personas, roundIndex, config.candidatesPerRound);
@@ -308,9 +327,55 @@ export async function runTournament(
       });
     }
 
-    // Score every candidate via the cheap tournament verifier.
-    const verdicts = await Promise.all(
-      candidates.map((c) => {
+    // Score every candidate via the cheap tournament verifier. Phase 4
+    // memoization: skip the verifier call when a candidate's response
+    // hash matches a prior tournament winner of the same obligation
+    // type, OR matches another candidate already scored in this round.
+    // The skipped candidate inherits the existing verdict.
+    const verdicts: Array<ScoredCandidate | null> = candidates.map(() => null);
+    const verdictByHash: Map<string, ScoredCandidate> = new Map();
+    /** Hashes whose verdict has already been added into `roundUsage`. */
+    const usageCountedHashes = new Set<string>();
+    // Pre-populate verdictByHash from the memo store: candidates whose
+    // hash matches a prior winner of the same type get a synthetic
+    // verdict (zero-cost) at the prior winner's score. The verdict
+    // comes from the ledger, not from a fresh verifier call.
+    if (memoStore) {
+      for (const c of candidates) {
+        if (verdictByHash.has(c.responseSha256)) continue;
+        const hit = memoStore.findPriorWinnerByHash(obligation, c.responseSha256);
+        if (hit) {
+          const priorScore =
+            hit.origin.type === 'tournament-winner-selected'
+              ? hit.origin.score
+              : config.scoreThreshold;
+          const synthetic: ScoredCandidate = {
+            score: Math.max(config.scoreThreshold, priorScore),
+            rationale: `memoized: ${hit.detail}`,
+            rawText: '',
+            usage: emptyUsage(),
+            model: 'memoized',
+          };
+          verdictByHash.set(c.responseSha256, synthetic);
+        }
+      }
+    }
+    // Walk candidates in order; each unique-hash candidate not already
+    // memoized triggers one fresh verifier call. Subsequent same-hash
+    // candidates skip and inherit the verdict.
+    const toScoreSerially: TournamentCandidate[] = [];
+    for (const c of candidates) {
+      if (verdictByHash.has(c.responseSha256)) {
+        verifierCallsSavedByMemoization += 1;
+        continue;
+      }
+      // Stake out the slot so later same-hash candidates don't add to
+      // toScoreSerially as well; the actual verdict lands below.
+      verdictByHash.set(c.responseSha256, null as unknown as ScoredCandidate);
+      toScoreSerially.push(c);
+    }
+    const freshVerdicts = await Promise.all(
+      toScoreSerially.map((c) => {
         const opts: Parameters<typeof scoreCandidate>[4] = {};
         if (config.verifierPersona !== undefined) opts.persona = config.verifierPersona;
         else opts.persona = TOURNAMENT_VERIFIER_PERSONA;
@@ -318,13 +383,28 @@ export async function runTournament(
         return scoreCandidate(session, obligation, c.response.text, c.candidateIndex, opts);
       }),
     );
+    for (let i = 0; i < toScoreSerially.length; i += 1) {
+      const c = toScoreSerially[i];
+      const v = freshVerdicts[i];
+      if (!c || !v) continue;
+      verdictByHash.set(c.responseSha256, v);
+    }
+    // Assign verdicts back in candidate order. Add each unique-hash
+    // verdict's usage exactly once into `roundUsage`; same-hash
+    // candidates inherit the verdict but do not double-count the cost.
     for (let i = 0; i < candidates.length; i += 1) {
       const c = candidates[i];
-      const v = verdicts[i];
-      if (!c || !v) continue;
-      c.verdict = v;
-      roundUsage = addUsage(roundUsage, v.usage);
-      if (v.score > bestScore) bestScore = v.score;
+      if (!c) continue;
+      const v = verdictByHash.get(c.responseSha256) ?? null;
+      verdicts[i] = v;
+      if (v) {
+        c.verdict = v;
+        if (!usageCountedHashes.has(c.responseSha256)) {
+          roundUsage = addUsage(roundUsage, v.usage);
+          usageCountedHashes.add(c.responseSha256);
+        }
+        if (v.score > bestScore) bestScore = v.score;
+      }
     }
 
     // Pick the highest-scoring candidate.
@@ -353,6 +433,28 @@ export async function runTournament(
           score: top.verdict.score,
           rationale: top.verdict.rationale,
         });
+        // Phase 4: feed the winner into the memo store so subsequent
+        // obligations of the same type benefit from in-run memoization.
+        if (memoStore) {
+          memoStore.ingestWinner(
+            {
+              type: 'tournament-winner-selected',
+              ts: new Date().toISOString(),
+              runId: '',
+              seq: 0,
+              prevHash: '',
+              entryHash: '',
+              obligationIndex,
+              roundIndex,
+              candidateIndex: top.candidateIndex,
+              personaId: top.personaId,
+              responseSha256: top.responseSha256,
+              score: top.verdict.score,
+              rationale: top.verdict.rationale,
+            },
+            obligation.type,
+          );
+        }
         // Discard everyone else (i.e. record the losers).
         for (const c of candidates) {
           if (c.candidateIndex === top.candidateIndex) continue;
@@ -380,6 +482,7 @@ export async function runTournament(
           usage: totalUsage,
           escalated: false,
           bestScore,
+          verifierCallsSavedByMemoization,
         };
       }
       // Winner was selected but failed application/verification — discard
@@ -439,6 +542,7 @@ export async function runTournament(
     usage: totalUsage,
     escalated: true,
     bestScore,
+    verifierCallsSavedByMemoization,
   };
 }
 

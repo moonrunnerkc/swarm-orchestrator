@@ -1,10 +1,35 @@
 /**
- * Public surface of the v8 evidence ledger. Phase 2 ships an append-only
- * JSONL implementation; Phase 4 layers IRONROOT-backed hash chaining and
- * memoization on top.
+ * Public surface of the v8 evidence ledger. Phase 4 ships an append-only
+ * JSONL ledger with full hash-chain semantics, a memoization layer, and
+ * a resume helper that derives population state from a partial run.
  */
 
-export { JsonlLedger, readEntries } from './jsonl-ledger';
+export {
+  HashChainedLedger,
+  ChainTamperedError,
+  GENESIS_PREV_HASH,
+  canonicalJson,
+  computeEntryHash,
+  readEntries,
+  verifyChainAt,
+  verifyChainEntries,
+} from './ledger';
+
+// Back-compat alias used by Phase 2/3 call sites.
+export { JsonlLedger } from './jsonl-ledger';
+
+export {
+  MemoStore,
+  obligationKey,
+  type MemoizationHit,
+} from './memoization';
+
+export {
+  deriveResumeState,
+  ResumeError,
+  type ResumeState,
+} from './resume';
+
 export type {
   CandidateDiscardedEntry,
   CandidateRecordedEntry,
@@ -13,8 +38,10 @@ export type {
   LedgerEntryType,
   ObligationAttemptedEntry,
   ObligationFailedEntry,
+  ObligationMemoizedEntry,
   ObligationSatisfiedEntry,
   RunFinishedEntry,
+  RunResumedEntry,
   RunStartedEntry,
   TournamentEscalatedEntry,
   TournamentRoundStartedEntry,
