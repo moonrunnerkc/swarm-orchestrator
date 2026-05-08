@@ -22,6 +22,7 @@
 ## Table of contents
 
 - [Why this exists](#why-this-exists)
+- [v6 → v8 in plain language](#v6--v8-in-plain-language)
 - [What's new in v8](#whats-new-in-v8)
 - [End-to-end results](#end-to-end-results)
 - [Quick start](#quick-start)
@@ -51,6 +52,51 @@ Swarm Orchestrator inverts both:
 - No repair loops. Each obligation is satisfied by a **tournament**: parallel candidates from different personas, a cheap verifier picks the winner, losers are discarded with their diff hashes logged.
 
 The cost model and the architecture rationale are in [`docs/v8-overhaul-guide.md`](docs/v8-overhaul-guide.md).
+
+## v6 → v8 in plain language
+
+### What v6 did
+
+You gave it a goal. It planned numbered steps. For each step it spawned an external coding CLI as a child process (Copilot, Claude Code, or Codex), up to two at a time on isolated git branches. After each step it parsed the agent's `/share` transcript, ran nine quality checks against the merged result, and retried failed steps up to three times via a "repair" agent. Steps that passed merged to `main`; failed ones rolled back. Source: `src/swarm-orchestrator.ts`, `src/adapters/`, `src/scheduling/`, `src/repair-agent.ts`, `src/quality-gates/registry.ts`.
+
+### What v8 changes
+
+| | v6 | v8 |
+|---|---|---|
+| How it talks to the model | spawns one external CLI per step | one Anthropic API session, switches personas by changing the system prompt |
+| Goal format | natural-language plan | typed contract with 8 rule types you can edit before execution |
+| Parallelism | up to 2 steps at a time, in waves | N candidate solutions racing inside one tournament per rule |
+| On failure | retry up to 3 times via a repair agent | discard the candidate, try a different persona; **no retry loop** |
+| Verification | once, after the step | 4 checkpoints: pre-generation skip, mid-stream abort, post-generation, post-merge integration |
+| Audit trail | run artifacts under `runs/` | append-only hash-chained log under `.swarm/ledger/` (tampering breaks the chain) |
+| Resume after kill | not supported | `swarm v8 resume <run-id>` replays the log |
+| Some work skips the model entirely | no | yes — file scaffolding, formatters, etc. dispatch through `src/wasm/` for zero tokens |
+| Cost economics | pays full project context per step | cached prefix + cheap candidates ⇒ **58.88% lower input tokens** measured against the v6 cost model on the 10-goal suite ([`docs/v8-phase-2-benchmark.md`](docs/v8-phase-2-benchmark.md)) |
+
+### What stayed the same
+
+- The nine quality gates from v6 still ship and still run via `swarm gates`. Source: `src/quality-gates/registry.ts`.
+- The four CLI adapters (Copilot, Claude Code, Codex, Claude Code Teams) still ship. They're now opt-in via `swarm run --v6`. Source: `src/adapters/`.
+- The `runs/` layout, OWASP report renderer, post-run reporter, and signed attestation are preserved verbatim.
+
+### What v8 actually produces today
+
+A 23-second run from a fresh `git init` + minimal TypeScript scaffold against the goal *"add `src/hello.ts` that exports a `hello()` function returning the string 'hello, world', plus `src/hello.test.ts` that asserts it"*:
+
+| Result | Number |
+|---|---|
+| Rules in contract | 4 |
+| Rules satisfied | 4 / 4 |
+| Post-merge integration check | PASS |
+| Input tokens | 1,675 |
+| Output tokens | 1,342 |
+| Estimated cost | ~$0.025 (Sonnet 4 at $3 / $15 per million tokens) |
+| Wall time | 23 s |
+| Stray files / framework mismatches | 0 |
+| `npm run build` after | exit 0 |
+| `npm test` after | 1 passed, 0 failed |
+
+Source: ledger entries 0–14 in `/tmp/swarm-v8-proof5/.swarm/ledger/run-moxkfmln-77a270.jsonl`, captured during the four-fix validation in commit [`4e56b4a`](https://github.com/moonrunnerkc/swarm-orchestrator/commit/4e56b4a).
 
 ## What's new in v8
 
