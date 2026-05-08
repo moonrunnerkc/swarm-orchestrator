@@ -3,6 +3,11 @@ export {
   type VerificationCommandResult,
 } from './command-runner';
 export {
+  verifyObligation,
+  type VerificationResult,
+  type VerifyOptions,
+} from './run-verifier';
+export {
   runDifferentialGate,
   type DifferentialGateInput,
   type DifferentialGateResult,

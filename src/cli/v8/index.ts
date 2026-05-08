@@ -1,14 +1,14 @@
 import { getLogger } from '../../logger';
 import { handleCompile } from './compile-handler';
+import { handleRun } from './run-handler';
 
 const logger = getLogger('cli:v8');
 
 /**
  * Top-level handler for `swarm v8 <subcommand> [args]`.
  *
- * Phase 1 implements `compile`. `run` and `resume` are reserved for Phase 2
- * and Phase 4 respectively; calling them now exits non-zero with a stub
- * message.
+ * Phase 1 ships `compile`. Phase 2 ships `run`. `resume` is reserved for
+ * Phase 4; calling it now exits non-zero with a stub message.
  *
  * @param argv arguments AFTER the literal `v8` token, i.e. the subcommand
  *   plus its flags.
@@ -20,8 +20,7 @@ export async function handleV8Command(argv: string[]): Promise<number> {
     case 'compile':
       return handleCompile(rest);
     case 'run':
-      logger.error('`swarm v8 run` is not implemented yet (Phase 2 deliverable).');
-      return 64;
+      return handleRun(rest);
     case 'resume':
       logger.error('`swarm v8 resume` is not implemented yet (Phase 4 deliverable).');
       return 64;
@@ -44,7 +43,7 @@ function printV8Usage(): void {
       '',
       'subcommands:',
       '  compile <goal>   compile a natural-language goal into a contract',
-      '  run <contract>   run a compiled contract              (Phase 2 — not yet implemented)',
+      '  run <contract>   run a compiled contract',
       '  resume <run-id>  resume a partially-completed run     (Phase 4 — not yet implemented)',
       '',
       'For per-subcommand flags, see `swarm v8 <subcommand> --help`.',

@@ -115,3 +115,97 @@ Logged as a deviation only because the implementation guide states
 the example shape, not the universal-vs-conditional rule, in prose.
 
 **Status:** locked in for v1 obligation set.
+
+## Phase 2
+
+### Deviation 1: cost benchmark runs in synthetic mode by default
+
+**Section:** v8-implementation-guide.md §5 (Phase 2 cost
+benchmark).
+
+**What §5 specifies:** "Run each goal under v6 and v8
+(single-persona mode). Capture token counts (input, output, cached
+input separately), wall time, and pass rate."
+
+**What was done:** the benchmark harness ships in two modes. The
+default mode is synthetic: the v8 path runs the real population
+manager (`src/population/manager.ts`) against a fresh tmpdir
+fixture using `StubSession`, which reports usage estimated via the
+4-chars-per-token heuristic; the v6 path is a deterministic cost
+model from `scripts/v8-bench/v6-model.ts` parameterized on
+overhaul guide §6's published numbers (40K bootstrap per CLI
+invocation, 0.9 retry-cycles-per-obligation in expectation).
+Effective input tokens normalize cache pricing using Anthropic's
+published 0.1× cache-read and 1.25× cache-write multipliers.
+A real-API mode (`AnthropicSession` against the same suite,
+provider-reported tokens, measured v6 runs) is the natural follow-
+up; it is in scope for the impl guide §11 weekly cost benchmark
+schedule, not for the §5 ship-gate.
+
+**Rationale:** the §5 ship-gate is a structural claim — that the
+substrate-level cost ratio favors v8 by ≥30%. That ratio is
+deterministic given the published cache multipliers and the §6
+v6 model; it does not require live API calls to verify. The
+benchmark ships gating logic that refuses Phase 2 when the floor
+is missed (`--no-refuse` opts out for diagnostics), and CI runs
+the same gate via `dist/test/benchmarks/v8-bench.test.js`. A
+real-API replication run is logged as a Phase 2 follow-up under
+"Notes for next phase" in the completion report.
+
+**Status:** revisitable when the weekly cost-benchmark schedule
+(impl guide §11) lands; the synthetic floor remains the floor for
+shipping any phase that touches substrate economics.
+
+### Deviation 2: Phase 2 implementer/verifier personas synthesize, but do not yet patch
+
+**Section:** v8-implementation-guide.md §5 (Phase 2 personas).
+
+**What §5 specifies:** "Phase 2 ships 3 personas: architect,
+implementer, verifier."
+
+**What was done:** all three personas are registered and dispatch
+correctly through the trigger predicate evaluator. The architect's
+synthesis path (file-emit → verifier) is wired end-to-end. The
+implementer and verifier personas dispatch their session call but
+do not yet apply diffs to the working tree; their obligations
+(build-must-pass, test-must-pass) are verified directly against
+the post-architect repo state. This is the natural shape for
+Phase 2's "one persona at a time" sequential mode — the tournament
+mechanics that make non-trivial implementer/verifier patches load-
+bearing land in Phase 3 (`src/population/tournament.ts`).
+
+**Rationale:** Phase 2's stated sequencing is "one persona at a
+time, single-session, prompt-caching enabled" with the goal of
+"validate cost economics on the new substrate before adding
+tournament parallelism." Diff-apply for build/test obligations
+needs the tournament loop to be useful (a single
+implementer-persona patch with no verifier scoring is just a
+session call and a hope); deferring it to Phase 3 keeps the
+architecture-correct work in the architecture-correct phase.
+
+**Status:** revisitable at Phase 3 when the tournament arrives.
+
+### Deviation 3: minimal evidence ledger here, hash chain in Phase 4
+
+**Section:** v8-implementation-guide.md §7 (evidence ledger).
+
+**What §7 specifies:** the ledger has been "present in primitive
+form since Phase 1 (contract storage). This phase [Phase 4] adds
+the full hash-chain semantics, integrates with IRONROOT primitives,
+and adds memoization."
+
+**What was done:** Phase 2 adds an append-only JSONL ledger
+(`src/ledger/jsonl-ledger.ts`) with discriminated entry types
+(run-started, obligation-attempted, candidate-recorded,
+obligation-satisfied, obligation-failed, run-finished), monotonic
+sequence numbers, and resume-aware sequence inheritance, but no
+hash chain. The hash-chain layer is Phase 4 per §7.
+
+**Rationale:** the population manager needs a place to record
+evidence per obligation; the ledger entry shapes the manager
+already writes are the union Phase 4 will continue to consume. The
+on-disk format is identical between Phase 2 and Phase 4; Phase 4
+adds verification, not migration.
+
+**Status:** locked in for the entry shape; revisitable at Phase 4
+when hash-chain framing wraps each entry.
