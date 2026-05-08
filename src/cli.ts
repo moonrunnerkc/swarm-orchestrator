@@ -125,6 +125,7 @@ import {
   showUsage,
 } from './cli/index';
 import { initActiveRules, readRuleLoaderConfig } from './rules/loader';
+import { handleV8Command } from './cli/v8/index';
 
 /**
  * Commands that consume cheat rules or other rule-pack data and benefit from
@@ -241,6 +242,9 @@ async function main(): Promise<void> {
         break;
       case 'recipe-info':
         exitCode = handleRecipeInfoCommand(args);
+        break;
+      case 'v8':
+        exitCode = await handleV8Command(args.slice(1));
         break;
       default:
         logger.error(`Unknown command: ${command}\n`);

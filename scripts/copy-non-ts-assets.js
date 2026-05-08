@@ -16,6 +16,14 @@ const PAIRS = [
     dst: path.join(__dirname, '..', 'dist', 'src', 'rules', 'schemas'),
     pattern: /\.schema\.json$/,
   },
+  {
+    // v8 contract obligation schema. The compiled loader at
+    // dist/src/contract/schema/loader.js reads v1.json from its sibling
+    // directory; the source-tree fallback covers tsx/dev runs.
+    src: path.join(__dirname, '..', 'src', 'contract', 'schema'),
+    dst: path.join(__dirname, '..', 'dist', 'src', 'contract', 'schema'),
+    pattern: /\.json$/,
+  },
 ];
 
 function copyMatching(srcDir, dstDir, pattern) {
