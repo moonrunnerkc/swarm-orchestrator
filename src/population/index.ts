@@ -10,6 +10,7 @@ export {
   renderDynamicMessage,
   runPopulation,
   type ObligationOutcome,
+  type PopulationMode,
   type RunPopulationOptions,
   type RunPopulationResult,
 } from './manager';
@@ -20,5 +21,26 @@ export {
   writeFileObligation,
   type FileEmitResult,
 } from './diff-applier';
+
+export {
+  applyUnifiedDiff,
+  looksLikeUnifiedDiff,
+  parseUnifiedDiff,
+  type UnifiedDiffApplyResult,
+} from './unified-diff';
+
+export {
+  DEFAULT_TOURNAMENT_CONFIG,
+  pickPersonaSlate,
+  runTournament,
+  type ApplyOutcome,
+  type RunTournamentOptions,
+  type TournamentCandidate,
+  type TournamentConfig,
+  type TournamentLedgerSink,
+  type TournamentPersonaSlate,
+  type TournamentResult,
+  type TournamentRound,
+} from './tournament';
 
 export { PopulationStateBuilder } from './state';

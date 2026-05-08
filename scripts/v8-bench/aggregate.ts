@@ -1,5 +1,20 @@
 import type { GoalRunResult } from './run-goal';
 
+/**
+ * Per-goal pairing of single-mode and tournament-mode runs against the same
+ * v6 baseline. Used by the Phase 3 §6 ship-gate to assert tournament cost
+ * stays within 1.5× of single-mode cost.
+ */
+export interface ModeComparisonRow {
+  goalId: string;
+  size: GoalRunResult['size'];
+  obligationCount: number;
+  single: GoalRunResult;
+  tournament: GoalRunResult;
+  /** tournament effective input / single effective input. */
+  costMultiplier: number;
+}
+
 export interface BenchSummary {
   goalCount: number;
   totalObligations: number;
@@ -112,5 +127,105 @@ export function renderMarkdown(results: readonly GoalRunResult[], summary: Bench
   lines.push('');
   lines.push(`**Phase 2 §5 floor (≥30% reduction):** ${summary.meets30PctFloor ? 'PASS' : 'FAIL'}`);
   lines.push(`**Phase 2 §5 floor (pass rate within 5%):** ${summary.passRateWithin5Pct ? 'PASS' : 'FAIL'}`);
+  return lines.join('\n');
+}
+
+/**
+ * Phase 3 §6 mode comparison summary. Tournament mode must be no more
+ * than 1.5× single-persona cost while showing measurably better pass
+ * rate on tricky obligations. The "tricky" subset is identified by the
+ * caller (typically the explicitly-marked `tricky*` goals).
+ */
+export interface ModeComparisonSummary {
+  rowCount: number;
+  totalSingleEffectiveInput: number;
+  totalTournamentEffectiveInput: number;
+  /** Aggregate tournament/single cost ratio. */
+  costMultiplier: number;
+  singlePassRate: number;
+  tournamentPassRate: number;
+  /** Pass-rate delta in absolute percentage points (tournament − single). */
+  passRateDelta: number;
+  /** True when the aggregate cost multiplier is ≤ 1.5. */
+  meets1_5xCap: boolean;
+  /** True when tournament pass rate is ≥ single pass rate. */
+  noPassRateRegression: boolean;
+}
+
+/** Build a comparison summary from per-goal mode pairs. */
+export function summarizeModeComparison(
+  rows: readonly ModeComparisonRow[],
+): ModeComparisonSummary {
+  let single = 0;
+  let tournament = 0;
+  let totalOblig = 0;
+  let singleSat = 0;
+  let tournamentSat = 0;
+  for (const r of rows) {
+    single += r.single.v8EffectiveInput;
+    tournament += r.tournament.v8EffectiveInput;
+    totalOblig += r.obligationCount;
+    singleSat += r.single.satisfied;
+    tournamentSat += r.tournament.satisfied;
+  }
+  const multiplier = single === 0 ? 0 : tournament / single;
+  const singlePass = totalOblig === 0 ? 0 : singleSat / totalOblig;
+  const tournamentPass = totalOblig === 0 ? 0 : tournamentSat / totalOblig;
+  return {
+    rowCount: rows.length,
+    totalSingleEffectiveInput: single,
+    totalTournamentEffectiveInput: tournament,
+    costMultiplier: multiplier,
+    singlePassRate: singlePass,
+    tournamentPassRate: tournamentPass,
+    passRateDelta: tournamentPass - singlePass,
+    meets1_5xCap: multiplier <= 1.5,
+    noPassRateRegression: tournamentPass >= singlePass,
+  };
+}
+
+/**
+ * Render a Markdown table comparing single vs tournament modes for the
+ * Phase 3 §6 cost-and-accuracy ship-gate.
+ */
+export function renderModeComparison(
+  rows: readonly ModeComparisonRow[],
+  summary: ModeComparisonSummary,
+): string {
+  const lines: string[] = [];
+  lines.push(
+    '| goal | size | oblig | single eff-in | tournament eff-in | tour/single | single pass | tournament pass |',
+  );
+  lines.push('|---|---|---|---|---|---|---|---|');
+  for (const r of rows) {
+    lines.push(
+      `| ${r.goalId} | ${r.size} | ${r.obligationCount} | ${r.single.v8EffectiveInput.toFixed(0)} | ${r.tournament.v8EffectiveInput.toFixed(0)} | ${r.costMultiplier.toFixed(2)}× | ${r.single.satisfied}/${r.obligationCount} | ${r.tournament.satisfied}/${r.obligationCount} |`,
+    );
+  }
+  lines.push('');
+  lines.push(`**Goals compared:** ${summary.rowCount}`);
+  lines.push(
+    `**Total single eff-in:** ${summary.totalSingleEffectiveInput.toFixed(0)} tokens`,
+  );
+  lines.push(
+    `**Total tournament eff-in:** ${summary.totalTournamentEffectiveInput.toFixed(0)} tokens`,
+  );
+  lines.push(`**Tournament/single cost multiplier:** ${summary.costMultiplier.toFixed(3)}×`);
+  lines.push(
+    `**Single pass rate:** ${(summary.singlePassRate * 100).toFixed(1)}%`,
+  );
+  lines.push(
+    `**Tournament pass rate:** ${(summary.tournamentPassRate * 100).toFixed(1)}%`,
+  );
+  lines.push(
+    `**Pass-rate delta (tournament − single):** ${(summary.passRateDelta * 100).toFixed(2)} pp`,
+  );
+  lines.push('');
+  lines.push(
+    `**Phase 3 §6 cap (≤1.5× single):** ${summary.meets1_5xCap ? 'PASS' : 'FAIL'}`,
+  );
+  lines.push(
+    `**Phase 3 §6 (no pass-rate regression):** ${summary.noPassRateRegression ? 'PASS' : 'FAIL'}`,
+  );
   return lines.join('\n');
 }

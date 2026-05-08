@@ -5,8 +5,9 @@ import { finalize } from '../../src/contract/compiler';
 import type { FinalContract, ObligationV1 } from '../../src/contract/types';
 import { JsonlLedger } from '../../src/ledger/jsonl-ledger';
 import { createDefaultRegistry } from '../../src/persona/persona-registry';
-import { runPopulation } from '../../src/population/manager';
+import { runPopulation, type PopulationMode } from '../../src/population/manager';
 import { StubSession } from '../../src/session/stub-session';
+import type { SessionRequest } from '../../src/session/types';
 import {
   cacheHitRate,
   effectiveInputTokens,
@@ -78,6 +79,13 @@ export interface RunGoalOptions {
    * by the production benchmark harness.
    */
   workRoot?: string;
+  /** Population mode: 'single' (Phase 2) or 'tournament' (Phase 3). */
+  mode?: PopulationMode;
+  /**
+   * Tournament candidates per round when mode === 'tournament'. Defaults to
+   * the per-type defaults in DEFAULT_TOURNAMENT_CONFIG.
+   */
+  tournamentCandidates?: number;
 }
 
 /**
@@ -96,21 +104,47 @@ export async function runBenchGoal(
   const projectContext = options.projectContext ?? BENCH_PROJECT_CONTEXT;
   const work = options.workRoot ?? fs.mkdtempSync(path.join(os.tmpdir(), 'v8-bench-'));
   fs.mkdirSync(work, { recursive: true });
+  const mode: PopulationMode = options.mode ?? 'single';
 
   const contract = makeContract(work, goal.goal, goal.obligations);
 
   const session = new StubSession({
     projectContext,
-    responder: (req) => buildStubResponse(req.personaId),
+    responder: (req) => buildStubResponse(req),
   });
   const ledger = new JsonlLedger(path.join(work, 'ledger.jsonl'), goal.id);
-  const result = await runPopulation({
+  const runOptions: Parameters<typeof runPopulation>[0] = {
     contract,
     repoRoot: work,
     registry: createDefaultRegistry(),
     session,
     ledger,
-  });
+    mode,
+  };
+  if (mode === 'tournament' && options.tournamentCandidates !== undefined) {
+    const n = options.tournamentCandidates;
+    runOptions.tournamentConfig = {
+      'file-must-exist': {
+        candidatesPerRound: n,
+        roundCap: 3,
+        scoreThreshold: 0.5,
+        temperatureSchedule: [0.2, 0.5, 0.8],
+      },
+      'build-must-pass': {
+        candidatesPerRound: n,
+        roundCap: 3,
+        scoreThreshold: 0.5,
+        temperatureSchedule: [0.1, 0.4, 0.7],
+      },
+      'test-must-pass': {
+        candidatesPerRound: n,
+        roundCap: 3,
+        scoreThreshold: 0.5,
+        temperatureSchedule: [0.1, 0.4, 0.7],
+      },
+    };
+  }
+  const result = await runPopulation(runOptions);
 
   const v8Eff = effectiveInputTokens(result.totalUsage);
   const v6Usage = modelV6Usage(goal.obligations, v6Model);
@@ -144,8 +178,14 @@ function makeContract(repoRoot: string, goal: string, obligations: ObligationV1[
   });
 }
 
-function buildStubResponse(personaId: string): string {
-  if (personaId === 'architect') {
+function buildStubResponse(req: SessionRequest): string {
+  // Tournament-verifier persona expects a strict JSON envelope with a
+  // score above the threshold so the synthetic benchmark commits the
+  // first candidate deterministically (see Phase 3 verifier-persona.ts).
+  if (req.personaId === 'tournament-verifier') {
+    return JSON.stringify({ score: 0.85, rationale: 'synthetic-bench score' });
+  }
+  if (req.personaId === 'architect') {
     return [
       '```',
       `// stub-emitted file for benchmark goal`,

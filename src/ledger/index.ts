@@ -6,6 +6,7 @@
 
 export { JsonlLedger, readEntries } from './jsonl-ledger';
 export type {
+  CandidateDiscardedEntry,
   CandidateRecordedEntry,
   LedgerEntry,
   LedgerEntryHeader,
@@ -15,4 +16,7 @@ export type {
   ObligationSatisfiedEntry,
   RunFinishedEntry,
   RunStartedEntry,
+  TournamentEscalatedEntry,
+  TournamentRoundStartedEntry,
+  TournamentWinnerSelectedEntry,
 } from './types';

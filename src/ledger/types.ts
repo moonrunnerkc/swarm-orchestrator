@@ -75,14 +75,88 @@ export interface RunFinishedEntry extends LedgerEntryHeader {
   totalUsage: SessionUsage;
 }
 
-/** Discriminated union of every Phase 2 ledger entry shape. */
+/**
+ * Phase 3: a tournament round started for an obligation. The same
+ * obligationIndex may be revisited up to `roundCap` times; each round emits
+ * its own entry so the ledger captures diversity-injection decisions.
+ */
+export interface TournamentRoundStartedEntry extends LedgerEntryHeader {
+  type: 'tournament-round-started';
+  obligationIndex: number;
+  obligationType: string;
+  roundIndex: number;
+  /** Total rounds allowed for this obligation. */
+  roundCap: number;
+  /** Persona ids dispatched in this round, in order. */
+  personaIds: string[];
+  /** Sampling temperatures used per candidate, parallel to personaIds. */
+  temperatures: number[];
+}
+
+/**
+ * Phase 3: a candidate that lost the tournament. Its diff hash and token
+ * cost are captured for cost attribution per impl guide §6 ("losing
+ * candidates are logged to the ledger with full diff hash but never
+ * applied. Their token cost is captured for cost attribution.").
+ */
+export interface CandidateDiscardedEntry extends LedgerEntryHeader {
+  type: 'candidate-discarded';
+  obligationIndex: number;
+  roundIndex: number;
+  candidateIndex: number;
+  personaId: string;
+  responseSha256: string;
+  /** Verifier's structured score in [0, 1]; see verifier-persona.ts. */
+  score: number;
+  /** Verifier's brief rationale for the score. */
+  rationale: string;
+  /** Token usage attributed to this candidate's generation call. */
+  usage: SessionUsage;
+  model: string;
+}
+
+/**
+ * Phase 3: tournament selected a winner. The winning candidate is the one
+ * whose response is then applied / verified in the standard pipeline.
+ */
+export interface TournamentWinnerSelectedEntry extends LedgerEntryHeader {
+  type: 'tournament-winner-selected';
+  obligationIndex: number;
+  roundIndex: number;
+  candidateIndex: number;
+  personaId: string;
+  responseSha256: string;
+  score: number;
+  rationale: string;
+}
+
+/**
+ * Phase 3: tournament exhausted its round cap without producing a winner
+ * that satisfies the obligation. The run escalates: §6 specifies surfacing
+ * to the user with all candidate diffs and verifier scores.
+ */
+export interface TournamentEscalatedEntry extends LedgerEntryHeader {
+  type: 'tournament-escalated';
+  obligationIndex: number;
+  obligationType: string;
+  roundsRun: number;
+  /** Highest candidate score seen across all rounds. */
+  bestScore: number;
+  detail: string;
+}
+
+/** Discriminated union of every ledger entry shape. */
 export type LedgerEntry =
   | RunStartedEntry
   | ObligationAttemptedEntry
   | CandidateRecordedEntry
   | ObligationSatisfiedEntry
   | ObligationFailedEntry
-  | RunFinishedEntry;
+  | RunFinishedEntry
+  | TournamentRoundStartedEntry
+  | CandidateDiscardedEntry
+  | TournamentWinnerSelectedEntry
+  | TournamentEscalatedEntry;
 
 /** Type tag union for all ledger entries. */
 export type LedgerEntryType = LedgerEntry['type'];

@@ -2,12 +2,16 @@ import * as crypto from 'crypto';
 import type { FinalContract, ObligationV1 } from '../contract/types';
 import type { JsonlLedger } from '../ledger/jsonl-ledger';
 import type {
+  CandidateDiscardedEntry,
   CandidateRecordedEntry,
   ObligationAttemptedEntry,
   ObligationFailedEntry,
   ObligationSatisfiedEntry,
   RunFinishedEntry,
   RunStartedEntry,
+  TournamentEscalatedEntry,
+  TournamentRoundStartedEntry,
+  TournamentWinnerSelectedEntry,
 } from '../ledger/types';
 import type { PersonaRegistry } from '../persona/persona-registry';
 import type { PersonaSpec } from '../persona/types';
@@ -16,7 +20,20 @@ import type { Session, SessionUsage } from '../session/types';
 import { addUsage, emptyUsage } from '../session/types';
 import { verifyObligation } from '../verification/run-verifier';
 import { applyFileEmit } from './diff-applier';
+import { applyUnifiedDiff, looksLikeUnifiedDiff } from './unified-diff';
 import { PopulationStateBuilder } from './state';
+import {
+  DEFAULT_TOURNAMENT_CONFIG,
+  runTournament,
+  type TournamentCandidate,
+  type TournamentConfig,
+  type TournamentLedgerSink,
+  type TournamentPersonaSlate,
+  type TournamentResult,
+} from './tournament';
+
+/** Mode the population manager runs in. */
+export type PopulationMode = 'single' | 'tournament';
 
 export interface RunPopulationOptions {
   contract: FinalContract;
@@ -32,6 +49,16 @@ export interface RunPopulationOptions {
   commandTimeoutMs?: number;
   /** Optional cap on obligations attempted; useful for tests. */
   maxObligations?: number;
+  /**
+   * Execution mode: `single` runs the Phase 2 sequential path (one persona
+   * per obligation, one candidate); `tournament` runs the Phase 3 path
+   * (N candidates per obligation, scored by the tournament-verifier
+   * persona, winner applied). Defaults to `single` for back-compat with
+   * existing tests; the v8 CLI defaults to `tournament` post-Phase 3.
+   */
+  mode?: PopulationMode;
+  /** Optional per-obligation-type tournament config override. */
+  tournamentConfig?: Partial<Record<ObligationV1['type'], TournamentConfig>>;
 }
 
 /** Per-obligation outcome the manager hands back to the caller. */
@@ -41,6 +68,11 @@ export interface ObligationOutcome {
   personaId: string | null;
   satisfied: boolean;
   detail: string;
+  /**
+   * Tournament evidence when mode === 'tournament'. Null in single mode
+   * or when the obligation never reached the tournament path.
+   */
+  tournament?: TournamentResult | null;
 }
 
 /** Aggregate result of running the contract. */
@@ -51,21 +83,17 @@ export interface RunPopulationResult {
   totalUsage: SessionUsage;
   /** Wall time for the whole run, ms. */
   wallTimeMs: number;
+  /** Mode the run executed under. */
+  mode: PopulationMode;
 }
 
 /**
- * Phase 2 population manager. Walks unsatisfied obligations sequentially,
- * one persona at a time. For each obligation:
- *   1. Pick the persona via predicate evaluation.
- *   2. Build a per-call user message containing the obligation.
- *   3. Call the session.
- *   4. Apply the response (file-must-exist only in Phase 2).
- *   5. Run the verifier.
- *   6. Append a ledger entry.
- *
- * Build/test obligations don't have an apply step yet — Phase 2 simply
- * runs the command via the verifier to record the current pass/fail state.
- * Phase 3 introduces the tournament path that produces patches for those.
+ * Population manager. Walks unsatisfied obligations sequentially. For
+ * each obligation, picks the persona via predicate evaluation and either:
+ *   - `single` mode (Phase 2): one call, one candidate, apply, verify.
+ *   - `tournament` mode (Phase 3): N candidates per round, verifier
+ *     picks the winner, winner applied + verified; loser candidates are
+ *     logged with full diff hash and token cost.
  *
  * Returns aggregate outcomes plus session usage and wall time.
  */
@@ -75,6 +103,7 @@ export async function runPopulation(
   const start = Date.now();
   const { contract, repoRoot, registry, session, ledger, commandTimeoutMs } = options;
   const cap = options.maxObligations ?? contract.obligations.length;
+  const mode: PopulationMode = options.mode ?? 'single';
   const builder = new PopulationStateBuilder(contract.obligations);
 
   ledger.append<RunStartedEntry>({
@@ -105,6 +134,49 @@ export async function runPopulation(
       personaId: persona.id,
     });
 
+    if (mode === 'tournament') {
+      const result = await executeTournament({
+        obligation,
+        obligationIndex,
+        primaryPersona: persona,
+        registry,
+        session,
+        ledger,
+        repoRoot,
+        commandTimeoutMs,
+        tournamentConfig: options.tournamentConfig,
+      });
+      totalUsage = addUsage(totalUsage, result.tournament.usage);
+      const winnerPersonaId = result.tournament.winner?.personaId ?? null;
+      if (result.satisfied) {
+        builder.setStatus(obligationIndex, 'satisfied');
+        ledger.append<ObligationSatisfiedEntry>({
+          type: 'obligation-satisfied',
+          obligationIndex,
+          obligationType: obligation.type,
+          detail: result.detail,
+        });
+      } else {
+        builder.setStatus(obligationIndex, 'failed');
+        ledger.append<ObligationFailedEntry>({
+          type: 'obligation-failed',
+          obligationIndex,
+          obligationType: obligation.type,
+          detail: result.detail,
+        });
+      }
+      outcomes.push({
+        obligationIndex,
+        obligation,
+        personaId: winnerPersonaId,
+        satisfied: result.satisfied,
+        detail: result.detail,
+        tournament: result.tournament,
+      });
+      continue;
+    }
+
+    // Single mode (Phase 2 path).
     const dynamic = renderDynamicMessage(obligation, repoRoot);
     const response = await session.complete({
       personaId: persona.id,
@@ -125,6 +197,12 @@ export async function runPopulation(
 
     if (obligation.type === 'file-must-exist') {
       applyFileEmit(repoRoot, obligation.path, response.text);
+    } else if (looksLikeUnifiedDiff(response.text)) {
+      try {
+        applyUnifiedDiff(repoRoot, response.text);
+      } catch {
+        // The verifier will detect the failure; manager surfaces it.
+      }
     }
 
     const verifyOpts: Parameters<typeof verifyObligation>[1] = { repoRoot };
@@ -155,6 +233,7 @@ export async function runPopulation(
       personaId: persona.id,
       satisfied: verifyResult.satisfied,
       detail: verifyResult.detail,
+      tournament: null,
     });
   }
 
@@ -174,6 +253,7 @@ export async function runPopulation(
     failed,
     totalUsage,
     wallTimeMs: Date.now() - start,
+    mode,
   };
 }
 
@@ -216,4 +296,148 @@ function sha256(s: string): string {
 /** Persona helper used by tests: list the personas a given registry exposes. */
 export function listPersonaIds(registry: PersonaRegistry): string[] {
   return registry.list().map((p: PersonaSpec) => p.id);
+}
+
+interface ExecuteTournamentArgs {
+  obligation: ObligationV1;
+  obligationIndex: number;
+  primaryPersona: PersonaSpec;
+  registry: PersonaRegistry;
+  session: Session;
+  ledger: JsonlLedger;
+  repoRoot: string;
+  commandTimeoutMs: number | undefined;
+  tournamentConfig: RunPopulationOptions['tournamentConfig'];
+}
+
+interface ExecuteTournamentResult {
+  satisfied: boolean;
+  detail: string;
+  tournament: TournamentResult;
+}
+
+/**
+ * Per-obligation tournament dispatcher used by the manager when
+ * `mode === 'tournament'`. Builds the persona slate from the registry,
+ * applies the per-type config, and turns ledger sink callbacks into
+ * `JsonlLedger` writes.
+ */
+async function executeTournament(args: ExecuteTournamentArgs): Promise<ExecuteTournamentResult> {
+  const {
+    obligation,
+    obligationIndex,
+    primaryPersona,
+    registry,
+    session,
+    ledger,
+    repoRoot,
+    commandTimeoutMs,
+    tournamentConfig,
+  } = args;
+
+  const config = {
+    ...DEFAULT_TOURNAMENT_CONFIG[obligation.type],
+    ...(tournamentConfig?.[obligation.type] ?? {}),
+  };
+
+  const fallback: PersonaSpec[] = registry
+    .list()
+    .filter((p) => p.id !== primaryPersona.id && p.handles.length === 0 ? false : p.id !== primaryPersona.id);
+  const personas: TournamentPersonaSlate = { primary: [primaryPersona], fallback };
+
+  const sink: TournamentLedgerSink = {
+    recordRoundStarted(p) {
+      ledger.append<TournamentRoundStartedEntry>({
+        type: 'tournament-round-started',
+        ...p,
+      });
+    },
+    recordCandidate(p) {
+      ledger.append<CandidateRecordedEntry>({
+        type: 'candidate-recorded',
+        ...p,
+      });
+    },
+    recordWinner(p) {
+      ledger.append<TournamentWinnerSelectedEntry>({
+        type: 'tournament-winner-selected',
+        ...p,
+      });
+    },
+    recordDiscard(p) {
+      ledger.append<CandidateDiscardedEntry>({
+        type: 'candidate-discarded',
+        ...p,
+      });
+    },
+    recordEscalation(p) {
+      ledger.append<TournamentEscalatedEntry>({
+        type: 'tournament-escalated',
+        ...p,
+      });
+    },
+  };
+
+  const result = await runTournament({
+    obligation,
+    obligationIndex,
+    session,
+    personas,
+    config,
+    renderUserMessage: (o) => renderDynamicMessage(o, repoRoot),
+    applyCandidate: async (candidate: TournamentCandidate, ob: ObligationV1) => {
+      const applyDetail = applyTournamentCandidate(repoRoot, ob, candidate.response.text);
+      const verifyOpts: Parameters<typeof verifyObligation>[1] = { repoRoot };
+      if (commandTimeoutMs !== undefined) verifyOpts.commandTimeoutMs = commandTimeoutMs;
+      const verifyResult = verifyObligation(ob, verifyOpts);
+      return {
+        satisfied: verifyResult.satisfied,
+        detail: `${applyDetail}; ${verifyResult.detail}`,
+      };
+    },
+    ledgerSink: sink,
+  });
+
+  if (result.satisfied) {
+    return {
+      satisfied: true,
+      detail: result.detail,
+      tournament: result,
+    };
+  }
+  return {
+    satisfied: false,
+    detail: result.detail,
+    tournament: result,
+  };
+}
+
+/**
+ * Apply a candidate's response to the workspace. Picks between the
+ * fenced single-file applier (architect-style) and the unified-diff
+ * applier (implementer/verifier-style) based on response shape and
+ * obligation type. Returns a short detail string for the ledger.
+ */
+function applyTournamentCandidate(
+  repoRoot: string,
+  obligation: ObligationV1,
+  responseText: string,
+): string {
+  const trimmed = responseText.trim();
+  if (trimmed === 'no-op' || trimmed === '"no-op"') {
+    return 'no-op declared';
+  }
+  if (obligation.type === 'file-must-exist') {
+    const r = applyFileEmit(repoRoot, obligation.path, responseText);
+    return r.detail;
+  }
+  if (looksLikeUnifiedDiff(responseText)) {
+    try {
+      const r = applyUnifiedDiff(repoRoot, responseText);
+      return r.detail;
+    } catch (err) {
+      return `unified diff apply error: ${(err as Error).message.slice(0, 120)}`;
+    }
+  }
+  return 'response was neither no-op nor a unified diff; nothing applied';
 }

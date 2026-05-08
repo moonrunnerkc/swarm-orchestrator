@@ -25,3 +25,13 @@ export {
   type PopulationState,
   type TriggerPredicate,
 } from './predicates';
+
+export {
+  TOURNAMENT_VERIFIER_PERSONA,
+  clampScore,
+  parseVerifierScore,
+  renderVerifierPrompt,
+  scoreCandidate,
+  type ScoredCandidate,
+  type VerifierScore,
+} from './verifier-persona';

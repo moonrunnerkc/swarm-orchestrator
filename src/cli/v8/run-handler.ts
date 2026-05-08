@@ -24,6 +24,10 @@ export interface RunFlags {
   runId: string | null;
   /** Optional path to write the structured result JSON. */
   resultPath: string | null;
+  /** Population mode: 'single' (Phase 2) or 'tournament' (Phase 3 default). */
+  mode: 'single' | 'tournament';
+  /** Optional override for tournament candidates per round. */
+  candidates: number | null;
 }
 
 /** Test seam: lets tests inject a custom session and/or registry. */
@@ -90,9 +94,32 @@ export async function handleRun(
     registry,
     session,
     ledger,
+    mode: flags.mode,
   };
   if (flags.maxObligations !== null) runOptions.maxObligations = flags.maxObligations;
   if (flags.commandTimeoutMs !== null) runOptions.commandTimeoutMs = flags.commandTimeoutMs;
+  if (flags.candidates !== null && flags.mode === 'tournament') {
+    runOptions.tournamentConfig = {
+      'file-must-exist': {
+        candidatesPerRound: flags.candidates,
+        roundCap: 3,
+        scoreThreshold: 0.5,
+        temperatureSchedule: [0.2, 0.5, 0.8],
+      },
+      'build-must-pass': {
+        candidatesPerRound: flags.candidates,
+        roundCap: 3,
+        scoreThreshold: 0.5,
+        temperatureSchedule: [0.1, 0.4, 0.7],
+      },
+      'test-must-pass': {
+        candidatesPerRound: flags.candidates,
+        roundCap: 3,
+        scoreThreshold: 0.5,
+        temperatureSchedule: [0.1, 0.4, 0.7],
+      },
+    };
+  }
 
   const result = await runPopulation(runOptions);
 
@@ -100,6 +127,7 @@ export async function handleRun(
   const rate = cacheHitRate(result.totalUsage);
   logger.info(`run id:        ${runId}`);
   logger.info(`contract id:   ${contract.manifest.contractId}`);
+  logger.info(`mode:          ${result.mode}`);
   logger.info(`obligations:   ${result.satisfied}/${result.outcomes.length} satisfied`);
   logger.info(
     `tokens (in):   ${result.totalUsage.inputTokens} std + ${result.totalUsage.cacheReadTokens} cache-read + ${result.totalUsage.cacheCreationTokens} cache-write`,
@@ -115,6 +143,7 @@ export async function handleRun(
       runId,
       contractId: contract.manifest.contractId,
       contractHash: contract.manifest.contractHash,
+      mode: result.mode,
       obligationCount: result.outcomes.length,
       satisfied: result.satisfied,
       failed: result.failed,
@@ -129,6 +158,14 @@ export async function handleRun(
         personaId: o.personaId,
         satisfied: o.satisfied,
         detail: o.detail,
+        tournament: o.tournament
+          ? {
+              rounds: o.tournament.rounds.length,
+              escalated: o.tournament.escalated,
+              bestScore: o.tournament.bestScore,
+              winner: o.tournament.winner,
+            }
+          : null,
       })),
     });
   }
@@ -185,6 +222,8 @@ export function parseRunFlags(argv: string[]): RunFlags {
     commandTimeoutMs: null,
     runId: null,
     resultPath: null,
+    mode: 'single',
+    candidates: null,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -221,6 +260,19 @@ export function parseRunFlags(argv: string[]): RunFlags {
       flags.runId = requireValue(argv, ++i, '--run-id');
     } else if (arg === '--result') {
       flags.resultPath = requireValue(argv, ++i, '--result');
+    } else if (arg === '--mode') {
+      const v = requireValue(argv, ++i, '--mode');
+      if (v !== 'single' && v !== 'tournament') {
+        throw new Error(`invalid --mode value "${v}"; expected single | tournament`);
+      }
+      flags.mode = v;
+    } else if (arg === '--candidates') {
+      const raw = requireValue(argv, ++i, '--candidates');
+      const n = Number.parseInt(raw, 10);
+      if (!Number.isFinite(n) || n <= 0 || n > 8) {
+        throw new Error(`invalid --candidates "${raw}"; must be a positive integer ≤ 8`);
+      }
+      flags.candidates = n;
     } else if (arg === '--help' || arg === '-h') {
       printRunUsage();
       throw new Error('help requested');
@@ -274,6 +326,8 @@ function printRunUsage(): void {
       '  --command-timeout-ms <ms>    per-command timeout (default 300000)',
       '  --run-id <id>                run id override (default time-based)',
       '  --result <path>              write structured run result to this JSON file',
+      '  --mode single|tournament     execution mode (default single)',
+      '  --candidates <n>             tournament candidates per round (1-8, type-default otherwise)',
       '  --help, -h                   show this message',
       '',
     ].join('\n'),
