@@ -781,13 +781,14 @@ confirms (or supplies a different number) at the Part A → Part B
 STOP; an upward override requires a DECISIONS.md entry before Part B
 begins.
 
-**Pre-registration commit SHA:** appended in this entry once the
-commit lands; the SHA is the reference point for "was this artefact
-locked before any Phase 2 run?" If the operator overrides the cost
-ceiling, the override entry cites this SHA. The harness and analysis
-script are re-built from this commit for any subsequent re-run; a
-git checkout at this SHA must reproduce the same obligation set,
-fixture content hash, and analysis-script self-test result.
+**Pre-registration commit SHA:** `378e533` (full:
+`378e53367e1e4dbef3cc2ee10cba9430f309cae6`). This is the reference
+point for "was this artefact locked before any Phase 2 run?" If the
+operator overrides the cost ceiling, the override entry cites this
+SHA. The harness and analysis script are re-built from this commit
+for any subsequent re-run; a git checkout at `378e533` must reproduce
+the same obligation set, fixture content hash, and analysis-script
+self-test result.
 
 **Out-of-scope reaffirmed:** Phase 3+ adapters do not start in
 Phase 2's session. The 48-hour post-merge regression check is
