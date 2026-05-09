@@ -99,6 +99,68 @@ Resolution requires either (a) evidence that the battery's existing layers —
 the post-merge regression surface, or (b) a concrete scenario where it
 demonstrably misses one. Until one of those exists, Phase 2 is blocked.
 
+### 2026-05-08 — Phase 1 dev gate: BLOCKED on local Codex install
+
+The Phase 1 dev gate (per `docs/adapter-integration.md`) requires running
+`CodexFalsifier` against a sample of 20 `property-must-hold` obligations
+the existing battery passes, then hand-inspecting the claimed
+falsifications to rule out false positives.
+
+**Blocker:** the `codex` binary is not installed in this environment
+(verified via `command -v codex` and `which codex`, both returned no
+result), and provisioning OpenAI credentials for the agent that
+implemented this work is out of scope. The dev gate has not been run.
+
+**This is not a "dev gate failed" outcome — it is a "dev gate not yet
+attempted" outcome.** The two are different and the distinction matters
+for the Phase 1 stop conditions: the plan's "iterate once, then stop if
+still zero" rule applies after the gate has been *run*, not after it has
+been *deferred*.
+
+**Required next actions before the gate's pass/iterate/stop decision can
+be recorded:**
+
+1. Install Codex on the host that will run the gate
+   (`npm i -g @openai/codex`).
+2. Provision `OPENAI_API_KEY` in the environment.
+3. Build: `npm run build`.
+4. Run the env-gated integration test as a smoke check:
+   `SWARM_E2E_CODEX=1 npx mocha 'dist/test/falsification/adapters/codex/codex-falsifier.integration.test.js'`.
+   It must pass on the trivial token-grep property; if it does not, the
+   gate has already failed at the smoke level — stop and iterate the
+   prompt.
+5. Sample 20 obligations the existing battery passes. The repo's own
+   contracts plus the corpus under `benchmarks/falsification-corpus/`
+   are candidate sources; pick obligations whose `predicate` is a real
+   shell command (not just `true` / `false`).
+6. For each obligation, run `CodexFalsifier.falsify()` against a fresh
+   workspace checked out at the patch SHA. Record per-obligation:
+   - whether a counter-example was returned,
+   - the reproducer command and exit code,
+   - the captured `reproducerOutput`,
+   - per-call `dollarsSpent` and `wallClockMs`.
+7. Hand-inspect each claimed counter-example: re-run the reproducer
+   independently, confirm the predicate exits non-zero, confirm the
+   falsifying input is meaningful (not, e.g., a malformed file that
+   coincidentally trips the predicate for an unrelated reason).
+8. Record the gate outcome in this file with another dated entry,
+   citing yield count, false-positive count, total dollars, and total
+   wall-clock. Commit the run artifacts under `runs/<id>/` (gitignored)
+   and a derived summary under a tracked path.
+
+**Pass criterion:** at least one reproducible real failure across the 20
+obligations.
+
+**Iterate-once criterion:** zero real failures after the first run. The
+strategy iteration is a single change to `codex-prompt.ts`; commit it
+on the same branch with a message that names the change and the
+expected effect on yield.
+
+**Stop criterion:** zero real failures after the iterated strategy.
+Document the negative result here, push, and do not iterate further
+without explicit approval. The plan's risk register treats this as a
+publishable outcome.
+
 ### 2026-05-08 — Out of scope, restated
 
 The following are explicitly out of scope for the Phase 0/1 work and must
