@@ -99,7 +99,11 @@ interface CliFlags {
 
 const DEFAULT_TIME_BUDGET_MS = 300_000;
 const DEFAULT_COST_CAP_A_USD = 0.01;
-const DEFAULT_COST_CAP_B_USD = 1.0;
+// Config B per-obligation hard cap. 30 × $0.65 = $19.50 + Config A's
+// $0.30 worst case = $19.80 total. Tightened from the original $1.00
+// proposal after the operator approved a $20 worst-case ceiling for
+// Phase 2 (DECISIONS.md 2026-05-09 — Phase 2 cost cap tightened).
+const DEFAULT_COST_CAP_B_USD = 0.65;
 
 function parseFlags(argv: readonly string[]): CliFlags {
   let config: ConfigName | null = null;

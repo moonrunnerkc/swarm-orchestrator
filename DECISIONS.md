@@ -795,3 +795,47 @@ Phase 2's session. The 48-hour post-merge regression check is
 resolved as skip per the prior dated entry. Re-running config A or
 config B mid-study to "fix" a result is not allowed; discards are
 environmental-only (rate limit, network) and logged.
+
+### 2026-05-09 — Phase 2 cost cap tightened: operator approved $20 worst-case
+
+The pre-registration entry above proposed a Config B per-obligation
+hard cap of `$1.00` (30 × $1.00 = $30.00 worst case for B, $30.30
+combined). The operator approved a `$20` worst-case ceiling instead.
+
+**Decision: tighten Config B's per-obligation hard cap from `$1.00` to
+`$0.65`.** New worst-case totals:
+
+- Config A: `30 × $0.01 = $0.30`.
+- Config B: `30 × $0.65 = $19.50`.
+- Combined upper bound: `$19.80`, within the operator's `$20` ceiling.
+
+**Why:** the operator's $20 limit binds the run; the per-obligation
+cap is the lever the harness enforces. $0.65 still gives 4.3×
+headroom over Phase 1's per-obligation mean of $0.15, so a typical
+obligation runs nowhere near the cap; outlier obligations that would
+have exceeded $0.65 are flagged as `costCapHit` rather than allowed
+to consume budget that could push the total over $20.
+
+**How to apply:** the tightening edits the cap default in
+`scripts/phase2/run-harness.ts` and the corresponding numbers in
+`evidence/phase2/PROTOCOL.md`. Per the protocol's "Restart
+conditions" rule — "Changing the cost cap … after this commit and
+before the run completes invalidates the run and requires a new
+pre-registration commit" — this tightening produces a new
+pre-registration SHA, recorded below this entry once the commit
+lands. Part B does not start until that SHA is recorded.
+
+**Pareto-dominance ceiling unchanged.** The previously proposed
+ceiling (median per-obligation billed-cost diff (B − A) ≤ `$0.50`,
+total billed-cost diff across 30 obligations ≤ `$15.00`) is below
+the tightened cap and remains the criterion for the C2.1 (ship B)
+decision branch. Tightening the cap below the ceiling means a
+Pareto-acceptable run cannot hit the cap by definition; runs that
+do hit the cap are by definition not Pareto-acceptable on cost,
+which is the intended signal.
+
+**Updated pre-registration commit SHA:** appended in this entry once
+the cap-tightening commit lands. Both SHAs are referenced together
+when reading the locked artefact set (the original `378e533` for
+obligations / fixture / harness shape; the new SHA for the cost-cap
+value).

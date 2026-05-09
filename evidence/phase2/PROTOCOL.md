@@ -75,11 +75,13 @@ duplicate the per-obligation predicate evaluation and add no signal.
 - **Config A:** `$0.01` per obligation, hard. A has no LLM calls so
   this is a sanity-check cap (a non-zero number in cost.json under
   Config A would indicate a harness defect).
-- **Config B:** `$1.00` per obligation, hard. Phase 1's mean
+- **Config B:** `$0.65` per obligation, hard. Phase 1's mean
   per-obligation cost was ~`$0.15` (`evidence/phase1-dev-gate/run-1/summary.md`
-  total `$2.9989` ÷ 20 obligations); `$1.00` gives 6.7× headroom for
-  adversarial outliers without inflating the worst-case Phase 2 spend
-  past `$30.00` total.
+  total `$2.9989` ÷ 20 obligations); `$0.65` gives 4.3× headroom for
+  adversarial outliers while keeping the worst-case Phase 2 spend
+  within the operator-approved `$20` ceiling. (Originally proposed at
+  `$1.00`; tightened after the operator approved `$20` worst case.
+  See DECISIONS.md 2026-05-09 entry "Phase 2 cost cap tightened".)
 - **Cost-cap hits are logged, not retried.** When `cost.json` records
   `costCapHit: true` for an obligation, that obligation is treated as
   completed for the run; the cost-cap-hit count appears in
@@ -89,9 +91,10 @@ duplicate the per-obligation predicate evaluation and add no signal.
 Total estimated spend at the locked cap:
 
 - Config A: `30 × $0.01 = $0.30` worst case (expected: `$0`).
-- Config B: `30 × $1.00 = $30.00` worst case (expected: `~$5` based
+- Config B: `30 × $0.65 = $19.50` worst case (expected: `~$5` based
   on Phase 1's per-obligation mean).
-- Combined upper bound: `$30.30`.
+- Combined upper bound: `$19.80`, within the operator-approved `$20`
+  ceiling.
 
 ## Statistical method
 
