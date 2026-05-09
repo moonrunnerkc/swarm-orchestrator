@@ -1381,3 +1381,79 @@ on).
 - Cost-trailer hot-fix (drop `-s`): `6f76f94`.
 - Run artefacts + analysis + this close-out + registry default flip:
   recorded in the commit that lands this entry.
+
+### 2026-05-09 — Phase 4 protocol PRE-REGISTERED
+
+The Phase 4 protocol is locked at `evidence/phase4/PROTOCOL.md` as of
+this commit. Locking before any Phase 4 run is executed prevents
+post-hoc adjustment of the obligation set, statistical method, or
+decision-input rule.
+
+**Locked artefacts (this commit):**
+
+- `evidence/phase3/obligations.json` — same N=20 set as Phase 3.
+  Reused per the agent brief ("No new obligation set"). Contamination
+  guard at `test/falsification/phase3-gate-fixture.test.ts` already
+  certifies the fixture against this set.
+- `evidence/fixtures/phase-3/` — same fixture as Phase 3.
+- `scripts/phase4/run-harness.ts` — paired-run harness for Config B'
+  (Codex+Copilot) vs Config B'' (Codex+Copilot+ClaudeCode). The
+  dispatcher offers each obligation to every adapter that handles it;
+  per-adapter outcomes and per-obligation aggregates land in
+  `evidence/phase4/run/<config>/<id>/`.
+- `scripts/phase4/analyze.py` — paired Wilcoxon + McNemar with
+  Bonferroni, plus the Phase-4-specific
+  ClaudeCode-marginal-yield-per-dollar comparison. `--self-test`
+  exercises the math on synthetic datasets covering both the
+  diversity-confirmed and diversity-weakened branches.
+- `src/falsification/adapters/claude-code/` — the Phase 4 falsifier
+  adapter. Wraps the real `claude` CLI via `-p --output-format json`,
+  no `--dangerously-skip-permissions`. The prompt is *deliberately
+  identical* to Copilot's (re-exported from `copilot-prompt.ts`) so
+  the cross-family-diversity comparison is well-posed: same task,
+  different model family.
+- `evidence/phase4/PROTOCOL.md` — the protocol document itself.
+
+**Cost cap (per obligation):** Config B' `$0.65`; Config B'' `$1.50`
+(higher headroom for ClaudeCode's per-call cost — a smoke test against
+the OAuth/Max-session-driven CLI showed ~$0.077 per simple turn). The
+adapter passes `--max-budget-usd 1.00` to the `claude` subprocess as a
+per-call hard cap.
+
+**Decision rule:** Phase 4 is *not* a ship/no-ship gate; ClaudeCode
+ships behind the per-adapter `includeClaudeCode: true` flag (default
+off, per the plan) regardless of outcome. The Phase-4 measurement is
+an input to the Phase 5 gate:
+- ClaudeCode marginal yield = 0 → cross-family-diversity thesis
+  CONFIRMED; Phase 5 skipped (two adapters running fire-all is the
+  production configuration).
+- ClaudeCode marginal yield > 0 → cross-family-diversity thesis
+  WEAKENED; Phase 5 (bandit dispatcher) is eligible.
+
+**Pre-registration commit SHA:** recorded in the commit that lands
+this entry. The harness, analysis script, and adapter are re-built
+from this commit for any subsequent re-run.
+
+**Out-of-scope reaffirmed:** Phase 5+ does not start until Phase 4's
+measurement runs. Phase 6 remains conditional on a separate
+high-stakes-obligations finding.
+
+### 2026-05-09 — Phase 4 sandbox posture
+
+ClaudeCode CLI is spawned with `-p --output-format json
+--max-budget-usd 1.00 --add-dir <workspace>
+--no-session-persistence --exclude-dynamic-system-prompt-sections`.
+No `--dangerously-skip-permissions`, no
+`--allow-dangerously-skip-permissions`, no `--bare`. The
+`--add-dir <workspace>` grants tool access to the isolated temp
+workspace only; the prompt instructs the model not to write or run
+shells, only to emit a fenced ```json``` block of candidate
+perturbations. The orchestrator (not the model) applies and rolls
+back each candidate.
+
+Authentication uses the operator's logged-in OAuth/Max session by
+default (no `ANTHROPIC_API_KEY` required). Under that auth,
+`dollarsBilled = 0` (subscription-flat) and `dollarsTokenEstimate`
+equals the API rate-card value the CLI returns in
+`total_cost_usd`. If the operator sets `ANTHROPIC_API_KEY`,
+`dollarsBilled = dollarsTokenEstimate` (per-token billing).

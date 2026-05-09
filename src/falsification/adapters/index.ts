@@ -29,10 +29,13 @@ export { CodexFalsifier } from './codex/codex-falsifier';
 export type { CodexFalsifierOptions } from './codex/codex-falsifier';
 export { CopilotFalsifier } from './copilot/copilot-falsifier';
 export type { CopilotFalsifierOptions } from './copilot/copilot-falsifier';
+export { ClaudeCodeFalsifier } from './claude-code/claude-code-falsifier';
+export type { ClaudeCodeFalsifierOptions } from './claude-code/claude-code-falsifier';
 
 import { AdapterRegistry } from './registry';
 import { CodexFalsifier } from './codex/codex-falsifier';
 import { CopilotFalsifier } from './copilot/copilot-falsifier';
+import { ClaudeCodeFalsifier } from './claude-code/claude-code-falsifier';
 
 /**
  * Build a registry pre-populated with the orchestrator's built-in
@@ -56,6 +59,13 @@ export interface DefaultRegistryOptions {
    * that wants Codex-only behaviour, can opt out.
    */
   readonly includeCopilot?: boolean;
+  /**
+   * Register the ClaudeCode falsifier alongside Codex and Copilot.
+   * Default false per the Phase 4 plan ("Ship the adapter regardless of
+   * yield … behind its own per-adapter flag"). The Phase 4 measurement
+   * harness opts in via this flag.
+   */
+  readonly includeClaudeCode?: boolean;
 }
 
 export function defaultAdapterRegistry(options: DefaultRegistryOptions = {}): AdapterRegistry {
@@ -64,6 +74,9 @@ export function defaultAdapterRegistry(options: DefaultRegistryOptions = {}): Ad
   const includeCopilot = options.includeCopilot ?? true;
   if (includeCopilot) {
     registry.register(new CopilotFalsifier());
+  }
+  if (options.includeClaudeCode === true) {
+    registry.register(new ClaudeCodeFalsifier());
   }
   return registry;
 }
