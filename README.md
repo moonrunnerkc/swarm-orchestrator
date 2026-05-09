@@ -441,7 +441,7 @@ The following are deliberately deferred and documented; each fails cleanly when 
 | [Phase 7 benchmark](docs/v8-phase-7-benchmark.md) | Persona/obligation expansion gate. |
 | [Verification](docs/verification.md) | Per-step verifier, outcome checks, transcript checks, hook evidence. |
 | [Adapters](docs/adapters.md) | v6 CLI adapter capabilities, options, supervisor. |
-| [Falsification adapters](docs/falsification-adapters.md) | v8 falsifier subsystem (Phase 0/1 of [adapter-integration.md](docs/adapter-integration.md)). Contract, registry, cost schema, Codex adapter. |
+| [Falsification adapters](docs/falsification-adapters.md) | v8 falsifier subsystem (final post-2026-05-09 close-out). Production set: Codex + Copilot default-on, ClaudeCode behind a per-adapter flag default-off. Contract, registry, dual-column cost reporting, methodology-fix invariants. |
 | [Decisions](DECISIONS.md) | Architectural decisions, including the Adapter Decisions section that records sandbox posture, obligation targets, and still-open questions. |
 | [Quality gates](docs/quality-gates.md) | The nine built-in gates and how to register custom ones. |
 | [Configuration](docs/configuration.md) | Config file precedence, schema, overrides. |

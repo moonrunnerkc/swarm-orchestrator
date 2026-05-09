@@ -1,6 +1,39 @@
 # Adapter Reintegration Implementation Plan
 
-## Implementation status
+> **FINAL STATUS — closed out 2026-05-09.** The plan below is now
+> historical record. The authoritative source for the post-close-out
+> architecture is the 2026-05-09 "Adapter integration close-out" entry
+> in [`DECISIONS.md`](../DECISIONS.md), mirrored in
+> [`docs/falsification-adapters.md`](falsification-adapters.md).
+>
+> **Per-phase verdicts:**
+>
+> | Phase | Final outcome |
+> |---|---|
+> | Phase 0 | Closed (contract + scaffolding shipped). |
+> | Phase 1 | Passed dev gate (`evidence/phase1-dev-gate/run-1`). |
+> | Phase 2 | C2.1 ship-B: Codex Pareto-dominates on N=28 analyzable. |
+> | Phase 3 | Ship-B' (Copilot default-on). Heuristic-confirmed bounds 50–60 catches; all four API-equivalent yield/$ ratios above the Codex baseline. The original 6.5× headline was dropped during the audit-and-corrections sweep in favour of a four-ratio table. |
+> | Phase 4 (original) | **INVALIDATED** by obligation-set-mismatch — see `evidence/phase4/analysis.md` status banner. |
+> | Phase 4 redo | Cross-family-diversity thesis confirmed on `property-must-hold` (B' caught 18/19 analyzable, ClaudeCode 0 unique). ClaudeCode ships behind a per-adapter flag default-off. |
+> | Phase 5 | Skipped on operational grounds (two adapters with disjoint obligation types — bandit has nothing to arbitrate). |
+> | Phase 6 | Deferred (Phase 2's predicate set lacked high-stakes obligations; gate had no input). |
+>
+> **Production architecture:** producer + Codex (default on) + Copilot
+> (default on); ClaudeCode behind a per-adapter flag (default off); no
+> bandit dispatcher. Methodology-fix invariants in place (pre-apply
+> baseline check, fixture isolation, dual-column cost reporting:
+> `dollarsBilled` + `dollarsApiEquivalent`).
+>
+> **Branch:** `feat/adapter-reintegration-v8` — does **not** merge to
+> `main` from the close-out session; merge timing is the operator's
+> separate decision.
+>
+> Cite: 2026-05-09 "Adapter integration close-out" entry in
+> [`DECISIONS.md`](../DECISIONS.md) (and the dated per-phase entries
+> immediately above it).
+
+## Implementation status (historical, pre-close-out)
 
 | Phase | Status | Notes |
 |---|---|---|
