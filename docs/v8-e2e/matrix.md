@@ -57,13 +57,15 @@ output will land.
 | F14 | GitHub Action dry-run with `act` | accepts documented inputs, contract-only and cost-cap behave | captures/F14-action.txt |
 | F15 | CLI fallback mode | deprecated CLI-subprocess path still runs when explicitly invoked | captures/F15-cli-fallback.txt |
 
-## Three explicit Phase 7 deferrals
+## Phase 7 deferrals
 
-Per spec, accept these as not-fixed, but verify the failure mode is a
-clean error rather than silent garbage.
+Two of the original Phase 7 deferrals (X1, X2) were resolved
+post-Phase-7 — see the e2e REPORT for the resolution. X3 remains
+deferred per spec.
 
-| # | Deferral | Acceptable failure mode |
+| # | Deferral | Status |
 |---|---|---|
-| X1 | tree-sitter AST signature checks (substring match acceptable) | function-must-have-signature uses substring; if a goal exercises AST-strict matching, it must error or skip cleanly. |
-| X2 | Anthropic extractor prompt expansion for Phase 7 obligation types | Anthropic extractor produces only Phase 1 types; Phase 7 contracts via stub-extractor or hand-edit. If a user runs `swarm v8 compile --extractor anthropic` with a Phase 7-shaped goal, the extractor must emit Phase 1-shaped obligations cleanly (no garbage Phase 7 emission). |
-| X3 | tournament-mode streaming + auto-rollback | tournament mode does not stream (single-mode-only). `swarm v8 run --mode tournament` with `--forbid-import` set must either skip the assertion or no-op cleanly, not produce wrong output. |
+| X1 | tree-sitter AST signature checks (substring match acceptable) | RESOLVED. `function-must-have-signature` is AST-backed via the TypeScript compiler API and Python `ast` module. See `src/verification/ast-signature.ts`. |
+| X2 | Anthropic extractor prompt expansion for Phase 7 obligation types | RESOLVED. The extractor's tool input_schema and system prompt cover all eight v1 obligation types. See `src/contract/extractor/anthropic-extractor.ts`. |
+| X3 | tournament-mode streaming + auto-rollback | DEFERRED. Tournament mode does not stream (single-mode-only). `swarm v8 run --mode tournament` with `--forbid-import` set must either skip the assertion or no-op cleanly, not produce wrong output. |
+| X4 | regex-based import-graph parser; AST resolver post-v8.0 | RESOLVED. `import-graph-must-satisfy` is AST-backed via the TypeScript compiler API and Python `ast` module. See `src/verification/ast-imports.ts`. |
