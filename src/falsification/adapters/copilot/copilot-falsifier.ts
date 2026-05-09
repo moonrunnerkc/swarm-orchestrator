@@ -200,6 +200,7 @@ export class CopilotFalsifier implements FalsifierAdapter {
           dollarsSpent: 0,
           dollarsBilled: 0,
           dollarsTokenEstimate: 0,
+          dollarsApiEquivalent: 0,
           authMethod,
           counterExamplesFound: 0,
           falsePositives: 0,
@@ -247,9 +248,9 @@ export class CopilotFalsifier implements FalsifierAdapter {
     const combinedOutput = `${subprocess.stdout}\n${subprocess.stderr}`;
     const requestsParser = this.premiumRequestsOverride ?? parseCopilotPremiumRequests;
     const premiumRequests = requestsParser(combinedOutput);
-    const { dollarsBilled, dollarsTokenEstimate } =
+    const { dollarsBilled, dollarsTokenEstimate, dollarsApiEquivalent } =
       premiumRequests === null
-        ? { dollarsBilled: 0, dollarsTokenEstimate: 0 }
+        ? { dollarsBilled: 0, dollarsTokenEstimate: 0, dollarsApiEquivalent: 0 }
         : dollarsForRequestsByAuth(premiumRequests, authMethod);
     const cost: AdapterCostRecord = {
       adapterName: this.name,
@@ -258,6 +259,7 @@ export class CopilotFalsifier implements FalsifierAdapter {
       dollarsSpent: dollarsTokenEstimate,
       dollarsBilled,
       dollarsTokenEstimate,
+      dollarsApiEquivalent,
       authMethod,
       counterExamplesFound: confirmed.length,
       falsePositives,
@@ -374,6 +376,7 @@ function notApplicableOutcome(
       dollarsSpent: 0,
       dollarsBilled: 0,
       dollarsTokenEstimate: 0,
+      dollarsApiEquivalent: 0,
       authMethod: 'unknown',
       counterExamplesFound: 0,
       falsePositives: 0,

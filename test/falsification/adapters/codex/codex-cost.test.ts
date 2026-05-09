@@ -1,6 +1,7 @@
 import { strict as assert } from 'assert';
 import {
   dollarsForUsage,
+  dollarsForUsageByAuth,
   parseCodexUsage,
 } from '../../../../src/falsification/adapters/codex/codex-cost';
 
@@ -75,6 +76,29 @@ describe('codex cost parsing and pricing', () => {
         dollarsForUsage({ inputTokens: 0, outputTokens: 0, model: 'o4-mini' }),
         0,
       );
+    });
+  });
+
+  describe('dollarsForUsageByAuth (audit-and-corrections, 2026-05-09)', () => {
+    // Codex is metered at API token rates regardless of auth tier:
+    // dollarsApiEquivalent must equal dollarsTokenEstimate for every
+    // outcome of dollarsForUsageByAuth. (Subscription auth zeroes
+    // dollarsBilled; the API-equivalent column is unaffected.)
+    it('reports dollarsApiEquivalent === dollarsTokenEstimate under chatgpt auth', () => {
+      const usage = { inputTokens: 1000, outputTokens: 500, model: 'o4-mini' };
+      const { dollarsBilled, dollarsTokenEstimate, dollarsApiEquivalent } =
+        dollarsForUsageByAuth(usage, 'chatgpt');
+      assert.equal(dollarsBilled, 0);
+      assert.ok(dollarsTokenEstimate > 0);
+      assert.equal(dollarsApiEquivalent, dollarsTokenEstimate);
+    });
+
+    it('reports dollarsApiEquivalent === dollarsTokenEstimate === dollarsBilled under api auth', () => {
+      const usage = { inputTokens: 1000, outputTokens: 500, model: 'gpt-5-codex' };
+      const { dollarsBilled, dollarsTokenEstimate, dollarsApiEquivalent } =
+        dollarsForUsageByAuth(usage, 'api');
+      assert.equal(dollarsBilled, dollarsTokenEstimate);
+      assert.equal(dollarsApiEquivalent, dollarsTokenEstimate);
     });
   });
 });

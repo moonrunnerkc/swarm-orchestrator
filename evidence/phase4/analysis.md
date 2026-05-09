@@ -7,26 +7,71 @@
 - Per-comparison alpha (Bonferroni) = 0.0125
 - Comparisons = 4
 
+> **STATUS 2026-05-09 (audit-and-corrections):** This analysis is
+> retained for the obligation-set-mismatch record, but its
+> "diversity-thesis CONFIRMED" conclusion is **invalidated** by the
+> obligation-set mismatch flagged in DECISIONS.md `### 2026-05-09 —
+> Audit and corrections` (C1). The replacement run lives at
+> `evidence/phase4-redo/analysis.md` against an N=20
+> `property-must-hold` obligation set disjoint from Phases 1–3.
+> The cost columns below are restated on a billed-basis /
+> API-equivalent-basis split for completeness; the underlying numbers
+> are unchanged.
+
 ## Headline metrics
 
 | Metric | Config B' | Config B'' | Notes |
 |---|---|---|---|
 | Pass count | 0/20 (0.000, 95% CI [0.000, 0.161]) | 0/20 (0.000, 95% CI [0.000, 0.161]) | Pass = no adapter reported a counter-example |
-| Total billed | $0.0000 | $1.0121 | Subscription = $0 by construction |
-| Total token-estimate | $0.4680 | $1.5321 | API rate-card USD |
+| Total billed | $0.0000 | $1.0121 | Real-charge USD (`dollarsBilled`); Copilot subscription = $0; ClaudeCode billed because `ANTHROPIC_API_KEY` was set in the run env |
+| Total token-estimate | $0.4680 | $1.5321 | `dollarsTokenEstimate`; Copilot subscription-imputed at $0.026/Premium-request, ClaudeCode at API rate card |
+| Total API-equivalent | $1.0000 | $2.0121 | `dollarsApiEquivalent`; Copilot at $0.05/Premium-request (GPT-4-Turbo-equivalent), ClaudeCode at API rate card; audit-and-corrections 2026-05-09 |
 | Total wall-clock (s) | 371.26 | 461.08 | |
 | Total LLM calls | 20 | 40 | |
 
-## ClaudeCode marginal yield per dollar (Phase 4 diversity-thesis signal)
+## ClaudeCode marginal yield per dollar — both bases (audit-and-corrections, 2026-05-09)
 
-- ClaudeCode unique yield (B'' falsified, B' did not): **0**
-- Additional spend (Σ B'' tokenEstimate − Σ B' tokenEstimate): **$1.0641**
-- ClaudeCode yield/$: **0.00**
+- ClaudeCode unique yield (B'' falsified, B' did not): **0** (machine-claimed; the obligation-set mismatch makes the underlying number uninterpretable for the cross-family question — see status banner).
 
-**Cross-family diversity thesis: CONFIRMED.** ClaudeCode (same family as the producer) added zero unique yield over the cross-family Codex+Copilot pair. The cross-family diversity is doing the work the architecture's premise expects — a same-family adapter is redundant.
+**Billed basis:**
 
-**Phase 5 gate: SKIP.**
-ClaudeCode marginal yield is zero; per the agent brief and the plan's Phase 5 gate, two adapters running fire-all is the production configuration. Phase 5 (bandit dispatcher) is not built in this session.
+- Additional `dollarsBilled` spend (Σ B'' − Σ B'): **$1.0121**.
+- ClaudeCode billed-basis yield/$: **0.00**.
+
+**API-equivalent basis (like-for-like):**
+
+- Additional `dollarsApiEquivalent` spend: **$1.0121** (Σ B'' − Σ B' = 2.0121 − 1.0000).
+- ClaudeCode API-equivalent yield/$: **0.00**.
+
+**Subscription-imputed-token-estimate basis (preserved for back-compat with the original headline):**
+
+- Additional `dollarsTokenEstimate` spend: **$1.0641**.
+- ClaudeCode `dollarsTokenEstimate` yield/$: **0.00**.
+
+The numerator is zero on every basis, so the basis distinction is
+not load-bearing for *this* phase's headline — but it is the same
+reframing applied uniformly across phases per the audit. The
+cross-family-diversity verdict is decided in
+`evidence/phase4-redo/analysis.md` against a `property-must-hold`
+obligation set, not here.
+
+**Cross-family diversity thesis: ~~CONFIRMED~~ INVALIDATED by obligation set mismatch.**
+
+The original conclusion "same-family adapter is redundant" is **not**
+supported by this run because the obligation set targeted Copilot's
+specialties (`import-graph-must-satisfy`,
+`function-must-have-signature`), not ClaudeCode's strategy
+(`property-must-hold` adversarial test inputs). ClaudeCode showing
+zero unique yield on a set its strategy does not target tells us
+nothing about whether ClaudeCode finds things Codex+Copilot miss on
+the obligation surface ClaudeCode was designed to attack. The
+re-test lives at `evidence/phase4-redo/`.
+
+**Phase 5 gate: SKIP — but for operational reasons, not the
+diversity verdict.** See the Phase 5 skip-rationale entry in
+DECISIONS.md (2026-05-09); the skip stands on "2-arm bandit is low
+operational leverage", independent of the cross-family-diversity
+question.
 
 ## Hypothesis tests
 

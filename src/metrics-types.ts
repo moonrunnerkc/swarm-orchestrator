@@ -121,8 +121,24 @@ export interface AdapterCostAggregate {
   /**
    * Sum of per-call `dollarsTokenEstimate`. Upper-bound cost from token
    * counts × rate card; populated regardless of auth tier.
+   *
+   * For Copilot this is subscription-imputed at $0.026/Premium-request
+   * (Pro+ implied per-request rate), not from a per-token API rate card.
+   * The cross-adapter, like-for-like comparison surface is
+   * `dollarsApiEquivalent`. See the 2026-05-09 audit-and-corrections
+   * DECISIONS.md entry.
    */
   dollarsTokenEstimate: number;
+  /**
+   * Sum of per-call `dollarsApiEquivalent`. The comparable per-token API
+   * rate-card cost the same workload would have incurred. Equal to
+   * `dollarsTokenEstimate` for adapters that already meter at API token
+   * rates (Codex, ClaudeCode); for Copilot it is computed from the
+   * Premium-request count via a GPT-4-Turbo-derived per-request average,
+   * so a Copilot run reports a non-zero `dollarsApiEquivalent` even
+   * though `dollarsBilled` is zero.
+   */
+  dollarsApiEquivalent: number;
   /** Wall-clock milliseconds across `calls`. */
   wallClockMs: number;
   /** Confirmed counter-examples produced across `calls`. */

@@ -149,6 +149,7 @@ export class CodexFalsifier implements FalsifierAdapter {
           dollarsSpent: 0,
           dollarsBilled: 0,
           dollarsTokenEstimate: 0,
+          dollarsApiEquivalent: 0,
           authMethod,
           counterExamplesFound: 0,
           falsePositives: 0,
@@ -204,9 +205,9 @@ export class CodexFalsifier implements FalsifierAdapter {
     const observedModel = extractModelFromBanner(`${subprocess.stdout}\n${subprocess.stderr}`);
     const modelForUsage = observedModel ?? modelForCost ?? 'unknown';
     const usage = parseCodexUsage(`${subprocess.stdout}\n${subprocess.stderr}`, modelForUsage);
-    const { dollarsBilled, dollarsTokenEstimate } =
+    const { dollarsBilled, dollarsTokenEstimate, dollarsApiEquivalent } =
       usage === null
-        ? { dollarsBilled: 0, dollarsTokenEstimate: 0 }
+        ? { dollarsBilled: 0, dollarsTokenEstimate: 0, dollarsApiEquivalent: 0 }
         : dollarsForUsageByAuth(usage, authMethod);
     const cost: AdapterCostRecord = {
       adapterName: this.name,
@@ -215,6 +216,7 @@ export class CodexFalsifier implements FalsifierAdapter {
       dollarsSpent: dollarsTokenEstimate,
       dollarsBilled,
       dollarsTokenEstimate,
+      dollarsApiEquivalent,
       authMethod,
       counterExamplesFound: confirmed.length,
       falsePositives,
@@ -309,6 +311,7 @@ function notApplicableOutcome(
       dollarsSpent: 0,
       dollarsBilled: 0,
       dollarsTokenEstimate: 0,
+      dollarsApiEquivalent: 0,
       authMethod: 'unknown',
       counterExamplesFound: 0,
       falsePositives: 0,

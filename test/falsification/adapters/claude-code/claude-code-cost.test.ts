@@ -35,9 +35,29 @@ describe('claude-code-cost', () => {
     });
 
     it('returns 0/0 when totalCostUsd is 0', () => {
-      const { dollarsBilled, dollarsTokenEstimate } = dollarsForEnvelopeByAuth(0, 'api');
+      const { dollarsBilled, dollarsTokenEstimate, dollarsApiEquivalent } =
+        dollarsForEnvelopeByAuth(0, 'api');
       assert.equal(dollarsBilled, 0);
       assert.equal(dollarsTokenEstimate, 0);
+      assert.equal(dollarsApiEquivalent, 0);
+    });
+
+    // Audit-and-corrections (2026-05-09): ClaudeCode CLI returns
+    // total_cost_usd already at API rate-card value, so the
+    // API-equivalent surface is identical to the token-estimate.
+    it('reports dollarsApiEquivalent === dollarsTokenEstimate under chatgpt auth', () => {
+      const { dollarsTokenEstimate, dollarsApiEquivalent } = dollarsForEnvelopeByAuth(
+        0.42,
+        'chatgpt',
+      );
+      assert.equal(dollarsApiEquivalent, dollarsTokenEstimate);
+    });
+
+    it('reports dollarsApiEquivalent === dollarsTokenEstimate === dollarsBilled under api auth', () => {
+      const { dollarsBilled, dollarsTokenEstimate, dollarsApiEquivalent } =
+        dollarsForEnvelopeByAuth(0.42, 'api');
+      assert.equal(dollarsApiEquivalent, dollarsTokenEstimate);
+      assert.equal(dollarsApiEquivalent, dollarsBilled);
     });
   });
 });

@@ -70,11 +70,18 @@ function roundCents(value: number): number {
 export function dollarsForUsageByAuth(
   usage: CodexUsage,
   authMethod: AdapterAuthMethod,
-): { dollarsBilled: number; dollarsTokenEstimate: number } {
+): {
+  dollarsBilled: number;
+  dollarsTokenEstimate: number;
+  dollarsApiEquivalent: number;
+} {
   const tokenEstimate = dollarsForUsage(usage);
   return {
     dollarsBilled: authMethod === 'chatgpt' ? 0 : tokenEstimate,
     dollarsTokenEstimate: tokenEstimate,
+    // Codex usage is metered at API token rates already, so the
+    // API-equivalent surface is identical to the token-estimate.
+    dollarsApiEquivalent: tokenEstimate,
   };
 }
 

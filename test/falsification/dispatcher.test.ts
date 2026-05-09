@@ -39,6 +39,7 @@ function counterExampleAdapter(name: string): FalsifierAdapter {
           dollarsSpent: 0.001,
           dollarsBilled: 0.001,
           dollarsTokenEstimate: 0.001,
+          dollarsApiEquivalent: 0.001,
           authMethod: 'api',
           counterExamplesFound: 1,
           falsePositives: 0,

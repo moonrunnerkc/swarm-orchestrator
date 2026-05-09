@@ -1760,3 +1760,84 @@ redo (below) is what determines whether ClaudeCode earns its slot on
 its own strategy's obligation type. If it does, the third-adapter
 revisit-condition above fires and Phase 5 returns to the table.
 
+
+### 2026-05-09 — Cost normalization: rate-card citation for Copilot's API-equivalent column
+
+The cost-aggregator extension landed in this session adds
+`dollarsApiEquivalent` as the like-for-like cross-adapter comparison
+surface, distinct from the existing `dollarsTokenEstimate`. For
+Codex and ClaudeCode (already metered at API token rates),
+`dollarsApiEquivalent === dollarsTokenEstimate`. For Copilot, the new
+column is computed as `Premium requests × $0.05/request`, where the
+$0.05/request rate is the GPT-4-Turbo per-request equivalent for an
+average tool-use turn. The constants and the override paths live in
+`src/falsification/adapters/copilot/copilot-cost.ts`.
+
+**Rate-card derivation (citations).**
+
+- **Routing target.** GitHub Copilot Pro+ Premium requests route to
+  GPT-4-class models. The 1× multiplier (i.e. one Premium request per
+  user turn) covers GPT-4 / GPT-4-Turbo on Pro+; routing to higher-tier
+  models (Claude 3.5 Sonnet, GPT-5-class) charges higher Premium
+  multipliers. The conservative midpoint we cost against is
+  GPT-4-Turbo. (GitHub Copilot pricing docs, "Premium request
+  multipliers and request usage" page,
+  https://docs.github.com/copilot/managing-copilot/understanding-and-managing-requests-in-copilot/requests-in-github-copilot.)
+- **OpenAI rate card for `gpt-4-turbo`** (https://openai.com/api/pricing,
+  retrieved via web archive snapshot 2025-Q1):
+    - Input: $10.00 per 1M tokens.
+    - Output: $30.00 per 1M tokens.
+- **Average call shape per Premium request, rough but load-bearing on
+  the comparison.** The Phase 3 / Phase 4 harnesses send obligation +
+  fixture-context + tool descriptions and expect a tight JSON
+  candidate list. Empirically (from the captured Phase 3
+  `copilot-stdout.txt` / `copilot-stderr.txt` files): ~3500 input
+  tokens, ~500 output tokens per Premium request.
+    - 3500 × $10/1M = $0.035 (input).
+    - 500 × $30/1M = $0.015 (output).
+    - Per-request API equivalent ≈ **$0.050**.
+- **Single-constant assumption.** Copilot CLI does not surface token
+  counts on stderr (only the Premium-request count). We therefore use
+  a single midpoint per Premium request, not a per-call token-count
+  computation. The override path
+  `COPILOT_USD_PER_PREMIUM_REQUEST_API_EQUIV` lets an operator on a
+  different routing or call shape replace the constant without a code
+  change.
+
+**Subscription-imputed rate retained.** The existing
+`COPILOT_USD_PER_PREMIUM_REQUEST` ($0.026 default, derived from the
+$39/month / 1500 Premium requests Pro+ allocation) continues to drive
+`dollarsTokenEstimate`. The Phase 3 close-out's "$0.5200 total
+token-estimate" row is unchanged; what changes is the addition of a
+parallel `dollarsApiEquivalent` row computed at the GPT-4-Turbo rate.
+
+**Where the new column shows up.**
+
+- `src/falsification/adapters/types.ts` — `AdapterCostRecord.dollarsApiEquivalent`.
+- `src/metrics-types.ts` — `AdapterCostAggregate.dollarsApiEquivalent`.
+- `src/falsification/adapters/cost-aggregator.ts` — sums
+  `dollarsApiEquivalent` alongside the existing fields.
+- `evidence/phase2/analysis.md`, `evidence/phase3/analysis.md`,
+  `evidence/phase4/analysis.md` — re-stated with both cost bases.
+- Tests:
+  `test/falsification/adapters/cost-aggregator.test.ts` (new
+  Phase-3-shape pinning test);
+  `test/falsification/adapters/copilot/copilot-cost.test.ts` (override
+  + auth pairing for the new column);
+  Codex and ClaudeCode cost tests assert
+  `dollarsApiEquivalent === dollarsTokenEstimate` by construction.
+
+**Effect on the Phase 3 headline.** The pre-audit headline (Copilot
+yield/$ = 38.46, 6.5× the Codex Phase 2 baseline of 5.91) was
+computed on the subscription-imputed-token-estimate basis. On the
+API-equivalent basis the Copilot ratio falls to ~3.4× (20 / 1.0 ÷
+26 / 4.3994 ≈ 3.4). The "Copilot earns its slot" decision survives
+on the API-equivalent basis (the ratio is still well above 1.0) but
+the original headline magnitude is overstated by roughly 1.9×. The
+billed-basis comparison is undefined because Copilot's
+`dollarsBilled` denominator is zero under subscription auth.
+
+**Open follow-up.** The corrected Phase 3 close-out in Part F (after
+operator inspection) will substitute confirmed-only yield for the
+machine-claimed numerator and re-publish the API-equivalent ratio
+against that confirmed yield count.

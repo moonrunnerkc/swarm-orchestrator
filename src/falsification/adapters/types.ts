@@ -182,8 +182,36 @@ export interface AdapterCostRecord {
    * Always populated when token counts are available, regardless of auth
    * tier. Equals `dollarsBilled` under per-token auth; equals the would-be
    * API cost under flat-rate subscriptions.
+   *
+   * Note (audit 2026-05-09): for Copilot this value is *subscription-
+   * imputed* at $0.026/Premium-request (Copilot Pro+ implied per-request
+   * cost), not derived from per-token API rates. Read
+   * `dollarsApiEquivalent` for the cross-adapter, like-for-like
+   * comparison surface.
    */
   readonly dollarsTokenEstimate: number;
+  /**
+   * What the same workload would cost on the comparable per-token API
+   * rate card (the *API-equivalent* dollar value), regardless of how the
+   * call was actually billed. Distinct from `dollarsTokenEstimate`
+   * because Copilot CLI is subscription-only — its `dollarsTokenEstimate`
+   * is computed from the per-Premium-request subscription rate
+   * ($0.026/request under Pro+), not from a true per-token API rate
+   * card; `dollarsApiEquivalent` for Copilot maps Premium requests to
+   * GPT-4-Turbo-equivalent token costs (see
+   * `copilot-cost.ts` and the audit-and-corrections DECISIONS.md entry,
+   * 2026-05-09, for the rate-selection rationale and citations). For
+   * Codex and ClaudeCode (both already metered at API token rates),
+   * `dollarsApiEquivalent === dollarsTokenEstimate`.
+   *
+   * Phase 2/3/4 cost ratios are reported on two bases starting with the
+   * 2026-05-09 audit: a *billed-basis* ratio using `dollarsBilled` and an
+   * *API-equivalent-basis* ratio using `dollarsApiEquivalent`. The
+   * API-equivalent surface is the like-for-like comparison; the
+   * billed-basis surface is preserved for back-compatibility with the
+   * pre-audit headline numbers.
+   */
+  readonly dollarsApiEquivalent: number;
   /** Count of confirmed counter-examples in the result. */
   readonly counterExamplesFound: number;
   /**

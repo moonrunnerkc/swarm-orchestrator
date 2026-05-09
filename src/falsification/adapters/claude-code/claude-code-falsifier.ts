@@ -156,6 +156,7 @@ export class ClaudeCodeFalsifier implements FalsifierAdapter {
           dollarsSpent: 0,
           dollarsBilled: 0,
           dollarsTokenEstimate: 0,
+          dollarsApiEquivalent: 0,
           authMethod,
           counterExamplesFound: 0,
           falsePositives: 0,
@@ -207,10 +208,8 @@ export class ClaudeCodeFalsifier implements FalsifierAdapter {
       }
     }
     const wallClockMs = Date.now() - startedAt;
-    const { dollarsBilled, dollarsTokenEstimate } = dollarsForEnvelopeByAuth(
-      envelope.totalCostUsd,
-      authMethod,
-    );
+    const { dollarsBilled, dollarsTokenEstimate, dollarsApiEquivalent } =
+      dollarsForEnvelopeByAuth(envelope.totalCostUsd, authMethod);
     const cost: AdapterCostRecord = {
       adapterName: this.name,
       obligationType: obligation.type,
@@ -218,6 +217,7 @@ export class ClaudeCodeFalsifier implements FalsifierAdapter {
       dollarsSpent: dollarsTokenEstimate,
       dollarsBilled,
       dollarsTokenEstimate,
+      dollarsApiEquivalent,
       authMethod,
       counterExamplesFound: confirmed.length,
       falsePositives,
@@ -325,6 +325,7 @@ function notApplicableOutcome(
       dollarsSpent: 0,
       dollarsBilled: 0,
       dollarsTokenEstimate: 0,
+      dollarsApiEquivalent: 0,
       authMethod: 'unknown',
       counterExamplesFound: 0,
       falsePositives: 0,

@@ -28,11 +28,18 @@ export function detectClaudeCodeAuthMethod(env: NodeJS.ProcessEnv = process.env)
 export function dollarsForEnvelopeByAuth(
   totalCostUsd: number,
   authMethod: AdapterAuthMethod,
-): { dollarsBilled: number; dollarsTokenEstimate: number } {
+): {
+  dollarsBilled: number;
+  dollarsTokenEstimate: number;
+  dollarsApiEquivalent: number;
+} {
   const tokenEstimate = roundCents(totalCostUsd);
   return {
     dollarsBilled: authMethod === 'chatgpt' ? 0 : tokenEstimate,
     dollarsTokenEstimate: tokenEstimate,
+    // ClaudeCode CLI returns `total_cost_usd` already at API rate-card
+    // value, so API-equivalent equals the token-estimate by definition.
+    dollarsApiEquivalent: tokenEstimate,
   };
 }
 
