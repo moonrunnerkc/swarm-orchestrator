@@ -1,0 +1,39 @@
+Inspecting the target file to mirror its shape while crafting three distinct signature drifts.
+
+```json
+{
+  "candidates": [
+    {
+      "name": "string-parameter-drift",
+      "rationale": "This keeps a function named negate but changes its parameter type, so the normalized signature no longer matches `(x: number): number`.",
+      "files": [
+        {
+          "relPath": "src/math/negate.ts",
+          "bytes": "export function negate(x: string): number {\n  return -Number(x);\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "string-return-type-drift",
+      "rationale": "This preserves the function name and parameter type while changing the return type, which should cause the AST-backed signature check to report a mismatch.",
+      "files": [
+        {
+          "relPath": "src/math/negate.ts",
+          "bytes": "export function negate(x: number): string {\n  return String(-x);\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "renamed-function-removal",
+      "rationale": "This removes any declaration named `negate` by renaming the exported function, so the extractor should find no matching function at all.",
+      "files": [
+        {
+          "relPath": "src/math/negate.ts",
+          "bytes": "export function invert(x: number): number {\n  return -x;\n}\n"
+        }
+      ]
+    }
+  ]
+}
+```
+

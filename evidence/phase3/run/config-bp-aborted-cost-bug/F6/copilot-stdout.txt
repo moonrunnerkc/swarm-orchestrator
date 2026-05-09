@@ -1,0 +1,37 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "extra-parameter-drift",
+      "rationale": "This keeps a function named clamp but changes its parameter list by adding a fourth argument, so the normalized signature no longer matches the expected one.",
+      "files": [
+        {
+          "relPath": "src/math/clamp.ts",
+          "bytes": "export function clamp(x: number, lo: number, hi: number, inclusive: boolean = true): number {\n  if (inclusive) {\n    return Math.min(Math.max(x, lo), hi);\n  }\n\n  if (x <= lo) {\n    return lo + Number.EPSILON;\n  }\n\n  if (x >= hi) {\n    return hi - Number.EPSILON;\n  }\n\n  return x;\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "return-type-drift",
+      "rationale": "This preserves the function name and parameters but changes the declared return type from number to string, which should be reported as a signature mismatch.",
+      "files": [
+        {
+          "relPath": "src/math/clamp.ts",
+          "bytes": "export function clamp(x: number, lo: number, hi: number): string {\n  const bounded = Math.min(Math.max(x, lo), hi);\n  return String(bounded);\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "function-removed-via-rename",
+      "rationale": "This replacement removes any declaration named clamp by renaming the exported function, so the AST extractor should find no matching function at all.",
+      "files": [
+        {
+          "relPath": "src/math/clamp.ts",
+          "bytes": "export function clampValue(x: number, lo: number, hi: number): number {\n  return Math.min(Math.max(x, lo), hi);\n}\n"
+        }
+      ]
+    }
+  ]
+}
+```
+

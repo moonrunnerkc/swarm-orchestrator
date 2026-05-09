@@ -1,0 +1,43 @@
+Inspecting the target file to craft three distinct replacement candidates.
+
+● Read upper.ts
+  │ src/format/upper.ts
+  └ 3 lines read
+
+```json
+{
+  "candidates": [
+    {
+      "name": "change-parameter-type",
+      "rationale": "This keeps a function named toUpper but changes its parameter type, so the normalized signature no longer matches `(s: string): string`.",
+      "files": [
+        {
+          "relPath": "src/format/upper.ts",
+          "bytes": "export function toUpper(s: number): string {\n  return String(s).toUpperCase();\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "change-return-type",
+      "rationale": "This preserves the function name and parameter name but changes the declared return type, causing a signature mismatch.",
+      "files": [
+        {
+          "relPath": "src/format/upper.ts",
+          "bytes": "export function toUpper(s: string): number {\n  return s.toUpperCase().length;\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "rename-function",
+      "rationale": "This removes any declaration named `toUpper` entirely by renaming the exported function, so the AST extractor should find no matching function.",
+      "files": [
+        {
+          "relPath": "src/format/upper.ts",
+          "bytes": "export function upperCase(s: string): string {\n  return s.toUpperCase();\n}\n"
+        }
+      ]
+    }
+  ]
+}
+```
+

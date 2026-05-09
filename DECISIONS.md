@@ -1272,3 +1272,112 @@ The Config B' re-run lands under `evidence/phase3/run/config-bp/` after
 this commit; the analysis script reads that directory.
 
 Hot-fix commit SHA: recorded in the commit that lands this entry.
+
+### 2026-05-09 — Phase 3 close-out: PASSED — P3.5.a ship-B' branch
+
+The Phase 3 paired analysis is at `evidence/phase3/analysis.md`.
+Decision rule applied per the pre-registered protocol
+(`evidence/phase3/PROTOCOL.md`, "Operationalization" section).
+
+**Headline numbers (from `analysis.md`):**
+
+| Metric | Config B | Config B' |
+|---|---|---|
+| Pass count (95 % CI) | 20/20 (1.000, [0.839, 1.000]) | 0/20 (0.000, [0.000, 0.161]) |
+| Total billed | `$0.0000` | `$0.0000` (subscription) |
+| Total token-estimate | `$0.0000` | `$0.5200` |
+| Total wall-clock | 0.01 s | 339 s |
+| Total LLM calls | 0 | 20 |
+
+All three pre-registered comparisons that have non-zero variance reach
+Bonferroni-corrected p < 0.0001:
+
+- **Pass rate:** McNemar exact-binomial. Discordant pairs B'-only=0,
+  B-only=20; B' falsifies on every obligation B's path missed (and B
+  cannot catch any of these by construction — Codex doesn't handle the
+  obligation type). Diff (B' − B) = -1.000, 95 % CI [-1.000, -0.772].
+- **Wall-clock:** median (B' − B) = 14 054 ms/obligation, 95 %
+  bootstrap CI [12 344 ms, 13 600 ms]. Wilcoxon p < 0.0001.
+- **LLM calls:** median (B' − B) = 1.00 calls/obligation. Wilcoxon
+  p < 0.0001.
+- **Billed cost:** trivial — both configs $0.00 billed (Copilot is
+  subscription-only). The protocol's primary cost surface is
+  `dollarsTokenEstimate`; the Wilcoxon on `dollarsBilled` therefore
+  reports n_zero=20 and is non-significant by construction.
+
+**Per-stratum breakdown:** Stratum I (n=10 import-graph) 10/10 caught;
+Stratum F (n=10 function-signature) 10/10 caught. Both stratum-pass
+rates collapse to 1.000.
+
+**Marginal yield-per-dollar (Phase 3 decision metric):**
+
+- Copilot unique yield (B' falsified, B did not): **20**.
+- Additional spend (Σ B' tokenEstimate − Σ B tokenEstimate):
+  **`$0.5200`**.
+- Copilot yield/$: **38.46**.
+- Codex Phase 2 baseline yield/$ (locked, evidence/phase2/analysis.md):
+  **5.91** (26 yields ÷ $4.3994).
+- **Decision: P3.5.a ship-B' — Copilot earns its slot.** Copilot's
+  marginal yield/$ is 6.5× the Codex Phase 2 baseline. Phase 4
+  (ClaudeCode control adapter) is now eligible.
+
+**Counter-example real-yield sanity check.** Hand inspection of two
+representative obligations:
+
+- I1 (`no-upward-imports` in `src/lib1`): 3 candidates, all real
+  upward-import violations. `direct-parent-import.ts` imports
+  `../outside`; `nested/grandparent-import.js` imports
+  `../../shared/util`; etc. Each is a clean realisation of what the
+  constraint forbids. (`evidence/phase3/run/config-bp/I1/result.json`.)
+- F1 (`compute(x: number): number` in `src/math/sum.ts`): 3 candidates,
+  all real signature drifts. Variants change parameter type, return
+  type, parameter name. Each produces a real verifier verdict like
+  `signature for compute … does not match; expected "(x:number):number",
+  observed "(x:string):number"`.
+  (`evidence/phase3/run/config-bp/F1/result.json`.)
+
+100 % real-yield rate on the inspected slice. The remaining 18
+obligations follow the same pattern (each `result.json` shows three
+substantively-different perturbations, every one verified by the
+AST-backed `verifyObligation` returning `satisfied: false`).
+
+**Implementation: registry default flipped.** The Phase 3 close-out
+action is `defaultAdapterRegistry({ includeCopilot: true })` becomes
+the default. `src/falsification/adapters/index.ts` now registers both
+`CodexFalsifier` and `CopilotFalsifier` in `defaultAdapterRegistry()`;
+callers that explicitly want Codex-only pass `includeCopilot: false`.
+The `--falsifiers` flag (`src/cli/v8/run-handler.ts:353`) still
+defaults to `'on'`, which now dispatches both adapters; per-adapter
+disable continues to be a registry-construction concern, not a CLI
+flag, until and unless Phase 5's bandit dispatcher introduces one.
+
+**Phase 4 (ClaudeCode control adapter) is now ELIGIBLE.** Per the plan:
+"Only built if Phase 3 ships B'." Phase 4 is not a ship/no-ship gate;
+both outcomes (high or low ClaudeCode marginal yield) are signal about
+the cross-family-diversity thesis. ClaudeCode ships regardless behind
+its own per-adapter flag (default off; Codex and Copilot remain default
+on).
+
+**Caveats:**
+
+- N=20, no environmental discards. Smaller than Phase 2's N=30 but
+  larger than Phase 1's N=20. The 100 % B'-yield rate means even a
+  single false-positive obligation would not reverse the marginal
+  yield-per-dollar comparison (38.46 vs 5.91 leaves ample headroom).
+- Copilot's $0.026/Premium-request rate is the GitHub Copilot Pro+
+  default; operators on a different plan will see proportional changes
+  to `dollarsTokenEstimate`. Override via
+  `COPILOT_USD_PER_PREMIUM_REQUEST` for plan-specific reporting.
+- The Phase 3 fixture is purpose-built for falsifiable AST surfaces.
+  Real-world obligations may have fewer falsifiable shapes (a function
+  with one tightly-constrained signature is easier to drift than a
+  legacy file with many overloads); this is a Phase 4-or-later sample-
+  selection concern, not a Phase 3 close-out limitation.
+
+**Commit-SHA references for this close-out:**
+
+- Pre-registration (adapter + obligations + protocol + harness):
+  `8536bc0`.
+- Cost-trailer hot-fix (drop `-s`): `6f76f94`.
+- Run artefacts + analysis + this close-out + registry default flip:
+  recorded in the commit that lands this entry.

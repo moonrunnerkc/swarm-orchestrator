@@ -1,0 +1,39 @@
+I’m checking the target file so I can produce three concrete replacement candidates.
+
+```json
+{
+  "candidates": [
+    {
+      "name": "add-radix-parameter",
+      "rationale": "This keeps a parseInteger declaration but changes its normalized signature by adding a second parameter.",
+      "files": [
+        {
+          "relPath": "src/parse/integer.ts",
+          "bytes": "export function parseInteger(s: string, radix: number): number {\n  return Number.parseInt(s, radix);\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "change-return-type-to-string",
+      "rationale": "This preserves the function name but changes the return type from number to string, which should fail the signature check.",
+      "files": [
+        {
+          "relPath": "src/parse/integer.ts",
+          "bytes": "export function parseInteger(s: string): string {\n  return String(Number.parseInt(s, 10));\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "rename-exported-function",
+      "rationale": "This removes any declaration named parseInteger from the file by renaming the function entirely.",
+      "files": [
+        {
+          "relPath": "src/parse/integer.ts",
+          "bytes": "export function parseIntStrict(s: string): number {\n  return Number.parseInt(s, 10);\n}\n"
+        }
+      ]
+    }
+  ]
+}
+```
+

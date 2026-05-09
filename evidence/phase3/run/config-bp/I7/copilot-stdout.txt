@@ -1,0 +1,58 @@
+Inspecting `src/pkg2` to choose self-contained cycle candidates that the verifier will walk.
+
+● List directory src/pkg2
+  └ 3 files found
+
+● Read a.ts
+  │ src/pkg2/a.ts
+  └ 3 lines read
+
+● Read mid.ts
+  │ src/pkg2/mid.ts
+  └ 3 lines read
+
+● Read leaf.ts
+  │ src/pkg2/leaf.ts
+  └ 1 line read
+
+```json
+{
+  "candidates": [
+    {
+      "name": "overwrite-mid-self-cycle",
+      "rationale": "Overwriting mid.ts to import a.ts closes the existing edge from a.ts back into a 2-file cycle.",
+      "files": [
+        {
+          "relPath": "src/pkg2/mid.ts",
+          "bytes": "import { a } from './a';\n\nexport const mid = a + 10;\n"
+        }
+      ]
+    },
+    {
+      "name": "overwrite-leaf-three-cycle",
+      "rationale": "Overwriting leaf.ts to import a.ts closes the existing chain a.ts -> mid.ts -> leaf.ts back to a.ts.",
+      "files": [
+        {
+          "relPath": "src/pkg2/leaf.ts",
+          "bytes": "import { a } from './a';\n\nexport const leaf = a + 1;\n"
+        }
+      ]
+    },
+    {
+      "name": "add-fresh-two-file-cycle",
+      "rationale": "Adding two new files that import each other creates a self-contained directed cycle entirely inside src/pkg2.",
+      "files": [
+        {
+          "relPath": "src/pkg2/cycle-left.js",
+          "bytes": "import { right } from './cycle-right.js';\n\nexport const left = right + 1;\n"
+        },
+        {
+          "relPath": "src/pkg2/cycle-right.js",
+          "bytes": "import { left } from './cycle-left.js';\n\nexport const right = left + 1;\n"
+        }
+      ]
+    }
+  ]
+}
+```
+

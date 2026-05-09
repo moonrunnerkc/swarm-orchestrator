@@ -38,18 +38,22 @@ import { CopilotFalsifier } from './copilot/copilot-falsifier';
  * Build a registry pre-populated with the orchestrator's built-in
  * falsifier adapters.
  *
- * Phase 1 registered `CodexFalsifier` (the property-must-hold strategy).
- * Phase 3 registers `CopilotFalsifier` behind a per-adapter flag — it is
- * NOT included by default until Phase 3's empirical gate ships B'.
- * Callers that want Copilot enabled construct a registry by hand or pass
- * `includeCopilot: true`.
+ * Phase 1 registered `CodexFalsifier` (property-must-hold strategy).
+ * Phase 3 (close-out 2026-05-09 — P3.5.a) added `CopilotFalsifier`
+ * (import-graph-must-satisfy and function-must-have-signature
+ * strategies) as a default-on adapter; Copilot's marginal yield/$ on
+ * the Phase 3 N=20 obligation set was 38.46, well above the Codex
+ * Phase 2 baseline of 5.91, so the ablation arm earned its slot.
+ *
+ * Callers that need to disable Copilot (e.g. an environment without a
+ * `copilot` binary) pass `includeCopilot: false`.
  */
 export interface DefaultRegistryOptions {
   /**
-   * Register the Copilot falsifier alongside Codex. Default false until
-   * Phase 3's empirical decision flips it on (per the Phase 3 close-out
-   * in DECISIONS.md). The flag exists so the Phase 3 measurement harness
-   * and integration tests can opt in without code changes elsewhere.
+   * Register the Copilot falsifier alongside Codex. Default true after
+   * the Phase 3 close-out shipped B' (DECISIONS.md 2026-05-09). The
+   * flag exists so an environment without a copilot binary, or a test
+   * that wants Codex-only behaviour, can opt out.
    */
   readonly includeCopilot?: boolean;
 }
@@ -57,7 +61,8 @@ export interface DefaultRegistryOptions {
 export function defaultAdapterRegistry(options: DefaultRegistryOptions = {}): AdapterRegistry {
   const registry = new AdapterRegistry();
   registry.register(new CodexFalsifier());
-  if (options.includeCopilot === true) {
+  const includeCopilot = options.includeCopilot ?? true;
+  if (includeCopilot) {
     registry.register(new CopilotFalsifier());
   }
   return registry;

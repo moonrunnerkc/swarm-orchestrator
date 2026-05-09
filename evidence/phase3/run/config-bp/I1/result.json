@@ -1,0 +1,52 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "import-graph-must-satisfy",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/lib1/direct-parent-import.ts",
+            "bytes": "import thing from \"../outside\";\n\nexport default thing;\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"import-graph-must-satisfy\",\"constraint\":\"no-upward-imports\",\"scope\":\"src/lib1\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "import-graph violation (no-upward-imports): 1 offender(s); src/lib1/direct-parent-import.ts imports \"../outside\" (escapes its directory)",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/lib1/nested/grandparent-import.js",
+            "bytes": "import util from \"../../shared/util\";\n\nexport { util };\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"import-graph-must-satisfy\",\"constraint\":\"no-upward-imports\",\"scope\":\"src/lib1\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "import-graph violation (no-upward-imports): 1 offender(s); src/lib1/nested/grandparent-import.js imports \"../../shared/util\" (escapes its directory)",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/lib1/side-effect-upward-import.mts",
+            "bytes": "import \"../bootstrap\";\n\nexport const marker = 1;\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"import-graph-must-satisfy\",\"constraint\":\"no-upward-imports\",\"scope\":\"src/lib1\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "import-graph violation (no-upward-imports): 1 offender(s); src/lib1/side-effect-upward-import.mts imports \"../bootstrap\" (escapes its directory)",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "copilot",
+    "obligationType": "import-graph-must-satisfy",
+    "wallClockMs": 14638,
+    "dollarsSpent": 0.026,
+    "dollarsBilled": 0,
+    "dollarsTokenEstimate": 0.026,
+    "authMethod": "chatgpt",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

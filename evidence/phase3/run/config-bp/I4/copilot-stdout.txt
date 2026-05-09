@@ -1,0 +1,37 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "ts-upward-import",
+      "rationale": "Adding a TypeScript file under src/lib4 with a relative import starting with .. should violate the no-upward-imports constraint.",
+      "files": [
+        {
+          "relPath": "src/lib4/violations/upward-import.ts",
+          "bytes": "import helper from \"../helper\";\n\nexport const value = helper;\n"
+        }
+      ]
+    },
+    {
+      "name": "js-double-upward-import",
+      "rationale": "Adding a JavaScript file under src/lib4 that imports from a parent path using ../.. should independently falsify the constraint.",
+      "files": [
+        {
+          "relPath": "src/lib4/testcases/nested-breaker.js",
+          "bytes": "import thing from \"../../outside\";\n\nexport default thing;\n"
+        }
+      ]
+    },
+    {
+      "name": "tsx-parent-import",
+      "rationale": "A TSX file inside src/lib4 with an import source beginning with .. is sufficient for the verifier to detect an upward relative import.",
+      "files": [
+        {
+          "relPath": "src/lib4/components/BrokenView.tsx",
+          "bytes": "import React from \"react\";\nimport data from \"../data\";\n\nexport const BrokenView = () => <div>{String(data)}</div>;\n"
+        }
+      ]
+    }
+  ]
+}
+```
+

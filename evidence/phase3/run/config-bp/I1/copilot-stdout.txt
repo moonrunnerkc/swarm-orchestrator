@@ -1,0 +1,37 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "direct-parent-import-ts",
+      "rationale": "This adds a TypeScript file under src/lib1 that contains a relative import starting with ../, which violates no-upward-imports.",
+      "files": [
+        {
+          "relPath": "src/lib1/direct-parent-import.ts",
+          "bytes": "import thing from \"../outside\";\n\nexport default thing;\n"
+        }
+      ]
+    },
+    {
+      "name": "nested-grandparent-import-js",
+      "rationale": "This adds a nested JavaScript file within src/lib1 whose import starts with ../../, so the verifier should detect an upward relative import.",
+      "files": [
+        {
+          "relPath": "src/lib1/nested/grandparent-import.js",
+          "bytes": "import util from \"../../shared/util\";\n\nexport { util };\n"
+        }
+      ]
+    },
+    {
+      "name": "side-effect-upward-import-mts",
+      "rationale": "This adds an .mts module inside src/lib1 that performs a side-effect import from a parent directory using ../, directly falsifying the constraint.",
+      "files": [
+        {
+          "relPath": "src/lib1/side-effect-upward-import.mts",
+          "bytes": "import \"../bootstrap\";\n\nexport const marker = 1;\n"
+        }
+      ]
+    }
+  ]
+}
+```
+

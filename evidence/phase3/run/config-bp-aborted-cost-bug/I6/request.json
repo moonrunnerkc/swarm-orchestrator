@@ -1,0 +1,16 @@
+{
+  "binaryPath": "copilot",
+  "args": [
+    "--no-ask-user",
+    "--no-color",
+    "-s",
+    "--output-format",
+    "text",
+    "--allow-all-paths",
+    "--allow-tool",
+    "view"
+  ],
+  "cwd": "/var/folders/1q/2_tt_q515bs98g0f5v17_sdc0000gn/T/phase3-Bp-I6-XwNEwB/workspace",
+  "timeoutMs": 300000,
+  "prompt": "You are an adversarial perturbation generator running inside an isolated\nworkspace. Your task is to falsify the import-graph-must-satisfy\nobligation below by describing concrete file perturbations that would\ncause the structural constraint to fail.\n\nObligation type: import-graph-must-satisfy\nConstraint: no-cycles\nScope (relative directory walked by the verifier): src/pkg1\n\nThe constraint is `no-cycles`: the local import graph rooted at the\nscope must contain no directed cycle. To falsify, propose new files\ninside the scope whose imports form a cycle (e.g., A imports B,\nB imports A; or a longer chain that closes back on itself).\nImports that resolve outside the scope are ignored, so the cycle\nmust be entirely between files inside the scope.\n\nConstraints, all hard:\n1. Do NOT modify the workspace yourself. The orchestrator applies the\n   files you describe.\n2. Produce exactly 3 candidates, each with a short\n   rationale and a list of files to add or overwrite (relPath relative\n   to the workspace root, plus byte content as a UTF-8 string).\n3. Each candidate must be independently sufficient — the orchestrator\n   applies one candidate at a time and rolls back before applying the\n   next, so candidates must not depend on each other.\n4. Files must use a source extension the verifier walks: .ts, .tsx,\n   .cts, .mts, .js, .jsx, .mjs, .cjs, .py. Anything else is silently\n   ignored by the verifier.\n5. Place files inside the scope src/pkg1; files outside the\n   scope are not walked and cannot trigger the constraint.\n6. Do not write under .git, node_modules, dist, runs, .swarm, or any\n   ignored directory.\n\nReply with one fenced ```json``` block matching the schema below. No\nprose before, after, or inside the block.\n\nSchema:\n```json\n{\n  \"candidates\": [\n    {\n      \"name\": \"string identifier, kebab-case\",\n      \"rationale\": \"one-sentence explanation of why this should\n        falsify the obligation\",\n      \"files\": [\n        { \"relPath\": \"path/relative/to/workspace.ext\",\n          \"bytes\": \"file content as a single UTF-8 string\" }\n      ]\n    }\n  ]\n}\n```\n\nNow produce the JSON for this obligation."
+}

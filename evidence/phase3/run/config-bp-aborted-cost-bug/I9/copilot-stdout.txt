@@ -1,0 +1,53 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "two-file-ts-cycle",
+      "rationale": "These two new TypeScript files import each other directly inside src/pkg4, creating a simple directed cycle.",
+      "files": [
+        {
+          "relPath": "src/pkg4/perturb-a.ts",
+          "bytes": "import \"./perturb-b\";\nexport const a = \"a\";\n"
+        },
+        {
+          "relPath": "src/pkg4/perturb-b.ts",
+          "bytes": "import \"./perturb-a\";\nexport const b = \"b\";\n"
+        }
+      ]
+    },
+    {
+      "name": "three-file-js-cycle",
+      "rationale": "These three JavaScript files form a closed import chain entirely within src/pkg4: alpha -> beta -> gamma -> alpha.",
+      "files": [
+        {
+          "relPath": "src/pkg4/cycle-alpha.js",
+          "bytes": "import \"./cycle-beta.js\";\nexport const alpha = \"alpha\";\n"
+        },
+        {
+          "relPath": "src/pkg4/cycle-beta.js",
+          "bytes": "import \"./cycle-gamma.js\";\nexport const beta = \"beta\";\n"
+        },
+        {
+          "relPath": "src/pkg4/cycle-gamma.js",
+          "bytes": "import \"./cycle-alpha.js\";\nexport const gamma = \"gamma\";\n"
+        }
+      ]
+    },
+    {
+      "name": "tsx-index-helper-cycle",
+      "rationale": "These TSX files introduce a two-node cycle by having an index file import a helper and the helper import the index back.",
+      "files": [
+        {
+          "relPath": "src/pkg4/widget-index.tsx",
+          "bytes": "import \"./widget-helper\";\nexport const WidgetIndex = () => null;\n"
+        },
+        {
+          "relPath": "src/pkg4/widget-helper.tsx",
+          "bytes": "import \"./widget-index\";\nexport const WidgetHelper = () => null;\n"
+        }
+      ]
+    }
+  ]
+}
+```
+

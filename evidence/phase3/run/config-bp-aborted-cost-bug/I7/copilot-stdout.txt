@@ -1,0 +1,51 @@
+I’ll inspect `src/pkg2` and nearby config so the proposed files use plausible local import syntax and stay within scope.
+
+```json
+{
+  "candidates": [
+    {
+      "name": "two-file-cycle",
+      "rationale": "Adding two new TypeScript files that import each other creates a directed cycle entirely within src/pkg2.",
+      "files": [
+        {
+          "relPath": "src/pkg2/cycleA.ts",
+          "bytes": "import { cycleB } from './cycleB';\n\nexport const cycleA = cycleB + 1;\n"
+        },
+        {
+          "relPath": "src/pkg2/cycleB.ts",
+          "bytes": "import { cycleA } from './cycleA';\n\nexport const cycleB = cycleA + 1;\n"
+        }
+      ]
+    },
+    {
+      "name": "close-existing-chain",
+      "rationale": "Overwriting leaf.ts to import a.ts closes the existing a -> mid -> leaf chain into a cycle under src/pkg2.",
+      "files": [
+        {
+          "relPath": "src/pkg2/leaf.ts",
+          "bytes": "import { a } from './a';\n\nexport const leaf = a + 1;\n"
+        }
+      ]
+    },
+    {
+      "name": "three-file-cycle",
+      "rationale": "Adding a three-node import chain that returns to its start produces a clear directed cycle wholly inside the scoped directory.",
+      "files": [
+        {
+          "relPath": "src/pkg2/ring1.ts",
+          "bytes": "import { ring2 } from './ring2';\n\nexport const ring1 = ring2 + 1;\n"
+        },
+        {
+          "relPath": "src/pkg2/ring2.ts",
+          "bytes": "import { ring3 } from './ring3';\n\nexport const ring2 = ring3 + 1;\n"
+        },
+        {
+          "relPath": "src/pkg2/ring3.ts",
+          "bytes": "import { ring1 } from './ring1';\n\nexport const ring3 = ring1 + 1;\n"
+        }
+      ]
+    }
+  ]
+}
+```
+

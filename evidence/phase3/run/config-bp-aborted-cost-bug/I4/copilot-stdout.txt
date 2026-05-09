@@ -1,0 +1,37 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "upward-import-ts",
+      "rationale": "This adds a TypeScript file inside src/lib4 that contains a relative import starting with .., which should violate no-upward-imports.",
+      "files": [
+        {
+          "relPath": "src/lib4/upward-import.ts",
+          "bytes": "import helper from \"../shared/helper\";\n\nexport default helper;\n"
+        }
+      ]
+    },
+    {
+      "name": "nested-upward-import-js",
+      "rationale": "This adds a nested JavaScript file under src/lib4 whose import climbs to a parent directory with ../../, so the structural constraint should fail.",
+      "files": [
+        {
+          "relPath": "src/lib4/nested/nested-upward.js",
+          "bytes": "import thing from \"../../outside-module\";\n\nexport default thing;\n"
+        }
+      ]
+    },
+    {
+      "name": "reexport-upward-mts",
+      "rationale": "This adds an ES module TypeScript file in src/lib4 that re-exports from a path beginning with .., which is still an upward relative import.",
+      "files": [
+        {
+          "relPath": "src/lib4/deep/reexport-upward.mts",
+          "bytes": "export { value } from \"../../upstream/value.mjs\";\n"
+        }
+      ]
+    }
+  ]
+}
+```
+

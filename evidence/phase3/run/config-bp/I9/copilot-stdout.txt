@@ -1,0 +1,68 @@
+● List directory src/pkg4
+  └ 3 files found
+
+● Search (glob)
+  │ "src/pkg4/**/*.{ts,tsx,cts,mts,js,jsx,mjs,cjs,py}"
+  └ 3 files found
+
+● Read start.ts
+  │ src/pkg4/start.ts
+  └ 3 lines read
+
+● Read mid.ts
+  │ src/pkg4/mid.ts
+  └ 3 lines read
+
+● Read end.ts
+  │ src/pkg4/end.ts
+  └ 1 line read
+
+```json
+{
+  "candidates": [
+    {
+      "name": "two-file-cycle-addition",
+      "rationale": "Adding two new TypeScript modules that import each other creates a directed cycle entirely within src/pkg4.",
+      "files": [
+        {
+          "relPath": "src/pkg4/cycle-a.ts",
+          "bytes": "import { cycleB } from './cycle-b';\n\nexport const cycleA = cycleB + 1;\n"
+        },
+        {
+          "relPath": "src/pkg4/cycle-b.ts",
+          "bytes": "import { cycleA } from './cycle-a';\n\nexport const cycleB = cycleA + 1;\n"
+        }
+      ]
+    },
+    {
+      "name": "close-existing-chain",
+      "rationale": "Overwriting end.ts to import start.ts closes the existing start -> mid -> end chain into a cycle.",
+      "files": [
+        {
+          "relPath": "src/pkg4/end.ts",
+          "bytes": "import { start } from './start';\n\nexport const end = start + 1;\n"
+        }
+      ]
+    },
+    {
+      "name": "three-file-subdir-ring",
+      "rationale": "Adding a three-module ring under src/pkg4 forms a longer directed cycle that remains fully inside the walked scope.",
+      "files": [
+        {
+          "relPath": "src/pkg4/ring/one.ts",
+          "bytes": "import { two } from './two';\n\nexport const one = two + 1;\n"
+        },
+        {
+          "relPath": "src/pkg4/ring/two.ts",
+          "bytes": "import { three } from './three';\n\nexport const two = three + 1;\n"
+        },
+        {
+          "relPath": "src/pkg4/ring/three.ts",
+          "bytes": "import { one } from './one';\n\nexport const three = one + 1;\n"
+        }
+      ]
+    }
+  ]
+}
+```
+
