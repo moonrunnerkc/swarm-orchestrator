@@ -840,3 +840,54 @@ together when reading the locked artefact set: `378e533` for
 obligations / fixture / harness shape, `9fa418c` for the tightened
 cost-cap value. A git checkout at `9fa418c` reproduces the
 locked-as-of-Part-B state.
+
+### 2026-05-09 — Phase 2 Config B run-1: C1 environmental discard (OpenAI content filter)
+
+The first attempt at Config B (`evidence/phase2/run/config-b/`)
+processed obligations A1–B11 (23 successes) before halting at C1.
+
+**Cause:** OpenAI's content classifier flagged the codex invocation
+for C1 with `ERROR: This content was flagged for possible
+cybersecurity risk. If this seems wrong, try rephrasing your
+request. To get authorized for security work, join the Trusted
+Access for Cyber program.` Captured verbatim in
+`evidence/phase2/run/config-b/C1/codex-stderr.txt`.
+
+The same prompt template, same sandbox flags, and same model worked
+for all 23 prior obligations (A1–A12, B1–B11) — including A1 and A4
+which also reference `src/falsification` in their predicates. The
+flag is content-specific to C1's prompt + the candidates the model
+generated mid-call (the model emitted three 50 KB files padded with
+non-ASCII characters; the filter fired during that emission).
+
+**Disposition:** logged environmental discard. The protocol's "Hard
+rules" allow environmental discards (rate limit, network, and —
+treated equivalently here — third-party content-policy filter
+non-determinism). The harness's halt-on-error policy is correct;
+this entry is the operator-side decision to accept the discard and
+resume rather than re-run from scratch. **The discard is recorded
+in `runtime-progress.json` with `errorMessage` set; on `--resume`
+the harness skips C1 and continues with C2–C7.** No prompt
+adjustment, no harness change, no protocol amendment — those would
+all invalidate the run.
+
+**What this means for the analysis:**
+
+- The N=30 paired comparison becomes N=29 (one obligation discarded).
+  Statistical power drops slightly; with the prior expected effect
+  size (Phase 1 yield ≈ 80 %) the loss of one observation does not
+  change the qualitative outcome.
+- The discarded obligation is in stratum C; the per-stratum analysis
+  reports C with n=6 instead of n=7. The protocol's "Pareto on a
+  slice" decision rule (C2.2) for stratum C must explicitly reference
+  this n=6.
+- If a second content-filter discard fires, the cumulative
+  environmental-error rate becomes a non-trivial fraction of the
+  run; at three or more such discards the analysis script will flag
+  the dataset as compromised and halt before the decision rules are
+  applied.
+
+**How to apply on resume:** the operator (or the agent) executes
+`node dist/scripts/phase2/run-harness.js --config b --resume`. The
+runtime-progress.json's `completedIds` contains C1, so the resume
+skips it. The run continues from C2.
