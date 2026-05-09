@@ -1,0 +1,64 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "import-graph-must-satisfy",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/pkg3/tail.ts",
+            "bytes": "import { root } from './root';\n\nexport const tail = root + 1;\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"import-graph-must-satisfy\",\"constraint\":\"no-cycles\",\"scope\":\"src/pkg3\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "import-graph violation (no-cycles): src/pkg3/root.ts -> src/pkg3/tail.ts -> src/pkg3/root.ts",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/pkg3/cycle-a.ts",
+            "bytes": "import { b } from './cycle-b';\n\nexport const a = b + 1;\n"
+          },
+          {
+            "relPath": "src/pkg3/cycle-b.ts",
+            "bytes": "import { a } from './cycle-a';\n\nexport const b = a + 1;\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"import-graph-must-satisfy\",\"constraint\":\"no-cycles\",\"scope\":\"src/pkg3\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "import-graph violation (no-cycles): src/pkg3/cycle-a.ts -> src/pkg3/cycle-b.ts -> src/pkg3/cycle-a.ts",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/pkg3/deep/one.js",
+            "bytes": "import './two.js';\n\nexport const one = 1;\n"
+          },
+          {
+            "relPath": "src/pkg3/deep/two.js",
+            "bytes": "import './three.js';\n\nexport const two = 2;\n"
+          },
+          {
+            "relPath": "src/pkg3/deep/three.js",
+            "bytes": "import './one.js';\n\nexport const three = 3;\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"import-graph-must-satisfy\",\"constraint\":\"no-cycles\",\"scope\":\"src/pkg3\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "import-graph violation (no-cycles): src/pkg3/deep/one.js -> src/pkg3/deep/two.js -> src/pkg3/deep/three.js -> src/pkg3/deep/one.js",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "copilot",
+    "obligationType": "import-graph-must-satisfy",
+    "wallClockMs": 27415,
+    "dollarsSpent": 0.026,
+    "dollarsBilled": 0,
+    "dollarsTokenEstimate": 0.026,
+    "authMethod": "chatgpt",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

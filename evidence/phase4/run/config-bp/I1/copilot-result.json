@@ -1,0 +1,52 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "import-graph-must-satisfy",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/lib1/nested/upward-one.ts",
+            "bytes": "import { a } from \"../a\";\n\nexport const brokenOne = a;\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"import-graph-must-satisfy\",\"constraint\":\"no-upward-imports\",\"scope\":\"src/lib1\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "import-graph violation (no-upward-imports): 1 offender(s); src/lib1/nested/upward-one.ts imports \"../a\" (escapes its directory)",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/lib1/deeper/level/upward-two.ts",
+            "bytes": "import { b } from \"../../b\";\n\nexport const brokenTwo = b;\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"import-graph-must-satisfy\",\"constraint\":\"no-upward-imports\",\"scope\":\"src/lib1\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "import-graph violation (no-upward-imports): 1 offender(s); src/lib1/deeper/level/upward-two.ts imports \"../../b\" (escapes its directory)",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/lib1/a.ts",
+            "bytes": "import { b } from \"../lib1/b\";\n\nexport const a = b + 1;\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"import-graph-must-satisfy\",\"constraint\":\"no-upward-imports\",\"scope\":\"src/lib1\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "import-graph violation (no-upward-imports): 1 offender(s); src/lib1/a.ts imports \"../lib1/b\" (escapes its directory)",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "copilot",
+    "obligationType": "import-graph-must-satisfy",
+    "wallClockMs": 28056,
+    "dollarsSpent": 0.026,
+    "dollarsBilled": 0,
+    "dollarsTokenEstimate": 0.026,
+    "authMethod": "chatgpt",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

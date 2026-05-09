@@ -1,0 +1,54 @@
+I’ll inspect `src/lib1` so I can propose valid in-scope files without changing the workspace.
+
+● List directory src/lib1
+  └ 2 files found
+
+● Search (glob)
+  │ "src/lib1/**/*.{ts,tsx,cts,mts,js,jsx,mjs,cjs,py}"
+  └ 2 files found
+
+● Read a.ts
+  │ src/lib1/a.ts
+  └ 3 lines read
+
+● Read b.ts
+  │ src/lib1/b.ts
+  └ 1 line read
+
+```json
+{
+  "candidates": [
+    {
+      "name": "nested-upward-import",
+      "rationale": "Adding a new TypeScript file under src/lib1/nested that imports ../a creates a relative import beginning with .. inside the walked scope.",
+      "files": [
+        {
+          "relPath": "src/lib1/nested/upward-one.ts",
+          "bytes": "import { a } from \"../a\";\n\nexport const brokenOne = a;\n"
+        }
+      ]
+    },
+    {
+      "name": "double-upward-import",
+      "rationale": "Adding a deeper file under src/lib1/deeper/level with an import of ../../b introduces an upward relative import that violates no-upward-imports.",
+      "files": [
+        {
+          "relPath": "src/lib1/deeper/level/upward-two.ts",
+          "bytes": "import { b } from \"../../b\";\n\nexport const brokenTwo = b;\n"
+        }
+      ]
+    },
+    {
+      "name": "root-file-upward-import",
+      "rationale": "Overwriting an existing root file in src/lib1 so it imports ../lib1/b makes the file itself contain a forbidden upward relative import.",
+      "files": [
+        {
+          "relPath": "src/lib1/a.ts",
+          "bytes": "import { b } from \"../lib1/b\";\n\nexport const a = b + 1;\n"
+        }
+      ]
+    }
+  ]
+}
+```
+

@@ -1,0 +1,37 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "rename-square-function",
+      "rationale": "This removes any declaration named square by renaming the exported function, so the AST check finds no matching function name.",
+      "files": [
+        {
+          "relPath": "src/math/square.ts",
+          "bytes": "export function squared(x: number): number {\n  return x * x;\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "change-parameter-type",
+      "rationale": "This keeps a function named square but changes its parameter type from number to string, producing a normalized signature mismatch.",
+      "files": [
+        {
+          "relPath": "src/math/square.ts",
+          "bytes": "export function square(x: string): number {\n  const value = Number(x);\n  return value * value;\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "change-return-type",
+      "rationale": "This preserves the function name and parameter type but changes the return type to string, which should fail the expected signature substring check.",
+      "files": [
+        {
+          "relPath": "src/math/square.ts",
+          "bytes": "export function square(x: number): string {\n  return String(x * x);\n}\n"
+        }
+      ]
+    }
+  ]
+}
+```
+

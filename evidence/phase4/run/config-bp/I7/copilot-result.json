@@ -1,0 +1,64 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "import-graph-must-satisfy",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/pkg2/cycle-a.ts",
+            "bytes": "import { valueB } from './cycle-b';\n\nexport const valueA = valueB + 1;\n"
+          },
+          {
+            "relPath": "src/pkg2/cycle-b.ts",
+            "bytes": "import { valueA } from './cycle-a';\n\nexport const valueB = valueA + 1;\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"import-graph-must-satisfy\",\"constraint\":\"no-cycles\",\"scope\":\"src/pkg2\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "import-graph violation (no-cycles): src/pkg2/cycle-a.ts -> src/pkg2/cycle-b.ts -> src/pkg2/cycle-a.ts",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/pkg2/leaf.ts",
+            "bytes": "import { a } from './a';\n\nexport const leaf = a + 2;\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"import-graph-must-satisfy\",\"constraint\":\"no-cycles\",\"scope\":\"src/pkg2\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "import-graph violation (no-cycles): src/pkg2/a.ts -> src/pkg2/mid.ts -> src/pkg2/leaf.ts -> src/pkg2/a.ts",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/pkg2/ring1.js",
+            "bytes": "import { ring2 } from './ring2.js';\n\nexport const ring1 = ring2;\n"
+          },
+          {
+            "relPath": "src/pkg2/ring2.js",
+            "bytes": "import { ring3 } from './ring3.js';\n\nexport const ring2 = ring3;\n"
+          },
+          {
+            "relPath": "src/pkg2/ring3.js",
+            "bytes": "import { ring1 } from './ring1.js';\n\nexport const ring3 = ring1;\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"import-graph-must-satisfy\",\"constraint\":\"no-cycles\",\"scope\":\"src/pkg2\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "import-graph violation (no-cycles): src/pkg2/ring1.js -> src/pkg2/ring2.js -> src/pkg2/ring3.js -> src/pkg2/ring1.js",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "copilot",
+    "obligationType": "import-graph-must-satisfy",
+    "wallClockMs": 26324,
+    "dollarsSpent": 0.026,
+    "dollarsBilled": 0,
+    "dollarsTokenEstimate": 0.026,
+    "authMethod": "chatgpt",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

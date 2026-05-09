@@ -1,0 +1,70 @@
+I’m checking the scope layout first so the candidates fit the existing tree and file types.
+
+● List directory src/pkg2
+  └ 3 files found
+
+● Search (glob)
+  │ "src/pkg2/**/*.{ts,tsx,cts,mts,js,jsx,mjs,cjs,py}"
+  └ 3 files found
+
+● Read a.ts
+  │ src/pkg2/a.ts
+  └ 3 lines read
+
+● Read leaf.ts
+  │ src/pkg2/leaf.ts
+  └ 1 line read
+
+● Read mid.ts
+  │ src/pkg2/mid.ts
+  └ 3 lines read
+
+```json
+{
+  "candidates": [
+    {
+      "name": "two-file-ts-cycle",
+      "rationale": "Adding two new TypeScript files that import each other creates a directed cycle entirely within src/pkg2.",
+      "files": [
+        {
+          "relPath": "src/pkg2/cycle-a.ts",
+          "bytes": "import { valueB } from './cycle-b';\n\nexport const valueA = valueB + 1;\n"
+        },
+        {
+          "relPath": "src/pkg2/cycle-b.ts",
+          "bytes": "import { valueA } from './cycle-a';\n\nexport const valueB = valueA + 1;\n"
+        }
+      ]
+    },
+    {
+      "name": "close-existing-chain",
+      "rationale": "Overwriting leaf.ts to import a.ts closes the existing a -> mid -> leaf chain into a cycle.",
+      "files": [
+        {
+          "relPath": "src/pkg2/leaf.ts",
+          "bytes": "import { a } from './a';\n\nexport const leaf = a + 2;\n"
+        }
+      ]
+    },
+    {
+      "name": "three-file-js-cycle",
+      "rationale": "A three-node JavaScript import loop in new files is sufficient on its own to violate the no-cycles constraint.",
+      "files": [
+        {
+          "relPath": "src/pkg2/ring1.js",
+          "bytes": "import { ring2 } from './ring2.js';\n\nexport const ring1 = ring2;\n"
+        },
+        {
+          "relPath": "src/pkg2/ring2.js",
+          "bytes": "import { ring3 } from './ring3.js';\n\nexport const ring2 = ring3;\n"
+        },
+        {
+          "relPath": "src/pkg2/ring3.js",
+          "bytes": "import { ring1 } from './ring1.js';\n\nexport const ring3 = ring1;\n"
+        }
+      ]
+    }
+  ]
+}
+```
+

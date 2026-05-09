@@ -1,0 +1,52 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "function-must-have-signature",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/parse/integer.ts",
+            "bytes": "export function parseInteger(s: unknown): number {\n  const value = Number(s);\n  if (!Number.isFinite(value) || !Number.isInteger(value)) {\n    throw new Error(`Not an integer: ${String(s)}`);\n  }\n  return value;\n}\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"function-must-have-signature\",\"file\":\"src/parse/integer.ts\",\"name\":\"parseInteger\",\"signature\":\"(s: string): number\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "signature for parseInteger in src/parse/integer.ts does not match; expected \"(s:string):number\", observed \"(s:unknown):number\"",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/parse/integer.ts",
+            "bytes": "export function parseInteger(s: string): number | null {\n  const value = Number(s);\n  if (!Number.isFinite(value) || !Number.isInteger(value)) {\n    return null;\n  }\n  return value;\n}\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"function-must-have-signature\",\"file\":\"src/parse/integer.ts\",\"name\":\"parseInteger\",\"signature\":\"(s: string): number\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "signature for parseInteger in src/parse/integer.ts does not match; expected \"(s:string):number\", observed \"(s:string):number|null\"",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/parse/integer.ts",
+            "bytes": "export function parseInt(s: string): number {\n  const value = Number(s);\n  if (!Number.isFinite(value) || !Number.isInteger(value)) {\n    throw new Error(`Not an integer: ${s}`);\n  }\n  return value;\n}\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"function-must-have-signature\",\"file\":\"src/parse/integer.ts\",\"name\":\"parseInteger\",\"signature\":\"(s: string): number\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "parseInteger is not declared in src/parse/integer.ts; expected signature (s: string): number",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "claude-code",
+    "obligationType": "function-must-have-signature",
+    "wallClockMs": 7341,
+    "dollarsSpent": 0.052928,
+    "dollarsBilled": 0.052928,
+    "dollarsTokenEstimate": 0.052928,
+    "authMethod": "api",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

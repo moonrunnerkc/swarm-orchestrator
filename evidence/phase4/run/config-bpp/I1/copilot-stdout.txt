@@ -1,0 +1,37 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "upward-import-basic-ts",
+      "rationale": "This adds a TypeScript file under src/lib1 that contains a relative import starting with .., which directly violates the no-upward-imports rule.",
+      "files": [
+        {
+          "relPath": "src/lib1/upward-import-basic.ts",
+          "bytes": "import value from \"../outside\";\n\nexport default value;\n"
+        }
+      ]
+    },
+    {
+      "name": "upward-import-nested-js",
+      "rationale": "This adds a nested JavaScript file within src/lib1 whose import escapes its directory with ../.., so the structural constraint should fail.",
+      "files": [
+        {
+          "relPath": "src/lib1/nested/deeper/upward-import.js",
+          "bytes": "import helper from \"../../other\";\n\nexport const result = helper;\n"
+        }
+      ]
+    },
+    {
+      "name": "upward-import-tsx-component",
+      "rationale": "This places a TSX file inside the scoped tree with an upward relative import, which is sufficient to falsify the obligation on its own.",
+      "files": [
+        {
+          "relPath": "src/lib1/components/BadImport.tsx",
+          "bytes": "import Widget from \"../Widget\";\n\nexport function BadImport() {\n  return Widget;\n}\n"
+        }
+      ]
+    }
+  ]
+}
+```
+

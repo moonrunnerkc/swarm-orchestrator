@@ -1,0 +1,41 @@
+● Read negate.ts
+  │ src/math/negate.ts
+  └ 3 lines read
+
+```json
+{
+  "candidates": [
+    {
+      "name": "rename-function-to-invert",
+      "rationale": "Renaming the exported function removes any declaration named negate from the file, so the AST-backed check cannot find a matching function.",
+      "files": [
+        {
+          "relPath": "src/math/negate.ts",
+          "bytes": "export function invert(x: number): number {\n  return -x;\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "change-parameter-type-to-string",
+      "rationale": "Keeping the function name but changing the parameter type from number to string produces a normalized signature different from the expected one.",
+      "files": [
+        {
+          "relPath": "src/math/negate.ts",
+          "bytes": "export function negate(x: string): number {\n  return -Number(x);\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "change-return-type-to-string",
+      "rationale": "Keeping the function name and parameter but changing the return type to string makes the signature diverge while remaining valid TypeScript.",
+      "files": [
+        {
+          "relPath": "src/math/negate.ts",
+          "bytes": "export function negate(x: number): string {\n  return String(-x);\n}\n"
+        }
+      ]
+    }
+  ]
+}
+```
+

@@ -1,0 +1,37 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "upward-import-ts-root",
+      "rationale": "This adds a TypeScript file under src/lib5 that contains a relative import starting with ../, directly violating the no-upward-imports rule.",
+      "files": [
+        {
+          "relPath": "src/lib5/upward-import.ts",
+          "bytes": "import value from \"../outside\";\n\nexport default value;\n"
+        }
+      ]
+    },
+    {
+      "name": "upward-import-js-nested",
+      "rationale": "This adds a nested JavaScript file within src/lib5 whose import path starts with ../../, which escapes upward and should fail the structural constraint.",
+      "files": [
+        {
+          "relPath": "src/lib5/nested/escape.js",
+          "bytes": "import helper from \"../../helper\";\n\nexport const escaped = helper;\n"
+        }
+      ]
+    },
+    {
+      "name": "upward-import-mts-deep",
+      "rationale": "This adds an .mts module under src/lib5 with an upward relative import beginning with ../, making the verifier observe a prohibited upward import inside the scoped tree.",
+      "files": [
+        {
+          "relPath": "src/lib5/deep/module/violate.mts",
+          "bytes": "import config from \"../config\";\n\nexport { config };\n"
+        }
+      ]
+    }
+  ]
+}
+```
+

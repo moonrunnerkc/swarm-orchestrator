@@ -1,0 +1,43 @@
+I’ll inspect the target file, then draft three distinct full-file replacements that each break the required signature in a different way.
+
+● Read concat.ts
+  │ src/format/concat.ts
+  └ 3 lines read
+
+```json
+{
+  "candidates": [
+    {
+      "name": "rename-concat-to-join",
+      "rationale": "Renaming the exported function removes any declaration named concat from the file while keeping the TypeScript valid.",
+      "files": [
+        {
+          "relPath": "src/format/concat.ts",
+          "bytes": "export function join(a: string, b: string): string {\n  return a + b;\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "change-second-parameter-type",
+      "rationale": "Keeping the function name but changing the second parameter type to number creates a normalized signature mismatch.",
+      "files": [
+        {
+          "relPath": "src/format/concat.ts",
+          "bytes": "export function concat(a: string, b: number): string {\n  return a + String(b);\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "change-return-type-to-number",
+      "rationale": "Keeping the same parameters but changing the return type to number makes the signature differ from the required string return type.",
+      "files": [
+        {
+          "relPath": "src/format/concat.ts",
+          "bytes": "export function concat(a: string, b: string): number {\n  return (a + b).length;\n}\n"
+        }
+      ]
+    }
+  ]
+}
+```
+

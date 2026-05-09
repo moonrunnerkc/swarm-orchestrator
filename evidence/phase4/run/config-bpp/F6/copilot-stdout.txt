@@ -1,0 +1,43 @@
+Inspecting the target file to mirror its shape while crafting three distinct signature drifts.
+
+● Read clamp.ts
+  │ src/math/clamp.ts
+  └ 5 lines read
+
+```json
+{
+  "candidates": [
+    {
+      "name": "optional-hi-parameter",
+      "rationale": "This keeps a function named clamp but changes its parameter list so the normalized signature no longer matches the required three-number form.",
+      "files": [
+        {
+          "relPath": "src/math/clamp.ts",
+          "bytes": "export function clamp(x: number, lo: number, hi?: number): number {\n  if (hi === undefined) return lo;\n  if (x < lo) return lo;\n  if (x > hi) return hi;\n  return x;\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "string-return-type",
+      "rationale": "This preserves the function name and parameters but changes the declared return type from number to string, which should be reported as a signature mismatch.",
+      "files": [
+        {
+          "relPath": "src/math/clamp.ts",
+          "bytes": "export function clamp(x: number, lo: number, hi: number): string {\n  if (x < lo) return String(lo);\n  if (x > hi) return String(hi);\n  return String(x);\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "rename-clamp-function",
+      "rationale": "This removes any declaration named clamp by replacing it with a differently named function, causing the AST lookup for clamp to fail.",
+      "files": [
+        {
+          "relPath": "src/math/clamp.ts",
+          "bytes": "export function bound(x: number, lo: number, hi: number): number {\n  if (x < lo) return lo;\n  if (x > hi) return hi;\n  return x;\n}\n"
+        }
+      ]
+    }
+  ]
+}
+```
+

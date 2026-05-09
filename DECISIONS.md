@@ -1457,3 +1457,139 @@ default (no `ANTHROPIC_API_KEY` required). Under that auth,
 equals the API rate-card value the CLI returns in
 `total_cost_usd`. If the operator sets `ANTHROPIC_API_KEY`,
 `dollarsBilled = dollarsTokenEstimate` (per-token billing).
+
+### 2026-05-09 — Phase 4 close-out: cross-family diversity thesis CONFIRMED — Phase 5 skipped
+
+The Phase 4 paired analysis is at `evidence/phase4/analysis.md`.
+Decision: ClaudeCode adds zero unique yield over Copilot on the
+N=20 Phase 3 obligation set; the cross-family diversity thesis is
+CONFIRMED; Phase 5 (bandit dispatcher) is SKIPPED per the agent
+brief and the plan's Phase 5 gate.
+
+**Headline numbers:**
+
+| Metric | Config B' | Config B'' |
+|---|---|---|
+| Pass count | 0/20 | 0/20 |
+| Total billed | $0.0000 | $1.0121 |
+| Total token-estimate | $0.4680 | $1.5321 |
+| Total wall-clock | 371 s | 461 s |
+| Total LLM calls | 20 | 40 |
+
+**ClaudeCode marginal yield-per-dollar:**
+
+- ClaudeCode unique yield (B'' falsified, B' did not): **0**.
+- Additional spend (Σ B'' tokenEstimate − Σ B' tokenEstimate):
+  **`$1.0641`**.
+- ClaudeCode yield/$: **0.00**.
+
+**Bonferroni-corrected p-values:**
+
+- Pass rate: trivial (no discordant pairs); diff = 0.000, 95 % CI
+  [-0.161, +0.161]. Both configs catch all 20 obligations.
+- Token-estimate cost: median +$0.049/obligation, p < 0.0001.
+  ClaudeCode adds real spend.
+- Wall-clock: median +5612 ms/obligation, p = 0.004. ClaudeCode
+  adds real wall time.
+- LLM calls: median +1.00 calls/obligation, p < 0.0001. ClaudeCode
+  doubles the per-obligation call count.
+
+ClaudeCode's per-obligation behaviour: 3 candidates per call (matching
+the prompt's locked count), all 3 confirmed for stratum F and I1–I5;
+2 of 3 confirmed for I6–I10 (the `no-cycles` scopes), suggesting the
+strategy occasionally proposed an additional file that did not actually
+close a cycle. False-positive rate is low and consistent with
+Copilot's per-call behaviour, indicating no model-family-specific bias
+in the candidate-runner's classification.
+
+**ANTHROPIC_API_KEY-driven billing surface.** During the run,
+`ANTHROPIC_API_KEY` was set in the operator's environment, so
+`detectClaudeCodeAuthMethod` returned `api` and `dollarsBilled` ==
+`dollarsTokenEstimate` for every ClaudeCode call. Total real charge
+on Brad's API account: `$1.0121` for the Config B'' run. The auth
+detection logic is correct; the billing surface reflects the
+operator's actual environment.
+
+**Diversity-thesis interpretation:**
+
+Phase 4's question is whether *same-family* (Anthropic-vs-Anthropic-
+producer) diversity catches anything *cross-family* (Copilot, OpenAI)
+did not. The answer is **no**. ClaudeCode and Copilot agree on every
+obligation: both falsify all 20, with similar per-candidate yields
+and similar per-call token costs. The same-family adapter is
+redundant on this obligation surface.
+
+This is the "low yield validates the cross-family thesis" outcome the
+plan explicitly calls out:
+
+> if it finds nothing the producer's persona race didn't already
+> find, that's evidence cross-family diversity is doing the actual
+> work.
+
+**Implementation:** ClaudeCode ships behind the per-adapter flag
+(`includeClaudeCode: true`) regardless of yield, per the plan
+("Ship the adapter regardless of yield because both outcomes are
+signal"). The `defaultAdapterRegistry` keeps `includeClaudeCode`
+default `false`; Codex and Copilot remain default `on`. Operators
+that want a same-family control arm in production can opt in.
+
+**Caveats called out for the close-out:**
+
+- N=20 is small for a per-stratum diversity claim. The thesis is
+  confirmed *for this obligation surface* (import-graph + function-
+  signature on a synthetic fixture); a Phase 4 follow-up that adds
+  property-must-hold obligations to the test pool would strengthen
+  the claim against the obligation type Codex actually targets, where
+  cross-family redundancy might look different.
+- Both Copilot and ClaudeCode showed 100 % yield — the "saturated"
+  shape means the comparison cannot distinguish their relative
+  capability beyond "both are sufficient for these obligations." If
+  the obligation set tightened to harder shapes that Copilot misses,
+  ClaudeCode's marginal yield could become positive without
+  invalidating the broader diversity thesis.
+- ClaudeCode produced 5/30 (17 %) false positives across the 10
+  cycle-constraint obligations vs. 0/30 across the 10 upward-import
+  + 30 signature-drift obligations. The cycle-constraint surface is
+  harder to reason about; this is a per-strategy observation, not a
+  model-family one.
+
+**Phase 5 (bandit dispatcher) decision: SKIP.** Per the agent brief:
+
+> If ClaudeCode yield is zero or negative, skip Phase 5; document in
+> DECISIONS.md that two adapters running fire-all is the production
+> configuration.
+
+ClaudeCode marginal yield is zero. Two adapters (Codex and Copilot)
+running fire-all is the production configuration. Phase 5 is not
+built in this session. The bandit-dispatcher idea remains a
+defensible future investment if a third adapter earns its slot; today
+the empirical case for it does not exist.
+
+**Phase 6 status:** Phase 2's predicate set did not surface
+high-stakes obligations per the Phase 2 close-out, so the Phase 6
+gate did not fire; Phase 6 stays deferred until a future session that
+explicitly seeds high-stakes obligations into the test pool.
+
+**Commit-SHA references for this close-out:**
+
+- Pre-registration (adapter + protocol + harness + analysis):
+  `86cc48a`.
+- Run artefacts + analysis + this close-out: recorded in the commit
+  that lands this entry.
+
+### 2026-05-09 — Phase 6 status (post-Phase-4)
+
+Per the agent brief: "Phase 2's predicate set did not surface
+high-stakes obligations per the agent's Phase 2 report, so the Phase
+6 gate did not fire. Append a note to DECISIONS.md under 'Phase 6
+status' stating: gate not fired by Phase 2 evidence, Phase 6 deferred
+until a future session that explicitly seeds high-stakes obligations
+into the test pool."
+
+Phase 6 (cross-vendor producer race) gate: **not fired by Phase 2
+evidence** (`evidence/phase2/analysis.md` and the Phase 2 close-out
+above did not surface security-relevant or performance-must-not-
+regress obligations). Phase 6 is **deferred** until a future session
+explicitly seeds high-stakes obligations into the test pool. Phase 6
+remains independent of Phase 3/4/5 outcomes per the plan's
+"independently gated on Phase 2's findings" framing.

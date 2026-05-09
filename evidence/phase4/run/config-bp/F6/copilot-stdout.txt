@@ -1,0 +1,80 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "extra-parameter-signature-drift",
+      "rationale": "This keeps a function named clamp but changes its parameter list by adding a fourth argument, so the normalized signature no longer matches.",
+      "files": [
+        {
+          "relPath": "src/math/clamp.ts",
+          "bytes": "export function clamp(x: number, lo: number, hi: number, wrap = false): number {\n  if (wrap) {\n    const span = hi - lo;\n    return span === 0 ? lo : ((((x - lo) % span) + span) % span) + lo;\n  }\n\n  return Math.min(hi, Math.max(lo, x));\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "return-type-string-drift",
+      "rationale": "This preserves the function name and parameters but changes the declared return type from number to string, which should falsify the signature obligation.",
+      "files": [
+        {
+          "relPath": "src/math/clamp.ts",
+          "bytes": "export function clamp(x: number, lo: number, hi: number): string {\n  return String(Math.min(hi, Math.max(lo, x)));\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "function-renamed-no-clamp",
+      "rationale": "This replacement removes any function named clamp entirely by renaming it, so the AST-backed check should find no matching declaration.",
+      "files": [
+        {
+          "relPath": "src/math/clamp.ts",
+          "bytes": "export function bound(x: number, lo: number, hi: number): number {\n  return Math.min(hi, Math.max(lo, x));\n}\n"
+        }
+      ]
+    }
+  ]
+}
+```● Response was interrupted due to a server error. Retrying...
+
+I’ll inspect the target file so the replacements stay concrete and syntactically valid.
+
+● Read clamp.ts
+  │ src/math/clamp.ts
+  └ 5 lines read
+
+```json
+{
+  "candidates": [
+    {
+      "name": "rename-clamp-function",
+      "rationale": "Renaming the exported function removes any function declaration named clamp from the target file.",
+      "files": [
+        {
+          "relPath": "src/math/clamp.ts",
+          "bytes": "export function clampValue(x: number, lo: number, hi: number): number {\n  if (x < lo) return lo;\n  if (x > hi) return hi;\n  return x;\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "add-extra-parameter",
+      "rationale": "Adding a fourth parameter changes the normalized signature so it no longer matches the required three-parameter form.",
+      "files": [
+        {
+          "relPath": "src/math/clamp.ts",
+          "bytes": "export function clamp(x: number, lo: number, hi: number, wrap: boolean): number {\n  if (wrap && hi < lo) {\n    return x;\n  }\n  if (x < lo) return lo;\n  if (x > hi) return hi;\n  return x;\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "change-return-type",
+      "rationale": "Changing the declared return type from number to string makes the signature differ even though the function name and parameters remain present.",
+      "files": [
+        {
+          "relPath": "src/math/clamp.ts",
+          "bytes": "export function clamp(x: number, lo: number, hi: number): string {\n  if (x < lo) return String(lo);\n  if (x > hi) return String(hi);\n  return String(x);\n}\n"
+        }
+      ]
+    }
+  ]
+}
+```
+
