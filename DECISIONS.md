@@ -700,3 +700,97 @@ performance-must-not-regress on a benchmark whose hardware varies
 across runs), that obligation type warrants its own decision entry
 proposing a window for *just that slice*, not as a global Phase 2
 default.
+
+### 2026-05-09 — Phase 2 fixture: reuse the Phase 1 fixture
+
+The Phase 2 obligation set at `evidence/phase2/obligations.json` is
+disjoint from Phase 1's by predicate and target, but every Phase 2
+predicate evaluates to exit 0 against an unmodified copy of the Phase 1
+fixture (`evidence/fixtures/phase-1-gate/`); none of the new predicates
+require shapes the Phase 1 fixture cannot already express. Verified by
+`test/falsification/phase2-gate-fixture.test.ts`, which runs every
+locked Phase 2 predicate against a fresh copy of the fixture and asserts
+each exits 0 (mirrors the Phase 1 contamination guard).
+
+**Decision:** reuse `evidence/fixtures/phase-1-gate/` for Phase 2; do
+not duplicate it under `evidence/fixtures/phase-2/`. Two contamination
+guards (`phase1-gate-fixture.test.ts`, `phase2-gate-fixture.test.ts`)
+cover the two locked obligation sets against the single fixture. If a
+future Phase 2 amendment requires additional shapes, the obligation
+set is what changes — the fixture is edited only via the
+methodology-fix process documented in the 2026-05-09 entry above
+(re-run the contamination tests, append a dated entry citing the
+edit's effect).
+
+**Why:** the Phase 1 fixture was specifically designed as a
+contamination-free workspace shaped like a project, and the Phase 2
+predicates exercise the same "absence of forbidden token / file shape"
+form. Building a parallel `phase-2/` tree would duplicate the same
+files with different package metadata; a single tree is simpler to
+keep contamination-free and removes a class of "which fixture did
+which run use?" confusion.
+
+**How to apply:** Phase 2 runs read `fixturePath` from
+`evidence/phase2/obligations.json`, which points at
+`evidence/fixtures/phase-1-gate`. Future Phase 2 amendments must
+update `fixturePath` if the fixture path changes; the harness
+validates the path exists and computes a content hash recorded in
+`environment.json` so a swapped fixture between runs is detected.
+
+### 2026-05-09 — Phase 2 protocol PRE-REGISTERED
+
+The Phase 2 protocol is locked at `evidence/phase2/PROTOCOL.md` as of
+this commit. Locking before any Phase 2 run is executed — and
+documenting the locked-artefact list, cost cap, statistical method,
+and decision rules in the same commit — prevents post-hoc adjustment
+of any of those choices. Per the protocol's "Restart conditions"
+section, any change to the obligation set, fixture, harness,
+analysis script, cost cap, statistical method, or decision rules
+*after this commit and before the run completes* invalidates the run
+and requires a new pre-registration commit.
+
+**Locked artefacts (this commit):**
+
+- `evidence/phase2/obligations.json` — N=30 obligations, 12A / 11B / 7C,
+  disjoint from Phase 1's locked set.
+- `evidence/fixtures/phase-1-gate/` — reused; content hash
+  `b7f129e7335e96e1a1166828eac6696f24bd140f7378d1fa86199a621feacd25`.
+- `scripts/phase2/run-harness.ts` (compiled to
+  `dist/scripts/phase2/run-harness.js`) — paired-run harness with
+  hard cost cap per obligation per config.
+- `scripts/phase2/analyze.py` — paired Wilcoxon (cost / wall-clock /
+  LLM calls) + McNemar with exact-binomial fallback (pass rate),
+  Bonferroni correction across the four comparisons, 95% CIs on every
+  reported number, bootstrap CI for median diffs (`seed=42`).
+  Verified on a synthetic paired dataset where the answer is known
+  via `python3 scripts/phase2/analyze.py --self-test`.
+- `evidence/phase2/PROTOCOL.md` — the protocol document itself,
+  including the proposed Pareto-dominance ceiling.
+
+**Cost cap (per obligation):** Config A `$0.01`, Config B `$1.00`.
+Config A's cap is a sanity check (A spawns no LLM calls and so spends
+`$0` by construction); Config B's cap gives 6.7× headroom over Phase
+1's mean per-obligation cost of `$0.15`. Total worst-case Phase 2
+spend at the cap: `$30.30`. Total expected: `~$5`.
+
+**Pareto-dominance ceiling (proposed):** median per-obligation
+billed-cost difference (B − A) ≤ `$0.50` **and** total billed-cost
+difference across the 30 obligations ≤ `$15.00`. Rationale and
+operator-override pathway documented in PROTOCOL.md. The operator
+confirms (or supplies a different number) at the Part A → Part B
+STOP; an upward override requires a DECISIONS.md entry before Part B
+begins.
+
+**Pre-registration commit SHA:** appended in this entry once the
+commit lands; the SHA is the reference point for "was this artefact
+locked before any Phase 2 run?" If the operator overrides the cost
+ceiling, the override entry cites this SHA. The harness and analysis
+script are re-built from this commit for any subsequent re-run; a
+git checkout at this SHA must reproduce the same obligation set,
+fixture content hash, and analysis-script self-test result.
+
+**Out-of-scope reaffirmed:** Phase 3+ adapters do not start in
+Phase 2's session. The 48-hour post-merge regression check is
+resolved as skip per the prior dated entry. Re-running config A or
+config B mid-study to "fix" a result is not allowed; discards are
+environmental-only (rate limit, network) and logged.
