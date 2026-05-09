@@ -1,0 +1,53 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/falsification/adversarial-direct/logging.ts",
+            "bytes": "export function reportFailure(message: string): void {\n  console.error(message);\n}\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'console\\.error(' src/falsification --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/falsification/adversarial-direct/logging.ts:2:  console.error(message);\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/falsification/adversarial-comment/notes.ts",
+            "bytes": "// Regression marker: console.error( must not appear in checked files.\nexport const marker = true;\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'console\\.error(' src/falsification --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/falsification/adversarial-comment/notes.ts:1:// Regression marker: console.error( must not appear in checked files.\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/falsification/adversarial-string/template.ts",
+            "bytes": "export const forbiddenSnippet = \"console.error(\";\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'console\\.error(' src/falsification --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/falsification/adversarial-string/template.ts:1:export const forbiddenSnippet = \"console.error(\";\n",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 15793,
+    "dollarsSpent": 0.15249,
+    "dollarsBilled": 0.15249,
+    "dollarsTokenEstimate": 0.15249,
+    "dollarsApiEquivalent": 0.15249,
+    "authMethod": "unknown",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

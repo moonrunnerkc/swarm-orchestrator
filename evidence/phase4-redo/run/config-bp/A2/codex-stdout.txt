@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "root-marker-text",
+      "rationale": "A new root-level text file containing the forbidden marker will be found by grep, causing the predicate command to exit non-zero.",
+      "files": [
+        {
+          "relPath": "phase4redo-root-marker.txt",
+          "bytes": "This file intentionally contains XXX_FORBIDDEN_PHASE4REDO_TOKEN to falsify the predicate.\n"
+        }
+      ]
+    },
+    {
+      "name": "nested-marker-config",
+      "rationale": "A new file in a fresh non-excluded subdirectory containing the forbidden marker will be searched by grep and falsify the predicate.",
+      "files": [
+        {
+          "relPath": "adversarial-inputs/phase4redo-config.json",
+          "bytes": "{\n  \"marker\": \"XXX_FORBIDDEN_PHASE4REDO_TOKEN\",\n  \"purpose\": \"predicate falsification\"\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "source-comment-marker",
+      "rationale": "A new TypeScript source file with the forbidden marker in a comment is still plain text matched by grep, so the predicate fails.",
+      "files": [
+        {
+          "relPath": "src/phase4redo_forbidden_marker.ts",
+          "bytes": "// XXX_FORBIDDEN_PHASE4REDO_TOKEN\nexport const phase4RedoProbe = true;\n"
+        }
+      ]
+    }
+  ]
+}
+```

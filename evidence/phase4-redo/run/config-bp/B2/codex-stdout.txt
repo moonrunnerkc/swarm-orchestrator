@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "root-procfile",
+      "rationale": "Adding a file named Procfile at the workspace root makes find return a matching path, so test -z fails.",
+      "files": [
+        {
+          "relPath": "Procfile",
+          "bytes": "web: node server.js\n"
+        }
+      ]
+    },
+    {
+      "name": "nested-procfile",
+      "rationale": "Adding a nested file named Procfile outside excluded directories is still found by the predicate's recursive find command.",
+      "files": [
+        {
+          "relPath": "adversarial-case/Procfile",
+          "bytes": "worker: npm run worker\n"
+        }
+      ]
+    },
+    {
+      "name": "deep-procfile",
+      "rationale": "Adding a deeply nested Procfile under a fresh normal directory falsifies the no-Procfile-at-any-depth property.",
+      "files": [
+        {
+          "relPath": "predicate-fixtures/deep/service/Procfile",
+          "bytes": "release: echo deploying\n"
+        }
+      ]
+    }
+  ]
+}
+```

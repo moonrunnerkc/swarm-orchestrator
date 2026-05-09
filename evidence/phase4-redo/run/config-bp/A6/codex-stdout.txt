@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "urgent-fixme-top-level",
+      "rationale": "Adding a new source file containing the exact comment text makes grep find a match and the negated predicate exit non-zero.",
+      "files": [
+        {
+          "relPath": "src/adversarial-urgent-fixme-a.ts",
+          "bytes": "export const value = 1;\n// FIXME(urgent)\n"
+        }
+      ]
+    },
+    {
+      "name": "urgent-fixme-nested",
+      "rationale": "A fresh nested file under src with the target comment is within the grep search scope and should falsify the no-match property.",
+      "files": [
+        {
+          "relPath": "src/adversarial/urgent-marker-b.ts",
+          "bytes": "function marker() {\n  return true;\n}\n// FIXME(urgent) remove this before release\n"
+        }
+      ]
+    },
+    {
+      "name": "urgent-fixme-in-js",
+      "rationale": "The predicate searches all files under src regardless of extension, so this new JavaScript file with the exact comment should be detected.",
+      "files": [
+        {
+          "relPath": "src/adversarial-urgent-fixme-c.js",
+          "bytes": "const enabled = false;\nif (!enabled) {\n  // FIXME(urgent)\n  console.log('disabled');\n}\n"
+        }
+      ]
+    }
+  ]
+}
+```

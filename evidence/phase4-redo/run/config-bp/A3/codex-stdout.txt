@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "root-dsa-pem",
+      "rationale": "A new root-level PEM-looking file contains the exact BEGIN DSA PRIVATE KEY header, so grep should find it and make the negated predicate fail.",
+      "files": [
+        {
+          "relPath": "dsa-private-key-fixture.pem",
+          "bytes": "-----BEGIN DSA PRIVATE KEY-----\nMIIBugIBAAKBgQCexamplefixtureonlynotarealkey\n-----END DSA PRIVATE KEY-----\n"
+        }
+      ]
+    },
+    {
+      "name": "nested-config-dsa-header",
+      "rationale": "A file in a fresh non-excluded directory includes the target header text in configuration content, which is still matched by the recursive grep.",
+      "files": [
+        {
+          "relPath": "fixtures/security/sample-config.txt",
+          "bytes": "key_type=dsa\nheader=-----BEGIN DSA PRIVATE KEY-----\ncomment=test fixture for scanner behavior\n"
+        }
+      ]
+    },
+    {
+      "name": "markdown-dsa-example",
+      "rationale": "Documentation under a fresh directory contains the exact forbidden header inside an example block, so the workspace-wide search should report it.",
+      "files": [
+        {
+          "relPath": "docs/adversarial-dsa-example.md",
+          "bytes": "# DSA Scanner Fixture\n\n```pem\n-----BEGIN DSA PRIVATE KEY-----\nplaceholder\n-----END DSA PRIVATE KEY-----\n```\n"
+        }
+      ]
+    }
+  ]
+}
+```

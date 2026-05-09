@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "top-level-ts-ignore-comment",
+      "rationale": "A new TypeScript file under src/ containing @ts-ignore will be matched by grep and make the negated predicate fail.",
+      "files": [
+        {
+          "relPath": "src/adversarial-ts-ignore-a.ts",
+          "bytes": "// @ts-ignore\nexport const adversarialA: number = \"not a number\";\n"
+        }
+      ]
+    },
+    {
+      "name": "nested-ts-ignore-directive",
+      "rationale": "The recursive grep scans nested directories under src/ and will find the @ts-ignore directive in this new .ts file.",
+      "files": [
+        {
+          "relPath": "src/adversarial/nested-ts-ignore-b.ts",
+          "bytes": "export function adversarialB(value: unknown): string {\n  // @ts-ignore\n  return value.trim();\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "string-literal-ts-ignore",
+      "rationale": "The predicate searches for the raw substring @ts-ignore anywhere in .ts files, so a string literal containing it also falsifies the property.",
+      "files": [
+        {
+          "relPath": "src/adversarial-string-ts-ignore-c.ts",
+          "bytes": "export const adversarialMessage = \"contains @ts-ignore in a string literal\";\n"
+        }
+      ]
+    }
+  ]
+}
+```

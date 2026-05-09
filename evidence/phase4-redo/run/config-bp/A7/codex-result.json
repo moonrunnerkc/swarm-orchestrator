@@ -1,0 +1,53 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "aws-key-literal-case-01/config.ini",
+            "bytes": "[default]\naws_access_key_id = AKIAEXAMPLE000000000\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'aws_access_key_id' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist 2>/dev/null",
+        "reproducerOutput": "./aws-key-literal-case-01/config.ini:2:aws_access_key_id = AKIAEXAMPLE000000000\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "aws-key-literal-case-02/notes.md",
+            "bytes": "# Deployment Notes\n\nDo not commit values like `aws_access_key_id` to source control.\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'aws_access_key_id' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist 2>/dev/null",
+        "reproducerOutput": "./aws-key-literal-case-02/notes.md:3:Do not commit values like `aws_access_key_id` to source control.\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "aws-key-literal-case-03/fixture.json",
+            "bytes": "{\n  \"aws_access_key_id\": \"AKIAEXAMPLE111111111\"\n}\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'aws_access_key_id' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist 2>/dev/null",
+        "reproducerOutput": "./aws-key-literal-case-03/fixture.json:2:  \"aws_access_key_id\": \"AKIAEXAMPLE111111111\"\n",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 10399,
+    "dollarsSpent": 0.145,
+    "dollarsBilled": 0.145,
+    "dollarsTokenEstimate": 0.145,
+    "dollarsApiEquivalent": 0.145,
+    "authMethod": "unknown",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

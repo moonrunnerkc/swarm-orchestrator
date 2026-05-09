@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "direct-call",
+      "rationale": "A new TypeScript file under src/falsification contains the literal text console.error(, so grep will find a match and the negated predicate will fail.",
+      "files": [
+        {
+          "relPath": "src/falsification/adversarial-direct/logging.ts",
+          "bytes": "export function reportFailure(message: string): void {\n  console.error(message);\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "comment-match",
+      "rationale": "The predicate is a raw grep search, so even the literal text console.error( inside a TypeScript comment falsifies it.",
+      "files": [
+        {
+          "relPath": "src/falsification/adversarial-comment/notes.ts",
+          "bytes": "// Regression marker: console.error( must not appear in checked files.\nexport const marker = true;\n"
+        }
+      ]
+    },
+    {
+      "name": "string-match",
+      "rationale": "The checked TypeScript file contains console.error( inside a string literal, which still matches the grep pattern.",
+      "files": [
+        {
+          "relPath": "src/falsification/adversarial-string/template.ts",
+          "bytes": "export const forbiddenSnippet = \"console.error(\";\n"
+        }
+      ]
+    }
+  ]
+}
+```

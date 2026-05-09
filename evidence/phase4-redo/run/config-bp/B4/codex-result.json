@@ -1,0 +1,53 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "adversarial-credentials-root/credentials.yaml",
+            "bytes": "username: test-user\npassword: test-password\n"
+          }
+        ],
+        "reproducer": "test -z \"$(find . -name 'credentials.yaml' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null)\"",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "adversarial-config/security/credentials.yaml",
+            "bytes": "api_key: example-key\nsecret: example-secret\n"
+          }
+        ],
+        "reproducer": "test -z \"$(find . -name 'credentials.yaml' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null)\"",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "adversarial-service/env/local/credentials.yaml",
+            "bytes": "service: local-test\ntoken: placeholder-token\n"
+          }
+        ],
+        "reproducer": "test -z \"$(find . -name 'credentials.yaml' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null)\"",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 8403,
+    "dollarsSpent": 0.14416,
+    "dollarsBilled": 0.14416,
+    "dollarsTokenEstimate": 0.14416,
+    "dollarsApiEquivalent": 0.14416,
+    "authMethod": "unknown",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

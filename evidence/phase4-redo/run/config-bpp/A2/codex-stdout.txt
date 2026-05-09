@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "root-marker-text",
+      "rationale": "A new text file at the workspace root contains the forbidden marker, so grep should find it and make the negated predicate fail.",
+      "files": [
+        {
+          "relPath": "phase4redo-root-marker.txt",
+          "bytes": "This file intentionally contains XXX_FORBIDDEN_PHASE4REDO_TOKEN for predicate falsification.\n"
+        }
+      ]
+    },
+    {
+      "name": "nested-marker-config",
+      "rationale": "A new file in a fresh non-excluded subdirectory contains the forbidden marker, which is within the recursive grep search scope.",
+      "files": [
+        {
+          "relPath": "adversarial-inputs/phase4redo-config.json",
+          "bytes": "{\n  \"marker\": \"XXX_FORBIDDEN_PHASE4REDO_TOKEN\",\n  \"purpose\": \"falsify workspace-wide marker absence\"\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "source-comment-marker",
+      "rationale": "A new source-like file outside excluded directories includes the forbidden marker in a comment, so the predicate's grep command should match it.",
+      "files": [
+        {
+          "relPath": "phase4redo_probe.ts",
+          "bytes": "export const probe = true;\n// XXX_FORBIDDEN_PHASE4REDO_TOKEN\n"
+        }
+      ]
+    }
+  ]
+}
+```
