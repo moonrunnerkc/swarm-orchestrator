@@ -301,7 +301,6 @@ function buildCopilotArgs(
   // Argument shape per `copilot --help` (CLI 1.0.44):
   //   -p <prompt>                          non-interactive prompt mode
   //   --no-ask-user                        do not prompt the operator
-  //   -s / --silent                        suppress stats banner; print agent reply only
   //   --output-format text                 plain text reply (JSON envelope is JSONL,
   //                                        which complicates fenced-block extraction)
   //   --allow-tool <name>                  per-tool permission grant
@@ -311,10 +310,17 @@ function buildCopilotArgs(
   // adapter passes per-tool grants from `allowedTools`. The integration
   // test seam may set `allowedTools = 'all'`, which expands to
   // `--allow-all-tools`.
+  //
+  // Note: `-s/--silent` is intentionally *omitted*. With --silent the
+  // CLI suppresses the trailing `Requests N Premium (Ts)` stats line —
+  // which is the only surface the cost-aggregator can read to map a
+  // call to dollars. The brace-balanced JSON extractor in
+  // copilot-output-parser.ts terminates at the matching close-brace and
+  // ignores everything after, so the stats trailer cannot leak into the
+  // candidate document.
   const args: string[] = [
     '--no-ask-user',
     '--no-color',
-    '-s',
     '--output-format',
     'text',
     '--allow-all-paths',

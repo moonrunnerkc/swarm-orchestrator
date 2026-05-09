@@ -1228,3 +1228,47 @@ The model is told in the prompt not to write or run shells — only to
 emit a fenced ```json``` block describing candidate perturbations.
 The orchestrator (not the model) applies and rolls back each
 candidate inside the isolated workspace.
+
+### 2026-05-09 — Phase 3 harness hot-fix: drop -s/--silent so the cost trailer is captured
+
+A first attempt at Config B' (`evidence/phase3/run/config-bp-aborted-cost-bug/`)
+ran all 20 obligations to completion with 60 confirmed counter-examples
+(3 per obligation, 100 % yield, 0 false positives, 0 environmental
+discards). However, every per-obligation `cost.json` recorded
+`dollarsBilled: 0`, `dollarsTokenEstimate: 0`. Inspecting captured
+output (`evidence/phase3/run/config-bp-aborted-cost-bug/I1/copilot-stdout.txt`,
+`copilot-stderr.txt`) showed the JSON candidate document was present but
+the trailing `Requests N Premium (Ts)` stats line was absent — Copilot
+CLI's `-s/--silent` flag suppresses it.
+
+`parseCopilotPremiumRequests` correctly returned `null`, and the cost
+mapping correctly surfaced that as `$0`. The bug is in the harness's
+choice of CLI flags: `-s` made the only premium-request marker
+unreachable, so the cost layer had nothing to read.
+
+**Hot-fix:** drop `-s/--silent` from the default flag list in
+`src/falsification/adapters/copilot/copilot-falsifier.ts`'s
+`buildCopilotArgs`. The brace-balanced fenced-JSON extractor in
+`copilot-output-parser.ts` terminates at the matching close brace and
+ignores everything after, so the stats trailer can sit harmlessly past
+the JSON block. This commit lands the one-line flag change plus an
+in-source comment explaining why `-s` is intentionally omitted.
+
+**Why this is hot-fix-eligible (per PROTOCOL.md "Restart conditions"
+carveout):** the bug was in the harness's instrumentation surface, not
+in the measurement itself. The model behaviour, the prompt, the
+sandbox posture, the verifier, and the candidate-runner are all
+unchanged; only the CLI flag set that decides which trailer the
+process writes to stdout is changed. The pre-registered cost-aggregator
+contract ("Real cost instrumentation via the same per-(adapter,
+obligation-type) aggregator") is what the fix restores. Same shape as
+the Phase 2 hot-fixes ("Read runtime-progress.json" and "Filter out
+errored pairs"): aligned with pre-registration intent, no measurement
+value changed.
+
+The aborted run is preserved at
+`evidence/phase3/run/config-bp-aborted-cost-bug/` for the audit trail.
+The Config B' re-run lands under `evidence/phase3/run/config-bp/` after
+this commit; the analysis script reads that directory.
+
+Hot-fix commit SHA: recorded in the commit that lands this entry.
