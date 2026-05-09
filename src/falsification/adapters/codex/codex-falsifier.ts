@@ -53,6 +53,14 @@ export interface CodexFalsifierOptions {
    * satisfy Phase 1's "no mocks of the CLI" rule.
    */
   readonly invocationOverride?: (request: CodexInvocationRequest) => Promise<CodexInvocationResult>;
+  /**
+   * Observability hook fired after every real (or overridden) subprocess
+   * invocation completes, with the raw `CodexInvocationResult`. Side-effect
+   * only — the adapter still consumes the same result it returned. The
+   * Phase 1 dev-gate runner uses this to capture raw stdout/stderr per
+   * obligation without modifying subprocess behaviour. Not a mock seam.
+   */
+  readonly onInvocation?: (request: CodexInvocationRequest, result: CodexInvocationResult) => void;
 }
 
 export interface CodexInvocationRequest {
@@ -78,12 +86,16 @@ export class CodexFalsifier implements FalsifierAdapter {
   private readonly binaryPath: string;
   private readonly model: string;
   private readonly invocationOverride?: (req: CodexInvocationRequest) => Promise<CodexInvocationResult>;
+  private readonly onInvocation?: (req: CodexInvocationRequest, res: CodexInvocationResult) => void;
 
   constructor(options: CodexFalsifierOptions = {}) {
     this.binaryPath = options.binaryPath ?? 'codex';
     this.model = options.model ?? DEFAULT_MODEL;
     if (options.invocationOverride !== undefined) {
       this.invocationOverride = options.invocationOverride;
+    }
+    if (options.onInvocation !== undefined) {
+      this.onInvocation = options.onInvocation;
     }
   }
 
@@ -154,10 +166,12 @@ export class CodexFalsifier implements FalsifierAdapter {
   }
 
   private async runCodex(req: CodexInvocationRequest): Promise<CodexInvocationResult> {
-    if (this.invocationOverride !== undefined) {
-      return this.invocationOverride(req);
+    const result =
+      this.invocationOverride !== undefined ? await this.invocationOverride(req) : await spawnCodex(req);
+    if (this.onInvocation !== undefined) {
+      this.onInvocation(req, result);
     }
-    return spawnCodex(req);
+    return result;
   }
 }
 
