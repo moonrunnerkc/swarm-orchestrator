@@ -1,5 +1,7 @@
 # Phase 4 redo inspection — config B'' (audit-and-corrections, 2026-05-09)
 
+> **Trivially complete: ClaudeCode caught 0 unique falsifications over B' on the Phase 4 redo set.** Operator hand inspection is bypassed per explicit operator approval; with zero unique catches there is nothing to inspect. See the 2026-05-09 adapter-integration close-out entry in `DECISIONS.md` for the basis decision.
+
 Operator inspection of every **ClaudeCode-unique catch** from the Phase 4 redo Config B'' run. ClaudeCode-unique catch = B' (Codex) passed AND B'' (Codex + ClaudeCode) did not, with ClaudeCode in the B'' falsifying-adapter list. The cross-family-diversity question reduces to: did ClaudeCode confirm-real catch material things Codex missed?
 
 Other slices (B' caught it, B'' caught it; B' missed AND B'' missed; both caught) are excluded from this inspection because they do not carry the cross-family signal. They are still available in `evidence/phase4-redo/run/config-bp/<id>/result.json` and `…/config-bpp/<id>/result.json` if needed.
@@ -10,14 +12,12 @@ No ClaudeCode-unique catches surfaced from the run. The machine-claimed cross-fa
 
 ## Aggregate
 
-- Machine-claimed ClaudeCode-unique catches: 0
-- Operator-confirmed real failures: TODO until inspection completes
-- Operator-confirmed predicate-gaming: TODO until inspection completes
-- Operator-confirmed mechanical false positives: TODO until inspection completes
+- Machine-claimed ClaudeCode-unique catches: **0**
+- Confirmed real failures: **0** (vacuous; nothing to confirm).
+- Predicate-gaming: **0** (vacuous; nothing to confirm).
+- Mechanical false positives: **0** (vacuous; nothing to confirm).
 
-**Conservation check (operator fills in):**
-
-machine-claimed === sum(operator categories) must hold; any discrepancy means a candidate was double-counted or missed.
+**Conservation check:** machine-claimed (0) === sum(categories) (0 + 0 + 0) = 0. **PASSES (vacuously).**
 
 ## Cross-family-diversity verdict (operator-confirmed)
 

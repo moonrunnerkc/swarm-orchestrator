@@ -1,10 +1,18 @@
 # Phase 3 inspection — config B' (audit-and-corrections, 2026-05-09)
 
+> **OPERATOR INSPECTION BYPASSED PER EXPLICIT APPROVAL.** Verdicts below are derived from the heuristic AST-based classifier only; no per-candidate operator hand-inspection was performed. See the 2026-05-09 adapter-integration close-out entry in `DECISIONS.md` for the basis decision and the four-ratio Phase 3 ship/freeze accounting that consumes these heuristic-classified counts as bounds (not point estimates).
+
 Operator inspection of every machine-claimed Copilot catch from the Phase 3 ship-B' run. Pre-populated with heuristic AST-based classifications by `scripts/inspection/build-phase3-skeleton.ts`. **Heuristic labels are not authoritative; operator verdict is.**
 
 For each candidate the inspection records: file path + content, reproducer command, reproducer exit code and output, the heuristic label/reason, and the operator verdict (confirmed real failure / predicate-gaming / mechanical false positive). The aggregate section at the bottom rolls the verdicts into confirmed counts the corrected Phase 3 close-out (Part F of the audit) consumes.
 
 Sources: per-obligation `result.json` files at `evidence/phase3/run/config-bp/<id>/result.json` (the ship-B' run); machine-claimed yield = 60 (20 obligations × 3 candidates each).
+
+**Verdict-derivation rules (operator approval bypass):**
+
+- Heuristic `likely-real` → `Confirmed real failure (heuristic-classified, not hand-inspected)`.
+- Heuristic `likely-gaming` → `Predicate-gaming (heuristic-classified, not hand-inspected)`.
+- Heuristic `ambiguous` → `Ambiguous (treated as likely-real for upper bound, predicate-gaming for lower bound; heuristic-classified, not hand-inspected)`.
 
 ## I1 — no-upward-imports in `src/lib1` (stratum I, import-graph-must-satisfy)
 
@@ -38,7 +46,7 @@ import-graph violation (no-upward-imports): 1 offender(s); src/lib1/direct-paren
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -72,7 +80,7 @@ import-graph violation (no-upward-imports): 1 offender(s); src/lib1/nested/grand
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -106,7 +114,7 @@ import-graph violation (no-upward-imports): 1 offender(s); src/lib1/side-effect-
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -143,7 +151,7 @@ import-graph violation (no-upward-imports): 1 offender(s); src/lib2/violations/u
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -178,7 +186,7 @@ import-graph violation (no-upward-imports): 1 offender(s); src/lib2/components/b
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -211,7 +219,7 @@ import-graph violation (no-upward-imports): 1 offender(s); src/lib2/nested/deepe
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -249,7 +257,7 @@ import-graph violation (no-upward-imports): 1 offender(s); src/lib3/violates-upw
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -285,7 +293,7 @@ import-graph violation (no-upward-imports): 1 offender(s); src/lib3/components/B
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -319,7 +327,7 @@ import-graph violation (no-upward-imports): 1 offender(s); src/lib3/utils/break-
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -357,7 +365,7 @@ import-graph violation (no-upward-imports): 1 offender(s); src/lib4/violations/u
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -391,7 +399,7 @@ import-graph violation (no-upward-imports): 1 offender(s); src/lib4/testcases/ne
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -426,7 +434,7 @@ import-graph violation (no-upward-imports): 1 offender(s); src/lib4/components/B
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -464,7 +472,7 @@ import-graph violation (no-upward-imports): 1 offender(s); src/lib5/break-root.t
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -498,7 +506,7 @@ import-graph violation (no-upward-imports): 1 offender(s); src/lib5/nested/break
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -532,7 +540,7 @@ import-graph violation (no-upward-imports): 1 offender(s); src/lib5/deep/inner/b
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -578,7 +586,7 @@ import-graph violation (no-cycles): src/pkg1/cycle-alpha.ts -> src/pkg1/cycle-be
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -628,7 +636,7 @@ import-graph violation (no-cycles): src/pkg1/loop-one.ts -> src/pkg1/loop-two.ts
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -662,7 +670,7 @@ import-graph violation (no-cycles): src/pkg1/a.ts -> src/pkg1/b.ts -> src/pkg1/c
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -700,7 +708,7 @@ import-graph violation (no-cycles): src/pkg2/a.ts -> src/pkg2/mid.ts -> src/pkg2
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -734,7 +742,7 @@ import-graph violation (no-cycles): src/pkg2/a.ts -> src/pkg2/mid.ts -> src/pkg2
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -776,7 +784,7 @@ import-graph violation (no-cycles): src/pkg2/cycle-left.js -> src/pkg2/cycle-rig
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -814,7 +822,7 @@ import-graph violation (no-cycles): src/pkg3/root.ts -> src/pkg3/tail.ts -> src/
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -864,7 +872,7 @@ import-graph violation (no-cycles): src/pkg3/cycle-a.ts -> src/pkg3/cycle-b.ts -
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -922,7 +930,7 @@ import-graph violation (no-cycles): src/pkg3/loop-first.ts -> src/pkg3/loop-seco
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -968,7 +976,7 @@ import-graph violation (no-cycles): src/pkg4/cycle-a.ts -> src/pkg4/cycle-b.ts -
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -1002,7 +1010,7 @@ import-graph violation (no-cycles): src/pkg4/end.ts -> src/pkg4/start.ts -> src/
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -1052,7 +1060,7 @@ import-graph violation (no-cycles): src/pkg4/ring/one.ts -> src/pkg4/ring/two.ts
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -1090,7 +1098,7 @@ import-graph violation (no-cycles): src/pkg5/alpha.ts -> src/pkg5/beta.ts -> src
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -1132,7 +1140,7 @@ import-graph violation (no-cycles): src/pkg5/delta.ts -> src/pkg5/gamma.ts -> sr
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -1182,7 +1190,7 @@ import-graph violation (no-cycles): src/pkg5/ring-a.ts -> src/pkg5/ring-b.ts -> 
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -1220,7 +1228,7 @@ signature for compute in src/math/sum.ts does not match; expected "(x:number):nu
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -1254,7 +1262,7 @@ signature for compute in src/math/sum.ts does not match; expected "(x:number):nu
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -1288,7 +1296,7 @@ compute is not declared in src/math/sum.ts; expected signature (x: number): numb
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Ambiguous (treated as likely-real for upper bound, predicate-gaming for lower bound; heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -1326,7 +1334,7 @@ signature for multiply in src/math/product.ts does not match; expected "(a:numbe
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -1360,7 +1368,7 @@ signature for multiply in src/math/product.ts does not match; expected "(a:numbe
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -1394,7 +1402,7 @@ multiply is not declared in src/math/product.ts; expected signature (a: number, 
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Ambiguous (treated as likely-real for upper bound, predicate-gaming for lower bound; heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -1432,7 +1440,7 @@ signature for formatGreeting in src/format/greet.ts does not match; expected "(n
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -1466,7 +1474,7 @@ signature for formatGreeting in src/format/greet.ts does not match; expected "(n
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -1500,7 +1508,7 @@ formatGreeting is not declared in src/format/greet.ts; expected signature (name:
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Ambiguous (treated as likely-real for upper bound, predicate-gaming for lower bound; heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -1538,7 +1546,7 @@ signature for isPositive in src/predicate/positive.ts does not match; expected "
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -1572,7 +1580,7 @@ signature for isPositive in src/predicate/positive.ts does not match; expected "
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -1606,7 +1614,7 @@ isPositive is not declared in src/predicate/positive.ts; expected signature (x: 
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Ambiguous (treated as likely-real for upper bound, predicate-gaming for lower bound; heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -1644,7 +1652,7 @@ parseInteger is not declared in src/parse/integer.ts; expected signature (s: str
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Ambiguous (treated as likely-real for upper bound, predicate-gaming for lower bound; heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -1678,7 +1686,7 @@ signature for parseInteger in src/parse/integer.ts does not match; expected "(s:
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -1712,7 +1720,7 @@ signature for parseInteger in src/parse/integer.ts does not match; expected "(s:
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -1752,7 +1760,7 @@ clamp is not declared in src/math/clamp.ts; expected signature (x: number, lo: n
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Ambiguous (treated as likely-real for upper bound, predicate-gaming for lower bound; heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -1789,7 +1797,7 @@ signature for clamp in src/math/clamp.ts does not match; expected "(x:number,lo:
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -1825,7 +1833,7 @@ signature for clamp in src/math/clamp.ts does not match; expected "(x:number,lo:
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -1863,7 +1871,7 @@ signature for toUpper in src/format/upper.ts does not match; expected "(s:string
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -1897,7 +1905,7 @@ signature for toUpper in src/format/upper.ts does not match; expected "(s:string
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -1931,7 +1939,7 @@ toUpper is not declared in src/format/upper.ts; expected signature (s: string): 
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Ambiguous (treated as likely-real for upper bound, predicate-gaming for lower bound; heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -1970,7 +1978,7 @@ signature for square in src/math/square.ts does not match; expected "(x:number):
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -2004,7 +2012,7 @@ signature for square in src/math/square.ts does not match; expected "(x:number):
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -2038,7 +2046,7 @@ square is not declared in src/math/square.ts; expected signature (x: number): nu
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Ambiguous (treated as likely-real for upper bound, predicate-gaming for lower bound; heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -2076,7 +2084,7 @@ signature for concat in src/format/concat.ts does not match; expected "(a:string
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -2110,7 +2118,7 @@ signature for concat in src/format/concat.ts does not match; expected "(a:string
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -2144,7 +2152,7 @@ concat is not declared in src/format/concat.ts; expected signature (a: string, b
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Ambiguous (treated as likely-real for upper bound, predicate-gaming for lower bound; heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -2182,7 +2190,7 @@ signature for negate in src/math/negate.ts does not match; expected "(x:number):
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -2216,7 +2224,7 @@ signature for negate in src/math/negate.ts does not match; expected "(x:number):
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Confirmed real failure (heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -2250,7 +2258,7 @@ negate is not declared in src/math/negate.ts; expected signature (x: number): nu
 
 </details>
 
-**Operator verdict:** [ ] Confirmed real failure  [ ] Predicate-gaming  [ ] Mechanical false positive
+**Operator verdict:** [x] Ambiguous (treated as likely-real for upper bound, predicate-gaming for lower bound; heuristic-classified, not hand-inspected)
 
 **Operator notes:**
 
@@ -2262,13 +2270,22 @@ negate is not declared in src/math/negate.ts; expected signature (x: number): nu
 - Heuristic likely-real: 50
 - Heuristic likely-gaming: 0
 - Heuristic ambiguous: 10
-- Operator-confirmed real failures: TODO until inspection completes
-- Operator-confirmed predicate-gaming: TODO until inspection completes
-- Operator-confirmed mechanical false positives: TODO until inspection completes
+- Operator hand-inspection: BYPASSED PER EXPLICIT APPROVAL (see banner above and the 2026-05-09 close-out entry in `DECISIONS.md`).
+- Heuristic-derived verdicts (substituted for operator verdicts):
+  - Confirmed real failure (heuristic-classified, not hand-inspected): **50**.
+  - Predicate-gaming (heuristic-classified, not hand-inspected): **0**.
+  - Ambiguous (treated as likely-real for upper bound, predicate-gaming for lower bound; heuristic-classified, not hand-inspected): **10**.
+  - Mechanical false positives: **0** (heuristic classifier emitted none; not separately confirmed).
 
-**Conservation check (operator fills in):**
+**Heuristic-derived bounds (consumed by the corrected Phase 3 close-out):**
 
-machine-claimed === sum(operator categories) must hold; any discrepancy means a candidate was double-counted or missed.
+- **Lower bound (heuristic-confirmed):** 50 — likely-real verdicts only; ambiguous candidates discarded.
+- **Upper bound (heuristic-confirmed):** 60 — likely-real plus all ambiguous candidates treated as real.
+- **Bracket width:** 10, the count of ambiguous candidates.
+
+**Conservation check:** machine-claimed (60) === sum(heuristic-derived categories) (50 likely-real + 0 likely-gaming + 10 ambiguous + 0 mechanical FP) = 60. **PASSES.**
+
+**Epistemic caveat.** These counts rest on a heuristic classifier (`src/falsification/inspection/heuristic-classifier.ts`), not on per-candidate hand inspection. The classifier is AST-based with documented heuristics; it is not a substitute for operator adjudication. The corrected Phase 3 close-out reads these as bounds, not point estimates, and reports the four-ratio accounting accordingly.
 
 ## Provenance
 
