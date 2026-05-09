@@ -1275,6 +1275,19 @@ Hot-fix commit SHA: recorded in the commit that lands this entry.
 
 ### 2026-05-09 — Phase 3 close-out: PASSED — P3.5.a ship-B' branch
 
+> **STATUS 2026-05-09 (audit-and-corrections):** Provisional, superseded
+> after hand inspection. The 60 candidates this entry summarises were
+> never operator-inspected; the "100 % real-yield rate on the inspected
+> slice" line covered only 6 of 60 candidates. The 6.5× yield/$ headline
+> below is computed against an unaudited yield count and against a
+> heterogeneous cost basis (Copilot's `dollarsTokenEstimate` is
+> subscription-imputed at $0.026/Premium-request, not a per-token API
+> rate card; Codex's is API-billed). A corrected close-out lands later
+> in this file once `evidence/phase3/run/config-b-prime/inspection.md`
+> is operator-completed and the cost aggregator's two-column refactor
+> (Part B of the audit) re-states the comparison on a like-for-like
+> basis. See `### 2026-05-09 — Audit and corrections` below.
+
 The Phase 3 paired analysis is at `evidence/phase3/analysis.md`.
 Decision rule applied per the pre-registered protocol
 (`evidence/phase3/PROTOCOL.md`, "Operationalization" section).
@@ -1460,6 +1473,23 @@ equals the API rate-card value the CLI returns in
 
 ### 2026-05-09 — Phase 4 close-out: cross-family diversity thesis CONFIRMED — Phase 5 skipped
 
+> **STATUS 2026-05-09 (audit-and-corrections):** **INVALIDATED by
+> obligation set mismatch.** Phase 4 reused the Phase 3 obligation set
+> (10 `import-graph-must-satisfy` + 10 `function-must-have-signature`),
+> which targets Copilot's stated specialties. ClaudeCode's strategy
+> (mirrored from Codex per the Phase 4 protocol) is adversarial test
+> inputs targeting `property-must-hold`. ClaudeCode showing zero unique
+> yield on a set its strategy does not target is uninterpretable as
+> evidence for the cross-family-diversity thesis: the test could not
+> distinguish "ClaudeCode brings nothing new to the cross-family
+> question" from "ClaudeCode never had a shot at the obligation type
+> its strategy handles." The "cross-family diversity thesis CONFIRMED"
+> conclusion below does **not** hold. The Phase 4 redo lives at
+> `evidence/phase4-redo/`; that run uses an N=20
+> `property-must-hold` obligation set disjoint from Phases 1–3.
+> See `### 2026-05-09 — Audit and corrections` and
+> `### 2026-05-09 — Phase 4 redo` entries below.
+
 The Phase 4 paired analysis is at `evidence/phase4/analysis.md`.
 Decision: ClaudeCode adds zero unique yield over Copilot on the
 N=20 Phase 3 obligation set; the cross-family diversity thesis is
@@ -1593,3 +1623,140 @@ regress obligations). Phase 6 is **deferred** until a future session
 explicitly seeds high-stakes obligations into the test pool. Phase 6
 remains independent of Phase 3/4/5 outcomes per the plan's
 "independently gated on Phase 2's findings" framing.
+
+### 2026-05-09 — Audit and corrections
+
+**Source:** operator agent brief landed mid-session 2026-05-09 after
+the Phase 4 close-out and Phase 5 skip. The brief flagged four
+concerns about the post-Phase-3/4 evidence and required the work
+landing in this entry. This section is the index; subsequent dated
+entries below carry the corrected close-outs and the redo evidence.
+
+**Concerns (verbatim from the brief):**
+
+- **C1. Phase 4 obligation set mismatch.** Phase 4 reused Phase 3's
+  obligation set (Copilot specialties: `import-graph-must-satisfy`,
+  `function-must-have-signature`). ClaudeCode's strategy targets
+  `property-must-hold`. ClaudeCode showing zero yield is
+  uninterpretable on that set. The Phase 4 close-out's
+  "cross-family diversity confirmed" conclusion does not hold.
+- **C2. Phases 3 and 4 had no hand inspection.** Phase 1 and Phase 2
+  showed roughly 33 % predicate-gaming after hand inspection despite
+  predicate-runner false-positive rates of zero. Phase 3's "60 catches,
+  0 FPs" is unaudited; the 6.5× yield-per-dollar headline rests on it.
+  The Phase 3 close-out's hand-inspection paragraph covered 6 of 60
+  candidates (I1 + F1) — not a 60-candidate audit.
+- **C3. Cost comparison mixes rate cards.** `cost-aggregator` emits one
+  apples-to-apples column (`dollarsSpent` / `dollarsTokenEstimate`).
+  Phase 2 reported Codex API-billed dollars; Phase 3 reported Copilot
+  subscription-imputed dollars (subscription = effectively zero, with
+  `dollarsTokenEstimate` derived from `Premium requests × $0.026`,
+  *not* from a per-token API rate card). The 6.5× ratio is
+  heterogeneous and overstated.
+- **C4. Phase 5 skip rationale not recorded as a prompt-tightening
+  choice.** The prior agent prompt tightened the plan's "more than one
+  adapter earning slots" gate to require ClaudeCode specifically to
+  earn marginal yield. The skip is defensible on operational grounds
+  but the deviation from the plan's gate language was undocumented.
+
+**Work landing this session under this entry:**
+
+- **Part A (no spend).** This entry, plus status banners on the
+  existing Phase 3 and Phase 4 close-outs (above): Phase 3 marked
+  *Provisional, superseded after hand inspection*; Phase 4 marked
+  *INVALIDATED by obligation set mismatch*. A Phase 5 skip rationale
+  entry follows in this section.
+- **Part B (no spend).** Cost aggregator extended with two cost
+  columns per call: `dollarsBilled` (real charge; subscription-imputed
+  zero stays zero) and `dollarsApiEquivalent` (token-usage × the
+  comparable per-token API rate card). Rate-card selection for
+  Copilot's API-equivalent documented below. Real test on the
+  aggregator. `evidence/phase2/analysis.md`,
+  `evidence/phase3/analysis.md`, `evidence/phase4/analysis.md`
+  re-stated with both columns; existing ratios stay as
+  *billed-basis*; new ratios added as *API-equivalent-basis*.
+- **Part C (real spend, hard cap $20).** Phase 4 redo on a
+  `property-must-hold` obligation set disjoint from Phases 1–3.
+  Pre-registration at `evidence/phase4-redo/PROTOCOL.md`. Run B' and
+  B'' captured under `evidence/phase4-redo/run/`. Analysis at
+  `evidence/phase4-redo/analysis.md`. Inspection skeleton seeded for
+  ClaudeCode-unique catches (the small set that matters for the
+  cross-family question).
+- **Part D (no spend).** Heuristic pre-classifier under
+  `src/falsification/inspection/heuristic-classifier.ts` (AST-based,
+  not regex). Real tests for positive / negative / edge cases.
+  Phase 3 inspection skeleton at
+  `evidence/phase3/run/config-b-prime/inspection.md` pre-populated
+  with heuristic classifications for all 60 candidates plus an
+  aggregate section.
+- **Part E (STOP).** Operator inspects both inspection.md files;
+  operator commits.
+- **Part F (no spend, after operator inspection).** Corrected Phase 3
+  close-out and Phase 4 redo close-out land *after* operator
+  inspection; not part of this commit.
+
+**Out of scope this session (carried forward from the brief):**
+
+- Re-running Phase 2 or Phase 3 (the runs are sound; only the
+  inspection and the cost normalization were missing).
+- Building the bandit dispatcher (Phase 5).
+- Phase 6.
+- Modifying Phase 1 evidence.
+- Adding a hard pipeline gate that requires `inspection.md` before any
+  close-out. The skeleton-generation tooling makes future inspections
+  cheaper without forcing them.
+
+**Methodology-fix invariants reaffirmed.** Pre-apply baseline check
+and fixture isolation continue to hold for the Phase 4 redo:
+obligations are pre-checked against the unmodified fixture and must
+all hold pre-apply; each candidate is applied to a fresh copy of the
+fixture before the predicate runner is invoked.
+
+### 2026-05-09 — Phase 5 skip rationale (recorded as a plan-deviation note)
+
+The Phase 5 skip stands on operational grounds, but the prior session's
+prompt tightened the plan's gate language and that deviation needs to
+sit in this file separately from the Phase 4 close-out (which is now
+invalidated upstream of the gate question).
+
+**Plan's gate language** (`docs/adapter-integration.md` Phase 5):
+
+> Only if Phases 3 and 4 collectively show that more than one adapter
+> is earning its slot. Replaces fire-all-adapters with
+> per-obligation-type strategy selection.
+
+**Prior prompt's tightened gate language:**
+
+> If ClaudeCode yield is zero or negative, skip Phase 5; document in
+> DECISIONS.md that two adapters running fire-all is the production
+> configuration.
+
+The plan's "more than one adapter is earning its slot" gate had
+already passed at end-of-Phase-3: Codex earned its slot in Phase 2
+(C2.1 ship-B), Copilot earned its slot in Phase 3 (P3.5.a ship-B'
+branch). Two adapters earning slots satisfies "more than one." The
+plan's gate did not require ClaudeCode specifically to earn marginal
+yield; the prior prompt added that requirement on top.
+
+**Skip stands on operational grounds, not on the plan's gate.** A
+2-arm bandit (Codex + Copilot, where each adapter handles disjoint
+obligation types by construction) is low leverage: there is no
+within-type adapter overlap for the bandit to arbitrate. Building the
+bandit dispatcher to dispatch one of two non-overlapping adapters
+adds infrastructure without changing the dispatch decision. The skip
+is therefore justified as "low operational value", not as "the plan's
+gate did not pass."
+
+**Conditions for revisit.** Phase 5 becomes worth re-evaluating when a
+third adapter that earns its slot is added to the registry. At that
+point at least two adapters claim overlapping obligation types and the
+bandit's per-obligation-type Thompson-sampling becomes load-bearing.
+Until then, fire-all on the two registered adapters remains the
+production configuration.
+
+**Diversity-thesis status note.** This entry records the Phase 5 skip
+*independently* of the cross-family-diversity question. The Phase 4
+redo (below) is what determines whether ClaudeCode earns its slot on
+its own strategy's obligation type. If it does, the third-adapter
+revisit-condition above fires and Phase 5 returns to the table.
+
