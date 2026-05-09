@@ -6,6 +6,19 @@ import { handleRun } from './run-handler';
 const logger = getLogger('cli:v8:run-wrapper');
 
 /**
+ * Test seam: the wrapper delegates `compile` and `run` through this object
+ * so unit tests can substitute fakes without spawning the real handlers.
+ * Production callers pass nothing; the defaults wire to the real
+ * `handleCompile` / `handleRun`.
+ */
+export interface RunV8Deps {
+  readonly handleCompile: (argv: string[]) => Promise<number>;
+  readonly handleRun: (argv: string[]) => Promise<number>;
+}
+
+const DEFAULT_DEPS: RunV8Deps = { handleCompile, handleRun };
+
+/**
  * Entry point for `swarm run` under v8 default-dispatch (impl guide §12
  * line 275: "after Phase 4, v8 becomes opt-out: default switches to v8,
  * `--v6` flag preserves old behavior").
@@ -30,7 +43,10 @@ const logger = getLogger('cli:v8:run-wrapper');
  *   the run pass. The convenience pass-throughs (`--session`,
  *   `--no-deterministic`, etc.) are recognized as v8-run flags.
  */
-export async function handleRunV8(argv: string[]): Promise<number> {
+export async function handleRunV8(
+  argv: string[],
+  deps: RunV8Deps = DEFAULT_DEPS,
+): Promise<number> {
   const split = splitArgv(argv);
 
   if (split.goal === null) {
@@ -60,7 +76,7 @@ export async function handleRunV8(argv: string[]): Promise<number> {
 
   // The compile step writes to `<out>/<contract-id>/`. We re-derive the
   // path from the manifest immediately after compile.
-  const compileExit = await handleCompile(compileArgv);
+  const compileExit = await deps.handleCompile(compileArgv);
   if (compileExit !== 0) return compileExit;
 
   const contractDir = findLatestContractDir(contractsParent);
@@ -70,8 +86,19 @@ export async function handleRunV8(argv: string[]): Promise<number> {
   }
 
   const runArgv: string[] = [contractDir, '--repo-root', repoRoot, ...split.runPassthrough];
-  return handleRun(runArgv);
+  return deps.handleRun(runArgv);
 }
+
+/**
+ * Test-only re-exports of the internal helpers. The names are prefixed
+ * with `__` so that consumers reading public API surface skip them; the
+ * runtime values are the same functions used internally.
+ */
+export const __testing = {
+  splitArgv: (argv: string[]) => splitArgv(argv),
+  findLatestContractDir: (parent: string) => findLatestContractDir(parent),
+  requireValue: (argv: string[], index: number, flag: string) => requireValue(argv, index, flag),
+};
 
 interface SplitArgv {
   goal: string | null;

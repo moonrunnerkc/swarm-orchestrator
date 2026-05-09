@@ -345,13 +345,16 @@ function detectTestCommand(workdir: string, workingDir: string): string | null {
   //     conftest.py).
   //   - --ignore paths prevent pytest from descending into orchestrator
   //     artifact trees whose own conftest.py would re-register options.
+  //     pytest 8.x accepts only paths relative to the current working
+  //     directory for --ignore; absolute paths are silently ignored, which
+  //     pre-fix caused the parent-worktree conftest to be loaded anyway.
+  //     The verifier always invokes pytest with `cwd: workdir`, so the
+  //     ignore arguments are intentionally relative.
   const pytestCmd = () => {
     const py = resolvePythonBinary(workdir, workingDir);
-    const runsDir = path.join(workdir, 'runs');
-    const swarmDir = path.join(workdir, '.swarm');
     return (
       `${py} -m pytest --rootdir="${workdir}" ` +
-      `--ignore="${runsDir}" --ignore="${swarmDir}"`
+      `--ignore=runs --ignore=.swarm`
     );
   };
 

@@ -28,7 +28,10 @@ describe('plan-files', () => {
 
   beforeEach(() => {
     originalCwd = process.cwd();
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'plan-files-'));
+    // realpathSync resolves the macOS /var -> /private/var symlink so the
+    // path stored here matches what process.cwd() / savePlanFile compute;
+    // otherwise direct path-equality assertions diverge on Darwin.
+    tmpDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'plan-files-')));
     process.chdir(tmpDir);
   });
 
