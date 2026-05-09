@@ -1841,3 +1841,405 @@ billed-basis comparison is undefined because Copilot's
 operator inspection) will substitute confirmed-only yield for the
 machine-claimed numerator and re-publish the API-equivalent ratio
 against that confirmed yield count.
+
+### 2026-05-09 — Phase 3 corrected close-out (Part F): heuristic-confirmed bounds, four-ratio yield/$ table, ship-B' branch
+
+The corrected Phase 3 close-out lands here after operator inspection
+was bypassed per explicit approval (see banner on
+`evidence/phase3/run/config-b-prime/inspection.md`). The verdict source
+is the AST-based heuristic classifier in
+`src/falsification/inspection/heuristic-classifier.ts`, not per-candidate
+hand inspection. Bounds, not point estimates, are reported.
+
+**Heuristic-confirmed bounds on Copilot's Phase 3 catches (60
+machine-claimed candidates across 20 obligations):**
+
+- **Lower bound (likely-real only):** 50.
+- **Upper bound (likely-real + ambiguous):** 60.
+- **Bracket width (heuristic ambiguous count):** 10.
+
+Source: `evidence/phase3/run/config-b-prime/inspection.md` Aggregate
+section. Conservation check (machine-claimed = sum of categories)
+passes.
+
+**Codex Phase 2 baseline (`evidence/phase2/analysis.md` and the Phase 2
+close-out above):**
+
+- **Machine-claimed real catches:** 26 obligations.
+- **Partial-hand-inspection floor:** ~12 real catches. Derived from the
+  Phase 2 close-out's per-obligation candidate inspection (7 of 26
+  obligations inspected at ~67 % real-shaped). The 12 figure is a
+  conservative floor on what is *known* to be real; the ratio held in
+  every inspected obligation, but the un-inspected 19 obligations
+  contribute 0 to the floor.
+- **Codex Phase 2 spend:** `$4.3994` billed = `$4.3994` API-equivalent
+  (Codex meters at API token rates regardless of auth tier).
+- **Codex Phase 2 yield/$ — machine basis:** 26 / $4.3994 = **5.91**.
+- **Codex Phase 2 yield/$ — partial-inspection-floor basis:** 12 /
+  $4.3994 = **2.73**.
+
+**Phase 3 Copilot spend (`evidence/phase3/analysis.md`):**
+
+- **`dollarsBilled`:** `$0.0000` (Copilot is subscription-only on this
+  run; the billed-basis denominator is degenerate).
+- **`dollarsApiEquivalent`:** `$1.0000` (20 Premium requests ×
+  $0.05/request, GPT-4-Turbo rate-card-equivalent; rate-card derivation
+  documented in the 2026-05-09 Cost normalization entry above).
+
+**Four-ratio yield/$ table (the audit prompt's correction to the
+original 6.5× headline):**
+
+| Numerator (heuristic-confirmed catches) | Denominator (basis)             | Copilot yield/$    | Ratio vs Codex machine 5.91 | Ratio vs Codex floor 2.73 |
+|----------------------------------------:|---------------------------------|-------------------:|----------------------------:|--------------------------:|
+| Lower 50                                | Billed `$0.0000`                | undefined (deg.)   | undefined                   | undefined                 |
+| Upper 60                                | Billed `$0.0000`                | undefined (deg.)   | undefined                   | undefined                 |
+| Lower 50                                | API-equivalent `$1.0000`        | **50.00**          | **8.5×**                    | **18.3×**                 |
+| Upper 60                                | API-equivalent `$1.0000`        | **60.00**          | **10.2×**                   | **22.0×**                 |
+
+The two billed-basis cells are degenerate because Copilot's subscription
+flat-rate makes the denominator zero; the table records "undefined" rather
+than reporting an infinite ratio.
+
+**Decision against the plan's gate (`docs/adapter-integration.md` Phase 3
+"marginal yield per dollar from adding Copilot" — ship if at or above
+Codex's Phase 2 baseline yield/$):**
+
+- **Conservative combination** (Phase 3 lower bound 50 vs Codex
+  partial-inspection floor 2.73 on API-equivalent basis):
+  **50 / 2.73 ≈ 18.3× the Codex floor — well above the gate.**
+- **Optimistic combination** (Phase 3 upper bound 60 vs Codex machine
+  5.91 on API-equivalent basis): **60 / 5.91 ≈ 10.2× — also above.**
+- All four API-equivalent cells exceed the Codex baseline by at least an
+  order of magnitude. **Ship-B' branch (P3.5.a) is the decision under
+  every cell of the table.**
+
+The 6.5× headline is **dropped** (it confused subscription-imputed
+denominator units with API-billed denominators and used the un-audited
+machine-claimed numerator). The four-ratio table replaces it.
+
+**Implementation status:** unchanged from the original close-out — the
+registry default was already flipped to `defaultAdapterRegistry({
+includeCopilot: true })` with `--falsifiers on` dispatching both Codex
+and Copilot. The corrected close-out re-affirms the implementation, it
+does not require new code changes.
+
+**Cited evidence:**
+
+- `evidence/phase3/run/config-b-prime/inspection.md` (heuristic-confirmed
+  bounds, bypass banner).
+- `evidence/phase3/analysis.md` (Phase 3 cost, API-equivalent re-statement).
+- `evidence/phase2/analysis.md` (Codex Phase 2 baseline; the un-audited
+  machine-claimed 26 and the partial-hand-inspection 7/26 paragraph).
+- The 2026-05-09 audit-and-corrections + cost-normalization entries
+  above.
+
+**Epistemic note (carries through from the audit's hard rules).** The
+numerator units in the table are mismatched: Copilot's numerator counts
+heuristic-confirmed *candidates* (3 per obligation in Phase 3 = 60
+machine-claimed); Codex's baseline counts caught *obligations* (26 of 28
+analyzable in Phase 2). A like-for-like comparison would either compare
+both at obligation level (Copilot = 20 unique obligations vs Codex = 26)
+or both at candidate level (Copilot 50–60 heuristic-confirmed vs Codex
+floor of ~52 real candidates if the per-obligation 67 % rate is applied
+to all 26 caught obligations × 3 candidates = 78). The audit prompt
+specified the numerators in the form recorded above (Copilot
+candidate-bracket 50–60, Codex obligation-level 26 / floor 12), so the
+table reports them as specified; the directional conclusion (ship-B' under
+every API-equivalent cell) holds under the obligation-level alternative
+as well (Copilot 20 obligations / $1 = 20 yield/$, Codex floor 2.73, still
+7×). The unit mismatch does not invalidate the gate decision; it does
+mean the *magnitude* of "how much Copilot beats Codex" is sensitive to
+the unit choice and should not be reported without the unit named.
+
+The conclusions also rest on (a) heuristic AST-based classification for
+Phase 3 candidates rather than full operator hand-inspection, and (b)
+partial hand-inspection of Phase 2 (7/26 obligations). Full hand
+inspection of both phases would tighten the bounds but is out of scope
+for the close-out per the operator brief; the audit's explicit
+rules treat heuristic classification as the verdict source for Phase 3
+and the partial-inspection floor as the lower bound for Phase 2. Future
+external publication should commission full hand inspection before
+citing magnitude figures.
+
+### 2026-05-09 — Phase 4 redo close-out: cross-family-diversity thesis CONFIRMED on a property-must-hold surface
+
+The Phase 4 redo run on a `property-must-hold` obligation set
+(`evidence/phase4-redo/obligations.json`, N=20) replaces the original
+Phase 4's invalidated obligation-set-mismatch evidence
+(`evidence/phase4/analysis.md` status banner). The redo surface is the
+obligation type ClaudeCode's mirrored-from-Codex strategy actually
+targets.
+
+**B' (Codex) catch rate on the analyzable paired set:**
+
+- Original N = 20; environmental discards = 1 (C2, ClaudeCode B'' arm
+  hit the 300 000 ms wall-clock budget; documented in
+  `evidence/phase4-redo/analysis.md`).
+- **Analyzable paired N = 19.**
+- B' catches: **18 of 19** analyzable obligations (only B6 was a
+  Codex-side miss on this set).
+- Source: `evidence/phase4-redo/run/config-bp/summary.md`.
+
+**Classification under the audit prompt's B-saturation rule (carried
+forward from Part B of this session):**
+
+- B' = 19/19 (saturation) → cross-family thesis inconclusive on this
+  surface. **Not the case.**
+- B' = 17–18/19 (residual exists) and ClaudeCode = 0 → cross-family
+  thesis confirmed. **This is the case.**
+- B' < 17 (coverage gap) → flag as separate concern, do not declare a
+  cross-family verdict. **Not the case.**
+
+B' = 18/19 falls in the middle bucket. The single residual obligation
+(B6) was a Codex miss; ClaudeCode also missed B6 (the run's per-obligation
+ClaudeCode results show no unique catch). With a non-trivial residual
+that ClaudeCode did not pick up, the test had a real chance to surface
+cross-family signal and did not.
+
+**ClaudeCode unique catches on the analyzable set:** **0** — machine-
+claimed and operator-inspected (operator inspection trivially complete;
+nothing to inspect because the machine count is zero). Source:
+`evidence/phase4-redo/run/config-b-prime-prime/inspection.md` (banner:
+"Trivially complete: ClaudeCode caught 0 unique falsifications over B'
+on the Phase 4 redo set").
+
+**Cross-family-diversity verdict: CONFIRMED** on the property-must-hold
+surface. The same-family ClaudeCode adapter adds zero unique yield over
+the cross-family Codex adapter on the obligation type ClaudeCode's
+strategy actually targets. This is the like-for-like cross-family test
+the original Phase 4 attempted but could not run because the obligation
+type was wrong.
+
+**Implementation status (unchanged from the audit's invariants):**
+
+- ClaudeCode ships behind a per-adapter flag, default off, per the plan's
+  "ship the adapter regardless of yield" rule for Phase 4.
+  `defaultAdapterRegistry({ includeClaudeCode: true })` is opt-in;
+  default is `includeClaudeCode: false`.
+- Production adapter set: producer + Codex (default on) + Copilot (default
+  on); ClaudeCode available behind the per-adapter flag for ablation /
+  research.
+
+**Cited evidence:**
+
+- `evidence/phase4-redo/analysis.md` (paired analysis; ClaudeCode unique
+  yield = 0 across all three cost bases).
+- `evidence/phase4-redo/run/config-bp/summary.md` (B' per-obligation
+  results showing the 18/19 catch rate and the B6 / C2 anomalies).
+- `evidence/phase4-redo/run/config-b-prime-prime/inspection.md`
+  (trivially-complete inspection skeleton with the bypass banner).
+
+**Epistemic note.** The "thesis confirmed" conclusion holds for the
+property-must-hold surface measured here. It does not generalize to
+arbitrary obligation types — Phase 4 (the original) and Phase 4 redo
+together cover `property-must-hold`, `import-graph-must-satisfy`, and
+`function-must-have-signature`. Other obligation types
+(`coverage-must-exceed`, `performance-must-not-regress`, etc.) are
+untested for cross-family-diversity signal. Adding ClaudeCode to the
+default-on set would require a new measurement on the obligation surface
+where it is being deployed; today the empirical case for the per-adapter
+flag default-off is intact.
+
+### 2026-05-09 — Phase 6 status (final close-out): deferred as deliberate scope cutoff
+
+Re-affirms and consolidates the Phase 6 status across the prior dated
+entries. The plan's Phase 6 (cross-vendor producer race) is gated on
+Phase 2's findings about high-stakes obligations (security-relevant,
+performance-must-not-regress on declared hot paths, irreversible side
+effects).
+
+- **Phase 2's predicate set did not include high-stakes obligations.**
+  The N=30 Phase 2 obligations were all `property-must-hold` (12A / 11B /
+  7C strata) targeting absence of forbidden tokens, file-shape
+  artefacts, and compound combinations. None of them carried a
+  high-stakes tag in the sense Phase 6 targets. Source:
+  `evidence/phase2/obligations.json` and the Phase 2 close-out above.
+- **The Phase 6 gate therefore did not fire on Phase 2 evidence.** The
+  plan's Phase 6 gate language ("Race fires only on obligations tagged
+  with: security-relevant, performance-must-not-regress on declared hot
+  path, or irreversible side effect") is conditional on such
+  obligations existing in the test pool; with none present, the gate
+  has no input.
+- **Phase 6 is deferred** until an obligation-design phase explicitly
+  seeds high-stakes predicates into the test pool. This is recorded as
+  a **deliberate scope cutoff**, not an oversight: the close-out chose
+  not to fabricate high-stakes obligations to force the gate to fire,
+  and chose not to extend Phase 2 retrospectively.
+
+**How to revisit.** Phase 6 returns to the table when:
+
+- A real production obligation mix surfaces with security-relevant or
+  performance-must-not-regress tags; **or**
+- An external requirement (compliance, audit) explicitly demands a
+  cross-vendor producer race for a specific obligation slice; **or**
+- An obligation-design phase is scoped that seeds N≥10 high-stakes
+  obligations and re-runs the Phase 6 gate against them.
+
+Until one of those triggers, Phase 6 stays out of the production
+configuration. The architectural rule (no merge path bypasses
+verification or quality gates) remains in force regardless of Phase 6's
+deferred state.
+
+### 2026-05-09 — Carry-forward reconciliation: 6 pre-existing v8.0.1 main failures resolved
+
+The 2026-05-09 "Known pre-existing failures on v8.0.1 main" entry above
+recorded six failures on `a7e5455` (the v8.0.1 release commit) that
+were also present on the early branch state (1970/8/6 → 2000/9/6). At
+this close-out the branch counts are 2115+/0+/0 (all green). The path
+from "6 failing, tracked, do not fix on this branch" to "6 → 0, all
+green on this branch" runs through one commit:
+
+- **`699fa4c` — `fix(falsification): resolve 9 tool limitations from
+  session-end audit`** (2026-05-09).
+
+The commit's body explicitly scopes pre-existing test failures as item
+`#6 — 6 → 0` and lists the per-failure resolution:
+
+- Failures 1 and 2 (`finding-schema.test.js:196` and
+  `verification/differential-gate.test.js:143`, both asserting
+  `findings[0].scope === 'line'`): root-caused as
+  `extractSourceLocations()` failing to resolve macOS `/var` vs
+  `/private/var` symlinks when comparing relative-path source locations
+  against test fixture paths. **Fix:** realpath both sides of the
+  relative-path resolution in
+  `src/verification/differential-gate.ts:extractSourceLocations`.
+- Failure 3 (`outcome-verification.test.js:590` — pytest rootdir
+  isolation, `--slow` option collision): root-caused as pytest 8.x
+  silently ignoring absolute-path forms passed to `--ignore`, causing
+  the parent worktree's `conftest.py` to register `--slow` again when
+  the nested fixture's `conftest.py` was scanned. **Fix:** pass
+  relative `--ignore` paths to pytest in the affected harness.
+- Failures 4, 5, 6 (`plan-files.test.js:180`, `worktree-manager.test.js:76`,
+  `worktree-manager.test.js:100` — `/var` vs `/private/var` realpath
+  mismatch): root-caused as macOS `os.tmpdir()` returning a `/var` path
+  that resolves through the `/private` symlink, while the assertion
+  compared against the un-resolved form. **Fix:** wrap each
+  `mkdtempSync` output in `fs.realpathSync` at test setup.
+
+**Resolution status:** all six failures are real test bugs that were
+fixed in tree, not silently skipped or removed. The test files still
+exist (`test/finding-schema.test.ts`, `test/verification/differential-gate.test.ts`,
+`test/outcome-verification.test.ts`, `test/plan-files.test.ts`,
+`test/worktree-manager.test.ts`) and now pass. The `git log
+a7e5455..HEAD` query against those files plus
+`src/verification/differential-gate.ts` returns exactly one commit:
+`699fa4c`. No subsequent commit reverts or re-introduces the failures.
+
+**Audit-trail note.** The fix landed inside the broader "9 tool
+limitations" sweep, mid-stream of Phase 1's methodology fixes (the
+`baseline-predicate-failed` change is in the same commit). Bundling
+the pre-existing failures with the methodology work is a deviation
+from the prior entry's "do not fix on this branch" disposition; the
+deviation is acknowledged here. Reason for the deviation: the audit
+sweep made the test suite a clean baseline against which the Phase 1
+contamination fix could be validated, and leaving six unrelated
+failures in tree would have masked any regression introduced by the
+methodology fix.
+
+### 2026-05-09 — Adapter integration close-out
+
+Top-level summary of the adapter-reintegration work tracked in
+`docs/adapter-integration.md`. Reads as the historical record after the
+audit-and-corrections sweep and the Phase 4 redo. Citations to the
+per-phase dated entries above for detail.
+
+**Production architecture (final state on `feat/adapter-reintegration-v8`):**
+
+- **Producer:** untouched single-vendor cached Anthropic session as in
+  v8.0.1. The plan's "producer side is untouched" invariant holds.
+- **Default adapter set (falsifiers):** producer + Codex + Copilot.
+  Both Codex and Copilot register as default-on falsifiers via
+  `defaultAdapterRegistry()`; the `--falsifiers on|off` flag in
+  `src/cli/v8/run-handler.ts` continues to gate dispatch as a whole.
+- **ClaudeCode:** ships behind a per-adapter flag, default off
+  (`includeClaudeCode: false`). Operators that want the same-family
+  control arm in production opt in explicitly via
+  `defaultAdapterRegistry({ includeClaudeCode: true })`.
+- **Bandit dispatcher (Phase 5):** **NOT BUILT.** Skipped on operational
+  grounds; with two registered adapters whose obligation types are
+  disjoint by construction (Codex → `property-must-hold`; Copilot →
+  `import-graph-must-satisfy` + `function-must-have-signature`), there
+  is no within-type adapter overlap for the bandit to arbitrate. See
+  the 2026-05-09 "Phase 5 skip rationale" entry for the
+  plan-deviation note.
+- **Methodology-fix invariants (in place, validated by tests):**
+  - **Pre-apply baseline check.** `CodexFalsifier.falsify()` (and the
+    Phase 4 ClaudeCodeFalsifier) run the obligation predicate against
+    the unmodified workspace before any LLM spawn; if the predicate
+    fails pre-apply, the adapter returns
+    `no-falsification-found` with reason `baseline-predicate-failed`,
+    no spawn, no billed dollars.
+  - **Fixture isolation.** All gate runs source workspaces from
+    purpose-built fixtures under `evidence/fixtures/` rather than from
+    `git archive` of HEAD. Fixture content hashes are recorded in each
+    run's `environment.json` and validated by per-phase contamination
+    tests.
+  - **Dual-column cost reporting.** `AdapterCostRecord` and
+    `AdapterCostAggregate` carry both `dollarsBilled` (real charge) and
+    `dollarsApiEquivalent` (rate-card-derived API equivalent for
+    cross-adapter comparison). Subscription-imputed `dollarsBilled = 0`
+    no longer flatters cross-adapter ratios.
+
+**Phase status table (final, as of close-out):**
+
+| Phase | Status | Outcome / cite |
+|---|---|---|
+| P0 | Closed | Contract + scaffolding shipped (2026-05-08 entries above). |
+| P1 | Passed dev gate | `evidence/phase1-dev-gate/run-1`; ≥1 reproducible real failure across 20 obligations. Methodology fix landed mid-stream (pre-apply baseline + fixture isolation). |
+| P2 | Closed C2.1 (ship-B) | `evidence/phase2/analysis.md`. Codex Pareto-dominates baseline on N=28 analyzable; ship Codex as default. |
+| P3 | Ship-B' (heuristic-confirmed) | Corrected close-out above. Lower bound 50 / upper bound 60 heuristic-confirmed catches; all four API-equivalent yield/$ ratios above the Codex Phase 2 baseline; ship Copilot as default. The original 6.5× headline is dropped in favour of the four-ratio table. |
+| P4 redo | Cross-family thesis confirmed | `evidence/phase4-redo/analysis.md` and the corrected close-out above. B' (Codex) caught 18/19 analyzable; ClaudeCode added 0 unique catches over B'; ship ClaudeCode behind a per-adapter flag default-off. The original Phase 4 close-out (`evidence/phase4/analysis.md`) is INVALIDATED by the obligation-set-mismatch banner. |
+| P5 | Skipped (operational) | See 2026-05-09 "Phase 5 skip rationale" entry. The plan's "more than one adapter earning slots" gate had passed, but the bandit's value with two non-overlapping adapters was low. Plan-deviation acknowledged. |
+| P6 | Deferred (deliberate scope cutoff) | See 2026-05-09 "Phase 6 status (final close-out)" entry. Phase 2's predicate set lacked high-stakes obligations; the Phase 6 gate had no input. Deferred until an obligation-design phase seeds high-stakes predicates. |
+
+**Deferred work (not blocking close-out):**
+
+- **Phase 6 high-stakes obligation design.** Out of scope here; revisit
+  when production obligations or external requirements supply real
+  high-stakes predicates.
+- **Full hand inspection of Phase 2 and Phase 3 evidence.** Operator
+  inspection was bypassed for Phase 3; Phase 2's hand-inspection
+  covered 7/26 caught obligations. External publication should
+  commission full hand inspection before citing magnitude figures
+  (yield/$ ratios beyond directional ship/freeze).
+- **Bandit dispatcher (Phase 5).** Re-evaluate when a third adapter
+  earns its slot on overlapping obligation types. Until then, fire-all
+  on Codex+Copilot remains the production configuration.
+- **Plugin SDK, signature verification, plugin signing,** and the other
+  out-of-scope items from `docs/adapter-integration.md` — none promoted
+  during this work.
+
+**Total adapter-integration spend (across all phase runs).**
+
+Sourced from per-obligation `cost.json` files under
+`evidence/phase*/run/*/<id>/cost.json` (newer runs include
+`dollarsApiEquivalent`; older runs report `dollarsBilled` and
+`dollarsTokenEstimate`, with `dollarsApiEquivalent` recomputed at the
+phase analysis layer using the rate-card constants documented in the
+2026-05-09 Cost normalization entry). Per-phase totals:
+
+| Phase | Run | `dollarsBilled` | `dollarsApiEquivalent` | Notes |
+|---|---|---:|---:|---|
+| P1 dev gate | run-1 | $2.9989 | $2.9989 | Codex; pre-API-equiv-split — same value. |
+| P2 | config-a | $0.0000 | $0.0000 | Producer-only baseline (no LLM calls). |
+| P2 | config-b | $4.3994 | $4.3994 | Codex API-billed. |
+| P3 | config-b | $0.0000 | $0.0000 | Producer-only baseline. |
+| P3 | config-bp | $0.0000 | $1.0000 | Copilot subscription = $0 billed; API-equiv at $0.05/Premium-request × 20. |
+| P3 | config-bp-aborted | $0.0000 | $0.0000 | Cost-trailer suppressed by `-s` flag bug; no real billing recorded. |
+| P4 (orig) | config-bp | $0.0000 | $1.0000 | Copilot. |
+| P4 (orig) | config-bpp | $1.0121 | $2.0121 | ClaudeCode API-billed (`ANTHROPIC_API_KEY` set). |
+| P4 redo | config-bp | $2.5349 | $2.5349 | Codex API-billed. |
+| P4 redo | config-bpp | $4.3931 | $4.3931 | Codex + ClaudeCode API-billed. |
+| **Total** | | **~$15.34** | **~$18.34** | |
+
+The billed-basis total is the real charge across operator-funded
+accounts (~$15.34). The API-equivalent total adds the Copilot
+subscription runs at the GPT-4-Turbo rate-card-equivalent (~$18.34
+combined). Both are well under any single-phase ceiling.
+
+**Hard rules re-affirmed.** No merge path bypasses verification or
+quality gates. The branch does **NOT** merge to `main` from this
+session — the operator decides merge timing separately. Methodology-fix
+invariants (pre-apply baseline, fixture isolation, dual-column cost
+reporting) stay in place. The plan's "What's Explicitly Out of Scope"
+section continues to govern.
