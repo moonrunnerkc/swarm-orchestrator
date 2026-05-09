@@ -1,0 +1,52 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/falsification/case-direct/function-constructor.ts",
+            "bytes": "export const makeAdder = Function(\"a\", \"b\", \"return a + b\");\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'Function(' src/falsification --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/falsification/case-direct/function-constructor.ts:1:export const makeAdder = Function(\"a\", \"b\", \"return a + b\");\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/falsification/case-nested/runtime/evaluator.ts",
+            "bytes": "const source = \"return value * 2\";\nexport const evaluator = Function(\"value\", source);\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'Function(' src/falsification --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/falsification/case-nested/runtime/evaluator.ts:2:export const evaluator = Function(\"value\", source);\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/falsification/case-comment/comment-marker.ts",
+            "bytes": "// Regression note: avoid using Function(\"x\", \"return x\") here.\nexport const safeValue = 42;\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'Function(' src/falsification --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/falsification/case-comment/comment-marker.ts:1:// Regression note: avoid using Function(\"x\", \"return x\") here.\n",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 17927,
+    "dollarsSpent": 0.14931,
+    "dollarsBilled": 0.14931,
+    "dollarsTokenEstimate": 0.14931,
+    "authMethod": "unknown",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

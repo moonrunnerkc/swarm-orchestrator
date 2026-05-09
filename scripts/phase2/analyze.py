@@ -75,6 +75,8 @@ class PerObligation:
     dollars_token_estimate: float
     wall_clock_ms: int
     llm_calls: int
+    errored: bool
+    error_message: str
 
 
 def load_obligations(path: Path) -> list[dict]:
@@ -86,43 +88,43 @@ def load_obligations(path: Path) -> list[dict]:
 
 
 def load_run(run_dir: Path, obligation_ids: list[str]) -> list[PerObligation]:
-    summary_tsv = run_dir / "summary.tsv"
-    if not summary_tsv.exists():
-        raise FileNotFoundError(f"missing summary.tsv at {summary_tsv}")
+    """Load per-obligation outcomes from runtime-progress.json.
 
-    rows = summary_tsv.read_text().splitlines()
-    header = rows[0].split("\t")
-    expected = [
-        "id", "stratum", "pass", "resultKind", "resultReason",
-        "counterExamples", "falsePositives", "dollarsBilled",
-        "dollarsTokenEstimate", "llmCalls", "wallClockMs", "costCapHit", "error",
-    ]
-    if header != expected:
-        raise ValueError(f"unexpected header in {summary_tsv}: {header}")
+    runtime-progress.json is the structured canonical record of the run
+    (see scripts/phase2/run-harness.ts: PerObligationOutcome, RuntimeProgress).
+    summary.tsv is a derived flat view; we prefer JSON because the TSV
+    can break when an obligation's errorMessage contains tabs or
+    newlines (codex stderr embedded verbatim).
+    """
+    progress_path = run_dir / "runtime-progress.json"
+    if not progress_path.exists():
+        raise FileNotFoundError(f"missing runtime-progress.json at {progress_path}")
 
+    progress = json.loads(progress_path.read_text())
+    outcomes = progress.get("outcomes", [])
     by_id: dict[str, PerObligation] = {}
-    for raw in rows[1:]:
-        if not raw.strip():
-            continue
-        fields = raw.split("\t")
-        record = dict(zip(header, fields))
+    for record in outcomes:
         oid = record["id"]
+        error_message = record.get("errorMessage") or ""
+        result_kind = record.get("resultKind") or ""
         by_id[oid] = PerObligation(
             obligation_id=oid,
             stratum=record["stratum"],
-            pass_=(record["pass"] == "true"),
+            pass_=bool(record["pass"]),
             dollars_billed=float(record["dollarsBilled"]),
             dollars_token_estimate=float(record["dollarsTokenEstimate"]),
             wall_clock_ms=int(record["wallClockMs"]),
             llm_calls=int(record["llmCalls"]),
+            errored=(result_kind == "errored" or error_message != ""),
+            error_message=error_message,
         )
 
     missing = [oid for oid in obligation_ids if oid not in by_id]
     if missing:
-        raise ValueError(f"summary.tsv at {summary_tsv} missing obligations: {missing}")
+        raise ValueError(f"runtime-progress.json at {progress_path} missing obligations: {missing}")
     extras = [oid for oid in by_id if oid not in obligation_ids]
     if extras:
-        raise ValueError(f"summary.tsv at {summary_tsv} has unexpected obligations: {extras}")
+        raise ValueError(f"runtime-progress.json at {progress_path} has unexpected obligations: {extras}")
 
     return [by_id[oid] for oid in obligation_ids]
 
@@ -294,8 +296,14 @@ def render_markdown(
     cost_test: WilcoxonResult,
     wall_test: WilcoxonResult,
     llm_test: WilcoxonResult,
+    discarded: Optional[list[tuple[str, str]]] = None,
+    original_n: Optional[int] = None,
 ) -> str:
     n = len(config_a)
+    if original_n is None:
+        original_n = n
+    if discarded is None:
+        discarded = []
     a_pass = sum(1 for o in config_a if o.pass_)
     b_pass = sum(1 for o in config_b if o.pass_)
     a_pass_ci = wilson_proportion_ci(a_pass, n)
@@ -312,10 +320,19 @@ def render_markdown(
     out: list[str] = []
     out.append("# Phase 2 analysis")
     out.append("")
-    out.append(f"- Sample size N = {n}")
+    out.append(f"- Original N = {original_n}")
+    out.append(f"- Discarded (environmental) = {len(discarded)}")
+    out.append(f"- Analyzable paired N = {n}")
     out.append(f"- Family-wise alpha = {FAMILY_WISE_ALPHA}")
     out.append(f"- Per-comparison alpha (Bonferroni) = {PER_COMPARISON_ALPHA:.4f}")
     out.append(f"- Comparisons = {N_COMPARISONS} (pass-rate, billed cost, wall-clock, LLM calls)")
+    if discarded:
+        out.append("")
+        out.append("### Discarded obligations (environmental, excluded from paired analysis)")
+        out.append("")
+        for oid, reason in discarded:
+            collapsed = " ".join(reason.split())[:240]
+            out.append(f"- `{oid}`: {collapsed}")
     out.append("")
     out.append("## Headline metrics")
     out.append("")
@@ -431,10 +448,38 @@ def run_real_analysis(args: argparse.Namespace) -> int:
 
     obligations = load_obligations(obligations_path)
     obligation_ids = [o["id"] for o in obligations]
-    config_a = load_run(config_a_dir, obligation_ids)
-    config_b = load_run(config_b_dir, obligation_ids)
-    if [o.obligation_id for o in config_a] != [o.obligation_id for o in config_b]:
+    full_config_a = load_run(config_a_dir, obligation_ids)
+    full_config_b = load_run(config_b_dir, obligation_ids)
+    if [o.obligation_id for o in full_config_a] != [o.obligation_id for o in full_config_b]:
         raise ValueError("config-a and config-b obligation orderings differ")
+
+    # Filter out paired pairs where either arm is an environmental discard
+    # (errored). Documented in PROTOCOL.md and DECISIONS.md: discards are
+    # logged and excluded from the paired analysis. The discard count is
+    # reported alongside the analyzable N so the dataset's
+    # post-discard size is auditable from the analysis output alone.
+    discarded: list[tuple[str, str]] = []
+    config_a: list[PerObligation] = []
+    config_b: list[PerObligation] = []
+    for a, b in zip(full_config_a, full_config_b):
+        if a.errored or b.errored:
+            who = "A" if a.errored else "B"
+            why = a.error_message if a.errored else b.error_message
+            discarded.append((a.obligation_id, f"{who}: {why[:140]}"))
+            continue
+        config_a.append(a)
+        config_b.append(b)
+
+    if not config_a:
+        raise ValueError("no analyzable obligations after discards; cannot run analysis")
+
+    if len(discarded) > 0.10 * len(full_config_a):
+        sys.stderr.write(
+            f"WARNING: {len(discarded)}/{len(full_config_a)} obligations discarded "
+            f"({100 * len(discarded) / len(full_config_a):.1f}%) — "
+            f"above the 10% threshold; analysis still proceeds, but the close-out "
+            f"must cite the elevated discard rate as a caveat on the result.\n"
+        )
 
     pairs = [(a.pass_, b.pass_) for a, b in zip(config_a, config_b)]
     pass_test = mcnemar_test(pairs)
@@ -445,10 +490,19 @@ def run_real_analysis(args: argparse.Namespace) -> int:
     wall_test = wilcoxon_signed_rank([float(x) for x in wall_diffs])
     llm_test = wilcoxon_signed_rank([float(x) for x in llm_diffs])
 
-    md = render_markdown(config_a, config_b, pass_test, cost_test, wall_test, llm_test)
+    md = render_markdown(
+        config_a,
+        config_b,
+        pass_test,
+        cost_test,
+        wall_test,
+        llm_test,
+        discarded=discarded,
+        original_n=len(full_config_a),
+    )
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(md)
-    print(f"wrote {out_path}")
+    print(f"wrote {out_path} (analyzed N={len(config_a)}, discarded={len(discarded)})")
     return 0
 
 
@@ -483,6 +537,8 @@ def synthetic_dataset(seed: int) -> tuple[list[PerObligation], list[PerObligatio
             dollars_token_estimate=0.0,
             wall_clock_ms=6,
             llm_calls=0,
+            errored=False,
+            error_message="",
         ))
         b.append(PerObligation(
             obligation_id=oid,
@@ -492,6 +548,8 @@ def synthetic_dataset(seed: int) -> tuple[list[PerObligation], list[PerObligatio
             dollars_token_estimate=0.30,
             wall_clock_ms=120000,
             llm_calls=1,
+            errored=False,
+            error_message="",
         ))
     return a, b
 

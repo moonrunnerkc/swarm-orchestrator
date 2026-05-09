@@ -1,0 +1,52 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "phase2_plain_marker_case/forbidden-token.txt",
+            "bytes": "This file intentionally contains XXX_FORBIDDEN_PHASE2_TOKEN to falsify the predicate.\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'XXX_FORBIDDEN_PHASE2_TOKEN' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist 2>/dev/null",
+        "reproducerOutput": "./phase2_plain_marker_case/forbidden-token.txt:1:This file intentionally contains XXX_FORBIDDEN_PHASE2_TOKEN to falsify the predicate.\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "phase2_nested_marker_case/config/sample.json",
+            "bytes": "{\n  \"status\": \"test\",\n  \"marker\": \"XXX_FORBIDDEN_PHASE2_TOKEN\"\n}\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'XXX_FORBIDDEN_PHASE2_TOKEN' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist 2>/dev/null",
+        "reproducerOutput": "./phase2_nested_marker_case/config/sample.json:3:  \"marker\": \"XXX_FORBIDDEN_PHASE2_TOKEN\"\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "phase2_markdown_marker_case/notes.md",
+            "bytes": "# Predicate falsification note\n\n```text\nXXX_FORBIDDEN_PHASE2_TOKEN\n```\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'XXX_FORBIDDEN_PHASE2_TOKEN' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist 2>/dev/null",
+        "reproducerOutput": "./phase2_markdown_marker_case/notes.md:4:XXX_FORBIDDEN_PHASE2_TOKEN\n",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 9442,
+    "dollarsSpent": 0.14445,
+    "dollarsBilled": 0.14445,
+    "dollarsTokenEstimate": 0.14445,
+    "authMethod": "unknown",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

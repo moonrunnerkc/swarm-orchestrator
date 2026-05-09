@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "root-core-empty",
+      "rationale": "Adding a regular file named core at the workspace root makes find emit a match, causing grep to succeed and the negated predicate to exit non-zero.",
+      "files": [
+        {
+          "relPath": "core",
+          "bytes": ""
+        }
+      ]
+    },
+    {
+      "name": "root-core-text",
+      "rationale": "A regular UTF-8 text file named core at the workspace root satisfies the exact find expression the predicate forbids.",
+      "files": [
+        {
+          "relPath": "core",
+          "bytes": "simulated core dump marker\n"
+        }
+      ]
+    },
+    {
+      "name": "root-core-json",
+      "rationale": "Any regular file named core directly under the workspace root is enough to make the predicate detect a forbidden core dump file.",
+      "files": [
+        {
+          "relPath": "core",
+          "bytes": "{\"kind\":\"core\",\"simulated\":true}\n"
+        }
+      ]
+    }
+  ]
+}
+```

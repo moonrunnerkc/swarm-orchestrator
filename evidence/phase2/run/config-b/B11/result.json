@@ -1,0 +1,52 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": ".htpasswd",
+            "bytes": "user:$apr1$abcdefghijklmnopqrstuv\n"
+          }
+        ],
+        "reproducer": "! find . -name '.htpasswd' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "auth-fixtures/.htpasswd",
+            "bytes": "admin:{SHA}W6ph5Mm5Pz8GgiULbPgzG37mj9g=\n"
+          }
+        ],
+        "reproducer": "! find . -name '.htpasswd' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "security-cases/apache/basic/.htpasswd",
+            "bytes": "demo:$2y$05$abcdefghijklmnopqrstuu7g7Rr9lP0vN0XK3YvQKZc0kBfM3nE1a\n"
+          }
+        ],
+        "reproducer": "! find . -name '.htpasswd' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 14059,
+    "dollarsSpent": 0.15065,
+    "dollarsBilled": 0.15065,
+    "dollarsTokenEstimate": 0.15065,
+    "authMethod": "unknown",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

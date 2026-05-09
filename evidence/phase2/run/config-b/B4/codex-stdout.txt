@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "root-basic-certificate",
+      "rationale": "Adding any regular file with a .cer suffix at the workspace root makes find emit a match, causing grep -q . to succeed and the negated predicate to fail.",
+      "files": [
+        {
+          "relPath": "adversarial-root-basic.cer",
+          "bytes": "-----BEGIN CERTIFICATE-----\nMIIBadversarialbasic\n-----END CERTIFICATE-----\n"
+        }
+      ]
+    },
+    {
+      "name": "root-empty-certificate",
+      "rationale": "Even an empty regular .cer file at the workspace root is matched by find, so the predicate exits non-zero.",
+      "files": [
+        {
+          "relPath": "adversarial-empty.cer",
+          "bytes": ""
+        }
+      ]
+    },
+    {
+      "name": "root-text-certificate",
+      "rationale": "The predicate checks only filename and file type, so a plain text root-level .cer file falsifies it regardless of content.",
+      "files": [
+        {
+          "relPath": "not-a-real-certificate.cer",
+          "bytes": "This file is intentionally just UTF-8 text, but its root-level .cer path is enough to violate the predicate.\n"
+        }
+      ]
+    }
+  ]
+}
+```

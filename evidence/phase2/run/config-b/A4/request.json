@@ -1,0 +1,14 @@
+{
+  "binaryPath": "codex",
+  "args": [
+    "--ask-for-approval",
+    "never",
+    "--sandbox",
+    "workspace-write",
+    "exec",
+    "--skip-git-repo-check"
+  ],
+  "cwd": "/var/folders/1q/2_tt_q515bs98g0f5v17_sdc0000gn/T/phase2-B-A4-tkDiTk/workspace",
+  "timeoutMs": 300000,
+  "prompt": "You are an adversarial test-input generator running inside a\nworkspace-write sandbox. Your task is to falsify the property-must-hold\nobligation below by describing concrete inputs that would cause the\npredicate command to exit with a non-zero status (the predicate exits\nzero when the property holds; non-zero means the property does not).\n\nPredicate target: no debugger; statement in src/\nPredicate command: ! grep -rn 'debugger;' src/ --include='*.ts' 2>/dev/null\n\nConstraints, all hard:\n1. Do NOT modify the workspace yourself. The orchestrator applies the\n   inputs you describe.\n2. Produce exactly 3 candidates, each with a short\n   rationale and a list of NEW files to add (relPath relative to the\n   workspace root, plus byte content as a UTF-8 string).\n3. Do not propose paths that already exist in the workspace; the\n   orchestrator rejects those without running them.\n4. Do not propose paths under .git, node_modules, dist, runs, .swarm,\n   or any other generated/ignored directory. Use a fresh subdirectory\n   if the predicate scopes its search to a specific path; otherwise\n   place files under the workspace root with descriptive names.\n5. Each candidate should be independent — the adapter applies one at a\n   time and removes it before applying the next.\n6. Reply with one fenced ```json``` block matching the schema below.\n   No prose before, after, or inside the block.\n\nSchema:\n```json\n{\n  \"candidates\": [\n    {\n      \"name\": \"string identifier, kebab-case\",\n      \"rationale\": \"one-sentence explanation of why this should\n        falsify the predicate\",\n      \"files\": [\n        { \"relPath\": \"path/relative/to/workspace.ext\",\n          \"bytes\": \"file content as a single UTF-8 string\" }\n      ]\n    }\n  ]\n}\n```\n\nNow produce the JSON for this obligation."
+}

@@ -1,0 +1,52 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/adversarial/direct-secret.ts",
+            "bytes": "const secret = \"open-sesame\";\nexport { secret };\n"
+          }
+        ],
+        "reproducer": "! grep -rEn 'secret = \"' src/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/adversarial/direct-secret.ts:1:const secret = \"open-sesame\";\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/adversarial/nested/config.ts",
+            "bytes": "export function loadConfig() {\n  const secret = \"nested-value\";\n  return { secret };\n}\n"
+          }
+        ],
+        "reproducer": "! grep -rEn 'secret = \"' src/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/adversarial/nested/config.ts:2:  const secret = \"nested-value\";\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/adversarial/comment-only.ts",
+            "bytes": "// Example from old docs: secret = \"do-not-use\"\nexport const placeholder = true;\n"
+          }
+        ],
+        "reproducer": "! grep -rEn 'secret = \"' src/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/adversarial/comment-only.ts:1:// Example from old docs: secret = \"do-not-use\"\n",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 14531,
+    "dollarsSpent": 0.14989,
+    "dollarsBilled": 0.14989,
+    "dollarsTokenEstimate": 0.14989,
+    "authMethod": "unknown",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

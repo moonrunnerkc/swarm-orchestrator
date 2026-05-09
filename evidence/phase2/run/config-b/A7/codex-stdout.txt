@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "basic-auth-string-literal",
+      "rationale": "A TypeScript string containing an Authorization: Basic token of at least eight base64 characters will be matched by the grep predicate.",
+      "files": [
+        {
+          "relPath": "src/adversarial-basic-auth/string-literal.ts",
+          "bytes": "export const header = \"Authorization: Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ==\";\n"
+        }
+      ]
+    },
+    {
+      "name": "basic-auth-comment",
+      "rationale": "The grep predicate scans raw TypeScript text, so the forbidden Authorization: Basic literal inside a comment still falsifies it.",
+      "files": [
+        {
+          "relPath": "src/adversarial-basic-auth/comment.ts",
+          "bytes": "// Authorization: Basic dGVzdHVzZXI6c2VjcmV0\nexport const ok = true;\n"
+        }
+      ]
+    },
+    {
+      "name": "basic-auth-template",
+      "rationale": "A template literal with the complete Authorization: Basic token text matches the regular expression in a .ts file under src.",
+      "files": [
+        {
+          "relPath": "src/adversarial-basic-auth/template.ts",
+          "bytes": "export const requestHeaders = `Authorization: Basic YWRtaW46cGFzc3dvcmQ=`;\n"
+        }
+      ]
+    }
+  ]
+}
+```

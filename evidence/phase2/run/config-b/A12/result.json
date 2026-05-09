@@ -1,0 +1,52 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/adversarial/pem-fixture.txt",
+            "bytes": "test fixture\n-----BEGIN CERTIFICATE-----\nMIIBfakefixture\n-----END CERTIFICATE-----\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'BEGIN CERTIFICATE' src/ 2>/dev/null",
+        "reproducerOutput": "src/adversarial/pem-fixture.txt:2:-----BEGIN CERTIFICATE-----\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/adversarial/embedded-cert.ts",
+            "bytes": "export const sampleCertificate = `-----BEGIN CERTIFICATE-----\\nplaceholder\\n-----END CERTIFICATE-----`;\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'BEGIN CERTIFICATE' src/ 2>/dev/null",
+        "reproducerOutput": "src/adversarial/embedded-cert.ts:1:export const sampleCertificate = `-----BEGIN CERTIFICATE-----\\nplaceholder\\n-----END CERTIFICATE-----`;\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/adversarial/commented-marker.ts",
+            "bytes": "// Regression fixture: BEGIN CERTIFICATE should not appear in src.\nexport const ok = false;\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'BEGIN CERTIFICATE' src/ 2>/dev/null",
+        "reproducerOutput": "src/adversarial/commented-marker.ts:1:// Regression fixture: BEGIN CERTIFICATE should not appear in src.\n",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 17540,
+    "dollarsSpent": 0.15066,
+    "dollarsBilled": 0.15066,
+    "dollarsTokenEstimate": 0.15066,
+    "authMethod": "unknown",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

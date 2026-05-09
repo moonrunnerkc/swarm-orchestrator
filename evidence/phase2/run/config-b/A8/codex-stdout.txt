@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "root-env-slack-webhook",
+      "rationale": "A new root-level env sample containing slack_webhook will be matched by grep and make the negated predicate fail.",
+      "files": [
+        {
+          "relPath": "adversarial-slack-webhook.env",
+          "bytes": "SLACK_WEBHOOK=https://hooks.slack.example/services/T000/B000/XXXX\n"
+        }
+      ]
+    },
+    {
+      "name": "docs-uppercase-token",
+      "rationale": "The predicate uses case-insensitive grep, so SLACK_WEBHOOK in a new documentation file should falsify it.",
+      "files": [
+        {
+          "relPath": "adversarial-docs/slack-webhook-note.md",
+          "bytes": "# Integration note\n\nConfigure SLACK_WEBHOOK before sending deployment alerts.\n"
+        }
+      ]
+    },
+    {
+      "name": "json-nested-lowercase-token",
+      "rationale": "A new JSON config with the exact lowercase slack_webhook token is inside the searched workspace and not excluded.",
+      "files": [
+        {
+          "relPath": "adversarial-config/notifications.json",
+          "bytes": "{\n  \"slack_webhook\": \"https://hooks.slack.example/services/T111/B222/YYYY\"\n}\n"
+        }
+      ]
+    }
+  ]
+}
+```

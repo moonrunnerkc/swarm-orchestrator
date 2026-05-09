@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "empty-top-level-ts",
+      "rationale": "Adding a zero-byte TypeScript file directly under src makes find match it and causes grep to succeed, making the negated predicate fail.",
+      "files": [
+        {
+          "relPath": "src/empty-top-level.ts",
+          "bytes": ""
+        }
+      ]
+    },
+    {
+      "name": "empty-nested-ts",
+      "rationale": "Adding a zero-byte TypeScript file in a fresh src subdirectory still falls under the predicate search path and falsifies the no-empty-ts condition.",
+      "files": [
+        {
+          "relPath": "src/adversarial/empty-nested.ts",
+          "bytes": ""
+        }
+      ]
+    },
+    {
+      "name": "empty-test-ts",
+      "rationale": "A zero-byte .ts file with a test-style name under src is still matched by the predicate and causes it to exit non-zero.",
+      "files": [
+        {
+          "relPath": "src/property-cases/zero-byte.spec.ts",
+          "bytes": ""
+        }
+      ]
+    }
+  ]
+}
+```

@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "direct-header-constant",
+      "rationale": "A new TypeScript file under src contains the exact lowercase literal x-api-key:, so grep will match and the negated predicate will fail.",
+      "files": [
+        {
+          "relPath": "src/adversarial/direct-header-constant.ts",
+          "bytes": "export const headerLine = \"x-api-key: test-value\";\n"
+        }
+      ]
+    },
+    {
+      "name": "commented-header-example",
+      "rationale": "The predicate does not ignore comments, so a commented example containing x-api-key: in a .ts file will still be matched.",
+      "files": [
+        {
+          "relPath": "src/adversarial/commented-header-example.ts",
+          "bytes": "// Example forbidden request header: x-api-key: abc123\nexport const ok = true;\n"
+        }
+      ]
+    },
+    {
+      "name": "template-header-literal",
+      "rationale": "A template literal in a new .ts file contains the exact substring x-api-key:, causing grep to return a match.",
+      "files": [
+        {
+          "relPath": "src/adversarial/template-header-literal.ts",
+          "bytes": "export const rawRequest = `GET / HTTP/1.1\nx-api-key: local-dev-key\nHost: example.test\n`;\n"
+        }
+      ]
+    }
+  ]
+}
+```

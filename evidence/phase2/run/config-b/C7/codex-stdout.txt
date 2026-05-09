@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "root-secret-config",
+      "rationale": "A new root-level .yaml file containing the literal substring password will be matched by find and grep.",
+      "files": [
+        {
+          "relPath": "secret-config.yaml",
+          "bytes": "service: api\npassword: hunter2\n"
+        }
+      ]
+    },
+    {
+      "name": "root-db-credentials",
+      "rationale": "The predicate searches only workspace-root *.yaml files, and this root file includes password in a YAML key.",
+      "files": [
+        {
+          "relPath": "db-credentials.yaml",
+          "bytes": "database:\n  user: app\n  password: local-dev-secret\n"
+        }
+      ]
+    },
+    {
+      "name": "root-comment-password",
+      "rationale": "grep matches password anywhere in the root-level YAML file, including comments.",
+      "files": [
+        {
+          "relPath": "deployment-notes.yaml",
+          "bytes": "environment: test\n# rotate password before release\nreplicas: 1\n"
+        }
+      ]
+    }
+  ]
+}
+```

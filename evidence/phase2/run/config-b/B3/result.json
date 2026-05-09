@@ -1,0 +1,52 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "adversarial-root-certificate.p12",
+            "bytes": "not a real certificate; filename is sufficient to falsify the predicate\n"
+          }
+        ],
+        "reproducer": "! find . -name '*.p12' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "adversarial-inputs/nested-keystore.p12",
+            "bytes": "dummy p12 payload\n"
+          }
+        ],
+        "reproducer": "! find . -name '*.p12' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/adversarial-keystore.p12",
+            "bytes": "placeholder keystore bytes\n"
+          }
+        ],
+        "reproducer": "! find . -name '*.p12' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 12139,
+    "dollarsSpent": 0.15066,
+    "dollarsBilled": 0.15066,
+    "dollarsTokenEstimate": 0.15066,
+    "authMethod": "unknown",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}
