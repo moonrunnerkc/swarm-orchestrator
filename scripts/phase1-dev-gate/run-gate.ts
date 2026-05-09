@@ -35,6 +35,7 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { loadDotenv } from '../../src/env-loader';
 import {
   CodexFalsifier,
   type CodexInvocationRequest,
@@ -42,6 +43,12 @@ import {
 } from '../../src/falsification/adapters/codex/codex-falsifier';
 import type { ObligationV1, PropertyMustHoldObligation } from '../../src/contract/types';
 import type { FalsificationInput, FalsifyOutcome } from '../../src/falsification/adapters/types';
+
+// Source `.env` from cwd / orchestrator install / `~/.env` so
+// `OPENAI_API_KEY` reaches the codex subprocess without the operator
+// having to export it manually each shell. Same logic as `src/cli.ts`,
+// shared via `src/env-loader.ts`.
+loadDotenv();
 
 interface SampleObligation {
   id: string;

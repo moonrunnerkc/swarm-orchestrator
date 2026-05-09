@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "top-level-src-token",
+      "rationale": "A new TypeScript file under src contains a literal Bearer token with more than 20 allowed characters, so grep should match and make the negated predicate fail.",
+      "files": [
+        {
+          "relPath": "src/adversarial-fixtures/top-level-src-token.ts",
+          "bytes": "export const authorizationHeader = \"Bearer abcdefghijklmnopqrstuvwxyz012345\";\n"
+        }
+      ]
+    },
+    {
+      "name": "commented-bearer-token",
+      "rationale": "The predicate scans raw TypeScript text, so a Bearer token literal inside a comment is still matched by grep.",
+      "files": [
+        {
+          "relPath": "src/adversarial-fixtures/commented-bearer-token.ts",
+          "bytes": "// Example header: Bearer ABCDEFGHIJKLMNOPQRSTUVWXYZ_12345\nexport const placeholder = true;\n"
+        }
+      ]
+    },
+    {
+      "name": "nested-src-token",
+      "rationale": "The recursive grep includes nested .ts files under src, and this file contains a matching Bearer token literal.",
+      "files": [
+        {
+          "relPath": "src/adversarial-fixtures/nested/nested-src-token.ts",
+          "bytes": "export function getHeader(): string {\n  return 'Authorization: Bearer token_value-1234567890ABCDE';\n}\n"
+        }
+      ]
+    }
+  ]
+}
+```

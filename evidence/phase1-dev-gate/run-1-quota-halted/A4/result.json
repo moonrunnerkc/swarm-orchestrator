@@ -1,0 +1,49 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/falsification/adversarial/direct-console-log.ts",
+            "bytes": "export function trigger(): void {\n  console.log('predicate should fail');\n}\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'console\\.log(' src/falsification/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/falsification/adversarial/direct-console-log.ts:2:  console.log('predicate should fail');\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/falsification/adversarial/nested/nested-console-log.ts",
+            "bytes": "const value = 42;\nif (value > 0) {\n  console.log(value);\n}\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'console\\.log(' src/falsification/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/falsification/adversarial/nested/nested-console-log.ts:3:  console.log(value);\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/falsification/adversarial/comment-console-log.ts",
+            "bytes": "export const note = 'not executed';\n// console.log('still matched by grep');\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'console\\.log(' src/falsification/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/falsification/adversarial/comment-console-log.ts:2:// console.log('still matched by grep');\n",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 12878,
+    "dollarsSpent": 0.04802,
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}
