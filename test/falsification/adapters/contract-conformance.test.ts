@@ -71,8 +71,12 @@ function assertResultShapeIsValid(result: FalsificationResult): void {
       return;
     case 'no-falsification-found':
       assert.ok(
-        ['time-budget-exhausted', 'no-counter-example-discovered', 'strategy-not-applicable']
-          .includes(result.reason),
+        [
+          'time-budget-exhausted',
+          'no-counter-example-discovered',
+          'strategy-not-applicable',
+          'baseline-predicate-failed',
+        ].includes(result.reason),
         `unknown no-falsification-found reason: ${result.reason}`,
       );
       assert.equal(typeof result.attempts, 'number');

@@ -9,7 +9,11 @@ describe('WorktreeManager', () => {
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'worktree-mgr-test-'));
+    // realpathSync resolves the macOS /var -> /private/var symlink so the
+    // path stored here matches what `git rev-parse --show-toplevel` and
+    // similar tools report; otherwise direct string comparisons against
+    // tool output diverge on Darwin.
+    tempDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'worktree-mgr-test-')));
   });
 
   afterEach(() => {

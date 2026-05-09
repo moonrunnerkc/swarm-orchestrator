@@ -108,7 +108,17 @@ export interface PropertyViolationTraceResult {
 export type NoFalsificationReason =
   | 'time-budget-exhausted'
   | 'no-counter-example-discovered'
-  | 'strategy-not-applicable';
+  | 'strategy-not-applicable'
+  | 'baseline-predicate-failed';
+
+/**
+ * Auth method the adapter used for the underlying CLI/API call. Drives the
+ * `dollarsBilled` vs `dollarsTokenEstimate` split: subscription-style auth
+ * (ChatGPT) charges flat-rate so `dollarsBilled` is 0 even when the token
+ * estimate is positive; API-key auth charges per-token so the two values
+ * coincide.
+ */
+export type AdapterAuthMethod = 'chatgpt' | 'api' | 'unknown';
 
 /**
  * Variant: the adapter ran but did not find a falsification. This is a
@@ -146,8 +156,34 @@ export interface AdapterCostRecord {
    * Real dollars spent on this call (subprocess provider charges, API
    * usage, etc.). Adapters that cannot measure cost report 0 and document
    * the gap in their adapter-specific docs.
+   *
+   * Equal to `dollarsTokenEstimate` and preserved for backward
+   * compatibility with consumers that pre-date the auth-method split.
+   * New code should read `dollarsBilled` (real charge) or
+   * `dollarsTokenEstimate` (computed upper bound) directly.
    */
   readonly dollarsSpent: number;
+  /**
+   * Auth method the underlying CLI/API used for this call. Flat-rate
+   * subscriptions (`chatgpt`) report `dollarsBilled === 0` even when the
+   * token-estimate is positive; per-token auth (`api`) reports them equal.
+   */
+  readonly authMethod: AdapterAuthMethod;
+  /**
+   * Real dollars charged to the operator's account for this call. Zero
+   * under flat-rate subscriptions. Phase 2's cost comparison uses this
+   * value when computing the price-per-confirmed-yield headline metric so
+   * the result is not inflated by token estimates against subscription
+   * tiers.
+   */
+  readonly dollarsBilled: number;
+  /**
+   * Upper-bound dollar value computed from token counts × rate card.
+   * Always populated when token counts are available, regardless of auth
+   * tier. Equals `dollarsBilled` under per-token auth; equals the would-be
+   * API cost under flat-rate subscriptions.
+   */
+  readonly dollarsTokenEstimate: number;
   /** Count of confirmed counter-examples in the result. */
   readonly counterExamplesFound: number;
   /**

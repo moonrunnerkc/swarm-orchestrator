@@ -2,7 +2,10 @@ import { strict as assert } from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { runCandidateAgainstPredicate } from '../../../../src/falsification/adapters/codex/predicate-runner';
+import {
+  checkPredicateBaseline,
+  runCandidateAgainstPredicate,
+} from '../../../../src/falsification/adapters/codex/predicate-runner';
 import type { ParsedCandidate } from '../../../../src/falsification/adapters/codex/codex-output-parser';
 
 /**
@@ -103,6 +106,25 @@ describe('runCandidateAgainstPredicate', () => {
         () => runCandidateAgainstPredicate(escape, 'true', ws),
         /outside the workspace root|already exists/,
       );
+    } finally {
+      fs.rmSync(ws, { recursive: true, force: true });
+    }
+  });
+
+  it('preserves the baseline contract: predicate must pass against an unmodified workspace', () => {
+    const ws = makeWorkspace();
+    try {
+      // Empty workspace + "no FORBIDDEN here" predicate → exit 0 → baseline ok.
+      const okBaseline = checkPredicateBaseline('! grep -r "FORBIDDEN" . 2>/dev/null', ws);
+      assert.equal(okBaseline.ok, true);
+      assert.equal(okBaseline.exitCode, 0);
+
+      // Plant the forbidden token; baseline must now report not-ok so callers
+      // can short-circuit before invoking the codex CLI.
+      fs.writeFileSync(path.join(ws, 'tainted.txt'), 'FORBIDDEN', 'utf8');
+      const taintedBaseline = checkPredicateBaseline('! grep -r "FORBIDDEN" . 2>/dev/null', ws);
+      assert.equal(taintedBaseline.ok, false);
+      assert.notEqual(taintedBaseline.exitCode, 0);
     } finally {
       fs.rmSync(ws, { recursive: true, force: true });
     }

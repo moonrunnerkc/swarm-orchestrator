@@ -8,6 +8,9 @@
  * publishes a price change.
  */
 
+import { spawnSync } from 'child_process';
+import type { AdapterAuthMethod } from '../types';
+
 export interface CodexUsage {
   readonly inputTokens: number;
   readonly outputTokens: number;
@@ -55,6 +58,64 @@ export function dollarsForUsage(usage: CodexUsage): number {
 
 function roundCents(value: number): number {
   return Math.round(value * 1_000_000) / 1_000_000;
+}
+
+/**
+ * Compute the (billed, token-estimate) pair for a usage record. Under
+ * subscription-style auth (`chatgpt`) the operator pays a flat rate, so
+ * `billed` is 0 even when the rate-card multiplied token total is
+ * positive. Under per-token auth (`api`, or `unknown` as a conservative
+ * fallback) the two values coincide.
+ */
+export function dollarsForUsageByAuth(
+  usage: CodexUsage,
+  authMethod: AdapterAuthMethod,
+): { dollarsBilled: number; dollarsTokenEstimate: number } {
+  const tokenEstimate = dollarsForUsage(usage);
+  return {
+    dollarsBilled: authMethod === 'chatgpt' ? 0 : tokenEstimate,
+    dollarsTokenEstimate: tokenEstimate,
+  };
+}
+
+let cachedAuthMethod: AdapterAuthMethod | null = null;
+
+/**
+ * Probe the local codex CLI to determine which auth tier the next
+ * `falsify()` call will run under. The codex CLI prints a single line
+ * like `Logged in using ChatGPT` or `Logged in using API key` from
+ * `codex login status`; older builds may print a JSON envelope. Cached
+ * per process — auth state is not expected to change mid-run.
+ *
+ * Returns 'unknown' (and does not cache) when the binary is absent or
+ * the output cannot be parsed; callers should treat 'unknown' the same
+ * as 'api' for cost accounting (conservative — bills full token cost).
+ */
+export function detectCodexAuthMethod(binaryPath = 'codex'): AdapterAuthMethod {
+  if (cachedAuthMethod !== null) return cachedAuthMethod;
+  const result = spawnSync(binaryPath, ['login', 'status'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: 5_000,
+  });
+  if (result.error !== undefined) return 'unknown';
+  const combined = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
+  const detected = parseAuthMethod(combined);
+  cachedAuthMethod = detected;
+  return detected;
+}
+
+/** Reset the auth-method cache. Test-only; production code never calls this. */
+export function _resetAuthMethodCacheForTests(): void {
+  cachedAuthMethod = null;
+}
+
+function parseAuthMethod(output: string): AdapterAuthMethod {
+  if (/logged in using chatgpt/i.test(output)) return 'chatgpt';
+  if (/logged in using api(\s+key)?/i.test(output)) return 'api';
+  if (/"auth_method"\s*:\s*"chatgpt"/i.test(output)) return 'chatgpt';
+  if (/"auth_method"\s*:\s*"api(?:_key)?"/i.test(output)) return 'api';
+  return 'unknown';
 }
 
 /**

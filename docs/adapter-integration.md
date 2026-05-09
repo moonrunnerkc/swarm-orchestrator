@@ -152,7 +152,7 @@ Rollback: flag off. Default is single-vendor producer.
 
 **Empirical null result.** The plan must be acceptable to ship even if Phase 2 says no. The negative result is publishable: tested cross-vendor falsification on a contract-first orchestrator, found single-vendor plus AST verification sufficient. That's a defensible outcome, not a failure. Phase 2 stopping here costs roughly 7 to 12 days, not the full 17 to 29 day budget.
 
-**Adapter version drift.** Vendor CLIs ship breaking changes. Pin specific CLI versions in CI, run a weekly canary against unpinned versions, alert on breakage.
+**Adapter version drift.** Vendor CLIs ship breaking changes. Pin specific CLI versions in CI, run a weekly canary against unpinned versions, alert on breakage. Codex implementation: `.github/workflows/codex-canary.yml` runs the env-gated `codex-falsifier.integration.test.ts` against the unpinned `@openai/codex` weekly (Monday 09:00 UTC) and on `workflow_dispatch`. On schedule failure the workflow opens a labelled issue (`adapter-drift`, `codex`) so a maintainer can update the adapter before the next dev-gate run.
 
 ## Open Questions to Resolve Before Starting
 

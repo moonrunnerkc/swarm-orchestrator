@@ -106,6 +106,26 @@ interface PredicateExecResult {
   readonly exitCode: number;
 }
 
+/**
+ * Run the obligation's predicate against the workspace *before* any
+ * candidate is applied. A property-must-hold obligation must pass against
+ * the unmodified workspace; otherwise yields are pre-tainted (the
+ * predicate is already failing for unrelated reasons), every codex
+ * candidate trivially "falsifies", and downstream cost is wasted on
+ * meaningless work.
+ *
+ * Callers should short-circuit on `ok === false` and return a
+ * `no-falsification-found` outcome with reason `baseline-predicate-failed`
+ * rather than invoking the underlying CLI.
+ */
+export function checkPredicateBaseline(
+  predicate: string,
+  workspaceRoot: string,
+): { readonly ok: boolean; readonly output: string; readonly exitCode: number } {
+  const exec = runPredicate(predicate, workspaceRoot);
+  return { ok: exec.exitCode === 0, output: exec.output, exitCode: exec.exitCode };
+}
+
 function runPredicate(predicate: string, workspaceRoot: string): PredicateExecResult {
   try {
     const stdout = execSync(predicate, {

@@ -30,8 +30,8 @@ import type {
 } from '../types';
 import { buildCodexPrompt } from './codex-prompt';
 import { parseCodexCandidates } from './codex-output-parser';
-import { runCandidateAgainstPredicate } from './predicate-runner';
-import { dollarsForUsage, parseCodexUsage } from './codex-cost';
+import { runCandidateAgainstPredicate, checkPredicateBaseline } from './predicate-runner';
+import { dollarsForUsageByAuth, detectCodexAuthMethod, parseCodexUsage } from './codex-cost';
 
 /**
  * Sentinel value meaning "do not pass `--model` to codex; let the user's
@@ -66,6 +66,12 @@ export interface CodexFalsifierOptions {
    * obligation without modifying subprocess behaviour. Not a mock seam.
    */
   readonly onInvocation?: (request: CodexInvocationRequest, result: CodexInvocationResult) => void;
+  /**
+   * Test seam: override the auth-method detector. Production code reads
+   * `codex login status`; tests can pass a constant function to avoid
+   * spawning the real binary.
+   */
+  readonly authMethodOverride?: () => 'chatgpt' | 'api' | 'unknown';
 }
 
 export interface CodexInvocationRequest {
@@ -92,6 +98,7 @@ export class CodexFalsifier implements FalsifierAdapter {
   private readonly model: string | null;
   private readonly invocationOverride?: (req: CodexInvocationRequest) => Promise<CodexInvocationResult>;
   private readonly onInvocation?: (req: CodexInvocationRequest, res: CodexInvocationResult) => void;
+  private readonly authMethodOverride?: () => 'chatgpt' | 'api' | 'unknown';
 
   constructor(options: CodexFalsifierOptions = {}) {
     this.binaryPath = options.binaryPath ?? 'codex';
@@ -102,6 +109,9 @@ export class CodexFalsifier implements FalsifierAdapter {
     if (options.onInvocation !== undefined) {
       this.onInvocation = options.onInvocation;
     }
+    if (options.authMethodOverride !== undefined) {
+      this.authMethodOverride = options.authMethodOverride;
+    }
   }
 
   async falsify(input: FalsificationInput): Promise<FalsifyOutcome> {
@@ -110,6 +120,42 @@ export class CodexFalsifier implements FalsifierAdapter {
       return notApplicableOutcome(this.name, input.obligation.type, startedAt);
     }
     const obligation = input.obligation as PropertyMustHoldObligation;
+    const authMethod =
+      this.authMethodOverride !== undefined
+        ? this.authMethodOverride()
+        : detectCodexAuthMethod(this.binaryPath);
+
+    // Baseline check: a property-must-hold obligation must pass against
+    // the clean workspace. If it already fails, every codex candidate
+    // trivially "falsifies" and the spend is wasted. Skip codex entirely
+    // and return a structured outcome.
+    const baseline = checkPredicateBaseline(obligation.predicate, input.workspaceRoot);
+    if (!baseline.ok) {
+      const wallClockMs = Date.now() - startedAt;
+      return {
+        result: {
+          kind: 'no-falsification-found',
+          obligationType: obligation.type,
+          reason: 'baseline-predicate-failed',
+          attempts: 0,
+          detail:
+            `predicate exited ${baseline.exitCode} against the unmodified workspace; ` +
+            `obligation is pre-tainted. Snapshot a clean SHA or fix the predicate before retrying.`,
+        },
+        cost: {
+          adapterName: this.name,
+          obligationType: obligation.type,
+          wallClockMs,
+          dollarsSpent: 0,
+          dollarsBilled: 0,
+          dollarsTokenEstimate: 0,
+          authMethod,
+          counterExamplesFound: 0,
+          falsePositives: 0,
+        },
+      };
+    }
+
     const prompt = buildCodexPrompt(obligation);
     const args = buildCodexArgs(this.model);
     const modelForCost = this.model;
@@ -127,6 +173,13 @@ export class CodexFalsifier implements FalsifierAdapter {
         `codex exec failed with exit code ${subprocess.exitCode}. ` +
           `stderr: ${truncate(subprocess.stderr, 1024)} — ` +
           `surface the failure rather than treating it as no-falsification-found.`,
+        {
+          cause: {
+            exitCode: subprocess.exitCode,
+            stderr: subprocess.stderr,
+            stdout: subprocess.stdout,
+          },
+        },
       );
     }
     const candidates = parseCodexCandidates(subprocess.stdout);
@@ -151,12 +204,18 @@ export class CodexFalsifier implements FalsifierAdapter {
     const observedModel = extractModelFromBanner(`${subprocess.stdout}\n${subprocess.stderr}`);
     const modelForUsage = observedModel ?? modelForCost ?? 'unknown';
     const usage = parseCodexUsage(`${subprocess.stdout}\n${subprocess.stderr}`, modelForUsage);
-    const dollarsSpent = usage === null ? 0 : dollarsForUsage(usage);
+    const { dollarsBilled, dollarsTokenEstimate } =
+      usage === null
+        ? { dollarsBilled: 0, dollarsTokenEstimate: 0 }
+        : dollarsForUsageByAuth(usage, authMethod);
     const cost: AdapterCostRecord = {
       adapterName: this.name,
       obligationType: obligation.type,
       wallClockMs,
-      dollarsSpent,
+      dollarsSpent: dollarsTokenEstimate,
+      dollarsBilled,
+      dollarsTokenEstimate,
+      authMethod,
       counterExamplesFound: confirmed.length,
       falsePositives,
     };
@@ -248,6 +307,9 @@ function notApplicableOutcome(
       obligationType,
       wallClockMs: Date.now() - startedAt,
       dollarsSpent: 0,
+      dollarsBilled: 0,
+      dollarsTokenEstimate: 0,
+      authMethod: 'unknown',
       counterExamplesFound: 0,
       falsePositives: 0,
     },

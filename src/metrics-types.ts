@@ -107,8 +107,22 @@ export interface AdapterCostAggregate {
   obligationType: string;
   /** Number of `falsify()` calls aggregated into this record. */
   calls: number;
-  /** Real dollars spent across `calls`. */
+  /**
+   * Sum of per-call `dollarsSpent`. Equals `dollarsTokenEstimate` and is
+   * preserved for backward compatibility with consumers that pre-date the
+   * auth-method split.
+   */
   dollarsSpent: number;
+  /**
+   * Sum of per-call `dollarsBilled`. Real charges to the operator's
+   * account; zero across calls made under flat-rate subscription auth.
+   */
+  dollarsBilled: number;
+  /**
+   * Sum of per-call `dollarsTokenEstimate`. Upper-bound cost from token
+   * counts × rate card; populated regardless of auth tier.
+   */
+  dollarsTokenEstimate: number;
   /** Wall-clock milliseconds across `calls`. */
   wallClockMs: number;
   /** Confirmed counter-examples produced across `calls`. */
