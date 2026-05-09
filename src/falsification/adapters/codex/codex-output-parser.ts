@@ -44,17 +44,69 @@ export function parseCodexCandidates(rawOutput: string): readonly ParsedCandidat
   return validateCandidates(parsed);
 }
 
+/**
+ * Extract the JSON payload from a fenced ```json``` block. Uses a
+ * string-aware balanced-brace scanner instead of a regex because
+ * codex's JSON candidates can legitimately contain triple-backtick
+ * sequences inside `bytes` strings (e.g. when the candidate file
+ * embeds a markdown code fence). A non-greedy regex stops at the
+ * first inner backtick and yields malformed JSON; a greedy regex
+ * over-consumes any trailing tokens-used line. The brace-balanced
+ * scan terminates exactly at the matching close brace and ignores
+ * everything inside JSON strings, so embedded fences cannot break
+ * extraction.
+ */
 function extractFencedJson(rawOutput: string): string {
-  const fenceRegex = /```json\s*([\s\S]*?)```/;
-  const match = fenceRegex.exec(rawOutput);
-  if (match === null || typeof match[1] !== 'string') {
+  const FENCE_START = '```json';
+  const fenceIdx = rawOutput.indexOf(FENCE_START);
+  if (fenceIdx === -1) {
     throw new Error(
       'Codex output did not contain a fenced ```json``` block. The prompt asks for one and ' +
         'no other content; this means either the prompt failed to constrain the model or the ' +
         'Codex CLI changed its output framing. Inspect captured stdout and update the strategy.',
     );
   }
-  return match[1].trim();
+  const after = rawOutput.slice(fenceIdx + FENCE_START.length);
+  let i = 0;
+  // Skip whitespace immediately after the fence (newlines, spaces).
+  while (i < after.length && /\s/.test(after[i] as string)) i += 1;
+  if (i >= after.length || (after[i] !== '{' && after[i] !== '[')) {
+    throw new Error(
+      'Codex fenced ```json``` block did not start with `{` or `[` after the fence header. ' +
+        'Inspect captured stdout to debug the prompt.',
+    );
+  }
+  const jsonStart = i;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (; i < after.length; i += 1) {
+    const ch = after[i];
+    if (inString) {
+      if (escape) {
+        escape = false;
+      } else if (ch === '\\') {
+        escape = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+    } else if (ch === '{' || ch === '[') {
+      depth += 1;
+    } else if (ch === '}' || ch === ']') {
+      depth -= 1;
+      if (depth === 0) {
+        return after.slice(jsonStart, i + 1);
+      }
+    }
+  }
+  throw new Error(
+    'Codex fenced ```json``` block had unbalanced braces. ' +
+      'Inspect captured stdout — the model produced a truncated or malformed JSON document.',
+  );
 }
 
 function validateCandidates(parsed: unknown): readonly ParsedCandidate[] {

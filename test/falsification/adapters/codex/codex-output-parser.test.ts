@@ -42,10 +42,22 @@ describe('parseCodexCandidates', () => {
     assert.throws(() => parseCodexCandidates('no fence here at all'), /fenced ```json``` block/);
   });
 
-  it('throws on JSON parse failure', () => {
+  it('throws on JSON parse failure (malformed but brace-balanced body)', () => {
+    // Use a body the brace scanner accepts as balanced but JSON.parse
+    // rejects (unquoted key). The earlier `{ this is not json` test
+    // was unbalanced, which the new scanner now catches earlier with a
+    // different message — that path is exercised by the unbalanced-
+    // braces case below.
     assert.throws(
-      () => parseCodexCandidates(fenceJson('{ this is not json')),
+      () => parseCodexCandidates(fenceJson('{not-a-quoted-key: 1}')),
       /did not parse as JSON/,
+    );
+  });
+
+  it('throws on unbalanced braces inside the fence', () => {
+    assert.throws(
+      () => parseCodexCandidates(fenceJson('{ "candidates": [')),
+      /unbalanced braces/,
     );
   });
 
@@ -94,5 +106,32 @@ describe('parseCodexCandidates', () => {
     const parsed = parseCodexCandidates(fenceJson(JSON.stringify(ok)));
     assert.equal(parsed[0]?.files[0]?.relPath, '.env');
     assert.equal(parsed[0]?.files[0]?.bytes, '');
+  });
+
+  it('survives JSON whose string content contains nested triple-backticks', () => {
+    // Reproduces the run-1 A3 failure: codex emits a markdown-fenced
+    // candidate whose `bytes` includes ```text…```. A non-greedy regex
+    // would terminate at the inner ``` and yield malformed JSON; the
+    // string-aware brace scanner must finish at the matching outer `}`.
+    const ok = validCandidatesObject();
+    (ok.candidates[0] as { files: { relPath: string; bytes: string }[] }).files = [
+      {
+        relPath: 'adversarial/nested-md.md',
+        bytes: '# nested\n\n```text\nFORBIDDEN\n```\n',
+      },
+    ];
+    const wrapped = ['```json', JSON.stringify(ok), '```', 'tokens used', '1234'].join('\n');
+    const parsed = parseCodexCandidates(wrapped);
+    assert.equal(parsed.length, CODEX_CANDIDATE_COUNT);
+    assert.equal(parsed[0]?.files[0]?.bytes.includes('```text'), true);
+  });
+
+  it('extracts the JSON when codex appends a tokens-used footer after the fence', () => {
+    const ok = validCandidatesObject();
+    const wrapped = ['```json', JSON.stringify(ok), '```', '', 'tokens used', '5,678', ''].join(
+      '\n',
+    );
+    const parsed = parseCodexCandidates(wrapped);
+    assert.equal(parsed.length, CODEX_CANDIDATE_COUNT);
   });
 });
