@@ -1,0 +1,53 @@
+=== F8 (continued): streaming verification via integration test ===
+(stub session at CLI level doesn't emit forbidden imports;
+ the integration test test/integration/v8-streaming.test.ts uses a
+ custom responder that emits the doomed import — this test asserts
+ mid-stream abort end-to-end.)
+
+--- run integration:v8-streaming ---
+    ✔ post-merge catches the cross-obligation integration failure (§9 exit (c))
+[cli:v8:run] run id:        pm-pass
+[cli:v8:run] contract id:   f81d43acbbe9fe42
+[cli:v8:run] mode:          single
+[cli:v8:run] obligations:   3/3 satisfied
+[cli:v8:run] deterministic: 0 satisfied / 0 rerouted
+[cli:v8:run] pre-verified:  0 obligations
+[cli:v8:run] streaming:     0 aborted (0 chars before abort)
+[cli:v8:run] post-merge:    PASS (0/3 regressed)
+[cli:v8:run] tokens (in):   598 std + 2 cache-read + 1 cache-write
+[cli:v8:run] effective in:  599.45 tokens
+[cli:v8:run] tokens (out):  6
+[cli:v8:run] cache hit:     0.3%
+[cli:v8:run] wall time:     10ms
+[cli:v8:run] ledger:        /var/folders/1q/2_tt_q515bs98g0f5v17_sdc0000gn/T/v8-stream-int-lvq2C3/pm.jsonl
+    ✔ post-merge passes on a clean run
+
+
+  5 passing (70ms)
+
+
+--- run benchmarks:v8-phase6-bench ---
+
+
+  v8 Phase 6 streaming-verification benchmark gate
+    ✔ declares >=4 goals with at least 3 doomed variants (shape gate)
+    ✔ every doomed goal aborts mid-generation under streaming (§9 (a))
+    ✔ streaming output tokens strictly lower than non-streaming baseline on doomed goals (§9 (b))
+    ✔ clean goals never produce a false abort
+    ✔ savings scale with response length on doomed goals
+
+
+  5 passing (97ms)
+
+
+--- regenerate phase6 bench report ---
+[bench6] doomed-small (doomed=true): baseline-out=54 streaming-out=12 aborted=1 ratio=4.500× chars-before-abort=32
+[bench6] doomed-medium (doomed=true): baseline-out=191 streaming-out=12 aborted=1 ratio=15.917× chars-before-abort=32
+[bench6] doomed-large (doomed=true): baseline-out=757 streaming-out=12 aborted=1 ratio=63.083× chars-before-abort=32
+[bench6] clean-baseline (doomed=false): baseline-out=183 streaming-out=183 aborted=0 ratio=1.000× chars-before-abort=0
+
+[bench6] report:  /Users/brad/projects/swarm-orchestrator/docs/v8-phase-6-benchmark.md
+[bench6] history: /Users/brad/projects/swarm-orchestrator/docs/benchmarks/v8-history.jsonl
+[bench6] every doomed goal aborts mid-generation (§9 (a)): PASS
+[bench6] streaming output strictly lower than baseline on doomed goals (§9 (b)): PASS
+[bench6] clean goals do not produce false aborts: PASS

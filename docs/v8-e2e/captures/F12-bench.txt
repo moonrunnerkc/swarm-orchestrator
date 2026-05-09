@@ -1,0 +1,31 @@
+=== F12: cost benchmark ===
+--- 12.1 Phase 7 milestone benchmark ---
+[bench7] personaCount=8 obligationTypeCount=8 happy.failed=0 failure.failed=5 (expected 5)
+[bench7] report:  /Users/brad/projects/swarm-orchestrator/docs/v8-phase-7-benchmark.md
+[bench7] history: /Users/brad/projects/swarm-orchestrator/docs/benchmarks/v8-history.jsonl
+[bench7] personas >= 7: PASS
+[bench7] obligation types >= 8: PASS
+[bench7] dispatch correct: PASS
+[bench7] failure suite catches every new type: PASS
+
+--- 12.2 v8-history.jsonl tail ---
+{"ts":"2026-05-08T21:14:44.116Z","suite":"phase6-streaming","goalId":"clean-baseline","doomed":false,"baseline":{"satisfied":3,"failed":0,"streamingAbortedCandidates":0,"streamingCharsBeforeAbort":0,"preVerifiedObligations":0,"candidateRecordedCount":3,"candidateStreamAbortedCount":0,"effectiveInput":39759,"cacheHitRate":0.6616917251773702,"wallTimeMs":5,"totalUsage":{"inputTokens":609,"cacheReadTokens":54000,"cacheCreationTokens":27000,"outputTokens":183}},"streaming":{"satisfied":3,"failed":0,"streamingAbortedCandidates":0,"streamingCharsBeforeAbort":0,"preVerifiedObligations":0,"candidateRecordedCount":3,"candidateStreamAbortedCount":0,"effectiveInput":39759,"cacheHitRate":0.6616917251773702,"wallTimeMs":5,"totalUsage":{"inputTokens":609,"cacheReadTokens":54000,"cacheCreationTokens":27000,"outputTokens":183}},"outputTokenRatio":1,"tokensSaved":0}
+{"ts":"2026-05-08T21:14:44.116Z","suite":"phase6-summary","allDoomedAbort":true,"allCheaper":true,"noFalseAborts":true,"goalCount":4}
+{"ts":"2026-05-08T21:15:46.591Z","suite":"phase7-milestone","personaCount":8,"obligationTypeCount":8,"happy":{"satisfied":8,"failed":0},"failure":{"satisfied":2,"failed":5,"expected":5},"gates":{"personaCountAtLeast7":true,"obligationTypeCountAtLeast8":true,"everyTypeDispatchedToOwner":true,"failureSuiteCatchesEveryNewType":true}}
+
+--- 12.3 Phase 2 cost benchmark (stub-only, no real API) ---
+(Phase 2 bench drives StubSession-based goals;
+ real-API token cross-check requires ANTHROPIC_API_KEY
+ and is gated by E2E=1 per impl guide §11.)
+
+Phase 2 history rows:
+
+--- 12.4 SDK response.usage cross-check ---
+(StubSession returns synthetic usage based on response length;
+ real Anthropic SDK returns response.usage with cache_read_input_tokens
+ and cache_creation_input_tokens. The v8 session manager already
+ maps these in src/session/anthropic-session.ts.)
+207:  cache_creation_input_tokens?: number | null;
+208:  cache_read_input_tokens?: number | null;
+219:    cacheReadTokens: numberOr(u?.cache_read_input_tokens, 0),
+220:    cacheCreationTokens: numberOr(u?.cache_creation_input_tokens, 0),

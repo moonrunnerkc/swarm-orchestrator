@@ -1,0 +1,41 @@
+============== F7: WASM deterministic floor (stub) ==================
+[cli:v8:run] effective in:  454.10 tokens
+[cli:v8:run] tokens (out):  26
+[cli:v8:run] cache hit:     13.3%
+[cli:v8:run] wall time:     316ms
+[cli:v8:run] ledger:        /private/tmp/v8-e2e-fixture/.swarm/ledger/post-wasm.jsonl
+
+deterministic counters:
+{
+  "deterministicObligations": 1,
+  "deterministicReroutes": 0
+}
+deterministic ledger entries:
+{"ts":"2026-05-08T21:44:22.138Z","runId":"post-wasm","seq":1,"prevHash":"b05af8a1b33fb842883699e521f2c1d7c0909049fc5aaf64a75e9b85ae8c965f","type":"obligation-deterministic-attempted","obligationIndex":0,"obligationType":"file-must-exist","strategyName":"scaffold-template","entryHash":"02e722434bfe6a271b2d7c2333f37073327fbe8bca2eda8a309254f4c183068a"}
+{"ts":"2026-05-08T21:44:22.138Z","runId":"post-wasm","seq":2,"prevHash":"02e722434bfe6a271b2d7c2333f37073327fbe8bca2eda8a309254f4c183068a","type":"obligation-deterministic-applied","obligationIndex":0,"obligationType":"file-must-exist","strategyName":"scaffold-template","filesAffected":["LICENSE"],"wallTimeMs":0,"detail":"wrote LICENSE from registered template","entryHash":"9b23b043d691f4bf9d1e650ebb36f965dd791eca2f8540398c7726473367e2c2"}
+LICENSE created:
+-rw-r--r--  1 brad  wheel  752 May  8 15:44 /tmp/v8-e2e-fixture/LICENSE
+ISC License
+
+
+============== F8: streaming verification (integration tests) ==================
+    ✔ post-merge passes on a clean run
+
+
+  5 passing (75ms)
+
+
+    ✔ savings scale with response length on doomed goals
+
+
+  5 passing (90ms)
+
+
+============== F9: ledger tamper detection ==================
+F9.1 chain valid before tamper
+F9.2 TAMPER DETECTED: ledger entry at line 1 fails entry-hash check: stored 5a8fb1c0…b80b but recomputed abc3fe11…a0a2
+[cli:v8:resume] ledger chain integrity check failed at line 1: ledger entry at line 1 fails entry-hash check: stored 5a8fb1c0…b80b but recomputed abc3fe11…a0a2
+F9.3 resume exit code: 0 (expected 4 = chain tampered)
+============== F9.3 retry: capture v8 resume exit code correctly ==================
+[cli:v8:resume] ledger chain integrity check failed at line 1: ledger entry at line 1 fails entry-hash check: stored 5a8fb1c0…b80b but recomputed 87ea5fa8…8349
+F9 resume exit code: 4 (expected 4 = chain-tampered per resume-handler.ts:71)

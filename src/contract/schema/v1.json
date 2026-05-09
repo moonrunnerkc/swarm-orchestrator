@@ -1,0 +1,198 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/moonrunnerkc/swarm-orchestrator/contract/v1.json",
+  "title": "Swarm Orchestrator v8 Contract Obligation",
+  "description": "Single contract obligation. Contracts serialize as JSONL where each line is one obligation. See docs/v8-overhaul-guide.md §5.1 and docs/v8-implementation-guide.md §4. Phase 5 adds the optional `deterministicStrategy` field for WASM-eligible obligations (impl guide §8 / overhaul §5.6). Phase 7 adds five additional oneOf branches: function-must-have-signature, property-must-hold, import-graph-must-satisfy, coverage-must-exceed, performance-must-not-regress (impl guide §10).",
+  "type": "object",
+  "oneOf": [
+    {
+      "title": "file-must-exist",
+      "type": "object",
+      "required": ["type", "path"],
+      "properties": {
+        "type": { "const": "file-must-exist" },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Filesystem path that must exist after execution. Relative to repository root."
+        },
+        "deterministicStrategy": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional name of a deterministic strategy registered with the WASM runtime. When set, the population manager dispatches this obligation to the runtime instead of the synthesis tournament. See docs/v8-implementation-guide.md §8."
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "title": "build-must-pass",
+      "type": "object",
+      "required": ["type", "command"],
+      "properties": {
+        "type": { "const": "build-must-pass" },
+        "command": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Shell command whose exit code must be zero. Run from repository root."
+        },
+        "deterministicStrategy": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional name of a deterministic strategy registered with the WASM runtime. When set, the population manager dispatches this obligation to the runtime instead of the synthesis tournament."
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "title": "test-must-pass",
+      "type": "object",
+      "required": ["type", "command"],
+      "properties": {
+        "type": { "const": "test-must-pass" },
+        "command": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Shell command whose exit code must be zero. Run from repository root."
+        },
+        "deterministicStrategy": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional name of a deterministic strategy registered with the WASM runtime. When set, the population manager dispatches this obligation to the runtime instead of the synthesis tournament."
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "title": "function-must-have-signature",
+      "type": "object",
+      "required": ["type", "file", "name", "signature"],
+      "properties": {
+        "type": { "const": "function-must-have-signature" },
+        "file": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Repo-relative path to the file declaring the named function."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Function or method name as it appears in source."
+        },
+        "signature": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Signature substring including parens. Whitespace is collapsed before comparison."
+        },
+        "deterministicStrategy": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "title": "property-must-hold",
+      "type": "object",
+      "required": ["type", "predicate", "target"],
+      "properties": {
+        "type": { "const": "property-must-hold" },
+        "predicate": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Shell command, run from repo root. Exit zero ⇒ property holds."
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Human-readable target the property is asserted to hold over."
+        },
+        "deterministicStrategy": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "title": "import-graph-must-satisfy",
+      "type": "object",
+      "required": ["type", "constraint", "scope"],
+      "properties": {
+        "type": { "const": "import-graph-must-satisfy" },
+        "constraint": {
+          "type": "string",
+          "enum": ["no-cycles", "no-upward-imports"],
+          "description": "Structural constraint asserted over the import graph rooted at scope."
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Repo-relative directory to walk."
+        },
+        "deterministicStrategy": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "title": "coverage-must-exceed",
+      "type": "object",
+      "required": ["type", "scope", "metric", "threshold"],
+      "properties": {
+        "type": { "const": "coverage-must-exceed" },
+        "scope": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Repo-relative path to coverage-summary.json (Istanbul/c8 shape)."
+        },
+        "metric": {
+          "type": "string",
+          "enum": ["lines", "statements", "branches", "functions"],
+          "description": "Coverage metric asserted against."
+        },
+        "threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Threshold percentage in [0, 100]; coverage must be >= threshold."
+        },
+        "deterministicStrategy": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "title": "performance-must-not-regress",
+      "type": "object",
+      "required": ["type", "benchmark", "baseline", "threshold"],
+      "properties": {
+        "type": { "const": "performance-must-not-regress" },
+        "benchmark": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Shell command whose stdout's last numeric token is the current value."
+        },
+        "baseline": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Repo-relative path to baseline JSON ({ \"value\": number })."
+        },
+        "threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Maximum allowed fractional regression. current > baseline * (1 + threshold) fails."
+        },
+        "deterministicStrategy": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

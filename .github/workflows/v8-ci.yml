@@ -1,0 +1,58 @@
+name: v8 CI
+
+on:
+  push:
+    branches: [v8-dev]
+  pull_request:
+    branches: [v8-dev]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run lint
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pytest
+        # The synthesizer's framework-aware preflight runs `python3 -m pytest
+        # --collect-only` against synthesized Python candidates. Without
+        # pytest on PATH, every Python candidate is rejected with a
+        # collection error and the related test-synthesizer specs all fail.
+        # ubuntu-latest does not include pytest by default.
+        run: pip install pytest
+      - name: Configure git identity
+        # Production code paths that spawn git directly (e.g.
+        # attachAttestationNote -> git notes add) need an author identity.
+        # ubuntu-latest CI runners ship with empty global git config.
+        run: |
+          git config --global user.email "ci@swarm-orchestrator.local"
+          git config --global user.name "swarm-ci"
+      - run: npm test

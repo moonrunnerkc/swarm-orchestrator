@@ -1,0 +1,51 @@
+=== F11: memoization (two runs of same goal) ===
+--- 11.1 first run, completes everything ---
+[cli:v8:run] pre-verified:  0 obligations
+[cli:v8:run] streaming:     0 aborted (0 chars before abort)
+[cli:v8:run] tokens (in):   1911 std + 504 cache-read + 72 cache-write
+[cli:v8:run] effective in:  2051.40 tokens
+[cli:v8:run] tokens (out):  114
+[cli:v8:run] cache hit:     20.3%
+[cli:v8:run] wall time:     314ms
+[cli:v8:run] ledger:        /private/tmp/v8-e2e-fixture/.swarm/ledger/e2e-memo.jsonl
+
+--- 11.2 immediately resume same run-id (every obligation memoized) ---
+[cli:v8:resume] verifier saved:0 calls
+[cli:v8:resume] deterministic: 0 satisfied / 0 rerouted
+[cli:v8:resume] pre-verified:  0 obligations
+[cli:v8:resume] streaming:     0 aborted (0 chars before abort)
+[cli:v8:resume] tokens (in):   477 std + 70 cache-read + 70 cache-write
+[cli:v8:resume] effective in:  571.50 tokens
+[cli:v8:resume] tokens (out):  29
+[cli:v8:resume] cache hit:     11.3%
+[cli:v8:resume] wall time:     193ms
+[cli:v8:resume] ledger:        /tmp/v8-e2e-fixture/.swarm/ledger/e2e-memo.jsonl
+
+--- 11.3 memoization counters across both runs ---
+{
+  "memoizedObligations": 0,
+  "totalUsage": {
+    "inputTokens": 1911,
+    "cacheReadTokens": 504,
+    "cacheCreationTokens": 72,
+    "outputTokens": 114
+  }
+}
+vs second run:
+{
+  "memoizedObligations": 6,
+  "totalUsage": {
+    "inputTokens": 477,
+    "cacheReadTokens": 70,
+    "cacheCreationTokens": 70,
+    "outputTokens": 29
+  }
+}
+
+--- 11.4 obligation-memoized entries in ledger ---
+{"ts":"2026-05-08T21:15:29.763Z","runId":"e2e-memo","seq":28,"prevHash":"93b3d7113d8152f6ad58ec17f868cb471dcdaba1087f03769df5843cda4a126e","type":"obligation-memoized","obligationIndex":0,"obligationType":"file-must-exist","obligationKey":"file-must-exist|src/strings.ts","source":"prior-run","responseSha256":null,"detail":"obligation index 0 satisfied by prior run; skipping synthesis","entryHash":"021eef08653dfd3598f81100d11079043f3e40a0d9aec928caf0e5fce67d71ef"}
+{"ts":"2026-05-08T21:15:29.763Z","runId":"e2e-memo","seq":29,"prevHash":"021eef08653dfd3598f81100d11079043f3e40a0d9aec928caf0e5fce67d71ef","type":"obligation-memoized","obligationIndex":2,"obligationType":"test-must-pass","obligationKey":"test-must-pass|npm test","source":"prior-run","responseSha256":null,"detail":"obligation index 2 satisfied by prior run; skipping synthesis","entryHash":"780213cd102bb66e6f2b938035471c6150f8444d1e1c78fd567db3f515e68ba4"}
+{"ts":"2026-05-08T21:15:29.763Z","runId":"e2e-memo","seq":30,"prevHash":"780213cd102bb66e6f2b938035471c6150f8444d1e1c78fd567db3f515e68ba4","type":"obligation-memoized","obligationIndex":4,"obligationType":"property-must-hold","obligationKey":"property-must-hold|index entry exists|test -f src/index.ts","source":"prior-run","responseSha256":null,"detail":"obligation index 4 satisfied by prior run; skipping synthesis","entryHash":"faf4e924dbf4b5f940f84462512ce5571a60de0d3042acbaf050ec4537dff709"}
+{"ts":"2026-05-08T21:15:29.763Z","runId":"e2e-memo","seq":31,"prevHash":"faf4e924dbf4b5f940f84462512ce5571a60de0d3042acbaf050ec4537dff709","type":"obligation-memoized","obligationIndex":5,"obligationType":"import-graph-must-satisfy","obligationKey":"import-graph-must-satisfy|src|no-cycles","source":"prior-run","responseSha256":null,"detail":"obligation index 5 satisfied by prior run; skipping synthesis","entryHash":"f06cd656287a78f504a0d86f7ddc4f47e39ed5a80f6f4b721e351e95cc5abe55"}
+{"ts":"2026-05-08T21:15:29.763Z","runId":"e2e-memo","seq":32,"prevHash":"f06cd656287a78f504a0d86f7ddc4f47e39ed5a80f6f4b721e351e95cc5abe55","type":"obligation-memoized","obligationIndex":6,"obligationType":"coverage-must-exceed","obligationKey":"coverage-must-exceed|coverage/coverage-summary.json|lines|80","source":"prior-run","responseSha256":null,"detail":"obligation index 6 satisfied by prior run; skipping synthesis","entryHash":"305299a0bb3a9713d9f94d132a3bd65a04f8ffde3aa64554f747628791d9037f"}
+{"ts":"2026-05-08T21:15:29.763Z","runId":"e2e-memo","seq":33,"prevHash":"305299a0bb3a9713d9f94d132a3bd65a04f8ffde3aa64554f747628791d9037f","type":"obligation-memoized","obligationIndex":7,"obligationType":"performance-must-not-regress","obligationKey":"performance-must-not-regress|sh scripts-bench.sh|baseline.json|0.1","source":"prior-run","responseSha256":null,"detail":"obligation index 7 satisfied by prior run; skipping synthesis","entryHash":"056f901cb595b2903a0f6fdc6baff529bcd4f68d987ada53b07cdbab1cf9f9ee"}

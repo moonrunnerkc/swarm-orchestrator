@@ -1,0 +1,43 @@
+============== F8 REAL Anthropic streaming abort (forbidden-import) ==================
+--- compile a goal that will provoke a real import statement ---
+[cli:v8:compile] contract written: /private/tmp/v8-e2e-fixture/.swarm/contracts/a354402b58b81aea
+[cli:v8:compile] contract id:      a354402b58b81aea
+[cli:v8:compile] contract hash:    a354402b58b81aea1028c4a491885542ce77e6ae7fa2bd29869fecdb1d19e65a
+contract: .swarm/contracts/a354402b58b81aea/
+{"type":"file-must-exist","path":"src/json-util.ts"}
+{"type":"build-must-pass","command":"npm run build"}
+{"type":"test-must-pass","command":"npm test"}
+
+--- run with --forbid-import lodash; the implementer should emit lodash import,
+    streaming verifier should abort mid-generation ---
+[cli:v8:run] run id:        real-streaming
+[cli:v8:run] contract id:   a354402b58b81aea
+[cli:v8:run] mode:          single
+[cli:v8:run] obligations:   0/3 satisfied
+[cli:v8:run] deterministic: 0 satisfied / 0 rerouted
+[cli:v8:run] pre-verified:  0 obligations
+[cli:v8:run] streaming:     3 aborted (1408 chars before abort)
+[cli:v8:run] tokens (in):   0 std + 0 cache-read + 0 cache-write
+[cli:v8:run] effective in:  0.00 tokens
+[cli:v8:run] tokens (out):  0
+[cli:v8:run] cache hit:     0.0%
+[cli:v8:run] wall time:     8789ms
+[cli:v8:run] ledger:        /private/tmp/v8-e2e-fixture/.swarm/ledger/real-streaming.jsonl
+
+--- streaming counters ---
+{
+  "streamingAbortedCandidates": 3,
+  "streamingCharsBeforeAbort": 1408,
+  "satisfied": 0,
+  "failed": 3
+}
+
+--- candidate-stream-aborted ledger entries ---
+{"ts":"2026-05-08T21:58:27.111Z","runId":"real-streaming","seq":2,"prevHash":"34b9a95ed69a9b0a61571164620299d7d7dbec0e50378f5d341ff9b9712253a2","type":"candidate-stream-aborted","obligationIndex":0,"roundIndex":0,"candidateIndex":0,"personaId":"architect","partialResponseSha256":"2ff6b852025dc48099264757ed748c68bcedc018b4bea3a8fc81dae4552f18f8","abortedAtChars":144,"reason":"partial output references forbidden import \"lodash\"","usageAtAbort":{"inputTokens":0,"cacheReadTokens":0,"cacheCreationTokens":0,"outputTokens":0},"model":"claude-sonnet-4-6","entryHash":"aaf641f8749967b976ad907bc8ef99c37ba7f179f1da7835f40fe702e26da516"}
+{"ts":"2026-05-08T21:58:30.589Z","runId":"real-streaming","seq":5,"prevHash":"9dfd4197379997ed8b2f462bd9634cc6d2c66df5f986f76c77f2521f4fcd30d9","type":"candidate-stream-aborted","obligationIndex":1,"roundIndex":0,"candidateIndex":0,"personaId":"implementer","partialResponseSha256":"21fae76985d2c52b9bf8e7b33d7bfde6befa4d0929fe48b2c5e06dba9a1cf9e6","abortedAtChars":588,"reason":"partial output references forbidden import \"lodash\"","usageAtAbort":{"inputTokens":0,"cacheReadTokens":0,"cacheCreationTokens":0,"outputTokens":0},"model":"claude-sonnet-4-6","entryHash":"b831f2652c6ab47978a17cadde47cabbc9cdba3afd5c3e9421e94af0ec91f56d"}
+{"ts":"2026-05-08T21:58:34.687Z","runId":"real-streaming","seq":8,"prevHash":"477f83a92f175c789254c15359c46f5328de9ea36d9fd56720daced82220629c","type":"candidate-stream-aborted","obligationIndex":2,"roundIndex":0,"candidateIndex":0,"personaId":"verifier","partialResponseSha256":"68a4d83d71bb56ed04595d525882ff3de770561da13f99e9cac397fda800b4d2","abortedAtChars":676,"reason":"partial output references forbidden import \"lodash\"","usageAtAbort":{"inputTokens":0,"cacheReadTokens":0,"cacheCreationTokens":0,"outputTokens":0},"model":"claude-sonnet-4-6","entryHash":"699d7d00d030c1a03f37941670dca859da060f243f91351f3ed371b4a37db846"}
+
+--- per-call usage (note: aborted calls show output tokens up to abort) ---
+{"persona":"architect","type":"candidate-stream-aborted","in":null,"out":null,"charsBeforeAbort":null}
+{"persona":"implementer","type":"candidate-stream-aborted","in":null,"out":null,"charsBeforeAbort":null}
+{"persona":"verifier","type":"candidate-stream-aborted","in":null,"out":null,"charsBeforeAbort":null}
