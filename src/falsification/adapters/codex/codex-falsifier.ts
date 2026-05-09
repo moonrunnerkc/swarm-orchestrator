@@ -33,8 +33,13 @@ import { parseCodexCandidates } from './codex-output-parser';
 import { runCandidateAgainstPredicate } from './predicate-runner';
 import { dollarsForUsage, parseCodexUsage } from './codex-cost';
 
-/** Default model the Codex CLI uses when none is specified. */
-const DEFAULT_MODEL = 'o4-mini';
+/**
+ * Sentinel value meaning "do not pass `--model` to codex; let the user's
+ * `~/.codex/config.toml` (or the binary's own default) pick the model".
+ * Hard-coding a model previously broke ChatGPT-auth setups where the
+ * pinned model (e.g. o4-mini) is not available to the account.
+ */
+const MODEL_FROM_CODEX_CONFIG = null;
 
 /** Ceiling on captured stdout/stderr size. Truncated past this. */
 const MAX_OUTPUT_BYTES = 1_000_000;
@@ -84,13 +89,13 @@ export class CodexFalsifier implements FalsifierAdapter {
   readonly name = 'codex';
   readonly handles: readonly ObligationType[] = ['property-must-hold'];
   private readonly binaryPath: string;
-  private readonly model: string;
+  private readonly model: string | null;
   private readonly invocationOverride?: (req: CodexInvocationRequest) => Promise<CodexInvocationResult>;
   private readonly onInvocation?: (req: CodexInvocationRequest, res: CodexInvocationResult) => void;
 
   constructor(options: CodexFalsifierOptions = {}) {
     this.binaryPath = options.binaryPath ?? 'codex';
-    this.model = options.model ?? DEFAULT_MODEL;
+    this.model = options.model === undefined ? MODEL_FROM_CODEX_CONFIG : options.model;
     if (options.invocationOverride !== undefined) {
       this.invocationOverride = options.invocationOverride;
     }
@@ -107,6 +112,7 @@ export class CodexFalsifier implements FalsifierAdapter {
     const obligation = input.obligation as PropertyMustHoldObligation;
     const prompt = buildCodexPrompt(obligation);
     const args = buildCodexArgs(this.model);
+    const modelForCost = this.model;
     const invocation: CodexInvocationRequest = {
       binaryPath: this.binaryPath,
       args,
@@ -139,7 +145,12 @@ export class CodexFalsifier implements FalsifierAdapter {
       }
     }
     const wallClockMs = Date.now() - startedAt;
-    const usage = parseCodexUsage(`${subprocess.stdout}\n${subprocess.stderr}`, this.model);
+    // Prefer the model name codex reports in its own banner over our
+    // configured default; under ChatGPT auth the runtime model can differ
+    // from any value we pre-configured.
+    const observedModel = extractModelFromBanner(`${subprocess.stdout}\n${subprocess.stderr}`);
+    const modelForUsage = observedModel ?? modelForCost ?? 'unknown';
+    const usage = parseCodexUsage(`${subprocess.stdout}\n${subprocess.stderr}`, modelForUsage);
     const dollarsSpent = usage === null ? 0 : dollarsForUsage(usage);
     const cost: AdapterCostRecord = {
       adapterName: this.name,
@@ -175,17 +186,35 @@ export class CodexFalsifier implements FalsifierAdapter {
   }
 }
 
-function buildCodexArgs(model: string): readonly string[] {
-  return [
-    'exec',
-    '--sandbox',
-    'workspace-write',
+function buildCodexArgs(model: string | null): readonly string[] {
+  // Argument order matches codex CLI 0.130.0's grammar: `--ask-for-approval`
+  // and `--sandbox` are root-level flags and must precede the `exec`
+  // subcommand. `--skip-git-repo-check` is an exec-level flag. `--model`
+  // is omitted when null so codex falls back to the user's
+  // `~/.codex/config.toml` default — necessary because ChatGPT-auth
+  // accounts cannot use API-only models like `o4-mini`.
+  const args: string[] = [
     '--ask-for-approval',
     'never',
-    '--model',
-    model,
+    '--sandbox',
+    'workspace-write',
+    'exec',
     '--skip-git-repo-check',
   ];
+  if (model !== null) {
+    args.push('--model', model);
+  }
+  return args;
+}
+
+/**
+ * Pull the actual model name out of codex's invocation banner. The
+ * banner format under codex 0.130.0 is a `model: <name>` line in the
+ * stderr preamble. Returns null if no banner line is present.
+ */
+function extractModelFromBanner(output: string): string | null {
+  const match = /(^|\n)\s*model:\s*(\S+)/.exec(output);
+  return match !== null ? match[2] ?? null : null;
 }
 
 function noFalsification(

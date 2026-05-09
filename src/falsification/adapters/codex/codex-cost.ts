@@ -58,11 +58,16 @@ function roundCents(value: number): number {
 }
 
 /**
- * Extract token usage from Codex's stdout/stderr. Codex's `exec` mode
- * prints a tail of the form
- *   `tokens used: input=NNN output=NNN total=NNN`
- * (or, in newer builds, a structured JSON line with the same fields).
- * Either form is acceptable. Returns null if no usage is reported.
+ * Extract token usage from Codex's stdout/stderr. Three formats are
+ * accepted, in priority order:
+ *   1. Older `tokens used: input=NNN output=NNN` line.
+ *   2. JSONL/JSON envelope `"tokens": { "input": N, "output": N }`.
+ *   3. Codex 0.130.0 footer `tokens used\n<total>` (one count, comma-OK).
+ *      The total is reported as a single number; we conservatively bucket
+ *      it as `outputTokens` so the dollar estimate uses the higher-priced
+ *      output rate. This is an upper-bound pricing approximation, not a
+ *      ground-truth split.
+ * Returns null if no usage is reported.
  */
 export function parseCodexUsage(rawOutput: string, model: string): CodexUsage | null {
   const lineMatch = /tokens?\s*used\s*:\s*input\s*=\s*(\d+)\s+output\s*=\s*(\d+)/i.exec(rawOutput);
@@ -81,6 +86,13 @@ export function parseCodexUsage(rawOutput: string, model: string): CodexUsage | 
     const outputTokens = Number.parseInt(jsonMatch[2] ?? '0', 10);
     if (Number.isFinite(inputTokens) && Number.isFinite(outputTokens)) {
       return { inputTokens, outputTokens, model };
+    }
+  }
+  const totalMatch = /tokens\s+used\s*\n\s*([\d,]+)/i.exec(rawOutput);
+  if (totalMatch !== null) {
+    const totalTokens = Number.parseInt((totalMatch[1] ?? '0').replace(/,/g, ''), 10);
+    if (Number.isFinite(totalTokens) && totalTokens >= 0) {
+      return { inputTokens: 0, outputTokens: totalTokens, model };
     }
   }
   return null;

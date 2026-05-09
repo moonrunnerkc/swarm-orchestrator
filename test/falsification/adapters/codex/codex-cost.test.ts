@@ -30,6 +30,17 @@ describe('codex cost parsing and pricing', () => {
     it('returns null when no usage is reported', () => {
       assert.equal(parseCodexUsage('just narration with no usage block', 'o4-mini'), null);
     });
+
+    it('parses the codex 0.130.0 footer (single-total form, comma-separated)', () => {
+      const usage = parseCodexUsage(
+        'codex\nhello there\ntokens used\n1,545\n',
+        'gpt-5.5',
+      );
+      assert.ok(usage);
+      assert.equal(usage!.inputTokens, 0);
+      assert.equal(usage!.outputTokens, 1545);
+      assert.equal(usage!.model, 'gpt-5.5');
+    });
   });
 
   describe('dollarsForUsage', () => {
