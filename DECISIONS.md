@@ -1100,3 +1100,131 @@ Phase 6 evaluation.
 - C6 environmental discard logged: `89d84fd`.
 - Run artefacts + analysis hot-fixes + `evidence/phase2/analysis.md`
   + this close-out section: `482aa1f`.
+
+### 2026-05-09 — Phase 3 fixture: new tree at evidence/fixtures/phase-3/
+
+The Phase 3 obligation set targets `import-graph-must-satisfy` and
+`function-must-have-signature` — both AST-backed obligation types whose
+verifiers walk source code rather than execute a shell predicate. The
+Phase 1/2 fixture (`evidence/fixtures/phase-1-gate/`) is sized for
+property-must-hold predicates (grep + find against a tiny `src/`); it
+has neither named functions with declared signatures nor multi-file
+import scopes a `no-cycles` / `no-upward-imports` constraint can
+exercise meaningfully.
+
+**Decision:** build a self-contained Phase 3 fixture under
+`evidence/fixtures/phase-3/`. Layout:
+
+- `src/math/{sum,product,clamp,square,negate}.ts` — five files, each
+  declaring one named function (`compute`, `multiply`, `clamp`,
+  `square`, `negate`) with a documented TS signature.
+- `src/format/{greet,upper,concat}.ts`,
+  `src/parse/integer.ts`,
+  `src/predicate/positive.ts` — five additional named-function
+  modules. Total: ten functions for the F1–F10 obligations.
+- `src/lib1/`–`src/lib5/` — five scopes, each with two files using
+  sibling-only imports. Backing the I1–I5 `no-upward-imports`
+  obligations.
+- `src/pkg1/`–`src/pkg5/` — five scopes, each with an acyclic
+  import chain (2–3 files). Backing the I6–I10 `no-cycles`
+  obligations.
+
+**Why a separate fixture instead of extending phase-1-gate:** adding
+the new scaffolding under the existing tree would silently change the
+contamination surface of every Phase 1/2 obligation that walks `src/`.
+Two parallel trees keep the two obligation surfaces independent and
+avoid retroactively changing what "the fixture" means for Phase 1/2
+re-runs.
+
+**Contamination guard:** `test/falsification/phase3-gate-fixture.test.ts`
+copies the fixture into a temp directory and runs the AST-backed
+`verifyObligation` against every Phase 3 obligation, asserting each is
+satisfied. Mirrors the Phase 1/2 contamination guard, with the verifier
+swapped from "shell predicate exits 0" to "AST verifier returns
+satisfied".
+
+### 2026-05-09 — Phase 3 protocol PRE-REGISTERED
+
+The Phase 3 protocol is locked at `evidence/phase3/PROTOCOL.md` as of
+this commit. Locking before any Phase 3 run is executed — and
+documenting the locked-artefact list, cost cap, statistical method,
+decision rule, and Codex Phase 2 baseline yield-per-dollar in the same
+commit — prevents post-hoc adjustment of any of those choices.
+
+**Locked artefacts (this commit):**
+
+- `evidence/phase3/obligations.json` — N=20 obligations, 10 I + 10 F,
+  disjoint from Phase 1's and Phase 2's locked sets by obligation type.
+- `evidence/fixtures/phase-3/` — purpose-built fixture; rationale in
+  the dated entry above.
+- `scripts/phase3/run-harness.ts` (compiled to
+  `dist/scripts/phase3/run-harness.js`) — paired-run harness for the
+  two configurations (`b` = producer + Codex; `bp` = producer + Codex
+  + Copilot). Reuses the Phase 2 harness's snapshot/resume/error-halt
+  semantics; the only material change is the AST-verifier-based
+  pass/fail computation in Config B and the Copilot-driven path in
+  Config B'.
+- `scripts/phase3/analyze.py` — paired Wilcoxon + McNemar with
+  Bonferroni correction, plus the Phase-3-specific marginal-yield-per-
+  dollar comparison against the Codex Phase 2 baseline. Verified on a
+  synthetic paired dataset where the answer is known via
+  `python3 scripts/phase3/analyze.py --self-test`.
+- `src/falsification/adapters/copilot/` — the Phase 3 falsifier
+  adapter (`copilot-falsifier.ts`, `copilot-prompt.ts`,
+  `copilot-output-parser.ts`, `predicate-runner.ts`,
+  `copilot-cost.ts`). Real `copilot -p` subprocess invocation, no
+  mocks of the CLI. Production sandbox posture matches the plan's
+  risk register: per-tool permission grants only
+  (`--allow-tool view --allow-all-paths`), no `--allow-all-tools`
+  outside the env-gated integration test.
+- `evidence/phase3/PROTOCOL.md` — the protocol document itself,
+  including the marginal-yield decision rule.
+
+**Cost cap (per obligation):** Config B `$0.01` (sanity check —
+no LLM calls); Config B' `$0.65` (mirrors Phase 2's per-obligation
+cap; gives ~25× headroom over Copilot's per-request rate of
+$0.026). Total worst-case Phase 3 spend at the cap: `$13.20`,
+within the operator-approved Phase 3 ceiling of `$20`.
+
+**Codex Phase 2 baseline yield-per-dollar (locked, used as the Phase
+3 ship/no-ship threshold):** `26 / $4.3994 ≈ 5.91 yields/$`. Source:
+`evidence/phase2/analysis.md`. The denominator uses
+`dollarsTokenEstimate` (which equals `dollarsBilled` under Codex's
+API auth) because Copilot is subscription-only and the apples-to-
+apples comparison surface is the rate-card-derived token estimate,
+not the subscription-flat `dollarsBilled = 0`.
+
+**Decision rule:** ship B' (P3.5.a) iff Copilot's
+yield-per-dollar ≥ 5.91; otherwise freeze (P3.5.b) and Copilot
+stays available behind the `includeCopilot: true` flag on
+`defaultAdapterRegistry`.
+
+**Pre-registration commit SHA:** recorded in the commit that lands
+this entry. The harness, analysis script, and adapter are re-built
+from this commit for any subsequent re-run; a git checkout at this
+SHA must reproduce the same obligation set, fixture content hash,
+analysis-script self-test result, and adapter behaviour.
+
+**Out-of-scope reaffirmed:** Phase 4+ adapters do not start until
+Phase 3's gate fires. Phase 6 remains conditional on a separate
+high-stakes-obligations finding. Re-running Config B or Config B'
+mid-study to "fix" a result is not allowed; discards are
+environmental-only (rate limit, network, content-filter
+non-determinism) and logged.
+
+### 2026-05-09 — Phase 3 sandbox posture
+
+Copilot CLI is spawned with the constrained per-tool permission set
+`--allow-tool view --allow-all-paths --no-ask-user --no-color -s
+--output-format text`. No `--allow-all-tools`, no `--allow-all-urls`,
+no `--yolo`. The integration test (`SWARM_E2E_COPILOT=1`) may relax
+to `--allow-all-tools` because it runs in an isolated temp workspace
+that is deleted at end-of-test; production runs leave the per-tool
+default in place. This matches the plan's risk-register requirement
+("Explicit per-tool permissions, no `--allow-all-tools` outside test
+fixtures").
+
+The model is told in the prompt not to write or run shells — only to
+emit a fenced ```json``` block describing candidate perturbations.
+The orchestrator (not the model) applies and rolls back each
+candidate inside the isolated workspace.
