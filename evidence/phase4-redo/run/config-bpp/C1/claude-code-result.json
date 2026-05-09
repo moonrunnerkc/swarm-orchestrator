@@ -1,0 +1,53 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "net_tool.py",
+            "bytes": "import socket\n\ns = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\nprint(s)\n"
+          }
+        ],
+        "reproducer": "! find . -name '*.py' -not -path './node_modules/*' -not -path './.git/*' -exec grep -l 'import socket' {} + 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/utils/network_helper.py",
+            "bytes": "#!/usr/bin/env python3\nimport socket\n\ndef get_host():\n    return socket.gethostname()\n"
+          }
+        ],
+        "reproducer": "! find . -name '*.py' -not -path './node_modules/*' -not -path './.git/*' -exec grep -l 'import socket' {} + 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "tools/conn.py",
+            "bytes": "import socket as sock\n\nsrv = sock.socket()\n"
+          }
+        ],
+        "reproducer": "! find . -name '*.py' -not -path './node_modules/*' -not -path './.git/*' -exec grep -l 'import socket' {} + 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "claude-code",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 8055,
+    "dollarsSpent": 0.049252,
+    "dollarsBilled": 0.049252,
+    "dollarsTokenEstimate": 0.049252,
+    "dollarsApiEquivalent": 0.049252,
+    "authMethod": "api",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

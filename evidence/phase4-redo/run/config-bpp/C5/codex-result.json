@@ -1,0 +1,53 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "adversarial-host-binding-a7f3.yaml",
+            "bytes": "service:\n  name: adversarial\n  host: 0.0.0.0\n  port: 8080\n"
+          }
+        ],
+        "reproducer": "! find . \\( -name '*.yaml' -o -name '*.yml' \\) -not -path './node_modules/*' -not -path './.git/*' -exec grep -l 'host: 0\\.0\\.0\\.0' {} + 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "predicate-fixtures-b92c/open-listener.yml",
+            "bytes": "app:\n  environment: test\nnetwork:\n  host: 0.0.0.0\n  protocol: http\n"
+          }
+        ],
+        "reproducer": "! find . \\( -name '*.yaml' -o -name '*.yml' \\) -not -path './node_modules/*' -not -path './.git/*' -exec grep -l 'host: 0\\.0\\.0\\.0' {} + 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "config-check-c41d/commented-host.yaml",
+            "bytes": "# temporary local override\n# host: 0.0.0.0\nsettings:\n  enabled: true\n"
+          }
+        ],
+        "reproducer": "! find . \\( -name '*.yaml' -o -name '*.yml' \\) -not -path './node_modules/*' -not -path './.git/*' -exec grep -l 'host: 0\\.0\\.0\\.0' {} + 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 7664,
+    "dollarsSpent": 0.14515,
+    "dollarsBilled": 0.14515,
+    "dollarsTokenEstimate": 0.14515,
+    "dollarsApiEquivalent": 0.14515,
+    "authMethod": "unknown",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

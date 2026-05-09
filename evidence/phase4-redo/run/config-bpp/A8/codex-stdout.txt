@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "direct-ts-ignore-comment",
+      "rationale": "A new TypeScript file under src containing @ts-ignore will be matched by the grep predicate.",
+      "files": [
+        {
+          "relPath": "src/adversarial/direct-ignore.ts",
+          "bytes": "// @ts-ignore\nexport const value: number = 'not a number';\n"
+        }
+      ]
+    },
+    {
+      "name": "block-comment-ts-ignore",
+      "rationale": "The predicate searches raw text, so @ts-ignore inside a block comment in a .ts file under src still falsifies it.",
+      "files": [
+        {
+          "relPath": "src/adversarial/block-ignore.ts",
+          "bytes": "/*\n * @ts-ignore\n */\nexport const ok = true;\n"
+        }
+      ]
+    },
+    {
+      "name": "string-literal-ts-ignore",
+      "rationale": "Because grep does not parse TypeScript syntax, @ts-ignore inside a string literal in src will still produce a match.",
+      "files": [
+        {
+          "relPath": "src/adversarial/string-ignore.ts",
+          "bytes": "export const marker = '@ts-ignore';\n"
+        }
+      ]
+    }
+  ]
+}
+```

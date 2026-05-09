@@ -1,0 +1,53 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/adversarial-dir.sh/payload.txt",
+            "bytes": "placeholder\n"
+          }
+        ],
+        "reproducer": "! find src -name '*.sh' -perm -u+x 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/property_cases/nested-trigger.sh/readme.txt",
+            "bytes": "trigger via executable directory permissions\n"
+          }
+        ],
+        "reproducer": "! find src -name '*.sh' -perm -u+x 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/test_inputs/run-me.sh/content.txt",
+            "bytes": "directory name is the adversarial input\n"
+          }
+        ],
+        "reproducer": "! find src -name '*.sh' -perm -u+x 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 17346,
+    "dollarsSpent": 0.14726,
+    "dollarsBilled": 0.14726,
+    "dollarsTokenEstimate": 0.14726,
+    "dollarsApiEquivalent": 0.14726,
+    "authMethod": "unknown",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

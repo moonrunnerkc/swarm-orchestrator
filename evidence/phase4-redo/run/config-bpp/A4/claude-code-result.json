@@ -1,0 +1,53 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/adversarial-exit.ts",
+            "bytes": "export function bail(): never {\n  process.exit(1);\n}\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'process\\.exit(' src/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/adversarial-exit.ts:2:  process.exit(1);\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/utils/shutdown/abort.ts",
+            "bytes": "function abort() {\n  process.exit(2);\n}\nabort();\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'process\\.exit(' src/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/utils/shutdown/abort.ts:2:  process.exit(2);\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/notes/exit-reference.ts",
+            "bytes": "// TODO: replace process.exit( with proper error handling\nexport const placeholder = true;\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'process\\.exit(' src/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/notes/exit-reference.ts:1:// TODO: replace process.exit( with proper error handling\n",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "claude-code",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 8217,
+    "dollarsSpent": 0.048701,
+    "dollarsBilled": 0.048701,
+    "dollarsTokenEstimate": 0.048701,
+    "dollarsApiEquivalent": 0.048701,
+    "authMethod": "api",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

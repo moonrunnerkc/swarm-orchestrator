@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "root-npmrc",
+      "rationale": "Adding a .npmrc at the workspace root makes find return a matching path outside excluded directories.",
+      "files": [
+        {
+          "relPath": ".npmrc",
+          "bytes": "registry=https://registry.npmjs.org/\n"
+        }
+      ]
+    },
+    {
+      "name": "config-dir-npmrc",
+      "rationale": "Adding a .npmrc inside a fresh normal directory makes the predicate command see a non-excluded match.",
+      "files": [
+        {
+          "relPath": "predicate-npmrc-case/.npmrc",
+          "bytes": "save-exact=true\n"
+        }
+      ]
+    },
+    {
+      "name": "nested-tooling-npmrc",
+      "rationale": "Adding a nested .npmrc under a fresh workspace subdirectory is still within the predicate search scope.",
+      "files": [
+        {
+          "relPath": "adversarial-inputs/npm-settings/.npmrc",
+          "bytes": "strict-ssl=false\n"
+        }
+      ]
+    }
+  ]
+}
+```

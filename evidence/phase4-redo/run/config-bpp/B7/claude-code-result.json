@@ -1,0 +1,53 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "config.bak",
+            "bytes": "backup of config file\n"
+          }
+        ],
+        "reproducer": "test -z \"$(find . -name '*.bak' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null)\"",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/main.bak",
+            "bytes": "old version of main source\n"
+          }
+        ],
+        "reproducer": "test -z \"$(find . -name '*.bak' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null)\"",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "data/backups/snapshot.bak",
+            "bytes": "snapshot backup data\n"
+          }
+        ],
+        "reproducer": "test -z \"$(find . -name '*.bak' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null)\"",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "claude-code",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 6772,
+    "dollarsSpent": 0.046388,
+    "dollarsBilled": 0.046388,
+    "dollarsTokenEstimate": 0.046388,
+    "dollarsApiEquivalent": 0.046388,
+    "authMethod": "api",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

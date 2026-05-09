@@ -1,0 +1,53 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "Procfile",
+            "bytes": "web: npm start\n"
+          }
+        ],
+        "reproducer": "test -z \"$(find . -name 'Procfile' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null)\"",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "adversarial-app/Procfile",
+            "bytes": "worker: node worker.js\n"
+          }
+        ],
+        "reproducer": "test -z \"$(find . -name 'Procfile' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null)\"",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "deploy/checks/heroku/Procfile",
+            "bytes": "release: npm run migrate\n"
+          }
+        ],
+        "reproducer": "test -z \"$(find . -name 'Procfile' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null)\"",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 9852,
+    "dollarsSpent": 0.15033,
+    "dollarsBilled": 0.15033,
+    "dollarsTokenEstimate": 0.15033,
+    "dollarsApiEquivalent": 0.15033,
+    "authMethod": "unknown",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

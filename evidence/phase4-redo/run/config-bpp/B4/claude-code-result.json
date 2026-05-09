@@ -1,0 +1,53 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "credentials.yaml",
+            "bytes": "username: admin\npassword: secret\n"
+          }
+        ],
+        "reproducer": "test -z \"$(find . -name 'credentials.yaml' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null)\"",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "config/secrets/credentials.yaml",
+            "bytes": "api_key: abc123\ntoken: xyz789\n"
+          }
+        ],
+        "reproducer": "test -z \"$(find . -name 'credentials.yaml' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null)\"",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/app/config/env/credentials.yaml",
+            "bytes": "db:\n  user: root\n  pass: hunter2\n"
+          }
+        ],
+        "reproducer": "test -z \"$(find . -name 'credentials.yaml' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null)\"",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "claude-code",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 7148,
+    "dollarsSpent": 0.047439,
+    "dollarsBilled": 0.047439,
+    "dollarsTokenEstimate": 0.047439,
+    "dollarsApiEquivalent": 0.047439,
+    "authMethod": "api",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

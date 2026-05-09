@@ -1,0 +1,53 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "admin-config.json",
+            "bytes": "{\n  \"user\": \"alice\",\n  \"role\": \"admin\"\n}\n"
+          }
+        ],
+        "reproducer": "! find . -name '*.json' -not -path './node_modules/*' -not -path './.git/*' -not -path './dist/*' -exec grep -l '\"role\": \"admin\"' {} + 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "config/users/perms.json",
+            "bytes": "{\"name\":\"bob\",\"role\": \"admin\",\"active\":true}\n"
+          }
+        ],
+        "reproducer": "! find . -name '*.json' -not -path './node_modules/*' -not -path './.git/*' -not -path './dist/*' -exec grep -l '\"role\": \"admin\"' {} + 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "data/roles.json",
+            "bytes": "[\n  {\"id\": 1, \"role\": \"user\"},\n  {\"id\": 2, \"role\": \"admin\"}\n]\n"
+          }
+        ],
+        "reproducer": "! find . -name '*.json' -not -path './node_modules/*' -not -path './.git/*' -not -path './dist/*' -exec grep -l '\"role\": \"admin\"' {} + 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "claude-code",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 7411,
+    "dollarsSpent": 0.049457,
+    "dollarsBilled": 0.049457,
+    "dollarsTokenEstimate": 0.049457,
+    "dollarsApiEquivalent": 0.049457,
+    "authMethod": "api",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

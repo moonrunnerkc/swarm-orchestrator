@@ -1,0 +1,53 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "aws-credentials-example.ini",
+            "bytes": "[default]\naws_access_key_id = AKIAEXAMPLE000000000\naws_secret_access_key = example\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'aws_access_key_id' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist 2>/dev/null",
+        "reproducerOutput": "./aws-credentials-example.ini:2:aws_access_key_id = AKIAEXAMPLE000000000\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/adversarial-aws-config.ts",
+            "bytes": "export const sampleAwsConfig = {\n  \"aws_access_key_id\": \"AKIAEXAMPLE111111111\"\n};\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'aws_access_key_id' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist 2>/dev/null",
+        "reproducerOutput": "./src/adversarial-aws-config.ts:2:  \"aws_access_key_id\": \"AKIAEXAMPLE111111111\"\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "test/fixtures/aws-profile.txt",
+            "bytes": "fixture profile:\naws_access_key_id=AKIAEXAMPLE222222222\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'aws_access_key_id' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist 2>/dev/null",
+        "reproducerOutput": "./test/fixtures/aws-profile.txt:2:aws_access_key_id=AKIAEXAMPLE222222222\n",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 14056,
+    "dollarsSpent": 0.16611,
+    "dollarsBilled": 0.16611,
+    "dollarsTokenEstimate": 0.16611,
+    "dollarsApiEquivalent": 0.16611,
+    "authMethod": "unknown",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}
