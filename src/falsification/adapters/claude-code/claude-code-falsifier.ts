@@ -36,8 +36,8 @@ import type {
   FalsificationInput,
   FalsifierAdapter,
   FalsifyOutcome,
-  NoFalsificationFoundResult,
 } from '../types';
+import { noFalsification } from '../no-falsification';
 import { buildClaudeCodePrompt } from './claude-code-prompt';
 import { parseClaudeCodeCandidates } from './claude-code-output-parser';
 import {
@@ -291,18 +291,6 @@ function buildClaudeCodeArgs(
   return args;
 }
 
-function noFalsification(
-  obligationType: ObligationType,
-  attempts: number,
-  reason: 'time-budget-exhausted' | 'no-counter-example-discovered',
-): NoFalsificationFoundResult {
-  return {
-    kind: 'no-falsification-found',
-    obligationType,
-    reason,
-    attempts,
-  };
-}
 
 function notApplicableOutcome(
   adapterName: string,

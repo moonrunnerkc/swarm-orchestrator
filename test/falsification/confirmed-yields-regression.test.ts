@@ -1,11 +1,11 @@
 import { strict as assert } from 'assert';
-import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { CodexFalsifier } from '../../src/falsification/adapters/codex/codex-falsifier';
 import type { FalsificationInput } from '../../src/falsification/adapters/types';
 import type { PropertyMustHoldObligation } from '../../src/contract/types';
+import { runPredicate } from './shared/run-predicate';
 
 /**
  * Regression fixtures captured from the strongest confirmed real failures
@@ -95,23 +95,6 @@ function applyCandidateFiles(
     written.push(abs);
   }
   return written;
-}
-
-function runPredicate(predicate: string, cwd: string): { exitCode: number; output: string } {
-  try {
-    const stdout = execSync(predicate, {
-      cwd,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    return { exitCode: 0, output: stdout };
-  } catch (cause) {
-    const err = cause as { status?: unknown; stdout?: unknown; stderr?: unknown };
-    const status = typeof err.status === 'number' ? err.status : 1;
-    const stdout = typeof err.stdout === 'string' ? err.stdout : '';
-    const stderr = typeof err.stderr === 'string' ? err.stderr : '';
-    return { exitCode: status, output: `${stdout}${stderr}` };
-  }
 }
 
 function fakeCodexStdoutFor(candidate: RegressionCandidate): string {

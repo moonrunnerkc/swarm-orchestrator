@@ -88,7 +88,22 @@ export const DEFAULT_QUALITY_GATES_CONFIG: QualityGatesConfig = {
         '^env/',
         '^vendor/',
         '^target/',
-        '^__pycache__/'
+        '^__pycache__/',
+        // Falsification evidence run artifacts — captured CLI transcripts
+        // (codex-stderr.txt, copilot-stdout.txt, etc.) repeat the same
+        // prompt across obligations by design, so the duplicate-blocks
+        // gate would flag every committed run. Fixtures under
+        // evidence/fixtures/ stay in scope (they are real source code).
+        '^evidence/[^/]+/run',
+        '^evidence/[^/]+/run-[^/]+/',
+        // Per-phase pre-registered harnesses and analysis scripts. The
+        // protocol's restart conditions (DECISIONS.md "Phase N protocol
+        // PRE-REGISTERED" entries) lock these scripts at the
+        // pre-registration commit; modifying scripts/phase2/* in place
+        // to dedupe with phase3 or phase4 invalidates the recorded
+        // measurement. Cross-phase duplication is therefore intentional
+        // and excluded.
+        '^scripts/phase[0-9]+/'
       ]
     },
     hardcodedConfig: {
@@ -134,7 +149,16 @@ export const DEFAULT_QUALITY_GATES_CONFIG: QualityGatesConfig = {
         '\\.env(\\.example|\\.local)?$',
         '^docker-compose[^/]*\\.ya?ml$',
         '(^|/)Dockerfile',
-        '\\.dockerfile$'
+        '\\.dockerfile$',
+        // Falsification evidence run artifacts — committed CLI
+        // transcripts and per-obligation result.json files contain the
+        // exact strings the obligation predicates were testing for
+        // (e.g. "127.0.0.1" inside an A10 result.json that was the
+        // counter-example). Excluding the artifact path keeps the
+        // gate's signal where it belongs (real source files); fixtures
+        // under evidence/fixtures/ stay in scope.
+        '^evidence/[^/]+/run',
+        '^evidence/[^/]+/run-[^/]+/'
       ]
     },
     readmeClaims: {

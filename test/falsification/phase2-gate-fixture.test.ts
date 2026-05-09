@@ -1,8 +1,8 @@
 import { strict as assert } from 'assert';
-import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { runPredicate } from './shared/run-predicate';
 
 /**
  * Contamination guard for the Phase 2 empirical-gate fixture. Phase 2
@@ -32,23 +32,6 @@ const PHASE2_SAMPLE_PATH = path.join(REPO_ROOT, 'evidence', 'phase2', 'obligatio
 
 function copyFixture(src: string, dest: string): void {
   fs.cpSync(src, dest, { recursive: true });
-}
-
-function runPredicate(predicate: string, cwd: string): { exitCode: number; output: string } {
-  try {
-    const stdout = execSync(predicate, {
-      cwd,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    return { exitCode: 0, output: stdout };
-  } catch (cause) {
-    const err = cause as { status?: unknown; stdout?: unknown; stderr?: unknown };
-    const status = typeof err.status === 'number' ? err.status : 1;
-    const stdout = typeof err.stdout === 'string' ? err.stdout : '';
-    const stderr = typeof err.stderr === 'string' ? err.stderr : '';
-    return { exitCode: status, output: `${stdout}${stderr}` };
-  }
 }
 
 describe('phase-2 gate fixture contamination guard', () => {

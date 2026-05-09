@@ -26,8 +26,8 @@ import type {
   FalsificationInput,
   FalsifierAdapter,
   FalsifyOutcome,
-  NoFalsificationFoundResult,
 } from '../types';
+import { noFalsification } from '../no-falsification';
 import { buildCodexPrompt } from './codex-prompt';
 import { parseCodexCandidates } from './codex-output-parser';
 import { runCandidateAgainstPredicate, checkPredicateBaseline } from './predicate-runner';
@@ -278,18 +278,6 @@ function extractModelFromBanner(output: string): string | null {
   return match !== null ? match[2] ?? null : null;
 }
 
-function noFalsification(
-  obligationType: ObligationType,
-  attempts: number,
-  reason: 'time-budget-exhausted' | 'no-counter-example-discovered',
-): NoFalsificationFoundResult {
-  return {
-    kind: 'no-falsification-found',
-    obligationType,
-    reason,
-    attempts,
-  };
-}
 
 function notApplicableOutcome(
   adapterName: string,
