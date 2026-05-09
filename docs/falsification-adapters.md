@@ -19,7 +19,7 @@ the historical record of the final state.
 | Phase 1 — Codex falsifier, dispatcher, `--falsifiers` flag | shipped; dev gate passed (`evidence/phase1-dev-gate/run-1`) | 2026-05-09 "Phase 1 dev gate: PASSED". |
 | Phase 2 — Codex vs producer-only baseline (N=30) | shipped C2.1 (Codex default-on) | 2026-05-09 "Phase 2 close-out". |
 | Phase 3 — Copilot ablation (N=20, `import-graph` + `function-signature`) | ship-B' (Copilot default-on) | 2026-05-09 corrected close-out. Original 6.5× headline replaced by a four-ratio table; ship decision survives every API-equivalent cell. |
-| Phase 4 redo — ClaudeCode ablation on `property-must-hold` (N=20) | cross-family-diversity thesis confirmed | 2026-05-09 "Phase 4 redo close-out". B' caught 18/19 analyzable; ClaudeCode unique = 0; ClaudeCode ships behind a per-adapter flag default-off. |
+| Phase 4 redo — ClaudeCode ablation on `property-must-hold` (N=20) | cross-family-diversity thesis **not contradicted**; residual too small for strong confirmation (B' caught 18/19 analyzable; the N=1 residual gave ClaudeCode at most one chance to surface unique yield) | 2026-05-09 "Phase 4 redo close-out" + 2026-05-09 "Adapter integration close-out: post-review corrections". ClaudeCode unique = 0; ClaudeCode ships behind a per-adapter flag default-off regardless of yield. |
 | Phase 5 — bandit dispatcher | NOT BUILT (operational skip) | 2026-05-09 "Phase 5 skip rationale". Two adapters with disjoint obligation types — no within-type overlap for the bandit to arbitrate. |
 | Phase 6 — cross-vendor producer race | deferred | 2026-05-09 "Phase 6 status (final close-out)". Phase 2's predicate set lacked high-stakes obligations; the gate had no input. |
 

@@ -15,7 +15,7 @@
 > | Phase 2 | C2.1 ship-B: Codex Pareto-dominates on N=28 analyzable. |
 > | Phase 3 | Ship-B' (Copilot default-on). Heuristic-confirmed bounds 50–60 catches; all four API-equivalent yield/$ ratios above the Codex baseline. The original 6.5× headline was dropped during the audit-and-corrections sweep in favour of a four-ratio table. |
 > | Phase 4 (original) | **INVALIDATED** by obligation-set-mismatch — see `evidence/phase4/analysis.md` status banner. |
-> | Phase 4 redo | Cross-family-diversity thesis confirmed on `property-must-hold` (B' caught 18/19 analyzable, ClaudeCode 0 unique). ClaudeCode ships behind a per-adapter flag default-off. |
+> | Phase 4 redo | Cross-family-diversity thesis **not contradicted** on `property-must-hold` (B' caught 18/19 analyzable, ClaudeCode 0 unique). N=1 residual is too small for strong confirmation; ClaudeCode ships behind a per-adapter flag default-off regardless of yield. See the 2026-05-09 "Adapter integration close-out: post-review corrections" entry in `DECISIONS.md`. |
 > | Phase 5 | Skipped on operational grounds (two adapters with disjoint obligation types — bandit has nothing to arbitrate). |
 > | Phase 6 | Deferred (Phase 2's predicate set lacked high-stakes obligations; gate had no input). |
 >

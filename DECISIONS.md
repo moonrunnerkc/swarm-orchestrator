@@ -2243,3 +2243,120 @@ session — the operator decides merge timing separately. Methodology-fix
 invariants (pre-apply baseline, fixture isolation, dual-column cost
 reporting) stay in place. The plan's "What's Explicitly Out of Scope"
 section continues to govern.
+
+### 2026-05-09 — Adapter integration close-out: post-review corrections
+
+Three review-flagged issues against the close-out entries above. Each
+is a correction to a specific claim, not a re-litigation of the
+underlying decision. Append-only per DECISIONS.md convention.
+
+**Correction 1 — soften the cross-family verdict.** The 2026-05-09
+"Phase 4 redo close-out" above states the cross-family-diversity thesis
+is "CONFIRMED" because B' (Codex) caught 18 of 19 analyzable obligations
+and ClaudeCode caught 0 of the 1 B' missed. The rule the audit prompt
+supplied (17–18/19 + ClaudeCode = 0 → confirmed) does not have power at
+N=1 residual: a single obligation B' missed gives ClaudeCode at most
+one chance to surface unique yield, and ClaudeCode missing that single
+opportunity is consistent with both "ClaudeCode adds nothing" and
+"ClaudeCode would catch some but the residual was too small to see it."
+The data is consistent with the cross-family thesis but does not
+support a strong confirmation.
+
+**Revised framing for any external claim or downstream summary:** the
+Phase 4 redo result is "**not contradicted** by ClaudeCode's measured
+zero unique yield; the residual count (1 obligation) is too small to
+confirm with strength." The decision implication is unchanged —
+ClaudeCode ships behind a per-adapter flag default-off, regardless of
+yield, per the plan's "ship the adapter regardless of yield" rule for
+Phase 4. The implementation status above is unchanged. What this
+correction tightens is the **epistemic** strength of the conclusion,
+not the production architecture.
+
+A future Phase 4 redo on a larger residual (e.g., obligations chosen
+to be harder for the cross-family producer adapter to catch, increasing
+the residual surface to N≥5) would either strengthen or invalidate the
+"not contradicted" framing. That is deferred work, not a close-out
+condition.
+
+**Correction 2 — reconcile the API-equivalent ratio shift (3.4× → 8.5×–
+22×) with the prior audit-session number.** The 2026-05-09 "Cost
+normalization" entry above reports `Copilot ratio falls to ~3.4× (20 /
+1.0 ÷ 26 / 4.3994 ≈ 3.4)` on the API-equivalent basis. The 2026-05-09
+"Phase 3 corrected close-out" four-ratio table reports 8.5× / 10.2× /
+18.3× / 22.0×. **Both numbers use the same `$1.0000` API-equivalent
+denominator** (verified in `evidence/phase3/analysis.md:17` and `:47`).
+The denominator is not the source of the shift; the **numerator unit**
+is. Specifically:
+
+- The 3.4× figure used **obligation-level** Copilot yield: 20
+  obligations Copilot uniquely caught vs Codex's 26 obligations caught
+  in Phase 2.
+- The 8.5×–22× table uses **candidate-level** heuristic-confirmed yield:
+  50 likely-real / 60 likely-real-or-ambiguous candidates (at 3
+  candidates per obligation) vs Codex's same 26 obligations.
+
+The corrected close-out's epistemic note flagged that mismatch in
+prose; this correction promotes it to the table itself. **The
+unit-consistent (obligation-level) comparison is the more defensible
+external surface** because Codex's baseline is already obligation-level
+and there is no published Codex candidate-level inspection floor. The
+candidate-level rows are still informative — they reflect the
+heuristic-confirmed bracket the operator-inspection bypass produced —
+but they should be read as upper-bound ceilings on a different unit,
+not as a multiple of the Codex baseline.
+
+**Unit-consistent (obligation-level) yield/$ table — supersedes the
+candidate-level four-ratio table for any external claim:**
+
+| Numerator (obligation-level)                          | Denominator (basis)             | Copilot yield/$    | Ratio vs Codex machine 5.91 | Ratio vs Codex floor 2.73 |
+|------------------------------------------------------:|---------------------------------|-------------------:|----------------------------:|--------------------------:|
+| 20 (machine-claimed; every obligation caught)         | Billed `$0.0000`                | undefined (deg.)   | undefined                   | undefined                 |
+| 20 (heuristic-confirmed: every obligation has ≥1 likely-real candidate; 50 likely-real spread across 20 obligations) | Billed `$0.0000`                | undefined (deg.)   | undefined                   | undefined                 |
+| 20 (machine = heuristic-confirmed at obligation-level)| API-equivalent `$1.0000`        | **20.00**          | **3.4×**                    | **7.3×**                  |
+
+At obligation level, the numerator collapses across machine-claimed
+and heuristic-confirmed bounds because every obligation in Phase 3 has
+at least one likely-real candidate (50 likely-real ÷ 20 obligations =
+2.5 likely-real/obligation; 0 obligations have zero likely-real
+candidates). The bracket the candidate-level reading produced (50 vs
+60) does not propagate to the obligation-level reading, which is
+why this row reduces to a single ratio per cell.
+
+**Decision against the plan's gate is unchanged:** the 3.4× ratio (and
+the 7.3× ratio against the Codex partial-inspection floor) are both
+above the gate of "match or beat the Codex Phase 2 baseline yield/$".
+Ship-B' (P3.5.a) holds. The candidate-level four-ratio table in the
+prior corrected close-out remains in DECISIONS.md as an internal
+record of how the bypass-approval bounds propagate to candidate-level
+yield/$, but the **obligation-level table above is what any external
+write-up should cite**.
+
+**Correction 3 — fix the file path attribution for the differential-
+gate realpath fix.** The 2026-05-09 "Carry-forward reconciliation"
+entry above attributes failure 1 and failure 2 to a fix in
+`src/verification/differential-gate.ts:extractSourceLocations`. The
+function `extractSourceLocations` lives in
+`src/verification/source-locations.ts`, not `differential-gate.ts`.
+Verified by `git show 699fa4c -- src/verification/source-locations.ts`,
+which shows the actual `tryRealpath()` helper added at file head and
+the realpath-both-sides change inside `normalizeLocationPath`.
+`src/verification/differential-gate.ts` was not modified in `699fa4c`.
+
+**Test-file attribution (also worth being precise about):** of the six
+test files listed in the original "Known pre-existing failures" entry,
+`699fa4c` modified only `test/plan-files.test.ts` and
+`test/worktree-manager.test.ts` — the three macOS-realpath tests
+(failures 4, 5, 6). The other three failing test files
+(`test/finding-schema.test.ts`, `test/verification/differential-gate.test.ts`,
+`test/outcome-verification.test.ts`) were **not** modified; their
+underlying production-code fixes (in `src/verification/source-locations.ts`
+for failures 1–2 and in `src/verifier/outcome-checks.ts` for failure
+3) made the existing test assertions pass without test-file edits.
+That is a stronger fix shape — the production code is now correct
+against the test, rather than the test being relaxed to fit the
+production code — and worth recording.
+
+The resolution-path conclusion is unchanged: all six pre-existing
+failures resolved through `699fa4c` with real, root-cause fixes; no
+silent skip, no test removal. The corrections above tighten the
+attribution paths only.
