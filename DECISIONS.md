@@ -1096,8 +1096,7 @@ Phase 6 evaluation.
 - Pre-registration (obligations / fixture / harness shape):
   `378e533`.
 - Pre-registration (tightened cap to operator's `$20`): `9fa418c`.
-- Config A run + Config B run (artefacts under
-  `evidence/phase2/run/`): committed in this session's run-evidence
-  commit, SHA appended below once the close-out is pushed.
-- Analysis hot-fixes + analysis.md + this close-out: appended below
-  once the commit lands.
+- C1 environmental discard logged: `fde89c5`.
+- C6 environmental discard logged: `89d84fd`.
+- Run artefacts + analysis hot-fixes + `evidence/phase2/analysis.md`
+  + this close-out section: `482aa1f`.
