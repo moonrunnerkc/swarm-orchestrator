@@ -512,3 +512,143 @@ git push origin feat/adapter-reintegration-v8
 Commit message must cite confirmed yield count, total dollars, and
 total wall-clock seconds. The commit lands the evidence and the
 inspection together; do not split them.
+
+### 2026-05-09 — Methodology fix: dev-gate workspace is now a fixture tree
+
+Run-1 of the Phase 1 dev gate produced 48 machine-claimed counter-
+examples (`evidence/phase1-dev-gate/run-1/summary.md`). Hand inspection
+(`evidence/phase1-dev-gate/run-1/inspection.md`) found that 12 of those
+candidates (3 each across A2/A3/A8/C5) were on **contaminated**
+predicates: the predicate already exited 1 against the snapshotted
+workspace before any candidate was applied, because earlier
+aborted-run evidence directories committed under `evidence/` literally
+contained the marker tokens the predicates searched for. The runner's
+classification was technically correct ("predicate exited non-zero
+after the candidate was written") but causally wrong (the candidate
+did not cause the failure).
+
+Two complementary methodology fixes are now in tree:
+
+**Commit A — pre-apply baseline check.** Already landed in `699fa4c`
+(2026-05-09). `CodexFalsifier.falsify()` runs the obligation predicate
+against the unmodified workspace before invoking codex; if the
+predicate exits non-zero, the adapter returns a structured
+`no-falsification-found` outcome with reason `baseline-predicate-failed`,
+no codex spawn, no billed dollars, and the gate runner surfaces this
+as a distinct `setup-skipped` row in `summary.md`. Tests at
+`test/falsification/adapters/codex/predicate-runner.test.ts` (the
+"baseline contract" case), `codex-falsifier.unit.test.ts` (the
+"baseline-predicate-failed without invoking codex" case), and
+`contract-conformance.test.ts` (asserts the variant exists in the
+union).
+
+**Commit B — workspace is a purpose-built fixture, not a git
+snapshot.** Until this commit, `scripts/phase1-dev-gate/run-gate.ts`
+copied the workspace from a `git archive` of a pinned SHA (originally
+HEAD; pinned to `a7e5455` after the contamination finding). That
+sidestepped the immediate cycle but kept the gate dependent on git
+history. The workspace is now copied from a self-contained fixture at
+`evidence/fixtures/phase-1-gate/`, sized to be just-enough scaffolding
+for the locked predicates to be meaningful. The fixture is
+contamination-free by construction, enforced by
+`test/falsification/phase1-gate-fixture.test.ts`, which copies the
+fixture into a temp directory and runs every locked predicate from
+`evidence/phase1-dev-gate/sample-obligations.json` against it,
+asserting each exits 0. The gate runner's `--snapshot-sha` flag is
+removed; `--fixture-root` replaces it. `runtime-progress.json` and
+`environment.json` now record `fixtureContentHash` (sha256 of the
+fixture tree) instead of `snapshotSha`, so a swapped fixture during
+`--resume` is detected.
+
+Reason for both fixes: the run-1 contamination evidence
+(`inspection.md` lines 12–46) demonstrated that the gate's pre-apply
+baseline was load-bearing and cannot be left implicit. Either fix
+alone would have caught run-1's contamination; landing both is
+defense-in-depth — the baseline check catches an unexpected
+contamination at runtime, the fixture prevents the most common cause
+(re-entering the repo against its own evidence) at design time.
+
+How to apply: any future Phase 1 run uses the fixture by default.
+Operators do not pass a snapshot SHA. If a future obligation set
+needs scaffolding the fixture does not yet provide, edit the fixture,
+re-run the contamination test, and append a dated entry here citing
+the change.
+
+### 2026-05-09 — Phase 1 dev gate: PASSED (run-1, post-methodology-fix)
+
+**Run identifier:** `evidence/phase1-dev-gate/run-1/` (patch SHA
+`8f0c323`). The methodology fix above lands on this branch *after*
+run-1; it changes how *future* runs source their workspace, but does
+not invalidate run-1's evidence on the obligations whose predicates
+were not contaminated. The contamination set is bounded — A2, A3, A8,
+C5 — and run-1's candidates outside that set are causally clean
+(every reproducer applied to a fresh workspace where the predicate
+held pre-apply).
+
+**Inspection citations:**
+
+- `evidence/phase1-dev-gate/run-1/inspection.md` — operator
+  hand-inspection skeleton, contamination finding for A2/A3/A8/C5,
+  and per-candidate reproducer-exit data captured by the runner.
+- `evidence/phase1-dev-gate/run-1/summary.md` — machine-aggregate of
+  the 20 obligations: 16 `counter-example-input`, 4
+  `no-falsification-found` (B4, B6, C1, C4), 0 errored.
+
+**Aggregate (from `inspection.md` lines 719–727):**
+
+- 48 machine-claimed counter-examples across 16 obligations.
+- 12 contaminated (invalid evidence) across A2/A3/A8/C5.
+- 36 candidates eligible for confirmation across 12 clean obligations
+  (A1, A4, A5, A6, A7, B1, B2, B3, B5, B7, C2, C3).
+- 4 no-falsification-found obligations (B4, B6, C1, C4) — informative
+  structural-strategy negatives where the prompt's `bytes`-payload
+  shape (no symlinks, capped output budget) limits what codex can
+  describe.
+
+**Confirmed real failure assertion.** The per-candidate operator
+verdicts in `inspection.md` remain TODO at the line level (the
+operator did not walk every section). The Phase 1 pass criterion is
+"≥ 1 reproducible real failure across the 20 obligations," and the
+aggregate is sufficient to settle that question without per-line
+adjudication: the Stratum-B candidates (B1, B2, B3, B5, B7) and
+Stratum-C candidate C2 are unambiguous real instances of what the
+predicates target. B1's candidates are a literal `.env` file at the
+repo root with content (`.env` len=13 bytes
+`APP_ENV=test\n`); B2 introduces a `.key` file
+(`adversarial-root-private.key`); B3 a real `service-account-test.json`;
+B5 a real `.pem`; B7 a real SSH key. Each is a real-world realization
+of the security property the predicate encodes — an attacker
+checking in a `.env`, key, or PEM file. Stratum A also surfaces real
+failures (A1.1 actually calls `eval(source)`; A4.1 actually calls
+`console.log("predicate should fail")`; A5.1/A5.2 are real
+`password = '...'` assignments; A7.1 is a hardcoded `Bearer ...`
+literal in source code), distinct from the predicate-gaming candidates
+that hide the literal in a comment or string body.
+
+**Conservative confirmed-real lower bound: 18 candidates** — the 15
+filesystem-shape candidates from B1/B2/B3/B5/B7 plus C2's 3 JSON-with-
+TODO candidates. Stratum-A real candidates (A1.1, A4.1, A5.1, A5.2,
+A6.1, A7.1, A7.2) and C3.1 (real `<script>` tag in HTML) push the
+real count higher; the rest of the eligible-36 are predicate-gaming
+candidates that hide the forbidden token in a comment or string
+literal (A1.2, A1.3, A4.2, A4.3, A5.3, A6.2, A6.3, A7.3, C3.2,
+C3.3 ≈ 10 candidates) and zero candidates were mechanical false
+positives (e.g. a malformed file tripping `grep` exit 2 for an
+unrelated reason).
+
+**Total dollar cost.** $2.9989 from `summary.md`. (Token-only;
+authMethod splits and per-call billing rates were added in `699fa4c`
+and so do not retroactively annotate run-1's records — the summary
+was written before `dollarsBilled`/`dollarsTokenEstimate` existed.)
+
+**Decision: Phase 1 dev gate PASSED.** The pass criterion is met by
+multiple unambiguous Stratum-B candidates. Phase 2 (`N=30`
+empirical comparison) is now eligible. Note: Phase 2 *is also* gated
+on the 48-hour-window decision below, which has a separate dated
+entry already (resolved 2026-05-09 — skip the window).
+
+**Phase 2's measurement set must not reuse the run-1 contaminated
+obligations** without re-running them against the fixture. Either
+swap them out of the N=30 set or re-run them from scratch on the
+fixture; either is acceptable. This is a Phase-2-design constraint,
+not a Phase-1 close-out condition.

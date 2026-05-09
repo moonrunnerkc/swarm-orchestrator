@@ -4,16 +4,23 @@
  *
  * Reads the locked obligation sample at
  * `evidence/phase1-dev-gate/sample-obligations.json`, runs `CodexFalsifier`
- * against each obligation against a freshly-snapshotted workspace
- * (`git archive <sha> | tar -x`), and writes per-obligation evidence under
+ * against each obligation inside a freshly-copied workspace
+ * (recursive copy of the fixture at `evidence/fixtures/phase-1-gate/`),
+ * and writes per-obligation evidence under
  * `evidence/phase1-dev-gate/run-<N>/`. No mocks: real codex subprocess via
  * the production `CodexFalsifier` path. Errors from missing binary or auth
  * surface as thrown errors and stop the run; the runner does not recover.
  *
- * Snapshot SHA: defaults to `a7e5455` (v8.0.1). That SHA pre-dates the
- * `evidence/phase1-dev-gate/` subtree, so the workspace is not re-entrant
- * against its own committed evidence (the failure mode that contaminated
- * obligations A2/A3/A8/C5 in run-1-aborted/).
+ * Workspace source: a purpose-built fixture under
+ * `evidence/fixtures/phase-1-gate/`. The fixture is contamination-free by
+ * construction — every locked predicate in sample-obligations.json exits
+ * 0 against it before any candidate is applied. The earlier run-1
+ * approach (`git archive HEAD | tar -x`) was re-entrant against the
+ * orchestrator's own evidence/ subtree, which contaminated four
+ * obligations in run-1 (A2/A3/A8/C5; see
+ * `evidence/phase1-dev-gate/run-1/inspection.md`). Pinning to v8.0.1
+ * (`a7e5455`) sidestepped that single cycle but kept the gate dependent
+ * on git history; this fixture is self-contained.
  *
  * Per-obligation artifacts (one directory per obligation):
  *   - `request.json` — codex CLI binary, args, prompt, cwd
@@ -35,7 +42,8 @@
  *
  *   --run N                 Run number; produces `run-N/`. Default 1.
  *   --time-budget-ms M      Per-obligation codex time budget. Default 300000.
- *   --snapshot-sha <sha>    Git SHA to snapshot. Default a7e5455 (v8.0.1).
+ *   --fixture-root <path>   Absolute or repo-relative path to the fixture
+ *                           tree. Default evidence/fixtures/phase-1-gate.
  *   --start-from <id>       Skip obligations until <id> is reached.
  *   --skip <id1,id2,...>    Comma-separated list of ids to skip.
  *   --resume                Read runtime-progress.json from run dir; skip
@@ -47,6 +55,7 @@
  */
 
 import { execFileSync } from 'child_process';
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -65,7 +74,7 @@ import type { FalsificationInput, FalsifyOutcome } from '../../src/falsification
 // shared via `src/env-loader.ts`.
 loadDotenv();
 
-const DEFAULT_SNAPSHOT_SHA = 'a7e5455';
+const DEFAULT_FIXTURE_REL = path.join('evidence', 'fixtures', 'phase-1-gate');
 
 interface SampleObligation {
   id: string;
@@ -83,7 +92,7 @@ interface SampleFile {
 interface CliFlags {
   runNumber: number;
   timeBudgetMs: number;
-  snapshotSha: string;
+  fixtureRoot: string | null;
   startFrom: string | null;
   skip: ReadonlySet<string>;
   resume: boolean;
@@ -92,7 +101,7 @@ interface CliFlags {
 function parseFlags(argv: readonly string[]): CliFlags {
   let runNumber = 1;
   let timeBudgetMs = 300_000;
-  let snapshotSha = DEFAULT_SNAPSHOT_SHA;
+  let fixtureRoot: string | null = null;
   let startFrom: string | null = null;
   const skip = new Set<string>();
   let resume = false;
@@ -114,10 +123,10 @@ function parseFlags(argv: readonly string[]): CliFlags {
         throw new Error(`--time-budget-ms must be >= 1000, got ${next}`);
       }
       i += 1;
-    } else if (arg === '--snapshot-sha') {
+    } else if (arg === '--fixture-root') {
       const next = argv[i + 1];
-      if (next === undefined) throw new Error('--snapshot-sha requires a value');
-      snapshotSha = next;
+      if (next === undefined) throw new Error('--fixture-root requires a value');
+      fixtureRoot = next;
       i += 1;
     } else if (arg === '--start-from') {
       const next = argv[i + 1];
@@ -137,7 +146,7 @@ function parseFlags(argv: readonly string[]): CliFlags {
     } else if (arg === '--help' || arg === '-h') {
       console.log(
         'Usage: node dist/scripts/phase1-dev-gate/run-gate.js ' +
-          '[--run N] [--time-budget-ms M] [--snapshot-sha SHA] ' +
+          '[--run N] [--time-budget-ms M] [--fixture-root PATH] ' +
           '[--start-from ID] [--skip ID1,ID2,...] [--resume]',
       );
       process.exit(0);
@@ -145,7 +154,7 @@ function parseFlags(argv: readonly string[]): CliFlags {
       throw new Error(`unknown argument: ${arg}`);
     }
   }
-  return { runNumber, timeBudgetMs, snapshotSha, startFrom, skip, resume };
+  return { runNumber, timeBudgetMs, fixtureRoot, startFrom, skip, resume };
 }
 
 function repoRoot(): string {
@@ -157,34 +166,55 @@ function repoRoot(): string {
   return out;
 }
 
-function resolveSha(repoPath: string, sha: string): string {
-  try {
-    return execFileSync('git', ['rev-parse', '--verify', `${sha}^{commit}`], {
-      cwd: repoPath,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    }).trim();
-  } catch (err) {
+function resolveFixtureRoot(repoPath: string, override: string | null): string {
+  const raw = override ?? path.join(repoPath, DEFAULT_FIXTURE_REL);
+  const abs = path.isAbsolute(raw) ? raw : path.resolve(repoPath, raw);
+  if (!fs.existsSync(abs) || !fs.statSync(abs).isDirectory()) {
     throw new Error(
-      `snapshot SHA ${sha} not found in local repo. ` +
-        `Fetch or check out the v8.0.1 tag (or pass a different --snapshot-sha) before retrying.`,
-      { cause: err instanceof Error ? err : new Error(String(err)) },
+      `fixture root not found at ${abs}. ` +
+        `Build the fixture under evidence/fixtures/phase-1-gate/ or pass --fixture-root.`,
     );
   }
+  return abs;
 }
 
-function snapshotShaInto(repoPath: string, sha: string, destDir: string): void {
+function copyFixtureInto(fixtureRoot: string, destDir: string): void {
   fs.mkdirSync(destDir, { recursive: true });
-  // git archive <sha> | tar -x -C destDir
-  const archive = execFileSync('git', ['archive', sha], {
-    cwd: repoPath,
-    stdio: ['ignore', 'pipe', 'pipe'],
-    maxBuffer: 1024 * 1024 * 1024,
-  });
-  const tarPath = path.join(destDir, '.snapshot.tar');
-  fs.writeFileSync(tarPath, archive);
-  execFileSync('tar', ['-xf', tarPath, '-C', destDir], { stdio: ['ignore', 'pipe', 'pipe'] });
-  fs.rmSync(tarPath, { force: true });
+  fs.cpSync(fixtureRoot, destDir, { recursive: true });
+}
+
+/**
+ * Stable content hash of a directory tree. Walks deterministically (sorted
+ * relative paths), feeds (relPath, content) tuples into SHA-256, returns
+ * the hex digest. Used as the fixture's identity in environment.json and
+ * runtime-progress.json so resumes can detect a swapped fixture.
+ */
+function fixtureContentHash(fixtureRoot: string): string {
+  const entries: string[] = [];
+  const walk = (dir: string): void => {
+    for (const name of fs.readdirSync(dir).sort()) {
+      const abs = path.join(dir, name);
+      const stat = fs.lstatSync(abs);
+      const rel = path.relative(fixtureRoot, abs);
+      if (stat.isSymbolicLink()) {
+        entries.push(`symlink:${rel}\0${fs.readlinkSync(abs)}\0`);
+        continue;
+      }
+      if (stat.isDirectory()) {
+        walk(abs);
+        continue;
+      }
+      if (stat.isFile()) {
+        const content = fs.readFileSync(abs);
+        const sha = crypto.createHash('sha256').update(content).digest('hex');
+        entries.push(`file:${rel}\0${sha}\0`);
+      }
+    }
+  };
+  walk(fixtureRoot);
+  const hasher = crypto.createHash('sha256');
+  for (const e of entries) hasher.update(e);
+  return hasher.digest('hex');
 }
 
 function toObligation(sample: SampleObligation): PropertyMustHoldObligation {
@@ -214,7 +244,7 @@ interface PerObligationOutcome {
 }
 
 interface RuntimeProgress {
-  readonly snapshotSha: string;
+  readonly fixtureContentHash: string;
   readonly startedAtIso: string;
   readonly lastCompletedId: string | null;
   readonly completedIds: readonly string[];
@@ -242,15 +272,14 @@ async function runOneObligation(
   runDir: string,
   timeBudgetMs: number,
   patchSha: string,
-  repoPath: string,
-  snapshotSha: string,
+  fixtureRoot: string,
 ): Promise<PerObligationOutcome> {
   const obligationDir = path.join(runDir, sample.id);
   fs.mkdirSync(obligationDir, { recursive: true });
 
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), `phase1-gate-${sample.id}-`));
   const workspaceRoot = path.join(tmpRoot, 'workspace');
-  snapshotShaInto(repoPath, snapshotSha, workspaceRoot);
+  copyFixtureInto(fixtureRoot, workspaceRoot);
 
   const obligation = toObligation(sample);
   let lastInvocation: { request: CodexInvocationRequest; result: CodexInvocationResult } | null =
@@ -401,7 +430,8 @@ function writeSummaryMd(
   outcomes: readonly PerObligationOutcome[],
   runDir: string,
   patchSha: string,
-  snapshotSha: string,
+  fixtureRoot: string,
+  fixtureHash: string,
   totalDollarsBilled: number,
   totalDollarsTokenEstimate: number,
   totalWallClockMs: number,
@@ -410,7 +440,8 @@ function writeSummaryMd(
   lines.push('# Phase 1 dev gate — run summary');
   lines.push('');
   lines.push(`- Patch SHA: \`${patchSha}\``);
-  lines.push(`- Snapshot SHA: \`${snapshotSha}\``);
+  lines.push(`- Fixture root: \`${fixtureRoot}\``);
+  lines.push(`- Fixture content hash: \`${fixtureHash}\``);
   lines.push(`- Obligations: ${outcomes.length}`);
   lines.push(`- Total wall-clock: ${(totalWallClockMs / 1000).toFixed(1)} s`);
   lines.push(`- Total dollars (billed): $${totalDollarsBilled.toFixed(4)}`);
@@ -432,7 +463,7 @@ function writeSummaryMd(
   lines.push('');
   lines.push('Yield is *machine-claimed* only. Operator hand-inspection in inspection.md');
   lines.push('determines confirmed-vs-false-positive yield. Rows tagged `setup-skipped`');
-  lines.push('had the baseline predicate fail against the snapshot before codex was invoked');
+  lines.push('had the baseline predicate fail against the fixture before codex was invoked');
   lines.push('and consumed zero dollars.');
   lines.push('');
   fs.writeFileSync(path.join(runDir, 'summary.md'), lines.join('\n'));
@@ -480,7 +511,8 @@ async function main(): Promise<void> {
     );
   }
 
-  const resolvedSha = resolveSha(repo, flags.snapshotSha);
+  const fixtureRoot = resolveFixtureRoot(repo, flags.fixtureRoot);
+  const fixtureHash = fixtureContentHash(fixtureRoot);
 
   const runDir = path.join(repo, 'evidence', 'phase1-dev-gate', `run-${flags.runNumber}`);
   let resumeProgress: RuntimeProgress | null = null;
@@ -498,18 +530,22 @@ async function main(): Promise<void> {
           `unknown-state run directory.`,
       );
     }
-    if (resumeProgress.snapshotSha !== resolvedSha) {
+    if (resumeProgress.fixtureContentHash !== fixtureHash) {
       throw new Error(
-        `--resume snapshot SHA mismatch: progress file says ${resumeProgress.snapshotSha}, ` +
-          `current --snapshot-sha resolves to ${resolvedSha}. Mixing snapshots within one run ` +
-          `would invalidate cross-obligation comparisons.`,
+        `--resume fixture content hash mismatch: progress file says ${resumeProgress.fixtureContentHash}, ` +
+          `current fixture at ${fixtureRoot} hashes to ${fixtureHash}. Mixing fixtures within one ` +
+          `run would invalidate cross-obligation comparisons.`,
       );
     }
   } else {
     fs.mkdirSync(runDir, { recursive: true });
   }
 
-  const patchSha = resolveSha(repo, 'HEAD');
+  const patchSha = execFileSync('git', ['rev-parse', '--verify', 'HEAD^{commit}'], {
+    cwd: repo,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
   const startedAtIso = resumeProgress?.startedAtIso ?? new Date().toISOString();
   if (!fs.existsSync(path.join(runDir, 'environment.json'))) {
     fs.writeFileSync(
@@ -519,7 +555,8 @@ async function main(): Promise<void> {
           runNumber: flags.runNumber,
           startedAtIso,
           patchSha,
-          snapshotSha: resolvedSha,
+          fixtureRoot: path.relative(repo, fixtureRoot),
+          fixtureContentHash: fixtureHash,
           repoRoot: repo,
           nodeVersion: process.version,
           platform: `${os.platform()}-${os.arch()}`,
@@ -545,7 +582,7 @@ async function main(): Promise<void> {
     process.stderr.write(
       `[phase1-gate] starting ${ob.id} (${ob.stratum}) :: ${ob.target}\n`,
     );
-    const outcome = await runOneObligation(ob, runDir, flags.timeBudgetMs, patchSha, repo, resolvedSha);
+    const outcome = await runOneObligation(ob, runDir, flags.timeBudgetMs, patchSha, fixtureRoot);
     outcomes.push(outcome);
     completedIds.add(outcome.id);
     process.stderr.write(
@@ -558,7 +595,7 @@ async function main(): Promise<void> {
     );
 
     writeProgress(runDir, {
-      snapshotSha: resolvedSha,
+      fixtureContentHash: fixtureHash,
       startedAtIso,
       lastCompletedId: outcome.id,
       completedIds: [...completedIds],
@@ -571,7 +608,7 @@ async function main(): Promise<void> {
           `See ${path.relative(repo, runDir)}/${ob.id}/error.txt\n`,
       );
       writeSummaryTsv(outcomes, runDir);
-      writeSummaryMd(outcomes, runDir, patchSha, resolvedSha, 0, 0, Date.now() - startedAt);
+      writeSummaryMd(outcomes, runDir, patchSha, fixtureRoot, fixtureHash, 0, 0, Date.now() - startedAt);
       process.exit(2);
     }
   }
@@ -587,7 +624,7 @@ async function main(): Promise<void> {
         totalDollarsTokenEstimate,
         obligationCount: outcomes.length,
         finishedAtIso: new Date().toISOString(),
-        snapshotSha: resolvedSha,
+        fixtureContentHash: fixtureHash,
       },
       null,
       2,
@@ -598,7 +635,8 @@ async function main(): Promise<void> {
     outcomes,
     runDir,
     patchSha,
-    resolvedSha,
+    fixtureRoot,
+    fixtureHash,
     totalDollarsBilled,
     totalDollarsTokenEstimate,
     totalWallClockMs,
