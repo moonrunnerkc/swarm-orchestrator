@@ -114,12 +114,15 @@ longitudinal tracking.
   - `src/persona/persona-registry.ts` — doc per new persona spec
   - `src/ledger/memoization.ts` — doc on the extended `obligationKey`
 - Architecture deviations: `docs/v8-architecture-deviations.md`
-  updated with five Phase 7 deviations:
-  1. function-must-have-signature uses substring match, not AST
-  2. import-graph-must-satisfy uses regex, not module resolver
+  updated with five Phase 7 deviations (1, 2, and 4 marked
+  resolved post-Phase-7 once the AST/extractor work landed):
+  1. function-must-have-signature — RESOLVED, AST-backed via
+     TypeScript compiler API + Python `ast`
+  2. import-graph-must-satisfy — RESOLVED, AST-backed via
+     TypeScript compiler API + Python `ast`
   3. each Phase 7 persona owns exactly one type, 1:1
-  4. Anthropic extractor unchanged for Phase 7; new types are
-     user-edited or stub-emitted
+  4. Anthropic extractor — RESOLVED, emits all eight v1 obligation
+     types
   5. tricky-bench responder routes by obligation type, not persona id
 - Benchmark report: `docs/v8-phase-7-benchmark.md` (auto-generated
   from `dist/scripts/v8-bench/run-phase7.js`, regenerable on
@@ -287,21 +290,23 @@ total.
 
 **NON-BLOCKER findings:**
 
-- `function-must-have-signature` uses a whitespace-stripped
-  substring match instead of an AST parser; revisitable at Phase 8
-  when tree-sitter integration lands. Logged as Phase 7
-  architecture deviation 1.
+- `function-must-have-signature` is now AST-backed via the
+  TypeScript compiler API (TS/JS) and the Python `ast` module
+  (`.py`). Substring false positives (signature inside a string
+  literal or `//` comment) cannot match. Phase 7 architecture
+  deviation 1 is marked resolved.
 
-- `import-graph-must-satisfy` parses imports via regex, not a
-  language-aware module resolver; bare specifiers and TS path
-  aliases are deliberately ignored. Logged as Phase 7 architecture
-  deviation 2.
+- `import-graph-must-satisfy` is now AST-backed via the TypeScript
+  compiler API for JS/TS (catches multi-line imports, dynamic
+  `import()`, `import x = require(...)`, re-exports — and rejects
+  `require` substrings inside string literals/comments) and the
+  Python `ast` module for `.py`. Phase 7 architecture deviation 2
+  is marked resolved.
 
-- The Anthropic extractor's prompt and tool schema continue to
-  reference only Phase 1 obligation types. Phase 7 types reach
-  contracts via user editing or custom extractors. Production
-  prompt-engineering for Phase 7 types is post-v8.0 roadmap.
-  Logged as Phase 7 architecture deviation 4.
+- The Anthropic extractor's prompt and `submit_contract` tool
+  schema describe all eight v1 obligation types; the API enforces
+  shape per type and the validator re-checks cross-cutting rules.
+  Phase 7 architecture deviation 4 is marked resolved.
 
 - Each Phase 7 persona owns exactly one obligation type. This is
   a Phase 2 dispatcher constraint (predicate fires the first

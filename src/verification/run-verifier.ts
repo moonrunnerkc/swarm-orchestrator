@@ -8,6 +8,8 @@ import type {
   ObligationV1,
   PerformanceMustNotRegressObligation,
 } from '../contract/types';
+import { checkFunctionSignature } from './ast-signature';
+import { extractImports as extractImportsAst } from './ast-imports';
 
 /**
  * Per-obligation verification result. Phase 2's verifier is the
@@ -123,12 +125,19 @@ function verifyCommand(
 }
 
 /**
- * Phase 7: function-must-have-signature verifier. Reads the named file,
- * collapses whitespace, and looks for the literal substring
- * `<name><signature>` (e.g. `handler(req: Request): Response`). Whitespace
- * collapsing means `(req, res)` and `( req, res )` both match. The check
- * is intentionally substring-based so it works without a per-language
- * AST parser; persona prompts are explicit about the expected shape.
+ * function-must-have-signature verifier. Reads the named file, parses it
+ * with the per-language AST (TypeScript compiler API for .ts/.tsx/.js/.jsx/
+ * .cjs/.mjs/.cts/.mts; Python `ast` module via python3 subprocess for
+ * .py), collects every declared function/method/arrow-function with the
+ * obligation's name, and compares each declaration's parameter list and
+ * return type to the obligation's expected signature.
+ *
+ * Comparison is whitespace-insensitive — both sides are re-rendered
+ * through the AST and stripped of whitespace before equality, so
+ * formatter variation (`(req, res)` vs `( req , res )`) is irrelevant
+ * but param types and return types are compared structurally rather
+ * than as raw substrings. Overload sets and multiple same-name
+ * declarations pass when at least one declaration matches.
  */
 function verifyFunctionSignature(
   obligation: FunctionMustHaveSignatureObligation,
@@ -153,38 +162,44 @@ function verifyFunctionSignature(
       detail: `read ${obligation.file} failed: ${(err as Error).message}`,
     };
   }
-  const needle = stripWhitespace(`${obligation.name}${obligation.signature}`);
-  const haystack = stripWhitespace(body);
-  if (haystack.includes(needle)) {
+  const check = checkFunctionSignature(abs, body, obligation.name, obligation.signature);
+  if (check.error) {
     return {
-      satisfied: true,
-      detail: `signature for ${obligation.name} found in ${obligation.file}`,
+      satisfied: false,
+      detail:
+        `signature check for ${obligation.name} in ${obligation.file} could not run: ${check.error}`,
     };
   }
+  if (check.matched) {
+    return {
+      satisfied: true,
+      detail: `signature for ${obligation.name} matches in ${obligation.file}`,
+    };
+  }
+  if (!check.nameFound) {
+    return {
+      satisfied: false,
+      detail:
+        `${obligation.name} is not declared in ${obligation.file}; ` +
+        `expected signature ${obligation.signature}`,
+    };
+  }
+  const observed = check.observedNormalized.length > 0
+    ? `observed ${check.observedNormalized.map((s) => `"${s}"`).join(', ')}`
+    : 'no signature recovered';
   return {
     satisfied: false,
     detail:
-      `signature for ${obligation.name} not found in ${obligation.file}; ` +
-      `expected to find substring "${obligation.name}${obligation.signature}" ` +
-      `(whitespace-insensitive)`,
+      `signature for ${obligation.name} in ${obligation.file} does not match; ` +
+      `expected "${check.expectedNormalized}", ${observed}`,
   };
 }
 
 /**
- * Strip every whitespace character so the signature comparison is fully
- * whitespace-insensitive: `(req, res)` matches `( req , res )` and
- * `(req,res)` alike. This is coarser than a tokenizer but enough to
- * match human-written signatures across formatter conventions without a
- * per-language AST.
- */
-function stripWhitespace(s: string): string {
-  return s.replace(/\s+/g, '');
-}
-
-/**
- * Phase 7: import-graph-must-satisfy verifier. Walks `.ts/.tsx/.js/.mjs/
- * .cjs/.py` files under the obligation's scope, parses import statements
- * with a small set of language-specific regexes, and evaluates the
+ * import-graph-must-satisfy verifier. Walks `.ts/.tsx/.js/.jsx/.mjs/.cjs/
+ * .cts/.mts/.py` files under the obligation's scope, parses each file
+ * with the per-language AST (TypeScript compiler API for JS/TS, Python
+ * `ast` module via python3 subprocess for `.py`), and evaluates the
  * named structural constraint.
  *
  * Constraints:
@@ -194,6 +209,10 @@ function stripWhitespace(s: string): string {
  *     back-edge into the active stack is a cycle. Imports that don't
  *     resolve to a tracked file (external packages, missing files) are
  *     ignored.
+ *
+ * Parser-error files (Python subprocess unavailable, syntax errors) are
+ * surfaced in the obligation's failure detail so the caller can fix the
+ * upstream cause rather than silently dropping unparseable files.
  */
 function verifyImportGraph(
   obligation: ImportGraphMustSatisfyObligation,
@@ -218,14 +237,18 @@ function verifyImportGraph(
 
   const files = walkSourceFiles(scopeAbs);
   const violations: string[] = [];
+  const parserErrors: string[] = [];
   const graph = new Map<string, string[]>();
 
   for (const abs of files) {
     const text = safeReadFile(abs);
     if (text === null) continue;
-    const rawImports = extractImports(abs, text);
+    const extraction = extractImportsAst(abs, text);
+    if (extraction.error) {
+      parserErrors.push(`${path.relative(repoRoot, abs)}: ${extraction.error}`);
+    }
     const resolvedNeighbors: string[] = [];
-    for (const spec of rawImports) {
+    for (const spec of extraction.specs) {
       if (obligation.constraint === 'no-upward-imports' && spec.startsWith('..')) {
         violations.push(
           `${path.relative(repoRoot, abs)} imports "${spec}" (escapes its directory)`,
@@ -235,6 +258,15 @@ function verifyImportGraph(
       if (resolved) resolvedNeighbors.push(resolved);
     }
     graph.set(abs, resolvedNeighbors);
+  }
+
+  if (parserErrors.length > 0) {
+    return {
+      satisfied: false,
+      detail:
+        `import-graph parser error(s) in ${parserErrors.length} file(s); ` +
+        parserErrors.slice(0, 3).join('; '),
+    };
   }
 
   if (obligation.constraint === 'no-upward-imports') {
@@ -267,7 +299,18 @@ function verifyImportGraph(
   };
 }
 
-const SOURCE_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py']);
+
+const SOURCE_EXTS = new Set([
+  '.ts',
+  '.tsx',
+  '.cts',
+  '.mts',
+  '.js',
+  '.jsx',
+  '.mjs',
+  '.cjs',
+  '.py',
+]);
 
 function walkSourceFiles(root: string): string[] {
   const out: string[] = [];
@@ -313,46 +356,6 @@ function safeReadFile(abs: string): string | null {
   }
 }
 
-const JS_IMPORT_RE = /(?:^|\n)\s*import\s+(?:[^'"\n]+\s+from\s+)?['"]([^'"\n]+)['"]/g;
-const JS_REQUIRE_RE = /\brequire\(\s*['"]([^'"\n]+)['"]\s*\)/g;
-const PY_IMPORT_FROM_RE = /(?:^|\n)\s*from\s+([.\w][\w.]*)\s+import\b/g;
-const PY_IMPORT_RE = /(?:^|\n)\s*import\s+([\w.][\w.,\s]*)/g;
-
-function extractImports(filePath: string, text: string): string[] {
-  const ext = path.extname(filePath);
-  const found: string[] = [];
-  if (ext === '.py') {
-    let m: RegExpExecArray | null;
-    PY_IMPORT_FROM_RE.lastIndex = 0;
-    while ((m = PY_IMPORT_FROM_RE.exec(text)) !== null) {
-      const captured = m[1];
-      if (captured) found.push(captured);
-    }
-    PY_IMPORT_RE.lastIndex = 0;
-    while ((m = PY_IMPORT_RE.exec(text)) !== null) {
-      const captured = m[1];
-      if (!captured) continue;
-      for (const piece of captured.split(',')) {
-        const trimmed = piece.trim().split(/\s+as\s+/)[0]?.trim();
-        if (trimmed) found.push(trimmed);
-      }
-    }
-    return found;
-  }
-  let m: RegExpExecArray | null;
-  JS_IMPORT_RE.lastIndex = 0;
-  while ((m = JS_IMPORT_RE.exec(text)) !== null) {
-    const captured = m[1];
-    if (captured) found.push(captured);
-  }
-  JS_REQUIRE_RE.lastIndex = 0;
-  while ((m = JS_REQUIRE_RE.exec(text)) !== null) {
-    const captured = m[1];
-    if (captured) found.push(captured);
-  }
-  return found;
-}
-
 function resolveLocalImport(
   fromAbs: string,
   spec: string,
@@ -367,6 +370,8 @@ function resolveLocalImport(
     target,
     `${target}.ts`,
     `${target}.tsx`,
+    `${target}.cts`,
+    `${target}.mts`,
     `${target}.js`,
     `${target}.jsx`,
     `${target}.mjs`,
@@ -374,6 +379,8 @@ function resolveLocalImport(
     `${target}.py`,
     path.join(target, 'index.ts'),
     path.join(target, 'index.tsx'),
+    path.join(target, 'index.cts'),
+    path.join(target, 'index.mts'),
     path.join(target, 'index.js'),
     path.join(target, '__init__.py'),
   ];

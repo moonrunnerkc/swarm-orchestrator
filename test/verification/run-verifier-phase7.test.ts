@@ -59,7 +59,7 @@ describe('verification/run-verifier (Phase 7 obligation types)', () => {
       assert.equal(result.satisfied, true, result.detail);
     });
 
-    it('fails when the signature is missing', () => {
+    it('fails when the declared signature does not match', () => {
       const filePath = 'src/handler.ts';
       fs.mkdirSync(path.join(repoRoot, 'src'), { recursive: true });
       fs.writeFileSync(
@@ -75,7 +75,27 @@ describe('verification/run-verifier (Phase 7 obligation types)', () => {
       };
       const result = verifyObligation(obligation, { repoRoot });
       assert.equal(result.satisfied, false);
-      assert.match(result.detail, /not found/);
+      assert.match(result.detail, /does not match/);
+      assert.match(result.detail, /observed "\(\)"/);
+    });
+
+    it('fails when the function is not declared at all', () => {
+      const filePath = 'src/handler.ts';
+      fs.mkdirSync(path.join(repoRoot, 'src'), { recursive: true });
+      fs.writeFileSync(
+        path.join(repoRoot, filePath),
+        'export const unrelated = 1;\n',
+        'utf8',
+      );
+      const obligation: FunctionMustHaveSignatureObligation = {
+        type: 'function-must-have-signature',
+        file: filePath,
+        name: 'handler',
+        signature: '(req: Request): Promise<Response>',
+      };
+      const result = verifyObligation(obligation, { repoRoot });
+      assert.equal(result.satisfied, false);
+      assert.match(result.detail, /not declared/);
     });
 
     it('fails with a clear error when the file is missing', () => {

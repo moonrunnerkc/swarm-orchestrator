@@ -671,39 +671,38 @@ collapsing the on-disk evidence.
 
 ## Phase 7
 
-### Deviation 1: function-must-have-signature uses a substring match, not an AST parser
+### Deviation 1: function-must-have-signature uses an AST parser (resolved)
 
 **Section:** v8-implementation-guide.md §10 (Phase 7 — contract type
 expansion list, item 1: "function-must-have-signature(file, name,
 signature): type-level check against the AST.").
 
 **What §10 specifies:** "type-level check against the AST" — the
-guide implies AST-aware verification per language.
+guide requires AST-aware verification per language.
 
-**What was done:** the verifier reads the file as text, strips
-whitespace from both haystack and needle, and looks for the literal
-substring `<name><signature>`. The persona prompt is explicit about
-the expected shape so the LLM emits a matching signature. Whitespace
-stripping handles formatter variation across `( req , res )` /
-`(req,res)` / `( req: Request ): void`.
+**What is done:** the verifier in
+`src/verification/ast-signature.ts` parses the target file with the
+TypeScript compiler API (`.ts/.tsx/.cts/.mts/.js/.jsx/.cjs/.mjs`) or
+with the Python `ast` module via a `python3 -c` subprocess (`.py`).
+It collects every function declaration, function expression, arrow
+function (assigned to a const, class property, or object literal),
+method declaration, and method signature whose name matches the
+obligation's `name`, then re-renders each declared signature
+through the same parser. The obligation's `signature` is parsed the
+same way (TS: wrapped as `function __probe__<sig> {}`; Python:
+returned by `ast.unparse`) and the two canonical forms are compared
+after a whitespace strip. Overload sets pass when at least one
+declaration matches; substring false positives (signature inside a
+string literal or comment) cannot match because comment/string
+text never reaches the AST visitor.
 
-**Rationale:** an AST-aware check requires per-language parsers
-(tree-sitter or equivalent) bundled into the runtime; that's a Phase
-8 surface. Substring matching is good enough to enforce a contract
-the persona is told about: the LLM emits the exact signature, the
-verifier confirms it appears. The cost of false positives (the
-substring appears in a string literal, e.g.) is bounded by the
-tournament verifier's structured score — but in practice the
-contract-stamped name is rare enough in source bodies that the
-collision rate is near zero. Misses (whitespace mangled across
-lines) are caught by the streaming verifier or the build/test
-obligations downstream.
+**Status:** resolved. The TypeScript compiler is now a runtime
+dependency in `package.json`. Python AST parsing uses the system
+`python3` (override with `SWARM_PYTHON_BIN`); when python3 is not
+installed the obligation fails with an actionable error rather than
+silently passing.
 
-**Status:** revisitable at Phase 8 when tree-sitter integration
-lands (impl guide §15 references it as the deterministic-floor AST
-parser library).
-
-### Deviation 2: import-graph-must-satisfy parses imports with regex, not a language-aware module resolver
+### Deviation 2: import-graph-must-satisfy uses an AST parser (resolved)
 
 **Section:** v8-implementation-guide.md §10 (Phase 7 — contract type
 expansion list, item 3: "import-graph-must-satisfy(constraint):
@@ -712,29 +711,22 @@ dependency-graph constraints (no cycles, no upward imports).").
 **What §10 specifies:** "dependency-graph constraints" — the guide
 is silent on parser choice.
 
-**What was done:** the verifier walks `.ts/.tsx/.js/.mjs/.cjs/.py`
-files under the obligation's scope and runs simple regexes for
-JavaScript/TypeScript imports (`import ... from`, `require(...)`)
-and Python imports (`from <pkg> import`, `import <pkg>`). Local
-specifiers (relative paths) are resolved against the file set on
-disk; bare specifiers (npm packages, Python packages) and path
-aliases are ignored. Cycle detection runs DFS over the resolved
-local graph with back-edge reconstruction.
+**What is done:** the extractor in
+`src/verification/ast-imports.ts` parses each
+`.ts/.tsx/.cts/.mts/.js/.jsx/.cjs/.mjs` file with the TypeScript
+compiler API and walks `ImportDeclaration`,
+`ExportDeclaration` (re-exports), `ImportEqualsDeclaration`
+(`import x = require(…)`), `require('...')` calls, and dynamic
+`import('...')` calls — including multi-line shapes the v8.0 regex
+matcher could miss. Python files are parsed with the `ast` module
+(visit `Import` and `ImportFrom`, preserving the relative-import
+dot prefix). String literals and comments are never matched. Local
+specifiers are resolved against the file set on disk; bare
+specifiers (npm packages, Python packages) remain out of scope by
+design — the two shipped constraints (`no-cycles`,
+`no-upward-imports`) are local-only by definition.
 
-**Rationale:** the contract obligation asserts a structural property
-("no cycles", "no upward imports") that does not depend on resolved
-module identity for non-local imports — it only depends on the local
-graph the regex extracts. A full language-aware resolver (including
-TS path aliases, package.json `exports`, Python sys.path) would
-quadruple the verifier's surface and its dependency graph, while
-catching a class of false negatives the contract doesn't actually
-care about (`import 'lodash'` does not contribute to a project-local
-cycle). The two shipped constraints — `no-cycles` and
-`no-upward-imports` — are local-only by definition.
-
-**Status:** locked in for v8.0. Additional constraints that need
-non-local resolution land as separate constraint identifiers with
-their own resolver layers.
+**Status:** resolved.
 
 ### Deviation 3: each Phase 7 persona owns exactly one new obligation type, 1:1
 
@@ -770,34 +762,35 @@ beyond Phase 2's "wake on type X" shape (impl guide §5 anticipates
 ledger-state predicates per overhaul guide §4.3). At that point one
 persona can own multiple types disambiguated by ledger conditions.
 
-### Deviation 4: the Anthropic extractor's prompt is unchanged from Phase 1; Phase 7 obligation types are user-edited or stub-emitted
+### Deviation 4: the Anthropic extractor emits all eight obligation types (resolved)
 
 **Section:** v8-implementation-guide.md §10 (Phase 7 — contract type
 expansion).
 
 **What §10 specifies:** §10 is silent on whether the LLM extractor
-should automatically emit Phase 7 types from natural-language goals.
+should automatically emit Phase 7 types from natural-language goals,
+but the contract pipeline is only useful end-to-end when the
+extractor can emit every shape the verifier knows how to check.
 
-**What was done:** the `AnthropicExtractor`'s system prompt and tool
-schema continue to reference only the three Phase 1 types
-(file-must-exist, build-must-pass, test-must-pass). Phase 7 types
-are added to a contract via user editing in the approval step, via
-custom extractors, or via the stub extractor's explicit
-goal-to-obligations mapping.
+**What is done:** the `AnthropicExtractor`'s system prompt and
+`submit_contract` tool input_schema describe all eight v1
+obligation types (file-must-exist, build-must-pass, test-must-pass,
+function-must-have-signature, property-must-hold,
+import-graph-must-satisfy, coverage-must-exceed,
+performance-must-not-regress) and tell the model when each Phase 7
+type applies. The schema's `oneOf` enumerates each shape so the API
+rejects malformed payloads at the API boundary; the validator
+re-checks the cross-cutting rules (≥1 build-must-pass, ≥1
+test-must-pass, no duplicates) after extraction. The Phase 1
+hash-stability guarantee still holds: goals that previously
+produced three-type contracts still produce three-type contracts
+because the prompt instructs the model not to fabricate Phase 7
+obligations the goal does not call for.
 
-**Rationale:** Phase 7 is open-ended (impl guide §10 status:
-"ongoing"). Teaching the production extractor to emit a richer set
-of obligation types from natural language requires per-type prompt
-engineering plus a calibration pass that the Phase 7 milestone
-doesn't gate. Keeping the extractor stable through the v8.0
-milestone preserves Phase 1's hash-stability guarantee for goals
-that still produce three-type contracts. The contract validator and
-canonicalizer accept all eight types regardless of source, so any
-caller that wants Phase 7 types in its contract just emits them.
-
-**Status:** the extractor will grow Phase 7-aware prompts when the
-new types' real-world frequency warrants it; this is post-v8.0
-roadmap, not a milestone gate.
+**Status:** resolved. Test
+`test/contract/extractor-anthropic.test.ts` enforces that the
+production extractor's tool-use schema accepts every Phase 7 type
+and that emitted obligations validate against the on-disk schema.
 
 ### Deviation 5: tricky-bench responder routes by obligation type, not by persona id
 

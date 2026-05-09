@@ -116,8 +116,10 @@ v8 is a structural overhaul, not a feature pass. The current `v8-dev` branch shi
 | **`swarm v8` CLI** — `compile`, `run`, `resume` subcommands | `src/cli/v8/` |
 | **Top-level `swarm run` defaults to v8**, with `--v6` opt-out | `src/cli.ts:226` |
 | **GitHub Action** gains `contract-only` and `cost-cap` inputs | [`action.yml`](action.yml) |
-| **Eight obligation types** in the v1 schema | `src/contract/schema/v1.json` |
+| **Eight obligation types** in the v1 schema, all emitted by the production Anthropic extractor from natural-language goals | `src/contract/schema/v1.json`, `src/contract/extractor/anthropic-extractor.ts` |
 | **Eight personas** wired by default | `src/persona/persona-registry.ts` |
+| **AST-backed `function-must-have-signature` verifier** (TypeScript compiler API for JS/TS, Python `ast` for `.py`) — rejects substring false positives from comments and string literals | `src/verification/ast-signature.ts` |
+| **AST-backed `import-graph-must-satisfy` extractor** (TypeScript compiler API for JS/TS, Python `ast` for `.py`) — handles multi-line imports, `import x = require(...)`, dynamic `import()`, and re-exports | `src/verification/ast-imports.ts` |
 
 The v6 verified-branch pipeline (worker/reviewer steps, octopus merge, nine quality gates) is preserved verbatim under `swarm run --v6`, `swarm swarm`, and the lower-level commands. v8 is opt-out at the top-level `swarm run` only.
 
@@ -419,9 +421,6 @@ A full file inventory and v6→v8 reuse audit lives in [`docs/v8-reuse-audit.md`
 
 The following are deliberately deferred and documented; each fails cleanly when reached rather than producing wrong output. See [`docs/v8-architecture-deviations.md`](docs/v8-architecture-deviations.md) and [`docs/v8-e2e/REPORT.md`](docs/v8-e2e/REPORT.md) for the full list.
 
-- **Anthropic extractor emits Phase 1 obligations only.** `function-must-have-signature`, `property-must-hold`, `import-graph-must-satisfy`, `coverage-must-exceed`, `performance-must-not-regress` reach contracts via the stub extractor or by hand-editing `contract.jsonl`. Prompt-engineering the Anthropic extractor for Phase 7 types is post-v8.0 roadmap.
-- **`function-must-have-signature` is a substring match**, not a tree-sitter AST check. Whitespace-insensitive. Tree-sitter integration is post-v8.0.
-- **`import-graph-must-satisfy` parses imports with regex**, not a language-aware module resolver. Bare specifiers and TypeScript path aliases are deliberately ignored.
 - **Tournament mode does not stream.** `--mode tournament` plus `--forbid-import` skips the streaming abort cleanly; streaming verification is single-mode only.
 - **Post-merge failure does not auto-rollback.** The run is marked failed; per-obligation worktree snapshots are post-v8.0.
 - **`--cost-cap` is enforced post-run, not mid-run.** Cumulative spend is checked at the end of each obligation against estimated Sonnet 4 pricing; mid-run abort is post-v8.0.
