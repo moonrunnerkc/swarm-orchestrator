@@ -85,4 +85,14 @@ describe('parseCodexCandidates', () => {
       /non-empty files array/,
     );
   });
+
+  it('accepts a candidate file with empty bytes (legitimate empty-file payload)', () => {
+    const ok = validCandidatesObject();
+    (ok.candidates[0] as { files: { relPath: string; bytes: string }[] }).files = [
+      { relPath: '.env', bytes: '' },
+    ];
+    const parsed = parseCodexCandidates(fenceJson(JSON.stringify(ok)));
+    assert.equal(parsed[0]?.files[0]?.relPath, '.env');
+    assert.equal(parsed[0]?.files[0]?.bytes, '');
+  });
 });

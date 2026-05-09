@@ -1,0 +1,49 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/adversarial-token-cases/direct-authorization-header.ts",
+            "bytes": "export const authorizationHeader = \"Bearer ABCDEFGHIJKLMNOPQRST12345\";\n"
+          }
+        ],
+        "reproducer": "! grep -rEn 'Bearer\\s+[A-Za-z0-9_-]{20,}' src/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/adversarial-token-cases/direct-authorization-header.ts:1:export const authorizationHeader = \"Bearer ABCDEFGHIJKLMNOPQRST12345\";\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/adversarial-token-cases/template-literal-bearer-token.ts",
+            "bytes": "export const debugLine = `request auth: Bearer token_ABCDEFGHIJKLMNOPQRSTUVWXYZ`;\n"
+          }
+        ],
+        "reproducer": "! grep -rEn 'Bearer\\s+[A-Za-z0-9_-]{20,}' src/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/adversarial-token-cases/template-literal-bearer-token.ts:1:export const debugLine = `request auth: Bearer token_ABCDEFGHIJKLMNOPQRSTUVWXYZ`;\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/adversarial-token-cases/commented-bearer-token.ts",
+            "bytes": "// Example: Bearer abcdefghijklmnopqrstuvwxyz_012345\nexport const placeholder = true;\n"
+          }
+        ],
+        "reproducer": "! grep -rEn 'Bearer\\s+[A-Za-z0-9_-]{20,}' src/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/adversarial-token-cases/commented-bearer-token.ts:1:// Example: Bearer abcdefghijklmnopqrstuvwxyz_012345\n",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 13595,
+    "dollarsSpent": 0.10839,
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

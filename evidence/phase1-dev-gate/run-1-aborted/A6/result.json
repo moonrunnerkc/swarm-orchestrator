@@ -1,0 +1,49 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/security-todo-probe-a.ts",
+            "bytes": "// SECURITY: TODO verify this path is rejected by the predicate\nexport const probeA = true;\n"
+          }
+        ],
+        "reproducer": "! grep -rn '// SECURITY: TODO' src/ 2>/dev/null",
+        "reproducerOutput": "src/security-todo-probe-a.ts:1:// SECURITY: TODO verify this path is rejected by the predicate\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/adversarial-inputs/security-todo-probe-b.ts",
+            "bytes": "export function probeB(): string {\n  // SECURITY: TODO remove placeholder before release\n  return \"probe-b\";\n}\n"
+          }
+        ],
+        "reproducer": "! grep -rn '// SECURITY: TODO' src/ 2>/dev/null",
+        "reproducerOutput": "src/adversarial-inputs/security-todo-probe-b.ts:2:  // SECURITY: TODO remove placeholder before release\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/adversarial-inputs/security-todo-probe-c.json",
+            "bytes": "{\n  \"note\": \"// SECURITY: TODO confirm grep catches this literal string\"\n}\n"
+          }
+        ],
+        "reproducer": "! grep -rn '// SECURITY: TODO' src/ 2>/dev/null",
+        "reproducerOutput": "src/adversarial-inputs/security-todo-probe-c.json:2:  \"note\": \"// SECURITY: TODO confirm grep catches this literal string\"\n",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 13697,
+    "dollarsSpent": 0.04017,
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

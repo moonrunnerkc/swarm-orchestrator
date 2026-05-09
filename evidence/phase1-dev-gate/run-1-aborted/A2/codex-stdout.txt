@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "plain-text-marker",
+      "rationale": "A new root-level text file containing the forbidden marker will be matched by the recursive grep.",
+      "files": [
+        {
+          "relPath": "phase1_gate_plain_marker.txt",
+          "bytes": "This file intentionally contains XXX_FORBIDDEN_TOKEN_PHASE1_GATE to falsify the predicate.\n"
+        }
+      ]
+    },
+    {
+      "name": "nested-source-comment",
+      "rationale": "A new source file in a fresh non-excluded directory containing the marker in a comment will be found by grep.",
+      "files": [
+        {
+          "relPath": "adversarial_inputs/phase1_gate_marker.js",
+          "bytes": "// XXX_FORBIDDEN_TOKEN_PHASE1_GATE\nexport const value = 1;\n"
+        }
+      ]
+    },
+    {
+      "name": "json-string-marker",
+      "rationale": "A new JSON fixture containing the marker as a string value will be searched because it is outside excluded directories.",
+      "files": [
+        {
+          "relPath": "test_fixtures/phase1_gate_payload.json",
+          "bytes": "{\n  \"marker\": \"XXX_FORBIDDEN_TOKEN_PHASE1_GATE\",\n  \"expected\": \"predicate failure\"\n}\n"
+        }
+      ]
+    }
+  ]
+}
+```

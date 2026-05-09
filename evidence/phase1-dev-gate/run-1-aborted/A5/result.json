@@ -1,0 +1,49 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/falsification-cases/direct-password-assignment.ts",
+            "bytes": "export const password = 'hunter2';\n"
+          }
+        ],
+        "reproducer": "! grep -rEn \"password = '\" src/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/falsification-cases/direct-password-assignment.ts:1:export const password = 'hunter2';\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/falsification-cases/class-field-password.ts",
+            "bytes": "export class TestCredentials {\n  password = 'temporary-test-secret';\n}\n"
+          }
+        ],
+        "reproducer": "! grep -rEn \"password = '\" src/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/falsification-cases/class-field-password.ts:2:  password = 'temporary-test-secret';\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/falsification-cases/nested/config-password.ts",
+            "bytes": "export function makeConfig() {\n  const password = 'local-only';\n  return { password };\n}\n"
+          }
+        ],
+        "reproducer": "! grep -rEn \"password = '\" src/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/falsification-cases/nested/config-password.ts:2:  const password = 'local-only';\n",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 15582,
+    "dollarsSpent": 0.04892,
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

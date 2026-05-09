@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "direct-log-helper",
+      "rationale": "A new TypeScript file under src/falsification containing console.log( will be matched by the grep predicate.",
+      "files": [
+        {
+          "relPath": "src/falsification/adversarial/direct-log-helper.ts",
+          "bytes": "export function directLogHelper(): void {\n  console.log(\"predicate violation\");\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "commented-log-marker",
+      "rationale": "The predicate searches raw text, so console.log( inside a TypeScript comment still causes grep to find a match.",
+      "files": [
+        {
+          "relPath": "src/falsification/adversarial/commented-log-marker.ts",
+          "bytes": "// This comment intentionally includes console.log(\"debug\") to falsify the text predicate.\nexport const marker = true;\n"
+        }
+      ]
+    },
+    {
+      "name": "string-literal-log",
+      "rationale": "The grep predicate does not parse TypeScript and will match console.log( inside a string literal.",
+      "files": [
+        {
+          "relPath": "src/falsification/adversarial/string-literal-log.ts",
+          "bytes": "export const forbiddenText = \"console.log(\";\n"
+        }
+      ]
+    }
+  ]
+}
+```

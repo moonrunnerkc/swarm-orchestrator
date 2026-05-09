@@ -80,8 +80,8 @@ function validateCandidate(entry: unknown, index: number): ParsedCandidate {
     throw new Error(`Codex candidate at index ${index} is not an object`);
   }
   const obj = entry as { name?: unknown; rationale?: unknown; files?: unknown };
-  const name = requireString(obj.name, `candidate[${index}].name`);
-  const rationale = requireString(obj.rationale, `candidate[${index}].rationale`);
+  const name = requireNonEmptyString(obj.name, `candidate[${index}].name`);
+  const rationale = requireNonEmptyString(obj.rationale, `candidate[${index}].rationale`);
   if (!Array.isArray(obj.files) || obj.files.length === 0) {
     throw new Error(`Codex candidate "${name}" must have a non-empty files array`);
   }
@@ -102,8 +102,19 @@ function validateCandidateFile(
     );
   }
   const obj = entry as { relPath?: unknown; bytes?: unknown };
-  const relPath = requireString(obj.relPath, `candidate "${candidateName}" file[${fileIndex}].relPath`);
-  const bytes = requireString(obj.bytes, `candidate "${candidateName}" file[${fileIndex}].bytes`);
+  const relPath = requireNonEmptyString(
+    obj.relPath,
+    `candidate "${candidateName}" file[${fileIndex}].relPath`,
+  );
+  // Empty `bytes` is valid: an empty file at a forbidden path is a
+  // legitimate counter-example for predicates like `find … -type f`
+  // that key off path/shape, not content. The earlier non-empty check
+  // here rejected codex's "empty .env" candidate even though the
+  // resulting file would still falsify the predicate.
+  const bytes = requireStringAllowEmpty(
+    obj.bytes,
+    `candidate "${candidateName}" file[${fileIndex}].bytes`,
+  );
   if (relPath.startsWith('/') || relPath.includes('..')) {
     throw new Error(
       `Codex candidate "${candidateName}" file[${fileIndex}] relPath "${relPath}" must be ` +
@@ -113,9 +124,16 @@ function validateCandidateFile(
   return { relPath, bytes };
 }
 
-function requireString(value: unknown, label: string): string {
+function requireNonEmptyString(value: unknown, label: string): string {
   if (typeof value !== 'string' || value.length === 0) {
     throw new Error(`${label} must be a non-empty string`);
+  }
+  return value;
+}
+
+function requireStringAllowEmpty(value: unknown, label: string): string {
+  if (typeof value !== 'string') {
+    throw new Error(`${label} must be a string`);
   }
   return value;
 }
