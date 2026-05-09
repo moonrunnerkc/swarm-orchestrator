@@ -1,0 +1,281 @@
+/**
+ * `CodexFalsifier` — Phase 1 falsifier adapter.
+ *
+ * Spawns the real `codex` binary in `workspace-write` sandbox mode with
+ * approval policy `never`. One strategy: adversarial test input
+ * generation against `property-must-hold` obligations. The adapter:
+ *   1. builds the Codex prompt for the obligation,
+ *   2. spawns Codex as a subprocess with the safe sandbox flags,
+ *   3. parses the JSON candidate document Codex returns,
+ *   4. applies and re-runs each candidate locally,
+ *   5. classifies confirmed counter-examples vs. false positives,
+ *   6. returns a typed `FalsifyOutcome` and a populated cost record.
+ *
+ * Sequential dispatch only. No scheduling, no bandit. Errors from the
+ * underlying CLI (binary missing, auth failure, parse failure) are
+ * thrown — the dispatcher surfaces them; collapsing them to
+ * `no-falsification-found` would hide real regressions per
+ * `docs/adapter-integration.md`.
+ */
+
+import { spawn } from 'child_process';
+import type { ObligationType, PropertyMustHoldObligation } from '../../../contract/types';
+import type {
+  AdapterCostRecord,
+  CounterExampleInput,
+  FalsificationInput,
+  FalsifierAdapter,
+  FalsifyOutcome,
+  NoFalsificationFoundResult,
+} from '../types';
+import { buildCodexPrompt } from './codex-prompt';
+import { parseCodexCandidates } from './codex-output-parser';
+import { runCandidateAgainstPredicate } from './predicate-runner';
+import { dollarsForUsage, parseCodexUsage } from './codex-cost';
+
+/** Default model the Codex CLI uses when none is specified. */
+const DEFAULT_MODEL = 'o4-mini';
+
+/** Ceiling on captured stdout/stderr size. Truncated past this. */
+const MAX_OUTPUT_BYTES = 1_000_000;
+
+/** Options accepted by the Codex falsifier. Test seams only — production
+ *  code uses defaults. */
+export interface CodexFalsifierOptions {
+  /** Path to the codex binary. Defaults to `codex` on PATH. */
+  readonly binaryPath?: string;
+  /** Model override; falls back to `DEFAULT_MODEL`. */
+  readonly model?: string;
+  /**
+   * Test seam: replace the subprocess invocation with a synchronous
+   * function that produces the same `CodexInvocationResult`. Production
+   * code does not pass this — the adapter must run the real CLI to
+   * satisfy Phase 1's "no mocks of the CLI" rule.
+   */
+  readonly invocationOverride?: (request: CodexInvocationRequest) => Promise<CodexInvocationResult>;
+}
+
+export interface CodexInvocationRequest {
+  readonly binaryPath: string;
+  readonly args: readonly string[];
+  readonly cwd: string;
+  readonly prompt: string;
+  readonly timeoutMs: number;
+  readonly env: NodeJS.ProcessEnv;
+}
+
+export interface CodexInvocationResult {
+  readonly stdout: string;
+  readonly stderr: string;
+  readonly exitCode: number;
+  readonly wallClockMs: number;
+}
+
+/** Public Codex falsifier adapter. */
+export class CodexFalsifier implements FalsifierAdapter {
+  readonly name = 'codex';
+  readonly handles: readonly ObligationType[] = ['property-must-hold'];
+  private readonly binaryPath: string;
+  private readonly model: string;
+  private readonly invocationOverride?: (req: CodexInvocationRequest) => Promise<CodexInvocationResult>;
+
+  constructor(options: CodexFalsifierOptions = {}) {
+    this.binaryPath = options.binaryPath ?? 'codex';
+    this.model = options.model ?? DEFAULT_MODEL;
+    if (options.invocationOverride !== undefined) {
+      this.invocationOverride = options.invocationOverride;
+    }
+  }
+
+  async falsify(input: FalsificationInput): Promise<FalsifyOutcome> {
+    const startedAt = Date.now();
+    if (input.obligation.type !== 'property-must-hold') {
+      return notApplicableOutcome(this.name, input.obligation.type, startedAt);
+    }
+    const obligation = input.obligation as PropertyMustHoldObligation;
+    const prompt = buildCodexPrompt(obligation);
+    const args = buildCodexArgs(this.model);
+    const invocation: CodexInvocationRequest = {
+      binaryPath: this.binaryPath,
+      args,
+      cwd: input.workspaceRoot,
+      prompt,
+      timeoutMs: input.timeBudgetMs,
+      env: process.env,
+    };
+    const subprocess = await this.runCodex(invocation);
+    if (subprocess.exitCode !== 0) {
+      throw new Error(
+        `codex exec failed with exit code ${subprocess.exitCode}. ` +
+          `stderr: ${truncate(subprocess.stderr, 1024)} — ` +
+          `surface the failure rather than treating it as no-falsification-found.`,
+      );
+    }
+    const candidates = parseCodexCandidates(subprocess.stdout);
+    const confirmed: CounterExampleInput[] = [];
+    let falsePositives = 0;
+    for (const candidate of candidates) {
+      const result = runCandidateAgainstPredicate(
+        candidate,
+        obligation.predicate,
+        input.workspaceRoot,
+      );
+      if (result.falsified && result.counterExample !== null) {
+        confirmed.push(result.counterExample);
+      } else {
+        falsePositives += 1;
+      }
+    }
+    const wallClockMs = Date.now() - startedAt;
+    const usage = parseCodexUsage(`${subprocess.stdout}\n${subprocess.stderr}`, this.model);
+    const dollarsSpent = usage === null ? 0 : dollarsForUsage(usage);
+    const cost: AdapterCostRecord = {
+      adapterName: this.name,
+      obligationType: obligation.type,
+      wallClockMs,
+      dollarsSpent,
+      counterExamplesFound: confirmed.length,
+      falsePositives,
+    };
+    if (confirmed.length === 0) {
+      return {
+        result: noFalsification(obligation.type, candidates.length, 'no-counter-example-discovered'),
+        cost,
+      };
+    }
+    return {
+      result: {
+        kind: 'counter-example-input',
+        obligationType: obligation.type,
+        inputs: confirmed,
+      },
+      cost,
+    };
+  }
+
+  private async runCodex(req: CodexInvocationRequest): Promise<CodexInvocationResult> {
+    if (this.invocationOverride !== undefined) {
+      return this.invocationOverride(req);
+    }
+    return spawnCodex(req);
+  }
+}
+
+function buildCodexArgs(model: string): readonly string[] {
+  return [
+    'exec',
+    '--sandbox',
+    'workspace-write',
+    '--ask-for-approval',
+    'never',
+    '--model',
+    model,
+    '--skip-git-repo-check',
+  ];
+}
+
+function noFalsification(
+  obligationType: ObligationType,
+  attempts: number,
+  reason: 'time-budget-exhausted' | 'no-counter-example-discovered',
+): NoFalsificationFoundResult {
+  return {
+    kind: 'no-falsification-found',
+    obligationType,
+    reason,
+    attempts,
+  };
+}
+
+function notApplicableOutcome(
+  adapterName: string,
+  obligationType: ObligationType,
+  startedAt: number,
+): FalsifyOutcome {
+  return {
+    result: {
+      kind: 'no-falsification-found',
+      obligationType,
+      reason: 'strategy-not-applicable',
+      attempts: 0,
+      detail: `${adapterName} only handles property-must-hold obligations`,
+    },
+    cost: {
+      adapterName,
+      obligationType,
+      wallClockMs: Date.now() - startedAt,
+      dollarsSpent: 0,
+      counterExamplesFound: 0,
+      falsePositives: 0,
+    },
+  };
+}
+
+function spawnCodex(req: CodexInvocationRequest): Promise<CodexInvocationResult> {
+  return new Promise((resolve, reject) => {
+    const startedAt = Date.now();
+    const child = spawn(req.binaryPath, [...req.args, req.prompt], {
+      cwd: req.cwd,
+      env: req.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill('SIGTERM');
+      setTimeout(() => child.kill('SIGKILL'), 2_000).unref();
+    }, req.timeoutMs);
+    timer.unref();
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => {
+      if (stdoutBytes < MAX_OUTPUT_BYTES) {
+        stdout += chunk;
+        stdoutBytes += chunk.length;
+      }
+    });
+    child.stderr.on('data', (chunk: string) => {
+      if (stderrBytes < MAX_OUTPUT_BYTES) {
+        stderr += chunk;
+        stderrBytes += chunk.length;
+      }
+    });
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      reject(
+        new Error(
+          `failed to spawn codex binary "${req.binaryPath}": ${err.message}. ` +
+            `Install the codex CLI or set CodexFalsifierOptions.binaryPath.`,
+          { cause: err },
+        ),
+      );
+    });
+    child.on('close', (exitCode) => {
+      clearTimeout(timer);
+      if (timedOut) {
+        reject(
+          new Error(
+            `codex exec exceeded the ${req.timeoutMs}ms time budget; the call was killed. ` +
+              `Increase FalsificationInput.timeBudgetMs if the obligation legitimately needs more time.`,
+          ),
+        );
+        return;
+      }
+      resolve({
+        stdout,
+        stderr,
+        exitCode: typeof exitCode === 'number' ? exitCode : 1,
+        wallClockMs: Date.now() - startedAt,
+      });
+    });
+  });
+}
+
+function truncate(value: string, max: number): string {
+  if (value.length <= max) return value;
+  return `${value.slice(0, max)}…[truncated]`;
+}

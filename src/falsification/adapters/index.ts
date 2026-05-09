@@ -3,11 +3,10 @@
  *
  * Exports the contract types, the registry, the cost aggregator, and the
  * `defaultAdapterRegistry()` factory the dispatcher uses to obtain a
- * registry pre-populated with the built-in adapters. Phase 0 lands the
- * factory with an empty population — the contract-conformance integration
- * test (`test/falsification/adapters/contract-conformance.test.ts`) fails
- * on Phase 0 because no built-in adapter is registered yet, and Phase 1
- * makes it pass by registering `CodexFalsifier`.
+ * registry pre-populated with the built-in adapters. Phase 1 wires
+ * `CodexFalsifier` in so the contract-conformance integration test
+ * (`test/falsification/adapters/contract-conformance.test.ts`) sees a
+ * registered adapter.
  */
 
 export type {
@@ -26,14 +25,21 @@ export type {
 
 export { AdapterRegistry } from './registry';
 export { aggregateAdapterCosts, totalAdapterDollars } from './cost-aggregator';
+export { CodexFalsifier } from './codex/codex-falsifier';
+export type { CodexFalsifierOptions } from './codex/codex-falsifier';
 
 import { AdapterRegistry } from './registry';
+import { CodexFalsifier } from './codex/codex-falsifier';
 
 /**
  * Build a registry pre-populated with the orchestrator's built-in
- * falsifier adapters. Phase 0 returns an empty registry; Phase 1 adds
- * `CodexFalsifier`.
+ * falsifier adapters. Phase 1 registers `CodexFalsifier` with default
+ * options (binary path `codex`, model `o4-mini`); callers that need to
+ * inject a different binary path or model construct a `CodexFalsifier`
+ * directly and register it on a fresh `AdapterRegistry`.
  */
 export function defaultAdapterRegistry(): AdapterRegistry {
-  return new AdapterRegistry();
+  const registry = new AdapterRegistry();
+  registry.register(new CodexFalsifier());
+  return registry;
 }

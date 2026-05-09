@@ -3,23 +3,24 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import {
+  CodexFalsifier,
   defaultAdapterRegistry,
   type FalsificationInput,
   type FalsificationResult,
   type FalsifierAdapter,
 } from '../../../src/falsification/adapters';
+import { CODEX_CANDIDATE_COUNT } from '../../../src/falsification/adapters/codex/codex-prompt';
 
 /**
- * Phase 0 deliverable: a real failing integration test that asserts an
- * adapter implementation conforms to the `FalsifierAdapter` contract.
- *
- * Phase 0 leaves `defaultAdapterRegistry()` empty, so the
- * "registry exposes a registered codex adapter" case fails with a clear
- * message that drives Phase 1. Once Phase 1 registers `CodexFalsifier`,
- * the adapter-by-name lookup succeeds and the conformance assertions
- * exercise the real implementation. The conformance assertions
- * themselves are the durable part — they keep enforcing the contract on
- * every adapter that gets registered, not just Codex.
+ * Phase 0 deliverable, satisfied by Phase 1: a real integration test
+ * that asserts an adapter implementation conforms to the
+ * `FalsifierAdapter` contract. The test exercises a `CodexFalsifier`
+ * with a fake invocation that returns a syntactically valid Codex
+ * response — this verifies the adapter's *parsing/dispatch/result*
+ * contract end-to-end without spawning the real binary. The actual CLI
+ * is exercised in
+ * `test/falsification/adapters/codex/codex-falsifier.integration.test.ts`
+ * (env-gated).
  */
 
 function isKebabCase(name: string): boolean {
@@ -35,8 +36,8 @@ function smokeInput(workspaceRoot: string): FalsificationInput {
     patchSha: '0000000000000000000000000000000000000000',
     obligation: {
       type: 'property-must-hold',
-      predicate: 'true',
-      target: 'always-holds smoke test',
+      predicate: '! grep -r "FORBIDDEN_TOKEN_CONFORMANCE" . 2>/dev/null',
+      target: 'no FORBIDDEN_TOKEN_CONFORMANCE in workspace',
     },
     contextRefs: [],
     timeBudgetMs: 5_000,
@@ -77,7 +78,6 @@ function assertResultShapeIsValid(result: FalsificationResult): void {
       assert.equal(typeof result.attempts, 'number');
       return;
     default: {
-      // exhaustiveness check — adding a new variant must update this test
       const exhaustive: never = result;
       throw new Error(`unhandled FalsificationResult variant: ${JSON.stringify(exhaustive)}`);
     }
@@ -109,30 +109,88 @@ async function runConformance(adapter: FalsifierAdapter): Promise<void> {
   }
 }
 
+function fakeCodexResponse(): string {
+  const candidates = Array.from({ length: CODEX_CANDIDATE_COUNT }, (_, i) => ({
+    name: `c-${i}`,
+    rationale: 'introduces the forbidden token in a fresh file',
+    files: [{ relPath: `c-${i}/leak.txt`, bytes: 'FORBIDDEN_TOKEN_CONFORMANCE' }],
+  }));
+  return [
+    'narration line that the parser must ignore',
+    '```json',
+    JSON.stringify({ candidates }),
+    '```',
+    'tokens used: input=120 output=80 total=200',
+  ].join('\n');
+}
+
 describe('FalsifierAdapter contract conformance', () => {
   it('exposes the codex adapter through defaultAdapterRegistry()', () => {
     const registry = defaultAdapterRegistry();
     const codex = registry.get('codex');
-    assert.ok(
-      codex !== undefined,
-      'expected a "codex" adapter registered in defaultAdapterRegistry(); ' +
-        'Phase 1 of docs/adapter-integration.md must add it. This failure ' +
-        'is the Phase 0 → Phase 1 driver.',
-    );
+    assert.ok(codex !== undefined, 'expected a "codex" adapter registered');
+    assert.ok(codex!.handles.includes('property-must-hold'));
   });
 
-  it('every registered adapter satisfies the FalsifierAdapter contract', async function () {
-    this.timeout(30_000);
-    const registry = defaultAdapterRegistry();
-    const adapters = registry.all();
-    if (adapters.length === 0) {
-      // Phase 0 path: prior assertion already failed with a Phase-1-driving
-      // message. Mark this case pending instead of duplicating the failure.
-      this.skip();
-      return;
+  it('CodexFalsifier conforms to the contract under a real invocation override', async () => {
+    const adapter = new CodexFalsifier({
+      invocationOverride: async () => ({
+        stdout: fakeCodexResponse(),
+        stderr: '',
+        exitCode: 0,
+        wallClockMs: 50,
+      }),
+    });
+    await runConformance(adapter);
+  });
+
+  it('produces a counter-example-input result for the smoke obligation', async () => {
+    const adapter = new CodexFalsifier({
+      invocationOverride: async () => ({
+        stdout: fakeCodexResponse(),
+        stderr: '',
+        exitCode: 0,
+        wallClockMs: 50,
+      }),
+    });
+    const workspace = makeWorkspace();
+    try {
+      const outcome = await adapter.falsify(smokeInput(workspace));
+      assert.equal(outcome.result.kind, 'counter-example-input');
+      if (outcome.result.kind === 'counter-example-input') {
+        assert.ok(outcome.result.inputs.length > 0);
+      }
+      assert.ok(outcome.cost.counterExamplesFound > 0);
+      assert.ok(outcome.cost.dollarsSpent > 0, 'token usage should produce non-zero dollars');
+    } finally {
+      fs.rmSync(workspace, { recursive: true, force: true });
     }
-    for (const adapter of adapters) {
-      await runConformance(adapter);
+  });
+
+  it('returns no-falsification-found when none of the candidates actually falsify', async () => {
+    const safeCandidatesJson = JSON.stringify({
+      candidates: Array.from({ length: CODEX_CANDIDATE_COUNT }, (_, i) => ({
+        name: `safe-${i}`,
+        rationale: 'does not contain the token, so the predicate stays satisfied',
+        files: [{ relPath: `safe-${i}/note.txt`, bytes: 'nothing-forbidden-here' }],
+      })),
+    });
+    const adapter = new CodexFalsifier({
+      invocationOverride: async () => ({
+        stdout: ['```json', safeCandidatesJson, '```'].join('\n'),
+        stderr: '',
+        exitCode: 0,
+        wallClockMs: 30,
+      }),
+    });
+    const workspace = makeWorkspace();
+    try {
+      const outcome = await adapter.falsify(smokeInput(workspace));
+      assert.equal(outcome.result.kind, 'no-falsification-found');
+      assert.equal(outcome.cost.counterExamplesFound, 0);
+      assert.equal(outcome.cost.falsePositives, CODEX_CANDIDATE_COUNT);
+    } finally {
+      fs.rmSync(workspace, { recursive: true, force: true });
     }
   });
 });

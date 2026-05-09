@@ -41,6 +41,20 @@ One adapter per agent backend. All adapters use `process-supervisor.ts` for subp
 
 Capability matrix and end-of-turn contract details are in [docs/adapters.md](docs/adapters.md).
 
+### `src/falsification/adapters/` (Phase 0/1 of the adapter-reintegration plan)
+
+A separate adapter subsystem for *falsifiers*, distinct from the producer adapters above. Adapters here do not generate patches; they consume a patch SHA plus an obligation and try to surface a counter-example, regression fixture, or property-violation trace.
+
+| File | Responsibility |
+|---|---|
+| `types.ts` | `FalsifierAdapter` interface and the four-variant `FalsificationResult` union. |
+| `registry.ts` | In-process `AdapterRegistry`. Registration order is the dispatch order. |
+| `cost-aggregator.ts` | Aggregates per-call records into `runs/<id>/cost-attribution.json`. |
+| `codex/codex-falsifier.ts` | Codex falsifier (Phase 1). `codex exec --sandbox workspace-write --ask-for-approval never`. |
+| `../dispatcher.ts` | Sequential dispatcher. Honors `--falsifiers off`. |
+
+Plan, status, and contract details are in [docs/falsification-adapters.md](docs/falsification-adapters.md) and [docs/adapter-integration.md](docs/adapter-integration.md). Architectural decisions (sandbox posture, obligation target, open questions) are in [DECISIONS.md](DECISIONS.md).
+
 ## Checkpoint Interruption Flow
 
 The orchestrator runs an agent against a goal, captures the resulting diff at structured checkpoints, runs the falsification battery, scores it, and either feeds advisory feedback back into the agent's next turn or hard-gate halts the run.
@@ -127,7 +141,10 @@ The following ship in v6 and earlier but are deleted in v7. Any reference to the
 runs/<execution-id>/
   session-state.json
   metrics.json
-  cost-attribution.json
+  cost-attribution.json   (Phase 0 of the adapter-reintegration plan
+                           extends this file additively with optional
+                           per-adapter dollar totals; see
+                           docs/falsification-adapters.md)
   knowledge-base.json
   wave-N-analysis.json
   report.md

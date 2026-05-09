@@ -1,5 +1,18 @@
 # Adapter Reintegration Implementation Plan
 
+## Implementation status
+
+| Phase | Status | Notes |
+|---|---|---|
+| Phase 0 | shipped on `feat/adapter-reintegration-v8` | Contract, registry, cost schema, failing conformance test that drove Phase 1. See [`docs/falsification-adapters.md`](falsification-adapters.md) and the Adapter Decisions section of [`DECISIONS.md`](../DECISIONS.md). |
+| Phase 1 | shipped on `feat/adapter-reintegration-v8`; dev gate gated on a local Codex install | `CodexFalsifier` lands as the Phase 1 adapter. `--falsifiers <on\|off>` flag is parsed by `swarm v8 run` (default `on`). The integration test against the real Codex CLI is gated on `SWARM_E2E_CODEX=1`. The dev gate result is recorded in [`DECISIONS.md`](../DECISIONS.md) once it has been run on 20 obligations. |
+| Phase 2 | not started | Empirical comparison N=30. Blocked on the still-open question in [`DECISIONS.md`](../DECISIONS.md) about whether the 48-hour post-merge regression check is necessary. |
+| Phase 3+ | not started | Conditional on Phase 2 outcomes. |
+
+The plan below is the authoritative spec for what each phase must
+deliver and what its decision gates are. Status above is the only piece
+that updates as work lands.
+
 ## Context
 
 Swarm Orchestrator v8.0.1 ships a contract-first single-vendor architecture: one cached Anthropic session as the producer, AST-backed verifiers, hash-chained evidence ledger. This plan adds CLI adapters back into the system as falsifiers, not as alternative producers. The producer side is untouched.

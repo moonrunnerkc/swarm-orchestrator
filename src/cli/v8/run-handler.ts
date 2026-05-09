@@ -70,6 +70,16 @@ export interface RunFlags {
    * GitHub Action's `cost-cap` input per impl guide §12 line 290.
    */
   costCapUsd: number | null;
+  /**
+   * Phase 1 of the adapter-reintegration plan: feature flag controlling
+   * the falsification dispatcher (`src/falsification/dispatcher.ts`).
+   * Default `'on'`. `--falsifiers off` bypasses the dispatcher entirely
+   * so adapters stay in tree but are not invoked. Phase 1 does not yet
+   * call the dispatcher from this run path; the flag is parsed and
+   * propagated so Phase 2 can wire it into measurement runs without
+   * changing flag plumbing.
+   */
+  falsifiers: 'on' | 'off';
 }
 
 /** Test seam: lets tests inject a custom session, registry, or WASM runtime. */
@@ -340,6 +350,7 @@ export function parseRunFlags(argv: string[]): RunFlags {
     preGeneration: true,
     forbiddenImports: [],
     costCapUsd: null,
+    falsifiers: 'on',
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -410,6 +421,12 @@ export function parseRunFlags(argv: string[]): RunFlags {
         throw new Error(`invalid --cost-cap "${raw}"; must be a positive number (USD)`);
       }
       flags.costCapUsd = n;
+    } else if (arg === '--falsifiers') {
+      const v = requireValue(argv, ++i, '--falsifiers');
+      if (v !== 'on' && v !== 'off') {
+        throw new Error(`invalid --falsifiers value "${v}"; expected on | off`);
+      }
+      flags.falsifiers = v;
     } else if (arg === '--help' || arg === '-h') {
       printRunUsage();
       throw new Error('help requested');
