@@ -49,6 +49,10 @@ function noUpwardImportsInput(workspaceRoot: string): FalsificationInput {
 
 describe('ClaudeCodeFalsifier unit paths', () => {
   it('returns strategy-not-applicable for unsupported obligation types', async () => {
+    // Phase 4 redo extension (audit-and-corrections, 2026-05-09):
+    // ClaudeCode now handles property-must-hold in addition to its
+    // original two types. Test uses test-must-pass to exercise the
+    // strategy-not-applicable branch.
     const adapter = new ClaudeCodeFalsifier({
       authMethodOverride: () => 'chatgpt',
       invocationOverride: async () => ({ stdout: '', stderr: '', exitCode: 0, wallClockMs: 0 }),
@@ -57,7 +61,10 @@ describe('ClaudeCodeFalsifier unit paths', () => {
     try {
       const outcome = await adapter.falsify({
         patchSha: '0'.repeat(40),
-        obligation: { type: 'property-must-hold', predicate: 'true', target: 'whatever' },
+        obligation: {
+          type: 'test-must-pass',
+          command: 'true',
+        },
         contextRefs: [],
         timeBudgetMs: 1_000,
         workspaceRoot: ws,

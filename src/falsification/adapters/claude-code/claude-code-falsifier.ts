@@ -29,6 +29,7 @@ import type {
   FunctionMustHaveSignatureObligation,
   ImportGraphMustSatisfyObligation,
   ObligationType,
+  PropertyMustHoldObligation,
 } from '../../../contract/types';
 import type {
   AdapterCostRecord,
@@ -46,6 +47,20 @@ import {
 } from './predicate-runner';
 import { detectClaudeCodeAuthMethod, dollarsForEnvelopeByAuth } from './claude-code-cost';
 import { parseClaudeCodeEnvelope } from './claude-code-output-parser';
+// Phase 4 redo (DECISIONS.md 2026-05-09 audit-and-corrections): the
+// ClaudeCode adapter now also handles property-must-hold obligations.
+// The cross-family-diversity question requires a same-family adapter
+// that targets *Codex's* obligation surface (adversarial test inputs
+// against property predicates). The property-must-hold path
+// deliberately re-uses Codex's prompt body, candidate parser, and
+// predicate runner so the comparison is "same task, different model
+// family", not "same model family, different task."
+import { buildCodexPrompt } from '../codex/codex-prompt';
+import { parseCodexCandidates } from '../codex/codex-output-parser';
+import {
+  checkPredicateBaseline,
+  runCandidateAgainstPredicate,
+} from '../codex/predicate-runner';
 
 const MAX_OUTPUT_BYTES = 4_000_000;
 
@@ -83,7 +98,7 @@ export interface ClaudeCodeInvocationResult {
   readonly wallClockMs: number;
 }
 
-type SupportedObligation =
+type AstSupportedObligation =
   | ImportGraphMustSatisfyObligation
   | FunctionMustHaveSignatureObligation;
 
@@ -94,6 +109,10 @@ export class ClaudeCodeFalsifier implements FalsifierAdapter {
   readonly handles: readonly ObligationType[] = [
     'import-graph-must-satisfy',
     'function-must-have-signature',
+    // Phase 4 redo (DECISIONS.md 2026-05-09): adversarial-test-input
+    // strategy on property-must-hold, mirroring Codex's strategy. Same
+    // task body (re-uses `buildCodexPrompt`), different model family.
+    'property-must-hold',
   ];
   private readonly binaryPath: string;
   private readonly model: string | null;
@@ -124,13 +143,20 @@ export class ClaudeCodeFalsifier implements FalsifierAdapter {
 
   async falsify(input: FalsificationInput): Promise<FalsifyOutcome> {
     const startedAt = Date.now();
+    if (input.obligation.type === 'property-must-hold') {
+      return this.falsifyPropertyMustHold(
+        input,
+        input.obligation as PropertyMustHoldObligation,
+        startedAt,
+      );
+    }
     if (
       input.obligation.type !== 'import-graph-must-satisfy' &&
       input.obligation.type !== 'function-must-have-signature'
     ) {
       return notApplicableOutcome(this.name, input.obligation.type, startedAt);
     }
-    const obligation = input.obligation as SupportedObligation;
+    const obligation = input.obligation as AstSupportedObligation;
     const authMethod =
       this.authMethodOverride !== undefined
         ? this.authMethodOverride()
@@ -242,6 +268,132 @@ export class ClaudeCodeFalsifier implements FalsifierAdapter {
     };
   }
 
+  /**
+   * Property-must-hold strategy (Phase 4 redo, audit-and-corrections
+   * 2026-05-09). Mirrors `CodexFalsifier`'s strategy: baseline-check,
+   * spawn `claude` with the *Codex* prompt, parse the JSON envelope,
+   * extract candidates from `.result`, run each through the Codex
+   * predicate runner. Same task body as Codex; only the model family
+   * differs. Cost lands on `dollarsApiEquivalent` for the cross-family
+   * comparison; `dollarsBilled` is zero under the operator's
+   * subscription session.
+   */
+  private async falsifyPropertyMustHold(
+    input: FalsificationInput,
+    obligation: PropertyMustHoldObligation,
+    startedAt: number,
+  ): Promise<FalsifyOutcome> {
+    const authMethod =
+      this.authMethodOverride !== undefined
+        ? this.authMethodOverride()
+        : detectClaudeCodeAuthMethod();
+
+    const baseline = checkPredicateBaseline(obligation.predicate, input.workspaceRoot);
+    if (!baseline.ok) {
+      const wallClockMs = Date.now() - startedAt;
+      return {
+        result: {
+          kind: 'no-falsification-found',
+          obligationType: obligation.type,
+          reason: 'baseline-predicate-failed',
+          attempts: 0,
+          detail:
+            `predicate exited ${baseline.exitCode} against the unmodified workspace; ` +
+            `obligation is pre-tainted. Snapshot a clean SHA or fix the predicate before retrying.`,
+        },
+        cost: {
+          adapterName: this.name,
+          obligationType: obligation.type,
+          wallClockMs,
+          dollarsSpent: 0,
+          dollarsBilled: 0,
+          dollarsTokenEstimate: 0,
+          dollarsApiEquivalent: 0,
+          authMethod,
+          counterExamplesFound: 0,
+          falsePositives: 0,
+        },
+      };
+    }
+
+    const prompt = buildCodexPrompt(obligation);
+    const args = buildClaudeCodeArgs(this.model, this.maxBudgetUsd, input.workspaceRoot);
+    const invocation: ClaudeCodeInvocationRequest = {
+      binaryPath: this.binaryPath,
+      args,
+      cwd: input.workspaceRoot,
+      prompt,
+      timeoutMs: input.timeBudgetMs,
+      env: process.env,
+    };
+    const subprocess = await this.runClaudeCode(invocation);
+    if (subprocess.exitCode !== 0) {
+      throw new Error(
+        `claude exec failed with exit code ${subprocess.exitCode}. ` +
+          `stderr: ${truncate(subprocess.stderr, 1024)} — ` +
+          `surface the failure rather than treating it as no-falsification-found.`,
+        {
+          cause: {
+            exitCode: subprocess.exitCode,
+            stderr: subprocess.stderr,
+            stdout: subprocess.stdout,
+          },
+        },
+      );
+    }
+    const envelope = parseClaudeCodeEnvelope(subprocess.stdout);
+    // The agent reply is a fenced ```json``` block; reuse Codex's
+    // strict parser (3 candidates, schema-validated).
+    const candidates = parseCodexCandidates(envelope.result);
+    const confirmed: CounterExampleInput[] = [];
+    let falsePositives = 0;
+    for (const candidate of candidates) {
+      const result = runCandidateAgainstPredicate(
+        candidate,
+        obligation.predicate,
+        input.workspaceRoot,
+      );
+      if (result.falsified && result.counterExample !== null) {
+        confirmed.push(result.counterExample);
+      } else {
+        falsePositives += 1;
+      }
+    }
+    const wallClockMs = Date.now() - startedAt;
+    const { dollarsBilled, dollarsTokenEstimate, dollarsApiEquivalent } =
+      dollarsForEnvelopeByAuth(envelope.totalCostUsd, authMethod);
+    const cost: AdapterCostRecord = {
+      adapterName: this.name,
+      obligationType: obligation.type,
+      wallClockMs,
+      dollarsSpent: dollarsTokenEstimate,
+      dollarsBilled,
+      dollarsTokenEstimate,
+      dollarsApiEquivalent,
+      authMethod,
+      counterExamplesFound: confirmed.length,
+      falsePositives,
+    };
+    if (confirmed.length === 0) {
+      return {
+        result: noFalsification(
+          obligation.type,
+          candidates.length,
+          'no-counter-example-discovered',
+        ),
+        cost,
+      };
+    }
+    return {
+      result: {
+        kind: 'counter-example-input',
+        obligationType: obligation.type,
+        inputs: confirmed,
+      },
+      cost,
+    };
+  }
+
   private async runClaudeCode(
     req: ClaudeCodeInvocationRequest,
   ): Promise<ClaudeCodeInvocationResult> {
@@ -304,7 +456,7 @@ function notApplicableOutcome(
       reason: 'strategy-not-applicable',
       attempts: 0,
       detail:
-        `${adapterName} only handles import-graph-must-satisfy and function-must-have-signature obligations`,
+        `${adapterName} only handles import-graph-must-satisfy, function-must-have-signature, and property-must-hold obligations`,
     },
     cost: {
       adapterName,
