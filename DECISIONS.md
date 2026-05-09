@@ -834,8 +834,9 @@ Pareto-acceptable run cannot hit the cap by definition; runs that
 do hit the cap are by definition not Pareto-acceptable on cost,
 which is the intended signal.
 
-**Updated pre-registration commit SHA:** appended in this entry once
-the cap-tightening commit lands. Both SHAs are referenced together
-when reading the locked artefact set (the original `378e533` for
-obligations / fixture / harness shape; the new SHA for the cost-cap
-value).
+**Updated pre-registration commit SHA:** `9fa418c` (full:
+`9fa418ceb0233ff2012e8d134f0a24b83aa84945`). Both SHAs are referenced
+together when reading the locked artefact set: `378e533` for
+obligations / fixture / harness shape, `9fa418c` for the tightened
+cost-cap value. A git checkout at `9fa418c` reproduces the
+locked-as-of-Part-B state.
