@@ -652,3 +652,51 @@ obligations** without re-running them against the fixture. Either
 swap them out of the N=30 set or re-run them from scratch on the
 fixture; either is acceptable. This is a Phase-2-design constraint,
 not a Phase-1 close-out condition.
+
+### 2026-05-09 — 48-hour question: grounding re-verified post-Phase-1
+
+The 2026-05-09 entry above ("48-hour post-merge regression check:
+skip for Phase 2") proposed skipping the window on the basis that the
+existing battery already exercises the regression surface Phase 2
+cares about. As part of the Phase 1 close-out (see entry above) the
+citations were re-verified against the current branch:
+
+- `src/verification/battery-runner.ts:21-27` — `LAYERS` is exactly
+  `['differential-gate', 'mutation-gate', 'cheat-detector',
+  'property-gate', 'attestation']`. Confirmed present.
+- `src/verification/differential-gate.ts` — exports
+  `runDifferentialGate(...)`. Confirmed present (covers Class 1 in
+  the prior entry: passing-then-failing test transitions).
+- `src/verification/mutation-gate.ts` — exports the mutation-gate
+  layer. Confirmed present (covers Class 2: discriminative power of
+  the suite).
+- `src/verification/cheat-detector.ts` — exports the cheat-detector
+  layer. Confirmed present (covers Class 3: predicate gaming).
+- `src/verification/property-gate.ts` — exports the property-gate
+  layer with property-harness integration. Confirmed present
+  (covers Class 4: globally-true property generators).
+- `src/verification/attestation.ts` — exports the attestation
+  layer. Confirmed present (covers signed-evidence requirement).
+- `src/verification/post-merge.ts:50-72` — `postMergeVerify(options)`
+  walks `contract.obligations` and re-runs `verifyObligation` on each
+  after all obligations have applied. Confirmed present (covers
+  Class 5: cross-obligation merge interaction; the impl-guide §9
+  "two obligations passing alone but failing together" surface).
+
+The five regression classes the prior entry maps to battery layers
+are still mapped to extant code; the proposal stands. The four
+classes the 48-hour window would catch but the battery does not
+(environment drift, production input shift, subsequent merges,
+latent timing) are still real but still not what Phase 2 is built to
+measure.
+
+**Verification-only entry. Proposal unchanged.** Phase 2 measures
+pass-rate, cost, and wall-clock latency on the same N=30 stratified
+obligation set with no separate 48-hour wait window;
+"post-merge defect rate" is operationalized by `post-merge.ts`. The
+operator may still override at Phase 2's planning gate; if a
+specific Phase-2 obligation type emerges as drift-sensitive (e.g.,
+performance-must-not-regress on a benchmark whose hardware varies
+across runs), that obligation type warrants its own decision entry
+proposing a window for *just that slice*, not as a global Phase 2
+default.
