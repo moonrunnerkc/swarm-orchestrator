@@ -1,0 +1,49 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/falsification/adversarial/direct-eval-call.ts",
+            "bytes": "export function run(source: string): unknown {\n  return eval(source);\n}\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'eval(' src/falsification --include='*.ts'",
+        "reproducerOutput": "src/falsification/adversarial/direct-eval-call.ts:2:  return eval(source);\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/falsification/adversarial/commented-eval-token.ts",
+            "bytes": "// Regression fixture: eval(\"1 + 1\") must be detected by the predicate.\nexport const value = 2;\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'eval(' src/falsification --include='*.ts'",
+        "reproducerOutput": "src/falsification/adversarial/commented-eval-token.ts:1:// Regression fixture: eval(\"1 + 1\") must be detected by the predicate.\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/falsification/adversarial/string-literal-eval-token.ts",
+            "bytes": "export const forbiddenSnippet = \"eval(\\\"console.log(1)\\\")\";\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'eval(' src/falsification --include='*.ts'",
+        "reproducerOutput": "src/falsification/adversarial/string-literal-eval-token.ts:1:export const forbiddenSnippet = \"eval(\\\"console.log(1)\\\")\";\n",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 12437,
+    "dollarsSpent": 0.15282,
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

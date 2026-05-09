@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "plain-config-token",
+      "rationale": "A new root-level config file containing the literal aws_secret_access_key will be matched by the recursive case-insensitive grep.",
+      "files": [
+        {
+          "relPath": "predicate-fixtures/plain-secret-config.txt",
+          "bytes": "service=example\naws_secret_access_key=not-a-real-secret\n"
+        }
+      ]
+    },
+    {
+      "name": "uppercase-env-token",
+      "rationale": "The predicate uses grep -i, so an uppercase AWS_SECRET_ACCESS_KEY entry in a new env sample file should still match.",
+      "files": [
+        {
+          "relPath": "predicate-fixtures/uppercase-env-sample.env",
+          "bytes": "AWS_SECRET_ACCESS_KEY=placeholder-value\n"
+        }
+      ]
+    },
+    {
+      "name": "commented-doc-token",
+      "rationale": "The grep predicate does not ignore comments or documentation, so mentioning aws_secret_access_key in a new markdown file should falsify it.",
+      "files": [
+        {
+          "relPath": "predicate-fixtures/secret-key-note.md",
+          "bytes": "# Local credential note\n\nDo not commit aws_secret_access_key values here.\n"
+        }
+      ]
+    }
+  ]
+}
+```

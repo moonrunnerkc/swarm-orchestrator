@@ -1,0 +1,49 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": ".env",
+            "bytes": "APP_ENV=test\n"
+          }
+        ],
+        "reproducer": "! find . -maxdepth 1 -name '.env' -type f 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": ".env",
+            "bytes": "DATABASE_URL=postgres://user:pass@localhost:5432/app\n"
+          }
+        ],
+        "reproducer": "! find . -maxdepth 1 -name '.env' -type f 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": ".env",
+            "bytes": ""
+          }
+        ],
+        "reproducer": "! find . -maxdepth 1 -name '.env' -type f 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 18568,
+    "dollarsSpent": 0.16192,
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

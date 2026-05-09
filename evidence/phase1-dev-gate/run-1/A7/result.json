@@ -1,0 +1,49 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/adversarial-bearer-literals/hardcoded-auth-header.ts",
+            "bytes": "export const authorizationHeader = \"Bearer ABCDEFGHIJKLMNOPQRST12345\";\n"
+          }
+        ],
+        "reproducer": "! grep -rEn 'Bearer\\s+[A-Za-z0-9_-]{20,}' src/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/adversarial-bearer-literals/hardcoded-auth-header.ts:1:export const authorizationHeader = \"Bearer ABCDEFGHIJKLMNOPQRST12345\";\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/adversarial-bearer-literals/fixture-bearer-token.ts",
+            "bytes": "export const mockRequest = {\n  headers: {\n    authorization: 'Bearer test_token_1234567890ABCDE'\n  }\n};\n"
+          }
+        ],
+        "reproducer": "! grep -rEn 'Bearer\\s+[A-Za-z0-9_-]{20,}' src/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/adversarial-bearer-literals/fixture-bearer-token.ts:3:    authorization: 'Bearer test_token_1234567890ABCDE'\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/adversarial-bearer-literals/commented-bearer-token.ts",
+            "bytes": "// Example: Authorization: Bearer zyxwvutsrqponmlkjihg_12345\nexport const placeholder = true;\n"
+          }
+        ],
+        "reproducer": "! grep -rEn 'Bearer\\s+[A-Za-z0-9_-]{20,}' src/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/adversarial-bearer-literals/commented-bearer-token.ts:1:// Example: Authorization: Bearer zyxwvutsrqponmlkjihg_12345\n",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 24002,
+    "dollarsSpent": 0.16537,
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

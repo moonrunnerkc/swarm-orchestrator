@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "typescript-source-comment",
+      "rationale": "Adding a TypeScript file under src containing the exact comment makes grep find a match and causes the negated predicate to fail.",
+      "files": [
+        {
+          "relPath": "src/adversarial-todo-a/security-marker.ts",
+          "bytes": "export const marker = true;\n// SECURITY: TODO remove this insecure placeholder before release\n"
+        }
+      ]
+    },
+    {
+      "name": "markdown-note-under-src",
+      "rationale": "The predicate searches all files under src recursively, so a Markdown note with the exact substring will be detected.",
+      "files": [
+        {
+          "relPath": "src/adversarial-todo-b/notes.md",
+          "bytes": "# Security Review Notes\n\n// SECURITY: TODO audit this path before enabling it.\n"
+        }
+      ]
+    },
+    {
+      "name": "json-string-contains-token",
+      "rationale": "grep matches raw bytes regardless of file type, so the exact comment text inside a JSON string under src falsifies the property.",
+      "files": [
+        {
+          "relPath": "src/adversarial-todo-c/config.json",
+          "bytes": "{\n  \"reviewNote\": \"// SECURITY: TODO verify authorization checks\"\n}\n"
+        }
+      ]
+    }
+  ]
+}
+```

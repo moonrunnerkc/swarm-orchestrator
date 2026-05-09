@@ -1,0 +1,49 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "adversarial-root-test-key.pem",
+            "bytes": "-----BEGIN TEST PRIVATE KEY-----\nnot-a-real-key\n-----END TEST PRIVATE KEY-----\n"
+          }
+        ],
+        "reproducer": "! find . -maxdepth 1 -name '*.pem' -type f 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "adversarial-root-certificate.pem",
+            "bytes": "-----BEGIN CERTIFICATE-----\nVGhpcyBpcyBhIHRlc3QgY2VydGlmaWNhdGUu\n-----END CERTIFICATE-----\n"
+          }
+        ],
+        "reproducer": "! find . -maxdepth 1 -name '*.pem' -type f 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "adversarial-empty-root.pem",
+            "bytes": ""
+          }
+        ],
+        "reproducer": "! find . -maxdepth 1 -name '*.pem' -type f 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 9728,
+    "dollarsSpent": 0.15041,
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

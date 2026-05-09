@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "direct-eval-call",
+      "rationale": "A new TypeScript file under src/falsification contains the literal substring eval(, so grep will find it and the negated predicate will fail.",
+      "files": [
+        {
+          "relPath": "src/falsification/adversarial/direct-eval-call.ts",
+          "bytes": "export function run(source: string): unknown {\n  return eval(source);\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "commented-eval-token",
+      "rationale": "The predicate is a raw grep and does not parse TypeScript, so eval( inside a comment still produces a match.",
+      "files": [
+        {
+          "relPath": "src/falsification/adversarial/commented-eval-token.ts",
+          "bytes": "// Regression fixture: eval(\"1 + 1\") must be detected by the predicate.\nexport const value = 2;\n"
+        }
+      ]
+    },
+    {
+      "name": "string-literal-eval-token",
+      "rationale": "The grep pattern matches eval( inside string literals in any included .ts file under src/falsification.",
+      "files": [
+        {
+          "relPath": "src/falsification/adversarial/string-literal-eval-token.ts",
+          "bytes": "export const forbiddenSnippet = \"eval(\\\"console.log(1)\\\")\";\n"
+        }
+      ]
+    }
+  ]
+}
+```

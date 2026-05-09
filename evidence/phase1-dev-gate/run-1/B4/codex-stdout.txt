@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "direct-src-symlink",
+      "rationale": "Adding a symbolic link directly under src/ makes find src/ -type l emit a path, causing grep to match and the predicate to exit non-zero.",
+      "files": [
+        {
+          "relPath": "src/adversarial-symlink-a",
+          "bytes": "../package.json"
+        }
+      ]
+    },
+    {
+      "name": "nested-src-symlink",
+      "rationale": "Adding a symbolic link inside a fresh subdirectory under src/ is still within the predicate scope and will be reported by find -type l.",
+      "files": [
+        {
+          "relPath": "src/adversarial-links/link-b",
+          "bytes": "../../README.md"
+        }
+      ]
+    },
+    {
+      "name": "dangling-src-symlink",
+      "rationale": "A dangling symbolic link under src/ still has filesystem type l, so find src/ -type l will print it and falsify the property.",
+      "files": [
+        {
+          "relPath": "src/adversarial-dangling/link-c",
+          "bytes": "../../definitely-missing-target-for-symlink-test"
+        }
+      ]
+    }
+  ]
+}
+```
