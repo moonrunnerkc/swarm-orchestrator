@@ -891,3 +891,52 @@ all invalidate the run.
 `node dist/scripts/phase2/run-harness.js --config b --resume`. The
 runtime-progress.json's `completedIds` contains C1, so the resume
 skips it. The run continues from C2.
+
+### 2026-05-09 — Phase 2 Config B run-1: C6 environmental discard (5-min wall-clock budget exhausted)
+
+The first `--resume` of Config B successfully ran C2–C5 then halted at
+C6.
+
+**Cause:** the codex subprocess for C6 exceeded the per-obligation
+5-minute wall-clock budget and was killed by `SIGTERM`/`SIGKILL`. The
+spawnCodex `reject` path is taken on timeout, so the `onInvocation`
+callback never fires and no `codex-stdout.txt`/`codex-stderr.txt` is
+captured for C6 — only `error.txt` and `stdout.log` (the latter
+records the predicate baseline plus the timeout error). Verified at
+`evidence/phase2/run/config-b/C6/{error.txt,cost.json}`.
+
+C6's predicate is "no `*.html` in `templates/` over 20 KB" — a
+compound size-based predicate analogous to C1's "no `*.ts` … over 50
+KB". The pattern matches: in the runs that did complete (C5 also
+size-based, took 50 s; vs. typical 8–17 s), size-based compound
+predicates push codex into much longer reasoning loops, and on C6
+it apparently looped past 5 minutes without returning. C6 is the
+second discarded obligation in this run.
+
+**Disposition:** logged environmental discard, same rule as C1's
+content-filter discard (timeouts on a third-party API call are
+environmental in the same sense as rate limits / network). Continue
+on `--resume`. C6 is in `runtime-progress.json` with `errorMessage`
+set; on the next `--resume` the harness skips both C1 and C6 and
+runs only C7. **Cumulative discards: 2 of 30 (6.7 %)** — within the
+"more than 2 such discards is concerning" line drawn in the C1
+entry. **A third environmental discard would put the dataset over
+10 % loss; at that point the analysis is run on the partial
+dataset and the close-out cites the elevated discard rate as a
+caveat on the result.**
+
+The harness keeps the 5-minute budget unchanged — bumping it
+mid-run is a measurement-affecting protocol change, which restart
+conditions forbid. Future Phase 2 amendments may raise the budget
+*before* the run begins, with rationale in DECISIONS.md.
+
+**Cumulative spend through C6's halt:** approximately `$4.35`
+(A1–B11: `~$3.73` + C2: `$0.146` + C3: `$0.152` + C4: `$0.150` + C5:
+`$0.178` + C6: `$0` errored). Well under the operator's `$20`
+worst-case ceiling.
+
+**How to apply on resume:** `node dist/scripts/phase2/run-harness.js
+--config b --resume` — both C1 and C6 are now in `completedIds`, so
+the resume runs only C7. After C7, the run is complete with **N=28
+analyzable obligations** (12 A + 11 B + 5 C; 2 environmental
+discards at C1 and C6).
