@@ -92,7 +92,14 @@ streaming verifier      post-merge integration
 3. **Verify at four points.** Pre-generation memoization, mid-stream abort,
    post-generation per-obligation verifier, post-merge integration check.
 4. **Falsify.** Registered adapters take the satisfied patch and try to break it.
-   A confirmed counter-example flips the obligation back to failed.
+   A confirmed counter-example flips the obligation back to failed and triggers an
+   ARIES-style workspace rollback: pre-apply bytes are restored from a
+   content-addressed sidecar under `.swarm/snapshots/<run-id>/`, the restore is
+   verified by re-hashing on-disk bytes against the logged pre-apply blob SHA, and
+   out-of-band mutations between apply and rollback are detected rather than
+   silently overwritten. The post-merge integration check uses the same primitive
+   to unwind every applied obligation in reverse order when cross-obligation
+   regression is detected.
 5. **Record.** Every action is appended to `.swarm/ledger/<run-id>.jsonl` with the
    SHA of the prior entry. Tampering is detectable; runs resume from any prior state.
 
@@ -136,6 +143,7 @@ swarm v8 run <contract>  [--session anthropic|stub] [--mode single|tournament]
                          [--forbid-import <names>] [--cost-cap <usd>]
                          [--no-streaming] [--no-pre-generation] [--no-post-merge]
 swarm v8 resume <run-id> [--ledger <path>] [--contract <dir>]
+swarm v8 stats <run-id>  [--ledger <path>] [--json]
 
 swarm run --goal "<text>"  # compiles and runs via v8 (use --v6 for legacy pipeline)
 swarm gates [path]         # run quality gates against a repo
