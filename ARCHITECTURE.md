@@ -67,7 +67,7 @@ Subsystem overview and per-phase close-outs are in [docs/falsification-adapters.
 
 The orchestrator runs an agent against a goal, captures the resulting diff at structured checkpoints, runs the falsification battery, scores it, and either feeds advisory feedback back into the agent's next turn or hard-gate halts the run.
 
-```
+```text
                             +-------------------+
                             |       goal        |
                             +-------+-----------+
@@ -145,7 +145,7 @@ The following ship in v6 and earlier but are deleted in v7. Any reference to the
 
 ## Output Artifacts
 
-```
+```text
 runs/<execution-id>/
   session-state.json
   metrics.json

@@ -1,4 +1,11 @@
-# Adapter Capabilities
+# Producer Adapter Capabilities
+
+> **Scope.** This page documents the v6 *producer* adapters under
+> `src/adapters/`: subprocess wrappers around third-party coding CLIs that
+> generate patches in the verified-branch pipeline (`swarm run --v6`,
+> `swarm swarm`, `swarm execute`). For the v8 *falsifier* adapter subsystem
+> (Codex, Copilot, ClaudeCode falsifiers under `src/falsification/adapters/`),
+> see [`falsification-adapters.md`](falsification-adapters.md).
 
 Captured: 2026-04-26
 
