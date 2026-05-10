@@ -7,10 +7,9 @@ import { runPredicate } from './shared/run-predicate';
 /**
  * Contamination guard for the Phase 1 dev-gate fixture under
  * `evidence/fixtures/phase-1-gate/`. Every locked predicate in
- * `evidence/phase1-dev-gate/sample-obligations.json` must exit 0 against
+ * `evidence/fixtures/phase1-obligations.json` must exit 0 against
  * the bare fixture, otherwise the gate's pre-apply baseline is tainted
- * before codex is even invoked — the same failure mode that contaminated
- * run-1 (see `evidence/phase1-dev-gate/run-1/inspection.md`).
+ * before codex is even invoked.
  *
  * This test runs the predicates from a fresh copy of the fixture (so the
  * test cannot accidentally hide breakage by picking up files from outside
@@ -29,7 +28,7 @@ interface SampleFile {
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
 const FIXTURE_ROOT = path.join(REPO_ROOT, 'evidence', 'fixtures', 'phase-1-gate');
-const SAMPLE_PATH = path.join(REPO_ROOT, 'evidence', 'phase1-dev-gate', 'sample-obligations.json');
+const SAMPLE_PATH = path.join(REPO_ROOT, 'evidence', 'fixtures', 'phase1-obligations.json');
 
 function copyFixture(dest: string): void {
   fs.cpSync(FIXTURE_ROOT, dest, { recursive: true });

@@ -1,0 +1,173 @@
+{
+  "$schema-comment": "Phase 4 redo obligation set (audit-and-corrections, DECISIONS.md 2026-05-09). 20 property-must-hold obligations stratified A/B/C, disjoint from Phase 1 (sample-obligations.json), Phase 2 (phase2/obligations.json), and Phase 3 (phase3/obligations.json) by predicate, target-token, and target file shape. Obligation type chosen because it is the obligation surface ClaudeCode's strategy targets per docs/adapter-integration.md Phase 4 (adversarial test inputs). Locked under DECISIONS.md 2026-05-09 audit-and-corrections entry.",
+  "fixturePath": "evidence/fixtures/phase-1-gate",
+  "fixtureRationale": "Reuses the Phase 1 fixture (also used by Phase 2). Phases 1/2/4-redo all use property-must-hold obligations with grep/find-based predicates; the same fixture supports all three predicate shapes. Contamination-free for the 20 Phase 4 redo predicates is enforced by test/falsification/phase4-redo-gate-fixture.test.ts.",
+  "obligationCount": 20,
+  "strata": {
+    "A": "token-content absence (grep-based) — falsified by adding a file containing the forbidden token",
+    "B": "filesystem-shape absence (find-based) — falsified by adding a file matching a forbidden path/shape",
+    "C": "compound absence (find + grep / size + path) — falsified by adding a file that satisfies multiple offending conditions at once"
+  },
+  "obligations": [
+    {
+      "id": "A1",
+      "stratum": "A",
+      "type": "property-must-hold",
+      "target": "no console.error( in src/falsification",
+      "predicate": "! grep -rn 'console\\.error(' src/falsification --include='*.ts' 2>/dev/null",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "A2",
+      "stratum": "A",
+      "type": "property-must-hold",
+      "target": "no XXX_FORBIDDEN_PHASE4REDO_TOKEN marker anywhere in workspace",
+      "predicate": "! grep -rn 'XXX_FORBIDDEN_PHASE4REDO_TOKEN' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist 2>/dev/null",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "A3",
+      "stratum": "A",
+      "type": "property-must-hold",
+      "target": "no BEGIN DSA PRIVATE KEY header anywhere in workspace",
+      "predicate": "! grep -rln 'BEGIN DSA PRIVATE KEY' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist 2>/dev/null",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "A4",
+      "stratum": "A",
+      "type": "property-must-hold",
+      "target": "no process.exit( call in src/",
+      "predicate": "! grep -rn 'process\\.exit(' src/ --include='*.ts' 2>/dev/null",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "A5",
+      "stratum": "A",
+      "type": "property-must-hold",
+      "target": "no apiKey = \" assignment in src/",
+      "predicate": "! grep -rEn 'apiKey = \"' src/ --include='*.ts' 2>/dev/null",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "A6",
+      "stratum": "A",
+      "type": "property-must-hold",
+      "target": "no // FIXME(urgent) comment in src/",
+      "predicate": "! grep -rn '// FIXME(urgent)' src/ 2>/dev/null",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "A7",
+      "stratum": "A",
+      "type": "property-must-hold",
+      "target": "no aws_access_key_id literal anywhere in workspace",
+      "predicate": "! grep -rn 'aws_access_key_id' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist 2>/dev/null",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "A8",
+      "stratum": "A",
+      "type": "property-must-hold",
+      "target": "no @ts-ignore directive in src/",
+      "predicate": "! grep -rn '@ts-ignore' src/ --include='*.ts' 2>/dev/null",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "B1",
+      "stratum": "B",
+      "type": "property-must-hold",
+      "target": "no .dockerignore file anywhere in workspace",
+      "predicate": "test -z \"$(find . -name '.dockerignore' -not -path './node_modules/*' -not -path './.git/*' -not -path './dist/*' 2>/dev/null)\"",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "B2",
+      "stratum": "B",
+      "type": "property-must-hold",
+      "target": "no Procfile at any depth in workspace",
+      "predicate": "test -z \"$(find . -name 'Procfile' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null)\"",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "B3",
+      "stratum": "B",
+      "type": "property-must-hold",
+      "target": "no *.sqlite file in workspace",
+      "predicate": "test -z \"$(find . -name '*.sqlite' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null)\"",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "B4",
+      "stratum": "B",
+      "type": "property-must-hold",
+      "target": "no credentials.yaml file at any depth",
+      "predicate": "test -z \"$(find . -name 'credentials.yaml' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null)\"",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "B5",
+      "stratum": "B",
+      "type": "property-must-hold",
+      "target": "no .npmrc file in workspace",
+      "predicate": "test -z \"$(find . -name '.npmrc' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null)\"",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "B6",
+      "stratum": "B",
+      "type": "property-must-hold",
+      "target": "no symlink under src/",
+      "predicate": "test -z \"$(find src -type l 2>/dev/null)\"",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "B7",
+      "stratum": "B",
+      "type": "property-must-hold",
+      "target": "no *.bak backup file in workspace",
+      "predicate": "test -z \"$(find . -name '*.bak' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null)\"",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "C1",
+      "stratum": "C",
+      "type": "property-must-hold",
+      "target": "no .py file containing 'import socket' anywhere",
+      "predicate": "! find . -name '*.py' -not -path './node_modules/*' -not -path './.git/*' -exec grep -l 'import socket' {} + 2>/dev/null | grep -q .",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "C2",
+      "stratum": "C",
+      "type": "property-must-hold",
+      "target": "no .ts file > 50 KB under src/falsification/",
+      "predicate": "! find src/falsification -name '*.ts' -size +50k 2>/dev/null | grep -q .",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "C3",
+      "stratum": "C",
+      "type": "property-must-hold",
+      "target": "no executable .sh file under src/",
+      "predicate": "! find src -name '*.sh' -perm -u+x 2>/dev/null | grep -q .",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "C4",
+      "stratum": "C",
+      "type": "property-must-hold",
+      "target": "no .json file containing the literal '\"role\": \"admin\"' anywhere",
+      "predicate": "! find . -name '*.json' -not -path './node_modules/*' -not -path './.git/*' -not -path './dist/*' -exec grep -l '\"role\": \"admin\"' {} + 2>/dev/null | grep -q .",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "C5",
+      "stratum": "C",
+      "type": "property-must-hold",
+      "target": "no .yaml file containing 'host: 0.0.0.0' anywhere",
+      "predicate": "! find . \\( -name '*.yaml' -o -name '*.yml' \\) -not -path './node_modules/*' -not -path './.git/*' -exec grep -l 'host: 0\\.0\\.0\\.0' {} + 2>/dev/null | grep -q .",
+      "expectedPreApplyExit": 0
+    }
+  ]
+}

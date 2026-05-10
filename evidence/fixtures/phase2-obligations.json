@@ -1,0 +1,253 @@
+{
+  "$schema-comment": "Phase 2 empirical-gate obligation set. 30 property-must-hold obligations, stratified into 3 strata (A=token-content, B=filesystem-shape, C=compound). Disjoint from the Phase 1 dev-gate set at evidence/phase1-dev-gate/sample-obligations.json — no predicate, target token, or target file shape is reused. Each predicate exits 0 against the bare Phase 1 fixture (which Phase 2 reuses; see DECISIONS.md 2026-05-09 entry for the reuse rationale). Locked under DECISIONS.md 2026-05-09 entry; do not modify in place — supersede with a new dated set if the gate has to be redone.",
+  "fixturePath": "evidence/fixtures/phase-1-gate",
+  "fixtureRationale": "Reused from Phase 1; verified contamination-free for all 30 Phase 2 predicates by test/falsification/phase2-gate-fixture.test.ts.",
+  "obligationCount": 30,
+  "strata": {
+    "A": "token-content absence (grep-based) — falsified by adding a file containing the forbidden token",
+    "B": "filesystem-shape absence (find-based) — falsified by adding a file matching a forbidden path/shape",
+    "C": "compound absence (find + grep / size + path) — falsified by adding a file that satisfies multiple offending conditions at once"
+  },
+  "obligations": [
+    {
+      "id": "A1",
+      "stratum": "A",
+      "type": "property-must-hold",
+      "target": "no Function( constructor call in src/falsification",
+      "predicate": "! grep -rn 'Function(' src/falsification --include='*.ts' 2>/dev/null",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "A2",
+      "stratum": "A",
+      "type": "property-must-hold",
+      "target": "no XXX_FORBIDDEN_PHASE2_TOKEN marker anywhere in workspace",
+      "predicate": "! grep -rn 'XXX_FORBIDDEN_PHASE2_TOKEN' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist 2>/dev/null",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "A3",
+      "stratum": "A",
+      "type": "property-must-hold",
+      "target": "no BEGIN OPENSSH PRIVATE KEY header anywhere in workspace",
+      "predicate": "! grep -rln 'BEGIN OPENSSH PRIVATE KEY' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist 2>/dev/null",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "A4",
+      "stratum": "A",
+      "type": "property-must-hold",
+      "target": "no debugger; statement in src/",
+      "predicate": "! grep -rn 'debugger;' src/ --include='*.ts' 2>/dev/null",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "A5",
+      "stratum": "A",
+      "type": "property-must-hold",
+      "target": "no literal secret = \" assignment in src/",
+      "predicate": "! grep -rEn 'secret = \"' src/ --include='*.ts' 2>/dev/null",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "A6",
+      "stratum": "A",
+      "type": "property-must-hold",
+      "target": "no TODO(security) comment in src/",
+      "predicate": "! grep -rn 'TODO(security)' src/ 2>/dev/null",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "A7",
+      "stratum": "A",
+      "type": "property-must-hold",
+      "target": "no Authorization: Basic <token> literal in src/",
+      "predicate": "! grep -rEn 'Authorization: Basic [A-Za-z0-9+/=]{8,}' src/ --include='*.ts' 2>/dev/null",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "A8",
+      "stratum": "A",
+      "type": "property-must-hold",
+      "target": "no slack_webhook token (case-insensitive) anywhere in workspace",
+      "predicate": "! grep -rin 'slack_webhook' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist 2>/dev/null",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "A9",
+      "stratum": "A",
+      "type": "property-must-hold",
+      "target": "no <<<<<<< HEAD merge-conflict marker in src/",
+      "predicate": "! grep -rn '<<<<<<< HEAD' src/ 2>/dev/null",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "A10",
+      "stratum": "A",
+      "type": "property-must-hold",
+      "target": "no 127.0.0.1:<port> literal in src/",
+      "predicate": "! grep -rEn '127\\.0\\.0\\.1:[0-9]+' src/ --include='*.ts' 2>/dev/null",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "A11",
+      "stratum": "A",
+      "type": "property-must-hold",
+      "target": "no x-api-key: header literal in src/",
+      "predicate": "! grep -rn 'x-api-key:' src/ --include='*.ts' 2>/dev/null",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "A12",
+      "stratum": "A",
+      "type": "property-must-hold",
+      "target": "no BEGIN CERTIFICATE block in src/",
+      "predicate": "! grep -rn 'BEGIN CERTIFICATE' src/ 2>/dev/null",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "B1",
+      "stratum": "B",
+      "type": "property-must-hold",
+      "target": "no .npmrc at workspace root",
+      "predicate": "! find . -maxdepth 1 -name '.npmrc' -type f 2>/dev/null | grep -q .",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "B2",
+      "stratum": "B",
+      "type": "property-must-hold",
+      "target": "no *.crt files in workspace",
+      "predicate": "! find . -name '*.crt' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null | grep -q .",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "B3",
+      "stratum": "B",
+      "type": "property-must-hold",
+      "target": "no *.p12 files in workspace",
+      "predicate": "! find . -name '*.p12' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null | grep -q .",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "B4",
+      "stratum": "B",
+      "type": "property-must-hold",
+      "target": "no *.cer at workspace root",
+      "predicate": "! find . -maxdepth 1 -name '*.cer' -type f 2>/dev/null | grep -q .",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "B5",
+      "stratum": "B",
+      "type": "property-must-hold",
+      "target": "no zero-byte *.ts files under src/",
+      "predicate": "! find src/ -name '*.ts' -size 0 -type f 2>/dev/null | grep -q .",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "B6",
+      "stratum": "B",
+      "type": "property-must-hold",
+      "target": "no .git-credentials file in workspace",
+      "predicate": "! find . -name '.git-credentials' -type f -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null | grep -q .",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "B7",
+      "stratum": "B",
+      "type": "property-must-hold",
+      "target": "no source file > 1 MB under src/",
+      "predicate": "! find src/ -size +1M -type f 2>/dev/null | grep -q .",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "B8",
+      "stratum": "B",
+      "type": "property-must-hold",
+      "target": "no *.pfx files in workspace",
+      "predicate": "! find . -name '*.pfx' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null | grep -q .",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "B9",
+      "stratum": "B",
+      "type": "property-must-hold",
+      "target": "no core dump file at workspace root",
+      "predicate": "! find . -maxdepth 1 -name 'core' -type f 2>/dev/null | grep -q .",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "B10",
+      "stratum": "B",
+      "type": "property-must-hold",
+      "target": "no *.bak files at workspace root",
+      "predicate": "! find . -maxdepth 1 -name '*.bak' -type f 2>/dev/null | grep -q .",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "B11",
+      "stratum": "B",
+      "type": "property-must-hold",
+      "target": "no .htpasswd files in workspace",
+      "predicate": "! find . -name '.htpasswd' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null | grep -q .",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "C1",
+      "stratum": "C",
+      "type": "property-must-hold",
+      "target": "no *.ts under src/falsification over 50 KB containing 'console'",
+      "predicate": "! find src/falsification -name '*.ts' -size +50k -exec grep -l 'console' {} + 2>/dev/null | grep -q .",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "C2",
+      "stratum": "C",
+      "type": "property-must-hold",
+      "target": "no JSON file at workspace root containing 'BEGIN'",
+      "predicate": "! find . -maxdepth 1 -name '*.json' -exec grep -l 'BEGIN' {} + 2>/dev/null | grep -q .",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "C3",
+      "stratum": "C",
+      "type": "property-must-hold",
+      "target": "no <iframe tag in templates/",
+      "predicate": "! grep -rln '<iframe' templates/ 2>/dev/null | grep -q .",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "C4",
+      "stratum": "C",
+      "type": "property-must-hold",
+      "target": "no *.test.ts under test/falsification containing eval(",
+      "predicate": "! find test/falsification -name '*.test.ts' -exec grep -l 'eval(' {} + 2>/dev/null | grep -q .",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "C5",
+      "stratum": "C",
+      "type": "property-must-hold",
+      "target": "no Markdown file at workspace root over 30 KB",
+      "predicate": "! find . -maxdepth 1 -name '*.md' -size +30k 2>/dev/null | grep -q .",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "C6",
+      "stratum": "C",
+      "type": "property-must-hold",
+      "target": "no *.html in templates/ over 20 KB",
+      "predicate": "! find templates/ -name '*.html' -size +20k 2>/dev/null | grep -q .",
+      "expectedPreApplyExit": 0
+    },
+    {
+      "id": "C7",
+      "stratum": "C",
+      "type": "property-must-hold",
+      "target": "no *.yaml at workspace root containing 'password'",
+      "predicate": "! find . -maxdepth 1 -name '*.yaml' -exec grep -l 'password' {} + 2>/dev/null | grep -q .",
+      "expectedPreApplyExit": 0
+    }
+  ]
+}

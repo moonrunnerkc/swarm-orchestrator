@@ -28,7 +28,7 @@ interface Phase4RedoSampleFile {
 }
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
-const SAMPLE_PATH = path.join(REPO_ROOT, 'evidence', 'phase4-redo', 'obligations.json');
+const SAMPLE_PATH = path.join(REPO_ROOT, 'evidence', 'fixtures', 'phase4-redo-obligations.json');
 
 function copyFixture(src: string, dest: string): void {
   fs.cpSync(src, dest, { recursive: true });

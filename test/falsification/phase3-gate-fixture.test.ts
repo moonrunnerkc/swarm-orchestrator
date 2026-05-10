@@ -33,7 +33,7 @@ interface Phase3SampleFile {
 }
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
-const PHASE3_SAMPLE_PATH = path.join(REPO_ROOT, 'evidence', 'phase3', 'obligations.json');
+const PHASE3_SAMPLE_PATH = path.join(REPO_ROOT, 'evidence', 'fixtures', 'phase3-obligations.json');
 
 function copyFixture(src: string, dest: string): void {
   fs.cpSync(src, dest, { recursive: true });

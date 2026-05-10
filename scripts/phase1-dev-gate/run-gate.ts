@@ -498,16 +498,16 @@ function selectObligations(
 async function main(): Promise<void> {
   const flags = parseFlags(process.argv.slice(2));
   const repo = repoRoot();
-  const samplePath = path.join(repo, 'evidence', 'phase1-dev-gate', 'sample-obligations.json');
+  const samplePath = path.join(repo, 'evidence', 'fixtures', 'phase1-obligations.json');
   if (!fs.existsSync(samplePath)) {
     throw new Error(
-      `sample-obligations.json missing at ${samplePath}; runner expects the locked sample to be tracked on the branch`,
+      `phase1-obligations.json missing at ${samplePath}; runner expects the locked sample to be tracked on the branch`,
     );
   }
   const sample = JSON.parse(fs.readFileSync(samplePath, 'utf8')) as SampleFile;
   if (sample.obligations.length !== sample.obligationCount) {
     throw new Error(
-      `sample-obligations.json: declared count ${sample.obligationCount} does not match obligations.length ${sample.obligations.length}`,
+      `phase1-obligations.json: declared count ${sample.obligationCount} does not match obligations.length ${sample.obligations.length}`,
     );
   }
 
