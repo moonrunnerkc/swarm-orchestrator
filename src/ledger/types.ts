@@ -354,6 +354,75 @@ export interface FalsificationCallEntry extends LedgerEntryHeader {
   detail: string;
 }
 
+/**
+ * Workspace mutation snapshot recorded immediately before a producer's
+ * patch is applied. Used by `rollbackObligation` to restore the workspace
+ * when a falsifier later finds a counter-example or the post-merge
+ * integration check detects a regression.
+ *
+ * Pre-apply file bytes are written to a sidecar directory under
+ * `.swarm/snapshots/<runId>/<obligationIndex>/<preBlobSha>`; this entry
+ * carries only SHAs, not bytes, to keep the JSONL small.
+ *
+ * Content-only: blob SHAs use the same algorithm as `git hash-object`
+ * (header `blob <byteLength>\0` + content, SHA1). File modes, symlinks,
+ * and binary-special-case handling are out of scope; persona-emitted
+ * diffs in this codebase do not touch them in practice.
+ *
+ * Replay/resume treats this entry as informational. Resume drives off
+ * `obligation-satisfied` and `obligation-failed`; snapshot entries are
+ * audit trail only.
+ */
+export interface WorkspaceSnapshotEntry extends LedgerEntryHeader {
+  type: 'workspace-snapshot';
+  obligationIndex: number;
+  files: ReadonlyArray<{
+    path: string;
+    /** Pre-apply blob SHA, or 'absent' if the file did not exist. */
+    preBlobSha: string | 'absent';
+    /**
+     * Expected blob SHA after the producer's patch is applied. Used by
+     * rollback to detect cases where the file was mutated by something
+     * other than the obligation's apply (later obligation, concurrent
+     * process, manual edit) between apply and rollback.
+     */
+    expectedPostBlobSha: string | 'absent';
+  }>;
+}
+
+/**
+ * Recorded by `rollbackObligation` after the workspace files for an
+ * obligation are restored. Modeled on ARIES Compensation Log Records
+ * (Mohan et al. 1992, ACM TODS 17(1)): the entry carries enough state
+ * that a crash mid-rollback can be resumed by a future run inspecting
+ * the ledger to identify which files have already been restored.
+ *
+ * `restoredFiles` is empty when `success` is false (state-mismatch or
+ * io-error returned before any file was touched).
+ *
+ * Replay/resume treats this entry as informational; the next run sees
+ * the workspace as it actually is on disk.
+ */
+export interface ObligationRolledBackEntry extends LedgerEntryHeader {
+  type: 'obligation-rolled-back';
+  obligationIndex: number;
+  trigger: 'per-obligation-falsification' | 'post-merge-regression';
+  success: boolean;
+  restoredFiles: ReadonlyArray<{
+    path: string;
+    /**
+     * Blob SHA of the file content after rollback completed, or
+     * 'absent' if rollback unlinked the file (pre-apply state was
+     * 'absent'). This is the ARIES recovery-invariant evidence: caller
+     * verified `restoredBlobSha === preBlobSha` before writing this
+     * entry. A crash-safe resume can compare on-disk SHAs against this
+     * field to determine which restores already completed.
+     */
+    restoredBlobSha: string | 'absent';
+  }>;
+  detail: string;
+}
+
 /** Discriminated union of every ledger entry shape. */
 export type LedgerEntry =
   | RunStartedEntry
@@ -374,7 +443,9 @@ export type LedgerEntry =
   | CandidateStreamAbortedEntry
   | ObligationPreVerifiedEntry
   | PostMergeVerifiedEntry
-  | FalsificationCallEntry;
+  | FalsificationCallEntry
+  | WorkspaceSnapshotEntry
+  | ObligationRolledBackEntry;
 
 /** Type tag union for all ledger entries. */
 export type LedgerEntryType = LedgerEntry['type'];

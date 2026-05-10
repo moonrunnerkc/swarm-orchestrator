@@ -2,6 +2,7 @@ import { getLogger } from '../../logger';
 import { handleCompile } from './compile-handler';
 import { handleResume } from './resume-handler';
 import { handleRun } from './run-handler';
+import { handleStats } from './stats-handler';
 
 const logger = getLogger('cli:v8');
 
@@ -23,6 +24,8 @@ export async function handleV8Command(argv: string[]): Promise<number> {
       return handleRun(rest);
     case 'resume':
       return handleResume(rest);
+    case 'stats':
+      return handleStats(rest);
     case undefined:
     case '--help':
     case '-h':
@@ -44,6 +47,7 @@ function printV8Usage(): void {
       '  compile <goal>   compile a natural-language goal into a contract',
       '  run <contract>   run a compiled contract',
       '  resume <run-id>  resume a partially-completed run',
+      '  stats <run-id>   aggregate diagnostic counts from a run ledger',
       '',
       'For per-subcommand flags, see `swarm v8 <subcommand> --help`.',
       '',

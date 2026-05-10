@@ -184,8 +184,9 @@ Reference: [`docs/configuration.md`](docs/configuration.md), config precedence i
 
 - **Tournament mode does not stream.** `--mode tournament` plus `--forbid-import`
   skips the streaming abort; streaming verification is `--mode single` only.
-- **Post-merge failure does not auto-rollback.** The run is marked failed;
-  per-obligation worktree snapshots are post-v8.0.
+- **Cleanup.** Per-obligation snapshot sidecars under `.swarm/snapshots/<run-id>/`
+  are written before each apply and not pruned at end of run; remove them when
+  reclaiming disk space.
 - **`--cost-cap` is enforced post-obligation, not mid-call.** Cumulative spend is
   checked at the end of each obligation against estimated Sonnet 4 pricing.
 - **Bandit dispatch is not built (Phase 5).** Codex and Copilot have disjoint
