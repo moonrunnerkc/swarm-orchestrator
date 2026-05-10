@@ -6,27 +6,6 @@ producers**: given a patch and an obligation, an adapter tries to falsify
 the obligation by surfacing a counter-example, a regression fixture, or a
 property-violation trace. The producer side of v8.0.1 is unchanged.
 
-The plan that drove this work is [`docs/adapter-integration.md`](adapter-integration.md);
-architectural decisions and per-phase close-outs are in [`DECISIONS.md`](../DECISIONS.md).
-The 2026-05-09 "Adapter integration close-out" entry in `DECISIONS.md` is
-the historical record of the final state.
-
-## Status (final, post-audit-and-corrections)
-
-| Phase | Outcome | Cite |
-|---|---|---|
-| Phase 0 — contract, registry, cost schema | shipped | 2026-05-08 entries in `DECISIONS.md`. |
-| Phase 1 — Codex falsifier, dispatcher, `--falsifiers` flag | shipped; dev gate passed (`evidence/phase1-dev-gate/run-1`) | 2026-05-09 "Phase 1 dev gate: PASSED". |
-| Phase 2 — Codex vs producer-only baseline (N=30) | shipped C2.1 (Codex default-on) | 2026-05-09 "Phase 2 close-out". |
-| Phase 3 — Copilot ablation (N=20, `import-graph` + `function-signature`) | ship-B' (Copilot default-on) | 2026-05-09 corrected close-out. Original 6.5× headline replaced by a four-ratio table; ship decision survives every API-equivalent cell. |
-| Phase 4 redo — ClaudeCode ablation on `property-must-hold` (N=20) | cross-family-diversity thesis **not contradicted**; residual too small for strong confirmation (B' caught 18/19 analyzable; the N=1 residual gave ClaudeCode at most one chance to surface unique yield) | 2026-05-09 "Phase 4 redo close-out" + 2026-05-09 "Adapter integration close-out: post-review corrections". ClaudeCode unique = 0; ClaudeCode ships behind a per-adapter flag default-off regardless of yield. |
-| Phase 5 — bandit dispatcher | NOT BUILT (operational skip) | 2026-05-09 "Phase 5 skip rationale". Two adapters with disjoint obligation types — no within-type overlap for the bandit to arbitrate. |
-| Phase 6 — cross-vendor producer race | deferred | 2026-05-09 "Phase 6 status (final close-out)". Phase 2's predicate set lacked high-stakes obligations; the gate had no input. |
-
-The original Phase 4 (ClaudeCode on Phase 3's obligation set) is
-**INVALIDATED** — see the status banner on `evidence/phase4/analysis.md`.
-The redo is the authoritative Phase 4 result.
-
 ## Production adapter set
 
 | Adapter | Default | Obligation types it handles |
@@ -80,20 +59,14 @@ documented below.
 
 ## Methodology-fix invariants
 
-Three invariants are load-bearing for any future falsifier work and
-must not be removed without a dated decision entry in `DECISIONS.md`:
+Three invariants are load-bearing for the falsifier subsystem:
 
 1. **Pre-apply baseline predicate check.** Every adapter that runs a
    shell predicate (currently Codex and ClaudeCode for
    `property-must-hold`) checks the predicate against the unmodified
    workspace before any LLM spawn. If the predicate fails pre-apply,
    the adapter returns `no-falsification-found` with reason
-   `baseline-predicate-failed`, no spawn, no billed dollars. The gate
-   runner surfaces this as a distinct row in `summary.md`. The
-   contamination incident in `evidence/phase1-dev-gate/run-1-aborted/`
-   is the "why" — leaving the check implicit produced 12 spurious
-   yields when the workspace had committed evidence files containing
-   the marker tokens the predicates searched for.
+   `baseline-predicate-failed`, no spawn, no billed dollars.
 2. **Fixture isolation.** Gate runs source workspaces from purpose-built
    fixtures under `evidence/fixtures/` (e.g.
    `evidence/fixtures/phase-1-gate/`, `evidence/fixtures/phase-3/`),
@@ -107,10 +80,7 @@ must not be removed without a dated decision entry in `DECISIONS.md`:
    subscription auth = $0) and `dollarsApiEquivalent`
    (rate-card-derived API equivalent for cross-adapter comparison).
    Subscription-imputed `dollarsBilled = 0` no longer flatters
-   cross-adapter ratios. The Phase 3 close-out's original 6.5× headline
-   conflated subscription-imputed token estimates with API-billed
-   dollars; the dual-column reporting prevents that confusion at the
-   data layer.
+   cross-adapter ratios.
 
 ## Cost reporting
 
@@ -129,8 +99,7 @@ API token rates regardless of auth, so
 `dollarsApiEquivalent === dollarsTokenEstimate` for those adapters.
 Copilot is subscription-only; `dollarsApiEquivalent` is computed as
 `Premium requests × $0.05/request` (GPT-4-Turbo-equivalent rate-card
-midpoint per the 2026-05-09 "Cost normalization" entry in
-`DECISIONS.md`). The constant is overridable via
+midpoint). The constant is overridable via
 `COPILOT_USD_PER_PREMIUM_REQUEST_API_EQUIV`.
 
 ## CLI flag
@@ -155,9 +124,6 @@ const codexOnly = defaultAdapterRegistry({ includeCopilot: false });
 const withClaudeCode = defaultAdapterRegistry({ includeClaudeCode: true });
 ```
 
-If a future phase earns ClaudeCode default-on, the close-out will flip
-the default in `defaultAdapterRegistry()` and update this section.
-
 ## Sandbox posture
 
 | Adapter | Posture |
@@ -166,8 +132,8 @@ the default in `defaultAdapterRegistry()` and update this section.
 | Copilot | `--allow-tool view --allow-all-paths --no-ask-user --no-color --output-format text`. No `--allow-all-tools`, no `--allow-all-urls`, no `--yolo`. The integration test (`SWARM_E2E_COPILOT=1`) may relax to `--allow-all-tools` because it runs in an isolated temp workspace. |
 | ClaudeCode | `-p --output-format json --max-budget-usd 1.00 --add-dir <workspace> --no-session-persistence --exclude-dynamic-system-prompt-sections`. No `--dangerously-skip-permissions`, no `--allow-dangerously-skip-permissions`, no `--bare`. |
 
-Adding any of the omitted "danger" flags requires its own decision
-entry in `DECISIONS.md` first.
+Adding any of the omitted "danger" flags is a deliberate trust
+expansion and should be reviewed against the threat model before merge.
 
 ## Running adapter integration tests against the real CLIs
 
@@ -193,33 +159,19 @@ drift for those adapters is detected by the integration tests on demand.
 
 ## What is NOT in this subsystem
 
-The plan's "What's Explicitly Out of Scope" section continues to
-govern. None of the following landed during the adapter integration
-work:
-
 - Plugin SDK, signature verification, plugin signing.
 - Multiple strategies per adapter beyond the one each currently ships
   (Codex: adversarial inputs; Copilot: graph perturbation + signature
   drift; ClaudeCode: adversarial inputs mirrored from Codex).
 - Stigmergic evidence board, pheromone propagation, neighbor signaling.
-- Cross-run posterior persistence (would be a Phase 5 concern; Phase 5
-  is skipped on operational grounds).
-- Bandit dispatcher (Phase 5; not built).
-- Cross-vendor producer race (Phase 6; deferred — Phase 2 found no
-  high-stakes obligations).
+- Cross-run posterior persistence.
+- Bandit dispatcher.
+- Cross-vendor producer race.
 - Dashboard or UI surface for falsification results.
 - Auto-installation of adapter CLIs.
 
 ## See also
 
-- [`docs/adapter-integration.md`](adapter-integration.md) — the
-  multi-phase plan this subsystem implemented. Bears a final-status
-  header on top with the close-out date and per-phase outcomes.
-- [`DECISIONS.md`](../DECISIONS.md) — Adapter Decisions section,
-  including the audit-and-corrections sweep and the 2026-05-09
-  "Adapter integration close-out" entry that this document mirrors.
-- [`docs/falsification-battery-current.md`](falsification-battery-current.md) —
-  the existing v7 battery that the adapter system runs *alongside*, not
-  instead of.
 - [`src/verification/battery-runner.ts`](../src/verification/battery-runner.ts) —
-  the v7 battery's entry point.
+  the v7 battery's entry point. The adapter system runs *alongside* the
+  battery, not instead of it.

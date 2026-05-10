@@ -59,9 +59,9 @@ A separate adapter subsystem for *falsifiers*, distinct from the producer adapte
 | `inspection/heuristic-classifier.ts` | AST-based heuristic classifier for inspection skeletons. Verdict-aid, not a verdict source (the 2026-05-09 close-out used heuristic as the verdict source under explicit operator-bypass approval and reported bounds rather than point estimates). |
 | `../dispatcher.ts` | Sequential dispatcher. Honors `--falsifiers off`. |
 
-**Methodology-fix invariants:** pre-apply baseline check, fixture isolation (workspaces sourced from `evidence/fixtures/`, not `git archive` of HEAD), and dual-column cost reporting (`dollarsBilled` + `dollarsApiEquivalent`). Removing any of the three requires its own dated decision entry in [DECISIONS.md](DECISIONS.md).
+**Methodology-fix invariants:** pre-apply baseline check, fixture isolation (workspaces sourced from `evidence/fixtures/`, not `git archive` of HEAD), and dual-column cost reporting (`dollarsBilled` + `dollarsApiEquivalent`). All three are load-bearing for the falsification adapter subsystem.
 
-Subsystem overview and per-phase close-outs are in [docs/falsification-adapters.md](docs/falsification-adapters.md) and the 2026-05-09 "Adapter integration close-out" entry of [DECISIONS.md](DECISIONS.md). The historical multi-phase plan is in [docs/adapter-integration.md](docs/adapter-integration.md).
+Subsystem overview is in [docs/falsification-adapters.md](docs/falsification-adapters.md).
 
 ## Checkpoint Interruption Flow
 

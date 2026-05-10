@@ -257,11 +257,7 @@ single `--falsifiers <on|off>` then gates dispatch as a whole.
 
 See [docs/falsification-adapters.md](falsification-adapters.md) for the
 subsystem overview (production topology, sandbox posture, dual-column
-cost reporting, methodology-fix invariants),
-[docs/adapter-integration.md](adapter-integration.md) for the
-historical multi-phase plan, and [DECISIONS.md](../DECISIONS.md) for
-the recorded architectural decisions and the 2026-05-09 "Adapter
-integration close-out" entry.
+cost reporting, methodology-fix invariants).
 
 ## Transcript commands
 

@@ -98,8 +98,7 @@ streaming verifier      post-merge integration
 
 The architectural rule: nothing commits without passing the obligation's verifier.
 
-Architecture deep-dive: [`ARCHITECTURE.md`](ARCHITECTURE.md) and
-[`docs/v8-overhaul-guide.md`](docs/v8-overhaul-guide.md).
+Architecture deep-dive: [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Adapters
 
@@ -179,8 +178,7 @@ Reference: [`docs/configuration.md`](docs/configuration.md), config precedence i
 
 `src/` is grouped by responsibility: `contract/`, `session/`, `persona/`,
 `population/`, `ledger/`, `wasm/`, `verification/`, `falsification/adapters/`,
-`adapters/` (v6 producer CLIs), `quality-gates/`, `cli/`. The full v6-to-v8
-module reuse audit is in [`docs/v8-reuse-audit.md`](docs/v8-reuse-audit.md).
+`adapters/` (v6 producer CLIs), `quality-gates/`, `cli/`.
 
 ## Limitations
 
@@ -195,21 +193,16 @@ module reuse audit is in [`docs/v8-reuse-audit.md`](docs/v8-reuse-audit.md).
   [`docs/falsification-adapters.md`](docs/falsification-adapters.md).
 - **Cross-vendor producer race is deferred (Phase 6).**
 
-Full list with rationale: [`docs/v8-architecture-deviations.md`](docs/v8-architecture-deviations.md).
-
 ## Documentation
 
 | Document | What it covers |
 |---|---|
 | [Architecture](ARCHITECTURE.md) | Module layout, scheduling, falsification battery, output artifacts. |
-| [v8 overhaul guide](docs/v8-overhaul-guide.md) | Architecture rationale and cost model. |
-| [v8 implementation guide](docs/v8-implementation-guide.md) | Phased build sequence and exit gates. |
 | [Falsification adapters](docs/falsification-adapters.md) | Adapter contract, sandbox posture, cost reporting, methodology invariants. |
 | [Producer adapters](docs/adapters.md) | v6 producer-CLI capabilities, end-of-turn contract. |
 | [Quality gates](docs/quality-gates.md) | The 9 built-in gates, how to register custom ones. |
 | [CLI reference](docs/cli.md) | Every subcommand and flag. |
 | [Verification](docs/verification.md) | Per-step verifier, transcript checks, hook evidence. |
-| [Decisions](DECISIONS.md) | Architectural decisions, including the Adapter Decisions section. |
 | [Changelog](CHANGELOG.md) | Per-release changes. |
 | [Contributing](CONTRIBUTING.md) | Development setup, code style, PR workflow. |
 | [Security policy](SECURITY.md) | How to report vulnerabilities. |

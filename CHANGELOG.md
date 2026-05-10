@@ -47,8 +47,8 @@ with cost and yield. Source: `src/falsification/dispatcher.ts`,
   `evidence/fixtures/` with hash validation; dual-column cost reporting at the
   `AdapterCostRecord` and `AdapterCostAggregate` layers. See
   [`docs/falsification-adapters.md`](docs/falsification-adapters.md).
-- `docs/falsification-adapters.md`, `docs/adapter-integration.md`, expanded
-  Adapter Decisions section in `DECISIONS.md`.
+- `docs/falsification-adapters.md` documenting the adapter contract, sandbox
+  posture, and dual-column cost reporting.
 
 ### Not built or deferred
 
@@ -88,11 +88,6 @@ hash-chained JSONL ledger with resume, WASM deterministic floor, streaming
 verifier with mid-generation abort, post-merge integration check, and the
 top-level `swarm run` defaulting to v8 with `--v6` opt-out for the legacy
 verified-branch pipeline.
-
-Architecture rationale: [`docs/v8-overhaul-guide.md`](docs/v8-overhaul-guide.md).
-Phased build sequence:
-[`docs/v8-implementation-guide.md`](docs/v8-implementation-guide.md).
-Module reuse audit: [`docs/v8-reuse-audit.md`](docs/v8-reuse-audit.md).
 
 ## Earlier releases
 

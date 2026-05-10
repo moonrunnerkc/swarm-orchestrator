@@ -40,7 +40,7 @@ Before any PR: `npm test`, then `node dist/src/cli.js gates .`, then a descripti
 - `src/logger.ts`: the structured logger. Use it.
 - `config/`: agent profiles and gate config (YAML).
 - `test/`: Mocha tests, fixtures in `test/fixtures/`.
-- `.github/workflows/codex-canary.yml`: weekly canary against the unpinned `@openai/codex` CLI; opens an `adapter-drift` issue on schedule failure. Implements the version-drift mitigation from `docs/adapter-integration.md`.
+- `.github/workflows/codex-canary.yml`: weekly canary against the unpinned `@openai/codex` CLI; opens an `adapter-drift` issue on schedule failure.
 
 ## Conventions
 
