@@ -172,6 +172,7 @@ export async function handleRun(
     registry,
     session,
     ledger,
+    runId,
     mode: flags.mode,
     preGeneration: flags.preGeneration,
     postMerge: flags.postMerge,

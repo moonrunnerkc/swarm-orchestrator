@@ -14,6 +14,7 @@ import type {
   ObligationFailedEntry,
   ObligationMemoizedEntry,
   ObligationPreVerifiedEntry,
+  ObligationRolledBackEntry,
   ObligationSatisfiedEntry,
   PostMergeVerifiedEntry,
   RunFinishedEntry,
@@ -21,6 +22,7 @@ import type {
   TournamentEscalatedEntry,
   TournamentRoundStartedEntry,
   TournamentWinnerSelectedEntry,
+  WorkspaceSnapshotEntry,
 } from '../ledger/types';
 import type { AdapterRegistry } from '../falsification/adapters/registry';
 import { dispatchFalsifiers, type FalsifiersFlag } from '../falsification/dispatcher';
@@ -41,6 +43,8 @@ import {
 } from '../verification/streaming-verifier';
 import type { WasmRuntime } from '../wasm/wasm-runtime';
 import { applyFileEmit } from './diff-applier';
+import { computePostApplyShas, snapshotBeforeApply } from './diff-snapshot';
+import { rollbackObligation } from './rollback';
 import { applyUnifiedDiff, looksLikeUnifiedDiff } from './unified-diff';
 import { PopulationStateBuilder } from './state';
 import {
@@ -66,6 +70,11 @@ export interface RunPopulationOptions {
   session: Session;
   /** Ledger used to record evidence of every action. */
   ledger: JsonlLedger;
+  /**
+   * Run identifier used for snapshot sidecar directories and ledger
+   * entries. Defaults to `ledger.run()` when omitted.
+   */
+  runId?: string;
   /** Cap on commands run by the verifier. */
   commandTimeoutMs?: number;
   /** Optional cap on obligations attempted; useful for tests. */
@@ -258,6 +267,7 @@ export async function runPopulation(
 ): Promise<RunPopulationResult> {
   const start = Date.now();
   const { contract, repoRoot, registry, session, ledger, commandTimeoutMs } = options;
+  const runId = options.runId ?? ledger.run();
   const cap = options.maxObligations ?? contract.obligations.length;
   // Paths owned by file-must-exist obligations. The architect persona
   // creates these; subsequent personas (security-reviewer, verifier, etc.)
@@ -446,6 +456,7 @@ export async function runPopulation(
         memoStore,
         renderContext: tournamentRenderCtx,
         fileMustExistPaths,
+        runId,
       });
       totalUsage = addUsage(totalUsage, result.tournament.usage);
       verifierCallsSavedByMemoization += result.tournament.verifierCallsSavedByMemoization;
@@ -465,6 +476,29 @@ export async function runPopulation(
         if (falsified !== null) {
           tournamentSatisfied = false;
           tournamentDetail = falsified;
+
+          const rb = await rollbackObligation(
+            obligationIndex,
+            ledger,
+            repoRoot,
+            runId,
+            'per-obligation-falsification',
+          );
+          ledger.append<ObligationRolledBackEntry>({
+            type: 'obligation-rolled-back',
+            obligationIndex,
+            trigger: 'per-obligation-falsification',
+            success: rb.success,
+            restoredFiles: rb.restoredFiles,
+            detail: rb.success
+              ? `rolled back ${rb.restoredFiles.length} file(s) after falsification`
+              : `rollback failed: ${rb.failure?.detail ?? 'unknown'}`,
+          });
+          if (!rb.success && rb.failure?.kind !== 'no-snapshot-found') {
+            throw new Error(
+              `rollback failed for obligation ${obligationIndex}: ${rb.failure?.detail ?? 'unknown'}`,
+            );
+          }
         }
       }
       if (tournamentSatisfied) {
@@ -575,6 +609,8 @@ export async function runPopulation(
       model: responseModel,
     });
 
+    const pre = snapshotBeforeApply(repoRoot, runId, obligation, obligationIndex, responseText);
+
     if (obligation.type === 'file-must-exist') {
       applyFileEmit(repoRoot, obligation.path, responseText);
     } else if (responseText.trim() === 'no-op') {
@@ -591,6 +627,15 @@ export async function runPopulation(
       } catch {
         // The verifier will detect the failure; manager surfaces it.
       }
+    }
+
+    if (pre) {
+      const files = computePostApplyShas(repoRoot, pre);
+      ledger.append<WorkspaceSnapshotEntry>({
+        type: 'workspace-snapshot',
+        obligationIndex,
+        files,
+      });
     }
 
     const verifyOpts: Parameters<typeof verifyObligation>[1] = { repoRoot };
@@ -635,6 +680,34 @@ export async function runPopulation(
       if (falsified !== null) {
         finalSatisfied = false;
         finalDetail = falsified;
+
+        if (pre) {
+          const rb = await rollbackObligation(
+            obligationIndex,
+            ledger,
+            repoRoot,
+            runId,
+            'per-obligation-falsification',
+          );
+          ledger.append<ObligationRolledBackEntry>({
+            type: 'obligation-rolled-back',
+            obligationIndex,
+            trigger: 'per-obligation-falsification',
+            success: rb.success,
+            restoredFiles: rb.restoredFiles,
+            detail: rb.success
+              ? `rolled back ${rb.restoredFiles.length} file(s) after falsification`
+              : `rollback failed: ${rb.failure?.detail ?? 'unknown'}`,
+          });
+          if (!rb.success && rb.failure?.kind !== 'no-snapshot-found') {
+            // state-mismatch, recovery-invariant-violated, and io-error are
+            // hard failures; continuing on a corrupted workspace silently
+            // breaks subsequent obligations.
+            throw new Error(
+              `rollback failed for obligation ${obligationIndex}: ${rb.failure?.detail ?? 'unknown'}`,
+            );
+          }
+        }
       }
     }
 
@@ -710,6 +783,42 @@ export async function runPopulation(
       if (failed === 0 && regressionGap > 0) {
         failed = regressionGap;
         satisfied = Math.max(0, satisfied - regressionGap);
+      }
+
+      // Roll back ALL applied obligations in reverse order. Post-merge
+      // regression is an integration failure; obligation N may regress
+      // because obligation N+3 violated an invariant N depended on.
+      // Restoring to the pre-run state matches v6's abandon-the-bad-branch
+      // behavior and is correct without needing to identify the exact
+      // cause.
+      for (let i = outcomes.length - 1; i >= 0; i -= 1) {
+        const o = outcomes[i];
+        if (!o) continue;
+        if (!o.satisfied) continue;
+        if (o.personaId === null) continue; // pre-verified / deterministic / memoized; no snapshot exists.
+
+        const rb = await rollbackObligation(
+          o.obligationIndex,
+          ledger,
+          repoRoot,
+          runId,
+          'post-merge-regression',
+        );
+        ledger.append<ObligationRolledBackEntry>({
+          type: 'obligation-rolled-back',
+          obligationIndex: o.obligationIndex,
+          trigger: 'post-merge-regression',
+          success: rb.success,
+          restoredFiles: rb.restoredFiles,
+          detail: rb.success
+            ? `rolled back ${rb.restoredFiles.length} file(s) after post-merge regression`
+            : `rollback failed: ${rb.failure?.detail ?? 'unknown'}`,
+        });
+        if (!rb.success && rb.failure?.kind !== 'no-snapshot-found') {
+          throw new Error(
+            `post-merge rollback failed for obligation ${o.obligationIndex}: ${rb.failure?.detail ?? 'unknown'}`,
+          );
+        }
       }
     }
   }
@@ -1236,6 +1345,8 @@ interface ExecuteTournamentArgs {
    * these paths so the architect's body is preserved across persona turns.
    */
   fileMustExistPaths: ReadonlySet<string>;
+  /** Run identifier for snapshot sidecar directories. */
+  runId: string;
 }
 
 interface ExecuteTournamentResult {
@@ -1262,6 +1373,7 @@ async function executeTournament(args: ExecuteTournamentArgs): Promise<ExecuteTo
     commandTimeoutMs,
     tournamentConfig,
     memoStore,
+    runId,
   } = args;
 
   const config = {
@@ -1315,15 +1427,49 @@ async function executeTournament(args: ExecuteTournamentArgs): Promise<ExecuteTo
     config,
     renderUserMessage: (o) => renderDynamicMessage(o, repoRoot, args.renderContext),
     applyCandidate: async (candidate: TournamentCandidate, ob: ObligationV1) => {
+      const pre = snapshotBeforeApply(
+        repoRoot,
+        runId,
+        ob,
+        obligationIndex,
+        candidate.response.text,
+      );
       const applyDetail = applyTournamentCandidate(
         repoRoot,
         ob,
         candidate.response.text,
         args.fileMustExistPaths,
       );
+      if (pre) {
+        const files = computePostApplyShas(repoRoot, pre);
+        ledger.append<WorkspaceSnapshotEntry>({
+          type: 'workspace-snapshot',
+          obligationIndex,
+          files,
+        });
+      }
       const verifyOpts: Parameters<typeof verifyObligation>[1] = { repoRoot };
       if (commandTimeoutMs !== undefined) verifyOpts.commandTimeoutMs = commandTimeoutMs;
       const verifyResult = verifyObligation(ob, verifyOpts);
+      if (!verifyResult.satisfied && pre) {
+        const rb = await rollbackObligation(
+          obligationIndex,
+          ledger,
+          repoRoot,
+          runId,
+          'per-obligation-falsification',
+        );
+        ledger.append<ObligationRolledBackEntry>({
+          type: 'obligation-rolled-back',
+          obligationIndex,
+          trigger: 'per-obligation-falsification',
+          success: rb.success,
+          restoredFiles: rb.restoredFiles,
+          detail: rb.success
+            ? `rolled back ${rb.restoredFiles.length} file(s) after tournament winner failed verification`
+            : `rollback failed: ${rb.failure?.detail ?? 'unknown'}`,
+        });
+      }
       return {
         satisfied: verifyResult.satisfied,
         detail: `${applyDetail}; ${verifyResult.detail}`,

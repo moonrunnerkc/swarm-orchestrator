@@ -48,6 +48,16 @@ interface ParsedFilePatch {
   hunks: ParsedHunk[];
 }
 
+/** Internal representation of a parsed diff header plus its line index. */
+interface DiffHeader {
+  oldPath: string | null;
+  newPath: string | null;
+  isCreate: boolean;
+  isDelete: boolean;
+  /** 0-based line index of the `---` header in the stripped line array. */
+  headerLineIndex: number;
+}
+
 /**
  * Detect whether a response body looks like a unified diff. Used by the
  * population manager to decide between `applyFileEmit` (fenced) and
@@ -62,19 +72,25 @@ export function looksLikeUnifiedDiff(text: string): boolean {
 }
 
 /**
- * Parse a unified diff. Returns one entry per file patch. Throws when the
- * diff is structurally malformed (missing headers, hunk count mismatch,
- * unexpected leading characters).
+ * Strip optional markdown fences and split into lines.
  */
-export function parseUnifiedDiff(text: string): ParsedFilePatch[] {
+function stripAndSplit(text: string): string[] {
   const stripped = text
     .replace(/^```(?:diff|patch)?\s*\n?/i, '')
     .replace(/\n?```\s*$/i, '');
-  const lines = stripped.split('\n');
-  const patches: ParsedFilePatch[] = [];
+  return stripped.split('\n');
+}
+
+/**
+ * Parse the `---` / `+++` headers from a unified diff. Returns one entry
+ * per file patch, carrying the parsed paths and the 0-based line index of
+ * the `---` header so callers can slice the hunk body that follows.
+ * Throws when headers are malformed.
+ */
+function parseDiffHeaders(lines: readonly string[]): DiffHeader[] {
+  const headers: DiffHeader[] = [];
   let i = 0;
   while (i < lines.length) {
-    // Skip blank or noise leading lines (e.g. `diff --git`, `index ...`).
     while (i < lines.length && !lines[i]?.startsWith('--- ')) {
       i += 1;
     }
@@ -86,19 +102,94 @@ export function parseUnifiedDiff(text: string): ParsedFilePatch[] {
         `unified diff: expected '---' followed by '+++' at line ${i + 1}, got '${oldHeader}' / '${newHeader}'`,
       );
     }
-    i += 2;
     const oldRaw = oldHeader.slice(4).split('\t')[0]?.trim() ?? '';
     const newRaw = newHeader.slice(4).split('\t')[0]?.trim() ?? '';
     const isCreate = oldRaw === '/dev/null';
     const isDelete = newRaw === '/dev/null';
     const oldPath = isCreate ? null : stripPathPrefix(oldRaw);
     const newPath = isDelete ? null : stripPathPrefix(newRaw);
-    const hunks: ParsedHunk[] = [];
+    headers.push({ oldPath, newPath, isCreate, isDelete, headerLineIndex: i });
+    i += 2;
+    // Skip hunks to reach the next header.
     while (i < lines.length && lines[i]?.startsWith('@@')) {
-      const header = lines[i] ?? '';
-      const m = header.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/);
+      i += 1;
+      while (i < lines.length) {
+        const ln = lines[i] ?? '';
+        if (ln.startsWith('@@') || ln.startsWith('--- ') || ln.startsWith('diff ')) break;
+        if (ln.length === 0 && i === lines.length - 1) {
+          i += 1;
+          break;
+        }
+        const tag = ln[0];
+        if (tag === ' ' || tag === '-' || tag === '+' || tag === '\\') {
+          i += 1;
+          continue;
+        }
+        if (tag === undefined || ln.length === 0) {
+          i += 1;
+          break;
+        }
+        i += 1;
+        break;
+      }
+    }
+  }
+  return headers;
+}
+
+/**
+ * Enumerate repo-relative file paths a unified diff targets. Used by
+ * `snapshotBeforeApply` to know which paths to hash before applying.
+ * Pure function; does not touch the filesystem.
+ *
+ * Returns an empty array when the input is not a unified diff. Caller
+ * treats empty paths as "nothing to snapshot" and skips the ledger
+ * write.
+ */
+export function listAffectedPaths(diffText: string): readonly string[] {
+  const trimmed = diffText.trim();
+  if (trimmed === 'no-op' || trimmed === '"no-op"') {
+    return [];
+  }
+  if (!looksLikeUnifiedDiff(trimmed)) {
+    return [];
+  }
+  try {
+    const lines = stripAndSplit(trimmed);
+    const headers = parseDiffHeaders(lines);
+    const paths = new Set<string>();
+    for (const h of headers) {
+      const target = h.newPath ?? h.oldPath;
+      if (target) paths.add(target);
+    }
+    return [...paths];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Parse a unified diff. Returns one entry per file patch. Throws when the
+ * diff is structurally malformed (missing headers, hunk count mismatch,
+ * unexpected leading characters).
+ */
+export function parseUnifiedDiff(text: string): ParsedFilePatch[] {
+  const lines = stripAndSplit(text);
+  const headers = parseDiffHeaders(lines);
+  const patches: ParsedFilePatch[] = [];
+
+  for (let h = 0; h < headers.length; h += 1) {
+    const header = headers[h];
+    if (!header) continue;
+    const nextHeader = headers[h + 1];
+    const bodyEnd = nextHeader ? nextHeader.headerLineIndex : lines.length;
+    let i = header.headerLineIndex + 2;
+    const hunks: ParsedHunk[] = [];
+    while (i < bodyEnd && lines[i]?.startsWith('@@')) {
+      const headerLine = lines[i] ?? '';
+      const m = headerLine.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/);
       if (!m) {
-        throw new Error(`unified diff: malformed hunk header at line ${i + 1}: '${header}'`);
+        throw new Error(`unified diff: malformed hunk header at line ${i + 1}: '${headerLine}'`);
       }
       const oldStart = Number.parseInt(m[1] ?? '1', 10);
       const oldLines = m[2] !== undefined ? Number.parseInt(m[2], 10) : 1;
@@ -108,11 +199,11 @@ export function parseUnifiedDiff(text: string): ParsedFilePatch[] {
       const body: string[] = [];
       let oldSeen = 0;
       let newSeen = 0;
-      while (i < lines.length) {
+      while (i < bodyEnd) {
         const ln = lines[i] ?? '';
         if (ln.startsWith('@@') || ln.startsWith('--- ') || ln.startsWith('diff ')) break;
         // Tolerate trailing blank line after final hunk.
-        if (ln.length === 0 && i === lines.length - 1) {
+        if (ln.length === 0 && i === bodyEnd - 1) {
           i += 1;
           break;
         }
@@ -141,7 +232,13 @@ export function parseUnifiedDiff(text: string): ParsedFilePatch[] {
       }
       hunks.push({ oldStart, oldLines, newStart, newLines, lines: body });
     }
-    patches.push({ oldPath, newPath, isCreate, isDelete, hunks });
+    patches.push({
+      oldPath: header.oldPath,
+      newPath: header.newPath,
+      isCreate: header.isCreate,
+      isDelete: header.isDelete,
+      hunks,
+    });
   }
   return patches;
 }
