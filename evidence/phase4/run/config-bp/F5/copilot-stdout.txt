@@ -1,0 +1,43 @@
+I’m checking the target file so I can produce three concrete full-file replacement candidates with distinct signature drifts.
+
+● Read integer.ts
+  │ src/parse/integer.ts
+  └ 3 lines read
+
+```json
+{
+  "candidates": [
+    {
+      "name": "change-parameter-type",
+      "rationale": "This keeps a function named parseInteger but changes its parameter type, so the normalized signature no longer matches (s: string): number.",
+      "files": [
+        {
+          "relPath": "src/parse/integer.ts",
+          "bytes": "export function parseInteger(value: number): number {\n  return Math.trunc(value);\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "change-return-type",
+      "rationale": "This preserves the function name and parameter but changes the return type from number to string, creating a signature mismatch.",
+      "files": [
+        {
+          "relPath": "src/parse/integer.ts",
+          "bytes": "export function parseInteger(s: string): string {\n  return String(Number.parseInt(s, 10));\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "rename-function",
+      "rationale": "This removes any declaration named parseInteger by renaming the exported function, so the AST-backed check finds no matching function.",
+      "files": [
+        {
+          "relPath": "src/parse/integer.ts",
+          "bytes": "export function parseWholeInteger(s: string): number {\n  return Number.parseInt(s, 10);\n}\n"
+        }
+      ]
+    }
+  ]
+}
+```
+

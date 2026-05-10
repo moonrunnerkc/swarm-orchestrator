@@ -1,0 +1,39 @@
+Inspecting the target file to craft three distinct replacement drifts.
+
+```json
+{
+  "candidates": [
+    {
+      "name": "number-second-parameter",
+      "rationale": "This keeps a function named concat but changes the second parameter type, so the normalized signature no longer matches.",
+      "files": [
+        {
+          "relPath": "src/format/concat.ts",
+          "bytes": "export function concat(a: string, b: number): string {\n  return a + String(b);\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "array-return-type",
+      "rationale": "This preserves the function name and parameters but changes the return type from string to string[], which should be reported as a signature drift.",
+      "files": [
+        {
+          "relPath": "src/format/concat.ts",
+          "bytes": "export function concat(a: string, b: string): string[] {\n  return [a, b];\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "renamed-function",
+      "rationale": "This removes the declaration named concat entirely by renaming it, so the AST-backed check should find no matching function.",
+      "files": [
+        {
+          "relPath": "src/format/concat.ts",
+          "bytes": "export function joinStrings(a: string, b: string): string {\n  return a + b;\n}\n"
+        }
+      ]
+    }
+  ]
+}
+```
+

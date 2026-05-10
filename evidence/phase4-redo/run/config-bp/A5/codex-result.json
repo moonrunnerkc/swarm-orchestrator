@@ -1,0 +1,53 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/adversarial/direct-assignment.ts",
+            "bytes": "export const configure = () => {\n  const apiKey = \"test-key-123\";\n  return apiKey;\n};\n"
+          }
+        ],
+        "reproducer": "! grep -rEn 'apiKey = \"' src/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/adversarial/direct-assignment.ts:2:  const apiKey = \"test-key-123\";\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/adversarial/class-field-assignment.ts",
+            "bytes": "export class ClientConfig {\n  public apiKey = \"local-dev-key\";\n}\n"
+          }
+        ],
+        "reproducer": "! grep -rEn 'apiKey = \"' src/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/adversarial/class-field-assignment.ts:2:  public apiKey = \"local-dev-key\";\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/adversarial/commented-secret.ts",
+            "bytes": "// Example only: apiKey = \"do-not-use\"\nexport const loaded = true;\n"
+          }
+        ],
+        "reproducer": "! grep -rEn 'apiKey = \"' src/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/adversarial/commented-secret.ts:1:// Example only: apiKey = \"do-not-use\"\n",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 9596,
+    "dollarsSpent": 0.02884,
+    "dollarsBilled": 0.02884,
+    "dollarsTokenEstimate": 0.02884,
+    "dollarsApiEquivalent": 0.02884,
+    "authMethod": "unknown",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "ts-line-comment-security-todo",
+      "rationale": "A TypeScript source file under src/ containing the exact TODO(security) text will be matched by grep, making the negated predicate fail.",
+      "files": [
+        {
+          "relPath": "src/adversarial-security-todo-a/trigger.ts",
+          "bytes": "export const marker = true;\n// TODO(security): validate authorization boundary before release\n"
+        }
+      ]
+    },
+    {
+      "name": "markdown-security-todo",
+      "rationale": "The predicate scans all files under src/, so a markdown file containing the exact TODO(security) comment text will falsify it.",
+      "files": [
+        {
+          "relPath": "src/adversarial-security-todo-b/notes.md",
+          "bytes": "# Security Notes\n\nTODO(security): document threat model assumptions.\n"
+        }
+      ]
+    },
+    {
+      "name": "nested-json-security-todo",
+      "rationale": "A nested JSON fixture under src/ with TODO(security) in a string still matches the grep pattern and causes a non-zero predicate exit.",
+      "files": [
+        {
+          "relPath": "src/adversarial-security-todo-c/fixtures/policy.json",
+          "bytes": "{\n  \"review\": \"TODO(security): replace permissive default policy\"\n}\n"
+        }
+      ]
+    }
+  ]
+}
+```

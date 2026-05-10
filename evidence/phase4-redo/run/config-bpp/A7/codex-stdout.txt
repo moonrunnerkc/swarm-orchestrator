@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "root-aws-credentials",
+      "rationale": "A new root-level credentials-style file contains the exact literal aws_access_key_id, so grep should find it and make the predicate fail.",
+      "files": [
+        {
+          "relPath": "aws-credentials-example.ini",
+          "bytes": "[default]\naws_access_key_id = AKIAEXAMPLE000000000\naws_secret_access_key = example\n"
+        }
+      ]
+    },
+    {
+      "name": "src-config-literal",
+      "rationale": "A new source file embeds the exact aws_access_key_id literal in a string key, which is inside the predicate search scope.",
+      "files": [
+        {
+          "relPath": "src/adversarial-aws-config.ts",
+          "bytes": "export const sampleAwsConfig = {\n  \"aws_access_key_id\": \"AKIAEXAMPLE111111111\"\n};\n"
+        }
+      ]
+    },
+    {
+      "name": "test-fixture-aws-key",
+      "rationale": "A new test fixture file contains the exact aws_access_key_id text and is not in any excluded directory.",
+      "files": [
+        {
+          "relPath": "test/fixtures/aws-profile.txt",
+          "bytes": "fixture profile:\naws_access_key_id=AKIAEXAMPLE222222222\n"
+        }
+      ]
+    }
+  ]
+}
+```

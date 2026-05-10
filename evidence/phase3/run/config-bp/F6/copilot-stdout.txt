@@ -1,0 +1,43 @@
+I’m checking the target file so I can produce three distinct, syntactically valid replacement candidates.
+
+● Read clamp.ts
+  │ src/math/clamp.ts
+  └ 5 lines read
+
+```json
+{
+  "candidates": [
+    {
+      "name": "rename-exported-function",
+      "rationale": "Renaming the exported function removes any declaration named clamp from the target file, so the AST-backed check finds no matching function.",
+      "files": [
+        {
+          "relPath": "src/math/clamp.ts",
+          "bytes": "export function bound(x: number, lo: number, hi: number): number {\n  if (x < lo) return lo;\n  if (x > hi) return hi;\n  return x;\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "change-parameter-types",
+      "rationale": "Keeping the function name but changing the parameter list to include a string-typed bound yields a different normalized signature than the required one.",
+      "files": [
+        {
+          "relPath": "src/math/clamp.ts",
+          "bytes": "export function clamp(x: number, lo: string, hi: number): number {\n  const lower = Number(lo);\n  if (x < lower) return lower;\n  if (x > hi) return hi;\n  return x;\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "change-return-type",
+      "rationale": "Keeping the same parameters but changing clamp to return a string instead of a number produces a clear signature drift while remaining valid TypeScript.",
+      "files": [
+        {
+          "relPath": "src/math/clamp.ts",
+          "bytes": "export function clamp(x: number, lo: number, hi: number): string {\n  if (x < lo) return String(lo);\n  if (x > hi) return String(hi);\n  return String(x);\n}\n"
+        }
+      ]
+    }
+  ]
+}
+```
+

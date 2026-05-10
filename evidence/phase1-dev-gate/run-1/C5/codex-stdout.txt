@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "root-redacted-simple",
+      "rationale": "A new root-level Markdown file containing the literal REDACTED will be found by the maxdepth root scan and make grep match.",
+      "files": [
+        {
+          "relPath": "redacted-trigger.md",
+          "bytes": "# Trigger\n\nThis file contains REDACTED.\n"
+        }
+      ]
+    },
+    {
+      "name": "root-redacted-uppercase",
+      "rationale": "The predicate searches root Markdown files for the exact substring REDACTED, so this independent root file falsifies it.",
+      "files": [
+        {
+          "relPath": "property-violation.md",
+          "bytes": "status: REDACTED\nnotes: adversarial root markdown fixture\n"
+        }
+      ]
+    },
+    {
+      "name": "root-redacted-inline",
+      "rationale": "A root-level .md file with REDACTED embedded inside a longer token still matches grep's substring search.",
+      "files": [
+        {
+          "relPath": "inline-redacted-case.md",
+          "bytes": "The marker xxREDACTEDyy is intentionally present in this root Markdown file.\n"
+        }
+      ]
+    }
+  ]
+}
+```

@@ -1,0 +1,162 @@
+{
+  "$schema-comment": "Phase 3 ablation-gate obligation set. 20 obligations: 10 import-graph-must-satisfy + 10 function-must-have-signature, disjoint from Phase 1 (sample-obligations.json) and Phase 2 (phase2/obligations.json) by obligation type. Targets Copilot's stated specialties per docs/adapter-integration.md Phase 3. Locked under DECISIONS.md 2026-05-09 entry; do not modify in place — supersede with a new dated set if the gate has to be redone.",
+  "fixturePath": "evidence/fixtures/phase-3",
+  "fixtureRationale": "Self-contained scaffolding tree dedicated to Phase 3. The Phase 1/2 fixture lacks named functions and import scopes the Phase 3 obligation types require; building under evidence/fixtures/phase-3/ keeps the two surfaces independent. Contamination guard: test/falsification/phase3-gate-fixture.test.ts.",
+  "obligationCount": 20,
+  "strata": {
+    "I": "import-graph-must-satisfy — perturbation strategy adds a file inside the scope that violates the named structural constraint (no-upward-imports OR no-cycles).",
+    "F": "function-must-have-signature — drift strategy overwrites the file containing the named function so its declared signature no longer matches the obligation's expected signature."
+  },
+  "obligations": [
+    {
+      "id": "I1",
+      "stratum": "I",
+      "type": "import-graph-must-satisfy",
+      "constraint": "no-upward-imports",
+      "scope": "src/lib1"
+    },
+    {
+      "id": "I2",
+      "stratum": "I",
+      "type": "import-graph-must-satisfy",
+      "constraint": "no-upward-imports",
+      "scope": "src/lib2"
+    },
+    {
+      "id": "I3",
+      "stratum": "I",
+      "type": "import-graph-must-satisfy",
+      "constraint": "no-upward-imports",
+      "scope": "src/lib3"
+    },
+    {
+      "id": "I4",
+      "stratum": "I",
+      "type": "import-graph-must-satisfy",
+      "constraint": "no-upward-imports",
+      "scope": "src/lib4"
+    },
+    {
+      "id": "I5",
+      "stratum": "I",
+      "type": "import-graph-must-satisfy",
+      "constraint": "no-upward-imports",
+      "scope": "src/lib5"
+    },
+    {
+      "id": "I6",
+      "stratum": "I",
+      "type": "import-graph-must-satisfy",
+      "constraint": "no-cycles",
+      "scope": "src/pkg1"
+    },
+    {
+      "id": "I7",
+      "stratum": "I",
+      "type": "import-graph-must-satisfy",
+      "constraint": "no-cycles",
+      "scope": "src/pkg2"
+    },
+    {
+      "id": "I8",
+      "stratum": "I",
+      "type": "import-graph-must-satisfy",
+      "constraint": "no-cycles",
+      "scope": "src/pkg3"
+    },
+    {
+      "id": "I9",
+      "stratum": "I",
+      "type": "import-graph-must-satisfy",
+      "constraint": "no-cycles",
+      "scope": "src/pkg4"
+    },
+    {
+      "id": "I10",
+      "stratum": "I",
+      "type": "import-graph-must-satisfy",
+      "constraint": "no-cycles",
+      "scope": "src/pkg5"
+    },
+    {
+      "id": "F1",
+      "stratum": "F",
+      "type": "function-must-have-signature",
+      "file": "src/math/sum.ts",
+      "name": "compute",
+      "signature": "(x: number): number"
+    },
+    {
+      "id": "F2",
+      "stratum": "F",
+      "type": "function-must-have-signature",
+      "file": "src/math/product.ts",
+      "name": "multiply",
+      "signature": "(a: number, b: number): number"
+    },
+    {
+      "id": "F3",
+      "stratum": "F",
+      "type": "function-must-have-signature",
+      "file": "src/format/greet.ts",
+      "name": "formatGreeting",
+      "signature": "(name: string): string"
+    },
+    {
+      "id": "F4",
+      "stratum": "F",
+      "type": "function-must-have-signature",
+      "file": "src/predicate/positive.ts",
+      "name": "isPositive",
+      "signature": "(x: number): boolean"
+    },
+    {
+      "id": "F5",
+      "stratum": "F",
+      "type": "function-must-have-signature",
+      "file": "src/parse/integer.ts",
+      "name": "parseInteger",
+      "signature": "(s: string): number"
+    },
+    {
+      "id": "F6",
+      "stratum": "F",
+      "type": "function-must-have-signature",
+      "file": "src/math/clamp.ts",
+      "name": "clamp",
+      "signature": "(x: number, lo: number, hi: number): number"
+    },
+    {
+      "id": "F7",
+      "stratum": "F",
+      "type": "function-must-have-signature",
+      "file": "src/format/upper.ts",
+      "name": "toUpper",
+      "signature": "(s: string): string"
+    },
+    {
+      "id": "F8",
+      "stratum": "F",
+      "type": "function-must-have-signature",
+      "file": "src/math/square.ts",
+      "name": "square",
+      "signature": "(x: number): number"
+    },
+    {
+      "id": "F9",
+      "stratum": "F",
+      "type": "function-must-have-signature",
+      "file": "src/format/concat.ts",
+      "name": "concat",
+      "signature": "(a: string, b: string): string"
+    },
+    {
+      "id": "F10",
+      "stratum": "F",
+      "type": "function-must-have-signature",
+      "file": "src/math/negate.ts",
+      "name": "negate",
+      "signature": "(x: number): number"
+    }
+  ]
+}

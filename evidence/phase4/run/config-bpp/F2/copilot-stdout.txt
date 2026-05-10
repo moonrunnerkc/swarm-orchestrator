@@ -1,0 +1,37 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "change-second-parameter-type",
+      "rationale": "This keeps a function named multiply but changes its parameter types so the normalized signature no longer matches the expected one.",
+      "files": [
+        {
+          "relPath": "src/math/product.ts",
+          "bytes": "export function multiply(a: number, b: string): number {\n  return a * Number(b);\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "change-return-type",
+      "rationale": "This preserves the function name and parameters but changes the declared return type, which should cause a signature mismatch.",
+      "files": [
+        {
+          "relPath": "src/math/product.ts",
+          "bytes": "export function multiply(a: number, b: number): string {\n  return String(a * b);\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "rename-function",
+      "rationale": "This removes any declaration named multiply by replacing it with a differently named function, so the AST-backed check should find no matching function.",
+      "files": [
+        {
+          "relPath": "src/math/product.ts",
+          "bytes": "export function product(a: number, b: number): number {\n  return a * b;\n}\n"
+        }
+      ]
+    }
+  ]
+}
+```
+

@@ -1,0 +1,152 @@
+{
+  "$schema-comment": "Phase 1 dev gate sample. 20 property-must-hold obligations, stratified into 3 strata (A=token-content, B=filesystem-shape, C=compound). Each predicate exits 0 (property holds) against the v8.0.1 (a7e5455) snapshot — chosen because that SHA pre-dates evidence/phase1-dev-gate, so the gate workspace is not re-entrant against its own committed evidence. The codex falsifier may only ADD files (per src/falsification/adapters/codex/codex-prompt.ts), so every predicate is of the negation form: exit 0 means no offending content/path exists. List locked under DECISIONS.md 2026-05-09 entry; do not modify in place — supersede with a new dated sample if the gate has to be redone.",
+  "fixtureSnapshot": "git archive a7e5455 (v8.0.1 tag) — pinned in scripts/phase1-dev-gate/run-gate.ts to keep the workspace evidence-free",
+  "obligationCount": 20,
+  "strata": {
+    "A": "token-content absence (grep-based) — falsified by adding a file containing the forbidden token",
+    "B": "filesystem-shape absence (find-based) — falsified by adding a file matching a forbidden path/shape",
+    "C": "compound absence (find + grep / size + path) — falsified by adding a file that satisfies multiple offending conditions at once"
+  },
+  "obligations": [
+    {
+      "id": "A1",
+      "stratum": "A",
+      "type": "property-must-hold",
+      "target": "no eval() in src/falsification",
+      "predicate": "! grep -rn 'eval(' src/falsification --include='*.ts'"
+    },
+    {
+      "id": "A2",
+      "stratum": "A",
+      "type": "property-must-hold",
+      "target": "no XXX_FORBIDDEN_TOKEN_PHASE1_GATE marker anywhere in repo",
+      "predicate": "! grep -rn 'XXX_FORBIDDEN_TOKEN_PHASE1_GATE' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist 2>/dev/null"
+    },
+    {
+      "id": "A3",
+      "stratum": "A",
+      "type": "property-must-hold",
+      "target": "no PEM RSA private-key header in repo",
+      "predicate": "! grep -rln 'BEGIN RSA PRIVATE KEY' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist 2>/dev/null"
+    },
+    {
+      "id": "A4",
+      "stratum": "A",
+      "type": "property-must-hold",
+      "target": "no console.log( in src/falsification",
+      "predicate": "! grep -rn 'console\\.log(' src/falsification/ --include='*.ts' 2>/dev/null"
+    },
+    {
+      "id": "A5",
+      "stratum": "A",
+      "type": "property-must-hold",
+      "target": "no literal password = ' assignment in src",
+      "predicate": "! grep -rEn \"password = '\" src/ --include='*.ts' 2>/dev/null"
+    },
+    {
+      "id": "A6",
+      "stratum": "A",
+      "type": "property-must-hold",
+      "target": "no // SECURITY: TODO comment in src",
+      "predicate": "! grep -rn '// SECURITY: TODO' src/ 2>/dev/null"
+    },
+    {
+      "id": "A7",
+      "stratum": "A",
+      "type": "property-must-hold",
+      "target": "no Bearer-token literal in src",
+      "predicate": "! grep -rEn 'Bearer\\s+[A-Za-z0-9_-]{20,}' src/ --include='*.ts' 2>/dev/null"
+    },
+    {
+      "id": "A8",
+      "stratum": "A",
+      "type": "property-must-hold",
+      "target": "no aws_secret_access_key token in repo",
+      "predicate": "! grep -rin 'aws_secret_access_key' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist 2>/dev/null"
+    },
+    {
+      "id": "B1",
+      "stratum": "B",
+      "type": "property-must-hold",
+      "target": "no .env file at repo root",
+      "predicate": "! find . -maxdepth 1 -name '.env' -type f 2>/dev/null | grep -q ."
+    },
+    {
+      "id": "B2",
+      "stratum": "B",
+      "type": "property-must-hold",
+      "target": "no *.key files in repo (excluding node_modules and .git)",
+      "predicate": "! find . -name '*.key' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null | grep -q ."
+    },
+    {
+      "id": "B3",
+      "stratum": "B",
+      "type": "property-must-hold",
+      "target": "no service-account*.json files in repo",
+      "predicate": "! find . -name 'service-account*.json' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null | grep -q ."
+    },
+    {
+      "id": "B4",
+      "stratum": "B",
+      "type": "property-must-hold",
+      "target": "no symlinks under src/",
+      "predicate": "! find src/ -type l 2>/dev/null | grep -q ."
+    },
+    {
+      "id": "B5",
+      "stratum": "B",
+      "type": "property-must-hold",
+      "target": "no *.pem at repo root",
+      "predicate": "! find . -maxdepth 1 -name '*.pem' -type f 2>/dev/null | grep -q ."
+    },
+    {
+      "id": "B6",
+      "stratum": "B",
+      "type": "property-must-hold",
+      "target": "no source file > 200 KB under src/",
+      "predicate": "! find src/ -name '*.ts' -size +200k 2>/dev/null | grep -q ."
+    },
+    {
+      "id": "B7",
+      "stratum": "B",
+      "type": "property-must-hold",
+      "target": "no SSH private-key files (id_rsa/id_dsa/id_ed25519) in repo",
+      "predicate": "! find . -type f \\( -name 'id_rsa' -o -name 'id_dsa' -o -name 'id_ed25519' \\) -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null | grep -q ."
+    },
+    {
+      "id": "C1",
+      "stratum": "C",
+      "type": "property-must-hold",
+      "target": "no .ts file under src/falsification over 30 KB",
+      "predicate": "! find src/falsification -name '*.ts' -size +30k 2>/dev/null | grep -q ."
+    },
+    {
+      "id": "C2",
+      "stratum": "C",
+      "type": "property-must-hold",
+      "target": "no JSON file at repo root containing 'TODO'",
+      "predicate": "! find . -maxdepth 1 -name '*.json' -exec grep -l 'TODO' {} + 2>/dev/null | grep -q ."
+    },
+    {
+      "id": "C3",
+      "stratum": "C",
+      "type": "property-must-hold",
+      "target": "no <script> tag in templates/",
+      "predicate": "! grep -rln '<script>' templates/ 2>/dev/null | grep -q ."
+    },
+    {
+      "id": "C4",
+      "stratum": "C",
+      "type": "property-must-hold",
+      "target": "no *.test.ts file under test/falsification over 50 KB",
+      "predicate": "! find test/falsification -name '*.test.ts' -size +50k 2>/dev/null | grep -q ."
+    },
+    {
+      "id": "C5",
+      "stratum": "C",
+      "type": "property-must-hold",
+      "target": "no Markdown file at repo root containing 'REDACTED'",
+      "predicate": "! find . -maxdepth 1 -name '*.md' -exec grep -l 'REDACTED' {} + 2>/dev/null | grep -q ."
+    }
+  ]
+}

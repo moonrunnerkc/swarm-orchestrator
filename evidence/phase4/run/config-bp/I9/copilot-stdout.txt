@@ -1,0 +1,53 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "ts-two-file-cycle",
+      "rationale": "These two new TypeScript files import each other directly, creating a simple directed cycle entirely within src/pkg4.",
+      "files": [
+        {
+          "relPath": "src/pkg4/cycle-a.ts",
+          "bytes": "import { b } from \"./cycle-b\";\nexport const a = b + 1;\n"
+        },
+        {
+          "relPath": "src/pkg4/cycle-b.ts",
+          "bytes": "import { a } from \"./cycle-a\";\nexport const b = a + 1;\n"
+        }
+      ]
+    },
+    {
+      "name": "js-three-file-cycle",
+      "rationale": "These three JavaScript modules form a closed import chain A -> B -> C -> A, which violates the no-cycles constraint.",
+      "files": [
+        {
+          "relPath": "src/pkg4/loop-a.js",
+          "bytes": "import { b } from \"./loop-b.js\";\nexport const a = b;\n"
+        },
+        {
+          "relPath": "src/pkg4/loop-b.js",
+          "bytes": "import { c } from \"./loop-c.js\";\nexport const b = c;\n"
+        },
+        {
+          "relPath": "src/pkg4/loop-c.js",
+          "bytes": "import { a } from \"./loop-a.js\";\nexport const c = a;\n"
+        }
+      ]
+    },
+    {
+      "name": "tsx-two-file-cycle",
+      "rationale": "These TSX files use relative imports to reference each other, so the local import graph inside src/pkg4 contains a two-node cycle.",
+      "files": [
+        {
+          "relPath": "src/pkg4/view-one.tsx",
+          "bytes": "import { ViewTwo } from \"./view-two\";\nexport const ViewOne = () => ViewTwo;\n"
+        },
+        {
+          "relPath": "src/pkg4/view-two.tsx",
+          "bytes": "import { ViewOne } from \"./view-one\";\nexport const ViewTwo = () => ViewOne;\n"
+        }
+      ]
+    }
+  ]
+}
+```
+

@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "root-direct-import",
+      "rationale": "A new Python file at the workspace root contains the literal substring import socket, so grep should find it.",
+      "files": [
+        {
+          "relPath": "socket_probe.py",
+          "bytes": "import socket\n\nprint(socket.gethostname())\n"
+        }
+      ]
+    },
+    {
+      "name": "nested-comment-match",
+      "rationale": "The predicate searches for the text import socket anywhere in .py files, including comments.",
+      "files": [
+        {
+          "relPath": "adversarial/comment_contains_socket.py",
+          "bytes": "# This comment deliberately says import socket\nvalue = 42\n"
+        }
+      ]
+    },
+    {
+      "name": "string-literal-match",
+      "rationale": "The grep pattern is textual, so a Python string containing import socket should also trigger the predicate failure.",
+      "files": [
+        {
+          "relPath": "checks/socket_literal_case.py",
+          "bytes": "message = \"documentation example: import socket\"\nprint(message)\n"
+        }
+      ]
+    }
+  ]
+}
+```

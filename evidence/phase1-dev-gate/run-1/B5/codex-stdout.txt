@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "root-test-key-pem",
+      "rationale": "Adding any regular file with a .pem suffix at the workspace root makes find emit a match and grep succeeds, causing the negated predicate to fail.",
+      "files": [
+        {
+          "relPath": "adversarial-root-test-key.pem",
+          "bytes": "-----BEGIN TEST PRIVATE KEY-----\nnot-a-real-key\n-----END TEST PRIVATE KEY-----\n"
+        }
+      ]
+    },
+    {
+      "name": "root-certificate-pem",
+      "rationale": "A root-level .pem file is within the predicate's maxdepth 1 search and therefore falsifies the no-root-pem property.",
+      "files": [
+        {
+          "relPath": "adversarial-root-certificate.pem",
+          "bytes": "-----BEGIN CERTIFICATE-----\nVGhpcyBpcyBhIHRlc3QgY2VydGlmaWNhdGUu\n-----END CERTIFICATE-----\n"
+        }
+      ]
+    },
+    {
+      "name": "root-empty-pem",
+      "rationale": "Even an empty regular file ending in .pem at the workspace root is printed by find, so grep sees a path and the predicate exits non-zero.",
+      "files": [
+        {
+          "relPath": "adversarial-empty-root.pem",
+          "bytes": ""
+        }
+      ]
+    }
+  ]
+}
+```

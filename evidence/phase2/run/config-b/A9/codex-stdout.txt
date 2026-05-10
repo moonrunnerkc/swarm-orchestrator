@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "conflict-marker-in-ts",
+      "rationale": "A new TypeScript file under src containing the literal merge-conflict marker will be matched by grep, making the negated predicate fail.",
+      "files": [
+        {
+          "relPath": "src/adversarial-conflict-a/example.ts",
+          "bytes": "export const value = 1;\n<<<<<<< HEAD\nexport const other = 2;\n"
+        }
+      ]
+    },
+    {
+      "name": "conflict-marker-in-text",
+      "rationale": "A plain text file under src with the exact <<<<<<< HEAD sequence will cause grep to find a match and return success, so the predicate exits non-zero.",
+      "files": [
+        {
+          "relPath": "src/adversarial-conflict-b/notes.txt",
+          "bytes": "This file intentionally includes a merge marker for testing.\n<<<<<<< HEAD\n"
+        }
+      ]
+    },
+    {
+      "name": "conflict-marker-in-json",
+      "rationale": "Even inside a JSON string, the literal marker is still present in a file under src and will be detected by grep.",
+      "files": [
+        {
+          "relPath": "src/adversarial-conflict-c/config.json",
+          "bytes": "{\n  \"status\": \"<<<<<<< HEAD\"\n}\n"
+        }
+      ]
+    }
+  ]
+}
+```

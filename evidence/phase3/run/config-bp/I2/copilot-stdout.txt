@@ -1,0 +1,37 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "ts-upward-import",
+      "rationale": "This adds a TypeScript file under src/lib2 with a relative import starting with '..', which directly violates no-upward-imports.",
+      "files": [
+        {
+          "relPath": "src/lib2/violations/upward-import.ts",
+          "bytes": "import value from \"../outside\";\nexport default value;\n"
+        }
+      ]
+    },
+    {
+      "name": "jsx-double-dot-import",
+      "rationale": "This adds a JSX file inside the scoped tree whose import path begins with '..', making the structural constraint fail.",
+      "files": [
+        {
+          "relPath": "src/lib2/components/bad-import.jsx",
+          "bytes": "import thing from \"../shared\";\nexport default function BadImport() {\n  return thing;\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "mjs-nested-upward-import",
+      "rationale": "This places an ES module deeper under src/lib2 and uses an upward relative import, which is sufficient on its own to falsify the obligation.",
+      "files": [
+        {
+          "relPath": "src/lib2/nested/deeper/break-rule.mjs",
+          "bytes": "import \"../escape.js\";\nexport const broken = true;\n"
+        }
+      ]
+    }
+  ]
+}
+```
+

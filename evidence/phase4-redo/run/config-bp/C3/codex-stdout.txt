@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "dot-sh-directory-basic",
+      "rationale": "Adding a file inside a fresh directory named with a .sh suffix causes find to match that executable directory under src.",
+      "files": [
+        {
+          "relPath": "src/adversarial-basic.sh/readme.txt",
+          "bytes": "This file forces creation of a user-executable directory whose name ends in .sh.\n"
+        }
+      ]
+    },
+    {
+      "name": "nested-dot-sh-directory",
+      "rationale": "The predicate does not restrict matches to regular files, so the newly created nested .sh directory should satisfy -name '*.sh' and -perm -u+x.",
+      "files": [
+        {
+          "relPath": "src/falsification/nested-trigger.sh/payload.txt",
+          "bytes": "Nested payload to create an executable directory ending in .sh.\n"
+        }
+      ]
+    },
+    {
+      "name": "scriptlike-folder",
+      "rationale": "A fresh directory with a script-like .sh name under src is normally created with owner execute permission, making grep see a find result.",
+      "files": [
+        {
+          "relPath": "src/scriptlike-folder.sh/marker.txt",
+          "bytes": "Marker content; the parent directory name and permissions are what falsify the predicate.\n"
+        }
+      ]
+    }
+  ]
+}
+```

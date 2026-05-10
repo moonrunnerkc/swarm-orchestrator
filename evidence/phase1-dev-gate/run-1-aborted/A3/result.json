@@ -1,0 +1,49 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "adversarial-rsa-header-1.txt",
+            "bytes": "test fixture\n-----BEGIN RSA PRIVATE KEY-----\nnot-a-real-key\n"
+          }
+        ],
+        "reproducer": "! grep -rln 'BEGIN RSA PRIVATE KEY' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist 2>/dev/null",
+        "reproducerOutput": "./evidence/phase1-dev-gate/sample-obligations.json\n./adversarial-rsa-header-1.txt\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "adversarial-fixtures/sample-rsa.pem",
+            "bytes": "-----BEGIN RSA PRIVATE KEY-----\nMIIBOgIBAAJBANotARealPrivateKeyFixtureOnly\n-----END RSA PRIVATE KEY-----\n"
+          }
+        ],
+        "reproducer": "! grep -rln 'BEGIN RSA PRIVATE KEY' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist 2>/dev/null",
+        "reproducerOutput": "./evidence/phase1-dev-gate/sample-obligations.json\n./adversarial-fixtures/sample-rsa.pem\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "adversarial-src/commented-secret.js",
+            "bytes": "// Fixture used to test secret scanning behavior.\n// -----BEGIN RSA PRIVATE KEY-----\nexport const value = \"not a secret\";\n"
+          }
+        ],
+        "reproducer": "! grep -rln 'BEGIN RSA PRIVATE KEY' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist 2>/dev/null",
+        "reproducerOutput": "./evidence/phase1-dev-gate/sample-obligations.json\n./adversarial-src/commented-secret.js\n",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 12495,
+    "dollarsSpent": 0.02369,
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

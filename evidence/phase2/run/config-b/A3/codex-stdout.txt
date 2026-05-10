@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "root-test-fixture-key",
+      "rationale": "A new root-level fixture file containing the OpenSSH private key header will be found by the recursive grep.",
+      "files": [
+        {
+          "relPath": "adversarial-openssh-header-1.txt",
+          "bytes": "test fixture\n-----BEGIN OPENSSH PRIVATE KEY-----\nnot-a-real-key\n-----END OPENSSH PRIVATE KEY-----\n"
+        }
+      ]
+    },
+    {
+      "name": "nested-config-sample-key",
+      "rationale": "A new non-excluded nested directory with a config sample containing the forbidden header will be searched by grep.",
+      "files": [
+        {
+          "relPath": "predicate-fixtures/config-sample.env",
+          "bytes": "SSH_KEY=\"-----BEGIN OPENSSH PRIVATE KEY-----\\nplaceholder\\n-----END OPENSSH PRIVATE KEY-----\"\n"
+        }
+      ]
+    },
+    {
+      "name": "docs-embedded-key-header",
+      "rationale": "A documentation markdown file containing the exact forbidden header text will cause grep to return a matching path.",
+      "files": [
+        {
+          "relPath": "security-notes/adversarial-key-example.md",
+          "bytes": "# Example\n\nDo not commit secrets like this:\n\n```text\n-----BEGIN OPENSSH PRIVATE KEY-----\nplaceholder only\n-----END OPENSSH PRIVATE KEY-----\n```\n"
+        }
+      ]
+    }
+  ]
+}
+```

@@ -1,0 +1,52 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "function-must-have-signature",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/math/clamp.ts",
+            "bytes": "export function clamp(x: number, lo: number, hi: number, wrap = false): number {\n  if (wrap) {\n    const span = hi - lo;\n    return span === 0 ? lo : ((((x - lo) % span) + span) % span) + lo;\n  }\n\n  return Math.min(hi, Math.max(lo, x));\n}\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"function-must-have-signature\",\"file\":\"src/math/clamp.ts\",\"name\":\"clamp\",\"signature\":\"(x: number, lo: number, hi: number): number\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "signature for clamp in src/math/clamp.ts does not match; expected \"(x:number,lo:number,hi:number):number\", observed \"(x:number,lo:number,hi:number,wrap=false):number\"",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/math/clamp.ts",
+            "bytes": "export function clamp(x: number, lo: number, hi: number): string {\n  return String(Math.min(hi, Math.max(lo, x)));\n}\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"function-must-have-signature\",\"file\":\"src/math/clamp.ts\",\"name\":\"clamp\",\"signature\":\"(x: number, lo: number, hi: number): number\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "signature for clamp in src/math/clamp.ts does not match; expected \"(x:number,lo:number,hi:number):number\", observed \"(x:number,lo:number,hi:number):string\"",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/math/clamp.ts",
+            "bytes": "export function bound(x: number, lo: number, hi: number): number {\n  return Math.min(hi, Math.max(lo, x));\n}\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"function-must-have-signature\",\"file\":\"src/math/clamp.ts\",\"name\":\"clamp\",\"signature\":\"(x: number, lo: number, hi: number): number\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "clamp is not declared in src/math/clamp.ts; expected signature (x: number, lo: number, hi: number): number",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "copilot",
+    "obligationType": "function-must-have-signature",
+    "wallClockMs": 31382,
+    "dollarsSpent": 0,
+    "dollarsBilled": 0,
+    "dollarsTokenEstimate": 0,
+    "authMethod": "chatgpt",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

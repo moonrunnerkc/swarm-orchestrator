@@ -1,0 +1,72 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "import-graph-must-satisfy",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/pkg3/alpha-cycle-a.js",
+            "bytes": "import \"./alpha-cycle-b.js\";\nexport const alphaA = \"a\";\n"
+          },
+          {
+            "relPath": "src/pkg3/alpha-cycle-b.js",
+            "bytes": "import \"./alpha-cycle-a.js\";\nexport const alphaB = \"b\";\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"import-graph-must-satisfy\",\"constraint\":\"no-cycles\",\"scope\":\"src/pkg3\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "import-graph violation (no-cycles): src/pkg3/alpha-cycle-a.js -> src/pkg3/alpha-cycle-b.js -> src/pkg3/alpha-cycle-a.js",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/pkg3/ring-one.ts",
+            "bytes": "import \"./ring-two\";\nexport const ringOne = 1;\n"
+          },
+          {
+            "relPath": "src/pkg3/ring-two.ts",
+            "bytes": "import \"./ring-three\";\nexport const ringTwo = 2;\n"
+          },
+          {
+            "relPath": "src/pkg3/ring-three.ts",
+            "bytes": "import \"./ring-one\";\nexport const ringThree = 3;\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"import-graph-must-satisfy\",\"constraint\":\"no-cycles\",\"scope\":\"src/pkg3\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "import-graph violation (no-cycles): src/pkg3/ring-one.ts -> src/pkg3/ring-two.ts -> src/pkg3/ring-three.ts -> src/pkg3/ring-one.ts",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/pkg3/loops/entry.mjs",
+            "bytes": "import \"./middle.mjs\";\nexport const entry = true;\n"
+          },
+          {
+            "relPath": "src/pkg3/loops/middle.mjs",
+            "bytes": "import \"./exit.mjs\";\nexport const middle = true;\n"
+          },
+          {
+            "relPath": "src/pkg3/loops/exit.mjs",
+            "bytes": "import \"./entry.mjs\";\nexport const exit = true;\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"import-graph-must-satisfy\",\"constraint\":\"no-cycles\",\"scope\":\"src/pkg3\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "import-graph violation (no-cycles): src/pkg3/loops/entry.mjs -> src/pkg3/loops/middle.mjs -> src/pkg3/loops/exit.mjs -> src/pkg3/loops/entry.mjs",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "copilot",
+    "obligationType": "import-graph-must-satisfy",
+    "wallClockMs": 20166,
+    "dollarsSpent": 0,
+    "dollarsBilled": 0,
+    "dollarsTokenEstimate": 0,
+    "authMethod": "chatgpt",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

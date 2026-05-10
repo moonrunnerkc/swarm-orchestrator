@@ -1,0 +1,52 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "import-graph-must-satisfy",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/lib5/upward.ts",
+            "bytes": "import something from \"../outside\";\n\nexport const x = something;\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"import-graph-must-satisfy\",\"constraint\":\"no-upward-imports\",\"scope\":\"src/lib5\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "import-graph violation (no-upward-imports): 1 offender(s); src/lib5/upward.ts imports \"../outside\" (escapes its directory)",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/lib5/nested/deep.js",
+            "bytes": "const helper = require(\"../../helpers/foo\");\nmodule.exports = helper;\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"import-graph-must-satisfy\",\"constraint\":\"no-upward-imports\",\"scope\":\"src/lib5\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "import-graph violation (no-upward-imports): 1 offender(s); src/lib5/nested/deep.js imports \"../../helpers/foo\" (escapes its directory)",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/lib5/upward_mod.py",
+            "bytes": "from ..sibling import thing\n\nresult = thing\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"import-graph-must-satisfy\",\"constraint\":\"no-upward-imports\",\"scope\":\"src/lib5\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "import-graph violation (no-upward-imports): 1 offender(s); src/lib5/upward_mod.py imports \"..sibling\" (escapes its directory)",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "claude-code",
+    "obligationType": "import-graph-must-satisfy",
+    "wallClockMs": 8589,
+    "dollarsSpent": 0.048934,
+    "dollarsBilled": 0.048934,
+    "dollarsTokenEstimate": 0.048934,
+    "authMethod": "api",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/adversarial/direct-localhost-url.ts",
+            "bytes": "export const apiBaseUrl = \"http://127.0.0.1:3000/api\";\n"
+          }
+        ],
+        "reproducer": "! grep -rEn '127\\.0\\.0\\.1:[0-9]+' src/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/adversarial/direct-localhost-url.ts:1:export const apiBaseUrl = \"http://127.0.0.1:3000/api\";\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/adversarial/commented-loopback-address.ts",
+            "bytes": "// Local debug endpoint: 127.0.0.1:8080\nexport const enabled = false;\n"
+          }
+        ],
+        "reproducer": "! grep -rEn '127\\.0\\.0\\.1:[0-9]+' src/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/adversarial/commented-loopback-address.ts:1:// Local debug endpoint: 127.0.0.1:8080\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/adversarial/template-literal-loopback.ts",
+            "bytes": "export const websocketUrl = `ws://127.0.0.1:5173/socket`;\n"
+          }
+        ],
+        "reproducer": "! grep -rEn '127\\.0\\.0\\.1:[0-9]+' src/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/adversarial/template-literal-loopback.ts:1:export const websocketUrl = `ws://127.0.0.1:5173/socket`;\n",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 11434,
+    "dollarsSpent": 0.1507,
+    "dollarsBilled": 0.1507,
+    "dollarsTokenEstimate": 0.1507,
+    "authMethod": "unknown",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

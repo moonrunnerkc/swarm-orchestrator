@@ -1,0 +1,37 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "parameter-type-drift",
+      "rationale": "This keeps an isPositive declaration but changes its parameter type so the normalized signature no longer matches `(x: number): boolean`.",
+      "files": [
+        {
+          "relPath": "src/predicate/positive.ts",
+          "bytes": "export function isPositive(x: string): boolean {\n  return Number(x) > 0;\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "return-type-drift",
+      "rationale": "This preserves the function name and parameter type but changes the return type, which should be reported as a signature mismatch.",
+      "files": [
+        {
+          "relPath": "src/predicate/positive.ts",
+          "bytes": "export function isPositive(x: number): number {\n  return x > 0 ? 1 : 0;\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "function-renamed-away",
+      "rationale": "This removes any declaration named `isPositive` by replacing it with a differently named function, so the extractor should find no matching symbol.",
+      "files": [
+        {
+          "relPath": "src/predicate/positive.ts",
+          "bytes": "export function isNonNegative(x: number): boolean {\n  return x >= 0;\n}\n"
+        }
+      ]
+    }
+  ]
+}
+```
+

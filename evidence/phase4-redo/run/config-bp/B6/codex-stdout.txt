@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "src-symlink-to-readme",
+      "rationale": "Adding a symbolic link anywhere under src makes find src -type l print that path, so test -z fails.",
+      "files": [
+        {
+          "relPath": "src/adversarial-symlink-a/readme-link",
+          "bytes": "../README.md"
+        }
+      ]
+    },
+    {
+      "name": "src-nested-symlink",
+      "rationale": "A nested symbolic link under src is still matched by find src -type l and falsifies the no-symlink predicate.",
+      "files": [
+        {
+          "relPath": "src/adversarial-symlink-b/deep/config-link",
+          "bytes": "../../../package.json"
+        }
+      ]
+    },
+    {
+      "name": "src-broken-symlink",
+      "rationale": "Even a broken symbolic link under src has type l, causing find to emit it and the predicate command to exit non-zero.",
+      "files": [
+        {
+          "relPath": "src/adversarial-symlink-c/missing-target-link",
+          "bytes": "definitely-missing-target.txt"
+        }
+      ]
+    }
+  ]
+}
+```

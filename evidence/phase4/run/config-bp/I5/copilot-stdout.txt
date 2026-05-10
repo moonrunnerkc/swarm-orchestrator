@@ -1,0 +1,37 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "single-parent-import-ts",
+      "rationale": "This adds a TypeScript file under src/lib5 with a relative import specifier starting with .., which should violate no-upward-imports.",
+      "files": [
+        {
+          "relPath": "src/lib5/single-parent-import.ts",
+          "bytes": "import x from \"../outside\";\n\nexport default x;\n"
+        }
+      ]
+    },
+    {
+      "name": "nested-double-parent-js",
+      "rationale": "This adds a JavaScript file inside a nested directory under src/lib5 that imports via ../../, clearly escaping upward from its directory.",
+      "files": [
+        {
+          "relPath": "src/lib5/nested/double-parent-import.js",
+          "bytes": "import thing from \"../../somewhere\";\n\nexport const value = thing;\n"
+        }
+      ]
+    },
+    {
+      "name": "reexport-upward-mts",
+      "rationale": "This adds an ES module TypeScript file under src/lib5 that uses a re-export from an upward relative path beginning with .., which should also be flagged.",
+      "files": [
+        {
+          "relPath": "src/lib5/deeper/reexport-upward.mts",
+          "bytes": "export { default as bad } from \"../../target\";\n"
+        }
+      ]
+    }
+  ]
+}
+```
+

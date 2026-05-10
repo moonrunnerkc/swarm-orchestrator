@@ -1,0 +1,53 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "adversarial-root.sqlite",
+            "bytes": "not a real database; extension is sufficient\n"
+          }
+        ],
+        "reproducer": "test -z \"$(find . -name '*.sqlite' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null)\"",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "predicate-fixtures/visible.sqlite",
+            "bytes": "fixture content\n"
+          }
+        ],
+        "reproducer": "test -z \"$(find . -name '*.sqlite' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null)\"",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/falsification/adversarial-visible.sqlite",
+            "bytes": "sqlite marker\n"
+          }
+        ],
+        "reproducer": "test -z \"$(find . -name '*.sqlite' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null)\"",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 12656,
+    "dollarsSpent": 0.02868,
+    "dollarsBilled": 0.02868,
+    "dollarsTokenEstimate": 0.02868,
+    "dollarsApiEquivalent": 0.02868,
+    "authMethod": "unknown",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

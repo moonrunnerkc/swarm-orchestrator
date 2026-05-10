@@ -1,0 +1,49 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/falsification/adversarial/direct-log-helper.ts",
+            "bytes": "export function directLogHelper(): void {\n  console.log(\"predicate violation\");\n}\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'console\\.log(' src/falsification/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/falsification/adversarial/direct-log-helper.ts:2:  console.log(\"predicate violation\");\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/falsification/adversarial/commented-log-marker.ts",
+            "bytes": "// This comment intentionally includes console.log(\"debug\") to falsify the text predicate.\nexport const marker = true;\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'console\\.log(' src/falsification/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/falsification/adversarial/commented-log-marker.ts:1:// This comment intentionally includes console.log(\"debug\") to falsify the text predicate.\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/falsification/adversarial/string-literal-log.ts",
+            "bytes": "export const forbiddenText = \"console.log(\";\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'console\\.log(' src/falsification/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/falsification/adversarial/string-literal-log.ts:1:export const forbiddenText = \"console.log(\";\n",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 14537,
+    "dollarsSpent": 0.04773,
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

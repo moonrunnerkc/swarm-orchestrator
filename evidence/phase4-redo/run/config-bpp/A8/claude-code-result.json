@@ -1,0 +1,53 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/bad.ts",
+            "bytes": "// @ts-ignore\nexport const x: number = 'oops' as any;\n"
+          }
+        ],
+        "reproducer": "! grep -rn '@ts-ignore' src/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/bad.ts:1:// @ts-ignore\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/utils/helper.ts",
+            "bytes": "export function f() {\n  /* @ts-ignore */\n  return 1;\n}\n"
+          }
+        ],
+        "reproducer": "! grep -rn '@ts-ignore' src/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/utils/helper.ts:2:  /* @ts-ignore */\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/log.ts",
+            "bytes": "export const message = \"warning: @ts-ignore present\";\n"
+          }
+        ],
+        "reproducer": "! grep -rn '@ts-ignore' src/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/log.ts:1:export const message = \"warning: @ts-ignore present\";\n",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "claude-code",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 7287,
+    "dollarsSpent": 0.047977,
+    "dollarsBilled": 0.047977,
+    "dollarsTokenEstimate": 0.047977,
+    "dollarsApiEquivalent": 0.047977,
+    "authMethod": "api",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

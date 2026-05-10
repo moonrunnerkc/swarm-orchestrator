@@ -1,0 +1,53 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "socket_probe.py",
+            "bytes": "import socket\n\nprint(socket.gethostname())\n"
+          }
+        ],
+        "reproducer": "! find . -name '*.py' -not -path './node_modules/*' -not -path './.git/*' -exec grep -l 'import socket' {} + 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "adversarial/comment_contains_socket.py",
+            "bytes": "# This comment deliberately says import socket\nvalue = 42\n"
+          }
+        ],
+        "reproducer": "! find . -name '*.py' -not -path './node_modules/*' -not -path './.git/*' -exec grep -l 'import socket' {} + 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "checks/socket_literal_case.py",
+            "bytes": "message = \"documentation example: import socket\"\nprint(message)\n"
+          }
+        ],
+        "reproducer": "! find . -name '*.py' -not -path './node_modules/*' -not -path './.git/*' -exec grep -l 'import socket' {} + 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 10216,
+    "dollarsSpent": 0.14928,
+    "dollarsBilled": 0.14928,
+    "dollarsTokenEstimate": 0.14928,
+    "dollarsApiEquivalent": 0.14928,
+    "authMethod": "unknown",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

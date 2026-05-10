@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "root-todo-note-json",
+      "rationale": "A new root-level .json file containing the literal TODO will be matched by find and grep, making the predicate command exit non-zero.",
+      "files": [
+        {
+          "relPath": "todo-note.json",
+          "bytes": "{\n  \"note\": \"TODO: remove this test marker\"\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "root-config-todo-json",
+      "rationale": "The predicate scans only root-level JSON files, so this new root config file with TODO in a string falsifies the property.",
+      "files": [
+        {
+          "relPath": "adversarial-config.json",
+          "bytes": "{\n  \"status\": \"TODO\",\n  \"enabled\": true\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "root-array-todo-json",
+      "rationale": "This valid root-level JSON array includes the substring TODO, causing grep to find a match and the negated predicate to fail.",
+      "files": [
+        {
+          "relPath": "root-todo-fixture.json",
+          "bytes": "[\n  \"alpha\",\n  \"TODO item\",\n  \"omega\"\n]\n"
+        }
+      ]
+    }
+  ]
+}
+```

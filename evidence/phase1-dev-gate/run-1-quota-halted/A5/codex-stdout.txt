@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "direct-src-password-literal",
+      "rationale": "A new TypeScript file under src contains the exact literal substring matched by grep: password = '.",
+      "files": [
+        {
+          "relPath": "src/adversarial-password-candidate-one.ts",
+          "bytes": "export function candidateOne(): string {\n  const password = 'hardcoded-secret-one';\n  return password;\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "nested-src-password-literal",
+      "rationale": "A new nested TypeScript file under src is included by grep -r and contains password = ' in executable code.",
+      "files": [
+        {
+          "relPath": "src/adversarial-inputs/password-literal-two.ts",
+          "bytes": "export const config = {\n  label: 'test'\n};\n\nlet password = 'nested-hardcoded-secret-two';\n\nexport default password;\n"
+        }
+      ]
+    },
+    {
+      "name": "commented-password-literal",
+      "rationale": "The predicate is a raw grep scan, so the exact password = ' substring in a TypeScript comment still causes a non-zero predicate result.",
+      "files": [
+        {
+          "relPath": "src/adversarial-comments/password-comment-three.ts",
+          "bytes": "// Regression fixture: password = 'comment-only-secret-three'\nexport const marker = 'comment-only';\n"
+        }
+      ]
+    }
+  ]
+}
+```

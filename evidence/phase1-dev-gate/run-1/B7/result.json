@@ -1,0 +1,49 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "ssh-key-fixtures-a/id_rsa",
+            "bytes": "-----BEGIN OPENSSH PRIVATE KEY-----\nnot-a-real-key\n-----END OPENSSH PRIVATE KEY-----\n"
+          }
+        ],
+        "reproducer": "! find . -type f \\( -name 'id_rsa' -o -name 'id_dsa' -o -name 'id_ed25519' \\) -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "security-regression-inputs-b/nested/id_dsa",
+            "bytes": "-----BEGIN DSA PRIVATE KEY-----\nnot-a-real-key\n-----END DSA PRIVATE KEY-----\n"
+          }
+        ],
+        "reproducer": "! find . -type f \\( -name 'id_rsa' -o -name 'id_dsa' -o -name 'id_ed25519' \\) -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "credential-check-cases-c/id_ed25519",
+            "bytes": "-----BEGIN OPENSSH PRIVATE KEY-----\nnot-a-real-key\n-----END OPENSSH PRIVATE KEY-----\n"
+          }
+        ],
+        "reproducer": "! find . -type f \\( -name 'id_rsa' -o -name 'id_dsa' -o -name 'id_ed25519' \\) -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 12133,
+    "dollarsSpent": 0.14563,
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

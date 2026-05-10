@@ -91,6 +91,63 @@ export interface StepCostRecord {
 }
 
 /**
+ * Per-adapter falsification yield and cost aggregate. One entry per
+ * (adapter, obligation-type) pair per run, aggregated across calls.
+ * Schema fixed in Phase 0 of `docs/adapter-integration.md`; new fields
+ * append, never replace, so older readers stay compatible. Distinct from
+ * the per-call `AdapterCostRecord` in
+ * `src/falsification/adapters/types.ts`: that one is what an adapter
+ * returns from a single `falsify()` call, this one is what gets written
+ * to `cost-attribution.json` after every call has been aggregated.
+ */
+export interface AdapterCostAggregate {
+  /** Stable, kebab-case adapter identifier matching the registry key. */
+  adapterName: string;
+  /** Obligation type the rows below were collected against. */
+  obligationType: string;
+  /** Number of `falsify()` calls aggregated into this record. */
+  calls: number;
+  /**
+   * Sum of per-call `dollarsSpent`. Equals `dollarsTokenEstimate` and is
+   * preserved for backward compatibility with consumers that pre-date the
+   * auth-method split.
+   */
+  dollarsSpent: number;
+  /**
+   * Sum of per-call `dollarsBilled`. Real charges to the operator's
+   * account; zero across calls made under flat-rate subscription auth.
+   */
+  dollarsBilled: number;
+  /**
+   * Sum of per-call `dollarsTokenEstimate`. Upper-bound cost from token
+   * counts × rate card; populated regardless of auth tier.
+   *
+   * For Copilot this is subscription-imputed at $0.026/Premium-request
+   * (Pro+ implied per-request rate), not from a per-token API rate card.
+   * The cross-adapter, like-for-like comparison surface is
+   * `dollarsApiEquivalent`. See the 2026-05-09 audit-and-corrections
+   * DECISIONS.md entry.
+   */
+  dollarsTokenEstimate: number;
+  /**
+   * Sum of per-call `dollarsApiEquivalent`. The comparable per-token API
+   * rate-card cost the same workload would have incurred. Equal to
+   * `dollarsTokenEstimate` for adapters that already meter at API token
+   * rates (Codex, ClaudeCode); for Copilot it is computed from the
+   * Premium-request count via a GPT-4-Turbo-derived per-request average,
+   * so a Copilot run reports a non-zero `dollarsApiEquivalent` even
+   * though `dollarsBilled` is zero.
+   */
+  dollarsApiEquivalent: number;
+  /** Wall-clock milliseconds across `calls`. */
+  wallClockMs: number;
+  /** Confirmed counter-examples produced across `calls`. */
+  counterExamplesFound: number;
+  /** Adapter-claimed candidates that did not actually falsify. */
+  falsePositives: number;
+}
+
+/**
  * Aggregate cost attribution for an entire swarm run.
  * Saved alongside RunMetrics in metrics.json.
  */
@@ -102,6 +159,20 @@ export interface CostAttribution {
   modelMultiplier: number;
   overageTriggered: boolean;
   perStep: StepCostRecord[];
+  /**
+   * Per-adapter dollar totals and yield, keyed by adapter name. Optional so
+   * runs that did not enable any falsifier (or used `--falsifiers off`)
+   * omit the field entirely instead of writing an empty object that readers
+   * have to special-case. Added in Phase 0 of the adapter-reintegration
+   * work.
+   */
+  adapters?: AdapterCostAggregate[];
+  /**
+   * Sum of `adapters[].dollarsSpent`, materialized so the run report can
+   * surface the cross-adapter total without iterating. Optional for the
+   * same reason as `adapters`.
+   */
+  adapterDollarsTotal?: number;
 }
 
 /**

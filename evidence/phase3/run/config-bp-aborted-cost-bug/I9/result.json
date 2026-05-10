@@ -1,0 +1,68 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "import-graph-must-satisfy",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/pkg4/perturb-a.ts",
+            "bytes": "import \"./perturb-b\";\nexport const a = \"a\";\n"
+          },
+          {
+            "relPath": "src/pkg4/perturb-b.ts",
+            "bytes": "import \"./perturb-a\";\nexport const b = \"b\";\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"import-graph-must-satisfy\",\"constraint\":\"no-cycles\",\"scope\":\"src/pkg4\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "import-graph violation (no-cycles): src/pkg4/perturb-a.ts -> src/pkg4/perturb-b.ts -> src/pkg4/perturb-a.ts",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/pkg4/cycle-alpha.js",
+            "bytes": "import \"./cycle-beta.js\";\nexport const alpha = \"alpha\";\n"
+          },
+          {
+            "relPath": "src/pkg4/cycle-beta.js",
+            "bytes": "import \"./cycle-gamma.js\";\nexport const beta = \"beta\";\n"
+          },
+          {
+            "relPath": "src/pkg4/cycle-gamma.js",
+            "bytes": "import \"./cycle-alpha.js\";\nexport const gamma = \"gamma\";\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"import-graph-must-satisfy\",\"constraint\":\"no-cycles\",\"scope\":\"src/pkg4\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "import-graph violation (no-cycles): src/pkg4/cycle-alpha.js -> src/pkg4/cycle-beta.js -> src/pkg4/cycle-gamma.js -> src/pkg4/cycle-alpha.js",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/pkg4/widget-index.tsx",
+            "bytes": "import \"./widget-helper\";\nexport const WidgetIndex = () => null;\n"
+          },
+          {
+            "relPath": "src/pkg4/widget-helper.tsx",
+            "bytes": "import \"./widget-index\";\nexport const WidgetHelper = () => null;\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"import-graph-must-satisfy\",\"constraint\":\"no-cycles\",\"scope\":\"src/pkg4\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "import-graph violation (no-cycles): src/pkg4/widget-helper.tsx -> src/pkg4/widget-index.tsx -> src/pkg4/widget-helper.tsx",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "copilot",
+    "obligationType": "import-graph-must-satisfy",
+    "wallClockMs": 18949,
+    "dollarsSpent": 0,
+    "dollarsBilled": 0,
+    "dollarsTokenEstimate": 0,
+    "authMethod": "chatgpt",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

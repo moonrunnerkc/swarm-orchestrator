@@ -1,0 +1,52 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "function-must-have-signature",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/format/concat.ts",
+            "bytes": "export function join(a: string, b: string): string {\n  return a + b;\n}\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"function-must-have-signature\",\"file\":\"src/format/concat.ts\",\"name\":\"concat\",\"signature\":\"(a: string, b: string): string\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "concat is not declared in src/format/concat.ts; expected signature (a: string, b: string): string",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/format/concat.ts",
+            "bytes": "export function concat(a: string, b: number): string {\n  return a + String(b);\n}\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"function-must-have-signature\",\"file\":\"src/format/concat.ts\",\"name\":\"concat\",\"signature\":\"(a: string, b: string): string\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "signature for concat in src/format/concat.ts does not match; expected \"(a:string,b:string):string\", observed \"(a:string,b:number):string\"",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/format/concat.ts",
+            "bytes": "export function concat(a: string, b: string): number {\n  return (a + b).length;\n}\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"function-must-have-signature\",\"file\":\"src/format/concat.ts\",\"name\":\"concat\",\"signature\":\"(a: string, b: string): string\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "signature for concat in src/format/concat.ts does not match; expected \"(a:string,b:string):string\", observed \"(a:string,b:string):number\"",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "copilot",
+    "obligationType": "function-must-have-signature",
+    "wallClockMs": 13084,
+    "dollarsSpent": 0.026,
+    "dollarsBilled": 0,
+    "dollarsTokenEstimate": 0.026,
+    "authMethod": "chatgpt",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

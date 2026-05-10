@@ -1,0 +1,52 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "adversarial-root-certificate.pfx",
+            "bytes": "dummy pfx content\n"
+          }
+        ],
+        "reproducer": "! find . -name '*.pfx' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "security-fixtures/test-identity.pfx",
+            "bytes": "placeholder certificate bundle\n"
+          }
+        ],
+        "reproducer": "! find . -name '*.pfx' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": ".adversarial-secrets/local-signing-key.pfx",
+            "bytes": "not a real key\n"
+          }
+        ],
+        "reproducer": "! find . -name '*.pfx' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 12107,
+    "dollarsSpent": 0.15009,
+    "dollarsBilled": 0.15009,
+    "dollarsTokenEstimate": 0.15009,
+    "authMethod": "unknown",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

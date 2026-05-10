@@ -41,6 +41,28 @@ One adapter per agent backend. All adapters use `process-supervisor.ts` for subp
 
 Capability matrix and end-of-turn contract details are in [docs/adapters.md](docs/adapters.md).
 
+### `src/falsification/adapters/` (adapter-reintegration final state)
+
+A separate adapter subsystem for *falsifiers*, distinct from the producer adapters above. Adapters here do not generate patches; they consume a patch SHA plus an obligation and try to surface a counter-example, regression fixture, or property-violation trace.
+
+**Production topology (final, post-2026-05-09 close-out):** producer + Codex (default on) + Copilot (default on); ClaudeCode available behind a per-adapter flag (default off) for the same-family ablation arm. No bandit dispatcher (Phase 5 skipped on operational grounds — disjoint obligation types between Codex and Copilot leave nothing for the bandit to arbitrate). Phase 6 (cross-vendor producer race) is deferred until high-stakes obligations enter the test pool.
+
+| File | Responsibility |
+|---|---|
+| `types.ts` | `FalsifierAdapter` interface and the four-variant `FalsificationResult` union. `AdapterCostRecord` carries both `dollarsBilled` (real charge) and `dollarsApiEquivalent` (rate-card-derived; the like-for-like cross-adapter comparison surface). |
+| `registry.ts` | In-process `AdapterRegistry`. Registration order is the dispatch order. |
+| `index.ts` | `defaultAdapterRegistry({ includeCopilot?, includeClaudeCode? })` — Codex always registered; Copilot defaults on; ClaudeCode defaults off. |
+| `cost-aggregator.ts` | Per-`(adapter, obligation-type)` aggregate written to `runs/<id>/cost-attribution.json`. Sums both cost columns. |
+| `codex/codex-falsifier.ts` | Codex falsifier. Strategy: adversarial test inputs against `property-must-hold`. Pre-apply baseline check short-circuits before LLM spawn if the predicate already fails. |
+| `copilot/copilot-falsifier.ts` | Copilot falsifier. Strategy: import-graph perturbation + function-signature drift against `import-graph-must-satisfy` and `function-must-have-signature`. |
+| `claude-code/claude-code-falsifier.ts` | ClaudeCode falsifier. Strategy mirrored from Codex (`property-must-hold`). Same family as the producer; opt-in for ablation / research. |
+| `inspection/heuristic-classifier.ts` | AST-based heuristic classifier for inspection skeletons. Verdict-aid, not a verdict source (the 2026-05-09 close-out used heuristic as the verdict source under explicit operator-bypass approval and reported bounds rather than point estimates). |
+| `../dispatcher.ts` | Sequential dispatcher. Honors `--falsifiers off`. |
+
+**Methodology-fix invariants:** pre-apply baseline check, fixture isolation (workspaces sourced from `evidence/fixtures/`, not `git archive` of HEAD), and dual-column cost reporting (`dollarsBilled` + `dollarsApiEquivalent`). Removing any of the three requires its own dated decision entry in [DECISIONS.md](DECISIONS.md).
+
+Subsystem overview and per-phase close-outs are in [docs/falsification-adapters.md](docs/falsification-adapters.md) and the 2026-05-09 "Adapter integration close-out" entry of [DECISIONS.md](DECISIONS.md). The historical multi-phase plan is in [docs/adapter-integration.md](docs/adapter-integration.md).
+
 ## Checkpoint Interruption Flow
 
 The orchestrator runs an agent against a goal, captures the resulting diff at structured checkpoints, runs the falsification battery, scores it, and either feeds advisory feedback back into the agent's next turn or hard-gate halts the run.
@@ -127,7 +149,10 @@ The following ship in v6 and earlier but are deleted in v7. Any reference to the
 runs/<execution-id>/
   session-state.json
   metrics.json
-  cost-attribution.json
+  cost-attribution.json   (extended additively by the adapter-reintegration
+                           work with per-adapter aggregates carrying
+                           dollarsBilled + dollarsApiEquivalent; see
+                           docs/falsification-adapters.md)
   knowledge-base.json
   wave-N-analysis.json
   report.md

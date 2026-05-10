@@ -35,6 +35,18 @@ describe('contract/validator', () => {
     assert.ok(result.errors.some((e) => e.code === 'missing-build-must-pass'));
   });
 
+  it('accepts a contract without build-must-pass when requireBuild is false', () => {
+    const result = validateObligations(
+      [
+        { type: 'file-must-exist', path: 'a.ts' },
+        { type: 'test-must-pass', command: 'npm test' },
+      ],
+      { requireBuild: false },
+    );
+    assert.equal(result.valid, true);
+    assert.deepEqual(result.errors, []);
+  });
+
   it('rejects when test-must-pass is missing', () => {
     const result = validateObligations([
       { type: 'file-must-exist', path: 'a.ts' },

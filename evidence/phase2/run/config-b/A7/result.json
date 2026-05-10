@@ -1,0 +1,52 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/adversarial-basic-auth/string-literal.ts",
+            "bytes": "export const header = \"Authorization: Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ==\";\n"
+          }
+        ],
+        "reproducer": "! grep -rEn 'Authorization: Basic [A-Za-z0-9+/=]{8,}' src/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/adversarial-basic-auth/string-literal.ts:1:export const header = \"Authorization: Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ==\";\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/adversarial-basic-auth/comment.ts",
+            "bytes": "// Authorization: Basic dGVzdHVzZXI6c2VjcmV0\nexport const ok = true;\n"
+          }
+        ],
+        "reproducer": "! grep -rEn 'Authorization: Basic [A-Za-z0-9+/=]{8,}' src/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/adversarial-basic-auth/comment.ts:1:// Authorization: Basic dGVzdHVzZXI6c2VjcmV0\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/adversarial-basic-auth/template.ts",
+            "bytes": "export const requestHeaders = `Authorization: Basic YWRtaW46cGFzc3dvcmQ=`;\n"
+          }
+        ],
+        "reproducer": "! grep -rEn 'Authorization: Basic [A-Za-z0-9+/=]{8,}' src/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/adversarial-basic-auth/template.ts:1:export const requestHeaders = `Authorization: Basic YWRtaW46cGFzc3dvcmQ=`;\n",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 11643,
+    "dollarsSpent": 0.28804,
+    "dollarsBilled": 0.28804,
+    "dollarsTokenEstimate": 0.28804,
+    "authMethod": "unknown",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

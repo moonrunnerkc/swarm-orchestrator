@@ -1,0 +1,37 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "root-ts-upward-import",
+      "rationale": "Adding a TypeScript file directly under src/lib3 with an import path starting with ../ violates the no-upward-imports rule within the scoped walk.",
+      "files": [
+        {
+          "relPath": "src/lib3/upward-import.ts",
+          "bytes": "import thing from \"../outside\";\n\nexport default thing;\n"
+        }
+      ]
+    },
+    {
+      "name": "nested-js-double-dot-import",
+      "rationale": "Adding a nested JavaScript file under src/lib3 whose relative import begins with ../../ is independently sufficient to falsify the constraint.",
+      "files": [
+        {
+          "relPath": "src/lib3/nested/break-rule.js",
+          "bytes": "import helper from \"../../shared/helper\";\n\nexport const value = helper;\n"
+        }
+      ]
+    },
+    {
+      "name": "tsx-parent-import",
+      "rationale": "A TSX file inside src/lib3 that imports from a parent directory via ../ immediately creates an upward relative import under the verified scope.",
+      "files": [
+        {
+          "relPath": "src/lib3/components/Violator.tsx",
+          "bytes": "import React from \"react\";\nimport util from \"../util\";\n\nexport const Violator = () => <div>{String(util)}</div>;\n"
+        }
+      ]
+    }
+  ]
+}
+```
+

@@ -14,6 +14,10 @@ import {
   type SessionUsage,
 } from '../../session/types';
 import { createDefaultRuntime, WasmRuntime } from '../../wasm';
+import {
+  defaultAdapterRegistry,
+  AdapterRegistry,
+} from '../../falsification/adapters';
 
 const logger = getLogger('cli:v8:run');
 
@@ -70,6 +74,18 @@ export interface RunFlags {
    * GitHub Action's `cost-cap` input per impl guide §12 line 290.
    */
   costCapUsd: number | null;
+  /**
+   * Adapter-reintegration: feature flag controlling the falsification
+   * dispatcher (`src/falsification/dispatcher.ts`). Default `'on'`. When
+   * on, every registered adapter that handles the obligation type is
+   * dispatched after the producer's verifier marks the patch satisfied;
+   * a confirmed counter-example flips the obligation status to failed
+   * and appends a `falsification-call` ledger entry with cost and yield.
+   * `--falsifiers off` bypasses the dispatcher entirely so runs that
+   * don't want to spend on adapter calls (or whose target environment
+   * lacks the underlying CLIs) can opt out.
+   */
+  falsifiers: 'on' | 'off';
 }
 
 /** Test seam: lets tests inject a custom session, registry, or WASM runtime. */
@@ -78,6 +94,12 @@ export interface RunHandlerInjections {
   registry?: PersonaRegistry;
   /** Phase 5: override the deterministic-floor runtime. */
   wasmRuntime?: WasmRuntime;
+  /**
+   * Adapter-reintegration: override the falsifier registry. Production
+   * code calls `defaultAdapterRegistry()`; tests inject a fake registry
+   * (or pass `null` to disable adapters even when `--falsifiers on`).
+   */
+  adapterRegistry?: AdapterRegistry | null;
 }
 
 const DEFAULT_PROJECT_CONTEXT_PREAMBLE =
@@ -134,6 +156,16 @@ export async function handleRun(
 
   const wasmRuntime = injections.wasmRuntime ?? (flags.deterministic ? createDefaultRuntime() : undefined);
 
+  // Adapter-reintegration: build the falsifier registry the population
+  // manager dispatches against after each obligation. Phase 1's flag
+  // plumbing in `RunFlags.falsifiers` finally wires through to the run
+  // path. Tests can inject a fake (or null) via `injections.adapterRegistry`.
+  const adapterRegistry =
+    injections.adapterRegistry === null
+      ? undefined
+      : injections.adapterRegistry ??
+        (flags.falsifiers === 'on' ? defaultAdapterRegistry() : undefined);
+
   const runOptions: Parameters<typeof runPopulation>[0] = {
     contract,
     repoRoot,
@@ -143,7 +175,9 @@ export async function handleRun(
     mode: flags.mode,
     preGeneration: flags.preGeneration,
     postMerge: flags.postMerge,
+    falsifiers: flags.falsifiers,
   };
+  if (adapterRegistry) runOptions.adapterRegistry = adapterRegistry;
   if (flags.streaming) {
     runOptions.streaming = { forbiddenImports: flags.forbiddenImports };
   }
@@ -340,6 +374,7 @@ export function parseRunFlags(argv: string[]): RunFlags {
     preGeneration: true,
     forbiddenImports: [],
     costCapUsd: null,
+    falsifiers: 'on',
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -410,6 +445,12 @@ export function parseRunFlags(argv: string[]): RunFlags {
         throw new Error(`invalid --cost-cap "${raw}"; must be a positive number (USD)`);
       }
       flags.costCapUsd = n;
+    } else if (arg === '--falsifiers') {
+      const v = requireValue(argv, ++i, '--falsifiers');
+      if (v !== 'on' && v !== 'off') {
+        throw new Error(`invalid --falsifiers value "${v}"; expected on | off`);
+      }
+      flags.falsifiers = v;
     } else if (arg === '--help' || arg === '-h') {
       printRunUsage();
       throw new Error('help requested');

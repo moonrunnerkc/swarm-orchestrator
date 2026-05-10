@@ -1,0 +1,59 @@
+I’m checking the scope layout so the candidates fit cleanly inside `src/pkg1` without relying on assumptions.
+
+● Search (glob)
+  │ "src/pkg1/**/*"
+  └ 3 files found
+
+```json
+{
+  "candidates": [
+    {
+      "name": "two-file-ts-cycle",
+      "rationale": "Adding two new TypeScript modules that import each other creates a directed 2-node cycle entirely within `src/pkg1`.",
+      "files": [
+        {
+          "relPath": "src/pkg1/cycle-alpha.ts",
+          "bytes": "import './cycle-beta';\nexport const alpha = 'alpha';\n"
+        },
+        {
+          "relPath": "src/pkg1/cycle-beta.ts",
+          "bytes": "import './cycle-alpha';\nexport const beta = 'beta';\n"
+        }
+      ]
+    },
+    {
+      "name": "three-file-js-cycle",
+      "rationale": "Adding three JavaScript files with imports A -> B -> C -> A forms a simple directed cycle inside the walked scope.",
+      "files": [
+        {
+          "relPath": "src/pkg1/ring-one.js",
+          "bytes": "import './ring-two.js';\nexport const one = 1;\n"
+        },
+        {
+          "relPath": "src/pkg1/ring-two.js",
+          "bytes": "import './ring-three.js';\nexport const two = 2;\n"
+        },
+        {
+          "relPath": "src/pkg1/ring-three.js",
+          "bytes": "import './ring-one.js';\nexport const three = 3;\n"
+        }
+      ]
+    },
+    {
+      "name": "tsx-cycle-pair",
+      "rationale": "Adding two TSX modules that mutually import each other introduces another self-contained cycle under `src/pkg1`.",
+      "files": [
+        {
+          "relPath": "src/pkg1/view-left.tsx",
+          "bytes": "import './view-right';\nexport const ViewLeft = () => null;\n"
+        },
+        {
+          "relPath": "src/pkg1/view-right.tsx",
+          "bytes": "import './view-left';\nexport const ViewRight = () => null;\n"
+        }
+      ]
+    }
+  ]
+}
+```
+

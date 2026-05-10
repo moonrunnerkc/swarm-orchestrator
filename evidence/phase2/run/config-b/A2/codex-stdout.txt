@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "plain-root-marker",
+      "rationale": "A new searched file containing the exact forbidden marker should make grep find a match and cause the negated predicate to fail.",
+      "files": [
+        {
+          "relPath": "phase2_plain_marker_case/forbidden-token.txt",
+          "bytes": "This file intentionally contains XXX_FORBIDDEN_PHASE2_TOKEN to falsify the predicate.\n"
+        }
+      ]
+    },
+    {
+      "name": "nested-json-marker",
+      "rationale": "The predicate searches recursively outside excluded directories, so a nested JSON file with the marker should be detected.",
+      "files": [
+        {
+          "relPath": "phase2_nested_marker_case/config/sample.json",
+          "bytes": "{\n  \"status\": \"test\",\n  \"marker\": \"XXX_FORBIDDEN_PHASE2_TOKEN\"\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "markdown-code-marker",
+      "rationale": "The grep command does not ignore Markdown or code blocks, so the marker in this new document should produce a match.",
+      "files": [
+        {
+          "relPath": "phase2_markdown_marker_case/notes.md",
+          "bytes": "# Predicate falsification note\n\n```text\nXXX_FORBIDDEN_PHASE2_TOKEN\n```\n"
+        }
+      ]
+    }
+  ]
+}
+```

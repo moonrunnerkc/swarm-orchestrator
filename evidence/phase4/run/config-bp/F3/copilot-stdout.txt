@@ -1,0 +1,43 @@
+I’m checking the target file so I can generate three concrete, syntactically valid replacement variants.
+
+● Read greet.ts
+  │ src/format/greet.ts
+  └ 3 lines read
+
+```json
+{
+  "candidates": [
+    {
+      "name": "change-parameter-type",
+      "rationale": "This keeps the function name but changes the parameter type from string to number, so the normalized signature no longer matches.",
+      "files": [
+        {
+          "relPath": "src/format/greet.ts",
+          "bytes": "export function formatGreeting(name: number): string {\n  return `Hello, ${name}!`;\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "change-return-type",
+      "rationale": "This preserves the function name and parameter list but changes the return type to number, creating a signature drift.",
+      "files": [
+        {
+          "relPath": "src/format/greet.ts",
+          "bytes": "export function formatGreeting(name: string): number {\n  return name.length;\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "rename-function",
+      "rationale": "This removes any declaration named formatGreeting by renaming the exported function, so the AST-backed check finds no matching function.",
+      "files": [
+        {
+          "relPath": "src/format/greet.ts",
+          "bytes": "export function buildGreeting(name: string): string {\n  return `Hello, ${name}!`;\n}\n"
+        }
+      ]
+    }
+  ]
+}
+```
+

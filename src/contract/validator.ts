@@ -59,14 +59,31 @@ export interface ValidationError {
  *
  * The validator additionally enforces the §4 minimum-shape requirement
  * surfaced in the Phase 1 exit criteria: a draft must contain at least one
- * `build-must-pass` and one `test-must-pass` obligation.
+ * `test-must-pass` obligation, and at least one `build-must-pass` when the
+ * caller indicates the project has a build step. Library projects published
+ * as source (no `scripts.build`) pass `requireBuild: false`; forcing a
+ * synthetic `npm run build` against a repo with no build script generates
+ * a phantom obligation that can never satisfy.
  *
  * Phase 7 extends per-type duplicate-detection to the five new types
  * (impl guide §10). Each type's identity key is the canonical payload
  * tuple; duplicates are flagged with a type-specific error code so the
  * CLI can show targeted remediation.
  */
-export function validateObligations(candidates: unknown[]): ValidationResult {
+export interface ValidateOptions {
+  /**
+   * When false, contracts without a `build-must-pass` obligation are
+   * accepted. Used by `compileGoal`/`finalize` when the project's
+   * discovered `repoContext.buildCommand` is null (no build step exists).
+   * Defaults to true to preserve historical behavior.
+   */
+  requireBuild?: boolean;
+}
+
+export function validateObligations(
+  candidates: unknown[],
+  options: ValidateOptions = {},
+): ValidationResult {
   const errors: ValidationError[] = [];
   const validate = obligationValidator();
 
@@ -292,7 +309,8 @@ export function validateObligations(candidates: unknown[]): ValidationResult {
     }
   }
 
-  if (!hasBuild) {
+  const requireBuild = options.requireBuild ?? true;
+  if (!hasBuild && requireBuild) {
     errors.push({
       index: null,
       code: 'missing-build-must-pass',

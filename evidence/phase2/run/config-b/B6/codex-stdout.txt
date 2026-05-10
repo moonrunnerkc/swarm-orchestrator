@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "root-git-credentials",
+      "rationale": "Adding a regular file named .git-credentials at the workspace root makes find emit a match outside excluded paths, causing grep -q . to succeed and the negated predicate to fail.",
+      "files": [
+        {
+          "relPath": ".git-credentials",
+          "bytes": "https://user:token@example.com\n"
+        }
+      ]
+    },
+    {
+      "name": "fresh-dir-git-credentials",
+      "rationale": "Adding a .git-credentials file in a fresh normal subdirectory is within the predicate search scope and not excluded by any path filter.",
+      "files": [
+        {
+          "relPath": "credential-probe/.git-credentials",
+          "bytes": "https://alice:secret@git.example.test\n"
+        }
+      ]
+    },
+    {
+      "name": "nested-git-credentials",
+      "rationale": "A deeply nested regular file whose basename is .git-credentials still matches find -name and is not under .git or node_modules.",
+      "files": [
+        {
+          "relPath": "adversarial-inputs/nested/auth/.git-credentials",
+          "bytes": "machine example.test login bob password hunter2\n"
+        }
+      ]
+    }
+  ]
+}
+```

@@ -1,0 +1,53 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": ".dockerignore",
+            "bytes": "# adversarial dockerignore\n*.log\n"
+          }
+        ],
+        "reproducer": "test -z \"$(find . -name '.dockerignore' -not -path './node_modules/*' -not -path './.git/*' -not -path './dist/*' 2>/dev/null)\"",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "adversarial-dockerignore-case/.dockerignore",
+            "bytes": "# nested dockerignore\ncoverage/\n"
+          }
+        ],
+        "reproducer": "test -z \"$(find . -name '.dockerignore' -not -path './node_modules/*' -not -path './.git/*' -not -path './dist/*' 2>/dev/null)\"",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "predicate-fixtures/dockerignore-present/example/.dockerignore",
+            "bytes": "# deep dockerignore\ntmp/\n"
+          }
+        ],
+        "reproducer": "test -z \"$(find . -name '.dockerignore' -not -path './node_modules/*' -not -path './.git/*' -not -path './dist/*' 2>/dev/null)\"",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 11535,
+    "dollarsSpent": 0.15054,
+    "dollarsBilled": 0.15054,
+    "dollarsTokenEstimate": 0.15054,
+    "dollarsApiEquivalent": 0.15054,
+    "authMethod": "unknown",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

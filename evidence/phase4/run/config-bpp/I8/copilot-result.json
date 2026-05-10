@@ -1,0 +1,72 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "import-graph-must-satisfy",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/pkg3/cycle_case1/a.ts",
+            "bytes": "import \"./b\";\nexport const a = \"a\";\n"
+          },
+          {
+            "relPath": "src/pkg3/cycle_case1/b.ts",
+            "bytes": "import \"./a\";\nexport const b = \"b\";\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"import-graph-must-satisfy\",\"constraint\":\"no-cycles\",\"scope\":\"src/pkg3\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "import-graph violation (no-cycles): src/pkg3/cycle_case1/a.ts -> src/pkg3/cycle_case1/b.ts -> src/pkg3/cycle_case1/a.ts",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/pkg3/cycle_case2/alpha.js",
+            "bytes": "import \"./beta.js\";\nexport const alpha = \"alpha\";\n"
+          },
+          {
+            "relPath": "src/pkg3/cycle_case2/beta.js",
+            "bytes": "import \"./gamma.js\";\nexport const beta = \"beta\";\n"
+          },
+          {
+            "relPath": "src/pkg3/cycle_case2/gamma.js",
+            "bytes": "import \"./alpha.js\";\nexport const gamma = \"gamma\";\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"import-graph-must-satisfy\",\"constraint\":\"no-cycles\",\"scope\":\"src/pkg3\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "import-graph violation (no-cycles): src/pkg3/cycle_case2/alpha.js -> src/pkg3/cycle_case2/beta.js -> src/pkg3/cycle_case2/gamma.js -> src/pkg3/cycle_case2/alpha.js",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/pkg3/cycle_case3/view.tsx",
+            "bytes": "import \"./logic.mts\";\nexport const View = () => null;\n"
+          },
+          {
+            "relPath": "src/pkg3/cycle_case3/logic.mts",
+            "bytes": "import \"./state.cts\";\nexport const logic = \"logic\";\n"
+          },
+          {
+            "relPath": "src/pkg3/cycle_case3/state.cts",
+            "bytes": "import \"./view\";\nexports.state = \"state\";\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"import-graph-must-satisfy\",\"constraint\":\"no-cycles\",\"scope\":\"src/pkg3\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "import-graph violation (no-cycles): src/pkg3/cycle_case3/logic.mts -> src/pkg3/cycle_case3/state.cts -> src/pkg3/cycle_case3/view.tsx -> src/pkg3/cycle_case3/logic.mts",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "copilot",
+    "obligationType": "import-graph-must-satisfy",
+    "wallClockMs": 22008,
+    "dollarsSpent": 0.026,
+    "dollarsBilled": 0,
+    "dollarsTokenEstimate": 0.026,
+    "authMethod": "chatgpt",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

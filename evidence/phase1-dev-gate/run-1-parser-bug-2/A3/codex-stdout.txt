@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "root-text-canary",
+      "rationale": "A new root-level text file containing the exact PEM RSA private-key header will be found by grep, making the negated predicate fail.",
+      "files": [
+        {
+          "relPath": "pem-rsa-header-canary.txt",
+          "bytes": "This is a test fixture, not a real key.\n-----BEGIN RSA PRIVATE KEY-----\nplaceholder\n"
+        }
+      ]
+    },
+    {
+      "name": "pem-extension-fixture",
+      "rationale": "A new .pem fixture outside excluded directories contains the searched header string, so grep returns a match and the predicate exits non-zero.",
+      "files": [
+        {
+          "relPath": "security-fixtures/rsa-private-key-header.pem",
+          "bytes": "-----BEGIN RSA PRIVATE KEY-----\nMIIBFAKECONTENTFORTESTONLY\n-----END RSA PRIVATE KEY-----\n"
+        }
+      ]
+    },
+    {
+      "name": "nested-markdown-header",
+      "rationale": "A nested markdown file is still within grep's recursive search scope and includes the exact header string.",
+      "files": [
+        {
+          "relPath": "adversarial-inputs/nested-rsa-header.md",
+          "bytes": "# Predicate falsification fixture\n\n```text\n-----BEGIN RSA PRIVATE KEY-----\n```\n"
+        }
+      ]
+    }
+  ]
+}
+```

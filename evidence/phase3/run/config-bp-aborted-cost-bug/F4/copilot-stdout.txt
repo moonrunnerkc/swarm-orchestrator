@@ -1,0 +1,39 @@
+Inspecting the target file so I can craft three distinct full-file replacements that stay valid TypeScript.
+
+```json
+{
+  "candidates": [
+    {
+      "name": "string-parameter-drift",
+      "rationale": "Changing the parameter type from number to string preserves a valid function named isPositive but makes its normalized signature differ from the expected one.",
+      "files": [
+        {
+          "relPath": "src/predicate/positive.ts",
+          "bytes": "export function isPositive(x: string): boolean {\n  return Number(x) > 0;\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "number-return-drift",
+      "rationale": "Changing the return type from boolean to number keeps the function present while falsifying the required signature substring.",
+      "files": [
+        {
+          "relPath": "src/predicate/positive.ts",
+          "bytes": "export function isPositive(x: number): number {\n  return x > 0 ? 1 : 0;\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "renamed-function-drift",
+      "rationale": "Renaming the exported function removes any declaration named isPositive from the file, so the AST-backed check should find no matching function.",
+      "files": [
+        {
+          "relPath": "src/predicate/positive.ts",
+          "bytes": "export function isNonNegative(x: number): boolean {\n  return x > 0;\n}\n"
+        }
+      ]
+    }
+  ]
+}
+```
+

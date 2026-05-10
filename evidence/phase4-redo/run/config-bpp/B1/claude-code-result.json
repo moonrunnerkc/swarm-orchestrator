@@ -1,0 +1,53 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": ".dockerignore",
+            "bytes": "node_modules\n.git\ndist\n"
+          }
+        ],
+        "reproducer": "test -z \"$(find . -name '.dockerignore' -not -path './node_modules/*' -not -path './.git/*' -not -path './dist/*' 2>/dev/null)\"",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "services/api/.dockerignore",
+            "bytes": "*.log\ntmp/\n"
+          }
+        ],
+        "reproducer": "test -z \"$(find . -name '.dockerignore' -not -path './node_modules/*' -not -path './.git/*' -not -path './dist/*' 2>/dev/null)\"",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "docker/build/context/.dockerignore",
+            "bytes": "**/*.md\n.env\n"
+          }
+        ],
+        "reproducer": "test -z \"$(find . -name '.dockerignore' -not -path './node_modules/*' -not -path './.git/*' -not -path './dist/*' 2>/dev/null)\"",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "claude-code",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 7551,
+    "dollarsSpent": 0.046753,
+    "dollarsBilled": 0.046753,
+    "dollarsTokenEstimate": 0.046753,
+    "dollarsApiEquivalent": 0.046753,
+    "authMethod": "api",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": ".npmrc",
+            "bytes": "registry=https://registry.npmjs.org/\n"
+          }
+        ],
+        "reproducer": "test -z \"$(find . -name '.npmrc' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null)\"",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "config/.npmrc",
+            "bytes": "save-exact=true\n"
+          }
+        ],
+        "reproducer": "test -z \"$(find . -name '.npmrc' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null)\"",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "packages/sample/nested/.npmrc",
+            "bytes": "package-lock=false\n"
+          }
+        ],
+        "reproducer": "test -z \"$(find . -name '.npmrc' -not -path './node_modules/*' -not -path './.git/*' 2>/dev/null)\"",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "claude-code",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 7202,
+    "dollarsSpent": 0.047697,
+    "dollarsBilled": 0.047697,
+    "dollarsTokenEstimate": 0.047697,
+    "dollarsApiEquivalent": 0.047697,
+    "authMethod": "api",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

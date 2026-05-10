@@ -1,0 +1,49 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/falsification/adversarial-direct-eval-9f3a2b/index.ts",
+            "bytes": "export function run(code: string): unknown {\n  return eval(code);\n}\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'eval(' src/falsification --include='*.ts'",
+        "reproducerOutput": "src/falsification/adversarial-direct-eval-9f3a2b/index.ts:2:  return eval(code);\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/falsification/adversarial-comment-eval-4c8d1e/comment.ts",
+            "bytes": "// This comment intentionally mentions eval( to trigger the predicate.\nexport const value = 42;\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'eval(' src/falsification --include='*.ts'",
+        "reproducerOutput": "src/falsification/adversarial-comment-eval-4c8d1e/comment.ts:1:// This comment intentionally mentions eval( to trigger the predicate.\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/falsification/adversarial-string-eval-a7b6c5/message.ts",
+            "bytes": "export const forbiddenText = \"eval(\";\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'eval(' src/falsification --include='*.ts'",
+        "reproducerOutput": "src/falsification/adversarial-string-eval-a7b6c5/message.ts:1:export const forbiddenText = \"eval(\";\n",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 10988,
+    "dollarsSpent": 0.14421,
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "security-todo-top-level",
+      "rationale": "Adding a source file containing the exact marker makes grep find a match, so the negated predicate exits non-zero.",
+      "files": [
+        {
+          "relPath": "src/adversarial-security-todo/security-todo-top-level.ts",
+          "bytes": "export const marker = true;\n// SECURITY: TODO remove insecure placeholder before release\n"
+        }
+      ]
+    },
+    {
+      "name": "security-todo-nested",
+      "rationale": "The recursive grep under src will match the exact SECURITY TODO comment inside a fresh nested source directory.",
+      "files": [
+        {
+          "relPath": "src/adversarial-security-todo-nested/checks/insecure-placeholder.ts",
+          "bytes": "export function insecurePlaceholder(): string {\n  // SECURITY: TODO validate authorization boundary here\n  return \"placeholder\";\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "security-todo-json-schema-note",
+      "rationale": "The predicate searches all files under src, not only TypeScript, so a JSON file containing the exact comment text will falsify it.",
+      "files": [
+        {
+          "relPath": "src/adversarial-security-todo-data/security-note.json",
+          "bytes": "{\n  \"note\": \"// SECURITY: TODO replace temporary secret handling\"\n}\n"
+        }
+      ]
+    }
+  ]
+}
+```

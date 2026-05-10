@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "direct-password-assignment",
+      "rationale": "A new TypeScript file under src contains the exact literal substring matched by grep: password = '.",
+      "files": [
+        {
+          "relPath": "src/falsification-cases/direct-password-assignment.ts",
+          "bytes": "export const password = 'hunter2';\n"
+        }
+      ]
+    },
+    {
+      "name": "class-field-password",
+      "rationale": "A class field with a literal single-quoted password assignment matches the predicate regex.",
+      "files": [
+        {
+          "relPath": "src/falsification-cases/class-field-password.ts",
+          "bytes": "export class TestCredentials {\n  password = 'temporary-test-secret';\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "nested-config-password",
+      "rationale": "The predicate recursively scans src for .ts files, so this nested new file with password = ' should be detected.",
+      "files": [
+        {
+          "relPath": "src/falsification-cases/nested/config-password.ts",
+          "bytes": "export function makeConfig() {\n  const password = 'local-only';\n  return { password };\n}\n"
+        }
+      ]
+    }
+  ]
+}
+```

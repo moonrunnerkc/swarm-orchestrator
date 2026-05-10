@@ -1,0 +1,49 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/adversarial-password-cases/direct-password-assignment.ts",
+            "bytes": "export function getPassword(): string {\n  const password = 'hardcoded-secret';\n  return password;\n}\n"
+          }
+        ],
+        "reproducer": "! grep -rEn \"password = '\" src/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/adversarial-password-cases/direct-password-assignment.ts:2:  const password = 'hardcoded-secret';\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/adversarial-password-cases/class-field-password.ts",
+            "bytes": "export class DemoCredentials {\n  build(): string {\n    let password = 'demo-password';\n    return password;\n  }\n}\n"
+          }
+        ],
+        "reproducer": "! grep -rEn \"password = '\" src/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/adversarial-password-cases/class-field-password.ts:3:    let password = 'demo-password';\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/adversarial-password-cases/comment-password-pattern.ts",
+            "bytes": "// Example forbidden text: password = 'do-not-commit'\nexport const placeholder = true;\n"
+          }
+        ],
+        "reproducer": "! grep -rEn \"password = '\" src/ --include='*.ts' 2>/dev/null",
+        "reproducerOutput": "src/adversarial-password-cases/comment-password-pattern.ts:1:// Example forbidden text: password = 'do-not-commit'\n",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 11720,
+    "dollarsSpent": 0.25088,
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

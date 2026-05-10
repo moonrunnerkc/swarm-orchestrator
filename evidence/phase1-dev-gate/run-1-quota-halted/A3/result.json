@@ -1,0 +1,49 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "adversarial-pem-cases/plain-rsa-key.pem",
+            "bytes": "-----BEGIN RSA PRIVATE KEY-----\nnot-a-real-key\n-----END RSA PRIVATE KEY-----\n"
+          }
+        ],
+        "reproducer": "! grep -rln 'BEGIN RSA PRIVATE KEY' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist 2>/dev/null",
+        "reproducerOutput": "./evidence/phase1-dev-gate/run-1-aborted/A3/request.json\n./evidence/phase1-dev-gate/run-1-aborted/A3/result.json\n./evidence/phase1-dev-gate/run-1-aborted/A3/codex-stderr.txt\n./evidence/phase1-dev-gate/run-1-aborted/A3/codex-stdout.txt\n./evidence/phase1-dev-gate/sample-obligations.json\n./adversarial-pem-cases/plain-rsa-key.pem\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "adversarial-pem-cases/commented-fixture.ts",
+            "bytes": "// Test fixture containing a forbidden marker:\n// -----BEGIN RSA PRIVATE KEY-----\nexport const fixture = \"placeholder\";\n"
+          }
+        ],
+        "reproducer": "! grep -rln 'BEGIN RSA PRIVATE KEY' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist 2>/dev/null",
+        "reproducerOutput": "./evidence/phase1-dev-gate/run-1-aborted/A3/request.json\n./evidence/phase1-dev-gate/run-1-aborted/A3/result.json\n./evidence/phase1-dev-gate/run-1-aborted/A3/codex-stderr.txt\n./evidence/phase1-dev-gate/run-1-aborted/A3/codex-stdout.txt\n./evidence/phase1-dev-gate/sample-obligations.json\n./adversarial-pem-cases/commented-fixture.ts\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "adversarial-pem-cases/sample-config.env",
+            "bytes": "APP_MODE=test\nPRIVATE_KEY_HEADER=\"-----BEGIN RSA PRIVATE KEY-----\"\n"
+          }
+        ],
+        "reproducer": "! grep -rln 'BEGIN RSA PRIVATE KEY' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist 2>/dev/null",
+        "reproducerOutput": "./evidence/phase1-dev-gate/run-1-aborted/A3/request.json\n./evidence/phase1-dev-gate/run-1-aborted/A3/result.json\n./evidence/phase1-dev-gate/run-1-aborted/A3/codex-stderr.txt\n./evidence/phase1-dev-gate/run-1-aborted/A3/codex-stdout.txt\n./evidence/phase1-dev-gate/sample-obligations.json\n./adversarial-pem-cases/sample-config.env\n",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 15619,
+    "dollarsSpent": 0.1192,
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

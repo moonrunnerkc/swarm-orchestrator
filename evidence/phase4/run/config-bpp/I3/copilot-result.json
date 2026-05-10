@@ -1,0 +1,52 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "import-graph-must-satisfy",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/lib3/violations/upward-import.ts",
+            "bytes": "import thing from \"../outside\";\n\nexport const value = thing;\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"import-graph-must-satisfy\",\"constraint\":\"no-upward-imports\",\"scope\":\"src/lib3\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "import-graph violation (no-upward-imports): 1 offender(s); src/lib3/violations/upward-import.ts imports \"../outside\" (escapes its directory)",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/lib3/breakers/nested/bad-import.js",
+            "bytes": "import shared from \"../../shared\";\n\nexport default shared;\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"import-graph-must-satisfy\",\"constraint\":\"no-upward-imports\",\"scope\":\"src/lib3\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "import-graph violation (no-upward-imports): 1 offender(s); src/lib3/breakers/nested/bad-import.js imports \"../../shared\" (escapes its directory)",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/lib3/edge-case/escape.mts",
+            "bytes": "import { helper } from \"../helper\";\n\nexport const escaped = helper;\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"import-graph-must-satisfy\",\"constraint\":\"no-upward-imports\",\"scope\":\"src/lib3\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "import-graph violation (no-upward-imports): 1 offender(s); src/lib3/edge-case/escape.mts imports \"../helper\" (escapes its directory)",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "copilot",
+    "obligationType": "import-graph-must-satisfy",
+    "wallClockMs": 12213,
+    "dollarsSpent": 0.026,
+    "dollarsBilled": 0,
+    "dollarsTokenEstimate": 0.026,
+    "authMethod": "chatgpt",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

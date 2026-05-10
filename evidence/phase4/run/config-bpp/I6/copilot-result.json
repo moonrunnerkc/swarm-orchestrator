@@ -1,0 +1,68 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "import-graph-must-satisfy",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/pkg1/cycle-alpha.ts",
+            "bytes": "import './cycle-beta';\nexport const alpha = 'alpha';\n"
+          },
+          {
+            "relPath": "src/pkg1/cycle-beta.ts",
+            "bytes": "import './cycle-alpha';\nexport const beta = 'beta';\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"import-graph-must-satisfy\",\"constraint\":\"no-cycles\",\"scope\":\"src/pkg1\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "import-graph violation (no-cycles): src/pkg1/cycle-alpha.ts -> src/pkg1/cycle-beta.ts -> src/pkg1/cycle-alpha.ts",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/pkg1/ring-one.js",
+            "bytes": "import './ring-two.js';\nexport const one = 1;\n"
+          },
+          {
+            "relPath": "src/pkg1/ring-two.js",
+            "bytes": "import './ring-three.js';\nexport const two = 2;\n"
+          },
+          {
+            "relPath": "src/pkg1/ring-three.js",
+            "bytes": "import './ring-one.js';\nexport const three = 3;\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"import-graph-must-satisfy\",\"constraint\":\"no-cycles\",\"scope\":\"src/pkg1\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "import-graph violation (no-cycles): src/pkg1/ring-one.js -> src/pkg1/ring-two.js -> src/pkg1/ring-three.js -> src/pkg1/ring-one.js",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/pkg1/view-left.tsx",
+            "bytes": "import './view-right';\nexport const ViewLeft = () => null;\n"
+          },
+          {
+            "relPath": "src/pkg1/view-right.tsx",
+            "bytes": "import './view-left';\nexport const ViewRight = () => null;\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"import-graph-must-satisfy\",\"constraint\":\"no-cycles\",\"scope\":\"src/pkg1\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "import-graph violation (no-cycles): src/pkg1/view-left.tsx -> src/pkg1/view-right.tsx -> src/pkg1/view-left.tsx",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "copilot",
+    "obligationType": "import-graph-must-satisfy",
+    "wallClockMs": 17602,
+    "dollarsSpent": 0.026,
+    "dollarsBilled": 0,
+    "dollarsTokenEstimate": 0.026,
+    "authMethod": "chatgpt",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

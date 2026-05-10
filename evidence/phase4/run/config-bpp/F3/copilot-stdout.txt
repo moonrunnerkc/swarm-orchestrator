@@ -1,0 +1,41 @@
+● Read greet.ts
+  │ src/format/greet.ts
+  └ 3 lines read
+
+```json
+{
+  "candidates": [
+    {
+      "name": "extra-parameter-drift",
+      "rationale": "This keeps the function name but changes its parameter list, so the normalized signature no longer matches `(name: string): string`.",
+      "files": [
+        {
+          "relPath": "src/format/greet.ts",
+          "bytes": "export function formatGreeting(name: string, excited: boolean): string {\n  return excited ? `Hello, ${name}!!` : `Hello, ${name}!`;\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "return-type-drift",
+      "rationale": "This preserves the function name and parameter but changes the declared return type from `string` to `number`, which should be reported as a signature mismatch.",
+      "files": [
+        {
+          "relPath": "src/format/greet.ts",
+          "bytes": "export function formatGreeting(name: string): number {\n  return name.length;\n}\n"
+        }
+      ]
+    },
+    {
+      "name": "renamed-function-drift",
+      "rationale": "This removes any declaration named `formatGreeting` entirely by replacing it with a differently named function.",
+      "files": [
+        {
+          "relPath": "src/format/greet.ts",
+          "bytes": "export function buildGreeting(name: string): string {\n  return `Hello, ${name}!`;\n}\n"
+        }
+      ]
+    }
+  ]
+}
+```
+

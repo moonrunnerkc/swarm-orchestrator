@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "direct-localhost-url",
+      "rationale": "A new TypeScript file under src contains a direct 127.0.0.1:<port> literal that grep will match.",
+      "files": [
+        {
+          "relPath": "src/adversarial/direct-localhost-url.ts",
+          "bytes": "export const apiBaseUrl = \"http://127.0.0.1:3000/api\";\n"
+        }
+      ]
+    },
+    {
+      "name": "commented-loopback-address",
+      "rationale": "The predicate does not ignore comments, so a commented 127.0.0.1:<port> literal in a TypeScript file should falsify it.",
+      "files": [
+        {
+          "relPath": "src/adversarial/commented-loopback-address.ts",
+          "bytes": "// Local debug endpoint: 127.0.0.1:8080\nexport const enabled = false;\n"
+        }
+      ]
+    },
+    {
+      "name": "template-literal-loopback",
+      "rationale": "A template literal containing 127.0.0.1:<port> still matches the grep pattern in included .ts files.",
+      "files": [
+        {
+          "relPath": "src/adversarial/template-literal-loopback.ts",
+          "bytes": "export const websocketUrl = `ws://127.0.0.1:5173/socket`;\n"
+        }
+      ]
+    }
+  ]
+}
+```

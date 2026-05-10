@@ -1,0 +1,52 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "templates/adversarial-direct.html",
+            "bytes": "<!doctype html>\n<html>\n<body>\n<iframe src=\"about:blank\"></iframe>\n</body>\n</html>\n"
+          }
+        ],
+        "reproducer": "! grep -rln '<iframe' templates/ 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "templates/adversarial_nested/embed.html",
+            "bytes": "<section>\n  <h1>Embedded content</h1>\n  <iframe title=\"demo\" src=\"/demo\"></iframe>\n</section>\n"
+          }
+        ],
+        "reproducer": "! grep -rln '<iframe' templates/ 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "templates/adversarial-comment.html",
+            "bytes": "{# Regression fixture: <iframe src=\"https://example.test\"></iframe> #}\n<div>No runtime iframe needed.</div>\n"
+          }
+        ],
+        "reproducer": "! grep -rln '<iframe' templates/ 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 12166,
+    "dollarsSpent": 0.15217,
+    "dollarsBilled": 0.15217,
+    "dollarsTokenEstimate": 0.15217,
+    "authMethod": "unknown",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

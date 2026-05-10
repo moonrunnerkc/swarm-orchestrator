@@ -1,0 +1,60 @@
+● List directory src/pkg5
+  └ 2 files found
+
+● Read alpha.ts
+  │ src/pkg5/alpha.ts
+  └ 3 lines read
+
+● Read beta.ts
+  │ src/pkg5/beta.ts
+  └ 1 line read
+
+```json
+{
+  "candidates": [
+    {
+      "name": "two-file-ts-cycle",
+      "rationale": "Adding two new TypeScript modules that import each other creates a direct cycle entirely within src/pkg5.",
+      "files": [
+        {
+          "relPath": "src/pkg5/cycle_pair/a.ts",
+          "bytes": "import './b';\n\nexport const a = 'a';\n"
+        },
+        {
+          "relPath": "src/pkg5/cycle_pair/b.ts",
+          "bytes": "import './a';\n\nexport const b = 'b';\n"
+        }
+      ]
+    },
+    {
+      "name": "three-file-js-cycle",
+      "rationale": "Adding a three-module JavaScript chain that closes back to the first file forms a directed cycle inside the walked scope.",
+      "files": [
+        {
+          "relPath": "src/pkg5/ring/one.js",
+          "bytes": "import './two.js';\n\nexport const one = 1;\n"
+        },
+        {
+          "relPath": "src/pkg5/ring/two.js",
+          "bytes": "import './three.js';\n\nexport const two = 2;\n"
+        },
+        {
+          "relPath": "src/pkg5/ring/three.js",
+          "bytes": "import './one.js';\n\nexport const three = 3;\n"
+        }
+      ]
+    },
+    {
+      "name": "overwrite-beta-to-close-cycle",
+      "rationale": "Overwriting beta.ts so it imports alpha.ts closes a cycle with the existing alpha.ts -> beta.ts edge.",
+      "files": [
+        {
+          "relPath": "src/pkg5/beta.ts",
+          "bytes": "import { alpha } from './alpha';\n\nexport const beta = alpha + 1;\n"
+        }
+      ]
+    }
+  ]
+}
+```
+

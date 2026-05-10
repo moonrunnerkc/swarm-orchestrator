@@ -6,6 +6,7 @@ import type {
   CandidateDiscardedEntry,
   CandidateRecordedEntry,
   CandidateStreamAbortedEntry,
+  FalsificationCallEntry,
   ObligationAttemptedEntry,
   ObligationDeterministicAppliedEntry,
   ObligationDeterministicAttemptedEntry,
@@ -21,6 +22,8 @@ import type {
   TournamentRoundStartedEntry,
   TournamentWinnerSelectedEntry,
 } from '../ledger/types';
+import type { AdapterRegistry } from '../falsification/adapters/registry';
+import { dispatchFalsifiers, type FalsifiersFlag } from '../falsification/dispatcher';
 import type { PersonaRegistry } from '../persona/persona-registry';
 import type { PersonaSpec } from '../persona/types';
 import { selectPersonaForState } from '../persona/predicates';
@@ -132,6 +135,30 @@ export interface RunPopulationOptions {
    * Defaults to false.
    */
   postMerge?: boolean;
+  /**
+   * Adapter-reintegration: falsification-dispatcher feature flag. When
+   * `'on'` (default) and a falsifier registry is supplied, the manager
+   * dispatches every registered adapter that handles the obligation type
+   * after the producer's verifier marks the patch satisfied. A
+   * confirmed counter-example flips the obligation status to failed and
+   * appends a `falsification-call` ledger entry with the adapter's cost
+   * and yield. When `'off'` or no registry is supplied, the dispatcher
+   * is bypassed and the run is identical to pre-Phase-2 behaviour.
+   */
+  falsifiers?: FalsifiersFlag;
+  /**
+   * Adapter-reintegration: registry of falsifier adapters to dispatch
+   * after each obligation. Caller-supplied so tests can inject a fake
+   * registry without spawning real Codex/Copilot CLIs. Production wires
+   * `defaultAdapterRegistry()` at the run-handler layer.
+   */
+  adapterRegistry?: AdapterRegistry;
+  /**
+   * Adapter-reintegration: per-adapter wall-clock budget, ms. Defaults
+   * to 60_000 (60s). The dispatcher passes this through unchanged; each
+   * adapter must self-bound to it.
+   */
+  adapterTimeBudgetMs?: number;
 }
 
 /** Per-obligation outcome the manager hands back to the caller. */
@@ -232,6 +259,20 @@ export async function runPopulation(
   const start = Date.now();
   const { contract, repoRoot, registry, session, ledger, commandTimeoutMs } = options;
   const cap = options.maxObligations ?? contract.obligations.length;
+  // Paths owned by file-must-exist obligations. The architect persona
+  // creates these; subsequent personas (security-reviewer, verifier, etc.)
+  // must not overwrite them via their unified diffs. Without this guard a
+  // property-must-hold predicate that mentions the file path tempts the
+  // satisfying persona into emitting a `--- /dev/null` create patch that
+  // stomps on the architect's body — and when the model thinks aloud and
+  // the diff is partial, the file ends up truncated.
+  const fileMustExistPaths = new Set<string>(
+    contract.obligations
+      .filter((o): o is typeof o & { type: 'file-must-exist'; path: string } =>
+        o.type === 'file-must-exist',
+      )
+      .map((o) => o.path),
+  );
   const mode: PopulationMode = options.mode ?? 'single';
   const builder = new PopulationStateBuilder(contract.obligations);
   const skip = options.skipObligationIndexes ?? new Set<number>();
@@ -404,17 +445,35 @@ export async function runPopulation(
         tournamentConfig: options.tournamentConfig,
         memoStore,
         renderContext: tournamentRenderCtx,
+        fileMustExistPaths,
       });
       totalUsage = addUsage(totalUsage, result.tournament.usage);
       verifierCallsSavedByMemoization += result.tournament.verifierCallsSavedByMemoization;
       const winnerPersonaId = result.tournament.winner?.personaId ?? null;
+      let tournamentSatisfied = result.satisfied;
+      let tournamentDetail = result.detail;
       if (result.satisfied) {
+        const falsified = await runFalsifiersForObligation({
+          obligation,
+          obligationIndex,
+          repoRoot,
+          ledger,
+          registry: options.adapterRegistry,
+          falsifiers: options.falsifiers ?? 'on',
+          timeBudgetMs: options.adapterTimeBudgetMs ?? 60_000,
+        });
+        if (falsified !== null) {
+          tournamentSatisfied = false;
+          tournamentDetail = falsified;
+        }
+      }
+      if (tournamentSatisfied) {
         builder.setStatus(obligationIndex, 'satisfied');
         ledger.append<ObligationSatisfiedEntry>({
           type: 'obligation-satisfied',
           obligationIndex,
           obligationType: obligation.type,
-          detail: result.detail,
+          detail: tournamentDetail,
         });
       } else {
         builder.setStatus(obligationIndex, 'failed');
@@ -422,15 +481,15 @@ export async function runPopulation(
           type: 'obligation-failed',
           obligationIndex,
           obligationType: obligation.type,
-          detail: result.detail,
+          detail: tournamentDetail,
         });
       }
       outcomes.push({
         obligationIndex,
         obligation,
         personaId: winnerPersonaId,
-        satisfied: result.satisfied,
-        detail: result.detail,
+        satisfied: tournamentSatisfied,
+        detail: tournamentDetail,
         tournament: result.tournament,
       });
       continue;
@@ -522,7 +581,13 @@ export async function runPopulation(
       // No-op declared — leave the workspace unchanged; verifier decides.
     } else if (looksLikeUnifiedDiff(responseText)) {
       try {
-        applyUnifiedDiff(repoRoot, responseText);
+        // Protect file-must-exist paths from cross-persona overwrites:
+        // the architect already owns these files. A diff that targets one
+        // is dropped (skip that patch only, not the whole diff) so the
+        // architect's body is preserved.
+        applyUnifiedDiff(repoRoot, responseText, {
+          protectedPaths: fileMustExistPaths,
+        });
       } catch {
         // The verifier will detect the failure; manager surfaces it.
       }
@@ -555,13 +620,31 @@ export async function runPopulation(
       if (misuse) verifyResult = { satisfied: false, detail: misuse };
     }
 
+    let finalSatisfied = verifyResult.satisfied;
+    let finalDetail = verifyResult.detail;
     if (verifyResult.satisfied) {
+      const falsified = await runFalsifiersForObligation({
+        obligation,
+        obligationIndex,
+        repoRoot,
+        ledger,
+        registry: options.adapterRegistry,
+        falsifiers: options.falsifiers ?? 'on',
+        timeBudgetMs: options.adapterTimeBudgetMs ?? 60_000,
+      });
+      if (falsified !== null) {
+        finalSatisfied = false;
+        finalDetail = falsified;
+      }
+    }
+
+    if (finalSatisfied) {
       builder.setStatus(obligationIndex, 'satisfied');
       ledger.append<ObligationSatisfiedEntry>({
         type: 'obligation-satisfied',
         obligationIndex,
         obligationType: obligation.type,
-        detail: verifyResult.detail,
+        detail: finalDetail,
       });
     } else {
       builder.setStatus(obligationIndex, 'failed');
@@ -569,7 +652,7 @@ export async function runPopulation(
         type: 'obligation-failed',
         obligationIndex,
         obligationType: obligation.type,
-        detail: verifyResult.detail,
+        detail: finalDetail,
       });
     }
 
@@ -577,8 +660,8 @@ export async function runPopulation(
       obligationIndex,
       obligation,
       personaId: persona.id,
-      satisfied: verifyResult.satisfied,
-      detail: verifyResult.detail,
+      satisfied: finalSatisfied,
+      detail: finalDetail,
       tournament: null,
     });
   }
@@ -1147,6 +1230,12 @@ interface ExecuteTournamentArgs {
    * tournament candidate sees the same diagnostic input as single mode.
    */
   renderContext: RenderContext;
+  /**
+   * Repo-relative paths owned by file-must-exist obligations elsewhere in
+   * the contract. The tournament's diff applier drops patches targeting
+   * these paths so the architect's body is preserved across persona turns.
+   */
+  fileMustExistPaths: ReadonlySet<string>;
 }
 
 interface ExecuteTournamentResult {
@@ -1226,7 +1315,12 @@ async function executeTournament(args: ExecuteTournamentArgs): Promise<ExecuteTo
     config,
     renderUserMessage: (o) => renderDynamicMessage(o, repoRoot, args.renderContext),
     applyCandidate: async (candidate: TournamentCandidate, ob: ObligationV1) => {
-      const applyDetail = applyTournamentCandidate(repoRoot, ob, candidate.response.text);
+      const applyDetail = applyTournamentCandidate(
+        repoRoot,
+        ob,
+        candidate.response.text,
+        args.fileMustExistPaths,
+      );
       const verifyOpts: Parameters<typeof verifyObligation>[1] = { repoRoot };
       if (commandTimeoutMs !== undefined) verifyOpts.commandTimeoutMs = commandTimeoutMs;
       const verifyResult = verifyObligation(ob, verifyOpts);
@@ -1264,6 +1358,7 @@ function applyTournamentCandidate(
   repoRoot: string,
   obligation: ObligationV1,
   responseText: string,
+  protectedPaths: ReadonlySet<string>,
 ): string {
   const trimmed = responseText.trim();
   if (trimmed === 'no-op' || trimmed === '"no-op"') {
@@ -1275,11 +1370,105 @@ function applyTournamentCandidate(
   }
   if (looksLikeUnifiedDiff(responseText)) {
     try {
-      const r = applyUnifiedDiff(repoRoot, responseText);
+      const r = applyUnifiedDiff(repoRoot, responseText, { protectedPaths });
       return r.detail;
     } catch (err) {
       return `unified diff apply error: ${(err as Error).message.slice(0, 120)}`;
     }
   }
   return 'response was neither no-op nor a unified diff; nothing applied';
+}
+
+interface RunFalsifiersArgs {
+  readonly obligation: ObligationV1;
+  readonly obligationIndex: number;
+  readonly repoRoot: string;
+  readonly ledger: JsonlLedger;
+  readonly registry: AdapterRegistry | undefined;
+  readonly falsifiers: FalsifiersFlag;
+  readonly timeBudgetMs: number;
+}
+
+/**
+ * Adapter-reintegration: dispatch every adapter that handles the
+ * obligation type after the producer's verifier has marked the patch
+ * satisfied. Returns a falsification detail string when any adapter
+ * confirmed a counter-example (caller flips the obligation to failed),
+ * or null when no falsification was found / dispatcher disabled / no
+ * registry supplied.
+ *
+ * Each adapter call appends a `falsification-call` ledger entry with
+ * cost and yield. Adapter throws are caught and recorded as failed
+ * dispatch entries; an adapter going sideways must not crash the run
+ * (the producer's verifier already approved the patch).
+ */
+async function runFalsifiersForObligation(
+  args: RunFalsifiersArgs,
+): Promise<string | null> {
+  const { obligation, obligationIndex, repoRoot, ledger, registry, falsifiers } = args;
+  if (falsifiers === 'off' || registry === undefined) return null;
+  if (registry.forObligation(obligation.type).length === 0) return null;
+  let outcome;
+  try {
+    outcome = await dispatchFalsifiers(obligation, registry, {
+      falsifiers,
+      timeBudgetMs: args.timeBudgetMs,
+      workspaceRoot: repoRoot,
+      contextRefs: [],
+      // The v8 run path does not commit per obligation; adapters that
+      // want a SHA can `git rev-parse HEAD` inside the workspace. We
+      // pass the empty string as a sentinel so they can detect the
+      // uncommitted-workspace case.
+      patchSha: '',
+    });
+  } catch (err) {
+    ledger.append<FalsificationCallEntry>({
+      type: 'falsification-call',
+      obligationIndex,
+      obligationType: obligation.type,
+      adapterName: '<dispatcher>',
+      resultKind: 'dispatcher-error',
+      counterExamplesFound: 0,
+      wallClockMs: 0,
+      dollarsBilled: 0,
+      dollarsApiEquivalent: 0,
+      detail: `falsifier dispatch threw: ${(err as Error).message.slice(0, 800)}`,
+    });
+    return null;
+  }
+  if (outcome.disabled) return null;
+  let firstCounterExampleDetail: string | null = null;
+  for (const call of outcome.calls) {
+    const counterExamples = call.cost.counterExamplesFound;
+    let detail: string;
+    if (call.result.kind === 'counter-example-input') {
+      const inputs = call.result.inputs;
+      const repro = inputs[0]?.reproducer ?? '<no reproducer>';
+      detail =
+        `${call.adapterName} found ${inputs.length} counter-example(s); ` +
+        `first reproducer: ${repro.slice(0, 200)}`;
+      if (firstCounterExampleDetail === null) firstCounterExampleDetail = detail;
+    } else if (call.result.kind === 'no-falsification-found') {
+      detail = `${call.adapterName} found no falsification (${call.result.reason}, ${call.result.attempts} attempts)`;
+    } else if (call.result.kind === 'regression-fixture') {
+      detail = `${call.adapterName} produced regression fixture at ${call.result.fixturePath}`;
+      if (firstCounterExampleDetail === null) firstCounterExampleDetail = detail;
+    } else {
+      detail = `${call.adapterName} produced property-violation trace (${call.result.steps.length} steps)`;
+      if (firstCounterExampleDetail === null) firstCounterExampleDetail = detail;
+    }
+    ledger.append<FalsificationCallEntry>({
+      type: 'falsification-call',
+      obligationIndex,
+      obligationType: obligation.type,
+      adapterName: call.adapterName,
+      resultKind: call.result.kind,
+      counterExamplesFound: counterExamples,
+      wallClockMs: call.cost.wallClockMs,
+      dollarsBilled: call.cost.dollarsBilled,
+      dollarsApiEquivalent: call.cost.dollarsApiEquivalent,
+      detail,
+    });
+  }
+  return firstCounterExampleDetail;
 }

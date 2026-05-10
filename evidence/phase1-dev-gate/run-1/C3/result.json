@@ -1,0 +1,49 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "templates/adversarial-literal/index.html",
+            "bytes": "<!doctype html>\n<html><body><script>alert('x')</script></body></html>\n"
+          }
+        ],
+        "reproducer": "! grep -rln '<script>' templates/ 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "templates/adversarial-json/payload.json",
+            "bytes": "{\n  \"name\": \"bad-template\",\n  \"body\": \"<script>console.log('bad')</script>\"\n}\n"
+          }
+        ],
+        "reproducer": "! grep -rln '<script>' templates/ 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "templates/adversarial-docs/example.md",
+            "bytes": "# Example\n\nThis template includes a forbidden tag:\n\n<script>window.bad = true</script>\n"
+          }
+        ],
+        "reproducer": "! grep -rln '<script>' templates/ 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 12404,
+    "dollarsSpent": 0.03005,
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

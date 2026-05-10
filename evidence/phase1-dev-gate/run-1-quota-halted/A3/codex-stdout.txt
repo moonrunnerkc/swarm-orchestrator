@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "plain-pem-header-file",
+      "rationale": "A new tracked text file containing the literal RSA private-key PEM header will be found by grep, making the negated predicate fail.",
+      "files": [
+        {
+          "relPath": "adversarial-pem-cases/plain-rsa-key.pem",
+          "bytes": "-----BEGIN RSA PRIVATE KEY-----\nnot-a-real-key\n-----END RSA PRIVATE KEY-----\n"
+        }
+      ]
+    },
+    {
+      "name": "commented-header-in-source",
+      "rationale": "The predicate searches raw file contents, so the forbidden header inside a source comment still triggers grep.",
+      "files": [
+        {
+          "relPath": "adversarial-pem-cases/commented-fixture.ts",
+          "bytes": "// Test fixture containing a forbidden marker:\n// -----BEGIN RSA PRIVATE KEY-----\nexport const fixture = \"placeholder\";\n"
+        }
+      ]
+    },
+    {
+      "name": "config-value-header",
+      "rationale": "A configuration-style file under a normal repository path containing the exact header string is within grep's recursive search scope.",
+      "files": [
+        {
+          "relPath": "adversarial-pem-cases/sample-config.env",
+          "bytes": "APP_MODE=test\nPRIVATE_KEY_HEADER=\"-----BEGIN RSA PRIVATE KEY-----\"\n"
+        }
+      ]
+    }
+  ]
+}
+```

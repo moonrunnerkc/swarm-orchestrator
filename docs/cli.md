@@ -231,6 +231,38 @@ swarm attest verify HEAD
 
 This is the only v7 falsification-battery CLI surface exposed today.
 
+## Falsification adapter flags (v8 run)
+
+`swarm v8 run` accepts `--falsifiers <on|off>` (default `on`). Setting
+`off` short-circuits the falsification dispatcher entirely; adapter code
+stays in tree but is never invoked.
+
+**Production adapter set (final, post-2026-05-09 close-out):** Codex
+and Copilot are default-on; ClaudeCode is behind a per-adapter flag
+default-off. The CLI does **not** expose per-adapter on/off flags;
+per-adapter selection is a registry-construction concern at the API
+layer:
+
+```ts
+import { defaultAdapterRegistry } from '@swarm/falsification';
+
+defaultAdapterRegistry();                              // Codex + Copilot
+defaultAdapterRegistry({ includeCopilot: false });     // Codex-only
+defaultAdapterRegistry({ includeClaudeCode: true });   // + same-family ablation arm
+```
+
+`includeCopilot` defaults to `true`; `includeClaudeCode` defaults to
+`false`. The flags shape the registry the dispatcher walks; the CLI's
+single `--falsifiers <on|off>` then gates dispatch as a whole.
+
+See [docs/falsification-adapters.md](falsification-adapters.md) for the
+subsystem overview (production topology, sandbox posture, dual-column
+cost reporting, methodology-fix invariants),
+[docs/adapter-integration.md](adapter-integration.md) for the
+historical multi-phase plan, and [DECISIONS.md](../DECISIONS.md) for
+the recorded architectural decisions and the 2026-05-09 "Adapter
+integration close-out" entry.
+
 ## Transcript commands
 
 ### `swarm share import <runid> <step> <agent> <path>`

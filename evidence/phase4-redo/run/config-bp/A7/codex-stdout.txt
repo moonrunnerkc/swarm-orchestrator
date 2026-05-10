@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "plain-config-literal",
+      "rationale": "A normal configuration-style file containing the literal aws_access_key_id will be found by grep under the workspace root.",
+      "files": [
+        {
+          "relPath": "aws-key-literal-case-01/config.ini",
+          "bytes": "[default]\naws_access_key_id = AKIAEXAMPLE000000000\n"
+        }
+      ]
+    },
+    {
+      "name": "commented-doc-literal",
+      "rationale": "The predicate searches raw text, so the literal aws_access_key_id in documentation comments still falsifies it.",
+      "files": [
+        {
+          "relPath": "aws-key-literal-case-02/notes.md",
+          "bytes": "# Deployment Notes\n\nDo not commit values like `aws_access_key_id` to source control.\n"
+        }
+      ]
+    },
+    {
+      "name": "json-fixture-literal",
+      "rationale": "A JSON fixture key named aws_access_key_id is within the searched tree and will make grep match.",
+      "files": [
+        {
+          "relPath": "aws-key-literal-case-03/fixture.json",
+          "bytes": "{\n  \"aws_access_key_id\": \"AKIAEXAMPLE111111111\"\n}\n"
+        }
+      ]
+    }
+  ]
+}
+```

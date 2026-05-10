@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "root-npmrc-registry",
+      "rationale": "Adding a regular .npmrc file at the workspace root makes find match it, causing grep to succeed and the negated predicate to exit non-zero.",
+      "files": [
+        {
+          "relPath": ".npmrc",
+          "bytes": "registry=https://registry.npmjs.org/\n"
+        }
+      ]
+    },
+    {
+      "name": "root-npmrc-auth-placeholder",
+      "rationale": "A root-level .npmrc file of any content is enough to falsify the predicate because it searches only for the file's existence.",
+      "files": [
+        {
+          "relPath": ".npmrc",
+          "bytes": "always-auth=false\n"
+        }
+      ]
+    },
+    {
+      "name": "root-npmrc-empty-config",
+      "rationale": "Creating .npmrc directly under the workspace root causes the maxdepth-1 find command to emit a match, making the predicate fail.",
+      "files": [
+        {
+          "relPath": ".npmrc",
+          "bytes": "# test npm config\n"
+        }
+      ]
+    }
+  ]
+}
+```

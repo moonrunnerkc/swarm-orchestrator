@@ -1,0 +1,64 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "import-graph-must-satisfy",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/pkg1/c.ts",
+            "bytes": "import { a } from './a';\n\nexport const c = a + 1;\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"import-graph-must-satisfy\",\"constraint\":\"no-cycles\",\"scope\":\"src/pkg1\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "import-graph violation (no-cycles): src/pkg1/a.ts -> src/pkg1/b.ts -> src/pkg1/c.ts -> src/pkg1/a.ts",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/pkg1/cycle-left.ts",
+            "bytes": "import { right } from './cycle-right';\n\nexport const left = right + 1;\n"
+          },
+          {
+            "relPath": "src/pkg1/cycle-right.ts",
+            "bytes": "import { left } from './cycle-left';\n\nexport const right = left + 1;\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"import-graph-must-satisfy\",\"constraint\":\"no-cycles\",\"scope\":\"src/pkg1\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "import-graph violation (no-cycles): src/pkg1/cycle-left.ts -> src/pkg1/cycle-right.ts -> src/pkg1/cycle-left.ts",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/pkg1/loop-one.js",
+            "bytes": "import { two } from './loop-two.js';\n\nexport const one = two + 1;\n"
+          },
+          {
+            "relPath": "src/pkg1/loop-two.js",
+            "bytes": "import { three } from './loop-three.js';\n\nexport const two = three + 1;\n"
+          },
+          {
+            "relPath": "src/pkg1/loop-three.js",
+            "bytes": "import { one } from './loop-one.js';\n\nexport const three = one + 1;\n"
+          }
+        ],
+        "reproducer": "node -e \"const {verifyObligation}=require('./dist/src/verification/run-verifier');console.log(JSON.stringify(verifyObligation({\"type\":\"import-graph-must-satisfy\",\"constraint\":\"no-cycles\",\"scope\":\"src/pkg1\"},{repoRoot:process.cwd()})))\"",
+        "reproducerOutput": "import-graph violation (no-cycles): src/pkg1/loop-one.js -> src/pkg1/loop-two.js -> src/pkg1/loop-three.js -> src/pkg1/loop-one.js",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "copilot",
+    "obligationType": "import-graph-must-satisfy",
+    "wallClockMs": 30211,
+    "dollarsSpent": 0.026,
+    "dollarsBilled": 0,
+    "dollarsTokenEstimate": 0.026,
+    "authMethod": "chatgpt",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

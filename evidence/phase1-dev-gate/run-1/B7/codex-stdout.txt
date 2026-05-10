@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "root-private-id-rsa",
+      "rationale": "Adding a file named id_rsa outside excluded directories makes find emit a match and grep succeed, causing the negated predicate to fail.",
+      "files": [
+        {
+          "relPath": "ssh-key-fixtures-a/id_rsa",
+          "bytes": "-----BEGIN OPENSSH PRIVATE KEY-----\nnot-a-real-key\n-----END OPENSSH PRIVATE KEY-----\n"
+        }
+      ]
+    },
+    {
+      "name": "nested-private-id-dsa",
+      "rationale": "Adding a nested file named id_dsa outside excluded directories is still found by the recursive predicate search.",
+      "files": [
+        {
+          "relPath": "security-regression-inputs-b/nested/id_dsa",
+          "bytes": "-----BEGIN DSA PRIVATE KEY-----\nnot-a-real-key\n-----END DSA PRIVATE KEY-----\n"
+        }
+      ]
+    },
+    {
+      "name": "config-private-id-ed25519",
+      "rationale": "Adding a file named id_ed25519 in a normal fresh directory matches the predicate's private-key filename pattern.",
+      "files": [
+        {
+          "relPath": "credential-check-cases-c/id_ed25519",
+          "bytes": "-----BEGIN OPENSSH PRIVATE KEY-----\nnot-a-real-key\n-----END OPENSSH PRIVATE KEY-----\n"
+        }
+      ]
+    }
+  ]
+}
+```

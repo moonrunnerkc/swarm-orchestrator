@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "root-npmrc",
+      "rationale": "Adding a .npmrc at the workspace root makes find output ./.npmrc, so the test -z predicate fails.",
+      "files": [
+        {
+          "relPath": ".npmrc",
+          "bytes": "registry=https://registry.npmjs.org/\n"
+        }
+      ]
+    },
+    {
+      "name": "config-npmrc",
+      "rationale": "Adding a .npmrc in a fresh config directory is within the predicate search scope and is not excluded by its path filters.",
+      "files": [
+        {
+          "relPath": "config/.npmrc",
+          "bytes": "save-exact=true\n"
+        }
+      ]
+    },
+    {
+      "name": "ci-npmrc",
+      "rationale": "Adding a nested .npmrc under a fresh ci directory causes find to return a matching path outside .git and node_modules.",
+      "files": [
+        {
+          "relPath": "ci/npm/.npmrc",
+          "bytes": "fund=false\naudit=false\n"
+        }
+      ]
+    }
+  ]
+}
+```

@@ -1,0 +1,36 @@
+```json
+{
+  "candidates": [
+    {
+      "name": "root-backup-file",
+      "rationale": "Adding a workspace-root file ending in .bak makes find return a matching path, so test -z receives non-empty output and fails.",
+      "files": [
+        {
+          "relPath": "predicate-root-backup.bak",
+          "bytes": "backup marker\n"
+        }
+      ]
+    },
+    {
+      "name": "nested-backup-file",
+      "rationale": "Adding a .bak file in a normal fresh subdirectory is within the predicate search scope and is not excluded by its path filters.",
+      "files": [
+        {
+          "relPath": "adversarial-inputs/nested-config.bak",
+          "bytes": "temporary backup content\n"
+        }
+      ]
+    },
+    {
+      "name": "source-tree-backup-file",
+      "rationale": "Adding a .bak file under src is still searched by find and is outside all excluded directories, causing non-empty command substitution.",
+      "files": [
+        {
+          "relPath": "src/generated-test-backup.bak",
+          "bytes": "source backup artifact\n"
+        }
+      ]
+    }
+  ]
+}
+```

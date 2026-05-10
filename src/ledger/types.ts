@@ -326,6 +326,34 @@ export interface PostMergeVerifiedEntry extends LedgerEntryHeader {
   detail: string;
 }
 
+/**
+ * Falsification adapter call. One entry per dispatched adapter call,
+ * appended after the producer's verification of an obligation succeeds.
+ * Carries enough cost data and the result kind so audits can reconstruct
+ * adapter yield without a separate cost-attribution file.
+ */
+export interface FalsificationCallEntry extends LedgerEntryHeader {
+  type: 'falsification-call';
+  obligationIndex: number;
+  obligationType: string;
+  adapterName: string;
+  /** Discriminator from FalsificationResult: counter-example-input | regression-fixture | property-violation-trace | no-falsification-found */
+  resultKind: string;
+  /**
+   * Number of confirmed counter-examples found. Zero for non-falsifying
+   * results; >0 means the producer's patch was falsified.
+   */
+  counterExamplesFound: number;
+  /** Wall clock for the single adapter call. */
+  wallClockMs: number;
+  /** Real dollars billed to the operator's account. */
+  dollarsBilled: number;
+  /** API-equivalent dollar value (cross-adapter comparison surface). */
+  dollarsApiEquivalent: number;
+  /** Free-form summary detail. */
+  detail: string;
+}
+
 /** Discriminated union of every ledger entry shape. */
 export type LedgerEntry =
   | RunStartedEntry
@@ -345,7 +373,8 @@ export type LedgerEntry =
   | ObligationDeterministicFailedEntry
   | CandidateStreamAbortedEntry
   | ObligationPreVerifiedEntry
-  | PostMergeVerifiedEntry;
+  | PostMergeVerifiedEntry
+  | FalsificationCallEntry;
 
 /** Type tag union for all ledger entries. */
 export type LedgerEntryType = LedgerEntry['type'];

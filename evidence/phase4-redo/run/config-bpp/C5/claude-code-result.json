@@ -1,0 +1,53 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "config.yaml",
+            "bytes": "server:\n  host: 0.0.0.0\n  port: 8080\n"
+          }
+        ],
+        "reproducer": "! find . \\( -name '*.yaml' -o -name '*.yml' \\) -not -path './node_modules/*' -not -path './.git/*' -exec grep -l 'host: 0\\.0\\.0\\.0' {} + 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "deploy/app.yml",
+            "bytes": "service:\n  name: api\n  host: 0.0.0.0\n"
+          }
+        ],
+        "reproducer": "! find . \\( -name '*.yaml' -o -name '*.yml' \\) -not -path './node_modules/*' -not -path './.git/*' -exec grep -l 'host: 0\\.0\\.0\\.0' {} + 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "infra/values.yaml",
+            "bytes": "# Helm values\nimage:\n  repository: example\nlistener:\n  host: 0.0.0.0\n  port: 9000\nreplicas: 2\n"
+          }
+        ],
+        "reproducer": "! find . \\( -name '*.yaml' -o -name '*.yml' \\) -not -path './node_modules/*' -not -path './.git/*' -exec grep -l 'host: 0\\.0\\.0\\.0' {} + 2>/dev/null | grep -q .",
+        "reproducerOutput": "",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "claude-code",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 9546,
+    "dollarsSpent": 0.049606,
+    "dollarsBilled": 0.049606,
+    "dollarsTokenEstimate": 0.049606,
+    "dollarsApiEquivalent": 0.049606,
+    "authMethod": "api",
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}

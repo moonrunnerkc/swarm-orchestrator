@@ -1,0 +1,49 @@
+{
+  "result": {
+    "kind": "counter-example-input",
+    "obligationType": "property-must-hold",
+    "inputs": [
+      {
+        "files": [
+          {
+            "relPath": "src/falsification/adversarial/direct-eval.ts",
+            "bytes": "export function run(input: string): unknown {\n  return eval(input);\n}\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'eval(' src/falsification --include='*.ts'",
+        "reproducerOutput": "src/falsification/adversarial/direct-eval.ts:2:  return eval(input);\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/falsification/adversarial/commented-eval.ts",
+            "bytes": "// Regression fixture: eval( should be rejected even if it appears in comments.\nexport const marker = true;\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'eval(' src/falsification --include='*.ts'",
+        "reproducerOutput": "src/falsification/adversarial/commented-eval.ts:1:// Regression fixture: eval( should be rejected even if it appears in comments.\n",
+        "reproducerExitCode": 1
+      },
+      {
+        "files": [
+          {
+            "relPath": "src/falsification/adversarial/string-literal-eval.ts",
+            "bytes": "export const forbiddenText = \"eval(\";\n"
+          }
+        ],
+        "reproducer": "! grep -rn 'eval(' src/falsification --include='*.ts'",
+        "reproducerOutput": "src/falsification/adversarial/string-literal-eval.ts:1:export const forbiddenText = \"eval(\";\n",
+        "reproducerExitCode": 1
+      }
+    ]
+  },
+  "cost": {
+    "adapterName": "codex",
+    "obligationType": "property-must-hold",
+    "wallClockMs": 15397,
+    "dollarsSpent": 0.03207,
+    "counterExamplesFound": 3,
+    "falsePositives": 0
+  }
+}
