@@ -42,7 +42,10 @@ export function readContract(dir: string): FinalContract {
   }
   const manifest = readManifest(manifestPath);
   const obligations = parseJsonl(fs.readFileSync(obligationsPath, 'utf8'));
-  const validation = validateObligations(obligations);
+  // Mirror compileGoal/finalize: build is only required when the captured
+  // repoContext indicates the project actually has a build step.
+  const requireBuild = manifest.repoContext.buildCommand !== null;
+  const validation = validateObligations(obligations, { requireBuild });
   if (!validation.valid) {
     throw new Error(
       `contract obligations at ${obligationsPath} failed validation: ` +

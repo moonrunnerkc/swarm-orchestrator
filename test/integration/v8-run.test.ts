@@ -88,7 +88,12 @@ describe('integration: swarm v8 run', () => {
 
   it('exits 2 when at least one obligation fails verification', async () => {
     const work = tmpDir();
-    fs.writeFileSync(path.join(work, 'package.json'), '{}');
+    // Declare scripts so the stub extractor emits both build-must-pass and
+    // test-must-pass; the override below relies on the build line existing.
+    fs.writeFileSync(
+      path.join(work, 'package.json'),
+      JSON.stringify({ scripts: { build: 'echo build', test: 'echo test' } }),
+    );
     const contractDir = path.join(work, 'contract');
     await handleCompile([
       'add a thing',

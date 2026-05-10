@@ -130,6 +130,40 @@ describe('population/unified-diff', () => {
       assert.equal(fs.readFileSync(path.join(repo, 'x.txt'), 'utf8'), 'one\nTWO\nthree\n');
     });
 
+    it('skips patches whose target is in protectedPaths and applies the rest', () => {
+      const repo = tmpDir('v8-diff-');
+      // Pre-existing architect-owned file we want to keep intact.
+      const protectedPath = 'test/architect-owned.test.js';
+      const protectedAbs = path.join(repo, protectedPath);
+      fs.mkdirSync(path.dirname(protectedAbs), { recursive: true });
+      fs.writeFileSync(protectedAbs, "import 'a';\n// architect body\n");
+      // Multi-file diff: one patch targets the protected path (overwrite
+      // attempt) and a second targets an unrelated path.
+      const diff = [
+        '--- /dev/null',
+        '+++ b/' + protectedPath,
+        '@@ -0,0 +1,1 @@',
+        '+stomped',
+        '--- /dev/null',
+        '+++ b/notes.txt',
+        '@@ -0,0 +1,1 @@',
+        '+ok',
+      ].join('\n');
+      const r = applyUnifiedDiff(repo, diff, {
+        protectedPaths: new Set([protectedPath]),
+      });
+      assert.equal(r.applied, true);
+      assert.deepEqual(r.changedFiles, ['notes.txt']);
+      assert.match(r.detail, /skipped 1/);
+      // Architect's body intact.
+      assert.equal(
+        fs.readFileSync(protectedAbs, 'utf8'),
+        "import 'a';\n// architect body\n",
+      );
+      // Unrelated file written.
+      assert.equal(fs.readFileSync(path.join(repo, 'notes.txt'), 'utf8'), 'ok\n');
+    });
+
     it('deletes a file when +++ /dev/null', () => {
       const repo = tmpDir('v8-diff-');
       const target = path.join(repo, 'goodbye.txt');

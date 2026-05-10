@@ -68,9 +68,13 @@ function defaultHeuristic(input: ExtractorInput): ObligationV1[] {
   const out: ObligationV1[] = [];
   const filePath = guessFilePath(input.goal);
   out.push({ type: 'file-must-exist', path: filePath });
-  const build = input.repoContext.buildCommand ?? 'npm run build';
   const test = input.repoContext.testCommand ?? 'npm test';
-  out.push({ type: 'build-must-pass', command: build });
+  // Only emit build-must-pass when the project actually has a build step;
+  // forcing it on libraries without `scripts.build` produces a phantom
+  // obligation that fails post-merge.
+  if (input.repoContext.buildCommand !== null) {
+    out.push({ type: 'build-must-pass', command: input.repoContext.buildCommand });
+  }
   out.push({ type: 'test-must-pass', command: test });
   return out;
 }

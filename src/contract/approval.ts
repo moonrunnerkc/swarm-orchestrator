@@ -87,7 +87,8 @@ async function editAndValidate(
     io.print(`edit produced invalid JSONL: ${(err as Error).message}`);
     return null;
   }
-  const validation = validateObligations(parsed);
+  const requireBuild = draft.repoContext.buildCommand !== null;
+  const validation = validateObligations(parsed, { requireBuild });
   if (!validation.valid) {
     io.print('edit produced an invalid contract:');
     for (const e of validation.errors) io.print(`  [${e.code}] ${e.message}`);

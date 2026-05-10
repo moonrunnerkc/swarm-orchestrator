@@ -133,6 +133,33 @@ describe('contract/extractor/anthropic-extractor', () => {
     assert.ok(typeof out.provenance.promptSha256 === 'string' && out.provenance.promptSha256.length === 64);
   });
 
+  it('parses obligations even when the model double-encodes them as a JSON string', async () => {
+    // Real failure mode observed against Sonnet: tool_use payload arrives as
+    // `{ obligations: "[...json text...]" }` instead of a real array. The
+    // extractor must recover by JSON.parsing the string, otherwise the run
+    // dies before any work happens.
+    const obligations: ObligationV1[] = [
+      { type: 'file-must-exist', path: 'a.ts' },
+      { type: 'test-must-pass', command: 'npm test' },
+    ];
+    const fakeClient = {
+      messages: {
+        create: async () => ({
+          content: [
+            {
+              type: 'tool_use',
+              name: 'submit_contract',
+              input: { obligations: JSON.stringify(obligations) },
+            },
+          ],
+        }),
+      },
+    };
+    const ext = new AnthropicExtractor(asExtractorOpts(fakeClient));
+    const out = await ext.extract({ goal: 'g', repoContext });
+    assert.deepEqual(out.obligations, obligations);
+  });
+
   it('throws a clear error when the model returns no tool_use block', async () => {
     const fakeClient = {
       messages: {

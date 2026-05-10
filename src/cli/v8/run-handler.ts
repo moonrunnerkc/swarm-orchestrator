@@ -14,6 +14,10 @@ import {
   type SessionUsage,
 } from '../../session/types';
 import { createDefaultRuntime, WasmRuntime } from '../../wasm';
+import {
+  defaultAdapterRegistry,
+  AdapterRegistry,
+} from '../../falsification/adapters';
 
 const logger = getLogger('cli:v8:run');
 
@@ -71,13 +75,15 @@ export interface RunFlags {
    */
   costCapUsd: number | null;
   /**
-   * Phase 1 of the adapter-reintegration plan: feature flag controlling
-   * the falsification dispatcher (`src/falsification/dispatcher.ts`).
-   * Default `'on'`. `--falsifiers off` bypasses the dispatcher entirely
-   * so adapters stay in tree but are not invoked. Phase 1 does not yet
-   * call the dispatcher from this run path; the flag is parsed and
-   * propagated so Phase 2 can wire it into measurement runs without
-   * changing flag plumbing.
+   * Adapter-reintegration: feature flag controlling the falsification
+   * dispatcher (`src/falsification/dispatcher.ts`). Default `'on'`. When
+   * on, every registered adapter that handles the obligation type is
+   * dispatched after the producer's verifier marks the patch satisfied;
+   * a confirmed counter-example flips the obligation status to failed
+   * and appends a `falsification-call` ledger entry with cost and yield.
+   * `--falsifiers off` bypasses the dispatcher entirely so runs that
+   * don't want to spend on adapter calls (or whose target environment
+   * lacks the underlying CLIs) can opt out.
    */
   falsifiers: 'on' | 'off';
 }
@@ -88,6 +94,12 @@ export interface RunHandlerInjections {
   registry?: PersonaRegistry;
   /** Phase 5: override the deterministic-floor runtime. */
   wasmRuntime?: WasmRuntime;
+  /**
+   * Adapter-reintegration: override the falsifier registry. Production
+   * code calls `defaultAdapterRegistry()`; tests inject a fake registry
+   * (or pass `null` to disable adapters even when `--falsifiers on`).
+   */
+  adapterRegistry?: AdapterRegistry | null;
 }
 
 const DEFAULT_PROJECT_CONTEXT_PREAMBLE =
@@ -144,6 +156,16 @@ export async function handleRun(
 
   const wasmRuntime = injections.wasmRuntime ?? (flags.deterministic ? createDefaultRuntime() : undefined);
 
+  // Adapter-reintegration: build the falsifier registry the population
+  // manager dispatches against after each obligation. Phase 1's flag
+  // plumbing in `RunFlags.falsifiers` finally wires through to the run
+  // path. Tests can inject a fake (or null) via `injections.adapterRegistry`.
+  const adapterRegistry =
+    injections.adapterRegistry === null
+      ? undefined
+      : injections.adapterRegistry ??
+        (flags.falsifiers === 'on' ? defaultAdapterRegistry() : undefined);
+
   const runOptions: Parameters<typeof runPopulation>[0] = {
     contract,
     repoRoot,
@@ -153,7 +175,9 @@ export async function handleRun(
     mode: flags.mode,
     preGeneration: flags.preGeneration,
     postMerge: flags.postMerge,
+    falsifiers: flags.falsifiers,
   };
+  if (adapterRegistry) runOptions.adapterRegistry = adapterRegistry;
   if (flags.streaming) {
     runOptions.streaming = { forbiddenImports: flags.forbiddenImports };
   }

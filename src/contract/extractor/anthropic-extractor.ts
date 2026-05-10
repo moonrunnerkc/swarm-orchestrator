@@ -117,6 +117,18 @@ function extractToolUseObligations(content: Anthropic.ContentBlock[]): unknown[]
     if (block.type === 'tool_use' && block.name === SUBMIT_CONTRACT_TOOL.name) {
       const blockInput = block.input as { obligations?: unknown };
       if (Array.isArray(blockInput.obligations)) return blockInput.obligations;
+      // Tolerate the intermittent shape where the model JSON-encodes the
+      // array as a string in the tool input (the Anthropic API does not
+      // guarantee structured arrays here, even with input_schema set; the
+      // model occasionally double-encodes). Try one parse before failing.
+      if (typeof blockInput.obligations === 'string') {
+        try {
+          const parsed = JSON.parse(blockInput.obligations);
+          if (Array.isArray(parsed)) return parsed;
+        } catch {
+          // Fall through to the structured error below.
+        }
+      }
       throw new Error(
         `Anthropic extractor tool_use payload missing "obligations" array; got: ${JSON.stringify(blockInput)}`,
       );
@@ -156,12 +168,16 @@ const SYSTEM_PROMPT = [
   '    "threshold": <number 0..1, fractional regression cap> }',
   '',
   'Hard rules:',
-  '- The contract MUST contain at least one build-must-pass and at least one',
-  '  test-must-pass obligation.',
+  '- The contract MUST contain at least one test-must-pass obligation.',
+  '- Emit build-must-pass ONLY when repoContext.buildCommand is non-null.',
+  '  When buildCommand is null (typical for libraries published as source,',
+  '  e.g. ESM packages with no build step), OMIT build-must-pass entirely.',
+  '  Forcing a synthetic "npm run build" against a repo with no build script',
+  '  generates a phantom obligation that can never satisfy.',
   '- Paths are repo-relative. Never absolute. Never start with "/" or a drive letter.',
   '- Commands are non-empty shell strings. Use the repository context\'s buildCommand',
-  '  and testCommand verbatim when present; otherwise pick a reasonable default for',
-  '  the language (e.g. "npm run build" / "npm test" for TypeScript/JavaScript;',
+  '  and testCommand verbatim when present; otherwise (for test only) pick a',
+  '  reasonable default for the language ("npm test" for TypeScript/JavaScript;',
   '  "pytest" for Python).',
   '- Emit file-must-exist when the goal calls for a new file or module.',
   '  If the goal is purely behavioral (e.g. "fix the off-by-one bug"), file-must-exist',
@@ -180,6 +196,10 @@ const SYSTEM_PROMPT = [
   '  exported endpoint is documented", "no file exceeds 500 lines"). Use predicates',
   '  built from common tools: grep -r, ! grep, find ... -size, jq, etc. Exit 0 means',
   '  the property holds. Set target to a short human-readable label.',
+  '  Predicates run under bash, but stay simple: prefer plain pipelines and',
+  '  short-circuit `&&`/`||`. Avoid process substitution `<(...)`, `[[ ]]`,',
+  '  multi-line scripts, and clever quoting — predicates that fail to parse',
+  '  count as obligation failures.',
   '- import-graph-must-satisfy: the goal calls for a module-graph invariant. Use',
   '  "no-cycles" when the goal forbids circular imports anywhere under a directory;',
   '  use "no-upward-imports" when the goal forbids files reaching outside their own',

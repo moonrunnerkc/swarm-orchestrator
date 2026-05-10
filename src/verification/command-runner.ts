@@ -29,9 +29,12 @@ export function runVerificationCommand(
   const started = Date.now();
 
   return new Promise((resolve) => {
+    // Use bash explicitly so LLM-authored predicates that rely on bash
+    // syntax (process substitution `<(...)`, `[[ ]]`, etc.) don't fail
+    // under /bin/sh. Mirrors run-verifier.ts:VERIFICATION_SHELL.
     const proc = spawn(command, {
       cwd,
-      shell: true,
+      shell: '/bin/bash',
       env: {
         ...process.env,
         GIT_TERMINAL_PROMPT: '0',

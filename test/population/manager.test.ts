@@ -131,6 +131,153 @@ describe('population/manager', () => {
     assert.equal(result.outcomes.length, 1);
   });
 
+  it('dispatches falsifiers after producer satisfaction; counter-example flips obligation to failed', async () => {
+    const { AdapterRegistry } = await import('../../src/falsification/adapters/registry');
+    const repo = tmpDir('v8-mgr-fals-');
+    // Property obligation that's trivially satisfied (file exists), so the
+    // producer side passes; the fake adapter then claims a counter-example
+    // and the manager must flip the obligation to failed.
+    fs.writeFileSync(path.join(repo, 'pkg.txt'), 'hello\n');
+    const propertyContract = finalize({
+      schemaVersion: 'v1',
+      goal: 'g',
+      repoContext: {
+        repoRoot: repo,
+        buildCommand: 'true',
+        testCommand: 'true',
+        language: 'typescript',
+      },
+      obligations: [
+        { type: 'file-must-exist', path: 'pkg.txt' },
+        { type: 'build-must-pass', command: 'true' },
+        { type: 'test-must-pass', command: 'true' },
+        {
+          type: 'property-must-hold',
+          predicate: 'true',
+          target: 'always holds',
+        },
+      ],
+      extractor: { name: 'stub', model: null, temperature: null, promptSha256: null },
+    });
+    const fakeAdapter = {
+      name: 'fake-falsifier',
+      handles: ['property-must-hold'] as const,
+      falsify: async () => ({
+        result: {
+          kind: 'counter-example-input' as const,
+          obligationType: 'property-must-hold' as const,
+          inputs: [
+            {
+              files: [],
+              reproducer: 'echo broke',
+              reproducerOutput: 'broke',
+              reproducerExitCode: 1,
+            },
+          ],
+        },
+        cost: {
+          adapterName: 'fake-falsifier',
+          obligationType: 'property-must-hold' as const,
+          wallClockMs: 5,
+          dollarsSpent: 0,
+          authMethod: 'api' as const,
+          dollarsBilled: 0,
+          dollarsTokenEstimate: 0,
+          dollarsApiEquivalent: 0,
+          counterExamplesFound: 1,
+          falsePositives: 0,
+        },
+      }),
+    };
+    const adapterRegistry = new AdapterRegistry();
+    adapterRegistry.register(fakeAdapter);
+    const session = new StubSession({
+      projectContext: '',
+      responder: (req) =>
+        req.personaId === 'architect' ? '```\nhello\n```' : 'no-op',
+    });
+    const ledger = new JsonlLedger(path.join(repo, 'ledger.jsonl'), 'fals-1');
+    const result = await runPopulation({
+      contract: propertyContract,
+      repoRoot: repo,
+      registry: createDefaultRegistry(),
+      session,
+      ledger,
+      adapterRegistry,
+      falsifiers: 'on',
+    });
+    // Property obligation must have been flipped to failed by the falsifier.
+    const propertyOutcome = result.outcomes.find(
+      (o) => o.obligation.type === 'property-must-hold',
+    );
+    assert.ok(propertyOutcome);
+    assert.equal(propertyOutcome?.satisfied, false);
+    assert.match(propertyOutcome?.detail ?? '', /fake-falsifier/);
+    // Ledger must contain the falsification-call entry with the counter-example.
+    const entries = ledger.readAll();
+    const falsCall = entries.find((e) => e.type === 'falsification-call');
+    assert.ok(falsCall, 'expected a falsification-call ledger entry');
+    assert.equal(
+      (falsCall as { resultKind: string }).resultKind,
+      'counter-example-input',
+    );
+  });
+
+  it('skips dispatch entirely when falsifiers === "off"', async () => {
+    const { AdapterRegistry } = await import('../../src/falsification/adapters/registry');
+    const repo = tmpDir('v8-mgr-fals-off-');
+    fs.writeFileSync(path.join(repo, 'pkg.txt'), 'hi\n');
+    const contract = finalize({
+      schemaVersion: 'v1',
+      goal: 'g',
+      repoContext: {
+        repoRoot: repo,
+        buildCommand: 'true',
+        testCommand: 'true',
+        language: 'typescript',
+      },
+      obligations: [
+        { type: 'file-must-exist', path: 'pkg.txt' },
+        { type: 'build-must-pass', command: 'true' },
+        { type: 'test-must-pass', command: 'true' },
+        { type: 'property-must-hold', predicate: 'true', target: 'always holds' },
+      ],
+      extractor: { name: 'stub', model: null, temperature: null, promptSha256: null },
+    });
+    let called = false;
+    const fakeAdapter = {
+      name: 'fake',
+      handles: ['property-must-hold'] as const,
+      falsify: async () => {
+        called = true;
+        throw new Error('should never be called');
+      },
+    };
+    const adapterRegistry = new AdapterRegistry();
+    adapterRegistry.register(fakeAdapter);
+    const session = new StubSession({
+      projectContext: '',
+      responder: (req) =>
+        req.personaId === 'architect' ? '```\nhi\n```' : 'no-op',
+    });
+    const ledger = new JsonlLedger(path.join(repo, 'ledger.jsonl'), 'r1');
+    await runPopulation({
+      contract,
+      repoRoot: repo,
+      registry: createDefaultRegistry(),
+      session,
+      ledger,
+      adapterRegistry,
+      falsifiers: 'off',
+    });
+    assert.equal(called, false);
+    const entries = ledger.readAll();
+    assert.equal(
+      entries.some((e) => e.type === 'falsification-call'),
+      false,
+    );
+  });
+
   it('renderDynamicMessage embeds the obligation JSON', () => {
     const message = renderDynamicMessage(
       { type: 'file-must-exist', path: 'src/x.ts' },

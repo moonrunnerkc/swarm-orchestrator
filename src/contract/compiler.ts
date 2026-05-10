@@ -73,7 +73,8 @@ export async function compileGoal(options: CompileOptions): Promise<DraftContrac
     goal: options.goal,
     repoContext: options.repoContext,
   });
-  const validation = validateObligations(extracted.obligations);
+  const requireBuild = options.repoContext.buildCommand !== null;
+  const validation = validateObligations(extracted.obligations, { requireBuild });
   if (!validation.valid) {
     throw new ContractValidationError(extracted.obligations, validation.errors);
   }
@@ -101,7 +102,8 @@ export async function compileGoal(options: CompileOptions): Promise<DraftContrac
  * construction, so a failure here is a programmer error not a user error.
  */
 export function finalize(draft: DraftContract, now: Date = new Date()): FinalContract {
-  const validation = validateObligations(draft.obligations);
+  const requireBuild = draft.repoContext.buildCommand !== null;
+  const validation = validateObligations(draft.obligations, { requireBuild });
   if (!validation.valid) {
     throw new ContractValidationError(draft.obligations, validation.errors);
   }

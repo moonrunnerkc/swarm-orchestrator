@@ -1,6 +1,17 @@
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+
+/**
+ * Shell to use for verification commands (build, test, predicates,
+ * benchmarks). LLM-authored property predicates routinely use bash-only
+ * syntax — process substitution `<(...)`, `[[ ]]`, `$'...'`. Node's default
+ * `shell: true` resolves to `/bin/sh` on POSIX, which doesn't accept those
+ * forms and aborts with `syntax error near unexpected token '('`. Forcing
+ * bash here keeps the verifier from rejecting otherwise-valid predicates.
+ * `/bin/bash` exists on macOS, mainstream Linux distros, and CI runners.
+ */
+const VERIFICATION_SHELL = '/bin/bash';
 import type {
   CoverageMustExceedObligation,
   FunctionMustHaveSignatureObligation,
@@ -90,7 +101,7 @@ function verifyCommand(
   const timeout = options.commandTimeoutMs ?? DEFAULT_TIMEOUT_MS;
   const result = spawnSync(command, {
     cwd: options.repoRoot,
-    shell: true,
+    shell: VERIFICATION_SHELL,
     encoding: 'utf8',
     timeout,
     env: process.env,
@@ -563,7 +574,7 @@ function verifyPerformance(
 
   const result = spawnSync(obligation.benchmark, {
     cwd: options.repoRoot,
-    shell: true,
+    shell: VERIFICATION_SHELL,
     encoding: 'utf8',
     timeout,
     env: process.env,

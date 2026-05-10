@@ -257,6 +257,22 @@ function truncate(s: string): string {
 }
 
 /**
+ * Options for `applyUnifiedDiff`.
+ */
+export interface ApplyUnifiedDiffOptions {
+  /**
+   * Repo-relative paths that this caller is forbidden from writing. Patches
+   * targeting any of these paths are silently skipped (recorded in
+   * `skippedFiles`). Use this when an upstream `file-must-exist` obligation
+   * owns a path: subsequent personas (security-reviewer satisfying a
+   * property, verifier satisfying test-must-pass) can otherwise emit a
+   * "let me also create the file" diff and overwrite the architect's body
+   * with their own — sometimes truncated — content.
+   */
+  readonly protectedPaths?: ReadonlySet<string>;
+}
+
+/**
  * Apply a unified-diff response body. Tolerates `no-op` (returns
  * `{applied: false, changedFiles: [], detail: 'no-op'}`). Throws when the
  * diff is malformed or hunks fail to apply; the population manager
@@ -265,6 +281,7 @@ function truncate(s: string): string {
 export function applyUnifiedDiff(
   repoRoot: string,
   responseText: string,
+  options: ApplyUnifiedDiffOptions = {},
 ): UnifiedDiffApplyResult {
   const trimmed = responseText.trim();
   if (trimmed === 'no-op' || trimmed === '"no-op"') {
@@ -279,16 +296,29 @@ export function applyUnifiedDiff(
   }
   const patches = parseUnifiedDiff(trimmed);
   const changedFiles: string[] = [];
+  const skippedFiles: string[] = [];
   for (const patch of patches) {
-    const target = applyFilePatch(repoRoot, patch);
-    changedFiles.push(target);
+    const target = patch.newPath ?? patch.oldPath;
+    if (target !== null && options.protectedPaths?.has(target)) {
+      skippedFiles.push(target);
+      continue;
+    }
+    const written = applyFilePatch(repoRoot, patch);
+    changedFiles.push(written);
+  }
+  let detail: string;
+  if (changedFiles.length === 0 && skippedFiles.length === 0) {
+    detail = 'parsed diff but no files changed';
+  } else if (skippedFiles.length === 0) {
+    detail = `applied ${patches.length} patch(es) over ${changedFiles.length} file(s)`;
+  } else {
+    detail =
+      `applied ${changedFiles.length} patch(es); skipped ${skippedFiles.length} ` +
+      `patch(es) targeting protected path(s): ${[...new Set(skippedFiles)].join(', ')}`;
   }
   return {
     applied: changedFiles.length > 0,
     changedFiles,
-    detail:
-      changedFiles.length === 0
-        ? 'parsed diff but no files changed'
-        : `applied ${patches.length} patch(es) over ${changedFiles.length} file(s)`,
+    detail,
   };
 }
