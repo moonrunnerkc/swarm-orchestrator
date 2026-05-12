@@ -652,22 +652,36 @@ export async function runPopulation(
 
     const pre = snapshotBeforeApply(repoRoot, runId, obligation, obligationIndex, responseText);
 
+    // applyDetail surfaces *why* a persona's response did or didn't change
+    // the workspace. Without this trace, a downstream verifier failure
+    // ("predicate exited 1") gives no signal whether the persona emitted
+    // an unapplyable diff, declared no-op, or simply produced prose.
+    let applyDetail: string | null = null;
     if (obligation.type === 'file-must-exist') {
       applyFileEmit(repoRoot, obligation.path, responseText);
     } else if (responseText.trim() === 'no-op') {
-      // No-op declared — leave the workspace unchanged; verifier decides.
+      applyDetail = 'persona declared no-op; workspace left unchanged';
     } else if (looksLikeUnifiedDiff(responseText)) {
       try {
         // Protect file-must-exist paths from cross-persona overwrites:
         // the architect already owns these files. A diff that targets one
         // is dropped (skip that patch only, not the whole diff) so the
         // architect's body is preserved.
-        applyUnifiedDiff(repoRoot, responseText, {
+        const result = applyUnifiedDiff(repoRoot, responseText, {
           protectedPaths: fileMustExistPaths,
         });
-      } catch {
-        // The verifier will detect the failure; manager surfaces it.
+        if (!result.applied) {
+          applyDetail = `unified diff did not apply: ${result.detail}`;
+        }
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        applyDetail = `unified diff parse/apply error: ${message}`;
       }
+    } else {
+      applyDetail =
+        'persona response is neither a unified diff nor "no-op" — ' +
+        'workspace left unchanged. Response head: ' +
+        responseText.trim().slice(0, 120).replace(/\s+/g, ' ');
     }
 
     if (pre) {
@@ -708,6 +722,13 @@ export async function runPopulation(
 
     let finalSatisfied = verifyResult.satisfied;
     let finalDetail = verifyResult.detail;
+    // Surface why no patch was applied: a verifier failure ("predicate
+    // exited 1") with no upstream context leads users to debug the
+    // predicate when the real problem is that the persona's response
+    // wasn't an applyable diff.
+    if (!finalSatisfied && applyDetail !== null) {
+      finalDetail = `${applyDetail}; verifier: ${finalDetail}`;
+    }
     if (verifyResult.satisfied) {
       const falsified = await runFalsifiersForObligation({
         obligation,

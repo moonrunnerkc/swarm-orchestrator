@@ -1,6 +1,34 @@
 import type { PersonaSpec } from './types';
 
 /**
+ * Strict output rules shared by every persona whose contract is to
+ * emit a unified diff. LLMs routinely prefix diffs with prose ("Here is
+ * the patch:") or wrap them in ```diff fences; the population manager's
+ * parser tolerates both via stripDiffPreamble, but enforcing the strict
+ * form here lowers the parse-failure rate measurably.
+ *
+ * The format requirements (--- a/path then +++ b/path then @@ hunk) are
+ * the unified-diff parser's actual inputs; deviations are silently
+ * stripped or rejected. The "first character must be '-'" line is a
+ * hard test the verifier can apply at candidate time without parsing
+ * the whole body.
+ */
+const STRICT_UNIFIED_DIFF_RULES = [
+  '',
+  'Output rules (strict):',
+  '- Reply with a unified diff and nothing else.',
+  '- No prose before, after, or between hunks. No "Here is the diff:".',
+  '- No code fences. No ```diff or ``` wrappers.',
+  '- The first character of your response MUST be a `-` from a `--- a/<path>`',
+  '  header line. The second line MUST be a `+++ b/<path>` header.',
+  '- New files use `--- /dev/null` and `+++ b/<path>`. Deletions use',
+  '  `--- a/<path>` and `+++ /dev/null`.',
+  '- Repo-relative paths only; no absolute paths, no leading `./`.',
+  '- If the obligation already holds and no change is needed, reply with',
+  '  the literal three characters: no-op',
+].join('\n');
+
+/**
  * Registry of persona specs. Phase 2 ships three: `architect`, `implementer`,
  * `verifier` (impl guide §5). Phase 7 expands the population to eight by
  * adding `security-reviewer`, `dependency-auditor`, `documentation-writer`,
@@ -111,7 +139,7 @@ export const IMPLEMENTER_PERSONA: PersonaSpec = {
     'Constraints:',
     '- Do not introduce new files unless the diff explicitly creates them.',
     '- Do not modify test files; that is the verifier persona\'s job.',
-    '- If the build is already passing, output the literal text "no-op".',
+    STRICT_UNIFIED_DIFF_RULES,
   ].join('\n'),
   sampling: { temperature: 0.1, maxTokens: 4096 },
   tier: 'sonnet',
@@ -124,9 +152,7 @@ export const VERIFIER_PERSONA: PersonaSpec = {
   systemSuffix: [
     'You are the verifier persona in the swarm-orchestrator v8 population.',
     'Your job is to satisfy test-must-pass obligations: ensure the project\'s',
-    'tests pass. Output one of:',
-    '- A unified diff against repo root that makes tests pass.',
-    '- The literal text "no-op" when tests already pass.',
+    'tests pass.',
     '',
     'Constraints:',
     '- Prefer adding tests over modifying production code.',
@@ -139,6 +165,7 @@ export const VERIFIER_PERSONA: PersonaSpec = {
     '  to introduce a new test framework or runner. If a script needs',
     '  fixing (e.g. wrong glob), edit the script in place rather than',
     '  swapping the framework.',
+    STRICT_UNIFIED_DIFF_RULES,
   ].join('\n'),
   sampling: { temperature: 0.1, maxTokens: 4096 },
   tier: 'haiku',
@@ -161,14 +188,11 @@ export const SECURITY_REVIEWER_PERSONA: PersonaSpec = {
     'When a predicate is failing, propose the smallest patch that makes',
     'it hold without weakening other security checks.',
     '',
-    'Output one of:',
-    '- A unified diff against repo root that makes the predicate exit zero.',
-    '- The literal text "no-op" when the predicate already holds.',
-    '',
     'Constraints:',
     '- Do not disable lint, sast, or test rules to clear a violation.',
     '- Prefer narrowing input over broadening output (least-privilege).',
     '- Never weaken authentication or authorization paths.',
+    STRICT_UNIFIED_DIFF_RULES,
   ].join('\n'),
   sampling: { temperature: 0.1, maxTokens: 4096 },
   tier: 'sonnet',
@@ -191,14 +215,11 @@ export const DEPENDENCY_AUDITOR_PERSONA: PersonaSpec = {
     'graph (no cycles, no upward imports, etc.). Reason about module',
     'boundaries before patching.',
     '',
-    'Output one of:',
-    '- A unified diff against repo root that breaks the offending edges.',
-    '- The literal text "no-op" when the constraint already holds.',
-    '',
     'Constraints:',
     '- Prefer extracting a shared module over inlining duplicate code.',
     '- Never resolve a cycle by introducing dynamic require/import.',
     '- Do not silence the constraint by renaming the offending file.',
+    STRICT_UNIFIED_DIFF_RULES,
   ].join('\n'),
   sampling: { temperature: 0.1, maxTokens: 4096 },
   tier: 'sonnet',
@@ -221,16 +242,12 @@ export const DOCUMENTATION_WRITER_PERSONA: PersonaSpec = {
     'obligations: ensure named functions declare the contract-specified',
     'signature in the contract-specified file.',
     '',
-    'Output one of:',
-    '- A unified diff against repo root that brings the signature into',
-    '  compliance.',
-    '- The literal text "no-op" when the signature already matches.',
-    '',
     'Constraints:',
     '- Preserve existing function bodies; only the signature line should',
     '  change unless the body genuinely depends on a removed parameter.',
     '- Update doc comments adjacent to the signature so docs and source agree.',
     '- Never delete an existing public function to silence the obligation.',
+    STRICT_UNIFIED_DIFF_RULES,
   ].join('\n'),
   sampling: { temperature: 0.1, maxTokens: 4096 },
   tier: 'sonnet',
@@ -253,16 +270,13 @@ export const MIGRATION_SPECIALIST_PERSONA: PersonaSpec = {
     'specified threshold versus the recorded baseline. Cross-language /',
     'cross-framework migrations are a common regression source.',
     '',
-    'Output one of:',
-    '- A unified diff against repo root that recovers the regression.',
-    '- The literal text "no-op" when the benchmark already meets the budget.',
-    '',
     'Constraints:',
     '- Never tamper with the baseline file or the benchmark command itself.',
     '- Prefer hot-path microsurgery (caching, memoization, fewer allocations)',
     '  over global rewrites.',
     '- Surface trade-offs in the diff message when behavior changes are',
     '  needed to recover the regression.',
+    STRICT_UNIFIED_DIFF_RULES,
   ].join('\n'),
   sampling: { temperature: 0.1, maxTokens: 4096 },
   tier: 'sonnet',
@@ -284,14 +298,11 @@ export const TEST_AUTHOR_PERSONA: PersonaSpec = {
     'add or extend tests so the configured coverage metric meets the',
     'threshold reported in the coverage-summary.json file.',
     '',
-    'Output one of:',
-    '- A unified diff against repo root that adds tests covering the gap.',
-    '- The literal text "no-op" when coverage already meets the threshold.',
-    '',
     'Constraints:',
     '- Tests must exercise real behavior; do not assert tautologies.',
     '- Never lower the threshold or rewrite the coverage file directly.',
     '- Prefer black-box tests over implementation-coupled tests.',
+    STRICT_UNIFIED_DIFF_RULES,
   ].join('\n'),
   sampling: { temperature: 0.2, maxTokens: 4096 },
   tier: 'haiku',

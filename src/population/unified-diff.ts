@@ -59,15 +59,36 @@ interface DiffHeader {
 }
 
 /**
+ * Strip leading prose, markdown fences, and any text before the first
+ * unified-diff header. Personas often emit "Here is the diff:\n\n--- a/..."
+ * or wrap the body in ```diff fences; both are stripped here so the
+ * downstream parser sees a clean diff body.
+ *
+ * Returns the input unchanged when no `--- ` header is found, so callers
+ * that use `looksLikeUnifiedDiff` to gate parsing still see negative
+ * results for non-diff text.
+ */
+export function stripDiffPreamble(text: string): string {
+  // Strip markdown fences anywhere in the text (some LLMs emit ```diff…```
+  // mid-response after a sentence). We deliberately tolerate fences on
+  // either or both ends.
+  let s = text.replace(/```(?:diff|patch)?\s*\n?/gi, '');
+  s = s.replace(/\n?```\s*/g, '\n');
+  // Find the first line that begins with "--- " at the start of a line —
+  // anything before it is preamble prose and gets dropped.
+  const m = /^---\s+\S/m.exec(s);
+  if (!m) return text;
+  return s.slice(m.index);
+}
+
+/**
  * Detect whether a response body looks like a unified diff. Used by the
  * population manager to decide between `applyFileEmit` (fenced) and
- * `applyUnifiedDiff` (patch).
+ * `applyUnifiedDiff` (patch). Prose preamble is tolerated via
+ * `stripDiffPreamble`.
  */
 export function looksLikeUnifiedDiff(text: string): boolean {
-  // Strip optional fences.
-  const stripped = text
-    .replace(/^```(?:diff|patch)?\s*\n?/i, '')
-    .replace(/\n?```\s*$/i, '');
+  const stripped = stripDiffPreamble(text);
   return /^---\s+\S+\n\+\+\+\s+\S+\n@@\s/m.test(stripped);
 }
 
@@ -75,10 +96,7 @@ export function looksLikeUnifiedDiff(text: string): boolean {
  * Strip optional markdown fences and split into lines.
  */
 function stripAndSplit(text: string): string[] {
-  const stripped = text
-    .replace(/^```(?:diff|patch)?\s*\n?/i, '')
-    .replace(/\n?```\s*$/i, '');
-  return stripped.split('\n');
+  return stripDiffPreamble(text).split('\n');
 }
 
 /**

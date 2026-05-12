@@ -6,6 +6,7 @@ import {
   applyUnifiedDiff,
   looksLikeUnifiedDiff,
   parseUnifiedDiff,
+  stripDiffPreamble,
 } from '../../src/population/unified-diff';
 
 function tmpDir(prefix: string): string {
@@ -30,6 +31,52 @@ describe('population/unified-diff', () => {
 
     it('rejects no-op text', () => {
       assert.equal(looksLikeUnifiedDiff('no-op'), false);
+    });
+
+    it('detects a diff preceded by prose preamble', () => {
+      const diff =
+        'Here is the patch:\n\n--- a/x\n+++ b/x\n@@ -1,1 +1,2 @@\n hi\n+bye\n';
+      assert.equal(looksLikeUnifiedDiff(diff), true);
+    });
+
+    it('detects a diff preceded by multi-paragraph prose', () => {
+      const diff = [
+        'I analyzed the obligation.',
+        '',
+        'The predicate requires the route to be registered.',
+        '',
+        '--- a/x',
+        '+++ b/x',
+        '@@ -1,1 +1,2 @@',
+        ' hi',
+        '+bye',
+      ].join('\n');
+      assert.equal(looksLikeUnifiedDiff(diff), true);
+    });
+
+    it('detects a diff wrapped in ```diff fences with extra whitespace', () => {
+      const diff =
+        '\n```diff\n--- a/x\n+++ b/x\n@@ -1,1 +1,2 @@\n hi\n+bye\n```\n';
+      assert.equal(looksLikeUnifiedDiff(diff), true);
+    });
+  });
+
+  describe('stripDiffPreamble', () => {
+    it('returns the input unchanged when no diff header is present', () => {
+      const text = 'Just some prose with no diff header.';
+      assert.equal(stripDiffPreamble(text), text);
+    });
+
+    it('strips a leading "Here is the diff:" prose line', () => {
+      const diff = 'Here is the diff:\n\n--- a/x\n+++ b/x\n@@ -1,1 +1,2 @@\n hi\n+bye\n';
+      const out = stripDiffPreamble(diff);
+      assert.ok(out.startsWith('--- a/x\n'), `expected diff to start with --- a/x; got: ${out.slice(0, 60)}`);
+    });
+
+    it('strips ```diff fences', () => {
+      const diff = '```diff\n--- a/x\n+++ b/x\n@@ -1,1 +1,2 @@\n hi\n+bye\n```';
+      const out = stripDiffPreamble(diff);
+      assert.ok(out.startsWith('--- a/x\n'));
     });
   });
 
@@ -94,6 +141,39 @@ describe('population/unified-diff', () => {
       ].join('\n');
       const patches = parseUnifiedDiff(diff);
       assert.equal(patches.length, 1);
+    });
+  });
+
+  describe('applyUnifiedDiff with prose preamble', () => {
+    it('applies a diff even when the persona prefixes it with prose', () => {
+      const repo = tmpDir('v8-diff-prose-');
+      const diff = [
+        'Here is the patch:',
+        '',
+        '--- /dev/null',
+        '+++ b/new.txt',
+        '@@ -0,0 +1,1 @@',
+        '+hello',
+      ].join('\n');
+      const r = applyUnifiedDiff(repo, diff);
+      assert.equal(r.applied, true, `expected applied=true; detail: ${r.detail}`);
+      assert.deepEqual(r.changedFiles, ['new.txt']);
+      assert.equal(fs.readFileSync(path.join(repo, 'new.txt'), 'utf8'), 'hello\n');
+    });
+
+    it('applies a diff wrapped in ```diff fences', () => {
+      const repo = tmpDir('v8-diff-fenced-');
+      const diff = [
+        '```diff',
+        '--- /dev/null',
+        '+++ b/new.txt',
+        '@@ -0,0 +1,1 @@',
+        '+hello',
+        '```',
+      ].join('\n');
+      const r = applyUnifiedDiff(repo, diff);
+      assert.equal(r.applied, true, `expected applied=true; detail: ${r.detail}`);
+      assert.equal(fs.readFileSync(path.join(repo, 'new.txt'), 'utf8'), 'hello\n');
     });
   });
 
