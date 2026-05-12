@@ -687,6 +687,13 @@ export async function runPopulation(
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : String(cause);
         applyDetail = `unified diff parse/apply error: ${message}`;
+        // A throw mid-application means an earlier hunk may have
+        // already landed on disk before the failing hunk's context
+        // mismatch was detected. We don't know if any patches did
+        // land, so treat this as "may have mutated" — that fires the
+        // per-obligation-failed-apply rollback below, which is
+        // idempotent (no-op if pre==current, restores otherwise).
+        appliedAnyPatches = true;
       }
     } else {
       applyDetail =
