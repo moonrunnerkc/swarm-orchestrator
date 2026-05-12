@@ -2,8 +2,6 @@
 
 <img src="assets/header.svg" alt="Swarm Orchestrator" width="100%">
 
-# Swarm Orchestrator
-
 **Contract-first AI coding swarm with hash-chained evidence and verifier-gated commits.**
 
 [![License](https://img.shields.io/badge/license-ISC-blue?style=flat-square)](LICENSE)
