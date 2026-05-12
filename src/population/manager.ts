@@ -32,7 +32,7 @@ import { dispatchFalsifiers, type FalsifiersFlag } from '../falsification/dispat
 import type { PersonaRegistry } from '../persona/persona-registry';
 import type { PersonaSpec } from '../persona/types';
 import { selectPersonaForState } from '../persona/predicates';
-import type { Session, SessionUsage } from '../session/types';
+import type { Session, SessionRequest, SessionUsage } from '../session/types';
 import { addUsage, emptyUsage } from '../session/types';
 import { postMergeVerify } from '../verification/post-merge';
 import { preVerifyObligations } from '../verification/pre-generation';
@@ -579,12 +579,23 @@ export async function runPopulation(
       commandTimeoutMs,
     );
     const dynamic = renderDynamicMessage(obligation, repoRoot, renderCtx);
-    const sessionRequest = {
+    // Retry-on-failure feedback loop: the May 2026 eval showed
+    // personas writing diffs with imagined context lines and no way to
+    // correct because the orchestrator never gave them the error.
+    // Closing the loop: on apply/verify failure, augment the user
+    // message with the structured failure and re-prompt the same
+    // persona. Bounded at RETRY_MAX so a confused persona can't burn
+    // the run's token budget. Streaming path takes the first attempt
+    // and skips retry — the streaming verifier already aborts early on
+    // forbidden imports, which is its own corrective signal.
+    const RETRY_MAX = 2;
+    let retryFeedback: string | null = null;
+    const buildRequest = (): SessionRequest => ({
       personaId: persona.id,
       personaSystemSuffix: persona.systemSuffix,
       sampling: { ...persona.sampling },
-      userMessage: dynamic,
-    } as const;
+      userMessage: retryFeedback === null ? dynamic : `${dynamic}\n\n${retryFeedback}`,
+    });
 
     let responseText: string;
     let responseUsage: SessionUsage;
@@ -593,7 +604,7 @@ export async function runPopulation(
     if (usingStreaming) {
       streamingOutcome = await runStreamingCompletion(
         session,
-        sessionRequest,
+        buildRequest(),
         obligation,
         streamingAssertions,
         options.costTracker,
@@ -602,7 +613,7 @@ export async function runPopulation(
       responseUsage = streamingOutcome.streamResult.response.usage;
       responseModel = streamingOutcome.streamResult.response.model;
     } else {
-      const response = await session.complete(sessionRequest);
+      const response = await session.complete(buildRequest());
       responseText = response.text;
       responseUsage = response.usage;
       responseModel = response.model;
@@ -643,141 +654,176 @@ export async function runPopulation(
       continue;
     }
 
-    ledger.append<CandidateRecordedEntry>({
-      type: 'candidate-recorded',
-      obligationIndex,
-      personaId: persona.id,
-      responseSha256: sha256(responseText),
-      usage: responseUsage,
-      model: responseModel,
-    });
-
-    const pre = snapshotBeforeApply(repoRoot, runId, obligation, obligationIndex, responseText);
-
-    // applyDetail surfaces *why* a persona's response did or didn't change
-    // the workspace. Without this trace, a downstream verifier failure
-    // ("predicate exited 1") gives no signal whether the persona emitted
-    // an unapplyable diff, declared no-op, or simply produced prose.
     let applyDetail: string | null = null;
-    // appliedAnyPatches drives the "roll back on verifier-fail" path: a
-    // failed obligation that *did* mutate files leaves a partial state
-    // that cascades into later obligations' snapshots and trips the
-    // post-merge rollback's state invariants. Tracking this separately
-    // from `applyDetail` keeps the rollback logic crisp.
     let appliedAnyPatches = false;
-    if (obligation.type === 'file-must-exist') {
-      applyFileEmit(repoRoot, obligation.path, responseText);
-      appliedAnyPatches = true;
-    } else if (responseText.trim() === 'no-op') {
-      applyDetail = 'persona declared no-op; workspace left unchanged';
-    } else if (looksLikeUnifiedDiff(responseText)) {
-      try {
-        // Protect file-must-exist paths from cross-persona overwrites:
-        // the architect already owns these files. A diff that targets one
-        // is dropped (skip that patch only, not the whole diff) so the
-        // architect's body is preserved.
-        const result = applyUnifiedDiff(repoRoot, responseText, {
-          protectedPaths: fileMustExistPaths,
-        });
-        if (result.applied) {
-          appliedAnyPatches = true;
-        } else {
-          applyDetail = `unified diff did not apply: ${result.detail}`;
-        }
-      } catch (cause) {
-        const message = cause instanceof Error ? cause.message : String(cause);
-        applyDetail = `unified diff parse/apply error: ${message}`;
-        // A throw mid-application means an earlier hunk may have
-        // already landed on disk before the failing hunk's context
-        // mismatch was detected. We don't know if any patches did
-        // land, so treat this as "may have mutated" — that fires the
-        // per-obligation-failed-apply rollback below, which is
-        // idempotent (no-op if pre==current, restores otherwise).
-        appliedAnyPatches = true;
-      }
-    } else {
-      applyDetail =
-        'persona response is neither a unified diff nor "no-op" — ' +
-        'workspace left unchanged. Response head: ' +
-        responseText.trim().slice(0, 120).replace(/\s+/g, ' ');
-    }
-
-    if (pre) {
-      const files = computePostApplyShas(repoRoot, pre);
-      ledger.append<WorkspaceSnapshotEntry>({
-        type: 'workspace-snapshot',
-        obligationIndex,
-        files,
-      });
-    }
-
+    let pre: ReturnType<typeof snapshotBeforeApply> = null;
+    let verifyResult: ReturnType<typeof verifyObligation>;
+    let finalSatisfied: boolean;
+    let finalDetail: string;
     const verifyOpts: Parameters<typeof verifyObligation>[1] = { repoRoot };
     if (commandTimeoutMs !== undefined) verifyOpts.commandTimeoutMs = commandTimeoutMs;
-    let verifyResult = verifyObligation(obligation, verifyOpts);
 
-    // Defense-in-depth: when the architect just wrote a test file and the
-    // contract knows the project's test framework, sanity-check the file
-    // against that framework. The standard verifier only checks file
-    // existence; without this guard a test file written with the wrong
-    // framework's API passes file-must-exist, breaks build/test in
-    // confusing ways downstream, and post-merge has to surface the
-    // failure with a stack trace instead of "wrong test framework". This
-    // promotes the misalignment into a precise, persona-attributable
-    // obligation failure.
-    if (
-      verifyResult.satisfied &&
-      obligation.type === 'file-must-exist' &&
-      renderCtx.testFramework &&
-      isTestFilePath(obligation.path)
-    ) {
-      const misuse = detectTestFrameworkMisuse(
-        repoRoot,
-        obligation.path,
-        renderCtx.testFramework,
-      );
-      if (misuse) verifyResult = { satisfied: false, detail: misuse };
-    }
-
-    let finalSatisfied = verifyResult.satisfied;
-    let finalDetail = verifyResult.detail;
-    // Surface why no patch was applied: a verifier failure ("predicate
-    // exited 1") with no upstream context leads users to debug the
-    // predicate when the real problem is that the persona's response
-    // wasn't an applyable diff.
-    if (!finalSatisfied && applyDetail !== null) {
-      finalDetail = `${applyDetail}; verifier: ${finalDetail}`;
-    }
-    // Per-obligation cleanup: when an obligation FAILED verification but
-    // its diff actually applied (mutated files on disk), roll those
-    // mutations back immediately. Without this, partial half-correct
-    // diffs cascade into the next obligation's pre-snapshot and into
-    // post-merge's reference state — eventually tripping the post-merge
-    // rollback's strict state-equality invariant. The May 2026 eval
-    // re-run hit this as "current SHA does not match expected post-apply
-    // SHA; workspace was mutated between apply and rollback".
-    if (!finalSatisfied && appliedAnyPatches && pre && obligation.type !== 'file-must-exist') {
-      const rb = await rollbackObligation(
-        obligationIndex,
-        ledger,
-        repoRoot,
-        runId,
-        'per-obligation-failed-apply',
-      );
-      ledger.append<ObligationRolledBackEntry>({
-        type: 'obligation-rolled-back',
-        obligationIndex,
-        trigger: 'per-obligation-failed-apply',
-        success: rb.success,
-        restoredFiles: rb.restoredFiles,
-        detail: rb.success
-          ? `rolled back ${rb.restoredFiles.length} file(s) after failed apply (workspace restored to pre-attempt state)`
-          : `rollback failed: ${rb.failure?.detail ?? 'unknown'}`,
-      });
-      if (!rb.success && rb.failure?.kind !== 'no-snapshot-found') {
-        throw new Error(
-          `per-obligation-failed-apply rollback failed for obligation ${obligationIndex}: ${rb.failure?.detail ?? 'unknown'}`,
-        );
+    // Retry loop. The first iteration uses the response we already
+    // computed above; subsequent iterations re-call session.complete
+    // with retryFeedback appended so the persona sees the specific
+    // failure from the previous attempt. Streaming-path responses do
+    // not retry (the streaming verifier handles its own correction).
+    for (let attempt = 0; ; attempt += 1) {
+      if (attempt > 0) {
+        // Re-prompt with corrective feedback.
+        const response = await session.complete(buildRequest());
+        responseText = response.text;
+        responseUsage = response.usage;
+        responseModel = response.model;
+        totalUsage = addUsage(totalUsage, responseUsage);
       }
+
+      ledger.append<CandidateRecordedEntry>({
+        type: 'candidate-recorded',
+        obligationIndex,
+        personaId: persona.id,
+        responseSha256: sha256(responseText),
+        usage: responseUsage,
+        model: responseModel,
+      });
+
+      // applyDetail surfaces *why* a persona's response did or didn't change
+      // the workspace. Without this trace, a downstream verifier failure
+      // ("predicate exited 1") gives no signal whether the persona emitted
+      // an unapplyable diff, declared no-op, or simply produced prose.
+      applyDetail = null;
+      appliedAnyPatches = false;
+      pre = snapshotBeforeApply(repoRoot, runId, obligation, obligationIndex, responseText);
+      if (obligation.type === 'file-must-exist') {
+        applyFileEmit(repoRoot, obligation.path, responseText);
+        appliedAnyPatches = true;
+      } else if (responseText.trim() === 'no-op') {
+        applyDetail = 'persona declared no-op; workspace left unchanged';
+      } else if (looksLikeUnifiedDiff(responseText)) {
+        try {
+          // Protect file-must-exist paths from cross-persona overwrites:
+          // the architect already owns these files. A diff that targets one
+          // is dropped (skip that patch only, not the whole diff) so the
+          // architect's body is preserved.
+          const result = applyUnifiedDiff(repoRoot, responseText, {
+            protectedPaths: fileMustExistPaths,
+          });
+          if (result.applied) {
+            appliedAnyPatches = true;
+          } else {
+            applyDetail = `unified diff did not apply: ${result.detail}`;
+          }
+        } catch (cause) {
+          const message = cause instanceof Error ? cause.message : String(cause);
+          applyDetail = `unified diff parse/apply error: ${message}`;
+          // A throw mid-application means an earlier hunk may have
+          // already landed on disk before the failing hunk's context
+          // mismatch was detected. We don't know if any patches did
+          // land, so treat this as "may have mutated" — that fires the
+          // per-obligation-failed-apply rollback below, which is
+          // idempotent (no-op if pre==current, restores otherwise).
+          appliedAnyPatches = true;
+        }
+      } else {
+        applyDetail =
+          'persona response is neither a unified diff nor "no-op" — ' +
+          'workspace left unchanged. Response head: ' +
+          responseText.trim().slice(0, 120).replace(/\s+/g, ' ');
+      }
+
+      if (pre) {
+        const files = computePostApplyShas(repoRoot, pre);
+        ledger.append<WorkspaceSnapshotEntry>({
+          type: 'workspace-snapshot',
+          obligationIndex,
+          files,
+        });
+      }
+
+      verifyResult = verifyObligation(obligation, verifyOpts);
+
+      // Defense-in-depth: when the architect just wrote a test file and the
+      // contract knows the project's test framework, sanity-check the file
+      // against that framework. The standard verifier only checks file
+      // existence; without this guard a test file written with the wrong
+      // framework's API passes file-must-exist, breaks build/test in
+      // confusing ways downstream, and post-merge has to surface the
+      // failure with a stack trace instead of "wrong test framework". This
+      // promotes the misalignment into a precise, persona-attributable
+      // obligation failure.
+      if (
+        verifyResult.satisfied &&
+        obligation.type === 'file-must-exist' &&
+        renderCtx.testFramework &&
+        isTestFilePath(obligation.path)
+      ) {
+        const misuse = detectTestFrameworkMisuse(
+          repoRoot,
+          obligation.path,
+          renderCtx.testFramework,
+        );
+        if (misuse) verifyResult = { satisfied: false, detail: misuse };
+      }
+
+      finalSatisfied = verifyResult.satisfied;
+      finalDetail = verifyResult.detail;
+      // Surface why no patch was applied: a verifier failure ("predicate
+      // exited 1") with no upstream context leads users to debug the
+      // predicate when the real problem is that the persona's response
+      // wasn't an applyable diff.
+      if (!finalSatisfied && applyDetail !== null) {
+        finalDetail = `${applyDetail}; verifier: ${finalDetail}`;
+      }
+
+      // Per-attempt cleanup: when this attempt FAILED verification but
+      // its diff actually applied (mutated files on disk), roll those
+      // mutations back. Without this, partial half-correct diffs cascade
+      // into the next attempt's (or next obligation's) pre-snapshot and
+      // trip the post-merge rollback's strict state-equality invariant.
+      if (!finalSatisfied && appliedAnyPatches && pre && obligation.type !== 'file-must-exist') {
+        const rb = await rollbackObligation(
+          obligationIndex,
+          ledger,
+          repoRoot,
+          runId,
+          'per-obligation-failed-apply',
+        );
+        ledger.append<ObligationRolledBackEntry>({
+          type: 'obligation-rolled-back',
+          obligationIndex,
+          trigger: 'per-obligation-failed-apply',
+          success: rb.success,
+          restoredFiles: rb.restoredFiles,
+          detail: rb.success
+            ? `rolled back ${rb.restoredFiles.length} file(s) after failed apply (workspace restored to pre-attempt state)`
+            : `rollback failed: ${rb.failure?.detail ?? 'unknown'}`,
+        });
+        if (!rb.success && rb.failure?.kind !== 'no-snapshot-found') {
+          throw new Error(
+            `per-obligation-failed-apply rollback failed for obligation ${obligationIndex}: ${rb.failure?.detail ?? 'unknown'}`,
+          );
+        }
+        // After rollback, the workspace state and the in-memory
+        // appliedAnyPatches flag should reflect "no mutations from
+        // this attempt". The next iteration (or downstream code) is
+        // free to act on a clean baseline.
+        appliedAnyPatches = false;
+      }
+
+      if (finalSatisfied) break;
+      if (attempt >= RETRY_MAX) break;
+      // Streaming responses do not retry — the streaming verifier
+      // already provides a corrective abort signal.
+      if (usingStreaming) break;
+      // Build retry feedback from the structured failure detail.
+      retryFeedback =
+        'Your previous attempt did not satisfy the obligation. Specifics:\n' +
+        finalDetail +
+        '\n\nReissue your response. If the failure was a context mismatch, ' +
+        'look at the file contents in this prompt and use ONLY those exact ' +
+        'lines as ` ` and `-` lines in your diff. If the failure was a ' +
+        'predicate exit-1, your diff did not produce the asserted property ' +
+        '— adjust the diff to make the predicate exit zero.';
     }
     if (verifyResult.satisfied) {
       const falsified = await runFalsifiersForObligation({
