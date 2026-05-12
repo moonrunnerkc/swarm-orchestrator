@@ -57,7 +57,8 @@ A separate adapter subsystem for *falsifiers*, distinct from the producer adapte
 | `copilot/copilot-falsifier.ts` | Copilot falsifier. Strategy: import-graph perturbation + function-signature drift against `import-graph-must-satisfy` and `function-must-have-signature`. |
 | `claude-code/claude-code-falsifier.ts` | ClaudeCode falsifier. Strategy mirrored from Codex (`property-must-hold`). Same family as the producer; opt-in for ablation / research. |
 | `inspection/heuristic-classifier.ts` | AST-based heuristic classifier for inspection skeletons. Verdict-aid, not a verdict source (the 2026-05-09 close-out used heuristic as the verdict source under explicit operator-bypass approval and reported bounds rather than point estimates). |
-| `../dispatcher.ts` | Sequential dispatcher. Honors `--falsifiers off`. |
+| `../dispatcher.ts` | Sequential dispatcher. Honors `--falsifiers off`. Optionally consults a `FalsifierScheduler` (UCB1, opt-in via `--falsifier-scheduler ucb1`) to order adapters by historical success/regression/false-positive/latency; each ordering decision is appended to the ledger as `falsifier-dispatch-decision`. |
+| `../scheduler.ts` | UCB1 bandit scheduler. Persists per-adapter counters at `.swarm/falsifier-stats.json` (override with `--falsifier-stats-path`). Untried adapters score `+Infinity` so every falsifier is sampled before exploit mode engages. |
 
 **Methodology-fix invariants:** pre-apply baseline check, fixture isolation (workspaces sourced from `evidence/fixtures/`, not `git archive` of HEAD), and dual-column cost reporting (`dollarsBilled` + `dollarsApiEquivalent`). All three are load-bearing for the falsification adapter subsystem.
 

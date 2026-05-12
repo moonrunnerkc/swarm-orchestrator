@@ -259,6 +259,63 @@ See [docs/falsification-adapters.md](falsification-adapters.md) for the
 subsystem overview (production topology, sandbox posture, dual-column
 cost reporting, methodology-fix invariants).
 
+### Adaptive scheduler (UCB1)
+
+`--falsifier-scheduler <none|ucb1>` (default `none`) controls the order
+in which adapters are dispatched for a given obligation. `ucb1` orders
+adapters by a UCB1 score computed over persisted historical outcomes
+(success, regression-discovered, false-positive, latency-ms). Adapters
+with no observations are tried first (score `+Infinity`), then exploit
+mode kicks in. Stats persist at `.swarm/falsifier-stats.json`; override
+with `--falsifier-stats-path <path>`. Every decision is appended to the
+ledger as `falsifier-dispatch-decision`, so replay reproduces the same
+ordering.
+
+## Cost-cap (live)
+
+`--cost-cap <usd>` is enforced **mid-stream** by default: a shared
+`LiveCostTracker` observes every concurrent streaming chunk, projects
+cumulative USD across all streams, and triggers a cooperative abort
+once the projection crosses the cap. Aborts are recorded as
+`candidate-stream-aborted` with `reason='cost-cap exceeded'` and the
+estimated spend at the abort instant; final per-stream usage is
+reconciled via `commitUsage` after each adapter response settles.
+
+Pass `--no-cost-cap-live` to fall back to the post-obligation
+enforcement behaviour (cumulative spend checked at the end of each
+obligation).
+
+## Tournament streaming verification
+
+`--mode tournament` reuses the same `runStreamingCompletion` pipeline
+that `--mode single` uses. Each candidate streams independently; if a
+streaming verifier (forbid-import, regex, cost-cap) trips on one
+candidate, the tournament aborts **only** that candidate's stream and
+continues running the others. Aborted candidates receive a synthetic
+verdict (`score = -1`, `model = 'stream-aborted'`) pre-populated into
+the verdict-by-hash memo so a same-hash collision cannot promote them
+to winner. Replay over the same inputs reproduces an identical winner
+selection.
+
+## Snapshot cleanup
+
+Per-obligation snapshots under `.swarm/snapshots/<run-id>/` are pruned
+once after the `run-finished` ledger entry, so cleanup never races an
+active writer. Policy is set with `--snapshot-cleanup <policy>`:
+
+| Policy | Behaviour |
+|---|---|
+| `retain-on-failure` (default) | Drop the current run dir on success; keep everything on failure. |
+| `always` | Always drop the current run dir after run-end. |
+| `never` | Never prune anything. |
+| `retain-last:N` | Keep the N most-recent run dirs by mtime. |
+| `max-age:<duration>` | Prune dirs older than the given duration (`500ms`, `30m`, `7d`). |
+| `max-disk:<size>` | Prune oldest-first until the snapshot root fits under the size (`100MB`, `2GB`). |
+
+Cleanup is idempotent and tolerates concurrently-removed directories
+between scan and rm, so an interrupted cleanup re-run reaches the same
+final state.
+
 ## Transcript commands
 
 ### `swarm share import <runid> <step> <agent> <path>`

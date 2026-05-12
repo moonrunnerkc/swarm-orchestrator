@@ -6,6 +6,52 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added (architectural-limitation close-out)
+
+- **Tournament streaming verification.** `--mode tournament` now routes
+  every candidate through the same `runStreamingCompletion` pipeline used
+  by `--mode single`. Streaming verifiers (forbid-import, regex, cost-cap)
+  abort only the offending candidate; survivors continue and the
+  deterministic tie-break still selects a winner. Aborted candidates are
+  pre-populated in `verdictByHash` with a synthetic
+  `{ score: -1, model: 'stream-aborted' }` verdict so a same-hash collision
+  cannot promote them. Source: `src/population/tournament.ts`,
+  `src/verification/streaming-verifier.ts`.
+- **Snapshot cleanup.** `.swarm/snapshots/<run-id>/` is pruned once after
+  the `run-finished` ledger entry via the new `--snapshot-cleanup <policy>`
+  flag. Policies: `retain-on-failure` (default), `always`, `never`,
+  `retain-last:N`, `max-age:<dur>`, `max-disk:<sz>`. Idempotent and
+  crash-safe (tolerates concurrently-removed directories between scan and
+  rm). Source: `src/population/snapshot-cleanup.ts`,
+  `src/population/manager.ts`.
+- **Live `--cost-cap`.** A single `LiveCostTracker` observes every
+  concurrent stream, projects cumulative USD in real time, and triggers a
+  cooperative abort once the projection crosses the cap. Aborts are
+  recorded as `candidate-stream-aborted` with
+  `reason='cost-cap exceeded'`; final per-stream usage is reconciled via
+  `commitUsage` after each adapter response settles. Live by default;
+  `--no-cost-cap-live` falls back to the old post-obligation enforcement.
+  Source: `src/verification/live-cost-tracker.ts`.
+- **UCB1 falsifier dispatch.** Opt in with `--falsifier-scheduler ucb1`.
+  The dispatcher orders adapters by a UCB1 score over persisted (success,
+  regression-discovered, false-positive, latency-ms) counters at
+  `.swarm/falsifier-stats.json` (override with `--falsifier-stats-path`).
+  Every decision is appended to the ledger as
+  `falsifier-dispatch-decision`, so replay reproduces the same ordering.
+  Default `none` preserves registration order. Source:
+  `src/falsification/scheduler.ts`, `src/falsification/dispatcher.ts`,
+  `src/ledger/types.ts`.
+
+### Tests
+
+- 38 new tests across `test/population/snapshot-cleanup.test.ts`,
+  `test/verification/live-cost-tracker.test.ts`,
+  `test/falsification/scheduler.test.ts`,
+  `test/population/tournament-streaming.test.ts`, and extensions to
+  `test/falsification/dispatcher.test.ts`. Suite total: **2196 passing**.
+
+---
+
 Adapter reintegration: the falsification dispatcher is wired into the v8 run path
 behind the new `--falsifiers <on|off>` flag (default `on`). After the producer's
 verifier accepts a patch, every registered adapter that handles the obligation

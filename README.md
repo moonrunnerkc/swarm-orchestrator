@@ -141,6 +141,8 @@ swarm v8 compile <goal> [--out <dir>] [--yes] [--extractor anthropic|stub]
 swarm v8 run <contract>  [--session anthropic|stub] [--mode single|tournament]
                          [--candidates <n>] [--falsifiers on|off]
                          [--forbid-import <names>] [--cost-cap <usd>]
+                         [--no-cost-cap-live] [--snapshot-cleanup <policy>]
+                         [--falsifier-scheduler none|ucb1] [--falsifier-stats-path <path>]
                          [--no-streaming] [--no-pre-generation] [--no-post-merge]
 swarm v8 resume <run-id> [--ledger <path>] [--contract <dir>]
 swarm v8 stats <run-id>  [--ledger <path>] [--json]
@@ -190,17 +192,31 @@ Reference: [`docs/configuration.md`](docs/configuration.md), config precedence i
 
 ## Limitations
 
-- **Tournament mode does not stream.** `--mode tournament` plus `--forbid-import`
-  skips the streaming abort; streaming verification is `--mode single` only.
-- **Cleanup.** Per-obligation snapshot sidecars under `.swarm/snapshots/<run-id>/`
-  are written before each apply and not pruned at end of run; remove them when
-  reclaiming disk space.
-- **`--cost-cap` is enforced post-obligation, not mid-call.** Cumulative spend is
-  checked at the end of each obligation against estimated Sonnet 4 pricing.
-- **Bandit dispatch is not built (Phase 5).** Codex and Copilot have disjoint
-  obligation types, so there is nothing to arbitrate between. See
-  [`docs/falsification-adapters.md`](docs/falsification-adapters.md).
 - **Cross-vendor producer race is deferred (Phase 6).**
+
+Previously documented limitations resolved in the current build:
+
+- **Tournament streaming.** `--mode tournament` now routes each candidate
+  through the same `runStreamingCompletion` pipeline used by single mode;
+  streaming verifiers (forbid-import, regex, cost-cap) abort only the
+  offending candidate while survivors continue. Replay reproduces the same
+  winner.
+- **Snapshot cleanup.** `.swarm/snapshots/<run-id>/` is pruned automatically
+  after the `run-finished` ledger entry via `--snapshot-cleanup` (default
+  `retain-on-failure`; also `always`, `never`, `retain-last:N`,
+  `max-age:<dur>`, `max-disk:<sz>`).
+- **Live `--cost-cap`.** Cumulative spend is now projected from streaming
+  token usage in real time across every concurrent stream; once the cap is
+  crossed, in-flight streams are cooperatively aborted with a
+  `candidate-stream-aborted` ledger entry (`reason='cost-cap exceeded'`).
+  Opt out with `--no-cost-cap-live` to fall back to post-obligation
+  enforcement.
+- **Adaptive falsifier dispatch.** Opt in with `--falsifier-scheduler ucb1`;
+  the dispatcher orders adapters by UCB1 over persisted (success,
+  regression-discovered, false-positive, latency) counters at
+  `.swarm/falsifier-stats.json`. Each decision is ledgered as
+  `falsifier-dispatch-decision` for replay determinism. Default `none`
+  preserves registration order.
 
 ## Documentation
 
