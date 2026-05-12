@@ -36,6 +36,12 @@ import {
   scoreCandidate,
   type ScoredCandidate,
 } from './../persona/verifier-persona';
+import {
+  runStreamingCompletion,
+  type StreamingAssertion,
+  type StreamingVerifierOutcome,
+} from '../verification/streaming-verifier';
+import type { LiveCostTracker } from '../verification/live-cost-tracker';
 
 /**
  * Per-obligation-type tournament configuration. The defaults match impl
@@ -181,6 +187,17 @@ export interface TournamentResult {
    * plus prior-winner-hash matches from the memo store.
    */
   verifierCallsSavedByMemoization: number;
+  /**
+   * Phase 7: number of candidate generations the streaming verifier
+   * aborted mid-stream across every round of this tournament. Always 0
+   * when the harness was run without `streamingAssertions`.
+   */
+  streamingAbortedCandidates: number;
+  /**
+   * Phase 7: total characters of partial output observed before
+   * streaming-verifier aborts fired across every round.
+   */
+  streamingCharsBeforeAbort: number;
 }
 
 /** Persona slate the harness draws from per round. */
@@ -237,6 +254,40 @@ export interface RunTournamentOptions {
    * benefit from in-run memoization.
    */
   memoStore?: MemoStore;
+  /**
+   * Phase 7 (tournament-streaming): when supplied, candidate generation
+   * routes through `runStreamingCompletion` and the verifier may abort
+   * individual candidates mid-stream. Aborts are independent across the
+   * Promise.all entries — one offending candidate aborting does not
+   * cancel the others. Aborted candidates receive a synthetic verdict
+   * with score `-1` so they can never win the round; surviving
+   * candidates continue scoring normally.
+   */
+  streamingAssertions?: readonly StreamingAssertion[];
+  /**
+   * Phase 7 (tournament-streaming): optional live cost tracker shared
+   * across all in-flight candidate streams. Lets a single per-run cap
+   * apply across single mode, tournament rounds, and concurrent
+   * candidates simultaneously.
+   */
+  costTracker?: LiveCostTracker;
+  /** Sink for stream-aborted ledger entries. */
+  streamingSink?: TournamentStreamingSink;
+}
+
+/** Hooks for emitting streaming-abort ledger entries. */
+export interface TournamentStreamingSink {
+  recordStreamAborted(args: {
+    obligationIndex: number;
+    roundIndex: number;
+    candidateIndex: number;
+    personaId: string;
+    partialResponseSha256: string;
+    abortedAtChars: number;
+    reason: string;
+    usageAtAbort: SessionUsage;
+    model: string;
+  }): void;
 }
 
 /**
@@ -306,6 +357,18 @@ export async function runTournament(
   let totalUsage = emptyUsage();
   let bestScore = 0;
   let verifierCallsSavedByMemoization = 0;
+  let streamingAbortedCandidates = 0;
+  let streamingCharsBeforeAbort = 0;
+  const streamingAssertions = options.streamingAssertions ?? [];
+  const useStreaming = streamingAssertions.length > 0 || options.costTracker !== undefined;
+  /** Synthetic verdict for stream-aborted candidates: cannot win a round. */
+  const streamAbortedVerdict = (reason: string): ScoredCandidate => ({
+    score: -1,
+    rationale: `stream-aborted: ${reason}`,
+    rawText: '',
+    usage: emptyUsage(),
+    model: 'stream-aborted',
+  });
 
   for (let roundIndex = 0; roundIndex < cap; roundIndex += 1) {
     const slate = pickPersonaSlate(personas, roundIndex, config.candidatesPerRound);
@@ -321,29 +384,75 @@ export async function runTournament(
       temperatures: slate.map(() => baseTemp),
     });
 
-    // Generate candidates in parallel.
+    // Generate candidates in parallel. When streaming is enabled, each
+    // candidate goes through `runStreamingCompletion`; an abort on any
+    // candidate is independent of the others (Promise.all entries are
+    // separate awaitables operating against fresh observers). Aborted
+    // candidates receive a synthetic verdict so they can't win.
+    const streamAborts: Array<{ aborted: true; reason: string; outcome: StreamingVerifierOutcome } | null> = [];
     const candidates: TournamentCandidate[] = await Promise.all(
       slate.map(async (persona, candidateIndex): Promise<TournamentCandidate> => {
         const userMessage = options.renderUserMessage(obligation, persona, roundIndex, candidateIndex);
         const sampling = { ...persona.sampling, temperature: baseTemp };
-        const response = await session.complete({
+        const sessionRequest = {
           personaId: persona.id,
           personaSystemSuffix: persona.systemSuffix,
           sampling,
           userMessage,
-        });
+        } as const;
+        let response: SessionResponse;
+        let aborted = false;
+        let abortReason: string | null = null;
+        let outcome: StreamingVerifierOutcome | null = null;
+        if (useStreaming) {
+          outcome = await runStreamingCompletion(
+            session,
+            sessionRequest,
+            obligation,
+            streamingAssertions,
+            options.costTracker,
+          );
+          response = outcome.streamResult.response;
+          aborted = outcome.aborted;
+          abortReason = outcome.abortReason;
+        } else {
+          response = await session.complete(sessionRequest);
+        }
         const responseSha256 = sha256(response.text);
         const candidate: TournamentCandidate = {
           candidateIndex,
           personaId: persona.id,
           response,
-          verdict: null,
+          verdict: aborted ? streamAbortedVerdict(abortReason ?? 'unknown') : null,
           responseSha256,
           temperature: baseTemp,
         };
+        streamAborts[candidateIndex] = aborted && outcome !== null
+          ? { aborted: true, reason: abortReason ?? 'unknown', outcome }
+          : null;
         return candidate;
       }),
     );
+
+    // Emit stream-abort ledger entries for any aborted candidates; these
+    // come BEFORE candidate-recorded so audit order matches causation.
+    for (const c of candidates) {
+      const ab = streamAborts[c.candidateIndex];
+      if (!ab) continue;
+      streamingAbortedCandidates += 1;
+      streamingCharsBeforeAbort += ab.outcome.abortedAtChars;
+      options.streamingSink?.recordStreamAborted({
+        obligationIndex,
+        roundIndex,
+        candidateIndex: c.candidateIndex,
+        personaId: c.personaId,
+        partialResponseSha256: c.responseSha256,
+        abortedAtChars: ab.outcome.abortedAtChars,
+        reason: ab.reason,
+        usageAtAbort: c.response.usage,
+        model: c.response.model,
+      });
+    }
 
     let roundUsage = emptyUsage();
     for (const c of candidates) {
@@ -368,6 +477,16 @@ export async function runTournament(
     const verdictByHash: Map<string, ScoredCandidate> = new Map();
     /** Hashes whose verdict has already been added into `roundUsage`. */
     const usageCountedHashes = new Set<string>();
+    // Pre-populate verdictByHash with synthetic verdicts for any
+    // stream-aborted candidates: their partial response cannot be
+    // scored fairly and should never win. This MUST happen before the
+    // memo-store lookup so an aborted candidate is not silently
+    // promoted by a prior winner with the same hash collision.
+    for (const c of candidates) {
+      if (c.verdict !== null && c.verdict.model === 'stream-aborted') {
+        verdictByHash.set(c.responseSha256, c.verdict);
+      }
+    }
     // Pre-populate verdictByHash from the memo store: candidates whose
     // hash matches a prior winner of the same type get a synthetic
     // verdict (zero-cost) at the prior winner's score. The verdict
@@ -515,6 +634,8 @@ export async function runTournament(
           escalated: false,
           bestScore,
           verifierCallsSavedByMemoization,
+          streamingAbortedCandidates,
+          streamingCharsBeforeAbort,
         };
       }
       // Winner was selected but failed application/verification — discard
@@ -575,6 +696,8 @@ export async function runTournament(
     escalated: true,
     bestScore,
     verifierCallsSavedByMemoization,
+    streamingAbortedCandidates,
+    streamingCharsBeforeAbort,
   };
 }
 

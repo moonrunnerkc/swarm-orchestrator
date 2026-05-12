@@ -355,6 +355,24 @@ export interface FalsificationCallEntry extends LedgerEntryHeader {
 }
 
 /**
+ * Phase 7: bandit dispatch decision recorded once per obligation that
+ * had multiple eligible adapters and a scheduler attached. Lets audits
+ * reconstruct the chosen adapter order without consulting the
+ * persisted stats file (which can drift between runs).
+ */
+export interface FalsifierDispatchDecisionEntry extends LedgerEntryHeader {
+  type: 'falsifier-dispatch-decision';
+  obligationIndex: number;
+  obligationType: string;
+  /** 'sequential' or 'ucb1'. */
+  kind: string;
+  /** Adapter names in dispatch order. */
+  order: string[];
+  /** UCB1 priority scores at decision time. Empty for sequential. `null` when score was +Infinity (untried adapter). */
+  scores: Array<{ adapter: string; score: number | null }>;
+}
+
+/**
  * Workspace mutation snapshot recorded immediately before a producer's
  * patch is applied. Used by `rollbackObligation` to restore the workspace
  * when a falsifier later finds a counter-example or the post-merge
@@ -444,6 +462,7 @@ export type LedgerEntry =
   | ObligationPreVerifiedEntry
   | PostMergeVerifiedEntry
   | FalsificationCallEntry
+  | FalsifierDispatchDecisionEntry
   | WorkspaceSnapshotEntry
   | ObligationRolledBackEntry;
 

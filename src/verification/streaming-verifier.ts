@@ -19,8 +19,10 @@ import type {
   SessionRequest,
   SessionStreamObserver,
   SessionStreamResult,
+  SessionUsage,
   StreamDecision,
 } from '../session/types';
+import type { LiveCostTracker } from './live-cost-tracker';
 
 /**
  * A checkable assertion the streaming verifier evaluates against the
@@ -136,18 +138,26 @@ export interface StreamingVerifierOutcome {
  * Drive a streaming completion under verifier supervision. The verifier
  * is consulted on every chunk delivered by the session; the first
  * violating assertion wins and aborts the stream.
+ *
+ * When `costTracker` is supplied, the stream is also gated by the
+ * tracker: if projected spend (committed + in-flight estimate) crosses
+ * the configured cap, the tracker's observer aborts ahead of the
+ * assertion observer and the result records `'cost-cap exceeded'` as
+ * the reason. The tracker is updated with the call's actual usage when
+ * the stream settles, so subsequent calls see correct cumulative state.
  */
 export async function runStreamingCompletion(
   session: Session,
   request: SessionRequest,
   obligation: ObligationV1,
   assertions: readonly StreamingAssertion[],
+  costTracker?: LiveCostTracker,
 ): Promise<StreamingVerifierOutcome> {
   let abortAssertionId: string | null = null;
   let abortReason: string | null = null;
   let abortedAtChars = 0;
 
-  const observer: SessionStreamObserver = ({ partialText }): StreamDecision => {
+  const assertionObserver: SessionStreamObserver = ({ partialText }): StreamDecision => {
     const violation = evaluateAssertions(assertions, obligation, partialText);
     if (violation === null) return { kind: 'continue' };
     abortAssertionId = violation.assertionId;
@@ -156,8 +166,30 @@ export async function runStreamingCompletion(
     return { kind: 'abort', reason: violation.reason };
   };
 
-  const streamResult = await session.stream(request, observer);
+  let observer: SessionStreamObserver = assertionObserver;
+  let finalize: ((usage: SessionUsage | null) => void) | null = null;
+  if (costTracker) {
+    const wrap = costTracker.observerForStream(assertionObserver);
+    observer = wrap.observer;
+    finalize = wrap.finalize;
+  }
+
+  let streamResult: SessionStreamResult;
+  try {
+    streamResult = await session.stream(request, observer);
+  } catch (err) {
+    if (finalize) finalize(null);
+    throw err;
+  }
+  if (finalize) finalize(streamResult.response.usage);
   const aborted = streamResult.aborted;
+  // Cost-cap aborts populate `abortReason` from the tracker, not from
+  // an assertion. Reflect that distinction in the outcome shape.
+  if (aborted && abortAssertionId === null && streamResult.abortReason !== null) {
+    abortReason = streamResult.abortReason;
+    abortAssertionId = COST_CAP_ASSERTION_ID;
+    abortedAtChars = streamResult.response.text.length;
+  }
   return {
     streamResult,
     aborted,
@@ -166,6 +198,9 @@ export async function runStreamingCompletion(
     abortedAtChars: aborted ? abortedAtChars : streamResult.response.text.length,
   };
 }
+
+/** Synthetic assertion id used in ledger output when a cost-cap fired. */
+export const COST_CAP_ASSERTION_ID = 'cost-cap';
 
 /**
  * Phase 6 default streaming-verifier configuration. Combines a

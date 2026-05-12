@@ -165,10 +165,82 @@ drift for those adapters is detected by the integration tests on demand.
   drift; ClaudeCode: adversarial inputs mirrored from Codex).
 - Stigmergic evidence board, pheromone propagation, neighbor signaling.
 - Cross-run posterior persistence.
-- Bandit dispatcher.
 - Cross-vendor producer race.
 - Dashboard or UI surface for falsification results.
 - Auto-installation of adapter CLIs.
+
+## Bandit dispatcher (UCB1)
+
+When `--falsifier-scheduler ucb1` is passed, the dispatcher orders the
+adapters that handle the current obligation type by their UCB1 score
+based on persisted historical outcomes. Adapters with no observations
+are tried first (UCB1 score `+Infinity`), so every falsifier gets at
+least one trial before the scheduler starts exploiting. After each
+trial the scheduler records (success, regression-discovered,
+false-positive, latency-ms) for that adapter and persists the running
+counters to `.swarm/falsifier-stats.json` (override with
+`--falsifier-stats-path`).
+
+Each scheduling decision is appended to the ledger as a
+`falsifier-dispatch-decision` entry containing the ordered adapter
+list, the per-adapter UCB1 score (with `+Infinity` serialised as
+`null`), and the count of observations consulted. Replay reads the
+same persisted stats and ledger, so dispatch order is reproducible.
+
+Default policy is `none` (registration order, no scoring), preserving
+existing behaviour for callers that don't opt in.
+
+## Streaming verification in tournament mode
+
+Tournament mode (`--mode tournament`) reuses the same
+`runStreamingCompletion` pipeline that single mode uses. Each
+candidate streams independently; if a streaming verifier (forbid-
+import, regex, cost-cap) trips on one candidate the tournament aborts
+*only* that candidate's stream and continues running the others.
+Aborted candidates are recorded in the ledger as
+`candidate-stream-aborted` and assigned a synthetic verdict
+(`score = -1`, `model = 'stream-aborted'`) that is pre-populated into
+the verdict-by-hash memo so a same-hash collision cannot promote them
+to winner. Surviving candidates are scored normally and the
+deterministic tie-break selects the winner. Replay over the same
+inputs reproduces identical winner selection.
+
+## Mid-stream cost-cap enforcement
+
+`--cost-cap <usd>` (default behaviour: live; opt out with
+`--no-cost-cap-live`) installs a single `LiveCostTracker` shared by
+every concurrent stream in the run. The tracker observes each
+streaming chunk, projects the run's cumulative spend in real time, and
+returns an `abort` decision once the cap is crossed. Aborts propagate
+through the same `candidate-stream-aborted` ledger entry used by other
+streaming verifiers, with `reason = 'cost-cap exceeded'` and the
+estimated spend at the abort moment. Final per-stream usage is
+committed via `commitUsage` so post-run reconciliation matches the
+real adapter response. Partial outputs remain replay-safe because the
+abort marker and the partial text are both ledgered before the next
+candidate starts.
+
+## Snapshot cleanup
+
+Per-obligation snapshots written under `.swarm/snapshots/<run-id>/`
+were previously never pruned. The run lifecycle now invokes
+`cleanupSnapshots()` once after the `run-finished` ledger entry is
+written, so cleanup never races an active writer. Policies, set with
+`--snapshot-cleanup`:
+
+- `retain-on-failure` (default) — drop the current run's directory on
+  success, keep everything on failure.
+- `always` — always drop the current run's directory after run-end.
+- `never` — never prune anything.
+- `retain-last:N` — keep the N most-recent run directories by mtime.
+- `max-age:<duration>` — prune any run directory whose newest mtime is
+  older than the given duration (`500ms`, `30m`, `7d`).
+- `max-disk:<size>` — prune oldest-first until the snapshot root is
+  under the given size (`100MB`, `2GB`).
+
+Cleanup is idempotent and tolerates concurrently-removed directories
+between scan and rm, so an interrupted cleanup re-run reaches the same
+final state.
 
 ## See also
 

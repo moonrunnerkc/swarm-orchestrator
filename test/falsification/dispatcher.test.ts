@@ -108,4 +108,50 @@ describe('dispatchFalsifiers', () => {
     assert.equal(outcome.calls.length, 1);
     assert.equal(outcome.calls[0]?.adapterName, 'matches');
   });
+
+  it('with scheduler: orders adapters via scheduler and records the decision', async () => {
+    const { FalsifierScheduler } = require('../../src/falsification/scheduler') as typeof import('../../src/falsification/scheduler');
+    const registry = new AdapterRegistry();
+    registry.register(counterExampleAdapter('a'));
+    registry.register(counterExampleAdapter('b'));
+    const sched = new FalsifierScheduler({ kind: 'ucb1', statsPath: null });
+    // Seed scheduler so 'b' has a clearly higher reward than 'a'.
+    for (let i = 0; i < 5; i += 1) sched.recordOutcome('a', { successful: false, costUsd: 1, latencyMs: 100 });
+    for (let i = 0; i < 5; i += 1) sched.recordOutcome('b', { successful: true, costUsd: 0.01, latencyMs: 100 });
+    const outcome = await dispatchFalsifiers(obligation, registry, {
+      falsifiers: 'on',
+      timeBudgetMs: 1000,
+      workspaceRoot: '/tmp/unused',
+      contextRefs: [],
+      patchSha: 'deadbeef',
+      scheduler: sched,
+    });
+    assert.equal(outcome.calls.length, 2);
+    assert.equal(outcome.calls[0]?.adapterName, 'b');
+    assert.equal(outcome.calls[1]?.adapterName, 'a');
+    assert.ok(outcome.dispatchDecision);
+    assert.equal(outcome.dispatchDecision?.kind, 'ucb1');
+    assert.deepEqual(outcome.dispatchDecision?.order, ['b', 'a']);
+  });
+
+  it('with shouldCancel: bails after current adapter when signal flips', async () => {
+    const registry = new AdapterRegistry();
+    registry.register(counterExampleAdapter('a'));
+    registry.register(counterExampleAdapter('b'));
+    let calls = 0;
+    const outcome = await dispatchFalsifiers(obligation, registry, {
+      falsifiers: 'on',
+      timeBudgetMs: 1000,
+      workspaceRoot: '/tmp/unused',
+      contextRefs: [],
+      patchSha: 'deadbeef',
+      shouldCancel: () => {
+        calls += 1;
+        // Allow first adapter, cancel before second.
+        return calls > 1 ? 'cost-cap exceeded' : null;
+      },
+    });
+    assert.equal(outcome.calls.length, 1);
+    assert.equal(outcome.cancelled, 'cost-cap exceeded');
+  });
 });

@@ -18,6 +18,9 @@ import {
   defaultAdapterRegistry,
   AdapterRegistry,
 } from '../../falsification/adapters';
+import { parseSnapshotPolicy } from '../../population/snapshot-cleanup';
+import { LiveCostTracker } from '../../verification/live-cost-tracker';
+import { FalsifierScheduler } from '../../falsification/scheduler';
 
 const logger = getLogger('cli:v8:run');
 
@@ -86,6 +89,29 @@ export interface RunFlags {
    * lacks the underlying CLIs) can opt out.
    */
   falsifiers: 'on' | 'off';
+  /**
+   * Phase 7: snapshot sidecar cleanup policy spec. Parsed via
+   * `parseSnapshotPolicy`. Empty string uses the default
+   * (`retain-on-failure`).
+   */
+  snapshotCleanup: string;
+  /**
+   * Phase 7: adaptive falsifier scheduler. `sequential` (default)
+   * preserves registration-order dispatch; `ucb1` enables the bandit.
+   */
+  falsifierScheduler: 'sequential' | 'ucb1';
+  /**
+   * Phase 7: override path for the persisted bandit stats. Empty
+   * string uses `<repoRoot>/.swarm/falsifier-stats.json`.
+   */
+  falsifierStatsPath: string;
+  /**
+   * Phase 7: when true and `--cost-cap` is set, the live cost tracker
+   * aborts in-flight generations as soon as the projected spend
+   * exceeds the cap. Default true. The post-run gate remains as a
+   * deterministic fallback.
+   */
+  costCapLive: boolean;
 }
 
 /** Test seam: lets tests inject a custom session, registry, or WASM runtime. */
@@ -183,6 +209,40 @@ export async function handleRun(
     runOptions.streaming = { forbiddenImports: flags.forbiddenImports };
   }
   if (wasmRuntime) runOptions.wasmRuntime = wasmRuntime;
+
+  // Phase 7: snapshot cleanup policy. Parsed early so a malformed spec
+  // surfaces before we spend tokens.
+  if (flags.snapshotCleanup) {
+    try {
+      runOptions.snapshotCleanupPolicy = parseSnapshotPolicy(flags.snapshotCleanup);
+    } catch (err) {
+      logger.error((err as Error).message);
+      return 1;
+    }
+  }
+
+  // Phase 7: live cost tracker. Construct only when both --cost-cap is
+  // set and live mode is enabled. The post-run gate below remains as a
+  // deterministic backstop in case the tracker undercounts.
+  let costTracker: LiveCostTracker | undefined;
+  if (flags.costCapUsd !== null && flags.costCapLive) {
+    costTracker = new LiveCostTracker({ capUsd: flags.costCapUsd });
+    runOptions.costTracker = costTracker;
+  }
+
+  // Phase 7: adaptive falsifier scheduler. Default sequential preserves
+  // historical behavior; ucb1 enables the bandit. Stats persist to
+  // `.swarm/falsifier-stats.json` by default; override via flag.
+  if (flags.falsifierScheduler === 'ucb1') {
+    const statsPath = flags.falsifierStatsPath
+      ? path.resolve(flags.falsifierStatsPath)
+      : path.join(repoRoot, '.swarm', 'falsifier-stats.json');
+    runOptions.falsifierScheduler = new FalsifierScheduler({
+      kind: 'ucb1',
+      statsPath,
+    });
+  }
+
   if (flags.maxObligations !== null) runOptions.maxObligations = flags.maxObligations;
   if (flags.commandTimeoutMs !== null) runOptions.commandTimeoutMs = flags.commandTimeoutMs;
   if (flags.candidates !== null && flags.mode === 'tournament') {
@@ -376,6 +436,10 @@ export function parseRunFlags(argv: string[]): RunFlags {
     forbiddenImports: [],
     costCapUsd: null,
     falsifiers: 'on',
+    snapshotCleanup: '',
+    falsifierScheduler: 'sequential',
+    falsifierStatsPath: '',
+    costCapLive: true,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -452,6 +516,18 @@ export function parseRunFlags(argv: string[]): RunFlags {
         throw new Error(`invalid --falsifiers value "${v}"; expected on | off`);
       }
       flags.falsifiers = v;
+    } else if (arg === '--snapshot-cleanup') {
+      flags.snapshotCleanup = requireValue(argv, ++i, '--snapshot-cleanup');
+    } else if (arg === '--falsifier-scheduler') {
+      const v = requireValue(argv, ++i, '--falsifier-scheduler');
+      if (v !== 'sequential' && v !== 'ucb1') {
+        throw new Error(`invalid --falsifier-scheduler value "${v}"; expected sequential | ucb1`);
+      }
+      flags.falsifierScheduler = v;
+    } else if (arg === '--falsifier-stats-path') {
+      flags.falsifierStatsPath = requireValue(argv, ++i, '--falsifier-stats-path');
+    } else if (arg === '--no-cost-cap-live') {
+      flags.costCapLive = false;
     } else if (arg === '--help' || arg === '-h') {
       printRunUsage();
       throw new Error('help requested');
@@ -513,6 +589,11 @@ function printRunUsage(): void {
       '  --no-post-merge              disable Phase 6 post-merge integration check (default: enabled)',
       '  --forbid-import <names>      comma-separated module names the streaming verifier rejects',
       '  --cost-cap <usd>             hard cost ceiling in USD; exit 6 if exceeded',
+      '  --no-cost-cap-live           disable mid-stream cost-cap enforcement (post-run only)',
+      '  --snapshot-cleanup <spec>    snapshot policy (retain-on-failure|always|never|',
+      '                               retain-last-n=<n>|max-age-ms=<ms>|max-disk-bytes=<b>)',
+      '  --falsifier-scheduler <kind> sequential (default) | ucb1 (adaptive bandit)',
+      '  --falsifier-stats-path <p>   override path for persisted bandit stats',
       '  --help, -h                   show this message',
       '',
     ].join('\n'),

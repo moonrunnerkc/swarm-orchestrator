@@ -7,6 +7,7 @@ import type {
   CandidateRecordedEntry,
   CandidateStreamAbortedEntry,
   FalsificationCallEntry,
+  FalsifierDispatchDecisionEntry,
   ObligationAttemptedEntry,
   ObligationDeterministicAppliedEntry,
   ObligationDeterministicAttemptedEntry,
@@ -56,6 +57,16 @@ import {
   type TournamentPersonaSlate,
   type TournamentResult,
 } from './tournament';
+import {
+  cleanupSnapshots,
+  DEFAULT_SNAPSHOT_POLICY,
+  type SnapshotCleanupPolicy,
+} from './snapshot-cleanup';
+import type { LiveCostTracker } from '../verification/live-cost-tracker';
+import type { FalsifierScheduler } from '../falsification/scheduler';
+import { getLogger } from '../logger';
+
+const log = getLogger('population.manager');
 
 /** Mode the population manager runs in. */
 export type PopulationMode = 'single' | 'tournament';
@@ -168,6 +179,28 @@ export interface RunPopulationOptions {
    * adapter must self-bound to it.
    */
   adapterTimeBudgetMs?: number;
+  /**
+   * Phase 7: shared live cost tracker. When supplied, every streaming
+   * call (single mode and tournament candidates) routes through the
+   * tracker; the projected spend is enforced mid-stream and a cap
+   * crossing aborts the in-flight call. The tracker is also used as a
+   * cooperative cancellation token by non-streaming adapters
+   * (falsifier subprocesses) via `tracker.isCancelled()`.
+   */
+  costTracker?: LiveCostTracker;
+  /**
+   * Phase 7: snapshot sidecar cleanup policy. Run after the population
+   * loop finishes (and after the final ledger entry is appended) to
+   * reclaim disk under `.swarm/snapshots/`. Default: `retain-on-failure`.
+   */
+  snapshotCleanupPolicy?: SnapshotCleanupPolicy;
+  /**
+   * Phase 7: optional adaptive falsifier scheduler. When supplied, the
+   * dispatcher orders adapter candidates via UCB1 (or sequential) and
+   * persists outcome stats. When omitted, the dispatcher falls back to
+   * registration-order behavior unchanged.
+   */
+  falsifierScheduler?: FalsifierScheduler;
 }
 
 /** Per-obligation outcome the manager hands back to the caller. */
@@ -443,7 +476,7 @@ export async function runPopulation(
         contract.manifest,
         commandTimeoutMs,
       );
-      const result = await executeTournament({
+      const execOpts: ExecuteTournamentArgs = {
         obligation,
         obligationIndex,
         primaryPersona: persona,
@@ -457,9 +490,14 @@ export async function runPopulation(
         renderContext: tournamentRenderCtx,
         fileMustExistPaths,
         runId,
-      });
+      };
+      if (usingStreaming) execOpts.streamingAssertions = streamingAssertions;
+      if (options.costTracker !== undefined) execOpts.costTracker = options.costTracker;
+      const result = await executeTournament(execOpts);
       totalUsage = addUsage(totalUsage, result.tournament.usage);
       verifierCallsSavedByMemoization += result.tournament.verifierCallsSavedByMemoization;
+      streamingAbortedCandidates += result.tournament.streamingAbortedCandidates;
+      streamingCharsBeforeAbort += result.tournament.streamingCharsBeforeAbort;
       const winnerPersonaId = result.tournament.winner?.personaId ?? null;
       let tournamentSatisfied = result.satisfied;
       let tournamentDetail = result.detail;
@@ -472,6 +510,8 @@ export async function runPopulation(
           registry: options.adapterRegistry,
           falsifiers: options.falsifiers ?? 'on',
           timeBudgetMs: options.adapterTimeBudgetMs ?? 60_000,
+          ...(options.falsifierScheduler ? { scheduler: options.falsifierScheduler } : {}),
+          ...(options.costTracker ? { costTracker: options.costTracker } : {}),
         });
         if (falsified !== null) {
           tournamentSatisfied = false;
@@ -554,6 +594,7 @@ export async function runPopulation(
         sessionRequest,
         obligation,
         streamingAssertions,
+        options.costTracker,
       );
       responseText = streamingOutcome.streamResult.response.text;
       responseUsage = streamingOutcome.streamResult.response.usage;
@@ -676,6 +717,8 @@ export async function runPopulation(
         registry: options.adapterRegistry,
         falsifiers: options.falsifiers ?? 'on',
         timeBudgetMs: options.adapterTimeBudgetMs ?? 60_000,
+          ...(options.falsifierScheduler ? { scheduler: options.falsifierScheduler } : {}),
+          ...(options.costTracker ? { costTracker: options.costTracker } : {}),
       });
       if (falsified !== null) {
         finalSatisfied = false;
@@ -829,6 +872,17 @@ export async function runPopulation(
     failed,
     totalUsage,
   });
+
+  // Phase 7 snapshot cleanup. Runs after the final ledger entry so it
+  // can never race the writer. The current run is the only candidate
+  // that could be live; we pass `runFailed` so retain-on-failure keeps
+  // its sidecars for resume/forensics.
+  const runFailed = failed > 0 || postMerge?.passed === false;
+  try {
+    cleanupSnapshots(repoRoot, runId, runFailed, options.snapshotCleanupPolicy ?? DEFAULT_SNAPSHOT_POLICY);
+  } catch (err) {
+    log.warn('snapshot cleanup failed (non-fatal)', { error: err instanceof Error ? err.message : String(err) });
+  }
 
   return {
     outcomes,
@@ -1347,6 +1401,18 @@ interface ExecuteTournamentArgs {
   fileMustExistPaths: ReadonlySet<string>;
   /** Run identifier for snapshot sidecar directories. */
   runId: string;
+  /**
+   * Phase 7: streaming verifier assertions to evaluate per chunk on each
+   * candidate. When undefined, candidate generation falls back to the
+   * non-streaming `session.complete()` path.
+   */
+  streamingAssertions?: readonly StreamingAssertion[];
+  /**
+   * Phase 7: shared live cost tracker. Threaded through to every
+   * candidate stream so a single per-run cap applies across all
+   * concurrent generations.
+   */
+  costTracker?: LiveCostTracker;
 }
 
 interface ExecuteTournamentResult {
@@ -1476,8 +1542,18 @@ async function executeTournament(args: ExecuteTournamentArgs): Promise<ExecuteTo
       };
     },
     ledgerSink: sink,
+    streamingSink: {
+      recordStreamAborted(p) {
+        ledger.append<CandidateStreamAbortedEntry>({
+          type: 'candidate-stream-aborted',
+          ...p,
+        });
+      },
+    },
   };
   if (memoStore !== undefined) tournamentOpts.memoStore = memoStore;
+  if (args.streamingAssertions !== undefined) tournamentOpts.streamingAssertions = args.streamingAssertions;
+  if (args.costTracker !== undefined) tournamentOpts.costTracker = args.costTracker;
   const result = await runTournament(tournamentOpts);
 
   if (result.satisfied) {
@@ -1533,6 +1609,8 @@ interface RunFalsifiersArgs {
   readonly registry: AdapterRegistry | undefined;
   readonly falsifiers: FalsifiersFlag;
   readonly timeBudgetMs: number;
+  readonly scheduler?: FalsifierScheduler;
+  readonly costTracker?: LiveCostTracker;
 }
 
 /**
@@ -1556,17 +1634,31 @@ async function runFalsifiersForObligation(
   if (registry.forObligation(obligation.type).length === 0) return null;
   let outcome;
   try {
-    outcome = await dispatchFalsifiers(obligation, registry, {
+    const dispatchOpts: Parameters<typeof dispatchFalsifiers>[2] = {
       falsifiers,
       timeBudgetMs: args.timeBudgetMs,
       workspaceRoot: repoRoot,
       contextRefs: [],
-      // The v8 run path does not commit per obligation; adapters that
-      // want a SHA can `git rev-parse HEAD` inside the workspace. We
-      // pass the empty string as a sentinel so they can detect the
-      // uncommitted-workspace case.
       patchSha: '',
-    });
+    };
+    if (args.scheduler) (dispatchOpts as { scheduler?: FalsifierScheduler }).scheduler = args.scheduler;
+    if (args.costTracker) {
+      const tracker = args.costTracker;
+      (dispatchOpts as { shouldCancel?: () => string | null }).shouldCancel = () =>
+        tracker.isCancelled() ? 'cost-cap exceeded' : null;
+    }
+    outcome = await dispatchFalsifiers(obligation, registry, dispatchOpts);
+    if (args.scheduler) args.scheduler.flush();
+    if (outcome.dispatchDecision) {
+      ledger.append<FalsifierDispatchDecisionEntry>({
+        type: 'falsifier-dispatch-decision',
+        obligationIndex,
+        obligationType: obligation.type,
+        kind: outcome.dispatchDecision.kind,
+        order: outcome.dispatchDecision.order.slice(),
+        scores: outcome.dispatchDecision.scores.map((s) => ({ adapter: s.adapter, score: Number.isFinite(s.score) ? s.score : null })),
+      });
+    }
   } catch (err) {
     ledger.append<FalsificationCallEntry>({
       type: 'falsification-call',
