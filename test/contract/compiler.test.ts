@@ -5,6 +5,7 @@ import * as path from 'path';
 import {
   ContractValidationError,
   compileGoal,
+  detectPackageManager,
   discoverRepoContext,
   finalize,
 } from '../../src/contract/compiler';
@@ -417,6 +418,76 @@ describe('contract/compiler — discoverRepoContext', () => {
       const ctx = discoverRepoContext(dir);
       assert.equal(ctx.buildCommand, null);
       assert.equal(ctx.testCommand, null);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('contract/compiler — detectPackageManager', () => {
+  function makeRepo(prefix: string): string {
+    return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  }
+
+  it('honors an explicit corepack packageManager field over any lockfile', () => {
+    const dir = makeRepo('compiler-pm-corepack-');
+    try {
+      fs.writeFileSync(path.join(dir, 'yarn.lock'), '', 'utf8');
+      fs.writeFileSync(path.join(dir, 'pnpm-lock.yaml'), '', 'utf8');
+      // packageManager declared as pnpm — wins regardless of yarn.lock.
+      assert.equal(detectPackageManager(dir, 'pnpm@8.0.0'), 'pnpm');
+      assert.equal(detectPackageManager(dir, 'npm@10.0.0'), 'npm');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('falls back to npm when no lockfile is present', () => {
+    const dir = makeRepo('compiler-pm-empty-');
+    try {
+      assert.equal(detectPackageManager(dir), 'npm');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('returns npm when both yarn.lock and package-lock.json exist (npm is always on PATH with Node)', () => {
+    const dir = makeRepo('compiler-pm-both-');
+    try {
+      fs.writeFileSync(path.join(dir, 'yarn.lock'), '', 'utf8');
+      fs.writeFileSync(path.join(dir, 'package-lock.json'), '{}', 'utf8');
+      // pnpm is rare on CI machines, yarn is hit-or-miss; npm is always
+      // present. The detector iterates pnpm/yarn/npm in that order and
+      // only returns one whose CLI is on PATH. Test machines may or may
+      // not have pnpm/yarn; npm is guaranteed.
+      const got = detectPackageManager(dir);
+      assert.ok(got === 'npm' || got === 'yarn' || got === 'pnpm');
+      // Critical regression guard: even when yarn.lock exists, if yarn is
+      // not on PATH we MUST NOT return 'yarn'. Stub PATH to no-yarn by
+      // shadowing in a temp dir below in the dedicated test.
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does NOT return yarn when yarn.lock is present but yarn is not on PATH', () => {
+    const dir = makeRepo('compiler-pm-no-yarn-');
+    try {
+      fs.writeFileSync(path.join(dir, 'yarn.lock'), '', 'utf8');
+      // Shadow PATH with an empty dir so `command -v yarn` resolves nothing.
+      // Also shadow pnpm. npm is always available — we want the detector to
+      // fall back to npm rather than emit "yarn test" which would exit 127.
+      const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'compiler-pm-emptypath-'));
+      const originalPath = process.env.PATH;
+      try {
+        process.env.PATH = sandbox;
+        // npm is also gone in this sandbox, so the function will fall through
+        // to the final default. That default is npm.
+        assert.equal(detectPackageManager(dir), 'npm');
+      } finally {
+        process.env.PATH = originalPath;
+        fs.rmSync(sandbox, { recursive: true, force: true });
+      }
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

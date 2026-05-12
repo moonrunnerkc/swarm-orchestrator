@@ -1,3 +1,4 @@
+import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { DEFAULT_STRATEGY_NAMES } from '../wasm/registry';
@@ -177,22 +178,73 @@ interface PackageJsonProbe {
 function readPackageJsonScripts(repoRoot: string): PackageJsonProbe | null {
   const packageJsonPath = path.join(repoRoot, 'package.json');
   if (!fs.existsSync(packageJsonPath)) return null;
-  let parsed: { scripts?: Record<string, string> };
+  let parsed: { scripts?: Record<string, string>; packageManager?: unknown };
   try {
     parsed = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
   } catch {
     return null;
   }
+  const declared = parsed.packageManager;
   return {
     scripts: parsed.scripts ?? null,
-    packageManager: detectPackageManager(repoRoot),
+    packageManager: detectPackageManager(repoRoot, declared),
   };
 }
 
-function detectPackageManager(repoRoot: string): 'pnpm' | 'yarn' | 'npm' {
-  if (fs.existsSync(path.join(repoRoot, 'pnpm-lock.yaml'))) return 'pnpm';
-  if (fs.existsSync(path.join(repoRoot, 'yarn.lock'))) return 'yarn';
+/**
+ * Pick the package manager the project actually uses. Priority:
+ *   1. The `packageManager` field in package.json (corepack's canonical
+ *      signal: `"packageManager": "yarn@4.0.0"` etc.). When present and
+ *      parseable, it wins regardless of lockfiles — the project owner
+ *      stated which manager to use.
+ *   2. Lockfile presence AND the manager's CLI being on PATH. We never
+ *      claim "yarn" if `yarn` is not installed, because every downstream
+ *      `yarn test` will exit 127 and waste the run.
+ *   3. Fall back to `npm` (every Node install ships it).
+ *
+ * The earlier heuristic — first lockfile wins — silently broke runs in
+ * repos with stale lockfiles (e.g. `yarn.lock` left behind after a
+ * migration to npm).
+ */
+export function detectPackageManager(
+  repoRoot: string,
+  declaredPackageManager: unknown = undefined,
+): 'pnpm' | 'yarn' | 'npm' {
+  // 1. Honor an explicit corepack `packageManager` declaration.
+  if (typeof declaredPackageManager === 'string') {
+    const head = declaredPackageManager.split('@')[0]?.trim();
+    if (head === 'pnpm' || head === 'yarn' || head === 'npm') return head;
+  }
+
+  // 2. Lockfile + on-PATH.
+  const candidates: Array<{ name: 'pnpm' | 'yarn' | 'npm'; lockfile: string }> = [
+    { name: 'pnpm', lockfile: 'pnpm-lock.yaml' },
+    { name: 'yarn', lockfile: 'yarn.lock' },
+    { name: 'npm', lockfile: 'package-lock.json' },
+  ];
+  for (const { name, lockfile } of candidates) {
+    if (fs.existsSync(path.join(repoRoot, lockfile)) && isCommandOnPath(name)) {
+      return name;
+    }
+  }
+
+  // 3. Universal default — Node ships npm.
   return 'npm';
+}
+
+/**
+ * Return true when `command` resolves on PATH. Uses `which` (POSIX)
+ * with stdio suppressed; throws are interpreted as "not on PATH".
+ * `process.env.PATHEXT` isn't relevant since swarm-orchestrator targets
+ * macOS/Linux.
+ */
+function isCommandOnPath(command: string): boolean {
+  try {
+    execSync(`command -v ${command}`, { stdio: ['ignore', 'ignore', 'ignore'] });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
