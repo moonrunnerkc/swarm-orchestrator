@@ -1,4 +1,6 @@
 import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 import type { ContractManifest, FinalContract, ObligationV1, RepoContext } from '../contract/types';
 import type { JsonlLedger } from '../ledger/jsonl-ledger';
 import { MemoStore, obligationKey } from '../ledger/memoization';
@@ -1182,6 +1184,7 @@ export function renderDynamicMessage(
       lines.push(
         'Otherwise output a unified diff against repo root that brings the file into compliance.',
       );
+      appendFileContext(lines, repoRoot, [obligation.file]);
       break;
     case 'property-must-hold':
       lines.push(
@@ -1195,6 +1198,7 @@ export function renderDynamicMessage(
       if (context?.commandFailureTail) {
         lines.push('', renderFailureBlock(obligation.predicate, context.commandFailureTail));
       }
+      appendFileContext(lines, repoRoot, extractFilePathsFromPredicate(obligation.predicate));
       break;
     case 'import-graph-must-satisfy':
       lines.push(
@@ -1231,6 +1235,103 @@ export function renderDynamicMessage(
       break;
   }
   return lines.join('\n');
+}
+
+/**
+ * Cap on how many bytes of a single file we inline into the persona
+ * prompt. Files larger than this get truncated with a banner so the
+ * model sees the head and knows there is more. 6 KB ≈ 1500 tokens —
+ * generous enough for the typical Express controller/route file in
+ * the May 2026 eval target (~50–80 lines) but bounded so a huge file
+ * doesn't dominate the prompt budget.
+ */
+const FILE_CONTEXT_MAX_BYTES = 6 * 1024;
+/** Hard cap on total bytes appended across all context files per obligation. */
+const TOTAL_FILE_CONTEXT_MAX_BYTES = 16 * 1024;
+
+/**
+ * Append "Current file contents:" sections to the dynamic prompt for
+ * each file that the obligation will modify or whose state the persona
+ * needs to know to write a valid diff. Without this, personas guess at
+ * context lines and the resulting diffs hit "context mismatch" errors
+ * (the May 2026 eval failure mode: every persona emitted a diff whose
+ * `--- a/path` context lines didn't match the real file).
+ *
+ * Paths that don't exist or aren't readable are silently skipped — the
+ * persona will see only the files that exist. Each file is truncated to
+ * FILE_CONTEXT_MAX_BYTES; the total budget across all files is
+ * TOTAL_FILE_CONTEXT_MAX_BYTES so a multi-file predicate doesn't blow
+ * the prompt budget.
+ */
+function appendFileContext(
+  lines: string[],
+  repoRoot: string,
+  paths: readonly string[],
+): void {
+  let remaining = TOTAL_FILE_CONTEXT_MAX_BYTES;
+  const seen = new Set<string>();
+  for (const relPath of paths) {
+    if (remaining <= 0) break;
+    if (seen.has(relPath)) continue;
+    seen.add(relPath);
+    let abs: string;
+    try {
+      abs = path.resolve(repoRoot, relPath);
+    } catch {
+      continue;
+    }
+    // Defense: reject paths that escape repoRoot via ../
+    const rel = path.relative(repoRoot, abs);
+    if (rel.startsWith('..') || path.isAbsolute(rel)) continue;
+    if (!fs.existsSync(abs)) continue;
+    let body: string;
+    try {
+      body = fs.readFileSync(abs, 'utf8');
+    } catch {
+      continue;
+    }
+    const truncated = body.length > FILE_CONTEXT_MAX_BYTES;
+    const slice = truncated ? body.slice(0, FILE_CONTEXT_MAX_BYTES) : body;
+    const byteCost = slice.length + 80; // rough overhead for the banner
+    if (byteCost > remaining) continue;
+    remaining -= byteCost;
+    lines.push('');
+    lines.push(`Current contents of ${relPath} (use these exact lines as diff context):`);
+    lines.push('```');
+    lines.push(slice + (truncated ? '\n[…truncated…]' : ''));
+    lines.push('```');
+  }
+}
+
+/**
+ * Extract repo-relative file paths from a shell predicate. The
+ * extractor's predicates routinely look like
+ *   grep -q 'router.get' src/routes/v1/user.route.js
+ * or
+ *   awk '...' tests/integration/user.test.js
+ * The personas need to see the contents of those files to write
+ * applyable diffs. This walks the predicate text for tokens that look
+ * like POSIX-style relative paths (contain '/', have a recognised file
+ * extension, no leading '/', no leading '-' which would be a flag).
+ *
+ * Returns unique paths in first-seen order. Conservative on purpose:
+ * false negatives are fine (persona just doesn't get extra context),
+ * false positives (matching a string literal that isn't a path) are
+ * tolerable as long as appendFileContext fs.existsSync-gates the result.
+ */
+function extractFilePathsFromPredicate(predicate: string): string[] {
+  // Tokens that look like relative paths with an extension. Stops at
+  // shell quoting / whitespace / pipes / semis.
+  const candidates: string[] = [];
+  const tokenRe = /(?:^|[\s'"`])([a-zA-Z0-9_.][a-zA-Z0-9_./-]*\/[a-zA-Z0-9_./-]+\.[a-zA-Z0-9]+)(?=[\s'"`)|;&]|$)/g;
+  let m: RegExpExecArray | null;
+  while ((m = tokenRe.exec(predicate)) !== null) {
+    const token = m[1];
+    if (token === undefined) continue;
+    if (token.startsWith('/') || token.startsWith('-')) continue;
+    if (!candidates.includes(token)) candidates.push(token);
+  }
+  return candidates;
 }
 
 /**
