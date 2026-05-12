@@ -414,7 +414,17 @@ export function applyUnifiedDiff(
   const skippedFiles: string[] = [];
   for (const patch of patches) {
     const target = patch.newPath ?? patch.oldPath;
-    if (target !== null && options.protectedPaths?.has(target)) {
+    // Protection scope: only block CREATE/DELETE patches against
+    // architect-owned paths. A modify-in-place patch (--- a/path /
+    // +++ b/path) is an additive edit that does NOT stomp on the
+    // architect's body, so it must be allowed — otherwise every
+    // downstream persona's legitimate edit to a file-must-exist path
+    // gets silently skipped (the May 2026 eval failure mode).
+    if (
+      target !== null &&
+      options.protectedPaths?.has(target) &&
+      (patch.isCreate || patch.isDelete)
+    ) {
       skippedFiles.push(target);
       continue;
     }

@@ -244,6 +244,56 @@ describe('population/unified-diff', () => {
       assert.equal(fs.readFileSync(path.join(repo, 'notes.txt'), 'utf8'), 'ok\n');
     });
 
+    it('allows modify-in-place patches against protected paths (additive edits)', () => {
+      const repo = tmpDir('v8-diff-protect-modify-');
+      const protectedPath = 'src/controllers/user.controller.js';
+      const protectedAbs = path.join(repo, protectedPath);
+      fs.mkdirSync(path.dirname(protectedAbs), { recursive: true });
+      fs.writeFileSync(protectedAbs, "const a = 1;\nconst b = 2;\n");
+      // A modify-in-place patch — adds a new line. The architect's
+      // body is preserved (no overwrite), the new line is appended.
+      const diff = [
+        '--- a/' + protectedPath,
+        '+++ b/' + protectedPath,
+        '@@ -1,2 +1,3 @@',
+        ' const a = 1;',
+        ' const b = 2;',
+        '+const c = 3;',
+      ].join('\n');
+      const r = applyUnifiedDiff(repo, diff, {
+        protectedPaths: new Set([protectedPath]),
+      });
+      assert.equal(r.applied, true, `expected applied=true; detail: ${r.detail}`);
+      assert.deepEqual(r.changedFiles, [protectedPath]);
+      // The original lines are still there AND the new line was added.
+      const after = fs.readFileSync(protectedAbs, 'utf8');
+      assert.match(after, /const a = 1;/);
+      assert.match(after, /const b = 2;/);
+      assert.match(after, /const c = 3;/);
+    });
+
+    it('still blocks create patches that target protected paths', () => {
+      const repo = tmpDir('v8-diff-protect-create-');
+      const protectedPath = 'src/controllers/user.controller.js';
+      const protectedAbs = path.join(repo, protectedPath);
+      fs.mkdirSync(path.dirname(protectedAbs), { recursive: true });
+      fs.writeFileSync(protectedAbs, '// architect body\n');
+      // A CREATE patch attempts to overwrite — the architect's body
+      // would be replaced. Must be blocked.
+      const diff = [
+        '--- /dev/null',
+        '+++ b/' + protectedPath,
+        '@@ -0,0 +1,1 @@',
+        '+stomped',
+      ].join('\n');
+      const r = applyUnifiedDiff(repo, diff, {
+        protectedPaths: new Set([protectedPath]),
+      });
+      assert.equal(r.applied, false);
+      assert.match(r.detail, /skipped 1/);
+      assert.equal(fs.readFileSync(protectedAbs, 'utf8'), '// architect body\n');
+    });
+
     it('deletes a file when +++ /dev/null', () => {
       const repo = tmpDir('v8-diff-');
       const target = path.join(repo, 'goodbye.txt');
