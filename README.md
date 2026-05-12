@@ -25,7 +25,7 @@ decides what reaches your repo.
 
 ## Status
 
-Version `8.0.1` on `main`. Node `>= 20` (CI matrix: 20, 22). License ISC. The v8
+Version `8.0.2` on `main`. Node `>= 20` (CI matrix: 20, 22). License ISC. The v8
 architecture is the default for `swarm run`; the v6 verified-branch pipeline is
 preserved under `swarm run --v6` and the `swarm swarm` / `swarm execute` commands.
 Falsifier subsystem: Codex on, Copilot on, ClaudeCode opt-in (see

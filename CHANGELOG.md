@@ -6,7 +6,36 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
-### Added (architectural-limitation close-out)
+## [8.0.2] - 2026-05-11
+
+Tag commit: set at release time. Previously-documented architectural
+limitations closed out in this release; workspace rollback (landed on `main`
+since `8.0.1` via [`584bca2`](https://github.com/moonrunnerkc/swarm-orchestrator/commit/584bca2))
+is the headline feature shipped under the `8.0.2` tag.
+
+### Added (workspace rollback)
+
+- **ARIES-style workspace rollback for falsified obligations.** A confirmed
+  falsifier counter-example now flips the obligation back to failed *and*
+  unwinds the patch: pre-apply bytes are restored from a content-addressed
+  sidecar under `.swarm/snapshots/<run-id>/`, the restore is verified by
+  re-hashing on-disk bytes against the logged pre-apply blob SHA, and
+  out-of-band mutations between apply and rollback surface as a failed
+  rollback ledger entry rather than being silently overwritten.
+  The post-merge integration check reuses the same primitive to unwind
+  every applied obligation in reverse order when cross-obligation regression
+  is detected. Source: `src/population/rollback.ts`, snapshot manager wiring
+  in `src/population/manager.ts`. Land commits
+  [`584bca2`](https://github.com/moonrunnerkc/swarm-orchestrator/commit/584bca2)
+  and [`2c8effa`](https://github.com/moonrunnerkc/swarm-orchestrator/commit/2c8effa);
+  README narrative landed in [`2986159`](https://github.com/moonrunnerkc/swarm-orchestrator/commit/2986159).
+- **`swarm v8 stats` subcommand.** Reports per-adapter falsifier counters
+  (success, regression-discovered, false-positive, latency-ms) from the
+  same `.swarm/falsifier-stats.json` file used by the UCB1 dispatcher.
+  Source: `src/cli/v8/index.ts`, README CLI reference landed in
+  [`2986159`](https://github.com/moonrunnerkc/swarm-orchestrator/commit/2986159).
+
+
 
 - **Tournament streaming verification.** `--mode tournament` now routes
   every candidate through the same `runStreamingCompletion` pipeline used
