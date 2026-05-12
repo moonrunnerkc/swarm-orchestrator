@@ -960,6 +960,15 @@ export async function runPopulation(
       failedCount: pm.failedCount,
       outcomes: slimOutcomes,
     };
+    // Post-merge is authoritative for the integrated state. Even if
+    // an apply-time attempt failed for some obligation, what matters
+    // for the exit code is whether the FINAL integrated workspace
+    // passes its obligations. Recompute satisfied/failed from
+    // pm.outcomes so the exit code reflects post-merge truth, not a
+    // stale apply-time counter from the per-obligation phase.
+    satisfied = pm.outcomes.filter((o) => o.passed).length;
+    failed = pm.outcomes.filter((o) => !o.passed).length;
+
     if (!pm.passed) {
       // Rollback policy: only abandon the merge when a STRUCTURAL
       // obligation regresses. Structural = test-must-pass,
@@ -982,14 +991,7 @@ export async function runPopulation(
             o.obligation.type === 'file-must-exist'),
       );
       const regressionGap = pm.failedCount;
-      if (structuralRegression) {
-        // Promote the regression into the run's failure count so the
-        // CLI exit code reflects the integration failure.
-        if (failed === 0 && regressionGap > 0) {
-          failed = regressionGap;
-          satisfied = Math.max(0, satisfied - regressionGap);
-        }
-      } else {
+      if (!structuralRegression) {
         // Keep the applied work AND keep the exit-code green: the
         // code compiles, tests pass, and required files exist.
         // Predicate-only regressions are surfaced as quality
@@ -998,6 +1000,8 @@ export async function runPopulation(
         // run.failed because the policy already decided the work is
         // shippable. Exit-code semantics stay aligned with the
         // workspace state: kept-with-warnings → exit 0.
+        failed = 0;
+        satisfied = pm.obligationCount - regressionGap;
         ledger.append<ObligationRolledBackEntry>({
           type: 'obligation-rolled-back',
           obligationIndex: -1,
