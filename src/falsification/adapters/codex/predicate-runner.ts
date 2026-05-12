@@ -9,11 +9,13 @@
  * (false positive — recorded in the cost record).
  */
 
-import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { checkPredicateBaseline, runPredicate } from '../../../verification/predicate-runner';
 import type { CounterExampleInput } from '../types';
 import type { ParsedCandidate } from './codex-output-parser';
+
+export { checkPredicateBaseline };
 
 export interface PredicateRunResult {
   /** True when the predicate exited non-zero (property does not hold). */
@@ -99,49 +101,6 @@ export function runCandidateAgainstPredicate(
     output: exec.output,
     exitCode: exec.exitCode,
   };
-}
-
-interface PredicateExecResult {
-  readonly output: string;
-  readonly exitCode: number;
-}
-
-/**
- * Run the obligation's predicate against the workspace *before* any
- * candidate is applied. A property-must-hold obligation must pass against
- * the unmodified workspace; otherwise yields are pre-tainted (the
- * predicate is already failing for unrelated reasons), every codex
- * candidate trivially "falsifies", and downstream cost is wasted on
- * meaningless work.
- *
- * Callers should short-circuit on `ok === false` and return a
- * `no-falsification-found` outcome with reason `baseline-predicate-failed`
- * rather than invoking the underlying CLI.
- */
-export function checkPredicateBaseline(
-  predicate: string,
-  workspaceRoot: string,
-): { readonly ok: boolean; readonly output: string; readonly exitCode: number } {
-  const exec = runPredicate(predicate, workspaceRoot);
-  return { ok: exec.exitCode === 0, output: exec.output, exitCode: exec.exitCode };
-}
-
-function runPredicate(predicate: string, workspaceRoot: string): PredicateExecResult {
-  try {
-    const stdout = execSync(predicate, {
-      cwd: workspaceRoot,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: process.env,
-    });
-    return { output: stdout, exitCode: 0 };
-  } catch (cause) {
-    const err = cause as { status?: unknown; stdout?: unknown; stderr?: unknown };
-    const status = typeof err.status === 'number' ? err.status : 1;
-    const stdout = typeof err.stdout === 'string' ? err.stdout : '';
-    const stderr = typeof err.stderr === 'string' ? err.stderr : '';
-    return { output: `${stdout}${stderr}`, exitCode: status };
-  }
 }
 
 function isEmptyDirectory(dir: string): boolean {
