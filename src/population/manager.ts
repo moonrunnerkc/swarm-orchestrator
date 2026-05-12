@@ -706,10 +706,14 @@ export async function runPopulation(
         // contents of each file. This bypasses unified-diff context
         // matching entirely — LLMs reliably produce coherent file
         // bodies but flake on `--- a/<path>` context lines.
+        // protectedPaths is intentionally NOT passed: in the
+        // whole-file flow the persona is shown the current file
+        // body via the file-context injector and asked to write the
+        // FULL new contents (additive, not stomping). The
+        // truncation guard inside applyWholeFileResponse catches
+        // pathological shrinkage cases.
         try {
-          const result = applyWholeFileResponse(repoRoot, responseText, {
-            protectedPaths: fileMustExistPaths,
-          });
+          const result = applyWholeFileResponse(repoRoot, responseText);
           if (result.applied) {
             appliedAnyPatches = true;
           } else {

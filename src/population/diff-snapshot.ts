@@ -17,6 +17,7 @@ import * as path from 'path';
 import type { ObligationV1 } from '../contract/types';
 import type { WorkspaceSnapshotEntry } from '../ledger/types';
 import { listAffectedPaths, looksLikeUnifiedDiff } from './unified-diff';
+import { looksLikeWholeFileResponse, parseWholeFileBlocks } from './whole-file-apply';
 
 /**
  * Compute a SHA1 in the same format `git hash-object` produces, so blob
@@ -78,6 +79,19 @@ export function snapshotBeforeApply(
     affectedPaths = [obligation.path];
   } else if (looksLikeUnifiedDiff(trimmed)) {
     affectedPaths = listAffectedPaths(trimmed);
+    if (affectedPaths.length === 0) {
+      return null;
+    }
+  } else if (looksLikeWholeFileResponse(trimmed)) {
+    // Whole-file response format: each <<<FILE <path> ... FILE>>>
+    // block names a file the applier will overwrite. We need
+    // pre-snapshots for all of them so rollback can restore on
+    // failure, exactly like unified-diff.
+    try {
+      affectedPaths = parseWholeFileBlocks(trimmed).map((b) => b.relPath);
+    } catch {
+      return null;
+    }
     if (affectedPaths.length === 0) {
       return null;
     }
