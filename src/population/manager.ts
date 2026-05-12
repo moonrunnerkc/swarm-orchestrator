@@ -49,6 +49,7 @@ import { applyFileEmit } from './diff-applier';
 import { computePostApplyShas, snapshotBeforeApply } from './diff-snapshot';
 import { rollbackObligation } from './rollback';
 import { applyUnifiedDiff, looksLikeUnifiedDiff } from './unified-diff';
+import { applyWholeFileResponse, looksLikeWholeFileResponse } from './whole-file-apply';
 import { PopulationStateBuilder } from './state';
 import {
   DEFAULT_TOURNAMENT_CONFIG,
@@ -699,6 +700,26 @@ export async function runPopulation(
         appliedAnyPatches = true;
       } else if (responseText.trim() === 'no-op') {
         applyDetail = 'persona declared no-op; workspace left unchanged';
+      } else if (looksLikeWholeFileResponse(responseText)) {
+        // Whole-file replacement path: persona emits one or more
+        // `<<<FILE <path> ... FILE>>>` blocks with the full new
+        // contents of each file. This bypasses unified-diff context
+        // matching entirely — LLMs reliably produce coherent file
+        // bodies but flake on `--- a/<path>` context lines.
+        try {
+          const result = applyWholeFileResponse(repoRoot, responseText, {
+            protectedPaths: fileMustExistPaths,
+          });
+          if (result.applied) {
+            appliedAnyPatches = true;
+          } else {
+            applyDetail = `whole-file write did not apply: ${result.detail}`;
+          }
+        } catch (cause) {
+          const message = cause instanceof Error ? cause.message : String(cause);
+          applyDetail = `whole-file parse/apply error: ${message}`;
+          appliedAnyPatches = true;
+        }
       } else if (looksLikeUnifiedDiff(responseText)) {
         try {
           // Protect file-must-exist paths from cross-persona overwrites:
