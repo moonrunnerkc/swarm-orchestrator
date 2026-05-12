@@ -655,9 +655,15 @@ export async function runPopulation(
       continue;
     }
 
-    let applyDetail: string | null = null;
-    let appliedAnyPatches = false;
-    let pre: ReturnType<typeof snapshotBeforeApply> = null;
+    // These are reassigned at the top of each retry iteration; declared
+    // here so they're in scope for the per-obligation rollback block
+    // and the satisfied/failed bookkeeping below the loop. The retry
+    // loop body always runs at least once (it's a `for (;;)` with
+    // explicit breaks), so TS's definite-assignment analysis is
+    // satisfied without an initial value.
+    let applyDetail: string | null;
+    let appliedAnyPatches: boolean;
+    let pre: ReturnType<typeof snapshotBeforeApply>;
     let verifyResult: ReturnType<typeof verifyObligation>;
     let finalSatisfied: boolean;
     let finalDetail: string;
@@ -828,11 +834,11 @@ export async function runPopulation(
             `per-obligation-failed-apply rollback failed for obligation ${obligationIndex}: ${rb.failure?.detail ?? 'unknown'}`,
           );
         }
-        // After rollback, the workspace state and the in-memory
-        // appliedAnyPatches flag should reflect "no mutations from
-        // this attempt". The next iteration (or downstream code) is
-        // free to act on a clean baseline.
-        appliedAnyPatches = false;
+        // Workspace is now restored to pre-attempt state. The next
+        // retry iteration will reset appliedAnyPatches at its top;
+        // if we break out of the loop here (no more retries), the
+        // outer code only reads finalSatisfied/finalDetail, not
+        // appliedAnyPatches — so no explicit reset is needed.
       }
 
       if (finalSatisfied) break;
