@@ -37,7 +37,15 @@ export interface RunFlags {
   runId: string | null;
   /** Optional path to write the structured result JSON. */
   resultPath: string | null;
-  /** Population mode: 'single' (Phase 2) or 'tournament' (Phase 3 default). */
+  /**
+   * Population mode. `single` dispatches one persona per obligation
+   * (the persona registered as the canonical handler for that
+   * obligation type) and verifies its candidate immediately. This is
+   * the default — it minimizes cost and is sufficient for most
+   * goals. `tournament` races multiple candidates per obligation via
+   * the Phase 3 tournament loop (`--candidates N`); use it when you
+   * want adversarial selection across personas at higher token cost.
+   */
   mode: 'single' | 'tournament';
   /** Optional override for tournament candidates per round. */
   candidates: number | null;

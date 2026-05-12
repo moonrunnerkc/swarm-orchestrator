@@ -79,12 +79,37 @@ function formatPlain(stats: RunStats): string {
     lines.push(`  ${type}: ${count}`);
   }
   lines.push('');
-  lines.push(`Falsifications: ${stats.falsificationCount}`);
-  for (const [adapter, count] of Object.entries(stats.falsificationByAdapter)) {
-    lines.push(`  ${adapter}: ${count}`);
+  lines.push('Falsifications:');
+  lines.push(`  attempted:           ${stats.falsificationAttempted}`);
+  lines.push(`  counter-examples:    ${stats.falsificationCount}`);
+  lines.push(`  dispatcher-errors:   ${stats.falsificationDispatcherErrors}`);
+  if (stats.falsificationDispatcherErrors > 0) {
+    lines.push(
+      `  WARNING: ${stats.falsificationDispatcherErrors} falsifier dispatch(es) ` +
+        `failed; the producer's verifier alone decided these obligations. ` +
+        `Run \`swarm v8 doctor\` to diagnose adapter availability.`,
+    );
   }
-  for (const [type, count] of Object.entries(stats.falsificationByObligationType)) {
-    lines.push(`  ${type}: ${count}`);
+  if (
+    Object.keys(stats.falsificationByAdapter).length > 0 ||
+    Object.keys(stats.falsificationDispatcherErrorsByAdapter).length > 0
+  ) {
+    lines.push('  by adapter:');
+    const allAdapters = new Set<string>([
+      ...Object.keys(stats.falsificationByAdapter),
+      ...Object.keys(stats.falsificationDispatcherErrorsByAdapter),
+    ]);
+    for (const adapter of allAdapters) {
+      const found = stats.falsificationByAdapter[adapter] ?? 0;
+      const errs = stats.falsificationDispatcherErrorsByAdapter[adapter] ?? 0;
+      lines.push(`    ${adapter}: counter-examples=${found} errors=${errs}`);
+    }
+  }
+  if (Object.keys(stats.falsificationByObligationType).length > 0) {
+    lines.push('  by obligation type:');
+    for (const [type, count] of Object.entries(stats.falsificationByObligationType)) {
+      lines.push(`    ${type}: ${count}`);
+    }
   }
   lines.push('');
   lines.push('Files touched (top 10):');
@@ -104,8 +129,14 @@ interface RunStats {
   rollbackCount: number;
   rollbackByTrigger: Record<string, number>;
   rollbackByObligationType: Record<string, number>;
+  /** Count of falsification-call entries where counterExamplesFound > 0. */
   falsificationCount: number;
+  /** Count of all falsification-call entries (successes + dispatcher errors). */
+  falsificationAttempted: number;
+  /** Count of falsification-call entries with resultKind === 'dispatcher-error'. */
+  falsificationDispatcherErrors: number;
   falsificationByAdapter: Record<string, number>;
+  falsificationDispatcherErrorsByAdapter: Record<string, number>;
   falsificationByObligationType: Record<string, number>;
   topFiles: Array<[string, number]>;
 }
@@ -117,10 +148,13 @@ function computeStats(entries: LedgerEntry[], runId: string): RunStats {
   const rollbackByTrigger: Record<string, number> = {};
   const rollbackByObligationType: Record<string, number> = {};
   const falsificationByAdapter: Record<string, number> = {};
+  const falsificationDispatcherErrorsByAdapter: Record<string, number> = {};
   const falsificationByObligationType: Record<string, number> = {};
   const fileTouches: Map<string, number> = new Map();
   let rollbackCount = 0;
   let falsificationCount = 0;
+  let falsificationAttempted = 0;
+  let falsificationDispatcherErrors = 0;
   let firstTs: string | null = null;
   let runFinishedTs: string | null = null;
   let mode: 'single' | 'tournament' = 'single';
@@ -144,7 +178,12 @@ function computeStats(entries: LedgerEntry[], runId: string): RunStats {
           (rollbackByObligationType[obligationType] ?? 0) + 1;
       }
     } else if (e.type === 'falsification-call') {
-      if (e.counterExamplesFound > 0) {
+      falsificationAttempted += 1;
+      if (e.resultKind === 'dispatcher-error') {
+        falsificationDispatcherErrors += 1;
+        falsificationDispatcherErrorsByAdapter[e.adapterName] =
+          (falsificationDispatcherErrorsByAdapter[e.adapterName] ?? 0) + 1;
+      } else if (e.counterExamplesFound > 0) {
         falsificationCount += 1;
         falsificationByAdapter[e.adapterName] = (falsificationByAdapter[e.adapterName] ?? 0) + 1;
         falsificationByObligationType[e.obligationType] =
@@ -175,7 +214,10 @@ function computeStats(entries: LedgerEntry[], runId: string): RunStats {
     rollbackByTrigger,
     rollbackByObligationType,
     falsificationCount,
+    falsificationAttempted,
+    falsificationDispatcherErrors,
     falsificationByAdapter,
+    falsificationDispatcherErrorsByAdapter,
     falsificationByObligationType,
     topFiles,
   };

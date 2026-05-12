@@ -206,6 +206,84 @@ describe('cli/v8 stats-handler', () => {
     assert.equal(parsed.mode, 'tournament');
   });
 
+  it('breaks out falsification attempts vs counter-examples vs dispatcher-errors', async () => {
+    const repo = tmpDir('v8-stats-falsify-');
+    const ledger = new JsonlLedger(path.join(repo, 'ledger.jsonl'), 'run-stats-falsify');
+    ledger.append<RunStartedEntry>({
+      type: 'run-started',
+      contractId: 'c1',
+      contractHash: 'h1',
+      obligationCount: 1,
+      goal: 'g',
+    });
+    ledger.append<ObligationAttemptedEntry>({
+      type: 'obligation-attempted',
+      obligationIndex: 0,
+      obligationType: 'property-must-hold',
+      personaId: 'security-reviewer',
+    });
+    // 1 successful counter-example from codex
+    ledger.append<FalsificationCallEntry>({
+      type: 'falsification-call',
+      obligationIndex: 0,
+      obligationType: 'property-must-hold',
+      adapterName: 'codex',
+      resultKind: 'counter-example-input',
+      counterExamplesFound: 1,
+      wallClockMs: 100,
+      dollarsBilled: 0,
+      dollarsApiEquivalent: 0,
+      detail: 'found',
+    });
+    // 2 dispatcher errors from codex
+    ledger.append<FalsificationCallEntry>({
+      type: 'falsification-call',
+      obligationIndex: 0,
+      obligationType: 'property-must-hold',
+      adapterName: 'codex',
+      resultKind: 'dispatcher-error',
+      counterExamplesFound: 0,
+      wallClockMs: 0,
+      dollarsBilled: 0,
+      dollarsApiEquivalent: 0,
+      detail: 'binary not found',
+    });
+    ledger.append<FalsificationCallEntry>({
+      type: 'falsification-call',
+      obligationIndex: 0,
+      obligationType: 'property-must-hold',
+      adapterName: 'codex',
+      resultKind: 'dispatcher-error',
+      counterExamplesFound: 0,
+      wallClockMs: 0,
+      dollarsBilled: 0,
+      dollarsApiEquivalent: 0,
+      detail: 'binary not found',
+    });
+    ledger.append<RunFinishedEntry>({
+      type: 'run-finished',
+      satisfied: 1,
+      failed: 0,
+      totalUsage: {
+        inputTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        outputTokens: 0,
+      },
+    });
+
+    const { stdout } = await captureStdout(() =>
+      handleStats(['run-stats-falsify', '--ledger', path.join(repo, 'ledger.jsonl')]),
+    );
+    // Plain-text output should distinguish attempted from counter-examples
+    // from dispatcher-errors and surface the warning.
+    assert.match(stdout, /attempted:\s*3/);
+    assert.match(stdout, /counter-examples:\s*1/);
+    assert.match(stdout, /dispatcher-errors:\s*2/);
+    assert.match(stdout, /WARNING:.*falsifier dispatch.*failed/);
+    assert.match(stdout, /codex:.*counter-examples=1.*errors=2/);
+  });
+
   it('reports zero rollbacks for an empty ledger', async () => {
     const repo = tmpDir('v8-stats-');
     const ledger = new JsonlLedger(path.join(repo, 'ledger.jsonl'), 'run-stats-2');
