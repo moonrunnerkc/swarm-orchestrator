@@ -191,28 +191,19 @@ function checkTypeScriptSignature(
     ) {
       recordSignature(node);
     } else if (ts.isVariableDeclaration(node) && node.name && ts.isIdentifier(node.name)) {
-      if (
-        node.name.text === name &&
-        node.initializer &&
-        (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))
-      ) {
-        recordSignature(node.initializer);
+      if (node.name.text === name) {
+        const fn = unwrapInitializerToFunctionNode(node.initializer);
+        if (fn) recordSignature(fn);
       }
     } else if (ts.isPropertyDeclaration(node) && node.name) {
-      if (
-        memberNameText(node.name) === name &&
-        node.initializer &&
-        (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))
-      ) {
-        recordSignature(node.initializer);
+      if (memberNameText(node.name) === name) {
+        const fn = unwrapInitializerToFunctionNode(node.initializer);
+        if (fn) recordSignature(fn);
       }
     } else if (ts.isPropertyAssignment(node) && node.name) {
-      if (
-        memberNameText(node.name) === name &&
-        node.initializer &&
-        (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))
-      ) {
-        recordSignature(node.initializer);
+      if (memberNameText(node.name) === name) {
+        const fn = unwrapInitializerToFunctionNode(node.initializer);
+        if (fn) recordSignature(fn);
       }
     }
     ts.forEachChild(node, visit);
@@ -227,6 +218,39 @@ function checkTypeScriptSignature(
     expectedNormalized: expectedNorm,
     observedNormalized,
   };
+}
+
+/**
+ * Resolve `const name = <initializer>` to the function node whose
+ * signature represents the named binding's call shape. Supports:
+ *   - direct arrow: `const x = (req, res) => {}` → ArrowFunction
+ *   - direct expr: `const x = function(req, res) {}` → FunctionExpression
+ *   - one-arg wrapper call: `const x = catchAsync((req, res) => {})`
+ *     → ArrowFunction inside the call's single argument
+ *
+ * The wrapper-call form is the dominant Express idiom (catchAsync,
+ * asyncHandler, expressAsync, etc.). The verifier used to ignore it
+ * because the initializer is a CallExpression, not a function literal —
+ * which meant the entire express-controller pattern flunked the
+ * function-must-have-signature check even when the signature was
+ * exactly right.
+ *
+ * Returns null when no function node is reachable in one hop.
+ */
+function unwrapInitializerToFunctionNode(
+  initializer: ts.Expression | undefined,
+): ts.SignatureDeclaration | null {
+  if (!initializer) return null;
+  if (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer)) {
+    return initializer;
+  }
+  if (ts.isCallExpression(initializer) && initializer.arguments.length === 1) {
+    const arg = initializer.arguments[0];
+    if (arg && (ts.isArrowFunction(arg) || ts.isFunctionExpression(arg))) {
+      return arg;
+    }
+  }
+  return null;
 }
 
 function memberNameText(name: ts.PropertyName): string | undefined {

@@ -167,7 +167,7 @@ export const IMPLEMENTER_PERSONA: PersonaSpec = {
     '- Do not modify test files; that is the verifier persona\'s job.',
     STRICT_UNIFIED_DIFF_RULES,
   ].join('\n'),
-  sampling: { temperature: 0.1, maxTokens: 4096 },
+  sampling: { temperature: 0.1, maxTokens: 8192 },
   tier: 'sonnet',
   handles: ['build-must-pass'] as const,
 };
@@ -193,7 +193,7 @@ export const VERIFIER_PERSONA: PersonaSpec = {
     '  swapping the framework.',
     STRICT_UNIFIED_DIFF_RULES,
   ].join('\n'),
-  sampling: { temperature: 0.1, maxTokens: 4096 },
+  sampling: { temperature: 0.1, maxTokens: 8192 },
   tier: 'haiku',
   handles: ['test-must-pass'] as const,
 };
@@ -220,7 +220,7 @@ export const SECURITY_REVIEWER_PERSONA: PersonaSpec = {
     '- Never weaken authentication or authorization paths.',
     STRICT_UNIFIED_DIFF_RULES,
   ].join('\n'),
-  sampling: { temperature: 0.1, maxTokens: 4096 },
+  sampling: { temperature: 0.1, maxTokens: 8192 },
   tier: 'sonnet',
   handles: ['property-must-hold'] as const,
 };
@@ -247,7 +247,7 @@ export const DEPENDENCY_AUDITOR_PERSONA: PersonaSpec = {
     '- Do not silence the constraint by renaming the offending file.',
     STRICT_UNIFIED_DIFF_RULES,
   ].join('\n'),
-  sampling: { temperature: 0.1, maxTokens: 4096 },
+  sampling: { temperature: 0.1, maxTokens: 8192 },
   tier: 'sonnet',
   handles: ['import-graph-must-satisfy'] as const,
 };
@@ -275,7 +275,7 @@ export const DOCUMENTATION_WRITER_PERSONA: PersonaSpec = {
     '- Never delete an existing public function to silence the obligation.',
     STRICT_UNIFIED_DIFF_RULES,
   ].join('\n'),
-  sampling: { temperature: 0.1, maxTokens: 4096 },
+  sampling: { temperature: 0.1, maxTokens: 8192 },
   tier: 'sonnet',
   handles: ['function-must-have-signature'] as const,
 };
@@ -304,7 +304,7 @@ export const MIGRATION_SPECIALIST_PERSONA: PersonaSpec = {
     '  needed to recover the regression.',
     STRICT_UNIFIED_DIFF_RULES,
   ].join('\n'),
-  sampling: { temperature: 0.1, maxTokens: 4096 },
+  sampling: { temperature: 0.1, maxTokens: 8192 },
   tier: 'sonnet',
   handles: ['performance-must-not-regress'] as const,
 };
@@ -330,7 +330,7 @@ export const TEST_AUTHOR_PERSONA: PersonaSpec = {
     '- Prefer black-box tests over implementation-coupled tests.',
     STRICT_UNIFIED_DIFF_RULES,
   ].join('\n'),
-  sampling: { temperature: 0.2, maxTokens: 4096 },
+  sampling: { temperature: 0.2, maxTokens: 8192 },
   tier: 'haiku',
   handles: ['coverage-must-exceed'] as const,
 };

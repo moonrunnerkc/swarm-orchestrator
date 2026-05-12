@@ -78,6 +78,58 @@ describe('verification/ast-signature', () => {
     assert.equal(result.matched, true, `observed=${JSON.stringify(result.observedNormalized)}`);
   });
 
+  it('matches an arrow function wrapped in a one-arg call (Express catchAsync pattern)', () => {
+    const abs = write(
+      'src/controllers/user.controller.js',
+      [
+        "const catchAsync = require('../utils/catchAsync');",
+        '',
+        'const getUser = catchAsync(async (req, res) => {',
+        '  res.send({});',
+        '});',
+        '',
+        'const changeMyPassword = catchAsync(async (req, res) => {',
+        '  // verify and update password',
+        '  res.status(204).send();',
+        '});',
+        '',
+        'module.exports = { getUser, changeMyPassword };',
+        '',
+      ].join('\n'),
+    );
+    const body = fs.readFileSync(abs, 'utf8');
+    const result = checkFunctionSignature(abs, body, 'changeMyPassword', '(req, res)');
+    assert.equal(
+      result.matched,
+      true,
+      `observed=${JSON.stringify(result.observedNormalized)}`,
+    );
+  });
+
+  it('matches an arrow function wrapped in asyncHandler (alternate Express wrapper)', () => {
+    const abs = write(
+      'src/handlers.js',
+      'const handler = asyncHandler((req, res) => res.send({}));\n',
+    );
+    const body = fs.readFileSync(abs, 'utf8');
+    const result = checkFunctionSignature(abs, body, 'handler', '(req, res)');
+    assert.equal(
+      result.matched,
+      true,
+      `observed=${JSON.stringify(result.observedNormalized)}`,
+    );
+  });
+
+  it('does not match a const whose initializer is a non-function call', () => {
+    const abs = write(
+      'src/notfn.js',
+      "const x = require('./y');\n",
+    );
+    const body = fs.readFileSync(abs, 'utf8');
+    const result = checkFunctionSignature(abs, body, 'x', '(req, res)');
+    assert.equal(result.matched, false);
+  });
+
   it('matches a method declared inside a class', () => {
     const abs = write(
       'src/server.ts',
