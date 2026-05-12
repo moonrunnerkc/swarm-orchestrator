@@ -14,11 +14,18 @@
 </div>
 
 `swarm` compiles a natural-language goal into a typed contract, dispatches it to a
-population of personas inside one cached Anthropic session, races candidate diffs per
-obligation, and commits only the diffs that pass verification. After the producer's
-verifier accepts a patch, registered falsifier adapters get a chance to break it
-before it merges. Every action lands in an append-only hash-chained ledger you can
-audit, resume, or replay.
+population of personas inside one cached Anthropic session, and commits only the
+diffs that pass verification. The default `single` mode runs one purpose-built
+persona per obligation; opt in to `--mode tournament` to race multiple candidates
+per obligation when adversarial selection is worth the extra cost. After the
+producer's verifier accepts a patch, registered falsifier adapters get a chance to
+break it before it merges. Every action lands in an append-only hash-chained ledger
+you can audit, resume, or replay.
+
+Before your first run, sanity-check the environment with `swarm v8 doctor` —
+it probes ANTHROPIC_API_KEY, falsifier CLIs (codex/copilot/claude), and the
+package manager so a misconfigured prerequisite surfaces immediately instead of
+producing a confusing run summary.
 
 It wraps an LLM; it does not replace one. The model writes the code, the orchestrator
 decides what reaches your repo.
