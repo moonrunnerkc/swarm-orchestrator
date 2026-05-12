@@ -424,7 +424,10 @@ export interface WorkspaceSnapshotEntry extends LedgerEntryHeader {
 export interface ObligationRolledBackEntry extends LedgerEntryHeader {
   type: 'obligation-rolled-back';
   obligationIndex: number;
-  trigger: 'per-obligation-falsification' | 'post-merge-regression';
+  trigger:
+    | 'per-obligation-falsification'
+    | 'per-obligation-failed-apply'
+    | 'post-merge-regression';
   success: boolean;
   restoredFiles: ReadonlyArray<{
     path: string;

@@ -657,8 +657,15 @@ export async function runPopulation(
     // ("predicate exited 1") gives no signal whether the persona emitted
     // an unapplyable diff, declared no-op, or simply produced prose.
     let applyDetail: string | null = null;
+    // appliedAnyPatches drives the "roll back on verifier-fail" path: a
+    // failed obligation that *did* mutate files leaves a partial state
+    // that cascades into later obligations' snapshots and trips the
+    // post-merge rollback's state invariants. Tracking this separately
+    // from `applyDetail` keeps the rollback logic crisp.
+    let appliedAnyPatches = false;
     if (obligation.type === 'file-must-exist') {
       applyFileEmit(repoRoot, obligation.path, responseText);
+      appliedAnyPatches = true;
     } else if (responseText.trim() === 'no-op') {
       applyDetail = 'persona declared no-op; workspace left unchanged';
     } else if (looksLikeUnifiedDiff(responseText)) {
@@ -670,7 +677,9 @@ export async function runPopulation(
         const result = applyUnifiedDiff(repoRoot, responseText, {
           protectedPaths: fileMustExistPaths,
         });
-        if (!result.applied) {
+        if (result.applied) {
+          appliedAnyPatches = true;
+        } else {
           applyDetail = `unified diff did not apply: ${result.detail}`;
         }
       } catch (cause) {
@@ -728,6 +737,38 @@ export async function runPopulation(
     // wasn't an applyable diff.
     if (!finalSatisfied && applyDetail !== null) {
       finalDetail = `${applyDetail}; verifier: ${finalDetail}`;
+    }
+    // Per-obligation cleanup: when an obligation FAILED verification but
+    // its diff actually applied (mutated files on disk), roll those
+    // mutations back immediately. Without this, partial half-correct
+    // diffs cascade into the next obligation's pre-snapshot and into
+    // post-merge's reference state — eventually tripping the post-merge
+    // rollback's strict state-equality invariant. The May 2026 eval
+    // re-run hit this as "current SHA does not match expected post-apply
+    // SHA; workspace was mutated between apply and rollback".
+    if (!finalSatisfied && appliedAnyPatches && pre && obligation.type !== 'file-must-exist') {
+      const rb = await rollbackObligation(
+        obligationIndex,
+        ledger,
+        repoRoot,
+        runId,
+        'per-obligation-failed-apply',
+      );
+      ledger.append<ObligationRolledBackEntry>({
+        type: 'obligation-rolled-back',
+        obligationIndex,
+        trigger: 'per-obligation-failed-apply',
+        success: rb.success,
+        restoredFiles: rb.restoredFiles,
+        detail: rb.success
+          ? `rolled back ${rb.restoredFiles.length} file(s) after failed apply (workspace restored to pre-attempt state)`
+          : `rollback failed: ${rb.failure?.detail ?? 'unknown'}`,
+      });
+      if (!rb.success && rb.failure?.kind !== 'no-snapshot-found') {
+        throw new Error(
+          `per-obligation-failed-apply rollback failed for obligation ${obligationIndex}: ${rb.failure?.detail ?? 'unknown'}`,
+        );
+      }
     }
     if (verifyResult.satisfied) {
       const falsified = await runFalsifiersForObligation({
