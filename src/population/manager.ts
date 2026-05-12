@@ -971,13 +971,47 @@ export async function runPopulation(
         satisfied = Math.max(0, satisfied - regressionGap);
       }
 
-      // Roll back ALL applied obligations in reverse order. Post-merge
-      // regression is an integration failure; obligation N may regress
-      // because obligation N+3 violated an invariant N depended on.
-      // Restoring to the pre-run state matches v6's abandon-the-bad-branch
-      // behavior and is correct without needing to identify the exact
-      // cause.
-      for (let i = outcomes.length - 1; i >= 0; i -= 1) {
+      // Rollback policy: only abandon the merge when a STRUCTURAL
+      // obligation regresses. Structural = test-must-pass,
+      // build-must-pass, file-must-exist (code that wouldn't compile,
+      // wouldn't run tests, or is missing required files is genuinely
+      // broken). Predicate-only regressions (property-must-hold,
+      // function-must-have-signature, coverage-must-exceed, etc.) are
+      // QUALITY checks; their failure means the run did not meet some
+      // assertion, but the code itself works. Rolling back working
+      // code for cosmetic predicate misses (e.g. `grep -q "204"` when
+      // the code uses `httpStatus.NO_CONTENT`) destroys real progress.
+      // The May 2026 eval hit exactly this: test-must-pass succeeded,
+      // 14/16 obligations passed at post-merge, 2 over-literal greps
+      // failed — and a full rollback erased the entire feature.
+      const structuralRegression = pm.outcomes.some(
+        (o) =>
+          !o.passed &&
+          (o.obligation.type === 'test-must-pass' ||
+            o.obligation.type === 'build-must-pass' ||
+            o.obligation.type === 'file-must-exist'),
+      );
+      if (!structuralRegression) {
+        // Keep the applied work; surface a clear warning in the
+        // ledger detail. Run still exits non-zero (failed > 0) so
+        // CI / scripts can detect the partial failure.
+        ledger.append<ObligationRolledBackEntry>({
+          type: 'obligation-rolled-back',
+          obligationIndex: -1,
+          trigger: 'post-merge-regression',
+          success: true,
+          restoredFiles: [],
+          detail:
+            `post-merge regression detected (${regressionGap} obligation(s)) but ` +
+            'no structural failure — keeping applied work. ' +
+            'Predicate-only regressions surface as quality warnings, not rollback triggers.',
+        });
+      } else {
+        // Roll back ALL applied obligations in reverse order. Structural
+        // regression means the integrated workspace is broken; restoring
+        // to the pre-run state matches v6's abandon-the-bad-branch
+        // behaviour.
+        for (let i = outcomes.length - 1; i >= 0; i -= 1) {
         const o = outcomes[i];
         if (!o) continue;
         if (!o.satisfied) continue;
@@ -1004,6 +1038,7 @@ export async function runPopulation(
           throw new Error(
             `post-merge rollback failed for obligation ${o.obligationIndex}: ${rb.failure?.detail ?? 'unknown'}`,
           );
+        }
         }
       }
     }
