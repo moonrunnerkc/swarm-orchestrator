@@ -961,16 +961,6 @@ export async function runPopulation(
       outcomes: slimOutcomes,
     };
     if (!pm.passed) {
-      // Promote the regression into the run's failure count. We don't
-      // mutate the per-obligation outcomes (those reflect the apply-time
-      // result) but we make sure `run.failed > 0` so the CLI exit code
-      // reflects the integration failure.
-      const regressionGap = pm.failedCount;
-      if (failed === 0 && regressionGap > 0) {
-        failed = regressionGap;
-        satisfied = Math.max(0, satisfied - regressionGap);
-      }
-
       // Rollback policy: only abandon the merge when a STRUCTURAL
       // obligation regresses. Structural = test-must-pass,
       // build-must-pass, file-must-exist (code that wouldn't compile,
@@ -991,10 +981,23 @@ export async function runPopulation(
             o.obligation.type === 'build-must-pass' ||
             o.obligation.type === 'file-must-exist'),
       );
-      if (!structuralRegression) {
-        // Keep the applied work; surface a clear warning in the
-        // ledger detail. Run still exits non-zero (failed > 0) so
-        // CI / scripts can detect the partial failure.
+      const regressionGap = pm.failedCount;
+      if (structuralRegression) {
+        // Promote the regression into the run's failure count so the
+        // CLI exit code reflects the integration failure.
+        if (failed === 0 && regressionGap > 0) {
+          failed = regressionGap;
+          satisfied = Math.max(0, satisfied - regressionGap);
+        }
+      } else {
+        // Keep the applied work AND keep the exit-code green: the
+        // code compiles, tests pass, and required files exist.
+        // Predicate-only regressions are surfaced as quality
+        // warnings in the ledger — visible to anyone who reads
+        // `swarm v8 stats <run-id>` — but they do NOT promote into
+        // run.failed because the policy already decided the work is
+        // shippable. Exit-code semantics stay aligned with the
+        // workspace state: kept-with-warnings → exit 0.
         ledger.append<ObligationRolledBackEntry>({
           type: 'obligation-rolled-back',
           obligationIndex: -1,
@@ -1004,9 +1007,10 @@ export async function runPopulation(
           detail:
             `post-merge regression detected (${regressionGap} obligation(s)) but ` +
             'no structural failure — keeping applied work. ' +
-            'Predicate-only regressions surface as quality warnings, not rollback triggers.',
+            'Predicate-only regressions are quality warnings, not rollback triggers.',
         });
-      } else {
+      }
+      if (structuralRegression) {
         // Roll back ALL applied obligations in reverse order. Structural
         // regression means the integrated workspace is broken; restoring
         // to the pre-run state matches v6's abandon-the-bad-branch
