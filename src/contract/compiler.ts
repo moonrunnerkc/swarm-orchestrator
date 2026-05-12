@@ -1,6 +1,7 @@
 import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { checkPredicateBaseline } from '../verification/predicate-runner';
 import { DEFAULT_STRATEGY_NAMES } from '../wasm/registry';
 import { canonicalSort, contractHash, contractIdFromHash } from './canonicalize';
 import { type Extractor } from './extractor/types';
@@ -12,6 +13,7 @@ import {
   type FinalContract,
   type ObligationV1,
   type RepoContext,
+  type TautologyWarning,
 } from './types';
 import { validateObligations, type ValidationError } from './validator';
 
@@ -79,20 +81,82 @@ export async function compileGoal(options: CompileOptions): Promise<DraftContrac
   if (!validation.valid) {
     throw new ContractValidationError(extracted.obligations, validation.errors);
   }
+
+  // Drop property-must-hold obligations whose predicate already exits
+  // zero against the unmodified workspace. These tautologies inflate
+  // the satisfied-count without measuring any actual change — the
+  // exact failure mode that produced "8/13 satisfied" with zero code
+  // emitted in the May 2026 eval run. We only check when repoRoot
+  // resolves to a real directory; in unit tests with synthetic
+  // contexts (/tmp/example-ts etc.) we skip the check.
+  const { obligations: filteredObligations, tautologyWarnings } = filterBaselineTautologies(
+    extracted.obligations,
+    options.repoContext.repoRoot,
+  );
+
   const autoTag = options.autoTagDeterministic ?? true;
   const tagged = autoTag
-    ? tagObligations(extracted.obligations, {
+    ? tagObligations(filteredObligations, {
         availableStrategies: options.availableStrategies ?? DEFAULT_STRATEGY_NAMES,
       })
-    : extracted.obligations.slice();
+    : filteredObligations.slice();
   const canonical = canonicalSort(tagged);
-  return {
+  const draft: DraftContract = {
     schemaVersion: CONTRACT_SCHEMA_VERSION,
     goal: options.goal,
     repoContext: options.repoContext,
     obligations: canonical,
     extractor: extracted.provenance,
   };
+  if (tautologyWarnings.length > 0) {
+    draft.tautologyWarnings = tautologyWarnings;
+  }
+  return draft;
+}
+
+/**
+ * Walk the extractor's property-must-hold obligations, running each
+ * predicate against the unmodified workspace. Predicates that exit
+ * zero (the property already holds) are tautological — they require
+ * no work from any persona — and are dropped from the contract.
+ * Other obligation types pass through unchanged.
+ *
+ * Returns the filtered list and a parallel list of warnings explaining
+ * which obligations were dropped and why. Skips the baseline check
+ * entirely when `repoRoot` does not resolve to a readable directory
+ * (unit tests use synthetic repoContexts like `/tmp/example-ts`).
+ */
+function filterBaselineTautologies(
+  obligations: readonly ObligationV1[],
+  repoRoot: string,
+): { obligations: ObligationV1[]; tautologyWarnings: TautologyWarning[] } {
+  // Bail out early if the workspace isn't real on disk. The validator
+  // already ensured the obligations are syntactically valid; this step
+  // is a semantic check that needs a real filesystem.
+  if (!fs.existsSync(repoRoot) || !fs.statSync(repoRoot).isDirectory()) {
+    return { obligations: obligations.slice(), tautologyWarnings: [] };
+  }
+  const kept: ObligationV1[] = [];
+  const warnings: TautologyWarning[] = [];
+  for (const obligation of obligations) {
+    if (obligation.type !== 'property-must-hold') {
+      kept.push(obligation);
+      continue;
+    }
+    const baseline = checkPredicateBaseline(obligation.predicate, repoRoot);
+    if (baseline.ok) {
+      warnings.push({
+        obligation,
+        reason:
+          `predicate already exits zero on the unmodified workspace ` +
+          `("${obligation.target}"); the obligation cannot measure any change ` +
+          `and would be trivially satisfied by every persona response`,
+      });
+      continue;
+    }
+    kept.push(obligation);
+  }
+  return { obligations: kept, tautologyWarnings: warnings };
 }
 
 /**

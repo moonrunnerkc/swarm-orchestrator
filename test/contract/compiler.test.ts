@@ -424,6 +424,97 @@ describe('contract/compiler — discoverRepoContext', () => {
   });
 });
 
+describe('contract/compiler — baseline tautology filter', () => {
+  function makeRepo(prefix: string): string {
+    return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  }
+
+  it('drops a property-must-hold whose predicate already exits zero on the baseline', async () => {
+    const dir = makeRepo('compiler-tautology-drop-');
+    try {
+      fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'jest' } }), 'utf8');
+      fs.writeFileSync(path.join(dir, 'README.md'), '# repo with feature-flag-enabled stuff', 'utf8');
+      const tautological: ObligationV1 = {
+        type: 'property-must-hold',
+        predicate: "grep -q 'feature-flag-enabled' README.md",
+        target: 'flag mentioned',
+      };
+      const meaningful: ObligationV1 = {
+        type: 'property-must-hold',
+        predicate: "grep -q 'brand-new-feature-token' README.md",
+        target: 'new feature anchored',
+      };
+      const testPass: ObligationV1 = {
+        type: 'test-must-pass',
+        command: 'jest',
+      };
+      const ext = StubExtractor.fromObligations([tautological, meaningful, testPass]);
+      const draft = await compileGoal({
+        goal: 'demo',
+        repoContext: {
+          repoRoot: dir,
+          buildCommand: null,
+          testCommand: 'jest',
+          language: 'typescript',
+        },
+        extractor: ext,
+        autoTagDeterministic: false,
+      });
+      // tautological obligation is dropped; meaningful + test pass through.
+      assert.equal(draft.obligations.length, 2);
+      assert.ok(draft.tautologyWarnings);
+      assert.equal(draft.tautologyWarnings!.length, 1);
+      assert.equal((draft.tautologyWarnings![0]!.obligation as { target: string }).target, 'flag mentioned');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps all obligations when no predicate is tautological', async () => {
+    const dir = makeRepo('compiler-tautology-keep-');
+    try {
+      fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'jest' } }), 'utf8');
+      fs.writeFileSync(path.join(dir, 'README.md'), '# nothing relevant here', 'utf8');
+      const obligation: ObligationV1 = {
+        type: 'property-must-hold',
+        predicate: "grep -q 'NEW-TOKEN-ONLY-IN-PATCH' README.md",
+        target: 'new token anchored',
+      };
+      const testPass: ObligationV1 = { type: 'test-must-pass', command: 'jest' };
+      const ext = StubExtractor.fromObligations([obligation, testPass]);
+      const draft = await compileGoal({
+        goal: 'demo',
+        repoContext: { repoRoot: dir, buildCommand: null, testCommand: 'jest', language: 'typescript' },
+        extractor: ext,
+        autoTagDeterministic: false,
+      });
+      assert.equal(draft.obligations.length, 2);
+      assert.equal((draft.tautologyWarnings ?? []).length, 0);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('skips the baseline check when repoRoot does not exist on disk (unit-test contexts)', async () => {
+    const obligation: ObligationV1 = {
+      type: 'property-must-hold',
+      predicate: "grep -q 'anything' nonexistent.txt",
+      target: 'cannot be checked',
+    };
+    const testPass: ObligationV1 = { type: 'test-must-pass', command: 'jest' };
+    const ext = StubExtractor.fromObligations([obligation, testPass]);
+    const draft = await compileGoal({
+      goal: 'demo',
+      repoContext: { repoRoot: '/tmp/this-path-does-not-exist-xyz123', buildCommand: null, testCommand: 'jest', language: 'typescript' },
+      extractor: ext,
+      autoTagDeterministic: false,
+    });
+    // Without a real workspace we cannot check the predicate; the
+    // obligation passes through unchanged so unit tests work.
+    assert.equal(draft.obligations.length, 2);
+  });
+});
+
 describe('contract/compiler — detectPackageManager', () => {
   function makeRepo(prefix: string): string {
     return fs.mkdtempSync(path.join(os.tmpdir(), prefix));

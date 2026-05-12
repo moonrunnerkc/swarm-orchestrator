@@ -231,12 +231,33 @@ export interface ExtractorProvenance {
  * In-memory representation of a contract before approval and persistence.
  * Obligations are already validated and canonically ordered.
  */
+/**
+ * A predicate the extractor proposed that already holds against the
+ * unmodified baseline workspace — i.e. it's a tautology that any
+ * subsequent persona work would trivially satisfy. The compiler drops
+ * these from the obligation list and surfaces them here so callers can
+ * audit and re-engage the user.
+ */
+export interface TautologyWarning {
+  /** The dropped obligation, exactly as the extractor emitted it. */
+  obligation: ObligationV1;
+  /** Human-readable explanation of why the obligation was dropped. */
+  reason: string;
+}
+
 export interface DraftContract {
   schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
   goal: string;
   repoContext: RepoContext;
   obligations: ObligationV1[];
   extractor: ExtractorProvenance;
+  /**
+   * Obligations the compiler refused to ship because their predicates
+   * already hold against the unmodified workspace. Empty when nothing
+   * was dropped. Not part of the contract hash — these obligations
+   * never enter the run pipeline.
+   */
+  tautologyWarnings?: readonly TautologyWarning[];
 }
 
 /**

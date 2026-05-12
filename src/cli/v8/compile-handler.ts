@@ -91,6 +91,21 @@ export async function handleCompile(
     return 1;
   }
 
+  // Surface dropped tautological predicates so users see why the
+  // satisfied-count from a run won't include them. Without this trace,
+  // a user re-running the same goal sees a different contract size
+  // and has no explanation.
+  if (draft.tautologyWarnings && draft.tautologyWarnings.length > 0) {
+    logger.warn(
+      `dropped ${draft.tautologyWarnings.length} tautological obligation(s) ` +
+        `(predicate already holds against the baseline workspace):`,
+    );
+    for (const w of draft.tautologyWarnings) {
+      const target = w.obligation.type === 'property-must-hold' ? w.obligation.target : '';
+      logger.warn(`  - [${w.obligation.type}] ${target}: ${w.reason}`);
+    }
+  }
+
   let approved;
   try {
     approved = await runApproval(draft, {
