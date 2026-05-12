@@ -812,10 +812,11 @@ export async function runPopulation(
 
       if (finalSatisfied) break;
       if (attempt >= RETRY_MAX) break;
-      // Streaming responses do not retry — the streaming verifier
-      // already provides a corrective abort signal.
-      if (usingStreaming) break;
-      // Build retry feedback from the structured failure detail.
+      // Build retry feedback from the structured failure detail. The
+      // streaming verifier handles mid-stream abort for forbidden
+      // imports; post-apply/post-verify failures are still useful
+      // signal regardless of streaming. We always retry on the
+      // non-streaming complete() path for the second attempt onward.
       retryFeedback =
         'Your previous attempt did not satisfy the obligation. Specifics:\n' +
         finalDetail +
