@@ -26,6 +26,17 @@ const STRICT_UNIFIED_DIFF_RULES = [
   '- Repo-relative paths only; no absolute paths, no leading `./`.',
   '- If the obligation already holds and no change is needed, reply with',
   '  the literal three characters: no-op',
+  '',
+  'CRITICAL — diff context anchoring:',
+  'When the prompt includes a "Current contents of <path>:" block, every',
+  '` ` (context) line and every `-` (delete) line in your hunks for that',
+  'path MUST appear VERBATIM in the file shown — same characters, same',
+  'indentation, same surrounding lines. Do not paraphrase. Do not invent',
+  'helper lines that "should" be there. Do not assume what the file looks',
+  'like beyond what is shown. The parser does byte-for-byte context',
+  'matching; a single wrong character rejects the entire diff. If you',
+  'cannot find a clean anchor in the shown file, narrow your hunk to a',
+  'smaller, more reliably-anchored slice.',
 ].join('\n');
 
 /**
