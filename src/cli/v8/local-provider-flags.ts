@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import type { ResolvedLocalProviderConfig } from '../../config/provider-config';
 import { LOCAL_BACKEND_NAMES, type LocalBackendName } from '../../inference/local/factory';
 
 /**
@@ -42,6 +43,70 @@ export interface LocalProviderFlagValues {
   maxConcurrency: number | null;
   apiKey: string | null;
   seed: number | null;
+}
+
+/**
+ * Apply the precedence chain `flag > env > config > default` to the
+ * local-provider fields. Returns a new `LocalProviderFlagValues` with
+ * each field set to the highest-priority non-null value among the three
+ * sources (or null if every source is unset, in which case factory
+ * defaults take over).
+ *
+ * The env-var names match the existing factory's lookup keys so the
+ * factory's own fallback path stays consistent.
+ */
+export function resolveEffectiveLocalProvider(
+  fromFlag: LocalProviderFlagValues,
+  fromConfig: ResolvedLocalProviderConfig,
+  env: NodeJS.ProcessEnv = process.env,
+): LocalProviderFlagValues {
+  return {
+    backend:
+      fromFlag.backend ??
+      (env['LOCAL_LLM_BACKEND'] && LOCAL_BACKEND_NAMES.includes(env['LOCAL_LLM_BACKEND'] as LocalBackendName)
+        ? (env['LOCAL_LLM_BACKEND'] as LocalBackendName)
+        : null) ??
+      fromConfig.backend ??
+      null,
+    baseUrl: fromFlag.baseUrl ?? env['LOCAL_LLM_BASE_URL'] ?? fromConfig.baseUrl ?? null,
+    modelExtractor:
+      fromFlag.modelExtractor ??
+      env['LOCAL_LLM_MODEL_EXTRACTOR'] ??
+      fromConfig.modelExtractor ??
+      null,
+    modelSession:
+      fromFlag.modelSession ??
+      env['LOCAL_LLM_MODEL_SESSION'] ??
+      fromConfig.modelSession ??
+      null,
+    personaModelMap: fromFlag.personaModelMap ?? fromConfig.personaModelMap ?? null,
+    grammar:
+      fromFlag.grammar ??
+      (env['LOCAL_LLM_GRAMMAR'] && LOCAL_GRAMMAR_MODES.includes(env['LOCAL_LLM_GRAMMAR'] as LocalGrammarMode)
+        ? (env['LOCAL_LLM_GRAMMAR'] as LocalGrammarMode)
+        : null) ??
+      fromConfig.grammar ??
+      null,
+    requestTimeoutMs:
+      fromFlag.requestTimeoutMs ??
+      readNumberEnv(env['LOCAL_LLM_REQUEST_TIMEOUT_MS']) ??
+      fromConfig.requestTimeoutMs ??
+      null,
+    maxConcurrency:
+      fromFlag.maxConcurrency ??
+      readNumberEnv(env['LOCAL_LLM_MAX_CONCURRENCY']) ??
+      fromConfig.maxConcurrency ??
+      null,
+    apiKey: fromFlag.apiKey ?? env['LOCAL_LLM_API_KEY'] ?? null,
+    seed:
+      fromFlag.seed ?? readNumberEnv(env['LOCAL_LLM_SEED']) ?? fromConfig.seed ?? null,
+  };
+}
+
+function readNumberEnv(raw: string | undefined): number | null {
+  if (raw === undefined) return null;
+  const n = Number.parseFloat(raw);
+  return Number.isFinite(n) ? n : null;
 }
 
 /** Construct a struct with every field unset. */

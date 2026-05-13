@@ -20,8 +20,10 @@ import {
   applyLocalProviderFlag,
   emptyLocalProviderFlagValues,
   isLocalProviderFlag,
+  resolveEffectiveLocalProvider,
   type LocalProviderFlagValues,
 } from './local-provider-flags';
+import { loadProviderConfig } from '../../config/provider-config';
 
 const logger = getLogger('cli:v8:compile');
 
@@ -50,6 +52,14 @@ export interface CompileFlags {
   recipe: string | null;
   /** Local-provider flag values; consumed only when `extractor === 'local'`. */
   local: LocalProviderFlagValues;
+  /**
+   * Tracks which fields were set by an explicit `--<flag>` token versus
+   * defaulted from an env var or the resolver's hardcoded fallback.
+   * Used by the post-parse precedence chain to decide whether a
+   * `.swarm/config.yaml provider:` value should override the parsed
+   * default.
+   */
+  flagsSource: { extractorFromFlag: boolean };
 }
 
 /** Test seam: lets tests inject a custom extractor without touching env. */
@@ -80,6 +90,26 @@ export async function handleCompile(
   }
 
   const repoContext = discoverRepoContext(path.resolve(flags.repoRoot));
+
+  // Precedence chain: flag > env > config > default. parseCompileFlags
+  // already applied flag-or-env precedence at parse time (the parser
+  // tracks whether --extractor was supplied via flagsSource). Fold the
+  // config-file values in below env for any field neither the flag nor
+  // the env set explicitly.
+  try {
+    const providerConfig = loadProviderConfig(path.resolve(flags.repoRoot));
+    flags.local = resolveEffectiveLocalProvider(flags.local, providerConfig.local);
+    if (
+      providerConfig.extractor &&
+      !flags.flagsSource.extractorFromFlag &&
+      process.env['EXTRACTOR_PROVIDER'] === undefined
+    ) {
+      flags.extractor = providerConfig.extractor;
+    }
+  } catch (err) {
+    logger.error((err as Error).message);
+    return 1;
+  }
 
   let extractor: Extractor;
   try {
@@ -189,6 +219,7 @@ export function parseCompileFlags(argv: string[]): CompileFlags {
     apiKey: null,
     recipe: null,
     local: emptyLocalProviderFlagValues(),
+    flagsSource: { extractorFromFlag: false },
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -207,6 +238,7 @@ export function parseCompileFlags(argv: string[]): CompileFlags {
       const v = requireValue(argv, i + 1, '--extractor');
       i += 1;
       flags.extractor = resolveExtractorProvider(v);
+      flags.flagsSource.extractorFromFlag = true;
     } else if (arg === '--contract-file') {
       flags.contractFile = requireValue(argv, ++i, '--contract-file');
     } else if (arg === '--contract-module') {

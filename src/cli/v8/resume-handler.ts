@@ -27,8 +27,10 @@ import {
   applyLocalProviderFlag,
   emptyLocalProviderFlagValues,
   isLocalProviderFlag,
+  resolveEffectiveLocalProvider,
   type LocalProviderFlagValues,
 } from './local-provider-flags';
+import { loadProviderConfig } from '../../config/provider-config';
 
 const logger = getLogger('cli:v8:resume');
 
@@ -71,6 +73,8 @@ export interface ResumeFlags {
   costCapUsd: number | null;
   /** Local-provider flag values; consumed only when `sessionKind === 'local'`. */
   local: LocalProviderFlagValues;
+  /** Tracks which provider fields were set by an explicit `--<flag>` token. */
+  flagsSource: { sessionFromFlag: boolean };
 }
 
 /** Test seam: lets tests inject a custom session, registry, or WASM runtime. */
@@ -189,6 +193,26 @@ export async function handleResume(
   });
 
   const projectContext = renderProjectContext(contract.manifest.goal, repoRoot);
+
+  // Precedence chain: flag > env > config > default. Fold config
+  // fallback into any local-provider field still null after the flag
+  // and env parsed at parseResumeFlags time; do the same for the
+  // session provider when neither the flag nor the env explicitly set
+  // it.
+  try {
+    const providerConfig = loadProviderConfig(repoRoot);
+    flags.local = resolveEffectiveLocalProvider(flags.local, providerConfig.local);
+    if (
+      providerConfig.session &&
+      !flags.flagsSource.sessionFromFlag &&
+      process.env['SESSION_PROVIDER'] === undefined
+    ) {
+      flags.sessionKind = providerConfig.session;
+    }
+  } catch (err) {
+    logger.error((err as Error).message);
+    return 1;
+  }
 
   let session: Session;
   try {
@@ -403,6 +427,7 @@ export function parseResumeFlags(argv: string[]): ResumeFlags {
     forbiddenImports: [],
     costCapUsd: null,
     local: emptyLocalProviderFlagValues(),
+    flagsSource: { sessionFromFlag: false },
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -418,6 +443,7 @@ export function parseResumeFlags(argv: string[]): ResumeFlags {
     } else if (arg === '--session') {
       const v = requireValue(argv, ++i, '--session');
       flags.sessionKind = resolveSessionProvider(v);
+      flags.flagsSource.sessionFromFlag = true;
     } else if (arg === '--external-patches-dir') {
       flags.externalPatchesDir = requireValue(argv, ++i, '--external-patches-dir');
     } else if (arg === '--external-patches-queue') {
