@@ -84,6 +84,65 @@ RUN_ID = os.environ.get(
     datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"),
 )
 
+# ---------------------------------------------------------------------------
+# Provider flags forwarded to every orchestrator subprocess.
+#
+# Precedence (same as the orchestrator's own resolver): CLI flag wins, env
+# var fills in, factory defaults take over otherwise. Values are recorded in
+# the module-level dict `_PROVIDER_FLAGS` so `run_orchestrator()` can build
+# the per-invocation `cmd` list without re-parsing argv each call.
+#
+# Compare-providers mode mutates this dict before each provider sweep, so
+# the same evaluate_tasks() loop emits one summary per provider; the
+# orchestrator never sees stale values across sweeps because every cmd is
+# rebuilt from the live dict.
+# ---------------------------------------------------------------------------
+_LOCAL_PROVIDER_FLAGS: tuple[str, ...] = (
+    "--local-backend",
+    "--local-base-url",
+    "--local-model-extractor",
+    "--local-model-session",
+    "--local-persona-model-map",
+    "--local-grammar",
+    "--local-request-timeout-ms",
+    "--local-max-concurrency",
+    "--local-api-key",
+    "--local-seed",
+)
+
+_LOCAL_ENV_FOR_FLAG: dict[str, str] = {
+    "--local-backend": "LOCAL_LLM_BACKEND",
+    "--local-base-url": "LOCAL_LLM_BASE_URL",
+    "--local-model-extractor": "LOCAL_LLM_MODEL_EXTRACTOR",
+    "--local-model-session": "LOCAL_LLM_MODEL_SESSION",
+    "--local-grammar": "LOCAL_LLM_GRAMMAR",
+    "--local-request-timeout-ms": "LOCAL_LLM_REQUEST_TIMEOUT_MS",
+    "--local-max-concurrency": "LOCAL_LLM_MAX_CONCURRENCY",
+    "--local-api-key": "LOCAL_LLM_API_KEY",
+    "--local-seed": "LOCAL_LLM_SEED",
+}
+
+_PROVIDER_FLAGS: dict[str, str | None] = {
+    "--extractor": os.environ.get("EXTRACTOR_PROVIDER"),
+    "--session": os.environ.get("SESSION_PROVIDER"),
+    **{flag: os.environ.get(env) for flag, env in _LOCAL_ENV_FOR_FLAG.items()},
+}
+
+
+def build_provider_flags() -> list[str]:
+    """Materialize the orchestrator-bound CLI flag list from `_PROVIDER_FLAGS`.
+
+    Returns a list shaped `["--extractor", "deterministic", "--session", ...]`
+    suitable for splicing into a `subprocess` `cmd` list. Skips unset entries
+    so the default behavior (no flags supplied) is unchanged.
+    """
+    out: list[str] = []
+    for flag, value in _PROVIDER_FLAGS.items():
+        if value is None or value == "":
+            continue
+        out.extend([flag, value])
+    return out
+
 
 # ---------------------------------------------------------------------------
 # Diff capture (bytes-safe, with size guardrails)
@@ -637,6 +696,11 @@ def run_orchestrator(repo_dir: Path, problem_statement: str, task: dict | None =
             "--task-type", "swebench",
             "--yes",
         ]
+        # Forward provider selection and local-* flags so the user can choose
+        # which extractor/session implementation runs inside this sweep
+        # without relying on env-var inheritance alone. Per-invocation
+        # overrides via `_PROVIDER_FLAGS` are picked up here.
+        cmd.extend(build_provider_flags())
         # Pass the FAIL_TO_PASS test command so the battery Layer 1 gate has a
         # concrete differential command instead of invoking the AI synthesizer.
         if task is not None:
@@ -1564,6 +1628,124 @@ def evaluate_tasks(*, keep_workdir: bool = False) -> dict:
     return summary
 
 
+def _add_provider_flag_args(parser: argparse.ArgumentParser) -> None:
+    """Attach `--extractor`, `--session`, and the ten `--local-*` flags to
+    `parser`. Identical surface to the orchestrator's own CLI; values flow
+    through to every orchestrator subprocess via `build_provider_flags()`.
+    """
+    parser.add_argument(
+        "--extractor",
+        default=None,
+        choices=("deterministic", "local", "anthropic"),
+        help="provider for the contract extractor (default: from env or deterministic)",
+    )
+    parser.add_argument(
+        "--session",
+        default=None,
+        choices=("deterministic", "local", "anthropic"),
+        help="provider for the patch-generation session (default: from env or deterministic)",
+    )
+    for flag in _LOCAL_PROVIDER_FLAGS:
+        parser.add_argument(flag, default=None, help=f"forwarded to the orchestrator as {flag}")
+
+
+def _apply_provider_args(args: argparse.Namespace) -> None:
+    """Fold parsed argparse values into the module-level `_PROVIDER_FLAGS`.
+
+    CLI values override the env-var defaults the dict was initialized with.
+    Unset CLI values leave the env-derived defaults in place.
+    """
+    if args.extractor is not None:
+        _PROVIDER_FLAGS["--extractor"] = args.extractor
+    if args.session is not None:
+        _PROVIDER_FLAGS["--session"] = args.session
+    for flag in _LOCAL_PROVIDER_FLAGS:
+        # argparse maps `--foo-bar` to attribute `foo_bar`.
+        attr = flag.lstrip("-").replace("-", "_")
+        val = getattr(args, attr, None)
+        if val is not None:
+            _PROVIDER_FLAGS[flag] = val
+
+
+def evaluate_tasks_compare_providers(*, keep_workdir: bool = False) -> dict:
+    """Run the full sweep once per provider and emit a side-by-side summary.
+
+    Mirrors `benchmarks/provider-bench/`'s comparison mode: deterministic,
+    local, and anthropic each get their own sweep, and a comparison JSON is
+    written next to the per-sweep summaries.
+
+    Each provider's per-instance result list is preserved so callers can
+    diff outcomes per task. Cost is zero for `deterministic` and `local`
+    (no remote API calls) and the orchestrator-reported elapsed time for
+    `anthropic`.
+    """
+    providers = ("deterministic", "local", "anthropic")
+    per_provider: dict[str, dict] = {}
+    for provider in providers:
+        _PROVIDER_FLAGS["--extractor"] = provider
+        _PROVIDER_FLAGS["--session"] = provider
+        print(f"\n{'#' * 60}\n# Compare-providers: {provider}\n{'#' * 60}\n")
+        per_provider[provider] = evaluate_tasks(keep_workdir=keep_workdir)
+
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    summary_path = RESULTS_DIR / f"{RUN_ID}-compare-providers.json"
+    comparison = {
+        "timestamp": datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"),
+        "dataset": DATASET_ID,
+        "run_id": RUN_ID,
+        "providers": providers,
+        "summary": {
+            p: {
+                "resolved": per_provider[p].get("resolved", 0),
+                "total": per_provider[p].get("total", 0),
+                "percent_resolved": per_provider[p].get("percent_resolved", 0.0),
+                "mean_latency_seconds": per_provider[p].get("mean_latency_seconds", 0.0),
+                "aborted": per_provider[p].get("aborted", False),
+            }
+            for p in providers
+        },
+        "per_instance": _per_instance_comparison(per_provider),
+    }
+    with open(summary_path, "w") as f:
+        json.dump(comparison, f, indent=2)
+    print(f"\nCompare-providers summary: {summary_path}")
+    return comparison
+
+
+def _per_instance_comparison(per_provider: dict[str, dict]) -> list[dict]:
+    """Pivot per-provider results into a per-instance row list.
+
+    Each row carries the instance_id and one column per provider:
+    `resolved`, `elapsed_seconds`, and `status`. Aligned by instance_id so
+    a diff tool can compare provider behavior on the same task at a glance.
+    """
+    # Index each provider's task list by instance_id for the pivot.
+    by_provider: dict[str, dict[str, dict]] = {}
+    instance_ids: list[str] = []
+    seen: set[str] = set()
+    for provider, summary in per_provider.items():
+        tasks = summary.get("tasks", []) or []
+        by_provider[provider] = {t["instance_id"]: t for t in tasks if "instance_id" in t}
+        for t in tasks:
+            iid = t.get("instance_id")
+            if iid and iid not in seen:
+                seen.add(iid)
+                instance_ids.append(iid)
+    rows: list[dict] = []
+    for iid in instance_ids:
+        row: dict = {"instance_id": iid}
+        for provider, indexed in by_provider.items():
+            t = indexed.get(iid, {})
+            run = t.get("run", {}) or {}
+            row[provider] = {
+                "resolved": bool(t.get("resolved")),
+                "elapsed_seconds": run.get("elapsed_seconds", None),
+                "status": t.get("status"),
+            }
+        rows.append(row)
+    return rows
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="SWE-bench evaluation runner for swarm-orchestrator."
@@ -1579,5 +1761,20 @@ if __name__ == "__main__":
             "Default: off (workdir is deleted on exit)."
         ),
     )
+    parser.add_argument(
+        "--compare-providers",
+        action="store_true",
+        default=False,
+        help=(
+            "Run the sweep three times (deterministic, local, anthropic) and "
+            "write a side-by-side comparison JSON. Each per-provider run uses "
+            "the same instance set; the comparison rows pivot per instance."
+        ),
+    )
+    _add_provider_flag_args(parser)
     args = parser.parse_args()
-    evaluate_tasks(keep_workdir=args.keep_workdir)
+    _apply_provider_args(args)
+    if args.compare_providers:
+        evaluate_tasks_compare_providers(keep_workdir=args.keep_workdir)
+    else:
+        evaluate_tasks(keep_workdir=args.keep_workdir)

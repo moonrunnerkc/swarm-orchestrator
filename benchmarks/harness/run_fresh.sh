@@ -38,18 +38,55 @@ BUDGET_CAP="${BUDGET_CAP:-30}"
 # Parse positional + long flags. TARGET_RUNS is still the first positional arg
 # for backwards compatibility.
 TARGET_RUNS=""
+# Provider-selection flags forwarded verbatim to the orchestrator's
+# `swarm run` subprocess. Each is initialized from its env-var counterpart
+# so callers can configure either via the flag or via the environment;
+# explicit flags override env values when both are set.
+EXTRACTOR_PROVIDER="${EXTRACTOR_PROVIDER:-}"
+SESSION_PROVIDER="${SESSION_PROVIDER:-}"
+LOCAL_LLM_BACKEND="${LOCAL_LLM_BACKEND:-}"
+LOCAL_LLM_BASE_URL="${LOCAL_LLM_BASE_URL:-}"
+LOCAL_LLM_MODEL_EXTRACTOR="${LOCAL_LLM_MODEL_EXTRACTOR:-}"
+LOCAL_LLM_MODEL_SESSION="${LOCAL_LLM_MODEL_SESSION:-}"
+LOCAL_LLM_GRAMMAR="${LOCAL_LLM_GRAMMAR:-}"
+LOCAL_LLM_API_KEY="${LOCAL_LLM_API_KEY:-}"
+LOCAL_LLM_SEED="${LOCAL_LLM_SEED:-}"
+LOCAL_LLM_REQUEST_TIMEOUT_MS="${LOCAL_LLM_REQUEST_TIMEOUT_MS:-}"
+LOCAL_LLM_MAX_CONCURRENCY="${LOCAL_LLM_MAX_CONCURRENCY:-}"
+LOCAL_PERSONA_MODEL_MAP="${LOCAL_PERSONA_MODEL_MAP:-}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --task-source) TASK_SOURCE="$2"; shift 2 ;;
     --producer)    PRODUCER="$2"; shift 2 ;;
     --tool)        TOOL="$2"; shift 2 ;;
     --budget-cap)  BUDGET_CAP="$2"; shift 2 ;;
+    --extractor)                  EXTRACTOR_PROVIDER="$2"; shift 2 ;;
+    --session)                    SESSION_PROVIDER="$2"; shift 2 ;;
+    --local-backend)              LOCAL_LLM_BACKEND="$2"; shift 2 ;;
+    --local-base-url)             LOCAL_LLM_BASE_URL="$2"; shift 2 ;;
+    --local-model-extractor)      LOCAL_LLM_MODEL_EXTRACTOR="$2"; shift 2 ;;
+    --local-model-session)        LOCAL_LLM_MODEL_SESSION="$2"; shift 2 ;;
+    --local-grammar)              LOCAL_LLM_GRAMMAR="$2"; shift 2 ;;
+    --local-api-key)              LOCAL_LLM_API_KEY="$2"; shift 2 ;;
+    --local-seed)                 LOCAL_LLM_SEED="$2"; shift 2 ;;
+    --local-request-timeout-ms)   LOCAL_LLM_REQUEST_TIMEOUT_MS="$2"; shift 2 ;;
+    --local-max-concurrency)      LOCAL_LLM_MAX_CONCURRENCY="$2"; shift 2 ;;
+    --local-persona-model-map)    LOCAL_PERSONA_MODEL_MAP="$2"; shift 2 ;;
     --help|-h)
-      cat <<HELP
+      cat <<'HELP'
 Usage: run_fresh.sh [N] [--task-source RUBRIC|CONSTRAINT_BINDING]
                     [--producer ORCHESTRATOR|SINGLE_SHOT|LADDER|ALL]
                     [--tool claude-code|copilot|codex]
                     [--budget-cap N]
+                    [--extractor deterministic|local|anthropic]
+                    [--session   deterministic|local|anthropic]
+                    [--local-backend ... --local-base-url ... etc.]
+
+Provider flags forward to the ORCHESTRATOR producer's swarm run
+subprocess. Each flag has a matching env-var (EXTRACTOR_PROVIDER /
+SESSION_PROVIDER / LOCAL_LLM_*) -- explicit flags override the env
+when both are set. SINGLE_SHOT and LADDER producers do not invoke the
+orchestrator and ignore these flags.
 HELP
       exit 0 ;;
     --*) echo "ERROR: unknown flag: $1" >&2; exit 2 ;;
@@ -57,6 +94,23 @@ HELP
   esac
 done
 TARGET_RUNS="${TARGET_RUNS:-8}"
+
+# Build the orchestrator-bound provider flag list once. Each set value
+# becomes a `--flag value` pair; unset values are skipped so the default
+# (no provider flags) is unchanged.
+PROVIDER_FLAGS=()
+[ -n "$EXTRACTOR_PROVIDER" ]            && PROVIDER_FLAGS+=("--extractor" "$EXTRACTOR_PROVIDER")
+[ -n "$SESSION_PROVIDER" ]              && PROVIDER_FLAGS+=("--session" "$SESSION_PROVIDER")
+[ -n "$LOCAL_LLM_BACKEND" ]             && PROVIDER_FLAGS+=("--local-backend" "$LOCAL_LLM_BACKEND")
+[ -n "$LOCAL_LLM_BASE_URL" ]            && PROVIDER_FLAGS+=("--local-base-url" "$LOCAL_LLM_BASE_URL")
+[ -n "$LOCAL_LLM_MODEL_EXTRACTOR" ]     && PROVIDER_FLAGS+=("--local-model-extractor" "$LOCAL_LLM_MODEL_EXTRACTOR")
+[ -n "$LOCAL_LLM_MODEL_SESSION" ]       && PROVIDER_FLAGS+=("--local-model-session" "$LOCAL_LLM_MODEL_SESSION")
+[ -n "$LOCAL_LLM_GRAMMAR" ]             && PROVIDER_FLAGS+=("--local-grammar" "$LOCAL_LLM_GRAMMAR")
+[ -n "$LOCAL_LLM_API_KEY" ]             && PROVIDER_FLAGS+=("--local-api-key" "$LOCAL_LLM_API_KEY")
+[ -n "$LOCAL_LLM_SEED" ]                && PROVIDER_FLAGS+=("--local-seed" "$LOCAL_LLM_SEED")
+[ -n "$LOCAL_LLM_REQUEST_TIMEOUT_MS" ]  && PROVIDER_FLAGS+=("--local-request-timeout-ms" "$LOCAL_LLM_REQUEST_TIMEOUT_MS")
+[ -n "$LOCAL_LLM_MAX_CONCURRENCY" ]     && PROVIDER_FLAGS+=("--local-max-concurrency" "$LOCAL_LLM_MAX_CONCURRENCY")
+[ -n "$LOCAL_PERSONA_MODEL_MAP" ]       && PROVIDER_FLAGS+=("--local-persona-model-map" "$LOCAL_PERSONA_MODEL_MAP")
 
 if [ "$TASK_SOURCE" = "CONSTRAINT_BINDING" ]; then
   CB_TASKS_DIR="$REPO_ROOT/benchmarks/constraint-binding/tasks"
@@ -179,11 +233,16 @@ run_orchestrator() {
     return 1
   fi
 
-  # Run swarm inside the workspace directory
+  # Run swarm inside the workspace directory. Forward provider-selection
+  # flags so the producer's run honors --extractor/--session/--local-*
+  # without depending on env-var inheritance into the subshell alone.
+  # The `${PROVIDER_FLAGS[@]+...}` idiom safely expands to nothing under
+  # bash 3.2 + `set -u` when the array is empty (default case).
   (cd "$workspace" && node "$SWARM_BIN" run \
     --goal "$task_prompt" \
     --tool "$TOOL" \
     --yes \
+    ${PROVIDER_FLAGS[@]+"${PROVIDER_FLAGS[@]}"} \
     > "$run_dir/orchestrator_stdout.txt" 2>&1) || true
 
   # Copy metadata artifacts from the inner swarm run directory

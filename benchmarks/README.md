@@ -71,6 +71,32 @@ cd benchmarks/swe-bench && docker compose up --build
 
 ---
 
+## Provider flags
+
+Every harness that invokes `swarm run` accepts and forwards the same
+provider-selection surface as the CLI:
+
+- `--extractor deterministic|local|anthropic` (or `EXTRACTOR_PROVIDER`)
+- `--session deterministic|local|anthropic` (or `SESSION_PROVIDER`)
+- the ten `--local-*` flags (or the matching `LOCAL_LLM_*` env vars)
+
+Coverage per harness:
+
+| Harness | Flags accepted | Compare-providers mode | Notes |
+|---|---|---|---|
+| `swe-bench/evaluation-scripts/run_swebench.py` | yes | `--compare-providers` runs all three providers and writes `<run-id>-compare-providers.json` next to the per-sweep summaries | env-var fallbacks identical to the orchestrator's |
+| `harness/run_fresh.sh` (`ORCHESTRATOR` producer) | yes (forwarded to `swarm run`) | no | `SINGLE_SHOT` and `LADDER` producers do not invoke the orchestrator and ignore these flags |
+| `harness/run-n.sh` | n/a — invokes `swarm demo`, which has a fixed scenario pipeline rather than the v8 contract pipeline | n/a | the demo subcommand does not accept extractor/session flags |
+| `provider-bench/provider-bench.ts` | yes (canonical TypeScript comparison tool) | `--compare-providers` | see [provider-bench/README.md](provider-bench/README.md) for examples |
+
+When neither the flag nor the env-var is set, every harness behaves
+exactly as before — the default `deterministic` extractor and session
+preserve historical behavior. Per-invocation overrides via the CLI flag
+work because each harness rebuilds the orchestrator command from the
+live values for every subprocess call.
+
+---
+
 ## Strategy Overview
 
 | # | Strategy | Location | Status |
