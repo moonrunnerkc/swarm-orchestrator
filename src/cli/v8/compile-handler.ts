@@ -16,6 +16,12 @@ import {
   resolveExtractorProvider,
 } from '../../contract/extractor/factory';
 import { loadRecipe, listRecipes } from '../../recipe-loader';
+import {
+  applyLocalProviderFlag,
+  emptyLocalProviderFlagValues,
+  isLocalProviderFlag,
+  type LocalProviderFlagValues,
+} from './local-provider-flags';
 
 const logger = getLogger('cli:v8:compile');
 
@@ -42,6 +48,8 @@ export interface CompileFlags {
    * templates in v8.
    */
   recipe: string | null;
+  /** Local-provider flag values; consumed only when `extractor === 'local'`. */
+  local: LocalProviderFlagValues;
 }
 
 /** Test seam: lets tests inject a custom extractor without touching env. */
@@ -140,6 +148,10 @@ export async function handleCompile(
 }
 
 function buildExtractor(flags: CompileFlags): Extractor {
+  const grammar =
+    flags.local.grammar === 'gbnf' || flags.local.grammar === 'outlines'
+      ? null
+      : flags.local.grammar;
   return buildExtractorFromFactory({
     provider: flags.extractor,
     contractFile: flags.contractFile,
@@ -147,6 +159,12 @@ function buildExtractor(flags: CompileFlags): Extractor {
     apiKey: flags.apiKey,
     model: flags.model,
     temperature: flags.temperature,
+    localBackend: flags.local.backend,
+    localBaseUrl: flags.local.baseUrl,
+    localModel: flags.local.modelExtractor,
+    localGrammar: grammar,
+    localSeed: flags.local.seed,
+    localApiKey: flags.local.apiKey,
   });
 }
 
@@ -170,11 +188,14 @@ export function parseCompileFlags(argv: string[]): CompileFlags {
     temperature: null,
     apiKey: null,
     recipe: null,
+    local: emptyLocalProviderFlagValues(),
   };
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i] ?? '';
-    if (arg === '--yes' || arg === '-y') {
+    if (isLocalProviderFlag(arg)) {
+      i = applyLocalProviderFlag(argv, i, flags.local, (raw) => path.resolve(flags.repoRoot, raw));
+    } else if (arg === '--yes' || arg === '-y') {
       flags.autoApprove = true;
     } else if (arg === '--no-editor') {
       flags.disableEditor = true;
@@ -277,6 +298,14 @@ function printCompileUsage(): void {
       '  --model <id>          model id override (anthropic provider)',
       '  --temperature <n>     sampling temperature override (default 0)',
       '  --api-key <key>       API key override (anthropic provider)',
+      '  --local-backend <name>          openai-compatible | ollama | llama-cpp | vllm',
+      '  --local-base-url <url>          local-provider base URL',
+      '  --local-model-extractor <id>    local-provider extractor model id',
+      '  --local-grammar <mode>          auto | json-schema | none (default auto)',
+      '  --local-request-timeout-ms <n>  per-call timeout (default 120000)',
+      '  --local-max-concurrency <n>     concurrent requests (default 1)',
+      '  --local-api-key <key>           local-backend API key (when required)',
+      '  --local-seed <n>                sampling seed (default 0)',
       '  --recipe <name>       compile from a built-in recipe (see `swarm recipes`)',
       '  --help, -h            show this message',
       '',

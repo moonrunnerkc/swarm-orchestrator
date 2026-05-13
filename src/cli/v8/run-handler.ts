@@ -12,6 +12,12 @@ import {
   resolveSessionProvider,
 } from '../../session/factory';
 import {
+  applyLocalProviderFlag,
+  emptyLocalProviderFlagValues,
+  isLocalProviderFlag,
+  type LocalProviderFlagValues,
+} from './local-provider-flags';
+import {
   cacheHitRate,
   effectiveInputTokens,
   type Session,
@@ -132,6 +138,8 @@ export interface RunFlags {
    * deterministic fallback.
    */
   costCapLive: boolean;
+  /** Local-provider flag values; consumed only when `sessionKind === 'local'`. */
+  local: LocalProviderFlagValues;
 }
 
 /** Test seam: lets tests inject a custom session, registry, or WASM runtime. */
@@ -399,7 +407,7 @@ export function estimateUsageCostUsd(usage: SessionUsage): number {
 }
 
 function buildSession(flags: RunFlags, projectContext: string): Session {
-  return buildSessionFromFactory({
+  const opts: Parameters<typeof buildSessionFromFactory>[0] = {
     provider: flags.sessionKind,
     projectContext,
     apiKey: flags.apiKey,
@@ -408,7 +416,15 @@ function buildSession(flags: RunFlags, projectContext: string): Session {
     externalPatchesQueue: flags.externalPatchesQueue,
     externalPatchesStdin: flags.externalPatchesStdin,
     externalPatchesTimeoutMs: flags.externalPatchesTimeoutMs,
-  });
+    localBackend: flags.local.backend,
+    localBaseUrl: flags.local.baseUrl,
+    localModel: flags.local.modelSession,
+    localGrammar: flags.local.grammar,
+    localSeed: flags.local.seed,
+    localApiKey: flags.local.apiKey,
+  };
+  if (flags.local.personaModelMap) opts.localPersonaModelMap = flags.local.personaModelMap;
+  return buildSessionFromFactory(opts);
 }
 
 /**
@@ -457,11 +473,14 @@ export function parseRunFlags(argv: string[]): RunFlags {
     falsifierScheduler: 'sequential',
     falsifierStatsPath: '',
     costCapLive: true,
+    local: emptyLocalProviderFlagValues(),
   };
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i] ?? '';
-    if (arg === '--repo-root') {
+    if (isLocalProviderFlag(arg)) {
+      i = applyLocalProviderFlag(argv, i, flags.local, (raw) => path.resolve(flags.repoRoot, raw));
+    } else if (arg === '--repo-root') {
       flags.repoRoot = requireValue(argv, ++i, '--repo-root');
     } else if (arg === '--session') {
       const v = requireValue(argv, ++i, '--session');
@@ -609,6 +628,15 @@ function printRunUsage(): void {
       '  --external-patches-timeout-ms <n>  per-call wait (default 30000 for complete)',
       '  --model <id>                 model id override (anthropic session)',
       '  --api-key <key>              API key override (anthropic session)',
+      '  --local-backend <name>       openai-compatible | ollama | llama-cpp | vllm',
+      '  --local-base-url <url>       local-provider base URL',
+      '  --local-model-session <id>   local-provider session model id',
+      '  --local-persona-model-map <p|json>  inline JSON or path to JSON/YAML persona→model map',
+      '  --local-grammar <mode>       auto | gbnf | json-schema | outlines | none (default auto)',
+      '  --local-request-timeout-ms <n>  per-call timeout for local backend (default 120000)',
+      '  --local-max-concurrency <n>  concurrent local-backend requests (default 1)',
+      '  --local-api-key <key>        local-backend API key (when required)',
+      '  --local-seed <n>             sampling seed for local provider (default 0)',
       '  --ledger <path>              ledger jsonl path (default .swarm/ledger/<run-id>.jsonl)',
       '  --max-obligations <n>        cap on obligations attempted',
       '  --command-timeout-ms <ms>    per-command timeout (default 300000)',

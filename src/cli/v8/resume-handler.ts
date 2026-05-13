@@ -23,6 +23,12 @@ import {
 import { cacheHitRate, effectiveInputTokens, type Session } from '../../session/types';
 import { createDefaultRuntime, WasmRuntime } from '../../wasm';
 import { estimateUsageCostUsd } from './run-handler';
+import {
+  applyLocalProviderFlag,
+  emptyLocalProviderFlagValues,
+  isLocalProviderFlag,
+  type LocalProviderFlagValues,
+} from './local-provider-flags';
 
 const logger = getLogger('cli:v8:resume');
 
@@ -63,6 +69,8 @@ export interface ResumeFlags {
    * (cost-cap-exceeded). Wired by the GitHub Action's `cost-cap` input.
    */
   costCapUsd: number | null;
+  /** Local-provider flag values; consumed only when `sessionKind === 'local'`. */
+  local: LocalProviderFlagValues;
 }
 
 /** Test seam: lets tests inject a custom session, registry, or WASM runtime. */
@@ -338,7 +346,7 @@ function inferContractPath(
 }
 
 function buildSession(flags: ResumeFlags, projectContext: string): Session {
-  return buildSessionFromFactory({
+  const opts: Parameters<typeof buildSessionFromFactory>[0] = {
     provider: flags.sessionKind,
     projectContext,
     apiKey: flags.apiKey,
@@ -347,7 +355,15 @@ function buildSession(flags: ResumeFlags, projectContext: string): Session {
     externalPatchesQueue: flags.externalPatchesQueue,
     externalPatchesStdin: flags.externalPatchesStdin,
     externalPatchesTimeoutMs: flags.externalPatchesTimeoutMs,
-  });
+    localBackend: flags.local.backend,
+    localBaseUrl: flags.local.baseUrl,
+    localModel: flags.local.modelSession,
+    localGrammar: flags.local.grammar,
+    localSeed: flags.local.seed,
+    localApiKey: flags.local.apiKey,
+  };
+  if (flags.local.personaModelMap) opts.localPersonaModelMap = flags.local.personaModelMap;
+  return buildSessionFromFactory(opts);
 }
 
 /** Build the static project-context prefix the session caches. */
@@ -386,11 +402,14 @@ export function parseResumeFlags(argv: string[]): ResumeFlags {
     preGeneration: true,
     forbiddenImports: [],
     costCapUsd: null,
+    local: emptyLocalProviderFlagValues(),
   };
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i] ?? '';
-    if (arg === '--ledger') {
+    if (isLocalProviderFlag(arg)) {
+      i = applyLocalProviderFlag(argv, i, flags.local, (raw) => path.resolve(flags.repoRoot, raw));
+    } else if (arg === '--ledger') {
       flags.ledgerPath = requireValue(argv, ++i, '--ledger');
     } else if (arg === '--contract') {
       flags.contractPath = requireValue(argv, ++i, '--contract');
@@ -509,6 +528,15 @@ function printResumeUsage(): void {
       '  --external-patches-stdin     read patch envelopes from stdin (deterministic session)',
       '  --model <id>                 model id override',
       '  --api-key <key>              Anthropic API key override',
+      '  --local-backend <name>       openai-compatible | ollama | llama-cpp | vllm',
+      '  --local-base-url <url>       local-provider base URL',
+      '  --local-model-session <id>   local-provider session model id',
+      '  --local-persona-model-map <p|json>  inline JSON or path to JSON/YAML persona→model map',
+      '  --local-grammar <mode>       auto | gbnf | json-schema | outlines | none (default auto)',
+      '  --local-request-timeout-ms <n>  per-call timeout (default 120000)',
+      '  --local-max-concurrency <n>  concurrent local-backend requests (default 1)',
+      '  --local-api-key <key>        local-backend API key (when required)',
+      '  --local-seed <n>             sampling seed (default 0)',
       '  --command-timeout-ms <ms>    per-command timeout (default 300000)',
       '  --result <path>              write structured run result to this JSON file',
       '  --mode single|tournament     execution mode (default single)',
