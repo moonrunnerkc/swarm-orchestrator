@@ -361,6 +361,18 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
     const shared = [
       'Code must read as human-written: no over-commented obvious logic, no generic variable names, no boilerplate filler.',
       'README must only contain sections relevant to this project. Do not add troubleshooting, FAQ, or contributing sections unless the project warrants them.',
+      // Pre-existing tooling failures (lint, format, build-script) that prevent
+      // the project\'s standard test command from exiting 0 are blockers you must
+      // fix as part of getting your change in. "Do not modify unrelated files"
+      // forbids cleanup *refactors*, not fixing a lint error that prevents the
+      // gate from running. Acceptance: the project\'s standard test command (the
+      // exact one in package.json `scripts.test` / pyproject.toml `[tool.pytest]`
+      // / equivalent) exits 0 after your change. If a pre-existing rule
+      // violation in unrelated code blocks that, the smallest fix that clears
+      // the violation is in-scope. Skip-list it only if both (a) the violation
+      // is unfixable without a refactor that genuinely is out of scope and
+      // (b) you state the constraint explicitly in your commit message.
+      'The project\'s standard test command (npm test / pytest / cargo test / equivalent) must exit 0 when your step completes. Pre-existing lint/format/build-script errors that block the test command from running are in-scope to fix — fixing them is not scope creep, leaving them broken is.',
     ];
 
     const byType: Record<GoalType, string[]> = {
@@ -429,7 +441,7 @@ OUTPUT ONLY THE JSON, NOTHING ELSE.`;
         'Apply the contract change and every caller/test update in this single step. The post-step verifier runs tests against the combined state — an impl change without its matching test updates will fail verification and force a rollback.',
         'Enumerate every call site before editing. A caller the agent missed is a broken build; use the repo\'s own tools (grep, TypeScript references) to find them all.',
         'Update tests alongside the impl so existing tests that exercised the pre-change contract become tests of the post-change contract. Adding entirely new tests is fine; leaving stale tests in place is not.',
-        'Do not introduce unrelated refactors while touching each file. The only changes that belong in this step are the ones the contract change requires.',
+        'Do not introduce unrelated *refactors* while touching each file. Cleanup, style rewrites, and improvements to code you happen to be near are out of scope. This does NOT forbid fixing pre-existing lint or build-script errors that block the project\'s standard test command — those are blockers, not refactors, and fixing them is required (see the shared "test command must exit 0" criterion above).',
       ],
     };
 
