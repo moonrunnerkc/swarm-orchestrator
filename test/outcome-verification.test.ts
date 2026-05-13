@@ -35,7 +35,17 @@ function initGitRepo(dir: string): string {
  * Returns the path.
  */
 function writeTranscript(dir: string, content?: string): string {
-  const p = path.join(dir, 'transcript.md');
+  // The orchestrator writes transcripts under `runs/<id>/steps/...` —
+  // outside the verifier's auto-commit pathspec. The earlier fixture
+  // placed `transcript.md` at the worktree root as untracked; that
+  // surface was harmless until the verifier started auto-committing
+  // uncommitted agent work, at which point the unrelated fixture file
+  // counted as "agent work" and forced a commit on every test. Putting
+  // the test transcript under `runs/` reproduces production placement
+  // and stays excluded by gitPathspecExcludes().
+  const runsDir = path.join(dir, 'runs', 'fixture-run', 'steps', 'step-1');
+  fs.mkdirSync(runsDir, { recursive: true });
+  const p = path.join(runsDir, 'share.md');
   fs.writeFileSync(p, content ?? '# Transcript\nNo significant activity.');
   return p;
 }
@@ -298,16 +308,28 @@ describe('Outcome-Based Verification', () => {
       assert.strictEqual(testCheck!.passed, true);
     });
 
-    it('fails when test script exits non-zero', async () => {
+    it('fails when worker introduces a regression that breaks a previously-passing test', async () => {
+      // Pre-fix this test asserted "fails when test script exits non-zero"
+      // without distinguishing worker-introduced regressions from
+      // pre-existing failures. The 2026-05 ow run exposed why that
+      // matters: the verifier rejected a correct patch because ow's
+      // upstream main shipped with pre-existing xo errors that fail
+      // `npm test`, regardless of what the worker did. The new
+      // baseline-differential semantics make the distinction explicit:
+      // worker-introduced failure ⇒ reject; pre-existing failure that
+      // matches across baseline and patch ⇒ pass.
       const dir = tmpDir();
       tempDirs.push(dir);
 
-      const pkg = { name: 'test-proj', scripts: { test: 'node -e "process.exit(1)"' } };
+      // Baseline: a green test command.
+      const pkg = { name: 'test-proj', scripts: { test: 'node -e "process.exit(0)"' } };
       fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(pkg));
-
       const baseSha = initGitRepo(dir);
-      fs.writeFileSync(path.join(dir, 'y.ts'), '');
-      execSync('git add . && git commit -m "y"', { cwd: dir });
+
+      // Worker commit: replaces the test command with one that exits non-zero.
+      const brokenPkg = { name: 'test-proj', scripts: { test: 'node -e "process.exit(1)"' } };
+      fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(brokenPkg));
+      execSync('git add . && git commit -m "regression"', { cwd: dir });
 
       const transcript = writeTranscript(dir);
       const verifier = new VerifierEngine(dir);
@@ -319,7 +341,42 @@ describe('Outcome-Based Verification', () => {
 
       const testCheck = result.checks.find(c => c.type === 'test_exec');
       assert.ok(testCheck);
-      assert.strictEqual(testCheck!.passed, false);
+      assert.strictEqual(testCheck!.passed, false,
+        'worker-introduced regression (baseline green, patched red) must still fail the gate');
+      assert.match(testCheck!.reason ?? '', /Baseline.*passes.*regression/,
+        'failure reason must explicitly name baseline-vs-patched divergence so reviewers see why');
+    });
+
+    it('passes when both baseline and patched fail with the same exit code (pre-existing failure)', async () => {
+      // Direct test for the 2026-05 ow blocker: when `npm test` was
+      // already failing on baseline for reasons outside the worker's
+      // change, the gate must not reject a correct patch.
+      const dir = tmpDir();
+      tempDirs.push(dir);
+
+      // Baseline: test command already exits non-zero.
+      const pkg = { name: 'test-proj', scripts: { test: 'node -e "process.exit(4)"' } };
+      fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(pkg));
+      const baseSha = initGitRepo(dir);
+
+      // Worker commit: adds an unrelated file; package.json unchanged so
+      // npm test still exits 4 — same failure mode as baseline.
+      fs.writeFileSync(path.join(dir, 'feature.ts'), 'export const x = 1;\n');
+      execSync('git add . && git commit -m "add feature"', { cwd: dir });
+
+      const transcript = writeTranscript(dir);
+      const verifier = new VerifierEngine(dir);
+
+      const result = await verifier.verifyStep(
+        1, 'dev', transcript, undefined, undefined, undefined,
+        { workdir: dir, baseSha }
+      );
+
+      const testCheck = result.checks.find(c => c.type === 'test_exec');
+      assert.ok(testCheck);
+      assert.strictEqual(testCheck!.passed, true,
+        'pre-existing test failure (same exit code in baseline and patched) must not block the gate');
+      assert.match(testCheck!.evidence ?? '', /pre-existing/i);
     });
   });
 
@@ -435,6 +492,16 @@ Compiled successfully
     });
 
     it('passes when agent modified tracked files without committing (uncommitted changes)', async () => {
+      // Pre-fix this test asserted that uncommitted working-tree changes
+      // counted as PASSED for git_diff with "uncommitted" in the evidence.
+      // That behavior masked the 2026-05 ow v4 failure mode: an agent
+      // that edited files but exited before `git commit` (transient API
+      // error) produced a worker branch with no commits; the verifier
+      // "passed" the step on uncommitted state; the merge brought
+      // nothing forward; the falsification battery rejected a no-op
+      // patch. The fix auto-commits uncommitted agent work in
+      // runOutcomeChecks so the merge picks it up — this test now pins
+      // that recovery contract.
       const dir = tmpDir();
       tempDirs.push(dir);
 
@@ -442,7 +509,7 @@ Compiled successfully
       fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(pkg));
       const baseSha = initGitRepo(dir);
 
-      // Agent modified a tracked file but did not stage or commit it
+      // Agent modified a tracked file but did not stage or commit it.
       fs.writeFileSync(path.join(dir, 'seed.txt'), 'modified by agent');
 
       const transcript = writeTranscript(dir);
@@ -455,8 +522,17 @@ Compiled successfully
 
       const diffCheck = result.checks.find((c) => c.type === 'git_diff');
       assert.ok(diffCheck, 'git_diff check should exist');
-      assert.strictEqual(diffCheck!.passed, true, 'should pass on uncommitted working-tree changes');
-      assert.ok(diffCheck!.evidence?.includes('uncommitted'), 'evidence should note uncommitted changes');
+      assert.strictEqual(diffCheck!.passed, true, 'uncommitted agent work must still pass after auto-commit recovery');
+      // The new contract: evidence reflects COMMITTED state because
+      // auto-commit ran before the check. The legacy "uncommitted" path
+      // is no longer reachable when there is anything to commit.
+      assert.doesNotMatch(diffCheck!.evidence ?? '', /uncommitted/i,
+        'after auto-commit, evidence must reflect committed state, not the legacy "uncommitted" fallback');
+      // And a real commit must exist on the branch now, so the merge
+      // picks the work up.
+      const newHead = execSync('git rev-parse HEAD', { cwd: dir, encoding: 'utf8' }).trim();
+      assert.notStrictEqual(newHead, baseSha,
+        'auto-commit must have produced a new HEAD so the branch merger picks up the agent\'s changes');
     });
 
     it('passes when agent produced no commits but build and tests confirm goal achieved (idempotent)', async () => {
