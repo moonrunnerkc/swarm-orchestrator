@@ -1,0 +1,26 @@
+# GBNF grammar enforcing the FORMAT 1/2/3 patch contract from
+# src/persona/persona-registry.ts. Loaded by the local session and passed
+# to backends that advertise GBNF support (today: llama.cpp). The grammar
+# constrains every response to begin with one of three tokens — the
+# whole-file marker (`<<<FILE `), the unified-diff marker (`---`), or the
+# literal three characters `no-op`. Prose preambles and markdown fences are
+# unrepresentable in this grammar.
+#
+# Hunk bodies inside FORMAT 2 are not validated structurally here; the
+# unified-diff applier in src/population/unified-diff.ts performs the
+# byte-for-byte context match.
+
+root ::= format1 | format2 | format3
+format3 ::= "no-op" ws-eof
+format1 ::= file-block (ws-line file-block)* ws-eof
+file-block ::= "<<<FILE " path "\n" file-body "FILE>>>"
+file-body ::= (any-line "\n")*
+format2 ::= "--- " diff-path "\n" "+++ " diff-path "\n" hunk-or-context+
+hunk-or-context ::= hunk-line "\n"
+hunk-line ::= [-+@ ] any-line-content?
+diff-path ::= ( "/dev/null" | "a/" path | "b/" path )
+path ::= [^ \n]+
+any-line ::= [^\n]*
+any-line-content ::= [^\n]*
+ws-line ::= ("\n" | "\r\n")
+ws-eof ::= [ \t\r\n]*

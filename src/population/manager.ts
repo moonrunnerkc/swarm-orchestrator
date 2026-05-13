@@ -20,6 +20,7 @@ import type {
   ObligationRolledBackEntry,
   ObligationSatisfiedEntry,
   PostMergeVerifiedEntry,
+  ProviderAttribution,
   RunFinishedEntry,
   RunStartedEntry,
   TournamentEscalatedEntry,
@@ -635,6 +636,7 @@ export async function runPopulation(
         reason: streamingOutcome.abortReason ?? 'streaming verifier aborted',
         usageAtAbort: responseUsage,
         model: responseModel,
+        ...providerAttribution(session),
       });
       builder.setStatus(obligationIndex, 'failed');
       const failDetail = `streaming verifier aborted: ${streamingOutcome.abortReason ?? 'unspecified violation'}`;
@@ -692,6 +694,7 @@ export async function runPopulation(
         responseSha256: sha256(responseText),
         usage: responseUsage,
         model: responseModel,
+        ...providerAttribution(session),
       });
 
       // applyDetail surfaces *why* a persona's response did or didn't change
@@ -1662,6 +1665,30 @@ function sha256(s: string): string {
   return crypto.createHash('sha256').update(s, 'utf8').digest('hex');
 }
 
+/**
+ * Build the provider-attribution slice that every candidate-* ledger
+ * entry carries. Reads `Session.providerInfo()` so the ledger captures
+ * which provider / model / backend / grammar / seed produced a candidate
+ * without the population manager needing to track the wiring.
+ *
+ * The optional-chain guard tolerates older test mocks that satisfy the
+ * Session shape structurally without implementing `providerInfo`. When
+ * absent, the entries are written without provider attribution, which is
+ * the pre-refactor behavior.
+ */
+function providerAttribution(session: Session): ProviderAttribution {
+  if (typeof session.providerInfo !== 'function') return {};
+  const info = session.providerInfo();
+  return {
+    provider: info.provider,
+    modelId: info.model,
+    backend: info.backend,
+    grammar: info.grammar,
+    seed: info.seed,
+    usageEstimated: info.usageEstimated,
+  };
+}
+
 /** Persona helper used by tests: list the personas a given registry exposes. */
 export function listPersonaIds(registry: PersonaRegistry): string[] {
   return registry.list().map((p: PersonaSpec) => p.id);
@@ -1754,6 +1781,7 @@ async function executeTournament(args: ExecuteTournamentArgs): Promise<ExecuteTo
       ledger.append<CandidateRecordedEntry>({
         type: 'candidate-recorded',
         ...p,
+        ...providerAttribution(session),
       });
     },
     recordWinner(p) {
@@ -1766,6 +1794,7 @@ async function executeTournament(args: ExecuteTournamentArgs): Promise<ExecuteTo
       ledger.append<CandidateDiscardedEntry>({
         type: 'candidate-discarded',
         ...p,
+        ...providerAttribution(session),
       });
     },
     recordEscalation(p) {

@@ -23,11 +23,13 @@ export interface ExtractorOutput {
 }
 
 /**
- * Goal-to-obligations extractor. The compiler depends on this interface; the
- * Anthropic implementation is the production extractor (impl guide §4: "a
- * single LLM call (Sonnet tier)"); the stub implementation is used by tests
- * that need deterministic output and by `--extractor stub` for offline
- * inspection of the rest of the pipeline.
+ * Goal-to-obligations extractor. The compiler depends on this interface;
+ * three providers implement it: the deterministic extractor (default, no
+ * model, accepts a hand-authored contract), the local extractor (any
+ * OpenAI-compatible / Ollama / llama.cpp / vLLM endpoint), and the
+ * Anthropic extractor (impl guide §4: a single Sonnet-tier call). The
+ * verifier and the compiler are agnostic to which provider produced the
+ * output.
  */
 export interface Extractor {
   extract(input: ExtractorInput): Promise<ExtractorOutput>;

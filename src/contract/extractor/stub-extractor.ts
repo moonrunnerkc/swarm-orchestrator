@@ -2,8 +2,15 @@ import { type ObligationV1 } from '../types';
 import { type Extractor, type ExtractorInput, type ExtractorOutput } from './types';
 
 /**
- * Deterministic extractor used by tests and by `--extractor stub` for
- * offline inspection of the compiler pipeline.
+ * @internal
+ *
+ * Deterministic extractor used by the project's own tests and the
+ * synthetic-mode benchmark. NOT a user-facing provider: the three
+ * CLI-reachable providers are `deterministic`, `local`, and `anthropic`
+ * (see `src/contract/extractor/factory.ts`). Tests construct this class
+ * directly via `StubExtractor.fromObligations(...)` /
+ * `.fromGoalMap(...)` / `.fromHeuristic()`. The factory deliberately
+ * does not accept a `stub` provider name.
  *
  * Two construction modes:
  *

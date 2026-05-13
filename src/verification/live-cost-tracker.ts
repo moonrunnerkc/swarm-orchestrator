@@ -32,7 +32,7 @@ import {
   type SessionStreamObserver,
   type SessionUsage,
 } from '../session/types';
-import { estimateTokens } from '../session/stub-session';
+import { estimateTokens } from '../session/token-estimator';
 
 /** Per-token USD prices the tracker uses to convert tokens to dollars. */
 export interface PricePerToken {

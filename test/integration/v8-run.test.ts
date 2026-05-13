@@ -4,8 +4,11 @@ import * as os from 'os';
 import * as path from 'path';
 import { handleCompile } from '../../src/cli/v8/compile-handler';
 import { handleRun } from '../../src/cli/v8/run-handler';
+import { StubExtractor } from '../../src/contract/extractor/stub-extractor';
 import { StubSession } from '../../src/session/stub-session';
 import { readEntries } from '../../src/ledger/jsonl-ledger';
+
+const stubExtractor = (): StubExtractor => StubExtractor.fromHeuristic();
 
 function tmpDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'v8-run-int-'));
@@ -32,14 +35,16 @@ describe('integration: swarm v8 run', () => {
     const contractDir = path.join(work, 'contract');
 
     // Compile
-    const compileExit = await handleCompile([
-      'add a CHANGES.md note',
-      '--repo-root', work,
-      '--out', contractDir,
-      '--extractor', 'stub',
-      '--yes',
-      '--no-editor',
-    ]);
+    const compileExit = await handleCompile(
+      [
+        'add a CHANGES.md note',
+        '--repo-root', work,
+        '--out', contractDir,
+        '--yes',
+        '--no-editor',
+      ],
+      { extractor: stubExtractor() },
+    );
     assert.equal(compileExit, 0);
 
     // Run
@@ -53,7 +58,6 @@ describe('integration: swarm v8 run', () => {
       [
         contractDir,
         '--repo-root', work,
-        '--session', 'stub',
         '--ledger', ledgerPath,
         '--result', resultPath,
         '--run-id', 'fixed-run-id',
@@ -95,14 +99,16 @@ describe('integration: swarm v8 run', () => {
       JSON.stringify({ scripts: { build: 'echo build', test: 'echo test' } }),
     );
     const contractDir = path.join(work, 'contract');
-    await handleCompile([
-      'add a thing',
-      '--repo-root', work,
-      '--out', contractDir,
-      '--extractor', 'stub',
-      '--yes',
-      '--no-editor',
-    ]);
+    await handleCompile(
+      [
+        'add a thing',
+        '--repo-root', work,
+        '--out', contractDir,
+        '--yes',
+        '--no-editor',
+      ],
+      { extractor: stubExtractor() },
+    );
 
     // Override the contract on disk to use a failing build command, then re-write
     // the manifest so the contract reader still validates.
@@ -125,7 +131,6 @@ describe('integration: swarm v8 run', () => {
       [
         contractDir,
         '--repo-root', work,
-        '--session', 'stub',
         '--ledger', path.join(work, 'ledger.jsonl'),
         '--run-id', 'r2',
       ],
@@ -138,14 +143,16 @@ describe('integration: swarm v8 run', () => {
     const work = tmpDir();
     fs.writeFileSync(path.join(work, 'package.json'), '{}');
     const contractDir = path.join(work, 'contract');
-    await handleCompile([
-      'goal',
-      '--repo-root', work,
-      '--out', contractDir,
-      '--extractor', 'stub',
-      '--yes',
-      '--no-editor',
-    ]);
+    await handleCompile(
+      [
+        'goal',
+        '--repo-root', work,
+        '--out', contractDir,
+        '--yes',
+        '--no-editor',
+      ],
+      { extractor: stubExtractor() },
+    );
     const exit = await handleRun([contractDir, '--bogus']);
     assert.equal(exit, 1);
   });

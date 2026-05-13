@@ -5,8 +5,12 @@ import { readContract } from '../../contract/serializer';
 import { JsonlLedger } from '../../ledger/jsonl-ledger';
 import { createDefaultRegistry, PersonaRegistry } from '../../persona/persona-registry';
 import { runPopulation } from '../../population/manager';
-import { AnthropicSession } from '../../session/anthropic-session';
-import { StubSession } from '../../session/stub-session';
+import {
+  buildSession as buildSessionFromFactory,
+  type SessionProvider,
+  SESSION_PROVIDERS,
+  resolveSessionProvider,
+} from '../../session/factory';
 import {
   cacheHitRate,
   effectiveInputTokens,
@@ -28,9 +32,17 @@ const logger = getLogger('cli:v8:run');
 export interface RunFlags {
   contractPath: string;
   repoRoot: string;
-  sessionKind: 'anthropic' | 'stub';
+  sessionKind: SessionProvider;
   model: string | null;
   apiKey: string | null;
+  /** Watched directory for deterministic-session patch envelopes. */
+  externalPatchesDir: string | null;
+  /** JSONL queue file for deterministic-session patch envelopes. */
+  externalPatchesQueue: string | null;
+  /** When true, the deterministic session reads patches from stdin. */
+  externalPatchesStdin: boolean;
+  /** Per-call timeout in ms for deterministic-session reads. */
+  externalPatchesTimeoutMs: number | null;
   ledgerPath: string | null;
   maxObligations: number | null;
   commandTimeoutMs: number | null;
@@ -387,23 +399,16 @@ export function estimateUsageCostUsd(usage: SessionUsage): number {
 }
 
 function buildSession(flags: RunFlags, projectContext: string): Session {
-  if (flags.sessionKind === 'stub') {
-    const opts: ConstructorParameters<typeof StubSession>[0] = { projectContext };
-    if (flags.model !== null) opts.model = flags.model;
-    return new StubSession(opts);
-  }
-  const apiKey = flags.apiKey ?? process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error(
-      'ANTHROPIC_API_KEY is not set. Pass --api-key, set the env var, or use --session stub.',
-    );
-  }
-  const opts: ConstructorParameters<typeof AnthropicSession>[0] = {
-    apiKey,
+  return buildSessionFromFactory({
+    provider: flags.sessionKind,
     projectContext,
-  };
-  if (flags.model !== null) opts.model = flags.model;
-  return new AnthropicSession(opts);
+    apiKey: flags.apiKey,
+    model: flags.model,
+    externalPatchesDir: flags.externalPatchesDir,
+    externalPatchesQueue: flags.externalPatchesQueue,
+    externalPatchesStdin: flags.externalPatchesStdin,
+    externalPatchesTimeoutMs: flags.externalPatchesTimeoutMs,
+  });
 }
 
 /**
@@ -427,9 +432,13 @@ export function parseRunFlags(argv: string[]): RunFlags {
   const flags: RunFlags = {
     contractPath: '',
     repoRoot: process.cwd(),
-    sessionKind: 'anthropic',
+    sessionKind: resolveSessionProvider(null),
     model: null,
     apiKey: null,
+    externalPatchesDir: process.env.EXTERNAL_PATCHES_DIR ?? null,
+    externalPatchesQueue: process.env.EXTERNAL_PATCHES_QUEUE ?? null,
+    externalPatchesStdin: false,
+    externalPatchesTimeoutMs: null,
     ledgerPath: null,
     maxObligations: null,
     commandTimeoutMs: null,
@@ -456,10 +465,22 @@ export function parseRunFlags(argv: string[]): RunFlags {
       flags.repoRoot = requireValue(argv, ++i, '--repo-root');
     } else if (arg === '--session') {
       const v = requireValue(argv, ++i, '--session');
-      if (v !== 'anthropic' && v !== 'stub') {
-        throw new Error(`invalid --session value "${v}"; expected anthropic | stub`);
+      flags.sessionKind = resolveSessionProvider(v);
+    } else if (arg === '--external-patches-dir') {
+      flags.externalPatchesDir = requireValue(argv, ++i, '--external-patches-dir');
+    } else if (arg === '--external-patches-queue') {
+      flags.externalPatchesQueue = requireValue(argv, ++i, '--external-patches-queue');
+    } else if (arg === '--external-patches-stdin') {
+      flags.externalPatchesStdin = true;
+    } else if (arg === '--external-patches-timeout-ms') {
+      const raw = requireValue(argv, ++i, '--external-patches-timeout-ms');
+      const n = Number.parseInt(raw, 10);
+      if (!Number.isFinite(n) || n < 0) {
+        throw new Error(
+          `invalid --external-patches-timeout-ms "${raw}"; must be a non-negative integer`,
+        );
       }
-      flags.sessionKind = v;
+      flags.externalPatchesTimeoutMs = n;
     } else if (arg === '--model') {
       flags.model = requireValue(argv, ++i, '--model');
     } else if (arg === '--api-key') {
@@ -581,9 +602,13 @@ function printRunUsage(): void {
       '',
       'flags:',
       '  --repo-root <path>           project root (default cwd)',
-      '  --session anthropic|stub     session kind (default anthropic)',
-      '  --model <id>                 model id override',
-      '  --api-key <key>              Anthropic API key override',
+      `  --session <name>             ${SESSION_PROVIDERS.join(' | ')} (default deterministic)`,
+      '  --external-patches-dir <p>   watched dir of patch envelopes (deterministic session)',
+      '  --external-patches-queue <p> JSONL queue of patch envelopes (deterministic session)',
+      '  --external-patches-stdin     read patch envelopes from stdin (deterministic session)',
+      '  --external-patches-timeout-ms <n>  per-call wait (default 30000 for complete)',
+      '  --model <id>                 model id override (anthropic session)',
+      '  --api-key <key>              API key override (anthropic session)',
       '  --ledger <path>              ledger jsonl path (default .swarm/ledger/<run-id>.jsonl)',
       '  --max-obligations <n>        cap on obligations attempted',
       '  --command-timeout-ms <ms>    per-command timeout (default 300000)',

@@ -24,7 +24,7 @@ const DEFAULT_DEPS: RunV8Deps = { handleCompile, handleRun };
  * `--v6` flag preserves old behavior").
  *
  * The wrapper reads a `--goal "..."` flag, runs `swarm v8 compile` on it
- * (stub-heuristic extractor by default; --extractor selects), writes the
+ * (deterministic extractor by default; `--extractor` selects), writes the
  * contract to a temp directory under `.swarm/contracts/`, then runs
  * `swarm v8 run <contract>`. Other flags pass through to the run step.
  *

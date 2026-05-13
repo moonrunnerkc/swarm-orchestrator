@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import {
   addUsage,
   emptyUsage,
+  type ProviderInfo,
   type Session,
   type SessionRequest,
   type SessionResponse,
@@ -65,6 +66,17 @@ export class AnthropicSession implements Session {
 
   totalUsage(): SessionUsage {
     return { ...this.cumulative };
+  }
+
+  providerInfo(): ProviderInfo {
+    return {
+      provider: 'anthropic',
+      model: this.model,
+      backend: null,
+      grammar: null,
+      seed: null,
+      usageEstimated: false,
+    };
   }
 
   async complete(request: SessionRequest): Promise<SessionResponse> {

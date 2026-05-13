@@ -9,8 +9,12 @@ import {
 import { writeContract } from '../../contract/serializer';
 import { runApproval, ContractRejectedError } from '../../contract/approval';
 import { type Extractor } from '../../contract/extractor/types';
-import { AnthropicExtractor } from '../../contract/extractor/anthropic-extractor';
-import { StubExtractor } from '../../contract/extractor/stub-extractor';
+import {
+  buildExtractor as buildExtractorFromFactory,
+  type ExtractorProvider,
+  EXTRACTOR_PROVIDERS,
+  resolveExtractorProvider,
+} from '../../contract/extractor/factory';
 import { loadRecipe, listRecipes } from '../../recipe-loader';
 
 const logger = getLogger('cli:v8:compile');
@@ -22,7 +26,11 @@ export interface CompileFlags {
   repoRoot: string;
   autoApprove: boolean;
   disableEditor: boolean;
-  extractor: 'anthropic' | 'stub' | 'stub-heuristic';
+  extractor: ExtractorProvider;
+  /** Path to a YAML or JSON contract file (deterministic provider). */
+  contractFile: string | null;
+  /** Path to a TS/JS contract module (deterministic provider). */
+  contractModule: string | null;
   model: string | null;
   temperature: number | null;
   apiKey: string | null;
@@ -132,19 +140,14 @@ export async function handleCompile(
 }
 
 function buildExtractor(flags: CompileFlags): Extractor {
-  if (flags.extractor === 'stub') return StubExtractor.fromHeuristic();
-  if (flags.extractor === 'stub-heuristic') return StubExtractor.fromHeuristic();
-  // anthropic: require an API key one way or the other.
-  const apiKey = flags.apiKey ?? process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error(
-      'ANTHROPIC_API_KEY is not set. Pass --api-key, set the env var, or use --extractor stub.',
-    );
-  }
-  const opts: ConstructorParameters<typeof AnthropicExtractor>[0] = { apiKey };
-  if (flags.model !== null) opts.model = flags.model;
-  if (flags.temperature !== null) opts.temperature = flags.temperature;
-  return new AnthropicExtractor(opts);
+  return buildExtractorFromFactory({
+    provider: flags.extractor,
+    contractFile: flags.contractFile,
+    contractModule: flags.contractModule,
+    apiKey: flags.apiKey,
+    model: flags.model,
+    temperature: flags.temperature,
+  });
 }
 
 /**
@@ -160,7 +163,9 @@ export function parseCompileFlags(argv: string[]): CompileFlags {
     repoRoot: process.cwd(),
     autoApprove: false,
     disableEditor: false,
-    extractor: 'anthropic',
+    extractor: resolveExtractorProvider(null),
+    contractFile: null,
+    contractModule: null,
     model: null,
     temperature: null,
     apiKey: null,
@@ -180,10 +185,11 @@ export function parseCompileFlags(argv: string[]): CompileFlags {
     } else if (arg === '--extractor') {
       const v = requireValue(argv, i + 1, '--extractor');
       i += 1;
-      if (v !== 'anthropic' && v !== 'stub' && v !== 'stub-heuristic') {
-        throw new Error(`invalid --extractor value "${v}"; expected one of anthropic, stub, stub-heuristic`);
-      }
-      flags.extractor = v;
+      flags.extractor = resolveExtractorProvider(v);
+    } else if (arg === '--contract-file') {
+      flags.contractFile = requireValue(argv, ++i, '--contract-file');
+    } else if (arg === '--contract-module') {
+      flags.contractModule = requireValue(argv, ++i, '--contract-module');
     } else if (arg === '--model') {
       flags.model = requireValue(argv, ++i, '--model');
     } else if (arg === '--temperature') {
@@ -265,10 +271,12 @@ function printCompileUsage(): void {
       '  --repo-root <path>    project root for repo-context discovery (default cwd)',
       '  --yes, -y             auto-approve without prompting',
       '  --no-editor           disable the [e]dit option in the approval prompt',
-      '  --extractor <name>    anthropic (default) | stub | stub-heuristic',
-      '  --model <id>          Anthropic model id override (default claude-sonnet-4-6)',
+      `  --extractor <name>    ${EXTRACTOR_PROVIDERS.join(' | ')} (default deterministic)`,
+      '  --contract-file <p>   YAML or JSON contract file (deterministic provider)',
+      '  --contract-module <p> TS/JS contract module default export (deterministic provider)',
+      '  --model <id>          model id override (anthropic provider)',
       '  --temperature <n>     sampling temperature override (default 0)',
-      '  --api-key <key>       Anthropic API key override (default $ANTHROPIC_API_KEY)',
+      '  --api-key <key>       API key override (anthropic provider)',
       '  --recipe <name>       compile from a built-in recipe (see `swarm recipes`)',
       '  --help, -h            show this message',
       '',

@@ -10,6 +10,30 @@
 
 import type { SessionUsage } from '../session/types';
 
+/**
+ * Provider attribution recorded on every ledger entry produced by a
+ * session call. The fields are optional so entries written by older code
+ * (pre-provider-architecture) parse without modification and so non-call
+ * entries (run-started, obligation-satisfied at the verifier level) omit
+ * them. Population manager copies these from `Session.providerInfo()`
+ * onto each candidate-* entry.
+ */
+export interface ProviderAttribution {
+  provider?: 'deterministic' | 'local' | 'anthropic' | 'stub';
+  /** Model id; null when the provider runs no model. */
+  modelId?: string | null;
+  /** Backend name for local provider (ollama / openai-compatible / llama-cpp / vllm). */
+  backend?: string | null;
+  /** Grammar-decoding mode (gbnf / json-schema / outlines / none). */
+  grammar?: string | null;
+  /** Sampling seed. */
+  seed?: number | null;
+  /** External-patch attribution string (deterministic provider). */
+  source?: string | null;
+  /** True when the backend doesn't report token counts and the session estimates. */
+  usageEstimated?: boolean;
+}
+
 /** Common header fields every ledger entry carries. */
 export interface LedgerEntryHeader {
   /** ISO-8601 UTC timestamp. */
@@ -51,7 +75,7 @@ export interface ObligationAttemptedEntry extends LedgerEntryHeader {
 }
 
 /** Persona produced a candidate response. */
-export interface CandidateRecordedEntry extends LedgerEntryHeader {
+export interface CandidateRecordedEntry extends LedgerEntryHeader, ProviderAttribution {
   type: 'candidate-recorded';
   obligationIndex: number;
   personaId: string;
@@ -155,7 +179,7 @@ export interface TournamentRoundStartedEntry extends LedgerEntryHeader {
  * candidates are logged to the ledger with full diff hash but never
  * applied. Their token cost is captured for cost attribution.").
  */
-export interface CandidateDiscardedEntry extends LedgerEntryHeader {
+export interface CandidateDiscardedEntry extends LedgerEntryHeader, ProviderAttribution {
   type: 'candidate-discarded';
   obligationIndex: number;
   roundIndex: number;
@@ -264,7 +288,7 @@ export interface ObligationDeterministicFailedEntry extends LedgerEntryHeader {
  * remaining generation cost was avoided. See impl guide §9 ("Token
  * savings on aborted generations measurable in run output").
  */
-export interface CandidateStreamAbortedEntry extends LedgerEntryHeader {
+export interface CandidateStreamAbortedEntry extends LedgerEntryHeader, ProviderAttribution {
   type: 'candidate-stream-aborted';
   obligationIndex: number;
   /** Round index when emitted from a tournament; 0 for single mode. */

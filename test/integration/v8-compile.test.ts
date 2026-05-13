@@ -13,17 +13,21 @@ function tmpOut(): string {
 }
 
 describe('integration: swarm v8 compile', () => {
+  const stub = (): StubExtractor => StubExtractor.fromHeuristic();
+
   it('writes a contract to --out using the stub extractor', async () => {
     const out = tmpOut();
     try {
-      const exit = await handleCompile([
-        'add a health check endpoint',
-        '--repo-root', fixtureRoot,
-        '--out', out,
-        '--extractor', 'stub',
-        '--yes',
-        '--no-editor',
-      ]);
+      const exit = await handleCompile(
+        [
+          'add a health check endpoint',
+          '--repo-root', fixtureRoot,
+          '--out', out,
+          '--yes',
+          '--no-editor',
+        ],
+        { extractor: stub() },
+      );
       assert.equal(exit, 0);
       const contract = readContract(out);
       assert.equal(contract.manifest.goal, 'add a health check endpoint');
@@ -45,12 +49,11 @@ describe('integration: swarm v8 compile', () => {
         'add a health check endpoint',
         '--repo-root', fixtureRoot,
         '--out', out,
-        '--extractor', 'stub',
         '--yes',
         '--no-editor',
       ];
-      assert.equal(await handleCompile(args(a)), 0);
-      assert.equal(await handleCompile(args(b)), 0);
+      assert.equal(await handleCompile(args(a), { extractor: stub() }), 0);
+      assert.equal(await handleCompile(args(b), { extractor: stub() }), 0);
       const ca = readContract(a);
       const cb = readContract(b);
       assert.equal(ca.manifest.contractHash, cb.manifest.contractHash);
@@ -64,14 +67,16 @@ describe('integration: swarm v8 compile', () => {
   it('emits a non-empty contract.jsonl with one obligation per line', async () => {
     const out = tmpOut();
     try {
-      const exit = await handleCompile([
-        'add a thing',
-        '--repo-root', fixtureRoot,
-        '--out', out,
-        '--extractor', 'stub',
-        '--yes',
-        '--no-editor',
-      ]);
+      const exit = await handleCompile(
+        [
+          'add a thing',
+          '--repo-root', fixtureRoot,
+          '--out', out,
+          '--yes',
+          '--no-editor',
+        ],
+        { extractor: stub() },
+      );
       assert.equal(exit, 0);
       const jsonl = fs.readFileSync(path.join(out, 'contract.jsonl'), 'utf8');
       const lines = jsonl.split('\n').filter((l) => l.length > 0);
@@ -88,15 +93,17 @@ describe('integration: swarm v8 compile', () => {
   it('rejects an unknown flag with a parse error and exit 1', async () => {
     const out = tmpOut();
     try {
-      const exit = await handleCompile([
-        'add a thing',
-        '--repo-root', fixtureRoot,
-        '--out', out,
-        '--extractor', 'stub',
-        '--yes',
-        '--no-editor',
-        '--bogus',
-      ]);
+      const exit = await handleCompile(
+        [
+          'add a thing',
+          '--repo-root', fixtureRoot,
+          '--out', out,
+          '--yes',
+          '--no-editor',
+          '--bogus',
+        ],
+        { extractor: stub() },
+      );
       assert.equal(exit, 1);
     } finally {
       fs.rmSync(out, { recursive: true, force: true });

@@ -1,6 +1,11 @@
 import * as crypto from 'crypto';
 import Anthropic from '@anthropic-ai/sdk';
 import { type ObligationV1 } from '../types';
+import {
+  SUBMIT_CONTRACT_INPUT_SCHEMA,
+  SUBMIT_CONTRACT_TOOL_DESCRIPTION,
+  SUBMIT_CONTRACT_TOOL_NAME,
+} from './contract-schema';
 import { type Extractor, type ExtractorInput, type ExtractorOutput } from './types';
 
 /**
@@ -248,103 +253,7 @@ const SYSTEM_PROMPT = [
 ].join('\n');
 
 const SUBMIT_CONTRACT_TOOL: Anthropic.Tool = {
-  name: 'submit_contract',
-  description: 'Submit the compiled list of contract obligations for the user goal.',
-  input_schema: {
-    type: 'object',
-    required: ['obligations'],
-    properties: {
-      obligations: {
-        type: 'array',
-        minItems: 1,
-        items: {
-          oneOf: [
-            {
-              type: 'object',
-              required: ['type', 'path'],
-              additionalProperties: false,
-              properties: {
-                type: { const: 'file-must-exist' },
-                path: { type: 'string', minLength: 1 },
-              },
-            },
-            {
-              type: 'object',
-              required: ['type', 'command'],
-              additionalProperties: false,
-              properties: {
-                type: { const: 'build-must-pass' },
-                command: { type: 'string', minLength: 1 },
-              },
-            },
-            {
-              type: 'object',
-              required: ['type', 'command'],
-              additionalProperties: false,
-              properties: {
-                type: { const: 'test-must-pass' },
-                command: { type: 'string', minLength: 1 },
-              },
-            },
-            {
-              type: 'object',
-              required: ['type', 'file', 'name', 'signature'],
-              additionalProperties: false,
-              properties: {
-                type: { const: 'function-must-have-signature' },
-                file: { type: 'string', minLength: 1 },
-                name: { type: 'string', minLength: 1 },
-                signature: { type: 'string', minLength: 1 },
-              },
-            },
-            {
-              type: 'object',
-              required: ['type', 'predicate', 'target'],
-              additionalProperties: false,
-              properties: {
-                type: { const: 'property-must-hold' },
-                predicate: { type: 'string', minLength: 1 },
-                target: { type: 'string', minLength: 1 },
-              },
-            },
-            {
-              type: 'object',
-              required: ['type', 'constraint', 'scope'],
-              additionalProperties: false,
-              properties: {
-                type: { const: 'import-graph-must-satisfy' },
-                constraint: { type: 'string', enum: ['no-cycles', 'no-upward-imports'] },
-                scope: { type: 'string', minLength: 1 },
-              },
-            },
-            {
-              type: 'object',
-              required: ['type', 'scope', 'metric', 'threshold'],
-              additionalProperties: false,
-              properties: {
-                type: { const: 'coverage-must-exceed' },
-                scope: { type: 'string', minLength: 1 },
-                metric: {
-                  type: 'string',
-                  enum: ['lines', 'statements', 'branches', 'functions'],
-                },
-                threshold: { type: 'number', minimum: 0, maximum: 100 },
-              },
-            },
-            {
-              type: 'object',
-              required: ['type', 'benchmark', 'baseline', 'threshold'],
-              additionalProperties: false,
-              properties: {
-                type: { const: 'performance-must-not-regress' },
-                benchmark: { type: 'string', minLength: 1 },
-                baseline: { type: 'string', minLength: 1 },
-                threshold: { type: 'number', minimum: 0, maximum: 1 },
-              },
-            },
-          ],
-        },
-      },
-    },
-  },
+  name: SUBMIT_CONTRACT_TOOL_NAME,
+  description: SUBMIT_CONTRACT_TOOL_DESCRIPTION,
+  input_schema: SUBMIT_CONTRACT_INPUT_SCHEMA,
 };

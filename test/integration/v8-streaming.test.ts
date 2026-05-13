@@ -71,7 +71,6 @@ describe('integration: v8 streaming + pre-gen + post-merge (Phase 6)', () => {
       [
         contractDir,
         '--repo-root', work,
-        '--session', 'stub',
         '--ledger', ledgerPath,
         '--result', resultPath,
         '--run-id', 'streaming-1',
@@ -138,7 +137,6 @@ describe('integration: v8 streaming + pre-gen + post-merge (Phase 6)', () => {
       [
         contractDir,
         '--repo-root', work,
-        '--session', 'stub',
         '--ledger', path.join(work, 's.jsonl'),
         '--result', path.join(work, 's.json'),
         '--run-id', 'stream',
@@ -171,7 +169,6 @@ describe('integration: v8 streaming + pre-gen + post-merge (Phase 6)', () => {
       [
         contractDir2,
         '--repo-root', work2,
-        '--session', 'stub',
         '--ledger', path.join(work2, 'f.jsonl'),
         '--result', path.join(work2, 'f.json'),
         '--run-id', 'full',
@@ -226,7 +223,6 @@ describe('integration: v8 streaming + pre-gen + post-merge (Phase 6)', () => {
       [
         contractDir,
         '--repo-root', work,
-        '--session', 'stub',
         '--ledger', path.join(work, 'pre.jsonl'),
         '--result', path.join(work, 'pre.json'),
         '--run-id', 'pre',
@@ -282,7 +278,6 @@ describe('integration: v8 streaming + pre-gen + post-merge (Phase 6)', () => {
       [
         contractDir,
         '--repo-root', work,
-        '--session', 'stub',
         '--ledger', path.join(work, 'pm.jsonl'),
         '--result', path.join(work, 'pm.json'),
         '--run-id', 'pm-fail',
@@ -332,7 +327,6 @@ describe('integration: v8 streaming + pre-gen + post-merge (Phase 6)', () => {
       [
         contractDir,
         '--repo-root', work,
-        '--session', 'stub',
         '--ledger', path.join(work, 'pm.jsonl'),
         '--result', path.join(work, 'pm.json'),
         '--run-id', 'pm-pass',

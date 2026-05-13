@@ -4,6 +4,11 @@ import * as os from 'os';
 import * as path from 'path';
 import { handleCompile } from '../../src/cli/v8/compile-handler';
 import { handleRun } from '../../src/cli/v8/run-handler';
+import { StubExtractor } from '../../src/contract/extractor/stub-extractor';
+
+const stubCompile = (): { extractor: StubExtractor } => ({
+  extractor: StubExtractor.fromHeuristic(),
+});
 import { readEntries } from '../../src/ledger/jsonl-ledger';
 import { readContract } from '../../src/contract/serializer';
 import { StubSession } from '../../src/session/stub-session';
@@ -39,14 +44,16 @@ describe('integration: v8 deterministic floor (Phase 5)', () => {
     fs.writeFileSync(path.join(work, 'tsconfig.json'), '{}');
 
     const contractDir = path.join(work, 'contract');
-    const compileExit = await handleCompile([
-      'add a CHANGELOG.md to the project',
-      '--repo-root', work,
-      '--out', contractDir,
-      '--extractor', 'stub',
-      '--yes',
-      '--no-editor',
-    ]);
+    const compileExit = await handleCompile(
+      [
+        'add a CHANGELOG.md to the project',
+        '--repo-root', work,
+        '--out', contractDir,
+        '--yes',
+        '--no-editor',
+      ],
+      stubCompile(),
+    );
     assert.equal(compileExit, 0);
 
     // Confirm the compiler auto-tagged the CHANGELOG.md obligation.
@@ -78,7 +85,6 @@ describe('integration: v8 deterministic floor (Phase 5)', () => {
       [
         contractDir,
         '--repo-root', work,
-        '--session', 'stub',
         '--ledger', ledgerPath,
         '--result', resultPath,
         '--run-id', 'det-1',
@@ -122,14 +128,16 @@ describe('integration: v8 deterministic floor (Phase 5)', () => {
       ),
     );
     const contractDir = path.join(work, 'contract');
-    await handleCompile([
-      'add a CHANGELOG.md to the project',
-      '--repo-root', work,
-      '--out', contractDir,
-      '--extractor', 'stub',
-      '--yes',
-      '--no-editor',
-    ]);
+    await handleCompile(
+      [
+        'add a CHANGELOG.md to the project',
+        '--repo-root', work,
+        '--out', contractDir,
+        '--yes',
+        '--no-editor',
+      ],
+      stubCompile(),
+    );
 
     const session = new StubSession({
       projectContext: 'CTX',
@@ -140,7 +148,6 @@ describe('integration: v8 deterministic floor (Phase 5)', () => {
       [
         contractDir,
         '--repo-root', work,
-        '--session', 'stub',
         '--ledger', path.join(work, 'ledger.jsonl'),
         '--result', resultPath,
         '--no-deterministic',
@@ -167,14 +174,16 @@ describe('integration: v8 deterministic floor (Phase 5)', () => {
       ),
     );
     const contractDir = path.join(work, 'contract');
-    await handleCompile([
-      'add a CHANGELOG.md',
-      '--repo-root', work,
-      '--out', contractDir,
-      '--extractor', 'stub',
-      '--yes',
-      '--no-editor',
-    ]);
+    await handleCompile(
+      [
+        'add a CHANGELOG.md',
+        '--repo-root', work,
+        '--out', contractDir,
+        '--yes',
+        '--no-editor',
+      ],
+      stubCompile(),
+    );
     const onDisk = fs.readFileSync(path.join(contractDir, 'contract.jsonl'), 'utf8');
     assert.match(onDisk, /"deterministicStrategy":"scaffold-template"/);
   });

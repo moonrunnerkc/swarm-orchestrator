@@ -6,6 +6,7 @@ import { finalize } from '../../src/contract/compiler';
 import { writeContract } from '../../src/contract/serializer';
 import { handleCompile } from '../../src/cli/v8/compile-handler';
 import { handleResume } from '../../src/cli/v8/resume-handler';
+import { StubExtractor } from '../../src/contract/extractor/stub-extractor';
 import { handleRun } from '../../src/cli/v8/run-handler';
 import { readEntries, verifyChainAt } from '../../src/ledger/ledger';
 import { StubSession } from '../../src/session/stub-session';
@@ -72,7 +73,6 @@ describe('integration: swarm v8 resume', () => {
       [
         contractDir,
         '--repo-root', work,
-        '--session', 'stub',
         '--ledger', ledgerPath,
         '--result', result1Path,
         '--run-id', 'partial-run',
@@ -109,7 +109,6 @@ describe('integration: swarm v8 resume', () => {
         '--ledger', ledgerPath,
         '--contract', contractDir,
         '--repo-root', work,
-        '--session', 'stub',
         '--result', result2Path,
         '--no-streaming',
         '--no-pre-generation',
@@ -148,14 +147,16 @@ describe('integration: swarm v8 resume', () => {
     fs.writeFileSync(path.join(work, 'package.json'), JSON.stringify({ name: 'wf', private: true, scripts: { build: "node -e ''", test: "node -e ''" } }));
     fs.writeFileSync(path.join(work, 'tsconfig.json'), '{}');
     const contractDir = path.join(work, 'contract');
-    await handleCompile([
-      'add CHANGES.md',
-      '--repo-root', work,
-      '--out', contractDir,
-      '--extractor', 'stub',
-      '--yes',
-      '--no-editor',
-    ]);
+    await handleCompile(
+      [
+        'add CHANGES.md',
+        '--repo-root', work,
+        '--out', contractDir,
+        '--yes',
+        '--no-editor',
+      ],
+      { extractor: StubExtractor.fromHeuristic() },
+    );
     const ledgerPath = path.join(work, 'ledger.jsonl');
     const session1 = new StubSession({
       projectContext: 'CTX',
@@ -165,7 +166,6 @@ describe('integration: swarm v8 resume', () => {
       [
         contractDir,
         '--repo-root', work,
-        '--session', 'stub',
         '--ledger', ledgerPath,
         '--run-id', 'orig',
         '--max-obligations', '2',
@@ -186,7 +186,6 @@ describe('integration: swarm v8 resume', () => {
         '--ledger', ledgerPath,
         '--contract', contractDir,
         '--repo-root', work,
-        '--session', 'stub',
       ],
       { session: new StubSession({ projectContext: 'CTX' }) },
     );

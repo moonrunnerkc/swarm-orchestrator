@@ -148,15 +148,42 @@ export interface SessionStreamResult {
 }
 
 /**
- * The session abstraction. Implementations: AnthropicSession (real API,
- * prompt-cache-native), StubSession (deterministic, used by tests and the
- * synthetic-mode benchmark).
+ * Provider attribution recorded in the ledger alongside every call this
+ * session produces. The fields are populated at construction time and do
+ * not change between calls; the ledger writer copies them into each
+ * provider-attributed entry so audits can reconstruct which provider /
+ * model / backend produced a given candidate.
+ */
+export interface ProviderInfo {
+  /** One of the three providers; "stub" is the heuristic back-compat alias. */
+  provider: 'deterministic' | 'local' | 'anthropic' | 'stub';
+  /** Model id, or null for providers that don't run a model. */
+  model: string | null;
+  /** Local-backend name (ollama / openai-compatible / llama-cpp / vllm), or null. */
+  backend: string | null;
+  /** Grammar-decoding mode in effect (gbnf / json-schema / outlines / none), or null. */
+  grammar: string | null;
+  /** Sampling seed, when applicable. */
+  seed: number | null;
+  /** True when the backend doesn't report token counts and the session estimates. */
+  usageEstimated: boolean;
+}
+
+/**
+ * The session abstraction. Three implementations satisfy this interface:
+ * DeterministicSession (default; no model; emits externally-sourced
+ * patches from a directory, queue file, or stdin), LocalSession (any
+ * OpenAI-compatible / Ollama / llama.cpp / vLLM endpoint), and
+ * AnthropicSession (real API, prompt-cache-native). The session's caller
+ * (run-handler, orchestrator) treats all three identically.
  */
 export interface Session {
   /** Run a persona-shaped completion. */
   complete(request: SessionRequest): Promise<SessionResponse>;
   /** Cumulative usage across every call this session has served. */
   totalUsage(): SessionUsage;
+  /** Provider attribution for the ledger; constant across the session's life. */
+  providerInfo(): ProviderInfo;
   /**
    * Static project-context prefix the session prepends to every call. Public
    * so callers and tests can introspect what is being cached.

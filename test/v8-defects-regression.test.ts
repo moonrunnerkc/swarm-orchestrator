@@ -1,8 +1,9 @@
 import { strict as assert } from 'assert';
-import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { handleCompile } from '../src/cli/v8/compile-handler';
+import { StubExtractor } from '../src/contract/extractor/stub-extractor';
 
 /**
  * Regression tests for the v8-e2e Phase D defects (D1, D2, D3, D5).
@@ -19,7 +20,6 @@ import * as path from 'path';
  */
 
 const ROOT = path.resolve(__dirname, '..', '..');
-const CLI = path.join(ROOT, 'dist', 'src', 'cli.js');
 
 describe('v8-e2e Phase D defects', () => {
   // ── D3: action.yml inputs ─────────────────────────────────
@@ -79,34 +79,40 @@ describe('v8-e2e Phase D defects', () => {
       'refactor-modularize',
     ];
 
-    it('recognizes --recipe as a flag (no "unknown flag" error)', () => {
-      // Sanity: --recipe should NOT be an unknown flag.
-      let stderr = '';
+    it('recognizes --recipe as a flag (no "unknown flag" error)', async () => {
+      // Sanity: --recipe should NOT be an unknown flag. Run handleCompile
+      // in-process with a stub extractor injection so the test does not
+      // depend on a configured deterministic-contract file or a network
+      // call to the anthropic provider.
+      const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v8-recipe-cli-test-'));
       try {
-        execSync(`node "${CLI}" v8 compile --recipe add-tests --extractor stub-heuristic --yes --no-editor --out /tmp/v8-recipe-cli-test`, {
-          encoding: 'utf8',
-          stdio: ['ignore', 'pipe', 'pipe'],
-        });
-      } catch (e) {
-        stderr = (e as { stderr?: string }).stderr ?? '';
+        const exit = await handleCompile(
+          ['--recipe', 'add-tests', '--yes', '--no-editor', '--out', outDir],
+          { extractor: StubExtractor.fromHeuristic() },
+        );
+        assert.equal(exit, 0, '--recipe must be a wired flag in the v8 compile CLI');
+      } finally {
+        fs.rmSync(outDir, { recursive: true, force: true });
       }
-      assert.doesNotMatch(
-        stderr,
-        /unknown flag: --recipe/,
-        '--recipe must be a wired flag in the v8 compile CLI',
-      );
     });
 
-    it('every shipped recipe yields a v1-schema-valid contract', function () {
+    it('every shipped recipe yields a v1-schema-valid contract', async function () {
       this.timeout(30000);
       const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'v8-recipe-test-'));
       try {
         for (const recipe of RECIPES) {
           const outDir = path.join(tmp, recipe);
-          execSync(
-            `node "${CLI}" v8 compile --recipe ${recipe} --extractor stub-heuristic --yes --no-editor --out "${outDir}" --repo-root "${tmp}"`,
-            { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+          const exit = await handleCompile(
+            [
+              '--recipe', recipe,
+              '--yes',
+              '--no-editor',
+              '--out', outDir,
+              '--repo-root', tmp,
+            ],
+            { extractor: StubExtractor.fromHeuristic() },
           );
+          assert.equal(exit, 0, `recipe ${recipe}: handleCompile must succeed`);
           const manifestPath = path.join(outDir, 'manifest.json');
           const contractPath = path.join(outDir, 'contract.jsonl');
           assert.ok(fs.existsSync(manifestPath), `manifest missing for recipe ${recipe}`);

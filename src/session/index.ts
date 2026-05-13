@@ -2,8 +2,10 @@
  * Public surface of the v8 session layer. Phase 2 ships:
  *   - The `Session` abstraction (interface, request/response/usage types).
  *   - `AnthropicSession`: the production prompt-cache-native implementation.
- *   - `StubSession`: deterministic stub for tests and the synthetic benchmark.
- *   - Effective-input-token math used by the run-time UI and the benchmark.
+ *   - `StubSession`: internal-only synthetic session for tests and the
+ *     synthetic benchmark; not reachable from any CLI flag.
+ *   - `estimateTokens`: the four-chars-per-token estimator used by the
+ *     live cost tracker and the stub session.
  */
 
 export {

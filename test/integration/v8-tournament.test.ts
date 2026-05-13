@@ -4,8 +4,13 @@ import * as os from 'os';
 import * as path from 'path';
 import { handleCompile } from '../../src/cli/v8/compile-handler';
 import { handleRun } from '../../src/cli/v8/run-handler';
+import { StubExtractor } from '../../src/contract/extractor/stub-extractor';
 import { StubSession } from '../../src/session/stub-session';
 import { readEntries } from '../../src/ledger/jsonl-ledger';
+
+const stubCompile = (): { extractor: StubExtractor } => ({
+  extractor: StubExtractor.fromHeuristic(),
+});
 
 function tmpDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'v8-tour-int-'));
@@ -37,14 +42,16 @@ describe('integration: swarm v8 run --mode tournament', () => {
     fs.writeFileSync(path.join(work, 'tsconfig.json'), '{}');
     const contractDir = path.join(work, 'contract');
 
-    await handleCompile([
-      'add a CHANGES.md note',
-      '--repo-root', work,
-      '--out', contractDir,
-      '--extractor', 'stub',
-      '--yes',
-      '--no-editor',
-    ]);
+    await handleCompile(
+      [
+        'add a CHANGES.md note',
+        '--repo-root', work,
+        '--out', contractDir,
+        '--yes',
+        '--no-editor',
+      ],
+      stubCompile(),
+    );
 
     const resultPath = path.join(work, 'result.json');
     const ledgerPath = path.join(work, 'ledger.jsonl');
@@ -64,7 +71,6 @@ describe('integration: swarm v8 run --mode tournament', () => {
       [
         contractDir,
         '--repo-root', work,
-        '--session', 'stub',
         '--ledger', ledgerPath,
         '--result', resultPath,
         '--run-id', 'fixed-tour-id',
@@ -108,14 +114,16 @@ describe('integration: swarm v8 run --mode tournament', () => {
   it('rejects an invalid --mode value', async () => {
     const work = tmpDir();
     const contractDir = path.join(work, 'contract');
-    await handleCompile([
-      'g',
-      '--repo-root', work,
-      '--out', contractDir,
-      '--extractor', 'stub',
-      '--yes',
-      '--no-editor',
-    ]);
+    await handleCompile(
+      [
+        'g',
+        '--repo-root', work,
+        '--out', contractDir,
+        '--yes',
+        '--no-editor',
+      ],
+      stubCompile(),
+    );
     const exit = await handleRun([contractDir, '--mode', 'bogus']);
     assert.equal(exit, 1);
   });
@@ -123,14 +131,16 @@ describe('integration: swarm v8 run --mode tournament', () => {
   it('rejects --candidates out of range', async () => {
     const work = tmpDir();
     const contractDir = path.join(work, 'contract');
-    await handleCompile([
-      'g',
-      '--repo-root', work,
-      '--out', contractDir,
-      '--extractor', 'stub',
-      '--yes',
-      '--no-editor',
-    ]);
+    await handleCompile(
+      [
+        'g',
+        '--repo-root', work,
+        '--out', contractDir,
+        '--yes',
+        '--no-editor',
+      ],
+      stubCompile(),
+    );
     const exit = await handleRun([contractDir, '--candidates', '99']);
     assert.equal(exit, 1);
   });

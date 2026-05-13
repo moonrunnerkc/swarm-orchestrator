@@ -1,6 +1,23 @@
+/**
+ * @internal
+ *
+ * Synthetic in-memory `Session` implementation used by the project's own
+ * integration tests and by the synthetic-mode benchmark. NOT a
+ * user-facing provider: the three CLI-reachable providers are
+ * `deterministic`, `local`, and `anthropic` (see `src/session/factory.ts`).
+ *
+ * Tests construct this class directly via `new StubSession({...})`. The
+ * session factory deliberately does not accept a `stub` provider name;
+ * if a future code path attempts to reach the stub through the factory,
+ * the dedicated startup guard (see `assertStubNotInProductionPath`) will
+ * surface the regression with a fail-loud error.
+ */
+
+import { estimateTokens } from './token-estimator';
 import {
   addUsage,
   emptyUsage,
+  type ProviderInfo,
   type Session,
   type SessionRequest,
   type SessionResponse,
@@ -8,6 +25,8 @@ import {
   type SessionStreamResult,
   type SessionUsage,
 } from './types';
+
+export { estimateTokens };
 
 /**
  * Generator function: given the persona id and the dynamic user message,
@@ -70,6 +89,17 @@ export class StubSession implements Session {
 
   totalUsage(): SessionUsage {
     return { ...this.cumulative };
+  }
+
+  providerInfo(): ProviderInfo {
+    return {
+      provider: 'stub',
+      model: this.modelId,
+      backend: null,
+      grammar: null,
+      seed: null,
+      usageEstimated: true,
+    };
   }
 
   async complete(request: SessionRequest): Promise<SessionResponse> {
@@ -179,17 +209,6 @@ export class StubSession implements Session {
       abortReason,
     };
   }
-}
-
-/**
- * Anthropic's published rule of thumb: ~4 characters per token for English
- * source text. Off by 10–20% on real prose; tight enough for the synthetic
- * benchmark where v6 and v8 are tokenized the same way and the cost ratio
- * is what matters.
- */
-export function estimateTokens(text: string): number {
-  if (text.length === 0) return 0;
-  return Math.max(1, Math.ceil(text.length / 4));
 }
 
 function defaultResponder(request: SessionRequest, callIndex: number): string {
