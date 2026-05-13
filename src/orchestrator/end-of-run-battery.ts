@@ -8,6 +8,7 @@ import {
   type BatteryResult,
 } from '../verification/battery-runner';
 import type {
+  DifferentialOverlayFile,
   MutationCommandRunner,
   PropertyCommandRunner,
 } from '../verification';
@@ -32,6 +33,15 @@ export interface EndOfRunBatteryOptions {
   regressionCommandRunner?: BatteryCommandRunner;
   mutationCommandRunner?: MutationCommandRunner;
   propertyCommandRunner?: PropertyCommandRunner;
+  /**
+   * Files the differential-gate must overlay onto its detached base
+   * and patch worktrees. The pre-worker-synthesized regression test
+   * is the canonical case: it lives in the orchestrator's run scratch
+   * directory rather than in either branch's history, and without the
+   * overlay the test command exits non-zero because the file is
+   * missing — not because the regression test caught the bug.
+   */
+  differentialOverlayFiles?: readonly DifferentialOverlayFile[];
 }
 
 export interface EndOfRunBatteryArgs {
@@ -109,5 +119,8 @@ export async function runEndOfRunBattery(args: EndOfRunBatteryArgs): Promise<Bat
       : {}),
     ...(args.options?.mutationCommandRunner !== undefined ? { mutationCommandRunner: args.options.mutationCommandRunner } : {}),
     ...(args.options?.propertyCommandRunner !== undefined ? { propertyCommandRunner: args.options.propertyCommandRunner } : {}),
+    ...(args.options?.differentialOverlayFiles !== undefined
+      ? { differentialOverlayFiles: args.options.differentialOverlayFiles }
+      : {}),
   });
 }

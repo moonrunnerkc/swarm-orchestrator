@@ -100,6 +100,9 @@ async function runDifferentialLayer(state: BatteryRunnerState, started: number):
     agentBranch: state.input.patchCommit,
     testCommand: command,
     timeoutMs: timeoutFor(state.input, 'differential-gate', 120_000),
+    ...(state.input.differentialOverlayFiles
+      ? { overlayFiles: state.input.differentialOverlayFiles }
+      : {}),
   });
   const status = result.status === 'PASS'
     ? 'pass'

@@ -149,6 +149,7 @@ export {
   type BatteryLayerStatus,
   type BatteryResult,
   type BatteryRunnerInput,
+  type DifferentialOverlayFile,
   type LayerResult,
 } from './battery-runner';
 export {

@@ -559,11 +559,41 @@ export class SwarmOrchestrator implements RemediationHost, ReplanHost, StepExecu
       }
     }
 
+    // Build the overlay for the differential gate. The synthesized
+    // regression test lives in the orchestrator's run scratch directory
+    // (under `<workingDir>/test/swarm_synth_attempt_N_*.ts` for ava
+    // shapes, equivalent for other frameworks). It is NOT committed to
+    // any branch — neither the upstream base nor the merged patch. The
+    // differential gate creates detached worktrees at base and patch
+    // commits, so without overlay the synth test file is missing from
+    // both worktrees and the test command exits non-zero because the
+    // file does not exist. That presents as "differential-gate failed
+    // on patch" which is misleading: the regression test never ran.
+    // Overlaying the file into both worktrees lets the gate exercise
+    // the real signal (does the patch make the synthesized test pass?).
+    const differentialOverlayFiles =
+      context.synthesizedTestFilePath !== undefined
+        ? [
+            {
+              absoluteSource: context.synthesizedTestFilePath,
+              relativeDestination: path.relative(
+                this.workingDir,
+                context.synthesizedTestFilePath,
+              ),
+            },
+          ]
+        : undefined;
+
     const batteryResult = await _runEndOfRunBattery({
       workingDir: this.workingDir,
       plan,
       context,
-      options: { differentialTestCommand: context.synthesizedTestCommand },
+      options: {
+        differentialTestCommand: context.synthesizedTestCommand,
+        ...(differentialOverlayFiles !== undefined
+          ? { differentialOverlayFiles }
+          : {}),
+      },
     });
     context.batteryResult = batteryResult;
     logger.info(

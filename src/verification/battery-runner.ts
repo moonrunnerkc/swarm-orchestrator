@@ -15,6 +15,7 @@ export type {
   BatteryLayerStatus,
   BatteryResult,
   BatteryRunnerInput,
+  DifferentialOverlayFile,
   LayerResult,
 } from './battery-types';
 
