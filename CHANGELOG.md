@@ -6,6 +6,90 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Breaking
+
+- Default provider changed from `anthropic` to `deterministic`. Users who
+  relied on the previous default must explicitly opt in to a model provider
+  via `--extractor anthropic --session anthropic`, the `EXTRACTOR_PROVIDER` /
+  `SESSION_PROVIDER` env vars, or the equivalent project-config keys. See
+  [docs/migration.md](docs/migration.md).
+
+### Added
+
+- Deterministic provider for both extractor and session. The tool now runs
+  end-to-end with no network access, no model, and no API key. Three
+  contract input forms (`--contract-file`, `--contract-module`, inline
+  config block) and three patch input channels (`--external-patches-dir`,
+  `--external-patches-queue`, `--external-patches-stdin`).
+- Local provider supporting `openai-compatible`, `ollama`, `llama-cpp`, and
+  `vllm` backends. Backend-agnostic; no model is hardcoded. Configuration
+  through `LOCAL_LLM_*` env vars (see
+  [docs/configuration.md](docs/configuration.md)).
+- Grammar-constrained decoding for backends that support it (`json-schema`
+  on `openai-compatible` / `ollama` / `vllm`, `gbnf` on `llama-cpp`). The
+  unified-diff GBNF grammar ships at
+  `src/inference/local/grammars/unified-diff.gbnf`.
+- Ledger entries written by candidate-generation sites now carry optional
+  provider-attribution fields: `provider`, `modelId`, `backend`, `grammar`,
+  `seed`, `source`, `usageEstimated`. Existing consumers are unaffected.
+- End-to-end test (`test/e2e/deterministic-full-cycle.test.ts`) proving the
+  full compile + run + verify cycle works with `ANTHROPIC_API_KEY` unset
+  and no network access.
+- [docs/providers.md](docs/providers.md),
+  [docs/configuration.md](docs/configuration.md),
+  [docs/migration.md](docs/migration.md). Architecture overview gains a
+  "Provider boundary" section.
+- CLI flags for local-provider configuration on `swarm compile`,
+  `swarm run`, and `swarm resume`: `--local-backend`, `--local-base-url`,
+  `--local-model-extractor`, `--local-model-session`,
+  `--local-persona-model-map`, `--local-grammar`,
+  `--local-request-timeout-ms`, `--local-max-concurrency`,
+  `--local-api-key`, `--local-seed`.
+- Config-file `provider:` block parser at `.swarm/config.yaml`
+  (`src/config/provider-config.ts`). The block sits below env vars in the
+  precedence chain (flag > env > config > default); unknown keys, wrong
+  types, and out-of-set enum values fail loud with the offending key
+  path.
+- Parameterized Session interface contract test running against
+  `DeterministicSession`, `AnthropicSession`, and `LocalSession` with each
+  of the four shipped local backends. Any new provider must pass the
+  same battery to claim Session conformance.
+- Provider-comparison benchmark harness at `benchmarks/provider-bench/`.
+  Supports `--extractor`, `--session`, every `--local-*` flag, and a
+  `--compare-providers` mode that runs all three providers sequentially
+  and emits a Markdown report.
+
+### Changed
+
+- Contract JSON Schema extracted to
+  `src/contract/extractor/contract-schema.ts`. The Anthropic extractor and
+  the deterministic / local extractors all import from it; the LLM tool
+  call binds the same bytes the deterministic validator uses.
+- Anthropic provider records `provider: 'anthropic'` in ledger entries.
+- README Quick Start no longer requires Anthropic credentials. The first
+  runnable example produces a working result with zero external
+  dependencies.
+- `buildExtractor` and `buildSession` consolidated into
+  `src/contract/extractor/factory.ts` and `src/session/factory.ts`. The
+  duplicated session-building logic across `run-handler.ts` and
+  `resume-handler.ts` is gone.
+- The legacy `stub` and `stub-heuristic` provider names are no longer
+  accepted by the CLI factories. `StubExtractor` and `StubSession` remain
+  as library exports for the project's own integration tests and the
+  synthetic benchmark; no flag, env var, or config key can reach them.
+  The four-chars-per-token estimator moved from `stub-session.ts` to
+  `src/session/token-estimator.ts` so production code does not import
+  from an `@internal` module.
+
+### Fixed
+
+- README GitHub Action section incorrectly described the Action as
+  defaulting to the Anthropic provider; `entrypoint.sh` does not set a
+  provider, so the Action inherits the CLI's `deterministic` default.
+- `docs/configuration.md` listed `stub` / `stub-heuristic` among the
+  accepted `--extractor` / `--session` values; the row was removed after
+  the CLI factories stopped accepting those names.
+
 ## [8.0.2] - 2026-05-11
 
 Tag commit: set at release time. Previously-documented architectural
