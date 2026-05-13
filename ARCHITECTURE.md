@@ -2,6 +2,58 @@
 
 > Project overview in [README.md](README.md). High-level positioning: a falsification and attestation layer for AI coding agents — agents produce patches, the orchestrator tries to break them, and only patches that survive merge. Hard-gate layers stop bad patches; advisory layers feed a composite score that flags patches for human review.
 
+## Provider boundary
+
+Input sourcing is a pluggable layer below the verifier. Three providers
+implement two thin interfaces (`Extractor` and `Session`); the verifier and
+every layer above it are provider-agnostic.
+
+```text
++------------------------+        +------------------------+
+| deterministic provider |        | externally-sourced     |
+|  - extractor: file/    | <----- |  contracts and patches |
+|    module/inline       |        |  (no network, no model)|
+|  - session: dir/queue/ |        +------------------------+
+|    stdin patch reader  |
++------------------------+
++------------------------+        +------------------------+
+|     local provider     |        | OpenAI-compatible /    |
+|  - extractor: JSON     | <----- |  Ollama / llama.cpp /  |
+|    schema grammar      |        |  vLLM endpoint         |
+|  - session: GBNF       |        +------------------------+
+|    grammar             |
++------------------------+
++------------------------+        +------------------------+
+|   anthropic provider   |        | api.anthropic.com      |
+|  - extractor: tool-use | <----- |  (cached prefix,       |
+|  - session: cached     |        |  Sonnet tier)          |
+|    prefix              |        +------------------------+
++------------------------+
+                |
+                | obligations + patches (provider-agnostic)
+                v
++--------------------------------------------------------+
+|  verifier + ledger + manifest + canonicalization +     |
+|  falsifiers + snapshot/rollback + quality gates +      |
+|  cost cap + tournament                                 |
++--------------------------------------------------------+
+                |
+                v
+            committed diffs
+```
+
+The verifier never knows which provider produced its input. The ledger
+records provider attribution (`provider`, `modelId`, `backend`, `grammar`,
+`seed`, `source`, `usageEstimated`) on every entry so audits can
+reconstruct which provider produced a given candidate, but the verifier
+makes no decision based on those fields.
+
+Provider selection is per-call. The extractor and session can use different
+providers independently. Selection is explicit; the orchestrator never
+falls back silently between providers.
+
+Reference: [docs/providers.md](docs/providers.md).
+
 ## Module Layout
 
 ### `src/verification/`

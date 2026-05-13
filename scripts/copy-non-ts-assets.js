@@ -24,6 +24,14 @@ const PAIRS = [
     dst: path.join(__dirname, '..', 'dist', 'src', 'contract', 'schema'),
     pattern: /\.json$/,
   },
+  {
+    // Local-inference grammar files used by LocalSession to constrain
+    // FORMAT 1/2/3 output on GBNF-capable backends. Loaded at runtime
+    // via __dirname-relative fs.readFileSync.
+    src: path.join(__dirname, '..', 'src', 'inference', 'local', 'grammars'),
+    dst: path.join(__dirname, '..', 'dist', 'src', 'inference', 'local', 'grammars'),
+    pattern: /\.gbnf$/,
+  },
 ];
 
 function copyMatching(srcDir, dstDir, pattern) {
