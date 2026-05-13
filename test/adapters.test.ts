@@ -575,4 +575,117 @@ describe('Agent Adapters', () => {
       }
     });
   });
+
+  describe('CopilotAdapter transient API error retry (cold-start)', () => {
+    // The CLI sometimes prints "Request failed due to a transient API
+    // error. Retrying..." and exits non-zero despite the implied
+    // self-retry. The adapter has to re-spawn or v6 worker steps die
+    // mid-session with an empty branch — observed yesterday on the
+    // ow.string.creditCard run.
+    //
+    // These tests put a fake `copilot` binary on PATH that maintains a
+    // counter file across invocations so the test can program a
+    // sequence of transient + success exits.
+
+    function makeAttemptScript(transientAttempts: number, successOutput: string): string {
+      // counter file lives next to the script in the bin dir; bash mutates
+      // it atomically with a write-then-mv so concurrent reads see a
+      // consistent value (not needed here — calls are serial — but the
+      // pattern is robust and what the test seeds expect).
+      return [
+        '#!/usr/bin/env bash',
+        'set -u',
+        'COUNTER_FILE="$(dirname "$0")/copilot-attempt-count"',
+        'N=$(cat "$COUNTER_FILE" 2>/dev/null || echo 0)',
+        'N=$((N + 1))',
+        'echo "$N" > "$COUNTER_FILE"',
+        // Drain stdin so the adapter\'s `-p` pipe close doesn\'t SIGPIPE us.
+        'cat >/dev/null',
+        `if [ "$N" -le ${transientAttempts} ]; then`,
+        '  echo "Request failed due to a transient API error. Retrying..."',
+        '  echo "(simulated transient on attempt $N)" >&2',
+        '  exit 1',
+        'fi',
+        `echo "${successOutput}"`,
+        '# Mimic the Copilot stderr summary so parseCopilotRequestCount has something to find',
+        'echo "Requests 1 Premium (5s)" >&2',
+        'exit 0',
+      ].join('\n');
+    }
+
+    it('re-spawns and succeeds when attempt 1 emits the transient marker but attempt 2 succeeds', async () => {
+      await withFakeCliOnPath(
+        'copilot',
+        makeAttemptScript(1, 'copilot recovered output after one transient'),
+        async (workdir) => {
+          const adapter = new CopilotAdapter();
+          const result = await adapter.spawn({
+            prompt: 'finish the task',
+            workdir,
+            executionMode: 'cold-start',
+            timeout: 5_000,
+          });
+          await adapter.shutdown();
+
+          assert.strictEqual(result.exitCode, 0, 'final exit code is 0 after retry');
+          assert.ok(
+            result.stdout.includes('copilot recovered output after one transient'),
+            `expected recovered output on stdout; got: ${result.stdout}`,
+          );
+          assert.strictEqual(
+            result.premiumRequestsConsumed,
+            1,
+            'premium count parsed from the successful attempt only',
+          );
+        },
+      );
+    });
+
+    it('throws a clear error after maxAttempts of transient failures', async () => {
+      await withFakeCliOnPath(
+        'copilot',
+        // Three transients in a row → exhausts the maxAttempts=3 budget
+        // because every single attempt returned the marker.
+        makeAttemptScript(99, 'unused'),
+        async (workdir) => {
+          const adapter = new CopilotAdapter();
+          await assert.rejects(
+            adapter.spawn({
+              prompt: 'finish the task',
+              workdir,
+              executionMode: 'cold-start',
+              timeout: 5_000,
+            }),
+            (err: Error) => {
+              assert.match(err.message, /transient API error/i);
+              assert.match(err.message, /3 attempts/);
+              return true;
+            },
+          );
+          await adapter.shutdown();
+        },
+      );
+    });
+
+    it('does not retry when attempt 1 succeeds cleanly', async () => {
+      await withFakeCliOnPath(
+        'copilot',
+        // Zero transients → first attempt succeeds.
+        makeAttemptScript(0, 'clean first-attempt output'),
+        async (workdir) => {
+          const adapter = new CopilotAdapter();
+          const result = await adapter.spawn({
+            prompt: 'finish the task',
+            workdir,
+            executionMode: 'cold-start',
+            timeout: 5_000,
+          });
+          await adapter.shutdown();
+
+          assert.strictEqual(result.exitCode, 0);
+          assert.ok(result.stdout.includes('clean first-attempt output'));
+        },
+      );
+    });
+  });
 });

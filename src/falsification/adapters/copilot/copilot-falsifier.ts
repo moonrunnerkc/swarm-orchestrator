@@ -49,7 +49,10 @@ import {
   dollarsForRequestsByAuth,
   parseCopilotPremiumRequests,
 } from './copilot-cost';
-import { invokeWithTransientRetry, isTransientApiError } from './transient-retry';
+import {
+  invokeWithTransientRetry,
+  isTransientApiError,
+} from '../../../copilot-transient-retry';
 import { getLogger } from '../../../logger';
 
 const logger = getLogger('copilot-falsifier');

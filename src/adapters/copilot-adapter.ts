@@ -7,6 +7,23 @@ import { AgentAdapter, AgentResult, AgentSpawnOptions } from './agent-adapter';
 import { classifyFatalAgentError } from './fatal-error-classifier';
 import { PersistentInteractiveSession } from './persistent-session';
 import { supervisedSpawn } from './process-supervisor';
+import { getLogger } from '../logger';
+import {
+  invokeWithTransientRetry,
+  isTransientApiError,
+} from '../copilot-transient-retry';
+
+const logger = getLogger('copilot-adapter');
+
+/**
+ * Maximum re-spawn attempts when the Copilot CLI prints the
+ * "Request failed due to a transient API error. Retrying..." marker
+ * and exits non-zero. Matches the falsifier's budget so v6 worker
+ * and v8 falsifier behave identically under transient upstream
+ * provider failure. Three is the same retry budget the v6 repair
+ * agent uses.
+ */
+const COPILOT_TRANSIENT_RETRY_ATTEMPTS = 3;
 
 // Maximum silence before killing a stalled copilot subprocess.
 // Copilot CLI can go quiet for several minutes during extended tool-use
@@ -125,19 +142,41 @@ export class CopilotAdapter implements AgentAdapter {
       args.push('--agent', opts.copilotAgent);
     }
 
-    const result = await supervisedSpawn({
-      command: 'copilot',
-      args,
-      cwd: opts.workdir,
-      // Copilot CLI authenticates via gh's local keyring, not env-var API keys.
-      // It needs the full user environment (XDG_CONFIG_HOME, DBUS_SESSION_BUS_ADDRESS,
-      // keyring paths, etc.) to locate stored credentials. Restricting the env
-      // like we do for API-key-based adapters breaks auth silently.
-      env: copilotChildEnv(),
-      logPrefix: opts.logPrefix,
-      stallTimeoutMs: opts.timeout ?? STALL_TIMEOUT_MS,
-      onLine: opts.onAgentLine ? (line) => opts.onAgentLine!(line) : undefined,
-    });
+    // Wrap supervisedSpawn in transient-retry. The Copilot CLI sometimes
+    // prints "Request failed due to a transient API error. Retrying..."
+    // to stdout/stderr and then exits non-zero despite the implied
+    // self-retry. v6 worker runs died mid-session on this and produced
+    // empty branches; re-spawning the same prompt within seconds
+    // reliably succeeds. The session is one-shot (`-p`) and the child
+    // workdir is the worker's branch — when the transient error fires
+    // before the CLI made any file changes (the observed pattern),
+    // re-spawning is safe and recovers the run.
+    const result = await invokeWithTransientRetry(
+      () =>
+        supervisedSpawn({
+          command: 'copilot',
+          args,
+          cwd: opts.workdir,
+          // Copilot CLI authenticates via gh's local keyring, not env-var API keys.
+          // It needs the full user environment (XDG_CONFIG_HOME, DBUS_SESSION_BUS_ADDRESS,
+          // keyring paths, etc.) to locate stored credentials. Restricting the env
+          // like we do for API-key-based adapters breaks auth silently.
+          env: copilotChildEnv(),
+          logPrefix: opts.logPrefix,
+          stallTimeoutMs: opts.timeout ?? STALL_TIMEOUT_MS,
+          onLine: opts.onAgentLine ? (line) => opts.onAgentLine!(line) : undefined,
+        }),
+      {
+        maxAttempts: COPILOT_TRANSIENT_RETRY_ATTEMPTS,
+        onAttempt: (res, attempt) => {
+          if (attempt < COPILOT_TRANSIENT_RETRY_ATTEMPTS && isTransientApiError(res)) {
+            logger.warn(
+              `copilot worker transient API error on attempt ${attempt}/${COPILOT_TRANSIENT_RETRY_ATTEMPTS}; re-spawning`,
+            );
+          }
+        },
+      },
+    );
     const durationMs = Date.now() - startTime;
 
     // Copilot prints scope-enforcement messages on stderr when an agent tries

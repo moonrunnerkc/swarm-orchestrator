@@ -9,7 +9,7 @@ import {
   TransientApiRetryExhaustedError,
   invokeWithTransientRetry,
   isTransientApiError,
-} from '../../../../src/falsification/adapters/copilot/transient-retry';
+} from '../../../../src/copilot-transient-retry';
 
 /**
  * Drives the retry path for the Copilot CLI's transient-API-error
