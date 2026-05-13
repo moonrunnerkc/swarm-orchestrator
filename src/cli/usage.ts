@@ -3,13 +3,19 @@ export function showUsage(): void {
 Swarm Orchestrator - Falsification and Audit-Ready Orchestration for AI Coding Agents
 
 Usage:
+  swarm compile <goal>                   Compile a goal into a typed contract (v8 default)
+  swarm run <contract>                   Run a compiled contract through the v8 pipeline
+  swarm run --goal "<text>"              Compile + run in one step (add --v6 for legacy)
+  swarm resume <run-id>                  Resume a killed run from the ledger
+  swarm stats <run-id>                   Aggregate diagnostic counts from a run ledger
+  swarm doctor                           Probe local prerequisites (API key, falsifiers, PMs)
+
   swarm bootstrap <path(s)> "Goal"       Deep analysis and plan generation (multi-repo)
   swarm plan <goal>                      Generate intelligent plan
   swarm plan --copilot <goal>            Generate Copilot CLI prompt for planning
   swarm plan import <runid> <transcript> Parse plan from Copilot /share transcript
   swarm execute <planfile>               Execute a saved plan step-by-step
   swarm swarm <planfile>                 Execute plan with verified branch/worktree workflow (analyzer-gated concurrency)
-  swarm run --goal "description"          Plan + execute in one step (convenience)
   swarm quick "task"                     Quick-fix mode for simple single-agent tasks
   swarm demo <scenario>                  Run pre-configured demo scenario
   swarm demo-fast                        Fast 2-step demo (alias for: swarm demo demo-fast)

@@ -63,6 +63,7 @@ import {
 import { initActiveRules, readRuleLoaderConfig } from './rules/loader';
 import { handleV8Command } from './cli/v8/index';
 import { handleRunV8 } from './cli/v8/run-wrapper';
+import { handleRun as handleV8RunDirect } from './cli/v8/run-handler';
 
 /**
  * Commands that consume cheat rules or other rule-pack data and benefit from
@@ -164,13 +165,20 @@ async function main(): Promise<void> {
         // opt-out: default switches to v8, --v6 flag preserves old
         // behavior." The dispatch here implements that flip. --v6 is
         // stripped before forwarding.
+        //
+        // Within the v8 path, `--goal "<text>"` goes through the
+        // compile-then-run wrapper; a positional contract path goes
+        // straight to the run handler so users no longer need the
+        // explicit `v8` prefix to run a precompiled contract.
         const v6Index = args.indexOf('--v6');
         if (v6Index >= 0) {
           const v6Args = args.slice();
           v6Args.splice(v6Index, 1);
           exitCode = await handleRunCommand(v6Args);
-        } else {
+        } else if (args.includes('--goal')) {
           exitCode = await handleRunV8(args.slice(1));
+        } else {
+          exitCode = await handleV8RunDirect(args.slice(1));
         }
         break;
       }
@@ -191,6 +199,15 @@ async function main(): Promise<void> {
         break;
       case 'recipe-info':
         exitCode = handleRecipeInfoCommand(args);
+        break;
+      case 'compile':
+      case 'resume':
+      case 'stats':
+      case 'doctor':
+        // Top-level aliases for the v8 pipeline. `swarm <cmd>` is the
+        // documented form; `swarm v8 <cmd>` remains supported for users
+        // pinned to the explicit prefix.
+        exitCode = await handleV8Command(args);
         break;
       case 'v8':
         exitCode = await handleV8Command(args.slice(1));

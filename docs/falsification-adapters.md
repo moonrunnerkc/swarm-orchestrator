@@ -104,7 +104,7 @@ midpoint). The constant is overridable via
 
 ## CLI flag
 
-`swarm v8 run` accepts `--falsifiers <on|off>` (default `on`). Setting
+`swarm run` accepts `--falsifiers <on|off>` (default `on`). Setting
 `off` makes `dispatchFalsifiers()` short-circuit; adapter code stays in
 the tree but is never invoked.
 

@@ -231,9 +231,9 @@ swarm attest verify HEAD
 
 This is the only v7 falsification-battery CLI surface exposed today.
 
-## Falsification adapter flags (v8 run)
+## Falsification adapter flags
 
-`swarm v8 run` accepts `--falsifiers <on|off>` (default `on`). Setting
+`swarm run` accepts `--falsifiers <on|off>` (default `on`). Setting
 `off` short-circuits the falsification dispatcher entirely; adapter code
 stays in tree but is never invoked.
 

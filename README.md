@@ -20,7 +20,7 @@ producer's verifier accepts a patch, registered falsifier adapters get a chance 
 break it before it merges. Every action lands in an append-only hash-chained ledger
 you can audit, resume, or replay.
 
-Before your first run, sanity-check the environment with `swarm v8 doctor` —
+Before your first run, sanity-check the environment with `swarm doctor` —
 it probes ANTHROPIC_API_KEY, falsifier CLIs (codex/copilot/claude), and the
 package manager so a misconfigured prerequisite surfaces immediately instead of
 producing a confusing run summary.
@@ -31,8 +31,11 @@ decides what reaches your repo.
 ## Status
 
 Version `8.0.2` on `main`. Node `>= 20` (CI matrix: 20, 22). License ISC. The v8
-architecture is the default for `swarm run`; the v6 verified-branch pipeline is
-preserved under `swarm run --v6` and the `swarm swarm` / `swarm execute` commands.
+architecture is the default — `swarm compile`, `swarm run`, `swarm resume`,
+`swarm stats`, and `swarm doctor` all dispatch to it without a version prefix.
+The legacy v6 verified-branch pipeline is preserved as opt-in under
+`swarm run --v6` and the `swarm swarm` / `swarm execute` commands. The `swarm v8
+<cmd>` form still works for anyone pinned to the explicit prefix.
 Falsifier subsystem: Codex on, Copilot on, ClaudeCode opt-in (see
 [Adapters](#adapters)).
 
@@ -46,14 +49,17 @@ git clone https://github.com/moonrunnerkc/swarm-orchestrator.git
 cd swarm-orchestrator && npm install && npm run build && npm link
 
 # Compile a goal into a contract, then run it
-swarm v8 compile "add a /health endpoint that returns 200 OK" --yes
-swarm v8 run .swarm/contracts/<contract-id>
+swarm compile "add a /health endpoint that returns 200 OK" --yes
+swarm run .swarm/contracts/<contract-id>
 
-# Or both in one step (defaults to v8)
+# Or both in one step
 swarm run --goal "add a /health endpoint that returns 200 OK"
 
+# Opt into the legacy v6 verified-branch pipeline
+swarm run --v6 --goal "add a /health endpoint that returns 200 OK"
+
 # Resume a killed run from the ledger
-swarm v8 resume <run-id>
+swarm resume <run-id>
 ```
 
 ## How it works
@@ -86,11 +92,11 @@ streaming verifier      post-merge integration
             committed diffs
 ```
 
-1. **Compile.** `swarm v8 compile <goal>` calls Anthropic with a tool-use schema and
+1. **Compile.** `swarm compile <goal>` calls Anthropic with a tool-use schema and
    writes a typed `contract.jsonl` plus a `manifest.json` carrying goal, repo
    context, extractor provenance, and a SHA-256 of the canonical contract bytes.
    Identical inputs produce identical contract hashes.
-2. **Dispatch.** `swarm v8 run` opens one cached Anthropic session and walks each
+2. **Dispatch.** `swarm run` opens one cached Anthropic session and walks each
    obligation. The population manager picks the persona whose trigger predicate
    matches the obligation's type. In `tournament` mode, N candidates run in parallel;
    a verifier picks the top scorer; losers are logged but never committed.
@@ -141,21 +147,24 @@ sandbox posture, and dual-column cost reporting in
 ## CLI reference
 
 ```text
-swarm v8 compile <goal> [--out <dir>] [--yes] [--extractor anthropic|stub]
-                        [--model <id>] [--recipe <name>]
-swarm v8 run <contract>  [--session anthropic|stub] [--mode single|tournament]
-                         [--candidates <n>] [--falsifiers on|off]
-                         [--forbid-import <names>] [--cost-cap <usd>]
-                         [--no-cost-cap-live] [--snapshot-cleanup <policy>]
-                         [--falsifier-scheduler none|ucb1] [--falsifier-stats-path <path>]
-                         [--no-streaming] [--no-pre-generation] [--no-post-merge]
-swarm v8 resume <run-id> [--ledger <path>] [--contract <dir>]
-swarm v8 stats <run-id>  [--ledger <path>] [--json]
+swarm compile <goal>  [--out <dir>] [--yes] [--extractor anthropic|stub]
+                      [--model <id>] [--recipe <name>]
+swarm run <contract>  [--session anthropic|stub] [--mode single|tournament]
+                      [--candidates <n>] [--falsifiers on|off]
+                      [--forbid-import <names>] [--cost-cap <usd>]
+                      [--no-cost-cap-live] [--snapshot-cleanup <policy>]
+                      [--falsifier-scheduler none|ucb1] [--falsifier-stats-path <path>]
+                      [--no-streaming] [--no-pre-generation] [--no-post-merge]
+swarm resume <run-id> [--ledger <path>] [--contract <dir>]
+swarm stats <run-id>  [--ledger <path>] [--json]
+swarm doctor          [--cwd <path>] [--require-git]
 
-swarm run --goal "<text>"  # compiles and runs via v8 (use --v6 for legacy pipeline)
+swarm run --goal "<text>"  # compiles and runs; add --v6 for the legacy pipeline
 swarm gates [path]         # run quality gates against a repo
 swarm recipes              # list built-in recipes
 swarm attest verify <commit>
+
+# `swarm v8 <cmd>` is still accepted as an alias for any of the above.
 ```
 
 Run any subcommand with `--help` for the full flag set. Full reference:
