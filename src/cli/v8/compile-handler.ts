@@ -24,6 +24,7 @@ import {
   type LocalProviderFlagValues,
 } from './local-provider-flags';
 import { loadProviderConfig } from '../../config/provider-config';
+import { formatGrammarWarning, resolveGrammarForConsumer } from './grammar-resolve';
 
 const logger = getLogger('cli:v8:compile');
 
@@ -178,10 +179,14 @@ export async function handleCompile(
 }
 
 function buildExtractor(flags: CompileFlags): Extractor {
-  const grammar =
-    flags.local.grammar === 'gbnf' || flags.local.grammar === 'outlines'
-      ? null
-      : flags.local.grammar;
+  const resolution = resolveGrammarForConsumer('extractor', flags.local.grammar);
+  // The warning fires only when this extractor is the local one — the
+  // deterministic and anthropic branches ignore `localGrammar` entirely,
+  // and emitting a coercion message for a consumer that isn't reading
+  // the value would be misleading.
+  if (resolution.coercion && flags.extractor === 'local') {
+    process.stderr.write(formatGrammarWarning(resolution.coercion) + '\n');
+  }
   return buildExtractorFromFactory({
     provider: flags.extractor,
     contractFile: flags.contractFile,
@@ -192,7 +197,7 @@ function buildExtractor(flags: CompileFlags): Extractor {
     localBackend: flags.local.backend,
     localBaseUrl: flags.local.baseUrl,
     localModel: flags.local.modelExtractor,
-    localGrammar: grammar,
+    localGrammar: resolution.effective,
     localSeed: flags.local.seed,
     localApiKey: flags.local.apiKey,
   });

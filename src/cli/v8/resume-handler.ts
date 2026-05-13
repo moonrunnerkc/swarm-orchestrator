@@ -31,6 +31,7 @@ import {
   type LocalProviderFlagValues,
 } from './local-provider-flags';
 import { loadProviderConfig } from '../../config/provider-config';
+import { formatGrammarWarning, resolveGrammarForConsumer } from './grammar-resolve';
 
 const logger = getLogger('cli:v8:resume');
 
@@ -370,6 +371,13 @@ function inferContractPath(
 }
 
 function buildSession(flags: ResumeFlags, projectContext: string): Session {
+  const resolution = resolveGrammarForConsumer('session', flags.local.grammar);
+  // Only the local session reads `localGrammar`; emitting a warning when
+  // the deterministic or anthropic branch would ignore the value would be
+  // misleading.
+  if (resolution.coercion && flags.sessionKind === 'local') {
+    process.stderr.write(formatGrammarWarning(resolution.coercion) + '\n');
+  }
   const opts: Parameters<typeof buildSessionFromFactory>[0] = {
     provider: flags.sessionKind,
     projectContext,
@@ -382,7 +390,7 @@ function buildSession(flags: ResumeFlags, projectContext: string): Session {
     localBackend: flags.local.backend,
     localBaseUrl: flags.local.baseUrl,
     localModel: flags.local.modelSession,
-    localGrammar: flags.local.grammar,
+    localGrammar: resolution.effective,
     localSeed: flags.local.seed,
     localApiKey: flags.local.apiKey,
   };

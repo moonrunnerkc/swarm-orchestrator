@@ -42,13 +42,28 @@ At least one source must be selected when the session is `deterministic`.
 | `--local-model-extractor <id>` | `LOCAL_LLM_MODEL_EXTRACTOR` | `provider.local.model_extractor` | yes if extractor=local | none | model id for the extractor |
 | `--local-model-session <id>` | `LOCAL_LLM_MODEL_SESSION` | `provider.local.model_session` | yes if session=local | none | model id for the session |
 | `--local-persona-model-map <p\|json>` | — | `provider.local.persona_model_map` | no | empty | persona id → model id map |
-| `--local-grammar <mode>` | `LOCAL_LLM_GRAMMAR` | `provider.local.grammar` | no | `auto` | `auto` / `gbnf` / `json-schema` / `outlines` / `none` |
+| `--local-grammar <mode>` | `LOCAL_LLM_GRAMMAR` | `provider.local.grammar` | no | `auto` | `auto` / `gbnf` / `json-schema` / `outlines` / `none` (see grammar-capability matrix below) |
 | `--local-api-key <key>` | `LOCAL_LLM_API_KEY` | — | no | none | bearer token, if the endpoint needs one |
 | `--local-seed <n>` | `LOCAL_LLM_SEED` | `provider.local.seed` | no | `0` | sampling seed |
 | `--local-request-timeout-ms <n>` | `LOCAL_LLM_REQUEST_TIMEOUT_MS` | `provider.local.request_timeout_ms` | no | `120000` | per-request timeout |
 | `--local-max-concurrency <n>` | `LOCAL_LLM_MAX_CONCURRENCY` | `provider.local.max_concurrency` | no | `1` | concurrent backend requests |
 
 See [docs/providers.md](providers.md) for backend-specific details.
+
+### Grammar capability matrix
+
+The single `--local-grammar` flag feeds two independent consumers. Each
+consumer accepts a different subset:
+
+| Consumer | Accepted grammar values |
+|----------|-------------------------|
+| extractor | `auto`, `json-schema`, `none` |
+| session | `auto`, `gbnf`, `json-schema`, `outlines`, `none` |
+
+Values outside a consumer's accepted set are coerced to `auto` for that
+consumer with a single startup warning to stderr naming the flag, the
+value, the consumer, and the effective value. The run still succeeds.
+The peer consumer continues to honor the requested value when it can.
 
 ## Anthropic provider
 

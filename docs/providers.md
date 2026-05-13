@@ -152,6 +152,31 @@ session targets the unified-diff GBNF shipped at
 advertises no support for the requested mode, the session logs a warning
 naming the backend and the chosen fallback, then proceeds.
 
+### Grammar capability matrix
+
+The single `--local-grammar` flag is consumed by two independent pieces.
+Each accepts a different subset:
+
+| Consumer | Accepted grammar values |
+|----------|-------------------------|
+| extractor | `auto`, `json-schema`, `none` |
+| session | `auto`, `gbnf`, `json-schema`, `outlines`, `none` |
+
+Values outside a consumer's accepted set are coerced to `auto` for that
+consumer, with a single startup warning to stderr naming the flag, the
+requested value, the consumer that cannot honor it, and the effective
+value. Example:
+
+```
+warning: --local-grammar=gbnf does not apply to the extractor (extractor accepts: auto, json-schema, none); extractor will use 'auto'. Session will use 'gbnf' as requested.
+```
+
+The warning is informational. The run still succeeds, and the peer
+consumer honors the requested value if it can. The warning fires only
+when the affected consumer is actually in use (`--extractor local` /
+`--session local`); coercion is silent for deterministic and anthropic
+providers because those branches do not read the grammar value.
+
 ### Determinism
 
 The local provider passes `temperature: 0` and `seed: 0` (configurable via

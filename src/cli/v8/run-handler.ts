@@ -19,6 +19,7 @@ import {
   type LocalProviderFlagValues,
 } from './local-provider-flags';
 import { loadProviderConfig } from '../../config/provider-config';
+import { formatGrammarWarning, resolveGrammarForConsumer } from './grammar-resolve';
 import {
   cacheHitRate,
   effectiveInputTokens,
@@ -430,6 +431,13 @@ export function estimateUsageCostUsd(usage: SessionUsage): number {
 }
 
 function buildSession(flags: RunFlags, projectContext: string): Session {
+  const resolution = resolveGrammarForConsumer('session', flags.local.grammar);
+  // Only the local session reads `localGrammar`; the deterministic and
+  // anthropic branches ignore it. Emitting a coercion warning for a
+  // consumer that isn't reading the value would be misleading.
+  if (resolution.coercion && flags.sessionKind === 'local') {
+    process.stderr.write(formatGrammarWarning(resolution.coercion) + '\n');
+  }
   const opts: Parameters<typeof buildSessionFromFactory>[0] = {
     provider: flags.sessionKind,
     projectContext,
@@ -442,7 +450,7 @@ function buildSession(flags: RunFlags, projectContext: string): Session {
     localBackend: flags.local.backend,
     localBaseUrl: flags.local.baseUrl,
     localModel: flags.local.modelSession,
-    localGrammar: flags.local.grammar,
+    localGrammar: resolution.effective,
     localSeed: flags.local.seed,
     localApiKey: flags.local.apiKey,
   };
