@@ -89,6 +89,36 @@ All notable changes to this project are documented here. The format is based on
 - `docs/configuration.md` listed `stub` / `stub-heuristic` among the
   accepted `--extractor` / `--session` values; the row was removed after
   the CLI factories stopped accepting those names.
+- `--local-grammar gbnf` (or any value the extractor cannot honor) used
+  to be silently coerced to null with no user-facing signal. The
+  compile, run, and resume handlers now resolve the requested value per
+  consumer through `src/cli/v8/grammar-resolve.ts` and emit a single
+  stderr warning naming the flag, the value, the consumer, and the
+  effective value. The warning fires only when the affected consumer is
+  the local one; the deterministic and anthropic branches ignore
+  `localGrammar` and a coercion message there would be misleading. The
+  grammar-capability matrix is documented in
+  [docs/configuration.md](docs/configuration.md) and
+  [docs/providers.md](docs/providers.md).
+
+### Added (benchmark provider switching)
+
+- `benchmarks/swe-bench/evaluation-scripts/run_swebench.py` and
+  `benchmarks/harness/run_fresh.sh` now accept and forward
+  `--extractor`, `--session`, and the ten `--local-*` flags (plus the
+  matching env-var fallbacks) to every orchestrator subprocess. Default
+  behavior (no provider flags supplied) is unchanged.
+- `run_swebench.py --compare-providers` runs the SWE-bench sweep three
+  times (once per provider) and writes a side-by-side comparison JSON
+  to `RESULTS_DIR/<run-id>-compare-providers.json` next to the
+  per-sweep summaries. Per-instance pivot lets a diff tool compare
+  provider behavior on the same task.
+- [benchmarks/README.md](benchmarks/README.md) documents which
+  harnesses accept provider flags, which have a comparison mode, and
+  which are out of scope (the `swarm demo` subcommand on `run-n.sh`
+  uses a fixed-scenario pipeline that does not accept extractor /
+  session flags; the `ladder` harness invokes `claude` directly and
+  never the orchestrator).
 
 ## [8.0.2] - 2026-05-11
 

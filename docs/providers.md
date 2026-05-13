@@ -174,8 +174,9 @@ warning: --local-grammar=gbnf does not apply to the extractor (extractor accepts
 The warning is informational. The run still succeeds, and the peer
 consumer honors the requested value if it can. The warning fires only
 when the affected consumer is actually in use (`--extractor local` /
-`--session local`); coercion is silent for deterministic and anthropic
-providers because those branches do not read the grammar value.
+`--session local`); no warning is emitted for deterministic or
+anthropic providers because those branches do not read the grammar
+value at all (so there is nothing to coerce).
 
 ### Determinism
 
