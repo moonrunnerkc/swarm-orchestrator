@@ -264,10 +264,76 @@ function readRelevantFiles(
 }
 
 /**
+ * Universal assertion-grounding guidance. Applies to every framework
+ * profile (Python and JS alike) because the failure mode it prevents is
+ * language-independent: synthesized tests that pass against the worker's
+ * actual fix get false-rejected because the assertion was stricter than
+ * the spec.
+ *
+ * The 2026-05 ow run is the canonical case. The goal said:
+ *   "Use ArgumentError message pattern: `Expected ${label} to be a valid
+ *    credit card number, got \`${value}\``"
+ * The synthesizer hard-coded `label = '\`string\`'` (backticks around the
+ * literal `string`) and asserted on exact-string equality. The worker's
+ * implementation produced `Expected string to be a valid credit card
+ * number, got \`...\`` — correct per ow's actual convention (visible in
+ * `string-email.ts`'s `Expected ${label} to be an email address, got
+ * \`${value}\`` getter) — but the synth's over-strict assertion rejected
+ * the patch. The differential gate trusted the synth and blocked merge
+ * on a *correct* implementation.
+ *
+ * The three rules below prevent this whole class of failure:
+ *
+ *   1. `${var}` placeholders in the goal text are runtime substitutions
+ *      done by the library being tested, not literal strings to copy.
+ *      Match them as patterns (regex `.+` or substring), not exact text.
+ *
+ *   2. Ground assertions about library output in actual library
+ *      behavior. Read at least one existing file (impl or test) that
+ *      exercises the same assertion shape before writing yours. If the
+ *      goal references "the email predicate" and you are adding a
+ *      sibling predicate, read the email predicate's doc-comment and
+ *      tests first.
+ *
+ *   3. Prefer assertions on the discriminating signal (the bug being
+ *      caught) over assertions on incidental formatting (label
+ *      punctuation, exact whitespace, label wrapping). Cosmetic
+ *      differences are not the bug.
+ */
+const ASSERTION_GROUNDING_GUIDANCE = [
+  'ASSERTION GROUNDING — non-negotiable rules for every assertion you author:',
+  '',
+  '1. `${var}` / {var} / <var> placeholders in the goal text describe',
+  '   runtime substitutions the library performs. Treat them as patterns,',
+  '   not literal strings to copy into your assertion. Match error',
+  '   messages with regex (e.g. `/Expected .+ to be valid, got `.+`/`) or',
+  '   substring containment, NOT exact-string equality, when the spec',
+  '   contains placeholders.',
+  '',
+  '2. Before asserting on library output (error messages, return shapes,',
+  '   serialized formats), read at least one existing file in the repo',
+  '   that produces the same kind of output. If the goal says "mirror',
+  '   `<feature X>`", you must read `<feature X>`\'s implementation AND',
+  '   its tests, and ground your assertions in what they actually emit.',
+  '   Guessing label/punctuation/format conventions from the goal text',
+  '   alone is how synthesized tests false-reject correct implementations.',
+  '',
+  '3. Assert on the discriminating signal — the *behavior* the goal',
+  '   pins — and not on incidental formatting. A credit-card test that',
+  '   asserts "the error contains the offending value AND the phrase',
+  '   `credit card`" is robust; one that asserts an exact 65-character',
+  '   error string with specific backtick placement is brittle and will',
+  '   false-reject a correct implementation over cosmetic differences.',
+].join('\n');
+
+/**
  * Compose the synthesizer's user prompt. The framework profile's
  * `promptGuidance` is injected verbatim between the goal and the
  * relevant-files block so the LLM sees the placement and testCommand
- * conventions before it sees the source it has to test.
+ * conventions before it sees the source it has to test. The
+ * assertion-grounding guidance is injected unconditionally because the
+ * failure mode it prevents — synth false-rejections from over-strict
+ * assertions — is language- and framework-independent.
  */
 export function buildPrompt(
   input: TestSynthesisInput,
@@ -279,6 +345,8 @@ export function buildPrompt(
 ${input.goalText}
 
 ${profile.promptGuidance}
+
+${ASSERTION_GROUNDING_GUIDANCE}
 
 Relevant source context:
 ${readRelevantFiles(input.targetRepoPath, input.relevantFiles)}

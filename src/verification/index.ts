@@ -45,6 +45,7 @@ export {
   type TestSynthesisResult,
   type TestSynthesisStatus,
 } from './test-synthesizer';
+export type { VerificationCommandRunner } from './test-synthesizer-types';
 export {
   detectTestFramework,
   getFrameworkProfile,

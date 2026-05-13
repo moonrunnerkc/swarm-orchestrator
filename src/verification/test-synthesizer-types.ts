@@ -3,6 +3,20 @@ import type { VerificationCommandResult } from './command-runner';
 import type { TestFramework } from './test-framework-detection';
 
 /**
+ * Signature of the synthesizer's verification-command runner. Matches the
+ * real {@link import('./command-runner').runVerificationCommand} so the
+ * default can be swapped in tests without changing call sites. Tests inject
+ * a fake here to assert synthesizer behavior (placement, sanitization,
+ * rejection-feedback routing) without depending on the host having pytest
+ * or any other interpreter installed.
+ */
+export type VerificationCommandRunner = (
+  command: string,
+  cwd: string,
+  timeoutMs?: number,
+) => Promise<VerificationCommandResult>;
+
+/**
  * Shared type definitions for the test synthesizer's public API. Lives in
  * its own file so the run loop (`test-synthesizer.ts`) and the I/O helpers
  * (`test-synthesizer-io.ts`) can both import these types without creating
@@ -62,6 +76,17 @@ export interface TestSynthesisInput {
    * eval-driver path leaves it unset so detection runs on the real repo.
    */
   framework?: TestFramework;
+  /**
+   * Override the verification-command runner. Tests inject a fake to drive
+   * the synthesizer's preflight + base-run state machine without requiring
+   * a working `python3 -m pytest` on the host (or, for JS profiles, any
+   * particular Node version). Production callers leave this undefined and
+   * the real `runVerificationCommand` is used.
+   *
+   * Underscore prefix matches the convention used elsewhere
+   * (`_synthesize` in pre-worker-synthesis) for test-only injection seams.
+   */
+  _runCommand?: VerificationCommandRunner;
 }
 
 export interface TestSynthesisResult {

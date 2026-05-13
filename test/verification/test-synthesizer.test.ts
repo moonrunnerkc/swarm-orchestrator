@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { AgentAdapter, AgentResult, AgentSpawnOptions } from '../../src/adapters/agent-adapter';
 import { DEFAULT_TIMEOUT_MS, synthesizeRegressionTest } from '../../src/verification';
+import type { VerificationCommandRunner } from '../../src/verification';
 
 class FakeAdapter implements AgentAdapter {
   readonly name = 'fake';
@@ -36,6 +37,29 @@ function candidate(source: string): string {
     testFilePath: 'regression.test.js',
     testCommand: 'node {{TEST_FILE}}',
     testSource: source,
+  });
+}
+
+/**
+ * Build a fake verification-command runner driven by an exit-code function.
+ * Tests use this to assert synthesizer state-machine behavior without
+ * depending on the host having pytest, a specific Python version, or any
+ * particular Node version installed. The runner records nothing — it is a
+ * pure exit-code stub. Output strings are empty because the synthesizer
+ * only feeds output back to the LLM via retries, and unit tests assert on
+ * the structured `attempts` result instead.
+ */
+function makeFakeRunner(
+  exitCodeFor: (command: string) => number,
+): VerificationCommandRunner {
+  return async (command: string, cwd: string) => ({
+    command,
+    cwd,
+    exitCode: exitCodeFor(command),
+    stdout: '',
+    stderr: '',
+    durationMs: 0,
+    timedOut: false,
   });
 }
 
@@ -174,6 +198,90 @@ describe('test synthesizer', () => {
     assert.match(prompt, /do NOT hardcode.*\.venv/i);
   });
 
+  it('injects the universal assertion-grounding guidance for every framework', async () => {
+    // Regression for the 2026-05 ow synth false-rejection. The synth
+    // hard-coded `label = '\`string\`'` (backticks around the literal
+    // `string`) because the goal text used `${label}` and the synth
+    // interpreted that as a string to fill in rather than a runtime
+    // placeholder to match. The worker's correct implementation then
+    // failed the over-strict assertion and the differential gate
+    // blocked merge on a correct patch. The fix is prompt-level:
+    // every framework's prompt now carries explicit rules that
+    // (a) `${var}` placeholders are patterns, (b) assertions must be
+    // grounded in repo evidence, (c) prefer discriminating signal over
+    // incidental formatting. Pinning the guidance text here so a
+    // future prompt edit cannot silently remove these rules and
+    // re-introduce the false-rejection mode.
+    //
+    // Iterates every framework so the contract holds for Python and
+    // JS profiles alike — the failure mode is language-independent.
+    const shapes: ReadonlyArray<{ name: string; setup: (repo: string) => void }> = [
+      { name: 'pytest-standard', setup: (repo) => fs.writeFileSync(path.join(repo, 'conftest.py'), '# pytest fixtures', 'utf8') },
+      { name: 'django-runtests', setup: (repo) => {
+          fs.mkdirSync(path.join(repo, 'tests'), { recursive: true });
+          fs.writeFileSync(path.join(repo, 'tests', 'runtests.py'), '# runner', 'utf8');
+        },
+      },
+      { name: 'pytest-fallback', setup: (_repo) => { /* empty repo */ } },
+      { name: 'js-ava', setup: (repo) => fs.writeFileSync(
+          path.join(repo, 'package.json'),
+          JSON.stringify({ devDependencies: { ava: '^6.0.0' } }),
+        ),
+      },
+      { name: 'js-jest', setup: (repo) => fs.writeFileSync(
+          path.join(repo, 'package.json'),
+          JSON.stringify({ devDependencies: { jest: '^29.0.0' } }),
+        ),
+      },
+      { name: 'js-node-test', setup: (repo) => fs.writeFileSync(
+          path.join(repo, 'package.json'),
+          JSON.stringify({ scripts: { test: 'node --test test/**/*.test.js' } }),
+        ),
+      },
+    ];
+
+    for (const shape of shapes) {
+      const repo = tmpRepo();
+      dirs.push(repo);
+      shape.setup(repo);
+
+      const captured: string[] = [];
+      class CaptureAdapter implements AgentAdapter {
+        readonly name = 'capture';
+        async spawn(opts: AgentSpawnOptions): Promise<AgentResult> {
+          captured.push(opts.prompt);
+          return { stdout: candidate('assert(true);\n'), stderr: '', exitCode: 0, durationMs: 1 };
+        }
+      }
+
+      await synthesizeRegressionTest({
+        goalText: 'goal',
+        targetRepoPath: repo,
+        adapter: new CaptureAdapter(),
+        maxAttempts: 1,
+        timeoutMs: 30_000,
+        _runCommand: async (command, cwd) => ({
+          command, cwd, exitCode: 1, stdout: '', stderr: '', durationMs: 0, timedOut: false,
+        }),
+      });
+
+      assert.equal(captured.length, 1, `${shape.name}: expected one prompt`);
+      const prompt = captured[0]!;
+      assert.match(prompt, /ASSERTION GROUNDING/,
+        `${shape.name}: prompt must carry the universal grounding guidance header`);
+      // `[\s\S]*` so the assertion crosses newlines — the guidance text
+      // is multi-line and `.` does not match `\n` in JS regex.
+      assert.match(prompt, /\$\{var\}[\s\S]*placeholders[\s\S]*patterns/i,
+        `${shape.name}: prompt must direct the LLM to treat \${var}-style placeholders as patterns, not literals`);
+      assert.match(prompt, /(regex[\s\S]*substring)|(substring[\s\S]*regex)/i,
+        `${shape.name}: prompt must direct the LLM to use regex or substring matching for templated messages`);
+      assert.match(prompt, /read at least one existing file/i,
+        `${shape.name}: prompt must require grounding assertions in repo evidence`);
+      assert.match(prompt, /discriminating signal|incidental formatting/i,
+        `${shape.name}: prompt must direct the LLM to assert on behavior, not cosmetic formatting`);
+    }
+  });
+
   it('preserves directory structure for Django runtests-shaped repos', async () => {
     const repo = tmpRepo();
     dirs.push(repo);
@@ -249,15 +357,25 @@ describe('test synthesizer', () => {
       }),
     ]);
 
+    // Inject a fake command runner so the test does not require pytest
+    // on the host. Preflight (`--collect-only`) returns 0 ⇒ accepts the
+    // structural check. Base run returns non-zero ⇒ synthesizer accepts
+    // the candidate as catching a bug. See VerificationCommandRunner.
+    const runCommand = makeFakeRunner((command) =>
+      /--collect-only/.test(command) ? 0 : 1,
+    );
+
     const result = await synthesizeRegressionTest({
       goalText: 'pytest regression test',
       targetRepoPath: repo,
       adapter,
       maxAttempts: 1,
       timeoutMs: 30_000,
+      _runCommand: runCommand,
     });
 
-    assert.notEqual(result.status, 'GENERATION_FAILED');
+    assert.equal(result.status, 'GENERATED',
+      `synthesis must reach GENERATED with the injected runner; got ${result.status}`);
     const written = result.testFilePath ?? '';
     const rel = path.relative(repo, written);
     assert.match(rel, /^swarm_synth_attempt_1_test_thing\.py$/,
@@ -278,12 +396,19 @@ describe('test synthesizer', () => {
       }),
     ]);
 
+    // Fake runner: preflight passes, base run fails ⇒ candidate accepted
+    // and result.testCommand is populated for the sanitization assertion.
+    const runCommand = makeFakeRunner((command) =>
+      /--collect-only/.test(command) ? 0 : 1,
+    );
+
     const result = await synthesizeRegressionTest({
       goalText: 'pylint-style regression test',
       targetRepoPath: repo,
       adapter,
       maxAttempts: 1,
       timeoutMs: 30_000,
+      _runCommand: runCommand,
     });
 
     const finalCommand = result.testCommand ?? '';
@@ -313,12 +438,30 @@ describe('test synthesizer', () => {
     });
     const adapter = new FakeAdapter([broken, valid]);
 
+    // The runner maps the synthesizer's preflight + base-run state machine
+    // onto deterministic exit codes:
+    //   attempt 1, preflight  → 1 (collection-error, candidate rejected)
+    //   attempt 2, preflight  → 0 (passes structural check)
+    //   attempt 2, base run   → 1 (test fails ⇒ catches a bug ⇒ accepted)
+    // Routing keys off the candidate's relative path; the synthesizer
+    // writes `swarm_synth_attempt_<N>_<basename>` so we can attribute each
+    // command to the right attempt without parsing argv.
+    let preflightCalls = 0;
+    const runCommand = makeFakeRunner((command) => {
+      if (/--collect-only/.test(command)) {
+        preflightCalls += 1;
+        return preflightCalls === 1 ? 1 : 0;
+      }
+      return 1;
+    });
+
     const result = await synthesizeRegressionTest({
       goalText: 'goal',
       targetRepoPath: repo,
       adapter,
       maxAttempts: 2,
       timeoutMs: 30_000,
+      _runCommand: runCommand,
     });
 
     // The first attempt is rejected with collection-error feedback; the

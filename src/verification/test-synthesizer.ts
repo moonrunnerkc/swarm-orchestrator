@@ -106,6 +106,10 @@ export async function synthesizeRegressionTest(
     ? getFrameworkProfile(input.framework)
     : detectTestFramework(input.targetRepoPath);
   const venvBin = input.venvBin;
+  // Test-only seam: tests inject a fake here to assert the state machine
+  // without requiring pytest or a specific Node version on the host. See
+  // `VerificationCommandRunner` in test-synthesizer-types.ts.
+  const runCommand = input._runCommand ?? runVerificationCommand;
   const instanceLogContext = `framework=${profile.framework} repo=${path.basename(input.targetRepoPath)}`;
   const attempts: TestSynthesisAttempt[] = [];
   let feedback: string | undefined;
@@ -178,7 +182,7 @@ export async function synthesizeRegressionTest(
         venvBin,
         input.targetRepoPath,
       );
-      const preflight = await runVerificationCommand(
+      const preflight = await runCommand(
         preflightCmd,
         input.targetRepoPath,
         timeoutMs,
@@ -200,7 +204,7 @@ export async function synthesizeRegressionTest(
     }
 
     const baseCommand = wrapWithVenv(written.command, venvBin, input.targetRepoPath);
-    const commandResult = await runVerificationCommand(
+    const commandResult = await runCommand(
       baseCommand,
       input.targetRepoPath,
       timeoutMs,
