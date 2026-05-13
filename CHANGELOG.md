@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [8.0.3] - 2026-05-13
+
+Provider boundary: the orchestrator no longer requires an Anthropic API
+key by default. Three interchangeable providers (`deterministic`,
+`local`, `anthropic`) sit behind the same `Extractor` / `Session`
+interfaces and pass the same parameterized contract test. See the
+sections below for the full inventory.
+
 ### Breaking
 
 - Default provider changed from `anthropic` to `deterministic`. Users who
