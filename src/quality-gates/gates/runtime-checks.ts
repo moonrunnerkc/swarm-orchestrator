@@ -143,16 +143,85 @@ export function buildTestCommand(projectRoot: string): string {
 }
 
 /**
+ * Hardcoded ignore list. Covers orchestrator artifact dirs (runs, plans,
+ * proof, .quickfix), conventional build output (dist, build, coverage,
+ * .next, .turbo, .cache), and dependency dirs (node_modules). The merge
+ * with {@link readGitignoreTopLevelDirs} extends this with whatever the
+ * project itself has marked unbuildable, so user scratch dirs and locally
+ * cloned subrepos do not get linted as project source.
+ */
+const BUILTIN_LINT_IGNORE_DIRS: readonly string[] = [
+  'dist', 'build', 'coverage', 'runs', 'plans',
+  '.next', '.turbo', '.cache', 'proof', '.quickfix', 'node_modules',
+];
+
+/**
+ * Read top-level directory entries from `.gitignore` so the lint scope
+ * tracks what the project itself considers non-source. Without this,
+ * a user who clones a sandbox repo into `comparison-runs/` or any other
+ * gitignored scratch dir gets ESLint errors for code they do not own —
+ * exactly the failure surfaced during the 2026-05 ow comparison run,
+ * where two errors in the cloned upstream sources blocked the gate
+ * with no actionable fix path.
+ *
+ * Parser scope is intentionally narrow:
+ *   - Top-level (no slashes mid-path) directory or glob entries only.
+ *   - Strips leading/trailing slashes, comments, blank lines, and
+ *     negation lines (`!foo`) which would shrink the ignore set
+ *     incorrectly without a fuller .gitignore evaluator.
+ *
+ * This matches how the rest of the gate already treats the ignore
+ * list — a flat set of top-level prefixes fed to `--ignore-pattern`.
+ *
+ * @param projectRoot - Repo root to read `.gitignore` from.
+ * @returns Top-level directory names (no trailing slashes), or [].
+ */
+export function readGitignoreTopLevelDirs(projectRoot: string): string[] {
+  const gitignorePath = path.join(projectRoot, '.gitignore');
+  if (!fs.existsSync(gitignorePath)) return [];
+  let body: string;
+  try {
+    body = fs.readFileSync(gitignorePath, 'utf-8');
+  } catch {
+    return [];
+  }
+  const entries = new Set<string>();
+  for (const rawLine of body.split('\n')) {
+    const line = rawLine.trim();
+    if (line === '' || line.startsWith('#') || line.startsWith('!')) continue;
+    // Strip leading `/` so paths are repo-relative.
+    const stripped = line.replace(/^\//, '').replace(/\/$/, '');
+    // Only accept top-level entries: no slashes mid-path. A nested entry
+    // like `src/generated/**` is not safely expressible as a top-level
+    // `--ignore-pattern dir/` and would over-match; pass it through
+    // ESLint's own .eslintignore loader instead.
+    if (stripped === '' || stripped.includes('/')) continue;
+    // Defensive: ESLint's --ignore-pattern interprets glob metacharacters.
+    // A literal directory name like `dist` is safe; `*.log` is not a
+    // directory and would mis-trigger the `dir + '/'` suffix logic.
+    if (/[*?[\]]/.test(stripped)) continue;
+    entries.add(stripped);
+  }
+  return [...entries];
+}
+
+/**
  * Build the ESLint command, scoping to agent-changed files when a baseline
  * commit is available. Without a baseline, falls back to scanning everything
- * but excludes common build-output and orchestrator artifact directories.
+ * but excludes orchestrator artifact directories AND every top-level entry
+ * in the project's `.gitignore` so user scratch dirs and local sub-clones
+ * are not linted as project source.
  */
 export function buildEslintCommand(
   projectRoot: string,
   baseCommit?: string
 ): string | null {
-  const ignoreDirs = ['dist', 'build', 'coverage', 'runs', 'plans',
-    '.next', '.turbo', '.cache', 'proof', '.quickfix', 'node_modules'];
+  const ignoreDirs = [
+    ...BUILTIN_LINT_IGNORE_DIRS,
+    ...readGitignoreTopLevelDirs(projectRoot).filter(
+      (entry) => !BUILTIN_LINT_IGNORE_DIRS.includes(entry),
+    ),
+  ];
 
   if (baseCommit) {
     try {

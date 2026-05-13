@@ -279,4 +279,67 @@ describe('buildEslintCommand', () => {
     assert.ok(cmd!.includes('api.js'), 'should include the real changed file');
     assert.ok(!cmd!.includes('dist/bundle.js'), 'should exclude files in dist/');
   });
+
+  it('extends the ignore set with top-level entries from .gitignore', () => {
+    // Regression for the 2026-05 ow comparison run, where a user-created
+    // scratch dir (`comparison-runs/`) was already in .gitignore but the
+    // gate scanned it anyway and surfaced two errors in files outside
+    // the project the user could not fix.
+    fs.writeFileSync(
+      path.join(tmpDir, '.gitignore'),
+      [
+        '# header comment',
+        '',
+        'comparison-runs/',
+        'sandbox',
+        '!exception-line',     // negation entries are intentionally dropped
+        '*.log',               // glob entries are intentionally dropped
+        'src/generated/**',    // nested entries are intentionally dropped
+      ].join('\n'),
+    );
+
+    const cmd = buildEslintCommand(tmpDir);
+
+    assert.ok(cmd, 'should return a command');
+    assert.ok(cmd!.includes("'comparison-runs/'"),
+      `gitignored top-level dir must extend the ignore set; got: ${cmd}`);
+    assert.ok(cmd!.includes("'sandbox/'"),
+      `top-level entries without trailing slash must be ignored as dirs; got: ${cmd}`);
+    assert.ok(!cmd!.includes("'exception-line/'"),
+      'negation entries (!foo) must not shrink the ignore set');
+    assert.ok(!cmd!.includes("'*.log/'") && !cmd!.includes("'*.log'"),
+      'glob entries are not safely expressible as --ignore-pattern dir/ and must be dropped');
+    assert.ok(!cmd!.includes("'src/generated/'"),
+      'nested entries must be dropped — handled by eslint flat-config ignores instead');
+  });
+
+  it('does not duplicate entries already in the built-in ignore list', () => {
+    // A project that lists `dist/` and `node_modules/` in its own
+    // .gitignore must not produce `--ignore-pattern 'dist/' ... --ignore-pattern 'dist/'`.
+    // The duplicate would not be an error but pollutes the command string
+    // logged on failure and makes the gate output harder to read.
+    fs.writeFileSync(
+      path.join(tmpDir, '.gitignore'),
+      'dist/\nnode_modules/\ncustom-output/\n',
+    );
+
+    const cmd = buildEslintCommand(tmpDir);
+
+    assert.ok(cmd, 'should return a command');
+    const distMatches = cmd!.match(/'dist\/'/g) ?? [];
+    assert.equal(distMatches.length, 1,
+      `dist/ must appear exactly once even when also listed in .gitignore; got ${distMatches.length} occurrences`);
+    assert.ok(cmd!.includes("'custom-output/'"),
+      'project-specific gitignore entries must still extend the ignore set');
+  });
+
+  it('returns the built-in ignore list when no .gitignore is present', () => {
+    // A repo without .gitignore still gets the orchestrator's built-in
+    // exclusions; .gitignore is purely additive.
+    const cmd = buildEslintCommand(tmpDir);
+
+    assert.ok(cmd, 'should return a command');
+    assert.ok(cmd!.includes("'dist/'"));
+    assert.ok(cmd!.includes("'runs/'"));
+  });
 });
