@@ -79,5 +79,59 @@ describe('contract/extractor — factory', () => {
       const ext = buildExtractor({ provider: 'anthropic', apiKey: 'sk-test' });
       assert.ok(ext instanceof AnthropicExtractor);
     });
+
+    describe('local provider misconfiguration (DoD 2: no silent fallback)', () => {
+      const origBaseUrl = process.env.LOCAL_LLM_BASE_URL;
+      const origBackend = process.env.LOCAL_LLM_BACKEND;
+      const origModel = process.env.LOCAL_LLM_MODEL_EXTRACTOR;
+
+      beforeEach(() => {
+        delete process.env.LOCAL_LLM_BASE_URL;
+        delete process.env.LOCAL_LLM_BACKEND;
+        delete process.env.LOCAL_LLM_MODEL_EXTRACTOR;
+      });
+
+      afterEach(() => {
+        if (origBaseUrl !== undefined) process.env.LOCAL_LLM_BASE_URL = origBaseUrl;
+        if (origBackend !== undefined) process.env.LOCAL_LLM_BACKEND = origBackend;
+        if (origModel !== undefined) process.env.LOCAL_LLM_MODEL_EXTRACTOR = origModel;
+      });
+
+      it('fails loud when local is selected without a backend name', () => {
+        assert.throws(
+          () =>
+            buildExtractor({
+              provider: 'local',
+              localBaseUrl: 'http://localhost:11434/v1',
+              localModel: 'qwen2.5-coder:14b',
+            }),
+          /no backend specified/,
+        );
+      });
+
+      it('fails loud when local is selected without a base URL', () => {
+        assert.throws(
+          () =>
+            buildExtractor({
+              provider: 'local',
+              localBackend: 'ollama',
+              localModel: 'qwen2.5-coder:14b',
+            }),
+          /LOCAL_LLM_BASE_URL is not set/,
+        );
+      });
+
+      it('fails loud when local is selected without a model id', () => {
+        assert.throws(
+          () =>
+            buildExtractor({
+              provider: 'local',
+              localBackend: 'ollama',
+              localBaseUrl: 'http://localhost:11434/v1',
+            }),
+          /no model id provided/,
+        );
+      });
+    });
   });
 });
