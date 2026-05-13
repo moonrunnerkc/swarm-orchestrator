@@ -2,7 +2,7 @@
 
 <img src="assets/header.svg" alt="Swarm Orchestrator" width="100%">
 
-**Contract-first AI coding swarm with hash-chained evidence and verifier-gated commits.**
+**Deterministic-first code-change verifier. Hand-authored contracts, externally-sourced patches, hash-chained evidence, falsifier-gated commits. Opt-in providers for local and hosted models.**
 
 [![License](https://img.shields.io/badge/license-ISC-blue?style=flat-square)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-339933?style=flat-square)](package.json)
@@ -11,22 +11,20 @@
 
 </div>
 
-`swarm` compiles a natural-language goal into a typed contract, dispatches it to a
-population of personas inside one cached Anthropic session, and commits only the
-diffs that pass verification. The default `single` mode runs one purpose-built
-persona per obligation; opt in to `--mode tournament` to race multiple candidates
-per obligation when adversarial selection is worth the extra cost. After the
-producer's verifier accepts a patch, registered falsifier adapters get a chance to
-break it before it merges. Every action lands in an append-only hash-chained ledger
-you can audit, resume, or replay.
+`swarm` is a verification and falsification engine for code changes, with three
+opt-in input providers on top. The default `deterministic` provider takes a
+hand-authored contract and externally-sourced patches and runs the entire
+verification pipeline against them with zero network calls, zero model
+installs, and zero API keys. The `local` provider lets you swap in any
+OpenAI-compatible / Ollama / llama.cpp / vLLM endpoint as the source of
+patches; the `anthropic` provider does the same against Claude. The verifier
+never knows which provider produced its input.
 
-Before your first run, sanity-check the environment with `swarm doctor` —
-it probes ANTHROPIC_API_KEY, falsifier CLIs (codex/copilot/claude), and the
-package manager so a misconfigured prerequisite surfaces immediately instead of
-producing a confusing run summary.
-
-It wraps an LLM; it does not replace one. The model writes the code, the orchestrator
-decides what reaches your repo.
+After a candidate passes per-obligation verification, registered falsifier
+adapters get a chance to break it before it merges. Every action lands in an
+append-only hash-chained ledger you can audit, resume, or replay. The
+architectural rule: nothing commits without passing the obligation's verifier
+and the quality-gate pipeline.
 
 ## Status
 
@@ -41,26 +39,104 @@ Falsifier subsystem: Codex on, Copilot on, ClaudeCode opt-in (see
 
 ## Quick start
 
-Requires Node `>= 20`, git `>= 2.40`, and `ANTHROPIC_API_KEY`. Pass
-`--extractor stub --session stub` to run offline.
+Requires Node `>= 20` and git `>= 2.40`. No model, no API key, no network access
+needed for the default provider.
 
 ```bash
 git clone https://github.com/moonrunnerkc/swarm-orchestrator.git
 cd swarm-orchestrator && npm install && npm run build && npm link
 
-# Compile a goal into a contract, then run it
-swarm compile "add a /health endpoint that returns 200 OK" --yes
-swarm run .swarm/contracts/<contract-id>
+# Author a contract directly — the deterministic extractor validates it.
+cat > contract.yaml <<'EOF'
+obligations:
+  - type: test-must-pass
+    command: npm test
+EOF
 
-# Or both in one step
-swarm run --goal "add a /health endpoint that returns 200 OK"
+# Compile (deterministic by default — no model call, no API key needed).
+swarm compile "verify the test command exits zero" \
+  --contract-file contract.yaml \
+  --out .swarm/contracts/local
 
-# Opt into the legacy v6 verified-branch pipeline
-swarm run --v6 --goal "add a /health endpoint that returns 200 OK"
+# Pre-stage external patches (empty here; pre-generation verification
+# satisfies the test-must-pass obligation against the current workspace).
+echo -n "" > patches.jsonl
 
+# Run (deterministic session reads patches from the queue file).
+swarm run .swarm/contracts/local --external-patches-queue patches.jsonl
+```
+
+That first run touches no external service. To opt into a model provider, see
+[Providers](#providers) below.
+
+```bash
 # Resume a killed run from the ledger
 swarm resume <run-id>
 ```
+
+## Providers
+
+Three providers implement the same Extractor and Session interfaces. The
+verifier, ledger, manifest, canonicalization, falsifiers, snapshot/rollback,
+quality gates, cost cap, and tournament logic are provider-agnostic.
+
+### Deterministic (default; no model, no network)
+
+Use when the contract can be hand-authored and patches come from an
+external source (a model running outside the orchestrator, a human
+patcher, a recorded session, anything that produces FORMAT 1/2/3 patch
+envelopes). This is the only provider whose runtime guarantees no network
+access and no model dependency.
+
+```bash
+swarm compile "<goal>" --contract-file contract.yaml --out <dir>
+swarm run <dir> --external-patches-queue patches.jsonl
+# Or:  --external-patches-dir <dir>
+# Or:  --external-patches-stdin
+```
+
+### Local (opt-in; any OpenAI-compatible / Ollama / llama.cpp / vLLM endpoint)
+
+Use when you want patch generation but no third-party API. The local
+provider talks to whatever endpoint you run. No model is hardcoded; no
+hardware is assumed. Configure via environment:
+
+```bash
+export LOCAL_LLM_BACKEND=openai-compatible      # or ollama | llama-cpp | vllm
+export LOCAL_LLM_BASE_URL=http://localhost:8080/v1
+export LOCAL_LLM_MODEL_EXTRACTOR=<your-chosen-model>
+export LOCAL_LLM_MODEL_SESSION=<your-chosen-model>
+
+swarm compile "<goal>" --extractor local
+swarm run .swarm/contracts/<id> --session local
+```
+
+### Anthropic (opt-in; requires `ANTHROPIC_API_KEY`)
+
+Use as a baseline benchmark, or when you want the convenience of a hosted
+endpoint without standing up your own.
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+swarm compile "<goal>" --extractor anthropic
+swarm run .swarm/contracts/<id> --session anthropic
+```
+
+### Reference profiles (local provider)
+
+Tested combinations, not recommendations. Any backend-compatible model
+works with the local provider.
+
+| Profile | Backend | Hardware | Representative model |
+|---|---|---|---|
+| Minimal | `openai-compatible` (Llamafile-server) | CPU only | small quantized 3-7B |
+| Modest | `ollama` | Consumer GPU | mid-size code-trained model |
+| Serious | `llama-cpp` | Workstation / high-end GPU | larger code model |
+| Remote | `vllm` | Separate inference server | hosted on a GPU box |
+
+See [docs/providers.md](docs/providers.md) for the full configuration
+reference (env vars, config-file keys, grammar negotiation, prefix-cache
+mapping per backend, determinism guarantees and limitations).
 
 ## How it works
 
@@ -92,14 +168,21 @@ streaming verifier      post-merge integration
             committed diffs
 ```
 
-1. **Compile.** `swarm compile <goal>` calls Anthropic with a tool-use schema and
-   writes a typed `contract.jsonl` plus a `manifest.json` carrying goal, repo
-   context, extractor provenance, and a SHA-256 of the canonical contract bytes.
-   Identical inputs produce identical contract hashes.
-2. **Dispatch.** `swarm run` opens one cached Anthropic session and walks each
-   obligation. The population manager picks the persona whose trigger predicate
-   matches the obligation's type. In `tournament` mode, N candidates run in parallel;
-   a verifier picks the top scorer; losers are logged but never committed.
+1. **Compile.** `swarm compile <goal>` runs the configured extractor — the
+   default deterministic extractor validates a hand-authored contract file; the
+   local extractor issues a single call against a user-configured endpoint with
+   grammar-constrained decoding; the Anthropic extractor uses a Sonnet
+   tool-use call. All three emit the same canonical `contract.jsonl` plus a
+   `manifest.json` carrying goal, repo context, extractor provenance, and a
+   SHA-256 of the canonical bytes. Identical inputs produce identical hashes.
+2. **Dispatch.** `swarm run` opens a session via the configured provider —
+   the deterministic session pulls externally-staged patches; the local
+   session calls the user-configured endpoint with the unified-diff
+   grammar; the Anthropic session uses a cached prompt-cache-native
+   prefix. The population manager picks the persona whose trigger
+   predicate matches the obligation's type. In `tournament` mode, N
+   candidates run in parallel; a verifier picks the top scorer; losers are
+   logged but never committed.
 3. **Verify at four points.** Pre-generation memoization, mid-stream abort,
    post-generation per-obligation verifier, post-merge integration check.
 4. **Falsify.** Registered adapters take the satisfied patch and try to break it.
@@ -147,14 +230,32 @@ sandbox posture, and dual-column cost reporting in
 ## CLI reference
 
 ```text
-swarm compile <goal>  [--out <dir>] [--yes] [--extractor anthropic|stub]
+swarm compile <goal>  [--out <dir>] [--yes]
+                      [--extractor deterministic|local|anthropic]
+                      [--contract-file <path>] [--contract-module <path>]
                       [--model <id>] [--recipe <name>]
-swarm run <contract>  [--session anthropic|stub] [--mode single|tournament]
+                      [--local-backend openai-compatible|ollama|llama-cpp|vllm]
+                      [--local-base-url <url>]
+                      [--local-model-extractor <id>]
+                      [--local-grammar auto|json-schema|none]
+                      [--local-request-timeout-ms <n>] [--local-max-concurrency <n>]
+                      [--local-api-key <key>] [--local-seed <n>]
+swarm run <contract>  [--session deterministic|local|anthropic]
+                      [--external-patches-dir <path>] [--external-patches-queue <path>]
+                      [--external-patches-stdin] [--external-patches-timeout-ms <n>]
+                      [--mode single|tournament]
                       [--candidates <n>] [--falsifiers on|off]
                       [--forbid-import <names>] [--cost-cap <usd>]
                       [--no-cost-cap-live] [--snapshot-cleanup <policy>]
                       [--falsifier-scheduler none|ucb1] [--falsifier-stats-path <path>]
                       [--no-streaming] [--no-pre-generation] [--no-post-merge]
+                      [--local-backend openai-compatible|ollama|llama-cpp|vllm]
+                      [--local-base-url <url>]
+                      [--local-model-session <id>]
+                      [--local-persona-model-map <path-or-json>]
+                      [--local-grammar auto|gbnf|json-schema|outlines|none]
+                      [--local-request-timeout-ms <n>] [--local-max-concurrency <n>]
+                      [--local-api-key <key>] [--local-seed <n>]
 swarm resume <run-id> [--ledger <path>] [--contract <dir>]
 swarm stats <run-id>  [--ledger <path>] [--json]
 swarm doctor          [--cwd <path>] [--require-git]
@@ -172,6 +273,11 @@ Run any subcommand with `--help` for the full flag set. Full reference:
 
 ## GitHub Action
 
+The action inherits the CLI's `deterministic` default and runs offline
+unless the workflow opts in to the Anthropic or local provider. Set
+`EXTRACTOR_PROVIDER` / `SESSION_PROVIDER` (or pass `--extractor` /
+`--session`) to switch.
+
 ```yaml
 - uses: moonrunnerkc/swarm-orchestrator@v8
   with:
@@ -179,6 +285,9 @@ Run any subcommand with `--help` for the full flag set. Full reference:
     contract-only: false   # true compiles and stops
     cost-cap: "5.00"       # hard ceiling in USD; run exits 6 if exceeded
   env:
+    # Required only when the action is configured to use the Anthropic
+    # provider (EXTRACTOR_PROVIDER=anthropic / SESSION_PROVIDER=anthropic).
+    # The default is deterministic and needs no API key.
     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
@@ -188,7 +297,7 @@ All inputs documented in [`action.yml`](action.yml).
 
 | File | Purpose |
 |---|---|
-| `.env`, `~/.env` | API keys and overrides. Loaded cwd `.env`, then orchestrator install `.env`, then `~/.env`; first match wins per key. |
+| `.env`, `~/.env` | Provider configuration and overrides (`ANTHROPIC_API_KEY`, `LOCAL_LLM_*`, etc.). Loaded cwd `.env`, then orchestrator install `.env`, then `~/.env`; first match wins per key. |
 | `.swarm/contracts/<id>/contract.jsonl` | Compiled obligations, schema-validated. |
 | `.swarm/contracts/<id>/manifest.json` | Goal, repo context, extractor provenance, contract hash. |
 | `.swarm/ledger/<run-id>.jsonl` | Append-only hash-chained ledger of every persona action and verifier result. |
