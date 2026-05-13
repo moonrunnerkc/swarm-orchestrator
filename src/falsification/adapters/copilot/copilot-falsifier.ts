@@ -49,6 +49,19 @@ import {
   dollarsForRequestsByAuth,
   parseCopilotPremiumRequests,
 } from './copilot-cost';
+import { invokeWithTransientRetry, isTransientApiError } from './transient-retry';
+import { getLogger } from '../../../logger';
+
+const logger = getLogger('copilot-falsifier');
+
+/**
+ * Maximum spawn attempts when the Copilot CLI returns the transient-
+ * API-error marker. Three is the same retry budget the v6 repair
+ * agent uses, and matches what the Copilot CLI itself appears to
+ * attempt (the marker is printed once per internal retry, capped at
+ * two prints in observed runs).
+ */
+const COPILOT_TRANSIENT_RETRY_ATTEMPTS = 3;
 
 /** Ceiling on captured stdout/stderr size. Truncated past this. */
 const MAX_OUTPUT_BYTES = 1_000_000;
@@ -285,14 +298,25 @@ export class CopilotFalsifier implements FalsifierAdapter {
   }
 
   private async runCopilot(req: CopilotInvocationRequest): Promise<CopilotInvocationResult> {
-    const result =
-      this.invocationOverride !== undefined
-        ? await this.invocationOverride(req)
-        : await spawnCopilot(req);
-    if (this.onInvocation !== undefined) {
-      this.onInvocation(req, result);
-    }
-    return result;
+    return invokeWithTransientRetry(
+      () =>
+        this.invocationOverride !== undefined
+          ? this.invocationOverride(req)
+          : spawnCopilot(req),
+      {
+        maxAttempts: COPILOT_TRANSIENT_RETRY_ATTEMPTS,
+        onAttempt: (result, attempt) => {
+          if (this.onInvocation !== undefined) {
+            this.onInvocation(req, result);
+          }
+          if (attempt < COPILOT_TRANSIENT_RETRY_ATTEMPTS && isTransientApiError(result)) {
+            logger.warn(
+              `copilot transient API error on attempt ${attempt}/${COPILOT_TRANSIENT_RETRY_ATTEMPTS}; re-spawning`,
+            );
+          }
+        },
+      },
+    );
   }
 }
 
