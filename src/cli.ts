@@ -172,6 +172,7 @@ async function main(): Promise<void> {
         // explicit `v8` prefix to run a precompiled contract.
         const v6Index = args.indexOf('--v6');
         if (v6Index >= 0) {
+          logger.warn('--v6 is deprecated and will be removed in v9.0.0.');
           const v6Args = args.slice();
           v6Args.splice(v6Index, 1);
           exitCode = await handleRunCommand(v6Args);

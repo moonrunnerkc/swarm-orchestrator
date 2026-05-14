@@ -6,6 +6,29 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [8.0.4] - 2026-05-14
+
+Deprecation signal for the legacy v6 pipeline. Phase 0 of the v8-only
+cleanup; no behavioral changes to the v6 or v8 code paths.
+
+### Deprecated
+
+- `swarm run --v6` now prints `--v6 is deprecated and will be removed in
+  v9.0.0.` to stderr before dispatch. The legacy verified-branch pipeline
+  remains fully functional in 8.0.x; it will be removed in v9.0.0.
+
+### Added
+
+- `evidence/baseline-v8.0.3/` — captured baselines (build log, test log,
+  end-to-end smoke against `fixtures/v8-empty`, LOC count, file count) so
+  later cleanup phases can gate against a comparable reference point.
+- `evidence/loc-budget.txt` — per-phase LOC ceiling consumed by the
+  cleanup CI gate.
+- CI gate (`cleanup-boundary` job in `.github/workflows/ci.yml`) that
+  enforces three invariants on every PR: total `src/` LOC stays at or
+  below `evidence/loc-budget.txt`, the v6 entry surface contains no v8
+  imports, and v8 directories contain no v6 imports.
+
 ## [8.0.3] - 2026-05-13
 
 Provider boundary: the orchestrator no longer requires an Anthropic API
