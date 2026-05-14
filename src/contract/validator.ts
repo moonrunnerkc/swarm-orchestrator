@@ -6,23 +6,14 @@ import {
   OBLIGATION_TYPES,
 } from './types';
 
-/**
- * Result of running the contract validator over a list of candidate
- * obligations. `errors` is empty when `valid` is true.
- */
 export interface ValidationResult {
   valid: boolean;
   errors: ValidationError[];
 }
 
-/**
- * Single validator error. `index` references the obligation by its position
- * in the input list (0-based), or is `null` for whole-contract errors.
- */
 export interface ValidationError {
-  /** Index in the input list, or null for cross-obligation errors. */
+  // null for cross-obligation errors.
   index: number | null;
-  /** Stable error code for programmatic handling. */
   code:
     | 'schema'
     | 'unknown-type'
@@ -41,43 +32,90 @@ export interface ValidationError {
     | 'no-obligations'
     | 'missing-build-must-pass'
     | 'missing-test-must-pass';
-  /** Human-readable message including remediation hint. */
   message: string;
 }
 
-/**
- * Validate a candidate obligation list against the v1 schema and the
- * cross-obligation consistency rules described in impl guide §4
- * ("checks the draft contract for internal consistency").
- *
- * Per §4 the validator must reject:
- * - Schema violations (handled by Ajv).
- * - Contradictory obligations (here: duplicate keyed entries per type).
- * - Obligations referencing nonexistent files unless the obligation is a
- *   creation directive — `file-must-exist` IS a creation directive in v1
- *   (post-execution check), so we do not check filesystem existence.
- *
- * The validator additionally enforces the §4 minimum-shape requirement
- * surfaced in the Phase 1 exit criteria: a draft must contain at least one
- * `test-must-pass` obligation, and at least one `build-must-pass` when the
- * caller indicates the project has a build step. Library projects published
- * as source (no `scripts.build`) pass `requireBuild: false`; forcing a
- * synthetic `npm run build` against a repo with no build script generates
- * a phantom obligation that can never satisfy.
- *
- * Phase 7 extends per-type duplicate-detection to the five new types
- * (impl guide §10). Each type's identity key is the canonical payload
- * tuple; duplicates are flagged with a type-specific error code so the
- * CLI can show targeted remediation.
- */
 export interface ValidateOptions {
-  /**
-   * When false, contracts without a `build-must-pass` obligation are
-   * accepted. Used by `compileGoal`/`finalize` when the project's
-   * discovered `repoContext.buildCommand` is null (no build step exists).
-   * Defaults to true to preserve historical behavior.
-   */
+  // When false, contracts without a `build-must-pass` are accepted —
+  // library projects published as source (no scripts.build) need this;
+  // forcing a synthetic `npm run build` against such a repo generates
+  // a phantom obligation that can never satisfy.
   requireBuild?: boolean;
+}
+
+// Per-type field-validation table. The order in each row is the order
+// the original switch enforced — preserved so errors fire in the same
+// order on the same input.
+type FieldKind = 'path' | 'command' | 'nonempty-string';
+type EmptyFieldName = 'name' | 'signature' | 'target';
+const OBLIGATION_FIELD_CHECKS: Record<
+  ObligationType,
+  ReadonlyArray<{ kind: FieldKind; field: string }>
+> = {
+  'file-must-exist': [{ kind: 'path', field: 'path' }],
+  'build-must-pass': [{ kind: 'command', field: 'command' }],
+  'test-must-pass': [{ kind: 'command', field: 'command' }],
+  'function-must-have-signature': [
+    { kind: 'path', field: 'file' },
+    { kind: 'nonempty-string', field: 'name' },
+    { kind: 'nonempty-string', field: 'signature' },
+  ],
+  'property-must-hold': [
+    { kind: 'command', field: 'predicate' },
+    { kind: 'nonempty-string', field: 'target' },
+  ],
+  'import-graph-must-satisfy': [{ kind: 'path', field: 'scope' }],
+  'coverage-must-exceed': [{ kind: 'path', field: 'scope' }],
+  'performance-must-not-regress': [
+    { kind: 'command', field: 'benchmark' },
+    { kind: 'path', field: 'baseline' },
+  ],
+};
+
+function dedupeKey(o: ObligationV1): string {
+  switch (o.type) {
+    case 'file-must-exist':
+      return o.path;
+    case 'build-must-pass':
+      return o.command;
+    case 'test-must-pass':
+      return o.command;
+    case 'function-must-have-signature':
+      return `${o.file}|${o.name}|${o.signature}`;
+    case 'property-must-hold':
+      return `${o.target}|${o.predicate}`;
+    case 'import-graph-must-satisfy':
+      return `${o.scope}|${o.constraint}`;
+    case 'coverage-must-exceed':
+      return `${o.scope}|${o.metric}`;
+    case 'performance-must-not-regress':
+      return `${o.benchmark}|${o.baseline}`;
+  }
+}
+
+function duplicateMessage(o: ObligationV1): string {
+  switch (o.type) {
+    case 'file-must-exist':
+      return `duplicate file-must-exist for path "${o.path}"; remove the redundant entry`;
+    case 'build-must-pass':
+      return `duplicate build-must-pass for command "${o.command}"; remove the redundant entry`;
+    case 'test-must-pass':
+      return `duplicate test-must-pass for command "${o.command}"; remove the redundant entry`;
+    case 'function-must-have-signature':
+      return `duplicate function-must-have-signature for ${o.file}:${o.name}; remove the redundant entry`;
+    case 'property-must-hold':
+      return `duplicate property-must-hold for target "${o.target}"; remove the redundant entry`;
+    case 'import-graph-must-satisfy':
+      return `duplicate import-graph-must-satisfy for scope "${o.scope}" / constraint "${o.constraint}"; remove the redundant entry`;
+    case 'coverage-must-exceed':
+      return `duplicate coverage-must-exceed for scope "${o.scope}" / metric "${o.metric}"; remove the redundant entry`;
+    case 'performance-must-not-regress':
+      return `duplicate performance-must-not-regress for benchmark "${o.benchmark}" / baseline "${o.baseline}"; remove the redundant entry`;
+  }
+}
+
+function duplicateCode(type: ObligationType): ValidationError['code'] {
+  return `duplicate-${type}` as ValidationError['code'];
 }
 
 export function validateObligations(
@@ -98,18 +136,11 @@ export function validateObligations(
     return { valid: false, errors };
   }
 
-  const seenPaths = new Set<string>();
-  const seenBuildCommands = new Set<string>();
-  const seenTestCommands = new Set<string>();
-  const seenSignatureKeys = new Set<string>();
-  const seenPropertyKeys = new Set<string>();
-  const seenImportGraphKeys = new Set<string>();
-  const seenCoverageKeys = new Set<string>();
-  const seenPerfKeys = new Set<string>();
+  const seenKeys: Map<ObligationType, Set<string>> = new Map();
   let hasBuild = false;
   let hasTest = false;
 
-  for (let i = 0; i < candidates.length; i += 1) {
+  outer: for (let i = 0; i < candidates.length; i += 1) {
     const candidate = candidates[i];
     if (!validate(candidate)) {
       const detail = (validate.errors ?? [])
@@ -133,180 +164,36 @@ export function validateObligations(
       continue;
     }
 
-    switch (obligation.type) {
-      case 'file-must-exist': {
-        const checkErr = checkPath(obligation.path, i);
-        if (checkErr) {
-          errors.push(checkErr);
-          break;
-        }
-        if (seenPaths.has(obligation.path)) {
-          errors.push({
-            index: i,
-            code: 'duplicate-file-must-exist',
-            message: `duplicate file-must-exist for path "${obligation.path}"; remove the redundant entry`,
-          });
-          break;
-        }
-        seenPaths.add(obligation.path);
-        break;
-      }
-      case 'build-must-pass': {
-        const cmdErr = checkCommand(obligation.command, i);
-        if (cmdErr) {
-          errors.push(cmdErr);
-          break;
-        }
-        if (seenBuildCommands.has(obligation.command)) {
-          errors.push({
-            index: i,
-            code: 'duplicate-build-must-pass',
-            message: `duplicate build-must-pass for command "${obligation.command}"; remove the redundant entry`,
-          });
-          break;
-        }
-        seenBuildCommands.add(obligation.command);
-        hasBuild = true;
-        break;
-      }
-      case 'test-must-pass': {
-        const cmdErr = checkCommand(obligation.command, i);
-        if (cmdErr) {
-          errors.push(cmdErr);
-          break;
-        }
-        if (seenTestCommands.has(obligation.command)) {
-          errors.push({
-            index: i,
-            code: 'duplicate-test-must-pass',
-            message: `duplicate test-must-pass for command "${obligation.command}"; remove the redundant entry`,
-          });
-          break;
-        }
-        seenTestCommands.add(obligation.command);
-        hasTest = true;
-        break;
-      }
-      case 'function-must-have-signature': {
-        const fileErr = checkPath(obligation.file, i);
-        if (fileErr) {
-          errors.push(fileErr);
-          break;
-        }
-        if (obligation.name.trim().length === 0) {
-          errors.push({
-            index: i,
-            code: 'empty-field',
-            message: `obligation ${i} has empty name`,
-          });
-          break;
-        }
-        if (obligation.signature.trim().length === 0) {
-          errors.push({
-            index: i,
-            code: 'empty-field',
-            message: `obligation ${i} has empty signature`,
-          });
-          break;
-        }
-        const key = `${obligation.file}|${obligation.name}|${obligation.signature}`;
-        if (seenSignatureKeys.has(key)) {
-          errors.push({
-            index: i,
-            code: 'duplicate-function-must-have-signature',
-            message: `duplicate function-must-have-signature for ${obligation.file}:${obligation.name}; remove the redundant entry`,
-          });
-          break;
-        }
-        seenSignatureKeys.add(key);
-        break;
-      }
-      case 'property-must-hold': {
-        const cmdErr = checkCommand(obligation.predicate, i);
-        if (cmdErr) {
-          errors.push(cmdErr);
-          break;
-        }
-        if (obligation.target.trim().length === 0) {
-          errors.push({
-            index: i,
-            code: 'empty-field',
-            message: `obligation ${i} has empty target`,
-          });
-          break;
-        }
-        const key = `${obligation.target}|${obligation.predicate}`;
-        if (seenPropertyKeys.has(key)) {
-          errors.push({
-            index: i,
-            code: 'duplicate-property-must-hold',
-            message: `duplicate property-must-hold for target "${obligation.target}"; remove the redundant entry`,
-          });
-          break;
-        }
-        seenPropertyKeys.add(key);
-        break;
-      }
-      case 'import-graph-must-satisfy': {
-        const scopeErr = checkPath(obligation.scope, i);
-        if (scopeErr) {
-          errors.push(scopeErr);
-          break;
-        }
-        const key = `${obligation.scope}|${obligation.constraint}`;
-        if (seenImportGraphKeys.has(key)) {
-          errors.push({
-            index: i,
-            code: 'duplicate-import-graph-must-satisfy',
-            message: `duplicate import-graph-must-satisfy for scope "${obligation.scope}" / constraint "${obligation.constraint}"; remove the redundant entry`,
-          });
-          break;
-        }
-        seenImportGraphKeys.add(key);
-        break;
-      }
-      case 'coverage-must-exceed': {
-        const scopeErr = checkPath(obligation.scope, i);
-        if (scopeErr) {
-          errors.push(scopeErr);
-          break;
-        }
-        const key = `${obligation.scope}|${obligation.metric}`;
-        if (seenCoverageKeys.has(key)) {
-          errors.push({
-            index: i,
-            code: 'duplicate-coverage-must-exceed',
-            message: `duplicate coverage-must-exceed for scope "${obligation.scope}" / metric "${obligation.metric}"; remove the redundant entry`,
-          });
-          break;
-        }
-        seenCoverageKeys.add(key);
-        break;
-      }
-      case 'performance-must-not-regress': {
-        const cmdErr = checkCommand(obligation.benchmark, i);
-        if (cmdErr) {
-          errors.push(cmdErr);
-          break;
-        }
-        const baselineErr = checkPath(obligation.baseline, i);
-        if (baselineErr) {
-          errors.push(baselineErr);
-          break;
-        }
-        const key = `${obligation.benchmark}|${obligation.baseline}`;
-        if (seenPerfKeys.has(key)) {
-          errors.push({
-            index: i,
-            code: 'duplicate-performance-must-not-regress',
-            message: `duplicate performance-must-not-regress for benchmark "${obligation.benchmark}" / baseline "${obligation.baseline}"; remove the redundant entry`,
-          });
-          break;
-        }
-        seenPerfKeys.add(key);
-        break;
+    for (const check of OBLIGATION_FIELD_CHECKS[obligation.type]) {
+      const value = readStringField(obligation, check.field);
+      let err: ValidationError | null = null;
+      if (check.kind === 'path') err = checkPath(value, i);
+      else if (check.kind === 'command') err = checkCommand(value, i);
+      else err = checkNonemptyField(value, i, check.field as EmptyFieldName);
+      if (err) {
+        errors.push(err);
+        continue outer;
       }
     }
+
+    let set = seenKeys.get(obligation.type);
+    if (!set) {
+      set = new Set();
+      seenKeys.set(obligation.type, set);
+    }
+    const key = dedupeKey(obligation);
+    if (set.has(key)) {
+      errors.push({
+        index: i,
+        code: duplicateCode(obligation.type),
+        message: duplicateMessage(obligation),
+      });
+      continue;
+    }
+    set.add(key);
+
+    if (obligation.type === 'build-must-pass') hasBuild = true;
+    else if (obligation.type === 'test-must-pass') hasTest = true;
   }
 
   const requireBuild = options.requireBuild ?? true;
@@ -330,6 +217,10 @@ export function validateObligations(
   }
 
   return { valid: errors.length === 0, errors };
+}
+
+function readStringField(o: ObligationV1, field: string): string {
+  return (o as unknown as Record<string, string>)[field] ?? '';
 }
 
 function isKnownType(t: unknown): t is ObligationType {
@@ -360,6 +251,21 @@ function checkCommand(cmd: string, index: number): ValidationError | null {
       index,
       code: 'empty-command',
       message: `obligation ${index} has empty command`,
+    };
+  }
+  return null;
+}
+
+function checkNonemptyField(
+  value: string,
+  index: number,
+  field: EmptyFieldName,
+): ValidationError | null {
+  if (value.trim().length === 0) {
+    return {
+      index,
+      code: 'empty-field',
+      message: `obligation ${index} has empty ${field}`,
     };
   }
   return null;
