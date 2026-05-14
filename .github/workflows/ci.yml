@@ -154,6 +154,18 @@ jobs:
           --regular "$SYNTHETIC_OUTPUT_ROOT/regular" \
           --under-tested "$SYNTHETIC_OUTPUT_ROOT/under-tested"
 
+  cleanup-boundary:
+    # Phase 0 of the v8-only cleanup. Enforces a LOC budget and the
+    # bidirectional v6/v8 import boundary on every PR. Failing this gate
+    # is a Phase 6 blocker: any new cross-boundary import has to be
+    # resolved before the legacy v6 pipeline can be deleted.
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Run cleanup-boundary gate
+      run: bash scripts/cleanup-boundary-gate.sh
+
   security-audit:
     runs-on: ubuntu-latest
     steps:
