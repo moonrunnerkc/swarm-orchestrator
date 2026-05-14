@@ -2,18 +2,40 @@
 
 <img src="assets/header.svg" alt="Swarm Orchestrator" width="100%">
 
-**Deterministic-first verification and falsification engine for code changes.**
+### Deterministic-first verification and falsification engine for code changes.
 
-Hand-authored contracts, externally-sourced patches, verifier-gated commits,
-append-only evidence ledgers, and optional model providers for local or hosted
+<p>
+Hand-authored contracts, externally-sourced patches, verifier-gated commits,<br/>
+append-only evidence ledgers, and optional model providers for local or hosted<br/>
 generation.
+</p>
 
-[![License](https://img.shields.io/badge/license-ISC-blue?style=flat-square)](LICENSE)
-[![Node](https://img.shields.io/badge/node-%3E%3D20-339933?style=flat-square)](package.json)
-[![CI](https://img.shields.io/github/actions/workflow/status/moonrunnerkc/swarm-orchestrator/ci.yml?branch=main&label=ci&style=flat-square)](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/github/package-json/v/moonrunnerkc/swarm-orchestrator?style=flat-square)](package.json)
+<p>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-ISC-blue?style=flat-square"></a>
+  <a href="package.json"><img alt="Node" src="https://img.shields.io/badge/node-%3E%3D20-339933?style=flat-square"></a>
+  <a href="https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/moonrunnerkc/swarm-orchestrator/ci.yml?branch=main&label=ci&style=flat-square"></a>
+  <a href="package.json"><img alt="Version" src="https://img.shields.io/github/package-json/v/moonrunnerkc/swarm-orchestrator?style=flat-square"></a>
+</p>
+
+<p>
+  <a href="#quick-start"><b>Quick start</b></a>
+  &nbsp;·&nbsp;
+  <a href="#providers"><b>Providers</b></a>
+  &nbsp;·&nbsp;
+  <a href="#how-it-works"><b>How it works</b></a>
+  &nbsp;·&nbsp;
+  <a href="#adapters"><b>Adapters</b></a>
+  &nbsp;·&nbsp;
+  <a href="#cli-reference"><b>CLI</b></a>
+  &nbsp;·&nbsp;
+  <a href="#github-action"><b>GitHub Action</b></a>
+  &nbsp;·&nbsp;
+  <a href="#documentation"><b>Docs</b></a>
+</p>
 
 </div>
+
+---
 
 `swarm` separates patch generation from verification.
 
@@ -41,12 +63,13 @@ The architectural rule is simple:
 
 > Nothing commits unless the obligation verifier and quality gates pass.
 
+---
+
 ## Status
 
-- Version: `8.0.3`
-- Node: `>= 20`
-- CI matrix: 20, 22
-- License: ISC
+<p align="center">
+<sub><b>Version</b> <code>8.0.3</code> &nbsp;·&nbsp; <b>Node</b> <code>&gt;= 20</code> &nbsp;·&nbsp; <b>CI matrix</b> 20, 22 &nbsp;·&nbsp; <b>License</b> ISC</sub>
+</p>
 
 v8.0.3 changed the default provider from `anthropic` to `deterministic`. If you
 upgraded from an earlier release and your workflow assumed a hosted model,
@@ -68,6 +91,8 @@ swarm doctor
 The legacy verified-branch pipeline remains available through `swarm run --v6`,
 or the older `swarm swarm` / `swarm execute` commands. The `swarm v8 <cmd>` form
 is still accepted for compatibility.
+
+---
 
 ## Quick start
 
@@ -123,6 +148,8 @@ Resume a stopped run:
 ```bash
 swarm resume <run-id>
 ```
+
+---
 
 ## Providers
 
@@ -201,6 +228,8 @@ swarm compile "<goal>" --extractor anthropic
 swarm run .swarm/contracts/<id> --session anthropic
 ```
 
+---
+
 ## How it works
 
 ```text
@@ -274,6 +303,8 @@ from prior ledger state.
 
 Architecture deep-dive: [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
+---
+
 ## Adapters
 
 `swarm` includes two separate adapter systems.
@@ -313,7 +344,12 @@ Global control: `--falsifiers on|off`.
 
 See [`docs/falsification-adapters.md`](docs/falsification-adapters.md).
 
+---
+
 ## CLI reference
+
+<details>
+<summary><b>View commands</b></summary>
 
 ```text
 swarm compile <goal>
@@ -328,7 +364,11 @@ swarm recipes
 swarm attest verify <commit>
 ```
 
+</details>
+
 Run any command with `--help`. Full reference: [`docs/cli.md`](docs/cli.md).
+
+---
 
 ## GitHub Action
 
@@ -349,7 +389,12 @@ provider.
 
 See [`action.yml`](action.yml).
 
+---
+
 ## Configuration
+
+<details>
+<summary><b>View configuration files</b></summary>
 
 | File                                   | Purpose                              |
 | -------------------------------------- | ------------------------------------ |
@@ -360,8 +405,12 @@ See [`action.yml`](action.yml).
 | `config/quality-gates.yaml`            | v6 quality gate configuration        |
 | `config/default-agents.yaml`           | v6 agent profiles                    |
 
+</details>
+
 Reference: [`docs/configuration.md`](docs/configuration.md),
 [`CLAUDE.md`](CLAUDE.md).
+
+---
 
 ## Project layout
 
@@ -380,7 +429,12 @@ src/
 └── cli/
 ```
 
+---
+
 ## Documentation
+
+<details>
+<summary><b>View documentation index</b></summary>
 
 | Document                                                           | Purpose                            |
 | ------------------------------------------------------------------ | ---------------------------------- |
@@ -400,6 +454,10 @@ src/
 | [`CONTRIBUTING.md`](CONTRIBUTING.md)                               | Development workflow               |
 | [`SECURITY.md`](SECURITY.md)                                       | Vulnerability reporting            |
 
+</details>
+
+---
+
 ## Contributing
 
 ```bash
@@ -417,7 +475,12 @@ node dist/src/cli.js gates .
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-## License
+---
 
-[ISC](LICENSE) © 2026 Bradley R. Kinnard /
-[moonrunnerkc](https://github.com/moonrunnerkc).
+<div align="center">
+<sub>
+
+[ISC](LICENSE) © 2026 Bradley R. Kinnard / [moonrunnerkc](https://github.com/moonrunnerkc)
+
+</sub>
+</div>
