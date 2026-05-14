@@ -22,7 +22,6 @@ import {
   readString,
   requireEnum,
   requireNonNegativeInt,
-  requirePositiveFloat,
   requirePositiveInt,
   runParseArgs,
   type ParseArgsOptions,
@@ -33,7 +32,6 @@ import {
   cacheHitRate,
   effectiveInputTokens,
   type Session,
-  type SessionUsage,
 } from '../../session/types';
 import { createDefaultRuntime, WasmRuntime } from '../../wasm';
 import {
@@ -109,12 +107,12 @@ export interface RunFlags {
    */
   forbiddenImports: string[];
   /**
-   * Hard cost ceiling in USD. After the run completes, if the
-   * Anthropic-priced estimate from `totalUsage` exceeds the cap, the CLI
-   * exits 6 (cost-cap-exceeded). Null disables the cap. Wired by the
-   * GitHub Action's `cost-cap` input per impl guide §12 line 290.
+   * Live output-token budget. When set, the streaming verifier aborts
+   * an in-flight generation as soon as the projected output crosses the
+   * budget. Null disables the gate. Token-denominated so the same flag
+   * works across providers (Anthropic, local, deterministic).
    */
-  costCapUsd: number | null;
+  tokenBudget: number | null;
   /**
    * Adapter-reintegration: feature flag controlling the falsification
    * dispatcher (`src/falsification/dispatcher.ts`). Default `'on'`. When
@@ -143,13 +141,6 @@ export interface RunFlags {
    * string uses `<repoRoot>/.swarm/falsifier-stats.json`.
    */
   falsifierStatsPath: string;
-  /**
-   * Phase 7: when true and `--cost-cap` is set, the live cost tracker
-   * aborts in-flight generations as soon as the projected spend
-   * exceeds the cap. Default true. The post-run gate remains as a
-   * deterministic fallback.
-   */
-  costCapLive: boolean;
   /** Local-provider flag values; consumed only when `sessionKind === 'local'`. */
   local: LocalProviderFlagValues;
   /** Tracks which provider fields were set by an explicit `--<flag>` token. */
@@ -282,13 +273,8 @@ export async function handleRun(
     }
   }
 
-  // Phase 7: live cost tracker. Construct only when both --cost-cap is
-  // set and live mode is enabled. The post-run gate below remains as a
-  // deterministic backstop in case the tracker undercounts.
-  let costTracker: LiveCostTracker | undefined;
-  if (flags.costCapUsd !== null && flags.costCapLive) {
-    costTracker = new LiveCostTracker({ capUsd: flags.costCapUsd });
-    runOptions.costTracker = costTracker;
+  if (flags.tokenBudget !== null) {
+    runOptions.costTracker = new LiveCostTracker({ budgetTokens: flags.tokenBudget });
   }
 
   // Phase 7: adaptive falsifier scheduler. Default sequential preserves
@@ -399,44 +385,11 @@ export async function handleRun(
     });
   }
 
-  if (flags.costCapUsd !== null) {
-    const spentUsd = estimateUsageCostUsd(result.totalUsage);
-    logger.info(`cost cap:      $${flags.costCapUsd.toFixed(4)} USD (spent: $${spentUsd.toFixed(4)} USD)`);
-    if (spentUsd > flags.costCapUsd) {
-      logger.error(
-        `cost cap $${flags.costCapUsd.toFixed(4)} exceeded; estimated spend $${spentUsd.toFixed(4)}`,
-      );
-      return 6;
-    }
+  if (flags.tokenBudget !== null) {
+    logger.info(`token budget:  ${flags.tokenBudget} output tokens (spent: ${result.totalUsage.outputTokens})`);
   }
 
   return result.failed === 0 ? 0 : 2;
-}
-
-/**
- * Approximate Anthropic Claude Sonnet 4 pricing in USD per token. Cache
- * reads are 90% off the input rate; cache creation is 1.25× the input
- * rate. Pricing reference: https://www.anthropic.com/pricing (Claude
- * Sonnet 4 series, 2026 schedule).
- */
-const SONNET4_PRICE_PER_TOKEN_USD = {
-  input: 3 / 1_000_000,
-  cacheRead: 0.3 / 1_000_000,
-  cacheCreation: 3.75 / 1_000_000,
-  output: 15 / 1_000_000,
-};
-
-/**
- * Estimate the USD spend implied by a `SessionUsage`. Used for the
- * --cost-cap post-run gate.
- */
-export function estimateUsageCostUsd(usage: SessionUsage): number {
-  return (
-    usage.inputTokens * SONNET4_PRICE_PER_TOKEN_USD.input +
-    usage.cacheReadTokens * SONNET4_PRICE_PER_TOKEN_USD.cacheRead +
-    usage.cacheCreationTokens * SONNET4_PRICE_PER_TOKEN_USD.cacheCreation +
-    usage.outputTokens * SONNET4_PRICE_PER_TOKEN_USD.output
-  );
 }
 
 function buildSession(flags: RunFlags, projectContext: string): Session {
@@ -510,7 +463,6 @@ const RUN_SCHEMA: ParseArgsOptions = {
   'snapshot-cleanup': { type: 'string' },
   'falsifier-scheduler': { type: 'string' },
   'falsifier-stats-path': { type: 'string' },
-  'no-cost-cap-live': { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
 };
 
@@ -528,7 +480,7 @@ export function parseRunFlags(argv: string[]): RunFlags {
   const externalPatchesTimeoutRaw = readString(values, 'external-patches-timeout-ms');
   const maxObligationsRaw = readString(values, 'max-obligations');
   const commandTimeoutRaw = readString(values, 'command-timeout-ms');
-  const costCapRaw = readString(values, 'cost-cap');
+  const tokenBudgetRaw = readString(values, 'cost-cap');
   const falsifiersRaw = readString(values, 'falsifiers');
   const falsifierSchedulerRaw = readString(values, 'falsifier-scheduler');
   const forbidImports = values['forbid-import'];
@@ -572,14 +524,13 @@ export function parseRunFlags(argv: string[]): RunFlags {
     postMerge: !readBoolean(values, 'no-post-merge'),
     preGeneration: !readBoolean(values, 'no-pre-generation'),
     forbiddenImports,
-    costCapUsd: costCapRaw !== undefined ? requirePositiveFloat(costCapRaw, '--cost-cap') : null,
+    tokenBudget: tokenBudgetRaw !== undefined ? requirePositiveInt(tokenBudgetRaw, '--cost-cap') : null,
     falsifiers: falsifiersRaw !== undefined ? requireEnum(falsifiersRaw, '--falsifiers', ['on', 'off'] as const) : 'on',
     snapshotCleanup: readString(values, 'snapshot-cleanup') ?? '',
     falsifierScheduler: falsifierSchedulerRaw !== undefined
       ? requireEnum(falsifierSchedulerRaw, '--falsifier-scheduler', ['sequential', 'ucb1'] as const)
       : 'sequential',
     falsifierStatsPath: readString(values, 'falsifier-stats-path') ?? '',
-    costCapLive: !readBoolean(values, 'no-cost-cap-live'),
     local: buildLocalProviderFlagValues(values, (raw) => path.resolve(repoRoot, raw)),
     flagsSource: { sessionFromFlag: sessionRaw !== undefined },
   };
@@ -647,8 +598,7 @@ function printRunUsage(): void {
       '  --no-pre-generation          disable Phase 6 pre-generation skip pass (default: enabled)',
       '  --no-post-merge              disable Phase 6 post-merge integration check (default: enabled)',
       '  --forbid-import <names>      comma-separated module names the streaming verifier rejects',
-      '  --cost-cap <usd>             hard cost ceiling in USD; exit 6 if exceeded',
-      '  --no-cost-cap-live           disable mid-stream cost-cap enforcement (post-run only)',
+      '  --cost-cap <n>               live output-token ceiling; aborts streams once projected output crosses it',
       '  --snapshot-cleanup <spec>    snapshot policy (retain-on-failure|always|never|',
       '                               retain-last-n=<n>|max-age-ms=<ms>|max-disk-bytes=<b>)',
       '  --falsifier-scheduler <kind> sequential (default) | ucb1 (adaptive bandit)',

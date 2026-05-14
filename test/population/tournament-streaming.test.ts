@@ -139,7 +139,7 @@ describe('population/tournament — streaming verification', () => {
       () => 0.9,
     );
     const sink = new CapturingStreamSink();
-    const tracker = new LiveCostTracker({ capUsd: 0.0005 });
+    const tracker = new LiveCostTracker({ budgetTokens: 50 });
     const result = await runTournament({
       obligation: fileObligation,
       obligationIndex: 0,

@@ -2,7 +2,6 @@ import { strict as assert } from 'assert';
 import {
   LiveCostTracker,
   COST_CAP_ABORT_REASON,
-  SONNET4_PRICE_PER_TOKEN,
 } from '../../src/verification/live-cost-tracker';
 
 const ZERO = {
@@ -13,14 +12,14 @@ const ZERO = {
 };
 
 describe('LiveCostTracker', () => {
-  it('reports no cap when constructed with capUsd=null', () => {
-    const t = new LiveCostTracker({ capUsd: null });
-    assert.equal(t.hasCap(), false);
+  it('reports no budget when constructed with budgetTokens=null', () => {
+    const t = new LiveCostTracker({ budgetTokens: null });
+    assert.equal(t.hasBudget(), false);
     assert.equal(t.isCancelled(), false);
   });
 
-  it('does not abort when projected spend stays under cap', () => {
-    const t = new LiveCostTracker({ capUsd: 10 });
+  it('does not abort when projected tokens stay under budget', () => {
+    const t = new LiveCostTracker({ budgetTokens: 10_000 });
     const { observer, finalize } = t.observerForStream();
     const decision = observer({ partialText: 'a'.repeat(100), chunk: '', charsObserved: 100 });
     assert.equal(decision.kind, 'continue');
@@ -28,9 +27,9 @@ describe('LiveCostTracker', () => {
     assert.equal(t.isCancelled(), false);
   });
 
-  it('aborts the stream once projected spend crosses the cap', () => {
-    // Sonnet 4 output: $0.000015/token. To hit a $0.001 cap we need ~67 tokens (~268 chars).
-    const t = new LiveCostTracker({ capUsd: 0.001 });
+  it('aborts the stream once projected tokens cross the budget', () => {
+    // estimateTokens uses ~4 chars/token; 2000 chars ≈ 500 tokens, above a 50-token budget.
+    const t = new LiveCostTracker({ budgetTokens: 50 });
     const { observer } = t.observerForStream();
     const text = 'x'.repeat(2000);
     const decision = observer({ partialText: text, chunk: '', charsObserved: (text).length });
@@ -39,35 +38,33 @@ describe('LiveCostTracker', () => {
     assert.equal(t.isCancelled(), true);
     const info = t.lastAbortInfo();
     assert.ok(info !== null);
-    assert.equal(info?.capUsd, 0.001);
-    assert.ok((info?.projectedUsd ?? 0) >= 0.001);
+    assert.equal(info?.budgetTokens, 50);
+    assert.ok((info?.projectedTokens ?? 0) >= 50);
   });
 
   it('accounts for multiple concurrent streams against the same ceiling', () => {
-    const t = new LiveCostTracker({ capUsd: 0.001 });
+    // 150 chars ≈ 38 tokens — one stream stays under 50-token budget; two combined cross it.
+    const t = new LiveCostTracker({ budgetTokens: 50 });
     const a = t.observerForStream();
     const b = t.observerForStream();
-    // 150 chars ≈ 38 tokens ≈ $0.00057 — single stream is under $0.001 cap.
     const aDec = a.observer({ partialText: 'x'.repeat(150), chunk: '', charsObserved: 150 });
     assert.equal(aDec.kind, 'continue');
-    // Combined ≈ $0.00114 — second stream pushes projected over cap.
     const bDec = b.observer({ partialText: 'y'.repeat(150), chunk: '', charsObserved: 150 });
     assert.equal(bDec.kind, 'abort');
   });
 
   it('finalize commits usage and frees in-flight slot', () => {
-    const t = new LiveCostTracker({ capUsd: null });
+    const t = new LiveCostTracker({ budgetTokens: null });
     const { observer, finalize } = t.observerForStream();
     observer({ partialText: 'abcde', chunk: '', charsObserved: ('abcde').length });
-    assert.ok(t.projectedUsd() > 0);
+    assert.ok(t.projectedTokens() > 0);
     finalize({ ...ZERO, outputTokens: 10 });
-    // After finalize, no in-flight estimate; projected = committed.
-    assert.equal(t.projectedUsd(), t.spentUsd());
-    assert.equal(t.spentUsd(), 10 * SONNET4_PRICE_PER_TOKEN.output);
+    assert.equal(t.projectedTokens(), t.committedTokens());
+    assert.equal(t.committedTokens(), 10);
   });
 
-  it('inner observer abort decision is preserved when cap is intact', () => {
-    const t = new LiveCostTracker({ capUsd: 100 });
+  it('inner observer abort decision is preserved when budget is intact', () => {
+    const t = new LiveCostTracker({ budgetTokens: 100_000 });
     const { observer } = t.observerForStream((ev) =>
       ev.partialText.includes('STOP') ? { kind: 'abort', reason: 'inner-stop' } : { kind: 'continue' },
     );
@@ -78,8 +75,8 @@ describe('LiveCostTracker', () => {
     if (stop.kind === 'abort') assert.equal(stop.reason, 'inner-stop');
   });
 
-  it('cap abort takes precedence over inner observer', () => {
-    const t = new LiveCostTracker({ capUsd: 0.0001 });
+  it('budget abort takes precedence over inner observer', () => {
+    const t = new LiveCostTracker({ budgetTokens: 10 });
     let innerCalled = false;
     const { observer } = t.observerForStream(() => {
       innerCalled = true;
@@ -91,13 +88,13 @@ describe('LiveCostTracker', () => {
     assert.equal(innerCalled, false);
   });
 
-  it('snapshot reports committed, projected, and cap', () => {
-    const t = new LiveCostTracker({ capUsd: 5 });
+  it('snapshot reports committed, projected, and budget', () => {
+    const t = new LiveCostTracker({ budgetTokens: 5000 });
     const { observer, finalize } = t.observerForStream();
     observer({ partialText: 'hello world', chunk: '', charsObserved: ('hello world').length });
     const s = t.snapshot();
-    assert.equal(s.capUsd, 5);
-    assert.ok(s.projectedUsd >= s.committedUsd);
+    assert.equal(s.budgetTokens, 5000);
+    assert.ok(s.projectedTokens >= s.committedTokens);
     finalize({ ...ZERO, outputTokens: 4 });
   });
 });

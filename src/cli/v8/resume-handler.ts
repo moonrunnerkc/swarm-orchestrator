@@ -22,7 +22,6 @@ import {
 } from '../../session/factory';
 import { cacheHitRate, effectiveInputTokens, type Session } from '../../session/types';
 import { createDefaultRuntime, WasmRuntime } from '../../wasm';
-import { estimateUsageCostUsd } from './run-handler';
 import {
   buildLocalProviderFlagValues,
   LOCAL_PROVIDER_FLAG_SCHEMA,
@@ -34,7 +33,6 @@ import {
   readString,
   requireEnum,
   requireNonNegativeInt,
-  requirePositiveFloat,
   requirePositiveInt,
   runParseArgs,
   type ParseArgsOptions,
@@ -76,11 +74,11 @@ export interface ResumeFlags {
   /** Phase 6: comma-separated forbidden-import names. */
   forbiddenImports: string[];
   /**
-   * Hard cost ceiling in USD. After the run completes, if Anthropic-priced
-   * spend from `totalUsage` exceeds the cap, the CLI exits 6
-   * (cost-cap-exceeded). Wired by the GitHub Action's `cost-cap` input.
+   * Output-token budget passed through from the legacy `--cost-cap` flag.
+   * Logged at end of resume; live enforcement is not currently wired into
+   * the resume path. Null disables the gate.
    */
-  costCapUsd: number | null;
+  tokenBudget: number | null;
   /** Local-provider flag values; consumed only when `sessionKind === 'local'`. */
   local: LocalProviderFlagValues;
   /** Tracks which provider fields were set by an explicit `--<flag>` token. */
@@ -344,15 +342,8 @@ export async function handleResume(
     });
   }
 
-  if (flags.costCapUsd !== null) {
-    const spentUsd = estimateUsageCostUsd(result.totalUsage);
-    logger.info(`cost cap:      $${flags.costCapUsd.toFixed(4)} USD (spent: $${spentUsd.toFixed(4)} USD)`);
-    if (spentUsd > flags.costCapUsd) {
-      logger.error(
-        `cost cap $${flags.costCapUsd.toFixed(4)} exceeded; estimated spend $${spentUsd.toFixed(4)}`,
-      );
-      return 6;
-    }
+  if (flags.tokenBudget !== null) {
+    logger.info(`token budget:  ${flags.tokenBudget} output tokens (spent: ${result.totalUsage.outputTokens})`);
   }
 
   return result.failed === 0 ? 0 : 2;
@@ -457,7 +448,7 @@ export function parseResumeFlags(argv: string[]): ResumeFlags {
   const candidatesRaw = readString(values, 'candidates');
   const externalPatchesTimeoutRaw = readString(values, 'external-patches-timeout-ms');
   const commandTimeoutRaw = readString(values, 'command-timeout-ms');
-  const costCapRaw = readString(values, 'cost-cap');
+  const tokenBudgetRaw = readString(values, 'cost-cap');
   const forbidImports = values['forbid-import'];
 
   const forbiddenImports: string[] = [];
@@ -496,7 +487,7 @@ export function parseResumeFlags(argv: string[]): ResumeFlags {
     postMerge: !readBoolean(values, 'no-post-merge'),
     preGeneration: !readBoolean(values, 'no-pre-generation'),
     forbiddenImports,
-    costCapUsd: costCapRaw !== undefined ? requirePositiveFloat(costCapRaw, '--cost-cap') : null,
+    tokenBudget: tokenBudgetRaw !== undefined ? requirePositiveInt(tokenBudgetRaw, '--cost-cap') : null,
     local: buildLocalProviderFlagValues(values, (raw) => path.resolve(repoRoot, raw)),
     flagsSource: { sessionFromFlag: sessionRaw !== undefined },
   };
@@ -557,7 +548,7 @@ function printResumeUsage(): void {
       '  --no-pre-generation          disable Phase 6 pre-generation skip pass (default: enabled)',
       '  --no-post-merge              disable Phase 6 post-merge integration check (default: enabled)',
       '  --forbid-import <names>      comma-separated module names the streaming verifier rejects',
-      '  --cost-cap <usd>             hard cost ceiling in USD; exit 6 if exceeded',
+      '  --cost-cap <n>               output-token budget logged at end of resume',
       '  --help, -h                   show this message',
       '',
     ].join('\n'),
