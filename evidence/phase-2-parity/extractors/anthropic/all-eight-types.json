@@ -1,0 +1,50 @@
+{
+  "obligations": [
+    {
+      "type": "file-must-exist",
+      "path": "src/handler.ts"
+    },
+    {
+      "type": "build-must-pass",
+      "command": "npm run build"
+    },
+    {
+      "type": "test-must-pass",
+      "command": "npm test"
+    },
+    {
+      "type": "function-must-have-signature",
+      "file": "src/handler.ts",
+      "name": "handler",
+      "signature": "(req: Request): Promise<Response>"
+    },
+    {
+      "type": "property-must-hold",
+      "predicate": "! grep -r \"eval(\" src",
+      "target": "no eval() calls in src"
+    },
+    {
+      "type": "import-graph-must-satisfy",
+      "constraint": "no-cycles",
+      "scope": "src"
+    },
+    {
+      "type": "coverage-must-exceed",
+      "scope": "coverage/coverage-summary.json",
+      "metric": "lines",
+      "threshold": 90
+    },
+    {
+      "type": "performance-must-not-regress",
+      "benchmark": "node bench.js",
+      "baseline": "bench/baseline.json",
+      "threshold": 0.1
+    }
+  ],
+  "provenance": {
+    "name": "anthropic",
+    "model": "claude-sonnet-4-6",
+    "temperature": 0,
+    "promptSha256": "6bb1fa0bf679754e9b90fa29f73cad97f87a45b39b777eeaf959badff8ec4d70"
+  }
+}
