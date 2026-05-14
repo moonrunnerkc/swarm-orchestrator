@@ -12,7 +12,6 @@ import { loadPlanFile, savePlanFile } from '../plan-files';
 import QuickFixMode, { QuickFixOptions } from '../quick-fix-mode';
 import { SwarmOrchestrator, SwarmExecutionOptions, SwarmExecutionContext } from '../swarm-orchestrator';
 import { defaultModelForAdapter } from '../adapters';
-import { confirmCostPrompt } from './cost-prompt';
 import {
   ExecuteSwarmCliOptions,
   parseSwarmFlags,
@@ -163,18 +162,6 @@ export async function executeSwarm(
       logger.error('   If using a token, ensure GH_TOKEN / GITHUB_TOKEN is set and valid.');
       return 1;
     }
-  }
-
-  // Gate: require explicit user confirmation before spending tokens
-  const confirmed = await confirmCostPrompt(
-    costEstimate.lowEstimate,
-    costEstimate.totalPremiumRequests,
-    modelName,
-    !!options?.yes
-  );
-  if (!confirmed) {
-    logger.info('Cancelled.');
-    return 0;
   }
 
   // Resolve the target repo directory: plan metadata > CLI flag > first step repo > plan file location > cwd
@@ -524,18 +511,6 @@ export async function handleQuickCommand(args: string[]): Promise<number> {
   );
   logger.info(`💰 Cost Estimate: ${quickEstimate.lowEstimate}-${quickEstimate.totalPremiumRequests} premium requests`);
   logger.info(`   1 step | ${quickModel} (${quickEstimate.modelMultiplier}x)\n`);
-
-  // Gate: require explicit user confirmation before spending tokens
-  const quickConfirmed = await confirmCostPrompt(
-    quickEstimate.lowEstimate,
-    quickEstimate.totalPremiumRequests,
-    quickModel,
-    flags.yes
-  );
-  if (!quickConfirmed) {
-    logger.info('Cancelled.');
-    return 0;
-  }
 
   const quickOpts: QuickFixOptions = {
     skipVerification: flags.skipVerify
