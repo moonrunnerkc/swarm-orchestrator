@@ -72,211 +72,64 @@ import { getLogger } from '../logger';
 
 const log = getLogger('population.manager');
 
-/** Mode the population manager runs in. */
 export type PopulationMode = 'single' | 'tournament';
 
 export interface RunPopulationOptions {
   contract: FinalContract;
-  /** Repo root the verifier and applier resolve paths against. */
   repoRoot: string;
-  /** Persona registry the manager dispatches against. */
   registry: PersonaRegistry;
-  /** Session used for every persona call. */
   session: Session;
-  /** Ledger used to record evidence of every action. */
   ledger: JsonlLedger;
-  /**
-   * Run identifier used for snapshot sidecar directories and ledger
-   * entries. Defaults to `ledger.run()` when omitted.
-   */
   runId?: string;
-  /** Cap on commands run by the verifier. */
   commandTimeoutMs?: number;
-  /** Optional cap on obligations attempted; useful for tests. */
   maxObligations?: number;
-  /**
-   * Execution mode: `single` runs the Phase 2 sequential path (one persona
-   * per obligation, one candidate); `tournament` runs the Phase 3 path
-   * (N candidates per obligation, scored by the tournament-verifier
-   * persona, winner applied). Defaults to `single` for back-compat with
-   * existing tests; the v8 CLI defaults to `single` for cost-efficiency
-   * and pass `--mode tournament` to opt into the parallel-candidate path.
-   */
+  // the v8 CLI defaults to `single`; tournament mode opts in via --mode.
   mode?: PopulationMode;
-  /** Optional per-obligation-type tournament config override. */
   tournamentConfig?: Partial<Record<ObligationV1['type'], TournamentConfig>>;
-  /**
-   * Phase 4: obligation indexes to skip via memoization. Used by the
-   * resume path: indexes already satisfied in a prior run are recorded
-   * as `obligation-memoized` and the synthesis path is bypassed.
-   */
   skipObligationIndexes?: ReadonlySet<number>;
-  /**
-   * Phase 4: optional memo store. The manager populates it during the
-   * run and hands it to each tournament. Callers that want
-   * cross-obligation in-run memoization pass an empty store; passing
-   * null/undefined disables in-run memoization.
-   */
   memoStore?: MemoStore;
-  /**
-   * Phase 5: optional WASM deterministic-floor runtime. When supplied,
-   * obligations whose `deterministicStrategy` resolves to a registered
-   * strategy are dispatched through the runtime instead of the
-   * synthesis path. A failure on the deterministic side reroutes the
-   * obligation to synthesis (impl guide §8 misclassification recovery)
-   * — the exact synthesis path that runs depends on `mode`.
-   */
   wasmRuntime?: WasmRuntime;
-  /**
-   * Phase 5: optional per-strategy wall-time budget, ms. Forwarded to
-   * `WasmRuntime.dispatch`. Default per-strategy timeout in
-   * `wasm-runtime.ts` applies when omitted.
-   */
   strategyTimeoutMs?: number;
-  /**
-   * Phase 6: streaming-verification configuration. When supplied, the
-   * single-mode generation path uses `session.stream()` with the
-   * configured assertions and may abort mid-generation. When omitted,
-   * the manager falls back to non-streaming `session.complete()` (the
-   * Phase 2/3 behaviour). Tournament candidate generation is
-   * intentionally NOT streaming-routed: tournaments race candidates in
-   * parallel and the cheap verifier picks the winner; mid-stream abort
-   * inside a tournament round breaks the race fairness. Streaming for
-   * tournament candidates is logged as a Phase 7 follow-up.
-   */
+  // Tournament candidate generation is intentionally NOT streaming-routed:
+  // tournaments race candidates in parallel and mid-stream abort breaks
+  // race fairness.
   streaming?: StreamingVerifierConfig;
-  /**
-   * Phase 6: when true, run a pre-generation verification pass over
-   * every still-pending obligation (after memoization and the
-   * deterministic floor) and skip any that the live workspace already
-   * satisfies. Defaults to false to preserve Phase 2/3/4/5 wall-time.
-   */
   preGeneration?: boolean;
-  /**
-   * Phase 6: when true, run a post-merge integration check after the
-   * synthesis loop completes. Failure flips the run's `failed` count
-   * to non-zero and emits a `post-merge-verified` ledger entry.
-   * Defaults to false.
-   */
   postMerge?: boolean;
-  /**
-   * Adapter-reintegration: falsification-dispatcher feature flag. When
-   * `'on'` (default) and a falsifier registry is supplied, the manager
-   * dispatches every registered adapter that handles the obligation type
-   * after the producer's verifier marks the patch satisfied. A
-   * confirmed counter-example flips the obligation status to failed and
-   * appends a `falsification-call` ledger entry with the adapter's cost
-   * and yield. When `'off'` or no registry is supplied, the dispatcher
-   * is bypassed and the run is identical to pre-Phase-2 behaviour.
-   */
   falsifiers?: FalsifiersFlag;
-  /**
-   * Adapter-reintegration: registry of falsifier adapters to dispatch
-   * after each obligation. Caller-supplied so tests can inject a fake
-   * registry without spawning real Codex/Copilot CLIs. Production wires
-   * `defaultAdapterRegistry()` at the run-handler layer.
-   */
   adapterRegistry?: AdapterRegistry;
-  /**
-   * Adapter-reintegration: per-adapter wall-clock budget, ms. Defaults
-   * to 60_000 (60s). The dispatcher passes this through unchanged; each
-   * adapter must self-bound to it.
-   */
   adapterTimeBudgetMs?: number;
-  /**
-   * Phase 7: shared live cost tracker. When supplied, every streaming
-   * call (single mode and tournament candidates) routes through the
-   * tracker; the projected spend is enforced mid-stream and a cap
-   * crossing aborts the in-flight call. The tracker is also used as a
-   * cooperative cancellation token by non-streaming adapters
-   * (falsifier subprocesses) via `tracker.isCancelled()`.
-   */
   costTracker?: LiveCostTracker;
-  /**
-   * Phase 7: snapshot sidecar cleanup policy. Run after the population
-   * loop finishes (and after the final ledger entry is appended) to
-   * reclaim disk under `.swarm/snapshots/`. Default: `retain-on-failure`.
-   */
   snapshotCleanupPolicy?: SnapshotCleanupPolicy;
-  /**
-   * Phase 7: optional adaptive falsifier scheduler. When supplied, the
-   * dispatcher orders adapter candidates via UCB1 (or sequential) and
-   * persists outcome stats. When omitted, the dispatcher falls back to
-   * registration-order behavior unchanged.
-   */
   falsifierScheduler?: FalsifierScheduler;
 }
 
-/** Per-obligation outcome the manager hands back to the caller. */
 export interface ObligationOutcome {
   obligationIndex: number;
   obligation: ObligationV1;
   personaId: string | null;
   satisfied: boolean;
   detail: string;
-  /**
-   * Tournament evidence when mode === 'tournament'. Null in single mode
-   * or when the obligation never reached the tournament path.
-   */
   tournament?: TournamentResult | null;
 }
 
-/** Aggregate result of running the contract. */
 export interface RunPopulationResult {
   outcomes: ObligationOutcome[];
   satisfied: number;
   failed: number;
   totalUsage: SessionUsage;
-  /** Wall time for the whole run, ms. */
   wallTimeMs: number;
-  /** Mode the run executed under. */
   mode: PopulationMode;
-  /** Phase 4: number of obligations satisfied via memoization (no synthesis). */
   memoizedObligations: number;
-  /** Phase 4: total verifier calls saved via in-run candidate-hash dedup. */
   verifierCallsSavedByMemoization: number;
-  /**
-   * Phase 5: number of obligations satisfied via the WASM deterministic
-   * floor (zero LLM tokens consumed). Counted separately from
-   * `memoizedObligations` so the §8 cost benchmark can attribute savings.
-   */
   deterministicObligations: number;
-  /**
-   * Phase 5: number of obligations whose deterministic strategy ran but
-   * was rerouted to synthesis (misclassification recovery). The
-   * obligation may still end up satisfied via synthesis; this counter
-   * captures the runtime's miss rate.
-   */
   deterministicReroutes: number;
-  /**
-   * Phase 6: number of obligations satisfied by the pre-generation pass
-   * (live workspace already passes; no LLM tokens, no deterministic
-   * strategy, no memoization hit). Counted separately so the §9 cost
-   * benchmark can attribute savings.
-   */
   preVerifiedObligations: number;
-  /**
-   * Phase 6: number of streaming candidate generations the streaming
-   * verifier aborted mid-stream. Each abort saves the cost of the
-   * remaining (un-generated) tokens; the ledger captures token usage
-   * up to the abort point per candidate.
-   */
   streamingAbortedCandidates: number;
-  /**
-   * Phase 6: total characters of partial output generated before the
-   * streaming verifier fired its abort. Only counts aborted candidates;
-   * a proxy for "tokens billed before abort" and a denominator for the
-   * §9 savings claim.
-   */
   streamingCharsBeforeAbort: number;
-  /**
-   * Phase 6: post-merge integration-check result. `null` when the
-   * manager was run with `postMerge: false` (the default).
-   */
   postMerge: PostMergeRunOutcome | null;
 }
 
-/** Phase 6: post-merge result the manager hands back. */
 export interface PostMergeRunOutcome {
   passed: boolean;
   obligationCount: number;
@@ -289,16 +142,6 @@ export interface PostMergeRunOutcome {
   }>;
 }
 
-/**
- * Population manager. Walks unsatisfied obligations sequentially. For
- * each obligation, picks the persona via predicate evaluation and either:
- *   - `single` mode (Phase 2): one call, one candidate, apply, verify.
- *   - `tournament` mode (Phase 3): N candidates per round, verifier
- *     picks the winner, winner applied + verified; loser candidates are
- *     logged with full diff hash and token cost.
- *
- * Returns aggregate outcomes plus session usage and wall time.
- */
 export async function runPopulation(
   options: RunPopulationOptions,
 ): Promise<RunPopulationResult> {
@@ -331,12 +174,8 @@ export async function runPopulation(
     ? buildAssertions(streamingConfig)
     : [];
   const usingStreaming = streamingAssertions.length > 0;
-  /**
-   * Phase 5: track which obligation indexes have already failed their
-   * deterministic dispatch this run. Used to prevent re-attempting the
-   * strategy after we've rerouted to synthesis (§8: "no retry of the
-   * WASM module").
-   */
+  // §8: never retry a failed WASM strategy — once rerouted to synthesis,
+  // the deterministic floor is out of the picture for that index.
   const deterministicTried = new Set<number>();
 
   ledger.append<RunStartedEntry>({
@@ -347,8 +186,6 @@ export async function runPopulation(
     goal: contract.manifest.goal,
   });
 
-  // Phase 4: pre-mark skipped obligations as satisfied via memoization.
-  // The audit trail records one `obligation-memoized` entry per skip.
   let memoizedObligations = 0;
   for (let i = 0; i < contract.obligations.length; i += 1) {
     if (!skip.has(i)) continue;
@@ -377,11 +214,6 @@ export async function runPopulation(
   let streamingCharsBeforeAbort = 0;
   let attempted = 0;
 
-  // Phase 5: deterministic-floor pre-pass. Walk every pending obligation
-  // tagged with a registered strategy and dispatch through the runtime
-  // before the predicate loop fires. Successful dispatches mark the
-  // obligation `satisfied` and the predicate loop never picks it up;
-  // failures fall through to synthesis.
   if (wasmRuntime) {
     for (let i = 0; i < contract.obligations.length; i += 1) {
       if (skip.has(i)) continue;
@@ -416,13 +248,9 @@ export async function runPopulation(
     }
   }
 
-  // Phase 6: pre-generation verification pass. Walk every pending
-  // obligation (after memoization + deterministic) and check whether
-  // the live workspace already satisfies it. Skips with an
-  // `obligation-pre-verified` ledger entry. Order matters: memoization
-  // and the deterministic floor are cheaper than running build / test
-  // commands; pre-generation only inspects obligations that survived
-  // both prior cheap paths.
+  // Order matters: pre-generation runs build/test commands, costlier
+  // than memoization or the deterministic floor — only the obligations
+  // that survived both cheap paths reach this pass.
   if (options.preGeneration) {
     const alreadyExcluded = new Set<number>(skip);
     for (const o of outcomes) alreadyExcluded.add(o.obligationIndex);
@@ -846,11 +674,6 @@ export async function runPopulation(
 
       if (finalSatisfied) break;
       if (attempt >= RETRY_MAX) break;
-      // Build retry feedback from the structured failure detail. The
-      // streaming verifier handles mid-stream abort for forbidden
-      // imports; post-apply/post-verify failures are still useful
-      // signal regardless of streaming. We always retry on the
-      // non-streaming complete() path for the second attempt onward.
       retryFeedback =
         'Your previous attempt did not satisfy the obligation. Specifics:\n' +
         finalDetail +
@@ -937,11 +760,6 @@ export async function runPopulation(
   let satisfied = builder.countInStatus('satisfied');
   let failed = builder.countInStatus('failed');
 
-  // Phase 6: post-merge integration verification. Re-runs every
-  // obligation in the contract end-to-end against the workspace as it
-  // actually is once everyone has committed. Failure at this layer
-  // promotes any previously-satisfied obligation that no longer holds
-  // into the failed bucket and emits an audit-trail entry.
   let postMerge: PostMergeRunOutcome | null = null;
   if (options.postMerge) {
     const verifyOpts: Parameters<typeof verifyObligation>[1] = { repoRoot };
@@ -1068,10 +886,7 @@ export async function runPopulation(
     totalUsage,
   });
 
-  // Phase 7 snapshot cleanup. Runs after the final ledger entry so it
-  // can never race the writer. The current run is the only candidate
-  // that could be live; we pass `runFailed` so retain-on-failure keeps
-  // its sidecars for resume/forensics.
+  // Runs after the final ledger entry so it can never race the writer.
   const runFailed = failed > 0 || postMerge?.passed === false;
   try {
     cleanupSnapshots(repoRoot, runId, runFailed, options.snapshotCleanupPolicy ?? DEFAULT_SNAPSHOT_POLICY);
@@ -1112,19 +927,8 @@ interface DispatchDeterministicResult {
   detail: string;
 }
 
-/**
- * Phase 5: dispatch a single deterministic-tagged obligation through
- * the WASM runtime. Emits the trio
- * `obligation-deterministic-attempted` (always),
- * `obligation-deterministic-applied` (on success), and
- * `obligation-deterministic-failed` (on any failure). On success also
- * emits `obligation-satisfied` so memoization and downstream tooling
- * see the same shape they see for synthesis-satisfied obligations.
- *
- * §8 misclassification recovery: this helper never retries a failing
- * strategy. The caller (the manager pre-pass) tracks attempted indexes
- * and lets the predicate loop reroute the obligation to synthesis.
- */
+// §8 misclassification recovery: never retries a failing strategy.
+// The caller tracks attempted indexes and reroutes to synthesis.
 async function dispatchDeterministic(
   args: DispatchDeterministicArgs,
 ): Promise<DispatchDeterministicResult> {
@@ -1174,7 +978,6 @@ async function dispatchDeterministic(
     return { satisfied: false, detail: outcome.detail };
   }
 
-  // Strategy applied; run the standard verifier.
   const verifyOpts: Parameters<typeof verifyObligation>[1] = { repoRoot };
   if (commandTimeoutMs !== undefined) verifyOpts.commandTimeoutMs = commandTimeoutMs;
   const verifyResult = verifyObligation(obligation, verifyOpts);
@@ -1208,44 +1011,20 @@ async function dispatchDeterministic(
   return { satisfied: true, detail: outcome.detail };
 }
 
-/**
- * Optional pre-computed context the manager builds and threads into the
- * persona prompt. Each field addresses a real failure mode observed in
- * production runs:
- *
- *   - `commandFailureTail`: for command-shaped obligations (build / test /
- *     property / coverage / performance) the manager pre-runs the verifier
- *     once and embeds the failure tail. Without this, the implementer is
- *     told to "make build pass" with zero signal about why it's failing,
- *     and historically responded with off-target diffs (e.g. creating new
- *     files at unrelated paths). Pre-running is cheap because the
- *     post-merge check already pays for it.
- *
- *   - `testFramework`: for `file-must-exist` targeting a test file
- *     (`.test.`, `.spec.`, `__tests__/`, `_test.py`), the architect needs
- *     to know which test API is in scope. Without this hint the architect
- *     defaults to the most-common-on-the-internet API (Jest) and writes
- *     `expect(x).toBe(y)` into projects that use `node --test` /
- *     `node:assert` and don't have Jest installed. Discovered by
- *     `discoverRepoContext` from package.json deps; passed through
- *     verbatim.
- */
+// commandFailureTail: pre-running the verifier once before synthesis
+// surfaces the actual error to the persona; without it the implementer
+// gets "make build pass" with zero signal and historically responded
+// with off-target diffs.
+// testFramework: without this hint the architect defaults to Jest API
+// and lands broken files in node:test / Mocha / Vitest projects.
 export interface RenderContext {
   commandFailureTail?: string;
   testFramework?: 'jest' | 'mocha' | 'vitest' | 'node-test' | 'pytest' | null;
 }
 
-/**
- * Build the per-call user message for an obligation. The contract context
- * (goal, repo summary) is sent once via the cached system block; only the
- * per-obligation specifics go here so cache hits dominate.
- *
- * The optional `context` parameter carries pre-computed diagnostics
- * (command failure tail, test-framework hint). The fallback shape (no
- * context) is preserved for callers — tests, the tournament harness's
- * default `renderUserMessage`, and any future caller that wants the
- * minimal prompt.
- */
+// Contract context (goal, repo summary) is sent once via the cached
+// system block; only per-obligation specifics go here so cache hits
+// dominate.
 export function renderDynamicMessage(
   obligation: ObligationV1,
   repoRoot: string,
@@ -1260,12 +1039,8 @@ export function renderDynamicMessage(
   ];
   switch (obligation.type) {
     case 'file-must-exist': {
-      // For test files, the framework hint goes FIRST and is the most
-      // important line in the prompt: it has historically been the
-      // single highest-impact instruction (Sonnet defaults to Jest API
-      // when unhinted, breaking node:test / Mocha / Vitest projects).
-      // Promoting the hint above the generic "emit a fenced block"
-      // instruction makes it structurally salient.
+      // Framework hint goes FIRST: structurally salient placement
+      // overrides the model's Jest-default-when-unhinted bias.
       const fwHint = renderTestFrameworkHint(obligation.path, context?.testFramework ?? null);
       if (fwHint) {
         lines.push('REQUIRED:', fwHint, '');
@@ -1368,32 +1143,14 @@ export function renderDynamicMessage(
   return lines.join('\n');
 }
 
-/**
- * Cap on how many bytes of a single file we inline into the persona
- * prompt. Files larger than this get truncated with a banner so the
- * model sees the head and knows there is more. 6 KB ≈ 1500 tokens —
- * generous enough for the typical Express controller/route file in
- * the May 2026 eval target (~50–80 lines) but bounded so a huge file
- * doesn't dominate the prompt budget.
- */
+// 6 KB ≈ 1500 tokens — covers a typical controller/route file without
+// dominating the prompt budget.
 const FILE_CONTEXT_MAX_BYTES = 6 * 1024;
-/** Hard cap on total bytes appended across all context files per obligation. */
 const TOTAL_FILE_CONTEXT_MAX_BYTES = 16 * 1024;
 
-/**
- * Append "Current file contents:" sections to the dynamic prompt for
- * each file that the obligation will modify or whose state the persona
- * needs to know to write a valid diff. Without this, personas guess at
- * context lines and the resulting diffs hit "context mismatch" errors
- * (the May 2026 eval failure mode: every persona emitted a diff whose
- * `--- a/path` context lines didn't match the real file).
- *
- * Paths that don't exist or aren't readable are silently skipped — the
- * persona will see only the files that exist. Each file is truncated to
- * FILE_CONTEXT_MAX_BYTES; the total budget across all files is
- * TOTAL_FILE_CONTEXT_MAX_BYTES so a multi-file predicate doesn't blow
- * the prompt budget.
- */
+// Without inlining current file contents, personas guess at context
+// lines and diffs hit "context mismatch" errors (May 2026 eval failure
+// mode).
 function appendFileContext(
   lines: string[],
   repoRoot: string,
@@ -1423,7 +1180,7 @@ function appendFileContext(
     }
     const truncated = body.length > FILE_CONTEXT_MAX_BYTES;
     const slice = truncated ? body.slice(0, FILE_CONTEXT_MAX_BYTES) : body;
-    const byteCost = slice.length + 80; // rough overhead for the banner
+    const byteCost = slice.length + 80;
     if (byteCost > remaining) continue;
     remaining -= byteCost;
     lines.push('');
@@ -1434,25 +1191,10 @@ function appendFileContext(
   }
 }
 
-/**
- * Extract repo-relative file paths from a shell predicate. The
- * extractor's predicates routinely look like
- *   grep -q 'router.get' src/routes/v1/user.route.js
- * or
- *   awk '...' tests/integration/user.test.js
- * The personas need to see the contents of those files to write
- * applyable diffs. This walks the predicate text for tokens that look
- * like POSIX-style relative paths (contain '/', have a recognised file
- * extension, no leading '/', no leading '-' which would be a flag).
- *
- * Returns unique paths in first-seen order. Conservative on purpose:
- * false negatives are fine (persona just doesn't get extra context),
- * false positives (matching a string literal that isn't a path) are
- * tolerable as long as appendFileContext fs.existsSync-gates the result.
- */
+// Conservative on purpose: false negatives are fine (persona gets no
+// extra context); false positives are gated by appendFileContext's
+// fs.existsSync check.
 function extractFilePathsFromPredicate(predicate: string): string[] {
-  // Tokens that look like relative paths with an extension. Stops at
-  // shell quoting / whitespace / pipes / semis.
   const candidates: string[] = [];
   const tokenRe = /(?:^|[\s'"`])([a-zA-Z0-9_.][a-zA-Z0-9_./-]*\/[a-zA-Z0-9_./-]+\.[a-zA-Z0-9]+)(?=[\s'"`)|;&]|$)/g;
   let m: RegExpExecArray | null;
@@ -1465,15 +1207,8 @@ function extractFilePathsFromPredicate(predicate: string): string[] {
   return candidates;
 }
 
-/**
- * Decide whether a `file-must-exist` path looks like a test file, and if
- * so render a one-line hint naming the project's test framework. The hint
- * is deliberately prescriptive: when we know the framework, the architect
- * MUST use that framework's API, because the default-without-hint is
- * Jest-shaped (test/expect) and lands broken in node:test / Mocha /
- * Vitest projects. When framework is null we say nothing — over-specifying
- * is worse than under-specifying.
- */
+// Prescriptive when framework is known; silent when null —
+// over-specifying is worse than under-specifying.
 function renderTestFrameworkHint(
   relPath: string,
   framework: RepoContext['testFramework'],
@@ -1498,23 +1233,14 @@ function renderTestFrameworkHint(
 
 const TEST_FILE_PATTERN = /(\.|_)(test|spec)\.[a-zA-Z0-9]+$|(^|\/)__tests__\//;
 
-/** Predicate used by the architect's test-framework hint and by tests. */
 export function isTestFilePath(relPath: string): boolean {
   return TEST_FILE_PATTERN.test(relPath);
 }
 
-/**
- * Detect when a freshly-written test file uses a different framework's
- * API than the project's. Returns a human-readable failure detail when a
- * misuse is found, or `null` when the file aligns with the framework.
- *
- * The check is deliberately conservative: only obvious cross-framework
- * imports / API references trip it. Two frameworks that look identical
- * at the API surface (e.g. Jest and Vitest both use `describe`/`it`/
- * `expect`) are not flagged against each other; the cost of a false
- * positive — telling the architect to rewrite a perfectly valid file —
- * is higher than the cost of letting an ambiguous case through.
- */
+// Conservative: only obvious cross-framework imports/API references
+// trip it. Lookalike frameworks (Jest vs Vitest) are not flagged
+// against each other — a false positive (rewrite a valid file) is
+// costlier than letting an ambiguous case through.
 function detectTestFrameworkMisuse(
   repoRoot: string,
   relPath: string,
@@ -1562,21 +1288,13 @@ function detectTestFrameworkMisuse(
       if (importsVitest) return wrong('File imports from `vitest`.');
       return null;
     case 'pytest':
-      // Python misuse detection deferred — pytest doesn't have a single
-      // confusable peer to flag against, and the LLM-emitted-Python path
-      // is rare enough not to justify hard-coding rules here yet.
+      // Deferred: pytest has no single confusable peer to flag against.
       return null;
   }
 }
 
-/**
- * For build/test obligations, tell the implementer/verifier to preserve
- * the project's existing test framework. Without this, the verifier
- * historically rewrote the architect's already-correct test files into a
- * different framework's API (typically Jest) on the assumption that
- * Jest is the universal default. The result was a "test-must-pass" diff
- * that broke "build-must-pass" and required manual fixup.
- */
+// Without this hint, the verifier historically rewrote already-correct
+// test files into Jest API and broke build-must-pass.
 function renderFrameworkPreservationHint(
   framework: NonNullable<RenderContext['testFramework']>,
 ): string {
@@ -1588,8 +1306,6 @@ function renderFrameworkPreservationHint(
 }
 
 function renderFailureBlock(command: string, tail: string): string {
-  // Cap tail length so the prompt stays bounded; the tail is meant to
-  // surface error messages and stack frames, not a full log.
   const capped = tail.length > 2000 ? tail.slice(-2000) : tail;
   return [
     `The verifier ran \`${command}\` against the current workspace and it failed. Tail of stderr+stdout:`,
@@ -1600,19 +1316,9 @@ function renderFailureBlock(command: string, tail: string): string {
   ].join('\n');
 }
 
-/**
- * Pre-run a command-shaped obligation's verifier to capture failure
- * detail. Returns null when the obligation already passes (no failure
- * tail to surface) or when the obligation type is not command-shaped.
- *
- * Used by the manager to build a `RenderContext` immediately before
- * dispatching the obligation. Cost: one verifier call per command-shaped
- * obligation that's about to be synthesized. The post-merge check already
- * runs every verifier once, so the marginal cost is one extra
- * pre-dispatch run per command obligation. In return, the persona prompt
- * carries the actual error, which collapses round-after-round
- * misdiagnosis into a single targeted patch.
- */
+// Marginal cost vs. the post-merge check is one extra verifier run per
+// command obligation; in return the persona prompt carries the real
+// error and collapses round-after-round misdiagnosis into one patch.
 function preRunCommandVerifier(
   obligation: ObligationV1,
   options: Parameters<typeof verifyObligation>[1],
@@ -1627,21 +1333,13 @@ function preRunCommandVerifier(
   }
   const r = verifyObligation(obligation, options);
   if (r.satisfied) return null;
-  // verifyObligation's `detail` already contains "command \"X\" exited N;
-  // tail: <up to 512 chars>" — we surface that tail directly to the
-  // persona because re-running here would double the wall time.
+  // Reuse the tail from verifyObligation's detail; re-running here
+  // would double the wall time.
   const m = r.detail.match(/tail:\s*([\s\S]+)$/);
   if (m && m[1]) return m[1].trim();
   return r.detail;
 }
 
-/**
- * Build a `RenderContext` for a single obligation. Pure for
- * `file-must-exist` (just consults the manifest); side-effecting for
- * command-shaped obligations (runs the verifier once to capture the
- * failure tail). The verify call is bounded by the manager's
- * `commandTimeoutMs`.
- */
 function buildRenderContext(
   obligation: ObligationV1,
   repoRoot: string,
@@ -1665,18 +1363,8 @@ function sha256(s: string): string {
   return crypto.createHash('sha256').update(s, 'utf8').digest('hex');
 }
 
-/**
- * Build the provider-attribution slice that every candidate-* ledger
- * entry carries. Reads `Session.providerInfo()` so the ledger captures
- * which provider / model / backend / grammar / seed produced a candidate
- * without the population manager needing to track the wiring.
- *
- * The optional-chain guard tolerates older test mocks that satisfy the
- * Session shape structurally without implementing `providerInfo`. When
- * absent, the entries are written without provider attribution, which is
- * the pre-refactor behavior.
- */
 function providerAttribution(session: Session): ProviderAttribution {
+  // Older test mocks satisfy Session structurally without providerInfo.
   if (typeof session.providerInfo !== 'function') return {};
   const info = session.providerInfo();
   return {
@@ -1689,7 +1377,6 @@ function providerAttribution(session: Session): ProviderAttribution {
   };
 }
 
-/** Persona helper used by tests: list the personas a given registry exposes. */
 export function listPersonaIds(registry: PersonaRegistry): string[] {
   return registry.list().map((p: PersonaSpec) => p.id);
 }
@@ -1705,31 +1392,10 @@ interface ExecuteTournamentArgs {
   commandTimeoutMs: number | undefined;
   tournamentConfig: RunPopulationOptions['tournamentConfig'];
   memoStore: MemoStore | undefined;
-  /**
-   * Pre-computed render context (command failure tail, test framework
-   * hint). Threaded through to the per-candidate prompt so every
-   * tournament candidate sees the same diagnostic input as single mode.
-   */
   renderContext: RenderContext;
-  /**
-   * Repo-relative paths owned by file-must-exist obligations elsewhere in
-   * the contract. The tournament's diff applier drops patches targeting
-   * these paths so the architect's body is preserved across persona turns.
-   */
   fileMustExistPaths: ReadonlySet<string>;
-  /** Run identifier for snapshot sidecar directories. */
   runId: string;
-  /**
-   * Phase 7: streaming verifier assertions to evaluate per chunk on each
-   * candidate. When undefined, candidate generation falls back to the
-   * non-streaming `session.complete()` path.
-   */
   streamingAssertions?: readonly StreamingAssertion[];
-  /**
-   * Phase 7: shared live cost tracker. Threaded through to every
-   * candidate stream so a single per-run cap applies across all
-   * concurrent generations.
-   */
   costTracker?: LiveCostTracker;
 }
 
@@ -1739,12 +1405,6 @@ interface ExecuteTournamentResult {
   tournament: TournamentResult;
 }
 
-/**
- * Per-obligation tournament dispatcher used by the manager when
- * `mode === 'tournament'`. Builds the persona slate from the registry,
- * applies the per-type config, and turns ledger sink callbacks into
- * `JsonlLedger` writes.
- */
 async function executeTournament(args: ExecuteTournamentArgs): Promise<ExecuteTournamentResult> {
   const {
     obligation,
@@ -1890,12 +1550,6 @@ async function executeTournament(args: ExecuteTournamentArgs): Promise<ExecuteTo
   };
 }
 
-/**
- * Apply a candidate's response to the workspace. Picks between the
- * fenced single-file applier (architect-style) and the unified-diff
- * applier (implementer/verifier-style) based on response shape and
- * obligation type. Returns a short detail string for the ledger.
- */
 function applyTournamentCandidate(
   repoRoot: string,
   obligation: ObligationV1,
@@ -1933,19 +1587,9 @@ interface RunFalsifiersArgs {
   readonly costTracker?: LiveCostTracker;
 }
 
-/**
- * Adapter-reintegration: dispatch every adapter that handles the
- * obligation type after the producer's verifier has marked the patch
- * satisfied. Returns a falsification detail string when any adapter
- * confirmed a counter-example (caller flips the obligation to failed),
- * or null when no falsification was found / dispatcher disabled / no
- * registry supplied.
- *
- * Each adapter call appends a `falsification-call` ledger entry with
- * cost and yield. Adapter throws are caught and recorded as failed
- * dispatch entries; an adapter going sideways must not crash the run
- * (the producer's verifier already approved the patch).
- */
+// Adapter throws are caught and recorded as failed dispatch entries:
+// an adapter going sideways must not crash the run, the producer's
+// verifier has already approved the patch.
 async function runFalsifiersForObligation(
   args: RunFalsifiersArgs,
 ): Promise<string | null> {
