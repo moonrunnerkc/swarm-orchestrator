@@ -3,7 +3,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import Ajv, { type ErrorObject, type ValidateFunction } from 'ajv';
 import * as yaml from 'js-yaml';
-import { type ObligationV1 } from '../types';
 import {
   SUBMIT_CONTRACT_INPUT_SCHEMA,
   type ContractEnvelope,

@@ -136,6 +136,7 @@ function parseEnvelopeOrThrow(
         `(grammar: ${grammarApplied ? 'json-schema' : 'soft-prompt'}). ` +
         `Head of response: ${truncate(stripped, 200)}. ` +
         `Underlying parse error: ${(err as Error).message}`,
+      { cause: err },
     );
   }
   if (

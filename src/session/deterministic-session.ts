@@ -335,6 +335,7 @@ function parseEnvelopeFile(text: string, source: string): ExternalPatchEnvelope 
     throw new Error(
       `deterministic session: failed to parse patch file ${source} as JSON: ${(err as Error).message}; ` +
         `each file in a watched directory must be a JSON envelope { patch, persona?, source? }`,
+      { cause: err },
     );
   }
   return coerceEnvelope(parsed, source);
@@ -348,6 +349,7 @@ function parseEnvelopeLine(line: string, source: string): ExternalPatchEnvelope 
     throw new Error(
       `deterministic session: failed to parse queue line in ${source}: ${(err as Error).message}; ` +
         `each line must be a JSON envelope { patch, persona?, source? }`,
+      { cause: err },
     );
   }
   return coerceEnvelope(parsed, source);
