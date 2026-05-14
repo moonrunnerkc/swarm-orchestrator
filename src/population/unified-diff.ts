@@ -21,10 +21,10 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import parseDiff = require('parse-diff');
 
 export interface UnifiedDiffApplyResult {
   applied: boolean;
-  /** Repo-relative paths that were created, modified, or deleted. */
   changedFiles: string[];
   detail: string;
 }
@@ -41,143 +41,74 @@ interface ParsedHunk {
 interface ParsedFilePatch {
   oldPath: string | null;
   newPath: string | null;
-  /** True when the patch creates a new file (`--- /dev/null`). */
   isCreate: boolean;
-  /** True when the patch deletes a file (`+++ /dev/null`). */
   isDelete: boolean;
   hunks: ParsedHunk[];
 }
 
-/** Internal representation of a parsed diff header plus its line index. */
-interface DiffHeader {
-  oldPath: string | null;
-  newPath: string | null;
-  isCreate: boolean;
-  isDelete: boolean;
-  /** 0-based line index of the `---` header in the stripped line array. */
-  headerLineIndex: number;
-}
+const HUNK_HEADER = /^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@/;
 
-/**
- * Strip leading prose, markdown fences, and any text before the first
- * unified-diff header. Personas often emit "Here is the diff:\n\n--- a/..."
- * or wrap the body in ```diff fences; both are stripped here so the
- * downstream parser sees a clean diff body.
- *
- * Returns the input unchanged when no `--- ` header is found, so callers
- * that use `looksLikeUnifiedDiff` to gate parsing still see negative
- * results for non-diff text.
- */
 export function stripDiffPreamble(text: string): string {
-  // Strip markdown fences anywhere in the text (some LLMs emit ```diff…```
-  // mid-response after a sentence). We deliberately tolerate fences on
-  // either or both ends.
   let s = text.replace(/```(?:diff|patch)?\s*\n?/gi, '');
   s = s.replace(/\n?```\s*/g, '\n');
-  // Find the first line that begins with "--- " at the start of a line —
-  // anything before it is preamble prose and gets dropped.
   const m = /^---\s+\S/m.exec(s);
   if (!m) return text;
   return s.slice(m.index);
 }
 
-/**
- * Detect whether a response body looks like a unified diff. Used by the
- * population manager to decide between `applyFileEmit` (fenced) and
- * `applyUnifiedDiff` (patch). Prose preamble is tolerated via
- * `stripDiffPreamble`.
- */
 export function looksLikeUnifiedDiff(text: string): boolean {
   const stripped = stripDiffPreamble(text);
   return /^---\s+\S+\n\+\+\+\s+\S+\n@@\s/m.test(stripped);
 }
 
 /**
- * Strip optional markdown fences and split into lines.
+ * Convert a parse-diff `Change.content` value into the leading-marker form
+ * the applier expects (` `, `-`, or `+` followed by the line body). parse-diff
+ * keeps the marker on `content` already; we just normalize "no newline at end
+ * of file" sentinels which the applier treats as informational.
  */
-function stripAndSplit(text: string): string[] {
-  return stripDiffPreamble(text).split('\n');
+function changeToLine(change: parseDiff.Change): string | null {
+  if (change.content.startsWith('\\')) return null;
+  return change.content;
 }
 
-/**
- * Parse the `---` / `+++` headers from a unified diff. Returns one entry
- * per file patch, carrying the parsed paths and the 0-based line index of
- * the `---` header so callers can slice the hunk body that follows.
- * Throws when headers are malformed.
- */
-function parseDiffHeaders(lines: readonly string[]): DiffHeader[] {
-  const headers: DiffHeader[] = [];
-  let i = 0;
-  while (i < lines.length) {
-    while (i < lines.length && !lines[i]?.startsWith('--- ')) {
-      i += 1;
+function toFilePatch(file: parseDiff.File): ParsedFilePatch {
+  const isCreate = file.from === '/dev/null' || file.new === true;
+  const isDelete = file.to === '/dev/null' || file.deleted === true;
+  const oldPath = isCreate ? null : (file.from ?? null);
+  const newPath = isDelete ? null : (file.to ?? null);
+  const hunks: ParsedHunk[] = file.chunks.map((chunk) => {
+    const lines: string[] = [];
+    for (const change of chunk.changes) {
+      const ln = changeToLine(change);
+      if (ln !== null) lines.push(ln);
     }
-    if (i >= lines.length) break;
-    const oldHeader = lines[i] ?? '';
-    const newHeader = lines[i + 1] ?? '';
-    if (!oldHeader.startsWith('--- ') || !newHeader.startsWith('+++ ')) {
-      throw new Error(
-        `unified diff: expected '---' followed by '+++' at line ${i + 1}, got '${oldHeader}' / '${newHeader}'`,
-      );
-    }
-    const oldRaw = oldHeader.slice(4).split('\t')[0]?.trim() ?? '';
-    const newRaw = newHeader.slice(4).split('\t')[0]?.trim() ?? '';
-    const isCreate = oldRaw === '/dev/null';
-    const isDelete = newRaw === '/dev/null';
-    const oldPath = isCreate ? null : stripPathPrefix(oldRaw);
-    const newPath = isDelete ? null : stripPathPrefix(newRaw);
-    headers.push({ oldPath, newPath, isCreate, isDelete, headerLineIndex: i });
-    i += 2;
-    // Skip hunks to reach the next header.
-    while (i < lines.length && lines[i]?.startsWith('@@')) {
-      i += 1;
-      while (i < lines.length) {
-        const ln = lines[i] ?? '';
-        if (ln.startsWith('@@') || ln.startsWith('--- ') || ln.startsWith('diff ')) break;
-        if (ln.length === 0 && i === lines.length - 1) {
-          i += 1;
-          break;
-        }
-        const tag = ln[0];
-        if (tag === ' ' || tag === '-' || tag === '+' || tag === '\\') {
-          i += 1;
-          continue;
-        }
-        if (tag === undefined || ln.length === 0) {
-          i += 1;
-          break;
-        }
-        i += 1;
-        break;
-      }
-    }
-  }
-  return headers;
+    return {
+      oldStart: chunk.oldStart,
+      oldLines: chunk.oldLines,
+      newStart: chunk.newStart,
+      newLines: chunk.newLines,
+      lines,
+    };
+  });
+  return { oldPath, newPath, isCreate, isDelete, hunks };
 }
 
 /**
  * Enumerate repo-relative file paths a unified diff targets. Used by
  * `snapshotBeforeApply` to know which paths to hash before applying.
- * Pure function; does not touch the filesystem.
- *
- * Returns an empty array when the input is not a unified diff. Caller
- * treats empty paths as "nothing to snapshot" and skips the ledger
- * write.
+ * Pure function; does not touch the filesystem. Returns empty when the
+ * input is not a unified diff.
  */
 export function listAffectedPaths(diffText: string): readonly string[] {
   const trimmed = diffText.trim();
-  if (trimmed === 'no-op' || trimmed === '"no-op"') {
-    return [];
-  }
-  if (!looksLikeUnifiedDiff(trimmed)) {
-    return [];
-  }
+  if (trimmed === 'no-op' || trimmed === '"no-op"') return [];
+  if (!looksLikeUnifiedDiff(trimmed)) return [];
   try {
-    const lines = stripAndSplit(trimmed);
-    const headers = parseDiffHeaders(lines);
+    const patches = parseUnifiedDiff(trimmed);
     const paths = new Set<string>();
-    for (const h of headers) {
-      const target = h.newPath ?? h.oldPath;
+    for (const p of patches) {
+      const target = p.newPath ?? p.oldPath;
       if (target) paths.add(target);
     }
     return [...paths];
@@ -187,94 +118,38 @@ export function listAffectedPaths(diffText: string): readonly string[] {
 }
 
 /**
- * Parse a unified diff. Returns one entry per file patch. Throws when the
- * diff is structurally malformed (missing headers, hunk count mismatch,
- * unexpected leading characters).
+ * Parse a unified diff into one entry per file patch. Throws when the diff
+ * is structurally malformed: missing `+++` after `---`, or a `@@` header
+ * that does not match the strict range form. parse-diff itself is permissive
+ * (silently skips garbage); the strict applier in front requires that
+ * permissiveness be tightened back up so personas can't smuggle through a
+ * fuzzy diff.
  */
 export function parseUnifiedDiff(text: string): ParsedFilePatch[] {
-  const lines = stripAndSplit(text);
-  const headers = parseDiffHeaders(lines);
-  const patches: ParsedFilePatch[] = [];
-
-  for (let h = 0; h < headers.length; h += 1) {
-    const header = headers[h];
-    if (!header) continue;
-    const nextHeader = headers[h + 1];
-    const bodyEnd = nextHeader ? nextHeader.headerLineIndex : lines.length;
-    let i = header.headerLineIndex + 2;
-    const hunks: ParsedHunk[] = [];
-    while (i < bodyEnd && lines[i]?.startsWith('@@')) {
-      const headerLine = lines[i] ?? '';
-      const m = headerLine.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/);
-      if (!m) {
-        throw new Error(`unified diff: malformed hunk header at line ${i + 1}: '${headerLine}'`);
-      }
-      const oldStart = Number.parseInt(m[1] ?? '1', 10);
-      const oldLines = m[2] !== undefined ? Number.parseInt(m[2], 10) : 1;
-      const newStart = Number.parseInt(m[3] ?? '1', 10);
-      const newLines = m[4] !== undefined ? Number.parseInt(m[4], 10) : 1;
-      i += 1;
-      const body: string[] = [];
-      let oldSeen = 0;
-      let newSeen = 0;
-      while (i < bodyEnd) {
-        const ln = lines[i] ?? '';
-        if (ln.startsWith('@@') || ln.startsWith('--- ') || ln.startsWith('diff ')) break;
-        // Tolerate trailing blank line after final hunk.
-        if (ln.length === 0 && i === bodyEnd - 1) {
-          i += 1;
-          break;
-        }
-        const tag = ln[0];
-        if (tag === ' ') {
-          oldSeen += 1;
-          newSeen += 1;
-        } else if (tag === '-') {
-          oldSeen += 1;
-        } else if (tag === '+') {
-          newSeen += 1;
-        } else if (tag === '\\') {
-          // "\ No newline at end of file" — informational; ignore.
-        } else if (tag === undefined || ln.length === 0) {
-          // Blank lines inside hunks are valid context (single space line)
-          // but here we treat truly-empty lines as terminators.
-          break;
-        } else {
-          throw new Error(
-            `unified diff: unexpected hunk line at ${i + 1}: '${ln.slice(0, 40)}'`,
-          );
-        }
-        body.push(ln);
-        i += 1;
-        if (oldSeen >= oldLines && newSeen >= newLines) break;
-      }
-      hunks.push({ oldStart, oldLines, newStart, newLines, lines: body });
+  const stripped = stripDiffPreamble(text);
+  const lines = stripped.split('\n');
+  for (let i = 0; i < lines.length; i += 1) {
+    const ln = lines[i] ?? '';
+    if (ln.startsWith('@@') && !HUNK_HEADER.test(ln)) {
+      throw new Error(`unified diff: malformed hunk header at line ${i + 1}: '${ln}'`);
     }
-    patches.push({
-      oldPath: header.oldPath,
-      newPath: header.newPath,
-      isCreate: header.isCreate,
-      isDelete: header.isDelete,
-      hunks,
-    });
+    if (ln.startsWith('--- ')) {
+      const next = lines[i + 1] ?? '';
+      if (!next.startsWith('+++ ')) {
+        throw new Error(
+          `unified diff: expected '---' followed by '+++' at line ${i + 1}, got '${ln}' / '${next}'`,
+        );
+      }
+    }
   }
-  return patches;
-}
-
-/**
- * Strip the conventional `a/` / `b/` prefix git emits. Leaves bare paths
- * (no prefix) intact. `/dev/null` callers don't reach this function.
- */
-function stripPathPrefix(raw: string): string {
-  if (raw.startsWith('a/') || raw.startsWith('b/')) return raw.slice(2);
-  return raw;
+  const files = parseDiff(stripped);
+  return files.map(toFilePatch);
 }
 
 /**
  * Apply a parsed file patch to the repository. Strict context match: every
  * ` `/`-` line in the hunk must equal the corresponding source line at the
- * stated offset. The applier writes the result to disk and returns the
- * affected repo-relative path.
+ * stated offset.
  */
 function applyFilePatch(repoRoot: string, patch: ParsedFilePatch): string {
   if (patch.isDelete) {
@@ -305,14 +180,12 @@ function applyFilePatch(repoRoot: string, patch: ParsedFilePatch): string {
     fs.writeFileSync(abs, out.join('\n') + (out.length > 0 ? '\n' : ''), 'utf8');
     return patch.newPath;
   }
-  // Modify in place.
   const target = patch.newPath ?? patch.oldPath;
   if (!target) throw new Error('unified diff: modify patch with no path');
   const abs = resolveRepoRelative(repoRoot, target);
   const original = fs.existsSync(abs) ? fs.readFileSync(abs, 'utf8') : '';
   const sourceLines = original.split('\n');
-  // Trailing-newline bookkeeping: a file ending with '\n' splits into one
-  // extra empty element we need to preserve.
+  // A trailing '\n' splits into an extra empty element we must preserve.
   const hadTrailingNewline = original.endsWith('\n');
   const working = hadTrailingNewline ? sourceLines.slice(0, -1) : sourceLines;
   const result: string[] = [...working];
@@ -359,7 +232,6 @@ function resolveRepoRelative(repoRoot: string, relPath: string): string {
     );
   }
   const abs = path.join(repoRoot, relPath);
-  // Defensive: refuse to escape repo root via ..
   const rel = path.relative(repoRoot, abs);
   if (rel.startsWith('..') || path.isAbsolute(rel)) {
     throw new Error(`unified diff: target path ${relPath} escapes repo root ${repoRoot}`);
@@ -371,28 +243,18 @@ function truncate(s: string): string {
   return s.length > 60 ? s.slice(0, 57) + '...' : s;
 }
 
-/**
- * Options for `applyUnifiedDiff`.
- */
 export interface ApplyUnifiedDiffOptions {
   /**
    * Repo-relative paths that this caller is forbidden from writing. Patches
-   * targeting any of these paths are silently skipped (recorded in
-   * `skippedFiles`). Use this when an upstream `file-must-exist` obligation
-   * owns a path: subsequent personas (security-reviewer satisfying a
-   * property, verifier satisfying test-must-pass) can otherwise emit a
-   * "let me also create the file" diff and overwrite the architect's body
-   * with their own — sometimes truncated — content.
+   * that CREATE or DELETE such a path are silently skipped (recorded in
+   * `skippedFiles`); modify-in-place patches are allowed, since they don't
+   * stomp on the architect's body. Without this exemption every downstream
+   * persona's legitimate edit to a file-must-exist path gets silently
+   * dropped — the May 2026 eval failure mode.
    */
   readonly protectedPaths?: ReadonlySet<string>;
 }
 
-/**
- * Apply a unified-diff response body. Tolerates `no-op` (returns
- * `{applied: false, changedFiles: [], detail: 'no-op'}`). Throws when the
- * diff is malformed or hunks fail to apply; the population manager
- * surfaces the error as a verification failure.
- */
 export function applyUnifiedDiff(
   repoRoot: string,
   responseText: string,
@@ -414,12 +276,6 @@ export function applyUnifiedDiff(
   const skippedFiles: string[] = [];
   for (const patch of patches) {
     const target = patch.newPath ?? patch.oldPath;
-    // Protection scope: only block CREATE/DELETE patches against
-    // architect-owned paths. A modify-in-place patch (--- a/path /
-    // +++ b/path) is an additive edit that does NOT stomp on the
-    // architect's body, so it must be allowed — otherwise every
-    // downstream persona's legitimate edit to a file-must-exist path
-    // gets silently skipped (the May 2026 eval failure mode).
     if (
       target !== null &&
       options.protectedPaths?.has(target) &&
