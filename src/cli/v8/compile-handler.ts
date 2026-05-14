@@ -15,7 +15,6 @@ import {
   EXTRACTOR_PROVIDERS,
   resolveExtractorProvider,
 } from '../../contract/extractor/factory';
-import { loadRecipe, listRecipes } from '../../recipe-loader';
 import {
   buildLocalProviderFlagValues,
   LOCAL_PROVIDER_FLAG_SCHEMA,
@@ -49,14 +48,6 @@ export interface CompileFlags {
   model: string | null;
   temperature: number | null;
   apiKey: string | null;
-  /**
-   * Name of a built-in recipe (e.g. `add-tests`, `add-auth`). When set,
-   * the goal is composed from the recipe's description plus its step
-   * tasks; any positional argument is appended as a free-form goal
-   * suffix. Per impl guide §12 line 288, recipes ship as contract
-   * templates in v8.
-   */
-  recipe: string | null;
   /** Local-provider flag values; consumed only when `extractor === 'local'`. */
   local: LocalProviderFlagValues;
   /**
@@ -221,7 +212,6 @@ const COMPILE_SCHEMA: ParseArgsOptions = {
   model: { type: 'string' },
   temperature: { type: 'string' },
   'api-key': { type: 'string' },
-  recipe: { type: 'string' },
   help: { type: 'boolean', short: 'h' },
 };
 
@@ -253,15 +243,10 @@ export function parseCompileFlags(argv: string[]): CompileFlags {
     model: readString(values, 'model') ?? null,
     temperature: temperatureRaw !== undefined ? requireFiniteFloat(temperatureRaw, '--temperature') : null,
     apiKey: readString(values, 'api-key') ?? null,
-    recipe: readString(values, 'recipe') ?? null,
     local: buildLocalProviderFlagValues(values, (raw) => path.resolve(repoRoot, raw)),
     flagsSource: { extractorFromFlag: extractorRaw !== undefined },
   };
 
-  if (flags.recipe !== null) {
-    flags.goal = composeRecipeGoal(flags.recipe, positionals.join(' ').trim());
-    return flags;
-  }
   if (positionals.length === 0) {
     throw new Error('missing goal: usage `swarm v8 compile <goal> [flags]`');
   }
@@ -270,33 +255,6 @@ export function parseCompileFlags(argv: string[]): CompileFlags {
     throw new Error('goal is empty');
   }
   return flags;
-}
-
-/**
- * Build a goal string from a recipe name. The recipe's description is the
- * primary goal; each step's task contributes additional context. A free-form
- * positional suffix (e.g. `swarm v8 compile --recipe add-tests "for the
- * payments module"`) is appended verbatim so users can scope the recipe.
- */
-export function composeRecipeGoal(recipeName: string, suffix: string): string {
-  let recipe;
-  try {
-    recipe = loadRecipe(recipeName);
-  } catch (err) {
-    const known = listRecipes();
-    throw new Error(
-      `unknown recipe "${recipeName}". Available recipes: ${known.join(', ')}`,
-      { cause: err },
-    );
-  }
-  const parts: string[] = [recipe.description];
-  for (const step of recipe.steps) {
-    parts.push(step.task);
-  }
-  if (suffix.length > 0) {
-    parts.push(`Scope: ${suffix}`);
-  }
-  return parts.join('. ');
 }
 
 function printCompileUsage(): void {
@@ -323,7 +281,6 @@ function printCompileUsage(): void {
       '  --local-max-concurrency <n>     concurrent requests (default 1)',
       '  --local-api-key <key>           local-backend API key (when required)',
       '  --local-seed <n>                sampling seed (default 0)',
-      '  --recipe <name>       compile from a built-in recipe (see `swarm recipes`)',
       '  --help, -h            show this message',
       '',
     ].join('\n'),

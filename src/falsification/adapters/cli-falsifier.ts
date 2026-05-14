@@ -6,7 +6,7 @@
 
 import type { ObligationType } from '../../contract/types';
 import { getLogger } from '../../logger';
-import { invokeWithTransientRetry, isTransientApiError } from '../../copilot-transient-retry';
+import { invokeWithTransientRetry, isTransientApiError } from './transient-retry';
 import { spawnCli, truncate } from './spawn-cli';
 import type {
   AdapterAuthMethod,

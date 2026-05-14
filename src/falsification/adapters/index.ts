@@ -8,7 +8,6 @@ import { claudeCodeProfile } from './profiles/claude-code';
 
 export type * from './types';
 export { AdapterRegistry } from './registry';
-export { aggregateAdapterCosts, totalAdapterDollars } from './cost-aggregator';
 export { CliFalsifier } from './cli-falsifier';
 export type * from './cli-falsifier';
 export { copilotProfile } from './profiles/copilot';
