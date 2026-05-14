@@ -6,13 +6,10 @@ import {
   checkPredicateBaseline,
   runPredicate,
 } from '../../src/verification/predicate-runner';
-import { checkPredicateBaseline as codexCheckPredicateBaseline } from '../../src/falsification/adapters/codex/predicate-runner';
 
-/**
- * Unit tests for the generic predicate runner. Covers the shared
- * module at src/verification/predicate-runner.ts and the
- * back-compat re-export from the codex adapter.
- */
+// Unit tests for the generic predicate runner at
+// src/verification/predicate-runner.ts. Adapters now consume this
+// module directly via the shared shell-candidate-runner.
 
 function makeWorkspace(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-verification-predicate-runner-'));
@@ -78,8 +75,3 @@ describe('checkPredicateBaseline', () => {
   });
 });
 
-describe('codex adapter back-compat re-export', () => {
-  it('exposes the same checkPredicateBaseline implementation as the shared module', () => {
-    assert.strictEqual(codexCheckPredicateBaseline, checkPredicateBaseline);
-  });
-});

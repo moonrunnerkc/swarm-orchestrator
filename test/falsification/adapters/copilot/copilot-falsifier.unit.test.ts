@@ -2,7 +2,8 @@ import { strict as assert } from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { CopilotFalsifier } from '../../../../src/falsification/adapters/copilot/copilot-falsifier';
+import { CliFalsifier } from '../../../../src/falsification/adapters/cli-falsifier';
+import { copilotProfile } from '../../../../src/falsification/adapters/profiles/copilot';
 import type { FalsificationInput } from '../../../../src/falsification/adapters/types';
 
 /**
@@ -47,7 +48,7 @@ function noUpwardImportsInput(workspaceRoot: string): FalsificationInput {
 
 describe('CopilotFalsifier unit paths', () => {
   it('returns strategy-not-applicable for unsupported obligation types', async () => {
-    const adapter = new CopilotFalsifier({
+    const adapter = new CliFalsifier(copilotProfile, {
       authMethodOverride: () => 'chatgpt',
       invocationOverride: async () => ({
         stdout: '',
@@ -80,7 +81,7 @@ describe('CopilotFalsifier unit paths', () => {
 
   it('returns baseline-predicate-failed when the obligation is already violated', async () => {
     let copilotCalled = false;
-    const adapter = new CopilotFalsifier({
+    const adapter = new CliFalsifier(copilotProfile, {
       authMethodOverride: () => 'chatgpt',
       invocationOverride: async () => {
         copilotCalled = true;
@@ -113,7 +114,7 @@ describe('CopilotFalsifier unit paths', () => {
 
   it('preserves full stderr on Error.cause when copilot exits non-zero', async () => {
     const stderr4kb = 'X'.repeat(4096);
-    const adapter = new CopilotFalsifier({
+    const adapter = new CliFalsifier(copilotProfile, {
       authMethodOverride: () => 'chatgpt',
       invocationOverride: async () => ({
         stdout: '',
@@ -160,7 +161,7 @@ describe('CopilotFalsifier unit paths', () => {
       },
     ];
     const stdout = fenceCandidates(candidates) + '\nRequests 4 Premium (10s)';
-    const adapter = new CopilotFalsifier({
+    const adapter = new CliFalsifier(copilotProfile, {
       authMethodOverride: () => 'chatgpt',
       invocationOverride: async () => ({
         stdout,
@@ -208,7 +209,7 @@ describe('CopilotFalsifier unit paths', () => {
       },
     ];
     const stdout = fenceCandidates(candidates) + '\nRequests 1 Premium (5s)';
-    const adapter = new CopilotFalsifier({
+    const adapter = new CliFalsifier(copilotProfile, {
       authMethodOverride: () => 'chatgpt',
       invocationOverride: async () => ({
         stdout,
@@ -267,7 +268,7 @@ describe('CopilotFalsifier unit paths', () => {
       },
     ];
     const stdout = fenceCandidates(candidates) + '\nRequests 3 Premium (8s)';
-    const adapter = new CopilotFalsifier({
+    const adapter = new CliFalsifier(copilotProfile, {
       authMethodOverride: () => 'chatgpt',
       invocationOverride: async () => ({
         stdout,

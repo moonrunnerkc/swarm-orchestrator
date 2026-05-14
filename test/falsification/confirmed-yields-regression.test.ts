@@ -2,7 +2,8 @@ import { strict as assert } from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { CodexFalsifier } from '../../src/falsification/adapters/codex/codex-falsifier';
+import { CliFalsifier } from '../../src/falsification/adapters/cli-falsifier';
+import { codexProfile } from '../../src/falsification/adapters/profiles/codex';
 import type { FalsificationInput } from '../../src/falsification/adapters/types';
 import type { PropertyMustHoldObligation } from '../../src/contract/types';
 import { runPredicate } from './shared/run-predicate';
@@ -161,7 +162,7 @@ describe('Phase 1 confirmed-yields regression fixtures', () => {
       it('CodexFalsifier classifies the candidate as a confirmed counter-example', async () => {
         const ws = makeWorkspaceFromFixture();
         try {
-          const adapter = new CodexFalsifier({
+          const adapter = new CliFalsifier(codexProfile, {
             authMethodOverride: () => 'api',
             invocationOverride: async () => ({
               stdout: fakeCodexStdoutFor(candidate),

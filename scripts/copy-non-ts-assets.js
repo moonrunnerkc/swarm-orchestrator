@@ -32,6 +32,19 @@ const PAIRS = [
     dst: path.join(__dirname, '..', 'dist', 'src', 'inference', 'local', 'grammars'),
     pattern: /\.gbnf$/,
   },
+  {
+    // Falsification adapter prompt templates. Each (adapter, obligation
+    // kind) pairing ships as one .md file the profile loads at module
+    // init via __dirname-relative fs.readFileSync.
+    src: path.join(__dirname, '..', 'src', 'falsification', 'adapters', 'profiles', 'copilot', 'prompts'),
+    dst: path.join(__dirname, '..', 'dist', 'src', 'falsification', 'adapters', 'profiles', 'copilot', 'prompts'),
+    pattern: /\.md$/,
+  },
+  {
+    src: path.join(__dirname, '..', 'src', 'falsification', 'adapters', 'profiles', 'codex', 'prompts'),
+    dst: path.join(__dirname, '..', 'dist', 'src', 'falsification', 'adapters', 'profiles', 'codex', 'prompts'),
+    pattern: /\.md$/,
+  },
 ];
 
 function copyMatching(srcDir, dstDir, pattern) {

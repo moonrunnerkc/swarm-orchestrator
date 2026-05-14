@@ -3,13 +3,13 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import {
-  CodexFalsifier,
+  CliFalsifier as CodexFalsifier,
   defaultAdapterRegistry,
   type FalsificationInput,
   type FalsificationResult,
   type FalsifierAdapter,
 } from '../../../src/falsification/adapters';
-import { CODEX_CANDIDATE_COUNT } from '../../../src/falsification/adapters/codex/codex-prompt';
+import { CODEX_CANDIDATE_COUNT, codexProfile } from '../../../src/falsification/adapters/profiles/codex';
 
 /**
  * Phase 0 deliverable, satisfied by Phase 1: a real integration test
@@ -137,7 +137,7 @@ describe('FalsifierAdapter contract conformance', () => {
   });
 
   it('CodexFalsifier conforms to the contract under a real invocation override', async () => {
-    const adapter = new CodexFalsifier({
+    const adapter = new CodexFalsifier(codexProfile, {
       invocationOverride: async () => ({
         stdout: fakeCodexResponse(),
         stderr: '',
@@ -149,7 +149,7 @@ describe('FalsifierAdapter contract conformance', () => {
   });
 
   it('produces a counter-example-input result for the smoke obligation', async () => {
-    const adapter = new CodexFalsifier({
+    const adapter = new CodexFalsifier(codexProfile, {
       invocationOverride: async () => ({
         stdout: fakeCodexResponse(),
         stderr: '',
@@ -179,7 +179,7 @@ describe('FalsifierAdapter contract conformance', () => {
         files: [{ relPath: `safe-${i}/note.txt`, bytes: 'nothing-forbidden-here' }],
       })),
     });
-    const adapter = new CodexFalsifier({
+    const adapter = new CodexFalsifier(codexProfile, {
       invocationOverride: async () => ({
         stdout: ['```json', safeCandidatesJson, '```'].join('\n'),
         stderr: '',

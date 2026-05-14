@@ -2,7 +2,8 @@ import { strict as assert } from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { CopilotFalsifier } from '../../../../src/falsification/adapters/copilot/copilot-falsifier';
+import { CliFalsifier } from '../../../../src/falsification/adapters/cli-falsifier';
+import { copilotProfile } from '../../../../src/falsification/adapters/profiles/copilot';
 import type { FalsificationInput } from '../../../../src/falsification/adapters/types';
 import {
   TRANSIENT_API_ERROR_PATTERN,
@@ -211,7 +212,7 @@ function noUpwardImportsInput(workspaceRoot: string): FalsificationInput {
 describe('CopilotFalsifier transient-retry integration', () => {
   it('retries the spawn when the CLI emits the transient marker and proceeds with the recovered output', async () => {
     let calls = 0;
-    const adapter = new CopilotFalsifier({
+    const adapter = new CliFalsifier(copilotProfile, {
       authMethodOverride: () => 'chatgpt',
       premiumRequestsOverride: () => null,
       invocationOverride: async () => {
@@ -238,7 +239,7 @@ describe('CopilotFalsifier transient-retry integration', () => {
 
   it('surfaces TransientApiRetryExhaustedError when every attempt was transient', async () => {
     let calls = 0;
-    const adapter = new CopilotFalsifier({
+    const adapter = new CliFalsifier(copilotProfile, {
       authMethodOverride: () => 'chatgpt',
       premiumRequestsOverride: () => null,
       invocationOverride: async () => {
@@ -269,7 +270,7 @@ describe('CopilotFalsifier transient-retry integration', () => {
   it('fires onInvocation observability hook on every attempt including transient ones', async () => {
     const captured: Array<{ exitCode: number }> = [];
     let calls = 0;
-    const adapter = new CopilotFalsifier({
+    const adapter = new CliFalsifier(copilotProfile, {
       authMethodOverride: () => 'chatgpt',
       premiumRequestsOverride: () => null,
       invocationOverride: async () => {

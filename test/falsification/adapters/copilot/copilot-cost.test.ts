@@ -4,7 +4,7 @@ import {
   copilotUsdPerPremiumRequest,
   dollarsForRequestsByAuth,
   parseCopilotPremiumRequests,
-} from '../../../../src/falsification/adapters/copilot/copilot-cost';
+} from '../../../../src/falsification/adapters/profiles/copilot';
 
 describe('copilot-cost', () => {
   describe('copilotUsdPerPremiumRequest', () => {

@@ -1,6 +1,6 @@
 import { strict as assert } from 'assert';
-import { parseCopilotCandidates } from '../../../../src/falsification/adapters/copilot/copilot-output-parser';
-import { COPILOT_CANDIDATE_COUNT } from '../../../../src/falsification/adapters/copilot/copilot-prompt';
+import { parseCopilotCandidates } from '../../../../src/falsification/adapters/profiles/copilot';
+import { COPILOT_CANDIDATE_COUNT } from '../../../../src/falsification/adapters/profiles/copilot';
 
 function fence(payload: object): string {
   return ['```json', JSON.stringify(payload), '```'].join('\n');

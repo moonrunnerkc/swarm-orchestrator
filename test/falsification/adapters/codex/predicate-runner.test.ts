@@ -2,11 +2,13 @@ import { strict as assert } from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import {
-  checkPredicateBaseline,
-  runCandidateAgainstPredicate,
-} from '../../../../src/falsification/adapters/codex/predicate-runner';
-import type { ParsedCandidate } from '../../../../src/falsification/adapters/codex/codex-output-parser';
+import { runShellCandidate } from '../../../../src/falsification/adapters/candidate-runners';
+import { checkPredicateBaseline } from '../../../../src/verification/predicate-runner';
+import type { ParsedCandidate } from '../../../../src/falsification/adapters/cli-falsifier';
+
+function runCandidateAgainstPredicate(c: ParsedCandidate, p: string, w: string) {
+  return runShellCandidate(c, p, w, 'Codex');
+}
 
 /**
  * Unit tests for the predicate runner. These exercise the real

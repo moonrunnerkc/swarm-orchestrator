@@ -2,7 +2,8 @@ import { strict as assert } from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { ClaudeCodeFalsifier } from '../../../../src/falsification/adapters/claude-code/claude-code-falsifier';
+import { CliFalsifier } from '../../../../src/falsification/adapters/cli-falsifier';
+import { claudeCodeProfile } from '../../../../src/falsification/adapters/profiles/claude-code';
 import type { FalsificationInput } from '../../../../src/falsification/adapters/types';
 
 function makeWorkspace(): string {
@@ -53,7 +54,7 @@ describe('ClaudeCodeFalsifier unit paths', () => {
     // ClaudeCode now handles property-must-hold in addition to its
     // original two types. Test uses test-must-pass to exercise the
     // strategy-not-applicable branch.
-    const adapter = new ClaudeCodeFalsifier({
+    const adapter = new CliFalsifier(claudeCodeProfile, {
       authMethodOverride: () => 'chatgpt',
       invocationOverride: async () => ({ stdout: '', stderr: '', exitCode: 0, wallClockMs: 0 }),
     });
@@ -80,7 +81,7 @@ describe('ClaudeCodeFalsifier unit paths', () => {
 
   it('returns baseline-predicate-failed when the obligation is already violated', async () => {
     let claudeCalled = false;
-    const adapter = new ClaudeCodeFalsifier({
+    const adapter = new CliFalsifier(claudeCodeProfile, {
       authMethodOverride: () => 'chatgpt',
       invocationOverride: async () => {
         claudeCalled = true;
@@ -106,7 +107,7 @@ describe('ClaudeCodeFalsifier unit paths', () => {
 
   it('preserves stderr on Error.cause when claude exits non-zero', async () => {
     const stderr2kb = 'X'.repeat(2048);
-    const adapter = new ClaudeCodeFalsifier({
+    const adapter = new CliFalsifier(claudeCodeProfile, {
       authMethodOverride: () => 'chatgpt',
       invocationOverride: async () => ({
         stdout: '',
@@ -153,7 +154,7 @@ describe('ClaudeCodeFalsifier unit paths', () => {
       },
     ];
     const stdout = makeEnvelope(fenceCandidates(candidates), 0.07, false);
-    const adapter = new ClaudeCodeFalsifier({
+    const adapter = new CliFalsifier(claudeCodeProfile, {
       authMethodOverride: () => 'chatgpt',
       invocationOverride: async () => ({ stdout, stderr: '', exitCode: 0, wallClockMs: 50 }),
     });
@@ -193,7 +194,7 @@ describe('ClaudeCodeFalsifier unit paths', () => {
       },
     ];
     const stdout = makeEnvelope(fenceCandidates(candidates), 0.09, false);
-    const adapter = new ClaudeCodeFalsifier({
+    const adapter = new CliFalsifier(claudeCodeProfile, {
       authMethodOverride: () => 'chatgpt',
       invocationOverride: async () => ({ stdout, stderr: '', exitCode: 0, wallClockMs: 30 }),
     });

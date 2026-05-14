@@ -3,7 +3,8 @@ import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { CopilotFalsifier } from '../../../../src/falsification/adapters/copilot/copilot-falsifier';
+import { CliFalsifier } from '../../../../src/falsification/adapters/cli-falsifier';
+import { copilotProfile } from '../../../../src/falsification/adapters/profiles/copilot';
 import type { FalsificationInput } from '../../../../src/falsification/adapters/types';
 
 /**
@@ -69,7 +70,7 @@ describe('CopilotFalsifier real-CLI integration', function () {
         'export const sibling = 2;\n',
         'utf8',
       );
-      const adapter = new CopilotFalsifier({ allowedTools: 'all' });
+      const adapter = new CliFalsifier(copilotProfile, { allowedTools: 'all' });
       const input: FalsificationInput = {
         patchSha: '0000000000000000000000000000000000000000',
         obligation: {

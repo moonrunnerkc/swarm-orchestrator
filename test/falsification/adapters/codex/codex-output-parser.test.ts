@@ -1,6 +1,6 @@
 import { strict as assert } from 'assert';
-import { parseCodexCandidates } from '../../../../src/falsification/adapters/codex/codex-output-parser';
-import { CODEX_CANDIDATE_COUNT } from '../../../../src/falsification/adapters/codex/codex-prompt';
+import { parseCodexCandidates } from '../../../../src/falsification/adapters/profiles/codex';
+import { CODEX_CANDIDATE_COUNT } from '../../../../src/falsification/adapters/profiles/codex';
 
 /**
  * Unit tests for the Codex output parser. The parser is the seam between
