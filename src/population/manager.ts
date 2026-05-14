@@ -55,7 +55,7 @@ import {
   DEFAULT_SNAPSHOT_POLICY,
   type SnapshotCleanupPolicy,
 } from './snapshot-cleanup';
-import type { LiveCostTracker } from '../verification/live-cost-tracker';
+import { COST_CAP_ABORT_REASON, type LiveCostTracker } from '../verification/live-cost-tracker';
 import type { FalsifierScheduler } from '../falsification/scheduler';
 import { getLogger } from '../logger';
 import {
@@ -1067,7 +1067,7 @@ async function runFalsifiersForObligation(
     if (args.costTracker) {
       const tracker = args.costTracker;
       (dispatchOpts as { shouldCancel?: () => string | null }).shouldCancel = () =>
-        tracker.isCancelled() ? 'cost-cap exceeded' : null;
+        tracker.isCancelled() ? COST_CAP_ABORT_REASON : null;
     }
     outcome = await dispatchFalsifiers(obligation, registry, dispatchOpts);
     if (args.scheduler) args.scheduler.flush();
