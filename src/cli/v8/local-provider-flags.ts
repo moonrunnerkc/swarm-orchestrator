@@ -2,21 +2,30 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { ResolvedLocalProviderConfig } from '../../config/provider-config';
 import { LOCAL_BACKEND_NAMES, type LocalBackendName } from '../../inference/local/factory';
+import {
+  requireNonNegativeInt,
+  requirePositiveInt,
+  type ParseArgsOptions,
+} from './argv-schema';
 
 /**
  * Shared parsing for the `--local-*` family of flags that configure the
- * local provider. All three v8 handlers (`compile`, `run`, `resume`) accept
- * exactly the same flag set; this module is the single source of truth
- * for their names, types, validation, and precedence rules.
+ * local provider. All three argv-driven v8 handlers (`compile`, `run`,
+ * `resume`) accept the same flag set; this module is the single source
+ * of truth for their names, types, validation, and the precedence chain.
  *
  * Precedence the resolved values feed into:
  *
- *   flag value (from this module) > env var > config file > default
+ *   flag value (this module) > env var > config file > default
  *
  * Resolution against env vars and config files happens downstream in the
- * provider factories. This module is responsible only for parsing the
- * flag tokens and surfacing a structured, typed `LocalProviderFlagValues`
- * object the caller folds into its own flag struct.
+ * provider factories. This module is responsible only for:
+ *   - the parseArgs schema records the handlers spread into their own
+ *     `options:` config (`LOCAL_PROVIDER_FLAG_SCHEMA`),
+ *   - validating the parsed string values into a typed
+ *     `LocalProviderFlagValues` struct (`buildLocalProviderFlagValues`),
+ *   - the flag→env→config precedence resolver
+ *     (`resolveEffectiveLocalProvider`).
  */
 
 /** Identifier for the local-session grammar mode. */
@@ -46,14 +55,114 @@ export interface LocalProviderFlagValues {
 }
 
 /**
+ * `--local-*` flag tokens, derived from the schema keys. Exported for
+ * pass-through-style argv walkers (e.g. benchmarks/provider-bench) that
+ * need to recognize the local-provider family without invoking parseArgs
+ * themselves. Schema is the source of truth; this constant is a view.
+ */
+export const LOCAL_PROVIDER_FLAG_TOKENS: readonly string[] = Object.freeze(
+  [
+    'local-backend',
+    'local-base-url',
+    'local-model-extractor',
+    'local-model-session',
+    'local-persona-model-map',
+    'local-grammar',
+    'local-request-timeout-ms',
+    'local-max-concurrency',
+    'local-api-key',
+    'local-seed',
+  ].map((k) => `--${k}`),
+);
+
+/** parseArgs schema records for every `--local-*` flag. */
+export const LOCAL_PROVIDER_FLAG_SCHEMA: ParseArgsOptions = {
+  'local-backend': { type: 'string' },
+  'local-base-url': { type: 'string' },
+  'local-model-extractor': { type: 'string' },
+  'local-model-session': { type: 'string' },
+  'local-persona-model-map': { type: 'string' },
+  'local-grammar': { type: 'string' },
+  'local-request-timeout-ms': { type: 'string' },
+  'local-max-concurrency': { type: 'string' },
+  'local-api-key': { type: 'string' },
+  'local-seed': { type: 'string' },
+};
+
+/** Construct a struct with every field unset. */
+export function emptyLocalProviderFlagValues(): LocalProviderFlagValues {
+  return {
+    backend: null,
+    baseUrl: null,
+    modelExtractor: null,
+    modelSession: null,
+    personaModelMap: null,
+    grammar: null,
+    requestTimeoutMs: null,
+    maxConcurrency: null,
+    apiKey: null,
+    seed: null,
+  };
+}
+
+/**
+ * Translate the parseArgs `values` object into a typed
+ * `LocalProviderFlagValues`. Throws on enum-invalid or range-invalid
+ * input with the same message shape pre-3b emitted.
+ *
+ * `resolveModulePath` lets `--local-persona-model-map` resolve relative
+ * paths against the handler-specific `repoRoot`.
+ */
+export function buildLocalProviderFlagValues(
+  values: Record<string, unknown>,
+  resolveModulePath: (raw: string) => string,
+): LocalProviderFlagValues {
+  const out = emptyLocalProviderFlagValues();
+  const backend = stringOrNull(values, 'local-backend');
+  if (backend !== null) {
+    if (!LOCAL_BACKEND_NAMES.includes(backend as LocalBackendName)) {
+      throw new Error(
+        `invalid --local-backend "${backend}"; expected one of: ${LOCAL_BACKEND_NAMES.join(', ')}`,
+      );
+    }
+    out.backend = backend as LocalBackendName;
+  }
+  out.baseUrl = stringOrNull(values, 'local-base-url');
+  out.modelExtractor = stringOrNull(values, 'local-model-extractor');
+  out.modelSession = stringOrNull(values, 'local-model-session');
+  const map = stringOrNull(values, 'local-persona-model-map');
+  if (map !== null) out.personaModelMap = parsePersonaModelMap(map, resolveModulePath);
+  const grammar = stringOrNull(values, 'local-grammar');
+  if (grammar !== null) {
+    if (!LOCAL_GRAMMAR_MODES.includes(grammar as LocalGrammarMode)) {
+      throw new Error(
+        `invalid --local-grammar "${grammar}"; expected one of: ${LOCAL_GRAMMAR_MODES.join(', ')}`,
+      );
+    }
+    out.grammar = grammar as LocalGrammarMode;
+  }
+  const reqTimeout = stringOrNull(values, 'local-request-timeout-ms');
+  if (reqTimeout !== null) out.requestTimeoutMs = requirePositiveInt(reqTimeout, '--local-request-timeout-ms');
+  const maxConc = stringOrNull(values, 'local-max-concurrency');
+  if (maxConc !== null) out.maxConcurrency = requirePositiveInt(maxConc, '--local-max-concurrency');
+  out.apiKey = stringOrNull(values, 'local-api-key');
+  const seed = stringOrNull(values, 'local-seed');
+  if (seed !== null) out.seed = requireNonNegativeInt(seed, '--local-seed');
+  return out;
+}
+
+function stringOrNull(values: Record<string, unknown>, key: string): string | null {
+  const v = values[key];
+  return typeof v === 'string' ? v : null;
+}
+
+/**
  * Apply the precedence chain `flag > env > config > default` to the
  * local-provider fields. Returns a new `LocalProviderFlagValues` with
  * each field set to the highest-priority non-null value among the three
- * sources (or null if every source is unset, in which case factory
- * defaults take over).
+ * sources (or null if every source is unset; factory defaults take over).
  *
- * The env-var names match the existing factory's lookup keys so the
- * factory's own fallback path stays consistent.
+ * The env-var names match the existing factory's lookup keys.
  */
 export function resolveEffectiveLocalProvider(
   fromFlag: LocalProviderFlagValues,
@@ -109,139 +218,6 @@ function readNumberEnv(raw: string | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Construct a struct with every field unset. */
-export function emptyLocalProviderFlagValues(): LocalProviderFlagValues {
-  return {
-    backend: null,
-    baseUrl: null,
-    modelExtractor: null,
-    modelSession: null,
-    personaModelMap: null,
-    grammar: null,
-    requestTimeoutMs: null,
-    maxConcurrency: null,
-    apiKey: null,
-    seed: null,
-  };
-}
-
-/**
- * The set of flag tokens this module owns. Handlers consult this when
- * routing argv tokens to either the local-provider parser or their own
- * top-level dispatch.
- */
-export const LOCAL_PROVIDER_FLAG_TOKENS: readonly string[] = [
-  '--local-backend',
-  '--local-base-url',
-  '--local-model-extractor',
-  '--local-model-session',
-  '--local-persona-model-map',
-  '--local-grammar',
-  '--local-request-timeout-ms',
-  '--local-max-concurrency',
-  '--local-api-key',
-  '--local-seed',
-] as const;
-
-/** True when the argv token names one of the local-provider flags. */
-export function isLocalProviderFlag(arg: string): boolean {
-  return LOCAL_PROVIDER_FLAG_TOKENS.includes(arg);
-}
-
-/**
- * Apply a single local-provider flag in place, given the index of the
- * flag token. The caller passes argv and the current index; this
- * function reads the value at argv[i+1], advances i, validates the
- * value's shape, and writes into `target`.
- *
- * Returns the new index the caller should continue from (i.e. the
- * index of the just-consumed value).
- *
- * @throws when the flag is unrecognized, missing a value, or carries
- *         an out-of-range / shape-invalid value.
- */
-export function applyLocalProviderFlag(
-  argv: readonly string[],
-  index: number,
-  target: LocalProviderFlagValues,
-  resolveModulePath: (raw: string) => string,
-): number {
-  const flag = argv[index] ?? '';
-  const valueIndex = index + 1;
-  const raw = argv[valueIndex];
-  if (raw === undefined || raw.startsWith('--')) {
-    throw new Error(`flag ${flag} requires a value`);
-  }
-
-  switch (flag) {
-    case '--local-backend': {
-      if (!LOCAL_BACKEND_NAMES.includes(raw as LocalBackendName)) {
-        throw new Error(
-          `invalid --local-backend "${raw}"; expected one of: ${LOCAL_BACKEND_NAMES.join(', ')}`,
-        );
-      }
-      target.backend = raw as LocalBackendName;
-      break;
-    }
-    case '--local-base-url':
-      target.baseUrl = raw;
-      break;
-    case '--local-model-extractor':
-      target.modelExtractor = raw;
-      break;
-    case '--local-model-session':
-      target.modelSession = raw;
-      break;
-    case '--local-persona-model-map':
-      target.personaModelMap = parsePersonaModelMap(raw, resolveModulePath);
-      break;
-    case '--local-grammar': {
-      if (!LOCAL_GRAMMAR_MODES.includes(raw as LocalGrammarMode)) {
-        throw new Error(
-          `invalid --local-grammar "${raw}"; expected one of: ${LOCAL_GRAMMAR_MODES.join(', ')}`,
-        );
-      }
-      target.grammar = raw as LocalGrammarMode;
-      break;
-    }
-    case '--local-request-timeout-ms': {
-      const n = Number.parseInt(raw, 10);
-      if (!Number.isFinite(n) || n <= 0) {
-        throw new Error(
-          `invalid --local-request-timeout-ms "${raw}"; must be a positive integer`,
-        );
-      }
-      target.requestTimeoutMs = n;
-      break;
-    }
-    case '--local-max-concurrency': {
-      const n = Number.parseInt(raw, 10);
-      if (!Number.isFinite(n) || n <= 0) {
-        throw new Error(
-          `invalid --local-max-concurrency "${raw}"; must be a positive integer`,
-        );
-      }
-      target.maxConcurrency = n;
-      break;
-    }
-    case '--local-api-key':
-      target.apiKey = raw;
-      break;
-    case '--local-seed': {
-      const n = Number.parseInt(raw, 10);
-      if (!Number.isFinite(n) || n < 0) {
-        throw new Error(`invalid --local-seed "${raw}"; must be a non-negative integer`);
-      }
-      target.seed = n;
-      break;
-    }
-    default:
-      throw new Error(`internal: applyLocalProviderFlag called with non-local flag "${flag}"`);
-  }
-
-  return valueIndex;
-}
-
 /**
  * Parse the value of `--local-persona-model-map`. Three accepted forms:
  *
@@ -249,12 +225,7 @@ export function applyLocalProviderFlag(
  *   2. A path to a `.json` file containing such a map.
  *   3. A path to a `.yaml` / `.yml` file containing such a map.
  *
- * The discriminator is "starts with `{`" → inline; otherwise treat as a
- * filesystem path. Returns a frozen `Record<string, string>`.
- *
- * @throws when the value is neither valid JSON nor a readable file, when
- *         the file extension is unsupported, or when the parsed object
- *         is not a flat string-to-string map.
+ * Returns a frozen `Record<string, string>`.
  */
 function parsePersonaModelMap(
   raw: string,
@@ -318,13 +289,9 @@ function parsePersonaModelMap(
   return Object.freeze(out);
 }
 
-/**
- * Minimal YAML flat-map parser for `--local-persona-model-map`. Accepts
- * one `key: value` pair per line, with optional `#` comments and blank
- * lines. Anything more elaborate (nested objects, lists, anchors,
- * multi-line strings) is rejected with a corrective error. We
- * deliberately do not pull a YAML dependency for this one tiny use case.
- */
+// Minimal YAML flat-map parser: `key: value` per line, `#` comments,
+// blank lines. Anything more elaborate is rejected with a corrective
+// error; the wider YAML grammar isn't needed for this one tiny use case.
 function parseYamlFlatMap(body: string, sourcePath: string): Record<string, string> {
   const out: Record<string, string> = {};
   const lines = body.split(/\r?\n/);

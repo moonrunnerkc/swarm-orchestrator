@@ -17,12 +17,18 @@ import {
 } from '../../contract/extractor/factory';
 import { loadRecipe, listRecipes } from '../../recipe-loader';
 import {
-  applyLocalProviderFlag,
-  emptyLocalProviderFlagValues,
-  isLocalProviderFlag,
+  buildLocalProviderFlagValues,
+  LOCAL_PROVIDER_FLAG_SCHEMA,
   resolveEffectiveLocalProvider,
   type LocalProviderFlagValues,
 } from './local-provider-flags';
+import {
+  readBoolean,
+  readString,
+  requireFiniteFloat,
+  runParseArgs,
+  type ParseArgsOptions,
+} from './argv-schema';
 import { loadProviderConfig } from '../../config/provider-config';
 import { formatGrammarWarning, resolveGrammarForConsumer } from './grammar-resolve';
 
@@ -203,77 +209,59 @@ function buildExtractor(flags: CompileFlags): Extractor {
   });
 }
 
+const COMPILE_SCHEMA: ParseArgsOptions = {
+  ...LOCAL_PROVIDER_FLAG_SCHEMA,
+  yes: { type: 'boolean', short: 'y' },
+  'no-editor': { type: 'boolean' },
+  out: { type: 'string' },
+  'repo-root': { type: 'string' },
+  extractor: { type: 'string' },
+  'contract-file': { type: 'string' },
+  'contract-module': { type: 'string' },
+  model: { type: 'string' },
+  temperature: { type: 'string' },
+  'api-key': { type: 'string' },
+  recipe: { type: 'string' },
+  help: { type: 'boolean', short: 'h' },
+};
+
 /**
  * Parse `swarm v8 compile` argv. The first positional is the goal; flags
  * may appear in any order. Multiple positionals are joined with spaces so
  * unquoted goals work (`swarm v8 compile add a health check endpoint`).
  */
 export function parseCompileFlags(argv: string[]): CompileFlags {
-  const positionals: string[] = [];
+  const { values, positionals } = runParseArgs(argv, COMPILE_SCHEMA);
+  if (readBoolean(values, 'help')) {
+    printCompileUsage();
+    throw new Error('help requested');
+  }
+
+  const repoRoot = readString(values, 'repo-root') ?? process.cwd();
+  const extractorRaw = readString(values, 'extractor');
+  const temperatureRaw = readString(values, 'temperature');
+
   const flags: CompileFlags = {
     goal: '',
-    out: null,
-    repoRoot: process.cwd(),
-    autoApprove: false,
-    disableEditor: false,
-    extractor: resolveExtractorProvider(null),
-    contractFile: null,
-    contractModule: null,
-    model: null,
-    temperature: null,
-    apiKey: null,
-    recipe: null,
-    local: emptyLocalProviderFlagValues(),
-    flagsSource: { extractorFromFlag: false },
+    out: readString(values, 'out') ?? null,
+    repoRoot,
+    autoApprove: readBoolean(values, 'yes'),
+    disableEditor: readBoolean(values, 'no-editor'),
+    extractor: resolveExtractorProvider(extractorRaw ?? null),
+    contractFile: readString(values, 'contract-file') ?? null,
+    contractModule: readString(values, 'contract-module') ?? null,
+    model: readString(values, 'model') ?? null,
+    temperature: temperatureRaw !== undefined ? requireFiniteFloat(temperatureRaw, '--temperature') : null,
+    apiKey: readString(values, 'api-key') ?? null,
+    recipe: readString(values, 'recipe') ?? null,
+    local: buildLocalProviderFlagValues(values, (raw) => path.resolve(repoRoot, raw)),
+    flagsSource: { extractorFromFlag: extractorRaw !== undefined },
   };
-
-  for (let i = 0; i < argv.length; i += 1) {
-    const arg = argv[i] ?? '';
-    if (isLocalProviderFlag(arg)) {
-      i = applyLocalProviderFlag(argv, i, flags.local, (raw) => path.resolve(flags.repoRoot, raw));
-    } else if (arg === '--yes' || arg === '-y') {
-      flags.autoApprove = true;
-    } else if (arg === '--no-editor') {
-      flags.disableEditor = true;
-    } else if (arg === '--out') {
-      flags.out = requireValue(argv, ++i, '--out');
-    } else if (arg === '--repo-root') {
-      flags.repoRoot = requireValue(argv, ++i, '--repo-root');
-    } else if (arg === '--extractor') {
-      const v = requireValue(argv, i + 1, '--extractor');
-      i += 1;
-      flags.extractor = resolveExtractorProvider(v);
-      flags.flagsSource.extractorFromFlag = true;
-    } else if (arg === '--contract-file') {
-      flags.contractFile = requireValue(argv, ++i, '--contract-file');
-    } else if (arg === '--contract-module') {
-      flags.contractModule = requireValue(argv, ++i, '--contract-module');
-    } else if (arg === '--model') {
-      flags.model = requireValue(argv, ++i, '--model');
-    } else if (arg === '--temperature') {
-      const raw = requireValue(argv, ++i, '--temperature');
-      const n = Number.parseFloat(raw);
-      if (!Number.isFinite(n)) throw new Error(`invalid --temperature "${raw}"; must be a number`);
-      flags.temperature = n;
-    } else if (arg === '--api-key') {
-      flags.apiKey = requireValue(argv, ++i, '--api-key');
-    } else if (arg === '--recipe') {
-      flags.recipe = requireValue(argv, ++i, '--recipe');
-    } else if (arg === '--help' || arg === '-h') {
-      printCompileUsage();
-      throw new Error('help requested');
-    } else if (arg.startsWith('--')) {
-      throw new Error(`unknown flag: ${arg}`);
-    } else {
-      positionals.push(arg);
-    }
-  }
 
   if (flags.recipe !== null) {
     flags.goal = composeRecipeGoal(flags.recipe, positionals.join(' ').trim());
     return flags;
   }
-
   if (positionals.length === 0) {
     throw new Error('missing goal: usage `swarm v8 compile <goal> [flags]`');
   }
@@ -309,14 +297,6 @@ export function composeRecipeGoal(recipeName: string, suffix: string): string {
     parts.push(`Scope: ${suffix}`);
   }
   return parts.join('. ');
-}
-
-function requireValue(argv: string[], index: number, flag: string): string {
-  const v = argv[index];
-  if (v === undefined || v.startsWith('--')) {
-    throw new Error(`flag ${flag} requires a value`);
-  }
-  return v;
 }
 
 function printCompileUsage(): void {

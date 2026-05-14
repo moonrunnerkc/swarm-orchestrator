@@ -21,6 +21,7 @@
 import * as path from 'path';
 import { readEntries } from '../../ledger/jsonl-ledger';
 import type { LedgerEntry } from '../../ledger/types';
+import { readBoolean, readString, runParseArgs, type ParseArgsOptions } from './argv-schema';
 
 interface StatsFlags {
   runId: string;
@@ -28,39 +29,24 @@ interface StatsFlags {
   json: boolean;
 }
 
+const STATS_SCHEMA: ParseArgsOptions = {
+  ledger: { type: 'string' },
+  json: { type: 'boolean' },
+};
+
 function parseStatsFlags(argv: string[]): StatsFlags {
-  const flags: StatsFlags = {
-    runId: '',
-    ledgerPath: null,
-    json: false,
-  };
-  let i = 0;
-  while (i < argv.length) {
-    const arg = argv[i] ?? '';
-    if (arg === '--ledger') {
-      flags.ledgerPath = requireValue(argv, ++i, '--ledger');
-    } else if (arg === '--json') {
-      flags.json = true;
-    } else if (arg.startsWith('--')) {
-      throw new Error(`unknown flag: ${arg}`);
-    } else {
-      if (flags.runId.length > 0) throw new Error('unexpected extra positional argument');
-      flags.runId = arg;
-    }
-    i += 1;
-  }
-  if (flags.runId.length === 0) {
+  const { values, positionals } = runParseArgs(argv, STATS_SCHEMA);
+  if (positionals.length === 0) {
     throw new Error('missing run-id: usage `swarm v8 stats <run-id> [flags]`');
   }
-  return flags;
-}
-
-function requireValue(argv: string[], index: number, flag: string): string {
-  const v = argv[index];
-  if (v === undefined || v.startsWith('--')) {
-    throw new Error(`flag ${flag} requires a value`);
+  if (positionals.length > 1) {
+    throw new Error('unexpected extra positional argument');
   }
-  return v;
+  return {
+    runId: positionals[0] ?? '',
+    ledgerPath: readString(values, 'ledger') ?? null,
+    json: readBoolean(values, 'json'),
+  };
 }
 
 function formatPlain(stats: RunStats): string {
