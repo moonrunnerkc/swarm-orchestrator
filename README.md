@@ -197,22 +197,73 @@ Falsifier details: [`docs/falsification-adapters.md`](docs/falsification-adapter
 
 ## GitHub Action
 
-The Docker action exposes `goal` and `contract-only`. It does not expose
-`--contract-file`, so natural-language Action runs should select model
-providers through environment variables:
+The Docker action exposes the full provider, contract-source, and run-knob
+surface as inputs. API keys are the one exception: they are read from the
+workflow `env:` block, never from a `with:` input.
+
+Natural-language goal with a hosted Claude provider:
 
 ```yaml
 - uses: moonrunnerkc/swarm-orchestrator@v9
   with:
     goal: 'add a /health endpoint'
-    contract-only: false
+    extractor: anthropic
+    session: anthropic
+    model: claude-sonnet-4-6
   env:
-    EXTRACTOR_PROVIDER: anthropic
-    SESSION_PROVIDER: anthropic
     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
-See [`action.yml`](action.yml) and [`SECURITY.md`](SECURITY.md).
+Pre-authored contract + deterministic patches (no LLM, no network):
+
+```yaml
+- uses: moonrunnerkc/swarm-orchestrator@v9
+  with:
+    goal: 'check project metadata exists'
+    contract-file: ./swarm/contract.yaml
+    external-patches-queue: ./swarm/patches.jsonl
+    falsifiers: 'off'
+```
+
+Run an already-compiled contract directory:
+
+```yaml
+- uses: moonrunnerkc/swarm-orchestrator@v9
+  with:
+    contract-path: .swarm/contracts/release-gate
+    session: deterministic
+    external-patches-queue: ./swarm/patches.jsonl
+```
+
+Local-provider (e.g. Ollama running on a self-hosted runner):
+
+```yaml
+- uses: moonrunnerkc/swarm-orchestrator@v9
+  with:
+    goal: 'add a /health endpoint'
+    extractor: local
+    session: local
+    local-backend: ollama
+    local-base-url: http://localhost:11434/v1
+    local-model-extractor: qwen2.5-coder:14b
+    local-model-session: qwen2.5-coder:32b
+```
+
+Advanced flags not exposed as first-class inputs go through `extra-args`,
+which is shell-split with quote awareness:
+
+```yaml
+- uses: moonrunnerkc/swarm-orchestrator@v9
+  with:
+    goal: 'add a /health endpoint'
+    extra-args: '--snapshot-cleanup always --forbid-import lodash'
+```
+
+The action emits a `result` step output containing the run-result JSON
+(obligations satisfied, tokens, wall time).
+
+See [`action.yml`](action.yml) for the full input list and
+[`SECURITY.md`](SECURITY.md) for secret-handling rules.
 
 ## Project Map
 

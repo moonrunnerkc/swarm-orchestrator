@@ -57,7 +57,59 @@ describe('cli/v8/run-wrapper splitArgv', () => {
     assert.equal(split.apiKey, null);
     assert.equal(split.model, null);
     assert.equal(split.temperature, null);
+    assert.deepEqual(split.compilePassthrough, []);
     assert.deepEqual(split.runPassthrough, ['--no-deterministic', '--cost-cap', '5']);
+  });
+
+  it('forwards every --local-* flag to both compile and run passes', () => {
+    const split = splitArgv([
+      '--goal',
+      'do thing',
+      '--extractor',
+      'local',
+      '--session',
+      'local',
+      '--local-backend',
+      'ollama',
+      '--local-base-url',
+      'http://localhost:11434/v1',
+      '--local-model-extractor',
+      'qwen2.5-coder:14b',
+      '--local-model-session',
+      'qwen2.5-coder:32b',
+      '--local-grammar',
+      'auto',
+    ]);
+    assert.deepEqual(split.compilePassthrough, [
+      '--local-backend',
+      'ollama',
+      '--local-base-url',
+      'http://localhost:11434/v1',
+      '--local-model-extractor',
+      'qwen2.5-coder:14b',
+      '--local-model-session',
+      'qwen2.5-coder:32b',
+      '--local-grammar',
+      'auto',
+    ]);
+    assert.deepEqual(split.runPassthrough, [
+      '--session',
+      'local',
+      '--local-backend',
+      'ollama',
+      '--local-base-url',
+      'http://localhost:11434/v1',
+      '--local-model-extractor',
+      'qwen2.5-coder:14b',
+      '--local-model-session',
+      'qwen2.5-coder:32b',
+      '--local-grammar',
+      'auto',
+    ]);
+  });
+
+  it('rejects --local-* flag without a value', () => {
+    assert.throws(() => splitArgv(['--local-backend']), /requires a value/);
   });
 
   it('throws when --temperature is not a finite number', () => {
@@ -207,5 +259,42 @@ describe('cli/v8/run-wrapper handleRunV8', () => {
     assert.ok(runHandlerCalled, 'run handler must have been called');
     assert.equal(runArgvCaptured[0], path.join(tmpDir, '.swarm', 'contracts', 'contract-abc'));
     assert.ok(runArgvCaptured.includes('--no-deterministic'), 'unknown flag passed through');
+  });
+
+  it('forwards --local-* flags into the compile-handler argv', async () => {
+    const compileArgsCaptured: string[] = [];
+    const exit = await handleRunV8(
+      [
+        '--goal',
+        'add greet',
+        '--repo-root',
+        tmpDir,
+        '--extractor',
+        'local',
+        '--local-backend',
+        'ollama',
+        '--local-base-url',
+        'http://localhost:11434/v1',
+        '--local-model-extractor',
+        'qwen2.5-coder:14b',
+      ],
+      {
+        handleCompile: async (argv) => {
+          compileArgsCaptured.push(...argv);
+          const contractsParent = path.join(tmpDir, '.swarm', 'contracts');
+          fs.mkdirSync(contractsParent, { recursive: true });
+          fs.mkdirSync(path.join(contractsParent, 'contract-local'));
+          return 0;
+        },
+        handleRun: async () => 0,
+      },
+    );
+    assert.equal(exit, 0);
+    assert.ok(compileArgsCaptured.includes('--local-backend'));
+    assert.ok(compileArgsCaptured.includes('ollama'));
+    assert.ok(compileArgsCaptured.includes('--local-base-url'));
+    assert.ok(compileArgsCaptured.includes('http://localhost:11434/v1'));
+    assert.ok(compileArgsCaptured.includes('--local-model-extractor'));
+    assert.ok(compileArgsCaptured.includes('qwen2.5-coder:14b'));
   });
 });

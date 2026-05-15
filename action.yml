@@ -5,17 +5,120 @@ branding:
   color: 'blue'
 
 inputs:
+  # ── Mode selection ────────────────────────────────────────────────────────
   goal:
-    description: 'Natural-language goal. Compiled into a contract, then either executed or returned (see contract-only).'
-    required: true
+    description: |
+      Natural-language goal. Compiled into a contract and executed unless
+      contract-only is true. Mutually exclusive with contract-path.
+    required: false
+  contract-path:
+    description: |
+      Path to an already-compiled contract directory (skips compile). Use
+      this when you compile contracts in a prior step and want to run them
+      verbatim. Mutually exclusive with goal.
+    required: false
   contract-only:
-    description: 'When true, compile the goal into a contract and stop without executing it. Output: the contract directory under .swarm/contracts/.'
+    description: |
+      When true, compile the goal into a contract and stop without
+      executing it. The contract directory under .swarm/contracts/ is the
+      artifact. Requires goal (cannot be combined with contract-path).
     required: false
     default: 'false'
 
+  # ── Deterministic-extractor contract source ──────────────────────────────
+  contract-file:
+    description: |
+      Path to a YAML or JSON contract file. Consumed by the deterministic
+      extractor; pairs with goal to produce a compiled contract without an
+      LLM round-trip.
+    required: false
+  contract-module:
+    description: |
+      Path to a TS/JS module whose default export is a contract object.
+      Deterministic extractor only.
+    required: false
+
+  # ── Provider selection ────────────────────────────────────────────────────
+  extractor:
+    description: 'Extractor provider: deterministic | local | anthropic.'
+    required: false
+  session:
+    description: 'Session provider: deterministic | local | anthropic.'
+    required: false
+  model:
+    description: |
+      Model id override (anthropic provider). API keys are NEVER passed as
+      inputs — set ANTHROPIC_API_KEY through the workflow `env:` block.
+    required: false
+
+  # ── Local-provider settings ──────────────────────────────────────────────
+  local-backend:
+    description: 'Local backend: openai-compatible | ollama | llama-cpp | vllm.'
+    required: false
+  local-base-url:
+    description: 'Base URL for the local provider.'
+    required: false
+  local-model-extractor:
+    description: 'Local-provider model id for the extractor (compile pass).'
+    required: false
+  local-model-session:
+    description: 'Local-provider model id for the session (run pass).'
+    required: false
+  local-grammar:
+    description: 'Grammar mode: auto | gbnf | json-schema | outlines | none.'
+    required: false
+
+  # ── Patches (deterministic session) ──────────────────────────────────────
+  external-patches-queue:
+    description: 'Path to a JSONL queue of patch envelopes (deterministic session).'
+    required: false
+  external-patches-dir:
+    description: 'Path to a watched dir of patch envelopes (deterministic session).'
+    required: false
+
+  # ── Run knobs ────────────────────────────────────────────────────────────
+  falsifiers:
+    description: 'on (default) | off — disables falsifier adapter calls when off.'
+    required: false
+  mode:
+    description: 'Execution mode: single (default) | tournament.'
+    required: false
+  candidates:
+    description: 'Tournament candidates per round (1-8). Ignored in single mode.'
+    required: false
+  max-obligations:
+    description: 'Cap on the number of obligations attempted per run.'
+    required: false
+  cost-cap:
+    description: 'Live output-token ceiling; aborts streams once projected output crosses it.'
+    required: false
+
+  # ── Workspace ────────────────────────────────────────────────────────────
+  repo-root:
+    description: 'Project root for repo-context discovery (default: GITHUB_WORKSPACE).'
+    required: false
+  working-directory:
+    description: 'Directory to cd into before running. Default: GITHUB_WORKSPACE.'
+    required: false
+  result-path:
+    description: |
+      Where the structured run-result JSON is written. Default:
+      /tmp/swarm-result.json. The entrypoint always reads this path back
+      into the `result` step output.
+    required: false
+
+  # ── Escape valve ─────────────────────────────────────────────────────────
+  extra-args:
+    description: |
+      Additional raw CLI flags appended verbatim to the swarm invocation,
+      whitespace-separated (shell-style quoting respected). Use this only
+      for flags not exposed above (e.g. `--snapshot-cleanup always`,
+      `--forbid-import lodash`, `--falsifier-scheduler ucb1`).
+    required: false
+
 outputs:
   result:
-    description: 'JSON summary of the run (obligations satisfied, tokens, wall time)'
+    description: 'JSON summary of the run (obligations satisfied, tokens, wall time).'
 
 runs:
   using: 'docker'

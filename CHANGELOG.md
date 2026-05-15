@@ -6,6 +6,29 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- GitHub Action inputs for the full provider, contract-source, and
+  run-knob surface: `contract-path`, `contract-file`, `contract-module`,
+  `extractor`, `session`, `model`, `local-backend`, `local-base-url`,
+  `local-model-extractor`, `local-model-session`, `local-grammar`,
+  `external-patches-queue`, `external-patches-dir`, `falsifiers`,
+  `mode`, `candidates`, `max-obligations`, `cost-cap`, `repo-root`,
+  `working-directory`, `result-path`, and `extra-args`. The action now
+  supports all three run modes (compile-then-run from a `goal`,
+  `contract-only` compile, and direct run of a pre-compiled
+  `contract-path`) and emits the run-result JSON via the existing
+  `result` step output. API keys remain off-limits as inputs and must
+  be set through the workflow `env:` block.
+
+### Fixed
+
+- `swarm run --goal "..."` now forwards every `--local-*` flag to both
+  the compile (extractor) and run (session) passes. Prior to this fix
+  the wrapper kept local-provider flags in the run-pass passthrough
+  only, so a flag-driven local configuration crashed the compile pass
+  unless `LOCAL_LLM_*` env vars were also set.
+
 ## [9.0.0] - 2026-05-14
 
 Removal of the legacy v6 verified-branch pipeline. v8 (contract-first,

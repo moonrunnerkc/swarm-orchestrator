@@ -2,6 +2,7 @@ import * as path from 'path';
 import { getLogger } from '../../logger';
 import { handleCompile } from './compile-handler';
 import { handleRun } from './run-handler';
+import { LOCAL_PROVIDER_FLAG_TOKENS } from './local-provider-flags';
 
 const logger = getLogger('cli:v8:run-wrapper');
 
@@ -72,6 +73,12 @@ export async function handleRunV8(
   if (split.temperature !== null) compileArgv.push('--temperature', String(split.temperature));
   if (split.contractFile !== null) compileArgv.push('--contract-file', split.contractFile);
   if (split.contractModule !== null) compileArgv.push('--contract-module', split.contractModule);
+  // Local-provider flags are shared by both compile (extractor) and run
+  // (session). The wrapper forwards them to both passes so a single
+  // `swarm run --goal "..." --extractor local --local-backend ollama
+  // --local-base-url <url>` invocation configures both stages without
+  // requiring env-var fallback.
+  compileArgv.push(...split.compilePassthrough);
 
   // The compile step writes to `<out>/<contract-id>/`. We re-derive the
   // path from the manifest immediately after compile.
@@ -108,6 +115,8 @@ interface SplitArgv {
   temperature: number | null;
   contractFile: string | null;
   contractModule: string | null;
+  /** Flags forwarded to the compile pass (in addition to the named fields). */
+  compilePassthrough: string[];
   runPassthrough: string[];
 }
 
@@ -127,8 +136,10 @@ function splitArgv(argv: string[]): SplitArgv {
     temperature: null,
     contractFile: null,
     contractModule: null,
+    compilePassthrough: [],
     runPassthrough: [],
   };
+  const localTokens: ReadonlySet<string> = new Set(LOCAL_PROVIDER_FLAG_TOKENS);
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i] ?? '';
     if (arg === '--goal') {
@@ -157,6 +168,14 @@ function splitArgv(argv: string[]): SplitArgv {
       out.contractFile = requireValue(argv, ++i, '--contract-file');
     } else if (arg === '--contract-module') {
       out.contractModule = requireValue(argv, ++i, '--contract-module');
+    } else if (localTokens.has(arg)) {
+      // `--local-*` flags configure either the extractor (compile pass) or
+      // the session (run pass). Both handlers accept the full local-flag
+      // schema, so the wrapper forwards every local flag to both passes;
+      // each side reads the fields relevant to it and ignores the rest.
+      const value = requireValue(argv, ++i, arg);
+      out.compilePassthrough.push(arg, value);
+      out.runPassthrough.push(arg, value);
     } else {
       out.runPassthrough.push(arg);
     }
