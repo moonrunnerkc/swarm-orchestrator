@@ -1,3 +1,35 @@
+<div align="center">
+
+<img src="docs/assets/hero.svg" alt="Swarm Orchestrator — contract-first verification for code changes" width="100%">
+
+<p>
+  <a href="https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/moonrunnerkc/swarm-orchestrator/ci.yml?branch=main&label=CI&logo=github&style=flat-square" alt="CI"></a>
+  <a href="https://github.com/moonrunnerkc/swarm-orchestrator/releases/latest"><img src="https://img.shields.io/github/v/release/moonrunnerkc/swarm-orchestrator?label=release&style=flat-square&color=22d3ee" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/moonrunnerkc/swarm-orchestrator?style=flat-square&color=a78bfa" alt="License"></a>
+  <a href="https://nodejs.org"><img src="https://img.shields.io/badge/node-%E2%89%A5%2020-3c873a?style=flat-square&logo=node.js&logoColor=white" alt="Node ≥ 20"></a>
+  <img src="https://img.shields.io/badge/tests-908%20passing-34d399?style=flat-square" alt="908 tests passing">
+  <img src="https://img.shields.io/badge/TypeScript-strict-3178c6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript strict">
+  <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-fb7185?style=flat-square" alt="PRs welcome"></a>
+</p>
+
+<p>
+  <a href="#requirements"><b>Requirements</b></a> ·
+  <a href="#install-from-a-clone"><b>Install</b></a> ·
+  <a href="#quick-start"><b>Quick Start</b></a> ·
+  <a href="#commands"><b>Commands</b></a> ·
+  <a href="#providers"><b>Providers</b></a> ·
+  <a href="#contracts"><b>Contracts</b></a> ·
+  <a href="#verification"><b>Verification</b></a> ·
+  <a href="#github-action"><b>GitHub Action</b></a> ·
+  <a href="#project-map"><b>Map</b></a> ·
+  <a href="#docs"><b>Docs</b></a> ·
+  <a href="#development"><b>Dev</b></a>
+</p>
+
+</div>
+
+---
+
 # Swarm Orchestrator
 
 Contract-first verification for code changes.
@@ -216,3 +248,7 @@ npm run typecheck
 ```
 
 License: [ISC](LICENSE).
+
+<div align="center">
+<sub>Built with the falsification gate. <a href="#swarm-orchestrator">↑ back to top</a></sub>
+</div>
