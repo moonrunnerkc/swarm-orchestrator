@@ -60,8 +60,10 @@ this precedence order):
 
 1. `--contract-file <path>` — YAML (`.yaml` / `.yml`) or JSON (`.json`). The
    file extension picks the parser. UTF-8 only.
-2. `--contract-module <path>` — TypeScript or JavaScript module exporting a
-   default value matching `{ obligations: [...] }`.
+2. `--contract-module <path>` — JavaScript module (`.js` / `.cjs`, or
+   precompiled TypeScript) loadable by `require()`, exporting a default value
+   matching `{ obligations: [...] }`. Raw `.ts` sources require an external
+   loader.
 3. Inline `contract` block in a project config file (forthcoming).
 
 Validation uses the same JSON Schema every provider depends on

@@ -60,11 +60,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { loadDotenv } from '../../src/env-loader';
-import {
-  CodexFalsifier,
-  type CodexInvocationRequest,
-  type CodexInvocationResult,
-} from '../../src/falsification/adapters/codex/codex-falsifier';
+import { CliFalsifier, type CliInvocationRequest, type CliInvocationResult } from '../../src/falsification/adapters/cli-falsifier';
+import { codexProfile } from '../../src/falsification/adapters/profiles/codex';
 import type { ObligationV1, PropertyMustHoldObligation } from '../../src/contract/types';
 import type { FalsificationInput, FalsifyOutcome } from '../../src/falsification/adapters/types';
 
@@ -282,9 +279,9 @@ async function runOneObligation(
   copyFixtureInto(fixtureRoot, workspaceRoot);
 
   const obligation = toObligation(sample);
-  let lastInvocation: { request: CodexInvocationRequest; result: CodexInvocationResult } | null =
+  let lastInvocation: { request: CliInvocationRequest; result: CliInvocationResult } | null =
     null;
-  const falsifier = new CodexFalsifier({
+  const falsifier = new CliFalsifier(codexProfile, {
     onInvocation: (request, result) => {
       lastInvocation = { request, result };
     },
@@ -306,7 +303,7 @@ async function runOneObligation(
     errorMessage = err instanceof Error ? err.message : String(err);
   } finally {
     if (lastInvocation !== null) {
-      const li = lastInvocation as { request: CodexInvocationRequest; result: CodexInvocationResult };
+      const li = lastInvocation as { request: CliInvocationRequest; result: CliInvocationResult };
       fs.writeFileSync(
         path.join(obligationDir, 'request.json'),
         JSON.stringify(
@@ -364,10 +361,10 @@ async function runOneObligation(
       dollarsTokenEstimate: 0,
       authMethod: 'unknown',
       wallClockMs: lastInvocation
-        ? (lastInvocation as { result: CodexInvocationResult }).result.wallClockMs
+        ? (lastInvocation as { result: CliInvocationResult }).result.wallClockMs
         : 0,
       codexExitCode: lastInvocation
-        ? (lastInvocation as { result: CodexInvocationResult }).result.exitCode
+        ? (lastInvocation as { result: CliInvocationResult }).result.exitCode
         : 'unrun',
       errorMessage,
     };
@@ -394,7 +391,7 @@ async function runOneObligation(
       reason === 'baseline-predicate-failed'
         ? 'skipped'
         : lastInvocation
-          ? (lastInvocation as { result: CodexInvocationResult }).result.exitCode
+          ? (lastInvocation as { result: CliInvocationResult }).result.exitCode
           : 'unrun',
     errorMessage: null,
   };

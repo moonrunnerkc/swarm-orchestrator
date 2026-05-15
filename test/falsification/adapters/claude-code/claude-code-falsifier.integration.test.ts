@@ -3,7 +3,8 @@ import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { ClaudeCodeFalsifier } from '../../../../src/falsification/adapters/claude-code/claude-code-falsifier';
+import { CliFalsifier } from '../../../../src/falsification/adapters/cli-falsifier';
+import { claudeCodeProfile } from '../../../../src/falsification/adapters/profiles/claude-code';
 import type { FalsificationInput } from '../../../../src/falsification/adapters/types';
 
 /**
@@ -55,7 +56,7 @@ describe('ClaudeCodeFalsifier real-CLI integration', function () {
         'export const sibling = 2;\n',
         'utf8',
       );
-      const adapter = new ClaudeCodeFalsifier({ maxBudgetUsd: 1.0 });
+      const adapter = new CliFalsifier(claudeCodeProfile, { maxBudgetUsd: 1.0 });
       const input: FalsificationInput = {
         patchSha: '0'.repeat(40),
         obligation: {

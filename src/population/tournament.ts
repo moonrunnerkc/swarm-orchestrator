@@ -1,29 +1,8 @@
-/**
- * Phase 3 speculative-synthesis tournament harness.
- *
- * For each obligation that requires synthesis (not deterministic
- * transformation), the population manager initiates a tournament:
- * multiple personas generate candidate responses in parallel, the
- * tournament-verifier persona scores them, and the highest-scoring
- * candidate is selected for application. Losers are recorded with their
- * diff hash, score, and token cost; their text is discarded.
- *
- * Diversity injection (impl guide §6): tournament rounds whose top
- * candidate fails to apply or score above threshold rerun with different
- * sampling parameters and may rotate personas. Hard cap at three rounds
- * per obligation; on exhaustion the harness reports an `escalated`
- * outcome and does not commit any candidate.
- *
- * The harness is intentionally agnostic to *what* the persona produces:
- * it accepts an `applyCandidate` callback that knows how to translate the
- * winning response into on-disk changes (file emit for architect, unified
- * diff for implementer/verifier). The applier returns a verification-style
- * result; the harness uses it as the satisfaction signal.
- *
- * See:
- *   - `v8-overhaul-guide.md` §5.3 (speculative synthesis tree)
- *   - `v8-implementation-guide.md` §6 (Phase 3 deliverables)
- */
+// Speculative-synthesis tournament harness. Per impl guide §6:
+// diversity injection across rounds, hard cap of three rounds before
+// escalating. The harness is agnostic to *what* personas produce —
+// applyCandidate knows how to translate the winner into on-disk
+// changes.
 
 import * as crypto from 'crypto';
 import type { ObligationV1 } from '../contract/types';
@@ -43,40 +22,23 @@ import {
 } from '../verification/streaming-verifier';
 import type { LiveCostTracker } from '../verification/live-cost-tracker';
 
-/**
- * Per-obligation-type tournament configuration. The defaults match impl
- * guide §6 (2–4 candidates, 3-round cap with diversity injection).
- */
+// Defaults match impl guide §6: 2–4 candidates, 3-round cap with
+// diversity injection.
 export interface TournamentConfig {
-  /** Number of candidates per round. Defaults vary by obligation type. */
   candidatesPerRound: number;
-  /** Maximum number of rounds before escalating. Hard cap 3. */
   roundCap: number;
-  /**
-   * Score threshold a winner must clear. Below this, the round is
-   * considered a wash and diversity injection takes over (or escalation
-   * if the cap is hit).
-   */
+  // Below threshold, the round is a wash and diversity injection takes
+  // over (or escalation if the cap is hit).
   scoreThreshold: number;
-  /**
-   * Per-round temperature schedule. Round k uses index `k mod length`.
-   * Diversity-injection knob: temperatures should differ across rounds.
-   */
+  // Round k uses index `k mod length`. Temperatures should differ
+  // across rounds for diversity.
   temperatureSchedule: number[];
-  /** Tournament-verifier persona override. Defaults to `tournament-verifier`. */
   verifierPersona?: PersonaSpec;
-  /** Verifier model id override (e.g. specific haiku revision). */
   verifierModel?: string;
 }
 
-/**
- * Default tournament configurations per obligation type. File-must-exist
- * uses a smaller candidate pool (architect personas tend to converge);
- * build/test obligations get the wider pool because they involve more
- * subtle decisions. Phase 7 obligation types reuse the build/test shape
- * (3 candidates, threshold 0.5) since each requires a unified-diff
- * patch under the same cost-curve as build/test obligations.
- */
+// File-must-exist uses a smaller pool (architects converge);
+// build/test get the wider pool because the decisions are subtler.
 export const DEFAULT_TOURNAMENT_CONFIG: Record<ObligationV1['type'], TournamentConfig> = {
   'file-must-exist': {
     candidatesPerRound: 2,
@@ -128,154 +90,77 @@ export const DEFAULT_TOURNAMENT_CONFIG: Record<ObligationV1['type'], TournamentC
   },
 };
 
-/** Outcome a candidate-application step reports back to the tournament. */
 export interface ApplyOutcome {
-  /** True when the application + verification step succeeded. */
   satisfied: boolean;
-  /** Human-readable note for the ledger. */
   detail: string;
 }
 
-/**
- * Generation candidate the tournament considers. The harness records the
- * full response text plus token usage and the response hash; the text is
- * applied only if the candidate wins and verifies.
- */
 export interface TournamentCandidate {
   candidateIndex: number;
   personaId: string;
-  /** Full session response, kept so the winner can be applied verbatim. */
   response: SessionResponse;
-  /** Verifier score; only populated after `scoreCandidate`. */
   verdict: ScoredCandidate | null;
-  /** Sha256 of `response.text`. */
   responseSha256: string;
-  /** Sampling temperature used for this candidate. */
   temperature: number;
 }
 
-/** Round of a tournament: candidates plus their verdicts. */
 export interface TournamentRound {
   roundIndex: number;
   candidates: TournamentCandidate[];
-  /** Round usage (generation calls + verifier calls). */
   usage: SessionUsage;
-  /** Index into `candidates` of the round's winner, or null if all losers. */
   winnerIndex: number | null;
 }
 
-/** Aggregate result of a tournament for a single obligation. */
 export interface TournamentResult {
   obligationIndex: number;
-  /** All rounds that ran, in order. */
   rounds: TournamentRound[];
-  /** True when a winning candidate satisfied the obligation. */
   satisfied: boolean;
-  /** Round and candidate index of the satisfying winner, or null. */
   winner: { roundIndex: number; candidateIndex: number; personaId: string } | null;
-  /** Free-form detail: satisfied/escalated/not-satisfied reason. */
   detail: string;
-  /** Summed usage for every generation + verifier call across all rounds. */
   usage: SessionUsage;
-  /** True when the harness exhausted the round cap without a satisfier. */
   escalated: boolean;
-  /** Best score observed across every round (for the escalation report). */
   bestScore: number;
-  /**
-   * Phase 4: number of verifier calls saved by memoization across all
-   * rounds of this tournament. Sum of in-round duplicate-hash dedup
-   * plus prior-winner-hash matches from the memo store.
-   */
   verifierCallsSavedByMemoization: number;
-  /**
-   * Phase 7: number of candidate generations the streaming verifier
-   * aborted mid-stream across every round of this tournament. Always 0
-   * when the harness was run without `streamingAssertions`.
-   */
   streamingAbortedCandidates: number;
-  /**
-   * Phase 7: total characters of partial output observed before
-   * streaming-verifier aborts fired across every round.
-   */
   streamingCharsBeforeAbort: number;
 }
 
-/** Persona slate the harness draws from per round. */
 export interface TournamentPersonaSlate {
-  /** Primary personas for round 0. */
   primary: PersonaSpec[];
-  /** Optional fallback personas for diversity injection (round ≥1). */
   fallback?: PersonaSpec[];
 }
 
 export interface RunTournamentOptions {
-  /** The obligation under tournament. */
   obligation: ObligationV1;
-  /** Index in the original contract obligation list (for ledger). */
   obligationIndex: number;
-  /** Session every persona dispatches against. */
   session: Session;
-  /** Persona slate. The harness rotates by round mod slate length. */
   personas: TournamentPersonaSlate;
-  /** Tournament configuration. */
   config: TournamentConfig;
-  /**
-   * Build the per-call user message for a candidate. Generally identical
-   * to the population manager's `renderDynamicMessage`; passed in so the
-   * harness can inject diversity-flavoured framing per round if needed.
-   */
   renderUserMessage: (
     obligation: ObligationV1,
     persona: PersonaSpec,
     roundIndex: number,
     candidateIndex: number,
   ) => string;
-  /**
-   * Apply the winning candidate's response to the workspace and run
-   * verification. Returns `{satisfied}` based on the verifier outcome.
-   * Called once per round, only on the round winner. The applier should
-   * be idempotent across rounds; rounds run only when the previous
-   * winner failed to satisfy.
-   */
+  // Idempotent across rounds; rounds run only when the previous winner
+  // failed to satisfy.
   applyCandidate: (
     candidate: TournamentCandidate,
     obligation: ObligationV1,
   ) => Promise<ApplyOutcome>;
-  /** Optional ledger sink. The harness emits round/winner/discard entries via this. */
   ledgerSink?: TournamentLedgerSink;
-  /**
-   * Phase 4: optional memo store. When supplied, the harness consults the
-   * store before scoring each candidate. A candidate whose responseSha256
-   * matches a prior tournament winner of the same obligation type
-   * inherits that prior verdict and skips its verifier call. Within a
-   * single round, candidates with duplicate hashes share one verdict.
-   *
-   * The store is mutated after each won round so subsequent obligations
-   * benefit from in-run memoization.
-   */
+  // A candidate whose responseSha256 matches a prior tournament winner
+  // of the same obligation type inherits that verdict and skips the
+  // verifier call.
   memoStore?: MemoStore;
-  /**
-   * Phase 7 (tournament-streaming): when supplied, candidate generation
-   * routes through `runStreamingCompletion` and the verifier may abort
-   * individual candidates mid-stream. Aborts are independent across the
-   * Promise.all entries — one offending candidate aborting does not
-   * cancel the others. Aborted candidates receive a synthetic verdict
-   * with score `-1` so they can never win the round; surviving
-   * candidates continue scoring normally.
-   */
+  // Stream aborts are independent across candidates — one aborting does
+  // not cancel the others. Aborted candidates get a synthetic verdict
+  // with score -1 so they cannot win.
   streamingAssertions?: readonly StreamingAssertion[];
-  /**
-   * Phase 7 (tournament-streaming): optional live cost tracker shared
-   * across all in-flight candidate streams. Lets a single per-run cap
-   * apply across single mode, tournament rounds, and concurrent
-   * candidates simultaneously.
-   */
   costTracker?: LiveCostTracker;
-  /** Sink for stream-aborted ledger entries. */
   streamingSink?: TournamentStreamingSink;
 }
 
-/** Hooks for emitting streaming-abort ledger entries. */
 export interface TournamentStreamingSink {
   recordStreamAborted(args: {
     obligationIndex: number;
@@ -290,11 +175,8 @@ export interface TournamentStreamingSink {
   }): void;
 }
 
-/**
- * Hooks the harness uses to record tournament evidence. Keeps the
- * ledger-shape concern out of the harness module so a different storage
- * (Phase 4 hash-chained ledger) can plug in without touching the harness.
- */
+// Keeps ledger-shape concerns out of the harness so a different store
+// (Phase 4 hash-chained ledger) can plug in without touching it.
 export interface TournamentLedgerSink {
   recordRoundStarted(args: {
     obligationIndex: number;
@@ -342,12 +224,6 @@ export interface TournamentLedgerSink {
   }): void;
 }
 
-/**
- * Run a tournament for a single obligation. Returns the aggregated
- * result; callers (the population manager) are responsible for treating
- * the outcome as satisfaction in the contract state and recording any
- * higher-level ledger framing.
- */
 export async function runTournament(
   options: RunTournamentOptions,
 ): Promise<TournamentResult> {
@@ -361,7 +237,7 @@ export async function runTournament(
   let streamingCharsBeforeAbort = 0;
   const streamingAssertions = options.streamingAssertions ?? [];
   const useStreaming = streamingAssertions.length > 0 || options.costTracker !== undefined;
-  /** Synthetic verdict for stream-aborted candidates: cannot win a round. */
+  // Synthetic verdict for stream-aborted candidates: cannot win a round.
   const streamAbortedVerdict = (reason: string): ScoredCandidate => ({
     score: -1,
     rationale: `stream-aborted: ${reason}`,
@@ -384,11 +260,6 @@ export async function runTournament(
       temperatures: slate.map(() => baseTemp),
     });
 
-    // Generate candidates in parallel. When streaming is enabled, each
-    // candidate goes through `runStreamingCompletion`; an abort on any
-    // candidate is independent of the others (Promise.all entries are
-    // separate awaitables operating against fresh observers). Aborted
-    // candidates receive a synthetic verdict so they can't win.
     const streamAborts: Array<{ aborted: true; reason: string; outcome: StreamingVerifierOutcome } | null> = [];
     const candidates: TournamentCandidate[] = await Promise.all(
       slate.map(async (persona, candidateIndex): Promise<TournamentCandidate> => {
@@ -434,8 +305,8 @@ export async function runTournament(
       }),
     );
 
-    // Emit stream-abort ledger entries for any aborted candidates; these
-    // come BEFORE candidate-recorded so audit order matches causation.
+    // Stream-abort entries come BEFORE candidate-recorded so audit
+    // order matches causation.
     for (const c of candidates) {
       const ab = streamAborts[c.candidateIndex];
       if (!ab) continue;
@@ -468,29 +339,16 @@ export async function runTournament(
       });
     }
 
-    // Score every candidate via the cheap tournament verifier. Phase 4
-    // memoization: skip the verifier call when a candidate's response
-    // hash matches a prior tournament winner of the same obligation
-    // type, OR matches another candidate already scored in this round.
-    // The skipped candidate inherits the existing verdict.
     const verdicts: Array<ScoredCandidate | null> = candidates.map(() => null);
     const verdictByHash: Map<string, ScoredCandidate> = new Map();
-    /** Hashes whose verdict has already been added into `roundUsage`. */
     const usageCountedHashes = new Set<string>();
-    // Pre-populate verdictByHash with synthetic verdicts for any
-    // stream-aborted candidates: their partial response cannot be
-    // scored fairly and should never win. This MUST happen before the
-    // memo-store lookup so an aborted candidate is not silently
-    // promoted by a prior winner with the same hash collision.
+    // Stream-aborted verdicts MUST be staked first so an aborted
+    // candidate is not silently promoted by a memo-store hash collision.
     for (const c of candidates) {
       if (c.verdict !== null && c.verdict.model === 'stream-aborted') {
         verdictByHash.set(c.responseSha256, c.verdict);
       }
     }
-    // Pre-populate verdictByHash from the memo store: candidates whose
-    // hash matches a prior winner of the same type get a synthetic
-    // verdict (zero-cost) at the prior winner's score. The verdict
-    // comes from the ledger, not from a fresh verifier call.
     if (memoStore) {
       for (const c of candidates) {
         if (verdictByHash.has(c.responseSha256)) continue;
@@ -511,17 +369,14 @@ export async function runTournament(
         }
       }
     }
-    // Walk candidates in order; each unique-hash candidate not already
-    // memoized triggers one fresh verifier call. Subsequent same-hash
-    // candidates skip and inherit the verdict.
     const toScoreSerially: TournamentCandidate[] = [];
     for (const c of candidates) {
       if (verdictByHash.has(c.responseSha256)) {
         verifierCallsSavedByMemoization += 1;
         continue;
       }
-      // Stake out the slot so later same-hash candidates don't add to
-      // toScoreSerially as well; the actual verdict lands below.
+      // Stake the slot before scoring so later same-hash candidates
+      // dedupe against this one.
       verdictByHash.set(c.responseSha256, null as unknown as ScoredCandidate);
       toScoreSerially.push(c);
     }
@@ -540,9 +395,8 @@ export async function runTournament(
       if (!c || !v) continue;
       verdictByHash.set(c.responseSha256, v);
     }
-    // Assign verdicts back in candidate order. Add each unique-hash
-    // verdict's usage exactly once into `roundUsage`; same-hash
-    // candidates inherit the verdict but do not double-count the cost.
+    // Same-hash candidates inherit the verdict but do not double-count
+    // its cost into roundUsage.
     for (let i = 0; i < candidates.length; i += 1) {
       const c = candidates[i];
       if (!c) continue;
@@ -558,15 +412,12 @@ export async function runTournament(
       }
     }
 
-    // Pick the highest-scoring candidate.
     const ranked = [...candidates].sort((a, b) => (b.verdict?.score ?? 0) - (a.verdict?.score ?? 0));
     const top = ranked[0] ?? null;
     let winnerIndex: number | null = null;
-    /** Candidate indices already discarded in this round (avoid double-record). */
     const discarded = new Set<number>();
 
     if (top && top.verdict && top.verdict.score >= config.scoreThreshold) {
-      // Apply and verify the winner.
       const apply = await options.applyCandidate(top, obligation);
       if (apply.satisfied) {
         winnerIndex = top.candidateIndex;
@@ -584,8 +435,6 @@ export async function runTournament(
           score: top.verdict.score,
           rationale: top.verdict.rationale,
         });
-        // Phase 4: feed the winner into the memo store so subsequent
-        // obligations of the same type benefit from in-run memoization.
         if (memoStore) {
           memoStore.ingestWinner(
             {
@@ -606,7 +455,6 @@ export async function runTournament(
             obligation.type,
           );
         }
-        // Discard everyone else (i.e. record the losers).
         for (const c of candidates) {
           if (c.candidateIndex === top.candidateIndex) continue;
           if (!c.verdict) continue;
@@ -638,8 +486,8 @@ export async function runTournament(
           streamingCharsBeforeAbort,
         };
       }
-      // Winner was selected but failed application/verification — discard
-      // and fall through to the next round (or escalate when cap hit).
+      // Winner failed application/verification — discard and fall
+      // through to the next round (or escalate when cap is hit).
       ledgerSink?.recordDiscard({
         obligationIndex,
         roundIndex,
@@ -654,9 +502,6 @@ export async function runTournament(
       discarded.add(top.candidateIndex);
     }
 
-    // Discard every candidate that hasn't already been discarded above.
-    // When threshold isn't met, this includes top; when threshold passed
-    // but apply failed, top is in `discarded` and skipped here.
     for (const c of candidates) {
       if (!c.verdict) continue;
       if (discarded.has(c.candidateIndex)) continue;
@@ -677,7 +522,6 @@ export async function runTournament(
     totalUsage = addUsage(totalUsage, roundUsage);
   }
 
-  // Cap reached without a satisfier.
   ledgerSink?.recordEscalation({
     obligationIndex,
     obligationType: obligation.type,
@@ -701,12 +545,9 @@ export async function runTournament(
   };
 }
 
-/**
- * Pick `count` personas from the slate for the given round. Round 0 uses
- * primaries; later rounds rotate in fallbacks for diversity injection.
- * Repeats from primary if the slate is shorter than `count`; this is the
- * "two of the same persona at different temperatures" path.
- */
+// Round 0 uses primaries; later rounds rotate in fallbacks. Repeats
+// from primary when the slate is shorter than `count` — the
+// "same persona at different temperatures" path.
 export function pickPersonaSlate(
   slate: TournamentPersonaSlate,
   roundIndex: number,

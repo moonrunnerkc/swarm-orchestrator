@@ -1,16 +1,12 @@
-import * as crypto from 'crypto';
 import { type ObligationV1 } from '../types';
-import {
-  SUBMIT_CONTRACT_INPUT_SCHEMA,
-  type ContractEnvelope,
-} from './contract-schema';
+import { SUBMIT_CONTRACT_INPUT_SCHEMA, type ContractEnvelope } from './contract-schema';
+import { sha256Hex, stripJsonFences, truncate } from './scan-pipeline';
 import { type Extractor, type ExtractorInput, type ExtractorOutput } from './types';
 import { type LocalBackend } from '../../inference/local/backend';
 import { getLogger } from '../../logger';
 
 const logger = getLogger('contract:local-extractor');
 
-/** Construction options for {@link LocalExtractor}. */
 export interface LocalExtractorOptions {
   backend: LocalBackend;
   model: string;
@@ -20,28 +16,22 @@ export interface LocalExtractorOptions {
    * caller takes responsibility for parsing the model's text output.
    */
   grammar?: 'auto' | 'json-schema' | 'none';
-  /** Sampling temperature; defaults to 0 for reproducibility. */
   temperature?: number;
-  /** Sampling seed; defaults to 0 for reproducibility. */
   seed?: number;
-  /** Max output tokens. */
   maxTokens?: number;
 }
 
 /**
  * Extractor backed by a local inference endpoint. Issues a single chat
- * completion against the user-configured backend with a grammar-constrained
- * decoding request targeting the shared contract envelope schema. When the
- * backend doesn't support grammar-constrained decoding, falls back to
- * soft-prompt parsing (still strict — invalid JSON surfaces as an error).
+ * completion against the configured backend with a grammar-constrained
+ * decoding request targeting the contract envelope schema; falls back to
+ * soft-prompt parsing when the backend doesn't support json-schema
+ * grammar (still strict — invalid JSON surfaces as an error).
  *
- * Determinism: every call passes `temperature: 0` and a configurable seed,
- * captured in the provenance via the prompt sha256. Same goal + same
- * workspace + same seed + same model + same backend produces an identical
- * contract hash.
- *
- * @throws when the backend call fails, when the response is not valid JSON,
- *         or when the parsed envelope does not contain an obligations array.
+ * Determinism: every call passes `temperature: 0` and a configurable
+ * seed, captured in the provenance via the prompt sha256. Same goal +
+ * same workspace + same seed + same model + same backend produces an
+ * identical contract hash.
  */
 export class LocalExtractor implements Extractor {
   private readonly backend: LocalBackend;
@@ -63,7 +53,7 @@ export class LocalExtractor implements Extractor {
   async extract(input: ExtractorInput): Promise<ExtractorOutput> {
     const systemPrompt = LOCAL_SYSTEM_PROMPT;
     const userPrompt = buildUserPrompt(input);
-    const promptSha = sha256(`${systemPrompt}\n---\n${userPrompt}`);
+    const promptSha = sha256Hex(`${systemPrompt}\n---\n${userPrompt}`);
     const useGrammar = this.shouldUseGrammar();
 
     const response = await this.backend.chat({
@@ -75,7 +65,9 @@ export class LocalExtractor implements Extractor {
       temperature: this.temperature,
       maxTokens: this.maxTokens,
       seed: this.seed,
-      ...(useGrammar ? { grammar: { kind: 'json-schema', schema: SUBMIT_CONTRACT_INPUT_SCHEMA } } : {}),
+      ...(useGrammar
+        ? { grammar: { kind: 'json-schema', schema: SUBMIT_CONTRACT_INPUT_SCHEMA } }
+        : {}),
     });
 
     const envelope = parseEnvelopeOrThrow(response.text, this.backend.name, useGrammar);
@@ -117,10 +109,6 @@ function buildUserPrompt(input: ExtractorInput): string {
   ].join('\n');
 }
 
-function sha256(s: string): string {
-  return crypto.createHash('sha256').update(s, 'utf8').digest('hex');
-}
-
 function parseEnvelopeOrThrow(
   text: string,
   backendName: string,
@@ -152,19 +140,6 @@ function parseEnvelopeOrThrow(
   return {
     obligations: (parsed as { obligations: ObligationV1[] }).obligations,
   };
-}
-
-function stripJsonFences(text: string): string {
-  // Some servers wrap JSON in ```json fences even when asked not to. Strip
-  // a single leading and trailing fence; leave the body as-is otherwise.
-  return text
-    .replace(/^```(?:json)?\s*\n/i, '')
-    .replace(/\n?```\s*$/i, '');
-}
-
-function truncate(text: string, max: number): string {
-  if (text.length <= max) return text;
-  return `${text.slice(0, max)}...`;
 }
 
 const LOCAL_SYSTEM_PROMPT = [

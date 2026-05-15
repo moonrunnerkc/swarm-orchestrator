@@ -3,7 +3,8 @@ import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { CodexFalsifier } from '../../../../src/falsification/adapters/codex/codex-falsifier';
+import { CliFalsifier } from '../../../../src/falsification/adapters/cli-falsifier';
+import { codexProfile } from '../../../../src/falsification/adapters/profiles/codex';
 import type { FalsificationInput } from '../../../../src/falsification/adapters/types';
 
 /**
@@ -48,7 +49,7 @@ describe('CodexFalsifier real-CLI integration', function () {
   it('produces at least one confirmed counter-example for a trivial property', async () => {
     const workspace = makeWorkspace();
     try {
-      const adapter = new CodexFalsifier();
+      const adapter = new CliFalsifier(codexProfile, );
       const input: FalsificationInput = {
         patchSha: '0000000000000000000000000000000000000000',
         obligation: {

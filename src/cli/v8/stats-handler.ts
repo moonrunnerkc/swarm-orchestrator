@@ -18,9 +18,11 @@
  * default; `--ledger <path>` overrides.
  */
 
+import * as fs from 'fs';
 import * as path from 'path';
 import { readEntries } from '../../ledger/jsonl-ledger';
 import type { LedgerEntry } from '../../ledger/types';
+import { readBoolean, readString, runParseArgs, type ParseArgsOptions } from './argv-schema';
 
 interface StatsFlags {
   runId: string;
@@ -28,39 +30,43 @@ interface StatsFlags {
   json: boolean;
 }
 
-function parseStatsFlags(argv: string[]): StatsFlags {
-  const flags: StatsFlags = {
-    runId: '',
-    ledgerPath: null,
-    json: false,
-  };
-  let i = 0;
-  while (i < argv.length) {
-    const arg = argv[i] ?? '';
-    if (arg === '--ledger') {
-      flags.ledgerPath = requireValue(argv, ++i, '--ledger');
-    } else if (arg === '--json') {
-      flags.json = true;
-    } else if (arg.startsWith('--')) {
-      throw new Error(`unknown flag: ${arg}`);
-    } else {
-      if (flags.runId.length > 0) throw new Error('unexpected extra positional argument');
-      flags.runId = arg;
-    }
-    i += 1;
-  }
-  if (flags.runId.length === 0) {
-    throw new Error('missing run-id: usage `swarm v8 stats <run-id> [flags]`');
-  }
-  return flags;
+const STATS_SCHEMA: ParseArgsOptions = {
+  ledger: { type: 'string' },
+  json: { type: 'boolean' },
+  help: { type: 'boolean', short: 'h' },
+};
+
+function printStatsUsage(): void {
+  process.stderr.write(
+    [
+      'usage: swarm v8 stats <run-id> [flags]',
+      '',
+      'flags:',
+      '  --ledger <path>   ledger jsonl path (default .swarm/ledger/<run-id>.jsonl)',
+      '  --json            emit machine-readable JSON instead of plain text',
+      '  --help, -h        show this message',
+      '',
+    ].join('\n'),
+  );
 }
 
-function requireValue(argv: string[], index: number, flag: string): string {
-  const v = argv[index];
-  if (v === undefined || v.startsWith('--')) {
-    throw new Error(`flag ${flag} requires a value`);
+function parseStatsFlags(argv: string[]): StatsFlags {
+  const { values, positionals } = runParseArgs(argv, STATS_SCHEMA);
+  if (readBoolean(values, 'help')) {
+    printStatsUsage();
+    throw new Error('help requested');
   }
-  return v;
+  if (positionals.length === 0) {
+    throw new Error('missing run-id: usage `swarm v8 stats <run-id> [flags]`');
+  }
+  if (positionals.length > 1) {
+    throw new Error('unexpected extra positional argument');
+  }
+  return {
+    runId: positionals[0] ?? '',
+    ledgerPath: readString(values, 'ledger') ?? null,
+    json: readBoolean(values, 'json'),
+  };
 }
 
 function formatPlain(stats: RunStats): string {
@@ -238,11 +244,18 @@ export async function handleStats(argv: string[]): Promise<number> {
   try {
     flags = parseStatsFlags(argv);
   } catch (err) {
-    process.stderr.write(`${(err as Error).message}\n`);
+    const msg = (err as Error).message;
+    if (msg === 'help requested') return 0;
+    process.stderr.write(`${msg}\n`);
     return 1;
   }
 
   const ledgerPath = flags.ledgerPath ?? path.join(process.cwd(), '.swarm', 'ledger', `${flags.runId}.jsonl`);
+
+  if (!fs.existsSync(ledgerPath)) {
+    process.stderr.write(`ledger not found at ${ledgerPath}\n`);
+    return 1;
+  }
 
   let entries: LedgerEntry[];
   try {

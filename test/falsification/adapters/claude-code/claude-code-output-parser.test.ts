@@ -2,8 +2,8 @@ import { strict as assert } from 'assert';
 import {
   parseClaudeCodeCandidates,
   parseClaudeCodeEnvelope,
-} from '../../../../src/falsification/adapters/claude-code/claude-code-output-parser';
-import { CLAUDE_CODE_CANDIDATE_COUNT } from '../../../../src/falsification/adapters/claude-code/claude-code-prompt';
+} from '../../../../src/falsification/adapters/profiles/claude-code';
+import { CLAUDE_CODE_CANDIDATE_COUNT } from '../../../../src/falsification/adapters/profiles/claude-code';
 
 function makeCandidates(n: number): unknown[] {
   return Array.from({ length: n }, (_, i) => ({

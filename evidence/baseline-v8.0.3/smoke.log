@@ -1,0 +1,90 @@
+=== swarm-orchestrator end-to-end smoke ===
+fixture:      /Users/brad/projects/swarm-orchestrator/fixtures/v8-empty
+contract:     /var/folders/1q/2_tt_q515bs98g0f5v17_sdc0000gn/T/swarm-smoke-XXXXXX.Ji3Dch96qz/contract.yaml
+extractor:    deterministic
+session:      deterministic
+binary:       node dist/src/cli.js
+version:      8.0.3
+commit:       96d6b20eba8c916cff0908ae470a4154e17874f3
+date:         2026-05-14T14:10:27Z
+
+=== contract.yaml ===
+obligations:
+  - type: build-must-pass
+    command: npm run build
+  - type: test-must-pass
+    command: npm test
+
+=== compile ===
+[cli:v8:compile] contract written: /var/folders/1q/2_tt_q515bs98g0f5v17_sdc0000gn/T/swarm-smoke-XXXXXX.Ji3Dch96qz/contract-out
+[cli:v8:compile] contract id:      a8d480f62bf9c2be
+[cli:v8:compile] contract hash:    a8d480f62bf9c2bed8b7daf47adfc698f2d2fced9e99b40e47b386cf543cb43c
+compile exit: 0
+
+=== run ===
+Loaded 5 rules from 1 packs: swarm-orchestrator/cheat-defaults
+run id:        run-mp5kfro7-679eb4
+contract id:   a8d480f62bf9c2be
+mode:          single
+obligations:   2/2 satisfied
+deterministic: 0 satisfied / 0 rerouted
+pre-verified:  2 obligations
+streaming:     0 aborted (0 chars before abort)
+tokens (in):   0 std + 0 cache-read + 0 cache-write
+effective in:  0.00 tokens
+tokens (out):  0
+cache hit:     0.0%
+wall time:     177ms
+ledger:        /var/folders/1q/2_tt_q515bs98g0f5v17_sdc0000gn/T/swarm-smoke-XXXXXX.Ji3Dch96qz/ledger.jsonl
+run exit: 0
+
+=== result.json ===
+{
+  "runId": "run-mp5kfro7-679eb4",
+  "contractId": "a8d480f62bf9c2be",
+  "contractHash": "a8d480f62bf9c2bed8b7daf47adfc698f2d2fced9e99b40e47b386cf543cb43c",
+  "mode": "single",
+  "obligationCount": 2,
+  "satisfied": 2,
+  "failed": 0,
+  "memoizedObligations": 0,
+  "verifierCallsSavedByMemoization": 0,
+  "deterministicObligations": 0,
+  "deterministicReroutes": 0,
+  "preVerifiedObligations": 2,
+  "streamingAbortedCandidates": 0,
+  "streamingCharsBeforeAbort": 0,
+  "postMerge": null,
+  "totalUsage": {
+    "inputTokens": 0,
+    "cacheReadTokens": 0,
+    "cacheCreationTokens": 0,
+    "outputTokens": 0
+  },
+  "effectiveInputTokens": 0,
+  "cacheHitRate": 0,
+  "wallTimeMs": 177,
+  "ledgerPath": "/var/folders/1q/2_tt_q515bs98g0f5v17_sdc0000gn/T/swarm-smoke-XXXXXX.Ji3Dch96qz/ledger.jsonl",
+  "outcomes": [
+    {
+      "obligationIndex": 0,
+      "type": "build-must-pass",
+      "personaId": null,
+      "satisfied": true,
+      "detail": "pre-verified: command \"npm run build\" exited 0",
+      "tournament": null
+    },
+    {
+      "obligationIndex": 1,
+      "type": "test-must-pass",
+      "personaId": null,
+      "satisfied": true,
+      "detail": "pre-verified: command \"npm test\" exited 0",
+      "tournament": null
+    }
+  ]
+}
+
+=== final verdict ===
+satisfied: 2
+failed: 0

@@ -21,6 +21,7 @@ import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getLogger } from '../../logger';
+import { readBoolean, readString, runParseArgs, type ParseArgsOptions } from './argv-schema';
 
 const logger = getLogger('cli:v8:doctor');
 
@@ -43,11 +44,14 @@ export interface DoctorFlags {
    * aren't standalone git repos.
    */
   requireGit: boolean;
+  /** Set when `--help`/`-h` was passed; the handler short-circuits with exit 0. */
+  helpRequested: boolean;
 }
 
 /** Top-level dispatcher for the `doctor` subcommand. */
 export async function handleDoctor(argv: string[]): Promise<number> {
   const flags = parseFlags(argv);
+  if (flags.helpRequested) return 0;
   const results: ProbeResult[] = [];
 
   results.push(probeApiKey());
@@ -79,43 +83,34 @@ export async function handleDoctor(argv: string[]): Promise<number> {
   return exitCode;
 }
 
+const DOCTOR_SCHEMA: ParseArgsOptions = {
+  cwd: { type: 'string' },
+  'require-git': { type: 'boolean' },
+  help: { type: 'boolean', short: 'h' },
+};
+
 function parseFlags(argv: string[]): DoctorFlags {
-  const flags: DoctorFlags = {
-    cwd: process.cwd(),
-    requireGit: false,
-  };
-  let i = 0;
-  while (i < argv.length) {
-    const arg = argv[i];
-    if (arg === '--cwd') {
-      const v = argv[i + 1];
-      if (v === undefined) throw new Error('flag --cwd requires a value');
-      flags.cwd = path.resolve(v);
-      i += 2;
-      continue;
-    }
-    if (arg === '--require-git') {
-      flags.requireGit = true;
-      i += 1;
-      continue;
-    }
-    if (arg === '--help' || arg === '-h') {
-      process.stderr.write(
-        [
-          'usage: swarm v8 doctor [flags]',
-          '',
-          'flags:',
-          '  --cwd <path>      directory to inspect (default: process.cwd())',
-          '  --require-git     fail if cwd is not inside a writable git repo',
-          '',
-        ].join('\n'),
-      );
-      i += 1;
-      continue;
-    }
-    throw new Error(`unknown flag: ${arg}`);
+  const { values } = runParseArgs(argv, DOCTOR_SCHEMA);
+  const helpRequested = readBoolean(values, 'help');
+  if (helpRequested) {
+    process.stderr.write(
+      [
+        'usage: swarm v8 doctor [flags]',
+        '',
+        'flags:',
+        '  --cwd <path>      directory to inspect (default: process.cwd())',
+        '  --require-git     fail if cwd is not inside a writable git repo',
+        '  --help, -h        show this message',
+        '',
+      ].join('\n'),
+    );
   }
-  return flags;
+  const cwd = readString(values, 'cwd');
+  return {
+    cwd: cwd !== undefined ? path.resolve(cwd) : process.cwd(),
+    requireGit: readBoolean(values, 'require-git'),
+    helpRequested,
+  };
 }
 
 function probeApiKey(): ProbeResult {

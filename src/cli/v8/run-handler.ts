@@ -12,19 +12,26 @@ import {
   resolveSessionProvider,
 } from '../../session/factory';
 import {
-  applyLocalProviderFlag,
-  emptyLocalProviderFlagValues,
-  isLocalProviderFlag,
+  buildLocalProviderFlagValues,
+  LOCAL_PROVIDER_FLAG_SCHEMA,
   resolveEffectiveLocalProvider,
   type LocalProviderFlagValues,
 } from './local-provider-flags';
+import {
+  readBoolean,
+  readString,
+  requireEnum,
+  requireNonNegativeInt,
+  requirePositiveInt,
+  runParseArgs,
+  type ParseArgsOptions,
+} from './argv-schema';
 import { loadProviderConfig } from '../../config/provider-config';
 import { formatGrammarWarning, resolveGrammarForConsumer } from './grammar-resolve';
 import {
   cacheHitRate,
   effectiveInputTokens,
   type Session,
-  type SessionUsage,
 } from '../../session/types';
 import { createDefaultRuntime, WasmRuntime } from '../../wasm';
 import {
@@ -100,12 +107,12 @@ export interface RunFlags {
    */
   forbiddenImports: string[];
   /**
-   * Hard cost ceiling in USD. After the run completes, if the
-   * Anthropic-priced estimate from `totalUsage` exceeds the cap, the CLI
-   * exits 6 (cost-cap-exceeded). Null disables the cap. Wired by the
-   * GitHub Action's `cost-cap` input per impl guide §12 line 290.
+   * Live output-token budget. When set, the streaming verifier aborts
+   * an in-flight generation as soon as the projected output crosses the
+   * budget. Null disables the gate. Token-denominated so the same flag
+   * works across providers (Anthropic, local, deterministic).
    */
-  costCapUsd: number | null;
+  tokenBudget: number | null;
   /**
    * Adapter-reintegration: feature flag controlling the falsification
    * dispatcher (`src/falsification/dispatcher.ts`). Default `'on'`. When
@@ -134,13 +141,6 @@ export interface RunFlags {
    * string uses `<repoRoot>/.swarm/falsifier-stats.json`.
    */
   falsifierStatsPath: string;
-  /**
-   * Phase 7: when true and `--cost-cap` is set, the live cost tracker
-   * aborts in-flight generations as soon as the projected spend
-   * exceeds the cap. Default true. The post-run gate remains as a
-   * deterministic fallback.
-   */
-  costCapLive: boolean;
   /** Local-provider flag values; consumed only when `sessionKind === 'local'`. */
   local: LocalProviderFlagValues;
   /** Tracks which provider fields were set by an explicit `--<flag>` token. */
@@ -273,13 +273,8 @@ export async function handleRun(
     }
   }
 
-  // Phase 7: live cost tracker. Construct only when both --cost-cap is
-  // set and live mode is enabled. The post-run gate below remains as a
-  // deterministic backstop in case the tracker undercounts.
-  let costTracker: LiveCostTracker | undefined;
-  if (flags.costCapUsd !== null && flags.costCapLive) {
-    costTracker = new LiveCostTracker({ capUsd: flags.costCapUsd });
-    runOptions.costTracker = costTracker;
+  if (flags.tokenBudget !== null) {
+    runOptions.costTracker = new LiveCostTracker({ budgetTokens: flags.tokenBudget });
   }
 
   // Phase 7: adaptive falsifier scheduler. Default sequential preserves
@@ -390,44 +385,11 @@ export async function handleRun(
     });
   }
 
-  if (flags.costCapUsd !== null) {
-    const spentUsd = estimateUsageCostUsd(result.totalUsage);
-    logger.info(`cost cap:      $${flags.costCapUsd.toFixed(4)} USD (spent: $${spentUsd.toFixed(4)} USD)`);
-    if (spentUsd > flags.costCapUsd) {
-      logger.error(
-        `cost cap $${flags.costCapUsd.toFixed(4)} exceeded; estimated spend $${spentUsd.toFixed(4)}`,
-      );
-      return 6;
-    }
+  if (flags.tokenBudget !== null) {
+    logger.info(`token budget:  ${flags.tokenBudget} output tokens (spent: ${result.totalUsage.outputTokens})`);
   }
 
   return result.failed === 0 ? 0 : 2;
-}
-
-/**
- * Approximate Anthropic Claude Sonnet 4 pricing in USD per token. Cache
- * reads are 90% off the input rate; cache creation is 1.25× the input
- * rate. Pricing reference: https://www.anthropic.com/pricing (Claude
- * Sonnet 4 series, 2026 schedule).
- */
-const SONNET4_PRICE_PER_TOKEN_USD = {
-  input: 3 / 1_000_000,
-  cacheRead: 0.3 / 1_000_000,
-  cacheCreation: 3.75 / 1_000_000,
-  output: 15 / 1_000_000,
-};
-
-/**
- * Estimate the USD spend implied by a `SessionUsage`. Used for the
- * --cost-cap post-run gate.
- */
-export function estimateUsageCostUsd(usage: SessionUsage): number {
-  return (
-    usage.inputTokens * SONNET4_PRICE_PER_TOKEN_USD.input +
-    usage.cacheReadTokens * SONNET4_PRICE_PER_TOKEN_USD.cacheRead +
-    usage.cacheCreationTokens * SONNET4_PRICE_PER_TOKEN_USD.cacheCreation +
-    usage.outputTokens * SONNET4_PRICE_PER_TOKEN_USD.output
-  );
 }
 
 function buildSession(flags: RunFlags, projectContext: string): Session {
@@ -474,150 +436,104 @@ export function renderProjectContext(goal: string, repoRoot: string): string {
   ].join('\n');
 }
 
-export function parseRunFlags(argv: string[]): RunFlags {
-  const positionals: string[] = [];
-  const flags: RunFlags = {
-    contractPath: '',
-    repoRoot: process.cwd(),
-    sessionKind: resolveSessionProvider(null),
-    model: null,
-    apiKey: null,
-    externalPatchesDir: process.env.EXTERNAL_PATCHES_DIR ?? null,
-    externalPatchesQueue: process.env.EXTERNAL_PATCHES_QUEUE ?? null,
-    externalPatchesStdin: false,
-    externalPatchesTimeoutMs: null,
-    ledgerPath: null,
-    maxObligations: null,
-    commandTimeoutMs: null,
-    runId: null,
-    resultPath: null,
-    mode: 'single',
-    candidates: null,
-    deterministic: true,
-    streaming: true,
-    postMerge: true,
-    preGeneration: true,
-    forbiddenImports: [],
-    costCapUsd: null,
-    falsifiers: 'on',
-    snapshotCleanup: '',
-    falsifierScheduler: 'sequential',
-    falsifierStatsPath: '',
-    costCapLive: true,
-    local: emptyLocalProviderFlagValues(),
-    flagsSource: { sessionFromFlag: false },
-  };
+const RUN_SCHEMA: ParseArgsOptions = {
+  ...LOCAL_PROVIDER_FLAG_SCHEMA,
+  'repo-root': { type: 'string' },
+  session: { type: 'string' },
+  'external-patches-dir': { type: 'string' },
+  'external-patches-queue': { type: 'string' },
+  'external-patches-stdin': { type: 'boolean' },
+  'external-patches-timeout-ms': { type: 'string' },
+  model: { type: 'string' },
+  'api-key': { type: 'string' },
+  ledger: { type: 'string' },
+  'max-obligations': { type: 'string' },
+  'command-timeout-ms': { type: 'string' },
+  'run-id': { type: 'string' },
+  result: { type: 'string' },
+  mode: { type: 'string' },
+  candidates: { type: 'string' },
+  'no-deterministic': { type: 'boolean' },
+  'no-streaming': { type: 'boolean' },
+  'no-post-merge': { type: 'boolean' },
+  'no-pre-generation': { type: 'boolean' },
+  'forbid-import': { type: 'string', multiple: true },
+  'cost-cap': { type: 'string' },
+  falsifiers: { type: 'string' },
+  'snapshot-cleanup': { type: 'string' },
+  'falsifier-scheduler': { type: 'string' },
+  'falsifier-stats-path': { type: 'string' },
+  help: { type: 'boolean', short: 'h' },
+};
 
-  for (let i = 0; i < argv.length; i += 1) {
-    const arg = argv[i] ?? '';
-    if (isLocalProviderFlag(arg)) {
-      i = applyLocalProviderFlag(argv, i, flags.local, (raw) => path.resolve(flags.repoRoot, raw));
-    } else if (arg === '--repo-root') {
-      flags.repoRoot = requireValue(argv, ++i, '--repo-root');
-    } else if (arg === '--session') {
-      const v = requireValue(argv, ++i, '--session');
-      flags.sessionKind = resolveSessionProvider(v);
-      flags.flagsSource.sessionFromFlag = true;
-    } else if (arg === '--external-patches-dir') {
-      flags.externalPatchesDir = requireValue(argv, ++i, '--external-patches-dir');
-    } else if (arg === '--external-patches-queue') {
-      flags.externalPatchesQueue = requireValue(argv, ++i, '--external-patches-queue');
-    } else if (arg === '--external-patches-stdin') {
-      flags.externalPatchesStdin = true;
-    } else if (arg === '--external-patches-timeout-ms') {
-      const raw = requireValue(argv, ++i, '--external-patches-timeout-ms');
-      const n = Number.parseInt(raw, 10);
-      if (!Number.isFinite(n) || n < 0) {
-        throw new Error(
-          `invalid --external-patches-timeout-ms "${raw}"; must be a non-negative integer`,
-        );
-      }
-      flags.externalPatchesTimeoutMs = n;
-    } else if (arg === '--model') {
-      flags.model = requireValue(argv, ++i, '--model');
-    } else if (arg === '--api-key') {
-      flags.apiKey = requireValue(argv, ++i, '--api-key');
-    } else if (arg === '--ledger') {
-      flags.ledgerPath = requireValue(argv, ++i, '--ledger');
-    } else if (arg === '--max-obligations') {
-      const raw = requireValue(argv, ++i, '--max-obligations');
-      const n = Number.parseInt(raw, 10);
-      if (!Number.isFinite(n) || n <= 0) {
-        throw new Error(`invalid --max-obligations "${raw}"; must be a positive integer`);
-      }
-      flags.maxObligations = n;
-    } else if (arg === '--command-timeout-ms') {
-      const raw = requireValue(argv, ++i, '--command-timeout-ms');
-      const n = Number.parseInt(raw, 10);
-      if (!Number.isFinite(n) || n <= 0) {
-        throw new Error(`invalid --command-timeout-ms "${raw}"; must be a positive integer`);
-      }
-      flags.commandTimeoutMs = n;
-    } else if (arg === '--run-id') {
-      flags.runId = requireValue(argv, ++i, '--run-id');
-    } else if (arg === '--result') {
-      flags.resultPath = requireValue(argv, ++i, '--result');
-    } else if (arg === '--mode') {
-      const v = requireValue(argv, ++i, '--mode');
-      if (v !== 'single' && v !== 'tournament') {
-        throw new Error(`invalid --mode value "${v}"; expected single | tournament`);
-      }
-      flags.mode = v;
-    } else if (arg === '--candidates') {
-      const raw = requireValue(argv, ++i, '--candidates');
-      const n = Number.parseInt(raw, 10);
-      if (!Number.isFinite(n) || n <= 0 || n > 8) {
-        throw new Error(`invalid --candidates "${raw}"; must be a positive integer ≤ 8`);
-      }
-      flags.candidates = n;
-    } else if (arg === '--no-deterministic') {
-      flags.deterministic = false;
-    } else if (arg === '--no-streaming') {
-      flags.streaming = false;
-    } else if (arg === '--no-post-merge') {
-      flags.postMerge = false;
-    } else if (arg === '--no-pre-generation') {
-      flags.preGeneration = false;
-    } else if (arg === '--forbid-import') {
-      const v = requireValue(argv, ++i, '--forbid-import');
-      for (const part of v.split(',')) {
+export function parseRunFlags(argv: string[]): RunFlags {
+  const { values, positionals } = runParseArgs(argv, RUN_SCHEMA);
+  if (readBoolean(values, 'help')) {
+    printRunUsage();
+    throw new Error('help requested');
+  }
+
+  const repoRoot = readString(values, 'repo-root') ?? process.cwd();
+  const sessionRaw = readString(values, 'session');
+  const modeRaw = readString(values, 'mode');
+  const candidatesRaw = readString(values, 'candidates');
+  const externalPatchesTimeoutRaw = readString(values, 'external-patches-timeout-ms');
+  const maxObligationsRaw = readString(values, 'max-obligations');
+  const commandTimeoutRaw = readString(values, 'command-timeout-ms');
+  const tokenBudgetRaw = readString(values, 'cost-cap');
+  const falsifiersRaw = readString(values, 'falsifiers');
+  const falsifierSchedulerRaw = readString(values, 'falsifier-scheduler');
+  const forbidImports = values['forbid-import'];
+
+  const forbiddenImports: string[] = [];
+  if (Array.isArray(forbidImports)) {
+    for (const entry of forbidImports) {
+      if (typeof entry !== 'string') continue;
+      for (const part of entry.split(',')) {
         const p = part.trim();
-        if (p.length > 0) flags.forbiddenImports.push(p);
+        if (p.length > 0) forbiddenImports.push(p);
       }
-    } else if (arg === '--cost-cap') {
-      const raw = requireValue(argv, ++i, '--cost-cap');
-      const n = Number.parseFloat(raw);
-      if (!Number.isFinite(n) || n <= 0) {
-        throw new Error(`invalid --cost-cap "${raw}"; must be a positive number (USD)`);
-      }
-      flags.costCapUsd = n;
-    } else if (arg === '--falsifiers') {
-      const v = requireValue(argv, ++i, '--falsifiers');
-      if (v !== 'on' && v !== 'off') {
-        throw new Error(`invalid --falsifiers value "${v}"; expected on | off`);
-      }
-      flags.falsifiers = v;
-    } else if (arg === '--snapshot-cleanup') {
-      flags.snapshotCleanup = requireValue(argv, ++i, '--snapshot-cleanup');
-    } else if (arg === '--falsifier-scheduler') {
-      const v = requireValue(argv, ++i, '--falsifier-scheduler');
-      if (v !== 'sequential' && v !== 'ucb1') {
-        throw new Error(`invalid --falsifier-scheduler value "${v}"; expected sequential | ucb1`);
-      }
-      flags.falsifierScheduler = v;
-    } else if (arg === '--falsifier-stats-path') {
-      flags.falsifierStatsPath = requireValue(argv, ++i, '--falsifier-stats-path');
-    } else if (arg === '--no-cost-cap-live') {
-      flags.costCapLive = false;
-    } else if (arg === '--help' || arg === '-h') {
-      printRunUsage();
-      throw new Error('help requested');
-    } else if (arg.startsWith('--')) {
-      throw new Error(`unknown flag: ${arg}`);
-    } else {
-      positionals.push(arg);
     }
   }
+
+  const flags: RunFlags = {
+    contractPath: '',
+    repoRoot,
+    sessionKind: resolveSessionProvider(sessionRaw ?? null),
+    model: readString(values, 'model') ?? null,
+    apiKey: readString(values, 'api-key') ?? null,
+    externalPatchesDir: readString(values, 'external-patches-dir') ?? process.env.EXTERNAL_PATCHES_DIR ?? null,
+    externalPatchesQueue: readString(values, 'external-patches-queue') ?? process.env.EXTERNAL_PATCHES_QUEUE ?? null,
+    externalPatchesStdin: readBoolean(values, 'external-patches-stdin'),
+    externalPatchesTimeoutMs: externalPatchesTimeoutRaw !== undefined
+      ? requireNonNegativeInt(externalPatchesTimeoutRaw, '--external-patches-timeout-ms')
+      : null,
+    ledgerPath: readString(values, 'ledger') ?? null,
+    maxObligations: maxObligationsRaw !== undefined
+      ? requirePositiveInt(maxObligationsRaw, '--max-obligations')
+      : null,
+    commandTimeoutMs: commandTimeoutRaw !== undefined
+      ? requirePositiveInt(commandTimeoutRaw, '--command-timeout-ms')
+      : null,
+    runId: readString(values, 'run-id') ?? null,
+    resultPath: readString(values, 'result') ?? null,
+    mode: modeRaw !== undefined ? requireEnum(modeRaw, '--mode', ['single', 'tournament'] as const) : 'single',
+    candidates: candidatesRaw !== undefined ? parseCandidates(candidatesRaw) : null,
+    deterministic: !readBoolean(values, 'no-deterministic'),
+    streaming: !readBoolean(values, 'no-streaming'),
+    postMerge: !readBoolean(values, 'no-post-merge'),
+    preGeneration: !readBoolean(values, 'no-pre-generation'),
+    forbiddenImports,
+    tokenBudget: tokenBudgetRaw !== undefined ? requirePositiveInt(tokenBudgetRaw, '--cost-cap') : null,
+    falsifiers: falsifiersRaw !== undefined ? requireEnum(falsifiersRaw, '--falsifiers', ['on', 'off'] as const) : 'on',
+    snapshotCleanup: readString(values, 'snapshot-cleanup') ?? '',
+    falsifierScheduler: falsifierSchedulerRaw !== undefined
+      ? requireEnum(falsifierSchedulerRaw, '--falsifier-scheduler', ['sequential', 'ucb1'] as const)
+      : 'sequential',
+    falsifierStatsPath: readString(values, 'falsifier-stats-path') ?? '',
+    local: buildLocalProviderFlagValues(values, (raw) => path.resolve(repoRoot, raw)),
+    flagsSource: { sessionFromFlag: sessionRaw !== undefined },
+  };
 
   if (positionals.length === 0) {
     throw new Error('missing contract path: usage `swarm v8 run <contract-path> [flags]`');
@@ -629,12 +545,12 @@ export function parseRunFlags(argv: string[]): RunFlags {
   return flags;
 }
 
-function requireValue(argv: string[], index: number, flag: string): string {
-  const v = argv[index];
-  if (v === undefined || v.startsWith('--')) {
-    throw new Error(`flag ${flag} requires a value`);
+function parseCandidates(raw: string): number {
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n) || n <= 0 || n > 8) {
+    throw new Error(`invalid --candidates "${raw}"; must be a positive integer ≤ 8`);
   }
-  return v;
+  return n;
 }
 
 function randomToken(n: number): string {
@@ -682,10 +598,9 @@ function printRunUsage(): void {
       '  --no-pre-generation          disable Phase 6 pre-generation skip pass (default: enabled)',
       '  --no-post-merge              disable Phase 6 post-merge integration check (default: enabled)',
       '  --forbid-import <names>      comma-separated module names the streaming verifier rejects',
-      '  --cost-cap <usd>             hard cost ceiling in USD; exit 6 if exceeded',
-      '  --no-cost-cap-live           disable mid-stream cost-cap enforcement (post-run only)',
+      '  --cost-cap <n>               live output-token ceiling (positive integer); aborts streams once projected output crosses it',
       '  --snapshot-cleanup <spec>    snapshot policy (retain-on-failure|always|never|',
-      '                               retain-last-n=<n>|max-age-ms=<ms>|max-disk-bytes=<b>)',
+      '                               retain-last:<n>|max-age:<duration>|max-disk:<size>)',
       '  --falsifier-scheduler <kind> sequential (default) | ucb1 (adaptive bandit)',
       '  --falsifier-stats-path <p>   override path for persisted bandit stats',
       '  --help, -h                   show this message',

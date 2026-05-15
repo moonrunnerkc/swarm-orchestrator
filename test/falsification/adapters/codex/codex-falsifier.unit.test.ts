@@ -2,7 +2,8 @@ import { strict as assert } from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { CodexFalsifier } from '../../../../src/falsification/adapters/codex/codex-falsifier';
+import { CliFalsifier } from '../../../../src/falsification/adapters/cli-falsifier';
+import { codexProfile } from '../../../../src/falsification/adapters/profiles/codex';
 import type { FalsificationInput } from '../../../../src/falsification/adapters/types';
 
 /**
@@ -49,7 +50,7 @@ function smokeInput(workspaceRoot: string): FalsificationInput {
 describe('CodexFalsifier unit paths', () => {
   it('preserves full stderr on Error.cause when codex exits non-zero', async () => {
     const stderr4kb = 'X'.repeat(4096);
-    const adapter = new CodexFalsifier({
+    const adapter = new CliFalsifier(codexProfile, {
       authMethodOverride: () => 'api',
       invocationOverride: async () => ({
         stdout: '',
@@ -80,7 +81,7 @@ describe('CodexFalsifier unit paths', () => {
 
   it('returns baseline-predicate-failed without invoking codex when workspace is pre-tainted', async () => {
     let codexCalled = false;
-    const adapter = new CodexFalsifier({
+    const adapter = new CliFalsifier(codexProfile, {
       authMethodOverride: () => 'api',
       invocationOverride: async () => {
         codexCalled = true;
@@ -107,7 +108,7 @@ describe('CodexFalsifier unit paths', () => {
 
   it('reports dollarsBilled=0 under chatgpt auth but populates dollarsTokenEstimate', async () => {
     const fakeStdout = makeCandidateStdout('tokens used: input=1000 output=2000 total=3000');
-    const adapter = new CodexFalsifier({
+    const adapter = new CliFalsifier(codexProfile, {
       authMethodOverride: () => 'chatgpt',
       invocationOverride: async () => ({
         stdout: fakeStdout,
@@ -131,7 +132,7 @@ describe('CodexFalsifier unit paths', () => {
 
   it('reports dollarsBilled === dollarsTokenEstimate under api auth', async () => {
     const fakeStdout = makeCandidateStdout('tokens used: input=500 output=1500 total=2000');
-    const adapter = new CodexFalsifier({
+    const adapter = new CliFalsifier(codexProfile, {
       authMethodOverride: () => 'api',
       invocationOverride: async () => ({
         stdout: fakeStdout,

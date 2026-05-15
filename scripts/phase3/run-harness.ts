@@ -63,11 +63,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { loadDotenv } from '../../src/env-loader';
-import {
-  CopilotFalsifier,
-  type CopilotInvocationRequest,
-  type CopilotInvocationResult,
-} from '../../src/falsification/adapters/copilot/copilot-falsifier';
+import { CliFalsifier, type CliInvocationRequest, type CliInvocationResult } from '../../src/falsification/adapters/cli-falsifier';
+import { copilotProfile } from '../../src/falsification/adapters/profiles/copilot';
 import type {
   FunctionMustHaveSignatureObligation,
   ImportGraphMustSatisfyObligation,
@@ -366,9 +363,9 @@ async function runConfigBPrime(
   const workspaceRoot = path.join(tmpRoot, 'workspace');
   copyFixtureInto(fixtureRoot, workspaceRoot);
 
-  let lastInvocation: { request: CopilotInvocationRequest; result: CopilotInvocationResult } | null =
+  let lastInvocation: { request: CliInvocationRequest; result: CliInvocationResult } | null =
     null;
-  const falsifier = new CopilotFalsifier({
+  const falsifier = new CliFalsifier(copilotProfile, {
     ...(copilotBinary !== null ? { binaryPath: copilotBinary } : {}),
     onInvocation: (request, result) => {
       lastInvocation = { request, result };
@@ -396,8 +393,8 @@ async function runConfigBPrime(
   } finally {
     if (lastInvocation !== null) {
       const li = lastInvocation as {
-        request: CopilotInvocationRequest;
-        result: CopilotInvocationResult;
+        request: CliInvocationRequest;
+        result: CliInvocationResult;
       };
       fs.writeFileSync(
         path.join(obligationDir, 'request.json'),
@@ -459,11 +456,11 @@ async function runConfigBPrime(
   fs.writeFileSync(path.join(obligationDir, 'result.json'), JSON.stringify(outcome, null, 2) + '\n');
   const copilotStdoutTxt =
     lastInvocation !== null
-      ? (lastInvocation as { result: CopilotInvocationResult }).result.stdout
+      ? (lastInvocation as { result: CliInvocationResult }).result.stdout
       : '';
   const copilotStderrTxt =
     lastInvocation !== null
-      ? (lastInvocation as { result: CopilotInvocationResult }).result.stderr
+      ? (lastInvocation as { result: CliInvocationResult }).result.stderr
       : '';
   fs.writeFileSync(
     path.join(obligationDir, 'stdout.log'),

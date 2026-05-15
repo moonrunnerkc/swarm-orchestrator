@@ -2,7 +2,7 @@ import { strict as assert } from 'assert';
 import {
   detectClaudeCodeAuthMethod,
   dollarsForEnvelopeByAuth,
-} from '../../../../src/falsification/adapters/claude-code/claude-code-cost';
+} from '../../../../src/falsification/adapters/profiles/claude-code';
 
 describe('claude-code-cost', () => {
   describe('detectClaudeCodeAuthMethod', () => {

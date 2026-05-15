@@ -47,16 +47,9 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { loadDotenv } from '../../src/env-loader';
-import {
-  CodexFalsifier,
-  type CodexInvocationRequest,
-  type CodexInvocationResult,
-} from '../../src/falsification/adapters/codex/codex-falsifier';
-import {
-  ClaudeCodeFalsifier,
-  type ClaudeCodeInvocationRequest,
-  type ClaudeCodeInvocationResult,
-} from '../../src/falsification/adapters/claude-code/claude-code-falsifier';
+import { CliFalsifier, type CliInvocationRequest, type CliInvocationResult } from '../../src/falsification/adapters/cli-falsifier';
+import { codexProfile } from '../../src/falsification/adapters/profiles/codex';
+import { claudeCodeProfile } from '../../src/falsification/adapters/profiles/claude-code';
 import type {
   ObligationV1,
   PropertyMustHoldObligation,
@@ -278,9 +271,9 @@ function buildAdapters(config: ConfigName): FalsifierAdapter[] {
   // whose handles do not match the obligation type to keep the cost
   // record clean).
   if (config === 'bp') {
-    return [new CodexFalsifier()];
+    return [new CliFalsifier(codexProfile, )];
   }
-  return [new CodexFalsifier(), new ClaudeCodeFalsifier()];
+  return [new CliFalsifier(codexProfile, ), new CliFalsifier(claudeCodeProfile, )];
 }
 
 async function runConfig(
@@ -299,20 +292,20 @@ async function runConfig(
 
   const subprocessCaptures: Array<{
     adapterName: string;
-    request: CodexInvocationRequest | ClaudeCodeInvocationRequest;
-    result: CodexInvocationResult | ClaudeCodeInvocationResult;
+    request: CliInvocationRequest | CliInvocationRequest;
+    result: CliInvocationResult | CliInvocationResult;
   }> = [];
 
   const adapters = buildAdapters(config).map((adapter) => {
     if (adapter.name === 'codex') {
-      return new CodexFalsifier({
+      return new CliFalsifier(codexProfile, {
         onInvocation: (request, result) => {
           subprocessCaptures.push({ adapterName: 'codex', request, result });
         },
       });
     }
     if (adapter.name === 'claude-code') {
-      return new ClaudeCodeFalsifier({
+      return new CliFalsifier(claudeCodeProfile, {
         onInvocation: (request, result) => {
           subprocessCaptures.push({ adapterName: 'claude-code', request, result });
         },

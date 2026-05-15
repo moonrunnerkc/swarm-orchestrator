@@ -1,486 +1,218 @@
-<div align="center">
+# Swarm Orchestrator
 
-<img src="assets/header.svg" alt="Swarm Orchestrator" width="100%">
+Contract-first verification for code changes.
 
-### Deterministic-first verification and falsification engine for code changes.
+`swarm` turns a goal into typed obligations, verifies candidate patches against
+those obligations, runs falsifiers, and records the run in a hash-chained JSONL
+ledger. A patch is not accepted just because a model produced it.
 
-<p>
-Hand-authored contracts, externally-sourced patches, verifier-gated commits,<br/>
-append-only evidence ledgers, and optional model providers for local or hosted<br/>
-generation.
-</p>
+Current release: `9.0.0`. The old v6 verified-branch pipeline was removed in
+v9; pin `8.0.x` if you still need `swarm run --v6`. v8 is now the only runtime.
+The old `swarm v8 <cmd>` form still works, but the normal commands are
+unprefixed.
 
-<p>
-  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-ISC-blue?style=flat-square"></a>
-  <a href="package.json"><img alt="Node" src="https://img.shields.io/badge/node-%3E%3D20-339933?style=flat-square"></a>
-  <a href="https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/moonrunnerkc/swarm-orchestrator/ci.yml?branch=main&label=ci&style=flat-square"></a>
-  <a href="package.json"><img alt="Version" src="https://img.shields.io/github/package-json/v/moonrunnerkc/swarm-orchestrator?style=flat-square"></a>
-</p>
+## Requirements
 
-<p>
-  <a href="#quick-start"><b>Quick start</b></a>
-  &nbsp;·&nbsp;
-  <a href="#providers"><b>Providers</b></a>
-  &nbsp;·&nbsp;
-  <a href="#how-it-works"><b>How it works</b></a>
-  &nbsp;·&nbsp;
-  <a href="#adapters"><b>Adapters</b></a>
-  &nbsp;·&nbsp;
-  <a href="#cli-reference"><b>CLI</b></a>
-  &nbsp;·&nbsp;
-  <a href="#github-action"><b>GitHub Action</b></a>
-  &nbsp;·&nbsp;
-  <a href="#documentation"><b>Docs</b></a>
-</p>
+- Node `>=20`
+- git `>=2.40`
+- `npm`, `yarn`, or `pnpm` in target projects that run command obligations
 
-</div>
-
----
-
-`swarm` separates patch generation from verification.
-
-The default deterministic provider runs entirely offline with no model installs,
-API keys, or network access. It validates hand-authored contracts against
-externally-supplied patches and runs the same verification pipeline used by
-model-backed sessions.
-
-Optional providers let you generate patches through:
-
-- local OpenAI-compatible endpoints
-- Ollama
-- llama.cpp
-- vLLM
-- Anthropic Claude
-
-The verifier, falsifiers, ledger, manifests, rollback system, and quality gates
-are provider-agnostic. The verifier never knows where patches came from.
-
-After a patch satisfies its obligation, falsifier adapters attempt to break it
-before merge. Every action is recorded in an append-only hash-chained ledger for
-replay, auditing, and resume support.
-
-The architectural rule is simple:
-
-> Nothing commits unless the obligation verifier and quality gates pass.
-
----
-
-## Status
-
-<p align="center">
-<sub><b>Version</b> <code>8.0.3</code> &nbsp;·&nbsp; <b>Node</b> <code>&gt;= 20</code> &nbsp;·&nbsp; <b>CI matrix</b> 20, 22 &nbsp;·&nbsp; <b>License</b> ISC</sub>
-</p>
-
-v8.0.3 changed the default provider from `anthropic` to `deterministic`. If you
-upgraded from an earlier release and your workflow assumed a hosted model,
-opt back in with `--extractor anthropic --session anthropic` (or the
-`EXTRACTOR_PROVIDER` / `SESSION_PROVIDER` env vars). See
-[`docs/migration.md`](docs/migration.md).
-
-v8 is the default architecture. These commands dispatch directly to v8 without a
-version prefix:
-
-```text
-swarm compile
-swarm run
-swarm resume
-swarm stats
-swarm doctor
-```
-
-The legacy verified-branch pipeline remains available through `swarm run --v6`,
-or the older `swarm swarm` / `swarm execute` commands. The `swarm v8 <cmd>` form
-is still accepted for compatibility.
-
----
-
-## Quick start
-
-Requires:
-
-- Node `>= 20`
-- git `>= 2.40`
-
-The default provider requires no model, no API key, and no network access.
+## Install From A Clone
 
 ```bash
 git clone https://github.com/moonrunnerkc/swarm-orchestrator.git
 cd swarm-orchestrator
-
 npm install
 npm run build
 npm link
 ```
 
-Author a contract:
+Check the CLI:
+
+```bash
+swarm --help
+```
+
+## Quick Start
+
+The default provider is `deterministic`: no model, no network, no API key. It
+expects a hand-authored contract and an external patch source.
 
 ```bash
 cat > contract.yaml <<'EOF'
 obligations:
+  - type: build-must-pass
+    command: node -e "process.exit(0)"
   - type: test-must-pass
-    command: npm test
+    command: node -e "process.exit(0)"
+  - type: file-must-exist
+    path: package.json
 EOF
-```
 
-Compile it:
-
-```bash
-swarm compile "verify the test command exits zero" \
+swarm compile "check project metadata exists" \
   --contract-file contract.yaml \
-  --out .swarm/contracts/local
+  --out .swarm/contracts/demo \
+  --yes \
+  --no-editor
+
+printf '' > patches.jsonl
+
+swarm run .swarm/contracts/demo \
+  --external-patches-queue patches.jsonl \
+  --falsifiers off
 ```
 
-Provide externally-generated patches:
+The empty queue is enough when the obligation is already true before patch
+generation. For actual changes, write one JSON envelope per line:
 
-```bash
-echo -n "" > patches.jsonl
+```json
+{"patch":"no-op","source":"manual"}
 ```
 
-Run verification:
+`patch` accepts one of three strict formats: whole-file blocks, unified diffs,
+or the literal `no-op`.
+
+## Commands
+
+| Command | Purpose |
+|---|---|
+| `swarm compile <goal>` | Write `contract.jsonl` and `manifest.json` |
+| `swarm run <contract-dir>` | Apply, verify, falsify, and ledger a compiled contract |
+| `swarm run --goal "<text>"` | Compile and run in one step |
+| `swarm resume <run-id>` | Continue from a prior ledger |
+| `swarm stats <run-id>` | Summarize a run ledger |
+| `swarm doctor` | Probe local prerequisites |
+
+Run any command with `--help` for flags.
+
+For deterministic one-step runs, pass the contract input through the wrapper:
 
 ```bash
-swarm run .swarm/contracts/local \
+swarm run --goal "check project metadata exists" \
+  --contract-file contract.yaml \
   --external-patches-queue patches.jsonl
 ```
-
-Resume a stopped run:
-
-```bash
-swarm resume <run-id>
-```
-
----
 
 ## Providers
 
-All providers implement the same extractor and session interfaces. The verifier,
-falsifiers, ledger, manifests, rollback system, tournament logic, and quality
-gates are shared across providers.
+Provider selection is per call:
 
-### Deterministic (default)
+`flag > env var > .swarm/config.yaml > deterministic`
 
-Offline verification with no model dependency.
+| Provider | Use it when | Required setup |
+|---|---|---|
+| `deterministic` | Contracts and patches come from outside `swarm` | `--contract-file` or `--contract-module`, plus a patch dir, queue, or stdin |
+| `local` | You run your own model endpoint | `LOCAL_LLM_BACKEND`, `LOCAL_LLM_BASE_URL`, and local model env vars |
+| `anthropic` | You want hosted Claude generation | `ANTHROPIC_API_KEY` |
 
-Use when:
+Supported local backends: OpenAI-compatible APIs, Ollama, llama.cpp, and vLLM.
 
-- contracts are hand-authored
-- patches are generated externally
-- reproducibility matters more than generation
+Keep secrets in environment variables. Do not pass API keys through GitHub
+Action inputs or committed config.
 
-Patch sources can include humans, external models, recorded sessions, generated
-diff queues, or stdin streams.
+Provider details: [`docs/providers.md`](docs/providers.md).
 
-```bash
-swarm compile "<goal>" \
-  --contract-file contract.yaml \
-  --out <dir>
+## Contracts
 
-swarm run <dir> \
-  --external-patches-queue patches.jsonl
+Contracts are YAML, JSON, or a CommonJS-loadable module exporting:
+
+```yaml
+obligations:
+  - type: build-must-pass
+    command: npm run build
+  - type: test-must-pass
+    command: npm test
 ```
 
-Additional inputs:
+Supported obligation types:
 
-- `--external-patches-dir <dir>`
-- `--external-patches-stdin`
+- `file-must-exist`
+- `build-must-pass`
+- `test-must-pass`
+- `function-must-have-signature`
+- `property-must-hold`
+- `import-graph-must-satisfy`
+- `coverage-must-exceed`
+- `performance-must-not-regress`
 
-### Local provider
+## Verification
 
-Use any compatible local or self-hosted endpoint.
+A run can use pre-generation checks, streaming verification, post-generation
+verification, falsifier adapters, rollback snapshots, and post-merge checks.
+Confirmed falsifier failures roll back the workspace using snapshots under
+`.swarm/snapshots/<run-id>/`.
 
-Supported backends:
-
-- OpenAI-compatible APIs
-- Ollama
-- llama.cpp
-- vLLM
-
-```bash
-export LOCAL_LLM_BACKEND=openai-compatible
-export LOCAL_LLM_BASE_URL=http://localhost:8080/v1
-export LOCAL_LLM_MODEL_EXTRACTOR=<model>
-export LOCAL_LLM_MODEL_SESSION=<model>
-
-swarm compile "<goal>" --extractor local
-swarm run .swarm/contracts/<id> --session local
-```
-
-Reference profiles (tested combinations, not recommendations — any
-backend-compatible model works):
-
-| Profile | Backend             | Hardware                   | Representative model        |
-| ------- | ------------------- | -------------------------- | --------------------------- |
-| Minimal | `openai-compatible` | CPU only                   | small quantized 3-7B        |
-| Modest  | `ollama`            | Consumer GPU               | mid-size code-trained model |
-| Serious | `llama-cpp`         | Workstation / high-end GPU | larger code model           |
-| Remote  | `vllm`              | Separate inference server  | hosted on a GPU box         |
-
-Full env-var and grammar reference: [`docs/providers.md`](docs/providers.md).
-
-### Anthropic provider
-
-Hosted Claude integration.
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-
-swarm compile "<goal>" --extractor anthropic
-swarm run .swarm/contracts/<id> --session anthropic
-```
-
----
-
-## How it works
+Run artifacts:
 
 ```text
-goal
-  │
-  ▼
-contract compiler
-  │
-  ▼
-contract + manifest
-  │
-  ▼
-session / population manager
-  │
-  ├── generate or ingest patches
-  ├── verify obligations
-  ├── run falsifiers
-  ├── apply rollback if needed
-  └── append ledger evidence
-  │
-  ▼
-committed diff
+.swarm/contracts/<id>/contract.jsonl
+.swarm/contracts/<id>/manifest.json
+.swarm/ledger/<run-id>.jsonl
+.swarm/snapshots/<run-id>/
 ```
 
-### Compile
+Falsifier adapters live under `src/falsification/adapters/`. Defaults:
 
-`swarm compile` produces:
+| Adapter | Default | Handles |
+|---|---|---|
+| Codex | on | `property-must-hold` |
+| Copilot | on | `import-graph-must-satisfy`, `function-must-have-signature` |
+| Claude Code | opt-in | `property-must-hold`, `import-graph-must-satisfy`, `function-must-have-signature` |
 
-- `contract.jsonl`
-- `manifest.json`
+Disable adapter calls with `--falsifiers off`.
 
-All providers emit the same canonical contract format and manifest structure.
-
-### Run
-
-`swarm run` opens a provider session. Depending on provider configuration,
-patches may come from external queues, local inference endpoints, or hosted
-APIs.
-
-Tournament mode evaluates multiple candidates in parallel and selects the top
-verified result.
-
-### Verify
-
-Verification occurs at multiple stages:
-
-- pre-generation
-- streaming
-- post-generation
-- post-merge integration
-
-Nothing commits unless verification succeeds.
-
-### Falsify
-
-After verification, falsifier adapters attempt to surface:
-
-- regressions
-- counter-examples
-- property violations
-
-Confirmed failures trigger rollback using content-addressed snapshots under
-`.swarm/snapshots/<run-id>/`. Rollback integrity is verified against logged
-SHA-256 hashes before restore.
-
-### Record
-
-Every action is appended to `.swarm/ledger/<run-id>.jsonl`. Each ledger entry
-includes the previous entry hash, making tampering detectable. Runs can resume
-from prior ledger state.
-
-Architecture deep-dive: [`ARCHITECTURE.md`](ARCHITECTURE.md).
-
----
-
-## Adapters
-
-`swarm` includes two separate adapter systems.
-
-### Producer adapters
-
-Located in `src/adapters/`. These wrap external coding CLIs for the legacy v6
-verified-branch pipeline.
-
-Supported backends:
-
-- Copilot
-- Claude Code
-- Claude Code Teams
-- Codex
-
-Opt-in only:
-
-```bash
-swarm run --v6
-```
-
-See [`docs/adapters.md`](docs/adapters.md).
-
-### Falsifier adapters
-
-Located in `src/falsification/adapters/`. These attempt to break already-verified
-patches.
-
-| Falsifier             | Default | Obligation types                                                                  |
-| --------------------- | ------- | --------------------------------------------------------------------------------- |
-| `CodexFalsifier`      | on      | `property-must-hold`                                                              |
-| `CopilotFalsifier`    | on      | `import-graph-must-satisfy`, `function-must-have-signature`                       |
-| `ClaudeCodeFalsifier` | opt-in  | `property-must-hold`, `import-graph-must-satisfy`, `function-must-have-signature` |
-
-Global control: `--falsifiers on|off`.
-
-See [`docs/falsification-adapters.md`](docs/falsification-adapters.md).
-
----
-
-## CLI reference
-
-<details>
-<summary><b>View commands</b></summary>
-
-```text
-swarm compile <goal>
-swarm run <contract>
-swarm resume <run-id>
-swarm stats <run-id>
-swarm doctor
-
-swarm run --goal "<text>"
-swarm gates [path]
-swarm recipes
-swarm attest verify <commit>
-```
-
-</details>
-
-Run any command with `--help`. Full reference: [`docs/cli.md`](docs/cli.md).
-
----
+Falsifier details: [`docs/falsification-adapters.md`](docs/falsification-adapters.md).
 
 ## GitHub Action
 
-The GitHub Action inherits the deterministic offline default.
+The Docker action exposes `goal` and `contract-only`. It does not expose
+`--contract-file`, so natural-language Action runs should select model
+providers through environment variables:
 
 ```yaml
-- uses: moonrunnerkc/swarm-orchestrator@v8
+- uses: moonrunnerkc/swarm-orchestrator@v9
   with:
     goal: 'add a /health endpoint'
     contract-only: false
-    cost-cap: '5.00'
   env:
+    EXTRACTOR_PROVIDER: anthropic
+    SESSION_PROVIDER: anthropic
     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
-Anthropic credentials are only required when explicitly using the Anthropic
-provider.
+See [`action.yml`](action.yml) and [`SECURITY.md`](SECURITY.md).
 
-See [`action.yml`](action.yml).
-
----
-
-## Configuration
-
-<details>
-<summary><b>View configuration files</b></summary>
-
-| File                                   | Purpose                              |
-| -------------------------------------- | ------------------------------------ |
-| `.env`, `~/.env`                       | Provider configuration and overrides |
-| `.swarm/contracts/<id>/contract.jsonl` | Compiled obligations                 |
-| `.swarm/contracts/<id>/manifest.json`  | Goal, provenance, contract hash      |
-| `.swarm/ledger/<run-id>.jsonl`         | Append-only execution ledger         |
-| `config/quality-gates.yaml`            | v6 quality gate configuration        |
-| `config/default-agents.yaml`           | v6 agent profiles                    |
-
-</details>
-
-Reference: [`docs/configuration.md`](docs/configuration.md),
-[`CLAUDE.md`](CLAUDE.md).
-
----
-
-## Project layout
+## Project Map
 
 ```text
-src/
-├── contract/
-├── session/
-├── persona/
-├── population/
-├── ledger/
-├── wasm/
-├── verification/
-├── falsification/adapters/
-├── adapters/
-├── quality-gates/
-└── cli/
+src/cli/                 CLI dispatcher and v8 handlers
+src/contract/            contract schema, compiler, validation, serialization
+src/session/             deterministic, local, and Anthropic sessions
+src/population/          candidate orchestration, apply, verify, rollback
+src/verification/        obligation and streaming verifiers
+src/falsification/       falsifier dispatch and adapter profiles
+src/ledger/              append-only hash-chained ledger
+src/inference/local/     local model backends
+config/personas/         persona definitions
 ```
 
----
+## Docs
 
-## Documentation
+- [`docs/providers.md`](docs/providers.md) - provider setup and env vars
+- [`docs/migration.md`](docs/migration.md) - provider migration notes
+- [`docs/falsification-adapters.md`](docs/falsification-adapters.md) - adapter subsystem
+- [`CHANGELOG.md`](CHANGELOG.md) - release history
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) - development workflow
+- [`SECURITY.md`](SECURITY.md) - vulnerability reporting and secret handling
+- [`CLAUDE.md`](CLAUDE.md) - maintainer architecture notes
 
-<details>
-<summary><b>View documentation index</b></summary>
-
-| Document                                                           | Purpose                            |
-| ------------------------------------------------------------------ | ---------------------------------- |
-| [`ARCHITECTURE.md`](ARCHITECTURE.md)                               | System architecture and scheduling |
-| [`docs/providers.md`](docs/providers.md)                           | Provider configuration reference   |
-| [`docs/migration.md`](docs/migration.md)                           | Upgrade and migration notes        |
-| [`docs/configuration.md`](docs/configuration.md)                   | Config file and env precedence     |
-| [`docs/falsification-adapters.md`](docs/falsification-adapters.md) | Falsifier subsystem                |
-| [`docs/adapters.md`](docs/adapters.md)                             | v6 producer adapters               |
-| [`docs/quality-gates.md`](docs/quality-gates.md)                   | Quality gate system                |
-| [`docs/cli.md`](docs/cli.md)                                       | Full CLI reference                 |
-| [`docs/verification.md`](docs/verification.md)                     | Verifier pipeline                  |
-| [`docs/github-action.md`](docs/github-action.md)                   | GitHub Action inputs and outputs   |
-| [`docs/recipes.md`](docs/recipes.md)                               | Built-in recipes                   |
-| [`docs/benchmarks.md`](docs/benchmarks.md)                         | Benchmark harnesses                |
-| [`CHANGELOG.md`](CHANGELOG.md)                                     | Release history                    |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md)                               | Development workflow               |
-| [`SECURITY.md`](SECURITY.md)                                       | Vulnerability reporting            |
-
-</details>
-
----
-
-## Contributing
+## Development
 
 ```bash
 npm install
 npm run build
 npm test
+npm run typecheck
 ```
 
-Before opening a PR:
-
-```bash
-npm test
-node dist/src/cli.js gates .
-```
-
-See [`CONTRIBUTING.md`](CONTRIBUTING.md).
-
----
-
-<div align="center">
-<sub>
-
-[ISC](LICENSE) © 2026 Bradley R. Kinnard / [moonrunnerkc](https://github.com/moonrunnerkc)
-
-</sub>
-</div>
+License: [ISC](LICENSE).

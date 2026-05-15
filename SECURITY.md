@@ -13,19 +13,18 @@ never reads secrets from config files, CLI arguments, or `with:` inputs.
 
 | Secret | Required For | Scope |
 |--------|-------------|-------|
-| `ANTHROPIC_API_KEY` | `--tool claude-code` | Anthropic API access |
-| `OPENAI_API_KEY` | `--tool codex` | OpenAI API access |
-| `GITHUB_TOKEN` | `--tool copilot`, PR creation | Repo contents + PRs only |
+| `ANTHROPIC_API_KEY` | `--extractor anthropic` / `--session anthropic` | Anthropic API access |
+| `OPENAI_API_KEY` | Codex falsifier (`src/falsification/adapters/profiles/codex.ts`) | OpenAI API access |
+| `GITHUB_TOKEN` | Copilot falsifier (`src/falsification/adapters/profiles/copilot.ts`), PR creation | Repo contents + PRs only |
 
 ### GitHub Actions Usage
 
 Always pass secrets via the `env:` block, never via `with:` inputs:
 
 ```yaml
-- uses: moonrunnerkc/swarm-orchestrator@main
+- uses: moonrunnerkc/swarm-orchestrator@v9
   with:
     goal: "Your goal here"
-    tool: claude-code
   env:
     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```

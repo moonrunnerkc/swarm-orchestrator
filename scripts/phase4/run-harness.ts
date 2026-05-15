@@ -49,16 +49,9 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { loadDotenv } from '../../src/env-loader';
-import {
-  CopilotFalsifier,
-  type CopilotInvocationRequest,
-  type CopilotInvocationResult,
-} from '../../src/falsification/adapters/copilot/copilot-falsifier';
-import {
-  ClaudeCodeFalsifier,
-  type ClaudeCodeInvocationRequest,
-  type ClaudeCodeInvocationResult,
-} from '../../src/falsification/adapters/claude-code/claude-code-falsifier';
+import { CliFalsifier, type CliInvocationRequest, type CliInvocationResult } from '../../src/falsification/adapters/cli-falsifier';
+import { copilotProfile } from '../../src/falsification/adapters/profiles/copilot';
+import { claudeCodeProfile } from '../../src/falsification/adapters/profiles/claude-code';
 import type {
   FunctionMustHaveSignatureObligation,
   ImportGraphMustSatisfyObligation,
@@ -283,9 +276,9 @@ function buildAdapters(config: ConfigName): FalsifierAdapter[] {
   // that filtering automatically; the harness mirrors the production
   // dispatch by registering only the adapters whose strategies match.
   if (config === 'bp') {
-    return [new CopilotFalsifier()];
+    return [new CliFalsifier(copilotProfile, )];
   }
-  return [new CopilotFalsifier(), new ClaudeCodeFalsifier()];
+  return [new CliFalsifier(copilotProfile, ), new CliFalsifier(claudeCodeProfile, )];
 }
 
 async function runConfig(
@@ -312,8 +305,8 @@ async function runConfig(
   // pushes to.
   const subprocessCaptures: Array<{
     adapterName: string;
-    request: CopilotInvocationRequest | ClaudeCodeInvocationRequest;
-    result: CopilotInvocationResult | ClaudeCodeInvocationResult;
+    request: CliInvocationRequest | CliInvocationRequest;
+    result: CliInvocationResult | CliInvocationResult;
   }> = [];
 
   // Build adapter-specific instances with onInvocation hooks attached.
@@ -323,7 +316,7 @@ async function runConfig(
   for (const adapter of adapters) {
     if (adapter.name === 'copilot') {
       hookedAdapters.push(
-        new CopilotFalsifier({
+        new CliFalsifier(copilotProfile, {
           onInvocation: (request, result) => {
             subprocessCaptures.push({ adapterName: 'copilot', request, result });
           },
@@ -331,7 +324,7 @@ async function runConfig(
       );
     } else if (adapter.name === 'claude-code') {
       hookedAdapters.push(
-        new ClaudeCodeFalsifier({
+        new CliFalsifier(claudeCodeProfile, {
           onInvocation: (request, result) => {
             subprocessCaptures.push({ adapterName: 'claude-code', request, result });
           },

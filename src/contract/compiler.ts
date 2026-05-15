@@ -17,34 +17,19 @@ import {
 } from './types';
 import { validateObligations, type ValidationError } from './validator';
 
-/** Options to `compileGoal`. */
 export interface CompileOptions {
-  /** Natural-language goal text. */
   goal: string;
-  /** Repo context produced by `discoverRepoContext` or built by the caller. */
   repoContext: RepoContext;
-  /** Extractor implementation to use. */
   extractor: Extractor;
-  /**
-   * Phase 5: when set to false, skip the deterministic-strategy
-   * auto-tagger. Default true — tagging is opt-out so production
-   * compilation always considers the deterministic floor. Tests that
-   * want to inspect raw extractor output use this flag.
-   */
+  // Default true — tagging is opt-out so production compilation always
+  // considers the deterministic floor. Tests inspecting raw extractor
+  // output use this flag.
   autoTagDeterministic?: boolean;
-  /**
-   * Phase 5: explicit list of strategy names available to the tagger.
-   * Defaults to `DEFAULT_STRATEGY_NAMES` (the three first-party
-   * strategies). Custom runtimes pass their own list.
-   */
   availableStrategies?: readonly string[];
 }
 
-/**
- * Error thrown by the compiler when validation rejects extractor output.
- * Carries the raw obligations and validation errors so the CLI handler can
- * present a useful message without re-running the LLM call.
- */
+// Carries raw obligations and validation errors so the CLI handler can
+// render a useful message without re-running the LLM call.
 export class ContractValidationError extends Error {
   readonly obligations: ObligationV1[];
   readonly validationErrors: ValidationError[];
@@ -58,19 +43,6 @@ export class ContractValidationError extends Error {
   }
 }
 
-/**
- * Compile a natural-language goal into a draft contract.
- *
- * Pipeline:
- *   1. Extractor produces candidate obligations from goal + repoContext.
- *   2. Validator checks v1 schema and cross-cutting rules.
- *   3. Canonicalizer sorts the obligations into stable order.
- *   4. Compiler returns the DraftContract with extractor provenance.
- *
- * Throws `ContractValidationError` when validation fails. The caller can
- * inspect `error.obligations` and `error.validationErrors` to render a
- * useful message and offer the user the chance to edit and re-validate.
- */
 export async function compileGoal(options: CompileOptions): Promise<DraftContract> {
   const extracted = await options.extractor.extract({
     goal: options.goal,
@@ -83,12 +55,8 @@ export async function compileGoal(options: CompileOptions): Promise<DraftContrac
   }
 
   // Drop property-must-hold obligations whose predicate already exits
-  // zero against the unmodified workspace. These tautologies inflate
-  // the satisfied-count without measuring any actual change — the
-  // exact failure mode that produced "8/13 satisfied" with zero code
-  // emitted in the May 2026 eval run. We only check when repoRoot
-  // resolves to a real directory; in unit tests with synthetic
-  // contexts (/tmp/example-ts etc.) we skip the check.
+  // zero against the unmodified workspace — May 2026 eval ran with
+  // "8/13 satisfied" and zero code emitted because of this failure mode.
   const { obligations: filteredObligations, tautologyWarnings } = filterBaselineTautologies(
     extracted.obligations,
     options.repoContext.repoRoot,
@@ -114,25 +82,12 @@ export async function compileGoal(options: CompileOptions): Promise<DraftContrac
   return draft;
 }
 
-/**
- * Walk the extractor's property-must-hold obligations, running each
- * predicate against the unmodified workspace. Predicates that exit
- * zero (the property already holds) are tautological — they require
- * no work from any persona — and are dropped from the contract.
- * Other obligation types pass through unchanged.
- *
- * Returns the filtered list and a parallel list of warnings explaining
- * which obligations were dropped and why. Skips the baseline check
- * entirely when `repoRoot` does not resolve to a readable directory
- * (unit tests use synthetic repoContexts like `/tmp/example-ts`).
- */
+// Skips baseline checks for synthetic repoContexts (unit tests use
+// paths like /tmp/example-ts that don't resolve to a real directory).
 function filterBaselineTautologies(
   obligations: readonly ObligationV1[],
   repoRoot: string,
 ): { obligations: ObligationV1[]; tautologyWarnings: TautologyWarning[] } {
-  // Bail out early if the workspace isn't real on disk. The validator
-  // already ensured the obligations are syntactically valid; this step
-  // is a semantic check that needs a real filesystem.
   if (!fs.existsSync(repoRoot) || !fs.statSync(repoRoot).isDirectory()) {
     return { obligations: obligations.slice(), tautologyWarnings: [] };
   }
@@ -159,13 +114,8 @@ function filterBaselineTautologies(
   return { obligations: kept, tautologyWarnings: warnings };
 }
 
-/**
- * Finalize a draft contract: compute its hash, derive its id, stamp a
- * created-at timestamp, and assemble the on-disk manifest. Pure: no I/O.
- *
- * Re-validation is a defensive sweep: the draft is supposed to be valid by
- * construction, so a failure here is a programmer error not a user error.
- */
+// Re-validation here is a defensive sweep: drafts are valid by
+// construction, so a failure here is a programmer error.
 export function finalize(draft: DraftContract, now: Date = new Date()): FinalContract {
   const requireBuild = draft.repoContext.buildCommand !== null;
   const validation = validateObligations(draft.obligations, { requireBuild });
@@ -185,18 +135,6 @@ export function finalize(draft: DraftContract, now: Date = new Date()): FinalCon
   return { manifest, obligations: draft.obligations };
 }
 
-/**
- * Build a `RepoContext` for the given project root by reading package.json
- * and probing for known language signals. Pure read-only inspection.
- *
- * - buildCommand: derived from `scripts.build` (npm-shaped) when present.
- * - testCommand: derived from `scripts.test` when present, with package
- *   manager prefix from lockfile detection (mirrors the convention used by
- *   `src/test-command-discovery.ts`).
- * - language: 'typescript' when tsconfig.json exists, 'javascript' when only
- *   package.json exists, 'python' when pyproject.toml or requirements.txt
- *   exists, else 'unknown'.
- */
 export function discoverRepoContext(repoRoot: string): RepoContext {
   const buildCommand = discoverBuildCommand(repoRoot);
   const testCommand = discoverTestCommandLocal(repoRoot);
@@ -208,10 +146,8 @@ export function discoverRepoContext(repoRoot: string): RepoContext {
     testCommand,
     language,
   };
-  // Field is optional under exactOptionalPropertyTypes; only assign when
-  // we have an actual value (including explicit `null` for "looked but
-  // found nothing"). Leaving the key absent for undetected projects keeps
-  // older manifests bit-identical.
+  // exactOptionalPropertyTypes: leaving the key absent for undetected
+  // projects keeps older manifests bit-identical.
   if (testFramework !== undefined) ctx.testFramework = testFramework;
   return ctx;
 }
@@ -255,32 +191,19 @@ function readPackageJsonScripts(repoRoot: string): PackageJsonProbe | null {
   };
 }
 
-/**
- * Pick the package manager the project actually uses. Priority:
- *   1. The `packageManager` field in package.json (corepack's canonical
- *      signal: `"packageManager": "yarn@4.0.0"` etc.). When present and
- *      parseable, it wins regardless of lockfiles — the project owner
- *      stated which manager to use.
- *   2. Lockfile presence AND the manager's CLI being on PATH. We never
- *      claim "yarn" if `yarn` is not installed, because every downstream
- *      `yarn test` will exit 127 and waste the run.
- *   3. Fall back to `npm` (every Node install ships it).
- *
- * The earlier heuristic — first lockfile wins — silently broke runs in
- * repos with stale lockfiles (e.g. `yarn.lock` left behind after a
- * migration to npm).
- */
+// Earlier "first lockfile wins" heuristic broke runs in repos with
+// stale lockfiles (yarn.lock left over after npm migration). Lockfile
+// + on-PATH is the gate so we never claim "yarn" when yarn is missing.
+// Corepack's `packageManager` declaration wins when present.
 export function detectPackageManager(
   repoRoot: string,
   declaredPackageManager: unknown = undefined,
 ): 'pnpm' | 'yarn' | 'npm' {
-  // 1. Honor an explicit corepack `packageManager` declaration.
   if (typeof declaredPackageManager === 'string') {
     const head = declaredPackageManager.split('@')[0]?.trim();
     if (head === 'pnpm' || head === 'yarn' || head === 'npm') return head;
   }
 
-  // 2. Lockfile + on-PATH.
   const candidates: Array<{ name: 'pnpm' | 'yarn' | 'npm'; lockfile: string }> = [
     { name: 'pnpm', lockfile: 'pnpm-lock.yaml' },
     { name: 'yarn', lockfile: 'yarn.lock' },
@@ -292,16 +215,9 @@ export function detectPackageManager(
     }
   }
 
-  // 3. Universal default — Node ships npm.
   return 'npm';
 }
 
-/**
- * Return true when `command` resolves on PATH. Uses `which` (POSIX)
- * with stdio suppressed; throws are interpreted as "not on PATH".
- * `process.env.PATHEXT` isn't relevant since swarm-orchestrator targets
- * macOS/Linux.
- */
 function isCommandOnPath(command: string): boolean {
   try {
     execSync(`command -v ${command}`, { stdio: ['ignore', 'ignore', 'ignore'] });
@@ -311,21 +227,8 @@ function isCommandOnPath(command: string): boolean {
   }
 }
 
-/**
- * Detect the project's test framework from package.json (Node projects)
- * or pyproject.toml/requirements.txt (Python). Returns null when the signal
- * is absent or ambiguous. The detector is deliberately narrow — only
- * frameworks we know how to write idiomatic tests for ship a label —
- * because a wrong label is worse than no label (the architect would
- * confidently emit Jest API into a Mocha project).
- *
- * Detection rules, first match wins:
- *   - Node: explicit dep on `jest`/`vitest`/`mocha` ⇒ that framework.
- *     Otherwise, if the test script invokes `node --test` (or the
- *     equivalent), treat as Node's built-in `node:test` runner.
- *   - Python: dep on `pytest` (in pyproject.toml or requirements.txt) or
- *     a pytest.ini/tox.ini ⇒ pytest.
- */
+// Narrow on purpose: a wrong label is worse than no label because the
+// architect would confidently emit Jest API into a Mocha project.
 type TestFrameworkLabel = 'jest' | 'mocha' | 'vitest' | 'node-test' | 'pytest' | null;
 
 function detectTestFramework(
@@ -362,8 +265,6 @@ function detectNodeTestFramework(repoRoot: string): TestFrameworkLabel {
   if ('vitest' in allDeps) return 'vitest';
   if ('mocha' in allDeps) return 'mocha';
   const testScript = parsed.scripts?.test ?? '';
-  // Node's built-in runner. Match `node --test`, `node:test`, and the
-  // common `--test` shorthand that piggybacks on a test file glob.
   if (/\bnode\b[^|;&]*--test\b/.test(testScript)) return 'node-test';
   if (/\bnode:test\b/.test(testScript)) return 'node-test';
   return null;

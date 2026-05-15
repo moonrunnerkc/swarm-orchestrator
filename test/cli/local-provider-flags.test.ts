@@ -3,49 +3,38 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
-  applyLocalProviderFlag,
+  buildLocalProviderFlagValues,
   emptyLocalProviderFlagValues,
-  isLocalProviderFlag,
   LOCAL_GRAMMAR_MODES,
-  LOCAL_PROVIDER_FLAG_TOKENS,
+  LOCAL_PROVIDER_FLAG_SCHEMA,
 } from '../../src/cli/v8/local-provider-flags';
+import { runParseArgs } from '../../src/cli/v8/argv-schema';
 
 const identity = (raw: string): string => raw;
 
 function parse(argv: string[]): ReturnType<typeof emptyLocalProviderFlagValues> {
-  const out = emptyLocalProviderFlagValues();
-  for (let i = 0; i < argv.length; i += 1) {
-    const a = argv[i] ?? '';
-    if (isLocalProviderFlag(a)) {
-      i = applyLocalProviderFlag(argv, i, out, identity);
-    } else {
-      throw new Error(`unexpected non-local flag: ${a}`);
-    }
-  }
-  return out;
+  const { values } = runParseArgs(argv, LOCAL_PROVIDER_FLAG_SCHEMA);
+  return buildLocalProviderFlagValues(values as Record<string, unknown>, identity);
 }
 
 describe('cli/v8/local-provider-flags', () => {
-  it('LOCAL_PROVIDER_FLAG_TOKENS lists the ten documented flags', () => {
-    assert.equal(LOCAL_PROVIDER_FLAG_TOKENS.length, 10);
-    assert.ok(LOCAL_PROVIDER_FLAG_TOKENS.includes('--local-backend'));
-    assert.ok(LOCAL_PROVIDER_FLAG_TOKENS.includes('--local-base-url'));
-    assert.ok(LOCAL_PROVIDER_FLAG_TOKENS.includes('--local-model-extractor'));
-    assert.ok(LOCAL_PROVIDER_FLAG_TOKENS.includes('--local-model-session'));
-    assert.ok(LOCAL_PROVIDER_FLAG_TOKENS.includes('--local-persona-model-map'));
-    assert.ok(LOCAL_PROVIDER_FLAG_TOKENS.includes('--local-grammar'));
-    assert.ok(LOCAL_PROVIDER_FLAG_TOKENS.includes('--local-request-timeout-ms'));
-    assert.ok(LOCAL_PROVIDER_FLAG_TOKENS.includes('--local-max-concurrency'));
-    assert.ok(LOCAL_PROVIDER_FLAG_TOKENS.includes('--local-api-key'));
-    assert.ok(LOCAL_PROVIDER_FLAG_TOKENS.includes('--local-seed'));
-  });
-
-  it('isLocalProviderFlag recognizes every documented flag and rejects others', () => {
-    for (const t of LOCAL_PROVIDER_FLAG_TOKENS) {
-      assert.equal(isLocalProviderFlag(t), true, `${t} should be a local flag`);
+  it('LOCAL_PROVIDER_FLAG_SCHEMA covers the ten documented flags', () => {
+    const keys = Object.keys(LOCAL_PROVIDER_FLAG_SCHEMA);
+    assert.equal(keys.length, 10);
+    for (const k of [
+      'local-backend',
+      'local-base-url',
+      'local-model-extractor',
+      'local-model-session',
+      'local-persona-model-map',
+      'local-grammar',
+      'local-request-timeout-ms',
+      'local-max-concurrency',
+      'local-api-key',
+      'local-seed',
+    ]) {
+      assert.ok(keys.includes(k), `${k} should be in the schema`);
     }
-    assert.equal(isLocalProviderFlag('--extractor'), false);
-    assert.equal(isLocalProviderFlag('--local-unknown'), false);
   });
 
   it('--local-backend stores a valid backend name', () => {
@@ -197,7 +186,7 @@ describe('cli/v8/local-provider-flags', () => {
   it('a flag without a value raises a corrective error', () => {
     assert.throws(
       () => parse(['--local-backend']),
-      /--local-backend requires a value/,
+      /--local-backend.*(requires a value|argument)/,
     );
   });
 });

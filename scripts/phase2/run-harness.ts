@@ -61,11 +61,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { loadDotenv } from '../../src/env-loader';
-import {
-  CodexFalsifier,
-  type CodexInvocationRequest,
-  type CodexInvocationResult,
-} from '../../src/falsification/adapters/codex/codex-falsifier';
+import { CliFalsifier, type CliInvocationRequest, type CliInvocationResult } from '../../src/falsification/adapters/cli-falsifier';
+import { codexProfile } from '../../src/falsification/adapters/profiles/codex';
 import type { ObligationV1, PropertyMustHoldObligation } from '../../src/contract/types';
 import type { FalsificationInput, FalsifyOutcome } from '../../src/falsification/adapters/types';
 
@@ -356,9 +353,9 @@ async function runConfigB(
   copyFixtureInto(fixtureRoot, workspaceRoot);
 
   const obligation = toObligation(sample);
-  let lastInvocation: { request: CodexInvocationRequest; result: CodexInvocationResult } | null =
+  let lastInvocation: { request: CliInvocationRequest; result: CliInvocationResult } | null =
     null;
-  const falsifier = new CodexFalsifier({
+  const falsifier = new CliFalsifier(codexProfile, {
     onInvocation: (request, result) => {
       lastInvocation = { request, result };
     },
@@ -387,7 +384,7 @@ async function runConfigB(
     errorMessage = err instanceof Error ? err.message : String(err);
   } finally {
     if (lastInvocation !== null) {
-      const li = lastInvocation as { request: CodexInvocationRequest; result: CodexInvocationResult };
+      const li = lastInvocation as { request: CliInvocationRequest; result: CliInvocationResult };
       fs.writeFileSync(
         path.join(obligationDir, 'request.json'),
         JSON.stringify(
@@ -449,11 +446,11 @@ async function runConfigB(
   fs.writeFileSync(path.join(obligationDir, 'result.json'), JSON.stringify(outcome, null, 2) + '\n');
   const codexStdoutTxt =
     lastInvocation !== null
-      ? (lastInvocation as { result: CodexInvocationResult }).result.stdout
+      ? (lastInvocation as { result: CliInvocationResult }).result.stdout
       : '';
   const codexStderrTxt =
     lastInvocation !== null
-      ? (lastInvocation as { result: CodexInvocationResult }).result.stderr
+      ? (lastInvocation as { result: CliInvocationResult }).result.stderr
       : '';
   fs.writeFileSync(
     path.join(obligationDir, 'stdout.log'),

@@ -19,9 +19,8 @@ export interface RunV8Deps {
 const DEFAULT_DEPS: RunV8Deps = { handleCompile, handleRun };
 
 /**
- * Entry point for `swarm run` under v8 default-dispatch (impl guide §12
- * line 275: "after Phase 4, v8 becomes opt-out: default switches to v8,
- * `--v6` flag preserves old behavior").
+ * Entry point for `swarm run`. v8 is now the only path; v6 was removed
+ * in v9.0.0.
  *
  * The wrapper reads a `--goal "..."` flag, runs `swarm v8 compile` on it
  * (deterministic extractor by default; `--extractor` selects), writes the
@@ -50,9 +49,7 @@ export async function handleRunV8(
   const split = splitArgv(argv);
 
   if (split.goal === null) {
-    logger.error(
-      'swarm run (v8 default): missing --goal "<description>". Pass --v6 to opt into the legacy CLI-subprocess path.',
-    );
+    logger.error('swarm run: missing --goal "<description>".');
     return 1;
   }
 
@@ -73,6 +70,8 @@ export async function handleRunV8(
   if (split.apiKey !== null) compileArgv.push('--api-key', split.apiKey);
   if (split.model !== null) compileArgv.push('--model', split.model);
   if (split.temperature !== null) compileArgv.push('--temperature', String(split.temperature));
+  if (split.contractFile !== null) compileArgv.push('--contract-file', split.contractFile);
+  if (split.contractModule !== null) compileArgv.push('--contract-module', split.contractModule);
 
   // The compile step writes to `<out>/<contract-id>/`. We re-derive the
   // path from the manifest immediately after compile.
@@ -107,6 +106,8 @@ interface SplitArgv {
   apiKey: string | null;
   model: string | null;
   temperature: number | null;
+  contractFile: string | null;
+  contractModule: string | null;
   runPassthrough: string[];
 }
 
@@ -124,6 +125,8 @@ function splitArgv(argv: string[]): SplitArgv {
     apiKey: null,
     model: null,
     temperature: null,
+    contractFile: null,
+    contractModule: null,
     runPassthrough: [],
   };
   for (let i = 0; i < argv.length; i += 1) {
@@ -150,6 +153,10 @@ function splitArgv(argv: string[]): SplitArgv {
         throw new Error(`invalid --temperature "${raw}"; must be a number`);
       }
       out.temperature = n;
+    } else if (arg === '--contract-file') {
+      out.contractFile = requireValue(argv, ++i, '--contract-file');
+    } else if (arg === '--contract-module') {
+      out.contractModule = requireValue(argv, ++i, '--contract-module');
     } else {
       out.runPassthrough.push(arg);
     }

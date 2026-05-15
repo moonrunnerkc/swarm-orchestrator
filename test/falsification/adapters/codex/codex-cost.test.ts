@@ -3,7 +3,7 @@ import {
   dollarsForUsage,
   dollarsForUsageByAuth,
   parseCodexUsage,
-} from '../../../../src/falsification/adapters/codex/codex-cost';
+} from '../../../../src/falsification/adapters/profiles/codex';
 
 describe('codex cost parsing and pricing', () => {
   describe('parseCodexUsage', () => {
