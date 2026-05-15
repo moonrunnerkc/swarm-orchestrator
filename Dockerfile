@@ -30,9 +30,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
 COPY --from=build /app/dist/ dist/
-COPY agents/ agents/
 COPY config/ config/
-COPY plugin/ plugin/
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh && chmod +x dist/src/cli.js
 

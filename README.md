@@ -68,17 +68,16 @@ The architectural rule is simple:
 ## Status
 
 <p align="center">
-<sub><b>Version</b> <code>8.0.3</code> &nbsp;·&nbsp; <b>Node</b> <code>&gt;= 20</code> &nbsp;·&nbsp; <b>CI matrix</b> 20, 22 &nbsp;·&nbsp; <b>License</b> ISC</sub>
+<sub><b>Version</b> <code>9.0.0</code> &nbsp;·&nbsp; <b>Node</b> <code>&gt;= 20</code> &nbsp;·&nbsp; <b>CI matrix</b> 20, 22 &nbsp;·&nbsp; <b>License</b> ISC</sub>
 </p>
 
-v8.0.3 changed the default provider from `anthropic` to `deterministic`. If you
-upgraded from an earlier release and your workflow assumed a hosted model,
-opt back in with `--extractor anthropic --session anthropic` (or the
-`EXTRACTOR_PROVIDER` / `SESSION_PROVIDER` env vars). See
-[`docs/migration.md`](docs/migration.md).
+v9.0.0 removes the legacy v6 verified-branch pipeline. Pin to `8.0.x` if you
+still depend on `swarm run --v6` or the v6 top-level commands. v8.0.3 made
+`deterministic` the default extractor and session provider; that default
+carries forward unchanged.
 
-v8 is the default architecture. These commands dispatch directly to v8 without a
-version prefix:
+v8 is the only supported architecture. These commands dispatch directly to v8
+without a version prefix:
 
 ```text
 swarm compile
@@ -88,9 +87,10 @@ swarm stats
 swarm doctor
 ```
 
-The legacy verified-branch pipeline remains available through `swarm run --v6`,
-or the older `swarm swarm` / `swarm execute` commands. The `swarm v8 <cmd>` form
-is still accepted for compatibility.
+The `swarm v8 <cmd>` form is still accepted for compatibility. The legacy
+verified-branch pipeline (`swarm run --v6`, `swarm swarm`, `swarm execute`,
+`swarm bootstrap`, `swarm plan`, etc.) was removed in v9.0.0; pin to `8.0.x` if
+you still depend on it.
 
 ---
 
@@ -301,35 +301,11 @@ Every action is appended to `.swarm/ledger/<run-id>.jsonl`. Each ledger entry
 includes the previous entry hash, making tampering detectable. Runs can resume
 from prior ledger state.
 
-Architecture deep-dive: [`ARCHITECTURE.md`](ARCHITECTURE.md).
+Architecture details: [`CLAUDE.md`](CLAUDE.md) covers module boundaries; [`docs/falsification-adapters.md`](docs/falsification-adapters.md) covers the falsifier subsystem.
 
 ---
 
-## Adapters
-
-`swarm` includes two separate adapter systems.
-
-### Producer adapters
-
-Located in `src/adapters/`. These wrap external coding CLIs for the legacy v6
-verified-branch pipeline.
-
-Supported backends:
-
-- Copilot
-- Claude Code
-- Claude Code Teams
-- Codex
-
-Opt-in only:
-
-```bash
-swarm run --v6
-```
-
-See [`docs/adapters.md`](docs/adapters.md).
-
-### Falsifier adapters
+## Falsifier adapters
 
 Located in `src/falsification/adapters/`. These attempt to break already-verified
 patches.
@@ -359,14 +335,11 @@ swarm stats <run-id>
 swarm doctor
 
 swarm run --goal "<text>"
-swarm gates [path]
-swarm recipes
-swarm attest verify <commit>
 ```
 
 </details>
 
-Run any command with `--help`. Full reference: [`docs/cli.md`](docs/cli.md).
+Run any command with `--help`.
 
 ---
 
@@ -375,7 +348,7 @@ Run any command with `--help`. Full reference: [`docs/cli.md`](docs/cli.md).
 The GitHub Action inherits the deterministic offline default.
 
 ```yaml
-- uses: moonrunnerkc/swarm-orchestrator@v8
+- uses: moonrunnerkc/swarm-orchestrator@v9
   with:
     goal: 'add a /health endpoint'
     contract-only: false
@@ -387,7 +360,7 @@ The GitHub Action inherits the deterministic offline default.
 Anthropic credentials are only required when explicitly using the Anthropic
 provider.
 
-See [`action.yml`](action.yml).
+See [`action.yml`](action.yml) for input declarations.
 
 ---
 
@@ -402,13 +375,10 @@ See [`action.yml`](action.yml).
 | `.swarm/contracts/<id>/contract.jsonl` | Compiled obligations                 |
 | `.swarm/contracts/<id>/manifest.json`  | Goal, provenance, contract hash      |
 | `.swarm/ledger/<run-id>.jsonl`         | Append-only execution ledger         |
-| `config/quality-gates.yaml`            | v6 quality gate configuration        |
-| `config/default-agents.yaml`           | v6 agent profiles                    |
 
 </details>
 
-Reference: [`docs/configuration.md`](docs/configuration.md),
-[`CLAUDE.md`](CLAUDE.md).
+Reference: [`CLAUDE.md`](CLAUDE.md).
 
 ---
 
@@ -424,8 +394,7 @@ src/
 ├── wasm/
 ├── verification/
 ├── falsification/adapters/
-├── adapters/
-├── quality-gates/
+├── inference/
 └── cli/
 ```
 
@@ -438,18 +407,12 @@ src/
 
 | Document                                                           | Purpose                            |
 | ------------------------------------------------------------------ | ---------------------------------- |
-| [`ARCHITECTURE.md`](ARCHITECTURE.md)                               | System architecture and scheduling |
 | [`docs/providers.md`](docs/providers.md)                           | Provider configuration reference   |
 | [`docs/migration.md`](docs/migration.md)                           | Upgrade and migration notes        |
 | [`docs/configuration.md`](docs/configuration.md)                   | Config file and env precedence     |
 | [`docs/falsification-adapters.md`](docs/falsification-adapters.md) | Falsifier subsystem                |
-| [`docs/adapters.md`](docs/adapters.md)                             | v6 producer adapters               |
-| [`docs/quality-gates.md`](docs/quality-gates.md)                   | Quality gate system                |
-| [`docs/cli.md`](docs/cli.md)                                       | Full CLI reference                 |
-| [`docs/verification.md`](docs/verification.md)                     | Verifier pipeline                  |
-| [`docs/github-action.md`](docs/github-action.md)                   | GitHub Action inputs and outputs   |
-| [`docs/recipes.md`](docs/recipes.md)                               | Built-in recipes                   |
-| [`docs/benchmarks.md`](docs/benchmarks.md)                         | Benchmark harnesses                |
+| [`docs/providers.md`](docs/providers.md)                           | Provider configuration reference   |
+| [`docs/migration.md`](docs/migration.md)                           | Upgrade and migration notes        |
 | [`CHANGELOG.md`](CHANGELOG.md)                                     | Release history                    |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md)                               | Development workflow               |
 | [`SECURITY.md`](SECURITY.md)                                       | Vulnerability reporting            |
@@ -470,7 +433,7 @@ Before opening a PR:
 
 ```bash
 npm test
-node dist/src/cli.js gates .
+npm run typecheck
 ```
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md).

@@ -1,56 +1,21 @@
 name: 'Falsifying Swarm Orchestrator'
-description: 'Falsification battery and signed attestation for AI-authored code. Verified branches, audit-ready run artifacts.'
+description: 'Contract-first AI coding swarm. Compiles a goal into typed obligations, races persona candidates per obligation, verifies before commit.'
 branding:
   icon: 'cpu'
   color: 'blue'
 
 inputs:
   goal:
-    description: 'Natural language goal for plan generation and execution'
-    required: false
-  plan:
-    description: 'Path to an existing plan JSON file'
-    required: false
-  recipe:
-    description: 'Name of a built-in recipe (e.g., add-tests, add-auth)'
-    required: false
-  tool:
-    description: 'CLI agent to use (copilot, claude-code, codex, claude-code-teams). Default: copilot'
-    required: false
-    default: 'copilot'
-  model:
-    description: 'Model name for agent sessions (e.g., claude-sonnet-4, o3)'
-    required: false
-  max-retries:
-    description: 'Maximum retry attempts for queued and repair retries'
-    required: false
-    default: '3'
-  pr:
-    description: 'PR mode: auto (merge on pass) or review (wait for approval)'
-    required: false
-    default: 'review'
-  sarif:
-    description: 'When true, run quality gates and upload results as SARIF to GitHub code scanning'
-    required: false
-    default: 'false'
+    description: 'Natural-language goal. Compiled into a contract, then either executed or returned (see contract-only).'
+    required: true
   contract-only:
-    description: 'v8: when true, compile the goal into a contract and stop without executing it. Output: the contract directory under .swarm/contracts/.'
+    description: 'When true, compile the goal into a contract and stop without executing it. Output: the contract directory under .swarm/contracts/.'
     required: false
     default: 'false'
-  cost-cap:
-    description: 'v8: hard cost ceiling in USD. The run aborts after the obligation that pushes cumulative estimated spend past the cap. Empty disables the cap.'
-    required: false
-    default: ''
 
 outputs:
   result:
-    description: 'JSON summary of the swarm execution (steps, pass/fail, timing)'
-  plan-path:
-    description: 'Path to the generated or used plan file'
-  pr-url:
-    description: 'URL of the created pull request (if --pr mode was active)'
-  sarif-path:
-    description: 'Path to the SARIF file when sarif=true'
+    description: 'JSON summary of the run (obligations satisfied, tokens, wall time)'
 
 runs:
   using: 'docker'

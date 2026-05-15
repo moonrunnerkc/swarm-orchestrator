@@ -1,9 +1,0 @@
-{
-  "name": "swarm-scope-enforcement",
-  "description": "Block file operations outside the current step's declared scope",
-  "event": "preToolUse",
-  "tools": ["editFile", "createFile", "deleteFile", "insertText", "replaceText"],
-  "command": "node -e \"const ctx = JSON.parse(process.env.COPILOT_HOOK_CONTEXT || '{}'); const scope = JSON.parse(process.env.SWARM_STEP_SCOPE || '[]'); if (scope.length === 0) { process.exit(0); } const filePath = (ctx.arguments || {}).path || (ctx.arguments || {}).filePath || ''; const allowed = scope.some(s => filePath.includes(s)); if (!allowed) { console.error(JSON.stringify({ decision: 'deny', reason: 'File ' + filePath + ' is outside this agent step scope: ' + scope.join(', ') })); process.exit(1); }\"",
-  "enabled": false,
-  "_comment": "Stub for Upgrade 3 (Hooks Injection). Enable when hook generator is implemented."
-}
