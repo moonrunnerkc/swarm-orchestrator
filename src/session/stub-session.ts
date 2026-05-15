@@ -64,9 +64,7 @@ export interface StubSessionOptions {
  * matching how Anthropic's prompt cache actually behaves on a hot prefix.
  *
  * Token estimates use the conventional "4 chars per token" heuristic. This
- * is approximate but sufficient for unit tests; the synthetic-mode
- * benchmark applies the same heuristic on both the v6 and v8 sides so the
- * comparison is fair.
+ * is approximate but sufficient for unit tests.
  */
 export class StubSession implements Session {
   private cumulative: SessionUsage = emptyUsage();

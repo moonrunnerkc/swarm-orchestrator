@@ -19,9 +19,8 @@ export interface RunV8Deps {
 const DEFAULT_DEPS: RunV8Deps = { handleCompile, handleRun };
 
 /**
- * Entry point for `swarm run` under v8 default-dispatch (impl guide §12
- * line 275: "after Phase 4, v8 becomes opt-out: default switches to v8,
- * `--v6` flag preserves old behavior").
+ * Entry point for `swarm run`. v8 is now the only path; v6 was removed
+ * in v9.0.0.
  *
  * The wrapper reads a `--goal "..."` flag, runs `swarm v8 compile` on it
  * (deterministic extractor by default; `--extractor` selects), writes the
@@ -50,9 +49,7 @@ export async function handleRunV8(
   const split = splitArgv(argv);
 
   if (split.goal === null) {
-    logger.error(
-      'swarm run (v8 default): missing --goal "<description>". Pass --v6 to opt into the legacy CLI-subprocess path.',
-    );
+    logger.error('swarm run: missing --goal "<description>".');
     return 1;
   }
 

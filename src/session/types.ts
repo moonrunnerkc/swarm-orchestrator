@@ -34,8 +34,7 @@ export const CACHE_READ_MULTIPLIER = 0.1;
 export const CACHE_WRITE_MULTIPLIER = 1.25;
 
 // Input tokens normalized to standard-rate equivalents using the
-// Anthropic cache multipliers — the comparable cost surface for
-// v6 (no caching) vs v8 (caching).
+// Anthropic cache multipliers.
 export function effectiveInputTokens(u: SessionUsage): number {
   return (
     u.inputTokens +
