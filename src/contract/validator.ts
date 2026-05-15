@@ -166,7 +166,7 @@ export function validateObligations(
 
     for (const check of OBLIGATION_FIELD_CHECKS[obligation.type]) {
       const value = readStringField(obligation, check.field);
-      let err: ValidationError | null = null;
+      let err: ValidationError | null;
       if (check.kind === 'path') err = checkPath(value, i);
       else if (check.kind === 'command') err = checkCommand(value, i);
       else err = checkNonemptyField(value, i, check.field as EmptyFieldName);

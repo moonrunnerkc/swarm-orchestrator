@@ -44,11 +44,14 @@ export interface DoctorFlags {
    * aren't standalone git repos.
    */
   requireGit: boolean;
+  /** Set when `--help`/`-h` was passed; the handler short-circuits with exit 0. */
+  helpRequested: boolean;
 }
 
 /** Top-level dispatcher for the `doctor` subcommand. */
 export async function handleDoctor(argv: string[]): Promise<number> {
   const flags = parseFlags(argv);
+  if (flags.helpRequested) return 0;
   const results: ProbeResult[] = [];
 
   results.push(probeApiKey());
@@ -88,7 +91,8 @@ const DOCTOR_SCHEMA: ParseArgsOptions = {
 
 function parseFlags(argv: string[]): DoctorFlags {
   const { values } = runParseArgs(argv, DOCTOR_SCHEMA);
-  if (readBoolean(values, 'help')) {
+  const helpRequested = readBoolean(values, 'help');
+  if (helpRequested) {
     process.stderr.write(
       [
         'usage: swarm v8 doctor [flags]',
@@ -96,6 +100,7 @@ function parseFlags(argv: string[]): DoctorFlags {
         'flags:',
         '  --cwd <path>      directory to inspect (default: process.cwd())',
         '  --require-git     fail if cwd is not inside a writable git repo',
+        '  --help, -h        show this message',
         '',
       ].join('\n'),
     );
@@ -104,6 +109,7 @@ function parseFlags(argv: string[]): DoctorFlags {
   return {
     cwd: cwd !== undefined ? path.resolve(cwd) : process.cwd(),
     requireGit: readBoolean(values, 'require-git'),
+    helpRequested,
   };
 }
 

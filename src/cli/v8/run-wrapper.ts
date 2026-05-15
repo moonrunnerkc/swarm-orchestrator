@@ -70,6 +70,8 @@ export async function handleRunV8(
   if (split.apiKey !== null) compileArgv.push('--api-key', split.apiKey);
   if (split.model !== null) compileArgv.push('--model', split.model);
   if (split.temperature !== null) compileArgv.push('--temperature', String(split.temperature));
+  if (split.contractFile !== null) compileArgv.push('--contract-file', split.contractFile);
+  if (split.contractModule !== null) compileArgv.push('--contract-module', split.contractModule);
 
   // The compile step writes to `<out>/<contract-id>/`. We re-derive the
   // path from the manifest immediately after compile.
@@ -104,6 +106,8 @@ interface SplitArgv {
   apiKey: string | null;
   model: string | null;
   temperature: number | null;
+  contractFile: string | null;
+  contractModule: string | null;
   runPassthrough: string[];
 }
 
@@ -121,6 +125,8 @@ function splitArgv(argv: string[]): SplitArgv {
     apiKey: null,
     model: null,
     temperature: null,
+    contractFile: null,
+    contractModule: null,
     runPassthrough: [],
   };
   for (let i = 0; i < argv.length; i += 1) {
@@ -147,6 +153,10 @@ function splitArgv(argv: string[]): SplitArgv {
         throw new Error(`invalid --temperature "${raw}"; must be a number`);
       }
       out.temperature = n;
+    } else if (arg === '--contract-file') {
+      out.contractFile = requireValue(argv, ++i, '--contract-file');
+    } else if (arg === '--contract-module') {
+      out.contractModule = requireValue(argv, ++i, '--contract-module');
     } else {
       out.runPassthrough.push(arg);
     }

@@ -18,6 +18,7 @@
  * default; `--ledger <path>` overrides.
  */
 
+import * as fs from 'fs';
 import * as path from 'path';
 import { readEntries } from '../../ledger/jsonl-ledger';
 import type { LedgerEntry } from '../../ledger/types';
@@ -32,10 +33,29 @@ interface StatsFlags {
 const STATS_SCHEMA: ParseArgsOptions = {
   ledger: { type: 'string' },
   json: { type: 'boolean' },
+  help: { type: 'boolean', short: 'h' },
 };
+
+function printStatsUsage(): void {
+  process.stderr.write(
+    [
+      'usage: swarm v8 stats <run-id> [flags]',
+      '',
+      'flags:',
+      '  --ledger <path>   ledger jsonl path (default .swarm/ledger/<run-id>.jsonl)',
+      '  --json            emit machine-readable JSON instead of plain text',
+      '  --help, -h        show this message',
+      '',
+    ].join('\n'),
+  );
+}
 
 function parseStatsFlags(argv: string[]): StatsFlags {
   const { values, positionals } = runParseArgs(argv, STATS_SCHEMA);
+  if (readBoolean(values, 'help')) {
+    printStatsUsage();
+    throw new Error('help requested');
+  }
   if (positionals.length === 0) {
     throw new Error('missing run-id: usage `swarm v8 stats <run-id> [flags]`');
   }
@@ -224,11 +244,18 @@ export async function handleStats(argv: string[]): Promise<number> {
   try {
     flags = parseStatsFlags(argv);
   } catch (err) {
-    process.stderr.write(`${(err as Error).message}\n`);
+    const msg = (err as Error).message;
+    if (msg === 'help requested') return 0;
+    process.stderr.write(`${msg}\n`);
     return 1;
   }
 
   const ledgerPath = flags.ledgerPath ?? path.join(process.cwd(), '.swarm', 'ledger', `${flags.runId}.jsonl`);
+
+  if (!fs.existsSync(ledgerPath)) {
+    process.stderr.write(`ledger not found at ${ledgerPath}\n`);
+    return 1;
+  }
 
   let entries: LedgerEntry[];
   try {
