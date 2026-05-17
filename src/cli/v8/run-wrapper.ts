@@ -193,7 +193,9 @@ function requireValue(argv: string[], index: number, flag: string): string {
 
 /**
  * Find the most recently created contract directory under `parent`.
- * Used to discover the contract dir handleCompile just wrote.
+ * Uses manifest.json mtime when available, falling back to directory mtime.
+ * Manifest mtime is more stable because the directory mtime changes on any
+ * nested file modification.
  */
 function findLatestContractDir(parent: string): string | null {
   const fs = require('fs') as typeof import('fs');
@@ -206,7 +208,13 @@ function findLatestContractDir(parent: string): string | null {
   let latest = entries[0] ?? '';
   let latestMtime = 0;
   for (const dir of entries) {
-    const mt = fs.statSync(dir).mtimeMs;
+    const manifestPath = path.join(dir, 'manifest.json');
+    let mt: number;
+    try {
+      mt = fs.statSync(manifestPath).mtimeMs;
+    } catch {
+      mt = fs.statSync(dir).mtimeMs;
+    }
     if (mt > latestMtime) {
       latestMtime = mt;
       latest = dir;

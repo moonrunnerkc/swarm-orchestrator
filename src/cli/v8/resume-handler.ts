@@ -63,8 +63,15 @@ export interface ResumeFlags {
   resultPath: string | null;
   mode: 'single' | 'tournament';
   candidates: number | null;
-  /** Phase 5: enable the WASM deterministic floor on resume. Default true. */
+  /**
+   * Phase 5: enable the WASM deterministic floor on resume. Default true.
+   */
   deterministic: boolean;
+  /**
+   * Adapter-reintegration: enable or disable falsifier dispatch on resume.
+   * Default 'on'. When 'off', the dispatcher is bypassed.
+   */
+  falsifiers: 'on' | 'off';
   /** Phase 6: enable streaming verification on resume. Default true. */
   streaming: boolean;
   /** Phase 6: enable post-merge integration check on resume. Default true. */
@@ -122,9 +129,33 @@ export async function handleResume(
   }
 
   const repoRoot = path.resolve(flags.repoRoot);
-  const ledgerPath = flags.ledgerPath
+  let ledgerPath = flags.ledgerPath
     ? path.resolve(flags.ledgerPath)
     : path.join(repoRoot, '.swarm', 'ledger', `${flags.runId}.jsonl`);
+  if (!fs.existsSync(ledgerPath)) {
+    // If the exact path is missing, scan .swarm/ledger for any .jsonl file
+    // whose first line is a run-started entry with a matching run id. This
+    // covers resumes of runs that wrote to a custom --ledger name.
+    const ledgerDir = path.join(repoRoot, '.swarm', 'ledger');
+    if (fs.existsSync(ledgerDir)) {
+      for (const name of fs.readdirSync(ledgerDir)) {
+        if (!name.endsWith('.jsonl')) continue;
+        const candidate = path.join(ledgerDir, name);
+        try {
+          const firstLine = fs.readFileSync(candidate, 'utf8').split('\n')[0];
+          if (firstLine) {
+            const entry = JSON.parse(firstLine);
+            if (entry.runId === flags.runId || entry.id === flags.runId) {
+              ledgerPath = candidate;
+              break;
+            }
+          }
+        } catch {
+          // skip unreadable or malformed ledger files
+        }
+      }
+    }
+  }
   if (!fs.existsSync(ledgerPath)) {
     logger.error(`ledger not found at ${ledgerPath}`);
     return 1;
@@ -245,6 +276,7 @@ export async function handleResume(
     memoStore,
     preGeneration: flags.preGeneration,
     postMerge: flags.postMerge,
+    falsifiers: flags.falsifiers,
   };
   if (flags.streaming) {
     runOptions.streaming = { forbiddenImports: flags.forbiddenImports };
@@ -426,6 +458,7 @@ const RESUME_SCHEMA: ParseArgsOptions = {
   result: { type: 'string' },
   mode: { type: 'string' },
   candidates: { type: 'string' },
+  falsifiers: { type: 'string' },
   'no-deterministic': { type: 'boolean' },
   'no-streaming': { type: 'boolean' },
   'no-post-merge': { type: 'boolean' },
@@ -446,6 +479,7 @@ export function parseResumeFlags(argv: string[]): ResumeFlags {
   const sessionRaw = readString(values, 'session');
   const modeRaw = readString(values, 'mode');
   const candidatesRaw = readString(values, 'candidates');
+  const falsifiersRaw = readString(values, 'falsifiers');
   const externalPatchesTimeoutRaw = readString(values, 'external-patches-timeout-ms');
   const commandTimeoutRaw = readString(values, 'command-timeout-ms');
   const tokenBudgetRaw = readString(values, 'cost-cap');
@@ -482,6 +516,7 @@ export function parseResumeFlags(argv: string[]): ResumeFlags {
     resultPath: readString(values, 'result') ?? null,
     mode: modeRaw !== undefined ? requireEnum(modeRaw, '--mode', ['single', 'tournament'] as const) : 'single',
     candidates: candidatesRaw !== undefined ? parseCandidates(candidatesRaw) : null,
+    falsifiers: falsifiersRaw !== undefined ? requireEnum(falsifiersRaw, '--falsifiers', ['on', 'off'] as const) : 'on',
     deterministic: !readBoolean(values, 'no-deterministic'),
     streaming: !readBoolean(values, 'no-streaming'),
     postMerge: !readBoolean(values, 'no-post-merge'),

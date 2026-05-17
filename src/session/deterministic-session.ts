@@ -187,9 +187,10 @@ export class DeterministicSession implements Session {
         return envelope;
       }
       if (Date.now() >= deadline) {
+        const exhausted = this.source.kind === 'queue' && this.queue.length === 0;
         throw new Error(
           `deterministic session: no external patch envelope available for persona "${personaId}" ` +
-            `within ${timeoutMs} ms. Source: ${describeSource(this.source)}.`,
+            `within ${timeoutMs} ms${exhausted ? ' (queue exhausted)' : ''}. Source: ${describeSource(this.source)}.`,
         );
       }
       await sleep(POLL_INTERVAL_MS);
