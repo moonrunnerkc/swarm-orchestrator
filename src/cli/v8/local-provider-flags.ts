@@ -2,11 +2,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { ResolvedLocalProviderConfig } from '../../config/provider-config';
 import { LOCAL_BACKEND_NAMES, type LocalBackendName } from '../../inference/local/factory';
+import { LOCAL_GRAMMAR_MODES, type LocalGrammarMode } from './local-provider-types';
 import {
   requireNonNegativeInt,
   requirePositiveInt,
   type ParseArgsOptions,
 } from './argv-schema';
+export { LOCAL_GRAMMAR_MODES };
 
 /**
  * Shared parsing for the `--local-*` family of flags that configure the
@@ -28,17 +30,7 @@ import {
  *     (`resolveEffectiveLocalProvider`).
  */
 
-/** Identifier for the local-session grammar mode. */
-export type LocalGrammarMode = 'auto' | 'gbnf' | 'json-schema' | 'outlines' | 'none';
 
-/** Identifiers accepted by `--local-grammar`. */
-export const LOCAL_GRAMMAR_MODES: readonly LocalGrammarMode[] = [
-  'auto',
-  'gbnf',
-  'json-schema',
-  'outlines',
-  'none',
-] as const;
 
 /** Resolved local-provider flag values, all optional. */
 export interface LocalProviderFlagValues {

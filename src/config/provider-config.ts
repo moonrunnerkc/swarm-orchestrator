@@ -4,7 +4,7 @@ import * as yaml from 'js-yaml';
 import { LOCAL_BACKEND_NAMES, type LocalBackendName } from '../inference/local/factory';
 import { EXTRACTOR_PROVIDERS, type ExtractorProvider } from '../contract/extractor/factory';
 import { SESSION_PROVIDERS, type SessionProvider } from '../session/factory';
-import { LOCAL_GRAMMAR_MODES, type LocalGrammarMode } from '../cli/v8/local-provider-flags';
+import { LOCAL_GRAMMAR_MODES, type LocalGrammarMode } from '../cli/v8/local-provider-types';
 
 /**
  * Loader for the `provider:` block in `.swarm/config.yaml`. The block sits

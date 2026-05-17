@@ -10,7 +10,7 @@ import type {
   CliInvocationRequest,
   CliInvocationResult,
   PromptDelivery,
-} from './cli-falsifier';
+} from './adapter-profile';
 
 /** Spawn the underlying CLI, capping captured output at `profile.maxOutputBytes`. */
 export function spawnCli(req: CliInvocationRequest, profile: AdapterProfile): Promise<CliInvocationResult> {

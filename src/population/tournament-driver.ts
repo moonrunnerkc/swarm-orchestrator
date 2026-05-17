@@ -20,9 +20,10 @@ import type { PersonaSpec } from '../persona/types';
 import type { Session } from '../session/types';
 import type { LiveCostTracker } from '../verification/live-cost-tracker';
 import type { StreamingAssertion } from '../verification/streaming-verifier';
-import { providerAttribution, attemptApplyAndVerify } from './manager';
-import type { RunPopulationOptions } from './manager';
+import { providerAttribution } from './provider-attribution';
+import { attemptApplyAndVerify } from './apply-verify';
 import { renderDynamicMessage, type RenderContext } from './persona-message';
+import type { TournamentConfig } from './tournament';
 import {
   DEFAULT_TOURNAMENT_CONFIG,
   runTournament,
@@ -41,7 +42,7 @@ export interface ExecuteTournamentArgs {
   ledger: JsonlLedger;
   repoRoot: string;
   commandTimeoutMs: number | undefined;
-  tournamentConfig: RunPopulationOptions['tournamentConfig'];
+  tournamentConfig?: Partial<Record<ObligationV1['type'], TournamentConfig>> | undefined | undefined;
   memoStore: MemoStore | undefined;
   renderContext: RenderContext;
   fileMustExistPaths: ReadonlySet<string>;

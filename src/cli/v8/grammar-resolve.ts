@@ -1,4 +1,4 @@
-import { type LocalGrammarMode } from './local-provider-flags';
+import { type LocalGrammarMode } from './local-provider-types';
 
 /**
  * Per-consumer grammar capability resolution.

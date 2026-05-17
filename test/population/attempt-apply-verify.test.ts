@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { JsonlLedger } from '../../src/ledger/jsonl-ledger';
-import { attemptApplyAndVerify } from '../../src/population/manager';
+import { attemptApplyAndVerify } from '../../src/population/apply-verify';
 import type { ObligationV1 } from '../../src/contract/types';
 
 function tmpDir(prefix: string): string {
