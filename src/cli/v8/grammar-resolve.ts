@@ -34,14 +34,14 @@ export const SESSION_GRAMMARS: readonly LocalGrammarMode[] = [
 ] as const;
 
 /** Consumer identifiers exposed to the warning emitter. */
-export type GrammarConsumer = 'extractor' | 'session';
+type GrammarConsumer = 'extractor' | 'session';
 
 /**
  * Records that a user-supplied grammar value was coerced for a specific
  * consumer because that consumer cannot honor it. The caller emits one
  * warning per record via {@link formatGrammarWarning}.
  */
-export interface GrammarCoercion {
+interface GrammarCoercion {
   /** Consumer that could not honor the requested value. */
   consumer: GrammarConsumer;
   /** Value the user supplied. */
@@ -62,13 +62,13 @@ export interface GrammarCoercion {
 }
 
 /** Grammar values the extractor accepts. */
-export type ExtractorGrammar = 'auto' | 'json-schema' | 'none';
+type ExtractorGrammar = 'auto' | 'json-schema' | 'none';
 
 /** Grammar values the session accepts (every value the parser allows). */
-export type SessionGrammar = LocalGrammarMode;
+type SessionGrammar = LocalGrammarMode;
 
 /** Result of resolving a user-supplied grammar for a single consumer. */
-export interface GrammarResolution<T extends LocalGrammarMode> {
+interface GrammarResolution<T extends LocalGrammarMode> {
   /** Effective grammar value for the consumer. Null when the user passed null. */
   effective: T | null;
   /** Present when the requested value was coerced; null otherwise. */

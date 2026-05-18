@@ -1,8 +1,9 @@
 import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { checkPredicateBaseline } from '../verification/predicate-runner';
-import { DEFAULT_STRATEGY_NAMES } from '../wasm/registry';
+import { SwarmError } from '../errors';
+import { checkPredicateBaseline } from '../shared-predicates/predicate-runner';
+import { DEFAULT_STRATEGY_NAMES } from '../shared-wasm/strategy-constants';
 import { canonicalSort, contractHash, contractIdFromHash } from './canonicalize';
 import { type Extractor } from './extractor/types';
 import { tagObligations } from './tagger';
@@ -30,13 +31,13 @@ export interface CompileOptions {
 
 // Carries raw obligations and validation errors so the CLI handler can
 // render a useful message without re-running the LLM call.
-export class ContractValidationError extends Error {
+export class ContractValidationError extends SwarmError {
   readonly obligations: ObligationV1[];
   readonly validationErrors: ValidationError[];
 
-  constructor(obligations: ObligationV1[], errors: ValidationError[]) {
+  constructor(obligations: ObligationV1[], errors: ValidationError[], remediation?: string) {
     const detail = errors.map((e) => `[${e.code}] ${e.message}`).join('\n  ');
-    super(`contract validation failed:\n  ${detail}`);
+    super(`contract validation failed:\n  ${detail}`, 'CONTRACT_VALIDATION', remediation !== undefined ? { remediation } : undefined);
     this.name = 'ContractValidationError';
     this.obligations = obligations;
     this.validationErrors = errors;
@@ -51,7 +52,8 @@ export async function compileGoal(options: CompileOptions): Promise<DraftContrac
   const requireBuild = options.repoContext.buildCommand !== null;
   const validation = validateObligations(extracted.obligations, { requireBuild });
   if (!validation.valid) {
-    throw new ContractValidationError(extracted.obligations, validation.errors);
+    throw new ContractValidationError(extracted.obligations, validation.errors,
+      'Try: check your contract.yaml syntax against the schema in docs/');
   }
 
   // Drop property-must-hold obligations whose predicate already exits
@@ -120,7 +122,8 @@ export function finalize(draft: DraftContract, now: Date = new Date()): FinalCon
   const requireBuild = draft.repoContext.buildCommand !== null;
   const validation = validateObligations(draft.obligations, { requireBuild });
   if (!validation.valid) {
-    throw new ContractValidationError(draft.obligations, validation.errors);
+    throw new ContractValidationError(draft.obligations, validation.errors,
+      'Try: check your contract.yaml syntax against the schema in docs/');
   }
   const hash = contractHash(draft.obligations);
   const manifest: ContractManifest = {

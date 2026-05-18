@@ -3,15 +3,19 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as readline from 'readline';
-import { canonicalSerialize, canonicalSort } from './canonicalize';
+import { SwarmError } from '../errors';
+import {
+  canonicalSerialize,
+  canonicalSort,
+} from './canonicalize';
 import { parseJsonl } from './serializer';
 import { type DraftContract, type ObligationV1 } from './types';
 import { validateObligations } from './validator';
 
 /** Thrown when the user explicitly rejects a contract. */
-export class ContractRejectedError extends Error {
-  constructor() {
-    super('contract rejected by user');
+export class ContractRejectedError extends SwarmError {
+  constructor(remediation?: string) {
+    super('contract rejected by user', 'CONTRACT_REJECTED', remediation !== undefined ? { remediation } : undefined);
     this.name = 'ContractRejectedError';
   }
 }
@@ -60,7 +64,7 @@ export async function runApproval(
       : '[a]pprove / [e]dit / [r]eject';
     const answer = (await io.prompt(`${choiceText}: `)).trim().toLowerCase();
     if (answer === 'a' || answer === 'approve') return current;
-    if (answer === 'r' || answer === 'reject') throw new ContractRejectedError();
+    if (answer === 'r' || answer === 'reject') throw new ContractRejectedError('Try: review the contract and re-run with a modified contract, or use --auto-approve to skip approval');
     if (!options.disableEditor && (answer === 'e' || answer === 'edit')) {
       const next = await editAndValidate(current, io);
       if (next) current = next;

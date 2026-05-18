@@ -13,7 +13,7 @@
  * criteria).
  */
 
-import type { ObligationV1 } from '../contract/types';
+import type { ObligationV1 } from '../shared-types/obligation-types';
 import type {
   Session,
   SessionRequest,
@@ -200,7 +200,7 @@ export async function runStreamingCompletion(
 }
 
 /** Synthetic assertion id used in ledger output when a cost-cap fired. */
-export const COST_CAP_ASSERTION_ID = 'cost-cap';
+const COST_CAP_ASSERTION_ID = 'cost-cap';
 
 /**
  * Phase 6 default streaming-verifier configuration. Combines a

@@ -37,7 +37,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-export interface WholeFileBlock {
+interface WholeFileBlock {
   /** Repo-relative path from the `<<<FILE <path>` marker. */
   readonly relPath: string;
   /** Verbatim body (the file's new contents). */

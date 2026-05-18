@@ -3,6 +3,7 @@ import { getLogger } from '../../logger';
 import { handleCompile } from './compile-handler';
 import { handleRun } from './run-handler';
 import { LOCAL_PROVIDER_FLAG_TOKENS } from './local-provider-flags';
+import { findContractFile } from '../../contract/auto-discover';
 
 const logger = getLogger('cli:v8:run-wrapper');
 
@@ -12,7 +13,7 @@ const logger = getLogger('cli:v8:run-wrapper');
  * Production callers pass nothing; the defaults wire to the real
  * `handleCompile` / `handleRun`.
  */
-export interface RunV8Deps {
+interface RunV8Deps {
   readonly handleCompile: (argv: string[]) => Promise<number>;
   readonly handleRun: (argv: string[]) => Promise<number>;
 }
@@ -168,6 +169,11 @@ function splitArgv(argv: string[]): SplitArgv {
       out.contractFile = requireValue(argv, ++i, '--contract-file');
     } else if (arg === '--contract-module') {
       out.contractModule = requireValue(argv, ++i, '--contract-module');
+    } else if (arg === '--preset') {
+      const value = requireValue(argv, ++i, '--preset');
+      // Presets affect both compile and run phases; forward to both.
+      out.compilePassthrough.push('--preset', value);
+      out.runPassthrough.push('--preset', value);
     } else if (localTokens.has(arg)) {
       // `--local-*` flags configure either the extractor (compile pass) or
       // the session (run pass). Both handlers accept the full local-flag
@@ -178,6 +184,13 @@ function splitArgv(argv: string[]): SplitArgv {
       out.runPassthrough.push(arg, value);
     } else {
       out.runPassthrough.push(arg);
+    }
+  }
+  // Auto-detect contract file when --contract-file not provided
+  if (out.contractFile === null) {
+    const detected = findContractFile(process.cwd());
+    if (detected !== undefined) {
+      out.contractFile = detected;
     }
   }
   return out;

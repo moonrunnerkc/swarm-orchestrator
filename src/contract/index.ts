@@ -90,3 +90,5 @@ export {
   tagSummary,
   type TaggerOptions,
 } from './tagger';
+
+export { findContractFile } from './auto-discover';

@@ -34,7 +34,7 @@ import { formatGrammarWarning, resolveGrammarForConsumer } from './grammar-resol
 const logger = getLogger('cli:v8:compile');
 
 /** Parsed flags for `swarm v8 compile`. */
-export interface CompileFlags {
+interface CompileFlags {
   goal: string;
   out: string | null;
   repoRoot: string;
@@ -61,7 +61,7 @@ export interface CompileFlags {
 }
 
 /** Test seam: lets tests inject a custom extractor without touching env. */
-export interface CompileHandlerInjections {
+interface CompileHandlerInjections {
   extractor?: Extractor;
 }
 

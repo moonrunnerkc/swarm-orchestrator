@@ -19,7 +19,7 @@ export const LOCAL_BACKEND_NAMES: readonly LocalBackendName[] = [
  * Configuration the local-provider factories consume to construct a
  * backend. Mirrors `BackendOptions` plus the backend selector.
  */
-export interface LocalBackendConfig extends BackendOptions {
+interface LocalBackendConfig extends BackendOptions {
   backend: LocalBackendName;
 }
 

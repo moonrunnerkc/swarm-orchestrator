@@ -9,53 +9,28 @@
  * file types the §8 spec calls out (license headers, file naming
  * conventions, scaffolds). Additional templates are registered via
  * `registerTemplate`.
+ *
+ * The template data and lookup functions have been moved to
+ * src/shared-wasm/strategy-constants.ts to break the circular
+ * dependency between contract and wasm. This file re-exports them
+ * for backward compatibility.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
-import type { ObligationV1 } from '../../contract/types';
+import type { ObligationV1 } from '../../shared-types/obligation-types';
+import {
+  getTemplate,
+  hasTemplateFor,
+  registerTemplate,
+  listTemplateKeys,
+} from '../../shared-wasm/strategy-constants';
 import { ensureInsideRepoRoot } from '../wasm-runtime';
 import type { DeterministicStrategy, StrategyContext, StrategyResult } from '../types';
 
-/** A template body keyed by an exact basename match (e.g. "LICENSE"). */
-const BASENAME_TEMPLATES: Record<string, string> = {
-  LICENSE: licenseTemplate(),
-  '.gitignore': gitignoreTemplate(),
-  '.editorconfig': editorconfigTemplate(),
-  'README.md': readmeTemplate(),
-  'CHANGELOG.md': changelogTemplate(),
-};
-
-/** A template body keyed by extension (e.g. ".md"). */
-const EXTENSION_TEMPLATES: Record<string, string> = {
-  '.md': '# Placeholder\n\nThis file is a Phase 5 deterministic scaffold.\n',
-  '.txt': 'Placeholder text.\n',
-};
-
-/**
- * Register an additional template at runtime. Useful for users who
- * want to extend the strategy without forking the source tree.
- */
-export function registerTemplate(
-  key: { kind: 'basename' | 'extension'; value: string },
-  body: string,
-): void {
-  if (key.kind === 'basename') BASENAME_TEMPLATES[key.value] = body;
-  else EXTENSION_TEMPLATES[key.value] = body;
-}
-
-/** True when a template can satisfy the given path. Used by the auto-tagger. */
-export function hasTemplateFor(relPath: string): boolean {
-  return resolveTemplate(relPath) !== null;
-}
-
-function resolveTemplate(relPath: string): string | null {
-  const base = path.basename(relPath);
-  if (BASENAME_TEMPLATES[base] !== undefined) return BASENAME_TEMPLATES[base];
-  const ext = path.extname(relPath);
-  if (ext && EXTENSION_TEMPLATES[ext] !== undefined) return EXTENSION_TEMPLATES[ext];
-  return null;
-}
+// Re-export for backward compatibility — consumers that imported
+// these from '../wasm/strategies/scaffold-template' still work.
+export { hasTemplateFor, registerTemplate, listTemplateKeys };
 
 /** The strategy implementation. */
 export const scaffoldTemplateStrategy: DeterministicStrategy = {
@@ -70,7 +45,7 @@ export const scaffoldTemplateStrategy: DeterministicStrategy = {
       );
     }
     const relPath = obligation.path;
-    const template = resolveTemplate(relPath);
+    const template = getTemplate(relPath);
     if (template === null) {
       throw new Error(
         `no template registered for ${relPath} (basename or extension lookup miss)`,
@@ -94,74 +69,6 @@ export const scaffoldTemplateStrategy: DeterministicStrategy = {
     };
   },
 };
-
-function licenseTemplate(): string {
-  return [
-    'ISC License',
-    '',
-    'Copyright (c) <year> <copyright holders>',
-    '',
-    'Permission to use, copy, modify, and/or distribute this software for any',
-    'purpose with or without fee is hereby granted, provided that the above',
-    'copyright notice and this permission notice appear in all copies.',
-    '',
-    'THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES',
-    'WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF',
-    'MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR',
-    'ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES',
-    'WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN',
-    'ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF',
-    'OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.',
-  ].join('\n');
-}
-
-function gitignoreTemplate(): string {
-  return ['node_modules/', 'dist/', 'coverage/', '.env', '.env.*', '*.log'].join('\n');
-}
-
-function editorconfigTemplate(): string {
-  return [
-    'root = true',
-    '',
-    '[*]',
-    'indent_style = space',
-    'indent_size = 2',
-    'end_of_line = lf',
-    'charset = utf-8',
-    'trim_trailing_whitespace = true',
-    'insert_final_newline = true',
-    '',
-    '[*.md]',
-    'trim_trailing_whitespace = false',
-    '',
-    '[Makefile]',
-    'indent_style = tab',
-  ].join('\n');
-}
-
-function readmeTemplate(): string {
-  return ['# Project', '', 'Placeholder README scaffolded by Phase 5 deterministic floor.'].join(
-    '\n',
-  );
-}
-
-function changelogTemplate(): string {
-  return [
-    '# Changelog',
-    '',
-    'All notable changes to this project will be documented in this file.',
-    '',
-    '## [Unreleased]',
-  ].join('\n');
-}
-
-/** Test/inspection helper: list the basenames currently registered. */
-export function listTemplateKeys(): { basenames: string[]; extensions: string[] } {
-  return {
-    basenames: Object.keys(BASENAME_TEMPLATES).slice().sort(),
-    extensions: Object.keys(EXTENSION_TEMPLATES).slice().sort(),
-  };
-}
 
 /** Type guard: confirm the obligation is one this strategy can take on. */
 export function canScaffold(o: ObligationV1): boolean {

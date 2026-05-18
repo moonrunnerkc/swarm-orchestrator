@@ -21,6 +21,8 @@
  * own text and exit cleanly).
  */
 
+import { SwarmError } from '../../errors';
+
 /** Minimal subprocess-result shape the retry helper needs. */
 export interface TransientRetryableResult {
   readonly stdout: string;
@@ -34,7 +36,7 @@ export interface TransientRetryableResult {
  * the message verbatim with three trailing dots; the regex tolerates
  * one or more dots and case variants because the CLI is not contract.
  */
-export const TRANSIENT_API_ERROR_PATTERN =
+const TRANSIENT_API_ERROR_PATTERN =
   /Request failed due to a transient API error\.\s*Retrying\.{1,}/i;
 
 /** True when the result looks like a Copilot transient-API-error exit. */
@@ -62,10 +64,10 @@ export interface TransientRetryOptions<R extends TransientRetryableResult> {
  * parsing the message. Keeps the last result attached as `cause` per
  * the `preserve-caught-error` lint rule.
  */
-export class TransientApiRetryExhaustedError extends Error {
+export class TransientApiRetryExhaustedError extends SwarmError {
   readonly maxAttempts: number;
   readonly lastResult: TransientRetryableResult;
-  constructor(maxAttempts: number, lastResult: TransientRetryableResult) {
+  constructor(maxAttempts: number, lastResult: TransientRetryableResult, remediation?: string) {
     const tailStderr = (lastResult.stderr || '').slice(-512).trim();
     const tailStdout = (lastResult.stdout || '').slice(-512).trim();
     super(
@@ -75,7 +77,10 @@ export class TransientApiRetryExhaustedError extends Error {
         `internally but exits without recovering. Last stderr tail: ` +
         `${tailStderr || '(empty)'}; last stdout tail: ${tailStdout || '(empty)'}. ` +
         `Re-run when the upstream provider is healthy or raise maxAttempts.`,
-      { cause: { lastResult } },
+      'TRANSIENT_RETRY_EXHAUSTED',
+      remediation !== undefined
+        ? { cause: { lastResult }, remediation }
+        : { cause: { lastResult } },
     );
     this.name = 'TransientApiRetryExhaustedError';
     this.maxAttempts = maxAttempts;
@@ -110,5 +115,6 @@ export async function invokeWithTransientRetry<R extends TransientRetryableResul
   }
   // lastTransient is non-null because the loop above ran at least once
   // and only assigns when a transient result was observed.
-  throw new TransientApiRetryExhaustedError(maxAttempts, lastTransient as R);
+  throw new TransientApiRetryExhaustedError(maxAttempts, lastTransient as R,
+    'Try: re-run when the upstream provider is healthy, or increase --max-transient-retries, or use --session-provider deterministic');
 }

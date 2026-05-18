@@ -59,7 +59,7 @@ export interface DeterministicSessionOptions {
 }
 
 /** FORMAT classification returned by {@link validatePatchFormat}. */
-export type PatchFormat = 'format-1-whole-file' | 'format-2-unified-diff' | 'format-3-no-op';
+type PatchFormat = 'format-1-whole-file' | 'format-2-unified-diff' | 'format-3-no-op';
 
 /** Result of validating a patch against FORMAT 1/2/3. */
 export interface PatchValidationResult {

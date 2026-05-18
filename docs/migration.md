@@ -98,10 +98,68 @@ deterministic default. The follow-up corrects them:
   fully account for the post-pass total of 2372 passing. No tests were
   hidden, skipped, or env-gated.
 
+The on-disk contract format and `contractHash` algorithm, the verifier,
+the falsifier registry, the quality gate machinery, the manifest schema,
+and the snapshot / rollback primitives are unchanged.
+
+## v9 complexity reduction
+
+The v9 cycle simplified the CLI surface and internal structure without
+removing any verification stage, quality gate, or provider backend.
+
+### Falsifiers default change
+
+`--falsifiers` now defaults to `off` when the session provider is
+`deterministic`, and `on` for `anthropic` / `local`. Previously the default
+was unconditionally `on`, which required every deterministic-path user to
+type `--falsifiers off` because the adapter CLIs (Codex, Copilot) are not
+installed by default. Existing `--falsifiers off` calls continue to work
+unchanged.
+
+### Auto-discovery
+
+Contract files and patch sources are now auto-discovered from the current
+directory, making `--contract-file` and `--external-patches-queue` optional
+in the common case. See [docs/providers.md](providers.md) for the search
+order.
+
+### Pipeline presets
+
+`--preset <full|fast|minimal>` configures the pipeline in one flag instead
+of combining multiple boolean toggles:
+
+| Preset | Falsifiers | Streaming | Pre-gen | Post-merge |
+|---|---|---|---|---|
+| `full` (default) | on | on | on | on |
+| `fast` | off | off | off | off |
+| `minimal` | off | off | off | off (deterministic floor only) |
+
+### New commands
+
+- `swarm init` — scaffolds `contract.yaml` + `patches.jsonl` for the detected
+  or specified language.
+- `swarm doctor --fix` — auto-resolves common setup problems (missing `.swarm/`
+  directories, stale locks, missing patches.jsonl, incorrect permissions).
+
+### Internal changes (no user-facing behavior change)
+
+- `src/population/manager.ts` decomposed from 955 to ~490 LOC across four
+  focused modules: `falsifier-dispatch.ts`, `deterministic-dispatch.ts`,
+  `post-merge-handler.ts`, and `single-mode-executor.ts`.
+- Shared-type modules (`src/shared-types/`, `src/shared-predicates/`,
+  `src/shared-wasm/`) eliminate circular dependencies between contract,
+  verification, and wasm modules.
+- `src/errors.ts` introduces `SwarmError` with `code` and `remediation`
+  fields; 5 subclasses replace generic `Error` throws throughout the
+  codebase. Every throw site now includes a remediation hint.
+- 58 dead exports removed from 17 files; public surface reduced from 581
+  to 523 exported symbols.
+
+### Unchanged
+
 - The on-disk contract format and `contractHash` algorithm.
-- The CLI subcommand surface (`compile`, `run`, `resume`, `stats`,
-  `doctor`).
-- Every existing flag other than the additions documented in
-  [docs/configuration.md](configuration.md).
+- The CLI subcommand surface (`compile`, `run`, `resume`, `stats`, `doctor`)
+  plus the additions (`init`, `doctor --fix`).
 - The verifier, the falsifier registry, the quality gate machinery, the
   manifest schema, and the snapshot / rollback primitives.
+- All test counts and coverage gates.

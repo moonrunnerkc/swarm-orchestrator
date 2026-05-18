@@ -29,3 +29,5 @@ export {
 } from './anthropic-session';
 
 export { StubSession, estimateTokens, type StubResponder, type StubSessionOptions } from './stub-session';
+
+export { findPatchesSource } from './auto-discover';

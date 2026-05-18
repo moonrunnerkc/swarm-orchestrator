@@ -1,7 +1,10 @@
 import * as crypto from 'crypto';
 import * as path from 'path';
+import * as fs from 'fs';
 import { getLogger } from '../../logger';
 import { readContract } from '../../contract/serializer';
+import { findContractFile } from '../../contract/auto-discover';
+import { findPatchesSource } from '../../session/auto-discover';
 import { JsonlLedger } from '../../ledger/jsonl-ledger';
 import { createDefaultRegistry, PersonaRegistry } from '../../persona/persona-registry';
 import { runPopulation } from '../../population/manager';
@@ -41,11 +44,17 @@ import {
 import { parseSnapshotPolicy } from '../../population/snapshot-cleanup';
 import { LiveCostTracker } from '../../verification/live-cost-tracker';
 import { FalsifierScheduler } from '../../falsification/scheduler';
+import {
+  type PipelineConfig,
+  type PresetName,
+  resolvePipelineConfig,
+  PRESET_NAMES,
+} from '../../population/pipeline-config';
 
 const logger = getLogger('cli:v8:run');
 
 /** Parsed flags for `swarm v8 run`. */
-export interface RunFlags {
+interface RunFlags {
   contractPath: string;
   repoRoot: string;
   sessionKind: SessionProvider;
@@ -115,11 +124,13 @@ export interface RunFlags {
   tokenBudget: number | null;
   /**
    * Adapter-reintegration: feature flag controlling the falsification
-   * dispatcher (`src/falsification/dispatcher.ts`). Default `'on'`. When
-   * on, every registered adapter that handles the obligation type is
-   * dispatched after the producer's verifier marks the patch satisfied;
-   * a confirmed counter-example flips the obligation status to failed
-   * and appends a `falsification-call` ledger entry with cost and yield.
+   * dispatcher (`src/falsification/dispatcher.ts`). Default `'on'`
+   * for non-deterministic providers, `'off'` for deterministic (which
+   * has no adapter CLIs by default). When on, every registered adapter
+   * that handles the obligation type is dispatched after the producer's
+   * verifier marks the patch satisfied; a confirmed counter-example
+   * flips the obligation status to failed and appends a
+   * `falsification-call` ledger entry with cost and yield.
    * `--falsifiers off` bypasses the dispatcher entirely so runs that
    * don't want to spend on adapter calls (or whose target environment
    * lacks the underlying CLIs) can opt out.
@@ -145,10 +156,16 @@ export interface RunFlags {
   local: LocalProviderFlagValues;
   /** Tracks which provider fields were set by an explicit `--<flag>` token. */
   flagsSource: { sessionFromFlag: boolean };
+  /** True when `--falsifiers` was explicitly passed on the command line. */
+  falsifiersExplicitlySet: boolean;
+  /** Pipeline preset name, or null when no --preset flag was given. */
+  preset: string | null;
+  /** Resolved pipeline config (populated from preset + per-flag overrides). */
+  pipelineConfig: PipelineConfig;
 }
 
 /** Test seam: lets tests inject a custom session, registry, or WASM runtime. */
-export interface RunHandlerInjections {
+interface RunHandlerInjections {
   session?: Session;
   registry?: PersonaRegistry;
   /** Phase 5: override the deterministic-floor runtime. */
@@ -219,6 +236,10 @@ export async function handleRun(
   } catch (err) {
     logger.error((err as Error).message);
     return 1;
+  }
+
+  if (flags.falsifiers === 'off' && !flags.falsifiersExplicitlySet) {
+    logger.info('falsifiers: off (auto; deterministic provider has no adapter CLIs by default)');
   }
 
   let session: Session;
@@ -425,7 +446,7 @@ function buildSession(flags: RunFlags, projectContext: string): Session {
  * version is intentionally minimal: contract goal + repo root. Phase 3+
  * will fold in per-language toolchain summaries and ledger highlights.
  */
-export function renderProjectContext(goal: string, repoRoot: string): string {
+function renderProjectContext(goal: string, repoRoot: string): string {
   return [
     DEFAULT_PROJECT_CONTEXT_PREAMBLE,
     '',
@@ -463,6 +484,7 @@ const RUN_SCHEMA: ParseArgsOptions = {
   'snapshot-cleanup': { type: 'string' },
   'falsifier-scheduler': { type: 'string' },
   'falsifier-stats-path': { type: 'string' },
+  preset: { type: 'string' },
   help: { type: 'boolean', short: 'h' },
 };
 
@@ -496,10 +518,91 @@ export function parseRunFlags(argv: string[]): RunFlags {
     }
   }
 
+  const sessionKind = resolveSessionProvider(sessionRaw ?? null);
+
+  // --preset: resolve pipeline config from a named preset, with
+  // per-flag overrides taking precedence.
+  const presetRaw = readString(values, 'preset');
+  if (presetRaw !== undefined && !PRESET_NAMES.includes(presetRaw)) {
+    throw new Error(
+      `invalid --preset "${presetRaw}"; must be one of ${PRESET_NAMES.join(' | ')}`,
+    );
+  }
+  const preset: string | null = presetRaw !== undefined ? presetRaw : null;
+
+  // Track which pipeline flags were explicitly provided so they
+  // override preset values.
+  const pipelineOverrides: {
+    deterministic?: boolean;
+    streaming?: boolean;
+    postMerge?: boolean;
+    preGeneration?: boolean;
+    falsifiers?: 'on' | 'off';
+    falsifierScheduler?: 'sequential' | 'ucb1';
+    snapshotCleanup?: string;
+    forbiddenImports?: readonly string[];
+    tokenBudget?: number | null;
+    mode?: 'single' | 'tournament';
+    candidates?: number | null;
+    maxObligations?: number | null;
+    commandTimeoutMs?: number | null;
+  } = {};
+  if (modeRaw !== undefined) {
+    pipelineOverrides.mode = requireEnum(modeRaw, '--mode', ['single', 'tournament'] as const);
+  }
+  if (candidatesRaw !== undefined) {
+    pipelineOverrides.candidates = parseCandidates(candidatesRaw);
+  }
+  if (readBoolean(values, 'no-deterministic')) {
+    pipelineOverrides.deterministic = false;
+  }
+  if (readBoolean(values, 'no-streaming')) {
+    pipelineOverrides.streaming = false;
+  }
+  if (readBoolean(values, 'no-post-merge')) {
+    pipelineOverrides.postMerge = false;
+  }
+  if (readBoolean(values, 'no-pre-generation')) {
+    pipelineOverrides.preGeneration = false;
+  }
+  if (forbiddenImports.length > 0) {
+    pipelineOverrides.forbiddenImports = forbiddenImports;
+  }
+  if (tokenBudgetRaw !== undefined) {
+    pipelineOverrides.tokenBudget = requirePositiveInt(tokenBudgetRaw, '--cost-cap');
+  }
+  const falsifiersExplicitlySet = falsifiersRaw !== undefined;
+  if (falsifiersRaw !== undefined) {
+    pipelineOverrides.falsifiers = requireEnum(falsifiersRaw, '--falsifiers', ['on', 'off'] as const);
+  } else if (!preset) {
+    // When no preset is active and the user didn't explicitly set
+    // falsifiers, fall back to the session-kind-based default
+    // (deterministic providers have no adapter CLIs by default).
+    pipelineOverrides.falsifiers = sessionKind === 'deterministic' ? 'off' : 'on';
+  }
+  if (falsifierSchedulerRaw !== undefined) {
+    pipelineOverrides.falsifierScheduler = requireEnum(falsifierSchedulerRaw, '--falsifier-scheduler', ['sequential', 'ucb1'] as const);
+  }
+  {
+    const sc = readString(values, 'snapshot-cleanup');
+    if (sc !== undefined) pipelineOverrides.snapshotCleanup = sc;
+  }
+  if (maxObligationsRaw !== undefined) {
+    pipelineOverrides.maxObligations = requirePositiveInt(maxObligationsRaw, '--max-obligations');
+  }
+  if (commandTimeoutRaw !== undefined) {
+    pipelineOverrides.commandTimeoutMs = requirePositiveInt(commandTimeoutRaw, '--command-timeout-ms');
+  }
+
+  const pipelineConfig = resolvePipelineConfig({
+    preset: preset as PresetName | null,
+    overrides: pipelineOverrides,
+  });
+
   const flags: RunFlags = {
     contractPath: '',
     repoRoot,
-    sessionKind: resolveSessionProvider(sessionRaw ?? null),
+    sessionKind,
     model: readString(values, 'model') ?? null,
     apiKey: readString(values, 'api-key') ?? null,
     externalPatchesDir: readString(values, 'external-patches-dir') ?? process.env.EXTERNAL_PATCHES_DIR ?? null,
@@ -509,39 +612,57 @@ export function parseRunFlags(argv: string[]): RunFlags {
       ? requireNonNegativeInt(externalPatchesTimeoutRaw, '--external-patches-timeout-ms')
       : null,
     ledgerPath: readString(values, 'ledger') ?? null,
-    maxObligations: maxObligationsRaw !== undefined
-      ? requirePositiveInt(maxObligationsRaw, '--max-obligations')
-      : null,
-    commandTimeoutMs: commandTimeoutRaw !== undefined
-      ? requirePositiveInt(commandTimeoutRaw, '--command-timeout-ms')
-      : null,
+    maxObligations: pipelineConfig.maxObligations,
+    commandTimeoutMs: pipelineConfig.commandTimeoutMs,
     runId: readString(values, 'run-id') ?? null,
     resultPath: readString(values, 'result') ?? null,
-    mode: modeRaw !== undefined ? requireEnum(modeRaw, '--mode', ['single', 'tournament'] as const) : 'single',
-    candidates: candidatesRaw !== undefined ? parseCandidates(candidatesRaw) : null,
-    deterministic: !readBoolean(values, 'no-deterministic'),
-    streaming: !readBoolean(values, 'no-streaming'),
-    postMerge: !readBoolean(values, 'no-post-merge'),
-    preGeneration: !readBoolean(values, 'no-pre-generation'),
-    forbiddenImports,
-    tokenBudget: tokenBudgetRaw !== undefined ? requirePositiveInt(tokenBudgetRaw, '--cost-cap') : null,
-    falsifiers: falsifiersRaw !== undefined ? requireEnum(falsifiersRaw, '--falsifiers', ['on', 'off'] as const) : 'on',
-    snapshotCleanup: readString(values, 'snapshot-cleanup') ?? '',
-    falsifierScheduler: falsifierSchedulerRaw !== undefined
-      ? requireEnum(falsifierSchedulerRaw, '--falsifier-scheduler', ['sequential', 'ucb1'] as const)
-      : 'sequential',
+    mode: pipelineConfig.mode,
+    candidates: pipelineConfig.candidates,
+    deterministic: pipelineConfig.deterministic,
+    streaming: pipelineConfig.streaming,
+    postMerge: pipelineConfig.postMerge,
+    preGeneration: pipelineConfig.preGeneration,
+    forbiddenImports: [...pipelineConfig.forbiddenImports],
+    tokenBudget: pipelineConfig.tokenBudget,
+    falsifiers: pipelineConfig.falsifiers,
+    snapshotCleanup: pipelineConfig.snapshotCleanup,
+    falsifierScheduler: pipelineConfig.falsifierScheduler,
     falsifierStatsPath: readString(values, 'falsifier-stats-path') ?? '',
     local: buildLocalProviderFlagValues(values, (raw) => path.resolve(repoRoot, raw)),
     flagsSource: { sessionFromFlag: sessionRaw !== undefined },
+    falsifiersExplicitlySet,
+    preset,
+    pipelineConfig,
   };
 
   if (positionals.length === 0) {
-    throw new Error('missing contract path: usage `swarm v8 run <contract-path> [flags]`');
-  }
-  if (positionals.length > 1) {
+    // Auto-detect contract file when no positional path provided
+    const autoContract = findContractFile(repoRoot);
+    if (autoContract !== undefined) {
+      flags.contractPath = autoContract;
+    } else {
+      throw new Error('missing contract path: usage `swarm v8 run <contract-path> [flags]`');
+    }
+  } else if (positionals.length > 1) {
     throw new Error(`too many positionals: ${positionals.join(' ')}`);
+  } else {
+    flags.contractPath = path.resolve(positionals[0] ?? '');
   }
-  flags.contractPath = path.resolve(positionals[0] ?? '');
+
+  // Auto-detect patches source when none explicitly provided
+  if (flags.externalPatchesDir === null && flags.externalPatchesQueue === null && !flags.externalPatchesStdin) {
+    const autoPatches = findPatchesSource(repoRoot);
+    if (autoPatches) {
+      logger.debug(`auto-detected patches source at ${autoPatches}`);
+      const stat = fs.statSync(autoPatches);
+      if (stat.isDirectory()) {
+        flags.externalPatchesDir = autoPatches;
+      } else {
+        flags.externalPatchesQueue = autoPatches;
+      }
+    }
+  }
+
   return flags;
 }
 
@@ -603,6 +724,7 @@ function printRunUsage(): void {
       '                               retain-last:<n>|max-age:<duration>|max-disk:<size>)',
       '  --falsifier-scheduler <kind> sequential (default) | ucb1 (adaptive bandit)',
       '  --falsifier-stats-path <p>   override path for persisted bandit stats',
+      '  --preset full|fast|minimal   pipeline preset (full: all features, fast: skip pre-gen+falsifiers+streaming, minimal: deterministic-only)',
       '  --help, -h                   show this message',
       '',
     ].join('\n'),

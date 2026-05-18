@@ -10,13 +10,10 @@ import { formatPrettierStrategy } from './strategies/format-prettier';
 import { importSortStrategy } from './strategies/import-sort';
 import { scaffoldTemplateStrategy } from './strategies/scaffold-template';
 import type { DeterministicStrategy } from './types';
+import { DEFAULT_STRATEGY_NAMES } from '../shared-wasm/strategy-constants';
 
-/** Names of the three first-party strategies, in registration order. */
-export const DEFAULT_STRATEGY_NAMES = [
-  'scaffold-template',
-  'import-sort',
-  'format-prettier',
-] as const;
+// Re-export for backward compatibility
+export { DEFAULT_STRATEGY_NAMES };
 
 /** Snapshot of the three default strategies. Consumers may extend this list. */
 export const DEFAULT_STRATEGIES: readonly DeterministicStrategy[] = [

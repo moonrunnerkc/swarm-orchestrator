@@ -104,9 +104,12 @@ midpoint). The constant is overridable via
 
 ## CLI flag
 
-`swarm run` accepts `--falsifiers <on|off>` (default `on`). Setting
-`off` makes `dispatchFalsifiers()` short-circuit; adapter code stays in
-the tree but is never invoked.
+`swarm run` accepts `--falsifiers <on|off>`. The default depends on the
+session provider: `off` for `deterministic` (the adapters require separate
+CLI tools that are not installed by default), `on` for `anthropic` and
+`local`. Setting `off` explicitly makes `dispatchFalsifiers()` short-circuit
+regardless of session provider; adapter code stays in the tree but is never
+invoked.
 
 Per-adapter selection is **not** a CLI flag. Construct a registry with
 the desired adapters at the API layer:

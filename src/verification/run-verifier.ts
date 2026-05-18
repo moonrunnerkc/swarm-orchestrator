@@ -18,7 +18,7 @@ import type {
   ImportGraphMustSatisfyObligation,
   ObligationV1,
   PerformanceMustNotRegressObligation,
-} from '../contract/types';
+} from '../shared-types/obligation-types';
 import { checkFunctionSignature } from './ast-signature';
 import { extractImports as extractImportsAst } from './ast-imports';
 

@@ -1,14 +1,14 @@
-export type LogLevel = 'error' | 'warn' | 'info' | 'debug' | 'trace' | 'silent';
+type LogLevel = 'error' | 'warn' | 'info' | 'debug' | 'trace' | 'silent';
 export type OutputFormat = 'text' | 'json';
 
-export interface LoggerConfig {
+interface LoggerConfig {
   level?: LogLevel;
   outputFormat?: OutputFormat;
   /** Route info/debug/trace to stderr instead of stdout (text mode). */
   diagnosticsToStderr?: boolean;
 }
 
-export interface Logger {
+interface Logger {
   error: (...args: unknown[]) => void;
   warn: (...args: unknown[]) => void;
   info: (...args: unknown[]) => void;
@@ -104,25 +104,10 @@ export function setPrettyMode(pretty: boolean): void {
   state.prettyMode = pretty;
 }
 
-export function isPrettyMode(): boolean {
-  return state.prettyMode;
-}
-
 export function getLogger(scope?: string): Logger {
   return createLogger(scope);
 }
 
 export function getLoggerConfig(): Required<Pick<LoggerConfig, 'level' | 'outputFormat' | 'diagnosticsToStderr'>> & { prettyMode: boolean } {
   return { ...state };
-}
-
-export function isJsonOutput(): boolean {
-  return state.outputFormat === 'json';
-}
-
-export function writeStructuredOutput(payload: unknown): void {
-  const content = typeof payload === 'string'
-    ? payload
-    : JSON.stringify(payload, null, 2);
-  process.stdout.write(content + '\n');
 }

@@ -243,7 +243,7 @@ function truncate(s: string): string {
   return s.length > 60 ? s.slice(0, 57) + '...' : s;
 }
 
-export interface ApplyUnifiedDiffOptions {
+interface ApplyUnifiedDiffOptions {
   /**
    * Repo-relative paths that this caller is forbidden from writing. Patches
    * that CREATE or DELETE such a path are silently skipped (recorded in

@@ -55,8 +55,24 @@ of them identically.
 
 ## Deterministic
 
-Accepts a structured contract directly in one of three forms (resolved in
-this precedence order):
+Accepts a structured contract directly. Auto-discovery resolves the contract
+file before flags are consulted; you only need `--contract-file` when the file
+is in a non-standard location.
+
+### Contract auto-discovery
+
+`findContractFile(cwd)` searches in order:
+
+1. `contract.yaml` / `contract.json` in the current directory
+2. `swarm-contract.yaml` / `swarm-contract.json` in the current directory
+3. `.swarm/contract.yaml` / `.swarm/contract.json`
+
+If none is found, the CLI requires `--contract-file` or `--contract-module`.
+
+When a flag is supplied explicitly, auto-discovery is skipped and the flagged
+path is used directly.
+
+### Explicit contract forms (resolved in this precedence order when auto-discovery is not used)
 
 1. `--contract-file <path>` — YAML (`.yaml` / `.yml`) or JSON (`.json`). The
    file extension picks the parser. UTF-8 only.
@@ -73,8 +89,25 @@ corrective action.
 
 ### Session input channels
 
-The deterministic session reads externally-sourced patches from one of
-three channels (resolved in this order):
+The deterministic session reads externally-sourced patches. Auto-discovery
+resolves the patches source before flags are consulted; you only need
+`--external-patches-queue` or `--external-patches-dir` when the source is in
+a non-standard location.
+
+### Patches auto-discovery
+
+`findPatchesSource(cwd)` searches in order:
+
+1. `patches.jsonl` in the current directory
+2. `swarm-patches.jsonl` in the current directory
+3. `patches/` directory in the current directory
+
+If none is found, the CLI requires one of the explicit channel flags below.
+
+When a flag is supplied explicitly, auto-discovery is skipped and the flagged
+path is used directly.
+
+### Explicit input channels (resolved in this order when auto-discovery is not used)
 
 1. `--external-patches-dir <path>` (or `EXTERNAL_PATCHES_DIR`) — watched
    directory; each file is a JSON envelope. Consumed files are moved to

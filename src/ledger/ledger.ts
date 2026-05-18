@@ -10,15 +10,16 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
+import { SwarmError } from '../errors';
 import type { LedgerEntry, LedgerEntryHeader } from './types';
 
 export const GENESIS_PREV_HASH = '0'.repeat(64);
 
-export class ChainTamperedError extends Error {
+export class ChainTamperedError extends SwarmError {
   readonly lineNumber: number;
   readonly kind: 'entry-hash-mismatch' | 'prev-hash-mismatch' | 'malformed-header';
-  constructor(message: string, lineNumber: number, kind: ChainTamperedError['kind']) {
-    super(message);
+  constructor(message: string, lineNumber: number, kind: ChainTamperedError['kind'], remediation?: string) {
+    super(message, 'CHAIN_TAMPERED', remediation !== undefined ? { remediation } : undefined);
     this.name = 'ChainTamperedError';
     this.lineNumber = lineNumber;
     this.kind = kind;
@@ -131,6 +132,7 @@ export function verifyChainEntries(entries: readonly LedgerEntry[]): void {
         `ledger entry at line ${lineNumber} is missing prevHash/entryHash header fields`,
         lineNumber,
         'malformed-header',
+        'Try: delete the corrupted ledger file and re-run, or restore from a backup',
       );
     }
     if (e.prevHash !== expectedPrev) {
@@ -138,6 +140,7 @@ export function verifyChainEntries(entries: readonly LedgerEntry[]): void {
         `ledger chain broken at line ${lineNumber}: prevHash ${shortHash(e.prevHash)} does not chain from ${shortHash(expectedPrev)}`,
         lineNumber,
         'prev-hash-mismatch',
+        'Try: delete the corrupted ledger file and re-run, or restore from a backup',
       );
     }
     const recomputed = computeEntryHash(stripEntryHash(e));
@@ -146,6 +149,7 @@ export function verifyChainEntries(entries: readonly LedgerEntry[]): void {
         `ledger entry at line ${lineNumber} fails entry-hash check: stored ${shortHash(e.entryHash)} but recomputed ${shortHash(recomputed)}`,
         lineNumber,
         'entry-hash-mismatch',
+        'Try: delete the corrupted ledger file and re-run, or restore from a backup',
       );
     }
     expectedPrev = e.entryHash;

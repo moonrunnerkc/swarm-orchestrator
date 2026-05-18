@@ -12,7 +12,7 @@
  */
 
 /** Message roles in the chat protocol shared by every backend. */
-export type ChatRole = 'system' | 'user' | 'assistant';
+type ChatRole = 'system' | 'user' | 'assistant';
 
 /** Single chat message. */
 export interface ChatMessage {
@@ -123,4 +123,4 @@ export interface BackendOptions {
 export const DEFAULT_REQUEST_TIMEOUT_MS = 120_000;
 
 /** Default max concurrency. */
-export const DEFAULT_MAX_CONCURRENCY = 1;
+// DEFAULT_MAX_CONCURRENCY removed (was 1, never used outside this file)

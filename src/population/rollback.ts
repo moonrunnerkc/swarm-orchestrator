@@ -13,7 +13,7 @@ import type {
 } from '../ledger/types';
 import { gitHashObject } from './diff-snapshot';
 
-export type RollbackTrigger = ObligationRolledBackEntry['trigger'];
+type RollbackTrigger = ObligationRolledBackEntry['trigger'];
 
 export interface RollbackResult {
   success: boolean;

@@ -16,7 +16,7 @@
  * outcome, and the user diagnoses or re-runs.
  */
 
-import type { FinalContract, ObligationV1 } from '../contract/types';
+import type { FinalContract, ObligationV1 } from '../shared-types/obligation-types';
 import { verifyObligation, type VerifyOptions } from './run-verifier';
 
 /** Per-obligation post-merge re-check outcome. */

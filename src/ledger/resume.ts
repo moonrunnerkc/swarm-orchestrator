@@ -22,6 +22,7 @@
  * dispatching the population manager.
  */
 
+import { SwarmError } from '../errors';
 import type { FinalContract, ObligationV1 } from '../contract/types';
 import type { LedgerEntry, RunStartedEntry } from './types';
 import {
@@ -59,13 +60,29 @@ export interface ResumeState {
 }
 
 /**
+ * Mapping from domain-specific ResumeError code to SwarmError-level code.
+ */
+const RESUME_CODE_MAP: Record<ResumeErrorDomainCode, string> = {
+  'no-run-started': 'RESUME_NO_RUN_STARTED',
+  'contract-hash-mismatch': 'RESUME_HASH_MISMATCH',
+  'no-obligations': 'RESUME_NO_OBLIGATIONS',
+};
+
+type ResumeErrorDomainCode = 'no-run-started' | 'contract-hash-mismatch' | 'no-obligations';
+
+/**
  * Error thrown when the ledger doesn't carry enough state to resume
  * cleanly. Distinct from `ChainTamperedError` which signals tamper.
+ *
+ * The `code` property retains the domain-specific code for backward
+ * compatibility; the SwarmError-level code is available via the base
+ * class `code` field (which gets overwritten by this subclass's
+ * narrower `code` declaration). Use `swarmCode` for the unified code.
  */
-export class ResumeError extends Error {
-  readonly code: 'no-run-started' | 'contract-hash-mismatch' | 'no-obligations';
-  constructor(message: string, code: ResumeError['code']) {
-    super(message);
+export class ResumeError extends SwarmError {
+  readonly code: ResumeErrorDomainCode;
+  constructor(message: string, code: ResumeErrorDomainCode, remediation?: string) {
+    super(message, RESUME_CODE_MAP[code], remediation !== undefined ? { remediation } : undefined);
     this.name = 'ResumeError';
     this.code = code;
   }
@@ -93,10 +110,12 @@ export function deriveResumeState(
     throw new ResumeError(
       `no run-started entry matches contract hash ${contract.manifest.contractHash}; ledger contains ${[...seenHashes].join(', ') || '(none)'}`,
       'no-run-started',
+      'Try: ensure you are resuming with the same contract used in the original run, or start a new run instead',
     );
   }
   if (contract.obligations.length === 0) {
-    throw new ResumeError('contract has no obligations to resume against', 'no-obligations');
+    throw new ResumeError('contract has no obligations to resume against', 'no-obligations',
+      'Try: provide a contract with at least one obligation, or start a fresh run');
   }
   const satisfied = priorSatisfiedIndexes(entries, contract.manifest.contractHash, options);
   const failed = priorFailedIndexes(entries, contract.manifest.contractHash, options);

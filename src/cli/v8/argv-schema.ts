@@ -13,7 +13,7 @@ import { parseArgs, type ParseArgsConfig } from 'node:util';
 
 export type ParseArgsOptions = NonNullable<ParseArgsConfig['options']>;
 
-export interface ParseArgvResult<T> {
+interface ParseArgvResult<T> {
   values: T;
   positionals: string[];
 }

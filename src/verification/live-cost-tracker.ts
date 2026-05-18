@@ -14,7 +14,7 @@ export interface BudgetAbortInfo {
   ts: string;
 }
 
-export interface BudgetSnapshot {
+interface BudgetSnapshot {
   committedTokens: number;
   projectedTokens: number;
   budgetTokens: number | null;

@@ -17,7 +17,7 @@
 import * as path from 'path';
 import {
   hasTemplateFor,
-} from '../wasm/strategies/scaffold-template';
+} from '../shared-wasm/strategy-constants';
 import type { ObligationV1 } from './types';
 
 export interface TaggerOptions {

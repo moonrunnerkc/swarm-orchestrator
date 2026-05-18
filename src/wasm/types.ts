@@ -10,7 +10,7 @@
  * See `v8-implementation-guide.md` §8 and `v8-overhaul-guide.md` §5.6.
  */
 
-import type { ObligationType, ObligationV1 } from '../contract/types';
+import type { ObligationType, ObligationV1 } from '../shared-types/obligation-types';
 
 /**
  * Per-dispatch context handed to a strategy. The strategy operates on

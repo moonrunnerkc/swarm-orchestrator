@@ -18,7 +18,8 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import type { ObligationV1 } from '../contract/types';
+import { SwarmError } from '../errors';
+import type { ObligationV1 } from '../shared-types/obligation-types';
 import type {
   DeterministicStrategy,
   DispatchOutcome,
@@ -30,14 +31,16 @@ import type {
 export const DEFAULT_STRATEGY_TIMEOUT_MS = 30_000;
 
 /** Error thrown by the sandbox when a write would escape `repoRoot`. */
-export class SandboxEscapeError extends Error {
+export class SandboxEscapeError extends SwarmError {
   /** The path the strategy attempted to write. */
   readonly attemptedPath: string;
   /** The repoRoot the sandbox is anchored to. */
   readonly repoRoot: string;
-  constructor(attemptedPath: string, repoRoot: string) {
+  constructor(attemptedPath: string, repoRoot: string, remediation?: string) {
     super(
       `sandbox refused write at ${attemptedPath}: path escapes repoRoot ${repoRoot}`,
+      'SANDBOX_ESCAPE',
+      remediation !== undefined ? { remediation } : undefined,
     );
     this.name = 'SandboxEscapeError';
     this.attemptedPath = attemptedPath;
@@ -46,11 +49,11 @@ export class SandboxEscapeError extends Error {
 }
 
 /** Error thrown when a strategy exceeds its wall-time budget. */
-export class StrategyTimeoutError extends Error {
+export class StrategyTimeoutError extends SwarmError {
   readonly strategyName: string;
   readonly timeoutMs: number;
-  constructor(strategyName: string, timeoutMs: number) {
-    super(`strategy "${strategyName}" exceeded ${timeoutMs}ms wall-time budget`);
+  constructor(strategyName: string, timeoutMs: number, remediation?: string) {
+    super(`strategy "${strategyName}" exceeded ${timeoutMs}ms wall-time budget`, 'STRATEGY_TIMEOUT', remediation !== undefined ? { remediation } : undefined);
     this.name = 'StrategyTimeoutError';
     this.strategyName = strategyName;
     this.timeoutMs = timeoutMs;
@@ -71,7 +74,8 @@ export function ensureInsideRepoRoot(repoRoot: string, candidate: string): strin
   const rel = path.relative(absRepoRoot, resolved);
   if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) {
     if (rel === '') return absRepoRoot;
-    throw new SandboxEscapeError(candidate, absRepoRoot);
+    throw new SandboxEscapeError(candidate, absRepoRoot,
+      'Try: check that your strategy only writes inside the repository root, or use --repo-root to set the correct boundary');
   }
   return resolved;
 }
@@ -234,7 +238,8 @@ async function runWithTimeout(
   let timer: NodeJS.Timeout | null = null;
   const timeoutPromise = new Promise<never>((_resolve, reject) => {
     timer = setTimeout(() => {
-      reject(new StrategyTimeoutError(strategy.name, ctx.timeoutMs));
+      reject(new StrategyTimeoutError(strategy.name, ctx.timeoutMs,
+        'Try: increase --command-timeout-ms, or use --preset fast to skip pre-generation checks'));
     }, ctx.timeoutMs);
   });
   try {

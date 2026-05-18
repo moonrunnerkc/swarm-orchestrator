@@ -3,71 +3,47 @@ import type { FinalContract, ObligationV1 } from '../contract/types';
 import type { JsonlLedger } from '../ledger/jsonl-ledger';
 import { MemoStore, obligationKey } from '../ledger/memoization';
 import type {
-  CandidateRecordedEntry,
-  CandidateStreamAbortedEntry,
-  FalsificationCallEntry,
-  FalsifierDispatchDecisionEntry,
   ObligationAttemptedEntry,
-  ObligationDeterministicAppliedEntry,
-  ObligationDeterministicAttemptedEntry,
-  ObligationDeterministicFailedEntry,
   ObligationFailedEntry,
   ObligationMemoizedEntry,
   ObligationPreVerifiedEntry,
   ObligationRolledBackEntry,
   ObligationSatisfiedEntry,
-  PostMergeVerifiedEntry,
-  ProviderAttribution,
   RunFinishedEntry,
   RunStartedEntry,
-  WorkspaceSnapshotEntry,
 } from '../ledger/types';
 import type { AdapterRegistry } from '../falsification/adapters/registry';
-import { dispatchFalsifiers, type FalsifiersFlag } from '../falsification/dispatcher';
+import { type FalsifiersFlag } from '../falsification/dispatcher';
 import type { PersonaRegistry } from '../persona/persona-registry';
 import type { PersonaSpec } from '../persona/types';
 import { selectPersonaForState } from '../persona/predicates';
-import type { Session, SessionRequest, SessionUsage } from '../session/types';
+import type { Session, SessionUsage } from '../session/types';
 import { addUsage, emptyUsage } from '../session/types';
-import { postMergeVerify } from '../verification/post-merge';
 import { preVerifyObligations } from '../verification/pre-generation';
 import { verifyObligation } from '../verification/run-verifier';
 import {
   buildAssertions,
-  runStreamingCompletion,
   type StreamingAssertion,
   type StreamingVerifierConfig,
-  type StreamingVerifierOutcome,
 } from '../verification/streaming-verifier';
 import type { WasmRuntime } from '../wasm/wasm-runtime';
-import { applyFileEmit } from './diff-applier';
-import {
-  computePostApplyShas,
-  snapshotBeforeApply,
-  type PreApplySnapshot,
-} from './diff-snapshot';
-import { rollbackObligation } from './rollback';
-import { applyUnifiedDiff, looksLikeUnifiedDiff } from './unified-diff';
-import { applyWholeFileResponse, looksLikeWholeFileResponse } from './whole-file-apply';
-import { PopulationStateBuilder } from './state';
 import {
   cleanupSnapshots,
   DEFAULT_SNAPSHOT_POLICY,
   type SnapshotCleanupPolicy,
 } from './snapshot-cleanup';
-import { COST_CAP_ABORT_REASON, type LiveCostTracker } from '../verification/live-cost-tracker';
+import type { LiveCostTracker } from '../verification/live-cost-tracker';
 import type { FalsifierScheduler } from '../falsification/scheduler';
 import { getLogger } from '../logger';
-import { providerAttribution } from './provider-attribution';
-import { attemptApplyAndVerify, type AttemptApplyAndVerifyResult } from './apply-verify';
-import {
-  buildRenderContext,
-  renderDynamicMessage,
-  type RenderContext,
-} from './persona-message';
-import { detectTestFrameworkMisuse, isTestFilePath } from './test-framework-misuse';
-import { executeTournament } from './tournament-driver';
 import type { TournamentConfig, TournamentResult } from './tournament';
+import { dispatchFalsifiersForObligation } from './falsifier-dispatch';
+import { dispatchDeterministicFloor } from './deterministic-dispatch';
+import { handlePostMerge } from './post-merge-handler';
+import { executeSingleMode, type SingleModeOptions } from './single-mode-executor';
+import { rollbackObligation } from './rollback';
+import { PopulationStateBuilder } from './state';
+import { executeTournament } from './tournament-driver';
+import { buildRenderContext } from './persona-message';
 
 const log = getLogger('population.manager');
 
@@ -141,21 +117,6 @@ export interface PostMergeRunOutcome {
   }>;
 }
 
-// The shared apply→verify→rollback seam. Both single-mode (sequential
-// retry with reprompt) and tournament-mode (parallel candidates with
-// verifier scoring) feed responses through this helper. Reprompt-with-
-// feedback is single-mode-only and stays in the caller.
-//
-// `trigger` selects the rollback policy:
-//   - `per-obligation-failed-apply` (single-mode): roll back only when
-//     patches actually applied AND the obligation isn't file-must-exist
-//     (architect file creation has no pre-state to restore to).
-//   - `per-obligation-falsification` (tournament-mode): roll back any
-//     time a pre-snapshot exists and verification failed. Tournament's
-//     historical behavior — preserved here to keep parity captures
-//     byte-stable.
-
-
 export async function runPopulation(
   options: RunPopulationOptions,
 ): Promise<RunPopulationResult> {
@@ -177,7 +138,6 @@ export async function runPopulation(
   const skip = options.skipObligationIndexes ?? new Set<number>();
   const memoStore = options.memoStore;
   const wasmRuntime = options.wasmRuntime;
-  const strategyTimeoutMs = options.strategyTimeoutMs;
   const streamingConfig = options.streaming;
   const streamingAssertions: readonly StreamingAssertion[] = streamingConfig
     ? buildAssertions(streamingConfig)
@@ -223,6 +183,7 @@ export async function runPopulation(
   let streamingCharsBeforeAbort = 0;
   let attempted = 0;
 
+  // ── Deterministic floor ─────────────────────────────────────────
   if (wasmRuntime) {
     for (let i = 0; i < contract.obligations.length; i += 1) {
       if (skip.has(i)) continue;
@@ -230,17 +191,19 @@ export async function runPopulation(
       if (!o || !o.deterministicStrategy) continue;
       if (!wasmRuntime.has(o.deterministicStrategy)) continue;
       if (deterministicTried.has(i)) continue;
-      const detOutcome = await dispatchDeterministic({
-        obligation: o,
-        obligationIndex: i,
-        runtime: wasmRuntime,
+
+      const detResult = await dispatchDeterministicFloor(
+        i,
+        o,
+        wasmRuntime,
         repoRoot,
-        commandTimeoutMs,
-        strategyTimeoutMs,
         ledger,
-      });
+        commandTimeoutMs,
+        options.strategyTimeoutMs,
+      );
       deterministicTried.add(i);
-      if (detOutcome.satisfied) {
+
+      if (detResult.applied) {
         builder.setStatus(i, 'satisfied');
         deterministicObligations += 1;
         outcomes.push({
@@ -248,7 +211,7 @@ export async function runPopulation(
           obligation: o,
           personaId: null,
           satisfied: true,
-          detail: detOutcome.detail,
+          detail: detResult.detail,
           tournament: null,
         });
       } else {
@@ -257,6 +220,7 @@ export async function runPopulation(
     }
   }
 
+  // ── Pre-generation check ────────────────────────────────────────
   // Order matters: pre-generation runs build/test commands, costlier
   // than memoization or the deterministic floor — only the obligations
   // that survived both cheap paths reach this pass.
@@ -294,6 +258,7 @@ export async function runPopulation(
     }
   }
 
+  // ── Main scheduling loop ────────────────────────────────────────
   while (attempted < cap) {
     const selection = selectPersonaForState(registry, builder.view());
     if (!selection) break;
@@ -343,20 +308,20 @@ export async function runPopulation(
       let tournamentSatisfied = result.satisfied;
       let tournamentDetail = result.detail;
       if (result.satisfied) {
-        const falsified = await runFalsifiersForObligation({
-          obligation,
+        const falsified = await dispatchFalsifiersForObligation(
           obligationIndex,
-          repoRoot,
+          obligation,
+          options.adapterRegistry,
           ledger,
-          registry: options.adapterRegistry,
-          falsifiers: options.falsifiers ?? 'on',
-          timeBudgetMs: options.adapterTimeBudgetMs ?? 60_000,
-          ...(options.falsifierScheduler ? { scheduler: options.falsifierScheduler } : {}),
-          ...(options.costTracker ? { costTracker: options.costTracker } : {}),
-        });
-        if (falsified !== null) {
+          repoRoot,
+          options.falsifiers ?? 'on',
+          options.adapterTimeBudgetMs ?? 60_000,
+          options.falsifierScheduler,
+          options.costTracker,
+        );
+        if (falsified.counterExample) {
           tournamentSatisfied = false;
-          tournamentDetail = falsified;
+          tournamentDetail = falsified.detail;
           const rb = await rollbackObligation(
             obligationIndex,
             ledger,
@@ -409,302 +374,71 @@ export async function runPopulation(
       continue;
     }
 
-    // Single mode: generate→apply→verify with reprompt-on-failure
-    // feedback loop. Bounded at RETRY_MAX so a confused persona can't
-    // burn the run's token budget. Streaming path takes the first
-    // attempt and skips retry — the streaming verifier already aborts
-    // early on forbidden imports, which is its own corrective signal.
-    const dynamic = renderDynamicMessage(obligation, repoRoot, renderCtx);
-    const RETRY_MAX = 2;
-    let retryFeedback: string | null = null;
-    const buildRequest = (): SessionRequest => ({
-      personaId: persona.id,
-      personaSystemSuffix: persona.systemSuffix,
-      sampling: { ...persona.sampling },
-      userMessage: retryFeedback === null ? dynamic : `${dynamic}\n\n${retryFeedback}`,
-    });
+    // ── Single mode ────────────────────────────────────────────────
+    const singleOpts: SingleModeOptions = {
+      fileMustExistPaths,
+      runId,
+      commandTimeoutMs,
+      renderContext: renderCtx,
+      streamingAssertions,
+      adapterRegistry: options.adapterRegistry,
+      falsifiers: options.falsifiers,
+      adapterTimeBudgetMs: options.adapterTimeBudgetMs,
+      falsifierScheduler: options.falsifierScheduler,
+      costTracker: options.costTracker,
+    };
 
-    let responseText: string;
-    let responseUsage: SessionUsage;
-    let responseModel: string;
-    let streamingOutcome: StreamingVerifierOutcome | null = null;
-    if (usingStreaming) {
-      streamingOutcome = await runStreamingCompletion(
-        session,
-        buildRequest(),
-        obligation,
-        streamingAssertions,
-        options.costTracker,
-      );
-      responseText = streamingOutcome.streamResult.response.text;
-      responseUsage = streamingOutcome.streamResult.response.usage;
-      responseModel = streamingOutcome.streamResult.response.model;
-    } else {
-      const response = await session.complete(buildRequest());
-      responseText = response.text;
-      responseUsage = response.usage;
-      responseModel = response.model;
-    }
-    totalUsage = addUsage(totalUsage, responseUsage);
+    const singleResult = await executeSingleMode(
+      obligationIndex,
+      obligation,
+      session,
+      persona,
+      builder,
+      repoRoot,
+      ledger,
+      singleOpts,
+    );
 
-    if (streamingOutcome?.aborted) {
+    totalUsage = addUsage(totalUsage, singleResult.usage);
+    if (singleResult.streamingAborted) {
       streamingAbortedCandidates += 1;
-      streamingCharsBeforeAbort += streamingOutcome.abortedAtChars;
-      ledger.append<CandidateStreamAbortedEntry>({
-        type: 'candidate-stream-aborted',
-        obligationIndex,
-        roundIndex: 0,
-        candidateIndex: 0,
-        personaId: persona.id,
-        partialResponseSha256: sha256(responseText),
-        abortedAtChars: streamingOutcome.abortedAtChars,
-        reason: streamingOutcome.abortReason ?? 'streaming verifier aborted',
-        usageAtAbort: responseUsage,
-        model: responseModel,
-        ...providerAttribution(session),
-      });
-      builder.setStatus(obligationIndex, 'failed');
-      const failDetail = `streaming verifier aborted: ${streamingOutcome.abortReason ?? 'unspecified violation'}`;
-      ledger.append<ObligationFailedEntry>({
-        type: 'obligation-failed',
-        obligationIndex,
-        obligationType: obligation.type,
-        detail: failDetail,
-      });
-      outcomes.push({
-        obligationIndex,
-        obligation,
-        personaId: persona.id,
-        satisfied: false,
-        detail: failDetail,
-        tournament: null,
-      });
-      continue;
-    }
-
-    let attempt = 0;
-    let attemptResult: AttemptApplyAndVerifyResult;
-    for (;;) {
-      if (attempt > 0) {
-        const response = await session.complete(buildRequest());
-        responseText = response.text;
-        responseUsage = response.usage;
-        responseModel = response.model;
-        totalUsage = addUsage(totalUsage, responseUsage);
-      }
-
-      ledger.append<CandidateRecordedEntry>({
-        type: 'candidate-recorded',
-        obligationIndex,
-        personaId: persona.id,
-        responseSha256: sha256(responseText),
-        usage: responseUsage,
-        model: responseModel,
-        ...providerAttribution(session),
-      });
-
-      attemptResult = await attemptApplyAndVerify({
-        obligation,
-        obligationIndex,
-        responseText,
-        repoRoot,
-        ledger,
-        runId,
-        fileMustExistPaths,
-        commandTimeoutMs,
-        renderContext: renderCtx,
-        trigger: 'per-obligation-failed-apply',
-      });
-
-      if (attemptResult.satisfied) break;
-      if (attempt >= RETRY_MAX) break;
-      const failureContext = attemptResult.applyOk
-        ? attemptResult.verifyDetail
-        : `${attemptResult.applyDetail}; verifier: ${attemptResult.verifyDetail}`;
-      retryFeedback =
-        'Your previous attempt did not satisfy the obligation. Specifics:\n' +
-        failureContext +
-        '\n\nReissue your response. If the failure was a context mismatch, ' +
-        'look at the file contents in this prompt and use ONLY those exact ' +
-        'lines as ` ` and `-` lines in your diff. If the failure was a ' +
-        'predicate exit-1, your diff did not produce the asserted property ' +
-        '— adjust the diff to make the predicate exit zero.';
-      attempt += 1;
-    }
-
-    let finalSatisfied = attemptResult.satisfied;
-    let finalDetail = attemptResult.satisfied || attemptResult.applyOk
-      ? attemptResult.verifyDetail
-      : `${attemptResult.applyDetail}; verifier: ${attemptResult.verifyDetail}`;
-    if (finalSatisfied) {
-      const falsified = await runFalsifiersForObligation({
-        obligation,
-        obligationIndex,
-        repoRoot,
-        ledger,
-        registry: options.adapterRegistry,
-        falsifiers: options.falsifiers ?? 'on',
-        timeBudgetMs: options.adapterTimeBudgetMs ?? 60_000,
-        ...(options.falsifierScheduler ? { scheduler: options.falsifierScheduler } : {}),
-        ...(options.costTracker ? { costTracker: options.costTracker } : {}),
-      });
-      if (falsified !== null) {
-        finalSatisfied = false;
-        finalDetail = falsified;
-        if (attemptResult.pre) {
-          const rb = await rollbackObligation(
-            obligationIndex,
-            ledger,
-            repoRoot,
-            runId,
-            'per-obligation-falsification',
-          );
-          ledger.append<ObligationRolledBackEntry>({
-            type: 'obligation-rolled-back',
-            obligationIndex,
-            trigger: 'per-obligation-falsification',
-            success: rb.success,
-            restoredFiles: rb.restoredFiles,
-            detail: rb.success
-              ? `rolled back ${rb.restoredFiles.length} file(s) after falsification`
-              : `rollback failed: ${rb.failure?.detail ?? 'unknown'}`,
-          });
-          if (!rb.success && rb.failure?.kind !== 'no-snapshot-found') {
-            throw new Error(
-              `rollback failed for obligation ${obligationIndex}: ${rb.failure?.detail ?? 'unknown'}`,
-            );
-          }
-        }
-      }
-    }
-
-    if (finalSatisfied) {
-      builder.setStatus(obligationIndex, 'satisfied');
-      ledger.append<ObligationSatisfiedEntry>({
-        type: 'obligation-satisfied',
-        obligationIndex,
-        obligationType: obligation.type,
-        detail: finalDetail,
-      });
-    } else {
-      builder.setStatus(obligationIndex, 'failed');
-      ledger.append<ObligationFailedEntry>({
-        type: 'obligation-failed',
-        obligationIndex,
-        obligationType: obligation.type,
-        detail: finalDetail,
-      });
+      streamingCharsBeforeAbort += singleResult.streamingAbortedAtChars;
     }
 
     outcomes.push({
       obligationIndex,
       obligation,
       personaId: persona.id,
-      satisfied: finalSatisfied,
-      detail: finalDetail,
+      satisfied: singleResult.satisfied,
+      detail: singleResult.detail,
       tournament: null,
     });
   }
 
+  // ── Post-merge integration check ────────────────────────────────
   let satisfied = builder.countInStatus('satisfied');
   let failed = builder.countInStatus('failed');
 
   let postMerge: PostMergeRunOutcome | null = null;
   if (options.postMerge) {
-    const verifyOpts: Parameters<typeof verifyObligation>[1] = { repoRoot };
-    if (commandTimeoutMs !== undefined) verifyOpts.commandTimeoutMs = commandTimeoutMs;
-    const pm = postMergeVerify({ contract, verifyOptions: verifyOpts });
-    const slimOutcomes = pm.outcomes.map((o) => ({
-      obligationIndex: o.obligationIndex,
-      obligationType: o.obligation.type,
-      passed: o.passed,
-      detail: o.detail,
-    }));
-    ledger.append<PostMergeVerifiedEntry>({
-      type: 'post-merge-verified',
-      passed: pm.passed,
-      obligationCount: pm.obligationCount,
-      failedCount: pm.failedCount,
-      outcomes: slimOutcomes,
-      detail: pm.passed
-        ? `post-merge integration check passed across ${pm.obligationCount} obligation(s)`
-        : `post-merge integration check failed: ${pm.failedCount}/${pm.obligationCount} obligation(s) regressed`,
-    });
+    const pmResult = await handlePostMerge(
+      contract,
+      builder,
+      repoRoot,
+      ledger,
+      runId,
+      outcomes,
+      commandTimeoutMs,
+    );
+    // Post-merge is authoritative; use its recomputed counts.
+    satisfied = pmResult.satisfied;
+    failed = pmResult.failed;
     postMerge = {
-      passed: pm.passed,
-      obligationCount: pm.obligationCount,
-      failedCount: pm.failedCount,
-      outcomes: slimOutcomes,
+      passed: pmResult.passed,
+      obligationCount: pmResult.obligationCount,
+      failedCount: pmResult.failedCount,
+      outcomes: pmResult.outcomes,
     };
-    // Post-merge is authoritative for the integrated state; recompute
-    // satisfied/failed from pm.outcomes so the exit code reflects
-    // post-merge truth, not a stale apply-time counter.
-    satisfied = pm.outcomes.filter((o) => o.passed).length;
-    failed = pm.outcomes.filter((o) => !o.passed).length;
-
-    if (!pm.passed) {
-      // Rollback policy: only abandon the merge when a STRUCTURAL
-      // obligation regresses. Predicate-only regressions
-      // (property-must-hold, function-must-have-signature,
-      // coverage-must-exceed, etc.) are quality checks; rolling back
-      // working code for cosmetic predicate misses destroys real
-      // progress. May 2026 eval: test-must-pass succeeded, 14/16
-      // obligations passed at post-merge, 2 over-literal greps failed —
-      // a full rollback erased the entire feature.
-      const structuralRegression = pm.outcomes.some(
-        (o) =>
-          !o.passed &&
-          (o.obligation.type === 'test-must-pass' ||
-            o.obligation.type === 'build-must-pass' ||
-            o.obligation.type === 'file-must-exist'),
-      );
-      const regressionGap = pm.failedCount;
-      if (!structuralRegression) {
-        failed = 0;
-        satisfied = pm.obligationCount - regressionGap;
-        ledger.append<ObligationRolledBackEntry>({
-          type: 'obligation-rolled-back',
-          obligationIndex: -1,
-          trigger: 'post-merge-regression',
-          success: true,
-          restoredFiles: [],
-          detail:
-            `post-merge regression detected (${regressionGap} obligation(s)) but ` +
-            'no structural failure — keeping applied work. ' +
-            'Predicate-only regressions are quality warnings, not rollback triggers.',
-        });
-      }
-      if (structuralRegression) {
-        for (let i = outcomes.length - 1; i >= 0; i -= 1) {
-          const o = outcomes[i];
-          if (!o) continue;
-          if (!o.satisfied) continue;
-          if (o.personaId === null) continue;
-          const rb = await rollbackObligation(
-            o.obligationIndex,
-            ledger,
-            repoRoot,
-            runId,
-            'post-merge-regression',
-          );
-          ledger.append<ObligationRolledBackEntry>({
-            type: 'obligation-rolled-back',
-            obligationIndex: o.obligationIndex,
-            trigger: 'post-merge-regression',
-            success: rb.success,
-            restoredFiles: rb.restoredFiles,
-            detail: rb.success
-              ? `rolled back ${rb.restoredFiles.length} file(s) after post-merge regression`
-              : `rollback failed: ${rb.failure?.detail ?? 'unknown'}`,
-          });
-          if (!rb.success && rb.failure?.kind !== 'no-snapshot-found') {
-            throw new Error(
-              `post-merge rollback failed for obligation ${o.obligationIndex}: ${rb.failure?.detail ?? 'unknown'}`,
-            );
-          }
-        }
-      }
-    }
   }
 
   ledger.append<RunFinishedEntry>({
@@ -740,213 +474,12 @@ export async function runPopulation(
   };
 }
 
-interface DispatchDeterministicArgs {
-  obligation: ObligationV1;
-  obligationIndex: number;
-  runtime: WasmRuntime;
-  repoRoot: string;
-  commandTimeoutMs: number | undefined;
-  strategyTimeoutMs: number | undefined;
-  ledger: JsonlLedger;
-}
-
-interface DispatchDeterministicResult {
-  satisfied: boolean;
-  detail: string;
-}
-
-// §8 misclassification recovery: never retries a failing strategy.
-// The caller tracks attempted indexes and reroutes to synthesis.
-async function dispatchDeterministic(
-  args: DispatchDeterministicArgs,
-): Promise<DispatchDeterministicResult> {
-  const {
-    obligation,
-    obligationIndex,
-    runtime,
-    repoRoot,
-    commandTimeoutMs,
-    strategyTimeoutMs,
-    ledger,
-  } = args;
-  const strategyName = obligation.deterministicStrategy ?? '';
-
-  ledger.append<ObligationDeterministicAttemptedEntry>({
-    type: 'obligation-deterministic-attempted',
-    obligationIndex,
-    obligationType: obligation.type,
-    strategyName,
-  });
-
-  const dispatchOpts: { strategyName?: string; timeoutMs?: number } = {};
-  if (strategyTimeoutMs !== undefined) dispatchOpts.timeoutMs = strategyTimeoutMs;
-  const outcome = await runtime.dispatch(obligation, repoRoot, dispatchOpts);
-
-  if (outcome.error !== null) {
-    ledger.append<ObligationDeterministicFailedEntry>({
-      type: 'obligation-deterministic-failed',
-      obligationIndex,
-      obligationType: obligation.type,
-      strategyName,
-      reason: 'error',
-      detail: outcome.detail,
-    });
-    return { satisfied: false, detail: outcome.detail };
-  }
-
-  if (!outcome.applied) {
-    ledger.append<ObligationDeterministicFailedEntry>({
-      type: 'obligation-deterministic-failed',
-      obligationIndex,
-      obligationType: obligation.type,
-      strategyName,
-      reason: 'not-applied',
-      detail: outcome.detail,
-    });
-    return { satisfied: false, detail: outcome.detail };
-  }
-
-  const verifyOpts: Parameters<typeof verifyObligation>[1] = { repoRoot };
-  if (commandTimeoutMs !== undefined) verifyOpts.commandTimeoutMs = commandTimeoutMs;
-  const verifyResult = verifyObligation(obligation, verifyOpts);
-  if (!verifyResult.satisfied) {
-    ledger.append<ObligationDeterministicFailedEntry>({
-      type: 'obligation-deterministic-failed',
-      obligationIndex,
-      obligationType: obligation.type,
-      strategyName,
-      reason: 'verifier-rejected',
-      detail: `${outcome.detail}; verifier said: ${verifyResult.detail}`,
-    });
-    return { satisfied: false, detail: verifyResult.detail };
-  }
-
-  ledger.append<ObligationDeterministicAppliedEntry>({
-    type: 'obligation-deterministic-applied',
-    obligationIndex,
-    obligationType: obligation.type,
-    strategyName,
-    filesAffected: outcome.filesAffected,
-    wallTimeMs: outcome.wallTimeMs,
-    detail: outcome.detail,
-  });
-  ledger.append<ObligationSatisfiedEntry>({
-    type: 'obligation-satisfied',
-    obligationIndex,
-    obligationType: obligation.type,
-    detail: `deterministic ${strategyName}: ${outcome.detail}`,
-  });
-  return { satisfied: true, detail: outcome.detail };
-}
-
 export function listPersonaIds(registry: PersonaRegistry): string[] {
   return registry.list().map((p: PersonaSpec) => p.id);
 }
 
 export function sha256(s: string): string {
   return crypto.createHash('sha256').update(s, 'utf8').digest('hex');
-}
-
-
-
-interface RunFalsifiersArgs {
-  readonly obligation: ObligationV1;
-  readonly obligationIndex: number;
-  readonly repoRoot: string;
-  readonly ledger: JsonlLedger;
-  readonly registry: AdapterRegistry | undefined;
-  readonly falsifiers: FalsifiersFlag;
-  readonly timeBudgetMs: number;
-  readonly scheduler?: FalsifierScheduler;
-  readonly costTracker?: LiveCostTracker;
-}
-
-// Adapter throws are caught and recorded as failed dispatch entries:
-// an adapter going sideways must not crash the run, the producer's
-// verifier has already approved the patch.
-async function runFalsifiersForObligation(
-  args: RunFalsifiersArgs,
-): Promise<string | null> {
-  const { obligation, obligationIndex, repoRoot, ledger, registry, falsifiers } = args;
-  if (falsifiers === 'off' || registry === undefined) return null;
-  if (registry.forObligation(obligation.type).length === 0) return null;
-  let outcome;
-  try {
-    const dispatchOpts: Parameters<typeof dispatchFalsifiers>[2] = {
-      falsifiers,
-      timeBudgetMs: args.timeBudgetMs,
-      workspaceRoot: repoRoot,
-      contextRefs: [],
-      patchSha: '',
-    };
-    if (args.scheduler) (dispatchOpts as { scheduler?: FalsifierScheduler }).scheduler = args.scheduler;
-    if (args.costTracker) {
-      const tracker = args.costTracker;
-      (dispatchOpts as { shouldCancel?: () => string | null }).shouldCancel = () =>
-        tracker.isCancelled() ? COST_CAP_ABORT_REASON : null;
-    }
-    outcome = await dispatchFalsifiers(obligation, registry, dispatchOpts);
-    if (args.scheduler) args.scheduler.flush();
-    if (outcome.dispatchDecision) {
-      ledger.append<FalsifierDispatchDecisionEntry>({
-        type: 'falsifier-dispatch-decision',
-        obligationIndex,
-        obligationType: obligation.type,
-        kind: outcome.dispatchDecision.kind,
-        order: outcome.dispatchDecision.order.slice(),
-        scores: outcome.dispatchDecision.scores.map((s) => ({ adapter: s.adapter, score: Number.isFinite(s.score) ? s.score : null })),
-      });
-    }
-  } catch (err) {
-    ledger.append<FalsificationCallEntry>({
-      type: 'falsification-call',
-      obligationIndex,
-      obligationType: obligation.type,
-      adapterName: '<dispatcher>',
-      resultKind: 'dispatcher-error',
-      counterExamplesFound: 0,
-      wallClockMs: 0,
-      dollarsBilled: 0,
-      dollarsApiEquivalent: 0,
-      detail: `falsifier dispatch threw: ${(err as Error).message.slice(0, 800)}`,
-    });
-    return null;
-  }
-  if (outcome.disabled) return null;
-  let firstCounterExampleDetail: string | null = null;
-  for (const call of outcome.calls) {
-    const counterExamples = call.cost.counterExamplesFound;
-    let detail: string;
-    if (call.result.kind === 'counter-example-input') {
-      const inputs = call.result.inputs;
-      const repro = inputs[0]?.reproducer ?? '<no reproducer>';
-      detail =
-        `${call.adapterName} found ${inputs.length} counter-example(s); ` +
-        `first reproducer: ${repro.slice(0, 200)}`;
-      if (firstCounterExampleDetail === null) firstCounterExampleDetail = detail;
-    } else if (call.result.kind === 'no-falsification-found') {
-      detail = `${call.adapterName} found no falsification (${call.result.reason}, ${call.result.attempts} attempts)`;
-    } else if (call.result.kind === 'regression-fixture') {
-      detail = `${call.adapterName} produced regression fixture at ${call.result.fixturePath}`;
-      if (firstCounterExampleDetail === null) firstCounterExampleDetail = detail;
-    } else {
-      detail = `${call.adapterName} produced property-violation trace (${call.result.steps.length} steps)`;
-      if (firstCounterExampleDetail === null) firstCounterExampleDetail = detail;
-    }
-    ledger.append<FalsificationCallEntry>({
-      type: 'falsification-call',
-      obligationIndex,
-      obligationType: obligation.type,
-      adapterName: call.adapterName,
-      resultKind: call.result.kind,
-      counterExamplesFound: counterExamples,
-      wallClockMs: call.cost.wallClockMs,
-      dollarsBilled: call.cost.dollarsBilled,
-      dollarsApiEquivalent: call.cost.dollarsApiEquivalent,
-      detail,
-    });
-  }
-  return firstCounterExampleDetail;
 }
 
 // Re-export so external consumers (tests, v8 CLI handlers) keep their

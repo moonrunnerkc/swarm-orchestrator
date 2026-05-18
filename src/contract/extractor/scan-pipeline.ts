@@ -3,7 +3,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import Ajv, { type ErrorObject, type ValidateFunction } from 'ajv';
 import * as yaml from 'js-yaml';
-import { SUBMIT_CONTRACT_INPUT_SCHEMA, type ContractEnvelope } from './contract-schema';
+import { SwarmError } from '../../errors';
+import {
+  SUBMIT_CONTRACT_INPUT_SCHEMA,
+  type ContractEnvelope,
+} from './contract-schema';
 
 /**
  * Shared scan-and-classify pipeline used by the non-Anthropic extractors
@@ -24,11 +28,11 @@ export interface ContractValidationIssue {
  * extractor's existing public surface (and the `err instanceof` test
  * assertions) keep working after the move.
  */
-export class DeterministicExtractorError extends Error {
+export class DeterministicExtractorError extends SwarmError {
   readonly issues: readonly ContractValidationIssue[];
 
-  constructor(issues: readonly ContractValidationIssue[], summary: string) {
-    super(summary);
+  constructor(issues: readonly ContractValidationIssue[], summary: string, remediation?: string) {
+    super(summary, 'DETERMINISTIC_EXTRACTOR', remediation !== undefined ? { remediation } : undefined);
     this.name = 'DeterministicExtractorError';
     this.issues = issues;
   }
@@ -54,7 +58,8 @@ export function truncate(text: string, max: number): string {
 export function loadEnvelopeFile(filePath: string): unknown {
   const absolute = path.resolve(filePath);
   if (!fs.existsSync(absolute)) {
-    throw fileError(`contract file not found: ${absolute}; check the --contract-file path`);
+    throw fileError(`contract file not found: ${absolute}; check the --contract-file path`,
+      'Try: create one with swarm init, or specify --contract-file <path>');
   }
   const raw = fs.readFileSync(absolute, 'utf8');
   const ext = path.extname(absolute).toLowerCase();
@@ -66,11 +71,12 @@ export function loadEnvelopeFile(filePath: string): unknown {
   }
   throw fileError(
     `contract file ${absolute} has unsupported extension "${ext}"; use .json, .yaml, or .yml`,
+    'Try: rename your contract file with a .json, .yaml, or .yml extension',
   );
 }
 
-function fileError(message: string): DeterministicExtractorError {
-  return new DeterministicExtractorError([], message);
+function fileError(message: string, remediation?: string): DeterministicExtractorError {
+  return new DeterministicExtractorError([], message, remediation);
 }
 
 function tryParse(
@@ -86,6 +92,7 @@ function tryParse(
     throw fileError(
       `contract file ${absolute} is not valid ${from}: ${(err as Error).message}; ` +
         `fix the ${from} syntax or use a ${fallbackExt} extension to parse as ${fallback}`,
+      `Try: fix the ${from} syntax in ${absolute}, or rename to ${fallbackExt} to parse as ${fallback}`,
     );
   }
 }
@@ -93,7 +100,8 @@ function tryParse(
 export async function loadEnvelopeModule(modulePath: string): Promise<unknown> {
   const absolute = path.resolve(modulePath);
   if (!fs.existsSync(absolute)) {
-    throw fileError(`contract module not found: ${absolute}; check the --contract-module path`);
+    throw fileError(`contract module not found: ${absolute}; check the --contract-module path`,
+      'Try: verify the module path exists, or use --contract-file instead');
   }
   let mod: { default?: unknown; [k: string]: unknown };
   try {
@@ -102,6 +110,7 @@ export async function loadEnvelopeModule(modulePath: string): Promise<unknown> {
     throw fileError(
       `failed to import contract module ${absolute}: ${(err as Error).message}; ` +
         `the module must be a TS/JS file the runtime can load`,
+      'Try: check the module for syntax errors or missing dependencies, or use --contract-file instead',
     );
   }
   return mod.default ?? mod;
@@ -115,7 +124,8 @@ export function validateContractEnvelope(raw: unknown, sourceLabel: string): Con
       `deterministic extractor rejected ${sourceLabel}: ` +
       `${issues.length} validation issue(s)\n` +
       issues.map((i) => `  - ${i.pointer || '/'}: ${i.fix}`).join('\n');
-    throw new DeterministicExtractorError(issues, summary);
+    throw new DeterministicExtractorError(issues, summary,
+      'Try: check your contract.yaml syntax against the schema in docs/');
   }
   return raw as ContractEnvelope;
 }

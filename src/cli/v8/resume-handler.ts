@@ -43,7 +43,7 @@ import { formatGrammarWarning, resolveGrammarForConsumer } from './grammar-resol
 const logger = getLogger('cli:v8:resume');
 
 /** Parsed flags for `swarm v8 resume`. */
-export interface ResumeFlags {
+interface ResumeFlags {
   runId: string;
   ledgerPath: string | null;
   contractPath: string | null;
@@ -93,7 +93,7 @@ export interface ResumeFlags {
 }
 
 /** Test seam: lets tests inject a custom session, registry, or WASM runtime. */
-export interface ResumeHandlerInjections {
+interface ResumeHandlerInjections {
   session?: Session;
   registry?: PersonaRegistry;
   /** Phase 5: override the deterministic-floor runtime. */
@@ -431,7 +431,7 @@ function buildSession(flags: ResumeFlags, projectContext: string): Session {
 }
 
 /** Build the static project-context prefix the session caches. */
-export function renderProjectContext(goal: string, repoRoot: string): string {
+function renderProjectContext(goal: string, repoRoot: string): string {
   return [
     DEFAULT_PROJECT_CONTEXT_PREAMBLE,
     '',

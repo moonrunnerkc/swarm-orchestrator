@@ -5,7 +5,7 @@ import { configureLogger, getLogger, setPrettyMode } from './logger';
 
 const startupArgs = process.argv.slice(2);
 
-const USER_FACING_COMMANDS = new Set(['run']);
+const USER_FACING_COMMANDS = new Set(['run', 'init']);
 const firstNonFlag = startupArgs.find((a) => !a.startsWith('-'));
 const isUserFacingCommand = firstNonFlag ? USER_FACING_COMMANDS.has(firstNonFlag) : false;
 const isVerbose = startupArgs.includes('--verbose');
@@ -42,6 +42,7 @@ Usage:
   swarm resume <run-id>         Resume a killed run from the ledger
   swarm stats <run-id>          Aggregate diagnostic counts from a run ledger
   swarm doctor                  Probe local prerequisites (API key, falsifiers, PMs)
+  swarm init                    Scaffold contract.yaml + patches.jsonl
   swarm --help                  Show this help message
 
 For per-subcommand flags, see \`swarm <command> --help\`.
@@ -79,6 +80,7 @@ async function main(): Promise<void> {
       case 'resume':
       case 'stats':
       case 'doctor':
+      case 'init':
         // Top-level aliases for the v8 pipeline. `swarm <cmd>` is the
         // documented form; `swarm v8 <cmd>` remains supported for users
         // pinned to the explicit prefix.

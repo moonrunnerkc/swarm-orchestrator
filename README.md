@@ -7,7 +7,7 @@
   <a href="https://github.com/moonrunnerkc/swarm-orchestrator/releases/latest"><img src="https://img.shields.io/github/v/release/moonrunnerkc/swarm-orchestrator?label=release&style=flat-square&color=22d3ee" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/moonrunnerkc/swarm-orchestrator?style=flat-square&color=a78bfa" alt="License"></a>
   <a href="https://nodejs.org"><img src="https://img.shields.io/badge/node-%E2%89%A5%2020-3c873a?style=flat-square&logo=node.js&logoColor=white" alt="Node >= 20"></a>
-  <img src="https://img.shields.io/badge/tests-908%20passing-34d399?style=flat-square" alt="908 tests passing">
+  <img src="https://img.shields.io/badge/tests-917%20passing-34d399?style=flat-square" alt="917 tests passing">
   <img src="https://img.shields.io/badge/TypeScript-strict-3178c6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript strict">
   <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-fb7185?style=flat-square" alt="PRs welcome"></a>
 </p>
@@ -89,9 +89,16 @@ swarm doctor
 
 ## Quick Start
 
-This checks two simple things: `package.json` exists, and a harmless Node test
-command exits successfully. It runs locally, does not call a model, and does
-not need an API key.
+Use `swarm init` to scaffold a contract and patches file, then run. No API key
+needed — the deterministic provider is the default and falsifiers are off
+automatically when no adapter CLIs are present.
+
+```bash
+swarm init
+swarm run --goal "check this project has package metadata"
+```
+
+Or manually:
 
 ```bash
 cat > contract.yaml <<'EOF'
@@ -104,16 +111,32 @@ EOF
 
 printf '{"patch":"no-op","source":"readme-smoke"}\n' > patches.jsonl
 
-swarm run --goal "check this project has package metadata" \
-  --contract-file contract.yaml \
-  --external-patches-queue patches.jsonl \
-  --falsifiers off
+swarm run --goal "check this project has package metadata"
 ```
 
 That should exit `0` in this repository. It also creates `.swarm/` evidence
 files. After that works, replace `contract.yaml` with checks that matter for
 your project, then replace `no-op` with a real patch source or choose a model
 provider.
+
+**Auto-discovery:** `swarm` automatically finds `contract.yaml` and
+`patches.jsonl` in the current directory or any parent. You only need
+`--contract-file` or `--external-patches-queue` when the file is in a
+non-standard location.
+
+**Presets:** Use `--preset` to configure the pipeline in one flag instead of
+many:
+
+```bash
+swarm run --goal "quick check" --preset fast
+swarm run --goal "minimal check" --preset minimal
+```
+
+| Preset | Falsifiers | Streaming | Pre-gen | Post-merge | Best for |
+|---|---|---|---|---|---|
+| `full` (default) | on | on | on | on | Full rigor; hosted providers |
+| `fast` | off | off | off | off | Local iteration; deterministic provider |
+| `minimal` | off | off | off | off | Deterministic floor only; no synthesis |
 
 ## Common Workflows
 
@@ -123,10 +146,16 @@ Use this when another tool, person, or agent is producing patches and you want
 `swarm` to judge them.
 
 ```bash
+swarm run --goal "verify the release gate"
+```
+
+If `contract.yaml` and `patches.jsonl` are in the repo root, that is all you
+need. If they are elsewhere:
+
+```bash
 swarm run --goal "verify the release gate" \
   --contract-file ./swarm/contract.yaml \
-  --external-patches-queue ./swarm/patches.jsonl \
-  --falsifiers off
+  --external-patches-queue ./swarm/patches.jsonl
 ```
 
 Patch queues are JSONL. Each line is an envelope:
@@ -149,13 +178,14 @@ export ANTHROPIC_API_KEY=...
 
 swarm run --goal "add a /health endpoint" \
   --extractor anthropic \
-  --session anthropic \
-  --falsifiers off
+  --session anthropic
 ```
 
 Pass `--model <id>` if you want to pin a specific Anthropic model. Provider
 setup and local-model options are covered in [docs/providers.md](docs/providers.md).
-Remove `--falsifiers off` after the optional adapter CLIs are configured.
+Falsifiers are on by default for non-deterministic providers; add
+`--falsifiers off` to skip them, or configure adapter CLIs per
+[docs/falsification-adapters.md](docs/falsification-adapters.md).
 
 ### Run an Existing Contract Directory
 
@@ -168,9 +198,22 @@ swarm compile "verify the release gate" \
   --yes \
   --no-editor
 
-swarm run .swarm/contracts/release-gate \
-  --external-patches-queue ./swarm/patches.jsonl \
-  --falsifiers off
+swarm run .swarm/contracts/release-gate
+```
+
+### Scaffold and Diagnose
+
+```bash
+# Scaffold contract.yaml + patches.jsonl for your language
+swarm init --language python
+swarm init --language go
+swarm init --language rust
+
+# Diagnose setup problems
+swarm doctor
+
+# Auto-fix common problems (missing .swarm/, stale locks, etc.)
+swarm doctor --fix
 ```
 
 ## Contracts
@@ -212,7 +255,9 @@ The exact contract format is verifiable in
 | `swarm run <contract-dir>` | Run an already compiled contract |
 | `swarm resume <run-id>` | Continue from a prior ledger |
 | `swarm stats <run-id>` | Summarize a run ledger |
+| `swarm init` | Scaffold contract.yaml + patches.jsonl |
 | `swarm doctor` | Check local prerequisites |
+| `swarm doctor --fix` | Auto-fix common setup problems |
 
 Run any command with `--help` for its flags.
 
@@ -267,7 +312,20 @@ Runs write evidence under `.swarm/`:
 ```
 
 `swarm` exits non-zero when an obligation fails, a run cannot be completed, or
-a configured budget/precondition is violated.
+a configured budget/precondition is violated. Every error includes a
+remediation hint explaining how to fix the problem.
+
+## Error hints
+
+All SwarmError subclasses carry a `remediation` field with actionable advice:
+
+```
+Contract file not found: /path/contract.yaml
+Try: create one with swarm init, or specify --contract-file <path>
+```
+
+Run `swarm doctor` to diagnose setup problems. Add `--fix` to auto-resolve
+common issues (missing directories, stale locks, missing patches.jsonl).
 
 ## Reference
 
