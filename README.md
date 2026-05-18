@@ -343,6 +343,19 @@ common issues (missing directories, stale locks, missing patches.jsonl).
 Current release: `9.0.0`. v9 removed the legacy v6 pipeline; pin `8.0.x` if
 you still need `swarm run --v6`.
 
+## Benchmarks
+
+The `benchmarks/` directory contains four active benchmark suites:
+
+| Suite | Location | Purpose |
+|---|---|
+| **Provider bench** | `benchmarks/provider-bench/` | Side-by-side cost/wall-time comparison of extractor and session providers against identical contracts. Produces `report.md` and `report.json`. |
+| **Falsification corpus** | `benchmarks/falsification-corpus/` | Calibration fixtures for falsification layers: agent-authored patches with hand labels, plus synthetic adversarial patches. CI runs the 21-patch synthetic suite as a regression fixture. |
+| **Ladder baseline** | `benchmarks/ladder/` | Single-agent baseline that receives the same goal as the orchestrator, then iterates through explicit prompts and a repair phase. Used to measure whether multi-agent coordination adds value beyond sequential prompting. |
+| **Constraint binding** | `benchmarks/constraint-binding/` | Multi-step constraint tasks (schema-then-query, rename-then-update-callers, contract-change-then-client, lift-then-reuse) with pinned fixtures and behavioural validators. Scores the orchestrator against the ladder on cross-cutting constraint satisfaction. |
+
+Each suite has its own README with run instructions. The falsification corpus serves a dual role: it is a CI regression fixture (all 21 broken patches must be caught, all 21 clean controls must pass) and a benchmark harness for measuring adapter catch rates over time.
+
 ## Development
 
 ```bash
