@@ -243,6 +243,43 @@ Common check types:
 | `coverage-must-exceed` | Coverage stays above a threshold |
 | `performance-must-not-regress` | A benchmark stays within tolerance |
 
+Real-world patterns:
+
+```yaml
+# Reject PRs that drop coverage below 80%
+obligations:
+  - type: coverage-must-exceed
+    command: npx nyc --reporter=json npm test
+    threshold: 80
+
+# Enforce a module boundary: src/public/ must not import src/internal/
+obligations:
+  - type: import-graph-must-satisfy
+    rules:
+      - source: "src/public/**"
+        mustNotImport: "src/internal/**"
+      - deny: "**/cycles"
+
+# Verify a specific function signature survives refactors
+obligations:
+  - type: function-must-have-signature
+    file: src/api/handler.ts
+    name: handleRequest
+    signature: "(req: Request, res: Response) => Promise<void>"
+
+# Shell predicate: no debugger statements in committed code
+obligations:
+  - type: property-must-hold
+    predicate: "! grep -r 'debugger' src/"
+
+# Performance regression gate: build must not slow down
+obligations:
+  - type: performance-must-not-regress
+    command: npm run build
+    baselineMs: 30000
+    tolerancePercent: 20
+```
+
 The exact contract format is verifiable in
 [src/contract/schema/v1.json](src/contract/schema/v1.json).
 
