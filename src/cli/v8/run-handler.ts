@@ -410,7 +410,14 @@ export async function handleRun(
     logger.info(`token budget:  ${flags.tokenBudget} output tokens (spent: ${result.totalUsage.outputTokens})`);
   }
 
-  return result.failed === 0 ? 0 : 2;
+  // Exit non-zero when any obligation regressed, even if the regression
+  // was downgraded by the post-merge handler (e.g. predicate-only
+  // regressions where the work is kept rather than rolled back). The
+  // applied work staying in place is a rollback policy decision — it
+  // does not change the fact that a contract obligation failed.
+  const postMergeFailed = result.postMerge !== null && !result.postMerge.passed;
+  if (result.failed === 0 && !postMergeFailed) return 0;
+  return 2;
 }
 
 function buildSession(flags: RunFlags, projectContext: string): Session {
