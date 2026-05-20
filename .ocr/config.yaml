@@ -1,0 +1,146 @@
+# Open Code Review Configuration
+# This file is installed to .ocr/config.yaml and customized per-project.
+# Context here is injected into every review request.
+#
+# NOTE on indentation: commented example blocks below are TOP-LEVEL keys
+# (default_team, output, discourse, github, models, runtime, code-review-map).
+# Some upstream templates indent these examples at 2 spaces inside
+# `context_discovery:` — that is incorrect. Uncomment at column 0.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PROJECT CONTEXT
+# ─────────────────────────────────────────────────────────────────────────────
+# Injected into ALL review requests. Keep it tight—focus on what reviewers
+# genuinely need to know that isn't obvious from the code itself.
+
+# context: |
+#   Tech stack: TypeScript, React, Node.js, PostgreSQL
+#   Architecture: Monorepo with NX, ESM only
+#   Testing: Jest + React Testing Library, mock only external services
+#   Critical constraint: All public APIs must be backwards compatible
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CONTEXT DISCOVERY
+# ─────────────────────────────────────────────────────────────────────────────
+# Files to read during Phase 1 (Context Discovery). OCR merges these into
+# the review context automatically.
+
+context_discovery:
+  # OpenSpec integration — disabled; this repo does not use OpenSpec.
+  # Flip to true and supply paths when openspec/ is adopted.
+  openspec:
+    enabled: false
+    # config: "openspec/config.yaml"
+    # specs: "openspec/specs/**/*.md"
+    # active_changes: "openspec/changes/**/*.md"
+
+  # AI assistant configuration files (auto-detected)
+  references:
+    - "AGENTS.md"
+    - "CLAUDE.md"
+    - ".cursorrules"
+    - ".windsurfrules"
+    - ".github/copilot-instructions.md"
+    - "CONTRIBUTING.md"
+    - "openspec/AGENTS.md" # OpenSpec instructions (if present)
+  # Additional project-specific files to include
+  # additional:
+  #   - "docs/ARCHITECTURE.md"
+  #   - "docs/API_STANDARDS.md"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# REVIEW RULES
+# ─────────────────────────────────────────────────────────────────────────────
+# Per-severity rules for reviewers. Only add what's not obvious.
+
+# rules:
+#   critical:
+#     - Security vulnerabilities (injection, path traversal, secrets in code)
+#     - Breaking changes without migration path
+#     - Data loss or corruption risks
+#   important:
+#     - Silent error handling (catch without action)
+#     - Missing user-facing error messages
+#     - Performance regressions in hot paths
+#   consider:
+#     - Naming consistency
+#     - Documentation gaps
+#     - Test coverage for edge cases
+
+# ─────────────────────────────────────────────────────────────────────────────
+# REVIEWER TEAM
+# ─────────────────────────────────────────────────────────────────────────────
+# Default scope: 6 reviewers (was 11 — accessibility/frontend/performance had
+# no surface area on this TypeScript CLI/library). Reliability stays in because
+# verification gates are this project's thesis. Scope up per-PR with `--team`.
+
+default_team:
+  # Form 1 — shorthand. N instances, no model override.
+  principal: 2 # Holistic architecture review
+  quality: 2 # Code quality and maintainability
+  security: 1
+  testing: 1
+  docs-reviewer: 1
+  reliability: 1
+
+  # ── Optional advanced forms ──
+  # Form 2 — object: N instances, all sharing the same model.
+  # quality: { count: 2, model: claude-haiku-4-5-20251001 }
+  #
+  # Form 3 — list of instance configs: per-instance model and optional name.
+  # principal:
+  #   - { model: claude-opus-4-7 }
+  #   - { model: claude-sonnet-4-6, name: principal-balanced }
+  #
+  # Mixing forms within a single entry (e.g. count + instances) is rejected
+  # at parse time. Pick one form per persona.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MODELS (optional)
+# ─────────────────────────────────────────────────────────────────────────────
+# Define personal aliases for vendor-native model identifiers and an optional
+# workspace-level default. OCR ships zero alias entries — this section is
+# entirely user-owned. Aliases expand once at parse time.
+#
+# models:
+#   aliases:
+#     workhorse: claude-sonnet-4-6
+#     big-brain: claude-opus-4-7
+#   default: claude-sonnet-4-6   # used when an instance has no explicit model
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RUNTIME (optional)
+# ─────────────────────────────────────────────────────────────────────────────
+# Tunables that affect liveness reasoning. Defaults are usually fine.
+#
+# runtime:
+#   agent_heartbeat_seconds: 60   # After this many seconds without an
+#                                 # `ocr session beat` call, a `running`
+#                                 # agent_sessions row is reclassified
+#                                 # `orphaned` on the next sweep.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CODE REVIEW MAP
+# ─────────────────────────────────────────────────────────────────────────────
+# Configuration for the /ocr:map command.
+# Increase agent redundancy for large codebases to improve accuracy.
+# Note: Map is a standalone tool for humans; review command works independently.
+#
+# code-review-map:
+#   agents:
+#     flow_analysts: 2         # Number of Flow Analyst agents (1-10, default: 2)
+#     requirements_mappers: 2  # Number of Requirements Mapper agents (1-10, default: 2)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# OUTPUT & WORKFLOW
+# ─────────────────────────────────────────────────────────────────────────────
+
+output:
+  session_dir: ".ocr/sessions"
+
+discourse:
+  enabled: true # Set false or use --quick to skip reviewer debate phase
+
+github:
+  auto_prompt_post: false
+  comment_format: "single" # "single" or "inline"
