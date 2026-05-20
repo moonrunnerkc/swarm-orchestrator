@@ -109,10 +109,14 @@ obligations:
     path: package.json
 EOF
 
-printf '{"patch":"no-op","source":"readme-smoke"}\n' > patches.jsonl
+printf '{"patch":"no-op","source":"readme-smoke"}\n%.0s' {1..2} > patches.jsonl
 
 swarm run --goal "check this project has package metadata"
 ```
+
+The deterministic provider consumes one patch envelope per obligation, so
+the contract's obligation count and `patches.jsonl`'s line count must match.
+`swarm init` keeps them in sync automatically.
 
 That should exit `0` in this repository. It also creates `.swarm/` evidence
 files. After that works, replace `contract.yaml` with checks that matter for
@@ -246,21 +250,21 @@ Common check types:
 Real-world patterns:
 
 ```yaml
-# Reject PRs that drop coverage below 80%
+# Reject PRs that drop line-coverage below 80%
 obligations:
   - type: coverage-must-exceed
-    command: npx nyc --reporter=json npm test
+    scope: coverage/coverage-summary.json
+    metric: lines
     threshold: 80
 
-# Enforce a module boundary: src/public/ must not import src/internal/
+# Enforce module boundaries: walk src/ and reject any import cycle
 obligations:
   - type: import-graph-must-satisfy
-    rules:
-      - source: "src/public/**"
-        mustNotImport: "src/internal/**"
-      - deny: "**/cycles"
+    constraint: no-cycles
+    scope: src/
 
-# Verify a specific function signature survives refactors
+# Verify a specific function signature survives refactors. Both
+# declaration-style ((...): T) and arrow-style ((...) => T) are accepted.
 obligations:
   - type: function-must-have-signature
     file: src/api/handler.ts
@@ -271,13 +275,15 @@ obligations:
 obligations:
   - type: property-must-hold
     predicate: "! grep -r 'debugger' src/"
+    target: "no debugger statements in src/"
 
-# Performance regression gate: build must not slow down
+# Performance regression gate: command stdout's last numeric token must
+# stay within 20% of the baseline JSON's { "value": ... } field.
 obligations:
   - type: performance-must-not-regress
-    command: npm run build
-    baselineMs: 30000
-    tolerancePercent: 20
+    benchmark: "node scripts/bench.js"
+    baseline: benchmarks/build.baseline.json
+    threshold: 0.20
 ```
 
 The exact contract format is verifiable in
