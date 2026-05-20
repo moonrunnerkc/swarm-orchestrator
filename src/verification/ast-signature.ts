@@ -275,19 +275,39 @@ function renderTsSignature(node: ts.SignatureDeclaration, sourceFile: ts.SourceF
 
 /**
  * Normalize a TS-shaped signature string into a canonical form for
- * equality. Parses `<sig>` as the parameter+return-type tail of a function
- * declaration via the TypeScript parser, then re-renders parameters and
- * return type with a stable separator. Falling back to whitespace-strip
- * keeps malformed obligations comparable to the substring matcher's old
- * behaviour, but the parsed form is preferred when available.
+ * equality. Accepts both styles:
+ *
+ *   - Declaration tail: `(params): Return`
+ *   - Function-type literal: `(params) => Return`
+ *
+ * Both normalize to `(<params>):<return>`. Falls back to a whitespace
+ * strip if neither parse produces a usable shape (preserving the
+ * pre-AST substring-matcher behaviour for malformed obligations).
  */
 function normalizeTsSignature(sig: string): string {
   const trimmed = sig.trim();
-  const wrapped = `function __probe__${trimmed} {}`;
+  // Prefer the type-alias parse when arrow syntax is present; otherwise
+  // prefer the function-declaration parse. Either parse that yields a
+  // return-type wins over one that does not.
+  const preferArrow = /=>/.test(trimmed);
+  const attempts: Array<() => { params: string; ret: string } | null> = preferArrow
+    ? [() => parseAsTypeLiteral(trimmed), () => parseAsFunctionDecl(trimmed)]
+    : [() => parseAsFunctionDecl(trimmed), () => parseAsTypeLiteral(trimmed)];
+  for (const attempt of attempts) {
+    const parsed = attempt();
+    if (parsed && (parsed.params.length > 0 || parsed.ret.length > 0)) {
+      const ret = parsed.ret ? `:${parsed.ret}` : '';
+      return `(${parsed.params})${ret}`;
+    }
+  }
+  return stripWhitespace(trimmed);
+}
+
+function parseAsFunctionDecl(sig: string): { params: string; ret: string } | null {
   try {
     const sf = ts.createSourceFile(
-      '__probe__.ts',
-      wrapped,
+      '__decl__.ts',
+      `function __probe__${sig} {}`,
       ts.ScriptTarget.Latest,
       true,
       ts.ScriptKind.TS,
@@ -295,13 +315,35 @@ function normalizeTsSignature(sig: string): string {
     const stmt = sf.statements[0];
     if (stmt && ts.isFunctionDeclaration(stmt)) {
       const params = stmt.parameters.map((p) => stripWhitespace(p.getText(sf))).join(',');
-      const ret = stmt.type ? `:${stripWhitespace(stmt.type.getText(sf))}` : '';
-      return `(${params})${ret}`;
+      const ret = stmt.type ? stripWhitespace(stmt.type.getText(sf)) : '';
+      return { params, ret };
     }
   } catch {
-    /* fall through to whitespace-strip fallback */
+    /* fall through */
   }
-  return stripWhitespace(trimmed);
+  return null;
+}
+
+function parseAsTypeLiteral(sig: string): { params: string; ret: string } | null {
+  try {
+    const sf = ts.createSourceFile(
+      '__type__.ts',
+      `type __probe__ = ${sig};`,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    );
+    const stmt = sf.statements[0];
+    if (stmt && ts.isTypeAliasDeclaration(stmt) && ts.isFunctionTypeNode(stmt.type)) {
+      const ft = stmt.type;
+      const params = ft.parameters.map((p) => stripWhitespace(p.getText(sf))).join(',');
+      const ret = ft.type ? stripWhitespace(ft.type.getText(sf)) : '';
+      return { params, ret };
+    }
+  } catch {
+    /* fall through */
+  }
+  return null;
 }
 
 function stripWhitespace(s: string): string {
