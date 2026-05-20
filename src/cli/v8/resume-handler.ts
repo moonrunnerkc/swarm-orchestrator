@@ -218,6 +218,13 @@ export async function handleResume(
   logger.info(`pending:       ${resumeState.pendingIndexes.size}`);
   logger.info(`prior failed:  ${resumeState.failedIndexes.size} (will retry)`);
 
+  // Short-circuit: nothing to resume. Skip session construction (which
+  // would otherwise demand a patch source) and exit cleanly.
+  if (resumeState.pendingIndexes.size === 0 && resumeState.failedIndexes.size === 0) {
+    logger.info('nothing to resume; all obligations already satisfied.');
+    return 0;
+  }
+
   // Open the ledger for append. The constructor verifies the chain
   // again and inherits the next seq number from the on-disk tail.
   const ledger = new HashChainedLedger(ledgerPath, flags.runId);
