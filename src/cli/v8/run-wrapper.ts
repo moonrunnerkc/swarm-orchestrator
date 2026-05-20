@@ -171,8 +171,8 @@ function splitArgv(argv: string[]): SplitArgv {
       out.contractModule = requireValue(argv, ++i, '--contract-module');
     } else if (arg === '--preset') {
       const value = requireValue(argv, ++i, '--preset');
-      // Presets affect both compile and run phases; forward to both.
-      out.compilePassthrough.push('--preset', value);
+      // Presets only affect the run-phase pipeline (falsifiers, streaming,
+      // pre-generation, post-merge). Contract compilation is preset-agnostic.
       out.runPassthrough.push('--preset', value);
     } else if (localTokens.has(arg)) {
       // `--local-*` flags configure either the extractor (compile pass) or
