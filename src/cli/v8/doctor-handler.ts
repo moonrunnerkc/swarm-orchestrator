@@ -362,7 +362,7 @@ function probeSwarmDirectory(cwd: string): ProbeResult[] {
         detail: 'missing; swarm uses patches.jsonl for patch tracking',
         required: false,
         fixable: true,
-        fixHint: 'created empty patches.jsonl',
+        fixHint: 'created patches.jsonl with one no-op envelope per default obligation',
       });
     }
     return results;
@@ -448,21 +448,26 @@ function probeSwarmDirectory(cwd: string): ProbeResult[] {
       detail: 'missing; swarm uses patches.jsonl for patch tracking',
       required: false,
       fixable: true,
-      fixHint: 'created empty patches.jsonl',
+      fixHint: 'created patches.jsonl with one no-op envelope per default obligation',
     });
   }
 
   return results;
 }
 
-/** Default contract.yaml content for auto-fix. */
-const DEFAULT_CONTRACT = [
-  'obligations:',
-  '  - type: build-must-pass',
-  '    command: npm run build',
-  '  - type: test-must-pass',
-  '    command: npm test',
-].join('\n') + '\n';
+/** Default contract obligations for auto-fix. patches.jsonl is scaffolded
+ *  with one envelope per obligation so the deterministic session has
+ *  enough fuel for `swarm run` without queue-exhaustion. */
+const DEFAULT_OBLIGATIONS: ReadonlyArray<{ type: string; command: string }> = [
+  { type: 'build-must-pass', command: 'npm run build' },
+  { type: 'test-must-pass', command: 'npm test' },
+];
+const DEFAULT_PATCH_LINE = '{"patch":"no-op","source":"swarm-doctor"}';
+const DEFAULT_CONTRACT =
+  ['obligations:', ...DEFAULT_OBLIGATIONS.flatMap((o) => [`  - type: ${o.type}`, `    command: ${o.command}`])].join('\n') +
+  '\n';
+const DEFAULT_PATCHES =
+  Array.from({ length: DEFAULT_OBLIGATIONS.length }, () => DEFAULT_PATCH_LINE).join('\n') + '\n';
 
 /**
  * Attempt to auto-fix a probe result. Returns true if the fix was applied.
@@ -518,12 +523,13 @@ function applyFix(r: ProbeResult, cwd: string): boolean {
     }
 
     if (r.name === 'patches.jsonl') {
-      // Create empty patches.jsonl in .swarm/
+      // Scaffold one envelope per default obligation so `swarm run` does
+      // not hit queue-exhaustion immediately after `doctor --fix`.
       const patchesPath = path.join(swarmDir, 'patches.jsonl');
       if (!fs.existsSync(swarmDir)) {
         fs.mkdirSync(swarmDir, { recursive: true });
       }
-      fs.writeFileSync(patchesPath, '', 'utf8');
+      fs.writeFileSync(patchesPath, DEFAULT_PATCHES, 'utf8');
       return true;
     }
   } catch (err) {

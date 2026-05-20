@@ -149,10 +149,18 @@ describe('cli/v8 doctor-handler', () => {
       fs.writeFileSync(path.join(cwd, 'contract.yaml'), 'obligations: []\n', 'utf8');
 
       const exit = await handleDoctor(['--cwd', cwd, '--fix']);
-      // patches.jsonl should have been created (in .swarm/)
+      // patches.jsonl should have been created (in .swarm/) with one no-op
+      // envelope per default obligation so a subsequent `swarm run` does
+      // not hit deterministic queue-exhaustion immediately.
       assert.equal(fs.existsSync(path.join(cwd, '.swarm', 'patches.jsonl')), true);
-      // Content should be empty
-      assert.equal(fs.readFileSync(path.join(cwd, '.swarm', 'patches.jsonl'), 'utf8'), '');
+      const patchesText = fs.readFileSync(path.join(cwd, '.swarm', 'patches.jsonl'), 'utf8');
+      const patchLines = patchesText.split('\n').filter((l) => l.trim().length > 0);
+      assert.ok(patchLines.length >= 1, 'expected at least one envelope');
+      for (const line of patchLines) {
+        const env = JSON.parse(line);
+        assert.equal(env.patch, 'no-op');
+        assert.equal(env.source, 'swarm-doctor');
+      }
       assert.equal(exit, 0);
     } finally {
       if (previous === undefined) delete process.env.ANTHROPIC_API_KEY;

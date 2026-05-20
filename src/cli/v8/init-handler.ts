@@ -17,43 +17,49 @@ import { runParseArgs, readBoolean, readString, type ParseArgsOptions } from './
 
 const logger = getLogger('cli:v8:init');
 
+interface ObligationTemplate {
+  type: string;
+  command: string;
+}
+
 /** Language-specific contract templates. */
-const CONTRACT_TEMPLATES: Record<string, string> = {
+const CONTRACT_TEMPLATES: Record<string, ObligationTemplate[]> = {
   node: [
-    'obligations:',
-    '  - type: build-must-pass',
-    '    command: npm run build',
-    '  - type: test-must-pass',
-    '    command: npm test',
-  ].join('\n'),
+    { type: 'build-must-pass', command: 'npm run build' },
+    { type: 'test-must-pass', command: 'npm test' },
+  ],
 
   python: [
-    'obligations:',
-    '  - type: build-must-pass',
-    '    command: python -m compileall .',
-    '  - type: test-must-pass',
-    '    command: pytest',
-  ].join('\n'),
+    { type: 'build-must-pass', command: 'python -m compileall .' },
+    { type: 'test-must-pass', command: 'pytest' },
+  ],
 
   go: [
-    'obligations:',
-    '  - type: build-must-pass',
-    '    command: go build ./...',
-    '  - type: test-must-pass',
-    '    command: go test ./...',
-  ].join('\n'),
+    { type: 'build-must-pass', command: 'go build ./...' },
+    { type: 'test-must-pass', command: 'go test ./...' },
+  ],
 
   rust: [
-    'obligations:',
-    '  - type: build-must-pass',
-    '    command: cargo build',
-    '  - type: test-must-pass',
-    '    command: cargo test',
-  ].join('\n'),
+    { type: 'build-must-pass', command: 'cargo build' },
+    { type: 'test-must-pass', command: 'cargo test' },
+  ],
 };
 
 const VALID_LANGUAGES = Object.keys(CONTRACT_TEMPLATES);
-const PATCHES_CONTENT = '{"patch":"no-op","source":"swarm-init"}\n';
+const PATCH_ENVELOPE_LINE = '{"patch":"no-op","source":"swarm-init"}';
+
+function renderContractYaml(obligations: ObligationTemplate[]): string {
+  const lines = ['obligations:'];
+  for (const o of obligations) {
+    lines.push(`  - type: ${o.type}`);
+    lines.push(`    command: ${o.command}`);
+  }
+  return lines.join('\n') + '\n';
+}
+
+function renderPatchesJsonl(obligationCount: number): string {
+  return Array.from({ length: obligationCount }, () => PATCH_ENVELOPE_LINE).join('\n') + '\n';
+}
 
 /** Parsed flags for `swarm v8 init`. */
 interface InitFlags {
@@ -134,8 +140,8 @@ export async function handleInit(argv: string[]): Promise<number> {
     return 0;
   }
 
-  const contractContent = CONTRACT_TEMPLATES[flags.language];
-  if (contractContent === undefined) {
+  const obligations = CONTRACT_TEMPLATES[flags.language];
+  if (obligations === undefined) {
     // Should not happen after validation, but satisfies the type checker.
     logger.error(`unsupported language: ${flags.language}`);
     return 1;
@@ -146,8 +152,8 @@ export async function handleInit(argv: string[]): Promise<number> {
     fs.mkdirSync(flags.cwd, { recursive: true });
   }
 
-  fs.writeFileSync(contractPath, contractContent + '\n', 'utf8');
-  fs.writeFileSync(patchesPath, PATCHES_CONTENT, 'utf8');
+  fs.writeFileSync(contractPath, renderContractYaml(obligations), 'utf8');
+  fs.writeFileSync(patchesPath, renderPatchesJsonl(obligations.length), 'utf8');
 
   logger.info(`created ${contractPath}`);
   logger.info(`created ${patchesPath}`);
