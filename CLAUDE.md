@@ -116,6 +116,44 @@ Every execution writes to `.swarm/ledger/<run-id>.jsonl` (append-only ledger) an
 - Throw `SwarmError` subclasses (from `src/errors.ts`) with a `remediation` hint so the user knows how to fix the problem.
 - Tests go under `test/`, mirror the module path, end in `.test.ts`, run under Mocha.
 
+## README and docs writing rules
+
+These rules apply to `README.md`, all `docs/*.md`, and any other public-facing
+prose in the repo. They are stricter than the in-code style guide and override
+it where they conflict.
+
+- **Section order is fixed.** Title plus one-line description, badges row,
+  "What This Does" (3 sentences max), install or quick start, usage examples,
+  architecture (only if complex), API reference (only if applicable),
+  contributing, license.
+- **"What This Does" stays under 3 sentences.** If it needs more, the project
+  is not focused enough yet.
+- **Badges row goes immediately after the title.** CI, version, license, test
+  count if real, coverage if measured honestly. No vanity badges.
+- **No AI tells.** Do not use "empowering developers," "seamlessly,"
+  "leverages," "robust," "comprehensive solution," "powerful," "elegant,"
+  "intuitive," "battle-tested," "production-ready," or similar marketing
+  vocabulary.
+- **No em dashes anywhere.** Use commas, colons, semicolons, parentheses, or
+  split sentences. Hyphens inside compound terms (mock-of-hallucination) are
+  fine; an em dash as a sentence connector is not.
+- **No feature walls.** Do not dump bullet lists of capabilities just to
+  look substantial.
+- **No symmetrical pros/cons blocks** or balanced "tradeoffs" tables. Real
+  tradeoffs are asymmetric.
+- **Every claim is backed by a number or a link.** No unverified benchmarks,
+  no invented stats. If a number is in the README it points to a test, a
+  benchmark run, or a fixture count that the reader can reproduce.
+- **Evidence-first.** If you cannot point to a test, a benchmark, a
+  screenshot, or a working demo, do not claim it.
+- **Code examples must run as written.** No pseudo-code passed off as usage.
+  Every command and code block in the README is something a reader can paste
+  into a shell or file and have work.
+- **Human-written voice.** Write like the person who built it, not a
+  marketing team or an AI imitating one.
+- **No closing fluff.** No "Built with love," no "Star this repo if you like
+  it," no thank-you paragraphs.
+
 ## Complexity-reduction changes (v9)
 
 The v9 cycle reduced complexity without removing verification stages or quality
