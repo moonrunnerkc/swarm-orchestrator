@@ -111,6 +111,8 @@ Each detector lives in its own file under that directory. Adding one is a new fi
 
 500 broken patches and 500 clean controls, 50 of each per category, under [`benchmarks/falsification-corpus/v10-corpus/`](benchmarks/falsification-corpus/v10-corpus/). [`npm run leaderboard`](benchmarks/leaderboard/score.ts) replays the corpus and exits non-zero on any miss or false positive. Current state on this branch: 0 failed expectations, recorded in [`benchmarks/leaderboard/results.json`](benchmarks/leaderboard/results.json). The full mocha suite (`npm test`) runs 976 tests.
 
+The local-LLM session path was verified end-to-end against Ollama with `gemma4:31b` on `sindresorhus/escape-string-regexp`: 2 of 2 obligations satisfied in 16 seconds wall time, patch applied and verified on disk.
+
 ## AI-BOM
 
 `--emit-aibom cyclonedx-ml | spdx-ai | both` writes one document per format per run under `.swarm/aibom/`. Emitters in [`src/audit/aibom/`](src/audit/aibom/) produce hand-rolled JSON against the upstream specs; no third-party AI-BOM runtime dep.
@@ -145,6 +147,18 @@ Hosted-model run:
 export ANTHROPIC_API_KEY=sk-...
 swarm run --goal "add a /health endpoint" --extractor anthropic --session anthropic
 ```
+
+Local-LLM run (Ollama):
+
+```bash
+swarm run --goal "add a named export sum(a, b)" \
+  --session local --local-backend ollama \
+  --local-base-url http://localhost:11434 \
+  --local-model-session gemma4:31b \
+  --local-grammar none --local-max-concurrency 1 --preset fast
+```
+
+Replace `gemma4:31b` with any installed Ollama model. Other local backends (`openai-compatible`, `llama-cpp`, `vllm`) take the same flag shape.
 
 Provider details and local-model setup in [`docs/providers.md`](docs/providers.md). Obligation taxonomy in [`docs/check-types.md`](docs/check-types.md). Schema in [`src/contract/schema/v1.json`](src/contract/schema/v1.json).
 
