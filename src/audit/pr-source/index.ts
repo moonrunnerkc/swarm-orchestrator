@@ -52,7 +52,7 @@ const SIGNATURES: AgentSignature[] = [
     ],
     branchPatterns: [/^claude\//i, /^claude-code\//i],
     versionExtractor: (text) => {
-      const m = text.match(/Claude (?:Code\s+)?(?:Opus|Sonnet|Haiku)\s+([0-9]+\.[0-9]+(?:\.[0-9]+)?)/i);
+      const m = text.match(/(?:Opus|Sonnet|Haiku)[^\d]{0,5}([0-9]+\.[0-9]+(?:\.[0-9]+)?)/i);
       return m?.[1];
     },
   },
