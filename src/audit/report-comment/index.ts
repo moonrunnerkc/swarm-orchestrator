@@ -15,8 +15,8 @@ const SEVERITY_ORDER: Severity[] = ['block', 'warn', 'info'];
 
 export function renderPrComment(result: AuditResult, options: RenderOptions = {}): string {
   const headline = result.pass
-    ? '# ✅ Swarm Audit: PASS'
-    : '# ❌ Swarm Audit: BLOCK';
+    ? '# Swarm Audit: PASS'
+    : '# Swarm Audit: BLOCK';
   const subtitle = result.pass
     ? '_No blocking cheat patterns detected. Audit obligations are satisfied._'
     : '_Blocking findings below must be addressed before this PR can be merged._';
@@ -67,8 +67,7 @@ function renderSummary(result: AuditResult): string {
 
 function renderSeverityHeader(severity: Severity, count: number): string {
   const label = severity === 'block' ? 'Blocking' : severity === 'warn' ? 'Warning' : 'Informational';
-  const icon = severity === 'block' ? '⛔' : severity === 'warn' ? '⚠️' : 'ℹ️';
-  return `## ${icon} ${label} (${count})`;
+  return `## ${label} (${count})`;
 }
 
 function renderFinding(finding: Finding): string {

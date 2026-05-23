@@ -35,12 +35,12 @@ const BLOCK_RESULT: AuditResult = {
 describe('audit / report-comment', () => {
   it('renders a PASS header for a clean audit', () => {
     const md = renderPrComment(PASS_RESULT);
-    assert.ok(md.startsWith('# ✅ Swarm Audit: PASS\n'));
+    assert.ok(md.startsWith('# Swarm Audit: PASS\n'));
   });
 
   it('renders a BLOCK header when there are blocking findings', () => {
     const md = renderPrComment(BLOCK_RESULT);
-    assert.ok(md.startsWith('# ❌ Swarm Audit: BLOCK\n'));
+    assert.ok(md.startsWith('# Swarm Audit: BLOCK\n'));
   });
 
   it('renders the agent attribution line', () => {
