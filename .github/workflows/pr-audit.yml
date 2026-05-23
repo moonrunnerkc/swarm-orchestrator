@@ -1,0 +1,77 @@
+name: PR Audit
+# Self-audit: every PR opened against this repo runs through swarm-audit,
+# providing the dogfood evidence that powers the Phase 1 plan exit
+# criterion.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - run: npm run build
+      - name: Run swarm audit
+        id: audit
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          node dist/src/cli.js audit "${GITHUB_REPOSITORY}#${{ github.event.pull_request.number }}" \
+            --output json \
+            --emit-aibom cyclonedx-ml \
+            > audit.json
+          AUDIT_EXIT=$?
+          set -e
+          LEDGER=$(ls -t .swarm/ledger/audit-*.jsonl 2>/dev/null | head -n1 || true)
+          echo "ledger=$LEDGER" >> "$GITHUB_OUTPUT"
+          echo "exit=$AUDIT_EXIT" >> "$GITHUB_OUTPUT"
+      - name: Render and post comment
+        if: ${{ always() }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LEDGER: ${{ steps.audit.outputs.ledger }}
+        run: |
+          PAYLOAD=$(node -e "
+            const r = require('./audit.json');
+            const { renderPrComment } = require('./dist/src/audit/report-comment');
+            process.stdout.write(JSON.stringify({ body: renderPrComment(r, { ledgerUrl: process.env.LEDGER }) }));
+          ")
+          curl -sS -X POST \
+            -H "Authorization: token ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
+            --data "$PAYLOAD" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${{ github.event.pull_request.number }}/comments" \
+            > /dev/null
+      - name: Upload AI-BOM artifact
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: aibom
+          path: .swarm/aibom/
+          if-no-files-found: ignore
+      - name: Upload audit ledger
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-ledger
+          path: .swarm/ledger/audit-*.jsonl
+          if-no-files-found: ignore
+      - name: Fail on blocking findings
+        if: ${{ steps.audit.outputs.exit != '0' }}
+        run: |
+          echo "swarm-audit blocked this PR. See the comment above for details." >&2
+          exit 1

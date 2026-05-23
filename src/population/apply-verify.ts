@@ -1,23 +1,13 @@
 import type { ObligationV1 } from '../contract/types';
 import type { JsonlLedger } from '../ledger/jsonl-ledger';
-import type { ProviderAttribution, WorkspaceSnapshotEntry, ObligationRolledBackEntry } from '../ledger/types';
-import type { Session, SessionUsage } from '../session/types';
-import { addUsage } from '../session/types';
+import type { WorkspaceSnapshotEntry, ObligationRolledBackEntry } from '../ledger/types';
 import { applyFileEmit } from './diff-applier';
 import { computePostApplyShas, snapshotBeforeApply, type PreApplySnapshot } from './diff-snapshot';
 import { rollbackObligation } from './rollback';
 import { applyUnifiedDiff, looksLikeUnifiedDiff } from './unified-diff';
 import { applyWholeFileResponse, looksLikeWholeFileResponse } from './whole-file-apply';
-import { providerAttribution } from './provider-attribution';
 import { verifyObligation } from '../verification/run-verifier';
-import { preVerifyObligations } from '../verification/pre-generation';
-import { postMergeVerify } from '../verification/post-merge';
-import { getLogger } from '../logger';
-import { buildAssertions, runStreamingCompletion } from '../verification/streaming-verifier';
-import type { StreamingVerifierConfig, StreamingAssertion } from '../verification/streaming-verifier';
-import { COST_CAP_ABORT_REASON, type LiveCostTracker } from '../verification/live-cost-tracker';
-import type { PersonaSpec } from '../persona/types';
-import { renderDynamicMessage, type RenderContext } from './persona-message';
+import { type RenderContext } from './persona-message';
 import { detectTestFrameworkMisuse, isTestFilePath } from './test-framework-misuse';
 
 export interface AttemptApplyAndVerifyArgs {

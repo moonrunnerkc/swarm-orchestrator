@@ -1,4 +1,5 @@
 import { getLogger } from '../../logger';
+import { handleAudit } from './audit-handler';
 import { handleCompile } from './compile-handler';
 import { handleDoctor } from './doctor-handler';
 import { handleInit } from './init-handler';
@@ -32,6 +33,8 @@ export async function handleV8Command(argv: string[]): Promise<number> {
       return handleInit(rest);
     case 'doctor':
       return handleDoctor(rest);
+    case 'audit':
+      return handleAudit(rest);
     case undefined:
     case '--help':
     case '-h':
@@ -56,6 +59,7 @@ function printV8Usage(): void {
       '  stats <run-id>   aggregate diagnostic counts from a run ledger',
       '  doctor           probe local prerequisites (API key, falsifiers, PMs)',
       '  init             scaffold contract.yaml + patches.jsonl',
+      '  audit            audit a PR for AI-agent cheat patterns (v10)',
       '',
       'For per-subcommand flags, see `swarm v8 <subcommand> --help`.',
       '',

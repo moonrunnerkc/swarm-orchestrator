@@ -1,11 +1,41 @@
-name: 'Falsifying Swarm Orchestrator'
-description: 'Contract-first AI coding swarm. Compiles a goal into typed obligations, races persona candidates per obligation, verifies before commit.'
+name: 'Swarm Audit — the merge gate for AI-generated PRs'
+description: 'Audits PRs opened by AI coding agents for cheat patterns (test relaxation, mock-of-hallucination, assertion strip, no-op fix). Posts findings as a PR comment and gates merges on blocking results. Also runs the legacy v8 orchestrator pipeline when invoked with goal/contract-path.'
 branding:
-  icon: 'cpu'
+  icon: 'shield'
   color: 'blue'
 
 inputs:
-  # ── Mode selection ────────────────────────────────────────────────────────
+  # ── Audit mode (v10, default trigger: pull_request) ──────────────────────
+  audit-mode:
+    description: |
+      Set to true to run `swarm audit` against a PR diff. When true, the
+      action operates as a merge gate: exit 0 = pass, exit 1 = blocking
+      findings. Pairs with `pr` (default: ${{ github.event.pull_request.number }}).
+    required: false
+    default: 'false'
+  pr:
+    description: |
+      PR reference for audit mode. owner/repo#NN, a GitHub PR URL, or just
+      the PR number (the action infers owner/repo from GITHUB_REPOSITORY).
+    required: false
+  diff-file:
+    description: |
+      Path to a unified diff on disk (alternative to `pr`). Used by
+      audit mode when a diff is already materialized.
+    required: false
+  emit-aibom:
+    description: |
+      Emit an AI-BOM artifact alongside the audit. Values: cyclonedx-ml |
+      spdx-ai | both. Output written to .swarm/aibom/.
+    required: false
+  audit-comment:
+    description: |
+      When true (the default in audit mode), the action posts the rendered
+      Markdown comment to the PR using GITHUB_TOKEN.
+    required: false
+    default: 'true'
+
+  # ── Legacy v8 orchestrator mode ──────────────────────────────────────────
   goal:
     description: |
       Natural-language goal. Compiled into a contract and executed unless
@@ -119,6 +149,12 @@ inputs:
 outputs:
   result:
     description: 'JSON summary of the run (obligations satisfied, tokens, wall time).'
+  audit-pass:
+    description: 'Audit mode: "true" when no blocking findings, "false" when blocking.'
+  audit-findings:
+    description: 'Audit mode: count of blocking findings.'
+  audit-ledger:
+    description: 'Audit mode: path to the JSONL evidence ledger written by the run.'
 
 runs:
   using: 'docker'

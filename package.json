@@ -1,10 +1,11 @@
 {
   "name": "swarm-orchestrator",
-  "version": "9.0.0",
-  "description": "Contract-first AI coding swarm with hash-chained evidence. Compiles a goal into typed obligations, races persona candidates per obligation in a single cached inference session, verifies before commit, and logs every action in an append-only ledger.",
+  "version": "10.0.0",
+  "description": "The merge gate for AI-generated PRs. Detects when AI coding agents cheat — test relaxation, mock-of-hallucination, assertion strip, no-op fix — and gates merges on cheat-free PRs. Emits CycloneDX-ML and SPDX 3.0 AI-Profile artifacts for procurement and EU AI Act Annex IV documentation.",
   "main": "dist/src/index.js",
   "bin": {
     "swarm": "dist/src/cli.js",
+    "swarm-audit": "dist/src/cli.js",
     "swarm-orchestrator": "dist/src/cli.js"
   },
   "files": [
@@ -28,27 +29,37 @@
     "typecheck": "tsc --noEmit -p tsconfig.build.json",
     "format": "prettier --write 'src/**/*.{ts,tsx}' 'test/**/*.ts'",
     "format:check": "prettier --check 'src/**/*.{ts,tsx}' 'test/**/*.ts'",
-    "start": "node dist/src/cli.js"
+    "start": "node dist/src/cli.js",
+    "corpus:generate": "tsc -p tsconfig.build.json && node dist/scripts/corpus/generate-v10.js",
+    "leaderboard": "tsc -p tsconfig.build.json && node dist/benchmarks/leaderboard/score.js"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/moonrunnerkc/swarm-orchestrator.git"
   },
   "keywords": [
-    "cli",
-    "falsification",
+    "code-review",
+    "pr-audit",
+    "ai-code-gate",
+    "cheat-detector",
+    "aibom",
+    "ai-bom",
+    "cyclonedx-ml",
+    "spdx-ai",
+    "merge-gate",
+    "github-action",
+    "eu-ai-act",
+    "cisa-sbom",
+    "claude-code",
+    "cursor",
+    "devin",
+    "aider",
+    "codex",
+    "copilot",
+    "openhands",
     "attestation",
     "verification",
-    "quality-gates",
-    "orchestrator",
-    "agent-orchestrator",
-    "swarm",
-    "ai",
-    "swe-bench",
-    "copilot",
-    "copilot-cli",
-    "claude-code",
-    "codex"
+    "swarm"
   ],
   "author": "Bradley R. Kinnard",
   "license": "ISC",

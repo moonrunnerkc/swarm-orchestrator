@@ -53,6 +53,10 @@ export interface ExtractorFactoryFlags {
   localSeed?: number | null;
   /** Local backend API key. */
   localApiKey?: string | null;
+  /** Per-request timeout in ms for the local backend (default 120000). */
+  localRequestTimeoutMs?: number | null;
+  /** Max in-flight concurrent local-backend requests (default 1). */
+  localMaxConcurrency?: number | null;
 }
 
 /**
@@ -102,11 +106,18 @@ function buildLocalExtractor(flags: ExtractorFactoryFlags): Extractor {
         'set LOCAL_LLM_MODEL_EXTRACTOR or pass --local-model-extractor',
     );
   }
-  const backend = buildLocalBackend({
+  const backendOpts: Parameters<typeof buildLocalBackend>[0] = {
     backend: backendName,
     baseUrl,
     apiKey: flags.localApiKey ?? process.env.LOCAL_LLM_API_KEY ?? null,
-  });
+  };
+  if (flags.localRequestTimeoutMs !== null && flags.localRequestTimeoutMs !== undefined) {
+    backendOpts.requestTimeoutMs = flags.localRequestTimeoutMs;
+  }
+  if (flags.localMaxConcurrency !== null && flags.localMaxConcurrency !== undefined) {
+    backendOpts.maxConcurrency = flags.localMaxConcurrency;
+  }
+  const backend = buildLocalBackend(backendOpts);
   const opts: ConstructorParameters<typeof LocalExtractor>[0] = { backend, model };
   if (flags.localGrammar) opts.grammar = flags.localGrammar;
   if (flags.localSeed !== null && flags.localSeed !== undefined) opts.seed = flags.localSeed;

@@ -3,6 +3,7 @@ import { LlamaCppBackend } from './backends/llama-cpp';
 import { OllamaBackend } from './backends/ollama';
 import { OpenAiCompatibleBackend } from './backends/openai-compatible';
 import { VllmBackend } from './backends/vllm';
+import { ConcurrencyLimitedBackend } from './concurrency-gate';
 
 /** Identifier accepted by the LOCAL_LLM_BACKEND env var / config field. */
 export type LocalBackendName = 'openai-compatible' | 'ollama' | 'llama-cpp' | 'vllm';
@@ -38,6 +39,19 @@ export function buildLocalBackend(config: LocalBackendConfig): LocalBackend {
         'set LOCAL_LLM_BASE_URL or pass --local-base-url',
     );
   }
+  const raw = buildRawBackend(config);
+  // `--local-max-concurrency` is documented as defaulting to 1. The
+  // gate enforces that on the client side: backends like Ollama
+  // serialize inference per loaded model anyway, so parallel calls
+  // only burn each call's timeout budget waiting in the daemon
+  // queue. A client-side semaphore lets each call's timer start
+  // when it actually begins talking to the model.
+  const limit = config.maxConcurrency ?? 1;
+  if (limit < 1 || !Number.isFinite(limit)) return raw;
+  return new ConcurrencyLimitedBackend(raw, limit);
+}
+
+function buildRawBackend(config: LocalBackendConfig): LocalBackend {
   switch (config.backend) {
     case 'openai-compatible':
       return new OpenAiCompatibleBackend(config);

@@ -1,0 +1,47 @@
+---
+description: Cursor rule pack that surfaces swarm-audit findings inline as the agent edits.
+globs:
+  - "src/**/*.{ts,tsx,js,jsx}"
+  - "test/**/*.{ts,tsx,js,jsx}"
+alwaysApply: true
+---
+
+# Swarm Audit — inline cheat-pattern guardrails for Cursor agents
+
+When proposing changes inside this repo, the agent **must avoid** the
+ten cheat patterns the [swarm-audit](https://github.com/moonrunnerkc/swarm-orchestrator)
+GitHub Action blocks at merge time. The audit runs on every PR
+(`./.github/workflows/pr-audit.yml`); flagged PRs cannot merge.
+
+Pattern catalog and the inline rule for each:
+
+- **test-relaxation** — Never swap a strict matcher (`toBe`, `toEqual`,
+  `assertEqual`) for a looser one (`toBeDefined`, `toBeGreaterThan(0)`,
+  `expect.anything()`). Never delete a `describe` / `it` block to make a
+  failing test pass.
+- **mock-of-hallucination** — Before adding `jest.mock(...)`,
+  `vi.mock(...)`, or `@patch(...)`, verify the target exists in the
+  repo's manifest (package.json, requirements.txt, pyproject.toml,
+  go.mod, Cargo.toml). If not, the agent invented the integration.
+- **assertion-strip** — Net assertion count per test file must not
+  decrease across a change. Always replace deleted assertions with
+  equivalents.
+- **no-op-fix** — When fixing a failing test, modify the source. Never
+  edit the test to make the existing source pass.
+- **coverage-erosion** — Adding an `if`/`switch`/`case` branch in source
+  requires a corresponding test addition that exercises the new path.
+- **fake-refactor** — Renaming an exported symbol requires updating
+  every caller in the same diff. Use repo-wide search first.
+- **comment-only-fix** — Do not add `// FIXME:` / `# TODO:` lines as a
+  "fix" — actually change the code.
+- **error-swallow** — Never add `try { ... } catch {}` or
+  `try: ... except: pass`. Catches must log and rethrow.
+- **exception-rethrow-lost-context** — When wrapping an error, pass
+  `{ cause: err }`. Never use `throw new Error(...)` without `cause`.
+- **dead-branch-insertion** — Never add `if (false)`, `if (0)`,
+  `if (null)`, or other tautology-guarded blocks.
+
+## When in doubt
+
+Run `npx swarm audit --diff-stdin < /dev/stdin` against the current
+diff before responding. Exit code `0` = audit pass.

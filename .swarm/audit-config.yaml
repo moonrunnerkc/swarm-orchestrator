@@ -1,0 +1,14 @@
+# Project audit config for the swarm-orchestrator repo itself.
+# Read by src/audit/cheat-detector/audit-config.ts when the dogfood
+# audit (.github/workflows/pr-audit.yml) runs against this repo.
+#
+# These files contain literal cheat patterns by design — detector unit
+# tests embed fixture diffs in template literals, rule packs and Cursor
+# .mdc files quote the patterns as documentation, and the corpus
+# generator emits intentionally-broken patches as test data. They are
+# not real code introducing the patterns, but a regex-based detector
+# can't tell the difference without lexical analysis of the host file.
+excludePaths:
+  - "test/audit/cheat-detector/**.test.ts"
+  - "integrations/cursor/**.mdc"
+  - "scripts/corpus/**.ts"

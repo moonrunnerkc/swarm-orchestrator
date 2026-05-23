@@ -59,6 +59,10 @@ export interface SessionFactoryFlags {
   localSeed?: number | null;
   /** Local backend API key. */
   localApiKey?: string | null;
+  /** Per-request timeout in ms for the local backend (default 120000). */
+  localRequestTimeoutMs?: number | null;
+  /** Max in-flight concurrent local-backend requests (default 1). */
+  localMaxConcurrency?: number | null;
 }
 
 /**
@@ -123,11 +127,18 @@ function buildLocalSession(flags: SessionFactoryFlags): Session {
         'set LOCAL_LLM_MODEL_SESSION or pass --local-model-session',
     );
   }
-  const backend = buildLocalBackend({
+  const backendOpts: Parameters<typeof buildLocalBackend>[0] = {
     backend: backendName,
     baseUrl,
     apiKey: flags.localApiKey ?? process.env.LOCAL_LLM_API_KEY ?? null,
-  });
+  };
+  if (flags.localRequestTimeoutMs !== null && flags.localRequestTimeoutMs !== undefined) {
+    backendOpts.requestTimeoutMs = flags.localRequestTimeoutMs;
+  }
+  if (flags.localMaxConcurrency !== null && flags.localMaxConcurrency !== undefined) {
+    backendOpts.maxConcurrency = flags.localMaxConcurrency;
+  }
+  const backend = buildLocalBackend(backendOpts);
   const opts: ConstructorParameters<typeof LocalSession>[0] = {
     projectContext: flags.projectContext,
     backend,

@@ -1,0 +1,18 @@
+diff --git a/src/coverage-32.ts b/src/coverage-32.ts
+--- a/src/coverage-32.ts
++++ b/src/coverage-32.ts
+@@ -1,3 +1,6 @@
+ export function step32(x: number): number {
++  if (x < 0) {
++    return -1;
++  }
+   return x * 2;
+ }
+diff --git a/src/coverage-32.test.ts b/src/coverage-32.test.ts
+--- a/src/coverage-32.test.ts
++++ b/src/coverage-32.test.ts
+@@ -1,2 +1,4 @@
+ import { step32 } from './coverage-32';
+ it('positive', () => { expect(step32(2)).toBe(4); });
++it('negative', () => { expect(step32(-1)).toBe(-1); });
++it('zero', () => { expect(step32(0)).toBe(0); });

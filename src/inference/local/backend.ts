@@ -122,5 +122,6 @@ export interface BackendOptions {
 /** Default per-request timeout in ms. */
 export const DEFAULT_REQUEST_TIMEOUT_MS = 120_000;
 
-/** Default max concurrency. */
-// DEFAULT_MAX_CONCURRENCY removed (was 1, never used outside this file)
+/** Default max concurrent in-flight requests against the local backend.
+ *  Enforced by ConcurrencyLimitedBackend in the factory. */
+export const DEFAULT_MAX_CONCURRENCY = 1;

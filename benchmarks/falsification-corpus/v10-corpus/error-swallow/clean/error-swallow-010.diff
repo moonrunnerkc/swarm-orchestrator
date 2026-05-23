@@ -1,0 +1,12 @@
+diff --git a/src/err-10.ts b/src/err-10.ts
+--- a/src/err-10.ts
++++ b/src/err-10.ts
+@@ -1,3 +1,8 @@
+ export function call10() {
++  try {
+     dangerousOp(10);
++  } catch (err) {
++    logger.error('call10 failed', { cause: err });
++    throw err;
++  }
+ }
