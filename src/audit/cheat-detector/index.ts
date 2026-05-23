@@ -14,12 +14,24 @@ import { testRelaxationDetector } from './test-relaxation';
 import { mockOfHallucinationDetector } from './mock-of-hallucination';
 import { assertionStripDetector } from './assertion-strip';
 import { noOpFixDetector } from './no-op-fix';
+import { coverageErosionDetector } from './coverage-erosion';
+import { fakeRefactorDetector } from './fake-refactor';
+import { commentOnlyFixDetector } from './comment-only-fix';
+import { errorSwallowDetector } from './error-swallow';
+import { exceptionRethrowLostContextDetector } from './exception-rethrow-lost-context';
+import { deadBranchInsertionDetector } from './dead-branch-insertion';
 
 export const DETECTORS: readonly Detector[] = [
   testRelaxationDetector,
   mockOfHallucinationDetector,
   assertionStripDetector,
   noOpFixDetector,
+  coverageErosionDetector,
+  fakeRefactorDetector,
+  commentOnlyFixDetector,
+  errorSwallowDetector,
+  exceptionRethrowLostContextDetector,
+  deadBranchInsertionDetector,
 ];
 
 export function runCheatDetectors(input: AuditInput): AuditResult {
@@ -49,4 +61,10 @@ export { testRelaxationDetector } from './test-relaxation';
 export { mockOfHallucinationDetector } from './mock-of-hallucination';
 export { assertionStripDetector } from './assertion-strip';
 export { noOpFixDetector } from './no-op-fix';
+export { coverageErosionDetector } from './coverage-erosion';
+export { fakeRefactorDetector } from './fake-refactor';
+export { commentOnlyFixDetector } from './comment-only-fix';
+export { errorSwallowDetector } from './error-swallow';
+export { exceptionRethrowLostContextDetector } from './exception-rethrow-lost-context';
+export { deadBranchInsertionDetector } from './dead-branch-insertion';
 export type { Detector } from './detector-types';
