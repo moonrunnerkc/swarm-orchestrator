@@ -35,6 +35,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getLogger } from '../../logger';
 import { readBoolean, readString, runParseArgs, type ParseArgsOptions } from './argv-schema';
+import { DEFAULT_TOURNAMENT_CONFIG } from '../../population/tournament';
+import type { ObligationV1 } from '../../contract/types';
 
 const logger = getLogger('cli:v8:doctor');
 
@@ -559,8 +561,10 @@ function probeSwarmDirectory(cwd: string): ProbeResult[] {
 }
 
 /** Default contract obligations for auto-fix. patches.jsonl is scaffolded
- *  with one envelope per obligation so the deterministic session has
- *  enough fuel for `swarm run` without queue-exhaustion. */
+ *  with enough no-op envelopes per obligation to cover the worst-case
+ *  tournament dispatch (candidatesPerRound * roundCap), so the
+ *  deterministic session never trips queue-exhaustion immediately after
+ *  `doctor --fix`. */
 const DEFAULT_OBLIGATIONS: ReadonlyArray<{ type: string; command: string }> = [
   { type: 'build-must-pass', command: 'npm run build' },
   { type: 'test-must-pass', command: 'npm test' },
@@ -569,8 +573,15 @@ const DEFAULT_PATCH_LINE = '{"patch":"no-op","source":"swarm-doctor"}';
 const DEFAULT_CONTRACT =
   ['obligations:', ...DEFAULT_OBLIGATIONS.flatMap((o) => [`  - type: ${o.type}`, `    command: ${o.command}`])].join('\n') +
   '\n';
+function defaultPatchEnvelopeCount(obligationType: string): number {
+  const cfg = DEFAULT_TOURNAMENT_CONFIG[obligationType as ObligationV1['type']];
+  if (!cfg) return 1;
+  return Math.max(1, cfg.candidatesPerRound * Math.min(cfg.roundCap, 3));
+}
 const DEFAULT_PATCHES =
-  Array.from({ length: DEFAULT_OBLIGATIONS.length }, () => DEFAULT_PATCH_LINE).join('\n') + '\n';
+  DEFAULT_OBLIGATIONS.flatMap((o) =>
+    Array.from({ length: defaultPatchEnvelopeCount(o.type) }, () => DEFAULT_PATCH_LINE),
+  ).join('\n') + '\n';
 
 /**
  * Attempt to auto-fix a probe result. Returns true if the fix was applied.

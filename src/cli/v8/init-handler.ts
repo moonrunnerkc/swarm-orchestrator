@@ -14,6 +14,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getLogger } from '../../logger';
 import { runParseArgs, readBoolean, readString, type ParseArgsOptions } from './argv-schema';
+import { DEFAULT_TOURNAMENT_CONFIG } from '../../population/tournament';
+import type { ObligationV1 } from '../../contract/types';
 
 const logger = getLogger('cli:v8:init');
 
@@ -57,8 +59,26 @@ function renderContractYaml(obligations: ObligationTemplate[]): string {
   return lines.join('\n') + '\n';
 }
 
-function renderPatchesJsonl(obligationCount: number): string {
-  return Array.from({ length: obligationCount }, () => PATCH_ENVELOPE_LINE).join('\n') + '\n';
+// Each obligation triggers a tournament that dispatches up to
+// `candidatesPerRound * roundCap` session requests in parallel (per
+// DEFAULT_TOURNAMENT_CONFIG). The deterministic session needs one
+// envelope per dispatch, so scaffold that worst-case count per
+// obligation. Otherwise the README quick-start ("swarm init && swarm
+// run --goal ...") trips the 30s queue-exhausted timeout the moment
+// round 1 fires more candidates than scaffolded envelopes.
+function envelopesPerObligation(obligationType: string): number {
+  const cfg = DEFAULT_TOURNAMENT_CONFIG[obligationType as ObligationV1['type']];
+  if (!cfg) return 1;
+  return Math.max(1, cfg.candidatesPerRound * Math.min(cfg.roundCap, 3));
+}
+
+function renderPatchesJsonl(obligations: ObligationTemplate[]): string {
+  const lines: string[] = [];
+  for (const o of obligations) {
+    const count = envelopesPerObligation(o.type);
+    for (let i = 0; i < count; i += 1) lines.push(PATCH_ENVELOPE_LINE);
+  }
+  return lines.join('\n') + '\n';
 }
 
 /** Parsed flags for `swarm v8 init`. */
@@ -153,7 +173,7 @@ export async function handleInit(argv: string[]): Promise<number> {
   }
 
   fs.writeFileSync(contractPath, renderContractYaml(obligations), 'utf8');
-  fs.writeFileSync(patchesPath, renderPatchesJsonl(obligations.length), 'utf8');
+  fs.writeFileSync(patchesPath, renderPatchesJsonl(obligations), 'utf8');
 
   logger.info(`created ${contractPath}`);
   logger.info(`created ${patchesPath}`);
