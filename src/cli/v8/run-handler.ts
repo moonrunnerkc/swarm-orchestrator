@@ -443,6 +443,8 @@ function buildSession(flags: RunFlags, projectContext: string): Session {
     localGrammar: resolution.effective,
     localSeed: flags.local.seed,
     localApiKey: flags.local.apiKey,
+    localRequestTimeoutMs: flags.local.requestTimeoutMs,
+    localMaxConcurrency: flags.local.maxConcurrency,
   };
   if (flags.local.personaModelMap) opts.localPersonaModelMap = flags.local.personaModelMap;
   return buildSessionFromFactory(opts);
