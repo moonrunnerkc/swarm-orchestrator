@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Aider commit-hook integration: run swarm-audit against the just-
+# staged change before allowing the commit. Drop this file into a
+# repo's `.git/hooks/pre-commit` and `chmod +x` it (or symlink from
+# a husky / pre-commit config).
+#
+# Exits 0 when audit passes, 1 when it blocks. Aider stages from its
+# coder pass and then invokes git commit, so this hook fires after
+# the agent has settled but before the commit lands.
+
+set -euo pipefail
+
+# Skip when no staged change.
+if git diff --cached --quiet; then
+  exit 0
+fi
+
+# Use the locally installed swarm if available; fall back to npx.
+if command -v swarm >/dev/null 2>&1; then
+  SWARM=(swarm)
+elif command -v npx >/dev/null 2>&1; then
+  SWARM=(npx -y swarm-orchestrator)
+else
+  echo "swarm-audit hook: neither 'swarm' nor 'npx' on PATH — skipping audit" >&2
+  exit 0
+fi
+
+DIFF_FILE="$(mktemp)"
+trap 'rm -f "$DIFF_FILE"' EXIT
+
+git diff --cached > "$DIFF_FILE"
+
+set +e
+"${SWARM[@]}" audit --diff-file "$DIFF_FILE" --output text
+EXIT=$?
+set -e
+
+if [ "$EXIT" -ne 0 ]; then
+  cat <<'EOF' >&2
+
+Commit blocked by swarm-audit. The cheat-detector engine flagged at
+least one pattern in the staged change. Fix the flagged hunk(s) (or
+rerun with `git commit --no-verify` if you are certain the finding is
+spurious — but the same audit will block the PR at merge time).
+
+Run `swarm audit --diff-file <(git diff --cached) --output markdown`
+for the full rendered explanation.
+
+EOF
+  exit 1
+fi
+
+exit 0

@@ -66,6 +66,12 @@ interface DoctorFlags {
    * Default false — just report issues.
    */
   fix: boolean;
+  /**
+   * When true, doctor additionally probes the v10 audit connector
+   * surface: GITHUB_TOKEN presence, PR-comment posting permissions,
+   * AI-BOM emission readiness, and the cheat-detector module loading.
+   */
+  connectors: boolean;
   /** Set when `--help`/`-h` was passed; the handler short-circuits with exit 0. */
   helpRequested: boolean;
 }
@@ -83,6 +89,10 @@ export async function handleDoctor(argv: string[]): Promise<number> {
   results.push(probeAtLeastOnePackageManager());
   results.push(probeCwd(flags.cwd, flags.requireGit));
   results.push(...probeSwarmDirectory(flags.cwd));
+
+  if (flags.connectors) {
+    results.push(...probeConnectorSurface(flags.cwd));
+  }
 
   let exitCode = 0;
   let totalIssues = 0;
@@ -140,6 +150,7 @@ const DOCTOR_SCHEMA: ParseArgsOptions = {
   cwd: { type: 'string' },
   'require-git': { type: 'boolean' },
   fix: { type: 'boolean' },
+  connectors: { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
 };
 
@@ -155,6 +166,8 @@ function parseFlags(argv: string[]): DoctorFlags {
         '  --cwd <path>      directory to inspect (default: process.cwd())',
         '  --require-git     fail if cwd is not inside a writable git repo',
         '  --fix             attempt to auto-fix fixable issues',
+        '  --connectors      additionally probe v10 audit-connector readiness',
+        '                    (GITHUB_TOKEN, PR-comment permissions, AIBOM)',
         '  --help, -h        show this message',
         '',
       ].join('\n'),
@@ -165,8 +178,99 @@ function parseFlags(argv: string[]): DoctorFlags {
     cwd: cwd !== undefined ? path.resolve(cwd) : process.cwd(),
     requireGit: readBoolean(values, 'require-git'),
     fix: readBoolean(values, 'fix') ?? false,
+    connectors: readBoolean(values, 'connectors') ?? false,
     helpRequested,
   };
+}
+
+// Probes the v10 audit-connector surface. Each probe is non-required
+// (does not flip the exit code on its own) unless the user explicitly
+// configured something that depends on it — checking the surface lets
+// platform engineers verify CI before a PR opens.
+function probeConnectorSurface(cwd: string): ProbeResult[] {
+  const out: ProbeResult[] = [];
+
+  // GITHUB_TOKEN: required for posting PR audit comments and for
+  // authenticated PR fetches (60/hr unauthenticated otherwise).
+  const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN ?? '';
+  out.push({
+    name: 'GITHUB_TOKEN',
+    ok: token.length > 0,
+    detail:
+      token.length > 0
+        ? 'loaded from env (length=' + token.length + ')'
+        : 'not set; PR-comment posting and authenticated PR fetches will not work',
+    required: false,
+    fixable: false,
+  });
+
+  // pull-requests: write permission inference. We can't probe the
+  // permission directly here, but we can flag when running under
+  // GITHUB_ACTIONS and pull-requests isn't in GITHUB_TOKEN_PERMISSIONS.
+  if (process.env.GITHUB_ACTIONS === 'true') {
+    const tokenPerms = process.env.GITHUB_TOKEN_PERMISSIONS ?? '';
+    const hasPrWrite = tokenPerms.includes('pull-requests:write');
+    out.push({
+      name: 'workflow pull-requests permission',
+      ok: hasPrWrite || tokenPerms.length === 0,
+      detail: hasPrWrite
+        ? 'pull-requests:write declared'
+        : tokenPerms.length === 0
+          ? 'GITHUB_TOKEN_PERMISSIONS not set; assuming default permissions'
+          : 'pull-requests:write missing — PR comments cannot be posted',
+      required: false,
+      fixable: false,
+    });
+  }
+
+  // cheat-detector engine: dynamic require to confirm the module is
+  // available in the consumer's install. The audit-handler imports the
+  // engine at top-level, so this also detects a broken dist build.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const det = require('../../audit/cheat-detector') as { DETECTORS?: readonly { name: string }[] };
+    const count = det.DETECTORS?.length ?? 0;
+    out.push({
+      name: 'cheat-detector engine',
+      ok: count > 0,
+      detail: count > 0 ? `${count} detector(s) registered` : 'no detectors registered',
+      required: true,
+      fixable: false,
+    });
+  } catch (err) {
+    out.push({
+      name: 'cheat-detector engine',
+      ok: false,
+      detail: `failed to load: ${(err as Error).message}`,
+      required: true,
+      fixable: false,
+    });
+  }
+
+  // AI-BOM directory writability: the consumer might be in a
+  // read-only mount; .swarm/aibom needs to be writable for emission.
+  const aibomDir = path.join(cwd, '.swarm', 'aibom');
+  let aibomOk = true;
+  let aibomDetail = `${aibomDir} is writable`;
+  try {
+    fs.mkdirSync(aibomDir, { recursive: true });
+    const probe = path.join(aibomDir, `.doctor-probe-${Date.now()}`);
+    fs.writeFileSync(probe, '');
+    fs.unlinkSync(probe);
+  } catch (err) {
+    aibomOk = false;
+    aibomDetail = `cannot write AI-BOM artifacts to ${aibomDir}: ${(err as Error).message}`;
+  }
+  out.push({
+    name: 'AI-BOM output directory',
+    ok: aibomOk,
+    detail: aibomDetail,
+    required: false,
+    fixable: true,
+    fixHint: 'create .swarm/aibom/ and ensure it is writable',
+  });
+
+  return out;
 }
 
 function probeApiKey(): ProbeResult {
