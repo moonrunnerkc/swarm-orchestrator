@@ -11,6 +11,7 @@ import parseDiff from 'parse-diff';
 import type { Detector } from './detector-types';
 import type { AuditInput, AuditResult, Finding } from '../types';
 import { isAuditSubjectPath } from './subject-paths';
+import { buildExcludeMatcher, loadAuditConfig } from './audit-config';
 import { testRelaxationDetector } from './test-relaxation';
 import { mockOfHallucinationDetector } from './mock-of-hallucination';
 import { assertionStripDetector } from './assertion-strip';
@@ -37,11 +38,18 @@ export const DETECTORS: readonly Detector[] = [
 
 export function runCheatDetectors(input: AuditInput): AuditResult {
   const allFiles = parseDiff(input.unifiedDiff);
-  // Data files (.diff/.patch) and files under conventional fixture /
-  // corpus directories are demonstration material for the detectors
-  // themselves. Auditing them would turn every detector test fixture
-  // into a self-block. Filter once, before any detector runs.
-  const files = allFiles.filter((f) => isAuditSubjectPath(f.to ?? f.from ?? null));
+  // Two filters compose: the built-in subject-path filter (data files
+  // and conventional fixture / corpus dirs) and the project-level
+  // `.swarm/audit-config.yaml` exclude list (for repos whose own
+  // source legitimately contains literal cheat patterns — detector
+  // tests, rule packs, generator scripts).
+  const excludeFromConfig = buildExcludeMatcher(loadAuditConfig(input.repoRoot).excludePaths);
+  const files = allFiles.filter((f) => {
+    const p = f.to ?? f.from ?? null;
+    if (!isAuditSubjectPath(p)) return false;
+    if (p && excludeFromConfig(p)) return false;
+    return true;
+  });
   const ctx = { files, repoRoot: input.repoRoot };
   const findings: Finding[] = [];
   const detectorVersions: Record<string, string> = {};
