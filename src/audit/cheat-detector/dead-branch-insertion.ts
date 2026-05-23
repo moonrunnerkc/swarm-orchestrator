@@ -4,7 +4,7 @@
 
 import type { Detector, DetectorContext } from './detector-types';
 import type { Finding } from '../types';
-import { isTestFile, walkHunks } from './diff-walker';
+import { isCommentOnlyLine, isTestFile, walkHunks } from './diff-walker';
 
 const VERSION = '1.0.0';
 
@@ -25,6 +25,7 @@ export const deadBranchInsertionDetector: Detector = {
     for (const hunk of walkHunks(ctx.files)) {
       if (isTestFile(hunk.file)) continue;
       for (const addition of hunk.added) {
+        if (isCommentOnlyLine(addition.content)) continue;
         for (const re of DEAD_CONDITIONS) {
           if (!re.test(addition.content)) continue;
           findings.push({

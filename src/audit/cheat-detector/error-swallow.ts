@@ -5,7 +5,7 @@
 
 import type { Detector, DetectorContext } from './detector-types';
 import type { Finding } from '../types';
-import { filePath, isTestFile, shouldInspect, walkHunks } from './diff-walker';
+import { filePath, isCommentOnlyLine, isTestFile, shouldInspect, walkHunks } from './diff-walker';
 
 const VERSION = '1.0.0';
 
@@ -27,7 +27,10 @@ export const errorSwallowDetector: Detector = {
       if (isTestFile(hunk.file)) continue;
       const file = ctx.files.find((f) => filePath(f) === hunk.file);
       if (file === undefined || !shouldInspect(file)) continue;
-      const addedJoined = hunk.added.map((a) => a.content).join('\n');
+      const addedJoined = hunk.added
+        .filter((a) => !isCommentOnlyLine(a.content))
+        .map((a) => a.content)
+        .join('\n');
       // Multi-line: scan added block as a single text body.
       for (const re of EMPTY_CATCH_PATTERNS) {
         if (re.test(addedJoined)) {

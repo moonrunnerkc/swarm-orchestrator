@@ -68,9 +68,87 @@ export async function fetchPrDiffViaGithub(ref: GithubPrRef): Promise<string> {
     }
     return data;
   } catch (err) {
+    // The unified-diff endpoint refuses PRs larger than 300 files
+    // (HTTP 406 with code "too_large"). GitHub's documented workaround
+    // is the paginated /pulls/N/files endpoint, which returns per-file
+    // patch hunks we can splice into a unified diff. Detect that case
+    // explicitly and fall back, instead of failing the whole audit.
+    if (isDiffTooLarge(err)) {
+      return fetchPrDiffViaListFiles(octokit, ref);
+    }
     if (err instanceof SwarmError) throw err;
     throw new SwarmError(
       `failed to fetch PR diff for ${ref.owner}/${ref.repo}#${ref.number}: ${(err as Error).message}`,
+      'AUDIT_PR_FETCH',
+      {
+        cause: err,
+        remediation: 'Try: set GITHUB_TOKEN, or verify the PR reference exists',
+      },
+    );
+  }
+}
+
+interface OctokitErrorShape {
+  status?: number;
+  message?: string;
+  errors?: ReadonlyArray<{ code?: string; field?: string; resource?: string }>;
+}
+
+function isDiffTooLarge(err: unknown): boolean {
+  if (err === null || typeof err !== 'object') return false;
+  const e = err as OctokitErrorShape;
+  if (e.status === 406) return true;
+  if (typeof e.message === 'string' && /too[_ ]large|exceeded the maximum number of files/i.test(e.message)) {
+    return true;
+  }
+  if (Array.isArray(e.errors)) {
+    for (const inner of e.errors) {
+      if (inner?.code === 'too_large') return true;
+    }
+  }
+  return false;
+}
+
+interface FileEntryShape {
+  filename: string;
+  previous_filename?: string;
+  status: string; // added | removed | modified | renamed | copied | changed | unchanged
+  patch?: string;
+}
+
+async function fetchPrDiffViaListFiles(
+  octokit: Octokit,
+  ref: GithubPrRef,
+): Promise<string> {
+  try {
+    const files = (await octokit.paginate(octokit.pulls.listFiles, {
+      owner: ref.owner,
+      repo: ref.repo,
+      pull_number: ref.number,
+      per_page: 100,
+    })) as FileEntryShape[];
+    if (files.length === 0) return '';
+    const chunks: string[] = [];
+    for (const f of files) {
+      // listFiles omits `patch` for binary files and for files whose
+      // single-file patch exceeds GitHub's per-file truncation limit.
+      // Skip those — including a header with no hunks would produce a
+      // malformed unified diff downstream.
+      if (typeof f.patch !== 'string' || f.patch.length === 0) continue;
+      const oldPath = f.status === 'added' ? '/dev/null' : `a/${f.previous_filename ?? f.filename}`;
+      const newPath = f.status === 'removed' ? '/dev/null' : `b/${f.filename}`;
+      chunks.push(
+        `diff --git a/${f.previous_filename ?? f.filename} b/${f.filename}\n` +
+          `--- ${oldPath}\n` +
+          `+++ ${newPath}\n` +
+          (f.patch.endsWith('\n') ? f.patch : `${f.patch}\n`),
+      );
+    }
+    return chunks.join('');
+  } catch (err) {
+    if (err instanceof SwarmError) throw err;
+    throw new SwarmError(
+      `failed to fetch PR file list for ${ref.owner}/${ref.repo}#${ref.number}: ${(err as Error).message}`,
       'AUDIT_PR_FETCH',
       {
         cause: err,

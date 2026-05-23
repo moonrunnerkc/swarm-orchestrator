@@ -23,6 +23,18 @@ export interface HunkPair {
   deleted: DeletedLine[];
 }
 
+// A line is "comment-only" if its first non-whitespace characters
+// open or continue a single-line or block comment. Comments are prose
+// describing code, not the code itself — a detector looking for a
+// `jest.mock(...)` call should not fire on `// jest.mock('foo') is a
+// cheat`. The exact set of opener tokens here covers JS/TS, Python,
+// SQL/Lua (--), block comments (/* */), and continuations (*).
+const COMMENT_ONLY_RE = /^\s*(\/\/|#|--|\/\*|\*\/|\*(?!\*))/;
+
+export function isCommentOnlyLine(content: string): boolean {
+  return COMMENT_ONLY_RE.test(content);
+}
+
 const SUPPORTED_FILE_KINDS = ['add', 'modify', 'rename'] as const;
 
 export function fileKind(file: ParsedDiffFile): 'add' | 'modify' | 'delete' | 'rename' | 'unknown' {

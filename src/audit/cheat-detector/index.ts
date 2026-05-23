@@ -10,6 +10,7 @@
 import parseDiff from 'parse-diff';
 import type { Detector } from './detector-types';
 import type { AuditInput, AuditResult, Finding } from '../types';
+import { isAuditSubjectPath } from './subject-paths';
 import { testRelaxationDetector } from './test-relaxation';
 import { mockOfHallucinationDetector } from './mock-of-hallucination';
 import { assertionStripDetector } from './assertion-strip';
@@ -35,7 +36,12 @@ export const DETECTORS: readonly Detector[] = [
 ];
 
 export function runCheatDetectors(input: AuditInput): AuditResult {
-  const files = parseDiff(input.unifiedDiff);
+  const allFiles = parseDiff(input.unifiedDiff);
+  // Data files (.diff/.patch) and files under conventional fixture /
+  // corpus directories are demonstration material for the detectors
+  // themselves. Auditing them would turn every detector test fixture
+  // into a self-block. Filter once, before any detector runs.
+  const files = allFiles.filter((f) => isAuditSubjectPath(f.to ?? f.from ?? null));
   const ctx = { files, repoRoot: input.repoRoot };
   const findings: Finding[] = [];
   const detectorVersions: Record<string, string> = {};

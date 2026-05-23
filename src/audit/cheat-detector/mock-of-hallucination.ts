@@ -13,7 +13,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { Detector, DetectorContext } from './detector-types';
 import type { Finding } from '../types';
-import { walkHunks } from './diff-walker';
+import { isCommentOnlyLine, walkHunks } from './diff-walker';
 
 const VERSION = '1.0.0';
 
@@ -42,6 +42,7 @@ export const mockOfHallucinationDetector: Detector = {
     const hunks = walkHunks(ctx.files);
     for (const hunk of hunks) {
       for (const addition of hunk.added) {
+        if (isCommentOnlyLine(addition.content)) continue;
         const claimed = extractMockTarget(addition.content);
         if (claimed === undefined) continue;
         if (isLocalImport(claimed)) continue;
