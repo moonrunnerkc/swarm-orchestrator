@@ -1,0 +1,136 @@
+name: 'Swarm Audit'
+description: 'Composite action that runs swarm-audit (v10) against a PR diff and posts the rendered audit comment.'
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+inputs:
+  pr:
+    description: 'PR reference: owner/repo#NN, full URL, or bare number (inferred from GITHUB_REPOSITORY).'
+    required: false
+  emit-aibom:
+    description: 'cyclonedx-ml | spdx-ai | both (default: none).'
+    required: false
+    default: ''
+  comment:
+    description: 'Post the rendered Markdown to the PR via GITHUB_TOKEN. Default true.'
+    required: false
+    default: 'true'
+  repo-root:
+    description: 'Repo root for manifest / import lookups. Default: $GITHUB_WORKSPACE.'
+    required: false
+  node-version:
+    description: 'Node version for setup-node. Default 20.'
+    required: false
+    default: '20'
+
+outputs:
+  pass:
+    description: '"true" when no blocking findings, otherwise "false".'
+    value: ${{ steps.audit.outputs.pass }}
+  blocking-findings:
+    description: 'Count of blocking findings.'
+    value: ${{ steps.audit.outputs.blocking }}
+  ledger:
+    description: 'Path to the audit ledger JSONL file.'
+    value: ${{ steps.audit.outputs.ledger }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Install swarm-orchestrator
+      shell: bash
+      run: |
+        npm install --omit=dev --no-save swarm-orchestrator@latest >/dev/null 2>&1 || \
+          npm install --no-save swarm-orchestrator@latest
+
+    - name: Resolve PR ref
+      id: resolve
+      shell: bash
+      env:
+        INPUT_PR: ${{ inputs.pr }}
+      run: |
+        PR="$INPUT_PR"
+        if [ -z "$PR" ] && [ -n "${GITHUB_EVENT_PATH:-}" ]; then
+          PR=$(node -e "const e=require(process.env.GITHUB_EVENT_PATH); process.stdout.write(String(e.pull_request?.number ?? e.number ?? ''))")
+        fi
+        if [ -z "$PR" ]; then
+          echo "no PR ref available — pass an explicit `pr` input or trigger on pull_request" >&2
+          exit 2
+        fi
+        if [[ "$PR" =~ ^[0-9]+$ ]] && [ -n "${GITHUB_REPOSITORY:-}" ]; then
+          PR="${GITHUB_REPOSITORY}#${PR}"
+        fi
+        echo "ref=$PR" >> "$GITHUB_OUTPUT"
+
+    - name: Run swarm audit
+      id: audit
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ env.GITHUB_TOKEN }}
+        INPUT_EMIT_AIBOM: ${{ inputs.emit-aibom }}
+        INPUT_REPO_ROOT: ${{ inputs.repo-root }}
+        INPUT_PR_REF: ${{ steps.resolve.outputs.ref }}
+      run: |
+        AUDIT_CMD=(npx swarm audit "$INPUT_PR_REF" --output json)
+        if [ -n "$INPUT_EMIT_AIBOM" ]; then
+          AUDIT_CMD+=(--emit-aibom "$INPUT_EMIT_AIBOM")
+        fi
+        if [ -n "$INPUT_REPO_ROOT" ]; then
+          AUDIT_CMD+=(--repo-root "$INPUT_REPO_ROOT")
+        fi
+        AUDIT_JSON="$(mktemp)"
+        set +e
+        "${AUDIT_CMD[@]}" > "$AUDIT_JSON"
+        EXIT=$?
+        set -e
+        PASS="false"; if [ "$EXIT" = "0" ]; then PASS="true"; fi
+        BLOCK=$(node -e "try{const r=require('${AUDIT_JSON}');process.stdout.write(String(r.findings.filter(f=>f.severity==='block').length))}catch(e){process.stdout.write('0')}")
+        LEDGER=$(ls -t .swarm/ledger/audit-*.jsonl 2>/dev/null | head -n1 || true)
+        {
+          echo "pass=$PASS"
+          echo "blocking=$BLOCK"
+          echo "ledger=$LEDGER"
+          echo "json_path=$AUDIT_JSON"
+        } >> "$GITHUB_OUTPUT"
+        exit $EXIT
+      continue-on-error: true
+
+    - name: Post audit comment
+      if: ${{ inputs.comment == 'true' }}
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ env.GITHUB_TOKEN }}
+        INPUT_PR_REF: ${{ steps.resolve.outputs.ref }}
+        AUDIT_JSON: ${{ steps.audit.outputs.json_path }}
+        AUDIT_LEDGER: ${{ steps.audit.outputs.ledger }}
+      run: |
+        if [ -z "${GITHUB_TOKEN:-}" ]; then
+          echo "GITHUB_TOKEN not set; skipping PR comment." >&2
+          exit 0
+        fi
+        PR_NUMBER="${INPUT_PR_REF##*#}"
+        PR_OWNER_REPO="${INPUT_PR_REF%%#*}"
+        PAYLOAD=$(node -e "
+          const r = require('$AUDIT_JSON');
+          const { renderPrComment } = require('swarm-orchestrator/dist/src/audit/report-comment');
+          process.stdout.write(JSON.stringify({ body: renderPrComment(r, { ledgerUrl: '$AUDIT_LEDGER' }) }));
+        ")
+        curl -sS -X POST \
+          -H "Authorization: token ${GITHUB_TOKEN}" \
+          -H "Accept: application/vnd.github+json" \
+          -H "Content-Type: application/json" \
+          --data "$PAYLOAD" \
+          "https://api.github.com/repos/${PR_OWNER_REPO}/issues/${PR_NUMBER}/comments" > /dev/null
+
+    - name: Fail step on blocking findings
+      if: ${{ steps.audit.outputs.pass != 'true' }}
+      shell: bash
+      run: |
+        echo "swarm-audit: ${{ steps.audit.outputs.blocking }} blocking finding(s) — see comment above." >&2
+        exit 1
