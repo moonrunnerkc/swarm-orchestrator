@@ -36,11 +36,22 @@ const RELAXED_DIFF = `diff --git a/test/add.test.ts b/test/add.test.ts
 
 describe('cheat-detector engine', () => {
   it('exposes a stable, non-empty detector registry', () => {
-    assert.ok(DETECTORS.length >= 4);
+    assert.ok(DETECTORS.length >= 10);
     const names = DETECTORS.map((d) => d.name);
     assert.deepEqual(
       names.sort(),
-      ['assertion-strip', 'mock-of-hallucination', 'no-op-fix', 'test-relaxation'].sort(),
+      [
+        'assertion-strip',
+        'comment-only-fix',
+        'coverage-erosion',
+        'dead-branch-insertion',
+        'error-swallow',
+        'exception-rethrow-lost-context',
+        'fake-refactor',
+        'mock-of-hallucination',
+        'no-op-fix',
+        'test-relaxation',
+      ].sort(),
     );
   });
 
