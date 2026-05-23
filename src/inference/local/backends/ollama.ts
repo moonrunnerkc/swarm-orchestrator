@@ -49,14 +49,20 @@ export class OllamaBackend implements LocalBackend {
     }
     const parsed = safeParseJson(text) as
       | {
-          message?: { content?: string };
+          message?: { content?: string; thinking?: string };
           prompt_eval_count?: number;
           eval_count?: number;
         }
       | null;
+    // Some thinking-capable models ignore `think:false` and still route
+    // their answer through `message.thinking` (or split it between the
+    // two). Fall back to thinking when content is empty so the session
+    // gets the model's actual output instead of an empty string.
     const content = parsed?.message?.content ?? '';
+    const thinking = parsed?.message?.thinking ?? '';
+    const text2 = content.length > 0 ? content : thinking;
     return {
-      text: content,
+      text: text2,
       usage: ollamaUsage(parsed),
       usageEstimated: parsed?.eval_count === undefined,
     };
@@ -91,14 +97,19 @@ export class OllamaBackend implements LocalBackend {
         if (line.trim().length === 0) continue;
         const parsed = safeParseJson(line) as
           | {
-              message?: { content?: string };
+              message?: { content?: string; thinking?: string };
               done?: boolean;
               prompt_eval_count?: number;
               eval_count?: number;
             }
           | null;
         if (!parsed) continue;
-        const delta = parsed.message?.content ?? '';
+        // Stream `content` deltas; only fall back to `thinking` deltas
+        // when the model never produced any content (some thinking-
+        // capable models ignore `think:false`).
+        const contentDelta = parsed.message?.content ?? '';
+        const thinkingDelta = parsed.message?.thinking ?? '';
+        const delta = contentDelta.length > 0 ? contentDelta : thinkingDelta;
         if (delta.length > 0) {
           partialText += delta;
           if (!observer({ chunk: delta, partialText })) {
@@ -138,10 +149,18 @@ export class OllamaBackend implements LocalBackend {
 }
 
 function buildOllamaBody(request: BackendRequest, stream: boolean): Record<string, unknown> {
+  // `think: false` tells Ollama not to route the model's output through a
+  // separate `message.thinking` channel for models that support thinking
+  // mode (gemma4, deepseek-r1, qwen3, gpt-oss). Without this, those models
+  // happily fill `thinking` with their entire response and leave
+  // `message.content` empty, which the session-side parser correctly
+  // treats as an empty response. The caller can still re-enable thinking
+  // by passing `extras: { think: true }`.
   const body: Record<string, unknown> = {
     model: request.model,
     messages: request.messages,
     stream,
+    think: false,
     options: {
       temperature: request.temperature,
       num_predict: request.maxTokens,
