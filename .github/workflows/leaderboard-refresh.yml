@@ -1,0 +1,36 @@
+name: Leaderboard Refresh
+# Weekly refresh of the public leaderboard. Runs the corpus through the
+# cheat-detector engine, writes docs/leaderboard/data.json + results.json,
+# commits, and pushes. GitHub Pages serves the result.
+
+on:
+  schedule:
+    - cron: '0 13 * * MON'  # 13:00 UTC every Monday
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - run: npm run build
+      - run: npm run corpus:generate
+      - run: npm run leaderboard
+      - name: Commit refresh
+        run: |
+          if ! git diff --quiet -- docs/leaderboard/ benchmarks/leaderboard/; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add docs/leaderboard/ benchmarks/leaderboard/
+            git commit -m "chore(leaderboard): weekly refresh"
+            git push
+          else
+            echo "no changes"
+          fi
