@@ -1,24 +1,25 @@
 <div align="center">
 
-<img src="docs/assets/hero.svg" alt="Swarm Orchestrator - contract-first verification for code changes" width="100%">
+<img src="docs/assets/hero.svg" alt="Swarm Orchestrator - the merge gate for AI-generated PRs" width="100%">
 
 <p>
   <a href="https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/moonrunnerkc/swarm-orchestrator/ci.yml?branch=main&label=CI&logo=github&style=flat-square" alt="CI"></a>
   <a href="https://github.com/moonrunnerkc/swarm-orchestrator/releases/latest"><img src="https://img.shields.io/github/v/release/moonrunnerkc/swarm-orchestrator?label=release&style=flat-square&color=22d3ee" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/moonrunnerkc/swarm-orchestrator?style=flat-square&color=a78bfa" alt="License"></a>
   <a href="https://nodejs.org"><img src="https://img.shields.io/badge/node-%E2%89%A5%2020-3c873a?style=flat-square&logo=node.js&logoColor=white" alt="Node >= 20"></a>
-  <img src="https://img.shields.io/badge/tests-917%20passing-34d399?style=flat-square" alt="917 tests passing">
+  <img src="https://img.shields.io/badge/tests-953%20passing-34d399?style=flat-square" alt="953 tests passing">
   <img src="https://img.shields.io/badge/TypeScript-strict-3178c6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript strict">
   <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-fb7185?style=flat-square" alt="PRs welcome"></a>
 </p>
 
 <p>
-  <a href="#install"><b>Install</b></a> ·
   <a href="#how-it-works"><b>How It Works</b></a> ·
-  <a href="#quick-start"><b>Quick Start</b></a> ·
-  <a href="#common-workflows"><b>Workflows</b></a> ·
-  <a href="#contracts"><b>Contracts</b></a> ·
   <a href="#github-action"><b>GitHub Action</b></a> ·
+  <a href="#install"><b>Install</b></a> ·
+  <a href="#quick-start"><b>Quick Start</b></a> ·
+  <a href="#cheat-detectors"><b>Cheat Detectors</b></a> ·
+  <a href="#ai-bom"><b>AI-BOM</b></a> ·
+  <a href="#orchestration-mode"><b>Orchestration Mode</b></a> ·
   <a href="#reference"><b>Reference</b></a>
 </p>
 
@@ -26,51 +27,85 @@
 
 ---
 
-# Swarm Orchestrator
+# Swarm Orchestrator — *the merge gate for AI-generated PRs*
 
-Swarm Orchestrator is a safety check for code changes. It gives a proposed
-change a clear checklist, runs the checklist, and records what happened.
+When your team uses Claude Code, Cursor, Devin, Aider, Codex CLI, or Copilot to
+ship code, the failure mode that bites is not a bad commit — it's a green PR
+where the agent quietly relaxed a test, mocked a service that does not exist,
+stripped assertions to make a failing case pass, or edited the test instead of
+the bug. Swarm is the GitHub Action that catches that before it merges.
 
-Plain English:
+Phase 1 ships four cheat detectors, an evidence ledger, and a procurement-ready
+AI-BOM. Phase 2 publishes a public leaderboard scoring named agents on a 500-
+case corpus. Phase 3 emits CycloneDX 1.6 ML-BOM and SPDX 3.0 AI-Profile
+artifacts so the audit clears procurement before [EU AI Act Article 11][eu-ai-act]
+binds August 2, 2026.
 
-- A `patch` is a proposed code change.
-- A `contract` is the checklist the change must satisfy.
-- A `provider` is where the proposed change comes from: a file, a queue, a
-  hosted model, or your own local model server.
-- A `ledger` is the audit log written after the run.
-- A `falsifier` is an optional second checker that tries to prove an accepted
-  change is still wrong.
-
-Use it when you want:
-
-- AI-generated or externally generated patches checked before merge.
-- A CI gate that fails when required checks do not pass.
-- A local-only verification path, with optional model-driven generation when
-  you want it.
-
-It does not replace tests, review, or CI. It gives them a structured checklist
-and saves a record of the decision.
+[eu-ai-act]: docs/eu-ai-act-mapping.md
 
 ## How It Works
 
-1. You provide a goal, a contract, or both.
-2. `swarm` turns that into exact checks, or reads the checks you already wrote.
-3. A patch is supplied by a queue, stdin, a directory, or a model provider.
-4. `swarm` applies and verifies the patch.
-5. Passing runs leave evidence in `.swarm/`; failing runs exit non-zero.
+1. A PR opens against your repo. The agent that wrote it could be human or AI;
+   Swarm fingerprints the source from commit metadata, bot author, branch
+   prefix, and PR body.
+2. The Swarm GitHub Action wakes on `pull_request`, fetches the unified diff,
+   and runs the cheat-detector engine against it. Each detector reports
+   findings with severity `block`, `warn`, or `info`.
+3. Findings stream into an append-only, hash-chained evidence ledger under
+   `.swarm/ledger/audit-<run-id>.jsonl`. Tampering breaks the chain.
+4. The action posts a rendered Markdown comment back to the PR — pass/fail
+   header, agent attribution line, findings grouped by severity, ledger link.
+5. Any `block` finding fails the check. CI refuses the merge.
+6. Optionally, the same run emits a CycloneDX-ML or SPDX-AI document for
+   procurement and EU AI Act Annex IV technical documentation.
 
-Every important format is linked below so the README stays readable while the
-details remain verifiable.
+The orchestrator path that produced this engine — contract → typed checks →
+graded patches → post-merge re-audit — is still available for teams that want
+Swarm to *generate* code, not just audit it. See [Orchestration mode](#orchestration-mode).
+
+## GitHub Action
+
+Self-host on every PR with `pull_request: [opened, synchronize, reopened]`:
+
+```yaml
+name: PR Audit
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+permissions:
+  pull-requests: write
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: moonrunnerkc/swarm-orchestrator@v10
+        with:
+          audit-mode: true
+          emit-aibom: cyclonedx-ml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+Outputs:
+
+- `audit-pass` — `"true"` if no blocking findings.
+- `audit-findings` — blocking-finding count.
+- `audit-ledger` — path to the JSONL evidence ledger inside the job workspace.
+
+The composite sub-action at
+[`.github/actions/swarm-audit/`](.github/actions/swarm-audit/) skips the
+Docker container path when you want a lighter `setup-node` flow.
+
+See [action.yml](action.yml) for every input and
+[SECURITY.md](SECURITY.md) for secret-handling rules.
 
 ## Install
 
-Requirements:
-
-- Node `>=20`
-- git `>=2.40`
-- `npm`, `yarn`, or `pnpm` in projects whose contracts run package commands
-
-Install from a clone:
+Requirements: Node `>=20`, git `>=2.40`, `npm`.
 
 ```bash
 git clone https://github.com/moonrunnerkc/swarm-orchestrator.git
@@ -78,153 +113,86 @@ cd swarm-orchestrator
 npm install
 npm run build
 npm link
+swarm --help
 ```
 
-Check the CLI:
+Or as a one-shot audit against a PR you own:
 
 ```bash
-swarm --help
-swarm doctor
+GITHUB_TOKEN=ghp_... npx swarm-orchestrator audit moonrunnerkc/swarm-orchestrator#123
 ```
 
 ## Quick Start
 
-Use `swarm init` to scaffold a contract and patches file, then run. No API key
-needed — the deterministic provider is the default and falsifiers are off
-automatically when no adapter CLIs are present.
+```bash
+# Audit a PR by reference
+swarm audit moonrunnerkc/swarm-orchestrator#42 --emit-aibom cyclonedx-ml
+
+# Audit a diff on disk (offline, no GitHub call)
+git diff main...HEAD > my.patch
+swarm audit --diff-file my.patch
+
+# Audit from stdin (good for git hooks)
+git diff main...HEAD | swarm audit --diff-stdin --output markdown
+```
+
+Exit codes:
+
+- `0` — pass (no blocking findings).
+- `1` — block (one or more blocking cheat patterns caught).
+- `2` — usage error.
+
+## Cheat Detectors
+
+Phase 1 ships four detectors that each catch a specific category of
+agent-authored shortcut:
+
+| Category | What it catches |
+|---|---|
+| `test-relaxation` | Strict matcher swapped for a looser one (`toBe(5)` → `toBeDefined()`), `describe`/`it` blocks deleted, removed assertions inside an edited hunk. |
+| `mock-of-hallucination` | `jest.mock`, `vi.mock`, `@patch` against modules that exist in no manifest in the repo (package.json, requirements.txt, pyproject.toml, go.mod, Cargo.toml). |
+| `assertion-strip` | Net assertion count in a test file drops after the PR, regardless of how the deletion is spread across hunks. |
+| `no-op-fix` | PR claims to fix a failing test but the source modifications share no symbol with the test changes, or no test file in the repo imports the modified source. |
+
+Phase 2 expands the lineup to ten categories on a 500/500 broken/clean
+fixture corpus. See
+[benchmarks/leaderboard/](benchmarks/leaderboard/).
+
+## AI-BOM
+
+`--emit-aibom cyclonedx-ml`, `--emit-aibom spdx-ai`, or `--emit-aibom both`
+writes one document per format per run under `.swarm/aibom/`. Both formats are
+hand-rolled against the upstream spec (no third-party emitter dep):
+
+- **CycloneDX 1.6 ML-BOM** — audited patch is the subject `application`
+  component; detected agent is a `machine-learning-model` component;
+  findings are `vulnerabilities` with `affects` pointing to the subject;
+  the evidence ledger is hashed into `externalReferences`.
+- **SPDX 3.0 AI-Profile** — JSON-LD with the AI profile. Subject is a
+  `SoftwareApplication`, agent is an `AIPackage`, each finding is a
+  reviewer `Annotation`, the agent links to the subject via an
+  `audited` `Relationship`.
+
+Procurement mappings:
+
+- [docs/eu-ai-act-mapping.md](docs/eu-ai-act-mapping.md) — EU AI Act Article 11
+  plus Annex IV technical-documentation fields.
+- [docs/cisa-sbom-ai-mapping.md](docs/cisa-sbom-ai-mapping.md) — CISA SBOM-for-AI
+  minimum elements.
+
+## Orchestration mode
+
+The audit engine is built on top of the contract-first, falsification-gated
+orchestrator that pre-dates v10. Teams that want Swarm to *generate* code in
+addition to grading it use the run path:
 
 ```bash
-swarm init
-swarm run --goal "check this project has package metadata"
+swarm init                # scaffold rules + patches input
+swarm run --goal "..."    # extract → grade → post-merge re-audit
 ```
 
-Or manually:
-
-```bash
-cat > contract.yaml <<'EOF'
-obligations:
-  - type: test-must-pass
-    command: node -e "process.exit(0)"
-  - type: file-must-exist
-    path: package.json
-EOF
-
-printf '{"patch":"no-op","source":"readme-smoke"}\n%.0s' {1..2} > patches.jsonl
-
-swarm run --goal "check this project has package metadata"
-```
-
-The deterministic provider consumes one patch envelope per obligation, so
-the contract's obligation count and `patches.jsonl`'s line count must match.
-`swarm init` keeps them in sync automatically.
-
-That should exit `0` in this repository. It also creates `.swarm/` evidence
-files. After that works, replace `contract.yaml` with checks that matter for
-your project, then replace `no-op` with a real patch source or choose a model
-provider.
-
-**Auto-discovery:** `swarm` automatically finds `contract.yaml` and
-`patches.jsonl` in the current directory or any parent. You only need
-`--contract-file` or `--external-patches-queue` when the file is in a
-non-standard location.
-
-**Presets:** Use `--preset` to configure the pipeline in one flag instead of
-many:
-
-```bash
-swarm run --goal "quick check" --preset fast
-swarm run --goal "minimal check" --preset minimal
-```
-
-| Preset | Falsifiers | Streaming | Pre-gen | Post-merge | Best for |
-|---|---|---|---|---|---|
-| `full` (default) | on | on | on | on | Full rigor; hosted providers |
-| `fast` | off | off | off | off | Local iteration; deterministic provider |
-| `minimal` | off | off | off | off | Deterministic floor only; no synthesis |
-
-## Common Workflows
-
-### Verify a Hand-Written Checklist
-
-Use this when another tool, person, or agent is producing patches and you want
-`swarm` to judge them.
-
-```bash
-swarm run --goal "verify the release gate"
-```
-
-If `contract.yaml` and `patches.jsonl` are in the repo root, that is all you
-need. If they are elsewhere:
-
-```bash
-swarm run --goal "verify the release gate" \
-  --contract-file ./swarm/contract.yaml \
-  --external-patches-queue ./swarm/patches.jsonl
-```
-
-Patch queues are JSONL. Each line is an envelope:
-
-```json
-{"patch":"no-op","source":"manual"}
-```
-
-`patch` can be `no-op`, a unified diff, or a whole-file patch block. See the
-deterministic provider notes in [docs/providers.md](docs/providers.md) for the
-full patch input formats.
-
-### Let a Hosted Model Suggest Changes
-
-Use Anthropic when you want `swarm` to turn the goal into checks and ask the
-hosted API for proposed changes.
-
-```bash
-export ANTHROPIC_API_KEY=...
-
-swarm run --goal "add a /health endpoint" \
-  --extractor anthropic \
-  --session anthropic
-```
-
-Pass `--model <id>` if you want to pin a specific Anthropic model. Provider
-setup and local-model options are covered in [docs/providers.md](docs/providers.md).
-Falsifiers are on by default for non-deterministic providers; add
-`--falsifiers off` to skip them, or configure adapter CLIs per
-[docs/falsification-adapters.md](docs/falsification-adapters.md).
-
-### Run an Existing Contract Directory
-
-Use this when compile and run happen in separate steps.
-
-```bash
-swarm compile "verify the release gate" \
-  --contract-file ./swarm/contract.yaml \
-  --out .swarm/contracts/release-gate \
-  --yes \
-  --no-editor
-
-swarm run .swarm/contracts/release-gate
-```
-
-### Scaffold and Diagnose
-
-```bash
-# Scaffold contract.yaml + patches.jsonl for your language
-swarm init --language python
-swarm init --language go
-swarm init --language rust
-
-# Diagnose setup problems
-swarm doctor
-
-# Auto-fix common problems (missing .swarm/, stale locks, etc.)
-swarm doctor --fix
-```
-
-## Contracts
-
-A contract is the machine-readable checklist. It can be YAML, JSON, or a
-CommonJS-loadable module. Every contract needs at least one `test-must-pass`
-check. Most projects start with build and test checks:
+The rule format is a YAML or JSON file at `contract.yaml` (auto-discovered
+from cwd). Each rule is a typed check Swarm knows how to grade:
 
 ```yaml
 obligations:
@@ -234,170 +202,93 @@ obligations:
     command: npm test
 ```
 
-Common check types:
+Common check types and the runtime taxonomy live in
+[docs/check-types.md](docs/check-types.md). The contract schema is verifiable
+at [src/contract/schema/v1.json](src/contract/schema/v1.json).
 
-| Type | Checks |
-|---|---|
-| `file-must-exist` | A required file exists |
-| `build-must-pass` | A build command exits `0` |
-| `test-must-pass` | A test command exits `0` |
-| `function-must-have-signature` | A function keeps the expected shape |
-| `property-must-hold` | A shell predicate exits `0` |
-| `import-graph-must-satisfy` | Import rules such as no cycles |
-| `coverage-must-exceed` | Coverage stays above a threshold |
-| `performance-must-not-regress` | A benchmark stays within tolerance |
+### Common workflows
 
-Real-world patterns:
+```bash
+# Verify a hand-written rule set against externally supplied patches
+swarm run --goal "verify the release gate"
 
-```yaml
-# Reject PRs that drop line-coverage below 80%
-obligations:
-  - type: coverage-must-exceed
-    scope: coverage/coverage-summary.json
-    metric: lines
-    threshold: 80
+# Let Anthropic produce candidate patches under the rule set
+swarm run --goal "add a /health endpoint" \
+  --extractor anthropic --session anthropic
 
-# Enforce module boundaries: walk src/ and reject any import cycle
-obligations:
-  - type: import-graph-must-satisfy
-    constraint: no-cycles
-    scope: src/
-
-# Verify a specific function signature survives refactors. Both
-# declaration-style ((...): T) and arrow-style ((...) => T) are accepted.
-obligations:
-  - type: function-must-have-signature
-    file: src/api/handler.ts
-    name: handleRequest
-    signature: "(req: Request, res: Response) => Promise<void>"
-
-# Shell predicate: no debugger statements in committed code
-obligations:
-  - type: property-must-hold
-    predicate: "! grep -r 'debugger' src/"
-    target: "no debugger statements in src/"
-
-# Performance regression gate: command stdout's last numeric token must
-# stay within 20% of the baseline JSON's { "value": ... } field.
-obligations:
-  - type: performance-must-not-regress
-    benchmark: "node scripts/bench.js"
-    baseline: benchmarks/build.baseline.json
-    threshold: 0.20
+# Run a pre-compiled rule directory
+swarm compile "verify the release gate" --contract-file ./swarm/contract.yaml \
+  --out .swarm/contracts/release-gate --yes --no-editor
+swarm run .swarm/contracts/release-gate
 ```
 
-The exact contract format is verifiable in
-[src/contract/schema/v1.json](src/contract/schema/v1.json).
+Falsifiers (the cheat-detection layer underneath the audit engine) are `off`
+by default for the deterministic provider and `on` for hosted ones. Override
+with `--falsifiers <on|off>`. Provider setup is in
+[docs/providers.md](docs/providers.md).
+
+### Presets
+
+```bash
+swarm run --goal "quick check" --preset fast      # fewer gates, deterministic provider
+swarm run --goal "rigor"       --preset full      # default — all gates on
+```
+
+| Preset | Cheat detection | Streaming | Pre-gen | Post-merge | Best for |
+|---|---|---|---|---|---|
+| `full` | on | on | on | on | Hosted providers, max rigor |
+| `fast` | off | off | off | off | Deterministic provider, local iteration |
+| `minimal` | off | off | off | off | Deterministic floor only |
 
 ## Commands
 
 | Command | Purpose |
 |---|---|
-| `swarm run --goal "<text>"` | Compile and run in one step |
-| `swarm compile <goal>` | Write a reusable contract directory |
-| `swarm run <contract-dir>` | Run an already compiled contract |
+| `swarm audit <pr|--diff-*>` | **v10 entry point.** Audit a PR diff and exit on blocking findings. |
+| `swarm run --goal "<text>"` | Compile rules and grade patches in one step |
+| `swarm compile <goal>` | Write a reusable rule directory |
+| `swarm run <contract-dir>` | Grade against an already-compiled rule directory |
 | `swarm resume <run-id>` | Continue from a prior ledger |
 | `swarm stats <run-id>` | Summarize a run ledger |
-| `swarm init` | Scaffold contract.yaml + patches.jsonl |
+| `swarm init` | Scaffold rules + patches input |
 | `swarm doctor` | Check local prerequisites |
 | `swarm doctor --fix` | Auto-fix common setup problems |
 
 Run any command with `--help` for its flags.
 
-## Providers
-
-| CLI value | Plain meaning |
-|---|---|
-| `deterministic` | Local-only. You provide the contract and patch source. No model or API key. |
-| `anthropic` | Hosted model. Requires `ANTHROPIC_API_KEY`. |
-| `local` | Your own model server, such as OpenAI-compatible APIs, Ollama, llama.cpp, or vLLM. |
-
-Provider selection is per call. Details, environment variables, and local model
-setup are in [docs/providers.md](docs/providers.md).
-
-## GitHub Action
-
-Minimal deterministic gate:
-
-```yaml
-- uses: moonrunnerkc/swarm-orchestrator@v9
-  with:
-    goal: 'check project metadata exists'
-    contract-file: ./swarm/contract.yaml
-    external-patches-queue: ./swarm/patches.jsonl
-    falsifiers: 'off'
-```
-
-Hosted model run:
-
-```yaml
-- uses: moonrunnerkc/swarm-orchestrator@v9
-  with:
-    goal: 'add a /health endpoint'
-    extractor: anthropic
-    session: anthropic
-  env:
-    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-```
-
-See [action.yml](action.yml) for all inputs and [SECURITY.md](SECURITY.md) for
-secret-handling rules.
-
 ## Output
 
-Runs write evidence under `.swarm/`:
+Audit runs write evidence under `.swarm/` (gitignored at the consumer-repo
+level):
 
 ```text
-.swarm/contracts/<id>/contract.jsonl
-.swarm/contracts/<id>/manifest.json
-.swarm/ledger/<run-id>.jsonl
-.swarm/snapshots/<run-id>/
+.swarm/ledger/audit-<run-id>.jsonl   append-only hash-chained evidence
+.swarm/aibom/<run-id>.cdx.json       CycloneDX 1.6 ML-BOM (when --emit-aibom)
+.swarm/aibom/<run-id>.spdx.json      SPDX 3.0 AI-Profile (when --emit-aibom)
 ```
 
-`swarm` exits non-zero when an obligation fails, a run cannot be completed, or
-a configured budget/precondition is violated. Every error includes a
-remediation hint explaining how to fix the problem.
-
-## Error hints
-
-All SwarmError subclasses carry a `remediation` field with actionable advice:
-
-```
-Contract file not found: /path/contract.yaml
-Try: create one with swarm init, or specify --contract-file <path>
-```
-
-Run `swarm doctor` to diagnose setup problems. Add `--fix` to auto-resolve
-common issues (missing directories, stale locks, missing patches.jsonl).
+`swarm audit` exits non-zero when any finding has severity `block`. Every
+`SwarmError` carries a `remediation` field so the user knows how to fix the
+input that caused the failure.
 
 ## Reference
 
-- [package.json](package.json) - package version, Node requirement, and npm scripts
-- [action.yml](action.yml) - GitHub Action inputs and output
-- [src/contract/schema/v1.json](src/contract/schema/v1.json) - exact contract schema
-- [docs/providers.md](docs/providers.md) - providers, env vars, and local models
-- [docs/falsification-adapters.md](docs/falsification-adapters.md) - optional falsifier adapters
-- [docs/migration.md](docs/migration.md) - migration notes
-- [CHANGELOG.md](CHANGELOG.md) - release history
-- [CONTRIBUTING.md](CONTRIBUTING.md) - development workflow
-- [SECURITY.md](SECURITY.md) - vulnerability reporting and secret handling
-- [CLAUDE.md](CLAUDE.md) - maintainer architecture notes
+- [package.json](package.json) — package version, Node requirement, npm scripts
+- [action.yml](action.yml) — GitHub Action inputs and outputs
+- [docs/check-types.md](docs/check-types.md) — full rule taxonomy
+- [docs/providers.md](docs/providers.md) — extractor and session providers
+- [docs/falsification-adapters.md](docs/falsification-adapters.md) — adapter configuration
+- [docs/eu-ai-act-mapping.md](docs/eu-ai-act-mapping.md) — EU AI Act mapping
+- [docs/cisa-sbom-ai-mapping.md](docs/cisa-sbom-ai-mapping.md) — CISA SBOM-for-AI mapping
+- [benchmarks/leaderboard/](benchmarks/leaderboard/) — agent leaderboard harness
+- [src/contract/schema/v1.json](src/contract/schema/v1.json) — rule schema
+- [CHANGELOG.md](CHANGELOG.md) — release history
+- [CONTRIBUTING.md](CONTRIBUTING.md) — development workflow
+- [SECURITY.md](SECURITY.md) — vulnerability reporting and secret handling
 
-Current release: `9.0.0`. v9 removed the legacy v6 pipeline; pin `8.0.x` if
-you still need `swarm run --v6`.
-
-## Benchmarks
-
-The `benchmarks/` directory contains four active benchmark suites:
-
-| Suite | Location | Purpose |
-|---|---|
-| **Provider bench** | `benchmarks/provider-bench/` | Side-by-side cost/wall-time comparison of extractor and session providers against identical contracts. Produces `report.md` and `report.json`. |
-| **Falsification corpus** | `benchmarks/falsification-corpus/` | Calibration fixtures for falsification layers: agent-authored patches with hand labels, plus synthetic adversarial patches. CI runs the 21-patch synthetic suite as a regression fixture. |
-| **Ladder baseline** | `benchmarks/ladder/` | Single-agent baseline that receives the same goal as the orchestrator, then iterates through explicit prompts and a repair phase. Used to measure whether multi-agent coordination adds value beyond sequential prompting. |
-| **Constraint binding** | `benchmarks/constraint-binding/` | Multi-step constraint tasks (schema-then-query, rename-then-update-callers, contract-change-then-client, lift-then-reuse) with pinned fixtures and behavioural validators. Scores the orchestrator against the ladder on cross-cutting constraint satisfaction. |
-
-Each suite has its own README with run instructions. The falsification corpus serves a dual role: it is a CI regression fixture (all 21 broken patches must be caught, all 21 clean controls must pass) and a benchmark harness for measuring adapter catch rates over time.
+Current release: `10.0.0` (in progress on `v10-auditor-repositioning`). Pin
+`9.x` for the pre-audit orchestrator surface, `8.0.x` for the v6 legacy
+pipeline.
 
 ## Development
 
@@ -411,5 +302,5 @@ npm run typecheck
 License: [ISC](LICENSE).
 
 <div align="center">
-<sub><a href="#swarm-orchestrator">Back to top</a></sub>
+<sub><a href="#swarm-orchestrator--the-merge-gate-for-ai-generated-prs">Back to top</a></sub>
 </div>

@@ -6,6 +6,50 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### v10 — Auditor repositioning
+
+Refocuses the project from "AI coding swarm" to *the merge gate for AI-generated
+PRs.* Internal API names (`Obligation`, `Contract`, `verifier`) are stable; only
+docs vocabulary, the headline action, and the top-level CLI surface change.
+
+#### Added
+
+- `swarm audit <pr-ref | --diff-file | --diff-stdin>` CLI subcommand.
+- `src/audit/cheat-detector/` with four Phase-1 detectors: `test-relaxation`,
+  `mock-of-hallucination`, `assertion-strip`, `no-op-fix`. Pluggable detector
+  registry; adding a category is one import + one array entry.
+- `src/audit/pr-source/` AI-agent fingerprinter covering Claude Code, Cursor,
+  Devin, Aider, Codex CLI, Copilot Workspace, Replit Agent, OpenHands.
+- `src/audit/report-comment/` deterministic PR-comment renderer.
+- `src/audit/aibom/` emitters for CycloneDX 1.6 ML-BOM and SPDX 3.0 AI-Profile,
+  both hand-rolled, no new runtime deps. Triggered by `--emit-aibom`.
+- Optional `aiAgent: { vendor, version?, confidence?, source? }` on every
+  ledger entry; three new audit entry kinds (`pr-audit-started`,
+  `pr-audit-finding`, `pr-audit-completed`).
+- `audit-mode: true` input on the root GitHub Action plus a composite
+  sub-action at `.github/actions/swarm-audit/`. The action emits
+  `audit-pass`, `audit-findings`, `audit-ledger` outputs and posts the
+  rendered Markdown finding back to the PR via `GITHUB_TOKEN`.
+- Dogfood workflow `.github/workflows/pr-audit.yml` that audits every PR
+  against the repository itself.
+- 500/500 broken/clean fixture corpus under
+  `benchmarks/falsification-corpus/v10-corpus/` driven by the v10 generator
+  scripts in `scripts/corpus/`.
+- `benchmarks/leaderboard/` reproducible scorer + `docs/leaderboard/` static
+  site rendering the agent leaderboard.
+- `docs/check-types.md`, `docs/eu-ai-act-mapping.md`, and
+  `docs/cisa-sbom-ai-mapping.md`.
+- New `swarm-audit` bin alias (same dispatcher) so consumer scripts can name
+  the audit verb directly.
+
+#### Changed
+
+- README leads with the audit positioning and the merge-gate tagline.
+- Action.yml description, branding, and headline reflect the audit-first
+  positioning; legacy v8 orchestrator inputs continue to work unchanged.
+- `package.json` description, keywords retuned around `pr-audit`,
+  `cheat-detector`, `aibom`, `merge-gate`, `eu-ai-act`, `cisa-sbom`.
+
 ### Added
 
 - GitHub Action inputs for the full provider, contract-source, and
