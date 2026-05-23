@@ -18,6 +18,19 @@ export interface ProviderAttribution {
   usageEstimated?: boolean;
 }
 
+// Optional per-entry agent attribution (v10). When an entry is produced
+// in response to work an AI coding agent did (e.g. an audit of a PR
+// opened by Cursor), the attribution flows into the canonical-JSON
+// hash chain just like any other field. Absent on entries that did not
+// originate from a recognizable agent — pre-v10 ledger files parse
+// without surfacing this field at all.
+export interface LedgerAgentAttribution {
+  vendor: string;
+  version?: string;
+  confidence?: 'high' | 'medium' | 'low';
+  source?: string;
+}
+
 // Genesis prevHash is the all-zero digest; entryHash is sha256 hex of
 // the canonical JSON of this entry with `entryHash` itself excluded.
 export interface LedgerEntryHeader {
@@ -26,6 +39,7 @@ export interface LedgerEntryHeader {
   seq: number;
   prevHash: string;
   entryHash: string;
+  aiAgent?: LedgerAgentAttribution;
 }
 
 // Per-kind payload shape. Adding a new kind = add a row here. Entries
@@ -218,6 +232,34 @@ export interface LedgerEntryPayloadMap {
     }>;
     detail: string;
   };
+  // v10 audit entries.
+  'pr-audit-started': {
+    prNumber: number | null;
+    prRepository: string | null;
+    prHeadSha: string;
+    prBaseSha: string;
+    detectorsScheduled: string[];
+  };
+  'pr-audit-finding': {
+    category: string;
+    severity: 'block' | 'warn' | 'info';
+    file: string;
+    line: number;
+    endLine?: number;
+    message: string;
+    evidenceSha256: string;
+  };
+  'pr-audit-completed': {
+    prNumber: number | null;
+    prRepository: string | null;
+    pass: boolean;
+    findingCount: number;
+    blockingCount: number;
+    warningCount: number;
+    detectorVersions: Record<string, string>;
+    wallTimeMs: number;
+    detail: string;
+  };
 }
 
 export type LedgerEntryType = keyof LedgerEntryPayloadMap;
@@ -253,3 +295,6 @@ export type FalsificationCallEntry = LedgerEntry<'falsification-call'>;
 export type FalsifierDispatchDecisionEntry = LedgerEntry<'falsifier-dispatch-decision'>;
 export type WorkspaceSnapshotEntry = LedgerEntry<'workspace-snapshot'>;
 export type ObligationRolledBackEntry = LedgerEntry<'obligation-rolled-back'>;
+export type PrAuditStartedEntry = LedgerEntry<'pr-audit-started'>;
+export type PrAuditFindingEntry = LedgerEntry<'pr-audit-finding'>;
+export type PrAuditCompletedEntry = LedgerEntry<'pr-audit-completed'>;

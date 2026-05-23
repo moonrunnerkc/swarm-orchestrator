@@ -11,7 +11,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { SwarmError } from '../errors';
-import type { LedgerEntry, LedgerEntryHeader } from './types';
+import type { LedgerAgentAttribution, LedgerEntry, LedgerEntryHeader } from './types';
 
 export const GENESIS_PREV_HASH = '0'.repeat(64);
 
@@ -71,14 +71,23 @@ export class HashChainedLedger {
     return this.lastHash;
   }
 
-  // Stamps ts, runId, seq, prevHash, entryHash.
-  append<E extends LedgerEntry>(payload: Omit<E, keyof LedgerEntryHeader>): E {
+  // Stamps ts, runId, seq, prevHash, entryHash. Optional `aiAgent`
+  // attribution flows into the canonical-JSON hash chain when provided
+  // — v10 audit pipelines pass it; pre-v10 callers omit it and the
+  // emitted JSON stays byte-identical to legacy output.
+  append<E extends LedgerEntry>(
+    payload: Omit<E, keyof LedgerEntryHeader>,
+    opts?: { aiAgent?: LedgerAgentAttribution },
+  ): E {
     const ts = new Date().toISOString();
+    const agentField =
+      opts?.aiAgent !== undefined ? { aiAgent: opts.aiAgent } : {};
     const base = {
       ts,
       runId: this.runId,
       seq: this.seq,
       prevHash: this.lastHash,
+      ...agentField,
       ...payload,
     } as Omit<E, 'entryHash'> & { entryHash?: string };
     const entryHash = computeEntryHash(base);
