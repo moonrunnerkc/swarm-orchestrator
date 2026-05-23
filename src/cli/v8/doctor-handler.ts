@@ -227,7 +227,6 @@ function probeConnectorSurface(cwd: string): ProbeResult[] {
   // available in the consumer's install. The audit-handler imports the
   // engine at top-level, so this also detects a broken dist build.
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const det = require('../../audit/cheat-detector') as { DETECTORS?: readonly { name: string }[] };
     const count = det.DETECTORS?.length ?? 0;
     out.push({
