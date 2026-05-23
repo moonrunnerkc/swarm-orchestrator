@@ -1,0 +1,12 @@
+diff --git a/src/err-23.ts b/src/err-23.ts
+--- a/src/err-23.ts
++++ b/src/err-23.ts
+@@ -1,3 +1,8 @@
+ export function call23() {
++  try {
+     dangerousOp(23);
++  } catch (err) {
++    logger.error('call23 failed', { cause: err });
++    throw err;
++  }
+ }
