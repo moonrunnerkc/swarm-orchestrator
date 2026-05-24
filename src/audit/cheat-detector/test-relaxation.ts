@@ -17,8 +17,14 @@
 import type { Detector, DetectorContext } from './detector-types';
 import type { Finding } from '../types';
 import { isTestFile, walkHunks } from './diff-walker';
+import { gradeReplacement } from './matcher-grader';
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
+
+// AST grading is bounded so the audit stays cheap on large PRs. Above the
+// cap the regex layer still runs on every hunk; the cap only governs the
+// TS-compiler-API parse path.
+export const MATCHER_GRADER_HUNK_CAP = 50;
 
 const STRICT_MATCHERS: RegExp[] = [
   /\btoBe\s*\(/,
@@ -70,6 +76,8 @@ export const testRelaxationDetector: Detector = {
   run(ctx: DetectorContext): Finding[] {
     const findings: Finding[] = [];
     const hunks = walkHunks(ctx.files);
+    let graderHunksUsed = 0;
+    let graderCapHit = false;
     for (const hunk of hunks) {
       if (!isTestFile(hunk.file)) continue;
 
@@ -77,10 +85,14 @@ export const testRelaxationDetector: Detector = {
       const additions = hunk.added.filter((a) => containsAssertion(a.content));
 
       // Strict → loose replacement (same chunk, regardless of order).
+      // Track which (del, add) pairs the regex already flagged so the AST
+      // escalation does not double-report the same line.
+      const regexFlaggedAdditions = new Set<number>();
       for (const del of deletions) {
         if (!isStrictAssertion(del.content)) continue;
         const sibling = additions.find((a) => isLooseAssertion(a.content));
         if (sibling !== undefined) {
+          regexFlaggedAdditions.add(sibling.lineNumber);
           findings.push({
             category: 'test-relaxation',
             severity: 'block',
@@ -89,6 +101,39 @@ export const testRelaxationDetector: Detector = {
               'The test no longer covers the original constraint.',
             location: { file: hunk.file, line: sibling.lineNumber },
             evidence: `- ${del.content.trim()}\n+ ${sibling.content.trim()}`,
+          });
+        }
+      }
+
+      // AST-graded matcher strictness. Catches tolerance widening on a
+      // matcher whose name is unchanged: `toBeCloseTo(5, 2)` →
+      // `toBeCloseTo(5, 100)`, `toBeWithin(0, 10)` →
+      // `toBeWithin(-1000, 1000)`. The regex layer above cannot see this
+      // because the matcher name is identical on both sides.
+      for (const del of deletions) {
+        if (additions.length === 0) break;
+        if (graderHunksUsed >= MATCHER_GRADER_HUNK_CAP) {
+          graderCapHit = true;
+          break;
+        }
+        // Skip pairs the regex already flagged.
+        const candidate = additions.find(
+          (a) => !regexFlaggedAdditions.has(a.lineNumber),
+        );
+        if (candidate === undefined) continue;
+        graderHunksUsed += 1;
+        const verdict = gradeReplacement(del.content, candidate.content);
+        if (verdict === 'weakened') {
+          regexFlaggedAdditions.add(candidate.lineNumber);
+          findings.push({
+            category: 'test-relaxation',
+            severity: 'block',
+            message:
+              'Matcher strictness was weakened (AST-graded): tolerance widened, ' +
+              'literal replaced with a wildcard, or range expanded. The test no ' +
+              'longer constrains the original behavior as tightly.',
+            location: { file: hunk.file, line: candidate.lineNumber },
+            evidence: `- ${del.content.trim()}\n+ ${candidate.content.trim()}`,
           });
         }
       }
@@ -130,6 +175,18 @@ export const testRelaxationDetector: Detector = {
           });
         }
       }
+    }
+    if (graderCapHit) {
+      findings.push({
+        category: 'test-relaxation',
+        severity: 'info',
+        message:
+          `AST matcher-grader cap of ${MATCHER_GRADER_HUNK_CAP} hunks reached; ` +
+          'remaining hunks were checked only by the regex layer. Large PRs may ' +
+          'underreport tolerance-widening relaxations.',
+        location: { file: '<aggregate>', line: 0 },
+        evidence: '',
+      });
     }
     return findings;
   },
