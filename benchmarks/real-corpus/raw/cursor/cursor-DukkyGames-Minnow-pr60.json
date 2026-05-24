@@ -1,0 +1,26 @@
+{
+  "id": "cursor-DukkyGames-Minnow-pr60",
+  "agent": {
+    "vendor": "cursor",
+    "confidence": "medium",
+    "source": "branch=cursor/+body=cursor-session-url"
+  },
+  "pr": {
+    "number": 60,
+    "headSha": "20e66a7cf85590bf62f478cd9efb00730cc8c644",
+    "baseSha": "663ec367d7ae375accb20d1f4dc602807997cc1d",
+    "title": "Harden Reef chart widgets with lint, check tool, and silent repair",
+    "body": "<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n## Summary\n\nReef chart widgets often looked broken even when iframe validation passed. This change hardens templates and validation, adds an agent-side checker, and replaces the technical error panel with a silent repair loop for the latest assistant turn.\n\n## Changes\n\n### Canonical chart pattern\n- Updated Recharts templates/snippets (`snippet-chart-line`, `snippet-chart-bar`, `slider-graph`, `calculator-with-chart`, `pie-chart`) with `YAxis` `type=\"number\"`, `width={60}`, `toFixed` tick formatter, `margin.left` ≥ 36, and `React.createElement` where specified.\n\n### Static fence lint (`widget-fence-lint.ts`)\n- Blocks `toExponential`, missing `.rw-chart`/`.mw-chart`, weak YAxis config, and unquoted `var(--*)` in `style={{ }}`.\n- Wired into `prepareReefWidgetHtml` so bad fences fail before mount.\n\n### Runtime chart probe (`widget-prelude.ts`)\n- Fails validation when `.recharts-responsive-container` height &lt; 48px or axis ticks use scientific notation.\n\n### `check_reef_widget` tool\n- Browser tool: static lint + `prepareReefWidgetHtml` + off-DOM iframe probe → JSON `{ ok, errors, warnings }`.\n- Enabled for `reef-widget` sub-agent; documented in Reef prompts.\n\n### Silent auto-repair (`widget-repair.ts`)\n- On validation failure (latest assistant bubble, not streaming): keep \"Checking widget…\", LLM fix-only pass, patch history, re-mount.\n- Up to 2 attempts; then soft \"Preview unavailable\" placeholder (no technical error list).\n\n## Tests\n\n- `test/chat/reef/widget-fence-lint.test.mts` (new)\n- Extended `widget-snippets-conventions.test.mjs`\n- All `test/chat/reef/*` pass via project test loader (67 tests)\n<!-- CURSOR_AGENT_PR_BODY_END -->\n\n<div><a href=\"https://cursor.com/agents/bc-48d2aa9c-5222-440f-bbfe-4271761fcb40\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/background-agent?bcId=bc-48d2aa9c-5222-440f-bbfe-4271761fcb40\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-light.png\"><img alt=\"Open in Cursor\" width=\"131\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"></picture></a>&nbsp;</div>\n\n",
+    "author": "DukkyGames",
+    "headRef": "cursor/reef-chart-widget-hardening-cb40",
+    "repository": "DukkyGames/Minnow"
+  },
+  "diffRef": {
+    "repository": "DukkyGames/Minnow",
+    "headSha": "20e66a7cf85590bf62f478cd9efb00730cc8c644",
+    "baseSha": "663ec367d7ae375accb20d1f4dc602807997cc1d"
+  },
+  "vendoredDiffPath": "cursor/cursor-DukkyGames-Minnow-pr60.diff",
+  "vendoredAt": "2026-05-24T03:12:09.092Z",
+  "collectedAt": "2026-05-24T03:12:09.092Z"
+}

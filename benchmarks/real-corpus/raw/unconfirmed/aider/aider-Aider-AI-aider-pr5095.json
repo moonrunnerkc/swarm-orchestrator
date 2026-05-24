@@ -1,0 +1,26 @@
+{
+  "id": "aider-Aider-AI-aider-pr5095",
+  "agent": {
+    "vendor": "aider",
+    "confidence": "high",
+    "source": "repo-owner=Aider-AI"
+  },
+  "pr": {
+    "number": 5095,
+    "headSha": "1aca5e603709da4947f24a76ce51f198f22677cc",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1",
+    "title": "Add Perplexity as a model provider",
+    "body": "## Summary\n\nAdds [Perplexity](https://docs.perplexity.ai) as a first-class model provider in Aider, mirroring the OpenRouter integration pattern. Perplexity exposes an OpenAI-compatible Agent API at `https://api.perplexity.ai`, which LiteLLM already supports under the `perplexity/` provider prefix.\n\nThe default model in all examples is `perplexity/sonar-pro`.\n\n## Files changed\n\n- **`aider/website/docs/llms/perplexity.md`** — new provider docs page (mirrors `openrouter.md`)\n- **`aider/resources/model-settings.yml`** — model entries for `sonar`, `sonar-pro`, `sonar-reasoning`, `sonar-reasoning-pro`, `sonar-deep-research`\n- **`aider/onboarding.py`** — `PERPLEXITY_API_KEY` → `perplexity/sonar-pro` in default-model auto-selection\n- **`aider/models.py`** — `perplexity` provider added to `fast_validate_environment` keymap\n- **`tests/basic/test_onboarding.py`** — coverage for Perplexity env-var detection\n- **`tests/basic/test_models.py`** — coverage for the new model-settings entries\n\n## Available models\n\n- `perplexity/sonar`\n- `perplexity/sonar-pro` (default)\n- `perplexity/sonar-reasoning`\n- `perplexity/sonar-reasoning-pro`\n- `perplexity/sonar-deep-research`\n\n## Test plan\n\n- [x] `pytest tests/basic/test_onboarding.py tests/basic/test_models.py` — all pass\n- [x] Full `tests/basic/` suite passes (only the pre-existing `test_voice.py` failures from this sandbox's missing sound device are unrelated)\n- [x] `aider --model perplexity/sonar-pro` resolves the new model settings\n\nReferences: https://docs.perplexity.ai\n",
+    "author": "jliounis",
+    "headRef": "add-perplexity-provider",
+    "repository": "Aider-AI/aider"
+  },
+  "diffRef": {
+    "repository": "Aider-AI/aider",
+    "headSha": "1aca5e603709da4947f24a76ce51f198f22677cc",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1"
+  },
+  "vendoredDiffPath": "unconfirmed/aider/aider-Aider-AI-aider-pr5095.diff",
+  "vendoredAt": "2026-05-24T03:20:29.628Z",
+  "collectedAt": "2026-05-24T03:20:29.628Z"
+}

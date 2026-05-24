@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24180",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24180,
+    "headSha": "e190ed8f14608db4552dc49c1ca84d332988aa9f",
+    "baseSha": "7d47056ea42636271ac020b86347fbbef49490aa",
+    "title": "code-mode: introduce durable session interface",
+    "body": "## Summary\r\n\r\nIntroduce a `CodeModeSession` interface for executing and managing code-mode cells.\r\n\r\nThis moves cell lifecycle, callback delegation, termination, and shutdown behind a session abstraction, while continuing to use the existing in-process implementation, and the ability to implement an external process one behind this interface.\r\n\r\nA Codex session owns one `CodeModeSession`, which in turn owns its running cells and stored code-mode state. Each cell is represented to the caller as a `StartedCell`, exposing its cell ID and initial response.\r\n\r\nIt also introduces a `CodeModeSessionDelegate` callback interface. A session uses the delegate to invoke nested host tools and emit notifications while a cell is running, allowing the runtime to communicate with its owning Codex session without depending directly on core turn handling.\r\n\r\n\r\n",
+    "author": "cconger",
+    "headRef": "cconger/code-mode-session-runtime",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "e190ed8f14608db4552dc49c1ca84d332988aa9f",
+    "baseSha": "7d47056ea42636271ac020b86347fbbef49490aa"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24180.diff",
+  "vendoredAt": "2026-05-24T03:20:39.721Z",
+  "collectedAt": "2026-05-24T03:20:39.721Z"
+}

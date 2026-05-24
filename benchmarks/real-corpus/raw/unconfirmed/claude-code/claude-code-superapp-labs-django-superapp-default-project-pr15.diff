@@ -1,0 +1,62 @@
+diff --git a/.aider.conf.yml b/.aider.conf.yml
+deleted file mode 100644
+index 365f665..0000000
+--- a/.aider.conf.yml
++++ /dev/null
+@@ -1 +0,0 @@
+-read: CONVENTIONS.md
+diff --git a/AGENTS.md b/AGENTS.md
+new file mode 120000
+index 0000000..681311e
+--- /dev/null
++++ b/AGENTS.md
+@@ -0,0 +1 @@
++CLAUDE.md
+\ No newline at end of file
+diff --git a/CLAUDE.md b/CLAUDE.md
+new file mode 100644
+index 0000000..636c002
+--- /dev/null
++++ b/CLAUDE.md
+@@ -0,0 +1,41 @@
++# Project guide for Claude — `django-superapp-default-project`
++
++Copier template for the **default Django SuperApp project skeleton**. Bootstrap with:
++
++```bash
++django_superapp bootstrap-project \
++    --template-repo https://github.com/superapp-labs/django-superapp-default-project \
++    ./my_superapp
++```
++
++**Read [`./README.md`](./README.md) and the upstream [`../django-superapp/CONVENTIONS.md`](https://github.com/superapp-labs/django-superapp/blob/main/CONVENTIONS.md) first.** This file is the contributor brief.
++
++## What this template provides
++
++- `superapp/settings.py` — top-level Django settings that wire in `django_superapp.settings.extend_superapp_settings` so installed apps auto-load via `superapp/apps/<name>/settings.py`.
++- `superapp/urls.py` — uses `django_superapp.urls.extend_with_superapp_urlpatterns` for URL discovery.
++- Docker-based dev (Postgres + Redis + web container).
++- `Makefile` with the canonical commands (`make setup-sample-env`, `make start-docker`, `make migrate`, ...).
++- `scripts/` containing `run-server.sh`, `run-migrations.sh`, etc. used by the web container.
++
++## Hard rules when contributing
++
++1. **Every change is observable downstream.** Files in this template become files in thousands of generated projects. Treat structure / filenames / settings keys as ABI. Renames are breaking — list them in the PR description.
++2. **Native Unfold on the admin path is the project default.** This template ships only the project shell — admin classes come from the `admin_portal` app. Don't introduce a non-Unfold admin entrypoint here.
++3. **One class per file.** Applies to anything added under `superapp/apps/<name>/`. The parent toolkit's `CONVENTIONS.md` is the source of truth.
++4. **`DATABASE_URL` is the only DB config.** Downstream projects override it freely; do not encode hostnames or ports in `settings.py` outside `dj_database_url.config(default=...)`. The example DB URL in `.env.example` is illustrative — projects pointing at a non-Docker Postgres should set their own port (see the per-project port convention in downstream repos).
++5. **`.aider.conf.yml` is deprecated.** Remove if present; agent configs live in CLAUDE.md / AGENTS.md / project-specific files now.
++6. **Keep `requirements.txt` lean.** This is the project shell, not a kitchen sink. App-specific deps belong in `superapp/apps/<name>/requirements.txt` and are aggregated by `scripts/generate-requirements.sh` at install time.
++7. **Sidebar nav is empty here.** `UNFOLD['SIDEBAR']['navigation'] = []` ships empty; downstream apps mutate it. Don't add entries for apps that aren't bootstrapped in this template.
++
++## Common edits
++
++- **Bump Django** → `requirements.txt` + sanity-check the migrations on a fresh project run. Python compatibility lives in the toolkit's `setup.py` — coordinate.
++- **Tighten settings** (logging, storage, security) → edit `superapp/settings.py`. Wrap new env-driven keys with sensible defaults so a freshly bootstrapped project starts without configuration.
++- **Add a helper script** → drop it in `scripts/`, mark it executable, document it in `Makefile`. Keep the docker-compose contract intact.
++
++## Companion files for agents
++
++`AGENTS.md` is a symlink to this file so agent tools that look for either filename pick up the same rules.
++
++`.aider.conf.yml` was historically shipped but is deprecated — remove if you see it. Agent tooling reads CLAUDE.md / AGENTS.md.

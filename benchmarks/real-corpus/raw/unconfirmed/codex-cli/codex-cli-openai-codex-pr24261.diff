@@ -1,0 +1,1700 @@
+diff --git a/codex-rs/Cargo.lock b/codex-rs/Cargo.lock
+index 4acaeb7c2775..f166a57b87ba 100644
+--- a/codex-rs/Cargo.lock
++++ b/codex-rs/Cargo.lock
+@@ -2236,6 +2236,7 @@ dependencies = [
+  "codex-exec-server",
+  "codex-execpolicy",
+  "codex-features",
++ "codex-git-utils",
+  "codex-install-context",
+  "codex-login",
+  "codex-mcp",
+@@ -2260,7 +2261,9 @@ dependencies = [
+  "codex-windows-sandbox",
+  "crossterm",
+  "http 1.4.0",
++ "insta",
+  "libc",
++ "os_info",
+  "owo-colors",
+  "predicates",
+  "pretty_assertions",
+@@ -2269,12 +2272,16 @@ dependencies = [
+  "serde_json",
+  "sqlx",
+  "supports-color 3.0.2",
++ "sys-locale",
+  "tempfile",
+  "tokio",
+  "toml 0.9.11+spec-1.1.0",
+  "tracing",
+  "tracing-appender",
+  "tracing-subscriber",
++ "unicode-segmentation",
++ "which 8.0.0",
++ "windows-sys 0.52.0",
+ ]
+ 
+ [[package]]
+diff --git a/codex-rs/cli/Cargo.toml b/codex-rs/cli/Cargo.toml
+index 627d5d16d1be..1740a9e51c19 100644
+--- a/codex-rs/cli/Cargo.toml
++++ b/codex-rs/cli/Cargo.toml
+@@ -37,6 +37,7 @@ codex-exec = { workspace = true }
+ codex-exec-server = { workspace = true }
+ codex-execpolicy = { workspace = true }
+ codex-features = { workspace = true }
++codex-git-utils = { workspace = true }
+ codex-install-context = { workspace = true }
+ codex-login = { workspace = true }
+ codex-memories-write = { workspace = true }
+@@ -59,11 +60,13 @@ codex-utils-path = { workspace = true }
+ crossterm = { workspace = true }
+ http = { workspace = true }
+ libc = { workspace = true }
++os_info = { workspace = true }
+ owo-colors = { workspace = true }
+ regex-lite = { workspace = true }
+ serde = { workspace = true, features = ["derive"] }
+ serde_json = { workspace = true }
+ supports-color = { workspace = true }
++sys-locale = { workspace = true }
+ tempfile = { workspace = true }
+ tokio = { workspace = true, features = [
+     "io-std",
+@@ -78,14 +81,21 @@ toml = { workspace = true }
+ tracing = { workspace = true }
+ tracing-appender = { workspace = true }
+ tracing-subscriber = { workspace = true }
++unicode-segmentation = { workspace = true }
++which = { workspace = true }
+ 
+ [target.'cfg(target_os = "windows")'.dependencies]
+ codex_windows_sandbox = { package = "codex-windows-sandbox", path = "../windows-sandbox-rs" }
++windows-sys = { version = "0.52", features = [
++    "Win32_Foundation",
++    "Win32_System_Console",
++] }
+ 
+ [dev-dependencies]
+ assert_cmd = { workspace = true }
+ assert_matches = { workspace = true }
+ codex-utils-cargo-bin = { workspace = true }
++insta = { workspace = true }
+ predicates = { workspace = true }
+ pretty_assertions = { workspace = true }
+ sqlx = { workspace = true }
+diff --git a/codex-rs/cli/src/doctor.rs b/codex-rs/cli/src/doctor.rs
+index 6ce316803ccb..5c7b8adb1ea3 100644
+--- a/codex-rs/cli/src/doctor.rs
++++ b/codex-rs/cli/src/doctor.rs
+@@ -66,12 +66,16 @@ use serde::Serialize;
+ use supports_color::Stream;
+ 
+ mod background;
++mod git;
+ mod output;
+ mod progress;
+ mod runtime;
++mod system;
++mod title;
+ mod updates;
+ 
+ use background::background_server_check;
++use git::git_check;
+ use output::HumanOutputOptions;
+ use output::redact_detail;
+ use output::render_human_report;
+@@ -79,6 +83,8 @@ use progress::DoctorProgress;
+ use progress::doctor_progress;
+ use runtime::runtime_check;
+ use runtime::search_check;
++use system::system_check;
++use title::terminal_title_check;
+ use updates::updates_check;
+ 
+ const OPENAI_BETA_HEADER: &str = "OpenAI-Beta";
+@@ -330,6 +336,7 @@ async fn build_report(
+ ) -> DoctorReport {
+     let progress = doctor_progress(command.json);
+     let mut checks = Vec::new();
++    checks.push(run_sync_check("system", progress.clone(), system_check));
+     checks.push(run_sync_check("installation", progress.clone(), || {
+         installation_check(!command.summary)
+     }));
+@@ -352,6 +359,8 @@ async fn build_report(
+                 mcp_check,
+                 sandbox_check,
+                 terminal_check,
++                git_check,
++                terminal_title_check,
+                 state_check,
+                 background_server_check,
+                 reachability_check,
+@@ -376,6 +385,12 @@ async fn build_report(
+                         terminal_check(command.no_color)
+                     })
+                 },
++                run_async_check("git", progress.clone(), git_check(config.cwd.as_path())),
++                async {
++                    run_sync_check("terminal title", progress.clone(), || {
++                        terminal_title_check(config)
++                    })
++                },
+                 run_async_check("state", progress.clone(), state_check(config)),
+                 async {
+                     run_sync_check("app-server", progress.clone(), || {
+@@ -397,6 +412,8 @@ async fn build_report(
+                 mcp_check,
+                 sandbox_check,
+                 terminal_check,
++                git_check,
++                terminal_title_check,
+                 state_check,
+                 background_server_check,
+                 reachability_check,
+@@ -404,7 +421,18 @@ async fn build_report(
+         }
+         Err(err) => {
+             let reachability_plan = default_reachability_plan();
+-            let (config_check, network_check, terminal_check, state_check, reachability_check) = tokio::join!(
++            let fallback_cwd = interactive
++                .cwd
++                .clone()
++                .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
++            let (
++                config_check,
++                network_check,
++                terminal_check,
++                git_check,
++                state_check,
++                reachability_check,
++            ) = tokio::join!(
+                 async {
+                     run_sync_check("config", progress.clone(), || {
+                         DoctorCheck::new(
+@@ -423,6 +451,7 @@ async fn build_report(
+                         terminal_check(command.no_color)
+                     })
+                 },
++                run_async_check("git", progress.clone(), git_check(fallback_cwd.as_path())),
+                 async { run_sync_check("state", progress.clone(), fallback_state_check) },
+                 run_async_check(
+                     "provider reachability",
+@@ -434,6 +463,7 @@ async fn build_report(
+                 config_check,
+                 network_check,
+                 terminal_check,
++                git_check,
+                 state_check,
+                 reachability_check,
+             ]);
+@@ -1034,6 +1064,7 @@ fn config_check(config: &Config) -> DoctorCheck {
+     let status = if config.startup_warnings.is_empty() {
+         CheckStatus::Ok
+     } else {
++        push_startup_warning_counts(&mut details, &config.startup_warnings);
+         details.extend(
+             config
+                 .startup_warnings
+@@ -1046,6 +1077,23 @@ fn config_check(config: &Config) -> DoctorCheck {
+     DoctorCheck::new("config.load", "config", status, "config loaded").details(details)
+ }
+ 
++fn push_startup_warning_counts(details: &mut Vec<String>, warnings: &[String]) {
++    details.push(format!("startup warnings: {}", warnings.len()));
++    for (label, needle) in [
++        ("startup warning skills", "skill"),
++        ("startup warning hooks", "hook"),
++        ("startup warning plugins", "plugin"),
++        ("startup warning MCP", "mcp"),
++        ("startup warning deprecated", "deprecated"),
++    ] {
++        let count = warnings
++            .iter()
++            .filter(|warning| warning.to_ascii_lowercase().contains(needle))
++            .count();
++        details.push(format!("{label}: {count}"));
++    }
++}
++
+ fn feature_flag_details(config: &Config, details: &mut Vec<String>) {
+     let features = config.features.get();
+     let enabled_features = FEATURES
+@@ -1579,6 +1627,7 @@ struct TerminalCheckInputs {
+     stream_supports_color: bool,
+     terminal_size: Result<(u16, u16), String>,
+     tmux_details: Vec<String>,
++    windows_console_details: Vec<String>,
+ }
+ 
+ impl TerminalCheckInputs {
+@@ -1592,6 +1641,7 @@ impl TerminalCheckInputs {
+         } else {
+             Vec::new()
+         };
++        let windows_console_details = windows_console_details();
+         Self {
+             info,
+             env,
+@@ -1603,6 +1653,7 @@ impl TerminalCheckInputs {
+             stream_supports_color: supports_color::on(Stream::Stdout).is_some(),
+             terminal_size,
+             tmux_details,
++            windows_console_details,
+         }
+     }
+ 
+@@ -1619,6 +1670,51 @@ fn terminal_check(no_color_flag: bool) -> DoctorCheck {
+     terminal_check_from_inputs(TerminalCheckInputs::detect(no_color_flag))
+ }
+ 
++#[cfg(windows)]
++fn windows_console_details() -> Vec<String> {
++    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
++    use windows_sys::Win32::System::Console::ENABLE_VIRTUAL_TERMINAL_PROCESSING;
++    use windows_sys::Win32::System::Console::GetConsoleCP;
++    use windows_sys::Win32::System::Console::GetConsoleMode;
++    use windows_sys::Win32::System::Console::GetConsoleOutputCP;
++    use windows_sys::Win32::System::Console::GetStdHandle;
++    use windows_sys::Win32::System::Console::STD_ERROR_HANDLE;
++    use windows_sys::Win32::System::Console::STD_OUTPUT_HANDLE;
++
++    let mut details = Vec::new();
++    details.push(format!("console input code page: {}", unsafe {
++        GetConsoleCP()
++    }));
++    details.push(format!("console output code page: {}", unsafe {
++        GetConsoleOutputCP()
++    }));
++    details.push(console_mode_detail("stdout console mode", unsafe {
++        GetStdHandle(STD_OUTPUT_HANDLE)
++    }));
++    details.push(console_mode_detail("stderr console mode", unsafe {
++        GetStdHandle(STD_ERROR_HANDLE)
++    }));
++
++    fn console_mode_detail(label: &str, handle: isize) -> String {
++        if handle == 0 || handle == INVALID_HANDLE_VALUE {
++            return format!("{label}: unavailable");
++        }
++        let mut mode = 0_u32;
++        if unsafe { GetConsoleMode(handle, &mut mode) } == 0 {
++            return format!("{label}: unavailable");
++        }
++        let vt_enabled = mode & ENABLE_VIRTUAL_TERMINAL_PROCESSING != 0;
++        format!("{label}: 0x{mode:08x} (VT processing: {vt_enabled})")
++    }
++
++    details
++}
++
++#[cfg(not(windows))]
++fn windows_console_details() -> Vec<String> {
++    Vec::new()
++}
++
+ fn terminal_check_from_inputs(inputs: TerminalCheckInputs) -> DoctorCheck {
+     let info = &inputs.info;
+     let name = info.name;
+@@ -1652,6 +1748,7 @@ fn terminal_check_from_inputs(inputs: TerminalCheckInputs) -> DoctorCheck {
+     }
+     push_presence_env_values(&mut details, &inputs, REMOTE_TERMINAL_ENV_VARS);
+     details.extend(inputs.tmux_details.iter().cloned());
++    details.extend(inputs.windows_console_details.iter().cloned());
+ 
+     let locale_warning = locale.as_deref().is_some_and(is_non_utf8_locale);
+     let mut issues = Vec::new();
+@@ -3030,6 +3127,31 @@ mod tests {
+         );
+     }
+ 
++    #[test]
++    fn startup_warning_counts_group_known_sources() {
++        let warnings = vec![
++            "Skipped loading 2 skill(s) due to invalid SKILL.md files.".to_string(),
++            "[features].codex_hooks is deprecated. Use [features].hooks instead.".to_string(),
++            "plugin example failed to load".to_string(),
++            "MCP server example failed to start".to_string(),
++        ];
++        let mut details = Vec::new();
++
++        push_startup_warning_counts(&mut details, &warnings);
++
++        assert_eq!(
++            details,
++            vec![
++                "startup warnings: 4",
++                "startup warning skills: 1",
++                "startup warning hooks: 1",
++                "startup warning plugins: 1",
++                "startup warning MCP: 1",
++                "startup warning deprecated: 1",
++            ]
++        );
++    }
++
+     #[test]
+     fn config_overrides_from_interactive_preserves_global_options() {
+         let interactive = TuiCli::parse_from([
+@@ -3723,6 +3845,7 @@ mod tests {
+             stream_supports_color: true,
+             terminal_size: Ok((120, 40)),
+             tmux_details: Vec::new(),
++            windows_console_details: Vec::new(),
+         }
+     }
+ 
+@@ -3856,6 +3979,22 @@ mod tests {
+         );
+     }
+ 
++    #[test]
++    fn terminal_check_includes_windows_console_details() {
++        let mut inputs = terminal_inputs();
++        inputs
++            .windows_console_details
++            .push("stdout console mode: 0x00000004 (VT processing: true)".to_string());
++
++        let check = terminal_check_from_inputs(inputs);
++
++        assert!(
++            check
++                .details
++                .contains(&"stdout console mode: 0x00000004 (VT processing: true)".to_string())
++        );
++    }
++
+     #[test]
+     fn terminal_check_keeps_tmux_probe_failures_non_fatal() {
+         let mut inputs = terminal_inputs();
+diff --git a/codex-rs/cli/src/doctor/git.rs b/codex-rs/cli/src/doctor/git.rs
+new file mode 100644
+index 000000000000..390a624f6fcf
+--- /dev/null
++++ b/codex-rs/cli/src/doctor/git.rs
+@@ -0,0 +1,378 @@
++use std::collections::BTreeSet;
++use std::path::Path;
++use std::path::PathBuf;
++use std::process::Output;
++use std::time::Duration;
++
++use codex_git_utils::get_git_repo_root;
++use tokio::process::Command;
++use tokio::time::timeout;
++
++use super::CheckStatus;
++use super::DoctorCheck;
++use super::DoctorIssue;
++
++const GIT_COMMAND_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 2);
++
++#[derive(Clone, Debug, Default, Eq, PartialEq)]
++struct GitCheckInputs {
++    selected_git: Option<PathBuf>,
++    git_candidates: Vec<PathBuf>,
++    git_version: Option<String>,
++    git_exec_path: Option<String>,
++    git_build_options: Option<String>,
++    repo_root: Option<PathBuf>,
++    git_entry: Option<String>,
++    branch: Option<String>,
++    core_fsmonitor: Option<String>,
++}
++
++pub(super) async fn git_check(cwd: &Path) -> DoctorCheck {
++    let selected_git = which::which("git").ok();
++    let git_candidates = git_candidates();
++    let repo_root = get_git_repo_root(cwd);
++
++    let (git_version, git_exec_path, git_build_options, branch, core_fsmonitor) =
++        if let Some(git_path) = selected_git.as_deref() {
++            let (version, exec_path, build_options, branch, fsmonitor) = tokio::join!(
++                git_output(git_path, cwd, &["--version"]),
++                git_output(git_path, cwd, &["--exec-path"]),
++                git_output(git_path, cwd, &["version", "--build-options"]),
++                git_output(git_path, cwd, &["rev-parse", "--abbrev-ref", "HEAD"]),
++                git_output(git_path, cwd, &["config", "--get", "core.fsmonitor"]),
++            );
++            (version, exec_path, build_options, branch, fsmonitor)
++        } else {
++            (None, None, None, None, None)
++        };
++
++    git_check_from_inputs(GitCheckInputs {
++        selected_git,
++        git_candidates,
++        git_version,
++        git_exec_path,
++        git_build_options,
++        git_entry: repo_root.as_deref().map(git_entry_summary),
++        repo_root,
++        branch,
++        core_fsmonitor,
++    })
++}
++
++fn git_check_from_inputs(inputs: GitCheckInputs) -> DoctorCheck {
++    let mut details = Vec::new();
++    match inputs.selected_git.as_deref() {
++        Some(path) => details.push(format!("selected git: {}", path.display())),
++        None => details.push("selected git: not found".to_string()),
++    }
++    details.push(format!("PATH git entries: {}", inputs.git_candidates.len()));
++    for (index, path) in inputs.git_candidates.iter().enumerate() {
++        details.push(format!("PATH git #{}: {}", index + 1, path.display()));
++    }
++    push_optional_detail(&mut details, "git version", inputs.git_version.as_deref());
++    push_optional_detail(
++        &mut details,
++        "git exec path",
++        inputs.git_exec_path.as_deref(),
++    );
++    push_optional_detail(
++        &mut details,
++        "git build options",
++        inputs.git_build_options.as_deref(),
++    );
++    match inputs.repo_root.as_deref() {
++        Some(root) => {
++            details.push("repo detected: true".to_string());
++            details.push(format!("repo root: {}", root.display()));
++        }
++        None => details.push("repo detected: false".to_string()),
++    }
++    push_optional_detail(&mut details, ".git entry", inputs.git_entry.as_deref());
++    push_optional_detail(
++        &mut details,
++        "git branch",
++        normalized_branch(inputs.branch.as_deref()),
++    );
++    push_optional_detail(
++        &mut details,
++        "core.fsmonitor",
++        inputs
++            .core_fsmonitor
++            .as_deref()
++            .filter(|value| !value.is_empty()),
++    );
++
++    let mut check = DoctorCheck::new(
++        "git.environment",
++        "git",
++        CheckStatus::Ok,
++        git_summary(&inputs),
++    )
++    .details(details);
++
++    if inputs.selected_git.is_some() && inputs.git_version.is_none() {
++        check.status = CheckStatus::Warning;
++        check.summary = "Git executable found but could not be run".to_string();
++        check = check.issue(
++            DoctorIssue::new(
++                CheckStatus::Warning,
++                "Git executable was found on PATH but did not return a version",
++            )
++            .expected("git --version succeeds")
++            .remedy("Fix the selected Git executable or PATH so Codex can inspect Git metadata.")
++            .field("git version")
++            .field("selected git"),
++        );
++    } else if inputs.selected_git.is_none() && inputs.repo_root.is_some() {
++        check.status = CheckStatus::Warning;
++        check.summary = "Git repository detected but git executable was not found".to_string();
++        check = check.issue(
++            DoctorIssue::new(
++                CheckStatus::Warning,
++                "Git repository detected but git executable was not found",
++            )
++            .expected("git available on PATH")
++            .remedy("Install Git or fix PATH so Codex can inspect repository metadata.")
++            .field("selected git"),
++        );
++    } else if let Some(cause) =
++        old_windows_git_warning(inputs.git_version.as_deref(), cfg!(windows))
++    {
++        check.status = CheckStatus::Warning;
++        check.summary = cause.clone();
++        check = check.issue(
++            DoctorIssue::new(CheckStatus::Warning, cause)
++                .measured(inputs.git_version.unwrap_or_else(|| "unknown".to_string()))
++                .expected("current Git for Windows")
++                .remedy(
++                    "Update Git for Windows or the bundled Git executable Codex resolves first.",
++                )
++                .field("git version")
++                .field("selected git"),
++        );
++    }
++
++    check
++}
++
++fn git_summary(inputs: &GitCheckInputs) -> String {
++    match inputs.git_version.as_deref() {
++        Some(version) => version.to_string(),
++        None if inputs.selected_git.is_some() => {
++            "git executable found; version unavailable".to_string()
++        }
++        None => "git executable not found".to_string(),
++    }
++}
++
++fn push_optional_detail(details: &mut Vec<String>, label: &str, value: Option<&str>) {
++    if let Some(value) = value {
++        details.push(format!("{label}: {value}"));
++    }
++}
++
++fn normalized_branch(branch: Option<&str>) -> Option<&str> {
++    match branch {
++        Some("HEAD") => Some("detached HEAD"),
++        Some(value) if !value.is_empty() => Some(value),
++        _ => None,
++    }
++}
++
++fn git_candidates() -> Vec<PathBuf> {
++    let Ok(candidates) = which::which_all("git") else {
++        return Vec::new();
++    };
++    let mut seen = BTreeSet::new();
++    candidates
++        .filter(|candidate| seen.insert(candidate.clone()))
++        .collect()
++}
++
++async fn git_output(git_path: &Path, cwd: &Path, args: &[&str]) -> Option<String> {
++    let mut command = Command::new(git_path);
++    command
++        .env("GIT_OPTIONAL_LOCKS", "0")
++        .args(args)
++        .current_dir(cwd)
++        .kill_on_drop(true);
++    let output = timeout(GIT_COMMAND_TIMEOUT, command.output())
++        .await
++        .ok()?
++        .ok()?;
++    command_output_text(output)
++}
++
++fn command_output_text(output: Output) -> Option<String> {
++    if !output.status.success() {
++        return None;
++    }
++    let stdout = String::from_utf8_lossy(&output.stdout);
++    let normalized = stdout
++        .lines()
++        .map(str::trim)
++        .filter(|line| !line.is_empty())
++        .collect::<Vec<_>>()
++        .join("; ");
++    if normalized.is_empty() {
++        None
++    } else {
++        Some(normalized)
++    }
++}
++
++fn git_entry_summary(repo_root: &Path) -> String {
++    let entry = repo_root.join(".git");
++    match std::fs::metadata(&entry) {
++        Ok(metadata) if metadata.is_dir() => "directory".to_string(),
++        Ok(metadata) if metadata.is_file() => std::fs::read_to_string(&entry)
++            .ok()
++            .and_then(|contents| {
++                contents
++                    .strip_prefix("gitdir:")
++                    .map(str::trim)
++                    .map(|path| format!("file -> {path}"))
++            })
++            .unwrap_or_else(|| "file".to_string()),
++        Ok(_) => "other".to_string(),
++        Err(err) if err.kind() == std::io::ErrorKind::NotFound => "missing".to_string(),
++        Err(err) => format!("unreadable ({err})"),
++    }
++}
++
++fn old_windows_git_warning(version: Option<&str>, is_windows: bool) -> Option<String> {
++    if !is_windows {
++        return None;
++    }
++    let version = version?;
++    if version.to_ascii_lowercase().contains("msysgit") {
++        return Some("old msysgit installation may corrupt Windows TUI rendering".to_string());
++    }
++    let parsed = parse_git_version(version)?;
++    if parsed.major < 2 || (parsed.major == 2 && parsed.minor <= 34) {
++        return Some("old Git for Windows may corrupt Windows TUI rendering".to_string());
++    }
++    None
++}
++
++#[derive(Clone, Copy, Debug, Eq, PartialEq)]
++struct ParsedGitVersion {
++    major: u32,
++    minor: u32,
++    patch: u32,
++}
++
++fn parse_git_version(version: &str) -> Option<ParsedGitVersion> {
++    let version = version.strip_prefix("git version ")?;
++    let numeric = version
++        .split_whitespace()
++        .next()?
++        .split(".windows.")
++        .next()
++        .unwrap_or(version);
++    let mut parts = numeric.split('.');
++    Some(ParsedGitVersion {
++        major: parts.next()?.parse().ok()?,
++        minor: parts.next()?.parse().ok()?,
++        patch: parts.next().unwrap_or("0").parse().ok()?,
++    })
++}
++
++#[cfg(test)]
++mod tests {
++    use pretty_assertions::assert_eq;
++
++    use super::*;
++
++    #[test]
++    fn parses_git_for_windows_version() {
++        assert_eq!(
++            parse_git_version("git version 2.34.1.windows.1"),
++            Some(ParsedGitVersion {
++                major: 2,
++                minor: 34,
++                patch: 1,
++            })
++        );
++        assert_eq!(
++            parse_git_version("git version 2.54.0.windows.1"),
++            Some(ParsedGitVersion {
++                major: 2,
++                minor: 54,
++                patch: 0,
++            })
++        );
++    }
++
++    #[test]
++    fn classifies_old_windows_git() {
++        assert_eq!(
++            old_windows_git_warning(
++                Some("git version 2.34.1.windows.1"),
++                /*is_windows*/ true
++            )
++            .as_deref(),
++            Some("old Git for Windows may corrupt Windows TUI rendering")
++        );
++        assert_eq!(
++            old_windows_git_warning(
++                Some("git version 2.54.0.windows.1"),
++                /*is_windows*/ true
++            ),
++            None
++        );
++        assert_eq!(
++            old_windows_git_warning(
++                Some("git version 2.34.1.windows.1"),
++                /*is_windows*/ false
++            ),
++            None
++        );
++    }
++
++    #[test]
++    fn warns_when_git_repo_has_no_git_executable() {
++        let check = git_check_from_inputs(GitCheckInputs {
++            repo_root: Some(PathBuf::from("/repo")),
++            ..GitCheckInputs::default()
++        });
++
++        assert_eq!(check.status, CheckStatus::Warning);
++        assert_eq!(
++            check.summary,
++            "Git repository detected but git executable was not found"
++        );
++    }
++
++    #[test]
++    fn warns_when_selected_git_cannot_report_version() {
++        let check = git_check_from_inputs(GitCheckInputs {
++            selected_git: Some(PathBuf::from("/usr/bin/git")),
++            repo_root: Some(PathBuf::from("/repo")),
++            ..GitCheckInputs::default()
++        });
++
++        assert_eq!(check.status, CheckStatus::Warning);
++        assert_eq!(check.summary, "Git executable found but could not be run");
++    }
++
++    #[test]
++    fn reports_git_candidates_and_repo_metadata() {
++        let check = git_check_from_inputs(GitCheckInputs {
++            selected_git: Some(PathBuf::from("/usr/bin/git")),
++            git_candidates: vec![PathBuf::from("/usr/bin/git"), PathBuf::from("/opt/bin/git")],
++            git_version: Some("git version 2.54.0".to_string()),
++            git_exec_path: Some("/usr/libexec/git-core".to_string()),
++            repo_root: Some(PathBuf::from("/repo")),
++            git_entry: Some("directory".to_string()),
++            branch: Some("main".to_string()),
++            core_fsmonitor: Some("false".to_string()),
++            ..GitCheckInputs::default()
++        });
++
++        assert_eq!(check.status, CheckStatus::Ok);
++        assert!(check.details.contains(&"PATH git entries: 2".to_string()));
++        assert!(check.details.contains(&"git branch: main".to_string()));
++        assert!(check.details.contains(&"core.fsmonitor: false".to_string()));
++    }
++}
+diff --git a/codex-rs/cli/src/doctor/output.rs b/codex-rs/cli/src/doctor/output.rs
+index 2e58b1136a01..2734bd16fc5b 100644
+--- a/codex-rs/cli/src/doctor/output.rs
++++ b/codex-rs/cli/src/doctor/output.rs
+@@ -25,7 +25,9 @@ const SEPARATOR_WIDTH: usize = 61;
+ const GROUPS: &[OutputGroup] = &[
+     OutputGroup {
+         title: "Environment",
+-        keys: &["runtime", "install", "search", "terminal", "state"],
++        keys: &[
++            "system", "runtime", "install", "search", "git", "terminal", "title", "state",
++        ],
+     },
+     OutputGroup {
+         title: "Configuration",
+@@ -611,12 +613,15 @@ fn auth_reachability_note(report: &DoctorReport) -> Option<DoctorNote> {
+     None
+ }
+ 
+-fn display_summary(check: &DoctorCheck, _options: HumanOutputOptions) -> String {
++fn display_summary(check: &DoctorCheck, options: HumanOutputOptions) -> String {
+     match check.category.as_str() {
++        "system" => system_summary(check),
+         "runtime" => runtime_summary(check),
+         "install" if check.status == CheckStatus::Ok => "consistent".to_string(),
+         "search" => search_summary(check),
++        "git" => git_summary(check),
+         "terminal" => terminal_summary(check),
++        "title" => title_summary(check, options),
+         "state" => state_summary(check),
+         "config" if check.status == CheckStatus::Ok => "loaded".to_string(),
+         "mcp" => mcp_summary(check),
+@@ -628,6 +633,10 @@ fn display_summary(check: &DoctorCheck, _options: HumanOutputOptions) -> String
+     }
+ }
+ 
++fn system_summary(check: &DoctorCheck) -> String {
++    detail::detail_value(check, "os language").unwrap_or_else(|| check.summary.clone())
++}
++
+ fn runtime_summary(check: &DoctorCheck) -> String {
+     if detail::detail_value(check, "current executable")
+         .is_some_and(|path| path.contains("/target/debug/"))
+@@ -649,6 +658,12 @@ fn search_summary(check: &DoctorCheck) -> String {
+     }
+ }
+ 
++fn git_summary(check: &DoctorCheck) -> String {
++    detail::detail_value(check, "git version")
++        .or_else(|| detail::detail_value(check, "selected git"))
++        .unwrap_or_else(|| check.summary.clone())
++}
++
+ fn terminal_summary(check: &DoctorCheck) -> String {
+     let mut parts = Vec::new();
+     if let Some(terminal) = detail::detail_value(check, "terminal") {
+@@ -668,6 +683,19 @@ fn terminal_summary(check: &DoctorCheck) -> String {
+     }
+ }
+ 
++fn title_summary(check: &DoctorCheck, options: HumanOutputOptions) -> String {
++    let source = detail::detail_value(check, "terminal title source");
++    let project = detail::detail_value(check, "terminal title project value");
++    match (source, project) {
++        (Some(source), Some(project)) => {
++            let separator = if options.ascii { " | " } else { " · " };
++            format!("{source}{separator}project {project}")
++        }
++        (Some(source), None) => source,
++        _ => check.summary.clone(),
++    }
++}
++
+ fn state_summary(check: &DoctorCheck) -> String {
+     let databases_ok = [
+         "state DB integrity",
+@@ -1096,6 +1124,14 @@ mod tests {
+ 
+     fn sample_report() -> DoctorReport {
+         let checks = vec![
++            DoctorCheck::new(
++                "system.environment",
++                "system",
++                CheckStatus::Ok,
++                "OS language en-US",
++            )
++            .detail("os: macOS 15.0")
++            .detail("os language: en-US"),
+             DoctorCheck::new(
+                 "runtime.provenance",
+                 "runtime",
+@@ -1114,12 +1150,30 @@ mod tests {
+                 CheckStatus::Ok,
+                 "search is OK (bundled)",
+             ),
++            DoctorCheck::new(
++                "git.environment",
++                "git",
++                CheckStatus::Ok,
++                "git version 2.54.0",
++            )
++            .detail("selected git: /usr/bin/git")
++            .detail("git version: git version 2.54.0")
++            .detail("repo detected: true"),
+             DoctorCheck::new(
+                 "terminal.env",
+                 "terminal",
+                 CheckStatus::Warning,
+                 "narrow terminal",
+             ),
++            DoctorCheck::new(
++                "terminal.title",
++                "title",
++                CheckStatus::Ok,
++                "terminal title default",
++            )
++            .detail("terminal title source: default")
++            .detail("terminal title items: activity, project-name")
++            .detail("terminal title project value: codex"),
+             DoctorCheck::new(
+                 "state.paths",
+                 "state",
+@@ -1187,11 +1241,22 @@ Notes
+ ─────────────────────────────────────────────────────────────
+ 
+ Environment
++  ✓ system       en-US
++      os                       macOS 15.0
++      OS language              en-US
+   ✓ runtime      running local build on darwin-arm64
+   ✓ install      consistent
+       managed by               npm: no · bun: no · package root —
+   ✓ search       search is OK (bundled)
++  ✓ git          git version 2.54.0
++      selected git             /usr/bin/git
++      version                  git version 2.54.0
++      repo detected            true
+   ⚠ terminal     narrow terminal
++  ✓ title        default · project codex
++      title source             default
++      title items              activity, project-name
++      project value            codex
+   ✓ state        state paths inspectable
+ 
+ Configuration
+@@ -1210,7 +1275,7 @@ Background Server
+   ✓ app-server   background server is not running
+ 
+ {}
+-9 ok · 2 notes · 1 warn · 1 fail failed
++12 ok · 2 notes · 1 warn · 1 fail failed
+ 
+ --summary compact output           --all expand truncated lists
+ --json redacted report
+@@ -1220,6 +1285,14 @@ Background Server
+         assert_eq!(rendered, expected);
+     }
+ 
++    #[test]
++    fn render_human_report_snapshot_covers_environment_rows() {
++        insta::assert_snapshot!(
++            "doctor_human_report_environment_rows",
++            render_human_report(&sample_report(), detailed_no_color_unicode_options())
++        );
++    }
++
+     #[test]
+     fn render_human_report_supports_summary_output_without_color() {
+         let rendered = render_human_report(&sample_report(), summary_no_color_unicode_options());
+@@ -1233,10 +1306,13 @@ Notes
+ ─────────────────────────────────────────────────────────────
+ 
+ Environment
++  ✓ system       en-US
+   ✓ runtime      running local build on darwin-arm64
+   ✓ install      consistent
+   ✓ search       search is OK (bundled)
++  ✓ git          git version 2.54.0
+   ⚠ terminal     narrow terminal
++  ✓ title        default · project codex
+   ✓ state        state paths inspectable
+ 
+ Configuration
+@@ -1254,7 +1330,7 @@ Background Server
+   ✓ app-server   background server is not running
+ 
+ {}
+-9 ok · 2 notes · 1 warn · 1 fail failed
++12 ok · 2 notes · 1 warn · 1 fail failed
+ 
+ Run codex doctor without --summary for detailed diagnostics.
+ --all expand truncated lists       --json redacted report
+@@ -1285,10 +1361,13 @@ Notes
+ -------------------------------------------------------------
+ 
+ Environment
++  [ok] system       en-US
+   [ok] runtime      running local build on darwin-arm64
+   [ok] install      consistent
+   [ok] search       search is OK (bundled)
++  [ok] git          git version 2.54.0
+   [!!] terminal     narrow terminal
++  [ok] title        default | project codex
+   [ok] state        state paths inspectable
+ 
+ Configuration
+@@ -1306,7 +1385,7 @@ Background Server
+   [ok] app-server   background server is not running
+ 
+ {}
+-9 ok | 2 notes | 1 warn | 1 fail failed
++12 ok | 2 notes | 1 warn | 1 fail failed
+ 
+ Run codex doctor without --summary for detailed diagnostics.
+ --all expand truncated lists       --json redacted report
+diff --git a/codex-rs/cli/src/doctor/output/detail.rs b/codex-rs/cli/src/doctor/output/detail.rs
+index 010507762071..86cbf2a83f4a 100644
+--- a/codex-rs/cli/src/doctor/output/detail.rs
++++ b/codex-rs/cli/src/doctor/output/detail.rs
+@@ -37,8 +37,11 @@ struct ParsedDetail {
+ pub(super) fn detail_lines(check: &DoctorCheck, options: HumanOutputOptions) -> Vec<HumanDetail> {
+     let parsed = parsed_details(check);
+     let details = match check.category.as_str() {
++        "system" => system_details(&parsed),
+         "runtime" => runtime_details(&parsed),
+         "install" => install_details(&parsed, options),
++        "git" => git_details(&parsed, options),
++        "title" => title_details(&parsed),
+         "config" => config_details(&parsed, options),
+         "state" => state_details(&parsed),
+         _ => generic_details(&parsed),
+@@ -52,6 +55,30 @@ pub(super) fn detail_lines(check: &DoctorCheck, options: HumanOutputOptions) ->
+     details
+ }
+ 
++fn system_details(parsed: &[ParsedDetail]) -> Vec<HumanDetail> {
++    let mut out = Vec::new();
++    push_row_if_present(&mut out, parsed, "os", "os");
++    push_row_if_present(&mut out, parsed, "os language", "OS language");
++    push_row_if_present(&mut out, parsed, "LC_ALL", "LC_ALL");
++    push_row_if_present(&mut out, parsed, "LC_CTYPE", "LC_CTYPE");
++    push_row_if_present(&mut out, parsed, "LANG", "LANG");
++    push_remaining(
++        &mut out,
++        parsed,
++        &[
++            "os",
++            "os type",
++            "os version",
++            "os language",
++            "LC_ALL",
++            "LC_CTYPE",
++            "LANG",
++        ],
++        &[],
++    );
++    out
++}
++
+ pub(super) fn detail_value(check: &DoctorCheck, label: &str) -> Option<String> {
+     parsed_details(check)
+         .into_iter()
+@@ -232,6 +259,97 @@ fn install_details(parsed: &[ParsedDetail], options: HumanOutputOptions) -> Vec<
+     out
+ }
+ 
++fn git_details(parsed: &[ParsedDetail], options: HumanOutputOptions) -> Vec<HumanDetail> {
++    let mut out = Vec::new();
++    push_row_if_present(&mut out, parsed, "selected git", "selected git");
++    push_row_if_present(&mut out, parsed, "git version", "version");
++    push_row_if_present(&mut out, parsed, "git exec path", "exec path");
++    push_row_if_present(&mut out, parsed, "repo detected", "repo detected");
++    push_row_if_present(&mut out, parsed, "repo root", "repo root");
++    push_row_if_present(&mut out, parsed, ".git entry", ".git entry");
++    push_row_if_present(&mut out, parsed, "git branch", "branch");
++    push_row_if_present(&mut out, parsed, "core.fsmonitor", "core.fsmonitor");
++
++    let path_entries = numbered_values(parsed, "PATH git #");
++    if !path_entries.is_empty() {
++        let total = path_entries.len();
++        let shown = if options.show_all {
++            total
++        } else {
++            total.min(3)
++        };
++        out.push(HumanDetail::Row {
++            label: format!("PATH entries ({total})"),
++            value: path_entries[0].clone(),
++            expected: None,
++        });
++        out.extend(
++            path_entries
++                .iter()
++                .skip(1)
++                .take(shown.saturating_sub(1))
++                .cloned()
++                .map(HumanDetail::Continuation),
++        );
++        if shown < total {
++            out.push(HumanDetail::Continuation(
++                "… (full list with --all)".to_string(),
++            ));
++        }
++    }
++
++    push_remaining(
++        &mut out,
++        parsed,
++        &[
++            "selected git",
++            "PATH git entries",
++            "git version",
++            "git exec path",
++            "git build options",
++            "repo detected",
++            "repo root",
++            ".git entry",
++            "git branch",
++            "core.fsmonitor",
++        ],
++        &["PATH git #"],
++    );
++    out
++}
++
++fn title_details(parsed: &[ParsedDetail]) -> Vec<HumanDetail> {
++    let mut out = Vec::new();
++    push_row_if_present(&mut out, parsed, "terminal title source", "title source");
++    push_row_if_present(&mut out, parsed, "terminal title items", "title items");
++    push_row_if_present(&mut out, parsed, "terminal title activity", "activity item");
++    push_row_if_present(
++        &mut out,
++        parsed,
++        "terminal title project source",
++        "project source",
++    );
++    push_row_if_present(
++        &mut out,
++        parsed,
++        "terminal title project value",
++        "project value",
++    );
++    push_remaining(
++        &mut out,
++        parsed,
++        &[
++            "terminal title source",
++            "terminal title items",
++            "terminal title activity",
++            "terminal title project source",
++            "terminal title project value",
++        ],
++        &[],
++    );
++    out
++}
++
+ fn config_details(parsed: &[ParsedDetail], options: HumanOutputOptions) -> Vec<HumanDetail> {
+     let mut out = Vec::new();
+     if let Some(model) = value(parsed, "model") {
+diff --git a/codex-rs/cli/src/doctor/snapshots/codex__doctor__output__tests__doctor_human_report_environment_rows.snap b/codex-rs/cli/src/doctor/snapshots/codex__doctor__output__tests__doctor_human_report_environment_rows.snap
+new file mode 100644
+index 000000000000..84d3441fb294
+--- /dev/null
++++ b/codex-rs/cli/src/doctor/snapshots/codex__doctor__output__tests__doctor_human_report_environment_rows.snap
+@@ -0,0 +1,50 @@
++---
++source: cli/src/doctor/output.rs
++expression: "render_human_report(&sample_report(), detailed_no_color_unicode_options())"
++---
++Codex Doctor v0.0.0
++
++Notes
++   ⚠ terminal     narrow terminal
++   ✗ auth         token expired - Run `codex login`.
++─────────────────────────────────────────────────────────────
++
++Environment
++  ✓ system       en-US
++      os                       macOS 15.0
++      OS language              en-US
++  ✓ runtime      running local build on darwin-arm64
++  ✓ install      consistent
++      managed by               npm: no · bun: no · package root —
++  ✓ search       search is OK (bundled)
++  ✓ git          git version 2.54.0
++      selected git             /usr/bin/git
++      version                  git version 2.54.0
++      repo detected            true
++  ⚠ terminal     narrow terminal
++  ✓ title        default · project codex
++      title source             default
++      title items              activity, project-name
++      project value            codex
++  ✓ state        state paths inspectable
++
++Configuration
++  ✗ auth         token expired — Run `codex login`.
++      OPENAI_API_KEY           present
++
++Updates
++  ✓ updates      update configuration is locally consistent
++
++Connectivity
++  ✓ network      network environment readable
++  ✓ websocket    Responses WebSocket handshake succeeded
++  ✓ reachability active provider endpoints are reachable over HTTP
++
++Background Server
++  ✓ app-server   background server is not running
++
++─────────────────────────────────────────────────────────────
++12 ok · 2 notes · 1 warn · 1 fail failed
++
++--summary compact output           --all expand truncated lists
++--json redacted report
+diff --git a/codex-rs/cli/src/doctor/system.rs b/codex-rs/cli/src/doctor/system.rs
+new file mode 100644
+index 000000000000..c72b76561d05
+--- /dev/null
++++ b/codex-rs/cli/src/doctor/system.rs
+@@ -0,0 +1,112 @@
++use std::collections::BTreeMap;
++use std::env;
++
++use super::DoctorCheck;
++use super::LOCALE_ENV_VARS;
++
++#[derive(Clone, Debug, Default, Eq, PartialEq)]
++struct SystemCheckInputs {
++    os: String,
++    os_type: String,
++    os_version: String,
++    os_language: Option<String>,
++    locale_env: BTreeMap<String, String>,
++}
++
++impl SystemCheckInputs {
++    fn detect() -> Self {
++        let info = os_info::get();
++        let locale_env = LOCALE_ENV_VARS
++            .iter()
++            .filter_map(|name| {
++                env::var(name)
++                    .ok()
++                    .map(|value| ((*name).to_string(), value))
++            })
++            .collect();
++        Self {
++            os: info.to_string(),
++            os_type: info.os_type().to_string(),
++            os_version: info.version().to_string(),
++            os_language: sys_locale::get_locale(),
++            locale_env,
++        }
++    }
++}
++
++pub(super) fn system_check() -> DoctorCheck {
++    system_check_from_inputs(SystemCheckInputs::detect())
++}
++
++fn system_check_from_inputs(inputs: SystemCheckInputs) -> DoctorCheck {
++    let mut details = vec![
++        format!("os: {}", inputs.os),
++        format!("os type: {}", inputs.os_type),
++        format!("os version: {}", inputs.os_version),
++    ];
++    if let Some(language) = inputs.os_language.as_deref() {
++        details.push(format!("os language: {language}"));
++    } else {
++        details.push("os language: unavailable".to_string());
++    }
++    for name in LOCALE_ENV_VARS {
++        if let Some(value) = inputs.locale_env.get(*name) {
++            details.push(format!("{name}: {value}"));
++        }
++    }
++
++    let summary = inputs
++        .os_language
++        .as_deref()
++        .map(|language| format!("OS language {language}"))
++        .unwrap_or_else(|| "OS language unavailable".to_string());
++    DoctorCheck::new(
++        "system.environment",
++        "system",
++        super::CheckStatus::Ok,
++        summary,
++    )
++    .details(details)
++}
++
++#[cfg(test)]
++mod tests {
++    use pretty_assertions::assert_eq;
++
++    use super::*;
++
++    #[test]
++    fn system_check_reports_os_language_and_locale_env() {
++        let mut locale_env = BTreeMap::new();
++        locale_env.insert("LANG".to_string(), "en_US.UTF-8".to_string());
++        let check = system_check_from_inputs(SystemCheckInputs {
++            os: "macOS 15.0".to_string(),
++            os_type: "macos".to_string(),
++            os_version: "15.0".to_string(),
++            os_language: Some("en-US".to_string()),
++            locale_env,
++        });
++
++        assert_eq!(check.summary, "OS language en-US");
++        assert!(check.details.contains(&"os language: en-US".to_string()));
++        assert!(check.details.contains(&"LANG: en_US.UTF-8".to_string()));
++    }
++
++    #[test]
++    fn system_check_handles_missing_os_language() {
++        let check = system_check_from_inputs(SystemCheckInputs {
++            os: "Linux".to_string(),
++            os_type: "linux".to_string(),
++            os_version: "unknown".to_string(),
++            os_language: None,
++            locale_env: BTreeMap::new(),
++        });
++
++        assert_eq!(check.summary, "OS language unavailable");
++        assert!(
++            check
++                .details
++                .contains(&"os language: unavailable".to_string())
++        );
++    }
++}
+diff --git a/codex-rs/cli/src/doctor/title.rs b/codex-rs/cli/src/doctor/title.rs
+new file mode 100644
+index 000000000000..0f9c803ddfc0
+--- /dev/null
++++ b/codex-rs/cli/src/doctor/title.rs
+@@ -0,0 +1,405 @@
++use std::collections::HashSet;
++use std::path::Path;
++use std::path::PathBuf;
++
++use codex_config::ConfigLayerSource;
++use codex_config::ConfigLayerStackOrdering;
++use codex_core::config::Config;
++use codex_git_utils::get_git_repo_root;
++use unicode_segmentation::UnicodeSegmentation;
++
++use super::CheckStatus;
++use super::DoctorCheck;
++
++const DEFAULT_TERMINAL_TITLE_ITEMS: &[&str] = &["activity", "project-name"];
++const PROJECT_TITLE_MAX_CHARS: usize = 24;
++
++#[derive(Clone, Debug, Eq, PartialEq)]
++struct TerminalTitleInputs {
++    configured_items: Option<Vec<String>>,
++    cwd: PathBuf,
++    project_root: Option<ProjectTitleRoot>,
++}
++
++#[derive(Clone, Debug, Eq, PartialEq)]
++struct ProjectTitleRoot {
++    source: &'static str,
++    path: PathBuf,
++}
++
++pub(super) fn terminal_title_check(config: &Config) -> DoctorCheck {
++    terminal_title_check_from_inputs(TerminalTitleInputs {
++        configured_items: config.tui_terminal_title.clone(),
++        cwd: config.cwd.to_path_buf(),
++        project_root: terminal_title_project_root(config, &config.cwd),
++    })
++}
++
++fn terminal_title_check_from_inputs(inputs: TerminalTitleInputs) -> DoctorCheck {
++    let (source, items, invalid_items) = match inputs.configured_items {
++        Some(items) if items.is_empty() => ("disabled", Vec::new(), Vec::new()),
++        Some(items) => {
++            let (items, invalid_items) = parse_terminal_title_items(items);
++            ("configured", items, invalid_items)
++        }
++        None => (
++            "default",
++            DEFAULT_TERMINAL_TITLE_ITEMS
++                .iter()
++                .map(ToString::to_string)
++                .collect(),
++            Vec::new(),
++        ),
++    };
++    let mut details = vec![
++        format!("terminal title source: {source}"),
++        format!(
++            "terminal title items: {}",
++            if items.is_empty() {
++                "none".to_string()
++            } else {
++                items.join(", ")
++            }
++        ),
++        format!("terminal title activity: {}", activity_enabled(&items)),
++    ];
++    if !invalid_items.is_empty() {
++        details.push(format!(
++            "terminal title invalid items: {}",
++            invalid_items.join(", ")
++        ));
++    }
++
++    if project_title_selected(&items) {
++        let (project_source, project_value) =
++            project_title_candidate(inputs.project_root, &inputs.cwd);
++        details.push(format!("terminal title project source: {project_source}"));
++        if let Some(project_value) = project_value {
++            details.push(format!("terminal title project value: {project_value}"));
++        }
++    }
++
++    let status = if invalid_items.is_empty() {
++        CheckStatus::Ok
++    } else {
++        CheckStatus::Warning
++    };
++    let summary = if invalid_items.is_empty() {
++        format!("terminal title {source}")
++    } else {
++        format!("terminal title {source} with invalid items")
++    };
++    let mut check = DoctorCheck::new("terminal.title", "title", status, summary).details(details);
++    if !invalid_items.is_empty() {
++        check = check.issue(
++            super::DoctorIssue::new(
++                CheckStatus::Warning,
++                "terminal title configuration contains unknown item identifiers",
++            )
++            .measured(invalid_items.join(", "))
++            .expected("known terminal title item identifiers")
++            .remedy("Remove or replace the unknown entries in [tui].terminal_title.")
++            .field("terminal title invalid items"),
++        );
++    }
++    check
++}
++
++fn parse_terminal_title_items(items: Vec<String>) -> (Vec<String>, Vec<String>) {
++    let mut invalid = Vec::new();
++    let mut invalid_seen = HashSet::new();
++    let mut parsed = Vec::new();
++    for item in items {
++        match terminal_title_item_id(&item) {
++            Some(id) => parsed.push(id.to_string()),
++            None => {
++                if invalid_seen.insert(item.clone()) {
++                    invalid.push(format!(r#""{item}""#));
++                }
++            }
++        }
++    }
++    (parsed, invalid)
++}
++
++fn terminal_title_item_id(item: &str) -> Option<&'static str> {
++    match item {
++        "app-name" => Some("app-name"),
++        "project-name" | "project" => Some("project-name"),
++        "current-dir" => Some("current-dir"),
++        "activity" | "spinner" => Some("activity"),
++        "run-state" | "status" => Some("run-state"),
++        "thread-title" | "thread" => Some("thread-title"),
++        "git-branch" => Some("git-branch"),
++        "context-remaining" => Some("context-remaining"),
++        "context-used" | "context-usage" => Some("context-used"),
++        "five-hour-limit" => Some("five-hour-limit"),
++        "weekly-limit" => Some("weekly-limit"),
++        "codex-version" => Some("codex-version"),
++        "used-tokens" => Some("used-tokens"),
++        "total-input-tokens" => Some("total-input-tokens"),
++        "total-output-tokens" => Some("total-output-tokens"),
++        "thread-id" | "session-id" => Some("thread-id"),
++        "fast-mode" => Some("fast-mode"),
++        "model" | "model-name" => Some("model"),
++        "model-with-reasoning" => Some("model-with-reasoning"),
++        "task-progress" => Some("task-progress"),
++        _ => None,
++    }
++}
++
++fn activity_enabled(items: &[String]) -> bool {
++    items
++        .iter()
++        .any(|item| item == "activity" || item == "spinner")
++}
++
++fn project_title_selected(items: &[String]) -> bool {
++    items
++        .iter()
++        .any(|item| item == "project-name" || item == "project")
++}
++
++fn terminal_title_project_root(config: &Config, cwd: &Path) -> Option<ProjectTitleRoot> {
++    if let Some(repo_root) = get_git_repo_root(cwd) {
++        return Some(ProjectTitleRoot {
++            source: "git repo root",
++            path: repo_root,
++        });
++    }
++
++    config
++        .config_layer_stack
++        .get_layers(
++            ConfigLayerStackOrdering::LowestPrecedenceFirst,
++            /*include_disabled*/ true,
++        )
++        .iter()
++        .find_map(|layer| match &layer.name {
++            ConfigLayerSource::Project { dot_codex_folder } => dot_codex_folder
++                .as_path()
++                .parent()
++                .map(|root| ProjectTitleRoot {
++                    source: "project config",
++                    path: root.to_path_buf(),
++                }),
++            _ => None,
++        })
++}
++
++fn project_title_candidate(
++    project_root: Option<ProjectTitleRoot>,
++    cwd: &Path,
++) -> (&'static str, Option<String>) {
++    if let Some(project_root) = project_root {
++        return (
++            project_root.source,
++            Some(truncate_title_part(path_display_name(&project_root.path))),
++        );
++    }
++    ("cwd", Some(truncate_title_part(path_display_name(cwd))))
++}
++
++fn path_display_name(path: &Path) -> String {
++    path.file_name()
++        .map(|name| name.to_string_lossy().to_string())
++        .unwrap_or_else(|| path.display().to_string())
++}
++
++fn truncate_title_part(value: String) -> String {
++    let mut graphemes = value.graphemes(true);
++    let head = graphemes
++        .by_ref()
++        .take(PROJECT_TITLE_MAX_CHARS)
++        .collect::<String>();
++    if graphemes.next().is_none() || PROJECT_TITLE_MAX_CHARS <= 3 {
++        return head;
++    }
++
++    let mut truncated = head
++        .graphemes(true)
++        .take(PROJECT_TITLE_MAX_CHARS - 3)
++        .collect::<String>();
++    truncated.push_str("...");
++    truncated
++}
++
++#[cfg(test)]
++mod tests {
++    use pretty_assertions::assert_eq;
++
++    use super::*;
++
++    #[test]
++    fn terminal_title_reports_default_items_and_git_project_name() {
++        let check = terminal_title_check_from_inputs(TerminalTitleInputs {
++            configured_items: None,
++            cwd: PathBuf::from("/repo/subdir"),
++            project_root: Some(ProjectTitleRoot {
++                source: "git repo root",
++                path: PathBuf::from("/repo"),
++            }),
++        });
++
++        assert_eq!(check.summary, "terminal title default");
++        assert!(
++            check
++                .details
++                .contains(&"terminal title items: activity, project-name".to_string())
++        );
++        assert!(
++            check
++                .details
++                .contains(&"terminal title project source: git repo root".to_string())
++        );
++        assert!(
++            check
++                .details
++                .contains(&"terminal title project value: repo".to_string())
++        );
++    }
++
++    #[test]
++    fn terminal_title_reports_disabled_configuration() {
++        let check = terminal_title_check_from_inputs(TerminalTitleInputs {
++            configured_items: Some(Vec::new()),
++            cwd: PathBuf::from("/workspace"),
++            project_root: None,
++        });
++
++        assert_eq!(check.summary, "terminal title disabled");
++        assert!(
++            check
++                .details
++                .contains(&"terminal title items: none".to_string())
++        );
++        assert!(
++            check
++                .details
++                .contains(&"terminal title activity: false".to_string())
++        );
++        assert!(
++            !check
++                .details
++                .iter()
++                .any(|detail| detail.starts_with("terminal title project "))
++        );
++    }
++
++    #[test]
++    fn terminal_title_reports_project_config_fallback() {
++        let check = terminal_title_check_from_inputs(TerminalTitleInputs {
++            configured_items: Some(vec!["project".to_string()]),
++            cwd: PathBuf::from("/workspace/project/subdir"),
++            project_root: Some(ProjectTitleRoot {
++                source: "project config",
++                path: PathBuf::from("/workspace/project"),
++            }),
++        });
++
++        assert_eq!(check.summary, "terminal title configured");
++        assert!(
++            check
++                .details
++                .contains(&"terminal title project source: project config".to_string())
++        );
++        assert!(
++            check
++                .details
++                .contains(&"terminal title project value: project".to_string())
++        );
++    }
++
++    #[test]
++    fn terminal_title_omits_project_when_project_item_is_not_selected() {
++        let check = terminal_title_check_from_inputs(TerminalTitleInputs {
++            configured_items: Some(vec!["model".to_string()]),
++            cwd: PathBuf::from("/workspace/project"),
++            project_root: Some(ProjectTitleRoot {
++                source: "project config",
++                path: PathBuf::from("/workspace/project"),
++            }),
++        });
++
++        assert_eq!(check.summary, "terminal title configured");
++        assert!(
++            !check
++                .details
++                .iter()
++                .any(|detail| detail.starts_with("terminal title project "))
++        );
++    }
++
++    #[test]
++    fn terminal_title_warns_for_invalid_configured_items() {
++        let check = terminal_title_check_from_inputs(TerminalTitleInputs {
++            configured_items: Some(vec![
++                "project".to_string(),
++                "bogus".to_string(),
++                "activity".to_string(),
++                "bogus".to_string(),
++            ]),
++            cwd: PathBuf::from("/workspace/project"),
++            project_root: Some(ProjectTitleRoot {
++                source: "project config",
++                path: PathBuf::from("/workspace/project"),
++            }),
++        });
++
++        assert_eq!(check.status, CheckStatus::Warning);
++        assert_eq!(
++            check.summary,
++            "terminal title configured with invalid items"
++        );
++        assert!(
++            check
++                .details
++                .contains(&"terminal title items: project-name, activity".to_string())
++        );
++        assert!(
++            check
++                .details
++                .contains(&r#"terminal title invalid items: "bogus""#.to_string())
++        );
++        assert_eq!(check.issues.len(), 1);
++    }
++
++    #[test]
++    fn terminal_title_warns_when_all_configured_items_are_invalid() {
++        let check = terminal_title_check_from_inputs(TerminalTitleInputs {
++            configured_items: Some(vec!["bogus".to_string()]),
++            cwd: PathBuf::from("/workspace/project"),
++            project_root: None,
++        });
++
++        assert_eq!(check.status, CheckStatus::Warning);
++        assert!(
++            check
++                .details
++                .contains(&"terminal title items: none".to_string())
++        );
++        assert!(
++            check
++                .details
++                .contains(&r#"terminal title invalid items: "bogus""#.to_string())
++        );
++    }
++
++    #[test]
++    fn terminal_title_project_value_uses_tui_truncation_shape() {
++        let check = terminal_title_check_from_inputs(TerminalTitleInputs {
++            configured_items: Some(vec!["project".to_string()]),
++            cwd: PathBuf::from("/workspace/abcdefghijklmnopqrstuvwxyz"),
++            project_root: Some(ProjectTitleRoot {
++                source: "project config",
++                path: PathBuf::from("/workspace/abcdefghijklmnopqrstuvwxyz"),
++            }),
++        });
++
++        assert!(
++            check
++                .details
++                .contains(&"terminal title project value: abcdefghijklmnopqrstu...".to_string())
++        );
++    }
++}

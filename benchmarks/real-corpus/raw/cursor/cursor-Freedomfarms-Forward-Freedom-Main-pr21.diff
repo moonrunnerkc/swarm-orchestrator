@@ -1,0 +1,210 @@
+diff --git a/src/components/AccountsView.jsx b/src/components/AccountsView.jsx
+index 665cc0a..6b66ed0 100644
+--- a/src/components/AccountsView.jsx
++++ b/src/components/AccountsView.jsx
+@@ -218,6 +218,19 @@ export function AccountsView({
+   const [metalsQuote, setMetalsQuote] = useState(null);
+   const [metalsQuoteError, setMetalsQuoteError] = useState("");
+   const [isLoadingMetalsQuote, setIsLoadingMetalsQuote] = useState(false);
++  const [accountActionsMenuId, setAccountActionsMenuId] = useState(null);
++
++  useEffect(() => {
++    if (!accountActionsMenuId) return undefined;
++    const handle = (e) => {
++      const host = e.target.closest("[data-account-actions-root]");
++      if (!host || host.getAttribute("data-account-actions-root") !== accountActionsMenuId) {
++        setAccountActionsMenuId(null);
++      }
++    };
++    document.addEventListener("click", handle, true);
++    return () => document.removeEventListener("click", handle, true);
++  }, [accountActionsMenuId]);
+ 
+   const linkedBalance = accounts.reduce((sum, a) => sum + a.balance, 0);
+   const isCryptoAccount = form.type === "Crypto";
+@@ -463,6 +476,7 @@ export function AccountsView({
+     if (isDeletingAccount) return;
+     setDeleteTarget(null);
+     setDeleteError("");
++    setAccountActionsMenuId(null);
+   };
+ 
+   const launchQuickStart = (type) => {
+@@ -482,6 +496,7 @@ export function AccountsView({
+   const openEditModal = (account) => {
+     if (!account || account.plaidItemId || account.status !== "Manual") return;
+ 
++    setAccountActionsMenuId(null);
+     setEditingAccount(account);
+     setForm(buildFormFromAccount(account));
+     resetCryptoState();
+@@ -967,15 +982,6 @@ export function AccountsView({
+                   {grouped.map((account) => {
+                     const { isBankLinked, badgeLabel } = accountBankLinkPresentation(account);
+                     const metaLine = [account.institution || "—", account.type, account.status].join(" · ");
+-                    const btnBase = {
+-                      borderRadius: 6,
+-                      cursor: "pointer",
+-                      fontSize: 9,
+-                      fontWeight: 700,
+-                      textTransform: "uppercase",
+-                      letterSpacing: 0.55,
+-                      padding: "3px 7px",
+-                    };
+                     return (
+                       <div
+                         key={account.id}
+@@ -1042,44 +1048,9 @@ export function AccountsView({
+                               display: "flex",
+                               flexDirection: "column",
+                               alignItems: "flex-end",
+-                              gap: 3,
++                              gap: 6,
+                             }}
+                           >
+-                            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "flex-end" }}>
+-                              {!account.plaidItemId && account.status === "Manual" ? (
+-                                <button
+-                                  type="button"
+-                                  onClick={(event) => {
+-                                    event.stopPropagation();
+-                                    openEditModal(account);
+-                                  }}
+-                                  style={{
+-                                    ...btnBase,
+-                                    border: "1px solid rgba(0,216,255,.28)",
+-                                    background: "rgba(0,136,255,.12)",
+-                                    color: "#d7ebff",
+-                                  }}
+-                                >
+-                                  Edit
+-                                </button>
+-                              ) : null}
+-                              <button
+-                                type="button"
+-                                onClick={(event) => {
+-                                  event.stopPropagation();
+-                                  setDeleteError("");
+-                                  setDeleteTarget(account);
+-                                }}
+-                                style={{
+-                                  ...btnBase,
+-                                  border: "1px solid rgba(255,93,122,.28)",
+-                                  background: "rgba(255,36,77,.1)",
+-                                  color: "#ffd9df",
+-                                }}
+-                              >
+-                                {account.plaidItemId ? "Disconnect" : "Delete"}
+-                              </button>
+-                            </div>
+                             <div
+                               style={{
+                                 fontSize: 14,
+@@ -1092,6 +1063,107 @@ export function AccountsView({
+                               {account.balance < 0 ? "−" : ""}
+                               {money(Math.abs(account.balance))}
+                             </div>
++                            <div
++                              data-account-actions-root={account.id}
++                              style={{ position: "relative" }}
++                              onClick={(e) => e.stopPropagation()}
++                            >
++                              <button
++                                type="button"
++                                aria-label="Account actions"
++                                aria-expanded={accountActionsMenuId === account.id}
++                                aria-haspopup="menu"
++                                onClick={(e) => {
++                                  e.stopPropagation();
++                                  setAccountActionsMenuId((id) => (id === account.id ? null : account.id));
++                                }}
++                                style={{
++                                  width: 28,
++                                  height: 28,
++                                  borderRadius: 8,
++                                  border: "1px solid rgba(0,136,255,.22)",
++                                  background: "rgba(0,40,80,.32)",
++                                  color: "#8fb1d9",
++                                  cursor: "pointer",
++                                  fontSize: 17,
++                                  lineHeight: 1,
++                                  padding: 0,
++                                  display: "flex",
++                                  alignItems: "center",
++                                  justifyContent: "center",
++                                  flexShrink: 0,
++                                }}
++                              >
++                                ⋮
++                              </button>
++                              {accountActionsMenuId === account.id ? (
++                                <div
++                                  role="menu"
++                                  style={{
++                                    position: "absolute",
++                                    right: 0,
++                                    top: "calc(100% + 4px)",
++                                    minWidth: 148,
++                                    zIndex: 30,
++                                    borderRadius: 10,
++                                    border: "1px solid rgba(0,216,255,.22)",
++                                    background: "rgba(4,16,32,.98)",
++                                    boxShadow: "0 10px 32px rgba(0,0,0,.5)",
++                                    padding: "6px 0",
++                                  }}
++                                  onClick={(e) => e.stopPropagation()}
++                                >
++                                  {!account.plaidItemId && account.status === "Manual" ? (
++                                    <button
++                                      type="button"
++                                      role="menuitem"
++                                      onClick={(e) => {
++                                        e.stopPropagation();
++                                        openEditModal(account);
++                                      }}
++                                      style={{
++                                        display: "block",
++                                        width: "100%",
++                                        textAlign: "left",
++                                        border: "none",
++                                        background: "transparent",
++                                        color: "#dcecff",
++                                        fontSize: 13,
++                                        fontWeight: 600,
++                                        padding: "9px 14px",
++                                        cursor: "pointer",
++                                      }}
++                                    >
++                                      Edit account
++                                    </button>
++                                  ) : null}
++                                  <button
++                                    type="button"
++                                    role="menuitem"
++                                    onClick={(e) => {
++                                      e.stopPropagation();
++                                      setAccountActionsMenuId(null);
++                                      setDeleteError("");
++                                      setDeleteTarget(account);
++                                    }}
++                                    style={{
++                                      display: "block",
++                                      width: "100%",
++                                      textAlign: "left",
++                                      border: "none",
++                                      background: "transparent",
++                                      color: "#ffc9c9",
++                                      fontSize: 13,
++                                      fontWeight: 600,
++                                      padding: "9px 14px",
++                                      cursor: "pointer",
++                                    }}
++                                  >
++                                    {account.plaidItemId ? "Disconnect…" : "Remove…"}
++                                  </button>
++                                </div>
++                              ) : null}
++                            </div>
+                           </div>
+                         </div>
+ 

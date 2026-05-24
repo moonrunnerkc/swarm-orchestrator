@@ -1,0 +1,1199 @@
+diff --git a/crates/ai-core/src/lib.rs b/crates/ai-core/src/lib.rs
+index 99a3527..8c3e269 100644
+--- a/crates/ai-core/src/lib.rs
++++ b/crates/ai-core/src/lib.rs
+@@ -69,6 +69,9 @@ pub use crate::plugin::{Plugin, PluginError, PluginRegistry, PluginRequest, Plug
+ pub use crate::provider::Provider;
+ pub use crate::tool::{Tool, ToolDescriptor, ToolOutput};
+ 
++// Re-export tool validation (REQ-3.4)
++pub use crate::tool::{coerce_input, validate_tool_input, ValidationError};
++
+ // Re-export configuration
+ pub use crate::config::FrameworkConfig;
+ 
+@@ -86,10 +89,16 @@ pub use crate::template::TemplateEngine;
+ 
+ // Re-export structured output
+ pub use crate::structured::{
+-    complete_structured, extract_json, StructuredOutputConfig, StructuredOutputError,
+-    StructuredOutputValidator,
++    complete_structured, extract_and_fix_json, extract_json, fix_json, StructuredOutputConfig,
++    StructuredOutputError, StructuredOutputValidator,
+ };
+ 
++// Re-export output formatting (REQ-9.4)
++pub use crate::output_format::{format_output, OutputFormat, OutputFormatConfig};
++
++// Re-export rate limiting (REQ-12.4)
++pub use crate::rate_limit::{RateLimitConfig, RateLimitExceeded, TokenBucketRateLimiter};
++
+ // Module declarations
+ pub mod client;
+ pub mod config;
+@@ -100,9 +109,11 @@ pub mod error;
+ pub mod guardrail;
+ pub mod memory;
+ pub mod model_registry;
++pub mod output_format;
+ pub mod plugin;
+ pub mod prompt_injection;
+ pub mod provider;
++pub mod rate_limit;
+ pub mod structured;
+ pub mod template;
+ pub mod tool;
+diff --git a/crates/ai-core/src/output_format.rs b/crates/ai-core/src/output_format.rs
+new file mode 100644
+index 0000000..7b31b33
+--- /dev/null
++++ b/crates/ai-core/src/output_format.rs
+@@ -0,0 +1,269 @@
++// Copyright 2026 AI Framework Contributors. SPDX-License-Identifier: Apache-2.0
++
++//! Output formatting support for agent and task responses.
++//!
++//! Provides configurable output formatting: plain text, Markdown, code blocks,
++//! tables, and custom templates (REQ-9.4).
++
++use serde::{Deserialize, Serialize};
++use serde_json::Value;
++use std::collections::HashMap;
++
++/// Supported output formats.
++#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
++pub enum OutputFormat {
++    /// Plain text output (no formatting applied).
++    PlainText,
++    /// Markdown formatted output.
++    Markdown,
++    /// Wrap output in a code block with optional language hint.
++    CodeBlock(Option<String>),
++    /// Render structured data as a markdown table.
++    Table,
++    /// Custom template-based formatting.
++    Custom(String),
++}
++
++impl Default for OutputFormat {
++    fn default() -> Self {
++        Self::PlainText
++    }
++}
++
++/// Configuration for output formatting on a task or agent.
++#[derive(Debug, Clone, Serialize, Deserialize)]
++pub struct OutputFormatConfig {
++    /// The output format to use.
++    pub format: OutputFormat,
++    /// Optional custom templates (name -> template string).
++    pub templates: HashMap<String, String>,
++}
++
++impl Default for OutputFormatConfig {
++    fn default() -> Self {
++        Self {
++            format: OutputFormat::PlainText,
++            templates: HashMap::new(),
++        }
++    }
++}
++
++impl OutputFormatConfig {
++    /// Create a new output format configuration.
++    pub fn new(format: OutputFormat) -> Self {
++        Self {
++            format,
++            templates: HashMap::new(),
++        }
++    }
++
++    /// Add a custom template.
++    pub fn with_template(mut self, name: impl Into<String>, template: impl Into<String>) -> Self {
++        self.templates.insert(name.into(), template.into());
++        self
++    }
++}
++
++/// Format output according to the specified format.
++///
++/// Applies post-processing transformation to the raw output based on
++/// the configured format.
++pub fn format_output(content: &str, config: &OutputFormatConfig) -> String {
++    match &config.format {
++        OutputFormat::PlainText => content.to_string(),
++        OutputFormat::Markdown => format_as_markdown(content),
++        OutputFormat::CodeBlock(lang) => format_as_code_block(content, lang.as_deref()),
++        OutputFormat::Table => format_as_table(content),
++        OutputFormat::Custom(template_name) => {
++            if let Some(template) = config.templates.get(template_name) {
++                apply_template(content, template)
++            } else {
++                content.to_string()
++            }
++        }
++    }
++}
++
++/// Format content as Markdown.
++///
++/// Ensures proper markdown formatting with headers and structure.
++fn format_as_markdown(content: &str) -> String {
++    // If it already looks like markdown (has headers, lists, etc.), return as-is
++    if content.contains('#') || content.contains("- ") || content.contains("* ") {
++        return content.to_string();
++    }
++    // Otherwise, treat each line as a paragraph
++    content
++        .lines()
++        .filter(|l| !l.trim().is_empty())
++        .map(|l| l.to_string())
++        .collect::<Vec<_>>()
++        .join("\n\n")
++}
++
++/// Format content as a code block.
++fn format_as_code_block(content: &str, language: Option<&str>) -> String {
++    let lang = language.unwrap_or("");
++    format!("```{}\n{}\n```", lang, content)
++}
++
++/// Format structured data (JSON) as a markdown table.
++///
++/// Expects content to be a JSON array of objects. Each object becomes a row,
++/// and the keys become column headers.
++fn format_as_table(content: &str) -> String {
++    // Try to parse as JSON array of objects
++    if let Ok(Value::Array(items)) = serde_json::from_str::<Value>(content) {
++        if items.is_empty() {
++            return "| (empty) |\n|---------|".to_string();
++        }
++
++        // Collect all keys from first object for headers
++        let headers: Vec<String> = if let Some(Value::Object(first)) = items.first() {
++            first.keys().cloned().collect()
++        } else {
++            return content.to_string();
++        };
++
++        if headers.is_empty() {
++            return content.to_string();
++        }
++
++        // Build header row
++        let header_row = format!("| {} |", headers.join(" | "));
++        let separator = format!(
++            "| {} |",
++            headers
++                .iter()
++                .map(|_| "---")
++                .collect::<Vec<_>>()
++                .join(" | ")
++        );
++
++        // Build data rows
++        let mut rows = vec![header_row, separator];
++        for item in &items {
++            if let Value::Object(obj) = item {
++                let cells: Vec<String> = headers
++                    .iter()
++                    .map(|h| {
++                        obj.get(h)
++                            .map(|v| match v {
++                                Value::String(s) => s.clone(),
++                                other => other.to_string(),
++                            })
++                            .unwrap_or_default()
++                    })
++                    .collect();
++                rows.push(format!("| {} |", cells.join(" | ")));
++            }
++        }
++
++        rows.join("\n")
++    } else {
++        // Not valid JSON array, return as-is
++        content.to_string()
++    }
++}
++
++/// Apply a custom template to content.
++///
++/// Templates use `{{content}}` as a placeholder for the output content.
++/// Additional placeholders like `{{title}}`, `{{date}}` can be used.
++fn apply_template(content: &str, template: &str) -> String {
++    template.replace("{{content}}", content)
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    // REQ-9.4: Output Formatting Tests
++
++    #[test]
++    fn test_format_markdown_produces_properly_formatted_output() {
++        let config = OutputFormatConfig::new(OutputFormat::Markdown);
++        let input = "Line one\nLine two\nLine three";
++        let result = format_output(input, &config);
++        // Should format as separate paragraphs
++        assert!(result.contains("Line one"));
++        assert!(result.contains("Line two"));
++        assert!(result.contains("\n\n")); // paragraphs separated
++    }
++
++    #[test]
++    fn test_format_code_block_wraps_output() {
++        let config = OutputFormatConfig::new(OutputFormat::CodeBlock(Some("rust".to_string())));
++        let input = "fn main() {\n    println!(\"Hello\");\n}";
++        let result = format_output(input, &config);
++        assert!(result.starts_with("```rust\n"));
++        assert!(result.ends_with("\n```"));
++        assert!(result.contains("fn main()"));
++    }
++
++    #[test]
++    fn test_format_table_produces_markdown_table() {
++        let config = OutputFormatConfig::new(OutputFormat::Table);
++        let input = r#"[{"name": "Alice", "age": 30}, {"name": "Bob", "age": 25}]"#;
++        let result = format_output(input, &config);
++        assert!(result.contains("|"));
++        assert!(result.contains("---"));
++        assert!(result.contains("Alice"));
++        assert!(result.contains("Bob"));
++        assert!(result.contains("30"));
++        assert!(result.contains("25"));
++    }
++
++    #[test]
++    fn test_custom_template_applies_user_defined_pattern() {
++        let config = OutputFormatConfig::new(OutputFormat::Custom("report".to_string()))
++            .with_template("report", "# Report\n\n{{content}}\n\n---\nEnd of report");
++        let input = "Some analysis results here";
++        let result = format_output(input, &config);
++        assert!(result.starts_with("# Report\n\n"));
++        assert!(result.contains("Some analysis results here"));
++        assert!(result.ends_with("---\nEnd of report"));
++    }
++
++    #[test]
++    fn test_plain_text_returns_unchanged() {
++        let config = OutputFormatConfig::new(OutputFormat::PlainText);
++        let input = "Hello, world!";
++        let result = format_output(input, &config);
++        assert_eq!(result, input);
++    }
++
++    #[test]
++    fn test_code_block_without_language() {
++        let config = OutputFormatConfig::new(OutputFormat::CodeBlock(None));
++        let input = "some code";
++        let result = format_output(input, &config);
++        assert!(result.starts_with("```\n"));
++        assert!(result.ends_with("\n```"));
++    }
++
++    #[test]
++    fn test_table_with_empty_array() {
++        let config = OutputFormatConfig::new(OutputFormat::Table);
++        let input = "[]";
++        let result = format_output(input, &config);
++        assert!(result.contains("empty"));
++    }
++
++    #[test]
++    fn test_custom_template_missing_returns_content() {
++        let config = OutputFormatConfig::new(OutputFormat::Custom("nonexistent".to_string()));
++        let input = "fallback content";
++        let result = format_output(input, &config);
++        assert_eq!(result, input);
++    }
++
++    #[test]
++    fn test_markdown_already_formatted() {
++        let config = OutputFormatConfig::new(OutputFormat::Markdown);
++        let input = "# Title\n\n- Item 1\n- Item 2";
++        let result = format_output(input, &config);
++        // Should return as-is since it already has markdown
++        assert_eq!(result, input);
++    }
++}
+diff --git a/crates/ai-core/src/rate_limit.rs b/crates/ai-core/src/rate_limit.rs
+new file mode 100644
+index 0000000..7004890
+--- /dev/null
++++ b/crates/ai-core/src/rate_limit.rs
+@@ -0,0 +1,377 @@
++// Copyright 2026 AI Framework Contributors. SPDX-License-Identifier: Apache-2.0
++
++//! Token bucket rate limiting for AI framework (REQ-12.4).
++//!
++//! Provides configurable rate limiting per provider, per model, and per agent
++//! with RPM (requests per minute) and TPM (tokens per minute) limits and queuing.
++
++use std::collections::HashMap;
++use std::sync::Arc;
++use tokio::sync::Mutex;
++use tokio::time::{Duration, Instant};
++
++/// Configuration for rate limits.
++#[derive(Debug, Clone)]
++pub struct RateLimitConfig {
++    /// Maximum requests per minute (RPM).
++    pub rpm: Option<u64>,
++    /// Maximum tokens per minute (TPM).
++    pub tpm: Option<u64>,
++}
++
++impl RateLimitConfig {
++    /// Create a new rate limit configuration with RPM only.
++    pub fn rpm(rpm: u64) -> Self {
++        Self {
++            rpm: Some(rpm),
++            tpm: None,
++        }
++    }
++
++    /// Create a new rate limit configuration with TPM only.
++    pub fn tpm(tpm: u64) -> Self {
++        Self {
++            rpm: None,
++            tpm: Some(tpm),
++        }
++    }
++
++    /// Create a new rate limit configuration with both RPM and TPM.
++    pub fn new(rpm: u64, tpm: u64) -> Self {
++        Self {
++            rpm: Some(rpm),
++            tpm: Some(tpm),
++        }
++    }
++}
++
++/// Token bucket for rate limiting.
++#[derive(Debug)]
++struct TokenBucket {
++    /// Maximum tokens in the bucket (capacity).
++    capacity: u64,
++    /// Current available tokens.
++    tokens: f64,
++    /// Last time tokens were refilled.
++    last_refill: Instant,
++    /// Refill rate: tokens per second.
++    refill_rate: f64,
++}
++
++impl TokenBucket {
++    fn new(capacity: u64) -> Self {
++        Self {
++            capacity,
++            tokens: capacity as f64,
++            last_refill: Instant::now(),
++            refill_rate: capacity as f64 / 60.0, // refill over 1 minute
++        }
++    }
++
++    /// Try to consume `count` tokens. Returns true if successful.
++    fn try_consume(&mut self, count: u64) -> bool {
++        self.refill();
++        if self.tokens >= count as f64 {
++            self.tokens -= count as f64;
++            true
++        } else {
++            false
++        }
++    }
++
++    /// Time until `count` tokens become available.
++    fn time_until_available(&mut self, count: u64) -> Duration {
++        self.refill();
++        if self.tokens >= count as f64 {
++            return Duration::ZERO;
++        }
++        let needed = count as f64 - self.tokens;
++        let seconds = needed / self.refill_rate;
++        Duration::from_secs_f64(seconds)
++    }
++
++    fn refill(&mut self) {
++        let now = Instant::now();
++        let elapsed = now.duration_since(self.last_refill).as_secs_f64();
++        self.tokens = (self.tokens + elapsed * self.refill_rate).min(self.capacity as f64);
++        self.last_refill = now;
++    }
++}
++
++/// Rate limiter entry for a specific scope (provider/model/agent).
++#[derive(Debug)]
++struct RateLimiterEntry {
++    /// RPM bucket (each request costs 1 token).
++    rpm_bucket: Option<TokenBucket>,
++    /// TPM bucket (each request costs N tokens based on usage).
++    tpm_bucket: Option<TokenBucket>,
++}
++
++impl RateLimiterEntry {
++    fn new(config: &RateLimitConfig) -> Self {
++        Self {
++            rpm_bucket: config.rpm.map(TokenBucket::new),
++            tpm_bucket: config.tpm.map(TokenBucket::new),
++        }
++    }
++}
++
++/// Error returned when rate limit is exceeded.
++#[derive(Debug, Clone)]
++pub struct RateLimitExceeded {
++    /// How long to wait before retrying.
++    pub retry_after: Duration,
++    /// Description of which limit was exceeded.
++    pub message: String,
++}
++
++impl std::fmt::Display for RateLimitExceeded {
++    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
++        write!(
++            f,
++            "Rate limit exceeded: {}. Retry after {:?}",
++            self.message, self.retry_after
++        )
++    }
++}
++
++/// Token bucket rate limiter supporting per-provider, per-model, and per-agent limits.
++#[derive(Debug, Clone)]
++pub struct TokenBucketRateLimiter {
++    entries: Arc<Mutex<HashMap<String, RateLimiterEntry>>>,
++    configs: Arc<Mutex<HashMap<String, RateLimitConfig>>>,
++}
++
++impl TokenBucketRateLimiter {
++    /// Create a new token bucket rate limiter.
++    pub fn new() -> Self {
++        Self {
++            entries: Arc::new(Mutex::new(HashMap::new())),
++            configs: Arc::new(Mutex::new(HashMap::new())),
++        }
++    }
++
++    /// Configure rate limits for a specific scope.
++    ///
++    /// The scope can be a provider name, model name, agent name, or any string key.
++    pub async fn configure(&self, scope: impl Into<String>, config: RateLimitConfig) {
++        let scope = scope.into();
++        let mut configs = self.configs.lock().await;
++        configs.insert(scope.clone(), config.clone());
++        let mut entries = self.entries.lock().await;
++        entries.insert(scope, RateLimiterEntry::new(&config));
++    }
++
++    /// Try to acquire permission to make a request.
++    ///
++    /// Returns `Ok(())` if the request is allowed, or `Err(RateLimitExceeded)` if
++    /// the rate limit is exceeded.
++    ///
++    /// # Arguments
++    /// * `scope` - The rate limit scope (provider/model/agent name)
++    /// * `estimated_tokens` - Estimated token count for TPM limiting
++    pub async fn try_acquire(
++        &self,
++        scope: &str,
++        estimated_tokens: u64,
++    ) -> Result<(), RateLimitExceeded> {
++        let mut entries = self.entries.lock().await;
++        let entry = match entries.get_mut(scope) {
++            Some(e) => e,
++            None => return Ok(()), // No limit configured for this scope
++        };
++
++        // Check RPM
++        if let Some(rpm_bucket) = &mut entry.rpm_bucket {
++            if !rpm_bucket.try_consume(1) {
++                let wait = rpm_bucket.time_until_available(1);
++                return Err(RateLimitExceeded {
++                    retry_after: wait,
++                    message: format!("RPM limit exceeded for scope '{}'", scope),
++                });
++            }
++        }
++
++        // Check TPM
++        if let Some(tpm_bucket) = &mut entry.tpm_bucket {
++            if !tpm_bucket.try_consume(estimated_tokens) {
++                let wait = tpm_bucket.time_until_available(estimated_tokens);
++                return Err(RateLimitExceeded {
++                    retry_after: wait,
++                    message: format!("TPM limit exceeded for scope '{}'", scope),
++                });
++            }
++        }
++
++        Ok(())
++    }
++
++    /// Acquire permission to make a request, waiting (queuing) if necessary.
++    ///
++    /// This will block until the rate limit allows the request to proceed.
++    pub async fn acquire(&self, scope: &str, estimated_tokens: u64) {
++        loop {
++            match self.try_acquire(scope, estimated_tokens).await {
++                Ok(()) => return,
++                Err(exceeded) => {
++                    tokio::time::sleep(exceeded.retry_after).await;
++                }
++            }
++        }
++    }
++}
++
++impl Default for TokenBucketRateLimiter {
++    fn default() -> Self {
++        Self::new()
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    // REQ-12.4: Rate Limiting Tests
++
++    #[tokio::test]
++    async fn test_rpm_limit_allows_exactly_n_requests() {
++        let limiter = TokenBucketRateLimiter::new();
++        limiter
++            .configure("test_provider", RateLimitConfig::rpm(10))
++            .await;
++
++        // Should allow exactly 10 requests
++        for i in 0..10 {
++            let result = limiter.try_acquire("test_provider", 0).await;
++            assert!(
++                result.is_ok(),
++                "Request {} should be allowed, got: {:?}",
++                i,
++                result
++            );
++        }
++
++        // 11th request should be rejected
++        let result = limiter.try_acquire("test_provider", 0).await;
++        assert!(result.is_err(), "11th request should be rate limited");
++    }
++
++    #[tokio::test]
++    async fn test_queued_request_executes_after_window_resets() {
++        let limiter = TokenBucketRateLimiter::new();
++        // Use a higher RPM so token refill is fast enough for testing
++        // RPM=60 means 1 token/second refill rate
++        limiter
++            .configure("test_provider", RateLimitConfig::rpm(60))
++            .await;
++
++        // Exhaust all 60 tokens
++        for _ in 0..60 {
++            assert!(limiter.try_acquire("test_provider", 0).await.is_ok());
++        }
++
++        // Next request should be rejected
++        let err = limiter.try_acquire("test_provider", 0).await.unwrap_err();
++        assert!(err.retry_after > Duration::ZERO);
++
++        // Wait for at least 1 token to refill (1 token per second at RPM=60)
++        tokio::time::sleep(Duration::from_millis(1100)).await;
++
++        // Now should be able to acquire again
++        assert!(limiter.try_acquire("test_provider", 0).await.is_ok());
++    }
++
++    #[tokio::test]
++    async fn test_tpm_limit_rejects_exceeding_token_budget() {
++        let limiter = TokenBucketRateLimiter::new();
++        limiter
++            .configure("test_model", RateLimitConfig::tpm(100_000))
++            .await;
++
++        // Request using 50K tokens - should succeed
++        assert!(limiter.try_acquire("test_model", 50_000).await.is_ok());
++
++        // Request using another 50K tokens - should succeed (total 100K)
++        assert!(limiter.try_acquire("test_model", 50_000).await.is_ok());
++
++        // Request using 1 more token should fail (over 100K budget)
++        let result = limiter.try_acquire("test_model", 1).await;
++        assert!(result.is_err());
++        let err = result.unwrap_err();
++        assert!(err.message.contains("TPM"));
++    }
++
++    #[tokio::test]
++    async fn test_different_agents_have_independent_limits() {
++        let limiter = TokenBucketRateLimiter::new();
++        limiter.configure("agent_a", RateLimitConfig::rpm(2)).await;
++        limiter.configure("agent_b", RateLimitConfig::rpm(2)).await;
++
++        // Use up agent_a's limit
++        assert!(limiter.try_acquire("agent_a", 0).await.is_ok());
++        assert!(limiter.try_acquire("agent_a", 0).await.is_ok());
++        assert!(limiter.try_acquire("agent_a", 0).await.is_err()); // Exhausted
++
++        // agent_b should still work independently
++        assert!(limiter.try_acquire("agent_b", 0).await.is_ok());
++        assert!(limiter.try_acquire("agent_b", 0).await.is_ok());
++        assert!(limiter.try_acquire("agent_b", 0).await.is_err()); // Now exhausted
++    }
++
++    #[tokio::test]
++    async fn test_concurrent_requests_respect_rpm_and_tpm() {
++        let limiter = TokenBucketRateLimiter::new();
++        limiter
++            .configure("provider", RateLimitConfig::new(5, 10_000))
++            .await;
++
++        // Launch 5 concurrent requests each using 1000 tokens
++        let mut handles = vec![];
++        for _ in 0..5 {
++            let l = limiter.clone();
++            handles.push(tokio::spawn(async move {
++                l.try_acquire("provider", 1000).await
++            }));
++        }
++
++        let results: Vec<_> = futures::future::join_all(handles)
++            .await
++            .into_iter()
++            .map(|r| r.unwrap())
++            .collect();
++
++        let successes = results.iter().filter(|r| r.is_ok()).count();
++        assert_eq!(successes, 5, "All 5 should succeed within RPM limit");
++
++        // 6th request should be rejected (RPM exhausted)
++        let result = limiter.try_acquire("provider", 1000).await;
++        assert!(result.is_err());
++    }
++
++    #[tokio::test]
++    async fn test_no_limit_configured_allows_all() {
++        let limiter = TokenBucketRateLimiter::new();
++        // No configuration for "unconfigured_scope"
++        for _ in 0..100 {
++            assert!(limiter
++                .try_acquire("unconfigured_scope", 1000)
++                .await
++                .is_ok());
++        }
++    }
++
++    #[tokio::test]
++    async fn test_rate_limit_config_constructors() {
++        let rpm_only = RateLimitConfig::rpm(60);
++        assert_eq!(rpm_only.rpm, Some(60));
++        assert_eq!(rpm_only.tpm, None);
++
++        let tpm_only = RateLimitConfig::tpm(100_000);
++        assert_eq!(tpm_only.rpm, None);
++        assert_eq!(tpm_only.tpm, Some(100_000));
++
++        let both = RateLimitConfig::new(60, 100_000);
++        assert_eq!(both.rpm, Some(60));
++        assert_eq!(both.tpm, Some(100_000));
++    }
++}
+diff --git a/crates/ai-core/src/structured.rs b/crates/ai-core/src/structured.rs
+index 2275f9a..20d6416 100644
+--- a/crates/ai-core/src/structured.rs
++++ b/crates/ai-core/src/structured.rs
+@@ -188,6 +188,85 @@ pub fn extract_json(response: &str) -> Option<String> {
+     None
+ }
+ 
++/// Fix common JSON issues such as trailing commas and unquoted keys.
++///
++/// This function attempts to auto-fix malformed JSON that LLMs commonly produce:
++/// - Trailing commas in objects and arrays
++/// - Unquoted keys in objects
++///
++/// Returns `Some(fixed_json)` if a fix was applied successfully, or `None` if
++/// the input is too malformed to repair.
++pub fn fix_json(input: &str) -> Option<String> {
++    let trimmed = input.trim();
++
++    // If already valid, return as-is
++    if serde_json::from_str::<Value>(trimmed).is_ok() {
++        return Some(trimmed.to_string());
++    }
++
++    let mut fixed = trimmed.to_string();
++
++    // Fix trailing commas: ,] or ,}
++    // Use a regex to remove commas before closing brackets/braces (ignoring whitespace)
++    let trailing_comma_re = regex::Regex::new(r",(\s*[}\]])").unwrap();
++    fixed = trailing_comma_re.replace_all(&fixed, "$1").to_string();
++
++    // Fix unquoted keys: {key: "value"} -> {"key": "value"}
++    // Match word characters followed by colon that are not inside quotes
++    let unquoted_key_re =
++        regex::Regex::new(r"(?m)([{\[,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:").unwrap();
++    fixed = unquoted_key_re
++        .replace_all(&fixed, r#"$1"$2":"#)
++        .to_string();
++
++    // Try to parse the fixed version
++    if serde_json::from_str::<Value>(&fixed).is_ok() {
++        Some(fixed)
++    } else {
++        None
++    }
++}
++
++/// Extract and fix JSON from a response, handling common LLM output issues.
++///
++/// This combines `extract_json` with `fix_json` to robustly extract JSON from
++/// LLM responses that may include markdown code blocks, prose, trailing commas,
++/// and unquoted keys.
++pub fn extract_and_fix_json(response: &str) -> Option<String> {
++    // First try standard extraction
++    if let Some(json) = extract_json(response) {
++        return Some(json);
++    }
++
++    // Try to extract from markdown code blocks and then fix
++    let trimmed = response.trim();
++
++    // Try extracting from ```json blocks
++    if let Some(start) = trimmed.find("```json") {
++        let start = start + 7;
++        if let Some(end) = trimmed[start..].find("```") {
++            let json_str = trimmed[start..start + end].trim();
++            if let Some(fixed) = fix_json(json_str) {
++                return Some(fixed);
++            }
++        }
++    }
++
++    // Try extracting from ``` blocks
++    if let Some(start) = trimmed.find("```") {
++        let start = start + 3;
++        if let Some(end) = trimmed[start..].find("```") {
++            let json_str = trimmed[start..start + end].trim();
++            if let Some(fixed) = fix_json(json_str) {
++                return Some(fixed);
++            }
++        }
++    }
++
++    // Try fixing the whole input
++    fix_json(trimmed)
++}
++
+ /// Call a completion function and re-prompt on schema validation failure.
+ ///
+ /// This is the implementation of REQ-9.1's "Re-prompt on validation failure
+@@ -717,4 +796,98 @@ Second: {"b": 2}"#;
+             }
+         }
+     }
++
++    // REQ-9.2: Output Parsing Tests
++
++    #[test]
++    fn test_extract_json_from_markdown_code_block() {
++        let response = "Here is the result:\n```json\n{\"key\": \"value\"}\n```";
++        let result = extract_json(response);
++        assert_eq!(result, Some("{\"key\": \"value\"}".to_string()));
++    }
++
++    #[test]
++    fn test_extract_json_wrapped_in_prose() {
++        let response = "The answer is {\"key\": \"value\"} as shown above.";
++        let result = extract_json(response);
++        assert_eq!(result, Some("{\"key\": \"value\"}".to_string()));
++    }
++
++    #[test]
++    fn test_fix_trailing_comma() {
++        let input = r#"{"a": 1,}"#;
++        let result = fix_json(input);
++        assert!(result.is_some());
++        let parsed: Value = serde_json::from_str(&result.unwrap()).unwrap();
++        assert_eq!(parsed["a"], 1);
++    }
++
++    #[test]
++    fn test_fix_unquoted_key() {
++        let input = r#"{name: "test"}"#;
++        let result = fix_json(input);
++        assert!(result.is_some());
++        let parsed: Value = serde_json::from_str(&result.unwrap()).unwrap();
++        assert_eq!(parsed["name"], "test");
++    }
++
++    #[tokio::test]
++    async fn test_malformed_response_triggers_retry_with_fix_feedback() {
++        let schema = json!({
++            "type": "object",
++            "properties": {"key": {"type": "string"}},
++            "required": ["key"]
++        });
++        let validator =
++            StructuredOutputValidator::new(StructuredOutputConfig::new(schema).with_max_retries(2))
++                .unwrap();
++
++        let call_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
++        let call_count2 = call_count.clone();
++
++        let result = complete_structured(&validator, move |prompt| {
++            let n = call_count2.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
++            Box::pin(async move {
++                let response = if n == 0 {
++                    // First attempt: completely malformed
++                    "This is not JSON at all".to_string()
++                } else {
++                    // Second attempt: should include error feedback in prompt
++                    assert!(
++                        prompt.contains("invalid")
++                            || prompt.contains("Error")
++                            || prompt.contains("corrected"),
++                        "Retry prompt should contain error feedback"
++                    );
++                    r#"{"key": "fixed"}"#.to_string()
++                };
++                Ok::<String, Box<dyn std::error::Error + Send + Sync>>(response)
++            })
++        })
++        .await;
++
++        assert!(result.is_ok());
++        assert_eq!(result.unwrap()["key"], "fixed");
++        // Should have been called at least twice (first fail + retry)
++        assert!(call_count.load(std::sync::atomic::Ordering::SeqCst) >= 2);
++    }
++
++    #[test]
++    fn test_fix_json_trailing_comma_in_array() {
++        let input = r#"{"items": [1, 2, 3,]}"#;
++        let result = fix_json(input);
++        assert!(result.is_some());
++        let parsed: Value = serde_json::from_str(&result.unwrap()).unwrap();
++        assert_eq!(parsed["items"].as_array().unwrap().len(), 3);
++    }
++
++    #[test]
++    fn test_extract_and_fix_json_combined() {
++        // Test that extract_and_fix_json handles trailing commas in code blocks
++        let response = "```json\n{\"a\": 1,}\n```";
++        let result = extract_and_fix_json(response);
++        assert!(result.is_some());
++        let parsed: Value = serde_json::from_str(&result.unwrap()).unwrap();
++        assert_eq!(parsed["a"], 1);
++    }
+ }
+diff --git a/crates/ai-core/src/tool.rs b/crates/ai-core/src/tool.rs
+index c55ea78..4623a1c 100644
+--- a/crates/ai-core/src/tool.rs
++++ b/crates/ai-core/src/tool.rs
+@@ -43,6 +43,7 @@
+ //! ```
+ 
+ use async_trait::async_trait;
++use jsonschema::Validator;
+ use serde::{Deserialize, Serialize};
+ use serde_json::Value;
+ 
+@@ -341,6 +342,137 @@ impl ToolRegistry {
+     }
+ }
+ 
++/// Result of tool input validation.
++#[derive(Debug, Clone)]
++pub struct ValidationError {
++    /// Path to the invalid field (e.g., "properties.name").
++    pub path: String,
++    /// Descriptive error message.
++    pub message: String,
++}
++
++impl std::fmt::Display for ValidationError {
++    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
++        write!(f, "{}: {}", self.path, self.message)
++    }
++}
++
++/// Coerce compatible types in tool input to match the schema.
++///
++/// For example, a string "5" will be coerced to integer 5 if the schema
++/// expects an integer type.
++pub fn coerce_input(input: &Value, schema: &Value) -> Value {
++    match schema.get("type").and_then(|t| t.as_str()) {
++        Some("object") => {
++            if let Value::Object(map) = input {
++                let properties = schema
++                    .get("properties")
++                    .and_then(|p| p.as_object())
++                    .cloned()
++                    .unwrap_or_default();
++                let mut result = serde_json::Map::new();
++                for (key, value) in map {
++                    if let Some(prop_schema) = properties.get(key) {
++                        result.insert(key.clone(), coerce_input(value, prop_schema));
++                    } else {
++                        result.insert(key.clone(), value.clone());
++                    }
++                }
++                Value::Object(result)
++            } else {
++                input.clone()
++            }
++        }
++        Some("integer") | Some("number") => {
++            if let Value::String(s) = input {
++                if let Ok(n) = s.parse::<i64>() {
++                    Value::Number(serde_json::Number::from(n))
++                } else if let Ok(n) = s.parse::<f64>() {
++                    serde_json::Number::from_f64(n)
++                        .map(Value::Number)
++                        .unwrap_or_else(|| input.clone())
++                } else {
++                    input.clone()
++                }
++            } else {
++                input.clone()
++            }
++        }
++        Some("boolean") => {
++            if let Value::String(s) = input {
++                match s.as_str() {
++                    "true" => Value::Bool(true),
++                    "false" => Value::Bool(false),
++                    _ => input.clone(),
++                }
++            } else {
++                input.clone()
++            }
++        }
++        Some("string") => match input {
++            Value::Number(n) => Value::String(n.to_string()),
++            Value::Bool(b) => Value::String(b.to_string()),
++            _ => input.clone(),
++        },
++        Some("array") => {
++            if let Value::Array(arr) = input {
++                let item_schema = schema
++                    .get("items")
++                    .cloned()
++                    .unwrap_or(Value::Object(serde_json::Map::new()));
++                let coerced: Vec<Value> = arr
++                    .iter()
++                    .map(|item| coerce_input(item, &item_schema))
++                    .collect();
++                Value::Array(coerced)
++            } else {
++                input.clone()
++            }
++        }
++        _ => input.clone(),
++    }
++}
++
++/// Validate tool input against its JSON Schema.
++///
++/// Returns `Ok(coerced_input)` if valid (after type coercion), or `Err` with
++/// a descriptive error including the path to the invalid field.
++pub fn validate_tool_input(input: &Value, schema: &Value) -> Result<Value, ToolError> {
++    // First, coerce compatible types
++    let coerced = coerce_input(input, schema);
++
++    // Then validate against schema
++    let validator = Validator::new(schema)
++        .map_err(|e| ToolError::InvalidInput(format!("Invalid schema: {}", e)))?;
++
++    if validator.is_valid(&coerced) {
++        Ok(coerced)
++    } else {
++        // Collect validation errors with paths
++        let errors: Vec<ValidationError> = validator
++            .iter_errors(&coerced)
++            .map(|error| {
++                let path = error.instance_path.to_string();
++                let path = if path.is_empty() {
++                    error.schema_path.to_string()
++                } else {
++                    path
++                };
++                ValidationError {
++                    path,
++                    message: error.to_string(),
++                }
++            })
++            .collect();
++
++        if let Some(first) = errors.first() {
++            Err(ToolError::InvalidInput(format!("{}", first)))
++        } else {
++            Err(ToolError::InvalidInput("Validation failed".to_string()))
++        }
++    }
++}
++
+ #[cfg(test)]
+ mod tests {
+     use super::*;
+@@ -658,4 +790,116 @@ mod tests {
+         assert!(registry.descriptors().is_empty());
+         assert!(registry.get("anything").is_none());
+     }
++
++    // REQ-3.4: Tool Validation Tests
++
++    #[test]
++    fn test_valid_input_passes_validation_and_execution_proceeds() {
++        let schema = json!({
++            "type": "object",
++            "properties": {
++                "name": {"type": "string"},
++                "age": {"type": "integer"}
++            },
++            "required": ["name", "age"]
++        });
++
++        let input = json!({"name": "Alice", "age": 30});
++        let result = validate_tool_input(&input, &schema);
++        assert!(result.is_ok());
++        let coerced = result.unwrap();
++        assert_eq!(coerced["name"], "Alice");
++        assert_eq!(coerced["age"], 30);
++    }
++
++    #[test]
++    fn test_missing_required_field_returns_error_with_field_path() {
++        let schema = json!({
++            "type": "object",
++            "properties": {
++                "name": {"type": "string"},
++                "age": {"type": "integer"}
++            },
++            "required": ["name", "age"]
++        });
++
++        let input = json!({"age": 30}); // missing "name"
++        let result = validate_tool_input(&input, &schema);
++        assert!(result.is_err());
++        let err = result.unwrap_err();
++        let err_msg = err.to_string();
++        // Error should mention the missing required field
++        assert!(
++            err_msg.contains("name") || err_msg.contains("required"),
++            "Error should reference the missing field: {}",
++            err_msg
++        );
++    }
++
++    #[test]
++    fn test_string_5_for_integer_field_is_coerced_to_5() {
++        let schema = json!({
++            "type": "object",
++            "properties": {
++                "count": {"type": "integer"}
++            },
++            "required": ["count"]
++        });
++
++        let input = json!({"count": "5"});
++        let result = validate_tool_input(&input, &schema);
++        assert!(result.is_ok());
++        let coerced = result.unwrap();
++        assert_eq!(coerced["count"], 5);
++    }
++
++    #[test]
++    fn test_invalid_type_returns_descriptive_type_error() {
++        let schema = json!({
++            "type": "object",
++            "properties": {
++                "name": {"type": "string"}
++            },
++            "required": ["name"]
++        });
++
++        // Pass an object where a string is expected
++        let input = json!({"name": {"nested": "object"}});
++        let result = validate_tool_input(&input, &schema);
++        assert!(result.is_err());
++        let err = result.unwrap_err();
++        let err_msg = err.to_string();
++        // Error should reference the path and type mismatch
++        assert!(
++            err_msg.contains("name") || err_msg.contains("type") || err_msg.contains("string"),
++            "Error should describe type mismatch: {}",
++            err_msg
++        );
++    }
++
++    #[test]
++    fn test_coerce_string_to_number() {
++        let schema = json!({
++            "type": "object",
++            "properties": {
++                "value": {"type": "number"}
++            }
++        });
++        let input = json!({"value": "3.14"});
++        let coerced = coerce_input(&input, &schema);
++        assert_eq!(coerced["value"], 3.14);
++    }
++
++    #[test]
++    fn test_coerce_string_to_boolean() {
++        let schema = json!({
++            "type": "object",
++            "properties": {
++                "flag": {"type": "boolean"}
++            }
++        });
++        let input = json!({"flag": "true"});
++        let coerced = coerce_input(&input, &schema);
++        assert_eq!(coerced["flag"], true);
++    }
+ }
+diff --git a/docs/requirements.html b/docs/requirements.html
+index 2eb33a8..c683d02 100644
+--- a/docs/requirements.html
++++ b/docs/requirements.html
+@@ -1359,7 +1359,7 @@ <h3>Jump to Phase</h3>
+       </div>
+       <p class="phase-desc">Polish, advanced features, enterprise readiness.</p>
+ 
+-      <div class="req-card" data-diff="easy">
++      <div class="req-card" data-diff="easy" data-done="true">
+         <div class="req-head"><span class="req-id">REQ-3.4</span><span class="req-name">Tool Validation</span><span
+             class="difficulty easy">Easy</span></div>
+         <div class="req-body">The framework SHALL validate tool inputs against their schema before execution and provide
+@@ -1371,7 +1371,7 @@ <h3>Jump to Phase</h3>
+         </ul>
+       </div>
+ 
+-      <div class="req-card" data-diff="easy">
++      <div class="req-card" data-diff="easy" data-done="true">
+         <div class="req-head"><span class="req-id">REQ-9.2</span><span class="req-name">Output Parsing</span><span
+             class="difficulty easy">Easy</span></div>
+         <div class="req-body">The framework SHALL parse and validate LLM outputs, handling common failure modes
+@@ -1383,7 +1383,7 @@ <h3>Jump to Phase</h3>
+         </ul>
+       </div>
+ 
+-      <div class="req-card" data-diff="easy">
++      <div class="req-card" data-diff="easy" data-done="true">
+         <div class="req-head"><span class="req-id">REQ-9.4</span><span class="req-name">Output Formatting</span><span
+             class="difficulty easy">Easy</span></div>
+         <div class="req-body">The framework SHALL support configurable output formatting: plain text, Markdown, code
+@@ -1395,7 +1395,7 @@ <h3>Jump to Phase</h3>
+         </ul>
+       </div>
+ 
+-      <div class="req-card" data-diff="easy">
++      <div class="req-card" data-diff="easy" data-done="true">
+         <div class="req-head"><span class="req-id">REQ-12.4</span><span class="req-name">Rate Limiting</span><span
+             class="difficulty easy">Easy</span></div>
+         <div class="req-body">The framework SHALL support rate limiting per provider, per model, and per agent with

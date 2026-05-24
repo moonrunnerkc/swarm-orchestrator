@@ -1,0 +1,26 @@
+{
+  "id": "devin-divord97-ccc-pr21",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 21,
+    "headSha": "e7c23268a24f977ef4112884ae2e82b5754157c9",
+    "baseSha": "0bee828309a9a15aca3c752e86238aef8cebae2a",
+    "title": "feat: 实现前端 15 个关键交互组件",
+    "body": "## Summary\n\n实现前端缺失的 15 个关键交互组件，覆盖坐席工作台、实时通话辅助、IVR 编辑器增强、社交渠道管理、高级 AI 功能等。\n\n### 新增组件 (10个)\n\n| # | 组件 | 路径 | 功能 |\n|---|------|------|------|\n| 1 | **AgentPhoneBar** | `components/phone/` | 坐席软电话条：接听/挂机/保持/转接/会议/静音 + 状态切换（空闲/小休/离线） |\n| 2 | **TransferModal** | `components/phone/` | 转接弹窗：技能组/坐席/外线三种目标 + 盲转/咨询转 |\n| 3 | **RealtimeTranscriptPanel** | `components/phone/` | 实时转写面板：角色标签/情绪颜色/自动滚动 |\n| 4 | **ScriptRecommendPanel** | `components/phone/` | 话术推荐面板：分类标签/置信度/一键复制 |\n| 5 | **AiAssistPanel** | `components/phone/` | AI 辅助面板：情绪分析/通话摘要/自动填单 |\n| 6 | **ScreenPopPanel** | `components/phone/` | 来电弹屏：客户信息/历史记录/iframe 嵌入 |\n| 7 | **SupervisorPanel** | `components/phone/` | 管理员监控：实时通话列表 + 监听/耳语/强插/强拆 |\n| 8 | **PreviewCaseCard** | `components/phone/` | Preview 模式案例预览：倒计时/拨号/跳过 |\n| 9 | **QuickReplyPicker** | `components/phone/` | 快捷回复选择面板：分类筛选/搜索/一键发送 |\n| 10 | **WebchatWidget** | `components/webchat/` | 网页客服 Widget SDK：会话管理/消息收发/文件上传/浮窗交互 |\n\n### 新增/增强页面 (5个)\n\n| # | 页面 | 功能 |\n|---|------|------|\n| 11 | **IvrFlowEditor** 增强 | 拖拽定位/SVG 连线/连接手柄/缩放/撤销 + 全部 20 种节点配置面板 |\n| 12 | **CampaignLiveDashboard** | 外呼实时大屏：6 个 KPI 卡片 + 进度仪表盘 + 接通率/放弃率 + 坐席明细 |\n| 13 | **SocialChannelPage** | 社交渠道管理：微信/微博 CRUD + 启用/禁用 + 状态监控 |\n| 14 | **AdvancedAiPage** | 高级 AI：声纹复刻（训练任务管理）/ 对话分析（4 种分析类型）/ 智能培训 |\n| 15 | **DashboardPage** 漏斗图增强 | 增加全服务/半服务/直转层级 + 可视化柱状漏斗 |\n\n### 集成变更\n\n- **AppLayout**: 顶部集成 AgentPhoneBar；菜单新增\"实时大屏\"、\"社交渠道\"、\"高级 AI\"\n- **App.tsx**: 添加路由 `/campaigns/live`、`/im/social`、`/ai/advanced`\n- **endpoints.ts**: 新增 socialChannelApi / voiceCloneApi / conversationAnalyticsApi / trainingApi / supervisorApi / webchatApi\n\n## Review & Testing Checklist for Human\n\n- [ ] 启动前端 `npm run dev`，检查 AgentPhoneBar 在页面顶部正常渲染，点击\"上线/小休/下线\"按钮切换状态\n- [ ] 访问 `/campaigns/live` 确认实时大屏布局正确（依赖后端 API 返回数据）\n- [ ] 访问 `/im/social` 确认社交渠道 CRUD 弹窗正常弹出，表单字段完整\n- [ ] 访问 `/ai/advanced` 确认三个 Tab（声纹复刻/对话分析/智能培训）切换正常\n- [ ] IVR 编辑器：打开一个 IVR 流程，验证节点可拖拽移动、连接手柄可点击连线\n\n### Notes\n\n- 所有组件使用 Antd 5.x + React 19，与现有代码风格一致\n- 实时数据组件（AgentPhoneBar/SupervisorPanel/CampaignLiveDashboard）使用 5 秒轮询，生产环境建议替换为 WebSocket\n- WebchatWidget 使用 fetch API 而非 axios，因为它设计为可独立部署的嵌入式组件\n- `tsc --noEmit` 和 `vite build` 均通过\n\nLink to Devin session: https://app.devin.ai/sessions/a0ba506a3d574e7b8a041065a6b41144\nRequested by: @divord97\n<!-- devin-review-badge-begin -->\n\n---\n\n<a href=\"https://app.devin.ai/review/divord97/ccc/pull/21\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-open-in-devin-review-dark.svg?v=1\">\n    <img src=\"https://static.devin.ai/assets/gh-open-in-devin-review-light.svg?v=1\" alt=\"Open in Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779584431-frontend-15-components",
+    "repository": "divord97/ccc"
+  },
+  "diffRef": {
+    "repository": "divord97/ccc",
+    "headSha": "e7c23268a24f977ef4112884ae2e82b5754157c9",
+    "baseSha": "0bee828309a9a15aca3c752e86238aef8cebae2a"
+  },
+  "vendoredDiffPath": "devin/devin-divord97-ccc-pr21.diff",
+  "vendoredAt": "2026-05-24T03:04:21.140Z",
+  "collectedAt": "2026-05-24T03:04:21.140Z"
+}

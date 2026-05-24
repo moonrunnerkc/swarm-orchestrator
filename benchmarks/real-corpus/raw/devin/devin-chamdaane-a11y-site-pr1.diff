@@ -1,0 +1,3905 @@
+diff --git a/index.html b/index.html
+index f472932..69e6b0c 100644
+--- a/index.html
++++ b/index.html
+@@ -1,1087 +1,2824 @@
+ <!DOCTYPE html>
+ <html lang="fr">
+ <head>
+-<meta charset="UTF-8">
+-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+-<meta name="theme-color" content="#FFFFFF">
+-<title>CSS Bases</title>
+-
+-<!-- FAVICON avec H -->
+-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%23007AFF%22/><text x=%2250%25%22 y=%2260%25%22 font-family=%22Arial%22 font-size=%2260%22 text-anchor=%22middle%22 fill=%22white%22 font-weight=%22bold%22>H</text></svg>">
+-
+-<style>
+-/* ===== FORCER LE THÈME CLAIR ===== */
+-:root {
+-  color-scheme: light only;
+-}
+-
+-/* ===== VARIABLES CSS ===== */
+-:root {
+-  /* Couleurs mode normal */
+-  --color-primary: #007AFF;
+-  --color-surface: #FFFFFF;
+-  --color-background: #FFFFFF;
+-  --color-text: #000000;
+-  --color-text-secondary: #555555;
+-  --color-border: #E0E0E0;
+-  --color-hover: #F5F5F5;
+-  --color-accent: #FF2D55;
+-  --color-gradient-start: #007AFF;
+-  --color-gradient-end: #5856D6;
+-  
+-  /* Couleurs mode data school (quand carte ouverte) */
+-  --data-bg: #0A0A0A;
+-  --data-surface: #1A1A1A;
+-  --data-text: #FFFFFF;
+-  --data-accent: #00D4AA;
+-  --data-secondary: #00B8FF;
+-  --data-glow: rgba(0, 212, 170, 0.3);
+-  
+-  /* Espacements */
+-  --space-xs: 8px;
+-  --space-sm: 16px;
+-  --space-md: 24px;
+-  --space-lg: 32px;
+-  --space-xl: 48px;
+-
+-  /* Typographie */
+-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+-  --font-mono: "SF Mono", Monaco, "Courier New", monospace;
+-  --font-data: "Courier New", monospace;
+-
+-  /* Ombres */
+-  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.05);
+-  --shadow-md: 0 8px 30px rgba(0, 0, 0, 0.08);
+-  --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.1);
+-  --shadow-footer: 0 0 40px rgba(0, 122, 255, 0.15);
+-  
+-  /* Bordures */
+-  --radius-sm: 8px;
+-  --radius-md: 16px;
+-  --radius-lg: 24px;
+-  --radius-xl: 32px;
+-
+-  /* Transitions */
+-  --transition-fast: 200ms ease;
+-  --transition-smooth: 400ms cubic-bezier(0.4, 0, 0.2, 1);
+-}
+-
+-/* ===== BACKGROUND DATA STYLE ===== */
+-html {
+-  scroll-behavior: smooth;
+-  background: #0a192f; /* Fond bleu nuit */
+-  min-height: 100%;
+-}
+-
+-body {
+-  position: relative;
+-  font-family: var(--font-sans);
+-  color: var(--color-text);
+-  line-height: 1.6;
+-  -webkit-font-smoothing: antialiased;
+-  min-height: 100vh;
+-  display: flex;
+-  flex-direction: column;
+-  transition: background-color var(--transition-smooth);
+-  background: 
+-    /* Motif de grille subtile */
+-    linear-gradient(90deg, rgba(10, 25, 47, 0.8) 1px, transparent 1px),
+-    linear-gradient(0deg, rgba(10, 25, 47, 0.8) 1px, transparent 1px),
+-    /* Dégradé principal */
+-    linear-gradient(135deg, #0a192f 0%, #112240 50%, #0a192f 100%);
+-  background-size: 50px 50px, 50px 50px, cover;
+-}
+-
+-/* Points de connexion réseau */
+-body::before {
+-  content: '';
+-  position: fixed;
+-  top: 0;
+-  left: 0;
+-  width: 100%;
+-  height: 100%;
+-  background-image: 
+-    radial-gradient(circle at 20% 30%, rgba(0, 122, 255, 0.15) 0%, transparent 20%),
+-    radial-gradient(circle at 80% 70%, rgba(88, 86, 214, 0.15) 0%, transparent 20%),
+-    radial-gradient(circle at 40% 80%, rgba(0, 212, 170, 0.1) 0%, transparent 15%),
+-    radial-gradient(circle at 60% 20%, rgba(255, 45, 85, 0.1) 0%, transparent 15%);
+-  pointer-events: none;
+-  z-index: -1;
+-}
+-
+-/* Lignes de données animées */
+-body::after {
+-  content: '';
+-  position: fixed;
+-  top: 0;
+-  left: 0;
+-  width: 100%;
+-  height: 100%;
+-  background-image: 
+-    /* Lignes horizontales */
+-    linear-gradient(90deg, transparent 95%, rgba(0, 122, 255, 0.3) 100%),
+-    linear-gradient(90deg, transparent 85%, rgba(0, 212, 170, 0.2) 100%),
+-    linear-gradient(90deg, transparent 75%, rgba(88, 86, 214, 0.25) 100%),
+-    /* Lignes verticales */
+-    linear-gradient(0deg, transparent 90%, rgba(0, 122, 255, 0.2) 100%),
+-    linear-gradient(0deg, transparent 80%, rgba(255, 45, 85, 0.15) 100%),
+-    linear-gradient(0deg, transparent 70%, rgba(0, 212, 170, 0.25) 100%);
+-  background-size: 200px 100px, 150px 120px, 180px 90px, 100px 200px, 120px 150px, 90px 180px;
+-  animation: moveLines 20s linear infinite;
+-  pointer-events: none;
+-  z-index: -1;
+-  opacity: 0.5;
+-}
+-
+-@keyframes moveLines {
+-  0% {
+-    background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 0 0;
+-  }
+-  100% {
+-    background-position: 200px 100px, 150px 120px, 180px 90px, 100px 200px, 120px 150px, 90px 180px;
+-  }
+-}
+-
+-/* Points de données animés */
+-.data-dots {
+-  position: fixed;
+-  width: 100%;
+-  height: 100%;
+-  top: 0;
+-  left: 0;
+-  pointer-events: none;
+-  z-index: -1;
+-}
+-
+-.data-dots span {
+-  position: absolute;
+-  width: 2px;
+-  height: 2px;
+-  background: rgba(0, 212, 170, 0.7);
+-  border-radius: 50%;
+-  animation: float 15s infinite linear;
+-}
+-
+-.data-dots span:nth-child(odd) {
+-  background: rgba(0, 122, 255, 0.7);
+-}
+-
+-.data-dots span:nth-child(3n) {
+-  background: rgba(88, 86, 214, 0.7);
+-}
+-
+-@keyframes float {
+-  0% {
+-    transform: translateY(0) translateX(0);
+-    opacity: 0;
+-  }
+-  10% {
+-    opacity: 1;
+-  }
+-  90% {
+-    opacity: 1;
+-  }
+-  100% {
+-    transform: translateY(-100vh) translateX(100px);
+-    opacity: 0;
+-  }
+-}
+-
+-body.data-mode {
+-  background: var(--data-bg);
+-  color: var(--data-text);
+-  overflow: hidden;
+-}
+-
+-/* ===== HEADER STYLÉ (ton style original) ===== */
+-.header-container {
+-  background: rgba(255, 255, 255, 0.95);
+-  backdrop-filter: blur(20px);
+-  -webkit-backdrop-filter: blur(20px);
+-  border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+-  box-shadow: var(--shadow-md);
+-  position: relative;
+-  z-index: 100;
+-}
+-
+-.header {
+-  max-width: 1200px;
+-  margin: 0 auto;
+-  padding: var(--space-xl);
+-  text-align: center;
+-}
+-
+-.header h1 {
+-  font-size: clamp(2.5rem, 5vw, 4rem);
+-  font-weight: 800;
+-  letter-spacing: -0.02em;
+-  color: var(--color-text);
+-  margin-bottom: var(--space-sm);
+-  line-height: 1.1;
+-  background: linear-gradient(135deg, var(--color-gradient-start), var(--color-gradient-end));
+-  -webkit-background-clip: text;
+-  -webkit-text-fill-color: transparent;
+-  background-clip: text;
+-}
+-
+-.header p {
+-  font-size: clamp(1.1rem, 2vw, 1.5rem);
+-  color: var(--color-text-secondary);
+-  max-width: 600px;
+-  margin: 0 auto;
+-  font-weight: 300;
+-}
+-
+-/* ===== CONTENU PRINCIPAL ===== */
+-.main-content {
+-  flex: 1;
+-  padding: var(--space-xl) 0;
+-}
+-
+-/* ===== OVERLAY (pour carte ouverte) ===== */
+-.card-overlay {
+-  position: fixed;
+-  top: 0;
+-  left: 0;
+-  width: 100%;
+-  height: 100%;
+-  background: rgba(0, 0, 0, 0.8);
+-  backdrop-filter: blur(10px);
+-  z-index: 1000;
+-  opacity: 0;
+-  visibility: hidden;
+-  transition: all var(--transition-smooth);
+-}
+-
+-.card-overlay.active {
+-  opacity: 1;
+-  visibility: visible;
+-}
+-
+-/* ===== CARTES ===== */
+-.cards-container {
+-  max-width: 1200px;
+-  margin: 0 auto;
+-  padding: 0 var(--space-xl);
+-}
+-
+-.cards-grid {
+-  display: grid;
+-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+-  gap: var(--space-lg);
+-}
+-
+-/* Carte normale */
+-.card {
+-  background: rgba(255, 255, 255, 0.95);
+-  border-radius: var(--radius-lg);
+-  padding: var(--space-lg);
+-  box-shadow: var(--shadow-md);
+-  border: 2px solid rgba(0, 122, 255, 0.2);
+-  transition: all var(--transition-smooth);
+-  cursor: pointer;
+-  position: relative;
+-  overflow: hidden;
+-  backdrop-filter: blur(10px);
+-}
+-
+-.card:hover {
+-  transform: translateY(-8px);
+-  box-shadow: var(--shadow-lg), 0 0 30px rgba(0, 122, 255, 0.2);
+-  border-color: var(--color-primary);
+-  background: rgba(255, 255, 255, 0.98);
+-}
+-
+-.card::before {
+-  content: '';
+-  position: absolute;
+-  top: 0;
+-  left: 0;
+-  width: 100%;
+-  height: 4px;
+-  background: var(--color-primary);
+-  transform: scaleX(0);
+-  transform-origin: left;
+-  transition: transform var(--transition-smooth);
+-}
+-
+-.card:hover::before {
+-  transform: scaleX(1);
+-}
+-
+-.card h2 {
+-  font-size: 1.3rem;
+-  margin-bottom: var(--space-sm);
+-  color: var(--color-primary);
+-  display: flex;
+-  align-items: center;
+-  gap: var(--space-xs);
+-}
+-
+-.card h2::before {
+-  content: '▶';
+-  font-size: 0.8rem;
+-}
+-
+-.card ul {
+-  list-style: none;
+-}
+-
+-.card ul li {
+-  font-family: var(--font-mono);
+-  font-size: 0.9rem;
+-  padding: var(--space-xs) 0;
+-  color: var(--color-text-secondary);
+-  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+-}
+-
+-.card ul li:last-child {
+-  border-bottom: none;
+-}
+-
+-/* Carte en mode data school (plein écran) */
+-.card-expanded {
+-  position: fixed;
+-  top: 50%;
+-  left: 50%;
+-  transform: translate(-50%, -50%) scale(0.8);
+-  width: 90%;
+-  max-width: 800px;
+-  max-height: 80vh;
+-  background: var(--data-surface);
+-  border-radius: var(--radius-lg);
+-  padding: var(--space-xl);
+-  box-shadow: 0 0 60px var(--data-glow);
+-  border: 2px solid var(--data-accent);
+-  z-index: 1001;
+-  opacity: 0;
+-  visibility: hidden;
+-  overflow-y: auto;
+-  transition: all var(--transition-smooth);
+-}
+-
+-.card-expanded.active {
+-  opacity: 1;
+-  visibility: visible;
+-  transform: translate(-50%, -50%) scale(1);
+-}
+-
+-/* Style data school pour carte ouverte */
+-.card-expanded .card-header {
+-  display: flex;
+-  justify-content: space-between;
+-  align-items: center;
+-  margin-bottom: var(--space-lg);
+-  padding-bottom: var(--space-md);
+-  border-bottom: 2px solid var(--data-accent);
+-}
+-
+-.card-expanded .card-title {
+-  font-family: var(--font-data);
+-  font-size: 2rem;
+-  color: var(--data-accent);
+-  text-transform: uppercase;
+-  letter-spacing: 2px;
+-  display: flex;
+-  align-items: center;
+-  gap: var(--space-sm);
+-}
+-
+-.card-expanded .card-title::before {
+-  content: '>_';
+-  color: var(--data-secondary);
+-  font-size: 1.5rem;
+-}
+-
+-.card-expanded .card-close {
+-  background: transparent;
+-  border: 2px solid var(--data-secondary);
+-  color: var(--data-secondary);
+-  font-family: var(--font-mono);
+-  font-size: 1.5rem;
+-  width: 40px;
+-  height: 40px;
+-  border-radius: 50%;
+-  cursor: pointer;
+-  display: flex;
+-  align-items: center;
+-  justify-content: center;
+-  transition: all var(--transition-fast);
+-}
+-
+-.card-expanded .card-close:hover {
+-  background: var(--data-secondary);
+-  color: var(--data-surface);
+-  transform: rotate(90deg);
+-}
+-
+-.card-expanded .card-content {
+-  font-family: var(--font-data);
+-  color: var(--data-text);
+-}
+-
+-.card-expanded .code-block {
+-  background: rgba(0, 0, 0, 0.5);
+-  border-left: 4px solid var(--data-accent);
+-  padding: var(--space-md);
+-  margin: var(--space-md) 0;
+-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+-  overflow-x: auto;
+-}
+-
+-.card-expanded .code-block code {
+-  color: var(--data-secondary);
+-  font-size: 0.9rem;
+-  line-height: 1.8;
+-}
+-
+-.card-expanded .properties-list {
+-  list-style: none;
+-  display: grid;
+-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+-  gap: var(--space-sm);
+-  margin-top: var(--space-lg);
+-}
+-
+-.card-expanded .properties-list li {
+-  padding: var(--space-sm);
+-  background: rgba(0, 212, 170, 0.1);
+-  border: 1px solid rgba(0, 212, 170, 0.2);
+-  border-radius: var(--radius-sm);
+-  font-size: 0.9rem;
+-  position: relative;
+-}
+-
+-.card-expanded .properties-list li::before {
+-  content: '✓';
+-  position: absolute;
+-  right: var(--space-sm);
+-  color: var(--data-accent);
+-}
+-
+-/* Effets de lumières data mode */
+-.card-expanded::before {
+-  content: '';
+-  position: absolute;
+-  top: -2px;
+-  left: -2px;
+-  right: -2px;
+-  bottom: -2px;
+-  background: linear-gradient(45deg, 
+-    var(--data-accent), 
+-    var(--data-secondary),
+-    transparent 70%);
+-  border-radius: var(--radius-lg);
+-  z-index: -1;
+-  opacity: 0.5;
+-  filter: blur(10px);
+-}
+-
+-/* ===== FOOTER VOYANT (ton style original) ===== */
+-.footer {
+-  text-align: center;
+-  padding: var(--space-xl) var(--space-lg);
+-  font-size: 1rem;
+-  color: white;
+-  background: linear-gradient(135deg, 
+-    var(--color-gradient-start), 
+-    var(--color-gradient-end),
+-    #AF52DE);
+-  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+-  position: relative;
+-  overflow: hidden;
+-  box-shadow: var(--shadow-footer);
+-  margin-top: auto;
+-  z-index: 100;
+-}
+-
+-.footer::before {
+-  content: '';
+-  position: absolute;
+-  top: 0;
+-  left: 0;
+-  width: 100%;
+-  height: 100%;
+-  background: 
+-    radial-gradient(circle at 20% 80%, rgba(255, 255, 255, 0.2) 0%, transparent 50%),
+-    radial-gradient(circle at 80% 20%, rgba(255, 255, 255, 0.2) 0%, transparent 50%);
+-}
+-
+-.footer-content {
+-  position: relative;
+-  z-index: 2;
+-  max-width: 600px;
+-  margin: 0 auto;
+-}
+-
+-.footer-title {
+-  font-size: 1.8rem;
+-  font-weight: 700;
+-  margin-bottom: var(--space-sm);
+-  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+-}
+-
+-.footer-subtitle {
+-  font-size: 1.1rem;
+-  opacity: 0.9;
+-  margin-bottom: var(--space-lg);
+-  font-weight: 300;
+-}
+-
+-.footer-signature {
+-  font-family: var(--font-mono);
+-  font-size: 1.2rem;
+-  font-weight: 700;
+-  background: white;
+-  color: var(--color-gradient-start);
+-  padding: var(--space-sm) var(--space-lg);
+-  border-radius: 50px;
+-  display: inline-block;
+-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+-  transition: all var(--transition-smooth);
+-  margin-top: var(--space-sm);
+-  border: 2px solid white;
+-}
+-
+-.footer-signature:hover {
+-  transform: translateY(-5px) scale(1.05);
+-  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.3);
+-  background: transparent;
+-  color: white;
+-}
+-
+-.footer-copyright {
+-  margin-top: var(--space-lg);
+-  font-size: 0.9rem;
+-  opacity: 0.8;
+-  display: flex;
+-  align-items: center;
+-  justify-content: center;
+-  gap: var(--space-xs);
+-}
+-
+-.footer-copyright::before {
+-  content: '©';
+-  font-size: 1.2rem;
+-}
+-
+-/* ===== ANIMATIONS ===== */
+-@keyframes slideIn {
+-  from {
+-    opacity: 0;
+-    transform: translateY(20px);
+-  }
+-  to {
+-    opacity: 1;
+-    transform: translateY(0);
+-  }
+-}
+-
+-.card {
+-  animation: slideIn 0.5s ease backwards;
+-}
+-
+-.card:nth-child(2) { animation-delay: 0.1s; }
+-.card:nth-child(3) { animation-delay: 0.2s; }
+-.card:nth-child(4) { animation-delay: 0.3s; }
+-.card:nth-child(5) { animation-delay: 0.4s; }
+-.card:nth-child(6) { animation-delay: 0.5s; }
+-.card:nth-child(7) { animation-delay: 0.6s; }
+-.card:nth-child(8) { animation-delay: 0.7s; }
+-.card:nth-child(9) { animation-delay: 0.8s; }
+-.card:nth-child(10) { animation-delay: 0.9s; }
+-.card:nth-child(11) { animation-delay: 1s; }
+-.card:nth-child(12) { animation-delay: 1.1s; }
+-
+-/* ===== RESPONSIVE ===== */
+-@media (max-width: 768px) {
+-  .header {
+-    padding: var(--space-lg);
+-  }
+-  
+-  .header h1 {
+-    font-size: clamp(2rem, 5vw, 3rem);
+-  }
+-  
+-  .cards-container {
+-    padding: 0 var(--space-md);
+-  }
+-  
+-  .cards-grid {
+-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+-    gap: var(--space-md);
+-  }
+-  
+-  .card-expanded {
+-    width: 95%;
+-    padding: var(--space-lg);
+-  }
+-  
+-  .card-expanded .card-title {
+-    font-size: 1.5rem;
+-  }
+-  
+-  .card-expanded .properties-list {
+-    grid-template-columns: 1fr;
+-  }
+-  
+-  .footer {
+-    padding: var(--space-lg) var(--space-md);
+-  }
+-  
+-  .footer-title {
+-    font-size: 1.5rem;
+-  }
+-  
+-  .footer-signature {
+-    font-size: 1rem;
+-    padding: var(--space-sm) var(--space-md);
+-  }
+-}
+-
+-@media (max-width: 480px) {
+-  .cards-grid {
+-    grid-template-columns: 1fr;
+-  }
+-  
+-  .header h1 {
+-    font-size: clamp(1.8rem, 6vw, 2.5rem);
+-  }
+-  
+-  .header p {
+-    font-size: clamp(1rem, 3vw, 1.2rem);
+-  }
+-  
+-  .card {
+-    padding: var(--space-md);
+-  }
+-  
+-  .footer-title {
+-    font-size: 1.3rem;
+-  }
+-  
+-  .footer-subtitle {
+-    font-size: 1rem;
+-  }
+-}
+-</style>
++    <meta charset="UTF-8">
++    <meta name="viewport" content="width=device-width, initial-scale=1.0">
++    <title>Diaspora B&eacute;ninoise du Royaume-Uni &mdash; Unit&eacute;, Excellence, Impact</title>
++    <meta name="description" content="Plateforme officielle de la diaspora b&eacute;ninoise au Royaume-Uni. Unit&eacute;, solidarit&eacute;, excellence et d&eacute;veloppement.">
++    <link rel="preconnect" href="https://fonts.googleapis.com">
++    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
++    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
++    <style>
++        /* ================================================
++           DIASPORA BENINOISE UK — PREMIUM STYLESHEET
++           ================================================ */
++
++        /* --- CSS Custom Properties --- */
++        :root {
++            /* Primary palette — deep Beninese greens & British elegance */
++            --benin-green: #1B5E20;
++            --benin-green-deep: #0D3B13;
++            --benin-green-light: #2E7D32;
++            --benin-yellow: #C8A415;
++            --benin-yellow-soft: #D4AF37;
++            --benin-yellow-glow: rgba(212, 175, 55, 0.15);
++            --benin-red: #8B1A1A;
++            --benin-red-soft: #A0342C;
++
++            /* Neutrals */
++            --noir: #0A0A0A;
++            --noir-soft: #1A1A1A;
++            --charcoal: #2C2C2C;
++            --graphite: #3D3D3D;
++            --slate: #6B6B6B;
++            --silver: #9E9E9E;
++            --pearl: #E8E4DE;
++            --ivory: #F5F3EF;
++            --blanc: #FAFAF8;
++            --white: #FFFFFF;
++
++            /* Functional */
++            --bg-primary: var(--blanc);
++            --bg-dark: var(--noir);
++            --text-primary: var(--charcoal);
++            --text-light: var(--slate);
++            --text-on-dark: var(--pearl);
++            --accent: var(--benin-yellow-soft);
++            --accent-green: var(--benin-green);
++
++            /* Typography */
++            --font-display: 'Playfair Display', 'Cormorant Garamond', Georgia, serif;
++            --font-heading: 'Cormorant Garamond', Georgia, serif;
++            --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
++
++            /* Spacing */
++            --section-padding: clamp(4rem, 8vw, 8rem);
++            --container-max: 1280px;
++            --container-narrow: 960px;
++
++            /* Transitions */
++            --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
++            --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
++            --transition-fast: 0.3s var(--ease-out);
++            --transition-med: 0.6s var(--ease-out);
++            --transition-slow: 1s var(--ease-out);
++
++            /* Shadows */
++            --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
++            --shadow-md: 0 4px 20px rgba(0,0,0,0.08);
++            --shadow-lg: 0 12px 40px rgba(0,0,0,0.12);
++            --shadow-xl: 0 24px 60px rgba(0,0,0,0.16);
++        }
++
++        /* --- Reset & Base --- */
++        *, *::before, *::after {
++            margin: 0;
++            padding: 0;
++            box-sizing: border-box;
++        }
++
++        html {
++            scroll-behavior: smooth;
++            -webkit-font-smoothing: antialiased;
++            -moz-osx-font-smoothing: grayscale;
++        }
++
++        body {
++            font-family: var(--font-body);
++            font-size: 16px;
++            line-height: 1.7;
++            color: var(--text-primary);
++            background: var(--bg-primary);
++            overflow-x: hidden;
++        }
++
++        img {
++            max-width: 100%;
++            height: auto;
++            display: block;
++        }
++
++        a {
++            color: inherit;
++            text-decoration: none;
++            transition: color var(--transition-fast);
++        }
++
++        button {
++            cursor: pointer;
++            border: none;
++            background: none;
++            font-family: inherit;
++        }
++
++        .container {
++            max-width: var(--container-max);
++            margin: 0 auto;
++            padding: 0 clamp(1.5rem, 4vw, 3rem);
++        }
++
++        .container--narrow {
++            max-width: var(--container-narrow);
++        }
++
++        /* --- Utility --- */
++        .sr-only {
++            position: absolute;
++            width: 1px;
++            height: 1px;
++            padding: 0;
++            margin: -1px;
++            overflow: hidden;
++            clip: rect(0,0,0,0);
++            white-space: nowrap;
++            border: 0;
++        }
++
++        .reveal {
++            opacity: 0;
++            transform: translateY(40px);
++            transition: opacity 0.8s var(--ease-out), transform 0.8s var(--ease-out);
++        }
++
++        .reveal.active {
++            opacity: 1;
++            transform: translateY(0);
++        }
++
++        .reveal-delay-1 { transition-delay: 0.1s; }
++        .reveal-delay-2 { transition-delay: 0.2s; }
++        .reveal-delay-3 { transition-delay: 0.3s; }
++        .reveal-delay-4 { transition-delay: 0.4s; }
++
++        .section-label {
++            font-family: var(--font-body);
++            font-size: 0.75rem;
++            font-weight: 600;
++            letter-spacing: 0.2em;
++            text-transform: uppercase;
++            color: var(--benin-yellow-soft);
++            margin-bottom: 1rem;
++            display: flex;
++            align-items: center;
++            gap: 0.75rem;
++        }
++
++        .section-label::before {
++            content: '';
++            display: block;
++            width: 2rem;
++            height: 1px;
++            background: var(--benin-yellow-soft);
++        }
++
++        .section-title {
++            font-family: var(--font-display);
++            font-size: clamp(2rem, 4vw, 3.25rem);
++            font-weight: 600;
++            line-height: 1.15;
++            color: var(--noir-soft);
++            margin-bottom: 1.5rem;
++        }
++
++        .section-title--light {
++            color: var(--white);
++        }
++
++        .section-subtitle {
++            font-family: var(--font-body);
++            font-size: 1.05rem;
++            font-weight: 300;
++            line-height: 1.8;
++            color: var(--slate);
++            max-width: 640px;
++        }
++
++        .section-subtitle--light {
++            color: rgba(255,255,255,0.7);
++        }
++
++        .btn {
++            display: inline-flex;
++            align-items: center;
++            gap: 0.5rem;
++            padding: 0.9rem 2rem;
++            font-family: var(--font-body);
++            font-size: 0.85rem;
++            font-weight: 600;
++            letter-spacing: 0.08em;
++            text-transform: uppercase;
++            border-radius: 0;
++            transition: all var(--transition-fast);
++            position: relative;
++            overflow: hidden;
++        }
++
++        .btn--primary {
++            background: var(--benin-green);
++            color: var(--white);
++        }
++
++        .btn--primary:hover {
++            background: var(--benin-green-deep);
++            transform: translateY(-2px);
++            box-shadow: var(--shadow-lg);
++        }
++
++        .btn--outline {
++            background: transparent;
++            color: var(--white);
++            border: 1px solid rgba(255,255,255,0.4);
++        }
++
++        .btn--outline:hover {
++            background: rgba(255,255,255,0.1);
++            border-color: rgba(255,255,255,0.8);
++        }
++
++        .btn--gold {
++            background: var(--benin-yellow-soft);
++            color: var(--noir);
++        }
++
++        .btn--gold:hover {
++            background: var(--benin-yellow);
++            transform: translateY(-2px);
++            box-shadow: 0 8px 30px rgba(212,175,55,0.3);
++        }
++
++        .btn--dark {
++            background: var(--noir-soft);
++            color: var(--white);
++        }
++
++        .btn--dark:hover {
++            background: var(--charcoal);
++            transform: translateY(-2px);
++        }
++
++        .gold-line {
++            width: 3rem;
++            height: 2px;
++            background: var(--benin-yellow-soft);
++            display: block;
++        }
++
++        /* ================================================
++           NAVBAR
++           ================================================ */
++        .navbar {
++            position: fixed;
++            top: 0;
++            left: 0;
++            right: 0;
++            z-index: 1000;
++            padding: 1.25rem 0;
++            transition: all var(--transition-fast);
++        }
++
++        .navbar.scrolled {
++            background: rgba(10, 10, 10, 0.95);
++            backdrop-filter: blur(20px);
++            -webkit-backdrop-filter: blur(20px);
++            padding: 0.75rem 0;
++            box-shadow: 0 1px 0 rgba(255,255,255,0.05);
++        }
++
++        .navbar .container {
++            display: flex;
++            align-items: center;
++            justify-content: space-between;
++        }
++
++        .navbar__logo {
++            display: flex;
++            align-items: center;
++            gap: 0.75rem;
++            z-index: 1001;
++        }
++
++        .navbar__logo-icon {
++            width: 42px;
++            height: 42px;
++            position: relative;
++        }
++
++        .navbar__logo-icon svg {
++            width: 100%;
++            height: 100%;
++        }
++
++        .navbar__logo-text {
++            display: flex;
++            flex-direction: column;
++        }
++
++        .navbar__logo-name {
++            font-family: var(--font-display);
++            font-size: 1.15rem;
++            font-weight: 600;
++            color: var(--white);
++            letter-spacing: 0.02em;
++            line-height: 1.2;
++        }
++
++        .navbar__logo-tagline {
++            font-size: 0.65rem;
++            letter-spacing: 0.15em;
++            text-transform: uppercase;
++            color: var(--benin-yellow-soft);
++            font-weight: 500;
++        }
++
++        .navbar__nav {
++            display: flex;
++            align-items: center;
++            gap: 2rem;
++        }
++
++        .navbar__link {
++            font-size: 0.8rem;
++            font-weight: 500;
++            letter-spacing: 0.06em;
++            text-transform: uppercase;
++            color: rgba(255,255,255,0.75);
++            transition: color var(--transition-fast);
++            position: relative;
++        }
++
++        .navbar__link::after {
++            content: '';
++            position: absolute;
++            bottom: -4px;
++            left: 0;
++            width: 0;
++            height: 1px;
++            background: var(--benin-yellow-soft);
++            transition: width var(--transition-fast);
++        }
++
++        .navbar__link:hover {
++            color: var(--white);
++        }
++
++        .navbar__link:hover::after {
++            width: 100%;
++        }
++
++        .navbar__cta {
++            padding: 0.6rem 1.5rem;
++            background: var(--benin-yellow-soft);
++            color: var(--noir);
++            font-size: 0.75rem;
++            font-weight: 700;
++            letter-spacing: 0.1em;
++            text-transform: uppercase;
++            transition: all var(--transition-fast);
++        }
++
++        .navbar__cta:hover {
++            background: var(--benin-yellow);
++            transform: translateY(-1px);
++        }
++
++        /* Mobile menu */
++        .navbar__toggle {
++            display: none;
++            flex-direction: column;
++            gap: 5px;
++            z-index: 1001;
++            padding: 4px;
++        }
++
++        .navbar__toggle span {
++            display: block;
++            width: 24px;
++            height: 1.5px;
++            background: var(--white);
++            transition: all var(--transition-fast);
++        }
++
++        .navbar__toggle.active span:nth-child(1) {
++            transform: rotate(45deg) translate(4px, 5px);
++        }
++
++        .navbar__toggle.active span:nth-child(2) {
++            opacity: 0;
++        }
++
++        .navbar__toggle.active span:nth-child(3) {
++            transform: rotate(-45deg) translate(4px, -5px);
++        }
++
++        @media (max-width: 1024px) {
++            .navbar__toggle {
++                display: flex;
++            }
++
++            .navbar__nav {
++                position: fixed;
++                top: 0;
++                left: 0;
++                right: 0;
++                bottom: 0;
++                background: rgba(10, 10, 10, 0.98);
++                backdrop-filter: blur(30px);
++                flex-direction: column;
++                justify-content: center;
++                gap: 2rem;
++                opacity: 0;
++                pointer-events: none;
++                transition: opacity var(--transition-med);
++            }
++
++            .navbar__nav.open {
++                opacity: 1;
++                pointer-events: all;
++            }
++
++            .navbar__link {
++                font-size: 1.1rem;
++                letter-spacing: 0.1em;
++            }
++        }
++
++        /* ================================================
++           HERO SECTION
++           ================================================ */
++        .hero {
++            position: relative;
++            min-height: 100vh;
++            display: flex;
++            align-items: center;
++            justify-content: center;
++            background: var(--noir);
++            overflow: hidden;
++        }
++
++        .hero__bg {
++            position: absolute;
++            inset: 0;
++            z-index: 1;
++        }
++
++        .hero__bg-gradient {
++            position: absolute;
++            inset: 0;
++            background:
++                radial-gradient(ellipse at 20% 50%, rgba(27, 94, 32, 0.25) 0%, transparent 60%),
++                radial-gradient(ellipse at 80% 30%, rgba(212, 175, 55, 0.1) 0%, transparent 50%),
++                radial-gradient(ellipse at 50% 80%, rgba(139, 26, 26, 0.1) 0%, transparent 50%),
++                linear-gradient(180deg, rgba(10,10,10,0.3) 0%, rgba(10,10,10,0.8) 100%);
++            z-index: 2;
++        }
++
++        /* Geometric pattern overlay */
++        .hero__pattern {
++            position: absolute;
++            inset: 0;
++            z-index: 1;
++            opacity: 0.04;
++            background-image:
++                repeating-linear-gradient(0deg, transparent, transparent 80px, rgba(212,175,55,0.5) 80px, rgba(212,175,55,0.5) 81px),
++                repeating-linear-gradient(90deg, transparent, transparent 80px, rgba(212,175,55,0.5) 80px, rgba(212,175,55,0.5) 81px);
++        }
++
++        /* Floating particles */
++        .hero__particles {
++            position: absolute;
++            inset: 0;
++            z-index: 2;
++            overflow: hidden;
++        }
++
++        .particle {
++            position: absolute;
++            width: 2px;
++            height: 2px;
++            background: var(--benin-yellow-soft);
++            border-radius: 50%;
++            opacity: 0;
++            animation: particleFloat 8s infinite;
++        }
++
++        @keyframes particleFloat {
++            0% { opacity: 0; transform: translateY(100vh) scale(0); }
++            10% { opacity: 0.6; }
++            90% { opacity: 0.6; }
++            100% { opacity: 0; transform: translateY(-100px) scale(1); }
++        }
++
++        .hero__content {
++            position: relative;
++            z-index: 10;
++            text-align: center;
++            max-width: 900px;
++            padding: 0 2rem;
++        }
++
++        .hero__badge {
++            display: inline-flex;
++            align-items: center;
++            gap: 0.5rem;
++            padding: 0.5rem 1.25rem;
++            border: 1px solid rgba(212, 175, 55, 0.3);
++            background: rgba(212, 175, 55, 0.05);
++            margin-bottom: 2.5rem;
++            font-size: 0.7rem;
++            font-weight: 600;
++            letter-spacing: 0.2em;
++            text-transform: uppercase;
++            color: var(--benin-yellow-soft);
++            opacity: 0;
++            animation: fadeInUp 1s var(--ease-out) 0.3s forwards;
++        }
++
++        .hero__badge-dot {
++            width: 6px;
++            height: 6px;
++            background: var(--benin-yellow-soft);
++            border-radius: 50%;
++            animation: pulse 2s infinite;
++        }
++
++        @keyframes pulse {
++            0%, 100% { opacity: 1; }
++            50% { opacity: 0.4; }
++        }
++
++        .hero__title {
++            font-family: var(--font-display);
++            font-size: clamp(2.5rem, 6vw, 5rem);
++            font-weight: 700;
++            line-height: 1.05;
++            color: var(--white);
++            margin-bottom: 1.5rem;
++            opacity: 0;
++            animation: fadeInUp 1s var(--ease-out) 0.5s forwards;
++        }
++
++        .hero__title em {
++            font-style: italic;
++            color: var(--benin-yellow-soft);
++        }
++
++        .hero__subtitle {
++            font-family: var(--font-body);
++            font-size: clamp(1rem, 1.5vw, 1.15rem);
++            font-weight: 300;
++            line-height: 1.8;
++            color: rgba(255,255,255,0.6);
++            max-width: 600px;
++            margin: 0 auto 3rem;
++            opacity: 0;
++            animation: fadeInUp 1s var(--ease-out) 0.7s forwards;
++        }
++
++        .hero__actions {
++            display: flex;
++            align-items: center;
++            justify-content: center;
++            gap: 1rem;
++            flex-wrap: wrap;
++            opacity: 0;
++            animation: fadeInUp 1s var(--ease-out) 0.9s forwards;
++        }
++
++        @keyframes fadeInUp {
++            from { opacity: 0; transform: translateY(30px); }
++            to { opacity: 1; transform: translateY(0); }
++        }
++
++        .hero__scroll {
++            position: absolute;
++            bottom: 2rem;
++            left: 50%;
++            transform: translateX(-50%);
++            z-index: 10;
++            display: flex;
++            flex-direction: column;
++            align-items: center;
++            gap: 0.5rem;
++            color: rgba(255,255,255,0.4);
++            font-size: 0.65rem;
++            letter-spacing: 0.15em;
++            text-transform: uppercase;
++            animation: fadeInUp 1s var(--ease-out) 1.2s forwards;
++            opacity: 0;
++        }
++
++        .hero__scroll-line {
++            width: 1px;
++            height: 40px;
++            background: linear-gradient(to bottom, rgba(212,175,55,0.6), transparent);
++            animation: scrollLine 2s infinite;
++        }
++
++        @keyframes scrollLine {
++            0% { transform: scaleY(0); transform-origin: top; }
++            50% { transform: scaleY(1); transform-origin: top; }
++            50.01% { transform-origin: bottom; }
++            100% { transform: scaleY(0); transform-origin: bottom; }
++        }
++
++        /* Flag stripe accents */
++        .hero__flag-stripe {
++            position: absolute;
++            bottom: 0;
++            left: 0;
++            right: 0;
++            height: 4px;
++            z-index: 10;
++            display: flex;
++        }
++
++        .hero__flag-stripe span {
++            flex: 1;
++        }
++
++        .hero__flag-stripe span:nth-child(1) { background: var(--benin-green); }
++        .hero__flag-stripe span:nth-child(2) { background: var(--benin-yellow-soft); }
++        .hero__flag-stripe span:nth-child(3) { background: var(--benin-red-soft); }
++
++        /* ================================================
++           STATS BAR
++           ================================================ */
++        .stats-bar {
++            background: var(--white);
++            border-bottom: 1px solid rgba(0,0,0,0.06);
++            padding: 3rem 0;
++        }
++
++        .stats-bar__grid {
++            display: grid;
++            grid-template-columns: repeat(4, 1fr);
++            gap: 2rem;
++        }
++
++        .stat-item {
++            text-align: center;
++            position: relative;
++        }
++
++        .stat-item:not(:last-child)::after {
++            content: '';
++            position: absolute;
++            right: 0;
++            top: 50%;
++            transform: translateY(-50%);
++            width: 1px;
++            height: 40px;
++            background: rgba(0,0,0,0.08);
++        }
++
++        .stat-item__number {
++            font-family: var(--font-display);
++            font-size: clamp(2rem, 3.5vw, 2.75rem);
++            font-weight: 700;
++            color: var(--benin-green);
++            line-height: 1;
++            margin-bottom: 0.4rem;
++        }
++
++        .stat-item__label {
++            font-size: 0.75rem;
++            font-weight: 500;
++            letter-spacing: 0.1em;
++            text-transform: uppercase;
++            color: var(--slate);
++        }
++
++        @media (max-width: 768px) {
++            .stats-bar__grid {
++                grid-template-columns: repeat(2, 1fr);
++                gap: 1.5rem;
++            }
++
++            .stat-item:not(:last-child)::after {
++                display: none;
++            }
++        }
++
++        /* ================================================
++           MISSION SECTION
++           ================================================ */
++        .mission {
++            padding: var(--section-padding) 0;
++            background: var(--blanc);
++        }
++
++        .mission__grid {
++            display: grid;
++            grid-template-columns: 1fr 1fr;
++            gap: 4rem;
++            align-items: center;
++        }
++
++        .mission__visual {
++            position: relative;
++        }
++
++        .mission__image-frame {
++            position: relative;
++            aspect-ratio: 4/5;
++            background: linear-gradient(135deg, var(--benin-green-deep), var(--benin-green));
++            overflow: hidden;
++        }
++
++        .mission__image-frame::before {
++            content: '';
++            position: absolute;
++            inset: 0;
++            background:
++                repeating-linear-gradient(45deg, transparent, transparent 20px, rgba(255,255,255,0.03) 20px, rgba(255,255,255,0.03) 21px);
++            z-index: 1;
++        }
++
++        .mission__image-overlay {
++            position: absolute;
++            inset: 0;
++            display: flex;
++            align-items: center;
++            justify-content: center;
++            z-index: 2;
++        }
++
++        .mission__image-overlay svg {
++            width: 120px;
++            height: 120px;
++            opacity: 0.15;
++        }
++
++        .mission__accent {
++            position: absolute;
++            top: -1.5rem;
++            right: -1.5rem;
++            width: 120px;
++            height: 120px;
++            border: 1px solid var(--benin-yellow-soft);
++            opacity: 0.3;
++            z-index: -1;
++        }
++
++        .mission__values {
++            display: grid;
++            grid-template-columns: 1fr 1fr;
++            gap: 1.5rem;
++            margin-top: 2.5rem;
++        }
++
++        .mission__value {
++            padding: 1.5rem;
++            background: var(--white);
++            border: 1px solid rgba(0,0,0,0.05);
++            transition: all var(--transition-fast);
++        }
++
++        .mission__value:hover {
++            border-color: rgba(212,175,55,0.3);
++            box-shadow: var(--shadow-md);
++            transform: translateY(-2px);
++        }
++
++        .mission__value-icon {
++            font-size: 1.5rem;
++            margin-bottom: 0.75rem;
++            display: block;
++        }
++
++        .mission__value-title {
++            font-family: var(--font-heading);
++            font-size: 1.15rem;
++            font-weight: 600;
++            color: var(--noir-soft);
++            margin-bottom: 0.35rem;
++        }
++
++        .mission__value-text {
++            font-size: 0.85rem;
++            color: var(--slate);
++            line-height: 1.6;
++        }
++
++        @media (max-width: 768px) {
++            .mission__grid {
++                grid-template-columns: 1fr;
++                gap: 2.5rem;
++            }
++
++            .mission__values {
++                grid-template-columns: 1fr;
++            }
++        }
++
++        /* ================================================
++           COMMUNITY SECTION
++           ================================================ */
++        .community {
++            padding: var(--section-padding) 0;
++            background: var(--ivory);
++        }
++
++        .community__header {
++            text-align: center;
++            margin-bottom: 4rem;
++        }
++
++        .community__header .section-subtitle {
++            margin: 0 auto;
++        }
++
++        .community__grid {
++            display: grid;
++            grid-template-columns: repeat(4, 1fr);
++            gap: 1.5rem;
++        }
++
++        .community__card {
++            position: relative;
++            background: var(--white);
++            padding: 2.5rem 2rem;
++            text-align: center;
++            border: 1px solid rgba(0,0,0,0.04);
++            transition: all var(--transition-fast);
++            overflow: hidden;
++        }
++
++        .community__card::before {
++            content: '';
++            position: absolute;
++            top: 0;
++            left: 0;
++            right: 0;
++            height: 3px;
++            background: var(--benin-green);
++            transform: scaleX(0);
++            transition: transform var(--transition-fast);
++        }
++
++        .community__card:hover {
++            transform: translateY(-4px);
++            box-shadow: var(--shadow-lg);
++        }
++
++        .community__card:hover::before {
++            transform: scaleX(1);
++        }
++
++        .community__card-icon {
++            width: 56px;
++            height: 56px;
++            margin: 0 auto 1.25rem;
++            display: flex;
++            align-items: center;
++            justify-content: center;
++            background: var(--benin-yellow-glow);
++            border-radius: 50%;
++        }
++
++        .community__card-icon svg {
++            width: 26px;
++            height: 26px;
++            stroke: var(--benin-green);
++            fill: none;
++            stroke-width: 1.5;
++        }
++
++        .community__card-title {
++            font-family: var(--font-heading);
++            font-size: 1.2rem;
++            font-weight: 600;
++            color: var(--noir-soft);
++            margin-bottom: 0.5rem;
++        }
++
++        .community__card-count {
++            font-size: 0.75rem;
++            font-weight: 600;
++            letter-spacing: 0.1em;
++            color: var(--benin-yellow-soft);
++            text-transform: uppercase;
++        }
++
++        .community__card-text {
++            font-size: 0.9rem;
++            color: var(--slate);
++            line-height: 1.6;
++            margin-top: 0.75rem;
++        }
++
++        @media (max-width: 1024px) {
++            .community__grid {
++                grid-template-columns: repeat(2, 1fr);
++            }
++        }
++
++        @media (max-width: 600px) {
++            .community__grid {
++                grid-template-columns: 1fr;
++            }
++        }
++
++        /* ================================================
++           EVENTS SECTION
++           ================================================ */
++        .events {
++            padding: var(--section-padding) 0;
++            background: var(--noir);
++            position: relative;
++            overflow: hidden;
++        }
++
++        .events::before {
++            content: '';
++            position: absolute;
++            inset: 0;
++            background:
++                radial-gradient(ellipse at 30% 20%, rgba(27, 94, 32, 0.15) 0%, transparent 50%),
++                radial-gradient(ellipse at 70% 80%, rgba(212, 175, 55, 0.08) 0%, transparent 50%);
++        }
++
++        .events .container {
++            position: relative;
++            z-index: 2;
++        }
++
++        .events__header {
++            display: flex;
++            align-items: flex-end;
++            justify-content: space-between;
++            margin-bottom: 3.5rem;
++        }
++
++        .events__header .section-label {
++            color: var(--benin-yellow-soft);
++        }
++
++        .events__header .section-label::before {
++            background: var(--benin-yellow-soft);
++        }
++
++        .events__grid {
++            display: grid;
++            grid-template-columns: repeat(3, 1fr);
++            gap: 1.5rem;
++        }
++
++        .event-card {
++            background: rgba(255,255,255,0.04);
++            border: 1px solid rgba(255,255,255,0.06);
++            padding: 2rem;
++            transition: all var(--transition-fast);
++            position: relative;
++        }
++
++        .event-card:hover {
++            background: rgba(255,255,255,0.08);
++            border-color: rgba(212,175,55,0.3);
++            transform: translateY(-4px);
++        }
++
++        .event-card__date {
++            display: flex;
++            align-items: center;
++            gap: 0.75rem;
++            margin-bottom: 1.25rem;
++        }
++
++        .event-card__date-day {
++            font-family: var(--font-display);
++            font-size: 2.5rem;
++            font-weight: 700;
++            color: var(--benin-yellow-soft);
++            line-height: 1;
++        }
++
++        .event-card__date-info {
++            display: flex;
++            flex-direction: column;
++        }
++
++        .event-card__date-month {
++            font-size: 0.75rem;
++            font-weight: 600;
++            letter-spacing: 0.1em;
++            text-transform: uppercase;
++            color: rgba(255,255,255,0.5);
++        }
++
++        .event-card__date-year {
++            font-size: 0.7rem;
++            color: rgba(255,255,255,0.3);
++        }
++
++        .event-card__title {
++            font-family: var(--font-heading);
++            font-size: 1.25rem;
++            font-weight: 600;
++            color: var(--white);
++            margin-bottom: 0.75rem;
++            line-height: 1.3;
++        }
++
++        .event-card__location {
++            font-size: 0.8rem;
++            color: rgba(255,255,255,0.4);
++            display: flex;
++            align-items: center;
++            gap: 0.4rem;
++            margin-bottom: 1rem;
++        }
++
++        .event-card__tag {
++            display: inline-block;
++            padding: 0.25rem 0.75rem;
++            font-size: 0.65rem;
++            font-weight: 600;
++            letter-spacing: 0.1em;
++            text-transform: uppercase;
++            color: var(--benin-green);
++            background: rgba(27,94,32,0.15);
++            border: 1px solid rgba(27,94,32,0.2);
++        }
++
++        @media (max-width: 1024px) {
++            .events__grid {
++                grid-template-columns: 1fr;
++                max-width: 500px;
++            }
++
++            .events__header {
++                flex-direction: column;
++                align-items: flex-start;
++                gap: 1.5rem;
++            }
++        }
++
++        /* ================================================
++           PROJECTS SECTION
++           ================================================ */
++        .projects {
++            padding: var(--section-padding) 0;
++            background: var(--blanc);
++        }
++
++        .projects__header {
++            text-align: center;
++            margin-bottom: 4rem;
++        }
++
++        .projects__header .section-subtitle {
++            margin: 0 auto;
++        }
++
++        .projects__grid {
++            display: grid;
++            grid-template-columns: repeat(3, 1fr);
++            gap: 1.5rem;
++        }
++
++        .project-card {
++            position: relative;
++            padding: 2.5rem 2rem;
++            background: var(--white);
++            border: 1px solid rgba(0,0,0,0.05);
++            transition: all var(--transition-fast);
++            overflow: hidden;
++        }
++
++        .project-card::after {
++            content: '';
++            position: absolute;
++            bottom: 0;
++            left: 0;
++            right: 0;
++            height: 3px;
++            background: linear-gradient(90deg, var(--benin-green), var(--benin-yellow-soft));
++            transform: scaleX(0);
++            transform-origin: left;
++            transition: transform var(--transition-fast);
++        }
++
++        .project-card:hover {
++            transform: translateY(-4px);
++            box-shadow: var(--shadow-lg);
++        }
++
++        .project-card:hover::after {
++            transform: scaleX(1);
++        }
++
++        .project-card__number {
++            font-family: var(--font-display);
++            font-size: 3rem;
++            font-weight: 700;
++            color: rgba(27,94,32,0.08);
++            line-height: 1;
++            margin-bottom: 1rem;
++        }
++
++        .project-card__title {
++            font-family: var(--font-heading);
++            font-size: 1.3rem;
++            font-weight: 600;
++            color: var(--noir-soft);
++            margin-bottom: 0.75rem;
++        }
++
++        .project-card__text {
++            font-size: 0.9rem;
++            color: var(--slate);
++            line-height: 1.7;
++            margin-bottom: 1.25rem;
++        }
++
++        .project-card__status {
++            display: inline-flex;
++            align-items: center;
++            gap: 0.4rem;
++            font-size: 0.7rem;
++            font-weight: 600;
++            letter-spacing: 0.1em;
++            text-transform: uppercase;
++        }
++
++        .project-card__status--active {
++            color: var(--benin-green);
++        }
++
++        .project-card__status--planned {
++            color: var(--benin-yellow-soft);
++        }
++
++        .project-card__status-dot {
++            width: 6px;
++            height: 6px;
++            border-radius: 50%;
++            background: currentColor;
++        }
++
++        @media (max-width: 1024px) {
++            .projects__grid {
++                grid-template-columns: 1fr;
++                max-width: 500px;
++                margin: 0 auto;
++            }
++        }
++
++        /* ================================================
++           LEADERSHIP SECTION
++           ================================================ */
++        .leadership {
++            padding: var(--section-padding) 0;
++            background: var(--ivory);
++        }
++
++        .leadership__header {
++            text-align: center;
++            margin-bottom: 4rem;
++        }
++
++        .leadership__header .section-subtitle {
++            margin: 0 auto;
++        }
++
++        .leadership__grid {
++            display: grid;
++            grid-template-columns: repeat(3, 1fr);
++            gap: 2rem;
++        }
++
++        .leader-card {
++            text-align: center;
++            position: relative;
++        }
++
++        .leader-card__photo {
++            width: 100%;
++            aspect-ratio: 3/4;
++            background: linear-gradient(135deg, var(--benin-green-deep) 0%, var(--benin-green) 50%, var(--benin-green-light) 100%);
++            margin-bottom: 1.5rem;
++            position: relative;
++            overflow: hidden;
++        }
++
++        .leader-card__photo::before {
++            content: '';
++            position: absolute;
++            inset: 0;
++            background: repeating-linear-gradient(
++                45deg,
++                transparent,
++                transparent 30px,
++                rgba(255,255,255,0.02) 30px,
++                rgba(255,255,255,0.02) 31px
++            );
++        }
++
++        .leader-card__photo-initials {
++            position: absolute;
++            inset: 0;
++            display: flex;
++            align-items: center;
++            justify-content: center;
++            font-family: var(--font-display);
++            font-size: 3rem;
++            font-weight: 600;
++            color: rgba(255,255,255,0.15);
++            letter-spacing: 0.1em;
++        }
++
++        .leader-card__name {
++            font-family: var(--font-heading);
++            font-size: 1.3rem;
++            font-weight: 600;
++            color: var(--noir-soft);
++            margin-bottom: 0.3rem;
++        }
++
++        .leader-card__role {
++            font-size: 0.8rem;
++            font-weight: 500;
++            letter-spacing: 0.08em;
++            text-transform: uppercase;
++            color: var(--benin-yellow-soft);
++            margin-bottom: 0.75rem;
++        }
++
++        .leader-card__bio {
++            font-size: 0.9rem;
++            color: var(--slate);
++            line-height: 1.7;
++        }
++
++        .leader-card--featured .leader-card__photo {
++            background: linear-gradient(135deg, var(--noir) 0%, var(--charcoal) 100%);
++        }
++
++        .leader-card--featured .leader-card__name {
++            font-size: 1.5rem;
++        }
++
++        @media (max-width: 1024px) {
++            .leadership__grid {
++                grid-template-columns: 1fr;
++                max-width: 400px;
++                margin: 0 auto;
++            }
++        }
++
++        /* ================================================
++           GALLERY SECTION
++           ================================================ */
++        .gallery {
++            padding: var(--section-padding) 0;
++            background: var(--blanc);
++        }
++
++        .gallery__header {
++            text-align: center;
++            margin-bottom: 3rem;
++        }
++
++        .gallery__grid {
++            display: grid;
++            grid-template-columns: repeat(4, 1fr);
++            grid-template-rows: repeat(2, 200px);
++            gap: 0.75rem;
++        }
++
++        .gallery__item {
++            position: relative;
++            overflow: hidden;
++            cursor: pointer;
++        }
++
++        .gallery__item:nth-child(1) {
++            grid-column: span 2;
++            grid-row: span 2;
++        }
++
++        .gallery__item-bg {
++            position: absolute;
++            inset: 0;
++            transition: transform 0.6s var(--ease-out);
++        }
++
++        .gallery__item:nth-child(1) .gallery__item-bg { background: linear-gradient(135deg, #1B5E20, #2E7D32); }
++        .gallery__item:nth-child(2) .gallery__item-bg { background: linear-gradient(135deg, #C8A415, #D4AF37); }
++        .gallery__item:nth-child(3) .gallery__item-bg { background: linear-gradient(135deg, #2C2C2C, #3D3D3D); }
++        .gallery__item:nth-child(4) .gallery__item-bg { background: linear-gradient(135deg, #8B1A1A, #A0342C); }
++        .gallery__item:nth-child(5) .gallery__item-bg { background: linear-gradient(135deg, #0D3B13, #1B5E20); }
++
++        .gallery__item:hover .gallery__item-bg {
++            transform: scale(1.05);
++        }
++
++        .gallery__item-overlay {
++            position: absolute;
++            inset: 0;
++            background: rgba(0,0,0,0.3);
++            display: flex;
++            align-items: flex-end;
++            padding: 1.5rem;
++            transition: background var(--transition-fast);
++        }
++
++        .gallery__item:hover .gallery__item-overlay {
++            background: rgba(0,0,0,0.5);
++        }
++
++        .gallery__item-caption {
++            font-family: var(--font-heading);
++            font-size: 1rem;
++            font-weight: 500;
++            color: var(--white);
++        }
++
++        @media (max-width: 768px) {
++            .gallery__grid {
++                grid-template-columns: 1fr 1fr;
++                grid-template-rows: repeat(3, 180px);
++            }
++
++            .gallery__item:nth-child(1) {
++                grid-column: span 2;
++                grid-row: span 1;
++            }
++        }
++
++        /* ================================================
++           TESTIMONIALS SECTION
++           ================================================ */
++        .testimonials {
++            padding: var(--section-padding) 0;
++            background: var(--noir);
++            position: relative;
++            overflow: hidden;
++        }
++
++        .testimonials::before {
++            content: '';
++            position: absolute;
++            inset: 0;
++            background:
++                radial-gradient(ellipse at 80% 20%, rgba(212,175,55,0.06) 0%, transparent 50%);
++        }
++
++        .testimonials .container {
++            position: relative;
++            z-index: 2;
++        }
++
++        .testimonials__header {
++            text-align: center;
++            margin-bottom: 4rem;
++        }
++
++        .testimonials__grid {
++            display: grid;
++            grid-template-columns: repeat(3, 1fr);
++            gap: 1.5rem;
++        }
++
++        .testimonial-card {
++            background: rgba(255,255,255,0.04);
++            border: 1px solid rgba(255,255,255,0.06);
++            padding: 2.5rem 2rem;
++            transition: all var(--transition-fast);
++        }
++
++        .testimonial-card:hover {
++            background: rgba(255,255,255,0.07);
++            border-color: rgba(212,175,55,0.2);
++        }
++
++        .testimonial-card__quote {
++            font-family: var(--font-display);
++            font-size: 2.5rem;
++            color: var(--benin-yellow-soft);
++            line-height: 1;
++            margin-bottom: 1rem;
++            opacity: 0.5;
++        }
++
++        .testimonial-card__text {
++            font-size: 0.95rem;
++            font-style: italic;
++            color: rgba(255,255,255,0.7);
++            line-height: 1.8;
++            margin-bottom: 1.5rem;
++        }
++
++        .testimonial-card__author {
++            display: flex;
++            align-items: center;
++            gap: 0.75rem;
++        }
++
++        .testimonial-card__avatar {
++            width: 42px;
++            height: 42px;
++            border-radius: 50%;
++            background: var(--benin-green);
++            display: flex;
++            align-items: center;
++            justify-content: center;
++            font-family: var(--font-display);
++            font-size: 0.9rem;
++            font-weight: 600;
++            color: var(--white);
++        }
++
++        .testimonial-card__name {
++            font-weight: 600;
++            color: var(--white);
++            font-size: 0.9rem;
++        }
++
++        .testimonial-card__title {
++            font-size: 0.75rem;
++            color: rgba(255,255,255,0.4);
++        }
++
++        @media (max-width: 1024px) {
++            .testimonials__grid {
++                grid-template-columns: 1fr;
++                max-width: 500px;
++                margin: 0 auto;
++            }
++        }
++
++        /* ================================================
++           MEMBERSHIP SECTION
++           ================================================ */
++        .membership {
++            padding: var(--section-padding) 0;
++            background: var(--blanc);
++            position: relative;
++        }
++
++        .membership__grid {
++            display: grid;
++            grid-template-columns: 1fr 1fr;
++            gap: 4rem;
++            align-items: center;
++        }
++
++        .membership__form-wrapper {
++            background: var(--white);
++            padding: 3rem;
++            border: 1px solid rgba(0,0,0,0.06);
++            box-shadow: var(--shadow-md);
++        }
++
++        .membership__form-title {
++            font-family: var(--font-heading);
++            font-size: 1.5rem;
++            font-weight: 600;
++            color: var(--noir-soft);
++            margin-bottom: 0.5rem;
++        }
++
++        .membership__form-subtitle {
++            font-size: 0.9rem;
++            color: var(--slate);
++            margin-bottom: 2rem;
++        }
++
++        .form-group {
++            margin-bottom: 1.25rem;
++        }
++
++        .form-group label {
++            display: block;
++            font-size: 0.75rem;
++            font-weight: 600;
++            letter-spacing: 0.08em;
++            text-transform: uppercase;
++            color: var(--charcoal);
++            margin-bottom: 0.5rem;
++        }
++
++        .form-group input,
++        .form-group select,
++        .form-group textarea {
++            width: 100%;
++            padding: 0.85rem 1rem;
++            font-family: var(--font-body);
++            font-size: 0.9rem;
++            color: var(--charcoal);
++            background: var(--blanc);
++            border: 1px solid rgba(0,0,0,0.1);
++            outline: none;
++            transition: all var(--transition-fast);
++        }
++
++        .form-group input:focus,
++        .form-group select:focus,
++        .form-group textarea:focus {
++            border-color: var(--benin-green);
++            box-shadow: 0 0 0 3px rgba(27,94,32,0.08);
++        }
++
++        .form-group textarea {
++            resize: vertical;
++            min-height: 100px;
++        }
++
++        .form-row {
++            display: grid;
++            grid-template-columns: 1fr 1fr;
++            gap: 1rem;
++        }
++
++        @media (max-width: 768px) {
++            .membership__grid {
++                grid-template-columns: 1fr;
++                gap: 2.5rem;
++            }
++
++            .form-row {
++                grid-template-columns: 1fr;
++            }
++
++            .membership__form-wrapper {
++                padding: 2rem 1.5rem;
++            }
++        }
++
++        /* ================================================
++           MAP & CONTACT SECTION
++           ================================================ */
++        .contact {
++            padding: var(--section-padding) 0;
++            background: var(--ivory);
++        }
++
++        .contact__grid {
++            display: grid;
++            grid-template-columns: 1fr 1fr;
++            gap: 3rem;
++        }
++
++        .contact__map {
++            width: 100%;
++            height: 450px;
++            background: var(--charcoal);
++            border: 1px solid rgba(0,0,0,0.06);
++        }
++
++        .contact__map iframe {
++            width: 100%;
++            height: 100%;
++            border: 0;
++            filter: grayscale(0.3) contrast(1.05);
++        }
++
++        .contact__info {
++            display: flex;
++            flex-direction: column;
++            justify-content: center;
++        }
++
++        .contact__item {
++            display: flex;
++            align-items: flex-start;
++            gap: 1rem;
++            padding: 1.5rem 0;
++            border-bottom: 1px solid rgba(0,0,0,0.06);
++        }
++
++        .contact__item:first-child {
++            padding-top: 0;
++        }
++
++        .contact__item-icon {
++            width: 42px;
++            height: 42px;
++            display: flex;
++            align-items: center;
++            justify-content: center;
++            background: var(--benin-yellow-glow);
++            border-radius: 50%;
++            flex-shrink: 0;
++        }
++
++        .contact__item-icon svg {
++            width: 18px;
++            height: 18px;
++            stroke: var(--benin-green);
++            fill: none;
++            stroke-width: 1.5;
++        }
++
++        .contact__item-label {
++            font-size: 0.7rem;
++            font-weight: 600;
++            letter-spacing: 0.1em;
++            text-transform: uppercase;
++            color: var(--slate);
++            margin-bottom: 0.3rem;
++        }
++
++        .contact__item-value {
++            font-size: 1rem;
++            color: var(--noir-soft);
++            font-weight: 500;
++        }
++
++        .contact__item-value a {
++            color: var(--benin-green);
++        }
++
++        .contact__item-value a:hover {
++            color: var(--benin-green-deep);
++        }
++
++        .contact__socials {
++            display: flex;
++            gap: 1rem;
++            margin-top: 2rem;
++        }
++
++        .contact__social-link {
++            width: 44px;
++            height: 44px;
++            display: flex;
++            align-items: center;
++            justify-content: center;
++            background: var(--white);
++            border: 1px solid rgba(0,0,0,0.08);
++            transition: all var(--transition-fast);
++        }
++
++        .contact__social-link:hover {
++            background: var(--benin-green);
++            border-color: var(--benin-green);
++        }
++
++        .contact__social-link:hover svg {
++            stroke: var(--white);
++        }
++
++        .contact__social-link svg {
++            width: 18px;
++            height: 18px;
++            stroke: var(--charcoal);
++            fill: none;
++            stroke-width: 1.5;
++            transition: stroke var(--transition-fast);
++        }
++
++        @media (max-width: 768px) {
++            .contact__grid {
++                grid-template-columns: 1fr;
++            }
++
++            .contact__map {
++                height: 300px;
++            }
++        }
++
++        /* ================================================
++           FOOTER
++           ================================================ */
++        .footer {
++            background: var(--noir);
++            padding: 4rem 0 0;
++            position: relative;
++        }
++
++        .footer__top {
++            display: grid;
++            grid-template-columns: 2fr 1fr 1fr 1fr;
++            gap: 3rem;
++            padding-bottom: 3rem;
++            border-bottom: 1px solid rgba(255,255,255,0.06);
++        }
++
++        .footer__brand-name {
++            font-family: var(--font-display);
++            font-size: 1.3rem;
++            font-weight: 600;
++            color: var(--white);
++            margin-bottom: 1rem;
++        }
++
++        .footer__brand-desc {
++            font-size: 0.9rem;
++            color: rgba(255,255,255,0.5);
++            line-height: 1.7;
++            max-width: 320px;
++            margin-bottom: 1.5rem;
++        }
++
++        .footer__heading {
++            font-family: var(--font-heading);
++            font-size: 1rem;
++            font-weight: 600;
++            color: var(--white);
++            margin-bottom: 1.25rem;
++        }
++
++        .footer__links {
++            list-style: none;
++            display: flex;
++            flex-direction: column;
++            gap: 0.6rem;
++        }
++
++        .footer__links a {
++            font-size: 0.85rem;
++            color: rgba(255,255,255,0.45);
++            transition: color var(--transition-fast);
++        }
++
++        .footer__links a:hover {
++            color: var(--benin-yellow-soft);
++        }
++
++        .footer__bottom {
++            display: flex;
++            align-items: center;
++            justify-content: space-between;
++            padding: 1.5rem 0;
++            flex-wrap: wrap;
++            gap: 1rem;
++        }
++
++        .footer__copyright {
++            font-size: 0.8rem;
++            color: rgba(255,255,255,0.3);
++        }
++
++        .footer__flag {
++            display: flex;
++            gap: 2px;
++        }
++
++        .footer__flag span {
++            width: 20px;
++            height: 3px;
++        }
++
++        .footer__flag span:nth-child(1) { background: var(--benin-green); }
++        .footer__flag span:nth-child(2) { background: var(--benin-yellow-soft); }
++        .footer__flag span:nth-child(3) { background: var(--benin-red-soft); }
++
++        @media (max-width: 768px) {
++            .footer__top {
++                grid-template-columns: 1fr 1fr;
++                gap: 2rem;
++            }
++
++            .footer__top > div:first-child {
++                grid-column: span 2;
++            }
++        }
++
++        @media (max-width: 480px) {
++            .footer__top {
++                grid-template-columns: 1fr;
++            }
++
++            .footer__top > div:first-child {
++                grid-column: span 1;
++            }
++        }
++
++        /* ================================================
++           BACK TO TOP
++           ================================================ */
++        .back-to-top {
++            position: fixed;
++            bottom: 2rem;
++            right: 2rem;
++            width: 44px;
++            height: 44px;
++            background: var(--benin-green);
++            color: var(--white);
++            display: flex;
++            align-items: center;
++            justify-content: center;
++            z-index: 100;
++            opacity: 0;
++            pointer-events: none;
++            transition: all var(--transition-fast);
++            cursor: pointer;
++        }
++
++        .back-to-top.visible {
++            opacity: 1;
++            pointer-events: all;
++        }
++
++        .back-to-top:hover {
++            background: var(--benin-green-deep);
++            transform: translateY(-2px);
++        }
++
++        /* ================================================
++           LOADER
++           ================================================ */
++        .loader {
++            position: fixed;
++            inset: 0;
++            background: var(--noir);
++            z-index: 9999;
++            display: flex;
++            align-items: center;
++            justify-content: center;
++            transition: opacity 0.6s var(--ease-out);
++        }
++
++        .loader.hidden {
++            opacity: 0;
++            pointer-events: none;
++        }
++
++        .loader__content {
++            text-align: center;
++        }
++
++        .loader__logo {
++            width: 60px;
++            height: 60px;
++            margin: 0 auto 1.5rem;
++            animation: loaderPulse 1.5s infinite;
++        }
++
++        @keyframes loaderPulse {
++            0%, 100% { opacity: 0.4; transform: scale(0.95); }
++            50% { opacity: 1; transform: scale(1); }
++        }
++
++        .loader__text {
++            font-family: var(--font-display);
++            font-size: 1rem;
++            color: var(--benin-yellow-soft);
++            letter-spacing: 0.2em;
++            text-transform: uppercase;
++        }
++
++        /* ================================================
++           CTA SECTION (before footer)
++           ================================================ */
++        .cta-section {
++            padding: 6rem 0;
++            background: linear-gradient(135deg, var(--benin-green-deep) 0%, var(--benin-green) 50%, var(--benin-green-light) 100%);
++            text-align: center;
++            position: relative;
++            overflow: hidden;
++        }
++
++        .cta-section::before {
++            content: '';
++            position: absolute;
++            inset: 0;
++            background:
++                repeating-linear-gradient(45deg, transparent, transparent 40px, rgba(255,255,255,0.02) 40px, rgba(255,255,255,0.02) 41px);
++        }
++
++        .cta-section .container {
++            position: relative;
++            z-index: 2;
++        }
++
++        .cta-section__title {
++            font-family: var(--font-display);
++            font-size: clamp(2rem, 4vw, 3rem);
++            font-weight: 700;
++            color: var(--white);
++            margin-bottom: 1rem;
++            line-height: 1.15;
++        }
++
++        .cta-section__text {
++            font-size: 1.05rem;
++            font-weight: 300;
++            color: rgba(255,255,255,0.75);
++            margin-bottom: 2.5rem;
++            max-width: 500px;
++            margin-left: auto;
++            margin-right: auto;
++        }
++
++        .cta-section__actions {
++            display: flex;
++            align-items: center;
++            justify-content: center;
++            gap: 1rem;
++            flex-wrap: wrap;
++        }
++
++    </style>
+ </head>
+-
+ <body>
+ 
+-<!-- Points de données animés -->
+-<div class="data-dots" id="dataDots"></div>
+-
+-<!-- HEADER STYLÉ -->
+-<div class="header-container">
+-  <div class="header">
+-    <h1>Résumé des bases du CSS</h1>
+-    <p>Cheat Sheet • Débutant • Fondamentaux •CHAMDAANE😒<br>
+-    Khalilath t'es en congé donc ...👌</p>
+-  </div>
+-</div>
+-
+-<!-- CONTENU PRINCIPAL -->
+-<main class="main-content">
+-  <div class="cards-container">
+-    <div class="cards-grid">
+-      
+-      <!-- Carte 1 -->
+-      <div class="card" data-card="1">
+-        <h2>Structure CSS</h2>
+-        <ul>
+-          <li>sélecteur { }</li>
+-          <li>propriété: valeur;</li>
+-        </ul>
+-      </div>
+-
+-      <!-- Carte 2 -->
+-      <div class="card" data-card="2">
+-        <h2>Sélecteurs</h2>
+-        <ul>
+-          <li>p {}</li>
+-          <li>.class {}</li>
+-          <li>#id {}</li>
+-          <li>* {}</li>
+-          <li>div p {}</li>
+-          <li>div > p {}</li>
+-        </ul>
+-      </div>
+-
+-      <!-- Carte 3 -->
+-      <div class="card" data-card="3">
+-        <h2>Couleurs</h2>
+-        <ul>
+-          <li>color: red;</li>
+-          <li>color: #ff0000;</li>
+-          <li>color: rgb(255,0,0);</li>
+-          <li>color: rgba(0,0,0,0.5);</li>
+-        </ul>
+-      </div>
+-
+-      <!-- Carte 4 -->
+-      <div class="card" data-card="4">
+-        <h2>Texte & Police</h2>
+-        <ul>
+-          <li>font-family</li>
+-          <li>font-size</li>
+-          <li>font-weight</li>
+-          <li>text-align</li>
+-          <li>line-height</li>
+-          <li>letter-spacing</li>
+-        </ul>
+-      </div>
+-
+-      <!-- Carte 5 -->
+-      <div class="card" data-card="5">
+-        <h2>Box Model</h2>
+-        <ul>
+-          <li>margin</li>
+-          <li>padding</li>
+-          <li>border</li>
+-          <li>width</li>
+-          <li>height</li>
+-          <li>box-sizing</li>
+-        </ul>
+-      </div>
+-
+-      <!-- Carte 6 -->
+-      <div class="card" data-card="6">
+-        <h2>Background</h2>
+-        <ul>
+-          <li>background</li>
+-          <li>background-color</li>
+-          <li>background-image</li>
+-          <li>background-size</li>
+-          <li>background-position</li>
+-        </ul>
+-      </div>
+-
+-      <!-- Carte 7 -->
+-      <div class="card" data-card="7">
+-        <h2>Display & Position</h2>
+-        <ul>
+-          <li>display</li>
+-          <li>flex</li>
+-          <li>grid</li>
+-          <li>position</li>
+-          <li>relative</li>
+-          <li>absolute</li>
+-          <li>fixed</li>
+-        </ul>
+-      </div>
+-
+-      <!-- Carte 8 -->
+-      <div class="card" data-card="8">
+-        <h2>Flexbox</h2>
+-        <ul>
+-          <li>display: flex</li>
+-          <li>justify-content</li>
+-          <li>align-items</li>
+-          <li>flex-direction</li>
+-        </ul>
+-      </div>
+-
+-      <!-- Carte 9 -->
+-      <div class="card" data-card="9">
+-        <h2>Effets visuels</h2>
+-        <ul>
+-          <li>border-radius</li>
+-          <li>box-shadow</li>
+-          <li>opacity</li>
+-        </ul>
+-      </div>
+-
+-      <!-- Carte 10 -->
+-      <div class="card" data-card="10">
+-        <h2>Animations</h2>
+-        <ul>
+-          <li>transition</li>
+-          <li>transform</li>
+-          <li>scale()</li>
+-          <li>translate()</li>
+-        </ul>
+-      </div>
+-
+-      <!-- Carte 11 -->
+-      <div class="card" data-card="11">
+-        <h2>Interactions</h2>
+-        <ul>
+-          <li>:hover</li>
+-          <li>:active</li>
+-          <li>:focus</li>
+-          <li>cursor: pointer</li>
+-        </ul>
+-      </div>
+-
+-      <!-- Carte 12 -->
+-      <div class="card" data-card="12">
+-        <h2>Responsive</h2>
+-        <ul>
+-          <li>@media</li>
+-          <li>max-width</li>
+-          <li>min-width</li>
+-        </ul>
+-      </div>
+-
+-    </div>
+-  </div>
+-</main>
+-
+-<!-- FOOTER VOYANT -->
+-<footer class="footer">
+-  <div class="footer-content">
+-    <div class="footer-title">Maîtrise le CSS comme un Pro</div>
+-    <div class="footer-subtitle">Code propre • Design moderne • Accessibilité • Performance</div>
+-    <div class="footer-signature">Fait pas ton geek fantôme CHAMDAANE</div>
+-    <div class="footer-copyright">Résumé CSS • Apprentissage Web • HTML + CSS only</div>
+-  </div>
+-</footer>
+-
+-<!-- Overlay pour carte ouverte -->
+-<div class="card-overlay"></div>
+-
+-<!-- Template pour carte expanded -->
+-<template id="card-template">
+-  <div class="card-expanded">
+-    <div class="card-header">
+-      <div class="card-title"></div>
+-      <button class="card-close">×</button>
++    <!-- ===== LOADER ===== -->
++    <div class="loader" id="loader">
++        <div class="loader__content">
++            <div class="loader__logo">
++                <svg viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg">
++                    <rect x="2" y="2" width="56" height="56" stroke="#D4AF37" stroke-width="1" rx="0"/>
++                    <path d="M15 20 L30 10 L45 20 L45 45 L15 45 Z" stroke="#D4AF37" stroke-width="0.8" fill="none"/>
++                    <line x1="30" y1="10" x2="30" y2="45" stroke="#D4AF37" stroke-width="0.5" opacity="0.5"/>
++                    <line x1="15" y1="30" x2="45" y2="30" stroke="#D4AF37" stroke-width="0.5" opacity="0.5"/>
++                </svg>
++            </div>
++            <div class="loader__text">Diaspora B&eacute;ninoise UK</div>
++        </div>
+     </div>
+-    <div class="card-content">
+-      <div class="code-block">
+-        <code></code>
+-      </div>
+-      <ul class="properties-list"></ul>
++
++    <!-- ===== NAVBAR ===== -->
++    <nav class="navbar" id="navbar">
++        <div class="container">
++            <a href="#" class="navbar__logo">
++                <div class="navbar__logo-icon">
++                    <svg viewBox="0 0 42 42" fill="none" xmlns="http://www.w3.org/2000/svg">
++                        <rect x="1" y="1" width="40" height="40" stroke="#D4AF37" stroke-width="1"/>
++                        <path d="M10 15 L21 8 L32 15 L32 34 L10 34 Z" stroke="white" stroke-width="0.8" fill="none"/>
++                        <line x1="21" y1="8" x2="21" y2="34" stroke="#D4AF37" stroke-width="0.5" opacity="0.6"/>
++                        <circle cx="21" cy="22" r="4" stroke="#D4AF37" stroke-width="0.5" fill="none"/>
++                        <rect x="0" y="38" width="14" height="3" fill="#1B5E20"/>
++                        <rect x="14" y="38" width="14" height="3" fill="#D4AF37"/>
++                        <rect x="28" y="38" width="14" height="3" fill="#8B1A1A"/>
++                    </svg>
++                </div>
++                <div class="navbar__logo-text">
++                    <span class="navbar__logo-name">Diaspora B&eacute;ninoise</span>
++                    <span class="navbar__logo-tagline">Royaume-Uni</span>
++                </div>
++            </a>
++
++            <div class="navbar__nav" id="navMenu">
++                <a href="#mission" class="navbar__link">Mission</a>
++                <a href="#community" class="navbar__link">Communaut&eacute;</a>
++                <a href="#events" class="navbar__link">&Eacute;v&eacute;nements</a>
++                <a href="#projects" class="navbar__link">Projets</a>
++                <a href="#leadership" class="navbar__link">Leadership</a>
++                <a href="#contact" class="navbar__link">Contact</a>
++                <a href="#membership" class="navbar__cta">Adh&eacute;sion</a>
++            </div>
++
++            <button class="navbar__toggle" id="navToggle" aria-label="Menu">
++                <span></span>
++                <span></span>
++                <span></span>
++            </button>
++        </div>
++    </nav>
++
++    <!-- ===== HERO ===== -->
++    <section class="hero" id="hero">
++        <div class="hero__bg">
++            <div class="hero__pattern"></div>
++            <div class="hero__bg-gradient"></div>
++            <div class="hero__particles" id="heroParticles"></div>
++        </div>
++
++        <div class="hero__content">
++            <div class="hero__badge">
++                <span class="hero__badge-dot"></span>
++                Plateforme officielle &mdash; Londres, Royaume-Uni
++            </div>
++            <h1 class="hero__title">
++                Unit&eacute;, Excellence<br>
++                <em>&amp; Impact</em>
++            </h1>
++            <p class="hero__subtitle">
++                La voix de la diaspora b&eacute;ninoise au Royaume-Uni. Ensemble, nous construisons
++                un pont d'excellence entre le B&eacute;nin et la Grande-Bretagne.
++            </p>
++            <div class="hero__actions">
++                <a href="#membership" class="btn btn--gold">Rejoindre la communaut&eacute;</a>
++                <a href="#mission" class="btn btn--outline">D&eacute;couvrir notre mission</a>
++            </div>
++        </div>
++
++        <div class="hero__scroll">
++            <span>D&eacute;couvrir</span>
++            <div class="hero__scroll-line"></div>
++        </div>
++
++        <div class="hero__flag-stripe">
++            <span></span>
++            <span></span>
++            <span></span>
++        </div>
++    </section>
++
++    <!-- ===== STATS BAR ===== -->
++    <div class="stats-bar">
++        <div class="container">
++            <div class="stats-bar__grid">
++                <div class="stat-item reveal">
++                    <div class="stat-item__number" data-count="2500">0</div>
++                    <div class="stat-item__label">Membres actifs</div>
++                </div>
++                <div class="stat-item reveal reveal-delay-1">
++                    <div class="stat-item__number" data-count="45">0</div>
++                    <div class="stat-item__label">Projets lanc&eacute;s</div>
++                </div>
++                <div class="stat-item reveal reveal-delay-2">
++                    <div class="stat-item__number" data-count="12">0</div>
++                    <div class="stat-item__label">Villes UK</div>
++                </div>
++                <div class="stat-item reveal reveal-delay-3">
++                    <div class="stat-item__number" data-count="8">0</div>
++                    <div class="stat-item__label">Ann&eacute;es d'impact</div>
++                </div>
++            </div>
++        </div>
+     </div>
+-  </div>
+-</template>
+-
+-<script>
+-// Données pour chaque carte en mode data school
+-const cardData = {
+-  1: {
+-    title: "STRUCTURE CSS",
+-    code: "sélecteur {\n  propriété: valeur;\n  propriété2: valeur2;\n}",
+-    properties: [
+-      "Sélecteur : cible l'élément HTML",
+-      "Propriété : caractéristique à modifier",
+-      "Valeur : paramètre de la propriété",
+-      "Bloc : entre { }",
+-      "Déclaration : propriété:valeur;"
+-    ]
+-  },
+-  2: {
+-    title: "SÉLECTEURS CSS",
+-    code: "p { color: blue; }\n.class { font-size: 16px; }\n#id { margin: 0; }\n* { box-sizing: border-box; }",
+-    properties: [
+-      "Élément : p, div, h1...",
+-      "Classe : .ma-classe",
+-      "ID : #mon-id",
+-      "Universel : * (tous éléments)",
+-      "Descendant : div p",
+-      "Enfant direct : div > p"
+-    ]
+-  },
+-  3: {
+-    title: "SYSTÈME DE COULEURS",
+-    code: "color: red;\ncolor: #FF0000;\ncolor: rgb(255, 0, 0);\ncolor: rgba(255, 0, 0, 0.5);",
+-    properties: [
+-      "Noms : red, blue, green",
+-      "HEX : #RRGGBB",
+-      "RGB : rgb(0-255, 0-255, 0-255)",
+-      "RGBA : rgb + transparence",
+-      "HSL : teinte, saturation, luminosité"
+-    ]
+-  },
+-  4: {
+-    title: "TYPOGRAPHIE",
+-    code: "font-family: Arial, sans-serif;\nfont-size: 16px;\nfont-weight: bold;\ntext-align: center;",
+-    properties: [
+-      "font-family : police de caractères",
+-      "font-size : taille du texte",
+-      "font-weight : épaisseur (bold, normal)",
+-      "text-align : alignement horizontal",
+-      "line-height : hauteur de ligne",
+-      "letter-spacing : espacement lettres"
+-    ]
+-  },
+-  5: {
+-    title: "BOX MODEL",
+-    code: ".element {\n  margin: 20px;\n  padding: 15px;\n  border: 2px solid black;\n  width: 300px;\n}",
+-    properties: [
+-      "Margin : espace extérieur",
+-      "Padding : espace intérieur",
+-      "Border : bordure",
+-      "Width : largeur",
+-      "Height : hauteur",
+-      "box-sizing : mode de calcul"
+-    ]
+-  },
+-  6: {
+-    title: "BACKGROUND",
+-    code: "background: #fff url('image.jpg');\nbackground-size: cover;\nbackground-position: center;\nbackground-repeat: no-repeat;",
+-    properties: [
+-      "background-color : couleur de fond",
+-      "background-image : image de fond",
+-      "background-size : taille (cover, contain)",
+-      "background-position : position",
+-      "background-repeat : répétition"
+-    ]
+-  },
+-  7: {
+-    title: "DISPLAY & POSITION",
+-    code: ".element {\n  display: flex;\n  position: relative;\n  top: 10px;\n  left: 20px;\n}",
+-    properties: [
+-      "display : block, inline, flex, grid",
+-      "position : static, relative, absolute",
+-      "top/bottom/left/right : positionnement",
+-      "z-index : ordre d'empilement",
+-      "float : flottement"
+-    ]
+-  },
+-  8: {
+-    title: "FLEXBOX",
+-    code: ".container {\n  display: flex;\n  justify-content: center;\n  align-items: center;\n  flex-direction: column;\n}",
+-    properties: [
+-      "display: flex : active flexbox",
+-      "justify-content : alignement horizontal",
+-      "align-items : alignement vertical",
+-      "flex-direction : direction (row, column)",
+-      "flex-wrap : retour à la ligne"
+-    ]
+-  },
+-  9: {
+-    title: "EFFETS VISUELS",
+-    code: ".element {\n  border-radius: 10px;\n  box-shadow: 0 4px 8px rgba(0,0,0,0.1);\n  opacity: 0.8;\n}",
+-    properties: [
+-      "border-radius : coins arrondis",
+-      "box-shadow : ombre portée",
+-      "opacity : transparence (0 à 1)",
+-      "filter : effets de filtre",
+-      "blend-mode : mode de fusion"
+-    ]
+-  },
+-  10: {
+-    title: "ANIMATIONS",
+-    code: ".element {\n  transition: all 0.3s ease;\n  transform: scale(1.1) rotate(5deg);\n}",
+-    properties: [
+-      "transition : animation fluide",
+-      "transform : transformation 2D/3D",
+-      "scale() : échelle",
+-      "translate() : déplacement",
+-      "rotate() : rotation",
+-      "@keyframes : animations complexes"
+-    ]
+-  },
+-  11: {
+-    title: "INTERACTIONS",
+-    code: "a:hover { color: red; }\nbutton:active { transform: scale(0.95); }\ninput:focus { outline: 2px solid blue; }",
+-    properties: [
+-      ":hover : au survol",
+-      ":active : pendant le clic",
+-      ":focus : quand focus (tabulation)",
+-      "cursor : type de curseur",
+-      "user-select : sélection texte"
+-    ]
+-  },
+-  12: {
+-    title: "RESPONSIVE DESIGN",
+-    code: "@media (max-width: 768px) {\n  .element { font-size: 14px; }\n}\n\n@media (min-width: 1200px) {\n  .container { max-width: 1140px; }\n}",
+-    properties: [
+-      "@media : requête média",
+-      "max-width : largeur maximale",
+-      "min-width : largeur minimale",
+-      "orientation : portrait/paysage",
+-      "resolution : densité pixels"
+-    ]
+-  }
+-};
+-
+-// Gestion des événements
+-document.addEventListener('DOMContentLoaded', function() {
+-  const cards = document.querySelectorAll('.card');
+-  const overlay = document.querySelector('.card-overlay');
+-  const template = document.getElementById('card-template');
+-  const body = document.body;
+-  const dataDots = document.getElementById('dataDots');
+-  
+-  // Créer les points de données animés
+-  for (let i = 0; i < 50; i++) {
+-    const dot = document.createElement('span');
+-    dot.style.left = `${Math.random() * 100}%`;
+-    dot.style.top = `${Math.random() * 100}%`;
+-    dot.style.animationDelay = `${Math.random() * 15}s`;
+-    dot.style.animationDuration = `${15 + Math.random() * 10}s`;
+-    dataDots.appendChild(dot);
+-  }
+-  
+-  cards.forEach(card => {
+-    card.addEventListener('click', function() {
+-      const cardId = this.getAttribute('data-card');
+-      openCard(cardId);
+-    });
+-  });
+-  
+-  function openCard(cardId) {
+-    const data = cardData[cardId];
+-    if (!data) return;
+-    
+-    // Créer la carte expanded
+-    const cardClone = template.content.cloneNode(true);
+-    const expandedCard = cardClone.querySelector('.card-expanded');
+-    const cardTitle = expandedCard.querySelector('.card-title');
+-    const codeBlock = expandedCard.querySelector('code');
+-    const propertiesList = expandedCard.querySelector('.properties-list');
+-    const closeBtn = expandedCard.querySelector('.card-close');
+-    
+-    // Remplir les données
+-    cardTitle.textContent = data.title;
+-    codeBlock.textContent = data.code;
+-    
+-    // Ajouter les propriétés
+-    data.properties.forEach(prop => {
+-      const li = document.createElement('li');
+-      li.textContent = prop;
+-      propertiesList.appendChild(li);
+-    });
+-    
+-    // Ajouter au body
+-    document.body.appendChild(expandedCard);
+-    
+-    // Activer le mode data school
+-    setTimeout(() => {
+-      body.classList.add('data-mode');
+-      overlay.classList.add('active');
+-      expandedCard.classList.add('active');
+-    }, 10);
+-    
+-    // Bouton fermer
+-    closeBtn.addEventListener('click', closeCard);
+-    overlay.addEventListener('click', closeCard);
+-    
+-    // Échap pour fermer
+-    document.addEventListener('keydown', function(e) {
+-      if (e.key === 'Escape') closeCard();
+-    });
+-    
+-    function closeCard() {
+-      expandedCard.classList.remove('active');
+-      overlay.classList.remove('active');
+-      
+-      setTimeout(() => {
+-        body.classList.remove('data-mode');
+-        expandedCard.remove();
+-      }, 400);
+-    }
+-  }
+-  
+-  // Animation au chargement
+-  cards.forEach((card, index) => {
+-    card.style.animationDelay = `${index * 0.1}s`;
+-  });
+-});
+-</script>
++
++    <!-- ===== MISSION ===== -->
++    <section class="mission" id="mission">
++        <div class="container">
++            <div class="mission__grid">
++                <div class="mission__visual reveal">
++                    <div class="mission__image-frame">
++                        <div class="mission__image-overlay">
++                            <svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
++                                <circle cx="60" cy="60" r="50" stroke="white" stroke-width="0.5"/>
++                                <circle cx="60" cy="60" r="35" stroke="white" stroke-width="0.5"/>
++                                <path d="M60 10 L60 110 M10 60 L110 60" stroke="white" stroke-width="0.3"/>
++                                <path d="M25 25 L95 95 M95 25 L25 95" stroke="white" stroke-width="0.3"/>
++                            </svg>
++                        </div>
++                    </div>
++                    <div class="mission__accent"></div>
++                </div>
++
++                <div class="mission__text reveal reveal-delay-1">
++                    <span class="section-label">Notre mission</span>
++                    <h2 class="section-title">B&acirc;tir un pont d'excellence entre deux nations</h2>
++                    <p class="section-subtitle">
++                        La Diaspora B&eacute;ninoise du Royaume-Uni rassemble, f&eacute;d&egrave;re et repr&eacute;sente
++                        les B&eacute;ninois &eacute;tablis en Grande-Bretagne. Notre mission est de promouvoir
++                        l'excellence, la solidarit&eacute; et le d&eacute;veloppement &agrave; travers un r&eacute;seau
++                        dynamique et engag&eacute;.
++                    </p>
++                    <span class="gold-line" style="margin: 2rem 0;"></span>
++
++                    <div class="mission__values">
++                        <div class="mission__value">
++                            <span class="mission__value-icon">&#9670;</span>
++                            <div class="mission__value-title">Unit&eacute;</div>
++                            <p class="mission__value-text">Rassembler la communaut&eacute; b&eacute;ninoise autour de valeurs partag&eacute;es</p>
++                        </div>
++                        <div class="mission__value">
++                            <span class="mission__value-icon">&#9733;</span>
++                            <div class="mission__value-title">Excellence</div>
++                            <p class="mission__value-text">Promouvoir le talent et la r&eacute;ussite professionnelle</p>
++                        </div>
++                        <div class="mission__value">
++                            <span class="mission__value-icon">&#10043;</span>
++                            <div class="mission__value-title">Solidarit&eacute;</div>
++                            <p class="mission__value-text">S'entraider et soutenir les projets communautaires</p>
++                        </div>
++                        <div class="mission__value">
++                            <span class="mission__value-icon">&#9830;</span>
++                            <div class="mission__value-title">D&eacute;veloppement</div>
++                            <p class="mission__value-text">Contribuer au rayonnement &eacute;conomique du B&eacute;nin</p>
++                        </div>
++                    </div>
++                </div>
++            </div>
++        </div>
++    </section>
++
++    <!-- ===== COMMUNITY ===== -->
++    <section class="community" id="community">
++        <div class="container">
++            <div class="community__header reveal">
++                <span class="section-label" style="justify-content: center;">Notre communaut&eacute;</span>
++                <h2 class="section-title">Un r&eacute;seau diversifi&eacute; et dynamique</h2>
++                <p class="section-subtitle">Professionnels, &eacute;tudiants, entrepreneurs et familles unis par l'ambition et la fiert&eacute; b&eacute;ninoise.</p>
++            </div>
++
++            <div class="community__grid">
++                <div class="community__card reveal">
++                    <div class="community__card-icon">
++                        <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
++                    </div>
++                    <h3 class="community__card-title">Professionnels</h3>
++                    <span class="community__card-count">+800 membres</span>
++                    <p class="community__card-text">M&eacute;decins, ing&eacute;nieurs, financiers, avocats et cadres &eacute;tablis &agrave; travers le Royaume-Uni.</p>
++                </div>
++
++                <div class="community__card reveal reveal-delay-1">
++                    <div class="community__card-icon">
++                        <svg viewBox="0 0 24 24"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c0 2 3 3 6 3s6-1 6-3v-5"/></svg>
++                    </div>
++                    <h3 class="community__card-title">&Eacute;tudiants</h3>
++                    <span class="community__card-count">+500 &eacute;tudiants</span>
++                    <p class="community__card-text">Dans les meilleures universit&eacute;s britanniques : Oxford, Cambridge, UCL, Imperial, LSE.</p>
++                </div>
++
++                <div class="community__card reveal reveal-delay-2">
++                    <div class="community__card-icon">
++                        <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
++                    </div>
++                    <h3 class="community__card-title">Entrepreneurs</h3>
++                    <span class="community__card-count">+300 entreprises</span>
++                    <p class="community__card-text">Fondateurs, investisseurs et cr&eacute;ateurs d'entreprises entre le B&eacute;nin et le UK.</p>
++                </div>
++
++                <div class="community__card reveal reveal-delay-3">
++                    <div class="community__card-icon">
++                        <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
++                    </div>
++                    <h3 class="community__card-title">Familles</h3>
++                    <span class="community__card-count">+900 familles</span>
++                    <p class="community__card-text">Des familles b&eacute;ninoises &eacute;panouies, transmettant culture et valeurs &agrave; la prochaine g&eacute;n&eacute;ration.</p>
++                </div>
++            </div>
++        </div>
++    </section>
++
++    <!-- ===== EVENTS ===== -->
++    <section class="events" id="events">
++        <div class="container">
++            <div class="events__header">
++                <div>
++                    <span class="section-label">&Eacute;v&eacute;nements</span>
++                    <h2 class="section-title section-title--light">&Agrave; venir</h2>
++                    <p class="section-subtitle section-subtitle--light">Rencontres, galas, conf&eacute;rences et c&eacute;l&eacute;brations qui renforcent nos liens.</p>
++                </div>
++                <a href="#" class="btn btn--outline" style="flex-shrink: 0;">Tous les &eacute;v&eacute;nements</a>
++            </div>
++
++            <div class="events__grid">
++                <div class="event-card reveal">
++                    <div class="event-card__date">
++                        <span class="event-card__date-day">28</span>
++                        <div class="event-card__date-info">
++                            <span class="event-card__date-month">Juin</span>
++                            <span class="event-card__date-year">2026</span>
++                        </div>
++                    </div>
++                    <h3 class="event-card__title">Gala Annuel de la Diaspora B&eacute;ninoise</h3>
++                    <div class="event-card__location">
++                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
++                        The Dorchester, Londres
++                    </div>
++                    <span class="event-card__tag">Gala</span>
++                </div>
++
++                <div class="event-card reveal reveal-delay-1">
++                    <div class="event-card__date">
++                        <span class="event-card__date-day">15</span>
++                        <div class="event-card__date-info">
++                            <span class="event-card__date-month">Juillet</span>
++                            <span class="event-card__date-year">2026</span>
++                        </div>
++                    </div>
++                    <h3 class="event-card__title">Forum Business B&eacute;nin-UK</h3>
++                    <div class="event-card__location">
++                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
++                        Canary Wharf, Londres
++                    </div>
++                    <span class="event-card__tag">Business</span>
++                </div>
++
++                <div class="event-card reveal reveal-delay-2">
++                    <div class="event-card__date">
++                        <span class="event-card__date-day">01</span>
++                        <div class="event-card__date-info">
++                            <span class="event-card__date-month">Ao&ucirc;t</span>
++                            <span class="event-card__date-year">2026</span>
++                        </div>
++                    </div>
++                    <h3 class="event-card__title">F&ecirc;te Nationale du B&eacute;nin &mdash; C&eacute;l&eacute;bration Londres</h3>
++                    <div class="event-card__location">
++                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
++                        Ambassade du B&eacute;nin, Londres
++                    </div>
++                    <span class="event-card__tag">Culture</span>
++                </div>
++            </div>
++        </div>
++    </section>
++
++    <!-- ===== PROJECTS ===== -->
++    <section class="projects" id="projects">
++        <div class="container">
++            <div class="projects__header reveal">
++                <span class="section-label" style="justify-content: center;">Projets &amp; Investissements</span>
++                <h2 class="section-title">Initiatives pour le d&eacute;veloppement</h2>
++                <p class="section-subtitle">Des projets concrets qui contribuent au rayonnement du B&eacute;nin et renforcent les liens avec le Royaume-Uni.</p>
++            </div>
++
++            <div class="projects__grid">
++                <div class="project-card reveal">
++                    <div class="project-card__number">01</div>
++                    <h3 class="project-card__title">Programme de Bourses Acad&eacute;miques</h3>
++                    <p class="project-card__text">Financement de bourses pour les &eacute;tudiants b&eacute;ninois dans les universit&eacute;s britanniques. Accompagnement, mentorat et int&eacute;gration professionnelle.</p>
++                    <span class="project-card__status project-card__status--active">
++                        <span class="project-card__status-dot"></span>
++                        En cours
++                    </span>
++                </div>
++
++                <div class="project-card reveal reveal-delay-1">
++                    <div class="project-card__number">02</div>
++                    <h3 class="project-card__title">Hub d'Investissement B&eacute;nin-UK</h3>
++                    <p class="project-card__text">Plateforme facilitant les investissements de la diaspora au B&eacute;nin. Immobilier, agro-industrie, technologie et &eacute;nergie renouvelable.</p>
++                    <span class="project-card__status project-card__status--active">
++                        <span class="project-card__status-dot"></span>
++                        En cours
++                    </span>
++                </div>
++
++                <div class="project-card reveal reveal-delay-2">
++                    <div class="project-card__number">03</div>
++                    <h3 class="project-card__title">Centre Culturel B&eacute;ninois de Londres</h3>
++                    <p class="project-card__text">Cr&eacute;ation d'un espace culturel d&eacute;di&eacute; &agrave; la promotion de l'art, de la gastronomie et du patrimoine b&eacute;ninois &agrave; Londres.</p>
++                    <span class="project-card__status project-card__status--planned">
++                        <span class="project-card__status-dot"></span>
++                        En planification
++                    </span>
++                </div>
++            </div>
++        </div>
++    </section>
++
++    <!-- ===== LEADERSHIP ===== -->
++    <section class="leadership" id="leadership">
++        <div class="container">
++            <div class="leadership__header reveal">
++                <span class="section-label" style="justify-content: center;">Leadership</span>
++                <h2 class="section-title">Notre &eacute;quipe dirigeante</h2>
++                <p class="section-subtitle">Des leaders engag&eacute;s au service de la communaut&eacute; b&eacute;ninoise au Royaume-Uni.</p>
++            </div>
++
++            <div class="leadership__grid">
++                <div class="leader-card reveal">
++                    <div class="leader-card__photo">
++                        <span class="leader-card__photo-initials">PD</span>
++                    </div>
++                    <h3 class="leader-card__name">Pr&eacute;sident(e)</h3>
++                    <span class="leader-card__role">Pr&eacute;sidence</span>
++                    <p class="leader-card__bio">Dirige la vision strat&eacute;gique et repr&eacute;sente la diaspora aupr&egrave;s des institutions britanniques et b&eacute;ninoises.</p>
++                </div>
++
++                <div class="leader-card leader-card--featured reveal reveal-delay-1">
++                    <div class="leader-card__photo">
++                        <span class="leader-card__photo-initials">SG</span>
++                    </div>
++                    <h3 class="leader-card__name">Secr&eacute;taire G&eacute;n&eacute;ral(e)</h3>
++                    <span class="leader-card__role">Secr&eacute;tariat G&eacute;n&eacute;ral</span>
++                    <p class="leader-card__bio">Figure centrale de l'organisation, assure la coordination des activit&eacute;s, la gestion administrative et le lien entre les membres et les instances dirigeantes.</p>
++                </div>
++
++                <div class="leader-card reveal reveal-delay-2">
++                    <div class="leader-card__photo">
++                        <span class="leader-card__photo-initials">TR</span>
++                    </div>
++                    <h3 class="leader-card__name">Tr&eacute;sorier(&egrave;re)</h3>
++                    <span class="leader-card__role">Direction Financi&egrave;re</span>
++                    <p class="leader-card__bio">Supervise la gestion financi&egrave;re, les investissements communautaires et la transparence des comptes.</p>
++                </div>
++            </div>
++        </div>
++    </section>
++
++    <!-- ===== GALLERY ===== -->
++    <section class="gallery" id="gallery">
++        <div class="container">
++            <div class="gallery__header reveal">
++                <span class="section-label" style="justify-content: center;">Galerie</span>
++                <h2 class="section-title">Moments de fiert&eacute;</h2>
++            </div>
++
++            <div class="gallery__grid">
++                <div class="gallery__item reveal">
++                    <div class="gallery__item-bg"></div>
++                    <div class="gallery__item-overlay">
++                        <span class="gallery__item-caption">Gala Annuel 2025</span>
++                    </div>
++                </div>
++                <div class="gallery__item reveal reveal-delay-1">
++                    <div class="gallery__item-bg"></div>
++                    <div class="gallery__item-overlay">
++                        <span class="gallery__item-caption">Forum Business</span>
++                    </div>
++                </div>
++                <div class="gallery__item reveal reveal-delay-2">
++                    <div class="gallery__item-bg"></div>
++                    <div class="gallery__item-overlay">
++                        <span class="gallery__item-caption">Rencontre Networking</span>
++                    </div>
++                </div>
++                <div class="gallery__item reveal reveal-delay-1">
++                    <div class="gallery__item-bg"></div>
++                    <div class="gallery__item-overlay">
++                        <span class="gallery__item-caption">C&eacute;l&eacute;bration Culturelle</span>
++                    </div>
++                </div>
++                <div class="gallery__item reveal reveal-delay-2">
++                    <div class="gallery__item-bg"></div>
++                    <div class="gallery__item-overlay">
++                        <span class="gallery__item-caption">Conf&eacute;rence Diaspora</span>
++                    </div>
++                </div>
++            </div>
++        </div>
++    </section>
++
++    <!-- ===== TESTIMONIALS ===== -->
++    <section class="testimonials" id="testimonials">
++        <div class="container">
++            <div class="testimonials__header reveal">
++                <span class="section-label" style="justify-content: center; color: var(--benin-yellow-soft);">
++                    <span style="display:inline-block; width:2rem; height:1px; background: var(--benin-yellow-soft);"></span>
++                    T&eacute;moignages
++                </span>
++                <h2 class="section-title section-title--light">Paroles de la diaspora</h2>
++            </div>
++
++            <div class="testimonials__grid">
++                <div class="testimonial-card reveal">
++                    <div class="testimonial-card__quote">&ldquo;</div>
++                    <p class="testimonial-card__text">Rejoindre cette communaut&eacute; a transform&eacute; mon exp&eacute;rience au Royaume-Uni. Le r&eacute;seau professionnel et le soutien humain sont exceptionnels.</p>
++                    <div class="testimonial-card__author">
++                        <div class="testimonial-card__avatar">AK</div>
++                        <div>
++                            <div class="testimonial-card__name">Amina K.</div>
++                            <div class="testimonial-card__title">Consultante, City of London</div>
++                        </div>
++                    </div>
++                </div>
++
++                <div class="testimonial-card reveal reveal-delay-1">
++                    <div class="testimonial-card__quote">&ldquo;</div>
++                    <p class="testimonial-card__text">Gr&acirc;ce &agrave; la diaspora, j'ai pu investir au B&eacute;nin tout en &eacute;tant bas&eacute; &agrave; Manchester. Un pont v&eacute;ritable entre nos deux pays.</p>
++                    <div class="testimonial-card__author">
++                        <div class="testimonial-card__avatar">PH</div>
++                        <div>
++                            <div class="testimonial-card__name">Patrick H.</div>
++                            <div class="testimonial-card__title">Entrepreneur, Manchester</div>
++                        </div>
++                    </div>
++                </div>
++
++                <div class="testimonial-card reveal reveal-delay-2">
++                    <div class="testimonial-card__quote">&ldquo;</div>
++                    <p class="testimonial-card__text">Mes enfants d&eacute;couvrent leur culture b&eacute;ninoise gr&acirc;ce aux &eacute;v&eacute;nements organis&eacute;s. C'est un tr&eacute;sor pour notre famille.</p>
++                    <div class="testimonial-card__author">
++                        <div class="testimonial-card__avatar">SD</div>
++                        <div>
++                            <div class="testimonial-card__name">Sophie D.</div>
++                            <div class="testimonial-card__title">M&eacute;decin, Birmingham</div>
++                        </div>
++                    </div>
++                </div>
++            </div>
++        </div>
++    </section>
++
++    <!-- ===== MEMBERSHIP ===== -->
++    <section class="membership" id="membership">
++        <div class="container">
++            <div class="membership__grid">
++                <div class="reveal">
++                    <span class="section-label">Adh&eacute;sion</span>
++                    <h2 class="section-title">Rejoignez le mouvement</h2>
++                    <p class="section-subtitle" style="margin-bottom: 2rem;">
++                        Devenez membre de la diaspora b&eacute;ninoise du Royaume-Uni et participez
++                        activement &agrave; la construction d'un r&eacute;seau d'excellence. Ensemble, nous
++                        sommes plus forts.
++                    </p>
++                    <span class="gold-line" style="margin-bottom: 2rem;"></span>
++
++                    <div style="display: flex; flex-direction: column; gap: 1rem;">
++                        <div style="display: flex; align-items: flex-start; gap: 0.75rem;">
++                            <span style="color: var(--benin-green); font-size: 1.2rem; line-height: 1;">&#10003;</span>
++                            <span style="font-size: 0.95rem; color: var(--charcoal);">Acc&egrave;s au r&eacute;seau professionnel et au mentorat</span>
++                        </div>
++                        <div style="display: flex; align-items: flex-start; gap: 0.75rem;">
++                            <span style="color: var(--benin-green); font-size: 1.2rem; line-height: 1;">&#10003;</span>
++                            <span style="font-size: 0.95rem; color: var(--charcoal);">Invitations aux &eacute;v&eacute;nements exclusifs</span>
++                        </div>
++                        <div style="display: flex; align-items: flex-start; gap: 0.75rem;">
++                            <span style="color: var(--benin-green); font-size: 1.2rem; line-height: 1;">&#10003;</span>
++                            <span style="font-size: 0.95rem; color: var(--charcoal);">Participation aux projets d'investissement</span>
++                        </div>
++                        <div style="display: flex; align-items: flex-start; gap: 0.75rem;">
++                            <span style="color: var(--benin-green); font-size: 1.2rem; line-height: 1;">&#10003;</span>
++                            <span style="font-size: 0.95rem; color: var(--charcoal);">Soutien administratif et juridique</span>
++                        </div>
++                        <div style="display: flex; align-items: flex-start; gap: 0.75rem;">
++                            <span style="color: var(--benin-green); font-size: 1.2rem; line-height: 1;">&#10003;</span>
++                            <span style="font-size: 0.95rem; color: var(--charcoal);">Voix dans les d&eacute;cisions communautaires</span>
++                        </div>
++                    </div>
++                </div>
++
++                <div class="membership__form-wrapper reveal reveal-delay-1">
++                    <h3 class="membership__form-title">Demande d'adh&eacute;sion</h3>
++                    <p class="membership__form-subtitle">Remplissez le formulaire ci-dessous pour rejoindre notre communaut&eacute;.</p>
++
++                    <form id="membershipForm" onsubmit="handleFormSubmit(event)">
++                        <div class="form-row">
++                            <div class="form-group">
++                                <label for="firstName">Pr&eacute;nom</label>
++                                <input type="text" id="firstName" name="firstName" required placeholder="Votre pr&eacute;nom">
++                            </div>
++                            <div class="form-group">
++                                <label for="lastName">Nom</label>
++                                <input type="text" id="lastName" name="lastName" required placeholder="Votre nom">
++                            </div>
++                        </div>
++                        <div class="form-group">
++                            <label for="email">Email</label>
++                            <input type="email" id="email" name="email" required placeholder="votre@email.com">
++                        </div>
++                        <div class="form-group">
++                            <label for="phone">T&eacute;l&eacute;phone</label>
++                            <input type="tel" id="phone" name="phone" placeholder="+44 ..." >
++                        </div>
++                        <div class="form-group">
++                            <label for="city">Ville au UK</label>
++                            <select id="city" name="city">
++                                <option value="">S&eacute;lectionnez votre ville</option>
++                                <option>Londres</option>
++                                <option>Manchester</option>
++                                <option>Birmingham</option>
++                                <option>Leeds</option>
++                                <option>Liverpool</option>
++                                <option>Bristol</option>
++                                <option>Edinburgh</option>
++                                <option>Glasgow</option>
++                                <option>Cardiff</option>
++                                <option>Autre</option>
++                            </select>
++                        </div>
++                        <div class="form-group">
++                            <label for="profession">Profession</label>
++                            <input type="text" id="profession" name="profession" placeholder="Votre domaine professionnel">
++                        </div>
++                        <div class="form-group">
++                            <label for="message">Message (optionnel)</label>
++                            <textarea id="message" name="message" placeholder="Pourquoi souhaitez-vous rejoindre la diaspora ?"></textarea>
++                        </div>
++                        <button type="submit" class="btn btn--primary" style="width: 100%; justify-content: center; margin-top: 0.5rem;">
++                            Soumettre ma candidature
++                        </button>
++                    </form>
++                </div>
++            </div>
++        </div>
++    </section>
++
++    <!-- ===== CONTACT & MAP ===== -->
++    <section class="contact" id="contact">
++        <div class="container">
++            <div class="reveal" style="text-align: center; margin-bottom: 3rem;">
++                <span class="section-label" style="justify-content: center;">Contact</span>
++                <h2 class="section-title">Restons connect&eacute;s</h2>
++            </div>
++
++            <div class="contact__grid">
++                <div class="contact__map reveal">
++                    <iframe
++                        src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d317718.69319292053!2d-0.3817765050863085!3d51.52860701964828!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x47d8a00baf21de75%3A0x52963a5addd52a99!2sLondon%2C%20UK!5e0!3m2!1sfr!2sfr!4v1700000000000!5m2!1sfr!2sfr"
++                        allowfullscreen=""
++                        loading="lazy"
++                        referrerpolicy="no-referrer-when-downgrade"
++                        title="Localisation Londres, Royaume-Uni">
++                    </iframe>
++                </div>
++
++                <div class="contact__info reveal reveal-delay-1">
++                    <div class="contact__item">
++                        <div class="contact__item-icon">
++                            <svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
++                        </div>
++                        <div>
++                            <div class="contact__item-label">Adresse</div>
++                            <div class="contact__item-value">Londres, Royaume-Uni</div>
++                        </div>
++                    </div>
++
++                    <div class="contact__item">
++                        <div class="contact__item-icon">
++                            <svg viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
++                        </div>
++                        <div>
++                            <div class="contact__item-label">Email</div>
++                            <div class="contact__item-value"><a href="mailto:contact@diasporabeninuk.org">contact@diasporabeninuk.org</a></div>
++                        </div>
++                    </div>
++
++                    <div class="contact__item">
++                        <div class="contact__item-icon">
++                            <svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
++                        </div>
++                        <div>
++                            <div class="contact__item-label">T&eacute;l&eacute;phone</div>
++                            <div class="contact__item-value"><a href="tel:+442012345678">+44 20 1234 5678</a></div>
++                        </div>
++                    </div>
++
++                    <div class="contact__item">
++                        <div class="contact__item-icon">
++                            <svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
++                        </div>
++                        <div>
++                            <div class="contact__item-label">WhatsApp</div>
++                            <div class="contact__item-value"><a href="https://wa.me/442012345678" target="_blank" rel="noopener">+44 20 1234 5678</a></div>
++                        </div>
++                    </div>
++
++                    <div class="contact__socials">
++                        <a href="#" class="contact__social-link" aria-label="Facebook">
++                            <svg viewBox="0 0 24 24"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>
++                        </a>
++                        <a href="#" class="contact__social-link" aria-label="Instagram">
++                            <svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>
++                        </a>
++                        <a href="#" class="contact__social-link" aria-label="Twitter / X">
++                            <svg viewBox="0 0 24 24"><path d="M23 3a10.9 10.9 0 0 1-3.14 1.53 4.48 4.48 0 0 0-7.86 3v1A10.66 10.66 0 0 1 3 4s-4 9 5 13a11.64 11.64 0 0 1-7 2c9 5 20 0 20-11.5a4.5 4.5 0 0 0-.08-.83A7.72 7.72 0 0 0 23 3z"/></svg>
++                        </a>
++                        <a href="#" class="contact__social-link" aria-label="LinkedIn">
++                            <svg viewBox="0 0 24 24"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/></svg>
++                        </a>
++                        <a href="#" class="contact__social-link" aria-label="YouTube">
++                            <svg viewBox="0 0 24 24"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19.1c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z"/><polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"/></svg>
++                        </a>
++                    </div>
++                </div>
++            </div>
++        </div>
++    </section>
++
++    <!-- ===== CTA SECTION ===== -->
++    <section class="cta-section">
++        <div class="container reveal">
++            <h2 class="cta-section__title">Ensemble, fa&ccedil;onnons l'avenir<br>de notre communaut&eacute;</h2>
++            <p class="cta-section__text">Rejoignez un mouvement qui connecte le B&eacute;nin au Royaume-Uni avec ambition, fiert&eacute; et excellence.</p>
++            <div class="cta-section__actions">
++                <a href="#membership" class="btn btn--gold">Devenir membre</a>
++                <a href="#contact" class="btn btn--outline">Nous contacter</a>
++            </div>
++        </div>
++    </section>
++
++    <!-- ===== FOOTER ===== -->
++    <footer class="footer">
++        <div class="container">
++            <div class="footer__top">
++                <div>
++                    <div class="footer__brand-name">Diaspora B&eacute;ninoise du Royaume-Uni</div>
++                    <p class="footer__brand-desc">
++                        Plateforme officielle rassemblant les B&eacute;ninois &eacute;tablis au Royaume-Uni.
++                        Unit&eacute;, excellence et solidarit&eacute; au service du d&eacute;veloppement.
++                    </p>
++                    <div class="footer__flag">
++                        <span></span>
++                        <span></span>
++                        <span></span>
++                    </div>
++                </div>
++
++                <div>
++                    <h4 class="footer__heading">Navigation</h4>
++                    <ul class="footer__links">
++                        <li><a href="#mission">Mission</a></li>
++                        <li><a href="#community">Communaut&eacute;</a></li>
++                        <li><a href="#events">&Eacute;v&eacute;nements</a></li>
++                        <li><a href="#projects">Projets</a></li>
++                        <li><a href="#leadership">Leadership</a></li>
++                    </ul>
++                </div>
++
++                <div>
++                    <h4 class="footer__heading">Ressources</h4>
++                    <ul class="footer__links">
++                        <li><a href="#">Galerie</a></li>
++                        <li><a href="#">Actualit&eacute;s</a></li>
++                        <li><a href="#">FAQ</a></li>
++                        <li><a href="#">Partenaires</a></li>
++                        <li><a href="#">Presse</a></li>
++                    </ul>
++                </div>
++
++                <div>
++                    <h4 class="footer__heading">L&eacute;gal</h4>
++                    <ul class="footer__links">
++                        <li><a href="#">Mentions l&eacute;gales</a></li>
++                        <li><a href="#">Politique de confidentialit&eacute;</a></li>
++                        <li><a href="#">Conditions d'utilisation</a></li>
++                        <li><a href="#">Cookies</a></li>
++                    </ul>
++                </div>
++            </div>
++
++            <div class="footer__bottom">
++                <span class="footer__copyright">&copy; 2026 Diaspora B&eacute;ninoise du Royaume-Uni. Tous droits r&eacute;serv&eacute;s.</span>
++                <div class="footer__flag">
++                    <span></span>
++                    <span></span>
++                    <span></span>
++                </div>
++            </div>
++        </div>
++    </footer>
++
++    <!-- ===== BACK TO TOP ===== -->
++    <button class="back-to-top" id="backToTop" aria-label="Retour en haut">
++        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
++            <polyline points="18 15 12 9 6 15"/>
++        </svg>
++    </button>
++
++    <!-- ===== JAVASCRIPT ===== -->
++    <script>
++    (function() {
++        'use strict';
++
++        // --- Loader ---
++        window.addEventListener('load', function() {
++            setTimeout(function() {
++                document.getElementById('loader').classList.add('hidden');
++            }, 1200);
++        });
++
++        // --- Hero Particles ---
++        (function createParticles() {
++            var container = document.getElementById('heroParticles');
++            if (!container) return;
++            for (var i = 0; i < 30; i++) {
++                var particle = document.createElement('div');
++                particle.className = 'particle';
++                particle.style.left = Math.random() * 100 + '%';
++                particle.style.animationDelay = Math.random() * 8 + 's';
++                particle.style.animationDuration = (6 + Math.random() * 6) + 's';
++                particle.style.width = (1 + Math.random() * 2) + 'px';
++                particle.style.height = particle.style.width;
++                container.appendChild(particle);
++            }
++        })();
++
++        // --- Navbar scroll effect ---
++        var navbar = document.getElementById('navbar');
++        var lastScroll = 0;
++
++        window.addEventListener('scroll', function() {
++            var currentScroll = window.pageYOffset;
++            if (currentScroll > 80) {
++                navbar.classList.add('scrolled');
++            } else {
++                navbar.classList.remove('scrolled');
++            }
++            lastScroll = currentScroll;
++        });
++
++        // --- Mobile menu ---
++        var navToggle = document.getElementById('navToggle');
++        var navMenu = document.getElementById('navMenu');
++
++        navToggle.addEventListener('click', function() {
++            navToggle.classList.toggle('active');
++            navMenu.classList.toggle('open');
++            document.body.style.overflow = navMenu.classList.contains('open') ? 'hidden' : '';
++        });
++
++        // Close menu on link click
++        var navLinks = navMenu.querySelectorAll('.navbar__link, .navbar__cta');
++        navLinks.forEach(function(link) {
++            link.addEventListener('click', function() {
++                navToggle.classList.remove('active');
++                navMenu.classList.remove('open');
++                document.body.style.overflow = '';
++            });
++        });
++
++        // --- Smooth scroll ---
++        document.querySelectorAll('a[href^="#"]').forEach(function(anchor) {
++            anchor.addEventListener('click', function(e) {
++                var target = document.querySelector(this.getAttribute('href'));
++                if (target) {
++                    e.preventDefault();
++                    var offsetTop = target.getBoundingClientRect().top + window.pageYOffset - 80;
++                    window.scrollTo({
++                        top: offsetTop,
++                        behavior: 'smooth'
++                    });
++                }
++            });
++        });
++
++        // --- Scroll reveal ---
++        var revealElements = document.querySelectorAll('.reveal');
++
++        function checkReveal() {
++            var windowHeight = window.innerHeight;
++            revealElements.forEach(function(el) {
++                var elementTop = el.getBoundingClientRect().top;
++                if (elementTop < windowHeight - 80) {
++                    el.classList.add('active');
++                }
++            });
++        }
++
++        window.addEventListener('scroll', checkReveal);
++        window.addEventListener('resize', checkReveal);
++        // Initial check
++        setTimeout(checkReveal, 100);
++
++        // --- Counter animation ---
++        var counters = document.querySelectorAll('[data-count]');
++        var counterObserver = new IntersectionObserver(function(entries) {
++            entries.forEach(function(entry) {
++                if (entry.isIntersecting) {
++                    var el = entry.target;
++                    var target = parseInt(el.getAttribute('data-count'));
++                    var duration = 2000;
++                    var startTime = null;
++
++                    function animateCount(timestamp) {
++                        if (!startTime) startTime = timestamp;
++                        var progress = Math.min((timestamp - startTime) / duration, 1);
++                        var eased = 1 - Math.pow(1 - progress, 3);
++                        var current = Math.floor(eased * target);
++
++                        if (target >= 1000) {
++                            el.textContent = current.toLocaleString('fr-FR') + '+';
++                        } else {
++                            el.textContent = current + '+';
++                        }
++
++                        if (progress < 1) {
++                            requestAnimationFrame(animateCount);
++                        }
++                    }
++
++                    requestAnimationFrame(animateCount);
++                    counterObserver.unobserve(el);
++                }
++            });
++        }, { threshold: 0.5 });
++
++        counters.forEach(function(counter) {
++            counterObserver.observe(counter);
++        });
++
++        // --- Back to top ---
++        var backToTop = document.getElementById('backToTop');
++
++        window.addEventListener('scroll', function() {
++            if (window.pageYOffset > 600) {
++                backToTop.classList.add('visible');
++            } else {
++                backToTop.classList.remove('visible');
++            }
++        });
++
++        backToTop.addEventListener('click', function() {
++            window.scrollTo({ top: 0, behavior: 'smooth' });
++        });
++
++        // --- Parallax subtle effect on hero ---
++        window.addEventListener('scroll', function() {
++            var scrolled = window.pageYOffset;
++            var heroContent = document.querySelector('.hero__content');
++            if (heroContent && scrolled < window.innerHeight) {
++                heroContent.style.transform = 'translateY(' + (scrolled * 0.3) + 'px)';
++                heroContent.style.opacity = 1 - (scrolled / window.innerHeight) * 0.8;
++            }
++        });
++
++        // --- Form submission ---
++        window.handleFormSubmit = function(e) {
++            e.preventDefault();
++            var btn = e.target.querySelector('button[type="submit"]');
++            var originalText = btn.textContent;
++            btn.textContent = 'Envoi en cours...';
++            btn.style.opacity = '0.7';
++            btn.disabled = true;
++
++            setTimeout(function() {
++                btn.textContent = 'Candidature envoy\u00e9e !';
++                btn.style.background = 'var(--benin-green)';
++                btn.style.color = 'white';
++                btn.style.opacity = '1';
++
++                setTimeout(function() {
++                    btn.textContent = originalText;
++                    btn.style.background = '';
++                    btn.style.color = '';
++                    btn.disabled = false;
++                    e.target.reset();
++                }, 3000);
++            }, 1500);
++        };
++
++    })();
++    </script>
+ 
+ </body>
+ </html>

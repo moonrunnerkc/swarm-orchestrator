@@ -1,0 +1,26 @@
+{
+  "id": "cursor-walkertop-pl-pipeline-standalone-pr2",
+  "agent": {
+    "vendor": "cursor",
+    "confidence": "medium",
+    "source": "body=cursor-session-url"
+  },
+  "pr": {
+    "number": 2,
+    "headSha": "17105074ca072345909f716c0d48066d465ad096",
+    "baseSha": "c883487ec85a66c5363eda494fb55745b4d55724",
+    "title": "feat: add agent execution loop and codex cli executor",
+    "body": "## Summary\r\n- Add `pl agent run` as the agent execution control-plane loop with gate verification, repair context, retry, and trace events.\r\n- Harden repair policy through project config and failure-kind classification.\r\n- Add agent trace metadata for provider/model/prompt/artifacts/tool calls/tokens.\r\n- Add `codex-cli` executor support plus a fake Codex demo and new project adoption guide.\r\n\r\n## Test Plan\r\n- `git status --short --branch`\r\n- `bash tests/cli/test-pl-agent.sh` -> pass: 6, fail: 0\r\n- `bash examples/demo-agent-codex-cli/run-demo.sh` -> `Codex CLI Demo OK`\r\n- `./bin/pl status --self-check` -> `OK: lightweight validator passed (4 changes)`\r\n- `git diff --check` -> no output\r\n\r\n## Notes\r\n- This PR does not merge directly into `main`; it keeps review and merge explicit.\r\n- The Codex demo uses a fake `codex` binary, so CI and local smoke tests do not require Codex login state.\n\n<!-- CURSOR_SUMMARY -->\n---\n\n> [!NOTE]\n> **Medium Risk**\n> Adds a new command runner that executes arbitrary shell commands and introduces new retry/repair logic and trace emission paths, which could impact CI behavior and local workflows if edge cases mis-handle exit codes or config parsing. Changes are largely additive and covered by new CLI tests and runnable demos, reducing regression risk.\n> \n> **Overview**\n> Introduces **`pl agent run`** as a new CLI namespace and `scripts/pl-agent-run.sh` runner that executes an executor command, optionally runs `pl run --gate <X>` for verification, and on failure generates a Markdown *repair context* and retries repairs within a configured budget while emitting new `agent.*` trace events.\n> \n> Extends the loop with **config-driven repair policy** (`agent.repair.max_retries` and `agent.repair.strategy.<failure_kind>`), basic failure-kind classification, and optional **agent trace metadata** flags (`--provider/--model/--prompt-path/--*-artifact/--tool-call/--tokens-*`) merged into emitted events and `--json` output.\n> \n> Adds a **`codex-cli` executor** that builds a `codex exec ... - < prompt` invocation (with sandbox/approval/bin/extra args), plus new demos (`demo-agent-loop`, `demo-agent-crud-service`, `demo-agent-codex-cli` w/ fake codex), a new adoption guide and agent loop docs, CI wiring to run `tests/cli/test-pl-agent.sh`, and minor hygiene updates (ignore Python/tmp demo artifacts; `pl-status.sh` mktemp suffix tweak).\n> \n> <sup>Reviewed by [Cursor Bugbot](https://cursor.com/bugbot) for commit 17105074ca072345909f716c0d48066d465ad096. Bugbot is set up for automated code reviews on this repo. Configure [here](https://www.cursor.com/dashboard/bugbot).</sup>\n<!-- /CURSOR_SUMMARY -->",
+    "author": "walkertop",
+    "headRef": "codex-codex-cli-executor",
+    "repository": "walkertop/pl-pipeline-standalone"
+  },
+  "diffRef": {
+    "repository": "walkertop/pl-pipeline-standalone",
+    "headSha": "17105074ca072345909f716c0d48066d465ad096",
+    "baseSha": "c883487ec85a66c5363eda494fb55745b4d55724"
+  },
+  "vendoredDiffPath": "unconfirmed/cursor/cursor-walkertop-pl-pipeline-standalone-pr2.diff",
+  "vendoredAt": "2026-05-24T03:13:48.177Z",
+  "collectedAt": "2026-05-24T03:13:48.177Z"
+}

@@ -1,0 +1,26 @@
+{
+  "id": "cursor-blueyi-blueyi.github.io-pr11",
+  "agent": {
+    "vendor": "cursor",
+    "confidence": "medium",
+    "source": "branch=cursor/+body=cursor-session-url"
+  },
+  "pr": {
+    "number": 11,
+    "headSha": "cd500556c9239f62078a6f8490bf437afa2e7a73",
+    "baseSha": "a9fb6cf56ca58289a5bfa36c4eee6024f3ed964a",
+    "title": "feat(home): schedule-aware status pill in HKT",
+    "body": "<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n## Summary\n\nReplace the static `available for work` string in the topbar with a self-updating state machine driven by **Hong Kong wall-clock time** (UTC+8, no DST). The pill re-evaluates every 60 s and fades smoothly between states.\n\n## State table\n\n| When (HKT) | Dot | Text |\n|---|---|---|\n| Mon–Fri **08:00–22:00** | 🟢 green | `online · HKT` |\n| Mon–Fri **22:00–24:00** | 🔵 cyan | `wrapping up · HKT` |\n| Mon–Fri **00:00–08:00** | ⚪ gray | `offline · back 08:00 HKT` |\n| Sat / Sun **09:00–22:00** | 🟡 amber | `weekend · slow replies` |\n| Sat **22–24** / Sun **00–09** / Sat **00–09** | ⚪ gray | `offline · back 09:00 HKT` |\n| Sun **22:00–24:00** | ⚪ gray | `offline · back monday` |\n\nRight now (Sun 02:00 UTC → Sun 10:00 HKT) the pill should be showing **amber · weekend · slow replies**.\n\n## Implementation notes\n\n- **Zero dependencies.** Time is computed by shifting `Date.now()` by +8 h and reading via UTC accessors — robust to the visitor's local timezone and any DST in their locale.\n- New state classes `.s-green` / `.s-cyan` / `.s-amber` / `.s-gray` / `.s-purple` flip a single `--state-color` custom property. The live dot picks it up via `color` + `text-shadow` and keeps its existing pulse animation.\n- 280 ms fade-swap on each transition so the change feels intentional, not jittery.\n- Text node wrapped in `<span class=\"status-text\" id=\"status-text\">…</span>` so JS swaps content without touching the dot or the pulse.\n- Title tooltip: *\"status follows Hong Kong wall-clock time, refreshed every minute\"*.\n\n## Verification\n\n- Dry-run of `pickState()` across every weekday × 11 sample hours: state grid matches the table above; no off-by-one at the 08/09/22 boundaries.\n- `GET /` → 200 (81 KB).\n- HTML tag balance: clean.\n- Inline JS: `node --check` OK.\n\n## Easy follow-ups (not in this PR)\n\n- Tweak `WAKE_WEEKDAY_HM` / `WAKE_WEEKEND_HM` constants if you want different \"online\" windows.\n- Add a one-off override (e.g. a `data-status=\"vacation\"` attribute or a small \"manual override\" branch) when you want to pin a state for travel / interviews / etc.\n\n<!-- CURSOR_AGENT_PR_BODY_END -->\n\n<div><a href=\"https://cursor.com/agents/bc-36ff47cc-c127-4ef9-babf-b850b23c6781\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/background-agent?bcId=bc-36ff47cc-c127-4ef9-babf-b850b23c6781\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-light.png\"><img alt=\"Open in Cursor\" width=\"131\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"></picture></a>&nbsp;</div>\n\n",
+    "author": "blueyi",
+    "headRef": "cursor/schedule-aware-status-6781",
+    "repository": "blueyi/blueyi.github.io"
+  },
+  "diffRef": {
+    "repository": "blueyi/blueyi.github.io",
+    "headSha": "cd500556c9239f62078a6f8490bf437afa2e7a73",
+    "baseSha": "a9fb6cf56ca58289a5bfa36c4eee6024f3ed964a"
+  },
+  "vendoredDiffPath": "cursor/cursor-blueyi-blueyi.github.io-pr11.diff",
+  "vendoredAt": "2026-05-24T03:12:25.221Z",
+  "collectedAt": "2026-05-24T03:12:25.221Z"
+}

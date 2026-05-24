@@ -1,0 +1,26 @@
+{
+  "id": "cursor-jacobprall-render-coding-agents-pr9",
+  "agent": {
+    "vendor": "cursor",
+    "confidence": "medium",
+    "source": "branch=cursor/+body=cursor-session-url"
+  },
+  "pr": {
+    "number": 9,
+    "headSha": "4b3ece0cb8b93f864d8238f83fdbbbc807ed7ce2",
+    "baseSha": "ddb262378274e4b1965a6d55dc72816b70c469aa",
+    "title": "Sprint 2 Kickoff: Automations Foundation (R1, R2, R6)",
+    "body": "<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n## Sprint 2 Kickoff + Specification + Clarification\n\nInitializes Sprint 2 of the Marathon-driven development cycle, targeting Milestone 2 (Automations).\n\n### Selected Requirements\n\n| ID | Title | Scope |\n|----|-------|-------|\n| R1 | Schedule/Cron Triggers | Automation entity + cron scheduler service |\n| R2 | Event Triggers (GitHub/GitLab) | Extend InboundRouter for automation dispatch |\n| R6 | Automation Builder UI | Create/list scaffold for managing automations |\n\n### Artifacts Produced\n\n| File | Pipeline Step | Description |\n|------|--------------|-------------|\n| `.marathon/sprints/002/spec.md` | speckit-specify | 5 user stories, 15 FRs, 7 success criteria |\n| `.marathon/sprints/002/clarifications.md` | speckit-clarify | 10 ambiguities resolved, 5 alt implementations |\n\n### Key Architecture Decisions\n\n- **No backward compatibility constraint** on InboundRouter — refactor to multi-match (evaluate-all)\n- **Polling scheduler** inside gateway (30s interval, Redis lock) over dedicated cron service\n- **Single-page form** with collapsible sections for builder UI (not multi-step wizard)\n- **`cron-parser`** library for cron expression validation + next-run calculation\n- **FK + audit table** for session-automation linkage (fast filtering + rich history)\n- **Automation status**: `active` / `paused` / `error` (auto-error after 3 consecutive failures)\n- **Cooldown** on event automations to prevent thundering herd\n\n### Sprint Goals\n\nSprint 2 delivers the automation foundation: a persistent automation entity with cron/schedule triggers that fire unattended agent sessions, GitHub/GitLab event bindings via a refactored InboundRouter with multi-match dispatch, and a web UI scaffold (list + create flow) for managing automations.\n\n### Next Steps (Sprint DAG)\n\n1. ~~specify~~ ✅\n2. ~~clarify~~ ✅\n3. plan → implementation plan with file paths and API contracts\n4. architect-review → structural validation\n5. ux-review → UI/UX validation\n6. decompose → task breakdown for parallel implementation\n<!-- CURSOR_AGENT_PR_BODY_END -->\n\n<div><a href=\"https://cursor.com/agents/bc-462f0288-99ac-458b-8320-a1a983da9927\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/background-agent?bcId=bc-462f0288-99ac-458b-8320-a1a983da9927\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-light.png\"><img alt=\"Open in Cursor\" width=\"131\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"></picture></a>&nbsp;</div>\n\n",
+    "author": "jacobprall",
+    "headRef": "cursor/sprint-2-kickoff-9927",
+    "repository": "jacobprall/render-coding-agents"
+  },
+  "diffRef": {
+    "repository": "jacobprall/render-coding-agents",
+    "headSha": "4b3ece0cb8b93f864d8238f83fdbbbc807ed7ce2",
+    "baseSha": "ddb262378274e4b1965a6d55dc72816b70c469aa"
+  },
+  "vendoredDiffPath": "cursor/cursor-jacobprall-render-coding-agents-pr9.diff",
+  "vendoredAt": "2026-05-24T03:12:15.243Z",
+  "collectedAt": "2026-05-24T03:12:15.243Z"
+}

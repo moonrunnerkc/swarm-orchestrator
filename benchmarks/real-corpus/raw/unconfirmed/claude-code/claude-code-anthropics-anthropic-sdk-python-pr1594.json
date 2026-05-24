@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-python-pr1594",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1594,
+    "headSha": "6e4a8571641f09a296c49e20863913b4a1eb55de",
+    "baseSha": "5db69c6d5f3e7e39023973ca4b235046e5661157",
+    "title": "fix: allow both append_messages and generate_tool_call_response in tool runner loop",
+    "body": "## Summary\n\nWhen users call both `append_messages()` AND `generate_tool_call_response()` in the same loop iteration (e.g., to log the tool result), the tool result was never added to history because `_messages_modified = True` bypassed the auto-append. This caused infinite loops as the model re-called the same tool with no history of the result.\n\n## Root Cause\n\nThe original code:\n```python\nif not self._messages_modified:\n    self.append_messages(message, response)\n```\n\nWhen `append_messages()` was called first, it set `_messages_modified = True`, so the auto-append was skipped. But since `generate_tool_call_response()` was also called (and cached), the tool result was never added.\n\n## Fix\n\nChanged the logic to:\n```python\nif self._messages_modified:\n    self._cached_tool_call_response = None\n    self._messages_modified = False\n\nself.append_messages(message, response)\n```\n\nNow the auto-append always happens, clearing the cache and reset flag if needed. Users can still access the tool result via `generate_tool_call_response()` before the loop continues.\n\n## Testing\n\nThe fix was verified against the minimal repro from the issue:\n```python\nfor message in runner:\n    tool_response = runner.generate_tool_call_response()\n    if tool_response:\n        print(f\"Tool result: {tool_response}\")\n\n    runner.append_messages({\"role\": \"user\", \"content\": \"be concise in your response\"})\n```\n\nNow terminates correctly instead of infinite looping.\n\n## Related Issue\n\nCloses #1536 — _append_messages() inside tool runner loop causes infinite loop_",
+    "author": "AliSharjeell",
+    "headRef": "fix/tool-runner-append-messages",
+    "repository": "anthropics/anthropic-sdk-python"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-python",
+    "headSha": "6e4a8571641f09a296c49e20863913b4a1eb55de",
+    "baseSha": "5db69c6d5f3e7e39023973ca4b235046e5661157"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-python-pr1594.diff",
+  "vendoredAt": "2026-05-24T03:16:50.698Z",
+  "collectedAt": "2026-05-24T03:16:50.698Z"
+}

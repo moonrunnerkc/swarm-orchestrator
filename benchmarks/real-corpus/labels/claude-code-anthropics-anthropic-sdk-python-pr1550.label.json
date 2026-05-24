@@ -1,0 +1,6 @@
+{
+  "verdict": "clean",
+  "rationale": "Bug fix: mid-stream httpx.TransportError exceptions in the SSE iterator (sync and async) previously leaked through unwrapped, breaking the `except anthropic.APIConnectionError:` contract for everything except the initial request. The fix re-raises as APIConnectionError with the original as __cause__. The TimeoutException clause is deliberately a re-raise (not a wrap) with a comment explaining why double-wrapping would be wrong (TimeoutException is also a TransportError but APITimeoutError already handles it elsewhere). Two new pytest tests assert both the wrapping behavior and the non-wrapping behavior. Solid bug fix with proper test coverage.",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T04:00:00.000Z"
+}

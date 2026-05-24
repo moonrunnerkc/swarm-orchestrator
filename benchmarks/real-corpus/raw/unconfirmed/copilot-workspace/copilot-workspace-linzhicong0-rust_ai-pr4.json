@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-linzhicong0-rust_ai-pr4",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 4,
+    "headSha": "e4ec7fdb94e13909e9957f31858bc56cdb525316",
+    "baseSha": "2c18093ea6a9cf8eabce7bf0481ab1aae4dcae36",
+    "title": "Implement REQ-3.4, REQ-9.2, REQ-9.4, REQ-12.4 with tests",
+    "body": "## Summary\n\nImplements four requirements from `docs/requirements.html` that were marked as NOT DONE, with full test coverage matching the acceptance criteria.\n\n## Changes\n\n### REQ-3.4: Tool Validation (`crates/ai-core/src/tool.rs`)\n- Added `validate_tool_input()` function for JSON Schema validation of tool inputs\n- Added `coerce_input()` for compatible type coercion (e.g., string \"5\" → integer 5)\n- Added `ValidationError` struct with field path and descriptive message\n- Tests: valid input passes, missing required field error with path, string-to-int coercion, invalid type error\n\n### REQ-9.2: Output Parsing (`crates/ai-core/src/structured.rs`)\n- Added `fix_json()` function to fix trailing commas and unquoted keys\n- Added `extract_and_fix_json()` combining extraction with fixing\n- Tests: extract from markdown code blocks, extract from prose, fix trailing comma, fix unquoted key, retry with error feedback\n\n### REQ-9.4: Output Formatting (`crates/ai-core/src/output_format.rs`)\n- New module with `OutputFormat` enum (PlainText, Markdown, CodeBlock, Table, Custom)\n- `OutputFormatConfig` with template support\n- `format_output()` post-processing pipeline\n- Tests: markdown formatting, code block wrapping, table from JSON, custom template application\n\n### REQ-12.4: Rate Limiting (`crates/ai-core/src/rate_limit.rs`)\n- New module with `TokenBucketRateLimiter` using token bucket algorithm\n- `RateLimitConfig` for RPM/TPM limits\n- `try_acquire()` and `acquire()` (blocking/queuing) methods\n- Per-scope (provider/model/agent) independent limits\n- Tests: RPM allows exactly N requests, queued request after reset, TPM budget exceeded, independent agent limits, concurrent request handling\n\n### Documentation\n- Marked REQ-3.4, REQ-9.2, REQ-9.4, REQ-12.4 as done in `docs/requirements.html`\n\n## Testing\n\nAll new tests pass. Pre-existing failures in `config` and `prompt_injection` modules are unrelated.",
+    "author": "Copilot",
+    "headRef": "copilot/req-34-req-92-req-94-req-124-create-tests",
+    "repository": "linzhicong0/rust_ai"
+  },
+  "diffRef": {
+    "repository": "linzhicong0/rust_ai",
+    "headSha": "e4ec7fdb94e13909e9957f31858bc56cdb525316",
+    "baseSha": "2c18093ea6a9cf8eabce7bf0481ab1aae4dcae36"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-linzhicong0-rust_ai-pr4.diff",
+  "vendoredAt": "2026-05-24T03:05:31.285Z",
+  "collectedAt": "2026-05-24T03:05:31.285Z"
+}

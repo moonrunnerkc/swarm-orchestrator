@@ -1,0 +1,1287 @@
+diff --git a/app/layout.tsx b/app/layout.tsx
+index 05f819d..c569dfb 100644
+--- a/app/layout.tsx
++++ b/app/layout.tsx
+@@ -3,6 +3,7 @@ import type { Metadata } from "next"
+ import { Montserrat, Lato } from "next/font/google"
+ import { Analytics } from "@vercel/analytics/next"
+ import { LanguageProvider } from "@/contexts/language-context"
++import { AuthProvider } from "@/contexts/auth-context"
+ import { ScrollToTop } from "@/components/scroll-to-top"
+ import "./globals.css"
+ 
+@@ -52,7 +53,9 @@ export default function RootLayout({
+     <html lang="es">
+       <body className={`${montserrat.variable} ${lato.variable} font-sans antialiased`}>
+         <ScrollToTop />
+-        <LanguageProvider>{children}</LanguageProvider>
++        <LanguageProvider>
++          <AuthProvider>{children}</AuthProvider>
++        </LanguageProvider>
+         <Analytics />
+       </body>
+     </html>
+diff --git a/app/perfil/page.tsx b/app/perfil/page.tsx
+new file mode 100644
+index 0000000..e468529
+--- /dev/null
++++ b/app/perfil/page.tsx
+@@ -0,0 +1,21 @@
++import { Navigation } from "@/components/navigation"
++import { Footer } from "@/components/footer"
++import { ProfileView } from "@/components/profile-view"
++import type { Metadata } from "next"
++
++export const metadata: Metadata = {
++  title: "Mi Perfil | Patagonia Trek",
++  description: "Gestioná tu perfil y avatar de usuario en Patagonia Trek",
++}
++
++export default function ProfilePage() {
++  return (
++    <main className="min-h-screen">
++      <Navigation />
++      <div className="pt-16">
++        <ProfileView />
++      </div>
++      <Footer />
++    </main>
++  )
++}
+diff --git a/components/navigation.tsx b/components/navigation.tsx
+index 460061a..e9d8228 100644
+--- a/components/navigation.tsx
++++ b/components/navigation.tsx
+@@ -2,14 +2,47 @@
+ 
+ import { useState } from "react"
+ import Link from "next/link"
+-import { Menu, X, Globe } from "lucide-react"
++import { Menu, X, Globe, User, LogOut, Camera } from "lucide-react"
+ import { Button } from "@/components/ui/button"
++import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
++import {
++  DropdownMenu,
++  DropdownMenuContent,
++  DropdownMenuItem,
++  DropdownMenuLabel,
++  DropdownMenuSeparator,
++  DropdownMenuTrigger,
++} from "@/components/ui/dropdown-menu"
++import {
++  Dialog,
++  DialogContent,
++  DialogDescription,
++  DialogFooter,
++  DialogHeader,
++  DialogTitle,
++} from "@/components/ui/dialog"
++import { Input } from "@/components/ui/input"
++import { Label } from "@/components/ui/label"
+ import { useLanguage } from "@/contexts/language-context"
++import { useAuth } from "@/contexts/auth-context"
+ import { createWhatsAppHref } from "@/lib/whatsapp"
++import { safeAvatarSrc } from "@/lib/avatar"
+ 
+ export function Navigation() {
+   const [isOpen, setIsOpen] = useState(false)
+-  const { language, toggleLanguage } = useLanguage()
++  const [showAuthDialog, setShowAuthDialog] = useState(false)
++  const [authMode, setAuthMode] = useState<"login" | "register">("login")
++  const [authError, setAuthError] = useState("")
++  const [authLoading, setAuthLoading] = useState(false)
++
++  // Auth form fields
++  const [email, setEmail] = useState("")
++  const [password, setPassword] = useState("")
++  const [firstName, setFirstName] = useState("")
++  const [lastName, setLastName] = useState("")
++
++  const { language, toggleLanguage, t } = useLanguage()
++  const { user, logout } = useAuth()
+ 
+   const navItems =
+     language === "es"
+@@ -24,88 +57,380 @@ export function Navigation() {
+           { label: "Contact", href: createWhatsAppHref(), isExternal: true },
+         ]
+ 
++  function getUserInitials() {
++    if (!user) return ""
++    return `${user.firstName.charAt(0)}${user.lastName.charAt(0)}`.toUpperCase()
++  }
++
++  function openAuth(mode: "login" | "register") {
++    setAuthMode(mode)
++    setAuthError("")
++    setEmail("")
++    setPassword("")
++    setFirstName("")
++    setLastName("")
++    setShowAuthDialog(true)
++  }
++
++  async function handleAuthSubmit(e: React.FormEvent) {
++    e.preventDefault()
++    setAuthError("")
++    setAuthLoading(true)
++
++    // Dynamic import to avoid issues with SSR
++    const { useAuth: getAuth } = await import("@/contexts/auth-context")
++    // We already have access to auth context via the hook, but we need login/register
++    // Let's use the auth context directly
++  }
++
+   return (
+-    <nav className="fixed top-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-b border-border">
+-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+-        <div className="flex items-center justify-between h-16">
+-          {/* Logo */}
+-          <Link href="/" className="flex items-center space-x-2">
+-            <div className="text-2xl font-bold text-red-500 hover:text-red-600 transition-colors">
+-              {language === "es" ? "Patagonia Trek" : "Patagonia Trek"}
+-            </div>
+-          </Link>
++    <>
++      <nav className="fixed top-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-b border-border">
++        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
++          <div className="flex items-center justify-between h-16">
++            {/* Logo */}
++            <Link href="/" className="flex items-center space-x-2">
++              <div className="text-2xl font-bold text-red-500 hover:text-red-600 transition-colors">
++                {language === "es" ? "Patagonia Trek" : "Patagonia Trek"}
++              </div>
++            </Link>
+ 
+-          {/* Desktop Navigation */}
+-          <div className="hidden md:flex items-center space-x-8">
+-            {navItems.map((item) => (
+-              item.isExternal ? (
+-                <a
+-                  key={item.label}
+-                  href={item.href}
+-                  target="_blank"
+-                  rel="noopener noreferrer"
+-                  className="text-blue-600 hover:text-primary transition-colors font-medium"
+-                >
+-                  {item.label}
+-                </a>
++            {/* Desktop Navigation */}
++            <div className="hidden md:flex items-center space-x-8">
++              {navItems.map((item) => (
++                item.isExternal ? (
++                  <a
++                    key={item.label}
++                    href={item.href}
++                    target="_blank"
++                    rel="noopener noreferrer"
++                    className="text-blue-600 hover:text-primary transition-colors font-medium"
++                  >
++                    {item.label}
++                  </a>
++                ) : (
++                  <Link
++                    key={item.href}
++                    href={item.href}
++                    className="text-blue-600 hover:text-primary transition-colors font-medium"
++                  >
++                    {item.label}
++                  </Link>
++                )
++              ))}
++              <Button variant="ghost" size="icon" onClick={toggleLanguage}>
++                <Globe className="h-5 w-5" />
++                <span className="sr-only">Change language</span>
++              </Button>
++
++              {/* Auth: Avatar or Login Button */}
++              {user ? (
++                <UserAvatarMenu user={user} logout={logout} t={t} />
+               ) : (
+-                <Link
+-                  key={item.href}
+-                  href={item.href}
+-                  className="text-blue-600 hover:text-primary transition-colors font-medium"
++                <Button
++                  variant="outline"
++                  size="sm"
++                  onClick={() => openAuth("login")}
++                  className="ml-2"
+                 >
+-                  {item.label}
+-                </Link>
+-              )
+-            ))}
+-            <Button variant="ghost" size="icon" onClick={toggleLanguage} className="ml-auto">
+-              <Globe className="h-5 w-5" />
+-              <span className="sr-only">Change language</span>
+-            </Button>
+-          </div>
++                  <User className="h-4 w-4 mr-2" />
++                  {t("Ingresar", "Sign In")}
++                </Button>
++              )}
++            </div>
+ 
+-          {/* Mobile menu button */}
+-          <div className="md:hidden flex items-center gap-2">
+-            <Button variant="ghost" size="icon" onClick={toggleLanguage}>
+-              <Globe className="h-5 w-5" />
+-            </Button>
+-            <Button variant="ghost" size="icon" onClick={() => setIsOpen(!isOpen)}>
+-              {isOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+-            </Button>
++            {/* Mobile menu button */}
++            <div className="md:hidden flex items-center gap-2">
++              {user ? (
++                <UserAvatarMenu user={user} logout={logout} t={t} />
++              ) : (
++                <Button variant="ghost" size="icon" onClick={() => openAuth("login")}>
++                  <User className="h-5 w-5" />
++                </Button>
++              )}
++              <Button variant="ghost" size="icon" onClick={toggleLanguage}>
++                <Globe className="h-5 w-5" />
++              </Button>
++              <Button variant="ghost" size="icon" onClick={() => setIsOpen(!isOpen)}>
++                {isOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
++              </Button>
++            </div>
+           </div>
+         </div>
+-      </div>
+-
+-      {/* Mobile menu */}
+-      {isOpen && (
+-        <div className="md:hidden border-t border-border">
+-          <div className="px-4 pt-2 pb-3 space-y-1">
+-            {navItems.map((item) => (
+-              item.isExternal ? (
+-                <a
+-                  key={item.label}
+-                  href={item.href}
+-                  target="_blank"
+-                  rel="noopener noreferrer"
+-                  className="block px-3 py-2 text-base font-medium text-blue-600 hover:text-primary hover:bg-accent rounded-md transition-colors"
+-                  onClick={() => setIsOpen(false)}
+-                >
+-                  {item.label}
+-                </a>
+-              ) : (
++
++        {/* Mobile menu */}
++        {isOpen && (
++          <div className="md:hidden border-t border-border">
++            <div className="px-4 pt-2 pb-3 space-y-1">
++              {navItems.map((item) => (
++                item.isExternal ? (
++                  <a
++                    key={item.label}
++                    href={item.href}
++                    target="_blank"
++                    rel="noopener noreferrer"
++                    className="block px-3 py-2 text-base font-medium text-blue-600 hover:text-primary hover:bg-accent rounded-md transition-colors"
++                    onClick={() => setIsOpen(false)}
++                  >
++                    {item.label}
++                  </a>
++                ) : (
++                  <Link
++                    key={item.href}
++                    href={item.href}
++                    className="block px-3 py-2 text-base font-medium text-blue-600 hover:text-primary hover:bg-accent rounded-md transition-colors"
++                    onClick={() => setIsOpen(false)}
++                  >
++                    {item.label}
++                  </Link>
++                )
++              ))}
++              {user && (
+                 <Link
+-                  key={item.href}
+-                  href={item.href}
++                  href="/perfil"
+                   className="block px-3 py-2 text-base font-medium text-blue-600 hover:text-primary hover:bg-accent rounded-md transition-colors"
+                   onClick={() => setIsOpen(false)}
+                 >
+-                  {item.label}
++                  {t("Mi Perfil", "My Profile")}
+                 </Link>
+-              )
+-            ))}
++              )}
++            </div>
+           </div>
+-        </div>
+-      )}
+-    </nav>
++        )}
++      </nav>
++
++      {/* Auth Dialog */}
++      <AuthDialog
++        open={showAuthDialog}
++        onOpenChange={setShowAuthDialog}
++        mode={authMode}
++        setMode={setAuthMode}
++        t={t}
++      />
++    </>
++  )
++}
++
++// ─── User Avatar Menu Component ──────────────────────────────────────────────
++
++function UserAvatarMenu({
++  user,
++  logout,
++  t,
++}: {
++  user: { firstName: string; lastName: string; avatarUrl: string | null }
++  logout: () => Promise<void>
++  t: (es: string, en: string) => string
++}) {
++  const initials = `${user.firstName.charAt(0)}${user.lastName.charAt(0)}`.toUpperCase()
++  // Sanitize avatar URL at render time. `safeAvatarSrc` rejects anything that
++  // is not an http(s) URL or an allowlisted base64 image data URL, blocking
++  // payloads like `data:text/html,<script>...</script>` even if they were
++  // somehow persisted server-side.
++  const safeAvatar = safeAvatarSrc(user.avatarUrl)
++
++  return (
++    <DropdownMenu>
++      <DropdownMenuTrigger asChild>
++        <Button variant="ghost" className="relative h-9 w-9 rounded-full p-0">
++          <Avatar className="h-9 w-9">
++            {safeAvatar ? (
++              <AvatarImage src={safeAvatar} alt={`${user.firstName} ${user.lastName}`} />
++            ) : null}
++            <AvatarFallback className="bg-primary text-primary-foreground text-sm font-medium">
++              {initials}
++            </AvatarFallback>
++          </Avatar>
++        </Button>
++      </DropdownMenuTrigger>
++      <DropdownMenuContent className="w-56" align="end" forceMount>
++        <DropdownMenuLabel className="font-normal">
++          <div className="flex flex-col space-y-1">
++            <p className="text-sm font-medium leading-none">{user.firstName} {user.lastName}</p>
++          </div>
++        </DropdownMenuLabel>
++        <DropdownMenuSeparator />
++        <DropdownMenuItem asChild>
++          <Link href="/perfil" className="cursor-pointer">
++            <Camera className="mr-2 h-4 w-4" />
++            {t("Mi Perfil", "My Profile")}
++          </Link>
++        </DropdownMenuItem>
++        <DropdownMenuSeparator />
++        <DropdownMenuItem
++          className="cursor-pointer"
++          onClick={() => logout()}
++        >
++          <LogOut className="mr-2 h-4 w-4" />
++          {t("Cerrar sesión", "Sign Out")}
++        </DropdownMenuItem>
++      </DropdownMenuContent>
++    </DropdownMenu>
++  )
++}
++
++// ─── Auth Dialog Component ───────────────────────────────────────────────────
++
++function AuthDialog({
++  open,
++  onOpenChange,
++  mode,
++  setMode,
++  t,
++}: {
++  open: boolean
++  onOpenChange: (open: boolean) => void
++  mode: "login" | "register"
++  setMode: (mode: "login" | "register") => void
++  t: (es: string, en: string) => string
++}) {
++  const { login, register } = useAuth()
++  const [error, setError] = useState("")
++  const [loading, setLoading] = useState(false)
++  const [email, setEmail] = useState("")
++  const [password, setPassword] = useState("")
++  const [firstName, setFirstName] = useState("")
++  const [lastName, setLastName] = useState("")
++
++  function resetForm() {
++    setEmail("")
++    setPassword("")
++    setFirstName("")
++    setLastName("")
++    setError("")
++  }
++
++  function switchMode(newMode: "login" | "register") {
++    resetForm()
++    setMode(newMode)
++  }
++
++  async function handleSubmit(e: React.FormEvent) {
++    e.preventDefault()
++    setError("")
++    setLoading(true)
++
++    try {
++      if (mode === "login") {
++        const result = await login({ email, password })
++        if (result.success) {
++          resetForm()
++          onOpenChange(false)
++        } else {
++          setError(result.error || "Error")
++        }
++      } else {
++        const result = await register({ firstName, lastName, email, password })
++        if (result.success) {
++          resetForm()
++          onOpenChange(false)
++        } else {
++          setError(result.error || "Error")
++        }
++      }
++    } finally {
++      setLoading(false)
++    }
++  }
++
++  return (
++    <Dialog open={open} onOpenChange={(val) => { if (!val) resetForm(); onOpenChange(val) }}>
++      <DialogContent className="sm:max-w-[425px]">
++        <DialogHeader>
++          <DialogTitle>
++            {mode === "login"
++              ? t("Iniciar Sesión", "Sign In")
++              : t("Crear Cuenta", "Create Account")}
++          </DialogTitle>
++          <DialogDescription>
++            {mode === "login"
++              ? t(
++                  "Ingresá tus datos para acceder a tu cuenta",
++                  "Enter your credentials to access your account"
++                )
++              : t(
++                  "Completá tus datos para crear una cuenta nueva",
++                  "Fill in your details to create a new account"
++                )}
++          </DialogDescription>
++        </DialogHeader>
++
++        <form onSubmit={handleSubmit} className="space-y-4">
++          {mode === "register" && (
++            <div className="grid grid-cols-2 gap-4">
++              <div className="space-y-2">
++                <Label htmlFor="auth-firstName">{t("Nombre", "First Name")}</Label>
++                <Input
++                  id="auth-firstName"
++                  value={firstName}
++                  onChange={(e) => setFirstName(e.target.value)}
++                  required
++                  placeholder="Juan"
++                />
++              </div>
++              <div className="space-y-2">
++                <Label htmlFor="auth-lastName">{t("Apellido", "Last Name")}</Label>
++                <Input
++                  id="auth-lastName"
++                  value={lastName}
++                  onChange={(e) => setLastName(e.target.value)}
++                  required
++                  placeholder="Perez"
++                />
++              </div>
++            </div>
++          )}
++
++          <div className="space-y-2">
++            <Label htmlFor="auth-email">{t("Email", "Email")}</Label>
++            <Input
++              id="auth-email"
++              type="email"
++              value={email}
++              onChange={(e) => setEmail(e.target.value)}
++              required
++              placeholder="juan@ejemplo.com"
++            />
++          </div>
++
++          <div className="space-y-2">
++            <Label htmlFor="auth-password">{t("Contraseña", "Password")}</Label>
++            <Input
++              id="auth-password"
++              type="password"
++              value={password}
++              onChange={(e) => setPassword(e.target.value)}
++              required
++              minLength={6}
++              placeholder={t("Mínimo 6 caracteres", "At least 6 characters")}
++            />
++          </div>
++
++          {error && (
++            <p className="text-sm text-destructive">{error}</p>
++          )}
++
++          <DialogFooter className="flex-col gap-2 sm:flex-col">
++            <Button type="submit" className="w-full" disabled={loading}>
++              {loading
++                ? t("Cargando...", "Loading...")
++                : mode === "login"
++                  ? t("Ingresar", "Sign In")
++                  : t("Crear Cuenta", "Create Account")}
++            </Button>
++            <Button
++              type="button"
++              variant="link"
++              className="w-full text-sm"
++              onClick={() => switchMode(mode === "login" ? "register" : "login")}
++            >
++              {mode === "login"
++                ? t("¿No tenés cuenta? Crear una", "Don't have an account? Create one")
++                : t("¿Ya tenés cuenta? Ingresá", "Already have an account? Sign in")}
++            </Button>
++          </DialogFooter>
++        </form>
++      </DialogContent>
++    </Dialog>
+   )
+-}
+\ No newline at end of file
++}
+diff --git a/components/profile-view.tsx b/components/profile-view.tsx
+new file mode 100644
+index 0000000..83ef639
+--- /dev/null
++++ b/components/profile-view.tsx
+@@ -0,0 +1,258 @@
++"use client"
++
++import { useRef, useState } from "react"
++import { useRouter } from "next/navigation"
++import { Camera, Trash2, Upload, User } from "lucide-react"
++import { Button } from "@/components/ui/button"
++import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
++import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
++import { useLanguage } from "@/contexts/language-context"
++import { useAuth } from "@/contexts/auth-context"
++import {
++  ALLOWED_AVATAR_MIME_TYPES,
++  safeAvatarSrc,
++  validateAvatarDataUrl,
++} from "@/lib/avatar"
++
++export function ProfileView() {
++  const { t } = useLanguage()
++  const { user, isLoading, updateAvatar, removeAvatar } = useAuth()
++  const router = useRouter()
++  const fileInputRef = useRef<HTMLInputElement>(null)
++  const [uploading, setUploading] = useState(false)
++  const [error, setError] = useState("")
++  const [success, setSuccess] = useState("")
++
++  // Redirect to home if not logged in
++  if (!isLoading && !user) {
++    router.push("/")
++    return null
++  }
++
++  if (isLoading) {
++    return (
++      <div className="min-h-[60vh] flex items-center justify-center">
++        <p className="text-muted-foreground">{t("Cargando...", "Loading...")}</p>
++      </div>
++    )
++  }
++
++  if (!user) return null
++
++  const initials = `${user.firstName.charAt(0)}${user.lastName.charAt(0)}`.toUpperCase()
++  // Sanitize avatar URL at render time as defense-in-depth: even if a
++  // malicious value bypassed upload validation (e.g. injected directly into
++  // storage), it cannot reach an <img src=…> attribute unless it parses as a
++  // safe http(s):// URL or a base64 data URL with an allowlisted image MIME.
++  const safeAvatar = safeAvatarSrc(user.avatarUrl)
++
++  function handleFileSelect() {
++    fileInputRef.current?.click()
++  }
++
++  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
++    const file = e.target.files?.[0]
++    if (!file) return
++
++    // Validate file type against a strict allowlist (not a `image/*` prefix
++    // check, which would let through e.g. `image/svg+xml` -- SVGs can contain
++    // <script> and would re-introduce the XSS vector this code is guarding
++    // against).
++    if (
++      !(ALLOWED_AVATAR_MIME_TYPES as readonly string[]).includes(file.type)
++    ) {
++      setError(t("Por favor seleccioná una imagen válida", "Please select a valid image"))
++      return
++    }
++
++    // Validate file size (max 2MB)
++    if (file.size > 2 * 1024 * 1024) {
++      setError(t("La imagen no puede superar los 2MB", "Image must be under 2MB"))
++      return
++    }
++
++    setError("")
++    setSuccess("")
++    setUploading(true)
++
++    try {
++      // Read file as base64 data URL, then verify (a) the declared MIME is in
++      // our allowlist, (b) the decoded bytes' magic-byte signature matches
++      // that MIME, and (c) the bytes parse as a real image. This blocks
++      // payloads like `data:text/html,<script>...</script>` from ever
++      // reaching the avatar rendering path.
++      const rawDataUrl = await readFileAsDataUrl(file)
++      const dataUrl = await validateAvatarDataUrl(rawDataUrl)
++
++      const result = await updateAvatar(dataUrl)
++      if (result.success) {
++        setSuccess(t("Avatar actualizado correctamente", "Avatar updated successfully"))
++      } else {
++        setError(result.error || t("Error al actualizar avatar", "Error updating avatar"))
++      }
++    } catch {
++      setError(t("Error al procesar la imagen", "Error processing image"))
++    } finally {
++      setUploading(false)
++      // Reset file input
++      if (fileInputRef.current) fileInputRef.current.value = ""
++    }
++  }
++
++  async function handleRemoveAvatar() {
++    setError("")
++    setSuccess("")
++    setUploading(true)
++
++    try {
++      const result = await removeAvatar()
++      if (result.success) {
++        setSuccess(t("Avatar eliminado", "Avatar removed"))
++      } else {
++        setError(result.error || t("Error al eliminar avatar", "Error removing avatar"))
++      }
++    } finally {
++      setUploading(false)
++    }
++  }
++
++  return (
++    <div className="max-w-2xl mx-auto px-4 py-12">
++      <h1 className="text-3xl font-bold mb-8">{t("Mi Perfil", "My Profile")}</h1>
++
++      {/* Avatar Section */}
++      <Card className="mb-8">
++        <CardHeader>
++          <CardTitle className="flex items-center gap-2">
++            <Camera className="h-5 w-5" />
++            {t("Avatar", "Avatar")}
++          </CardTitle>
++          <CardDescription>
++            {t(
++              "Subí una foto de perfil. Se mostrará en la barra de navegación y tu perfil.",
++              "Upload a profile photo. It will be displayed in the navigation bar and your profile."
++            )}
++          </CardDescription>
++        </CardHeader>
++        <CardContent>
++          <div className="flex flex-col sm:flex-row items-center gap-6">
++            {/* Avatar preview */}
++            <Avatar className="h-28 w-28 border-4 border-muted">
++              {safeAvatar ? (
++                <AvatarImage src={safeAvatar} alt={`${user.firstName} ${user.lastName}`} />
++              ) : null}
++              <AvatarFallback className="bg-primary text-primary-foreground text-3xl font-medium">
++                {initials}
++              </AvatarFallback>
++            </Avatar>
++
++            {/* Upload controls */}
++            <div className="flex flex-col gap-3">
++              <input
++                ref={fileInputRef}
++                type="file"
++                accept="image/jpeg,image/png,image/webp,image/gif"
++                onChange={handleFileChange}
++                className="hidden"
++              />
++
++              <Button
++                onClick={handleFileSelect}
++                disabled={uploading}
++                variant="outline"
++                className="gap-2"
++              >
++                <Upload className="h-4 w-4" />
++                {uploading
++                  ? t("Subiendo...", "Uploading...")
++                  : safeAvatar
++                    ? t("Cambiar imagen", "Change image")
++                    : t("Subir imagen", "Upload image")}
++              </Button>
++
++              {safeAvatar && (
++                <Button
++                  onClick={handleRemoveAvatar}
++                  disabled={uploading}
++                  variant="ghost"
++                  className="gap-2 text-destructive hover:text-destructive"
++                >
++                  <Trash2 className="h-4 w-4" />
++                  {t("Eliminar avatar", "Remove avatar")}
++                </Button>
++              )}
++
++              <p className="text-xs text-muted-foreground">
++                {t(
++                  "JPG, PNG, WebP o GIF. Máximo 2MB.",
++                  "JPG, PNG, WebP or GIF. Max 2MB."
++                )}
++              </p>
++            </div>
++          </div>
++
++          {error && (
++            <p className="mt-4 text-sm text-destructive">{error}</p>
++          )}
++          {success && (
++            <p className="mt-4 text-sm text-green-600">{success}</p>
++          )}
++        </CardContent>
++      </Card>
++
++      {/* User Info Section */}
++      <Card>
++        <CardHeader>
++          <CardTitle className="flex items-center gap-2">
++            <User className="h-5 w-5" />
++            {t("Información Personal", "Personal Information")}
++          </CardTitle>
++        </CardHeader>
++        <CardContent>
++          <div className="space-y-4">
++            <div className="grid grid-cols-2 gap-4">
++              <div>
++                <p className="text-sm text-muted-foreground">{t("Nombre", "First Name")}</p>
++                <p className="font-medium">{user.firstName}</p>
++              </div>
++              <div>
++                <p className="text-sm text-muted-foreground">{t("Apellido", "Last Name")}</p>
++                <p className="font-medium">{user.lastName}</p>
++              </div>
++            </div>
++            <div>
++              <p className="text-sm text-muted-foreground">{t("Email", "Email")}</p>
++              <p className="font-medium">{user.email}</p>
++            </div>
++            <div>
++              <p className="text-sm text-muted-foreground">{t("Miembro desde", "Member since")}</p>
++              <p className="font-medium">
++                {new Date(user.createdAt).toLocaleDateString(
++                  t("es-AR", "en-US"),
++                  { year: "numeric", month: "long", day: "numeric" }
++                )}
++              </p>
++            </div>
++          </div>
++        </CardContent>
++      </Card>
++    </div>
++  )
++}
++
++// ─── Helpers ─────────────────────────────────────────────────────────────────
++
++function readFileAsDataUrl(file: File): Promise<string> {
++  return new Promise((resolve, reject) => {
++    const reader = new FileReader()
++    reader.onload = () => {
++      if (typeof reader.result === "string") {
++        resolve(reader.result)
++      } else {
++        reject(new Error("Failed to read file"))
++      }
++    }
++    reader.onerror = () => reject(reader.error)
++    reader.readAsDataURL(file)
++  })
++}
+diff --git a/contexts/auth-context.tsx b/contexts/auth-context.tsx
+new file mode 100644
+index 0000000..f4a4f10
+--- /dev/null
++++ b/contexts/auth-context.tsx
+@@ -0,0 +1,242 @@
++"use client"
++
++import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react"
++import type { User, LoginRequest, RegisterRequest } from "@/lib/types"
++import { isSafeAvatarUrl, validateAvatarDataUrl } from "@/lib/avatar"
++
++const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
++
++// SECURITY NOTE — server-side requirements for the /api/users/me/avatar
++// endpoints (PUT, DELETE):
++//   1. The endpoints MUST require a valid JWT in the `Authorization: Bearer …`
++//      header and reject (401) any request without one.
++//   2. The endpoints MUST re-validate the uploaded avatar payload (MIME
++//      allowlist, magic-byte signature, structural decode, max size). The
++//      client-side checks in `lib/avatar.ts` are defense-in-depth, not a
++//      substitute for server-side validation.
++//   3. Avatars SHOULD be stored as binary blobs and served from a separate,
++//      sandboxed origin (or with `Content-Disposition: attachment` and a
++//      strict CSP) to neutralize any HTML/script that bypasses validation.
++//
++// The backend implementation lives outside this repository, so we cannot
++// enforce these properties from here. The client-side mitigations below
++// (URL validation before send, automatic logout on 401/403) are intended to
++// reduce blast radius if the server is missing or misconfigured.
++
++type AuthContextType = {
++  user: User | null
++  isLoading: boolean
++  login: (data: LoginRequest) => Promise<{ success: boolean; error?: string }>
++  register: (data: RegisterRequest) => Promise<{ success: boolean; error?: string }>
++  logout: () => Promise<void>
++  updateAvatar: (avatarDataUrl: string) => Promise<{ success: boolean; error?: string }>
++  removeAvatar: () => Promise<{ success: boolean; error?: string }>
++}
++
++const AuthContext = createContext<AuthContextType | undefined>(undefined)
++
++export function AuthProvider({ children }: { children: ReactNode }) {
++  const [user, setUser] = useState<User | null>(null)
++  const [isLoading, setIsLoading] = useState(true)
++
++  // Restore session from localStorage on mount
++  useEffect(() => {
++    const token = localStorage.getItem("auth_token")
++    if (token) {
++      fetch(`${API_URL}/api/users/me`, {
++        headers: { Authorization: `Bearer ${token}` },
++      })
++        .then((res) => {
++          if (res.ok) return res.json()
++          // Token invalid, clean up
++          localStorage.removeItem("auth_token")
++          return null
++        })
++        .then((data) => {
++          if (data?.user) {
++            // Strip any avatar URL the server returns that fails our safety
++            // check, so a compromised / misbehaving server cannot inject an
++            // unsafe value into rendered <img src=…> attributes.
++            if (
++              data.user.avatarUrl != null &&
++              !isSafeAvatarUrl(data.user.avatarUrl)
++            ) {
++              data.user.avatarUrl = null
++            }
++            setUser(data.user)
++          }
++        })
++        .catch(() => {
++          localStorage.removeItem("auth_token")
++        })
++        .finally(() => setIsLoading(false))
++    } else {
++      setIsLoading(false)
++    }
++  }, [])
++
++  const login = useCallback(async (data: LoginRequest) => {
++    try {
++      const res = await fetch(`${API_URL}/api/users/login`, {
++        method: "POST",
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify(data),
++      })
++
++      const json = await res.json()
++
++      if (!res.ok) {
++        return { success: false, error: json.error || "Error al iniciar sesión" }
++      }
++
++      localStorage.setItem("auth_token", json.token)
++      setUser(json.user)
++      return { success: true }
++    } catch {
++      return { success: false, error: "Error de conexión con el servidor" }
++    }
++  }, [])
++
++  const register = useCallback(async (data: RegisterRequest) => {
++    try {
++      const res = await fetch(`${API_URL}/api/users/register`, {
++        method: "POST",
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify(data),
++      })
++
++      const json = await res.json()
++
++      if (!res.ok) {
++        return { success: false, error: json.error || "Error al crear la cuenta" }
++      }
++
++      localStorage.setItem("auth_token", json.token)
++      setUser(json.user)
++      return { success: true }
++    } catch {
++      return { success: false, error: "Error de conexión con el servidor" }
++    }
++  }, [])
++
++  const logout = useCallback(async () => {
++    const token = localStorage.getItem("auth_token")
++    if (token) {
++      try {
++        await fetch(`${API_URL}/api/users/logout`, {
++          method: "POST",
++          headers: { Authorization: `Bearer ${token}` },
++        })
++      } catch {
++        // Ignore network errors on logout
++      }
++    }
++    localStorage.removeItem("auth_token")
++    setUser(null)
++  }, [])
++
++  // If the server says the credential is invalid, drop it from storage so
++  // the next render returns the user to a logged-out state instead of
++  // continuing to send a bad token.
++  const handleAuthFailure = useCallback(() => {
++    localStorage.removeItem("auth_token")
++    setUser(null)
++  }, [])
++
++  const updateAvatar = useCallback(async (avatarDataUrl: string) => {
++    const token = localStorage.getItem("auth_token")
++    if (!token) return { success: false, error: "No autenticado" }
++
++    // Re-validate the data URL on this side of the boundary too. Even if a
++    // caller bypasses the upload UI, we never want to ship a non-image URL
++    // to the server (or, if the server is missing, persist one in state).
++    let safeDataUrl: string
++    try {
++      safeDataUrl = await validateAvatarDataUrl(avatarDataUrl)
++    } catch {
++      return { success: false, error: "Imagen inválida" }
++    }
++
++    try {
++      const res = await fetch(`${API_URL}/api/users/me/avatar`, {
++        method: "PUT",
++        headers: {
++          "Content-Type": "application/json",
++          Authorization: `Bearer ${token}`,
++        },
++        body: JSON.stringify({ avatarUrl: safeDataUrl }),
++      })
++
++      // Server says our token is bad: clear local auth state so the UI
++      // recovers instead of silently retrying with the same credential.
++      if (res.status === 401 || res.status === 403) {
++        handleAuthFailure()
++        return { success: false, error: "Sesión expirada. Iniciá sesión nuevamente." }
++      }
++
++      const json = await res.json()
++
++      if (!res.ok) {
++        return { success: false, error: json.error || "Error al actualizar avatar" }
++      }
++
++      // The server may echo back any value as `avatarUrl`. Re-validate before
++      // accepting it into client state so a misbehaving / compromised server
++      // cannot inject an unsafe URL into the rendered <img src=…>.
++      if (json.user && !isSafeAvatarUrl(json.user.avatarUrl) && json.user.avatarUrl !== null) {
++        return { success: false, error: "Respuesta del servidor inválida" }
++      }
++
++      setUser(json.user)
++      return { success: true }
++    } catch {
++      return { success: false, error: "Error de conexión con el servidor" }
++    }
++  }, [handleAuthFailure])
++
++  const removeAvatar = useCallback(async () => {
++    const token = localStorage.getItem("auth_token")
++    if (!token) return { success: false, error: "No autenticado" }
++
++    try {
++      const res = await fetch(`${API_URL}/api/users/me/avatar`, {
++        method: "DELETE",
++        headers: { Authorization: `Bearer ${token}` },
++      })
++
++      if (res.status === 401 || res.status === 403) {
++        handleAuthFailure()
++        return { success: false, error: "Sesión expirada. Iniciá sesión nuevamente." }
++      }
++
++      const json = await res.json()
++
++      if (!res.ok) {
++        return { success: false, error: json.error || "Error al eliminar avatar" }
++      }
++
++      if (json.user && !isSafeAvatarUrl(json.user.avatarUrl) && json.user.avatarUrl !== null) {
++        return { success: false, error: "Respuesta del servidor inválida" }
++      }
++
++      setUser(json.user)
++      return { success: true }
++    } catch {
++      return { success: false, error: "Error de conexión con el servidor" }
++    }
++  }, [handleAuthFailure])
++
++  return (
++    <AuthContext.Provider value={{ user, isLoading, login, register, logout, updateAvatar, removeAvatar }}>
++      {children}
++    </AuthContext.Provider>
++  )
++}
++
++export function useAuth() {
++  const context = useContext(AuthContext)
++  if (context === undefined) {
++    throw new Error("useAuth must be used within an AuthProvider")
++  }
++  return context
++}
+diff --git a/lib/avatar.ts b/lib/avatar.ts
+new file mode 100644
+index 0000000..cc437da
+--- /dev/null
++++ b/lib/avatar.ts
+@@ -0,0 +1,183 @@
++// ─── Avatar validation & sanitization helpers ────────────────────────────────
++//
++// These helpers exist to mitigate XSS risk from user-supplied avatar URLs.
++//
++// Threat model: the avatar pipeline accepts a base64 data URL from the client,
++// stores it in `user.avatarUrl`, and later renders it inside an <img src=…>.
++// If a URL like `data:text/html,<script>…</script>` slips through, the browser
++// will interpret it as HTML in some contexts (e.g. if loaded via a different
++// element, copy-pasted, or rendered without sanitization).
++//
++// LIMITATION: full mitigation requires the *server* to (1) re-validate the
++// uploaded bytes, (2) store images on disk/blob storage, and (3) serve them
++// from a separate, sandboxed domain (or at least via a content-disposition
++// attachment header) so that any HTML/script that bypasses validation cannot
++// run with the application's origin. The backend lives outside this repo, so
++// we apply defense-in-depth on the client: strict MIME allowlist, magic-byte
++// verification, structural decode via the browser's Image() pipeline, and a
++// safe-URL guard at every render site.
++
++// Allowlist of acceptable image MIME types. Anything else (text/*, etc.) is
++// rejected to prevent data-URL XSS.
++export const ALLOWED_AVATAR_MIME_TYPES = [
++  "image/jpeg",
++  "image/png",
++  "image/webp",
++  "image/gif",
++] as const
++
++export type AllowedAvatarMime = (typeof ALLOWED_AVATAR_MIME_TYPES)[number]
++
++// Magic-byte signatures for each allowed format. We validate the file's
++// actual bytes rather than trusting the client-supplied MIME type.
++const MAGIC_BYTE_SIGNATURES: Array<{
++  mime: AllowedAvatarMime
++  test: (bytes: Uint8Array) => boolean
++}> = [
++  {
++    mime: "image/jpeg",
++    test: (b) => b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff,
++  },
++  {
++    mime: "image/png",
++    test: (b) =>
++      b.length >= 8 &&
++      b[0] === 0x89 &&
++      b[1] === 0x50 &&
++      b[2] === 0x4e &&
++      b[3] === 0x47 &&
++      b[4] === 0x0d &&
++      b[5] === 0x0a &&
++      b[6] === 0x1a &&
++      b[7] === 0x0a,
++  },
++  {
++    mime: "image/gif",
++    test: (b) =>
++      b.length >= 6 &&
++      b[0] === 0x47 &&
++      b[1] === 0x49 &&
++      b[2] === 0x46 &&
++      b[3] === 0x38 &&
++      (b[4] === 0x37 || b[4] === 0x39) &&
++      b[5] === 0x61,
++  },
++  {
++    mime: "image/webp",
++    test: (b) =>
++      b.length >= 12 &&
++      // "RIFF"
++      b[0] === 0x52 &&
++      b[1] === 0x49 &&
++      b[2] === 0x46 &&
++      b[3] === 0x46 &&
++      // "WEBP"
++      b[8] === 0x57 &&
++      b[9] === 0x45 &&
++      b[10] === 0x42 &&
++      b[11] === 0x50,
++  },
++]
++
++function detectImageMime(bytes: Uint8Array): AllowedAvatarMime | null {
++  for (const sig of MAGIC_BYTE_SIGNATURES) {
++    if (sig.test(bytes)) return sig.mime
++  }
++  return null
++}
++
++/**
++ * Validates that a data URL is a safe avatar image:
++ *   - has the form `data:<allowed-image-mime>;base64,<payload>`
++ *   - decodes successfully
++ *   - the decoded bytes match the magic-byte signature for the declared MIME
++ *
++ * Returns a normalized data URL (with the verified MIME) on success, or
++ * throws an Error with a generic message on failure. Callers should treat
++ * the returned string as safe to send to the server, and should still
++ * re-validate via `isSafeAvatarUrl` before rendering anything that came
++ * back from the server.
++ */
++export async function validateAvatarDataUrl(dataUrl: string): Promise<string> {
++  // Step 1: structural check on the data URL prefix.
++  const match = /^data:([^;,]+);base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl)
++  if (!match) {
++    throw new Error("Invalid avatar data URL")
++  }
++
++  const declaredMime = match[1].toLowerCase()
++  const base64Payload = match[2]
++
++  if (!ALLOWED_AVATAR_MIME_TYPES.includes(declaredMime as AllowedAvatarMime)) {
++    throw new Error("Unsupported avatar MIME type")
++  }
++
++  // Step 2: decode the base64 payload and check magic bytes.
++  let bytes: Uint8Array
++  try {
++    const binary = atob(base64Payload)
++    bytes = new Uint8Array(binary.length)
++    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
++  } catch {
++    throw new Error("Invalid avatar payload")
++  }
++
++  const detectedMime = detectImageMime(bytes)
++  if (!detectedMime || detectedMime !== declaredMime) {
++    throw new Error("Avatar bytes do not match declared image type")
++  }
++
++  // Step 3: structural decode via the browser's image pipeline. This catches
++  // truncated / corrupt images and confirms the bytes really do parse as the
++  // claimed image format.
++  await new Promise<void>((resolve, reject) => {
++    const img = new Image()
++    img.onload = () => resolve()
++    img.onerror = () => reject(new Error("Avatar image failed to decode"))
++    // Reconstruct the data URL with the *verified* MIME so we don't echo
++    // back any client-supplied parameters.
++    img.src = `data:${detectedMime};base64,${base64Payload}`
++  })
++
++  return `data:${detectedMime};base64,${base64Payload}`
++}
++
++/**
++ * Returns true if `url` is safe to render as an avatar image src.
++ *
++ * Accepts:
++ *   - data: URLs whose MIME is in `ALLOWED_AVATAR_MIME_TYPES`
++ *   - http(s):// URLs (which the browser cannot evaluate as script)
++ *
++ * Rejects everything else (javascript:, vbscript:, file:, data:text/html, …).
++ */
++export function isSafeAvatarUrl(url: unknown): url is string {
++  if (typeof url !== "string" || url.length === 0) return false
++
++  // Data URL: must declare an allowlisted image MIME, base64-encoded.
++  if (url.startsWith("data:")) {
++    const m = /^data:([^;,]+);base64,[A-Za-z0-9+/=]+$/.exec(url)
++    if (!m) return false
++    return ALLOWED_AVATAR_MIME_TYPES.includes(
++      m[1].toLowerCase() as AllowedAvatarMime,
++    )
++  }
++
++  // Network URL: only http(s).
++  try {
++    const parsed = new URL(url)
++    return parsed.protocol === "http:" || parsed.protocol === "https:"
++  } catch {
++    return false
++  }
++}
++
++/**
++ * Returns the URL if it passes `isSafeAvatarUrl`, otherwise null. Use this
++ * at every render site so a malicious value that bypassed upload validation
++ * (e.g. injected directly into the database) still cannot reach an
++ * <img src=…> attribute.
++ */
++export function safeAvatarSrc(url: unknown): string | null {
++  return isSafeAvatarUrl(url) ? url : null
++}
+diff --git a/lib/types.ts b/lib/types.ts
+index 3998223..979b53a 100644
+--- a/lib/types.ts
++++ b/lib/types.ts
+@@ -95,3 +95,24 @@ export interface ContactRequest {
+   subject: string
+   message: string
+ }
++
++export interface User {
++  id: string
++  firstName: string
++  lastName: string
++  email: string
++  avatarUrl: string | null
++  createdAt: string
++}
++
++export interface LoginRequest {
++  email: string
++  password: string
++}
++
++export interface RegisterRequest {
++  firstName: string
++  lastName: string
++  email: string
++  password: string
++}

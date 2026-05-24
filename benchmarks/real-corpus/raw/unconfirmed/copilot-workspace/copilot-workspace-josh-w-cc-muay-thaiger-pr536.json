@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-josh-w-cc-muay-thaiger-pr536",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 536,
+    "headSha": "12bb0fb39f63de8eb9cfd85836a169f121c4a8e1",
+    "baseSha": "a7323ee0c643cf5fac8194b90c7334c0254c1d73",
+    "title": "Make the mobile game header full-width with visible adjacent tabs",
+    "body": "On mobile, the game header should read as a horizontally scrollable tab strip instead of a padded row of buttons. This change makes the header span the full viewport while keeping the active page centered and leaving a small preview of neighboring buttons visible.\n\n- **Mobile header layout**\n  - Extend the header container to the viewport edges on small screens.\n  - Keep horizontal snap scrolling, but reduce the inter-button gap so adjacent tabs peek in and signal more content off-screen.\n  - Preserve the existing one-button-at-a-time focus for the active route.\n\n- **Coverage for the layout contract**\n  - Update the colocated header CSS test to assert the full-width mobile container behavior in addition to the existing snap-scrolling rules.\n\n- **Relevant CSS**\n  ```css\n  @media(max-width: 768px) {\n    .header {\n      gap: var(--space-md);\n      overflow-x: auto;\n      padding-inline: var(--space-md);\n      position: relative;\n      right: var(--space-xl);\n      scroll-snap-type: x mandatory;\n      width: calc(100% + var(--space-xl) * 2);\n    }\n  }\n  ```\n\n- **Screenshot**\n  - <screenshot><img width=\"390\" alt=\"Mobile full-width scrollable header with adjacent tabs peeking in\" src=\"https://github.com/user-attachments/assets/ba8ad2ef-498a-4eae-aba7-78fcf551b558\" /></screenshot>",
+    "author": "Copilot",
+    "headRef": "copilot/feature-full-width-scrollable-header",
+    "repository": "josh-w-cc/muay-thaiger"
+  },
+  "diffRef": {
+    "repository": "josh-w-cc/muay-thaiger",
+    "headSha": "12bb0fb39f63de8eb9cfd85836a169f121c4a8e1",
+    "baseSha": "a7323ee0c643cf5fac8194b90c7334c0254c1d73"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-josh-w-cc-muay-thaiger-pr536.diff",
+  "vendoredAt": "2026-05-24T03:05:47.147Z",
+  "collectedAt": "2026-05-24T03:05:47.147Z"
+}

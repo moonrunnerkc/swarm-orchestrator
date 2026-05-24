@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24106",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24106,
+    "headSha": "9baf5b16014d4480a12127043f713d0630e8326e",
+    "baseSha": "162a6e746b7b4ef6024ccc819bf8ceaaa5f802f6",
+    "title": "docs: update README.md to mention curl-based installer",
+    "body": "Now that users can install via `curl` (or `irm`), we should tell them about it so they no longer need to use `npm`!\r\n\r\nNote that on one Windows machine I tested on, when I ran:\r\n\r\n```\r\nirm https://chatgpt.com/codex/install.ps1 | iex\r\n```\r\n\r\nI got this error:\r\n\r\n```\r\niex : The property 'OSArchitecture' cannot be found on this object. Verify that the property exists.\r\nAt line:1 char:45\r\n+ irm https://chatgpt.com/codex/install.ps1 | iex\r\n+                                             ~~~\r\n    + CategoryInfo          : NotSpecified: (:) [Invoke-Expression], PropertyNotFoundException\r\n    + FullyQualifiedErrorId : PropertyNotFoundStrict,Microsoft.PowerShell.Commands.InvokeExpressionCommand\r\n```\r\n\r\nso we'll recommend the following that works from both `cmd.exe` and PowerShell:\r\n\r\n```\r\npowershell -ExecutionPolicy ByPass -c \"irm https://chatgpt.com/codex/install.ps1 | iex\"\r\n```\r\n\r\nThis PR makes a slight update to `codex-rs/tui/src/update_action.rs` to match.",
+    "author": "bolinfest",
+    "headRef": "pr24106",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "9baf5b16014d4480a12127043f713d0630e8326e",
+    "baseSha": "162a6e746b7b4ef6024ccc819bf8ceaaa5f802f6"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24106.diff",
+  "vendoredAt": "2026-05-24T03:21:16.048Z",
+  "collectedAt": "2026-05-24T03:21:16.048Z"
+}

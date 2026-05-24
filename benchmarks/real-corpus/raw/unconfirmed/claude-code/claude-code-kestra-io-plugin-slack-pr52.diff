@@ -1,0 +1,21 @@
+diff --git a/src/main/resources/doc/io.kestra.plugin.slack.md b/src/main/resources/doc/io.kestra.plugin.slack.md
+new file mode 100644
+index 0000000..57fdf2a
+--- /dev/null
++++ b/src/main/resources/doc/io.kestra.plugin.slack.md
+@@ -0,0 +1,15 @@
++# How to use the Slack plugin
++
++Choose between an incoming webhook URL for simple notifications and a Slack App bot token for the full API surface.
++
++## Authentication
++
++**Incoming webhook** (`SlackIncomingWebhook`, `SlackExecution`): set the `url` property to a Slack incoming webhook URL. Create one at [api.slack.com/messaging/webhooks](https://api.slack.com/messaging/webhooks).
++
++**Bot token** (`app.chats.Post` and other app tasks): set the `token` property to a Slack bot token with the `chat:write` scope. Create a Slack app at [api.slack.com/apps](https://api.slack.com/apps).
++
++Store both in [secrets](https://kestra.io/docs/concepts/secret).
++
++## Tasks
++
++For in-flow notifications, use `SlackIncomingWebhook` with `messageText` for Slack-formatted text or `payload` for a custom JSON body. For automated failure monitoring, `SlackExecution` sends a structured alert — including an execution link, status, and duration — and is designed to be used with a [Flow trigger](https://kestra.io/docs/workflow-components/triggers) in a dedicated monitoring namespace that watches other namespaces for failures rather than adding error handling to individual flows. Bot token tasks under `app.chats`, `app.conversations`, `app.files`, and `app.reactions` cover the full Slack API surface for thread replies, file uploads, channel management, and more.

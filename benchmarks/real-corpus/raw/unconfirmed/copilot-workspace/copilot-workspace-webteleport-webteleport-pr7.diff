@@ -1,0 +1,165 @@
+diff --git a/endpoint/resolve.go b/endpoint/resolve.go
+index cd37961..3c19004 100644
+--- a/endpoint/resolve.go
++++ b/endpoint/resolve.go
+@@ -1,7 +1,6 @@
+ package endpoint
+ 
+ import (
+-	"fmt"
+ 	"log/slog"
+ 	"net/http"
+ 	"net/url"
+@@ -81,12 +80,12 @@ func HEAD(s string) (v []string) {
+ 	}
+ 	req, err := http.NewRequest(http.MethodHead, utils.AsURL(s), nil)
+ 	if err != nil {
+-		slog.Warn(fmt.Sprintf("http req error: %v", err))
++		slog.Warn("http req error", "error", err)
+ 		return
+ 	}
+ 	resp, err := client.Do(req)
+ 	if err != nil {
+-		slog.Warn(fmt.Sprintf("http head error: %v", err))
++		slog.Warn("http head error", "error", err)
+ 		return
+ 	}
+ 	return resp.Header.Values("Alt-Svc")
+@@ -101,7 +100,7 @@ func TXT(h string) []string {
+ 	}
+ 	txts, err := utils.LookupHostTXT(h, "1.1.1.1:53")
+ 	if err != nil {
+-		slog.Warn(fmt.Sprintf("dns lookup error: %s: %v", h, err))
++		slog.Warn("dns lookup error", "host", h, "error", err)
+ 	}
+ 	return altsvcLines(txts)
+ }
+diff --git a/transport/net-quic/listen.go b/transport/net-quic/listen.go
+index d6d607b..83da06b 100644
+--- a/transport/net-quic/listen.go
++++ b/transport/net-quic/listen.go
+@@ -45,7 +45,7 @@ func Listen(ctx context.Context, addr string) (*common.Listener, error) {
+ 				errchan <- strings.TrimPrefix(line, "ERR ")
+ 				continue
+ 			}
+-			slog.Warn(fmt.Sprintf("stm0: unknown command: %s", line))
++			slog.Warn("stm0: unknown command", "command", line)
+ 		}
+ 	}()
+ 
+diff --git a/transport/quic-go/listen.go b/transport/quic-go/listen.go
+index d6d607b..83da06b 100644
+--- a/transport/quic-go/listen.go
++++ b/transport/quic-go/listen.go
+@@ -45,7 +45,7 @@ func Listen(ctx context.Context, addr string) (*common.Listener, error) {
+ 				errchan <- strings.TrimPrefix(line, "ERR ")
+ 				continue
+ 			}
+-			slog.Warn(fmt.Sprintf("stm0: unknown command: %s", line))
++			slog.Warn("stm0: unknown command", "command", line)
+ 		}
+ 	}()
+ 
+diff --git a/transport/tcp/listen.go b/transport/tcp/listen.go
+index fa7005c..88e1f18 100644
+--- a/transport/tcp/listen.go
++++ b/transport/tcp/listen.go
+@@ -45,7 +45,7 @@ func Listen(ctx context.Context, addr string) (*common.Listener, error) {
+ 				errchan <- strings.TrimPrefix(line, "ERR ")
+ 				continue
+ 			}
+-			slog.Warn(fmt.Sprintf("stm0: unknown command: %s", line))
++			slog.Warn("stm0: unknown command", "command", line)
+ 		}
+ 	}()
+ 
+diff --git a/transport/websocket/listen.go b/transport/websocket/listen.go
+index 931d1e6..250429a 100644
+--- a/transport/websocket/listen.go
++++ b/transport/websocket/listen.go
+@@ -42,7 +42,7 @@ func Listen(ctx context.Context, addr string) (*common.Listener, error) {
+ 				errchan <- strings.TrimPrefix(line, "ERR ")
+ 				continue
+ 			}
+-			slog.Warn(fmt.Sprintf("stm0: unknown command: %s", line))
++			slog.Warn("stm0: unknown command", "command", line)
+ 		}
+ 	}()
+ 
+diff --git a/transport/websocket/up.go b/transport/websocket/up.go
+index e14cdf3..b20b8b4 100644
+--- a/transport/websocket/up.go
++++ b/transport/websocket/up.go
+@@ -2,7 +2,6 @@ package websocket
+ 
+ import (
+ 	"context"
+-	"fmt"
+ 	"io"
+ 	"log/slog"
+ 	"net/http"
+@@ -28,20 +27,20 @@ type Upgrader struct {
+ func (s *Upgrader) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+ 	conn, err := wsconn.Wrconn(w, r)
+ 	if err != nil {
+-		slog.Warn(fmt.Errorf("websocket upgrade failed: %w", err).Error())
++		slog.Warn("websocket upgrade failed", "error", err)
+ 		return
+ 	}
+ 
+ 	ssn, err := common.YamuxClient(conn)
+ 	if err != nil {
+-		slog.Warn(fmt.Errorf("websocket creating yamux client failed: %w", err).Error())
++		slog.Warn("websocket creating yamux client failed", "error", err)
+ 		return
+ 	}
+ 
+ 	tssn := &WebsocketSession{Session: ssn}
+ 	tstm, err := tssn.Open(context.Background())
+ 	if err != nil {
+-		slog.Warn(fmt.Errorf("websocket stm0 init failed: %w", err).Error())
++		slog.Warn("websocket stm0 init failed", "error", err)
+ 		return
+ 	}
+ 
+diff --git a/transport/webtransport/listen.go b/transport/webtransport/listen.go
+index 2470bf6..b228f82 100644
+--- a/transport/webtransport/listen.go
++++ b/transport/webtransport/listen.go
+@@ -42,7 +42,7 @@ func Listen(ctx context.Context, addr string) (*common.Listener, error) {
+ 				errchan <- strings.TrimPrefix(line, "ERR ")
+ 				continue
+ 			}
+-			slog.Warn(fmt.Sprintf("stm0: unknown command: %s", line))
++			slog.Warn("stm0: unknown command", "command", line)
+ 		}
+ 	}()
+ 
+diff --git a/transport/webtransport/up.go b/transport/webtransport/up.go
+index 24ede34..954b363 100644
+--- a/transport/webtransport/up.go
++++ b/transport/webtransport/up.go
+@@ -4,7 +4,6 @@ package webtransport
+ 
+ import (
+ 	"context"
+-	"fmt"
+ 	"io"
+ 	"log/slog"
+ 	"net/http"
+@@ -26,13 +25,13 @@ type Upgrader struct {
+ func (s *Upgrader) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+ 	ssn, err := s.Server.Upgrade(w, r)
+ 	if err != nil {
+-		slog.Warn(fmt.Errorf("webtransport upgrade failed: %w", err).Error())
++		slog.Warn("webtransport upgrade failed", "error", err)
+ 	}
+ 
+ 	tssn := &WebtransportSession{Session: ssn}
+ 	tstm, err := tssn.Open(context.Background())
+ 	if err != nil {
+-		slog.Warn(fmt.Errorf("webtransport stm0 init failed: %w", err).Error())
++		slog.Warn("webtransport stm0 init failed", "error", err)
+ 	}
+ 
+ 	R := &edge.Edge{

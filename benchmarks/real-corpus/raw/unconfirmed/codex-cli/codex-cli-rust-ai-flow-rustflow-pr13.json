@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-rust-ai-flow-rustflow-pr13",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "commit=codex-cli-footer"
+  },
+  "pr": {
+    "number": 13,
+    "headSha": "affcdba2cad9582906fa94fce67ad9c9b5d31bc3",
+    "baseSha": "a6d9fe3467334286203550da3b62dfa25990bcf1",
+    "title": "feat(llm): add Codex CLI provider",
+    "body": "## Summary\n- add a `codex` LLM provider backed by the local Codex CLI\n- register the provider in CLI and server default LLM gateways\n- document the auth boundary and add `examples/codex-workflow.yaml`\n\n## Security boundary\nRustFlow invokes `codex exec` as a subprocess and captures stdout. It does not read, copy, expose, or persist Codex auth tokens; authentication remains inside the locally logged-in Codex CLI.\n\nThe provider runs Codex with conservative defaults:\n- `--sandbox read-only`\n- `--ask-for-approval never`\n- `--ephemeral`\n\n## Verification\n- `cargo fmt --all -- --check`\n- `cargo test -p rustflow-llm`\n- `cargo test -p rustflow-server test_default_llm_gateway_includes_codex_provider`\n- `cargo clippy --all-targets --all-features -- -D warnings`\n\nAlso independently reviewed with a second Codex pass; it fixed CLI argument ordering and timeout coverage before this PR was opened.",
+    "author": "73-SEVENTYTHREE",
+    "headRef": "codex-rustflow-codex-llm-provider",
+    "repository": "rust-ai-flow/rustflow"
+  },
+  "diffRef": {
+    "repository": "rust-ai-flow/rustflow",
+    "headSha": "affcdba2cad9582906fa94fce67ad9c9b5d31bc3",
+    "baseSha": "a6d9fe3467334286203550da3b62dfa25990bcf1"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-rust-ai-flow-rustflow-pr13.diff",
+  "vendoredAt": "2026-05-24T03:13:49.066Z",
+  "collectedAt": "2026-05-24T03:13:49.066Z"
+}

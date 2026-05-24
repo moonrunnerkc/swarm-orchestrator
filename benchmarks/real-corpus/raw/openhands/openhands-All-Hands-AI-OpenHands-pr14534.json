@@ -1,0 +1,26 @@
+{
+  "id": "openhands-All-Hands-AI-OpenHands-pr14534",
+  "agent": {
+    "vendor": "openhands",
+    "confidence": "high",
+    "source": "repo-owner=All-Hands-AI+body=openhands-attribution"
+  },
+  "pr": {
+    "number": 14534,
+    "headSha": "bd8c472001f75c475592b70c3f05a11545bdc608",
+    "baseSha": "5e311f7f995008ffe4c74f8cf6f3085d4030c670",
+    "title": "Support KOTS-managed Jira DC service accounts",
+    "body": "## Summary\n- Add Jira DC service-account env support via `JIRA_DC_SERVICE_ACCOUNT_EMAIL` and `JIRA_DC_SERVICE_ACCOUNT_PAT`.\n- Prefer env-managed credentials at runtime while preserving per-workspace credentials for SaaS/non-managed installs.\n- Stop serializing decrypted Jira DC PATs into V1 callback processors; resolve the effective token at callback time instead.\n- Hide in-app service-account entry when OpenHands Enterprise/KOTS service-account values are configured, and surface partial env config errors.\n\n## Tests\n- `uv run ruff check enterprise/server/routes/integration/jira_dc.py enterprise/integrations/jira_dc/jira_dc_manager.py enterprise/integrations/jira_dc/jira_dc_service_account.py enterprise/integrations/jira_dc/jira_dc_v1_callback_processor.py enterprise/integrations/jira_dc/jira_dc_view.py openhands/app_server/web_client/default_web_client_config_injector.py openhands/app_server/web_client/web_client_models.py enterprise/tests/unit/integrations/jira_dc/test_jira_dc_service_account.py enterprise/tests/unit/integrations/jira_dc/test_jira_dc_v1_callback_processor.py enterprise/tests/unit/server/routes/test_jira_dc_integration_routes.py`\n- `PYTHONPATH=enterprise:. uv run --with python-keycloak --with limits --with coredis pytest enterprise/tests/unit/integrations/jira_dc/test_jira_dc_service_account.py enterprise/tests/unit/integrations/jira_dc/test_jira_dc_v1_callback_processor.py enterprise/tests/unit/integrations/jira_dc/test_jira_dc_manager.py enterprise/tests/unit/integrations/jira_dc/test_jira_dc_view.py enterprise/tests/unit/server/routes/test_jira_dc_integration_routes.py`\n- `npm run typecheck:staged && npm run check-translation-completeness`\n\n---\n\nTo run this PR locally, use the following command:\n\nGUI with Docker:\n```\ndocker run -it --rm   -p 3000:3000   -v /var/run/docker.sock:/var/run/docker.sock   --add-host host.docker.internal:host-gateway   --name openhands-app-bd8c472   docker.openhands.dev/openhands/openhands:bd8c472\n```",
+    "author": "ak684",
+    "headRef": "codex/jira-dc-kots-service-account",
+    "repository": "All-Hands-AI/OpenHands"
+  },
+  "diffRef": {
+    "repository": "All-Hands-AI/OpenHands",
+    "headSha": "bd8c472001f75c475592b70c3f05a11545bdc608",
+    "baseSha": "5e311f7f995008ffe4c74f8cf6f3085d4030c670"
+  },
+  "vendoredDiffPath": "openhands/openhands-All-Hands-AI-OpenHands-pr14534.diff",
+  "vendoredAt": "2026-05-24T03:17:49.066Z",
+  "collectedAt": "2026-05-24T03:17:49.066Z"
+}

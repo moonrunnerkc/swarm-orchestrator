@@ -1,0 +1,26 @@
+{
+  "id": "openhands-All-Hands-AI-OpenHands-pr14509",
+  "agent": {
+    "vendor": "openhands",
+    "confidence": "high",
+    "source": "repo-owner=All-Hands-AI+body=openhands-attribution"
+  },
+  "pr": {
+    "number": 14509,
+    "headSha": "573a517849c074ae2ee9a4534e68472962697a5e",
+    "baseSha": "8350c498aa6557d6e7e5c6f3c1385808191b1500",
+    "title": "BBDC: prompt unenrolled @-mentioners to sign up instead of falling back to the installer",
+    "body": "## What\r\n\r\nChanges the Bitbucket Data Center resolver's behavior for an @-mentioning user who has **no OpenHands account**.\r\n\r\nPreviously such a mention silently ran the job as — and billed it to — the webhook **installer**, using the installer's credentials and git attribution. Now, mirroring the GitHub manager, we **refuse the job and reply asking the user to sign up**:\r\n\r\n> @&lt;user&gt; it looks like you haven't created an OpenHands account yet. Please sign up at [OpenHands Cloud](…) and try again.\r\n\r\nSo every job that does run is attributed to — and uses the credentials/budget of — the actual requester.\r\n\r\nSpecifics:\r\n- Adds `_send_user_not_found_message`, which reuses the shared `get_user_not_found_message` copy (identical to GitHub/GitLab/Slack) and posts the reply under the installer's token — the closest BBDC analog to GitHub's installation token, and the only credential available for an unenrolled user.\r\n- A **transient Keycloak lookup error now drops the event** (enrollment status unknown) rather than falling back to the installer — we neither silently impersonate the installer nor wrongly tell a (possibly enrolled) user to sign up.\r\n\r\n## Scope\r\n\r\nThis PR is **only** the fallback-behavior change. The BBDC numeric-id mentioner resolution and the 👀 eye-reaction acknowledgement already merged to main in #14497 — this builds on top of them.\r\n\r\n## Testing\r\n\r\nSuccessfully tested end to end (note the comment telling the user to sign up still comes from the installer simply because in our current design that's the only token we have but in the future we'll provide a way to correct this so it comes from an end user service bot account):\r\n\r\nhttps://github.com/user-attachments/assets/b033e754-5eb6-4263-b6a3-fbb0b3f7a383\r\n\r\n- `enterprise/tests/unit/integrations/bitbucket_data_center/test_bitbucket_dc_manager.py` — 33 passing, including the sign-up path, the transient-error drop, and the installer-scoped reply construction.\r\n- ruff check + format clean against the pinned `v0.4.1` config.\r\n- Verified live on a self-hosted (Replicated) install: an unenrolled BBDC user @mentioned the bot → got the sign-up reply, no job started, no installer fallback.",
+    "author": "ak684",
+    "headRef": "alona/bbdc-mentioner-numeric-id",
+    "repository": "All-Hands-AI/OpenHands"
+  },
+  "diffRef": {
+    "repository": "All-Hands-AI/OpenHands",
+    "headSha": "573a517849c074ae2ee9a4534e68472962697a5e",
+    "baseSha": "8350c498aa6557d6e7e5c6f3c1385808191b1500"
+  },
+  "vendoredDiffPath": "openhands/openhands-All-Hands-AI-OpenHands-pr14509.diff",
+  "vendoredAt": "2026-05-24T03:18:17.120Z",
+  "collectedAt": "2026-05-24T03:18:17.120Z"
+}

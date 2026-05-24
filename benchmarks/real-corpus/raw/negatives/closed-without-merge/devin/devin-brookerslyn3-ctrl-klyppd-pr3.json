@@ -1,0 +1,26 @@
+{
+  "id": "devin-brookerslyn3-ctrl-klyppd-pr3",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 3,
+    "headSha": "8071766f9712bd23bb1d06e1cf4af9b79ed47976",
+    "baseSha": "79367337848f7e9f5b7631f864175605ec038c61",
+    "title": "feat: quality-of-life improvements — search, sort, confirm delete, dep check, recording timer",
+    "body": "## Summary\n\nA collection of quality-of-life improvements across the frontend and backend:\n\n**UI/UX:**\n- **Search bar** in library — filters clips by filename, tags, or folder in real-time\n- **Sort controls** — sort by date, name, or duration (ascending/descending toggle)\n- **Confirm dialogs** before deleting clips locally or removing from R2\n- **Recording elapsed timer** in the header — pulsing red indicator with `M:SS` during active recording\n- **Dependency check on startup** — shows a warning banner if `gpu-screen-recorder`, `ffmpeg`, or `ffprobe` are missing\n\n**Backend:**\n- **Stale DB cleanup** — `scan_clips` now removes database entries for clips whose files no longer exist on disk\n- **Preview cache cleanup** — on startup, removes transcoded preview files older than 7 days (prevents unbounded `/tmp/klyppd-preview/` growth)\n- **R2 delete error handling** — `deleteFromR2` now catches and surfaces errors instead of silently failing\n- **RPM bundle target** — added `rpm` to `tauri.conf.json` targets for Fedora/openSUSE users\n\n## Review & Testing Checklist for Human\n- [ ] Open library with some clips, verify search filters clips by filename as you type\n- [ ] Test sort controls: switch between date/name/duration and toggle asc/desc\n- [ ] Try deleting a clip — confirm dialog should appear before deletion proceeds\n- [ ] Start a recording and verify the elapsed timer appears in the header with a red pulse animation\n- [ ] If possible, temporarily rename `gpu-screen-recorder` and restart — verify the dependency warning banner appears\n- [ ] Delete a clip file from disk manually, then switch tabs back to library — verify the stale DB entry is cleaned up\n\n### Notes\n- All warnings from `svelte-check` are preexisting a11y hints (0 errors)\n- `cargo check` passes cleanly\n- This is a desktop app requiring real hardware — testing on your Hyprland setup recommended\n\nLink to Devin session: https://app.devin.ai/sessions/f3b462ed3e11412eb00cd35a2eedf99d\nRequested by: @brookerslyn3-ctrl",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779558458-qol-improvements",
+    "repository": "brookerslyn3-ctrl/klyppd"
+  },
+  "diffRef": {
+    "repository": "brookerslyn3-ctrl/klyppd",
+    "headSha": "8071766f9712bd23bb1d06e1cf4af9b79ed47976",
+    "baseSha": "79367337848f7e9f5b7631f864175605ec038c61"
+  },
+  "vendoredDiffPath": "negatives/closed-without-merge/devin/devin-brookerslyn3-ctrl-klyppd-pr3.diff",
+  "vendoredAt": "2026-05-24T04:27:42.150Z",
+  "collectedAt": "2026-05-24T04:27:42.150Z"
+}

@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-oven-sh-bun-pr31254",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "branch=claude/"
+  },
+  "pr": {
+    "number": 31254,
+    "headSha": "909bc4b0128344caa5476deeb7e3f1675a6e6c78",
+    "baseSha": "a8aec3067d2134c3d4408fed28bcdc61f9b6bb20",
+    "title": "Restrict crate-internal items to pub(crate) and remove dead code it exposes",
+    "body": "## What\n\nThree commits, one sweep:\n\n1. **`pub` → `pub(crate)` for 1,298 items across 105 files.** Applied mechanically via `cargo fix` driven by the `unreachable_pub` lint, which only fires on items that are provably unreachable from outside their defining crate — so the demotion cannot change what compiles. Two items (`addrinfo`/`freeaddrinfo` re-exports in `bun_dns`) were reverted by hand because a chained `pub use` re-exports them.\n\n2. **Remove the dead AST JSON-serialization facility.** The `js_ast` `jsonStringify` port — `JsonWriter`/`BindingJsonWriter` traits, `Serializable` carrier structs, 26 `json_stringify` methods, `Ast::to_json` — has zero trait implementors and zero callers. The only `.json_stringify()` call sites in the tree are `JSValue`'s native `JSON.stringify`, which is unrelated.\n\n3. **Remove six crates nothing depends on**, plus the data files vendored under them:\n   - `bun_unicode` — empty `lib.rs`, no consumers, but carried the entire vendored Unicode Character Database (~70k lines of `.txt`)\n   - `bun_libarchive_sys` / `bun_picohttp_sys` — superseded duplicates; `bun_libarchive` / `bun_picohttp` carry their own bindings and are what everything actually uses\n   - `bun_meta`, `bun_url_jsc` — zero callers\n   - the `bun_node-fallbacks` crate wrapper (the `.js` fallback modules stay; codegen bundles those directly)\n   - `crossbeam` from `[workspace.dependencies]` (no member declares it)\n\nAfter this, every workspace crate except the two standalone build roots (`bun_codegen`, `bun_shim_impl`) has at least one in-workspace dependent.\n\n## Why\n\n`dead_code = \"deny\"` is already enforced workspace-wide, but it treats every `pub` item as an external API root and never analyzes it. In a workspace where every crate is an internal implementation detail of one binary, that exemption swallows real dead code. Demoting crate-internal items to `pub(crate)` puts them back under the lint — that is what surfaced the dead serialization facility.\n\n## Verification\n\n- `cargo check --workspace --lib --bins` clean under the workspace's normal lint set\n- Full debug build links and runs\n- `bundler_edgecase` 103 pass / 0 fail, `bundler_browser` 12 pass / 0 fail (node-fallbacks path), `bun-add` failures are pre-existing on main (registry config leak in the test environment, identical signature with an unmodified build)\n\n```\n179 files changed, 1,522 insertions(+), 84,970 deletions(-)\n```",
+    "author": "Jarred-Sumner",
+    "headRef": "claude/pub-crate-demote",
+    "repository": "oven-sh/bun"
+  },
+  "diffRef": {
+    "repository": "oven-sh/bun",
+    "headSha": "909bc4b0128344caa5476deeb7e3f1675a6e6c78",
+    "baseSha": "a8aec3067d2134c3d4408fed28bcdc61f9b6bb20"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-oven-sh-bun-pr31254.diff",
+  "vendoredAt": "2026-05-24T03:23:42.863Z",
+  "collectedAt": "2026-05-24T03:23:42.863Z"
+}

@@ -1,0 +1,365 @@
+diff --git a/index.html b/index.html
+index f4eaf78..2959b34 100644
+--- a/index.html
++++ b/index.html
+@@ -8,6 +8,7 @@
+     <meta http-equiv="Expires" content="0">
+     <title>Full House Delivery — Dashboard</title>
+     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
++    <script>if(typeof pdfjsLib!=='undefined'){pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';}</script>
+     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+     <style>
+         :root {
+@@ -202,6 +203,9 @@
+         .cat-color { width: 16px; height: 16px; border-radius: 50%; flex-shrink: 0; }
+         .cat-name { flex: 1; font-weight: 500; font-size: 14px; }
+         .cat-total { font-weight: 700; font-size: 14px; color: #c0392b; margin-right: 4px; }
++        .reorder-btns { display: flex; flex-direction: column; gap: 1px; }
++        .reorder-btns button { background: none; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 10px; line-height: 1; padding: 2px 5px; color: #555; }
++        .reorder-btns button:hover { background: #ddd; }
+         .add-cat-row { display: flex; gap: 8px; }
+         .add-cat-row input { flex: 1; }
+ 
+@@ -416,7 +420,7 @@ <h1>Fullhouse Delivery LLC</h1>
+ 
+ <!-- Auth Bar -->
+ <div class="auth-bar" id="authBar">
+-    <span style="font-size:10px;color:#999;margin-right:8px" id="appVersion">v14</span>
++    <span style="font-size:10px;color:#999;margin-right:8px" id="appVersion">v15</span>
+     <span class="sync-status" id="syncStatus">Local Only</span>
+     <span class="user-email" id="userEmail"></span>
+     <button id="syncNowBtn" onclick="manualSync()" style="display:none;font-size:11px;padding:4px 10px;background:#2196F3;color:#fff;border:none;border-radius:6px;cursor:pointer;margin-right:4px">&#x21bb; Sync Now</button>
+@@ -601,19 +605,7 @@ <h2><span class="icon">&#128181;</span> Log Revenue / Expense</h2>
+             </div>
+             <div class="form-group">
+                 <label for="finType">Type</label>
+-                <select id="finType" required>
+-                    <option value="Money Received">Money Received</option>
+-                    <option value="Driver Pay">Driver Pay</option>
+-                    <option value="Gas">Gas</option>
+-                    <option value="Tolls">Tolls</option>
+-                    <option value="Supplies">Supplies</option>
+-                    <option value="Vehicle Insurance">Vehicle Insurance</option>
+-                    <option value="Liability Insurance">Liability Insurance</option>
+-                    <option value="Truck Repair/Maintenance">Truck Repair/Maintenance</option>
+-                    <option value="Commissions">Commissions</option>
+-                    <option value="Trash Removal Fee">Trash Removal Fee</option>
+-                    <option value="Miscellaneous">Miscellaneous</option>
+-                </select>
++                <select id="finType" required></select>
+             </div>
+             <div class="form-group">
+                 <label for="finAmount">Amount ($)</label>
+@@ -641,6 +633,16 @@ <h2><span class="icon">&#128190;</span> Finance Data</h2>
+         </div>
+     </div>
+ 
++    <!-- Manage Finance Types -->
++    <div class="card">
++        <h2><span class="icon">&#127991;&#65039;</span> Manage Types</h2>
++        <ul class="category-list" id="finTypeList"></ul>
++        <div class="add-cat-row">
++            <input type="text" id="newFinTypeName" placeholder="New type name..." maxlength="40">
++            <button class="btn btn-success btn-sm" onclick="addFinType()">+ Add</button>
++        </div>
++    </div>
++
+     <!-- Bank Statement Upload -->
+     <div class="card full-width">
+         <h2><span class="icon">&#128196;</span> Upload Bank Statement</h2>
+@@ -649,7 +651,7 @@ <h2><span class="icon">&#128196;</span> Upload Bank Statement</h2>
+             <p><strong>Click to upload</strong> or drag &amp; drop your bank statement</p>
+             <p class="formats">Supports CSV (.csv) and PDF (.pdf) files</p>
+         </div>
+-        <input type="file" id="bankFileInput" accept=".csv,.pdf" style="display:none" onchange="handleBankUpload(event)">
++        <input type="file" id="bankFileInput" accept=".csv,.pdf,application/pdf,text/csv" style="display:none" onchange="handleBankUpload(event)">
+         <div class="upload-hint">
+             <strong>How it works:</strong> Download your bank statement as a CSV or PDF file from your bank's website.
+             Upload it here and the system will automatically categorize transactions into your expense types
+@@ -662,20 +664,7 @@ <h2><span class="icon">&#128196;</span> Upload Bank Statement</h2>
+     <div class="card full-width">
+         <h2><span class="icon">&#128210;</span> Finance Log</h2>
+         <div class="log-controls">
+-            <select id="filterFinType" onchange="renderFinanceLog()">
+-                <option value="all">All Types</option>
+-                <option value="Money Received">Money Received</option>
+-                <option value="Driver Pay">Driver Pay</option>
+-                <option value="Gas">Gas</option>
+-                <option value="Tolls">Tolls</option>
+-                <option value="Supplies">Supplies</option>
+-                <option value="Vehicle Insurance">Vehicle Insurance</option>
+-                <option value="Liability Insurance">Liability Insurance</option>
+-                <option value="Truck Repair/Maintenance">Truck Repair/Maintenance</option>
+-                <option value="Commissions">Commissions</option>
+-                <option value="Trash Removal Fee">Trash Removal Fee</option>
+-                <option value="Miscellaneous">Miscellaneous</option>
+-            </select>
++            <select id="filterFinType" onchange="renderFinanceLog()"></select>
+             <input type="month" id="filterFinMonth" onchange="renderFinanceLog()">
+             <button class="btn btn-outline btn-sm" onclick="clearFinanceFilters()">Clear Filters</button>
+         </div>
+@@ -800,19 +789,7 @@ <h2>&#9999;&#65039; Edit Finance Entry</h2>
+         </div>
+         <div class="form-group">
+             <label for="editFinType">Type</label>
+-            <select id="editFinTypeSelect">
+-                <option value="Money Received">Money Received</option>
+-                <option value="Driver Pay">Driver Pay</option>
+-                <option value="Gas">Gas</option>
+-                <option value="Tolls">Tolls</option>
+-                <option value="Supplies">Supplies</option>
+-                <option value="Vehicle Insurance">Vehicle Insurance</option>
+-                <option value="Liability Insurance">Liability Insurance</option>
+-                <option value="Truck Repair/Maintenance">Truck Repair/Maintenance</option>
+-                <option value="Commissions">Commissions</option>
+-                <option value="Trash Removal Fee">Trash Removal Fee</option>
+-                <option value="Miscellaneous">Miscellaneous</option>
+-            </select>
++            <select id="editFinTypeSelect"></select>
+         </div>
+         <div class="form-group">
+             <label for="editFinAmount">Amount ($)</label>
+@@ -1056,6 +1033,7 @@ <h2>&#9999;&#65039; Edit Finance Entry</h2>
+         localStorage.setItem('fhd_categories', JSON.stringify(categories));
+         localStorage.setItem('fhd_entries', JSON.stringify(entries));
+         localStorage.setItem('fhd_finance', JSON.stringify(financeEntries));
++        localStorage.setItem('fhd_financeTypes', JSON.stringify(financeTypes));
+ 
+         if (hasDirty) {
+             await syncToSupabase();
+@@ -1178,6 +1156,7 @@ <h2>&#9999;&#65039; Edit Finance Entry</h2>
+     localStorage.setItem('fhd_categories', JSON.stringify(categories));
+     localStorage.setItem('fhd_entries', JSON.stringify(entries));
+     localStorage.setItem('fhd_finance', JSON.stringify(financeEntries));
++    localStorage.setItem('fhd_financeTypes', JSON.stringify(financeTypes));
+     localStorage.setItem('fhd_dirty', '1');
+ }
+ 
+@@ -1260,6 +1239,11 @@ <h2>&#9999;&#65039; Edit Finance Entry</h2>
+ ];
+ var entries = JSON.parse(localStorage.getItem('fhd_entries')) || [];
+ var financeEntries = JSON.parse(localStorage.getItem('fhd_finance')) || [];
++var financeTypes = JSON.parse(localStorage.getItem('fhd_financeTypes')) || [
++    'Money Received', 'Driver Pay', 'Gas', 'Tolls', 'Supplies',
++    'Vehicle Insurance', 'Liability Insurance', 'Truck Repair/Maintenance',
++    'Commissions', 'Trash Removal Fee', 'Miscellaneous'
++];
+ var currentPeriod = 'daily';
+ var _syncChain = Promise.resolve();
+ var _syncScheduled = false;
+@@ -1450,13 +1434,24 @@ <h2>&#9999;&#65039; Edit Finance Entry</h2>
+ function renderCategories() {
+     document.getElementById('categoryList').innerHTML = categories.map(function(cat, i) {
+         var total = entries.filter(function(e) { return e.category === cat; }).reduce(function(s, e) { return s + e.amount; }, 0);
+-        return '<li><span class="cat-color" style="background:' + PALETTE[i % PALETTE.length] + '"></span><span class="cat-name">' + esc(cat) + '</span><span class="cat-total">' + total + ' jobs</span><button class="btn btn-danger" onclick="removeCategory(' + i + ')" title="Remove category">&times;</button></li>';
++        var upBtn = i > 0 ? '<button onclick="moveCat(' + i + ',-1)" title="Move up">&#9650;</button>' : '<button disabled>&#9650;</button>';
++        var downBtn = i < categories.length - 1 ? '<button onclick="moveCat(' + i + ',1)" title="Move down">&#9660;</button>' : '<button disabled>&#9660;</button>';
++        return '<li><div class="reorder-btns">' + upBtn + downBtn + '</div><span class="cat-color" style="background:' + PALETTE[i % PALETTE.length] + '"></span><span class="cat-name">' + esc(cat) + '</span><span class="cat-total">' + total + ' jobs</span><button class="btn btn-danger" onclick="removeCategory(' + i + ')" title="Remove category">&times;</button></li>';
+     }).join('');
+     document.getElementById('entryCategory').innerHTML = categories.map(function(c) { return '<option value="' + esc(c) + '">' + esc(c) + '</option>'; }).join('');
+     document.getElementById('filterCategory').innerHTML = '<option value="all">All Categories</option>' + categories.map(function(c) { return '<option value="' + esc(c) + '">' + esc(c) + '</option>'; }).join('');
+     updateConditionalFields();
+ }
+ 
++function moveCat(i, dir) {
++    var j = i + dir;
++    if (j < 0 || j >= categories.length) return;
++    var temp = categories[i];
++    categories[i] = categories[j];
++    categories[j] = temp;
++    save(); renderAll();
++}
++
+ function addCategory() {
+     var input = document.getElementById('newCatName');
+     var name = input.value.trim();
+@@ -1474,6 +1469,50 @@ <h2>&#9999;&#65039; Edit Finance Entry</h2>
+     toast('Category "' + name + '" removed.');
+ }
+ 
++/* ═══════════════════════════════════════
++   FINANCE TYPES
++   ═══════════════════════════════════════ */
++function renderFinanceTypes() {
++    var optHtml = financeTypes.map(function(t) { return '<option value="' + esc(t) + '">' + esc(t) + '</option>'; }).join('');
++    document.getElementById('finType').innerHTML = optHtml;
++    document.getElementById('filterFinType').innerHTML = '<option value="all">All Types</option>' + optHtml;
++    document.getElementById('editFinTypeSelect').innerHTML = optHtml;
++
++    document.getElementById('finTypeList').innerHTML = financeTypes.map(function(t, i) {
++        var total = financeEntries.filter(function(e) { return e.type === t; }).reduce(function(s, e) { return s + e.amount; }, 0);
++        var upBtn = i > 0 ? '<button onclick="moveFinType(' + i + ',-1)" title="Move up">&#9650;</button>' : '<button disabled>&#9650;</button>';
++        var downBtn = i < financeTypes.length - 1 ? '<button onclick="moveFinType(' + i + ',1)" title="Move down">&#9660;</button>' : '<button disabled>&#9660;</button>';
++        var isRevenue = t === 'Money Received';
++        var cls = isRevenue ? 'cat-total' : 'cat-total';
++        return '<li><div class="reorder-btns">' + upBtn + downBtn + '</div><span class="cat-name">' + esc(t) + '</span><span class="' + cls + '">$' + total.toFixed(2) + '</span><button class="btn btn-danger" onclick="removeFinType(' + i + ')" title="Remove type">&times;</button></li>';
++    }).join('');
++}
++
++function addFinType() {
++    var input = document.getElementById('newFinTypeName');
++    var name = input.value.trim();
++    if (!name) return toast('Please enter a type name.');
++    if (financeTypes.some(function(t) { return t.toLowerCase() === name.toLowerCase(); })) return toast('Type already exists.');
++    financeTypes.push(name); input.value = '';
++    save(); renderFinanceTypes(); renderFinanceAll(); toast('Type "' + name + '" added!');
++}
++
++function removeFinType(i) {
++    var name = financeTypes[i];
++    if (!confirm('Remove "' + name + '"? Existing entries of this type will NOT be deleted.')) return;
++    financeTypes.splice(i, 1); save(); renderFinanceTypes(); renderFinanceAll();
++    toast('Type "' + name + '" removed.');
++}
++
++function moveFinType(i, dir) {
++    var j = i + dir;
++    if (j < 0 || j >= financeTypes.length) return;
++    var temp = financeTypes[i];
++    financeTypes[i] = financeTypes[j];
++    financeTypes[j] = temp;
++    save(); renderFinanceTypes(); renderFinanceAll();
++}
++
+ /* ═══════════════════════════════════════
+    CONDITIONAL FIELDS
+    ═══════════════════════════════════════ */
+@@ -1701,7 +1740,7 @@ <h2>&#9999;&#65039; Edit Finance Entry</h2>
+     document.getElementById('periodLabel').textContent = getPeriodLabel();
+     var all = getFilteredFinance();
+     var jobTotals = getJobRevenueTotals();
+-    var types = ['Money Received', 'Job Revenue', 'Driver Pay', 'Gas', 'Tolls', 'Supplies', 'Vehicle Insurance', 'Liability Insurance', 'Truck Repair/Maintenance', 'Commissions', 'Trash Removal Fee', 'Miscellaneous'];
++    var types = ['Job Revenue'].concat(financeTypes);
+     var html = '';
+     types.forEach(function(type) {
+         var total, isRevenue, cls;
+@@ -1874,7 +1913,11 @@ <h2>&#9999;&#65039; Edit Finance Entry</h2>
+     if (!entry) return;
+     document.getElementById('editFinId').value = id;
+     document.getElementById('editFinDate').value = entry.date;
+-    document.getElementById('editFinTypeSelect').value = entry.type;
++    var typeSelect = document.getElementById('editFinTypeSelect');
++    typeSelect.innerHTML = financeTypes.map(function(t) { return '<option value="' + esc(t) + '"' + (t === entry.type ? ' selected' : '') + '>' + esc(t) + '</option>'; }).join('');
++    if (!financeTypes.includes(entry.type)) {
++        typeSelect.innerHTML += '<option value="' + esc(entry.type) + '" selected>' + esc(entry.type) + '</option>';
++    }
+     document.getElementById('editFinAmount').value = entry.amount;
+     document.getElementById('editFinNote').value = entry.note || '';
+     document.getElementById('editFinanceModal').classList.add('active');
+@@ -2060,51 +2103,57 @@ <h2>&#9999;&#65039; Edit Finance Entry</h2>
+ 
+ function handlePDFUpload(file) {
+     if (typeof pdfjsLib === 'undefined') {
+-        toast('PDF support is loading. Please try again in a moment.');
++        toast('PDF library failed to load. Check your internet connection and refresh.', true);
+         return;
+     }
+-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
++    if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
++        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
++    }
+ 
+     toast('Processing PDF...');
+     var reader = new FileReader();
+     reader.onload = function() {
+-        var typedArray = new Uint8Array(reader.result);
+-        var loadingTask = pdfjsLib.getDocument({ data: typedArray });
+-        loadingTask.promise.then(function(pdf) {
+-            var allText = [];
+-            var pages = pdf.numPages;
+-            var processed = 0;
+-
+-            if (pages === 0) {
+-                toast('PDF has no pages.');
+-                return;
+-            }
++        try {
++            var typedArray = new Uint8Array(reader.result);
++            var loadingTask = pdfjsLib.getDocument({ data: typedArray });
++            loadingTask.promise.then(function(pdf) {
++                var allText = [];
++                var pages = pdf.numPages;
++                var processed = 0;
++
++                if (pages === 0) {
++                    toast('PDF has no pages.', true);
++                    return;
++                }
+ 
+-            function processPage(pageNum) {
+-                pdf.getPage(pageNum).then(function(page) {
+-                    page.getTextContent().then(function(textContent) {
+-                        var pageText = textContent.items.map(function(item) { return item.str; }).join(' ');
+-                        allText[pageNum - 1] = pageText;
+-                        processed++;
+-                        if (processed === pages) {
+-                            var fullText = allText.join('\n');
+-                            parsePDFText(fullText);
+-                        }
++                function processPage(pageNum) {
++                    pdf.getPage(pageNum).then(function(page) {
++                        page.getTextContent().then(function(textContent) {
++                            var pageText = textContent.items.map(function(item) { return item.str; }).join(' ');
++                            allText[pageNum - 1] = pageText;
++                            processed++;
++                            if (processed === pages) {
++                                var fullText = allText.join('\n');
++                                parsePDFText(fullText);
++                            }
++                        }).catch(function(err) {
++                            toast('Error reading PDF page ' + pageNum + ': ' + err.message, true);
++                        });
+                     }).catch(function(err) {
+-                        toast('Error reading PDF page ' + pageNum + ': ' + err.message);
++                        toast('Error reading PDF page ' + pageNum + ': ' + err.message, true);
+                     });
+-                }).catch(function(err) {
+-                    toast('Error reading PDF page ' + pageNum + ': ' + err.message);
+-                });
+-            }
++                }
+ 
+-            for (var i = 1; i <= pages; i++) { processPage(i); }
+-        }).catch(function(err) {
+-            toast('Error reading PDF: ' + err.message);
+-        });
++                for (var i = 1; i <= pages; i++) { processPage(i); }
++            }).catch(function(err) {
++                toast('Error reading PDF: ' + err.message + '. Try exporting as CSV instead.', true);
++            });
++        } catch (err) {
++            toast('Error processing PDF: ' + err.message, true);
++        }
+     };
+     reader.onerror = function() {
+-        toast('Error reading file. Please try again.');
++        toast('Error reading file. Please try again.', true);
+     };
+     reader.readAsArrayBuffer(file);
+ }
+@@ -2224,8 +2273,7 @@ <h2>&#9999;&#65039; Edit Finance Entry</h2>
+ }
+ 
+ function showBankPreview() {
+-    var types = ['Money Received', 'Driver Pay', 'Gas', 'Tolls', 'Supplies', 'Vehicle Insurance', 'Liability Insurance', 'Truck Repair/Maintenance', 'Commissions', 'Trash Removal Fee', 'Miscellaneous'];
+-    var optionsHtml = types.map(function(t) { return '<option value="' + t + '">' + t + '</option>'; }).join('');
++    var optionsHtml = financeTypes.map(function(t) { return '<option value="' + t + '">' + t + '</option>'; }).join('');
+ 
+     var html = '<table class="preview-table"><thead><tr><th style="width:30px"><input type="checkbox" class="preview-check" checked onchange="toggleAllBankRows(this)"></th><th>Date</th><th>Description</th><th>Amount</th><th>Category</th></tr></thead><tbody>';
+     bankParsedRows.forEach(function(row, idx) {
+@@ -2345,13 +2393,14 @@ <h2>&#9999;&#65039; Edit Finance Entry</h2>
+     renderCategories(); buildChart(); renderSummary(); renderLog();
+ }
+ function renderFinanceAll() {
+-    renderFinanceSummary(); renderFinanceBreakdown(); drawFinanceChart(); renderFinanceLog();
++    renderFinanceTypes(); renderFinanceSummary(); renderFinanceBreakdown(); drawFinanceChart(); renderFinanceLog();
+ }
+ 
+ document.getElementById('entryDate').value = today();
+ document.getElementById('finDate').value = today();
+ document.getElementById('footerYear').textContent = new Date().getFullYear();
+ renderAll();
++renderFinanceAll();
+ </script>
+ </body>
+ </html>

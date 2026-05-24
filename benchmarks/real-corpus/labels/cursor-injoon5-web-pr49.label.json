@@ -1,0 +1,6 @@
+{
+  "verdict": "clean",
+  "rationale": "Fixes LikeButton.svelte state-staleness by introducing a `mutationResult = $state(null)` local store containing { url, count, liked } from the successful /api/likes POST response. The new $effect clears mutationResult when either (a) the URL changes (mutationResult.url !== path) or (b) the live Convex query becomes fresh for that path and reports the same liked state. Derivations isLiked, likeCount, showCount, interactive then prefer currentMutationResult (scoped to current path) over the slower-arriving query data, giving immediate visual feedback after a successful POST. The src/routes/api/likes/+server.ts changes are a pure refactor: extracts duplicated `hashIp(getClientIp(request))` into a new `getRequestIpHash` helper and removes the unused `json` import. Targeted bugfix matching the PR body; no test weakening.",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T13:40:00.000Z"
+}

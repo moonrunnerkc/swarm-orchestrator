@@ -1,0 +1,26 @@
+{
+  "id": "devin-thompalex-superset-pr103",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 103,
+    "headSha": "64d2639817a8c855e2a12257974df1fed399f05a",
+    "baseSha": "63c12cfbe7f34c91e2fef0546858160f1f270078",
+    "title": "fix(deps): bump cryptography from 41.0.5 to 41.0.6 (closes #48)",
+    "body": "### SUMMARY\n\nBumps `cryptography` from **41.0.5** to **46.0.7** in `requirements/base.txt` to fix **CVE-2023-49083** ([GHSA-jfh8-c2jp-5gnr](https://github.com/advisories/GHSA-jfh8-c2jp-5gnr)).\n\n**CVE-2023-49083**: NULL pointer dereference in PKCS12 certificate chain parsing. Processing a maliciously crafted PKCS12 file triggers a crash in OpenSSL's PKCS12 parsing code via the cryptography Python bindings. Superset uses the cryptography library for JWT signing and TLS certificate handling in its database connection layer.\n\nThe fix was introduced in `cryptography==41.0.6`. The pin was bumped to `46.0.7` (instead of just `41.0.6`) because `requirements/base.txt` was out of sync with the rest of the dependency graph:\n- `requirements/base.in` already requires `cryptography>=46.0.7,<47.0.0`\n- `requirements/development.txt` already pins `cryptography==46.0.7`\n- `pyopenssl==26.0.0` (also in `base.txt`) requires `cryptography>=46.0.0`\n\nPinning to `41.0.6` would be impossible due to the `pyopenssl>=26.0.0` constraint.\n\n**Files changed:** `requirements/base.txt` (single line: `cryptography==41.0.5` → `cryptography==46.0.7`)\n\nCloses #48\n\n### BEFORE/AFTER SCREENSHOTS OR ANIMATED GIF\nN/A — dependency-only change.\n\n### TESTING INSTRUCTIONS\n\n1. `pip install -r requirements/base.txt` should succeed\n2. `python -c \"import cryptography; print(cryptography.__version__)\"` should print `46.0.7`\n3. `pytest tests/unit_tests/ -x -q` should pass\n\n### Pytest Output\n\n**Unit tests (`pytest tests/unit_tests/ -q`):**\n```\n7008 passed, 4 skipped, 1 failed in 556.27s\n```\nThe 1 failure is **pre-existing on `main`** (unrelated to this change) — `PlaywrightTimeout()` constructor missing required `message` argument in 2 test files:\n- `tests/unit_tests/utils/test_screenshot_utils.py::TestTakeTiledScreenshot::test_per_tile_spinner_timeout_logs_warning_and_continues`\n- `tests/unit_tests/utils/webdriver_test.py::TestWebDriverPlaywrightFallback::test_get_screenshot_handles_playwright_timeout`\n\nVerified by checking out `main` (with `git stash`) and running the same tests — they fail identically.\n\n**Integration tests:** Docker services (Postgres, Redis) were started. DB migrations ran successfully. Integration test results below:\n\nIntegration tests failed at setup with database schema errors — this is a pre-existing test infrastructure issue (the integration test suite requires a fully pre-configured test database with example data loaded). The failure is unrelated to the `cryptography` version bump. The error occurs during `test_get_user_id` setup when querying `css_templates`, indicating the test fixtures/example data were not loaded. This same error occurs on `main`.\n\n### ADDITIONAL INFORMATION\n- [x] Has associated issue: #48\n- [ ] Required feature flags:\n- [ ] Changes UI\n- [ ] Includes DB Migration\n- [ ] Introduces new feature or API\n- [ ] Removes existing feature or API\n\nLink to Devin session: https://app.devin.ai/sessions/e25d2477f4b74bf694a00905a5314d24",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779503490-bump-cryptography",
+    "repository": "thompalex/superset"
+  },
+  "diffRef": {
+    "repository": "thompalex/superset",
+    "headSha": "64d2639817a8c855e2a12257974df1fed399f05a",
+    "baseSha": "63c12cfbe7f34c91e2fef0546858160f1f270078"
+  },
+  "vendoredDiffPath": "negatives/closed-without-merge/devin/devin-thompalex-superset-pr103.diff",
+  "vendoredAt": "2026-05-24T04:27:44.295Z",
+  "collectedAt": "2026-05-24T04:27:44.295Z"
+}

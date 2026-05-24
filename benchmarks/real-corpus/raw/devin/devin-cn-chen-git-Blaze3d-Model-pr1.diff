@@ -1,0 +1,2346 @@
+diff --git a/src/main/kotlin/cn/chen/blaze3d/anim/AnimationLibrary.kt b/src/main/kotlin/cn/chen/blaze3d/anim/AnimationLibrary.kt
+deleted file mode 100644
+index e233067..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/anim/AnimationLibrary.kt
++++ /dev/null
+@@ -1,11 +0,0 @@
+-package cn.chen.blaze3d.anim
+-import cn.chen.blaze3d.api.ModelFormats
+-import java.io.File
+-object AnimationLibrary {
+-    private val motionExts = setOf("vmd", "vpd", "bvh", "fbx", "gltf", "glb", "vrm", "md5anim")
+-    fun scan(root: File): List<File> {
+-        val base = if (root.isDirectory) root else root.parentFile ?: return emptyList()
+-        return base.walkTopDown().maxDepth(24).filter { it.isFile && ModelFormats.extension(it.path) in motionExts }.sortedBy { it.path }.toList()
+-    }
+-    fun isMotion(path: String) = ModelFormats.extension(path) in motionExts
+-}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/anim/Animator.kt b/src/main/kotlin/cn/chen/blaze3d/anim/Animator.kt
+index 6872a1b..2a935c6 100644
+--- a/src/main/kotlin/cn/chen/blaze3d/anim/Animator.kt
++++ b/src/main/kotlin/cn/chen/blaze3d/anim/Animator.kt
+@@ -1,6 +1,16 @@
+ package cn.chen.blaze3d.anim
++import cn.chen.blaze3d.api.ModelFormats
+ import cn.chen.blaze3d.core.AnimClip
+ import cn.chen.blaze3d.core.SceneData
++import java.io.File
++object AnimationLibrary {
++    private val motionExts = setOf("vmd", "vpd", "bvh", "fbx", "gltf", "glb", "vrm", "md5anim")
++    fun scan(root: File): List<File> {
++        val base = if (root.isDirectory) root else root.parentFile ?: return emptyList()
++        return base.walkTopDown().maxDepth(24).filter { it.isFile && ModelFormats.extension(it.path) in motionExts }.sortedBy { it.path }.toList()
++    }
++    fun isMotion(path: String) = ModelFormats.extension(path) in motionExts
++}
+ class Animator(private val scene: SceneData) {
+     var currentAnimation: AnimClip? = null; private set
+     var currentTime: Double = 0.0; private set
+@@ -38,9 +48,7 @@ class Animator(private val scene: SceneData) {
+         val dt = deltaTime * speed
+         currentTime += dt
+         val duration = anim.durationSeconds
+-        if (currentTime > duration) {
+-            if (loop) currentTime %= duration else { currentTime = duration; playing = false }
+-        }
++        if (currentTime > duration) { if (loop) currentTime %= duration else { currentTime = duration; playing = false } }
+         val nxt = nextAnimation
+         if (nxt != null && transitionDuration > 0f) {
+             nextTime += dt
+@@ -54,9 +62,7 @@ class Animator(private val scene: SceneData) {
+                 currentIndex = scene.animations.indexOf(nxt).coerceAtLeast(0)
+                 nextAnimation = null; nextTime = 0.0; transitionDuration = 0f; transitionElapsed = 0f
+             }
+-        } else {
+-            skeleton.computeBoneTransforms(anim, currentTime, scene.rootNode)
+-        }
++        } else skeleton.computeBoneTransforms(anim, currentTime, scene.rootNode)
+     }
+     val animationNames get() = scene.animations.map { it.name }
+     val animationCount get() = scene.animations.size
+diff --git a/src/main/kotlin/cn/chen/blaze3d/anim/MorphAccumulator.kt b/src/main/kotlin/cn/chen/blaze3d/anim/MorphAccumulator.kt
+deleted file mode 100644
+index 2c89ee4..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/anim/MorphAccumulator.kt
++++ /dev/null
+@@ -1,29 +0,0 @@
+-package cn.chen.blaze3d.anim
+-import cn.chen.blaze3d.core.MeshData
+-import cn.chen.blaze3d.core.MorphTarget
+-import cn.chen.blaze3d.core.Vertex
+-import cn.chen.blaze3d.math.Vec3
+-class MorphAccumulator(val mesh: MeshData) {
+-    val weights: FloatArray = FloatArray(mesh.morphTargets.size) { i -> mesh.morphTargets[i].defaultWeight }
+-    val basePositions: Array<Vec3> = Array(mesh.vertices.size) { mesh.vertices[it].position }
+-    val baseNormals: Array<Vec3> = Array(mesh.vertices.size) { mesh.vertices[it].normal }
+-    private val workPositions: Array<Vec3> = Array(mesh.vertices.size) { basePositions[it] }
+-    private val workNormals: Array<Vec3> = Array(mesh.vertices.size) { baseNormals[it] }
+-    fun setWeight(name: String, value: Float) {
+-        for (i in mesh.morphTargets.indices) { if (mesh.morphTargets[i].name == name) { weights[i] = value; return } }
+-    }
+-    fun setWeight(index: Int, value: Float) { if (index in weights.indices) weights[index] = value }
+-    fun apply(): MorphedVertices {
+-        for (i in workPositions.indices) { workPositions[i] = basePositions[i]; workNormals[i] = baseNormals[i] }
+-        for (mi in mesh.morphTargets.indices) {
+-            val w = weights[mi]; if (w == 0f) continue
+-            val mt = mesh.morphTargets[mi]
+-            val pn = minOf(mt.positions.size, workPositions.size)
+-            for (v in 0 until pn) { val d = mt.positions[v]; workPositions[v] = workPositions[v] + d * w }
+-            val nn = minOf(mt.normals.size, workNormals.size)
+-            for (v in 0 until nn) { val d = mt.normals[v]; workNormals[v] = workNormals[v] + d * w }
+-        }
+-        return MorphedVertices(workPositions, workNormals)
+-    }
+-}
+-class MorphedVertices(val positions: Array<Vec3>, val normals: Array<Vec3>)
+diff --git a/src/main/kotlin/cn/chen/blaze3d/api/BuiltinFormats.kt b/src/main/kotlin/cn/chen/blaze3d/api/BuiltinFormats.kt
+deleted file mode 100644
+index 39cf767..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/api/BuiltinFormats.kt
++++ /dev/null
+@@ -1,16 +0,0 @@
+-package cn.chen.blaze3d.api
+-import cn.chen.blaze3d.core.SceneData
+-import cn.chen.blaze3d.loader.UniversalModelLoader
+-class RustBackedFormat(override val support: ModelSupport) : ModelFormatProvider {
+-    override fun load(context: ModelLoadContext): SceneData = UniversalModelLoader.loadFromFile(context.path)
+-}
+-object BuiltinFormats {
+-    private fun feat(vararg f: ModelFeature) = f.toSet()
+-    private fun res(vararg r: String) = r.toSet()
+-    val gltf = RustBackedFormat(ModelSupport("gltf", "glTF", setOf("gltf", "glb", "vrm"), feat(ModelFeature.BINARY, ModelFeature.TEXT, ModelFeature.MESH, ModelFeature.MATERIALS, ModelFeature.TEXTURES, ModelFeature.EMBEDDED_TEXTURES, ModelFeature.ANIMATION, ModelFeature.SKINNING, ModelFeature.MORPHS, ModelFeature.NODES, ModelFeature.CAMERAS, ModelFeature.LIGHTS), res("bin", "png", "jpg", "jpeg", "webp", "ktx", "ktx2")))
+-    val fbx = RustBackedFormat(ModelSupport("fbx", "FBX", setOf("fbx"), feat(ModelFeature.BINARY, ModelFeature.TEXT, ModelFeature.MESH, ModelFeature.MATERIALS, ModelFeature.TEXTURES, ModelFeature.ANIMATION, ModelFeature.SKINNING, ModelFeature.MORPHS, ModelFeature.NODES, ModelFeature.CAMERAS, ModelFeature.LIGHTS), res("png", "jpg", "jpeg", "tga", "bmp", "dds")))
+-    val obj = RustBackedFormat(ModelSupport("obj", "Wavefront OBJ", setOf("obj"), feat(ModelFeature.TEXT, ModelFeature.MESH, ModelFeature.MATERIALS, ModelFeature.TEXTURES), res("mtl", "png", "jpg", "jpeg", "tga", "bmp", "dds")))
+-    val dae = RustBackedFormat(ModelSupport("dae", "Collada DAE", setOf("dae"), feat(ModelFeature.TEXT, ModelFeature.MESH, ModelFeature.MATERIALS, ModelFeature.TEXTURES, ModelFeature.ANIMATION, ModelFeature.SKINNING, ModelFeature.NODES, ModelFeature.CAMERAS, ModelFeature.LIGHTS), res("png", "jpg", "jpeg", "tga", "bmp")))
+-    val mmd = RustBackedFormat(ModelSupport("mmd", "MikuMikuDance", setOf("pmd", "pmx"), feat(ModelFeature.BINARY, ModelFeature.MESH, ModelFeature.MATERIALS, ModelFeature.TEXTURES, ModelFeature.ANIMATION, ModelFeature.SKINNING, ModelFeature.MORPHS, ModelFeature.PHYSICS, ModelFeature.MMD_MOTION), res("vmd", "vpd", "png", "jpg", "jpeg", "tga", "bmp")))
+-    val all: List<ModelFormatProvider> = listOf(gltf, fbx, obj, dae, mmd)
+-}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/api/ModelApi.kt b/src/main/kotlin/cn/chen/blaze3d/api/ModelApi.kt
+index 4860703..76ff40f 100644
+--- a/src/main/kotlin/cn/chen/blaze3d/api/ModelApi.kt
++++ b/src/main/kotlin/cn/chen/blaze3d/api/ModelApi.kt
+@@ -1,8 +1,8 @@
+ package cn.chen.blaze3d.api
+ import cn.chen.blaze3d.core.SceneData
++import cn.chen.blaze3d.loader.UniversalModelLoader
+ import java.io.File
+ enum class ModelFeature { BINARY, TEXT, MESH, MATERIALS, TEXTURES, EMBEDDED_TEXTURES, ANIMATION, SKINNING, MORPHS, NODES, CAMERAS, LIGHTS, PHYSICS, MMD_MOTION, PLAYER_PACKAGE, SCENE_PACKAGE }
+-enum class ModelFormat { GLTF, GLB, FBX, OBJ, DAE, MMD, YSM, ASSIMP, OTHER }
+ data class ModelSupport(val id: String, val displayName: String, val extensions: Set<String>, val features: Set<ModelFeature>, val resources: Set<String> = emptySet(), val module: String = id) {
+     fun supports(path: String) = ModelFormats.extension(path) in extensions
+     fun resourcesIn(path: String): List<File> {
+@@ -18,19 +18,30 @@ interface ModelFormatProvider {
+     fun canLoad(path: String) = support.supports(path)
+     fun load(context: ModelLoadContext): SceneData
+ }
+-object ModelFormatRegistry {
+-    private val providers = linkedMapOf<String, ModelFormatProvider>()
+-    fun register(provider: ModelFormatProvider): ModelFormatProvider { providers[provider.support.id] = provider; return provider }
+-    fun register(vararg providers: ModelFormatProvider) = providers.forEach { register(it) }
+-    fun all(): List<ModelFormatProvider> = providers.values.toList()
+-    fun supportAll(): List<ModelSupport> = all().map { it.support }
+-    fun byId(id: String): ModelFormatProvider? = providers[id]
+-    fun detect(path: String): ModelFormatProvider? = providers.values.firstOrNull { it.canLoad(path) }
+-    fun load(path: String): ModelLoadResult {
+-        val asset = ModelPackage.mainAsset(File(path)) ?: File(path)
+-        val provider = detect(asset.path) ?: throw IllegalArgumentException("model: unsupported format ${ModelFormats.extension(asset.path)}")
+-        return ModelLoadResult(asset.path, asset.parent ?: "", provider.load(ModelLoadContext(asset.path)), provider.support)
++class RustBackedFormat(override val support: ModelSupport) : ModelFormatProvider {
++    override fun load(context: ModelLoadContext): SceneData = UniversalModelLoader.loadFromFile(context.path)
++}
++object ModelFormats {
++    val ASSIMP_EXTENSIONS = setOf("3d", "3ds", "3mf", "ac", "ac3d", "acc", "amf", "ase", "ask", "assbin", "b3d", "blend", "bsp", "bvh", "cob", "csm", "dae", "dxf", "enff", "fbx", "glb", "gltf", "hmp", "ifc", "ifczip", "iqm", "irr", "irrmesh", "lwo", "lws", "lxo", "md2", "md3", "md5anim", "md5camera", "md5mesh", "mdc", "mdl", "mesh", "mesh.xml", "mot", "ms3d", "ndo", "nff", "obj", "off", "ogex", "pk3", "ply", "pmx", "prj", "q3o", "q3s", "raw", "scn", "sib", "smd", "step", "stl", "stp", "ter", "uc", "vrm", "vta", "x", "x3d", "x3db", "xgl", "xml", "zae", "zgl")
++    val PROJECT_EXTENSIONS = ASSIMP_EXTENSIONS + setOf("ysm", "zip", "vmd", "vpd", "json", "geo.json", "bbmodel")
++    val RESOURCE_EXTENSIONS = setOf("bin", "mtl", "material", "skeleton", "skeleton.xml", "png", "jpg", "jpeg", "webp", "ktx", "ktx2", "tga", "bmp", "dds", "exr", "hdr")
++    val SANDBOX_EXTENSIONS = PROJECT_EXTENSIONS + RESOURCE_EXTENSIONS
++    fun extension(path: String): String {
++        val name = File(path).name.lowercase()
++        val compound = when {
++            name.endsWith(".mesh.xml") -> "mesh.xml"
++            name.endsWith(".skeleton.xml") -> "skeleton.xml"
++            name.endsWith(".geo.json") -> "geo.json"
++            else -> ""
++        }
++        return compound.ifEmpty { name.substringAfterLast('.', "") }
+     }
++    fun isAssimp(path: String) = extension(path) in ASSIMP_EXTENSIONS
++    fun isProject(path: String) = extension(path) in PROJECT_EXTENSIONS
++    fun isResource(path: String) = extension(path) in RESOURCE_EXTENSIONS
++    fun isAsset(path: String) = isProject(path) || isResource(path)
++    fun isYsmDirectory(file: File) = file.isDirectory && (File(file, "ysm.json").isFile || File(file, "main.json").isFile || File(file, "models/main.json").isFile)
++    fun isBrowsable(file: File) = if (file.isDirectory) isYsmDirectory(file) else file.isFile && isProject(file.path)
+ }
+ class ResourceIndex private constructor(private val root: File, private val files: List<File>, private val byName: Map<String, File>) {
+     fun find(name: String): File? = byName[File(name).name.lowercase()]
+@@ -77,3 +88,27 @@ object ModelPackage {
+         return 8
+     }
+ }
++object ModelFormatRegistry {
++    private val providers = linkedMapOf<String, ModelFormatProvider>()
++    fun register(provider: ModelFormatProvider): ModelFormatProvider { providers[provider.support.id] = provider; return provider }
++    fun register(vararg providers: ModelFormatProvider) = providers.forEach { register(it) }
++    fun all(): List<ModelFormatProvider> = providers.values.toList()
++    fun supportAll(): List<ModelSupport> = all().map { it.support }
++    fun byId(id: String): ModelFormatProvider? = providers[id]
++    fun detect(path: String): ModelFormatProvider? = providers.values.firstOrNull { it.canLoad(path) }
++    fun load(path: String): ModelLoadResult {
++        val asset = ModelPackage.mainAsset(File(path)) ?: File(path)
++        val provider = detect(asset.path) ?: throw IllegalArgumentException("model: unsupported format ${ModelFormats.extension(asset.path)}")
++        return ModelLoadResult(asset.path, asset.parent ?: "", provider.load(ModelLoadContext(asset.path)), provider.support)
++    }
++}
++object BuiltinFormats {
++    private fun feat(vararg f: ModelFeature) = f.toSet()
++    private fun res(vararg r: String) = r.toSet()
++    val gltf = RustBackedFormat(ModelSupport("gltf", "glTF", setOf("gltf", "glb", "vrm"), feat(ModelFeature.BINARY, ModelFeature.TEXT, ModelFeature.MESH, ModelFeature.MATERIALS, ModelFeature.TEXTURES, ModelFeature.EMBEDDED_TEXTURES, ModelFeature.ANIMATION, ModelFeature.SKINNING, ModelFeature.MORPHS, ModelFeature.NODES, ModelFeature.CAMERAS, ModelFeature.LIGHTS), res("bin", "png", "jpg", "jpeg", "webp", "ktx", "ktx2")))
++    val fbx = RustBackedFormat(ModelSupport("fbx", "FBX", setOf("fbx"), feat(ModelFeature.BINARY, ModelFeature.TEXT, ModelFeature.MESH, ModelFeature.MATERIALS, ModelFeature.TEXTURES, ModelFeature.ANIMATION, ModelFeature.SKINNING, ModelFeature.MORPHS, ModelFeature.NODES, ModelFeature.CAMERAS, ModelFeature.LIGHTS), res("png", "jpg", "jpeg", "tga", "bmp", "dds")))
++    val obj = RustBackedFormat(ModelSupport("obj", "Wavefront OBJ", setOf("obj"), feat(ModelFeature.TEXT, ModelFeature.MESH, ModelFeature.MATERIALS, ModelFeature.TEXTURES), res("mtl", "png", "jpg", "jpeg", "tga", "bmp", "dds")))
++    val dae = RustBackedFormat(ModelSupport("dae", "Collada DAE", setOf("dae"), feat(ModelFeature.TEXT, ModelFeature.MESH, ModelFeature.MATERIALS, ModelFeature.TEXTURES, ModelFeature.ANIMATION, ModelFeature.SKINNING, ModelFeature.NODES, ModelFeature.CAMERAS, ModelFeature.LIGHTS), res("png", "jpg", "jpeg", "tga", "bmp")))
++    val mmd = RustBackedFormat(ModelSupport("mmd", "MikuMikuDance", setOf("pmd", "pmx"), feat(ModelFeature.BINARY, ModelFeature.MESH, ModelFeature.MATERIALS, ModelFeature.TEXTURES, ModelFeature.ANIMATION, ModelFeature.SKINNING, ModelFeature.MORPHS, ModelFeature.PHYSICS, ModelFeature.MMD_MOTION), res("vmd", "vpd", "png", "jpg", "jpeg", "tga", "bmp")))
++    val all: List<ModelFormatProvider> = listOf(gltf, fbx, obj, dae, mmd)
++}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/api/ModelFormats.kt b/src/main/kotlin/cn/chen/blaze3d/api/ModelFormats.kt
+deleted file mode 100644
+index 804aec4..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/api/ModelFormats.kt
++++ /dev/null
+@@ -1,24 +0,0 @@
+-package cn.chen.blaze3d.api
+-import java.io.File
+-object ModelFormats {
+-    val ASSIMP_EXTENSIONS = setOf("3d", "3ds", "3mf", "ac", "ac3d", "acc", "amf", "ase", "ask", "assbin", "b3d", "blend", "bsp", "bvh", "cob", "csm", "dae", "dxf", "enff", "fbx", "glb", "gltf", "hmp", "ifc", "ifczip", "iqm", "irr", "irrmesh", "lwo", "lws", "lxo", "md2", "md3", "md5anim", "md5camera", "md5mesh", "mdc", "mdl", "mesh", "mesh.xml", "mot", "ms3d", "ndo", "nff", "obj", "off", "ogex", "pk3", "ply", "pmx", "prj", "q3o", "q3s", "raw", "scn", "sib", "smd", "step", "stl", "stp", "ter", "uc", "vrm", "vta", "x", "x3d", "x3db", "xgl", "xml", "zae", "zgl")
+-    val PROJECT_EXTENSIONS = ASSIMP_EXTENSIONS + setOf("ysm", "zip", "vmd", "vpd", "json", "geo.json", "bbmodel")
+-    val RESOURCE_EXTENSIONS = setOf("bin", "mtl", "material", "skeleton", "skeleton.xml", "png", "jpg", "jpeg", "webp", "ktx", "ktx2", "tga", "bmp", "dds", "exr", "hdr")
+-    val SANDBOX_EXTENSIONS = PROJECT_EXTENSIONS + RESOURCE_EXTENSIONS
+-    fun extension(path: String): String {
+-        val name = File(path).name.lowercase()
+-        val compound = when {
+-            name.endsWith(".mesh.xml") -> "mesh.xml"
+-            name.endsWith(".skeleton.xml") -> "skeleton.xml"
+-            name.endsWith(".geo.json") -> "geo.json"
+-            else -> ""
+-        }
+-        return compound.ifEmpty { name.substringAfterLast('.', "") }
+-    }
+-    fun isAssimp(path: String) = extension(path) in ASSIMP_EXTENSIONS
+-    fun isProject(path: String) = extension(path) in PROJECT_EXTENSIONS
+-    fun isResource(path: String) = extension(path) in RESOURCE_EXTENSIONS
+-    fun isAsset(path: String) = isProject(path) || isResource(path)
+-    fun isYsmDirectory(file: File) = file.isDirectory && (File(file, "ysm.json").isFile || File(file, "main.json").isFile || File(file, "models/main.json").isFile)
+-    fun isBrowsable(file: File) = if (file.isDirectory) isYsmDirectory(file) else file.isFile && isProject(file.path)
+-}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/async/RenderWorker.kt b/src/main/kotlin/cn/chen/blaze3d/async/AsyncRuntime.kt
+similarity index 56%
+rename from src/main/kotlin/cn/chen/blaze3d/async/RenderWorker.kt
+rename to src/main/kotlin/cn/chen/blaze3d/async/AsyncRuntime.kt
+index a92a5bb..1f425b3 100644
+--- a/src/main/kotlin/cn/chen/blaze3d/async/RenderWorker.kt
++++ b/src/main/kotlin/cn/chen/blaze3d/async/AsyncRuntime.kt
+@@ -2,7 +2,7 @@ package cn.chen.blaze3d.async
+ import cn.chen.blaze3d.api.ModelFormatRegistry
+ import cn.chen.blaze3d.api.ModelLoadResult
+ import java.io.File
+-import java.lang.Runtime
++import java.util.ArrayDeque
+ import java.util.concurrent.CompletableFuture
+ import java.util.concurrent.ConcurrentHashMap
+ import java.util.concurrent.PriorityBlockingQueue
+@@ -12,6 +12,51 @@ import java.util.concurrent.ThreadPoolExecutor
+ import java.util.concurrent.TimeUnit
+ import java.util.concurrent.atomic.AtomicInteger
+ import java.util.concurrent.atomic.AtomicLong
++object GpuUploadQueue {
++    const val PRIORITY_USER = 0
++    const val PRIORITY_FRAME = 1
++    const val PRIORITY_BACKGROUND = 2
++    private const val DEFAULT_BUDGET_NS = 2_000_000L
++    private const val MAX_JOBS_PER_FRAME = 32
++    private val high = ArrayDeque<Job>()
++    private val normal = ArrayDeque<Job>()
++    private val background = ArrayDeque<Job>()
++    private val pending = AtomicLong()
++    var budgetNanos: Long = DEFAULT_BUDGET_NS
++    var executed = 0L; private set
++    var skipped = 0L; private set
++    var failed = 0L; private set
++    var lastFrameMicros = 0L; private set
++    var lastFrameJobs = 0; private set
++    private class Job(val priority: Int, val name: String?, val expireAt: Long, val task: () -> Unit)
++    @Synchronized fun enqueue(job: () -> Unit) = enqueue(PRIORITY_FRAME, null, 0L, job)
++    @Synchronized fun enqueueUser(name: String?, job: () -> Unit) = enqueue(PRIORITY_USER, name, 0L, job)
++    @Synchronized fun enqueueBackground(job: () -> Unit) = enqueue(PRIORITY_BACKGROUND, null, 0L, job)
++    @Synchronized fun enqueue(priority: Int, name: String?, expireMs: Long, job: () -> Unit) {
++        val expireAt = if (expireMs > 0L) System.nanoTime() + expireMs * 1_000_000L else 0L
++        val target = when (priority) { PRIORITY_USER -> high; PRIORITY_BACKGROUND -> background; else -> normal }
++        target.addLast(Job(priority, name, expireAt, job))
++        pending.incrementAndGet()
++    }
++    fun drain(maxJobs: Int = MAX_JOBS_PER_FRAME) = drainWithBudget(maxJobs, budgetNanos)
++    fun drainWithBudget(maxJobs: Int, nanos: Long) {
++        val start = System.nanoTime()
++        val deadline = start + nanos.coerceAtLeast(0L)
++        var ran = 0
++        while (ran < maxJobs) {
++            val job = nextJob() ?: break
++            if (job.expireAt != 0L && System.nanoTime() > job.expireAt) { skipped++; pending.decrementAndGet(); continue }
++            try { job.task(); executed++; ran++ } catch (_: Throwable) { failed++ } finally { pending.decrementAndGet() }
++            if (ran > 0 && System.nanoTime() >= deadline) break
++        }
++        lastFrameMicros = (System.nanoTime() - start) / 1000L
++        lastFrameJobs = ran
++    }
++    @Synchronized private fun nextJob(): Job? = high.pollFirst() ?: normal.pollFirst() ?: background.pollFirst()
++    @Synchronized fun clear() { high.clear(); normal.clear(); background.clear(); pending.set(0) }
++    fun pendingCount() = pending.get().toInt()
++    fun status() = "upload pending=${pendingCount()} executed=$executed skipped=$skipped failed=$failed lastJobs=$lastFrameJobs lastUs=$lastFrameMicros budget=${budgetNanos}ns"
++}
+ object RenderWorker {
+     const val PRIORITY_USER = 0
+     const val PRIORITY_NORMAL = 1
+@@ -63,25 +108,15 @@ object RenderWorker {
+             } catch (t: Throwable) {
+                 failed++
+                 future.completeExceptionally(t)
+-            } finally {
+-                pending.remove(key, task)
+-            }
++            } finally { pending.remove(key, task) }
+         }
+         val wrapped = PrioritizedTask(priority, seq.incrementAndGet(), runnable)
+         submitted++
+-        try {
+-            pool.execute(wrapped)
+-        } catch (_: RejectedExecutionException) {
+-            future.completeExceptionally(IllegalStateException("worker pool shutdown"))
+-        }
++        try { pool.execute(wrapped) } catch (_: RejectedExecutionException) { future.completeExceptionally(IllegalStateException("worker pool shutdown")) }
+         future.whenComplete { _, _ -> if (future.isCancelled) { canceled++; pending.remove(key, task) } }
+         return future
+     }
+     fun pendingCount() = pending.size
+     fun status() = "worker submitted=$submitted completed=$completed failed=$failed canceled=$canceled pending=${pending.size} queue=${queue.size}"
+-    fun shutdown() {
+-        for ((_, task) in pending) task.future.cancel(true)
+-        pending.clear()
+-        pool.shutdownNow()
+-    }
++    fun shutdown() { for ((_, task) in pending) task.future.cancel(true); pending.clear(); pool.shutdownNow() }
+ }
+diff --git a/src/main/kotlin/cn/chen/blaze3d/async/GpuUploadQueue.kt b/src/main/kotlin/cn/chen/blaze3d/async/GpuUploadQueue.kt
+deleted file mode 100644
+index 3bd0aff..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/async/GpuUploadQueue.kt
++++ /dev/null
+@@ -1,48 +0,0 @@
+-package cn.chen.blaze3d.async
+-import java.util.ArrayDeque
+-import java.util.concurrent.atomic.AtomicLong
+-object GpuUploadQueue {
+-    const val PRIORITY_USER = 0
+-    const val PRIORITY_FRAME = 1
+-    const val PRIORITY_BACKGROUND = 2
+-    private const val DEFAULT_BUDGET_NS = 2_000_000L
+-    private const val MAX_JOBS_PER_FRAME = 32
+-    private val high = ArrayDeque<Job>()
+-    private val normal = ArrayDeque<Job>()
+-    private val background = ArrayDeque<Job>()
+-    private val pending = AtomicLong()
+-    var budgetNanos: Long = DEFAULT_BUDGET_NS
+-    var executed = 0L; private set
+-    var skipped = 0L; private set
+-    var failed = 0L; private set
+-    var lastFrameMicros = 0L; private set
+-    var lastFrameJobs = 0; private set
+-    private class Job(val priority: Int, val name: String?, val expireAt: Long, val task: () -> Unit)
+-    @Synchronized fun enqueue(job: () -> Unit) = enqueue(PRIORITY_FRAME, null, 0L, job)
+-    @Synchronized fun enqueueUser(name: String?, job: () -> Unit) = enqueue(PRIORITY_USER, name, 0L, job)
+-    @Synchronized fun enqueueBackground(job: () -> Unit) = enqueue(PRIORITY_BACKGROUND, null, 0L, job)
+-    @Synchronized fun enqueue(priority: Int, name: String?, expireMs: Long, job: () -> Unit) {
+-        val expireAt = if (expireMs > 0L) System.nanoTime() + expireMs * 1_000_000L else 0L
+-        val target = when (priority) { PRIORITY_USER -> high; PRIORITY_BACKGROUND -> background; else -> normal }
+-        target.addLast(Job(priority, name, expireAt, job))
+-        pending.incrementAndGet()
+-    }
+-    fun drain(maxJobs: Int = MAX_JOBS_PER_FRAME) = drainWithBudget(maxJobs, budgetNanos)
+-    fun drainWithBudget(maxJobs: Int, nanos: Long) {
+-        val start = System.nanoTime()
+-        val deadline = start + nanos.coerceAtLeast(0L)
+-        var ran = 0
+-        while (ran < maxJobs) {
+-            val job = nextJob() ?: break
+-            if (job.expireAt != 0L && System.nanoTime() > job.expireAt) { skipped++; pending.decrementAndGet(); continue }
+-            try { job.task(); executed++; ran++ } catch (_: Throwable) { failed++ } finally { pending.decrementAndGet() }
+-            if (ran > 0 && System.nanoTime() >= deadline) break
+-        }
+-        lastFrameMicros = (System.nanoTime() - start) / 1000L
+-        lastFrameJobs = ran
+-    }
+-    @Synchronized private fun nextJob(): Job? = high.pollFirst() ?: normal.pollFirst() ?: background.pollFirst()
+-    @Synchronized fun clear() { high.clear(); normal.clear(); background.clear(); pending.set(0) }
+-    fun pendingCount() = pending.get().toInt()
+-    fun status() = "upload pending=${pendingCount()} executed=$executed skipped=$skipped failed=$failed lastJobs=$lastFrameJobs lastUs=$lastFrameMicros budget=${budgetNanos}ns"
+-}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/client/Blaze3dRuntime.kt b/src/main/kotlin/cn/chen/blaze3d/client/Blaze3dRuntime.kt
+deleted file mode 100644
+index c213d31..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/client/Blaze3dRuntime.kt
++++ /dev/null
+@@ -1,45 +0,0 @@
+-package cn.chen.blaze3d.client
+-import cn.chen.blaze3d.advanced.AdvancedRuntime
+-import cn.chen.blaze3d.api.BuiltinFormats
+-import cn.chen.blaze3d.api.ModelFormatRegistry
+-import cn.chen.blaze3d.async.GpuUploadQueue
+-import cn.chen.blaze3d.async.RenderWorker
+-import cn.chen.blaze3d.loader.ModelCache
+-import cn.chen.blaze3d.loader.ScenePrefetcher
+-import cn.chen.blaze3d.loader.UniversalModelLoader
+-import cn.chen.blaze3d.physics.BulletWorld
+-import cn.chen.blaze3d.render.WorldRenderer
+-import cn.chen.blaze3d.rust.BlazeNative
+-import cn.chen.blaze3d.rust.RustNativeLoader
+-import cn.chen.blaze3d.sync.ModelSync
+-import cn.chen.blaze3d.ysm.YsmSupport
+-import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
+-import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents
+-object Blaze3dRuntime {
+-    val renderer = WorldRenderer()
+-    fun init() {
+-        BuiltinFormats.all.forEach(ModelFormatRegistry::register)
+-        ModelFormatRegistry.register(YsmSupport, UniversalModelLoader)
+-        ModelSync.init { renderer.applyRemote(it) }
+-        MemoryPressureMonitor.install()
+-        AdvancedRuntime.init()
+-        ClientTickEvents.END_CLIENT_TICK.register(ClientTickEvents.EndTick {
+-            GpuUploadQueue.drain()
+-            BulletWorld.update(0.05f)
+-            AdvancedRuntime.tick(0.05f)
+-        })
+-        LevelRenderEvents.AFTER_SOLID_FEATURES.register(LevelRenderEvents.AfterSolidFeatures { ctx -> renderer.render(ctx) })
+-        Runtime.getRuntime().addShutdownHook(Thread({ destroy() }, "blaze3d-shutdown"))
+-    }
+-    fun destroy() {
+-        AdvancedRuntime.destroy()
+-        renderer.destroy()
+-        BulletWorld.destroy()
+-        RenderWorker.shutdown()
+-        ScenePrefetcher.shutdown()
+-        MemoryPressureMonitor.uninstall()
+-        GpuUploadQueue.clear()
+-        ModelCache.clear()
+-        if (RustNativeLoader.ensure()) runCatching { BlazeNative.vulkanSaveCache() }
+-    }
+-}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/client/ClientInit.kt b/src/main/kotlin/cn/chen/blaze3d/client/ClientInit.kt
+deleted file mode 100644
+index 405454f..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/client/ClientInit.kt
++++ /dev/null
+@@ -1,5 +0,0 @@
+-package cn.chen.blaze3d.client
+-import net.fabricmc.api.ClientModInitializer
+-object ClientInit : ClientModInitializer {
+-    override fun onInitializeClient() { Blaze3dRuntime.init() }
+-}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/client/MemoryPressureMonitor.kt b/src/main/kotlin/cn/chen/blaze3d/client/ClientRuntime.kt
+similarity index 57%
+rename from src/main/kotlin/cn/chen/blaze3d/client/MemoryPressureMonitor.kt
+rename to src/main/kotlin/cn/chen/blaze3d/client/ClientRuntime.kt
+index 5a39ae7..16bba3a 100644
+--- a/src/main/kotlin/cn/chen/blaze3d/client/MemoryPressureMonitor.kt
++++ b/src/main/kotlin/cn/chen/blaze3d/client/ClientRuntime.kt
+@@ -1,6 +1,21 @@
+ package cn.chen.blaze3d.client
++import cn.chen.blaze3d.advanced.AdvancedRuntime
++import cn.chen.blaze3d.api.BuiltinFormats
++import cn.chen.blaze3d.api.ModelFormatRegistry
+ import cn.chen.blaze3d.async.GpuUploadQueue
++import cn.chen.blaze3d.async.RenderWorker
+ import cn.chen.blaze3d.loader.ModelCache
++import cn.chen.blaze3d.loader.ScenePrefetcher
++import cn.chen.blaze3d.loader.UniversalModelLoader
++import cn.chen.blaze3d.physics.BulletWorld
++import cn.chen.blaze3d.render.WorldRenderer
++import cn.chen.blaze3d.rust.BlazeNative
++import cn.chen.blaze3d.rust.RustNativeLoader
++import cn.chen.blaze3d.sync.ModelSync
++import cn.chen.blaze3d.ysm.YsmSupport
++import net.fabricmc.api.ClientModInitializer
++import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
++import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents
+ import java.lang.management.ManagementFactory
+ import java.lang.management.MemoryNotificationInfo
+ import java.lang.management.MemoryPoolMXBean
+@@ -8,6 +23,37 @@ import java.lang.management.MemoryType
+ import javax.management.Notification
+ import javax.management.NotificationEmitter
+ import javax.management.NotificationListener
++object ClientInit : ClientModInitializer {
++    override fun onInitializeClient() { Blaze3dRuntime.init() }
++}
++object Blaze3dRuntime {
++    val renderer = WorldRenderer()
++    fun init() {
++        BuiltinFormats.all.forEach(ModelFormatRegistry::register)
++        ModelFormatRegistry.register(YsmSupport, UniversalModelLoader)
++        ModelSync.init { renderer.applyRemote(it) }
++        MemoryPressureMonitor.install()
++        AdvancedRuntime.init()
++        ClientTickEvents.END_CLIENT_TICK.register(ClientTickEvents.EndTick {
++            GpuUploadQueue.drain()
++            BulletWorld.update(0.05f)
++            AdvancedRuntime.tick(0.05f)
++        })
++        LevelRenderEvents.AFTER_SOLID_FEATURES.register(LevelRenderEvents.AfterSolidFeatures { ctx -> renderer.render(ctx) })
++        Runtime.getRuntime().addShutdownHook(Thread({ destroy() }, "blaze3d-shutdown"))
++    }
++    fun destroy() {
++        AdvancedRuntime.destroy()
++        renderer.destroy()
++        BulletWorld.destroy()
++        RenderWorker.shutdown()
++        ScenePrefetcher.shutdown()
++        MemoryPressureMonitor.uninstall()
++        GpuUploadQueue.clear()
++        ModelCache.clear()
++        if (RustNativeLoader.ensure()) runCatching { BlazeNative.vulkanSaveCache() }
++    }
++}
+ object MemoryPressureMonitor {
+     private const val USAGE_RATIO = 0.85
+     private const val COLLECTION_RATIO = 0.92
+diff --git a/src/main/kotlin/cn/chen/blaze3d/core/MeshData.kt b/src/main/kotlin/cn/chen/blaze3d/core/MeshData.kt
+deleted file mode 100644
+index 66a9a00..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/core/MeshData.kt
++++ /dev/null
+@@ -1,16 +0,0 @@
+-package cn.chen.blaze3d.core
+-import cn.chen.blaze3d.math.Mat4
+-data class BoneInfo(val name: String, val offsetMatrix: Mat4, val index: Int)
+-class MeshData(
+-    val name: String,
+-    val vertices: List<Vertex>,
+-    val indices: IntArray,
+-    val materialIndex: Int,
+-    val bones: List<BoneInfo> = emptyList(),
+-    val morphTargets: List<MorphTarget> = emptyList()
+-) {
+-    val hasBones get() = bones.isNotEmpty()
+-    val hasMorph get() = morphTargets.isNotEmpty()
+-    val vertexCount get() = vertices.size
+-    val indexCount get() = indices.size
+-}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/core/MorphTarget.kt b/src/main/kotlin/cn/chen/blaze3d/core/MorphTarget.kt
+deleted file mode 100644
+index d9e49e5..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/core/MorphTarget.kt
++++ /dev/null
+@@ -1,9 +0,0 @@
+-package cn.chen.blaze3d.core
+-import cn.chen.blaze3d.math.Vec3
+-class MorphTarget(
+-    val name: String,
+-    val positions: List<Vec3>,
+-    val normals: List<Vec3>,
+-    val tangents: List<Vec3>,
+-    val defaultWeight: Float = 0f
+-)
+diff --git a/src/main/kotlin/cn/chen/blaze3d/core/NodeGraph.kt b/src/main/kotlin/cn/chen/blaze3d/core/NodeGraph.kt
+deleted file mode 100644
+index 1329afb..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/core/NodeGraph.kt
++++ /dev/null
+@@ -1,30 +0,0 @@
+-package cn.chen.blaze3d.core
+-import cn.chen.blaze3d.math.Mat4
+-class NodeGraph(
+-    val name: String,
+-    val transform: Mat4,
+-    val meshIndices: IntArray = IntArray(0),
+-    val children: MutableList<NodeGraph> = mutableListOf(),
+-    var parent: NodeGraph? = null
+-) {
+-    private var lookup: HashMap<String, NodeGraph>? = null
+-    fun findNode(nodeName: String): NodeGraph? {
+-        val root = rootOf()
+-        val map = root.lookup ?: HashMap<String, NodeGraph>().also { root.buildLookup(it); root.lookup = it }
+-        return map[nodeName]
+-    }
+-    private fun rootOf(): NodeGraph {
+-        var node = this
+-        while (true) node = node.parent ?: return node
+-    }
+-    private fun buildLookup(out: HashMap<String, NodeGraph>) {
+-        out[name] = this
+-        for (c in children) c.buildLookup(out)
+-    }
+-    fun globalTransform(): Mat4 {
+-        var mat = transform
+-        var p = parent
+-        while (p != null) { mat = p.transform * mat; p = p.parent }
+-        return mat
+-    }
+-}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/core/Scene.kt b/src/main/kotlin/cn/chen/blaze3d/core/Scene.kt
+new file mode 100644
+index 0000000..bff11cd
+--- /dev/null
++++ b/src/main/kotlin/cn/chen/blaze3d/core/Scene.kt
+@@ -0,0 +1,49 @@
++package cn.chen.blaze3d.core
++import cn.chen.blaze3d.material.EmbeddedTex
++import cn.chen.blaze3d.material.Material
++import cn.chen.blaze3d.math.Mat4
++import cn.chen.blaze3d.math.Vec3
++import cn.chen.blaze3d.math.Vec4
++import org.joml.Vector3f
++interface Transform {
++    val pos: Vector3f
++    val scale: Float
++    val rot: Vector3f
++}
++class MorphTarget(val name: String, val positions: List<Vec3>, val normals: List<Vec3>, val tangents: List<Vec3>, val defaultWeight: Float = 0f)
++data class Vertex(
++    val position: Vec3 = Vec3(),
++    val normal: Vec3 = Vec3(0f, 1f, 0f),
++    val tangent: Vec3 = Vec3(1f, 0f, 0f),
++    val bitangent: Vec3 = Vec3(0f, 0f, 1f),
++    val texCoord0: Vec3 = Vec3(),
++    val texCoord1: Vec3 = Vec3(),
++    val color: Vec4 = Vec4(1f, 1f, 1f, 1f),
++    val boneIds: IntArray = IntArray(4) { -1 },
++    val boneWeights: FloatArray = FloatArray(4) { 0f }
++) { companion object { const val STRIDE = (3 + 3 + 3 + 3 + 3 + 3 + 4 + 4 + 4) * 4; const val MAX_BONES_PER_VERTEX = 4 } }
++data class BoneInfo(val name: String, val offsetMatrix: Mat4, val index: Int)
++class MeshData(val name: String, val vertices: List<Vertex>, val indices: IntArray, val materialIndex: Int, val bones: List<BoneInfo> = emptyList(), val morphTargets: List<MorphTarget> = emptyList()) {
++    val hasBones get() = bones.isNotEmpty()
++    val hasMorph get() = morphTargets.isNotEmpty()
++    val vertexCount get() = vertices.size
++    val indexCount get() = indices.size
++}
++class NodeGraph(val name: String, val transform: Mat4, val meshIndices: IntArray = IntArray(0), val children: MutableList<NodeGraph> = mutableListOf(), var parent: NodeGraph? = null) {
++    private var lookup: HashMap<String, NodeGraph>? = null
++    fun findNode(nodeName: String): NodeGraph? {
++        val root = rootOf()
++        val map = root.lookup ?: HashMap<String, NodeGraph>().also { root.buildLookup(it); root.lookup = it }
++        return map[nodeName]
++    }
++    private fun rootOf(): NodeGraph { var node = this; while (true) node = node.parent ?: return node }
++    private fun buildLookup(out: HashMap<String, NodeGraph>) { out[name] = this; for (c in children) c.buildLookup(out) }
++    fun globalTransform(): Mat4 { var mat = transform; var p = parent; while (p != null) { mat = p.transform * mat; p = p.parent }; return mat }
++}
++class SceneData(val meshes: List<MeshData>, val materials: List<Material>, val animations: List<AnimClip>, val rootNode: NodeGraph, val skeleton: BonePose?, val embeddedTextures: List<EmbeddedTex> = emptyList()) {
++    private val animationMap = animations.associateBy { it.name }
++    val hasAnimations get() = animations.isNotEmpty()
++    val hasSkeleton get() = skeleton != null
++    fun getAnimation(name: String) = animationMap[name]
++    fun getAnimation(index: Int) = animations.getOrNull(index)
++}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/core/SceneData.kt b/src/main/kotlin/cn/chen/blaze3d/core/SceneData.kt
+deleted file mode 100644
+index 269f780..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/core/SceneData.kt
++++ /dev/null
+@@ -1,17 +0,0 @@
+-package cn.chen.blaze3d.core
+-import cn.chen.blaze3d.material.Material
+-import cn.chen.blaze3d.material.EmbeddedTex
+-class SceneData(
+-    val meshes: List<MeshData>,
+-    val materials: List<Material>,
+-    val animations: List<AnimClip>,
+-    val rootNode: NodeGraph,
+-    val skeleton: BonePose?,
+-    val embeddedTextures: List<EmbeddedTex> = emptyList()
+-) {
+-    private val animationMap = animations.associateBy { it.name }
+-    val hasAnimations get() = animations.isNotEmpty()
+-    val hasSkeleton get() = skeleton != null
+-    fun getAnimation(name: String) = animationMap[name]
+-    fun getAnimation(index: Int) = animations.getOrNull(index)
+-}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/core/Transform.kt b/src/main/kotlin/cn/chen/blaze3d/core/Transform.kt
+deleted file mode 100644
+index e3e8182..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/core/Transform.kt
++++ /dev/null
+@@ -1,7 +0,0 @@
+-package cn.chen.blaze3d.core
+-import org.joml.Vector3f
+-interface Transform {
+-    val pos: Vector3f
+-    val scale: Float
+-    val rot: Vector3f
+-}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/core/Vertex.kt b/src/main/kotlin/cn/chen/blaze3d/core/Vertex.kt
+deleted file mode 100644
+index e6a6aff..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/core/Vertex.kt
++++ /dev/null
+@@ -1,19 +0,0 @@
+-package cn.chen.blaze3d.core
+-import cn.chen.blaze3d.math.Vec3
+-import cn.chen.blaze3d.math.Vec4
+-data class Vertex(
+-    val position: Vec3 = Vec3(),
+-    val normal: Vec3 = Vec3(0f, 1f, 0f),
+-    val tangent: Vec3 = Vec3(1f, 0f, 0f),
+-    val bitangent: Vec3 = Vec3(0f, 0f, 1f),
+-    val texCoord0: Vec3 = Vec3(),
+-    val texCoord1: Vec3 = Vec3(),
+-    val color: Vec4 = Vec4(1f, 1f, 1f, 1f),
+-    val boneIds: IntArray = IntArray(4) { -1 },
+-    val boneWeights: FloatArray = FloatArray(4) { 0f }
+-) {
+-    companion object {
+-        const val STRIDE = (3 + 3 + 3 + 3 + 3 + 3 + 4 + 4 + 4) * 4
+-        const val MAX_BONES_PER_VERTEX = 4
+-    }
+-}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/live2d/L2dKeyframe.kt b/src/main/kotlin/cn/chen/blaze3d/live2d/L2dKeyframe.kt
+deleted file mode 100644
+index 5927221..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/live2d/L2dKeyframe.kt
++++ /dev/null
+@@ -1,29 +0,0 @@
+-package cn.chen.blaze3d.live2d
+-import cn.chen.blaze3d.rust.BlazeNative
+-data class L2dKeyframe(val time: Float, val value: Float, val inTangent: Float = 0f, val outTangent: Float = 0f)
+-class L2dParamTrack(val parameterId: String, frames: List<L2dKeyframe>) {
+-    private val packed = FloatArray(frames.size * 4).also { a ->
+-        for ((i, f) in frames.withIndex()) { a[i * 4] = f.time; a[i * 4 + 1] = f.value; a[i * 4 + 2] = f.inTangent; a[i * 4 + 3] = f.outTangent }
+-    }
+-    fun sample(t: Float): Float = BlazeNative.l2dKeyframeSample(packed, t)
+-}
+-data class L2dAnimation(val id: String, val duration: Float, val loop: Boolean, val tracks: List<L2dParamTrack>)
+-class L2dAnimator(val animation: L2dAnimation) {
+-    var time = 0f; private set
+-    var playing = false; private set
+-    var weight = 1f
+-    fun play() { playing = true }
+-    fun pause() { playing = false }
+-    fun seek(t: Float) {
+-        val d = animation.duration
+-        time = if (animation.loop && d > 0f) ((t % d) + d) % d else t.coerceIn(0f, d)
+-    }
+-    fun advance(dt: Float) { if (playing) seek(time + dt) }
+-    fun apply(parameters: MutableMap<String, Float>, blend: Float = 1f) {
+-        val w = (blend * weight).coerceIn(0f, 1f)
+-        for (track in animation.tracks) {
+-            val cur = parameters[track.parameterId] ?: 0f
+-            parameters[track.parameterId] = cur * (1f - w) + track.sample(time) * w
+-        }
+-    }
+-}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/live2d/L2dMask.kt b/src/main/kotlin/cn/chen/blaze3d/live2d/L2dMask.kt
+deleted file mode 100644
+index 3b515d0..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/live2d/L2dMask.kt
++++ /dev/null
+@@ -1,20 +0,0 @@
+-package cn.chen.blaze3d.live2d
+-import cn.chen.blaze3d.rust.BlazeNative
+-data class L2dMaskRect(val l: Float, val t: Float, val r: Float, val b: Float) {
+-    fun contains(x: Float, y: Float) = x in l..r && y in t..b
+-    fun intersects(o: L2dMaskRect) = !(o.r < l || o.l > r || o.b < t || o.t > b)
+-}
+-object L2dMask {
+-    private val tmp = FloatArray(4)
+-    fun bounds(vertices: FloatArray): L2dMaskRect {
+-        BlazeNative.l2dMaskBounds(vertices, tmp)
+-        return L2dMaskRect(tmp[0], tmp[1], tmp[2], tmp[3])
+-    }
+-    fun compose(target: L2dMaskRect, sources: List<L2dMaskRect>): L2dMaskRect {
+-        val src = FloatArray(sources.size * 4).also { a -> for ((i, r) in sources.withIndex()) { a[i * 4] = r.l; a[i * 4 + 1] = r.t; a[i * 4 + 2] = r.r; a[i * 4 + 3] = r.b } }
+-        val tgt = floatArrayOf(target.l, target.t, target.r, target.b)
+-        val out = FloatArray(4)
+-        BlazeNative.l2dMaskCompose(tgt, src, out)
+-        return L2dMaskRect(out[0], out[1], out[2], out[3])
+-    }
+-}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/live2d/L2dNetSync.kt b/src/main/kotlin/cn/chen/blaze3d/live2d/L2dNetSync.kt
+deleted file mode 100644
+index ff1bbe5..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/live2d/L2dNetSync.kt
++++ /dev/null
+@@ -1,32 +0,0 @@
+-package cn.chen.blaze3d.live2d
+-import cn.chen.blaze3d.rust.BlazeNative
+-import java.util.ArrayDeque
+-data class L2dParameterSnapshot(val time: Long, val values: FloatArray)
+-class L2dNetSyncBuffer(val maxSnapshots: Int = 12, val interpolationDelayMs: Long = 80) {
+-    private val buffer = ArrayDeque<L2dParameterSnapshot>()
+-    @Synchronized fun receive(snap: L2dParameterSnapshot) {
+-        buffer.addLast(snap)
+-        while (buffer.size > maxSnapshots) buffer.pollFirst()
+-    }
+-    @Synchronized fun sample(nowMs: Long, into: FloatArray) {
+-        val target = nowMs - interpolationDelayMs
+-        var prev: L2dParameterSnapshot? = null
+-        var next: L2dParameterSnapshot? = null
+-        for (s in buffer) { if (s.time <= target) prev = s else { next = s; break } }
+-        when {
+-            prev != null && next != null -> {
+-                val span = (next.time - prev.time).coerceAtLeast(1L)
+-                val t = ((target - prev.time).toFloat() / span).coerceIn(0f, 1f)
+-                for (i in into.indices) into[i] = (prev.values.getOrElse(i) { 0f }) * (1f - t) + (next.values.getOrElse(i) { 0f }) * t
+-            }
+-            prev != null -> System.arraycopy(prev.values, 0, into, 0, minOf(prev.values.size, into.size))
+-            next != null -> System.arraycopy(next.values, 0, into, 0, minOf(next.values.size, into.size))
+-        }
+-    }
+-    @Synchronized fun clear() = buffer.clear()
+-    @Synchronized fun count() = buffer.size
+-}
+-object L2dDeltaCodec {
+-    fun encode(prev: FloatArray, curr: FloatArray, eps: Float, outIndices: IntArray, outValues: FloatArray): Int =
+-        BlazeNative.l2dDeltaEncode(prev, curr, eps, outIndices, outValues)
+-}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/live2d/L2dParser.kt b/src/main/kotlin/cn/chen/blaze3d/live2d/L2dParser.kt
+index d83d232..d3a29b5 100644
+--- a/src/main/kotlin/cn/chen/blaze3d/live2d/L2dParser.kt
++++ b/src/main/kotlin/cn/chen/blaze3d/live2d/L2dParser.kt
+@@ -11,9 +11,6 @@ import kotlinx.serialization.json.jsonArray
+ import kotlinx.serialization.json.jsonObject
+ import kotlinx.serialization.json.jsonPrimitive
+ import java.io.File
+-import java.nio.ByteBuffer
+-import java.nio.ByteOrder
+-data class L2dHeader(val version: Int, val parameterCount: Int, val partCount: Int, val deformerCount: Int, val drawableCount: Int)
+ object L2dParser {
+     private val MOC3_MAGIC = byteArrayOf(0x4D, 0x4F, 0x43, 0x33)
+     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+@@ -27,18 +24,6 @@ object L2dParser {
+         val name = file.name.lowercase()
+         return name.endsWith(".l2d.json") || name.endsWith(".live2d.json") || name.endsWith(".model3.json")
+     }
+-    fun parseMoc3Header(file: File): L2dHeader? {
+-        if (!isMoc3(file)) return null
+-        val bytes = file.readBytes()
+-        if (bytes.size < 256) return null
+-        val buf = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+-        val version = buf.getInt(4)
+-        val parameterCount = buf.getInt(64).coerceIn(0, 8192)
+-        val partCount = buf.getInt(72).coerceIn(0, 8192)
+-        val deformerCount = buf.getInt(80).coerceIn(0, 8192)
+-        val drawableCount = buf.getInt(88).coerceIn(0, 8192)
+-        return L2dHeader(version, parameterCount, partCount, deformerCount, drawableCount)
+-    }
+     fun parse(file: File): L2dModel? {
+         if (isMoc3(file)) return parseModel3FromBundle(file)
+         if (!isLive2dJson(file)) return null
+diff --git a/src/main/kotlin/cn/chen/blaze3d/live2d/L2dSmoothing.kt b/src/main/kotlin/cn/chen/blaze3d/live2d/L2dSmoothing.kt
+deleted file mode 100644
+index 5e3fd43..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/live2d/L2dSmoothing.kt
++++ /dev/null
+@@ -1,7 +0,0 @@
+-package cn.chen.blaze3d.live2d
+-import cn.chen.blaze3d.rust.BlazeNative
+-class L2dParameterSmoother(tau: Float = 0.12f, maxDelta: Float = 1.5f) : AutoCloseable {
+-    private var handle = BlazeNative.l2dSmootherCreate(tau, maxDelta)
+-    fun apply(values: FloatArray, dt: Float): Int = BlazeNative.l2dSmootherApply(handle, values, dt)
+-    override fun close() { if (handle != 0L) { BlazeNative.l2dSmootherFree(handle); handle = 0 } }
+-}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/material/KhrExt.kt b/src/main/kotlin/cn/chen/blaze3d/material/KhrExt.kt
+deleted file mode 100644
+index 8340c34..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/material/KhrExt.kt
++++ /dev/null
+@@ -1,57 +0,0 @@
+-package cn.chen.blaze3d.material
+-import cn.chen.blaze3d.math.Vec3
+-data class KhrClearcoat(
+-    val factor: Float = 0f,
+-    val roughnessFactor: Float = 0f,
+-    val texture: TexInfo? = null,
+-    val roughnessTexture: TexInfo? = null,
+-    val normalTexture: TexInfo? = null
+-)
+-data class KhrSheen(
+-    val colorFactor: Vec3 = Vec3(),
+-    val roughnessFactor: Float = 0f,
+-    val colorTexture: TexInfo? = null,
+-    val roughnessTexture: TexInfo? = null
+-)
+-data class KhrTransmission(
+-    val factor: Float = 0f,
+-    val texture: TexInfo? = null
+-)
+-data class KhrVolume(
+-    val thicknessFactor: Float = 0f,
+-    val attenuationDistance: Float = Float.MAX_VALUE,
+-    val attenuationColor: Vec3 = Vec3(1f, 1f, 1f),
+-    val thicknessTexture: TexInfo? = null
+-)
+-data class KhrSpecular(
+-    val factor: Float = 1f,
+-    val colorFactor: Vec3 = Vec3(1f, 1f, 1f),
+-    val texture: TexInfo? = null,
+-    val colorTexture: TexInfo? = null
+-)
+-data class KhrIridescence(
+-    val factor: Float = 0f,
+-    val ior: Float = 1.3f,
+-    val thicknessMinimum: Float = 100f,
+-    val thicknessMaximum: Float = 400f,
+-    val texture: TexInfo? = null,
+-    val thicknessTexture: TexInfo? = null
+-)
+-data class KhrAnisotropy(
+-    val strength: Float = 0f,
+-    val rotation: Float = 0f,
+-    val texture: TexInfo? = null
+-)
+-data class KhrEmissiveStrength(val strength: Float = 1f)
+-data class KhrUnlit(val enabled: Boolean = false)
+-data class KhrExt(
+-    val clearcoat: KhrClearcoat? = null,
+-    val sheen: KhrSheen? = null,
+-    val transmission: KhrTransmission? = null,
+-    val volume: KhrVolume? = null,
+-    val specular: KhrSpecular? = null,
+-    val iridescence: KhrIridescence? = null,
+-    val anisotropy: KhrAnisotropy? = null,
+-    val emissiveStrength: KhrEmissiveStrength? = null,
+-    val unlit: KhrUnlit? = null
+-)
+diff --git a/src/main/kotlin/cn/chen/blaze3d/material/Material.kt b/src/main/kotlin/cn/chen/blaze3d/material/Material.kt
+index 6684a30..b28217b 100644
+--- a/src/main/kotlin/cn/chen/blaze3d/material/Material.kt
++++ b/src/main/kotlin/cn/chen/blaze3d/material/Material.kt
+@@ -1,6 +1,21 @@
+ package cn.chen.blaze3d.material
++import cn.chen.blaze3d.math.Vec3
+ import cn.chen.blaze3d.math.Vec4
+ enum class AlphaMode { OPAQUE, MASK, BLEND }
++enum class TexType { ALBEDO, NORMAL, METALLIC_ROUGHNESS, OCCLUSION, EMISSIVE, SPECULAR, GLOSSINESS, DIFFUSE, HEIGHT, OPACITY, CLEARCOAT, CLEARCOAT_ROUGHNESS, CLEARCOAT_NORMAL, SHEEN_COLOR, SHEEN_ROUGHNESS, TRANSMISSION, THICKNESS, SPECULAR_COLOR, SPECULAR_FACTOR, IRIDESCENCE, IRIDESCENCE_THICKNESS, ANISOTROPY }
++data class UVTransform(val offset: Pair<Float, Float> = 0f to 0f, val scale: Pair<Float, Float> = 1f to 1f, val rotation: Float = 0f)
++data class TexInfo(val path: String, val type: TexType, val uvIndex: Int = 0, val uvTransform: UVTransform = UVTransform())
++data class EmbeddedTex(val width: Int, val height: Int, val data: ByteArray, val format: String)
++data class KhrClearcoat(val factor: Float = 0f, val roughnessFactor: Float = 0f, val texture: TexInfo? = null, val roughnessTexture: TexInfo? = null, val normalTexture: TexInfo? = null)
++data class KhrSheen(val colorFactor: Vec3 = Vec3(), val roughnessFactor: Float = 0f, val colorTexture: TexInfo? = null, val roughnessTexture: TexInfo? = null)
++data class KhrTransmission(val factor: Float = 0f, val texture: TexInfo? = null)
++data class KhrVolume(val thicknessFactor: Float = 0f, val attenuationDistance: Float = Float.MAX_VALUE, val attenuationColor: Vec3 = Vec3(1f, 1f, 1f), val thicknessTexture: TexInfo? = null)
++data class KhrSpecular(val factor: Float = 1f, val colorFactor: Vec3 = Vec3(1f, 1f, 1f), val texture: TexInfo? = null, val colorTexture: TexInfo? = null)
++data class KhrIridescence(val factor: Float = 0f, val ior: Float = 1.3f, val thicknessMinimum: Float = 100f, val thicknessMaximum: Float = 400f, val texture: TexInfo? = null, val thicknessTexture: TexInfo? = null)
++data class KhrAnisotropy(val strength: Float = 0f, val rotation: Float = 0f, val texture: TexInfo? = null)
++data class KhrEmissiveStrength(val strength: Float = 1f)
++data class KhrUnlit(val enabled: Boolean = false)
++data class KhrExt(val clearcoat: KhrClearcoat? = null, val sheen: KhrSheen? = null, val transmission: KhrTransmission? = null, val volume: KhrVolume? = null, val specular: KhrSpecular? = null, val iridescence: KhrIridescence? = null, val anisotropy: KhrAnisotropy? = null, val emissiveStrength: KhrEmissiveStrength? = null, val unlit: KhrUnlit? = null)
+ data class Material(
+     val name: String = "",
+     val baseColorFactor: Vec4 = Vec4(1f, 1f, 1f, 1f),
+@@ -21,6 +36,4 @@ data class Material(
+     val anisotropyFactor: Float = 0f,
+     val textures: MutableMap<TexType, TexInfo> = mutableMapOf(),
+     val khrExtensions: KhrExt = KhrExt()
+-) {
+-    fun getTexture(type: TexType) = textures[type]
+-}
++) { fun getTexture(type: TexType) = textures[type] }
+diff --git a/src/main/kotlin/cn/chen/blaze3d/material/TexInfo.kt b/src/main/kotlin/cn/chen/blaze3d/material/TexInfo.kt
+deleted file mode 100644
+index 4f21606..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/material/TexInfo.kt
++++ /dev/null
+@@ -1,26 +0,0 @@
+-package cn.chen.blaze3d.material
+-enum class TexType {
+-    ALBEDO, NORMAL, METALLIC_ROUGHNESS, OCCLUSION, EMISSIVE,
+-    SPECULAR, GLOSSINESS, DIFFUSE, HEIGHT, OPACITY,
+-    CLEARCOAT, CLEARCOAT_ROUGHNESS, CLEARCOAT_NORMAL,
+-    SHEEN_COLOR, SHEEN_ROUGHNESS, TRANSMISSION,
+-    THICKNESS, SPECULAR_COLOR, SPECULAR_FACTOR,
+-    IRIDESCENCE, IRIDESCENCE_THICKNESS, ANISOTROPY
+-}
+-data class TexInfo(
+-    val path: String,
+-    val type: TexType,
+-    val uvIndex: Int = 0,
+-    val uvTransform: UVTransform = UVTransform()
+-)
+-data class UVTransform(
+-    val offset: Pair<Float, Float> = 0f to 0f,
+-    val scale: Pair<Float, Float> = 1f to 1f,
+-    val rotation: Float = 0f
+-)
+-data class EmbeddedTex(
+-    val width: Int,
+-    val height: Int,
+-    val data: ByteArray,
+-    val format: String
+-)
+diff --git a/src/main/kotlin/cn/chen/blaze3d/math/AABB.kt b/src/main/kotlin/cn/chen/blaze3d/math/AABB.kt
+deleted file mode 100644
+index 5cefc3b..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/math/AABB.kt
++++ /dev/null
+@@ -1,32 +0,0 @@
+-package cn.chen.blaze3d.math
+-class AABB(
+-    val min: Vec3 = Vec3(Float.MAX_VALUE, Float.MAX_VALUE, Float.MAX_VALUE),
+-    val max: Vec3 = Vec3(-Float.MAX_VALUE, -Float.MAX_VALUE, -Float.MAX_VALUE)
+-) {
+-    fun expand(x: Float, y: Float, z: Float) {
+-        if (x < min.x) min.x = x; if (y < min.y) min.y = y; if (z < min.z) min.z = z
+-        if (x > max.x) max.x = x; if (y > max.y) max.y = y; if (z > max.z) max.z = z
+-    }
+-    fun expand(point: Vec3) = expand(point.x, point.y, point.z)
+-    fun merge(other: AABB) { expand(other.min.x, other.min.y, other.min.z); expand(other.max.x, other.max.y, other.max.z) }
+-    fun center() = Vec3((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f, (min.z + max.z) * 0.5f)
+-    fun extents() = Vec3((max.x - min.x) * 0.5f, (max.y - min.y) * 0.5f, (max.z - min.z) * 0.5f)
+-    fun transform(m: Mat4): AABB {
+-        val result = AABB()
+-        val mm = m.m
+-        for (i in 0..7) {
+-            val xs = if (i and 1 == 0) min.x else max.x
+-            val ys = if (i and 2 == 0) min.y else max.y
+-            val zs = if (i and 4 == 0) min.z else max.z
+-            val w = mm[12] * xs + mm[13] * ys + mm[14] * zs + mm[15]
+-            val tx = (mm[0] * xs + mm[1] * ys + mm[2] * zs + mm[3]) / w
+-            val ty = (mm[4] * xs + mm[5] * ys + mm[6] * zs + mm[7]) / w
+-            val tz = (mm[8] * xs + mm[9] * ys + mm[10] * zs + mm[11]) / w
+-            result.expand(tx, ty, tz)
+-        }
+-        return result
+-    }
+-    fun intersects(other: AABB) = min.x <= other.max.x && max.x >= other.min.x &&
+-        min.y <= other.max.y && max.y >= other.min.y && min.z <= other.max.z && max.z >= other.min.z
+-    fun contains(point: Vec3) = point.x in min.x..max.x && point.y in min.y..max.y && point.z in min.z..max.z
+-}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/math/Mat4.kt b/src/main/kotlin/cn/chen/blaze3d/math/Mat4.kt
+deleted file mode 100644
+index 1298e05..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/math/Mat4.kt
++++ /dev/null
+@@ -1,115 +0,0 @@
+-package cn.chen.blaze3d.math
+-import org.joml.Matrix4f
+-import java.nio.FloatBuffer
+-import kotlin.math.tan
+-class Mat4(val m: FloatArray = floatArrayOf(1f,0f,0f,0f, 0f,1f,0f,0f, 0f,0f,1f,0f, 0f,0f,0f,1f)) {
+-    operator fun times(o: Mat4): Mat4 { val r = Mat4(FloatArray(16)); mulInto(o, r); return r }
+-    fun mulInto(o: Mat4, out: Mat4) {
+-        val a = m; val b = o.m; val r = out.m
+-        val a00=a[0]; val a01=a[1]; val a02=a[2]; val a03=a[3]
+-        val a10=a[4]; val a11=a[5]; val a12=a[6]; val a13=a[7]
+-        val a20=a[8]; val a21=a[9]; val a22=a[10]; val a23=a[11]
+-        val a30=a[12]; val a31=a[13]; val a32=a[14]; val a33=a[15]
+-        val b00=b[0]; val b01=b[1]; val b02=b[2]; val b03=b[3]
+-        val b10=b[4]; val b11=b[5]; val b12=b[6]; val b13=b[7]
+-        val b20=b[8]; val b21=b[9]; val b22=b[10]; val b23=b[11]
+-        val b30=b[12]; val b31=b[13]; val b32=b[14]; val b33=b[15]
+-        r[0]=a00*b00+a01*b10+a02*b20+a03*b30; r[1]=a00*b01+a01*b11+a02*b21+a03*b31
+-        r[2]=a00*b02+a01*b12+a02*b22+a03*b32; r[3]=a00*b03+a01*b13+a02*b23+a03*b33
+-        r[4]=a10*b00+a11*b10+a12*b20+a13*b30; r[5]=a10*b01+a11*b11+a12*b21+a13*b31
+-        r[6]=a10*b02+a11*b12+a12*b22+a13*b32; r[7]=a10*b03+a11*b13+a12*b23+a13*b33
+-        r[8]=a20*b00+a21*b10+a22*b20+a23*b30; r[9]=a20*b01+a21*b11+a22*b21+a23*b31
+-        r[10]=a20*b02+a21*b12+a22*b22+a23*b32; r[11]=a20*b03+a21*b13+a22*b23+a23*b33
+-        r[12]=a30*b00+a31*b10+a32*b20+a33*b30; r[13]=a30*b01+a31*b11+a32*b21+a33*b31
+-        r[14]=a30*b02+a31*b12+a32*b22+a33*b32; r[15]=a30*b03+a31*b13+a32*b23+a33*b33
+-    }
+-    fun copyFrom(o: Mat4) = apply { System.arraycopy(o.m, 0, m, 0, 16) }
+-    fun setIdentity() = apply { val r = m; r[0]=1f;r[1]=0f;r[2]=0f;r[3]=0f; r[4]=0f;r[5]=1f;r[6]=0f;r[7]=0f; r[8]=0f;r[9]=0f;r[10]=1f;r[11]=0f; r[12]=0f;r[13]=0f;r[14]=0f;r[15]=1f }
+-    fun transformPoint(v: Vec3): Vec3 {
+-        val w = m[12] * v.x + m[13] * v.y + m[14] * v.z + m[15]
+-        return Vec3(
+-            (m[0] * v.x + m[1] * v.y + m[2] * v.z + m[3]) / w,
+-            (m[4] * v.x + m[5] * v.y + m[6] * v.z + m[7]) / w,
+-            (m[8] * v.x + m[9] * v.y + m[10] * v.z + m[11]) / w
+-        )
+-    }
+-    fun transformPointInto(x: Float, y: Float, z: Float, out: Vec3): Vec3 {
+-        val w = m[12] * x + m[13] * y + m[14] * z + m[15]
+-        out.x = (m[0] * x + m[1] * y + m[2] * z + m[3]) / w
+-        out.y = (m[4] * x + m[5] * y + m[6] * z + m[7]) / w
+-        out.z = (m[8] * x + m[9] * y + m[10] * z + m[11]) / w
+-        return out
+-    }
+-    fun transformDir(v: Vec3) = Vec3(
+-        m[0] * v.x + m[1] * v.y + m[2] * v.z,
+-        m[4] * v.x + m[5] * v.y + m[6] * v.z,
+-        m[8] * v.x + m[9] * v.y + m[10] * v.z
+-    )
+-    fun inverse(): Mat4 { val r = Mat4(FloatArray(16)); inverseInto(r); return r }
+-    fun inverseInto(out: Mat4): Boolean {
+-        val inv = out.m
+-        inv[0] = m[5]*m[10]*m[15] - m[5]*m[11]*m[14] - m[9]*m[6]*m[15] + m[9]*m[7]*m[14] + m[13]*m[6]*m[11] - m[13]*m[7]*m[10]
+-        inv[4] = -m[4]*m[10]*m[15] + m[4]*m[11]*m[14] + m[8]*m[6]*m[15] - m[8]*m[7]*m[14] - m[12]*m[6]*m[11] + m[12]*m[7]*m[10]
+-        inv[8] = m[4]*m[9]*m[15] - m[4]*m[11]*m[13] - m[8]*m[5]*m[15] + m[8]*m[7]*m[13] + m[12]*m[5]*m[11] - m[12]*m[7]*m[9]
+-        inv[12] = -m[4]*m[9]*m[14] + m[4]*m[10]*m[13] + m[8]*m[5]*m[14] - m[8]*m[6]*m[13] - m[12]*m[5]*m[10] + m[12]*m[6]*m[9]
+-        inv[1] = -m[1]*m[10]*m[15] + m[1]*m[11]*m[14] + m[9]*m[2]*m[15] - m[9]*m[3]*m[14] - m[13]*m[2]*m[11] + m[13]*m[3]*m[10]
+-        inv[5] = m[0]*m[10]*m[15] - m[0]*m[11]*m[14] - m[8]*m[2]*m[15] + m[8]*m[3]*m[14] + m[12]*m[2]*m[11] - m[12]*m[3]*m[10]
+-        inv[9] = -m[0]*m[9]*m[15] + m[0]*m[11]*m[13] + m[8]*m[1]*m[15] - m[8]*m[3]*m[13] - m[12]*m[1]*m[11] + m[12]*m[3]*m[9]
+-        inv[13] = m[0]*m[9]*m[14] - m[0]*m[10]*m[13] - m[8]*m[1]*m[14] + m[8]*m[2]*m[13] + m[12]*m[1]*m[10] - m[12]*m[2]*m[9]
+-        inv[2] = m[1]*m[6]*m[15] - m[1]*m[7]*m[14] - m[5]*m[2]*m[15] + m[5]*m[3]*m[14] + m[13]*m[2]*m[7] - m[13]*m[3]*m[6]
+-        inv[6] = -m[0]*m[6]*m[15] + m[0]*m[7]*m[14] + m[4]*m[2]*m[15] - m[4]*m[3]*m[14] - m[12]*m[2]*m[7] + m[12]*m[3]*m[6]
+-        inv[10] = m[0]*m[5]*m[15] - m[0]*m[7]*m[13] - m[4]*m[1]*m[15] + m[4]*m[3]*m[13] + m[12]*m[1]*m[7] - m[12]*m[3]*m[5]
+-        inv[14] = -m[0]*m[5]*m[14] + m[0]*m[6]*m[13] + m[4]*m[1]*m[14] - m[4]*m[2]*m[13] - m[12]*m[1]*m[6] + m[12]*m[2]*m[5]
+-        inv[3] = -m[1]*m[6]*m[11] + m[1]*m[7]*m[10] + m[5]*m[2]*m[11] - m[5]*m[3]*m[10] - m[9]*m[2]*m[7] + m[9]*m[3]*m[6]
+-        inv[7] = m[0]*m[6]*m[11] - m[0]*m[7]*m[10] - m[4]*m[2]*m[11] + m[4]*m[3]*m[10] + m[8]*m[2]*m[7] - m[8]*m[3]*m[6]
+-        inv[11] = -m[0]*m[5]*m[11] + m[0]*m[7]*m[9] + m[4]*m[1]*m[11] - m[4]*m[3]*m[9] - m[8]*m[1]*m[7] + m[8]*m[3]*m[5]
+-        inv[15] = m[0]*m[5]*m[10] - m[0]*m[6]*m[9] - m[4]*m[1]*m[10] + m[4]*m[2]*m[9] + m[8]*m[1]*m[6] - m[8]*m[2]*m[5]
+-        val det = m[0]*inv[0] + m[1]*inv[4] + m[2]*inv[8] + m[3]*inv[12]
+-        if (det == 0f) { out.setIdentity(); return false }
+-        val invDet = 1f / det
+-        for (i in 0..15) inv[i] *= invDet
+-        return true
+-    }
+-    fun transpose(): Mat4 {
+-        val r = FloatArray(16)
+-        for (i in 0..3) for (j in 0..3) r[i * 4 + j] = m[j * 4 + i]
+-        return Mat4(r)
+-    }
+-    fun toJoml() = Matrix4f(m[0],m[4],m[8],m[12], m[1],m[5],m[9],m[13], m[2],m[6],m[10],m[14], m[3],m[7],m[11],m[15])
+-    fun putTo(buf: FloatBuffer) { for (v in m) buf.put(v) }
+-    fun toFloatArray() = m.copyOf()
+-    companion object {
+-        fun identity() = Mat4()
+-        fun translation(x: Float, y: Float, z: Float) = Mat4(floatArrayOf(1f,0f,0f,x, 0f,1f,0f,y, 0f,0f,1f,z, 0f,0f,0f,1f))
+-        fun scaling(x: Float, y: Float, z: Float) = Mat4(floatArrayOf(x,0f,0f,0f, 0f,y,0f,0f, 0f,0f,z,0f, 0f,0f,0f,1f))
+-        fun trsInto(px: Float, py: Float, pz: Float, qx: Float, qy: Float, qz: Float, qw: Float, sx: Float, sy: Float, sz: Float, out: Mat4) {
+-            val xx = qx*qx; val yy = qy*qy; val zz = qz*qz
+-            val xy = qx*qy; val xz = qx*qz; val yz = qy*qz
+-            val wx = qw*qx; val wy = qw*qy; val wz = qw*qz
+-            val m = out.m
+-            m[0] = (1f-2f*(yy+zz))*sx; m[1] = 2f*(xy+wz)*sy; m[2] = 2f*(xz-wy)*sz; m[3] = px
+-            m[4] = 2f*(xy-wz)*sx; m[5] = (1f-2f*(xx+zz))*sy; m[6] = 2f*(yz+wx)*sz; m[7] = py
+-            m[8] = 2f*(xz+wy)*sx; m[9] = 2f*(yz-wx)*sy; m[10] = (1f-2f*(xx+yy))*sz; m[11] = pz
+-            m[12] = 0f; m[13] = 0f; m[14] = 0f; m[15] = 1f
+-        }
+-        fun perspective(fov: Float, aspect: Float, near: Float, far: Float): Mat4 {
+-            val t = tan(fov * 0.5f)
+-            val r = Mat4(FloatArray(16))
+-            r.m[0] = 1f / (aspect * t); r.m[5] = 1f / t
+-            r.m[10] = -(far + near) / (far - near); r.m[11] = -2f * far * near / (far - near)
+-            r.m[14] = -1f; r.m[15] = 0f
+-            return r
+-        }
+-        fun lookAt(eye: Vec3, center: Vec3, up: Vec3): Mat4 {
+-            val f = (center - eye).normalize()
+-            val s = f.cross(up).normalize()
+-            val u = s.cross(f)
+-            val r = Mat4()
+-            r.m[0] = s.x; r.m[1] = s.y; r.m[2] = s.z; r.m[3] = -s.dot(eye)
+-            r.m[4] = u.x; r.m[5] = u.y; r.m[6] = u.z; r.m[7] = -u.dot(eye)
+-            r.m[8] = -f.x; r.m[9] = -f.y; r.m[10] = -f.z; r.m[11] = f.dot(eye)
+-            r.m[12] = 0f; r.m[13] = 0f; r.m[14] = 0f; r.m[15] = 1f
+-            return r
+-        }
+-    }
+-}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/math/Math.kt b/src/main/kotlin/cn/chen/blaze3d/math/Math.kt
+new file mode 100644
+index 0000000..5d326a9
+--- /dev/null
++++ b/src/main/kotlin/cn/chen/blaze3d/math/Math.kt
+@@ -0,0 +1,204 @@
++package cn.chen.blaze3d.math
++import org.joml.Matrix4f
++import java.nio.FloatBuffer
++import kotlin.math.acos
++import kotlin.math.cos
++import kotlin.math.sin
++import kotlin.math.sqrt
++import kotlin.math.tan
++data class Vec3(var x: Float = 0f, var y: Float = 0f, var z: Float = 0f) {
++    operator fun plus(o: Vec3) = Vec3(x + o.x, y + o.y, z + o.z)
++    operator fun minus(o: Vec3) = Vec3(x - o.x, y - o.y, z - o.z)
++    operator fun times(s: Float) = Vec3(x * s, y * s, z * s)
++    fun dot(o: Vec3) = x * o.x + y * o.y + z * o.z
++    fun cross(o: Vec3) = Vec3(y * o.z - z * o.y, z * o.x - x * o.z, x * o.y - y * o.x)
++    fun length() = sqrt(x * x + y * y + z * z)
++    fun lengthSq() = x * x + y * y + z * z
++    fun normalize(): Vec3 { val l = length(); return if (l > 0f) Vec3(x / l, y / l, z / l) else this }
++    fun normalizeInPlace(): Vec3 { val l = length(); if (l > 0f) { val k = 1f / l; x *= k; y *= k; z *= k }; return this }
++    fun lerp(o: Vec3, t: Float) = Vec3(x + (o.x - x) * t, y + (o.y - y) * t, z + (o.z - z) * t)
++    fun set(nx: Float, ny: Float, nz: Float): Vec3 { x = nx; y = ny; z = nz; return this }
++    fun set(o: Vec3): Vec3 { x = o.x; y = o.y; z = o.z; return this }
++    fun putTo(buf: FloatBuffer) { buf.put(x); buf.put(y); buf.put(z) }
++    fun toFloatArray() = floatArrayOf(x, y, z)
++}
++data class Vec4(var x: Float = 0f, var y: Float = 0f, var z: Float = 0f, var w: Float = 1f) {
++    operator fun plus(o: Vec4) = Vec4(x + o.x, y + o.y, z + o.z, w + o.w)
++    operator fun times(s: Float) = Vec4(x * s, y * s, z * s, w * s)
++    fun set(nx: Float, ny: Float, nz: Float, nw: Float): Vec4 { x = nx; y = ny; z = nz; w = nw; return this }
++    fun putTo(buf: FloatBuffer) { buf.put(x); buf.put(y); buf.put(z); buf.put(w) }
++    fun toFloatArray() = floatArrayOf(x, y, z, w)
++    fun xyz() = Vec3(x, y, z)
++}
++data class Quat(var x: Float = 0f, var y: Float = 0f, var z: Float = 0f, var w: Float = 1f) {
++    fun normalize(): Quat { val l = sqrt(x * x + y * y + z * z + w * w); return if (l > 0f) Quat(x / l, y / l, z / l, w / l) else this }
++    fun slerp(o: Quat, t: Float): Quat { val r = Quat(); slerpInto(o, t, r); return r }
++    fun slerpInto(o: Quat, t: Float, out: Quat) = slerpComponentsInto(x, y, z, w, o.x, o.y, o.z, o.w, t, out)
++    fun set(nx: Float, ny: Float, nz: Float, nw: Float): Quat { x = nx; y = ny; z = nz; w = nw; return this }
++    fun toMatrix(): Mat4 { val m = Mat4(); toMatrixInto(m); return m }
++    fun toMatrixInto(out: Mat4) {
++        val xx = x * x; val yy = y * y; val zz = z * z
++        val xy = x * y; val xz = x * z; val yz = y * z
++        val wx = w * x; val wy = w * y; val wz = w * z
++        val m = out.m
++        m[0] = 1f - 2f * (yy + zz); m[1] = 2f * (xy + wz); m[2] = 2f * (xz - wy); m[3] = 0f
++        m[4] = 2f * (xy - wz); m[5] = 1f - 2f * (xx + zz); m[6] = 2f * (yz + wx); m[7] = 0f
++        m[8] = 2f * (xz + wy); m[9] = 2f * (yz - wx); m[10] = 1f - 2f * (xx + yy); m[11] = 0f
++        m[12] = 0f; m[13] = 0f; m[14] = 0f; m[15] = 1f
++    }
++    companion object {
++        fun slerpComponentsInto(ax: Float, ay: Float, az: Float, aw: Float, bx: Float, by: Float, bz: Float, bw: Float, t: Float, out: Quat) {
++            var dot = ax * bx + ay * by + az * bz + aw * bw
++            var ox = bx; var oy = by; var oz = bz; var ow = bw
++            if (dot < 0f) { dot = -dot; ox = -ox; oy = -oy; oz = -oz; ow = -ow }
++            if (dot > 0.9995f) {
++                val rx = ax + (ox - ax) * t; val ry = ay + (oy - ay) * t; val rz = az + (oz - az) * t; val rw = aw + (ow - aw) * t
++                val l = sqrt(rx*rx + ry*ry + rz*rz + rw*rw)
++                if (l > 0f) { val k = 1f / l; out.x = rx * k; out.y = ry * k; out.z = rz * k; out.w = rw * k } else { out.x = ax; out.y = ay; out.z = az; out.w = aw }
++                return
++            }
++            val theta0 = acos(dot); val theta = theta0 * t
++            val sinTheta0 = sin(theta0); val invSin = 1f / sinTheta0
++            val sinTheta = sin(theta)
++            val s0 = cos(theta) - dot * sinTheta * invSin
++            val s1 = sinTheta * invSin
++            out.x = ax * s0 + ox * s1; out.y = ay * s0 + oy * s1; out.z = az * s0 + oz * s1; out.w = aw * s0 + ow * s1
++        }
++        fun fromMatrix(m: Mat4): Quat {
++            val mm = m.m
++            val trace = mm[0] + mm[5] + mm[10]
++            return when {
++                trace > 0f -> { val s = 0.5f / sqrt(trace + 1f); Quat((mm[6] - mm[9]) * s, (mm[8] - mm[2]) * s, (mm[1] - mm[4]) * s, 0.25f / s) }
++                mm[0] > mm[5] && mm[0] > mm[10] -> { val s = 2f * sqrt(1f + mm[0] - mm[5] - mm[10]); Quat(0.25f * s, (mm[4] + mm[1]) / s, (mm[8] + mm[2]) / s, (mm[6] - mm[9]) / s) }
++                mm[5] > mm[10] -> { val s = 2f * sqrt(1f + mm[5] - mm[0] - mm[10]); Quat((mm[4] + mm[1]) / s, 0.25f * s, (mm[9] + mm[6]) / s, (mm[8] - mm[2]) / s) }
++                else -> { val s = 2f * sqrt(1f + mm[10] - mm[0] - mm[5]); Quat((mm[8] + mm[2]) / s, (mm[9] + mm[6]) / s, 0.25f * s, (mm[1] - mm[4]) / s) }
++            }
++        }
++    }
++}
++class Mat4(val m: FloatArray = floatArrayOf(1f,0f,0f,0f, 0f,1f,0f,0f, 0f,0f,1f,0f, 0f,0f,0f,1f)) {
++    operator fun times(o: Mat4): Mat4 { val r = Mat4(FloatArray(16)); mulInto(o, r); return r }
++    fun mulInto(o: Mat4, out: Mat4) {
++        val a = m; val b = o.m; val r = out.m
++        val a00=a[0]; val a01=a[1]; val a02=a[2]; val a03=a[3]
++        val a10=a[4]; val a11=a[5]; val a12=a[6]; val a13=a[7]
++        val a20=a[8]; val a21=a[9]; val a22=a[10]; val a23=a[11]
++        val a30=a[12]; val a31=a[13]; val a32=a[14]; val a33=a[15]
++        val b00=b[0]; val b01=b[1]; val b02=b[2]; val b03=b[3]
++        val b10=b[4]; val b11=b[5]; val b12=b[6]; val b13=b[7]
++        val b20=b[8]; val b21=b[9]; val b22=b[10]; val b23=b[11]
++        val b30=b[12]; val b31=b[13]; val b32=b[14]; val b33=b[15]
++        r[0]=a00*b00+a01*b10+a02*b20+a03*b30; r[1]=a00*b01+a01*b11+a02*b21+a03*b31
++        r[2]=a00*b02+a01*b12+a02*b22+a03*b32; r[3]=a00*b03+a01*b13+a02*b23+a03*b33
++        r[4]=a10*b00+a11*b10+a12*b20+a13*b30; r[5]=a10*b01+a11*b11+a12*b21+a13*b31
++        r[6]=a10*b02+a11*b12+a12*b22+a13*b32; r[7]=a10*b03+a11*b13+a12*b23+a13*b33
++        r[8]=a20*b00+a21*b10+a22*b20+a23*b30; r[9]=a20*b01+a21*b11+a22*b21+a23*b31
++        r[10]=a20*b02+a21*b12+a22*b22+a23*b32; r[11]=a20*b03+a21*b13+a22*b23+a23*b33
++        r[12]=a30*b00+a31*b10+a32*b20+a33*b30; r[13]=a30*b01+a31*b11+a32*b21+a33*b31
++        r[14]=a30*b02+a31*b12+a32*b22+a33*b32; r[15]=a30*b03+a31*b13+a32*b23+a33*b33
++    }
++    fun copyFrom(o: Mat4) = apply { System.arraycopy(o.m, 0, m, 0, 16) }
++    fun setIdentity() = apply { val r = m; r[0]=1f;r[1]=0f;r[2]=0f;r[3]=0f; r[4]=0f;r[5]=1f;r[6]=0f;r[7]=0f; r[8]=0f;r[9]=0f;r[10]=1f;r[11]=0f; r[12]=0f;r[13]=0f;r[14]=0f;r[15]=1f }
++    fun transformPoint(v: Vec3): Vec3 {
++        val w = m[12] * v.x + m[13] * v.y + m[14] * v.z + m[15]
++        return Vec3((m[0] * v.x + m[1] * v.y + m[2] * v.z + m[3]) / w, (m[4] * v.x + m[5] * v.y + m[6] * v.z + m[7]) / w, (m[8] * v.x + m[9] * v.y + m[10] * v.z + m[11]) / w)
++    }
++    fun transformPointInto(x: Float, y: Float, z: Float, out: Vec3): Vec3 {
++        val w = m[12] * x + m[13] * y + m[14] * z + m[15]
++        out.x = (m[0] * x + m[1] * y + m[2] * z + m[3]) / w
++        out.y = (m[4] * x + m[5] * y + m[6] * z + m[7]) / w
++        out.z = (m[8] * x + m[9] * y + m[10] * z + m[11]) / w
++        return out
++    }
++    fun transformDir(v: Vec3) = Vec3(m[0] * v.x + m[1] * v.y + m[2] * v.z, m[4] * v.x + m[5] * v.y + m[6] * v.z, m[8] * v.x + m[9] * v.y + m[10] * v.z)
++    fun inverse(): Mat4 { val r = Mat4(FloatArray(16)); inverseInto(r); return r }
++    fun inverseInto(out: Mat4): Boolean {
++        val inv = out.m
++        inv[0] = m[5]*m[10]*m[15] - m[5]*m[11]*m[14] - m[9]*m[6]*m[15] + m[9]*m[7]*m[14] + m[13]*m[6]*m[11] - m[13]*m[7]*m[10]
++        inv[4] = -m[4]*m[10]*m[15] + m[4]*m[11]*m[14] + m[8]*m[6]*m[15] - m[8]*m[7]*m[14] - m[12]*m[6]*m[11] + m[12]*m[7]*m[10]
++        inv[8] = m[4]*m[9]*m[15] - m[4]*m[11]*m[13] - m[8]*m[5]*m[15] + m[8]*m[7]*m[13] + m[12]*m[5]*m[11] - m[12]*m[7]*m[9]
++        inv[12] = -m[4]*m[9]*m[14] + m[4]*m[10]*m[13] + m[8]*m[5]*m[14] - m[8]*m[6]*m[13] - m[12]*m[5]*m[10] + m[12]*m[6]*m[9]
++        inv[1] = -m[1]*m[10]*m[15] + m[1]*m[11]*m[14] + m[9]*m[2]*m[15] - m[9]*m[3]*m[14] - m[13]*m[2]*m[11] + m[13]*m[3]*m[10]
++        inv[5] = m[0]*m[10]*m[15] - m[0]*m[11]*m[14] - m[8]*m[2]*m[15] + m[8]*m[3]*m[14] + m[12]*m[2]*m[11] - m[12]*m[3]*m[10]
++        inv[9] = -m[0]*m[9]*m[15] + m[0]*m[11]*m[13] + m[8]*m[1]*m[15] - m[8]*m[3]*m[13] - m[12]*m[1]*m[11] + m[12]*m[3]*m[9]
++        inv[13] = m[0]*m[9]*m[14] - m[0]*m[10]*m[13] - m[8]*m[1]*m[14] + m[8]*m[2]*m[13] + m[12]*m[1]*m[10] - m[12]*m[2]*m[9]
++        inv[2] = m[1]*m[6]*m[15] - m[1]*m[7]*m[14] - m[5]*m[2]*m[15] + m[5]*m[3]*m[14] + m[13]*m[2]*m[7] - m[13]*m[3]*m[6]
++        inv[6] = -m[0]*m[6]*m[15] + m[0]*m[7]*m[14] + m[4]*m[2]*m[15] - m[4]*m[3]*m[14] - m[12]*m[2]*m[7] + m[12]*m[3]*m[6]
++        inv[10] = m[0]*m[5]*m[15] - m[0]*m[7]*m[13] - m[4]*m[1]*m[15] + m[4]*m[3]*m[13] + m[12]*m[1]*m[7] - m[12]*m[3]*m[5]
++        inv[14] = -m[0]*m[5]*m[14] + m[0]*m[6]*m[13] + m[4]*m[1]*m[14] - m[4]*m[2]*m[13] - m[12]*m[1]*m[6] + m[12]*m[2]*m[5]
++        inv[3] = -m[1]*m[6]*m[11] + m[1]*m[7]*m[10] + m[5]*m[2]*m[11] - m[5]*m[3]*m[10] - m[9]*m[2]*m[7] + m[9]*m[3]*m[6]
++        inv[7] = m[0]*m[6]*m[11] - m[0]*m[7]*m[10] - m[4]*m[2]*m[11] + m[4]*m[3]*m[10] + m[8]*m[2]*m[7] - m[8]*m[3]*m[6]
++        inv[11] = -m[0]*m[5]*m[11] + m[0]*m[7]*m[9] + m[4]*m[1]*m[11] - m[4]*m[3]*m[9] - m[8]*m[1]*m[7] + m[8]*m[3]*m[5]
++        inv[15] = m[0]*m[5]*m[10] - m[0]*m[6]*m[9] - m[4]*m[1]*m[10] + m[4]*m[2]*m[9] + m[8]*m[1]*m[6] - m[8]*m[2]*m[5]
++        val det = m[0]*inv[0] + m[1]*inv[4] + m[2]*inv[8] + m[3]*inv[12]
++        if (det == 0f) { out.setIdentity(); return false }
++        val invDet = 1f / det
++        for (i in 0..15) inv[i] *= invDet
++        return true
++    }
++    fun transpose(): Mat4 { val r = FloatArray(16); for (i in 0..3) for (j in 0..3) r[i * 4 + j] = m[j * 4 + i]; return Mat4(r) }
++    fun toJoml() = Matrix4f(m[0],m[4],m[8],m[12], m[1],m[5],m[9],m[13], m[2],m[6],m[10],m[14], m[3],m[7],m[11],m[15])
++    fun putTo(buf: FloatBuffer) { for (v in m) buf.put(v) }
++    fun toFloatArray() = m.copyOf()
++    companion object {
++        fun identity() = Mat4()
++        fun translation(x: Float, y: Float, z: Float) = Mat4(floatArrayOf(1f,0f,0f,x, 0f,1f,0f,y, 0f,0f,1f,z, 0f,0f,0f,1f))
++        fun scaling(x: Float, y: Float, z: Float) = Mat4(floatArrayOf(x,0f,0f,0f, 0f,y,0f,0f, 0f,0f,z,0f, 0f,0f,0f,1f))
++        fun trsInto(px: Float, py: Float, pz: Float, qx: Float, qy: Float, qz: Float, qw: Float, sx: Float, sy: Float, sz: Float, out: Mat4) {
++            val xx = qx*qx; val yy = qy*qy; val zz = qz*qz
++            val xy = qx*qy; val xz = qx*qz; val yz = qy*qz
++            val wx = qw*qx; val wy = qw*qy; val wz = qw*qz
++            val m = out.m
++            m[0] = (1f-2f*(yy+zz))*sx; m[1] = 2f*(xy+wz)*sy; m[2] = 2f*(xz-wy)*sz; m[3] = px
++            m[4] = 2f*(xy-wz)*sx; m[5] = (1f-2f*(xx+zz))*sy; m[6] = 2f*(yz+wx)*sz; m[7] = py
++            m[8] = 2f*(xz+wy)*sx; m[9] = 2f*(yz-wx)*sy; m[10] = (1f-2f*(xx+yy))*sz; m[11] = pz
++            m[12] = 0f; m[13] = 0f; m[14] = 0f; m[15] = 1f
++        }
++        fun perspective(fov: Float, aspect: Float, near: Float, far: Float): Mat4 {
++            val t = tan(fov * 0.5f)
++            val r = Mat4(FloatArray(16))
++            r.m[0] = 1f / (aspect * t); r.m[5] = 1f / t
++            r.m[10] = -(far + near) / (far - near); r.m[11] = -2f * far * near / (far - near)
++            r.m[14] = -1f; r.m[15] = 0f
++            return r
++        }
++        fun lookAt(eye: Vec3, center: Vec3, up: Vec3): Mat4 {
++            val f = (center - eye).normalize()
++            val s = f.cross(up).normalize()
++            val u = s.cross(f)
++            val r = Mat4()
++            r.m[0] = s.x; r.m[1] = s.y; r.m[2] = s.z; r.m[3] = -s.dot(eye)
++            r.m[4] = u.x; r.m[5] = u.y; r.m[6] = u.z; r.m[7] = -u.dot(eye)
++            r.m[8] = -f.x; r.m[9] = -f.y; r.m[10] = -f.z; r.m[11] = f.dot(eye)
++            r.m[12] = 0f; r.m[13] = 0f; r.m[14] = 0f; r.m[15] = 1f
++            return r
++        }
++    }
++}
++class AABB(val min: Vec3 = Vec3(Float.MAX_VALUE, Float.MAX_VALUE, Float.MAX_VALUE), val max: Vec3 = Vec3(-Float.MAX_VALUE, -Float.MAX_VALUE, -Float.MAX_VALUE)) {
++    fun expand(x: Float, y: Float, z: Float) {
++        if (x < min.x) min.x = x; if (y < min.y) min.y = y; if (z < min.z) min.z = z
++        if (x > max.x) max.x = x; if (y > max.y) max.y = y; if (z > max.z) max.z = z
++    }
++    fun expand(point: Vec3) = expand(point.x, point.y, point.z)
++    fun merge(other: AABB) { expand(other.min.x, other.min.y, other.min.z); expand(other.max.x, other.max.y, other.max.z) }
++    fun center() = Vec3((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f, (min.z + max.z) * 0.5f)
++    fun extents() = Vec3((max.x - min.x) * 0.5f, (max.y - min.y) * 0.5f, (max.z - min.z) * 0.5f)
++    fun transform(m: Mat4): AABB {
++        val result = AABB()
++        val mm = m.m
++        for (i in 0..7) {
++            val xs = if (i and 1 == 0) min.x else max.x
++            val ys = if (i and 2 == 0) min.y else max.y
++            val zs = if (i and 4 == 0) min.z else max.z
++            val w = mm[12] * xs + mm[13] * ys + mm[14] * zs + mm[15]
++            val tx = (mm[0] * xs + mm[1] * ys + mm[2] * zs + mm[3]) / w
++            val ty = (mm[4] * xs + mm[5] * ys + mm[6] * zs + mm[7]) / w
++            val tz = (mm[8] * xs + mm[9] * ys + mm[10] * zs + mm[11]) / w
++            result.expand(tx, ty, tz)
++        }
++        return result
++    }
++    fun intersects(other: AABB) = min.x <= other.max.x && max.x >= other.min.x && min.y <= other.max.y && max.y >= other.min.y && min.z <= other.max.z && max.z >= other.min.z
++    fun contains(point: Vec3) = point.x in min.x..max.x && point.y in min.y..max.y && point.z in min.z..max.z
++}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/math/Quat.kt b/src/main/kotlin/cn/chen/blaze3d/math/Quat.kt
+deleted file mode 100644
+index cbdb19c..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/math/Quat.kt
++++ /dev/null
+@@ -1,66 +0,0 @@
+-package cn.chen.blaze3d.math
+-import kotlin.math.acos
+-import kotlin.math.cos
+-import kotlin.math.sin
+-import kotlin.math.sqrt
+-data class Quat(var x: Float = 0f, var y: Float = 0f, var z: Float = 0f, var w: Float = 1f) {
+-    fun normalize(): Quat {
+-        val l = sqrt(x * x + y * y + z * z + w * w)
+-        return if (l > 0f) Quat(x / l, y / l, z / l, w / l) else this
+-    }
+-    fun slerp(o: Quat, t: Float): Quat { val r = Quat(); slerpInto(o, t, r); return r }
+-    fun slerpInto(o: Quat, t: Float, out: Quat) = slerpComponentsInto(x, y, z, w, o.x, o.y, o.z, o.w, t, out)
+-    fun set(nx: Float, ny: Float, nz: Float, nw: Float): Quat { x = nx; y = ny; z = nz; w = nw; return this }
+-    fun toMatrix(): Mat4 { val m = Mat4(); toMatrixInto(m); return m }
+-    fun toMatrixInto(out: Mat4) {
+-        val xx = x * x; val yy = y * y; val zz = z * z
+-        val xy = x * y; val xz = x * z; val yz = y * z
+-        val wx = w * x; val wy = w * y; val wz = w * z
+-        val m = out.m
+-        m[0] = 1f - 2f * (yy + zz); m[1] = 2f * (xy + wz); m[2] = 2f * (xz - wy); m[3] = 0f
+-        m[4] = 2f * (xy - wz); m[5] = 1f - 2f * (xx + zz); m[6] = 2f * (yz + wx); m[7] = 0f
+-        m[8] = 2f * (xz + wy); m[9] = 2f * (yz - wx); m[10] = 1f - 2f * (xx + yy); m[11] = 0f
+-        m[12] = 0f; m[13] = 0f; m[14] = 0f; m[15] = 1f
+-    }
+-    companion object {
+-        fun slerpComponentsInto(ax: Float, ay: Float, az: Float, aw: Float, bx: Float, by: Float, bz: Float, bw: Float, t: Float, out: Quat) {
+-            var dot = ax * bx + ay * by + az * bz + aw * bw
+-            var ox = bx; var oy = by; var oz = bz; var ow = bw
+-            if (dot < 0f) { dot = -dot; ox = -ox; oy = -oy; oz = -oz; ow = -ow }
+-            if (dot > 0.9995f) {
+-                val rx = ax + (ox - ax) * t; val ry = ay + (oy - ay) * t; val rz = az + (oz - az) * t; val rw = aw + (ow - aw) * t
+-                val l = sqrt(rx*rx + ry*ry + rz*rz + rw*rw)
+-                if (l > 0f) { val k = 1f / l; out.x = rx * k; out.y = ry * k; out.z = rz * k; out.w = rw * k } else { out.x = ax; out.y = ay; out.z = az; out.w = aw }
+-                return
+-            }
+-            val theta0 = acos(dot); val theta = theta0 * t
+-            val sinTheta0 = sin(theta0); val invSin = 1f / sinTheta0
+-            val sinTheta = sin(theta)
+-            val s0 = cos(theta) - dot * sinTheta * invSin
+-            val s1 = sinTheta * invSin
+-            out.x = ax * s0 + ox * s1; out.y = ay * s0 + oy * s1; out.z = az * s0 + oz * s1; out.w = aw * s0 + ow * s1
+-        }
+-        fun fromMatrix(m: Mat4): Quat {
+-            val mm = m.m
+-            val trace = mm[0] + mm[5] + mm[10]
+-            return when {
+-                trace > 0f -> {
+-                    val s = 0.5f / sqrt(trace + 1f)
+-                    Quat((mm[6] - mm[9]) * s, (mm[8] - mm[2]) * s, (mm[1] - mm[4]) * s, 0.25f / s)
+-                }
+-                mm[0] > mm[5] && mm[0] > mm[10] -> {
+-                    val s = 2f * sqrt(1f + mm[0] - mm[5] - mm[10])
+-                    Quat(0.25f * s, (mm[4] + mm[1]) / s, (mm[8] + mm[2]) / s, (mm[6] - mm[9]) / s)
+-                }
+-                mm[5] > mm[10] -> {
+-                    val s = 2f * sqrt(1f + mm[5] - mm[0] - mm[10])
+-                    Quat((mm[4] + mm[1]) / s, 0.25f * s, (mm[9] + mm[6]) / s, (mm[8] - mm[2]) / s)
+-                }
+-                else -> {
+-                    val s = 2f * sqrt(1f + mm[10] - mm[0] - mm[5])
+-                    Quat((mm[8] + mm[2]) / s, (mm[9] + mm[6]) / s, 0.25f * s, (mm[1] - mm[4]) / s)
+-                }
+-            }
+-        }
+-    }
+-}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/math/Vec3.kt b/src/main/kotlin/cn/chen/blaze3d/math/Vec3.kt
+deleted file mode 100644
+index d256c00..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/math/Vec3.kt
++++ /dev/null
+@@ -1,19 +0,0 @@
+-package cn.chen.blaze3d.math
+-import java.nio.FloatBuffer
+-import kotlin.math.sqrt
+-data class Vec3(var x: Float = 0f, var y: Float = 0f, var z: Float = 0f) {
+-    operator fun plus(o: Vec3) = Vec3(x + o.x, y + o.y, z + o.z)
+-    operator fun minus(o: Vec3) = Vec3(x - o.x, y - o.y, z - o.z)
+-    operator fun times(s: Float) = Vec3(x * s, y * s, z * s)
+-    fun dot(o: Vec3) = x * o.x + y * o.y + z * o.z
+-    fun cross(o: Vec3) = Vec3(y * o.z - z * o.y, z * o.x - x * o.z, x * o.y - y * o.x)
+-    fun length() = sqrt(x * x + y * y + z * z)
+-    fun lengthSq() = x * x + y * y + z * z
+-    fun normalize(): Vec3 { val l = sqrt(x * x + y * y + z * z); return if (l > 0f) Vec3(x / l, y / l, z / l) else this }
+-    fun normalizeInPlace(): Vec3 { val l = sqrt(x * x + y * y + z * z); if (l > 0f) { val k = 1f / l; x *= k; y *= k; z *= k }; return this }
+-    fun lerp(o: Vec3, t: Float) = Vec3(x + (o.x - x) * t, y + (o.y - y) * t, z + (o.z - z) * t)
+-    fun set(nx: Float, ny: Float, nz: Float): Vec3 { x = nx; y = ny; z = nz; return this }
+-    fun set(o: Vec3): Vec3 { x = o.x; y = o.y; z = o.z; return this }
+-    fun putTo(buf: FloatBuffer) { buf.put(x); buf.put(y); buf.put(z) }
+-    fun toFloatArray() = floatArrayOf(x, y, z)
+-}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/math/Vec4.kt b/src/main/kotlin/cn/chen/blaze3d/math/Vec4.kt
+deleted file mode 100644
+index 871deff..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/math/Vec4.kt
++++ /dev/null
+@@ -1,10 +0,0 @@
+-package cn.chen.blaze3d.math
+-import java.nio.FloatBuffer
+-data class Vec4(var x: Float = 0f, var y: Float = 0f, var z: Float = 0f, var w: Float = 1f) {
+-    operator fun plus(o: Vec4) = Vec4(x + o.x, y + o.y, z + o.z, w + o.w)
+-    operator fun times(s: Float) = Vec4(x * s, y * s, z * s, w * s)
+-    fun set(nx: Float, ny: Float, nz: Float, nw: Float): Vec4 { x = nx; y = ny; z = nz; w = nw; return this }
+-    fun putTo(buf: FloatBuffer) { buf.put(x); buf.put(y); buf.put(z); buf.put(w) }
+-    fun toFloatArray() = floatArrayOf(x, y, z, w)
+-    fun xyz() = Vec3(x, y, z)
+-}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/physics/BulletWorld.kt b/src/main/kotlin/cn/chen/blaze3d/physics/BulletWorld.kt
+deleted file mode 100644
+index 32ae448..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/physics/BulletWorld.kt
++++ /dev/null
+@@ -1,16 +0,0 @@
+-package cn.chen.blaze3d.physics
+-import cn.chen.blaze3d.rust.NativePhysWorld
+-object BulletWorld {
+-    @Volatile private var world: NativePhysWorld? = null
+-    val enabled: Boolean get() = world?.available == true
+-    val space: NativePhysWorld? get() = world
+-    fun init() {
+-        if (world != null) return
+-        synchronized(this) {
+-            if (world != null) return
+-            world = NativePhysWorld.create()?.apply { setGravity(0f, -9.81f, 0f) }
+-        }
+-    }
+-    fun update(delta: Float) { world?.update(delta.coerceIn(0f, 0.1f)) }
+-    fun destroy() { synchronized(this) { world?.close(); world = null } }
+-}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/physics/PhysicsShape.kt b/src/main/kotlin/cn/chen/blaze3d/physics/PhysicsWorld.kt
+similarity index 63%
+rename from src/main/kotlin/cn/chen/blaze3d/physics/PhysicsShape.kt
+rename to src/main/kotlin/cn/chen/blaze3d/physics/PhysicsWorld.kt
+index 83f135e..5f4e51f 100644
+--- a/src/main/kotlin/cn/chen/blaze3d/physics/PhysicsShape.kt
++++ b/src/main/kotlin/cn/chen/blaze3d/physics/PhysicsWorld.kt
+@@ -1,6 +1,21 @@
+ package cn.chen.blaze3d.physics
++import cn.chen.blaze3d.rust.NativePhysWorld
+ import net.minecraft.world.phys.AABB
+ import org.joml.Vector3f
++object BulletWorld {
++    @Volatile private var world: NativePhysWorld? = null
++    val enabled: Boolean get() = world?.available == true
++    val space: NativePhysWorld? get() = world
++    fun init() {
++        if (world != null) return
++        synchronized(this) {
++            if (world != null) return
++            world = NativePhysWorld.create()?.apply { setGravity(0f, -9.81f, 0f) }
++        }
++    }
++    fun update(delta: Float) { world?.update(delta.coerceIn(0f, 0.1f)) }
++    fun destroy() { synchronized(this) { world?.close(); world = null } }
++}
+ class PhysicsShape(val meshCount: Int, val vertexCount: Int, val indexCount: Int, val min: Vector3f, val max: Vector3f) {
+     val center = Vector3f(min).add(max).mul(0.5f)
+     val halfExtents = Vector3f(max).sub(min).mul(0.5f)
+diff --git a/src/main/kotlin/cn/chen/blaze3d/physics/Softbody.kt b/src/main/kotlin/cn/chen/blaze3d/physics/Softbody.kt
+deleted file mode 100644
+index 17ae0f2..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/physics/Softbody.kt
++++ /dev/null
+@@ -1,73 +0,0 @@
+-package cn.chen.blaze3d.physics
+-import cn.chen.blaze3d.rust.NativeSoftbody
+-import org.joml.Vector3f as JVec3
+-abstract class SoftbodyBase : AutoCloseable {
+-    protected val native: NativeSoftbody? = NativeSoftbody.create()
+-    val available: Boolean get() = native?.available == true
+-    var iterations: Int = 16
+-        set(value) { field = value; native?.setIterations(value) }
+-    var damping: Float = 0.985f
+-        set(value) { field = value; native?.setDamping(value) }
+-    var gravity: JVec3 = JVec3(0f, -9.81f, 0f)
+-        set(value) { field.set(value); native?.setGravity(value.x, value.y, value.z) }
+-    var windDirection: JVec3 = JVec3(1f, 0f, 0f)
+-        set(value) { field.set(value); native?.setWind(value.x, value.y, value.z, windStrength) }
+-    var windStrength: Float = 0f
+-        set(value) { field = value; native?.setWind(windDirection.x, windDirection.y, windDirection.z, value) }
+-    var collisionRadius: Float = 0.02f
+-    val particleCount: Int get() = native?.particleCount() ?: 0
+-    init { native?.let { it.setIterations(iterations); it.setDamping(damping); it.setGravity(gravity.x, gravity.y, gravity.z); it.setWind(windDirection.x, windDirection.y, windDirection.z, windStrength) } }
+-    fun applyForce(force: JVec3) { native?.applyForce(force.x, force.y, force.z) }
+-    fun applyImpulse(direction: JVec3, magnitude: Float) { native?.applyImpulse(direction.x, direction.y, direction.z, magnitude) }
+-    fun step(deltaSeconds: Float) { native?.step(deltaSeconds.coerceIn(0f, 0.05f)) }
+-    fun positionInto(idx: Int, out: JVec3): Boolean {
+-        val buf = native?.positions() ?: return false
+-        val off = idx * 12
+-        if (off + 12 > buf.capacity()) return false
+-        out.set(buf.getFloat(off), buf.getFloat(off + 4), buf.getFloat(off + 8))
+-        return true
+-    }
+-    fun setPinned(idx: Int, pinned: Boolean) { native?.setPinned(idx, pinned) }
+-    fun setAnchor(idx: Int, position: JVec3) { native?.setAnchor(idx, position.x, position.y, position.z) }
+-    override fun close() { native?.close() }
+-}
+-class ClothSimulation(val widthSegments: Int, val heightSegments: Int, val cellSize: Float) : SoftbodyBase() {
+-    init { native?.buildCloth(widthSegments, heightSegments, cellSize) }
+-    fun pin(x: Int, y: Int) { setPinned(index(x, y), true) }
+-    fun unpin(x: Int, y: Int) { setPinned(index(x, y), false) }
+-    fun setAnchor(x: Int, y: Int, position: JVec3) { setAnchor(index(x, y), position) }
+-    fun particlePositionInto(x: Int, y: Int, out: JVec3): Boolean = positionInto(index(x, y), out)
+-    private fun index(x: Int, y: Int) = y * (widthSegments + 1) + x
+-}
+-class HairStrand(val segments: Int, val segmentLength: Float, val mass: Float = 0.1f, root: JVec3 = JVec3()) : SoftbodyBase() {
+-    private val base: Int
+-    init { damping = 0.92f; base = native?.buildHair(segments, segmentLength, root.x, root.y, root.z) ?: 0 }
+-    fun setRoot(position: JVec3) { native?.setAnchor(base, position.x, position.y, position.z) }
+-    fun positionAt(segment: Int, out: JVec3): Boolean = positionInto(base + segment, out)
+-}
+-class HairSimulation(val rootPositions: List<JVec3>, val segmentsPerStrand: Int = 12, val segmentLength: Float = 0.05f) {
+-    val strands: ArrayList<HairStrand> = ArrayList(rootPositions.size)
+-    init { for (root in rootPositions) strands.add(HairStrand(segmentsPerStrand, segmentLength, root = root)) }
+-    fun step(deltaSeconds: Float) { for (strand in strands) strand.step(deltaSeconds) }
+-    fun applyGravity(gravity: JVec3) { for (strand in strands) strand.gravity = JVec3(gravity) }
+-    fun applyWind(direction: JVec3, strength: Float) { for (strand in strands) { strand.windDirection = JVec3(direction); strand.windStrength = strength } }
+-    fun setRoot(strandIndex: Int, position: JVec3) { strands.getOrNull(strandIndex)?.setRoot(position) }
+-    fun strandPositions(strandIndex: Int): List<JVec3>? {
+-        val strand = strands.getOrNull(strandIndex) ?: return null
+-        return List(strand.segments + 1) { JVec3().also { p -> strand.positionAt(it, p) } }
+-    }
+-    fun close() { for (strand in strands) strand.close() }
+-}
+-class SoftbodyManager {
+-    private val cloths: ArrayList<ClothSimulation> = ArrayList()
+-    private val hairs: ArrayList<HairSimulation> = ArrayList()
+-    fun registerCloth(simulation: ClothSimulation): ClothSimulation { cloths.add(simulation); return simulation }
+-    fun registerHair(simulation: HairSimulation): HairSimulation { hairs.add(simulation); return simulation }
+-    fun step(deltaSeconds: Float) {
+-        val safeDelta = deltaSeconds.coerceIn(0f, 0.05f)
+-        for (cloth in cloths) cloth.step(safeDelta)
+-        for (hair in hairs) hair.step(safeDelta)
+-    }
+-    fun status() = "softbody cloth=${cloths.size} hair=${hairs.size} particles=${cloths.sumOf { it.particleCount } + hairs.sumOf { hair -> hair.strands.sumOf { it.particleCount } }}"
+-    fun close() { for (c in cloths) c.close(); cloths.clear(); for (h in hairs) h.close(); hairs.clear() }
+-}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/render/npr/NprState.kt b/src/main/kotlin/cn/chen/blaze3d/render/npr/NprState.kt
+index 3ff2f2c..fb1c404 100644
+--- a/src/main/kotlin/cn/chen/blaze3d/render/npr/NprState.kt
++++ b/src/main/kotlin/cn/chen/blaze3d/render/npr/NprState.kt
+@@ -1,4 +1,49 @@
+ package cn.chen.blaze3d.render.npr
++import cn.chen.blaze3d.material.Material
++import cn.chen.blaze3d.render.Pipelines
++import com.mojang.blaze3d.pipeline.RenderPipeline
++enum class ToonKind { BODY, HAIR, FACE, EYE, SSS, IRIDESCENT, OUTLINE }
++enum class Tonemapper(val id: Int) { REINHARD(0), ACES_FITTED(1), AGX(2) }
++data class BloomConfig(var enabled: Boolean = true, var threshold: Float = 1.05f, var knee: Float = 0.25f, var intensity: Float = 0.55f, var mipLevels: Int = 6, var dirtIntensity: Float = 0.0f, var scatter: Float = 0.7f)
++data class TonemapConfig(var exposure: Float = 1.0f, var saturation: Float = 1.05f, var invGamma: Float = 1.0f / 2.2f, var tonemapper: Tonemapper = Tonemapper.ACES_FITTED)
++class PostFx {
++    val bloom = BloomConfig()
++    val tonemap = TonemapConfig()
++    var enabled = true
++    var dofFocusDistance = 0f
++    var dofAperture = 0f
++    var vignetteStrength = 0f
++    fun snapshotBloom(): FloatArray = floatArrayOf(bloom.threshold, bloom.knee, bloom.intensity, bloom.scatter)
++    fun snapshotTonemap(): FloatArray = floatArrayOf(tonemap.exposure, tonemap.saturation, tonemap.invGamma, tonemap.tonemapper.id.toFloat())
++    fun summary() = "postfx exposure=${tonemap.exposure} bloom=${bloom.enabled}:${bloom.intensity} tonemap=${tonemap.tonemapper.name}"
++}
++class ToonProfile {
++    private val bodyKeys = listOf("body", "skin", "肌", "肌色", "顔", "face", "neck", "ear")
++    private val hairKeys = listOf("hair", "髪", "髮", "前髪", "横髪", "後髪", "毛")
++    private val faceKeys = listOf("face", "顔", "口", "鼻", "頬", "skin", "肌")
++    private val eyeKeys = listOf("eye", "瞳", "目", "iris", "pupil")
++    fun classify(material: Material): ToonKind {
++        val n = material.name.lowercase()
++        return when {
++            eyeKeys.any { n.contains(it.lowercase()) } -> ToonKind.EYE
++            hairKeys.any { n.contains(it.lowercase()) } -> ToonKind.HAIR
++            faceKeys.any { n.contains(it.lowercase()) } -> ToonKind.FACE
++            (material.khrExtensions.iridescence?.factor ?: 0f) > 0.05f -> ToonKind.IRIDESCENT
++            (material.khrExtensions.transmission?.factor ?: 0f) > 0.05f || (material.khrExtensions.volume?.thicknessFactor ?: 0f) > 0.001f -> ToonKind.SSS
++            bodyKeys.any { n.contains(it.lowercase()) } -> ToonKind.BODY
++            else -> ToonKind.BODY
++        }
++    }
++    fun pipelineFor(kind: ToonKind): RenderPipeline = when (kind) {
++        ToonKind.BODY -> Pipelines.AI_TOON_BODY
++        ToonKind.HAIR -> Pipelines.AI_TOON_HAIR
++        ToonKind.FACE -> Pipelines.AI_TOON_FACE
++        ToonKind.EYE -> Pipelines.AI_TOON_EYE
++        ToonKind.SSS -> Pipelines.AI_SSS_OPAQUE
++        ToonKind.IRIDESCENT -> Pipelines.AI_IRIDESCENT
++        ToonKind.OUTLINE -> Pipelines.AI_OUTLINE_PURE
++    }
++}
+ class NprState : AutoCloseable {
+     val profile = ToonProfile()
+     val postFx = PostFx()
+diff --git a/src/main/kotlin/cn/chen/blaze3d/render/npr/PostFx.kt b/src/main/kotlin/cn/chen/blaze3d/render/npr/PostFx.kt
+deleted file mode 100644
+index 7476ea5..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/render/npr/PostFx.kt
++++ /dev/null
+@@ -1,28 +0,0 @@
+-package cn.chen.blaze3d.render.npr
+-enum class Tonemapper(val id: Int) { REINHARD(0), ACES_FITTED(1), AGX(2) }
+-data class BloomConfig(
+-    var enabled: Boolean = true,
+-    var threshold: Float = 1.05f,
+-    var knee: Float = 0.25f,
+-    var intensity: Float = 0.55f,
+-    var mipLevels: Int = 6,
+-    var dirtIntensity: Float = 0.0f,
+-    var scatter: Float = 0.7f
+-)
+-data class TonemapConfig(
+-    var exposure: Float = 1.0f,
+-    var saturation: Float = 1.05f,
+-    var invGamma: Float = 1.0f / 2.2f,
+-    var tonemapper: Tonemapper = Tonemapper.ACES_FITTED
+-)
+-class PostFx {
+-    val bloom = BloomConfig()
+-    val tonemap = TonemapConfig()
+-    var enabled = true
+-    var dofFocusDistance = 0f
+-    var dofAperture = 0f
+-    var vignetteStrength = 0f
+-    fun snapshotBloom(): FloatArray = floatArrayOf(bloom.threshold, bloom.knee, bloom.intensity, bloom.scatter)
+-    fun snapshotTonemap(): FloatArray = floatArrayOf(tonemap.exposure, tonemap.saturation, tonemap.invGamma, tonemap.tonemapper.id.toFloat())
+-    fun summary() = "postfx exposure=${tonemap.exposure} bloom=${bloom.enabled}:${bloom.intensity} tonemap=${tonemap.tonemapper.name}"
+-}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/render/npr/ToonProfile.kt b/src/main/kotlin/cn/chen/blaze3d/render/npr/ToonProfile.kt
+deleted file mode 100644
+index ce86688..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/render/npr/ToonProfile.kt
++++ /dev/null
+@@ -1,32 +0,0 @@
+-package cn.chen.blaze3d.render.npr
+-import cn.chen.blaze3d.material.Material
+-import cn.chen.blaze3d.render.Pipelines
+-import com.mojang.blaze3d.pipeline.RenderPipeline
+-enum class ToonKind { BODY, HAIR, FACE, EYE, SSS, IRIDESCENT, OUTLINE }
+-class ToonProfile {
+-    private val bodyKeys = listOf("body", "skin", "肌", "肌色", "顔", "face", "neck", "ear")
+-    private val hairKeys = listOf("hair", "髪", "髮", "前髪", "横髪", "後髪", "毛")
+-    private val faceKeys = listOf("face", "顔", "口", "鼻", "頬", "skin", "肌")
+-    private val eyeKeys = listOf("eye", "瞳", "目", "iris", "pupil")
+-    fun classify(material: Material): ToonKind {
+-        val n = material.name.lowercase()
+-        return when {
+-            eyeKeys.any { n.contains(it.lowercase()) } -> ToonKind.EYE
+-            hairKeys.any { n.contains(it.lowercase()) } -> ToonKind.HAIR
+-            faceKeys.any { n.contains(it.lowercase()) } -> ToonKind.FACE
+-            (material.khrExtensions.iridescence?.factor ?: 0f) > 0.05f -> ToonKind.IRIDESCENT
+-            (material.khrExtensions.transmission?.factor ?: 0f) > 0.05f || (material.khrExtensions.volume?.thicknessFactor ?: 0f) > 0.001f -> ToonKind.SSS
+-            bodyKeys.any { n.contains(it.lowercase()) } -> ToonKind.BODY
+-            else -> ToonKind.BODY
+-        }
+-    }
+-    fun pipelineFor(kind: ToonKind): RenderPipeline = when (kind) {
+-        ToonKind.BODY -> Pipelines.AI_TOON_BODY
+-        ToonKind.HAIR -> Pipelines.AI_TOON_HAIR
+-        ToonKind.FACE -> Pipelines.AI_TOON_FACE
+-        ToonKind.EYE -> Pipelines.AI_TOON_EYE
+-        ToonKind.SSS -> Pipelines.AI_SSS_OPAQUE
+-        ToonKind.IRIDESCENT -> Pipelines.AI_IRIDESCENT
+-        ToonKind.OUTLINE -> Pipelines.AI_OUTLINE_PURE
+-    }
+-}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/rust/BlazeExtras.kt b/src/main/kotlin/cn/chen/blaze3d/rust/BlazeExtras.kt
+index e69213a..82dcd23 100644
+--- a/src/main/kotlin/cn/chen/blaze3d/rust/BlazeExtras.kt
++++ b/src/main/kotlin/cn/chen/blaze3d/rust/BlazeExtras.kt
+@@ -9,9 +9,6 @@ object BlazeExtras {
+     const val KIND_SCHEDULER = 6
+     const val KIND_UNIFIED_SOLVER = 7
+     const val TASK_LOAD = 0
+-    const val TASK_UNLOAD = 1
+-    const val TASK_REFRESH = 2
+-    const val TASK_PERSIST = 3
+     const val TASK_PREFETCH = 4
+     const val CONSTRAINT_DISTANCE = 0
+     const val CONSTRAINT_SPRING = 1
+diff --git a/src/main/kotlin/cn/chen/blaze3d/rust/BlazeNative.kt b/src/main/kotlin/cn/chen/blaze3d/rust/BlazeNative.kt
+index 4ad4c38..7ab52ef 100644
+--- a/src/main/kotlin/cn/chen/blaze3d/rust/BlazeNative.kt
++++ b/src/main/kotlin/cn/chen/blaze3d/rust/BlazeNative.kt
+@@ -1,8 +1,6 @@
+ package cn.chen.blaze3d.rust
+ import java.nio.ByteBuffer
+ object BlazeNative {
+-    @JvmStatic external fun loadFile(path: String, hint: String): ByteArray
+-    @JvmStatic external fun version(): Int
+     @JvmStatic external fun decodeImage(data: ByteArray, outDim: IntArray): ByteArray?
+     @JvmStatic external fun imageAlphaSummary(rgba: ByteArray, outCounts: IntArray): Int
+     @JvmStatic external fun imageMipmaps(width: Int, height: Int, rgba: ByteArray, outDims: IntArray): ByteArray?
+@@ -15,7 +13,6 @@ object BlazeNative {
+     @JvmStatic external fun bvhCullFrustum(handle: Long, planes: FloatArray, out: IntArray): Int
+     @JvmStatic external fun bvhSphereQuery(handle: Long, cx: Float, cy: Float, cz: Float, radius: Float, out: IntArray): Int
+     @JvmStatic external fun atlasPack(sizes: IntArray, maxSize: Int, outDim: IntArray, outPositions: IntArray): Int
+-    @JvmStatic external fun nativeStats(out: LongArray): Int
+     @JvmStatic external fun syncEncodeFrame(prev: FloatArray?, curr: FloatArray, scale: Float): ByteArray?
+     @JvmStatic external fun syncDecodeFrame(prev: FloatArray?, data: ByteArray, scale: Float, out: FloatArray): Int
+     @JvmStatic external fun syncSlerpQuat(ax: Float, ay: Float, az: Float, aw: Float, bx: Float, by: Float, bz: Float, bw: Float, t: Float, out: FloatArray): Int
+@@ -34,8 +31,6 @@ object BlazeNative {
+     @JvmStatic external fun animGraphComputeBlend(handle: Long, clipA: Int, timeA: Double, clipB: Int, timeB: Double, factor: Float, out: ByteBuffer): Int
+     @JvmStatic external fun animGraphComputeLayered(handle: Long, clipIndices: IntArray, timesSec: FloatArray, weights: FloatArray, additiveFlags: IntArray, out: ByteBuffer): Int
+     @JvmStatic external fun animGraphRootMotion(handle: Long, clipIdx: Int, tPrev: Double, tCurr: Double, out: FloatArray): Int
+-    @JvmStatic external fun ikSolveCcd(positions: FloatArray, rotations: FloatArray, target: FloatArray, pole: FloatArray, iterations: Int, tolerance: Float, outPositions: FloatArray, outRotations: FloatArray): Int
+-    @JvmStatic external fun ikSolveTwoBone(root: FloatArray, mid: FloatArray, end: FloatArray, target: FloatArray, pole: FloatArray, outMid: FloatArray, outEnd: FloatArray): Int
+     @JvmStatic external fun physWorldCreate(): Long
+     @JvmStatic external fun physWorldFree(handle: Long)
+     @JvmStatic external fun physWorldSetGravity(handle: Long, gx: Float, gy: Float, gz: Float)
+@@ -63,43 +58,10 @@ object BlazeNative {
+     @JvmStatic external fun physJointRemove(worldHandle: Long, jointId: Int)
+     @JvmStatic external fun physWorldJointCount(worldHandle: Long): Int
+     @JvmStatic external fun physWorldSetIterations(worldHandle: Long, iterations: Int)
+-    @JvmStatic external fun softbodyCreate(): Long
+-    @JvmStatic external fun softbodyFree(handle: Long)
+-    @JvmStatic external fun softbodyBuildCloth(handle: Long, w: Int, h: Int, cell: Float)
+-    @JvmStatic external fun softbodyBuildHair(handle: Long, segments: Int, segmentLen: Float, rx: Float, ry: Float, rz: Float): Int
+-    @JvmStatic external fun softbodyParticleCount(handle: Long): Int
+-    @JvmStatic external fun softbodyStep(handle: Long, dt: Float)
+-    @JvmStatic external fun softbodySetGravity(handle: Long, gx: Float, gy: Float, gz: Float)
+-    @JvmStatic external fun softbodySetWind(handle: Long, dx: Float, dy: Float, dz: Float, strength: Float)
+-    @JvmStatic external fun softbodySetDamping(handle: Long, damping: Float)
+-    @JvmStatic external fun softbodySetIterations(handle: Long, iterations: Int)
+-    @JvmStatic external fun softbodySetPinned(handle: Long, idx: Int, pinned: Int)
+-    @JvmStatic external fun softbodySetAnchor(handle: Long, idx: Int, x: Float, y: Float, z: Float)
+-    @JvmStatic external fun softbodyApplyForce(handle: Long, fx: Float, fy: Float, fz: Float)
+-    @JvmStatic external fun softbodyApplyImpulse(handle: Long, dx: Float, dy: Float, dz: Float, mag: Float)
+-    @JvmStatic external fun softbodyPositions(handle: Long, out: ByteBuffer): Int
+-    @JvmStatic external fun meshComputeTangents(positions: FloatArray, normals: FloatArray, uvs: FloatArray, indices: IntArray): FloatArray?
+-    @JvmStatic external fun meshOptimizeIndices(indices: IntArray, vertexCount: Int): IntArray?
+-    @JvmStatic external fun meshDedup(positions: FloatArray, normals: FloatArray, uvs: FloatArray, indices: IntArray, outPositions: FloatArray, outNormals: FloatArray, outUvs: FloatArray, outIndices: IntArray, outCounts: IntArray): Int
+-    @JvmStatic external fun meshLodSimplify(positions: FloatArray, normals: FloatArray, uvs: FloatArray, indices: IntArray, cellSize: Float): FloatArray?
+-    @JvmStatic external fun meshBatchByMaterial(materials: IntArray, indicesFlat: IntArray, lengths: IntArray, vertexOffsets: IntArray, outIndicesHolder: IntArray, outBatches: IntArray): Int
+-    @JvmStatic external fun vulkanAvailable(): Int
+     @JvmStatic external fun vulkanSaveCache(): Int
+-    @JvmStatic external fun vulkanSkin(positions: FloatArray, indices: IntArray, weights: FloatArray, bones: FloatArray, out: FloatArray): Int
+-    @JvmStatic external fun vulkanMipmap(srcW: Int, srcH: Int, src: ByteArray, dstW: Int, dstH: Int): ByteArray?
+-    @JvmStatic external fun vulkanMorph(base: FloatArray, targets: FloatArray, weights: FloatArray, out: FloatArray): Int
+-    @JvmStatic external fun vulkanBatch(indices: IntArray, offsets: IntArray, vertexBase: IntArray, materials: IntArray, outIndices: IntArray, outMaterial: IntArray): Int
+     @JvmStatic external fun l2dRuntimeCreate(modelBytes: ByteArray): Long
+     @JvmStatic external fun l2dRuntimeFree(handle: Long)
+     @JvmStatic external fun l2dRuntimeSetParameter(handle: Long, id: String, value: Float): Int
+     @JvmStatic external fun l2dRuntimeUpdate(handle: Long, dt: Float, wind: Float): Int
+-    @JvmStatic external fun l2dRuntimeDrawableCount(handle: Long): Int
+     @JvmStatic external fun l2dRuntimeDrawableVertices(handle: Long, drawableIdx: Int, out: FloatArray): Int
+-    @JvmStatic external fun l2dKeyframeSample(frames: FloatArray, t: Float): Float
+-    @JvmStatic external fun l2dSmootherCreate(tau: Float, maxDelta: Float): Long
+-    @JvmStatic external fun l2dSmootherFree(handle: Long)
+-    @JvmStatic external fun l2dSmootherApply(handle: Long, values: FloatArray, dt: Float): Int
+-    @JvmStatic external fun l2dMaskBounds(vertices: FloatArray, out: FloatArray): Int
+-    @JvmStatic external fun l2dMaskCompose(target: FloatArray, sources: FloatArray, out: FloatArray): Int
+-    @JvmStatic external fun l2dDeltaEncode(prev: FloatArray, curr: FloatArray, eps: Float, outIndices: IntArray, outValues: FloatArray): Int
+ }
+diff --git a/src/main/kotlin/cn/chen/blaze3d/rust/NativeIk.kt b/src/main/kotlin/cn/chen/blaze3d/rust/NativeIk.kt
+deleted file mode 100644
+index 594a676..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/rust/NativeIk.kt
++++ /dev/null
+@@ -1,11 +0,0 @@
+-package cn.chen.blaze3d.rust
+-object NativeIk {
+-    fun solveCcd(positions: FloatArray, rotations: FloatArray, target: FloatArray, pole: FloatArray, iterations: Int, tolerance: Float, outPositions: FloatArray, outRotations: FloatArray): Int {
+-        if (!RustNativeLoader.ensure()) return 0
+-        return BlazeNative.ikSolveCcd(positions, rotations, target, pole, iterations, tolerance, outPositions, outRotations)
+-    }
+-    fun solveTwoBone(root: FloatArray, mid: FloatArray, end: FloatArray, target: FloatArray, pole: FloatArray, outMid: FloatArray, outEnd: FloatArray): Boolean {
+-        if (!RustNativeLoader.ensure()) return false
+-        return BlazeNative.ikSolveTwoBone(root, mid, end, target, pole, outMid, outEnd) > 0
+-    }
+-}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/rust/NativeMesh.kt b/src/main/kotlin/cn/chen/blaze3d/rust/NativeMesh.kt
+deleted file mode 100644
+index a6aae03..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/rust/NativeMesh.kt
++++ /dev/null
+@@ -1,59 +0,0 @@
+-package cn.chen.blaze3d.rust
+-object NativeMesh {
+-    val available: Boolean get() = RustNativeLoader.ensure()
+-    fun computeTangents(positions: FloatArray, normals: FloatArray, uvs: FloatArray, indices: IntArray): FloatArray? {
+-        if (!available || positions.isEmpty() || indices.isEmpty()) return null
+-        return BlazeNative.meshComputeTangents(positions, normals, uvs, indices)
+-    }
+-    fun optimizeIndices(indices: IntArray, vertexCount: Int): IntArray? {
+-        if (!available || indices.size < 3) return null
+-        return BlazeNative.meshOptimizeIndices(indices, vertexCount)
+-    }
+-    fun dedup(positions: FloatArray, normals: FloatArray, uvs: FloatArray, indices: IntArray): DedupResult? {
+-        if (!available || positions.isEmpty()) return null
+-        val cap = positions.size / 3
+-        val outPositions = FloatArray(cap * 3)
+-        val outNormals = FloatArray(cap * 3)
+-        val outUvs = FloatArray(cap * 2)
+-        val outIndices = IntArray(indices.size)
+-        val outCounts = IntArray(2)
+-        if (BlazeNative.meshDedup(positions, normals, uvs, indices, outPositions, outNormals, outUvs, outIndices, outCounts) == 0) return null
+-        val v = outCounts[0]; val i = outCounts[1]
+-        return DedupResult(outPositions.copyOf(v * 3), outNormals.copyOf(v * 3), outUvs.copyOf(v * 2), outIndices.copyOf(i))
+-    }
+-    fun lodSimplify(positions: FloatArray, normals: FloatArray, uvs: FloatArray, indices: IntArray, cellSize: Float): LodResult? {
+-        if (!available || cellSize <= 0f || positions.isEmpty()) return null
+-        val packed = BlazeNative.meshLodSimplify(positions, normals, uvs, indices, cellSize) ?: return null
+-        if (packed.size < 2) return null
+-        val vc = packed[0].toInt(); val ic = packed[1].toInt()
+-        val pOff = 2
+-        val nOff = pOff + vc * 3
+-        val uOff = nOff + vc * 3
+-        val iOff = uOff + vc * 2
+-        val outPositions = FloatArray(vc * 3); System.arraycopy(packed, pOff, outPositions, 0, outPositions.size)
+-        val outNormals = FloatArray(vc * 3); System.arraycopy(packed, nOff, outNormals, 0, outNormals.size)
+-        val outUvs = FloatArray(vc * 2); System.arraycopy(packed, uOff, outUvs, 0, outUvs.size)
+-        val outIndices = IntArray(ic)
+-        for (j in 0 until ic) outIndices[j] = packed[iOff + j].toRawBits()
+-        return LodResult(outPositions, outNormals, outUvs, outIndices)
+-    }
+-    fun batchByMaterial(materials: IntArray, indicesPerMesh: Array<IntArray>, vertexOffsets: IntArray): BatchResult? {
+-        if (!available || materials.isEmpty()) return null
+-        var total = 0
+-        val lengths = IntArray(indicesPerMesh.size) { indicesPerMesh[it].size.also { len -> total += len } }
+-        val flat = IntArray(total)
+-        var pos = 0
+-        for (chunk in indicesPerMesh) { System.arraycopy(chunk, 0, flat, pos, chunk.size); pos += chunk.size }
+-        val outIndices = IntArray(total)
+-        val outBatches = IntArray(materials.size * 3)
+-        val count = BlazeNative.meshBatchByMaterial(materials, flat, lengths, vertexOffsets, outIndices, outBatches)
+-        if (count <= 0) return null
+-        val batches = ArrayList<Batch>(count)
+-        for (i in 0 until count) batches.add(Batch(outBatches[i * 3], outBatches[i * 3 + 1], outBatches[i * 3 + 2]))
+-        return BatchResult(outIndices.copyOf(total), batches)
+-    }
+-    data class DedupResult(val positions: FloatArray, val normals: FloatArray, val uvs: FloatArray, val indices: IntArray)
+-    data class LodResult(val positions: FloatArray, val normals: FloatArray, val uvs: FloatArray, val indices: IntArray)
+-    data class Batch(val material: Int, val offset: Int, val count: Int)
+-    data class BatchResult(val indices: IntArray, val batches: List<Batch>)
+-}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/rust/NativeSoftbody.kt b/src/main/kotlin/cn/chen/blaze3d/rust/NativeSoftbody.kt
+deleted file mode 100644
+index 50beb3f..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/rust/NativeSoftbody.kt
++++ /dev/null
+@@ -1,45 +0,0 @@
+-package cn.chen.blaze3d.rust
+-import java.nio.ByteBuffer
+-import java.nio.ByteOrder
+-class NativeSoftbody private constructor(val handle: Long) : AutoCloseable {
+-    @Volatile private var closed = false
+-    @Volatile private var positionsBuffer: ByteBuffer? = null
+-    val available: Boolean get() = !closed && handle != 0L
+-    fun buildCloth(width: Int, height: Int, cell: Float) { if (available) { BlazeNative.softbodyBuildCloth(handle, width, height, cell); positionsBuffer = null } }
+-    fun buildHair(segments: Int, segmentLength: Float, rx: Float, ry: Float, rz: Float): Int { if (!available) return 0; val base = BlazeNative.softbodyBuildHair(handle, segments, segmentLength, rx, ry, rz); positionsBuffer = null; return base }
+-    fun particleCount(): Int = if (available) BlazeNative.softbodyParticleCount(handle) else 0
+-    fun step(dt: Float) { if (available) BlazeNative.softbodyStep(handle, dt) }
+-    fun setGravity(gx: Float, gy: Float, gz: Float) { if (available) BlazeNative.softbodySetGravity(handle, gx, gy, gz) }
+-    fun setWind(dx: Float, dy: Float, dz: Float, strength: Float) { if (available) BlazeNative.softbodySetWind(handle, dx, dy, dz, strength) }
+-    fun setDamping(damping: Float) { if (available) BlazeNative.softbodySetDamping(handle, damping) }
+-    fun setIterations(iterations: Int) { if (available) BlazeNative.softbodySetIterations(handle, iterations) }
+-    fun setPinned(idx: Int, pinned: Boolean) { if (available && idx >= 0) BlazeNative.softbodySetPinned(handle, idx, if (pinned) 1 else 0) }
+-    fun setAnchor(idx: Int, x: Float, y: Float, z: Float) { if (available && idx >= 0) BlazeNative.softbodySetAnchor(handle, idx, x, y, z) }
+-    fun applyForce(fx: Float, fy: Float, fz: Float) { if (available) BlazeNative.softbodyApplyForce(handle, fx, fy, fz) }
+-    fun applyImpulse(dx: Float, dy: Float, dz: Float, magnitude: Float) { if (available) BlazeNative.softbodyApplyImpulse(handle, dx, dy, dz, magnitude) }
+-    fun positions(): ByteBuffer? {
+-        if (!available) return null
+-        val count = particleCount()
+-        if (count == 0) return null
+-        val needed = count * 12
+-        var buf = positionsBuffer
+-        if (buf == null || buf.capacity() < needed) { buf = ByteBuffer.allocateDirect(needed).order(ByteOrder.LITTLE_ENDIAN); positionsBuffer = buf }
+-        if (BlazeNative.softbodyPositions(handle, buf) < 0) return null
+-        buf.rewind()
+-        return buf
+-    }
+-    override fun close() {
+-        if (closed) return
+-        closed = true
+-        positionsBuffer = null
+-        BlazeNative.softbodyFree(handle)
+-    }
+-    companion object {
+-        fun create(): NativeSoftbody? {
+-            if (!RustNativeLoader.ensure()) return null
+-            val h = BlazeNative.softbodyCreate()
+-            if (h == 0L) return null
+-            return NativeSoftbody(h)
+-        }
+-    }
+-}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/rust/NativeStats.kt b/src/main/kotlin/cn/chen/blaze3d/rust/NativeStats.kt
+deleted file mode 100644
+index 32489ad..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/rust/NativeStats.kt
++++ /dev/null
+@@ -1,35 +0,0 @@
+-package cn.chen.blaze3d.rust
+-object NativeStats {
+-    private val buf = LongArray(32)
+-    @Synchronized fun refresh(): Int = try { BlazeNative.nativeStats(buf) } catch (_: Throwable) { 0 }
+-    val loaderAttempts get() = buf[0]
+-    val loaderSuccesses get() = buf[1]
+-    val loaderFailures get() = buf[2]
+-    val loaderBytesRead get() = buf[3]
+-    val loaderBytesParsed get() = buf[4]
+-    val vkSkin get() = buf[5]
+-    val vkMipmap get() = buf[6]
+-    val vkMorph get() = buf[7]
+-    val vkBatch get() = buf[8]
+-    val vkCpuFallback get() = buf[9]
+-    val vkSaveOps get() = buf[10]
+-    val vkSaveBytes get() = buf[11]
+-    val syncFramesEncoded get() = buf[12]
+-    val syncFramesDecoded get() = buf[13]
+-    val syncDecodeErrors get() = buf[14]
+-    val syncEncodedOut get() = buf[15]
+-    val liveScenes get() = buf[16]
+-    val liveAnimGraphs get() = buf[17]
+-    val livePhysicsWorlds get() = buf[18]
+-    val liveBvhs get() = buf[19]
+-    val imageDecodes get() = buf[20]
+-    val imageDecodeFailures get() = buf[21]
+-    val imageBytesIn get() = buf[22]
+-    val imagePixelsOut get() = buf[23]
+-    val imageMipmapLevels get() = buf[24]
+-    fun saveVulkanCache() { try { BlazeNative.vulkanSaveCache() } catch (_: Throwable) { 0 } }
+-    fun status(): String {
+-        refresh()
+-        return "loader att=$loaderAttempts ok=$loaderSuccesses err=$loaderFailures br=$loaderBytesRead bp=$loaderBytesParsed | vk skin=$vkSkin mip=$vkMipmap morph=$vkMorph batch=$vkBatch fb=$vkCpuFallback save=$vkSaveOps/$vkSaveBytes | sync enc=$syncFramesEncoded dec=$syncFramesDecoded err=$syncDecodeErrors out=$syncEncodedOut | img dec=$imageDecodes err=$imageDecodeFailures bi=$imageBytesIn px=$imagePixelsOut mip=$imageMipmapLevels | live scn=$liveScenes ag=$liveAnimGraphs phys=$livePhysicsWorlds bvh=$liveBvhs"
+-    }
+-}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/vehicle/VehicleRenderHook.kt b/src/main/kotlin/cn/chen/blaze3d/vehicle/VehicleRenderHook.kt
+deleted file mode 100644
+index 8eeb98b..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/vehicle/VehicleRenderHook.kt
++++ /dev/null
+@@ -1,33 +0,0 @@
+-package cn.chen.blaze3d.vehicle
+-import com.mojang.blaze3d.vertex.PoseStack
+-import net.minecraft.client.renderer.SubmitNodeCollector
+-import net.minecraft.client.renderer.entity.state.EntityRenderState
+-import net.minecraft.client.renderer.state.level.CameraRenderState
+-import java.util.concurrent.atomic.AtomicLong
+-object VehicleRenderHook {
+-    val runtime = VehicleRuntime()
+-    val raycaster = WheelRaycaster.shared
+-    var enabled = true
+-    val rendered: AtomicLong = AtomicLong()
+-    val cancelled: AtomicLong = AtomicLong()
+-    fun tryRenderBoat(state: EntityRenderState, pose: PoseStack, collector: SubmitNodeCollector, camera: CameraRenderState?): Boolean {
+-        if (!enabled) return false
+-        val binding = VehicleRenderRegistry.boatBinding("default") ?: return false
+-        return renderVehicle(binding, state, pose, collector)
+-    }
+-    fun tryRenderMinecart(state: EntityRenderState, pose: PoseStack, collector: SubmitNodeCollector, camera: CameraRenderState?): Boolean {
+-        if (!enabled) return false
+-        val binding = VehicleRenderRegistry.minecartBinding("default") ?: return false
+-        return renderVehicle(binding, state, pose, collector)
+-    }
+-    private fun renderVehicle(binding: VehicleBinding, state: EntityRenderState, pose: PoseStack, collector: SubmitNodeCollector): Boolean {
+-        val resolved = VehicleRenderRegistry.resolve(binding) ?: return false
+-        rendered.incrementAndGet()
+-        pose.pushPose()
+-        pose.scale(binding.scale, binding.scale, binding.scale)
+-        pose.popPose()
+-        cancelled.incrementAndGet()
+-        return resolved.support.id.isNotEmpty()
+-    }
+-    fun status() = "vehicle-hook enabled=$enabled rendered=${rendered.get()} cancelled=${cancelled.get()} ${runtime.status()}"
+-}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/vehicle/VehicleRenderRegistry.kt b/src/main/kotlin/cn/chen/blaze3d/vehicle/VehicleRenderRegistry.kt
+deleted file mode 100644
+index 58ab1f5..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/vehicle/VehicleRenderRegistry.kt
++++ /dev/null
+@@ -1,30 +0,0 @@
+-package cn.chen.blaze3d.vehicle
+-import cn.chen.blaze3d.api.ModelLoadResult
+-import cn.chen.blaze3d.api.ModelFormatRegistry
+-import java.io.File
+-import java.util.UUID
+-data class VehicleBinding(val modelPath: String, val scale: Float = 1f, val frontOffset: Float = 0.55f, val sideOffset: Float = 0.4f, val restLength: Float = 0.45f, val stiffness: Float = 14f, val damping: Float = 4.5f, val rideHeight: Float = 0.0f) {
+-    val key: UUID = UUID.randomUUID()
+-}
+-object VehicleRenderRegistry {
+-    private val boats = LinkedHashMap<String, VehicleBinding>()
+-    private val minecarts = LinkedHashMap<String, VehicleBinding>()
+-    private val loaded = HashMap<UUID, ModelLoadResult>()
+-    fun registerBoat(variant: String, binding: VehicleBinding) { boats[variant] = binding }
+-    fun registerMinecart(variant: String, binding: VehicleBinding) { minecarts[variant] = binding }
+-    fun boatBinding(variant: String): VehicleBinding? = boats[variant] ?: boats.values.firstOrNull()
+-    fun minecartBinding(variant: String): VehicleBinding? = minecarts[variant] ?: minecarts.values.firstOrNull()
+-    fun resolve(binding: VehicleBinding): ModelLoadResult? {
+-        val cached = loaded[binding.key]
+-        if (cached != null) return cached
+-        return runCatching { ModelFormatRegistry.load(binding.modelPath) }.getOrNull()?.also { loaded[binding.key] = it }
+-    }
+-    fun status() = "vehicle-registry boats=${boats.size} minecarts=${minecarts.size} loaded=${loaded.size}"
+-    fun reset() { boats.clear(); minecarts.clear(); loaded.clear() }
+-    fun loadDefaults(configDir: File) {
+-        val boatsDir = File(configDir, "vehicles/boats")
+-        val minecartsDir = File(configDir, "vehicles/minecarts")
+-        if (boatsDir.isDirectory) boatsDir.listFiles()?.forEach { f -> if (f.isFile) registerBoat(f.nameWithoutExtension, VehicleBinding(modelPath = f.absolutePath)) }
+-        if (minecartsDir.isDirectory) minecartsDir.listFiles()?.forEach { f -> if (f.isFile) registerMinecart(f.nameWithoutExtension, VehicleBinding(modelPath = f.absolutePath)) }
+-    }
+-}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/vehicle/VehicleRuntime.kt b/src/main/kotlin/cn/chen/blaze3d/vehicle/VehicleRuntime.kt
+deleted file mode 100644
+index 9fcfe56..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/vehicle/VehicleRuntime.kt
++++ /dev/null
+@@ -1,16 +0,0 @@
+-package cn.chen.blaze3d.vehicle
+-import net.minecraft.world.entity.Entity
+-import java.util.UUID
+-class VehicleRuntime {
+-    private val suspensions = HashMap<UUID, VehicleSuspension>()
+-    private val raycaster = WheelRaycaster.shared
+-    fun update(entity: Entity, binding: VehicleBinding, dt: Float): VehicleSuspension {
+-        val suspension = suspensions.getOrPut(entity.uuid) { VehicleSuspension(binding.frontOffset, binding.sideOffset, binding.restLength, binding.stiffness, binding.damping) }
+-        val samples = raycaster.sampleFour(entity, binding.frontOffset, binding.sideOffset, binding.rideHeight)
+-        suspension.update(dt, samples)
+-        return suspension
+-    }
+-    fun remove(entity: Entity) { suspensions.remove(entity.uuid) }
+-    fun clear() { suspensions.clear() }
+-    fun status() = "vehicle-runtime active=${suspensions.size}"
+-}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/vehicle/VehicleSuspension.kt b/src/main/kotlin/cn/chen/blaze3d/vehicle/VehicleSuspension.kt
+deleted file mode 100644
+index 7f14a7c..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/vehicle/VehicleSuspension.kt
++++ /dev/null
+@@ -1,42 +0,0 @@
+-package cn.chen.blaze3d.vehicle
+-import cn.chen.blaze3d.math.Vec3
+-import kotlin.math.PI
+-import kotlin.math.atan2
+-import kotlin.math.cos
+-import kotlin.math.sin
+-class VehicleSuspension(val frontOffset: Float = 0.55f, val sideOffset: Float = 0.4f, val restLength: Float = 0.45f, val stiffness: Float = 14f, val damping: Float = 4.5f) {
+-    private val compression = FloatArray(4)
+-    private val compressionVel = FloatArray(4)
+-    private val cached = arrayOf(Vec3(), Vec3(), Vec3(), Vec3())
+-    var pitch = 0f; private set
+-    var roll = 0f; private set
+-    var height = 0f; private set
+-    fun update(dt: Float, samples: Array<WheelSample>) {
+-        if (samples.size < 4) return
+-        val clampedDt = dt.coerceIn(0f, 0.05f)
+-        for (i in 0..3) {
+-            val sample = samples[i]
+-            val target = if (sample.hit) (restLength - (sample.position.y - (sample.position.y + restLength))).coerceIn(0.0f, restLength) else restLength
+-            val err = target - compression[i]
+-            val acc = err * stiffness - compressionVel[i] * damping
+-            compressionVel[i] += acc * clampedDt
+-            compression[i] += compressionVel[i] * clampedDt
+-            compression[i] = compression[i].coerceIn(0f, restLength)
+-            cached[i] = Vec3(sample.position.x, sample.position.y + (restLength - compression[i]), sample.position.z)
+-        }
+-        val front = (cached[0].y + cached[1].y) * 0.5f
+-        val rear = (cached[2].y + cached[3].y) * 0.5f
+-        val left = (cached[1].y + cached[3].y) * 0.5f
+-        val right = (cached[0].y + cached[2].y) * 0.5f
+-        pitch = atan2((front - rear).toDouble(), frontOffset * 2.0).toFloat()
+-        roll = atan2((right - left).toDouble(), sideOffset * 2.0).toFloat()
+-        height = (front + rear + left + right) * 0.25f
+-    }
+-    fun wheels(): Array<Vec3> = cached
+-    fun chassisRotation(): FloatArray {
+-        val cp = cos(pitch.toDouble()).toFloat(); val sp = sin(pitch.toDouble()).toFloat()
+-        val cr = cos(roll.toDouble()).toFloat(); val sr = sin(roll.toDouble()).toFloat()
+-        return floatArrayOf(cr, 0f, sr, 0f, sr * sp, cp, -cr * sp, 0f, -sr * cp, sp, cr * cp, 0f, 0f, 0f, 0f, 1f)
+-    }
+-    fun status() = "vehicle-suspension pitch=${(pitch * 180.0 / PI).toFloat()} roll=${(roll * 180.0 / PI).toFloat()} h=$height"
+-}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/vehicle/VehicleSystem.kt b/src/main/kotlin/cn/chen/blaze3d/vehicle/VehicleSystem.kt
+new file mode 100644
+index 0000000..a5314a9
+--- /dev/null
++++ b/src/main/kotlin/cn/chen/blaze3d/vehicle/VehicleSystem.kt
+@@ -0,0 +1,162 @@
++package cn.chen.blaze3d.vehicle
++import cn.chen.blaze3d.api.ModelFormatRegistry
++import cn.chen.blaze3d.api.ModelLoadResult
++import cn.chen.blaze3d.math.Vec3
++import com.mojang.blaze3d.vertex.PoseStack
++import net.minecraft.client.Minecraft
++import net.minecraft.client.renderer.SubmitNodeCollector
++import net.minecraft.client.renderer.entity.state.EntityRenderState
++import net.minecraft.client.renderer.state.level.CameraRenderState
++import net.minecraft.core.BlockPos
++import net.minecraft.world.entity.Entity
++import net.minecraft.world.level.ClipContext
++import net.minecraft.world.phys.HitResult
++import net.minecraft.world.phys.Vec3 as MinecraftVec3
++import java.io.File
++import java.util.UUID
++import java.util.concurrent.atomic.AtomicLong
++import kotlin.math.PI
++import kotlin.math.atan2
++import kotlin.math.cos
++import kotlin.math.sin
++data class VehicleBinding(val modelPath: String, val scale: Float = 1f, val frontOffset: Float = 0.55f, val sideOffset: Float = 0.4f, val restLength: Float = 0.45f, val stiffness: Float = 14f, val damping: Float = 4.5f, val rideHeight: Float = 0.0f) {
++    val key: UUID = UUID.randomUUID()
++}
++data class WheelSample(val position: Vec3, val groundHeight: Float, val hit: Boolean, val slopeX: Float, val slopeZ: Float)
++class WheelRaycaster {
++    private val downRange = 1.6f
++    fun sampleWheel(entity: Entity, localOffset: Vec3): WheelSample {
++        val world = entity.level()
++        val origin = MinecraftVec3(entity.x + localOffset.x.toDouble(), entity.y + 0.5 + localOffset.y.toDouble(), entity.z + localOffset.z.toDouble())
++        val target = MinecraftVec3(origin.x, origin.y - downRange.toDouble(), origin.z)
++        val ctx = ClipContext(origin, target, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, entity)
++        val hit = world.clip(ctx)
++        if (hit.type != HitResult.Type.BLOCK) return WheelSample(Vec3(origin.x.toFloat(), entity.y.toFloat(), origin.z.toFloat()), entity.y.toFloat(), false, 0f, 0f)
++        val pos = hit.location
++        val slope = estimateSlope(world, BlockPos.containing(pos))
++        return WheelSample(Vec3(pos.x.toFloat(), pos.y.toFloat(), pos.z.toFloat()), pos.y.toFloat(), true, slope[0], slope[1])
++    }
++    private fun estimateSlope(world: net.minecraft.world.level.Level, pos: BlockPos): FloatArray {
++        val east = topY(world, pos.east()); val west = topY(world, pos.west())
++        val north = topY(world, pos.north()); val south = topY(world, pos.south())
++        return floatArrayOf((east - west) * 0.5f, (south - north) * 0.5f)
++    }
++    private fun topY(world: net.minecraft.world.level.Level, pos: BlockPos): Float {
++        val state = world.getBlockState(pos)
++        val box = state.getCollisionShape(world, pos)
++        return if (box.isEmpty) pos.y.toFloat() else (pos.y + box.max(net.minecraft.core.Direction.Axis.Y)).toFloat()
++    }
++    fun sampleFour(entity: Entity, frontOffset: Float, sideOffset: Float, axleY: Float): Array<WheelSample> {
++        val yaw = Math.toRadians(entity.yRot.toDouble())
++        val cy = Math.cos(yaw).toFloat(); val sy = Math.sin(yaw).toFloat()
++        fun local(x: Float, z: Float) = Vec3(x * cy - z * sy, axleY, x * sy + z * cy)
++        return arrayOf(
++            sampleWheel(entity, local(sideOffset, frontOffset)),
++            sampleWheel(entity, local(-sideOffset, frontOffset)),
++            sampleWheel(entity, local(sideOffset, -frontOffset)),
++            sampleWheel(entity, local(-sideOffset, -frontOffset))
++        )
++    }
++    companion object {
++        val shared = WheelRaycaster()
++        fun atCamera(): Boolean = Minecraft.getInstance().level != null
++    }
++}
++class VehicleSuspension(val frontOffset: Float = 0.55f, val sideOffset: Float = 0.4f, val restLength: Float = 0.45f, val stiffness: Float = 14f, val damping: Float = 4.5f) {
++    private val compression = FloatArray(4)
++    private val compressionVel = FloatArray(4)
++    private val cached = arrayOf(Vec3(), Vec3(), Vec3(), Vec3())
++    var pitch = 0f; private set
++    var roll = 0f; private set
++    var height = 0f; private set
++    fun update(dt: Float, samples: Array<WheelSample>) {
++        if (samples.size < 4) return
++        val clampedDt = dt.coerceIn(0f, 0.05f)
++        for (i in 0..3) {
++            val sample = samples[i]
++            val target = if (sample.hit) (restLength - (sample.position.y - (sample.position.y + restLength))).coerceIn(0.0f, restLength) else restLength
++            val err = target - compression[i]
++            val acc = err * stiffness - compressionVel[i] * damping
++            compressionVel[i] += acc * clampedDt
++            compression[i] += compressionVel[i] * clampedDt
++            compression[i] = compression[i].coerceIn(0f, restLength)
++            cached[i] = Vec3(sample.position.x, sample.position.y + (restLength - compression[i]), sample.position.z)
++        }
++        val front = (cached[0].y + cached[1].y) * 0.5f
++        val rear = (cached[2].y + cached[3].y) * 0.5f
++        val left = (cached[1].y + cached[3].y) * 0.5f
++        val right = (cached[0].y + cached[2].y) * 0.5f
++        pitch = atan2((front - rear).toDouble(), frontOffset * 2.0).toFloat()
++        roll = atan2((right - left).toDouble(), sideOffset * 2.0).toFloat()
++        height = (front + rear + left + right) * 0.25f
++    }
++    fun wheels(): Array<Vec3> = cached
++    fun chassisRotation(): FloatArray {
++        val cp = cos(pitch.toDouble()).toFloat(); val sp = sin(pitch.toDouble()).toFloat()
++        val cr = cos(roll.toDouble()).toFloat(); val sr = sin(roll.toDouble()).toFloat()
++        return floatArrayOf(cr, 0f, sr, 0f, sr * sp, cp, -cr * sp, 0f, -sr * cp, sp, cr * cp, 0f, 0f, 0f, 0f, 1f)
++    }
++    fun status() = "vehicle-suspension pitch=${(pitch * 180.0 / PI).toFloat()} roll=${(roll * 180.0 / PI).toFloat()} h=$height"
++}
++class VehicleRuntime {
++    private val suspensions = HashMap<UUID, VehicleSuspension>()
++    private val raycaster = WheelRaycaster.shared
++    fun update(entity: Entity, binding: VehicleBinding, dt: Float): VehicleSuspension {
++        val suspension = suspensions.getOrPut(entity.uuid) { VehicleSuspension(binding.frontOffset, binding.sideOffset, binding.restLength, binding.stiffness, binding.damping) }
++        val samples = raycaster.sampleFour(entity, binding.frontOffset, binding.sideOffset, binding.rideHeight)
++        suspension.update(dt, samples)
++        return suspension
++    }
++    fun remove(entity: Entity) { suspensions.remove(entity.uuid) }
++    fun clear() { suspensions.clear() }
++    fun status() = "vehicle-runtime active=${suspensions.size}"
++}
++object VehicleRenderRegistry {
++    private val boats = LinkedHashMap<String, VehicleBinding>()
++    private val minecarts = LinkedHashMap<String, VehicleBinding>()
++    private val loaded = HashMap<UUID, ModelLoadResult>()
++    fun registerBoat(variant: String, binding: VehicleBinding) { boats[variant] = binding }
++    fun registerMinecart(variant: String, binding: VehicleBinding) { minecarts[variant] = binding }
++    fun boatBinding(variant: String): VehicleBinding? = boats[variant] ?: boats.values.firstOrNull()
++    fun minecartBinding(variant: String): VehicleBinding? = minecarts[variant] ?: minecarts.values.firstOrNull()
++    fun resolve(binding: VehicleBinding): ModelLoadResult? {
++        val cached = loaded[binding.key]
++        if (cached != null) return cached
++        return runCatching { ModelFormatRegistry.load(binding.modelPath) }.getOrNull()?.also { loaded[binding.key] = it }
++    }
++    fun status() = "vehicle-registry boats=${boats.size} minecarts=${minecarts.size} loaded=${loaded.size}"
++    fun reset() { boats.clear(); minecarts.clear(); loaded.clear() }
++    fun loadDefaults(configDir: File) {
++        val boatsDir = File(configDir, "vehicles/boats")
++        val minecartsDir = File(configDir, "vehicles/minecarts")
++        if (boatsDir.isDirectory) boatsDir.listFiles()?.forEach { f -> if (f.isFile) registerBoat(f.nameWithoutExtension, VehicleBinding(modelPath = f.absolutePath)) }
++        if (minecartsDir.isDirectory) minecartsDir.listFiles()?.forEach { f -> if (f.isFile) registerMinecart(f.nameWithoutExtension, VehicleBinding(modelPath = f.absolutePath)) }
++    }
++}
++object VehicleRenderHook {
++    val runtime = VehicleRuntime()
++    val raycaster = WheelRaycaster.shared
++    var enabled = true
++    val rendered: AtomicLong = AtomicLong()
++    val cancelled: AtomicLong = AtomicLong()
++    fun tryRenderBoat(state: EntityRenderState, pose: PoseStack, collector: SubmitNodeCollector, camera: CameraRenderState?): Boolean {
++        if (!enabled) return false
++        val binding = VehicleRenderRegistry.boatBinding("default") ?: return false
++        return renderVehicle(binding, state, pose, collector)
++    }
++    fun tryRenderMinecart(state: EntityRenderState, pose: PoseStack, collector: SubmitNodeCollector, camera: CameraRenderState?): Boolean {
++        if (!enabled) return false
++        val binding = VehicleRenderRegistry.minecartBinding("default") ?: return false
++        return renderVehicle(binding, state, pose, collector)
++    }
++    private fun renderVehicle(binding: VehicleBinding, state: EntityRenderState, pose: PoseStack, collector: SubmitNodeCollector): Boolean {
++        val resolved = VehicleRenderRegistry.resolve(binding) ?: return false
++        rendered.incrementAndGet()
++        pose.pushPose()
++        pose.scale(binding.scale, binding.scale, binding.scale)
++        pose.popPose()
++        cancelled.incrementAndGet()
++        return resolved.support.id.isNotEmpty()
++    }
++    fun status() = "vehicle-hook enabled=$enabled rendered=${rendered.get()} cancelled=${cancelled.get()} ${runtime.status()}"
++}
+diff --git a/src/main/kotlin/cn/chen/blaze3d/vehicle/WheelRaycaster.kt b/src/main/kotlin/cn/chen/blaze3d/vehicle/WheelRaycaster.kt
+deleted file mode 100644
+index f0e478f..0000000
+--- a/src/main/kotlin/cn/chen/blaze3d/vehicle/WheelRaycaster.kt
++++ /dev/null
+@@ -1,52 +0,0 @@
+-package cn.chen.blaze3d.vehicle
+-import cn.chen.blaze3d.math.Vec3
+-import net.minecraft.client.Minecraft
+-import net.minecraft.core.BlockPos
+-import net.minecraft.world.entity.Entity
+-import net.minecraft.world.level.ClipContext
+-import net.minecraft.world.phys.HitResult
+-import net.minecraft.world.phys.Vec3 as MinecraftVec3
+-data class WheelSample(val position: Vec3, val groundHeight: Float, val hit: Boolean, val slopeX: Float, val slopeZ: Float)
+-class WheelRaycaster {
+-    private val downRange = 1.6f
+-    fun sampleWheel(entity: Entity, localOffset: Vec3): WheelSample {
+-        val world = entity.level()
+-        val origin = MinecraftVec3(entity.x + localOffset.x.toDouble(), entity.y + 0.5 + localOffset.y.toDouble(), entity.z + localOffset.z.toDouble())
+-        val target = MinecraftVec3(origin.x, origin.y - downRange.toDouble(), origin.z)
+-        val ctx = ClipContext(origin, target, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, entity)
+-        val hit = world.clip(ctx)
+-        if (hit.type != HitResult.Type.BLOCK) return WheelSample(Vec3(origin.x.toFloat(), entity.y.toFloat(), origin.z.toFloat()), entity.y.toFloat(), false, 0f, 0f)
+-        val pos = hit.location
+-        val slope = estimateSlope(world, BlockPos.containing(pos))
+-        return WheelSample(Vec3(pos.x.toFloat(), pos.y.toFloat(), pos.z.toFloat()), pos.y.toFloat(), true, slope[0], slope[1])
+-    }
+-    private fun estimateSlope(world: net.minecraft.world.level.Level, pos: BlockPos): FloatArray {
+-        val east = topY(world, pos.east())
+-        val west = topY(world, pos.west())
+-        val north = topY(world, pos.north())
+-        val south = topY(world, pos.south())
+-        val sx = (east - west) * 0.5f
+-        val sz = (south - north) * 0.5f
+-        return floatArrayOf(sx, sz)
+-    }
+-    private fun topY(world: net.minecraft.world.level.Level, pos: BlockPos): Float {
+-        val state = world.getBlockState(pos)
+-        val box = state.getCollisionShape(world, pos)
+-        return if (box.isEmpty) pos.y.toFloat() else (pos.y + box.max(net.minecraft.core.Direction.Axis.Y)).toFloat()
+-    }
+-    fun sampleFour(entity: Entity, frontOffset: Float, sideOffset: Float, axleY: Float): Array<WheelSample> {
+-        val yaw = Math.toRadians(entity.yRot.toDouble())
+-        val cy = Math.cos(yaw).toFloat(); val sy = Math.sin(yaw).toFloat()
+-        fun local(x: Float, z: Float) = Vec3(x * cy - z * sy, axleY, x * sy + z * cy)
+-        return arrayOf(
+-            sampleWheel(entity, local(sideOffset, frontOffset)),
+-            sampleWheel(entity, local(-sideOffset, frontOffset)),
+-            sampleWheel(entity, local(sideOffset, -frontOffset)),
+-            sampleWheel(entity, local(-sideOffset, -frontOffset))
+-        )
+-    }
+-    companion object {
+-        val shared = WheelRaycaster()
+-        fun atCamera(): Boolean = Minecraft.getInstance().level != null
+-    }
+-}

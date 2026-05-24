@@ -1,0 +1,26 @@
+{
+  "id": "aider-paul-gauthier-aider-pr5166",
+  "agent": {
+    "vendor": "aider",
+    "confidence": "high",
+    "source": "repo-owner=paul-gauthier"
+  },
+  "pr": {
+    "number": 5166,
+    "headSha": "f49628266768f2d53f71c948fd5cdb4718de19dd",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1",
+    "title": "Add model settings for Gemini 3.1 Pro Preview and Flash-Lite",
+    "body": "## Summary\n\nAdds entries to `aider/resources/model-settings.yml` for the recently released **Gemini 3.1 Pro Preview** and **Gemini 3.1 Flash-Lite** models across three providers: native `gemini/`, `vertex_ai/`, and `openrouter/google/`.\n\nThese models already have pricing and context-window metadata in litellm's `model_prices_and_context_window.json` (the upstream aider pulls from at `ModelInfoManager.MODEL_INFO_URL`), but were missing the project-side settings (`edit_format`, `weak_model_name`, `accepts_settings`, etc.). Without explicit settings, aider falls back to defaults that don't match the diff-fenced edit format the 3.x Gemini line expects, so users have to override per-model on the CLI.\n\n## Models added\n\n| Provider | Model |\n|---|---|\n| `gemini/` | `gemini-3.1-pro-preview` |\n| `gemini/` | `gemini-3.1-flash-lite` |\n| `vertex_ai/` | `gemini-3.1-pro-preview` |\n| `vertex_ai/` | `gemini-3.1-flash-lite` |\n| `openrouter/google/` | `gemini-3.1-pro-preview` |\n| `openrouter/google/` | `gemini-3.1-flash-lite` |\n\n## Settings shape\n\nMirrors the existing `gemini-3-pro-preview` / `gemini-3-flash-preview` block:\n\n- `edit_format: diff-fenced` (the 3.x line's preferred edit grammar)\n- `use_repo_map: true`\n- `overeager: true`\n- `accepts_settings: [\\\"thinking_tokens\\\"]`\n- Pro variants route to `flash-lite` for `weak_model_name` (and `editor_model_name` on Vertex), matching the cost-tiered weak-model pattern used elsewhere in the file.\n\n## Test plan\n\n- YAML validity: \\`python -c \\\"import yaml; yaml.safe_load(open('aider/resources/model-settings.yml'))\\\"\\` parses cleanly (363 entries total).\n- Diff is purely additive: 42 lines of YAML in one block + 1 line in HISTORY.md under \\`### main branch\\`. No existing entry modified.\n\n## Notes\n\nI considered also adding the `-customtools` and `-image-preview` variants of `gemini-3.1-pro-preview` that litellm tracks, but skipped them — they're niche variants without a clear edit-flow use case in aider. Happy to add if a maintainer wants them in.",
+    "author": "Cyberfilo",
+    "headRef": "feat/add-gemini-3-1-model-settings",
+    "repository": "paul-gauthier/aider"
+  },
+  "diffRef": {
+    "repository": "paul-gauthier/aider",
+    "headSha": "f49628266768f2d53f71c948fd5cdb4718de19dd",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1"
+  },
+  "vendoredDiffPath": "unconfirmed/aider/aider-paul-gauthier-aider-pr5166.diff",
+  "vendoredAt": "2026-05-24T03:19:06.374Z",
+  "collectedAt": "2026-05-24T03:19:06.374Z"
+}

@@ -1,0 +1,371 @@
+diff --git a/src-tauri/src/lib.rs b/src-tauri/src/lib.rs
+index 7bde3a5..5bf4650 100644
+--- a/src-tauri/src/lib.rs
++++ b/src-tauri/src/lib.rs
+@@ -258,6 +258,19 @@ fn get_theme_css() -> Result<String, String> {
+     Ok(std::fs::read_to_string(path).unwrap_or_default())
+ }
+ 
++// Dependency check -----------------------------------------------------------
++
++#[tauri::command]
++fn check_dependencies() -> Vec<String> {
++    let mut missing = Vec::new();
++    for dep in ["gpu-screen-recorder", "ffmpeg", "ffprobe"] {
++        if !which_cmd(dep) {
++            missing.push(dep.to_string());
++        }
++    }
++    missing
++}
++
+ // Files -----------------------------------------------------------------------
+ 
+ #[tauri::command]
+@@ -346,6 +359,17 @@ fn replace_file(src: String, dst: String) -> Result<(), String> {
+ fn scan_clips(state: tauri::State<AppState>) -> Result<Vec<Clip>, String> {
+     let clips_dir = state.settings.lock().unwrap().clips_directory.clone();
+ 
++    // Remove stale DB entries for clips whose files no longer exist on disk
++    {
++        let db = state.db.lock().unwrap();
++        let all = db.get_all_clips().unwrap_or_default();
++        for clip in &all {
++            if !Path::new(&clip.path).exists() {
++                db.delete_clip(&clip.id).ok();
++            }
++        }
++    }
++
+     let existing: std::collections::HashSet<String> = state.db.lock().unwrap()
+         .get_all_clips()
+         .unwrap_or_default()
+@@ -933,9 +957,27 @@ fn rename_if_pending(path: &Path, ext: &str) -> Option<PathBuf> {
+ 
+ // Entry point ----------------------------------------------------------------
+ 
++fn cleanup_preview_cache() {
++    let dir = std::env::temp_dir().join(PREVIEW_DIR);
++    if !dir.exists() { return; }
++    let cutoff = std::time::SystemTime::now() - std::time::Duration::from_secs(7 * 24 * 3600);
++    if let Ok(entries) = std::fs::read_dir(&dir) {
++        for entry in entries.flatten() {
++            let stale = entry.metadata().ok()
++                .and_then(|m| m.modified().ok())
++                .map(|t| t < cutoff)
++                .unwrap_or(true);
++            if stale {
++                std::fs::remove_file(entry.path()).ok();
++            }
++        }
++    }
++}
++
+ #[cfg_attr(mobile, tauri::mobile_entry_point)]
+ pub fn run() {
+     std::fs::create_dir_all(config_dir()).ok();
++    cleanup_preview_cache();
+ 
+     let data_dir = dirs::data_dir().unwrap_or_default().join("klyppd");
+     std::fs::create_dir_all(&data_dir).ok();
+@@ -977,6 +1019,7 @@ pub fn run() {
+             trim_clip, crop_clip, transcode_for_preview,
+             upload_clip, delete_from_r2, r2_storage,
+             get_settings, save_settings, set_window_opacity, get_storage_usage, get_theme_css,
++            check_dependencies,
+             scan_clips, read_thumbnail, read_video_bytes, serve_video, replace_file,
+         ])
+         .run(tauri::generate_context!())
+diff --git a/src-tauri/tauri.conf.json b/src-tauri/tauri.conf.json
+index a917ee3..99b19b5 100644
+--- a/src-tauri/tauri.conf.json
++++ b/src-tauri/tauri.conf.json
+@@ -34,7 +34,7 @@
+   },
+   "bundle": {
+     "active": true,
+-    "targets": ["deb", "appimage"],
++    "targets": ["deb", "rpm", "appimage"],
+     "shortDescription": "Medal-style clip manager for Linux",
+     "longDescription": "Klyppd is a lightweight clipping and recording tool for Linux. It uses gpu-screen-recorder for low-overhead capture, ships a built-in trimmer, and uploads to your own Cloudflare R2 with rich Discord/Twitter embed pages.",
+     "category": "Utility",
+diff --git a/src/App.svelte b/src/App.svelte
+index a75095a..e571475 100644
+--- a/src/App.svelte
++++ b/src/App.svelte
+@@ -40,6 +40,13 @@
+     let thumbCache = $state<Record<string, string>>({});
+     let viewMode = $state<ViewMode>("grid");
+     let sidebarCollapsed = $state(false);
++    let searchQuery = $state("");
++    let sortBy = $state<"date" | "name" | "duration">("date");
++    let sortAsc = $state(false);
++    let recordingStartTime = $state<number | null>(null);
++    let recordingElapsed = $state("");
++    let depsOk = $state(true);
++    let depsMissing = $state<string[]>([]);
+ 
+     let toast = $state<{ msg: string; kind: ToastKind } | null>(null);
+     let toastTimer: any;
+@@ -80,8 +87,18 @@
+         await injectUserTheme();
+         theme.apply();
+         settings = await invoke("get_settings");
++
++        try {
++            const missing = await invoke<string[]>("check_dependencies");
++            if (missing.length > 0) {
++                depsOk = false;
++                depsMissing = missing;
++            }
++        } catch {}
++
+         await refresh();
+         setInterval(refresh, 3000);
++        setInterval(updateRecordingTimer, 500);
+         await loadClips();
+ 
+         listen("clip-saved", (e: any) => {
+@@ -90,7 +107,6 @@
+         });
+         listen("toast", (e: any) => notify(e.payload.msg, e.payload.kind));
+ 
+-        // Subscribe to theme store for local reactivity
+         theme.subscribe((v) => {
+             currentTheme = v;
+         });
+@@ -127,11 +143,27 @@
+     // ─── Data fetching ─────────────────────────────────────────────────────
+ 
+     async function refresh() {
++        const prev = recState.recording_active;
+         recState = await invoke("get_recording_state");
++        if (recState.recording_active && !prev) {
++            recordingStartTime = Date.now();
++        } else if (!recState.recording_active && prev) {
++            recordingStartTime = null;
++            recordingElapsed = "";
++        }
+         if (tab !== "settings") settings = await invoke("get_settings");
+         storageUsage = await invoke("get_storage_usage");
+     }
+ 
++    function updateRecordingTimer() {
++        if (recordingStartTime) {
++            const s = Math.floor((Date.now() - recordingStartTime) / 1000);
++            const m = Math.floor(s / 60);
++            const sec = (s % 60).toString().padStart(2, "0");
++            recordingElapsed = `${m}:${sec}`;
++        }
++    }
++
+     async function loadClips() {
+         clips = await invoke<Clip[]>("scan_clips");
+         for (const c of clips) {
+@@ -217,6 +249,7 @@
+     }
+ 
+     async function deleteClip(clip: Clip) {
++        if (!confirm(`Delete "${clip.filename}"? This cannot be undone.`)) return;
+         try {
+             await invoke("delete_clip", { id: clip.id });
+             notify("Deleted");
+@@ -240,9 +273,14 @@
+     }
+ 
+     async function deleteFromR2(clip: Clip) {
+-        await invoke("delete_from_r2", { id: clip.id });
+-        notify("Removed from R2");
+-        await switchTab(tab);
++        if (!confirm(`Remove "${clip.filename}" from R2? The remote file will be deleted.`)) return;
++        try {
++            await invoke("delete_from_r2", { id: clip.id });
++            notify("Removed from R2");
++            await switchTab(tab);
++        } catch (e: any) {
++            notify("R2 delete failed", "err");
++        }
+     }
+ 
+     // ─── Editor ────────────────────────────────────────────────────────────
+@@ -367,6 +405,27 @@
+             ? `${(b / 1e6).toFixed(0)} MB`
+             : `${(b / 1e9).toFixed(1)} GB`;
+     }
++
++    function filteredClips(list: Clip[]) {
++        let result = list;
++        if (searchQuery.trim()) {
++            const q = searchQuery.toLowerCase();
++            result = result.filter(
++                (c) =>
++                    c.filename.toLowerCase().includes(q) ||
++                    (c.tags && c.tags.toLowerCase().includes(q)) ||
++                    (c.folder && c.folder.toLowerCase().includes(q)),
++            );
++        }
++        result = [...result].sort((a, b) => {
++            let cmp = 0;
++            if (sortBy === "name") cmp = a.filename.localeCompare(b.filename);
++            else if (sortBy === "duration") cmp = a.duration - b.duration;
++            else cmp = a.created_at.localeCompare(b.created_at);
++            return sortAsc ? cmp : -cmp;
++        });
++        return result;
++    }
+ </script>
+ 
+ {#if toast}
+@@ -393,6 +452,9 @@
+                 >
+                 {recState.replay_buffer_active ? "rec" : "idle"}
+             </button>
++            {#if recState.recording_active && recordingElapsed}
++                <span class="info-tag rec-timer">{recordingElapsed}</span>
++            {/if}
+             <span class="info-tag">{settings.codec || "h264"}</span>
+             <span class="info-tag">{settings.fps || 60}fps</span>
+             <span class="info-tag">{fmtBytes(storageUsage)}</span>
+@@ -504,14 +566,34 @@
+         </nav>
+ 
+         <main>
++            {#if !depsOk}
++                <div class="deps-warn">
++                    <span class="deps-icon">⚠</span>
++                    <span>Missing: {depsMissing.join(", ")}. Recording and editing features will not work.</span>
++                </div>
++            {/if}
+             {#if tab === "library"}
+                 <div class="page-head">
+                     <div class="page-title">
+                         <span class="prompt">~</span>
+                         <h1>library</h1>
+-                        <span class="count">{clips.length}</span>
++                        <span class="count">{filteredClips(clips).length}{searchQuery ? `/${clips.length}` : ""}</span>
+                     </div>
+                     <div class="page-controls">
++                        <input
++                            class="search-input"
++                            type="text"
++                            placeholder="search…"
++                            bind:value={searchQuery}
++                        />
++                        <select class="sort-select" bind:value={sortBy} onchange={() => forceRepaint()}>
++                            <option value="date">date</option>
++                            <option value="name">name</option>
++                            <option value="duration">duration</option>
++                        </select>
++                        <button class="sort-dir" onclick={() => { sortAsc = !sortAsc; forceRepaint(); }} title={sortAsc ? "Ascending" : "Descending"}>
++                            {sortAsc ? "↑" : "↓"}
++                        </button>
+                         <button
+                             class="view-toggle"
+                             class:active={viewMode === "grid"}
+@@ -546,7 +628,7 @@
+                     </div>
+                 {:else if viewMode === "grid"}
+                     <div class="grid">
+-                        {#each clips as clip}
++                        {#each filteredClips(clips) as clip}
+                             <article class="clip-card">
+                                 <div
+                                     class="clip-thumb"
+@@ -623,7 +705,7 @@
+                     </div>
+                 {:else}
+                     <div class="list">
+-                        {#each clips as clip}
++                        {#each filteredClips(clips) as clip}
+                             <div
+                                 class="list-row"
+                                 role="button"
+@@ -1516,6 +1598,30 @@
+         border-radius: 2px;
+         letter-spacing: 0.4px;
+     }
++    .rec-timer {
++        color: var(--danger, #e06c75);
++        font-weight: 600;
++        animation: pulse-rec 1.5s ease-in-out infinite;
++    }
++    @keyframes pulse-rec {
++        0%, 100% { opacity: 1; }
++        50% { opacity: 0.5; }
++    }
++    .deps-warn {
++        display: flex;
++        align-items: center;
++        gap: 8px;
++        padding: 8px 14px;
++        margin: 8px 14px 0;
++        background: rgba(224, 108, 117, 0.1);
++        border: 1px solid var(--danger, #e06c75);
++        border-radius: 4px;
++        color: var(--danger, #e06c75);
++        font-size: 11px;
++    }
++    .deps-icon {
++        font-size: 14px;
++    }
+ 
+     .window-ctrls {
+         -webkit-app-region: no-drag;
+@@ -1687,7 +1793,56 @@
+ 
+     .page-controls {
+         display: flex;
+-        gap: 2px;
++        gap: 4px;
++        align-items: center;
++    }
++    .search-input {
++        width: 120px;
++        height: 26px;
++        padding: 0 8px;
++        background: var(--bg-deepest, #060a10);
++        border: 1px solid var(--border, #1a2030);
++        color: var(--text, #b8c4d0);
++        border-radius: 3px;
++        font-size: 11px;
++        font-family: inherit;
++        outline: none;
++        transition: border-color 0.15s;
++    }
++    .search-input:focus {
++        border-color: var(--accent, #56b6c2);
++    }
++    .search-input::placeholder {
++        color: var(--text-faint, #364050);
++    }
++    .sort-select {
++        height: 26px;
++        padding: 0 4px;
++        background: var(--bg-deepest, #060a10);
++        border: 1px solid var(--border, #1a2030);
++        color: var(--text-muted, #4a5568);
++        border-radius: 3px;
++        font-size: 11px;
++        font-family: inherit;
++        cursor: pointer;
++        outline: none;
++    }
++    .sort-dir {
++        width: 26px;
++        height: 26px;
++        background: none;
++        border: 1px solid var(--border, #1a2030);
++        color: var(--text-muted, #4a5568);
++        border-radius: 3px;
++        cursor: pointer;
++        font-size: 13px;
++        font-family: inherit;
++        display: flex;
++        align-items: center;
++        justify-content: center;
++    }
++    .sort-dir:hover {
++        color: var(--text, #b8c4d0);
+     }
+     .view-toggle {
+         width: 26px;

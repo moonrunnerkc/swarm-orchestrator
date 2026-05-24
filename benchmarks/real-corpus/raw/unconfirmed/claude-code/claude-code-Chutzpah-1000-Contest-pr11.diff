@@ -1,0 +1,166 @@
+diff --git a/AUTONOMOUS_IMPROVEMENT_LOG.md b/AUTONOMOUS_IMPROVEMENT_LOG.md
+index 7fcccf0..2687b8e 100644
+--- a/AUTONOMOUS_IMPROVEMENT_LOG.md
++++ b/AUTONOMOUS_IMPROVEMENT_LOG.md
+@@ -802,7 +802,58 @@ uv run streamlit run app/main.py  # 앱 실행
+ 
+ ---
+ 
+-## 최종 점수 (Round 27 기준)
++## Round 28 — 페이지 헤더 HTML 헬퍼 추출 + XSS escape 가드 (2026-05-19)
++
++- **Branch**: `agent/round-28-page-header-helper` (stacked on R27)
++- **Scores (before → after)**:
++  - 기능 완성도: 9 → 9
++  - 사용자 경험: 9 → 9
++  - 안정성: 9 → 9 (XSS escape 회귀 가드 추가, 68 passed)
++  - 성능: 9 → 9
++  - 코드 품질: 9 → 9 (main.py 인라인 unsafe_allow_html 1건 → 헬퍼 호출)
++  - 완성도: 9 → 9
++- **Lowest area**: 동률 9. `app/main.py:44~49` 의 H1 + subtitle 가 인라인 `st.markdown(..., unsafe_allow_html=True)` 형태로 들어 있어, 페이지 헤더 텍스트가 사용자 입력에서 올 경우(향후 다국어/동적 제목 도입 시) escape 처리 누락 위험. 코드 응집도도 낮음.
++
++### Planned improvement (K1 소진)
++`app/components/cards.py` 에 두 함수 추가:
++- `page_header_html(title, subtitle) -> str` (순수 함수, HTML escape 처리, 단위 테스트 가능)
++- `render_page_header(title, subtitle) -> None` (Streamlit wrapper)
++
++`main.py` 의 인라인 마크업을 `render_page_header(...)` 호출 1줄로 교체. 향후 다국어/동적 헤더 도입 시 XSS escape 자동 적용.
++
++### Files changed
++- `app/components/cards.py`
++  - `page_header_html(title, subtitle) -> str` 순수 헬퍼 + Google docstring.
++  - `render_page_header(title, subtitle) -> None` Streamlit wrapper.
++- `app/main.py`
++  - import 갱신: `render_page_header` 추가.
++  - 인라인 `st.markdown(...)` H1/subtitle 4줄 → `render_page_header(...)` 1줄 호출.
++- `tests/test_app.py`
++  - `test_page_header_html_escapes_user_text` — `<script>` 페이로드가 `&lt;script&gt;` 로 escape 되는지.
++  - `test_page_header_html_uses_page_subtitle_class` — `<h1>` 과 `<p class='page-subtitle'>` 토큰 회귀 가드.
++
++### Verification
++- `uv run ruff check --fix .` → All checks passed
++- `uv run ruff format .` → 43 files left unchanged
++- `uv run pyright` → 0 errors, 137 warnings
++- `uv run pytest` → **68 passed** (이전 66 → +2), coverage 65.27% → **65.32%**
++
++### Slack 메시지 (요약)
++> Round 28 ✅ 페이지 헤더 헬퍼 추출 + XSS escape 가드 — main.py 응집도 ↑, 68 tests.
++
++### Commit
++- `refactor(cards): main.py H1/subtitle 인라인 → page_header_html 헬퍼 추출 + XSS escape 가드`
++
++### Notes (다음 라운드 후보 풀)
++- **I1**: 사이드바 footer 모바일 분기 (line-height·font-size 미세 조정)
++- **L1 (신규)**: `app/main.py` 의 지도 섹션 레이블 인라인 `st.markdown` 도 `render_section_label` 헬퍼로 추출 — K1 동일 패턴 확장
++- **F1**: 모달 X 닫기 폴리시 (외부 패키지 필요, 보류)
++- **E1**: 캐시 키 hash (사용자 컨펌 권장)
++- 다음 라운드 1순위: **L1 섹션 레이블 헬퍼** (K1 패턴 재활용, 안전) 또는 **I1**.
++
++---
++
++## 최종 점수 (Round 28 기준)
+ | 영역 | 점수 |
+ |------|------|
+ | 기능 완성도 | 9 |
+diff --git a/app/components/cards.py b/app/components/cards.py
+index 137fcc5..81c7432 100644
+--- a/app/components/cards.py
++++ b/app/components/cards.py
+@@ -154,6 +154,31 @@ def inject_design_css() -> None:
+     st.markdown(_DESIGN_CSS, unsafe_allow_html=True)
+ 
+ 
++def page_header_html(title: str, subtitle: str) -> str:
++    """Compose the page header HTML (H1 + subtitle) with HTML escaping.
++
++    Pure function — exposed for unit testing the escape behaviour.
++
++    Args:
++        title: 페이지 제목 — HTML escape 처리.
++        subtitle: 부제 1줄 — HTML escape 처리.
++
++    Returns:
++        ``<h1>{title}</h1><p class='page-subtitle'>{subtitle}</p>`` 마크업.
++    """
++    return f"<h1>{escape(title)}</h1><p class='page-subtitle'>{escape(subtitle)}</p>"
++
++
++def render_page_header(title: str, subtitle: str) -> None:
++    """Render the page H1 + subtitle using Design.md tokens.
++
++    Args:
++        title: 페이지 제목 텍스트 (H1, 24px/700).
++        subtitle: 부제 1줄 — ``--color-muted`` 14px/1.45.
++    """
++    st.markdown(page_header_html(title, subtitle), unsafe_allow_html=True)
++
++
+ class _KpiSource(NamedTuple):
+     caption: str
+     dataset: str
+diff --git a/app/main.py b/app/main.py
+index 94f0ead..db7baf5 100644
+--- a/app/main.py
++++ b/app/main.py
+@@ -5,7 +5,12 @@
+ import streamlit as st
+ import streamlit.components.v1 as components
+ 
+-from app.components.cards import inject_design_css, render_epiphany_cards, render_solution_summary
++from app.components.cards import (
++    inject_design_css,
++    render_epiphany_cards,
++    render_page_header,
++    render_solution_summary,
++)
+ from app.components.kakao_map import build_kakao_map_html
+ from app.components.sidebar import render_sidebar
+ from app.components.welcome_modal import render_welcome_modal
+@@ -43,11 +48,9 @@ def main() -> None:
+         return
+     radius_m, search_term = render_sidebar(data.suppliers)
+ 
+-    st.markdown(
+-        "<h1>서울 유출지하수 매칭</h1>"
+-        "<p class='page-subtitle'>"
+-        "서울시 공공데이터 기반 유출지하수 공급처 · 수요처 매칭 분석</p>",
+-        unsafe_allow_html=True,
++    render_page_header(
++        "서울 유출지하수 매칭",
++        "서울시 공공데이터 기반 유출지하수 공급처 · 수요처 매칭 분석",
+     )
+ 
+     selected = select_solution(
+diff --git a/tests/test_app.py b/tests/test_app.py
+index 8732394..ce1df23 100644
+--- a/tests/test_app.py
++++ b/tests/test_app.py
+@@ -5,7 +5,7 @@
+ import pandas as pd
+ import pytest
+ 
+-from app.components.cards import _DESIGN_CSS  # 모바일 분기 회귀 가드용
++from app.components.cards import _DESIGN_CSS, page_header_html  # 모바일 분기 회귀 가드용
+ from app.components.kakao_map import build_kakao_map_html
+ from app.services.data import KST, last_data_refresh, load_app_data
+ from app.services.matching import (
+@@ -158,6 +158,19 @@ def test_last_data_refresh_returns_none_when_no_parquet(tmp_path) -> None:  # ty
+     assert last_data_refresh(str(tmp_path)) is None
+ 
+ 
++def test_page_header_html_escapes_user_text() -> None:
++    html = page_header_html("<script>alert(1)</script>", "<b>x</b>")
++    assert "<script>" not in html
++    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
++    assert "&lt;b&gt;x&lt;/b&gt;" in html
++
++
++def test_page_header_html_uses_page_subtitle_class() -> None:
++    html = page_header_html("타이틀", "부제")
++    assert "<h1>타이틀</h1>" in html
++    assert "<p class='page-subtitle'>부제</p>" in html
++
++
+ def test_kpi_mobile_breakpoint_tokens_present() -> None:
+     # Round 26 회귀 가드 — 720px 이하에서 KPI 폰트·padding 축소 분기가 살아있는지.
+     assert "@media(max-width:720px)" in _DESIGN_CSS

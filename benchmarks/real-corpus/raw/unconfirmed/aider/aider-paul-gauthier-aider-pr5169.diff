@@ -1,0 +1,62 @@
+diff --git a/HISTORY.md b/HISTORY.md
+index 8e086e757b7..30ff1fcb87d 100644
+--- a/HISTORY.md
++++ b/HISTORY.md
+@@ -2,6 +2,7 @@
+ 
+ ### main branch
+ 
++- Added settings for DeepSeek R1 and V3 family (v3, v3-0324, v3.2) on Azure AI Foundry (`azure_ai/` provider).
+ - Added support for Claude 4.5/4.6 models and updated model aliases (sonnet/haiku/opus).
+ - Expanded Gemini model support with 2.5 Flash and Flash‑Lite, added Gemini 3 preview models, and updated the flash alias to gemini/gemini-flash-latest.
+ - Added DeepSeek Reasoner model and updated DeepSeek model metadata with costs and prompt caching.
+diff --git a/aider/resources/model-settings.yml b/aider/resources/model-settings.yml
+index c4d14cd0801..ebe4be9f616 100644
+--- a/aider/resources/model-settings.yml
++++ b/aider/resources/model-settings.yml
+@@ -600,6 +600,45 @@
+     max_tokens: 8192
+   caches_by_default: true
+ 
++- name: azure_ai/deepseek-r1
++  edit_format: diff
++  weak_model_name: azure_ai/deepseek-v3
++  use_repo_map: true
++  examples_as_sys_msg: true
++  extra_params:
++    max_tokens: 64000
++  caches_by_default: true
++  use_temperature: false
++  editor_model_name: azure_ai/deepseek-v3
++  editor_edit_format: editor-diff
++
++- name: azure_ai/deepseek-v3
++  edit_format: diff
++  use_repo_map: true
++  reminder: sys
++  examples_as_sys_msg: true
++  extra_params:
++    max_tokens: 8192
++  caches_by_default: true
++
++- name: azure_ai/deepseek-v3-0324
++  edit_format: diff
++  use_repo_map: true
++  reminder: sys
++  examples_as_sys_msg: true
++  extra_params:
++    max_tokens: 8192
++  caches_by_default: true
++
++- name: azure_ai/deepseek-v3.2
++  edit_format: diff
++  use_repo_map: true
++  reminder: sys
++  examples_as_sys_msg: true
++  extra_params:
++    max_tokens: 8192
++  caches_by_default: true
++
+ - name: openrouter/deepseek/deepseek-chat:free
+   edit_format: diff
+   weak_model_name: openrouter/deepseek/deepseek-chat:free

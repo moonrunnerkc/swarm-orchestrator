@@ -1,0 +1,398 @@
+diff --git a/boot-bg-collapse-fragments.js b/boot-bg-collapse-fragments.js
+index cb2e6a3..09cd5ce 100644
+--- a/boot-bg-collapse-fragments.js
++++ b/boot-bg-collapse-fragments.js
+@@ -561,9 +561,10 @@ function tagPlayFormationShards(items, rnd) {
+     .filter((s) => eligSet.has(s.i));
+   if (!scored.length) return;
+ 
+-  const hi = Math.min(6, scored.length);
++  /** 形成役割は最大 5（centerCore + 両翼 + 上下 cap）。6 枚目は「寄せ」に見えるため上限 5。 */
++  const hi = Math.min(5, scored.length);
+   const lo = Math.min(3, hi);
+-  let nWant = 3 + ((rnd() * 4) | 0);
++  let nWant = 3 + ((rnd() * 3) | 0);
+   if (nWant > hi) nWant = hi;
+   if (nWant < lo) nWant = lo;
+   scored.sort((a, b) => b.mass - a.mass);
+@@ -601,21 +602,124 @@ function tagPlayFormationShards(items, rnd) {
+   }
+ }
+ 
++/** P/L/A 行の中心 Y（redrawHomePlayUI と同一式） */
++function computePlayGlyphRowCenterY(layout) {
++  const { textCy, triDispH, midGap, playRowDispH } = layout;
++  const playContentH = triDispH + midGap + playRowDispH;
++  const playBlockTop = textCy - playContentH * 0.5;
++  return playBlockTop + triDispH + midGap + playRowDispH * 0.5;
++}
++
++function _playFormShardHalfSize(it) {
++  const w = it?.img?.displayWidth;
++  const h = it?.img?.displayHeight;
++  const hw = typeof w === 'number' && w > 4 ? w * 0.5 : 40;
++  const hh = typeof h === 'number' && h > 4 ? h * 0.5 : 40;
++  return { hw, hh };
++}
++
++/** min(w,h)/max(w,h) — 極細長ほど小さい */
++function _shardBbCompactness01(it) {
++  const w = it?.img?.displayWidth;
++  const h = it?.img?.displayHeight;
++  if (!(typeof w === 'number' && w > 2 && typeof h === 'number' && h > 2)) return 0;
++  return Math.min(w, h) / Math.max(w, h);
++}
++
++/** centerCore に極細長を割り当てない下限 */
++const PLAY_FORM_CORE_COMPACT_MIN = 0.14;
++
++const PLAY_FORM_ROLE_DEPTH = Object.freeze({
++  topCap: 0,
++  leftWing: 1,
++  centerCore: 2,
++  rightWing: 3,
++  bottomCap: 4,
++});
++
++function assignPlayFormationRoles(formItems) {
++  for (const it of formItems) delete it.playFormationRole;
++  if (!formItems.length) return;
++  const byMass = [...formItems].sort((a, b) => b.mass - a.mass);
++  let core = byMass[0];
++  for (const c of byMass) {
++    if (_shardBbCompactness01(c) >= PLAY_FORM_CORE_COMPACT_MIN) {
++      core = c;
++      break;
++    }
++  }
++  const pool = byMass.filter((x) => x !== core);
++  pool.sort((a, b) => a.restX - b.restX || a.restY - b.restY || a.mass - b.mass);
++  const leftWing = pool[0];
++  const rightWing = pool[pool.length - 1];
++  const mids = pool.slice(1, -1);
++  mids.sort((a, b) => a.mass - b.mass);
++  let topCap = null;
++  let bottomCap = null;
++  if (mids.length >= 2) {
++    topCap = mids[0];
++    bottomCap = mids[1];
++  } else if (mids.length === 1) {
++    const avgY = (leftWing.restY + rightWing.restY + core.restY) / 3;
++    if (avgY > core.restY) topCap = mids[0];
++    else bottomCap = mids[0];
++  }
++  core.playFormationRole = 'centerCore';
++  leftWing.playFormationRole = 'leftWing';
++  rightWing.playFormationRole = 'rightWing';
++  if (topCap) topCap.playFormationRole = 'topCap';
++  if (bottomCap) bottomCap.playFormationRole = 'bottomCap';
++}
++
++function applyClusterShiftToFitPanel(targets, panelL, panelT, panelW, panelH, margin) {
++  const loX = panelL + margin;
++  const hiX = panelL + panelW - margin;
++  const loY = panelT + margin;
++  const hiY = panelT + panelH - margin;
++  for (let pass = 0; pass < 6; pass++) {
++    let minL = Infinity;
++    let maxR = -Infinity;
++    let minT = Infinity;
++    let maxB = -Infinity;
++    for (const t of targets) {
++      const { hw, hh } = _playFormShardHalfSize(t.it);
++      minL = Math.min(minL, t.tx - hw);
++      maxR = Math.max(maxR, t.tx + hw);
++      minT = Math.min(minT, t.ty - hh);
++      maxB = Math.max(maxB, t.ty + hh);
++    }
++    let dx = 0;
++    let dy = 0;
++    if (minL < loX) dx = loX - minL;
++    else if (maxR > hiX) dx = hiX - maxR;
++    if (minT < loY) dy = loY - minT;
++    else if (maxB > hiY) dy = hiY - maxB;
++    if (dx === 0 && dy === 0) break;
++    for (const t of targets) {
++      t.tx += dx;
++      t.ty += dy;
++    }
++  }
++  let minL = Infinity;
++  let maxR = -Infinity;
++  for (const t of targets) {
++    const { hw } = _playFormShardHalfSize(t.it);
++    minL = Math.min(minL, t.tx - hw);
++    maxR = Math.max(maxR, t.tx + hw);
++  }
++  if (maxR - minL > hiX - loX - 0.5) {
++    const cx = (minL + maxR) * 0.5;
++    const sh = (loX + hiX) * 0.5 - cx;
++    for (const t of targets) t.tx += sh;
++  }
++}
++
+ /**
+  * @param {Phaser.Scene} bootScene
+  * @param {object[]} items
+  * @param {ReturnType<typeof computePlayPanelLayoutForShardFormation>} layout
+  * @param {() => number} rnd
+  */
+-function _playFormShardRadiusPx(it) {
+-  const w = it?.img?.displayWidth;
+-  const h = it?.img?.displayHeight;
+-  if (typeof w === 'number' && w > 4 && typeof h === 'number' && h > 4) {
+-    return 0.46 * Math.max(w, h);
+-  }
+-  return 0.018 * Math.sqrt(Math.max(400, it.mass || 0));
+-}
+-
+ function ensurePlayFormationTargetsAssigned(bootScene, items, layout, rnd) {
+   if (bootScene._playFormationTargetsAssigned) return;
+   const form = items.filter((it) => it.playFormation);
+@@ -623,117 +727,115 @@ function ensurePlayFormationTargetsAssigned(bootScene, items, layout, rnd) {
+     bootScene._playFormationTargetsAssigned = true;
+     return;
+   }
+-  const { panelL, panelT, panelW, panelH } = layout;
+-  const pcx = panelL + panelW * 0.5;
+-  const pcy = panelT + panelH * 0.5;
+-  /** 外周はパネル矩形に沿わせる（内部よりタイトなインセット） */
+-  const inset = Math.min(panelW, panelH) * 0.0075;
+-  const innerW = Math.max(8, panelW - 2 * inset);
+-  const innerH = Math.max(8, panelH - 2 * inset);
+-  const n = form.length;
+-  const nx = Math.max(1, Math.ceil(Math.sqrt(n * (innerW / Math.max(innerH, 1)) * 0.88)));
+-  const ny = Math.max(1, Math.ceil(n / nx));
+-  const cellW = innerW / nx;
+-  const cellH = innerH / ny;
+-  const jitterMul = 0.14;
+-  const slots = [];
+-  for (let gy = 0; gy < ny; gy++) {
+-    for (let gx = 0; gx < nx && slots.length < n; gx++) {
+-      const u = (gx + 0.5) / nx;
+-      const v = (gy + 0.5) / ny;
+-      const edge = Math.max(Math.abs(u - 0.5), Math.abs(v - 0.5)) * 2;
+-      slots.push({
+-        tx: panelL + inset + innerW * u + (rnd() - 0.5) * cellW * jitterMul,
+-        ty: panelT + inset + innerH * v + (rnd() - 0.5) * cellH * jitterMul,
+-        edge,
+-      });
+-    }
++  assignPlayFormationRoles(form);
++
++  const { panelL, panelT, panelW, panelH, textCx } = layout;
++  const playCy = computePlayGlyphRowCenterY(layout);
++  const margin = 8;
++
++  const core = form.find((x) => x.playFormationRole === 'centerCore');
++  const leftW = form.find((x) => x.playFormationRole === 'leftWing');
++  const rightW = form.find((x) => x.playFormationRole === 'rightWing');
++  const topC = form.find((x) => x.playFormationRole === 'topCap');
++  const botC = form.find((x) => x.playFormationRole === 'bottomCap');
++
++  const olap = Phaser.Math.Clamp(12 + rnd() * 16, 12, 28);
++  const olapR = Phaser.Math.Clamp(12 + rnd() * 16, 12, 28);
++
++  let ccX = textCx + (rnd() - 0.5) * 6;
++  let ccY = playCy + (rnd() - 0.5) * 5;
++
++  /** @type {{ it: object, tx: number, ty: number, rot: number }[]} */
++  const targets = [];
++
++  if (core) {
++    targets.push({
++      it: core,
++      tx: ccX,
++      ty: ccY,
++      rot: Phaser.Math.DegToRad((rnd() - 0.5) * 8),
++    });
+   }
+-  slots.sort((a, b) => b.edge - a.edge);
+-  while (slots.length < n) {
+-    slots.push({
+-      tx: panelL + inset + innerW * (0.18 + rnd() * 0.64),
+-      ty: panelT + inset + innerH * (0.16 + rnd() * 0.68),
+-      edge: 0,
++
++  if (leftW && core) {
++    const { hw: lhw } = _playFormShardHalfSize(leftW);
++    const { hw: cwh } = _playFormShardHalfSize(core);
++    targets.push({
++      it: leftW,
++      tx: ccX - cwh - lhw + olap,
++      ty: ccY + (rnd() - 0.5) * 12,
++      rot: Phaser.Math.DegToRad((rnd() - 0.5) * 16),
+     });
+   }
+-  form.sort((a, b) => b.mass - a.mass);
+-  const nDepthSteps = Math.min(4, Math.max(2, n));
+-  const targets = [];
+-  for (let fi = 0; fi < form.length; fi++) {
+-    const it = form[fi];
+-    const slot = slots[fi] ?? slots[slots.length - 1];
+-    let tx = slot.tx + (rnd() - 0.5) * 3.2;
+-    let ty = slot.ty + (rnd() - 0.5) * 3.2;
+-    /** 外周ほどわずかに外へ張り、矩形シルエットを強調（中央は崩しやすい） */
+-    const rx = tx - pcx;
+-    const ry = ty - pcy;
+-    const rlen = Math.hypot(rx, ry) + 1e-6;
+-    const edgeF = slot.edge ?? 0;
+-    const outwardPx = Phaser.Math.Clamp((edgeF - 0.28) * (3.5 + rnd() * 6), -2.5, 9);
+-    tx += (rx / rlen) * outwardPx;
+-    ty += (ry / rlen) * outwardPx;
+-    /** 各破片を中心へ 6〜18px（右上は追加で寄せる） */
+-    const dxC = pcx - tx;
+-    const dyC = pcy - ty;
+-    const distC = Math.hypot(dxC, dyC) + 1e-6;
+-    let pullMag = 6 + rnd() * 12;
+-    if (tx > pcx + 1 && ty < pcy - 1) {
+-      pullMag += 6 + rnd() * 10;
+-    }
+-    tx += (dxC / distC) * pullMag;
+-    ty += (dyC / distC) * pullMag;
+-    /** 中央付近のスロットだけ隣接スロットへ軽く寄せて稜線の接触感 */
+-    if (edgeF < 0.62) {
+-      const hubPull = 2.2 + rnd() * 5.5;
+-      tx = Phaser.Math.Linear(tx, pcx, hubPull / Math.max(120, distC));
+-      ty = Phaser.Math.Linear(ty, pcy, hubPull / Math.max(120, distC));
+-    }
+-    targets.push({ it, tx, ty });
+-    it.playFormationDepthIdx = fi % nDepthSteps;
++
++  if (rightW && core) {
++    const { hw: rhw } = _playFormShardHalfSize(rightW);
++    const { hw: cwh2 } = _playFormShardHalfSize(core);
++    targets.push({
++      it: rightW,
++      tx: ccX + cwh2 + rhw - olapR,
++      ty: ccY + (rnd() - 0.5) * 12,
++      rot: Phaser.Math.DegToRad((rnd() - 0.5) * 16),
++    });
+   }
+-  /** 軽いオーバーラップ（5〜18px）を狙いつつ完全重なりは避ける */
+-  const passes = 4;
+-  for (let pass = 0; pass < passes; pass++) {
+-    for (let i = 0; i < targets.length; i++) {
+-      for (let j = i + 1; j < targets.length; j++) {
+-        const a = targets[i];
+-        const b = targets[j];
+-        const dx = b.tx - a.tx;
+-        const dy = b.ty - a.ty;
+-        const d = Math.hypot(dx, dy) + 1e-6;
+-        const ra = _playFormShardRadiusPx(a.it);
+-        const rb = _playFormShardRadiusPx(b.it);
+-        const minSep = Math.max(14, Math.min(ra, rb) * 0.34);
+-        const overlapWant = 5 + rnd() * 13;
+-        const ideal = Phaser.Math.Clamp(ra + rb - overlapWant, minSep * 0.88, ra + rb - 3);
+-        if (d > ideal) {
+-          const pull = Math.min(7.5, (d - ideal) * (pass < 2 ? 0.42 : 0.28));
+-          const ux = dx / d;
+-          const uy = dy / d;
+-          a.tx += ux * pull * 0.5;
+-          a.ty += uy * pull * 0.5;
+-          b.tx -= ux * pull * 0.5;
+-          b.ty -= uy * pull * 0.5;
+-        } else if (d < minSep) {
+-          const push = (minSep - d) * 0.48;
+-          const ux = dx / d;
+-          const uy = dy / d;
+-          a.tx -= ux * push * 0.5;
+-          a.ty -= uy * push * 0.5;
+-          b.tx += ux * push * 0.5;
+-          b.ty += uy * push * 0.5;
+-        }
+-      }
+-    }
++
++  if (topC && core) {
++    const { hh: thh } = _playFormShardHalfSize(topC);
++    const { hh: cchh } = _playFormShardHalfSize(core);
++    const overlapVert = 5 + rnd() * 9;
++    const rawTy = ccY - cchh - thh * 0.72 + overlapVert;
++    const ty = Phaser.Math.Clamp(rawTy, panelT + margin + thh * 0.45, ccY - cchh * 0.32);
++    targets.push({
++      it: topC,
++      tx: ccX + (rnd() - 0.5) * panelW * 0.1,
++      ty,
++      rot: Phaser.Math.DegToRad((rnd() - 0.5) * 10),
++    });
++  }
++
++  if (botC && core) {
++    const { hh: bhh } = _playFormShardHalfSize(botC);
++    const { hh: cchh2 } = _playFormShardHalfSize(core);
++    const overlapVertB = 5 + rnd() * 9;
++    const rawBy = ccY + cchh2 + bhh * 0.72 - overlapVertB;
++    const ty = Phaser.Math.Clamp(rawBy, ccY + cchh2 * 0.32, panelT + panelH - margin - bhh * 0.45);
++    targets.push({
++      it: botC,
++      tx: ccX + (rnd() - 0.5) * panelW * 0.1,
++      ty,
++      rot: Phaser.Math.DegToRad((rnd() - 0.5) * 10),
++    });
+   }
+-  for (const { it, tx, ty } of targets) {
+-    const margin = 3;
++
++  applyClusterShiftToFitPanel(targets, panelL, panelT, panelW, panelH, margin);
++
++  for (const t of targets) {
++    const { it, tx, ty, rot } = t;
+     it.playTargetX = Phaser.Math.Clamp(tx, panelL + margin, panelL + panelW - margin);
+     it.playTargetY = Phaser.Math.Clamp(ty, panelT + margin, panelT + panelH - margin);
+-    it.playTargetRot = (rnd() - 0.5) * 0.082;
++    it.playTargetRot = rot;
++    const role = it.playFormationRole;
++    const di = PLAY_FORM_ROLE_DEPTH[role];
++    if (typeof di === 'number') it.playFormationDepthIdx = di;
+   }
++
+   bootScene._playFormationTargetsAssigned = true;
++
++  if (homeUrlDebugEnabled() && !bootScene._playFormRoleDebugLogged) {
++    bootScene._playFormRoleDebugLogged = true;
++    const lines = ['[PLAY_FORM_ROLE]'];
++    const order = ['centerCore', 'leftWing', 'rightWing', 'topCap', 'bottomCap'];
++    for (const role of order) {
++      const it = form.find((x) => x.playFormationRole === role);
++      if (!it || typeof it.playTargetX !== 'number') continue;
++      const id = it.texKey || 'shard';
++      const rotDeg = (it.playTargetRot * 180) / Math.PI;
++      lines.push(
++        `${role} ${id} / ${it.playTargetX.toFixed(1)} / ${it.playTargetY.toFixed(1)} / ${rotDeg.toFixed(2)}`,
++      );
++    }
++    console.log(lines.join('\n'));
++  }
+ }
+ 
+ /**
+@@ -982,6 +1084,7 @@ export function activateBootBgCollapseShardPhysics(bootScene, faultBandSpec, epo
+   bootScene._bootBgCollapseFaultSpec = faultBandSpec;
+   bootScene._bootBgShardPhysicsActive = true;
+   bootScene._playFormationTargetsAssigned = false;
++  bootScene._playFormRoleDebugLogged = false;
+   if (typeof epochMs === 'number' && Number.isFinite(epochMs)) {
+     bootScene.game.registry.set(REG_BOOT_BG_FRAG_EPOCH_MS, epochMs);
+   }
+@@ -1499,6 +1602,7 @@ export function destroyBootBgCollapseFragments(bootScene) {
+   }
+   bootScene._playFormDebugGfx = null;
+   bootScene._playFormationTargetsAssigned = false;
++  bootScene._playFormRoleDebugLogged = false;
+   try {
+     bootScene._bootBgShardRoot?.destroy?.(true);
+   } catch (_) {
+diff --git a/index.html b/index.html
+index 96f27a3..70a0452 100644
+--- a/index.html
++++ b/index.html
+@@ -194,7 +194,7 @@
+         FAIL: 'fail',
+       };
+       const APP_VERSION = '0.1.9';
+-      const BUILD_TIMESTAMP = '2026-05-23 16:00 UTC';
++      const BUILD_TIMESTAMP = '2026-05-24 12:00 UTC';
+ 
+       const BUILD_COMMIT_SHORT = 'local';
+       const BUILD_STAMP = `${APP_VERSION} / ${BUILD_TIMESTAMP}${BUILD_COMMIT_SHORT ? ` / ${BUILD_COMMIT_SHORT}` : ''}`;

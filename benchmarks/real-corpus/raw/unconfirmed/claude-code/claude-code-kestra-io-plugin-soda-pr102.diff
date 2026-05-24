@@ -1,0 +1,17 @@
+diff --git a/src/main/resources/doc/io.kestra.plugin.soda.md b/src/main/resources/doc/io.kestra.plugin.soda.md
+new file mode 100644
+index 0000000..fd3ec1a
+--- /dev/null
++++ b/src/main/resources/doc/io.kestra.plugin.soda.md
+@@ -0,0 +1,11 @@
++# How to use the Soda plugin
++
++Run Soda data quality scans from Kestra flows inside a container.
++
++## Common properties
++
++`containerImage` defaults to `sodadata/soda-core`. `taskRunner` controls where the container runs — defaults to Docker. Add extra Python packages (e.g. `soda-core-bigquery`) via `requirements`.
++
++## Tasks
++
++`Scan` runs a Soda scan — set `configuration` as a map matching Soda's YAML connection config (data source type, connection details, and credentials). Set `checks` as a map of SodaCL check definitions. Data source credentials should reference [secrets](https://kestra.io/docs/concepts/secret) via Kestra's expression syntax. Pass extra files via `inputFiles` or pull them from [namespace files](https://kestra.io/docs/concepts/namespace-files). Set `variables` to pass runtime values into checks. The output includes `result` with pass/warn/fail outcomes per check, plus `hasErrors`, `hasWarnings`, and `hasFailures` flags. Apply runner properties globally with [plugin defaults](https://kestra.io/docs/workflow-components/plugin-defaults).

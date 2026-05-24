@@ -1,0 +1,120 @@
+diff --git a/openhands/app_server/sandbox/sandbox_spec_service.py b/openhands/app_server/sandbox/sandbox_spec_service.py
+index 6949752b4dd7..a69b27aea751 100644
+--- a/openhands/app_server/sandbox/sandbox_spec_service.py
++++ b/openhands/app_server/sandbox/sandbox_spec_service.py
+@@ -69,8 +69,11 @@ def get_agent_server_image() -> str:
+     return AGENT_SERVER_IMAGE
+ 
+ 
+-# Prefixes for environment variables that should be auto-forwarded to agent-server
+-# These are typically configuration variables that affect the agent's behavior
++# Exact environment variables that should be auto-forwarded to agent-server.
++AUTO_FORWARD_VARIABLES = ('ALLOW_INSECURE_GIT_ACCESS',)
++
++# Prefixes for environment variables that should be auto-forwarded to agent-server.
++# These are typically configuration variables that affect the agent's behavior.
+ AUTO_FORWARD_PREFIXES = ('LLM_', 'LMNR_')
+ 
+ 
+@@ -79,11 +82,12 @@ def get_agent_server_env() -> dict[str, str]:
+ 
+     This function combines two sources of environment variables:
+ 
+-    1. **Auto-forwarded variables**: Environment variables with certain prefixes
+-       (e.g., LLM_*, LMNR_*) are automatically forwarded to the agent-server container.
++    1. **Auto-forwarded variables**: Selected variables and variables with certain
++       prefixes (e.g., ALLOW_INSECURE_GIT_ACCESS, LLM_*, LMNR_*) are automatically
++       forwarded to the agent-server container.
+        This ensures that LLM configuration like timeouts and retry settings
+        work correctly in the two-container V1 architecture, as well as
+-       Laminar monitoring/analytics configuration.
++       Laminar monitoring/analytics configuration and git access flags.
+ 
+     2. **Explicit overrides via OH_AGENT_SERVER_ENV**: A JSON string that allows
+        setting arbitrary environment variables in the agent-server container.
+@@ -120,12 +124,17 @@ def get_agent_server_env() -> dict[str, str]:
+     """
+     result: dict[str, str] = {}
+ 
+-    # Step 1: Auto-forward environment variables with recognized prefixes
++    # Step 1: Auto-forward selected exact environment variables.
++    for key in AUTO_FORWARD_VARIABLES:
++        if key in os.environ:
++            result[key] = os.environ[key]
++
++    # Step 2: Auto-forward environment variables with recognized prefixes
+     for key, value in os.environ.items():
+         if any(key.startswith(prefix) for prefix in AUTO_FORWARD_PREFIXES):
+             result[key] = value
+ 
+-    # Step 2: Apply explicit overrides from OH_AGENT_SERVER_ENV
++    # Step 3: Apply explicit overrides from OH_AGENT_SERVER_ENV
+     # These take precedence over auto-forwarded variables
+     explicit_env = env_parser.from_env(dict[str, str], 'OH_AGENT_SERVER_ENV')
+     result.update(explicit_env)
+diff --git a/tests/unit/app_server/test_agent_server_env_override.py b/tests/unit/app_server/test_agent_server_env_override.py
+index efd2b7a6fc59..6a065baab40d 100644
+--- a/tests/unit/app_server/test_agent_server_env_override.py
++++ b/tests/unit/app_server/test_agent_server_env_override.py
+@@ -27,6 +27,7 @@
+ )
+ from openhands.app_server.sandbox.sandbox_spec_service import (
+     AUTO_FORWARD_PREFIXES,
++    AUTO_FORWARD_VARIABLES,
+     get_agent_server_env,
+ )
+ 
+@@ -295,6 +296,33 @@ def test_llm_prefix_is_case_sensitive(self):
+             assert 'Llm_Timeout' not in result
+ 
+ 
++class TestExactAutoForwarding:
++    """Test cases for exact auto-forwarded environment variables."""
++
++    def test_auto_forward_variables_contains_insecure_git_access(self):
++        assert 'ALLOW_INSECURE_GIT_ACCESS' in AUTO_FORWARD_VARIABLES
++
++    def test_allow_insecure_git_access_auto_forwarded(self):
++        env_vars = {
++            'ALLOW_INSECURE_GIT_ACCESS': 'true',
++            'OTHER_VAR': 'should_not_be_included',
++        }
++
++        with patch.dict(os.environ, env_vars, clear=True):
++            result = get_agent_server_env()
++            assert result == {'ALLOW_INSECURE_GIT_ACCESS': 'true'}
++
++    def test_explicit_override_takes_precedence_over_exact_forward(self):
++        env_vars = {
++            'ALLOW_INSECURE_GIT_ACCESS': 'false',
++            'OH_AGENT_SERVER_ENV': '{"ALLOW_INSECURE_GIT_ACCESS": "true"}',
++        }
++
++        with patch.dict(os.environ, env_vars, clear=True):
++            result = get_agent_server_env()
++            assert result['ALLOW_INSECURE_GIT_ACCESS'] == 'true'
++
++
+ class TestLMNRAutoForwarding:
+     """Test cases for automatic forwarding of LMNR_* environment variables."""
+ 
+@@ -360,6 +388,19 @@ def test_lmnr_prefix_is_case_sensitive(self):
+ class TestDockerSandboxSpecEnvironmentOverride:
+     """Test environment variable override integration in Docker sandbox specs."""
+ 
++    def test_docker_specs_include_insecure_git_access_env(self):
++        """Test that the insecure git access flag reaches Docker sandbox specs."""
++        env_vars = {
++            'ALLOW_INSECURE_GIT_ACCESS': 'true',
++        }
++
++        with patch.dict(os.environ, env_vars, clear=True):
++            specs = get_default_docker_sandbox_specs()
++
++            assert len(specs) == 1
++            spec = specs[0]
++            assert spec.initial_env['ALLOW_INSECURE_GIT_ACCESS'] == 'true'
++
+     def test_docker_specs_include_agent_server_env(self):
+         """Test that Docker sandbox specs include agent server environment variables."""
+         env_vars = {

@@ -1,0 +1,244 @@
+diff --git a/docs/superpowers/2026-05-24-sale-core-verifier-plan.md b/docs/superpowers/2026-05-24-sale-core-verifier-plan.md
+new file mode 100644
+index 0000000..0e7d6f4
+--- /dev/null
++++ b/docs/superpowers/2026-05-24-sale-core-verifier-plan.md
+@@ -0,0 +1,238 @@
++# Sale Core E2E Verifier — Plan
++
++**Filed:** 2026-05-24 (autonomous Track 7)
++**Author:** Claude Sonnet 4.6
++**Status:** Plan only. No verifier script in this PR.
++
++Plans a non-prod end-to-end verifier covering the full `/sale` admin
++flow. Boss UI smoke remains the authoritative production verification,
++but a deterministic e2e script reduces regression surface between Boss
++smokes.
++
++Existing verifiers in `scripts/`:
++- `verify-sale-quick-bulk-product-codes.ts` — Tier 3.8
++- `verify-sale-d4-d6-functional-flow.ts` — sale D4/D6 functional flow
++- `verify-booking-flow.ts` — booking lifecycle
++- `verify-booking-conversion.ts` — booking → order
++- `verify-booking-create.ts` — manual create
++- `verify-order-reservation-cleanup.ts` — stock cleanup
++- `verify-expire-reservations-cron.ts` — reservation TTL
++- `verify-inventory-bulk-product-codes.ts` — Tier 3.9-D2-C
++
++This proposed `verify-sale-core-e2e.ts` would compose pieces from the
++above into one coherent admin journey.
++
++---
++
++## 1. Scope
++
++Single deterministic script covering admin's typical day:
++
++1. Create products in inventory (single + bulk)
++2. Attach products to a saleDate (sale-side)
++3. Create bookings (manual + multi-code)
++4. Mutate bookings (confirm, cancel)
++5. Create order from confirmed bookings
++6. Compute summary (totals + per-status counts)
++7. Inventory bulk re-create same codes (test reuse-or-create)
++8. Cleanup
++
++**Non-goals:**
++- Webhook delivery (Tier 4.1)
++- Outbound messaging (Tier 4.5+)
++- Payment flow
++- Image upload
++- Authentication (verifier runs at repository layer; HTTP route auth covered by unit tests)
++
++---
++
++## 2. Production-safety guard (same 6 layers)
++
++```ts
++import { evaluateNonProdDatabase } from './lib/non-prod-db-guard';
++```
++
++Existing `evaluateNonProdDatabase` enforces:
++1. CONFIRM_NON_PROD_DB=true required
++2. DATABASE_URL must be set
++3. Hostname must be `localhost` or `127.0.0.1`
++4. Hostname must not match production deny-list (`junction.proxy.rlwy.net`, `rlwy.net`)
++5. URL must not contain `nazhahatyai`
++6. DB name must equal `liveshop_pro`
++
++Exit `2` on guard failure. `--help` + `--preflight` flags per
++inventory verifier pattern (Track 2).
++
++**NEVER** soften the guard for any verifier.
++
++---
++
++## 3. Proposed test cases (15 cases)
++
++### A — Inventory side
++
++| Case | Description | Asserts |
++|---|---|---|
++| A1 | Create single inventory product | Product + Variant exists, 0 BroadcastProduct |
++| A2 | Create bulk inventory products 1..5 | 5 Product + 5 Variant, 0 BroadcastProduct, atomic |
++| A3 | Reuse-or-create: same codes again | productCreated=false, no new rows |
++
++### B — Sale side: attach + bookings
++
++| Case | Description | Asserts |
++|---|---|---|
++| B1 | Sale quick-create product code (Tier 3.8) | Product + Variant + BroadcastProduct trio |
++| B2 | AddFromStock batch attaches existing inventory to today | New BroadcastProduct rows reusing existing Product + Variant |
++| B3 | Manual create booking (PENDING_REVIEW) | Booking row with status PENDING_REVIEW, 0 reservations |
++| B4 | Multi-code booking (future Phase 1.5-D) | Skipped — held |
++
++### C — Booking lifecycle
++
++| Case | Description | Asserts |
++|---|---|---|
++| C1 | Confirm PENDING booking → CONFIRMED + reservation | StockReservation row created in same tx |
++| C2 | Cancel CONFIRMED booking → CANCELLED + reservation released | releasedAt set |
++| C3 | Cancel PENDING booking → CANCELLED, no reservation touched | No StockReservation activity |
++| C4 | Idempotent confirm replay | Returns { idempotent: true } |
++| C5 | Idempotent cancel replay | Returns { idempotent: true, stockReleased: false } |
++| C6 | Confirm with insufficient stock | Throws INSUFFICIENT_STOCK, status stays PENDING |
++
++### D — Order conversion
++
++| Case | Description | Asserts |
++|---|---|---|
++| D1 | Convert N CONFIRMED bookings → Order | Booking.convertedOrderId set; all reservations released; OrderItem groupBy correct |
++| D2 | Idempotent convert replay | Returns existing Order |
++| D3 | Convert with mixed status (1 PENDING + 1 CONFIRMED) | Throws BOOKING_INVALID_STATUS, no Order created |
++
++### E — Summary
++
++| Case | Description | Asserts |
++|---|---|---|
++| E1 | Summary for active saleDate | totalBookings + per-status counts correct |
++| E2 | Summary range mode | days[] in order, top-level totals = sum |
++| E3 | Summary empty saleDate | broadcastProductCount=0, panel shows empty state |
++
++### F — Cleanup
++
++| Case | Description | Asserts |
++|---|---|---|
++| F1 | All fixtures removed | Final count of Shop/User/Product/Variant/BP/Booking/Order/Reservation = 0 |
++
++---
++
++## 4. Implementation plan
++
++If Boss approves, implement as `scripts/verify-sale-core-e2e.ts`:
++
++```
++scripts/verify-sale-core-e2e.ts (~600 LOC)
++├── assertNonProdDatabase() — same 6-layer guard
++├── HELP_TEXT — usage
++├── --help + --preflight flags
++├── Fixture setup (Shop, User, ShopMember, Category)
++├── Cases A1-A3 (inventory)
++├── Cases B1-B3 (sale attach + bookings)
++├── Cases C1-C6 (booking lifecycle)
++├── Cases D1-D3 (order conversion)
++├── Cases E1-E3 (summary)
++├── Cleanup F1
++└── Summary report (PASS/FAIL/TOTAL)
++```
++
++Exit codes:
++- `0` — all 15 PASS + cleanup OK
++- `1` — any case fail
++- `2` — guard blocked
++
++npm script:
++```json
++"verify:sale:core-e2e": "tsx scripts/verify-sale-core-e2e.ts"
++```
++
++---
++
++## 5. Why NOT implement now
++
++The autonomous block has Boss policy "If Docker/DB uncertainty would
++cause churn, skip and document":
++
++1. Docker host→DB auth quirk documented in Track 2 still applies
++2. Existing 8 verifiers already cover most cases independently:
++   - A1-A3 → `verify-inventory-bulk-product-codes.ts`
++   - B1 → `verify-sale-quick-bulk-product-codes.ts`
++   - B3 → `verify-booking-create.ts`
++   - C1-C2 → `verify-booking-flow.ts`
++   - C2 stock release → `verify-order-reservation-cleanup.ts`
++   - D1-D3 → `verify-booking-conversion.ts`
++   - E1-E3 → not yet covered by any verifier (gap)
++3. Boss UI smoke is the authoritative path
++4. A single 600 LOC verifier introduces coordination risk vs 8 focused ones
++
++**Recommendation:** defer implementation. If implemented later, extract
++shared fixture setup helper to `scripts/lib/sale-core-fixtures.ts`
++first to reduce duplication.
++
++---
++
++## 6. Alternative: incremental fill-the-gap
++
++Rather than 600 LOC mega-verifier, write smallest missing pieces:
++
++| Gap | Suggested verifier | Effort |
++|---|---|---|
++| Summary single-day | `verify-sale-summary-single.ts` | ~150 LOC |
++| Summary range | `verify-sale-summary-range.ts` | ~200 LOC |
++| AddFromStock batch | `verify-sale-add-from-stock.ts` | ~180 LOC |
++
++Each its own PR, its own 6-layer guard wrapper, easier to review and
++maintain. Recommended over mega-verifier.
++
++---
++
++## 7. CI considerations
++
++Verifiers are **NOT** run in CI (no postgres service container in
++GitHub Actions). They remain manual-run scripts for:
++- Developer local validation
++- Pre-deploy gate (Boss-run on stable machine)
++- Post-migration smoke
++
++If future CI gains a postgres service, a verifier subset (cleanup-safe
+++ deterministic + < 30s) could become CI gate. Out of scope for this
++plan.
++
++---
++
++## 8. Cross-references
++
++- `scripts/verify-*.ts` (8 existing verifiers)
++- `scripts/lib/non-prod-db-guard.ts` (6-layer guard, NEVER soften)
++- `docs/superpowers/2026-05-24-inventory-verifier-troubleshooting.md` (Windows quirk)
++- `docs/superpowers/2026-05-23-stock-booking-state-machine-matrix.md` (semantic contract)
++- `docs/superpowers/2026-05-24-sale-data-fetch-audit.md` (Track 6)
++
++---
++
++## 9. Hard rules (when implementing)
++
++- ❌ NEVER soften the 6-layer guard
++- ❌ NEVER use production credentials
++- ❌ NEVER skip cleanup on FAIL (leak fixtures)
++- ❌ NEVER assert positive cases without negative-case coverage
++- ❌ NEVER hardcode date strings — derive from runId for determinism
++- ✅ ALWAYS print sanitized URL (password masked)
++- ✅ ALWAYS support `--preflight` for guard-only check
++- ✅ ALWAYS bound runtime (target ≤ 60s total)
++- ✅ ALWAYS use same RunId pattern as inventory verifier for cleanup safety
++
++---
++
++## 10. Status
++
++- Plan only this PR
++- No script created
++- Defer implementation per §5 reasoning
++- Recommended alternative: incremental gap-fill (§6) — each its own
++  PR, each ≤ 200 LOC
++- Boss verdict needed before any implementation PR opens

@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-manishsharma004-system-design-copilot-pr5",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 5,
+    "headSha": "36dab844bf9370e64c5177914adeaa5374bf63f3",
+    "baseSha": "bf565dda8e9e4058a382ba09a15711c4077e1c52",
+    "title": "Deepen primer coverage and add saveable interactive lesson practice",
+    "body": "The curriculum was too shallow relative to the System Design Primer and lacked any real practice flow beyond passive reading. This change expands the content with deeper distributed-systems coverage and adds per-lesson interactive drafting so learners can save answers locally before moving through prompts.\n\n- **Curriculum depth**\n  - Adds a new **Distributed systems building blocks** module covering:\n    - consistent hashing and hot-key management\n    - consensus, quorums, and leader election\n    - distributed transactions, sagas, and idempotent workflows\n    - probabilistic data structures and cardinality estimation\n    - batch processing, stream processing, and MapReduce\n  - Updates site-level copy to reflect broader primer coverage and a practice-oriented workflow.\n\n- **Interactive practice flow**\n  - Introduces a reusable `PracticeWorkspace` on lesson pages.\n  - Generates a 3-step practice deck per lesson (`opening`, `design`, `tradeoffs`) from lesson metadata.\n  - Requires learners to save an answer before advancing to the next prompt.\n  - Keeps answers ungraded by design.\n\n- **Local persistence**\n  - Adds a dedicated `practiceAnswers` store backed by `localStorage`.\n  - Saves answers per lesson/prompt so learners can leave and resume later.\n  - Supports clearing saved answers for a lesson without affecting completion progress.\n\n- **Content-model support**\n  - Extends `courseData.js` with `getLessonPracticeSteps()` to derive structured practice prompts from existing lesson sections, checklists, pitfalls, and interview prompts.\n  - Keeps the practice system data-driven so new lessons inherit the same interaction model automatically.\n\n```js\nexport function getLessonPracticeSteps(lesson) {\n  return [\n    { id: 'opening', title: 'Explain the concept', ... },\n    { id: 'design', title: 'System design drill', ... },\n    { id: 'tradeoffs', title: 'Trade-offs and failure review', ... }\n  ];\n}\n```",
+    "author": "Copilot",
+    "headRef": "copilot/add-interactive-exercises",
+    "repository": "manishsharma004/system-design-copilot"
+  },
+  "diffRef": {
+    "repository": "manishsharma004/system-design-copilot",
+    "headSha": "36dab844bf9370e64c5177914adeaa5374bf63f3",
+    "baseSha": "bf565dda8e9e4058a382ba09a15711c4077e1c52"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-manishsharma004-system-design-copilot-pr5.diff",
+  "vendoredAt": "2026-05-24T03:35:45.334Z",
+  "collectedAt": "2026-05-24T03:35:45.334Z"
+}

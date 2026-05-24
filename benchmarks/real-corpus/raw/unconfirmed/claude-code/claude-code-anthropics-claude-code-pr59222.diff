@@ -1,0 +1,638 @@
+diff --git a/.devcontainer/Dockerfile b/.devcontainer/Dockerfile
+index 8b48f6ad72..65cc500a61 100644
+--- a/.devcontainer/Dockerfile
++++ b/.devcontainer/Dockerfile
+@@ -83,9 +83,83 @@ RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
+ 
+ 
+ # Copy and set up firewall script
+-COPY init-firewall.sh /usr/local/bin/
++COPY .devcontainer/init-firewall.sh /usr/local/bin/
+ USER root
+ RUN chmod +x /usr/local/bin/init-firewall.sh && \
+   echo "node ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh" > /etc/sudoers.d/node-firewall && \
+   chmod 0440 /etc/sudoers.d/node-firewall
+ USER node
++# =============================================================================
++# FNBA OVERLAY — append the block below to the END of .devcontainer/Dockerfile.
++# Append-only on purpose: leaves the upstream content untouched so future
++# rebases from anthropics/claude-code stay merge-conflict-free.
++# =============================================================================
++
++# --- FNBA overlay begin -------------------------------------------------------
++# Adds: docker CLI + compose v2 plugin, gh CLI (if upstream omitted it),
++# and remaps the existing `node` user to match the WSL host user so the
++# homebase bind mount has correct ownership.
++#
++# NO language runtimes are added here (no JDK, no Maven, no Node-22, no pnpm).
++# Each repo (escrow-web-services, fnba-escrow-webapp, ...) provides its own
++# runtime via its own docker-compose.local.yml as a sibling container on the
++# WSL Docker daemon.
++
++ARG HOST_UID=1000
++ARG HOST_GID=1000
++ARG HOST_USER=node
++
++USER root
++
++# docker CLI + compose v2 plugin (client only — no daemon). Lets this
++# container drive sibling stacks via the mounted host /var/run/docker.sock.
++RUN install -m 0755 -d /etc/apt/keyrings \
++ && curl -fsSL https://download.docker.com/linux/debian/gpg \
++      | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
++ && chmod a+r /etc/apt/keyrings/docker.gpg \
++ && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
++      https://download.docker.com/linux/debian $(. /etc/os-release; echo "$VERSION_CODENAME") stable" \
++      > /etc/apt/sources.list.d/docker.list \
++ && apt-get update \
++ && apt-get install -y --no-install-recommends \
++      docker-ce-cli \
++      docker-compose-plugin \
++ && rm -rf /var/lib/apt/lists/*
++
++# gh CLI — upstream may already include it; this is idempotent-ish.
++RUN if ! command -v gh >/dev/null 2>&1; then \
++      curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
++        | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
++      && chmod a+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
++      && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
++        > /etc/apt/sources.list.d/github-cli.list \
++      && apt-get update \
++      && apt-get install -y --no-install-recommends gh \
++      && rm -rf /var/lib/apt/lists/*; \
++    fi
++
++# Remap the upstream-provided `node` user to match the WSL host identity.
++# This is what makes the ${HOST_HOME}:/home/${HOST_USER} bind mount work
++# without permission churn: files created in the container come out owned
++# by the same uid/gid as the host user.
++RUN set -eux; \
++    # Rename group first (must exist before usermod -g)
++    groupmod -n "${HOST_USER}" node || true; \
++    groupmod -g "${HOST_GID}" "${HOST_USER}"; \
++    # Rename user and move its home dir
++    usermod  -l "${HOST_USER}" -d "/home/${HOST_USER}" -m node; \
++    usermod  -u "${HOST_UID}" -g "${HOST_GID}" "${HOST_USER}"; \
++    # Add to docker group so the mounted docker.sock is usable without sudo.
++    # GID 999 is the conventional docker group GID on Debian; if the socket's
++    # actual GID differs at runtime, entrypoint.sh in the consumer's setup
++    # can `chgrp` it. For the POC, this is fine.
++    groupadd -f -g 999 docker || true; \
++    usermod  -aG docker "${HOST_USER}"
++
++# Bake the first-time bootstrap bundle into the image so it's available
++# even when homebase is empty on first run.
++COPY fnba-bootstrap/ /opt/fnba-bootstrap/
++RUN chmod +x /opt/fnba-bootstrap/first-time-setup.sh
++
++USER ${HOST_USER}
++# --- FNBA overlay end ---------------------------------------------------------
+diff --git a/.env.example b/.env.example
+new file mode 100644
+index 0000000000..42f125f14c
+--- /dev/null
++++ b/.env.example
+@@ -0,0 +1,38 @@
++# Per-user docker-compose env. Copy this to .env (or let scripts/wsl-up.sh
++# auto-generate it on first run). .env is gitignored — never commit it.
++
++# =============================================================================
++# REQUIRED — host identity (wsl-up.sh fills these in automatically)
++# =============================================================================
++
++# Your WSL username — also becomes the container username and the homebase
++# folder name (/home/$HOST_USER inside the container).
++HOST_USER=hwieland
++
++# Your WSL numeric uid/gid — the container's user is remapped to these so
++# files created inside the bind mount are owned by you on the host.
++HOST_UID=1000
++HOST_GID=1000
++
++# Absolute path to your WSL home directory on the host. This entire
++# directory is bind-mounted as /home/$HOST_USER inside the container
++# ("homebase" — the single source of persistent state).
++HOST_HOME=/home/hwieland
++
++
++# =============================================================================
++# OPTIONAL — future extension points (uncomment and fill in as needed)
++# =============================================================================
++
++# GitHub Personal Access Token. Only used if you opt into the --use-pat
++# fallback in fnba-bootstrap/first-time-setup.sh. The default git auth
++# strategy is SSH via your homebase ~/.ssh — leave this empty for that.
++# GH_TOKEN=
++
++# Atlassian (Jira / Confluence). The bootstrap wires the community
++# Atlassian remote MCP, which uses OAuth on first use — no token needed
++# here. These vars only matter if you ever bring back the legacy
++# PAT-based jira-mcp-server.
++# JIRA_BASE_URL=https://fnba.atlassian.net
++# JIRA_EMAIL=
++# JIRA_API_TOKEN=
+diff --git a/.gitignore b/.gitignore
+index 5ca0973f8f..1522d0104c 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -1,2 +1,3 @@
+ .DS_Store
++.env
+ 
+diff --git a/README.fnba.md b/README.fnba.md
+new file mode 100644
+index 0000000000..19a2ddc7b7
+--- /dev/null
++++ b/README.fnba.md
+@@ -0,0 +1,136 @@
++# Claude Code in WSL — FNBA fork
++
++This branch (`fnba/main`) overlays the upstream `anthropics/claude-code`
++devcontainer with the minimum needed to run it as a long-lived Docker
++container driven from a WSL terminal at FNBA.
++
++It is intentionally thin. Per-repo runtimes (Java, Maven, Node, pnpm, …)
++are **not** in this image — each repo brings its own via its own
++`docker-compose.local.yml` running as a sibling container on the WSL
++Docker daemon.
++
++## Prerequisites
++
++- Windows + WSL2 with a Linux distro (Ubuntu, Debian, etc.)
++- Docker Desktop installed with the WSL integration enabled for that distro
++- This repo cloned **inside** the WSL distro (e.g. `~/github/hwieland-fnba/claude-code`)
++- You are logged into the WSL distro as the user whose `~/` you want to be
++  the container's homebase
++
++## One-time setup
++
++```bash
++cd ~/github/hwieland-fnba/claude-code
++git checkout fnba/main
++./scripts/wsl-up.sh
++```
++
++`wsl-up.sh` will:
++
++1. Write `.env` from your WSL `$USER`, `id -u`, `id -g`, `$HOME` (only if
++   `.env` doesn't already exist — edit it by hand for overrides)
++2. `docker compose up -d --build`
++3. If `~/.claude/.fnba-bootstrap-done` is missing in your homebase,
++   run the **first-time setup** (see next section) inside the container
++4. `docker exec -it claude-<your-user> bash` to drop you into the container
++
++## First-time setup (auto, one-shot)
++
++The first time `wsl-up.sh` brings the container up against an empty
++homebase, it runs `/opt/fnba-bootstrap/first-time-setup.sh` for you. That
++script:
++
++1. Asks you to confirm (`[Y/n]`).
++2. Prompts for your name and email (defaults from `git config --global`
++   if present).
++3. Looks for an SSH key in `~/.ssh`. **SSH from homebase is the default
++   git auth strategy.** If you have a key, the script seeds
++   `~/.ssh/known_hosts` with GitHub and sets your `~/.gitconfig`
++   identity. If not, it tells you to run `ssh-keygen` and continues.
++4. Lays down a starter `.claude/` tree in your homebase:
++   - `~/CLAUDE.md` — top-level project guide (name/email interpolated)
++   - `~/.claude/commands/pde.md` — `/pde` slash command
++   - `~/.claude/settings.json` — minimal settings + community Atlassian
++     remote MCP server (OAuth — no token written to disk)
++   - `~/.claude/projects/-home-<you>/memory/MEMORY.md` — empty
++     auto-memory scaffold
++5. Writes the sentinel `~/.claude/.fnba-bootstrap-done` so subsequent
++   `wsl-up.sh` runs skip the setup.
++
++Every write is idempotent — pre-existing files in your homebase are
++**never** overwritten. To re-run setup after editing the bundle in the
++fork, delete the sentinel: `rm ~/.claude/.fnba-bootstrap-done`.
++
++### PAT fallback (not yet implemented)
++
++If you ever want to skip SSH and use a GitHub PAT instead, the script
++accepts `--use-pat`. The flag is wired in but the PAT flow itself is a
++stub — track it as a future enhancement.
++
++## What "homebase" means
++
++Your WSL home directory (e.g. `/home/hwieland`) is bind-mounted to
++`/home/<you>` inside the container. That means:
++
++- `~/.claude` — Claude Code config, projects, agents, memory
++- `~/.gitconfig`, `~/.ssh` — git + ssh identity
++- `~/.bash_history` (or `~/.zsh_history`)
++- Any repos you `git clone ~/github/...` from inside the container
++
++…all live on the WSL host. The container itself is disposable —
++`docker compose down && docker compose up -d --build` loses nothing.
++
++## Firewall
++
++Upstream ships `.devcontainer/init-firewall.sh`, a restrictive iptables
++script that drops most outbound traffic. **In this fork it is not run**
++because it would block FNBA internal hosts (Jira, internal artifact repo,
++DSQL, …) and FNBA already enforces egress at the network level.
++
++If you ever want it back, add a `postStart` step that runs
++`sudo /usr/local/bin/init-firewall.sh` and extend its allow-list with the
++FNBA hostnames you need.
++
++## Working on FNBA repos
++
++Inside the container, clone repos into your homebase:
++
++```bash
++mkdir -p ~/github/fnba-software && cd ~/github/fnba-software
++git clone <bitbucket-or-github>/escrow-web-services.git
++git clone <bitbucket-or-github>/fnba-escrow-webapp.git
++```
++
++Then run **each repo's own** stack as sibling containers. The Claude
++container has Docker CLI + compose v2 and talks to the host daemon via
++the mounted `/var/run/docker.sock`:
++
++```bash
++cd ~/github/fnba-software/escrow-web-services
++cp .env-example .env   # fill in DSQL creds
++docker compose -f docker-compose.local.yml up --build
++```
++
++Same pattern for `fnba-escrow-webapp`.
++
++If both stacks need to talk to each other, attach them to a shared
++external network (e.g. `fnba-dev`) in each `docker-compose.local.yml`.
++
++## Relationship to the existing FNBA container
++
++The existing `C:\dev\claude-docker\fnba-claude-docker-dist` Docker setup
++is unchanged and still works. This fork is a parallel POC — eventually it
++may replace that setup, but for now both coexist.
++
++## Keeping in sync with upstream
++
++```bash
++git fetch upstream            # one-time: git remote add upstream https://github.com/anthropics/claude-code
++git checkout main
++git merge upstream/main
++git checkout fnba/main
++git rebase main
++```
++
++All FNBA changes live on `fnba/main` and in **append-only** Dockerfile
++sections, so rebases stay clean.
+diff --git a/docker-compose.yml b/docker-compose.yml
+new file mode 100644
+index 0000000000..f5ea68dd16
+--- /dev/null
++++ b/docker-compose.yml
+@@ -0,0 +1,36 @@
++# FNBA overlay compose for the forked anthropics/claude-code devcontainer.
++# Builds .devcontainer/Dockerfile locally; no registry pull.
++# All user-specific values come from .env (populated by scripts/wsl-up.sh).
++
++services:
++  claude:
++    build:
++      # Context is repo root so the Dockerfile can COPY fnba-bootstrap/ in.
++      context: .
++      dockerfile: .devcontainer/Dockerfile
++      args:
++        HOST_UID: ${HOST_UID}
++        HOST_GID: ${HOST_GID}
++        HOST_USER: ${HOST_USER}
++    container_name: claude-${HOST_USER}
++    hostname: claude-${HOST_USER}
++    user: "${HOST_UID}:${HOST_GID}"
++    environment:
++      - HOME=/home/${HOST_USER}
++      - USER=${HOST_USER}
++      - CLAUDE_CONFIG_DIR=/home/${HOST_USER}/.claude
++      - DEVCONTAINER=true
++      # Bypass cert validation for FNBA's TLS-intercepting proxy. Matches the
++      # existing fnba-claude-docker-dist setup. Long-term, swap this for
++      # NODE_EXTRA_CA_CERTS pointing at a baked-in FNBA root CA bundle.
++      - NODE_TLS_REJECT_UNAUTHORIZED=0
++    volumes:
++      # Homebase: WSL home is the single source of persistent state
++      # (.claude config, .gitconfig, .ssh, cloned repos, shell history).
++      - ${HOST_HOME}:/home/${HOST_USER}:cached
++      # Sibling-container access: repo stacks run as their own containers
++      # on the WSL Docker daemon, not inside this one.
++      - /var/run/docker.sock:/var/run/docker.sock
++    working_dir: /home/${HOST_USER}
++    command: sleep infinity
++    init: true
+diff --git a/fnba-bootstrap/CLAUDE.md.tpl b/fnba-bootstrap/CLAUDE.md.tpl
+new file mode 100644
+index 0000000000..d462b9bce4
+--- /dev/null
++++ b/fnba-bootstrap/CLAUDE.md.tpl
+@@ -0,0 +1,56 @@
++# Claude Code home — {{USER_NAME}}
++
++Top-level CLAUDE.md for your WSL homebase. This file is read by Claude
++Code on every session and is the right place to put conventions, paths,
++and constraints that apply to all your work in this environment.
++
++## You
++
++- **Name**: {{USER_NAME}}
++- **Email**: {{USER_EMAIL}}
++- **Git author**: always `{{USER_NAME}}`
++
++## Environment
++
++- This is the **WSL/Docker** flavor of Claude Code (forked from
++  anthropics/claude-code, FNBA overlay).
++- The container's home directory (`/home/{{USER}}`) is bind-mounted from
++  your WSL home. Persistent state lives there:
++  - `~/.claude/` — Claude config, commands, agents, memory, projects
++  - `~/.gitconfig`, `~/.ssh/` — git + SSH identity
++  - `~/github/…` — checked-out repos (suggested location)
++- The container itself is disposable. Rebuilding it does not lose
++  anything in your homebase.
++
++## Per-repo runtimes
++
++Language runtimes (Java, Maven, Node, pnpm, …) are **not installed in
++this container**. Each FNBA repo runs as its own sibling container on
++the WSL Docker host via its own `docker-compose.local.yml`. Use the
++Docker CLI from inside this container — it talks to the host daemon via
++the mounted `/var/run/docker.sock`.
++
++## Working with FNBA repos
++
++Clone into `~/github/fnba-software/` and follow each repo's own README
++for `docker compose -f docker-compose.local.yml up`. The two
++priority repos for this POC:
++
++- `escrow-web-services` — Java 8 + Spring + JAX-RS WAR on Tomcat 9
++- `fnba-escrow-webapp` — Nuxt 3 SPA on Node 22 (pnpm)
++
++## MCP servers
++
++The bootstrap wired up the community Atlassian remote MCP (OAuth). To
++add more, edit `~/.claude/settings.json`.
++
++## Memory
++
++Auto-memory is enabled at `~/.claude/projects/-home-{{USER}}/memory/`.
++Claude writes durable user/project/feedback notes there as the session
++proceeds.
++
++## Add your own conventions below
++
++(This template is intentionally short — extend it with anything specific
++to how you want Claude to behave in your environment.)
+diff --git a/fnba-bootstrap/claude/commands/pde.md b/fnba-bootstrap/claude/commands/pde.md
+new file mode 100644
+index 0000000000..308c045307
+--- /dev/null
++++ b/fnba-bootstrap/claude/commands/pde.md
+@@ -0,0 +1,17 @@
++---
++description: "Propose Don't Execute — show all planned changes before making them"
++---
++
++# Propose Don't Execute (PDE) Mode
++
++For this request, do NOT make any file edits, shell commands, or other side-effecting actions yet. Instead:
++
++1. **Analyze** what needs to be done for: $ARGUMENTS
++2. **List every change** you would make — file by file, edit by edit — with enough detail to review:
++   - For file edits: show the diff or before/after snippets
++   - For new files: show the full content
++   - For shell commands: show the exact command and explain what it does
++   - For deletions: state what's being removed and why
++3. **Wait for approval** before executing anything
++
++Once I say "go", "lgtm", "do it", or similar — execute all proposed changes. If I request modifications, revise the proposal first.
+diff --git a/fnba-bootstrap/claude/projects/-home-USER/memory/MEMORY.md b/fnba-bootstrap/claude/projects/-home-USER/memory/MEMORY.md
+new file mode 100644
+index 0000000000..b5b169cc2a
+--- /dev/null
++++ b/fnba-bootstrap/claude/projects/-home-USER/memory/MEMORY.md
+@@ -0,0 +1,2 @@
++# Claude Code Memory
++
+diff --git a/fnba-bootstrap/claude/settings.json.tpl b/fnba-bootstrap/claude/settings.json.tpl
+new file mode 100644
+index 0000000000..79ec695b2f
+--- /dev/null
++++ b/fnba-bootstrap/claude/settings.json.tpl
+@@ -0,0 +1,20 @@
++{
++  "$schema": "https://json.schemastore.org/claude-code-settings.json",
++  "permissions": {
++    "allow": [
++      "Bash(git:*)",
++      "Bash(gh:*)",
++      "Bash(docker:*)",
++      "Bash(ls:*)",
++      "Bash(cat:*)",
++      "Read(*)",
++      "Edit(*)"
++    ]
++  },
++  "mcpServers": {
++    "atlassian": {
++      "type": "http",
++      "url": "https://mcp.atlassian.com/v1/mcp/authv2"
++    }
++  }
++}
+diff --git a/fnba-bootstrap/first-time-setup.sh b/fnba-bootstrap/first-time-setup.sh
+new file mode 100755
+index 0000000000..c4e1d50f4d
+--- /dev/null
++++ b/fnba-bootstrap/first-time-setup.sh
+@@ -0,0 +1,125 @@
++#!/usr/bin/env bash
++# first-time-setup.sh — lay down a starter ~/.claude/ tree in homebase.
++# Invoked automatically by scripts/wsl-up.sh when the sentinel is absent.
++# Idempotent: every file write is guarded so re-running fills gaps without
++# clobbering existing user content. Re-runnable manually by removing
++# ~/.claude/.fnba-bootstrap-done.
++
++set -euo pipefail
++
++BOOTSTRAP_ROOT="/opt/fnba-bootstrap"
++SENTINEL="$HOME/.claude/.fnba-bootstrap-done"
++USE_PAT=0
++
++for arg in "$@"; do
++  case "$arg" in
++    --use-pat) USE_PAT=1 ;;
++    *) echo "unknown flag: $arg" >&2; exit 64 ;;
++  esac
++done
++
++# 0. Idempotency guard
++if [[ -f "$SENTINEL" ]]; then
++  echo "Bootstrap already completed ($(cat "$SENTINEL"))."
++  echo "Remove $SENTINEL to re-run."
++  exit 0
++fi
++
++cat <<EOF
++============================================================
++FNBA Claude Code — first-time homebase setup
++============================================================
++
++About to populate your homebase (= your WSL home directory)
++with starter Claude Code config:
++
++  ~/CLAUDE.md                                    (top-level project guide)
++  ~/.claude/commands/pde.md                      (/pde slash command)
++  ~/.claude/settings.json                        (with Atlassian MCP)
++  ~/.claude/projects/-home-$USER/memory/MEMORY.md
++  ~/.claude/.fnba-bootstrap-done                 (sentinel)
++
++Each write is guarded — existing files will NOT be overwritten.
++EOF
++
++read -r -p "Proceed? [Y/n] " ans
++case "${ans:-Y}" in
++  [Yy]*) ;;
++  *) echo "Aborted."; exit 1 ;;
++esac
++
++# 1. User identity
++default_name="$(git config --global user.name 2>/dev/null || echo "$USER")"
++default_email="$(git config --global user.email 2>/dev/null || echo "${USER}@fnba.com")"
++read -r -p "Your name [${default_name}]: " USER_NAME
++USER_NAME="${USER_NAME:-$default_name}"
++read -r -p "Your email [${default_email}]: " USER_EMAIL
++USER_EMAIL="${USER_EMAIL:-$default_email}"
++
++# 2. Git / SSH
++if [[ "$USE_PAT" -eq 1 ]]; then
++  echo "PAT mode requested but not yet implemented — see README.fnba.md."
++  echo "Continuing without auth setup."
++elif compgen -G "$HOME/.ssh/id_*" > /dev/null; then
++  echo ">> SSH key found in ~/.ssh — using SSH for git auth."
++  mkdir -p "$HOME/.ssh"
++  touch "$HOME/.ssh/known_hosts"
++  if ! grep -q "^github.com " "$HOME/.ssh/known_hosts" 2>/dev/null; then
++    ssh-keyscan -t rsa,ecdsa,ed25519 github.com 2>/dev/null >> "$HOME/.ssh/known_hosts" || true
++  fi
++  git config --global --get user.name  >/dev/null 2>&1 || git config --global user.name  "$USER_NAME"
++  git config --global --get user.email >/dev/null 2>&1 || git config --global user.email "$USER_EMAIL"
++else
++  cat <<EOF
++>> No SSH key found in ~/.ssh.
++   Recommended: run \`ssh-keygen -t ed25519 -C "$USER_EMAIL"\` and add the
++   public key to your GitHub account, then re-run this script.
++   Fallback: \`first-time-setup.sh --use-pat\` (PAT mode — coming soon).
++   Continuing without git auth setup.
++EOF
++fi
++
++# 3. Lay down bundle (guarded copies)
++write_if_absent() {
++  local dest="$1" src="$2"
++  if [[ -e "$dest" ]]; then
++    echo "   skip (exists): $dest"
++  else
++    mkdir -p "$(dirname "$dest")"
++    cp "$src" "$dest"
++    echo "   wrote: $dest"
++  fi
++}
++
++interpolate_if_absent() {
++  local dest="$1" src="$2"
++  if [[ -e "$dest" ]]; then
++    echo "   skip (exists): $dest"
++  else
++    mkdir -p "$(dirname "$dest")"
++    sed -e "s|{{USER_NAME}}|$USER_NAME|g" \
++        -e "s|{{USER_EMAIL}}|$USER_EMAIL|g" \
++        -e "s|{{USER}}|$USER|g" \
++        "$src" > "$dest"
++    echo "   wrote: $dest"
++  fi
++}
++
++echo ">> Writing files..."
++interpolate_if_absent "$HOME/CLAUDE.md"                                       "$BOOTSTRAP_ROOT/CLAUDE.md.tpl"
++write_if_absent      "$HOME/.claude/commands/pde.md"                          "$BOOTSTRAP_ROOT/claude/commands/pde.md"
++interpolate_if_absent "$HOME/.claude/settings.json"                           "$BOOTSTRAP_ROOT/claude/settings.json.tpl"
++write_if_absent      "$HOME/.claude/projects/-home-$USER/memory/MEMORY.md"    "$BOOTSTRAP_ROOT/claude/projects/-home-USER/memory/MEMORY.md"
++
++# 4. Sentinel
++mkdir -p "$HOME/.claude"
++sha="$(cat "$BOOTSTRAP_ROOT/VERSION" 2>/dev/null || echo "unknown")"
++printf 'bootstrap completed: %s | fork: %s\n' "$(date -Iseconds)" "$sha" > "$SENTINEL"
++
++cat <<EOF
++
++============================================================
++Done. To re-run: rm $SENTINEL
++Restart Claude Code to pick up the new commands and MCP servers.
++============================================================
++EOF
+diff --git a/scripts/wsl-up.sh b/scripts/wsl-up.sh
+new file mode 100755
+index 0000000000..81faa871ad
+--- /dev/null
++++ b/scripts/wsl-up.sh
+@@ -0,0 +1,57 @@
++#!/usr/bin/env bash
++# wsl-up.sh — bring up the forked Claude Code devcontainer from a WSL terminal.
++#
++# Detects the invoking WSL user's identity, writes .env if missing, then builds
++# and starts the container and drops you into a shell inside it.
++
++set -euo pipefail
++
++SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
++ENV_FILE="$REPO_ROOT/.env"
++
++# Pull latest fork changes before building. Skip if the tree is dirty so
++# local edits aren't disturbed. Set WSL_UP_NO_PULL=1 to bypass.
++if [[ "${WSL_UP_NO_PULL:-0}" != "1" ]]; then
++  cd "$REPO_ROOT"
++  if [[ -z "$(git status --porcelain)" ]]; then
++    branch="$(git rev-parse --abbrev-ref HEAD)"
++    echo ">> git pull --ff-only origin $branch"
++    git pull --ff-only origin "$branch" || \
++      echo ">> Pull failed (non-fast-forward or network). Continuing with local HEAD."
++  else
++    echo ">> Working tree has local changes; skipping git pull."
++  fi
++fi
++
++if [[ ! -f "$ENV_FILE" ]]; then
++  echo ">> No .env found; generating one from your WSL identity..."
++  cat > "$ENV_FILE" <<EOF
++HOST_USER=$USER
++HOST_UID=$(id -u)
++HOST_GID=$(id -g)
++HOST_HOME=$HOME
++EOF
++  echo ">> Wrote $ENV_FILE:"
++  sed 's/^/   /' "$ENV_FILE"
++else
++  echo ">> Reusing existing $ENV_FILE"
++fi
++
++# shellcheck disable=SC1090
++source "$ENV_FILE"
++
++cd "$REPO_ROOT"
++echo ">> docker compose up -d --build"
++docker compose up -d --build
++
++CONTAINER="claude-${HOST_USER}"
++SENTINEL="/home/${HOST_USER}/.claude/.fnba-bootstrap-done"
++
++if ! docker exec "$CONTAINER" test -f "$SENTINEL"; then
++  echo ">> First-time setup detected; running bootstrap inside $CONTAINER..."
++  docker exec -it "$CONTAINER" bash /opt/fnba-bootstrap/first-time-setup.sh
++fi
++
++echo ">> Attaching to $CONTAINER..."
++exec docker exec -it "$CONTAINER" bash

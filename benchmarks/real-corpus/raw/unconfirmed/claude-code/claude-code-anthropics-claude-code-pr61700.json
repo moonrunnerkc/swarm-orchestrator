@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-claude-code-pr61700",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 61700,
+    "headSha": "e6c71a9ce07bbf2e6f74de4599cf758af44a7232",
+    "baseSha": "39e853e4074d90f27afdfb7ea601e0fc378bd0c5",
+    "title": "[docs] Add cleanup doc for failed telemetry events accumulating without retry (#61687)",
+    "body": "## Summary\n\nDocuments the cleanup workaround for failed telemetry events that accumulate in ~/.claude/telemetry/ and are never retried.\n\nCloses #61687\n\n## Problem\n\n\\1p_failed_events.*.json\\ files accumulate in \\~/.claude/telemetry/\\ when telemetry submission fails, and are never retried on subsequent startups. Files from Jan-Mar 2026 persist through multiple version upgrades.\n\n## Workaround\n\n\\\\\\\bash\nrm -f ~/.claude/telemetry/1p_failed_events.*.json\nexport DISABLE_TELEMETRY=1\n\\\\\\\n\n## Fixes Needed (CLI internal)\n\n1. Add startup scan of telemetry directory to retry failed event files\n2. Delete file after successful flush\n3. Age out files older than 30 days",
+    "author": "giruuuuj",
+    "headRef": "fix/telemetry-retry-61687",
+    "repository": "anthropics/claude-code"
+  },
+  "diffRef": {
+    "repository": "anthropics/claude-code",
+    "headSha": "e6c71a9ce07bbf2e6f74de4599cf758af44a7232",
+    "baseSha": "39e853e4074d90f27afdfb7ea601e0fc378bd0c5"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-claude-code-pr61700.diff",
+  "vendoredAt": "2026-05-24T03:15:42.289Z",
+  "collectedAt": "2026-05-24T03:15:42.289Z"
+}

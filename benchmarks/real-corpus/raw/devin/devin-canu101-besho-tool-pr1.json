@@ -1,0 +1,26 @@
+{
+  "id": "devin-canu101-besho-tool-pr1",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 1,
+    "headSha": "87148c2441d278d351a350406e0e2c06cdae5a7c",
+    "baseSha": "8355efc0a31358d07118d33a0b1fde7920eb5d64",
+    "title": "feat: استخدام رابط الفوترة بدلاً من حقل الحساب الإعلاني",
+    "body": "## Summary\n\nاستبدال حقل \"الحساب الإعلاني\" بحقل \"رابط الفوترة (Billing URL)\" تحت الكوكيز مباشرة.\n\n**التغييرات:**\n- حقل جديد لرابط الفوترة (Billing URL) في التبويب الأول تحت الكوكيز\n- الأداة تستخرج `act_id` تلقائياً من رابط الفوترة\n- رابط الفوترة يُستخدم مباشرة لربط البطاقات (Tab 2)\n- الحساب الإعلاني المُستخرج يُستخدم لإنشاء الإعلانات عبر الـ API (Tab 3)\n- تحديث الترجمات للعربية والإنجليزية\n\n**الفلو الجديد:**\n1. المستخدم يدخل الكوكيز + رابط الفوترة\n2. الأداة تستخرج `act_id` من الرابط → تفتح صفحة Ads Manager لاستخراج التوكن\n3. تبويب البطاقات يستخدم رابط الفوترة مباشرة\n4. تبويب الإعلانات يستخدم الحساب الإعلاني المُستخرج + التوكن\n\n## Review & Testing Checklist for Human\n\n- [ ] تأكد إن حقل رابط الفوترة يظهر تحت الكوكيز في التبويب الأول\n- [ ] جرّب إدخال رابط فوترة فعلي وتأكد من استخراج `act_id` بشكل صحيح\n- [ ] تأكد إن ربط البطاقات يستخدم رابط الفوترة المدخل مباشرة\n- [ ] تأكد إن إنشاء الإعلانات يشتغل بالحساب الإعلاني المستخرج من الرابط\n\n### Notes\n\n- الـ `extract_act_id` function الموجودة بالفعل في الكود بتدعم استخراج الـ act_id من أي صيغة (URL، act_xxx، أو رقم مجرد) فمفيش حاجة اتغيرت فيها\n- الـ fallback في `/api/add_cards` لسه موجود — لو مفيش `billing_url` بيحاول يبني واحد من `ad_account`\n\nLink to Devin session: https://app.devin.ai/sessions/75678c40c85c405288abcc4858b8a8e3\nRequested by: @canu101",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779592023-billing-url-field",
+    "repository": "canu101/besho-tool"
+  },
+  "diffRef": {
+    "repository": "canu101/besho-tool",
+    "headSha": "87148c2441d278d351a350406e0e2c06cdae5a7c",
+    "baseSha": "8355efc0a31358d07118d33a0b1fde7920eb5d64"
+  },
+  "vendoredDiffPath": "devin/devin-canu101-besho-tool-pr1.diff",
+  "vendoredAt": "2026-05-24T03:34:17.542Z",
+  "collectedAt": "2026-05-24T03:34:17.542Z"
+}

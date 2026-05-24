@@ -1,0 +1,26 @@
+{
+  "id": "devin-g2void2-byte-garant-pr230",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 230,
+    "headSha": "9cf0b0766ee4061939e7bb831320f79a361f874b",
+    "baseSha": "43bbf4d0b2d4e0f6a6583c4ad5820c5e6980582c",
+    "title": "chore(admin): static-analysis audit of /admin/settings fields (P8)",
+    "body": "## Summary\n\nRead-only sweep of every column the `app_settings` singleton row exposes through `PATCH /api/admin/settings`. For each field, the audit records the form's stated intent, every backend read site, whether changing the value in the form has any real effect, and a verdict (`WORKING` / `WORKING (conditional)` / `INERT (display only)` / `DEAD CODE`).\n\nOutput is a single markdown doc: `docs/audit/admin-settings-audit.md`.\n\n**This PR adds documentation only.** No code or schema changes — all proposed fixes are deferred to the three follow-up PRs listed at the end of the doc.\n\n### Findings the operator can act on\n\n1. **`invoice_commission_percent` — DEAD CODE.** Zero consumers in `backend/app/services_*.py`, `backend/app/routers/*.py`, `cryptopay.py`, or anywhere else. The column is on the model, the form persists edits, the audit log records the diff — but no business code reads the value. Setting a non-zero number here is a silent UX-trap: the admin thinks invoices will carry a platform fee; they won't.\n\n2. **`min_deposit` (singleton) — INERT.** The wallet deposit path (`services_wallet.create_deposit_invoice`, line 296) enforces **`currency.min_deposit`**, the per-currency override. The singleton value is read only by `routers/admin/settings.py:75` to render the form. The model docstring at `models.py:669-676` acknowledges this is \"a global default kept around for admin display\"; the admin form doesn't. Changing it does nothing.\n\n3. **`min_withdraw` (singleton) — INERT.** Same pattern — `services_wallet.create_withdrawal` (line 916) enforces `currency.min_withdraw`, not `AppSettings.min_withdraw`.\n\n### Fields confirmed wired correctly\n\n`deal_commission_percent` (deals), `vip_commission_percent` (deals, gated on VIP), `inactivity_pending_confirmation_days` + `inactivity_pending_cancellation_days` (sweep loop), `max_active_services_per_user` (services router), `auto_withdraw_enabled` (admin withdrawals + services_wallet), `maintenance_enabled` + `maintenance_message` (maintenance middleware + bot mirror).\n\nEvery field has its read sites cited line-by-line in the doc.\n\n### Recommended follow-up PRs (named in the doc)\n\n- `chore/drop-invoice-commission-percent` — drop the dead column end-to-end (low risk, mechanical).\n- `fix/admin-settings-min-amounts-inert` — either wire the singleton `min_deposit`/`min_withdraw` in as a global floor (Option A), or relabel them as informational and link to `/admin/taxonomy?tab=currencies` (Option B, cheaper). Calling this a product decision in the doc rather than committing to one path here.\n- `chore/admin-settings-help-text` — add tooltips for the non-obvious fields (the `−1` sentinel on `vip_commission_percent`, the silent-fallback semantics of `auto_withdraw_enabled` when `CRYPTOBOT_TOKEN` is unset).\n\n## Review & Testing Checklist for Human\n\n- [ ] Spot-check the citations in the doc against the linked files. The big claim is \"`invoice_commission_percent` has zero consumers\"; the quickest verification is `rg invoice_commission_percent backend/app | grep -v 'models.py\\|seed.py\\|schemas.py\\|routers/admin/settings.py'` — should return no results.\n- [ ] Read the **Recommendations** section and tell me which follow-up PR(s) you want me to open next. The `min_deposit` / `min_withdraw` fix has a product decision baked in (Option A \"wire it in\" vs Option B \"relabel as informational\") that I'd rather have you weigh in on before I write code.\n- [ ] Sanity-check the per-field verdicts in the TL;DR table — if any of them feel off based on production behaviour you've observed, ping me and I'll dig in.\n\n### Notes\n\nNo behaviour changes in this PR, so CI failures (if any) would only be cosmetic (markdown lint, link checking). Pre-commit hooks run only against the markdown file.\n\n\nLink to Devin session: https://app.devin.ai/sessions/18a86fe3f3364c29a771ba31944c295d\nRequested by: @g2void2-byte",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "chore/admin-settings-audit",
+    "repository": "g2void2-byte/garant"
+  },
+  "diffRef": {
+    "repository": "g2void2-byte/garant",
+    "headSha": "9cf0b0766ee4061939e7bb831320f79a361f874b",
+    "baseSha": "43bbf4d0b2d4e0f6a6583c4ad5820c5e6980582c"
+  },
+  "vendoredDiffPath": "negatives/closed-without-merge/devin/devin-g2void2-byte-garant-pr230.diff",
+  "vendoredAt": "2026-05-24T04:27:35.772Z",
+  "collectedAt": "2026-05-24T04:27:35.772Z"
+}

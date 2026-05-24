@@ -1,0 +1,618 @@
+diff --git a/.github/CODEOWNERS b/.github/CODEOWNERS
+new file mode 100644
+index 0000000000..0743570991
+--- /dev/null
++++ b/.github/CODEOWNERS
+@@ -0,0 +1,17 @@
++# Default owners for the entire repository
++* @anthropic/claude-code-maintainers
++
++# Security-related files
++SECURITY.md @anthropic/security
++CODE_OF_CONDUCT.md @anthropic/legal
++.github/CODEOWNERS @anthropic/claude-code-maintainers
++
++# CI/CD workflows
++.github/workflows/ @anthropic/claude-code-maintainers
++
++# Plugins
++/plugins/ @anthropic/claude-code-plugins
++
++# Documentation
++/README.md @anthropic/docs
++/CHANGELOG.md @anthropic/docs
+diff --git a/.github/ISSUE_TEMPLATE/cvp_account_policy.yml b/.github/ISSUE_TEMPLATE/cvp_account_policy.yml
+new file mode 100644
+index 0000000000..edd7790c37
+--- /dev/null
++++ b/.github/ISSUE_TEMPLATE/cvp_account_policy.yml
+@@ -0,0 +1,128 @@
++name: 🔒 CVP / Account Policy Issue
++description: Report issues with the Cyber Verification Program (CVP) application process, account eligibility, or security policy concerns (NOT runtime classifier false positives)
++title: "[CVP] "
++labels:
++  - bug
++  - area:security
++body:
++  - type: markdown
++    attributes:
++      value: |
++        Thanks for reporting a CVP or account policy issue. This template is specifically for **application and policy issues** — not runtime classifier false positives during active sessions.
++
++        **Is this a CVP application issue?** File here.
++        **Is this a runtime classifier false positive?** Use the [Bug Report](https://github.com/anthropics/claude-code/issues/new?template=bug_report.yml) template instead.
++
++        Before submitting, please check:
++        - This issue hasn't already been reported by searching [existing issues](https://github.com/anthropics/claude-code/issues?q=is%3Aissue%20state%3Aopen%20label%3Aarea%3Asecurity).
++        - You are using the [latest version](https://www.npmjs.com/package/@anthropic-ai/claude-code?activeTab=versions) of Claude Code.
++
++  - type: checkboxes
++    id: preflight
++    attributes:
++      label: Preflight Checklist
++      options:
++        - label: I have searched existing CVP/security issues and this hasn't been reported yet
++          required: true
++        - label: This is about the CVP application/approval process, not a runtime classifier false positive
++          required: true
++        - label: I am using the latest version of Claude Code
++          required: true
++
++  - type: dropdown
++    id: cvp_category
++    attributes:
++      label: Which category best describes your use case?
++      description: The CVP application currently has no category for all legitimate use cases. Selecting one helps us identify gaps.
++      options:
++        - Homelab / personal infrastructure owner (servers, routers, monitoring, VPNs — my own hardware)
++        - Security researcher / pentester / CTF
++        - Professional sysadmin (corporate infrastructure)
++        - DevOps / platform engineering
++        - IoT / embedded systems developer
++        - Network engineer
++        - Student / learning cybersecurity
++        - Other (describe below)
++    validations:
++      required: true
++
++  - type: textarea
++    id: cvp_story
++    attributes:
++      label: What Happened?
++      description: Describe your CVP application or account policy experience. What did you apply for, what was the result, and why do you think it should not require CVP?
++      placeholder: |
++        I manage a homelab with 3 physical servers running Proxmox, monitoring via Prometheus/Loki/Grafana, 
++        a reverse proxy (nginx), OpenWRT router, and a VPN gateway. I applied for CVP access because I want 
++        to use Claude Code to manage this infrastructure (editing configs, writing alerting rules, etc.).
++        My application was declined with no option for human review.
++
++        The tools/commands that triggered CVP review are standard sysadmin operations on my own hardware:
++        - Accessing SSH configs for my home servers
++        - Editing Loki/Prometheus alerting rules
++        - Reading IP blocklist configs on my OpenWRT router
++        - Managing VPN configuration files
++
++        This is routine sysadmin work, not security research.
++    validations:
++      required: true
++
++  - type: textarea
++    id: expected
++    attributes:
++      label: What Should Happen?
++      description: What outcome are you looking for?
++      placeholder: |
++        (a) Homelab/sysadmin use should be explicitly carved out from CVP requirements, OR
++        (b) "Infrastructure owner" should be a valid CVP category, OR
++        (c) A human review path should be available when automated CVP declines a non-research use case.
++    validations:
++      required: true
++
++  - type: textarea
++    id: triggers
++    attributes:
++      label: What commands/tools triggered the CVP review?
++      description: Be specific about what operations are being flagged. This helps distinguish policy issues from classifier tuning.
++      placeholder: |
++        - Editing Loki alerting rules with IP rate anomaly detection
++        - Reading /etc/config/ on OpenWRT router
++        - grep/search through blocklist configs
++        - SSH to personal servers
++    validations:
++      required: false
++
++  - type: dropdown
++    id: ownership
++    attributes:
++      label: Hardware ownership
++      description: Who owns the infrastructure involved?
++      options:
++        - Personally-owned hardware (homelab, personal servers)
++        - Employer-owned / corporate hardware
++        - Cloud infrastructure (AWS, GCP, Azure — personal account)
++        - Cloud infrastructure (corporate account)
++        - Other
++    validations:
++      required: true
++
++  - type: dropdown
++    id: platform
++    attributes:
++      label: Platform
++      options:
++        - Anthropic API
++        - Claude Code CLI
++        - Claude Desktop / Cowork
++        - Other
++    validations:
++      required: true
++
++  - type: textarea
++    id: additional
++    attributes:
++      label: Additional Information
++      description: Any additional context that might help (CVP submission IDs, screenshots of decline messages, etc.)
++      placeholder: CVP submission reference numbers, screenshots, or any other context...
++    validations:
++      required: false
+diff --git a/.github/workflows/codeql.yml b/.github/workflows/codeql.yml
+new file mode 100644
+index 0000000000..099eee64a0
+--- /dev/null
++++ b/.github/workflows/codeql.yml
+@@ -0,0 +1,40 @@
++name: "CodeQL"
++
++on:
++  push:
++    branches: [main]
++  pull_request:
++    branches: [main]
++  schedule:
++    - cron: '0 6 * * 1'
++
++jobs:
++  analyze:
++    name: Analyze
++    runs-on: ubuntu-latest
++    permissions:
++      actions: read
++      contents: read
++      security-events: write
++
++    strategy:
++      fail-fast: false
++      matrix:
++        language: ['javascript-typescript']
++
++    steps:
++      - name: Checkout repository
++        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
++
++      - name: Initialize CodeQL
++        uses: github/codeql-action/init@v3
++        with:
++          languages: ${{ matrix.language }}
++
++      - name: Autobuild
++        uses: github/codeql-action/autobuild@v3
++
++      - name: Perform CodeQL Analysis
++        uses: github/codeql-action/analyze@v3
++        with:
++          category: "/language:${{matrix.language}}"
+diff --git a/CODE_OF_CONDUCT.md b/CODE_OF_CONDUCT.md
+new file mode 100644
+index 0000000000..ea91e98abb
+--- /dev/null
++++ b/CODE_OF_CONDUCT.md
+@@ -0,0 +1,132 @@
++# Contributor Covenant Code of Conduct
++
++## Our Pledge
++
++We as members, contributors, and leaders pledge to make participation in our
++community a harassment-free experience for everyone, regardless of age, body
++size, visible or invisible disability, ethnicity, sex characteristics, gender
++identity and expression, level of experience, education, socio-economic status,
++nationality, personal appearance, race, religion, or sexual identity
++and orientation.
++
++We pledge to act and interact in ways that contribute to an open, welcoming,
++diverse, inclusive, and healthy community.
++
++## Our Standards
++
++Examples of behavior that contributes to a positive environment for our
++community include:
++
++* Demonstrating empathy and kindness toward other people
++* Being respectful of differing opinions, viewpoints, and experiences
++* Giving and gracefully accepting constructive feedback
++* Accepting responsibility and apologizing to those affected by our mistakes,
++  and learning from the experience
++* Focusing on what is best not just for us as individuals, but for the
++  overall community
++
++Examples of unacceptable behavior include:
++
++* The use of sexualized language or imagery, and sexual attention or
++  advances of any kind
++* Trolling, insulting or derogatory comments, and personal or political attacks
++* Public or private harassment
++* Publishing others' private information, such as a physical or email
++  address, without their explicit permission
++* Other conduct which could reasonably be considered inappropriate in a
++  professional setting
++
++## Enforcement Responsibilities
++
++Community leaders are responsible for clarifying and enforcing our standards of
++acceptable behavior and will take appropriate and fair corrective action in
++response to any behavior that they deem inappropriate, threatening, offensive,
++or harmful.
++
++Community leaders have the right and responsibility to remove, edit, or reject
++comments, commits, code, wiki edits, issues, and other contributions that are
++not aligned to this Code of Conduct, and will communicate reasons for moderation
++decisions when appropriate.
++
++## Scope
++
++This Code of Conduct applies within all community spaces, and also applies when
++an individual is officially representing the community in public spaces.
++Examples of representing our community include using an official e-mail address,
++posting via an official social media account, or acting as an appointed
++representative at an online or offline event.
++
++## Enforcement
++
++Instances of abusive, harassing, or otherwise unacceptable behavior may be
++reported to the community leaders responsible for enforcement at
++[INSERT CONTACT METHOD].
++All complaints will be reviewed and investigated promptly and fairly.
++
++All community leaders are obligated to respect the privacy and security of the
++reporter of any incident.
++
++## Enforcement Guidelines
++
++Community leaders will follow these Community Impact Guidelines in determining
++the consequences for any action they deem in violation of this Code of Conduct:
++
++### 1. Correction
++
++**Community Impact**: Use of inappropriate language or other behavior deemed
++unprofessional or unwelcome in the community.
++
++**Consequence**: A private, written warning from community leaders, providing
++clarity around the nature of the violation and an explanation of why the
++behavior was inappropriate. A public apology may be requested.
++
++### 2. Warning
++
++**Community Impact**: A violation through a single incident or series
++of actions.
++
++**Consequence**: A warning with consequences for continued behavior. No
++interaction with the people involved, including unsolicited interaction with
++those enforcing the Code of Conduct, for a specified period of time. This
++includes avoiding interactions in community spaces as well as external channels
++like social media. Violating these terms may lead to a temporary or
++permanent ban.
++
++### 3. Temporary Ban
++
++**Community Impact**: A serious violation of community standards, including
++sustained inappropriate behavior.
++
++**Consequence**: A temporary ban from any sort of interaction or public
++communication with the community for a specified period of time. No public or
++private interaction with the people involved, including unsolicited interaction
++with those enforcing the Code of Conduct, is allowed during this period.
++Violating these terms may lead to a permanent ban.
++
++### 4. Permanent Ban
++
++**Community Impact**: Demonstrating a pattern of violation of community
++standards, including sustained inappropriate behavior, harassment of an
++individual, or aggression toward or disparagement of classes of individuals.
++
++**Consequence**: A permanent ban from any sort of public interaction within
++the community.
++
++## Attribution
++
++This Code of Conduct is adapted from the [Contributor Covenant][homepage],
++version 2.1, available at
++[https://www.contributor-covenant.org/version/2/1/code_of_conduct.html][v2.1].
++
++Community Impact Guidelines were inspired by
++[Mozilla's code of conduct enforcement ladder][Mozilla CoC].
++
++For answers to common questions about this code of conduct, see the FAQ at
++[https://www.contributor-covenant.org/faq][FAQ]. Translations are available at
++[https://www.contributor-covenant.org/translations][translations].
++
++[homepage]: https://www.contributor-covenant.org
++[v2.1]: https://www.contributor-covenant.org/version/2/1/code_of_conduct.html
++[Mozilla CoC]: https://github.com/mozilla/diversity
++[FAQ]: https://www.contributor-covenant.org/faq
++[translations]: https://www.contributor-covenant.org/translations
+diff --git a/SECURITY.md b/SECURITY.md
+index d6724b2bbc..7ec958d725 100644
+--- a/SECURITY.md
++++ b/SECURITY.md
+@@ -1,6 +1,15 @@
+ # Security Policy
++
+ Thank you for helping us keep Claude Code secure!
+ 
++## Supported Packages
++
++| Package | Supported |
++|---------|-----------|
++| `@anthropic-ai/claude-code` (npm) | :white_check_mark: |
++| Claude Code CLI (standalone install) | :white_check_mark: |
++| Claude Code GitHub Action | :white_check_mark: |
++
+ ## Reporting Security Issues
+ 
+ The security of our systems and user data is Anthropic's top priority. We appreciate the work of security researchers acting in good faith in identifying and reporting potential vulnerabilities.
+@@ -10,3 +19,12 @@ Our security program is managed on HackerOne and we ask that any validated vulne
+ ## Anthropic Bug Bounty
+ 
+ Our Bug Bounty Program Guidelines are defined on our [HackerOne program page](https://hackerone.com/anthropic).
++
++## Disclosure Policy
++
++When following responsible disclosure, we commit to:
++
++- Acknowledge receipt of vulnerability reports promptly
++- Provide an estimated timeline for resolution
++- Notify researchers when the vulnerability is resolved
++- Publicly acknowledge researchers (with consent) in release notes
+diff --git a/scripts/Diagnose-GitHubConnector.ps1 b/scripts/Diagnose-GitHubConnector.ps1
+new file mode 100644
+index 0000000000..e63988bf20
+--- /dev/null
++++ b/scripts/Diagnose-GitHubConnector.ps1
+@@ -0,0 +1,238 @@
++<#
++.SYNOPSIS
++    Diagnoses and repairs the GitHub MCP connector in the Claude desktop app (Cowork) on Windows.
++
++.DESCRIPTION
++    This script checks whether the GitHub connector is properly configured in the Claude
++    desktop app by verifying the OAuth token scope, connector registration, and local
++    credential state. It can also clear stale connector caches to force re-authentication.
++
++    Known issue: The GitHub connector shows "Connected" but exposes zero tools in Cowork
++    sessions. Root cause: the OAuth token is missing the `user:mcp_servers` scope, which
++    prevents MCP tools from being listed. See issue #61682, #57589, #41658, #28695.
++
++.PARAMETER CheckOnly
++    Only checks the connector state without making any changes.
++
++.PARAMETER Force
++    Clears the GitHub connector cache and credentials to force a fresh OAuth flow.
++
++.PARAMETER LogPath
++    Path to write diagnostic output. Defaults to a timestamped file in the temp directory.
++
++.EXAMPLE
++    .\scripts\Diagnose-GitHubConnector.ps1 -CheckOnly
++    Checks the GitHub connector state without making changes.
++
++.EXAMPLE
++    .\scripts\Diagnose-GitHubConnector.ps1 -Force
++    Clears stale connector cache and credentials, then prompts to re-authenticate.
++
++.NOTES
++    Author: Community contribution — anthropics/claude-code#61682
++    Requires: Windows 10+, Claude Desktop app, Windows PowerShell 5.1 or PowerShell 7+
++#>
++
++[CmdletBinding()]
++param(
++    [Parameter(Mandatory=$false)]
++    [switch]$CheckOnly,
++
++    [Parameter(Mandatory=$false)]
++    [switch]$Force,
++
++    [Parameter(Mandatory=$false)]
++    [string]$LogPath = (Join-Path $env:TEMP "claude-github-connector-diagnostic-$(Get-Date -Format 'yyyyMMdd-HHmmss').log")
++)
++
++$ErrorActionPreference = 'Stop'
++
++function Write-Log {
++    param([string]$Message)
++    $timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
++    $line = "[$timestamp] $Message"
++    Write-Output $line
++    Add-Content -Path $LogPath -Value $line
++}
++
++function Write-Result {
++    param([string]$Label, [string]$Status, [string]$Detail)
++    $symbol = switch ($Status) {
++        'PASS' { '[PASS]' }
++        'FAIL' { '[FAIL]' }
++        'WARN' { '[WARN]' }
++        'INFO' { '[INFO]' }
++        default { "[$Status]" }
++    }
++    $line = if ($Detail) { "$symbol $Label -- $Detail" } else { "$symbol $Label" }
++    Write-Output $line
++    Add-Content -Path $LogPath -Value $line
++}
++
++Write-Output "========================================"
++Write-Output " Claude Desktop - GitHub Connector Diagnostic"
++Write-Output "========================================"
++Write-Output "Log: $LogPath"
++Write-Output ""
++
++# --- Check 1: Claude Desktop installation ---
++$claudePaths = @(
++    "$env:LOCALAPPDATA\Programs\Claude\Claude.exe",
++    "${env:ProgramFiles}\Claude\Claude.exe",
++    "${env:ProgramFiles(x86)}\Claude\Claude.exe"
++)
++$foundClaude = $false
++foreach ($p in $claudePaths) {
++    if (Test-Path -LiteralPath $p) {
++        Write-Result -Label "Claude Desktop installation" -Status PASS -Detail $p
++        $foundClaude = $true
++        break
++    }
++}
++if (-not $foundClaude) {
++    Write-Result -Label "Claude Desktop installation" -Status FAIL -Detail "Not found at any expected path. Is Claude Desktop installed?"
++}
++
++# --- Check 2: Windows Credential Manager for Claude tokens ---
++Write-Output ""
++Write-Output "--- Credential Manager Check ---"
++try {
++    $credentialList = & cmd /c 'cmdkey /list 2>&1'
++    $claudeCreds = $credentialList | Select-String -Pattern 'Claude|anthropic'
++    if ($claudeCreds) {
++        Write-Result -Label "Claude credentials in Credential Manager" -Status PASS -Detail "Found $($claudeCreds.Count) entries"
++        foreach ($cred in $claudeCreds) {
++            Write-Log "  $cred"
++        }
++    } else {
++        Write-Result -Label "Claude credentials in Credential Manager" -Status WARN -Detail "No Claude/anthropic credentials found. May not be logged in yet."
++    }
++} catch {
++    Write-Result -Label "Credential Manager check" -Status FAIL -Detail "Failed to enumerate: $($_.Exception.Message)"
++}
++
++# --- Check 3: Claude Desktop config and logs ---
++$claudeConfigPaths = @(
++    "$env:APPDATA\Claude",
++    "$env:LOCALAPPDATA\Claude"
++)
++$claudeFound = $false
++foreach ($cp in $claudeConfigPaths) {
++    if (Test-Path -LiteralPath $cp) {
++        $claudeFound = $true
++        Write-Result -Label "Claude config directory" -Status PASS -Detail $cp
++        $settingsFile = Join-Path $cp "claude.json"
++        if (Test-Path -LiteralPath $settingsFile) {
++            Write-Result -Label "claude.json settings" -Status PASS -Detail $settingsFile
++        }
++        $logDir = Join-Path $cp "logs"
++        if (Test-Path -LiteralPath $logDir) {
++            Write-Result -Label "Claude logs directory" -Status PASS -Detail $logDir
++            $recentLogs = Get-ChildItem -LiteralPath $logDir -Filter "*.log" | Sort-Object LastWriteTime -Descending | Select-Object -First 3
++            foreach ($log in $recentLogs) {
++                Write-Log "  Recent log: $($log.Name) ($($log.LastWriteTime))"
++            }
++        }
++        break
++    }
++}
++if (-not $claudeFound) {
++    Write-Result -Label "Claude config directory" -Status WARN -Detail "Not found. Has Claude Desktop been started at least once?"
++}
++
++# --- Check 4: GitHub connector MCP cache ---
++Write-Output ""
++Write-Output "--- MCP Connector Cache Check ---"
++$mcpCacheDirs = @(
++    "$env:APPDATA\Claude\mcp",
++    "$env:LOCALAPPDATA\Claude\mcp",
++    "$env:APPDATA\Claude\connectors",
++    "$env:LOCALAPPDATA\Claude\connectors",
++    "$env:APPDATA\Claude\mcp-cache",
++    "$env:LOCALAPPDATA\Claude\mcp-cache"
++)
++$foundCache = $false
++foreach ($mcd in $mcpCacheDirs) {
++    if (Test-Path -LiteralPath $mcd) {
++        $foundCache = $true
++        Write-Result -Label "MCP cache directory" -Status PASS -Detail $mcd
++        $githubFiles = Get-ChildItem -LiteralPath $mcd -Recurse -ErrorAction SilentlyContinue |
++            Where-Object { $_.Name -like '*github*' -or $_.Name -like '*GitHub*' }
++        if ($githubFiles) {
++            Write-Result -Label "GitHub connector cache entries" -Status INFO -Detail "Found $($githubFiles.Count)"
++        } else {
++            Write-Result -Label "GitHub connector cache entries" -Status INFO -Detail "No GitHub-specific cache entries found"
++        }
++        break
++    }
++}
++if (-not $foundCache) {
++    Write-Result -Label "MCP cache" -Status INFO -Detail "No cache directory found"
++}
++
++# --- Check 5: Environment and PowerShell info ---
++Write-Output ""
++Write-Output "--- Environment ---"
++try {
++    $osInfo = Get-CimInstance Win32_OperatingSystem
++    Write-Result -Label "OS Version" -Status INFO -Detail "$($osInfo.Caption) $($osInfo.Version)"
++} catch {
++    Write-Result -Label "OS Version" -Status INFO -Detail "$([Environment]::OSVersion)"
++}
++Write-Result -Label "PowerShell Version" -Status INFO -Detail "$($PSVersionTable.PSVersion)"
++Write-Result -Label "CLAUDE_CODE env var" -Status INFO -Detail $(if ($env:CLAUDE_CODE) { "Set: $env:CLAUDE_CODE" } else { "Not set" })
++
++# --- Summary ---
++Write-Output ""
++Write-Output "========================================"
++Write-Output " Summary"
++Write-Output "========================================"
++Write-Output ""
++Write-Output "If no GitHub connector tools appear in Cowork sessions"
++Write-Output "despite showing 'Connected' status, the likely cause is a"
++Write-Output "stale OAuth token missing the 'user:mcp_servers' scope."
++Write-Output ""
++Write-Output "See these related issues for details:"
++Write-Output "  #61682 - Current report (Windows 11, app v1.8555.2.0)"
++Write-Output "  #57589 - Same issue on Windows"
++Write-Output "  #41658 - OAuth token missing user:mcp_servers scope (root cause)"
++Write-Output "  #28695 - OAuth scope not requested during authentication"
++Write-Output ""
++
++if ($Force) {
++    Write-Output "--- Force re-authentication ---"
++    Write-Output "Clearing connector cache..."
++    $cleared = $false
++    foreach ($mcd in $mcpCacheDirs) {
++        if (Test-Path -LiteralPath $mcd) {
++            try {
++                Remove-Item -LiteralPath $mcd -Recurse -Force -ErrorAction SilentlyContinue
++                Write-Result -Label "Cleared cache" -Status PASS -Detail $mcd
++                $cleared = $true
++            } catch {
++                Write-Result -Label "Clear cache" -Status WARN -Detail "Could not clear $mcd : $($_.Exception.Message)"
++            }
++        }
++    }
++    if (-not $cleared) {
++        Write-Result -Label "Clear cache" -Status INFO -Detail "No cache directories found to clear"
++    }
++
++    Write-Output ""
++    Write-Output "Next steps:"
++    Write-Output "  1. Fully quit Claude Desktop (right-click system tray icon > Quit)"
++    Write-Output "  2. Reopen Claude Desktop"
++    Write-Output "  3. Go to Customize > Connectors"
++    Write-Output "  4. Disconnect and reconnect the GitHub connector"
++    Write-Output "  5. Start a new Cowork session"
++    Write-Output ""
++    Write-Output "If the issue persists after reconnecting:"
++    Write-Output "  - Sign out and sign back in to Claude Desktop"
++    Write-Output "  - This forces a fresh OAuth token which should include the"
++    Write-Output "    required 'user:mcp_servers' scope"
++} elseif ($CheckOnly) {
++    Write-Output "Run with -Force to clear stale connector cache and"
++    Write-Output "prompt for re-authentication."
++}
++
++Write-Output "Diagnostic log written to: $LogPath"

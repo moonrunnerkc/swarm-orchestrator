@@ -1,0 +1,26 @@
+{
+  "id": "aider-paul-gauthier-aider-pr5159",
+  "agent": {
+    "vendor": "aider",
+    "confidence": "high",
+    "source": "repo-owner=paul-gauthier"
+  },
+  "pr": {
+    "number": 5159,
+    "headSha": "fc9059a16f8a794a0f4f6b2084ea2e0eba409a0a",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1",
+    "title": "fix: make console output resilient to terminal encoding",
+    "body": "## Why\n\nFixes #5128.\n\nOn consoles whose codepage isn't UTF-8 (for example Windows cp1252), aider crashes with an uncaught UnicodeEncodeError as soon as any output contains a character the codepage can't encode — checkmarks, arrows, box-drawing characters, emoji, or non-Latin text. The traceback bottoms out in `aider/io.py` `_tool_message` -> `console.print` -> rich's `_write_buffer`.\n\n`_tool_message` already tries an ASCII fallback, but it can't recover: when rich's `file.write` raises, the unencodable text stays in rich's internal buffer (the `del self._buffer[:]` after the write never runs), so the retry re-flushes the same bad buffer and raises again. `tool_output` had no guard at all. The result is that essentially any decorated output takes down the whole session.\n\n## What\n\nRelax the console output stream's error handler from `strict` to `replace` when the console is constructed. Unencodable characters are then emitted as a placeholder instead of raising, which fixes every console-backed output path at once rather than guarding individual call sites.\n\n- An explicit, non-strict error handler is left untouched.\n- Streams that can't be reconfigured are handled gracefully.\n- No new dependencies, no behavior change on UTF-8 terminals.\n\n## Test\n\nAdded regression tests that drive the real output paths against a strict cp1252 stream (a stand-in for a legacy Windows console) and assert no crash with unencodable characters replaced, plus a test that an explicit error handler is preserved.",
+    "author": "ATOM00blue",
+    "headRef": "fix/console-encode-error-resilient-output",
+    "repository": "paul-gauthier/aider"
+  },
+  "diffRef": {
+    "repository": "paul-gauthier/aider",
+    "headSha": "fc9059a16f8a794a0f4f6b2084ea2e0eba409a0a",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1"
+  },
+  "vendoredDiffPath": "unconfirmed/aider/aider-paul-gauthier-aider-pr5159.diff",
+  "vendoredAt": "2026-05-24T03:19:10.062Z",
+  "collectedAt": "2026-05-24T03:19:10.062Z"
+}

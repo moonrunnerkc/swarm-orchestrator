@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-python-pr1542",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1542,
+    "headSha": "8345450045cf73622f3741b13572573823a24bf0",
+    "baseSha": "9aa85c8a3c099e8a49206aad37ff1e96af69b824",
+    "title": "fix(streaming): use parse_obj fallback to preserve nested event types (fixes #941)",
+    "body": "## Problem\n\nWhen Pydantic's union discriminator silently returns the raw dict instead of a typed model, `accumulate_event` raises `TypeError` at the second `isinstance` check:\n\n```\nUnexpected event runtime type, after deserialising twice - {'type': 'content_block_delta', 'index': 0, 'delta': {'type': 'text_delta', 'text': '...\\}} - <class 'dict'>\n```\n\n## Why existing PRs (#1167, #1287, #1448, #1467) do not fully fix it\n\nPRs #1287, #1448, and #1467 all add a type-map fallback, but use `model_construct(**raw)`. That method skips Pydantic validation and leaves **nested fields as raw dicts** — so `event.delta` inside a `content_block_delta` event remains `{\"type\": \"text_delta\", \"text\": \"...\"}`. The moment `accumulate_event` accesses `event.delta.type`, a secondary `AttributeError` is raised and the text is never accumulated.\n\nPR #1167 fixes the root cause in `_models.py` but changes core model-construction logic in a way that is hard to verify will not have side effects elsewhere.\n\n## This fix\n\nReplace `model_construct` with `parse_obj()` — the SDK's existing Pydantic v1/v2 compatibility helper (in `_compat.py`). `parse_obj` runs full validation, so nested union fields like `delta` are properly resolved to their typed objects (`TextDelta`, `InputJSONDelta`, etc.), not left as raw dicts. If `parse_obj` itself raises, the original `TypeError` is preserved.\n\nThe same fallback is applied symmetrically to `_beta_messages.py`.\n\n## Changes\n\n- `src/anthropic/lib/streaming/_messages.py` — add `_RAW_EVENT_TYPE_MAP`, import concrete event classes and `parse_obj`, apply fallback in `accumulate_event`\n- `src/anthropic/lib/streaming/_beta_messages.py` — same for the beta path\n- `tests/lib/streaming/test_messages.py` — three regression tests for the non-beta path (single delta accumulates, multiple deltas accumulate, unknown type still errors)\n- `tests/lib/streaming/test_partial_json.py` — three matching regression tests for the beta path (`TestBetaRawDictFallback`)\n\n## Test plan\n\n- `test_accumulate_event_raw_dict_text_delta_is_fully_typed` — passes a raw dict `content_block_delta` through `accumulate_event` and asserts `snapshot.content[0].text == \"hello\"`, which only passes if `event.delta.type` was accessible (i.e. delta is a typed `TextDelta`, not a dict)\n- `test_accumulate_event_raw_dict_multiple_deltas_accumulate` — three raw dict deltas build up `\"Hello there!\"`\n- `test_accumulate_event_raw_dict_unknown_type_still_raises` — unknown type string still raises `(TypeError, RuntimeError)`\n- Beta variants of all three in `TestBetaRawDictFallback` (in `test_partial_json.py`)\n\n---\n\n*Written with [Claude Code](https://claude.ai/code)*",
+    "author": "Echolonius",
+    "headRef": "fix/streaming-deserialization-fallback",
+    "repository": "anthropics/anthropic-sdk-python"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-python",
+    "headSha": "8345450045cf73622f3741b13572573823a24bf0",
+    "baseSha": "9aa85c8a3c099e8a49206aad37ff1e96af69b824"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-python-pr1542.diff",
+  "vendoredAt": "2026-05-24T03:17:31.045Z",
+  "collectedAt": "2026-05-24T03:17:31.045Z"
+}

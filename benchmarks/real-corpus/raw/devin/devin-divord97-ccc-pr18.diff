@@ -1,0 +1,362 @@
+diff --git a/deploy/freeswitch/conf/autoload_configs/verto.conf.xml b/deploy/freeswitch/conf/autoload_configs/verto.conf.xml
+index eaa8a5d..29a5e80 100644
+--- a/deploy/freeswitch/conf/autoload_configs/verto.conf.xml
++++ b/deploy/freeswitch/conf/autoload_configs/verto.conf.xml
+@@ -23,6 +23,8 @@
+       <param name="local-network" value="localnet.auto"/>
+       <param name="outbound-codec-string" value="opus,PCMU,PCMA"/>
+       <param name="inbound-codec-string" value="opus,PCMU,PCMA"/>
++      <param name="outbound-video-codec-string" value="VP8,H264"/>
++      <param name="inbound-video-codec-string" value="VP8,H264"/>
+       <param name="apply-candidate-acl" value="localnet.auto"/>
+       <param name="apply-candidate-acl" value="wan_v4.auto"/>
+       <param name="timer-name" value="soft"/>
+@@ -42,6 +44,8 @@
+       <param name="local-network" value="localnet.auto"/>
+       <param name="outbound-codec-string" value="opus,PCMU,PCMA"/>
+       <param name="inbound-codec-string" value="opus,PCMU,PCMA"/>
++      <param name="outbound-video-codec-string" value="VP8,H264"/>
++      <param name="inbound-video-codec-string" value="VP8,H264"/>
+       <param name="apply-candidate-acl" value="localnet.auto"/>
+       <param name="apply-candidate-acl" value="wan_v4.auto"/>
+       <param name="timer-name" value="soft"/>
+diff --git a/internal/application/outbound/service.go b/internal/application/outbound/service.go
+index 8bc6305..c61a35b 100644
+--- a/internal/application/outbound/service.go
++++ b/internal/application/outbound/service.go
+@@ -38,6 +38,7 @@ type DialRequest struct {
+ 	TenantID    int64
+ 	AgentUserID int64
+ 	Callee      string
++	MediaType   call.MediaType
+ 	CLIPolicyID *int64
+ }
+ 
+@@ -67,6 +68,7 @@ func (s *Service) Dial(ctx context.Context, req DialRequest) (*call.Call, error)
+ 	agentID := req.AgentUserID
+ 	input := call.CreateCallInput{
+ 		TenantID:      req.TenantID,
++		MediaType:     req.MediaType,
+ 		Caller:        cli.Number,
+ 		Callee:        req.Callee,
+ 		AgentUserID:   &agentID,
+@@ -96,6 +98,7 @@ type InternalDialRequest struct {
+ 	CalleeAgentID int64
+ 	CallerExt     string
+ 	CalleeExt     string
++	MediaType     call.MediaType
+ }
+ 
+ // DialInternal creates an internal (agent-to-agent) call.
+@@ -103,6 +106,7 @@ func (s *Service) DialInternal(ctx context.Context, req InternalDialRequest) (*c
+ 	agentID := req.CallerAgentID
+ 	c, err := s.callSvc.CreateInternalCall(ctx, call.CreateCallInput{
+ 		TenantID:    req.TenantID,
++		MediaType:   req.MediaType,
+ 		Caller:      req.CallerExt,
+ 		Callee:      req.CalleeExt,
+ 		AgentUserID: &agentID,
+diff --git a/internal/domain/call/entity.go b/internal/domain/call/entity.go
+index 96e917f..4a37320 100644
+--- a/internal/domain/call/entity.go
++++ b/internal/domain/call/entity.go
+@@ -73,6 +73,15 @@ const (
+ 	MediaTypeVideo MediaType = "video"
+ )
+ 
++var validMediaTypes = map[MediaType]bool{
++	MediaTypeAudio: true,
++	MediaTypeVideo: true,
++}
++
++func ValidMediaType(mt MediaType) bool {
++	return validMediaTypes[mt]
++}
++
+ type Call struct {
+ 	ID                  int64           `db:"id" json:"id"`
+ 	TenantID            int64           `db:"tenant_id" json:"tenant_id"`
+diff --git a/internal/domain/call/mock_repo.go b/internal/domain/call/mock_repo.go
+index 49cab0d..72528d0 100644
+--- a/internal/domain/call/mock_repo.go
++++ b/internal/domain/call/mock_repo.go
+@@ -52,6 +52,9 @@ func (r *MockCallRepo) ListWithFilter(_ context.Context, tenantID int64, filter
+ 		if filter.CallType != nil && c.CallType != *filter.CallType {
+ 			continue
+ 		}
++		if filter.MediaType != nil && c.MediaType != *filter.MediaType {
++			continue
++		}
+ 		if filter.Status != nil && c.Status != *filter.Status {
+ 			continue
+ 		}
+diff --git a/internal/domain/call/repository.go b/internal/domain/call/repository.go
+index 7f74c04..ec3a3f6 100644
+--- a/internal/domain/call/repository.go
++++ b/internal/domain/call/repository.go
+@@ -8,6 +8,7 @@ import (
+ type CallListFilter struct {
+ 	Direction *CallDirection
+ 	CallType  *CallType
++	MediaType *MediaType
+ 	Status    *CallStatus
+ 	Caller    string
+ 	Callee    string
+diff --git a/internal/domain/call/service.go b/internal/domain/call/service.go
+index 201f235..5b0fa9c 100644
+--- a/internal/domain/call/service.go
++++ b/internal/domain/call/service.go
+@@ -27,6 +27,7 @@ type CreateCallInput struct {
+ 	TenantID      int64
+ 	Direction     CallDirection
+ 	CallType      CallType
++	MediaType     MediaType
+ 	Caller        string
+ 	Callee        string
+ 	AgentUserID   *int64
+@@ -36,6 +37,18 @@ type CreateCallInput struct {
+ 	SIPTrunkID    *int64
+ }
+ 
++var ErrInvalidMediaType = fmt.Errorf("call: invalid media type, must be audio or video")
++
++func resolveMediaType(mt MediaType) (MediaType, error) {
++	if mt == "" {
++		return MediaTypeAudio, nil
++	}
++	if !ValidMediaType(mt) {
++		return "", ErrInvalidMediaType
++	}
++	return mt, nil
++}
++
+ func (s *CallService) CreateInboundCall(ctx context.Context, in CreateCallInput) (*Call, error) {
+ 	if in.Direction == "" {
+ 		in.Direction = DirectionInbound
+@@ -43,6 +56,10 @@ func (s *CallService) CreateInboundCall(ctx context.Context, in CreateCallInput)
+ 	if in.CallType == "" {
+ 		in.CallType = CallTypeNormal
+ 	}
++	mt, err := resolveMediaType(in.MediaType)
++	if err != nil {
++		return nil, err
++	}
+ 
+ 	now := time.Now()
+ 	c := &Call{
+@@ -50,7 +67,7 @@ func (s *CallService) CreateInboundCall(ctx context.Context, in CreateCallInput)
+ 		TenantID:      in.TenantID,
+ 		Direction:     in.Direction,
+ 		CallType:      in.CallType,
+-		MediaType:     MediaTypeAudio,
++		MediaType:     mt,
+ 		Caller:        in.Caller,
+ 		Callee:        in.Callee,
+ 		IVRFlowID:     in.IVRFlowID,
+@@ -128,6 +145,10 @@ func (s *CallService) CreateOutboundCall(ctx context.Context, in CreateCallInput
+ 	if in.CallType == "" {
+ 		in.CallType = CallTypeNormal
+ 	}
++	mt, err := resolveMediaType(in.MediaType)
++	if err != nil {
++		return nil, err
++	}
+ 
+ 	now := time.Now()
+ 	c := &Call{
+@@ -135,7 +156,7 @@ func (s *CallService) CreateOutboundCall(ctx context.Context, in CreateCallInput
+ 		TenantID:      in.TenantID,
+ 		Direction:     in.Direction,
+ 		CallType:      in.CallType,
+-		MediaType:     MediaTypeAudio,
++		MediaType:     mt,
+ 		Caller:        in.Caller,
+ 		Callee:        in.Callee,
+ 		AgentUserID:   in.AgentUserID,
+@@ -172,6 +193,10 @@ func (s *CallService) CreateInternalCall(ctx context.Context, in CreateCallInput
+ 	}
+ 	in.Direction = DirectionOutbound
+ 	in.CallType = CallTypeInternal
++	mt, err := resolveMediaType(in.MediaType)
++	if err != nil {
++		return nil, err
++	}
+ 
+ 	now := time.Now()
+ 	c := &Call{
+@@ -179,7 +204,7 @@ func (s *CallService) CreateInternalCall(ctx context.Context, in CreateCallInput
+ 		TenantID:    in.TenantID,
+ 		Direction:   in.Direction,
+ 		CallType:    in.CallType,
+-		MediaType:   MediaTypeAudio,
++		MediaType:   mt,
+ 		Caller:      in.Caller,
+ 		Callee:      in.Callee,
+ 		AgentUserID: in.AgentUserID,
+diff --git a/internal/domain/call/service_test.go b/internal/domain/call/service_test.go
+index c9945d9..674d471 100644
+--- a/internal/domain/call/service_test.go
++++ b/internal/domain/call/service_test.go
+@@ -470,3 +470,100 @@ func TestCallService_Whisper_PreConnect(t *testing.T) {
+ 	err := svc.WhisperPreConnect(context.Background(), c.ID, "来电: VIP客户 张三")
+ 	require.NoError(t, err)
+ }
++
++// --- Video Call Tests ---
++
++func TestCallService_CreateVideoInbound(t *testing.T) {
++	svc := NewCallService(NewMockCallRepo(), NewMockCallEventRepo(), NewMockIVRTrackingRepo())
++	c, err := svc.CreateInboundCall(context.Background(), CreateCallInput{
++		TenantID:  1,
++		Caller:    "+8613800001111",
++		Callee:    "+862188880001",
++		MediaType: MediaTypeVideo,
++	})
++	require.NoError(t, err)
++	assert.Equal(t, MediaTypeVideo, c.MediaType)
++	assert.Equal(t, DirectionInbound, c.Direction)
++}
++
++func TestCallService_CreateVideoOutbound(t *testing.T) {
++	svc := NewCallService(NewMockCallRepo(), NewMockCallEventRepo(), NewMockIVRTrackingRepo())
++	c, err := svc.CreateOutboundCall(context.Background(), CreateCallInput{
++		TenantID:  1,
++		Caller:    "+862188880001",
++		Callee:    "+8613800001111",
++		MediaType: MediaTypeVideo,
++	})
++	require.NoError(t, err)
++	assert.Equal(t, MediaTypeVideo, c.MediaType)
++	assert.Equal(t, DirectionOutbound, c.Direction)
++}
++
++func TestCallService_CreateVideoInternal(t *testing.T) {
++	svc := NewCallService(NewMockCallRepo(), NewMockCallEventRepo(), NewMockIVRTrackingRepo())
++	agentID := int64(100)
++	c, err := svc.CreateInternalCall(context.Background(), CreateCallInput{
++		TenantID:    1,
++		Caller:      "1001",
++		Callee:      "1002",
++		MediaType:   MediaTypeVideo,
++		AgentUserID: &agentID,
++	})
++	require.NoError(t, err)
++	assert.Equal(t, MediaTypeVideo, c.MediaType)
++	assert.Equal(t, CallTypeInternal, c.CallType)
++}
++
++func TestCallService_DefaultMediaType_Audio(t *testing.T) {
++	svc := NewCallService(NewMockCallRepo(), NewMockCallEventRepo(), NewMockIVRTrackingRepo())
++	c, err := svc.CreateInboundCall(context.Background(), CreateCallInput{
++		TenantID: 1,
++		Caller:   "+8613800001111",
++		Callee:   "+862188880001",
++	})
++	require.NoError(t, err)
++	assert.Equal(t, MediaTypeAudio, c.MediaType)
++}
++
++func TestValidMediaType(t *testing.T) {
++	assert.True(t, ValidMediaType(MediaTypeAudio))
++	assert.True(t, ValidMediaType(MediaTypeVideo))
++	assert.False(t, ValidMediaType(MediaType("chat")))
++	assert.False(t, ValidMediaType(MediaType("")))
++}
++
++func TestCallService_InvalidMediaType_Rejected(t *testing.T) {
++	svc := NewCallService(NewMockCallRepo(), NewMockCallEventRepo(), NewMockIVRTrackingRepo())
++	_, err := svc.CreateInboundCall(context.Background(), CreateCallInput{
++		TenantID:  1,
++		Caller:    "+8613800001111",
++		Callee:    "+862188880001",
++		MediaType: MediaType("foobar"),
++	})
++	assert.ErrorIs(t, err, ErrInvalidMediaType)
++}
++
++func TestCallService_ListCalls_FilterMediaType(t *testing.T) {
++	svc := NewCallService(NewMockCallRepo(), NewMockCallEventRepo(), NewMockIVRTrackingRepo())
++	ctx := context.Background()
++
++	_, _ = svc.CreateInboundCall(ctx, CreateCallInput{TenantID: 1, Caller: "a", Callee: "b"})
++	_, _ = svc.CreateInboundCall(ctx, CreateCallInput{TenantID: 1, Caller: "c", Callee: "d", MediaType: MediaTypeVideo})
++	_, _ = svc.CreateOutboundCall(ctx, CreateCallInput{TenantID: 1, Caller: "e", Callee: "f", MediaType: MediaTypeVideo})
++
++	video := MediaTypeVideo
++	calls, total, err := svc.ListCalls(ctx, 1, CallListFilter{MediaType: &video}, 0, 10)
++	require.NoError(t, err)
++	assert.Equal(t, int64(2), total)
++	assert.Len(t, calls, 2)
++	for _, c := range calls {
++		assert.Equal(t, MediaTypeVideo, c.MediaType)
++	}
++
++	audio := MediaTypeAudio
++	calls, total, err = svc.ListCalls(ctx, 1, CallListFilter{MediaType: &audio}, 0, 10)
++	require.NoError(t, err)
++	assert.Equal(t, int64(1), total)
++	assert.Len(t, calls, 1)
++	assert.Equal(t, MediaTypeAudio, calls[0].MediaType)
++}
+diff --git a/internal/infrastructure/mysql/call_repo.go b/internal/infrastructure/mysql/call_repo.go
+index 26c34e3..8ee135b 100644
+--- a/internal/infrastructure/mysql/call_repo.go
++++ b/internal/infrastructure/mysql/call_repo.go
+@@ -70,6 +70,10 @@ func (r *CallRepo) ListWithFilter(ctx context.Context, tenantID int64, filter ca
+ 		where += " AND call_type = ?"
+ 		args = append(args, *filter.CallType)
+ 	}
++	if filter.MediaType != nil {
++		where += " AND media_type = ?"
++		args = append(args, *filter.MediaType)
++	}
+ 	if filter.Status != nil {
+ 		where += " AND status = ?"
+ 		args = append(args, *filter.Status)
+diff --git a/internal/interfaces/http/handler/call.go b/internal/interfaces/http/handler/call.go
+index 2228150..98b2601 100644
+--- a/internal/interfaces/http/handler/call.go
++++ b/internal/interfaces/http/handler/call.go
+@@ -44,6 +44,10 @@ func (h *CallHandler) List(w http.ResponseWriter, r *http.Request) {
+ 		callType := call.CallType(ct)
+ 		filter.CallType = &callType
+ 	}
++	if mt := r.URL.Query().Get("media_type"); mt != "" {
++		mediaType := call.MediaType(mt)
++		filter.MediaType = &mediaType
++	}
+ 	if s := r.URL.Query().Get("status"); s != "" {
+ 		status := call.CallStatus(s)
+ 		filter.Status = &status
+@@ -102,6 +106,7 @@ func (h *CallHandler) Dial(w http.ResponseWriter, r *http.Request) {
+ 	var input struct {
+ 		AgentUserID int64  `json:"agent_user_id"`
+ 		Callee      string `json:"callee"`
++		MediaType   string `json:"media_type"`
+ 		CLIPolicyID *int64 `json:"cli_policy_id"`
+ 	}
+ 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+@@ -113,6 +118,7 @@ func (h *CallHandler) Dial(w http.ResponseWriter, r *http.Request) {
+ 		TenantID:    tenantID,
+ 		AgentUserID: input.AgentUserID,
+ 		Callee:      input.Callee,
++		MediaType:   call.MediaType(input.MediaType),
+ 		CLIPolicyID: input.CLIPolicyID,
+ 	})
+ 	if err != nil {
+@@ -129,6 +135,7 @@ func (h *CallHandler) InternalDial(w http.ResponseWriter, r *http.Request) {
+ 		CalleeAgentID int64  `json:"callee_agent_id"`
+ 		CallerExt     string `json:"caller_ext"`
+ 		CalleeExt     string `json:"callee_ext"`
++		MediaType     string `json:"media_type"`
+ 	}
+ 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+ 		response.Error(w, http.StatusBadRequest, "invalid request body")
+@@ -141,6 +148,7 @@ func (h *CallHandler) InternalDial(w http.ResponseWriter, r *http.Request) {
+ 		CalleeAgentID: input.CalleeAgentID,
+ 		CallerExt:     input.CallerExt,
+ 		CalleeExt:     input.CalleeExt,
++		MediaType:     call.MediaType(input.MediaType),
+ 	})
+ 	if err != nil {
+ 		response.Error(w, http.StatusBadRequest, err.Error())

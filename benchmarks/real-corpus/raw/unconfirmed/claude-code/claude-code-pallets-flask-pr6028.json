@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-pallets-flask-pr6028",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "body=claude-code-footer"
+  },
+  "pr": {
+    "number": 6028,
+    "headSha": "0d2d49e77975249d36135f96dab5fcdd4f6d14d6",
+    "baseSha": "954f5684e4841aad84a8eec7ace7b81a0d3f6831",
+    "title": "Fix FLASK_DEBUG env var ignored with click 8.4.0",
+    "body": "## Summary\n\nFixes #6025.\n\n- In click 8.4.0, `ctx.get_parameter_source()` returns `None` during eager callbacks instead of `ParameterSource.DEFAULT`\n- The guard in `_set_debug` only skipped for `source is not None`, so when `source=None` (click 8.4.0), the callback proceeded to overwrite `FLASK_DEBUG=1` with `\"0\"`\n- Changed `if source is not None and source in (...)` → `if source is None or source in (...)` to treat `None` the same as `DEFAULT`\n\n## Changes\n\n- `src/flask/cli.py`: 1-line fix in `_set_debug` guard condition\n- `tests/test_cli.py`: Regression test that sets `FLASK_DEBUG=1` env var and verifies it isn't overwritten when `--debug` isn't explicitly passed\n\n## Test plan\n\n- [x] Added `test_flaskgroup_debug_env` regression test\n- [x] Verified the fix matches the root cause analysis in #6025\n- [x] `_set_app` callback does not have this issue (it checks `value is None`, not parameter source)\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+    "author": "Terrajlz",
+    "headRef": "fix/flask-debug-env-click-840",
+    "repository": "pallets/flask"
+  },
+  "diffRef": {
+    "repository": "pallets/flask",
+    "headSha": "0d2d49e77975249d36135f96dab5fcdd4f6d14d6",
+    "baseSha": "954f5684e4841aad84a8eec7ace7b81a0d3f6831"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-pallets-flask-pr6028.diff",
+  "vendoredAt": "2026-05-24T03:24:36.264Z",
+  "collectedAt": "2026-05-24T03:24:36.264Z"
+}

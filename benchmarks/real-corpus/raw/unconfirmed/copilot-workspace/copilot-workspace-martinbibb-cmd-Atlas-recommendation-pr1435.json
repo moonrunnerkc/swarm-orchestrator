@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-martinbibb-cmd-Atlas-recommendation-pr1435",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 1435,
+    "headSha": "fa26750bac183019f6ab164173fc9e5d6fecd9a9",
+    "baseSha": "241c7958ea364e01ce0738555d38a00582ad1f47",
+    "title": "PR28: Add customer-pack visual tokens and print/mobile layout foundation",
+    "body": "This PR starts the first restrained visual layer for the evidence-driven customer pack: calm, print-safe presentation and clearer hierarchy, without introducing diagrams, animations, simulator graphics, or any evidence-copy changes. It focuses on reusable tokens and layout primitives so PDF and portal/mobile surfaces share the same baseline language.\n\n- **Visual token foundation (shared, low-ink)**\n  - Introduces pack-level CSS tokens for ink/surface/border palette, spacing rhythm, typography scale, radii, and line-height.\n  - Anchors renderer semantics with explicit hooks on the root document:\n    - `data-visual-tokens=\"customer-pack-v1\"`\n    - `data-layout-mode=\"print-and-portal\"`\n\n- **Section rhythm + card hierarchy**\n  - Normalizes section cadence via a consistent spacing rhythm across cover, recommendation evidence, and canonical sections.\n  - Strengthens structural hierarchy with subtle section header separation and card-surface contrast (still print-safe and restrained).\n\n- **Confidence badges, warning chips, metric tiles**\n  - Refines badge/chip treatments to severity/confidence variants using muted, print-friendly tones.\n  - Converts metrics into simple responsive tiles (`auto-fit` grid) to improve scanability without adding decorative visuals.\n\n- **Print-safe typography + A4 constraints**\n  - Keeps A4 `@page` rules and break-inside controls; tightens print styles to avoid heavy fills and preserve legibility in low-ink output.\n\n- **Responsive hooks for portal/mobile compatibility**\n  - Adds explicit layout hook on card grids: `data-layout=\"responsive-metric-cards\"`.\n  - Adds breakpoint behavior for small screens (card header stacking, timeline column collapse, reduced paddings).\n\n- **Renderer contract + docs alignment**\n  - Updates renderer assertions/snapshots for new structural hooks.\n  - Updates customer-pack renderer docs to reflect PR28 scope (tokens/rhythm/hierarchy foundation only).\n\n```tsx\n<article\n  className=\"cprv1-document\"\n  data-visual-tokens=\"customer-pack-v1\"\n  data-layout-mode=\"print-and-portal\"\n>\n  ...\n  <div className=\"cprv1-card-grid\" data-layout=\"responsive-metric-cards\">\n    ...\n  </div>\n</article>\n```",
+    "author": "Copilot",
+    "headRef": "copilot/pr28-customer-pack-visual-tokens",
+    "repository": "martinbibb-cmd/Atlas-recommendation"
+  },
+  "diffRef": {
+    "repository": "martinbibb-cmd/Atlas-recommendation",
+    "headSha": "fa26750bac183019f6ab164173fc9e5d6fecd9a9",
+    "baseSha": "241c7958ea364e01ce0738555d38a00582ad1f47"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-martinbibb-cmd-Atlas-recommendation-pr1435.diff",
+  "vendoredAt": "2026-05-24T03:06:10.836Z",
+  "collectedAt": "2026-05-24T03:06:10.836Z"
+}

@@ -1,0 +1,6 @@
+{
+  "verdict": "clean",
+  "rationale": "Replaces the `ad_account` input field with a `billing_url` field as the PR title promises. `app.py`'s `/api/verify_and_extract` now reads `billing_url` from the request, returns early with `الرجاء إدخال رابط الفوترة` if empty, calls `extract_act_id(billing_url)` to derive `resolved_account`, and includes `billing_url` in the response payload. `/api/add_cards` retains the documented `ad_account`-to-billing-URL fallback (`act_id = ad_account.replace('act_', '').strip()`) so the older flow still works. `index.html` swaps the `ad_account_input` element and `lbl_ad_account*` translation keys for `billing_url_input`/`lbl_billing_*`, adds a `STATE.billingUrl` field, threads it through `verifyAndExtract()` and `addCards()` request bodies (both auto and manual modes), and adds `no_billing_url`/updated `no_account` strings in both Arabic and English `LABELS` blocks. The flow described in the PR body is implemented end-to-end with consistent state tracking.",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T14:00:00.000Z"
+}

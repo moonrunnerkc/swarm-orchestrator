@@ -1,0 +1,649 @@
+diff --git a/src/components/about/AboutPage.tsx b/src/components/about/AboutPage.tsx
+index e2c11de..6a83c57 100644
+--- a/src/components/about/AboutPage.tsx
++++ b/src/components/about/AboutPage.tsx
+@@ -1,8 +1,9 @@
+ "use client";
+ 
+-import React, { useState } from "react";
++import React, { useEffect, useState } from "react";
+ import { ImageWithFallback } from "../figma/ImageWithFallback";
+ import { motion, useScroll, useTransform, useReducedMotion } from "framer-motion";
++import { scrollToHashWithRetry } from "@/lib/scroll-to-hash";
+ import { Card, CardContent } from "../ui/card";
+ import { Button } from "../ui/button";
+ import { Badge } from "../ui/badge";
+@@ -252,6 +253,12 @@ export function AboutPage() {
+   const { scrollYProgress } = useScroll();
+   const y = useTransform(scrollYProgress, [0, 1], [0, -50]);
+ 
++  useEffect(() => {
++    const hash = window.location.hash;
++    if (!hash) return;
++    return scrollToHashWithRetry(hash);
++  }, []);
++
+   return (
+     <div className="overflow-hidden">
+       {/* Dynamic Hero Section */}
+diff --git a/src/components/layout/Navigation.tsx b/src/components/layout/Navigation.tsx
+index 5332201..6a9df78 100644
+--- a/src/components/layout/Navigation.tsx
++++ b/src/components/layout/Navigation.tsx
+@@ -18,8 +18,6 @@ import {
+   Info,
+   Headphones,
+   Users,
+-  Bookmark,
+-  ScrollText,
+   UserPlus,
+   FileText as FileTextIcon,
+   MapPin,
+@@ -44,7 +42,12 @@ import {
+   DropdownMenuItem,
+   DropdownMenuTrigger,
+ } from "../ui/dropdown-menu";
+-import { discoverLinks, isDiscoverPath } from "../../lib/nav-links";
++import {
++  aboutLinks,
++  discoverLinks,
++  isAboutPath,
++  isDiscoverPath,
++} from "../../lib/nav-links";
+ 
+ interface NavigationProps {
+   className?: string;
+@@ -64,18 +67,8 @@ interface MobileCategory {
+   links: NavLink[];
+ }
+ 
+-// Main navigation links
++// Desktop top-bar links (Home is the logo; About/Discover are dropdowns)
+ const mainLinks: NavLink[] = [
+-  {
+-    name: "Home",
+-    path: "/",
+-    icon: <Home className="h-5 w-5" />,
+-  },
+-  {
+-    name: "About",
+-    path: "/about",
+-    icon: <Info className="h-5 w-5" />,
+-  },
+   {
+     name: "Bulletin",
+     path: "/bulletin",
+@@ -86,22 +79,6 @@ const mainLinks: NavLink[] = [
+     path: "/calendar",
+     icon: <Calendar className="h-5 w-5" />,
+   },
+-  {
+-    name: "Ministries",
+-    path: "/ministries",
+-    icon: <Heart className="h-5 w-5" />,
+-  },
+-  {
+-    name: "Music",
+-    path: "https://www.youtube.com/channel/UC9BS4wB8yHp6DIHUENQOSSw",
+-    icon: <Music className="h-5 w-5" />,
+-    external: true,
+-  },
+-  {
+-    name: "Contact",
+-    path: "/contact",
+-    icon: <Mail className="h-5 w-5" />,
+-  },
+ ];
+ 
+ // For mobile dock, we'll use a subset of the main links
+@@ -144,21 +121,6 @@ const mobileMenuCategories: MobileCategory[] = [
+         path: "/about",
+         icon: <Info className="h-5 w-5" />,
+       },
+-      {
+-        name: "Our Beliefs",
+-        path: "/about#beliefs",
+-        icon: <Bookmark className="h-5 w-5" />,
+-      },
+-      {
+-        name: "Our History",
+-        path: "/about#history",
+-        icon: <ScrollText className="h-5 w-5" />,
+-      },
+-      {
+-        name: "Our Leaders",
+-        path: "/about#leaders",
+-        icon: <UserPlus className="h-5 w-5" />,
+-      },
+       {
+         name: "Our Locations",
+         path: "/locations",
+@@ -345,6 +307,28 @@ export function Navigation({ className }: NavigationProps) {
+     setIsOpen(false);
+   }, []);
+ 
++  const navLinkClass = (isActive: boolean) =>
++    cn(
++      "relative px-3 py-2 rounded-md font-medium text-sm transition-all duration-300",
++      scrolled ? "py-1.5" : "py-2",
++      isActive
++        ? "text-primary"
++        : "text-foreground/70 hover:text-primary hover:bg-primary/5",
++    );
++
++  const navDropdownTriggerClass = (isActive: boolean) =>
++    cn(
++      navLinkClass(isActive),
++      "inline-flex items-center outline-none focus-visible:ring-2 focus-visible:ring-primary",
++    );
++
++  const navActiveUnderline = (
++    <span
++      className="absolute inset-x-2 bottom-0 h-0.5 bg-primary rounded-full"
++      aria-hidden="true"
++    />
++  );
++
+   return (
+     <>
+       <header
+@@ -360,7 +344,11 @@ export function Navigation({ className }: NavigationProps) {
+         <div className="container">
+           <div className="flex items-center justify-between">
+             {/* Logo */}
+-            <Link href="/" className="relative flex items-center z-10 group">
++            <Link
++              href="/"
++              className="relative flex items-center z-10 group"
++              aria-label="Home"
++            >
+               <div className="flex items-center perspective">
+                 <div className="flex flex-col">
+                   <BrandLogo />
+@@ -374,103 +362,64 @@ export function Navigation({ className }: NavigationProps) {
+                 aria-label="Main Navigation"
+               >
+                 <div className="flex space-x-1 lg:space-x-2">
+-                  {mainLinks.map((link) => {
+-                    if (link.name === "About") {
+-                      return (
+-                        <React.Fragment key="about-discover">
+-                          <Link
+-                            href={link.path}
+-                            className={cn(
+-                              "relative px-3 py-2 rounded-md font-medium text-sm transition-all duration-300",
+-                              scrolled ? "py-1.5" : "py-2",
+-                              pathname === link.path
+-                                ? "text-primary"
+-                                : "text-foreground/70 hover:text-primary hover:bg-primary/5",
+-                            )}
+-                            aria-current={
+-                              pathname === link.path ? "page" : undefined
+-                            }
+-                          >
+-                            <span className="relative z-10">{link.name}</span>
+-                            {pathname === link.path && (
+-                              <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-primary rounded-full" />
+-                            )}
++                  <DropdownMenu>
++                    <DropdownMenuTrigger
++                      className={navDropdownTriggerClass(isAboutPath(pathname))}
++                    >
++                      <span className="relative z-10">About</span>
++                      <ChevronDown className="ml-1 h-3.5 w-3.5 opacity-70" />
++                      {isAboutPath(pathname) && navActiveUnderline}
++                    </DropdownMenuTrigger>
++                    <DropdownMenuContent align="center" className="w-48">
++                      {aboutLinks.map((item) => (
++                        <DropdownMenuItem key={item.path} asChild>
++                          <Link href={item.path} className="cursor-pointer">
++                            {item.label}
+                           </Link>
+-                          <DropdownMenu>
+-                            <DropdownMenuTrigger
+-                              className={cn(
+-                                "relative inline-flex items-center px-3 py-2 rounded-md font-medium text-sm transition-all duration-300 outline-none focus-visible:ring-2 focus-visible:ring-primary",
+-                                scrolled ? "py-1.5" : "py-2",
+-                                isDiscoverPath(pathname)
+-                                  ? "text-primary"
+-                                  : "text-foreground/70 hover:text-primary hover:bg-primary/5",
+-                              )}
+-                            >
+-                              <span className="relative z-10">Discover</span>
+-                              <ChevronDown className="ml-1 h-3.5 w-3.5 opacity-70" />
+-                              {isDiscoverPath(pathname) && (
+-                                <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-primary rounded-full" />
+-                              )}
+-                            </DropdownMenuTrigger>
+-                            <DropdownMenuContent align="center" className="w-48">
+-                              <DropdownMenuItem asChild>
+-                                <Link href="/learn" className="cursor-pointer">
+-                                  All Topics
+-                                </Link>
+-                              </DropdownMenuItem>
+-                              {discoverLinks.map((item) => (
+-                                <DropdownMenuItem key={item.path} asChild>
+-                                  <Link href={item.path} className="cursor-pointer">
+-                                    {item.label}
+-                                  </Link>
+-                                </DropdownMenuItem>
+-                              ))}
+-                            </DropdownMenuContent>
+-                          </DropdownMenu>
+-                        </React.Fragment>
+-                      );
+-                    }
+-
+-                    if (link.external) {
+-                      return (
+-                        <a
+-                          key={link.path}
+-                          href={link.path}
+-                          target="_blank"
+-                          rel="noopener noreferrer"
+-                          className={cn(
+-                            "relative px-3 py-2 rounded-md font-medium text-sm transition-all duration-300",
+-                            scrolled ? "py-1.5" : "py-2",
+-                            "text-foreground/70 hover:text-primary hover:bg-primary/5",
+-                          )}
+-                        >
+-                          <span className="relative z-10">{link.name}</span>
+-                        </a>
+-                      );
+-                    }
++                        </DropdownMenuItem>
++                      ))}
++                    </DropdownMenuContent>
++                  </DropdownMenu>
++
++                  <DropdownMenu>
++                    <DropdownMenuTrigger
++                      className={navDropdownTriggerClass(
++                        isDiscoverPath(pathname),
++                      )}
++                    >
++                      <span className="relative z-10">Discover</span>
++                      <ChevronDown className="ml-1 h-3.5 w-3.5 opacity-70" />
++                      {isDiscoverPath(pathname) && navActiveUnderline}
++                    </DropdownMenuTrigger>
++                    <DropdownMenuContent align="center" className="w-48">
++                      <DropdownMenuItem asChild>
++                        <Link href="/learn" className="cursor-pointer">
++                          All Topics
++                        </Link>
++                      </DropdownMenuItem>
++                      {discoverLinks.map((item) => (
++                        <DropdownMenuItem key={item.path} asChild>
++                          <Link href={item.path} className="cursor-pointer">
++                            {item.label}
++                          </Link>
++                        </DropdownMenuItem>
++                      ))}
++                    </DropdownMenuContent>
++                  </DropdownMenu>
+ 
+-                    return (
+-                      <Link
+-                        key={link.path}
+-                        href={link.path}
+-                        className={cn(
+-                          "relative px-3 py-2 rounded-md font-medium text-sm transition-all duration-300",
+-                          scrolled ? "py-1.5" : "py-2",
+-                          pathname === link.path
+-                            ? "text-primary"
+-                            : "text-foreground/70 hover:text-primary hover:bg-primary/5",
+-                        )}
+-                        aria-current={
+-                          pathname === link.path ? "page" : undefined
+-                        }
+-                      >
+-                        <span className="relative z-10">{link.name}</span>
+-                        {pathname === link.path && (
+-                          <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-primary rounded-full" />
+-                        )}
+-                      </Link>
+-                    );
+-                  })}
++                  {mainLinks.map((link) => (
++                    <Link
++                      key={link.path}
++                      href={link.path}
++                      className={navLinkClass(pathname === link.path)}
++                      aria-current={
++                        pathname === link.path ? "page" : undefined
++                      }
++                    >
++                      <span className="relative z-10">{link.name}</span>
++                      {pathname === link.path && navActiveUnderline}
++                    </Link>
++                  ))}
+                 </div>
+               </nav>
+             )}
+diff --git a/src/components/layout/ScrollToTop.tsx b/src/components/layout/ScrollToTop.tsx
+index d474181..519ef7c 100644
+--- a/src/components/layout/ScrollToTop.tsx
++++ b/src/components/layout/ScrollToTop.tsx
+@@ -2,113 +2,111 @@
+ 
+ import { useEffect, useRef } from "react";
+ import { usePathname } from "next/navigation";
++import { scrollToHashWithRetry } from "@/lib/scroll-to-hash";
+ 
++const LEGAL_PATHS = ["/privacy", "/terms", "/cookies"];
++
++function resetScrollPosition() {
++  window.scrollTo(0, 0);
++
++  if (document.documentElement) document.documentElement.scrollTop = 0;
++  if (document.body) document.body.scrollTop = 0;
++
++  const mainElement = document.querySelector("main");
++  if (mainElement) mainElement.scrollTop = 0;
++}
+ 
+ /**
+- * A more aggressive ScrollToTop component that forcefully resets scroll position
+- * using multiple strategies to ensure it works across all browsers and situations
++ * Resets scroll on route changes and scrolls to hash targets when present.
++ * Hash is read inside effects so it stays in sync with Next.js client navigation.
+  */
+ export function ScrollToTop() {
+   const pathname = usePathname();
+-  const hash = typeof window !== "undefined" ? window.location.hash : "";
+   const prevPathRef = useRef<string | null>(null);
+-  
++
+   useEffect(() => {
+-    // Skip initial render
+-    if (prevPathRef.current === null) {
+-      prevPathRef.current = pathname;
+-      return;
+-    }
++    const hash = window.location.hash;
++    let cleanupHashRetry: (() => void) | undefined;
++    const timers: ReturnType<typeof setTimeout>[] = [];
++
++    const scrollIfHashPresent = () => {
++      const currentHash = window.location.hash;
++      if (!currentHash) return false;
++
++      cleanupHashRetry?.();
++      cleanupHashRetry = scrollToHashWithRetry(currentHash);
++      return true;
++    };
+ 
+-    // Handle hash scrolling
+     if (hash) {
+-      const scrollToHash = () => {
+-        const id = hash.replace('#', '');
+-        const element = document.getElementById(id);
+-        if (element) {
+-          element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+-          return true;
+-        }
+-        return false;
++      if (!scrollIfHashPresent()) {
++        timers.push(setTimeout(scrollIfHashPresent, 50));
++        timers.push(setTimeout(scrollIfHashPresent, 150));
++        timers.push(setTimeout(scrollIfHashPresent, 300));
++      }
++
++      prevPathRef.current = pathname;
++      return () => {
++        cleanupHashRetry?.();
++        timers.forEach(clearTimeout);
+       };
++    }
+ 
+-      // Try immediately
+-      if (!scrollToHash()) {
+-        // Retry after a short delay for dynamic content
+-        setTimeout(scrollToHash, 100);
+-        setTimeout(scrollToHash, 500);
+-      }
+-      
++    const isFirstRender = prevPathRef.current === null;
++    const pathnameChanged = prevPathRef.current !== pathname;
++
++    if (isFirstRender) {
+       prevPathRef.current = pathname;
+       return;
+     }
+ 
+-    // Define paths that should handle their own scrolling (legal/tabbed pages)
+-    const LEGAL_PATHS = ['/privacy', '/terms', '/cookies'];
+-    const isLegalTransition = 
+-      LEGAL_PATHS.includes(prevPathRef.current || '') && 
++    if (!pathnameChanged) {
++      return;
++    }
++
++    const isLegalTransition =
++      LEGAL_PATHS.includes(prevPathRef.current || "") &&
+       LEGAL_PATHS.includes(pathname);
+-    
++
++    prevPathRef.current = pathname;
++
+     if (isLegalTransition) {
+-      prevPathRef.current = pathname;
+       return;
+     }
+-    
+-    // Force immediate scroll reset in the most direct way
+-    window.scrollTo(0, 0);
+-    
+-    // Some browsers might need a slight delay
+-    const immediateTimer = setTimeout(() => {
+-      window.scrollTo(0, 0);
+-    }, 0);
+-    
+-    // For iOS Safari and some other mobile browsers that might need more time
+-    const shortTimer = setTimeout(() => {
+-      window.scrollTo(0, 0);
+-      
+-      // Force document element and body to top as well
+-      if (document.documentElement) document.documentElement.scrollTop = 0;
+-      if (document.body) document.body.scrollTop = 0;
+-      
+-      // Use all possible scroll methods
+-      window.scrollTo({
+-        top: 0,
+-        left: 0,
+-        behavior: 'auto' // Use auto instead of smooth for consistent behavior
+-      });
+-    }, 10);
+-    
+-    // Last resort timer with max priority
+-    const backupTimer = setTimeout(() => {
+-      window.scrollTo(0, 0);
+-      
+-      // Attempt again with a different technique
+-      if (typeof window.scroll === 'function') {
+-        window.scroll(0, 0);
+-      }
+-      
+-      // Force document element and body to top again
+-      if (document.documentElement) document.documentElement.scrollTop = 0;
+-      if (document.body) document.body.scrollTop = 0;
+-      
+-      // Try scrolling the main element if it exists
+-      const mainElement = document.querySelector('main');
+-      if (mainElement) {
+-        mainElement.scrollTop = 0;
+-      }
+-    }, 50);
+-    
+-    // Update the previous path
+-    prevPathRef.current = pathname;
+-    
+-    // Clean up timers
++
++    // Next.js can apply the hash slightly after pathname updates.
++    timers.push(
++      setTimeout(() => {
++        if (scrollIfHashPresent()) return;
++        resetScrollPosition();
++      }, 0),
++    );
++
++    timers.push(
++      setTimeout(() => {
++        if (window.location.hash) {
++          scrollIfHashPresent();
++          return;
++        }
++        resetScrollPosition();
++      }, 50),
++    );
++
+     return () => {
+-      clearTimeout(immediateTimer);
+-      clearTimeout(shortTimer);
+-      clearTimeout(backupTimer);
++      cleanupHashRetry?.();
++      timers.forEach(clearTimeout);
+     };
+-  }, [pathname, hash]);
+-  
+-  // This component doesn't render anything
++  }, [pathname]);
++
++  useEffect(() => {
++    const handleHashChange = () => {
++      const hash = window.location.hash;
++      if (hash) scrollToHashWithRetry(hash);
++    };
++
++    window.addEventListener("hashchange", handleHashChange);
++    return () => window.removeEventListener("hashchange", handleHashChange);
++  }, []);
++
+   return null;
+-}
+\ No newline at end of file
++}
+diff --git a/src/lib/nav-links.ts b/src/lib/nav-links.ts
+index 35564ba..ce2a478 100644
+--- a/src/lib/nav-links.ts
++++ b/src/lib/nav-links.ts
+@@ -1,14 +1,29 @@
+-export interface DiscoverLink {
++export interface NavDropdownLink {
+   label: string;
+   path: string;
+ }
+ 
+-export const discoverLinks: DiscoverLink[] = [
++export const aboutLinks: NavDropdownLink[] = [
++  { label: "About Us", path: "/about" },
++  { label: "Locations", path: "/locations" },
++  { label: "Ministries", path: "/ministries" },
++  { label: "Contact", path: "/contact" },
++];
++
++export const discoverLinks: NavDropdownLink[] = [
+   { label: "The 12 Tribes", path: "/learn/12-tribes" },
+   { label: "Holy Days", path: "/learn/holy-days" },
+   { label: "Pagan Holidays", path: "/learn/pagan-holidays" },
+ ];
+ 
++const aboutPaths = ["/about", "/locations", "/ministries", "/contact"];
++
++export function isAboutPath(pathname: string): boolean {
++  return aboutPaths.some(
++    (path) => pathname === path || pathname.startsWith(`${path}/`),
++  );
++}
++
+ export function isDiscoverPath(pathname: string): boolean {
+   return (
+     pathname === "/learn" ||
+diff --git a/src/lib/scroll-to-hash.ts b/src/lib/scroll-to-hash.ts
+new file mode 100644
+index 0000000..d78105d
+--- /dev/null
++++ b/src/lib/scroll-to-hash.ts
+@@ -0,0 +1,81 @@
++const DEFAULT_HEADER_OFFSET = 88;
++
++export function parseHashPath(path: string): { basePath: string; hash: string } {
++  const hashIndex = path.indexOf("#");
++  if (hashIndex === -1) {
++    return { basePath: path, hash: "" };
++  }
++
++  return {
++    basePath: path.slice(0, hashIndex) || "/",
++    hash: path.slice(hashIndex),
++  };
++}
++
++export function navigateToHashPath(
++  path: string,
++  pathname: string,
++  router: { push: (href: string) => void },
++): void {
++  const { basePath, hash } = parseHashPath(path);
++
++  if (hash && pathname === basePath) {
++    window.history.pushState(null, "", path);
++    scrollToHashWithRetry(hash);
++    return;
++  }
++
++  router.push(path);
++}
++
++export function scrollToHashSection(
++  hash: string,
++  options?: { behavior?: ScrollBehavior; offset?: number },
++): boolean {
++  const id = hash.replace(/^#/, "");
++  if (!id) return false;
++
++  const element = document.getElementById(id);
++  if (!element) return false;
++
++  const offset = options?.offset ?? DEFAULT_HEADER_OFFSET;
++  const top =
++    element.getBoundingClientRect().top + window.scrollY - offset;
++
++  window.scrollTo({
++    top: Math.max(0, top),
++    behavior: options?.behavior ?? "smooth",
++  });
++
++  return true;
++}
++
++export function scrollToHashWithRetry(
++  hash: string,
++  options?: {
++    behavior?: ScrollBehavior;
++    offset?: number;
++    maxAttempts?: number;
++    intervalMs?: number;
++  },
++): () => void {
++  const maxAttempts = options?.maxAttempts ?? 12;
++  const intervalMs = options?.intervalMs ?? 100;
++  let attempts = 0;
++  let timeoutId: ReturnType<typeof setTimeout> | undefined;
++
++  const tryScroll = () => {
++    attempts += 1;
++    if (scrollToHashSection(hash, options)) return;
++
++    if (attempts < maxAttempts) {
++      timeoutId = setTimeout(tryScroll, intervalMs);
++    }
++  };
++
++  tryScroll();
++
++  return () => {
++    if (timeoutId) clearTimeout(timeoutId);
++  };
++}

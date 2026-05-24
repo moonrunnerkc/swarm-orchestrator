@@ -1,0 +1,26 @@
+{
+  "id": "devin-einmalmaik-maunting-server-manager-pr7",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 7,
+    "headSha": "2e8d2463babe6c0b8ba55214feabfed8b13619d3",
+    "baseSha": "fc0b6ccfc80c6629245e18b5a564f3155f662a47",
+    "title": "Hotfix: Legacy servers.linux_user-Spalte beim Start droppen",
+    "body": "## Summary\n\nDirekter Fix für den Bug, den du gerade im Smoke-Test gesehen hast:\n\n```\npsycopg2.errors.NotNullViolation: null value in column \"linux_user\" of relation \"servers\" violates not-null constraint\n```\n\nPhase 1 hat das ORM-Model bereinigt (`linux_user` aus `models/server.py` raus), aber die Migration in `main.py` hat **nur die neuen Spalten hinzugefügt** und die alte `linux_user VARCHAR NOT NULL`-Spalte stehen lassen. Auf PostgreSQL knallt es deshalb bei jedem `INSERT INTO servers (...)`, weil SQLAlchemy `linux_user` nicht mehr im Statement hat und PG die Spalte aber noch zwingend verlangt.\n\n### Fix\n\nEine zusätzliche idempotente Migration nach den ADD-COLUMN-Statements:\n\n```python\nif 'linux_user' in cols:\n    conn.execute(text(\"ALTER TABLE servers DROP COLUMN linux_user\"))\n```\n\nLäuft beim nächsten Lifespan-Start exakt einmal und ist danach No-op (weil `linux_user` dann nicht mehr in `cols` ist).\n\n### Tests\n\n`backend/tests/test_migrations.py` (neu):\n\n- `test_migration_drops_legacy_linux_user_column` — baut auf einer Throwaway-SQLite explizit das Legacy-Schema mit `linux_user NOT NULL`, simuliert den Migrationsblock, prüft dass die Spalte weg ist, alte Daten erhalten bleiben **und ein neuer INSERT ohne `linux_user` funktioniert** (also genau der Pfad, der bei dir gerade gekracht ist).\n- `test_migration_idempotent_on_clean_schema` — sicherstellen dass die Migration auf einer frischen DB ohne `linux_user` ein No-op ist.\n\nKomplette Backend-Suite weiterhin grün: **92 passed**.\n\n## Review & Testing Checklist for Human\n\nRisiko: **gelb** — Wir droppen eine Spalte. Mit `DROP COLUMN` in PostgreSQL ist das atomar und sicher; die Spalte wird beim nächsten Lifespan einmalig entfernt. **Kein Backup-Pflichtschritt**, weil die Spalte nach Phase 1 nicht mehr beschrieben wird und keine Foreign-Key-Referenzen darauf existieren.\n\n- [ ] **Backend einmal restarten** (`systemctl restart msm-panel`) — der Lifespan-Code droppt die Spalte einmal beim Start. In den uvicorn-Logs sollte dann **kein** Fehler mehr kommen.\n- [ ] **Server-Create wiederholen:** der gleiche POST `/api/servers`, der gerade 500 geliefert hat, muss jetzt 200/201 liefern und die neue Server-Zeile in `psql` zeigt keine `linux_user`-Spalte mehr.\n- [ ] Optional: `psql -c \"\\d servers\"` vor und nach dem Restart vergleichen, um zu sehen dass `linux_user` weg ist.\n\n### Test-Plan kurz\n\n```bash\n# 1) Aktuell: linux_user existiert noch\nsudo -u msm psql -d msm -c \"\\d servers\" | grep linux_user\n# 2) Update + Restart\ncd /opt/msm && git fetch && git checkout devin/1779576787-drop-linux-user && systemctl restart msm-panel\n# 3) Danach: linux_user weg\nsudo -u msm psql -d msm -c \"\\d servers\" | grep linux_user  # → leer\n# 4) Smoke-Test wiederholen — Server \"test\" anlegen, kein 500 mehr.\n```\n\n### Notes\n\n- Geht clean auf SQLite (Tests) **und** PostgreSQL (deine Prod-DB). SQLite >= 3.35 unterstützt `DROP COLUMN` nativ; PostgreSQL kann es schon ewig.\n- Wir nutzen bewusst kein `IF EXISTS` in der SQL-Anweisung selbst, sondern checken in Python (`if 'linux_user' in cols`) — das ist konsistent mit den anderen Migrationsblöcken im File und produziert sauberere Logs.\n- Falls dein Smoke-Test-Server `id=9` schon halb angelegt war (Verzeichnis erstellt, DB-INSERT failed), bitte `rm -rf /opt/msm/servers/conan_exiles_ue5_1` vor dem Retry.\n\n\nLink to Devin session: https://app.devin.ai/sessions/226db64a5e62433d87404f2c1b15137d\nRequested by: @einmalmaik",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779576787-drop-linux-user",
+    "repository": "einmalmaik/maunting-server-manager"
+  },
+  "diffRef": {
+    "repository": "einmalmaik/maunting-server-manager",
+    "headSha": "2e8d2463babe6c0b8ba55214feabfed8b13619d3",
+    "baseSha": "fc0b6ccfc80c6629245e18b5a564f3155f662a47"
+  },
+  "vendoredDiffPath": "devin/devin-einmalmaik-maunting-server-manager-pr7.diff",
+  "vendoredAt": "2026-05-24T03:04:52.874Z",
+  "collectedAt": "2026-05-24T03:04:52.874Z"
+}

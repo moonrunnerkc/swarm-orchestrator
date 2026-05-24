@@ -1,0 +1,26 @@
+{
+  "id": "openhands-All-Hands-AI-OpenHands-pr14535",
+  "agent": {
+    "vendor": "openhands",
+    "confidence": "high",
+    "source": "repo-owner=All-Hands-AI+body=openhands-attribution"
+  },
+  "pr": {
+    "number": 14535,
+    "headSha": "e1d2f8f460126f8c5cdc4c526dfad3c6ba5a90f8",
+    "baseSha": "5e311f7f995008ffe4c74f8cf6f3085d4030c670",
+    "title": "fix: forward ALLOW_INSECURE_GIT_ACCESS to agent server",
+    "body": "Fixes #14523\r\n\r\nHUMAN:\r\nI traced the environment propagation path from `get_agent_server_env()` to the agent-server sandbox environment. This PR adds a narrow exact allowlist for `ALLOW_INSECURE_GIT_ACCESS` so it is forwarded without exposing arbitrary host environment variables.\r\n\r\n- [x] A human has tested these changes.\r\n\r\n## Summary\r\n\r\nFixes environment variable forwarding for `ALLOW_INSECURE_GIT_ACCESS`.\r\n\r\nPreviously, `get_agent_server_env()` only auto-forwarded environment variables with recognized prefixes such as `LLM_` and `LMNR_`. As a result, `ALLOW_INSECURE_GIT_ACCESS=true` was not propagated into the agent-server sandbox environment, even though the git provider logic expects this environment variable to be available.\r\n\r\nThis PR adds an exact allowlist for selected OpenHands runtime flags and forwards `ALLOW_INSECURE_GIT_ACCESS` without forwarding arbitrary host environment variables.\r\n\r\n## Changes\r\n\r\n- Added `AUTO_FORWARD_EXACT_VARS`\r\n- Auto-forward `ALLOW_INSECURE_GIT_ACCESS` to the agent-server environment\r\n- Updated the `get_agent_server_env()` docstring\r\n- Added unit test coverage for exact env var forwarding\r\n\r\n## Test Plan\r\n\r\n- `git diff --check` passed\r\n- `python -m py_compile openhands/app_server/sandbox/sandbox_spec_service.py` passed\r\n- Targeted pytest was not run locally because `pytest` is not installed in my current environment\r\n",
+    "author": "YingzuoLiu",
+    "headRef": "fix/docker-env-forwarding",
+    "repository": "All-Hands-AI/OpenHands"
+  },
+  "diffRef": {
+    "repository": "All-Hands-AI/OpenHands",
+    "headSha": "e1d2f8f460126f8c5cdc4c526dfad3c6ba5a90f8",
+    "baseSha": "5e311f7f995008ffe4c74f8cf6f3085d4030c670"
+  },
+  "vendoredDiffPath": "openhands/openhands-All-Hands-AI-OpenHands-pr14535.diff",
+  "vendoredAt": "2026-05-24T03:17:47.763Z",
+  "collectedAt": "2026-05-24T03:17:47.763Z"
+}

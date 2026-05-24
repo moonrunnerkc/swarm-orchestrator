@@ -1,0 +1,26 @@
+{
+  "id": "devin-nytick52nn-crypto-steam-monitor-pr2",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 2,
+    "headSha": "55583bd334a683aa6113448a97b48fa4f96ac1d4",
+    "baseSha": "0e5838fd190c9d1baf7e197a52d83b20a5ffaf75",
+    "title": "feat: paper SELL, full PnL tracking and sell alerts (Prompt 2)",
+    "body": "## Summary\n\nImplements the full BUY → SELL → PnL cycle for paper trading, completing Prompt 2.\n\n### Changes by file:\n\n**`app/models.py`** — New columns on `OpenPosition`:\n- `exit_price` (Float, nullable) — price at which position was closed\n- `closed_at` (DateTime, nullable) — timestamp of close\n- `pnl_rub` (Float, nullable) — realized profit/loss in RUB\n- `pnl_pct` (Float, nullable) — realized profit/loss percentage\n\n**`app/database.py`** — `migrate_open_positions()`:\n- Safe SQLite migration via `ALTER TABLE ADD COLUMN` (skips if column exists)\n\n**`main.py`** — Calls `migrate_open_positions()` at startup after `create_all()`\n\n**`app/paper_trading.py`** — New functions:\n- `execute_paper_sell(item_name, current_price, fee_pct)` — closes open position, calculates `net_revenue = price * (1 - fee/100)`, computes PnL, deposits net revenue to wallet, returns trade summary dict\n- `get_closed_positions()` — returns all closed positions for dashboard\n\n**`app/signals.py`** — SELL signal handling:\n- On SELL signal, calls `execute_paper_sell()` to close the position\n- Sends `send_sell_alert()` via Telegram if configured\n- Falls back gracefully if no open position exists\n\n**`app/notifier.py`** — `send_sell_alert(trade)`:\n- Russian-format Telegram message: 🔴 ЗАКРЫТО: {item} / Вход → Выход / PnL / Баланс\n\n**`web/dashboard.py`** — Dashboard enhancements:\n- **Unrealized PnL column** on open positions table: `(current_price × 0.85 - entry_price) × qty`\n- **Closed positions section** with entry/exit/PnL table + win rate stats\n- **Total PnL (realized)** metric card replacing the old placeholder PnL\n\n**`PROJECT_CONTEXT.md`** — Prompt 2 marked as Done\n\n## Review & Testing Checklist for Human\n\n- [ ] Run the monitor, trigger a BUY (or manually insert a test position), then verify SELL closes it correctly with proper PnL calculation\n- [ ] Verify PnL math: `net_revenue = exit_price × 0.85`, `pnl_rub = (net_revenue - entry_price) × qty`\n- [ ] Check dashboard shows unrealized PnL for open positions and closed positions section\n- [ ] Verify Telegram sell alert fires with correct Russian format (if Telegram is configured)\n- [ ] Test migration: start with an existing DB that has old `open_positions` table — confirm new columns are added safely\n\nRecommended test: Create a paper BUY at 500₽, then trigger SELL at 600₽. Expected: net_revenue = 510₽, pnl = +10₽ (+2.0%), balance increases by 510₽.\n\n### Notes\n\n- The migration uses `ALTER TABLE ADD COLUMN` which is safe for SQLite (no-op if column exists)\n- `execute_paper_sell` deposits `net_revenue × quantity` back to wallet (after Steam fee deduction)\n- SELL alert uses a local import of `get_balance` to avoid circular import with wallet module\n\nLink to Devin session: https://app.devin.ai/sessions/7c96df8e2c9d441e8404501a24d1b54e\nRequested by: @nytick52nn-crypto",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779480964-paper-sell",
+    "repository": "nytick52nn-crypto/steam-monitor"
+  },
+  "diffRef": {
+    "repository": "nytick52nn-crypto/steam-monitor",
+    "headSha": "55583bd334a683aa6113448a97b48fa4f96ac1d4",
+    "baseSha": "0e5838fd190c9d1baf7e197a52d83b20a5ffaf75"
+  },
+  "vendoredDiffPath": "negatives/closed-without-merge/devin/devin-nytick52nn-crypto-steam-monitor-pr2.diff",
+  "vendoredAt": "2026-05-24T04:28:10.697Z",
+  "collectedAt": "2026-05-24T04:28:10.697Z"
+}

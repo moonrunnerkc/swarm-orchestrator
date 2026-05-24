@@ -1,0 +1,535 @@
+diff --git a/services/s3tables/backend.go b/services/s3tables/backend.go
+index 09ed54691..41c7f9a95 100644
+--- a/services/s3tables/backend.go
++++ b/services/s3tables/backend.go
+@@ -15,9 +15,14 @@ import (
+ )
+ 
+ const (
+-	statusEnabled        = "enabled"
+-	keySettings          = "settings"
+-	storageClassStandard = "STANDARD"
++	statusEnabled                                 = "enabled"
++	keySettings                                   = "settings"
++	storageClassStandard                          = "STANDARD"
++	maintenanceTypeIcebergCompaction              = "icebergCompaction"
++	maintenanceTypeIcebergSnapshotManagement      = "icebergSnapshotManagement"
++	maintenanceTypeIcebergUnreferencedFileRemoval = "icebergUnreferencedFileRemoval"
++	metadataJSONSuffix                            = ".metadata.json"
++	metadataJSONGzipSuffix                        = ".metadata.json.gz"
+ )
+ 
+ var (
+@@ -33,6 +38,10 @@ var (
+ 	ErrTableNotFound = awserr.New("NotFoundException", awserr.ErrNotFound)
+ 	// ErrTableAlreadyExists is returned when a Table already exists.
+ 	ErrTableAlreadyExists = awserr.New("ConflictException", awserr.ErrConflict)
++	// ErrTableVersionConflict is returned when an optimistic-lock token is stale.
++	ErrTableVersionConflict = awserr.New("ConflictException", awserr.ErrConflict)
++	// ErrInvalidTableMetadataLocation is returned when an Iceberg metadata URI is invalid.
++	ErrInvalidTableMetadataLocation = awserr.New("BadRequestException", awserr.ErrInvalidParameter)
+ 	// ErrNilAppContext is returned when a nil AppContext is passed to Init.
+ 	ErrNilAppContext = awserr.New("InvalidParameter", awserr.ErrInvalidParameter)
+ )
+@@ -330,10 +339,10 @@ func (b *InMemoryBackend) CreateTableBucket(name string) (*TableBucket, error) {
+ 		CreatedAt:      time.Now().UTC(),
+ 		StorageClass:   storageClassStandard,
+ 		MaintenanceConfiguration: map[string]any{
+-			"icebergUnreferencedFileRemoval": map[string]any{
++			maintenanceTypeIcebergUnreferencedFileRemoval: map[string]any{
+ 				keyStatusField: statusEnabled,
+ 				keySettings: map[string]any{
+-					"icebergUnreferencedFileRemoval": map[string]any{
++					maintenanceTypeIcebergUnreferencedFileRemoval: map[string]any{
+ 						"nonCurrentDays":   float64(1),
+ 						"unreferencedDays": float64(3), //nolint:mnd // AWS default: 3 days for unreferenced files
+ 					},
+@@ -807,19 +816,19 @@ func (b *InMemoryBackend) CreateTable(tableBucketARN string, namespace []string,
+ 		ModifiedAt:        now,
+ 		OwnerAccountID:    b.accountID,
+ 		MaintenanceConfiguration: map[string]any{
+-			"icebergCompaction": map[string]any{
++			maintenanceTypeIcebergCompaction: map[string]any{
+ 				keyStatusField: statusEnabled,
+ 				keySettings: map[string]any{
+-					"icebergCompaction": map[string]any{
++					maintenanceTypeIcebergCompaction: map[string]any{
+ 						"targetFileSizeMB": float64(512), //nolint:mnd // AWS default: 512 MB target file size
+ 						"strategy":         "binpack",
+ 					},
+ 				},
+ 			},
+-			"icebergSnapshotManagement": map[string]any{
++			maintenanceTypeIcebergSnapshotManagement: map[string]any{
+ 				keyStatusField: statusEnabled,
+ 				keySettings: map[string]any{
+-					"icebergSnapshotManagement": map[string]any{
++					maintenanceTypeIcebergSnapshotManagement: map[string]any{
+ 						"maxSnapshotAgeHours": float64(120), //nolint:mnd // AWS default: 120 hours (5 days)
+ 						"minSnapshotsToKeep":  float64(1),
+ 					},
+@@ -903,11 +912,14 @@ func (b *InMemoryBackend) ListTables(tableBucketARN, namespace string) ([]*Table
+ func (b *InMemoryBackend) RenameTable(
+ 	tableBucketARN string,
+ 	namespace []string,
+-	name, newNamespace, newName string,
++	name, newNamespace, newName, versionToken string,
+ ) error {
+ 	b.muBuckets.RLock("RenameTable")
+ 	defer b.muBuckets.RUnlock()
+ 
++	b.muNamespaces.RLock("RenameTable")
++	defer b.muNamespaces.RUnlock()
++
+ 	b.muTables.Lock("RenameTable")
+ 	defer b.muTables.Unlock()
+ 
+@@ -921,6 +933,10 @@ func (b *InMemoryBackend) RenameTable(
+ 
+ 	found := b.tables[oldARN]
+ 
++	if versionToken != "" && versionToken != found.VersionToken {
++		return fmt.Errorf("%w: stale version token for table %q", ErrTableVersionConflict, name)
++	}
++
+ 	if newName == "" {
+ 		newName = name
+ 	}
+@@ -929,6 +945,10 @@ func (b *InMemoryBackend) RenameTable(
+ 		newNamespace = nsStr
+ 	}
+ 
++	if _, exists := b.namespaces[namespaceKey(tableBucketARN, newNamespace)]; !exists {
++		return fmt.Errorf("%w: namespace %q not found in bucket %s", ErrNamespaceNotFound, newNamespace, tableBucketARN)
++	}
++
+ 	tb := b.tableBuckets[tableBucketARN]
+ 	newARN := b.TableARN(tb.Name, newNamespace, newName)
+ 
+@@ -955,7 +975,7 @@ func (b *InMemoryBackend) RenameTable(
+ func (b *InMemoryBackend) UpdateTableMetadataLocation(
+ 	tableBucketARN string,
+ 	namespace []string,
+-	name, metadataLocation, _ string,
++	name, metadataLocation, versionToken string,
+ ) (*Table, error) {
+ 	b.muTables.Lock("UpdateTableMetadataLocation")
+ 	defer b.muTables.Unlock()
+@@ -967,6 +987,18 @@ func (b *InMemoryBackend) UpdateTableMetadataLocation(
+ 	}
+ 
+ 	t := b.tables[tableARN]
++	if versionToken != t.VersionToken {
++		return nil, fmt.Errorf("%w: stale version token for table %q", ErrTableVersionConflict, name)
++	}
++
++	if !validMetadataLocation(t.WarehouseLocation, metadataLocation) {
++		return nil, fmt.Errorf(
++			"%w: metadata location %q is outside table warehouse or invalid",
++			ErrInvalidTableMetadataLocation,
++			metadataLocation,
++		)
++	}
++
+ 	t.MetadataLocation = metadataLocation
+ 	t.VersionToken = uuid.NewString()
+ 	t.ModifiedAt = time.Now().UTC()
+@@ -974,6 +1006,15 @@ func (b *InMemoryBackend) UpdateTableMetadataLocation(
+ 	return cloneTable(t), nil
+ }
+ 
++func validMetadataLocation(warehouseLocation, metadataLocation string) bool {
++	if !strings.HasPrefix(metadataLocation, warehouseLocation+"/") {
++		return false
++	}
++
++	return strings.HasSuffix(metadataLocation, metadataJSONSuffix) ||
++		strings.HasSuffix(metadataLocation, metadataJSONGzipSuffix)
++}
++
+ // GetTableMaintenanceConfiguration returns the maintenance config for a table.
+ func (b *InMemoryBackend) GetTableMaintenanceConfiguration(
+ 	tableBucketARN string,
+diff --git a/services/s3tables/handler.go b/services/s3tables/handler.go
+index 95d191666..0b4ab51c4 100644
+--- a/services/s3tables/handler.go
++++ b/services/s3tables/handler.go
+@@ -484,6 +484,9 @@ func (h *Handler) handleError(c *echo.Context, err error) error {
+ 	case errors.Is(err, awserr.ErrConflict):
+ 		status = http.StatusConflict
+ 		errType = "ConflictException"
++	case errors.Is(err, awserr.ErrInvalidParameter):
++		status = http.StatusBadRequest
++		errType = "BadRequestException"
+ 	case errors.Is(err, errInvalidRequest):
+ 		status = http.StatusBadRequest
+ 		errType = "BadRequestException"
+@@ -651,6 +654,14 @@ func (h *Handler) handlePutTableBucketMaintenanceConfiguration(
+ 		return nil, fmt.Errorf("%w: %w", errInvalidRequest, err)
+ 	}
+ 
++	if maintenanceType != maintenanceTypeIcebergUnreferencedFileRemoval {
++		return nil, fmt.Errorf("%w: unsupported table bucket maintenance type %q", errInvalidRequest, maintenanceType)
++	}
++
++	if req.Value == nil {
++		return nil, fmt.Errorf("%w: value is required", errInvalidRequest)
++	}
++
+ 	if err := h.Backend.PutTableBucketMaintenanceConfiguration(bucketARN, maintenanceType, req.Value); err != nil {
+ 		return nil, err
+ 	}
+@@ -1338,7 +1349,12 @@ func (h *Handler) handleRenameTable(ctx context.Context, r *http.Request, body [
+ 		newName = *req.NewName
+ 	}
+ 
+-	if err := h.Backend.RenameTable(bucketARN, splitNamespace(nsName), name, newNs, newName); err != nil {
++	versionToken := ""
++	if req.VersionToken != nil {
++		versionToken = *req.VersionToken
++	}
++
++	if err := h.Backend.RenameTable(bucketARN, splitNamespace(nsName), name, newNs, newName, versionToken); err != nil {
+ 		return nil, err
+ 	}
+ 
+@@ -1369,6 +1385,10 @@ func (h *Handler) handleUpdateTableMetadataLocation(ctx context.Context, r *http
+ 		return nil, fmt.Errorf("%w: %w", errInvalidRequest, err)
+ 	}
+ 
++	if req.MetadataLocation == "" || req.VersionToken == "" {
++		return nil, fmt.Errorf("%w: metadataLocation and versionToken are required", errInvalidRequest)
++	}
++
+ 	table, err := h.Backend.UpdateTableMetadataLocation(
+ 		bucketARN,
+ 		splitNamespace(nsName),
+@@ -1450,6 +1470,14 @@ func (h *Handler) handlePutTableMaintenanceConfiguration(
+ 		return nil, fmt.Errorf("%w: %w", errInvalidRequest, err)
+ 	}
+ 
++	if !validTableMaintenanceType(maintenanceType) {
++		return nil, fmt.Errorf("%w: unsupported table maintenance type %q", errInvalidRequest, maintenanceType)
++	}
++
++	if req.Value == nil {
++		return nil, fmt.Errorf("%w: value is required", errInvalidRequest)
++	}
++
+ 	if err := h.Backend.PutTableMaintenanceConfiguration(
+ 		bucketARN,
+ 		splitNamespace(nsName),
+@@ -1466,6 +1494,11 @@ func (h *Handler) handlePutTableMaintenanceConfiguration(
+ 	return nil, nil
+ }
+ 
++func validTableMaintenanceType(maintenanceType string) bool {
++	return maintenanceType == maintenanceTypeIcebergCompaction ||
++		maintenanceType == maintenanceTypeIcebergSnapshotManagement
++}
++
+ func (h *Handler) handleGetTablePolicy(ctx context.Context, r *http.Request, _ []byte) ([]byte, error) {
+ 	segs := rawPathSegments(r)
+ 	if len(segs) < 4 { //nolint:mnd // minimum required segments
+diff --git a/services/s3tables/handler_refinement1_test.go b/services/s3tables/handler_refinement1_test.go
+index d66f74511..dcb7ad352 100644
+--- a/services/s3tables/handler_refinement1_test.go
++++ b/services/s3tables/handler_refinement1_test.go
+@@ -499,9 +499,9 @@ func TestRefinement1_GetTableMetadataLocation(t *testing.T) {
+ 		{
+ 			name:     "table with metadata location",
+ 			setup:    true,
+-			setMeta:  "s3://bucket/path/to/metadata.json",
++			setMeta:  "s3://meta-loc-bucket/ns1/t1/v1.metadata.json",
+ 			wantCode: http.StatusOK,
+-			wantMeta: "s3://bucket/path/to/metadata.json",
++			wantMeta: "s3://meta-loc-bucket/ns1/t1/v1.metadata.json",
+ 		},
+ 		{
+ 			name:     "missing table",
+@@ -521,8 +521,9 @@ func TestRefinement1_GetTableMetadataLocation(t *testing.T) {
+ 				tableARN := createTableHelper(t, h, bucketARN, "ns1", "t1")
+ 
+ 				if tt.setMeta != "" {
++					table := getTableHelper(t, h, bucketARN, "ns1", "t1")
+ 					_, err := h.Backend.UpdateTableMetadataLocation(
+-						bucketARN, []string{"ns1"}, "t1", tt.setMeta, "")
++						bucketARN, []string{"ns1"}, "t1", tt.setMeta, table["versionToken"].(string))
+ 					require.NoError(t, err)
+ 				}
+ 
+@@ -991,8 +992,8 @@ func TestRefinement1_MetadataLocationVsUpdate(t *testing.T) {
+ 	}{
+ 		{
+ 			name:         "update then get",
+-			metaLocation: "s3://mybucket/meta.json",
+-			expectInGet:  "s3://mybucket/meta.json",
++			metaLocation: "s3://ml-bucket/ns1/t1/v1.metadata.json",
++			expectInGet:  "s3://ml-bucket/ns1/t1/v1.metadata.json",
+ 		},
+ 	}
+ 
+@@ -1004,12 +1005,13 @@ func TestRefinement1_MetadataLocationVsUpdate(t *testing.T) {
+ 			bucketARN := createBucketHelper(t, h, "ml-bucket")
+ 			createNamespaceHelper(t, h, bucketARN, []string{"ns1"})
+ 			createTableHelper(t, h, bucketARN, "ns1", "t1")
++			table := getTableHelper(t, h, bucketARN, "ns1", "t1")
+ 
+ 			encodedARN := url.PathEscape(bucketARN)
+ 
+ 			updateBody, err := json.Marshal(map[string]string{
+ 				"metadataLocation": tt.metaLocation,
+-				"versionToken":     "tok1",
++				"versionToken":     table["versionToken"].(string),
+ 			})
+ 			require.NoError(t, err)
+ 
+diff --git a/services/s3tables/handler_test.go b/services/s3tables/handler_test.go
+index 92a5d83aa..6c86a9e3f 100644
+--- a/services/s3tables/handler_test.go
++++ b/services/s3tables/handler_test.go
+@@ -105,6 +105,19 @@ func createTableHelper(t *testing.T, h *s3tables.Handler, bucketARN, namespace,
+ 	return tableARN
+ }
+ 
++func getTableHelper(t *testing.T, h *s3tables.Handler, bucketARN, namespace, name string) map[string]any {
++	t.Helper()
++
++	query := url.Values{}
++	query.Set("tableBucketARN", bucketARN)
++	query.Set("namespace", namespace)
++	query.Set("name", name)
++	rec := doS3TablesRequest(t, h, http.MethodGet, "/get-table?"+query.Encode(), nil)
++	require.Equal(t, http.StatusOK, rec.Code)
++
++	return parseResponse(t, rec)
++}
++
+ func TestHandler_Name(t *testing.T) {
+ 	t.Parallel()
+ 
+@@ -607,14 +620,30 @@ func TestHandler_Table_Rename(t *testing.T) {
+ 	t.Parallel()
+ 
+ 	tests := []struct {
+-		body       map[string]any
+-		name       string
+-		wantStatus int
++		body          map[string]any
++		name          string
++		createTable   bool
++		useStaleToken bool
++		wantStatus    int
+ 	}{
+ 		{
+-			name:       "rename_table",
+-			body:       map[string]any{"newName": "renamed-table"},
+-			wantStatus: http.StatusNoContent,
++			name:        "rename_table",
++			body:        map[string]any{"newName": "renamed-table"},
++			createTable: true,
++			wantStatus:  http.StatusNoContent,
++		},
++		{
++			name:          "reject_stale_version_token",
++			body:          map[string]any{"newName": "renamed-table"},
++			createTable:   true,
++			useStaleToken: true,
++			wantStatus:    http.StatusConflict,
++		},
++		{
++			name:        "reject_missing_destination_namespace",
++			body:        map[string]any{"newNamespaceName": "missing-ns"},
++			createTable: true,
++			wantStatus:  http.StatusNotFound,
+ 		},
+ 		{
+ 			name:       "rename_table_not_found",
+@@ -633,12 +662,18 @@ func TestHandler_Table_Rename(t *testing.T) {
+ 			createNamespaceHelper(t, h, bucketARN, []string{"rename-ns"})
+ 
+ 			tableName := "orig-table"
+-			if tt.name == "rename_table" {
++			if tt.createTable {
+ 				_ = createTableHelper(t, h, bucketARN, "rename-ns", tableName)
++				table := getTableHelper(t, h, bucketARN, "rename-ns", tableName)
++				tt.body["versionToken"] = table["versionToken"]
+ 			} else {
+ 				tableName = "not-exist"
+ 			}
+ 
++			if tt.useStaleToken {
++				tt.body["versionToken"] = "stale-version-token"
++			}
++
+ 			path := "/tables/" + encodedARN + "/rename-ns/" + tableName + "/rename"
+ 			rec := doS3TablesRequest(t, h, http.MethodPut, path, tt.body)
+ 			assert.Equal(t, tt.wantStatus, rec.Code)
+@@ -650,19 +685,35 @@ func TestHandler_Table_UpdateMetadataLocation(t *testing.T) {
+ 	t.Parallel()
+ 
+ 	tests := []struct {
+-		body       map[string]any
+-		name       string
+-		wantStatus int
++		name             string
++		metadataLocation string
++		useStaleToken    bool
++		createTable      bool
++		wantStatus       int
+ 	}{
+ 		{
+-			name:       "update_metadata_location",
+-			body:       map[string]any{"metadataLocation": "s3://bucket/path/metadata.json", "versionToken": "v1"},
+-			wantStatus: http.StatusOK,
++			name:             "update_metadata_location",
++			metadataLocation: "s3://meta-bucket-update_metadata_location/meta-ns/meta-table/v1.metadata.json",
++			createTable:      true,
++			wantStatus:       http.StatusOK,
+ 		},
+ 		{
+-			name:       "table_not_found",
+-			body:       map[string]any{"metadataLocation": "s3://bucket/path/metadata.json", "versionToken": "v1"},
+-			wantStatus: http.StatusNotFound,
++			name:             "reject_location_outside_warehouse",
++			metadataLocation: "s3://other-bucket/meta-ns/meta-table/v1.metadata.json",
++			createTable:      true,
++			wantStatus:       http.StatusBadRequest,
++		},
++		{
++			name:             "reject_stale_version_token",
++			metadataLocation: "s3://meta-bucket-reject_stale_version_token/meta-ns/meta-table/v1.metadata.json.gz",
++			useStaleToken:    true,
++			createTable:      true,
++			wantStatus:       http.StatusConflict,
++		},
++		{
++			name:             "table_not_found",
++			metadataLocation: "s3://meta-bucket-table_not_found/meta-ns/not-exist/v1.metadata.json",
++			wantStatus:       http.StatusNotFound,
+ 		},
+ 	}
+ 
+@@ -676,14 +727,24 @@ func TestHandler_Table_UpdateMetadataLocation(t *testing.T) {
+ 			createNamespaceHelper(t, h, bucketARN, []string{"meta-ns"})
+ 
+ 			tableName := "meta-table"
+-			if tt.name == "update_metadata_location" {
++			versionToken := "missing-table-token"
++			if tt.createTable {
+ 				_ = createTableHelper(t, h, bucketARN, "meta-ns", tableName)
++				table := getTableHelper(t, h, bucketARN, "meta-ns", tableName)
++				versionToken = table["versionToken"].(string)
+ 			} else {
+ 				tableName = "not-exist"
+ 			}
+ 
++			if tt.useStaleToken {
++				versionToken = "stale-version-token"
++			}
++
+ 			path := "/tables/" + encodedARN + "/meta-ns/" + tableName + "/metadata-location"
+-			rec := doS3TablesRequest(t, h, http.MethodPut, path, tt.body)
++			rec := doS3TablesRequest(t, h, http.MethodPut, path, map[string]any{
++				"metadataLocation": tt.metadataLocation,
++				"versionToken":     versionToken,
++			})
+ 			assert.Equal(t, tt.wantStatus, rec.Code)
+ 		})
+ 	}
+@@ -764,6 +825,22 @@ func TestHandler_MaintenanceConfiguration(t *testing.T) {
+ 			},
+ 			wantStatus: http.StatusNoContent,
+ 		},
++		{
++			name:     "reject_bucket_compaction_type",
++			method:   http.MethodPut,
++			pathType: "bucket_put_compaction",
++			body: map[string]any{
++				"value": map[string]any{"status": "enabled"},
++			},
++			wantStatus: http.StatusBadRequest,
++		},
++		{
++			name:       "reject_missing_bucket_value",
++			method:     http.MethodPut,
++			pathType:   "bucket_put",
++			body:       map[string]any{},
++			wantStatus: http.StatusBadRequest,
++		},
+ 		{
+ 			name:       "get_table_maintenance",
+ 			method:     http.MethodGet,
+@@ -771,14 +848,39 @@ func TestHandler_MaintenanceConfiguration(t *testing.T) {
+ 			wantStatus: http.StatusOK,
+ 		},
+ 		{
+-			name:     "put_table_maintenance",
++			name:     "put_table_compaction",
++			method:   http.MethodPut,
++			pathType: "table_put_compaction",
++			body: map[string]any{
++				"value": map[string]any{"status": "enabled"},
++			},
++			wantStatus: http.StatusNoContent,
++		},
++		{
++			name:     "put_table_snapshot_management",
+ 			method:   http.MethodPut,
+-			pathType: "table_put",
++			pathType: "table_put_snapshot",
+ 			body: map[string]any{
+ 				"value": map[string]any{"status": "enabled"},
+ 			},
+ 			wantStatus: http.StatusNoContent,
+ 		},
++		{
++			name:     "reject_unreferenced_file_removal_for_table",
++			method:   http.MethodPut,
++			pathType: "table_put_unreferenced",
++			body: map[string]any{
++				"value": map[string]any{"status": "enabled"},
++			},
++			wantStatus: http.StatusBadRequest,
++		},
++		{
++			name:       "reject_missing_table_value",
++			method:     http.MethodPut,
++			pathType:   "table_put_compaction",
++			body:       map[string]any{},
++			wantStatus: http.StatusBadRequest,
++		},
+ 	}
+ 
+ 	for _, tt := range tests {
+@@ -798,10 +900,16 @@ func TestHandler_MaintenanceConfiguration(t *testing.T) {
+ 				path = "/buckets/" + encodedARN + "/maintenance"
+ 			case "bucket_put":
+ 				path = "/buckets/" + encodedARN + "/maintenance/icebergUnreferencedFileRemoval"
++			case "bucket_put_compaction":
++				path = "/buckets/" + encodedARN + "/maintenance/icebergCompaction"
+ 			case "table_get":
+ 				path = "/tables/" + encodedARN + "/maint-ns/maint-table/maintenance"
+-			case "table_put":
++			case "table_put_compaction":
+ 				path = "/tables/" + encodedARN + "/maint-ns/maint-table/maintenance/icebergCompaction"
++			case "table_put_snapshot":
++				path = "/tables/" + encodedARN + "/maint-ns/maint-table/maintenance/icebergSnapshotManagement"
++			case "table_put_unreferenced":
++				path = "/tables/" + encodedARN + "/maint-ns/maint-table/maintenance/icebergUnreferencedFileRemoval"
+ 			}
+ 
+ 			rec := doS3TablesRequest(t, h, tt.method, path, tt.body)
+diff --git a/services/s3tables/interfaces.go b/services/s3tables/interfaces.go
+index a1f35e4b6..124b2e42a 100644
+--- a/services/s3tables/interfaces.go
++++ b/services/s3tables/interfaces.go
+@@ -42,7 +42,7 @@ type StorageBackend interface {
+ 	GetTable(tableBucketARN string, namespace []string, name string) (*Table, error)
+ 	DeleteTable(tableBucketARN string, namespace []string, name string) error
+ 	ListTables(tableBucketARN, namespace string) ([]*Table, error)
+-	RenameTable(tableBucketARN string, namespace []string, name, newNamespace, newName string) error
++	RenameTable(tableBucketARN string, namespace []string, name, newNamespace, newName, versionToken string) error
+ 	UpdateTableMetadataLocation(
+ 		tableBucketARN string,
+ 		namespace []string,

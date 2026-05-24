@@ -1,0 +1,26 @@
+{
+  "id": "cursor-injoon5-web-pr49",
+  "agent": {
+    "vendor": "cursor",
+    "confidence": "medium",
+    "source": "branch=cursor/+body=cursor-session-url"
+  },
+  "pr": {
+    "number": 49,
+    "headSha": "0c2eb1326774359a7a2437a6b8bce9d3a5b40fcc",
+    "baseSha": "bcbbb3f5df05c1319a279ee7ea5ef29b8fb93d5b",
+    "title": "Fix like button selected state",
+    "body": "<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n## Summary\n- Use the successful `/api/likes` mutation response as the immediate LikeButton state.\n- Clear the local mutation state once the live Convex query catches up for the same page.\n- Keep liked/count state scoped to the current URL so navigation does not leak button state.\n- Simplify the LikeButton readiness gates without changing behavior.\n- Deduplicate request IP hashing inside the likes API route and remove an unused import.\n\n## Validation\n- `npx prettier --check \"src/lib/LikeButton.svelte\" \"src/routes/api/likes/+server.ts\"`\n- `npx eslint \"src/lib/LikeButton.svelte\" \"src/routes/api/likes/+server.ts\"`\n- `PUBLIC_CONVEX_URL=https://example.convex.cloud ADMIN_SECRET=dummy npm run build`\n- `npm run check` currently fails on existing project-wide type/env issues unrelated to the liking changes, including missing Node types/`ADMIN_SECRET`, MD module metadata typing, and Convex generated JS implicit-any diagnostics.\n<!-- CURSOR_AGENT_PR_BODY_END -->\n\n<div><a href=\"https://cursor.com/agents/bc-518037ca-4961-435f-9da3-00476ff9566f\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/background-agent?bcId=bc-518037ca-4961-435f-9da3-00476ff9566f\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-light.png\"><img alt=\"Open in Cursor\" width=\"131\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"></picture></a>&nbsp;</div>\n\n",
+    "author": "injoon5",
+    "headRef": "cursor/fix-likebutton-state-566f",
+    "repository": "injoon5/web"
+  },
+  "diffRef": {
+    "repository": "injoon5/web",
+    "headSha": "0c2eb1326774359a7a2437a6b8bce9d3a5b40fcc",
+    "baseSha": "bcbbb3f5df05c1319a279ee7ea5ef29b8fb93d5b"
+  },
+  "vendoredDiffPath": "cursor/cursor-injoon5-web-pr49.diff",
+  "vendoredAt": "2026-05-24T03:11:58.423Z",
+  "collectedAt": "2026-05-24T03:11:58.423Z"
+}

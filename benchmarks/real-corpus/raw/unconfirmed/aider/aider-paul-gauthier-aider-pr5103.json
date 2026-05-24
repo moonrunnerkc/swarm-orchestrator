@@ -1,0 +1,26 @@
+{
+  "id": "aider-paul-gauthier-aider-pr5103",
+  "agent": {
+    "vendor": "aider",
+    "confidence": "high",
+    "source": "repo-owner=paul-gauthier"
+  },
+  "pr": {
+    "number": 5103,
+    "headSha": "2c876d0e455cb8fc5130355bd01d16db2d43b354",
+    "baseSha": "3ec8ec5a7d695b08a6c24fe6c0c235c8f87df9af",
+    "title": "versioncheck: tolerate OSError when creating version-check marker",
+    "body": "Fixes #2865.\n\n`check_version`'s `finally` block called `VERSION_CHECK_FNAME.parent.mkdir(parents=True, exist_ok=True)` and `touch()` unconditionally. Sandboxes that leave `HOME` unset (or set it to `/`) end up resolving `Path.home()` to `/`, so `VERSION_CHECK_FNAME` is `/.aider/caches/versioncheck` and `mkdir` fails with `PermissionError: [Errno 13] Permission denied: '/.aider'`. The exception escapes through the finally and crashes aider on startup. The marker is purely an optimisation, wrap the two filesystem ops in a `try / except OSError` so a missing or unwritable home directory doesn't take aider down.",
+    "author": "SAY-5",
+    "headRef": "say5/version-check-permission-error-2865",
+    "repository": "paul-gauthier/aider"
+  },
+  "diffRef": {
+    "repository": "paul-gauthier/aider",
+    "headSha": "2c876d0e455cb8fc5130355bd01d16db2d43b354",
+    "baseSha": "3ec8ec5a7d695b08a6c24fe6c0c235c8f87df9af"
+  },
+  "vendoredDiffPath": "unconfirmed/aider/aider-paul-gauthier-aider-pr5103.diff",
+  "vendoredAt": "2026-05-24T03:19:43.342Z",
+  "collectedAt": "2026-05-24T03:19:43.342Z"
+}

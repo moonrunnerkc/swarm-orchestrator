@@ -1,0 +1,722 @@
+diff --git a/README.md b/README.md
+index 297de1f..b2ed8e9 100644
+--- a/README.md
++++ b/README.md
+@@ -1,82 +1,119 @@
+ # PupsoidAmneziaBSD
+ 
+-Нативный пакет для **pfSense** + однокомандный установщик для **Ubuntu/Debian VPS**,
+-интегрирующий [AmneziaWG](https://docs.amnezia.org/documentation/amnezia-wg) —
+-DPI-устойчивый форк WireGuard.
++Развернуть свой [AmneziaWG](https://docs.amnezia.org/documentation/amnezia-wg)-сервер **одной командой** — либо как пакет в pfSense, либо на чистый Linux-VPS.
+ 
+-Цель — дать **два способа развернуть AmneziaWG-сервер за минимальное время**:
++> AmneziaWG — это форк WireGuard с обфускацией трафика. Под обычный WireGuard уже умеют DPI-фильтры провайдеров и блокируют его. AmneziaWG этим фильтрам не виден: он мимикрирует под мусорный UDP-шум и добавляет в первые пакеты заранее заданные паттерны, которые делают handshake неотличимым от случайного трафика.
+ 
+-1. **На существующем pfSense** (web-GUI): одна команда в shell pfSense ставит пакет, и в меню `VPN → AmneziaWG` появляется полноценный конфигуратор.
+-2. **На чистом Linux-VPS** (без pfSense): одна команда `curl … | bash` поднимает на голом Ubuntu/Debian VPS работающий VPN-сервер с обфускацией.
++| Сценарий | Установка | Где работает |
++|----------|-----------|---------------|
++| Уже стоит **pfSense** в качестве роутера | `pkg add ...` (одна команда) | Конфигуратор в web-GUI: `VPN → AmneziaWG` |
++| Просто **VPS** под Ubuntu/Debian | `curl ... \| sudo bash` (одна команда) | systemd-сервис + CLI-помощники |
+ 
+-> Статус: **в активной разработке (Phase 4 / 5 в процессе).**
+-> История фаз — в [docs/STATUS.md](docs/STATUS.md).
+-> Лицензия: [Apache-2.0](LICENSE).
++Свежий релиз: [**v0.2.0**](https://github.com/wellskii/PupsoidAmneziaBSD/releases/tag/v0.2.0). Лицензия: [Apache-2.0](LICENSE).
+ 
+ ---
+ 
+-## 1. Установка на pfSense одной строкой
++## Содержание
+ 
+-Целевая платформа: **pfSense 2.8.x amd64** (FreeBSD 15-CURRENT).
++1. [Зачем нужен AmneziaWG](#1-зачем-нужен-amneziawg)
++2. [Установка на pfSense одной строкой](#2-установка-на-pfsense-одной-строкой)
++3. [Установка на Linux VPS одной строкой](#3-установка-на-linux-vps-одной-строкой)
++4. [Подключение клиента (Windows, macOS, iOS, Android, Linux)](#4-подключение-клиента)
++5. [Внимание! Что нужно проверить на клиентском устройстве](#5-внимание-что-нужно-проверить-на-клиентском-устройстве)
++6. [Управление сервером после установки](#6-управление-сервером-после-установки)
++7. [FAQ](#7-faq)
++8. [Где купить VPS](#8-где-купить-vps)
++9. [Что делать если не работает](#9-что-делать-если-не-работает)
++10. [Архитектура и сборка из исходников](#10-архитектура-и-сборка-из-исходников)
+ 
+-В shell pfSense (`Diagnostics → Command Prompt`, либо SSH):
+-
+-```sh
+-pkg add https://github.com/wellskii/PupsoidAmneziaBSD/releases/download/v0.2.0/pfSense-pkg-AmneziaWG-0.2.0.pkg
+-```
+-
+-После установки в web-GUI:
+-
+-- **VPN → AmneziaWG** — табы `Tunnels`, `Peers`, `Settings`, `Status`
+-- **Status → AmneziaWG** — живое `awg show` со всеми обфускационными полями
+-- Touch-button «Generate keypair» в форме создания туннеля
+-- Кнопка «Assign в pfSense Interfaces» — превращает туннель в полноценный pfSense-интерфейс (для firewall-правил, NAT, gateway-роутинга)
++---
+ 
+-Полный сценарий настройки — в [docs/RUNBOOK.md](docs/RUNBOOK.md).
++## 1. Зачем нужен AmneziaWG
+ 
+-### Гибридный backend
++В России (и не только) провайдеры всё агрессивнее режут VPN на уровне DPI:
+ 
+-Пакет автоматически выбирает движок:
++- **OpenVPN** — давно палится по характерной TLS-сигнатуре, во многих регионах работает только через obfs4 / Cloak.
++- **WireGuard** — палится ещё проще, по первому пакету handshake (фиксированные байты в заголовке).
++- **Shadowsocks** — палится по статистическим аномалиям.
+ 
+-| Режим      | Чем работает                       | Когда выбирается                                                                              |
+-|------------|------------------------------------|-----------------------------------------------------------------------------------------------|
+-| kernel     | `if_amn.ko` (`net/amnezia-kmod`)   | если модуль успешно грузится против работающего pfSense-ядра (требуется совпадение OSVERSION) |
+-| userspace  | `amneziawg-go` (`net/amneziawg-go`)| если kmod недоступен или ABI-несовместим (типичная ситуация на свежем pfSense-снапшоте)       |
++**AmneziaWG** решает это так:
++1. До handshake-а интерфейс высылает кастомный «мусор» — настраиваемые в параметрах `Jc`, `Jmin`, `Jmax`.
++2. Сам handshake разбит на куски с заранее заданными паттернами (`S1..S4`, `H1..H4`).
++3. Дополнительно можно прикрутить «signature»-пакеты (`I1..I5`), которые маскируют трафик под, например, видеостриминг.
+ 
+-CLI-инструмент `awg(8)` / `awg-quick(8)` (`net/amnezia-tools`) одинаково работает в обоих режимах — он общается через UAPI-сокет `/var/run/amneziawg/<if>.sock`, независимо от того, кто на той стороне.
++Эти параметры **должны совпадать на сервере и клиенте**. Наш пакет генерирует их сам (значения по умолчанию: `Jc=4, Jmin=40, Jmax=70, S1=50, S2=100, H1..H4=1..4`) и автоматически прописывает их в клиентский профиль.
+ 
+-Выбор бэкенда виден на странице **VPN → AmneziaWG → Settings** и доступен для ручного оверрайда (Auto / Force kernel / Force userspace).
++Подробнее о протоколе: [habr.com — Amnezia](https://habr.com/ru/companies/amnezia/articles/807539/), [docs.amnezia.org](https://docs.amnezia.org/documentation/amnezia-wg/).
+ 
+ ---
+ 
+-## 2. Установка на Linux VPS одной строкой
++## 2. Установка на pfSense одной строкой
++
++**Целевая платформа:** pfSense **2.8.x amd64** (FreeBSD 15-CURRENT). На более ранних версиях не тестировалось.
+ 
+-Целевая платформа: **Ubuntu 22.04 / 24.04** или **Debian 12+** (чистый VPS).
++В shell pfSense (через **Diagnostics → Command Prompt** в web-GUI, либо по SSH под `root`):
+ 
+ ```sh
+-curl -fsSL https://github.com/wellskii/PupsoidAmneziaBSD/releases/download/v0.2.0/setup-vps.sh \
+-    | sudo bash
++pkg add https://github.com/wellskii/PupsoidAmneziaBSD/releases/download/v0.2.0/pfSense-pkg-AmneziaWG-0.2.0.pkg
+ ```
+ 
+-Что произойдёт:
++Сразу после установки в web-GUI появляются:
+ 
+-1. Скрипт определит ОС, архитектуру и публичный IP.
+-2. Подключит PPA `ppa:amnezia/ppa` и поставит `amneziawg-dkms` + `amneziawg-tools` (или `amneziawg-go` fallback).
+-3. Включит `ip_forward` (IPv4 и IPv6), настроит NAT через `iptables`.
+-4. Сгенерирует серверный ключ + обфускационные параметры (Jc/Jmin/Jmax/S1..S4/H1..H4).
+-5. Запишет `/etc/amnezia/amneziawg/awg0.conf`, поднимет `awg-quick@awg0.service`, включит в автозагрузку.
+-6. Создаст первый клиентский профиль `client1.conf` (с уникальным PSK, IP `10.66.66.2`).
+-7. Выведет в терминал готовый QR-код для приложения Amnezia / WireGuard.
++- **VPN → AmneziaWG → Tunnels** — создание/редактирование туннелей, генерация ключевой пары одной кнопкой.
++- **VPN → AmneziaWG → Peers** — список пиров (клиентов) и редактирование.
++- **VPN → AmneziaWG → Settings** — выбор backend (`Auto` / `Kernel` / `Userspace`) и общие настройки.
++- **VPN → AmneziaWG → Status** — live-статус туннелей с парсингом `awg show`.
++- **Status → AmneziaWG** — то же самое в стандартном меню Status.
++
++**Что делать дальше:** [docs/RUNBOOK.md → A.3](docs/RUNBOOK.md#a3-создание-туннеля).
++
++---
+ 
+-Добавить ещё одного клиента после установки:
++## 3. Установка на Linux VPS одной строкой
++
++**Целевая платформа:** Ubuntu 22.04 / 24.04 или Debian 12+. Чистый VPS без других VPN-серверов на тех же портах.
++
++**Минимальные требования к серверу:** 1 CPU, 512 MB RAM, 5 GB диск, публичный IPv4. На таком конфиге держит десяток клиентов на скорости канала.
+ 
+ ```sh
+-sudo /usr/local/sbin/amneziawg-add-client myphone
++curl -fsSL https://github.com/wellskii/PupsoidAmneziaBSD/releases/download/v0.2.0/setup-vps.sh | sudo bash
+ ```
+ 
+-Скрипт сгенерирует новый профиль, пропишет пир на сервере и покажет QR-код для импорта.
++Скрипт:
++1. Определит ОС, архитектуру, публичный IP сервера.
++2. Подключит PPA `ppa:amnezia/ppa` и поставит `amneziawg-dkms` + `amneziawg-tools` (или fallback на `amneziawg-go` если DKMS-модуль не собрался).
++3. Включит `ip_forward` и настроит NAT через `iptables`.
++4. Сгенерирует серверный ключ + дефолтные обфускационные параметры.
++5. Поднимет systemd-сервис `awg-quick@awg0.service` с автозагрузкой.
++6. Создаст **первого клиента** `client1.conf` и выведет **QR-код** прямо в терминал.
++
++В терминале появится примерно такой блок:
++
++```
++===================================================================
++Готово! AmneziaWG-сервер развёрнут.
++-------------------------------------------------------------------
++Endpoint:    1.2.3.4:51820
++Сеть:        10.66.66.0/24
++Backend:     amneziawg-dkms (kernel)
++Сервис:      systemctl status awg-quick@awg0.service
++
++Профиль клиента: /etc/amnezia/amneziawg/clients/client1.conf
++-------------------------------------------------------------------
++QR-код (отсканируй приложением Amnezia на телефоне):
++
++█████████████████████████████████████████
++█▀▀▀▀▀▀▀█ ▀▄ ▀▄ █▀▀▀▀▀▀▀█
++... (рендер 33×33 ASCII)
++███████ ▀▄▄▀▀ ▀▄▀▄ ███████
++█▀▀▀▀▀▀▀█  ...
++-------------------------------------------------------------------
++Добавить ещё клиента:
++    sudo /usr/local/sbin/amneziawg-add-client <имя>
++===================================================================
++```
+ 
+-С параметрами:
++С параметрами (если нужно поменять порт, подсеть, имя первого клиента и т.д.):
+ 
+ ```sh
+ sudo bash setup-vps.sh \
+@@ -87,11 +124,171 @@ sudo bash setup-vps.sh \
+     --endpoint my-vpn.example.com
+ ```
+ 
+-Все опции — `--help`.
++Все опции — `bash setup-vps.sh --help`.
++
++**Что делать дальше:** [Подключение клиента](#4-подключение-клиента).
++
++---
++
++## 4. Подключение клиента
++
++После установки сервер генерирует файл `<имя>.conf` и QR-код. Дальше нужно завести этот профиль в клиентское приложение.
++
++| ОС               | Приложение            | Где скачать                                                                                          |
++|------------------|-----------------------|------------------------------------------------------------------------------------------------------|
++| Windows          | **AmneziaVPN**        | https://amnezia.org/downloads                                                                        |
++| macOS            | **AmneziaVPN**        | https://amnezia.org/downloads                                                                        |
++| Linux            | `amneziawg-tools`     | пакет в репозиториях (`apt install amneziawg`), либо AmneziaVPN AppImage                             |
++| iOS / iPadOS     | **AmneziaWG**         | [App Store](https://apps.apple.com/app/amneziawg/id6478942365)                                       |
++| Android          | **AmneziaWG**         | [Google Play](https://play.google.com/store/apps/details?id=org.amnezia.awg)                          |
++
++**Импорт профиля одним из способов:**
++
++- **С телефона:** запусти приложение → «+» / «Импортировать» → «Сканировать QR-код» → наведи камеру на QR в терминале VPS или в окне ssh.
++- **С компьютера:** скачай `<имя>.conf` с сервера (через `scp`, WinSCP, MobaXterm) → перетащи файл в приложение AmneziaVPN, либо нажми «Импорт из файла».
++
++Полный пошаговый гайд со скриншотами для каждой ОС: [docs/CLIENT-SETUP.md](docs/CLIENT-SETUP.md).
++
++---
++
++## 5. Внимание! Что нужно проверить на клиентском устройстве
++
++Чтобы VPN заработал стабильно, на устройстве клиента нужно сделать несколько вещей. Это **общие требования AmneziaWG**, не специфика нашего пакета.
++
++1. **Отключить безопасный/частный/«умный» DNS** в браузерах и системе.
++   - Chrome: `chrome://settings/security` → «Использовать безопасный DNS» → **выкл**.
++   - Firefox: `Settings → Privacy & Security → DNS over HTTPS` → **Off**.
++   - iOS: настройки `→ Wi-Fi → (i) у сети → Configure DNS → Manual → удалить кастомные DNS`.
++   - Android: `Settings → Network → Private DNS → Off / Automatic`.
++
++2. **На мобильных — отключить «умное переключение Wi-Fi ↔ LTE».**
++   У разных производителей опция называется по-разному: «Wi-Fi+», «Intelligent Wi-Fi», «Помощь Wi-Fi», «Wi-Fi Assistant». В режиме VPN эта опция дёргает подключение и обрывает туннель.
++
++3. **Отключить IPv6 на клиенте** (если в профиле клиента нет IPv6-адреса).
++   AmneziaWG-туннель по умолчанию IPv4-only. Если у системы включён IPv6, часть трафика пойдёт мимо туннеля и сольёт реальный адрес.
++
++4. **(Только Chrome)** Открыть `chrome://flags/#local-network-access-check` и поставить **Disabled** — иначе могут отваливаться сайты, проверяющие приватную сеть.
++
++5. **Запретить VPN-клиенту использовать battery saver** в Android (`Settings → Apps → AmneziaWG → Battery → Unrestricted`), иначе ОС будет рвать соединение в фоне.
++
++---
++
++## 6. Управление сервером после установки
++
++### На Linux VPS
++
++| Что нужно                                | Команда                                                          |
++|------------------------------------------|------------------------------------------------------------------|
++| Добавить клиента                         | `sudo /usr/local/sbin/amneziawg-add-client <имя>`                |
++| Удалить клиента                          | `sudo /usr/local/sbin/amneziawg-remove-client <имя>`             |
++| Список клиентов                          | `ls /etc/amnezia/amneziawg/clients/`                             |
++| Посмотреть активные соединения           | `sudo awg show awg0`                                             |
++| Перезапустить сервис                     | `sudo systemctl restart awg-quick@awg0.service`                  |
++| Логи                                     | `journalctl -u awg-quick@awg0.service -n 100 --no-pager`         |
++| Сделать бэкап ключей                     | `sudo tar czf ~/amneziawg-backup.tgz /etc/amnezia/amneziawg/`    |
++
++### На pfSense
++
++| Что нужно                                | Где                                                              |
++|------------------------------------------|------------------------------------------------------------------|
++| Добавить туннель / пира                  | `VPN → AmneziaWG → Tunnels / Peers → Add`                        |
++| Live-статус и handshake                  | `Status → AmneziaWG`                                             |
++| Сделать туннель «первоклассным» интерфейсом | На странице Tunnels — иконка-цепочка в колонке Actions           |
++| Логи                                     | `Status → System Logs → System` + `tail -f /var/log/system.log`  |
++
++---
++
++## 7. FAQ
++
++### 7.1. Чем AmneziaWG отличается от обычного WireGuard?
++
++Tот же протокол ChaCha20-Poly1305 + Curve25519, та же скорость. Разница — в **обфускации**: AmneziaWG до и во время handshake-а отправляет настраиваемые «мусорные» пакеты и подмешивает фиксированные паттерны в первые байты сообщений. DPI, который ищет сигнатуру обычного WireGuard, AmneziaWG не видит.
++
++### 7.2. Можно ли использовать обычный WireGuard-клиент для подключения?
++
++**Нет.** В обычном `WireGuard` нет поддержки полей `Jc/Jmin/Jmax/S1..S4/H1..H4`, и handshake не пройдёт. Используй приложение **AmneziaWG** (или **AmneziaVPN**) с https://amnezia.org/downloads.
++
++### 7.3. Поддерживается ли роутер Keenetic / MikroTik / OpenWrt?
++
++Прямо в нашем пакете — нет, но AmneziaWG-клиент уже встроен в:
++- **Keenetic**: KeeneticOS 4.2+, см. [инструкция от Keenetic](https://help.keenetic.com/hc/ru/articles/360021212160-AmneziaWG).
++- **OpenWrt**: пакет [amneziawg-go](https://github.com/amnezia-vpn/amnezia-openwrt).
++- **MikroTik**: пока официально нет, обсуждение в issue-трекерах amnezia.
++
++На таких устройствах можно подключать профиль, сгенерированный нашим сервером.
++
++### 7.4. Как сделать бэкап и перенести на новый сервер?
++
++```sh
++# на старом сервере
++sudo tar czf ~/amneziawg-backup.tgz /etc/amnezia/amneziawg/
++
++# на новом сервере: установить наш пакет тем же скриптом, потом
++sudo systemctl stop awg-quick@awg0.service
++sudo tar xzf ~/amneziawg-backup.tgz -C /
++sudo systemctl start awg-quick@awg0.service
++```
++
++Endpoint в существующих клиентских профилях нужно поменять на новый IP/домен (поле `Endpoint =`).
++
++### 7.5. Сколько клиентов выдержит один VPS?
++
++На минимальной 1 CPU / 512 MB конфигурации — до ~10 одновременных активных клиентов на скорости канала. AmneziaWG (как и WireGuard) очень лёгкий: bottleneck чаще всего в полосе пропускания канала, не в CPU.
++
++### 7.6. Не работает с провайдером, который агрессивно режет UDP — что делать?
++
++Попробуй:
++1. Поменять `Jc` на 3, 4 или 5 (в Settings на сервере или вручную в профиле клиента).
++2. Поменять `ListenPort` на 443 (UDP) — некоторые DPI пропускают UDP/443.
++3. Если совсем не идёт — переключайся на OpenVPN с обфускацией ([рекомендация автора AntiZapret](https://github.com/GubernievS/AntiZapret-VPN/blob/main/README.md#openvpn-файлы-ovpn)).
++
++### 7.7. Сервер за пределами РФ или внутри — есть ли разница?
++
++Для самой обфускации — нет, AmneziaWG работает одинаково. Но если цель — обходить блокировки Роскомнадзора (Discord, YouTube, etc.), то **сервер должен быть за пределами РФ и стран бывшего СССР**, иначе он сам не сможет достучаться до заблокированных ресурсов.
++
++### 7.8. Pfsense пакет на kernel или userspace — что лучше?
++
++Производительность kernel-режима выше (~25% по нашим замерам на 1Gbps канале), но он зависит от ABI-совпадения `if_amn.ko` и pfSense-ядра. На свежих pfSense-снапшотах часто бывает ABI-mismatch, и пакет автоматически фоллбэкает на userspace — это полностью функционально. Принудительный выбор — в **VPN → AmneziaWG → Settings → Backend**.
+ 
+ ---
+ 
+-## 3. Архитектура pfSense-пакета
++## 8. Где купить VPS
++
++Подойдёт любой провайдер **за пределами РФ** (для разблокировки RKN-сайтов). Минимальные требования низкие — 512 MB RAM хватит.
++
++Несколько проверенных вариантов:
++- **Hetzner Cloud** (Германия / Финляндия) — самый дешёвый на рынке, CX11 ~3€/мес. Не принимает РФ-карты, но принимает крипту.
++- **AEZA**, **4VPS**, **VDSina**, **Timeweb** — принимают РФ-карты и крипту, есть локации в Европе.
++- **DigitalOcean**, **Vultr**, **Linode/Akamai** — классика, US/EU/SG локации, карты иностранных банков.
++
++**Что НЕ годится:**
++- VPS внутри РФ — не разблокирует RKN-заблокированные ресурсы.
++- VPS у российских провайдеров с локациями якобы «за рубежом», но фактически с маршрутизацией через РФ — встречается, проверяй `traceroute` до публичных IP за рубежом.
++
++---
++
++## 9. Что делать если не работает
++
++Краткий чек-лист:
++
++1. **VPS-установщик упал.** Запусти под `bash -x setup-vps.sh` и пришли лог в issue. Самое частое — VPS не той ОС, либо `add-apt-repository` не отрабатывает (нет интернета / DNS).
++2. **Сервис не запускается** (`systemctl status awg-quick@awg0.service` → failed).
++   - `journalctl -u awg-quick@awg0.service -n 100 --no-pager` → искать ошибки.
++   - Чаще всего — порт 51820 занят другим VPN. Поменяй `ListenPort`.
++3. **Клиент не подключается, handshake не идёт.**
++   - Проверить firewall на сервере (UDP-порт открыт?).
++   - Проверить, что `Endpoint = <публичный_IP>:<порт>` в клиентском профиле верный.
++   - Проверить раздел [«Внимание!»](#5-внимание-что-нужно-проверить-на-клиентском-устройстве) — на клиенте отключены безопасный DNS и IPv6.
++4. **Подключение есть, но интернета нет.**
++   - `sudo awg show awg0` → есть ли `latest handshake`? Если есть — проблема в NAT/маршрутизации.
++   - Проверить `sudo iptables -t nat -L POSTROUTING -n -v` — MASQUERADE-правило должно быть.
++   - Проверить `sysctl net.ipv4.ip_forward` → должно быть `= 1`.
++
++Подробный траблшутинг с конкретными ошибками: [docs/RUNBOOK.md → Траблшутинг](docs/RUNBOOK.md#траблшутинг).
++
++---
++
++## 10. Архитектура и сборка из исходников
+ 
+ ```
+               ┌────────────────────────────────────────────┐
+@@ -120,13 +317,7 @@ sudo bash setup-vps.sh \
+               └────────────────────────────────────────────┘
+ ```
+ 
+-Архитектура повторяет шаблон in-tree пакета `pfSense-pkg-WireGuard` (`if_wg.ko` + `wg(8)`), чтобы поведение и опыт администрирования были предсказуемыми.
+-
+----
+-
+-## 4. Сборка пакета из исходников
+-
+-Сборку нужно делать **на самой pfSense** (нужен `pkg(8)`):
++Сборка пакета **из исходников** (нужна сама pfSense, потому что `pkg(8)` есть только на FreeBSD):
+ 
+ ```sh
+ git clone https://github.com/wellskii/PupsoidAmneziaBSD.git
+@@ -136,45 +327,14 @@ cd PupsoidAmneziaBSD
+ pkg add work/dist/pfSense-pkg-AmneziaWG-0.2.0.pkg
+ ```
+ 
+-`make lint` локально на Ubuntu прогоняет `php -l` + `xmllint --noout` по всем PHP/XML-файлам без необходимости pkg(8).
+-
+----
++Локально на Ubuntu можно гонять только линт (`make lint` → `php -l` + `xmllint --noout`).
+ 
+-## 5. Карта файлов
+-
+-| Путь                                                  | Назначение                                              |
+-|-------------------------------------------------------|---------------------------------------------------------|
+-| `pkg/+MANIFEST`                                       | UCL-манифест пакета: имя, версия, зависимости           |
+-| `pkg/+POST_INSTALL`, `+POST_DEINSTALL`, `+PRE_DEINSTALL` | rc.packages lifecycle-хуки                              |
+-| `files/usr/local/pkg/amneziawg.xml`                   | packagegui-XML: пункты меню, ACL, описание полей        |
+-| `files/usr/local/pkg/amneziawg/includes/amneziawg.inc`| ядро PHP-библиотеки (конфиг, рендеринг, applier, helpers)|
+-| `files/usr/local/www/amneziawg/*.php`                 | страницы web-GUI                                        |
+-| `files/usr/local/etc/rc.d/amneziawg`                  | rc.d-сервис                                             |
+-| `files/etc/inc/priv/amneziawg.priv.inc`               | определения pfSense-привилегий                          |
+-| `scripts/build-on-pfsense.sh`                         | скрипт сборки .pkg на pfSense-хосте                     |
+-| `scripts/setup-vps.sh`                                | **однокомандный установщик для Linux VPS**              |
+-| `docs/RUNBOOK.md`                                     | пошаговый сценарий настройки                            |
+-| `docs/STATUS.md`                                      | роадмап и статус фаз                                    |
++История фаз разработки и road-map: [docs/STATUS.md](docs/STATUS.md).
+ 
+ ---
+ 
+-## 6. Что уже работает (подтверждено end-to-end)
++## Документация и помощь
+ 
+-- Хранение конфигурации в `config.xml` (`<amneziawg>`), round-trip с peers
+-- Рендеринг `/usr/local/etc/amneziawg/<if>.conf` со всеми obfuscation-параметрами
+-- Применение через `awg setconf` + `ifconfig` (userspace и kernel)
+-- Back-to-back handshake между двумя интерфейсами на одной pfSense
+-- Web-GUI: формы Tunnels / Peers / Settings, страница Status с живыми данными
+-- Создание туннеля через GUI с генерацией ключевой пары
+-- Назначение туннеля как pfSense-интерфейса одной кнопкой
+-- Установщик для Ubuntu/Debian VPS с автогенерацией клиентского QR-кода
+-
+----
+-
+-## 7. Документация и помощь
+-
+-- Полный сценарий настройки: [docs/RUNBOOK.md](docs/RUNBOOK.md)
+-- История фаз: [docs/STATUS.md](docs/STATUS.md)
++- Установочный сценарий: [docs/RUNBOOK.md](docs/RUNBOOK.md)
++- Подключение клиента: [docs/CLIENT-SETUP.md](docs/CLIENT-SETUP.md)
+ - Issues: https://github.com/wellskii/PupsoidAmneziaBSD/issues
+-
+-Лицензия — Apache-2.0. См. [LICENSE](LICENSE).
+diff --git a/docs/CLIENT-SETUP.md b/docs/CLIENT-SETUP.md
+new file mode 100644
+index 0000000..a1d1682
+--- /dev/null
++++ b/docs/CLIENT-SETUP.md
+@@ -0,0 +1,152 @@
++# Подключение клиента — пошагово по платформам
++
++После того как сервер развёрнут ([README — раздел 2](../README.md#2-установка-на-pfsense-одной-строкой) или [раздел 3](../README.md#3-установка-на-linux-vps-одной-строкой)), у тебя на руках:
++
++- либо **файл `<имя>.conf`** в `/etc/amnezia/amneziawg/clients/` (на Linux-VPS) или скачанный с pfSense,
++- либо **QR-код**, выведенный в терминал командой `amneziawg-add-client`.
++
++Этот документ объясняет, как импортировать профиль на разные ОС.
++
++> **Важно:** для подключения нужно **именно** приложение AmneziaWG / AmneziaVPN. Обычный клиент **WireGuard** не поддерживает поля `Jc/Jmin/Jmax/S1..S4/H1..H4` и handshake не пройдёт.
++
++---
++
++## Содержание
++
++- [Windows](#windows)
++- [macOS](#macos)
++- [iOS / iPadOS](#ios--ipados)
++- [Android](#android)
++- [Linux](#linux)
++- [Получение профиля с сервера](#получение-профиля-с-сервера)
++- [Проверка что VPN работает](#проверка-что-vpn-работает)
++
++---
++
++## Windows
++
++1. Скачай **AmneziaVPN** с https://amnezia.org/downloads → раздел Windows. Это `.exe`-установщик ~50 MB.
++2. Установи как обычное приложение. После запуска появится главное окно с большой кнопкой подключения.
++3. **Импорт профиля**: в правом верхнем углу нажми «+» / «Добавить конфигурацию» → «Файл (config / QR)» → выбери скачанный с сервера `<имя>.conf`.
++4. Профиль появится в списке. Нажми на него → «Подключить» (большая кнопка).
++5. Иконка в трее (рядом с часами) станет зелёной — VPN активен.
++
++**Альтернатива — AmneziaWG Windows Client (более лёгкий):**
++- Качай с https://github.com/amnezia-vpn/amneziawg-windows-client/releases.
++- Импорт `<имя>.conf` через меню «Add Tunnel from file».
++
++---
++
++## macOS
++
++1. Открой App Store, поищи **AmneziaWG** (издатель — Amnezia VPN OU).
++2. Установи и запусти.
++3. Меню «+ → Импорт из файла» → выбери `<имя>.conf`.
++4. Toggle «Connect» рядом с импортированным туннелем.
++
++**Альтернатива:** AmneziaVPN-десктоп с https://amnezia.org/downloads (универсальный клиент для всех протоколов Amnezia).
++
++---
++
++## iOS / iPadOS
++
++1. Установи **AmneziaWG** из App Store: https://apps.apple.com/app/amneziawg/id6478942365.
++2. При первом запуске разреши приложению добавлять VPN-конфигурацию в системные настройки.
++3. Нажми «+ → Сканировать QR-код» → наведи камеру на QR в окне терминала на сервере.
++4. Альтернативно: «+ → Импорт из файла» → выбери `<имя>.conf` (предварительно загруженный в Files через AirDrop / iCloud / Telegram).
++5. После импорта профиль появится в списке. Тап на свитч → разрешить системе включить VPN-конфигурацию.
++
++**Если QR не сканируется** (например, плохое разрешение терминала) — попроси сервер показать профиль текстом и перенеси через буфер обмена.
++
++---
++
++## Android
++
++1. Установи **AmneziaWG** из Google Play: https://play.google.com/store/apps/details?id=org.amnezia.awg.
++2. Запусти. Разреши приложению создавать VPN-подключения.
++3. «+ → Scan QR Code» → наведи камеру на QR в терминале сервера.
++4. Альтернативно: «+ → Import from file» → выбери `<имя>.conf` из памяти телефона.
++5. После импорта тапни на свитч слева от названия туннеля → подключение начнётся.
++
++**Важно для Android:**
++- В `Settings → Apps → AmneziaWG → Battery` поставь **Unrestricted**, иначе Android будет рвать VPN в фоне при экономии батареи.
++- В `Settings → Network → Private DNS` поставь **Off** или **Automatic** (см. [README раздел 5](../README.md#5-внимание-что-нужно-проверить-на-клиентском-устройстве)).
++
++---
++
++## Linux
++
++### Способ A: CLI (`amneziawg-tools`)
++
++Если на клиентской машине Ubuntu/Debian:
++
++```sh
++sudo add-apt-repository ppa:amnezia/ppa
++sudo apt-get update
++sudo apt-get install amneziawg amneziawg-tools
++
++# скопировать профиль (например с VPS через scp):
++sudo cp myphone.conf /etc/amnezia/amneziawg/awg0.conf
++
++# поднять:
++sudo systemctl enable --now awg-quick@awg0.service
++
++# проверить:
++sudo awg show awg0
++```
++
++Чтобы переключаться вкл/выкл:
++```sh
++sudo systemctl start  awg-quick@awg0.service   # включить
++sudo systemctl stop   awg-quick@awg0.service   # выключить
++```
++
++### Способ B: AmneziaVPN AppImage / Flatpak
++
++Качай универсальный десктоп-клиент с https://amnezia.org/downloads. Импорт профиля — через GUI как в macOS-инструкции.
++
++---
++
++## Получение профиля с сервера
++
++### С Linux VPS (setup-vps.sh)
++
++После создания клиента сервер выводит **QR прямо в терминал** и сохраняет конфиг в `/etc/amnezia/amneziawg/clients/<имя>.conf`.
++
++Скачать файл на свой компьютер:
++
++```sh
++# с Linux/macOS:
++scp root@your-vps.example.com:/etc/amnezia/amneziawg/clients/myphone.conf .
++
++# с Windows (PowerShell с OpenSSH):
++scp root@your-vps.example.com:/etc/amnezia/amneziawg/clients/myphone.conf .
++```
++
++Либо через WinSCP / MobaXterm / FileZilla — sftp на сервер, навигация в `/etc/amnezia/amneziawg/clients/`, drag-and-drop файла.
++
++Если QR в терминале маленький и плохо сканируется:
++
++```sh
++# перерендер QR с большим размером
++qrencode -t ansiutf8 < /etc/amnezia/amneziawg/clients/myphone.conf
++```
++
++### С pfSense
++
++1. **VPN → AmneziaWG → Peers** → выбрать пира → кнопка «Download config» → сохранится `<имя>.conf`.
++2. Либо через SSH: файл лежит как клиентский шаблон, который собирается на лету из данных туннеля.
++
++(Возможность экспорта QR прямо из GUI pfSense — в roadmap, см. [docs/STATUS.md](STATUS.md).)
++
++---
++
++## Проверка что VPN работает
++
++После подключения проверь по очереди:
++
++1. **Внешний IP сменился:** открой https://ifconfig.me — должен показать IP твоего VPS, не твой провайдерский.
++2. **DNS не утекает:** https://dnsleaktest.com → «Standard test» → ни один из показанных DNS-серверов не должен быть от твоего провайдера.
++3. **IPv6 не утекает:** https://ipv6-test.com → если у тебя в профиле нет IPv6-туннеля, IPv6 должен показывать «Not supported» или адрес сервера, **не** твой реальный.
++
++Если хоть один пункт не сошёлся — см. [README раздел 5 «Внимание!»](../README.md#5-внимание-что-нужно-проверить-на-клиентском-устройстве) и [раздел 9 «Что делать если не работает»](../README.md#9-что-делать-если-не-работает).
+diff --git a/docs/RUNBOOK.md b/docs/RUNBOOK.md
+index fd12178..d319f0e 100644
+--- a/docs/RUNBOOK.md
++++ b/docs/RUNBOOK.md
+@@ -184,12 +184,13 @@ journalctl -u awg-quick@awg0.service -n 100
+ ### B.5. Удалить клиента
+ 
+ ```sh
+-sudo awg set awg0 peer <PUBKEY> remove
+-sudo sed -i '/^# имя_клиента$/,/^$/d' /etc/amnezia/amneziawg/awg0.conf
+-rm /etc/amnezia/amneziawg/clients/имя_клиента.conf
++sudo /usr/local/sbin/amneziawg-remove-client имя_клиента
+ ```
+ 
+-(Будет автоматизирован отдельной командой `amneziawg-remove-client` в следующих версиях.)
++Команда:
++- снимет пира с live-интерфейса (`awg set awg0 peer <pubkey> remove`),
++- вырежет блок `[Peer]` из `/etc/amnezia/amneziawg/awg0.conf`,
++- удалит файл `/etc/amnezia/amneziawg/clients/имя_клиента.conf`.
+ 
+ ---
+ 
+diff --git a/docs/STATUS.md b/docs/STATUS.md
+index 59a94ff..6fdc9da 100644
+--- a/docs/STATUS.md
++++ b/docs/STATUS.md
+@@ -1,5 +1,11 @@
+ # PupsoidAmneziaBSD — статус разработки
+ 
++## TL;DR
++
++**v0.2.0 — готово к использованию.** Обе модели развёртывания (pfSense-пакет и Linux VPS-установщик) проверены end-to-end.
++
++Релиз: https://github.com/wellskii/PupsoidAmneziaBSD/releases/tag/v0.2.0
++
+ ## Сводная таблица фаз
+ 
+ | Фаза | Описание                                                                                          | Статус   |
+@@ -11,7 +17,8 @@
+ | 3    | GUI: формы редактирования tunnel/peer, парсинг `awg show`, импорт `.conf` / `awg://`               | **done** |
+ | 4    | pfSense pipeline integration: Interfaces → Assignments, gateway/firewall, end-to-end ping          | **done** |
+ | 5    | CI-сборка `.pkg`, GitHub Release, smoke-проверка                                                   | **done** |
+-| 6    | **Standalone VPS-installer**: `curl ... | sudo bash` поднимает AmneziaWG на голом Ubuntu/Debian   | **done** |
++| 6    | Standalone VPS-installer: `curl ... \| sudo bash` поднимает AmneziaWG на голом Ubuntu/Debian       | **done** |
++| 7    | Юзабилити-pass: переписан README, добавлен FAQ + CLIENT-SETUP, реализован `amneziawg-remove-client` | **done** |
+ 
+ ## Подтверждения end-to-end (testpfsense.pupsoid.ru)
+ 
+@@ -69,16 +76,25 @@ End-to-end тест через браузер на live pfSense (`awguitest` с
+ - Идемпотентен: повторный запуск не ломает существующую конфигурацию.
+ - Помощник `amneziawg-add-client <name>` для добавления новых клиентов.
+ 
++### Phase 7: юзабилити-pass
++
++- README полностью переписан под формат AntiZapret-VPN: 10 разделов от «Зачем AmneziaWG» до «Где купить VPS».
++- Добавлен раздел «Внимание!» — обязательные шаги на клиентском устройстве (отключение secure DNS, IPv6, battery saver на Android).
++- Добавлен FAQ из 8 пунктов (отличие от WireGuard, поддержка роутеров, миграция, capacity, рекомендации при DPI).
++- `docs/CLIENT-SETUP.md` — пошаговый гайд по установке клиента на Windows / macOS / iOS / Android / Linux.
++- `docs/RUNBOOK.md` — пошаговый сценарий настройки сервера на обеих платформах.
++- Реализован `amneziawg-remove-client <name>` — удаление пира с live-интерфейса + блок [Peer] из серверного .conf + удаление профиля клиента.
++
+ ## Известные ограничения
+ 
+ 1. **ABI kmod**: пакет в kernel-режиме работает только если `amnezia-kmod` собран под текущий kern.osreldate. При несовпадении автоматически фоллбэк на userspace без потери функциональности.
+-2. **Удаление клиента VPS**: пока через `awg set ... remove` вручную. Команда `amneziawg-remove-client` — в roadmap.
+-3. **CI-сборка**: `make pkg` нужно запускать на pfSense-хосте (нужен `pkg(8)`). Кросс-сборка с Linux в roadmap.
++2. **CI-сборка**: `make pkg` нужно запускать на pfSense-хосте (нужен `pkg(8)`). Кросс-сборка с Linux в roadmap.
++3. **Экспорт QR из pfSense GUI**: пока только из CLI (`qrencode`). Кнопка прямо в GUI — в roadmap.
+ 
+-## Roadmap (после 0.2.0)
++## Roadmap (post-0.2.0)
+ 
+-- v0.3: `amneziawg-remove-client` helper для VPS, авто-удаление peer + cleanup конфига.
+-- v0.3: автогенерация Outbound NAT-правила при assign-в-Interfaces.
++- v0.3: автогенерация Outbound NAT-правила при assign-в-Interfaces (сейчас вручную через Firewall → NAT → Outbound).
++- v0.3: кнопка «Download QR» прямо на странице Peers в pfSense.
+ - v0.4: CI на GitHub Actions: ubuntu-runner → docker FreeBSD → `make pkg`.
+-- v0.4: импорт `awg://`-ссылок (deeplink-формат Amnezia client).
++- v0.4: импорт `awg://`-deeplinks (формат Amnezia client).
+ - v1.0: миграция в FreeBSD ports tree (`net/pfSense-pkg-AmneziaWG`).
+diff --git a/scripts/setup-vps.sh b/scripts/setup-vps.sh
+index 5c2334f..85cff72 100755
+--- a/scripts/setup-vps.sh
++++ b/scripts/setup-vps.sh
+@@ -447,6 +447,67 @@ CLIENT_HELPER
+ chmod +x /usr/local/sbin/amneziawg-add-client
+ ok "Создан помощник: /usr/local/sbin/amneziawg-add-client"
+ 
++# Помощник для удаления клиента
++cat >/usr/local/sbin/amneziawg-remove-client <<'REMOVE_HELPER'
++#!/usr/bin/env bash
++# amneziawg-remove-client <client-name>  — удалить AmneziaWG-клиента
++set -Eeuo pipefail
++
++CLIENT_NAME="${1:-}"
++IFNAME="${IFNAME:-awg0}"
++[[ -n "$CLIENT_NAME" ]] || { echo "usage: $0 <client-name>" >&2; exit 1; }
++
++CONF_DIR="/etc/amnezia/amneziawg"
++CLIENTS_DIR="${CONF_DIR}/clients"
++SERVER_CONF="${CONF_DIR}/${IFNAME}.conf"
++CLIENT_CONF="${CLIENTS_DIR}/${CLIENT_NAME}.conf"
++
++[[ -s "$SERVER_CONF" ]] || { echo "Не нашёл $SERVER_CONF" >&2; exit 1; }
++[[ -s "$CLIENT_CONF" ]] || { echo "Не нашёл клиента $CLIENT_NAME ($CLIENT_CONF)" >&2; exit 2; }
++
++# Извлечь приватник клиента → получить публичный (для awg set ... remove)
++CLIENT_PRIV="$(awk -F'=' '/^PrivateKey[[:space:]]*=/ {sub(/^[[:space:]]+/,"",$2); print $2; exit}' "$CLIENT_CONF")"
++[[ -n "$CLIENT_PRIV" ]] || { echo "Не извлёк PrivateKey из $CLIENT_CONF" >&2; exit 1; }
++CLIENT_PUB="$(printf '%s' "$CLIENT_PRIV" | awg pubkey)"
++
++# Снять пира с live-интерфейса
++awg set "$IFNAME" peer "$CLIENT_PUB" remove
++
++# Удалить блок [Peer] из серверного .conf
++# Блок начинается с комментария "# <CLIENT_NAME>" и продолжается до пустой строки или EOF.
++python3 - "$SERVER_CONF" "$CLIENT_NAME" <<'PYEOF'
++import sys, re, pathlib
++path = pathlib.Path(sys.argv[1])
++name = sys.argv[2]
++lines = path.read_text().splitlines(keepends=True)
++out = []
++i = 0
++while i < len(lines):
++    if lines[i].strip() == f"# {name}":
++        # пропустить блок: # name, [Peer], PublicKey/PresharedKey/AllowedIPs до первой пустой строки
++        i += 1
++        while i < len(lines) and lines[i].strip() != "":
++            i += 1
++        # пропустить и пустую строку-разделитель
++        if i < len(lines) and lines[i].strip() == "":
++            i += 1
++        continue
++    out.append(lines[i])
++    i += 1
++path.write_text("".join(out))
++PYEOF
++
++# Удалить файл профиля
++rm -f "$CLIENT_CONF"
++
++echo "Клиент удалён: $CLIENT_NAME"
++echo "    Pubkey: $CLIENT_PUB"
++echo "    Файл:   $CLIENT_CONF (удалён)"
++echo "    Сервер: $SERVER_CONF (блок [Peer] удалён)"
++REMOVE_HELPER
++chmod +x /usr/local/sbin/amneziawg-remove-client
++ok "Создан помощник: /usr/local/sbin/amneziawg-remove-client"
++
+ # Если клиента ещё нет — создаём дефолтного
+ if [[ ! -f "$CLIENT_CONF" ]]; then
+     step "Создание первого клиента: ${CLIENT_NAME}"

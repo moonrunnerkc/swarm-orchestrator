@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-python-pr1595",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1595,
+    "headSha": "733587e54f3dac57d369319582480235f64a1101",
+    "baseSha": "5db69c6d5f3e7e39023973ca4b235046e5661157",
+    "title": "ci: migrate claude.yml to Workload Identity Federation auth",
+    "body": "Replaces the static `ANTHROPIC_API_KEY` repo secret with Workload Identity Federation: `claude-code-action` exchanges this job's GitHub OIDC token for a short-lived access token instead of reading a long-lived key.\n\n- The federation rule is bound to this repository (repository_id-pinned), so the IDs below are repo-specific and not reusable elsewhere.\n- Pins `claude-code-action` to v1.0.132 — the WIF inputs (`anthropic_federation_rule_id` etc.) landed in v1.0.130.\n- `permissions: id-token: write` was already present.\n- No `anthropic_workspace_id` — the rule targets the org's default workspace, so the input is optional (per the action's [docs/setup.md](https://github.com/anthropics/claude-code-action/blob/main/docs/setup.md)).\n\nOnce merged, the `ANTHROPIC_API_KEY` repo secret can be removed.",
+    "author": "zenexer-ant",
+    "headRef": "zenexer/wif-claude-action",
+    "repository": "anthropics/anthropic-sdk-python"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-python",
+    "headSha": "733587e54f3dac57d369319582480235f64a1101",
+    "baseSha": "5db69c6d5f3e7e39023973ca4b235046e5661157"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-python-pr1595.diff",
+  "vendoredAt": "2026-05-24T03:16:49.671Z",
+  "collectedAt": "2026-05-24T03:16:49.671Z"
+}

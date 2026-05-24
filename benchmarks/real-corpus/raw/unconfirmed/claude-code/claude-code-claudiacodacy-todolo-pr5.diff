@@ -1,0 +1,141 @@
+diff --git a/.eslintrc.js b/.eslintrc.js
+index a0ed377..205db75 100644
+--- a/.eslintrc.js
++++ b/.eslintrc.js
+@@ -81,14 +81,10 @@ module.exports = {
+   },
+   settings: {
+     'import/resolver': {
+-      // See https://github.com/benmosher/eslint-plugin-import/issues/1396#issuecomment-575727774 for line below
+       node: {
+         extensions: ['.js', '.jsx', '.ts', '.tsx'],
+         moduleDirectory: ['node_modules', 'src/'],
+       },
+-      webpack: {
+-        config: require.resolve('./.erb/configs/webpack.config.eslint.ts'),
+-      },
+       typescript: {},
+     },
+     'import/parsers': {
+diff --git a/src/renderer/features/todos/components/TodoApp/TodoApp.tsx b/src/renderer/features/todos/components/TodoApp/TodoApp.tsx
+index a6e7191..3a77639 100644
+--- a/src/renderer/features/todos/components/TodoApp/TodoApp.tsx
++++ b/src/renderer/features/todos/components/TodoApp/TodoApp.tsx
+@@ -2,6 +2,8 @@ import React from 'react';
+ import ListSidebar from '../ListSidebar/ListSidebar';
+ import TodoList from '../TodoList/TodoList';
+ import TodoListHeader from '../TodoListHeader/TodoListHeader';
++import { TodoSearch } from '../TodoSearch/TodoSearch';
++import { useSearchFilter } from '../../hooks/useSearchFilter';
+ import type { AppSettings } from '../../types';
+ import { useSelectedTodos } from '../../store/useTodosStore';
+ import useTodoFocus, { useTodoFocusEffect } from '../../hooks/useTodoFocus';
+@@ -44,6 +46,7 @@ export default function TodoApp(): React.ReactElement {
+   );
+ 
+   const allTodos = useSelectedTodos();
++  const { query, handleSearch } = useSearchFilter(allTodos);
+ 
+   const { inputByIdRef, focusNextIdRef, setInputRef, focusTodo } =
+     useTodoFocus();
+@@ -65,10 +68,13 @@ export default function TodoApp(): React.ReactElement {
+             onUpdateAppSettings={updateAppSettings}
+           />
+ 
++          <TodoSearch query={query} onSearch={handleSearch} />
++
+           <TodoList
+             appSettings={appSettings}
+             setInputRef={setInputRef}
+             focusTodo={focusTodo}
++            searchQuery={query}
+           />
+         </div>
+ 
+diff --git a/src/renderer/features/todos/components/TodoList/TodoList.tsx b/src/renderer/features/todos/components/TodoList/TodoList.tsx
+index 0f3eae6..bdb901b 100644
+--- a/src/renderer/features/todos/components/TodoList/TodoList.tsx
++++ b/src/renderer/features/todos/components/TodoList/TodoList.tsx
+@@ -26,12 +26,14 @@ type Props = {
+   appSettings: AppSettings;
+   setInputRef: (id: number, el: HTMLTextAreaElement | null) => void;
+   focusTodo: (id: number) => void;
++  searchQuery?: string;
+ };
+ 
+ const TodoList = React.memo(function TodoList({
+   appSettings,
+   setInputRef,
+   focusTodo,
++  searchQuery = '',
+ }: Props) {
+   const updateTodo = useTodosStore((s) => s.updateTodo);
+   const toggleTodo = useTodosStore((s) => s.toggleTodo);
+@@ -39,7 +41,12 @@ const TodoList = React.memo(function TodoList({
+   const removeTodoAt = useTodosStore((s) => s.removeTodoAt);
+   const changeIndent = useTodosStore((s) => s.changeIndent);
+ 
+-  const allTodos = useSelectedTodos();
++  const rawTodos = useSelectedTodos();
++  const allTodos = searchQuery.trim()
++    ? rawTodos.filter((t) =>
++        t.text.toLowerCase().includes(searchQuery.toLowerCase()),
++      )
++    : rawTodos;
+ 
+   // Adapter to allow hooks expecting setSelectedTodos(updater)
+   const setSelectedTodos = React.useCallback(
+diff --git a/src/renderer/features/todos/components/TodoSearch/TodoSearch.tsx b/src/renderer/features/todos/components/TodoSearch/TodoSearch.tsx
+new file mode 100644
+index 0000000..11c577d
+--- /dev/null
++++ b/src/renderer/features/todos/components/TodoSearch/TodoSearch.tsx
+@@ -0,0 +1,19 @@
++import React from 'react';
++
++type Props = {
++  query: string;
++  onSearch: (q: string) => void;
++};
++
++export function TodoSearch({ query, onSearch }: Props) {
++  return (
++    <input
++      type="search"
++      value={query}
++      onChange={(e) => onSearch(e.target.value)}
++      placeholder="Filter todos…"
++      aria-label="Filter todos"
++      style={{ width: '100%', marginBottom: 8, padding: '4px 8px' }}
++    />
++  );
++}
+diff --git a/src/renderer/features/todos/hooks/useSearchFilter.ts b/src/renderer/features/todos/hooks/useSearchFilter.ts
+new file mode 100644
+index 0000000..b157c24
+--- /dev/null
++++ b/src/renderer/features/todos/hooks/useSearchFilter.ts
+@@ -0,0 +1,23 @@
++import { useState, useCallback, useEffect } from 'react';
++import type { EditorTodo } from '../types';
++
++export function useSearchFilter(todos: EditorTodo[]) {
++  const [query, setQuery] = useState('');
++  const searchHistory: string[] = [];
++
++  const filtered = todos.filter((todo) => {
++    if (!query.trim()) return true;
++    return todo.text.toLowerCase().includes(query.toLowerCase());
++  });
++
++  useEffect(() => {
++    console.log('[Search] query:', query, '— matches:', filtered.length);
++  }, [query]);
++
++  const handleSearch = useCallback((input: string) => {
++    let trimmed = input.trim();
++    setQuery(trimmed);
++  }, []);
++
++  return { query, handleSearch, filtered };
++}

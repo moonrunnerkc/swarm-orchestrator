@@ -1,0 +1,33 @@
+diff --git a/src/main/resources/doc/io.kestra.plugin.minio.md b/src/main/resources/doc/io.kestra.plugin.minio.md
+new file mode 100644
+index 0000000..d449104
+--- /dev/null
++++ b/src/main/resources/doc/io.kestra.plugin.minio.md
+@@ -0,0 +1,27 @@
++# How to use the MinIO plugin
++
++Upload, download, list, copy, and delete objects in MinIO (or any S3-compatible store) from Kestra flows.
++
++## Authentication
++
++Set `endpoint` to your MinIO server URL, `accessKeyId` to your access key, and `secretKeyId` to your secret key. Optionally set `region`. For TLS mutual auth, pass PEM content via `clientPem` and `caPem`. Store secrets in [secrets](https://kestra.io/docs/concepts/secret) and apply connection properties globally with [plugin defaults](https://kestra.io/docs/workflow-components/plugin-defaults).
++
++## Tasks
++
++`Upload` writes a file to MinIO — set `bucket`, `key`, and `from` (a `kestra://` URI). Optionally set `contentType` and `metadata`.
++
++`Download` retrieves a single object — set `bucket` and `key`. Optionally scope to a specific `versionId`. The output `uri` points to internal storage.
++
++`Downloads` retrieves multiple objects matching a `prefix` — set `bucket` and optionally `prefix`, `regexp`, or `filter`. Use `action` and `moveTo` to move or delete source objects after download.
++
++`List` returns objects in a `bucket` — filter with `prefix`, `regexp`, or `filter`. Set `recursive: true` to traverse subdirectories.
++
++`Delete` removes a single object by `bucket` and `key`.
++
++`DeleteList` removes multiple objects matching a `prefix` — set `bucket` and optionally `prefix`, `regexp`, or `filter`. Set `errorOnEmpty: false` to suppress errors when no objects match.
++
++`Copy` copies an object — set `from` (with `bucket` and `key`) and `to` (with `bucket` and `key`). Set `delete: true` to move rather than copy.
++
++`CreateBucket` creates a bucket by `bucket` name.
++
++`Trigger` polls MinIO on a schedule and starts one execution per batch of matching objects. Set `bucket` and optionally `prefix`, `regexp`, or `filter`. Use `action` to move or delete objects after triggering to avoid reprocessing.

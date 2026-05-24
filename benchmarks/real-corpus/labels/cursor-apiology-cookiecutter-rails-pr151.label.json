@@ -1,0 +1,6 @@
+{
+  "verdict": "clean",
+  "rationale": "Switches the cookiecutter-rails template from the apiology/solargraph fork to upstream solargraph >=0.59.2 in the generated Gemfile (the fork was only needed for RBS support, which is now upstream as of 0.57.0). Companion changes: hooks/post_gen_project.py introduces a `RAILS_VERSION = '7.2.3.1'` constant and updates both `gem install rails -v` and `rbenv exec rails _<version>_ new` to use it (and Gemfile.patch bumps `gem 'rails', '~> 7.2.3'`). .solargraph.yml and .overcommit.yml replace the `bin/*` glob with explicit bin entries and add `bin/docker-entrypoint`, `config/boot.rb`, and `spec/**/*` exclusions to dodge a known Solargraph 0.59 limitation around `ENV[]` resolution against RBS::Unnamed::ENVClass. The two @sg-ignore annotations in punchlist.rb and populate_heroku.rake are moved one line up so the suppression actually attaches to the warning-producing line under the new resolver. Clean version bump with the appropriate template adjustments.",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T13:40:00.000Z"
+}

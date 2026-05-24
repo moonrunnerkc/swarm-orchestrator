@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-typescript-pr1026",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1026,
+    "headSha": "adfdb8a24f8ea89d021c06a4f006d0cfce9fecf4",
+    "baseSha": "d3aff2821ae2e261f67a10779c8a47c3ce24f0e8",
+    "title": "fix(types): make betaZodTool return type assignable to ToolUnion",
+    "body": "## Summary\n\n`betaZodTool` always creates a custom tool (`type: 'custom'`), but its return type was `BetaRunnableTool<T>` which is `BetaClientRunnableToolType & { run, parse }`. Because `BetaClientRunnableToolType` is a union that distributes through the intersection, TypeScript expands it to `(BetaTool & { run, parse }) | (BetaToolBash & { run, parse }) | ...`. The `BetaTool.InputSchema.required` field is typed as `string[] | readonly string[] | null`, while `Tool.InputSchema.required` (used in the non-beta `ToolUnion`) only allows `string[] | null`. Under `exactOptionalPropertyTypes: true`, `readonly string[]` is not assignable to `Array<string>`, so `BetaRunnableTool<T>` is not assignable to `ToolUnion`, causing TS2322 for anyone trying to pass a `betaZodTool` result to `messages.stream()` or `messages.create()`.\n\nThe fix introduces `BetaRunnableCustomTool<T>` — a narrower type specifically for user-defined custom tools. Its `input_schema.required` is `string[] | null` (no `readonly`), making it structurally compatible with both `Tool.InputSchema` (non-beta) and `BetaTool.InputSchema` (beta). `betaZodTool` now returns this type, and it is re-exported from `helpers/beta/zod` so callers can reference it in type annotations. `BetaRunnableTool<T>` is preserved unchanged for existing usages in `betaTool`, `betaJsonSchemaTool`, and the tool-runner internals.\n\n## Issue\n\nFixes #1010\n\n## Local verification\n\n```\ncd /tmp/anthropic-sdk-typescript\n\n# TypeScript typecheck (must pass with zero errors)\n./node_modules/.bin/tsc --noEmit\n# Output: (empty – exit 0)\n\n# Run the narrowly-scoped test file covering betaZodTool\n./node_modules/.bin/jest tests/helpers/zod.test.ts --no-coverage\n```\n\nLast lines of output:\n```\nTest Suites: 1 passed, 1 total\nTests:       23 passed, 23 total\nSnapshots:   0 total\nTime:        0.359 s\n```\n\n=== LOCAL_TEST_PASSED ===\n\n## Risk\n\nThis is a **type-only change** with no runtime effect. No compiled JavaScript is modified. The only observable change for users is that `betaZodTool`'s return type becomes `BetaRunnableCustomTool<T>` instead of `BetaRunnableTool<T>`. Because `BetaRunnableCustomTool<T>` is a subtype of `BetaRunnableTool<T>` (all required structural constraints of `BetaRunnableTool` are satisfied), existing code that accepts `BetaRunnableTool<T>` will also accept the new type without modification.\n",
+    "author": "xodn348",
+    "headRef": "fix/beta-runnable-tool-assignable-to-tool-union",
+    "repository": "anthropics/anthropic-sdk-typescript"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-typescript",
+    "headSha": "adfdb8a24f8ea89d021c06a4f006d0cfce9fecf4",
+    "baseSha": "d3aff2821ae2e261f67a10779c8a47c3ce24f0e8"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-typescript-pr1026.diff",
+  "vendoredAt": "2026-05-24T03:16:39.114Z",
+  "collectedAt": "2026-05-24T03:16:39.114Z"
+}

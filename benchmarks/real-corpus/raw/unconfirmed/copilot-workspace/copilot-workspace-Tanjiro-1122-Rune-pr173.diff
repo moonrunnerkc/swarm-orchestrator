@@ -1,0 +1,475 @@
+diff --git a/docs/operational-capability-readiness.md b/docs/operational-capability-readiness.md
+new file mode 100644
+index 0000000..7da5468
+--- /dev/null
++++ b/docs/operational-capability-readiness.md
+@@ -0,0 +1,451 @@
++# Operational Capability Readiness Assessment
++
++**Generated:** 2026-05-24  
++**Assessed by:** Copilot (automated inspection of repository HEAD)  
++**Scope:** Six target operational capabilities against the `Tanjiro-1122/Rune` codebase
++
++---
++
++## How to Read This Document
++
++Each section describes one capability with four sections:
++
++- **Current state** — what exists in the code today
++- **Evidence** — specific file/line citations from the repository
++- **Gaps & blockers** — what is missing or unconnected
++- **Estimated readiness** — a qualitative distance rating
++- **Recommended next steps** — ordered, actionable work items
++
++The ratings in the [capability matrix](#capability-matrix) use this scale:
++
++| Symbol | Meaning |
++|--------|---------|
++| 🟢 **Ready** | Full code path exists, gated, audited; only env vars / approval needed to execute |
++| 🟡 **Partial** | Gate policy and audit exist; executor is present but blocked by a config switch or missing runner |
++| 🟠 **Stub** | Gate policy is registered and auditable; no real executor is wired |
++| 🔴 **Not connected** | No executor exists and the integration is explicitly listed as not wired yet |
++
++---
++
++## Capability Matrix
++
++| Capability | Gate policy | Audit log | Executor wired | Runner dependency | Real integration | Rating |
++|---|---|---|---|---|---|---|
++| Merge | ✅ | ✅ | ✅ | ❌ (GITHUB_TOKEN + allowlist) | ✅ Octokit | 🟢 Ready |
++| Deploy | ✅ | ✅ | ✅ (queued) | ❌ needs `RUNE_DEPLOYMENT_MUTATION_MODE=cli_runner` + runner process | ✅ Vercel CLI | 🟡 Partial |
++| Rollback | ✅ | ✅ | ✅ (queued) | ❌ same as deploy | ✅ Vercel CLI | 🟡 Partial |
++| Change payments | ✅ | ✅ | ❌ | — | ❌ RevenueCat write not connected | 🔴 Not connected |
++| Grant entitlements | ✅ | ✅ | ❌ | — | ❌ RevenueCat write not connected | 🔴 Not connected |
++| Mutate schemas/DNS/customer systems | ✅ | ✅ | ❌ | — | ❌ No migration/DNS/CRM API wired | 🔴 Not connected |
++
++---
++
++## 1. Merge
++
++### Current state
++
++A complete, safety-gated merge code path exists and is reachable today.
++
++`lib/privileged-merge.ts` implements `runPrivilegedMerge`, which:
++1. Validates the repo is in the allowlist (`lib/repo-actions.ts` → `isRepoAllowed`).
++2. Fetches the PR via Octokit, collects check-run conclusions, and auto-builds the required evidence (`approved_pr_url`, `passing_checks`, `diff_summary`, `rollback_plan`).
++3. Passes all evidence through `evaluatePrivilegedOperationGate` (`lib/privileged-operations.ts`) which verifies the exact approval phrase `APPROVE RUNE MERGE`, dry-run flag, all required scope and evidence fields.
++4. Writes an audit record to `rune_action_events` via `auditPrivilegedOperationGate`.
++5. On a live (non-dry-run) approved gate, calls `octokit.pulls.merge` with `merge_method: "squash"`.
++
++This is exposed via `POST /api/privileged-operations` with `action: "merge"` (`app/api/privileged-operations/route.ts`).
++
++A second, pipeline-oriented merge path exists in `lib/rune-lifecycle.ts` (`runLifecycle`), used when Rune opens its own PRs and auto-merges them after preview build and security gate checks.
++
++A smoke test asserts the structural invariants in `scripts/privileged-merge-smoke-test.mjs`.
++
++### Evidence
++
++| Artifact | Lines | Notes |
++|---|---|---|
++| `lib/privileged-operations.ts` | 55–66 | `merge` policy: exact phrase, required scope, required evidence, `dryRunRequired: true` |
++| `lib/privileged-merge.ts` | 59–178 | `runPrivilegedMerge` — full gate + Octokit execution |
++| `app/api/privileged-operations/route.ts` | 7–75 | `POST` with `action: "merge"` routes to `runPrivilegedMerge` |
++| `lib/rune-lifecycle.ts` | 190–196, 250–319 | `mergePR` helper and `runLifecycle` pipeline |
++| `supabase/schema.sql` | 262–275 | `rune_action_events` table where all gate audits are persisted |
++| `scripts/privileged-merge-smoke-test.mjs` | 1–13 | Structural assertions on key merge invariants |
++
++### Gaps & blockers
++
++| Gap | Impact |
++|---|---|
++| `GITHUB_TOKEN` or `RUNE_GITHUB_TOKEN` must be set in production | Without it, Octokit client is unauthenticated; private repos and write operations will fail |
++| Target repo must appear in the allowlist (`isRepoAllowed`) | All three managed repos are not automatically allowlisted; this needs confirming per env |
++| `rune_action_events` table schema mismatch (`jarvis_action_events` in old code) may mean historic audit data is on a different table | Audit trail integrity depends on which table name is live in Supabase |
++
++### Estimated readiness
++
++🟢 **Ready** — the full code path is implemented, gated, and audited. Merge can execute today once `GITHUB_TOKEN` is set and the target repo is allowlisted. The dry-run mode allows safe testing before first live execution.
++
++### Recommended next steps
++
++1. Confirm `GITHUB_TOKEN` (or `RUNE_GITHUB_TOKEN`) is set as a Vercel/production env var.
++2. Run a dry-run merge (`dryRun: true`) against a known open PR and confirm the gate result and audit log entry.
++3. Verify `rune_action_events` (not `jarvis_action_events`) is the live table in Supabase.
++4. Test one live squash merge to confirm end-to-end.
++
++---
++
++## 2. Deploy
++
++### Current state
++
++A structured deploy execution path exists via `lib/deployment-control.ts` (`executeDeploymentControlAction` with `action: "execute_redeploy"`).
++
++The flow:
++1. Checks exact approval text matches `APPROVE RUNE REDEPLOY`.
++2. Lists recent Vercel production deployments using the Vercel API.
++3. Constructs the documented Vercel CLI command: `vercel redeploy <url> --token=$VERCEL_TOKEN`.
++4. If `RUNE_DEPLOYMENT_MUTATION_MODE` is set to `cli_runner`, the command is queued as a task via `queueCliRunnerJob` (`lib/cli-runner-jobs.ts`), which writes a task row to Supabase for an external runner process to claim and execute.
++5. If `RUNE_DEPLOYMENT_MUTATION_MODE` is not `cli_runner`, the action is blocked with a full audit log but the documented command is returned for manual execution.
++
++A separate, simpler deploy path also exists in `lib/rune-lifecycle.ts` (`triggerRedeploy`) that calls Vercel's v13 deployments API directly, used only within the automated PR lifecycle pipeline.
++
++The `deploy` gate policy is registered in `lib/privileged-operations.ts` (approval phrase: `APPROVE RUNE DEPLOY`, required evidence: `build_passed`, `target_environment`, `release_summary`, `rollback_plan`). However, the `POST /api/privileged-operations` route only handles `action: "evaluate_gate"` for deploy — there is no `action: "deploy"` execution handler in that route. Execution goes through a separate API path (not yet identified as a dedicated route; the deployment-control functions appear to be called from the chat/operator tool router).
++
++### Evidence
++
++| Artifact | Lines | Notes |
++|---|---|---|
++| `lib/privileged-operations.ts` | 67–78 | `deploy` policy: phrase `APPROVE RUNE DEPLOY`, required scope/evidence |
++| `lib/deployment-control.ts` | 197–348 | `executeDeploymentControlAction` with full guard, audit, and CLI runner queue path |
++| `lib/deployment-control.ts` | 187–194 | `getDeploymentMutationMode()` reads `RUNE_DEPLOYMENT_MUTATION_MODE` |
++| `lib/deployment-control.ts` | 279–302 | Blocked path when `mutationMode !== "cli_runner"`, returns `documentedCommand` |
++| `lib/deployment-control.ts` | 305–315 | `queueCliRunnerJob` call when `cli_runner` mode is active |
++| `lib/cli-runner-jobs.ts` | 4–6 | `ALLOWED_COMMAND_PREFIXES` includes `"vercel redeploy "` |
++| `lib/rune-lifecycle.ts` | 200–211 | `triggerRedeploy()` — direct Vercel API v13 deployment clone |
++| `scripts/privileged-operations-control-plane-smoke-test.mjs` | 4–16 | Asserts `deploy` policy registration and phrase |
++
++### Gaps & blockers
++
++| Gap | Impact |
++|---|---|
++| `RUNE_DEPLOYMENT_MUTATION_MODE` must be set to `cli_runner` | Without it, approve + execution is blocked; returns command but does not deploy |
++| `RUNE_RUNNER_TOKEN` and a live external runner process must exist | The CLI runner job is only queued to Supabase; a separate runner process must poll and execute it |
++| `VERCEL_TOKEN` or `RUNE_VERCEL_TOKEN` must be configured | Without it, Vercel API calls fail at inspection and at runner execution time |
++| No dedicated API route for deploy execution | The deployment-control functions are invoked via chat/operator tool router, not directly exposed via a simple REST endpoint |
++
++### Estimated readiness
++
++🟡 **Partial** — the gate, audit, command generation, and queuing infrastructure is fully built. The blocker is operational: the external runner process and `RUNE_DEPLOYMENT_MUTATION_MODE=cli_runner` env var are required for live execution.
++
++### Recommended next steps
++
++1. Set `RUNE_DEPLOYMENT_MUTATION_MODE=cli_runner` in production once a runner process is ready.
++2. Stand up the external runner that polls the task queue and executes allowlisted commands with `VERCEL_TOKEN`.
++3. Run a dry-run deploy inspection via `prepareDeploymentControlAction` to confirm Vercel token and deployment listing work.
++4. Document which API route or chat tool invokes `executeDeploymentControlAction` to make the path explicit.
++
++---
++
++## 3. Rollback
++
++### Current state
++
++Rollback is structurally identical to deploy. `lib/deployment-control.ts` handles `action: "execute_rollback"` in `executeDeploymentControlAction`. The policy is registered with phrase `APPROVE RUNE ROLLBACK`.
++
++The logic:
++1. Lists recent Vercel production deployments.
++2. Finds the most recent `READY` deployment that is not index-0 (i.e., not the current one) as the rollback candidate.
++3. Constructs `vercel rollback <url> --token=$VERCEL_TOKEN`.
++4. Queues or blocks depending on `RUNE_DEPLOYMENT_MUTATION_MODE`.
++
++A simpler `rollbackProduction()` function also exists in `lib/rune-lifecycle.ts`, which calls Vercel v13 API directly to promote the `deployments[1]` deployment.
++
++### Evidence
++
++| Artifact | Lines | Notes |
++|---|---|---|
++| `lib/privileged-operations.ts` | 79–90 | `rollback` policy: phrase `APPROVE RUNE ROLLBACK`, required evidence includes `blast_radius` |
++| `lib/deployment-control.ts` | 125–183 | `prepareDeploymentControlAction` — identifies rollback candidate |
++| `lib/deployment-control.ts` | 197–348 | `executeDeploymentControlAction` — handles `execute_rollback` |
++| `lib/cli-runner-jobs.ts` | 4–6 | `"vercel rollback "` is an allowlisted command prefix |
++| `lib/rune-lifecycle.ts` | 322–349 | `rollbackProduction()` — direct Vercel API rollback |
++| `scripts/privileged-operations-control-plane-smoke-test.mjs` | 4–16 | Asserts `rollback` policy and phrase |
++
++### Gaps & blockers
++
++Same as deploy (runner, `RUNE_DEPLOYMENT_MUTATION_MODE`, `VERCEL_TOKEN`). Additionally:
++
++| Gap | Impact |
++|---|---|
++| Rollback candidate selection is index-based (`deployments[1]`) | If recent deployments include preview builds or failed states, the wrong deployment may be selected; explicit `deploymentId` parameter should be confirmed in practice |
++| No automated smoke test of rollback candidate selection logic | Rollback to wrong version could cause an outage longer than the original issue |
++
++### Estimated readiness
++
++🟡 **Partial** — same status as deploy. All code is in place; the runner process is the only operational blocker.
++
++### Recommended next steps
++
++1. Same as deploy: stand up the CLI runner, set `RUNE_DEPLOYMENT_MUTATION_MODE=cli_runner`.
++2. Run a `prepare_rollback` inspection (`prepareDeploymentControlAction`) against production to confirm the candidate selection returns the intended deployment before any live rollback is approved.
++3. Add a test or assertion on rollback candidate selection logic to guard against off-by-one errors in the deployment list.
++
++---
++
++## 4. Change Payments
++
++### Current state
++
++The `change_payments` gate policy is fully registered with the exact approval phrase `APPROVE RUNE PAYMENT CHANGE` and requires evidence fields: `payment_provider`, `affected_products`, `financial_impact`, `reversal_plan`. The `evaluate_gate` action in the privileged-operations API can check completeness and return a gate result with an audit record.
++
++However, **no executor exists**. RevenueCat integration is read-only (`lib/revenuecat-readonly.ts`): it can fetch subscriber info and entitlement status via the RevenueCat REST API (read key), but cannot create prices, cancel subscriptions, issue refunds, or modify any product in Stripe, RevenueCat, or App Store Connect.
++
++`RUNE_NOT_CONNECTED_YET` in `lib/project-registry.ts` explicitly lists:
++> "RevenueCat direct admin/granting controls"
++
++The `RUNE_APPROVAL_REQUIRED_ACTIONS` list includes:
++> "granting credits/free months/subscription changes"
++
++This confirms the current design intent: payment changes are gated and audited but not yet executable.
++
++### Evidence
++
++| Artifact | Lines | Notes |
++|---|---|---|
++| `lib/privileged-operations.ts` | 91–101 | `change_payments` policy: phrase, required evidence, `forbiddenWithoutApproval` list |
++| `lib/revenuecat-readonly.ts` | 1–50 | Read-only subscriber/entitlement lookup; no write methods |
++| `lib/revenuecat-overview.ts` | — | Overview/read-only report; no write methods |
++| `lib/project-registry.ts` | 186–192 | `RUNE_NOT_CONNECTED_YET`: RevenueCat write explicitly listed |
++| `lib/project-registry.ts` | 164–173 | `RUNE_APPROVAL_REQUIRED_ACTIONS` includes subscription changes |
++| `app/api/revenuecat/` | — | API route wraps read-only functions only |
++
++### Gaps & blockers
++
++| Gap | Impact |
++|---|---|
++| No RevenueCat write/admin API client | Cannot grant, revoke, refund, or modify subscriptions; would require the RevenueCat REST API secret key and write endpoints |
++| No Stripe client | Direct Stripe price or product changes are not possible; no client is in the codebase |
++| No App Store Connect in-app purchase management | App Store Connect integration is read-only (build/TestFlight status); IAP changes are not wired |
++| Gate evaluation works but returns `canExecute: false` with no executor | Approval would pass the gate but then have nowhere to go |
++
++### Estimated readiness
++
++🔴 **Not connected** — gate policy and audit infrastructure are ready; the integration with any payment provider write API does not exist. A substantial new integration must be built.
++
++### Recommended next steps
++
++1. Decide which payment provider(s) are in scope (RevenueCat admin API, Stripe, or both).
++2. Obtain and vault a RevenueCat Secret API key (`REVENUECAT_SECRET_KEY`) separate from the existing read key.
++3. Build a `lib/revenuecat-admin.ts` module that wraps the RevenueCat [grant promotional entitlement](https://www.revenuecat.com/reference/grant-a-promotional-entitlement), revoke, and subscriber-update endpoints behind the existing gate.
++4. Wire the executor into the privileged-operations API route as a new `action: "change_payments"` handler.
++5. Write a dry-run smoke test to confirm gate → audit → executor flow end-to-end.
++
++---
++
++## 5. Grant Entitlements
++
++### Current state
++
++Identical situation to Change Payments from an infrastructure standpoint.
++
++The `grant_entitlements` policy is registered with phrase `APPROVE RUNE ENTITLEMENT GRANT` and requires `user_identifier`, `entitlement_name`, `reason`, `expiration_or_reversal_plan`. The gate can be evaluated and audited.
++
++No write executor exists. `lib/revenuecat-readonly.ts` can only read a subscriber's current entitlements. Granting, revoking, or extending entitlements via the RevenueCat admin API is not implemented.
++
++### Evidence
++
++| Artifact | Lines | Notes |
++|---|---|---|
++| `lib/privileged-operations.ts` | 103–114 | `grant_entitlements` policy |
++| `lib/revenuecat-readonly.ts` | — | Returns `isActive` flag per entitlement; no grant/revoke methods |
++| `lib/project-registry.ts` | 186–192 | RevenueCat admin controls listed as not connected |
++| `app/api/revenuecat/route.ts` | — | Wraps read-only lookup; no write actions |
++
++### Gaps & blockers
++
++Same as Change Payments, plus:
++
++| Gap | Impact |
++|---|---|
++| No user lookup mechanism tied to the privileged operation request | Granting an entitlement requires resolving the correct RevenueCat `app_user_id` from an email or identifier; no such resolver exists |
++
++### Estimated readiness
++
++🔴 **Not connected** — gate and audit are ready; no executor.
++
++### Recommended next steps
++
++1. Build `lib/revenuecat-admin.ts` (shared with the Change Payments work) with:
++   - `grantPromotionalEntitlement(appUserId, entitlementId, durationMonths)` wrapping `POST /v1/subscribers/{app_user_id}/entitlements/{entitlement_identifier}/promotional`
++   - `revokePromotionalEntitlement(appUserId, entitlementId)` wrapping `DELETE` equivalent
++2. Add a user-resolver helper that maps email → RevenueCat `app_user_id` using the subscriber lookup endpoint.
++3. Wire the executor into the privileged-operations route as `action: "grant_entitlements"`.
++4. Log the entitlement grant event to `rune_action_events` with risk_level `high`.
++
++---
++
++## 6. Mutate Schemas / DNS / Customer Systems
++
++### Current state
++
++Three separate gate policies exist:
++
++- **`mutate_schema`** (phrase: `APPROVE RUNE SCHEMA MUTATION`) — requires `migration_sql`, `backup_or_restore_plan`, `affected_tables`, `rollback_sql`
++- **`mutate_dns`** (phrase: `APPROVE RUNE DNS CHANGE`) — requires `domain`, `record_diff`, `provider`, `rollback_record`
++- **`mutate_customer_systems`** (phrase: `APPROVE RUNE CUSTOMER SYSTEM CHANGE`) — requires `system_name`, `affected_customers`, `change_summary`, `customer_impact`, `rollback_plan`
++
++All three are evaluatable via `POST /api/privileged-operations` with `action: "evaluate_gate"`. Gate checks return `canExecute: false` (no executor), and a full audit record is written on every evaluation attempt.
++
++No executor for any of the three exists anywhere in the codebase. There is no Supabase migration runner, no DNS provider client (Cloudflare, Route 53, etc.), and no CRM or customer-system write client.
++
++`lib/schema-intel/` (the `app/api/schema-intel` route) provides read-only database schema inspection — it can describe tables and columns but cannot apply migrations.
++
++### Evidence
++
++| Artifact | Lines | Notes |
++|---|---|---|
++| `lib/privileged-operations.ts` | 115–150 | `mutate_schema`, `mutate_dns`, `mutate_customer_systems` policies |
++| `app/api/schema-intel/` | — | Read-only schema inspection; no migration execution |
++| `supabase/schema.sql` | — | Canonical schema file; migrations are applied manually via Supabase dashboard or CLI |
++| `supabase/migrations/` | — | Migration directory exists but no tooling to apply programmatically from Rune |
++| `scripts/privileged-operations-control-plane-smoke-test.mjs` | 4–16 | Asserts policies registered for all three kinds |
++
++### Gaps & blockers
++
++| Gap | Impact |
++|---|---|
++| No database migration executor | Schema mutations require running SQL against Supabase; no Supabase admin/database API client is wired for DDL execution |
++| No DNS provider client | No Cloudflare, Route 53, or other DNS API integration exists |
++| No customer system write integration | No CRM, Intercom, or bulk-update client is in the codebase |
++| Migrations currently require manual Supabase CLI/dashboard | There is no path from a Rune-approved mutation to an executed migration without a human intermediary |
++| For DNS: deployment platform (Vercel) handles domain DNS automatically; custom DNS changes outside of Vercel are entirely absent | Scope of "DNS" is undefined relative to current infrastructure |
++
++### Estimated readiness
++
++🔴 **Not connected** for all three — gate policies and audit trail are fully ready; executors do not exist.
++
++### Recommended next steps
++
++**Schema mutations:**
++1. Explore using Supabase's Management API (requires a `SUPABASE_ACCESS_TOKEN`) to execute SQL statements on the project database.
++2. Build a `lib/supabase-admin.ts` module with `executeMigration(sql, rollbackSql)` that runs the SQL through the management API, scoped exclusively behind the `mutate_schema` gate.
++3. Store the before/after schema snapshot in `rune_action_events.metadata` for auditability.
++
++**DNS mutations:**
++1. Clarify scope: are DNS changes for custom domains (Vercel handles) or external zones (Cloudflare / Route 53)?
++2. If Cloudflare: add `CLOUDFLARE_API_TOKEN` to the vault and build `lib/dns-admin.ts` using Cloudflare's zone/DNS record API.
++3. Wire executor behind the `mutate_dns` gate.
++
++**Customer system mutations:**
++1. Define which "customer system" is in scope (e.g., the Supabase `users` or `profiles` table, or a third-party CRM).
++2. Build a scoped write client with allow-listed operations only (no bulk delete without explicit approval).
++3. Wire executor behind the `mutate_customer_systems` gate.
++
++---
++
++## Cross-Cutting Observations
++
++### What is already solid across all capabilities
++
++1. **Gate policy registry** (`lib/privileged-operations.ts`) — all eight operation kinds are defined with exact approval phrases, required scope fields, required evidence fields, dry-run enforcement, and forbidden-action lists. This is a strong safety foundation.
++
++2. **Audit trail** — `auditPrivilegedOperationGate` writes every gate evaluation (approved or blocked) to `rune_action_events` with risk level `high`. The Supabase schema for this table is in `supabase/schema.sql`.
++
++3. **Dry-run by default** — all policies have `dryRunRequired: true`. No executor can proceed without explicitly passing `dryRun: false` plus the exact approval phrase. This prevents accidental execution.
++
++4. **Allowlist enforcement** — `isRepoAllowed` prevents merge operations against repos not explicitly configured, even if a GitHub token is present.
++
++5. **Command allowlist** — `lib/cli-runner-jobs.ts` only queues commands that start with allowlisted prefixes (vercel, npm, npx, git), preventing injection of arbitrary shell commands.
++
++### Shared infrastructure not yet in place
++
++| Item | Required by | Status |
++|---|---|---|
++| External CLI runner process | Deploy, Rollback | Not deployed; tasks are queued but not consumed |
++| `RUNE_DEPLOYMENT_MUTATION_MODE=cli_runner` | Deploy, Rollback | Env var not confirmed set |
++| RevenueCat admin/write API key | Change payments, Grant entitlements | Not in vault; read key only |
++| Supabase Management API token | Mutate schema | Not in vault |
++| DNS provider API token | Mutate DNS | Not present |
++| Customer system write client | Mutate customer systems | Not defined |
++
++### Progress tracker
++
++Use this checklist to track work toward full capability. Check items off as each is completed.
++
++#### Merge
++- [x] Gate policy registered
++- [x] Audit logging wired
++- [x] Executor (`runPrivilegedMerge`) implemented
++- [x] Dry-run mode
++- [ ] `GITHUB_TOKEN` confirmed set in production
++- [ ] Repo allowlist confirmed for all target repos
++- [ ] First live dry-run verified
++- [ ] First live merge executed and audited
++
++#### Deploy
++- [x] Gate policy registered
++- [x] Audit logging wired
++- [x] Command generation and queuing implemented
++- [x] Dry-run / blocked mode returning documented command
++- [ ] `VERCEL_TOKEN` confirmed in production
++- [ ] External CLI runner process deployed
++- [ ] `RUNE_DEPLOYMENT_MUTATION_MODE=cli_runner` set in production
++- [ ] First live deploy queued and executed via runner
++- [ ] Production deploy verified after runner execution
++
++#### Rollback
++- [x] Gate policy registered
++- [x] Audit logging wired
++- [x] Command generation and queuing implemented
++- [ ] `VERCEL_TOKEN` confirmed
++- [ ] External CLI runner process deployed
++- [ ] `RUNE_DEPLOYMENT_MUTATION_MODE=cli_runner` set
++- [ ] Rollback candidate selection validated against production deployment list
++- [ ] First live rollback tested (preferably to a non-critical deployment)
++
++#### Change Payments
++- [x] Gate policy registered
++- [x] Audit logging wired
++- [ ] RevenueCat admin API key obtained and vaulted
++- [ ] `lib/revenuecat-admin.ts` built with write endpoints
++- [ ] Executor wired into `POST /api/privileged-operations`
++- [ ] Dry-run payment change tested
++- [ ] Live payment change executed and audited
++
++#### Grant Entitlements
++- [x] Gate policy registered
++- [x] Audit logging wired
++- [ ] RevenueCat admin API key obtained and vaulted (shared with payments)
++- [ ] `lib/revenuecat-admin.ts` `grantPromotionalEntitlement` implemented
++- [ ] User resolver (email → `app_user_id`) implemented
++- [ ] Executor wired into `POST /api/privileged-operations`
++- [ ] Dry-run entitlement grant tested
++- [ ] Live entitlement grant executed and audited
++
++#### Mutate Schema
++- [x] Gate policy registered
++- [x] Audit logging wired
++- [ ] Supabase Management API scope clarified
++- [ ] `SUPABASE_ACCESS_TOKEN` obtained and vaulted
++- [ ] `lib/supabase-admin.ts` migration executor built
++- [ ] Before/after schema snapshot in audit metadata
++- [ ] Rollback SQL path tested in staging
++- [ ] Live migration executed and audited
++
++#### Mutate DNS
++- [x] Gate policy registered
++- [x] Audit logging wired
++- [ ] DNS change scope defined (Vercel custom domains vs. external zone)
++- [ ] DNS provider API token obtained and vaulted
++- [ ] DNS write client built
++- [ ] Executor wired into privileged-operations path
++- [ ] Dry-run DNS change tested
++
++#### Mutate Customer Systems
++- [x] Gate policy registered
++- [x] Audit logging wired
++- [ ] "Customer system" scope defined (Supabase table, CRM, other)
++- [ ] Scoped write client with allowlisted operations built
++- [ ] Executor wired into privileged-operations path
++- [ ] Dry-run customer update tested
++
++---
++
++*This document reflects the repository state as of the assessment date above. Items marked with evidence citations are grounded in the repository code. Inferences are labeled as such.*
+diff --git a/package-lock.json b/package-lock.json
+index b6b113e..85ce8e3 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -1,11 +1,11 @@
+ {
+-  "name": "jarvis",
++  "name": "rune",
+   "version": "0.1.0",
+   "lockfileVersion": 3,
+   "requires": true,
+   "packages": {
+     "": {
+-      "name": "jarvis",
++      "name": "rune",
+       "version": "0.1.0",
+       "dependencies": {
+         "@ai-sdk/openai": "^1.3.22",

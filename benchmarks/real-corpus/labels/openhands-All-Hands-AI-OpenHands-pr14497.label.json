@@ -1,0 +1,6 @@
+{
+  "verdict": "clean",
+  "rationale": "In `enterprise/integrations/bitbucket_data_center/bitbucket_dc_manager.py` `receive_message`, the lookup key passed to `token_manager.get_user_id_from_idp_user_id(...)` switches from `mentioner_slug` to `mentioner_idp_id = str(actor.get('id') or '')`, matching the documented Keycloak `bitbucket_data_center_id` attribute that stores the OIDC `sub` (numeric). The slug is retained only for log strings. A new private `_add_eyes_reaction` method posts an `eyes` emoticon via `SaaSBitbucketDCService(external_auth_id=reacting_user_id).add_comment_reaction(...)`, wrapped in `try/except Exception` that logs at INFO and swallows (legitimate best-effort acknowledgement, with the swallowing pattern explicitly justified by the docstring). The new `add_comment_reaction` in `openhands/app_server/integrations/bitbucket_data_center/service/resolver.py` correctly targets the `/rest/comment-likes/latest/projects/.../reactions/{emoticon}` PUT endpoint (the comment-likes plugin, not core REST). Two regression tests assert: the manager call passes `'1001'` (numeric id, not slug), and the service issues a PUT to the comment-likes URL with `emoticon='eyes'`. The fix matches the PR title and body precisely.",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T14:00:00.000Z"
+}

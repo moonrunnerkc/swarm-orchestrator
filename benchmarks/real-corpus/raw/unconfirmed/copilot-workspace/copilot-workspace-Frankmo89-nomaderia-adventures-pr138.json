@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-Frankmo89-nomaderia-adventures-pr138",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 138,
+    "headSha": "8530774af0fdfcf896a19205d262072057a1b14f",
+    "baseSha": "973e4c70bb11fdbcb08d66bcdce69770a6f40b1c",
+    "title": "feat: layout-matched skeleton loaders for destination, blog, and detail pages",
+    "body": "Generic `CardGridSkeleton` was shared across destinations and blog with wrong image heights and missing structural rows, causing visible layout shift on load. `DestinationDetailSkeleton` was missing the `md:h-[60vh]` hero breakpoint, tab nav, FAQ section, and had an undersized sidebar placeholder.\n\n## Changes\n\n### `src/components/LoadingSkeletons.tsx`\n- **`DestinationCardGridSkeleton`** (new) — `h-56 sm:h-52` image, country line, 2-line description, justified footer row (clock · dollar · link); matches `DestCard` exactly\n- **`BlogCardGridSkeleton`** (new) — `h-44` image, badge+reading-time+author flex row, title, description, date (`h-3`), \"Leer más\" placeholder; grid uses `md:grid-cols-2` to match blog's own columns\n- **`DestinationDetailSkeleton`** (improved) — hero gains `md:h-[60vh]`, content gains 4-tab nav row, 7 body lines, FAQ accordion placeholder, sidebar bumped to `h-64`\n- `CardGridSkeleton` retained for any other consumers\n\n### Consumers updated\n- `DestinationsCatalog` → `DestinationCardGridSkeleton`\n- `BlogListing` → `BlogCardGridSkeleton count={6}` (was `count={3}`, insufficient to fill a full grid row)\n- `DestinationDetail` was already wired to `DestinationDetailSkeleton`",
+    "author": "Copilot",
+    "headRef": "copilot/replace-loading-with-skeleton-loaders",
+    "repository": "Frankmo89/nomaderia-adventures"
+  },
+  "diffRef": {
+    "repository": "Frankmo89/nomaderia-adventures",
+    "headSha": "8530774af0fdfcf896a19205d262072057a1b14f",
+    "baseSha": "973e4c70bb11fdbcb08d66bcdce69770a6f40b1c"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-Frankmo89-nomaderia-adventures-pr138.diff",
+  "vendoredAt": "2026-05-24T03:05:37.059Z",
+  "collectedAt": "2026-05-24T03:05:37.060Z"
+}

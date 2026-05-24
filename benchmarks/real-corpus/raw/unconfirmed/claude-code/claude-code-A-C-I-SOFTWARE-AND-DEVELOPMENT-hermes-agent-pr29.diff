@@ -1,0 +1,1411 @@
+diff --git a/docs/orchestration/workers/aider-worker.md b/docs/orchestration/workers/aider-worker.md
+new file mode 100644
+index 00000000000..c4a8fceabc5
+--- /dev/null
++++ b/docs/orchestration/workers/aider-worker.md
+@@ -0,0 +1,149 @@
++# Aider worker
++
++The Aider worker is the Hermes adapter for [Aider](https://aider.chat),
++a git-native pair-programming CLI. It is one of the local CLI agents
++Hermes can hand work to without ever calling a hosted API on the
++user's behalf — the user already has Aider installed and configured.
++
++## When to use Aider
++
++Aider is the right tool when the change is:
++
++- **Git-native** — Aider tracks the diff and keeps the working tree
++  honest.
++- **Small or medium** — Aider's repo-map shines on focused changes
++  inside a handful of files.
++- **Repo-map guided** — Aider already knows how to crawl the repo for
++  symbols; let it pick neighboring files when the task touches a
++  module.
++- **Lint or test repair** — Aider can drive a tight edit ➜ run ➜ fix
++  loop locally.
++- **Pair programming** — when the human wants to stay in the loop and
++  review each suggestion.
++
++Reach for a different worker when the task needs an extension/recipe
++(use Goose), a long autonomous run (use a hosted agent), or
++filesystem-wide refactors that the repo-map cannot summarize.
++
++## Lifecycle
++
++```
++Caller
++  │
++  ▼
++workers.aider.run(task, workspace, execute=False, ...)
++  │
++  ├─ ensure_workspace(workspace)
++  ├─ render_prompt(task)            ➜ workspace/prompt.md
++  ├─ detect_command("aider")
++  ├─ build_handoff_command(...)
++  │
++  ├─ execute=False (default) ────────────────────────────────────┐
++  │     └─ write status.json with status="handoff_required"     │
++  │                                                              │
++  └─ execute=True                                                │
++        ├─ command missing  ➜ status="command_not_found"        │
++        └─ subprocess.run(aider --no-auto-commits ...)          │
++              ├─ capture stdout/stderr ➜ output.md              │
++              ├─ collect_git_artifacts ➜ patch.diff +           │
++              │                          changed-files.txt      │
++              └─ status="executed" or "failed"                  │
++                                                                ▼
++                                              caller surfaces WorkerResult
++```
++
++## Workspace layout
++
++```
++workspace/
++├── prompt.md          # always written
++├── status.json        # always written (machine-readable for the dashboard)
++├── output.md          # only when execute=True and the binary launched
++├── patch.diff         # only when the workspace's repo_root is a git checkout
++└── changed-files.txt  # only when the workspace's repo_root is a git checkout
++```
++
++## Default mode is handoff-required
++
++`run(..., execute=False)` is the default. Hermes writes the prompt and
++the status file, then surfaces the printed command for the user to run:
++
++```text
++aider --no-auto-commits --no-stream --no-pretty --no-check-update \
++      --no-show-release-notes --no-analytics \
++      tests/test_login.py app/auth.py \
++      --message-file /tmp/ws/prompt.md
++```
++
++The user copies, runs, and stays in control. **No background launch.
++No automated yes.**
++
++## Safe flags only
++
++When `execute=True`, the worker passes only the conservative flag set
++documented as safe for non-interactive use:
++
++| Flag                       | Why                                       |
++| -------------------------- | ----------------------------------------- |
++| `--no-auto-commits`        | Human commits, not the orchestrator.      |
++| `--no-stream`              | Deterministic captured output.            |
++| `--no-pretty`              | No ANSI in captured logs.                 |
++| `--no-check-update`        | No background network noise.              |
++| `--no-show-release-notes`  | Quiet startup.                            |
++| `--no-analytics`           | No telemetry on the user's behalf.        |
++
++Flags Hermes **never** adds automatically:
++
++- `--yes-always` (auto-applies every suggestion)
++- `--auto-commits`
++- anything that pushes, force-updates, or resets the working tree.
++
++If the user wants any of those, they pass them via
++`AiderConfig.extra_args` on their own initiative.
++
++## Configuration
++
++```python
++from hermes_cli.workers import WorkerTask
++from hermes_cli.workers.aider import AiderConfig, run
++
++result = run(
++    WorkerTask(
++        title="Fix the broken auth test",
++        instructions="The login flow regression test fails after the "
++                     "session-cookie refactor. Track down the breakage and fix it.",
++        files=["tests/test_login.py", "app/auth.py"],
++    ),
++    workspace="/tmp/hermes/aider-001",
++    config=AiderConfig(model="sonnet", timeout_seconds=600),
++)
++```
++
++`AiderConfig` fields:
++
++- `command` — binary name (default `"aider"`).
++- `model` — optional `--model NAME` passthrough.
++- `extra_args` — tuple of extra arguments appended after the safe set.
++- `timeout_seconds` — wall-clock cap when `execute=True` (default 600).
++
++## Failure modes
++
++| `WorkerStatus`        | When                                                   |
++| --------------------- | ------------------------------------------------------ |
++| `handoff_required`    | Default — prompt written, user runs the printed cmd.  |
++| `command_not_found`   | `execute=True` but `aider` is not on `PATH`.           |
++| `executed`            | `aider` returned a code; output + diff captured.       |
++| `failed`              | Timed out, OSError on launch, or the worker erred.     |
++
++Even on the failure paths, `status.json` is always written so the
++dashboard can render the box.
++
++## Limits
++
++- Hermes does not install Aider for the user — that is a deliberate
++  choice to avoid silently pulling network dependencies.
++- The worker cannot drive Aider's interactive `/commands`; it sends a
++  single prompt via `--message-file`.
++- `patch.diff` is collected against `repo_root` after the run; if the
++  workspace is outside a git checkout, no diff is produced and that
++  is reported truthfully in `status.json`.
+diff --git a/docs/orchestration/workers/goose-worker.md b/docs/orchestration/workers/goose-worker.md
+new file mode 100644
+index 00000000000..4d0dca89d35
+--- /dev/null
++++ b/docs/orchestration/workers/goose-worker.md
+@@ -0,0 +1,152 @@
++# Goose worker
++
++The Goose worker is the Hermes adapter for
++[Block/Goose](https://block.github.io/goose/), an open-source local
++agent runtime with a recipe + extension model. Like every Hermes
++worker, the adapter only invokes the user's local `goose` CLI — Hermes
++never talks to a hosted provider on the user's behalf.
++
++## When to use Goose
++
++Goose is the right tool when the task is:
++
++- **Recipe-driven** — there is (or you can write) a Goose recipe that
++  encodes the workflow.
++- **Extension-driven** — the task leans on Goose extensions
++  (developer, files, web fetch, MCP servers, …) more than on raw shell.
++- **Provider experimentation** — you want to try the same task across
++  Goose-supported providers without re-plumbing prompts.
++- **Desktop / CLI workflows** — the task runs comfortably on the
++  user's machine without needing a hosted long-running agent.
++
++Reach for a different worker when the change is a tight git-native
++edit (use Aider), a one-shot ad-hoc fix (any CLI agent works), or
++something that needs a hosted long-running agent.
++
++## Lifecycle
++
++```
++Caller
++  │
++  ▼
++workers.goose.run(task, workspace, execute=False, ...)
++  │
++  ├─ ensure_workspace(workspace)
++  ├─ render_prompt(task)            ➜ workspace/prompt.md
++  ├─ detect_command("goose")
++  ├─ build_handoff_command(...)
++  │
++  ├─ execute=False (default) ────────────────────────────────────┐
++  │     └─ write status.json with status="handoff_required"     │
++  │                                                              │
++  └─ execute=True                                                │
++        ├─ command missing  ➜ status="command_not_found"        │
++        └─ subprocess.run(goose run --no-session ...)           │
++              ├─ capture stdout/stderr ➜ output.md              │
++              ├─ collect_git_artifacts ➜ patch.diff +           │
++              │                          changed-files.txt      │
++              └─ status="executed" or "failed"                  │
++                                                                ▼
++                                              caller surfaces WorkerResult
++```
++
++## Workspace layout
++
++```
++workspace/
++├── prompt.md          # always written
++├── status.json        # always written (machine-readable for the dashboard)
++├── output.md          # only when execute=True and the binary launched
++├── patch.diff         # only when the workspace's repo_root is a git checkout
++└── changed-files.txt  # only when the workspace's repo_root is a git checkout
++```
++
++## Default mode is handoff-required
++
++`run(..., execute=False)` is the default. Hermes writes the prompt and
++status file, then surfaces a copy-pasteable command for the user:
++
++```text
++goose run --no-session \
++          --recipe recipes/summarize.yaml \
++          --with-extension developer \
++          --with-extension files \
++          --instructions /tmp/ws/prompt.md
++```
++
++The user reviews, runs, and stays in control. **Hermes never invokes
++Goose automatically with auto-approval flags.**
++
++## Safe defaults
++
++When `execute=True`, the worker passes only conservative arguments:
++
++| Argument               | Why                                                |
++| ---------------------- | -------------------------------------------------- |
++| `run`                  | Goose's non-interactive subcommand.                |
++| `--no-session`         | Avoids polluting the user's interactive history.   |
++| `--instructions FILE`  | Feeds the worker-tuned prompt.                     |
++| `--recipe FILE`        | Optional; only when caller supplies one.           |
++| `--with-extension X`   | Optional; only the extensions caller requested.    |
++
++Flags Hermes **never** adds automatically:
++
++- Any "auto-approve / yes-to-all" toggle.
++- Anything that pushes, force-updates, or resets the working tree.
++- Anything that installs extensions silently — if a needed extension
++  is missing, the prompt asks the user to install it first.
++
++If the user wants any of those, they pass them via
++`GooseConfig.extra_args` on their own initiative.
++
++## Configuration
++
++```python
++from hermes_cli.workers import WorkerTask
++from hermes_cli.workers.goose import GooseConfig, run
++
++result = run(
++    WorkerTask(
++        title="Summarize today's logs",
++        instructions="Use the files extension to read ./logs/today.txt "
++                     "and produce a 5-bullet executive summary in summary.md.",
++        files=["logs/today.txt"],
++    ),
++    workspace="/tmp/hermes/goose-001",
++    config=GooseConfig(
++        recipe="recipes/summarize.yaml",
++        extensions=("developer", "files"),
++        timeout_seconds=900,
++    ),
++)
++```
++
++`GooseConfig` fields:
++
++- `command` — binary name (default `"goose"`).
++- `recipe` — optional path to a Goose recipe YAML.
++- `extensions` — tuple of `--with-extension` values.
++- `extra_args` — tuple of extra arguments appended after the safe set.
++- `timeout_seconds` — wall-clock cap when `execute=True` (default 900).
++
++## Failure modes
++
++| `WorkerStatus`        | When                                                   |
++| --------------------- | ------------------------------------------------------ |
++| `handoff_required`    | Default — prompt written, user runs the printed cmd.  |
++| `command_not_found`   | `execute=True` but `goose` is not on `PATH`.           |
++| `executed`            | `goose` returned a code; output + diff captured.       |
++| `failed`              | Timed out, OSError on launch, or the worker erred.     |
++
++Even on the failure paths, `status.json` is always written so the
++dashboard can render the box.
++
++## Limits
++
++- Hermes does not install Goose or any extensions for the user.
++- The worker drives a single `goose run` invocation; long-running
++  interactive sessions are out of scope.
++- Recipe and extension paths are passed through verbatim — the user
++  is responsible for keeping them accessible to the `goose` process.
++- The adapter never automates unsupported subscription UIs; only the
++  local `goose` CLI is invoked.
+diff --git a/hermes_cli/workers/__init__.py b/hermes_cli/workers/__init__.py
+new file mode 100644
+index 00000000000..b30b5bbaf78
+--- /dev/null
++++ b/hermes_cli/workers/__init__.py
+@@ -0,0 +1,37 @@
++"""Worker adapters for handing Hermes tasks to local CLI agents.
++
++A *worker* is a thin Python adapter around a third-party local agent
++CLI (Aider, Goose, …). Hermes itself never replaces these tools —
++each worker prepares a sandboxed workspace with:
++
++    workspace/
++        prompt.md          # worker-tuned instructions
++        status.json        # machine-readable status the dashboard reads
++        output.md          # captured stdout (only when executed)
++        patch.diff         # ``git diff`` after the run (only when executed)
++        changed-files.txt  # newline-separated paths (only when executed)
++
++The default mode is **handoff-required**: the worker writes ``prompt.md``
++and ``status.json`` and stops. The user (or another orchestrator) runs
++the CLI manually with the prompt. The ``execute=True`` mode is opt-in
++and only runs commands the upstream tool publishes as safe — no
++destructive shortcuts (``--yes-always``, ``--auto-commit``, ``rm``,
++``reset --hard``, …) are ever invoked automatically.
++
++The adapters never automate paid subscription UIs. They only invoke the
++local CLI binaries the user installed on their own machine.
++"""
++
++from hermes_cli.workers.base import (
++    WorkerError,
++    WorkerResult,
++    WorkerStatus,
++    WorkerTask,
++)
++
++__all__ = [
++    "WorkerError",
++    "WorkerResult",
++    "WorkerStatus",
++    "WorkerTask",
++]
+diff --git a/hermes_cli/workers/aider.py b/hermes_cli/workers/aider.py
+new file mode 100644
+index 00000000000..1c2af940578
+--- /dev/null
++++ b/hermes_cli/workers/aider.py
+@@ -0,0 +1,213 @@
++"""Aider worker adapter.
++
++Aider is best for git-native edits, repo-map guided implementation,
++lint/test repair, and small/medium pair-programming changes. This
++adapter:
++
++1. Detects whether the ``aider`` CLI is installed.
++2. Writes a worker-tuned ``prompt.md`` into the workspace.
++3. Defaults to **handoff-required** — the user runs ``aider`` manually
++   with the prepared prompt.
++4. When ``execute=True`` and the binary is available, invokes Aider
++   with conservative flags (no auto-commit, no destructive shortcuts,
++   no streaming-yes).
++5. Writes ``status.json``; on execution, also captures ``output.md``,
++   ``patch.diff`` and ``changed-files.txt``.
++"""
++
++from __future__ import annotations
++
++import subprocess
++from dataclasses import dataclass, field
++from pathlib import Path
++from typing import Optional
++
++from hermes_cli.workers.base import (
++    WorkerResult,
++    WorkerStatus,
++    WorkerTask,
++    collect_git_artifacts,
++    detect_command,
++    ensure_workspace,
++    render_acceptance_block,
++    render_context_block,
++    render_files_block,
++    write_prompt,
++    write_status,
++)
++
++WORKER_NAME = "aider"
++DEFAULT_COMMAND = "aider"
++
++# Flags Aider documents as safe for non-interactive use. We intentionally
++# refuse to pass ``--yes-always`` (auto-applies every suggestion) or to
++# enable auto-commits — destructive shortcuts have to be requested by
++# the human running the tool, not by the orchestrator.
++_SAFE_FLAGS: tuple[str, ...] = (
++    "--no-auto-commits",
++    "--no-stream",
++    "--no-pretty",
++    "--no-check-update",
++    "--no-show-release-notes",
++    "--no-analytics",
++)
++
++
++@dataclass(frozen=True)
++class AiderConfig:
++    """Knobs the caller can override per invocation."""
++
++    command: str = DEFAULT_COMMAND
++    model: Optional[str] = None
++    extra_args: tuple[str, ...] = field(default_factory=tuple)
++    timeout_seconds: int = 600
++
++
++def render_prompt(task: WorkerTask) -> str:
++    """Build the worker-tuned ``prompt.md`` body for Aider."""
++    title = task.title.strip() or "Untitled task"
++    instructions = task.instructions.strip() or "(no instructions provided)"
++    body = (
++        f"# {title}\n\n"
++        "You are running inside the Aider CLI. Aider is best at small/"
++        "medium git-native edits guided by the repo map. Stay within the "
++        "files listed below unless absolutely necessary, ask before "
++        "touching files outside scope, and let the human commit — do not "
++        "use ``/commit`` or any auto-commit flag.\n\n"
++        "## Task\n"
++        f"{instructions}\n"
++        + render_files_block(task.files)
++        + render_context_block(task.context)
++        + render_acceptance_block(task.acceptance_criteria)
++        + "\n## Guardrails\n"
++        "- No destructive shell commands (``rm -rf``, ``git reset --hard``,"
++        " ``git push --force``).\n"
++        "- No auto-commits — the human reviews ``patch.diff`` and commits.\n"
++        "- If the change needs a new dependency or migration, stop and"
++        " describe it instead of installing.\n"
++        "- If the task is ambiguous, ask one focused question.\n"
++    )
++    return body
++
++
++def build_handoff_command(
++    config: AiderConfig,
++    workspace: Path,
++    task: WorkerTask,
++) -> str:
++    """Return a copy-pasteable ``aider`` invocation for manual handoff."""
++    parts = [config.command, *_SAFE_FLAGS]
++    if config.model:
++        parts.extend(["--model", config.model])
++    parts.extend(config.extra_args)
++    if task.files:
++        parts.extend(task.files)
++    prompt_path = (workspace / "prompt.md").as_posix()
++    parts.extend(["--message-file", prompt_path])
++    return " ".join(parts)
++
++
++def run(
++    task: WorkerTask,
++    workspace: Path,
++    *,
++    execute: bool = False,
++    repo_root: Optional[Path] = None,
++    config: Optional[AiderConfig] = None,
++) -> WorkerResult:
++    """Prepare (and optionally execute) an Aider run.
++
++    ``execute=False`` (default) is the handoff path: prompt + status are
++    written and the user runs Aider manually. ``execute=True`` requires
++    the ``aider`` binary on ``$PATH``; if it is missing, the result
++    falls back to ``COMMAND_NOT_FOUND`` rather than crashing.
++    """
++    cfg = config or AiderConfig()
++    workspace = ensure_workspace(workspace)
++    repo_root = (repo_root or Path.cwd()).resolve()
++
++    prompt_body = render_prompt(task)
++    prompt_path = write_prompt(workspace, prompt_body)
++    available = detect_command(cfg.command)
++    handoff_command = build_handoff_command(cfg, workspace, task)
++
++    if not execute:
++        result = WorkerResult(
++            worker=WORKER_NAME,
++            status=WorkerStatus.HANDOFF_REQUIRED,
++            workspace=workspace,
++            prompt_path=prompt_path,
++            status_path=workspace / "status.json",
++            command_available=available,
++            handoff_command=handoff_command,
++        )
++        result.status_path = write_status(workspace, result)
++        return result
++
++    if not available:
++        result = WorkerResult(
++            worker=WORKER_NAME,
++            status=WorkerStatus.COMMAND_NOT_FOUND,
++            workspace=workspace,
++            prompt_path=prompt_path,
++            status_path=workspace / "status.json",
++            command_available=False,
++            handoff_command=handoff_command,
++            error=f"{cfg.command!r} not found on PATH",
++        )
++        result.status_path = write_status(workspace, result)
++        return result
++
++    argv = [cfg.command, *_SAFE_FLAGS]
++    if cfg.model:
++        argv.extend(["--model", cfg.model])
++    argv.extend(cfg.extra_args)
++    if task.files:
++        argv.extend(task.files)
++    argv.extend(["--message-file", str(prompt_path)])
++
++    output_path = workspace / "output.md"
++    error: Optional[str] = None
++    exit_code: Optional[int] = None
++    try:
++        proc = subprocess.run(
++            argv,
++            cwd=str(repo_root),
++            capture_output=True,
++            text=True,
++            timeout=cfg.timeout_seconds,
++            check=False,
++        )
++        exit_code = proc.returncode
++        output_path.write_text(
++            (proc.stdout or "") + (proc.stderr or ""),
++            encoding="utf-8",
++        )
++    except subprocess.TimeoutExpired as exc:
++        error = f"timed out after {cfg.timeout_seconds}s"
++        output_path.write_text(
++            (exc.stdout or "") + (exc.stderr or ""),
++            encoding="utf-8",
++        )
++    except OSError as exc:
++        error = f"failed to launch {cfg.command!r}: {exc}"
++
++    patch_path, changed_files_path = collect_git_artifacts(workspace, repo_root)
++
++    status = WorkerStatus.EXECUTED if error is None else WorkerStatus.FAILED
++    result = WorkerResult(
++        worker=WORKER_NAME,
++        status=status,
++        workspace=workspace,
++        prompt_path=prompt_path,
++        status_path=workspace / "status.json",
++        command_available=True,
++        handoff_command=handoff_command,
++        output_path=output_path if output_path.exists() else None,
++        patch_path=patch_path,
++        changed_files_path=changed_files_path,
++        exit_code=exit_code,
++        error=error,
++    )
++    result.status_path = write_status(workspace, result)
++    return result
+diff --git a/hermes_cli/workers/base.py b/hermes_cli/workers/base.py
+new file mode 100644
+index 00000000000..1c76c8c73f8
+--- /dev/null
++++ b/hermes_cli/workers/base.py
+@@ -0,0 +1,193 @@
++"""Shared worker primitives: task, status, result, workspace I/O.
++
++This module is intentionally framework-free so individual workers
++(``aider.py``, ``goose.py``, …) stay small and easy to test.
++"""
++
++from __future__ import annotations
++
++import json
++import shutil
++import subprocess
++from dataclasses import asdict, dataclass, field
++from datetime import datetime, timezone
++from enum import Enum
++from pathlib import Path
++from typing import Any, Optional
++
++
++class WorkerStatus(str, Enum):
++    """Terminal state of a worker invocation."""
++
++    HANDOFF_REQUIRED = "handoff_required"
++    EXECUTED = "executed"
++    COMMAND_NOT_FOUND = "command_not_found"
++    FAILED = "failed"
++
++
++class WorkerError(Exception):
++    """Raised when a worker cannot prepare or run a task."""
++
++
++@dataclass
++class WorkerTask:
++    """A description of work to hand to a local CLI agent.
++
++    ``title`` and ``instructions`` are required. Everything else is
++    optional metadata the worker may surface in the rendered prompt.
++    """
++
++    title: str
++    instructions: str
++    files: list[str] = field(default_factory=list)
++    context: Optional[str] = None
++    acceptance_criteria: list[str] = field(default_factory=list)
++    metadata: dict[str, Any] = field(default_factory=dict)
++
++
++@dataclass
++class WorkerResult:
++    """Everything a caller needs to surface a worker run to the user."""
++
++    worker: str
++    status: WorkerStatus
++    workspace: Path
++    prompt_path: Path
++    status_path: Path
++    command_available: bool
++    handoff_command: Optional[str] = None
++    output_path: Optional[Path] = None
++    patch_path: Optional[Path] = None
++    changed_files_path: Optional[Path] = None
++    exit_code: Optional[int] = None
++    error: Optional[str] = None
++
++    def to_status_dict(self) -> dict[str, Any]:
++        """Serialize for ``status.json``. ``Path`` values become strings."""
++        data: dict[str, Any] = {
++            "worker": self.worker,
++            "status": self.status.value,
++            "workspace": str(self.workspace),
++            "prompt_path": str(self.prompt_path),
++            "command_available": self.command_available,
++            "handoff_command": self.handoff_command,
++            "exit_code": self.exit_code,
++            "error": self.error,
++            "output_path": str(self.output_path) if self.output_path else None,
++            "patch_path": str(self.patch_path) if self.patch_path else None,
++            "changed_files_path": (
++                str(self.changed_files_path) if self.changed_files_path else None
++            ),
++            "timestamp": datetime.now(timezone.utc).isoformat(),
++        }
++        return data
++
++
++def detect_command(command: str) -> bool:
++    """Return True if ``command`` is callable from ``$PATH``."""
++    return shutil.which(command) is not None
++
++
++def ensure_workspace(workspace: Path) -> Path:
++    """Create ``workspace`` (and parents) and return its resolved path."""
++    workspace.mkdir(parents=True, exist_ok=True)
++    return workspace.resolve()
++
++
++def write_prompt(workspace: Path, prompt: str) -> Path:
++    """Write ``prompt.md`` to ``workspace`` and return its path."""
++    prompt_path = workspace / "prompt.md"
++    prompt_path.write_text(prompt, encoding="utf-8")
++    return prompt_path
++
++
++def write_status(workspace: Path, result: WorkerResult) -> Path:
++    """Persist ``result`` as ``status.json`` and return its path."""
++    status_path = workspace / "status.json"
++    status_path.write_text(
++        json.dumps(result.to_status_dict(), indent=2, sort_keys=True),
++        encoding="utf-8",
++    )
++    return status_path
++
++
++def collect_git_artifacts(
++    workspace: Path,
++    repo_root: Path,
++) -> tuple[Optional[Path], Optional[Path]]:
++    """Capture ``git diff`` + changed-files list into ``workspace``.
++
++    Returns ``(patch_path, changed_files_path)``. Each entry is ``None``
++    when the underlying ``git`` command failed or ``repo_root`` is not a
++    git checkout. This function never raises on a missing/broken git;
++    workers degrade gracefully when artifacts cannot be collected.
++    """
++    if not (repo_root / ".git").exists():
++        return (None, None)
++    if shutil.which("git") is None:
++        return (None, None)
++
++    patch_path: Optional[Path] = None
++    changed_files_path: Optional[Path] = None
++    try:
++        diff = subprocess.run(
++            ["git", "diff", "--no-color"],
++            cwd=str(repo_root),
++            capture_output=True,
++            text=True,
++            check=False,
++        )
++        if diff.returncode == 0:
++            patch_path = workspace / "patch.diff"
++            patch_path.write_text(diff.stdout, encoding="utf-8")
++    except OSError:
++        patch_path = None
++
++    try:
++        names = subprocess.run(
++            ["git", "diff", "--name-only"],
++            cwd=str(repo_root),
++            capture_output=True,
++            text=True,
++            check=False,
++        )
++        if names.returncode == 0:
++            changed_files_path = workspace / "changed-files.txt"
++            changed_files_path.write_text(names.stdout, encoding="utf-8")
++    except OSError:
++        changed_files_path = None
++
++    return (patch_path, changed_files_path)
++
++
++def render_files_block(files: list[str]) -> str:
++    if not files:
++        return ""
++    bullets = "\n".join(f"- `{path}`" for path in files)
++    return f"\n## Files in scope\n{bullets}\n"
++
++
++def render_acceptance_block(criteria: list[str]) -> str:
++    if not criteria:
++        return ""
++    bullets = "\n".join(f"- {item}" for item in criteria)
++    return f"\n## Acceptance criteria\n{bullets}\n"
++
++
++def render_context_block(context: Optional[str]) -> str:
++    if not context:
++        return ""
++    return f"\n## Context\n{context.strip()}\n"
++
++
++# Re-exported so callers can build their own status dicts without
++# pulling in ``dataclasses`` directly.
++def result_as_dict(result: WorkerResult) -> dict[str, Any]:
++    """``asdict`` shim that stringifies Path values."""
++    data = asdict(result)
++    for key, value in list(data.items()):
++        if isinstance(value, Path):
++            data[key] = str(value)
++        elif isinstance(value, WorkerStatus):
++            data[key] = value.value
++    return data
+diff --git a/hermes_cli/workers/goose.py b/hermes_cli/workers/goose.py
+new file mode 100644
+index 00000000000..e640396633a
+--- /dev/null
++++ b/hermes_cli/workers/goose.py
+@@ -0,0 +1,206 @@
++"""Goose worker adapter.
++
++Goose (Block) is best for local agent recipes, provider experiments,
++extension-driven tasks, and desktop/CLI workflows. This adapter:
++
++1. Detects whether the ``goose`` CLI is installed.
++2. Writes a worker-tuned ``prompt.md`` into the workspace.
++3. Defaults to **handoff-required** — the user runs ``goose`` manually
++   with the prepared prompt or recipe.
++4. When ``execute=True`` and the binary is available, invokes
++   ``goose run`` non-interactively with conservative defaults.
++5. Writes ``status.json``; on execution, also captures ``output.md``,
++   ``patch.diff`` and ``changed-files.txt``.
++"""
++
++from __future__ import annotations
++
++import subprocess
++from dataclasses import dataclass, field
++from pathlib import Path
++from typing import Optional
++
++from hermes_cli.workers.base import (
++    WorkerResult,
++    WorkerStatus,
++    WorkerTask,
++    collect_git_artifacts,
++    detect_command,
++    ensure_workspace,
++    render_acceptance_block,
++    render_context_block,
++    render_files_block,
++    write_prompt,
++    write_status,
++)
++
++WORKER_NAME = "goose"
++DEFAULT_COMMAND = "goose"
++
++# Goose's ``run`` subcommand accepts an instructions file with
++# ``--instructions PATH`` and runs in non-interactive mode. We
++# explicitly do **not** auto-approve tool calls; the user has to opt in.
++_SAFE_RUN_FLAGS: tuple[str, ...] = (
++    "--no-session",
++)
++
++
++@dataclass(frozen=True)
++class GooseConfig:
++    """Knobs the caller can override per invocation."""
++
++    command: str = DEFAULT_COMMAND
++    recipe: Optional[str] = None
++    extensions: tuple[str, ...] = field(default_factory=tuple)
++    extra_args: tuple[str, ...] = field(default_factory=tuple)
++    timeout_seconds: int = 900
++
++
++def render_prompt(task: WorkerTask) -> str:
++    """Build the worker-tuned ``prompt.md`` body for Goose."""
++    title = task.title.strip() or "Untitled task"
++    instructions = task.instructions.strip() or "(no instructions provided)"
++    body = (
++        f"# {title}\n\n"
++        "You are running inside the Goose CLI. Goose is best when you"
++        " can lean on a recipe or an extension to do the work — favor"
++        " existing extensions over ad-hoc shell. Treat this workspace as"
++        " a sandbox; do not push, force-update, or modify shared"
++        " infrastructure.\n\n"
++        "## Task\n"
++        f"{instructions}\n"
++        + render_files_block(task.files)
++        + render_context_block(task.context)
++        + render_acceptance_block(task.acceptance_criteria)
++        + "\n## Guardrails\n"
++        "- No destructive shell commands (``rm -rf``, ``git reset --hard``,"
++        " ``git push --force``).\n"
++        "- Do not auto-approve tool calls; ask the human if a tool needs"
++        " elevated permissions.\n"
++        "- If a needed extension is missing, list what would unlock the"
++        " task instead of installing silently.\n"
++        "- If the task is ambiguous, ask one focused question.\n"
++    )
++    return body
++
++
++def build_handoff_command(
++    config: GooseConfig,
++    workspace: Path,
++) -> str:
++    """Return a copy-pasteable ``goose`` invocation for manual handoff."""
++    parts = [config.command, "run", *_SAFE_RUN_FLAGS]
++    if config.recipe:
++        parts.extend(["--recipe", config.recipe])
++    for ext in config.extensions:
++        parts.extend(["--with-extension", ext])
++    parts.extend(config.extra_args)
++    prompt_path = (workspace / "prompt.md").as_posix()
++    parts.extend(["--instructions", prompt_path])
++    return " ".join(parts)
++
++
++def run(
++    task: WorkerTask,
++    workspace: Path,
++    *,
++    execute: bool = False,
++    repo_root: Optional[Path] = None,
++    config: Optional[GooseConfig] = None,
++) -> WorkerResult:
++    """Prepare (and optionally execute) a Goose run.
++
++    ``execute=False`` (default) is the handoff path: prompt + status are
++    written and the user runs Goose manually. ``execute=True`` requires
++    the ``goose`` binary on ``$PATH``; missing binaries fall back to
++    ``COMMAND_NOT_FOUND`` rather than crashing.
++    """
++    cfg = config or GooseConfig()
++    workspace = ensure_workspace(workspace)
++    repo_root = (repo_root or Path.cwd()).resolve()
++
++    prompt_body = render_prompt(task)
++    prompt_path = write_prompt(workspace, prompt_body)
++    available = detect_command(cfg.command)
++    handoff_command = build_handoff_command(cfg, workspace)
++
++    if not execute:
++        result = WorkerResult(
++            worker=WORKER_NAME,
++            status=WorkerStatus.HANDOFF_REQUIRED,
++            workspace=workspace,
++            prompt_path=prompt_path,
++            status_path=workspace / "status.json",
++            command_available=available,
++            handoff_command=handoff_command,
++        )
++        result.status_path = write_status(workspace, result)
++        return result
++
++    if not available:
++        result = WorkerResult(
++            worker=WORKER_NAME,
++            status=WorkerStatus.COMMAND_NOT_FOUND,
++            workspace=workspace,
++            prompt_path=prompt_path,
++            status_path=workspace / "status.json",
++            command_available=False,
++            handoff_command=handoff_command,
++            error=f"{cfg.command!r} not found on PATH",
++        )
++        result.status_path = write_status(workspace, result)
++        return result
++
++    argv = [cfg.command, "run", *_SAFE_RUN_FLAGS]
++    if cfg.recipe:
++        argv.extend(["--recipe", cfg.recipe])
++    for ext in cfg.extensions:
++        argv.extend(["--with-extension", ext])
++    argv.extend(cfg.extra_args)
++    argv.extend(["--instructions", str(prompt_path)])
++
++    output_path = workspace / "output.md"
++    error: Optional[str] = None
++    exit_code: Optional[int] = None
++    try:
++        proc = subprocess.run(
++            argv,
++            cwd=str(repo_root),
++            capture_output=True,
++            text=True,
++            timeout=cfg.timeout_seconds,
++            check=False,
++        )
++        exit_code = proc.returncode
++        output_path.write_text(
++            (proc.stdout or "") + (proc.stderr or ""),
++            encoding="utf-8",
++        )
++    except subprocess.TimeoutExpired as exc:
++        error = f"timed out after {cfg.timeout_seconds}s"
++        output_path.write_text(
++            (exc.stdout or "") + (exc.stderr or ""),
++            encoding="utf-8",
++        )
++    except OSError as exc:
++        error = f"failed to launch {cfg.command!r}: {exc}"
++
++    patch_path, changed_files_path = collect_git_artifacts(workspace, repo_root)
++
++    status = WorkerStatus.EXECUTED if error is None else WorkerStatus.FAILED
++    result = WorkerResult(
++        worker=WORKER_NAME,
++        status=status,
++        workspace=workspace,
++        prompt_path=prompt_path,
++        status_path=workspace / "status.json",
++        command_available=True,
++        handoff_command=handoff_command,
++        output_path=output_path if output_path.exists() else None,
++        patch_path=patch_path,
++        changed_files_path=changed_files_path,
++        exit_code=exit_code,
++        error=error,
++    )
++    result.status_path = write_status(workspace, result)
++    return result
+diff --git a/tests/test_worker_aider.py b/tests/test_worker_aider.py
+new file mode 100644
+index 00000000000..57c305d08bb
+--- /dev/null
++++ b/tests/test_worker_aider.py
+@@ -0,0 +1,206 @@
++"""Tests for the Aider worker adapter (``hermes_cli/workers/aider.py``)."""
++
++from __future__ import annotations
++
++import json
++import subprocess
++from typing import Any
++from unittest import mock
++
++from hermes_cli.workers import WorkerStatus, WorkerTask
++from hermes_cli.workers import aider as aider_worker
++
++
++def _task(**overrides: Any) -> WorkerTask:
++    defaults: dict[str, Any] = {
++        "title": "Fix the broken auth test",
++        "instructions": (
++            "The login flow regression test fails after the recent "
++            "session-cookie refactor. Track down the breakage and fix it."
++        ),
++        "files": ["tests/test_login.py", "app/auth.py"],
++        "context": "Repro: `pytest tests/test_login.py::test_login_ok`.",
++        "acceptance_criteria": [
++            "Login test passes",
++            "No new fixtures introduced",
++        ],
++    }
++    defaults.update(overrides)
++    return WorkerTask(**defaults)
++
++
++class TestPromptRendering:
++    def test_prompt_includes_all_sections(self):
++        prompt = aider_worker.render_prompt(_task())
++        assert "# Fix the broken auth test" in prompt
++        assert "## Task" in prompt
++        assert "## Files in scope" in prompt
++        assert "tests/test_login.py" in prompt
++        assert "## Acceptance criteria" in prompt
++        assert "## Context" in prompt
++        assert "Aider" in prompt
++        assert "## Guardrails" in prompt
++        # Destructive shortcuts MUST be explicitly forbidden.
++        assert "git reset --hard" in prompt
++        assert "auto-commit" in prompt.lower()
++
++    def test_prompt_handles_empty_optional_fields(self):
++        prompt = aider_worker.render_prompt(
++            WorkerTask(title="t", instructions="i")
++        )
++        assert "# t" in prompt
++        assert "## Files in scope" not in prompt
++        assert "## Context" not in prompt
++        assert "## Acceptance criteria" not in prompt
++
++    def test_prompt_blank_title_does_not_crash(self):
++        prompt = aider_worker.render_prompt(
++            WorkerTask(title="   ", instructions="   ")
++        )
++        assert "Untitled task" in prompt
++        assert "(no instructions provided)" in prompt
++
++
++class TestHandoffPath:
++    def test_default_run_is_handoff_required(self, tmp_path):
++        with mock.patch.object(aider_worker, "detect_command", return_value=True):
++            result = aider_worker.run(_task(), tmp_path / "ws")
++
++        assert result.status is WorkerStatus.HANDOFF_REQUIRED
++        assert result.worker == "aider"
++        assert result.prompt_path.exists()
++        assert result.status_path.exists()
++        # No execution artifacts when we did not execute.
++        assert result.output_path is None
++        assert result.patch_path is None
++        assert result.changed_files_path is None
++        assert result.exit_code is None
++
++    def test_handoff_command_references_prompt_file(self, tmp_path):
++        with mock.patch.object(aider_worker, "detect_command", return_value=True):
++            result = aider_worker.run(_task(), tmp_path / "ws")
++        assert "--message-file" in result.handoff_command
++        assert "prompt.md" in result.handoff_command
++        # The safe flag set the orchestrator picks must be visible to the
++        # user copying the command.
++        assert "--no-auto-commits" in result.handoff_command
++
++    def test_status_json_is_machine_readable(self, tmp_path):
++        with mock.patch.object(aider_worker, "detect_command", return_value=True):
++            result = aider_worker.run(_task(), tmp_path / "ws")
++        data = json.loads(result.status_path.read_text())
++        assert data["worker"] == "aider"
++        assert data["status"] == "handoff_required"
++        assert data["command_available"] is True
++        assert "timestamp" in data
++
++    def test_handoff_works_when_binary_missing(self, tmp_path):
++        with mock.patch.object(aider_worker, "detect_command", return_value=False):
++            result = aider_worker.run(_task(), tmp_path / "ws")
++        # The handoff path still produces a prompt and status — the
++        # user can install Aider and run the printed command later.
++        assert result.status is WorkerStatus.HANDOFF_REQUIRED
++        assert result.command_available is False
++        assert result.prompt_path.exists()
++
++
++class TestExecutionPath:
++    def test_missing_binary_yields_command_not_found(self, tmp_path):
++        with mock.patch.object(aider_worker, "detect_command", return_value=False):
++            result = aider_worker.run(
++                _task(), tmp_path / "ws", execute=True
++            )
++        assert result.status is WorkerStatus.COMMAND_NOT_FOUND
++        assert result.command_available is False
++        assert result.exit_code is None
++        assert result.error and "not found" in result.error
++        # Even on failure, status.json is written for the dashboard.
++        assert result.status_path.exists()
++
++    def test_successful_execution_captures_output_and_artifacts(self, tmp_path):
++        repo = tmp_path / "repo"
++        (repo / ".git").mkdir(parents=True)
++        ws = tmp_path / "ws"
++
++        completed = subprocess.CompletedProcess(
++            args=["aider"], returncode=0,
++            stdout="aider says: done\n", stderr="",
++        )
++        with mock.patch.object(aider_worker, "detect_command", return_value=True), \
++             mock.patch.object(subprocess, "run", return_value=completed) as run_mock, \
++             mock.patch(
++                 "hermes_cli.workers.aider.collect_git_artifacts",
++                 return_value=(ws / "patch.diff", ws / "changed-files.txt"),
++             ):
++            (ws).mkdir(parents=True, exist_ok=True)
++            (ws / "patch.diff").write_text("diff --git a/x b/x\n")
++            (ws / "changed-files.txt").write_text("app/auth.py\n")
++            result = aider_worker.run(
++                _task(), ws, execute=True, repo_root=repo
++            )
++
++        assert result.status is WorkerStatus.EXECUTED
++        assert result.exit_code == 0
++        assert result.output_path and result.output_path.exists()
++        assert "aider says: done" in result.output_path.read_text()
++        assert result.patch_path and result.patch_path.exists()
++        assert result.changed_files_path and result.changed_files_path.exists()
++        # Verify we did NOT pass any destructive shortcut.
++        argv = run_mock.call_args.args[0]
++        assert "--yes-always" not in argv
++        assert "--auto-commits" not in argv
++        assert "--no-auto-commits" in argv
++
++    def test_timeout_marks_failure(self, tmp_path):
++        with mock.patch.object(aider_worker, "detect_command", return_value=True), \
++             mock.patch.object(
++                 subprocess, "run",
++                 side_effect=subprocess.TimeoutExpired(cmd="aider", timeout=1),
++             ), \
++             mock.patch(
++                 "hermes_cli.workers.aider.collect_git_artifacts",
++                 return_value=(None, None),
++             ):
++            result = aider_worker.run(
++                _task(), tmp_path / "ws",
++                execute=True,
++                config=aider_worker.AiderConfig(timeout_seconds=1),
++            )
++        assert result.status is WorkerStatus.FAILED
++        assert result.error and "timed out" in result.error
++
++    def test_launch_oserror_marks_failure(self, tmp_path):
++        with mock.patch.object(aider_worker, "detect_command", return_value=True), \
++             mock.patch.object(subprocess, "run", side_effect=OSError("no exec")), \
++             mock.patch(
++                 "hermes_cli.workers.aider.collect_git_artifacts",
++                 return_value=(None, None),
++             ):
++            result = aider_worker.run(
++                _task(), tmp_path / "ws", execute=True,
++            )
++        assert result.status is WorkerStatus.FAILED
++        assert result.error and "failed to launch" in result.error
++
++
++class TestCommandConstruction:
++    def test_safe_flags_in_handoff(self, tmp_path):
++        cmd = aider_worker.build_handoff_command(
++            aider_worker.AiderConfig(model="sonnet"),
++            tmp_path,
++            _task(),
++        )
++        assert cmd.startswith("aider ")
++        assert "--no-auto-commits" in cmd
++        assert "--model sonnet" in cmd
++        # Never auto-yes.
++        assert "--yes-always" not in cmd
++
++    def test_extra_args_propagate(self, tmp_path):
++        cfg = aider_worker.AiderConfig(extra_args=("--read", "AGENTS.md"))
++        cmd = aider_worker.build_handoff_command(cfg, tmp_path, _task())
++        assert "--read AGENTS.md" in cmd
++
++
++def test_module_is_importable():
++    import hermes_cli.workers.aider as _  # noqa: F401
+diff --git a/tests/test_worker_goose.py b/tests/test_worker_goose.py
+new file mode 100644
+index 00000000000..b108aa83bbf
+--- /dev/null
++++ b/tests/test_worker_goose.py
+@@ -0,0 +1,207 @@
++"""Tests for the Goose worker adapter (``hermes_cli/workers/goose.py``)."""
++
++from __future__ import annotations
++
++import json
++import subprocess
++from typing import Any
++from unittest import mock
++
++from hermes_cli.workers import WorkerStatus, WorkerTask
++from hermes_cli.workers import goose as goose_worker
++
++
++def _task(**overrides: Any) -> WorkerTask:
++    defaults: dict[str, Any] = {
++        "title": "Summarize today's logs",
++        "instructions": (
++            "Use the file extension to read ``./logs/today.txt`` and"
++            " produce a 5-bullet executive summary in ``summary.md``."
++        ),
++        "files": ["logs/today.txt"],
++        "context": "Goose can use the developer / files extensions only.",
++        "acceptance_criteria": [
++            "summary.md exists",
++            "Five bullets, no more",
++        ],
++    }
++    defaults.update(overrides)
++    return WorkerTask(**defaults)
++
++
++class TestPromptRendering:
++    def test_prompt_includes_all_sections(self):
++        prompt = goose_worker.render_prompt(_task())
++        assert "# Summarize today's logs" in prompt
++        assert "## Task" in prompt
++        assert "## Files in scope" in prompt
++        assert "logs/today.txt" in prompt
++        assert "## Acceptance criteria" in prompt
++        assert "## Context" in prompt
++        assert "Goose" in prompt
++        assert "## Guardrails" in prompt
++        # Destructive shortcuts MUST be explicitly forbidden.
++        assert "git push --force" in prompt
++        assert "auto-approve" in prompt.lower()
++
++    def test_prompt_handles_empty_optional_fields(self):
++        prompt = goose_worker.render_prompt(
++            WorkerTask(title="t", instructions="i")
++        )
++        assert "# t" in prompt
++        assert "## Files in scope" not in prompt
++        assert "## Context" not in prompt
++        assert "## Acceptance criteria" not in prompt
++
++    def test_prompt_blank_title_does_not_crash(self):
++        prompt = goose_worker.render_prompt(
++            WorkerTask(title="   ", instructions="   ")
++        )
++        assert "Untitled task" in prompt
++        assert "(no instructions provided)" in prompt
++
++
++class TestHandoffPath:
++    def test_default_run_is_handoff_required(self, tmp_path):
++        with mock.patch.object(goose_worker, "detect_command", return_value=True):
++            result = goose_worker.run(_task(), tmp_path / "ws")
++
++        assert result.status is WorkerStatus.HANDOFF_REQUIRED
++        assert result.worker == "goose"
++        assert result.prompt_path.exists()
++        assert result.status_path.exists()
++        assert result.output_path is None
++        assert result.patch_path is None
++        assert result.changed_files_path is None
++        assert result.exit_code is None
++
++    def test_handoff_command_references_instructions(self, tmp_path):
++        with mock.patch.object(goose_worker, "detect_command", return_value=True):
++            result = goose_worker.run(_task(), tmp_path / "ws")
++        assert "goose run" in result.handoff_command
++        assert "--instructions" in result.handoff_command
++        assert "prompt.md" in result.handoff_command
++
++    def test_status_json_is_machine_readable(self, tmp_path):
++        with mock.patch.object(goose_worker, "detect_command", return_value=True):
++            result = goose_worker.run(_task(), tmp_path / "ws")
++        data = json.loads(result.status_path.read_text())
++        assert data["worker"] == "goose"
++        assert data["status"] == "handoff_required"
++        assert data["command_available"] is True
++        assert "timestamp" in data
++
++    def test_handoff_works_when_binary_missing(self, tmp_path):
++        with mock.patch.object(goose_worker, "detect_command", return_value=False):
++            result = goose_worker.run(_task(), tmp_path / "ws")
++        assert result.status is WorkerStatus.HANDOFF_REQUIRED
++        assert result.command_available is False
++        assert result.prompt_path.exists()
++
++    def test_recipe_and_extensions_appear_in_handoff(self, tmp_path):
++        cfg = goose_worker.GooseConfig(
++            recipe="recipes/summarize.yaml",
++            extensions=("developer", "files"),
++        )
++        with mock.patch.object(goose_worker, "detect_command", return_value=True):
++            result = goose_worker.run(_task(), tmp_path / "ws", config=cfg)
++        assert "--recipe recipes/summarize.yaml" in result.handoff_command
++        assert "--with-extension developer" in result.handoff_command
++        assert "--with-extension files" in result.handoff_command
++
++
++class TestExecutionPath:
++    def test_missing_binary_yields_command_not_found(self, tmp_path):
++        with mock.patch.object(goose_worker, "detect_command", return_value=False):
++            result = goose_worker.run(
++                _task(), tmp_path / "ws", execute=True
++            )
++        assert result.status is WorkerStatus.COMMAND_NOT_FOUND
++        assert result.command_available is False
++        assert result.exit_code is None
++        assert result.error and "not found" in result.error
++        assert result.status_path.exists()
++
++    def test_successful_execution_captures_output_and_artifacts(self, tmp_path):
++        repo = tmp_path / "repo"
++        (repo / ".git").mkdir(parents=True)
++        ws = tmp_path / "ws"
++
++        completed = subprocess.CompletedProcess(
++            args=["goose"], returncode=0,
++            stdout="goose: ok\n", stderr="",
++        )
++        with mock.patch.object(goose_worker, "detect_command", return_value=True), \
++             mock.patch.object(subprocess, "run", return_value=completed) as run_mock, \
++             mock.patch(
++                 "hermes_cli.workers.goose.collect_git_artifacts",
++                 return_value=(ws / "patch.diff", ws / "changed-files.txt"),
++             ):
++            ws.mkdir(parents=True, exist_ok=True)
++            (ws / "patch.diff").write_text("diff --git a/x b/x\n")
++            (ws / "changed-files.txt").write_text("logs/today.txt\n")
++            result = goose_worker.run(
++                _task(), ws, execute=True, repo_root=repo
++            )
++
++        assert result.status is WorkerStatus.EXECUTED
++        assert result.exit_code == 0
++        assert result.output_path and result.output_path.exists()
++        assert "goose: ok" in result.output_path.read_text()
++        assert result.patch_path and result.patch_path.exists()
++        # Verify we did NOT pass any auto-approval shortcut.
++        argv = run_mock.call_args.args[0]
++        assert argv[0:2] == ["goose", "run"]
++        assert "--yes" not in argv
++        assert "--auto-approve" not in argv
++
++    def test_extensions_propagate_to_subprocess(self, tmp_path):
++        completed = subprocess.CompletedProcess(
++            args=["goose"], returncode=0, stdout="", stderr="",
++        )
++        cfg = goose_worker.GooseConfig(extensions=("developer",))
++        with mock.patch.object(goose_worker, "detect_command", return_value=True), \
++             mock.patch.object(subprocess, "run", return_value=completed) as run_mock, \
++             mock.patch(
++                 "hermes_cli.workers.goose.collect_git_artifacts",
++                 return_value=(None, None),
++             ):
++            goose_worker.run(_task(), tmp_path / "ws", execute=True, config=cfg)
++        argv = run_mock.call_args.args[0]
++        assert "--with-extension" in argv
++        assert "developer" in argv
++
++    def test_timeout_marks_failure(self, tmp_path):
++        with mock.patch.object(goose_worker, "detect_command", return_value=True), \
++             mock.patch.object(
++                 subprocess, "run",
++                 side_effect=subprocess.TimeoutExpired(cmd="goose", timeout=1),
++             ), \
++             mock.patch(
++                 "hermes_cli.workers.goose.collect_git_artifacts",
++                 return_value=(None, None),
++             ):
++            result = goose_worker.run(
++                _task(), tmp_path / "ws",
++                execute=True,
++                config=goose_worker.GooseConfig(timeout_seconds=1),
++            )
++        assert result.status is WorkerStatus.FAILED
++        assert result.error and "timed out" in result.error
++
++    def test_launch_oserror_marks_failure(self, tmp_path):
++        with mock.patch.object(goose_worker, "detect_command", return_value=True), \
++             mock.patch.object(subprocess, "run", side_effect=OSError("no exec")), \
++             mock.patch(
++                 "hermes_cli.workers.goose.collect_git_artifacts",
++                 return_value=(None, None),
++             ):
++            result = goose_worker.run(
++                _task(), tmp_path / "ws", execute=True,
++            )
++        assert result.status is WorkerStatus.FAILED
++        assert result.error and "failed to launch" in result.error
++
++
++def test_module_is_importable():
++    import hermes_cli.workers.goose as _  # noqa: F401

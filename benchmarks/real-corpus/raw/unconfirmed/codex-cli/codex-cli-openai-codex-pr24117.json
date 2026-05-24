@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24117",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24117,
+    "headSha": "51eb2839d09cd0a5d32a8544af46d9feeeffc0f9",
+    "baseSha": "162a6e746b7b4ef6024ccc819bf8ceaaa5f802f6",
+    "title": "[codex] Use rolling files for Windows sandbox logs",
+    "body": "## Why\n\nWindows sandbox diagnostics currently append to a single `sandbox.log` under `CODEX_HOME/.sandbox`. That file never rolls over, which makes it hard to safely include sandbox diagnostics in future feedback reports without risking unbounded growth.\n\n## What changed\n\n- Replaced direct append-open sandbox logging with `tracing_appender::rolling::RollingFileAppender`.\n- Configured sandbox logs to rotate daily using names like `sandbox.YYYY-MM-DD.log`.\n- Added a conservative `MAX_LOG_FILES` cap of 90 retained matching log files.\n- Routed the Windows sandbox setup helper through the same rolling writer.\n- Added helpers for resolving the current daily sandbox log path so future feedback upload work can use the same filename logic.\n- Updated tests and test diagnostics to read the dated daily log file.\n\nThis intentionally does not include sandbox logs in `/feedback` yet; scrubbing and attachment behavior can happen in a follow-up.\n\n## Testing\n\n- `cargo fmt -p codex-windows-sandbox`\n- `cargo check -p codex-windows-sandbox`\n- `cargo test -p codex-windows-sandbox`\n- `cargo test -p codex-windows-sandbox logging::tests`\n- `cargo clippy -p codex-windows-sandbox --all-targets -- -D warnings`",
+    "author": "iceweasel-oai",
+    "headRef": "codex/windows-sandbox-rolling-logs",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "51eb2839d09cd0a5d32a8544af46d9feeeffc0f9",
+    "baseSha": "162a6e746b7b4ef6024ccc819bf8ceaaa5f802f6"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24117.diff",
+  "vendoredAt": "2026-05-24T03:21:10.281Z",
+  "collectedAt": "2026-05-24T03:21:10.281Z"
+}

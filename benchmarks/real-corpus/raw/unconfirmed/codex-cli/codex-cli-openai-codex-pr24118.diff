@@ -1,0 +1,406 @@
+diff --git a/codex-rs/tools/src/json_schema.rs b/codex-rs/tools/src/json_schema.rs
+index 02936d52d114..c48e3a2d7359 100644
+--- a/codex-rs/tools/src/json_schema.rs
++++ b/codex-rs/tools/src/json_schema.rs
+@@ -6,13 +6,15 @@ use std::collections::BTreeMap;
+ use std::collections::BTreeSet;
+ 
+ const DEFINITION_TABLE_KEYS: [&str; 2] = ["$defs", "definitions"];
+-const SCHEMA_CHILD_KEYS: [&str; 2] = ["items", "anyOf"];
++const SCHEMA_CHILD_KEYS: [&str; 4] = ["items", "anyOf", "oneOf", "allOf"];
++const COMPOSITION_SCHEMA_KEYS: [&str; 3] = ["anyOf", "oneOf", "allOf"];
+ 
+ /// Primitive JSON Schema type names we support in tool definitions.
+ ///
+ /// This mirrors the OpenAI Structured Outputs subset for JSON Schema `type`:
+ /// string, number, boolean, integer, object, array, and null.
+-/// Keywords such as `enum`, `const`, and `anyOf` are modeled separately.
++/// Keywords such as `enum`, `const`, `anyOf`, `oneOf`, and `allOf` are modeled
++/// separately.
+ /// See <https://developers.openai.com/api/docs/guides/structured-outputs#supported-schemas>.
+ #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+ #[serde(rename_all = "lowercase")]
+@@ -58,6 +60,10 @@ pub struct JsonSchema {
+     pub additional_properties: Option<AdditionalProperties>,
+     #[serde(rename = "anyOf", skip_serializing_if = "Option::is_none")]
+     pub any_of: Option<Vec<JsonSchema>>,
++    #[serde(rename = "oneOf", skip_serializing_if = "Option::is_none")]
++    pub one_of: Option<Vec<JsonSchema>>,
++    #[serde(rename = "allOf", skip_serializing_if = "Option::is_none")]
++    pub all_of: Option<Vec<JsonSchema>>,
+     #[serde(rename = "$defs", skip_serializing_if = "Option::is_none")]
+     pub defs: Option<BTreeMap<String, JsonSchema>>,
+     #[serde(skip_serializing_if = "Option::is_none")]
+@@ -82,6 +88,22 @@ impl JsonSchema {
+         }
+     }
+ 
++    pub fn one_of(variants: Vec<JsonSchema>, description: Option<String>) -> Self {
++        Self {
++            description,
++            one_of: Some(variants),
++            ..Default::default()
++        }
++    }
++
++    pub fn all_of(variants: Vec<JsonSchema>, description: Option<String>) -> Self {
++        Self {
++            description,
++            all_of: Some(variants),
++            ..Default::default()
++        }
++    }
++
+     pub fn boolean(description: Option<String>) -> Self {
+         Self::typed(JsonSchemaPrimitiveType::Boolean, description)
+     }
+@@ -195,6 +217,7 @@ const LARGE_SCHEMA_COMPACTION_PASSES: &[LargeSchemaCompactionPass] = &[
+     strip_schema_descriptions,
+     drop_schema_definitions,
+     collapse_deep_schema_objects_from_root,
++    prune_schema_compositions,
+ ];
+ 
+ fn collapse_deep_schema_objects_from_root(value: &mut JsonValue) {
+@@ -373,6 +396,27 @@ fn collapse_deep_schema_objects(value: &mut JsonValue, depth: usize) {
+     }
+ }
+ 
++fn prune_schema_compositions(value: &mut JsonValue) {
++    match value {
++        JsonValue::Array(values) => {
++            for value in values {
++                prune_schema_compositions(value);
++            }
++        }
++        JsonValue::Object(map) => {
++            if has_composition_keyword(map) {
++                *value = json!({});
++                return;
++            }
++
++            for_each_schema_child_mut(map, DefinitionTraversal::Skip, &mut |value| {
++                prune_schema_compositions(value);
++            });
++        }
++        _ => {}
++    }
++}
++
+ fn is_complex_schema_object(map: &serde_json::Map<String, JsonValue>) -> bool {
+     SCHEMA_CHILD_KEYS.iter().any(|key| map.contains_key(*key))
+         || map.contains_key("properties")
+@@ -380,10 +424,16 @@ fn is_complex_schema_object(map: &serde_json::Map<String, JsonValue>) -> bool {
+         || map.contains_key("$ref")
+ }
+ 
++fn has_composition_keyword(map: &serde_json::Map<String, JsonValue>) -> bool {
++    COMPOSITION_SCHEMA_KEYS
++        .into_iter()
++        .any(|key| map.contains_key(key))
++}
++
+ /// Sanitize a JSON Schema (as serde_json::Value) so it can fit our limited
+ /// schema representation. This function:
+ /// - Ensures every typed schema object has a `"type"` when required.
+-/// - Preserves explicit `anyOf`.
++/// - Preserves explicit `anyOf`, `oneOf`, and `allOf`.
+ /// - Preserves `$ref` and reachable local `$defs` / `definitions`.
+ /// - Collapses `const` into single-value `enum`.
+ /// - Fills required child fields for object/array schema types, including
+@@ -419,8 +469,10 @@ fn sanitize_json_schema(value: &mut JsonValue) {
+             if let Some(value) = map.get_mut("prefixItems") {
+                 sanitize_json_schema(value);
+             }
+-            if let Some(value) = map.get_mut("anyOf") {
+-                sanitize_json_schema(value);
++            for key in COMPOSITION_SCHEMA_KEYS {
++                if let Some(value) = map.get_mut(key) {
++                    sanitize_json_schema(value);
++                }
+             }
+             for table in DEFINITION_TABLE_KEYS {
+                 sanitize_schema_table(map, table);
+@@ -432,7 +484,8 @@ fn sanitize_json_schema(value: &mut JsonValue) {
+ 
+             let mut schema_types = normalized_schema_types(map);
+ 
+-            if schema_types.is_empty() && (map.contains_key("$ref") || map.contains_key("anyOf")) {
++            if schema_types.is_empty() && (map.contains_key("$ref") || has_composition_keyword(map))
++            {
+                 return;
+             }
+ 
+diff --git a/codex-rs/tools/src/json_schema_tests.rs b/codex-rs/tools/src/json_schema_tests.rs
+index 52b30138c117..da522f891cdd 100644
+--- a/codex-rs/tools/src/json_schema_tests.rs
++++ b/codex-rs/tools/src/json_schema_tests.rs
+@@ -713,6 +713,109 @@ fn parse_tool_input_schema_preserves_nested_any_of_property() {
+     );
+ }
+ 
++#[test]
++fn parse_tool_input_schema_preserves_nested_one_of_property() {
++    // Example schema shape:
++    // {
++    //   "type": "object",
++    //   "properties": {
++    //     "query": {
++    //       "oneOf": [
++    //         { "const": "exact" },
++    //         { "type": "number" }
++    //       ]
++    //     }
++    //   }
++    // }
++    //
++    // Expected normalization behavior:
++    // - The nested `oneOf` is preserved.
++    // - Child variants are recursively sanitized, including `const` to `enum`.
++    let schema = parse_tool_input_schema(&serde_json::json!({
++        "type": "object",
++        "properties": {
++            "query": {
++                "oneOf": [
++                    { "const": "exact" },
++                    { "type": "number" }
++                ]
++            }
++        }
++    }))
++    .expect("parse schema");
++
++    assert_eq!(
++        schema,
++        JsonSchema::object(
++            BTreeMap::from([(
++                "query".to_string(),
++                JsonSchema::one_of(
++                    vec![
++                        JsonSchema::string_enum(
++                            vec![serde_json::json!("exact")],
++                            /*description*/ None,
++                        ),
++                        JsonSchema::number(/*description*/ None),
++                    ],
++                    /*description*/ None,
++                ),
++            )]),
++            /*required*/ None,
++            /*additional_properties*/ None
++        )
++    );
++}
++
++#[test]
++fn parse_tool_input_schema_preserves_nested_all_of_property() {
++    // Example schema shape:
++    // {
++    //   "type": "object",
++    //   "properties": {
++    //     "query": {
++    //       "allOf": [
++    //         { "type": "string" },
++    //         { "description": "unrecognized by itself" }
++    //       ]
++    //     }
++    //   }
++    // }
++    //
++    // Expected normalization behavior:
++    // - The nested `allOf` is preserved structurally rather than flattened.
++    // - Child variants are recursively sanitized.
++    let schema = parse_tool_input_schema(&serde_json::json!({
++        "type": "object",
++        "properties": {
++            "query": {
++                "allOf": [
++                    { "type": "string" },
++                    { "description": "unrecognized by itself" }
++                ]
++            }
++        }
++    }))
++    .expect("parse schema");
++
++    assert_eq!(
++        schema,
++        JsonSchema::object(
++            BTreeMap::from([(
++                "query".to_string(),
++                JsonSchema::all_of(
++                    vec![
++                        JsonSchema::string(/*description*/ None),
++                        JsonSchema::default(),
++                    ],
++                    /*description*/ None,
++                ),
++            )]),
++            /*required*/ None,
++            /*additional_properties*/ None
++        )
++    );
++}
++
+ #[test]
+ fn parse_tool_input_schema_preserves_type_unions_without_rewriting_to_any_of() {
+     // Example schema shape:
+@@ -1035,6 +1138,77 @@ fn parse_large_tool_input_schema_strips_descriptions_without_removing_descriptio
+     );
+ }
+ 
++#[test]
++fn parse_large_tool_input_schema_prunes_compositions_as_last_resort() {
++    for composition_key in super::COMPOSITION_SCHEMA_KEYS {
++        let variants = vec![
++            serde_json::json!({
++                "type": "string",
++                "enum": ["first ".repeat(400)]
++            }),
++            serde_json::json!({
++                "type": "string",
++                "enum": ["second ".repeat(400)]
++            }),
++            serde_json::json!({
++                "type": "string",
++                "enum": ["third ".repeat(400)]
++            }),
++        ];
++
++        let mut choice = serde_json::Map::new();
++        choice.insert(
++            composition_key.to_string(),
++            serde_json::Value::Array(variants),
++        );
++        let schema = parse_tool_input_schema(&serde_json::json!({
++            "type": "object",
++            "properties": {
++                "choice": choice
++            }
++        }))
++        .expect("parse schema");
++
++        assert_eq!(
++            serde_json::to_value(schema).expect("serialize schema"),
++            serde_json::json!({
++                "type": "object",
++                "properties": {
++                    "choice": {}
++                }
++            })
++        );
++    }
++}
++
++#[test]
++fn parse_large_tool_input_schema_prunes_single_composition_variant_if_still_over_budget() {
++    let schema = parse_tool_input_schema(&serde_json::json!({
++        "type": "object",
++        "properties": {
++            "choice": {
++                "anyOf": [
++                    {
++                        "type": "string",
++                        "enum": ["x".repeat(4_500)]
++                    }
++                ]
++            }
++        }
++    }))
++    .expect("parse schema");
++
++    assert_eq!(
++        serde_json::to_value(schema).expect("serialize schema"),
++        serde_json::json!({
++            "type": "object",
++            "properties": {
++                "choice": {}
++            }
++        })
++    );
++}
++
+ #[test]
+ fn parse_large_tool_input_schema_preserves_object_enum_literal_descriptions() {
+     let schema = parse_tool_input_schema(&serde_json::json!({
+@@ -1362,10 +1536,24 @@ fn parse_tool_input_schema_collects_refs_from_schema_child_keywords() {
+                     {"$ref": "#/$defs/Choice"},
+                     {"type": "string"}
+                 ]
++            },
++            "exclusive_choice": {
++                "oneOf": [
++                    {"$ref": "#/$defs/ExclusiveChoice"},
++                    {"type": "integer"}
++                ]
++            },
++            "combined": {
++                "allOf": [
++                    {"$ref": "#/$defs/Combined"},
++                    {"type": "object"}
++                ]
+             }
+         },
+         "$defs": {
++            "Combined": {"type": "object"},
+             "Choice": {"type": "boolean"},
++            "ExclusiveChoice": {"type": "null"},
+             "Extra": {"type": "number"},
+             "Item": {"type": "string"},
+             "Unused": {"type": "null"}
+@@ -1384,6 +1572,18 @@ fn parse_tool_input_schema_collects_refs_from_schema_child_keywords() {
+                         {"type": "string"}
+                     ]
+                 },
++                "combined": {
++                    "allOf": [
++                        {"$ref": "#/$defs/Combined"},
++                        {"type": "object", "properties": {}}
++                    ]
++                },
++                "exclusive_choice": {
++                    "oneOf": [
++                        {"$ref": "#/$defs/ExclusiveChoice"},
++                        {"type": "integer"}
++                    ]
++                },
+                 "items_holder": {
+                     "type": "array",
+                     "items": {"$ref": "#/$defs/Item"}
+@@ -1395,7 +1595,9 @@ fn parse_tool_input_schema_collects_refs_from_schema_child_keywords() {
+                 }
+             },
+             "$defs": {
++                "Combined": {"type": "object", "properties": {}},
+                 "Choice": {"type": "boolean"},
++                "ExclusiveChoice": {"type": "null"},
+                 "Extra": {"type": "number"},
+                 "Item": {"type": "string"}
+             }
+diff --git a/codex-rs/tools/tests/fixtures/json_schema_policy/google_drive.json b/codex-rs/tools/tests/fixtures/json_schema_policy/google_drive.json
+index bf37296cc029..518038aee502 100644
+--- a/codex-rs/tools/tests/fixtures/json_schema_policy/google_drive.json
++++ b/codex-rs/tools/tests/fixtures/json_schema_policy/google_drive.json
+@@ -53,13 +53,18 @@
+         {
+           "pointer": "/properties/title/description",
+           "value": "Copied file title."
++        },
++        {
++          "pointer": "/properties/file/oneOf/0/type",
++          "value": "string"
++        },
++        {
++          "pointer": "/properties/metadata/allOf/0/properties/source/type",
++          "value": "string"
+         }
+       ],
+       "expected_pruned": [],
+-      "expected_dropped_fields": [
+-        "/properties/file/oneOf",
+-        "/properties/metadata/allOf"
+-      ]
++      "expected_dropped_fields": []
+     }
+   ]
+ }

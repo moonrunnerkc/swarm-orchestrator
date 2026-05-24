@@ -1,0 +1,26 @@
+{
+  "id": "openhands-All-Hands-AI-OpenHands-pr14497",
+  "agent": {
+    "vendor": "openhands",
+    "confidence": "high",
+    "source": "repo-owner=All-Hands-AI+body=openhands-attribution"
+  },
+  "pr": {
+    "number": 14497,
+    "headSha": "df377ac97dfae440ba6fc93a665d677321d0198f",
+    "baseSha": "e069646a9a5a9b7abcbf85bd2af348c6f2b64a6f",
+    "title": "Fix BBDC mentioner resolution to use numeric id, and add 👀 eye reaction",
+    "body": "## What\r\n\r\n- **Resolve the BBDC @-mentioning user by their numeric id** (`actor['id']`) instead of the slug. Keycloak's `bitbucket_data_center_id` attribute is populated from the OIDC `sub` claim (numeric), so the slug lookup never matched and every job silently fell back to the webhook installer — replies/reactions posted as the installer rather than the invoking user.\r\n- **Add a best-effort 👀 reaction** on the triggering comment (BBDC comment-likes plugin), posted as the resolved invoking user.\r\n\r\nThis realigns BBDC with how GitHub and GitLab already work — both key on the numeric id (`github_id` via `sender.id`, `gitlab_id` via `sub`) — instead of BBDC being the lone username-keyed provider. Companion chart change: OpenHands-Cloud #647 (flips the `bitbucket_data_center` id-mapper claim back to `sub`).\r\n\r\n## Testing\r\n\r\n**Verified end-to-end on a real OHE instance:** an @-mention from a non-installer user now gets the 👀 reaction and a reply from that user's own account, not the installer's. Added unit regression tests for the numeric-id lookup and the comment-likes reactions endpoint.\r\n\r\nhttps://github.com/user-attachments/assets/55a9c701-98dd-4c6b-aa51-8ce11a03d38e\r\n\r\n\r\n\n---\n\nTo run this PR locally, use the following command:\n\nGUI with Docker:\n```\ndocker run -it --rm   -p 3000:3000   -v /var/run/docker.sock:/var/run/docker.sock   --add-host host.docker.internal:host-gateway   --name openhands-app-df377ac   docker.openhands.dev/openhands/openhands:df377ac\n```",
+    "author": "ak684",
+    "headRef": "alona/bbdc-mentioner-numeric-id",
+    "repository": "All-Hands-AI/OpenHands"
+  },
+  "diffRef": {
+    "repository": "All-Hands-AI/OpenHands",
+    "headSha": "df377ac97dfae440ba6fc93a665d677321d0198f",
+    "baseSha": "e069646a9a5a9b7abcbf85bd2af348c6f2b64a6f"
+  },
+  "vendoredDiffPath": "openhands/openhands-All-Hands-AI-OpenHands-pr14497.diff",
+  "vendoredAt": "2026-05-24T03:18:28.874Z",
+  "collectedAt": "2026-05-24T03:18:28.874Z"
+}

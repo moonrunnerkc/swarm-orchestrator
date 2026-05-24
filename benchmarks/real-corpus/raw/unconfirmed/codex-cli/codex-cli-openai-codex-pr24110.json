@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24110",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24110,
+    "headSha": "06c1db0548e55d929bb63a8143cbc93164dbc859",
+    "baseSha": "75b7e06621ac38c2b26a73832e797d49a7307f2b",
+    "title": "cli: support --profile for codex sandbox",
+    "body": "## Why\n\n`codex sandbox` now always runs the host sandbox backend, so it should accept the same profile selection mechanism as the rest of the runtime CLI surface. Without `--profile`, sandbox debugging can exercise only the default config stack unless users manually translate profile config into ad hoc `-c` overrides.\n\nSupporting `--profile` lets sandbox invocations load `$CODEX_HOME/<name>.config.toml`, including permission profile configuration, before resolving the sandbox policy for the command being run.\n\n## What Changed\n\n- Added `--profile NAME` / `-p NAME` to the host-specific `codex sandbox` argument structs as `config_profile`.\n- Allowed root-level `codex --profile NAME sandbox ...` and made a sandbox-local `codex sandbox --profile NAME ...` override the root selection.\n- Threaded `LoaderOverrides` through sandbox config loading so selected config profile files participate in permission resolution before the legacy read-only fallback.\n- Documented the new sandbox flag in `codex-rs/README.md`.\n\n## Verification\n\n- Added parser coverage for `codex sandbox --profile`.\n- Added sandbox config-loader coverage that verifies selected config profile loader overrides select the profile config rather than falling back to read-only.\n- Ran `cargo test -p codex-cli`.",
+    "author": "bolinfest",
+    "headRef": "pr24110",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "06c1db0548e55d929bb63a8143cbc93164dbc859",
+    "baseSha": "75b7e06621ac38c2b26a73832e797d49a7307f2b"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24110.diff",
+  "vendoredAt": "2026-05-24T03:21:15.401Z",
+  "collectedAt": "2026-05-24T03:21:15.401Z"
+}

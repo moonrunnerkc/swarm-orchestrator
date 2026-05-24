@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-luciangreen-plop-pr14",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 14,
+    "headSha": "b9ca688cb78a293c91cbf136c9a37c8dc70ffe57",
+    "baseSha": "03ef83256f8078661305432b433b82e02f15033b",
+    "title": "Implement Stage 9 list-manipulation-to-formula optimization in the optimizer pipeline",
+    "body": "Stage 9 in `pr3.txt` requires rewriting list-construction + `sum_list/2` patterns into closed-form arithmetic formulas. This PR adds that transformation and integrates it into the existing optimization pipeline and reporting flow.\n\n- **Stage 9 optimizer module**\n  - Added `list_formula.pl` with `optimise_list_formulas/3`.\n  - Detects and rewrites:\n    - `build_1_to_n(N, L), sum_list(L, S)` → `S is N * (N + 1) // 2`\n    - `build_sequence(N, Start, Step, L), sum_list(L, S)` → `S is N * (2 * Start + (N - 1) * Step) // 2`\n  - Emits `formula_discovered/2` report items per optimized predicate.\n\n- **Pipeline integration**\n  - Wired Stage 9 into `optimiser.pl` for both:\n    - `optimise_program/3`\n    - `optimise_predicate/4`\n  - Stage order now applies list-formula rewriting after Stage 3 simplification and before indexical/recursive-index analysis.\n\n- **Safety constraints for rewrite eligibility**\n  - Rewrites are gated to avoid list-variable escape:\n    - list variable must be used only in the matched builder + `sum_list/2` pair\n    - list variable must not appear in predicate head\n\n- **Coverage updates**\n  - Added `begin_tests(list_formula)` cases for:\n    - both supported rewrites\n    - non-rewrite when list is reused in body\n    - non-rewrite when list escapes via head\n    - report propagation through `optimise_program/3`\n\n```prolog\n% Before\nseq_sum(N, S) :-\n    build_1_to_n(N, L),\n    sum_list(L, S).\n\n% After\nseq_sum(N, S) :-\n    S is N * (N + 1) // 2.\n```",
+    "author": "Copilot",
+    "headRef": "copilot/implement-stage-9-from-pr3",
+    "repository": "luciangreen/plop"
+  },
+  "diffRef": {
+    "repository": "luciangreen/plop",
+    "headSha": "b9ca688cb78a293c91cbf136c9a37c8dc70ffe57",
+    "baseSha": "03ef83256f8078661305432b433b82e02f15033b"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-luciangreen-plop-pr14.diff",
+  "vendoredAt": "2026-05-24T03:06:29.234Z",
+  "collectedAt": "2026-05-24T03:06:29.234Z"
+}

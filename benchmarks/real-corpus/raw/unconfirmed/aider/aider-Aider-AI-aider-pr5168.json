@@ -1,0 +1,26 @@
+{
+  "id": "aider-Aider-AI-aider-pr5168",
+  "agent": {
+    "vendor": "aider",
+    "confidence": "high",
+    "source": "repo-owner=Aider-AI"
+  },
+  "pr": {
+    "number": 5168,
+    "headSha": "e74e04b3f2420080df95854eca0cd1c75a5f1061",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1",
+    "title": "Add model settings for Claude 4.x family on Azure AI Foundry",
+    "body": "## Summary\n\nAdds four entries to \\`aider/resources/model-settings.yml\\` for the Anthropic Claude 4.x family on **Azure AI Foundry** (\\`azure_ai/\\` provider — distinct from the Azure OpenAI \\`azure/\\` provider):\n\n| Model | weak_model_name | editor_model_name |\n|---|---|---|\n| \\`azure_ai/claude-opus-4-7\\` | \\`azure_ai/claude-haiku-4-5\\` | \\`azure_ai/claude-sonnet-4-6\\` |\n| \\`azure_ai/claude-opus-4-6\\` | \\`azure_ai/claude-haiku-4-5\\` | \\`azure_ai/claude-sonnet-4-6\\` |\n| \\`azure_ai/claude-sonnet-4-6\\` | \\`azure_ai/claude-haiku-4-5\\` | \\`azure_ai/claude-sonnet-4-6\\` |\n| \\`azure_ai/claude-haiku-4-5\\` | \\`azure_ai/claude-haiku-4-5\\` | \\`azure_ai/claude-haiku-4-5\\` |\n\nThese models already have pricing/context-window metadata in litellm's \\`model_prices_and_context_window.json\\` (the upstream Aider pulls from at \\`ModelInfoManager.MODEL_INFO_URL\\`), but were missing the project-side settings. Without them, users routing Claude through Azure AI Foundry got the wrong edit grammar and no \\`cache_control\\` wiring.\n\n## Settings shape\n\nMirrors the existing native Anthropic / Vertex AI / OpenRouter Claude entries:\n\n- \\`edit_format: diff\\`\n- \\`cache_control: true\\`\n- \\`use_repo_map: true\\`\n- \\`max_tokens: 128000\\` for Opus, \\`64000\\` for Sonnet/Haiku\n- \\`accepts_settings: [\\\"thinking_tokens\\\"]\\` where the native variant has it (Opus 4.6, Sonnet 4.6, Haiku 4.5)\n- \\`use_temperature: false\\` + \\`overeager: true\\` for Opus 4.7, matching the native \\`claude-opus-4-7\\` block\n\n## Test plan\n\n- YAML validity: \\`python -c \\\"import yaml; yaml.safe_load(open('aider/resources/model-settings.yml'))\\\"\\` parses cleanly.\n- Diff is purely additive: 60 lines in model-settings.yml + 1 line in HISTORY.md.",
+    "author": "Cyberfilo",
+    "headRef": "feat/add-azure-ai-claude-models",
+    "repository": "Aider-AI/aider"
+  },
+  "diffRef": {
+    "repository": "Aider-AI/aider",
+    "headSha": "e74e04b3f2420080df95854eca0cd1c75a5f1061",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1"
+  },
+  "vendoredDiffPath": "unconfirmed/aider/aider-Aider-AI-aider-pr5168.diff",
+  "vendoredAt": "2026-05-24T03:20:00.955Z",
+  "collectedAt": "2026-05-24T03:20:00.955Z"
+}

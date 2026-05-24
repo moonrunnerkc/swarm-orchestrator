@@ -1,0 +1,83 @@
+diff --git a/docs/content/contributing/release-strategy.md b/docs/content/contributing/release-strategy.md
+index 04ed44a0f..88a1c0b5f 100644
+--- a/docs/content/contributing/release-strategy.md
++++ b/docs/content/contributing/release-strategy.md
+@@ -47,6 +47,10 @@ Both promotion workflows support `workflow_dispatch`, so they can be triggered o
+ 
+ This is useful when a fix needs to be fast-tracked without waiting for the next scheduled run.
+ 
++## RHOAI ↔ MaaS Version Mapping
++
++For the authoritative table correlating RHOAI product releases with MaaS component versions and image tags, see [RHOAI ↔ MaaS Versions](../reference/rhoai-maas-versions.md).
++
+ ## Release Notes
+ 
+ Release notes in `docs/content/release-notes/index.md` summarize user-visible changes for each MaaS version. Keep them concise and focused on **what changed** and **why it matters**—link to detailed docs for **how** to migrate or configure.
+diff --git a/docs/content/reference/rhoai-maas-versions.md b/docs/content/reference/rhoai-maas-versions.md
+new file mode 100644
+index 000000000..ba1fbbbef
+--- /dev/null
++++ b/docs/content/reference/rhoai-maas-versions.md
+@@ -0,0 +1,50 @@
++# RHOAI ↔ MaaS Release Mapping
++
++This table maps each supported Red Hat OpenShift AI (RHOAI) release to the
++corresponding Models-as-a-Service (MaaS) component version. Use it for support
++ticket triage, CI reproduction, compatibility checks, and upgrade planning.
++
++## Version mapping
++
++| RHOAI Version | MaaS Version | RHOAI Image Tag | Status | Notes |
++|---------------|--------------|-----------------|--------|-------|
++| 3.4           | v0.1.0       | `v3.4`          | GA     | Subscription-driven access model; tier system removed. See [upgrade guide](../migration/upgrade-3.2-to-3.4.md). |
++| 3.3           | v0.0.2       | `v3.3`          | TP     | Same MaaS version as 3.2; no MaaS-specific changes. |
++| 3.2           | v0.0.2       | `v3.2`          | TP     | TLS, deploy-script updates. MaaS deployed manually (RHOAI 3.2 DSC does not support `modelsAsService`). |
++| 3.1           | v0.0.1       | `v3.1`          | TP     | Same MaaS version as 3.0; no MaaS-specific changes. |
++| 3.0           | v0.0.1       | —               | TP     | Initial MaaS release; tier-based access model, manual deployment only. |
++
++**Status key:** GA = Generally Available, TP = Tech Preview.
++
++## Image references
++
++Production images are published to the Red Hat registry. The image tag
++corresponds to the RHOAI version, not the MaaS version.
++
++| Component        | Registry path                                             |
++|------------------|-----------------------------------------------------------|
++| maas-api         | `registry.redhat.io/rhoai/odh-maas-api-rhel9:<tag>`      |
++| maas-controller  | `registry.redhat.io/rhoai/odh-maas-controller-rhel9:<tag>`|
++
++Upstream development images use the MaaS version tag on `quay.io/opendatahub/`.
++
++## Branch → RHOAI mapping
++
++See [Release Strategy](../contributing/release-strategy.md) for the full
++promotion flow. In short:
++
++| Branch   | Feeds into    |
++|----------|---------------|
++| `main`   | Next release  |
++| `stable` | ODH builds    |
++| `rhoai`  | Current RHOAI |
++
++## Operator channel
++
++RHOAI 3.x operators use the `stable-3.x` channel from `redhat-operators`.
++See [Platform Setup](../install/platform-setup.md) for installation details.
++
++## Updating this table
++
++When a new RHOAI GA ships that bumps the bundled MaaS version, add a row to the
++version mapping table in the same release PR (or an explicitly linked follow-up).
+diff --git a/docs/mkdocs.yml b/docs/mkdocs.yml
+index 374022132..994bc30c4 100644
+--- a/docs/mkdocs.yml
++++ b/docs/mkdocs.yml
+@@ -54,6 +54,7 @@ nav:
+   - Home:
+     - index.md
+     - Release Notes: release-notes/index.md
++    - RHOAI ↔ MaaS Versions: reference/rhoai-maas-versions.md
+     - Migration:
+       - Tier to Subscription: migration/tier-to-subscription.md
+       - Upgrade 3.2 to 3.4: migration/upgrade-3.2-to-3.4.md

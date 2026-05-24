@@ -1,0 +1,26 @@
+{
+  "id": "aider-Aider-AI-aider-pr5137",
+  "agent": {
+    "vendor": "aider",
+    "confidence": "high",
+    "source": "repo-owner=Aider-AI"
+  },
+  "pr": {
+    "number": 5137,
+    "headSha": "a9a1db6fc459233e16dbd60506efc7e094260a98",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1",
+    "title": "Guard scraper against private network URLs",
+    "body": "## Summary\n- block scraper requests to private, loopback, link-local, metadata, multicast, and otherwise non-public network targets before fetching\n- resolve and validate hostname targets, revalidate redirects, disable proxy/env routing for HTTPX, and bind HTTPX connections to the validated resolved address\n- avoid browser DNS rebinding by only using Playwright for literal IP URLs, with route-level blocking for unsafe browser requests\n\n## Testing\n- `.venv/bin/python -m pytest tests/scrape/test_scrape.py -k \"private or multicast or rebinding or network_backend or playwright_route\"`\n- `.venv/bin/python -m pytest tests/scrape/test_scrape.py tests/scrape/test_playwright_disable.py`\n- `.venv/bin/python -m flake8 aider/scrape.py tests/scrape/test_scrape.py tests/scrape/test_playwright_disable.py`\n- `.venv/bin/python -m compileall aider/scrape.py tests/scrape/test_scrape.py tests/scrape/test_playwright_disable.py`\n- `git diff --check`\n",
+    "author": "pragnyanramtha",
+    "headRef": "fix-5075-scraper-ssrf-guard",
+    "repository": "Aider-AI/aider"
+  },
+  "diffRef": {
+    "repository": "Aider-AI/aider",
+    "headSha": "a9a1db6fc459233e16dbd60506efc7e094260a98",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1"
+  },
+  "vendoredDiffPath": "unconfirmed/aider/aider-Aider-AI-aider-pr5137.diff",
+  "vendoredAt": "2026-05-24T03:20:12.497Z",
+  "collectedAt": "2026-05-24T03:20:12.497Z"
+}

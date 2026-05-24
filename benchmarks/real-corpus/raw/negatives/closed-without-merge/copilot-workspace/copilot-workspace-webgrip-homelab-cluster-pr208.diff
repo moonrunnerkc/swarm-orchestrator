@@ -1,0 +1,76 @@
+diff --git a/.copilot-review/result.md b/.copilot-review/result.md
+new file mode 100644
+index 00000000..5f56aa07
+--- /dev/null
++++ b/.copilot-review/result.md
+@@ -0,0 +1,70 @@
++pr: 205
++
++## Dependency Update Review
++
++**Verdict:** Yellow — Caution
++**Recommendation:** Merge after checks
++**Confidence:** High
++
++### Executive summary
++
++This PR bumps the Spegel Helm chart from `0.6.0` to `0.7.1` in the bootstrap helmfile (`bootstrap/helmfile.d/01-apps.yaml`). The primary risk driver is that v0.7.0 is a substantial minor release with significant internal refactoring, a new default hostPath persistence for peer identity, and the removal of Containerd 1.7/2.0 support. Notably, the Flux GitOps path (`kubernetes/apps/kube-system/spegel/app/ocirepository.yaml`) already targets `0.7.1` with a digest pin, meaning this workload has likely already been reconciled — the bootstrap file is being brought into parity. Merge is safe after confirming the cluster is running 0.7.1 healthily.
++
++### Update inventory
++
++| Dependency | Ecosystem | Change | Scope | Local role | Risk |
++|---|---|---|---|---|---|
++| `ghcr.io/spegel-org/helm-charts/spegel` | Helm / OCI | `0.6.0 → 0.7.1` | minor | infra / kube-system DaemonSet (P2P image cache) | Yellow |
++
++### Important upstream changes
++
++**v0.7.0** ([full changelog](https://github.com/spegel-org/spegel/releases/tag/v0.7.0)):
++
++- **[feature]** Peer ID persistence between restarts via a new `spegel.persistence` block (enabled by default with `hostPath: /var/lib/spegel`) — adds a new HostPath volume to every node ([spegel-org/spegel#1196](https://github.com/spegel-org/spegel/pull/1196))
++- **[feature]** QUIC enabled in P2P router — changes the transport protocol used between peers ([spegel-org/spegel#1174](https://github.com/spegel-org/spegel/pull/1174))
++- **[behavior]** Registry port split into peer metadata — potential wire-protocol incompatibility during rolling upgrade from 0.6.x ([spegel-org/spegel#1228](https://github.com/spegel-org/spegel/pull/1228))
++- **[behavior]** Mirror requests now use retry instead of range iteration ([spegel-org/spegel#1181](https://github.com/spegel-org/spegel/pull/1181))
++- **[behavior]** Hedged requests to peers added to protect against tail latency ([spegel-org/spegel#1258](https://github.com/spegel-org/spegel/pull/1258))
++- **[breaking]** Containerd 1.7 and 2.0 support removed — only Containerd ≥ 2.1 is now tested/supported ([spegel-org/spegel#1168](https://github.com/spegel-org/spegel/pull/1168))
++- **[bugfix]** Fix scope for anonymous auth with GHCR ([spegel-org/spegel#1175](https://github.com/spegel-org/spegel/pull/1175))
++- **[bugfix]** Fix record TTL and range header side-effects ([spegel-org/spegel#1205](https://github.com/spegel-org/spegel/pull/1205), [#1292](https://github.com/spegel-org/spegel/pull/1292))
++- **[bugfix]** Fix P2P ready race and connectivity gate ([spegel-org/spegel#1289](https://github.com/spegel-org/spegel/pull/1289))
++
++**v0.7.1** ([full changelog](https://github.com/spegel-org/spegel/releases/tag/v0.7.1)):
++
++- **[bugfix]** Fix data race when modifying range for failed blob request — important stability fix for concurrent image pulls ([spegel-org/spegel#1350](https://github.com/spegel-org/spegel/pull/1350))
++- **[bugfix]** Dependency bump: `go-libp2p-kad-dht` 0.39.1 → 0.40.0
++
++### Local impact
++
++**Two deployment paths are in play:**
++
++1. **Bootstrap helmfile** (`bootstrap/helmfile.d/01-apps.yaml`): Used during cluster bootstrap/re-bootstrap only. This is the file changed by this PR. It runs `helmfile apply` with Helm directly before Flux takes over.
++2. **Flux GitOps path** (`kubernetes/apps/kube-system/spegel/app/ocirepository.yaml`): Already pinned to `tag: 0.7.1` with digest `sha256:9efb90dbec90f3ffda195196eaa151cd1a6c2c30d44d59bb2c0853edf08d4430`. This means the production workload has **already been updated to 0.7.1 by Flux**.
++
++**HelmRelease values** (`kubernetes/apps/kube-system/spegel/app/helmrelease.yaml`):
++- `containerdSock: /run/containerd/containerd.sock` — matches the default
++- `containerdRegistryConfigPath: /etc/cri/conf.d/hosts` — explicitly overrides the new default (`/etc/containerd/certs.d`), so migration is safe
++- `service.registry.hostPort: 29999` — explicitly overrides default (30020)
++- `serviceMonitor.enabled: true`
++
++**New hostPath persistence** (`spegel.persistence.hostPath: /var/lib/spegel`, enabled by default in 0.7.0) is not explicitly configured in the HelmRelease, so the default will apply. This writes peer identity data to each node's `/var/lib/spegel`.
++
++**Containerd version**: The cluster uses Talos Linux with containerd. Verify the Talos/containerd version is ≥ 2.1 — Containerd 1.7 and 2.0 are no longer supported in this release.
++
++**Scope is low-blast-radius for this PR**: The Flux GitOps path is already at 0.7.1. This PR only aligns the bootstrap file. If Spegel is running healthy at 0.7.1 in the cluster today, merging is safe.
++
++### Pre-merge checks
++
++- [ ] Confirm Spegel DaemonSet is currently running 0.7.1 and healthy: `kubectl -n kube-system get daemonset spegel -o jsonpath='{.spec.template.spec.containers[0].image}'` and check pod status/logs
++- [ ] Confirm Containerd version on nodes is ≥ 2.1 (Containerd 1.7 / 2.0 support removed in v0.7.0): `talosctl get extensions` or check the Talos version's bundled containerd
++- [ ] Verify `/var/lib/spegel` hostPath directories are present or will be created cleanly on all nodes (new in 0.7.0 — peer ID persistence)
++- [ ] Confirm `containerdRegistryConfigPath: /etc/cri/conf.d/hosts` is still correct for this Talos setup (the upstream default changed to `/etc/containerd/certs.d` in 0.7.0; this repo overrides it, so it should be fine)
++- [ ] Check Spegel pod logs for any warnings about peer protocol version mismatches after the upgrade (due to peer-metadata protocol change in 0.7.0)
++
++### Evidence reviewed
++
++- **PR**: "feat(container): update image ghcr.io/spegel-org/helm-charts/spegel ( 0.6.0 ➔ 0.7.1 )" — labels: `area/bootstrap`, `renovate/container`, `type/minor`, `dependencies`. Diff: single line change in `bootstrap/helmfile.d/01-apps.yaml`. No values change.
++- **Files in repo**: `bootstrap/helmfile.d/01-apps.yaml`, `kubernetes/apps/kube-system/spegel/app/helmrelease.yaml`, `kubernetes/apps/kube-system/spegel/app/ocirepository.yaml`, `kubernetes/apps/kube-system/spegel/ks.yaml`
++- **Upstream sources checked**: https://github.com/spegel-org/spegel/releases/tag/v0.7.0 and https://github.com/spegel-org/spegel/releases/tag/v0.7.1 (GitHub releases API); https://raw.githubusercontent.com/spegel-org/spegel/v0.7.1/charts/spegel/values.yaml
++- **Notable uncertainty**: The Helm chart version scheme (`version: v0.0.1` in Chart.yaml) uses the app release tag as the OCI tag — chart internals are versioned by app tag. No separate chart changelog exists; release notes cover both app and chart changes together.

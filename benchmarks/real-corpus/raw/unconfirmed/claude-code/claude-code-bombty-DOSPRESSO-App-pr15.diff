@@ -1,0 +1,48 @@
+diff --git a/server/routes/personnel-attendance-detail.ts b/server/routes/personnel-attendance-detail.ts
+index d84f2c04d..cd53775fa 100644
+--- a/server/routes/personnel-attendance-detail.ts
++++ b/server/routes/personnel-attendance-detail.ts
+@@ -20,7 +20,7 @@ import {
+   factoryShiftSessions,
+   leaveRequests,
+   overtimeRequests,
+-  shiftAssignments,
++  shifts as shiftsTable,
+ } from '@shared/schema';
+ import { and, eq, gte, lte, isNull, sql, desc, or } from 'drizzle-orm';
+ 
+@@ -93,21 +93,22 @@ router.get('/api/personnel/:userId/attendance-detail', isAuthenticated, async (r
+     // 3) Vardiya Atamaları (planlanmış vardıyalar)
+     // ═════════════════════════════════════════════════
+     const shifts = await db.select({
+-      id: shiftAssignments.id,
+-      shiftDate: shiftAssignments.shiftDate,
+-      shiftStart: shiftAssignments.shiftStart,
+-      shiftEnd: shiftAssignments.shiftEnd,
+-      shiftType: shiftAssignments.shiftType,
+-      status: shiftAssignments.status,
++      id: shiftsTable.id,
++      shiftDate: shiftsTable.shiftDate,
++      shiftStart: shiftsTable.startTime,
++      shiftEnd: shiftsTable.endTime,
++      shiftType: shiftsTable.shiftType,
++      status: shiftsTable.status,
+     })
+-      .from(shiftAssignments)
++      .from(shiftsTable)
+       .where(and(
+-        eq(shiftAssignments.userId, targetUserId),
+-        gte(shiftAssignments.shiftDate, startDate),
+-        lte(shiftAssignments.shiftDate, endDate),
++        eq(shiftsTable.assignedToId, targetUserId),
++        gte(shiftsTable.shiftDate, startDate),
++        lte(shiftsTable.shiftDate, endDate),
++        isNull(shiftsTable.deletedAt),
+       ))
+-      .orderBy(desc(shiftAssignments.shiftDate))
+-      .catch(() => []); // shift_assignments yoksa boş dön
++      .orderBy(desc(shiftsTable.shiftDate))
++      .catch(() => []); // shifts tablosu sorunu olursa boş dön
+ 
+     // ═════════════════════════════════════════════════
+     // 4) İzin Talepleri (bu tarih aralığında)

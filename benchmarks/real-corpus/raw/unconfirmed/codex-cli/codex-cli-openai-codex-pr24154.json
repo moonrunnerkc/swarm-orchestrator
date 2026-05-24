@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24154",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24154,
+    "headSha": "d3d12c74ce6eba70da2298890b089239f4b3b043",
+    "baseSha": "5c20513a1b3d15898429abd92b3676b76795a892",
+    "title": "Add experimental turn additional context",
+    "body": "## Summary\n\nAdds experimental `additionalContext` support to `turn/start` and `turn/steer` so clients can provide ephemeral external context, such as browser or automation state, without turning that plumbing into a visible user prompt or triggering user-prompt lifecycle behavior.\n\n## API Shape\n\nThe shape for the parameter is:\n\n```ts\nadditionalContext?: Record<string, {\n  value: string\n  isUntrusted?: boolean\n}> | null\n```\n\nExample:\n\n```json\n{\n  \"additionalContext\": {\n    \"browser_info\": {\n      \"value\": \"Active tab is CI failures.\",\n      \"isUntrusted\": true\n    },\n    \"automation_info\": {\n      \"value\": \"CI rerun is in progress.\"\n    }\n  }\n}\n```\n\nThe keys are opaque and caller-defined. `isUntrusted` defaults to `false`.\n\n## Context Injection\n\nWhen the parameter is provided, each accepted entry is inserted into model context as a hidden contextual message item, not as a visible thread user-message item.\n\nUntrusted entries are inserted with role `user`:\n\n```text\n<external_${key}>${value}</external_${key}>\n```\n\nTrusted entries are inserted with role `developer`:\n\n```text\n<${key}>${value}</${key}>\n```\n\nValues are not escaped. Each value is truncated to 1k approximate tokens before wrapping.\n\nFor `turn/start`, accepted additional context is inserted before the normal user input. For `turn/steer`, additional context is merged only when the steer includes non-empty user input; context-only steers still reject as empty input.\n\n## Dedupe Strategy\n\n`AdditionalContextStore` lives on session state and stores the latest complete additional-context map.\n\nEach `turn/start` or non-empty `turn/steer` treats its `additionalContext` as the current complete set of values. Entries are injected only when the key is new or the exact entry for that key changed, including `value` or `isUntrusted`. After merging, the store is replaced with the provided map, so omitted keys are removed from the retained set and can be injected again later if reintroduced.\n\nOmitting `additionalContext`, passing `null`, or passing an empty object resets the store to empty and injects nothing.\n\n## What Changed\n\n- Threads experimental v2 `additionalContext` through app-server into core turn start and steer handling.\n- Adds separate contextual fragment types for untrusted user-role context and trusted developer-role context.\n- Switches task input plumbing to carry `TurnInput` directly so additional context can be combined with normal user input without treating it as prompt text.\n- Adds integration coverage for start/steer flow, role routing, dedupe/reset behavior, deletion/re-add behavior, hook-blocked input behavior, empty context-only steer rejection, and truncation.",
+    "author": "pakrym-oai",
+    "headRef": "pakrym/additional-context",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "d3d12c74ce6eba70da2298890b089239f4b3b043",
+    "baseSha": "5c20513a1b3d15898429abd92b3676b76795a892"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24154.diff",
+  "vendoredAt": "2026-05-24T03:20:52.036Z",
+  "collectedAt": "2026-05-24T03:20:52.036Z"
+}

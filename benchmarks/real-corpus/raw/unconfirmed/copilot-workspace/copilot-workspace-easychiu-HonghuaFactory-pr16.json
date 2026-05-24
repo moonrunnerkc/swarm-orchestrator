@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-easychiu-HonghuaFactory-pr16",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 16,
+    "headSha": "9ad5b396ee3219b73738136ce7e08117e17fd535",
+    "baseSha": "6f9788540dfbe73ba1c0eb284c9d500e05ea3983",
+    "title": "Dedicated adventure shop UI with proper navigation and visual clarity improvements",
+    "body": "Three issues addressed: adventure shop nodes redirect to the main store (wrong UI, wrong back-navigation), work/study/rest activities are visually indistinguishable in the scheduler, and the training log area lacks a visible scrollbar as entries accumulate.\n\n### Adventure shop separation\n- Added `'shopping'` status to `AdventureState.status` union type\n- Shop nodes now set `status: 'shopping'` instead of `activeScreen: 'store'`, keeping the player in the adventure screen\n- Inline adventure shop UI in `AdventureMap.tsx` with themed styling (emerald for 驛站, purple for 黑市) and filtered item list (combat consumables only)\n- \"返回修行路徑\" returns to `exploring` status instead of main screen\n\n```tsx\n// Before: redirected to main store\nactiveScreen: 'store'\n\n// After: stays in adventure with dedicated shop UI  \nnextAdv.status = 'shopping';\n```\n\n### Save/Load completeness\n- `SaveLoadPanel` was missing `cheatMode`, `unlockedCharacters`, `completedEndings`, `unlockedAchievements`, `lastFatherInteractionMonth` from save data — loading from start screen would lose these fields\n- \"讀取存檔\" button enlarged with glow effect for discoverability\n\n### Scheduler activity differentiation\n- `ActivityCard` uses type-specific color schemes: emerald/💰 for work, indigo/📖 for study, gold/😴 for rest\n- Added `border-l-4` stripe and expanded description from `line-clamp-1` → `line-clamp-2`\n\n### Training log scrollbar\n- Changed `overflow-y-auto` → `overflow-y-scroll` with `.scrollbar-visible` CSS class (gold-themed, webkit + Firefox `scrollbar-color`)\n- Fixed height `h-48`, added record count in header",
+    "author": "Copilot",
+    "headRef": "copilot/fix-homepage-file-display",
+    "repository": "easychiu/HonghuaFactory"
+  },
+  "diffRef": {
+    "repository": "easychiu/HonghuaFactory",
+    "headSha": "9ad5b396ee3219b73738136ce7e08117e17fd535",
+    "baseSha": "6f9788540dfbe73ba1c0eb284c9d500e05ea3983"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-easychiu-HonghuaFactory-pr16.diff",
+  "vendoredAt": "2026-05-24T03:35:51.887Z",
+  "collectedAt": "2026-05-24T03:35:51.887Z"
+}

@@ -1,0 +1,26 @@
+{
+  "id": "devin-fullhousedeliveryllc-wq-full-house-delivery-dashboard-pr16",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 16,
+    "headSha": "30336cbb0b38d8ac1c579e831c0cc5e94422760e",
+    "baseSha": "1ef75a64916796530822b70eb704535a8467850d",
+    "title": "v16: Invoice photos, required Note, Chime tab, expense-only finance, period-based Job Revenue",
+    "body": "## Summary\n\nSix feature enhancements to the dashboard (v16):\n\n1. **Invoice photo uploads** — new \"Invoices\" file input in Log a New Entry. Upload up to 5 photos per entry. Images are resized (max 800px) and compressed to JPEG at 60% quality to keep localStorage manageable. A 📎 icon appears in the entry log to view uploaded invoices. Thumbnails also shown in the edit modal.\n\n2. **Note field now required** — changed from optional to required with the same red accent highlighting as Category and Revenue.\n\n3. **Chime Payments tab** — new third tab with:\n   - Manual transaction entry (Deposit, Withdrawal, Transfer In/Out, Payment Received, Fee)\n   - CSV import from Chime transaction exports with auto-categorization\n   - Bar chart with daily/weekly/monthly/quarterly period selector\n   - Breakdown grid and summary strip (balance, total deposits, total withdrawals, transaction count)\n   - Edit/delete per transaction\n   - Drag & drop CSV upload\n   - Note: Chime does not offer a public API for third-party integration, so this uses manual entry + CSV import\n\n4. **Removed \"Money Received\" from Breakdown** — auto-removes legacy \"Money Received\" from the financeTypes array on load\n\n5. **Expense-only finance section** — renamed \"Log Revenue / Expense\" to \"Log Expense\". Revenue now comes exclusively from job entries. Finance form dropdown only shows expense types. Finance log shows all amounts as expenses.\n\n6. **Job Revenue period-based breakdown** — the Breakdown grid now filters by the selected period (today, this week, this month, this quarter). Both Job Revenue and expense totals reflect only entries within the current period range.\n\n## Review & Testing Checklist for Human\n\n- [ ] **Invoice upload**: Go to Customer & Jobs → Log a New Entry → select 1-5 images in the Invoices field → submit → verify 📎 icon appears in the log → click it → verify images display in the modal\n- [ ] **Note required**: Try submitting an entry with an empty Note field → verify it blocks submission with a toast message\n- [ ] **Chime tab**: Click the \"Chime Payments\" tab → add a manual transaction → verify it appears in the log and charts. Try importing a CSV file.\n- [ ] **Money Received removed**: Go to Revenues & Expenses → verify \"Money Received\" no longer appears in the Breakdown grid, form dropdown, or Manage Types list\n- [ ] **Expense-only form**: Verify the section says \"Log Expense\" and the Type dropdown only has expense categories\n- [ ] **Period-based breakdown**: Add job entries with different dates → switch between Daily/Weekly/Monthly/Quarterly → verify the Breakdown grid shows correct period-filtered totals for Job Revenue\n\n### Test plan\n1. Hard refresh (Ctrl+Shift+R) to load v16\n2. Test each feature above in order\n3. Verify existing data (entries, categories, etc.) is preserved after update\n4. Test on mobile after syncing\n\n### Notes\n- Invoice photos are stored as base64 in localStorage only (not synced to Supabase due to size constraints). They persist per-browser.\n- Legacy \"Money Received\" entries will still appear in the Finance Log but won't affect revenue calculations.\n- The Chime tab data is also localStorage-only for now.\n\nLink to Devin session: https://app.devin.ai/sessions/6039104f0b2a4194af27b6686cc684be\nRequested by: @fullhousedeliveryllc-wq",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779592782-feature-enhancements",
+    "repository": "fullhousedeliveryllc-wq/full-house-delivery-dashboard"
+  },
+  "diffRef": {
+    "repository": "fullhousedeliveryllc-wq/full-house-delivery-dashboard",
+    "headSha": "30336cbb0b38d8ac1c579e831c0cc5e94422760e",
+    "baseSha": "1ef75a64916796530822b70eb704535a8467850d"
+  },
+  "vendoredDiffPath": "devin/devin-fullhousedeliveryllc-wq-full-house-delivery-dashboard-pr16.diff",
+  "vendoredAt": "2026-05-24T03:34:15.533Z",
+  "collectedAt": "2026-05-24T03:34:15.533Z"
+}

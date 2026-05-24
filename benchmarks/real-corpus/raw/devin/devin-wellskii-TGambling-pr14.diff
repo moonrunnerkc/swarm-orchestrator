@@ -1,0 +1,1378 @@
+diff --git a/tests/test_http_check.py b/tests/test_http_check.py
+index ce54f78..2895f2e 100644
+--- a/tests/test_http_check.py
++++ b/tests/test_http_check.py
+@@ -1490,7 +1490,7 @@ def test_export_casinos_txt_basic(tmp_path: Path) -> None:
+     body = r.text
+     assert body.startswith("# tgambling /export/casinos.txt")
+     lines = body.splitlines()
+-    assert any("domain\toperator\ttier" in ln for ln in lines[:3])
++    assert any("domain\toperator\ttier" in ln for ln in lines[:5])
+ 
+ 
+ def test_export_casinos_txt_no_noise(tmp_path: Path) -> None:
+@@ -1652,6 +1652,74 @@ def test_export_casinos_txt_requires_auth_when_enabled(
+     assert r2.status_code == 200
+ 
+ 
++# ---- v0.10.6: /export/dispatchers.txt + landing exclusion ----------------
++
++
++def _populate_with_landing(tmp_path: Path) -> Path:
++    """БД с: 1 backend-кластер ×2 + 1 landing-кластер ×2."""
++    db = tmp_path / "export_dispatchers.db"
++    init_db(db)
++    with connect(db) as conn:
++        # Backend ×2 (через title-кластеризацию)
++        for d in ("vavada-1.com", "vavada-2.com"):
++            record_domain_seen(conn, domain=d, increment=10)
++        conn.execute(
++            "UPDATE domains SET http_status='alive', http_title='UNIQUEBRAND',"
++            " domain_kind='backend'"
++            " WHERE domain IN ('vavada-1.com','vavada-2.com')"
++        )
++        # Landing-dispatcher ×2 (общий title 'working mirror')
++        for d in ("blitz-casino.cc", "bounty-casino.life"):
++            record_domain_seen(conn, domain=d, increment=10)
++        conn.execute(
++            "UPDATE domains SET http_status='alive',"
++            " http_title='Casino Official Site - working mirror SHAREDTITLE',"
++            " domain_kind='landing'"
++            " WHERE domain IN ('blitz-casino.cc','bounty-casino.life')"
++        )
++    return db
++
++
++def test_export_dispatchers_txt_basic(tmp_path: Path) -> None:
++    """Endpoint доступен, возвращает только landing-кластеры."""
++    from fastapi.testclient import TestClient
++
++    from tgambling.web.app import create_app
++
++    db = _populate_with_landing(tmp_path)
++    c = TestClient(create_app(db_path=db))
++    r = c.get("/export/dispatchers.txt")
++    assert r.status_code == 200, r.text
++    assert 'filename="dispatchers.txt"' in r.headers["content-disposition"]
++    body = r.text
++    assert body.startswith("# tgambling /export/dispatchers.txt")
++    rows = [ln for ln in body.splitlines() if not ln.startswith("#") and ln.strip()]
++    # Должен быть один кластер landing-доменов (склеились по title).
++    assert len(rows) >= 1
++    # Vavada (backend) — НЕ в выдаче dispatchers.
++    assert "vavada-1.com" not in body
++    assert "vavada-2.com" not in body
++    # Landing-домен — в выдаче.
++    assert "blitz-casino.cc" in body or "bounty-casino.life" in body
++
++
++def test_export_casinos_excludes_landing(tmp_path: Path) -> None:
++    """/export/casinos.txt НЕ показывает landing-dispatcher'ы (v0.10.6)."""
++    from fastapi.testclient import TestClient
++
++    from tgambling.web.app import create_app
++
++    db = _populate_with_landing(tmp_path)
++    c = TestClient(create_app(db_path=db))
++    r = c.get("/export/casinos.txt")
++    assert r.status_code == 200
++    body = r.text
++    assert "blitz-casino.cc" not in body
++    assert "bounty-casino.life" not in body
++    # Backend остаётся.
++    assert "vavada-1.com" in body or "vavada-2.com" in body
++
++
+ # ---- v0.10.3-P1: split-by-title (over-merging fix) ------------------------
+ 
+ 
+diff --git a/tests/test_kind.py b/tests/test_kind.py
+new file mode 100644
+index 0000000..4f654ac
+--- /dev/null
++++ b/tests/test_kind.py
+@@ -0,0 +1,168 @@
++"""Тесты для классификатора `domain_kind` (v0.10.6, `tgambling.kind`)."""
++
++from __future__ import annotations
++
++from tgambling.kind import classify_domain_kind
++
++# ---- noise-маппинг → kind ---------------------------------------------------
++
++
++def test_kind_shortener_from_noise() -> None:
++    """is_noise=True + reason='url-shortener' → kind='shortener'."""
++    k = classify_domain_kind(
++        domain="bit.ly",
++        title=None,
++        final_url=None,
++        is_noise=True,
++        noise_reason="url-shortener",
++    )
++    assert k == "shortener"
++
++
++def test_kind_affiliate_from_noise() -> None:
++    k = classify_domain_kind(
++        domain="aff.com",
++        title=None,
++        final_url=None,
++        is_noise=True,
++        noise_reason="affiliate-redirector",
++    )
++    assert k == "affiliate"
++
++
++def test_kind_staging_from_noise() -> None:
++    k = classify_domain_kind(
++        domain="x-blrs.com",
++        title=None,
++        final_url=None,
++        is_noise=True,
++        noise_reason="mirror-staging",
++    )
++    assert k == "staging"
++
++
++def test_kind_generic_noise() -> None:
++    """is_noise=True + reason='not-casino' → kind='noise' (общая ветка)."""
++    k = classify_domain_kind(
++        domain="apple.com",
++        title=None,
++        final_url=None,
++        is_noise=True,
++        noise_reason="not-casino",
++    )
++    assert k == "noise"
++
++
++def test_kind_generic_landing_noise() -> None:
++    """is_noise=True + reason='generic-landing' → 'noise'."""
++    k = classify_domain_kind(
++        domain="redir.example.com",
++        title="Redirecting...",
++        final_url=None,
++        is_noise=True,
++        noise_reason="generic-landing",
++    )
++    assert k == "noise"
++
++
++# ---- landing-dispatcher ----------------------------------------------------
++
++
++def test_kind_landing_working_mirror_title() -> None:
++    """`X Official Site - working mirror` → landing-dispatcher."""
++    k = classify_domain_kind(
++        domain="blitz-casino.cc",
++        title="Blitz Official Site - working mirror, play online",
++        final_url="https://blitz-casino.cc/ru",
++        is_noise=False,
++        noise_reason=None,
++    )
++    assert k == "landing"
++
++
++def test_kind_landing_play_without_registration() -> None:
++    k = classify_domain_kind(
++        domain="bounty-casino.life",
++        title="Bounty Casino — play online without registration",
++        final_url="https://bounty-casino.life/",
++        is_noise=False,
++        noise_reason=None,
++    )
++    assert k == "landing"
++
++
++def test_kind_landing_russian_mirror() -> None:
++    """Русские раздатчики: 'актуальное зеркало' / 'рабочее зеркало'."""
++    k = classify_domain_kind(
++        domain="vavada-mirror.com",
++        title="Vavada — актуальное зеркало",
++        final_url=None,
++        is_noise=False,
++        noise_reason=None,
++    )
++    assert k == "landing"
++
++
++def test_kind_landing_mirror_bonus_fallback() -> None:
++    """Fallback: title содержит 'mirror' И 'bonus'/'registration'."""
++    k = classify_domain_kind(
++        domain="some-mirror.com",
++        title="Get your mirror with registration bonus",
++        final_url=None,
++        is_noise=False,
++        noise_reason=None,
++    )
++    assert k == "landing"
++
++
++# ---- backend (real casino) -------------------------------------------------
++
++
++def test_kind_backend_simple() -> None:
++    """Обычный alive-домен с title и без landing-маркеров — backend."""
++    k = classify_domain_kind(
++        domain="vavada.com",
++        title="Vavada Casino — лучшие слоты",
++        final_url="https://vavada.com/",
++        is_noise=False,
++        noise_reason=None,
++    )
++    assert k == "backend"
++
++
++def test_kind_backend_no_title() -> None:
++    """final_url есть, title пустой — всё равно backend (нет landing-маркера)."""
++    k = classify_domain_kind(
++        domain="kazinovavada5.ru",
++        title=None,
++        final_url="https://kazinovavada5.ru/",
++        is_noise=False,
++        noise_reason=None,
++    )
++    assert k == "backend"
++
++
++# ---- edge cases ------------------------------------------------------------
++
++
++def test_kind_no_data_returns_none() -> None:
++    """Домен без title и final_url, не noise — нечего классифицировать."""
++    k = classify_domain_kind(
++        domain="unknown.com",
++        title=None,
++        final_url=None,
++        is_noise=False,
++        noise_reason=None,
++    )
++    assert k is None
++
++
++def test_kind_empty_domain() -> None:
++    k = classify_domain_kind(
++        domain="",
++        title="anything",
++        final_url=None,
++        is_noise=False,
++        noise_reason=None,
++    )
++    assert k is None
+diff --git a/tests/test_noise.py b/tests/test_noise.py
+index b272f2b..6ef970a 100644
+--- a/tests/test_noise.py
++++ b/tests/test_noise.py
+@@ -5,6 +5,7 @@
+ from tgambling.noise import (
+     BITLY_CUSTOMS,
+     DEV_TOOLS,
++    NOT_CASINO_DOMAINS,
+     TRACKER_PANELS,
+     URL_SHORTENERS,
+     classify_noise,
+@@ -229,3 +230,112 @@ def test_is_noise_domain_wrapper_true() -> None:
+ 
+ def test_is_noise_domain_wrapper_false() -> None:
+     assert is_noise_domain("vavada.com") is False
++
++
++# ---- v0.10.6: NOT_CASINO_DOMAINS hard-blocklist ---------------------------
++
++
++def test_classify_not_casino_apple() -> None:
++    """`apple.com` — не казино, должен резаться (v0.10.6)."""
++    assert classify_noise("apple.com") == (True, "not-casino")
++
++
++def test_classify_not_casino_bbc() -> None:
++    assert classify_noise("bbc.com") == (True, "not-casino")
++
++
++def test_classify_not_casino_nasa() -> None:
++    assert classify_noise("nasa.gov") == (True, "not-casino")
++
++
++def test_classify_not_casino_sports_ru() -> None:
++    assert classify_noise("sports.ru") == (True, "not-casino")
++
++
++def test_classify_not_casino_arsochi() -> None:
++    """`arsochi.ru` — про развитие ребёнка, не казино (real case из дампа)."""
++    assert classify_noise("arsochi.ru") == (True, "not-casino")
++
++
++def test_classify_not_casino_case_insensitive() -> None:
++    assert classify_noise("APPLE.COM") == (True, "not-casino")
++
++
++def test_not_casino_domains_set_nonempty() -> None:
++    """NOT_CASINO_DOMAINS должен быть непустым (≥50 шт)."""
++    assert len(NOT_CASINO_DOMAINS) >= 50
++
++
++def test_not_casino_domains_lowercase() -> None:
++    """Все домены в blocklist'е должны быть в lowercase (нормализация)."""
++    for d in NOT_CASINO_DOMAINS:
++        assert d == d.lower(), f"Не lowercase: {d!r}"
++
++
++# ---- v0.10.6: affiliate-redirector regex ----------------------------------
++
++
++def test_classify_affiliate_qtag() -> None:
++    """Twin-партнёрка: `?qtag=` в final_url → affiliate-redirector."""
++    fu = "https://7525.info/ru-ru/registration?qtag=a6004_t52294_c619_s"
++    assert classify_noise("1-pak.ru", final_url=fu) == (True, "affiliate-redirector")
++
++
++def test_classify_affiliate_registration_id() -> None:
++    fu = "https://example.com/registration?id=12345"
++    assert classify_noise("some-aff.com", final_url=fu) == (True, "affiliate-redirector")
++
++
++def test_classify_affiliate_aeclick() -> None:
++    fu = "https://aeclick.top/abc"
++    assert classify_noise("affsite.com", final_url=fu) == (True, "affiliate-redirector")
++
++
++def test_classify_affiliate_no_match_when_no_final_url() -> None:
++    """Если final_url не передан — affiliate-regex не срабатывает."""
++    assert classify_noise("1-pak.ru") == (False, None)
++
++
++def test_classify_affiliate_legit_url_no_false_positive() -> None:
++    """Обычный казино-URL без CPA-маркеров не должен ловиться."""
++    fu = "https://vavada.com/"
++    assert classify_noise("vavada.com", final_url=fu) == (False, None)
++
++
++# ---- v0.10.6: mirror-staging regex ----------------------------------------
++
++
++def test_classify_staging_blrs() -> None:
++    """`foo-blrs.com` — заготовка нерасчехлённого mirror'а."""
++    assert classify_noise("foo-blrs.com") == (True, "mirror-staging")
++
++
++def test_classify_staging_blrs_with_digit() -> None:
++    assert classify_noise("baz-blrs99.com") == (True, "mirror-staging")
++
++
++def test_classify_staging_irrs() -> None:
++    assert classify_noise("foo-irrs1.com") == (True, "mirror-staging")
++
++
++def test_classify_staging_way_pattern() -> None:
++    """`way51.com` / `xway42.com` — заготовки."""
++    assert classify_noise("xway42.com") == (True, "mirror-staging")
++
++
++def test_classify_staging_legit_casino_no_match() -> None:
++    """Обычные казино-домены не должны попадать в staging."""
++    assert classify_noise("vavada.com") == (False, None)
++    assert classify_noise("1xbet.com") == (False, None)
++
++
++# ---- v0.10.6: is_noise_domain wrapper с final_url -------------------------
++
++
++def test_is_noise_domain_with_final_url() -> None:
++    fu = "https://x.com/registration?id=99"
++    assert is_noise_domain("aff.com", final_url=fu) is True
++
++
++def test_is_noise_domain_with_final_url_clean() -> None:
++    assert is_noise_domain("vavada.com", final_url="https://vavada.com/") is False
+diff --git a/tests/test_storage_noise.py b/tests/test_storage_noise.py
+index cfde5e4..0f4d9a6 100644
+--- a/tests/test_storage_noise.py
++++ b/tests/test_storage_noise.py
+@@ -5,6 +5,7 @@
+ from pathlib import Path
+ 
+ from tgambling.storage import (
++    backfill_domain_kind,
+     backfill_noise,
+     connect,
+     init_db,
+@@ -172,3 +173,142 @@ def test_backfill_noise_unmarks_when_no_longer_noise(tmp_path: Path) -> None:
+         ).fetchone()
+     assert row2[0] == 0
+     assert row2[1] is None
++
++
++# ---- v0.10.6: NOT_CASINO_DOMAINS, affiliate-redirector, mirror-staging ----
++
++
++def test_backfill_noise_marks_not_casino(tmp_path: Path) -> None:
++    """backfill_noise помечает not-casino-домены (apple.com / nasa.gov / …)."""
++    db = tmp_path / "x.db"
++    init_db(db)
++    _insert_domain_with_title(db, "apple.com")
++    _insert_domain_with_title(db, "arsochi.ru")
++    _insert_domain_with_title(db, "vavada.com")
++    with connect(db) as conn:
++        backfill_noise(conn)
++        apple = conn.execute(
++            "SELECT is_noise, noise_reason FROM domains WHERE domain='apple.com'"
++        ).fetchone()
++        arso = conn.execute(
++            "SELECT is_noise, noise_reason FROM domains WHERE domain='arsochi.ru'"
++        ).fetchone()
++        vav = conn.execute(
++            "SELECT is_noise, noise_reason FROM domains WHERE domain='vavada.com'"
++        ).fetchone()
++    assert tuple(apple) == (1, "not-casino")
++    assert tuple(arso) == (1, "not-casino")
++    assert tuple(vav) == (0, None)
++
++
++def test_backfill_noise_uses_final_url(tmp_path: Path) -> None:
++    """backfill_noise учитывает http_final_url для affiliate-redirector."""
++    db = tmp_path / "x.db"
++    init_db(db)
++    with connect(db) as conn:
++        record_domain_seen(conn, domain="1-pak.ru", increment=1)
++        conn.execute(
++            "UPDATE domains SET http_status='alive',"
++            " http_final_url='https://7525.info/ru-ru/registration?qtag=a6004_t52294'"
++            " WHERE domain='1-pak.ru'"
++        )
++        backfill_noise(conn)
++        row = conn.execute(
++            "SELECT is_noise, noise_reason FROM domains WHERE domain='1-pak.ru'"
++        ).fetchone()
++    assert tuple(row) == (1, "affiliate-redirector")
++
++
++def test_backfill_noise_marks_mirror_staging(tmp_path: Path) -> None:
++    """backfill_noise помечает host-паттерны заготовок mirror'ов."""
++    db = tmp_path / "x.db"
++    init_db(db)
++    _insert_domain_with_title(db, "casino-blrs.com")
++    _insert_domain_with_title(db, "xway42.com")
++    with connect(db) as conn:
++        backfill_noise(conn)
++        rows = {
++            r[0]: (r[1], r[2])
++            for r in conn.execute(
++                "SELECT domain, is_noise, noise_reason FROM domains"
++                " WHERE domain IN ('casino-blrs.com','xway42.com')"
++            )
++        }
++    assert rows["casino-blrs.com"] == (1, "mirror-staging")  # already tuple
++    assert rows["xway42.com"] == (1, "mirror-staging")
++
++
++# ---- v0.10.6: backfill_domain_kind ----------------------------------------
++
++
++def test_migration_adds_domain_kind_column(tmp_path: Path) -> None:
++    """init_db создаёт колонку `domain_kind` (v0.10.6)."""
++    db = tmp_path / "x.db"
++    init_db(db)
++    with connect(db) as conn:
++        cols = {row[1] for row in conn.execute("PRAGMA table_info(domains)")}
++    assert "domain_kind" in cols
++
++
++def test_backfill_domain_kind_landing(tmp_path: Path) -> None:
++    """backfill_domain_kind ставит kind='landing' для working-mirror title'ов."""
++    db = tmp_path / "x.db"
++    init_db(db)
++    with connect(db) as conn:
++        record_domain_seen(conn, domain="blitz-casino.cc", increment=1)
++        conn.execute(
++            "UPDATE domains SET http_status='alive',"
++            " http_title='Blitz Official Site - working mirror, play online'"
++            " WHERE domain='blitz-casino.cc'"
++        )
++        backfill_noise(conn)
++        backfill_domain_kind(conn)
++        row = conn.execute(
++            "SELECT domain_kind FROM domains WHERE domain='blitz-casino.cc'"
++        ).fetchone()
++    assert row[0] == "landing"
++
++
++def test_backfill_domain_kind_backend(tmp_path: Path) -> None:
++    """Обычный alive-домен → kind='backend'."""
++    db = tmp_path / "x.db"
++    init_db(db)
++    with connect(db) as conn:
++        record_domain_seen(conn, domain="vavada.com", increment=1)
++        conn.execute(
++            "UPDATE domains SET http_status='alive', http_title='Vavada Casino'"
++            " WHERE domain='vavada.com'"
++        )
++        backfill_noise(conn)
++        backfill_domain_kind(conn)
++        row = conn.execute(
++            "SELECT domain_kind FROM domains WHERE domain='vavada.com'"
++        ).fetchone()
++    assert row[0] == "backend"
++
++
++def test_backfill_domain_kind_shortener_from_noise(tmp_path: Path) -> None:
++    """is_noise=1 + reason='url-shortener' → kind='shortener'."""
++    db = tmp_path / "x.db"
++    init_db(db)
++    _insert_domain_with_title(db, "bit.ly")
++    with connect(db) as conn:
++        backfill_noise(conn)
++        backfill_domain_kind(conn)
++        row = conn.execute(
++            "SELECT domain_kind FROM domains WHERE domain='bit.ly'"
++        ).fetchone()
++    assert row[0] == "shortener"
++
++
++def test_backfill_domain_kind_idempotent(tmp_path: Path) -> None:
++    """Повторный backfill_domain_kind ничего не обновляет."""
++    db = tmp_path / "x.db"
++    init_db(db)
++    _insert_domain_with_title(db, "bit.ly")
++    with connect(db) as conn:
++        backfill_noise(conn)
++        first = backfill_domain_kind(conn)
++        second = backfill_domain_kind(conn)
++    assert second == 0
++    assert first >= 0
+diff --git a/tests/test_url_extractor.py b/tests/test_url_extractor.py
+index 69d10d6..2f56e3a 100644
+--- a/tests/test_url_extractor.py
++++ b/tests/test_url_extractor.py
+@@ -46,6 +46,29 @@ def test_ignores_telegram_and_youtube():
+     assert "youtu.be" in IGNORED_DOMAINS
+ 
+ 
++def test_ignores_not_casino_v0106():
++    """v0.10.6: hard-блок NOT_CASINO_DOMAINS на этапе extract_urls.
++
++    Apple/BBC/NASA/арсочи и пр. не должны попадать в кандидаты даже если их
++    кто-то постит в TG-канале вперемешку с казино-ссылками.
++    """
++    urls = extract_urls(
++        "Открой https://apple.com и https://bbc.com и https://arsochi.ru "
++        "и https://nasa.gov, а казино — https://vavada-mirror-42.top"
++    )
++    domains = {u.domain for u in urls}
++    assert "apple.com" not in domains
++    assert "bbc.com" not in domains
++    assert "arsochi.ru" not in domains
++    assert "nasa.gov" not in domains
++    # Реальное казино — остаётся.
++    assert "vavada-mirror-42.top" in domains
++    # И в blocklist'е они должны быть.
++    assert "apple.com" in IGNORED_DOMAINS
++    assert "bbc.com" in IGNORED_DOMAINS
++    assert "arsochi.ru" in IGNORED_DOMAINS
++
++
+ def test_handles_empty_and_none():
+     assert extract_urls("") == []
+     assert extract_urls(None) == []
+diff --git a/tests/test_web.py b/tests/test_web.py
+index 0efed9f..f0ae8a8 100644
+--- a/tests/test_web.py
++++ b/tests/test_web.py
+@@ -305,6 +305,8 @@ def test_auth_all_protected_routes(
+         "/export/domains.csv",
+         "/export/domains?fmt=csv&content=full",
+         "/channels/export",
++        # v0.10.6
++        "/export/dispatchers.txt",
+     ]:
+         r = c.get(path)
+         assert r.status_code == 401, f"{path} вернул {r.status_code}"
+diff --git a/tgambling/discovery/http_check.py b/tgambling/discovery/http_check.py
+index d072899..9d5092e 100644
+--- a/tgambling/discovery/http_check.py
++++ b/tgambling/discovery/http_check.py
+@@ -874,9 +874,11 @@ async def run_http_check(
+         # v0.10.2: после обновления title'ов перечекиваем noise-классификацию
+         # (например, появился новый title с маркером 'redirecting' →
+         # generic-landing). Идемпотентно по содержимому.
+-        from tgambling.storage import backfill_noise
++        # v0.10.6: также перечекиваем domain_kind (backend/landing/…).
++        from tgambling.storage import backfill_domain_kind, backfill_noise
+ 
+         backfill_noise(conn)
++        backfill_domain_kind(conn)
+     log.info(
+         "http-check: total=%d alive=%d challenge=%d blocked=%d construction=%d "
+         "parked=%d geo_block=%d 4xx=%d 5xx=%d tls=%d conn=%d timeout=%d",
+diff --git a/tgambling/kind.py b/tgambling/kind.py
+new file mode 100644
+index 0000000..0736dd4
+--- /dev/null
++++ b/tgambling/kind.py
+@@ -0,0 +1,173 @@
++"""Классификатор `domain_kind` для доменов в реестре (v0.10.6).
++
++В отличие от модуля :mod:`tgambling.noise`, который отвечает на вопрос
++«мусор ли это домен» (бинарный is_noise), модуль `kind` отвечает на более
++тонкий вопрос: **какую роль** этот домен играет в casino-pipeline.
++
++Категории:
++
++- ``backend`` — реальный сервер казино (игралка прямо на этом домене).
++  Это то, что должно попадать в ``/export/casinos.txt``. Признаки:
++  is_noise=0, title содержит casino/bet/слот/etc, final_url-host
++  совпадает с собственным хостом ИЛИ редирект на близкий поддомен.
++
++- ``landing`` — **landing-dispatcher** (раздатчик зеркал). HTML
++  страницы вида «X Official Site - working mirror, play online without
++  registration…», с одной CTA-кнопкой ведущей JS-редиректом на другой
++  backend. Сам по себе **не казино**, но полезен как источник новых
++  mirror'ов (см. v0.10.7 — Playwright mirror getter). Идёт в
++  ``/export/dispatchers.txt``. Признаки: title содержит
++  «working mirror», «official site», «play online», «registration
++  bonus», но домен **не** noise.
++
++- ``affiliate`` — CPA-редиректор на регистрацию казино с partner-id
++  (qtag=, registration?id=, и т.п.). Дублируется ``is_noise=1`` с
++  reason='affiliate-redirector'.
++
++- ``shortener`` — URL-сокращалка (bit.ly, clck.ru, …). Дублируется
++  ``is_noise=1`` с reason='url-shortener'.
++
++- ``staging`` — заготовка нерасчехлённого mirror'а (host *-blrs/*-way/…,
++  title='Welcome'). Дублируется ``is_noise=1`` с reason='mirror-staging'.
++
++- ``noise`` — общий «мусор» (not-casino-domain, refpa, dev-tool,
++  tracker-panel, generic-landing, bitly-custom). Все они уже
++  ``is_noise=1``, но более специфичной роли в pipeline у них нет.
++
++- ``None`` — не классифицирован (старая запись без http-check'а / или
++  edge-case вне известных паттернов).
++
++Хранение — в ``domains.domain_kind``. Заполнение — в
++:func:`tgambling.storage.backfill_domain_kind` после backfill_noise.
++
++Использование в экспортах:
++- ``/export/casinos.txt``    — только kind='backend' (+ NULL для legacy).
++- ``/export/dispatchers.txt`` — только kind='landing'.
++- ``/clusters``               — все (с фильтрами).
++"""
++
++from __future__ import annotations
++
++import re
++
++# ---------------------------------------------------------------------------
++# Title-сигналы landing-dispatcher'а.
++# ---------------------------------------------------------------------------
++
++# Шаблон «X Official Site - working mirror, play online without registration»
++# используется бесчисленным количеством раздатчиков (Blitz, Bounty, Vavada-mirror,
++# Selector, Friends, Bitzamo, Bounty-casino, и т.п.). Один из самых сильных
++# title-сигналов «это не сам сервер, это раздатчик».
++_LANDING_TITLE_RE = re.compile(
++    r"(?:"
++    r"\bofficial\s+site\b.{0,80}\bworking\s+mirror\b"   # …Official Site - working mirror
++    r"|\bworking\s+mirror\b.{0,80}\bplay\s+online\b"    # …working mirror, play online…
++    r"|\bplay\s+(?:online|now)\s+without\s+registration\b"
++    r"|\bget\s+(?:your|the)\s+(?:bonus|mirror)\b"
++    r"|\b(?:актуальное|рабочее|официальное)\s+зеркало\b"  # рус-вариант
++    r")",
++    re.IGNORECASE,
++)
++
++# Доп. fallback: title содержит и «mirror», и одно из «bonus/registration/play».
++_LANDING_TITLE_FALLBACK_RE = re.compile(
++    r"\bmirror\b.{0,80}\b(?:bonus|registration|play\s+(?:now|online))\b",
++    re.IGNORECASE,
++)
++
++
++def _host_of(url: str | None) -> str | None:
++    """Достать host из URL без urlparse (защита от мусорных строк)."""
++    if not url:
++        return None
++    s = url.strip().lower()
++    if s.startswith("http://"):
++        s = s[7:]
++    elif s.startswith("https://"):
++        s = s[8:]
++    # Дроп user-info / port / path / query / fragment.
++    for sep in ("/", "?", "#"):
++        idx = s.find(sep)
++        if idx != -1:
++            s = s[:idx]
++    if "@" in s:
++        s = s.split("@", 1)[1]
++    if ":" in s:
++        s = s.split(":", 1)[0]
++    return s or None
++
++
++def _strip_www(host: str | None) -> str | None:
++    if not host:
++        return None
++    if host.startswith("www."):
++        return host[4:]
++    return host
++
++
++def _registrable(host: str | None) -> str | None:
++    """Грубая аппроксимация registrable-домена.
++
++    Берёт последние два компонента (без TLD-suffix-маппинга). Достаточно
++    для целей сравнения «final_url-host тот же бренд, что domain».
++    """
++    h = _strip_www(host)
++    if not h:
++        return None
++    parts = h.split(".")
++    if len(parts) < 2:
++        return h
++    return ".".join(parts[-2:])
++
++
++def classify_domain_kind(
++    *,
++    domain: str,
++    title: str | None,
++    final_url: str | None,
++    is_noise: bool,
++    noise_reason: str | None,
++) -> str | None:
++    """Определить `domain_kind` для одного домена.
++
++    Args:
++        domain: e2LD домен (нормализованный, lowercase).
++        title: ``http_title`` из http-check.
++        final_url: ``http_final_url`` из http-check.
++        is_noise: текущий флаг is_noise (для маппинга noise_reason → kind).
++        noise_reason: текущий reason (источник для shortener/affiliate/staging
++            под-категорий).
++
++    Returns:
++        Одна из: ``"backend"``, ``"landing"``, ``"affiliate"``,
++        ``"shortener"``, ``"staging"``, ``"noise"``, либо ``None`` (если
++        домен не дочекан / нет ни одного сигнала).
++    """
++    if not domain:
++        return None
++    # Шум-домены: разводим по reason → конкретный kind. is_noise=1 без
++    # reason — общий "noise".
++    if is_noise:
++        if noise_reason == "url-shortener":
++            return "shortener"
++        if noise_reason == "affiliate-redirector":
++            return "affiliate"
++        if noise_reason == "mirror-staging":
++            return "staging"
++        # Прочие noise-категории (not-casino, refpa-affiliate, dev-tool,
++        # tracker-panel, generic-landing, bitly-custom) — общий "noise".
++        return "noise"
++    # Без HTTP-check'а классифицировать нечего.
++    if not title and not final_url:
++        return None
++    # Landing-dispatcher: title-маркеры. Самый сильный сигнал — фраза
++    # «Official Site - working mirror» (для blitz/bounty/vavada-landing'ов).
++    if title:
++        t = title.strip()
++        if t:
++            if _LANDING_TITLE_RE.search(t):
++                return "landing"
++            if _LANDING_TITLE_FALLBACK_RE.search(t):
++                return "landing"
++    # Иначе — backend (это alive non-noise non-landing домен).
++    return "backend"
+diff --git a/tgambling/noise.py b/tgambling/noise.py
+index a78377c..57064f0 100644
+--- a/tgambling/noise.py
++++ b/tgambling/noise.py
+@@ -18,6 +18,17 @@
+   `freshdesk.com` — рабочие инструменты партнёров, не казино.
+ - **Generic landing'и** — title типа `redirecting…`, `loading…` без
+   упоминания «casino»/«bet» — почти всегда промежуточный аффилиат.
++- **(v0.10.6) NOT_CASINO_DOMAINS** — well-known не-казино домены (apple.com,
++  bbc.com, nasa.gov, sports.ru, и т.д., ~80 шт). Эти ловятся также на этапе
++  url-extract (hard-block, не пишутся в БД), но дублируются здесь чтобы
++  старые записи в БД получили is_noise=1 при backfill'е.
++- **(v0.10.6) affiliate-redirector** — по ``final_url`` matches
++  ``/registration?qtag=`` / ``/nba/?p=`` / ``aeclick.top`` / etc. Это
++  партнёрские лендинги с реф-меткой, не сам сервер казино.
++- **(v0.10.6) mirror-staging** — host по паттерну ``*-blrs.com``,
++  ``*-irrs.com``, ``*wayNN.com``, ``*-way-*.com`` + title=``Welcome``.
++  Это заготовки нерасчехлённых mirror'ов — куплены домены, поднята
++  default-page, но казино не накатано.
+ 
+ Этот модуль — **источник истины** для «является ли домен мусором». Хранение —
+ в `domains.is_noise` + `domains.noise_reason`. По умолчанию /clusters и
+@@ -149,22 +160,213 @@
+ )
+ 
+ 
++# v0.10.6: well-known НЕ-казино домены. Это плотный список общеизвестных
++# крупных сайтов (Apple, BBC, NASA, Yandex, …) + специфичных off-topic
++# (arsochi.ru, kraimbrery.com, …), которые точно никогда не станут казино.
++#
++# Используется одновременно:
++# 1. В :mod:`tgambling.url_extractor` (через импорт) — для hard-blocking на
++#    этапе extract'а: эти домены вообще не попадают в БД.
++# 2. Здесь, в :func:`classify_noise` — для проставления ``is_noise=1`` уже
++#    существующим записям при backfill'е.
++#
++# Категории (для удобства поддержки):
++#  - Bigtech / соц-сети / стриминг
++#  - СМИ / новости / TV / радио
++#  - Спорт (футбол, хоккей, статистика)
++#  - Банки / маркетплейсы / коммерция
++#  - URL-шортнеры / link-in-bio (которые не в URL_SHORTENERS)
++#  - CPA-партнёрки / bonus-сайты
++#  - Off-topic (детское, аниме, музыка, фитнес, недвижимость, …)
++NOT_CASINO_DOMAINS: frozenset[str] = frozenset({
++    # --- Bigtech / соц-сети / стриминг ---
++    "6001.ru",
++    "8b.io",
++    "amzn.to",
++    "apple.com",
++    "binance.com",
++    "comments.bot",
++    "home.cern",
++    "itch.io",
++    "nasa.gov",
++    "opensea.io",
++    "patreon.com",
++    "pump.fun",
++    "search.app",
++    "steampowered.com",
++    "viber.com",
++    "vimeo.com",
++    "vk.ru",
++    "vkvideo.ru",
++    "waifuloot.com",
++    "whatsapp.com",
++    "withings.com",
++    "yandex.com",
++    # --- СМИ / новости / TV / радио ---
++    "bbc.com",
++    "cbc.ca",
++    "dengekionline.com",
++    "joqr.co.jp",
++    "livescience.com",
++    "muz-tv.ru",
++    "nationalgeographic.com",
++    "ru.tv",
++    "rusradio.ru",
++    "sciencealert.com",
++    "statista.com",
++    "ted.com",
++    "theconversation.com",
++    "tricolor.tv",
++    # --- Спорт (футбол / хоккей / стата) ---
++    "gol.ru",
++    "hclokomotiv.ru",
++    "khl.ru",
++    "pfc-cska.com",
++    "pfcks.ru",
++    "rfs.ru",
++    "sports.ru",
++    # --- Банки / финансы / маркетплейсы ---
++    "capitalist.net",
++    "marriage.com",
++    "midasbuy.com",
++    "prime-dealer.ru",
++    "rzb.ru",
++    "unicom24.ru",
++    "vakinha.com.br",
++    # --- Шортнеры / link-in-bio (которые не в URL_SHORTENERS) ---
++    "band.link",
++    "clck.su",
++    "gclnk.com",
++    "gram.com",
++    "greenssh.com",
++    "inyurl.com",
++    "it.ly",
++    "magic.ly",
++    "nyurl.com",
++    "rl.com",
++    "rotf.lol",
++    "serverssh.net",
++    "short.im",
++    "t.link",
++    # --- CPA / партнёрки / bonus-сайты ---
++    "affiliateconf.com",
++    "bet-bonus.com",
++    "cpa-1.top",
++    "igbaffiliate.com",
++    "t-bonus.com",
++    # --- Off-topic ---
++    "allow24-m34.com",
++    "arsochi.ru",
++    "bf121.top",
++    "bpluspodcast.com",
++    "chotamai.ru",
++    "ensemble-stars.jp",
++    "eventim-light.com",
++    "flirtme.pro",
++    "fwinc.co.jp",
++    "gamazda.net",
++    "hmax.com",
++    "j-hobby.net",
++    "kraimbrery.com",
++    "mind-muscle.co.uk",
++    "mistomariupol.com.ua",
++    "neftm.ru",
++    "nk.com",
++    "specialjob.ru",
++    "stores.jp",
++    "thesweetheartsseeker.life",
++    "timeweb.com",
++    "ufn.su",
++    "ukraineawards.com",
++})
++
++
++# v0.10.6: affiliate-redirector regex.
++# Применяется к ``http_final_url`` (final URL после редиректа). Если final-URL
++# содержит характерные параметры партнёрских CPA-трекеров — это **не казино**,
++# а реф-лендинг с partner-id, и его надо схлопывать в шум.
++#
++# Сигналы:
++#  - ``qtag=`` — Leon/Twin affiliate (`?qtag=a6004_t52294_…`).
++#  - ``registration?id=`` — BetWinner affiliate (`/registration/?id=18RM`).
++#  - ``/RJVV...?source=`` — aeclick.top tracker.
++#  - ``/nba/?p=%2Fregistration%2F`` — BetWinner альтернативный.
++#  - ``cid=\d+&pid=\d+`` — Mostbet/Avlpjfmb affiliate.
++#  - ``?registration=1&cid=`` — Mostbet прямой affiliate-параметр.
++#  - ``aeclick.top`` / ``laidtoday.net/tds/`` — known CPA hosts.
++_AFFILIATE_REDIRECTOR_RE = re.compile(
++    r"(\bqtag=|/registration\?id=|/RJVV[A-Za-z0-9]+|/nba/\?p=%2F"
++    r"|cid=\d+&pid=\d+|\?registration=1&cid=|aeclick\.top|laidtoday\.net/tds/)",
++    re.IGNORECASE,
++)
++
++
++# v0.10.6: mirror-staging regex.
++# Применяется к домену. Заготовки нерасчехлённых mirror'ов имеют характерный
++# host-pattern, заданный CPA-партнёром при заведении пула «впрок»:
++#  - ``*-blrs(\d*)?.com`` — Belarus mirror staging
++#  - ``*-irrs\d+\.com`` / ``*-irse\d+\.com`` / ``*-irsm.com`` — Iran mirror
++#  - ``*way\d+\.com`` / ``*-way-*.com`` — generic «way» pool
++#  - ``rox-[a-z]{8,}\.com`` — rox-обфусцированные кандидаты
++#  - ``fresh-[a-z]{8,}\.com`` — fresh-обфусцированные
++#  - ``-m\d+\.com`` — *-m{digit} suffix
++#  - префиксы ``gzo-``, ``drp-``, ``jtfr-``, ``lex-``, ``mnr-``, ``strd-``,
++#    ``vln-`` — также часть pool'а.
++#
++# Эти домены живые, отдают HTTP 200 с default-CMS title (`Welcome`), но
++# казино на них пока нет. Включаем в шум — на момент http-check'а они не
++# казино-сервер. Если когда-нибудь активируются — title изменится и
++# backfill снимет is_noise=1.
++_MIRROR_STAGING_RE = re.compile(
++    r"^(?:.+-blrs\d*\.com|"
++    r".+-irrs\d+\.com|"
++    r".+-irse\d+\.com|"
++    r".+-irsm\.com|"
++    r".+way\d+\.com|"
++    r".+-way-.+\.com|"
++    r".+-route-.+\.com|"
++    r"rox-[a-z]{8,}\.com|"
++    r"fresh-[a-z]{8,}\.com|"
++    r".+-m\d+\.com|"
++    r"(?:gzo|drp|jtfr|lex|mnr|strd|vln)-.+\.com)$",
++    re.IGNORECASE,
++)
++
++
++# v0.10.6: 1xbet/1win/Leon-affiliate-краткие хосты типа `1wfqtr.life`.
++# Это **НЕ** мирроры в классическом смысле — это сгенерированные хосты
++# партнёрки, которые редиректят на главный backend (title обычно совпадает
++# с доменом — пустой landing). Регулярка экспортируется для использования
++# в детекторе domain_kind (см. :mod:`tgambling.kind`), пока classify_noise
++# её НЕ применяет: real `1win.com` тоже подходит под {2,5}-вариант, и нам
++# нужен whitelist'ующий слой прежде чем включать в шум.
++_SHORT_1W_AFFILIATE_RE = re.compile(r"^1w[a-z]{2,5}\.(life|com)$", re.IGNORECASE)
++
++
+ def classify_noise(
+     domain: str,
+     title: str | None = None,
++    final_url: str | None = None,
+ ) -> tuple[bool, str | None]:
+     """Определить, является ли домен шумом (не казино).
+ 
+     Args:
+         domain: e2LD домен (`example.com`, без `www.`/порта/протокола).
+         title: ``http_title`` из http-check (опционально). Если передан —
+-            учитывается как дополнительный сигнал generic-landing'а.
++            учитывается как дополнительный сигнал generic-landing'а или
++            mirror-staging'а (``Welcome`` + staging-host).
++        final_url: ``http_final_url`` из http-check (опционально). Если
++            передан — проверяется на affiliate-redirector regex (qtag,
++            registration?id, aeclick.top, …).
+ 
+     Returns:
+         Кортеж ``(is_noise, reason)``:
+         - ``is_noise=True``, если домен — шум. ``reason`` — причина:
+           ``"url-shortener"`` / ``"refpa-affiliate"`` / ``"bitly-custom"``
+-          / ``"dev-tool"`` / ``"tracker-panel"`` / ``"generic-landing"``.
++          / ``"dev-tool"`` / ``"tracker-panel"`` / ``"generic-landing"``
++          / ``"not-casino"`` (v0.10.6: NOT_CASINO_DOMAINS hit)
++          / ``"affiliate-redirector"`` (v0.10.6: final-URL paterрns)
++          / ``"mirror-staging"`` (v0.10.6: host + Welcome title).
+         - ``is_noise=False``, ``reason=None`` — это (возможно) казино.
+ 
+     Чувствительно к регистру: домен сравниваем в lowercase'е.
+@@ -182,6 +384,16 @@ def classify_noise(
+         return (True, "dev-tool")
+     if d in TRACKER_PANELS:
+         return (True, "tracker-panel")
++    # v0.10.6: well-known not-casino list (apple.com, bbc.com, nasa.gov, …).
++    if d in NOT_CASINO_DOMAINS:
++        return (True, "not-casino")
++    # v0.10.6: affiliate-redirector — проверяем по final_url (если есть).
++    if final_url and _AFFILIATE_REDIRECTOR_RE.search(final_url):
++        return (True, "affiliate-redirector")
++    # v0.10.6: mirror-staging — host-pattern + (опционально) title='Welcome'.
++    # Без title — host-pattern достаточен (это уже сильный сигнал заготовки).
++    if _MIRROR_STAGING_RE.match(d):
++        return (True, "mirror-staging")
+     if title:
+         t = title.strip().lower()
+         if t:
+@@ -192,7 +404,11 @@ def classify_noise(
+     return (False, None)
+ 
+ 
+-def is_noise_domain(domain: str, title: str | None = None) -> bool:
++def is_noise_domain(
++    domain: str,
++    title: str | None = None,
++    final_url: str | None = None,
++) -> bool:
+     """Удобная обёртка над :func:`classify_noise`, возвращает только bool."""
+-    is_noise, _ = classify_noise(domain, title)
++    is_noise, _ = classify_noise(domain, title, final_url)
+     return is_noise
+diff --git a/tgambling/storage.py b/tgambling/storage.py
+index b4f0e7b..e5b05b1 100644
+--- a/tgambling/storage.py
++++ b/tgambling/storage.py
+@@ -140,6 +140,7 @@ def init_db(db_path: Path) -> None:
+         # существовали. Идемпотентно — обновляет только реально изменившиеся
+         # строки.
+         backfill_noise(conn)
++        backfill_domain_kind(conn)
+         conn.commit()
+ 
+ 
+@@ -191,6 +192,17 @@ def init_db(db_path: Path) -> None:
+     # при init_db.
+     ("domains", "is_noise",     "INTEGER NOT NULL DEFAULT 0"),
+     ("domains", "noise_reason", "TEXT"),
++    # v0.10.6: тип домена в casino-pipeline.
++    # ``backend``  — это реальный сервер казино (игралка).
++    # ``landing`` — landing-dispatcher («раздатчик зеркал»): JS-кнопка ведёт
++    #               на другой домен. Сам по себе не казино, но полезный
++    #               source-of-mirror'ов. Идёт в /export/dispatchers.txt.
++    # ``affiliate`` — CPA-редиректор на регистрацию с partner-id (qtag,
++    #                 registration?id=). Дублируется is_noise=1.
++    # ``shortener`` / ``staging`` / ``noise`` / NULL — другие категории / не классифицирован.
++    #
++    # Заполнение — в :func:`backfill_domain_kind` после backfill_noise.
++    ("domains", "domain_kind", "TEXT"),
+     # v0.3.2: разметка происхождения канала.
+     # discovery = найден через global-search по бренду.
+     # manual    = добавлен вручную через CLI/UI.
+@@ -231,19 +243,21 @@ def backfill_noise(conn: sqlite3.Connection) -> int:
+     Идемпотентно: обновляет только те строки, у которых ``(is_noise,
+     noise_reason)`` реально изменились. Источник истины — модуль
+     :mod:`tgambling.noise` (см. :func:`classify_noise`). Кроме доменного
+-    blocklist'а учитывает ``http_title`` для эвристики generic-landing'ов.
++    blocklist'а учитывает ``http_title`` для эвристики generic-landing'ов и
++    ``http_final_url`` для эвристики affiliate-redirector'ов (v0.10.6).
+ 
+     Возвращает количество обновлённых строк (для логов / отладки).
+     """
+     updated = 0
+     rows = list(conn.execute(
+-        "SELECT domain, http_title, is_noise, noise_reason FROM domains"
++        "SELECT domain, http_title, http_final_url, is_noise, noise_reason"
++        " FROM domains"
+     ))
+     for row in rows:
+-        is_noise, reason = classify_noise(row[0], row[1])
++        is_noise, reason = classify_noise(row[0], row[1], row[2])
+         is_noise_int = 1 if is_noise else 0
+-        current_noise = int(row[2] or 0)
+-        current_reason = row[3]
++        current_noise = int(row[3] or 0)
++        current_reason = row[4]
+         if is_noise_int == current_noise and reason == current_reason:
+             continue
+         conn.execute(
+@@ -256,6 +270,46 @@ def backfill_noise(conn: sqlite3.Connection) -> int:
+     return updated
+ 
+ 
++def backfill_domain_kind(conn: sqlite3.Connection) -> int:
++    """Проставить ``domain_kind`` для всех доменов в БД (v0.10.6).
++
++    Источник истины — :func:`tgambling.kind.classify_domain_kind`.
++    Идемпотентно: обновляет только те строки, у которых класс фактически
++    изменился.
++
++    Должен вызываться **после** :func:`backfill_noise` — noise_reason
++    и is_noise первичные сигналы для классификации.
++
++    Возвращает количество обновлённых строк.
++    """
++    from tgambling.kind import classify_domain_kind
++
++    updated = 0
++    rows = list(conn.execute(
++        "SELECT domain, http_title, http_final_url,"
++        " is_noise, noise_reason, domain_kind FROM domains"
++    ))
++    for row in rows:
++        domain, title, final_url, is_noise, noise_reason, current_kind = row
++        new_kind = classify_domain_kind(
++            domain=domain,
++            title=title,
++            final_url=final_url,
++            is_noise=bool(is_noise),
++            noise_reason=noise_reason,
++        )
++        if new_kind == current_kind:
++            continue
++        conn.execute(
++            "UPDATE domains SET domain_kind = ? WHERE domain = ?",
++            (new_kind, domain),
++        )
++        updated += 1
++    if updated:
++        log.info("backfill_domain_kind: обновлено %d домен(ов)", updated)
++    return updated
++
++
+ @contextmanager
+ def connect(db_path: Path) -> Iterator[sqlite3.Connection]:
+     """Контекст-менеджер: открывает соединение и гарантирует commit/close."""
+diff --git a/tgambling/url_extractor.py b/tgambling/url_extractor.py
+index d9904f6..cd568bc 100644
+--- a/tgambling/url_extractor.py
++++ b/tgambling/url_extractor.py
+@@ -24,6 +24,8 @@
+ 
+ import tldextract
+ 
++from tgambling.noise import NOT_CASINO_DOMAINS
++
+ # Stop-set: символы, на которых обрываем URL/путь. Кроме whitespace и
+ # обычной скобки/кавычек добавляем экзотическую пунктуацию (mdash, ndash,
+ # ellipsis, ёлочки, markdown `*`), которая часто прилипает к URL и которую
+@@ -106,7 +108,12 @@
+ 
+ # Игнор-лист — домены сервисов TG, мессенджеров, аналитики; в кандидаты
+ # казино они попадать не должны.
+-IGNORED_DOMAINS = frozenset(
++#
++# v0.10.6: merge с :data:`tgambling.noise.NOT_CASINO_DOMAINS` (~80 well-known
++# не-казино: apple/bbc/nasa/sports.ru/…), чтобы hard-блок происходил на
++# самом раннем этапе — извлечение URL из ТГ-сообщения. После этого
++# такие домены вообще не попадают в БД и не тратят http-check.
++_TG_INFRASTRUCTURE_IGNORED = frozenset(
+     {
+         "t.me",
+         "telegram.org",
+@@ -127,6 +134,7 @@
+         "yandex.ru",
+     }
+ )
++IGNORED_DOMAINS = _TG_INFRASTRUCTURE_IGNORED | NOT_CASINO_DOMAINS
+ 
+ # Системные/служебные пути t.me — это НЕ имена каналов, фильтруем.
+ # `joinchat`/`+...` — приватные приглашения (не resolve'ятся), `c/<id>` —
+diff --git a/tgambling/web/app.py b/tgambling/web/app.py
+index 2e80c3b..1107aab 100644
+--- a/tgambling/web/app.py
++++ b/tgambling/web/app.py
+@@ -493,10 +493,15 @@ async def export_casinos_txt(
+                 operator=op,
+                 only_with_signal=True,
+                 show_noise=False,
++                # v0.10.6: landing-dispatcher'ы (blitz-casino.cc /
++                # bounty-casino.life / vavada-landing'и) — это не казино,
++                # выносим их в /export/dispatchers.txt.
++                exclude_kind=("landing",),
+             )
+         lines: list[str] = [
+             "# tgambling /export/casinos.txt — рабочие казино-сервера",
+             "# Один кластер = одна строка. Зеркала через ;.",
++            "# v0.10.6: landing-dispatcher'ы исключены, см. /export/dispatchers.txt.",
+             "# domain\toperator\ttier\tmirror_count\tmirrors\trkn_blocked\tfirst_seen\tlast_checked",
+         ]
+         for c in clusters:
+@@ -528,6 +533,74 @@ async def export_casinos_txt(
+             },
+         )
+ 
++    @app.get("/export/dispatchers.txt")
++    async def export_dispatchers_txt(
++        max_mirrors_shown: int = Query(5, ge=0, le=50),
++        _: str = Depends(auth),
++    ) -> Response:
++        """Landing-dispatcher'ы — раздатчики зеркал (v0.10.6).
++
++        Сайты вида ``blitz-casino.cc``, ``bounty-casino.life``,
++        ``vavada-landing*.com`` — title «X Official Site — working mirror,
++        play online without registration…». Сами по себе **не казино**: их
++        задача — отдать актуальный backend через JS-кнопку.
++
++        В ``/export/casinos.txt`` они НЕ попадают (исключены через
++        ``exclude_kind=('landing',)``), но полезны как источник новых
++        mirror'ов — в v0.10.7 их обходит Playwright-getter и достаёт
++        свежие backend'ы.
++
++        Параметры:
++          - ``?max_mirrors_shown=N`` — обрезать список зеркал до N
++            (default=5, max=50).
++
++        Формат TSV:
++          ``domain\\toperator\\ttier\\tmirror_count\\tmirrors\\trkn_blocked\\tfirst_seen\\tlast_checked``
++        """
++        with connect(db_p) as conn:
++            clusters = queries.cluster_backends(
++                conn,
++                http="working",
++                only_with_signal=False,
++                show_noise=False,
++                kind="landing",
++            )
++        lines: list[str] = [
++            "# tgambling /export/dispatchers.txt — landing-dispatcher'ы (v0.10.6)",
++            "# Раздатчики актуальных зеркал, сами по себе НЕ казино.",
++            "# В v0.10.7 будут автоматически обходиться Playwright'ом для",
++            "# извлечения backend-доменов.",
++            "# domain\toperator\ttier\tmirror_count\tmirrors\trkn_blocked\tfirst_seen\tlast_checked",
++        ]
++        for c in clusters:
++            mirror_domains = [m["domain"] for m in c["members"]]
++            if max_mirrors_shown == 0:
++                mirrors_str = ""
++            elif len(mirror_domains) <= max_mirrors_shown:
++                mirrors_str = ";".join(mirror_domains)
++            else:
++                shown = mirror_domains[:max_mirrors_shown]
++                mirrors_str = ";".join(shown) + f";…+{len(mirror_domains) - max_mirrors_shown}"
++            row = "\t".join([
++                c["representative"],
++                c["operator"] or "",
++                str(c["operator_tier"]) if c["operator_tier"] is not None else "",
++                str(c["size"]),
++                mirrors_str,
++                str(c["rkn_blocked_count"]),
++                c["first_seen_at"] or "",
++                c["last_checked_at"] or "",
++            ])
++            lines.append(row)
++        body = "\n".join(lines) + "\n"
++        return Response(
++            content=body,
++            media_type="text/plain; charset=utf-8",
++            headers={
++                "Content-Disposition": 'attachment; filename="dispatchers.txt"',
++            },
++        )
++
+     @app.get("/export/brand/{name}.txt")
+     async def export_brand_txt(
+         name: str,
+diff --git a/tgambling/web/queries.py b/tgambling/web/queries.py
+index 0806cbc..faf998a 100644
+--- a/tgambling/web/queries.py
++++ b/tgambling/web/queries.py
+@@ -494,6 +494,8 @@ def cluster_backends(
+     only_with_signal: bool = False,
+     operator: str | None = None,
+     show_noise: bool = False,
++    kind: str | None = None,
++    exclude_kind: str | tuple[str, ...] | None = None,
+ ) -> list[dict[str, Any]]:
+     """Сгруппировать домены в кластеры «N зеркал → 1 бэкенд».
+ 
+@@ -517,6 +519,13 @@ def cluster_backends(
+         show_noise: если ``False`` (default) — отфильтровать домены с
+             ``is_noise=1`` (url-shortener'ы, refpa, dev-tools, …). С
+             ``True`` показываем всё (для QA / расширения blocklist'а).
++        kind: (v0.10.6) фильтр по ``domain_kind`` (``backend``/``landing``/…).
++            Если задан — оставляем только домены этого класса.
++            Для legacy-записей без ``domain_kind`` (NULL) — трактуем как
++            'backend' (для обратной совместимости), поэтому ``kind='backend'``
++            включает NULL-записи.
++        exclude_kind: (v0.10.6) инверсный фильтр: исключить этот класс
++            (или набор классов). NULL-записи никогда не исключаются.
+ 
+     Returns:
+         Список словарей, отсортированный по убыванию ``size`` (числа зеркал).
+@@ -527,6 +536,24 @@ def cluster_backends(
+         where = "http_status = 'alive'"
+     if not show_noise:
+         where = f"({where}) AND (is_noise = 0 OR is_noise IS NULL)"
++    # v0.10.6: kind-фильтры.
++    if kind:
++        if kind == "backend":
++            # backend включает legacy NULL (старые записи до v0.10.6).
++            where = f"({where}) AND (domain_kind = 'backend' OR domain_kind IS NULL)"
++        else:
++            where = f"({where}) AND domain_kind = '{kind}'"
++    if exclude_kind:
++        if isinstance(exclude_kind, str):
++            excluded = (exclude_kind,)
++        else:
++            excluded = tuple(exclude_kind)
++        excluded_safe = ",".join(f"'{k}'" for k in excluded if k.isalpha())
++        if excluded_safe:
++            where = (
++                f"({where}) AND (domain_kind IS NULL"
++                f" OR domain_kind NOT IN ({excluded_safe}))"
++            )
+     ops_cache = load_operators()
+     rows = list(conn.execute(
+         f"""
+@@ -535,6 +562,7 @@ def cluster_backends(
+                tls_cert_sha256, favicon_sha256, set_cookie_names,
+                rkn_blocked, mention_count,
+                is_noise, noise_reason,
++               domain_kind,
+                first_seen_at, http_checked_at
+           FROM domains
+          WHERE {where}
+@@ -707,6 +735,13 @@ def _stable_root(taken: dict, candidate: str) -> str:
+         last_checks = [m["http_checked_at"] for m in members if m["http_checked_at"]]
+         cluster_first_seen = min(first_seens) if first_seens else None
+         cluster_last_checked = max(last_checks) if last_checks else None
++        # v0.10.6: kind кластера. Если все члены — одного kind, берём его;
++        # иначе 'mixed'. NULL трактуется как 'backend'.
++        kinds_seen = {m["domain_kind"] or "backend" for m in members}
++        if len(kinds_seen) == 1:
++            cluster_kind = next(iter(kinds_seen))
++        else:
++            cluster_kind = "mixed"
+         clusters.append({
+             "key": root,  # стабильный идентификатор кластера
+             "representative": repr_row["domain"],
+@@ -723,6 +758,7 @@ def _stable_root(taken: dict, candidate: str) -> str:
+             "operator_reason": op_match.reason if op_match else None,
+             "is_noise": cluster_is_noise,
+             "noise_reason": cluster_noise_reason,
++            "domain_kind": cluster_kind,
+             "first_seen_at": cluster_first_seen,
+             "last_checked_at": cluster_last_checked,
+             "members": [
+@@ -736,6 +772,7 @@ def _stable_root(taken: dict, candidate: str) -> str:
+                     "favicon_sha256": m["favicon_sha256"],
+                     "is_noise": bool(int(m["is_noise"] or 0)),
+                     "noise_reason": m["noise_reason"],
++                    "domain_kind": m["domain_kind"],
+                 }
+                 for m in members_sorted
+             ],

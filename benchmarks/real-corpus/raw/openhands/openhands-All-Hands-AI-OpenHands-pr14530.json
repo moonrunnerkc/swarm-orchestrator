@@ -1,0 +1,26 @@
+{
+  "id": "openhands-All-Hands-AI-OpenHands-pr14530",
+  "agent": {
+    "vendor": "openhands",
+    "confidence": "high",
+    "source": "repo-owner=All-Hands-AI+body=openhands-attribution"
+  },
+  "pr": {
+    "number": 14530,
+    "headSha": "b18a0959b26d55d307c96362b82d908286fb3774",
+    "baseSha": "bd0106e8ba73532945d22cbf94a17e5810f62d69",
+    "title": "Support Bitbucket Data Center org claims",
+    "body": "## Summary\r\n\r\n[x] A human has tested these changes.\r\n\r\nEnables Bitbucket Data Center projects to be claimed for org-level resolver routing.\r\n\r\n- accepts bitbucket_data_center in org git-claim validation\r\n- returns Bitbucket Data Center projects from /api/v1/users/git-organizations so admins can claim them through the existing org routing UI\r\n- renders a readable Bitbucket Data Center provider label in the org-claims table\r\n- adds focused backend and frontend coverage for the BBDC provider path\r\n\r\n## Validation\r\n\r\n- env PYTHONPATH=enterprise:. uv run --with python-keycloak --with pytest-asyncio --with aiosqlite --with limits --with coredis pytest enterprise/tests/unit/server/routes/test_org_git_claims.py enterprise/tests/unit/test_user_git_organizations.py -q -> 27 passed\r\n- env PYTHONPATH=enterprise:. uv run ruff check --config enterprise/dev_config/python/ruff.toml enterprise/server/routes/org_models.py enterprise/server/routes/users_v1.py enterprise/tests/unit/server/routes/test_org_git_claims.py enterprise/tests/unit/test_user_git_organizations.py -> passed\r\n- npm test -- __tests__/hooks/use-git-conversation-routing.test.ts __tests__/components/features/org/git-org-row.test.tsx __tests__/components/features/org/git-conversation-routing.test.tsx -> 18 passed\r\n- R01 OHE overlay validation: created bitbucket_data_center claim for project AIV through /api/organizations/{org_id}/git-claims, resolved bitbucket_data_center/AIV to the claimed org with membership validation, deleted the claim through the API, and verified /api/v1/users/git-organizations returns provider bitbucket_data_center with projects AIV and DEM.\r\n- R01 live Bitbucket DC webhook validation: created a temporary org through /api/organizations using cookie auth, claimed AIV through the org claims API, posted a real @openhands PR comment on AIV/test#7, and verified logs routed bitbucket_data_center/aiv to the temporary org before creating conversation 9fd5d841-bf7d-49d1-90e4-1a30a42399c1.\r\n- R01 runtime-org validation: verified conversation_metadata_saas.org_id for 9fd5d841-bf7d-49d1-90e4-1a30a42399c1 matched the claimed org, and verified __SYSTEM__:OPENHANDS_API_KEY plus MCP_API_KEY rows were generated under that same org without printing key values.\r\n\r\n---\r\n\r\nTo run this PR locally, use the following command:\r\n\r\nGUI with Docker:\r\n```\r\ndocker run -it --rm   -p 3000:3000   -v /var/run/docker.sock:/var/run/docker.sock   --add-host host.docker.internal:host-gateway   --name openhands-app-b18a095   docker.openhands.dev/openhands/openhands:b18a095\r\n```\r\n",
+    "author": "ak684",
+    "headRef": "alona/bbdc-org-claims",
+    "repository": "All-Hands-AI/OpenHands"
+  },
+  "diffRef": {
+    "repository": "All-Hands-AI/OpenHands",
+    "headSha": "b18a0959b26d55d307c96362b82d908286fb3774",
+    "baseSha": "bd0106e8ba73532945d22cbf94a17e5810f62d69"
+  },
+  "vendoredDiffPath": "openhands/openhands-All-Hands-AI-OpenHands-pr14530.diff",
+  "vendoredAt": "2026-05-24T03:17:54.285Z",
+  "collectedAt": "2026-05-24T03:17:54.285Z"
+}

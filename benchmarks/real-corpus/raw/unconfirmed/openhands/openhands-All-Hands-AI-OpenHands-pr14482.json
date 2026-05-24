@@ -1,0 +1,26 @@
+{
+  "id": "openhands-All-Hands-AI-OpenHands-pr14482",
+  "agent": {
+    "vendor": "openhands",
+    "confidence": "high",
+    "source": "repo-owner=All-Hands-AI"
+  },
+  "pr": {
+    "number": 14482,
+    "headSha": "9fddfec5e743fe797ea4c4f572130db9e2eb23ac",
+    "baseSha": "332b6d14e689dc630a558b56f17c90613938fb1e",
+    "title": "Chunk the keycloak_auth cookie to survive the 4096-byte browser cap",
+    "body": "## Problem\r\n\r\nThe `keycloak_auth` cookie wraps a signed JWS containing the Keycloak access and refresh tokens. For users with large claim sets (long emails, several `allowed-origins` entries, many realm roles) the value exceeds the ~4096-byte per-cookie limit that Chrome and other browsers enforce. The browser silently drops the entire cookie, which presents as an endless login loop: the OAuth callback succeeds and sets the cookie, but it never reaches the next request, so `POST /api/authenticate` returns `401 NoCredentialsError` and the SPA bounces back to `/login`.\r\n\r\nThis is claim-size dependent, not user-role dependent. On a self-hosted install I measured two users on the same realm: one at 4061 bytes (just under, worked) and one at 4125 bytes (just over, locked out). A 48-byte difference in email length plus one extra claim was enough to flip it.\r\n\r\n## Fix\r\n\r\nSplit oversized values across numbered sibling cookies (`keycloak_auth`, `keycloak_auth_1`, ...) and reassemble them on read. Key properties:\r\n\r\n- A value that fits in one cookie is written as a single bare cookie, byte-identical to the previous behaviour, so existing sessions are unaffected.\r\n- Writes expire any trailing chunks left over from a previously larger value, so a shrunk token cannot pick up a stale chunk and corrupt itself.\r\n- Reads stop at the first missing index.\r\n\r\nThis is the standard pattern used by Spring Security and ASP.NET for the same browser limit. It lives in shared enterprise auth code, so it fixes the path for both Cloud and self-hosted.\r\n\r\nAll read, write, and delete sites for the cookie go through the new helpers in `server/auth/cookie_chunking.py`:\r\n\r\n- write: `set_response_cookie` (and the refresh middleware that calls it)\r\n- read: `saas_user_auth_from_cookie`, the `SetAuthCookieMiddleware` presence and TOS paths\r\n- delete: `/logout`, the `/authenticate` error path, the middleware `AuthError` path\r\n\r\n## Testing\r\n\r\nNew unit tests in `test_cookie_chunking.py` cover single-cookie round trip, oversized splitting with each chunk under the cap, absent and legacy single-cookie reads, stale-chunk cleanup on shrink, full delete, and boundary sizes.\r\n\r\nVerified end to end on a self-hosted install whose realm produced a 4125-byte cookie. Before this change the affected user could not log into the SPA (401 loop after a successful OAuth callback). After this change they log in cleanly, with `keycloak_auth` and `keycloak_auth_1` both stored and `POST /api/authenticate` returning 200:\r\n\r\n```\r\nLogging in user 49135ca0... (bitbucket_data_center)\r\nPOST /api/authenticate 200\r\nListing organizations ... org_count: 1\r\n```\r\n\r\n## Proof\r\n\r\nBefore (buggy)\r\n\r\nhttps://github.com/user-attachments/assets/9b37fb26-3824-4bbc-8c69-9af546ee0f35\r\n\r\n\r\n\r\nAfter (fixed)\r\n\r\nhttps://github.com/user-attachments/assets/b4a4b384-4f56-4002-a8eb-d3d2ec69895b\r\n\r\n\r\n\r\n\r\n## Why not just trim the token\r\n\r\nDropping the `allowed-origins` claim from the access token via realm config buys roughly 380 bytes, but it only helps self-hosted (Cloud's realm is separate) and breaks again for a large enough realm. Chunking is robust to any token size and fixes the shared code path. The claim trim is a reasonable cheap follow-up but not the fix.\r\n",
+    "author": "ak684",
+    "headRef": "alona/chunked-auth-cookie",
+    "repository": "All-Hands-AI/OpenHands"
+  },
+  "diffRef": {
+    "repository": "All-Hands-AI/OpenHands",
+    "headSha": "9fddfec5e743fe797ea4c4f572130db9e2eb23ac",
+    "baseSha": "332b6d14e689dc630a558b56f17c90613938fb1e"
+  },
+  "vendoredDiffPath": "unconfirmed/openhands/openhands-All-Hands-AI-OpenHands-pr14482.diff",
+  "vendoredAt": "2026-05-24T03:18:51.323Z",
+  "collectedAt": "2026-05-24T03:18:51.323Z"
+}

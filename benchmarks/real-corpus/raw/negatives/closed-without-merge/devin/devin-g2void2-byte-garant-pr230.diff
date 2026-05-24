@@ -1,0 +1,336 @@
+diff --git a/docs/audit/admin-settings-audit.md b/docs/audit/admin-settings-audit.md
+new file mode 100644
+index 0000000..93e5750
+--- /dev/null
++++ b/docs/audit/admin-settings-audit.md
+@@ -0,0 +1,330 @@
++# Admin Settings audit — `/admin/settings`
++
++Static-analysis audit of every column the `app_settings` singleton row
++exposes through `PATCH /api/admin/settings`. For each field this
++document records:
++
++1. **Intent** — what the admin form labels it as / what it claims to do.
++2. **Read sites** — every place in `backend/app/` (services, routers,
++   middleware, background loops) that actually reads the value.
++3. **Effective on PATCH?** — does changing the value in the admin form
++   change real behaviour, or is it inert?
++4. **Verdict** — `WORKING`, `WORKING (conditional)`, `INERT (display
++   only)`, or `DEAD CODE`.
++
++The audit is intentionally **read-only**. Nothing in this PR changes
++functional behaviour. Recommended follow-up PRs are listed at the end.
++
++> Field set is enumerated by `_EDITABLE_FIELDS` in
++> [`backend/app/routers/admin/settings.py`](../../backend/app/routers/admin/settings.py).
++> ORM column definitions live in
++> [`backend/app/models.py`](../../backend/app/models.py) lines 654–705.
++
++---
++
++## TL;DR
++
++| Field                                   | Verdict                | Notes                                                                                     |
++| --------------------------------------- | ---------------------- | ----------------------------------------------------------------------------------------- |
++| `deal_commission_percent`               | WORKING                | Read at `services_deals.py:311, 436, 597`.                                                |
++| `invoice_commission_percent`            | **DEAD CODE**          | No consumer anywhere in `backend/app/**`. The form persists it but nothing reads it.      |
++| `vip_commission_percent`                | WORKING (conditional)  | Applied only when `>=0` AND `buyer.is_vip or seller.is_vip` (`services_deals.py:312-314`).|
++| `min_deposit`                           | **INERT (display only)** | `services_wallet.create_deposit_invoice` enforces `currency.min_deposit`, not this column. |
++| `min_withdraw`                          | **INERT (display only)** | `services_wallet.create_withdrawal` enforces `currency.min_withdraw`, not this column.    |
++| `inactivity_pending_confirmation_days`  | WORKING                | Read by `services_deals.sweep_inactivity` (background loop).                              |
++| `inactivity_pending_cancellation_days`  | WORKING                | Read by `services_deals.sweep_inactivity` (background loop).                              |
++| `max_active_services_per_user`          | WORKING                | Read by `routers/services.py:134` SQL `func.coalesce(...)`.                               |
++| `auto_withdraw_enabled`                 | WORKING                | Read by `routers/admin/withdrawals.py:186` and `services_wallet._auto_withdraw_enabled`.  |
++| `maintenance_enabled`                   | WORKING                | Read by the `maintenance.py` middleware.                                                  |
++| `maintenance_message`                   | WORKING                | Rendered in the 503 response body of the middleware.                                      |
++
++**Three findings are user-visible problems:**
++
++- `invoice_commission_percent` is **dead** — the form accepts edits, persists
++  the value to PostgreSQL, audits the change, but **no business code
++  reads it**.
++- `min_deposit` / `min_withdraw` on the singleton row are **inert** —
++  the per-currency overrides at `Currency.min_deposit` / `Currency.min_withdraw`
++  are what the wallet routers actually enforce. The model docstring
++  acknowledges this ("global default kept around for admin display");
++  the admin form does not.
++
++See the **Recommendations** section at the end for proposed follow-up
++PRs.
++
++---
++
++## Per-field detail
++
++### `deal_commission_percent` — WORKING
++
++* **Intent (form label):** «Обычная комиссия (сделки)».
++* **Read sites:**
++  * [`services_deals.py:311`](../../backend/app/services_deals.py) —
++    `rate = Decimal(str(settings.deal_commission_percent))` inside
++    `create_deal`. This is the canonical rate that produces
++    `Deal.commission_amount` on creation.
++  * [`services_deals.py:436`](../../backend/app/services_deals.py) —
++    fallback inside `refund_decline` for legacy deals where
++    `Deal.commission_amount` was never persisted (older rows).
++  * [`services_deals.py:597`](../../backend/app/services_deals.py) —
++    same fallback inside `refund_cancel`.
++* **Mutated by:** `PATCH /api/admin/settings` only.
++* **Effective on PATCH?** Yes. New deals created after the PATCH use
++  the new rate; old deals carry their snapshotted `Deal.commission_amount`.
++* **Constraint:** model-level `CheckConstraint("deal_commission_percent BETWEEN 0 AND 100")`.
++
++### `invoice_commission_percent` — DEAD CODE
++
++* **Intent (form label):** «Комиссия по счетам».
++* **Read sites:** none in production code. Specifically:
++  * `services_wallet.py` (deposit/withdraw/invoice path) — **0 matches**.
++  * `services_deals.py` — **0 matches**.
++  * `routers/wallet.py`, `routers/deals.py`, `cryptopay.py`,
++    `bot/handlers/*` — **0 matches**.
++  * `serializers.py` — **0 matches**.
++  * The only matches in `backend/app/**` are:
++    * [`models.py:668`](../../backend/app/models.py) — column declaration.
++    * [`routers/admin/settings.py:46, 73`](../../backend/app/routers/admin/settings.py) — included in `_EDITABLE_FIELDS` and `_to_out`.
++    * [`schemas.py:1986, 2006, 2019`](../../backend/app/schemas.py) — included in `AdminSettingsOut`, `AdminSettingsUpdateIn`, and the range validator.
++    * [`seed.py:117`](../../backend/app/seed.py) — initial value `0.0`.
++  * Frontend: only displayed in `AdminSettingsPage.tsx` as a `NumberField`.
++* **Effective on PATCH?** **No.** The value is persisted to PostgreSQL,
++  audited, echoed back to the form, and… ignored.
++* **History clue:** the field has been on the model since the
++  [`9d0e4d959e65_initial_schema.py`](../../alembic/versions/9d0e4d959e65_initial_schema.py)
++  migration. There is no longer any code path that would charge a
++  separate "invoice commission" — invoices for wallet top-ups go
++  through CryptoBot/Crystalpay and carry no platform fee at the moment.
++* **Risk of leaving as-is:** an operator who sets a non-zero value
++  here expects platform fees on invoices and won't get any; this is a
++  silent UX-trap.
++* **Verdict:** dead. Either wire it into the invoice creation path
++  (`services_wallet.create_deposit_invoice` / `_create_<provider>_deposit_inner`)
++  if a fee is actually wanted, or drop the column.
++
++### `vip_commission_percent` — WORKING (conditional)
++
++* **Intent (form label):** «VIP комиссия (−1 = такая же как обычная)».
++* **Read site:**
++  * [`services_deals.py:312-314`](../../backend/app/services_deals.py):
++    ```python
++    rate = Decimal(str(settings.deal_commission_percent))
++    vip_rate = Decimal(str(settings.vip_commission_percent))
++    if vip_rate >= 0 and (buyer.is_vip or seller.is_vip):
++        rate = vip_rate
++    ```
++* **Effective on PATCH?** Yes, but only for deals where **either**
++  the buyer **or** the seller carries `User.is_vip=true`. With the
++  default seed value of `-1.0` the branch is never taken.
++* **Edge cases worth flagging in UI:**
++  * The default of `-1` is a sentinel; the form label spells it out
++    («−1 = такая же как обычная») which is good.
++  * The VIP override applies if **either** party is VIP — there is
++    no separate "seller-VIP" rate.
++  * `vip_commission_percent = 0` is a real value, not a sentinel —
++    setting it to `0` makes VIP deals commission-free.
++
++### `min_deposit` (on `app_settings`) — INERT (display only)
++
++* **Intent (form label):** «Мин. депозит (USD)».
++* **Apparent intent (UI):** "Global default for the minimum deposit
++  amount in USD."
++* **What actually happens:** the field is read **only** by
++  [`routers/admin/settings.py:75`](../../backend/app/routers/admin/settings.py)
++  for the form payload. The deposit-creation code path
++  ([`services_wallet.py:296-298`](../../backend/app/services_wallet.py))
++  enforces **`currency.min_deposit`**, the per-currency override:
++  ```python
++  currency = await get_currency_by_code(session, currency_code)
++  if amount < currency.min_deposit:
++      raise HTTPException(400, f"Минимальная сумма пополнения: {currency.min_deposit} {currency.code}")
++  ```
++  The model docstring at `models.py:669-676` actually spells this out
++  ("the per-currency overrides on `Currency.min_deposit` … are what
++  the wallet routers actually enforce; these singleton rows are a
++  global default kept around for admin display"), but the admin form
++  doesn't tell the operator that.
++* **Effective on PATCH?** **No.** Setting `min_deposit = 100` on the
++  singleton does not block a user from depositing 1 USDT, because
++  USDT carries its own `currency.min_deposit = 1.0` (`backend/app/seed.py:29`).
++* **Where it bleeds:** the only feedback the admin gets is via
++  `/admin/taxonomy` → «Валюты», where each currency has its own per-row
++  min-deposit field that **does** drive behaviour. The two surfaces
++  are not cross-linked.
++
++### `min_withdraw` (on `app_settings`) — INERT (display only)
++
++* **Intent (form label):** «Мин. вывод (USD)».
++* **Read site:** only `routers/admin/settings.py:76` for form payload.
++* **Actual enforcer:** [`services_wallet.py:916-918`](../../backend/app/services_wallet.py)
++  uses **`currency.min_withdraw`** (the per-currency override), same
++  pattern as `min_deposit`.
++* **Effective on PATCH?** **No.** Same reason as `min_deposit`.
++
++### `inactivity_pending_confirmation_days` — WORKING
++
++* **Intent (form label):** «Авто-истечение pending payment (дни)».
++* **Read site:**
++  [`services_deals.py:806-822`](../../backend/app/services_deals.py)
++  inside `sweep_inactivity`:
++  ```python
++  pc_cutoff = now - timedelta(days=int(settings.inactivity_pending_confirmation_days))
++  ```
++  Deals with `status == PENDING_CONFIRMATION` older than this cutoff
++  are auto-cancelled with `CANCELLED_FOR_INACTIVITY` and the buyer's
++  principal is refunded.
++* **Loop entry point:** `main.py:139-180` builds
++  `_inactivity_loop = _make_sweep_loop("inactivity", _inactivity_work, ...)`
++  and `main.py:343-344` schedules it at
++  `settings.inactivity_sweep_seconds` cadence
++  (env `INACTIVITY_SWEEP_SECONDS`, **not** an `AppSettings` field —
++  this is a separate process-level knob).
++* **Effective on PATCH?** Yes; the next loop tick re-reads the
++  setting from the DB so changes propagate within at most
++  `INACTIVITY_SWEEP_SECONDS`.
++
++### `inactivity_pending_cancellation_days` — WORKING
++
++* **Intent (form label):** «Авто-cancellation (дни)».
++* **Read site:** `services_deals.py:818` — same loop as above, applied
++  to `status == PENDING_CANCELLATION` rows.
++* Same propagation guarantees as `inactivity_pending_confirmation_days`.
++
++### `max_active_services_per_user` — WORKING
++
++* **Intent (form label):** «Максимум активных услуг на юзера».
++* **Read site:** [`routers/services.py:133-137`](../../backend/app/routers/services.py):
++  ```python
++  stmt = select(
++      func.coalesce(AppSettings.max_active_services_per_user, 10).label("max_active"),
++      count_stmt.label("active_count"),
++  ).limit(1)
++  ```
++  Used by `POST /api/services` to gate creation of new services
++  (the handler 409s when the user is at or above the cap).
++* **Effective on PATCH?** Yes, on the very next request — the value
++  is queried fresh per call. No caching.
++
++### `auto_withdraw_enabled` — WORKING
++
++* **Intent (form label):** «Авто-вывод через CryptoBot».
++* **Read sites:**
++  * [`services_wallet.py:867-871`](../../backend/app/services_wallet.py)
++    helper `_auto_withdraw_enabled(session)`.
++  * Direct read at
++    [`routers/admin/withdrawals.py:186`](../../backend/app/routers/admin/withdrawals.py)
++    inside the `decide` mutation. When `auto=true` **and**
++    `is_cryptopay_configured(...)`, the approve path immediately
++    issues a CryptoBot Transfer instead of leaving the withdrawal in
++    the `approved` queue for manual `mark_sent`.
++  * Second-chance fallback at
++    [`services_wallet.py:1048`](../../backend/app/services_wallet.py)
++    inside `attempt_auto_payouts` (used from deal-related flows).
++* **Toggle-time UX:** `routers/admin/settings.py:134-144` emits a
++  structured WARNING when the flag is flipped on while the
++  CryptoBot token is unset/placeholder. Good — this surfaces the
++  «silently falls back to manual» degradation in logs.
++* **Effective on PATCH?** Yes, on the very next withdrawal approval.
++
++### `maintenance_enabled` + `maintenance_message` — WORKING
++
++* **Intent:** global read-only switch.
++* **Read site:** [`maintenance.py`](../../backend/app/maintenance.py)
++  middleware. The flag is cached in-process with a short TTL
++  (`_TTL_SECONDS`), invalidated explicitly by the admin PATCH
++  (`routers/admin/settings.py:201-202`) when either field is in the
++  diff.
++* **Bot side:** [`backend/app/bot/maintenance.py`](../../backend/app/bot/maintenance.py)
++  consumes the same flag for inbound Telegram updates.
++* **Effective on PATCH?** Immediately on the worker that handled the
++  PATCH; other workers / the bot process catch up within
++  `_TTL_SECONDS`.
++* **Behaviour summary:**
++  * `GET/HEAD/OPTIONS` keep working (banner overlay still rendered).
++  * Every state-changing request from a non-admin caller 503s with
++    `maintenance_message` in the body.
++  * Exception allow-list in `maintenance.py` keeps the
++    CryptoBot/Crystalpay payment webhooks reachable so paid deposits
++    don't silently churn through retries.
++
++---
++
++## Recommendations (proposed follow-up PRs)
++
++### 1. `chore/drop-invoice-commission-percent` (low risk)
++
++* Remove `AppSettings.invoice_commission_percent` end-to-end:
++  drop the column (alembic), drop from `_EDITABLE_FIELDS`,
++  drop from `AdminSettingsOut` / `AdminSettingsUpdateIn` /
++  range validator, drop from `seed.py`, drop the row from the
++  `AdminSettingsPage.tsx` UI, regenerate `openapi.generated.ts`.
++* Risk: low. The field has zero consumers, so removal is mechanical.
++* Migration:
++  ```python
++  def upgrade():
++      op.drop_column("app_settings", "invoice_commission_percent")
++
++  def downgrade():
++      op.add_column("app_settings", sa.Column(
++          "invoice_commission_percent",
++          sa.Numeric(5, 2),
++          nullable=False,
++          server_default="0.0",
++      ))
++  ```
++
++### 2. `fix/admin-settings-min-amounts-inert` (low-medium risk)
++
++Two viable paths:
++
++* **Option A — wire them in.** Make the singleton values act as a
++  floor: in `services_wallet.create_deposit_invoice`, use
++  `max(currency.min_deposit, settings.min_deposit_for(currency.code))`
++  (the singleton is USD-denominated, so this needs an FX conversion
++  or a same-currency-only check). Same for `min_withdraw`. This
++  preserves the per-currency override as the actual minimum while
++  letting the operator raise the floor globally.
++* **Option B — relabel them as display-only.** Add a help tooltip in
++  the admin form: «Это значение не используется напрямую. Реальный
++  лимит задаётся в `Валюты → <код> → Мин. депозит`». Leave the
++  column in place but rename the form label / Section to
++  «Глобальный дефолт (информационно)» and link to `/admin/taxonomy?tab=currencies`.
++
++Option B is the cheaper fix and matches what the model comment already
++documents. Option A is more honest but requires designing how the
++singleton currency (USD) interacts with non-USD currencies — this is
++a product decision, not a bug fix.
++
++### 3. `chore/admin-settings-help-text` (cosmetic)
++
++* Add short help text under each `Section` clarifying the actual
++  semantics — particularly for `vip_commission_percent`
++  («−1 — отключено, применяется когда покупатель или продавец VIP»)
++  and `auto_withdraw_enabled` («Требует валидный `CRYPTOBOT_TOKEN`,
++  иначе авто-выплаты молча падают на ручную очередь»).
++
++---
++
++## Methodology
++
++For each setting field name `X` we ran:
++
++```bash
++rg "X" backend/app frontend/src tests
++```
++
++and classified each match into one of:
++
++* **Definition / migration / seed** (model, alembic, seed.py).
++* **CRUD scaffolding** (admin settings router, admin settings schemas).
++* **Display-only frontend** (form rows, openapi types).
++* **Production consumer** (services/routers/middleware/background
++  loops that actually use the value to decide behaviour).
++
++If the union of *production consumers* is empty for a field, it is
++flagged DEAD CODE. If the only "consumer" is a different DB column
++that happens to be the actual enforcement point, the field is flagged
++INERT.
++
++No business code was modified by this audit.

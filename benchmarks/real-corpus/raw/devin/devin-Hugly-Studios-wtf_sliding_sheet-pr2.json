@@ -1,0 +1,26 @@
+{
+  "id": "devin-Hugly-Studios-wtf_sliding_sheet-pr2",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 2,
+    "headSha": "9c97d5c1f8c74776f34caff84c6b27119928b59a",
+    "baseSha": "8de8fb5160fb1fadfdf33502cba9250eb79429e3",
+    "title": "fix: preserve caller's theme in SlidingSheetDialog route",
+    "body": "## Summary\n\nFixes `Null check operator used on a null value` error when opening a `SlidingSheetDialog` with `useRootNavigator: true` in apps that provide `ThemeExtension`s via nested `Theme` widgets (e.g. inside GoRouter shell routes).\n\n### Problem\n\n`showSlidingBottomSheet` already captures `Theme.of(context)` from the caller's context (line 26), but only uses it for the default background color. The actual route content is NOT wrapped with this theme.\n\nWhen `useRootNavigator: true`, the dialog route is pushed to the root navigator, which sits **above** any nested `Theme` widgets in the widget tree:\n\n```\nMaterialApp (default theme — no custom ThemeExtensions)\n  └─ Root Navigator  ← route pushed HERE\n    └─ ShellRoute (e.g. GoRouter)\n      └─ Theme(data: customTheme)  ← ThemeExtensions provided HERE\n        └─ Nested Navigator\n          └─ Page that calls showSlidingBottomSheet\n```\n\nResult: `Theme.of(context).extension<T>()` returns `null` inside the dialog builder, causing null check failures in any widget that accesses theme extensions.\n\n### Fix\n\nWrap the route content with `Theme(data: theme, ...)` using the already-captured theme from the caller's context. This ensures all widgets inside the dialog builder inherit the correct theme data and extensions, regardless of which navigator the route is pushed to.\n\n**Change:** `return sheet;` → `return Theme(data: theme, child: sheet);`\n\nThis is a one-line fix with no behavioral side effects — it simply makes the dialog's theme match the caller's theme, which is the expected behavior.\n\n## Review & Testing Checklist for Human\n\n- [ ] **Test with `useRootNavigator: true`:** Open a `SlidingSheetDialog` that uses custom `ThemeExtension`s — verify no null check errors\n- [ ] **Test with `useRootNavigator: false`:** Verify existing behavior is unchanged\n- [ ] **Test theme-dependent widgets inside the dialog:** Widgets that call `Theme.of(context).extension<T>()` should receive the correct extension\n\n### Notes\n\nThis issue was discovered alongside the infinite measurement loop fix (PR #1). On Flutter ≤3.35, the measurement loop froze the app before the builder content rendered, masking this theme propagation issue. With the loop fixed, the builder now renders but crashes on missing theme extensions.\n\nLink to Devin session: https://app.devin.ai/sessions/9ded5d6fb84f4890be7f8b3d12e9e222",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "fix/preserve-caller-theme-in-dialog",
+    "repository": "Hugly-Studios/wtf_sliding_sheet"
+  },
+  "diffRef": {
+    "repository": "Hugly-Studios/wtf_sliding_sheet",
+    "headSha": "9c97d5c1f8c74776f34caff84c6b27119928b59a",
+    "baseSha": "8de8fb5160fb1fadfdf33502cba9250eb79429e3"
+  },
+  "vendoredDiffPath": "devin/devin-Hugly-Studios-wtf_sliding_sheet-pr2.diff",
+  "vendoredAt": "2026-05-24T03:05:14.018Z",
+  "collectedAt": "2026-05-24T03:05:14.018Z"
+}

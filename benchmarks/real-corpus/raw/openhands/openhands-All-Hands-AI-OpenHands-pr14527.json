@@ -1,0 +1,26 @@
+{
+  "id": "openhands-All-Hands-AI-OpenHands-pr14527",
+  "agent": {
+    "vendor": "openhands",
+    "confidence": "high",
+    "source": "author=openhands-agent+body=openhands-attribution"
+  },
+  "pr": {
+    "number": 14527,
+    "headSha": "1fe4b98a20ba5b80abd7f2f68478fa1a0e3810da",
+    "baseSha": "2eef5c905051c0135e18284129ff63905c90c65e",
+    "title": "Require human context at the top of PR descriptions",
+    "body": "HUMAN:\r\nAdded HUMAN section and tested it.\r\n\r\n- [ ] A human has tested these changes.\r\n\r\nAGENT:\r\n\r\n## Why\r\n\r\nWe want PR authors to tell maintainers, in their own words, what the PR does. The current template has a human-tested checkbox, and the current readiness workflow comments only for first-time contributors confirming that a PR is ready for review.\r\n\r\n## Summary\r\n\r\n- add explicit `HUMAN:` / `AGENT:` sections at the top of the PR template, keeping the existing human-tested checkbox in place\r\n- update `pr-readiness-confirm.yml` to check every non-draft PR for non-empty text between `HUMAN:` and the checkbox\r\n- post a reminder comment when that human section is blank, and add a 👍 reaction (plus remove any prior reminder) when it is filled in\r\n\r\n## Issue Number\r\n\r\nN/A\r\n\r\n## How to Test\r\n\r\n1. Open `.github/pull_request_template.md` and confirm the top now reads `HUMAN:`, then the existing human-tested checkbox, then `AGENT:`.\r\n2. Open `.github/workflows/pr-readiness-confirm.yml` and confirm it now listens to `opened`, `edited`, and `ready_for_review`.\r\n3. Confirm the new `check-human-context` job:\r\n   - checks non-draft PRs regardless of author association\r\n   - looks for non-empty text between `HUMAN:` and `- [ ] A human has tested these changes.`\r\n   - posts a reminder comment if that section is blank\r\n   - adds a 👍 reaction and removes any prior reminder comment if that section is later filled in\r\n4. Run `poetry run pre-commit run --files .github/pull_request_template.md .github/workflows/pr-readiness-confirm.yml AGENTS.md --config ./dev_config/python/.pre-commit-config.yaml`.\r\n\r\n## Video/Screenshots\r\n\r\nN/A\r\n\r\n## Type\r\n\r\n- [ ] Bug fix\r\n- [ ] Feature\r\n- [ ] Refactor\r\n- [ ] Breaking change\r\n- [x] Docs / chore\r\n\r\n## Notes\r\n\r\n- The workflow uses the default workflow token with `issues: write` so it can add a 👍 reaction on PRs whose `HUMAN:` block is filled in.\r\n- I also recorded the new PR-template/workflow behavior in `AGENTS.md` for future sessions.\r\n\r\n_This PR description was created by an AI agent (OpenHands) on behalf of the user._\r\n\r\n@enyst can click here to [continue refining the PR](https://app.all-hands.dev/conversations/fcc8d8b4-bb15-41cf-83ca-a2639ab9a813)\r\n\r\n---\r\n\r\nTo run this PR locally, use the following command:\r\n\r\nGUI with Docker:\r\n```\r\ndocker run -it --rm   -p 3000:3000   -v /var/run/docker.sock:/var/run/docker.sock   --add-host host.docker.internal:host-gateway   --name openhands-app-1fe4b98   docker.openhands.dev/openhands/openhands:1fe4b98\r\n```",
+    "author": "enyst",
+    "headRef": "require-human-pr-context",
+    "repository": "All-Hands-AI/OpenHands"
+  },
+  "diffRef": {
+    "repository": "All-Hands-AI/OpenHands",
+    "headSha": "1fe4b98a20ba5b80abd7f2f68478fa1a0e3810da",
+    "baseSha": "2eef5c905051c0135e18284129ff63905c90c65e"
+  },
+  "vendoredDiffPath": "openhands/openhands-All-Hands-AI-OpenHands-pr14527.diff",
+  "vendoredAt": "2026-05-24T03:17:57.826Z",
+  "collectedAt": "2026-05-24T03:17:57.826Z"
+}

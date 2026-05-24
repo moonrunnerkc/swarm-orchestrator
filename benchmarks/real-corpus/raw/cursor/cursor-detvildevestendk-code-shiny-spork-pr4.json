@@ -1,0 +1,26 @@
+{
+  "id": "cursor-detvildevestendk-code-shiny-spork-pr4",
+  "agent": {
+    "vendor": "cursor",
+    "confidence": "medium",
+    "source": "branch=cursor/+body=cursor-session-url"
+  },
+  "pr": {
+    "number": 4,
+    "headSha": "9306c79e29ecb310ecf52bbf8f0f7e89e416dd39",
+    "baseSha": "7220393651d6360f9f694be5a57fd2dc2d34c930",
+    "title": "Scaffold and harden AI futures trading bot",
+    "body": "<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n## Summary\n- Add FastAPI backend scaffold with trading engine, risk/safety controls, AI trade filter, CCXT exchange abstraction, all requested starter strategies, backtesting, database models, and migrations.\n- Add Docker Compose deployment for API, worker, frontend, PostgreSQL, and Redis.\n- Add React/Tailwind dashboard starter, frontend lockfile, database schema SQL, architecture/setup documentation, full production deployment guide, UpCloud runbook, and final UpCloud launch checklist.\n- Harden paper-trading deployment with API key auth, restricted CORS, localhost-only service bindings, Redis auth, required DB/Redis secrets, Alembic psycopg driver, non-root containers, runtime frontend API config, readiness checks, worker heartbeat/scanning loop, and persisted paper trades/dashboard data.\n- Set deployed frontend API base URL to `http://81.27.108.159:8000` and default dashboard API key to `testkey123`.\n- Ensure dashboard page load calls `/api/v1/dashboard/summary`, `/api/v1/positions`, and `/api/v1/trades` with `x-api-key: testkey123` by default.\n- Add visible API errors, loading states, manual retry/refresh, and exact demo fallback paper data when backend data is empty or unavailable: balance 10000, daily PnL 127.45, open PnL 42.10, win rate 62%, max drawdown 4.8%, BTC long / ETH short positions, and fake recent trades.\n- Add realistic paper trading simulation with fake execution, simulated balance, long/short positions, leverage-aware margin, live market price marking from exchange OHLCV, simulated stop-loss/take-profit closures, PnL updates, and trade history dashboard integration.\n- Add structured Telegram alerts for startup/shutdown, simulated trades, errors, warnings, strategy signals, worker loop failures, and fatal worker crashes.\n- Enforce production paper/sandbox mode by rejecting `LIVE_TRADING_ENABLED=true`, `PAPER_TRADING_ENABLED=false`, or `EXCHANGE_SANDBOX=false` at startup.\n- Merge latest `origin/main`; current conflicts were simple frontend/env config conflicts where `main` had the previous no-default-key version and this branch had the latest deployed dashboard fix. Resolved by keeping this branch's newer `testkey123`/demo fallback versions.\n\n## Validation\n- `npm run build` in `frontend`\n- Merge resolution validation confirmed `http://81.27.108.159:8000`, `testkey123`, exact demo fallback metrics, BTC/ETH demo positions, and `x-api-key` are retained\n- Runtime config validation confirmed `frontend/public/config.js`, `frontend/docker-entrypoint.sh`, and `.env.example` retain the `testkey123` frontend key fallback\n- `git diff --check`\n- Previous validations include backend compile, route protection, paper simulation smoke tests, Telegram alert smoke tests, and production safety checks\n- `docker compose config` could not be run because Docker is not installed in this environment.\n<!-- CURSOR_AGENT_PR_BODY_END -->\n\n<div><a href=\"https://cursor.com/agents/bc-4d177743-0225-4168-ae8d-b692ae462acd\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/background-agent?bcId=bc-4d177743-0225-4168-ae8d-b692ae462acd\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-light.png\"><img alt=\"Open in Cursor\" width=\"131\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"></picture></a>&nbsp;</div>\n\n",
+    "author": "detvildevestendk-code",
+    "headRef": "cursor/ai-futures-bot-scaffold-2acd",
+    "repository": "detvildevestendk-code/shiny-spork"
+  },
+  "diffRef": {
+    "repository": "detvildevestendk-code/shiny-spork",
+    "headSha": "9306c79e29ecb310ecf52bbf8f0f7e89e416dd39",
+    "baseSha": "7220393651d6360f9f694be5a57fd2dc2d34c930"
+  },
+  "vendoredDiffPath": "cursor/cursor-detvildevestendk-code-shiny-spork-pr4.diff",
+  "vendoredAt": "2026-05-24T03:12:29.470Z",
+  "collectedAt": "2026-05-24T03:12:29.470Z"
+}

@@ -1,0 +1,3504 @@
+diff --git a/.githooks/pre-commit b/.githooks/pre-commit
+index 26b80329..78bd7d34 100755
+--- a/.githooks/pre-commit
++++ b/.githooks/pre-commit
+@@ -1,8 +1,40 @@
+ #!/usr/bin/env bash
+ # Pre-commit hook:
+-# - Runs the repository lint command
++# - Uses lint-staged to run biome on staged files only (fast feedback).
++# - Standalone clone or local `pnpm install`: lint-staged is reachable via pnpm exec.
++# - Submodule mode (no local node_modules): falls back to the parent workspace's
++#   lint-staged + biome binaries at `../node_modules/.bin/`. Uses this repo's
++#   lint-staged config (passed via --config).
+ 
+ set -euo pipefail
+ 
+-echo "Running lint..."
+-pnpm run lint --diagnostic-level=error
++if [ -d node_modules ]; then
++    pnpm exec lint-staged
++    exit $?
++fi
++
++# Submodule mode (nested under composableai/, which may itself be nested under
++# the studio parent — walk up until we find a node_modules/.bin/lint-staged).
++find_parent_bin() {
++    local dir="$(pwd)"
++    while [ "$dir" != "/" ]; do
++        dir="$(dirname "$dir")"
++        if [ -x "$dir/node_modules/.bin/lint-staged" ]; then
++            echo "$dir"
++            return 0
++        fi
++    done
++    return 1
++}
++
++if PARENT_DIR="$(find_parent_bin)"; then
++    PARENT_LINT_STAGED="$PARENT_DIR/node_modules/.bin/lint-staged"
++    echo "[pre-commit] lint-staged not installed locally — falling back to $PARENT_LINT_STAGED"
++    PATH="$PARENT_DIR/node_modules/.bin:$PATH" "$PARENT_LINT_STAGED" --config package.json
++    exit $?
++fi
++
++echo "Error: lint-staged not found in this workspace or any ancestor."
++echo "Run 'pnpm install' from inside llumiverse to install local devDeps,"
++echo "or commit with --no-verify to skip this check."
++exit 1
+diff --git a/.github/workflows/build-and-test.yml b/.github/workflows/build-and-test.yml
+index dc1aa832..b036e68d 100644
+--- a/.github/workflows/build-and-test.yml
++++ b/.github/workflows/build-and-test.yml
+@@ -29,7 +29,6 @@ jobs:
+           cache: "pnpm"
+       - run: pnpm install
+       - run: pnpm build
+-      - run: pnpm typecheck:test
+ 
+       - name: Authenticate with Google Cloud
+         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+@@ -45,7 +44,7 @@ jobs:
+           role-session-name: github-actions
+           aws-region: us-east-1
+ 
+-      - run: npx vitest
++      - name: Typecheck and test
+         env:
+           TOGETHER_API_KEY: ${{ secrets.TOGETHER_API_KEY }}
+           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+@@ -54,6 +53,7 @@ jobs:
+           BEDROCK_REGION: us-east-1
+           GOOGLE_PROJECT_ID: dengenlabs
+           GOOGLE_REGION: us-central1
++        run: pnpm typecheck:test && npx vitest
+ 
+   notify-repo-composableai:
+     runs-on: ubuntu-latest
+diff --git a/biome.json b/biome.json
+index 30038050..8f9fcdaf 100644
+--- a/biome.json
++++ b/biome.json
+@@ -25,16 +25,44 @@
+   "linter": {
+     "enabled": true,
+     "rules": {
+-      "recommended": false,
++      "recommended": true,
+       "correctness": {
++        "noEmptyPattern": "error",
++        "noUnreachable": "error",
+         "noUnusedFunctionParameters": "error",
+         "noUnusedImports": "error",
+-        "noUnusedVariables": "error"
++        "noUnusedVariables": "error",
++        "noVoidTypeReturn": "error",
++        "useJsxKeyInIterable": "error",
++        "useParseIntRadix": "error"
++      },
++      "complexity": {
++        "useLiteralKeys": "error",
++        "useOptionalChain": "error"
++      },
++      "security": {
++        "noDangerouslySetInnerHtml": "error"
++      },
++      "style": {
++        "useImportType": "error",
++        "useNodejsImportProtocol": "error",
++        "useTemplate": "error"
+       },
+       "suspicious": {
++        "noControlCharactersInRegex": "error",
++        "noDeprecatedImports": "error",
++        "noDoubleEquals": "error",
+         "noExplicitAny": "error",
+         "noImplicitAnyLet": "error",
+-        "noUnusedExpressions": "error"
++        "noShadowRestrictedNames": "error",
++        "noTemplateCurlyInString": "off",
++        "noUnusedExpressions": "error",
++        "useBiomeIgnoreFolder": "off",
++        "useIterableCallbackReturn": "error",
++        "noImportCycles": "error"
++      },
++      "nursery": {
++        "noFloatingPromises": "error"
+       }
+     }
+   },
+@@ -51,4 +79,4 @@
+       }
+     }
+   }
+-}
++}
+\ No newline at end of file
+diff --git a/common/src/LlumiverseError.test.ts b/common/src/LlumiverseError.test.ts
+index ac9a0949..6b08f66e 100644
+--- a/common/src/LlumiverseError.test.ts
++++ b/common/src/LlumiverseError.test.ts
+@@ -1,4 +1,4 @@
+-import { LlumiverseErrorContext, LlumiverseError } from '@llumiverse/common';
++import { type LlumiverseErrorContext, LlumiverseError } from '@llumiverse/common';
+ import { describe, expect, it } from 'vitest';
+ 
+ describe('LlumiverseError', () => {
+diff --git a/common/src/capability/azure_foundry.ts b/common/src/capability/azure_foundry.ts
+index 8de54a24..c885c7ae 100644
+--- a/common/src/capability/azure_foundry.ts
++++ b/common/src/capability/azure_foundry.ts
+@@ -1,4 +1,4 @@
+-import { ModelModalities, ModelCapabilities } from "../types.js";
++import type { ModelModalities, ModelCapabilities } from "../types.js";
+ 
+ // Global feature flags - temporarily disable tool support for non-OpenAI models
+ const ENABLE_TOOL_SUPPORT_NON_OPENAI = false;
+@@ -109,7 +109,7 @@ export function getModelCapabilitiesAzureFoundry(model: string): ModelCapabiliti
+     }
+ 
+     // 2. Fallback: find the longest matching family prefix in RECORD_FAMILY_CAPABILITIES
+-    let bestFamilyKey = undefined;
++    let bestFamilyKey: string | undefined;
+     let bestFamilyLength = 0;
+     for (const key of Object.keys(RECORD_FAMILY_CAPABILITIES)) {
+         if (normalized.startsWith(key) && key.length > bestFamilyLength) {
+diff --git a/common/src/capability/bedrock.ts b/common/src/capability/bedrock.ts
+index bc36de5a..c87b9ab2 100644
+--- a/common/src/capability/bedrock.ts
++++ b/common/src/capability/bedrock.ts
+@@ -1,4 +1,4 @@
+-import { ModelCapabilities, ModelModalities } from "../types.js";
++import type { ModelCapabilities, ModelModalities } from "../types.js";
+ 
+ // Explicit exception lists keyed by the model identifier (last segment after the prefix)
+ const RECORD_FOUNDATION_EXCEPTIONS: Record<string, ModelCapabilities> = {};
+diff --git a/common/src/capability/openai.ts b/common/src/capability/openai.ts
+index 7240fe90..5b7ac271 100644
+--- a/common/src/capability/openai.ts
++++ b/common/src/capability/openai.ts
+@@ -1,4 +1,4 @@
+-import { ModelModalities } from "../types.js";
++import type { ModelModalities } from "../types.js";
+ 
+ // OpenAI model capability type - tool_support_streaming defaults to tool_support for OpenAI models
+ type OpenAIModelCapability = { input: ModelModalities; output: ModelModalities; tool_support?: boolean; tool_support_streaming?: boolean };
+@@ -68,7 +68,7 @@ export function getModelCapabilitiesOpenAI(model: string): { input: ModelModalit
+             tool_support_streaming: record.tool_support_streaming ?? record.tool_support
+         };
+     }
+-    let bestFamilyKey = undefined;
++    let bestFamilyKey: string | undefined;
+     let bestFamilyLength = 0;
+     for (const key of Object.keys(RECORD_FAMILY_CAPABILITIES)) {
+         if (normalized.startsWith(key) && key.length > bestFamilyLength) {
+diff --git a/common/src/capability/vertexai.ts b/common/src/capability/vertexai.ts
+index 161f8b83..a9e97d6a 100644
+--- a/common/src/capability/vertexai.ts
++++ b/common/src/capability/vertexai.ts
+@@ -1,4 +1,4 @@
+-import { ModelModalities } from "../types.js";
++import type { ModelModalities } from "../types.js";
+ 
+ // Record of Vertex AI model capabilities keyed by model ID (last path segment, lowercased)
+ const RECORD_MODEL_CAPABILITIES: Record<string, { input: ModelModalities; output: ModelModalities; tool_support?: boolean }> = {
+@@ -52,7 +52,7 @@ export function getModelCapabilitiesVertexAI(model: string): { input: ModelModal
+     const normalized = normalizeVertexAIModelName(model);
+     const record = RECORD_MODEL_CAPABILITIES[normalized];
+     if (record) return record;
+-    let bestFamilyKey = undefined;
++    let bestFamilyKey: string | undefined;
+     let bestFamilyLength = 0;
+     for (const key of Object.keys(RECORD_FAMILY_CAPABILITIES)) {
+         if (normalized.startsWith(key) && key.length > bestFamilyLength) {
+diff --git a/common/src/options/azure_foundry.ts b/common/src/options/azure_foundry.ts
+index e68b4089..b32ea043 100644
+--- a/common/src/options/azure_foundry.ts
++++ b/common/src/options/azure_foundry.ts
+@@ -1,4 +1,4 @@
+-import { ModelOptionsInfo, ModelOptionInfoItem, ModelOptions, OptionType, SharedOptions } from "../types.js";
++import { type ModelOptionsInfo, type ModelOptionInfoItem, type ModelOptions, OptionType, SharedOptions } from "../types.js";
+ import { getMaxOutputTokens } from "./context-windows.js";
+ 
+ // Helper function to parse composite model IDs
+diff --git a/common/src/options/embedding.ts b/common/src/options/embedding.ts
+index 2103c355..3b420dc7 100644
+--- a/common/src/options/embedding.ts
++++ b/common/src/options/embedding.ts
+@@ -88,5 +88,5 @@ export function getDefaultEmbeddingModel(
+ ): string | undefined {
+     const byProvider = DEFAULT_EMBEDDING_MODELS[provider];
+     if (!byProvider) return undefined;
+-    return byProvider[modality] ?? byProvider["text"];
++    return byProvider[modality] ?? byProvider.text;
+ }
+diff --git a/common/src/options/fallback.ts b/common/src/options/fallback.ts
+index bc98e698..fd9aefde 100644
+--- a/common/src/options/fallback.ts
++++ b/common/src/options/fallback.ts
+@@ -1,4 +1,4 @@
+-import { ModelOptionsInfo, OptionType, SharedOptions } from "../types.js";
++import { type ModelOptionsInfo, OptionType, SharedOptions } from "../types.js";
+ 
+ export interface TextFallbackOptions {
+     _option_id: "text-fallback";    //For specific models should be format as "provider-model"
+diff --git a/common/src/options/groq.ts b/common/src/options/groq.ts
+index bf9374f7..c2245e8d 100644
+--- a/common/src/options/groq.ts
++++ b/common/src/options/groq.ts
+@@ -1,4 +1,4 @@
+-import { ModelOptionsInfo, ModelOptionInfoItem, ModelOptions, OptionType, SharedOptions } from "../types.js";
++import { type ModelOptionsInfo, type ModelOptionInfoItem, type ModelOptions, OptionType, SharedOptions } from "../types.js";
+ import { textOptionsFallback } from "./fallback.js";
+ 
+ // Union type of all Bedrock options
+diff --git a/common/src/options/openai.ts b/common/src/options/openai.ts
+index 0f1fbe0a..733f6793 100644
+--- a/common/src/options/openai.ts
++++ b/common/src/options/openai.ts
+@@ -1,5 +1,4 @@
+-import { ModelOptionInfoItem, ModelOptions, ModelOptionsInfo, OptionType, ReasoningEffort, SharedOptions } from "../types.js";
+-import { textOptionsFallback } from "./fallback.js";
++import { type ModelOptionInfoItem, type ModelOptions, type ModelOptionsInfo, OptionType, type ReasoningEffort, SharedOptions } from "../types.js";
+ 
+ // Union type of all OpenAI options
+ /**
+@@ -62,7 +61,7 @@ export function getOpenAiOptions(model: string, _option?: ModelOptions): ModelOp
+             sizeOptions["1024x1024"] = "1024x1024";
+             sizeOptions["1024x1536"] = "1024x1536";
+             sizeOptions["1536x1024"] = "1536x1024";
+-            sizeOptions["Auto"] = "auto";
++            sizeOptions.Auto = "auto";
+         } else if (isDallE2) {
+             sizeOptions["256x256"] = "256x256";
+             sizeOptions["512x512"] = "512x512";
+@@ -264,7 +263,6 @@ export function getOpenAiOptions(model: string, _option?: ModelOptions): ModelOp
+             ],
+         }
+     }
+-    return textOptionsFallback;
+ }
+ 
+ function isO1Full(model: string): boolean {
+diff --git a/core/src/CompletionStream.ts b/core/src/CompletionStream.ts
+index 53e98313..87220862 100644
+--- a/core/src/CompletionStream.ts
++++ b/core/src/CompletionStream.ts
+@@ -1,14 +1,14 @@
+ import {
+-    CompletionStream,
+-    DriverOptions,
+-    ExecutionOptions,
+-    ExecutionResponse,
+-    ExecutionTokenUsage,
+-    CompletionResult,
+-    ToolUse,
++    type CompletionStream,
++    type DriverOptions,
++    type ExecutionOptions,
++    type ExecutionResponse,
++    type ExecutionTokenUsage,
++    type CompletionResult,
++    type ToolUse,
+     LlumiverseError
+ } from "@llumiverse/common";
+-import { AbstractDriver } from "./Driver.js";
++import type { AbstractDriver } from "./Driver.js";
+ 
+ type StreamingToolUse = ToolUse<unknown> & { _actual_id?: string };
+ 
+@@ -35,12 +35,12 @@ export class DefaultCompletionStream<PromptT = unknown> implements CompletionStr
+         );
+ 
+         const start = Date.now();
+-        let finish_reason: string | undefined = undefined;
++        let finish_reason: string | undefined ;
+         let promptTokens: number = 0;
+-        let resultTokens: number | undefined = undefined;
+-        let promptCachedTokens: number | undefined = undefined;
+-        let promptCacheWriteTokens: number | undefined = undefined;
+-        let promptNewTokens: number | undefined = undefined;
++        let resultTokens: number | undefined ;
++        let promptCachedTokens: number | undefined ;
++        let promptCacheWriteTokens: number | undefined ;
++        let promptNewTokens: number | undefined ;
+ 
+         try {
+             const stream = await this.driver.requestTextCompletionStream(this.prompt, this.options);
+@@ -144,10 +144,10 @@ export class DefaultCompletionStream<PromptT = unknown> implements CompletionStr
+                                         return r.value;
+                                     case 'json':
+                                         return JSON.stringify(r.value);
+-                                    case 'image':
+-                                        // Show truncated image placeholder for streaming
++                                    case 'image': {
+                                         const truncatedValue = typeof r.value === 'string' ? r.value.slice(0, 10) : String(r.value).slice(0, 10);
+                                         return `\n[Image: ${truncatedValue}...]\n`;
++                                    }
+                                     default: {
+                                         const _exhaustive: never = r;
+                                         return String(_exhaustive);
+@@ -285,10 +285,10 @@ export class FallbackCompletionStream<PromptT = unknown> implements CompletionSt
+                         return r.value;
+                     case 'json':
+                         return JSON.stringify(r.value);
+-                    case 'image':
+-                        // Show truncated image placeholder for streaming
++                    case 'image': {
+                         const truncatedValue = typeof r.value === 'string' ? r.value.slice(0, 10) : String(r.value).slice(0, 10);
+                         return `[Image: ${truncatedValue}...]`;
++                    }
+                     default: {
+                         const _exhaustive: never = r;
+                         return String(_exhaustive);
+diff --git a/core/src/Driver.error.test.ts b/core/src/Driver.error.test.ts
+index ff66185e..f6f99049 100644
+--- a/core/src/Driver.error.test.ts
++++ b/core/src/Driver.error.test.ts
+@@ -1,13 +1,13 @@
+ import {
+-    AIModel,
+-    Completion,
+-    CompletionChunkObject,
+-    DriverOptions,
+-    EmbeddingsOptions,
+-    EmbeddingsResult,
+-    ExecutionOptions,
+-    LlumiverseErrorContext,
+-    ModelSearchPayload,
++    type AIModel,
++    type Completion,
++    type CompletionChunkObject,
++    type DriverOptions,
++    type EmbeddingsOptions,
++    type EmbeddingsResult,
++    type ExecutionOptions,
++    type LlumiverseErrorContext,
++    type ModelSearchPayload,
+     LlumiverseError,
+ } from '@llumiverse/common';
+ import { beforeEach, describe, expect, it } from 'vitest';
+@@ -37,6 +37,11 @@ class TestDriver extends AbstractDriver<DriverOptions, string> {
+     async generateEmbeddings(_options: EmbeddingsOptions): Promise<EmbeddingsResult> {
+         throw new Error('Not implemented');
+     }
++
++    // Re-exposed for tests — base class declares this as protected
++    isRetryableError(statusCode: number | undefined, message: string): boolean | undefined {
++        return super.isRetryableError(statusCode, message);
++    }
+ }
+ 
+ describe('AbstractDriver Error Formatting', () => {
+@@ -54,80 +59,80 @@ describe('AbstractDriver Error Formatting', () => {
+     describe('isRetryableError', () => {
+         describe('HTTP status codes', () => {
+             it('should mark 429 as retryable (rate limit)', () => {
+-                expect(driver['isRetryableError'](429, 'Rate limit exceeded')).toBe(true);
++                expect(driver.isRetryableError(429, 'Rate limit exceeded')).toBe(true);
+             });
+ 
+             it('should mark 408 as retryable (timeout)', () => {
+-                expect(driver['isRetryableError'](408, 'Request timeout')).toBe(true);
++                expect(driver.isRetryableError(408, 'Request timeout')).toBe(true);
+             });
+ 
+             it('should mark 529 as retryable (overloaded)', () => {
+-                expect(driver['isRetryableError'](529, 'Service overloaded')).toBe(true);
++                expect(driver.isRetryableError(529, 'Service overloaded')).toBe(true);
+             });
+ 
+             it('should mark 5xx as retryable (server errors)', () => {
+-                expect(driver['isRetryableError'](500, 'Internal server error')).toBe(true);
+-                expect(driver['isRetryableError'](502, 'Bad gateway')).toBe(true);
+-                expect(driver['isRetryableError'](503, 'Service unavailable')).toBe(true);
+-                expect(driver['isRetryableError'](504, 'Gateway timeout')).toBe(true);
++                expect(driver.isRetryableError(500, 'Internal server error')).toBe(true);
++                expect(driver.isRetryableError(502, 'Bad gateway')).toBe(true);
++                expect(driver.isRetryableError(503, 'Service unavailable')).toBe(true);
++                expect(driver.isRetryableError(504, 'Gateway timeout')).toBe(true);
+             });
+ 
+             it('should mark 4xx as not retryable (except 429, 408)', () => {
+-                expect(driver['isRetryableError'](400, 'Bad request')).toBe(false);
+-                expect(driver['isRetryableError'](401, 'Unauthorized')).toBe(false);
+-                expect(driver['isRetryableError'](403, 'Forbidden')).toBe(false);
+-                expect(driver['isRetryableError'](404, 'Not found')).toBe(false);
++                expect(driver.isRetryableError(400, 'Bad request')).toBe(false);
++                expect(driver.isRetryableError(401, 'Unauthorized')).toBe(false);
++                expect(driver.isRetryableError(403, 'Forbidden')).toBe(false);
++                expect(driver.isRetryableError(404, 'Not found')).toBe(false);
+             });
+ 
+             it('should mark 2xx and 3xx as not retryable', () => {
+-                expect(driver['isRetryableError'](200, 'OK')).toBe(false);
+-                expect(driver['isRetryableError'](301, 'Moved permanently')).toBe(false);
++                expect(driver.isRetryableError(200, 'OK')).toBe(false);
++                expect(driver.isRetryableError(301, 'Moved permanently')).toBe(false);
+             });
+         });
+ 
+         describe('message-based detection', () => {
+             it('should detect rate limit in message', () => {
+-                expect(driver['isRetryableError'](undefined, 'Rate limit exceeded')).toBe(true);
+-                expect(driver['isRetryableError'](undefined, 'You have hit the rate limit')).toBe(true);
+-                expect(driver['isRetryableError'](undefined, 'RATE_LIMIT_EXCEEDED')).toBe(true);
++                expect(driver.isRetryableError(undefined, 'Rate limit exceeded')).toBe(true);
++                expect(driver.isRetryableError(undefined, 'You have hit the rate limit')).toBe(true);
++                expect(driver.isRetryableError(undefined, 'RATE_LIMIT_EXCEEDED')).toBe(true);
+             });
+ 
+             it('should detect timeout in message', () => {
+-                expect(driver['isRetryableError'](undefined, 'Request timeout')).toBe(true);
+-                expect(driver['isRetryableError'](undefined, 'Connection timed out')).toBe(true);
+-                expect(driver['isRetryableError'](undefined, 'TIMEOUT_ERROR')).toBe(true);
++                expect(driver.isRetryableError(undefined, 'Request timeout')).toBe(true);
++                expect(driver.isRetryableError(undefined, 'Connection timed out')).toBe(true);
++                expect(driver.isRetryableError(undefined, 'TIMEOUT_ERROR')).toBe(true);
+             });
+ 
+             it('should detect retry in message', () => {
+-                expect(driver['isRetryableError'](undefined, 'Please retry later')).toBe(true);
+-                expect(driver['isRetryableError'](undefined, 'Retry the request')).toBe(true);
++                expect(driver.isRetryableError(undefined, 'Please retry later')).toBe(true);
++                expect(driver.isRetryableError(undefined, 'Retry the request')).toBe(true);
+             });
+ 
+             it('should detect overload in message', () => {
+-                expect(driver['isRetryableError'](undefined, 'Service overloaded')).toBe(true);
+-                expect(driver['isRetryableError'](undefined, 'Server is overload')).toBe(true);
+-                expect(driver['isRetryableError'](undefined, 'System overloaded')).toBe(true);
++                expect(driver.isRetryableError(undefined, 'Service overloaded')).toBe(true);
++                expect(driver.isRetryableError(undefined, 'Server is overload')).toBe(true);
++                expect(driver.isRetryableError(undefined, 'System overloaded')).toBe(true);
+             });
+ 
+             it('should detect resource exhausted in message', () => {
+-                expect(driver['isRetryableError'](undefined, 'Resource exhausted')).toBe(true);
+-                expect(driver['isRetryableError'](undefined, 'Resources exhausted')).toBe(true);
++                expect(driver.isRetryableError(undefined, 'Resource exhausted')).toBe(true);
++                expect(driver.isRetryableError(undefined, 'Resources exhausted')).toBe(true);
+             });
+ 
+             it('should detect throttle in message', () => {
+-                expect(driver['isRetryableError'](undefined, 'Request throttled')).toBe(true);
+-                expect(driver['isRetryableError'](undefined, 'Throttling exception')).toBe(true);
++                expect(driver.isRetryableError(undefined, 'Request throttled')).toBe(true);
++                expect(driver.isRetryableError(undefined, 'Throttling exception')).toBe(true);
+             });
+ 
+             it('should detect status codes in message', () => {
+-                expect(driver['isRetryableError'](undefined, 'Error 429: Too many requests')).toBe(true);
+-                expect(driver['isRetryableError'](undefined, 'HTTP 529 error')).toBe(true);
++                expect(driver.isRetryableError(undefined, 'Error 429: Too many requests')).toBe(true);
++                expect(driver.isRetryableError(undefined, 'HTTP 529 error')).toBe(true);
+             });
+ 
+             it('should mark unknown messages as undefined (let consumer decide)', () => {
+-                expect(driver['isRetryableError'](undefined, 'Invalid API key')).toBeUndefined();
+-                expect(driver['isRetryableError'](undefined, 'Bad request')).toBeUndefined();
+-                expect(driver['isRetryableError'](undefined, 'Model not found')).toBeUndefined();
++                expect(driver.isRetryableError(undefined, 'Invalid API key')).toBeUndefined();
++                expect(driver.isRetryableError(undefined, 'Bad request')).toBeUndefined();
++                expect(driver.isRetryableError(undefined, 'Model not found')).toBeUndefined();
+             });
+         });
+     });
+@@ -136,7 +141,7 @@ describe('AbstractDriver Error Formatting', () => {
+         it('should format error with status code', () => {
+             const originalError = errorWith('Rate limit exceeded', { status: 429 });
+ 
+-            const formatted = driver['formatLlumiverseError'](originalError, mockContext);
++            const formatted = driver.formatLlumiverseError(originalError, mockContext);
+ 
+             expect(formatted).toBeInstanceOf(LlumiverseError);
+             expect(formatted.code).toBe(429);
+@@ -150,7 +155,7 @@ describe('AbstractDriver Error Formatting', () => {
+         it('should extract status from statusCode property', () => {
+             const originalError = errorWith('Server error', { statusCode: 500 });
+ 
+-            const formatted = driver['formatLlumiverseError'](originalError, mockContext);
++            const formatted = driver.formatLlumiverseError(originalError, mockContext);
+ 
+             expect(formatted.code).toBe(500);
+             expect(formatted.retryable).toBe(true);
+@@ -159,7 +164,7 @@ describe('AbstractDriver Error Formatting', () => {
+         it('should extract status from code property', () => {
+             const originalError = errorWith('Timeout', { code: 408 });
+ 
+-            const formatted = driver['formatLlumiverseError'](originalError, mockContext);
++            const formatted = driver.formatLlumiverseError(originalError, mockContext);
+ 
+             expect(formatted.code).toBe(408);
+             expect(formatted.retryable).toBe(true);
+@@ -168,7 +173,7 @@ describe('AbstractDriver Error Formatting', () => {
+         it('should use undefined when no status code found', () => {
+             const originalError = new Error('Generic error');
+ 
+-            const formatted = driver['formatLlumiverseError'](originalError, mockContext);
++            const formatted = driver.formatLlumiverseError(originalError, mockContext);
+ 
+             expect(formatted.code).toBeUndefined();
+             expect(formatted.retryable).toBeUndefined(); // Unknown retryability
+@@ -177,7 +182,7 @@ describe('AbstractDriver Error Formatting', () => {
+         it('should handle non-Error objects', () => {
+             const originalError = 'String error message';
+ 
+-            const formatted = driver['formatLlumiverseError'](originalError, mockContext);
++            const formatted = driver.formatLlumiverseError(originalError, mockContext);
+ 
+             expect(formatted.message).toContain('String error message');
+             expect(formatted.originalError).toBe(originalError);
+@@ -186,7 +191,7 @@ describe('AbstractDriver Error Formatting', () => {
+         it('should preserve provider in message', () => {
+             const error = new Error('Test error');
+ 
+-            const formatted = driver['formatLlumiverseError'](error, mockContext);
++            const formatted = driver.formatLlumiverseError(error, mockContext);
+ 
+             expect(formatted.message).toMatch(/^\[test-provider\]/);
+         });
+@@ -194,17 +199,17 @@ describe('AbstractDriver Error Formatting', () => {
+         it('should determine retryability based on status and message', () => {
+             // Retryable by status
+             const retryableError = errorWith('Error', { status: 429 });
+-            const formatted1 = driver['formatLlumiverseError'](retryableError, mockContext);
++            const formatted1 = driver.formatLlumiverseError(retryableError, mockContext);
+             expect(formatted1.retryable).toBe(true);
+ 
+             // Not retryable by status
+             const nonRetryableError = errorWith('Error', { status: 400 });
+-            const formatted2 = driver['formatLlumiverseError'](nonRetryableError, mockContext);
++            const formatted2 = driver.formatLlumiverseError(nonRetryableError, mockContext);
+             expect(formatted2.retryable).toBe(false);
+ 
+             // Retryable by message
+             const messageRetryable = new Error('Rate limit exceeded');
+-            const formatted3 = driver['formatLlumiverseError'](messageRetryable, mockContext);
++            const formatted3 = driver.formatLlumiverseError(messageRetryable, mockContext);
+             expect(formatted3.retryable).toBe(true);
+         });
+     });
+@@ -235,7 +240,7 @@ describe('AbstractDriver Error Formatting', () => {
+             const customDriver = new CustomDriver({});
+             const customError = { type: 'custom_retryable', message: 'Custom error' };
+ 
+-            const formatted = customDriver['formatLlumiverseError'](customError, mockContext);
++            const formatted = customDriver.formatLlumiverseError(customError, mockContext);
+ 
+             expect(formatted.name).toBe('CUSTOM_ERROR');
+             expect(formatted.code).toBeUndefined();
+@@ -247,7 +252,7 @@ describe('AbstractDriver Error Formatting', () => {
+             const customDriver = new CustomDriver({});
+             const regularError = errorWith('Regular error', { status: 500 });
+ 
+-            const formatted = customDriver['formatLlumiverseError'](regularError, mockContext);
++            const formatted = customDriver.formatLlumiverseError(regularError, mockContext);
+ 
+             expect(formatted.code).toBe(500);
+             expect(formatted.retryable).toBe(true);
+diff --git a/core/src/Driver.ts b/core/src/Driver.ts
+index aa7f7921..92fec734 100644
+--- a/core/src/Driver.ts
++++ b/core/src/Driver.ts
+@@ -5,25 +5,25 @@
+  */
+ 
+ import {
+-    AIModel,
+-    Completion,
+-    CompletionChunkObject,
+-    CompletionStream,
+-    DataSource,
+-    DriverOptions,
+-    EmbeddingsOptions,
+-    EmbeddingsResult,
+-    ExecutionOptions,
+-    ExecutionResponse,
+-    LlumiverseErrorContext,
+-    Logger,
+-    ModelSearchPayload,
+-    PromptOptions,
+-    PromptSegment,
+-    Providers,
+-    TrainingJob,
+-    TrainingOptions,
+-    TrainingPromptOptions,
++    type AIModel,
++    type Completion,
++    type CompletionChunkObject,
++    type CompletionStream,
++    type DataSource,
++    type DriverOptions,
++    type EmbeddingsOptions,
++    type EmbeddingsResult,
++    type ExecutionOptions,
++    type ExecutionResponse,
++    type LlumiverseErrorContext,
++    type Logger,
++    type ModelSearchPayload,
++    type PromptOptions,
++    type PromptSegment,
++    type Providers,
++    type TrainingJob,
++    type TrainingOptions,
++    type TrainingPromptOptions,
+     LlumiverseError
+ } from "@llumiverse/common";
+ import { DefaultCompletionStream, FallbackCompletionStream } from "./CompletionStream.js";
+@@ -169,7 +169,7 @@ export abstract class AbstractDriver<OptionsT extends DriverOptions = DriverOpti
+                 const validationError = error instanceof Error ? error : new Error(String(error));
+                 const rawCode = getObjectProperty(error, 'code');
+                 const code = rawCode === 'json_error' || rawCode === 'validation_error' ? rawCode : undefined;
+-                const errorMessage = `[${this.provider}] [${options.model}] ${code ? '[' + code + '] ' : ''}Result validation error: ${validationError.message}`;
++                const errorMessage = `[${this.provider}] [${options.model}] ${code ? `[${code}] ` : ''}Result validation error: ${validationError.message}`;
+                 this.logger.error({ err: error, data: result.result }, errorMessage);
+                 result.error = {
+                     code: code || 'validation_error',
+diff --git a/core/src/async.ts b/core/src/async.ts
+index 58508008..bbd2f3c4 100644
+--- a/core/src/async.ts
++++ b/core/src/async.ts
+@@ -1,5 +1,5 @@
+ import type { ServerSentEvent } from "@vertesia/api-fetch-client"
+-import { CompletionChunkObject } from "@llumiverse/common";
++import type { CompletionChunkObject } from "@llumiverse/common";
+ 
+ export async function* asyncMap<T, R>(asyncIterable: AsyncIterable<T>, callback: (value: T, index: number) => R) {
+     let i = 0;
+diff --git a/core/src/formatters/commons.ts b/core/src/formatters/commons.ts
+index 9092647d..b535449c 100644
+--- a/core/src/formatters/commons.ts
++++ b/core/src/formatters/commons.ts
+@@ -1,5 +1,5 @@
+-import { JSONSchema } from "@llumiverse/common";
++import type { JSONSchema } from "@llumiverse/common";
+ 
+ export function getJSONSafetyNotice(schema: JSONSchema) {
+-    return "The answer must be a JSON object using the following JSON Schema:\n" + JSON.stringify(schema, undefined, 2);
++    return `The answer must be a JSON object using the following JSON Schema:\n${JSON.stringify(schema, undefined, 2)}`;
+ }
+diff --git a/core/src/formatters/generic.ts b/core/src/formatters/generic.ts
+index 431b2a9c..628ee3bb 100644
+--- a/core/src/formatters/generic.ts
++++ b/core/src/formatters/generic.ts
+@@ -1,5 +1,5 @@
+-import { JSONSchema } from "@llumiverse/common";
+-import { PromptRole, PromptSegment } from "@llumiverse/common";
++import type { JSONSchema } from "@llumiverse/common";
++import { PromptRole, type PromptSegment } from "@llumiverse/common";
+ import { getJSONSafetyNotice } from "./commons.js";
+ 
+ interface Labels {
+diff --git a/core/src/formatters/nova.ts b/core/src/formatters/nova.ts
+index c49eb8ea..bf19c1bf 100644
+--- a/core/src/formatters/nova.ts
++++ b/core/src/formatters/nova.ts
+@@ -1,5 +1,5 @@
+-import { JSONSchema } from "@llumiverse/common";
+-import { PromptRole, PromptSegment } from "@llumiverse/common";
++import type { JSONSchema } from "@llumiverse/common";
++import { PromptRole, type PromptSegment } from "@llumiverse/common";
+ import { readStreamAsBase64 } from "../stream.js";
+ import { getJSONSafetyNotice } from "./commons.js";
+ 
+@@ -102,7 +102,7 @@ export async function formatNovaPrompt(segments: PromptSegment[], schema?: JSONS
+     }
+ 
+     if (schema) {
+-        safety.push("IMPORTANT: " + getJSONSafetyNotice(schema));
++        safety.push(`IMPORTANT: ${getJSONSafetyNotice(schema)}`);
+     }
+ 
+     // messages must contains at least 1 item. If the prompt does not contains a user message (but only system messages)
+@@ -116,7 +116,7 @@ export async function formatNovaPrompt(segments: PromptSegment[], schema?: JSONS
+         messages.push({ content: [{ text: systemMessage }], role: 'user' });
+         systemMessage = safety.join('\n');
+     } else if (safety.length > 0) {
+-        systemMessage = systemMessage + '\n\nIMPORTANT: ' + safety.join('\n');
++        systemMessage = `${systemMessage}\n\nIMPORTANT: ${safety.join('\n')}`;
+     }
+ 
+     /*start Nova's message to make sure it answers properly in JSON
+diff --git a/core/src/json.ts b/core/src/json.ts
+index f86f551b..ec3ac6c4 100644
+--- a/core/src/json.ts
++++ b/core/src/json.ts
+@@ -1,4 +1,4 @@
+-import { JSONValue } from "@llumiverse/common";
++import type { JSONValue } from "@llumiverse/common";
+ import { jsonrepair } from 'jsonrepair';
+ 
+ function extractJsonFromText(text: string): string {
+diff --git a/core/src/resolver.ts b/core/src/resolver.ts
+index 82ece134..eb8b1386 100644
+--- a/core/src/resolver.ts
++++ b/core/src/resolver.ts
+@@ -12,7 +12,7 @@ function _prop(object: unknown, name: string): unknown {
+     }
+     if (Array.isArray(object)) {
+         const index = +name;
+-        if (isNaN(index)) {
++        if (Number.isNaN(index)) {
+             // map array to property
+             return object.map(item => item && typeof item === 'object' ? (item as Record<string, unknown>)[name] : undefined);
+         } else {
+diff --git a/core/src/validation.ts b/core/src/validation.ts
+index 41914f1b..0c24b141 100644
+--- a/core/src/validation.ts
++++ b/core/src/validation.ts
+@@ -1,4 +1,4 @@
+-import { CompletionResult, JSONValue, ResultValidationError } from "@llumiverse/common";
++import type { CompletionResult, JSONValue, ResultValidationError } from "@llumiverse/common";
+ import { Ajv } from 'ajv';
+ import addFormats from 'ajv-formats';
+ import { extractAndParseJSON } from "./json.js";
+@@ -13,9 +13,9 @@ const ajv = new Ajv({
+     removeAdditional: "failing"
+ });
+ 
+-//use ts ignore to avoid error with ESM and ajv-formats
+-// @ts-ignore This expression is not callable
+-addFormats(ajv)
++// biome-ignore lint/suspicious/noTsIgnore: ajv-formats default export inconsistently callable under ESM/CJS interop
++// @ts-ignore - ajv-formats default export is not callable under one of the TS configs in this monorepo
++addFormats(ajv);
+ 
+ function errorMessage(error: unknown): string {
+     return error instanceof Error ? error.message : String(error);
+@@ -94,7 +94,6 @@ export function validateResult(data: CompletionResult[], schema: object): Comple
+                 && typeof schemaFieldFormat === 'string'
+                 && ["date", "date-time"].includes(schemaFieldFormat)
+                 && !getRequiredFields(schemaField).includes(path[path.length - 1])) {
+-                continue;
+             } else {
+                 errors.push(e);
+             }
+diff --git a/core/test/conversation-strip.test.ts b/core/test/conversation-strip.test.ts
+index 60942bac..70ff8b6f 100644
+--- a/core/test/conversation-strip.test.ts
++++ b/core/test/conversation-strip.test.ts
+@@ -10,7 +10,7 @@ import {
+     deserializeBinaryFromStorage
+ } from "../src/conversation-utils";
+ 
+-import { Tree } from "./__helpers__/test-utils";
++import type { Tree } from "./__helpers__/test-utils";
+ 
+ const IMAGE_PLACEHOLDER = '[Image removed from conversation history]';
+ const DOCUMENT_PLACEHOLDER = '[Document removed from conversation history]';
+@@ -729,7 +729,7 @@ describe('truncateLargeTextInConversation', () => {
+     });
+ 
+     test('should preserve OpenAI base64 image blocks', () => {
+-        const largeBase64 = 'data:image/png;base64,' + 'c'.repeat(200000);
++        const largeBase64 = `data:image/png;base64,${'c'.repeat(200000)}`;
+         const input = {
+             messages: [{
+                 content: [{
+diff --git a/core/test/utils.test.ts b/core/test/utils.test.ts
+index a8b2f978..d9ad3b49 100644
+--- a/core/test/utils.test.ts
++++ b/core/test/utils.test.ts
+@@ -1,7 +1,7 @@
+-import fs, { readFileSync } from 'fs';
++import fs, { readFileSync } from 'node:fs';
+ import { describe, expect, test } from "vitest";
+ import { extractAndParseJSON, parseJSON } from "../src/json";
+-import { JSONArray, JSONObject, JsonResult } from '@llumiverse/common';
++import type { JSONArray, JSONObject, JsonResult } from '@llumiverse/common';
+ import { validateResult, ValidationError } from '../src/validation';
+ import { readDataFile } from './utils';
+ 
+@@ -14,6 +14,7 @@ describe('Core Utilities', () => {
+     test('parseJSON', () => {
+         const url = new URL("./json.txt", import.meta.url);
+         const text = readFileSync(url, "utf8");
++        // biome-ignore lint/style/noNonNullAssertion: intentional non-null assertion; TS can't prove narrowing here
+         const json = parseJSON(text)!;
+         expect((json as JSONObject).key1).toBe("value1 \" test");
+         expect((json as JSONObject).key2).toBe("value2");
+diff --git a/core/test/utils.ts b/core/test/utils.ts
+index ad42cfb7..4f6cbde2 100644
+--- a/core/test/utils.ts
++++ b/core/test/utils.ts
+@@ -1,5 +1,5 @@
+-import { dirname, join } from 'path';
+-import { readFileSync } from 'fs';
++import { dirname, join } from 'node:path';
++import { readFileSync } from 'node:fs';
+ 
+ 
+ const dataDir = join(dirname(new URL(import.meta.url).pathname), 'data');
+diff --git a/drivers/package.json b/drivers/package.json
+index f1ea576f..b9a87658 100644
+--- a/drivers/package.json
++++ b/drivers/package.json
+@@ -15,7 +15,7 @@
+     },
+     "scripts": {
+         "lint": "biome lint src",
+-        "test": "vitest run --retry 3",
++        "test": "vitest run --retry 3 --passWithNoTests",
+         "typecheck:test": "tsc -p tsconfig.test.json --noEmit",
+         "build": "pnpm exec tsmod build",
+         "clean": "rimraf ./lib tsconfig.tsbuildinfo"
+diff --git a/drivers/src/adobe/firefly.ts b/drivers/src/adobe/firefly.ts
+index 36f9aaef..b27c55cb 100644
+--- a/drivers/src/adobe/firefly.ts
++++ b/drivers/src/adobe/firefly.ts
+@@ -1,4 +1,4 @@
+-import { AbstractDriver, AIModel, Completion, CompletionChunkObject, DriverOptions, EmbeddingsOptions, EmbeddingsResult, ExecutionOptions, ModelSearchPayload, PromptSegment } from "@llumiverse/core";
++import { AbstractDriver, type AIModel, type Completion, type CompletionChunkObject, type DriverOptions, type EmbeddingsOptions, type EmbeddingsResult, type ExecutionOptions, type ModelSearchPayload, type PromptSegment } from "@llumiverse/core";
+ 
+ interface FireflyImageSource {
+     url?: string;
+diff --git a/drivers/src/azure/azure_foundry.ts b/drivers/src/azure/azure_foundry.ts
+index f812369d..f5d392c9 100644
+--- a/drivers/src/azure/azure_foundry.ts
++++ b/drivers/src/azure/azure_foundry.ts
+@@ -93,16 +93,16 @@ export class AzureFoundryDriver extends AbstractDriver<AzureFoundryDriverOptions
+     async isOpenAIDeployment(model: string): Promise<boolean> {
+         const { deploymentName } = parseAzureFoundryModelId(model);
+ 
+-        let deployment = undefined;
++        let deployment: ModelDeployment | undefined;
+         // First, verify the deployment exists
+         try {
+-            deployment = await this.service.deployments.get(deploymentName);
++            deployment = await this.service.deployments.get(deploymentName) as ModelDeployment;
+             this.logger.debug(`[Azure Foundry] Deployment ${deploymentName} found`);
+         } catch (deploymentError) {
+             this.logger.error({ deploymentError }, `[Azure Foundry] Deployment ${deploymentName} not found:`);
+         }
+ 
+-        return (deployment as ModelDeployment).modelPublisher === "OpenAI";
++        return deployment?.modelPublisher === "OpenAI";
+     }
+ 
+     protected canStream(_options: ExecutionOptions): Promise<boolean> {
+@@ -226,7 +226,6 @@ export class AzureFoundryDriver extends AbstractDriver<AzureFoundryDriverOptions
+                     yield chunk;
+                 } catch (parseError) {
+                     this.logger.warn({ parseError }, `[Azure Foundry] Failed to parse streaming response:`);
+-                    continue;
+                 }
+             }
+         } catch (error) {
+diff --git a/drivers/src/bedrock/converse.ts b/drivers/src/bedrock/converse.ts
+index 2b1d7613..001e6f90 100644
+--- a/drivers/src/bedrock/converse.ts
++++ b/drivers/src/bedrock/converse.ts
+@@ -114,7 +114,7 @@ async function processFile<T extends FileProcessingMode>(
+     const source = await f.getStream();
+ 
+     //Image file - "png" | "jpeg" | "gif" | "webp"
+-    if (f.mime_type && f.mime_type.startsWith("image")) {
++    if (f.mime_type?.startsWith("image")) {
+         const imageBlock = {
+             image: {
+                 format: mimeToImageType(f.mime_type),
+@@ -129,7 +129,7 @@ async function processFile<T extends FileProcessingMode>(
+     //Document file - "pdf | csv | doc | docx | xls | xlsx | html | txt | md"
+     else if (f.mime_type && (f.mime_type.startsWith("text") || f.mime_type?.startsWith("application"))) {
+         // Handle JSON files specially
+-        if (f.mime_type === "application/json" || (f.name && f.name.endsWith('.json'))) {
++        if (f.mime_type === "application/json" || (f.name?.endsWith('.json'))) {
+             const jsonContent = await readStreamAsString(source);
+             try {
+                 const parsedJson = JSON.parse(jsonContent);
+@@ -160,7 +160,7 @@ async function processFile<T extends FileProcessingMode>(
+         }
+     }
+     //Video file - "mov | mkv | mp4 | webm | flv | mpeg | mpg | wmv | three_gp"
+-    else if (f.mime_type && f.mime_type.startsWith("video")) {
++    else if (f.mime_type?.startsWith("video")) {
+         let url_string = (await f.getURL()).toLowerCase();
+         let url_format = new URL(url_string);
+         if (url_format.hostname.endsWith("amazonaws.com") &&
+@@ -345,11 +345,11 @@ export async function formatConversePrompt(segments: PromptSegment[], options: E
+     if (options.result_schema) {
+         let schemaText: string;
+         if (options.tools && options.tools.length > 0) {
+-            schemaText = "When not calling tools, the answer must be a JSON object using the following JSON Schema:\n" + JSON.stringify(options.result_schema, undefined, 2);
++            schemaText = `When not calling tools, the answer must be a JSON object using the following JSON Schema:\n${JSON.stringify(options.result_schema, undefined, 2)}`;
+         } else {
+-            schemaText = "The answer must be a JSON object using the following JSON Schema:\n" + JSON.stringify(options.result_schema, undefined, 2);
++            schemaText = `The answer must be a JSON object using the following JSON Schema:\n${JSON.stringify(options.result_schema, undefined, 2)}`;
+         }
+-        system.push({ text: "IMPORTANT: " + schemaText });
++        system.push({ text: `IMPORTANT: ${schemaText}` });
+     }
+ 
+     // Safety messages are user messages that should be included at the end.
+diff --git a/drivers/src/bedrock/embeddings.test.ts b/drivers/src/bedrock/embeddings.test.ts
+index 15fa4c19..9cb33135 100644
+--- a/drivers/src/bedrock/embeddings.test.ts
++++ b/drivers/src/bedrock/embeddings.test.ts
+@@ -407,7 +407,7 @@ function makeLiveDriver() {
+ function assertVector(values: number[]) {
+     expect(Array.isArray(values)).toBe(true);
+     expect(values.length).toBeGreaterThan(0);
+-    expect(values.every((v) => typeof v === "number" && isFinite(v))).toBe(true);
++    expect(values.every((v) => typeof v === "number" && Number.isFinite(v))).toBe(true);
+ }
+ 
+ describe.skipIf(!USE_REAL_API)("generateBedrockEmbeddings — live API", () => {
+diff --git a/drivers/src/bedrock/embeddings.ts b/drivers/src/bedrock/embeddings.ts
+index 4deb67b4..3da0ad48 100644
+--- a/drivers/src/bedrock/embeddings.ts
++++ b/drivers/src/bedrock/embeddings.ts
+@@ -318,7 +318,7 @@ async function generateCohereEmbeddings(
+     for (const entry of textInputs) {
+         const key = cohereInputType(entry.input.task_type ?? options.task_type);
+         if (!textGroups.has(key)) textGroups.set(key, []);
+-        textGroups.get(key)!.push(entry);
++        textGroups.get(key)?.push(entry);
+     }
+     for (const [groupInputType, group] of textGroups) {
+         const body: CohereEmbeddingRequest = {
+diff --git a/drivers/src/bedrock/index.ts b/drivers/src/bedrock/index.ts
+index 5246a45d..5c3a793d 100644
+--- a/drivers/src/bedrock/index.ts
++++ b/drivers/src/bedrock/index.ts
+@@ -528,7 +528,7 @@ export class BedrockDriver extends AbstractDriver<BedrockDriverOptions, BedrockP
+             }
+         }
+         if (error) {
+-            console.warn("Error on canStream check for model: " + model + " region detected: " + region, error);
++            console.warn(`Error on canStream check for model: ${model} region detected: ${region}`, error);
+         }
+         return canStream;
+     }
+@@ -681,7 +681,7 @@ export class BedrockDriver extends AbstractDriver<BedrockDriverOptions, BedrockP
+         // Increment turn counter for deferred stripping
+         conversation = incrementConversationTurn(conversation) as ConverseRequest;
+ 
+-        let tool_use: ToolUse<unknown>[] | undefined = undefined;
++        let tool_use: ToolUse<unknown>[] | undefined ;
+         //Get tool requests, we check tool use regardless of finish reason, as you can hit length and still get a valid response.
+         tool_use = res.output?.message?.content?.reduce((tools: ToolUse<unknown>[], c) => {
+             if (c.toolUse) {
+@@ -1105,7 +1105,7 @@ export class BedrockDriver extends AbstractDriver<BedrockDriverOptions, BedrockP
+         const executor = this.getExecutor();
+         const taskType = model_options.taskType ?? NovaImageGenerationTaskType.TEXT_IMAGE;
+ 
+-        this.logger.info("Task type: " + taskType);
++        this.logger.info(`Task type: ${taskType}`);
+ 
+         if (typeof prompt === "string") {
+             throw new Error("Bad prompt format");
+@@ -1154,11 +1154,11 @@ export class BedrockDriver extends AbstractDriver<BedrockDriverOptions, BedrockP
+ 
+         const service = this.getService();
+         const response = await service.send(new CreateModelCustomizationJobCommand({
+-            jobName: options.name + "-job",
++            jobName: `${options.name}-job`,
+             customModelName: options.name,
+             roleArn: this.options.training_role_arn || undefined,
+             baseModelIdentifier: options.model,
+-            clientRequestToken: "llumiverse-" + Date.now(),
++            clientRequestToken: `llumiverse-${Date.now()}`,
+             trainingDataConfig: {
+                 s3Uri: `s3://${upload.Bucket}/${upload.Key}`,
+             },
+@@ -1172,6 +1172,7 @@ export class BedrockDriver extends AbstractDriver<BedrockDriverOptions, BedrockP
+             jobIdentifier: response.jobArn
+         }));
+ 
++        // biome-ignore lint/style/noNonNullAssertion: intentional non-null assertion; TS can't prove narrowing here
+         return jobInfo(job, response.jobArn!);
+     }
+ 
+@@ -1476,7 +1477,7 @@ export function convertToolBlocksToText(messages: Message[]): Message[] {
+             const toolResult = (block as ContentBlock.ToolResultMember).toolResult;
+             if (toolUse) {
+                 const inputStr = toolUse.input ? JSON.stringify(toolUse.input) : '';
+-                const truncatedInput = inputStr.length > 500 ? inputStr.substring(0, 500) + '...' : inputStr;
++                const truncatedInput = inputStr.length > 500 ? `${inputStr.substring(0, 500)}...` : inputStr;
+                 newContent.push({
+                     text: `[Tool call: ${toolUse.name}(${truncatedInput})]`,
+                 } as ContentBlock.TextMember);
+@@ -1486,7 +1487,7 @@ export function convertToolBlocksToText(messages: Message[]): Message[] {
+                     for (const c of toolResult.content) {
+                         if ('text' in c && typeof c.text === 'string') {
+                             const text = c.text;
+-                            resultTexts.push(text.length > 500 ? text.substring(0, 500) + '...' : text);
++                            resultTexts.push(text.length > 500 ? `${text.substring(0, 500)}...` : text);
+                         }
+                     }
+                 }
+diff --git a/drivers/src/bedrock/nova-image-payload.ts b/drivers/src/bedrock/nova-image-payload.ts
+index 60899811..ee3c7f3e 100644
+--- a/drivers/src/bedrock/nova-image-payload.ts
++++ b/drivers/src/bedrock/nova-image-payload.ts
+@@ -10,23 +10,20 @@ function getFirstImageFromPrompt(prompt: NovaMessage[]) {
+     return msgImage.content.find(c => c.image)?.image;
+ }
+ 
+-function getAllImagesFromPrompt(prompt: NovaMessage[]) {
+-    const contentMsg = prompt.filter(m => m.content).map(m => m.content).flat();
+-    const imgParts = contentMsg.filter(c => c.image);
+-    if (!imgParts?.length) {
+-        return undefined;
+-    }
+-
+-    const images = imgParts.map(i => i.image).filter(i => i?.source?.bytes).map(i => i!.source.bytes);
+-    return images;
++function getAllImagesFromPrompt(prompt: NovaMessage[]): string[] | undefined {
++    const contentMsg = prompt.filter(m => m.content).flatMap(m => m.content);
++    const images = contentMsg
++        .map(c => c.image?.source?.bytes)
++        .filter((b): b is string => b !== undefined);
++    return images.length > 0 ? images : undefined;
+ }
+ 
+ async function textToImagePayload(prompt: NovaMessagesPrompt, options: ExecutionOptions): Promise<NovaTextToImagePayload> {
+     const modelOptions = options.model_options as NovaCanvasOptions;
+ 
+-    const textMessages = prompt.messages.map(m => m.content.map(c => c.text)).flat();
++    const textMessages = prompt.messages.flatMap(m => m.content.map(c => c.text));
+     let text = textMessages.join("\n\n");
+-    text += prompt.system ? "\n\n\nIMPORTANT: " + prompt.system?.map(m => m.text).join("\n\n") : '';
++    text += prompt.system ? `\n\n\nIMPORTANT: ${prompt.system?.map(m => m.text).join("\n\n")}` : '';
+ 
+     const conditionImage = (conditionImage: boolean) => {
+         const img = getFirstImageFromPrompt(prompt.messages);
+@@ -48,7 +45,7 @@ async function textToImagePayload(prompt: NovaMessagesPrompt, options: Execution
+         },
+         textToImageParams: {
+             text: text,
+-            conditionImage: conditionImage(modelOptions?.controlMode ? true : false)?.source.bytes,
++            conditionImage: conditionImage(!!modelOptions?.controlMode)?.source.bytes,
+             controlMode: modelOptions?.controlMode,
+             controlStrength: modelOptions?.controlStrength,
+             negativeText: prompt.negative
+@@ -88,9 +85,9 @@ async function imageVariationPayload(prompt: NovaMessagesPrompt, options: Execut
+ async function colorGuidedGenerationPayload(prompt: NovaMessagesPrompt, options: ExecutionOptions): Promise<NovaColorGuidedGenerationPayload> {
+     const modelOptions = options.model_options as NovaCanvasOptions;
+ 
+-    const textMessages = prompt.messages.map(m => m.content.map(c => c.text)).flat();
++    const textMessages = prompt.messages.flatMap(m => m.content.map(c => c.text));
+     let text = textMessages.join("\n\n");
+-    text += prompt.system ? "\n\n\nIMPORTANT: " + prompt.system?.map(m => m.text).join("\n\n") : '';
++    text += prompt.system ? `\n\n\nIMPORTANT: ${prompt.system?.map(m => m.text).join("\n\n")}` : '';
+ 
+     const conditionImage = (conditionImage: boolean) => {
+         const img = getFirstImageFromPrompt(prompt.messages);
+@@ -113,7 +110,7 @@ async function colorGuidedGenerationPayload(prompt: NovaMessagesPrompt, options:
+         colorGuidedGenerationParams: {
+             colors: modelOptions.colors ?? [],
+             text: text,
+-            referenceImage: conditionImage(modelOptions?.controlMode ? true : false)?.source.bytes,
++            referenceImage: conditionImage(!!modelOptions?.controlMode)?.source.bytes,
+             negativeText: prompt.negative
+         }
+     }
+@@ -162,7 +159,7 @@ async function inpaintingPayload(prompt: NovaMessagesPrompt, options: ExecutionO
+         inPaintingParams: {
+             image: sourceImage,
+             maskImage: maskImage,
+-            text: prompt.messages.map(m => m.content.map(c => c.text)).flat().join("\n\n"),
++            text: prompt.messages.flatMap(m => m.content.map(c => c.text)).join("\n\n"),
+             negativeText: prompt.negative
+         }
+     }
+@@ -193,7 +190,7 @@ async function outpaintingPayload(prompt: NovaMessagesPrompt, options: Execution
+         outPaintingParams: {
+             image: sourceImage,
+             maskImage: maskImage,
+-            text: prompt.messages.map(m => m.content.map(c => c.text)).flat().join("\n\n"),
++            text: prompt.messages.flatMap(m => m.content.map(c => c.text)).join("\n\n"),
+             negativeText: prompt.negative,
+             outPaintingMode: modelOptions?.outPaintingMode ?? "DEFAULT"
+         }
+diff --git a/drivers/src/bedrock/s3.ts b/drivers/src/bedrock/s3.ts
+index 3fd324ae..e05c71f8 100644
+--- a/drivers/src/bedrock/s3.ts
++++ b/drivers/src/bedrock/s3.ts
+@@ -85,7 +85,7 @@ export function parseS3UrlToUri(s3Url: URL) {
+                 bucketName = url.pathname.split('/')[1];
+                 // Adjust the pathname to remove the bucket name
+                 const pathParts = url.pathname.split('/').slice(2);
+-                url.pathname = '/' + pathParts.join('/');
++                url.pathname = `/${pathParts.join('/')}`;
+             } else {
+                 throw new Error('Unable to determine bucket name from URL');
+             }
+diff --git a/drivers/src/bedrock/streaming-tool-use.test.ts b/drivers/src/bedrock/streaming-tool-use.test.ts
+index ecb0fb0c..6dede6cb 100644
+--- a/drivers/src/bedrock/streaming-tool-use.test.ts
++++ b/drivers/src/bedrock/streaming-tool-use.test.ts
+@@ -12,7 +12,7 @@ import {
+ } from '@llumiverse/common';
+ import { AbstractDriver } from '@llumiverse/core';
+ import { beforeEach, describe, expect, it } from 'vitest';
+-import { BedrockDriver, BedrockPrompt } from './index.js';
++import { BedrockDriver, type BedrockPrompt } from './index.js';
+ import type { Tree } from '../../test/__helpers__/test-utils.js';
+ 
+ // ---------------------------------------------------------------------------
+@@ -29,7 +29,7 @@ describe('BedrockDriver getExtractedStream — tool use', () => {
+     });
+ 
+     it('emits an initial tool_use chunk on contentBlockStart', () => {
+-        const chunk = driver['getExtractedStream'](
++        const chunk = driver.getExtractedStream(
+             {
+                 contentBlockStart: {
+                     contentBlockIndex: 1,
+@@ -42,14 +42,14 @@ describe('BedrockDriver getExtractedStream — tool use', () => {
+         );
+ 
+         expect(chunk.tool_use).toHaveLength(1);
+-        expect(chunk.tool_use![0]).toMatchObject({ id: 'tool-abc', tool_name: 'my_tool', tool_input: '' });
++        expect(chunk.tool_use?.[0]).toMatchObject({ id: 'tool-abc', tool_name: 'my_tool', tool_input: '' });
+         expect(toolBlocks.get(1)).toEqual({ id: 'tool-abc', name: 'my_tool' });
+     });
+ 
+     it('emits a delta tool_use chunk on contentBlockDelta', () => {
+         toolBlocks.set(1, { id: 'tool-abc', name: 'my_tool' });
+ 
+-        const chunk = driver['getExtractedStream'](
++        const chunk = driver.getExtractedStream(
+             {
+                 contentBlockDelta: {
+                     contentBlockIndex: 1,
+@@ -62,13 +62,13 @@ describe('BedrockDriver getExtractedStream — tool use', () => {
+         );
+ 
+         expect(chunk.tool_use).toHaveLength(1);
+-        expect(chunk.tool_use![0]).toMatchObject({ id: 'tool-abc', tool_name: '', tool_input: '{"key":' });
++        expect(chunk.tool_use?.[0]).toMatchObject({ id: 'tool-abc', tool_name: '', tool_input: '{"key":' });
+     });
+ 
+     it('removes the block from the map on contentBlockStop', () => {
+         toolBlocks.set(1, { id: 'tool-abc', name: 'my_tool' });
+ 
+-        driver['getExtractedStream'](
++        driver.getExtractedStream(
+             { contentBlockStop: { contentBlockIndex: 1 } },
+             undefined,
+             undefined,
+@@ -79,11 +79,11 @@ describe('BedrockDriver getExtractedStream — tool use', () => {
+     });
+ 
+     it('tracks two interleaved tool calls by independent contentBlockIndex', () => {
+-        driver['getExtractedStream'](
++        driver.getExtractedStream(
+             { contentBlockStart: { contentBlockIndex: 1, start: { toolUse: { toolUseId: 'id-1', name: 'tool_a' } } } },
+             undefined, undefined, toolBlocks
+         );
+-        driver['getExtractedStream'](
++        driver.getExtractedStream(
+             { contentBlockStart: { contentBlockIndex: 3, start: { toolUse: { toolUseId: 'id-2', name: 'tool_b' } } } },
+             undefined, undefined, toolBlocks
+         );
+@@ -91,15 +91,15 @@ describe('BedrockDriver getExtractedStream — tool use', () => {
+         expect(toolBlocks.get(1)).toEqual({ id: 'id-1', name: 'tool_a' });
+         expect(toolBlocks.get(3)).toEqual({ id: 'id-2', name: 'tool_b' });
+ 
+-        const chunk = driver['getExtractedStream'](
++        const chunk = driver.getExtractedStream(
+             { contentBlockDelta: { contentBlockIndex: 3, delta: { toolUse: { input: '"val"' } } } },
+             undefined, undefined, toolBlocks
+         );
+-        expect(chunk.tool_use![0].id).toBe('id-2');
++        expect(chunk.tool_use?.[0].id).toBe('id-2');
+     });
+ 
+     it('still extracts text deltas when no tool use is present', () => {
+-        const chunk = driver['getExtractedStream'](
++        const chunk = driver.getExtractedStream(
+             { contentBlockDelta: { contentBlockIndex: 0, delta: { text: 'hello' } } },
+             undefined,
+             undefined,
+@@ -111,7 +111,7 @@ describe('BedrockDriver getExtractedStream — tool use', () => {
+     });
+ 
+     it('emits finish_reason "tool_use" from messageStop', () => {
+-        const chunk = driver['getExtractedStream'](
++        const chunk = driver.getExtractedStream(
+             { messageStop: { stopReason: 'tool_use' } },
+             undefined,
+             undefined,
+@@ -164,9 +164,9 @@ describe('driver.stream() — Bedrock tool use accumulation', () => {
+         const stream = await driver.stream(FAKE_SEGMENTS, options);
+         for await (const _ of stream) { /* drain */ }
+ 
+-        expect(stream.completion!.finish_reason).toBe('tool_use');
+-        expect(stream.completion!.tool_use).toHaveLength(1);
+-        expect(stream.completion!.tool_use![0]).toMatchObject({
++        expect(stream.completion?.finish_reason).toBe('tool_use');
++        expect(stream.completion?.tool_use).toHaveLength(1);
++        expect(stream.completion?.tool_use?.[0]).toMatchObject({
+             id: 'tool-1',
+             tool_name: 'do_thing',
+             tool_input: { param: 'hello' },
+@@ -188,10 +188,10 @@ describe('driver.stream() — Bedrock tool use accumulation', () => {
+         const stream = await driver.stream(FAKE_SEGMENTS, options);
+         for await (const _ of stream) { /* drain */ }
+ 
+-        const toolUse = stream.completion!.tool_use!;
++        const toolUse = stream.completion?.tool_use ?? [];
+         expect(toolUse).toHaveLength(2);
+-        expect(toolUse.find(t => t.id === 'id-a')!.tool_input).toEqual({ x: 1 });
+-        expect(toolUse.find(t => t.id === 'id-b')!.tool_input).toEqual({ y: 2 });
++        expect(toolUse.find(t => t.id === 'id-a')?.tool_input).toEqual({ x: 1 });
++        expect(toolUse.find(t => t.id === 'id-b')?.tool_input).toEqual({ y: 2 });
+     });
+ 
+     it('drops truncated tool calls when finish_reason is length', async () => {
+@@ -207,7 +207,7 @@ describe('driver.stream() — Bedrock tool use accumulation', () => {
+         const stream = await driver.stream(FAKE_SEGMENTS, options);
+         for await (const _ of stream) { /* drain */ }
+ 
+-        expect(stream.completion!.tool_use).toBeUndefined();
++        expect(stream.completion?.tool_use).toBeUndefined();
+     });
+ });
+ 
+diff --git a/drivers/src/bedrock/twelvelabs.ts b/drivers/src/bedrock/twelvelabs.ts
+index b6d3895f..41258a8b 100644
+--- a/drivers/src/bedrock/twelvelabs.ts
++++ b/drivers/src/bedrock/twelvelabs.ts
+@@ -65,12 +65,12 @@ export async function formatTwelvelabsPegasusPrompt(
+     for (const segment of segments) {
+         if (segment.role === PromptRole.system || segment.role === PromptRole.user) {
+             if (segment.content) {
+-                inputPrompt += segment.content + "\n";
++                inputPrompt += `${segment.content}\n`;
+             }
+ 
+             // Look for video files
+             for (const file of segment.files ?? []) {
+-                if (file.mime_type && file.mime_type.startsWith("video/")) {
++                if (file.mime_type?.startsWith("video/")) {
+                     videoFile = file;
+                     break; // Use the first video file found
+                 }
+diff --git a/drivers/src/groq/index.ts b/drivers/src/groq/index.ts
+index 149ab6df..e3b5f067 100644
+--- a/drivers/src/groq/index.ts
++++ b/drivers/src/groq/index.ts
+@@ -251,7 +251,7 @@ export class GroqDriver extends AbstractDriver<GroqDriverOptions, ChatCompletion
+         throw new Error("Method not implemented.");
+     }
+ 
+-    async generateEmbeddings({ }: EmbeddingsOptions): Promise<EmbeddingsResult> {
++    async generateEmbeddings(_options: EmbeddingsOptions): Promise<EmbeddingsResult> {
+         throw new Error("Method not implemented.");
+     }
+ 
+@@ -381,7 +381,6 @@ function convertResponseItemsToGroqMessages(items: ResponseInputItem[]): ChatCom
+                     }
+                 }]
+             });
+-            continue;
+         }
+     }
+ 
+diff --git a/drivers/src/huggingface_ie.ts b/drivers/src/huggingface_ie.ts
+index d2f1c87b..0466bb88 100644
+--- a/drivers/src/huggingface_ie.ts
++++ b/drivers/src/huggingface_ie.ts
+@@ -1,16 +1,16 @@
+ import {
+     InferenceClient,
+-    TextGenerationStreamOutput,
++    type TextGenerationStreamOutput,
+ } from "@huggingface/inference";
+ import {
+     AbstractDriver,
+-    AIModel,
++    type AIModel,
+     AIModelStatus,
+-    CompletionChunkObject,
+-    DriverOptions,
+-    EmbeddingsResult,
+-    ExecutionOptions,
+-    TextFallbackOptions,
++    type CompletionChunkObject,
++    type DriverOptions,
++    type EmbeddingsResult,
++    type ExecutionOptions,
++    type TextFallbackOptions,
+ } from "@llumiverse/core";
+ import { transformAsyncIterator } from "@llumiverse/core/async";
+ import { FetchClient } from "@vertesia/api-fetch-client";
+@@ -34,7 +34,7 @@ export class HuggingFaceIEDriver extends AbstractDriver<HuggingFaceIEDriverOptio
+             throw new Error(`Endpoint URL is required for ${this.provider}`);
+         }
+         this.service = new FetchClient(this.options.endpoint_url);
+-        this.service.headers["Authorization"] = `Bearer ${this.options.apiKey}`;
++        this.service.headers.Authorization = `Bearer ${this.options.apiKey}`;
+     }
+ 
+     async getModelURLEndpoint(
+@@ -134,7 +134,7 @@ export class HuggingFaceIEDriver extends AbstractDriver<HuggingFaceIEDriverOptio
+     async listModels(): Promise<AIModel[]> {
+         const res = await this.service.get("/") as { items: HuggingFaceIEModel[] };
+         const hfModels = res.items;
+-        if (!hfModels || !hfModels.length) return [];
++        if (!hfModels?.length) return [];
+ 
+         const models: AIModel[] = hfModels.map((model: HuggingFaceIEModel) => ({
+             id: model.name,
+@@ -199,7 +199,7 @@ interface HuggingFaceIEModel {
+     model: {
+         framework: string;
+         image: {
+-            huggingface: {};
++            huggingface: Record<string, never>;
+         };
+         repository: string;
+         revision: string;
+diff --git a/drivers/src/mistral/index.ts b/drivers/src/mistral/index.ts
+index ad4ff1e6..9576e6fa 100644
+--- a/drivers/src/mistral/index.ts
++++ b/drivers/src/mistral/index.ts
+@@ -56,7 +56,7 @@ export class MistralAIDriver extends AbstractDriver<MistralAIDriverOptions, Open
+         if (opts.result_schema) {
+             messages.push({
+                 role: "user",
+-                content: "IMPORTANT: " + getJSONSafetyNotice(opts.result_schema)
++                content: `IMPORTANT: ${getJSONSafetyNotice(opts.result_schema)}`
+             });
+         }
+         return messages;
+diff --git a/drivers/src/openai/azure_openai.ts b/drivers/src/openai/azure_openai.ts
+index 52c5655e..53436c0d 100644
+--- a/drivers/src/openai/azure_openai.ts
++++ b/drivers/src/openai/azure_openai.ts
+@@ -1,6 +1,7 @@
+ import { DefaultAzureCredential, getBearerTokenProvider } from "@azure/identity";
+-import { AIModel, DriverOptions, getModelCapabilities, modelModalitiesToArray, Providers } from "@llumiverse/core";
+-import OpenAI, { AzureOpenAI } from "openai";
++import { type AIModel, type DriverOptions, getModelCapabilities, modelModalitiesToArray, Providers } from "@llumiverse/core";
++import type OpenAI from "openai";
++import { AzureOpenAI } from "openai";
+ import { BaseOpenAIDriver } from "./index.js";
+ 
+ export interface AzureOpenAIDriverOptions extends DriverOptions {
+diff --git a/drivers/src/openai/index.ts b/drivers/src/openai/index.ts
+index d6654c5a..423a877c 100644
+--- a/drivers/src/openai/index.ts
++++ b/drivers/src/openai/index.ts
+@@ -180,7 +180,7 @@ export abstract class BaseOpenAIDriver extends AbstractDriver<
+         const model_options = options.model_options as OpenAIRequestOptions | undefined;
+         insert_image_detail(prompt, model_options?.image_detail ?? "auto");
+ 
+-        let parsedSchema: JSONSchema | undefined = undefined;
++        let parsedSchema: JSONSchema | undefined ;
+         let strictMode = false;
+         if (options.result_schema && supportsSchema(options.model)) {
+             try {
+@@ -243,7 +243,7 @@ export abstract class BaseOpenAIDriver extends AbstractDriver<
+             conversation = convertOpenAIFunctionItemsToText(conversation);
+         }
+ 
+-        let parsedSchema: JSONSchema | undefined = undefined;
++        let parsedSchema: JSONSchema | undefined ;
+         let strictMode = false;
+         if (options.result_schema && supportsSchema(options.model)) {
+             try {
+@@ -392,7 +392,7 @@ export abstract class BaseOpenAIDriver extends AbstractDriver<
+             return super.createTrainingPrompt(options);
+         } else {
+             // babbage, davinci not yet implemented
+-            throw new Error("Unsupported model for training: " + options.model);
++            throw new Error(`Unsupported model for training: ${options.model}`);
+         }
+     }
+ 
+@@ -555,12 +555,12 @@ export abstract class BaseOpenAIDriver extends AbstractDriver<
+         let promptText = "";
+         for (const item of prompt) {
+             if ('content' in item && typeof item.content === 'string') {
+-                promptText += item.content + "\\n";
++                promptText += `${item.content}\\n`;
+             } else if ('content' in item && Array.isArray(item.content)) {
+                 // Extract text from content array
+                 for (const part of item.content) {
+                     if ('type' in part && part.type === 'input_text' && 'text' in part) {
+-                        promptText += part.text + "\\n";
++                        promptText += `${part.text}\\n`;
+                     }
+                 }
+             }
+@@ -848,7 +848,7 @@ function jobInfo(job: OpenAI.FineTuning.Jobs.FineTuningJob): TrainingJob {
+         status = TrainingJobStatus.succeeded;
+     } else if (jobStatus === 'failed') {
+         status = TrainingJobStatus.failed;
+-        details = job.error ? `${job.error.code} - ${job.error.message} ${job.error.param ? " [" + job.error.param + "]" : ""}` : "error";
++        details = job.error ? `${job.error.code} - ${job.error.message} ${job.error.param ? ` [${job.error.param}]` : ""}` : "error";
+     } else if (jobStatus === 'cancelled') {
+         status = TrainingJobStatus.cancelled;
+     } else {
+@@ -1069,7 +1069,7 @@ export function convertOpenAIFunctionItemsToText(items: ResponseInputItem[]): Re
+         const typed = item as OpenAIFunctionItem;
+         if (typed.type === 'function_call') {
+             const argsStr = typed.arguments || '';
+-            const truncated = argsStr.length > 500 ? argsStr.substring(0, 500) + '...' : argsStr;
++            const truncated = argsStr.length > 500 ? `${argsStr.substring(0, 500)}...` : argsStr;
+             return {
+                 role: 'assistant' as const,
+                 content: `[Tool call: ${typed.name}(${truncated})]`,
+@@ -1077,7 +1077,7 @@ export function convertOpenAIFunctionItemsToText(items: ResponseInputItem[]): Re
+         }
+         if (typed.type === 'function_call_output') {
+             const output = typed.output || 'No output';
+-            const truncated = output.length > 500 ? output.substring(0, 500) + '...' : output;
++            const truncated = output.length > 500 ? `${output.substring(0, 500)}...` : output;
+             return {
+                 role: 'user' as const,
+                 content: `[Tool result: ${truncated}]`,
+@@ -1091,7 +1091,7 @@ function getToolDefinitions(tools: ToolDefinition[] | undefined | null): OpenAI.
+     return tools ? tools.map(getToolDefinition) : undefined;
+ }
+ function getToolDefinition(toolDef: ToolDefinition): OpenAI.Responses.FunctionTool {
+-    let parsedSchema: JSONSchema | undefined = undefined;
++    let parsedSchema: JSONSchema | undefined ;
+     let strictMode = false;
+     if (toolDef.input_schema) {
+         try {
+diff --git a/drivers/src/openai/openai.ts b/drivers/src/openai/openai.ts
+index 9636bcf4..ab2201b6 100644
+--- a/drivers/src/openai/openai.ts
++++ b/drivers/src/openai/openai.ts
+@@ -1,6 +1,6 @@
+ 
+ 
+-import { DriverOptions, Providers } from "@llumiverse/core";
++import { type DriverOptions, Providers } from "@llumiverse/core";
+ import OpenAI from "openai";
+ import { BaseOpenAIDriver } from "./index.js";
+ 
+diff --git a/drivers/src/openai/openai_compatible.ts b/drivers/src/openai/openai_compatible.ts
+index be9613a0..84f2c678 100644
+--- a/drivers/src/openai/openai_compatible.ts
++++ b/drivers/src/openai/openai_compatible.ts
+@@ -1,4 +1,4 @@
+-import { AIModel, DriverOptions, ModelType, Providers, getModelCapabilities, modelModalitiesToArray } from "@llumiverse/core";
++import { type AIModel, type DriverOptions, ModelType, Providers, getModelCapabilities, modelModalitiesToArray } from "@llumiverse/core";
+ import OpenAI from "openai";
+ import { BaseOpenAIDriver } from "./index.js";
+ 
+diff --git a/drivers/src/openai/openai_format.ts b/drivers/src/openai/openai_format.ts
+index 5ddb13c9..a7b88835 100644
+--- a/drivers/src/openai/openai_format.ts
++++ b/drivers/src/openai/openai_format.ts
+@@ -1,7 +1,7 @@
+ // This file is used by multiple drivers
+ // to format prompts in a way that is compatible with OpenAI's API.
+ 
+-import { PromptRole, PromptOptions, PromptSegment } from "@llumiverse/common";
++import { PromptRole, type PromptOptions, type PromptSegment } from "@llumiverse/common";
+ import { readStreamAsBase64 } from "@llumiverse/core";
+ import type OpenAI from "openai";
+ 
+@@ -29,7 +29,7 @@ export function formatOpenAILikeTextPrompt(segments: PromptSegment[]): OpenAITex
+         if (msg.role === PromptRole.system) {
+             system.push({ content: msg.content, role: "system" });
+         } else if (msg.role === PromptRole.safety) {
+-            safety.push({ content: "IMPORTANT: " + msg.content, role: "system" });
++            safety.push({ content: `IMPORTANT: ${msg.content}`, role: "system" });
+         } else if (msg.role !== PromptRole.negative && msg.role !== PromptRole.mask && msg.role !== PromptRole.tool) {
+             user.push({
+                 content: msg.content,
+@@ -88,10 +88,10 @@ export async function formatOpenAILikeMultimodalPrompt(segments: PromptSegment[]
+                     if ((s as EasyInputMessage).role === 'system') {
+                         const sysMsg = s as EasyInputMessage;
+                         if (typeof sysMsg.content === 'string') {
+-                            sysMsg.content = "TOOL: " + sysMsg.content;
++                            sysMsg.content = `TOOL: ${sysMsg.content}`;
+                         } else if (Array.isArray(sysMsg.content)) {
+                             sysMsg.content.forEach((c) => {
+-                                if (c.type === "input_text") c.text = "TOOL: " + c.text;
++                                if (c.type === "input_text") c.text = `TOOL: ${c.text}`;
+                             });
+                         }
+                     }
+@@ -107,7 +107,7 @@ export async function formatOpenAILikeMultimodalPrompt(segments: PromptSegment[]
+ 
+             if (Array.isArray(safetyMsg.content)) {
+                 safetyMsg.content.forEach((c) => {
+-                    if (c.type === "input_text") c.text = "DO NOT IGNORE - IMPORTANT: " + c.text;
++                    if (c.type === "input_text") c.text = `DO NOT IGNORE - IMPORTANT: ${c.text}`;
+                 });
+             }
+ 
+@@ -137,7 +137,7 @@ export async function formatOpenAILikeMultimodalPrompt(segments: PromptSegment[]
+             role: "system",
+             content: [{
+                 type: "input_text",
+-                text: "IMPORTANT: only answer using JSON, and respecting the schema included below, between the <response_schema> tags. " + `<response_schema>${JSON.stringify(opts.result_schema)}</response_schema>`
++                text: `IMPORTANT: only answer using JSON, and respecting the schema included below, between the <response_schema> tags. <response_schema>${JSON.stringify(opts.result_schema)}</response_schema>`
+             }]
+         };
+         system.push(schemaMsg);
+diff --git a/drivers/src/replicate.ts b/drivers/src/replicate.ts
+index 0eff4ae9..8f63cff4 100644
+--- a/drivers/src/replicate.ts
++++ b/drivers/src/replicate.ts
+@@ -1,21 +1,21 @@
+ import {
+     AbstractDriver,
+-    AIModel,
+-    Completion,
+-    CompletionChunkObject,
+-    DataSource,
+-    DriverOptions,
+-    EmbeddingsResult,
+-    ExecutionOptions,
+-    ModelSearchPayload,
+-    TextFallbackOptions,
+-    TrainingJob,
++    type AIModel,
++    type Completion,
++    type CompletionChunkObject,
++    type DataSource,
++    type DriverOptions,
++    type EmbeddingsResult,
++    type ExecutionOptions,
++    type ModelSearchPayload,
++    type TextFallbackOptions,
++    type TrainingJob,
+     TrainingJobStatus,
+-    TrainingOptions,
++    type TrainingOptions,
+ } from "@llumiverse/core";
+ import { EventStream } from "@llumiverse/core/async";
+ import { EventSource } from "eventsource";
+-import Replicate, { Prediction, Training } from "replicate";
++import Replicate, { type Prediction, type Training } from "replicate";
+ 
+ let cachedTrainableModels: AIModel[] | undefined;
+ let cachedTrainableModelsTimestamp: number = 0;
+@@ -102,6 +102,7 @@ export class ReplicateDriver extends AbstractDriver<DriverOptions, string> {
+ 
+         const stream = new EventStream<CompletionChunkObject>();
+ 
++        // biome-ignore lint/style/noNonNullAssertion: intentional non-null assertion; TS can't prove narrowing here
+         const source = new EventSource(prediction.urls.stream!);
+         source.addEventListener("output", (e: ReplicateEvent) => {
+             stream.push({ result: [{ type: "text", value: e.data }] });
+@@ -213,12 +214,13 @@ export class ReplicateDriver extends AbstractDriver<DriverOptions, string> {
+         });
+         const results = await Promise.all(promises);
+         return results.filter(m => !!m.latest_version).map(m => {
+-            const fullName = m.owner + '/' + m.name;
++            const fullName = `${m.owner}/${m.name}`;
++            // biome-ignore lint/style/noNonNullAssertion: intentional non-null assertion; TS can't prove narrowing here
+             const v = m.latest_version!;
+             return {
+-                id: fullName + ':' + v.id,
++                id: `${fullName}:${v.id}`,
+                 name:
+-                    fullName + "@" + v.cog_version + ":" + v.id.slice(0, 6),
++                    `${fullName}@${v.cog_version}:${v.id.slice(0, 6)}`,
+                 provider: this.provider,
+                 owner: m.owner,
+                 description: m.description,
+@@ -258,11 +260,11 @@ export class ReplicateDriver extends AbstractDriver<DriverOptions, string> {
+         }
+ 
+         const models: AIModel[] = versionResults.map((v) => {
+-            const fullName = rModel.owner + '/' + rModel.name;
++            const fullName = `${rModel.owner}/${rModel.name}`;
+             return {
+-                id: fullName + ':' + v.id,
++                id: `${fullName}:${v.id}`,
+                 name:
+-                    fullName + "@" + v.cog_version + ":" + v.id.slice(0, 6),
++                    `${fullName}@${v.cog_version}:${v.id.slice(0, 6)}`,
+                 provider: this.provider,
+                 owner: rModel.owner,
+                 description: rModel.description,
+@@ -332,7 +334,7 @@ function jobInfo(job: Prediction | Training, modelName?: string): TrainingJob {
+         id: job.id,
+         status,
+         details,
+-        model: modelName ? modelName + ':' + job.version : job.version
++        model: modelName ? `${modelName}:${job.version}` : job.version
+     } as TrainingJob;
+ 
+ }
+diff --git a/drivers/src/shared/claude-messages.ts b/drivers/src/shared/claude-messages.ts
+index d01fcfae..8d878be3 100644
+--- a/drivers/src/shared/claude-messages.ts
++++ b/drivers/src/shared/claude-messages.ts
+@@ -257,8 +257,8 @@ export async function formatClaudePrompt(segments: PromptSegment[], options: Exe
+ 
+     if (options.result_schema) {
+         const schemaText = options.tools && options.tools.length > 0
+-            ? 'When not calling tools, the answer must be a JSON object using the following JSON Schema:\n' + JSON.stringify(options.result_schema)
+-            : 'The answer must be a JSON object using the following JSON Schema:\n' + JSON.stringify(options.result_schema);
++            ? `When not calling tools, the answer must be a JSON object using the following JSON Schema:\n${JSON.stringify(options.result_schema)}`
++            : `The answer must be a JSON object using the following JSON Schema:\n${JSON.stringify(options.result_schema)}`;
+         system.push({ text: schemaText, type: 'text' as const });
+     }
+ 
+@@ -463,16 +463,16 @@ export function convertClaudeToolBlocksToText(messages: MessageParam[]): Message
+             if (typeof block === 'string') { newContent.push(block); continue; }
+             if (block.type === 'tool_use') {
+                 const inputStr = block.input ? JSON.stringify(block.input) : '';
+-                const truncated = inputStr.length > 500 ? inputStr.substring(0, 500) + '...' : inputStr;
++                const truncated = inputStr.length > 500 ? `${inputStr.substring(0, 500)}...` : inputStr;
+                 (newContent as Array<{ type: 'text'; text: string }>).push({ type: 'text', text: `[Tool call: ${block.name}(${truncated})]` });
+             } else if (block.type === 'tool_result') {
+                 let resultStr = 'No content';
+                 if (typeof block.content === 'string') {
+-                    resultStr = block.content.length > 500 ? block.content.substring(0, 500) + '...' : block.content;
++                    resultStr = block.content.length > 500 ? `${block.content.substring(0, 500)}...` : block.content;
+                 } else if (Array.isArray(block.content)) {
+                     const texts = block.content
+                         .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
+-                        .map((c) => (c.text.length > 500 ? c.text.substring(0, 500) + '...' : c.text));
++                        .map((c) => (c.text.length > 500 ? `${c.text.substring(0, 500)}...` : c.text));
+                     resultStr = texts.join('\n') || 'No text content';
+                 }
+                 (newContent as Array<{ type: 'text'; text: string }>).push({ type: 'text', text: `[Tool result: ${resultStr}]` });
+@@ -827,11 +827,11 @@ export function formatAnthropicLlumiverseError(error: unknown, context: Llumiver
+ 
+     if (apiError.error && typeof apiError.error === 'object') {
+         const nested = apiError.error as Record<string, unknown>;
+-        if (nested['error'] && typeof nested['error'] === 'object') {
+-            const innerError = nested['error'] as Record<string, unknown>;
+-            errorType = innerError['type'] as string | undefined;
+-            if (typeof innerError['message'] === 'string') {
+-                message = innerError['message'];
++        if (nested.error && typeof nested.error === 'object') {
++            const innerError = nested.error as Record<string, unknown>;
++            errorType = innerError.type as string | undefined;
++            if (typeof innerError.message === 'string') {
++                message = innerError.message;
+             }
+         }
+     }
+diff --git a/drivers/src/test-driver/TestErrorCompletionStream.ts b/drivers/src/test-driver/TestErrorCompletionStream.ts
+index 2026507a..35d111b5 100644
+--- a/drivers/src/test-driver/TestErrorCompletionStream.ts
++++ b/drivers/src/test-driver/TestErrorCompletionStream.ts
+@@ -1,4 +1,4 @@
+-import { CompletionStream, ExecutionOptions, ExecutionResponse, PromptSegment } from "@llumiverse/core";
++import type { CompletionStream, ExecutionOptions, ExecutionResponse, PromptSegment } from "@llumiverse/core";
+ import { sleep, throwError } from "./utils.js";
+ 
+ export class TestErrorCompletionStream implements CompletionStream<PromptSegment[]> {
+@@ -10,7 +10,7 @@ export class TestErrorCompletionStream implements CompletionStream<PromptSegment
+     }
+     async *[Symbol.asyncIterator]() {
+         yield "Started TestError. Next we will thrown an error.\n";
+-        sleep(1000);
++        await sleep(1000);
+         throwError("Testing stream completion error.", this.segments);
+     }
+ }
+diff --git a/drivers/src/test-driver/TestValidationErrorCompletionStream.ts b/drivers/src/test-driver/TestValidationErrorCompletionStream.ts
+index 2cf1e161..12ca4772 100644
+--- a/drivers/src/test-driver/TestValidationErrorCompletionStream.ts
++++ b/drivers/src/test-driver/TestValidationErrorCompletionStream.ts
+@@ -1,4 +1,4 @@
+-import { CompletionStream, ExecutionOptions, ExecutionResponse, PromptSegment } from "@llumiverse/core";
++import type { CompletionStream, ExecutionOptions, ExecutionResponse, PromptSegment } from "@llumiverse/core";
+ import { createValidationErrorCompletion, sleep } from "./utils.js";
+ 
+ 
+diff --git a/drivers/src/test-driver/index.ts b/drivers/src/test-driver/index.ts
+index 56196cc4..efccdba7 100644
+--- a/drivers/src/test-driver/index.ts
++++ b/drivers/src/test-driver/index.ts
+@@ -1,4 +1,4 @@
+-import { AIModel, AIModelStatus, CompletionStream, Driver, EmbeddingsResult, ExecutionOptions, ExecutionResponse, ModelType, PromptSegment, TrainingJob } from "@llumiverse/core";
++import { type AIModel, AIModelStatus, type CompletionStream, type Driver, type EmbeddingsResult, type ExecutionOptions, type ExecutionResponse, ModelType, type PromptSegment, type TrainingJob } from "@llumiverse/core";
+ import { TestErrorCompletionStream } from "./TestErrorCompletionStream.js";
+ import { TestValidationErrorCompletionStream } from "./TestValidationErrorCompletionStream.js";
+ import { createValidationErrorCompletion, sleep, throwError } from "./utils.js";
+@@ -41,7 +41,7 @@ export class TestDriver implements Driver<PromptSegment[]> {
+             case TestDriverModels.validationError:
+                 return this.executeValidationError(segments, options);
+             default:
+-                throwError("[test driver] Unknown model: " + options.model, segments)
++                throwError(`[test driver] Unknown model: ${options.model}`, segments)
+         }
+     }
+     async stream(segments: PromptSegment[], options: ExecutionOptions): Promise<CompletionStream<PromptSegment[]>> {
+@@ -51,7 +51,7 @@ export class TestDriver implements Driver<PromptSegment[]> {
+             case TestDriverModels.validationError:
+                 return new TestValidationErrorCompletionStream(segments, options);
+             default:
+-                throwError("[test driver] Unknown model: " + options.model, segments)
++                throwError(`[test driver] Unknown model: ${options.model}`, segments)
+         }
+     }
+ 
+diff --git a/drivers/src/test-driver/utils.ts b/drivers/src/test-driver/utils.ts
+index a6175e18..3f5186ef 100644
+--- a/drivers/src/test-driver/utils.ts
++++ b/drivers/src/test-driver/utils.ts
+@@ -1,4 +1,4 @@
+-import { ExecutionResponse, PromptSegment } from "@llumiverse/core";
++import type { ExecutionResponse, PromptSegment } from "@llumiverse/core";
+ 
+ export function throwError(message: string, prompt: PromptSegment[]): never {
+     const err = new Error(message) as Error & { prompt?: PromptSegment[] };
+diff --git a/drivers/src/vertexai/debug.ts b/drivers/src/vertexai/debug.ts
+index d02124ff..ef833160 100644
+--- a/drivers/src/vertexai/debug.ts
++++ b/drivers/src/vertexai/debug.ts
+@@ -1,4 +1,4 @@
+-import util from 'util';
++import util from 'node:util';
+ 
+ export function logObject(prefix: string, obj: unknown) {
+     const fullObj = util.inspect(obj, { showHidden: false, depth: null, colors: true });
+diff --git a/drivers/src/vertexai/embeddings/embeddings.test.ts b/drivers/src/vertexai/embeddings/embeddings.test.ts
+index a35de010..86e59313 100644
+--- a/drivers/src/vertexai/embeddings/embeddings.test.ts
++++ b/drivers/src/vertexai/embeddings/embeddings.test.ts
+@@ -414,7 +414,7 @@ function makeLiveDriver() {
+ function assertVector(values: number[]) {
+     expect(Array.isArray(values)).toBe(true);
+     expect(values.length).toBeGreaterThan(0);
+-    expect(values.every((v) => typeof v === "number" && isFinite(v))).toBe(true);
++    expect(values.every((v) => typeof v === "number" && Number.isFinite(v))).toBe(true);
+ }
+ 
+ describe.skipIf(!USE_REAL_API)("generateVertexAiEmbeddings — live API", () => {
+diff --git a/drivers/src/vertexai/index.ts b/drivers/src/vertexai/index.ts
+index 8650bbbe..c1ae4d02 100644
+--- a/drivers/src/vertexai/index.ts
++++ b/drivers/src/vertexai/index.ts
+@@ -26,7 +26,7 @@ import {
+ } from "@llumiverse/core";
+ import { FetchClient } from "@vertesia/api-fetch-client";
+ import { type AuthClient, GoogleAuth, type GoogleAuthOptions } from "google-auth-library";
+-import { getModelDefinition } from "./models.js";
++import { getModelDefinition, trimModelName } from "./models.js";
+ import { ANTHROPIC_REGIONS, NON_GLOBAL_ANTHROPIC_MODELS } from "./models/claude.js";
+ import { ImagenModelDefinition, type ImagenPrompt } from "./models/imagen.js";
+ import type { ClaudePrompt } from "../shared/claude-messages.js";
+@@ -53,10 +53,7 @@ function isClaudeStreamingPrompt(prompt: unknown): prompt is ClaudeStreamingProm
+ //General Prompt type for VertexAI
+ export type VertexAIPrompt = ImagenPrompt | GenerateContentPrompt | ClaudePrompt | LLamaPrompt;
+ 
+-export function trimModelName(model: string) {
+-    const i = model.lastIndexOf("@");
+-    return i > -1 ? model.substring(0, i) : model;
+-}
++export { trimModelName };
+ 
+ export class VertexAIDriver extends AbstractDriver<VertexAIDriverOptions, VertexAIPrompt> {
+     static PROVIDER = "vertexai";
+@@ -159,7 +156,7 @@ export class VertexAIDriver extends AbstractDriver<VertexAIDriverOptions, Vertex
+ 
+     public getLLamaClient(region: string = "us-central1"): FetchClient {
+         //Lazy initialization
+-        if (!this.llamaClient || this.llamaClient["region"] !== region) {
++        if (!this.llamaClient || this.llamaClient.region !== region) {
+             this.llamaClient = createFetchClient({
+                 region: region,
+                 project: this.options.project,
+@@ -169,7 +166,7 @@ export class VertexAIDriver extends AbstractDriver<VertexAIDriverOptions, Vertex
+                 return `Bearer ${token}`;
+             });
+             // Store the region for potential client reuse
+-            this.llamaClient["region"] = region;
++            this.llamaClient.region = region;
+         }
+         return this.llamaClient;
+     }
+@@ -604,8 +601,8 @@ export class VertexAIDriver extends AbstractDriver<VertexAIDriverOptions, Vertex
+             globalGoogleResult.map((model) => {
+                 const modelCapability = getModelCapabilities(model.name ?? '', "vertexai");
+                 return {
+-                    id: "locations/global/" + model.name,
+-                    name: "Global " + model.name?.split('/').pop(),
++                    id: `locations/global/${model.name}`,
++                    name: `Global ${model.name?.split('/').pop()}`,
+                     provider: "vertexai",
+                     owner: "google",
+                     input_modalities: modelModalitiesToArray(modelCapability.input),
+@@ -659,7 +656,7 @@ export class VertexAIDriver extends AbstractDriver<VertexAIDriverOptions, Vertex
+                             if (version >= 2.5) {
+                                 // Check if already present
+                                 const shortName = modelName.split('/').pop();
+-                                const globalName = "Global " + shortName;
++                                const globalName = `Global ${shortName}`;
+                                 if (models.some(m => m.name === globalName)) {
+                                     return false;
+                                 }
+@@ -672,8 +669,8 @@ export class VertexAIDriver extends AbstractDriver<VertexAIDriverOptions, Vertex
+                 }).map(model => {
+                     const modelCapability = getModelCapabilities(model.name ?? '', "vertexai");
+                     return {
+-                        id: "locations/global/" + model.name,
+-                        name: "Global " + model.name?.split('/').pop(),
++                        id: `locations/global/${model.name}`,
++                        name: `Global ${model.name?.split('/').pop()}`,
+                         provider: 'vertexai',
+                         owner: publisher,
+                         input_modalities: modelModalitiesToArray(modelCapability.input),
+@@ -702,8 +699,8 @@ export class VertexAIDriver extends AbstractDriver<VertexAIDriverOptions, Vertex
+                 }).map(model => {
+                     const modelCapability = getModelCapabilities(model.name ?? '', "vertexai");
+                     return {
+-                        id: "locations/global/" + model.name,
+-                        name: "Global " + model.name?.split('/').pop(),
++                        id: `locations/global/${model.name}`,
++                        name: `Global ${model.name?.split('/').pop()}`,
+                         provider: 'vertexai',
+                         owner: publisher,
+                         input_modalities: modelModalitiesToArray(modelCapability.input),
+diff --git a/drivers/src/vertexai/models.ts b/drivers/src/vertexai/models.ts
+index 575c5831..4ff5845a 100644
+--- a/drivers/src/vertexai/models.ts
++++ b/drivers/src/vertexai/models.ts
+@@ -1,9 +1,14 @@
+ import type { AIModel, Completion, CompletionChunkObject, ExecutionOptions, LlumiverseError, LlumiverseErrorContext, PromptSegment } from "@llumiverse/core";
+-import { type VertexAIDriver, type VertexAIPrompt, trimModelName } from "./index.js";
++import type { VertexAIDriver, VertexAIPrompt } from "./index.js";
+ import { ClaudeModelDefinition } from "./models/claude.js";
+ import { GeminiModelDefinition } from "./models/gemini.js";
+ import { LLamaModelDefinition } from "./models/llama.js";
+ 
++export function trimModelName(model: string): string {
++    const i = model.lastIndexOf("@");
++    return i > -1 ? model.substring(0, i) : model;
++}
++
+ export interface ModelDefinition<PromptT = VertexAIPrompt> {
+     model: AIModel;
+     versions?: string[]; // the versions of the model that are available. ex: ['001', '002']
+diff --git a/drivers/src/vertexai/models/gemini-conversation-mutation.test.ts b/drivers/src/vertexai/models/gemini-conversation-mutation.test.ts
+index b5428aa6..81f8efee 100644
+--- a/drivers/src/vertexai/models/gemini-conversation-mutation.test.ts
++++ b/drivers/src/vertexai/models/gemini-conversation-mutation.test.ts
+@@ -64,7 +64,7 @@ describe('convertGeminiFunctionPartsToText', () => {
+ 
+         const result = convertGeminiFunctionPartsToText(contents);
+ 
+-        expect(result[0].parts![0]).toEqual({
++        expect(result[0].parts?.[0]).toEqual({
+             text: '[Tool call: get_weather({"location":"Paris"})]',
+         });
+     });
+@@ -79,7 +79,7 @@ describe('convertGeminiFunctionPartsToText', () => {
+ 
+         const result = convertGeminiFunctionPartsToText(contents);
+ 
+-        expect(result[0].parts![0]).toEqual({
++        expect(result[0].parts?.[0]).toEqual({
+             text: '[Tool result for get_weather: {"temperature":"15°C"}]',
+         });
+     });
+@@ -90,7 +90,7 @@ describe('convertGeminiFunctionPartsToText', () => {
+ 
+         const result = convertGeminiFunctionPartsToText(contents);
+ 
+-        expect(result[0].parts![0]).toBe(textPart);
++        expect(result[0].parts?.[0]).toBe(textPart);
+     });
+ });
+ 
+diff --git a/drivers/src/vertexai/models/gemini-error-handling.test.ts b/drivers/src/vertexai/models/gemini-error-handling.test.ts
+index d61b68b5..257707df 100644
+--- a/drivers/src/vertexai/models/gemini-error-handling.test.ts
++++ b/drivers/src/vertexai/models/gemini-error-handling.test.ts
+@@ -5,7 +5,7 @@ import { GeminiModelDefinition } from './gemini.js';
+ import { exposePrivate, getProp } from '../../../test/__helpers__/test-utils.js';
+ 
+ type GeminiModelInternals = {
+-    isGeminiErrorRetryable: (httpStatusCode: number) => boolean | undefined;
++    isGeminiErrorRetryable: (httpStatusCode: number, message?: string) => boolean | undefined;
+ };
+ 
+ describe('GeminiModelDefinition Error Handling', () => {
+@@ -252,6 +252,29 @@ describe('GeminiModelDefinition Error Handling', () => {
+             expect(error.name).toBe('ValidationError');
+         });
+ 
++        it('should mark URL_REJECTED-REJECTED_CLIENT_THROTTLED 400s as retryable', () => {
++            // Reproduces a real Vertex AI failure: passing an audio file by URL
++            // (sys:AnalyzeAudio) sometimes 400s with INVALID_ARGUMENT whose
++            // message contains URL_REJECTED-REJECTED_CLIENT_THROTTLED — that's
++            // really a transient throttle on Google's URL fetcher.
++            const googleError = {
++                status: 400,
++                message:
++                    'Cannot fetch content from the provided URL. Please ensure the URL is valid ' +
++                    'and accessible by Vertex AI. Vertex AI respects robots.txt rules, so confirm ' +
++                    'the URL is allowed to be crawled. Status: URL_REJECTED-REJECTED_CLIENT_THROTTLED',
++            };
++
++            const error = modelDef.formatLlumiverseError(driver, googleError, {
++                provider: 'vertexai',
++                model: 'gemini-2.5-flash',
++                operation: 'execute',
++            });
++
++            expect(error.code).toBe(400);
++            expect(error.retryable).toBe(true);
++        });
++
+         it('should handle errors without extractable name', () => {
+             const googleError = {
+                 status: 500,
+@@ -300,6 +323,35 @@ describe('GeminiModelDefinition Error Handling', () => {
+             expect(exposePrivate<GeminiModelInternals>(modelDef).isGeminiErrorRetryable(405)).toBe(false);
+             expect(exposePrivate<GeminiModelInternals>(modelDef).isGeminiErrorRetryable(499)).toBe(false);
+         });
++
++        it('should treat 400 URL_REJECTED-REJECTED_CLIENT_THROTTLED as retryable', () => {
++            // Vertex AI surfaces inline-URL-fetcher throttling as 400 INVALID_ARGUMENT.
++            // The status is misleading — it's a transient Google-side throttle.
++            const message =
++                'Cannot fetch content from the provided URL. ' +
++                'Status: URL_REJECTED-REJECTED_CLIENT_THROTTLED';
++            expect(
++                exposePrivate<GeminiModelInternals>(modelDef).isGeminiErrorRetryable(400, message),
++            ).toBe(true);
++        });
++
++        it('should treat 400 URL_REJECTED-REJECTED_RATE_LIMITED as retryable', () => {
++            const message =
++                'Cannot fetch content from the provided URL. ' +
++                'Status: URL_REJECTED-REJECTED_RATE_LIMITED';
++            expect(
++                exposePrivate<GeminiModelInternals>(modelDef).isGeminiErrorRetryable(400, message),
++            ).toBe(true);
++        });
++
++        it('should still treat plain 400 INVALID_ARGUMENT as non-retryable', () => {
++            expect(
++                exposePrivate<GeminiModelInternals>(modelDef).isGeminiErrorRetryable(
++                    400,
++                    'INVALID_ARGUMENT: bad input',
++                ),
++            ).toBe(false);
++        });
+     });
+ 
+     describe('VertexAIDriver error routing', () => {
+diff --git a/drivers/src/vertexai/models/gemini.ts b/drivers/src/vertexai/models/gemini.ts
+index bcbc6ad3..1dcc90b8 100644
+--- a/drivers/src/vertexai/models/gemini.ts
++++ b/drivers/src/vertexai/models/gemini.ts
+@@ -458,10 +458,10 @@ export class GeminiModelDefinition implements ModelDefinition<GenerateContentPro
+                 // Fallback to putting the schema in the system instructions, if not using structured output.
+                 if (options.tools) {
+                     system.parts?.push({
+-                        text: "When not calling tools, the output must be a JSON object using the following JSON Schema:\n" + JSON.stringify(schema)
++                        text: `When not calling tools, the output must be a JSON object using the following JSON Schema:\n${JSON.stringify(schema)}`
+                     });
+                 } else {
+-                    system.parts?.push({ text: "The output must be a JSON object using the following JSON Schema:\n" + JSON.stringify(schema) });
++                    system.parts?.push({ text: `The output must be a JSON object using the following JSON Schema:\n${JSON.stringify(schema)}` });
+                 }
+             }
+         }
+@@ -483,7 +483,7 @@ export class GeminiModelDefinition implements ModelDefinition<GenerateContentPro
+     }
+ 
+     usageMetadataToTokenUsage(driver: VertexAIDriver, usageMetadata: GenerateContentResponseUsageMetadata | undefined): ExecutionTokenUsage {
+-        if (!usageMetadata || !usageMetadata.totalTokenCount) {
++        if (!usageMetadata?.totalTokenCount) {
+             return {};
+         }
+         const tokenUsage: ExecutionTokenUsage = {
+@@ -518,7 +518,7 @@ export class GeminiModelDefinition implements ModelDefinition<GenerateContentPro
+ 
+     async requestTextCompletion(driver: VertexAIDriver, prompt: GenerateContentPrompt, options: ExecutionOptions): Promise<Completion> {
+         const splits = options.model.split("/");
+-        let region: string | undefined = undefined;
++        let region: string | undefined ;
+         if (splits[0] === "locations" && splits.length >= 2) {
+             region = splits[1];
+         }
+@@ -552,7 +552,7 @@ export class GeminiModelDefinition implements ModelDefinition<GenerateContentPro
+ 
+         let tool_use: ToolUse[] | undefined;
+         let finish_reason: string | undefined, result: CompletionResult[] | undefined;
+-        const candidate = response.candidates && response.candidates[0];
++        const candidate = response.candidates?.[0];
+         if (candidate) {
+             switch (candidate.finishReason) {
+                 case FinishReason.MAX_TOKENS: finish_reason = "length"; break;
+@@ -631,7 +631,7 @@ export class GeminiModelDefinition implements ModelDefinition<GenerateContentPro
+ 
+     async requestTextCompletionStream(driver: VertexAIDriver, prompt: GenerateContentPrompt, options: ExecutionOptions): Promise<AsyncIterable<CompletionChunkObject>> {
+         const splits = options.model.split("/");
+-        let region: string | undefined = undefined;
++        let region: string | undefined ;
+         if (splits[0] === "locations" && splits.length >= 2) {
+             region = splits[1];
+         }
+@@ -765,7 +765,7 @@ export class GeminiModelDefinition implements ModelDefinition<GenerateContentPro
+         }
+ 
+         // Determine retryability based on Google error codes
+-        const retryable = this.isGeminiErrorRetryable(httpStatusCode);
++        const retryable = this.isGeminiErrorRetryable(httpStatusCode, message);
+ 
+         // Extract error name/type from message if present
+         const errorName = this.extractErrorName(message);
+@@ -811,11 +811,18 @@ export class GeminiModelDefinition implements ModelDefinition<GenerateContentPro
+      * - 404 (NOT_FOUND): Resource not found
+      * - 409 (CONFLICT): Resource conflict
+      * - Other 4xx client errors
+-     * 
++     *
++     * Exception: certain 400s from Vertex AI's inline URL fetcher (used when
++     * passing a file by URL to multimodal models) surface as INVALID_ARGUMENT
++     * but are actually transient throttling/rate-limit signals on the
++     * fetcher, not a bad request. Detect those by message substring and
++     * treat them as retryable.
++     *
+      * @param httpStatusCode - The HTTP status code from the API error
++     * @param message - The error message (used to detect transient 400 sub-cases)
+      * @returns True if retryable, false if not retryable, undefined if unknown
+      */
+-    private isGeminiErrorRetryable(httpStatusCode: number): boolean | undefined {
++    private isGeminiErrorRetryable(httpStatusCode: number, message?: string): boolean | undefined {
+         // Retryable status codes
+         if (httpStatusCode === 408) return true; // Request timeout
+         if (httpStatusCode === 429) return true; // Rate limit/quota
+@@ -824,6 +831,17 @@ export class GeminiModelDefinition implements ModelDefinition<GenerateContentPro
+         if (httpStatusCode === 504) return true; // Gateway timeout
+         if (httpStatusCode >= 500 && httpStatusCode < 600) return true; // Other 5xx server errors
+ 
++        // Vertex AI URL fetcher transient throttling, surfaced as 400 INVALID_ARGUMENT
++        // but really a Google-side rate limit on the inline-content fetcher.
++        if (httpStatusCode === 400 && message) {
++            if (
++                message.includes('URL_REJECTED-REJECTED_CLIENT_THROTTLED') ||
++                message.includes('URL_REJECTED-REJECTED_RATE_LIMITED')
++            ) {
++                return true;
++            }
++        }
++
+         // Non-retryable 4xx client errors
+         if (httpStatusCode >= 400 && httpStatusCode < 500) return false;
+ 
+@@ -871,13 +889,13 @@ export function convertGeminiFunctionPartsToText(contents: Content[]): Content[]
+         const newParts = content.parts.map(part => {
+             if (part.functionCall) {
+                 const argsStr = part.functionCall.args ? JSON.stringify(part.functionCall.args) : '';
+-                const truncated = argsStr.length > 500 ? argsStr.substring(0, 500) + '...' : argsStr;
++                const truncated = argsStr.length > 500 ? `${argsStr.substring(0, 500)}...` : argsStr;
+                 return { text: `[Tool call: ${part.functionCall.name}(${truncated})]` };
+             }
+             if (part.functionResponse) {
+                 const respStr = part.functionResponse.response
+                     ? JSON.stringify(part.functionResponse.response) : 'No response';
+-                const truncated = respStr.length > 500 ? respStr.substring(0, 500) + '...' : respStr;
++                const truncated = respStr.length > 500 ? `${respStr.substring(0, 500)}...` : respStr;
+                 return { text: `[Tool result for ${part.functionResponse.name}: ${truncated}]` };
+             }
+             return part;
+diff --git a/drivers/src/vertexai/models/imagen.ts b/drivers/src/vertexai/models/imagen.ts
+index fe5d43cd..41cf0916 100644
+--- a/drivers/src/vertexai/models/imagen.ts
++++ b/drivers/src/vertexai/models/imagen.ts
+@@ -330,7 +330,7 @@ export class ImagenModelDefinition {
+ 
+         const taskType: string = options.model_options?.edit_mode ?? ImagenTaskType.TEXT_IMAGE;
+ 
+-        driver.logger.info("Task type: " + taskType);
++        driver.logger.info(`Task type: ${taskType}`);
+ 
+         const modelName = options.model.split("/").pop() ?? '';
+ 
+diff --git a/drivers/src/vertexai/models/llama.ts b/drivers/src/vertexai/models/llama.ts
+index 012fcff3..1ed0edcf 100644
+--- a/drivers/src/vertexai/models/llama.ts
++++ b/drivers/src/vertexai/models/llama.ts
+@@ -1,10 +1,10 @@
+ import {
+-    AIModel, Completion, CompletionChunkObject, ExecutionOptions, ModelType,
+-    PromptOptions, PromptRole, PromptSegment,
+-    TextFallbackOptions
++    type AIModel, type Completion, type CompletionChunkObject, type ExecutionOptions, ModelType,
++    type PromptOptions, PromptRole, type PromptSegment,
++    type TextFallbackOptions
+ } from "@llumiverse/core";
+-import { VertexAIDriver } from "../index.js";
+-import { ModelDefinition } from "../models.js";
++import type { VertexAIDriver } from "../index.js";
++import type { ModelDefinition } from "../models.js";
+ import { transformSSEStream } from "@llumiverse/core/async";
+ import type { ServerSentEvent } from "@vertesia/api-fetch-client";
+ 
+@@ -138,7 +138,7 @@ export class LLamaModelDefinition implements ModelDefinition<LLamaPrompt> {
+         if (options.result_schema) {
+             messages.push({
+                 role: 'user',
+-                content: "The answer must be a JSON object using the following JSON Schema:\n" + JSON.stringify(options.result_schema)
++                content: `The answer must be a JSON object using the following JSON Schema:\n${JSON.stringify(options.result_schema)}`
+             });
+         }
+ 
+diff --git a/drivers/src/watsonx/index.ts b/drivers/src/watsonx/index.ts
+index 1172889f..60090009 100644
+--- a/drivers/src/watsonx/index.ts
++++ b/drivers/src/watsonx/index.ts
+@@ -37,7 +37,7 @@ export class WatsonxDriver extends AbstractDriver<WatsonxDriverOptions, string>
+ 
+         const payload: WatsonxTextGenerationPayload = {
+             model_id: options.model,
+-            input: prompt + "\n",
++            input: `${prompt}\n`,
+             parameters: {
+                 max_new_tokens: options.model_options?.max_tokens,
+                 temperature: options.model_options?.temperature,
+@@ -71,7 +71,7 @@ export class WatsonxDriver extends AbstractDriver<WatsonxDriverOptions, string>
+         options.model_options = options.model_options as TextFallbackOptions | undefined;
+         const payload: WatsonxTextGenerationPayload = {
+             model_id: options.model,
+-            input: prompt + "\n",
++            input: `${prompt}\n`,
+             parameters: {
+                 max_new_tokens: options.model_options?.max_tokens,
+                 temperature: options.model_options?.temperature,
+@@ -109,7 +109,7 @@ export class WatsonxDriver extends AbstractDriver<WatsonxDriverOptions, string>
+ 
+ 
+         const res = await this.fetchClient.get(`/ml/v1/foundation_model_specs?version=${API_VERSION}`)
+-            .catch(err => this.logger.warn("Can't list models on Watsonx: " + err)) as WatsonxListModelResponse;
++            .catch(err => this.logger.warn(`Can't list models on Watsonx: ${err}`)) as WatsonxListModelResponse;
+ 
+         const aiModels = res.resources.map((m: WatsonxModelSpec) => {
+             return {
+diff --git a/drivers/src/xai/index.ts b/drivers/src/xai/index.ts
+index 57ebecc7..63788a8d 100644
+--- a/drivers/src/xai/index.ts
++++ b/drivers/src/xai/index.ts
+@@ -1,5 +1,5 @@
+-import { AIModel, DriverOptions, PromptOptions, PromptSegment, Providers } from "@llumiverse/core";
+-import { formatOpenAILikeMultimodalPrompt, OpenAIPromptFormatterOptions } from "../openai/openai_format.js";
++import { type AIModel, type DriverOptions, type PromptOptions, type PromptSegment, Providers } from "@llumiverse/core";
++import { formatOpenAILikeMultimodalPrompt, type OpenAIPromptFormatterOptions } from "../openai/openai_format.js";
+ import { FetchClient } from "@vertesia/api-fetch-client";
+ import OpenAI from "openai";
+ import { BaseOpenAIDriver } from "../openai/index.js";
+diff --git a/drivers/test/all-models.test.ts b/drivers/test/all-models.test.ts
+index 955c5326..55fe54fc 100644
+--- a/drivers/test/all-models.test.ts
++++ b/drivers/test/all-models.test.ts
+@@ -1,4 +1,5 @@
+-import { AbstractDriver, AIModel, ExecutionOptions, getMaxOutputTokens, getMaxTokensLimitBedrock, getMaxTokensLimitVertexAi, Modalities, PromptRole, PromptSegment } from '@llumiverse/core';
++// biome-ignore lint/suspicious/noDeprecatedImports: exercising deprecated output_modality path until that API is removed
++import { type AbstractDriver, type AIModel, type ExecutionOptions, getMaxOutputTokens, getMaxTokensLimitBedrock, getMaxTokensLimitVertexAi, Modalities, PromptRole, type PromptSegment } from '@llumiverse/core';
+ import 'dotenv/config';
+ import { GoogleAuth } from 'google-auth-library';
+ import { describe, expect, test } from "vitest";
+@@ -199,13 +200,13 @@ if (process.env.XAI_API_KEY) {
+ }
+ 
+ function getTestOptions(model: string): ExecutionOptions {
+-    if (model == "o1-mini" || model == "o3-mini") {
++    if (model === "o1-mini" || model === "o3-mini") {
+         return {
+             model: model,
+             model_options: {
+                 _option_id: "openai-thinking",
+                 max_tokens: 3000,
+-                stop_sequence: model == "o3-mini" ? ["haemoglobin"] : undefined,
++                stop_sequence: model === "o3-mini" ? ["haemoglobin"] : undefined,
+             },
+             output_modality: Modalities.text,
+         };
+@@ -256,26 +257,26 @@ describe.concurrent.each(drivers)("Driver $name", ({ name, driver, models }) =>
+ 
+     test.each(models)(`${name}: execute prompt on %s`, { timeout: TIMEOUT, retry: 2 }, async (model) => {
+         const r = await driver.execute(testPrompt_color, getTestOptions(model));
+-        console.log("Result for execute " + model, JSON.stringify(r));
++        console.log(`Result for execute ${model}`, JSON.stringify(r));
+         assertCompletionOk(r, model, driver);
+     });
+ 
+     test.each(models)(`${name}: execute prompt with streaming on %s`, { timeout: TIMEOUT, retry: 2 }, async (model) => {
+         const r = await driver.stream(testPrompt_color, getTestOptions(model));
+         const out = await assertStreamingCompletionOk(r);
+-        console.log("Result for streaming " + model, JSON.stringify(out));
++        console.log(`Result for streaming ${model}`, JSON.stringify(out));
+     });
+ 
+     test.each(models)(`${name}: execute prompt with schema on %s`, { timeout: TIMEOUT, retry: 2 }, async (model) => {
+         const r = await driver.execute(testPrompt_color, { ...getTestOptions(model), result_schema: testSchema_color });
+-        console.log("Result for execute with schema " + model, JSON.stringify(r.result));
++        console.log(`Result for execute with schema ${model}`, JSON.stringify(r.result));
+         assertCompletionOk(r, model, driver);
+     });
+ 
+     test.each(models)(`${name}: execute prompt with streaming and schema on %s`, { timeout: TIMEOUT, retry: 2 }, async (model) => {
+         const r = await driver.stream(testPrompt_color, { ...getTestOptions(model), result_schema: testSchema_color });
+         const out = await assertStreamingCompletionOk(r, true);
+-        console.log("Result for streaming with schema " + model, JSON.stringify(out));
++        console.log(`Result for streaming with schema ${model}`, JSON.stringify(out));
+     });
+ 
+ 
+@@ -315,7 +316,7 @@ describe.concurrent.each(drivers)("Driver $name", ({ name, driver, models }) =>
+ 
+         const isMultiModal = fetchedModels?.find(r => r.id === model)?.is_multimodal;
+ 
+-        console.log(`${model} is multimodal: ` + isMultiModal)
++        console.log(`${model} is multimodal: ${isMultiModal}`)
+         if (!isMultiModal) return;
+ 
+         const r = await driver.execute(testPrompt_describeImage, {
+diff --git a/drivers/test/api-key-list-models.test.ts b/drivers/test/api-key-list-models.test.ts
+index 150dd83f..5c98244a 100644
+--- a/drivers/test/api-key-list-models.test.ts
++++ b/drivers/test/api-key-list-models.test.ts
+@@ -10,6 +10,7 @@ describe('List models using API keys', () => {
+         'Gemini: list models with API key',
+         { timeout: TIMEOUT },
+         async () => {
++            // biome-ignore lint/style/noNonNullAssertion: intentional non-null assertion; TS can't prove narrowing here
+             const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+ 
+             const pager = await client.models.list({ config: { pageSize: 100 } });
+diff --git a/drivers/test/assertions.ts b/drivers/test/assertions.ts
+index ecbc30e7..9b913155 100644
+--- a/drivers/test/assertions.ts
++++ b/drivers/test/assertions.ts
+@@ -1,5 +1,5 @@
+ 
+-import { AbstractDriver, CompletionStream, ExecutionResponse, extractAndParseJSON } from '@llumiverse/core';
++import { type AbstractDriver, type CompletionStream, type ExecutionResponse, extractAndParseJSON } from '@llumiverse/core';
+ import { expect } from "vitest";
+ import { completionResultToString, parseCompletionResultsToJson } from './utils.js';
+ 
+@@ -9,7 +9,7 @@ export function assertCompletionOk(r: ExecutionResponse, model?: string, driver?
+     //TODO: This just checks for existence of the object,
+     //could do with more thorough test however not all models support token_usage.
+     //Only create the object when there is meaningful information you want to interpret as a pass.
+-    if (!(driver?.provider == 'bedrock' && model?.includes("mistral"))) { //Skip if bedrock:mistral, token_usage not supported.
++    if (!(driver?.provider === 'bedrock' && model?.includes("mistral"))) { //Skip if bedrock:mistral, token_usage not supported.
+         expect(r.token_usage).toBeTruthy();
+     }
+     expect(r.finish_reason).toBeTruthy();
+diff --git a/drivers/test/bedrock-toolconfig-checkpoint.test.ts b/drivers/test/bedrock-toolconfig-checkpoint.test.ts
+index 640574ee..8c5fa671 100644
+--- a/drivers/test/bedrock-toolconfig-checkpoint.test.ts
++++ b/drivers/test/bedrock-toolconfig-checkpoint.test.ts
+@@ -65,16 +65,16 @@ describe('Bedrock - convertToolBlocksToText', () => {
+         const result = convertToolBlocksToText(messages);
+ 
+         // Plain message unchanged
+-        expect((result[0].content![0] as unknown as Tree).text).toBe('Search');
++        expect((result[0].content?.[0] as unknown as Tree).text).toBe('Search');
+         // Text block preserved, toolUse converted
+-        expect((result[1].content![0] as unknown as Tree).text).toBe('Searching...');
+-        expect((result[1].content![1] as unknown as Tree).text).toContain('[Tool call: search_docs');
+-        expect((result[1].content![1] as unknown as Tree).text).toContain('query');
+-        expect((result[1].content![1] as unknown as Tree).toolUse).toBeUndefined();
++        expect((result[1].content?.[0] as unknown as Tree).text).toBe('Searching...');
++        expect((result[1].content?.[1] as unknown as Tree).text).toContain('[Tool call: search_docs');
++        expect((result[1].content?.[1] as unknown as Tree).text).toContain('query');
++        expect((result[1].content?.[1] as unknown as Tree).toolUse).toBeUndefined();
+         // toolResult converted
+-        expect((result[2].content![0] as unknown as Tree).text).toContain('[Tool result:');
+-        expect((result[2].content![0] as unknown as Tree).text).toContain('Found 3 docs');
+-        expect((result[2].content![0] as unknown as Tree).toolResult).toBeUndefined();
++        expect((result[2].content?.[0] as unknown as Tree).text).toContain('[Tool result:');
++        expect((result[2].content?.[0] as unknown as Tree).text).toContain('Found 3 docs');
++        expect((result[2].content?.[0] as unknown as Tree).toolResult).toBeUndefined();
+     });
+ 
+     test('truncates large inputs and results', () => {
+@@ -83,10 +83,10 @@ describe('Bedrock - convertToolBlocksToText', () => {
+             { role: 'user', content: [{ toolResult: { toolUseId: 't1', content: [{ text: 'y'.repeat(1000) }] } }] },
+         ];
+         const result = convertToolBlocksToText(messages);
+-        expect((result[0].content![0] as unknown as Tree).text.length).toBeLessThan(700);
+-        expect((result[0].content![0] as unknown as Tree).text).toContain('...');
+-        expect((result[1].content![0] as unknown as Tree).text.length).toBeLessThan(700);
+-        expect((result[1].content![0] as unknown as Tree).text).toContain('...');
++        expect((result[0].content?.[0] as unknown as Tree).text.length).toBeLessThan(700);
++        expect((result[0].content?.[0] as unknown as Tree).text).toContain('...');
++        expect((result[1].content?.[0] as unknown as Tree).text.length).toBeLessThan(700);
++        expect((result[1].content?.[0] as unknown as Tree).text).toContain('...');
+     });
+ 
+     test('preparePayload converts when tools=[] but preserves when tools provided', () => {
+@@ -102,8 +102,8 @@ describe('Bedrock - convertToolBlocksToText', () => {
+         // tools=[] → conversion, no toolConfig
+         const emptyTools = driver.preparePayload(prompt, { model: 'anthropic.claude-sonnet-4-20250514', tools: [] } as ExecutionOptions);
+         expect(emptyTools.toolConfig).toBeUndefined();
+-        expect((emptyTools.messages![1].content![0] as unknown as Tree).toolUse).toBeUndefined();
+-        expect((emptyTools.messages![1].content![0] as unknown as Tree).text).toContain('[Tool call: think');
++        expect((emptyTools.messages?.[1].content?.[0] as unknown as Tree).toolUse).toBeUndefined();
++        expect((emptyTools.messages?.[1].content?.[0] as unknown as Tree).text).toContain('[Tool call: think');
+ 
+         // tools provided → no conversion, toolConfig set
+         const withTools = driver.preparePayload(
+@@ -111,7 +111,7 @@ describe('Bedrock - convertToolBlocksToText', () => {
+             { model: 'anthropic.claude-sonnet-4-20250514', tools: [{ name: 'x', description: 'x', input_schema: { type: 'object' } }] } as ExecutionOptions,
+         );
+         expect(withTools.toolConfig).toBeDefined();
+-        expect((withTools.messages![1].content![0] as unknown as Tree).toolUse).toBeDefined();
++        expect((withTools.messages?.[1].content?.[0] as unknown as Tree).toolUse).toBeDefined();
+     });
+ 
+     test('no conversion when conversation has no tool blocks', () => {
+@@ -249,18 +249,18 @@ describe('VertexAI Gemini - convertGeminiFunctionPartsToText', () => {
+         const result = convertGeminiFunctionPartsToText(contents);
+ 
+         // Plain text unchanged
+-        expect(result[0].parts![0].text).toBe('What is the weather?');
++        expect(result[0].parts?.[0].text).toBe('What is the weather?');
+ 
+         // functionCall converted, text preserved
+-        expect(result[1].parts![0].text).toBe('Let me check.');
+-        expect(result[1].parts![1].text).toContain('[Tool call: get_weather');
+-        expect(result[1].parts![1].text).toContain('Paris');
+-        expect(result[1].parts![1].functionCall).toBeUndefined();
++        expect(result[1].parts?.[0].text).toBe('Let me check.');
++        expect(result[1].parts?.[1].text).toContain('[Tool call: get_weather');
++        expect(result[1].parts?.[1].text).toContain('Paris');
++        expect(result[1].parts?.[1].functionCall).toBeUndefined();
+ 
+         // functionResponse converted
+-        expect(result[2].parts![0].text).toContain('[Tool result for get_weather:');
+-        expect(result[2].parts![0].text).toContain('temperature');
+-        expect(result[2].parts![0].functionResponse).toBeUndefined();
++        expect(result[2].parts?.[0].text).toContain('[Tool result for get_weather:');
++        expect(result[2].parts?.[0].text).toContain('temperature');
++        expect(result[2].parts?.[0].functionResponse).toBeUndefined();
+     });
+ 
+     test('truncates large args and responses', () => {
+@@ -275,10 +275,10 @@ describe('VertexAI Gemini - convertGeminiFunctionPartsToText', () => {
+             },
+         ];
+         const result = convertGeminiFunctionPartsToText(contents);
+-        expect(result[0].parts![0].text!.length).toBeLessThan(700);
+-        expect(result[0].parts![0].text).toContain('...');
+-        expect(result[1].parts![0].text!.length).toBeLessThan(700);
+-        expect(result[1].parts![0].text).toContain('...');
++        expect(result[0].parts?.[0].text?.length).toBeLessThan(700);
++        expect(result[0].parts?.[0].text).toContain('...');
++        expect(result[1].parts?.[0].text?.length).toBeLessThan(700);
++        expect(result[1].parts?.[0].text).toContain('...');
+     });
+ 
+     test('no conversion when no function parts', () => {
+diff --git a/drivers/test/checkpoint-tool-conversion.test.ts b/drivers/test/checkpoint-tool-conversion.test.ts
+index 78f13500..14cd2993 100644
+--- a/drivers/test/checkpoint-tool-conversion.test.ts
++++ b/drivers/test/checkpoint-tool-conversion.test.ts
+@@ -13,7 +13,7 @@
+  * 2. Then running a follow-up with tools=[] (checkpoint summary scenario)
+  */
+ 
+-import { AbstractDriver, ExecutionOptions, PromptRole, PromptSegment } from '@llumiverse/core';
++import { type AbstractDriver, type ExecutionOptions, PromptRole, type PromptSegment } from '@llumiverse/core';
+ import 'dotenv/config';
+ import { GoogleAuth } from 'google-auth-library';
+ import { describe, expect, test } from 'vitest';
+@@ -110,13 +110,13 @@ describe.concurrent.each(drivers)('Driver $name - checkpoint tool conversion', (
+         const toolResult = await driver.execute(TOOL_PROMPT, toolOptions);
+ 
+         expect(toolResult.tool_use).toBeDefined();
+-        expect(toolResult.tool_use!.length).toBeGreaterThan(0);
++        expect(toolResult.tool_use?.length).toBeGreaterThan(0);
+         expect(toolResult.conversation).toBeDefined();
+ 
+         // Step 2: Provide tool result to continue the conversation
+         const toolResponse: PromptSegment = {
+             role: PromptRole.tool,
+-            tool_use_id: toolResult.tool_use![0].id,
++            tool_use_id: toolResult.tool_use?.[0].id,
+             content: '15 degrees celsius, sunny',
+         };
+         const continueResult = await driver.execute([toolResponse], {
+diff --git a/drivers/test/conversation.test.ts b/drivers/test/conversation.test.ts
+index 743c9486..25a34042 100644
+--- a/drivers/test/conversation.test.ts
++++ b/drivers/test/conversation.test.ts
+@@ -7,7 +7,8 @@
+  * 3. The conversation object survives JSON.stringify/parse (no Uint8Array corruption)
+  */
+ 
+-import { AbstractDriver, DataSource, ExecutionOptions, Modalities, PromptRole, PromptSegment } from '@llumiverse/core';
++// biome-ignore lint/suspicious/noDeprecatedImports: exercising deprecated output_modality path until that API is removed
++import { type AbstractDriver, type DataSource, type ExecutionOptions, Modalities, PromptRole, type PromptSegment } from '@llumiverse/core';
+ import 'dotenv/config';
+ import { describe, expect, test } from "vitest";
+ import { AnthropicDriver, BedrockDriver, OpenAIDriver, VertexAIDriver, xAIDriver } from '../src';
+@@ -235,7 +236,7 @@ function verifyConversationSerializable(conversation: unknown, driverName: strin
+         }
+ 
+         if (Array.isArray(obj)) {
+-            obj.forEach((item, i) => checkForCorruptedBytes(item, `${path}[${i}]`));
++            obj.forEach((item, i) => { checkForCorruptedBytes(item, `${path}[${i}]`); });
+         }
+     };
+ 
+@@ -381,6 +382,7 @@ describe.skipIf(!hasDrivers).concurrent.each(drivers)("Driver $name - Multi-turn
+     });
+ 
+     test.skipIf(!visionModel)(`${name}: multi-turn conversation with image`, { timeout: TIMEOUT }, async () => {
++        // biome-ignore lint/style/noNonNullAssertion: intentional non-null assertion; TS can't prove narrowing here
+         const options = getTextOptions(visionModel!);
+ 
+         // Turn 1: Send an image as base64 (like Studio does)
+@@ -440,6 +442,7 @@ describe.skipIf(!hasDrivers).concurrent.each(drivers)("Driver $name - Multi-turn
+     });
+ 
+     test.skipIf(!visionModel)(`${name}: conversation with multiple images`, { timeout: TIMEOUT }, async () => {
++        // biome-ignore lint/style/noNonNullAssertion: intentional non-null assertion; TS can't prove narrowing here
+         const options = getTextOptions(visionModel!);
+ 
+         // Turn 1: Send two images as base64 (like Studio does)
+diff --git a/drivers/test/embeddings.test.ts b/drivers/test/embeddings.test.ts
+index 5d31d1ff..975a65e0 100644
+--- a/drivers/test/embeddings.test.ts
++++ b/drivers/test/embeddings.test.ts
+@@ -1,13 +1,13 @@
+ import { Base64DataSource, type Driver } from '@llumiverse/core';
+ import 'dotenv/config';
+-import { readFile } from 'fs/promises';
++import { readFile } from 'node:fs/promises';
+ import { describe, expect, test } from "vitest";
+ import { BedrockDriver, MistralAIDriver, OpenAIDriver, VertexAIDriver, WatsonxDriver } from "../src/index.js";
+ 
+ const TIMEOUT = 15000;
+ const TEXT = "Hello";
+ 
+-const IMAGE_SRC = import.meta.dirname + "/hello_world.jpg";
++const IMAGE_SRC = `${import.meta.dirname}/hello_world.jpg`;
+ 
+ async function convertImageToBase64(path: string) {
+     const data = await readFile(path);
+@@ -68,6 +68,7 @@ function firstValues(d: Driver) {
+ if (vertex) {
+     describe('VertexAI: embeddings generation', () => {
+         test('embeddings for text', async () => {
++            // biome-ignore lint/style/noNonNullAssertion: intentional non-null assertion; TS can't prove narrowing here
+             const r = await firstValues(vertex!)({ type: "text", text: TEXT });
+             expect(r.results).toHaveLength(1);
+             expect(r.results[0].outputs[0].values.length).toBeGreaterThan(0);
+@@ -75,13 +76,14 @@ if (vertex) {
+         }, TIMEOUT);
+ 
+         test('embeddings for image (multimodal)', async () => {
++            // biome-ignore lint/style/noNonNullAssertion: intentional non-null assertion; TS can't prove narrowing here
+             const r = await firstValues(vertex!)({ type: "image", source: imageDataSource() });
+             expect(r.results).toHaveLength(1);
+             expect(r.results[0].outputs[0].values.length).toBeGreaterThan(0);
+         }, TIMEOUT);
+ 
+         test('embeddings for batched text inputs', async () => {
+-            const r = await vertex!.generateEmbeddings({
++            const r = await vertex?.generateEmbeddings({
+                 inputs: [
+                     { type: "text", text: "first" },
+                     { type: "text", text: "second" },
+@@ -97,11 +99,13 @@ if (vertex) {
+ if (bedrock) {
+     describe('Bedrock: embeddings generation', () => {
+         test('embeddings for text (Nova default)', async () => {
++            // biome-ignore lint/style/noNonNullAssertion: intentional non-null assertion; TS can't prove narrowing here
+             const r = await firstValues(bedrock!)({ type: "text", text: TEXT });
+             expect(r.results[0].outputs[0].values.length).toBeGreaterThan(0);
+         }, TIMEOUT);
+ 
+         test('embeddings for image (Nova multimodal)', async () => {
++            // biome-ignore lint/style/noNonNullAssertion: intentional non-null assertion; TS can't prove narrowing here
+             const r = await firstValues(bedrock!)({ type: "image", source: imageDataSource() });
+             expect(r.results[0].outputs[0].values.length).toBeGreaterThan(0);
+         }, TIMEOUT);
+@@ -111,6 +115,7 @@ if (bedrock) {
+ if (openai) {
+     describe('OpenAI: embeddings generation', () => {
+         test('embeddings for text', async () => {
++            // biome-ignore lint/style/noNonNullAssertion: intentional non-null assertion; TS can't prove narrowing here
+             const r = await firstValues(openai!)({ type: "text", text: TEXT });
+             expect(r.results).toHaveLength(1);
+             expect(r.results[0].outputs[0].values.length).toBeGreaterThan(0);
+@@ -119,7 +124,7 @@ if (openai) {
+         }, TIMEOUT);
+ 
+         test('embeddings for batched text inputs', async () => {
+-            const r = await openai!.generateEmbeddings({
++            const r = await openai?.generateEmbeddings({
+                 inputs: [
+                     { type: "text", text: "alpha" },
+                     { type: "text", text: "beta" },
+@@ -133,6 +138,7 @@ if (openai) {
+ if (mistral) {
+     describe('MistralAI: embeddings generation', () => {
+         test('embeddings for text', async () => {
++            // biome-ignore lint/style/noNonNullAssertion: intentional non-null assertion; TS can't prove narrowing here
+             const r = await firstValues(mistral!)({ type: "text", text: TEXT });
+             expect(r.results[0].outputs[0].values.length).toBeGreaterThan(0);
+             expect(r.model).toBe("mistral-embed");
+@@ -143,6 +149,7 @@ if (mistral) {
+ if (watsonx) {
+     describe('Watsonx: embeddings generation', () => {
+         test('embeddings for text', async () => {
++            // biome-ignore lint/style/noNonNullAssertion: intentional non-null assertion; TS can't prove narrowing here
+             const r = await firstValues(watsonx!)({ type: "text", text: TEXT });
+             expect(r.results[0].outputs[0].values.length).toBeGreaterThan(0);
+             expect(r.model).toBe("ibm/slate-125m-english-rtrvr");
+diff --git a/drivers/test/image-gen.test.ts b/drivers/test/image-gen.test.ts
+index 38cd677f..8b61ad65 100644
+--- a/drivers/test/image-gen.test.ts
++++ b/drivers/test/image-gen.test.ts
+@@ -1,6 +1,7 @@
+-import { AbstractDriver, ExecutionOptions, Modalities } from "@llumiverse/core";
++// biome-ignore lint/suspicious/noDeprecatedImports: exercising deprecated output_modality path until that API is removed
++import { type AbstractDriver, type ExecutionOptions, Modalities } from "@llumiverse/core";
+ import "dotenv/config";
+-import fs from "fs";
++import fs from "node:fs";
+ import { describe, expect, test } from "vitest";
+ import { BedrockDriver } from "../src";
+ import { formatNovaImageGenerationPayload, NovaImageGenerationTaskType } from "../src/bedrock/nova-image-payload";
+diff --git a/drivers/test/orphaned-tool-use.test.ts b/drivers/test/orphaned-tool-use.test.ts
+index 8826907f..3d507a7d 100644
+--- a/drivers/test/orphaned-tool-use.test.ts
++++ b/drivers/test/orphaned-tool-use.test.ts
+@@ -258,12 +258,13 @@ describe('fixOrphanedToolUse - Bedrock', () => {
+         expect(result[1].role).toBe('user');
+ 
+         // The user message should have synthetic toolResult prepended
++        // biome-ignore lint/style/noNonNullAssertion: intentional non-null assertion; TS can't prove narrowing here
+         const userContent = result[1].content!;
+         expect(userContent).toHaveLength(2);
+         expect(userContent[0].toolResult).toBeDefined();
+-        expect(userContent[0].toolResult!.toolUseId).toBe('tool_1');
+-        expect(userContent[0].toolResult!.content![0].text).toContain('Tool interrupted');
+-        expect(userContent[0].toolResult!.content![0].text).toContain('search');
++        expect(userContent[0].toolResult?.toolUseId).toBe('tool_1');
++        expect(userContent[0].toolResult?.content?.[0].text).toContain('Tool interrupted');
++        expect(userContent[0].toolResult?.content?.[0].text).toContain('search');
+         expect(userContent[1].text).toBe('Actually, stop that and do something else');
+     });
+ 
+@@ -286,6 +287,7 @@ describe('fixOrphanedToolUse - Bedrock', () => {
+ 
+         const result = fixOrphanedToolUseBedrock(messages);
+ 
++        // biome-ignore lint/style/noNonNullAssertion: intentional non-null assertion; TS can't prove narrowing here
+         const userContent = result[1].content!;
+         expect(userContent).toHaveLength(4); // 3 synthetic toolResults + 1 text
+ 
+@@ -316,6 +318,7 @@ describe('fixOrphanedToolUse - Bedrock', () => {
+ 
+         const result = fixOrphanedToolUseBedrock(messages);
+ 
++        // biome-ignore lint/style/noNonNullAssertion: intentional non-null assertion; TS can't prove narrowing here
+         const userContent = result[1].content!;
+         expect(userContent).toHaveLength(3); // 1 synthetic + 1 real toolResult + 1 text
+ 
+@@ -349,14 +352,15 @@ describe('fixOrphanedToolUse - Bedrock', () => {
+         expect(result).toHaveLength(5);
+ 
+         // Check that the last user message has synthetic toolResults
++        // biome-ignore lint/style/noNonNullAssertion: intentional non-null assertion; TS can't prove narrowing here
+         const lastUserContent = result[4].content!;
+         expect(lastUserContent).toHaveLength(3); // 2 synthetic + 1 text
+ 
+         expect(lastUserContent[0].toolResult?.toolUseId).toBe('toolu_search');
+-        expect(lastUserContent[0].toolResult?.content![0].text).toContain('user stopped');
++        expect(lastUserContent[0].toolResult?.content?.[0].text).toContain('user stopped');
+ 
+         expect(lastUserContent[1].toolResult?.toolUseId).toBe('toolu_analyze');
+-        expect(lastUserContent[1].toolResult?.content![0].text).toContain('user stopped');
++        expect(lastUserContent[1].toolResult?.content?.[0].text).toContain('user stopped');
+ 
+         expect(lastUserContent[2].text).toBe('Never mind, do something else instead');
+     });
+diff --git a/drivers/test/samples.ts b/drivers/test/samples.ts
+index 50c13f0a..5408f741 100644
+--- a/drivers/test/samples.ts
++++ b/drivers/test/samples.ts
+@@ -1,10 +1,10 @@
+-import { DataSource, PromptRole, PromptSegment, readStreamAsBase64 } from "@llumiverse/core";
+-import { NovaMessagesPrompt } from "@llumiverse/core/formatters";
+-import { createReadStream } from "fs";
+-import { JSONSchema } from "@llumiverse/core";
++import { type DataSource, PromptRole, type PromptSegment, readStreamAsBase64 } from "@llumiverse/core";
++import type { NovaMessagesPrompt } from "@llumiverse/core/formatters";
++import { createReadStream } from "node:fs";
++import type { JSONSchema } from "@llumiverse/core";
+ import { createReadableStreamFromReadable } from "node-web-stream-adapters";
+-import { basename, dirname, resolve } from "path";
+-import { fileURLToPath } from "url";
++import { basename, dirname, resolve } from "node:path";
++import { fileURLToPath } from "node:url";
+ 
+ const __dirname = dirname(fileURLToPath(import.meta.url));
+ // 512x512 JPEG fallback — within Bedrock's [320, 4096] range
+diff --git a/drivers/test/tools.test.ts b/drivers/test/tools.test.ts
+index 9f365ad8..5fb7673b 100644
+--- a/drivers/test/tools.test.ts
++++ b/drivers/test/tools.test.ts
+@@ -1,4 +1,5 @@
+-import { AbstractDriver, ExecutionOptions, Modalities, PromptRole, PromptSegment } from '@llumiverse/core';
++// biome-ignore lint/suspicious/noDeprecatedImports: exercising deprecated output_modality path until that API is removed
++import { type AbstractDriver, type ExecutionOptions, Modalities, PromptRole, type PromptSegment } from '@llumiverse/core';
+ import 'dotenv/config';
+ import { GoogleAuth } from 'google-auth-library';
+ import { describe, expect, test } from "vitest";
+@@ -221,6 +222,7 @@ describe.concurrent.each(drivers)("Driver $name", ({ name, driver, models }) =>
+         expect(r.tool_use?.[0].id).toBeDefined();
+         expect(r.tool_use?.[0].tool_input).toBeDefined();
+         expect(r.tool_use?.[0].tool_name).toBe("get_weather");
++        // biome-ignore lint/style/noNonNullAssertion: intentional non-null assertion; TS can't prove narrowing here
+         const tool_use = r.tool_use!;
+         r = await driver.execute([{
+             role: PromptRole.tool,
+diff --git a/drivers/test/utils.ts b/drivers/test/utils.ts
+index 56cd3341..1c1a4264 100644
+--- a/drivers/test/utils.ts
++++ b/drivers/test/utils.ts
+@@ -1,6 +1,6 @@
+-import { dirname, join } from 'path';
+-import { readFileSync } from 'fs';
+-import { CompletionResult } from '@llumiverse/common';
++import { dirname, join } from 'node:path';
++import { readFileSync } from 'node:fs';
++import type { CompletionResult } from '@llumiverse/common';
+ 
+ const dataDir = join(dirname(new URL(import.meta.url).pathname), 'data');
+ const dataFile = (file: string) => join(dataDir, file);
+diff --git a/drivers/test/vertexai-embedding-models.test.ts b/drivers/test/vertexai-embedding-models.test.ts
+index 963a328d..434c0b5f 100644
+--- a/drivers/test/vertexai-embedding-models.test.ts
++++ b/drivers/test/vertexai-embedding-models.test.ts
+@@ -32,7 +32,7 @@ if (!vertex) {
+     describe("VertexAI text embedding model coverage via @google/genai", () => {
+         for (const model of VERTEX_TEXT_MODELS) {
+             test(`${model} — text-only single input`, async () => {
+-                const result = await vertex!.generateEmbeddings({
++                const result = await vertex?.generateEmbeddings({
+                     inputs: [{ type: "text", text: TEXT }],
+                     model,
+                 });
+diff --git a/drivers/test/vertexai-streaming-conversation.test.ts b/drivers/test/vertexai-streaming-conversation.test.ts
+index 831ac2ab..60ba08b9 100644
+--- a/drivers/test/vertexai-streaming-conversation.test.ts
++++ b/drivers/test/vertexai-streaming-conversation.test.ts
+@@ -1,7 +1,7 @@
+ import { describe, expect, test } from "vitest";
+-import { Content } from "@google/genai";
+-import { ExecutionOptions, unwrapConversationArray } from "@llumiverse/core";
+-import { VertexAIDriver, VertexAIPrompt } from "../src";
++import type { Content } from "@google/genai";
++import { type ExecutionOptions, unwrapConversationArray } from "@llumiverse/core";
++import { VertexAIDriver, type VertexAIPrompt } from "../src";
+ import type { Tree } from "./__helpers__/test-utils.js";
+ 
+ function extractTextParts(message: { parts?: Array<{ text?: string }> }): string[] {
+diff --git a/examples/src/bedrock.ts b/examples/src/bedrock.ts
+index 153384da..df72af09 100644
+--- a/examples/src/bedrock.ts
++++ b/examples/src/bedrock.ts
+@@ -1,5 +1,5 @@
+ import { defaultProvider } from "@aws-sdk/credential-provider-node";
+-import { AIModel, PromptRole, PromptSegment } from "@llumiverse/core";
++import { type AIModel, PromptRole, type PromptSegment } from "@llumiverse/core";
+ import { BedrockDriver } from "@llumiverse/drivers";
+ const credentials = defaultProvider({
+     profile: "default",
+@@ -55,6 +55,7 @@ async function main() {
+     }
+ 
+     // get the recomposed response from the stream chunks
++    // biome-ignore lint/style/noNonNullAssertion: intentional non-null assertion; TS can't prove narrowing here
+     const streamingResponse = stream.completion!;
+ 
+     console.log('\n# LLM response:', streamingResponse.result)
+diff --git a/examples/src/huggingface.ts b/examples/src/huggingface.ts
+index 256e8d8f..2d4c287e 100644
+--- a/examples/src/huggingface.ts
++++ b/examples/src/huggingface.ts
+@@ -1,5 +1,5 @@
+ import 'dotenv/config';
+-import { AIModel, PromptRole, PromptSegment } from "@llumiverse/core";
++import { type AIModel, PromptRole, type PromptSegment } from "@llumiverse/core";
+ import { HuggingFaceIEDriver } from "@llumiverse/drivers";
+ 
+ async function main() {
+@@ -51,6 +51,7 @@ async function main() {
+     }
+ 
+     // get the recomposed response from the stream chunks
++    // biome-ignore lint/style/noNonNullAssertion: intentional non-null assertion; TS can't prove narrowing here
+     const streamingResponse = stream.completion!;
+ 
+     console.log('\n# LLM response:', streamingResponse.result)
+diff --git a/examples/src/mistralai.ts b/examples/src/mistralai.ts
+index a018d651..575c0bc7 100644
+--- a/examples/src/mistralai.ts
++++ b/examples/src/mistralai.ts
+@@ -1,4 +1,4 @@
+-import { AIModel, PromptRole, PromptSegment } from "@llumiverse/core";
++import { type AIModel, PromptRole, type PromptSegment } from "@llumiverse/core";
+ import { MistralAIDriver } from "@llumiverse/drivers";
+ import 'dotenv/config';
+ 
+@@ -50,6 +50,7 @@ async function main() {
+     }
+ 
+     // get the recomposed response from the stream chunks
++    // biome-ignore lint/style/noNonNullAssertion: intentional non-null assertion; TS can't prove narrowing here
+     const streamingResponse = stream.completion!;
+ 
+     console.log('\n# LLM response:', streamingResponse.result)
+diff --git a/examples/src/openai.ts b/examples/src/openai.ts
+index 8711993d..ebec5760 100644
+--- a/examples/src/openai.ts
++++ b/examples/src/openai.ts
+@@ -1,4 +1,4 @@
+-import { AIModel, PromptRole, PromptSegment } from "@llumiverse/core";
++import { type AIModel, PromptRole, type PromptSegment } from "@llumiverse/core";
+ import { OpenAIDriver } from "@llumiverse/drivers";
+ 
+ async function main() {
+@@ -48,6 +48,7 @@ async function main() {
+     }
+ 
+     // get the recomposed response from the stream chunks
++    // biome-ignore lint/style/noNonNullAssertion: intentional non-null assertion; TS can't prove narrowing here
+     const streamingResponse = stream.completion!;
+ 
+     console.log('\n# LLM response:', streamingResponse.result)
+diff --git a/examples/src/replicate.ts b/examples/src/replicate.ts
+index 945fcd31..14d61fbf 100644
+--- a/examples/src/replicate.ts
++++ b/examples/src/replicate.ts
+@@ -1,5 +1,5 @@
+ import 'dotenv/config';
+-import { AIModel, PromptRole, PromptSegment } from "@llumiverse/core";
++import { type AIModel, PromptRole, type PromptSegment } from "@llumiverse/core";
+ import { ReplicateDriver } from "@llumiverse/drivers";
+ 
+ async function main() {
+@@ -50,6 +50,7 @@ async function main() {
+     }
+ 
+     // get the recomposed response from the stream chunks
++    // biome-ignore lint/style/noNonNullAssertion: intentional non-null assertion; TS can't prove narrowing here
+     const streamingResponse = stream.completion!;
+ 
+     console.log('\n# LLM response:', streamingResponse.result)
+diff --git a/examples/src/together.ts b/examples/src/together.ts
+index 783806c3..1d635726 100644
+--- a/examples/src/together.ts
++++ b/examples/src/together.ts
+@@ -1,4 +1,4 @@
+-import { AIModel, PromptRole, PromptSegment } from "@llumiverse/core";
++import { type AIModel, PromptRole, type PromptSegment } from "@llumiverse/core";
+ import { TogetherAIDriver } from "@llumiverse/drivers";
+ import 'dotenv/config';
+ 
+@@ -51,6 +51,7 @@ async function main() {
+     }
+ 
+     // get the recomposed response from the stream chunks
++    // biome-ignore lint/style/noNonNullAssertion: intentional non-null assertion; TS can't prove narrowing here
+     const streamingResponse = stream.completion!;
+ 
+     console.log('\n# LLM response:', streamingResponse.result)
+diff --git a/examples/src/vertexai.ts b/examples/src/vertexai.ts
+index b614a9ee..fd06405f 100644
+--- a/examples/src/vertexai.ts
++++ b/examples/src/vertexai.ts
+@@ -1,4 +1,4 @@
+-import { AIModel, PromptRole, PromptSegment } from "@llumiverse/core";
++import { type AIModel, PromptRole, type PromptSegment } from "@llumiverse/core";
+ import { VertexAIDriver } from "@llumiverse/drivers";
+ 
+ async function main() {
+@@ -49,6 +49,7 @@ async function main() {
+     }
+ 
+     // get the recomposed response from the stream chunks
++    // biome-ignore lint/style/noNonNullAssertion: intentional non-null assertion; TS can't prove narrowing here
+     const streamingResponse = stream.completion!;
+ 
+     console.log('\n# LLM response:', streamingResponse.result)
+diff --git a/package.json b/package.json
+index 6abe2617..5a387579 100644
+--- a/package.json
++++ b/package.json
+@@ -4,23 +4,31 @@
+     "private": true,
+     "type": "module",
+     "scripts": {
++        "build": "pnpm -r build",
+         "bump": "pnpm exec wst bump minor",
+-        "lint": "pnpm exec biome lint",
+-        "lint:fix": "pnpm exec biome lint --write",
++        "ci:local": "pnpm run lint && pnpm run build && pnpm run typecheck:test && pnpm run test",
+         "format": "pnpm exec biome format --write .",
+         "format:check": "pnpm exec biome format .",
+-        "release": "pnpm -r publish --access public",
++        "lint": "pnpm exec biome lint",
++        "lint:fix": "pnpm exec biome lint --write",
+         "prepare": "cp ./README.md ./core/ && cp ./README.md ./drivers/ && git config core.hooksPath .githooks 2>/dev/null || true",
+-        "build": "pnpm -r build",
++        "release": "pnpm -r publish --access public",
++        "test": "pnpm -r test",
+         "typecheck:test": "pnpm -r typecheck:test"
+     },
+     "devDependencies": {
+         "@biomejs/biome": "^2.4.4",
+         "cross-spawn": "^7.0.6",
++        "lint-staged": "^17.0.5",
+         "npm-ws-tools": "^0.3.0",
+         "rollup": "^4.59.0",
+         "typescript": "^6.0.2",
+         "vitest": "^4.1.4"
+     },
++    "lint-staged": {
++        "*.{js,cjs,mjs,jsx,ts,tsx,css,html}": [
++            "pnpm exec biome lint --no-errors-on-unmatched --files-ignore-unknown=true --diagnostic-level=error"
++        ]
++    },
+     "packageManager": "pnpm@11.1.2"
+ }
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index af840e6d..c1369008 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -46,6 +46,9 @@ importers:
+       cross-spawn:
+         specifier: ^7.0.6
+         version: 7.0.6
++      lint-staged:
++        specifier: ^17.0.5
++        version: 17.0.5
+       npm-ws-tools:
+         specifier: ^0.3.0
+         version: 0.3.0
+@@ -57,7 +60,7 @@ importers:
+         version: 6.0.2
+       vitest:
+         specifier: ^4.1.4
+-        version: 4.1.4(@types/node@24.12.2)(vite@6.4.2(@types/node@24.12.2))
++        version: 4.1.4(@types/node@24.12.2)(vite@6.4.2(@types/node@24.12.2)(yaml@2.9.0))
+ 
+   common:
+     devDependencies:
+@@ -75,7 +78,7 @@ importers:
+         version: 6.0.2
+       vitest:
+         specifier: ^4.0.18
+-        version: 4.1.4(@types/node@24.12.2)(vite@6.4.2(@types/node@24.12.2))
++        version: 4.1.4(@types/node@24.12.2)(vite@6.4.2(@types/node@24.12.2)(yaml@2.9.0))
+ 
+   core:
+     dependencies:
+@@ -109,7 +112,7 @@ importers:
+         version: 6.0.2
+       vitest:
+         specifier: ^4.0.18
+-        version: 4.1.4(@types/node@24.12.2)(vite@6.4.2(@types/node@24.12.2))
++        version: 4.1.4(@types/node@24.12.2)(vite@6.4.2(@types/node@24.12.2)(yaml@2.9.0))
+ 
+   drivers:
+     dependencies:
+@@ -209,7 +212,7 @@ importers:
+         version: 6.0.2
+       vitest:
+         specifier: ^4.0.18
+-        version: 4.1.4(@types/node@24.12.2)(vite@6.4.2(@types/node@24.12.2))
++        version: 4.1.4(@types/node@24.12.2)(vite@6.4.2(@types/node@24.12.2)(yaml@2.9.0))
+ 
+   examples:
+     dependencies:
+@@ -1292,6 +1295,10 @@ packages:
+     resolution: {integrity: sha512-/6w/C21Pm1A7aZitlI5Ni/2J6FFQN8i1Cvz3kHABAAbw93v/NlvKdVOqz7CCWz/3iv/JplRSEEZ83XION15ovw==}
+     engines: {node: '>=6'}
+ 
++  ansi-escapes@7.3.0:
++    resolution: {integrity: sha512-BvU8nYgGQBxcmMuEeUEmNTvrMVjJNSH7RgW24vXexN4Ven6qCvy4TntnvlnwnMLTVlcRQQdbRY8NKnaIoeWDNg==}
++    engines: {node: '>=18'}
++
+   ansi-regex@5.0.1:
+     resolution: {integrity: sha512-quJQXlTSUGL2LH9SUXo8VwsY4soanhgo6LNSm84E1LBcE8s3O0wpdiRzyR9z/ZZJMlMWv37qOOb9pdJlMUEKFQ==}
+     engines: {node: '>=8'}
+@@ -1300,6 +1307,10 @@ packages:
+     resolution: {integrity: sha512-7HSX4QQb4CspciLpVFwyRe79O3xsIZDDLER21kERQ71oaPodF8jL725AgJMFAYbooIqolJoRLuM81SpeUkpkvA==}
+     engines: {node: '>=12'}
+ 
++  ansi-regex@6.2.2:
++    resolution: {integrity: sha512-Bq3SmSpyFHaWjPk8If9yc6svM8c56dB5BAtW4Qbw5jHTwwXXcTLoRMkpDJp6VL0XzlWaCHTXrkFURMYmD0sLqg==}
++    engines: {node: '>=12'}
++
+   ansi-styles@4.3.0:
+     resolution: {integrity: sha512-zbB9rCJAT1rbjiVDb2hqKFHNYLxgtk8NURxZ3IZwD3F6NtxbXZQCnnSi1Lkx+IDohdPlFp222wVALIheZJQSEg==}
+     engines: {node: '>=8'}
+@@ -1308,6 +1319,10 @@ packages:
+     resolution: {integrity: sha512-bN798gFfQX+viw3R7yrGWRqnrN2oRkEkUjjl4JNn4E8GxxbjtG3FbrEIIY3l8/hrwUwIeCZvi4QuOTP4MErVug==}
+     engines: {node: '>=12'}
+ 
++  ansi-styles@6.2.3:
++    resolution: {integrity: sha512-4Dj6M28JB+oAH8kFkTLUo+a2jwOFkuqb3yucU0CANcRRUbxS0cP0nZYCGjcc3BNXwRIsUVmDGgzawme7zvJHvg==}
++    engines: {node: '>=12'}
++
+   argparse@2.0.1:
+     resolution: {integrity: sha512-8+9WqebbFzpX9OR+Wa6O29asIogeRMzcGtAINdpMHHyAg10f05aSFVBbcEqGf/PXw1EjAZ+q2/bEBg3DvurK3Q==}
+ 
+@@ -1352,6 +1367,14 @@ packages:
+     resolution: {integrity: sha512-NUPRluOfOiTKBKvWPtSD4PhFvWCqOi0BGStNWs57X9js7XGTprSmFoz5F0tWhR4WPjNeR9jXqdC7/UpSJTnlRg==}
+     engines: {node: '>=18'}
+ 
++  cli-cursor@5.0.0:
++    resolution: {integrity: sha512-aCj4O5wKyszjMmDT4tZj93kxyydN/K5zPWSCe6/0AV/AA1pqe5ZBIw0a2ZfPQV7lL5/yb5HsUreJ6UFAF1tEQw==}
++    engines: {node: '>=18'}
++
++  cli-truncate@5.2.0:
++    resolution: {integrity: sha512-xRwvIOMGrfOAnM1JYtqQImuaNtDEv9v6oIYAs4LIHwTiKee8uwvIi363igssOC0O5U04i4AlENs79LQLu9tEMw==}
++    engines: {node: '>=20'}
++
+   cliui@8.0.1:
+     resolution: {integrity: sha512-BSeNnyus75C4//NQ9gQt1/csTXyo/8Sb+afLAkzAptFuMsod9HFokGNudZpi/oQV73hnVK+sR+5PVRMd+Dr7YQ==}
+     engines: {node: '>=12'}
+@@ -1424,6 +1447,9 @@ packages:
+   ecdsa-sig-formatter@1.0.11:
+     resolution: {integrity: sha512-nagl3RYrbNv6kQkeJIpt6NJZy8twLB/2vtz6yN9Z4vRKHN4/QZJIEbqohALSgwKdnksuY3k5Addp5lg8sVoVcQ==}
+ 
++  emoji-regex@10.6.0:
++    resolution: {integrity: sha512-toUI84YS5YmxW219erniWD0CIVOo46xGKColeNQRgOzDorgBi1v4D71/OFzgD9GO2UGKIv1C3Sp8DAn0+j5w7A==}
++
+   emoji-regex@8.0.0:
+     resolution: {integrity: sha512-MSjYzcWNOA0ewAHpz0MxpYFvwg6yjy1NG3xteoqz644VCo/RPgnr1/GGt+ic3iJTzQ8Eu3TdM14SawnVUmGE6A==}
+ 
+@@ -1437,6 +1463,10 @@ packages:
+     resolution: {integrity: sha512-rRqJg/6gd538VHvR3PSrdRBb/1Vy2YfzHqzvbhGIQpDRKIa4FgV/54b5Q1xYSxOOwKvjXweS26E0Q+nAMwp2pQ==}
+     engines: {node: '>=8.6'}
+ 
++  environment@1.1.0:
++    resolution: {integrity: sha512-xUtoPkMggbz0MPyPiIWr1Kp4aeWJjDZ6SMvURhimjdZgsRuDplF5/s9hcgGhyXMhs+6vpnuoiZ2kFiu3FMnS8Q==}
++    engines: {node: '>=18'}
++
+   es-define-property@1.0.1:
+     resolution: {integrity: sha512-e3nRfgfUZ4rNGL232gUgX06QNyyez04KdjFrF+LTRoOXmrOgFKDg4BCdsjW8EnT69eqdYGmRpJwiPVYNrCaW3g==}
+     engines: {node: '>= 0.4'}
+@@ -1472,6 +1502,9 @@ packages:
+     resolution: {integrity: sha512-i/2XbnSz/uxRCU6+NdVJgKWDTM427+MqYbkQzD321DuCQJUqOuJKIA0IM2+W2xtYHdKOmZ4dR6fExsd4SXL+WQ==}
+     engines: {node: '>=6'}
+ 
++  eventemitter3@5.0.4:
++    resolution: {integrity: sha512-mlsTRyGaPBjPedk6Bvw+aqbsXDtoAyAzm5MO7JgU+yVRyMQ5O8bD4Kcci7BS85f93veegeCPkL8R4GLClnjLFw==}
++
+   events@3.3.0:
+     resolution: {integrity: sha512-mQw+2fkQbALzQ7V0MY0IqdnXNOeTtP4r0lN9z7AAawCXgqea7bDii20AYrIBrFd/Hx0M2Ocz6S111CaFkUcb0Q==}
+     engines: {node: '>=0.8.x'}
+@@ -1567,6 +1600,10 @@ packages:
+     resolution: {integrity: sha512-DyFP3BM/3YHTQOCUL/w0OZHR0lpKeGrxotcHWcqNEdnltqFwXVfhEBQ94eIo34AfQpo0rGki4cyIiftY06h2Fg==}
+     engines: {node: 6.* || 8.* || >= 10.*}
+ 
++  get-east-asian-width@1.6.0:
++    resolution: {integrity: sha512-QRbvDIbx6YklUe6RxeTeleMR0yv3cYH6PsPZHcnVn7xv7zO1BHN8r0XETu8n6Ye3Q+ahtSarc3WgtNWmehIBfA==}
++    engines: {node: '>=18'}
++
+   get-intrinsic@1.3.0:
+     resolution: {integrity: sha512-9fSjSaos/fRIVIp+xSJlE6lfwhES7LNtKaCBIamHsjr2na1BiABJPo0mOjjz8GJDURarmCPGqaiVg5mfjb98CQ==}
+     engines: {node: '>= 0.4'}
+@@ -1649,6 +1686,10 @@ packages:
+     resolution: {integrity: sha512-zymm5+u+sCsSWyD9qNaejV3DFvhCKclKdizYaJUuHA83RLjb7nSuGnddCHGv0hk+KY7BMAlsWeK4Ueg6EV6XQg==}
+     engines: {node: '>=8'}
+ 
++  is-fullwidth-code-point@5.1.0:
++    resolution: {integrity: sha512-5XHYaSyiqADb4RnZ1Bdad6cPp8Toise4TzEjcOYDHZkTCbKgiUl7WTUCpNWHuxmDt91wnsZBc9xinNzopv3JMQ==}
++    engines: {node: '>=18'}
++
+   is-inside-container@1.0.0:
+     resolution: {integrity: sha512-KIYLCCJghfHZxqjYBE7rEy0OBuTd5xCHS7tHVgvCLkx7StIoaxwNW3hCALgEUjFfeRk+MG/Qxmp/vtETEF3tRA==}
+     engines: {node: '>=14.16'}
+@@ -1698,6 +1739,15 @@ packages:
+   jws@4.0.1:
+     resolution: {integrity: sha512-EKI/M/yqPncGUUh44xz0PxSidXFr/+r0pA70+gIYhjv+et7yxM+s29Y+VGDkovRofQem0fs7Uvf4+YmAdyRduA==}
+ 
++  lint-staged@17.0.5:
++    resolution: {integrity: sha512-d12yC+/e8RhBjZtaxZn71FyrgU/P5e+uAPifhCLwdosQZP/zamSdKRWDC30ocVIbzDKiFG1McHc/LUgB92GIPw==}
++    engines: {node: '>=22.22.1'}
++    hasBin: true
++
++  listr2@10.2.1:
++    resolution: {integrity: sha512-7I5knELsJKTUjXG+A6BkKAiGkW1i25fNa/xlUl9hFtk15WbE9jndA89xu5FzQKrY5llajE1hfZZFMILXkDHk/Q==}
++    engines: {node: '>=22.13.0'}
++
+   lodash.camelcase@4.3.0:
+     resolution: {integrity: sha512-TwuEnCnxbc3rAvhf/LbG7tJUDzhqXyFnv3dtzLOPgCG/hODL7WFnsbwktkD7yUV0RrreP/l1PALq/YSg6VvjlA==}
+ 
+@@ -1722,6 +1772,10 @@ packages:
+   lodash.once@4.1.1:
+     resolution: {integrity: sha512-Sb487aTOCr9drQVL8pIxOzVhafOjZN9UU54hiN8PU3uAiSV7lx1yYNpbNmex2PK6dSJoNTSJUUswT651yww3Mg==}
+ 
++  log-update@6.1.0:
++    resolution: {integrity: sha512-9ie8ItPR6tjY5uYJh8K/Zrv/RMZ5VOlOWvtZdEHYSTFKZfIBPQa9tOAEeAWhd+AnIneLJ22w5fjOYtoutpWq5w==}
++    engines: {node: '>=18'}
++
+   long@5.3.1:
+     resolution: {integrity: sha512-ka87Jz3gcx/I7Hal94xaN2tZEOPoUOEVftkQqZx2EeQRN7LGdfLlI3FvZ+7WDplm+vK2Urx9ULrvSowtdCieng==}
+ 
+@@ -1747,6 +1801,10 @@ packages:
+     resolution: {integrity: sha512-ZDY+bPm5zTTF+YpCrAU9nK0UgICYPT0QtT1NZWFv4s++TNkcgVaT0g6+4R2uI4MjQjzysHB1zxuWL50hzaeXiw==}
+     engines: {node: '>= 0.6'}
+ 
++  mimic-function@5.0.1:
++    resolution: {integrity: sha512-VP79XUPxV2CigYP3jWwAUFSku2aKqBH7uTAapFWCBqutsbmDo96KY5o8uh6U+/YSIn5OxJnXp73beVkpqMIGhA==}
++    engines: {node: '>=18'}
++
+   minimatch@10.2.4:
+     resolution: {integrity: sha512-oRjTw/97aTBN0RHbYCdtF1MQfvusSIBQM0IZEgzl6426+8jSC0nF1a/GmnVLpfB9yyr6g6FTqWqiZVbxrtaCIg==}
+     engines: {node: 18 || 20 || >=22}
+@@ -1808,6 +1866,10 @@ packages:
+   once@1.4.0:
+     resolution: {integrity: sha512-lNaJgI+2Q5URQBkccEKHTQOPaXdUxnZZElQTZY0MFUAuaEqe1E+Nyvgdz/aIyNi6Z9MzO5dv1H8n58/GELp3+w==}
+ 
++  onetime@7.0.0:
++    resolution: {integrity: sha512-VXJjc87FScF88uafS3JllDgvAm+c/Slfz06lorj2uAY34rlUu0Nt+v8wreiImcrgAjjIHp1rXpTDlLOGw29WwQ==}
++    engines: {node: '>=18'}
++
+   open@10.1.0:
+     resolution: {integrity: sha512-mnkeQ1qP5Ue2wd+aivTD3NHd/lZ96Lu0jgf0pwktLPtx6cTZiH7tyeGRRHs0zX0rbrahXPnXlUnbeXyaBBuIaw==}
+     engines: {node: '>=18'}
+@@ -1905,6 +1967,10 @@ packages:
+     resolution: {integrity: sha512-Xf0nWe6RseziFMu+Ap9biiUbmplq6S9/p+7w7YXP/JBHhrUDDUhwa+vANyubuqfZWTveU//DYVGsDG7RKL/vEw==}
+     engines: {node: '>=0.10.0'}
+ 
++  restore-cursor@5.1.0:
++    resolution: {integrity: sha512-oMA2dcrw6u0YfxJQXm342bFKX/E4sG9rbTzO9ptUcR/e8A33cHuvStiYOwH7fszkZlZ1z/ta9AAoPk2F4qIOHA==}
++    engines: {node: '>=18'}
++
+   retry-request@8.0.2:
+     resolution: {integrity: sha512-JzFPAfklk1kjR1w76f0QOIhoDkNkSqW8wYKT08n9yysTmZfB+RQ2QoXoTAeOi1HD9ZipTyTAZg3c4pM/jeqgSw==}
+     engines: {node: '>=18'}
+@@ -1913,6 +1979,9 @@ packages:
+     resolution: {integrity: sha512-XQBQ3I8W1Cge0Seh+6gjj03LbmRFWuoszgK9ooCpwYIrhhoO80pfq4cUkU5DkknwfOfFteRwlZ56PYOGYyFWdg==}
+     engines: {node: '>= 4'}
+ 
++  rfdc@1.4.1:
++    resolution: {integrity: sha512-q1b3N5QkRUWUl7iyylaaj3kOpIT0N2i9MqIEQXP73GVsN9cw3fdx8X63cEmWhJGi2PPCF23Ijp7ktmd39rawIA==}
++
+   rimraf@6.1.2:
+     resolution: {integrity: sha512-cFCkPslJv7BAXJsYlK1dZsbP8/ZNLkCAQ0bi1hf5EKX2QHegmDFEFA6QhuYJlk7UDdc+02JjO80YSOrWPpw06g==}
+     engines: {node: 20 || >=22}
+@@ -1950,6 +2019,14 @@ packages:
+     resolution: {integrity: sha512-bzyZ1e88w9O1iNJbKnOlvYTrWPDl46O1bG0D3XInv+9tkPrxrN8jUUTiFlDkkmKWgn1M6CfIA13SuGqOa9Korw==}
+     engines: {node: '>=14'}
+ 
++  slice-ansi@7.1.2:
++    resolution: {integrity: sha512-iOBWFgUX7caIZiuutICxVgX1SdxwAVFFKwt1EvMYYec/NWO5meOJ6K5uQxhrYBdQJne4KxiqZc+KptFOWFSI9w==}
++    engines: {node: '>=18'}
++
++  slice-ansi@8.0.0:
++    resolution: {integrity: sha512-stxByr12oeeOyY2BlviTNQlYV5xOj47GirPr4yA1hE9JCtxfQN0+tVbkxwCtYDQWhEKWFHsEK48ORg5jrouCAg==}
++    engines: {node: '>=20'}
++
+   source-map-js@1.2.1:
+     resolution: {integrity: sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==}
+     engines: {node: '>=0.10.0'}
+@@ -1972,6 +2049,10 @@ packages:
+   stream-shift@1.0.3:
+     resolution: {integrity: sha512-76ORR0DO1o1hlKwTbi/DM3EXWGf3ZJYO8cXX5RJwnul2DEg2oyoZyjLNoQM8WsvZiFKCRfC1O0J7iCvie3RZmQ==}
+ 
++  string-argv@0.3.2:
++    resolution: {integrity: sha512-aqD2Q0144Z+/RqG52NeHEkZauTAUWJO8c6yTftGJKO3Tja5tUgIfmIl6kExvhtxSDP7fXB6DvzkfMpCd/F3G+Q==}
++    engines: {node: '>=0.6.19'}
++
+   string-width@4.2.3:
+     resolution: {integrity: sha512-wKyQRQpjJ0sIp62ErSZdGsjMJWsap5oRNihHhu6G7JVO/9jIB6UyevL+tXuOqrng8j/cxKTWyWUwvSTriiZz/g==}
+     engines: {node: '>=8'}
+@@ -1980,6 +2061,14 @@ packages:
+     resolution: {integrity: sha512-HnLOCR3vjcY8beoNLtcjZ5/nxn2afmME6lhrDrebokqMap+XbeW8n9TXpPDOqdGK5qcI3oT0GKTW6wC7EMiVqA==}
+     engines: {node: '>=12'}
+ 
++  string-width@7.2.0:
++    resolution: {integrity: sha512-tsaTIkKW9b4N+AEj+SVA+WhJzV7/zMhcSu78mLKWSk7cXMOSHsBKFWUs0fWwq8QyK3MgJBQRX6Gbi4kYbdvGkQ==}
++    engines: {node: '>=18'}
++
++  string-width@8.2.1:
++    resolution: {integrity: sha512-IIaP0g3iy9Cyy18w3M9YcaDudujEAVHKt3a3QJg1+sr/oX96TbaGUubG0hJyCjCBThFH+tFpcIyoUHUn1ogaLA==}
++    engines: {node: '>=20'}
++
+   string_decoder@1.3.0:
+     resolution: {integrity: sha512-hkRX8U1WjJFd8LsDJ2yQ/wWWxaopEsABU1XfkM8A+j0+85JAGppt16cr1Whg6KIbb4okU6Mql6BOj+uup/wKeA==}
+ 
+@@ -1991,6 +2080,10 @@ packages:
+     resolution: {integrity: sha512-iq6eVVI64nQQTRYq2KtEg2d2uU7LElhTJwsH4YzIHZshxlgZms/wIc4VoDQTlG/IvVIrBKG06CrZnp0qv7hkcQ==}
+     engines: {node: '>=12'}
+ 
++  strip-ansi@7.2.0:
++    resolution: {integrity: sha512-yDPMNjp4WyfYBkHnjIRLfca1i6KMyGCtsVgoKe/z1+6vukgaENdgGBZt+ZmKPc4gavvEZ5OgHfHdrazhgNyG7w==}
++    engines: {node: '>=12'}
++
+   strnum@2.3.0:
+     resolution: {integrity: sha512-ums3KNd42PGyx5xaoVTO1mjU1bH3NpY4vsrVlnv9PNGqQj8wd7rJ6nEypLrJ7z5vxK5RP0yMLo6J/Gsm62DI5Q==}
+ 
+@@ -2008,6 +2101,10 @@ packages:
+     resolution: {integrity: sha512-W/KYk+NFhkmsYpuHq5JykngiOCnxeVL8v8dFnqxSD8qEEdRfXk1SDM6JzNqcERbcGYj9tMrDQBYV9cjgnunFIg==}
+     engines: {node: '>=18'}
+ 
++  tinyexec@1.1.2:
++    resolution: {integrity: sha512-dAqSqE/RabpBKI8+h26GfLq6Vb3JVXs30XYQjdMjaj/c2tS8IYYMbIzP599KtRj7c57/wYApb3QjgRgXmrCukA==}
++    engines: {node: '>=18'}
++
+   tinyglobby@0.2.15:
+     resolution: {integrity: sha512-j2Zq4NyQYG5XMST4cbs02Ak8iJUdxRM0XI5QyxXuZOzKOINmWurp3smXu3y5wDcJrptwpSjgXHzIQxR0omXljQ==}
+     engines: {node: '>=12.0.0'}
+@@ -2153,6 +2250,10 @@ packages:
+     engines: {node: '>=8'}
+     hasBin: true
+ 
++  wrap-ansi@10.0.0:
++    resolution: {integrity: sha512-SGcvg80f0wUy2/fXES19feHMz8E0JoXv2uNgHOu4Dgi2OrCy1lqwFYEJz1BLbDI0exjPMe/ZdzZ/YpGECBG/aQ==}
++    engines: {node: '>=20'}
++
+   wrap-ansi@7.0.0:
+     resolution: {integrity: sha512-YVGIj2kamLSTxw6NsZjoBxfSwsn0ycdesmc4p+Q21c5zPuZ1pl+NfxVdxPtdHvmNVOQ6XSYG4AUtyt/Fi7D16Q==}
+     engines: {node: '>=10'}
+@@ -2161,6 +2262,10 @@ packages:
+     resolution: {integrity: sha512-si7QWI6zUMq56bESFvagtmzMdGOtoxfR+Sez11Mobfc7tm+VkUckk9bW2UeffTGVUbOksxmSw0AA2gs8g71NCQ==}
+     engines: {node: '>=12'}
+ 
++  wrap-ansi@9.0.2:
++    resolution: {integrity: sha512-42AtmgqjV+X1VpdOfyTGOYRi0/zsoLqtXQckTmqTeybT+BDIbM/Guxo7x3pE2vtpr1ok6xRqM9OpBe+Jyoqyww==}
++    engines: {node: '>=18'}
++
+   wrappy@1.0.2:
+     resolution: {integrity: sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ==}
+ 
+@@ -2184,6 +2289,11 @@ packages:
+     resolution: {integrity: sha512-0pfFzegeDWJHJIAmTLRP2DwHjdF5s7jo9tuztdQxAhINCdvS+3nGINqPd00AphqJR/0LhANUS6/+7SCb98YOfA==}
+     engines: {node: '>=10'}
+ 
++  yaml@2.9.0:
++    resolution: {integrity: sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA==}
++    engines: {node: '>= 14.6'}
++    hasBin: true
++
+   yargs-parser@21.1.1:
+     resolution: {integrity: sha512-tVpsJW7DdjecAiFpbIB1e3qxIQsE6NoPc5/eTdrbbIC4h0LVsWhnoa3g+m2HclBIujHzsxZ4VJVA+GUuc2/LBw==}
+     engines: {node: '>=12'}
+@@ -3716,13 +3826,13 @@ snapshots:
+       chai: 6.2.2
+       tinyrainbow: 3.1.0
+ 
+-  '@vitest/mocker@4.1.4(vite@6.4.2(@types/node@24.12.2))':
++  '@vitest/mocker@4.1.4(vite@6.4.2(@types/node@24.12.2)(yaml@2.9.0))':
+     dependencies:
+       '@vitest/spy': 4.1.4
+       estree-walker: 3.0.3
+       magic-string: 0.30.21
+     optionalDependencies:
+-      vite: 6.4.2(@types/node@24.12.2)
++      vite: 6.4.2(@types/node@24.12.2)(yaml@2.9.0)
+ 
+   '@vitest/pretty-format@4.1.4':
+     dependencies:
+@@ -3777,16 +3887,24 @@ snapshots:
+ 
+   ansi-colors@4.1.3: {}
+ 
++  ansi-escapes@7.3.0:
++    dependencies:
++      environment: 1.1.0
++
+   ansi-regex@5.0.1: {}
+ 
+   ansi-regex@6.1.0: {}
+ 
++  ansi-regex@6.2.2: {}
++
+   ansi-styles@4.3.0:
+     dependencies:
+       color-convert: 2.0.1
+ 
+   ansi-styles@6.2.1: {}
+ 
++  ansi-styles@6.2.3: {}
++
+   argparse@2.0.1: {}
+ 
+   asynckit@0.4.0: {}
+@@ -3827,6 +3945,15 @@ snapshots:
+ 
+   chai@6.2.2: {}
+ 
++  cli-cursor@5.0.0:
++    dependencies:
++      restore-cursor: 5.1.0
++
++  cli-truncate@5.2.0:
++    dependencies:
++      slice-ansi: 8.0.0
++      string-width: 8.2.1
++
+   cliui@8.0.1:
+     dependencies:
+       string-width: 4.2.3
+@@ -3891,6 +4018,8 @@ snapshots:
+     dependencies:
+       safe-buffer: 5.2.1
+ 
++  emoji-regex@10.6.0: {}
++
+   emoji-regex@8.0.0: {}
+ 
+   emoji-regex@9.2.2: {}
+@@ -3904,6 +4033,8 @@ snapshots:
+       ansi-colors: 4.1.3
+       strip-ansi: 6.0.1
+ 
++  environment@1.1.0: {}
++
+   es-define-property@1.0.1: {}
+ 
+   es-errors@1.3.0: {}
+@@ -3958,6 +4089,8 @@ snapshots:
+ 
+   event-target-shim@5.0.1: {}
+ 
++  eventemitter3@5.0.4: {}
++
+   events@3.3.0: {}
+ 
+   eventsource-parser@1.1.2: {}
+@@ -4053,6 +4186,8 @@ snapshots:
+ 
+   get-caller-file@2.0.5: {}
+ 
++  get-east-asian-width@1.6.0: {}
++
+   get-intrinsic@1.3.0:
+     dependencies:
+       call-bind-apply-helpers: 1.0.2
+@@ -4179,6 +4314,10 @@ snapshots:
+ 
+   is-fullwidth-code-point@3.0.0: {}
+ 
++  is-fullwidth-code-point@5.1.0:
++    dependencies:
++      get-east-asian-width: 1.6.0
++
+   is-inside-container@1.0.0:
+     dependencies:
+       is-docker: 3.0.0
+@@ -4247,6 +4386,23 @@ snapshots:
+       jwa: 2.0.1
+       safe-buffer: 5.2.1
+ 
++  lint-staged@17.0.5:
++    dependencies:
++      listr2: 10.2.1
++      picomatch: 4.0.4
++      string-argv: 0.3.2
++      tinyexec: 1.1.2
++    optionalDependencies:
++      yaml: 2.9.0
++
++  listr2@10.2.1:
++    dependencies:
++      cli-truncate: 5.2.0
++      eventemitter3: 5.0.4
++      log-update: 6.1.0
++      rfdc: 1.4.1
++      wrap-ansi: 10.0.0
++
+   lodash.camelcase@4.3.0: {}
+ 
+   lodash.includes@4.3.0: {}
+@@ -4263,6 +4419,14 @@ snapshots:
+ 
+   lodash.once@4.1.1: {}
+ 
++  log-update@6.1.0:
++    dependencies:
++      ansi-escapes: 7.3.0
++      cli-cursor: 5.0.0
++      slice-ansi: 7.1.2
++      strip-ansi: 7.1.0
++      wrap-ansi: 9.0.2
++
+   long@5.3.1: {}
+ 
+   lru-cache@10.4.3: {}
+@@ -4281,6 +4445,8 @@ snapshots:
+     dependencies:
+       mime-db: 1.52.0
+ 
++  mimic-function@5.0.1: {}
++
+   minimatch@10.2.4:
+     dependencies:
+       brace-expansion: 5.0.5
+@@ -4329,6 +4495,10 @@ snapshots:
+     dependencies:
+       wrappy: 1.0.2
+ 
++  onetime@7.0.0:
++    dependencies:
++      mimic-function: 5.0.1
++
+   open@10.1.0:
+     dependencies:
+       default-browser: 5.2.1
+@@ -4432,6 +4602,11 @@ snapshots:
+ 
+   require-from-string@2.0.2: {}
+ 
++  restore-cursor@5.1.0:
++    dependencies:
++      onetime: 7.0.0
++      signal-exit: 4.1.0
++
+   retry-request@8.0.2:
+     dependencies:
+       extend: 3.0.2
+@@ -4441,6 +4616,8 @@ snapshots:
+ 
+   retry@0.13.1: {}
+ 
++  rfdc@1.4.1: {}
++
+   rimraf@6.1.2:
+     dependencies:
+       glob: 13.0.0
+@@ -4493,6 +4670,16 @@ snapshots:
+ 
+   signal-exit@4.1.0: {}
+ 
++  slice-ansi@7.1.2:
++    dependencies:
++      ansi-styles: 6.2.1
++      is-fullwidth-code-point: 5.1.0
++
++  slice-ansi@8.0.0:
++    dependencies:
++      ansi-styles: 6.2.3
++      is-fullwidth-code-point: 5.1.0
++
+   source-map-js@1.2.1: {}
+ 
+   stackback@0.0.2: {}
+@@ -4515,6 +4702,8 @@ snapshots:
+ 
+   stream-shift@1.0.3: {}
+ 
++  string-argv@0.3.2: {}
++
+   string-width@4.2.3:
+     dependencies:
+       emoji-regex: 8.0.0
+@@ -4527,6 +4716,17 @@ snapshots:
+       emoji-regex: 9.2.2
+       strip-ansi: 7.1.0
+ 
++  string-width@7.2.0:
++    dependencies:
++      emoji-regex: 10.6.0
++      get-east-asian-width: 1.6.0
++      strip-ansi: 7.1.0
++
++  string-width@8.2.1:
++    dependencies:
++      get-east-asian-width: 1.6.0
++      strip-ansi: 7.2.0
++
+   string_decoder@1.3.0:
+     dependencies:
+       safe-buffer: 5.2.1
+@@ -4539,6 +4739,10 @@ snapshots:
+     dependencies:
+       ansi-regex: 6.1.0
+ 
++  strip-ansi@7.2.0:
++    dependencies:
++      ansi-regex: 6.2.2
++
+   strnum@2.3.0: {}
+ 
+   stubs@3.0.0: {}
+@@ -4556,6 +4760,8 @@ snapshots:
+ 
+   tinyexec@1.0.2: {}
+ 
++  tinyexec@1.1.2: {}
++
+   tinyglobby@0.2.15:
+     dependencies:
+       fdir: 6.5.0(picomatch@4.0.4)
+@@ -4583,7 +4789,7 @@ snapshots:
+ 
+   uuid@8.3.2: {}
+ 
+-  vite@6.4.2(@types/node@24.12.2):
++  vite@6.4.2(@types/node@24.12.2)(yaml@2.9.0):
+     dependencies:
+       esbuild: 0.25.6
+       fdir: 6.5.0(picomatch@4.0.4)
+@@ -4594,11 +4800,12 @@ snapshots:
+     optionalDependencies:
+       '@types/node': 24.12.2
+       fsevents: 2.3.3
++      yaml: 2.9.0
+ 
+-  vitest@4.1.4(@types/node@24.12.2)(vite@6.4.2(@types/node@24.12.2)):
++  vitest@4.1.4(@types/node@24.12.2)(vite@6.4.2(@types/node@24.12.2)(yaml@2.9.0)):
+     dependencies:
+       '@vitest/expect': 4.1.4
+-      '@vitest/mocker': 4.1.4(vite@6.4.2(@types/node@24.12.2))
++      '@vitest/mocker': 4.1.4(vite@6.4.2(@types/node@24.12.2)(yaml@2.9.0))
+       '@vitest/pretty-format': 4.1.4
+       '@vitest/runner': 4.1.4
+       '@vitest/snapshot': 4.1.4
+@@ -4615,7 +4822,7 @@ snapshots:
+       tinyexec: 1.0.2
+       tinyglobby: 0.2.15
+       tinyrainbow: 3.1.0
+-      vite: 6.4.2(@types/node@24.12.2)
++      vite: 6.4.2(@types/node@24.12.2)(yaml@2.9.0)
+       why-is-node-running: 2.3.0
+     optionalDependencies:
+       '@types/node': 24.12.2
+@@ -4642,6 +4849,12 @@ snapshots:
+       siginfo: 2.0.0
+       stackback: 0.0.2
+ 
++  wrap-ansi@10.0.0:
++    dependencies:
++      ansi-styles: 6.2.3
++      string-width: 8.2.1
++      strip-ansi: 7.2.0
++
+   wrap-ansi@7.0.0:
+     dependencies:
+       ansi-styles: 4.3.0
+@@ -4654,6 +4867,12 @@ snapshots:
+       string-width: 5.1.2
+       strip-ansi: 7.1.0
+ 
++  wrap-ansi@9.0.2:
++    dependencies:
++      ansi-styles: 6.2.1
++      string-width: 7.2.0
++      strip-ansi: 7.1.0
++
+   wrappy@1.0.2: {}
+ 
+   ws@8.18.2: {}
+@@ -4662,6 +4881,9 @@ snapshots:
+ 
+   y18n@5.0.8: {}
+ 
++  yaml@2.9.0:
++    optional: true
++
+   yargs-parser@21.1.1: {}
+ 
+   yargs@17.7.2:

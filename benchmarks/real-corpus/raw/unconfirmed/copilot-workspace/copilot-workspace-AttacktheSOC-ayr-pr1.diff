@@ -1,0 +1,692 @@
+diff --git a/blog-post-template.html b/blog-post-template.html
+new file mode 100644
+index 0000000..3404399
+--- /dev/null
++++ b/blog-post-template.html
+@@ -0,0 +1,80 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8" />
++    <meta name="viewport" content="width=device-width, initial-scale=1" />
++    <meta name="description" content="Template for AYR technical blog posts with structured content, detection snippets, and urgent operational tips." />
++    <meta name="keywords" content="blog template, sigma, yara, kql, opsec" />
++    <title>Attack Your Rights | Blog Post Template</title>
++    <link rel="stylesheet" href="style.css" />
++  </head>
++  <body>
++    <a class="skip-link" href="#main-content">Skip to main content</a>
++    <header class="site-header">
++      <div class="container">
++        <a class="logo" href="index.html" aria-label="Attack Your Rights home">Attack Your Rights</a>
++        <nav aria-label="Primary navigation">
++          <ul class="nav-list">
++            <li><a href="index.html">Home</a></li>
++            <li><a href="resources.html">Tools &amp; Resources</a></li>
++            <li><a href="blog.html" aria-current="page">Blog</a></li>
++            <li><a href="contact.html">Contact &amp; Submissions</a></li>
++          </ul>
++        </nav>
++      </div>
++    </header>
++
++    <main id="main-content" class="container">
++      <article aria-labelledby="post-title">
++        <h1 id="post-title">[Template] Threat Campaign to Detection Rules</h1>
++        <p class="meta"><time datetime="2026-05-24">24 May 2026</time> · 12 min read · <span class="tag">Template</span></p>
++
++        <h2>Executive summary</h2>
++        <p>Provide a plain-language overview of the threat, who is targeted, and what practical actions defenders can take immediately.</p>
++
++        <blockquote>
++          <p><strong>Urgent OpSec Note:</strong> If compromise is suspected, prioritize account containment and secondary-channel verification before public communication.</p>
++        </blockquote>
++
++        <h2>Threat model and assumptions</h2>
++        <h3>Likely adversary goals</h3>
++        <p>Document likely collection objectives, persistence mechanisms, and abuse pathways tied to affected communities.</p>
++
++        <h3>Detection opportunities</h3>
++        <p>Include assumptions and environment-specific caveats. Mark any required telemetry sources and expected blind spots.</p>
++
++        <h2>Defensive snippets</h2>
++        <p>Use inline code for key fields like <code>process.command_line</code> and <code>file.hash.sha256</code>.</p>
++
++        <h3>Sigma sample</h3>
++        <pre><code>title: Suspicious Archive Execution Chain
++id: 4bf7f097-1e0b-4c2d-ae3a-f4689c672eef
++status: experimental
++logsource:
++  category: process_creation
++  product: windows
++detection:
++  selection:
++    ParentImage|endswith: '\\explorer.exe'
++    Image|endswith:
++      - '\\wscript.exe'
++      - '\\powershell.exe'
++  condition: selection
++level: medium</code></pre>
++
++        <h3>KQL sample</h3>
++        <pre><code>DeviceProcessEvents
++| where Timestamp &gt; ago(7d)
++| where InitiatingProcessFileName =~ "explorer.exe"
++| where FileName in~ ("wscript.exe", "powershell.exe")
++| project Timestamp, DeviceName, AccountName, FileName, ProcessCommandLine</code></pre>
++      </article>
++    </main>
++
++    <footer class="site-footer">
++      <div class="container">
++        <p>Attack Your Rights (AYR) · Share practical defenses, responsibly.</p>
++      </div>
++    </footer>
++  </body>
++</html>
+diff --git a/blog.html b/blog.html
+new file mode 100644
+index 0000000..ec88660
+--- /dev/null
++++ b/blog.html
+@@ -0,0 +1,67 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8" />
++    <meta name="viewport" content="width=device-width, initial-scale=1" />
++    <meta name="description" content="Read AYR analyses on operational security, defensive detection engineering, and practical threat response." />
++    <meta name="keywords" content="opsec blog, threat intelligence, yara, sigma, kql" />
++    <title>Attack Your Rights | Blog</title>
++    <link rel="stylesheet" href="style.css" />
++  </head>
++  <body>
++    <a class="skip-link" href="#main-content">Skip to main content</a>
++    <header class="site-header">
++      <div class="container">
++        <a class="logo" href="index.html" aria-label="Attack Your Rights home">Attack Your Rights</a>
++        <nav aria-label="Primary navigation">
++          <ul class="nav-list">
++            <li><a href="index.html">Home</a></li>
++            <li><a href="resources.html">Tools &amp; Resources</a></li>
++            <li><a href="blog.html" aria-current="page">Blog</a></li>
++            <li><a href="contact.html">Contact &amp; Submissions</a></li>
++          </ul>
++        </nav>
++      </div>
++    </header>
++
++    <main id="main-content" class="container">
++      <section aria-labelledby="blog-title">
++        <h1 id="blog-title">AYR technical blog</h1>
++        <p>Chronological updates focused on practical security outcomes for human rights defenders and allied organizations.</p>
++      </section>
++
++      <section aria-labelledby="posts-title">
++        <h2 id="posts-title">Latest articles</h2>
++        <ul class="post-list">
++          <li>
++            <h3><a href="blog-post-template.html">Hardening Shared NGO Laptops in 30 Minutes</a></h3>
++            <p class="meta">
++              <time datetime="2026-05-18">18 May 2026</time> · 7 min read · <span class="tag">Endpoint Security</span>
++            </p>
++            <p>Step-by-step controls to reduce compromise risk on shared and older hardware without paid tooling.</p>
++          </li>
++          <li>
++            <h3><a href="blog-post-template.html">Phishing Playbooks Observed Against Journalists</a></h3>
++            <p class="meta">
++              <time datetime="2026-05-11">11 May 2026</time> · 9 min read · <span class="tag">Threat Intel</span>
++            </p>
++            <p>A practical breakdown of current lure patterns and immediate detection opportunities for small teams.</p>
++          </li>
++          <li>
++            <h3><a href="blog-post-template.html">From Report to Rule: Building KQL Detections Quickly</a></h3>
++            <p class="meta">
++              <time datetime="2026-05-03">03 May 2026</time> · 11 min read · <span class="tag">Detection Engineering</span>
++            </p>
++            <p>How to convert campaign reporting into tested KQL queries with clear assumptions and false-positive notes.</p>
++          </li>
++        </ul>
++      </section>
++    </main>
++
++    <footer class="site-footer">
++      <div class="container">
++        <p>Attack Your Rights (AYR) · Actionable insights for real-world risk.</p>
++      </div>
++    </footer>
++  </body>
++</html>
+diff --git a/contact.html b/contact.html
+new file mode 100644
+index 0000000..47ca45d
+--- /dev/null
++++ b/contact.html
+@@ -0,0 +1,76 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8" />
++    <meta name="viewport" content="width=device-width, initial-scale=1" />
++    <meta name="description" content="Contact AYR to suggest topics, request guidance, or submit technical questions with privacy-aware handling." />
++    <meta name="keywords" content="contact, submissions, opsec support, human rights cybersecurity" />
++    <title>Attack Your Rights | Contact &amp; Submissions</title>
++    <link rel="stylesheet" href="style.css" />
++  </head>
++  <body>
++    <a class="skip-link" href="#main-content">Skip to main content</a>
++    <header class="site-header">
++      <div class="container">
++        <a class="logo" href="index.html" aria-label="Attack Your Rights home">Attack Your Rights</a>
++        <nav aria-label="Primary navigation">
++          <ul class="nav-list">
++            <li><a href="index.html">Home</a></li>
++            <li><a href="resources.html">Tools &amp; Resources</a></li>
++            <li><a href="blog.html">Blog</a></li>
++            <li><a href="contact.html" aria-current="page">Contact &amp; Submissions</a></li>
++          </ul>
++        </nav>
++      </div>
++    </header>
++
++    <main id="main-content" class="container">
++      <section aria-labelledby="contact-title">
++        <h1 id="contact-title">Contact &amp; submissions</h1>
++        <blockquote>
++          <p><strong>Privacy and safety notice:</strong> Do not submit highly sensitive personal data, passwords, or active case details through this form. Use encrypted channels for critical or high-risk communication.</p>
++        </blockquote>
++      </section>
++
++      <section aria-labelledby="form-title">
++        <h2 id="form-title">Submit a request</h2>
++        <p class="meta">This form is configured for a static endpoint provider and can be connected to your production form ID.</p>
++
++        <form action="https://formspree.io/f/mnqebqby" method="post">
++          <div>
++            <label for="name">Name / Alias (optional)</label>
++            <input id="name" name="name" type="text" autocomplete="name" />
++          </div>
++
++          <div>
++            <label for="contact">Contact Method / Email (optional)</label>
++            <input id="contact" name="contact" type="email" autocomplete="email" inputmode="email" />
++          </div>
++
++          <div>
++            <label for="submission-type">Submission Type</label>
++            <select id="submission-type" name="submission_type" required>
++              <option value="">Select one</option>
++              <option value="topic">Suggest a Blog Topic/Report to Analyze</option>
++              <option value="help">Request Technical Help/Guidance</option>
++              <option value="general">General Inquiry</option>
++            </select>
++          </div>
++
++          <div>
++            <label for="message">Message/Details</label>
++            <textarea id="message" name="message" required></textarea>
++          </div>
++
++          <button type="submit">Send Submission</button>
++        </form>
++      </section>
++    </main>
++
++    <footer class="site-footer">
++      <div class="container">
++        <p>Attack Your Rights (AYR) · Secure-by-design communication, responsibly handled.</p>
++      </div>
++    </footer>
++  </body>
++</html>
+diff --git a/index.html b/index.html
+new file mode 100644
+index 0000000..31adea3
+--- /dev/null
++++ b/index.html
+@@ -0,0 +1,82 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8" />
++    <meta name="viewport" content="width=device-width, initial-scale=1" />
++    <meta name="description" content="Attack Your Rights (AYR) supports human rights defenders with practical cybersecurity guidance and defensive resources." />
++    <meta name="keywords" content="human rights defenders, cybersecurity, opsec, threat intelligence, digital safety" />
++    <title>Attack Your Rights | Home</title>
++    <link rel="stylesheet" href="style.css" />
++  </head>
++  <body>
++    <a class="skip-link" href="#main-content">Skip to main content</a>
++    <header class="site-header">
++      <div class="container">
++        <a class="logo" href="index.html" aria-label="Attack Your Rights home">Attack Your Rights</a>
++        <nav aria-label="Primary navigation">
++          <ul class="nav-list">
++            <li><a href="index.html" aria-current="page">Home</a></li>
++            <li><a href="resources.html">Tools &amp; Resources</a></li>
++            <li><a href="blog.html">Blog</a></li>
++            <li><a href="contact.html">Contact &amp; Submissions</a></li>
++          </ul>
++        </nav>
++      </div>
++    </header>
++
++    <main id="main-content" class="container">
++      <section class="hero" aria-labelledby="mission-title">
++        <h1 id="mission-title">Defending civil society with practical, low-bandwidth security guidance.</h1>
++        <p>Attack Your Rights (AYR) translates high-level threat research into actionable defenses for human rights defenders, journalists, and activists operating in hostile digital environments.</p>
++      </section>
++
++      <section aria-labelledby="crisis-title">
++        <h2 id="crisis-title">Global crisis dashboard</h2>
++        <div class="grid grid-3">
++          <article>
++            <h3>Cross-border spyware targeting</h3>
++            <p class="meta">Updated: 24 May 2026</p>
++            <p>Field reports indicate increased phishing and mobile surveillance attempts against independent media workers in multiple regions.</p>
++          </article>
++          <article>
++            <h3>Election-period digital repression</h3>
++            <p class="meta">Updated: 22 May 2026</p>
++            <p>Network disruptions and account takeovers are escalating during election cycles, especially where legal protections are weak.</p>
++          </article>
++          <article>
++            <h3>Legal pressure and data seizure risk</h3>
++            <p class="meta">Updated: 20 May 2026</p>
++            <p>Human rights organizations report rising requests for device access at border crossings and checkpoints.</p>
++          </article>
++        </div>
++      </section>
++
++      <section aria-labelledby="highlights-title">
++        <h2 id="highlights-title">Recent content highlights</h2>
++        <ul class="post-list">
++          <li>
++            <h3><a href="blog-post-template.html">Mobile OpSec Baseline for Field Teams</a></h3>
++            <p class="meta">19 May 2026 · 8 min read · <span class="tag">OpSec</span></p>
++            <p>A practical checklist for hardening Android and iOS devices under real-world constraints.</p>
++          </li>
++          <li>
++            <h3><a href="blog-post-template.html">Turning Threat Reports into Sigma Detections</a></h3>
++            <p class="meta">12 May 2026 · 10 min read · <span class="tag">Detection Engineering</span></p>
++            <p>How to map adversary techniques into portable detections your team can deploy quickly.</p>
++          </li>
++          <li>
++            <h3><a href="blog-post-template.html">Low-Cost Incident Logging for NGOs</a></h3>
++            <p class="meta">04 May 2026 · 6 min read · <span class="tag">Incident Response</span></p>
++            <p>A compact workflow for collecting and preserving evidence with limited budget and bandwidth.</p>
++          </li>
++        </ul>
++      </section>
++    </main>
++
++    <footer class="site-footer">
++      <div class="container">
++        <p>Attack Your Rights (AYR) · Fast, privacy-first support for digital rights defense.</p>
++      </div>
++    </footer>
++  </body>
++</html>
+diff --git a/resources.html b/resources.html
+new file mode 100644
+index 0000000..b00948d
+--- /dev/null
++++ b/resources.html
+@@ -0,0 +1,75 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8" />
++    <meta name="viewport" content="width=device-width, initial-scale=1" />
++    <meta name="description" content="Curated tools and organizations for digital safety, civil society defense, and threat intelligence response." />
++    <meta name="keywords" content="access now, citizen lab, tor, signal, sigma, yara, kql" />
++    <title>Attack Your Rights | Tools &amp; Resources</title>
++    <link rel="stylesheet" href="style.css" />
++  </head>
++  <body>
++    <a class="skip-link" href="#main-content">Skip to main content</a>
++    <header class="site-header">
++      <div class="container">
++        <a class="logo" href="index.html" aria-label="Attack Your Rights home">Attack Your Rights</a>
++        <nav aria-label="Primary navigation">
++          <ul class="nav-list">
++            <li><a href="index.html">Home</a></li>
++            <li><a href="resources.html" aria-current="page">Tools &amp; Resources</a></li>
++            <li><a href="blog.html">Blog</a></li>
++            <li><a href="contact.html">Contact &amp; Submissions</a></li>
++          </ul>
++        </nav>
++      </div>
++    </header>
++
++    <main id="main-content" class="container">
++      <section aria-labelledby="resources-title">
++        <h1 id="resources-title">Tools &amp; resources directory</h1>
++        <p>Use the quick filters to jump to the category you need.</p>
++        <div class="filter-links" aria-label="Resource category filters">
++          <a href="#civil-society">Civil Society Organizations</a>
++          <a href="#opsec-tools">Personal Security &amp; OpSec Tools</a>
++          <a href="#defensive-assets">Threat Intel &amp; Defensive Assets</a>
++        </div>
++      </section>
++
++      <section id="civil-society" aria-labelledby="civil-title">
++        <h2 id="civil-title">Civil Society Organizations</h2>
++        <ul class="resource-list">
++          <li><a href="https://www.accessnow.org/" rel="noopener noreferrer">Access Now</a> — Rapid-response support and digital security help for at-risk communities.</li>
++          <li><a href="https://citizenlab.ca/" rel="noopener noreferrer">Citizen Lab</a> — Research on surveillance technologies and digital threats to civil society.</li>
++          <li><a href="https://www.frontlinedefenders.org/" rel="noopener noreferrer">Front Line Defenders</a> — Protection and emergency assistance for human rights defenders.</li>
++          <li><a href="https://www.amnesty.org/" rel="noopener noreferrer">Amnesty International</a> — Documentation and advocacy on global human rights abuses.</li>
++        </ul>
++      </section>
++
++      <section id="opsec-tools" aria-labelledby="opsec-title">
++        <h2 id="opsec-title">Personal Security &amp; OpSec Tools</h2>
++        <ul class="resource-list">
++          <li><a href="https://signal.org/" rel="noopener noreferrer">Signal</a> — End-to-end encrypted messaging with disappearing messages and safety numbers.</li>
++          <li><a href="https://www.torproject.org/" rel="noopener noreferrer">Tor Browser</a> — Privacy-preserving browser for bypassing censorship and reducing tracking.</li>
++          <li><a href="https://www.veracrypt.fr/" rel="noopener noreferrer">VeraCrypt</a> — Open-source encrypted storage for devices and removable media.</li>
++          <li><a href="https://keepassxc.org/" rel="noopener noreferrer">KeePassXC</a> — Local password manager for strong, unique credentials.</li>
++        </ul>
++      </section>
++
++      <section id="defensive-assets" aria-labelledby="assets-title">
++        <h2 id="assets-title">Threat Intel &amp; Defensive Assets</h2>
++        <ul class="resource-list">
++          <li><a href="blog.html">AYR Threat Analysis Blog</a> — Plain-language translations of threat intel with defensive steps.</li>
++          <li><a href="blog-post-template.html">Detection Rule Template</a> — Starter format for publishing YARA, Sigma, and KQL examples.</li>
++          <li><a href="https://github.com/SigmaHQ/sigma" rel="noopener noreferrer">SigmaHQ</a> — Community repository of Sigma detection rules.</li>
++          <li><a href="https://github.com/Yara-Rules/rules" rel="noopener noreferrer">YARA Rules</a> — Curated YARA signatures for malware and threat hunting.</li>
++        </ul>
++      </section>
++    </main>
++
++    <footer class="site-footer">
++      <div class="container">
++        <p>Attack Your Rights (AYR) · Curated resources for resilient digital defense.</p>
++      </div>
++    </footer>
++  </body>
++</html>
+diff --git a/style.css b/style.css
+new file mode 100644
+index 0000000..40fc62f
+--- /dev/null
++++ b/style.css
+@@ -0,0 +1,276 @@
++:root {
++  --bg: #f9f9f9;
++  --surface: #ffffff;
++  --text: #1a1a1a;
++  --muted: #555555;
++  --accent: #0b3d91;
++  --accent-strong: #072c6a;
++  --border: #d9d9d9;
++  --focus: #b00020;
++  --max-width: 72rem;
++  --space-1: 0.5rem;
++  --space-2: 1rem;
++  --space-3: 1.5rem;
++  --space-4: 2rem;
++}
++
++* {
++  box-sizing: border-box;
++}
++
++html {
++  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
++  line-height: 1.6;
++  color: var(--text);
++  background: var(--bg);
++}
++
++body {
++  margin: 0;
++}
++
++a {
++  color: var(--accent);
++  text-decoration-thickness: 0.12em;
++  text-underline-offset: 0.12em;
++}
++
++a:hover,
++a:focus-visible {
++  color: var(--accent-strong);
++}
++
++:focus-visible {
++  outline: 2px solid var(--focus);
++  outline-offset: 2px;
++}
++
++.skip-link {
++  position: absolute;
++  left: -999px;
++  top: 0;
++  background: var(--text);
++  color: var(--surface);
++  padding: var(--space-1) var(--space-2);
++  z-index: 9999;
++}
++
++.skip-link:focus {
++  left: var(--space-1);
++}
++
++.container {
++  width: min(100% - 2rem, var(--max-width));
++  margin-inline: auto;
++}
++
++.site-header {
++  border-bottom: 1px solid var(--border);
++  background: var(--surface);
++}
++
++.site-header .container {
++  display: flex;
++  flex-wrap: wrap;
++  justify-content: space-between;
++  align-items: center;
++  gap: var(--space-2);
++  padding: var(--space-2) 0;
++}
++
++.logo {
++  font-weight: 700;
++  font-size: 1.2rem;
++  color: var(--text);
++  text-decoration: none;
++}
++
++.nav-list {
++  display: flex;
++  flex-wrap: wrap;
++  list-style: none;
++  margin: 0;
++  padding: 0;
++  gap: var(--space-2);
++}
++
++.nav-list a {
++  font-weight: 600;
++}
++
++main {
++  padding: var(--space-4) 0;
++}
++
++section,
++article,
++.card,
++.callout {
++  background: var(--surface);
++  border: 1px solid var(--border);
++  border-radius: 0.5rem;
++  padding: var(--space-3);
++}
++
++.hero {
++  margin-bottom: var(--space-4);
++}
++
++.hero h1 {
++  margin-top: 0;
++  line-height: 1.2;
++}
++
++.grid {
++  display: grid;
++  gap: var(--space-3);
++}
++
++.grid-2 {
++  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
++}
++
++.grid-3 {
++  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
++}
++
++h1,
++h2,
++h3 {
++  margin-top: 0;
++  line-height: 1.25;
++}
++
++p,
++ul,
++ol,
++dd {
++  margin-top: 0;
++}
++
++.meta {
++  color: var(--muted);
++  font-size: 0.95rem;
++}
++
++.tag {
++  display: inline-block;
++  background: #e8f0ff;
++  border: 1px solid #c8dafd;
++  border-radius: 999px;
++  padding: 0.1rem 0.65rem;
++  font-size: 0.85rem;
++  font-weight: 600;
++}
++
++.resource-list,
++.post-list {
++  list-style: none;
++  margin: 0;
++  padding: 0;
++  display: grid;
++  gap: var(--space-2);
++}
++
++.resource-list li,
++.post-list li {
++  border: 1px solid var(--border);
++  border-radius: 0.5rem;
++  padding: var(--space-2);
++  background: #fcfcfc;
++}
++
++.filter-links {
++  display: flex;
++  flex-wrap: wrap;
++  gap: var(--space-1);
++  margin-bottom: var(--space-2);
++}
++
++.filter-links a {
++  border: 1px solid var(--border);
++  background: var(--surface);
++  border-radius: 999px;
++  padding: 0.35rem 0.75rem;
++  text-decoration: none;
++}
++
++blockquote {
++  margin: 0;
++  padding: var(--space-2);
++  border-left: 0.3rem solid var(--accent);
++  background: #f3f7ff;
++}
++
++pre,
++code {
++  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
++}
++
++pre {
++  background: #111827;
++  color: #f9fafb;
++  padding: var(--space-2);
++  border-radius: 0.5rem;
++  overflow-x: auto;
++}
++
++form {
++  display: grid;
++  gap: var(--space-2);
++}
++
++label {
++  display: block;
++  font-weight: 600;
++  margin-bottom: 0.25rem;
++}
++
++input,
++select,
++textarea,
++button {
++  width: 100%;
++  border: 1px solid #666;
++  border-radius: 0.35rem;
++  font: inherit;
++  padding: 0.65rem 0.75rem;
++  background: var(--surface);
++  color: var(--text);
++}
++
++textarea {
++  min-height: 10rem;
++  resize: vertical;
++}
++
++button {
++  width: auto;
++  cursor: pointer;
++  background: var(--accent);
++  border-color: var(--accent);
++  color: #fff;
++  font-weight: 700;
++}
++
++button:hover,
++button:focus-visible {
++  background: var(--accent-strong);
++}
++
++.site-footer {
++  margin-top: var(--space-4);
++  border-top: 1px solid var(--border);
++  background: var(--surface);
++}
++
++.site-footer .container {
++  padding: var(--space-2) 0;
++  color: var(--muted);
++}
++
++@media (max-width: 40rem) {
++  .site-header .container {
++    align-items: flex-start;
++  }
++}

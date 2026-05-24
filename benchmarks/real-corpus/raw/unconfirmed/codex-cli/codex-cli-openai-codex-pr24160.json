@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24160",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24160,
+    "headSha": "458564df67d30422da0c092bbbc77cb024e754af",
+    "baseSha": "7924743c38e9a28795c1533ab5143dceea5ca566",
+    "title": "Add forked_from_thread_id turn metadata",
+    "body": "## Why\n\nResponses API turn metadata already carries the current session, thread, and turn IDs, but forked threads do not currently identify the thread they copied history from. That makes it harder for downstream consumers to distinguish a brand-new root thread from a fork and to reconstruct history lineage from `x-codex-turn-metadata`.\n\n## What changed\n\n- Adds `forked_from_thread_id` as a core-owned field in `x-codex-turn-metadata`.\n- Introduces `ThreadMetadataLineage` as the explicit input for thread-lineage metadata instead of passing another loose `Option` through turn metadata construction.\n- Captures the copied-history source at fork/spawn boundaries before rollout truncation can drop copied session metadata.\n- Reserves `forked_from_thread_id` during client metadata merging and preserves it when git enrichment rebuilds the metadata bag.\n- Adds app-server/root fork and core turn metadata coverage for the new field.\n\n## Verification\n\n- `just test -p codex-core --lib turn_metadata_state_includes_root_fork_lineage turn_metadata_state_merges_client_metadata_without_replacing_reserved_fields turn_metadata_state_preserves_lineage_after_git_enrichment`\n",
+    "author": "owenlin0",
+    "headRef": "owen/forked_from_thread_id",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "458564df67d30422da0c092bbbc77cb024e754af",
+    "baseSha": "7924743c38e9a28795c1533ab5143dceea5ca566"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24160.diff",
+  "vendoredAt": "2026-05-24T03:20:48.174Z",
+  "collectedAt": "2026-05-24T03:20:48.174Z"
+}

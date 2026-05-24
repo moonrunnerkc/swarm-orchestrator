@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-Chutzpah-1000-Contest-pr9",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "commit=claude-coauthor"
+  },
+  "pr": {
+    "number": 9,
+    "headSha": "3cc2b1d8a06aad68507d51533b92a83d9f4368fa",
+    "baseSha": "f9aa4cf8f1c8071a016cfcd229e5f048ad41cec6",
+    "title": "Round 26 — KPI 카드 모바일 분기 강화 (stacked on R25)",
+    "body": "## Round 26\n\n**Stacked PR**: base = `agent/round-25-step-examples` (PR #8). 머지 순서: R22 → R23 → R24 → R25 → R26.\n\n### Slack 메시지\n> Round 26 ✅ KPI 카드 모바일 분기 강화 (720px ↓: 폰트·padding 축소·source font ↓) — 65 tests.\n\n### Scores\n모두 9 유지. 모바일·태블릿 가독성 강화 + 회귀 가드 +1.\n\n### Lowest area\n동률 9. 기존 720px 미디어쿼리는 KPI 그리드 4 → 2열 분기만 처리. 모바일에서 `.kpi-value` 22px·`.kpi-cell` 14/18 padding 이 그대로라 셀 안 공간 부족 시 텍스트 단축 가능. 모바일 시연 환경(심사위원 핸드폰) 대응 부족.\n\n### Planned improvement (C1 소진)\n720px 이하에서 KPI 셀 폰트·padding·source disclosure 폰트를 한 단계 축소:\n- `.kpi-cell` padding 14/18 → 12/14\n- `.kpi-label` 11px → 10px\n- `.kpi-value` 22px → 18px\n- `.kpi-source > summary` 10px → 9px\n- `.kpi-source-body` 10px → 9px\n\n### Files changed\n- `app/components/cards.py` — 720px 미디어쿼리 블록 확장 (6줄)\n- `tests/test_app.py` — `test_kpi_mobile_breakpoint_tokens_present` 회귀 가드 1건\n\n### Verification\n- `uv run ruff check --fix .` → All checks passed\n- `uv run ruff format .` → 43 files left unchanged\n- `uv run pyright` → **0 errors, 137 warnings**\n- `uv run pytest` → **65 passed** (이전 64 → +1), coverage **65.29%**\n\n@claude\n\nCo-Authored-By: Claude <noreply@anthropic.com>",
+    "author": "IBORY-PURPLE",
+    "headRef": "agent/round-26-mobile-kpi-density",
+    "repository": "Chutzpah-1000/Contest"
+  },
+  "diffRef": {
+    "repository": "Chutzpah-1000/Contest",
+    "headSha": "3cc2b1d8a06aad68507d51533b92a83d9f4368fa",
+    "baseSha": "f9aa4cf8f1c8071a016cfcd229e5f048ad41cec6"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-Chutzpah-1000-Contest-pr9.diff",
+  "vendoredAt": "2026-05-24T03:09:38.546Z",
+  "collectedAt": "2026-05-24T03:09:38.546Z"
+}

@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-farion1231-cc-switch-pr2852",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "commit=codex-cli-footer"
+  },
+  "pr": {
+    "number": 2852,
+    "headSha": "6ed96b1807fca9d160dd1af846658f7a82a16061",
+    "baseSha": "4f0f103a8aaf9cf1f75abf7477a718cf53d828b9",
+    "title": "feat(proxy): Codex Chat Compat mode - DeepSeek and other Chat Completions providers",
+    "body": "## Summary\n\nAdds a **Chat Compat mode** that enables cc-switch to act as a proxy for Codex CLI when the upstream provider only supports **Chat Completions API** (e.g. DeepSeek, Qwen, GLM, Moonshot, etc).\n\n## How it works\n\nWhen `chat_compat: true` is set in the provider config, two bidirectional adapters are activated:\n\n1. **Request path** (`responses_to_chat.rs`): Converts Codex CLI's Responses API format → Chat Completions format before forwarding\n2. **Response path** (`chat_to_responses.rs`): Converts upstream Chat Completions response → Responses API SSE events for Codex CLI\n\n## DeepSeek-specific fixes included\n\n- Forces non-streaming for DeepSeek to simplify response handling\n- Prevents infinite retry loop when DeepSeek returns errors\n- Reorders interleaved messages and handles dangling `tool_calls`\n- Matches `tool_calls` to `outputs` to prevent \"insufficient\" error\n- Safe UTF-8 char boundary truncation to prevent panics on multi-byte strings\n\n## Usage\n\nAdd `chat_compat: true` to your DeepSeek (or other Chat Completions-only) provider config in cc-switch, then use it as a proxy for Codex CLI.",
+    "author": "OmMaBaMiHong",
+    "headRef": "feat/codex-chat-compat",
+    "repository": "farion1231/cc-switch"
+  },
+  "diffRef": {
+    "repository": "farion1231/cc-switch",
+    "headSha": "6ed96b1807fca9d160dd1af846658f7a82a16061",
+    "baseSha": "4f0f103a8aaf9cf1f75abf7477a718cf53d828b9"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-farion1231-cc-switch-pr2852.diff",
+  "vendoredAt": "2026-05-24T03:12:52.051Z",
+  "collectedAt": "2026-05-24T03:12:52.051Z"
+}

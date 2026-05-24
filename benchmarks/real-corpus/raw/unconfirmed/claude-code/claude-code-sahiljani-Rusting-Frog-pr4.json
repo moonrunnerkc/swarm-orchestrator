@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-sahiljani-Rusting-Frog-pr4",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "commit=claude-coauthor"
+  },
+  "pr": {
+    "number": 4,
+    "headSha": "55a04bcc1ec8a27beed11fd9dd298c395525e661",
+    "baseSha": "98a795a7b4c6fd01fa5baa9dc73b9b7f57a4e891",
+    "title": "refactor(evaluators): split integrations.rs into 7 per-tab files",
+    "body": "## Summary\n- Split the macro-bundled stubs in `crates/evaluators/src/integrations.rs` into one explicit file per integration tab: `analytics.rs`, `search_console.rs`, `link_metrics.rs`, `custom_search.rs`, `custom_extraction.rs`, `custom_javascript.rs`, `ai.rs`.\n- Each new file carries a short module doc comment naming its blocking dependency (GA4 OAuth, GSC OAuth, Moz/Majestic/Ahrefs, user-authored slots, render-worker JS bridge, AI provider) and a minimal test asserting empty findings for an HTML page.\n- Updated `lib.rs` module declarations and `phase1_evaluators()` registration to use the new module paths; deleted `integrations.rs`.\n\nImplements slice C.7 of the gap-closure master design (`docs/superpowers/specs/2026-05-22-sf-clone-gap-closure-master-design.md`). The old `integrations.rs` file's own doc comment flagged it as a placeholder to be split once real implementations started landing.\n\n## Test plan\n- [x] `cargo test -p sf-evaluators` (166 passed, 0 failed)\n- [x] `cargo fmt --check` (clean)\n- [x] `cargo clippy -p sf-evaluators --all-targets -- -D warnings` (clean)\n\nCo-Authored-By: Claude <noreply@anthropic.com>",
+    "author": "sahiljani",
+    "headRef": "refactor/c-7-split-integrations",
+    "repository": "sahiljani/Rusting-Frog"
+  },
+  "diffRef": {
+    "repository": "sahiljani/Rusting-Frog",
+    "headSha": "55a04bcc1ec8a27beed11fd9dd298c395525e661",
+    "baseSha": "98a795a7b4c6fd01fa5baa9dc73b9b7f57a4e891"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-sahiljani-Rusting-Frog-pr4.diff",
+  "vendoredAt": "2026-05-24T03:09:34.650Z",
+  "collectedAt": "2026-05-24T03:09:34.650Z"
+}

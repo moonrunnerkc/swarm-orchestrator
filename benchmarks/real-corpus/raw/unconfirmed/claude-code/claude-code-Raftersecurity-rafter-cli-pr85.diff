@@ -1,0 +1,1267 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 960f57c..b79edec 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
+ ## [Unreleased]
+ 
+ ### Added
++- **Aider read-only context: `RAFTER.md` + `.aider.conf.yml read:` entry** (Node + Python, rf-du2o / rf-cia phase c). Aider has no plugin/hook system and no native MCP support — `read:` in `.aider.conf.yml` is its only documented persistent-context primitive. `rafter agent init --with-aider` now writes:
++  - `RAFTER.md` at workspace root with the rafter security context block (`<!-- rafter:start --> ... <!-- rafter:end -->`).
++  - Adds `RAFTER.md` to the `read:` list in `.aider.conf.yml` (preserves existing keys and existing `read:` entries; idempotent across reinstalls).
++  - Reinstalls on top of older layouts strip the legacy `mcp-server-command: rafter mcp serve` line (silent no-op — Aider ignored unknown YAML keys per its docs).
++  - Now installs at `--local` (project) scope. Backed by 6 new Node tests + 6 new Python tests; recipe rewritten to match.
++
+ - **Windsurf deep support: per-skill workspace rules + AGENTS.md + project-scope (`--local`) install** (Node + Python, rf-0vr3 / rf-cia phase c). `rafter agent init --with-windsurf` now ships Windsurf the way it actually consumes context:
+   - Writes 4 per-skill rules under `.windsurf/rules/<skill>.md` with Windsurf YAML frontmatter (`trigger: model_decision`, `description:`) so the agent fetches the right rule per task description.
+   - Writes `AGENTS.md` at workspace root — Windsurf reads it natively (so does Codex; one file covers both). `<!-- rafter:start --> ... <!-- rafter:end -->` marker preserves user content.
+@@ -21,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
+   - Backed by 13 new Node tests and 12 new Python tests. The `cursor.instructions` component now manages rules + sub-agent together for `rafter agent enable/disable`.
+ 
+ ### Removed
++- **`rafter agent init --with-aider` no longer appends `mcp-server-command: rafter mcp serve` to `.aider.conf.yml`** (Node + Python, rf-du2o): Aider has no native MCP support; the unknown YAML key was silently ignored at runtime (independently flagged by gap reports rf-p1ri / rf-vayl and research bead rf-s1n3). Removed `installAiderMcp` from the Node init flow, `_aider_mcp` ComponentSpec from both Node and Python registries (replaced by `aider.read`), and the matching test expectations. Reinstalling on top of an older `.aider.conf.yml` strips the legacy line as a migration step.
++
+ - **`rafter agent init --with-windsurf` no longer writes `~/.windsurf/hooks.json`** (Node + Python, rf-0vr3): Windsurf has no documented hook surface in current versions — `pre_run_command` / `pre_write_code` were not consumed by the IDE at runtime. The install was a silent no-op (independently flagged by gap reports rf-p1ri / rf-vayl and research bead rf-s1n3). Pruned along the same pattern as the Continue.dev hooks prune. Removed `installWindsurfHooks` from the Node init flow, `_windsurf_hooks` ComponentSpec from both registries, and the matching test expectations. The MCP install at `~/.codeium/windsurf/mcp_config.json` is unchanged.
+ 
+ - **`rafter agent init --with-continue` no longer writes `~/.continue/settings.json`** (Node + Python, rf-cia): Continue.dev does not read `settings.json` and has no `hooks.PreToolUse`/`PostToolUse` field in its config schema (current versions use `config.yaml`, legacy uses `config.json`). The hook install was a silent no-op at runtime — files written, never consumed. Removed `installContinueDevHooks` from the Node init flow, `_continue_hooks` ComponentSpec from both Node and Python `rafter agent enable/disable` registries, and the matching test expectations. MCP install (`.continue/config.json` mcpServers entry) is unchanged. Continue.dev integration is now MCP-only — matches what `recipes/continue-dev.md` always claimed.
+diff --git a/node/src/commands/agent/components.ts b/node/src/commands/agent/components.ts
+index 765ec62..7bcec11 100644
+--- a/node/src/commands/agent/components.ts
++++ b/node/src/commands/agent/components.ts
+@@ -1,6 +1,7 @@
+ import fs from "fs";
+ import path from "path";
+ import os from "os";
++import yaml from "js-yaml";
+ import {
+   RAFTER_MARKER_START,
+   RAFTER_MARKER_END,
+@@ -828,41 +829,94 @@ function continueMcp(): ComponentSpec {
+   };
+ }
+ 
+-function aiderMcp(): ComponentSpec {
++/**
++ * Aider read-only context: writes RAFTER.md and adds it to .aider.conf.yml `read:`.
++ *
++ * Replaces the prior `aider.mcp` component, pruned in rf-du2o because Aider
++ * has no native MCP support — the legacy `mcp-server-command: rafter mcp serve`
++ * line was a silent no-op (Aider ignores unknown YAML keys per its docs).
++ *
++ * Project-scope by design — RAFTER.md and the read entry land in cwd.
++ */
++function aiderRead(): ComponentSpec {
+   const home = os.homedir();
+-  const configPath = path.join(home, ".aider.conf.yml");
+-  const mcpLineHeader = "# Rafter security MCP server";
++  const cwd = process.cwd();
++  const configPath = path.join(cwd, ".aider.conf.yml");
++  const rafterMdPath = path.join(cwd, "RAFTER.md");
++  const READ_ENTRY = "RAFTER.md";
++
+   return {
+-    id: "aider.mcp",
++    id: "aider.read",
+     platform: "aider",
+-    kind: "mcp",
+-    description: "Aider MCP server entry (~/.aider.conf.yml)",
+-    // Aider has no config dir — its presence is the file itself. Point detectDir
+-    // at $HOME so the platform is always considered "present enough to install into".
++    kind: "instructions",
++    description: "Aider read-only context (RAFTER.md + .aider.conf.yml read:)",
+     detectDir: home,
+-    path: configPath,
++    path: rafterMdPath,
+     isInstalled: () => {
++      if (!fs.existsSync(rafterMdPath)) return false;
+       if (!fs.existsSync(configPath)) return false;
+-      return fs.readFileSync(configPath, "utf-8").includes("rafter mcp serve");
++      const raw = fs.readFileSync(configPath, "utf-8");
++      try {
++        const parsed = yaml.load(raw) as any;
++        const reads = Array.isArray(parsed?.read)
++          ? parsed.read.map(String)
++          : typeof parsed?.read === "string" ? [parsed.read] : [];
++        return reads.includes(READ_ENTRY);
++      } catch {
++        return raw.includes(READ_ENTRY);
++      }
+     },
+     install: () => {
+-      const content = fs.existsSync(configPath) ? fs.readFileSync(configPath, "utf-8") : "";
+-      if (content.includes("rafter mcp serve")) return;
+-      const block = `\n${mcpLineHeader}\nmcp-server-command: rafter mcp serve\n`;
+-      fs.writeFileSync(configPath, content + block, "utf-8");
++      injectInstructionFile(rafterMdPath);
++      let raw = fs.existsSync(configPath) ? fs.readFileSync(configPath, "utf-8") : "";
++      // Strip legacy mcp-server-command silent-no-op (rf-du2o migration).
++      raw = raw.replace(
++        /\n?#\s*Rafter security MCP server\s*\nmcp-server-command:\s*rafter\s+mcp\s+serve\s*\n?/g,
++        "\n",
++      );
++      raw = raw.replace(/^mcp-server-command:\s*rafter\s+mcp\s+serve\s*\n?/gm, "");
++
++      let parsed: Record<string, any> = {};
++      if (raw.trim().length > 0) {
++        try {
++          const loaded = yaml.load(raw);
++          if (loaded && typeof loaded === "object" && !Array.isArray(loaded)) {
++            parsed = loaded as Record<string, any>;
++          }
++        } catch {
++          // Unparseable YAML — append safely without touching existing content.
++          if (!new RegExp(`\\b${READ_ENTRY}\\b`).test(raw)) {
++            const sep = raw.length > 0 && !raw.endsWith("\n") ? "\n" : "";
++            fs.writeFileSync(configPath, `${raw}${sep}read:\n  - ${READ_ENTRY}\n`, "utf-8");
++          }
++          return;
++        }
++      }
++      let reads: string[] = [];
++      if (Array.isArray(parsed.read)) reads = parsed.read.map(String);
++      else if (typeof parsed.read === "string") reads = [parsed.read];
++      if (!reads.includes(READ_ENTRY)) reads.push(READ_ENTRY);
++      parsed.read = reads;
++      fs.writeFileSync(configPath, yaml.dump(parsed), "utf-8");
+     },
+     uninstall: () => {
++      if (fs.existsSync(rafterMdPath)) {
++        try { fs.rmSync(rafterMdPath, { force: true }); } catch { /* best-effort */ }
++      }
+       if (!fs.existsSync(configPath)) return;
+-      const content = fs.readFileSync(configPath, "utf-8");
+-      // Remove both the comment marker and the command line; preserve everything else.
+-      const lines = content.split("\n");
+-      const next = lines.filter((l) => {
+-        const t = l.trim();
+-        if (t === mcpLineHeader) return false;
+-        if (t.startsWith("mcp-server-command:") && t.includes("rafter mcp serve")) return false;
+-        return true;
+-      });
+-      fs.writeFileSync(configPath, next.join("\n"), "utf-8");
++      const raw = fs.readFileSync(configPath, "utf-8");
++      try {
++        const parsed = yaml.load(raw) as any;
++        if (parsed && Array.isArray(parsed.read)) {
++          parsed.read = parsed.read.filter((p: any) => String(p) !== READ_ENTRY);
++          if (parsed.read.length === 0) delete parsed.read;
++        } else if (parsed && parsed.read === READ_ENTRY) {
++          delete parsed.read;
++        }
++        fs.writeFileSync(configPath, yaml.dump(parsed ?? {}), "utf-8");
++      } catch {
++        /* preserve unparseable file */
++      }
+     },
+   };
+ }
+@@ -913,7 +967,7 @@ export function getComponentRegistry(): ComponentSpec[] {
+       windsurfRules(),
+       windsurfMcp(),
+       continueMcp(),
+-      aiderMcp(),
++      aiderRead(),
+       openclawSkill(),
+     ];
+   }
+diff --git a/node/src/commands/agent/init.ts b/node/src/commands/agent/init.ts
+index a83dcf9..575e17d 100644
+--- a/node/src/commands/agent/init.ts
++++ b/node/src/commands/agent/init.ts
+@@ -12,6 +12,7 @@ import { createRequire } from "module";
+ import { createInterface } from "readline";
+ import { fmt } from "../../utils/formatter.js";
+ import { injectInstructionFile } from "./instruction-block.js";
++import yaml from "js-yaml";
+ 
+ const __filename = fileURLToPath(import.meta.url);
+ const __dirname = path.dirname(__filename);
+@@ -616,28 +617,80 @@ function installContinueDevMcp(root: string): boolean {
+ }
+ 
+ /**
+- * Install MCP config for Aider (~/.aider.conf.yml)
+- * Aider uses YAML config with mcpServers list
++ * Install Rafter context for Aider (rf-du2o).
++ *
++ * Aider has no native MCP support and no plugin/hook surface. Its only
++ * intercept-friendly persistent-context primitive is the `read:` flag in
++ * `.aider.conf.yml`, which injects read-only files into every session.
++ *
++ * Behavior:
++ *   1. Write `<root>/RAFTER.md` with the rafter instruction block.
++ *   2. Update `<root>/.aider.conf.yml` so `read:` includes `RAFTER.md`
++ *      (preserves any pre-existing `read:` entries; preserves other YAML keys).
++ *   3. Strip the legacy `mcp-server-command: rafter mcp serve` line if present
++ *      — it was a silent no-op in earlier rafter versions (Aider has no MCP).
++ *
++ * Returns true on success.
+  */
+-function installAiderMcp(root: string): boolean {
++function installAiderRead(root: string): boolean {
++  const rafterMdPath = path.join(root, "RAFTER.md");
+   const configPath = path.join(root, ".aider.conf.yml");
++  const RAFTER_READ_ENTRY = "RAFTER.md";
++
++  // 1. Write RAFTER.md (idempotent — the marker block is replaced in place).
++  injectInstructionFile(rafterMdPath);
+ 
+-  // Aider's YAML config is simple — we append the MCP flag if not present
+-  let content = "";
++  // 2. Update .aider.conf.yml read: list.
++  let raw = "";
+   if (fs.existsSync(configPath)) {
+-    content = fs.readFileSync(configPath, "utf-8");
++    raw = fs.readFileSync(configPath, "utf-8");
++  }
++
++  // 2a. Strip the legacy mcp-server-command line(s). Match a contiguous block
++  // that may include the preceding `# Rafter security MCP server` comment.
++  raw = raw.replace(
++    /\n?#\s*Rafter security MCP server\s*\nmcp-server-command:\s*rafter\s+mcp\s+serve\s*\n?/g,
++    "\n",
++  );
++  raw = raw.replace(/^mcp-server-command:\s*rafter\s+mcp\s+serve\s*\n?/gm, "");
++
++  // 2b. Parse remaining YAML, normalize read:.
++  let parsed: Record<string, any> = {};
++  if (raw.trim().length > 0) {
++    try {
++      const loaded = yaml.load(raw);
++      if (loaded && typeof loaded === "object" && !Array.isArray(loaded)) {
++        parsed = loaded as Record<string, any>;
++      }
++    } catch {
++      console.log(fmt.warning(`Existing ${configPath} was not valid YAML — preserving raw content and appending read: entry`));
++      // Append the read: line at the bottom rather than rewriting an
++      // unparseable file. We still need to make sure RAFTER.md ends up in it.
++      if (!new RegExp(`^read:\\s*\\[?[^\\n]*\\b${RAFTER_READ_ENTRY}\\b`, "m").test(raw)) {
++        const sep = raw.length > 0 && !raw.endsWith("\n") ? "\n" : "";
++        raw = `${raw}${sep}read:\n  - ${RAFTER_READ_ENTRY}\n`;
++        fs.writeFileSync(configPath, raw, "utf-8");
++      }
++      console.log(fmt.success(`Installed Rafter read-only context to ${configPath}`));
++      return true;
++    }
+   }
+ 
+-  // Check if rafter MCP is already configured
+-  if (content.includes("rafter mcp serve")) {
+-    console.log(fmt.success("Rafter MCP already configured in Aider config"));
+-    return true;
++  // Normalize `read:` to a string array.
++  let reads: string[] = [];
++  if (Array.isArray(parsed.read)) {
++    reads = parsed.read.map(String);
++  } else if (typeof parsed.read === "string") {
++    reads = [parsed.read];
+   }
+ 
+-  // Append MCP server config
+-  const mcpLine = "\n# Rafter security MCP server\nmcp-server-command: rafter mcp serve\n";
+-  fs.writeFileSync(configPath, content + mcpLine, "utf-8");
+-  console.log(fmt.success(`Installed Rafter MCP server to ${configPath}`));
++  if (!reads.includes(RAFTER_READ_ENTRY)) {
++    reads.push(RAFTER_READ_ENTRY);
++  }
++  parsed.read = reads;
++
++  fs.writeFileSync(configPath, yaml.dump(parsed), "utf-8");
++  console.log(fmt.success(`Installed Rafter read-only context to ${rafterMdPath} + ${configPath}`));
+   return true;
+ }
+ 
+@@ -796,7 +849,9 @@ export function createInitCommand(): Command {
+       // since rf-0vr3. User scope still also installs the MCP entry.
+       let wantWindsurf = opts.withWindsurf || opts.all;
+       let wantContinue = opts.withContinue || (opts.all && !opts.local);
+-      let wantAider = opts.withAider || (opts.all && !opts.local);
++      // Aider can install at --local scope (writes RAFTER.md + .aider.conf.yml
++      // in cwd) since rf-du2o.
++      let wantAider = opts.withAider || opts.all;
+       let wantGitleaks = opts.withGitleaks || (opts.all && !opts.local);
+ 
+       // Interactive mode: prompt for each detected integration
+@@ -1061,17 +1116,19 @@ export function createInitCommand(): Command {
+         localUnsupported("Continue.dev");
+       }
+ 
+-      // Install Aider MCP if opted in
++      // Install Aider integration if opted in (rf-du2o).
++      // Aider has no MCP and no hook surface — its only intercept is the
++      // `read:` flag in .aider.conf.yml. We write RAFTER.md and ensure
++      // `read:` includes it. The legacy mcp-server-command YAML line (a
++      // silent no-op) is stripped on reinstall.
+       let aiderOk = false;
+-      if (hasAider && wantAider) {
++      if (wantAider && (hasAider || opts.local)) {
+         try {
+-          aiderOk = installAiderMcp(root);
+-          if (aiderOk) manager.set("agent.environments.aider.enabled", true);
++          aiderOk = installAiderRead(root);
++          if (aiderOk && hasAider) manager.set("agent.environments.aider.enabled", true);
+         } catch (e) {
+           console.error(fmt.error(`Failed to install Aider integration: ${e}`));
+         }
+-      } else if (opts.local && wantAider) {
+-        localUnsupported("Aider");
+       }
+ 
+       // Install global instruction files for platforms that support them.
+@@ -1099,7 +1156,7 @@ export function createInitCommand(): Command {
+         if (cursorOk) console.log("  - Restart Cursor to load MCP server");
+         if (windsurfOk) console.log("  - Restart Windsurf to load MCP server");
+         if (continueOk) console.log("  - Restart Continue.dev to load MCP server");
+-        if (aiderOk) console.log("  - Restart Aider to load MCP server");
++        if (aiderOk) console.log("  - Restart Aider to load RAFTER.md from .aider.conf.yml read:");
+       } else if (scope === "project") {
+         console.log("No integrations were installed. In --local mode, pass one or more opt-in flags:");
+         console.log("  rafter agent init --local --with-claude-code");
+diff --git a/node/src/commands/brief.ts b/node/src/commands/brief.ts
+index 36dcf32..e68b55c 100644
+--- a/node/src/commands/brief.ts
++++ b/node/src/commands/brief.ts
+@@ -308,7 +308,9 @@ Add to Windsurf's MCP config (\`~/.codeium/windsurf/mcp_config.json\`):
+ 
+   aider: `# Rafter Setup — Aider
+ 
+-Aider uses MCP for tool integration.
++Aider has no plugin/hook system and no native MCP support. Its only intercept
++for persistent context is the \`read:\` flag in \`.aider.conf.yml\`, which
++injects read-only files into every session.
+ 
+ ## Automated Setup
+ 
+@@ -316,18 +318,21 @@ Aider uses MCP for tool integration.
+ rafter agent init --with-aider
+ \`\`\`
+ 
++This writes \`RAFTER.md\` at the workspace root and adds it to \`read:\` in
++\`.aider.conf.yml\`.
++
+ ## Manual Setup
+ 
+-Add to \`~/.aider.conf.yml\`:
+-\`\`\`yaml
+-mcp-servers:
+-  - name: rafter
+-    command: rafter mcp serve
+-\`\`\`
++1. Create \`RAFTER.md\` at the workspace root with rafter's security context.
++2. Add to \`.aider.conf.yml\`:
++   \`\`\`yaml
++   read:
++     - RAFTER.md
++   \`\`\`
+ 
+ ## Supplementing with Brief
+ 
+-Aider doesn't have persistent memory, so run before each session:
++Aider doesn't have persistent memory beyond \`read:\`, so run before each session:
+ \`\`\`bash
+ rafter brief commands    # quick command reference
+ \`\`\``,
+diff --git a/node/tests/agent-components.test.ts b/node/tests/agent-components.test.ts
+index 8eb7c58..fe53484 100644
+--- a/node/tests/agent-components.test.ts
++++ b/node/tests/agent-components.test.ts
+@@ -69,7 +69,7 @@ describe("rafter agent list", () => {
+       "windsurf.rules",
+       "windsurf.mcp",
+       "continue.mcp",
+-      "aider.mcp",
++      "aider.read",
+       "codex.hooks",
+       "codex.skills",
+       "openclaw.skills",
+@@ -93,7 +93,7 @@ describe("rafter agent list", () => {
+     expect((byId.get("cursor.mcp") as any).state).toBe("not-detected");
+     expect((byId.get("gemini.mcp") as any).state).toBe("not-detected");
+     // aider's "platform detected" is HOME which always exists
+-    expect((byId.get("aider.mcp") as any).detected).toBe(true);
++    expect((byId.get("aider.read") as any).detected).toBe(true);
+   });
+ 
+   it("--installed filters to only installed rows", () => {
+@@ -222,21 +222,32 @@ describe("rafter agent enable / disable", () => {
+     expect(rafterPreCount).toBe(2);
+   });
+ 
+-  it("aider.mcp appends only once; disable strips the block", () => {
++  it("aider.read writes RAFTER.md + read: entry, idempotent, strips legacy mcp line", () => {
+     const conf = path.join(home, ".aider.conf.yml");
+-    fs.writeFileSync(conf, "# pre-existing line\nmodel: gpt-5\n");
++    // Pre-existing config including the legacy silent-no-op MCP line that
++    // earlier rafter versions wrote (rf-du2o migration path).
++    fs.writeFileSync(
++      conf,
++      "model: gpt-5\n\n# Rafter security MCP server\nmcp-server-command: rafter mcp serve\n",
++    );
++
++    runCli("agent enable aider.read", home);
++    runCli("agent enable aider.read", home); // idempotent
+ 
+-    runCli("agent enable aider.mcp", home);
+-    runCli("agent enable aider.mcp", home); // idempotent
+     const after = fs.readFileSync(conf, "utf-8");
+-    const occurrences = (after.match(/rafter mcp serve/g) || []).length;
+-    expect(occurrences).toBe(1);
++    expect(after).not.toContain("rafter mcp serve");
+     expect(after).toContain("model: gpt-5");
++    // RAFTER.md should appear in read: exactly once.
++    const occurrences = (after.match(/RAFTER\.md/g) || []).length;
++    expect(occurrences).toBe(1);
++    // RAFTER.md was written at cwd (test runs with cwd=home).
++    expect(fs.existsSync(path.join(home, "RAFTER.md"))).toBe(true);
+ 
+-    runCli("agent disable aider.mcp", home);
++    runCli("agent disable aider.read", home);
+     const cleaned = fs.readFileSync(conf, "utf-8");
+-    expect(cleaned).not.toContain("rafter mcp serve");
++    expect(cleaned).not.toContain("RAFTER.md");
+     expect(cleaned).toContain("model: gpt-5");
++    expect(fs.existsSync(path.join(home, "RAFTER.md"))).toBe(false);
+   });
+ 
+   it("records enabled=true/false in ~/.rafter/config.json for each toggle", () => {
+diff --git a/node/tests/platform-integration.test.ts b/node/tests/platform-integration.test.ts
+index 56cd282..a455393 100644
+--- a/node/tests/platform-integration.test.ts
++++ b/node/tests/platform-integration.test.ts
+@@ -739,74 +739,96 @@ describe("Platform Integration — MCP Installs via CLI", () => {
+     });
+   });
+ 
+-  // ── 6. Aider MCP install ───────────────────────────────────────────
++  // ── 6. Aider read-only context (rf-du2o) ──────────────────────────
++  //
++  // Earlier rafter versions appended `mcp-server-command: rafter mcp serve`
++  // to .aider.conf.yml — Aider has no native MCP support and silently
++  // ignores unknown YAML keys per its docs. That install was a no-op.
++  //
++  // Replaced by RAFTER.md + .aider.conf.yml `read:` entry, Aider's only
++  // documented persistent-context primitive.
+ 
+-  describe("Aider MCP install (--with-aider)", () => {
+-    it("should create .aider.conf.yml with rafter mcp serve", () => {
+-      // Aider detection checks for the file itself, not a directory
+-      fs.writeFileSync(
+-        path.join(testHomeDir, ".aider.conf.yml"),
+-        "# existing aider config\n"
+-      );
++  describe("Aider read-only context (--with-aider)", () => {
++    it("writes RAFTER.md at workspace root with the rafter marker block", () => {
++      fs.writeFileSync(path.join(testHomeDir, ".aider.conf.yml"), "# existing aider config\n");
+ 
+       const result = runCli("agent init --with-aider", testHomeDir);
+       expect(result.exitCode).toBe(0);
+ 
+-      const configPath = path.join(testHomeDir, ".aider.conf.yml");
+-      expect(fs.existsSync(configPath)).toBe(true);
++      const rafterMd = path.join(testHomeDir, "RAFTER.md");
++      expect(fs.existsSync(rafterMd)).toBe(true);
++      const body = fs.readFileSync(rafterMd, "utf-8");
++      expect(body).toContain("<!-- rafter:start -->");
++      expect(body).toContain("<!-- rafter:end -->");
++    });
++
++    it("adds RAFTER.md to .aider.conf.yml `read:` list (preserving existing keys)", () => {
++      const existingConfig = [
++        "model: gpt-4-turbo",
++        "auto-commits: false",
++        "dark-mode: true",
++        "map-tokens: 1024",
++      ].join("\n") + "\n";
++      fs.writeFileSync(path.join(testHomeDir, ".aider.conf.yml"), existingConfig);
+ 
+-      const content = fs.readFileSync(configPath, "utf-8");
+-      expect(content).toContain("rafter mcp serve");
+-      expect(content).toContain("mcp-server-command: rafter mcp serve");
+-      // Should preserve existing content
+-      expect(content).toContain("# existing aider config");
++      runCli("agent init --with-aider", testHomeDir);
++
++      const content = fs.readFileSync(path.join(testHomeDir, ".aider.conf.yml"), "utf-8");
++      expect(content).toContain("model: gpt-4-turbo");
++      expect(content).toContain("auto-commits: false");
++      expect(content).toContain("dark-mode: true");
++      expect(content).toContain("map-tokens: 1024");
++      expect(content).toContain("RAFTER.md");
+     });
+-  });
+ 
+-  // ── 6b. Aider idempotency and preservation ────────────────────────
++    it("does NOT write the legacy mcp-server-command (silent no-op pruned)", () => {
++      fs.writeFileSync(path.join(testHomeDir, ".aider.conf.yml"), "# fresh\n");
++
++      runCli("agent init --with-aider", testHomeDir);
++
++      const content = fs.readFileSync(path.join(testHomeDir, ".aider.conf.yml"), "utf-8");
++      expect(content).not.toContain("mcp-server-command");
++      expect(content).not.toContain("rafter mcp serve");
++    });
+ 
+-  describe("Aider MCP idempotency", () => {
+-    it("should not duplicate mcp-server-command on repeated installs", () => {
++    it("strips a pre-existing legacy mcp-server-command on reinstall (rf-du2o migration)", () => {
+       fs.writeFileSync(
+         path.join(testHomeDir, ".aider.conf.yml"),
+-        "# aider config\n"
++        "model: gpt-5\n\n# Rafter security MCP server\nmcp-server-command: rafter mcp serve\n",
+       );
+ 
++      runCli("agent init --with-aider", testHomeDir);
++
++      const content = fs.readFileSync(path.join(testHomeDir, ".aider.conf.yml"), "utf-8");
++      expect(content).not.toContain("mcp-server-command");
++      expect(content).not.toContain("Rafter security MCP server");
++      expect(content).toContain("model: gpt-5");
++      expect(content).toContain("RAFTER.md");
++    });
++
++    it("is idempotent across repeated installs (RAFTER.md listed once)", () => {
++      fs.writeFileSync(path.join(testHomeDir, ".aider.conf.yml"), "model: gpt-5\n");
++
+       runCli("agent init --with-aider", testHomeDir);
+       runCli("agent init --with-aider", testHomeDir);
+ 
+-      const content = fs.readFileSync(
+-        path.join(testHomeDir, ".aider.conf.yml"),
+-        "utf-8"
+-      );
+-      // Count occurrences of the mcp line
+-      const matches = content.match(/mcp-server-command: rafter mcp serve/g);
++      const content = fs.readFileSync(path.join(testHomeDir, ".aider.conf.yml"), "utf-8");
++      const matches = content.match(/RAFTER\.md/g) || [];
+       expect(matches).toHaveLength(1);
+     });
+ 
+-    it("should preserve all existing YAML config", () => {
+-      const existingConfig = [
+-        "model: gpt-4-turbo",
+-        "auto-commits: false",
+-        "dark-mode: true",
+-        "map-tokens: 1024",
+-      ].join("\n") + "\n";
++    it("preserves existing read: entries", () => {
+       fs.writeFileSync(
+         path.join(testHomeDir, ".aider.conf.yml"),
+-        existingConfig
++        "read:\n  - CONVENTIONS.md\n  - DESIGN.md\n",
+       );
+ 
+       runCli("agent init --with-aider", testHomeDir);
+ 
+-      const content = fs.readFileSync(
+-        path.join(testHomeDir, ".aider.conf.yml"),
+-        "utf-8"
+-      );
+-      expect(content).toContain("model: gpt-4-turbo");
+-      expect(content).toContain("auto-commits: false");
+-      expect(content).toContain("dark-mode: true");
+-      expect(content).toContain("map-tokens: 1024");
+-      expect(content).toContain("rafter mcp serve");
++      const content = fs.readFileSync(path.join(testHomeDir, ".aider.conf.yml"), "utf-8");
++      expect(content).toContain("CONVENTIONS.md");
++      expect(content).toContain("DESIGN.md");
++      expect(content).toContain("RAFTER.md");
+     });
+   });
+ 
+@@ -855,11 +877,12 @@ describe("Platform Integration — MCP Installs via CLI", () => {
+       expect(
+         fs.existsSync(path.join(testHomeDir, ".continue", "config.json"))
+       ).toBe(false);
+-      // Aider file existed before but should NOT have rafter appended
++      // Aider file existed before but should NOT have rafter touch it.
+       const aiderContent = fs.readFileSync(
+         path.join(testHomeDir, ".aider.conf.yml"),
+         "utf-8"
+       );
++      expect(aiderContent).not.toContain("RAFTER.md");
+       expect(aiderContent).not.toContain("rafter mcp serve");
+     });
+   });
+@@ -923,12 +946,14 @@ describe("Platform Integration — MCP Installs via CLI", () => {
+       );
+       expect(continueDev.mcpServers).toBeDefined();
+ 
+-      // Aider
++      // Aider — RAFTER.md + read: entry (rf-du2o; legacy mcp line removed)
+       const aiderContent = fs.readFileSync(
+         path.join(testHomeDir, ".aider.conf.yml"),
+         "utf-8"
+       );
+-      expect(aiderContent).toContain("rafter mcp serve");
++      expect(aiderContent).not.toContain("rafter mcp serve");
++      expect(aiderContent).toContain("RAFTER.md");
++      expect(fs.existsSync(path.join(testHomeDir, "RAFTER.md"))).toBe(true);
+     });
+   });
+ 
+@@ -976,6 +1001,8 @@ describe("Platform Integration — MCP Installs via CLI", () => {
+         path.join(testHomeDir, ".aider.conf.yml"),
+         "utf-8"
+       );
++      // Aider not requested — its config file remains untouched.
++      expect(aiderContent).not.toContain("RAFTER.md");
+       expect(aiderContent).not.toContain("rafter mcp serve");
+     });
+ 
+@@ -1000,11 +1027,13 @@ describe("Platform Integration — MCP Installs via CLI", () => {
+           path.join(testHomeDir, ".codeium", "windsurf", "mcp_config.json")
+         )
+       ).toBe(true);
++      // Aider — RAFTER.md + read: entry (rf-du2o)
+       const aiderContent = fs.readFileSync(
+         path.join(testHomeDir, ".aider.conf.yml"),
+         "utf-8"
+       );
+-      expect(aiderContent).toContain("rafter mcp serve");
++      expect(aiderContent).toContain("RAFTER.md");
++      expect(fs.existsSync(path.join(testHomeDir, "RAFTER.md"))).toBe(true);
+     });
+   });
+ 
+@@ -1650,11 +1679,13 @@ describe("Platform Integration — MCP Installs via CLI", () => {
+       expect(fs.existsSync(path.join(testHomeDir, ".continue", "config.json"))).toBe(true);
+       expect(fs.existsSync(path.join(testHomeDir, ".continue", "settings.json"))).toBe(false);
+ 
+-      // ── Aider: YAML config ──
++      // ── Aider: RAFTER.md + read: entry (rf-du2o; legacy mcp line not written) ──
+       const aiderContent = fs.readFileSync(
+         path.join(testHomeDir, ".aider.conf.yml"), "utf-8"
+       );
+-      expect(aiderContent).toContain("rafter mcp serve");
++      expect(aiderContent).not.toContain("rafter mcp serve");
++      expect(aiderContent).toContain("RAFTER.md");
++      expect(fs.existsSync(path.join(testHomeDir, "RAFTER.md"))).toBe(true);
+     });
+   });
+ });
+diff --git a/python/rafter_cli/commands/agent.py b/python/rafter_cli/commands/agent.py
+index ede21f0..e25fa83 100644
+--- a/python/rafter_cli/commands/agent.py
++++ b/python/rafter_cli/commands/agent.py
+@@ -11,6 +11,8 @@
+ import stat
+ import subprocess
+ import sys
++
++import yaml
+ from dataclasses import dataclass
+ from datetime import datetime, timezone
+ from pathlib import Path
+@@ -677,21 +679,75 @@ def _install_continue_dev_mcp(root: Path) -> bool:
+     return True
+ 
+ 
+-def _install_aider_mcp(root: Path) -> bool:
+-    """Install MCP config for Aider (<root>/.aider.conf.yml)."""
++_AIDER_LEGACY_MCP_BLOCK_RE = re.compile(
++    r"\n?#\s*Rafter security MCP server\s*\nmcp-server-command:\s*rafter\s+mcp\s+serve\s*\n?",
++)
++_AIDER_LEGACY_MCP_LINE_RE = re.compile(
++    r"^mcp-server-command:\s*rafter\s+mcp\s+serve\s*\n?",
++    flags=re.MULTILINE,
++)
++_AIDER_READ_ENTRY = "RAFTER.md"
++
++
++def _install_aider_read(root: Path) -> bool:
++    """Install Rafter context for Aider (rf-du2o).
++
++    Aider has no native MCP support and no plugin/hook surface. Its only
++    intercept-friendly persistent-context primitive is the `read:` flag in
++    `.aider.conf.yml`, which injects read-only files into every session.
++
++    Behavior:
++      1. Write `<root>/RAFTER.md` with the rafter instruction block.
++      2. Update `<root>/.aider.conf.yml` so `read:` includes `RAFTER.md`
++         (preserves any pre-existing `read:` entries; preserves other YAML keys).
++      3. Strip the legacy `mcp-server-command: rafter mcp serve` line(s) if
++         present — silent no-op in earlier versions (Aider has no MCP).
++    """
++    rafter_md_path = root / "RAFTER.md"
+     config_path = root / ".aider.conf.yml"
+ 
+-    content = ""
+-    if config_path.exists():
+-        content = config_path.read_text()
++    # 1. Write RAFTER.md (idempotent — marker block replaced in place).
++    _inject_instruction_file(rafter_md_path)
+ 
+-    if "rafter mcp serve" in content:
+-        rprint(fmt.success("Rafter MCP already configured in Aider config"))
+-        return True
++    # 2. Update .aider.conf.yml read: list.
++    raw = config_path.read_text() if config_path.exists() else ""
+ 
+-    mcp_line = "\n# Rafter security MCP server\nmcp-server-command: rafter mcp serve\n"
+-    config_path.write_text(content + mcp_line)
+-    rprint(fmt.success(f"Installed Rafter MCP server to {config_path}"))
++    # 2a. Strip legacy mcp-server-command silent-no-op (rf-du2o migration).
++    raw = _AIDER_LEGACY_MCP_BLOCK_RE.sub("\n", raw)
++    raw = _AIDER_LEGACY_MCP_LINE_RE.sub("", raw)
++
++    parsed: dict[str, Any] = {}
++    if raw.strip():
++        try:
++            loaded = yaml.safe_load(raw)
++            if isinstance(loaded, dict):
++                parsed = loaded
++        except yaml.YAMLError:
++            # Unparseable YAML — append a read: section without rewriting.
++            if _AIDER_READ_ENTRY not in raw:
++                sep = "" if not raw or raw.endswith("\n") else "\n"
++                config_path.write_text(f"{raw}{sep}read:\n  - {_AIDER_READ_ENTRY}\n")
++            else:
++                config_path.write_text(raw)
++            rprint(fmt.success(f"Installed Rafter read-only context to {config_path}"))
++            return True
++
++    # Normalize read: to a list of strings.
++    reads: list[str] = []
++    raw_read = parsed.get("read")
++    if isinstance(raw_read, list):
++        reads = [str(p) for p in raw_read]
++    elif isinstance(raw_read, str):
++        reads = [raw_read]
++
++    if _AIDER_READ_ENTRY not in reads:
++        reads.append(_AIDER_READ_ENTRY)
++    parsed["read"] = reads
++
++    config_path.write_text(yaml.safe_dump(parsed, sort_keys=False))
++    rprint(fmt.success(
++        f"Installed Rafter read-only context to {rafter_md_path} + {config_path}"
++    ))
+     return True
+ 
+ 
+@@ -752,7 +808,9 @@ def init(
+     # rf-0vr3. User scope still also installs the MCP entry.
+     want_windsurf = with_windsurf or all_integrations
+     want_continue = with_continue or (all_integrations and not local)
+-    want_aider = with_aider or (all_integrations and not local)
++    # Aider can install at --local scope (writes RAFTER.md + .aider.conf.yml
++    # in cwd) since rf-du2o.
++    want_aider = with_aider or all_integrations
+     want_gitleaks = with_gitleaks or (all_integrations and not local)
+ 
+     # Show detected environments
+@@ -968,17 +1026,18 @@ def _local_unsupported(label: str) -> None:
+     elif local and want_continue:
+         _local_unsupported("Continue.dev")
+ 
+-    # Install Aider MCP if opted in
++    # Install Aider integration if opted in (rf-du2o).
++    # Aider has no MCP and no hook surface — its only intercept is the
++    # `read:` flag in .aider.conf.yml. We write RAFTER.md and ensure the
++    # `read:` list includes it. Legacy mcp-server-command line is stripped.
+     aider_ok = False
+-    if has_aider and want_aider:
++    if want_aider and (has_aider or local):
+         try:
+-            aider_ok = _install_aider_mcp(root)
+-            if aider_ok:
++            aider_ok = _install_aider_read(root)
++            if aider_ok and has_aider:
+                 manager.set("agent.environments.aider.enabled", True)
+         except Exception as e:
+             rprint(fmt.error(f"Failed to install Aider integration: {e}"))
+-    elif local and want_aider:
+-        _local_unsupported("Aider")
+ 
+     # Install global instruction files for platforms that support them
+     _install_global_instructions(
+@@ -1014,7 +1073,7 @@ def _local_unsupported(label: str) -> None:
+         if continue_ok:
+             rprint("  - Restart Continue.dev to load MCP server")
+         if aider_ok:
+-            rprint("  - Restart Aider to load MCP server")
++            rprint("  - Restart Aider to load RAFTER.md from .aider.conf.yml read:")
+     elif scope == "project":
+         rprint("No integrations were installed. In --local mode, pass one or more opt-in flags:")
+         rprint("  rafter agent init --local --with-claude-code")
+diff --git a/python/rafter_cli/commands/agent_components.py b/python/rafter_cli/commands/agent_components.py
+index acd8aca..85a0c26 100644
+--- a/python/rafter_cli/commands/agent_components.py
++++ b/python/rafter_cli/commands/agent_components.py
+@@ -14,11 +14,14 @@
+ 
+ import importlib.resources
+ import json
++import re
+ from dataclasses import dataclass
+ from datetime import datetime, timezone
+ from pathlib import Path
+ from typing import Any, Callable
+ 
++import yaml
++
+ from ..core.config_manager import ConfigManager
+ 
+ 
+@@ -776,43 +779,104 @@ def uninstall() -> None:
+     )
+ 
+ 
+-def _aider_mcp() -> ComponentSpec:
++_AIDER_LEGACY_MCP_BLOCK_RE = re.compile(
++    r"\n?#\s*Rafter security MCP server\s*\nmcp-server-command:\s*rafter\s+mcp\s+serve\s*\n?",
++)
++_AIDER_LEGACY_MCP_LINE_RE = re.compile(
++    r"^mcp-server-command:\s*rafter\s+mcp\s+serve\s*\n?",
++    flags=re.MULTILINE,
++)
++_AIDER_READ_ENTRY = "RAFTER.md"
++
++
++def _aider_read() -> ComponentSpec:
++    """Aider read-only context: writes RAFTER.md and adds it to .aider.conf.yml `read:`.
++
++    Replaces the prior `aider.mcp` component, pruned in rf-du2o because Aider
++    has no native MCP support — the legacy `mcp-server-command: rafter mcp serve`
++    line was a silent no-op (Aider ignores unknown YAML keys per its docs).
++
++    Project-scope by design — RAFTER.md and the read entry land in cwd.
++    """
+     home = Path.home()
+-    config_path = home / ".aider.conf.yml"
+-    header = "# Rafter security MCP server"
++    cwd = Path.cwd()
++    config_path = cwd / ".aider.conf.yml"
++    rafter_md_path = cwd / "RAFTER.md"
+ 
+     def is_installed() -> bool:
+-        return config_path.exists() and "rafter mcp serve" in config_path.read_text(encoding="utf-8")
++        if not rafter_md_path.exists() or not config_path.exists():
++            return False
++        try:
++            parsed = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
++        except yaml.YAMLError:
++            return _AIDER_READ_ENTRY in config_path.read_text(encoding="utf-8")
++        reads = parsed.get("read")
++        if isinstance(reads, list):
++            return _AIDER_READ_ENTRY in [str(p) for p in reads]
++        if isinstance(reads, str):
++            return reads == _AIDER_READ_ENTRY
++        return False
+ 
+     def install() -> None:
+-        existing = config_path.read_text(encoding="utf-8") if config_path.exists() else ""
+-        if "rafter mcp serve" in existing:
+-            return
+-        block = f"\n{header}\nmcp-server-command: rafter mcp serve\n"
+-        config_path.write_text(existing + block, encoding="utf-8")
++        _inject_instruction_file(rafter_md_path)
++        raw = config_path.read_text(encoding="utf-8") if config_path.exists() else ""
++        # Strip legacy mcp-server-command silent-no-op (rf-du2o migration).
++        raw = _AIDER_LEGACY_MCP_BLOCK_RE.sub("\n", raw)
++        raw = _AIDER_LEGACY_MCP_LINE_RE.sub("", raw)
++
++        parsed: dict[str, Any] = {}
++        if raw.strip():
++            try:
++                loaded = yaml.safe_load(raw)
++                if isinstance(loaded, dict):
++                    parsed = loaded
++            except yaml.YAMLError:
++                if _AIDER_READ_ENTRY not in raw:
++                    sep = "" if not raw or raw.endswith("\n") else "\n"
++                    config_path.write_text(f"{raw}{sep}read:\n  - {_AIDER_READ_ENTRY}\n", encoding="utf-8")
++                else:
++                    config_path.write_text(raw, encoding="utf-8")
++                return
++
++        reads: list[str] = []
++        raw_read = parsed.get("read")
++        if isinstance(raw_read, list):
++            reads = [str(p) for p in raw_read]
++        elif isinstance(raw_read, str):
++            reads = [raw_read]
++        if _AIDER_READ_ENTRY not in reads:
++            reads.append(_AIDER_READ_ENTRY)
++        parsed["read"] = reads
++        config_path.write_text(yaml.safe_dump(parsed, sort_keys=False), encoding="utf-8")
+ 
+     def uninstall() -> None:
++        if rafter_md_path.exists():
++            try:
++                rafter_md_path.unlink()
++            except OSError:
++                pass
+         if not config_path.exists():
+             return
+-        lines = config_path.read_text(encoding="utf-8").split("\n")
+-        filtered = []
+-        for line in lines:
+-            stripped = line.strip()
+-            if stripped == header:
+-                continue
+-            if stripped.startswith("mcp-server-command:") and "rafter mcp serve" in stripped:
+-                continue
+-            filtered.append(line)
+-        config_path.write_text("\n".join(filtered), encoding="utf-8")
++        try:
++            parsed = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
++        except yaml.YAMLError:
++            return
++        reads = parsed.get("read")
++        if isinstance(reads, list):
++            parsed["read"] = [str(p) for p in reads if str(p) != _AIDER_READ_ENTRY]
++            if not parsed["read"]:
++                del parsed["read"]
++        elif isinstance(reads, str) and reads == _AIDER_READ_ENTRY:
++            del parsed["read"]
++        config_path.write_text(yaml.safe_dump(parsed, sort_keys=False), encoding="utf-8")
+ 
+-    # Aider has no config dir; treat $HOME as always present so detection is true.
+     return ComponentSpec(
+-        id="aider.mcp",
++        id="aider.read",
+         platform="aider",
+-        kind="mcp",
+-        description="Aider MCP server entry (~/.aider.conf.yml)",
++        kind="instructions",
++        description="Aider read-only context (RAFTER.md + .aider.conf.yml read:)",
+         detect_dir=home,
+-        path=config_path,
++        path=rafter_md_path,
+         is_installed=is_installed,
+         install=install,
+         uninstall=uninstall,
+@@ -871,7 +935,7 @@ def get_registry() -> list[ComponentSpec]:
+             _windsurf_rules(),
+             _windsurf_mcp(),
+             _continue_mcp(),
+-            _aider_mcp(),
++            _aider_read(),
+             _openclaw_skill(),
+         ]
+     return _REGISTRY
+diff --git a/python/rafter_cli/commands/brief.py b/python/rafter_cli/commands/brief.py
+index d22eb48..0054506 100644
+--- a/python/rafter_cli/commands/brief.py
++++ b/python/rafter_cli/commands/brief.py
+@@ -161,7 +161,9 @@
+     "aider": """\
+ # Rafter Setup — Aider
+ 
+-Aider uses MCP for tool integration.
++Aider has no plugin/hook system and no native MCP support. Its only intercept
++for persistent context is the `read:` flag in `.aider.conf.yml`, which
++injects read-only files into every session.
+ 
+ ## Automated Setup
+ 
+@@ -169,18 +171,21 @@
+ rafter agent init --with-aider
+ ```
+ 
++This writes `RAFTER.md` at the workspace root and adds it to `read:` in
++`.aider.conf.yml`.
++
+ ## Manual Setup
+ 
+-Add to `~/.aider.conf.yml`:
+-```yaml
+-mcp-servers:
+-  - name: rafter
+-    command: rafter mcp serve
+-```
++1. Create `RAFTER.md` at the workspace root with rafter's security context.
++2. Add to `.aider.conf.yml`:
++   ```yaml
++   read:
++     - RAFTER.md
++   ```
+ 
+ ## Supplementing with Brief
+ 
+-Aider doesn't have persistent memory, so run before each session:
++Aider doesn't have persistent memory beyond `read:`, so run before each session:
+ ```bash
+ rafter brief commands    # quick command reference
+ ```""",
+diff --git a/python/tests/test_agent_components.py b/python/tests/test_agent_components.py
+index 493a1ba..4415d99 100644
+--- a/python/tests/test_agent_components.py
++++ b/python/tests/test_agent_components.py
+@@ -62,7 +62,7 @@ def test_json_has_expected_shape(self, home: Path):
+             "windsurf.rules",
+             "windsurf.mcp",
+             "continue.mcp",
+-            "aider.mcp",
++            "aider.read",
+             "codex.hooks",
+             "codex.skills",
+             "openclaw.skills",
+@@ -82,7 +82,7 @@ def test_reports_not_detected_for_absent_dirs(self, home: Path):
+         assert by_id["cursor.mcp"]["state"] == "not-detected"
+         assert by_id["gemini.mcp"]["state"] == "not-detected"
+         # aider's "platform detected" is HOME — always exists
+-        assert by_id["aider.mcp"]["detected"] is True
++        assert by_id["aider.read"]["detected"] is True
+ 
+     def test_installed_filter_only_returns_installed(self, home: Path):
+         (home / ".cursor").mkdir()
+@@ -190,20 +190,35 @@ def test_claude_code_hooks_install_preserves_and_is_idempotent(self, home: Path)
+         # Installer adds 2 PreToolUse entries; idempotent install stays at 2 (not 4).
+         assert rafter_pre_count == 2
+ 
+-    def test_aider_mcp_appends_once_and_disable_strips_block(self, home: Path):
++    def test_aider_read_writes_rafter_md_and_strips_legacy_mcp(self, home: Path):
++        """rf-du2o — `aider.read` writes RAFTER.md + read: entry; idempotent;
++        strips the silent-no-op `mcp-server-command:` line that earlier
++        rafter versions wrote.
++
++        _run_cli runs with cwd=home, so the cwd-relative writes (RAFTER.md and
++        .aider.conf.yml as the project root) land inside the fake HOME.
++        """
+         conf = home / ".aider.conf.yml"
+-        conf.write_text("# pre-existing line\nmodel: gpt-5\n")
++        # Pre-existing config including the legacy silent-no-op MCP line.
++        conf.write_text(
++            "model: gpt-5\n\n# Rafter security MCP server\nmcp-server-command: rafter mcp serve\n"
++        )
++
++        _run_cli("agent enable aider.read", home)
++        _run_cli("agent enable aider.read", home)  # idempotent
+ 
+-        _run_cli("agent enable aider.mcp", home)
+-        _run_cli("agent enable aider.mcp", home)  # idempotent
+         after = conf.read_text()
+-        assert after.count("rafter mcp serve") == 1
++        assert "rafter mcp serve" not in after
+         assert "model: gpt-5" in after
++        assert after.count("RAFTER.md") == 1
++        # RAFTER.md was written at cwd (== home).
++        assert (home / "RAFTER.md").exists()
+ 
+-        _run_cli("agent disable aider.mcp", home)
++        _run_cli("agent disable aider.read", home)
+         cleaned = conf.read_text()
+-        assert "rafter mcp serve" not in cleaned
++        assert "RAFTER.md" not in cleaned
+         assert "model: gpt-5" in cleaned
++        assert not (home / "RAFTER.md").exists()
+ 
+     def test_records_enabled_state_in_global_config(self, home: Path):
+         (home / ".cursor").mkdir()
+diff --git a/python/tests/test_agent_init.py b/python/tests/test_agent_init.py
+index 754a476..df3b32a 100644
+--- a/python/tests/test_agent_init.py
++++ b/python/tests/test_agent_init.py
+@@ -12,7 +12,7 @@
+     _install_windsurf_mcp,
+     _install_windsurf_rules,
+     _install_continue_dev_mcp,
+-    _install_aider_mcp,
++    _install_aider_read,
+ )
+ 
+ 
+@@ -223,36 +223,74 @@ def test_handles_object_format(self, tmp_path, monkeypatch):
+         assert config["mcpServers"]["other"]["command"] == "other"
+ 
+ 
+-class TestInstallAiderMcp:
+-    def test_creates_config_from_scratch(self, tmp_path, monkeypatch):
+-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+-        assert _install_aider_mcp(tmp_path)
++class TestInstallAiderRead:
++    """rf-du2o — replaces broken `mcp-server-command:` install. Aider has no
++    native MCP support; its only persistent-context primitive is the `read:`
++    flag in `.aider.conf.yml`."""
++
++    def test_writes_rafter_md(self, tmp_path):
++        assert _install_aider_read(tmp_path)
++        rafter_md = tmp_path / "RAFTER.md"
++        assert rafter_md.exists()
++        body = rafter_md.read_text()
++        assert "<!-- rafter:start -->" in body
++        assert "<!-- rafter:end -->" in body
+ 
++    def test_adds_rafter_md_to_read_list(self, tmp_path):
+         config_path = tmp_path / ".aider.conf.yml"
+-        assert config_path.exists()
++        config_path.write_text("model: gpt-4\n")
++
++        _install_aider_read(tmp_path)
++
+         content = config_path.read_text()
+-        assert "rafter mcp serve" in content
++        assert "model: gpt-4" in content
++        assert "RAFTER.md" in content
+ 
+-    def test_skips_if_already_configured(self, tmp_path, monkeypatch):
+-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
++    def test_does_not_write_legacy_mcp_line(self, tmp_path):
+         config_path = tmp_path / ".aider.conf.yml"
+-        config_path.write_text("mcp-server-command: rafter mcp serve\n")
++        config_path.write_text("# fresh\n")
+ 
+-        assert _install_aider_mcp(tmp_path)
++        _install_aider_read(tmp_path)
+ 
+         content = config_path.read_text()
+-        assert content.count("rafter mcp serve") == 1
++        assert "mcp-server-command" not in content
++        assert "rafter mcp serve" not in content
+ 
+-    def test_appends_to_existing_config(self, tmp_path, monkeypatch):
+-        monkeypatch.setattr(Path, "home", lambda: tmp_path)
++    def test_strips_legacy_mcp_block_on_reinstall(self, tmp_path):
++        """Migration path: pre-existing legacy line must be removed."""
+         config_path = tmp_path / ".aider.conf.yml"
+-        config_path.write_text("model: gpt-4\n")
++        config_path.write_text(
++            "model: gpt-5\n\n# Rafter security MCP server\nmcp-server-command: rafter mcp serve\n"
++        )
+ 
+-        _install_aider_mcp(tmp_path)
++        _install_aider_read(tmp_path)
+ 
+         content = config_path.read_text()
+-        assert "model: gpt-4" in content
+-        assert "rafter mcp serve" in content
++        assert "mcp-server-command" not in content
++        assert "Rafter security MCP server" not in content
++        assert "model: gpt-5" in content
++        assert "RAFTER.md" in content
++
++    def test_preserves_existing_read_entries(self, tmp_path):
++        config_path = tmp_path / ".aider.conf.yml"
++        config_path.write_text("read:\n  - CONVENTIONS.md\n  - DESIGN.md\n")
++
++        _install_aider_read(tmp_path)
++
++        content = config_path.read_text()
++        assert "CONVENTIONS.md" in content
++        assert "DESIGN.md" in content
++        assert "RAFTER.md" in content
++
++    def test_idempotent_on_repeated_installs(self, tmp_path):
++        config_path = tmp_path / ".aider.conf.yml"
++        config_path.write_text("model: gpt-5\n")
++
++        _install_aider_read(tmp_path)
++        _install_aider_read(tmp_path)
++
++        content = config_path.read_text()
++        assert content.count("RAFTER.md") == 1
+ 
+ 
+ # ── Flag rejection tests ─────────────────────────────────────────────
+@@ -331,9 +369,10 @@ def test_no_flags_skips_all_installations(self, tmp_path, monkeypatch):
+         continue_config = tmp_path / ".continue" / "config.json"
+         assert not continue_config.exists(), "Continue config.json should not be created without --with-continue"
+ 
+-        # Aider MCP should NOT be appended
++        # Aider read: should NOT be appended (rf-du2o); RAFTER.md not written.
+         aider_content = (tmp_path / ".aider.conf.yml").read_text()
+-        assert "rafter" not in aider_content, "Aider config should not be modified without --with-aider"
++        assert "RAFTER.md" not in aider_content, "Aider config should not be modified without --with-aider"
++        assert not (tmp_path / "RAFTER.md").exists()
+ 
+ 
+ # ── Codex skill installation tests ───────────────────────────────────
+diff --git a/recipes/aider.md b/recipes/aider.md
+index 84a3e6e..f17a34e 100644
+--- a/recipes/aider.md
++++ b/recipes/aider.md
+@@ -1,27 +1,56 @@
+ # Aider Setup
+ 
+-Rafter integrates with Aider through an **MCP server** that exposes scanning and auditing tools.
++Aider has **no plugin/hook system** and **no native MCP support**. Its only
++intercept-friendly persistent-context primitive is the `read:` flag in
++`.aider.conf.yml`, which injects read-only files into every Aider session.
++
++Rafter ships a `RAFTER.md` context file and adds it to that `read:` list.
++
++> Earlier versions of `rafter agent init --with-aider` appended
++> `mcp-server-command: rafter mcp serve` to `.aider.conf.yml`. Aider's
++> documented config schema has no `mcp-server-command` key — Aider silently
++> ignored it. That install was pruned in `rf-du2o`. Reinstalling on top of an
++> old layout strips the legacy line.
+ 
+ ## Automatic setup
+ 
+ ```sh
++# At a project root (no Aider install required):
++rafter agent init --local --with-aider
++
++# At user scope (against ~/.aider.conf.yml):
+ rafter agent init --with-aider
+ ```
+ 
+-This auto-detects `~/.aider.conf.yml` and appends the MCP server config. Done.
++This writes `RAFTER.md` at the workspace root and ensures `.aider.conf.yml`
++contains:
+ 
+-## Manual setup
++```yaml
++read:
++  - RAFTER.md
++```
+ 
+-### 1. MCP server
++Existing `read:` entries are preserved. The legacy `mcp-server-command:` line
++(if present from older rafter installs) is stripped.
+ 
+-Add to your `~/.aider.conf.yml`:
++## What gets installed
+ 
+-```yaml
+-# Rafter security MCP server
+-mcp-server-command: rafter mcp serve
+-```
++| Path | Purpose |
++|---|---|
++| `<cwd>/RAFTER.md` | Rafter security context block (`<!-- rafter:start --> ... <!-- rafter:end -->`) |
++| `<cwd>/.aider.conf.yml` | Adds `RAFTER.md` to the `read:` list (creates the list if absent) |
+ 
+-Provides `scan_secrets`, `evaluate_command`, `read_audit_log`, and `get_config` tools.
++## Manual setup
++
++1. Create `RAFTER.md` at the workspace root with rafter's security context.
++2. Add to `.aider.conf.yml`:
++
++   ```yaml
++   read:
++     - RAFTER.md
++   ```
++
++   Or, if you already have a `read:` list, append `- RAFTER.md` to it.
+ 
+ ## Verify
+ 
+@@ -29,4 +58,9 @@ Provides `scan_secrets`, `evaluate_command`, `read_audit_log`, and `get_config`
+ rafter agent verify
+ ```
+ 
+-Confirms MCP server is configured and Aider is detected.
++Aider doesn't have persistent memory beyond `read:`. For richer reference
++material per session, also run:
++
++```sh
++rafter brief commands    # quick command reference
++```
+diff --git a/shared-docs/PLATFORM_PARITY_AUDIT.md b/shared-docs/PLATFORM_PARITY_AUDIT.md
+index c2e715f..00cdff9 100644
+--- a/shared-docs/PLATFORM_PARITY_AUDIT.md
++++ b/shared-docs/PLATFORM_PARITY_AUDIT.md
+@@ -320,7 +320,8 @@ The recipes-stale gap is folded into each per-platform bead's acceptance. Sub-ag
+ ## Update (2026-05-03 — phase c progress)
+ 
+ - **Cursor deep support shipped** — PR #81 (rf-svn3, merged). `preToolUse` + `postToolUse` + `beforeShellExecution` hooks, 4 per-skill `.cursor/rules/<skill>.mdc` files, and `.cursor/agents/rafter.md` sub-agent. Closes the Cursor matrix-row gaps (skills, hooks, sub-agent). rf-p1fs closed as duplicate of rf-svn3.
+-- **Windsurf deep support shipped** — this PR (rf-0vr3). Pruned the silent-no-op `~/.windsurf/hooks.json` install (Windsurf has no hook surface), added 4 per-skill rules under `.windsurf/rules/<skill>.md`, extended `installGlobalInstructions` so `--with-windsurf` writes `AGENTS.md` at workspace root (Windsurf reads it natively). Windsurf now installs at `--local` scope as well. rf-jrs0 closed as duplicate of rf-0vr3.
++- **Windsurf deep support shipped** — PR #84 (rf-0vr3, merged). Pruned the silent-no-op `~/.windsurf/hooks.json` install (Windsurf has no hook surface), added 4 per-skill rules under `.windsurf/rules/<skill>.md`, extended `installGlobalInstructions` so `--with-windsurf` writes `AGENTS.md` at workspace root (Windsurf reads it natively). Windsurf now installs at `--local` scope as well. rf-jrs0 closed as duplicate of rf-0vr3.
++- **Aider read-only context shipped** — this PR (rf-du2o). Pruned the silent-no-op `mcp-server-command:` YAML append (Aider has no native MCP support), added a `RAFTER.md` write at workspace root + a `read: [..., RAFTER.md]` entry in `.aider.conf.yml`. Reinstalling strips the legacy line as a migration step. Aider also now installs at `--local` scope.
+ - **Codex hook schema verification** — newly beaded as rf-ovql (P1) after the rf-cia gap reports independently flagged it. Tracks the unverified assumption that Codex consumes Claude Code's `PreToolUse`/`PostToolUse` schema verbatim.
+ 
+-Outstanding rf-cia work after this PR: rf-acz0 (Continue rules), rf-du2o (Aider prune+RAFTER.md), rf-044o (Gemini re-verify), rf-ovql (Codex schema), rf-65zg (`agent verify` enhancements), rf-o329 (onboarding doc), rf-0lig (OpenClaw activity check).
++Outstanding rf-cia work after this PR: rf-acz0 (Continue rules), rf-044o (Gemini re-verify), rf-ovql (Codex schema), rf-65zg (`agent verify` enhancements), rf-o329 (onboarding doc), rf-0lig (OpenClaw activity check).

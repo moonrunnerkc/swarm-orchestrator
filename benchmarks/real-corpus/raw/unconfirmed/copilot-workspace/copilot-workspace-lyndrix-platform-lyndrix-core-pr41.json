@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-lyndrix-platform-lyndrix-core-pr41",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 41,
+    "headSha": "03eba7cdf3184c8277a0e0531088327fd6e66391",
+    "baseSha": "9896f3573cbd0c3e96f159d0be7f8ed6d20c73a9",
+    "title": "Enforce plugin runtime guardrails",
+    "body": "Several plugin-system guardrails existed in code but weren't actually enforced: permission checks logged and continued, manifest validation never blocked loading, `version_constraint` was ignored, `min_core_version` used lexicographic string compare, failed `setup()` left plugins stuck in `initializing`, vendored deps could shadow core packages via `sys.path[0]`, and `auto_enable_on_install` defaulted to `True`.\n\n### Changes\n\n- **`context.py` — permission enforcement**\n  - `subscribe()` / `emit()` now `log.error(...)` and `raise PermissionError(...)` with the documented message format instead of warning + silent skip.\n\n- **`manager.py` — lifecycle & validation**\n  - `_safe_async_setup` (and the sync branch of `_execute_setup`) set `status = \"failed\"` on exception and emit `plugin:setup_failed` directly on the global `bus`, bypassing plugin permissions.\n  - `_validate_manifest` returns `(issues, critical_issues)`. Any issues → entry `status = \"degraded\"`; critical issues (incompatible/invalid `min_core_version`, missing dependencies) additionally short-circuit `_execute_setup`. Missing `description`/`icon` remain warn-only.\n  - `min_core_version` compared via `packaging.version.Version`; invalid formats reported as critical.\n  - `_check_dependencies_met` evaluates `dep.version_constraint` with `packaging.specifiers.SpecifierSet` once the dependency is active; mismatch or invalid spec returns `False`.\n  - Vendor path switched from `sys.path.insert(0, …)` to `sys.path.append(…)` so plugin deps cannot shadow core modules.\n\n- **`models.py` — safer default**\n  - `ModuleManifest.auto_enable_on_install` default flipped from `True` to `False`.\n\n- **`plugin_service.py` — install-time identity check**\n  - New `_verify_plugin_identity(staging_path, expected_id)` loads the staged `entrypoint.py` in an isolated spec and compares `manifest.id`.\n  - On `upgrade`, the installed plugin's id is read first and verified against the staged archive before the atomic swap; mismatch aborts the install and emits `plugin:install_failed` with `error=\"identity_mismatch\"`. No public signatures changed.\n\n### Notes for reviewers\n\n- Fix 1 is a behavioral change for any plugin currently relying on silent permission failures — calls will now raise. Intentional, per spec.\n- Fix 7 changes the default for new plugin installs; existing `PluginState` rows are unaffected.\n- The bonus identity check only runs on `upgrade=True` paths where an expected id can be derived from the installed copy; fresh installs have no prior identity to compare against.",
+    "author": "Copilot",
+    "headRef": "copilot/implement-runtime-guardrails",
+    "repository": "lyndrix-platform/lyndrix-core"
+  },
+  "diffRef": {
+    "repository": "lyndrix-platform/lyndrix-core",
+    "headSha": "03eba7cdf3184c8277a0e0531088327fd6e66391",
+    "baseSha": "9896f3573cbd0c3e96f159d0be7f8ed6d20c73a9"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-lyndrix-platform-lyndrix-core-pr41.diff",
+  "vendoredAt": "2026-05-24T03:06:30.872Z",
+  "collectedAt": "2026-05-24T03:06:30.872Z"
+}

@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-F1R3FLY-io-f1r3node-pr521",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "commit=claude-coauthor"
+  },
+  "pr": {
+    "number": 521,
+    "headSha": "b03a6c4ab3817ad54a328ddbf4b70af510480446",
+    "baseSha": "678daf3bab2849911f0b8f52cfcf20bb9eca92ea",
+    "title": "ci: disable test_shard_degradation in integration matrix",
+    "body": "## Summary\n\nAdd `test_shard_degradation` to the workflow's `--deselect` list so it stops gating PR CI.\n\nThe test repeatedly fails the same way on the bridge-deploy inclusion floor — same bridge deploys (#76, #91, #106, #121, #136) miss the 10-15s inclusion budget across amd64/arm64, docker/subprocess. Tracker entry #1 in [`docs/real-flakes-tracker.md`](https://github.com/F1R3FLY-io/system-integration/blob/refactor/integration-test-framework/docs/real-flakes-tracker.md) catalogs 7+ recent observations with hypothesis (bridge-contract per-deploy cost dominates the irreducible floor).\n\nThis is a temporary deselect to keep PR signal clean; re-enable once the node-side perf work lands.\n\n## Test plan\n\n- [ ] PR CI passes without test_shard_degradation in the run\n- [ ] No other test in the same xdist group regresses\n\nCo-Authored-By: Claude <noreply@anthropic.com>",
+    "author": "spreston8",
+    "headRef": "ci/disable-test-shard-degradation",
+    "repository": "F1R3FLY-io/f1r3node"
+  },
+  "diffRef": {
+    "repository": "F1R3FLY-io/f1r3node",
+    "headSha": "b03a6c4ab3817ad54a328ddbf4b70af510480446",
+    "baseSha": "678daf3bab2849911f0b8f52cfcf20bb9eca92ea"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-F1R3FLY-io-f1r3node-pr521.diff",
+  "vendoredAt": "2026-05-24T03:08:49.405Z",
+  "collectedAt": "2026-05-24T03:08:49.405Z"
+}

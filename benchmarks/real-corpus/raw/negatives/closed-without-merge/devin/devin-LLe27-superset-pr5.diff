@@ -1,0 +1,92 @@
+diff --git a/superset-frontend/packages/superset-ui-core/src/components/Select/Select.test.tsx b/superset-frontend/packages/superset-ui-core/src/components/Select/Select.test.tsx
+index 2b558b072cb2..aad4fe07a878 100644
+--- a/superset-frontend/packages/superset-ui-core/src/components/Select/Select.test.tsx
++++ b/superset-frontend/packages/superset-ui-core/src/components/Select/Select.test.tsx
+@@ -974,6 +974,35 @@ test('"Select all" does not affect disabled options', async () => {
+   expect(await findSelectValue()).not.toHaveTextContent(options[1].label);
+ });
+ 
++test('"Select all" excludes null options from count', async () => {
++  const optionsWithNull = [
++    { label: 'Alice', value: 100, gender: 'Female' },
++    { label: 'Bob', value: 101, gender: 'Male' },
++    NULL_OPTION,
++  ];
++  render(
++    <Select {...defaultProps} options={optionsWithNull} mode="multiple" />,
++  );
++  await open();
++  expect(await screen.findByText(selectAllButtonText(2))).toBeInTheDocument();
++});
++
++test('"Select all" does not select null options', async () => {
++  const optionsWithNull = [
++    { label: 'Alice', value: 100, gender: 'Female' },
++    { label: 'Bob', value: 101, gender: 'Male' },
++    NULL_OPTION,
++  ];
++  render(
++    <Select {...defaultProps} options={optionsWithNull} mode="multiple" />,
++  );
++  await open();
++  await userEvent.click(await screen.findByText(selectAllButtonText(2)));
++  const values = await findAllSelectValues();
++  expect(values.length).toBe(2);
++  expect(values.some(v => v.textContent === NULL_OPTION.label)).toBe(false);
++});
++
+ test('abbreviates large numbers in bulk action buttons', async () => {
+   const manyOptions = Array.from({ length: 1500 }, (_, i) => ({
+     label: `Option ${i}`,
+diff --git a/superset-frontend/packages/superset-ui-core/src/components/Select/Select.tsx b/superset-frontend/packages/superset-ui-core/src/components/Select/Select.tsx
+index bab0e9a73949..ab659b3a0e60 100644
+--- a/superset-frontend/packages/superset-ui-core/src/components/Select/Select.tsx
++++ b/superset-frontend/packages/superset-ui-core/src/components/Select/Select.tsx
+@@ -251,6 +251,7 @@ const Select = forwardRef(
+       () =>
+         visibleOptions.filter(
+           option =>
++            option.value != null &&
+             (hasOption(option.value, selectValue) || !option.disabled) &&
+             !option.isNewOption,
+         ),
+@@ -285,8 +286,10 @@ const Select = forwardRef(
+           const isSelected = selectedValuesSet.has(option.value);
+           const isDisabled = option.disabled;
+           const isNew = option.isNewOption;
++          const isNull = option.value == null;
+ 
+           if (
++            !isNull &&
+             (!isDisabled || isSelected) &&
+             ((isNew && isSelected) || !isNew)
+           ) {
+@@ -472,7 +475,7 @@ const Select = forwardRef(
+       const newValues = [...currentValues] as RawValue[];
+       optionsToSelect.forEach(option => {
+         if (
+-          option.value &&
++          option.value != null &&
+           !option.disabled &&
+           !currentValuesSet.has(option.value)
+         ) {
+@@ -519,7 +522,8 @@ const Select = forwardRef(
+               handleSelectAll();
+             }}
+           >
+-            {t('Select all')} {`(${formatNumber('SMART_NUMBER', bulkSelectCounts.selectable)})`}
++            {t('Select all')}{' '}
++            {`(${formatNumber('SMART_NUMBER', bulkSelectCounts.selectable)})`}
+           </Button>
+           <Button
+             type="link"
+@@ -536,7 +540,8 @@ const Select = forwardRef(
+               handleDeselectAll();
+             }}
+           >
+-            {t('Clear')} {`(${formatNumber('SMART_NUMBER', bulkSelectCounts.deselectable)})`}
++            {t('Clear')}{' '}
++            {`(${formatNumber('SMART_NUMBER', bulkSelectCounts.deselectable)})`}
+           </Button>
+         </StyledBulkActionsContainer>
+       ),

@@ -1,0 +1,4293 @@
+diff --git a/codex-rs/app-server-protocol/src/protocol/v2/tests.rs b/codex-rs/app-server-protocol/src/protocol/v2/tests.rs
+index a7cec1d36da8..697ab1d97c08 100644
+--- a/codex-rs/app-server-protocol/src/protocol/v2/tests.rs
++++ b/codex-rs/app-server-protocol/src/protocol/v2/tests.rs
+@@ -3560,6 +3560,8 @@ fn turn_start_params_preserve_explicit_null_service_tier() {
+         thread_id: "thread_123".to_string(),
+         input: vec![],
+         responsesapi_client_metadata: None,
++        mcp_meta_by_server: None,
++        mcp_meta_by_connector: None,
+         environments: None,
+         cwd: None,
+         runtime_workspace_roots: None,
+@@ -3690,6 +3692,76 @@ fn turn_start_params_round_trip_environments() {
+     );
+ }
+ 
++#[test]
++fn turn_start_params_round_trip_mcp_meta_by_server() {
++    let params: TurnStartParams = serde_json::from_value(json!({
++        "threadId": "thread_123",
++        "input": [],
++        "mcpMetaByServer": {
++            "search_service": {
++                "client/location": {
++                    "country": "US"
++                }
++            }
++        },
++    }))
++    .expect("params should deserialize");
++
++    assert_eq!(
++        params.mcp_meta_by_server,
++        Some(HashMap::from([(
++            "search_service".to_string(),
++            HashMap::from([("client/location".to_string(), json!({ "country": "US" }),)]),
++        )]))
++    );
++    assert_eq!(
++        crate::experimental_api::ExperimentalApi::experimental_reason(&params),
++        Some("turn/start.mcpMetaByServer")
++    );
++
++    let serialized = serde_json::to_value(&params).expect("params should serialize");
++    assert_eq!(
++        serialized.pointer("/mcpMetaByServer/search_service/client~1location/country"),
++        Some(&json!("US"))
++    );
++}
++
++#[test]
++fn turn_start_params_round_trip_mcp_meta_by_connector() {
++    let params: TurnStartParams = serde_json::from_value(json!({
++        "threadId": "thread_123",
++        "input": [],
++        "mcpMetaByConnector": {
++            "connector_openai_search_service": {
++                "client/location": {
++                    "country": "US"
++                }
++            }
++        },
++    }))
++    .expect("params should deserialize");
++
++    assert_eq!(
++        params.mcp_meta_by_connector,
++        Some(HashMap::from([(
++            "connector_openai_search_service".to_string(),
++            HashMap::from([("client/location".to_string(), json!({ "country": "US" }),)]),
++        )]))
++    );
++    assert_eq!(
++        crate::experimental_api::ExperimentalApi::experimental_reason(&params),
++        Some("turn/start.mcpMetaByConnector")
++    );
++
++    let serialized = serde_json::to_value(&params).expect("params should serialize");
++    assert_eq!(
++        serialized.pointer(
++            "/mcpMetaByConnector/connector_openai_search_service/client~1location/country"
++        ),
++        Some(&json!("US"))
++    );
++}
++
+ #[test]
+ fn turn_start_params_preserve_empty_environments() {
+     let params: TurnStartParams = serde_json::from_value(json!({
+diff --git a/codex-rs/app-server-protocol/src/protocol/v2/turn.rs b/codex-rs/app-server-protocol/src/protocol/v2/turn.rs
+index 50660af1d7d4..f9251089f0fe 100644
+--- a/codex-rs/app-server-protocol/src/protocol/v2/turn.rs
++++ b/codex-rs/app-server-protocol/src/protocol/v2/turn.rs
+@@ -53,6 +53,22 @@ pub struct TurnStartParams {
+     #[experimental("turn/start.responsesapiClientMetadata")]
+     #[ts(optional = nullable)]
+     pub responsesapi_client_metadata: Option<HashMap<String, String>>,
++    /// Optional turn-scoped MCP request metadata keyed by configured custom MCP server name.
++    ///
++    /// Values are forwarded only to model-initiated tool calls for the
++    /// matching custom server. The host-routed `codex_apps` server cannot be
++    /// targeted through this field; use `mcpMetaByConnector` for its tools.
++    #[experimental("turn/start.mcpMetaByServer")]
++    #[ts(optional = nullable)]
++    pub mcp_meta_by_server: Option<HashMap<String, HashMap<String, JsonValue>>>,
++    /// Optional turn-scoped MCP request metadata keyed by app connector id.
++    ///
++    /// Values are forwarded only to model-initiated `codex_apps` tool calls
++    /// whose resolved connector id matches the key. Codex-owned `_meta` fields
++    /// take precedence.
++    #[experimental("turn/start.mcpMetaByConnector")]
++    #[ts(optional = nullable)]
++    pub mcp_meta_by_connector: Option<HashMap<String, HashMap<String, JsonValue>>>,
+     /// Optional turn-scoped environments.
+     ///
+     /// Omitted uses the thread sticky environments. Empty disables
+diff --git a/codex-rs/app-server/README.md b/codex-rs/app-server/README.md
+index 8ce55410a1a8..59d68fa6a0d2 100644
+--- a/codex-rs/app-server/README.md
++++ b/codex-rs/app-server/README.md
+@@ -158,7 +158,7 @@ Example with notification opt-out:
+ - `thread/shellCommand` — run a user-initiated `!` shell command against a thread; this runs unsandboxed with full access rather than inheriting the thread sandbox policy. Returns `{}` immediately while progress streams through standard turn/item notifications and any active turn receives the formatted output in its message stream.
+ - `thread/backgroundTerminals/clean` — terminate all running background terminals for a thread (experimental; requires `capabilities.experimentalApi`); returns `{}` when the cleanup request is accepted.
+ - `thread/rollback` — drop the last N turns from the agent’s in-memory context and persist a rollback marker in the rollout so future resumes see the pruned history; returns the updated `thread` (with `turns` populated) on success.
+-- `turn/start` — add user input to a thread and begin Codex generation; responds with the initial `turn` object and streams `turn/started`, `item/*`, and `turn/completed` notifications. Experimental `runtimeWorkspaceRoots` replaces the thread-scoped runtime workspace roots used to materialize `:workspace_roots`; relative paths resolve against the effective turn cwd. Prefer experimental `permissions` profile selection by id for permission overrides; the legacy `sandboxPolicy` field is still accepted but cannot be combined with `permissions`. For `collaborationMode`, `settings.developer_instructions: null` means "use built-in instructions for the selected mode".
++- `turn/start` — add user input to a thread and begin Codex generation; responds with the initial `turn` object and streams `turn/started`, `item/*`, and `turn/completed` notifications. Experimental `runtimeWorkspaceRoots` replaces the thread-scoped runtime workspace roots used to materialize `:workspace_roots`; relative paths resolve against the effective turn cwd. Experimental `mcpMetaByServer` adds request `_meta` to model-initiated calls routed through matching custom MCP server names, while experimental `mcpMetaByConnector` addresses individual app/connector calls by connector id; Codex-owned metadata fields take precedence. Prefer experimental `permissions` profile selection by id for permission overrides; the legacy `sandboxPolicy` field is still accepted but cannot be combined with `permissions`. For `collaborationMode`, `settings.developer_instructions: null` means "use built-in instructions for the selected mode".
+ - `thread/inject_items` — append raw Responses API items to a loaded thread’s model-visible history without starting a user turn; returns `{}` on success.
+ - `turn/steer` — add user input to an already in-flight regular turn without starting a new turn; returns the active `turnId` that accepted the input. Review and manual compaction turns reject `turn/steer`.
+ - `turn/interrupt` — request cancellation of an in-flight turn by `(thread_id, turn_id)`; success is an empty `{}` response and the turn finishes with `status: "interrupted"`.
+@@ -634,6 +634,8 @@ Turns attach user input (text or images) to a thread and trigger Codex generatio
+ 
+ You can optionally specify config overrides on the new turn. If specified, these settings become the default for subsequent turns on the same thread. `outputSchema` applies only to the current turn. Experimental `environments` is turn-scoped: omit it to inherit the thread's sticky environments, pass `[]` to run the turn with no environments, or pass explicit environment ids to override the sticky selection for this turn only.
+ 
++Experimental `mcpMetaByServer` and `mcpMetaByConnector` are also turn-scoped. Each `mcpMetaByServer` key is a configured custom MCP server name, and its object is merged into `_meta` only on model-initiated calls to that server. Each `mcpMetaByConnector` key is an app/connector id, and its object is merged only on model-initiated `codex_apps` calls whose resolved connector id matches. The aggregate `codex_apps` server cannot be targeted through `mcpMetaByServer`; use `mcpMetaByConnector` so metadata is not exposed to unrelated connectors. Codex-owned `_meta` fields cannot be replaced through either parameter. `responsesapiClientMetadata` remains Responses API request metadata and is not forwarded as MCP request `_meta`.
++
+ `approvalsReviewer` accepts:
+ 
+ - `"user"` — default. Review approval requests directly in the client.
+@@ -649,6 +651,18 @@ You can optionally specify config overrides on the new turn. If specified, these
+     "environments": [
+         { "environmentId": "local", "cwd": "/Users/me/project" }
+     ],
++    // Experimental: metadata for model-initiated calls to this custom MCP server.
++    "mcpMetaByServer": {
++        "my_custom_server": {
++            "request-id": "request-123"
++        }
++    },
++    // Experimental: metadata for model-initiated calls to this app/connector.
++    "mcpMetaByConnector": {
++        "connector_openai_search_service": {
++            "client/location": { "country": "US" }
++        }
++    },
+     "approvalPolicy": "unlessTrusted",
+     "sandboxPolicy": {
+         "type": "workspaceWrite",
+diff --git a/codex-rs/app-server/src/message_processor_tracing_tests.rs b/codex-rs/app-server/src/message_processor_tracing_tests.rs
+index a9625d3086ce..d3c8c32263c1 100644
+--- a/codex-rs/app-server/src/message_processor_tracing_tests.rs
++++ b/codex-rs/app-server/src/message_processor_tracing_tests.rs
+@@ -658,6 +658,8 @@ async fn turn_start_jsonrpc_span_parents_core_turn_spans() -> Result<()> {
+                         text_elements: Vec::new(),
+                     }],
+                     responsesapi_client_metadata: None,
++                    mcp_meta_by_server: None,
++                    mcp_meta_by_connector: None,
+                     cwd: None,
+                     runtime_workspace_roots: None,
+                     approval_policy: None,
+diff --git a/codex-rs/app-server/src/request_processors/turn_processor.rs b/codex-rs/app-server/src/request_processors/turn_processor.rs
+index ff2825be6780..1af42043e7d7 100644
+--- a/codex-rs/app-server/src/request_processors/turn_processor.rs
++++ b/codex-rs/app-server/src/request_processors/turn_processor.rs
+@@ -367,6 +367,15 @@ impl TurnRequestProcessor {
+             );
+             return Err(error);
+         }
++        if params
++            .mcp_meta_by_server
++            .as_ref()
++            .is_some_and(|metadata| metadata.contains_key(codex_mcp::CODEX_APPS_MCP_SERVER_NAME))
++        {
++            return Err(invalid_request(
++                "`mcpMetaByServer` cannot target `codex_apps`; use `mcpMetaByConnector` to target an individual connector",
++            ));
++        }
+         let (thread_id, thread) =
+             self.load_thread(&params.thread_id)
+                 .await
+@@ -419,6 +428,8 @@ impl TurnRequestProcessor {
+             environments: environment_selections,
+             final_output_json_schema: params.output_schema,
+             responsesapi_client_metadata: params.responsesapi_client_metadata,
++            mcp_meta_by_server: params.mcp_meta_by_server.map(Box::new),
++            mcp_meta_by_connector: params.mcp_meta_by_connector.map(Box::new),
+             thread_settings,
+         };
+         let turn_id = self
+@@ -752,6 +763,8 @@ impl TurnRequestProcessor {
+                 mapped_items,
+                 Some(&params.expected_turn_id),
+                 params.responsesapi_client_metadata,
++                /*mcp_meta_by_server*/ None,
++                /*mcp_meta_by_connector*/ None,
+             )
+             .await
+             .map_err(|err| {
+diff --git a/codex-rs/app-server/tests/suite/v2/turn_start.rs b/codex-rs/app-server/tests/suite/v2/turn_start.rs
+index 66f704f83d91..c997be40a570 100644
+--- a/codex-rs/app-server/tests/suite/v2/turn_start.rs
++++ b/codex-rs/app-server/tests/suite/v2/turn_start.rs
+@@ -1024,6 +1024,61 @@ async fn turn_start_rejects_invalid_permission_selection_before_starting_turn()
+     Ok(())
+ }
+ 
++#[tokio::test]
++async fn turn_start_rejects_codex_apps_server_scoped_mcp_metadata() -> Result<()> {
++    let codex_home = TempDir::new()?;
++    create_config_toml(
++        codex_home.path(),
++        "http://localhost/unused",
++        "never",
++        &BTreeMap::default(),
++    )?;
++
++    let mut mcp = McpProcess::new(codex_home.path()).await?;
++    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
++
++    let thread_req = mcp
++        .send_thread_start_request(ThreadStartParams {
++            model: Some("mock-model".to_string()),
++            ..Default::default()
++        })
++        .await?;
++    let thread_resp: JSONRPCResponse = timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.read_stream_until_response_message(RequestId::Integer(thread_req)),
++    )
++    .await??;
++    let ThreadStartResponse { thread, .. } = to_response::<ThreadStartResponse>(thread_resp)?;
++
++    let turn_req = mcp
++        .send_turn_start_request(TurnStartParams {
++            thread_id: thread.id,
++            input: vec![V2UserInput::Text {
++                text: "Hello".to_string(),
++                text_elements: Vec::new(),
++            }],
++            mcp_meta_by_server: Some(HashMap::from([(
++                "codex_apps".to_string(),
++                HashMap::from([("client/location".to_string(), json!("US"))]),
++            )])),
++            ..Default::default()
++        })
++        .await?;
++    let err: JSONRPCError = timeout(
++        DEFAULT_READ_TIMEOUT,
++        mcp.read_stream_until_error_message(RequestId::Integer(turn_req)),
++    )
++    .await??;
++
++    assert_eq!(err.error.code, INVALID_REQUEST_ERROR_CODE);
++    assert_eq!(
++        err.error.message,
++        "`mcpMetaByServer` cannot target `codex_apps`; use `mcpMetaByConnector` to target an individual connector"
++    );
++
++    Ok(())
++}
++
+ #[tokio::test]
+ async fn turn_start_rejects_unknown_environment_before_starting_turn() -> Result<()> {
+     let server = create_mock_responses_server_repeating_assistant("Done").await;
+@@ -2065,6 +2120,8 @@ async fn turn_start_updates_sandbox_and_cwd_between_turns_v2() -> Result<()> {
+                 text_elements: Vec::new(),
+             }],
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             cwd: Some(first_cwd.clone()),
+             runtime_workspace_roots: None,
+             approval_policy: Some(codex_app_server_protocol::AskForApproval::Never),
+@@ -2107,6 +2164,8 @@ async fn turn_start_updates_sandbox_and_cwd_between_turns_v2() -> Result<()> {
+                 text_elements: Vec::new(),
+             }],
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             cwd: Some(second_cwd.clone()),
+             runtime_workspace_roots: None,
+             approval_policy: Some(codex_app_server_protocol::AskForApproval::Never),
+diff --git a/codex-rs/core/src/agent/control_tests.rs b/codex-rs/core/src/agent/control_tests.rs
+index 7ff50ffef837..1dd6d0fbb27f 100644
+--- a/codex-rs/core/src/agent/control_tests.rs
++++ b/codex-rs/core/src/agent/control_tests.rs
+@@ -443,6 +443,8 @@ async fn send_input_submits_user_message() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         },
+     );
+@@ -597,6 +599,8 @@ async fn spawn_agent_creates_thread_and_sends_prompt() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         },
+     );
+@@ -769,6 +773,8 @@ async fn spawn_agent_can_fork_parent_thread_history_with_sanitized_items() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         },
+     );
+diff --git a/codex-rs/core/src/codex_delegate.rs b/codex-rs/core/src/codex_delegate.rs
+index 4ed6b2368cbf..f3c2746c6b74 100644
+--- a/codex-rs/core/src/codex_delegate.rs
++++ b/codex-rs/core/src/codex_delegate.rs
+@@ -192,6 +192,8 @@ pub(crate) async fn run_codex_thread_one_shot(
+         items: input,
+         final_output_json_schema,
+         responsesapi_client_metadata: None,
++        mcp_meta_by_server: None,
++        mcp_meta_by_connector: None,
+         thread_settings: Default::default(),
+     })
+     .await?;
+diff --git a/codex-rs/core/src/codex_thread.rs b/codex-rs/core/src/codex_thread.rs
+index 1b40387c3f4b..5a5e4aac9d08 100644
+--- a/codex-rs/core/src/codex_thread.rs
++++ b/codex-rs/core/src/codex_thread.rs
+@@ -238,9 +238,17 @@ impl CodexThread {
+         input: Vec<UserInput>,
+         expected_turn_id: Option<&str>,
+         responsesapi_client_metadata: Option<HashMap<String, String>>,
++        mcp_meta_by_server: Option<HashMap<String, HashMap<String, serde_json::Value>>>,
++        mcp_meta_by_connector: Option<HashMap<String, HashMap<String, serde_json::Value>>>,
+     ) -> Result<String, SteerInputError> {
+         self.codex
+-            .steer_input(input, expected_turn_id, responsesapi_client_metadata)
++            .steer_input(
++                input,
++                expected_turn_id,
++                responsesapi_client_metadata,
++                mcp_meta_by_server,
++                mcp_meta_by_connector,
++            )
+             .await
+     }
+ 
+diff --git a/codex-rs/core/src/guardian/review_session.rs b/codex-rs/core/src/guardian/review_session.rs
+index 15d6c142caec..655a3a7b61e3 100644
+--- a/codex-rs/core/src/guardian/review_session.rs
++++ b/codex-rs/core/src/guardian/review_session.rs
+@@ -714,6 +714,8 @@ async fn run_review_on_session(
+             environments: None,
+             final_output_json_schema: Some(params.schema.clone()),
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 #[allow(deprecated)]
+                 cwd: Some(params.parent_turn.cwd.to_path_buf()),
+diff --git a/codex-rs/core/src/mcp_tool_call.rs b/codex-rs/core/src/mcp_tool_call.rs
+index 7b62b10b6f7f..4d77b83eedaa 100644
+--- a/codex-rs/core/src/mcp_tool_call.rs
++++ b/codex-rs/core/src/mcp_tool_call.rs
+@@ -971,6 +971,18 @@ const MCP_TOOL_UI_RESOURCE_URI_META_KEY: &str = "ui/resourceUri";
+ const MCP_TOOL_PLUGIN_ID_META_KEY: &str = "plugin_id";
+ const MCP_TOOL_THREAD_ID_META_KEY: &str = "threadId";
+ 
++fn is_codex_owned_mcp_request_meta_key(key: &str) -> bool {
++    [
++        crate::X_CODEX_TURN_METADATA_HEADER,
++        MCP_TOOL_CODEX_APPS_META_KEY,
++        MCP_TOOL_PLUGIN_ID_META_KEY,
++        MCP_TOOL_THREAD_ID_META_KEY,
++        codex_mcp::MCP_SANDBOX_STATE_META_CAPABILITY,
++        codex_rollout_trace::MCP_CALL_ID_META_KEY,
++    ]
++    .contains(&key)
++}
++
+ async fn custom_mcp_tool_approval_mode(
+     sess: &Session,
+     turn_context: &TurnContext,
+@@ -1028,6 +1040,24 @@ fn build_mcp_tool_call_request_meta(
+ ) -> Option<serde_json::Value> {
+     let mut request_meta = serde_json::Map::new();
+ 
++    let client_meta = if server == CODEX_APPS_MCP_SERVER_NAME {
++        metadata
++            .and_then(|metadata| metadata.connector_id.as_deref())
++            .and_then(|connector_id| {
++                turn_context
++                    .turn_metadata_state
++                    .mcp_meta_for_connector(connector_id)
++            })
++    } else {
++        turn_context.turn_metadata_state.mcp_meta_for_server(server)
++    };
++    if let Some(meta) = client_meta {
++        request_meta.extend(
++            meta.into_iter()
++                .filter(|(key, _)| !is_codex_owned_mcp_request_meta_key(key)),
++        );
++    }
++
+     if let Some(turn_metadata) = turn_context
+         .turn_metadata_state
+         .current_meta_value_for_mcp_request(McpTurnMetadataContext {
+diff --git a/codex-rs/core/src/mcp_tool_call_tests.rs b/codex-rs/core/src/mcp_tool_call_tests.rs
+index cb83600350e4..71f55308f8f1 100644
+--- a/codex-rs/core/src/mcp_tool_call_tests.rs
++++ b/codex-rs/core/src/mcp_tool_call_tests.rs
+@@ -1089,6 +1089,143 @@ async fn mcp_tool_call_request_meta_includes_turn_started_at_unix_ms() {
+     );
+ }
+ 
++#[tokio::test]
++async fn mcp_tool_call_request_meta_includes_client_meta_only_for_matching_server() {
++    let (_, turn_context) = make_session_and_context().await;
++    turn_context
++        .turn_metadata_state
++        .set_mcp_meta_by_server(HashMap::from([(
++            "search_service".to_string(),
++            HashMap::from([(
++                "client/location".to_string(),
++                serde_json::json!({ "country": "US" }),
++            )]),
++        )]));
++
++    let matching = build_mcp_tool_call_request_meta(
++        &turn_context,
++        "search_service",
++        "call-search",
++        /*metadata*/ None,
++    )
++    .expect("matching server should receive metadata");
++    let other = build_mcp_tool_call_request_meta(
++        &turn_context,
++        "calendar",
++        "call-calendar",
++        /*metadata*/ None,
++    )
++    .expect("Codex turn metadata remains present");
++
++    assert_eq!(
++        matching.get("client/location"),
++        Some(&serde_json::json!({ "country": "US" }))
++    );
++    assert!(other.get("client/location").is_none());
++}
++
++#[tokio::test]
++async fn codex_apps_tool_call_request_meta_includes_client_meta_only_for_matching_connector() {
++    let (_, turn_context) = make_session_and_context().await;
++    turn_context
++        .turn_metadata_state
++        .set_mcp_meta_by_server(HashMap::from([(
++            CODEX_APPS_MCP_SERVER_NAME.to_string(),
++            HashMap::from([("client/location".to_string(), serde_json::json!("broad"))]),
++        )]));
++    turn_context
++        .turn_metadata_state
++        .set_mcp_meta_by_connector(HashMap::from([(
++            "calendar".to_string(),
++            HashMap::from([("client/location".to_string(), serde_json::json!("matched"))]),
++        )]));
++    let calendar = approval_metadata(
++        Some("calendar"),
++        Some("Calendar"),
++        /*connector_description*/ None,
++        /*tool_title*/ None,
++        /*tool_description*/ None,
++    );
++    let gmail = approval_metadata(
++        Some("gmail"),
++        Some("Gmail"),
++        /*connector_description*/ None,
++        /*tool_title*/ None,
++        /*tool_description*/ None,
++    );
++
++    let matching = build_mcp_tool_call_request_meta(
++        &turn_context,
++        CODEX_APPS_MCP_SERVER_NAME,
++        "call-calendar",
++        Some(&calendar),
++    )
++    .expect("matching connector should receive metadata");
++    let other = build_mcp_tool_call_request_meta(
++        &turn_context,
++        CODEX_APPS_MCP_SERVER_NAME,
++        "call-gmail",
++        Some(&gmail),
++    )
++    .expect("Codex Apps metadata remains present");
++
++    assert_eq!(
++        matching.get("client/location"),
++        Some(&serde_json::json!("matched"))
++    );
++    assert!(other.get("client/location").is_none());
++}
++
++#[tokio::test]
++async fn mcp_tool_call_request_meta_rejects_client_values_for_codex_owned_keys() {
++    let (_, turn_context) = make_session_and_context().await;
++    turn_context
++        .turn_metadata_state
++        .set_mcp_meta_by_server(HashMap::from([(
++            "custom_server".to_string(),
++            HashMap::from([
++                (
++                    crate::X_CODEX_TURN_METADATA_HEADER.to_string(),
++                    serde_json::json!({ "spoofed": true }),
++                ),
++                (
++                    MCP_TOOL_PLUGIN_ID_META_KEY.to_string(),
++                    serde_json::json!("spoofed"),
++                ),
++                (
++                    MCP_TOOL_THREAD_ID_META_KEY.to_string(),
++                    serde_json::json!("spoofed"),
++                ),
++                (
++                    codex_rollout_trace::MCP_CALL_ID_META_KEY.to_string(),
++                    serde_json::json!("spoofed"),
++                ),
++                ("client/location".to_string(), serde_json::json!("US")),
++            ]),
++        )]));
++
++    let meta = build_mcp_tool_call_request_meta(
++        &turn_context,
++        "custom_server",
++        "call-custom",
++        /*metadata*/ None,
++    )
++    .expect("Codex turn metadata remains present");
++
++    assert_eq!(meta.get("client/location"), Some(&serde_json::json!("US")));
++    assert!(meta.get(MCP_TOOL_PLUGIN_ID_META_KEY).is_none());
++    assert!(meta.get(MCP_TOOL_THREAD_ID_META_KEY).is_none());
++    assert!(
++        meta.get(codex_rollout_trace::MCP_CALL_ID_META_KEY)
++            .is_none()
++    );
++    assert!(
++        meta.get(crate::X_CODEX_TURN_METADATA_HEADER)
++            .and_then(|value| value.get("spoofed"))
++            .is_none()
++    );
++}
++
+ #[tokio::test]
+ async fn plugin_mcp_tool_call_request_meta_includes_plugin_id() {
+     let (_, turn_context) = make_session_and_context().await;
+diff --git a/codex-rs/core/src/session/handlers.rs b/codex-rs/core/src/session/handlers.rs
+index 3d57bd707491..2073ee875c06 100644
+--- a/codex-rs/core/src/session/handlers.rs
++++ b/codex-rs/core/src/session/handlers.rs
+@@ -194,11 +194,15 @@ pub(super) async fn user_input_or_turn_inner(
+         environments,
+         final_output_json_schema,
+         responsesapi_client_metadata,
++        mcp_meta_by_server,
++        mcp_meta_by_connector,
+         thread_settings,
+     } = op
+     else {
+         unreachable!();
+     };
++    let mcp_meta_by_server = mcp_meta_by_server.map(|metadata| *metadata);
++    let mcp_meta_by_connector = mcp_meta_by_connector.map(|metadata| *metadata);
+     let emit_thread_settings_applied = thread_settings != ThreadSettingsOverrides::default();
+     let mut updates = if emit_thread_settings_applied {
+         thread_settings_update(sess, thread_settings).await
+@@ -206,6 +210,8 @@ pub(super) async fn user_input_or_turn_inner(
+         SessionSettingsUpdate::default()
+     };
+     updates.final_output_json_schema = Some(final_output_json_schema);
++    updates.mcp_meta_by_server = mcp_meta_by_server.clone();
++    updates.mcp_meta_by_connector = mcp_meta_by_connector.clone();
+     updates.environments = environments;
+ 
+     let Ok(current_context) = sess.new_turn_with_sub_id(sub_id.clone(), updates).await else {
+@@ -226,6 +232,8 @@ pub(super) async fn user_input_or_turn_inner(
+             items.clone(),
+             /*expected_turn_id*/ None,
+             responsesapi_client_metadata.clone(),
++            mcp_meta_by_server,
++            mcp_meta_by_connector,
+         )
+         .await
+     {
+diff --git a/codex-rs/core/src/session/mod.rs b/codex-rs/core/src/session/mod.rs
+index bdffd4e3ca31..e9186c511e58 100644
+--- a/codex-rs/core/src/session/mod.rs
++++ b/codex-rs/core/src/session/mod.rs
+@@ -749,9 +749,17 @@ impl Codex {
+         input: Vec<UserInput>,
+         expected_turn_id: Option<&str>,
+         responsesapi_client_metadata: Option<HashMap<String, String>>,
++        mcp_meta_by_server: Option<HashMap<String, HashMap<String, Value>>>,
++        mcp_meta_by_connector: Option<HashMap<String, HashMap<String, Value>>>,
+     ) -> Result<String, SteerInputError> {
+         self.session
+-            .steer_input(input, expected_turn_id, responsesapi_client_metadata)
++            .steer_input(
++                input,
++                expected_turn_id,
++                responsesapi_client_metadata,
++                mcp_meta_by_server,
++                mcp_meta_by_connector,
++            )
+             .await
+     }
+ 
+@@ -1071,6 +1079,8 @@ impl Session {
+                 }],
+                 final_output_json_schema: None,
+                 responsesapi_client_metadata: None,
++                mcp_meta_by_server: None,
++                mcp_meta_by_connector: None,
+                 thread_settings: Default::default(),
+             },
+             /*mirror_user_text_to_realtime*/ None,
+@@ -3134,6 +3144,8 @@ impl Session {
+         input: Vec<UserInput>,
+         expected_turn_id: Option<&str>,
+         responsesapi_client_metadata: Option<HashMap<String, String>>,
++        mcp_meta_by_server: Option<HashMap<String, HashMap<String, Value>>>,
++        mcp_meta_by_connector: Option<HashMap<String, HashMap<String, Value>>>,
+     ) -> Result<String, SteerInputError> {
+         let mut active = self.active_turn.lock().await;
+         let Some(active_turn) = active.as_mut() else {
+@@ -3180,6 +3192,22 @@ impl Session {
+                 .turn_metadata_state
+                 .set_responsesapi_client_metadata(responsesapi_client_metadata);
+         }
++        if let Some(mcp_meta_by_server) = mcp_meta_by_server
++            && let Some((_, active_task)) = active_turn.tasks.first()
++        {
++            active_task
++                .turn_context
++                .turn_metadata_state
++                .set_mcp_meta_by_server(mcp_meta_by_server);
++        }
++        if let Some(mcp_meta_by_connector) = mcp_meta_by_connector
++            && let Some((_, active_task)) = active_turn.tasks.first()
++        {
++            active_task
++                .turn_context
++                .turn_metadata_state
++                .set_mcp_meta_by_connector(mcp_meta_by_connector);
++        }
+ 
+         self.input_queue
+             .push_pending_input_and_accept_mailbox_delivery_for_turn_state(
+diff --git a/codex-rs/core/src/session/session.rs b/codex-rs/core/src/session/session.rs
+index 8945880c33ef..b492b9e6a62b 100644
+--- a/codex-rs/core/src/session/session.rs
++++ b/codex-rs/core/src/session/session.rs
+@@ -392,6 +392,10 @@ pub(crate) struct SessionSettingsUpdate {
+     pub(crate) reasoning_summary: Option<ReasoningSummaryConfig>,
+     pub(crate) service_tier: Option<Option<String>>,
+     pub(crate) final_output_json_schema: Option<Option<Value>>,
++    /// Turn-local MCP request metadata keyed by configured custom MCP server name.
++    pub(crate) mcp_meta_by_server: Option<HashMap<String, HashMap<String, Value>>>,
++    /// Turn-local MCP request metadata keyed by app connector id.
++    pub(crate) mcp_meta_by_connector: Option<HashMap<String, HashMap<String, Value>>>,
+     /// Turn-local environment override. `None` inherits the sticky thread
+     /// environments stored on `SessionConfiguration`; `Some([])` explicitly
+     /// disables environments for this turn.
+diff --git a/codex-rs/core/src/session/tests.rs b/codex-rs/core/src/session/tests.rs
+index a08243701c68..8158d6fcdad8 100644
+--- a/codex-rs/core/src/session/tests.rs
++++ b/codex-rs/core/src/session/tests.rs
+@@ -2260,6 +2260,8 @@ async fn fork_startup_context_then_first_turn_diff_snapshot() -> anyhow::Result<
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -2306,6 +2308,8 @@ async fn fork_startup_context_then_first_turn_diff_snapshot() -> anyhow::Result<
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: ThreadSettingsOverrides {
+                 approval_policy: Some(AskForApproval::Never),
+                 collaboration_mode: Some(collaboration_mode),
+@@ -5229,6 +5233,8 @@ fn op_kind_for_input_and_context_ops() {
+             items: vec![],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         }
+         .kind(),
+@@ -5259,6 +5265,8 @@ async fn user_turn_updates_approvals_reviewer() {
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(config.cwd.to_path_buf()),
+                 approval_policy: Some(config.permissions.approval_policy.value()),
+@@ -7842,6 +7850,8 @@ async fn task_finish_emits_turn_item_lifecycle_for_leftover_pending_user_input()
+         pending_user_input.clone(),
+         Some(&tc.sub_id),
+         /*responsesapi_client_metadata*/ None,
++        /*mcp_meta_by_server*/ None,
++        /*mcp_meta_by_connector*/ None,
+     )
+     .await
+     .expect("steer pending input into active turn");
+@@ -7937,6 +7947,7 @@ async fn steer_input_requires_active_turn() {
+     let err = sess
+         .steer_input(
+             input, /*expected_turn_id*/ None, /*responsesapi_client_metadata*/ None,
++            /*mcp_meta_by_server*/ None, /*mcp_meta_by_connector*/ None,
+         )
+         .await
+         .expect_err("steering without active turn should fail");
+@@ -7970,6 +7981,8 @@ async fn steer_input_enforces_expected_turn_id() {
+             steer_input,
+             Some("different-turn-id"),
+             /*responsesapi_client_metadata*/ None,
++            /*mcp_meta_by_server*/ None,
++            /*mcp_meta_by_connector*/ None,
+         )
+         .await
+         .expect_err("mismatched expected turn id should fail");
+@@ -8016,6 +8029,8 @@ async fn steer_input_rejects_non_regular_turns() {
+                 steer_input,
+                 /*expected_turn_id*/ None,
+                 /*responsesapi_client_metadata*/ None,
++                /*mcp_meta_by_server*/ None,
++                /*mcp_meta_by_connector*/ None,
+             )
+             .await
+             .expect_err("steering a non-regular turn should fail");
+@@ -8052,11 +8067,36 @@ async fn steer_input_returns_active_turn_id() {
+             steer_input,
+             Some(&tc.sub_id),
+             /*responsesapi_client_metadata*/ None,
++            /*mcp_meta_by_server*/
++            Some(HashMap::from([(
++                "search_service".to_string(),
++                HashMap::from([("client/location".to_string(), json!("US"))]),
++            )])),
++            /*mcp_meta_by_connector*/
++            Some(HashMap::from([(
++                "connector_openai_search_service".to_string(),
++                HashMap::from([("client/location".to_string(), json!("CA"))]),
++            )])),
+         )
+         .await
+         .expect("steering with matching expected turn id should succeed");
+ 
+     assert_eq!(turn_id, tc.sub_id);
++    assert_eq!(
++        tc.turn_metadata_state.mcp_meta_for_server("search_service"),
++        Some(HashMap::from([(
++            "client/location".to_string(),
++            json!("US"),
++        )]))
++    );
++    assert_eq!(
++        tc.turn_metadata_state
++            .mcp_meta_for_connector("connector_openai_search_service"),
++        Some(HashMap::from([(
++            "client/location".to_string(),
++            json!("CA"),
++        )]))
++    );
+     assert!(sess.input_queue.has_pending_input(&sess.active_turn).await);
+ }
+ 
+@@ -8274,6 +8314,8 @@ async fn active_goal_continuation_runs_again_after_no_tool_turn() -> anyhow::Res
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -8379,6 +8421,8 @@ async fn pending_request_user_input_does_not_spawn_extra_goal_continuation() ->
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -8926,6 +8970,8 @@ async fn completed_goal_accounts_current_turn_tokens_before_tool_response() -> a
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -9094,6 +9140,8 @@ async fn steered_input_reopens_mailbox_delivery_for_current_turn() {
+         }],
+         Some(&tc.sub_id),
+         /*responsesapi_client_metadata*/ None,
++        /*mcp_meta_by_server*/ None,
++        /*mcp_meta_by_connector*/ None,
+     )
+     .await
+     .expect("steered input should be accepted");
+@@ -9143,6 +9191,8 @@ async fn stale_defer_mailbox_delivery_does_not_override_steered_input() {
+         }],
+         Some(&tc.sub_id),
+         /*responsesapi_client_metadata*/ None,
++        /*mcp_meta_by_server*/ None,
++        /*mcp_meta_by_connector*/ None,
+     )
+     .await
+     .expect("steered input should be accepted");
+diff --git a/codex-rs/core/src/session/turn_context.rs b/codex-rs/core/src/session/turn_context.rs
+index 3338d0a5581f..0a37a9f58ab8 100644
+--- a/codex-rs/core/src/session/turn_context.rs
++++ b/codex-rs/core/src/session/turn_context.rs
+@@ -631,6 +631,8 @@ impl Session {
+                 sub_id,
+                 session_configuration,
+                 updates.final_output_json_schema,
++                updates.mcp_meta_by_server,
++                updates.mcp_meta_by_connector,
+                 turn_environments,
+             )
+             .await)
+@@ -651,6 +653,8 @@ impl Session {
+         sub_id: String,
+         session_configuration: SessionConfiguration,
+         final_output_json_schema: Option<Option<Value>>,
++        mcp_meta_by_server: Option<HashMap<String, HashMap<String, Value>>>,
++        mcp_meta_by_connector: Option<HashMap<String, HashMap<String, Value>>>,
+         turn_environments: ResolvedTurnEnvironments,
+     ) -> Arc<TurnContext> {
+         let primary_turn_environment = turn_environments.primary();
+@@ -722,6 +726,16 @@ impl Session {
+         if let Some(final_schema) = final_output_json_schema {
+             turn_context.final_output_json_schema = final_schema;
+         }
++        if let Some(mcp_meta_by_server) = mcp_meta_by_server {
++            turn_context
++                .turn_metadata_state
++                .set_mcp_meta_by_server(mcp_meta_by_server);
++        }
++        if let Some(mcp_meta_by_connector) = mcp_meta_by_connector {
++            turn_context
++                .turn_metadata_state
++                .set_mcp_meta_by_connector(mcp_meta_by_connector);
++        }
+         let turn_context = Arc::new(turn_context);
+         turn_context.turn_metadata_state.spawn_git_enrichment_task();
+         turn_context
+@@ -769,6 +783,8 @@ impl Session {
+             sub_id,
+             session_configuration,
+             /*final_output_json_schema*/ None,
++            /*mcp_meta_by_server*/ None,
++            /*mcp_meta_by_connector*/ None,
+             turn_environments,
+         )
+         .await
+diff --git a/codex-rs/core/src/tools/handlers/multi_agents_tests.rs b/codex-rs/core/src/tools/handlers/multi_agents_tests.rs
+index a582805ed29c..bf96f3826e6f 100644
+--- a/codex-rs/core/src/tools/handlers/multi_agents_tests.rs
++++ b/codex-rs/core/src/tools/handlers/multi_agents_tests.rs
+@@ -2592,6 +2592,8 @@ async fn send_input_accepts_structured_items() {
+         ],
+         final_output_json_schema: None,
+         responsesapi_client_metadata: None,
++        mcp_meta_by_server: None,
++        mcp_meta_by_connector: None,
+         thread_settings: Default::default(),
+     };
+     let captured = manager
+diff --git a/codex-rs/core/src/turn_metadata.rs b/codex-rs/core/src/turn_metadata.rs
+index 1b2c6b4b1295..f7fd7ebb950b 100644
+--- a/codex-rs/core/src/turn_metadata.rs
++++ b/codex-rs/core/src/turn_metadata.rs
+@@ -189,6 +189,8 @@ pub(crate) struct TurnMetadataState {
+     enriched_header: Arc<RwLock<Option<String>>>,
+     turn_started_at_unix_ms: Arc<RwLock<Option<i64>>>,
+     responsesapi_client_metadata: Arc<RwLock<Option<HashMap<String, String>>>>,
++    mcp_meta_by_server: Arc<RwLock<HashMap<String, HashMap<String, Value>>>>,
++    mcp_meta_by_connector: Arc<RwLock<HashMap<String, HashMap<String, Value>>>>,
+     user_input_requested_during_turn: Arc<AtomicBool>,
+     enrichment_task: Arc<Mutex<Option<JoinHandle<()>>>>,
+ }
+@@ -235,13 +237,15 @@ impl TurnMetadataState {
+             enriched_header: Arc::new(RwLock::new(None)),
+             turn_started_at_unix_ms: Arc::new(RwLock::new(None)),
+             responsesapi_client_metadata: Arc::new(RwLock::new(None)),
++            mcp_meta_by_server: Arc::new(RwLock::new(HashMap::new())),
++            mcp_meta_by_connector: Arc::new(RwLock::new(HashMap::new())),
+             user_input_requested_during_turn: Arc::new(AtomicBool::new(false)),
+             enrichment_task: Arc::new(Mutex::new(None)),
+         }
+     }
+ 
+-    pub(crate) fn current_header_value(&self) -> Option<String> {
+-        let header = if let Some(header) = self
++    fn base_or_enriched_header_value(&self) -> String {
++        if let Some(header) = self
+             .enriched_header
+             .read()
+             .unwrap_or_else(std::sync::PoisonError::into_inner)
+@@ -251,7 +255,11 @@ impl TurnMetadataState {
+             header
+         } else {
+             self.base_header.clone()
+-        };
++        }
++    }
++
++    pub(crate) fn current_header_value(&self) -> Option<String> {
++        let header = self.base_or_enriched_header_value();
+         let turn_started_at_unix_ms = *self
+             .turn_started_at_unix_ms
+             .read()
+@@ -273,7 +281,17 @@ impl TurnMetadataState {
+         &self,
+         context: McpTurnMetadataContext<'_>,
+     ) -> Option<serde_json::Value> {
+-        let header = self.current_header_value()?;
++        let header = self.base_or_enriched_header_value();
++        let turn_started_at_unix_ms = *self
++            .turn_started_at_unix_ms
++            .read()
++            .unwrap_or_else(std::sync::PoisonError::into_inner);
++        let header = merge_turn_metadata(
++            &header,
++            turn_started_at_unix_ms,
++            /*responsesapi_client_metadata*/ None,
++        )
++        .unwrap_or(header);
+         let mut metadata = serde_json::from_str::<serde_json::Map<String, Value>>(&header).ok()?;
+         metadata.insert(
+             MODEL_KEY.to_string(),
+@@ -320,6 +338,45 @@ impl TurnMetadataState {
+             Some(responsesapi_client_metadata);
+     }
+ 
++    pub(crate) fn set_mcp_meta_by_server(
++        &self,
++        mcp_meta_by_server: HashMap<String, HashMap<String, Value>>,
++    ) {
++        *self
++            .mcp_meta_by_server
++            .write()
++            .unwrap_or_else(std::sync::PoisonError::into_inner) = mcp_meta_by_server;
++    }
++
++    pub(crate) fn mcp_meta_for_server(&self, server: &str) -> Option<HashMap<String, Value>> {
++        self.mcp_meta_by_server
++            .read()
++            .unwrap_or_else(std::sync::PoisonError::into_inner)
++            .get(server)
++            .cloned()
++    }
++
++    pub(crate) fn set_mcp_meta_by_connector(
++        &self,
++        mcp_meta_by_connector: HashMap<String, HashMap<String, Value>>,
++    ) {
++        *self
++            .mcp_meta_by_connector
++            .write()
++            .unwrap_or_else(std::sync::PoisonError::into_inner) = mcp_meta_by_connector;
++    }
++
++    pub(crate) fn mcp_meta_for_connector(
++        &self,
++        connector_id: &str,
++    ) -> Option<HashMap<String, Value>> {
++        self.mcp_meta_by_connector
++            .read()
++            .unwrap_or_else(std::sync::PoisonError::into_inner)
++            .get(connector_id)
++            .cloned()
++    }
++
+     pub(crate) fn set_turn_started_at_unix_ms(&self, turn_started_at_unix_ms: i64) {
+         *self
+             .turn_started_at_unix_ms
+diff --git a/codex-rs/core/src/turn_metadata_tests.rs b/codex-rs/core/src/turn_metadata_tests.rs
+index 2f7992710343..4941fc409583 100644
+--- a/codex-rs/core/src/turn_metadata_tests.rs
++++ b/codex-rs/core/src/turn_metadata_tests.rs
+@@ -347,6 +347,8 @@ fn turn_metadata_state_merges_client_metadata_without_replacing_reserved_fields(
+     let meta = state
+         .current_meta_value_for_mcp_request(test_mcp_turn_metadata_context())
+         .expect("turn metadata should be present");
++    assert!(meta.get("fiber_run_id").is_none());
++    assert!(meta.get("origin").is_none());
+     assert_eq!(meta["model"].as_str(), Some("gpt-5.4"));
+     assert_eq!(meta["reasoning_effort"].as_str(), Some("high"));
+ }
+diff --git a/codex-rs/core/tests/common/test_codex.rs b/codex-rs/core/tests/common/test_codex.rs
+index 5f5c7ee85a86..81160036ac71 100644
+--- a/codex-rs/core/tests/common/test_codex.rs
++++ b/codex-rs/core/tests/common/test_codex.rs
+@@ -768,6 +768,8 @@ impl TestCodex {
+                 environments,
+                 final_output_json_schema: None,
+                 responsesapi_client_metadata: None,
++                mcp_meta_by_server: None,
++                mcp_meta_by_connector: None,
+                 thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                     cwd: Some(self.config.cwd.to_path_buf()),
+                     approval_policy: Some(approval_policy),
+diff --git a/codex-rs/core/tests/suite/abort_tasks.rs b/codex-rs/core/tests/suite/abort_tasks.rs
+index c41502a9dc9a..afcb4a35205c 100644
+--- a/codex-rs/core/tests/suite/abort_tasks.rs
++++ b/codex-rs/core/tests/suite/abort_tasks.rs
+@@ -53,6 +53,8 @@ async fn interrupt_long_running_tool_emits_turn_aborted() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -110,6 +112,8 @@ async fn interrupt_tool_records_history_entries() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -131,6 +135,8 @@ async fn interrupt_tool_records_history_entries() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -214,6 +220,8 @@ async fn interrupt_persists_turn_aborted_marker_in_next_request() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -235,6 +243,8 @@ async fn interrupt_persists_turn_aborted_marker_in_next_request() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+diff --git a/codex-rs/core/tests/suite/apply_patch_cli.rs b/codex-rs/core/tests/suite/apply_patch_cli.rs
+index f5a35003f826..bb6f2870c87f 100644
+--- a/codex-rs/core/tests/suite/apply_patch_cli.rs
++++ b/codex-rs/core/tests/suite/apply_patch_cli.rs
+@@ -91,6 +91,8 @@ async fn submit_without_wait_with_turn_permissions(
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(harness.cwd().to_path_buf()),
+                 approval_policy: Some(AskForApproval::Never),
+diff --git a/codex-rs/core/tests/suite/approvals.rs b/codex-rs/core/tests/suite/approvals.rs
+index 924253d8b80c..e9a81f6ef51e 100644
+--- a/codex-rs/core/tests/suite/approvals.rs
++++ b/codex-rs/core/tests/suite/approvals.rs
+@@ -653,6 +653,8 @@ async fn submit_turn(
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(test.cwd.path().to_path_buf()),
+                 approval_policy: Some(approval_policy),
+@@ -2597,6 +2599,8 @@ async fn matched_prefix_rule_runs_unsandboxed_under_zsh_fork() -> Result<()> {
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(test.cwd.path().to_path_buf()),
+                 approval_policy: Some(approval_policy),
+diff --git a/codex-rs/core/tests/suite/client.rs b/codex-rs/core/tests/suite/client.rs
+index f6731a0ea4fa..69d6d84ca4e6 100644
+--- a/codex-rs/core/tests/suite/client.rs
++++ b/codex-rs/core/tests/suite/client.rs
+@@ -392,6 +392,8 @@ async fn resume_includes_initial_messages_and_sends_prior_items() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -758,6 +760,8 @@ async fn includes_session_id_thread_id_and_model_headers_in_request() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -969,6 +973,8 @@ async fn includes_base_instructions_override_in_request() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -1026,6 +1032,8 @@ async fn chatgpt_auth_sends_correct_request() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -1150,6 +1158,8 @@ async fn prefers_apikey_when_config_prefers_apikey_even_with_chatgpt_tokens() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -1189,6 +1199,8 @@ async fn includes_user_instructions_message_in_request() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -1277,6 +1289,8 @@ async fn includes_apps_guidance_as_developer_message_for_chatgpt_auth() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -1340,6 +1354,8 @@ async fn omits_apps_guidance_for_api_key_auth_even_when_feature_enabled() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -1399,6 +1415,8 @@ async fn omits_apps_guidance_when_configured_off() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -1441,6 +1459,8 @@ async fn omits_environment_context_when_configured_off() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -1498,6 +1518,8 @@ async fn skills_append_to_developer_message() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -1581,6 +1603,8 @@ async fn skills_use_aliases_in_developer_message_under_budget_pressure() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -1642,6 +1666,8 @@ async fn includes_configured_effort_in_request() -> anyhow::Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -1684,6 +1710,8 @@ async fn includes_no_effort_in_request() -> anyhow::Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -1727,6 +1755,8 @@ async fn includes_default_reasoning_effort_in_request_when_defined_by_model_info
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -1778,6 +1808,8 @@ async fn user_turn_collaboration_mode_overrides_model_and_effort() -> anyhow::Re
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(config.cwd.to_path_buf()),
+                 approval_policy: Some(config.permissions.approval_policy.value()),
+@@ -1834,6 +1866,8 @@ async fn configured_reasoning_summary_is_sent() -> anyhow::Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -1899,6 +1933,8 @@ async fn user_turn_explicit_reasoning_summary_overrides_model_catalog_default()
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(config.cwd.to_path_buf()),
+                 approval_policy: Some(config.permissions.approval_policy.value()),
+@@ -1959,6 +1995,8 @@ async fn reasoning_summary_is_omitted_when_disabled() -> anyhow::Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -2018,6 +2056,8 @@ async fn reasoning_summary_none_overrides_model_catalog_default() -> anyhow::Res
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -2057,6 +2097,8 @@ async fn includes_default_verbosity_in_request() -> anyhow::Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -2105,6 +2147,8 @@ async fn configured_verbosity_not_sent_for_models_without_support() -> anyhow::R
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -2152,6 +2196,8 @@ async fn configured_verbosity_is_sent() -> anyhow::Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -2204,6 +2250,8 @@ async fn includes_developer_instructions_message_in_request() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -2500,6 +2548,8 @@ async fn token_count_includes_rate_limits_snapshot() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -2639,6 +2689,8 @@ async fn usage_limit_error_emits_rate_limit_event() -> anyhow::Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -2716,6 +2768,8 @@ async fn context_window_error_sets_total_tokens_to_model_window() -> anyhow::Res
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -2731,6 +2785,8 @@ async fn context_window_error_sets_total_tokens_to_model_window() -> anyhow::Res
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -2816,6 +2872,8 @@ async fn incomplete_response_emits_content_filter_error_message() -> anyhow::Res
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -2927,6 +2985,8 @@ async fn azure_overrides_assign_properties_used_for_responses_url() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -3016,6 +3076,8 @@ async fn env_var_overrides_loaded_auth() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -3073,6 +3135,8 @@ async fn history_dedupes_streamed_and_final_messages_across_turns() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -3089,6 +3153,8 @@ async fn history_dedupes_streamed_and_final_messages_across_turns() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -3105,6 +3171,8 @@ async fn history_dedupes_streamed_and_final_messages_across_turns() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+diff --git a/codex-rs/core/tests/suite/client_websockets.rs b/codex-rs/core/tests/suite/client_websockets.rs
+index feee9d42272f..593553c0055a 100755
+--- a/codex-rs/core/tests/suite/client_websockets.rs
++++ b/codex-rs/core/tests/suite/client_websockets.rs
+@@ -1208,6 +1208,8 @@ async fn responses_websocket_usage_limit_error_emits_rate_limit_event() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -1297,6 +1299,8 @@ async fn responses_websocket_invalid_request_error_with_status_is_forwarded() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+diff --git a/codex-rs/core/tests/suite/code_mode.rs b/codex-rs/core/tests/suite/code_mode.rs
+index b733d7bded88..7a071e2bf2c6 100644
+--- a/codex-rs/core/tests/suite/code_mode.rs
++++ b/codex-rs/core/tests/suite/code_mode.rs
+@@ -2779,6 +2779,8 @@ text(
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(cwd),
+                 approval_policy: Some(AskForApproval::Never),
+diff --git a/codex-rs/core/tests/suite/collaboration_instructions.rs b/codex-rs/core/tests/suite/collaboration_instructions.rs
+index 0f9bee9431fe..49cb1fe23f4a 100644
+--- a/codex-rs/core/tests/suite/collaboration_instructions.rs
++++ b/codex-rs/core/tests/suite/collaboration_instructions.rs
+@@ -79,6 +79,8 @@ async fn no_collaboration_instructions_by_default() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -133,6 +135,8 @@ async fn user_input_includes_collaboration_instructions_after_override() -> Resu
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -170,6 +174,8 @@ async fn collaboration_instructions_added_on_user_turn() -> Result<()> {
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(test.config.cwd.to_path_buf()),
+                 approval_policy: Some(test.config.permissions.approval_policy.value()),
+@@ -220,6 +226,8 @@ async fn collaboration_instructions_omitted_when_disabled() -> Result<()> {
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(test.config.cwd.to_path_buf()),
+                 approval_policy: Some(test.config.permissions.approval_policy.value()),
+@@ -279,6 +287,8 @@ async fn override_then_next_turn_uses_updated_collaboration_instructions() -> Re
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -327,6 +337,8 @@ async fn user_turn_overrides_collaboration_instructions_after_override() -> Resu
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(test.config.cwd.to_path_buf()),
+                 approval_policy: Some(test.config.permissions.approval_policy.value()),
+@@ -391,6 +403,8 @@ async fn collaboration_mode_update_emits_new_instruction_message() -> Result<()>
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -414,6 +428,8 @@ async fn collaboration_mode_update_emits_new_instruction_message() -> Result<()>
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -466,6 +482,8 @@ async fn collaboration_mode_update_noop_does_not_append() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -489,6 +507,8 @@ async fn collaboration_mode_update_noop_does_not_append() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -543,6 +563,8 @@ async fn collaboration_mode_update_emits_new_instruction_message_when_mode_chang
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -569,6 +591,8 @@ async fn collaboration_mode_update_emits_new_instruction_message_when_mode_chang
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -624,6 +648,8 @@ async fn collaboration_mode_update_noop_does_not_append_when_mode_is_unchanged()
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -650,6 +676,8 @@ async fn collaboration_mode_update_noop_does_not_append_when_mode_is_unchanged()
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -708,6 +736,8 @@ async fn resume_replays_collaboration_instructions() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -724,6 +754,8 @@ async fn resume_replays_collaboration_instructions() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -776,6 +808,8 @@ async fn empty_collaboration_instructions_are_ignored() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+diff --git a/codex-rs/core/tests/suite/compact.rs b/codex-rs/core/tests/suite/compact.rs
+index 140b4ec2b11c..a69866621a4c 100644
+--- a/codex-rs/core/tests/suite/compact.rs
++++ b/codex-rs/core/tests/suite/compact.rs
+@@ -97,6 +97,8 @@ fn disabled_permission_user_turn(text: impl Into<String>, cwd: PathBuf, model: S
+         environments: None,
+         final_output_json_schema: None,
+         responsesapi_client_metadata: None,
++        mcp_meta_by_server: None,
++        mcp_meta_by_connector: None,
+         thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+             cwd: Some(cwd),
+             approval_policy: Some(AskForApproval::Never),
+@@ -408,6 +410,8 @@ async fn summarize_context_three_requests_and_instructions() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -433,6 +437,8 @@ async fn summarize_context_three_requests_and_instructions() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -610,6 +616,8 @@ async fn manual_pre_compact_block_decision_does_not_block_compaction() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -683,6 +691,8 @@ async fn compact_hooks_respect_matchers_and_post_runs_after_compaction() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -753,6 +763,8 @@ async fn manual_compact_uses_custom_prompt() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -900,6 +912,8 @@ async fn manual_compact_emits_context_compaction_items() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -1066,6 +1080,8 @@ async fn multiple_auto_compact_per_task_runs_after_token_limit_hit() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -1538,6 +1554,8 @@ async fn auto_compact_runs_after_token_limit_hit() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -1554,6 +1572,8 @@ async fn auto_compact_runs_after_token_limit_hit() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -1570,6 +1590,8 @@ async fn auto_compact_runs_after_token_limit_hit() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -1741,6 +1763,8 @@ async fn auto_compact_emits_context_compaction_items() {
+                 }],
+                 final_output_json_schema: None,
+                 responsesapi_client_metadata: None,
++                mcp_meta_by_server: None,
++                mcp_meta_by_connector: None,
+                 thread_settings: Default::default(),
+             })
+             .await
+@@ -1822,6 +1846,8 @@ async fn auto_compact_starts_after_turn_started() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -1837,6 +1863,8 @@ async fn auto_compact_starts_after_turn_started() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -1852,6 +1880,8 @@ async fn auto_compact_starts_after_turn_started() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -2380,6 +2410,8 @@ async fn auto_compact_persists_rollout_entries() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -2395,6 +2427,8 @@ async fn auto_compact_persists_rollout_entries() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -2410,6 +2444,8 @@ async fn auto_compact_persists_rollout_entries() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -2499,6 +2535,8 @@ async fn manual_compact_retries_after_context_window_error() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -2603,6 +2641,8 @@ async fn manual_compact_non_context_failure_retries_then_emits_task_error() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -2698,6 +2738,8 @@ async fn manual_compact_twice_preserves_latest_user_messages() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -2716,6 +2758,8 @@ async fn manual_compact_twice_preserves_latest_user_messages() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -2734,6 +2778,8 @@ async fn manual_compact_twice_preserves_latest_user_messages() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -2898,6 +2944,8 @@ async fn auto_compact_allows_multiple_attempts_when_interleaved_with_other_turn_
+                 }],
+                 final_output_json_schema: None,
+                 responsesapi_client_metadata: None,
++                mcp_meta_by_server: None,
++                mcp_meta_by_connector: None,
+                 thread_settings: Default::default(),
+             })
+             .await
+@@ -3003,6 +3051,8 @@ async fn snapshot_request_shape_mid_turn_continuation_compaction() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -3434,6 +3484,8 @@ async fn auto_compact_counts_encrypted_reasoning_before_last_user() {
+                 }],
+                 final_output_json_schema: None,
+                 responsesapi_client_metadata: None,
++                mcp_meta_by_server: None,
++                mcp_meta_by_connector: None,
+                 thread_settings: Default::default(),
+             })
+             .await
+@@ -3553,6 +3605,8 @@ async fn auto_compact_runs_when_reasoning_header_clears_between_turns() {
+                 }],
+                 final_output_json_schema: None,
+                 responsesapi_client_metadata: None,
++                mcp_meta_by_server: None,
++                mcp_meta_by_connector: None,
+                 thread_settings: Default::default(),
+             })
+             .await
+@@ -3615,6 +3669,8 @@ async fn snapshot_request_shape_pre_turn_compaction_including_incoming_user_mess
+                 }],
+                 final_output_json_schema: None,
+                 responsesapi_client_metadata: None,
++                mcp_meta_by_server: None,
++                mcp_meta_by_connector: None,
+                 thread_settings: Default::default(),
+             })
+             .await
+@@ -3647,6 +3703,8 @@ async fn snapshot_request_shape_pre_turn_compaction_including_incoming_user_mess
+             ],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -3836,6 +3894,8 @@ async fn snapshot_request_shape_pre_turn_compaction_context_window_exceeded() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -3851,6 +3911,8 @@ async fn snapshot_request_shape_pre_turn_compaction_context_window_exceeded() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -3924,6 +3986,8 @@ async fn snapshot_request_shape_manual_compact_without_previous_user_messages()
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+diff --git a/codex-rs/core/tests/suite/compact_remote.rs b/codex-rs/core/tests/suite/compact_remote.rs
+index d868abbfee32..2e92a63e6c87 100644
+--- a/codex-rs/core/tests/suite/compact_remote.rs
++++ b/codex-rs/core/tests/suite/compact_remote.rs
+@@ -326,6 +326,8 @@ async fn remote_compact_replaces_history_for_followups() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -343,6 +345,8 @@ async fn remote_compact_replaces_history_for_followups() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -518,6 +522,8 @@ async fn assert_remote_manual_compact_request_parity(
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -538,6 +544,8 @@ async fn assert_remote_manual_compact_request_parity(
+             ],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -552,6 +560,8 @@ async fn assert_remote_manual_compact_request_parity(
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -572,6 +582,8 @@ async fn assert_remote_manual_compact_request_parity(
+             ],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -586,6 +598,8 @@ async fn assert_remote_manual_compact_request_parity(
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -754,6 +768,8 @@ async fn remote_compact_v2_reuses_compaction_trigger_for_followups() -> Result<(
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -771,6 +787,8 @@ async fn remote_compact_v2_reuses_compaction_trigger_for_followups() -> Result<(
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -865,6 +883,8 @@ async fn remote_compact_v2_accepts_additional_output_items_before_compaction() -
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -882,6 +902,8 @@ async fn remote_compact_v2_accepts_additional_output_items_before_compaction() -
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -973,6 +995,8 @@ async fn remote_compact_filters_deferred_dynamic_tools() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -1045,6 +1069,8 @@ async fn remote_compact_runs_automatically() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -1126,6 +1152,8 @@ async fn remote_compact_trims_function_call_history_to_fit_context_window() -> R
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -1140,6 +1168,8 @@ async fn remote_compact_trims_function_call_history_to_fit_context_window() -> R
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -1258,6 +1288,8 @@ async fn auto_remote_compact_trims_function_call_history_to_fit_context_window()
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -1272,6 +1304,8 @@ async fn auto_remote_compact_trims_function_call_history_to_fit_context_window()
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -1292,6 +1326,8 @@ async fn auto_remote_compact_trims_function_call_history_to_fit_context_window()
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -1392,6 +1428,8 @@ async fn auto_remote_compact_failure_stops_agent_loop() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -1406,6 +1444,8 @@ async fn auto_remote_compact_failure_stops_agent_loop() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -1500,6 +1540,8 @@ async fn remote_compact_trim_estimate_uses_session_base_instructions() -> Result
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -1517,6 +1559,8 @@ async fn remote_compact_trim_estimate_uses_session_base_instructions() -> Result
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -1608,6 +1652,8 @@ async fn remote_compact_trim_estimate_uses_session_base_instructions() -> Result
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -1625,6 +1671,8 @@ async fn remote_compact_trim_estimate_uses_session_base_instructions() -> Result
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -1696,6 +1744,8 @@ async fn remote_manual_compact_emits_context_compaction_items() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -1777,6 +1827,8 @@ async fn remote_manual_compact_failure_emits_task_error_event() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -1861,6 +1913,8 @@ async fn remote_compact_persists_replacement_history_in_rollout() -> Result<()>
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -2004,6 +2058,8 @@ async fn remote_compact_and_resume_refresh_stale_developer_instructions() -> Res
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -2022,6 +2078,8 @@ async fn remote_compact_and_resume_refresh_stale_developer_instructions() -> Res
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -2047,6 +2105,8 @@ async fn remote_compact_and_resume_refresh_stale_developer_instructions() -> Res
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -2143,6 +2203,8 @@ async fn remote_compact_refreshes_stale_developer_instructions_without_resume()
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -2160,6 +2222,8 @@ async fn remote_compact_refreshes_stale_developer_instructions_without_resume()
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -2232,6 +2296,8 @@ async fn snapshot_request_shape_remote_pre_turn_compaction_restates_realtime_sta
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -2246,6 +2312,8 @@ async fn snapshot_request_shape_remote_pre_turn_compaction_restates_realtime_sta
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -2313,6 +2381,8 @@ async fn remote_request_uses_custom_experimental_realtime_start_instructions() -
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -2374,6 +2444,8 @@ async fn snapshot_request_shape_remote_pre_turn_compaction_restates_realtime_end
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -2390,6 +2462,8 @@ async fn snapshot_request_shape_remote_pre_turn_compaction_restates_realtime_end
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -2465,6 +2539,8 @@ async fn snapshot_request_shape_remote_manual_compact_restates_realtime_start()
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -2482,6 +2558,8 @@ async fn snapshot_request_shape_remote_manual_compact_restates_realtime_start()
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -2565,6 +2643,8 @@ async fn snapshot_request_shape_remote_mid_turn_compaction_does_not_restate_real
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -2581,6 +2661,8 @@ async fn snapshot_request_shape_remote_mid_turn_compaction_does_not_restate_real
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -2672,6 +2754,8 @@ async fn snapshot_request_shape_remote_compact_resume_restates_realtime_end() ->
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -2702,6 +2786,8 @@ async fn snapshot_request_shape_remote_compact_resume_restates_realtime_end() ->
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -2791,6 +2877,8 @@ async fn snapshot_request_shape_remote_pre_turn_compaction_including_incoming_us
+                 }],
+                 final_output_json_schema: None,
+                 responsesapi_client_metadata: None,
++                mcp_meta_by_server: None,
++                mcp_meta_by_connector: None,
+                 thread_settings: Default::default(),
+             })
+             .await?;
+@@ -2878,6 +2966,8 @@ async fn snapshot_request_shape_remote_pre_turn_compaction_strips_incoming_model
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -2900,6 +2990,8 @@ async fn snapshot_request_shape_remote_pre_turn_compaction_strips_incoming_model
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -3019,6 +3111,8 @@ async fn snapshot_request_shape_remote_pre_turn_compaction_context_window_exceed
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -3033,6 +3127,8 @@ async fn snapshot_request_shape_remote_pre_turn_compaction_context_window_exceed
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -3118,6 +3214,8 @@ async fn snapshot_request_shape_remote_mid_turn_continuation_compaction() -> Res
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -3196,6 +3294,8 @@ async fn snapshot_request_shape_remote_mid_turn_compaction_summary_only_reinject
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -3282,6 +3382,8 @@ async fn snapshot_request_shape_remote_mid_turn_compaction_multi_summary_reinjec
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -3299,6 +3401,8 @@ async fn snapshot_request_shape_remote_mid_turn_compaction_multi_summary_reinjec
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -3381,6 +3485,8 @@ async fn snapshot_request_shape_remote_manual_compact_without_previous_user_mess
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+diff --git a/codex-rs/core/tests/suite/compact_remote_parity.rs b/codex-rs/core/tests/suite/compact_remote_parity.rs
+index ccbd427b1f5c..2206d77ad884 100644
+--- a/codex-rs/core/tests/suite/compact_remote_parity.rs
++++ b/codex-rs/core/tests/suite/compact_remote_parity.rs
+@@ -606,6 +606,8 @@ async fn submit_user_input(codex: &codex_core::CodexThread, items: Vec<UserInput
+             items,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+diff --git a/codex-rs/core/tests/suite/compact_resume_fork.rs b/codex-rs/core/tests/suite/compact_resume_fork.rs
+index b2b02f5e6614..55b0abb52f2f 100644
+--- a/codex-rs/core/tests/suite/compact_resume_fork.rs
++++ b/codex-rs/core/tests/suite/compact_resume_fork.rs
+@@ -783,6 +783,8 @@ async fn user_turn(conversation: &Arc<CodexThread>, text: &str) {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+diff --git a/codex-rs/core/tests/suite/exec_policy.rs b/codex-rs/core/tests/suite/exec_policy.rs
+index f1e01c22ce7b..cb6a7af71e97 100644
+--- a/codex-rs/core/tests/suite/exec_policy.rs
++++ b/codex-rs/core/tests/suite/exec_policy.rs
+@@ -54,6 +54,8 @@ async fn submit_user_turn(
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(test.cwd_path().to_path_buf()),
+                 approval_policy: Some(approval_policy),
+@@ -141,6 +143,8 @@ async fn execpolicy_blocks_shell_invocation() -> Result<()> {
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(test.cwd_path().to_path_buf()),
+                 approval_policy: Some(AskForApproval::Never),
+diff --git a/codex-rs/core/tests/suite/fork_thread.rs b/codex-rs/core/tests/suite/fork_thread.rs
+index 68a167f79022..79c00ed983b5 100644
+--- a/codex-rs/core/tests/suite/fork_thread.rs
++++ b/codex-rs/core/tests/suite/fork_thread.rs
+@@ -57,6 +57,8 @@ async fn fork_thread_twice_drops_to_first_message() {
+                 }],
+                 final_output_json_schema: None,
+                 responsesapi_client_metadata: None,
++                mcp_meta_by_server: None,
++                mcp_meta_by_connector: None,
+                 thread_settings: Default::default(),
+             })
+             .await
+@@ -181,6 +183,8 @@ async fn fork_thread_from_history_does_not_require_source_rollout_path() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+diff --git a/codex-rs/core/tests/suite/hooks.rs b/codex-rs/core/tests/suite/hooks.rs
+index 4f376573b384..919de54674b3 100644
+--- a/codex-rs/core/tests/suite/hooks.rs
++++ b/codex-rs/core/tests/suite/hooks.rs
+@@ -1440,6 +1440,8 @@ async fn blocked_queued_prompt_does_not_strand_earlier_accepted_prompt() -> Resu
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -1459,6 +1461,8 @@ async fn blocked_queued_prompt_does_not_strand_earlier_accepted_prompt() -> Resu
+                 }],
+                 final_output_json_schema: None,
+                 responsesapi_client_metadata: None,
++                mcp_meta_by_server: None,
++                mcp_meta_by_connector: None,
+                 thread_settings: Default::default(),
+             })
+             .await?;
+diff --git a/codex-rs/core/tests/suite/image_rollout.rs b/codex-rs/core/tests/suite/image_rollout.rs
+index 085ca96f3770..5bed09ec5c18 100644
+--- a/codex-rs/core/tests/suite/image_rollout.rs
++++ b/codex-rs/core/tests/suite/image_rollout.rs
+@@ -127,6 +127,8 @@ async fn copy_paste_local_image_persists_rollout_request_shape() -> anyhow::Resu
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(cwd.path().to_path_buf()),
+                 approval_policy: Some(AskForApproval::Never),
+@@ -223,6 +225,8 @@ async fn drag_drop_image_persists_rollout_request_shape() -> anyhow::Result<()>
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(cwd.path().to_path_buf()),
+                 approval_policy: Some(AskForApproval::Never),
+diff --git a/codex-rs/core/tests/suite/items.rs b/codex-rs/core/tests/suite/items.rs
+index 82e01e245183..d83c07c18476 100644
+--- a/codex-rs/core/tests/suite/items.rs
++++ b/codex-rs/core/tests/suite/items.rs
+@@ -58,6 +58,8 @@ fn disabled_plan_turn(
+         environments: None,
+         final_output_json_schema: None,
+         responsesapi_client_metadata: None,
++        mcp_meta_by_server: None,
++        mcp_meta_by_connector: None,
+         thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+             cwd: Some(cwd),
+             approval_policy: Some(AskForApproval::Never),
+@@ -119,6 +121,8 @@ async fn user_message_item_is_emitted() -> anyhow::Result<()> {
+             items: vec![expected_input.clone()],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -178,6 +182,8 @@ async fn assistant_message_item_is_emitted() -> anyhow::Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -239,6 +245,8 @@ async fn reasoning_item_is_emitted() -> anyhow::Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -301,6 +309,8 @@ async fn web_search_item_is_emitted() -> anyhow::Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -381,6 +391,8 @@ async fn image_generation_call_event_is_emitted() -> anyhow::Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -468,6 +480,8 @@ async fn image_generation_call_event_is_emitted_when_image_save_fails() -> anyho
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -524,6 +538,8 @@ async fn agent_message_content_delta_has_item_metadata() -> anyhow::Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -1108,6 +1124,8 @@ async fn reasoning_content_delta_has_item_metadata() -> anyhow::Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -1163,6 +1181,8 @@ async fn reasoning_raw_content_delta_respects_flag() -> anyhow::Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+diff --git a/codex-rs/core/tests/suite/json_result.rs b/codex-rs/core/tests/suite/json_result.rs
+index e81d7aa82a1b..9384640e08e6 100644
+--- a/codex-rs/core/tests/suite/json_result.rs
++++ b/codex-rs/core/tests/suite/json_result.rs
+@@ -83,6 +83,8 @@ async fn codex_returns_json_result(model: String) -> anyhow::Result<()> {
+             environments: None,
+             final_output_json_schema: Some(serde_json::from_str(SCHEMA)?),
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(cwd.path().to_path_buf()),
+                 approval_policy: Some(AskForApproval::Never),
+diff --git a/codex-rs/core/tests/suite/mcp_turn_metadata.rs b/codex-rs/core/tests/suite/mcp_turn_metadata.rs
+index 16e6cbe37de3..3e1aaba951b0 100644
+--- a/codex-rs/core/tests/suite/mcp_turn_metadata.rs
++++ b/codex-rs/core/tests/suite/mcp_turn_metadata.rs
+@@ -63,6 +63,8 @@ async fn submit_user_turn(
+     text: &str,
+     approval_policy: AskForApproval,
+     collaboration_mode: Option<CollaborationMode>,
++    mcp_meta_by_server: Option<HashMap<String, HashMap<String, serde_json::Value>>>,
++    mcp_meta_by_connector: Option<HashMap<String, HashMap<String, serde_json::Value>>>,
+ ) -> Result<()> {
+     let session_model = test.session_configured.model.clone();
+     let (sandbox_policy, permission_profile) =
+@@ -76,6 +78,8 @@ async fn submit_user_turn(
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: mcp_meta_by_server.map(Box::new),
++            mcp_meta_by_connector: mcp_meta_by_connector.map(Box::new),
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(test.cwd.path().to_path_buf()),
+                 approval_policy: Some(approval_policy),
+@@ -146,6 +150,8 @@ async fn approved_mcp_tool_call_metadata_records_prior_user_input_request() -> R
+         "Use [$calendar](app://calendar) to create a calendar event.",
+         AskForApproval::OnRequest,
+         /*collaboration_mode*/ None,
++        /*mcp_meta_by_server*/ None,
++        /*mcp_meta_by_connector*/ None,
+     )
+     .await?;
+ 
+@@ -269,6 +275,8 @@ async fn mcp_tool_call_metadata_records_prior_request_user_input_tool() -> Resul
+                 developer_instructions: None,
+             },
+         }),
++        /*mcp_meta_by_server*/ None,
++        /*mcp_meta_by_connector*/ None,
+     )
+     .await?;
+ 
+@@ -318,3 +326,70 @@ async fn mcp_tool_call_metadata_records_prior_request_user_input_tool() -> Resul
+ 
+     Ok(())
+ }
++
++#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
++async fn mcp_tool_call_receives_turn_metadata_for_selected_connector() -> Result<()> {
++    skip_if_no_network!(Ok(()));
++
++    let server = start_mock_server().await;
++    let apps_server = AppsTestServer::mount(&server).await?;
++    let call_id = "calendar-call-targeted-meta";
++    let calendar_args = serde_json::to_string(&json!({
++        "title": "Lunch",
++        "starts_at": "2026-03-10T12:00:00Z"
++    }))?;
++    mount_sse_sequence(
++        &server,
++        vec![
++            sse(vec![
++                ev_response_created("resp-1"),
++                ev_function_call_with_namespace(
++                    call_id,
++                    SEARCH_CALENDAR_NAMESPACE,
++                    SEARCH_CALENDAR_CREATE_TOOL,
++                    &calendar_args,
++                ),
++                ev_completed("resp-1"),
++            ]),
++            sse(vec![
++                ev_response_created("resp-2"),
++                ev_assistant_message("msg-1", "done"),
++                ev_completed("resp-2"),
++            ]),
++        ],
++    )
++    .await;
++
++    let mut builder = search_capable_apps_builder(apps_server.chatgpt_base_url.clone())
++        .with_config(|config| {
++            set_calendar_approval_mode(config, AppToolApproval::Approve);
++        });
++    let test = builder.build(&server).await?;
++
++    submit_user_turn(
++        &test,
++        "Use [$calendar](app://calendar) to create a calendar event.",
++        AskForApproval::Never,
++        /*collaboration_mode*/ None,
++        /*mcp_meta_by_server*/ None,
++        /*mcp_meta_by_connector*/
++        Some(HashMap::from([(
++            "calendar".to_string(),
++            HashMap::from([("client/location".to_string(), json!({ "country": "US" }))]),
++        )])),
++    )
++    .await?;
++
++    wait_for_event(&test.codex, |event| {
++        matches!(event, EventMsg::TurnComplete(_))
++    })
++    .await;
++
++    let apps_tool_call = recorded_apps_tool_call_by_call_id(&server, call_id).await;
++    assert_eq!(
++        apps_tool_call.pointer("/params/_meta/client~1location/country"),
++        Some(&json!("US"))
++    );
++
++    Ok(())
++}
+diff --git a/codex-rs/core/tests/suite/model_switching.rs b/codex-rs/core/tests/suite/model_switching.rs
+index 009dfda60f52..d39dba745363 100644
+--- a/codex-rs/core/tests/suite/model_switching.rs
++++ b/codex-rs/core/tests/suite/model_switching.rs
+@@ -47,6 +47,8 @@ fn read_only_user_turn(test: &TestCodex, items: Vec<UserInput>, model: String) -
+         environments: None,
+         final_output_json_schema: None,
+         responsesapi_client_metadata: None,
++        mcp_meta_by_server: None,
++        mcp_meta_by_connector: None,
+         thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+             cwd: Some(test.cwd_path().to_path_buf()),
+             approval_policy: Some(AskForApproval::Never),
+diff --git a/codex-rs/core/tests/suite/model_visible_layout.rs b/codex-rs/core/tests/suite/model_visible_layout.rs
+index 17bc0f670371..a748dce56531 100644
+--- a/codex-rs/core/tests/suite/model_visible_layout.rs
++++ b/codex-rs/core/tests/suite/model_visible_layout.rs
+@@ -125,6 +125,8 @@ async fn snapshot_model_visible_layout_turn_overrides() -> Result<()> {
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(first_turn_cwd),
+                 approval_policy: Some(AskForApproval::Never),
+@@ -160,6 +162,8 @@ async fn snapshot_model_visible_layout_turn_overrides() -> Result<()> {
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(preturn_context_diff_cwd),
+                 approval_policy: Some(AskForApproval::OnRequest),
+@@ -249,6 +253,8 @@ async fn snapshot_model_visible_layout_cwd_change_does_not_refresh_agents() -> R
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(cwd_one.clone()),
+                 approval_policy: Some(AskForApproval::Never),
+@@ -282,6 +288,8 @@ async fn snapshot_model_visible_layout_cwd_change_does_not_refresh_agents() -> R
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(cwd_two),
+                 approval_policy: Some(AskForApproval::Never),
+@@ -365,6 +373,8 @@ async fn snapshot_model_visible_layout_resume_with_personality_change() -> Resul
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -406,6 +416,8 @@ async fn snapshot_model_visible_layout_resume_with_personality_change() -> Resul
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(resume_override_cwd),
+                 approval_policy: Some(AskForApproval::Never),
+@@ -479,6 +491,8 @@ async fn snapshot_model_visible_layout_resume_override_matches_rollout_model() -
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -520,6 +534,8 @@ async fn snapshot_model_visible_layout_resume_override_matches_rollout_model() -
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+diff --git a/codex-rs/core/tests/suite/models_cache_ttl.rs b/codex-rs/core/tests/suite/models_cache_ttl.rs
+index 3b729738df38..54f0f774c211 100644
+--- a/codex-rs/core/tests/suite/models_cache_ttl.rs
++++ b/codex-rs/core/tests/suite/models_cache_ttl.rs
+@@ -100,6 +100,8 @@ async fn renews_cache_ttl_on_matching_models_etag() -> Result<()> {
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(test.cwd_path().to_path_buf()),
+                 approval_policy: Some(codex_protocol::protocol::AskForApproval::Never),
+diff --git a/codex-rs/core/tests/suite/models_etag_responses.rs b/codex-rs/core/tests/suite/models_etag_responses.rs
+index 49f34d8644cd..ee3e255d963b 100644
+--- a/codex-rs/core/tests/suite/models_etag_responses.rs
++++ b/codex-rs/core/tests/suite/models_etag_responses.rs
+@@ -112,6 +112,8 @@ async fn refresh_models_on_models_etag_mismatch_and_avoid_duplicate_models_fetch
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(cwd_path),
+                 approval_policy: Some(AskForApproval::Never),
+diff --git a/codex-rs/core/tests/suite/otel.rs b/codex-rs/core/tests/suite/otel.rs
+index 9d2df4e60e79..5a0148b55251 100644
+--- a/codex-rs/core/tests/suite/otel.rs
++++ b/codex-rs/core/tests/suite/otel.rs
+@@ -122,6 +122,8 @@ async fn responses_api_emits_api_request_event() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -168,6 +170,8 @@ async fn process_sse_emits_tracing_for_output_item() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -214,6 +218,8 @@ async fn process_sse_emits_failed_event_on_parse_error() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -261,6 +267,8 @@ async fn process_sse_records_failed_event_when_stream_closes_without_completed()
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -328,6 +336,8 @@ async fn process_sse_failed_event_records_response_error_message() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -393,6 +403,8 @@ async fn process_sse_failed_event_logs_parse_error() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -445,6 +457,8 @@ async fn process_sse_failed_event_logs_missing_error() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -506,6 +520,8 @@ async fn process_sse_failed_event_logs_response_completed_parse_error() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -561,6 +577,8 @@ async fn process_sse_emits_completed_telemetry() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -640,6 +658,8 @@ async fn turn_and_completed_response_spans_record_token_usage() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -728,6 +748,8 @@ async fn handle_responses_span_records_response_kind_and_tool_name() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -822,6 +844,8 @@ async fn record_responses_sets_span_fields_for_response_events() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -911,6 +935,8 @@ async fn handle_response_item_records_tool_result_for_custom_tool_call() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -987,6 +1013,8 @@ async fn handle_response_item_records_tool_result_for_function_call() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -1064,6 +1092,8 @@ async fn handle_response_item_records_tool_result_for_shell_command_call() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -1173,6 +1203,8 @@ async fn handle_shell_command_autoapprove_from_config_records_tool_decision() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -1228,6 +1260,8 @@ async fn handle_shell_command_user_approved_records_tool_decision() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -1298,6 +1332,8 @@ async fn handle_shell_command_user_approved_for_session_records_tool_decision()
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -1368,6 +1404,8 @@ async fn handle_sandbox_error_user_approves_retry_records_tool_decision() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -1438,6 +1476,8 @@ async fn handle_shell_command_user_denies_records_tool_decision() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -1508,6 +1548,8 @@ async fn handle_sandbox_error_user_approves_for_session_records_tool_decision()
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -1579,6 +1621,8 @@ async fn handle_sandbox_error_user_denies_records_tool_decision() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+diff --git a/codex-rs/core/tests/suite/pending_input.rs b/codex-rs/core/tests/suite/pending_input.rs
+index b057b86171be..1548c9a2e9fb 100644
+--- a/codex-rs/core/tests/suite/pending_input.rs
++++ b/codex-rs/core/tests/suite/pending_input.rs
+@@ -103,6 +103,8 @@ async fn submit_user_input(codex: &CodexThread, text: &str) {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -121,6 +123,8 @@ async fn submit_danger_full_access_user_turn(test: &TestCodex, text: &str) {
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(test.config.cwd.to_path_buf()),
+                 approval_policy: Some(AskForApproval::Never),
+@@ -150,6 +154,8 @@ async fn steer_user_input(codex: &CodexThread, text: &str) {
+             }],
+             /*expected_turn_id*/ None,
+             /*responsesapi_client_metadata*/ None,
++            /*mcp_meta_by_server*/ None,
++            /*mcp_meta_by_connector*/ None,
+         )
+         .await
+         .unwrap_or_else(|err| panic!("steer user input: {err:?}"));
+@@ -291,6 +297,8 @@ async fn injected_user_input_triggers_follow_up_request_with_deltas() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -310,6 +318,8 @@ async fn injected_user_input_triggers_follow_up_request_with_deltas() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+diff --git a/codex-rs/core/tests/suite/permissions_messages.rs b/codex-rs/core/tests/suite/permissions_messages.rs
+index b77e65c0f526..8abab4066c70 100644
+--- a/codex-rs/core/tests/suite/permissions_messages.rs
++++ b/codex-rs/core/tests/suite/permissions_messages.rs
+@@ -58,6 +58,8 @@ async fn permissions_message_sent_once_on_start() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -98,6 +100,8 @@ async fn permissions_message_added_on_override_change() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -121,6 +125,8 @@ async fn permissions_message_added_on_override_change() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -167,6 +173,8 @@ async fn permissions_message_not_added_when_no_change() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -181,6 +189,8 @@ async fn permissions_message_not_added_when_no_change() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -227,6 +237,8 @@ async fn permissions_message_omitted_when_disabled() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -250,6 +262,8 @@ async fn permissions_message_omitted_when_disabled() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -309,6 +323,8 @@ async fn resume_replays_permissions_messages() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -333,6 +349,8 @@ async fn resume_replays_permissions_messages() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -349,6 +367,8 @@ async fn resume_replays_permissions_messages() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -409,6 +429,8 @@ async fn resume_and_fork_append_permissions_messages() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -433,6 +455,8 @@ async fn resume_and_fork_append_permissions_messages() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -455,6 +479,8 @@ async fn resume_and_fork_append_permissions_messages() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -491,6 +517,8 @@ async fn resume_and_fork_append_permissions_messages() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -552,6 +580,8 @@ async fn permissions_message_includes_writable_roots() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+diff --git a/codex-rs/core/tests/suite/personality.rs b/codex-rs/core/tests/suite/personality.rs
+index bbe8178f8d8c..ebd529baed01 100644
+--- a/codex-rs/core/tests/suite/personality.rs
++++ b/codex-rs/core/tests/suite/personality.rs
+@@ -68,6 +68,8 @@ fn read_only_text_turn_with_personality(
+         environments: None,
+         final_output_json_schema: None,
+         responsesapi_client_metadata: None,
++        mcp_meta_by_server: None,
++        mcp_meta_by_connector: None,
+         thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+             cwd: Some(test.cwd_path().to_path_buf()),
+             approval_policy: Some(approval_policy),
+diff --git a/codex-rs/core/tests/suite/plugins.rs b/codex-rs/core/tests/suite/plugins.rs
+index 45fdf3df0764..23d93522d65f 100644
+--- a/codex-rs/core/tests/suite/plugins.rs
++++ b/codex-rs/core/tests/suite/plugins.rs
+@@ -227,6 +227,8 @@ async fn capability_sections_render_in_developer_message_in_order() -> Result<()
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -306,6 +308,8 @@ async fn explicit_plugin_mentions_inject_plugin_guidance() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -388,6 +392,8 @@ async fn explicit_plugin_mentions_track_plugin_used_analytics() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+diff --git a/codex-rs/core/tests/suite/prompt_caching.rs b/codex-rs/core/tests/suite/prompt_caching.rs
+index a4b337f05935..911a68a9090c 100644
+--- a/codex-rs/core/tests/suite/prompt_caching.rs
++++ b/codex-rs/core/tests/suite/prompt_caching.rs
+@@ -153,6 +153,8 @@ async fn prompt_tools_are_consistent_across_requests() -> anyhow::Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -167,6 +169,8 @@ async fn prompt_tools_are_consistent_across_requests() -> anyhow::Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -247,6 +251,8 @@ async fn gpt_5_tools_without_apply_patch_append_apply_patch_instructions() -> an
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -261,6 +267,8 @@ async fn gpt_5_tools_without_apply_patch_append_apply_patch_instructions() -> an
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -326,6 +334,8 @@ async fn prefixes_context_and_instructions_once_and_consistently_across_requests
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -340,6 +350,8 @@ async fn prefixes_context_and_instructions_once_and_consistently_across_requests
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -423,6 +435,8 @@ async fn overrides_turn_context_but_keeps_cached_prefix_and_key_constant() -> an
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -461,6 +475,8 @@ async fn overrides_turn_context_but_keeps_cached_prefix_and_key_constant() -> an
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -542,6 +558,8 @@ async fn override_before_first_turn_emits_environment_context() -> anyhow::Resul
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -696,6 +714,8 @@ async fn per_turn_overrides_keep_cached_prefix_and_key_constant() -> anyhow::Res
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -721,6 +741,8 @@ async fn per_turn_overrides_keep_cached_prefix_and_key_constant() -> anyhow::Res
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(new_cwd.path().to_path_buf()),
+                 approval_policy: Some(AskForApproval::Never),
+@@ -835,6 +857,8 @@ async fn send_user_turn_with_no_changes_does_not_send_environment_context() -> a
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(default_cwd.to_path_buf()),
+                 approval_policy: Some(default_approval_policy),
+@@ -863,6 +887,8 @@ async fn send_user_turn_with_no_changes_does_not_send_environment_context() -> a
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(default_cwd.to_path_buf()),
+                 approval_policy: Some(default_approval_policy),
+@@ -974,6 +1000,8 @@ async fn send_user_turn_with_changes_sends_environment_context() -> anyhow::Resu
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(default_cwd.to_path_buf()),
+                 approval_policy: Some(default_approval_policy),
+@@ -1004,6 +1032,8 @@ async fn send_user_turn_with_changes_sends_environment_context() -> anyhow::Resu
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(default_cwd.to_path_buf()),
+                 approval_policy: Some(AskForApproval::Never),
+diff --git a/codex-rs/core/tests/suite/quota_exceeded.rs b/codex-rs/core/tests/suite/quota_exceeded.rs
+index 413855f64132..be9658414ad2 100644
+--- a/codex-rs/core/tests/suite/quota_exceeded.rs
++++ b/codex-rs/core/tests/suite/quota_exceeded.rs
+@@ -48,6 +48,8 @@ async fn quota_exceeded_emits_single_error_event() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+diff --git a/codex-rs/core/tests/suite/realtime_conversation.rs b/codex-rs/core/tests/suite/realtime_conversation.rs
+index 232d2380b0a1..f6df1c806920 100644
+--- a/codex-rs/core/tests/suite/realtime_conversation.rs
++++ b/codex-rs/core/tests/suite/realtime_conversation.rs
+@@ -2168,6 +2168,8 @@ async fn conversation_user_text_turn_is_sent_to_realtime_when_active() -> Result
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -2303,6 +2305,8 @@ async fn conversation_user_text_turn_is_capped_when_mirrored_to_realtime() -> Re
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -3499,6 +3503,8 @@ async fn inbound_handoff_request_steers_active_turn() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+diff --git a/codex-rs/core/tests/suite/remote_env.rs b/codex-rs/core/tests/suite/remote_env.rs
+index 873796ff6ced..b80065058f58 100644
+--- a/codex-rs/core/tests/suite/remote_env.rs
++++ b/codex-rs/core/tests/suite/remote_env.rs
+@@ -75,6 +75,8 @@ async fn submit_turn_with_approval_and_environments(
+             environments: Some(environments),
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(test.cwd.path().to_path_buf()),
+                 approval_policy: Some(AskForApproval::OnRequest),
+diff --git a/codex-rs/core/tests/suite/remote_models.rs b/codex-rs/core/tests/suite/remote_models.rs
+index e143cb8e3ed9..ad58efc3899c 100644
+--- a/codex-rs/core/tests/suite/remote_models.rs
++++ b/codex-rs/core/tests/suite/remote_models.rs
+@@ -160,6 +160,8 @@ async fn remote_models_config_context_window_override_clamps_to_max_context_wind
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -227,6 +229,8 @@ async fn remote_models_config_override_above_max_uses_max_context_window() -> Re
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -293,6 +297,8 @@ async fn remote_models_use_context_window_when_config_override_is_absent() -> Re
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -372,6 +378,8 @@ async fn remote_models_long_model_slug_is_sent_with_high_reasoning() -> Result<(
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -422,6 +430,8 @@ async fn namespaced_model_slug_uses_catalog_metadata_without_fallback_warning()
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -574,6 +584,8 @@ async fn remote_models_remote_model_uses_unified_exec() -> Result<()> {
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(cwd_path),
+                 approval_policy: Some(AskForApproval::Never),
+@@ -796,6 +808,8 @@ async fn remote_models_apply_remote_base_instructions() -> Result<()> {
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(cwd_path),
+                 approval_policy: Some(AskForApproval::Never),
+diff --git a/codex-rs/core/tests/suite/request_compression.rs b/codex-rs/core/tests/suite/request_compression.rs
+index 2d66389d5347..a478f20e9913 100644
+--- a/codex-rs/core/tests/suite/request_compression.rs
++++ b/codex-rs/core/tests/suite/request_compression.rs
+@@ -47,6 +47,8 @@ async fn request_body_is_zstd_compressed_for_codex_backend_when_enabled() -> any
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -97,6 +99,8 @@ async fn request_body_is_not_compressed_for_api_key_auth_even_when_enabled() ->
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+diff --git a/codex-rs/core/tests/suite/request_permissions.rs b/codex-rs/core/tests/suite/request_permissions.rs
+index 98001046859a..dddac2270a9a 100644
+--- a/codex-rs/core/tests/suite/request_permissions.rs
++++ b/codex-rs/core/tests/suite/request_permissions.rs
+@@ -198,6 +198,8 @@ async fn submit_turn(
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(test.cwd.path().to_path_buf()),
+                 approval_policy: Some(approval_policy),
+diff --git a/codex-rs/core/tests/suite/request_permissions_tool.rs b/codex-rs/core/tests/suite/request_permissions_tool.rs
+index 84e101e73ae0..6661933dab30 100644
+--- a/codex-rs/core/tests/suite/request_permissions_tool.rs
++++ b/codex-rs/core/tests/suite/request_permissions_tool.rs
+@@ -150,6 +150,8 @@ async fn submit_turn(
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(test.cwd.path().to_path_buf()),
+                 approval_policy: Some(approval_policy),
+diff --git a/codex-rs/core/tests/suite/request_user_input.rs b/codex-rs/core/tests/suite/request_user_input.rs
+index e0ec684797de..0f5d5fd58742 100644
+--- a/codex-rs/core/tests/suite/request_user_input.rs
++++ b/codex-rs/core/tests/suite/request_user_input.rs
+@@ -144,6 +144,8 @@ async fn request_user_input_round_trip_for_mode(mode: ModeKind) -> anyhow::Resul
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(cwd.path().to_path_buf()),
+                 approval_policy: Some(AskForApproval::Never),
+@@ -287,6 +289,8 @@ async fn request_user_input_interrupt_emits_deferred_token_count() -> anyhow::Re
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(cwd.path().to_path_buf()),
+                 approval_policy: Some(AskForApproval::Never),
+@@ -391,6 +395,8 @@ where
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(cwd.path().to_path_buf()),
+                 approval_policy: Some(AskForApproval::Never),
+diff --git a/codex-rs/core/tests/suite/responses_api_proxy_headers.rs b/codex-rs/core/tests/suite/responses_api_proxy_headers.rs
+index c18b4319844f..e51f60570c09 100644
+--- a/codex-rs/core/tests/suite/responses_api_proxy_headers.rs
++++ b/codex-rs/core/tests/suite/responses_api_proxy_headers.rs
+@@ -143,6 +143,8 @@ async fn submit_turn_with_timeout(test: &TestCodex, prompt: &str) -> Result<()>
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(cwd),
+                 approval_policy: Some(AskForApproval::OnRequest),
+diff --git a/codex-rs/core/tests/suite/resume.rs b/codex-rs/core/tests/suite/resume.rs
+index fc7a23215f82..ef2976c14365 100644
+--- a/codex-rs/core/tests/suite/resume.rs
++++ b/codex-rs/core/tests/suite/resume.rs
+@@ -93,6 +93,8 @@ async fn resume_includes_initial_messages_from_rollout_events() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -179,6 +181,8 @@ async fn resume_includes_initial_messages_from_reasoning_events() -> Result<()>
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -269,6 +273,8 @@ async fn resume_switches_models_preserves_base_instructions() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -312,6 +318,8 @@ async fn resume_switches_models_preserves_base_instructions() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -330,6 +338,8 @@ async fn resume_switches_models_preserves_base_instructions() -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -403,6 +413,8 @@ async fn resume_model_switch_is_not_duplicated_after_pre_turn_override() -> Resu
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -441,6 +453,8 @@ async fn resume_model_switch_is_not_duplicated_after_pre_turn_override() -> Resu
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+diff --git a/codex-rs/core/tests/suite/review.rs b/codex-rs/core/tests/suite/review.rs
+index 05ec967d09d5..4bcaf915fa54 100644
+--- a/codex-rs/core/tests/suite/review.rs
++++ b/codex-rs/core/tests/suite/review.rs
+@@ -684,6 +684,8 @@ async fn review_history_surfaces_in_parent_session() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+diff --git a/codex-rs/core/tests/suite/rmcp_client.rs b/codex-rs/core/tests/suite/rmcp_client.rs
+index 210c287c2f47..659c73e64622 100644
+--- a/codex-rs/core/tests/suite/rmcp_client.rs
++++ b/codex-rs/core/tests/suite/rmcp_client.rs
+@@ -113,6 +113,8 @@ fn read_only_user_turn_with_model(
+         environments: None,
+         final_output_json_schema: None,
+         responsesapi_client_metadata: None,
++        mcp_meta_by_server: None,
++        mcp_meta_by_connector: None,
+         thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+             cwd: Some(cwd),
+             approval_policy: Some(AskForApproval::Never),
+diff --git a/codex-rs/core/tests/suite/safety_check_downgrade.rs b/codex-rs/core/tests/suite/safety_check_downgrade.rs
+index ab985ce0f798..42bf1fd58952 100644
+--- a/codex-rs/core/tests/suite/safety_check_downgrade.rs
++++ b/codex-rs/core/tests/suite/safety_check_downgrade.rs
+@@ -45,6 +45,8 @@ fn disabled_text_turn(test: &TestCodex, text: &str) -> Op {
+         environments: None,
+         final_output_json_schema: None,
+         responsesapi_client_metadata: None,
++        mcp_meta_by_server: None,
++        mcp_meta_by_connector: None,
+         thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+             cwd: Some(test.cwd_path().to_path_buf()),
+             approval_policy: Some(AskForApproval::Never),
+diff --git a/codex-rs/core/tests/suite/search_tool.rs b/codex-rs/core/tests/suite/search_tool.rs
+index 706ff4871e05..ed4824132b8b 100644
+--- a/codex-rs/core/tests/suite/search_tool.rs
++++ b/codex-rs/core/tests/suite/search_tool.rs
+@@ -452,6 +452,8 @@ async fn tool_search_returns_deferred_tools_without_follow_up_tool_injection() -
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -865,6 +867,8 @@ async fn tool_search_returns_deferred_dynamic_tool_and_routes_follow_up_call() -
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -1173,6 +1177,8 @@ async fn tool_search_surfaced_mcp_tool_errors_are_returned_to_model() -> Result<
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+@@ -1493,6 +1499,8 @@ async fn tool_search_matches_dynamic_tools_by_name_description_namespace_and_sch
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+diff --git a/codex-rs/core/tests/suite/shell_snapshot.rs b/codex-rs/core/tests/suite/shell_snapshot.rs
+index 14241ffafb6f..431957bfa150 100644
+--- a/codex-rs/core/tests/suite/shell_snapshot.rs
++++ b/codex-rs/core/tests/suite/shell_snapshot.rs
+@@ -167,6 +167,8 @@ async fn run_snapshot_command_with_options(
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(cwd),
+                 approval_policy: Some(AskForApproval::Never),
+@@ -267,6 +269,8 @@ async fn run_shell_command_snapshot_with_options(
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(cwd),
+                 approval_policy: Some(AskForApproval::Never),
+@@ -347,6 +351,8 @@ async fn run_tool_turn_on_harness(
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(cwd),
+                 approval_policy: Some(AskForApproval::Never),
+@@ -590,6 +596,8 @@ async fn shell_command_snapshot_still_intercepts_apply_patch() -> Result<()> {
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(cwd.clone()),
+                 approval_policy: Some(AskForApproval::Never),
+diff --git a/codex-rs/core/tests/suite/skill_approval.rs b/codex-rs/core/tests/suite/skill_approval.rs
+index ad8ad6a91a57..b258154fe6c9 100644
+--- a/codex-rs/core/tests/suite/skill_approval.rs
++++ b/codex-rs/core/tests/suite/skill_approval.rs
+@@ -54,6 +54,8 @@ async fn submit_turn_with_policies(
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(test.cwd_path().to_path_buf()),
+                 approval_policy: Some(approval_policy),
+diff --git a/codex-rs/core/tests/suite/skills.rs b/codex-rs/core/tests/suite/skills.rs
+index 9173f60c4a7a..cee3ad1e8920 100644
+--- a/codex-rs/core/tests/suite/skills.rs
++++ b/codex-rs/core/tests/suite/skills.rs
+@@ -88,6 +88,8 @@ async fn user_turn_includes_skill_instructions() -> Result<()> {
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(test.config.cwd.to_path_buf()),
+                 approval_policy: Some(AskForApproval::Never),
+diff --git a/codex-rs/core/tests/suite/sqlite_state.rs b/codex-rs/core/tests/suite/sqlite_state.rs
+index f576e55a3d02..e159992ffb33 100644
+--- a/codex-rs/core/tests/suite/sqlite_state.rs
++++ b/codex-rs/core/tests/suite/sqlite_state.rs
+@@ -413,6 +413,8 @@ async fn mcp_call_marks_thread_memory_mode_polluted_when_configured() -> Result<
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(cwd),
+                 approval_policy: Some(AskForApproval::Never),
+diff --git a/codex-rs/core/tests/suite/stream_error_allows_next_turn.rs b/codex-rs/core/tests/suite/stream_error_allows_next_turn.rs
+index 5709cdd12b89..f22360c8fea0 100644
+--- a/codex-rs/core/tests/suite/stream_error_allows_next_turn.rs
++++ b/codex-rs/core/tests/suite/stream_error_allows_next_turn.rs
+@@ -101,6 +101,8 @@ async fn continue_after_stream_error() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+@@ -123,6 +125,8 @@ async fn continue_after_stream_error() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+diff --git a/codex-rs/core/tests/suite/stream_no_completed.rs b/codex-rs/core/tests/suite/stream_no_completed.rs
+index 40763960f40c..66959fc837c0 100644
+--- a/codex-rs/core/tests/suite/stream_no_completed.rs
++++ b/codex-rs/core/tests/suite/stream_no_completed.rs
+@@ -83,6 +83,8 @@ async fn retries_on_early_close() {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+diff --git a/codex-rs/core/tests/suite/tool_harness.rs b/codex-rs/core/tests/suite/tool_harness.rs
+index 2227e5b34e1e..329f8a9ae2da 100644
+--- a/codex-rs/core/tests/suite/tool_harness.rs
++++ b/codex-rs/core/tests/suite/tool_harness.rs
+@@ -110,6 +110,8 @@ async fn shell_command_tool_executes_command_and_streams_output() -> anyhow::Res
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(cwd_path),
+                 approval_policy: Some(AskForApproval::Never),
+@@ -191,6 +193,8 @@ async fn update_plan_tool_emits_plan_update_event() -> anyhow::Result<()> {
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(cwd_path),
+                 approval_policy: Some(AskForApproval::Never),
+@@ -282,6 +286,8 @@ async fn update_plan_tool_rejects_malformed_payload() -> anyhow::Result<()> {
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(cwd_path),
+                 approval_policy: Some(AskForApproval::Never),
+@@ -383,6 +389,8 @@ async fn apply_patch_tool_executes_and_emits_patch_events() -> anyhow::Result<()
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(cwd_path),
+                 approval_policy: Some(AskForApproval::Never),
+@@ -521,6 +529,8 @@ async fn apply_patch_reports_parse_diagnostics() -> anyhow::Result<()> {
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(cwd_path),
+                 approval_policy: Some(AskForApproval::Never),
+diff --git a/codex-rs/core/tests/suite/tool_parallelism.rs b/codex-rs/core/tests/suite/tool_parallelism.rs
+index 6663991e0203..115ae445a7c8 100644
+--- a/codex-rs/core/tests/suite/tool_parallelism.rs
++++ b/codex-rs/core/tests/suite/tool_parallelism.rs
+@@ -45,6 +45,8 @@ async fn run_turn(test: &TestCodex, prompt: &str) -> anyhow::Result<()> {
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(test.cwd.path().to_path_buf()),
+                 approval_policy: Some(AskForApproval::Never),
+@@ -371,6 +373,8 @@ async fn shell_tools_start_before_response_completed_when_stream_delayed() -> an
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(test.cwd.path().to_path_buf()),
+                 approval_policy: Some(AskForApproval::Never),
+diff --git a/codex-rs/core/tests/suite/truncation.rs b/codex-rs/core/tests/suite/truncation.rs
+index be9267934d61..fe76f55cd29c 100644
+--- a/codex-rs/core/tests/suite/truncation.rs
++++ b/codex-rs/core/tests/suite/truncation.rs
+@@ -523,6 +523,8 @@ async fn mcp_image_output_preserves_image_and_no_text_summary() -> Result<()> {
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(fixture.cwd.path().to_path_buf()),
+                 approval_policy: Some(AskForApproval::Never),
+diff --git a/codex-rs/core/tests/suite/unified_exec.rs b/codex-rs/core/tests/suite/unified_exec.rs
+index 9eb831b084d7..555b2059402f 100644
+--- a/codex-rs/core/tests/suite/unified_exec.rs
++++ b/codex-rs/core/tests/suite/unified_exec.rs
+@@ -200,6 +200,8 @@ async fn submit_unified_exec_turn(
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(test.config.cwd.to_path_buf()),
+                 approval_policy: Some(AskForApproval::Never),
+@@ -291,6 +293,8 @@ async fn unified_exec_intercepts_apply_patch_exec_command() -> Result<()> {
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(cwd),
+                 approval_policy: Some(AskForApproval::Never),
+@@ -2146,6 +2150,8 @@ async fn unified_exec_keeps_long_running_session_after_turn_end() -> Result<()>
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(turn_cwd),
+                 approval_policy: Some(AskForApproval::Never),
+@@ -2249,6 +2255,8 @@ async fn unified_exec_interrupt_preserves_long_running_session() -> Result<()> {
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(turn_cwd),
+                 approval_policy: Some(AskForApproval::Never),
+@@ -2721,6 +2729,8 @@ async fn unified_exec_runs_under_sandbox() -> Result<()> {
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(turn_cwd),
+                 approval_policy: Some(AskForApproval::Never),
+@@ -2843,6 +2853,8 @@ async fn unified_exec_enforces_glob_deny_read_policy() -> Result<()> {
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(turn_cwd),
+                 approval_policy: Some(AskForApproval::Never),
+@@ -2981,6 +2993,8 @@ async fn unified_exec_python_prompt_under_seatbelt() -> Result<()> {
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(turn_cwd),
+                 approval_policy: Some(AskForApproval::Never),
+diff --git a/codex-rs/core/tests/suite/user_notification.rs b/codex-rs/core/tests/suite/user_notification.rs
+index 343afd8d533f..b3902fd3ab76 100644
+--- a/codex-rs/core/tests/suite/user_notification.rs
++++ b/codex-rs/core/tests/suite/user_notification.rs
+@@ -64,6 +64,8 @@ mv "${tmp_path}" "${payload_path}""#,
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+diff --git a/codex-rs/core/tests/suite/user_shell_cmd.rs b/codex-rs/core/tests/suite/user_shell_cmd.rs
+index 536ee7b49593..eb8afd157138 100644
+--- a/codex-rs/core/tests/suite/user_shell_cmd.rs
++++ b/codex-rs/core/tests/suite/user_shell_cmd.rs
+@@ -182,6 +182,8 @@ async fn user_shell_command_does_not_replace_active_turn() -> anyhow::Result<()>
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(cwd),
+                 approval_policy: Some(AskForApproval::Never),
+diff --git a/codex-rs/core/tests/suite/view_image.rs b/codex-rs/core/tests/suite/view_image.rs
+index 6306b88b8f19..977b00e7d4d0 100644
+--- a/codex-rs/core/tests/suite/view_image.rs
++++ b/codex-rs/core/tests/suite/view_image.rs
+@@ -77,6 +77,8 @@ fn disabled_user_turn(test: &TestCodex, items: Vec<UserInput>, model: String) ->
+         environments: None,
+         final_output_json_schema: None,
+         responsesapi_client_metadata: None,
++        mcp_meta_by_server: None,
++        mcp_meta_by_connector: None,
+         thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+             cwd: Some(test.config.cwd.to_path_buf()),
+             approval_policy: Some(AskForApproval::Never),
+diff --git a/codex-rs/core/tests/suite/websocket_fallback.rs b/codex-rs/core/tests/suite/websocket_fallback.rs
+index 32a6e30caff3..f6001132a09f 100644
+--- a/codex-rs/core/tests/suite/websocket_fallback.rs
++++ b/codex-rs/core/tests/suite/websocket_fallback.rs
+@@ -160,6 +160,8 @@ async fn websocket_fallback_hides_first_websocket_retry_stream_error() -> Result
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                 cwd: Some(cwd.path().to_path_buf()),
+                 approval_policy: Some(AskForApproval::Never),
+diff --git a/codex-rs/core/tests/suite/window_headers.rs b/codex-rs/core/tests/suite/window_headers.rs
+index 76fcacf7a99e..10f173378633 100644
+--- a/codex-rs/core/tests/suite/window_headers.rs
++++ b/codex-rs/core/tests/suite/window_headers.rs
+@@ -112,6 +112,8 @@ async fn submit_user_turn(codex: &Arc<CodexThread>, text: &str) -> Result<()> {
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await?;
+diff --git a/codex-rs/mcp-server/src/codex_tool_runner.rs b/codex-rs/mcp-server/src/codex_tool_runner.rs
+index 167d56da5bf9..79adddd7393d 100644
+--- a/codex-rs/mcp-server/src/codex_tool_runner.rs
++++ b/codex-rs/mcp-server/src/codex_tool_runner.rs
+@@ -116,6 +116,8 @@ pub async fn run_codex_tool_session(
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         },
+         trace: None,
+@@ -166,6 +168,8 @@ pub async fn run_codex_tool_session_reply(
+             }],
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await
+diff --git a/codex-rs/memories/write/src/runtime.rs b/codex-rs/memories/write/src/runtime.rs
+index b1ffb2d215f7..d73c8fc243a0 100644
+--- a/codex-rs/memories/write/src/runtime.rs
++++ b/codex-rs/memories/write/src/runtime.rs
+@@ -261,6 +261,8 @@ impl MemoryStartupContext {
+                 environments: None,
+                 final_output_json_schema: None,
+                 responsesapi_client_metadata: None,
++                mcp_meta_by_server: None,
++                mcp_meta_by_connector: None,
+                 thread_settings: Default::default(),
+             })
+             .await
+diff --git a/codex-rs/protocol/src/protocol.rs b/codex-rs/protocol/src/protocol.rs
+index 2647d3a87886..4c98fb250edf 100644
+--- a/codex-rs/protocol/src/protocol.rs
++++ b/codex-rs/protocol/src/protocol.rs
+@@ -513,6 +513,12 @@ pub enum Op {
+         /// Optional turn-scoped Responses API `client_metadata`.
+         #[serde(default, skip_serializing_if = "Option::is_none")]
+         responsesapi_client_metadata: Option<HashMap<String, String>>,
++        /// Optional turn-scoped MCP request metadata keyed by configured custom server name.
++        #[serde(default, skip_serializing_if = "Option::is_none")]
++        mcp_meta_by_server: Option<Box<HashMap<String, HashMap<String, Value>>>>,
++        /// Optional turn-scoped MCP request metadata keyed by app connector id.
++        #[serde(default, skip_serializing_if = "Option::is_none")]
++        mcp_meta_by_connector: Option<Box<HashMap<String, HashMap<String, Value>>>>,
+ 
+         /// Persistent thread-settings overrides to apply before the input.
+         #[serde(default, flatten)]
+@@ -655,6 +661,8 @@ impl From<Vec<UserInput>> for Op {
+             items: value,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: ThreadSettingsOverrides::default(),
+         }
+     }
+@@ -4924,6 +4932,8 @@ mod tests {
+             items: Vec::new(),
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         };
+ 
+@@ -4944,6 +4954,8 @@ mod tests {
+                 items: Vec::new(),
+                 final_output_json_schema: None,
+                 responsesapi_client_metadata: None,
++                mcp_meta_by_server: None,
++                mcp_meta_by_connector: None,
+                 thread_settings: Default::default(),
+             }
+         );
+@@ -4966,6 +4978,8 @@ mod tests {
+             items: Vec::new(),
+             final_output_json_schema: Some(schema.clone()),
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         };
+ 
+@@ -4992,6 +5006,8 @@ mod tests {
+                 "fiber_run_id".to_string(),
+                 "fiber-123".to_string(),
+             )])),
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         };
+ 
+@@ -5011,6 +5027,47 @@ mod tests {
+         Ok(())
+     }
+ 
++    #[test]
++    fn user_input_with_mcp_metadata_round_trips() -> Result<()> {
++        let op = Op::UserInput {
++            environments: None,
++            items: Vec::new(),
++            final_output_json_schema: None,
++            responsesapi_client_metadata: None,
++            mcp_meta_by_server: Some(Box::new(HashMap::from([(
++                "search_service".to_string(),
++                HashMap::from([("client/location".to_string(), json!({ "country": "US" }))]),
++            )]))),
++            mcp_meta_by_connector: Some(Box::new(HashMap::from([(
++                "connector_openai_search_service".to_string(),
++                HashMap::from([("client/location".to_string(), json!({ "country": "CA" }))]),
++            )]))),
++            thread_settings: Default::default(),
++        };
++
++        let json_op = serde_json::to_value(&op)?;
++        assert_eq!(
++            json_op,
++            json!({
++                "type": "user_input",
++                "items": [],
++                "mcp_meta_by_server": {
++                    "search_service": {
++                        "client/location": { "country": "US" },
++                    }
++                },
++                "mcp_meta_by_connector": {
++                    "connector_openai_search_service": {
++                        "client/location": { "country": "CA" },
++                    }
++                }
++            })
++        );
++        assert_eq!(serde_json::from_value::<Op>(json_op)?, op);
++
++        Ok(())
++    }
++
+     #[test]
+     fn user_input_text_serializes_empty_text_elements() -> Result<()> {
+         let input = UserInput::Text {
+diff --git a/codex-rs/rollout-trace/src/lib.rs b/codex-rs/rollout-trace/src/lib.rs
+index 54094f0525b3..6e9d41440b54 100644
+--- a/codex-rs/rollout-trace/src/lib.rs
++++ b/codex-rs/rollout-trace/src/lib.rs
+@@ -35,6 +35,7 @@ pub use inference::InferenceTraceAttempt;
+ /// Shared recorder context for inference attempts within one Codex turn.
+ pub use inference::InferenceTraceContext;
+ /// Trace-owned MCP execution correlation propagated to bridge request metadata.
++pub use mcp::MCP_CALL_ID_META_KEY;
+ pub use mcp::McpCallTraceContext;
+ /// Public reduced trace model returned by replay.
+ pub use model::*;
+diff --git a/codex-rs/rollout-trace/src/mcp.rs b/codex-rs/rollout-trace/src/mcp.rs
+index b8564e1579bf..f9b3976408c9 100644
+--- a/codex-rs/rollout-trace/src/mcp.rs
++++ b/codex-rs/rollout-trace/src/mcp.rs
+@@ -7,7 +7,7 @@
+ use crate::McpCallId;
+ use serde_json::Value as JsonValue;
+ 
+-const MCP_CALL_ID_META_KEY: &str = "codex_bridge_mcp_call_id";
++pub const MCP_CALL_ID_META_KEY: &str = "codex_bridge_mcp_call_id";
+ 
+ /// No-op capable handle for one concrete MCP backend call.
+ #[derive(Clone, Debug)]
+diff --git a/codex-rs/thread-manager-sample/src/main.rs b/codex-rs/thread-manager-sample/src/main.rs
+index 9fdd6db90fb1..78f5360fac4e 100644
+--- a/codex-rs/thread-manager-sample/src/main.rs
++++ b/codex-rs/thread-manager-sample/src/main.rs
+@@ -298,6 +298,8 @@ async fn run_turn(thread: &CodexThread, thread_id: &str, prompt: String) -> anyh
+             environments: None,
+             final_output_json_schema: None,
+             responsesapi_client_metadata: None,
++            mcp_meta_by_server: None,
++            mcp_meta_by_connector: None,
+             thread_settings: Default::default(),
+         })
+         .await

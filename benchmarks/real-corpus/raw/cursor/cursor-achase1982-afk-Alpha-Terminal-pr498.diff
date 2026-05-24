@@ -1,0 +1,286 @@
+diff --git a/artifacts/alpha-terminal/src/components/MoversFeed.tsx b/artifacts/alpha-terminal/src/components/MoversFeed.tsx
+index 6e5b6e50..e825846e 100644
+--- a/artifacts/alpha-terminal/src/components/MoversFeed.tsx
++++ b/artifacts/alpha-terminal/src/components/MoversFeed.tsx
+@@ -39,6 +39,7 @@ const VALID_CATALYST_TYPES = new Set<MoversCatalystType>([
+   "EARNINGS",
+   "MA",
+   "SECTOR",
++  "UNKNOWN",
+   "NONE",
+ ]);
+ const POSTURE_COLORS: Record<MoversPosture, string> = {
+@@ -54,12 +55,12 @@ const CATALYST_TYPE_LABELS: Record<MoversCatalystType, string> = {
+   EARNINGS: "EARNINGS",
+   MA: "M&A",
+   SECTOR: "SECTOR",
++  UNKNOWN: "NO CATALYST",
+   NONE: "NO CATALYST",
+ };
+ 
+-/** Collapsed row: chevron | ticker | price | % change | catalyst | posture */
+-const COLLAPSED_GRID =
+-  "20px 52px 64px 72px minmax(0, 1fr) 72px";
++/** Collapsed row: chevron | ticker | price | % change | catalyst */
++const COLLAPSED_GRID = "20px 52px 64px 72px minmax(0, 1fr)";
+ 
+ /** Coerce legacy feed rows (pre–lazy-read) onto the current Situation shape. */
+ function normalizeSituation(raw: Situation & { read?: string; posture?: string; confidence?: string }): Situation {
+@@ -222,12 +223,6 @@ function MoversListHeader({
+       >
+         Catalyst
+       </span>
+-      <span
+-        className="font-mono tracking-wider text-right pr-1"
+-        style={{ color: MUTED, fontSize: ROW_FONT_PX }}
+-      >
+-        Posture
+-      </span>
+     </div>
+   );
+ }
+@@ -366,10 +361,6 @@ function SituationCard({
+   const up = t.changePct >= 0;
+   const isCluster = situation.kind === "cluster";
+   const cachedRead = sessionRead.get(situation.id);
+-  const postureLabel = cachedRead?.posture ?? "—";
+-  const postureColor = cachedRead?.posture
+-    ? (POSTURE_COLORS[cachedRead.posture] ?? GOLD)
+-    : TEXT_SECONDARY;
+ 
+   useEffect(() => {
+     if (!expanded || cachedRead) return;
+@@ -435,17 +426,6 @@ function SituationCard({
+           {fmtPct(t.changePct)}
+         </span>
+         <CatalystTypeLabel type={situation.catalystType} />
+-        <span
+-          className="font-mono font-bold tracking-wide px-1.5 py-0.5 rounded justify-self-end truncate"
+-          style={{
+-            fontSize: MIN_FONT_PX,
+-            background: cachedRead ? `${postureColor}18` : "transparent",
+-            color: postureColor,
+-            border: cachedRead ? `1px solid ${postureColor}44` : `1px solid ${BORDER}`,
+-          }}
+-        >
+-          {postureLabel}
+-        </span>
+       </button>
+       {expanded && (
+         <div className="px-3 pb-3 pt-1 space-y-2" style={{ paddingLeft: 36 }}>
+diff --git a/artifacts/api-server/src/lib/movers/__tests__/catalystKeywords.test.ts b/artifacts/api-server/src/lib/movers/__tests__/catalystKeywords.test.ts
+index 1f4c9154..370e2432 100644
+--- a/artifacts/api-server/src/lib/movers/__tests__/catalystKeywords.test.ts
++++ b/artifacts/api-server/src/lib/movers/__tests__/catalystKeywords.test.ts
+@@ -1,5 +1,8 @@
+ import { describe, expect, it } from "vitest";
+-import { classifyCatalystTypeFromHeadline } from "@workspace/movers-types";
++import {
++  classifyCatalystTypeFromHeadline,
++  headlineMatchesKeyword,
++} from "@workspace/movers-types";
+ 
+ describe("classifyCatalystTypeFromHeadline", () => {
+   it("classifies earnings headlines", () => {
+@@ -14,5 +17,37 @@ describe("classifyCatalystTypeFromHeadline", () => {
+ 
+   it("returns NONE for empty headline", () => {
+     expect(classifyCatalystTypeFromHeadline("")).toBe("NONE");
++    expect(classifyCatalystTypeFromHeadline("   ")).toBe("NONE");
++  });
++
++  it("returns UNKNOWN for non-keyword headlines (not SECTOR fallback)", () => {
++    expect(classifyCatalystTypeFromHeadline("Why Futu Holdings stock is moving today")).toBe("UNKNOWN");
++    expect(classifyCatalystTypeFromHeadline("Shares rise on heavy volume")).toBe("UNKNOWN");
++  });
++
++  it("returns SECTOR only on positive sector keyword match", () => {
++    expect(classifyCatalystTypeFromHeadline("NVTS leads chip sector rally")).toBe("SECTOR");
++    expect(classifyCatalystTypeFromHeadline("Stock moves with the sector")).toBe("SECTOR");
++  });
++
++  it("does not classify defense-sector compound as SECTOR", () => {
++    expect(classifyCatalystTypeFromHeadline("Hyliion secures major defense-sector partnership")).toBe(
++      "CONTRACT",
++    );
++    expect(classifyCatalystTypeFromHeadline("Hyliion rallies on defense-sector momentum")).toBe("UNKNOWN");
++  });
++
++  it("evaluates CONTRACT before SECTOR for contract headlines", () => {
++    expect(classifyCatalystTypeFromHeadline("HYLN wins defense contract from US Army")).toBe("CONTRACT");
++  });
++});
++
++describe("headlineMatchesKeyword", () => {
++  it("does not match sector inside defense-sector", () => {
++    expect(headlineMatchesKeyword("defense-sector partnership", "sector")).toBe(false);
++  });
++
++  it("matches sector as standalone token", () => {
++    expect(headlineMatchesKeyword("stock sector rally", "sector")).toBe(true);
+   });
+ });
+diff --git a/artifacts/api-server/src/lib/movers/moversDeterministicCatalyst.ts b/artifacts/api-server/src/lib/movers/moversDeterministicCatalyst.ts
+index 0686b529..f6d61b32 100644
+--- a/artifacts/api-server/src/lib/movers/moversDeterministicCatalyst.ts
++++ b/artifacts/api-server/src/lib/movers/moversDeterministicCatalyst.ts
+@@ -1,4 +1,4 @@
+-import type { FlaggedName, Situation } from "@workspace/movers-types";
++import type { FlaggedName, MoversCatalystType, Situation } from "@workspace/movers-types";
+ import { classifyCatalystTypeFromHeadline } from "@workspace/movers-types";
+ import pLimit from "p-limit";
+ import { fetchHeadlinesForSituation } from "./fmpMoversNews.js";
+@@ -7,6 +7,33 @@ import { logger } from "../logger.js";
+ 
+ const classifyLimit = pLimit(6);
+ 
++const TELEMETRY_CATALYST_TYPES: MoversCatalystType[] = [
++  "GOV",
++  "ANALYST",
++  "CONTRACT",
++  "EARNINGS",
++  "MA",
++  "SECTOR",
++  "UNKNOWN",
++  "NONE",
++];
++
++function logMoversCatalystTypeCounts(situations: Situation[]): void {
++  const catalystTypeCounts = Object.fromEntries(
++    TELEMETRY_CATALYST_TYPES.map((t) => [t, 0]),
++  ) as Record<MoversCatalystType, number>;
++  for (const s of situations) {
++    const key = TELEMETRY_CATALYST_TYPES.includes(s.catalystType)
++      ? s.catalystType
++      : "UNKNOWN";
++    catalystTypeCounts[key] += 1;
++  }
++  logger.info(
++    { catalystTypeCounts, situations: situations.length },
++    "Movers catalyst type counts",
++  );
++}
++
+ export async function applyDeterministicCatalystToSituations(
+   situations: Situation[],
+ ): Promise<{ situations: Situation[]; flagged: FlaggedName[] }> {
+@@ -73,5 +100,7 @@ export async function applyDeterministicCatalystToSituations(
+     return bPct - aPct;
+   });
+ 
++  logMoversCatalystTypeCounts(situationsOut);
++
+   return { situations: situationsOut, flagged: flaggedOut };
+ }
+diff --git a/lib/movers-types/src/catalystKeywords.ts b/lib/movers-types/src/catalystKeywords.ts
+index 7e24d456..5ca60b34 100644
+--- a/lib/movers-types/src/catalystKeywords.ts
++++ b/lib/movers-types/src/catalystKeywords.ts
+@@ -31,10 +31,10 @@ export const MOVERS_CATALYST_KEYWORD_GROUPS: ReadonlyArray<{
+       "revenue miss",
+       "guidance",
+       "quarterly results",
+-      "q1 ",
+-      "q2 ",
+-      "q3 ",
+-      "q4 ",
++      "q1",
++      "q2",
++      "q3",
++      "q4",
+       "fiscal year",
+       "profit warning",
+       "beats estimates",
+@@ -110,22 +110,68 @@ export const MOVERS_CATALYST_KEYWORD_GROUPS: ReadonlyArray<{
+ 
+ const ORDER = MOVERS_CATALYST_KEYWORD_GROUPS.map((g) => g.type);
+ 
++const ALNUM_SPACE_KEYWORD = /^[a-z0-9 ]+$/i;
++
++function escapeRegex(s: string): string {
++  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
++}
++
++/** Whitespace-delimited tokens (hyphenated compounds stay one token). */
++function tokenizeHeadline(hay: string): string[] {
++  return hay
++    .toLowerCase()
++    .split(/\s+/)
++    .map((t) => t.replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, ""))
++    .filter(Boolean);
++}
++
++function tokensIncludePhrase(tokens: string[], phrase: string): boolean {
++  const parts = phrase
++    .toLowerCase()
++    .trim()
++    .split(/\s+/)
++    .filter(Boolean);
++  if (parts.length === 0) return false;
++  if (parts.length === 1) return tokens.includes(parts[0]!);
++  for (let i = 0; i <= tokens.length - parts.length; i++) {
++    if (parts.every((p, j) => tokens[i + j] === p)) return true;
++  }
++  return false;
++}
++
++/** Match keyword as whole token(s) or bounded phrase; avoids "sector" inside "defense-sector". */
++export function headlineMatchesKeyword(hay: string, keyword: string): boolean {
++  const kw = keyword.toLowerCase().trim();
++  if (!kw) return false;
++
++  if (ALNUM_SPACE_KEYWORD.test(kw)) {
++    if (kw.includes(" ")) return tokensIncludePhrase(tokenizeHeadline(hay), kw);
++    return tokenizeHeadline(hay).includes(kw);
++  }
++
++  const pattern = `(?<![a-z0-9])${escapeRegex(kw)}(?![a-z0-9])`;
++  return new RegExp(pattern, "i").test(hay);
++}
++
+ /** Classify a headline into a catalyst type via keyword match (no LLM). */
+ export function classifyCatalystTypeFromHeadline(
+   headline: string,
+-): ClassifiableCatalystType | "NONE" {
++): ClassifiableCatalystType | "NONE" | "UNKNOWN" {
+   const hay = headline.toLowerCase();
+   if (!hay.trim()) return "NONE";
+   for (const group of MOVERS_CATALYST_KEYWORD_GROUPS) {
+     for (const kw of group.keywords) {
+-      if (hay.includes(kw)) return group.type;
++      if (headlineMatchesKeyword(hay, kw)) return group.type;
+     }
+   }
+-  return "SECTOR";
++  return "UNKNOWN";
+ }
+ 
+-export function catalystTypeSortPriority(type: ClassifiableCatalystType | "NONE"): number {
++export function catalystTypeSortPriority(
++  type: ClassifiableCatalystType | "NONE" | "UNKNOWN",
++): number {
+   if (type === "NONE") return 99;
++  if (type === "UNKNOWN") return 98;
+   const i = ORDER.indexOf(type as (typeof ORDER)[number]);
+   return i >= 0 ? i : 50;
+ }
+diff --git a/lib/movers-types/src/index.ts b/lib/movers-types/src/index.ts
+index cc744f5d..c6f308f1 100644
+--- a/lib/movers-types/src/index.ts
++++ b/lib/movers-types/src/index.ts
+@@ -7,6 +7,7 @@ export { MOVERS_THEME_TICKER_MAP } from "./themeTickers.js";
+ export {
+   MOVERS_CATALYST_KEYWORD_GROUPS,
+   classifyCatalystTypeFromHeadline,
++  headlineMatchesKeyword,
+ } from "./catalystKeywords.js";
+ 
+ export interface MoversFeed {
+@@ -24,6 +25,7 @@ export type MoversCatalystType =
+   | "EARNINGS"
+   | "MA"
+   | "SECTOR"
++  | "UNKNOWN"
+   | "NONE";
+ 
+ export type MoversPosture = "WATCH" | "WAIT" | "PASS";

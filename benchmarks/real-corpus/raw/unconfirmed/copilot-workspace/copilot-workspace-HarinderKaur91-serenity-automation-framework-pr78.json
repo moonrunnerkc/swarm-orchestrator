@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-HarinderKaur91-serenity-automation-framework-pr78",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 78,
+    "headSha": "7dc64e56c3c1dc5100cdba23d59578ebd270a76e",
+    "baseSha": "f84369824e357107babc12d04d9e8d722081a33a",
+    "title": "fix: correct SauceDemo cart slug and broaden Magento Cloudflare error detection",
+    "body": "Six CI scenarios failed across two sites: all SauceDemo checkout tests threw `ElementShouldBeEnabledException`, and all Magento search/product-detail tests threw `TimeoutException: Cloudflare SSL error page detected` after exhausting retries.\n\n## SauceDemo — double-dash slug bug\n\n`addProductToCart` was generating malformed button IDs due to a chained replace that inserted double dashes:\n\n```java\n// Before: \"Sauce Labs Backpack\" → \"add-to-cart-sauce--labs--backpack\" (doesn't exist)\nproductName.toLowerCase().replace(\" \", \"--\").replace(\"-\", \"-\")\n\n// After: \"Sauce Labs Backpack\" → \"add-to-cart-sauce-labs-backpack\"\nproductName.toLowerCase().replace(\" \", \"-\")\n```\n\n## Magento — Cloudflare retry not triggered for non-526 errors\n\n`isCloudflareSslErrorPage()` required both `cf-error-details` **and** the literal text `\"Error code 526\"` / `\"Invalid SSL certificate\"`. Any other Cloudflare 5xx (521 web server down, 522 timeout, 523 unreachable, etc.) returned `false`, so `withCloudflareRetry`'s catch block saw `!isCloudflareSslErrorPage()` and re-threw immediately instead of retrying.\n\nFix: check only for `cf-error-details`, which is present on every Cloudflare error page:\n\n```java\n// Before\nreturn pageSource.contains(\"cf-error-details\")\n    && (pageSource.contains(\"Error code 526\") || pageSource.contains(\"Invalid SSL certificate\"));\n\n// After\nreturn pageSource.contains(\"cf-error-details\");\n```\n\nA unit test for non-526 Cloudflare error detection (`shouldDetectNonSslCloudflareErrors`) is added to `MagentoHomePageTest`.",
+    "author": "Copilot",
+    "headRef": "copilot/fix-test-failures-f49f1a0b-ccb8-4025-b0ce-a2c5dcf449c4",
+    "repository": "HarinderKaur91/serenity-automation-framework"
+  },
+  "diffRef": {
+    "repository": "HarinderKaur91/serenity-automation-framework",
+    "headSha": "7dc64e56c3c1dc5100cdba23d59578ebd270a76e",
+    "baseSha": "f84369824e357107babc12d04d9e8d722081a33a"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-HarinderKaur91-serenity-automation-framework-pr78.diff",
+  "vendoredAt": "2026-05-24T03:06:04.455Z",
+  "collectedAt": "2026-05-24T03:06:04.455Z"
+}

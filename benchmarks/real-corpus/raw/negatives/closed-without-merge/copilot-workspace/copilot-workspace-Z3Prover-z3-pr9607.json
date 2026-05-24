@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-Z3Prover-z3-pr9607",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 9607,
+    "headSha": "69b78bf072d49a72fedd546abba3315615c66599",
+    "baseSha": "4a90d3105054796562079406e125b9480ac3472b",
+    "title": "Harden TPTP frontend against unsound include and formula handling",
+    "body": "The TPTP benchmark discussion surfaced soundness errors where the frontend could change problem meaning instead of rejecting unsupported input. The main failure modes were importing too many formulas from `include(...,[...])` and silently dropping constraints during parsing.\n\n- **Selective includes**\n  - Implement support for TPTP include name filters so `include('file',[...])` imports only the requested formulas.\n  - Prevents accidental strengthening of problems from unrequested axioms.\n\n- **Fail closed on invalid formulas**\n  - Replace the previous “skip and continue” path for semantic `z3_exception`s with a parser error on the offending formula.\n  - This avoids silently weakening the benchmark instance and returning conclusive but wrong SZS statuses.\n\n- **Reject placeholder parsing paths that lose constraints**\n  - Reject tuple/list terms in formula position instead of partially parsing them.\n  - Reject tuple `$let` destructuring instead of substituting only the first binding.\n  - These paths now preserve soundness by refusing unsupported constructs.\n\n- **Regression coverage**\n  - Add focused TPTP tests for:\n    - selective include filtering\n    - tuple/list formula rejection\n    - tuple `$let` rejection\n\nExample of the include bug fixed here:\n\n```tptp\n% included.p\nfof(keep,axiom,p).\nfof(poison,axiom,~ p).\n\n% main.p\ninclude('included.p',[keep]).\nfof(a1,axiom,q).\n```\n\nBefore this change, the frontend loaded both `keep` and `poison`; now it imports only `keep`.",
+    "author": "Copilot",
+    "headRef": "copilot/fix-soundness-errors",
+    "repository": "Z3Prover/z3"
+  },
+  "diffRef": {
+    "repository": "Z3Prover/z3",
+    "headSha": "69b78bf072d49a72fedd546abba3315615c66599",
+    "baseSha": "4a90d3105054796562079406e125b9480ac3472b"
+  },
+  "vendoredDiffPath": "negatives/closed-without-merge/copilot-workspace/copilot-workspace-Z3Prover-z3-pr9607.diff",
+  "vendoredAt": "2026-05-24T04:28:20.368Z",
+  "collectedAt": "2026-05-24T04:28:20.368Z"
+}

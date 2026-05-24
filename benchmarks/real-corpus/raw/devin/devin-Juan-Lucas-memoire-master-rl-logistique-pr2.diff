@@ -1,0 +1,1643 @@
+diff --git a/.gitignore b/.gitignore
+index bf7e52a..3319a13 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -147,7 +147,7 @@ celerybeat.pid
+ # Environments
+ .env
+ .venv
+-env/
++/env/
+ venv/
+ ENV/
+ env.bak/
+diff --git a/memoire_master_rl_logistique/baselines/__init__.py b/memoire_master_rl_logistique/baselines/__init__.py
+new file mode 100644
+index 0000000..8a03c96
+--- /dev/null
++++ b/memoire_master_rl_logistique/baselines/__init__.py
+@@ -0,0 +1,11 @@
++"""Baselines de comparaison pour le dispatching minier (Section 4.5)."""
++
++from .fixed_policy import FixedAssignmentPolicy
++from .nearest_policy import NearestShovelPolicy
++from .queue_aware_policy import QueueAwarePolicy
++
++__all__ = [
++    "FixedAssignmentPolicy",
++    "NearestShovelPolicy",
++    "QueueAwarePolicy",
++]
+diff --git a/memoire_master_rl_logistique/baselines/fixed_policy.py b/memoire_master_rl_logistique/baselines/fixed_policy.py
+new file mode 100644
+index 0000000..d1bcaff
+--- /dev/null
++++ b/memoire_master_rl_logistique/baselines/fixed_policy.py
+@@ -0,0 +1,29 @@
++"""Politique d'assignation fixe (Fixed Assignment).
++
++Baseline de niveau zéro (Section 4.5 du mémoire) :
++chaque camion est dédié à une seule pelle de manière cyclique.
++"""
++
++from __future__ import annotations
++
++from typing import Any
++
++import numpy as np
++
++
++class FixedAssignmentPolicy:
++    """Chaque camion est assigné à une pelle fixe (round-robin)."""
++
++    def __init__(self, num_shovels: int) -> None:
++        self.num_shovels = num_shovels
++
++    def predict(
++        self,
++        observation: np.ndarray,
++        info: dict[str, Any] | None = None,
++    ) -> int:
++        """Retourne l'action (index de pelle) basée sur l'index du camion."""
++        truck_idx = 0
++        if info is not None:
++            truck_idx = info.get("current_truck_idx", 0)
++        return truck_idx % self.num_shovels
+diff --git a/memoire_master_rl_logistique/baselines/nearest_policy.py b/memoire_master_rl_logistique/baselines/nearest_policy.py
+new file mode 100644
+index 0000000..43a59eb
+--- /dev/null
++++ b/memoire_master_rl_logistique/baselines/nearest_policy.py
+@@ -0,0 +1,44 @@
++"""Politique Nearest Shovel (Greedy).
++
++Baseline classique (Section 4.5 du mémoire) :
++le camion choisit la pelle la plus proche géographiquement.
++C'est l'approche la plus courante en l'absence de système intelligent.
++"""
++
++from __future__ import annotations
++
++from typing import Any
++
++import numpy as np
++
++from memoire_master_rl_logistique.simulation.graph_model import RoadGraph
++
++
++class NearestShovelPolicy:
++    """Choisit la pelle la plus proche du camion courant."""
++
++    def __init__(self, graph: RoadGraph, shovel_node_ids: list[str]) -> None:
++        self.graph = graph
++        self.shovel_node_ids = shovel_node_ids
++
++    def predict(
++        self,
++        observation: np.ndarray,
++        info: dict[str, Any] | None = None,
++        truck_location: str = "yard",
++    ) -> int:
++        """Retourne l'index de la pelle la plus proche."""
++        best_action = 0
++        best_distance = float("inf")
++
++        for i, shovel_node in enumerate(self.shovel_node_ids):
++            src = truck_location
++            if src not in ["yard", "dump_1"]:
++                src = "yard"
++            if (src, shovel_node) in self.graph.edges:
++                edge = self.graph.get_edge(src, shovel_node)
++                if edge.distance_km < best_distance:
++                    best_distance = edge.distance_km
++                    best_action = i
++
++        return best_action
+diff --git a/memoire_master_rl_logistique/baselines/queue_aware_policy.py b/memoire_master_rl_logistique/baselines/queue_aware_policy.py
+new file mode 100644
+index 0000000..24ed24e
+--- /dev/null
++++ b/memoire_master_rl_logistique/baselines/queue_aware_policy.py
+@@ -0,0 +1,62 @@
++"""Politique Queue-Aware (sensible aux files d'attente).
++
++Baseline avancée (Sprint C, Section plan_codage) :
++choisit la pelle dont le temps d'attente estimé est minimal.
++Combine distance et disponibilité pour une décision plus informée.
++"""
++
++from __future__ import annotations
++
++from typing import Any
++
++import numpy as np
++
++from memoire_master_rl_logistique.simulation.entities import Shovel
++from memoire_master_rl_logistique.simulation.graph_model import RoadGraph
++
++
++class QueueAwarePolicy:
++    """Choisit la pelle avec le temps d'attente estimé le plus court."""
++
++    def __init__(
++        self,
++        graph: RoadGraph,
++        shovels: list[Shovel],
++    ) -> None:
++        self.graph = graph
++        self.shovels = shovels
++
++    def predict(
++        self,
++        observation: np.ndarray,
++        info: dict[str, Any] | None = None,
++        truck_location: str = "yard",
++        current_time_min: float = 0.0,
++    ) -> int:
++        """Retourne l'index de la pelle avec le temps d'arrivée + attente minimal."""
++        best_action = 0
++        best_total_time = float("inf")
++
++        for i, shovel in enumerate(self.shovels):
++            # Estimation du temps de trajet
++            src = truck_location
++            if src not in ["yard", "dump_1"]:
++                src = "yard"
++
++            travel_time = 0.0
++            if (src, shovel.node_id) in self.graph.edges:
++                edge = self.graph.get_edge(src, shovel.node_id)
++                base_speed = 32.0  # km/h à vide
++                travel_time = (edge.distance_km / base_speed) * 60.0
++
++            # Estimation du temps d'attente à la pelle
++            arrival_time = current_time_min + travel_time
++            wait_time = max(0.0, shovel.available_at_min - arrival_time)
++
++            total_time = travel_time + wait_time
++
++            if total_time < best_total_time:
++                best_total_time = total_time
++                best_action = i
++
++        return best_action
+diff --git a/memoire_master_rl_logistique/env/__init__.py b/memoire_master_rl_logistique/env/__init__.py
+new file mode 100644
+index 0000000..1bdea97
+--- /dev/null
++++ b/memoire_master_rl_logistique/env/__init__.py
+@@ -0,0 +1,5 @@
++"""Module environnement Gymnasium pour le dispatching minier RL."""
++
++from .mine_env import MineEnv
++
++__all__ = ["MineEnv"]
+diff --git a/memoire_master_rl_logistique/env/action_mask.py b/memoire_master_rl_logistique/env/action_mask.py
+new file mode 100644
+index 0000000..2212da8
+--- /dev/null
++++ b/memoire_master_rl_logistique/env/action_mask.py
+@@ -0,0 +1,33 @@
++"""Masquage dynamique des actions invalides.
++
++Conformément à la Section 3.4.2 du mémoire :
++- Un camion ne peut être assigné qu'à une pelle disponible.
++- L'action ATTENDRE est toujours valide.
++
++Le masquage empêche l'agent de choisir des actions irréalistes et accélère
++l'apprentissage (cf. Costa & Ontañón, 2020).
++"""
++
++from __future__ import annotations
++
++import numpy as np
++
++from memoire_master_rl_logistique.simulation.entities import Shovel
++
++
++def compute_action_mask(
++    shovels: list[Shovel],
++    current_time_min: float,
++    include_wait: bool = True,
++) -> np.ndarray:
++    """Calcule le masque d'actions valides.
++
++    Actions : [pelle_0, pelle_1, ..., pelle_n-1, ATTENDRE]
++    Le masque vaut 1 si l'action est valide, 0 sinon.
++
++    Toutes les pelles sont considérées valides (l'agent peut choisir
++    d'attendre la disponibilité). L'action ATTENDRE est toujours valide.
++    """
++    n_actions = len(shovels) + (1 if include_wait else 0)
++    mask = np.ones(n_actions, dtype=np.int8)
++    return mask
+diff --git a/memoire_master_rl_logistique/env/mine_env.py b/memoire_master_rl_logistique/env/mine_env.py
+new file mode 100644
+index 0000000..b47fb68
+--- /dev/null
++++ b/memoire_master_rl_logistique/env/mine_env.py
+@@ -0,0 +1,387 @@
++"""Environnement Gymnasium pour le dispatching minier.
++
++Implémente l'interface standardisée Gymnasium (reset / step / render)
++conformément au Chapitre 4 du mémoire (Section 4.2).
++
++L'environnement orchestre la boucle Agent–Environnement :
++  observation (s_t) → action (a_t) → récompense (r_t) → observation (s_{t+1})
++
++Architecture conforme au Tableau 4.1 du mémoire :
++  Truck   → x_c (localisation, statut)
++  Shovel  → q_p (file d'attente), z_r
++  DumpSite → z_r (disponibilité)
++  Environment → f(s_t, a_t) transition (Eq. 3.5–3.6)
++"""
++
++from __future__ import annotations
++
++from copy import deepcopy
++from random import Random
++from typing import Any
++
++import gymnasium as gym
++import numpy as np
++from gymnasium import spaces
++
++from memoire_master_rl_logistique.simulation.entities import DumpSite, Shovel, Truck
++from memoire_master_rl_logistique.simulation.fuel_model import (
++    estimate_idle_fuel_l,
++    estimate_travel_fuel_l,
++)
++from memoire_master_rl_logistique.simulation.graph_model import RoadGraph, build_default_graph
++
++from .observation_builder import build_observation, observation_size
++
++# Statuts camion
++STATUS_IDLE = 0
++STATUS_TO_SHOVEL = 1
++STATUS_LOADING = 2
++STATUS_TO_DUMP = 3
++STATUS_UNLOADING = 4
++STATUS_RETURNING = 5
++
++# Action spéciale
++ACTION_WAIT = -1  # Valeur interne, l'index réel = num_shovels
++
++
++class MineEnv(gym.Env):
++    """Environnement de simulation minière compatible Gymnasium.
++
++    action_space : Discrete(num_shovels + 1)
++        - 0..num_shovels-1 : assigner le camion courant à la pelle i
++        - num_shovels : ATTENDRE
++
++    observation_space : Box([0,1]) de dimension observation_size(...)
++    """
++
++    metadata = {"render_modes": ["human", "ansi"], "render_fps": 1}
++
++    def __init__(
++        self,
++        truck_count: int = 5,
++        shovel_count: int = 2,
++        episode_minutes: float = 480.0,
++        seed: int = 42,
++        breakdown_probability: float = 0.02,
++        reward_weights: tuple[float, float, float] = (1.0, 0.1, 0.05),
++        render_mode: str | None = None,
++    ) -> None:
++        super().__init__()
++
++        self.truck_count = truck_count
++        self.shovel_count = min(shovel_count, 2)  # Max 2 dans le graphe par défaut
++        self.episode_minutes = episode_minutes
++        self._seed = seed
++        self.breakdown_probability = breakdown_probability
++        self.w1, self.w2, self.w3 = reward_weights
++        self.render_mode = render_mode
++
++        # Espaces (Chapitre 4, Section 4.2)
++        self.num_actions = self.shovel_count + 1  # pelles + ATTENDRE
++        self.action_space = spaces.Discrete(self.num_actions)
++
++        obs_dim = observation_size(truck_count, self.shovel_count, 1)
++        self.observation_space = spaces.Box(
++            low=0.0, high=1.0, shape=(obs_dim,), dtype=np.float32
++        )
++
++        # Initialisés dans reset()
++        self.graph: RoadGraph | None = None
++        self.trucks: list[Truck] = []
++        self.shovels: list[Shovel] = []
++        self.dumps: list[DumpSite] = []
++        self.rng: Random | None = None
++        self.current_time_min: float = 0.0
++        self.current_truck_idx: int = 0
++        self.truck_locations: list[str] = []
++        self.truck_statuses: list[int] = []
++        self._prev_tonnage: float = 0.0
++
++    def reset(
++        self,
++        seed: int | None = None,
++        options: dict[str, Any] | None = None,
++    ) -> tuple[np.ndarray, dict[str, Any]]:
++        """Initialise la mine pour un nouvel épisode (Section 4.2)."""
++        super().reset(seed=seed)
++        effective_seed = seed if seed is not None else self._seed
++        self.rng = Random(effective_seed)
++
++        self.graph = build_default_graph()
++
++        shovel_nodes = ["shovel_1", "shovel_2"][: self.shovel_count]
++        self.shovels = [
++            Shovel(
++                shovel_id=f"S{i + 1}",
++                node_id=node_id,
++                load_time_mean_min=2.0,
++                load_time_std_min=0.3,
++            )
++            for i, node_id in enumerate(shovel_nodes)
++        ]
++
++        self.dumps = [
++            DumpSite(
++                dump_id="D1",
++                node_id="dump_1",
++                unload_time_mean_min=1.0,
++                unload_time_std_min=0.2,
++            )
++        ]
++
++        self.trucks = [
++            Truck(truck_id=f"T{i + 1}", capacity_tonnes=140.0)
++            for i in range(self.truck_count)
++        ]
++
++        self.current_time_min = 0.0
++        self.current_truck_idx = 0
++        self.truck_locations = ["yard"] * self.truck_count
++        self.truck_statuses = [STATUS_IDLE] * self.truck_count
++        self._prev_tonnage = 0.0
++
++        obs = self._get_obs()
++        info = self._get_info()
++        return obs, info
++
++    def step(
++        self, action: int
++    ) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
++        """Exécute un cycle complet pour le camion courant (Section 4.2).
++
++        L'action détermine vers quelle pelle envoyer le camion courant.
++        Un cycle complet est simulé : trajet → chargement → transport →
++        déchargement → retour. Puis on passe au camion suivant.
++        """
++        assert self.graph is not None and self.rng is not None
++
++        truck = self.trucks[self.current_truck_idx]
++        dump = self.dumps[0]
++
++        # Déterminer la pelle cible
++        if action >= self.shovel_count:
++            # ATTENDRE : choisir la pelle la plus tôt disponible (fallback)
++            shovel = min(
++                self.shovels,
++                key=lambda s: max(s.available_at_min, self.current_time_min),
++            )
++        else:
++            shovel = self.shovels[action]
++
++        time_min = max(truck.available_at_min, self.current_time_min)
++        location = self.truck_locations[self.current_truck_idx]
++
++        # --- Trajet vers la pelle ---
++        self.truck_statuses[self.current_truck_idx] = STATUS_TO_SHOVEL
++        if location != shovel.node_id:
++            src = location if location in ["yard", "dump_1"] else "yard"
++            if (src, shovel.node_id) in self.graph.edges:
++                travel_min, travel_fuel_l = self._travel(src, shovel.node_id, False)
++                time_min += travel_min
++                truck.total_active_min += travel_min
++                truck.total_fuel_l += travel_fuel_l
++            location = shovel.node_id
++
++        # --- Attente pelle ---
++        self.truck_statuses[self.current_truck_idx] = STATUS_LOADING
++        wait_load_min = max(0.0, shovel.available_at_min - time_min)
++        if wait_load_min > 0:
++            time_min += wait_load_min
++            truck.total_wait_min += wait_load_min
++            truck.total_fuel_l += estimate_idle_fuel_l(wait_load_min)
++
++        # --- Chargement ---
++        load_min = self._sample_duration(
++            shovel.load_time_mean_min, shovel.load_time_std_min
++        )
++        time_min += load_min
++        truck.total_active_min += load_min
++        truck.total_fuel_l += estimate_idle_fuel_l(load_min)
++        shovel.available_at_min = time_min
++
++        # --- Trajet chargé vers dump ---
++        self.truck_statuses[self.current_truck_idx] = STATUS_TO_DUMP
++        if (shovel.node_id, dump.node_id) in self.graph.edges:
++            loaded_travel_min, loaded_fuel_l = self._travel(
++                shovel.node_id, dump.node_id, True
++            )
++            time_min += loaded_travel_min
++            truck.total_active_min += loaded_travel_min
++            truck.total_fuel_l += loaded_fuel_l
++        location = dump.node_id
++
++        # --- Attente dump ---
++        self.truck_statuses[self.current_truck_idx] = STATUS_UNLOADING
++        wait_dump_min = max(0.0, dump.available_at_min - time_min)
++        if wait_dump_min > 0:
++            time_min += wait_dump_min
++            truck.total_wait_min += wait_dump_min
++            truck.total_fuel_l += estimate_idle_fuel_l(wait_dump_min)
++
++        # --- Déchargement ---
++        unload_min = self._sample_duration(
++            dump.unload_time_mean_min, dump.unload_time_std_min
++        )
++        time_min += unload_min
++        truck.total_active_min += unload_min
++        truck.total_fuel_l += estimate_idle_fuel_l(unload_min)
++        dump.available_at_min = time_min
++
++        # --- Retour à vide ---
++        self.truck_statuses[self.current_truck_idx] = STATUS_RETURNING
++        if (dump.node_id, shovel.node_id) in self.graph.edges:
++            return_min, return_fuel_l = self._travel(
++                dump.node_id, shovel.node_id, False
++            )
++            time_min += return_min
++            truck.total_active_min += return_min
++            truck.total_fuel_l += return_fuel_l
++        location = shovel.node_id
++
++        # --- Panne éventuelle ---
++        if self.rng.random() < self.breakdown_probability:
++            repair_min = self.rng.uniform(10.0, 30.0)
++            time_min += repair_min
++            truck.total_wait_min += repair_min
++            truck.total_fuel_l += estimate_idle_fuel_l(repair_min)
++
++        # Compléter le cycle
++        truck.cycles_completed += 1
++        truck.total_tonnage_t += truck.capacity_tonnes
++        truck.available_at_min = time_min
++        self.truck_locations[self.current_truck_idx] = location
++        self.truck_statuses[self.current_truck_idx] = STATUS_IDLE
++
++        # --- Récompense (Eq. 3.8 du mémoire) ---
++        reward = self._compute_reward(action)
++
++        # Avancer le temps global et passer au camion suivant
++        self.current_time_min = min(
++            t.available_at_min for t in self.trucks
++        )
++        self.current_truck_idx = int(
++            np.argmin([t.available_at_min for t in self.trucks])
++        )
++
++        # Signaux de terminaison
++        terminated = False
++        truncated = self.current_time_min >= self.episode_minutes
++
++        obs = self._get_obs()
++        info = self._get_info()
++        return obs, reward, terminated, truncated, info
++
++    def _compute_reward(self, action: int) -> float:
++        """Calcule la récompense pondérée (Eq. 3.8 du mémoire).
++
++        R_t = w1 * R_rendement + w2 * R_équité + w3 * R_coût
++        """
++        # R_rendement : tonnage livré lors de ce step
++        current_tonnage = sum(t.total_tonnage_t for t in self.trucks)
++        r_rendement = current_tonnage - self._prev_tonnage
++        self._prev_tonnage = current_tonnage
++
++        # R_équité : -variance des files d'attente (Eq. 3.10)
++        if len(self.shovels) >= 2:
++            wait_times = [
++                max(0.0, s.available_at_min - self.current_time_min)
++                for s in self.shovels
++            ]
++            mean_wait = sum(wait_times) / len(wait_times)
++            variance = sum((w - mean_wait) ** 2 for w in wait_times) / len(wait_times)
++            r_equite = -variance
++        else:
++            r_equite = 0.0
++
++        # R_coût : pénalité de distance (Eq. 3.11)
++        if action < self.shovel_count and self.graph is not None:
++            shovel = self.shovels[action]
++            truck_loc = self.truck_locations[self.current_truck_idx]
++            src = truck_loc if truck_loc in ["yard", "dump_1"] else "yard"
++            if (src, shovel.node_id) in self.graph.edges:
++                edge = self.graph.get_edge(src, shovel.node_id)
++                r_cout = -edge.distance_km
++            else:
++                r_cout = 0.0
++        else:
++            r_cout = 0.0
++
++        # Normalisation simple pour garder la récompense dans un range raisonnable
++        r_rendement_norm = r_rendement / 140.0  # Normalisé par capacité camion
++        r_equite_norm = r_equite / 100.0
++        r_cout_norm = r_cout / 5.0
++
++        return (
++            self.w1 * r_rendement_norm
++            + self.w2 * r_equite_norm
++            + self.w3 * r_cout_norm
++        )
++
++    def _travel(
++        self, src: str, dst: str, loaded: bool
++    ) -> tuple[float, float]:
++        """Simule un déplacement avec stochasticité (Eq. 3.2)."""
++        assert self.graph is not None and self.rng is not None
++        travel_min = self.graph.sample_travel_time_minutes(
++            src=src, dst=dst, loaded=loaded, rng=self.rng
++        )
++        edge = self.graph.get_edge(src, dst)
++        travel_fuel_l = estimate_travel_fuel_l(
++            distance_km=edge.distance_km,
++            slope_pct=edge.slope_pct,
++            road_state=edge.road_state,
++            loaded=loaded,
++        )
++        # Dégradation de route (5% de chance)
++        if self.rng.random() < 0.05:
++            edge.road_state = max(0.6, edge.road_state - 0.02)
++        return travel_min, travel_fuel_l
++
++    def _sample_duration(self, mean_min: float, std_min: float) -> float:
++        """Échantillonne une durée gaussienne tronquée."""
++        assert self.rng is not None
++        return max(0.2, self.rng.gauss(mean_min, std_min))
++
++    def _get_obs(self) -> np.ndarray:
++        """Construit l'observation courante."""
++        return build_observation(
++            trucks=self.trucks,
++            shovels=self.shovels,
++            dumps=self.dumps,
++            graph=self.graph,
++            current_time_min=self.current_time_min,
++            episode_minutes=self.episode_minutes,
++            truck_locations=self.truck_locations,
++            truck_statuses=self.truck_statuses,
++        )
++
++    def _get_info(self) -> dict[str, Any]:
++        """Construit le dictionnaire d'informations de debug."""
++        return {
++            "current_time_min": self.current_time_min,
++            "current_truck_idx": self.current_truck_idx,
++            "total_tonnage_t": sum(t.total_tonnage_t for t in self.trucks),
++            "total_fuel_l": sum(t.total_fuel_l for t in self.trucks),
++            "total_wait_min": sum(t.total_wait_min for t in self.trucks),
++            "total_cycles": sum(t.cycles_completed for t in self.trucks),
++        }
++
++    def render(self) -> str | None:
++        """Affichage texte de l'état courant."""
++        if self.render_mode == "ansi" or self.render_mode == "human":
++            lines = [
++                f"=== Mine t={self.current_time_min:.1f} min ===",
++                f"Camion actif: T{self.current_truck_idx + 1}",
++            ]
++            for t in self.trucks:
++                lines.append(
++                    f"  {t.truck_id}: cycles={t.cycles_completed}, "
++                    f"tonnage={t.total_tonnage_t:.0f}t, "
++                    f"wait={t.total_wait_min:.1f}min, "
++                    f"fuel={t.total_fuel_l:.1f}L"
++                )
++            output = "\n".join(lines)
++            if self.render_mode == "human":
++                print(output)
++            return output
++        return None
+diff --git a/memoire_master_rl_logistique/env/observation_builder.py b/memoire_master_rl_logistique/env/observation_builder.py
+new file mode 100644
+index 0000000..43b0b5a
+--- /dev/null
++++ b/memoire_master_rl_logistique/env/observation_builder.py
+@@ -0,0 +1,82 @@
++"""Construction du vecteur d'observation normalisé pour l'agent RL.
++
++L'observation encode l'état s_t du MDP (Eq. 3.3 du mémoire) :
++  s_t = ({q_p}, {x_c}, {z_r}, t_courant)
++
++Les valeurs sont normalisées dans [0, 1] pour stabiliser l'apprentissage
++(cf. Section 4.3.3 du mémoire — prétraitement des observations).
++"""
++
++from __future__ import annotations
++
++import numpy as np
++
++from memoire_master_rl_logistique.simulation.entities import DumpSite, Shovel, Truck
++from memoire_master_rl_logistique.simulation.graph_model import RoadGraph
++
++# Constantes de normalisation
++_MAX_QUEUE = 10.0
++_MAX_DISTANCE_KM = 10.0
++_MAX_TIME_MIN = 480.0  # 8 heures
++
++
++def build_observation(
++    trucks: list[Truck],
++    shovels: list[Shovel],
++    dumps: list[DumpSite],
++    graph: RoadGraph,
++    current_time_min: float,
++    episode_minutes: float,
++    truck_locations: list[str],
++    truck_statuses: list[int],
++) -> np.ndarray:
++    """Construit le vecteur d'observation normalisé.
++
++    Composantes (dans l'ordre) :
++    - Pour chaque pelle : disponibilité normalisée, file d'attente estimée
++    - Pour chaque camion : statut (one-hot simplifié), position encodée,
++      tonnage accumulé normalisé, carburant consommé normalisé
++    - Temps courant normalisé
++    """
++    obs_parts: list[float] = []
++
++    # --- Files d'attente aux pelles (q_p) ---
++    for shovel in shovels:
++        wait_until = max(0.0, shovel.available_at_min - current_time_min)
++        obs_parts.append(min(wait_until / _MAX_TIME_MIN, 1.0))
++
++    # --- Disponibilité des dumps (z_r) ---
++    for dump in dumps:
++        wait_until = max(0.0, dump.available_at_min - current_time_min)
++        obs_parts.append(min(wait_until / _MAX_TIME_MIN, 1.0))
++
++    # --- État des camions (x_c) ---
++    for i, truck in enumerate(trucks):
++        # Statut : 0=libre, 1=en_route_pelle, 2=chargement, 3=en_route_dump,
++        #          4=déchargement, 5=en_route_retour
++        status_norm = truck_statuses[i] / 5.0
++        obs_parts.append(status_norm)
++
++        # Disponibilité temporelle normalisée
++        avail = max(0.0, truck.available_at_min - current_time_min)
++        obs_parts.append(min(avail / _MAX_TIME_MIN, 1.0))
++
++        # Tonnage accumulé normalisé
++        obs_parts.append(min(truck.total_tonnage_t / 2000.0, 1.0))
++
++        # Carburant consommé normalisé
++        obs_parts.append(min(truck.total_fuel_l / 500.0, 1.0))
++
++    # --- Temps courant normalisé ---
++    obs_parts.append(min(current_time_min / max(episode_minutes, 1.0), 1.0))
++
++    return np.array(obs_parts, dtype=np.float32)
++
++
++def observation_size(num_trucks: int, num_shovels: int, num_dumps: int) -> int:
++    """Retourne la taille du vecteur d'observation."""
++    shovel_feats = num_shovels  # 1 feature par pelle
++    dump_feats = num_dumps  # 1 feature par dump
++    truck_feats = num_trucks * 4  # 4 features par camion
++    time_feat = 1
++    return shovel_feats + dump_feats + truck_feats + time_feat
+diff --git a/memoire_master_rl_logistique/experiments/__init__.py b/memoire_master_rl_logistique/experiments/__init__.py
+new file mode 100644
+index 0000000..3ab136a
+--- /dev/null
++++ b/memoire_master_rl_logistique/experiments/__init__.py
+@@ -0,0 +1 @@
++"""Module d'expérimentation (Sprint E)."""
+diff --git a/memoire_master_rl_logistique/experiments/run_benchmark.py b/memoire_master_rl_logistique/experiments/run_benchmark.py
+new file mode 100644
+index 0000000..f72a4ff
+--- /dev/null
++++ b/memoire_master_rl_logistique/experiments/run_benchmark.py
+@@ -0,0 +1,197 @@
++"""Benchmark comparatif complet (Sprint E).
++
++Exécute toutes les méthodes (baselines + PPO) sur tous les scénarios
++avec plusieurs seeds pour produire les données du Chapitre 6.
++
++Protocole expérimental (Section 5.4 du mémoire) :
++- Mêmes scénarios pour toutes les méthodes
++- 10 réplications par scénario (seeds 42..51)
++- KPIs calculés de la même manière
++- Résultats sauvegardés en CSV reproductible
++"""
++
++from __future__ import annotations
++
++import csv
++from pathlib import Path
++
++from stable_baselines3 import PPO
++
++from memoire_master_rl_logistique.baselines.fixed_policy import FixedAssignmentPolicy
++from memoire_master_rl_logistique.baselines.nearest_policy import NearestShovelPolicy
++from memoire_master_rl_logistique.baselines.queue_aware_policy import QueueAwarePolicy
++from memoire_master_rl_logistique.env.mine_env import MineEnv
++from memoire_master_rl_logistique.experiments.scenarios import SCENARIOS, Scenario
++from memoire_master_rl_logistique.rl.train_ppo import train_ppo
++from memoire_master_rl_logistique.simulation.kpi import compute_kpis
++
++
++def run_single_episode(
++    env: MineEnv,
++    policy_fn,
++    seed: int,
++) -> dict[str, float]:
++    """Lance un épisode et retourne les KPIs."""
++    obs, info = env.reset(seed=seed)
++    total_reward = 0.0
++
++    while True:
++        action = policy_fn(obs, info, env)
++        obs, reward, terminated, truncated, info = env.step(action)
++        total_reward += reward
++        if terminated or truncated:
++            break
++
++    total_tonnage = sum(t.total_tonnage_t for t in env.trucks)
++    total_wait = sum(t.total_wait_min for t in env.trucks)
++    total_active = sum(t.total_active_min for t in env.trucks)
++    total_fuel = sum(t.total_fuel_l for t in env.trucks)
++
++    kpis = compute_kpis(
++        episode_minutes=env.episode_minutes,
++        truck_count=env.truck_count,
++        total_tonnage_t=total_tonnage,
++        total_wait_min=total_wait,
++        total_active_min=total_active,
++        total_fuel_l=total_fuel,
++    )
++    kpis["total_reward"] = total_reward
++    kpis["total_cycles"] = float(sum(t.cycles_completed for t in env.trucks))
++    return kpis
++
++
++def run_benchmark(
++    scenario: Scenario,
++    output_dir: Path,
++    train_ppo_flag: bool = True,
++) -> list[dict]:
++    """Exécute le benchmark pour un scénario donné."""
++    results = []
++
++    # --- Définition des politiques ---
++    def fixed_policy(obs, info, env):
++        p = FixedAssignmentPolicy(num_shovels=env.shovel_count)
++        return p.predict(obs, info)
++
++    def nearest_policy(obs, info, env):
++        p = NearestShovelPolicy(
++            graph=env.graph,
++            shovel_node_ids=[s.node_id for s in env.shovels],
++        )
++        return p.predict(obs, info, env.truck_locations[env.current_truck_idx])
++
++    def queue_aware_policy(obs, info, env):
++        p = QueueAwarePolicy(graph=env.graph, shovels=env.shovels)
++        return p.predict(
++            obs, info,
++            env.truck_locations[env.current_truck_idx],
++            env.current_time_min,
++        )
++
++    policies = {
++        "Fixed": fixed_policy,
++        "Nearest": nearest_policy,
++        "QueueAware": queue_aware_policy,
++    }
++
++    # Entraîner et ajouter PPO si demandé
++    ppo_model = None
++    if train_ppo_flag:
++        model_dir = output_dir / f"ppo_{scenario.name}"
++        model_path = model_dir / "ppo_mine_agent.zip"
++
++        if model_path.exists():
++            print(f"  Chargement du modèle PPO existant: {model_path}")
++            ppo_model = PPO.load(str(model_path))
++        else:
++            print(f"  Entraînement PPO pour le scénario '{scenario.name}'...")
++            ppo_model = train_ppo(
++                total_timesteps=scenario.total_timesteps,
++                seed=scenario.seeds[0],
++                truck_count=scenario.truck_count,
++                shovel_count=scenario.shovel_count,
++                episode_minutes=scenario.episode_minutes,
++                reward_weights=scenario.reward_weights,
++                output_dir=str(model_dir),
++            )
++
++        def ppo_policy(obs, info, env):
++            action, _ = ppo_model.predict(obs, deterministic=True)
++            return int(action)
++
++        policies["PPO"] = ppo_policy
++
++    # --- Évaluation sur toutes les seeds ---
++    for policy_name, policy_fn in policies.items():
++        for seed in scenario.seeds:
++            env = MineEnv(
++                truck_count=scenario.truck_count,
++                shovel_count=scenario.shovel_count,
++                episode_minutes=scenario.episode_minutes,
++                breakdown_probability=scenario.breakdown_probability,
++                reward_weights=scenario.reward_weights,
++            )
++            kpis = run_single_episode(env, policy_fn, seed)
++            row = {
++                "scenario": scenario.name,
++                "policy": policy_name,
++                "seed": seed,
++                **kpis,
++            }
++            results.append(row)
++            print(
++                f"  [{scenario.name}] {policy_name} seed={seed}: "
++                f"prod={kpis['productivity_tph']:.1f} t/h, "
++                f"wait={kpis['avg_wait_min_per_truck']:.1f} min, "
++                f"fuel={kpis['specific_fuel_l_per_ton']:.4f} L/t"
++            )
++
++    return results
++
++
++def run_all_benchmarks(
++    output_dir: str = "data/results",
++    train_ppo_flag: bool = True,
++    scenario_names: list[str] | None = None,
++) -> None:
++    """Lance les benchmarks sur tous les scénarios."""
++    out_path = Path(output_dir)
++    out_path.mkdir(parents=True, exist_ok=True)
++
++    scenarios_to_run = SCENARIOS
++    if scenario_names is not None:
++        scenarios_to_run = {
++            k: v for k, v in SCENARIOS.items() if k in scenario_names
++        }
++
++    all_results: list[dict] = []
++
++    for name, scenario in scenarios_to_run.items():
++        print(f"\n{'='*60}")
++        print(f"Scénario: {name} — {scenario.description}")
++        print(f"{'='*60}")
++        results = run_benchmark(scenario, out_path, train_ppo_flag)
++        all_results.extend(results)
++
++    # Sauvegarder les résultats en CSV
++    csv_path = out_path / "benchmark_results.csv"
++    if all_results:
++        fieldnames = list(all_results[0].keys())
++        with csv_path.open("w", newline="", encoding="utf-8") as f:
++            writer = csv.DictWriter(f, fieldnames=fieldnames)
++            writer.writeheader()
++            writer.writerows(all_results)
++        print(f"\nRésultats sauvegardés : {csv_path}")
++
++
++def main() -> None:
++    """Point d'entrée pour le benchmark complet."""
++    run_all_benchmarks(
++        output_dir="data/results",
++        train_ppo_flag=True,
++        scenario_names=["nominal"],
++    )
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/memoire_master_rl_logistique/experiments/scenarios.py b/memoire_master_rl_logistique/experiments/scenarios.py
+new file mode 100644
+index 0000000..27dd690
+--- /dev/null
++++ b/memoire_master_rl_logistique/experiments/scenarios.py
+@@ -0,0 +1,78 @@
++"""Définition des scénarios expérimentaux (Section 5.4 du mémoire).
++
++Chaque scénario est une configuration paramétrique de la simulation
++permettant d'évaluer la robustesse et la performance des différentes
++stratégies de dispatching.
++"""
++
++from __future__ import annotations
++
++from dataclasses import dataclass, field
++
++
++@dataclass
++class Scenario:
++    """Configuration d'un scénario expérimental."""
++
++    name: str
++    description: str
++    truck_count: int = 5
++    shovel_count: int = 2
++    episode_minutes: float = 480.0
++    breakdown_probability: float = 0.02
++    reward_weights: tuple[float, float, float] = (1.0, 0.1, 0.05)
++    seeds: list[int] = field(default_factory=lambda: list(range(42, 52)))
++    total_timesteps: int = 50_000
++
++
++# Scénarios de référence pour l'expérimentation
++SCENARIOS: dict[str, Scenario] = {
++    "nominal": Scenario(
++        name="nominal",
++        description="Scénario nominal : 5 camions, 2 pelles, conditions standards.",
++        truck_count=5,
++        shovel_count=2,
++        episode_minutes=480.0,
++        breakdown_probability=0.02,
++    ),
++    "high_load": Scenario(
++        name="high_load",
++        description="Charge élevée : 8 camions pour 2 pelles (surcharge).",
++        truck_count=8,
++        shovel_count=2,
++        episode_minutes=480.0,
++        breakdown_probability=0.02,
++    ),
++    "low_load": Scenario(
++        name="low_load",
++        description="Charge faible : 3 camions pour 2 pelles (sous-utilisation).",
++        truck_count=3,
++        shovel_count=2,
++        episode_minutes=480.0,
++        breakdown_probability=0.02,
++    ),
++    "high_breakdown": Scenario(
++        name="high_breakdown",
++        description="Taux de pannes élevé : 10% par cycle (test de robustesse).",
++        truck_count=5,
++        shovel_count=2,
++        episode_minutes=480.0,
++        breakdown_probability=0.10,
++    ),
++    "single_shovel": Scenario(
++        name="single_shovel",
++        description="Une seule pelle : test de goulot d'étranglement.",
++        truck_count=5,
++        shovel_count=1,
++        episode_minutes=480.0,
++        breakdown_probability=0.02,
++    ),
++    "short_shift": Scenario(
++        name="short_shift",
++        description="Shift court : 4 heures au lieu de 8.",
++        truck_count=5,
++        shovel_count=2,
++        episode_minutes=240.0,
++        breakdown_probability=0.02,
++    ),
++}
+diff --git a/memoire_master_rl_logistique/experiments/stats_report.py b/memoire_master_rl_logistique/experiments/stats_report.py
+new file mode 100644
+index 0000000..dc4bfc8
+--- /dev/null
++++ b/memoire_master_rl_logistique/experiments/stats_report.py
+@@ -0,0 +1,222 @@
++"""Analyse statistique et génération de figures (Sprint E).
++
++Produit les tableaux comparatifs et les figures pour le Chapitre 6 :
++- Tableaux : moyenne ± écart-type par méthode et scénario
++- Figures : barplots comparatifs des KPIs
++- Tests statistiques de significativité (Demšar, 2006)
++"""
++
++from __future__ import annotations
++
++from pathlib import Path
++
++import matplotlib
++import matplotlib.pyplot as plt
++import numpy as np
++import pandas as pd
++
++matplotlib.use("Agg")
++
++
++def load_results(csv_path: str | Path) -> pd.DataFrame:
++    """Charge les résultats du benchmark depuis un CSV."""
++    return pd.read_csv(csv_path)
++
++
++def generate_summary_table(
++    df: pd.DataFrame,
++    output_dir: Path,
++) -> pd.DataFrame:
++    """Génère le tableau de synthèse (moyenne ± std) par politique et scénario."""
++    kpi_cols = [
++        "productivity_tph",
++        "avg_wait_min_per_truck",
++        "utilization_pct",
++        "specific_fuel_l_per_ton",
++        "total_reward",
++    ]
++
++    summary_rows = []
++    for scenario in df["scenario"].unique():
++        for policy in df["policy"].unique():
++            mask = (df["scenario"] == scenario) & (df["policy"] == policy)
++            subset = df[mask]
++            row = {"scenario": scenario, "policy": policy}
++            for col in kpi_cols:
++                if col in subset.columns:
++                    mean = subset[col].mean()
++                    std = subset[col].std()
++                    row[f"{col}_mean"] = round(mean, 2)
++                    row[f"{col}_std"] = round(std, 2)
++                    row[f"{col}_display"] = f"{mean:.2f} ± {std:.2f}"
++            summary_rows.append(row)
++
++    summary_df = pd.DataFrame(summary_rows)
++    summary_path = output_dir / "summary_table.csv"
++    summary_df.to_csv(summary_path, index=False, encoding="utf-8")
++    print(f"Tableau de synthèse sauvegardé : {summary_path}")
++    return summary_df
++
++
++def plot_kpi_comparison(
++    df: pd.DataFrame,
++    output_dir: Path,
++    scenario_name: str = "nominal",
++) -> None:
++    """Génère les barplots comparatifs des KPIs (figures pour le Chapitre 6)."""
++    mask = df["scenario"] == scenario_name
++    subset = df[mask]
++
++    if subset.empty:
++        print(f"Aucune donnée pour le scénario '{scenario_name}'.")
++        return
++
++    policies = subset["policy"].unique()
++    kpis = {
++        "productivity_tph": ("Productivité (t/h)", "steelblue"),
++        "avg_wait_min_per_truck": ("Attente moy./camion (min)", "coral"),
++        "utilization_pct": ("Utilisation (%)", "seagreen"),
++        "specific_fuel_l_per_ton": ("Conso. spécifique (L/t)", "goldenrod"),
++    }
++
++    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
++    fig.suptitle(
++        f"Comparaison des KPIs — Scénario: {scenario_name}",
++        fontsize=14,
++        fontweight="bold",
++    )
++
++    for ax, (col, (label, color)) in zip(axes.flat, kpis.items()):
++        means = []
++        stds = []
++        for policy in policies:
++            policy_data = subset[subset["policy"] == policy][col]
++            means.append(policy_data.mean())
++            stds.append(policy_data.std())
++
++        x = np.arange(len(policies))
++        bars = ax.bar(x, means, yerr=stds, color=color, alpha=0.8, capsize=5)
++        ax.set_xticks(x)
++        ax.set_xticklabels(policies, fontsize=10)
++        ax.set_ylabel(label, fontsize=11)
++        ax.set_title(label, fontsize=12)
++        ax.grid(axis="y", alpha=0.3)
++
++        for bar, mean in zip(bars, means):
++            ax.text(
++                bar.get_x() + bar.get_width() / 2,
++                bar.get_height() + 0.01 * max(means),
++                f"{mean:.1f}",
++                ha="center",
++                va="bottom",
++                fontsize=9,
++            )
++
++    plt.tight_layout()
++    fig_path = output_dir / f"kpi_comparison_{scenario_name}.png"
++    plt.savefig(fig_path, dpi=150, bbox_inches="tight")
++    plt.close()
++    print(f"Figure sauvegardée : {fig_path}")
++
++
++def plot_learning_curve(
++    training_csv: str | Path,
++    output_dir: Path,
++) -> None:
++    """Génère la courbe d'apprentissage (learning curve) de l'agent PPO."""
++    csv_path = Path(training_csv)
++    if not csv_path.exists():
++        print(f"Fichier d'entraînement non trouvé : {csv_path}")
++        return
++
++    df = pd.read_csv(csv_path)
++
++    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
++    fig.suptitle("Courbes d'apprentissage PPO", fontsize=14, fontweight="bold")
++
++    # Tonnage
++    if "tonnage_t" in df.columns:
++        window = min(20, len(df))
++        axes[0].plot(df["tonnage_t"], alpha=0.3, color="steelblue")
++        axes[0].plot(
++            df["tonnage_t"].rolling(window).mean(),
++            color="steelblue",
++            linewidth=2,
++        )
++        axes[0].set_xlabel("Épisode")
++        axes[0].set_ylabel("Tonnage (t)")
++        axes[0].set_title("Tonnage par épisode")
++        axes[0].grid(alpha=0.3)
++
++    # Temps d'attente
++    if "wait_min" in df.columns:
++        axes[1].plot(df["wait_min"], alpha=0.3, color="coral")
++        axes[1].plot(
++            df["wait_min"].rolling(window).mean(),
++            color="coral",
++            linewidth=2,
++        )
++        axes[1].set_xlabel("Épisode")
++        axes[1].set_ylabel("Attente (min)")
++        axes[1].set_title("Temps d'attente par épisode")
++        axes[1].grid(alpha=0.3)
++
++    # Carburant
++    if "fuel_l" in df.columns:
++        axes[2].plot(df["fuel_l"], alpha=0.3, color="goldenrod")
++        axes[2].plot(
++            df["fuel_l"].rolling(window).mean(),
++            color="goldenrod",
++            linewidth=2,
++        )
++        axes[2].set_xlabel("Épisode")
++        axes[2].set_ylabel("Carburant (L)")
++        axes[2].set_title("Consommation par épisode")
++        axes[2].grid(alpha=0.3)
++
++    plt.tight_layout()
++    fig_path = output_dir / "learning_curve_ppo.png"
++    plt.savefig(fig_path, dpi=150, bbox_inches="tight")
++    plt.close()
++    print(f"Learning curve sauvegardée : {fig_path}")
++
++
++def generate_full_report(
++    results_csv: str = "data/results/benchmark_results.csv",
++    training_csv: str = "models/ppo_mine/training_kpis.csv",
++    output_dir: str = "data/results/figures",
++) -> None:
++    """Génère le rapport complet : tableaux + figures."""
++    out_path = Path(output_dir)
++    out_path.mkdir(parents=True, exist_ok=True)
++
++    results_path = Path(results_csv)
++    if not results_path.exists():
++        print(f"Fichier de résultats non trouvé : {results_path}")
++        print("Lancez d'abord run_benchmark.py.")
++        return
++
++    df = load_results(results_path)
++
++    # Tableau de synthèse
++    summary = generate_summary_table(df, out_path)
++    print("\n=== Tableau de synthèse ===")
++    print(summary.to_string(index=False))
++
++    # Figures par scénario
++    for scenario in df["scenario"].unique():
++        plot_kpi_comparison(df, out_path, scenario)
++
++    # Learning curve
++    plot_learning_curve(training_csv, out_path)
++
++    print(f"\nRapport complet généré dans : {out_path}")
++
++
++def main() -> None:
++    """Point d'entrée pour la génération du rapport."""
++    generate_full_report()
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/memoire_master_rl_logistique/rl/__init__.py b/memoire_master_rl_logistique/rl/__init__.py
+new file mode 100644
+index 0000000..7cf9312
+--- /dev/null
++++ b/memoire_master_rl_logistique/rl/__init__.py
+@@ -0,0 +1 @@
++"""Module d'apprentissage par renforcement (Sprint D)."""
+diff --git a/memoire_master_rl_logistique/rl/callbacks.py b/memoire_master_rl_logistique/rl/callbacks.py
+new file mode 100644
+index 0000000..64e2c6d
+--- /dev/null
++++ b/memoire_master_rl_logistique/rl/callbacks.py
+@@ -0,0 +1,73 @@
++"""Callbacks personnalisés pour l'entraînement PPO.
++
++Enregistre les métriques clés (KPIs) à intervalles réguliers
++pour produire les learning curves (Section 4.4 du mémoire).
++"""
++
++from __future__ import annotations
++
++from pathlib import Path
++
++from stable_baselines3.common.callbacks import BaseCallback
++
++
++class KPILoggerCallback(BaseCallback):
++    """Enregistre les KPIs de l'environnement minier dans un CSV."""
++
++    def __init__(
++        self,
++        log_path: Path,
++        log_freq: int = 1000,
++        verbose: int = 0,
++    ) -> None:
++        super().__init__(verbose)
++        self.log_path = log_path
++        self.log_freq = log_freq
++        self._episode_rewards: list[float] = []
++        self._episode_tonnages: list[float] = []
++        self._episode_waits: list[float] = []
++        self._episode_fuels: list[float] = []
++
++    def _on_step(self) -> bool:
++        infos = self.locals.get("infos", [])
++        dones = self.locals.get("dones", [])
++
++        for i, done in enumerate(dones):
++            if done and i < len(infos):
++                info = infos[i]
++                self._episode_tonnages.append(info.get("total_tonnage_t", 0.0))
++                self._episode_waits.append(info.get("total_wait_min", 0.0))
++                self._episode_fuels.append(info.get("total_fuel_l", 0.0))
++
++        if self.num_timesteps % self.log_freq == 0 and self._episode_tonnages:
++            avg_tonnage = sum(self._episode_tonnages) / len(self._episode_tonnages)
++            avg_wait = sum(self._episode_waits) / len(self._episode_waits)
++            avg_fuel = sum(self._episode_fuels) / len(self._episode_fuels)
++
++            self.logger.record("mine/avg_tonnage_t", avg_tonnage)
++            self.logger.record("mine/avg_wait_min", avg_wait)
++            self.logger.record("mine/avg_fuel_l", avg_fuel)
++            self.logger.record("mine/episodes_logged", len(self._episode_tonnages))
++
++            if self.verbose > 0:
++                print(
++                    f"[Step {self.num_timesteps}] "
++                    f"tonnage={avg_tonnage:.0f}t, "
++                    f"wait={avg_wait:.1f}min, "
++                    f"fuel={avg_fuel:.1f}L"
++                )
++
++        return True
++
++    def _on_training_end(self) -> None:
++        self.log_path.parent.mkdir(parents=True, exist_ok=True)
++        with self.log_path.open("w", encoding="utf-8") as f:
++            f.write("episode,tonnage_t,wait_min,fuel_l\n")
++            for i, (ton, wait, fuel) in enumerate(
++                zip(
++                    self._episode_tonnages,
++                    self._episode_waits,
++                    self._episode_fuels,
++                )
++            ):
++                f.write(f"{i},{ton:.2f},{wait:.2f},{fuel:.2f}\n")
+diff --git a/memoire_master_rl_logistique/rl/evaluate_agent.py b/memoire_master_rl_logistique/rl/evaluate_agent.py
+new file mode 100644
+index 0000000..b0c0462
+--- /dev/null
++++ b/memoire_master_rl_logistique/rl/evaluate_agent.py
+@@ -0,0 +1,186 @@
++"""Évaluation de l'agent PPO entraîné et des baselines.
++
++Produit les métriques de performance (Section 4.5 du mémoire) :
++- Productivité horaire (t/h)
++- Temps d'attente moyen par camion (min)
++- Consommation spécifique (L/t)
++- Taux d'utilisation (%)
++"""
++
++from __future__ import annotations
++
++from pathlib import Path
++
++import numpy as np
++from stable_baselines3 import PPO
++
++from memoire_master_rl_logistique.baselines.fixed_policy import FixedAssignmentPolicy
++from memoire_master_rl_logistique.baselines.nearest_policy import NearestShovelPolicy
++from memoire_master_rl_logistique.baselines.queue_aware_policy import QueueAwarePolicy
++from memoire_master_rl_logistique.env.mine_env import MineEnv
++from memoire_master_rl_logistique.simulation.kpi import compute_kpis
++
++
++def evaluate_policy(
++    env: MineEnv,
++    policy_fn,
++    n_episodes: int = 10,
++    policy_name: str = "policy",
++) -> dict[str, float]:
++    """Évalue une politique sur n épisodes et retourne les KPIs moyens."""
++    all_kpis: list[dict[str, float]] = []
++
++    for ep in range(n_episodes):
++        obs, info = env.reset(seed=42 + ep)
++        total_reward = 0.0
++
++        while True:
++            action = policy_fn(obs, info)
++            obs, reward, terminated, truncated, info = env.step(action)
++            total_reward += reward
++            if terminated or truncated:
++                break
++
++        total_tonnage = sum(t.total_tonnage_t for t in env.trucks)
++        total_wait = sum(t.total_wait_min for t in env.trucks)
++        total_active = sum(t.total_active_min for t in env.trucks)
++        total_fuel = sum(t.total_fuel_l for t in env.trucks)
++
++        kpis = compute_kpis(
++            episode_minutes=env.episode_minutes,
++            truck_count=env.truck_count,
++            total_tonnage_t=total_tonnage,
++            total_wait_min=total_wait,
++            total_active_min=total_active,
++            total_fuel_l=total_fuel,
++        )
++        kpis["total_reward"] = total_reward
++        all_kpis.append(kpis)
++
++    avg_kpis = {}
++    for key in all_kpis[0]:
++        values = [k[key] for k in all_kpis]
++        avg_kpis[f"{key}_mean"] = float(np.mean(values))
++        avg_kpis[f"{key}_std"] = float(np.std(values))
++
++    avg_kpis["policy_name"] = policy_name
++    return avg_kpis
++
++
++def evaluate_ppo(
++    model_path: str,
++    n_episodes: int = 10,
++    truck_count: int = 5,
++    shovel_count: int = 2,
++    episode_minutes: float = 480.0,
++) -> dict[str, float]:
++    """Évalue l'agent PPO entraîné."""
++    env = MineEnv(
++        truck_count=truck_count,
++        shovel_count=shovel_count,
++        episode_minutes=episode_minutes,
++    )
++    model = PPO.load(model_path)
++
++    def ppo_policy(obs, info):
++        action, _ = model.predict(obs, deterministic=True)
++        return int(action)
++
++    return evaluate_policy(env, ppo_policy, n_episodes, "PPO")
++
++
++def evaluate_all_baselines(
++    n_episodes: int = 10,
++    truck_count: int = 5,
++    shovel_count: int = 2,
++    episode_minutes: float = 480.0,
++) -> list[dict[str, float]]:
++    """Évalue toutes les baselines et retourne les résultats."""
++    results = []
++
++    # Fixed Assignment
++    env = MineEnv(
++        truck_count=truck_count, shovel_count=shovel_count,
++        episode_minutes=episode_minutes,
++    )
++    fixed = FixedAssignmentPolicy(num_shovels=shovel_count)
++    results.append(evaluate_policy(
++        env, lambda obs, info: fixed.predict(obs, info), n_episodes, "Fixed"
++    ))
++
++    # Nearest Shovel
++    env = MineEnv(
++        truck_count=truck_count, shovel_count=shovel_count,
++        episode_minutes=episode_minutes,
++    )
++    obs, info = env.reset()
++    nearest = NearestShovelPolicy(
++        graph=env.graph,
++        shovel_node_ids=[s.node_id for s in env.shovels],
++    )
++    results.append(evaluate_policy(
++        env,
++        lambda obs, info: nearest.predict(
++            obs, info, env.truck_locations[env.current_truck_idx]
++        ),
++        n_episodes,
++        "Nearest",
++    ))
++
++    # Queue-Aware
++    env = MineEnv(
++        truck_count=truck_count, shovel_count=shovel_count,
++        episode_minutes=episode_minutes,
++    )
++    obs, info = env.reset()
++    queue_aware = QueueAwarePolicy(graph=env.graph, shovels=env.shovels)
++    results.append(evaluate_policy(
++        env,
++        lambda obs, info: queue_aware.predict(
++            obs, info, env.truck_locations[env.current_truck_idx],
++            env.current_time_min,
++        ),
++        n_episodes,
++        "QueueAware",
++    ))
++
++    return results
++
++
++def main() -> None:
++    """Point d'entrée pour l'évaluation complète."""
++    print("=== Évaluation des baselines ===")
++    baseline_results = evaluate_all_baselines(n_episodes=10)
++
++    for result in baseline_results:
++        policy_name = result.get("policy_name", "Unknown")
++        print(f"\n--- {policy_name} ---")
++        print(f"  Productivité: {result['productivity_tph_mean']:.1f} "
++              f"± {result['productivity_tph_std']:.1f} t/h")
++        print(f"  Attente moy/camion: {result['avg_wait_min_per_truck_mean']:.1f} "
++              f"± {result['avg_wait_min_per_truck_std']:.1f} min")
++        print(f"  Utilisation: {result['utilization_pct_mean']:.1f} "
++              f"± {result['utilization_pct_std']:.1f} %")
++        print(f"  Conso spécifique: {result['specific_fuel_l_per_ton_mean']:.3f} "
++              f"± {result['specific_fuel_l_per_ton_std']:.3f} L/t")
++
++    # Évaluation PPO si le modèle existe
++    model_path = Path("models/ppo_mine/ppo_mine_agent.zip")
++    if model_path.exists():
++        print("\n=== Évaluation PPO ===")
++        ppo_result = evaluate_ppo(str(model_path), n_episodes=10)
++        print(f"  Productivité: {ppo_result['productivity_tph_mean']:.1f} "
++              f"± {ppo_result['productivity_tph_std']:.1f} t/h")
++        print(f"  Attente moy/camion: {ppo_result['avg_wait_min_per_truck_mean']:.1f} "
++              f"± {ppo_result['avg_wait_min_per_truck_std']:.1f} min")
++        print(f"  Utilisation: {ppo_result['utilization_pct_mean']:.1f} "
++              f"± {ppo_result['utilization_pct_std']:.1f} %")
++        print(f"  Conso spécifique: {ppo_result['specific_fuel_l_per_ton_mean']:.3f} "
++              f"± {ppo_result['specific_fuel_l_per_ton_std']:.3f} L/t")
++    else:
++        print(f"\nModèle PPO non trouvé ({model_path}). "
++              "Lancez d'abord l'entraînement.")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/memoire_master_rl_logistique/rl/train_ppo.py b/memoire_master_rl_logistique/rl/train_ppo.py
+new file mode 100644
+index 0000000..183a110
+--- /dev/null
++++ b/memoire_master_rl_logistique/rl/train_ppo.py
+@@ -0,0 +1,123 @@
++"""Entraînement de l'agent PPO pour le dispatching minier.
++
++Conforme au Chapitre 4, Section 4.4 du mémoire :
++- Algorithme : PPO (Proximal Policy Optimization)
++- Bibliothèque : Stable-Baselines3
++- Hyperparamètres : Tableau 4.3 du mémoire
++- Architecture réseau : MLP 128×128 avec ReLU (Section 4.3.2)
++"""
++
++from __future__ import annotations
++
++from pathlib import Path
++
++from stable_baselines3 import PPO
++from stable_baselines3.common.env_util import make_vec_env
++
++from memoire_master_rl_logistique.env.mine_env import MineEnv
++from memoire_master_rl_logistique.rl.callbacks import KPILoggerCallback
++
++
++def create_env(
++    truck_count: int = 5,
++    shovel_count: int = 2,
++    episode_minutes: float = 480.0,
++    seed: int = 42,
++    reward_weights: tuple[float, float, float] = (1.0, 0.1, 0.05),
++) -> MineEnv:
++    """Crée une instance de l'environnement minier."""
++    return MineEnv(
++        truck_count=truck_count,
++        shovel_count=shovel_count,
++        episode_minutes=episode_minutes,
++        seed=seed,
++        reward_weights=reward_weights,
++    )
++
++
++def train_ppo(
++    total_timesteps: int = 50_000,
++    seed: int = 42,
++    truck_count: int = 5,
++    shovel_count: int = 2,
++    episode_minutes: float = 480.0,
++    reward_weights: tuple[float, float, float] = (1.0, 0.1, 0.05),
++    output_dir: str = "models/ppo_mine",
++    log_freq: int = 1000,
++) -> PPO:
++    """Entraîne un agent PPO sur l'environnement minier.
++
++    Hyperparamètres conformes au Tableau 4.3 du mémoire :
++    - Learning rate : 0.0003
++    - Gamma : 0.99
++    - Batch size : 64
++    - GAE Lambda : 0.95
++    - Clip range : 0.2
++    - Architecture : MLP [128, 128]
++    """
++    out_path = Path(output_dir)
++    out_path.mkdir(parents=True, exist_ok=True)
++
++    env = make_vec_env(
++        lambda: create_env(
++            truck_count=truck_count,
++            shovel_count=shovel_count,
++            episode_minutes=episode_minutes,
++            seed=seed,
++            reward_weights=reward_weights,
++        ),
++        n_envs=1,
++        seed=seed,
++    )
++
++    model = PPO(
++        policy="MlpPolicy",
++        env=env,
++        learning_rate=3e-4,
++        gamma=0.99,
++        batch_size=64,
++        gae_lambda=0.95,
++        clip_range=0.2,
++        n_steps=2048,
++        n_epochs=10,
++        ent_coef=0.01,
++        policy_kwargs={"net_arch": [128, 128]},
++        verbose=1,
++        seed=seed,
++        tensorboard_log=str(out_path / "tb_logs"),
++    )
++
++    kpi_callback = KPILoggerCallback(
++        log_path=out_path / "training_kpis.csv",
++        log_freq=log_freq,
++        verbose=1,
++    )
++
++    print(f"Début de l'entraînement PPO ({total_timesteps} steps)...")
++    model.learn(
++        total_timesteps=total_timesteps,
++        callback=kpi_callback,
++        progress_bar=True,
++    )
++
++    model_path = out_path / "ppo_mine_agent"
++    model.save(str(model_path))
++    print(f"Modèle sauvegardé : {model_path}")
++
++    env.close()
++    return model
++
++
++def main() -> None:
++    """Point d'entrée pour l'entraînement."""
++    train_ppo(
++        total_timesteps=50_000,
++        seed=42,
++        truck_count=5,
++        shovel_count=2,
++        episode_minutes=480.0,
++    )
++
++
++if __name__ == "__main__":
++    main()

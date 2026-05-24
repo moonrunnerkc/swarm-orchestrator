@@ -1,0 +1,26 @@
+{
+  "id": "devin-naoki-dx-devindemo-pr2",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 2,
+    "headSha": "3b14a946960028b155f924a7e3124da3aa7e6f3e",
+    "baseSha": "90c329ef4ce4b1f30f21e096cdafe7f4959720b5",
+    "title": "feat: ドキュメントアップロード機能を追加（RAG対応）",
+    "body": "## Summary\nマニュアルやドキュメントをアップロードし、その内容に基づいてAIが回答するRAG的な機能を追加しました。\n\n### 追加された機能\n- **タブUI**: 「💬 チャット」と「📄 ドキュメント」のタブを追加。タブで画面を切り替え可能\n- **ドキュメントアップロード**: テキストファイル（.txt, .md, .csv, .json, .xml, .html, .log 等）をアップロード可能\n- **複数ファイル対応**: 複数のドキュメントを同時にアップロード・管理可能\n- **ドキュメント一覧**: アップロード済みファイルの名前・サイズを表示、個別に削除可能\n- **AIへの自動連携**: アップロードしたドキュメントの内容をシステムプロンプトに自動的に組み込み、AIがドキュメントに基づいて回答\n- **ステータス表示**: ヘッダーにアップロード済みドキュメント数を表示\n\n### 技術的な仕組み\n- ブラウザの FileReader API でファイル内容を読み込み、React state に保持\n- チャット送信時にドキュメント内容を system メッセージに結合して OpenAI API に送信\n- 既存のシステムプロンプト設定との併用が可能（プロンプト + ドキュメントの両方が反映される）\n\n### 制限事項\n- サーバーレスのブラウザ実装のため、本格的なベクトル検索（Embedding + Vector DB）ではなく、ドキュメント全文をコンテキストとして送信する方式\n- OpenAI API のトークン制限により、非常に大きなドキュメントは扱えません（目安: 約50ページ程度まで）\n- テキストベースのファイルのみ対応（PDF等のバイナリファイルは非対応）\n\n## Review & Testing Checklist for Human\n- [ ] `index.html` をブラウザで開き、「💬 チャット」「📄 ドキュメント」のタブが表示されるか確認\n- [ ] ドキュメントタブでテキストファイルをアップロードし、ファイル一覧に表示されるか確認\n- [ ] ドキュメントをアップロードした状態でチャットタブに切り替え、メッセージを送信し、ドキュメントの内容に基づいた回答が返ってくるか確認（要APIキー）\n- [ ] ドキュメントの削除ボタン（✕）で個別に削除できるか確認\n\n### テスト手順\n1. `index.html` をブラウザで開く\n2. ⚙ アイコンからAPIキーを設定\n3. 「📄 ドキュメント」タブをクリック\n4. テキストファイル（マニュアル等）をアップロード\n5. 「💬 チャット」タブに戻る\n6. アップロードしたマニュアルの内容について質問し、ドキュメントに基づいた回答が返ることを確認\n\n### Notes\n- 既存のチャット機能・設定機能への影響はありません（後方互換性あり）\n- ドキュメント未アップロード時は従来通りの動作です\n\nLink to Devin session: https://app.devin.ai/sessions/ccbac0fd241a4d6387ca3dc82b687886\nRequested by: @naoki-dx",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779586998-add-rag-upload",
+    "repository": "naoki-dx/devindemo"
+  },
+  "diffRef": {
+    "repository": "naoki-dx/devindemo",
+    "headSha": "3b14a946960028b155f924a7e3124da3aa7e6f3e",
+    "baseSha": "90c329ef4ce4b1f30f21e096cdafe7f4959720b5"
+  },
+  "vendoredDiffPath": "devin/devin-naoki-dx-devindemo-pr2.diff",
+  "vendoredAt": "2026-05-24T03:04:12.028Z",
+  "collectedAt": "2026-05-24T03:04:12.028Z"
+}

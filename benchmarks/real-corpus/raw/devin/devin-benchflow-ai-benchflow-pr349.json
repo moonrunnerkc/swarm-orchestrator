@@ -1,0 +1,26 @@
+{
+  "id": "devin-benchflow-ai-benchflow-pr349",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 349,
+    "headSha": "f496d7622aad7268c0007a30380974607f6cffb1",
+    "baseSha": "549d2bf59e1515457df4a2816a575cfb8e596e6e",
+    "title": "fix: accept verifier reward output when script exits nonzero (ENG-150)",
+    "body": "## Summary\n\nFixes ENG-150: SkillsBench verifiers exiting nonzero after reward 0 were reported as `verifier_errored` instead of honest model failures (`failed`).\n\n**Root cause:** `verifier.py` line 270-277 raised `VerifierOutputParseError` whenever a verifier script exited nonzero AND a reward file existed. This was intended to prevent accepting \"stale\" reward output from a crashed verifier — but `_clear_reward_outputs()` already wipes stale files before each run, so any reward file present was written by the current invocation.\n\n**The fix:** Replace the blanket rejection with a warning log. The reward is accepted and the result is classified by the scoring layer as `\"failed\"` (reward=0) or `\"passed\"` (reward=1.0) instead of `\"verifier_errored\"`.\n\n**Before:** `dynamic-object-aware-egomotion`, `threejs-structure-parser`, `threejs-to-obj` → `verifier_errored` (infrastructure noise)\n**After:** Same tasks → `failed` (honest model failure signal)\n\n**Changes:**\n- `src/benchflow/task/verifier.py`: Replace `VerifierOutputParseError` raise with `logger.warning` when `rc!=0` + reward file present\n- `tests/test_oracle_chokepoint.py`: Add 5 ENG-150 guard tests (scoring classification, reward.txt acceptance, reward.json acceptance, e2e pipeline, invariant for no-reward-file case)\n- `tests/test_llm_judge_verifier.py`: Delete pre-ENG-150 test per AGENTS.md convention (new behavior covered by chokepoint tests)\n\n**Test results:** 1861 passed, 9 skipped, 0 failed. ruff + ty clean.\n\n**Real eval:** gemini-3.1-flash-lite-preview on Daytona, `--include hello-world-task`, reward=1.0, all artifacts verified (result.json, trajectory/9 entries, summary.json, reward.txt).\n\n## Review & Testing Checklist for Human\n\n- [ ] **Verify reward freshness guarantee**: Confirm that `_clear_reward_outputs()` at line 147 of `verifier.py` wipes both `reward.txt` and `reward.json` before every verifier run — this is the safety invariant that makes accepting reward-from-nonzero-exit safe\n- [ ] **Run SkillsBench tasks that previously showed `verifier_errored`**: Rerun `dynamic-object-aware-egomotion`, `threejs-structure-parser`, or `threejs-to-obj` and confirm they now classify as `failed` with reward=0 instead of `verifier_errored`\n- [ ] **Check for false passes**: Verify that a genuinely crashed verifier (no reward file written) still raises `RewardFileNotFoundError` and gets classified as `verifier_errored`\n\n### Notes\n\nThe scoring precedence in `_utils/scoring.py` is unchanged — reward still takes precedence over errors (lines 123-128). The fix only changes the verifier layer to stop discarding valid reward output.\n\nDevin Review feedback addressed: deleted the pre-ENG-150 test entirely instead of rewriting it in-place, per AGENTS.md convention.\n\nLink to Devin session: https://app.devin.ai/sessions/d30db77671094a719a2d951dde637750\nRequested by: @xdotli\n<!-- devin-review-badge-begin -->\n\n---\n\n<a href=\"https://app.devin.ai/review/benchflow-ai/benchflow/pull/349\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-open-in-devin-review-dark.svg?v=1\">\n    <img src=\"https://static.devin.ai/assets/gh-open-in-devin-review-light.svg?v=1\" alt=\"Open in Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779585882-eng-150-verifier-reward-acceptance",
+    "repository": "benchflow-ai/benchflow"
+  },
+  "diffRef": {
+    "repository": "benchflow-ai/benchflow",
+    "headSha": "f496d7622aad7268c0007a30380974607f6cffb1",
+    "baseSha": "549d2bf59e1515457df4a2816a575cfb8e596e6e"
+  },
+  "vendoredDiffPath": "devin/devin-benchflow-ai-benchflow-pr349.diff",
+  "vendoredAt": "2026-05-24T03:04:13.450Z",
+  "collectedAt": "2026-05-24T03:04:13.450Z"
+}

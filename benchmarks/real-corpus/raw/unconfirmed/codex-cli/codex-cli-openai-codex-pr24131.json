@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24131",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24131,
+    "headSha": "96d3b7dfa5d0a94b0a558576afad85d0c7335854",
+    "baseSha": "423488480fa8b4502d1813f5fefe2292dd0f6bf7",
+    "title": "centralize Responses retry policy",
+    "body": "## Why\n\n#23951 added remote compaction v2 retries, but it left the retry and WS -> HTTPS fallback behavior duplicated between normal Responses turns and compaction. This follow-up centralizes the common retry handling so future changes to fallback, retry delay, retry notifications, and retry sleep do not have to be kept in sync across both callsites.\n\n## What changed\n\n- Added `core/src/responses_retry.rs` with a shared handler for retryable Responses stream errors.\n- Reused that handler from normal turn sampling and remote compaction v2.\n- Kept each callsite responsible for its retry budget: normal turns still use `stream_max_retries`, while compaction v2 still uses `min(stream_max_retries, 2)`.\n- Preserved caller-specific behavior around non-retryable errors, context-window errors, usage-limit errors, and compact-specific final failure logging.\n\nThe shared handler now owns:\n\n- WS -> HTTPS fallback warning emission\n- retry delay selection, including server-requested stream retry delay\n- retry logging\n- first-WebSocket-retry notification suppression\n- `Reconnecting... n/max` stream-error notification\n- sleeping before the next retry attempt\n\n## Verification\n\n- `cargo test -p codex-core remote_compact_v2`\n- `cargo test -p codex-core websocket_fallback`\n- `just fix -p codex-core`\n\nDid not run the full workspace test suite.\n",
+    "author": "rhan-oai",
+    "headRef": "rhan/retry-fallback-refactor",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "96d3b7dfa5d0a94b0a558576afad85d0c7335854",
+    "baseSha": "423488480fa8b4502d1813f5fefe2292dd0f6bf7"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24131.diff",
+  "vendoredAt": "2026-05-24T03:21:01.723Z",
+  "collectedAt": "2026-05-24T03:21:01.723Z"
+}

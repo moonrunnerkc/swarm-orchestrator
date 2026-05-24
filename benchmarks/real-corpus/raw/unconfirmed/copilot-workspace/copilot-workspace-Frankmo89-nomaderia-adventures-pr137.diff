@@ -1,0 +1,175 @@
+diff --git a/docs/pending-tasks.md b/docs/pending-tasks.md
+index 45899f1..1f0be84 100644
+--- a/docs/pending-tasks.md
++++ b/docs/pending-tasks.md
+@@ -386,6 +386,11 @@ https://nomaderia.com/
+ - Integrado en Index.tsx entre GearPreview y SocialProof
+ - Si no hay posts publicados, la sección no se renderiza
+ 
++### ✅ SocialProof: Conteos Reales vía `usePublicStats` (Mayo 2026)
++- [x] **Nuevo hook `src/hooks/use-public-stats.ts`** — consultas `head: true` / `count: "exact"` con `Promise.all` para 4 tablas: `destinations` (is_published=true), `blog_posts` (is_published=true), `quiz_responses` (total), `newsletter_subscribers` (total). `staleTime: 30 min`. Errores lanzados silenciosamente (retorna `undefined`, la UI no renderiza).
++- [x] **`SocialProof.tsx` actualizado** — importa `usePublicStats`; reemplaza los números inventados (350+, 12) con conteos en vivo. Cada tarjeta sólo se renderiza si su conteo es > 0. La tarjeta TAP (certificación real, sin número) siempre se muestra. Mientras se carga, el componente retorna `null` para evitar un parpadeo con ceros.
++- [x] Cero testimonios, cero estrellas, cero números inventados.
++
+ ### ✅ SocialProof: Alto Impacto Visual con Contadores Animados (Marzo 2026)
+ - [x] Sección de Prueba Social ahora es dinámica con datos reales de Supabase y contadores animados
+ - [x] `AnimatedCounter` interno usa `useMotionValue`, `useTransform`, `useSpring` y `useInView` de Framer Motion para contar de 0 al valor real cuando la sección es visible
+diff --git a/src/components/landing/SocialProof.tsx b/src/components/landing/SocialProof.tsx
+index 20a7b3c..d8e81e5 100644
+--- a/src/components/landing/SocialProof.tsx
++++ b/src/components/landing/SocialProof.tsx
+@@ -1,6 +1,7 @@
+ import { useEffect, useRef } from "react";
+ import { motion, useMotionValue, useTransform, useSpring, useInView } from "framer-motion";
+-import { Users, MapPin, ShieldCheck } from "lucide-react";
++import { Users, MapPin, ShieldCheck, BookOpen } from "lucide-react";
++import { usePublicStats } from "@/hooks/use-public-stats";
+ 
+ /** Animated counter that counts from 0 to `target` when visible */
+ const AnimatedCounter = ({
+@@ -30,32 +31,63 @@ const AnimatedCounter = ({
+ };
+ 
+ const SocialProof = () => {
+-  const stats = [
+-    {
+-      icon: Users,
+-      value: 350,
+-      suffix: "+",
+-      label: "Aventureros han encontrado su destino ideal",
+-      sublabel: "con nuestro quiz personalizado",
+-      isTap: false,
+-    },
+-    {
+-      icon: MapPin,
+-      value: 12,
+-      suffix: "",
+-      label: "Destinos documentados con guías completas",
+-      sublabel: "desde fin de semana hasta expediciones",
+-      isTap: false,
+-    },
+-    {
+-      icon: ShieldCheck,
+-      value: 0,
+-      suffix: "",
+-      label: "Agente de viajes certificada",
+-      sublabel: "National TAP Test — The Travel Institute, USA",
+-      isTap: true,
+-    },
+-  ];
++  const { data: stats, isLoading } = usePublicStats();
++
++  // Build the list of real data-driven stat cards (only shown when count > 0)
++  const dataStats = [
++    stats?.quizResponses && stats.quizResponses > 0
++      ? {
++          icon: Users,
++          value: stats.quizResponses,
++          suffix: "",
++          label: "Aventureros han hecho el quiz",
++          sublabel: "y encontraron su destino ideal",
++          isTap: false,
++        }
++      : null,
++    stats?.destinations && stats.destinations > 0
++      ? {
++          icon: MapPin,
++          value: stats.destinations,
++          suffix: "",
++          label: "Destinos guiados",
++          sublabel: "con guías completas para principiantes",
++          isTap: false,
++        }
++      : null,
++    stats?.blogPosts && stats.blogPosts > 0
++      ? {
++          icon: BookOpen,
++          value: stats.blogPosts,
++          suffix: "",
++          label: "Guías publicadas",
++          sublabel: "aventura outdoor en español",
++          isTap: false,
++        }
++      : null,
++  ].filter(Boolean) as Array<{
++    icon: typeof Users;
++    value: number;
++    suffix: string;
++    label: string;
++    sublabel: string;
++    isTap: boolean;
++  }>;
++
++  // TAP credential is always shown — it is a real certification, not a number
++  const tapCard = {
++    icon: ShieldCheck,
++    value: 0,
++    suffix: "",
++    label: "Agente de viajes certificada",
++    sublabel: "National TAP Test — The Travel Institute, USA",
++    isTap: true,
++  };
++
++  const visibleStats = [...dataStats, tapCard];
++
++  // Show nothing while loading to avoid a flash of stale/zero numbers
++  if (isLoading) return null;
+ 
+   return (
+     <section className="py-16 sm:py-24 bg-background relative overflow-hidden">
+@@ -77,7 +109,7 @@ const SocialProof = () => {
+ 
+         {/* Stats grid */}
+         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8 max-w-4xl mx-auto">
+-          {stats.map((stat, i) => (
++          {visibleStats.map((stat, i) => (
+             <motion.div
+               key={stat.label}
+               initial={{ opacity: 0, y: 30 }}
+diff --git a/src/hooks/use-public-stats.ts b/src/hooks/use-public-stats.ts
+new file mode 100644
+index 0000000..cfd7a75
+--- /dev/null
++++ b/src/hooks/use-public-stats.ts
+@@ -0,0 +1,41 @@
++import { useQuery } from "@tanstack/react-query";
++import { supabase } from "@/integrations/supabase/client";
++
++const STALE_TIME = 30 * 60 * 1000; // 30 minutes
++
++async function fetchCount(
++  table: "destinations" | "blog_posts" | "quiz_responses" | "newsletter_subscribers",
++  filter?: { column: string; value: boolean }
++): Promise<number> {
++  let query = supabase.from(table).select("*", { count: "exact", head: true });
++  if (filter) {
++    query = query.eq(filter.column, filter.value);
++  }
++  const { count, error } = await query;
++  if (error) throw error;
++  return count ?? 0;
++}
++
++export interface PublicStats {
++  destinations: number;
++  blogPosts: number;
++  quizResponses: number;
++  newsletterSubscribers: number;
++}
++
++export function usePublicStats() {
++  return useQuery<PublicStats>({
++    queryKey: ["public-stats"],
++    staleTime: STALE_TIME,
++    queryFn: async (): Promise<PublicStats> => {
++      const [destinations, blogPosts, quizResponses, newsletterSubscribers] =
++        await Promise.all([
++          fetchCount("destinations", { column: "is_published", value: true }),
++          fetchCount("blog_posts", { column: "is_published", value: true }),
++          fetchCount("quiz_responses"),
++          fetchCount("newsletter_subscribers"),
++        ]);
++      return { destinations, blogPosts, quizResponses, newsletterSubscribers };
++    },
++  });
++}

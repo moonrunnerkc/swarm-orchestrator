@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-typescript-pr1043",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1043,
+    "headSha": "a443272b6b3b66132459fb72251b7a7bae170058",
+    "baseSha": "a53f60d59ca904f3e79296586642aac3ce68ae02",
+    "title": "Add agents.txt v1.0 at repo root",
+    "body": "Hi Anthropic SDK team — opening this as a low-stakes proposal for the official TypeScript SDK. Happy to close if not a fit.\n\n## What this adds\n\nA single file, `/agents.txt`, at the repo root. It's the v1.0 open standard (lineage: `robots.txt` → `sitemap.xml` → `llms.txt` → `agents.txt`) for declaring what autonomous AI agents may and may not do in a repository. Spec: https://github.com/barneywohl/agentpress/blob/main/docs/AGENTSTXT_SPEC.md\n\nThe file is tailored to how this repo actually works:\n\n- **Honest about Stainless.** Per `SECURITY.md` and `CONTRIBUTING.md`, most of the SDK is generated from Anthropic's OpenAPI spec. `requires_human_approval` gates the entire source tree *except* `src/lib/**` and `examples/**` — the two paths CONTRIBUTING.md explicitly carves out as safe for hand edits. Generator-owned paths, version bumps, and release tags all require human sign-off.\n- **Entry points match the real toolchain.** `test_command = yarn run test`, `lint_command = yarn lint`, `examples/` pointed at the directory referenced in CONTRIBUTING.md.\n- **Prohibits** `publish_to_npm`, `merge_to_main`, and `modify_secrets` — backstops the automated release PR pipeline rather than competing with it.\n- **Disclosure** asks agent-authored PRs to carry a label and `Authored-by-Agent:` commit trailer so reviewers can see provenance at a glance.\n\n## What this doesn't do\n\n- No code changes. No workflow changes. No dependencies.\n- It's a social contract, not an enforcement mechanism — branch protection and required reviews still do the real work.\n- Doesn't replace `CONTRIBUTING.md`, `LICENSE`, or `SECURITY.md`.\n\n## CLA\n\nI didn't find a CLA bot in `.github/workflows/` or any CLA reference in `CONTRIBUTING.md`. If Anthropic does require one for outside contributors, please point me at it and I'll sign before this is reviewed.\n\n## Context\n\nI'm one of the maintainers of `@agent_press/mcp-server`, which plugs into Claude Code — so this lands squarely inside Anthropic's own agent ecosystem. A sibling PR is going up against `anthropic-sdk-python` with the same shape adapted for that repo's tooling.\n\nTotally understand if the answer is \"not yet\" or \"not here.\"",
+    "author": "barneywohl",
+    "headRef": "add-agents-txt",
+    "repository": "anthropics/anthropic-sdk-typescript"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-typescript",
+    "headSha": "a443272b6b3b66132459fb72251b7a7bae170058",
+    "baseSha": "a53f60d59ca904f3e79296586642aac3ce68ae02"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-typescript-pr1043.diff",
+  "vendoredAt": "2026-05-24T03:16:29.282Z",
+  "collectedAt": "2026-05-24T03:16:29.282Z"
+}

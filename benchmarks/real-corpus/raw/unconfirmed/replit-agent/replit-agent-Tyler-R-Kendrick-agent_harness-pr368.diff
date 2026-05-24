@@ -1,0 +1,754 @@
+diff --git a/agent-browser/src/App.tsx b/agent-browser/src/App.tsx
+index 5e6ce140..cbd91bc4 100644
+--- a/agent-browser/src/App.tsx
++++ b/agent-browser/src/App.tsx
+@@ -143,7 +143,6 @@ import {
+   isBenchmarkRoutingSettings,
+   mergeDiscoveredBenchmarkEvidence,
+   recommendBenchmarkRoute,
+-  areStagedRoutingChecksPassing,
+   splitBenchmarkModelRef,
+   type BenchmarkEvidenceDiscoveryState,
+   type BenchmarkModelRef,
+diff --git a/competition/README.md b/competition/README.md
+index 17bbeb9d..9218c645 100644
+--- a/competition/README.md
++++ b/competition/README.md
+@@ -59,6 +59,10 @@ competition/<product-slug>/
+ | Automation Anywhere APA | Enterprise agentic process automation platform | `competition/automation-anywhere-apa` |
+ | Sema4.ai / Robocorp | Python-first RPA and AI action platform | `competition/sema4ai-robocorp` |
+ | WorkFusion AI Agents | Financial-crime compliance AI-agent platform | `competition/workfusion-ai-agents` |
++| Devin | Autonomous software engineer | `competition/devin` |
++| Cursor Background Agents | AI coding IDE and remote agents | `competition/cursor-background-agents` |
++| Replit Agent | Prompt-to-app agent workspace | `competition/replit-agent` |
++| GitHub Copilot Cloud Agent | Repository-native coding agent | `competition/github-copilot-cloud-agent` |
+ 
+ ## Cross-Market Takeaways
+ 
+@@ -78,4 +82,7 @@ competition/<product-slug>/
+ - Open-source extension products such as Nanobrowser keep the user in their existing logged-in browser, which is a strong adoption wedge. The risk is that extension permissions, BYOK setup, and real-profile automation raise the bar for plain-language trust controls.
+ - Enterprise RPA incumbents are reframing "agents" as governed orchestration across robots, people, APIs, documents, and legacy UIs. They will capture compliance-heavy buyers that require audit, case management, and center-of-excellence controls, but their broad suites can feel overbuilt for developer-first browser agent workflows.
+ - Vertical AI-agent products such as WorkFusion show another wedge: package the whole process and domain model instead of selling generic browser control. This is powerful when the buyer wants outcomes in a known regulated workflow, but it leaves less room for local, inspectable, user-directed web work.
++- Coding-agent workbenches are converging on the same delegation loop: scoped task, isolated environment, branch or session, progress log, pull request, and human review. Devin sells this as an AI engineer, Cursor sells it from the IDE, Replit sells it as a full app-builder workspace, and GitHub sells it through repository-native issue and PR distribution.
++- The biggest opening for `agent-browser` against coding agents is evidence quality outside source code: browser session traces, screenshots, user approvals, visual regression artifacts, and local state that remain inspectable after the agent finishes.
++- Variable agent pricing is becoming a category-wide UX problem. Replit credit burn, Devin ACUs, Cursor model-priced background work, and Copilot premium-request/Actions consumption all create anxiety when long-running agents take a wrong turn.
+ 
+diff --git a/competition/cursor-background-agents/design/design.md b/competition/cursor-background-agents/design/design.md
+new file mode 100644
+index 00000000..b9c2c823
+--- /dev/null
++++ b/competition/cursor-background-agents/design/design.md
+@@ -0,0 +1,46 @@
++# Cursor Background Agents Design
++
++## Look And Feel
++
++- IDE-native, with agents presented as another sidebar/work queue inside the coding environment.
++- Background agents emphasize status, branch changes, machine takeover, and follow-up prompts rather than a separate project-management UI.
++- Bugbot extends the same workflow into pull requests by commenting review findings and offering a "fix in Cursor" style loop.
++
++## Design Tokens To Track
++
++```yaml
++surface: desktop IDE, background-agent sidebar, remote machine, GitHub app, PR review
++accent: code-first dark IDE
++primary_control: start background agent
++core_objects:
++  - background agent
++  - remote machine
++  - branch
++  - environment.json
++  - pull request
++  - bug finding
++information_density: high
++```
++
++## Differentiators
++
++- Agent execution is close to the IDE, so users can delegate and then take over in the same product.
++- `.cursor/environment.json` makes environment setup a repo artifact that can be committed and shared.
++- Background agents clone from GitHub, work on dedicated branches, and push back for review.
++
++## What Is Good
++
++- The mental model is familiar to engineers: branch, diff, PR, review, iterate.
++- Remote machines with install/start/terminal configuration make agent execution more repeatable than ad hoc chat.
++- Cursor can combine local interactive coding, remote background work, and PR review under one brand.
++
++## Where It Breaks Down
++
++- The design is strongest for code tasks and weaker for browser-centric evidence, screenshots, and end-user workflow proof.
++- Pricing tied to model API usage can be hard to estimate for long or parallel agent runs.
++- PR review automation can create noisy or stale comments when findings move or partial file context misses the broader change.
++
++## Screenshot References
++
++- Background agent docs and sidebar references: `https://docs.cursor.com/en/background-agent`
++- Bugbot docs: `https://docs.cursor.com/bugbot`
+diff --git a/competition/cursor-background-agents/features/cursor-background-agents.feature b/competition/cursor-background-agents/features/cursor-background-agents.feature
+new file mode 100644
+index 00000000..49b82c58
+--- /dev/null
++++ b/competition/cursor-background-agents/features/cursor-background-agents.feature
+@@ -0,0 +1,24 @@
++Feature: Cursor background coding agents
++  Cursor differentiates by letting developers launch asynchronous coding agents from the IDE and inspect the branch output in their normal code workflow.
++
++  Scenario: Launch a background agent from the IDE
++    Given a developer has connected a GitHub repository to Cursor
++    And the repository has an environment configuration
++    When the developer starts a background agent with a task prompt
++    Then Cursor creates an isolated remote machine
++    And the agent edits code on a dedicated branch
++
++  Scenario: Take over an agent machine
++    Given a background agent is running
++    When the developer opens the agent status view
++    Then they can inspect progress
++    And enter the remote machine or continue the work locally
++
++  Scenario: Review a pull request with Bugbot
++    Given a pull request is open
++    When Bugbot runs automatically or from a trigger comment
++    Then it posts bug, security, or quality findings
++    And the developer can use Cursor to address accepted findings
++
++  # Good: tight loop between IDE, branch, remote runtime, and PR review.
++  # Bad: less suited to non-code browser evidence and can create review noise.
+diff --git a/competition/cursor-background-agents/gossip/gossip.md b/competition/cursor-background-agents/gossip/gossip.md
+new file mode 100644
+index 00000000..c73269f1
+--- /dev/null
++++ b/competition/cursor-background-agents/gossip/gossip.md
+@@ -0,0 +1,26 @@
++# Cursor Background Agents Gossip
++
++## Positive Signals
++
++- Reviewers and users often cite Cursor's codebase understanding and multi-file editing as the product's strongest moat.
++- Background agents are discussed as a credible answer to long-running coding tasks that should happen away from the foreground editor.
++- The IDE handoff is a strength: developers can inspect diffs, continue work, and keep normal Git habits.
++
++## Negative Signals
++
++- Users question whether Bugbot sees enough context and complain about comments that remain outdated instead of resolving cleanly.
++- Some users describe model-priced agent usage as harder to budget than a flat subscription.
++- Background-agent docs require GitHub app permissions and environment configuration, which can be a barrier for locked-down organizations.
++
++## Bug And Friction Themes
++
++- Stale PR review comments.
++- Partial review coverage.
++- Usage surprises when high-end models are selected or background tasks are run in parallel.
++
++## Sources
++
++- Background agents: `https://docs.cursor.com/en/background-agent`
++- Pricing: `https://docs.cursor.com/account/rate-limits`
++- Bugbot: `https://docs.cursor.com/bugbot`
++- Reddit stale-comment discussion: `https://www.reddit.com/r/cursor/comments/1mp16ys/bugbot_should_resolve_its_own_outdated_comments/`
+diff --git a/competition/cursor-background-agents/marketing/marketing.md b/competition/cursor-background-agents/marketing/marketing.md
+new file mode 100644
+index 00000000..14218620
+--- /dev/null
++++ b/competition/cursor-background-agents/marketing/marketing.md
+@@ -0,0 +1,31 @@
++# Cursor Background Agents Marketing
++
++## Audience
++
++- Professional developers already spending most of their day in an AI-first editor.
++- Teams that want background execution but still want review and takeover inside a familiar IDE.
++- Engineering orgs evaluating Cursor against Copilot, Claude Code, Codex, Devin, and Windsurf.
++
++## Positioning
++
++- "Asynchronous remote agents in Cursor" rather than a separate outsourcing surface.
++- The core promise is flow: start work from the editor, let the agent run remotely, inspect status, follow up, and take over.
++- Bugbot positions Cursor as a code-review and quality layer, not only an implementation assistant.
++
++## Customer Model
++
++- Individual and team subscriptions include access to Background Agents.
++- Agent usage is charged against model inference pricing, with included usage pools on paid plans.
++- Bugbot is a separate review product/add-on in market perception.
++
++## Who They Capture
++
++- Developers who want the shortest path from code context to agent action.
++- Teams that want a shared agent environment config checked into the repo.
++- Buyers who prefer model-priced usage to enterprise ACU contracts.
++
++## Who They Miss
++
++- Non-engineers who need an app-building workspace rather than an IDE.
++- Teams that need browser session replay, visual proof, and human approval checkpoints as first-class artifacts.
++- Organizations requiring local-first agent state or self-hosted execution controls.
+diff --git a/competition/cursor-background-agents/product.yml b/competition/cursor-background-agents/product.yml
+new file mode 100644
+index 00000000..4f1a58a7
+--- /dev/null
++++ b/competition/cursor-background-agents/product.yml
+@@ -0,0 +1,21 @@
++slug: cursor-background-agents
++name: Cursor Background Agents
++vendor: Anysphere
++segment: ai-coding-ide-and-remote-agents
++product_path: competition/cursor-background-agents
++design_path: competition/cursor-background-agents/design
++features_path: competition/cursor-background-agents/features
++marketing_path: competition/cursor-background-agents/marketing
++gossip_path: competition/cursor-background-agents/gossip
++snapshot_date: 2026-05-15
++primary_sources:
++  - https://docs.cursor.com/en/background-agent
++  - https://docs.cursor.com/account/rate-limits
++  - https://docs.cursor.com/bugbot
++secondary_sources:
++  - https://www.reddit.com/r/cursor/comments/1mp16ys/bugbot_should_resolve_its_own_outdated_comments/
++  - https://www.reddit.com/r/GithubCopilot/comments/1oh58q3/the_cursor_bug_bot_doesnt_review_all_files_at_once/
++positioning: "AI-native IDE with asynchronous remote agents, codebase context, background branches, and PR review automation."
++customer_model: "Subscription IDE plans with included agent usage, model-priced overage, team pools, and add-on review automation."
++competitive_threat_level: high
++notes: "Threatens agent-browser when developer workflows center on code review, IDE handoff, and remote branch execution rather than browser task automation."
+diff --git a/competition/devin/design/design.md b/competition/devin/design/design.md
+new file mode 100644
+index 00000000..93485bb4
+--- /dev/null
++++ b/competition/devin/design/design.md
+@@ -0,0 +1,47 @@
++# Devin Design
++
++## Look And Feel
++
++- Work is organized around durable agent sessions rather than a local IDE surface.
++- The product emphasizes enterprise controls: integrations, consumption reports, auditability, secrets, guardrails, and organization settings.
++- Release notes show continued simplification of dense surfaces, including consolidated session headers, faster code block rendering, scroll restoration, and refreshed settings pages.
++
++## Design Tokens To Track
++
++```yaml
++surface: web app, session log, pull requests, Slack, Teams, Jira, Linear, API
++accent: enterprise AI engineer
++primary_control: start session or assign work item
++core_objects:
++  - session
++  - agent compute unit
++  - pull request
++  - integration
++  - review
++  - wiki
++  - guardrail
++information_density: high
++```
++
++## Differentiators
++
++- Treats the agent as a teammate with sessions, PRs, comments, integrations, and admin cost reporting.
++- GitHub integration lets Devin create PRs, respond to PR comments, and work inside the buyer's existing source-control review loop.
++- Enterprise features such as session ACU hard caps and MCP audit logs make it easier to sell into governed engineering orgs.
++
++## What Is Good
++
++- The session-first model maps to how managers already delegate engineering tickets.
++- Consumption reporting by product and repository helps admins understand agent spend.
++- Message permalinks, session categorization, review breakdowns, and auto-merge polish reduce coordination friction.
++
++## Where It Breaks Down
++
++- The UI can become an enterprise console instead of a fast local workbench.
++- ACU and quota mental models add cost-management work to every long-running task.
++- Users still need strong review discipline because the product hands back PRs, not guaranteed-correct shipped outcomes.
++
++## Screenshot References
++
++- GitHub integration screenshots: `https://docs.devin.ai/integrations/gh`
++- Release-note UI changes: `https://docs.devin.ai/release-notes/2026`
+diff --git a/competition/devin/features/devin.feature b/competition/devin/features/devin.feature
+new file mode 100644
+index 00000000..01efc313
+--- /dev/null
++++ b/competition/devin/features/devin.feature
+@@ -0,0 +1,24 @@
++Feature: Devin autonomous engineering sessions
++  Devin differentiates by turning tickets and chat requests into long-running engineering sessions that create reviewable pull requests.
++
++  Scenario: Create a pull request from an assigned repository task
++    Given a team has connected Devin to its GitHub organization
++    And a user starts a Devin session for a scoped engineering task
++    When Devin completes the implementation
++    Then Devin creates or updates a pull request
++    And the user can review, comment, and ask Devin to iterate
++
++  Scenario: Manage enterprise agent spend
++    Given an enterprise uses Devin across several repositories
++    When admins inspect consumption reporting
++    Then they can see spend by sessions, reviews, repositories, and product categories
++    And they can cap session ACU use when governance requires it
++
++  Scenario: Start work from collaboration systems
++    Given a team works from Slack, Teams, Jira, Linear, or GitHub
++    When a user mentions or assigns Devin from that system
++    Then Devin starts a tracked session
++    And returns progress and pull request links to the existing workflow
++
++  # Good: strong handoff through PRs, comments, integrations, and enterprise controls.
++  # Bad: high-cost autonomous work can hide wrong turns until review time.
+diff --git a/competition/devin/gossip/gossip.md b/competition/devin/gossip/gossip.md
+new file mode 100644
+index 00000000..7e1a7eda
+--- /dev/null
++++ b/competition/devin/gossip/gossip.md
+@@ -0,0 +1,26 @@
++# Devin Gossip
++
++## Positive Signals
++
++- Users frame Devin as a remote teammate when the task is well scoped and the review path is clear.
++- Enterprise discussion focuses on productivity leverage, no bench time, and fixed-price delivery pressure.
++- Recent docs show concrete product polish: better review spend reporting, session message permalinks, session categories, guardrail improvements, and MCP audit logs.
++
++## Negative Signals
++
++- Public discussion still fixates on price. A recurring comparison is that reported monthly Devin cost can exceed some entry-level offshore engineering salaries.
++- Early user reports complained about agent loops, environment setup burn, and tokens/ACUs spent before meaningful code work began.
++- Skeptics argue that the product is most useful only when the human still decomposes, reviews, and constrains work tightly.
++
++## Bug And Friction Themes
++
++- Long-running tasks can consume quota before users realize the direction is wrong.
++- Enterprise integration and permission setup is powerful but adds admin overhead.
++- Review quality depends on task clarity and repo setup, so weak issue descriptions become expensive.
++
++## Sources
++
++- Billing: `https://docs.devin.ai/admin/billing`
++- GitHub integration: `https://docs.devin.ai/integrations/gh`
++- 2026 release notes: `https://docs.devin.ai/release-notes/2026`
++- Reddit pricing discussion: `https://www.reddit.com/r/developersIndia/comments/1qhtef3/devin_costs_500month_a_fresher_at_infosys_costs/`
+diff --git a/competition/devin/marketing/marketing.md b/competition/devin/marketing/marketing.md
+new file mode 100644
+index 00000000..b236031d
+--- /dev/null
++++ b/competition/devin/marketing/marketing.md
+@@ -0,0 +1,31 @@
++# Devin Marketing
++
++## Audience
++
++- Engineering leaders with backlogs of well-scoped implementation, migration, modernization, and review work.
++- Platform and enterprise teams that need AI coding work to flow through GitHub, GitLab, Bitbucket, Azure DevOps, Jira, Linear, Slack, Teams, and APIs.
++- Organizations willing to buy a managed agent worker instead of assembling a local agent stack.
++
++## Positioning
++
++- "AI software engineer" rather than pair programmer.
++- The product promises delegated work: sessions, code changes, PRs, review loops, and enterprise administration.
++- Release-note emphasis on review, wiki, guardrails, MCP marketplace, audit logs, and consumption APIs positions Devin as an engineering operations product, not only a coding chat app.
++
++## Customer Model
++
++- Self-serve has Free, Pro, Max, and Teams plans with included quota plus on-demand credits.
++- Enterprise customers are billed through Agent Compute Units set by order form.
++- The enterprise wedge is governance: SSO/security controls, auditability, cost reporting, integration administration, and session caps.
++
++## Who They Capture
++
++- Managers who want to assign tasks and review PRs later.
++- Enterprises that need a vendor-owned autonomous agent with admin surfaces.
++- Teams with enough review bandwidth to turn agent output into shipped work.
++
++## Who They Miss
++
++- Developers who want local-first inspectability, custom runtime policy, or browser-specific trace artifacts.
++- Cost-sensitive individual builders who compare agent spend against flat-rate model subscriptions.
++- Teams that need deterministic browser evidence rather than an autonomous code worker.
+diff --git a/competition/devin/product.yml b/competition/devin/product.yml
+new file mode 100644
+index 00000000..b8b2da2b
+--- /dev/null
++++ b/competition/devin/product.yml
+@@ -0,0 +1,21 @@
++slug: devin
++name: Devin
++vendor: Cognition
++segment: autonomous-software-engineer
++product_path: competition/devin
++design_path: competition/devin/design
++features_path: competition/devin/features
++marketing_path: competition/devin/marketing
++gossip_path: competition/devin/gossip
++snapshot_date: 2026-05-15
++primary_sources:
++  - https://docs.devin.ai/admin/billing
++  - https://docs.devin.ai/integrations/gh
++  - https://docs.devin.ai/release-notes/2026
++secondary_sources:
++  - https://www.reddit.com/r/developersIndia/comments/1qhtef3/devin_costs_500month_a_fresher_at_infosys_costs/
++  - https://www.reddit.com/r/singularity/comments/1hb7n8m/devin_is_generally_available_today/
++positioning: "Autonomous AI software engineer that works in sessions, integrates with source-control and work-tracking systems, and produces pull requests for human review."
++customer_model: "Self-serve plans with included quota and on-demand credits, plus enterprise ACU pricing, sales-led controls, SSO/security posture, and admin consumption reporting."
++competitive_threat_level: high
++notes: "Direct threat to agent-browser when buyers want an outsourced engineering teammate rather than a browser-workbench primitive."
+diff --git a/competition/github-copilot-cloud-agent/design/design.md b/competition/github-copilot-cloud-agent/design/design.md
+new file mode 100644
+index 00000000..21666fcc
+--- /dev/null
++++ b/competition/github-copilot-cloud-agent/design/design.md
+@@ -0,0 +1,47 @@
++# GitHub Copilot Cloud Agent Design
++
++## Look And Feel
++
++- Native GitHub workflow surface: issues, pull requests, dashboard, repository pages, Actions, mobile, IDE chat, CLI, MCP, Slack, Teams, Jira, Linear, and Azure Boards.
++- The interaction model is assignment and delegation, not an external workspace.
++- GitHub's design advantage is ambient availability: the agent appears in the same places users already triage work.
++
++## Design Tokens To Track
++
++```yaml
++surface: GitHub.com, issues, pull requests, Actions, IDE chat, CLI, mobile, MCP
++accent: repository-native delegation
++primary_control: assign issue or delegate task
++core_objects:
++  - issue
++  - agent session
++  - pull request
++  - custom agent
++  - premium request
++  - Actions minutes
++  - review
++information_density: high
++```
++
++## Differentiators
++
++- Users can start agent work from many entry points, including Issues, dashboard, IDEs, GitHub Mobile, CLI, MCP server, Raycast, and failing Actions workflows.
++- Third-party agents such as OpenAI Codex and Anthropic Claude can be used alongside Copilot cloud agent in supported plans.
++- The product inherits GitHub's existing security, audit, branch, PR, review, and CI model.
++
++## What Is Good
++
++- Assigning an issue to an agent is a workflow teams already understand.
++- PR handoff keeps human review in the loop.
++- The breadth of entry points makes Copilot hard to avoid for teams already standardized on GitHub.
++
++## Where It Breaks Down
++
++- The agent is cloud-first and repo-first, so local runtime state, browser evidence, and visual traces are secondary.
++- Cost is tied to premium requests and Actions minutes, which can be opaque when model routing or session boundaries are unclear.
++- Native placement creates reputational risk when the agent writes unexpected text into professional artifacts.
++
++## Screenshot References
++
++- Issue assignment flow: `https://docs.github.com/en/enterprise-cloud@latest/copilot/how-tos/use-copilot-agents/cloud-agent/start-copilot-sessions`
++- Third-party agent concepts: `https://docs.github.com/en/copilot/concepts/agents/about-third-party-agents`
+diff --git a/competition/github-copilot-cloud-agent/features/github-copilot-cloud-agent.feature b/competition/github-copilot-cloud-agent/features/github-copilot-cloud-agent.feature
+new file mode 100644
+index 00000000..c43268d0
+--- /dev/null
++++ b/competition/github-copilot-cloud-agent/features/github-copilot-cloud-agent.feature
+@@ -0,0 +1,23 @@
++Feature: GitHub Copilot cloud agent
++  GitHub Copilot cloud agent differentiates by embedding asynchronous coding work directly into GitHub issue, pull request, IDE, mobile, CLI, and MCP workflows.
++
++  Scenario: Assign an issue to Copilot
++    Given a repository has Copilot cloud agent enabled
++    When a user assigns an issue to Copilot
++    Then Copilot starts a background session
++    And creates a pull request for human review when work is ready
++
++  Scenario: Delegate from an IDE
++    Given a developer is using Copilot Chat in a supported IDE
++    When the developer delegates a prompt to the cloud agent
++    Then Copilot creates a branch and pull request from the repository state
++    And adds the user as reviewer when the work is complete
++
++  Scenario: Choose a partner coding agent
++    Given a paid Copilot plan has third-party agents enabled
++    When the user starts a coding-agent task
++    Then the user can choose supported agents such as OpenAI Codex or Anthropic Claude
++    And the session consumes Copilot premium requests and GitHub Actions minutes
++
++  # Good: unmatched distribution inside existing GitHub workflows.
++  # Bad: inspectability depends on GitHub session logs and PR review rather than local proof artifacts.
+diff --git a/competition/github-copilot-cloud-agent/gossip/gossip.md b/competition/github-copilot-cloud-agent/gossip/gossip.md
+new file mode 100644
+index 00000000..18454228
+--- /dev/null
++++ b/competition/github-copilot-cloud-agent/gossip/gossip.md
+@@ -0,0 +1,28 @@
++# GitHub Copilot Cloud Agent Gossip
++
++## Positive Signals
++
++- Users describe issue assignment as useful for well-defined tasks: assign, wait for a PR, review, comment, and merge.
++- Some users report strong results for small bug fixes, labels, margins, off-by-one fixes, and tasks with detailed custom instructions.
++- Parallelism is a repeated benefit: users can delegate multiple tasks while staying in normal GitHub review flow.
++
++## Negative Signals
++
++- Users report that cloud sessions can be slow or miss intent when issues are vague.
++- Recent public complaints covered cloud-agent service unavailability where issue assignment failed with a temporary service error.
++- The March 2026 PR-tip backlash damaged trust because Copilot-generated or edited PR text was reported to include unwanted product tips before GitHub removed the behavior.
++
++## Bug And Friction Themes
++
++- Cloud service availability.
++- Opaque model and premium-request cost behavior.
++- Need for precise issues, custom instructions, and environment setup.
++- Artifact integrity concerns when agent output changes PR descriptions or comments.
++
++## Sources
++
++- Copilot overview: `https://docs.github.com/en/copilot/get-started/what-is-github-copilot`
++- Starting cloud agent sessions: `https://docs.github.com/en/enterprise-cloud@latest/copilot/how-tos/use-copilot-agents/cloud-agent/start-copilot-sessions`
++- Third-party agents: `https://docs.github.com/en/copilot/concepts/agents/about-third-party-agents`
++- Reddit issue-assignee discussion: `https://www.reddit.com/r/GithubCopilot/comments/1pd9xey/is_anyone_actually_using_github_copilot_as_an/`
++- PR tip backlash: `https://www.techradar.com/pro/this-is-horrific-github-kills-copilot-pull-request-ads-after-user-backlash`
+diff --git a/competition/github-copilot-cloud-agent/marketing/marketing.md b/competition/github-copilot-cloud-agent/marketing/marketing.md
+new file mode 100644
+index 00000000..7cd023a1
+--- /dev/null
++++ b/competition/github-copilot-cloud-agent/marketing/marketing.md
+@@ -0,0 +1,31 @@
++# GitHub Copilot Cloud Agent Marketing
++
++## Audience
++
++- GitHub-first engineering teams that already plan work in issues and review through pull requests.
++- Enterprises that prefer AI agents governed by existing GitHub policies, audit logs, and licenses.
++- Developers who want delegation without leaving GitHub, VS Code, JetBrains, Eclipse, Visual Studio, mobile, CLI, or MCP-enabled tools.
++
++## Positioning
++
++- Copilot is marketed as an AI coding assistant that helps from IDE suggestions through research, planning, code changes, and PR creation.
++- The cloud agent reframes Copilot from pair programmer to async contributor.
++- Third-party agent support positions GitHub as the control plane for multiple coding agents, not only its own model stack.
++
++## Customer Model
++
++- Available in Copilot Pro, Pro+, Business, and Enterprise plans depending on feature.
++- Cloud agent work consumes Copilot premium requests and GitHub Actions minutes.
++- Enterprise value comes from policy controls, custom agents, model choices, audit logs, and existing procurement.
++
++## Who They Capture
++
++- Teams already living in GitHub Issues, PRs, Actions, and Copilot licenses.
++- Managers who want to assign well-defined issues and return to a PR.
++- Organizations that want agent choice through a single GitHub governance layer.
++
++## Who They Miss
++
++- Teams that need local-first browser workbench state, custom UI, or artifact-backed visual regression proof.
++- Users who do not trust GitHub-hosted cloud execution with their repo context.
++- Builders working outside GitHub or in self-hosted/nonstandard SCM environments.
+diff --git a/competition/github-copilot-cloud-agent/product.yml b/competition/github-copilot-cloud-agent/product.yml
+new file mode 100644
+index 00000000..dd44ef2d
+--- /dev/null
++++ b/competition/github-copilot-cloud-agent/product.yml
+@@ -0,0 +1,22 @@
++slug: github-copilot-cloud-agent
++name: GitHub Copilot Cloud Agent
++vendor: GitHub
++segment: repository-native-coding-agent
++product_path: competition/github-copilot-cloud-agent
++design_path: competition/github-copilot-cloud-agent/design
++features_path: competition/github-copilot-cloud-agent/features
++marketing_path: competition/github-copilot-cloud-agent/marketing
++gossip_path: competition/github-copilot-cloud-agent/gossip
++snapshot_date: 2026-05-15
++primary_sources:
++  - https://docs.github.com/en/copilot/get-started/what-is-github-copilot
++  - https://docs.github.com/en/enterprise-cloud@latest/copilot/how-tos/use-copilot-agents/cloud-agent/start-copilot-sessions
++  - https://docs.github.com/en/copilot/concepts/agents/about-third-party-agents
++secondary_sources:
++  - https://www.reddit.com/r/GithubCopilot/comments/1pd9xey/is_anyone_actually_using_github_copilot_as_an/
++  - https://www.reddit.com/r/GithubCopilot/comments/1ssp8kd/github_cloud_agent_having_a_break/
++  - https://www.techradar.com/pro/this-is-horrific-github-kills-copilot-pull-request-ads-after-user-backlash
++positioning: "Repository-native cloud coding agent that can be assigned from issues, GitHub.com, IDE chat, mobile, CLI, MCP, and work-management integrations to produce pull requests."
++customer_model: "Bundled into Copilot paid plans, consuming Copilot premium requests and GitHub Actions minutes, with enterprise policy controls and third-party agent enablement."
++competitive_threat_level: high
++notes: "A distribution threat because agent work starts where many teams already manage issues, PRs, CI, reviews, and permissions."
+diff --git a/competition/replit-agent/design/design.md b/competition/replit-agent/design/design.md
+new file mode 100644
+index 00000000..d2f04512
+--- /dev/null
++++ b/competition/replit-agent/design/design.md
+@@ -0,0 +1,48 @@
++# Replit Agent Design
++
++## Look And Feel
++
++- Friendly prompt-to-app workspace built around chat, project editor, live preview, task board, and visual Canvas.
++- The design intentionally lowers coding vocabulary: users describe apps, choose output types, approve plans, and publish.
++- Canvas makes design exploration spatial, with frames for apps, mockups, mobile/tablet/desktop variants, screenshots, sticky notes, drawings, and flow arrows.
++
++## Design Tokens To Track
++
++```yaml
++surface: browser workspace, chat, project editor, task board, Canvas, preview, deployment
++accent: approachable builder workspace
++primary_control: describe what to build
++core_objects:
++  - project
++  - artifact
++  - task
++  - checkpoint
++  - design frame
++  - published app
++  - credit
++information_density: medium
++```
++
++## Differentiators
++
++- The app-building path is complete: prompt, plan, code, preview, auth, database, deploy, and iterate.
++- Task system shows Drafts, Active, Ready, and Done so agent work feels like a small Kanban board.
++- Canvas competes directly with visual app builders by making design variants and user flows first-class.
++
++## What Is Good
++
++- Beginner-friendly language expands the market beyond professional developers.
++- Plan mode and task review give users a chance to correct the agent before code changes land.
++- Live previews, checkpoints, and rollbacks make experimentation less scary.
++
++## Where It Breaks Down
++
++- Effort-based pricing turns the friendly UI into a cost-management surface for power users.
++- Canvas and task boards can hide implementation quality unless test and diff review are equally visible.
++- Replit-branded defaults such as Replit Auth are fast, but can constrain teams that need their own product identity or infrastructure.
++
++## Screenshot References
++
++- Agent flow: `https://docs.replit.com/core-concepts/agent`
++- Task board: `https://docs.replit.com/core-concepts/agent/task-system`
++- Canvas: `https://docs.replit.com/replitai/canvas`
+diff --git a/competition/replit-agent/features/replit-agent.feature b/competition/replit-agent/features/replit-agent.feature
+new file mode 100644
+index 00000000..aa2d8063
+--- /dev/null
++++ b/competition/replit-agent/features/replit-agent.feature
+@@ -0,0 +1,23 @@
++Feature: Replit Agent prompt-to-app workspace
++  Replit Agent differentiates by turning plain-language ideas into running apps with planning, background tasks, design Canvas, and deployment in one browser workspace.
++
++  Scenario: Build an app from a natural-language prompt
++    Given a user opens a Replit project
++    When the user describes an app in Agent chat
++    Then Agent creates a plan
++    And writes code, configures infrastructure, tests the result, and shows a preview
++
++  Scenario: Run parallel background tasks
++    Given Agent has proposed several implementation tasks
++    When the user accepts the task plan
++    Then tasks run in isolated copies of the project
++    And the user can review logs, test results, and previews before applying changes
++
++  Scenario: Explore visual directions on Canvas
++    Given a user wants to compare product screens
++    When the user asks Agent for several design variants
++    Then Canvas displays the variants as frames
++    And the user can annotate, resize, preview by device, and apply the chosen direction
++
++  # Good: complete builder loop from idea to deployed app.
++  # Bad: agent cost and implementation quality can be hard to predict.
+diff --git a/competition/replit-agent/gossip/gossip.md b/competition/replit-agent/gossip/gossip.md
+new file mode 100644
+index 00000000..1e427e7d
+--- /dev/null
++++ b/competition/replit-agent/gossip/gossip.md
+@@ -0,0 +1,27 @@
++# Replit Agent Gossip
++
++## Positive Signals
++
++- Users praise Replit for strong UX, easy guidance, and a low-friction path from idea to deployed app.
++- The task board, Canvas, and Plan Mode are widely understandable to non-developers.
++- Official support advice points users toward Economy Mode, Code Optimizations, Plan Mode, and spending limits, which shows Replit is actively responding to cost anxiety.
++
++## Negative Signals
++
++- Reddit discussion repeatedly centers on credit burn, unpredictable prompt costs, and the feeling that multi-agent workflows became too expensive to use freely.
++- Some users say Agent confidently marks substantial work done while leaving incomplete or broken implementation details.
++- Cost-sensitive builders compare Replit unfavorably with flat Claude/Codex/Cursor workflows.
++
++## Bug And Friction Themes
++
++- Surprise charges and hard-to-predict effort pricing.
++- Agent loops or overconfident completion claims.
++- Multi-task workflows multiplying cost across parallel tasks.
++
++## Sources
++
++- Agent overview: `https://docs.replit.com/core-concepts/agent`
++- Task system: `https://docs.replit.com/core-concepts/agent/task-system`
++- Canvas: `https://docs.replit.com/replitai/canvas`
++- AI billing: `https://docs.replit.com/billing/ai-billing`
++- Reddit pricing thread: `https://www.reddit.com/r/replit/comments/1r11vc9/replit_pricing_am_i_the_only_one_who_keeps/`
+diff --git a/competition/replit-agent/marketing/marketing.md b/competition/replit-agent/marketing/marketing.md
+new file mode 100644
+index 00000000..c07e811f
+--- /dev/null
++++ b/competition/replit-agent/marketing/marketing.md
+@@ -0,0 +1,31 @@
++# Replit Agent Marketing
++
++## Audience
++
++- Non-coders and semi-technical builders who want to ship apps from plain language.
++- Startup operators, students, educators, and solo builders who value browser-based setup and deployment.
++- Teams that want chat, code, preview, database/auth, design, and publishing in one tool.
++
++## Positioning
++
++- Agent is framed as a creative partner that takes action, not a chatbot.
++- The strongest message is "describe what you want and publish it" across web apps, mobile apps, dashboards, slides, files, and designs.
++- Replit sells an integrated workspace: Agent, Canvas, task system, connectors, Auth, database, deployments, and collaboration.
++
++## Customer Model
++
++- Starter has capped Agent usage and one published app.
++- Core and Pro unlock full builds, Plan Mode, connectors, task planning, published apps, and background task concurrency.
++- Agent work is billed through effort-based pricing and credits, with third-party API costs deducted from the user's Replit balance.
++
++## Who They Capture
++
++- Users who do not want local setup.
++- Builders who prioritize visual preview and deployment over codebase control.
++- Teams that want quick prototypes with hosted infrastructure bundled in.
++
++## Who They Miss
++
++- Developers who want local-first state, repo-native tests, and explicit PR review gates.
++- Buyers who distrust variable credit burn.
++- Teams that need auditable browser-agent traces rather than app-builder checkpoints.
+diff --git a/competition/replit-agent/product.yml b/competition/replit-agent/product.yml
+new file mode 100644
+index 00000000..c072d5bc
+--- /dev/null
++++ b/competition/replit-agent/product.yml
+@@ -0,0 +1,22 @@
++slug: replit-agent
++name: Replit Agent
++vendor: Replit
++segment: prompt-to-app-agent-workspace
++product_path: competition/replit-agent
++design_path: competition/replit-agent/design
++features_path: competition/replit-agent/features
++marketing_path: competition/replit-agent/marketing
++gossip_path: competition/replit-agent/gossip
++snapshot_date: 2026-05-15
++primary_sources:
++  - https://docs.replit.com/core-concepts/agent
++  - https://docs.replit.com/core-concepts/agent/task-system
++  - https://docs.replit.com/replitai/canvas
++  - https://docs.replit.com/billing/ai-billing
++secondary_sources:
++  - https://www.reddit.com/r/replit/comments/1r11vc9/replit_pricing_am_i_the_only_one_who_keeps/
++  - https://www.reddit.com/r/replit/comments/1ru0uhg/replit_agent_4_prompt_costs_doubled_multiagent/
++positioning: "Plain-language app builder and cloud workspace that plans, codes, previews, designs, deploys, and runs parallel background tasks."
++customer_model: "Freemium and paid Core/Pro subscriptions with effort-based Agent billing, credits, deployment usage, collaboration seats, and plan-gated background concurrency."
++competitive_threat_level: high
++notes: "Competes for builders who want an integrated app workspace rather than a local developer harness."

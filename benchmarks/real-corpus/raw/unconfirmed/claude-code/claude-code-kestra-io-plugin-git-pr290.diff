@@ -1,0 +1,17 @@
+diff --git a/src/main/resources/doc/io.kestra.plugin.git.md b/src/main/resources/doc/io.kestra.plugin.git.md
+new file mode 100644
+index 00000000..c9282f4e
+--- /dev/null
++++ b/src/main/resources/doc/io.kestra.plugin.git.md
+@@ -0,0 +1,11 @@
++# How to use the Git plugin
++
++Most Git tasks run inside a `WorkingDirectory` task so that cloned files are available to downstream tasks in the same execution.
++
++## Authentication
++
++For HTTPS authentication, set `username` and `password` — use a personal access token as the `password` value for GitHub, GitLab, and Bitbucket rather than your account password. For SSH, set `privateKey` to the PEM-encoded key content (not a file path) and `passphrase` if the key is protected. Store both in [secrets](https://kestra.io/docs/concepts/secret).
++
++## Tasks
++
++The plugin covers two directions. To run code from a repository, use `Clone` inside a `WorkingDirectory` — cloned files are then available to all subsequent tasks in that working directory. `depth: 1` (the default) gives a shallow clone; set `commit` to check out a specific SHA or `tag` to check out a tag, both of which disable shallow cloning. To keep Kestra in sync with a Git repository, use `SyncFlows` to pull flow definitions and `SyncNamespaceFiles` to pull namespace files from a branch into a target namespace; set `delete: true` on either to remove resources that no longer exist in Git. To push Kestra configuration back to version control, use `PushFlows` for flows and `PushNamespaceFiles` for namespace files.

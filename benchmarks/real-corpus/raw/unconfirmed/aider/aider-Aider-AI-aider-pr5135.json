@@ -1,0 +1,26 @@
+{
+  "id": "aider-Aider-AI-aider-pr5135",
+  "agent": {
+    "vendor": "aider",
+    "confidence": "high",
+    "source": "repo-owner=Aider-AI"
+  },
+  "pr": {
+    "number": 5135,
+    "headSha": "291603809e33567a961645d5587939ec939a3a7e",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1",
+    "title": "fix: avoid GitPython index parsing for tracked files",
+    "body": "## Summary\n\n- read tracked index paths with `git ls-files -z --cached --full-name` instead of GitPython's index parser\n- keep the existing committed-tree traversal and final `.aiderignore` filtering behavior\n- add a regression test covering committed plus intent-to-add files when `git.Repo.index` cannot be read\n\n## Motivation\n\nGitPython only supports older Git index formats in this path. Repositories using index v3/v4 can fail while Aider is listing tracked files, including cases triggered by `git add -N`, sparse/index features, and other Git tooling reported in #211.\n\n## Validation\n\n- `/tmp/aider-211-py312-venv/bin/python -m pytest tests/basic/test_repo.py::TestRepo::test_get_tracked_files_with_new_staged_file tests/basic/test_repo.py::TestRepo::test_get_tracked_files_without_gitpython_index_parser tests/basic/test_repo.py::TestRepo::test_get_tracked_files_with_aiderignore tests/basic/test_repo.py::TestRepo::test_get_tracked_files_from_subdir`\n- `/tmp/aider-211-py312-venv/bin/python -m pytest tests/basic/test_repo.py -k get_tracked_files`\n- `/tmp/aider-211-py312-venv/bin/python -m pytest tests/basic/test_sanity_check_repo.py`\n- `/tmp/aider-211-py312-venv/bin/python -m pytest tests/basic/test_repo.py tests/basic/test_sanity_check_repo.py`\n- `/tmp/aider-211-py312-venv/bin/pre-commit run --files aider/repo.py tests/basic/test_repo.py`\n- `git diff --check`\n\nFixes #211",
+    "author": "pragnyanramtha",
+    "headRef": "fix-git-index-ls-files-211",
+    "repository": "Aider-AI/aider"
+  },
+  "diffRef": {
+    "repository": "Aider-AI/aider",
+    "headSha": "291603809e33567a961645d5587939ec939a3a7e",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1"
+  },
+  "vendoredDiffPath": "unconfirmed/aider/aider-Aider-AI-aider-pr5135.diff",
+  "vendoredAt": "2026-05-24T03:20:14.471Z",
+  "collectedAt": "2026-05-24T03:20:14.471Z"
+}

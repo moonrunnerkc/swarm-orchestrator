@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24171",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24171,
+    "headSha": "5124e27d0f12d2566160e9ead6c45f8770a879d8",
+    "baseSha": "5c20513a1b3d15898429abd92b3676b76795a892",
+    "title": "package: add x64 macOS codex-zsh artifact",
+    "body": "## Why\n\nThe package builder has an Intel macOS release target (`x86_64-apple-darwin`) whose DotSlash platform is `macos-x86_64`, but `scripts/codex_package/codex-zsh` only listed Apple Silicon macOS plus Linux platforms. Because zsh is fetched with `missing_ok=True`, Intel macOS packages could miss the patched zsh resource instead of resolving a prebuilt artifact.\n\nThe `rust-v0.134.0-alpha.3` release now publishes `codex-zsh-x86_64-apple-darwin.tar.gz`, so the manifest can cover that platform. See the release assets in https://github.com/openai/codex/releases/tag/rust-v0.134.0-alpha.3 and the completed release job at https://github.com/openai/codex/actions/runs/26319528477/job/77485808896.\n\nRelevant existing mappings:\n\n- `x86_64-apple-darwin` maps to `macos-x86_64`: https://github.com/openai/codex/blob/main/scripts/codex_package/targets.py#L88-L93\n- zsh resources are resolved from `scripts/codex_package/codex-zsh`: https://github.com/openai/codex/blob/main/scripts/codex_package/zsh.py#L14-L22\n\n## What Changed\n\n- Updated existing `codex-zsh` DotSlash entries to `rust-v0.134.0-alpha.3` release URLs and refreshed their size and SHA-256 metadata.\n- Added a `macos-x86_64` entry for `codex-zsh-x86_64-apple-darwin.tar.gz`.\n\n## Verification\n\n- Downloaded the four `codex-zsh-*.tar.gz` release assets from `rust-v0.134.0-alpha.3`, computed their `wc -c` sizes and `shasum -a 256` digests, and verified each archive contains `codex-zsh/bin/zsh`.\n- `python3 -m unittest discover -s scripts/codex_package -p 'test_*.py'`",
+    "author": "bolinfest",
+    "headRef": "pr24171",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "5124e27d0f12d2566160e9ead6c45f8770a879d8",
+    "baseSha": "5c20513a1b3d15898429abd92b3676b76795a892"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24171.diff",
+  "vendoredAt": "2026-05-24T03:20:41.548Z",
+  "collectedAt": "2026-05-24T03:20:41.548Z"
+}

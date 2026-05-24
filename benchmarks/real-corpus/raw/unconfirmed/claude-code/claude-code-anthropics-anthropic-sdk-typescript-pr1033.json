@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-typescript-pr1033",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1033,
+    "headSha": "61e63375db17138dd1709642320a944d5fb910f6",
+    "baseSha": "e6f4239f20544f26b1f8b5afa38f519512e30bfd",
+    "title": "test(tool-runner): regression test for header propagation across iterations",
+    "body": "Closes #922\r\n\r\n## What\r\n\r\nAdds a regression test in `tests/lib/tools/ToolRunner.test.ts` verifying that user-provided custom headers — both `client.defaultHeaders` and the `options.headers` passed as the second argument to `client.beta.messages.toolRunner` — propagate to every request in the tool-use loop, not just the first one.\r\n\r\n## Why\r\n\r\nThe original bug in #922 (custom headers dropped on follow-up calls) was fixed in v0.64.0 (commit ac6a7a3) by adding the optional `options` parameter to `BetaToolRunner` and threading `this.#options` through to every `client.beta.messages.{create,stream}` call. However, the existing tests only cover `x-stainless-helper` propagation through iterations — user-provided headers in the multi-iteration path are not exercised. This PR closes that gap so the fix doesn't quietly regress.\r\n\r\n## How tested\r\n\r\n- `jest tests/lib/tools/ToolRunner.test.ts` — 29 passed (1 new + 28 existing)\r\n- Verified end-to-end against `@anthropic-ai/sdk@0.95.1` with a local mock server: both `defaultHeaders` and `options.headers` arrive on the initial request and on the follow-up after `tool_use`\r\n- `prettier --write` and `eslint --fix` applied; no other changes\r\n\r\n## AI disclosure\r\n\r\nAI-assisted: used Claude for codebase analysis, identifying the test gap, and drafting the test scaffold. Reasoning and verification reviewed manually.",
+    "author": "TheSeydiCharyyev",
+    "headRef": "test/issue-922-headers-propagation",
+    "repository": "anthropics/anthropic-sdk-typescript"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-typescript",
+    "headSha": "61e63375db17138dd1709642320a944d5fb910f6",
+    "baseSha": "e6f4239f20544f26b1f8b5afa38f519512e30bfd"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-typescript-pr1033.diff",
+  "vendoredAt": "2026-05-24T03:16:35.844Z",
+  "collectedAt": "2026-05-24T03:16:35.844Z"
+}

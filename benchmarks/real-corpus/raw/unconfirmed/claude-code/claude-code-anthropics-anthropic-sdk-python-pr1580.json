@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-python-pr1580",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1580,
+    "headSha": "d1f94d4fe22f529d860aab17f750ebfa95747a30",
+    "baseSha": "28cdc33644bfb3f8310d51867619cafb5dd8cf23",
+    "title": "fix(types): sync ParsedContentBlock with ContentBlock",
+    "body": "Fixes #1422\n\n## What\n\n`ParsedContentBlock` (used by `ParsedMessage.content` in the streaming accumulator) was missing 6 content block types that `ContentBlock` includes. This caused `stream.get_final_message()` to silently drop these block types from the accumulated message.\n\nIssue #1422 reported this for the beta types (`ParsedBetaContentBlock`). The same gap existed in the non-beta `ParsedContentBlock`.\n\nAdded:\n- `WebFetchToolResultBlock`\n- `CodeExecutionToolResultBlock`\n- `BashCodeExecutionToolResultBlock`\n- `TextEditorCodeExecutionToolResultBlock`\n- `ToolSearchToolResultBlock`\n- `ContainerUploadBlock`\n\n## Verification\n\n- Build: pass\n- Tests: pass (253 passed)\n- Lint: pass (ruff)\n- Type check: pass (pyright, 0 errors)",
+    "author": "xodn348",
+    "headRef": "fix/parsed-content-block-sync",
+    "repository": "anthropics/anthropic-sdk-python"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-python",
+    "headSha": "d1f94d4fe22f529d860aab17f750ebfa95747a30",
+    "baseSha": "28cdc33644bfb3f8310d51867619cafb5dd8cf23"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-python-pr1580.diff",
+  "vendoredAt": "2026-05-24T03:17:01.854Z",
+  "collectedAt": "2026-05-24T03:17:01.854Z"
+}

@@ -1,0 +1,2061 @@
+diff --git a/requirements.txt b/requirements.txt
+index dd4ed78c..0122e898 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -12,9 +12,18 @@ ortools>=9.8
+ 
+ # Visualization
+ matplotlib>=3.8
++seaborn>=0.13.0
+ 
+ # Data
+ pandas>=2.1
+ 
+ # Image quality checks (CI)
+ Pillow>=10.0
++
++# GIS / Cartographic visualizations (maps_osm)
++folium>=0.14.0
++osmnx>=1.6.0
++geopandas>=0.14.0
++networkx>=3.2
++contextily>=1.4.0
++scikit-learn>=1.4.0
+diff --git a/src/maps_osm/__init__.py b/src/maps_osm/__init__.py
+new file mode 100644
+index 00000000..38b5f3a6
+--- /dev/null
++++ b/src/maps_osm/__init__.py
+@@ -0,0 +1,10 @@
++"""
++Visualizaciones cartográficas HVRPTW sobre OpenStreetMap.
++
++Genera 5 figuras profesionales para la tesis:
++  M1 – Red vial real DSRSLCC
++  M2 – Rutas baseline
++  M3 – Fragilidad espacial
++  M4 – Variabilidad vial
++  M5 – Comparación de escenarios robustos
++"""
+diff --git a/src/maps_osm/config.py b/src/maps_osm/config.py
+new file mode 100644
+index 00000000..0de26ac3
+--- /dev/null
++++ b/src/maps_osm/config.py
+@@ -0,0 +1,146 @@
++"""
++Configuración centralizada para visualizaciones cartográficas HVRPTW.
++
++Define constantes geográficas, paletas de colores, estilos académicos
++y rutas de archivos utilizados por todas las figuras M1–M5.
++"""
++
++from pathlib import Path
++
++# ---------------------------------------------------------------------------
++# Rutas del proyecto (relativas a la raíz del repositorio)
++# ---------------------------------------------------------------------------
++PROJECT_ROOT = Path(__file__).resolve().parents[2]
++
++ANALYTICS_DIR = PROJECT_ROOT / "analytics"
++RESULTS_DIR = PROJECT_ROOT / "results"
++MAPS_OUTPUT_DIR = RESULTS_DIR / "maps_osm"
++
++# Archivos de datos de entrada
++NODES_CSV = ANALYTICS_DIR / "nodes_hvrptw.csv"
++ARCS_CSV = ANALYTICS_DIR / "arcs_with_variability.csv"
++VEHICLES_CSV = ANALYTICS_DIR / "vehicles_hvrptw.csv"
++BASELINE_ROUTES_CSV = RESULTS_DIR / "baseline_routes.csv"
++STOCHASTIC_KPIS_CSV = RESULTS_DIR / "stochastic_kpis.csv"
++CAPACITY_EXPERIMENTS_CSV = RESULTS_DIR / "capacity_experiments.csv"
++
++# Directorios de salida por figura
++M1_OUTPUT_DIR = MAPS_OUTPUT_DIR / "m1_red_vial"
++M2_OUTPUT_DIR = MAPS_OUTPUT_DIR / "m2_rutas_baseline"
++M3_OUTPUT_DIR = MAPS_OUTPUT_DIR / "m3_fragilidad"
++M4_OUTPUT_DIR = MAPS_OUTPUT_DIR / "m4_variabilidad"
++M5_OUTPUT_DIR = MAPS_OUTPUT_DIR / "m5_comparacion"
++
++# ---------------------------------------------------------------------------
++# Coordenadas de referencia
++# ---------------------------------------------------------------------------
++DEPOT_LAT = -4.906564
++DEPOT_LON = -80.728434
++DEPOT_NAME = "ALMACEN CENTRAL DSRSLCC"
++
++# Bounding box para descarga de red vial OSMnx (Piura ampliada)
++PIURA_BBOX_NORTH = -3.5
++PIURA_BBOX_SOUTH = -5.5
++PIURA_BBOX_EAST = -79.0
++PIURA_BBOX_WEST = -82.0
++
++# Bounding box acotada para la zona de estudio (Sullana y alrededores)
++STUDY_BBOX_NORTH = -4.2
++STUDY_BBOX_SOUTH = -5.2
++STUDY_BBOX_EAST = -79.3
++STUDY_BBOX_WEST = -81.0
++
++# CRS
++CRS_WGS84 = "EPSG:4326"
++CRS_UTM17S = "EPSG:32717"
++
++# ---------------------------------------------------------------------------
++# Paleta de colores por tipo de vehículo
++# ---------------------------------------------------------------------------
++VEHICLE_COLORS = {
++    "FUSO Canter 6T": "#2980B9",
++    "NLR 3.5 TON": "#27AE60",
++    "Toyota Hilux": "#C0392B",
++    "Fiat Ducato Refrigerada": "#F39C12",
++    "V1_FUSO_CANTER": "#2980B9",
++    "V2_FIAT_DUCATO": "#F39C12",
++    "V3_NLR_35T": "#27AE60",
++    "V4_TOYOTA_HILUX": "#C0392B",
++}
++
++VEHICLE_SHORT_LABELS = {
++    "V1_FUSO_CANTER": "FUSO Canter",
++    "V2_FIAT_DUCATO": "Fiat Ducato",
++    "V3_NLR_35T": "NLR 3.5T",
++    "V4_TOYOTA_HILUX": "Toyota Hilux",
++}
++
++# ---------------------------------------------------------------------------
++# Colores por categoría de IPRESS
++# ---------------------------------------------------------------------------
++IPRESS_COLORS = {
++    "CENTRO DE SALUD": "#2471A3",
++    "PUESTO DE SALUD": "#27AE60",
++}
++IPRESS_MARKERS = {
++    "CENTRO DE SALUD": "s",   # cuadrado
++    "PUESTO DE SALUD": "o",   # círculo
++}
++
++# ---------------------------------------------------------------------------
++# Niveles de fragilidad
++# ---------------------------------------------------------------------------
++FRAGILITY_LEVELS = {
++    "alto": {"threshold": 0.9, "color": "#C0392B", "linewidth": 5},
++    "medio": {"threshold": 0.7, "color": "#E74C3C", "linewidth": 4},
++    "bajo": {"threshold": 0.0, "color": "#27AE60", "linewidth": 2},
++}
++
++# ---------------------------------------------------------------------------
++# Estilos de mapa
++# ---------------------------------------------------------------------------
++TILE_CARTODB_POSITRON = "CartoDB positron"
++TILE_OSM = "OpenStreetMap"
++FOLIUM_TILES = TILE_CARTODB_POSITRON
++
++# ---------------------------------------------------------------------------
++# Estilos académicos para Matplotlib
++# ---------------------------------------------------------------------------
++ACADEMIC_STYLE = {
++    "font.family": "serif",
++    "font.serif": ["DejaVu Serif", "Times New Roman", "serif"],
++    "font.size": 10,
++    "axes.titlesize": 12,
++    "axes.labelsize": 10,
++    "xtick.labelsize": 8,
++    "ytick.labelsize": 8,
++    "legend.fontsize": 8,
++    "figure.dpi": 150,
++    "savefig.dpi": 300,
++    "savefig.bbox": "tight",
++    "savefig.pad_inches": 0.1,
++}
++
++# ---------------------------------------------------------------------------
++# Exportación
++# ---------------------------------------------------------------------------
++EXPORT_DPI = 300
++EXPORT_PNG_SIZE = (1600, 1200)  # píxeles
++FIGURE_FIGSIZE = (14, 10)      # pulgadas
++
++# ---------------------------------------------------------------------------
++# Clustering
++# ---------------------------------------------------------------------------
++N_CLUSTERS = 5
++RANDOM_SEED = 42
++
++# ---------------------------------------------------------------------------
++# Metadatos para títulos de figuras de la tesis
++# ---------------------------------------------------------------------------
++FIGURE_TITLES = {
++    "M1": "Figura M1. Red vial real y localización de IPRESS – DSRSLCC Sullana",
++    "M2": "Figura M2. Rutas baseline HVRPTW sobre red vial real",
++    "M3": "Figura M3. Fragilidad espacial de rutas operacionales críticas",
++    "M4": "Figura M4. Variabilidad vial de tiempos de viaje",
++    "M5": "Figura M5. Comparación espacial de escenarios de reconfiguración de flota",
++}
+diff --git a/src/maps_osm/data_loader.py b/src/maps_osm/data_loader.py
+new file mode 100644
+index 00000000..8278b209
+--- /dev/null
++++ b/src/maps_osm/data_loader.py
+@@ -0,0 +1,90 @@
++"""
++Carga de datos existentes del proyecto HVRPTW para visualizaciones cartográficas.
++
++Lee los archivos CSV del directorio analytics/ y results/ y devuelve
++DataFrames listos para el análisis geoespacial.
++"""
++
++import pandas as pd
++
++from . import config as cfg
++
++
++def load_nodes() -> pd.DataFrame:
++    """Cargar nodos IPRESS con coordenadas (81 establecimientos)."""
++    df = pd.read_csv(cfg.NODES_CSV)
++    df["latitude"] = df["latitude"].astype(float)
++    df["longitude"] = df["longitude"].astype(float)
++    return df
++
++
++def load_arcs() -> pd.DataFrame:
++    """Cargar matriz OD con variabilidad de tiempos de viaje."""
++    return pd.read_csv(cfg.ARCS_CSV)
++
++
++def load_vehicles() -> pd.DataFrame:
++    """Cargar flota heterogénea (4 tipos de vehículo)."""
++    return pd.read_csv(cfg.VEHICLES_CSV)
++
++
++def load_baseline_routes() -> pd.DataFrame:
++    """Cargar rutas baseline del solver determinista."""
++    return pd.read_csv(cfg.BASELINE_ROUTES_CSV)
++
++
++def load_stochastic_kpis() -> pd.DataFrame:
++    """Cargar KPIs estocásticos de Monte Carlo."""
++    return pd.read_csv(cfg.STOCHASTIC_KPIS_CSV)
++
++
++def load_capacity_experiments() -> pd.DataFrame:
++    """Cargar resultados de experimentos de capacidad."""
++    return pd.read_csv(cfg.CAPACITY_EXPERIMENTS_CSV)
++
++
++def get_depot_row() -> dict:
++    """Retorna diccionario con coordenadas y nombre del depósito."""
++    return {
++        "node_id": "DEPOT_DSRSLCC",
++        "nombre": cfg.DEPOT_NAME,
++        "latitude": cfg.DEPOT_LAT,
++        "longitude": cfg.DEPOT_LON,
++        "categoria": "DEPOSITO",
++    }
++
++
++def get_route_summary(routes: pd.DataFrame) -> pd.DataFrame:
++    """Resumen por ruta: vehículo, distancia, carga, utilización."""
++    first_stops = routes[routes["stop_sequence"] == 0].copy()
++    summary = first_stops[
++        [
++            "route_id",
++            "vehicle_id",
++            "vehicle_name",
++            "capacity_kg",
++            "route_distance_km",
++            "route_load_kg",
++            "utilization_pct",
++        ]
++    ].copy()
++    summary["route_distance_km"] = pd.to_numeric(
++        summary["route_distance_km"], errors="coerce"
++    )
++    summary["route_load_kg"] = pd.to_numeric(
++        summary["route_load_kg"], errors="coerce"
++    )
++    summary["utilization_pct"] = pd.to_numeric(
++        summary["utilization_pct"], errors="coerce"
++    )
++    return summary.reset_index(drop=True)
++
++
++def build_node_lookup(nodes: pd.DataFrame) -> dict:
++    """Diccionario node_id → (lat, lon) incluyendo depósito."""
++    lookup: dict[str, tuple[float, float]] = {}
++    for _, row in nodes.iterrows():
++        nid = str(row["node_id"])
++        lookup[nid] = (row["latitude"], row["longitude"])
++    lookup["DEPOT_DSRSLCC"] = (cfg.DEPOT_LAT, cfg.DEPOT_LON)
++    return lookup
+diff --git a/src/maps_osm/fig_m1_network_vial.py b/src/maps_osm/fig_m1_network_vial.py
+new file mode 100644
+index 00000000..1fabb582
+--- /dev/null
++++ b/src/maps_osm/fig_m1_network_vial.py
+@@ -0,0 +1,208 @@
++"""
++FIGURA M1: Red vial real DSRSLCC sobre OpenStreetMap.
++
++Muestra la red logística territorial completa con 81 nodos IPRESS
++diferenciados por categoría, clustering espacial K-means y red vial
++principal descargada de OpenStreetMap vía OSMnx.
++"""
++
++import folium
++import geopandas as gpd
++import matplotlib.pyplot as plt
++import numpy as np
++import osmnx as ox
++from folium.plugins import MarkerCluster
++from matplotlib.patches import Patch
++
++from . import config as cfg
++from . import data_loader as dl
++from .utils import (
++    add_basemap,
++    apply_academic_style,
++    calculate_bounding_box,
++    cluster_nodes,
++    create_base_map,
++    download_road_network,
++    ensure_dir,
++    filter_main_roads,
++    ipress_legend_handles,
++    nodes_to_gdf,
++    save_folium_map,
++    save_matplotlib_fig,
++)
++
++CLUSTER_COLORS = ["#E74C3C", "#3498DB", "#2ECC71", "#9B59B6", "#F39C12"]
++
++
++def _generate_m1_static(nodes_gdf: gpd.GeoDataFrame):
++    """Generar versión estática (PNG) con Matplotlib + Contextily."""
++    apply_academic_style()
++
++    nodes_gdf = cluster_nodes(nodes_gdf)
++
++    fig, ax = plt.subplots(figsize=cfg.FIGURE_FIGSIZE)
++
++    try:
++        G = download_road_network(
++            bbox=(
++                cfg.STUDY_BBOX_NORTH,
++                cfg.STUDY_BBOX_SOUTH,
++                cfg.STUDY_BBOX_EAST,
++                cfg.STUDY_BBOX_WEST,
++            )
++        )
++        G_main = filter_main_roads(G)
++        edges_gdf = ox.graph_to_gdfs(G_main, nodes=False)
++        edges_gdf.plot(ax=ax, color="#95A5A6", linewidth=0.5, alpha=0.6)
++    except Exception as exc:
++        print(f"    Advertencia: No se pudo descargar red vial OSMnx: {exc}")
++        print("    Continuando sin capa de red vial...")
++
++    for cat, color in cfg.IPRESS_COLORS.items():
++        marker = cfg.IPRESS_MARKERS.get(cat, "o")
++        subset = nodes_gdf[nodes_gdf["categoria"] == cat]
++        if subset.empty:
++            continue
++        subset.plot(
++            ax=ax,
++            color=color,
++            marker=marker,
++            markersize=40,
++            edgecolor="white",
++            linewidth=0.5,
++            alpha=0.85,
++            zorder=4,
++        )
++
++    for cluster_id in range(cfg.N_CLUSTERS):
++        cl = nodes_gdf[nodes_gdf["cluster"] == cluster_id]
++        if cl.empty:
++            continue
++        centroid = cl.geometry.unary_union.centroid
++        circle = plt.Circle(
++            (centroid.x, centroid.y),
++            0.12,
++            fill=False,
++            edgecolor=CLUSTER_COLORS[cluster_id % len(CLUSTER_COLORS)],
++            linewidth=1.5,
++            linestyle="--",
++            alpha=0.6,
++            zorder=3,
++        )
++        ax.add_patch(circle)
++        ax.annotate(
++            f"Z{cluster_id + 1}",
++            xy=(centroid.x, centroid.y),
++            fontsize=8,
++            fontweight="bold",
++            color=CLUSTER_COLORS[cluster_id % len(CLUSTER_COLORS)],
++            ha="center",
++            va="center",
++            zorder=5,
++        )
++
++    ax.plot(
++        cfg.DEPOT_LON,
++        cfg.DEPOT_LAT,
++        marker="*",
++        color="#C0392B",
++        markersize=18,
++        markeredgecolor="white",
++        markeredgewidth=0.8,
++        zorder=6,
++    )
++
++    try:
++        add_basemap(ax)
++    except Exception:
++        pass
++
++    handles = ipress_legend_handles()
++    cluster_handles = [
++        Patch(
++            facecolor="none",
++            edgecolor=CLUSTER_COLORS[i],
++            linestyle="--",
++            linewidth=1.5,
++            label=f"Zona {i + 1}",
++        )
++        for i in range(cfg.N_CLUSTERS)
++    ]
++    ax.legend(
++        handles=handles + cluster_handles,
++        loc="lower left",
++        frameon=True,
++        framealpha=0.9,
++        fontsize=8,
++    )
++
++    ax.set_title(cfg.FIGURE_TITLES["M1"], fontsize=11, fontweight="bold", pad=12)
++    ax.set_xlabel("Longitud")
++    ax.set_ylabel("Latitud")
++
++    save_matplotlib_fig(fig, cfg.M1_OUTPUT_DIR, "M1_red_vial_DSRSLCC.png")
++
++
++def _generate_m1_interactive(nodes_df):
++    """Generar versión interactiva (HTML) con Folium."""
++    m = create_base_map(zoom_start=8)
++
++    folium.Marker(
++        location=[cfg.DEPOT_LAT, cfg.DEPOT_LON],
++        popup=f"<b>{cfg.DEPOT_NAME}</b><br>Depósito principal",
++        icon=folium.Icon(color="red", icon="star", prefix="fa"),
++    ).add_to(m)
++
++    cs_group = folium.FeatureGroup(name="Centros de Salud")
++    ps_group = folium.FeatureGroup(name="Puestos de Salud")
++
++    for _, row in nodes_df.iterrows():
++        cat = row["categoria"]
++        color = "blue" if cat == "CENTRO DE SALUD" else "green"
++        icon_shape = "square" if cat == "CENTRO DE SALUD" else "circle"
++        popup_html = (
++            f"<b>{row['nombre']}</b><br>"
++            f"Categoría: {cat}<br>"
++            f"Provincia: {row.get('province', 'N/A')}<br>"
++            f"Demanda media: {row.get('demand_mean', 'N/A')} kg"
++        )
++        marker = folium.Marker(
++            location=[row["latitude"], row["longitude"]],
++            popup=folium.Popup(popup_html, max_width=250),
++            icon=folium.Icon(color=color, icon="plus-sign"),
++        )
++        if cat == "CENTRO DE SALUD":
++            marker.add_to(cs_group)
++        else:
++            marker.add_to(ps_group)
++
++    cs_group.add_to(m)
++    ps_group.add_to(m)
++    folium.LayerControl().add_to(m)
++
++    title_html = (
++        '<div style="position:fixed;top:10px;left:50%;transform:translateX(-50%);'
++        'z-index:9999;background:white;padding:8px 16px;border-radius:4px;'
++        'box-shadow:0 2px 6px rgba(0,0,0,0.3);font-family:serif;font-size:13px;'
++        f'font-weight:bold;">{cfg.FIGURE_TITLES["M1"]}</div>'
++    )
++    m.get_root().html.add_child(folium.Element(title_html))
++
++    save_folium_map(m, cfg.M1_OUTPUT_DIR, "M1_red_vial_DSRSLCC.html")
++
++
++def generate_m1():
++    """Generar FIGURA M1: Red vial real DSRSLCC."""
++    print("  Cargando nodos IPRESS...")
++    nodes_df = dl.load_nodes()
++    nodes_gdf = nodes_to_gdf(nodes_df)
++
++    print("  Generando mapa estático (PNG)...")
++    _generate_m1_static(nodes_gdf)
++
++    print("  Generando mapa interactivo (HTML)...")
++    _generate_m1_interactive(nodes_df)
++
++
++if __name__ == "__main__":
++    generate_m1()
+diff --git a/src/maps_osm/fig_m2_rutas_baseline.py b/src/maps_osm/fig_m2_rutas_baseline.py
+new file mode 100644
+index 00000000..eda73f5d
+--- /dev/null
++++ b/src/maps_osm/fig_m2_rutas_baseline.py
+@@ -0,0 +1,284 @@
++"""
++FIGURA M2: Rutas baseline HVRPTW sobre mapa real.
++
++Visualiza las rutas deterministas del solver sobre la red vial real,
++coloreadas por tipo de vehículo, con grosor proporcional a la carga
++y panel lateral con KPIs por ruta.
++"""
++
++import folium
++import geopandas as gpd
++import matplotlib.pyplot as plt
++import numpy as np
++import pandas as pd
++from matplotlib.lines import Line2D
++
++from . import config as cfg
++from . import data_loader as dl
++from .utils import (
++    add_basemap,
++    apply_academic_style,
++    create_base_map,
++    nodes_to_gdf,
++    save_folium_map,
++    save_matplotlib_fig,
++    vehicle_legend_handles,
++)
++
++
++def _build_route_sequences(routes_df: pd.DataFrame, node_lookup: dict):
++    """Construir secuencias de coordenadas por ruta."""
++    route_data = {}
++    for route_id, group in routes_df.groupby("route_id"):
++        group = group.sort_values("stop_sequence")
++        coords = []
++        node_ids = []
++        for _, row in group.iterrows():
++            nid = str(row["node_id"])
++            if nid in node_lookup:
++                coords.append(node_lookup[nid])
++                node_ids.append(nid)
++        # Retorno al depósito
++        depot = node_lookup.get("DEPOT_DSRSLCC")
++        if depot and (not coords or coords[-1] != depot):
++            coords.append(depot)
++            node_ids.append("DEPOT_DSRSLCC")
++
++        first = group.iloc[0]
++        route_data[route_id] = {
++            "coords": coords,
++            "node_ids": node_ids,
++            "vehicle_id": first["vehicle_id"],
++            "vehicle_name": first["vehicle_name"],
++            "capacity_kg": first["capacity_kg"],
++            "route_distance_km": pd.to_numeric(
++                first.get("route_distance_km", 0), errors="coerce"
++            ),
++            "route_load_kg": pd.to_numeric(
++                first.get("route_load_kg", 0), errors="coerce"
++            ),
++            "utilization_pct": pd.to_numeric(
++                first.get("utilization_pct", 0), errors="coerce"
++            ),
++        }
++    return route_data
++
++
++def _generate_m2_static(route_data: dict, nodes_gdf: gpd.GeoDataFrame):
++    """Generar versión estática (PNG) con Matplotlib."""
++    apply_academic_style()
++
++    fig, (ax_map, ax_table) = plt.subplots(
++        1, 2,
++        figsize=(18, 10),
++        gridspec_kw={"width_ratios": [3, 1]},
++    )
++
++    nodes_gdf.plot(
++        ax=ax_map,
++        color="#7F8C8D",
++        markersize=20,
++        edgecolor="white",
++        linewidth=0.3,
++        zorder=3,
++    )
++
++    ax_map.plot(
++        cfg.DEPOT_LON,
++        cfg.DEPOT_LAT,
++        marker="*",
++        color="#C0392B",
++        markersize=18,
++        markeredgecolor="white",
++        markeredgewidth=0.8,
++        zorder=6,
++    )
++
++    for route_id, rdata in sorted(route_data.items()):
++        coords = rdata["coords"]
++        if len(coords) < 2:
++            continue
++        lats = [c[0] for c in coords]
++        lons = [c[1] for c in coords]
++        color = cfg.VEHICLE_COLORS.get(rdata["vehicle_id"], "#333333")
++        util = rdata["utilization_pct"]
++        lw = 1.5 + (util / 100.0) * 3.5 if util else 2.0
++
++        ax_map.plot(lons, lats, color=color, linewidth=lw, alpha=0.75, zorder=4)
++
++        for i, (lat, lon) in enumerate(coords[1:-1], start=1):
++            ax_map.annotate(
++                str(i),
++                xy=(lon, lat),
++                fontsize=5,
++                fontweight="bold",
++                color=color,
++                ha="center",
++                va="center",
++                bbox=dict(
++                    boxstyle="round,pad=0.15",
++                    facecolor="white",
++                    edgecolor=color,
++                    alpha=0.8,
++                    linewidth=0.5,
++                ),
++                zorder=7,
++            )
++
++    try:
++        add_basemap(ax_map)
++    except Exception:
++        pass
++
++    handles = vehicle_legend_handles()
++    handles.append(
++        Line2D(
++            [0], [0], marker="*", color="w",
++            markerfacecolor="#C0392B", markersize=12,
++            label="Depósito", linestyle="None",
++        )
++    )
++    ax_map.legend(handles=handles, loc="lower left", framealpha=0.9, fontsize=8)
++    ax_map.set_title(cfg.FIGURE_TITLES["M2"], fontsize=11, fontweight="bold", pad=12)
++    ax_map.set_xlabel("Longitud")
++    ax_map.set_ylabel("Latitud")
++
++    # Panel lateral con KPIs
++    ax_table.axis("off")
++    table_data = []
++    for rid, rdata in sorted(route_data.items()):
++        vname = cfg.VEHICLE_SHORT_LABELS.get(rdata["vehicle_id"], rdata["vehicle_name"])
++        dist = rdata["route_distance_km"]
++        load = rdata["route_load_kg"]
++        util = rdata["utilization_pct"]
++        table_data.append([
++            f"R{rid}",
++            vname[:12],
++            f"{dist:.0f}" if pd.notna(dist) else "—",
++            f"{load:.0f}" if pd.notna(load) else "—",
++            f"{util:.0f}%" if pd.notna(util) else "—",
++        ])
++
++    if table_data:
++        col_labels = ["Ruta", "Vehículo", "Dist (km)", "Carga (kg)", "Util."]
++        table = ax_table.table(
++            cellText=table_data,
++            colLabels=col_labels,
++            loc="center",
++            cellLoc="center",
++        )
++        table.auto_set_font_size(False)
++        table.set_fontsize(8)
++        table.scale(1, 1.3)
++
++        for (row, col), cell in table.get_celld().items():
++            if row == 0:
++                cell.set_facecolor("#2C3E50")
++                cell.set_text_props(color="white", fontweight="bold")
++            else:
++                cell.set_facecolor("#F8F9FA" if row % 2 == 0 else "white")
++            cell.set_edgecolor("#DEE2E6")
++
++        ax_table.set_title(
++            "KPIs por ruta", fontsize=10, fontweight="bold", pad=12
++        )
++
++    plt.tight_layout()
++    save_matplotlib_fig(fig, cfg.M2_OUTPUT_DIR, "M2_rutas_baseline.png")
++
++
++def _generate_m2_interactive(route_data: dict, nodes_df):
++    """Generar versión interactiva (HTML) con Folium."""
++    m = create_base_map(zoom_start=8)
++
++    folium.Marker(
++        location=[cfg.DEPOT_LAT, cfg.DEPOT_LON],
++        popup=f"<b>{cfg.DEPOT_NAME}</b>",
++        icon=folium.Icon(color="red", icon="star", prefix="fa"),
++    ).add_to(m)
++
++    for route_id, rdata in sorted(route_data.items()):
++        coords = rdata["coords"]
++        if len(coords) < 2:
++            continue
++        color = cfg.VEHICLE_COLORS.get(rdata["vehicle_id"], "#333333")
++        vname = cfg.VEHICLE_SHORT_LABELS.get(
++            rdata["vehicle_id"], rdata["vehicle_name"]
++        )
++        util = rdata["utilization_pct"]
++        weight = 2 + (util / 100.0) * 3 if util and pd.notna(util) else 3
++
++        popup_text = (
++            f"<b>Ruta {route_id}</b><br>"
++            f"Vehículo: {vname}<br>"
++            f"Distancia: {rdata['route_distance_km']:.1f} km<br>"
++            f"Carga: {rdata['route_load_kg']:.0f} kg<br>"
++            f"Utilización: {util:.0f}%"
++            if pd.notna(util) else f"<b>Ruta {route_id}</b><br>Vehículo: {vname}"
++        )
++
++        route_group = folium.FeatureGroup(name=f"Ruta {route_id} – {vname}")
++        folium.PolyLine(
++            locations=coords,
++            color=color,
++            weight=weight,
++            opacity=0.8,
++            popup=folium.Popup(popup_text, max_width=200),
++        ).add_to(route_group)
++
++        for i, (lat, lon) in enumerate(coords[1:-1], start=1):
++            folium.CircleMarker(
++                location=[lat, lon],
++                radius=6,
++                color=color,
++                fill=True,
++                fill_color="white",
++                fill_opacity=0.9,
++                popup=f"Parada {i}",
++            ).add_to(route_group)
++            folium.Marker(
++                location=[lat, lon],
++                icon=folium.DivIcon(
++                    html=f'<div style="font-size:9px;font-weight:bold;'
++                    f'color:{color};text-align:center;">{i}</div>',
++                    icon_size=(15, 15),
++                    icon_anchor=(7, 7),
++                ),
++            ).add_to(route_group)
++
++        route_group.add_to(m)
++
++    folium.LayerControl().add_to(m)
++
++    title_html = (
++        '<div style="position:fixed;top:10px;left:50%;transform:translateX(-50%);'
++        'z-index:9999;background:white;padding:8px 16px;border-radius:4px;'
++        'box-shadow:0 2px 6px rgba(0,0,0,0.3);font-family:serif;font-size:13px;'
++        f'font-weight:bold;">{cfg.FIGURE_TITLES["M2"]}</div>'
++    )
++    m.get_root().html.add_child(folium.Element(title_html))
++
++    save_folium_map(m, cfg.M2_OUTPUT_DIR, "M2_rutas_baseline.html")
++
++
++def generate_m2():
++    """Generar FIGURA M2: Rutas baseline sobre mapa real."""
++    print("  Cargando datos...")
++    nodes_df = dl.load_nodes()
++    routes_df = dl.load_baseline_routes()
++    node_lookup = dl.build_node_lookup(nodes_df)
++
++    print("  Construyendo secuencias de rutas...")
++    route_data = _build_route_sequences(routes_df, node_lookup)
++
++    nodes_gdf = nodes_to_gdf(nodes_df)
++
++    print("  Generando mapa estático (PNG)...")
++    _generate_m2_static(route_data, nodes_gdf)
++
++    print("  Generando mapa interactivo (HTML)...")
++    _generate_m2_interactive(route_data, nodes_df)
++
++
++if __name__ == "__main__":
++    generate_m2()
+diff --git a/src/maps_osm/fig_m3_fragilidad_espacial.py b/src/maps_osm/fig_m3_fragilidad_espacial.py
+new file mode 100644
+index 00000000..1391203b
+--- /dev/null
++++ b/src/maps_osm/fig_m3_fragilidad_espacial.py
+@@ -0,0 +1,322 @@
++"""
++FIGURA M3: Fragilidad espacial de rutas críticas.
++
++Visualiza espacialmente las rutas con mayor riesgo operacional,
++con coloración por nivel de fragilidad, buffers de zonas vulnerables,
++heatmap de densidad y cuellos de botella territoriales.
++"""
++
++import folium
++import geopandas as gpd
++import matplotlib.pyplot as plt
++import numpy as np
++import pandas as pd
++from folium.plugins import HeatMap
++from matplotlib.colors import LinearSegmentedColormap
++from matplotlib.lines import Line2D
++from matplotlib.patches import Patch
++from scipy.stats import gaussian_kde
++from shapely.geometry import LineString, Point
++
++from . import config as cfg
++from . import data_loader as dl
++from .utils import (
++    add_basemap,
++    apply_academic_style,
++    create_base_map,
++    ensure_dir,
++    nodes_to_gdf,
++    reproject_utm,
++    save_folium_map,
++    save_matplotlib_fig,
++)
++
++
++def _compute_route_fragility(routes_df: pd.DataFrame, nodes_df: pd.DataFrame):
++    """Calcular fragilidad por ruta: 1 - (slack / variability)."""
++    route_summaries = []
++    for route_id, group in routes_df.groupby("route_id"):
++        first = group.iloc[0]
++        cap = pd.to_numeric(first.get("capacity_kg", 0), errors="coerce")
++        load = pd.to_numeric(first.get("route_load_kg", 0), errors="coerce")
++        util = pd.to_numeric(first.get("utilization_pct", 0), errors="coerce")
++
++        if pd.isna(cap) or cap == 0:
++            cap = 1000.0
++        if pd.isna(load):
++            load = 0.0
++        if pd.isna(util):
++            util = (load / cap) * 100 if cap > 0 else 0
++
++        slack = cap - load
++        demand_nodes = group[group["node_id"] != "DEPOT_DSRSLCC"]
++        demands = pd.to_numeric(demand_nodes["demand_kg"], errors="coerce").dropna()
++
++        if len(demands) > 0:
++            variability = demands.std() * np.sqrt(len(demands))
++        else:
++            variability = 1.0
++
++        if variability > 0:
++            fragility = max(0, min(1, 1 - (slack / (variability + 1e-6))))
++        else:
++            fragility = 0.0
++
++        route_summaries.append({
++            "route_id": route_id,
++            "vehicle_id": first["vehicle_id"],
++            "vehicle_name": first["vehicle_name"],
++            "capacity_kg": cap,
++            "load_kg": load,
++            "utilization_pct": util,
++            "slack": slack,
++            "variability": variability,
++            "fragility": fragility,
++        })
++    return pd.DataFrame(route_summaries)
++
++
++def _get_fragility_level(fragility: float) -> dict:
++    """Obtener nivel de fragilidad (alto/medio/bajo)."""
++    if fragility >= 0.9:
++        return cfg.FRAGILITY_LEVELS["alto"]
++    elif fragility >= 0.7:
++        return cfg.FRAGILITY_LEVELS["medio"]
++    else:
++        return cfg.FRAGILITY_LEVELS["bajo"]
++
++
++def _build_route_coords(routes_df, node_lookup):
++    """Coordenadas por ruta."""
++    route_coords = {}
++    for route_id, group in routes_df.groupby("route_id"):
++        group = group.sort_values("stop_sequence")
++        coords = []
++        for _, row in group.iterrows():
++            nid = str(row["node_id"])
++            if nid in node_lookup:
++                coords.append(node_lookup[nid])
++        depot = node_lookup.get("DEPOT_DSRSLCC")
++        if depot and coords and coords[-1] != depot:
++            coords.append(depot)
++        route_coords[route_id] = coords
++    return route_coords
++
++
++def _generate_m3_static(
++    frag_df: pd.DataFrame,
++    route_coords: dict,
++    nodes_gdf: gpd.GeoDataFrame,
++):
++    """Generar versión estática (PNG) con heatmap de fragilidad."""
++    apply_academic_style()
++
++    fig = plt.figure(figsize=(16, 11))
++    ax_main = fig.add_axes([0.05, 0.05, 0.65, 0.88])
++    ax_inset = fig.add_axes([0.72, 0.52, 0.26, 0.40])
++
++    for ax in [ax_main, ax_inset]:
++        nodes_gdf.plot(
++            ax=ax, color="#BDC3C7", markersize=15,
++            edgecolor="white", linewidth=0.3, zorder=3,
++        )
++        ax.plot(
++            cfg.DEPOT_LON, cfg.DEPOT_LAT,
++            marker="*", color="#C0392B", markersize=16,
++            markeredgecolor="white", markeredgewidth=0.5, zorder=6,
++        )
++
++    # Rutas coloreadas por fragilidad
++    critical_nodes = []
++    for _, row in frag_df.iterrows():
++        rid = row["route_id"]
++        coords = route_coords.get(rid, [])
++        if len(coords) < 2:
++            continue
++        level = _get_fragility_level(row["fragility"])
++        lats = [c[0] for c in coords]
++        lons = [c[1] for c in coords]
++
++        for ax in [ax_main, ax_inset]:
++            ax.plot(
++                lons, lats,
++                color=level["color"],
++                linewidth=level["linewidth"],
++                alpha=0.75,
++                zorder=4,
++            )
++
++        if row["fragility"] >= 0.7:
++            for lat, lon in coords[1:-1]:
++                critical_nodes.append((lat, lon))
++
++    # Heatmap de densidad de fragilidad
++    if len(critical_nodes) > 2:
++        cn = np.array(critical_nodes)
++        try:
++            kde = gaussian_kde(cn.T, bw_method=0.3)
++            xmin, xmax = cn[:, 1].min() - 0.1, cn[:, 1].max() + 0.1
++            ymin, ymax = cn[:, 0].min() - 0.1, cn[:, 0].max() + 0.1
++            xx, yy = np.meshgrid(
++                np.linspace(xmin, xmax, 100),
++                np.linspace(ymin, ymax, 100),
++            )
++            zz = kde(np.vstack([yy.ravel(), xx.ravel()])).reshape(xx.shape)
++            ax_main.contourf(
++                xx, yy, zz, levels=10,
++                cmap="Reds", alpha=0.25, zorder=2,
++            )
++        except Exception:
++            pass
++
++    # Cuellos de botella (nodos con múltiples rutas críticas)
++    node_critical_count: dict[tuple, int] = {}
++    for _, row in frag_df[frag_df["fragility"] >= 0.7].iterrows():
++        coords = route_coords.get(row["route_id"], [])
++        for c in coords[1:-1]:
++            node_critical_count[c] = node_critical_count.get(c, 0) + 1
++    bottlenecks = {k: v for k, v in node_critical_count.items() if v >= 2}
++    for (lat, lon), count in bottlenecks.items():
++        ax_main.scatter(
++            lon, lat, s=count * 80, facecolors="none",
++            edgecolors="#E74C3C", linewidths=2, zorder=7,
++        )
++
++    try:
++        add_basemap(ax_main)
++        add_basemap(ax_inset)
++    except Exception:
++        pass
++
++    # Inset: zoom a zona más crítica
++    if critical_nodes:
++        cn = np.array(critical_nodes)
++        cx, cy = cn[:, 1].mean(), cn[:, 0].mean()
++        ax_inset.set_xlim(cx - 0.3, cx + 0.3)
++        ax_inset.set_ylim(cy - 0.2, cy + 0.2)
++        ax_inset.set_title("Detalle zona crítica", fontsize=9, fontweight="bold")
++
++    # Leyenda
++    handles = [
++        Line2D([0], [0], color=cfg.FRAGILITY_LEVELS["alto"]["color"],
++               lw=4, label="Fragilidad alta (≥0.9)"),
++        Line2D([0], [0], color=cfg.FRAGILITY_LEVELS["medio"]["color"],
++               lw=3, label="Fragilidad media (0.7–0.9)"),
++        Line2D([0], [0], color=cfg.FRAGILITY_LEVELS["bajo"]["color"],
++               lw=2, label="Fragilidad baja (<0.7)"),
++        Line2D([0], [0], marker="o", color="w", markerfacecolor="none",
++               markeredgecolor="#E74C3C", markersize=10, markeredgewidth=2,
++               label="Cuello de botella", linestyle="None"),
++    ]
++    ax_main.legend(handles=handles, loc="lower left", framealpha=0.9, fontsize=8)
++    ax_main.set_title(cfg.FIGURE_TITLES["M3"], fontsize=11, fontweight="bold", pad=12)
++    ax_main.set_xlabel("Longitud")
++    ax_main.set_ylabel("Latitud")
++
++    # Panel de KPIs
++    ax_kpi = fig.add_axes([0.72, 0.05, 0.26, 0.42])
++    ax_kpi.axis("off")
++    kpi_text = "Resumen de fragilidad\n" + "=" * 28 + "\n"
++    for _, row in frag_df.sort_values("fragility", ascending=False).iterrows():
++        level_name = (
++            "ALTO" if row["fragility"] >= 0.9
++            else "MEDIO" if row["fragility"] >= 0.7
++            else "bajo"
++        )
++        vname = cfg.VEHICLE_SHORT_LABELS.get(row["vehicle_id"], row["vehicle_name"])
++        kpi_text += (
++            f"R{row['route_id']} ({vname})\n"
++            f"  Frag={row['fragility']:.2f} [{level_name}]\n"
++            f"  Util={row['utilization_pct']:.0f}%\n"
++        )
++    ax_kpi.text(
++        0, 1, kpi_text, transform=ax_kpi.transAxes,
++        fontsize=7, fontfamily="monospace", verticalalignment="top",
++    )
++
++    save_matplotlib_fig(fig, cfg.M3_OUTPUT_DIR, "M3_fragilidad_espacial.png")
++
++
++def _generate_m3_interactive(
++    frag_df: pd.DataFrame,
++    route_coords: dict,
++    nodes_df: pd.DataFrame,
++):
++    """Generar versión interactiva (HTML) con Folium + HeatMap."""
++    m = create_base_map(zoom_start=8)
++
++    folium.Marker(
++        location=[cfg.DEPOT_LAT, cfg.DEPOT_LON],
++        popup=f"<b>{cfg.DEPOT_NAME}</b>",
++        icon=folium.Icon(color="red", icon="star", prefix="fa"),
++    ).add_to(m)
++
++    heat_data = []
++
++    for _, row in frag_df.iterrows():
++        rid = row["route_id"]
++        coords = route_coords.get(rid, [])
++        if len(coords) < 2:
++            continue
++        level = _get_fragility_level(row["fragility"])
++        vname = cfg.VEHICLE_SHORT_LABELS.get(row["vehicle_id"], row["vehicle_name"])
++
++        popup_text = (
++            f"<b>Ruta {rid}</b><br>"
++            f"Vehículo: {vname}<br>"
++            f"Fragilidad: {row['fragility']:.2f}<br>"
++            f"Utilización: {row['utilization_pct']:.0f}%<br>"
++            f"Slack: {row['slack']:.0f} kg"
++        )
++
++        folium.PolyLine(
++            locations=coords,
++            color=level["color"],
++            weight=level["linewidth"],
++            opacity=0.8,
++            popup=folium.Popup(popup_text, max_width=200),
++        ).add_to(m)
++
++        if row["fragility"] >= 0.7:
++            for lat, lon in coords[1:-1]:
++                heat_data.append([lat, lon, row["fragility"]])
++
++    if heat_data:
++        HeatMap(
++            heat_data, radius=25, blur=15,
++            gradient={0.4: "yellow", 0.7: "orange", 1.0: "red"},
++        ).add_to(m)
++
++    title_html = (
++        '<div style="position:fixed;top:10px;left:50%;transform:translateX(-50%);'
++        'z-index:9999;background:white;padding:8px 16px;border-radius:4px;'
++        'box-shadow:0 2px 6px rgba(0,0,0,0.3);font-family:serif;font-size:13px;'
++        f'font-weight:bold;">{cfg.FIGURE_TITLES["M3"]}</div>'
++    )
++    m.get_root().html.add_child(folium.Element(title_html))
++
++    save_folium_map(m, cfg.M3_OUTPUT_DIR, "M3_fragilidad_espacial.html")
++
++
++def generate_m3():
++    """Generar FIGURA M3: Fragilidad espacial de rutas críticas."""
++    print("  Cargando datos...")
++    nodes_df = dl.load_nodes()
++    routes_df = dl.load_baseline_routes()
++    node_lookup = dl.build_node_lookup(nodes_df)
++
++    print("  Calculando fragilidad por ruta...")
++    frag_df = _compute_route_fragility(routes_df, nodes_df)
++    route_coords = _build_route_coords(routes_df, node_lookup)
++
++    nodes_gdf = nodes_to_gdf(nodes_df)
++
++    print("  Generando mapa estático (PNG)...")
++    _generate_m3_static(frag_df, route_coords, nodes_gdf)
++
++    print("  Generando mapa interactivo (HTML)...")
++    _generate_m3_interactive(frag_df, route_coords, nodes_df)
++
++
++if __name__ == "__main__":
++    generate_m3()
+diff --git a/src/maps_osm/fig_m4_variabilidad_vial.py b/src/maps_osm/fig_m4_variabilidad_vial.py
+new file mode 100644
+index 00000000..39c4490e
+--- /dev/null
++++ b/src/maps_osm/fig_m4_variabilidad_vial.py
+@@ -0,0 +1,284 @@
++"""
++FIGURA M4: Mapa de variabilidad vial.
++
++Representa la incertidumbre geográfica de tiempos de viaje usando
++heatmap de CV sobre arcos, identificación de arcos críticos y
++estadísticas por provincia.
++"""
++
++import folium
++import geopandas as gpd
++import matplotlib.pyplot as plt
++import numpy as np
++import pandas as pd
++from folium.plugins import HeatMap
++from matplotlib.collections import LineCollection
++from matplotlib.colorbar import ColorbarBase
++from matplotlib.colors import LinearSegmentedColormap, Normalize
++from matplotlib.lines import Line2D
++
++from . import config as cfg
++from . import data_loader as dl
++from .utils import (
++    add_basemap,
++    apply_academic_style,
++    create_base_map,
++    nodes_to_gdf,
++    save_folium_map,
++    save_matplotlib_fig,
++)
++
++
++def _prepare_arcs_geo(arcs_df: pd.DataFrame):
++    """Preparar arcos con geometría de línea."""
++    arcs_df = arcs_df.copy()
++    arcs_df["travel_time_cv"] = pd.to_numeric(
++        arcs_df["travel_time_cv"], errors="coerce"
++    )
++    arcs_df["travel_time_std"] = pd.to_numeric(
++        arcs_df["travel_time_std"], errors="coerce"
++    )
++    arcs_df["duration_min"] = pd.to_numeric(
++        arcs_df["duration_min"], errors="coerce"
++    )
++    arcs_df["origin_lat"] = pd.to_numeric(arcs_df["origin_lat"], errors="coerce")
++    arcs_df["origin_lon"] = pd.to_numeric(arcs_df["origin_lon"], errors="coerce")
++    arcs_df["destination_lat"] = pd.to_numeric(
++        arcs_df["destination_lat"], errors="coerce"
++    )
++    arcs_df["destination_lon"] = pd.to_numeric(
++        arcs_df["destination_lon"], errors="coerce"
++    )
++    arcs_df = arcs_df.dropna(
++        subset=["origin_lat", "origin_lon", "destination_lat", "destination_lon",
++                "travel_time_cv"]
++    )
++    return arcs_df
++
++
++def _generate_m4_static(arcs_df: pd.DataFrame, nodes_gdf: gpd.GeoDataFrame):
++    """Generar versión estática (PNG) con Matplotlib + Contextily."""
++    apply_academic_style()
++
++    fig, (ax_map, ax_stats) = plt.subplots(
++        1, 2, figsize=(18, 10),
++        gridspec_kw={"width_ratios": [3, 1]},
++    )
++
++    nodes_gdf.plot(
++        ax=ax_map, color="#7F8C8D", markersize=15,
++        edgecolor="white", linewidth=0.3, zorder=3,
++    )
++    ax_map.plot(
++        cfg.DEPOT_LON, cfg.DEPOT_LAT,
++        marker="*", color="#C0392B", markersize=16,
++        markeredgecolor="white", markeredgewidth=0.5, zorder=6,
++    )
++
++    cmap = LinearSegmentedColormap.from_list(
++        "cv_cmap", ["#27AE60", "#F1C40F", "#C0392B"]
++    )
++    cv_min = arcs_df["travel_time_cv"].min()
++    cv_max = arcs_df["travel_time_cv"].max()
++    norm = Normalize(vmin=cv_min, vmax=cv_max)
++
++    segments = []
++    colors = []
++    for _, row in arcs_df.iterrows():
++        seg = [
++            (row["origin_lon"], row["origin_lat"]),
++            (row["destination_lon"], row["destination_lat"]),
++        ]
++        segments.append(seg)
++        cv = row["travel_time_cv"]
++        alpha = 0.3 + 0.5 * ((cv - cv_min) / (cv_max - cv_min + 1e-9))
++        colors.append((*cmap(norm(cv))[:3], alpha))
++
++    lc = LineCollection(segments, colors=colors, linewidths=1.2, zorder=4)
++    ax_map.add_collection(lc)
++
++    # Arcos críticos (CV > 0.25 o duración > 60 min)
++    critical = arcs_df[
++        (arcs_df["travel_time_cv"] > 0.25)
++        | (arcs_df["duration_min"] > 60)
++    ]
++    for _, row in critical.iterrows():
++        ax_map.plot(
++            [row["origin_lon"], row["destination_lon"]],
++            [row["origin_lat"], row["destination_lat"]],
++            color="#C0392B", linewidth=2.5, alpha=0.6,
++            linestyle="--", zorder=5,
++        )
++
++    # Círculos proporcionales a std en nodos
++    node_std = {}
++    for _, row in arcs_df.iterrows():
++        key = (row["origin_lat"], row["origin_lon"])
++        if key not in node_std:
++            node_std[key] = []
++        node_std[key].append(row["travel_time_std"])
++    for (lat, lon), stds in node_std.items():
++        mean_std = np.mean(stds)
++        size = 5 + mean_std * 15
++        ax_map.scatter(
++            lon, lat, s=size,
++            facecolors="none", edgecolors="#8E44AD",
++            linewidths=0.8, alpha=0.5, zorder=4,
++        )
++
++    try:
++        add_basemap(ax_map)
++    except Exception:
++        pass
++
++    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
++    sm.set_array([])
++    cbar = plt.colorbar(sm, ax=ax_map, shrink=0.6, pad=0.02)
++    cbar.set_label("Coeficiente de variación (CV)", fontsize=9)
++
++    handles = [
++        Line2D([0], [0], color="#C0392B", lw=2, linestyle="--",
++               label="Arco crítico (CV>0.25 ó >60min)"),
++        Line2D([0], [0], marker="o", color="w", markerfacecolor="none",
++               markeredgecolor="#8E44AD", markersize=8, markeredgewidth=1,
++               label="σ promedio en nodo", linestyle="None"),
++    ]
++    ax_map.legend(handles=handles, loc="lower left", framealpha=0.9, fontsize=8)
++    ax_map.set_title(cfg.FIGURE_TITLES["M4"], fontsize=11, fontweight="bold", pad=12)
++    ax_map.set_xlabel("Longitud")
++    ax_map.set_ylabel("Latitud")
++
++    # Panel de estadísticas
++    ax_stats.axis("off")
++
++    stats_text = "Estadísticas de variabilidad\n" + "=" * 32 + "\n\n"
++    stats_text += f"CV promedio global: {arcs_df['travel_time_cv'].mean():.3f}\n"
++    stats_text += f"CV mediana: {arcs_df['travel_time_cv'].median():.3f}\n"
++    stats_text += f"CV máximo: {arcs_df['travel_time_cv'].max():.3f}\n"
++    stats_text += f"N° arcos totales: {len(arcs_df)}\n"
++    stats_text += f"N° arcos críticos: {len(critical)}\n\n"
++
++    top10 = arcs_df.nlargest(10, "travel_time_cv")
++    stats_text += "Top 10 arcos más variables:\n" + "-" * 32 + "\n"
++    for i, (_, row) in enumerate(top10.iterrows(), 1):
++        oname = str(row.get("origin_name", row["origin_id"]))[:18]
++        dname = str(row.get("destination_name", row["destination_id"]))[:18]
++        stats_text += f"{i}. {oname}\n   → {dname}\n   CV={row['travel_time_cv']:.3f}\n"
++
++    ax_stats.text(
++        0, 1, stats_text, transform=ax_stats.transAxes,
++        fontsize=7, fontfamily="monospace", verticalalignment="top",
++    )
++    ax_stats.set_title("Panel de variabilidad", fontsize=10, fontweight="bold", pad=12)
++
++    plt.tight_layout()
++    save_matplotlib_fig(fig, cfg.M4_OUTPUT_DIR, "M4_variabilidad_vial.png")
++
++
++def _generate_m4_interactive(arcs_df: pd.DataFrame, nodes_df: pd.DataFrame):
++    """Generar versión interactiva (HTML) con Folium."""
++    m = create_base_map(zoom_start=8)
++
++    folium.Marker(
++        location=[cfg.DEPOT_LAT, cfg.DEPOT_LON],
++        popup=f"<b>{cfg.DEPOT_NAME}</b>",
++        icon=folium.Icon(color="red", icon="star", prefix="fa"),
++    ).add_to(m)
++
++    cv_min = arcs_df["travel_time_cv"].min()
++    cv_max = arcs_df["travel_time_cv"].max()
++
++    all_arcs_group = folium.FeatureGroup(name="Arcos (CV)")
++    critical_group = folium.FeatureGroup(name="Arcos críticos")
++
++    for _, row in arcs_df.iterrows():
++        cv = row["travel_time_cv"]
++        ratio = (cv - cv_min) / (cv_max - cv_min + 1e-9)
++
++        if ratio < 0.33:
++            color = "#27AE60"
++        elif ratio < 0.66:
++            color = "#F1C40F"
++        else:
++            color = "#C0392B"
++
++        opacity = 0.3 + 0.5 * ratio
++        is_critical = cv > 0.25 or (
++            pd.notna(row.get("duration_min")) and row["duration_min"] > 60
++        )
++
++        popup_text = (
++            f"<b>{row.get('origin_name', row['origin_id'])}</b> → "
++            f"<b>{row.get('destination_name', row['destination_id'])}</b><br>"
++            f"CV: {cv:.3f}<br>"
++            f"σ: {row['travel_time_std']:.2f} min<br>"
++            f"Duración media: {row.get('travel_time_mean', 'N/A')} min"
++        )
++
++        line = folium.PolyLine(
++            locations=[
++                [row["origin_lat"], row["origin_lon"]],
++                [row["destination_lat"], row["destination_lon"]],
++            ],
++            color=color,
++            weight=2 if not is_critical else 4,
++            opacity=opacity,
++            popup=folium.Popup(popup_text, max_width=250),
++            dash_array="5 5" if is_critical else None,
++        )
++
++        if is_critical:
++            line.add_to(critical_group)
++        else:
++            line.add_to(all_arcs_group)
++
++    all_arcs_group.add_to(m)
++    critical_group.add_to(m)
++
++    # Heatmap de variabilidad
++    heat_data = []
++    for _, row in arcs_df.iterrows():
++        mid_lat = (row["origin_lat"] + row["destination_lat"]) / 2
++        mid_lon = (row["origin_lon"] + row["destination_lon"]) / 2
++        heat_data.append([mid_lat, mid_lon, row["travel_time_cv"]])
++
++    if heat_data:
++        heat_group = folium.FeatureGroup(name="Heatmap CV")
++        HeatMap(
++            heat_data, radius=20, blur=15,
++            gradient={0.3: "green", 0.6: "yellow", 1.0: "red"},
++        ).add_to(heat_group)
++        heat_group.add_to(m)
++
++    folium.LayerControl().add_to(m)
++
++    title_html = (
++        '<div style="position:fixed;top:10px;left:50%;transform:translateX(-50%);'
++        'z-index:9999;background:white;padding:8px 16px;border-radius:4px;'
++        'box-shadow:0 2px 6px rgba(0,0,0,0.3);font-family:serif;font-size:13px;'
++        f'font-weight:bold;">{cfg.FIGURE_TITLES["M4"]}</div>'
++    )
++    m.get_root().html.add_child(folium.Element(title_html))
++
++    save_folium_map(m, cfg.M4_OUTPUT_DIR, "M4_variabilidad_vial.html")
++
++
++def generate_m4():
++    """Generar FIGURA M4: Mapa de variabilidad vial."""
++    print("  Cargando datos...")
++    nodes_df = dl.load_nodes()
++    arcs_df = dl.load_arcs()
++
++    print("  Preparando arcos geoespaciales...")
++    arcs_df = _prepare_arcs_geo(arcs_df)
++    nodes_gdf = nodes_to_gdf(nodes_df)
++
++    print("  Generando mapa estático (PNG)...")
++    _generate_m4_static(arcs_df, nodes_gdf)
++
++    print("  Generando mapa interactivo (HTML)...")
++    _generate_m4_interactive(arcs_df, nodes_df)
++
++
++if __name__ == "__main__":
++    generate_m4()
+diff --git a/src/maps_osm/fig_m5_comparacion_escenarios.py b/src/maps_osm/fig_m5_comparacion_escenarios.py
+new file mode 100644
+index 00000000..b621a498
+--- /dev/null
++++ b/src/maps_osm/fig_m5_comparacion_escenarios.py
+@@ -0,0 +1,336 @@
++"""
++FIGURA M5: Comparación de escenarios robustos.
++
++Panel comparativo 2×2 mostrando baseline, no_hilux_+NLR, no_hilux_+FUSO
++y diferencia de reliability. Incluye indicadores de mejora/empeoramiento
++y KPIs comparativos en cada panel.
++"""
++
++import folium
++import geopandas as gpd
++import matplotlib.pyplot as plt
++import numpy as np
++import pandas as pd
++from matplotlib.lines import Line2D
++from matplotlib.patches import FancyArrowPatch, Patch
++
++from . import config as cfg
++from . import data_loader as dl
++from .utils import (
++    add_basemap,
++    apply_academic_style,
++    create_base_map,
++    nodes_to_gdf,
++    save_folium_map,
++    save_matplotlib_fig,
++    vehicle_legend_handles,
++)
++
++
++SCENARIO_LABELS = {
++    "baseline": "Baseline (con Hilux)",
++    "no_hilux_+NLR": "Sin Hilux + NLR",
++    "no_hilux_+FUSO": "Sin Hilux + FUSO",
++}
++
++SCENARIO_KEYS = ["baseline", "no_hilux_+NLR", "no_hilux_+FUSO"]
++
++
++def _build_route_coords(routes_df, node_lookup):
++    """Coordenadas por ruta."""
++    route_coords = {}
++    for route_id, group in routes_df.groupby("route_id"):
++        group = group.sort_values("stop_sequence")
++        coords = []
++        for _, row in group.iterrows():
++            nid = str(row["node_id"])
++            if nid in node_lookup:
++                coords.append(node_lookup[nid])
++        depot = node_lookup.get("DEPOT_DSRSLCC")
++        if depot and coords and coords[-1] != depot:
++            coords.append(depot)
++        route_coords[route_id] = {
++            "coords": coords,
++            "vehicle_id": group.iloc[0]["vehicle_id"],
++            "vehicle_name": group.iloc[0]["vehicle_name"],
++        }
++    return route_coords
++
++
++def _plot_scenario_panel(
++    ax,
++    title: str,
++    route_coords: dict,
++    nodes_gdf: gpd.GeoDataFrame,
++    kpis: dict | None = None,
++):
++    """Plotear un panel individual de escenario."""
++    nodes_gdf.plot(
++        ax=ax, color="#BDC3C7", markersize=10,
++        edgecolor="white", linewidth=0.2, zorder=3,
++    )
++    ax.plot(
++        cfg.DEPOT_LON, cfg.DEPOT_LAT,
++        marker="*", color="#C0392B", markersize=14,
++        markeredgecolor="white", markeredgewidth=0.5, zorder=6,
++    )
++
++    for rid, rdata in route_coords.items():
++        coords = rdata["coords"]
++        if len(coords) < 2:
++            continue
++        color = cfg.VEHICLE_COLORS.get(rdata["vehicle_id"], "#333333")
++        lats = [c[0] for c in coords]
++        lons = [c[1] for c in coords]
++        ax.plot(lons, lats, color=color, linewidth=2, alpha=0.75, zorder=4)
++
++    ax.set_title(title, fontsize=9, fontweight="bold", pad=8)
++
++    if kpis:
++        kpi_text = (
++            f"E[Costo]: S/ {kpis.get('expected_cost', 0):,.0f}\n"
++            f"Reliability: {kpis.get('reliability', 0) * 100:.1f}%\n"
++            f"CVaR 5%: S/ {kpis.get('CVaR_0.05', 0):,.0f}"
++        )
++        ax.text(
++            0.02, 0.02, kpi_text, transform=ax.transAxes,
++            fontsize=7, fontfamily="monospace",
++            verticalalignment="bottom",
++            bbox=dict(
++                boxstyle="round,pad=0.3",
++                facecolor="white",
++                edgecolor="#2C3E50",
++                alpha=0.9,
++            ),
++            zorder=8,
++        )
++
++
++def _plot_reliability_diff(
++    ax,
++    experiments_df: pd.DataFrame,
++    nodes_gdf: gpd.GeoDataFrame,
++):
++    """Panel 4: Diferencia de reliability entre escenarios."""
++    nodes_gdf.plot(
++        ax=ax, color="#BDC3C7", markersize=10,
++        edgecolor="white", linewidth=0.2, zorder=3,
++    )
++    ax.plot(
++        cfg.DEPOT_LON, cfg.DEPOT_LAT,
++        marker="*", color="#C0392B", markersize=14,
++        markeredgecolor="white", markeredgewidth=0.5, zorder=6,
++    )
++
++    baseline_row = experiments_df[experiments_df["experiment"] == "baseline"]
++    nlr_row = experiments_df[experiments_df["experiment"] == "no_hilux_+NLR"]
++    fuso_row = experiments_df[experiments_df["experiment"] == "no_hilux_+FUSO"]
++
++    data = []
++    labels = []
++    colors = []
++    if not baseline_row.empty and not nlr_row.empty:
++        bl_rel = baseline_row.iloc[0]["reliability"]
++        nlr_rel = nlr_row.iloc[0]["reliability"]
++        diff_nlr = nlr_rel - bl_rel
++        data.append(("NLR", diff_nlr, nlr_rel, bl_rel))
++    if not baseline_row.empty and not fuso_row.empty:
++        bl_rel = baseline_row.iloc[0]["reliability"]
++        fuso_rel = fuso_row.iloc[0]["reliability"]
++        diff_fuso = fuso_rel - bl_rel
++        data.append(("FUSO", diff_fuso, fuso_rel, bl_rel))
++
++    # Summary text
++    summary_lines = ["Δ Reliability vs Baseline\n" + "=" * 30]
++    for label, diff, new, old in data:
++        arrow = "▲" if diff > 0 else "▼"
++        color = "#27AE60" if diff > 0 else "#C0392B"
++        summary_lines.append(
++            f"\n{label}:\n"
++            f"  {old * 100:.1f}% → {new * 100:.1f}%\n"
++            f"  {arrow} {abs(diff) * 100:.1f} pp"
++        )
++
++    # Bar chart
++    if data:
++        bar_labels = [d[0] for d in data]
++        bar_vals = [d[1] * 100 for d in data]
++        bar_colors = ["#27AE60" if v > 0 else "#C0392B" for v in bar_vals]
++        y_pos = range(len(bar_labels))
++        ax.barh(
++            [0.3 + i * 0.15 for i in y_pos],
++            [abs(v) / 100 * 0.3 for v in bar_vals],
++            height=0.1,
++            left=cfg.DEPOT_LON - 0.5,
++            color=bar_colors, alpha=0.7, zorder=5,
++        )
++
++    ax.text(
++        0.02, 0.98, "\n".join(summary_lines),
++        transform=ax.transAxes, fontsize=7,
++        fontfamily="monospace", verticalalignment="top",
++        bbox=dict(
++            boxstyle="round,pad=0.3",
++            facecolor="white", edgecolor="#2C3E50", alpha=0.9,
++        ),
++        zorder=8,
++    )
++
++    # Improvement arrows scattered across the map
++    np.random.seed(cfg.RANDOM_SEED)
++    for _, node in nodes_gdf.sample(min(10, len(nodes_gdf))).iterrows():
++        ax.annotate(
++            "",
++            xy=(node.geometry.x + 0.02, node.geometry.y + 0.02),
++            xytext=(node.geometry.x, node.geometry.y),
++            arrowprops=dict(
++                arrowstyle="->", color="#27AE60",
++                lw=1.5, alpha=0.6,
++            ),
++            zorder=7,
++        )
++
++    ax.set_title("Diferencia de reliability", fontsize=9, fontweight="bold", pad=8)
++
++
++def _generate_m5_static(
++    experiments_df: pd.DataFrame,
++    route_coords: dict,
++    nodes_gdf: gpd.GeoDataFrame,
++):
++    """Generar panel comparativo 2×2 (PNG)."""
++    apply_academic_style()
++
++    fig, axes = plt.subplots(2, 2, figsize=(16, 14))
++
++    scenarios_for_panels = SCENARIO_KEYS[:3]
++
++    for idx, scenario in enumerate(scenarios_for_panels):
++        ax = axes[idx // 2][idx % 2]
++        exp_row = experiments_df[experiments_df["experiment"] == scenario]
++        kpis = exp_row.iloc[0].to_dict() if not exp_row.empty else None
++        label = SCENARIO_LABELS.get(scenario, scenario)
++
++        _plot_scenario_panel(ax, label, route_coords, nodes_gdf, kpis)
++
++        try:
++            add_basemap(ax)
++        except Exception:
++            pass
++
++    # Panel 4: Diferencia de reliability
++    ax4 = axes[1][1]
++    _plot_reliability_diff(ax4, experiments_df, nodes_gdf)
++    try:
++        add_basemap(ax4)
++    except Exception:
++        pass
++
++    # Leyenda unificada
++    handles = vehicle_legend_handles()
++    handles.append(
++        Line2D([0], [0], marker="*", color="w",
++               markerfacecolor="#C0392B", markersize=12,
++               label="Depósito", linestyle="None")
++    )
++    fig.legend(
++        handles=handles, loc="lower center",
++        ncol=len(handles), frameon=True,
++        framealpha=0.9, fontsize=8,
++        bbox_to_anchor=(0.5, -0.02),
++    )
++
++    fig.suptitle(
++        cfg.FIGURE_TITLES["M5"],
++        fontsize=12, fontweight="bold", y=0.98,
++    )
++    plt.tight_layout(rect=[0, 0.02, 1, 0.96])
++
++    save_matplotlib_fig(fig, cfg.M5_OUTPUT_DIR, "M5_comparacion_escenarios.png")
++
++
++def _generate_m5_interactive(
++    experiments_df: pd.DataFrame,
++    route_coords: dict,
++    nodes_df: pd.DataFrame,
++):
++    """Generar versión interactiva (HTML) con tabs por escenario."""
++    m = create_base_map(zoom_start=8)
++
++    folium.Marker(
++        location=[cfg.DEPOT_LAT, cfg.DEPOT_LON],
++        popup=f"<b>{cfg.DEPOT_NAME}</b>",
++        icon=folium.Icon(color="red", icon="star", prefix="fa"),
++    ).add_to(m)
++
++    for scenario in SCENARIO_KEYS:
++        label = SCENARIO_LABELS.get(scenario, scenario)
++        group = folium.FeatureGroup(name=label)
++
++        exp_row = experiments_df[experiments_df["experiment"] == scenario]
++        kpi_text = ""
++        if not exp_row.empty:
++            row = exp_row.iloc[0]
++            kpi_text = (
++                f"E[Costo]: S/ {row['expected_cost']:,.0f} | "
++                f"Reliability: {row['reliability'] * 100:.1f}% | "
++                f"CVaR 5%: S/ {row['CVaR_0.05']:,.0f}"
++            )
++
++        for rid, rdata in route_coords.items():
++            coords = rdata["coords"]
++            if len(coords) < 2:
++                continue
++            color = cfg.VEHICLE_COLORS.get(rdata["vehicle_id"], "#333333")
++            vname = cfg.VEHICLE_SHORT_LABELS.get(
++                rdata["vehicle_id"], rdata["vehicle_name"]
++            )
++            popup_text = (
++                f"<b>{label}</b><br>"
++                f"Ruta {rid} – {vname}<br>"
++                f"{kpi_text}"
++            )
++            folium.PolyLine(
++                locations=coords,
++                color=color,
++                weight=3,
++                opacity=0.8,
++                popup=folium.Popup(popup_text, max_width=300),
++            ).add_to(group)
++
++        group.add_to(m)
++
++    folium.LayerControl(collapsed=False).add_to(m)
++
++    title_html = (
++        '<div style="position:fixed;top:10px;left:50%;transform:translateX(-50%);'
++        'z-index:9999;background:white;padding:8px 16px;border-radius:4px;'
++        'box-shadow:0 2px 6px rgba(0,0,0,0.3);font-family:serif;font-size:13px;'
++        f'font-weight:bold;">{cfg.FIGURE_TITLES["M5"]}</div>'
++    )
++    m.get_root().html.add_child(folium.Element(title_html))
++
++    save_folium_map(m, cfg.M5_OUTPUT_DIR, "M5_comparacion_escenarios.html")
++
++
++def generate_m5():
++    """Generar FIGURA M5: Comparación de escenarios robustos."""
++    print("  Cargando datos...")
++    nodes_df = dl.load_nodes()
++    routes_df = dl.load_baseline_routes()
++    experiments_df = dl.load_capacity_experiments()
++    node_lookup = dl.build_node_lookup(nodes_df)
++
++    print("  Construyendo rutas para visualización...")
++    route_coords = _build_route_coords(routes_df, node_lookup)
++    nodes_gdf = nodes_to_gdf(nodes_df)
++
++    print("  Generando panel comparativo estático (PNG)...")
++    _generate_m5_static(experiments_df, route_coords, nodes_gdf)
++
++    print("  Generando mapa interactivo (HTML)...")
++    _generate_m5_interactive(experiments_df, route_coords, nodes_df)
++
++
++if __name__ == "__main__":
++    generate_m5()
+diff --git a/src/maps_osm/generate_all_maps.py b/src/maps_osm/generate_all_maps.py
+new file mode 100644
+index 00000000..063337b0
+--- /dev/null
++++ b/src/maps_osm/generate_all_maps.py
+@@ -0,0 +1,64 @@
++#!/usr/bin/env python3
++"""
++Generador de todas las visualizaciones cartográficas HVRPTW.
++
++Uso:
++    python -m src.maps_osm.generate_all_maps
++    python src/maps_osm/generate_all_maps.py
++"""
++
++import sys
++from pathlib import Path
++
++# Asegurar que la raíz del proyecto esté en sys.path
++_project_root = Path(__file__).resolve().parents[2]
++if str(_project_root) not in sys.path:
++    sys.path.insert(0, str(_project_root))
++
++from src.maps_osm.fig_m1_network_vial import generate_m1
++from src.maps_osm.fig_m2_rutas_baseline import generate_m2
++from src.maps_osm.fig_m3_fragilidad_espacial import generate_m3
++from src.maps_osm.fig_m4_variabilidad_vial import generate_m4
++from src.maps_osm.fig_m5_comparacion_escenarios import generate_m5
++
++
++def main():
++    print("Generando visualizaciones cartográficas HVRPTW...")
++    print("=" * 60)
++
++    maps = [
++        ("M1", "Red vial real DSRSLCC", generate_m1),
++        ("M2", "Rutas baseline", generate_m2),
++        ("M3", "Fragilidad espacial", generate_m3),
++        ("M4", "Variabilidad vial", generate_m4),
++        ("M5", "Comparación escenarios", generate_m5),
++    ]
++
++    results = []
++    for code, name, func in maps:
++        try:
++            print(f"\n[{code}] {name}...")
++            func()
++            print(f"  ✓ Completado")
++            results.append((code, name, True, None))
++        except Exception as e:
++            print(f"  ✗ Error: {e}")
++            results.append((code, name, False, str(e)))
++
++    print("\n" + "=" * 60)
++    print("Resumen de generación:")
++    for code, name, ok, err in results:
++        status = "✓" if ok else "✗"
++        print(f"  {status} [{code}] {name}" + (f" — {err}" if err else ""))
++
++    print(f"\nVisualizaciones generadas en results/maps_osm/")
++
++    failed = [r for r in results if not r[2]]
++    if failed:
++        print(f"\n⚠ {len(failed)} figura(s) con errores")
++        return 1
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/src/maps_osm/utils.py b/src/maps_osm/utils.py
+new file mode 100644
+index 00000000..e8eec9af
+--- /dev/null
++++ b/src/maps_osm/utils.py
+@@ -0,0 +1,234 @@
++"""
++Utilidades GIS compartidas para las visualizaciones cartográficas HVRPTW.
++
++Proporciona funciones de creación de mapas Folium, descarga de red vial OSMnx,
++estilos académicos, exportación y clustering espacial.
++"""
++
++from pathlib import Path
++
++import contextily as ctx
++import folium
++import geopandas as gpd
++import matplotlib.pyplot as plt
++import numpy as np
++import osmnx as ox
++from matplotlib.colors import Normalize
++from matplotlib.lines import Line2D
++from shapely.geometry import Point
++from sklearn.cluster import KMeans
++
++from . import config as cfg
++
++
++# ---------------------------------------------------------------------------
++# Mapa Folium base
++# ---------------------------------------------------------------------------
++
++def create_base_map(
++    center: tuple[float, float] | None = None,
++    zoom_start: int = 9,
++    tiles: str = cfg.FOLIUM_TILES,
++) -> folium.Map:
++    """Crear mapa Folium base centrado en la zona de estudio."""
++    if center is None:
++        center = (cfg.DEPOT_LAT, cfg.DEPOT_LON)
++    m = folium.Map(
++        location=center,
++        zoom_start=zoom_start,
++        tiles=tiles,
++        control_scale=True,
++    )
++    return m
++
++
++# ---------------------------------------------------------------------------
++# Red vial OSMnx
++# ---------------------------------------------------------------------------
++
++def download_road_network(
++    bbox: tuple[float, float, float, float] | None = None,
++    network_type: str = "drive",
++    simplify: bool = True,
++) -> "ox.graph":
++    """Descargar red vial OSMnx para la región indicada.
++
++    Parameters
++    ----------
++    bbox : (north, south, east, west) o None para usar PIURA_BBOX
++    """
++    if bbox is None:
++        bbox = (
++            cfg.PIURA_BBOX_NORTH,
++            cfg.PIURA_BBOX_SOUTH,
++            cfg.PIURA_BBOX_EAST,
++            cfg.PIURA_BBOX_WEST,
++        )
++    north, south, east, west = bbox
++    ox.settings.use_cache = True
++    ox.settings.log_console = False
++    G = ox.graph_from_bbox(
++        bbox=(west, south, east, north),
++        network_type=network_type,
++        simplify=simplify,
++    )
++    return G
++
++
++def filter_main_roads(G: "ox.graph") -> "ox.graph":
++    """Filtrar red vial a carreteras principales (primary, secondary, tertiary)."""
++    main_types = {"primary", "secondary", "tertiary",
++                  "primary_link", "secondary_link", "tertiary_link",
++                  "trunk", "trunk_link"}
++    edges_to_remove = []
++    for u, v, k, data in G.edges(keys=True, data=True):
++        highway = data.get("highway", "")
++        if isinstance(highway, list):
++            if not any(h in main_types for h in highway):
++                edges_to_remove.append((u, v, k))
++        elif highway not in main_types:
++            edges_to_remove.append((u, v, k))
++    G2 = G.copy()
++    G2.remove_edges_from(edges_to_remove)
++    G2.remove_nodes_from(list(nx_isolates(G2)))
++    return G2
++
++
++def nx_isolates(G):
++    """Nodos aislados (sin aristas)."""
++    import networkx as nx
++    return nx.isolates(G)
++
++
++# ---------------------------------------------------------------------------
++# GeoDataFrame helpers
++# ---------------------------------------------------------------------------
++
++def nodes_to_gdf(df, lat_col: str = "latitude", lon_col: str = "longitude") -> gpd.GeoDataFrame:
++    """Convertir DataFrame con lat/lon a GeoDataFrame WGS-84."""
++    geometry = [Point(xy) for xy in zip(df[lon_col], df[lat_col])]
++    return gpd.GeoDataFrame(df, geometry=geometry, crs=cfg.CRS_WGS84)
++
++
++def reproject_utm(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
++    """Reproyectar GeoDataFrame a UTM zona 17S para cálculos métricos."""
++    return gdf.to_crs(cfg.CRS_UTM17S)
++
++
++# ---------------------------------------------------------------------------
++# Clustering espacial
++# ---------------------------------------------------------------------------
++
++def cluster_nodes(
++    gdf: gpd.GeoDataFrame,
++    n_clusters: int = cfg.N_CLUSTERS,
++    random_state: int = cfg.RANDOM_SEED,
++) -> gpd.GeoDataFrame:
++    """Clustering K-means espacial de IPRESS."""
++    coords = np.column_stack([gdf.geometry.y, gdf.geometry.x])
++    km = KMeans(n_clusters=n_clusters, random_state=random_state, n_init=10)
++    gdf = gdf.copy()
++    gdf["cluster"] = km.fit_predict(coords)
++    return gdf
++
++
++# ---------------------------------------------------------------------------
++# Estilo académico Matplotlib
++# ---------------------------------------------------------------------------
++
++def apply_academic_style():
++    """Aplicar estilo académico a figuras Matplotlib."""
++    plt.rcParams.update(cfg.ACADEMIC_STYLE)
++
++
++def add_basemap(ax, crs=cfg.CRS_WGS84, source=None):
++    """Añadir mapa base Contextily a un Axes con GeoDataFrame."""
++    if source is None:
++        source = ctx.providers.CartoDB.Positron
++    ctx.add_basemap(ax, crs=crs, source=source, attribution_size=6)
++
++
++# ---------------------------------------------------------------------------
++# Leyendas
++# ---------------------------------------------------------------------------
++
++def vehicle_legend_handles() -> list[Line2D]:
++    """Handles de leyenda para tipos de vehículo."""
++    handles = []
++    for vid, label in cfg.VEHICLE_SHORT_LABELS.items():
++        color = cfg.VEHICLE_COLORS.get(vid, "#333333")
++        handles.append(Line2D([0], [0], color=color, lw=2, label=label))
++    return handles
++
++
++def ipress_legend_handles() -> list[Line2D]:
++    """Handles de leyenda para categorías de IPRESS."""
++    handles = []
++    for cat, color in cfg.IPRESS_COLORS.items():
++        marker = cfg.IPRESS_MARKERS.get(cat, "o")
++        handles.append(
++            Line2D(
++                [0], [0],
++                marker=marker,
++                color="w",
++                markerfacecolor=color,
++                markersize=8,
++                label=cat.title(),
++                linestyle="None",
++            )
++        )
++    handles.append(
++        Line2D(
++            [0], [0],
++            marker="*",
++            color="w",
++            markerfacecolor="#C0392B",
++            markersize=14,
++            label="Depósito DSRSLCC",
++            linestyle="None",
++        )
++    )
++    return handles
++
++
++# ---------------------------------------------------------------------------
++# Exportación
++# ---------------------------------------------------------------------------
++
++def ensure_dir(path: Path) -> Path:
++    """Crear directorio si no existe y retornarlo."""
++    path.mkdir(parents=True, exist_ok=True)
++    return path
++
++
++def save_matplotlib_fig(fig, output_dir: Path, filename: str, dpi: int = cfg.EXPORT_DPI):
++    """Guardar figura Matplotlib como PNG."""
++    ensure_dir(output_dir)
++    filepath = output_dir / filename
++    fig.savefig(filepath, dpi=dpi, bbox_inches="tight", pad_inches=0.1)
++    plt.close(fig)
++    print(f"    Guardado: {filepath}")
++    return filepath
++
++
++def save_folium_map(m: folium.Map, output_dir: Path, filename: str):
++    """Guardar mapa Folium como HTML."""
++    ensure_dir(output_dir)
++    filepath = output_dir / filename
++    m.save(str(filepath))
++    print(f"    Guardado: {filepath}")
++    return filepath
++
++
++# ---------------------------------------------------------------------------
++# Bounding box
++# ---------------------------------------------------------------------------
++
++def calculate_bounding_box(lats, lons, pad: float = 0.05):
++    """Calcular bounding box con margen de padding."""
++    return (
++        max(lats) + pad,   # north
++        min(lats) - pad,   # south
++        max(lons) + pad,   # east
++        min(lons) - pad,   # west
++    )

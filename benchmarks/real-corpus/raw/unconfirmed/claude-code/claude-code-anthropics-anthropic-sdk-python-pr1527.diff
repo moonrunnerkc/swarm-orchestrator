@@ -1,0 +1,35 @@
+diff --git a/examples/tools_runner.py b/examples/tools_runner.py
+index 07a4f2a56..894891a87 100644
+--- a/examples/tools_runner.py
++++ b/examples/tools_runner.py
+@@ -44,7 +44,7 @@ def get_weather(location: str, units: Literal["c", "f"]) -> str:
+ def main() -> None:
+     runner = client.beta.messages.tool_runner(
+         max_tokens=1024,
+-        model="claude-3-5-sonnet-latest",
++        model="claude-sonnet-4-5-20250929",
+         # alternatively, you can use `tools=[anthropic.beta_tool(get_weather)]`
+         tools=[get_weather],
+         messages=[{"role": "user", "content": "What is the weather in SF?"}],
+diff --git a/helpers.md b/helpers.md
+index c1f856e52..808cc6bec 100644
+--- a/helpers.md
++++ b/helpers.md
+@@ -11,7 +11,7 @@ async with client.messages.stream(
+             "content": "Say hello there!",
+         }
+     ],
+-    model="claude-3-5-sonnet-latest",
++    model="claude-sonnet-4-5-20250929",
+ ) as stream:
+     async for text in stream.text_stream:
+         print(text, end="", flush=True)
+@@ -60,7 +60,7 @@ async with client.messages.stream(
+             "content": "Say hello there!",
+         }
+     ],
+-    model="claude-3-5-sonnet-latest",
++    model="claude-sonnet-4-5-20250929",
+ ) as stream:
+     async for event in stream:
+         if event.type == "text":

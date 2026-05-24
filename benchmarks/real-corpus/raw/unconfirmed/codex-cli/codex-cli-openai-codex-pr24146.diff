@@ -1,0 +1,44 @@
+diff --git a/codex-rs/analytics/src/analytics_client_tests.rs b/codex-rs/analytics/src/analytics_client_tests.rs
+index ef5051cabaf2..cabea808865d 100644
+--- a/codex-rs/analytics/src/analytics_client_tests.rs
++++ b/codex-rs/analytics/src/analytics_client_tests.rs
+@@ -1262,6 +1262,14 @@ fn compaction_event_serializes_expected_shape() {
+     );
+ }
+ 
++#[test]
++fn compaction_implementation_serializes_remote_v2() {
++    let payload = serde_json::to_value(CompactionImplementation::ResponsesCompactionV2)
++        .expect("serialize compaction implementation");
++
++    assert_eq!(payload, json!("responses_compaction_v2"));
++}
++
+ #[test]
+ fn app_used_dedupe_is_keyed_by_turn_and_connector() {
+     let (sender, _receiver) = mpsc::channel(1);
+diff --git a/codex-rs/analytics/src/facts.rs b/codex-rs/analytics/src/facts.rs
+index d7e2c069d6c2..56bd0a5d2c3e 100644
+--- a/codex-rs/analytics/src/facts.rs
++++ b/codex-rs/analytics/src/facts.rs
+@@ -229,6 +229,7 @@ pub enum CompactionReason {
+ #[serde(rename_all = "snake_case")]
+ pub enum CompactionImplementation {
+     Responses,
++    ResponsesCompactionV2,
+     ResponsesCompact,
+ }
+ 
+diff --git a/codex-rs/core/src/compact_remote_v2.rs b/codex-rs/core/src/compact_remote_v2.rs
+index 37e44021bc20..0e235a941f57 100644
+--- a/codex-rs/core/src/compact_remote_v2.rs
++++ b/codex-rs/core/src/compact_remote_v2.rs
+@@ -111,7 +111,7 @@ async fn run_remote_compact_task_inner(
+         turn_context.as_ref(),
+         trigger,
+         reason,
+-        CompactionImplementation::Responses,
++        CompactionImplementation::ResponsesCompactionV2,
+         phase,
+     )
+     .await;

@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-python-pr1545",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1545,
+    "headSha": "399b4e7aa58204a9c50d1f014ce94d64a465f0c0",
+    "baseSha": "9aa85c8a3c099e8a49206aad37ff1e96af69b824",
+    "title": "fix(tools): preserve tool flow when caller appends unrelated messages (closes #1536)",
+    "body": "Closes #1536.\n\n## The bug\n\nThe reporter found that calling `append_messages` inside the `tool_runner` loop body causes an infinite tool-call loop. Their root-cause analysis is correct: any `append_messages` call sets `_messages_modified = True`, which causes `__run__` to skip the auto-append of the assistant message + tool result. The next iteration sends a request with no tool result, the model re-asks for the same tool call, repeat forever.\n\n## Why the flag is wrong\n\n`_messages_modified` was conflating two distinct use cases:\n\n1. **Modifying tool results** — caller appends a custom `tool_result` to override the SDK's auto-generated one. Auto-append should skip.\n2. **Append an unrelated user message** (#1536) — caller appends, say, `\"be concise in your response\"` between iterations. The tool result still needs to be threaded back in, otherwise the loop breaks.\n\nA single boolean can't distinguish these — one means \"I handled the tool flow,\" the other means \"I added context, please continue normally.\"\n\n## The fix\n\nReplace the flag-based gate with a **content-based check**: auto-append is skipped only when the last user message already contains a `tool_result` block whose `tool_use_id` matches the one we were about to write. Unrelated messages don't match, so the tool flow stays correctly threaded.\n\nApplied symmetrically to sync and async `__run__`.\n\n## Tests\n\n- New unit test `test_tool_response_already_appended_detects_matching_tool_result` covers:\n  - Empty history → no match\n  - History with an unrelated user message (the #1536 case) → no match → auto-append still runs\n  - History with a matching `tool_result` (modifying-tool-results case) → match → auto-append skipped\n  - Mismatched `tool_use_id` → no match\n- Full `tests/lib/tools/test_runners.py` passes: **13 passed, 1 xfailed**.\n- Existing `test_custom_message_handling` xfail is preserved — that pattern depends on additional re-threading logic (inserting the assistant message before the caller's tool result) and snapshot updates that are out of scope for this fix.\n\n## Repro from the issue\n\nThe reporter's repro (the \"be concise\" message inside the loop body) now terminates correctly: the tool result is auto-appended, the model sees its own tool answer, and produces the final text on the next iteration. Verified locally.\n",
+    "author": "0xdeadd",
+    "headRef": "fix/tool-runner-append-messages",
+    "repository": "anthropics/anthropic-sdk-python"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-python",
+    "headSha": "399b4e7aa58204a9c50d1f014ce94d64a465f0c0",
+    "baseSha": "9aa85c8a3c099e8a49206aad37ff1e96af69b824"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-python-pr1545.diff",
+  "vendoredAt": "2026-05-24T03:17:27.791Z",
+  "collectedAt": "2026-05-24T03:17:27.791Z"
+}

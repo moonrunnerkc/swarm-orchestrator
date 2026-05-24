@@ -1,0 +1,776 @@
+diff --git a/crates/evaluators/src/ai.rs b/crates/evaluators/src/ai.rs
+new file mode 100644
+index 0000000..54bb614
+--- /dev/null
++++ b/crates/evaluators/src/ai.rs
+@@ -0,0 +1,77 @@
++//! AI tab evaluator (stub).
++//!
++//! Blocked on a user-configured AI provider + prompt slots (1..100).
++//! Until the provider configuration + prompt pipeline ships this
++//! evaluator emits no findings; registering it keeps the tab catalog
++//! aligned with the 33-tab registry and gives the evaluator pipeline a
++//! zero-cost code path instead of silently dropping URLs through an
++//! unmatched tab.
++
++use sf_core::crawl::CrawlUrl;
++use sf_core::tab::TabKey;
++
++use crate::{EvalContext, Evaluator, Finding};
++
++pub struct AiEvaluator;
++
++impl Evaluator for AiEvaluator {
++    fn tab(&self) -> TabKey {
++        TabKey::Ai
++    }
++
++    fn evaluate(&self, _url: &CrawlUrl, _ctx: &EvalContext) -> Vec<Finding> {
++        Vec::new()
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use chrono::Utc;
++    use sf_core::config::CrawlConfig;
++    use sf_core::crawl::{ContentType, CrawlUrl};
++    use sf_core::id::{CrawlId, CrawlUrlId};
++
++    fn page() -> CrawlUrl {
++        CrawlUrl {
++            id: CrawlUrlId::new(),
++            crawl_id: CrawlId::new(),
++            url: "https://example.com/".to_string(),
++            url_hash: "h".to_string(),
++            content_type: ContentType::Html,
++            status_code: Some(200),
++            is_internal: true,
++            depth: 0,
++            title: None,
++            title_length: None,
++            title_pixel_width: None,
++            meta_description: None,
++            meta_description_length: None,
++            meta_description_pixel_width: None,
++            h1_first: None,
++            h1_count: 0,
++            h2_first: None,
++            h2_count: 0,
++            word_count: None,
++            response_time_ms: None,
++            content_length: None,
++            redirect_url: None,
++            canonical_url: None,
++            meta_robots: None,
++            crawled_at: Some(Utc::now()),
++        }
++    }
++
++    #[test]
++    fn ai_emits_nothing() {
++        let cfg = CrawlConfig::default();
++        let ctx = EvalContext {
++            config: &cfg,
++            html: None,
++            parsed: None,
++        };
++        let evaluator = AiEvaluator;
++        assert_eq!(evaluator.tab(), TabKey::Ai);
++        assert!(evaluator.evaluate(&page(), &ctx).is_empty());
++    }
++}
+diff --git a/crates/evaluators/src/analytics.rs b/crates/evaluators/src/analytics.rs
+new file mode 100644
+index 0000000..70b197f
+--- /dev/null
++++ b/crates/evaluators/src/analytics.rs
+@@ -0,0 +1,76 @@
++//! Analytics tab evaluator (stub).
++//!
++//! Blocked on Google Analytics 4 Data API + per-tenant OAuth. Until
++//! the integration ships this evaluator emits no findings; registering
++//! it keeps the tab catalog aligned with the 33-tab registry and gives
++//! the evaluator pipeline a zero-cost code path instead of silently
++//! dropping URLs through an unmatched tab.
++
++use sf_core::crawl::CrawlUrl;
++use sf_core::tab::TabKey;
++
++use crate::{EvalContext, Evaluator, Finding};
++
++pub struct AnalyticsEvaluator;
++
++impl Evaluator for AnalyticsEvaluator {
++    fn tab(&self) -> TabKey {
++        TabKey::Analytics
++    }
++
++    fn evaluate(&self, _url: &CrawlUrl, _ctx: &EvalContext) -> Vec<Finding> {
++        Vec::new()
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use chrono::Utc;
++    use sf_core::config::CrawlConfig;
++    use sf_core::crawl::{ContentType, CrawlUrl};
++    use sf_core::id::{CrawlId, CrawlUrlId};
++
++    fn page() -> CrawlUrl {
++        CrawlUrl {
++            id: CrawlUrlId::new(),
++            crawl_id: CrawlId::new(),
++            url: "https://example.com/".to_string(),
++            url_hash: "h".to_string(),
++            content_type: ContentType::Html,
++            status_code: Some(200),
++            is_internal: true,
++            depth: 0,
++            title: None,
++            title_length: None,
++            title_pixel_width: None,
++            meta_description: None,
++            meta_description_length: None,
++            meta_description_pixel_width: None,
++            h1_first: None,
++            h1_count: 0,
++            h2_first: None,
++            h2_count: 0,
++            word_count: None,
++            response_time_ms: None,
++            content_length: None,
++            redirect_url: None,
++            canonical_url: None,
++            meta_robots: None,
++            crawled_at: Some(Utc::now()),
++        }
++    }
++
++    #[test]
++    fn analytics_emits_nothing() {
++        let cfg = CrawlConfig::default();
++        let ctx = EvalContext {
++            config: &cfg,
++            html: None,
++            parsed: None,
++        };
++        let evaluator = AnalyticsEvaluator;
++        assert_eq!(evaluator.tab(), TabKey::Analytics);
++        assert!(evaluator.evaluate(&page(), &ctx).is_empty());
++    }
++}
+diff --git a/crates/evaluators/src/custom_extraction.rs b/crates/evaluators/src/custom_extraction.rs
+new file mode 100644
+index 0000000..c58da3f
+--- /dev/null
++++ b/crates/evaluators/src/custom_extraction.rs
+@@ -0,0 +1,77 @@
++//! Custom Extraction tab evaluator (stub).
++//!
++//! Blocked on user-authored XPath / CSS / regex slots (1..100) defined
++//! per crawl configuration. Until the slot configuration + extractor
++//! pipeline ships this evaluator emits no findings; registering it keeps
++//! the tab catalog aligned with the 33-tab registry and gives the
++//! evaluator pipeline a zero-cost code path instead of silently dropping
++//! URLs through an unmatched tab.
++
++use sf_core::crawl::CrawlUrl;
++use sf_core::tab::TabKey;
++
++use crate::{EvalContext, Evaluator, Finding};
++
++pub struct CustomExtractionEvaluator;
++
++impl Evaluator for CustomExtractionEvaluator {
++    fn tab(&self) -> TabKey {
++        TabKey::CustomExtraction
++    }
++
++    fn evaluate(&self, _url: &CrawlUrl, _ctx: &EvalContext) -> Vec<Finding> {
++        Vec::new()
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use chrono::Utc;
++    use sf_core::config::CrawlConfig;
++    use sf_core::crawl::{ContentType, CrawlUrl};
++    use sf_core::id::{CrawlId, CrawlUrlId};
++
++    fn page() -> CrawlUrl {
++        CrawlUrl {
++            id: CrawlUrlId::new(),
++            crawl_id: CrawlId::new(),
++            url: "https://example.com/".to_string(),
++            url_hash: "h".to_string(),
++            content_type: ContentType::Html,
++            status_code: Some(200),
++            is_internal: true,
++            depth: 0,
++            title: None,
++            title_length: None,
++            title_pixel_width: None,
++            meta_description: None,
++            meta_description_length: None,
++            meta_description_pixel_width: None,
++            h1_first: None,
++            h1_count: 0,
++            h2_first: None,
++            h2_count: 0,
++            word_count: None,
++            response_time_ms: None,
++            content_length: None,
++            redirect_url: None,
++            canonical_url: None,
++            meta_robots: None,
++            crawled_at: Some(Utc::now()),
++        }
++    }
++
++    #[test]
++    fn custom_extraction_emits_nothing() {
++        let cfg = CrawlConfig::default();
++        let ctx = EvalContext {
++            config: &cfg,
++            html: None,
++            parsed: None,
++        };
++        let evaluator = CustomExtractionEvaluator;
++        assert_eq!(evaluator.tab(), TabKey::CustomExtraction);
++        assert!(evaluator.evaluate(&page(), &ctx).is_empty());
++    }
++}
+diff --git a/crates/evaluators/src/custom_javascript.rs b/crates/evaluators/src/custom_javascript.rs
+new file mode 100644
+index 0000000..5219fd7
+--- /dev/null
++++ b/crates/evaluators/src/custom_javascript.rs
+@@ -0,0 +1,77 @@
++//! Custom JavaScript tab evaluator (stub).
++//!
++//! Blocked on user-authored JS snippets (1..100) executed by the render
++//! worker. Until the snippet configuration + render-worker bridge ships
++//! this evaluator emits no findings; registering it keeps the tab
++//! catalog aligned with the 33-tab registry and gives the evaluator
++//! pipeline a zero-cost code path instead of silently dropping URLs
++//! through an unmatched tab.
++
++use sf_core::crawl::CrawlUrl;
++use sf_core::tab::TabKey;
++
++use crate::{EvalContext, Evaluator, Finding};
++
++pub struct CustomJavaScriptEvaluator;
++
++impl Evaluator for CustomJavaScriptEvaluator {
++    fn tab(&self) -> TabKey {
++        TabKey::CustomJavaScript
++    }
++
++    fn evaluate(&self, _url: &CrawlUrl, _ctx: &EvalContext) -> Vec<Finding> {
++        Vec::new()
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use chrono::Utc;
++    use sf_core::config::CrawlConfig;
++    use sf_core::crawl::{ContentType, CrawlUrl};
++    use sf_core::id::{CrawlId, CrawlUrlId};
++
++    fn page() -> CrawlUrl {
++        CrawlUrl {
++            id: CrawlUrlId::new(),
++            crawl_id: CrawlId::new(),
++            url: "https://example.com/".to_string(),
++            url_hash: "h".to_string(),
++            content_type: ContentType::Html,
++            status_code: Some(200),
++            is_internal: true,
++            depth: 0,
++            title: None,
++            title_length: None,
++            title_pixel_width: None,
++            meta_description: None,
++            meta_description_length: None,
++            meta_description_pixel_width: None,
++            h1_first: None,
++            h1_count: 0,
++            h2_first: None,
++            h2_count: 0,
++            word_count: None,
++            response_time_ms: None,
++            content_length: None,
++            redirect_url: None,
++            canonical_url: None,
++            meta_robots: None,
++            crawled_at: Some(Utc::now()),
++        }
++    }
++
++    #[test]
++    fn custom_javascript_emits_nothing() {
++        let cfg = CrawlConfig::default();
++        let ctx = EvalContext {
++            config: &cfg,
++            html: None,
++            parsed: None,
++        };
++        let evaluator = CustomJavaScriptEvaluator;
++        assert_eq!(evaluator.tab(), TabKey::CustomJavaScript);
++        assert!(evaluator.evaluate(&page(), &ctx).is_empty());
++    }
++}
+diff --git a/crates/evaluators/src/custom_search.rs b/crates/evaluators/src/custom_search.rs
+new file mode 100644
+index 0000000..b3f6e85
+--- /dev/null
++++ b/crates/evaluators/src/custom_search.rs
+@@ -0,0 +1,77 @@
++//! Custom Search tab evaluator (stub).
++//!
++//! Blocked on user-authored regex/string slots (1..100) defined per
++//! crawl configuration. Until the slot configuration + matcher pipeline
++//! ships this evaluator emits no findings; registering it keeps the tab
++//! catalog aligned with the 33-tab registry and gives the evaluator
++//! pipeline a zero-cost code path instead of silently dropping URLs
++//! through an unmatched tab.
++
++use sf_core::crawl::CrawlUrl;
++use sf_core::tab::TabKey;
++
++use crate::{EvalContext, Evaluator, Finding};
++
++pub struct CustomSearchEvaluator;
++
++impl Evaluator for CustomSearchEvaluator {
++    fn tab(&self) -> TabKey {
++        TabKey::CustomSearch
++    }
++
++    fn evaluate(&self, _url: &CrawlUrl, _ctx: &EvalContext) -> Vec<Finding> {
++        Vec::new()
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use chrono::Utc;
++    use sf_core::config::CrawlConfig;
++    use sf_core::crawl::{ContentType, CrawlUrl};
++    use sf_core::id::{CrawlId, CrawlUrlId};
++
++    fn page() -> CrawlUrl {
++        CrawlUrl {
++            id: CrawlUrlId::new(),
++            crawl_id: CrawlId::new(),
++            url: "https://example.com/".to_string(),
++            url_hash: "h".to_string(),
++            content_type: ContentType::Html,
++            status_code: Some(200),
++            is_internal: true,
++            depth: 0,
++            title: None,
++            title_length: None,
++            title_pixel_width: None,
++            meta_description: None,
++            meta_description_length: None,
++            meta_description_pixel_width: None,
++            h1_first: None,
++            h1_count: 0,
++            h2_first: None,
++            h2_count: 0,
++            word_count: None,
++            response_time_ms: None,
++            content_length: None,
++            redirect_url: None,
++            canonical_url: None,
++            meta_robots: None,
++            crawled_at: Some(Utc::now()),
++        }
++    }
++
++    #[test]
++    fn custom_search_emits_nothing() {
++        let cfg = CrawlConfig::default();
++        let ctx = EvalContext {
++            config: &cfg,
++            html: None,
++            parsed: None,
++        };
++        let evaluator = CustomSearchEvaluator;
++        assert_eq!(evaluator.tab(), TabKey::CustomSearch);
++        assert!(evaluator.evaluate(&page(), &ctx).is_empty());
++    }
++}
+diff --git a/crates/evaluators/src/integrations.rs b/crates/evaluators/src/integrations.rs
+deleted file mode 100644
+index 6da57ae..0000000
+--- a/crates/evaluators/src/integrations.rs
++++ /dev/null
+@@ -1,138 +0,0 @@
+-//! Stub evaluators for tabs that are blocked on third-party or
+-//! user-driven integrations.
+-//!
+-//! Each of these tabs exists in the Screaming Frog product only
+-//! once a corresponding data source has been connected:
+-//!
+-//! | Tab | Blocking dependency |
+-//! |-----|---------------------|
+-//! | Analytics | Google Analytics 4 API (per-tenant OAuth) |
+-//! | SearchConsole | Google Search Console API (per-tenant OAuth) |
+-//! | LinkMetrics | Moz / Majestic / Ahrefs API (paid, per-tenant keys) |
+-//! | CustomSearch | User-authored regex/string slots (1..100) |
+-//! | CustomExtraction | User-authored XPath/CSS/regex slots (1..100) |
+-//! | CustomJavaScript | User-authored JS snippets (1..100), run in render worker |
+-//! | Ai | User-configured AI provider + prompts (1..100) |
+-//!
+-//! Until those integrations ship, the evaluators return no
+-//! findings. Registering them still serves two purposes: the tab
+-//! catalog stays aligned with the 33-tab registry, and the
+-//! evaluator pipeline hits zero-cost code paths for these tabs
+-//! instead of silently dropping URLs through an un-matched tab.
+-//!
+-//! This file will be split into `analytics.rs`, `search_console.rs`,
+-//! etc. once the real implementations start landing; keeping them
+-//! co-located here while they are all no-ops avoids cluttering the
+-//! module list with seven stub files.
+-
+-use sf_core::crawl::CrawlUrl;
+-use sf_core::tab::TabKey;
+-
+-use crate::{EvalContext, Evaluator, Finding};
+-
+-macro_rules! integration_stub {
+-    ($name:ident, $tab:expr) => {
+-        pub struct $name;
+-        impl Evaluator for $name {
+-            fn tab(&self) -> TabKey {
+-                $tab
+-            }
+-            fn evaluate(&self, _url: &CrawlUrl, _ctx: &EvalContext) -> Vec<Finding> {
+-                Vec::new()
+-            }
+-        }
+-    };
+-}
+-
+-integration_stub!(AnalyticsEvaluator, TabKey::Analytics);
+-integration_stub!(SearchConsoleEvaluator, TabKey::SearchConsole);
+-integration_stub!(LinkMetricsEvaluator, TabKey::LinkMetrics);
+-integration_stub!(CustomSearchEvaluator, TabKey::CustomSearch);
+-integration_stub!(CustomExtractionEvaluator, TabKey::CustomExtraction);
+-integration_stub!(CustomJavaScriptEvaluator, TabKey::CustomJavaScript);
+-integration_stub!(AiEvaluator, TabKey::Ai);
+-
+-#[cfg(test)]
+-mod tests {
+-    use super::*;
+-    use chrono::Utc;
+-    use sf_core::config::CrawlConfig;
+-    use sf_core::crawl::{ContentType, CrawlUrl};
+-    use sf_core::id::{CrawlId, CrawlUrlId};
+-
+-    fn page() -> CrawlUrl {
+-        CrawlUrl {
+-            id: CrawlUrlId::new(),
+-            crawl_id: CrawlId::new(),
+-            url: "https://example.com/".to_string(),
+-            url_hash: "h".to_string(),
+-            content_type: ContentType::Html,
+-            status_code: Some(200),
+-            is_internal: true,
+-            depth: 0,
+-            title: None,
+-            title_length: None,
+-            title_pixel_width: None,
+-            meta_description: None,
+-            meta_description_length: None,
+-            meta_description_pixel_width: None,
+-            h1_first: None,
+-            h1_count: 0,
+-            h2_first: None,
+-            h2_count: 0,
+-            word_count: None,
+-            response_time_ms: None,
+-            content_length: None,
+-            redirect_url: None,
+-            canonical_url: None,
+-            meta_robots: None,
+-            crawled_at: Some(Utc::now()),
+-        }
+-    }
+-
+-    fn empty_findings<E: Evaluator>(e: E, expected_tab: TabKey) {
+-        let cfg = CrawlConfig::default();
+-        let ctx = EvalContext {
+-            config: &cfg,
+-            html: None,
+-            parsed: None,
+-        };
+-        assert_eq!(e.tab(), expected_tab);
+-        assert!(e.evaluate(&page(), &ctx).is_empty());
+-    }
+-
+-    #[test]
+-    fn analytics_emits_nothing() {
+-        empty_findings(AnalyticsEvaluator, TabKey::Analytics);
+-    }
+-
+-    #[test]
+-    fn search_console_emits_nothing() {
+-        empty_findings(SearchConsoleEvaluator, TabKey::SearchConsole);
+-    }
+-
+-    #[test]
+-    fn link_metrics_emits_nothing() {
+-        empty_findings(LinkMetricsEvaluator, TabKey::LinkMetrics);
+-    }
+-
+-    #[test]
+-    fn custom_search_emits_nothing() {
+-        empty_findings(CustomSearchEvaluator, TabKey::CustomSearch);
+-    }
+-
+-    #[test]
+-    fn custom_extraction_emits_nothing() {
+-        empty_findings(CustomExtractionEvaluator, TabKey::CustomExtraction);
+-    }
+-
+-    #[test]
+-    fn custom_javascript_emits_nothing() {
+-        empty_findings(CustomJavaScriptEvaluator, TabKey::CustomJavaScript);
+-    }
+-
+-    #[test]
+-    fn ai_emits_nothing() {
+-        empty_findings(AiEvaluator, TabKey::Ai);
+-    }
+-}
+diff --git a/crates/evaluators/src/lib.rs b/crates/evaluators/src/lib.rs
+index 9750bf3..a5783be 100644
+--- a/crates/evaluators/src/lib.rs
++++ b/crates/evaluators/src/lib.rs
+@@ -1,15 +1,20 @@
+ pub mod accessibility;
++pub mod ai;
+ pub mod amp;
++pub mod analytics;
+ pub mod canonicals;
+ pub mod content;
++pub mod custom_extraction;
++pub mod custom_javascript;
++pub mod custom_search;
+ pub mod directives;
+ pub mod external;
+ pub mod headings;
+ pub mod hreflang;
+ pub mod images;
+-pub mod integrations;
+ pub mod internal;
+ pub mod javascript;
++pub mod link_metrics;
+ pub mod links;
+ pub mod meta_description;
+ pub mod meta_keywords;
+@@ -19,6 +24,7 @@ pub mod pagespeed;
+ pub mod pagination;
+ pub mod parity;
+ pub mod response_codes;
++pub mod search_console;
+ pub mod security;
+ pub mod sitemaps;
+ pub mod structured_data;
+@@ -78,12 +84,12 @@ pub fn phase1_evaluators() -> Vec<Box<dyn Evaluator>> {
+         Box::new(pagespeed::PageSpeedEvaluator),
+         Box::new(parity::ParityEvaluator),
+         Box::new(accessibility::AccessibilityEvaluator),
+-        Box::new(integrations::AnalyticsEvaluator),
+-        Box::new(integrations::SearchConsoleEvaluator),
+-        Box::new(integrations::LinkMetricsEvaluator),
+-        Box::new(integrations::CustomSearchEvaluator),
+-        Box::new(integrations::CustomExtractionEvaluator),
+-        Box::new(integrations::CustomJavaScriptEvaluator),
+-        Box::new(integrations::AiEvaluator),
++        Box::new(analytics::AnalyticsEvaluator),
++        Box::new(search_console::SearchConsoleEvaluator),
++        Box::new(link_metrics::LinkMetricsEvaluator),
++        Box::new(custom_search::CustomSearchEvaluator),
++        Box::new(custom_extraction::CustomExtractionEvaluator),
++        Box::new(custom_javascript::CustomJavaScriptEvaluator),
++        Box::new(ai::AiEvaluator),
+     ]
+ }
+diff --git a/crates/evaluators/src/link_metrics.rs b/crates/evaluators/src/link_metrics.rs
+new file mode 100644
+index 0000000..ac14bf5
+--- /dev/null
++++ b/crates/evaluators/src/link_metrics.rs
+@@ -0,0 +1,76 @@
++//! Link Metrics tab evaluator (stub).
++//!
++//! Blocked on Moz / Majestic / Ahrefs APIs (paid, per-tenant keys).
++//! Until at least one provider integration ships this evaluator emits
++//! no findings; registering it keeps the tab catalog aligned with the
++//! 33-tab registry and gives the evaluator pipeline a zero-cost code
++//! path instead of silently dropping URLs through an unmatched tab.
++
++use sf_core::crawl::CrawlUrl;
++use sf_core::tab::TabKey;
++
++use crate::{EvalContext, Evaluator, Finding};
++
++pub struct LinkMetricsEvaluator;
++
++impl Evaluator for LinkMetricsEvaluator {
++    fn tab(&self) -> TabKey {
++        TabKey::LinkMetrics
++    }
++
++    fn evaluate(&self, _url: &CrawlUrl, _ctx: &EvalContext) -> Vec<Finding> {
++        Vec::new()
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use chrono::Utc;
++    use sf_core::config::CrawlConfig;
++    use sf_core::crawl::{ContentType, CrawlUrl};
++    use sf_core::id::{CrawlId, CrawlUrlId};
++
++    fn page() -> CrawlUrl {
++        CrawlUrl {
++            id: CrawlUrlId::new(),
++            crawl_id: CrawlId::new(),
++            url: "https://example.com/".to_string(),
++            url_hash: "h".to_string(),
++            content_type: ContentType::Html,
++            status_code: Some(200),
++            is_internal: true,
++            depth: 0,
++            title: None,
++            title_length: None,
++            title_pixel_width: None,
++            meta_description: None,
++            meta_description_length: None,
++            meta_description_pixel_width: None,
++            h1_first: None,
++            h1_count: 0,
++            h2_first: None,
++            h2_count: 0,
++            word_count: None,
++            response_time_ms: None,
++            content_length: None,
++            redirect_url: None,
++            canonical_url: None,
++            meta_robots: None,
++            crawled_at: Some(Utc::now()),
++        }
++    }
++
++    #[test]
++    fn link_metrics_emits_nothing() {
++        let cfg = CrawlConfig::default();
++        let ctx = EvalContext {
++            config: &cfg,
++            html: None,
++            parsed: None,
++        };
++        let evaluator = LinkMetricsEvaluator;
++        assert_eq!(evaluator.tab(), TabKey::LinkMetrics);
++        assert!(evaluator.evaluate(&page(), &ctx).is_empty());
++    }
++}
+diff --git a/crates/evaluators/src/search_console.rs b/crates/evaluators/src/search_console.rs
+new file mode 100644
+index 0000000..0dfd50a
+--- /dev/null
++++ b/crates/evaluators/src/search_console.rs
+@@ -0,0 +1,76 @@
++//! Search Console tab evaluator (stub).
++//!
++//! Blocked on Google Search Console API + per-tenant OAuth. Until the
++//! integration ships this evaluator emits no findings; registering it
++//! keeps the tab catalog aligned with the 33-tab registry and gives the
++//! evaluator pipeline a zero-cost code path instead of silently dropping
++//! URLs through an unmatched tab.
++
++use sf_core::crawl::CrawlUrl;
++use sf_core::tab::TabKey;
++
++use crate::{EvalContext, Evaluator, Finding};
++
++pub struct SearchConsoleEvaluator;
++
++impl Evaluator for SearchConsoleEvaluator {
++    fn tab(&self) -> TabKey {
++        TabKey::SearchConsole
++    }
++
++    fn evaluate(&self, _url: &CrawlUrl, _ctx: &EvalContext) -> Vec<Finding> {
++        Vec::new()
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use chrono::Utc;
++    use sf_core::config::CrawlConfig;
++    use sf_core::crawl::{ContentType, CrawlUrl};
++    use sf_core::id::{CrawlId, CrawlUrlId};
++
++    fn page() -> CrawlUrl {
++        CrawlUrl {
++            id: CrawlUrlId::new(),
++            crawl_id: CrawlId::new(),
++            url: "https://example.com/".to_string(),
++            url_hash: "h".to_string(),
++            content_type: ContentType::Html,
++            status_code: Some(200),
++            is_internal: true,
++            depth: 0,
++            title: None,
++            title_length: None,
++            title_pixel_width: None,
++            meta_description: None,
++            meta_description_length: None,
++            meta_description_pixel_width: None,
++            h1_first: None,
++            h1_count: 0,
++            h2_first: None,
++            h2_count: 0,
++            word_count: None,
++            response_time_ms: None,
++            content_length: None,
++            redirect_url: None,
++            canonical_url: None,
++            meta_robots: None,
++            crawled_at: Some(Utc::now()),
++        }
++    }
++
++    #[test]
++    fn search_console_emits_nothing() {
++        let cfg = CrawlConfig::default();
++        let ctx = EvalContext {
++            config: &cfg,
++            html: None,
++            parsed: None,
++        };
++        let evaluator = SearchConsoleEvaluator;
++        assert_eq!(evaluator.tab(), TabKey::SearchConsole);
++        assert!(evaluator.evaluate(&page(), &ctx).is_empty());
++    }
++}

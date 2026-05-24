@@ -1,0 +1,222 @@
+diff --git a/backend/games/base.py b/backend/games/base.py
+index ea74050..ff7807f 100644
+--- a/backend/games/base.py
++++ b/backend/games/base.py
+@@ -19,6 +19,7 @@
+ 
+ import logging
+ import os
++import shlex
+ import socket
+ import subprocess
+ from abc import ABC, abstractmethod
+@@ -172,10 +173,30 @@ def default_volume_binds(server) -> list[VolumeBind]:
+ # Kuratiertes, gepflegtes SteamCMD-Image. Eine Pin auf einen festen Tag erfolgt
+ # in einer Folge-Phase (Phase 5 wird Image+Tag pro Plugin-Egg konfigurierbar).
+ STEAMCMD_IMAGE = "cm2network/steamcmd:root"
+-# Pfad des steamcmd-Wrappers im Image. Explizit setzen, damit unsere Pipeline
+-# nicht vom Image-Default-Entrypoint abhängt (manche Tags haben keinen).
+-STEAMCMD_ENTRYPOINT = "/home/steam/steamcmd/steamcmd.sh"
+-STEAMCMD_WORKDIR = "/home/steam/steamcmd"
++# Pfad des steamcmd-Wrappers im Image. Wird in den bash-Aufruf eingesetzt.
++STEAMCMD_BIN = "/home/steam/steamcmd/steamcmd.sh"
++
++
++def _build_steamcmd_bash_command(steam_args: list[str], chown_uid: int, chown_gid: int) -> list[str]:
++    """Verpackt SteamCMD-Args in ein `bash -c`-Kommando, das nach Abschluss /data
++    auf die Host-UID umownt.
++
++    Hintergrund: Das `:root`-Image hat `/home/steam` mit Mode 750 (steam-User-
++    only). Wir müssen SteamCMD als root im Container laufen lassen, sonst
++    schlägt schon das `stat`/`exec` auf den Wrapper mit `permission denied`
++    fehl. Container-Root ist durch `--cap-drop=ALL --security-opt=no-new-
++    privileges` und einen Bind-Mount-only-Schreibpfad genügend abgeschottet.
++    Nach dem Lauf chown'en wir /data zurück auf die msm-Host-UID, damit das
++    Panel als unprivilegierter User weiterarbeiten kann.
++    """
++    quoted = " ".join(shlex.quote(a) for a in steam_args)
++    script = (
++        f"{shlex.quote(STEAMCMD_BIN)} {quoted}; "
++        "rc=$?; "
++        f"chown -R {int(chown_uid)}:{int(chown_gid)} {shlex.quote(CONTAINER_DATA_DIR)}; "
++        "exit $rc"
++    )
++    return ["-c", script]
+ 
+ 
+ def run_steamcmd_install(
+@@ -192,28 +213,29 @@ def run_steamcmd_install(
+     """
+     os.makedirs(install_dir, exist_ok=True)
+ 
+-    cmd: list[str] = [
++    steam_args: list[str] = [
+         "+force_install_dir", CONTAINER_DATA_DIR,
+         "+login", "anonymous",
+         "+app_update", app_id, "validate",
+     ]
+     if extra_args:
+-        cmd.extend(extra_args)
+-    cmd.extend(["+quit"])
++        steam_args.extend(extra_args)
++    steam_args.append("+quit")
+ 
+     _append_console_log(server_id, f"[MSM] SteamCMD startet für App {app_id} (Docker)\n")
+ 
+     uid, gid = docker_service.host_uid_gid()
+     result = docker_service.run_ephemeral(
+         image=STEAMCMD_IMAGE,
+-        command=cmd,
++        command=_build_steamcmd_bash_command(steam_args, uid, gid),
+         volumes=[VolumeBind(install_dir, CONTAINER_DATA_DIR, read_only=False)],
+-        user=f"{uid}:{gid}",
+-        entrypoint=STEAMCMD_ENTRYPOINT,
+-        workdir=STEAMCMD_WORKDIR,
++        # KEIN --user-Override: SteamCMD muss im Container als root laufen, weil
++        # /home/steam im :root-Image Mode 750 hat. Files werden im bash-Wrapper
++        # nach dem Run auf {uid}:{gid} ge-chown't.
++        user=None,
++        entrypoint="bash",
+         # SteamCMD legt Cache/Auth in $HOME ab. Auf /data umleiten, damit der
+-        # Cache zwischen Runs erhalten bleibt und keine Permission-Probleme
+-        # mit /home/steam (root-owned) entstehen.
++        # Cache zwischen Runs persistent im Bind-Mount landet (kein Vollredownload).
+         env={"HOME": CONTAINER_DATA_DIR},
+         timeout=3600,
+     )
+@@ -242,7 +264,7 @@ def run_steamcmd_workshop_download(
+     Vollredownload — das übernimmt SteamCMD selbst, sofern lokale Files
+     existieren.
+     """
+-    cmd: list[str] = [
++    steam_args: list[str] = [
+         "+force_install_dir", CONTAINER_DATA_DIR,
+         "+login", "anonymous",
+         "+workshop_download_item", workshop_app_id, workshop_item_id,
+@@ -254,11 +276,10 @@ def run_steamcmd_workshop_download(
+     uid, gid = docker_service.host_uid_gid()
+     result = docker_service.run_ephemeral(
+         image=STEAMCMD_IMAGE,
+-        command=cmd,
++        command=_build_steamcmd_bash_command(steam_args, uid, gid),
+         volumes=[VolumeBind(install_dir, CONTAINER_DATA_DIR, read_only=False)],
+-        user=f"{uid}:{gid}",
+-        entrypoint=STEAMCMD_ENTRYPOINT,
+-        workdir=STEAMCMD_WORKDIR,
++        user=None,
++        entrypoint="bash",
+         env={"HOME": CONTAINER_DATA_DIR},
+         timeout=3600,
+     )
+diff --git a/backend/tests/test_docker_service.py b/backend/tests/test_docker_service.py
+index d71d71e..27117a5 100644
+--- a/backend/tests/test_docker_service.py
++++ b/backend/tests/test_docker_service.py
+@@ -184,35 +184,73 @@ def test_entrypoint_override_lands_before_image(self):
+ 
+ 
+ class TestSteamCMDHelpers:
+-    """Stellt sicher, dass run_steamcmd_install/workshop_download den Entrypoint
+-    explizit setzen — sonst krachen die Calls beim Bug, den der User gesehen hat
+-    (`exec: \"+force_install_dir\": executable file not found`)."""
++    """SteamCMD muss im :root-Image als root laufen (sonst `permission denied`
++    auf /home/steam/steamcmd/steamcmd.sh, Mode 750), und wir m\u00fcssen /data
++    nach dem Lauf auf die Host-UID zur\u00fcck-chown'en, damit der Panel-User
++    weiterarbeiten kann."""
+ 
+-    def test_steamcmd_install_uses_entrypoint_and_home(self, tmp_path):
+-        from games.base import STEAMCMD_ENTRYPOINT, STEAMCMD_WORKDIR, run_steamcmd_install
++    def test_steamcmd_install_runs_as_root_and_chowns(self, tmp_path):
++        from games.base import STEAMCMD_BIN, run_steamcmd_install
+ 
+-        with patch("games.base.docker_service.run_ephemeral") as mock_eph:
++        with patch("games.base.docker_service.run_ephemeral") as mock_eph, \
++             patch("games.base.docker_service.host_uid_gid", return_value=(1001, 1001)):
+             mock_eph.return_value = {"ok": True, "stdout": "ok", "stderr": ""}
+             run_steamcmd_install(server_id=1, install_dir=str(tmp_path), app_id="223350")
+ 
+         kwargs = mock_eph.call_args.kwargs
+-        assert kwargs["entrypoint"] == STEAMCMD_ENTRYPOINT
+-        assert kwargs["workdir"] == STEAMCMD_WORKDIR
++        # bash -c "<script>"
++        assert kwargs["entrypoint"] == "bash"
++        assert kwargs["command"][0] == "-c"
++        script = kwargs["command"][1]
++        assert STEAMCMD_BIN in script
++        assert "+app_update" in script and "223350" in script
++        # chown auf Host-UID nach SteamCMD
++        assert "chown -R 1001:1001 /data" in script
++        # rc bleibt erhalten
++        assert "exit $rc" in script
++        # KEIN --user-Override (l\u00e4uft als root im Container)
++        assert kwargs.get("user") is None
++        # HOME wandert ins Volume f\u00fcr persistenten Cache
+         assert kwargs["env"].get("HOME") == "/data"
+-        # Command beginnt mit den Steam-Args, nicht mit dem Entrypoint
+-        assert kwargs["command"][0] == "+force_install_dir"
+ 
+-    def test_workshop_download_uses_entrypoint_and_home(self, tmp_path):
+-        from games.base import STEAMCMD_ENTRYPOINT, STEAMCMD_WORKDIR, run_steamcmd_workshop_download
++    def test_workshop_download_runs_as_root_and_chowns(self, tmp_path):
++        from games.base import run_steamcmd_workshop_download
+ 
+-        with patch("games.base.docker_service.run_ephemeral") as mock_eph:
++        with patch("games.base.docker_service.run_ephemeral") as mock_eph, \
++             patch("games.base.docker_service.host_uid_gid", return_value=(1001, 1001)):
+             mock_eph.return_value = {"ok": True, "stdout": "ok", "stderr": ""}
+             run_steamcmd_workshop_download(
+                 server_id=1, install_dir=str(tmp_path), workshop_app_id="221100", workshop_item_id="12345"
+             )
+ 
+         kwargs = mock_eph.call_args.kwargs
+-        assert kwargs["entrypoint"] == STEAMCMD_ENTRYPOINT
+-        assert kwargs["workdir"] == STEAMCMD_WORKDIR
++        assert kwargs["entrypoint"] == "bash"
++        script = kwargs["command"][1]
++        assert "+workshop_download_item" in script and "221100" in script and "12345" in script
++        assert "chown -R 1001:1001 /data" in script
++        assert kwargs.get("user") is None
+         assert kwargs["env"].get("HOME") == "/data"
+-        assert "+workshop_download_item" in kwargs["command"]
++
++    def test_bash_script_is_safely_quoted(self, tmp_path):
++        """Wenn jemand extra_args mit Shell-Metazeichen reinreicht (z. B. ' oder ;),
++        darf das Script nicht aus dem SteamCMD-Kontext ausbrechen."""
++        from games.base import run_steamcmd_install
++
++        with patch("games.base.docker_service.run_ephemeral") as mock_eph, \
++             patch("games.base.docker_service.host_uid_gid", return_value=(1001, 1001)):
++            mock_eph.return_value = {"ok": True, "stdout": "", "stderr": ""}
++            run_steamcmd_install(
++                server_id=1,
++                install_dir=str(tmp_path),
++                app_id="223350",
++                extra_args=["+app_set_config", "value with spaces; rm -rf /"],
++            )
++
++        script = mock_eph.call_args.kwargs["command"][1]
++        # Der Injection-Versuch muss als gequotetes Argument enden, NICHT als
++        # eigenst\u00e4ndiges Shell-Kommando vor dem chown.
++        assert "rm -rf /" in script  # als Argument-String enthalten
++        # Aber NICHT als eigener Shell-Befehl ausf\u00fchrbar — chown kommt nach
++        # dem +quit-Argument und vor exit $rc, also der gefakte 'rm -rf /'
++        # ist in shlex.quote eingeschlossen.
++        assert script.count("chown -R 1001:1001 /data") == 1
+diff --git a/docs/agent-rules/architecture.md b/docs/agent-rules/architecture.md
+index 546cfaa..07ea24f 100644
+--- a/docs/agent-rules/architecture.md
++++ b/docs/agent-rules/architecture.md
+@@ -397,6 +397,13 @@ Hartes Disk-Quota (XFS-Projekt-Quota oder Overlay-Quota) ist explizit Phase-2-Ma
+ 
+ Es gibt kein Host-`steamcmd` mehr. Installs und Workshop-Downloads laufen in ephemeren Containern (`cm2network/steamcmd:root`), die in `games/base.run_steamcmd_install()` und `run_steamcmd_workshop_download()` gekapselt sind. Das nutzt das gleiche Bind-Mount-Layout (`<install_dir>` → `/data`).
+ 
++**Ausführungsmodell:**
++- Container läuft als **root im Container** (nicht via `--user`-Override), weil das `:root`-Image `/home/steam` mit Mode 750 hat und SteamCMD sonst nicht mal seinen eigenen Wrapper ausführen kann.
++- Entrypoint ist `bash`, der eigentliche SteamCMD-Aufruf läuft als `bash -c '<steamcmd> <args>; rc=$?; chown -R <uid>:<gid> /data; exit $rc'`. Damit landen Dateien am Ende auf der msm-Host-UID, nicht auf 0:0.
++- `HOME=/data` lenkt SteamCMDs Auth-/Cache-Verzeichnis (`~/Steam/`) in den Bind-Mount um. Persistent zwischen Runs, kein Schreibversuch auf `/home/steam` (root-owned).
++- Hardening bleibt aktiv (`--cap-drop=ALL`, `--security-opt=no-new-privileges`, `--rm`). Container-Root hat damit kein Kernel-CAP außer dem Default-Set, kann nicht eskalieren, und das einzige Schreibziel ist der Bind-Mount.
++- Alle SteamCMD-Argumente werden mit `shlex.quote()` escaped, bevor sie in den `bash -c`-String eingesetzt werden — Shell-Injection über `extra_args` ist nicht möglich.
++
+ Intelligentes Mod-Update bleibt erhalten: SteamCMD selbst entscheidet, ob ein `workshop_download_item` einen Refresh braucht — wir starten den Container einfach jedes Mal, und SteamCMD validiert die lokalen Dateien gegen das Manifest. Kein Voll-Redownload, wenn nichts geändert hat.
+ 
+ ### 12.5 TODO: Rootless Docker

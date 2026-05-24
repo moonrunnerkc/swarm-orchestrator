@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-Chutzpah-1000-Contest-pr7",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "commit=claude-coauthor"
+  },
+  "pr": {
+    "number": 7,
+    "headSha": "a7a49b1f652b1aad282bcb5487586f8343a32f3c",
+    "baseSha": "5c0df8a95eaa4f1270d6865694ff79677ec7ff0c",
+    "title": "Round 24 — 사이드바 도움말 섹션 + 버튼 셀렉터 정리 (stacked on R23)",
+    "body": "## Round 24\n\n**Stacked PR**: base = `agent/round-23-modal-epiphany-intro` (PR #6). R22 → R23 → R24 순으로 머지.\n\n### Slack 메시지\n> Round 24 ✅ 사이드바 \"도움말\" 섹션 라벨 추가 + 튜토리얼 재시작 버튼 셀렉터 정리.\n\n### Scores (before → after)\n- 기능 완성도: 9 → 9\n- 사용자 경험: 9 → 9 (도움말 위치 명확화)\n- 안정성: 9 → 9\n- 성능: 9 → 9\n- 코드 품질: 9 → 9 (동작 안 하는 셀렉터 제거)\n- 완성도: 9 → 9\n\n### Lowest area\n동률 9. R22 추가한 `[data-testid=\"stButton\"][data-key=\"sidebar_tutorial_replay\"]` 는 Streamlit DOM 에 `data-key` 가 직접 노출되지 않아 실제 매칭 안 됨 (의도된 버튼 톤이 적용 안 됨). 또한 \"튜토리얼 다시 보기\" 버튼이 매칭 반경 radio 직후·footer 직전에 위치해 섹션 경계가 모호.\n\n### Files changed\n- `app/components/sidebar.py`\n  - `_SIDEBAR_CSS`: data-key 셀렉터 제거 → 사이드바 일반 `[data-testid=\"stSidebar\"] [data-testid=\"stButton\"] button` 으로 정리. transition + focus ring 추가.\n  - `render_sidebar()`: 버튼 직전에 `st.divider()` + `<p class='sb-ctrl-label'>도움말</p>` 명시적 라벨 추가.\n\n### Verification\n- `uv run ruff check --fix .` → All checks passed\n- `uv run ruff format .` → 43 files left unchanged\n- `uv run pyright` → **0 errors, 137 warnings**\n- `uv run pytest` → **61 passed** 유지, coverage **64.06%**\n\n### Notes (다음 라운드 후보)\n- G3 단계 카드 시나리오 인라인 (FR-01 ↔ Heliocity 예시 직결)\n- C1 모바일 KPI 추가 폭\n- F1 모달 X 닫기 폴리시 (외부 패키지 필요, 보류)\n\n@claude\n\nCo-Authored-By: Claude <noreply@anthropic.com>",
+    "author": "IBORY-PURPLE",
+    "headRef": "agent/round-24-sidebar-help-section",
+    "repository": "Chutzpah-1000/Contest"
+  },
+  "diffRef": {
+    "repository": "Chutzpah-1000/Contest",
+    "headSha": "a7a49b1f652b1aad282bcb5487586f8343a32f3c",
+    "baseSha": "5c0df8a95eaa4f1270d6865694ff79677ec7ff0c"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-Chutzpah-1000-Contest-pr7.diff",
+  "vendoredAt": "2026-05-24T03:10:05.774Z",
+  "collectedAt": "2026-05-24T03:10:05.774Z"
+}

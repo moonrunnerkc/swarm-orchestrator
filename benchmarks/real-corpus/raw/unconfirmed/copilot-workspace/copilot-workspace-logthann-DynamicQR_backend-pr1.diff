@@ -1,0 +1,205 @@
+diff --git a/.env.example b/.env.example
+index 3c27609..d804941 100644
+--- a/.env.example
++++ b/.env.example
+@@ -25,7 +25,11 @@ CORS_ALLOW_CREDENTIALS=true
+ CORS_ALLOW_METHODS=*
+ CORS_ALLOW_HEADERS=*
+ 
+-QUEUE_BACKEND=memory
++# Queue backend:
++# - auto  : non-local env + non-local REDIS_URL/QUEUE_URL => redis, otherwise memory
++# - memory: force in-memory queue
++# - redis : force redis queue
++QUEUE_BACKEND=auto
+ QUEUE_URL=
+ DLQ_NAME=scan_logs_dlq
+ SCAN_LOG_QUEUE_NAME=scan_logs
+@@ -38,4 +42,3 @@ ANALYTICS_CRON_INTERVAL_MINUTES=5
+ # Get free license key: https://dev.maxmind.com/geoip/geolite2-free-geolocation-data
+ MAXMIND_LICENSE_KEY=your_license_key_here
+ GEOLITE2_DB_PATH=data/GeoLite2-City.mmdb
+-
+diff --git a/app/core/config.py b/app/core/config.py
+index 25338d2..dba4de2 100644
+--- a/app/core/config.py
++++ b/app/core/config.py
+@@ -70,7 +70,7 @@ class Settings(BaseSettings):
+         alias="GOOGLE_REDIRECT_URI",
+     )
+ 
+-    queue_backend: str = Field(default="memory", alias="QUEUE_BACKEND")
++    queue_backend: str = Field(default="auto", alias="QUEUE_BACKEND")
+     queue_url: Optional[str] = Field(default=None, alias="QUEUE_URL")
+     dlq_name: str = Field(default="scan_logs_dlq", alias="DLQ_NAME")
+     scan_log_queue_name: str = Field(
+@@ -139,4 +139,3 @@ def get_settings() -> Settings:
+     """Return a cached settings instance for dependency injection."""
+ 
+     return Settings()
+-
+diff --git a/app/main.py b/app/main.py
+index acfa37e..0ded693 100644
+--- a/app/main.py
++++ b/app/main.py
+@@ -17,6 +17,7 @@
+ from app.api.v1.users import router as users_router
+ from app.core.config import get_settings
+ from app.workers.dev_scan_worker import run_scan_log_worker
++from app.workers.queue_client import resolve_queue_backend
+ 
+ # Sanity check: if this line never appears, the process entrypoint/console wiring is wrong.
+ print("!!! BACKEND BOOTSTRAP COMPLETE !!!", flush=True)
+@@ -81,7 +82,7 @@ async def health_check() -> dict[str, str]:
+     @app.on_event("startup")
+     async def _start_embedded_scan_worker_if_needed() -> None:
+         logger.info("Application startup hook running")
+-        queue_backend = settings.queue_backend.lower().strip()
++        queue_backend = resolve_queue_backend(settings)
+         if settings.app_env != "local" or queue_backend != "memory":
+             return
+ 
+@@ -104,4 +105,3 @@ async def _stop_embedded_scan_worker_if_running() -> None:
+ 
+ 
+ app = create_application()
+-
+diff --git a/app/workers/queue_client.py b/app/workers/queue_client.py
+index 4189704..19d4be4 100644
+--- a/app/workers/queue_client.py
++++ b/app/workers/queue_client.py
+@@ -9,13 +9,14 @@
+ from dataclasses import dataclass
+ from datetime import UTC, datetime
+ from typing import Any
++from urllib.parse import urlparse
+ from uuid import uuid4
+ 
+ from redis import asyncio as redis
+ from redis.asyncio import Redis
+ from redis.exceptions import RedisError
+ 
+-from app.core.config import get_settings
++from app.core.config import LOCAL_ENV_NAMES, LOCAL_HOSTNAMES, Settings, get_settings
+ 
+ logger = logging.getLogger(__name__)
+ 
+@@ -242,6 +243,42 @@ def _deserialize_envelope(raw: str) -> QueueEnvelope:
+ _queue_client: QueueClient | None = None
+ 
+ 
++def resolve_queue_backend(settings: Settings) -> str:
++    """Resolve queue backend based on configuration and environment.
++
++    Explicit `memory`/`redis` values are honored directly. For `auto` (or empty),
++    non-local environments use Redis only when QUEUE_URL/REDIS_URL targets a
++    non-local host; otherwise the backend falls back to in-memory.
++    """
++
++    configured_backend = settings.queue_backend.lower().strip()
++    if configured_backend in {"memory", "redis"}:
++        return configured_backend
++
++    if configured_backend not in {"", "auto"}:
++        raise ValueError(f"Unsupported queue backend '{settings.queue_backend}'")
++
++    app_env = settings.app_env.lower().strip()
++    if app_env in LOCAL_ENV_NAMES:
++        return "memory"
++
++    redis_url = (settings.queue_url or settings.redis_url or "").strip()
++    if _is_non_local_redis_url(redis_url):
++        logger.info("Auto-selected redis queue backend")
++        return "redis"
++
++    return "memory"
++
++
++def _is_non_local_redis_url(redis_url: str) -> bool:
++    if not redis_url:
++        return False
++
++    parsed = urlparse(redis_url)
++    hostname = parsed.hostname
++    return bool(hostname and hostname not in LOCAL_HOSTNAMES)
++
++
+ def get_queue_client() -> QueueClient:
+     """Return singleton queue client based on configured backend."""
+ 
+@@ -251,7 +288,7 @@ def get_queue_client() -> QueueClient:
+         return _queue_client
+ 
+     settings = get_settings()
+-    backend = settings.queue_backend.lower().strip()
++    backend = resolve_queue_backend(settings)
+ 
+     if backend == "memory":
+         logger.info("Using in-memory queue backend")
+@@ -278,4 +315,3 @@ async def close_queue_client() -> None:
+     if _queue_client is not None:
+         await _queue_client.close()
+         _queue_client = None
+-
+diff --git a/tests/test_queue_client.py b/tests/test_queue_client.py
+index fa414d4..d30ef79 100644
+--- a/tests/test_queue_client.py
++++ b/tests/test_queue_client.py
+@@ -2,7 +2,9 @@
+ 
+ from __future__ import annotations
+ 
+-from app.workers.queue_client import InMemoryQueueClient
++from types import SimpleNamespace
++
++from app.workers.queue_client import InMemoryQueueClient, resolve_queue_backend
+ 
+ 
+ async def test_inmemory_queue_roundtrip_ack() -> None:
+@@ -36,3 +38,46 @@ async def test_inmemory_queue_dead_letter() -> None:
+ 
+     await client.close()
+ 
++
++def test_resolve_queue_backend_prefers_explicit_value() -> None:
++    settings = SimpleNamespace(
++        queue_backend="redis",
++        app_env="local",
++        queue_url=None,
++        redis_url="redis://localhost:6379/0",
++    )
++
++    assert resolve_queue_backend(settings) == "redis"
++
++
++def test_resolve_queue_backend_prefers_explicit_memory_value() -> None:
++    settings = SimpleNamespace(
++        queue_backend="memory",
++        app_env="production",
++        queue_url="redis://red-customer-host:6379/0",
++        redis_url="redis://red-customer-host:6379/0",
++    )
++
++    assert resolve_queue_backend(settings) == "memory"
++
++
++def test_resolve_queue_backend_auto_selects_redis_for_remote_deployment() -> None:
++    settings = SimpleNamespace(
++        queue_backend="auto",
++        app_env="production",
++        queue_url="redis://red-customer-host:6379/0",
++        redis_url="redis://localhost:6379/0",
++    )
++
++    assert resolve_queue_backend(settings) == "redis"
++
++
++def test_resolve_queue_backend_auto_falls_back_to_memory_without_remote_redis() -> None:
++    settings = SimpleNamespace(
++        queue_backend="auto",
++        app_env="production",
++        queue_url=None,
++        redis_url="redis://localhost:6379/0",
++    )
++
++    assert resolve_queue_backend(settings) == "memory"

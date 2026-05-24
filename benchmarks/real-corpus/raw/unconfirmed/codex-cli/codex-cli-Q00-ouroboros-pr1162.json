@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-Q00-ouroboros-pr1162",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "commit=codex-cli-footer"
+  },
+  "pr": {
+    "number": 1162,
+    "headSha": "a59bf3a75dfdbc44d70c9cd53dc2cb33e3fb179c",
+    "baseSha": "39d7998a4ab75293a19dc632a1e00005582588ef",
+    "title": "fix(codex): accept official Rust CLI binaries",
+    "body": "## Summary\n\n- Tighten Codex wrapper detection so Mach-O/ELF magic alone is not treated as a wrapper.\n- Require a compiled-binary header plus a wrapper-specific signature before falling back to another CLI.\n- Add regression coverage for official OpenAI Codex Rust binaries (`OpenAI Codex codex-rs 0.132.0`) resolving without wrapper warnings.\n\nCloses #1159\n\n## Test plan\n\n- `uv run pytest tests/unit/codex/test_cli_policy.py -q`\n- `uv run pytest tests/unit/codex/test_cli_policy.py tests/unit/orchestrator/test_codex_cli_runtime.py tests/unit/providers/test_codex_cli_adapter.py -q`\n- `uv run ruff check src/ouroboros/codex/cli_policy.py tests/unit/codex/test_cli_policy.py tests/unit/orchestrator/test_codex_cli_runtime.py tests/unit/providers/test_codex_cli_adapter.py`\n\n## Notes\n\nThis replaces the stale design-blocked assessment with a focused compatibility fix: the Codex CLI policy files are present on current `main`, so the reported bug is directly actionable.\n",
+    "author": "Q00",
+    "headRef": "warden/issue-1159-codex-rust-cli-policy",
+    "repository": "Q00/ouroboros"
+  },
+  "diffRef": {
+    "repository": "Q00/ouroboros",
+    "headSha": "a59bf3a75dfdbc44d70c9cd53dc2cb33e3fb179c",
+    "baseSha": "39d7998a4ab75293a19dc632a1e00005582588ef"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-Q00-ouroboros-pr1162.diff",
+  "vendoredAt": "2026-05-24T03:12:33.214Z",
+  "collectedAt": "2026-05-24T03:12:33.214Z"
+}

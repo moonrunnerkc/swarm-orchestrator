@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24254",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24254,
+    "headSha": "58c43ed5fc8aab80fbc66d0dcc2a8bef3559a4f9",
+    "baseSha": "7d47056ea42636271ac020b86347fbbef49490aa",
+    "title": "TUI config cleanup: oss_provider",
+    "body": "## Summary\n\nManual provider selection during `codex --oss` startup was still persisting `oss_provider` through the legacy local `config.toml` writer. That bypasses the app-server-owned config mutation path used by the TUI, so this routes the write through the app server config API instead.\n\nThe net behavior is intentionally narrow: only an interactive picker selection is persisted. Auto-detected single-running-provider startup and explicit `--local-provider` startup remain ephemeral, so merely having one backend running does not make that provider sticky for future runs.\n\n## What Changed\n\n- Removed the TUI picker’s direct dependency on `set_default_oss_provider`.\n- Had `oss_selection` report whether the returned provider came from the interactive picker.\n- Carried only manually selected providers into startup persistence.\n- Wrote `oss_provider` via `config/batchWrite` once the app server session is available.\n- Logged a warning and continued startup if the app-server config write fails.\n\n## Verification\n\nManually smoke-tested the real `codex-tui` binary with a temporary `CODEX_HOME`, pseudo-terminal input, and a fake LM Studio HTTP server:\n\n- Interactive picker selection persisted `oss_provider = \"lmstudio\"`.\n- Non-picker `--local-provider lmstudio` startup did not persist `oss_provider`.",
+    "author": "etraut-openai",
+    "headRef": "etraut/oss-provider-app-server-config",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "58c43ed5fc8aab80fbc66d0dcc2a8bef3559a4f9",
+    "baseSha": "7d47056ea42636271ac020b86347fbbef49490aa"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24254.diff",
+  "vendoredAt": "2026-05-24T03:20:37.615Z",
+  "collectedAt": "2026-05-24T03:20:37.615Z"
+}

@@ -1,0 +1,2911 @@
+diff --git a/README.md b/README.md
+index e215bc4..5a56573 100644
+--- a/README.md
++++ b/README.md
+@@ -1,36 +1,96 @@
+-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
++# ☕ Café Aroma - App de Cafetería
+ 
+-## Getting Started
++Una aplicación web moderna y responsive para una cafetería artesanal, construida con **Next.js 14**, **TypeScript** y **Tailwind CSS**.
+ 
+-First, run the development server:
++![Next.js](https://img.shields.io/badge/Next.js-14-black?style=flat-square&logo=next.js)
++![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?style=flat-square&logo=typescript)
++![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3.4-38B2AC?style=flat-square&logo=tailwind-css)
++
++## 🚀 Características
++
++- **🏠 Landing Page** - Hero section con imágenes, estadísticas, sección about y CTA
++- **☕ Menú de Productos** - Categorías (Café, Té, Pasteles, Sándwiches, Postres, Bebidas), buscador y filtros
++- **🛒 Carrito de Compras** - Agregar/quitar productos, actualizar cantidades, resumen de compra
++- **📦 Sistema de Pedidos** - Checkout con datos de contacto, método de pago y confirmación
++- **⭐ Programa de Lealtad** - Puntos, niveles (Bronce → Diamante), recompensas canjeables
++- **🔧 Panel de Administración** - Dashboard con estadísticas, gestión de productos y pedidos
++- **📱 100% Responsive** - Diseño adaptable para web y móvil
++
++## 🛠️ Tech Stack
++
++- **Framework**: Next.js 14 (App Router)
++- **Lenguaje**: TypeScript
++- **Estilos**: Tailwind CSS
++- **Iconos**: Lucide React
++- **Estado**: React Context API
++
++## 📦 Instalación
+ 
+ ```bash
++# Clonar el repositorio
++git clone https://github.com/filibeto1/cafeteria-app.git
++
++# Instalar dependencias
++cd cafeteria-app
++npm install
++
++# Iniciar servidor de desarrollo
+ npm run dev
+-# or
+-yarn dev
+-# or
+-pnpm dev
+-# or
+-bun dev
+ ```
+ 
+-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+-
+-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
++Abre [http://localhost:3000](http://localhost:3000) en tu navegador.
+ 
+-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
++## 📁 Estructura del Proyecto
+ 
+-## Learn More
++```
++src/
++├── app/
++│   ├── page.tsx              # Landing page
++│   ├── layout.tsx            # Layout principal
++│   ├── globals.css           # Estilos globales
++│   ├── menu/page.tsx         # Menú de productos
++│   ├── cart/page.tsx         # Carrito de compras
++│   ├── checkout/page.tsx     # Proceso de pago
++│   ├── orders/page.tsx       # Mis pedidos
++│   ├── loyalty/page.tsx      # Programa de lealtad
++│   └── admin/
++│       ├── page.tsx          # Dashboard admin
++│       ├── products/page.tsx # Gestión de productos
++│       └── orders/page.tsx   # Gestión de pedidos
++├── components/
++│   ├── Navbar.tsx            # Barra de navegación
++│   ├── Footer.tsx            # Pie de página
++│   └── ProductCard.tsx       # Tarjeta de producto
++├── context/
++│   ├── CartContext.tsx        # Estado del carrito
++│   ├── OrderContext.tsx       # Estado de pedidos
++│   └── LoyaltyContext.tsx     # Estado de lealtad
++├── data/
++│   ├── products.ts           # Datos de productos
++│   └── rewards.ts            # Datos de recompensas
++└── types/
++    └── index.ts              # Tipos TypeScript
++```
+ 
+-To learn more about Next.js, take a look at the following resources:
++## 🎨 Paleta de Colores
+ 
+-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
++| Color | Hex | Uso |
++|-------|-----|-----|
++| Primary | `#6f4e37` | Elementos principales |
++| Primary Dark | `#4a3425` | Texto destacado |
++| Accent | `#d4a574` | Botones, badges |
++| Cream | `#f5ebe0` | Fondos suaves |
++| Background | `#faf7f2` | Fondo general |
+ 
+-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
++## 📝 Scripts
+ 
+-## Deploy on Vercel
++```bash
++npm run dev      # Servidor de desarrollo
++npm run build    # Build de producción
++npm run start    # Iniciar en producción
++npm run lint     # Ejecutar ESLint
++```
+ 
+-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
++## 📄 Licencia
+ 
+-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
++MIT
+diff --git a/next.config.mjs b/next.config.mjs
+index 4678774..0e14bc2 100644
+--- a/next.config.mjs
++++ b/next.config.mjs
+@@ -1,4 +1,13 @@
+ /** @type {import('next').NextConfig} */
+-const nextConfig = {};
++const nextConfig = {
++  images: {
++    remotePatterns: [
++      {
++        protocol: "https",
++        hostname: "images.unsplash.com",
++      },
++    ],
++  },
++};
+ 
+ export default nextConfig;
+diff --git a/package-lock.json b/package-lock.json
+index 05c9723..6bc0919 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -8,6 +8,7 @@
+       "name": "cafeteria-app",
+       "version": "0.1.0",
+       "dependencies": {
++        "lucide-react": "^1.16.0",
+         "next": "14.2.35",
+         "react": "^18",
+         "react-dom": "^18"
+@@ -3843,6 +3844,15 @@
+       "dev": true,
+       "license": "ISC"
+     },
++    "node_modules/lucide-react": {
++      "version": "1.16.0",
++      "resolved": "https://registry.npmjs.org/lucide-react/-/lucide-react-1.16.0.tgz",
++      "integrity": "sha512-dYwyPzb4MEKpGUmNYk3WKWPnMrHs3FKM+q94kAnJrcDIqqn1hq2xY8scaS2ovsOCM5D51ey2gaRG3PBb1vgoYQ==",
++      "license": "ISC",
++      "peerDependencies": {
++        "react": "^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0"
++      }
++    },
+     "node_modules/math-intrinsics": {
+       "version": "1.1.0",
+       "resolved": "https://registry.npmjs.org/math-intrinsics/-/math-intrinsics-1.1.0.tgz",
+diff --git a/package.json b/package.json
+index 84520a8..93378fb 100644
+--- a/package.json
++++ b/package.json
+@@ -9,18 +9,19 @@
+     "lint": "next lint"
+   },
+   "dependencies": {
++    "lucide-react": "^1.16.0",
++    "next": "14.2.35",
+     "react": "^18",
+-    "react-dom": "^18",
+-    "next": "14.2.35"
++    "react-dom": "^18"
+   },
+   "devDependencies": {
+-    "typescript": "^5",
+     "@types/node": "^20",
+     "@types/react": "^18",
+     "@types/react-dom": "^18",
++    "eslint": "^8",
++    "eslint-config-next": "14.2.35",
+     "postcss": "^8",
+     "tailwindcss": "^3.4.1",
+-    "eslint": "^8",
+-    "eslint-config-next": "14.2.35"
++    "typescript": "^5"
+   }
+ }
+diff --git a/src/app/admin/orders/page.tsx b/src/app/admin/orders/page.tsx
+new file mode 100644
+index 0000000..1bb81c8
+--- /dev/null
++++ b/src/app/admin/orders/page.tsx
+@@ -0,0 +1,132 @@
++"use client";
++
++import Link from "next/link";
++import { ArrowLeft, ClipboardList } from "lucide-react";
++import { useOrders } from "@/context/OrderContext";
++import { Order } from "@/types";
++
++const statusOptions: Order["status"][] = [
++  "pendiente",
++  "preparando",
++  "listo",
++  "entregado",
++];
++
++const statusColors: Record<Order["status"], string> = {
++  pendiente: "bg-orange-100 text-orange-700",
++  preparando: "bg-blue-100 text-blue-700",
++  listo: "bg-green-100 text-green-700",
++  entregado: "bg-gray-100 text-gray-700",
++};
++
++export default function AdminOrdersPage() {
++  const { orders, updateOrderStatus } = useOrders();
++
++  if (orders.length === 0) {
++    return (
++      <div className="min-h-[60vh] flex flex-col items-center justify-center px-4 bg-gray-50">
++        <ClipboardList className="w-20 h-20 text-[var(--accent-light)] mb-6" />
++        <h1 className="text-2xl font-bold text-[var(--primary-dark)] mb-3">
++          No hay pedidos
++        </h1>
++        <p className="text-[var(--primary-light)] mb-6">
++          Los pedidos aparecer\u00e1n aqu\u00ed cuando los clientes ordenen
++        </p>
++        <Link href="/admin" className="btn-secondary inline-flex items-center gap-2">
++          <ArrowLeft className="w-4 h-4" />
++          Volver al panel
++        </Link>
++      </div>
++    );
++  }
++
++  return (
++    <div className="min-h-screen py-8 md:py-12 bg-gray-50">
++      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
++        <div className="flex items-center gap-4 mb-8">
++          <Link
++            href="/admin"
++            className="p-2 rounded-xl hover:bg-[var(--cream)] transition-colors"
++          >
++            <ArrowLeft className="w-5 h-5 text-[var(--primary)]" />
++          </Link>
++          <div>
++            <h1 className="text-3xl font-bold text-[var(--primary-dark)]">
++              Gestionar Pedidos
++            </h1>
++            <p className="text-[var(--primary-light)]">
++              {orders.length} pedidos registrados
++            </p>
++          </div>
++        </div>
++
++        <div className="space-y-4">
++          {orders.map((order) => (
++            <div key={order.id} className="card p-6">
++              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
++                <div>
++                  <h3 className="font-bold text-[var(--primary-dark)] text-lg">
++                    {order.id}
++                  </h3>
++                  <p className="text-sm text-[var(--primary-light)]">
++                    {order.customerName} \u2022 {order.customerPhone}
++                  </p>
++                  <p className="text-xs text-[var(--primary-light)]">
++                    {new Date(order.date).toLocaleDateString("es-MX", {
++                      year: "numeric",
++                      month: "long",
++                      day: "numeric",
++                      hour: "2-digit",
++                      minute: "2-digit",
++                    })}
++                  </p>
++                </div>
++                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
++                  <select
++                    value={order.status}
++                    onChange={(e) =>
++                      updateOrderStatus(
++                        order.id,
++                        e.target.value as Order["status"]
++                      )
++                    }
++                    className={`px-4 py-2 rounded-xl border-2 border-[var(--accent-light)] font-semibold text-sm focus:outline-none focus:border-[var(--primary)] capitalize ${
++                      statusColors[order.status]
++                    }`}
++                  >
++                    {statusOptions.map((status) => (
++                      <option key={status} value={status} className="capitalize">
++                        {status}
++                      </option>
++                    ))}
++                  </select>
++                  <span className="text-xl font-bold text-[var(--primary)]">
++                    ${order.total}
++                  </span>
++                </div>
++              </div>
++
++              <div className="border-t border-[var(--accent-light)] pt-3">
++                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
++                  {order.items.map((item) => (
++                    <div
++                      key={item.product.id}
++                      className="flex justify-between bg-[var(--cream)] rounded-lg px-3 py-2 text-sm"
++                    >
++                      <span className="text-[var(--primary-dark)]">
++                        {item.product.name}
++                      </span>
++                      <span className="font-semibold text-[var(--primary)]">
++                        x{item.quantity}
++                      </span>
++                    </div>
++                  ))}
++                </div>
++              </div>
++            </div>
++          ))}
++        </div>
++      </div>
++    </div>
++  );
++}
+diff --git a/src/app/admin/page.tsx b/src/app/admin/page.tsx
+new file mode 100644
+index 0000000..3b11192
+--- /dev/null
++++ b/src/app/admin/page.tsx
+@@ -0,0 +1,193 @@
++"use client";
++
++import Link from "next/link";
++import {
++  Package,
++  ClipboardList,
++  TrendingUp,
++  DollarSign,
++  Coffee,
++} from "lucide-react";
++import { useOrders } from "@/context/OrderContext";
++import { products } from "@/data/products";
++
++export default function AdminPage() {
++  const { orders } = useOrders();
++
++  const totalRevenue = orders.reduce((sum, order) => sum + order.total, 0);
++  const pendingOrders = orders.filter((o) => o.status === "pendiente").length;
++  const preparingOrders = orders.filter(
++    (o) => o.status === "preparando"
++  ).length;
++
++  const stats = [
++    {
++      label: "Ingresos Totales",
++      value: `$${totalRevenue.toLocaleString()}`,
++      icon: DollarSign,
++      color: "text-green-600",
++      bg: "bg-green-50",
++    },
++    {
++      label: "Total Pedidos",
++      value: orders.length.toString(),
++      icon: ClipboardList,
++      color: "text-blue-600",
++      bg: "bg-blue-50",
++    },
++    {
++      label: "Pendientes",
++      value: pendingOrders.toString(),
++      icon: TrendingUp,
++      color: "text-orange-600",
++      bg: "bg-orange-50",
++    },
++    {
++      label: "En Preparaci\u00f3n",
++      value: preparingOrders.toString(),
++      icon: Coffee,
++      color: "text-purple-600",
++      bg: "bg-purple-50",
++    },
++  ];
++
++  return (
++    <div className="min-h-screen py-8 md:py-12 bg-gray-50">
++      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
++        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
++          <div>
++            <h1 className="text-3xl font-bold text-[var(--primary-dark)]">
++              Panel de Administraci\u00f3n
++            </h1>
++            <p className="text-[var(--primary-light)]">
++              Gestiona tu cafeter\u00eda desde un solo lugar
++            </p>
++          </div>
++        </div>
++
++        {/* Stats */}
++        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
++          {stats.map((stat) => (
++            <div key={stat.label} className="card p-6">
++              <div className="flex items-center justify-between mb-3">
++                <span className="text-sm text-[var(--primary-light)]">
++                  {stat.label}
++                </span>
++                <div
++                  className={`w-10 h-10 rounded-xl ${stat.bg} flex items-center justify-center`}
++                >
++                  <stat.icon className={`w-5 h-5 ${stat.color}`} />
++                </div>
++              </div>
++              <div className="text-3xl font-bold text-[var(--primary-dark)]">
++                {stat.value}
++              </div>
++            </div>
++          ))}
++        </div>
++
++        {/* Quick Actions */}
++        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
++          <Link href="/admin/products" className="card p-8 group hover:border-[var(--primary)] border-2 border-transparent">
++            <div className="flex items-center gap-4">
++              <div className="w-16 h-16 rounded-2xl bg-[var(--cream)] flex items-center justify-center group-hover:bg-[var(--accent-light)] transition-colors">
++                <Package className="w-8 h-8 text-[var(--primary)]" />
++              </div>
++              <div>
++                <h2 className="text-xl font-bold text-[var(--primary-dark)]">
++                  Gestionar Productos
++                </h2>
++                <p className="text-[var(--primary-light)]">
++                  {products.length} productos en el men\u00fa
++                </p>
++              </div>
++            </div>
++          </Link>
++
++          <Link href="/admin/orders" className="card p-8 group hover:border-[var(--primary)] border-2 border-transparent">
++            <div className="flex items-center gap-4">
++              <div className="w-16 h-16 rounded-2xl bg-[var(--cream)] flex items-center justify-center group-hover:bg-[var(--accent-light)] transition-colors">
++                <ClipboardList className="w-8 h-8 text-[var(--primary)]" />
++              </div>
++              <div>
++                <h2 className="text-xl font-bold text-[var(--primary-dark)]">
++                  Gestionar Pedidos
++                </h2>
++                <p className="text-[var(--primary-light)]">
++                  {orders.length} pedidos registrados
++                </p>
++              </div>
++            </div>
++          </Link>
++        </div>
++
++        {/* Recent Orders */}
++        {orders.length > 0 && (
++          <div className="mt-8">
++            <h2 className="text-xl font-bold text-[var(--primary-dark)] mb-4">
++              Pedidos Recientes
++            </h2>
++            <div className="card overflow-hidden">
++              <div className="overflow-x-auto">
++                <table className="w-full">
++                  <thead className="bg-[var(--cream)]">
++                    <tr>
++                      <th className="px-6 py-3 text-left text-sm font-semibold text-[var(--primary-dark)]">
++                        ID
++                      </th>
++                      <th className="px-6 py-3 text-left text-sm font-semibold text-[var(--primary-dark)]">
++                        Cliente
++                      </th>
++                      <th className="px-6 py-3 text-left text-sm font-semibold text-[var(--primary-dark)]">
++                        Total
++                      </th>
++                      <th className="px-6 py-3 text-left text-sm font-semibold text-[var(--primary-dark)]">
++                        Estado
++                      </th>
++                      <th className="px-6 py-3 text-left text-sm font-semibold text-[var(--primary-dark)]">
++                        Fecha
++                      </th>
++                    </tr>
++                  </thead>
++                  <tbody className="divide-y divide-[var(--accent-light)]">
++                    {orders.slice(0, 5).map((order) => (
++                      <tr key={order.id} className="hover:bg-[var(--cream)]/50">
++                        <td className="px-6 py-4 text-sm font-mono font-bold text-[var(--primary)]">
++                          {order.id}
++                        </td>
++                        <td className="px-6 py-4 text-sm text-[var(--primary-dark)]">
++                          {order.customerName}
++                        </td>
++                        <td className="px-6 py-4 text-sm font-semibold text-[var(--primary)]">
++                          ${order.total}
++                        </td>
++                        <td className="px-6 py-4">
++                          <span
++                            className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold capitalize ${
++                              order.status === "pendiente"
++                                ? "bg-orange-100 text-orange-700"
++                                : order.status === "preparando"
++                                ? "bg-blue-100 text-blue-700"
++                                : order.status === "listo"
++                                ? "bg-green-100 text-green-700"
++                                : "bg-gray-100 text-gray-700"
++                            }`}
++                          >
++                            {order.status}
++                          </span>
++                        </td>
++                        <td className="px-6 py-4 text-sm text-[var(--primary-light)]">
++                          {new Date(order.date).toLocaleDateString("es-MX")}
++                        </td>
++                      </tr>
++                    ))}
++                  </tbody>
++                </table>
++              </div>
++            </div>
++          </div>
++        )}
++      </div>
++    </div>
++  );
++}
+diff --git a/src/app/admin/products/page.tsx b/src/app/admin/products/page.tsx
+new file mode 100644
+index 0000000..394db99
+--- /dev/null
++++ b/src/app/admin/products/page.tsx
+@@ -0,0 +1,112 @@
++"use client";
++
++import Image from "next/image";
++import Link from "next/link";
++import { ArrowLeft, Edit, Coffee } from "lucide-react";
++import { products } from "@/data/products";
++import { CATEGORY_LABELS } from "@/types";
++
++export default function AdminProductsPage() {
++  return (
++    <div className="min-h-screen py-8 md:py-12 bg-gray-50">
++      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
++        <div className="flex items-center gap-4 mb-8">
++          <Link
++            href="/admin"
++            className="p-2 rounded-xl hover:bg-[var(--cream)] transition-colors"
++          >
++            <ArrowLeft className="w-5 h-5 text-[var(--primary)]" />
++          </Link>
++          <div>
++            <h1 className="text-3xl font-bold text-[var(--primary-dark)]">
++              Productos
++            </h1>
++            <p className="text-[var(--primary-light)]">
++              {products.length} productos en el men\u00fa
++            </p>
++          </div>
++        </div>
++
++        <div className="card overflow-hidden">
++          <div className="overflow-x-auto">
++            <table className="w-full">
++              <thead className="bg-[var(--cream)]">
++                <tr>
++                  <th className="px-6 py-3 text-left text-sm font-semibold text-[var(--primary-dark)]">
++                    Producto
++                  </th>
++                  <th className="px-6 py-3 text-left text-sm font-semibold text-[var(--primary-dark)]">
++                    Categor\u00eda
++                  </th>
++                  <th className="px-6 py-3 text-left text-sm font-semibold text-[var(--primary-dark)]">
++                    Precio
++                  </th>
++                  <th className="px-6 py-3 text-left text-sm font-semibold text-[var(--primary-dark)]">
++                    Destacado
++                  </th>
++                  <th className="px-6 py-3 text-left text-sm font-semibold text-[var(--primary-dark)]">
++                    Acciones
++                  </th>
++                </tr>
++              </thead>
++              <tbody className="divide-y divide-[var(--accent-light)]">
++                {products.map((product) => (
++                  <tr
++                    key={product.id}
++                    className="hover:bg-[var(--cream)]/50 transition-colors"
++                  >
++                    <td className="px-6 py-4">
++                      <div className="flex items-center gap-3">
++                        <div className="relative w-12 h-12 rounded-xl overflow-hidden shrink-0">
++                          <Image
++                            src={product.image}
++                            alt={product.name}
++                            fill
++                            className="object-cover"
++                          />
++                        </div>
++                        <div>
++                          <p className="font-semibold text-[var(--primary-dark)]">
++                            {product.name}
++                          </p>
++                          <p className="text-xs text-[var(--primary-light)] line-clamp-1 max-w-[200px]">
++                            {product.description}
++                          </p>
++                        </div>
++                      </div>
++                    </td>
++                    <td className="px-6 py-4">
++                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[var(--cream)] text-[var(--primary)] text-sm font-medium">
++                        <Coffee className="w-3 h-3" />
++                        {CATEGORY_LABELS[product.category]}
++                      </span>
++                    </td>
++                    <td className="px-6 py-4 font-bold text-[var(--primary)]">
++                      ${product.price}
++                    </td>
++                    <td className="px-6 py-4">
++                      {product.featured ? (
++                        <span className="inline-flex px-3 py-1 rounded-full bg-[var(--accent-light)] text-[var(--primary-dark)] text-xs font-semibold">
++                          S\u00ed
++                        </span>
++                      ) : (
++                        <span className="text-[var(--primary-light)] text-sm">
++                          No
++                        </span>
++                      )}
++                    </td>
++                    <td className="px-6 py-4">
++                      <button className="p-2 rounded-xl hover:bg-[var(--cream)] text-[var(--primary)] transition-colors">
++                        <Edit className="w-4 h-4" />
++                      </button>
++                    </td>
++                  </tr>
++                ))}
++              </tbody>
++            </table>
++          </div>
++        </div>
++      </div>
++    </div>
++  );
++}
+diff --git a/src/app/cart/page.tsx b/src/app/cart/page.tsx
+new file mode 100644
+index 0000000..e96973e
+--- /dev/null
++++ b/src/app/cart/page.tsx
+@@ -0,0 +1,140 @@
++"use client";
++
++import Image from "next/image";
++import Link from "next/link";
++import {
++  Minus,
++  Plus,
++  Trash2,
++  ShoppingBag,
++  ArrowLeft,
++  ArrowRight,
++} from "lucide-react";
++import { useCart } from "@/context/CartContext";
++
++export default function CartPage() {
++  const { items, updateQuantity, removeFromCart, total, clearCart } = useCart();
++
++  if (items.length === 0) {
++    return (
++      <div className="min-h-[60vh] flex flex-col items-center justify-center px-4">
++        <ShoppingBag className="w-20 h-20 text-[var(--accent-light)] mb-6" />
++        <h1 className="text-2xl md:text-3xl font-bold text-[var(--primary-dark)] mb-3">
++          Tu carrito est\u00e1 vac\u00edo
++        </h1>
++        <p className="text-[var(--primary-light)] mb-8 text-center">
++          Agrega productos desde nuestro men\u00fa para comenzar tu pedido
++        </p>
++        <Link href="/menu" className="btn-primary inline-flex items-center gap-2">
++          <ArrowLeft className="w-4 h-4" />
++          Ir al Men\u00fa
++        </Link>
++      </div>
++    );
++  }
++
++  return (
++    <div className="min-h-screen py-8 md:py-12">
++      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
++        <h1 className="section-title mb-8">Tu Carrito</h1>
++
++        <div className="space-y-4 mb-8">
++          {items.map((item) => (
++            <div
++              key={item.product.id}
++              className="card flex flex-col sm:flex-row items-center gap-4 p-4"
++            >
++              <div className="relative w-full sm:w-24 h-32 sm:h-24 rounded-xl overflow-hidden shrink-0">
++                <Image
++                  src={item.product.image}
++                  alt={item.product.name}
++                  fill
++                  className="object-cover"
++                />
++              </div>
++              <div className="flex-1 text-center sm:text-left">
++                <h3 className="font-bold text-[var(--primary-dark)] text-lg">
++                  {item.product.name}
++                </h3>
++                <p className="text-sm text-[var(--primary-light)]">
++                  ${item.product.price} c/u
++                </p>
++              </div>
++              <div className="flex items-center gap-3">
++                <div className="flex items-center gap-2 bg-[var(--cream)] rounded-xl px-3 py-2">
++                  <button
++                    onClick={() =>
++                      updateQuantity(item.product.id, item.quantity - 1)
++                    }
++                    className="w-8 h-8 rounded-lg bg-white flex items-center justify-center hover:bg-[var(--accent-light)] transition-colors"
++                  >
++                    <Minus className="w-4 h-4" />
++                  </button>
++                  <span className="font-bold text-[var(--primary-dark)] w-8 text-center">
++                    {item.quantity}
++                  </span>
++                  <button
++                    onClick={() =>
++                      updateQuantity(item.product.id, item.quantity + 1)
++                    }
++                    className="w-8 h-8 rounded-lg bg-white flex items-center justify-center hover:bg-[var(--accent-light)] transition-colors"
++                  >
++                    <Plus className="w-4 h-4" />
++                  </button>
++                </div>
++                <span className="font-bold text-[var(--primary)] text-lg w-20 text-right">
++                  ${item.product.price * item.quantity}
++                </span>
++                <button
++                  onClick={() => removeFromCart(item.product.id)}
++                  className="p-2 rounded-xl hover:bg-red-50 text-red-400 hover:text-red-600 transition-colors"
++                >
++                  <Trash2 className="w-5 h-5" />
++                </button>
++              </div>
++            </div>
++          ))}
++        </div>
++
++        {/* Summary */}
++        <div className="card p-6 md:p-8">
++          <div className="flex justify-between items-center mb-4">
++            <span className="text-[var(--primary-light)]">Subtotal</span>
++            <span className="font-semibold text-[var(--primary-dark)]">
++              ${total}
++            </span>
++          </div>
++          <div className="flex justify-between items-center mb-4">
++            <span className="text-[var(--primary-light)]">Env\u00edo</span>
++            <span className="font-semibold text-[var(--success)]">Gratis</span>
++          </div>
++          <div className="border-t border-[var(--accent-light)] pt-4 mb-6">
++            <div className="flex justify-between items-center">
++              <span className="text-xl font-bold text-[var(--primary-dark)]">
++                Total
++              </span>
++              <span className="text-2xl font-bold text-[var(--primary)]">
++                ${total}
++              </span>
++            </div>
++          </div>
++          <div className="flex flex-col sm:flex-row gap-3">
++            <Link
++              href="/checkout"
++              className="btn-primary flex-1 text-center inline-flex items-center justify-center gap-2"
++            >
++              Proceder al Pago
++              <ArrowRight className="w-4 h-4" />
++            </Link>
++            <button
++              onClick={clearCart}
++              className="btn-secondary flex-shrink-0"
++            >
++              Vaciar Carrito
++            </button>
++          </div>
++        </div>
++      </div>
++    </div>
++  );
++}
+diff --git a/src/app/checkout/page.tsx b/src/app/checkout/page.tsx
+new file mode 100644
+index 0000000..6fbd299
+--- /dev/null
++++ b/src/app/checkout/page.tsx
+@@ -0,0 +1,241 @@
++"use client";
++
++import { useState } from "react";
++import {
++  CreditCard,
++  Banknote,
++  ShoppingBag,
++  CheckCircle,
++  ArrowLeft,
++} from "lucide-react";
++import { useCart } from "@/context/CartContext";
++import { useOrders } from "@/context/OrderContext";
++import { useLoyalty } from "@/context/LoyaltyContext";
++import Link from "next/link";
++
++export default function CheckoutPage() {
++  const { items, total, clearCart } = useCart();
++  const { addOrder } = useOrders();
++  const { addPoints } = useLoyalty();
++
++  const [name, setName] = useState("");
++  const [phone, setPhone] = useState("");
++  const [paymentMethod, setPaymentMethod] = useState<"efectivo" | "tarjeta">(
++    "tarjeta"
++  );
++  const [orderPlaced, setOrderPlaced] = useState(false);
++  const [orderId, setOrderId] = useState("");
++
++  if (items.length === 0 && !orderPlaced) {
++    return (
++      <div className="min-h-[60vh] flex flex-col items-center justify-center px-4">
++        <ShoppingBag className="w-20 h-20 text-[var(--accent-light)] mb-6" />
++        <h1 className="text-2xl font-bold text-[var(--primary-dark)] mb-3">
++          No hay productos en el carrito
++        </h1>
++        <Link href="/menu" className="btn-primary inline-flex items-center gap-2">
++          <ArrowLeft className="w-4 h-4" />
++          Ir al Men\u00fa
++        </Link>
++      </div>
++    );
++  }
++
++  if (orderPlaced) {
++    return (
++      <div className="min-h-[60vh] flex flex-col items-center justify-center px-4">
++        <div className="card p-8 md:p-12 text-center max-w-lg">
++          <CheckCircle className="w-20 h-20 text-[var(--success)] mx-auto mb-6" />
++          <h1 className="text-3xl font-bold text-[var(--primary-dark)] mb-3">
++            \u00a1Pedido Confirmado!
++          </h1>
++          <p className="text-[var(--primary-light)] mb-2">
++            Tu pedido <span className="font-bold">{orderId}</span> ha sido
++            recibido.
++          </p>
++          <p className="text-[var(--primary-light)] mb-2">
++            Ganaste{" "}
++            <span className="font-bold text-[var(--accent)]">
++              {Math.floor(total / 10)} puntos
++            </span>{" "}
++            de lealtad.
++          </p>
++          <p className="text-sm text-[var(--primary-light)] mb-8">
++            Te notificaremos cuando est\u00e9 listo para recoger.
++          </p>
++          <div className="flex flex-col sm:flex-row gap-3 justify-center">
++            <Link href="/orders" className="btn-primary">
++              Ver Mis Pedidos
++            </Link>
++            <Link href="/menu" className="btn-secondary">
++              Seguir Comprando
++            </Link>
++          </div>
++        </div>
++      </div>
++    );
++  }
++
++  const handleSubmit = (e: React.FormEvent) => {
++    e.preventDefault();
++    const order = addOrder(items, total, name, phone, paymentMethod);
++    const pointsEarned = Math.floor(total / 10);
++    addPoints(pointsEarned);
++    setOrderId(order.id);
++    setOrderPlaced(true);
++    clearCart();
++  };
++
++  return (
++    <div className="min-h-screen py-8 md:py-12">
++      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
++        <h1 className="section-title mb-8">Finalizar Pedido</h1>
++
++        <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
++          {/* Form */}
++          <div className="lg:col-span-3">
++            <form onSubmit={handleSubmit} className="space-y-6">
++              <div className="card p-6">
++                <h2 className="text-xl font-bold text-[var(--primary-dark)] mb-4">
++                  Datos de Contacto
++                </h2>
++                <div className="space-y-4">
++                  <div>
++                    <label className="block text-sm font-medium text-[var(--primary)] mb-1">
++                      Nombre completo
++                    </label>
++                    <input
++                      type="text"
++                      required
++                      value={name}
++                      onChange={(e) => setName(e.target.value)}
++                      className="w-full px-4 py-3 rounded-xl border-2 border-[var(--accent-light)] focus:border-[var(--primary)] focus:outline-none transition-colors"
++                      placeholder="Tu nombre"
++                    />
++                  </div>
++                  <div>
++                    <label className="block text-sm font-medium text-[var(--primary)] mb-1">
++                      Tel\u00e9fono
++                    </label>
++                    <input
++                      type="tel"
++                      required
++                      value={phone}
++                      onChange={(e) => setPhone(e.target.value)}
++                      className="w-full px-4 py-3 rounded-xl border-2 border-[var(--accent-light)] focus:border-[var(--primary)] focus:outline-none transition-colors"
++                      placeholder="(55) 1234-5678"
++                    />
++                  </div>
++                </div>
++              </div>
++
++              <div className="card p-6">
++                <h2 className="text-xl font-bold text-[var(--primary-dark)] mb-4">
++                  M\u00e9todo de Pago
++                </h2>
++                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
++                  <button
++                    type="button"
++                    onClick={() => setPaymentMethod("tarjeta")}
++                    className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all ${
++                      paymentMethod === "tarjeta"
++                        ? "border-[var(--primary)] bg-[var(--cream)]"
++                        : "border-[var(--accent-light)] hover:border-[var(--primary-light)]"
++                    }`}
++                  >
++                    <CreditCard
++                      className={`w-6 h-6 ${
++                        paymentMethod === "tarjeta"
++                          ? "text-[var(--primary)]"
++                          : "text-[var(--primary-light)]"
++                      }`}
++                    />
++                    <div className="text-left">
++                      <p className="font-semibold text-[var(--primary-dark)]">
++                        Tarjeta
++                      </p>
++                      <p className="text-xs text-[var(--primary-light)]">
++                        D\u00e9bito o cr\u00e9dito
++                      </p>
++                    </div>
++                  </button>
++                  <button
++                    type="button"
++                    onClick={() => setPaymentMethod("efectivo")}
++                    className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all ${
++                      paymentMethod === "efectivo"
++                        ? "border-[var(--primary)] bg-[var(--cream)]"
++                        : "border-[var(--accent-light)] hover:border-[var(--primary-light)]"
++                    }`}
++                  >
++                    <Banknote
++                      className={`w-6 h-6 ${
++                        paymentMethod === "efectivo"
++                          ? "text-[var(--primary)]"
++                          : "text-[var(--primary-light)]"
++                      }`}
++                    />
++                    <div className="text-left">
++                      <p className="font-semibold text-[var(--primary-dark)]">
++                        Efectivo
++                      </p>
++                      <p className="text-xs text-[var(--primary-light)]">
++                        Pago al recoger
++                      </p>
++                    </div>
++                  </button>
++                </div>
++              </div>
++
++              <button type="submit" className="btn-primary w-full text-lg">
++                Confirmar Pedido - ${total}
++              </button>
++            </form>
++          </div>
++
++          {/* Order Summary */}
++          <div className="lg:col-span-2">
++            <div className="card p-6 sticky top-24">
++              <h2 className="text-xl font-bold text-[var(--primary-dark)] mb-4">
++                Resumen
++              </h2>
++              <div className="space-y-3 mb-4">
++                {items.map((item) => (
++                  <div
++                    key={item.product.id}
++                    className="flex justify-between items-center"
++                  >
++                    <div>
++                      <span className="text-sm font-medium text-[var(--primary-dark)]">
++                        {item.product.name}
++                      </span>
++                      <span className="text-xs text-[var(--primary-light)] ml-1">
++                        x{item.quantity}
++                      </span>
++                    </div>
++                    <span className="font-semibold text-[var(--primary)]">
++                      ${item.product.price * item.quantity}
++                    </span>
++                  </div>
++                ))}
++              </div>
++              <div className="border-t border-[var(--accent-light)] pt-3">
++                <div className="flex justify-between items-center">
++                  <span className="font-bold text-[var(--primary-dark)]">
++                    Total
++                  </span>
++                  <span className="text-xl font-bold text-[var(--primary)]">
++                    ${total}
++                  </span>
++                </div>
++                <p className="text-xs text-[var(--accent)] mt-2">
++                  +{Math.floor(total / 10)} puntos de lealtad
++                </p>
++              </div>
++            </div>
++          </div>
++        </div>
++      </div>
++    </div>
++  );
++}
+diff --git a/src/app/globals.css b/src/app/globals.css
+index 13d40b8..d792216 100644
+--- a/src/app/globals.css
++++ b/src/app/globals.css
+@@ -3,21 +3,23 @@
+ @tailwind utilities;
+ 
+ :root {
+-  --background: #ffffff;
+-  --foreground: #171717;
+-}
+-
+-@media (prefers-color-scheme: dark) {
+-  :root {
+-    --background: #0a0a0a;
+-    --foreground: #ededed;
+-  }
++  --background: #faf7f2;
++  --foreground: #2d1b0e;
++  --primary: #6f4e37;
++  --primary-light: #a0845c;
++  --primary-dark: #4a3425;
++  --accent: #d4a574;
++  --accent-light: #e8c9a0;
++  --cream: #f5ebe0;
++  --success: #4caf50;
++  --warning: #ff9800;
++  --danger: #f44336;
+ }
+ 
+ body {
+   color: var(--foreground);
+   background: var(--background);
+-  font-family: Arial, Helvetica, sans-serif;
++  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+ }
+ 
+ @layer utilities {
+@@ -25,3 +27,66 @@ body {
+     text-wrap: balance;
+   }
+ }
++
++@layer components {
++  .btn-primary {
++    @apply bg-[var(--primary)] text-white px-6 py-3 rounded-xl font-semibold
++      hover:bg-[var(--primary-dark)] transition-all duration-300 shadow-md
++      hover:shadow-lg active:scale-95;
++  }
++
++  .btn-secondary {
++    @apply border-2 border-[var(--primary)] text-[var(--primary)] px-6 py-3
++      rounded-xl font-semibold hover:bg-[var(--primary)] hover:text-white
++      transition-all duration-300;
++  }
++
++  .btn-accent {
++    @apply bg-[var(--accent)] text-[var(--primary-dark)] px-6 py-3 rounded-xl
++      font-semibold hover:bg-[var(--accent-light)] transition-all duration-300
++      shadow-md hover:shadow-lg active:scale-95;
++  }
++
++  .card {
++    @apply bg-white rounded-2xl shadow-md hover:shadow-xl transition-all
++      duration-300 overflow-hidden;
++  }
++
++  .section-title {
++    @apply text-3xl md:text-4xl font-bold text-[var(--primary-dark)] text-center;
++  }
++
++  .section-subtitle {
++    @apply text-lg text-[var(--primary-light)] text-center max-w-2xl mx-auto mt-2;
++  }
++
++  .gradient-bg {
++    @apply bg-gradient-to-br from-[var(--primary)] via-[var(--primary-dark)] to-[#3a2218];
++  }
++
++  .glass {
++    @apply bg-white/80 backdrop-blur-md;
++  }
++}
++
++html {
++  scroll-behavior: smooth;
++}
++
++/* Custom scrollbar */
++::-webkit-scrollbar {
++  width: 8px;
++}
++
++::-webkit-scrollbar-track {
++  background: var(--cream);
++}
++
++::-webkit-scrollbar-thumb {
++  background: var(--primary-light);
++  border-radius: 4px;
++}
++
++::-webkit-scrollbar-thumb:hover {
++  background: var(--primary);
++}
+diff --git a/src/app/layout.tsx b/src/app/layout.tsx
+index a36cde0..30e3b75 100644
+--- a/src/app/layout.tsx
++++ b/src/app/layout.tsx
+@@ -1,21 +1,15 @@
+ import type { Metadata } from "next";
+-import localFont from "next/font/local";
+ import "./globals.css";
+-
+-const geistSans = localFont({
+-  src: "./fonts/GeistVF.woff",
+-  variable: "--font-geist-sans",
+-  weight: "100 900",
+-});
+-const geistMono = localFont({
+-  src: "./fonts/GeistMonoVF.woff",
+-  variable: "--font-geist-mono",
+-  weight: "100 900",
+-});
++import Navbar from "@/components/Navbar";
++import Footer from "@/components/Footer";
++import { CartProvider } from "@/context/CartContext";
++import { OrderProvider } from "@/context/OrderContext";
++import { LoyaltyProvider } from "@/context/LoyaltyContext";
+ 
+ export const metadata: Metadata = {
+-  title: "Create Next App",
+-  description: "Generated by create next app",
++  title: "Caf\u00e9 Aroma | Cafeter\u00eda Artesanal",
++  description:
++    "Donde cada taza cuenta una historia. Caf\u00e9 artesanal, pasteler\u00eda fresca y momentos inolvidables.",
+ };
+ 
+ export default function RootLayout({
+@@ -24,11 +18,17 @@ export default function RootLayout({
+   children: React.ReactNode;
+ }>) {
+   return (
+-    <html lang="en">
+-      <body
+-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+-      >
+-        {children}
++    <html lang="es">
++      <body className="antialiased min-h-screen flex flex-col">
++        <CartProvider>
++          <OrderProvider>
++            <LoyaltyProvider>
++              <Navbar />
++              <main className="flex-1">{children}</main>
++              <Footer />
++            </LoyaltyProvider>
++          </OrderProvider>
++        </CartProvider>
+       </body>
+     </html>
+   );
+diff --git a/src/app/loyalty/page.tsx b/src/app/loyalty/page.tsx
+new file mode 100644
+index 0000000..5165155
+--- /dev/null
++++ b/src/app/loyalty/page.tsx
+@@ -0,0 +1,232 @@
++"use client";
++
++import {
++  Star,
++  Gift,
++  TrendingUp,
++  Award,
++  Coffee,
++  CheckCircle,
++  Lock,
++} from "lucide-react";
++import { useLoyalty } from "@/context/LoyaltyContext";
++
++const levelConfig: Record<
++  string,
++  { color: string; bg: string; nextLevel: string; pointsNeeded: number }
++> = {
++  Bronce: {
++    color: "text-amber-700",
++    bg: "bg-amber-100",
++    nextLevel: "Plata",
++    pointsNeeded: 200,
++  },
++  Plata: {
++    color: "text-gray-500",
++    bg: "bg-gray-100",
++    nextLevel: "Oro",
++    pointsNeeded: 500,
++  },
++  Oro: {
++    color: "text-yellow-500",
++    bg: "bg-yellow-100",
++    nextLevel: "Diamante",
++    pointsNeeded: 1000,
++  },
++  Diamante: {
++    color: "text-cyan-500",
++    bg: "bg-cyan-100",
++    nextLevel: "",
++    pointsNeeded: 0,
++  },
++};
++
++export default function LoyaltyPage() {
++  const { loyalty, redeemReward } = useLoyalty();
++  const config = levelConfig[loyalty.level];
++  const progress =
++    config.pointsNeeded > 0
++      ? Math.min((loyalty.points / config.pointsNeeded) * 100, 100)
++      : 100;
++
++  return (
++    <div className="min-h-screen py-8 md:py-12">
++      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
++        <h1 className="section-title mb-2">Programa de Lealtad</h1>
++        <p className="section-subtitle mb-10">
++          Acumula puntos, sube de nivel y disfruta de recompensas exclusivas
++        </p>
++
++        {/* Loyalty Card */}
++        <div className="gradient-bg rounded-3xl p-6 md:p-10 text-white mb-10 relative overflow-hidden">
++          <div className="absolute top-0 right-0 w-64 h-64 rounded-full bg-white/5 -translate-y-1/2 translate-x-1/2" />
++          <div className="absolute bottom-0 left-0 w-48 h-48 rounded-full bg-white/5 translate-y-1/2 -translate-x-1/2" />
++
++          <div className="relative">
++            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
++              <div>
++                <div className="flex items-center gap-2 mb-2">
++                  <Coffee className="w-6 h-6 text-[var(--accent)]" />
++                  <span className="text-lg font-semibold opacity-80">
++                    Caf\u00e9 Aroma Rewards
++                  </span>
++                </div>
++                <div
++                  className={`inline-flex items-center gap-2 ${config.bg} ${config.color} px-4 py-2 rounded-full font-bold text-lg`}
++                >
++                  <Award className="w-5 h-5" />
++                  Nivel {loyalty.level}
++                </div>
++              </div>
++              <div className="text-right">
++                <div className="text-5xl md:text-6xl font-bold">
++                  {loyalty.points}
++                </div>
++                <div className="text-white/70">puntos disponibles</div>
++              </div>
++            </div>
++
++            {/* Progress */}
++            {config.nextLevel && (
++              <div>
++                <div className="flex justify-between text-sm mb-2">
++                  <span className="text-white/70">
++                    Progreso al nivel {config.nextLevel}
++                  </span>
++                  <span className="text-white/70">
++                    {loyalty.points}/{config.pointsNeeded}
++                  </span>
++                </div>
++                <div className="w-full bg-white/20 rounded-full h-3">
++                  <div
++                    className="bg-[var(--accent)] rounded-full h-3 transition-all duration-500"
++                    style={{ width: `${progress}%` }}
++                  />
++                </div>
++              </div>
++            )}
++
++            {/* Stats */}
++            <div className="grid grid-cols-3 gap-4 mt-8">
++              <div className="text-center bg-white/10 rounded-xl p-3">
++                <div className="text-2xl font-bold">
++                  {loyalty.totalOrders}
++                </div>
++                <div className="text-xs text-white/70">Pedidos</div>
++              </div>
++              <div className="text-center bg-white/10 rounded-xl p-3">
++                <div className="text-2xl font-bold">{loyalty.level}</div>
++                <div className="text-xs text-white/70">Nivel</div>
++              </div>
++              <div className="text-center bg-white/10 rounded-xl p-3">
++                <div className="text-2xl font-bold">
++                  {loyalty.rewards.filter((r) => r.redeemed).length}
++                </div>
++                <div className="text-xs text-white/70">Canjeados</div>
++              </div>
++            </div>
++          </div>
++        </div>
++
++        {/* How it works */}
++        <div className="mb-10">
++          <h2 className="text-2xl font-bold text-[var(--primary-dark)] mb-6">
++            \u00bfC\u00f3mo funciona?
++          </h2>
++          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
++            {[
++              {
++                icon: Coffee,
++                title: "Compra",
++                desc: "Realiza pedidos desde nuestra app o en sucursal",
++              },
++              {
++                icon: TrendingUp,
++                title: "Acumula",
++                desc: "Gana 1 punto por cada $10 de compra",
++              },
++              {
++                icon: Gift,
++                title: "Canjea",
++                desc: "Usa tus puntos en recompensas exclusivas",
++              },
++            ].map((step) => (
++              <div key={step.title} className="card p-6 text-center">
++                <div className="w-14 h-14 rounded-2xl bg-[var(--cream)] flex items-center justify-center mx-auto mb-4">
++                  <step.icon className="w-7 h-7 text-[var(--primary)]" />
++                </div>
++                <h3 className="font-bold text-[var(--primary-dark)] mb-2">
++                  {step.title}
++                </h3>
++                <p className="text-sm text-[var(--primary-light)]">
++                  {step.desc}
++                </p>
++              </div>
++            ))}
++          </div>
++        </div>
++
++        {/* Rewards */}
++        <div>
++          <h2 className="text-2xl font-bold text-[var(--primary-dark)] mb-6">
++            Recompensas Disponibles
++          </h2>
++          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
++            {loyalty.rewards.map((reward) => {
++              const canRedeem =
++                !reward.redeemed && loyalty.points >= reward.pointsCost;
++              return (
++                <div
++                  key={reward.id}
++                  className={`card p-6 ${
++                    reward.redeemed ? "opacity-60" : ""
++                  }`}
++                >
++                  <div className="flex items-start justify-between gap-4">
++                    <div className="flex-1">
++                      <div className="flex items-center gap-2 mb-2">
++                        <Gift className="w-5 h-5 text-[var(--accent)]" />
++                        <h3 className="font-bold text-[var(--primary-dark)]">
++                          {reward.name}
++                        </h3>
++                      </div>
++                      <p className="text-sm text-[var(--primary-light)] mb-3">
++                        {reward.description}
++                      </p>
++                      <div className="flex items-center gap-1">
++                        <Star className="w-4 h-4 text-[var(--accent)]" />
++                        <span className="font-bold text-[var(--primary)]">
++                          {reward.pointsCost} puntos
++                        </span>
++                      </div>
++                    </div>
++                    <div>
++                      {reward.redeemed ? (
++                        <div className="flex items-center gap-1 text-[var(--success)] text-sm font-semibold">
++                          <CheckCircle className="w-4 h-4" />
++                          Canjeado
++                        </div>
++                      ) : canRedeem ? (
++                        <button
++                          onClick={() => redeemReward(reward.id)}
++                          className="btn-primary !px-4 !py-2 text-sm"
++                        >
++                          Canjear
++                        </button>
++                      ) : (
++                        <div className="flex items-center gap-1 text-[var(--primary-light)] text-sm">
++                          <Lock className="w-4 h-4" />
++                          Bloqueado
++                        </div>
++                      )}
++                    </div>
++                  </div>
++                </div>
++              );
++            })}
++          </div>
++        </div>
++      </div>
++    </div>
++  );
++}
+diff --git a/src/app/menu/page.tsx b/src/app/menu/page.tsx
+new file mode 100644
+index 0000000..43cb192
+--- /dev/null
++++ b/src/app/menu/page.tsx
+@@ -0,0 +1,102 @@
++"use client";
++
++import { useState } from "react";
++import { Search } from "lucide-react";
++import ProductCard from "@/components/ProductCard";
++import { products } from "@/data/products";
++import { Category, CATEGORY_LABELS } from "@/types";
++
++const categories: (Category | "todos")[] = [
++  "todos",
++  "cafe",
++  "te",
++  "pasteles",
++  "sandwiches",
++  "postres",
++  "bebidas",
++];
++
++const categoryLabels: Record<Category | "todos", string> = {
++  todos: "Todos",
++  ...CATEGORY_LABELS,
++};
++
++export default function MenuPage() {
++  const [selectedCategory, setSelectedCategory] = useState<
++    Category | "todos"
++  >("todos");
++  const [searchQuery, setSearchQuery] = useState("");
++
++  const filteredProducts = products.filter((product) => {
++    const matchesCategory =
++      selectedCategory === "todos" || product.category === selectedCategory;
++    const matchesSearch =
++      product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
++      product.description.toLowerCase().includes(searchQuery.toLowerCase());
++    return matchesCategory && matchesSearch;
++  });
++
++  return (
++    <div className="min-h-screen py-8 md:py-12">
++      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
++        {/* Header */}
++        <div className="text-center mb-10">
++          <h1 className="section-title mb-2">Nuestro Men\u00fa</h1>
++          <p className="section-subtitle">
++            Descubre nuestra selecci\u00f3n de caf\u00e9s artesanales, pasteler\u00eda fresca
++            y m\u00e1s
++          </p>
++        </div>
++
++        {/* Search */}
++        <div className="max-w-md mx-auto mb-8">
++          <div className="relative">
++            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--primary-light)]" />
++            <input
++              type="text"
++              placeholder="Buscar productos..."
++              value={searchQuery}
++              onChange={(e) => setSearchQuery(e.target.value)}
++              className="w-full pl-12 pr-4 py-3 rounded-xl border-2 border-[var(--accent-light)] bg-white focus:border-[var(--primary)] focus:outline-none transition-colors"
++            />
++          </div>
++        </div>
++
++        {/* Category Filters */}
++        <div className="flex flex-wrap justify-center gap-2 md:gap-3 mb-10">
++          {categories.map((cat) => (
++            <button
++              key={cat}
++              onClick={() => setSelectedCategory(cat)}
++              className={`px-4 md:px-6 py-2 md:py-2.5 rounded-xl font-medium text-sm md:text-base transition-all ${
++                selectedCategory === cat
++                  ? "bg-[var(--primary)] text-white shadow-md"
++                  : "bg-white text-[var(--primary)] hover:bg-[var(--cream)] border border-[var(--accent-light)]"
++              }`}
++            >
++              {categoryLabels[cat]}
++            </button>
++          ))}
++        </div>
++
++        {/* Products Grid */}
++        {filteredProducts.length > 0 ? (
++          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
++            {filteredProducts.map((product) => (
++              <ProductCard key={product.id} product={product} />
++            ))}
++          </div>
++        ) : (
++          <div className="text-center py-16">
++            <p className="text-xl text-[var(--primary-light)]">
++              No se encontraron productos
++            </p>
++            <p className="text-[var(--primary-light)] mt-2">
++              Intenta con otra b\u00fasqueda o categor\u00eda
++            </p>
++          </div>
++        )}
++      </div>
++    </div>
++  );
++}
+diff --git a/src/app/orders/page.tsx b/src/app/orders/page.tsx
+new file mode 100644
+index 0000000..c9d1416
+--- /dev/null
++++ b/src/app/orders/page.tsx
+@@ -0,0 +1,139 @@
++"use client";
++
++import {
++  ClipboardList,
++  Clock,
++  ChefHat,
++  CheckCircle,
++  Package,
++  CreditCard,
++  Banknote,
++} from "lucide-react";
++import { useOrders } from "@/context/OrderContext";
++import Link from "next/link";
++import { Order } from "@/types";
++
++const statusConfig: Record<
++  Order["status"],
++  { label: string; icon: typeof Clock; color: string; bg: string }
++> = {
++  pendiente: {
++    label: "Pendiente",
++    icon: Clock,
++    color: "text-[var(--warning)]",
++    bg: "bg-orange-50",
++  },
++  preparando: {
++    label: "Preparando",
++    icon: ChefHat,
++    color: "text-blue-500",
++    bg: "bg-blue-50",
++  },
++  listo: {
++    label: "Listo",
++    icon: CheckCircle,
++    color: "text-[var(--success)]",
++    bg: "bg-green-50",
++  },
++  entregado: {
++    label: "Entregado",
++    icon: Package,
++    color: "text-gray-500",
++    bg: "bg-gray-50",
++  },
++};
++
++export default function OrdersPage() {
++  const { orders } = useOrders();
++
++  if (orders.length === 0) {
++    return (
++      <div className="min-h-[60vh] flex flex-col items-center justify-center px-4">
++        <ClipboardList className="w-20 h-20 text-[var(--accent-light)] mb-6" />
++        <h1 className="text-2xl md:text-3xl font-bold text-[var(--primary-dark)] mb-3">
++          Sin pedidos a\u00fan
++        </h1>
++        <p className="text-[var(--primary-light)] mb-8 text-center">
++          Realiza tu primer pedido desde nuestro men\u00fa
++        </p>
++        <Link href="/menu" className="btn-primary">
++          Ver Men\u00fa
++        </Link>
++      </div>
++    );
++  }
++
++  return (
++    <div className="min-h-screen py-8 md:py-12">
++      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
++        <h1 className="section-title mb-8">Mis Pedidos</h1>
++
++        <div className="space-y-6">
++          {orders.map((order) => {
++            const status = statusConfig[order.status];
++            const StatusIcon = status.icon;
++            return (
++              <div key={order.id} className="card p-6">
++                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
++                  <div>
++                    <h3 className="font-bold text-[var(--primary-dark)] text-lg">
++                      Pedido {order.id}
++                    </h3>
++                    <p className="text-sm text-[var(--primary-light)]">
++                      {new Date(order.date).toLocaleDateString("es-MX", {
++                        year: "numeric",
++                        month: "long",
++                        day: "numeric",
++                        hour: "2-digit",
++                        minute: "2-digit",
++                      })}
++                    </p>
++                  </div>
++                  <div
++                    className={`inline-flex items-center gap-2 px-4 py-2 rounded-full ${status.bg} ${status.color} font-semibold text-sm`}
++                  >
++                    <StatusIcon className="w-4 h-4" />
++                    {status.label}
++                  </div>
++                </div>
++
++                <div className="border-t border-[var(--accent-light)] pt-4 space-y-2">
++                  {order.items.map((item) => (
++                    <div
++                      key={item.product.id}
++                      className="flex justify-between items-center"
++                    >
++                      <span className="text-[var(--primary-dark)]">
++                        {item.product.name}{" "}
++                        <span className="text-[var(--primary-light)]">
++                          x{item.quantity}
++                        </span>
++                      </span>
++                      <span className="font-semibold text-[var(--primary)]">
++                        ${item.product.price * item.quantity}
++                      </span>
++                    </div>
++                  ))}
++                </div>
++
++                <div className="border-t border-[var(--accent-light)] mt-4 pt-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
++                  <div className="flex items-center gap-2 text-sm text-[var(--primary-light)]">
++                    {order.paymentMethod === "tarjeta" ? (
++                      <CreditCard className="w-4 h-4" />
++                    ) : (
++                      <Banknote className="w-4 h-4" />
++                    )}
++                    <span className="capitalize">{order.paymentMethod}</span>
++                  </div>
++                  <span className="text-xl font-bold text-[var(--primary)]">
++                    Total: ${order.total}
++                  </span>
++                </div>
++              </div>
++            );
++          })}
++        </div>
++      </div>
++    </div>
++  );
++}
+diff --git a/src/app/page.tsx b/src/app/page.tsx
+index 6fe62d1..4ca770a 100644
+--- a/src/app/page.tsx
++++ b/src/app/page.tsx
+@@ -1,101 +1,220 @@
++"use client";
++
+ import Image from "next/image";
++import Link from "next/link";
++import {
++  Coffee,
++  Star,
++  Clock,
++  Heart,
++  ArrowRight,
++  Sparkles,
++  Users,
++  Award,
++} from "lucide-react";
++import ProductCard from "@/components/ProductCard";
++import { products } from "@/data/products";
+ 
+-export default function Home() {
+-  return (
+-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
+-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
+-        <Image
+-          className="dark:invert"
+-          src="https://nextjs.org/icons/next.svg"
+-          alt="Next.js logo"
+-          width={180}
+-          height={38}
+-          priority
+-        />
+-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
+-          <li className="mb-2">
+-            Get started by editing{" "}
+-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
+-              src/app/page.tsx
+-            </code>
+-            .
+-          </li>
+-          <li>Save and see your changes instantly.</li>
+-        </ol>
++const featuredProducts = products.filter((p) => p.featured).slice(0, 6);
+ 
+-        <div className="flex gap-4 items-center flex-col sm:flex-row">
+-          <a
+-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
+-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
+-            target="_blank"
+-            rel="noopener noreferrer"
+-          >
+-            <Image
+-              className="dark:invert"
+-              src="https://nextjs.org/icons/vercel.svg"
+-              alt="Vercel logomark"
+-              width={20}
+-              height={20}
+-            />
+-            Deploy now
+-          </a>
+-          <a
+-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
+-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
+-            target="_blank"
+-            rel="noopener noreferrer"
+-          >
+-            Read our docs
+-          </a>
+-        </div>
+-      </main>
+-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
+-        <a
+-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
+-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
+-          target="_blank"
+-          rel="noopener noreferrer"
+-        >
+-          <Image
+-            aria-hidden
+-            src="https://nextjs.org/icons/file.svg"
+-            alt="File icon"
+-            width={16}
+-            height={16}
+-          />
+-          Learn
+-        </a>
+-        <a
+-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
+-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
+-          target="_blank"
+-          rel="noopener noreferrer"
+-        >
+-          <Image
+-            aria-hidden
+-            src="https://nextjs.org/icons/window.svg"
+-            alt="Window icon"
+-            width={16}
+-            height={16}
+-          />
+-          Examples
+-        </a>
+-        <a
+-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
+-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
+-          target="_blank"
+-          rel="noopener noreferrer"
+-        >
++const stats = [
++  { icon: Coffee, value: "10,000+", label: "Tazas servidas" },
++  { icon: Users, value: "5,000+", label: "Clientes felices" },
++  { icon: Award, value: "15+", label: "A\u00f1os de experiencia" },
++  { icon: Star, value: "4.9", label: "Calificaci\u00f3n" },
++];
++
++export default function HomePage() {
++  return (
++    <div>
++      {/* Hero Section */}
++      <section className="relative min-h-[90vh] flex items-center overflow-hidden">
++        <div className="absolute inset-0 z-0">
+           <Image
+-            aria-hidden
+-            src="https://nextjs.org/icons/globe.svg"
+-            alt="Globe icon"
+-            width={16}
+-            height={16}
++            src="https://images.unsplash.com/photo-1447933601403-0c6688de566e?w=1920&h=1080&fit=crop"
++            alt="Caf\u00e9 Aroma"
++            fill
++            className="object-cover"
++            priority
+           />
+-          Go to nextjs.org →
+-        </a>
+-      </footer>
++          <div className="absolute inset-0 bg-gradient-to-r from-[var(--primary-dark)]/90 via-[var(--primary-dark)]/70 to-transparent" />
++        </div>
++
++        <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
++          <div className="max-w-2xl">
++            <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-md text-white px-4 py-2 rounded-full mb-6">
++              <Sparkles className="w-4 h-4 text-[var(--accent)]" />
++              <span className="text-sm font-medium">
++                Cafeter\u00eda Artesanal desde 2009
++              </span>
++            </div>
++            <h1 className="text-4xl sm:text-5xl md:text-7xl font-bold text-white leading-tight mb-6">
++              Donde cada taza
++              <span className="text-[var(--accent)]"> cuenta </span>
++              una historia
++            </h1>
++            <p className="text-lg md:text-xl text-white/80 mb-8 leading-relaxed">
++              Descubre el sabor aut\u00e9ntico del caf\u00e9 artesanal. Granos
++              seleccionados, tostado perfecto y preparado con pasi\u00f3n en cada
++              taza.
++            </p>
++            <div className="flex flex-col sm:flex-row gap-4">
++              <Link href="/menu" className="btn-accent text-center text-lg">
++                Ver Men\u00fa
++                <ArrowRight className="w-5 h-5 inline-block ml-2" />
++              </Link>
++              <Link href="/loyalty" className="btn-secondary !border-white !text-white hover:!bg-white hover:!text-[var(--primary-dark)] text-center text-lg">
++                Programa de Lealtad
++              </Link>
++            </div>
++          </div>
++        </div>
++
++        {/* Floating card */}
++        <div className="hidden lg:block absolute right-12 bottom-12 z-10">
++          <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-6 border border-white/20 text-white max-w-xs">
++            <div className="flex items-center gap-3 mb-3">
++              <Clock className="w-5 h-5 text-[var(--accent)]" />
++              <span className="font-semibold">Abierto ahora</span>
++            </div>
++            <p className="text-white/70 text-sm">
++              Lun - Vie: 7:00 AM - 9:00 PM
++            </p>
++            <p className="text-white/70 text-sm">
++              S\u00e1b - Dom: 8:00 AM - 10:00 PM
++            </p>
++          </div>
++        </div>
++      </section>
++
++      {/* Stats Section */}
++      <section className="py-12 md:py-16 bg-white">
++        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
++          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-8">
++            {stats.map((stat) => (
++              <div key={stat.label} className="text-center group">
++                <div className="w-14 h-14 rounded-2xl bg-[var(--cream)] flex items-center justify-center mx-auto mb-3 group-hover:bg-[var(--accent-light)] transition-colors">
++                  <stat.icon className="w-7 h-7 text-[var(--primary)]" />
++                </div>
++                <div className="text-2xl md:text-3xl font-bold text-[var(--primary-dark)]">
++                  {stat.value}
++                </div>
++                <div className="text-sm text-[var(--primary-light)]">
++                  {stat.label}
++                </div>
++              </div>
++            ))}
++          </div>
++        </div>
++      </section>
++
++      {/* Featured Products */}
++      <section className="py-16 md:py-24">
++        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
++          <div className="text-center mb-12">
++            <h2 className="section-title">Nuestros Destacados</h2>
++            <p className="section-subtitle">
++              Lo m\u00e1s pedido por nuestros clientes. Prueba nuestras especialidades
++              favoritas.
++            </p>
++          </div>
++          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
++            {featuredProducts.map((product) => (
++              <ProductCard key={product.id} product={product} />
++            ))}
++          </div>
++          <div className="text-center mt-10">
++            <Link href="/menu" className="btn-secondary inline-flex items-center gap-2">
++              Ver Men\u00fa Completo
++              <ArrowRight className="w-4 h-4" />
++            </Link>
++          </div>
++        </div>
++      </section>
++
++      {/* About / Experience */}
++      <section className="py-16 md:py-24 bg-[var(--cream)]">
++        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
++          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
++            <div className="relative">
++              <div className="relative h-[400px] md:h-[500px] rounded-3xl overflow-hidden shadow-2xl">
++                <Image
++                  src="https://images.unsplash.com/photo-1442512595331-e89e73853f31?w=800&h=600&fit=crop"
++                  alt="Nuestra cafeter\u00eda"
++                  fill
++                  className="object-cover"
++                />
++              </div>
++              <div className="absolute -bottom-6 -right-6 w-32 h-32 rounded-2xl gradient-bg flex items-center justify-center shadow-xl">
++                <div className="text-center text-white">
++                  <div className="text-3xl font-bold">15+</div>
++                  <div className="text-xs">a\u00f1os</div>
++                </div>
++              </div>
++            </div>
++            <div>
++              <h2 className="text-3xl md:text-4xl font-bold text-[var(--primary-dark)] mb-6">
++                M\u00e1s que caf\u00e9,
++                <br />
++                <span className="text-[var(--primary)]">
++                  una experiencia \u00fanica
++                </span>
++              </h2>
++              <p className="text-[var(--primary-light)] leading-relaxed mb-6 text-lg">
++                En Caf\u00e9 Aroma creemos que cada taza merece ser especial.
++                Seleccionamos los mejores granos de origen, los tostamos con
++                cuidado y los preparamos con pasi\u00f3n para ofrecerte una
++                experiencia \u00fanica en cada visita.
++              </p>
++              <div className="space-y-4 mb-8">
++                {[
++                  "Granos de origen seleccionados",
++                  "Tostado artesanal en peque\u00f1os lotes",
++                  "Baristas certificados con pasi\u00f3n",
++                  "Pasteler\u00eda fresca todos los d\u00edas",
++                ].map((item) => (
++                  <div
++                    key={item}
++                    className="flex items-center gap-3 text-[var(--primary-dark)]"
++                  >
++                    <div className="w-6 h-6 rounded-full bg-[var(--accent)] flex items-center justify-center shrink-0">
++                      <Heart className="w-3 h-3 text-white" />
++                    </div>
++                    <span className="font-medium">{item}</span>
++                  </div>
++                ))}
++              </div>
++              <Link href="/menu" className="btn-primary inline-flex items-center gap-2">
++                Explorar Men\u00fa
++                <ArrowRight className="w-4 h-4" />
++              </Link>
++            </div>
++          </div>
++        </div>
++      </section>
++
++      {/* CTA Section */}
++      <section className="py-16 md:py-24 gradient-bg text-white relative overflow-hidden">
++        <div className="absolute inset-0 opacity-10">
++          <div className="absolute top-10 left-10 w-40 h-40 rounded-full border-2 border-white" />
++          <div className="absolute bottom-10 right-10 w-60 h-60 rounded-full border-2 border-white" />
++          <div className="absolute top-1/2 left-1/2 w-32 h-32 rounded-full border-2 border-white" />
++        </div>
++        <div className="relative max-w-4xl mx-auto px-4 text-center">
++          <Star className="w-12 h-12 text-[var(--accent)] mx-auto mb-6" />
++          <h2 className="text-3xl md:text-5xl font-bold mb-6">
++            \u00danete a nuestro programa de lealtad
++          </h2>
++          <p className="text-xl text-white/80 mb-8 max-w-2xl mx-auto">
++            Acumula puntos con cada compra, sube de nivel y disfruta de
++            recompensas exclusivas. \u00a1Tu fidelidad tiene premio!
++          </p>
++          <Link href="/loyalty" className="btn-accent text-lg inline-flex items-center gap-2">
++            Conocer m\u00e1s
++            <ArrowRight className="w-5 h-5" />
++          </Link>
++        </div>
++      </section>
+     </div>
+   );
+ }
+diff --git a/src/components/Footer.tsx b/src/components/Footer.tsx
+new file mode 100644
+index 0000000..c7626a7
+--- /dev/null
++++ b/src/components/Footer.tsx
+@@ -0,0 +1,115 @@
++import {
++  Coffee,
++  MapPin,
++  Phone,
++  Mail,
++  Clock,
++  Globe,
++  Share2,
++} from "lucide-react";
++import Link from "next/link";
++
++export default function Footer() {
++  return (
++    <footer className="gradient-bg text-white">
++      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-16">
++        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 md:gap-12">
++          {/* Brand */}
++          <div className="space-y-4">
++            <div className="flex items-center gap-2">
++              <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
++                <Coffee className="w-5 h-5 text-white" />
++              </div>
++              <span className="text-2xl font-bold">Caf\u00e9 Aroma</span>
++            </div>
++            <p className="text-white/70 leading-relaxed">
++              Donde cada taza cuenta una historia. Caf\u00e9 artesanal, pasteler\u00eda
++              fresca y momentos inolvidables.
++            </p>
++            <div className="flex gap-3">
++              <a
++                href="#"
++                className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors"
++              >
++                <Globe className="w-5 h-5" />
++              </a>
++              <a
++                href="#"
++                className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors"
++              >
++                <Share2 className="w-5 h-5" />
++              </a>
++            </div>
++          </div>
++
++          {/* Quick Links */}
++          <div>
++            <h3 className="text-lg font-bold mb-4">Navegaci\u00f3n</h3>
++            <ul className="space-y-2">
++              {[
++                { href: "/", label: "Inicio" },
++                { href: "/menu", label: "Men\u00fa" },
++                { href: "/cart", label: "Carrito" },
++                { href: "/orders", label: "Mis Pedidos" },
++                { href: "/loyalty", label: "Programa de Lealtad" },
++              ].map((link) => (
++                <li key={link.href}>
++                  <Link
++                    href={link.href}
++                    className="text-white/70 hover:text-white transition-colors"
++                  >
++                    {link.label}
++                  </Link>
++                </li>
++              ))}
++            </ul>
++          </div>
++
++          {/* Contact */}
++          <div>
++            <h3 className="text-lg font-bold mb-4">Contacto</h3>
++            <ul className="space-y-3">
++              <li className="flex items-center gap-3 text-white/70">
++                <MapPin className="w-4 h-4 shrink-0" />
++                <span>Av. Reforma 123, Col. Centro</span>
++              </li>
++              <li className="flex items-center gap-3 text-white/70">
++                <Phone className="w-4 h-4 shrink-0" />
++                <span>(55) 1234-5678</span>
++              </li>
++              <li className="flex items-center gap-3 text-white/70">
++                <Mail className="w-4 h-4 shrink-0" />
++                <span>hola@cafearoma.mx</span>
++              </li>
++            </ul>
++          </div>
++
++          {/* Hours */}
++          <div>
++            <h3 className="text-lg font-bold mb-4">Horario</h3>
++            <ul className="space-y-3">
++              <li className="flex items-start gap-3 text-white/70">
++                <Clock className="w-4 h-4 shrink-0 mt-0.5" />
++                <div>
++                  <p className="font-medium text-white">Lunes - Viernes</p>
++                  <p>7:00 AM - 9:00 PM</p>
++                </div>
++              </li>
++              <li className="flex items-start gap-3 text-white/70">
++                <Clock className="w-4 h-4 shrink-0 mt-0.5" />
++                <div>
++                  <p className="font-medium text-white">S\u00e1bado - Domingo</p>
++                  <p>8:00 AM - 10:00 PM</p>
++                </div>
++              </li>
++            </ul>
++          </div>
++        </div>
++
++        <div className="border-t border-white/20 mt-10 pt-8 text-center text-white/50">
++          <p>&copy; 2024 Caf\u00e9 Aroma. Todos los derechos reservados.</p>
++        </div>
++      </div>
++    </footer>
++  );
++}
+diff --git a/src/components/Navbar.tsx b/src/components/Navbar.tsx
+new file mode 100644
+index 0000000..d895827
+--- /dev/null
++++ b/src/components/Navbar.tsx
+@@ -0,0 +1,102 @@
++"use client";
++
++import Link from "next/link";
++import { useState } from "react";
++import {
++  Coffee,
++  ShoppingCart,
++  Menu,
++  X,
++  Star,
++  ClipboardList,
++  Settings,
++  Home,
++} from "lucide-react";
++import { useCart } from "@/context/CartContext";
++
++const navLinks = [
++  { href: "/", label: "Inicio", icon: Home },
++  { href: "/menu", label: "Men\u00fa", icon: Coffee },
++  { href: "/orders", label: "Pedidos", icon: ClipboardList },
++  { href: "/loyalty", label: "Lealtad", icon: Star },
++  { href: "/admin", label: "Admin", icon: Settings },
++];
++
++export default function Navbar() {
++  const [isOpen, setIsOpen] = useState(false);
++  const { itemCount } = useCart();
++
++  return (
++    <nav className="glass sticky top-0 z-50 border-b border-[var(--accent-light)]">
++      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
++        <div className="flex justify-between items-center h-16 md:h-20">
++          {/* Logo */}
++          <Link href="/" className="flex items-center gap-2 group">
++            <div className="w-10 h-10 rounded-full gradient-bg flex items-center justify-center group-hover:scale-110 transition-transform">
++              <Coffee className="w-5 h-5 text-white" />
++            </div>
++            <span className="text-xl md:text-2xl font-bold text-[var(--primary-dark)]">
++              Caf\u00e9 Aroma
++            </span>
++          </Link>
++
++          {/* Desktop Nav */}
++          <div className="hidden md:flex items-center gap-1">
++            {navLinks.map((link) => (
++              <Link
++                key={link.href}
++                href={link.href}
++                className="flex items-center gap-2 px-4 py-2 rounded-xl text-[var(--primary)] hover:bg-[var(--cream)] hover:text-[var(--primary-dark)] transition-all font-medium"
++              >
++                <link.icon className="w-4 h-4" />
++                {link.label}
++              </Link>
++            ))}
++          </div>
++
++          {/* Cart + Mobile Toggle */}
++          <div className="flex items-center gap-3">
++            <Link
++              href="/cart"
++              className="relative p-2 rounded-xl hover:bg-[var(--cream)] transition-all"
++            >
++              <ShoppingCart className="w-6 h-6 text-[var(--primary)]" />
++              {itemCount > 0 && (
++                <span className="absolute -top-1 -right-1 w-5 h-5 bg-[var(--danger)] text-white text-xs rounded-full flex items-center justify-center font-bold animate-pulse">
++                  {itemCount}
++                </span>
++              )}
++            </Link>
++            <button
++              className="md:hidden p-2 rounded-xl hover:bg-[var(--cream)] transition-all"
++              onClick={() => setIsOpen(!isOpen)}
++            >
++              {isOpen ? (
++                <X className="w-6 h-6 text-[var(--primary)]" />
++              ) : (
++                <Menu className="w-6 h-6 text-[var(--primary)]" />
++              )}
++            </button>
++          </div>
++        </div>
++
++        {/* Mobile Nav */}
++        {isOpen && (
++          <div className="md:hidden pb-4 border-t border-[var(--accent-light)] pt-4 animate-in slide-in-from-top">
++            {navLinks.map((link) => (
++              <Link
++                key={link.href}
++                href={link.href}
++                className="flex items-center gap-3 px-4 py-3 rounded-xl text-[var(--primary)] hover:bg-[var(--cream)] transition-all font-medium"
++                onClick={() => setIsOpen(false)}
++              >
++                <link.icon className="w-5 h-5" />
++                {link.label}
++              </Link>
++            ))}
++          </div>
++        )}
++      </div>
++    </nav>
++  );
++}
+diff --git a/src/components/ProductCard.tsx b/src/components/ProductCard.tsx
+new file mode 100644
+index 0000000..0ddecb6
+--- /dev/null
++++ b/src/components/ProductCard.tsx
+@@ -0,0 +1,78 @@
++"use client";
++
++import Image from "next/image";
++import { ShoppingCart, Plus, Minus } from "lucide-react";
++import { Product } from "@/types";
++import { useCart } from "@/context/CartContext";
++
++interface ProductCardProps {
++  product: Product;
++}
++
++export default function ProductCard({ product }: ProductCardProps) {
++  const { items, addToCart, updateQuantity } = useCart();
++  const cartItem = items.find((item) => item.product.id === product.id);
++
++  return (
++    <div className="card group">
++      <div className="relative h-48 md:h-56 overflow-hidden">
++        <Image
++          src={product.image}
++          alt={product.name}
++          fill
++          className="object-cover group-hover:scale-110 transition-transform duration-500"
++          sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
++        />
++        {product.featured && (
++          <span className="absolute top-3 left-3 bg-[var(--accent)] text-[var(--primary-dark)] text-xs font-bold px-3 py-1 rounded-full">
++            Destacado
++          </span>
++        )}
++      </div>
++      <div className="p-4 md:p-5">
++        <h3 className="text-lg font-bold text-[var(--primary-dark)] mb-1">
++          {product.name}
++        </h3>
++        <p className="text-sm text-[var(--primary-light)] mb-3 line-clamp-2">
++          {product.description}
++        </p>
++        <div className="flex items-center justify-between">
++          <span className="text-xl font-bold text-[var(--primary)]">
++            ${product.price}
++          </span>
++          {cartItem ? (
++            <div className="flex items-center gap-2 bg-[var(--cream)] rounded-xl px-2 py-1">
++              <button
++                onClick={() =>
++                  updateQuantity(product.id, cartItem.quantity - 1)
++                }
++                className="w-8 h-8 rounded-lg bg-white flex items-center justify-center hover:bg-[var(--accent-light)] transition-colors"
++              >
++                <Minus className="w-4 h-4" />
++              </button>
++              <span className="font-bold text-[var(--primary-dark)] w-6 text-center">
++                {cartItem.quantity}
++              </span>
++              <button
++                onClick={() =>
++                  updateQuantity(product.id, cartItem.quantity + 1)
++                }
++                className="w-8 h-8 rounded-lg bg-white flex items-center justify-center hover:bg-[var(--accent-light)] transition-colors"
++              >
++                <Plus className="w-4 h-4" />
++              </button>
++            </div>
++          ) : (
++            <button
++              onClick={() => addToCart(product)}
++              className="flex items-center gap-2 btn-primary !px-4 !py-2 text-sm"
++            >
++              <ShoppingCart className="w-4 h-4" />
++              Agregar
++            </button>
++          )}
++        </div>
++      </div>
++    </div>
++  );
++}
+diff --git a/src/context/CartContext.tsx b/src/context/CartContext.tsx
+new file mode 100644
+index 0000000..27f9a91
+--- /dev/null
++++ b/src/context/CartContext.tsx
+@@ -0,0 +1,88 @@
++"use client";
++
++import React, { createContext, useContext, useState, useCallback } from "react";
++import { CartItem, Product } from "@/types";
++
++interface CartContextType {
++  items: CartItem[];
++  addToCart: (product: Product) => void;
++  removeFromCart: (productId: string) => void;
++  updateQuantity: (productId: string, quantity: number) => void;
++  clearCart: () => void;
++  total: number;
++  itemCount: number;
++}
++
++const CartContext = createContext<CartContextType | undefined>(undefined);
++
++export function CartProvider({ children }: { children: React.ReactNode }) {
++  const [items, setItems] = useState<CartItem[]>([]);
++
++  const addToCart = useCallback((product: Product) => {
++    setItems((prev) => {
++      const existing = prev.find((item) => item.product.id === product.id);
++      if (existing) {
++        return prev.map((item) =>
++          item.product.id === product.id
++            ? { ...item, quantity: item.quantity + 1 }
++            : item
++        );
++      }
++      return [...prev, { product, quantity: 1 }];
++    });
++  }, []);
++
++  const removeFromCart = useCallback((productId: string) => {
++    setItems((prev) => prev.filter((item) => item.product.id !== productId));
++  }, []);
++
++  const updateQuantity = useCallback(
++    (productId: string, quantity: number) => {
++      if (quantity <= 0) {
++        removeFromCart(productId);
++        return;
++      }
++      setItems((prev) =>
++        prev.map((item) =>
++          item.product.id === productId ? { ...item, quantity } : item
++        )
++      );
++    },
++    [removeFromCart]
++  );
++
++  const clearCart = useCallback(() => {
++    setItems([]);
++  }, []);
++
++  const total = items.reduce(
++    (sum, item) => sum + item.product.price * item.quantity,
++    0
++  );
++
++  const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
++
++  return (
++    <CartContext.Provider
++      value={{
++        items,
++        addToCart,
++        removeFromCart,
++        updateQuantity,
++        clearCart,
++        total,
++        itemCount,
++      }}
++    >
++      {children}
++    </CartContext.Provider>
++  );
++}
++
++export function useCart() {
++  const context = useContext(CartContext);
++  if (!context) {
++    throw new Error("useCart must be used within CartProvider");
++  }
++  return context;
++}
+diff --git a/src/context/LoyaltyContext.tsx b/src/context/LoyaltyContext.tsx
+new file mode 100644
+index 0000000..a974114
+--- /dev/null
++++ b/src/context/LoyaltyContext.tsx
+@@ -0,0 +1,75 @@
++"use client";
++
++import React, { createContext, useContext, useState, useCallback } from "react";
++import { LoyaltyInfo } from "@/types";
++import { availableRewards } from "@/data/rewards";
++
++interface LoyaltyContextType {
++  loyalty: LoyaltyInfo;
++  addPoints: (amount: number) => void;
++  redeemReward: (rewardId: string) => boolean;
++}
++
++function getLevel(points: number): LoyaltyInfo["level"] {
++  if (points >= 1000) return "Diamante";
++  if (points >= 500) return "Oro";
++  if (points >= 200) return "Plata";
++  return "Bronce";
++}
++
++const LoyaltyContext = createContext<LoyaltyContextType | undefined>(undefined);
++
++export function LoyaltyProvider({ children }: { children: React.ReactNode }) {
++  const [loyalty, setLoyalty] = useState<LoyaltyInfo>({
++    points: 150,
++    level: "Bronce",
++    totalOrders: 5,
++    rewards: availableRewards.map((r) => ({ ...r })),
++  });
++
++  const addPoints = useCallback((amount: number) => {
++    setLoyalty((prev) => {
++      const newPoints = prev.points + amount;
++      return {
++        ...prev,
++        points: newPoints,
++        level: getLevel(newPoints),
++        totalOrders: prev.totalOrders + 1,
++      };
++    });
++  }, []);
++
++  const redeemReward = useCallback((rewardId: string): boolean => {
++    let success = false;
++    setLoyalty((prev) => {
++      const reward = prev.rewards.find((r) => r.id === rewardId);
++      if (!reward || reward.redeemed || prev.points < reward.pointsCost) {
++        return prev;
++      }
++      success = true;
++      return {
++        ...prev,
++        points: prev.points - reward.pointsCost,
++        level: getLevel(prev.points - reward.pointsCost),
++        rewards: prev.rewards.map((r) =>
++          r.id === rewardId ? { ...r, redeemed: true } : r
++        ),
++      };
++    });
++    return success;
++  }, []);
++
++  return (
++    <LoyaltyContext.Provider value={{ loyalty, addPoints, redeemReward }}>
++      {children}
++    </LoyaltyContext.Provider>
++  );
++}
++
++export function useLoyalty() {
++  const context = useContext(LoyaltyContext);
++  if (!context) {
++    throw new Error("useLoyalty must be used within LoyaltyProvider");
++  }
++  return context;
++}
+diff --git a/src/context/OrderContext.tsx b/src/context/OrderContext.tsx
+new file mode 100644
+index 0000000..b33fc2b
+--- /dev/null
++++ b/src/context/OrderContext.tsx
+@@ -0,0 +1,74 @@
++"use client";
++
++import React, { createContext, useContext, useState, useCallback } from "react";
++import { Order, CartItem } from "@/types";
++
++interface OrderContextType {
++  orders: Order[];
++  addOrder: (
++    items: CartItem[],
++    total: number,
++    customerName: string,
++    customerPhone: string,
++    paymentMethod: "efectivo" | "tarjeta"
++  ) => Order;
++  updateOrderStatus: (
++    orderId: string,
++    status: Order["status"]
++  ) => void;
++}
++
++const OrderContext = createContext<OrderContextType | undefined>(undefined);
++
++export function OrderProvider({ children }: { children: React.ReactNode }) {
++  const [orders, setOrders] = useState<Order[]>([]);
++
++  const addOrder = useCallback(
++    (
++      items: CartItem[],
++      total: number,
++      customerName: string,
++      customerPhone: string,
++      paymentMethod: "efectivo" | "tarjeta"
++    ): Order => {
++      const newOrder: Order = {
++        id: `ORD-${Date.now().toString(36).toUpperCase()}`,
++        items: [...items],
++        total,
++        status: "pendiente",
++        date: new Date().toISOString(),
++        customerName,
++        customerPhone,
++        paymentMethod,
++      };
++      setOrders((prev) => [newOrder, ...prev]);
++      return newOrder;
++    },
++    []
++  );
++
++  const updateOrderStatus = useCallback(
++    (orderId: string, status: Order["status"]) => {
++      setOrders((prev) =>
++        prev.map((order) =>
++          order.id === orderId ? { ...order, status } : order
++        )
++      );
++    },
++    []
++  );
++
++  return (
++    <OrderContext.Provider value={{ orders, addOrder, updateOrderStatus }}>
++      {children}
++    </OrderContext.Provider>
++  );
++}
++
++export function useOrders() {
++  const context = useContext(OrderContext);
++  if (!context) {
++    throw new Error("useOrders must be used within OrderProvider");
++  }
++  return context;
++}
+diff --git a/src/data/products.ts b/src/data/products.ts
+new file mode 100644
+index 0000000..6f1ac3a
+--- /dev/null
++++ b/src/data/products.ts
+@@ -0,0 +1,219 @@
++import { Product } from "@/types";
++
++export const products: Product[] = [
++  // Caf\u00e9
++  {
++    id: "cafe-1",
++    name: "Espresso Cl\u00e1sico",
++    description:
++      "Shot concentrado de caf\u00e9 con crema dorada. Intenso y arom\u00e1tico.",
++    price: 35,
++    image: "https://images.unsplash.com/photo-1510707577719-ae7c14805e3a?w=400&h=300&fit=crop",
++    category: "cafe",
++    featured: true,
++  },
++  {
++    id: "cafe-2",
++    name: "Cappuccino",
++    description:
++      "Espresso con leche vaporizada y espuma cremosa. Perfecto para cualquier momento.",
++    price: 55,
++    image: "https://images.unsplash.com/photo-1572442388796-11668a67e53d?w=400&h=300&fit=crop",
++    category: "cafe",
++    featured: true,
++  },
++  {
++    id: "cafe-3",
++    name: "Latte",
++    description:
++      "Suave mezcla de espresso y leche cremosa con un toque de espuma.",
++    price: 60,
++    image: "https://images.unsplash.com/photo-1561882468-9110e03e0f78?w=400&h=300&fit=crop",
++    category: "cafe",
++    featured: false,
++  },
++  {
++    id: "cafe-4",
++    name: "Mocha",
++    description:
++      "Espresso con chocolate, leche vaporizada y crema batida. Irresistible.",
++    price: 65,
++    image: "https://images.unsplash.com/photo-1578314675249-a6910f80cc4e?w=400&h=300&fit=crop",
++    category: "cafe",
++    featured: true,
++  },
++  {
++    id: "cafe-5",
++    name: "Americano",
++    description: "Espresso diluido con agua caliente. Suave pero con car\u00e1cter.",
++    price: 40,
++    image: "https://images.unsplash.com/photo-1551030173-122aabc4489c?w=400&h=300&fit=crop",
++    category: "cafe",
++    featured: false,
++  },
++  {
++    id: "cafe-6",
++    name: "Caf\u00e9 Fr\u00edo",
++    description:
++      "Cold brew servido con hielo. Refrescante y lleno de sabor.",
++    price: 55,
++    image: "https://images.unsplash.com/photo-1461023058943-07fcbe16d735?w=400&h=300&fit=crop",
++    category: "cafe",
++    featured: false,
++  },
++  // T\u00e9
++  {
++    id: "te-1",
++    name: "T\u00e9 Verde Matcha",
++    description:
++      "Matcha ceremonial batido a mano con leche de tu elecci\u00f3n.",
++    price: 60,
++    image: "https://images.unsplash.com/photo-1515823064-d6e0c04616a7?w=400&h=300&fit=crop",
++    category: "te",
++    featured: true,
++  },
++  {
++    id: "te-2",
++    name: "Chai Latte",
++    description:
++      "T\u00e9 negro especiado con canela, cardamomo y leche vaporizada.",
++    price: 55,
++    image: "https://images.unsplash.com/photo-1557006021-b85faa2bc5e2?w=400&h=300&fit=crop",
++    category: "te",
++    featured: false,
++  },
++  {
++    id: "te-3",
++    name: "T\u00e9 de Frutos Rojos",
++    description:
++      "Infusi\u00f3n de frutos rojos con notas dulces y c\u00edtricas.",
++    price: 45,
++    image: "https://images.unsplash.com/photo-1597318181409-cf64d0b5d8a2?w=400&h=300&fit=crop",
++    category: "te",
++    featured: false,
++  },
++  // Pasteles
++  {
++    id: "pastel-1",
++    name: "Croissant de Mantequilla",
++    description:
++      "Hojaldre crujiente por fuera, suave por dentro. Reci\u00e9n horneado.",
++    price: 40,
++    image: "https://images.unsplash.com/photo-1555507036-ab1f4038024a?w=400&h=300&fit=crop",
++    category: "pasteles",
++    featured: true,
++  },
++  {
++    id: "pastel-2",
++    name: "Muffin de Ar\u00e1ndanos",
++    description:
++      "Esponjoso muffin cargado de ar\u00e1ndanos frescos.",
++    price: 35,
++    image: "https://images.unsplash.com/photo-1607958996333-41aef7caefaa?w=400&h=300&fit=crop",
++    category: "pasteles",
++    featured: false,
++  },
++  {
++    id: "pastel-3",
++    name: "Pan de Chocolate",
++    description:
++      "Pain au chocolat con barras de chocolate belga.",
++    price: 45,
++    image: "https://images.unsplash.com/photo-1530610476181-d83430b64dcd?w=400&h=300&fit=crop",
++    category: "pasteles",
++    featured: true,
++  },
++  // S\u00e1ndwiches
++  {
++    id: "sandwich-1",
++    name: "Club S\u00e1ndwich",
++    description:
++      "Pollo, tocino, lechuga, tomate y mayonesa en pan tostado.",
++    price: 85,
++    image: "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?w=400&h=300&fit=crop",
++    category: "sandwiches",
++    featured: false,
++  },
++  {
++    id: "sandwich-2",
++    name: "Panini Caprese",
++    description:
++      "Mozzarella fresca, tomate, albahaca y pesto en pan ciabatta.",
++    price: 80,
++    image: "https://images.unsplash.com/photo-1539252554453-80ab65ce3586?w=400&h=300&fit=crop",
++    category: "sandwiches",
++    featured: true,
++  },
++  {
++    id: "sandwich-3",
++    name: "Wrap Vegetariano",
++    description:
++      "Hummus, verduras frescas y aguacate en tortilla integral.",
++    price: 75,
++    image: "https://images.unsplash.com/photo-1626700051175-6818013e1d4f?w=400&h=300&fit=crop",
++    category: "sandwiches",
++    featured: false,
++  },
++  // Postres
++  {
++    id: "postre-1",
++    name: "Cheesecake de Fresas",
++    description:
++      "Cremoso cheesecake New York con cobertura de fresas frescas.",
++    price: 70,
++    image: "https://images.unsplash.com/photo-1565958011703-44f9829ba187?w=400&h=300&fit=crop",
++    category: "postres",
++    featured: true,
++  },
++  {
++    id: "postre-2",
++    name: "Brownie con Helado",
++    description:
++      "Brownie tibio de chocolate con helado de vainilla y salsa de chocolate.",
++    price: 75,
++    image: "https://images.unsplash.com/photo-1606313564200-e75d5e30476c?w=400&h=300&fit=crop",
++    category: "postres",
++    featured: false,
++  },
++  {
++    id: "postre-3",
++    name: "Tiramis\u00fa",
++    description:
++      "Cl\u00e1sico italiano con mascarpone, caf\u00e9 y cacao.",
++    price: 80,
++    image: "https://images.unsplash.com/photo-1571877227200-a0d98ea607e9?w=400&h=300&fit=crop",
++    category: "postres",
++    featured: false,
++  },
++  // Bebidas
++  {
++    id: "bebida-1",
++    name: "Smoothie Tropical",
++    description:
++      "Mango, pi\u00f1a y pl\u00e1tano con jugo de naranja. Refrescante y natural.",
++    price: 65,
++    image: "https://images.unsplash.com/photo-1638176066666-ffb2f013c7dd?w=400&h=300&fit=crop",
++    category: "bebidas",
++    featured: false,
++  },
++  {
++    id: "bebida-2",
++    name: "Limonada de Fresa",
++    description:
++      "Limonada fresca con fresas naturales y hierbabuena.",
++    price: 50,
++    image: "https://images.unsplash.com/photo-1621263764928-df1444c5e859?w=400&h=300&fit=crop",
++    category: "bebidas",
++    featured: true,
++  },
++  {
++    id: "bebida-3",
++    name: "Chocolate Caliente",
++    description:
++      "Chocolate artesanal con leche y malvaviscos. Reconfortante.",
++    price: 50,
++    image: "https://images.unsplash.com/photo-1542990253-0d0f5be5f0ed?w=400&h=300&fit=crop",
++    category: "bebidas",
++    featured: false,
++  },
++];
+diff --git a/src/data/rewards.ts b/src/data/rewards.ts
+new file mode 100644
+index 0000000..a2969c1
+--- /dev/null
++++ b/src/data/rewards.ts
+@@ -0,0 +1,32 @@
++import { Reward } from "@/types";
++
++export const availableRewards: Reward[] = [
++  {
++    id: "reward-1",
++    name: "Caf\u00e9 Gratis",
++    pointsCost: 100,
++    description: "Un caf\u00e9 de tu elecci\u00f3n completamente gratis.",
++    redeemed: false,
++  },
++  {
++    id: "reward-2",
++    name: "Postre Gratis",
++    pointsCost: 200,
++    description: "Un postre a elegir de nuestro men\u00fa.",
++    redeemed: false,
++  },
++  {
++    id: "reward-3",
++    name: "Combo Especial",
++    pointsCost: 350,
++    description: "Caf\u00e9 + pastel + s\u00e1ndwich con 50% de descuento.",
++    redeemed: false,
++  },
++  {
++    id: "reward-4",
++    name: "Experiencia VIP",
++    pointsCost: 500,
++    description: "Taller de barismo + degustaci\u00f3n exclusiva.",
++    redeemed: false,
++  },
++];
+diff --git a/src/types/index.ts b/src/types/index.ts
+new file mode 100644
+index 0000000..2ca7c8c
+--- /dev/null
++++ b/src/types/index.ts
+@@ -0,0 +1,57 @@
++export interface Product {
++  id: string;
++  name: string;
++  description: string;
++  price: number;
++  image: string;
++  category: Category;
++  featured: boolean;
++}
++
++export type Category =
++  | "cafe"
++  | "te"
++  | "pasteles"
++  | "sandwiches"
++  | "postres"
++  | "bebidas";
++
++export interface CartItem {
++  product: Product;
++  quantity: number;
++}
++
++export interface Order {
++  id: string;
++  items: CartItem[];
++  total: number;
++  status: "pendiente" | "preparando" | "listo" | "entregado";
++  date: string;
++  customerName: string;
++  customerPhone: string;
++  paymentMethod: "efectivo" | "tarjeta";
++}
++
++export interface LoyaltyInfo {
++  points: number;
++  level: "Bronce" | "Plata" | "Oro" | "Diamante";
++  totalOrders: number;
++  rewards: Reward[];
++}
++
++export interface Reward {
++  id: string;
++  name: string;
++  pointsCost: number;
++  description: string;
++  redeemed: boolean;
++}
++
++export const CATEGORY_LABELS: Record<Category, string> = {
++  cafe: "Caf\u00e9",
++  te: "T\u00e9",
++  pasteles: "Pasteles",
++  sandwiches: "S\u00e1ndwiches",
++  postres: "Postres",
++  bebidas: "Bebidas",
++};

@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-k0swe-station-reservation-pr22",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 22,
+    "headSha": "dd9bab493c4d1f84963e93518fd0e2ad53614a2a",
+    "baseSha": "99467c34b73a37b0fea80f3cc7d8586b2e81b48c",
+    "title": "feat: membership requests admin panel",
+    "body": "Club admins need visibility into membership requests to approve or deny them, similar to the existing resource access request flow.\n\n## Changes\n\n### Backend\n- New migration `20260524000003_membership_request_rpc.sql` adding `list_club_membership_requests` RPC — admin-only, joins `memberships` + `users` to enrich with display name/callsign, excludes the calling admin\n\n### Frontend — `club.service.ts`\n- `MembershipRequest` interface\n- `listClubMembershipRequests(clubId)` — calls new RPC\n- `setMembershipStatus(membershipId, status)` — delegates to existing `approve_deny_membership` RPC\n\n### Frontend — `ClubDetailPage`\n- Signals: `membershipRequests`, `membershipRequestsError`, `actioningMembershipId`, `membershipActionError`\n- `approveMembership` / `denyMembership` methods, backed by `setMembershipRequestStatus`\n- `loadMembershipRequests()` called in parallel with `loadAccessRequests()` during `ngOnInit` for admins\n\n### Frontend — `club-detail.html`\n- New \"Membership Requests\" admin card: displays each requester's name, current status badge (`Pending`/`Approved`/`Denied`), and both Approve + Deny buttons always enabled — identical pattern to the Resource Access Requests card",
+    "author": "Copilot",
+    "headRef": "copilot/add-membership-request-visibility",
+    "repository": "k0swe/station-reservation"
+  },
+  "diffRef": {
+    "repository": "k0swe/station-reservation",
+    "headSha": "dd9bab493c4d1f84963e93518fd0e2ad53614a2a",
+    "baseSha": "99467c34b73a37b0fea80f3cc7d8586b2e81b48c"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-k0swe-station-reservation-pr22.diff",
+  "vendoredAt": "2026-05-24T03:35:40.313Z",
+  "collectedAt": "2026-05-24T03:35:40.313Z"
+}

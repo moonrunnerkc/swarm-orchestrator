@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-dataslope-dataslope-pr359",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 359,
+    "headSha": "c2480416f31b7921ffb4323a409a165f1c843ce6",
+    "baseSha": "4562eb8c2367b326c0ce84761c5c8da90c444392",
+    "title": "Audit report: UX/UI findings across SQLite, Postgres, and DuckDB playgrounds",
+    "body": "Audits the three SQL playgrounds end-to-end and delivers a categorized findings report with severities, file-level citations, and a prioritized fix list. Live walkthrough was done against `/playground/postgres` (PGlite bundles locally); SQLite and DuckDB were audited via source since their WASM modules failed to load in the sandbox — which itself surfaced the first finding.\n\n### Deliverables\n- `agent-outputs/20260524-0058-sql-playgrounds-ux-audit.md` — full report\n- `agent-outputs/assets-20260524-sql-playground-audit/*.png` — 4 supporting screenshots\n\n### Report structure\n- Executive summary + severity legend\n- 27-row top-findings table with `file:line` citations\n- Cross-playground consistency matrix\n- Per-workflow sections: engine boot, create table, inline cell editing, drop/truncate, triggers/indexes/views, constraints, errors, schemas/workspaces, import/export, notifications/history/undo, a11y, responsiveness\n- 3-tier prioritized recommendations (10 quick wins / 13 medium / 7 larger)\n- Methodology + environment appendix\n\n### Headline findings\n- 🔴 **F-02** Shared `ResultView.tsx:890` hard-codes `\"Loading SQLite engine…\"` — leaks into Postgres and DuckDB pages\n- 🔴 **F-01** Engine-load failure has no retry; tiny error caption hidden under giant title-stamp loader; Import/Export silently disabled with no tooltip\n- 🔴 **F-03 / F-25** Postgres `dropEntity` silently issues `CASCADE` (`runtime/postgres.ts:695`); DuckDB does not — same button, divergent destruction; truncate similarly hides `RESTART IDENTITY CASCADE`\n- 🔴 **F-05** Add-Table type combobox filters its own listbox by current text, so opening the chevron on the default `bigserial` shows only `bigserial` of 30+ available types\n- 🔴 **F-04 / F-08** Every cell (JSON, JSONB, BYTEA, TIMESTAMPTZ, UUID, arrays, STRUCT) edits through one plain `<input type=\"text\">`; commits require a separate, undiscoverable button; no in-session undo\n- 🔴 **F-06** Multi-statement errors drop partial results and never identify which statement failed; editor line/column is never highlighted; error overlay auto-dismisses after ~3s\n- 🔴 **F-07** No query cancellation, timeout, or elapsed-time indicator\n- 🟡 **F-09** Sidebar lists triggers/indexes/views with rich icons but only supports View-DDL and Drop — no create/edit anywhere\n- 🟡 **F-14** Import/export parity is broken: SQLite has CSV/JSON/Parquet/XLSX/.db; Postgres only `.sql`; DuckDB has no CSV-import dialog despite native `read_csv()`\n- 🟡 **F-12 / F-13** Escape doesn't reliably close the Add-Table modal; the 13-column structure table has no responsive collapse\n- 🟡 **F-10 / F-17** Toast timeout 2.4s (too short for errors); query history is in-memory only\n- 🟡 **F-18 / F-19** Workspace-conflict warning is a non-blocking toast; schema switch leaves open tabs silently pointed at the previous schema\n- ♿ **F-21 / F-24** Inline edit input has no `aria-label`; NULL / pending-edit cues are color-only; DuckDB's \"Open type list\" trigger is missing an `aria-label` that Postgres has\n- **F-27** Google Fonts is fetched cross-origin; when blocked, `document.fonts.ready` never resolves (also broke Playwright screenshots during the audit)\n\n### Suggested next steps\nTier-0 fixes (≤1 day each) cluster around the shared `SqlPlayground` / `SqlPlaygroundShell` / `ResultView` components, so most quick wins are single-file edits. The two parallel Add-Table implementations (custom in `PostgresPlayground.tsx` and `DuckDbPlayground.tsx`) are the root cause of the F-04 / F-05 / F-15 / F-16 inconsistencies and are good candidates for consolidation onto a shared form driven by per-engine type catalogs.",
+    "author": "Copilot",
+    "headRef": "copilot/audit-ui-ux-sql-playgrounds",
+    "repository": "dataslope/dataslope"
+  },
+  "diffRef": {
+    "repository": "dataslope/dataslope",
+    "headSha": "c2480416f31b7921ffb4323a409a165f1c843ce6",
+    "baseSha": "4562eb8c2367b326c0ce84761c5c8da90c444392"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-dataslope-dataslope-pr359.diff",
+  "vendoredAt": "2026-05-24T03:06:27.809Z",
+  "collectedAt": "2026-05-24T03:06:27.809Z"
+}

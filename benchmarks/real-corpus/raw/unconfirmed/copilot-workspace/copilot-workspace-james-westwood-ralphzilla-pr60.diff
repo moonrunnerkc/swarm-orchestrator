@@ -1,0 +1,2424 @@
+diff --git a/README.md b/README.md
+index a1eeac0..bd33095 100644
+--- a/README.md
++++ b/README.md
+@@ -104,41 +104,29 @@ Ralphzilla ships an MCP server (`ralph_mcp.py`) that exposes 8 tools for monitor
+ | `rzilla_add` | No | Add a task to the backlog |
+ | `rzilla_abort` | No | Abort running sprint |
+ 
+-### Setup for opencode
++### Setup
+ 
+-Add to `~/.config/opencode/opencode.json` (global) or your project's local config:
++**One rzilla MCP instance per project.** Each project that uses rzilla must have its own `.mcp.json` in its repo root. Do **not** add rzilla to the global opencode config (`~/.config/opencode/opencode.json`) — a global instance can only point at one project's `prd.json`, which causes confusion when you work across multiple repos.
+ 
+-```json
+-{
+-  "mcp": {
+-    "rzilla": {
+-      "type": "local",
+-      "command": ["/abs/path/to/ralphzilla/.venv/bin/python", "/abs/path/to/ralphzilla/ralph_mcp.py", "--repo-dir", "/abs/path/to/your/project"],
+-      "enabled": true
+-    }
+-  }
+-}
+-```
+-
+-> **Important**: Use the absolute path to the venv Python binary, **not** `uv run --extra mcp`. The `uv run` command resolves extras from the current project's `pyproject.toml`, so it fails when opencode starts from a different directory. Keep `cwd` pointed at the ralphzilla checkout — `--repo-dir` tells rzilla which repo to operate on, but subprocesses still run from the ralphzilla environment.
+-
+-### Setup for other MCP clients
+-
+-Create a `.mcp.json` in your project root:
++Create `.mcp.json` in your project root:
+ 
+ ```json
+ {
+   "mcpServers": {
+     "rzilla": {
+       "command": "/abs/path/to/ralphzilla/.venv/bin/python",
+-      "args": ["/abs/path/to/ralphzilla/ralph_mcp.py", "--repo-dir", "/abs/path/to/your/project"],
+-      "cwd": "/abs/path/to/ralphzilla"
++      "args": ["/abs/path/to/ralphzilla/ralph_mcp.py"],
++      "cwd": "/abs/path/to/your/project"
+     }
+   }
+ }
+ ```
+ 
+-The `--repo-dir` argument tells the MCP server which project's `prd.json` to read (matching the `rzilla run --repo-dir` CLI flag). Without it, the server defaults to ralphzilla's own `prd.json`. Keep `cwd` set to the ralphzilla checkout so `uv run rzilla` resolves correctly.
++**Key points:**
++- Set `cwd` to the project you want rzilla to operate on — the server auto-detects the git root and reads `prd.json` from there.
++- Use the absolute path to ralphzilla's venv Python binary, **not** `uv run --extra mcp` (which fails when launched from a different project directory).
++- Only use `--repo-dir` in the args if you need to override the cwd-based project detection.
++- When you switch projects in your editor, the correct rzilla instance is loaded automatically from that project's `.mcp.json`.
+ 
+ ---
+ 
+diff --git a/prd.json b/prd.json
+index cf3bbc4..550d787 100644
+--- a/prd.json
++++ b/prd.json
+@@ -1527,4 +1527,4 @@
+       "complexity": 2
+     }
+   ]
+-}
+\ No newline at end of file
++}
+diff --git a/ralph-loop.log b/ralph-loop.log
+new file mode 100644
+index 0000000..557e75d
+--- /dev/null
++++ b/ralph-loop.log
+@@ -0,0 +1,1557 @@
++2026-04-22 23:37:27 [INFO ] Running preflight checks...
++2026-04-22 23:37:27 [INFO ] Running command: gh --version
++2026-04-22 23:37:27 [INFO ] Running command: git --version
++2026-04-22 23:37:27 [WARN ] Running inside Claude Code session — reviewer will fall back to gemini if claude is unavailable.
++2026-04-22 23:37:27 [INFO ] Running command: git remote get-url origin
++2026-04-22 23:37:27 [INFO ] Running command: git diff --quiet origin/main -- prd.json
++2026-04-22 23:37:27 [INFO ] Preflight passed.
++2026-04-22 23:37:27 [INFO ] Iteration 1/10: M6-01 multi_runtime_abstraction_layer
++2026-04-22 23:37:27 [INFO ] [_run_task_standard] START: M6-01
++2026-04-22 23:37:27 [INFO ] [_run_task_standard] Step 1: ensure_main_up_to_date
++2026-04-22 23:37:27 [INFO ] Running command: git checkout main
++2026-04-22 23:37:27 [INFO ] Running command: git fetch origin main
++2026-04-22 23:37:28 [INFO ] Running command: git reset --hard origin/main
++2026-04-22 23:37:28 [INFO ] [_run_task_standard] Step 1 complete
++2026-04-22 23:37:28 [INFO ] [_run_task_standard] Step 2: checkout_or_create
++2026-04-22 23:37:28 [INFO ] Running command: git branch --list ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-22 23:37:28 [INFO ] Creating new branch: ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-22 23:37:28 [INFO ] Running command: git checkout -b ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-22 23:37:28 [INFO ] Running command: git rev-list --count main..ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-22 23:37:28 [INFO ] [_run_task_standard] Step 2 complete
++2026-04-22 23:37:28 [INFO ] [_run_task_standard] Step 3: run_coder
++2026-04-22 23:37:28 [INFO ] Invoking coder: opencode
++2026-04-22 23:37:28 [INFO ] Running command: opencode run -m opencode/kimi-k2.5 --dangerously-skip-permissions You are opencode, an expert software engineer.
++Your task is: multi_runtime_abstraction_layer
++Description: Design and implement an abstraction layer in ralph.py to support multiple AI runtimes. Create a base `AIRunner` abstract class with common interface methods: `run_task(task_id, branch_name)` that returns completion status and output. Define the contract that all runtime implementations must follow including: command execution, output capture, error handling, and timeout management. This enables plugging in different AI tools (Aider, Cursor, Cline, Codex) without changing the core ralph loop logic. The abstraction should handle runtime detection, version checking, and graceful degradation when a runtime is unavailable.
++
++Acceptance Criteria:
++1. tests/test_runner.py: AIRunner base class exists with abstract methods
++2. tests/test_runner.py: Runtime configuration schema validates correctly
++3. tests/test_runner.py: Unsupported runtime raises clear error
++4. ralph.py: Base runner class implemented with proper abc module usage
++
++Files to modify: 
++
++
++
++IMPORTANT: Do NOT touch prd.json or progress.txt — the orchestrator
++handles all of that after your PR is merged.
++
++2026-04-22 23:47:22 [INFO ] [_run_task_standard] Step 3 complete
++2026-04-22 23:47:22 [INFO ] [_run_task_standard] Step 4: PreCommitGate.run
++2026-04-22 23:47:22 [INFO ] Running pre-commit gate...
++2026-04-22 23:47:22 [INFO ] Running command: uv run ruff check --fix .
++2026-04-22 23:47:22 [INFO ] Running command: uv run ruff format .
++2026-04-22 23:47:22 [INFO ] Running command: uv run pre-commit run --all-files
++2026-04-22 23:47:23 [WARN ] Pre-commit failed (round 1/2)
++2026-04-22 23:47:23 [INFO ] Invoking coder: opencode
++2026-04-22 23:47:23 [INFO ] Running command: opencode run -m opencode/kimi-k2.5 --dangerously-skip-permissions The task 'multi_runtime_abstraction_layer' failed pre-commit hooks.
++Failure output:
++ruff (legacy alias)......................................................Passed
++ruff format..............................................................Passed
++pytest...................................................................Failed
++- hook id: pytest
++- exit code: 2
++
++============================= test session starts ==============================
++platform linux -- Python 3.13.12, pytest-9.0.3, pluggy-1.6.0 -- /home/james/Programming/personal/ralphzilla/.venv/bin/python3
++cachedir: .pytest_cache
++rootdir: /home/james/Programming/personal/ralphzilla
++configfile: pyproject.toml
++plugins: cov-7.1.0
++collecting ... collected 517 items / 1 error
++
++==================================== ERRORS ====================================
++____________________ ERROR collecting tests/test_runner.py _____________________
++ImportError while importing test module '/home/james/Programming/personal/ralphzilla/tests/test_runner.py'.
++Hint: make sure your test modules/packages have valid Python names.
++Traceback:
++.venv/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
++    mod = import_path(
++.venv/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
++    importlib.import_module(module_name)
++../../../miniconda3/lib/python3.13/importlib/__init__.py:88: in import_module
++    return _bootstrap._gcd_import(name[level:], package, level)
++           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
++<frozen importlib._bootstrap>:1387: in _gcd_import
++    ???
++<frozen importlib._bootstrap>:1360: in _find_and_load
++    ???
++<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
++    ???
++<frozen importlib._bootstrap>:935: in _load_unlocked
++    ???
++.venv/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
++    exec(co, module.__dict__)
++tests/test_runner.py:12: in <module>
++    from ralph import (
++E   ImportError: cannot import name 'BaseAIRunner' from 'ralph' (/home/james/Programming/personal/ralphzilla/ralph.py)
++=============================== warnings summary ===============================
++ralph.py:3680
++  /home/james/Programming/personal/ralphzilla/ralph.py:3680: PytestCollectionWarning: cannot collect test class 'TestQualityChecker' because it has a __init__ constructor (from: tests/test_quality_checker.py)
++    class TestQualityChecker:
++
++ralph.py:725
++  /home/james/Programming/personal/ralphzilla/ralph.py:725: PytestCollectionWarning: cannot collect test class 'TestQualityResult' because it has a __init__ constructor (from: tests/test_scaffold.py)
++    @dataclass
++
++ralph.py:3558
++  /home/james/Programming/personal/ralphzilla/ralph.py:3558: PytestCollectionWarning: cannot collect test class 'TestRunner' because it has a __init__ constructor (from: tests/test_test_runner.py)
++    class TestRunner:
++
++-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
++=========================== short test summary info ============================
++ERROR tests/test_runner.py
++!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
++========================= 3 warnings, 1 error in 0.25s =========================
++
++trim trailing whitespace.................................................Passed
++fix end of files.........................................................Passed
++check yaml...............................................................Passed
++check for added large files..............................................Passed
++check json...............................................................Passed
++
++
++Please fix the issues.
++
++2026-04-22 23:49:21 [INFO ] Running command: uv run pre-commit run --all-files
++2026-04-22 23:49:22 [WARN ] Pre-commit failed (round 2/2)
++2026-04-22 23:49:22 [ERROR] Pre-commit still failing after max rounds.
++2026-04-22 23:49:22 [WARN ] [_run_task_standard] Step 4: pre-commit failed after 2 rounds
++2026-04-22 23:49:22 [INFO ] [_run_task_standard] Step 5: TestRunner.run
++2026-04-22 23:49:22 [INFO ] Running quality checks...
++2026-04-22 23:49:22 [INFO ] Running command: uv run pytest tests/ -v
++2026-04-22 23:49:22 [WARN ] Quality checks failed (round 1/2)
++2026-04-22 23:49:22 [INFO ] Invoking coder: opencode
++2026-04-22 23:49:22 [INFO ] Running command: opencode run -m opencode/kimi-k2.5 --dangerously-skip-permissions The task 'multi_runtime_abstraction_layer' failed quality checks/tests.
++Failure output:
++Command failed: uv run pytest tests/ -v
++============================= test session starts ==============================
++platform linux -- Python 3.13.12, pytest-9.0.3, pluggy-1.6.0 -- /home/james/Programming/personal/ralphzilla/.venv/bin/python3
++cachedir: .pytest_cache
++rootdir: /home/james/Programming/personal/ralphzilla
++configfile: pyproject.toml
++plugins: cov-7.1.0
++collecting ... collected 517 items / 1 error
++
++==================================== ERRORS ====================================
++____________________ ERROR collecting tests/test_runner.py _____________________
++ImportError while importing test module '/home/james/Programming/personal/ralphzilla/tests/test_runner.py'.
++Hint: make sure your test modules/packages have valid Python names.
++Traceback:
++.venv/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
++    mod = import_path(
++.venv/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
++    importlib.import_module(module_name)
++../../../miniconda3/lib/python3.13/importlib/__init__.py:88: in import_module
++    return _bootstrap._gcd_import(name[level:], package, level)
++           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
++<frozen importlib._bootstrap>:1387: in _gcd_import
++    ???
++<frozen importlib._bootstrap>:1360: in _find_and_load
++    ???
++<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
++    ???
++<frozen importlib._bootstrap>:935: in _load_unlocked
++    ???
++.venv/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
++    exec(co, module.__dict__)
++tests/test_runner.py:12: in <module>
++    from ralph import (
++E   ImportError: cannot import name 'BaseAIRunner' from 'ralph' (/home/james/Programming/personal/ralphzilla/ralph.py)
++=============================== warnings summary ===============================
++ralph.py:3680
++  /home/james/Programming/personal/ralphzilla/ralph.py:3680: PytestCollectionWarning: cannot collect test class 'TestQualityChecker' because it has a __init__ constructor (from: tests/test_quality_checker.py)
++    class TestQualityChecker:
++
++ralph.py:725
++  /home/james/Programming/personal/ralphzilla/ralph.py:725: PytestCollectionWarning: cannot collect test class 'TestQualityResult' because it has a __init__ constructor (from: tests/test_scaffold.py)
++    @dataclass
++
++ralph.py:3558
++  /home/james/Programming/personal/ralphzilla/ralph.py:3558: PytestCollectionWarning: cannot collect test class 'TestRunner' because it has a __init__ constructor (from: tests/test_test_runner.py)
++    class TestRunner:
++
++-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
++=========================== short test summary info ============================
++ERROR tests/test_runner.py
++!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
++========================= 3 warnings, 1 error in 0.24s =========================
++
++
++
++
++Please fix the implementation to pass the tests.
++
++2026-04-22 23:52:25 [INFO ] Running command: uv run pytest tests/ -v
++2026-04-22 23:53:20 [INFO ] Running command: uv run ruff check ralph.py tests/
++2026-04-22 23:53:20 [INFO ] Running command: uv run ruff format --check ralph.py tests/
++2026-04-22 23:53:20 [INFO ] [_run_task_standard] Step 5 complete
++2026-04-22 23:53:20 [INFO ] [_run_task_standard] Step 6: push_branch
++2026-04-22 23:53:20 [INFO ] Running command: git remote get-url origin
++2026-04-22 23:53:20 [INFO ] Running command: git push --set-upstream origin ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-22 23:53:20 [ERROR] [_run_task_standard] Step 6 failed: Command '['git', 'push', '--set-upstream', 'origin', 'ralph/M6-01-multi-runtime-abstraction-layer']' returned non-zero exit status 1.
++2026-04-22 23:53:20 [ERROR] Task failed: Push failed: Command '['git', 'push', '--set-upstream', 'origin', 'ralph/M6-01-multi-runtime-abstraction-layer']' returned non-zero exit status 1.
++2026-04-22 23:53:20 [INFO ] Loop stopped due to fatal error.
++2026-04-22 23:53:20 [INFO ] Sprint complete
++2026-04-22 23:53:20 [INFO ] Loop finished.
++2026-04-22 23:53:20 [INFO ] Running command: git branch --list ralph/*
++2026-04-22 23:53:20 [INFO ] [ScrumMaster] Cleanup complete. Deleted 0 stale branch(es).
++2026-04-22 23:53:20 [INFO ] Sprint summary written to ralph-summary-2026-04-22T235320.md
++2026-04-22 23:53:20 [WARN ] Clean-exit verification failed: ['progress.txt update marker missing']
++2026-04-22 23:53:20 [INFO ] Recorded run history: unclean (50 tasks)
++2026-04-26 18:40:55 [INFO ] Running preflight checks...
++2026-04-26 18:40:55 [INFO ] Running command: gh --version
++2026-04-26 18:40:55 [INFO ] Running command: git --version
++2026-04-26 18:40:55 [INFO ] Running command: git remote get-url origin
++2026-04-26 18:40:55 [INFO ] Running command: git diff --quiet origin/main -- prd.json
++2026-04-26 18:40:55 [INFO ] Preflight passed.
++2026-04-26 18:40:55 [INFO ] Iteration 1/10: M6-01 multi_runtime_abstraction_layer
++2026-04-26 18:40:55 [INFO ] [_run_task_standard] START: M6-01
++2026-04-26 18:40:55 [INFO ] [_run_task_standard] Step 1: ensure_main_up_to_date
++2026-04-26 18:40:55 [INFO ] Running command: git checkout main
++2026-04-26 18:40:55 [INFO ] Running command: git fetch origin main
++2026-04-26 18:40:56 [INFO ] Running command: git reset --hard origin/main
++2026-04-26 18:40:56 [INFO ] [_run_task_standard] Step 1 complete
++2026-04-26 18:40:56 [INFO ] [_run_task_standard] Step 2: checkout_or_create
++2026-04-26 18:40:56 [INFO ] Running command: git branch --list ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-26 18:40:56 [INFO ] Creating new branch: ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-26 18:40:56 [INFO ] Running command: git checkout -b ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-26 18:40:56 [INFO ] Running command: git rev-list --count main..ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-26 18:40:56 [INFO ] [_run_task_standard] Step 2 complete
++2026-04-26 18:40:56 [INFO ] [_run_task_standard] Step 3: run_coder
++2026-04-26 18:40:56 [INFO ] Invoking coder: opencode
++2026-04-26 18:40:56 [INFO ] Running command: opencode run -m glm-4 --dangerously-skip-permissions You are opencode, an expert software engineer.
++Your task is: multi_runtime_abstraction_layer
++Description: Design and implement an abstraction layer in ralph.py to support multiple AI runtimes. Create a base `AIRunner` abstract class with common interface methods: `run_task(task_id, branch_name)` that returns completion status and output. Define the contract that all runtime implementations must follow including: command execution, output capture, error handling, and timeout management. This enables plugging in different AI tools (Aider, Cursor, Cline, Codex) without changing the core ralph loop logic. The abstraction should handle runtime detection, version checking, and graceful degradation when a runtime is unavailable.
++
++Acceptance Criteria:
++1. tests/test_runner.py: AIRunner base class exists with abstract methods
++2. tests/test_runner.py: Runtime configuration schema validates correctly
++3. tests/test_runner.py: Unsupported runtime raises clear error
++4. ralph.py: Base runner class implemented with proper abc module usage
++
++Files to modify: 
++
++
++
++IMPORTANT: Do NOT touch prd.json or progress.txt — the orchestrator
++handles all of that after your PR is merged.
++
++2026-04-26 19:40:56 [ERROR] [_run_task_standard] Step 3 failed: Command '['opencode', 'run', '-m', 'glm-4', '--dangerously-skip-permissions', 'You are opencode, an expert software engineer.\nYour task is: multi_runtime_abstraction_layer\nDescription: Design and implement an abstraction layer in ralph.py to support multiple AI runtimes. Create a base `AIRunner` abstract class with common interface methods: `run_task(task_id, branch_name)` that returns completion status and output. Define the contract that all runtime implementations must follow including: command execution, output capture, error handling, and timeout management. This enables plugging in different AI tools (Aider, Cursor, Cline, Codex) without changing the core ralph loop logic. The abstraction should handle runtime detection, version checking, and graceful degradation when a runtime is unavailable.\n\nAcceptance Criteria:\n1. tests/test_runner.py: AIRunner base class exists with abstract methods\n2. tests/test_runner.py: Runtime configuration schema validates correctly\n3. tests/test_runner.py: Unsupported runtime raises clear error\n4. ralph.py: Base runner class implemented with proper abc module usage\n\nFiles to modify: \n\n\n\nIMPORTANT: Do NOT touch prd.json or progress.txt — the orchestrator\nhandles all of that after your PR is merged.\n']' timed out after 3600 seconds
++2026-04-26 19:40:56 [ERROR] Task failed: Command '['opencode', 'run', '-m', 'glm-4', '--dangerously-skip-permissions', 'You are opencode, an expert software engineer.\nYour task is: multi_runtime_abstraction_layer\nDescription: Design and implement an abstraction layer in ralph.py to support multiple AI runtimes. Create a base `AIRunner` abstract class with common interface methods: `run_task(task_id, branch_name)` that returns completion status and output. Define the contract that all runtime implementations must follow including: command execution, output capture, error handling, and timeout management. This enables plugging in different AI tools (Aider, Cursor, Cline, Codex) without changing the core ralph loop logic. The abstraction should handle runtime detection, version checking, and graceful degradation when a runtime is unavailable.\n\nAcceptance Criteria:\n1. tests/test_runner.py: AIRunner base class exists with abstract methods\n2. tests/test_runner.py: Runtime configuration schema validates correctly\n3. tests/test_runner.py: Unsupported runtime raises clear error\n4. ralph.py: Base runner class implemented with proper abc module usage\n\nFiles to modify: \n\n\n\nIMPORTANT: Do NOT touch prd.json or progress.txt — the orchestrator\nhandles all of that after your PR is merged.\n']' timed out after 3600 seconds
++2026-04-26 19:40:56 [INFO ] Loop stopped due to fatal error.
++2026-04-26 19:40:56 [INFO ] Sprint complete
++2026-04-26 19:40:56 [INFO ] Loop finished.
++2026-04-26 19:40:56 [INFO ] Running command: git branch --list ralph/*
++2026-04-26 19:40:56 [INFO ] [ScrumMaster] Checking branch: ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-26 19:40:56 [INFO ] Running command: gh pr list --head ralph/M6-01-multi-runtime-abstraction-layer --state open --json number,url
++2026-04-26 19:40:58 [INFO ] Running command: git log -1 --format=%ct ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-26 19:40:58 [INFO ] [ScrumMaster] Deleting stale branch ralph/M6-01-multi-runtime-abstraction-layer: no open PR
++2026-04-26 19:40:58 [INFO ] Running command: git branch -D ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-26 19:40:58 [INFO ] [ScrumMaster] Cleanup complete. Deleted 1 stale branch(es).
++2026-04-26 19:40:58 [INFO ] Sprint summary written to ralph-summary-2026-04-26T194058.md
++2026-04-26 19:40:58 [WARN ] Clean-exit verification failed: ['progress.txt update marker missing']
++2026-04-26 19:40:58 [INFO ] Recorded run history: unclean (50 tasks)
++2026-04-26 21:15:19 [INFO ] Running preflight checks...
++2026-04-26 21:15:19 [INFO ] Running command: gh --version
++2026-04-26 21:15:19 [INFO ] Running command: git --version
++2026-04-26 21:15:19 [INFO ] Running command: git remote get-url origin
++2026-04-26 21:15:19 [INFO ] Running command: git diff --quiet origin/main -- prd.json
++2026-04-26 21:15:19 [INFO ] Preflight passed.
++2026-04-26 21:15:19 [INFO ] Iteration 1/10: M6-01 multi_runtime_abstraction_layer
++2026-04-26 21:15:19 [INFO ] [_run_task_standard] START: M6-01
++2026-04-26 21:15:19 [INFO ] [_run_task_standard] Step 1: ensure_main_up_to_date
++2026-04-26 21:15:19 [INFO ] Running command: git checkout main
++2026-04-26 21:15:19 [INFO ] Running command: git fetch origin main
++2026-04-26 21:15:20 [INFO ] Running command: git reset --hard origin/main
++2026-04-26 21:15:20 [INFO ] [_run_task_standard] Step 1 complete
++2026-04-26 21:15:20 [INFO ] [_run_task_standard] Step 2: checkout_or_create
++2026-04-26 21:15:20 [INFO ] Running command: git branch --list ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-26 21:15:20 [ERROR] [_run_task_standard] Step 2 failed: Branch ralph/M6-01-multi-runtime-abstraction-layer already exists and resume=False
++2026-04-26 21:15:20 [ERROR] Task failed: Branch ralph/M6-01-multi-runtime-abstraction-layer already exists and resume=False
++2026-04-26 21:15:20 [INFO ] Loop stopped due to fatal error.
++2026-04-26 21:15:20 [INFO ] Sprint complete
++2026-04-26 21:15:20 [INFO ] Loop finished.
++2026-04-26 21:15:20 [INFO ] Running command: git branch --list ralph/*
++2026-04-26 21:15:20 [INFO ] [ScrumMaster] Checking branch: ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-26 21:15:20 [INFO ] Running command: gh pr list --head ralph/M6-01-multi-runtime-abstraction-layer --state open --json number,url
++2026-04-26 21:15:21 [INFO ] Running command: git log -1 --format=%ct ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-26 21:15:21 [INFO ] [ScrumMaster] Deleting stale branch ralph/M6-01-multi-runtime-abstraction-layer: no open PR
++2026-04-26 21:15:21 [INFO ] Running command: git branch -D ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-26 21:15:21 [INFO ] [ScrumMaster] Cleanup complete. Deleted 1 stale branch(es).
++2026-04-26 21:15:21 [INFO ] Sprint summary written to ralph-summary-2026-04-26T211521.md
++2026-04-26 21:15:21 [WARN ] Clean-exit verification failed: ['progress.txt update marker missing']
++2026-04-26 21:15:21 [INFO ] Recorded run history: unclean (50 tasks)
++2026-04-26 21:45:26 [INFO ] Running preflight checks...
++2026-04-26 21:45:26 [INFO ] Running command: gh --version
++2026-04-26 21:45:26 [INFO ] Running command: git --version
++2026-04-26 21:45:26 [INFO ] Running command: git remote get-url origin
++2026-04-26 21:45:26 [INFO ] Running command: git diff --quiet origin/main -- prd.json
++2026-04-26 21:45:26 [INFO ] Preflight passed.
++2026-04-26 21:45:26 [INFO ] Iteration 1/10: M6-01 multi_runtime_abstraction_layer
++2026-04-26 21:45:26 [INFO ] Running command: gh pr list --head ralph/M6-01-multi-runtime-abstraction-layer --state open --json number,url
++2026-04-26 21:45:27 [INFO ] [_run_task_standard] START: M6-01
++2026-04-26 21:45:27 [INFO ] [_run_task_standard] Step 1: ensure_main_up_to_date
++2026-04-26 21:45:27 [INFO ] Running command: git checkout main
++2026-04-26 21:45:27 [INFO ] Running command: git fetch origin main
++2026-04-26 21:45:28 [INFO ] Running command: git reset --hard origin/main
++2026-04-26 21:45:28 [INFO ] [_run_task_standard] Step 1 complete
++2026-04-26 21:45:28 [INFO ] [_run_task_standard] Step 2: checkout_or_create
++2026-04-26 21:45:28 [INFO ] Running command: git branch --list ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-26 21:45:28 [INFO ] Resuming existing branch: ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-26 21:45:28 [INFO ] Running command: git checkout ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-26 21:45:28 [INFO ] Running command: git rev-list --count main..ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-26 21:45:28 [INFO ] [_run_task_standard] Step 2 complete
++2026-04-26 21:45:28 [INFO ] [_run_task_standard] Step 3: run_coder
++2026-04-26 21:45:28 [INFO ] Invoking coder: opencode
++2026-04-26 21:45:28 [INFO ] Running command: opencode run -m opencode/glm-5.1 --dangerously-skip-permissions You are opencode, an expert software engineer.
++Your task is: multi_runtime_abstraction_layer
++Description: Design and implement an abstraction layer in ralph.py to support multiple AI runtimes. Create a base `AIRunner` abstract class with common interface methods: `run_task(task_id, branch_name)` that returns completion status and output. Define the contract that all runtime implementations must follow including: command execution, output capture, error handling, and timeout management. This enables plugging in different AI tools (Aider, Cursor, Cline, Codex) without changing the core ralph loop logic. The abstraction should handle runtime detection, version checking, and graceful degradation when a runtime is unavailable.
++
++Acceptance Criteria:
++1. tests/test_runner.py: AIRunner base class exists with abstract methods
++2. tests/test_runner.py: Runtime configuration schema validates correctly
++3. tests/test_runner.py: Unsupported runtime raises clear error
++4. ralph.py: Base runner class implemented with proper abc module usage
++
++Files to modify: 
++
++
++
++IMPORTANT: Do NOT touch prd.json or progress.txt — the orchestrator
++handles all of that after your PR is merged.
++
++2026-04-26 22:45:28 [ERROR] [_run_task_standard] Step 3 failed: Command '['opencode', 'run', '-m', 'opencode/glm-5.1', '--dangerously-skip-permissions', 'You are opencode, an expert software engineer.\nYour task is: multi_runtime_abstraction_layer\nDescription: Design and implement an abstraction layer in ralph.py to support multiple AI runtimes. Create a base `AIRunner` abstract class with common interface methods: `run_task(task_id, branch_name)` that returns completion status and output. Define the contract that all runtime implementations must follow including: command execution, output capture, error handling, and timeout management. This enables plugging in different AI tools (Aider, Cursor, Cline, Codex) without changing the core ralph loop logic. The abstraction should handle runtime detection, version checking, and graceful degradation when a runtime is unavailable.\n\nAcceptance Criteria:\n1. tests/test_runner.py: AIRunner base class exists with abstract methods\n2. tests/test_runner.py: Runtime configuration schema validates correctly\n3. tests/test_runner.py: Unsupported runtime raises clear error\n4. ralph.py: Base runner class implemented with proper abc module usage\n\nFiles to modify: \n\n\n\nIMPORTANT: Do NOT touch prd.json or progress.txt — the orchestrator\nhandles all of that after your PR is merged.\n']' timed out after 3600 seconds
++2026-04-26 22:45:28 [ERROR] Task failed: Command '['opencode', 'run', '-m', 'opencode/glm-5.1', '--dangerously-skip-permissions', 'You are opencode, an expert software engineer.\nYour task is: multi_runtime_abstraction_layer\nDescription: Design and implement an abstraction layer in ralph.py to support multiple AI runtimes. Create a base `AIRunner` abstract class with common interface methods: `run_task(task_id, branch_name)` that returns completion status and output. Define the contract that all runtime implementations must follow including: command execution, output capture, error handling, and timeout management. This enables plugging in different AI tools (Aider, Cursor, Cline, Codex) without changing the core ralph loop logic. The abstraction should handle runtime detection, version checking, and graceful degradation when a runtime is unavailable.\n\nAcceptance Criteria:\n1. tests/test_runner.py: AIRunner base class exists with abstract methods\n2. tests/test_runner.py: Runtime configuration schema validates correctly\n3. tests/test_runner.py: Unsupported runtime raises clear error\n4. ralph.py: Base runner class implemented with proper abc module usage\n\nFiles to modify: \n\n\n\nIMPORTANT: Do NOT touch prd.json or progress.txt — the orchestrator\nhandles all of that after your PR is merged.\n']' timed out after 3600 seconds
++2026-04-26 22:45:28 [INFO ] Loop stopped due to fatal error.
++2026-04-26 22:45:28 [INFO ] Sprint complete
++2026-04-26 22:45:28 [INFO ] Loop finished.
++2026-04-26 22:45:28 [INFO ] Running command: git branch --list ralph/*
++2026-04-26 22:45:28 [INFO ] [ScrumMaster] Checking branch: ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-26 22:45:28 [INFO ] Running command: gh pr list --head ralph/M6-01-multi-runtime-abstraction-layer --state open --json number,url
++2026-04-26 22:45:28 [INFO ] Running command: git log -1 --format=%ct ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-26 22:45:28 [INFO ] [ScrumMaster] Deleting stale branch ralph/M6-01-multi-runtime-abstraction-layer: no open PR
++2026-04-26 22:45:28 [INFO ] Running command: git branch -D ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-26 22:45:28 [INFO ] [ScrumMaster] Cleanup complete. Deleted 1 stale branch(es).
++2026-04-26 22:45:28 [INFO ] Sprint summary written to ralph-summary-2026-04-26T224528.md
++2026-04-26 22:45:28 [WARN ] Clean-exit verification failed: ['progress.txt update marker missing']
++2026-04-26 22:45:28 [INFO ] Recorded run history: unclean (50 tasks)
++2026-04-27 10:10:55 [INFO ] Running preflight checks...
++2026-04-27 10:10:55 [INFO ] Running command: gh --version
++2026-04-27 10:10:55 [INFO ] Running command: git --version
++2026-04-27 10:10:55 [INFO ] Running command: git remote get-url origin
++2026-04-27 10:10:55 [INFO ] Running command: git diff --quiet origin/main -- prd.json
++2026-04-27 10:10:55 [FATAL] Preflight failed: prd.json has uncommitted local changes. Commit and push before running ralph.
++2026-04-27 11:00:05 [INFO ] Running preflight checks...
++2026-04-27 11:00:05 [INFO ] Running command: gh --version
++2026-04-27 11:00:05 [INFO ] Running command: git --version
++2026-04-27 11:00:05 [INFO ] Running command: git remote get-url origin
++2026-04-27 11:00:05 [INFO ] Running command: git diff --quiet origin/main -- prd.json
++2026-04-27 11:00:05 [INFO ] Preflight passed.
++2026-04-27 11:00:05 [INFO ] Iteration 1/14: M6-01 multi_runtime_abstraction_layer
++2026-04-27 11:00:05 [INFO ] [_run_task_standard] START: M6-01
++2026-04-27 11:00:05 [INFO ] [_run_task_standard] Step 1: ensure_main_up_to_date
++2026-04-27 11:00:05 [INFO ] Running command: git checkout main
++2026-04-27 11:00:05 [INFO ] Running command: git fetch origin main
++2026-04-27 11:00:06 [INFO ] Running command: git reset --hard origin/main
++2026-04-27 11:00:06 [INFO ] [_run_task_standard] Step 1 complete
++2026-04-27 11:00:06 [INFO ] [_run_task_standard] Step 2: checkout_or_create
++2026-04-27 11:00:06 [INFO ] Running command: git branch --list ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-27 11:00:06 [ERROR] [_run_task_standard] Step 2 failed: Branch ralph/M6-01-multi-runtime-abstraction-layer already exists and resume=False
++2026-04-27 11:00:06 [ERROR] Task failed: Branch ralph/M6-01-multi-runtime-abstraction-layer already exists and resume=False
++2026-04-27 11:00:06 [INFO ] Loop stopped due to fatal error.
++2026-04-27 11:00:06 [INFO ] Sprint complete
++2026-04-27 11:00:06 [INFO ] Loop finished.
++2026-04-27 11:00:06 [INFO ] Running command: git branch --list ralph/*
++2026-04-27 11:00:06 [INFO ] [ScrumMaster] Checking branch: ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-27 11:00:06 [INFO ] Running command: gh pr list --head ralph/M6-01-multi-runtime-abstraction-layer --state open --json number,url
++2026-04-27 11:00:07 [INFO ] Running command: git log -1 --format=%ct ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-27 11:00:07 [INFO ] [ScrumMaster] Deleting stale branch ralph/M6-01-multi-runtime-abstraction-layer: no open PR
++2026-04-27 11:00:07 [INFO ] Running command: git branch -D ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-27 11:00:07 [INFO ] [ScrumMaster] Cleanup complete. Deleted 1 stale branch(es).
++2026-04-27 11:00:07 [INFO ] Sprint summary written to ralph-summary-2026-04-27T110007.md
++2026-04-27 11:00:07 [WARN ] Clean-exit verification failed: ['progress.txt update marker missing']
++2026-04-27 11:00:07 [INFO ] Recorded run history: unclean (50 tasks)
++2026-04-27 11:59:43 [INFO ] Running preflight checks...
++2026-04-27 11:59:43 [INFO ] Running command: gh --version
++2026-04-27 11:59:43 [INFO ] Running command: git --version
++2026-04-27 11:59:43 [INFO ] Running command: git remote get-url origin
++2026-04-27 11:59:43 [INFO ] Running command: git diff --quiet origin/main -- prd.json
++2026-04-27 11:59:43 [INFO ] Preflight passed.
++2026-04-27 11:59:43 [INFO ] Iteration 1/14: M6-01 multi_runtime_abstraction_layer
++2026-04-27 11:59:43 [INFO ] [_run_task_standard] START: M6-01
++2026-04-27 11:59:43 [INFO ] [_run_task_standard] Step 1: ensure_main_up_to_date
++2026-04-27 11:59:43 [INFO ] Running command: git checkout main
++2026-04-27 11:59:43 [INFO ] Running command: git fetch origin main
++2026-04-27 11:59:45 [INFO ] Running command: git reset --hard origin/main
++2026-04-27 11:59:45 [INFO ] [_run_task_standard] Step 1 complete
++2026-04-27 11:59:45 [INFO ] [_run_task_standard] Step 2: checkout_or_create
++2026-04-27 11:59:45 [INFO ] Running command: git branch --list ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-27 11:59:45 [INFO ] Creating new branch: ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-27 11:59:45 [INFO ] Running command: git checkout -b ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-27 11:59:45 [INFO ] Running command: git rev-list --count main..ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-27 11:59:45 [INFO ] [_run_task_standard] Step 2 complete
++2026-04-27 11:59:45 [INFO ] [_run_task_standard] Step 3: run_coder
++2026-04-27 11:59:45 [INFO ] Invoking coder: gemini
++2026-04-27 11:59:45 [INFO ] Running command: gemini -m gemini-2.5-pro --yolo -p You are gemini, an expert software engineer.
++Your task is: multi_runtime_abstraction_layer
++Description: Design and implement an abstraction layer in ralph.py to support multiple AI runtimes. Create a base `AIRunner` abstract class with common interface methods: `run_task(task_id, branch_name)` that returns completion status and output. Define the contract that all runtime implementations must follow including: command execution, output capture, error handling, and timeout management. This enables plugging in different AI tools (Aider, Cursor, Cline, Codex) without changing the core ralph loop logic. The abstraction should handle runtime detection, version checking, and graceful degradation when a runtime is unavailable.
++
++Acceptance Criteria:
++1. tests/test_runner.py: AIRunner base class exists with abstract methods
++2. tests/test_runner.py: Runtime configuration schema validates correctly
++3. tests/test_runner.py: Unsupported runtime raises clear error
++4. ralph.py: Base runner class implemented with proper abc module usage
++
++Files to modify: 
++
++
++
++IMPORTANT: Do NOT touch prd.json or progress.txt — the orchestrator
++handles all of that after your PR is merged.
++
++2026-04-27 12:00:16 [ERROR] Coder gemini failed.
++2026-04-27 12:00:16 [ERROR] [_run_task_standard] Step 3: CoderFailedError
++2026-04-27 12:00:16 [ERROR] Task failed: Coder execution failed
++2026-04-27 12:00:16 [INFO ] Loop stopped due to fatal error.
++2026-04-27 12:00:16 [INFO ] Sprint complete
++2026-04-27 12:00:16 [INFO ] Loop finished.
++2026-04-27 12:00:16 [INFO ] Running command: git branch --list ralph/*
++2026-04-27 12:00:16 [INFO ] [ScrumMaster] Checking branch: ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-27 12:00:16 [INFO ] Running command: gh pr list --head ralph/M6-01-multi-runtime-abstraction-layer --state open --json number,url
++2026-04-27 12:00:16 [INFO ] Running command: git log -1 --format=%ct ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-27 12:00:16 [INFO ] [ScrumMaster] Deleting stale branch ralph/M6-01-multi-runtime-abstraction-layer: no open PR
++2026-04-27 12:00:16 [INFO ] Running command: git branch -D ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-27 12:00:16 [INFO ] [ScrumMaster] Cleanup complete. Deleted 1 stale branch(es).
++2026-04-27 12:00:16 [INFO ] Sprint summary written to ralph-summary-2026-04-27T120016.md
++2026-04-27 12:00:16 [WARN ] Clean-exit verification failed: ['progress.txt update marker missing']
++2026-04-27 12:00:16 [INFO ] Recorded run history: unclean (50 tasks)
++2026-04-27 12:06:32 [INFO ] Running preflight checks...
++2026-04-27 12:06:32 [INFO ] Running command: gh --version
++2026-04-27 12:06:33 [INFO ] Running command: git --version
++2026-04-27 12:06:33 [INFO ] Running command: git remote get-url origin
++2026-04-27 12:06:33 [INFO ] Running command: git diff --quiet origin/main -- prd.json
++2026-04-27 12:06:33 [INFO ] Preflight passed.
++2026-04-27 12:06:33 [INFO ] Iteration 1/14: M6-01 multi_runtime_abstraction_layer
++2026-04-27 12:06:33 [INFO ] [_run_task_standard] START: M6-01
++2026-04-27 12:06:33 [INFO ] [_run_task_standard] Step 1: ensure_main_up_to_date
++2026-04-27 12:06:33 [INFO ] Running command: git checkout main
++2026-04-27 12:06:33 [INFO ] Running command: git fetch origin main
++2026-04-27 12:06:34 [INFO ] Running command: git reset --hard origin/main
++2026-04-27 12:06:34 [INFO ] [_run_task_standard] Step 1 complete
++2026-04-27 12:06:34 [INFO ] [_run_task_standard] Step 2: checkout_or_create
++2026-04-27 12:06:34 [INFO ] Running command: git branch --list ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-27 12:06:34 [ERROR] [_run_task_standard] Step 2 failed: Branch ralph/M6-01-multi-runtime-abstraction-layer already exists and resume=False
++2026-04-27 12:06:34 [ERROR] Task failed: Branch ralph/M6-01-multi-runtime-abstraction-layer already exists and resume=False
++2026-04-27 12:06:34 [INFO ] Loop stopped due to fatal error.
++2026-04-27 12:06:34 [INFO ] Sprint complete
++2026-04-27 12:06:34 [INFO ] Loop finished.
++2026-04-27 12:06:34 [INFO ] Running command: git branch --list ralph/*
++2026-04-27 12:06:34 [INFO ] [ScrumMaster] Checking branch: ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-27 12:06:34 [INFO ] Running command: gh pr list --head ralph/M6-01-multi-runtime-abstraction-layer --state open --json number,url
++2026-04-27 12:06:34 [INFO ] Running command: git log -1 --format=%ct ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-27 12:06:34 [INFO ] [ScrumMaster] Deleting stale branch ralph/M6-01-multi-runtime-abstraction-layer: no open PR
++2026-04-27 12:06:34 [INFO ] Running command: git branch -D ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-27 12:06:34 [INFO ] [ScrumMaster] Cleanup complete. Deleted 1 stale branch(es).
++2026-04-27 12:06:34 [INFO ] Sprint summary written to ralph-summary-2026-04-27T120634.md
++2026-04-27 12:06:34 [WARN ] Clean-exit verification failed: ['progress.txt update marker missing']
++2026-04-27 12:06:34 [INFO ] Recorded run history: unclean (50 tasks)
++2026-04-27 12:50:24 [INFO ] Running preflight checks...
++2026-04-27 12:50:24 [INFO ] Running command: gh --version
++2026-04-27 12:50:24 [INFO ] Running command: git --version
++2026-04-27 12:50:24 [INFO ] Running command: git remote get-url origin
++2026-04-27 12:50:24 [INFO ] Running command: git diff --quiet origin/main -- prd.json
++2026-04-27 12:50:24 [INFO ] Preflight passed.
++2026-04-27 12:50:24 [INFO ] Iteration 1/10: M6-01 multi_runtime_abstraction_layer
++2026-04-27 12:50:24 [INFO ] [_run_task_standard] START: M6-01
++2026-04-27 12:50:24 [INFO ] [_run_task_standard] Step 1: ensure_main_up_to_date
++2026-04-27 12:50:24 [INFO ] Running command: git checkout main
++2026-04-27 12:50:24 [INFO ] Running command: git fetch origin main
++2026-04-27 12:50:26 [INFO ] Running command: git reset --hard origin/main
++2026-04-27 12:50:26 [INFO ] [_run_task_standard] Step 1 complete
++2026-04-27 12:50:26 [INFO ] [_run_task_standard] Step 2: checkout_or_create
++2026-04-27 12:50:26 [INFO ] Running command: git branch --list ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-27 12:50:26 [INFO ] Creating new branch: ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-27 12:50:26 [INFO ] Running command: git checkout -b ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-27 12:50:26 [INFO ] Running command: git rev-list --count main..ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-27 12:50:26 [INFO ] [_run_task_standard] Step 2 complete
++2026-04-27 12:50:26 [INFO ] [_run_task_standard] Step 3: run_coder
++2026-04-27 12:50:26 [INFO ] Invoking coder: opencode
++2026-04-27 12:50:26 [INFO ] Running command: opencode run -m opencode/big-pickle --dangerously-skip-permissions You are opencode, an expert software engineer.
++Your task is: multi_runtime_abstraction_layer
++Description: Design and implement an abstraction layer in ralph.py to support multiple AI runtimes. Create a base `AIRunner` abstract class with common interface methods: `run_task(task_id, branch_name)` that returns completion status and output. Define the contract that all runtime implementations must follow including: command execution, output capture, error handling, and timeout management. This enables plugging in different AI tools (Aider, Cursor, Cline, Codex) without changing the core ralph loop logic. The abstraction should handle runtime detection, version checking, and graceful degradation when a runtime is unavailable.
++
++Acceptance Criteria:
++1. tests/test_runner.py: AIRunner base class exists with abstract methods
++2. tests/test_runner.py: Runtime configuration schema validates correctly
++3. tests/test_runner.py: Unsupported runtime raises clear error
++4. ralph.py: Base runner class implemented with proper abc module usage
++
++Files to modify: 
++
++
++
++IMPORTANT: Do NOT touch prd.json or progress.txt — the orchestrator
++handles all of that after your PR is merged.
++
++2026-04-27 12:53:29 [INFO ] [_run_task_standard] Step 3 complete
++2026-04-27 12:53:29 [INFO ] [_run_task_standard] Step 4: PreCommitGate.run
++2026-04-27 12:53:29 [INFO ] Running pre-commit gate...
++2026-04-27 12:53:29 [INFO ] Running command: uv run ruff check --fix .
++2026-04-27 12:53:29 [INFO ] Running command: uv run ruff format .
++2026-04-27 12:53:29 [INFO ] Running command: uv run pre-commit run --all-files
++2026-04-27 12:54:30 [WARN ] Pre-commit failed (round 1/2)
++2026-04-27 12:54:30 [INFO ] Invoking coder: opencode
++2026-04-27 12:54:30 [INFO ] Running command: opencode run -m opencode/big-pickle --dangerously-skip-permissions The task 'multi_runtime_abstraction_layer' failed pre-commit hooks.
++Failure output:
++ruff (legacy alias)......................................................Passed
++ruff format..............................................................Passed
++pytest...................................................................Failed
++- hook id: pytest
++- files were modified by this hook
++
++============================= test session starts ==============================
++platform linux -- Python 3.13.12, pytest-9.0.3, pluggy-1.6.0 -- /home/james/Programming/personal/ralphzilla/.venv/bin/python3
++cachedir: .pytest_cache
++rootdir: /home/james/Programming/personal/ralphzilla
++configfile: pyproject.toml
++plugins: anyio-4.13.0, cov-7.1.0
++collecting ... collected 580 items
++
++tests/integration/test_dry_run_smoke.py::TestDryRunSmokeIntegration::test_dry_run_exits_zero PASSED [  0%]
++tests/integration/test_dry_run_smoke.py::TestDryRunSmokeIntegration::test_dry_run_filters_completed_tasks PASSED [  0%]
++tests/integration/test_dry_run_smoke.py::TestDryRunSmokeIntegration::test_dry_run_includes_pending_task_titles PASSED [  0%]
++tests/integration/test_dry_run_smoke.py::TestDryRunSmokeIntegration::test_dry_run_displays_estimated_action PASSED [  0%]
++tests/integration/test_dry_run_smoke.py::TestDryRunSmokeIntegration::test_dry_run_displays_acceptance_criteria_count PASSED [  0%]
++tests/integration/test_dry_run_smoke.py::TestDryRunSmokeIntegration::test_dry_run_indicates_start_and_complete PASSED [  1%]
++tests/integration/test_dry_run_smoke.py::TestDryRunSmokeIntegration::test_dry_run_no_git_commands_executed PASSED [  1%]
++tests/integration/test_dry_run_smoke.py::TestDryRunSmokeIntegration::test_dry_run_no_ai_calls_made PASSED [  1%]
++tests/integration/test_dry_run_smoke.py::TestDryRunOutputFormat::test_output_contains_task_id_and_title PASSED [  1%]
++tests/integration/test_dry_run_smoke.py::TestDryRunOutputFormat::test_output_format_template PASSED [  1%]
++tests/integration/test_dry_run_smoke.py::TestDryRunTaskSelection::test_selects_task_when_dependency_met PASSED [  1%]
++tests/integration/test_dry_run_smoke.py::TestDryRunTaskSelection::test_skips_tasks_with_unmet_dependencies PASSED [  2%]
++tests/integration/test_dry_run_smoke.py::TestDryRunSkipsHumanTasks::test_skips_human_owned_tasks PASSED [  2%]
++tests/integration/test_dry_run_smoke.py::TestDryRunWithRealComponents::test_components_initialize_correctly PASSED [  2%]
++tests/integration/test_dry_run_smoke.py::TestDryRunWithRealComponents::test_task_tracker_loads_fixture PASSED [  2%]
++tests/integration/test_dry_run_smoke.py::TestDryRunWithRealComponents::test_task_selection_with_fixture PASSED [  2%]
++tests/integration/test_dry_run_smoke.py::TestDryRunWithRealComponents::test_preflight_checks_pass_on_valid_fixture PASSED [  2%]
++tests/test_ai_runner.py::test_is_nested_claude_session PASSED            [  3%]
++tests/test_ai_runner.py::test_assign_agents_overrides PASSED             [  3%]
++tests/test_ai_runner.py::test_run_coder_claude PASSED                    [  3%]
++tests/test_ai_runner.py::test_run_reviewer_nested_fallback PASSED        [  3%]
++tests/test_ai_runner.py::test_clean_output PASSED                        [  3%]
++tests/test_ai_runner.py::test_assign_agents_complexity_routing PASSED    [  3%]
++tests/test_ai_runner.py::test_run_reviewer_claude_removes_claudecode PASSED [  4%]
++tests/test_ai_runner.py::test_run_test_writer_uses_different_model PASSED [  4%]
++tests/test_ai_runner.py::test_run_reviewer_opencode_uses_reviewer_model PASSED [  4%]
++tests/test_ai_runner.py::test_run_coder_opencode_uses_coder_model PASSED [  4%]
++tests/test_ai_runner.py::test_run_coder_opencode_model_override PASSED   [  4%]
++tests/test_ai_runner.py::test_run_test_writer_opencode_uses_test_writer_model PASSED [  5%]
++tests/test_blocker_analyser.py::test_classifies_merge_conflict_from_git_output PASSED [  5%]
++tests/test_blocker_analyser.py::test_classifies_ci_fatal_from_cifailedfatal_exception PASSED [  5%]
++tests/test_blocker_analyser.py::test_classifies_prd_guard_from_prdguardviolation PASSED [  5%]
++tests/test_blocker_analyser.py::test_classifies_reviewer_unavailable_from_empty_response PASSED [  5%]
++tests/test_blocker_analyser.py::test_analyse_returns_none_for_unknown_errors PASSED [  5%]
++tests/test_blocker_analyser.py::test_analyse_with_empty_error_output PASSED [  6%]
++tests/test_blocker_analyser.py::test_multiple_conflict_patterns PASSED   [  6%]
++tests/test_blocker_analyser.py::test_blocker_result_dataclass PASSED     [  6%]
++tests/test_branch_manager.py::test_verify_ssh_remote_raises_on_https_url PASSED [  6%]
++tests/test_branch_manager.py::test_verify_ssh_remote_success PASSED      [  6%]
++tests/test_branch_manager.py::test_ensure_main_up_to_date_uses_reset_not_pull PASSED [  6%]
++tests/test_branch_manager.py::test_checkout_or_create_raises_on_existing_branch_no_resume PASSED [  7%]
++tests/test_branch_manager.py::test_checkout_or_create_creates_new_branch_when_not_exists PASSED [  7%]
++tests/test_branch_manager.py::test_checkout_or_create_resumes_existing_branch PASSED [  7%]
++tests/test_branch_manager.py::test_sanitise_branch_name_truncates_to_40_chars PASSED [  7%]
++tests/test_branch_manager.py::test_sanitise_branch_name_transforms_title PASSED [  7%]
++tests/test_branch_manager.py::test_push_verifies_ssh_before_executing PASSED [  7%]
++tests/test_branch_manager.py::test_delete_remote_verifies_ssh PASSED     [  8%]
++tests/test_ci_poller.py::TestGetLatestRunId::test_success PASSED         [  8%]
++tests/test_ci_poller.py::TestGetLatestRunId::test_empty_raises_timeout PASSED [  8%]
++tests/test_ci_poller.py::TestWaitForRun::test_pending_then_success PASSED [  8%]
++tests/test_ci_poller.py::TestWaitForRun::test_failure PASSED             [  8%]
++tests/test_ci_poller.py::TestWaitForRun::test_timeout PASSED             [  8%]
++tests/test_ci_poller.py::TestWaitForNewRun::test_new_run_appears PASSED  [  9%]
++tests/test_ci_poller.py::TestGetLatestRunIdParsesGhJsonOutput::test_get_latest_run_id_parses_gh_json_output PASSED [  9%]
++tests/test_ci_poller.py::TestGetLatestRunIdParsesGhJsonOutput::test_get_latest_run_id_calls_gh_with_json_flag PASSED [  9%]
++tests/test_ci_poller.py::TestWaitForRunPollsAtConfiguredInterval::test_wait_for_run_polls_at_configured_interval PASSED [  9%]
++tests/test_ci_poller.py::TestWaitForNewRunDetectsDifferentRunId::test_wait_for_new_run_detects_different_run_id PASSED [  9%]
++tests/test_ci_poller.py::TestRunIdPinningAvoidsStaleResults::test_run_id_pinning_avoids_stale_results PASSED [ 10%]
++tests/test_ci_poller.py::TestUsesConclusionFieldNotStateForVerdict::test_uses_conclusion_field_not_state_for_verdict PASSED [ 10%]
++tests/test_ci_poller.py::TestUsesConclusionFieldNotStateForVerdict::test_conclusion_failure_returns_failure PASSED [ 10%]
++tests/test_ci_poller.py::TestUsesConclusionFieldNotStateForVerdict::test_conclusion_none_with_pending_state_keeps_polling PASSED [ 10%]
++tests/test_ci_poller.py::TestWaitForCompletion::test_passed PASSED       [ 10%]
++tests/test_ci_poller.py::TestWaitForCompletion::test_failed PASSED       [ 10%]
++tests/test_ci_poller.py::TestCheckRequiredFailures::test_required_check_fails_blocks PASSED [ 11%]
++tests/test_ci_poller.py::TestCheckRequiredFailures::test_only_optional_fails_does_not_block PASSED [ 11%]
++tests/test_ci_poller.py::TestCheckRequiredFailures::test_no_checks_returns_pass PASSED [ 11%]
++tests/test_ci_poller.py::TestWaitAndFix::test_first_try_passed PASSED    [ 11%]
++tests/test_ci_poller.py::TestWaitAndFix::test_optional_check_failure_does_not_block PASSED [ 11%]
++tests/test_ci_poller.py::TestWaitAndFix::test_coder_fail_raises PASSED   [ 11%]
++tests/test_ci_poller.py::TestWaitForNewRunAfterPush::test_wait_for_new_run_called_after_push PASSED [ 12%]
++tests/test_ci_poller.py::TestWaitForNewRunAfterPush::test_max_rounds_raises_cifailedfatal PASSED [ 12%]
++tests/test_cli.py::TestCLIEntryPoint::test_help_exits_zero PASSED        [ 12%]
++tests/test_cli.py::TestCLIEntryPoint::test_unknown_flag_exits_nonzero PASSED [ 12%]
++tests/test_cli.py::TestCLIEntryPoint::test_rzilla_help_exits_zero PASSED [ 12%]
++tests/test_cli.py::TestCLIEntryPoint::test_rzilla_run_dry_run_exits_zero PASSED [ 12%]
++tests/test_cli.py::TestDryRunMode::test_dry_run_filters_completed_and_human_tasks PASSED [ 13%]
++tests/test_cli.py::TestCLIFlags::test_flags_map_to_config PASSED         [ 13%]
++tests/test_conflict_detector.py::TestCheckWaveConflicts::test_no_conflicts_disjoint_files PASSED [ 13%]
++tests/test_conflict_detector.py::TestCheckWaveConflicts::test_no_conflicts_empty_files PASSED [ 13%]
++tests/test_conflict_detector.py::TestCheckWaveConflicts::test_no_conflicts_single_task PASSED [ 13%]
++tests/test_conflict_detector.py::TestCheckWaveConflicts::test_detects_shared_file PASSED [ 13%]
++tests/test_conflict_detector.py::TestCheckWaveConflicts::test_shared_files_maps_file_to_task_ids PASSED [ 14%]
++tests/test_conflict_detector.py::TestCheckWaveConflicts::test_conflicting_tasks_contains_correct_pair PASSED [ 14%]
++tests/test_conflict_detector.py::TestCheckWaveConflicts::test_multiple_shared_files PASSED [ 14%]
++tests/test_conflict_detector.py::TestCheckWaveConflicts::test_three_tasks_sharing_one_file PASSED [ 14%]
++tests/test_conflict_detector.py::TestCheckWaveConflicts::test_no_duplicate_pairs PASSED [ 14%]
++tests/test_conflict_detector.py::TestCheckWaveConflicts::test_empty_task_list PASSED [ 15%]
++tests/test_conflict_detector.py::TestCheckWaveConflicts::test_non_overlapping_mix PASSED [ 15%]
++tests/test_conflict_detector.py::TestBuildWavesConflictSplitting::test_conflicting_tasks_placed_in_separate_waves PASSED [ 15%]
++tests/test_conflict_detector.py::TestBuildWavesConflictSplitting::test_non_conflicting_tasks_stay_in_same_wave PASSED [ 15%]
++tests/test_conflict_detector.py::TestBuildWavesConflictSplitting::test_three_tasks_all_conflicting_three_waves PASSED [ 15%]
++tests/test_conflict_detector.py::TestBuildWavesConflictSplitting::test_partial_conflict_splits_only_conflicting_pair PASSED [ 15%]
++tests/test_conflict_detector.py::TestBuildWavesConflictSplitting::test_dependency_then_conflict PASSED [ 16%]
++tests/test_conflict_detector.py::TestExecuteWaveConflictGuard::test_raises_on_conflicting_wave PASSED [ 16%]
++tests/test_conflict_detector.py::TestExecuteWaveConflictGuard::test_no_error_for_disjoint_files PASSED [ 16%]
++tests/test_conflict_detector.py::TestExecuteWaveConflictGuard::test_no_error_for_tasks_without_files PASSED [ 16%]
++tests/test_conflict_detector.py::TestExecuteWaveConflictGuard::test_error_message_contains_conflicting_pair PASSED [ 16%]
++tests/test_dependency_graph.py::TestBuildGraph::test_empty_task_list PASSED [ 16%]
++tests/test_dependency_graph.py::TestBuildGraph::test_single_task_no_deps PASSED [ 17%]
++tests/test_dependency_graph.py::TestBuildGraph::test_linear_chain PASSED [ 17%]
++tests/test_dependency_graph.py::TestBuildGraph::test_diamond_dependency PASSED [ 17%]
++tests/test_dependency_graph.py::TestBuildGraph::test_build_graph_is_idempotent PASSED [ 17%]
++tests/test_dependency_graph.py::TestValidateDependencies::test_no_missing_deps PASSED [ 17%]
++tests/test_dependency_graph.py::TestValidateDependencies::test_detects_missing_single_dep PASSED [ 17%]
++tests/test_dependency_graph.py::TestValidateDependencies::test_detects_multiple_missing_deps PASSED [ 18%]
++tests/test_dependency_graph.py::TestValidateDependencies::test_no_duplicates_in_missing PASSED [ 18%]
++tests/test_dependency_graph.py::TestDetectCycles::test_no_cycle_returns_false PASSED [ 18%]
++tests/test_dependency_graph.py::TestDetectCycles::test_self_loop_returns_true PASSED [ 18%]
++tests/test_dependency_graph.py::TestDetectCycles::test_two_node_cycle PASSED [ 18%]
++tests/test_dependency_graph.py::TestDetectCycles::test_three_node_cycle PASSED [ 18%]
++tests/test_dependency_graph.py::TestDetectCycles::test_cycle_in_subgraph PASSED [ 19%]
++tests/test_dependency_graph.py::TestDetectCycles::test_empty_graph_no_cycle PASSED [ 19%]
++tests/test_dependency_graph.py::TestTopologicalSort::test_all_nodes_present_in_result PASSED [ 19%]
++tests/test_dependency_graph.py::TestTopologicalSort::test_dependency_precedes_dependent PASSED [ 19%]
++tests/test_dependency_graph.py::TestTopologicalSort::test_parallel_tasks_both_in_result PASSED [ 19%]
++tests/test_dependency_graph.py::TestDependencyCycleError::test_raises_on_cycle PASSED [ 20%]
++tests/test_dependency_graph.py::TestDependencyCycleError::test_error_message_names_cycle_nodes PASSED [ 20%]
++tests/test_dependency_graph.py::TestDependencyCycleError::test_error_is_ralph_error_subclass PASSED [ 20%]
++tests/test_dependency_graph.py::TestDependencyCycleError::test_three_node_cycle_error_message PASSED [ 20%]
++tests/test_discovery_wizard.py::TestDiscoveryWizard::test_project_spec_dataclass PASSED [ 20%]
++tests/test_discovery_wizard.py::TestDiscoveryWizard::test_wizard_asks_six_questions PASSED [ 20%]
++tests/test_discovery_wizard.py::TestDiscoveryWizard::test_wizard_parses_language_runtime_package_manager PASSED [ 21%]
++tests/test_discovery_wizard.py::TestDiscoveryWizard::test_wizard_parses_test_framework_and_coverage PASSED [ 21%]
++tests/test_discovery_wizard.py::TestDiscoveryWizard::test_wizard_raises_on_empty_description PASSED [ 21%]
++tests/test_discovery_wizard.py::TestDiscoveryWizard::test_wizard_quality_checks_multiline PASSED [ 21%]
++tests/test_discovery_wizard.py::TestDiscoveryWizard::test_wizard_human_steps_multiline PASSED [ 21%]
++tests/test_discovery_wizard.py::TestDiscoveryWizard::test_wizard_out_of_scope_multiline PASSED [ 21%]
++tests/test_discovery_wizard.py::TestRalphInit::test_rzilla_init_help PASSED [ 22%]
++tests/test_discovery_wizard.py::TestRalphInit::test_rzilla_init_non_interactive_raises PASSED [ 22%]
++tests/test_discovery_wizard.py::TestGitHook::test_hook_file_is_executable PASSED [ 22%]
++tests/test_escalation_manager.py::TestTracksConsecutiveFailuresPerBlocker::test_starts_at_zero PASSED [ 22%]
++tests/test_escalation_manager.py::TestTracksConsecutiveFailuresPerBlocker::test_record_failure_increments_count PASSED [ 22%]
++tests/test_escalation_manager.py::TestTracksConsecutiveFailuresPerBlocker::test_record_multiple_failures_same_kind PASSED [ 22%]
++tests/test_escalation_manager.py::TestTracksConsecutiveFailuresPerBlocker::test_records_different_blockers_independently PASSED [ 23%]
++tests/test_escalation_manager.py::TestTracksConsecutiveFailuresPerBlocker::test_reset_consecutive_clears_count PASSED [ 23%]
++tests/test_escalation_manager.py::TestEscalatesAfterThreeRetriesSameBlocker::test_should_not_escalate_before_threshold PASSED [ 23%]
++tests/test_escalation_manager.py::TestEscalatesAfterThreeRetriesSameBlocker::test_should_escalate_at_threshold PASSED [ 23%]
++tests/test_escalation_manager.py::TestEscalatesAfterThreeRetriesSameBlocker::test_should_escalate_above_threshold PASSED [ 23%]
++tests/test_escalation_manager.py::TestEscalatesAfterThreeRetriesSameBlocker::test_escalation_is_per_kind PASSED [ 23%]
++tests/test_escalation_manager.py::TestEscalatesAfterThreeRetriesSameBlocker::test_reset_then_record_does_not_escalate PASSED [ 24%]
++tests/test_escalation_manager.py::TestEscalatesAfterFiveTotalBlockers::test_should_not_escalate_before_total_threshold PASSED [ 24%]
++tests/test_escalation_manager.py::TestEscalatesAfterFiveTotalBlockers::test_should_escalate_at_total_threshold PASSED [ 24%]
++tests/test_escalation_manager.py::TestEscalatesAfterFiveTotalBlockers::test_total_threshold_respected_across_kinds PASSED [ 24%]
++tests/test_escalation_manager.py::TestWritesEscalationMarkdownWithContext::test_escalation_creates_markdown_file PASSED [ 24%]
++tests/test_escalation_manager.py::TestWritesEscalationMarkdownWithContext::test_markdown_contains_task_id PASSED [ 25%]
++tests/test_escalation_manager.py::TestWritesEscalationMarkdownWithContext::test_markdown_contains_blocker_kind PASSED [ 25%]
++tests/test_escalation_manager.py::TestWritesEscalationMarkdownWithContext::test_markdown_contains_context PASSED [ 25%]
++tests/test_escalation_manager.py::TestWritesEscalationMarkdownWithContext::test_markdown_contains_acceptance_criteria PASSED [ 25%]
++tests/test_escalation_manager.py::TestWritesEscalationMarkdownWithContext::test_markdown_filename_has_timestamp PASSED [ 25%]
++tests/test_escalation_manager.py::TestMaintainsFailureLedgerJson::test_escalate_creates_ledger_file PASSED [ 25%]
++tests/test_escalation_manager.py::TestMaintainsFailureLedgerJson::test_ledger_contains_entry PASSED [ 26%]
++tests/test_escalation_manager.py::TestMaintainsFailureLedgerJson::test_ledger_accumulates_multiple_escalations PASSED [ 26%]
++tests/test_escalation_manager.py::TestMaintainsFailureLedgerJson::test_ledger_entry_has_required_fields PASSED [ 26%]
++tests/test_escalation_manager.py::TestMaintainsFailureLedgerJson::test_ledger_survives_corrupt_json PASSED [ 26%]
++tests/test_escalation_manager.py::TestMaintainsFailureLedgerJson::test_escalate_creates_review_task PASSED [ 26%]
++tests/test_logger.py::test_logger_creation PASSED                        [ 26%]
++tests/test_logger.py::test_logger_info PASSED                            [ 27%]
++tests/test_logger.py::test_logger_multiple_levels PASSED                 [ 27%]
++tests/test_logger.py::test_logger_fatal PASSED                           [ 27%]
++tests/test_loop_supervisor.py::test_clean_exit_all_markers_present PASSED [ 27%]
++tests/test_loop_supervisor.py::test_detects_missing_sprint_complete_marker PASSED [ 27%]
++tests/test_loop_supervisor.py::test_detects_traceback_in_final_lines PASSED [ 27%]
++tests/test_loop_supervisor.py::test_detects_unhandled_exception_marker PASSED [ 28%]
++tests/test_loop_supervisor.py::test_records_run_history_correctly PASSED [ 28%]
++tests/test_loop_supervisor.py::test_records_unclean_run_history PASSED   [ 28%]
++tests/test_loop_supervisor.py::test_appends_to_existing_history PASSED   [ 28%]
++tests/test_loop_supervisor.py::test_missing_log_file PASSED              [ 28%]
++tests/test_loop_supervisor.py::test_handles_empty_log_file PASSED        [ 28%]
++tests/test_loop_supervisor.py::test_final_50_lines_only PASSED           [ 29%]
++tests/test_loop_supervisor.py::test_runs_ralph_as_subprocess_with_correct_args PASSED [ 29%]
++tests/test_loop_supervisor.py::test_captures_exit_code_on_completion PASSED [ 29%]
++tests/test_loop_supervisor.py::test_monitors_log_file_for_error_markers PASSED [ 29%]
++tests/test_loop_supervisor.py::test_detects_hung_process_via_timeout PASSED [ 29%]
++tests/test_loop_supervisor.py::test_detects_healthy_process_not_hung PASSED [ 30%]
++tests/test_mcp_server.py::TestReadPrd::test_read_prd_returns_empty_dict_when_file_missing PASSED [ 30%]
++tests/test_mcp_server.py::TestReadPrd::test_read_prd_parses_json_correctly PASSED [ 30%]
++tests/test_mcp_server.py::TestFindLatestSummary::test_returns_none_when_no_summaries PASSED [ 30%]
++tests/test_mcp_server.py::TestFindLatestSummary::test_returns_most_recent_summary PASSED [ 30%]
++tests/test_mcp_server.py::TestIsSprintRunning::test_returns_true_when_rzilla_process_found PASSED [ 30%]
++tests/test_mcp_server.py::TestIsSprintRunning::test_returns_false_when_no_rzilla_process PASSED [ 31%]
++tests/test_mcp_server.py::TestIsSprintRunning::test_handles_no_such_process_exception PASSED [ 31%]
++tests/test_mcp_server.py::TestRzillaStatus::test_returns_correct_counts PASSED [ 31%]
++tests/test_mcp_server.py::TestRzillaTasks::test_returns_all_tasks_by_default PASSED [ 31%]
++tests/test_mcp_server.py::TestRzillaTasks::test_filters_by_pending PASSED [ 31%]
++tests/test_mcp_server.py::TestRzillaTasks::test_respects_limit PASSED    [ 31%]
++tests/test_mcp_server.py::TestRzillaLog::test_returns_no_log_message_when_missing PASSED [ 32%]
++tests/test_mcp_server.py::TestRzillaLog::test_returns_last_lines PASSED  [ 32%]
++tests/test_mcp_server.py::TestRzillaLog::test_respects_max_limit PASSED  [ 32%]
++tests/test_mcp_server.py::TestRzillaSummary::test_returns_no_summary_when_none_exists PASSED [ 32%]
++tests/test_mcp_server.py::TestRzillaSummary::test_returns_latest_summary_content PASSED [ 32%]
++tests/test_mcp_server.py::TestRzillaDryRun::test_runs_dry_run_without_task PASSED [ 32%]
++tests/test_mcp_server.py::TestRzillaDryRun::test_runs_dry_run_with_task PASSED [ 33%]
++tests/test_mcp_server.py::TestRzillaDryRun::test_handles_timeout PASSED  [ 33%]
++tests/test_mcp_server.py::TestRzillaDryRun::test_handles_file_not_found PASSED [ 33%]
++tests/test_mcp_server.py::TestRzillaRun::test_starts_background_process PASSED [ 33%]
++tests/test_mcp_server.py::TestRzillaRun::test_passes_all_flags PASSED    [ 33%]
++tests/test_mcp_server.py::TestRzillaAdd::test_adds_task_with_spec PASSED [ 33%]
++tests/test_mcp_server.py::TestRzillaAdd::test_handles_timeout PASSED     [ 34%]
++tests/test_mcp_server.py::TestRzillaAbort::test_aborts_running_sprint PASSED [ 34%]
++tests/test_mcp_server.py::TestRzillaAbort::test_no_sprint_running PASSED [ 34%]
++tests/test_mcp_server.py::TestRzillaAbort::test_handles_process_lookup_error PASSED [ 34%]
++tests/test_mcp_server.py::TestMCPAnnotations::test_readonly_tools_marked PASSED [ 34%]
++tests/test_mcp_server.py::TestMCPAnnotations::test_destructive_abort_marked PASSED [ 35%]
++tests/test_mcp_server.py::TestIntegrationEdgeCases::test_status_with_empty_tasks PASSED [ 35%]
++tests/test_mcp_server.py::TestIntegrationEdgeCases::test_tasks_with_complex_dependencies PASSED [ 35%]
++tests/test_mcp_server.py::TestIntegrationEdgeCases::test_log_handles_unicode PASSED [ 35%]
++tests/test_mcp_server.py::TestIntegrationEdgeCases::test_run_with_all_parameters PASSED [ 35%]
++tests/test_mcp_server.py::TestMCPLoggingConfig::test_no_rich_handler_on_root_logger PASSED [ 35%]
++tests/test_mcp_server.py::TestMCPLoggingConfig::test_mcp_loggers_silenced PASSED [ 36%]
++tests/test_mcp_server.py::TestMCPLoggingConfig::test_server_produces_no_stderr_on_startup PASSED [ 36%]
++tests/test_mcp_server.py::TestRepoDirArg::test_default_project_dir_is_repo_dir PASSED [ 36%]
++tests/test_mcp_server.py::TestRepoDirArg::test_prd_file_derived_from_project_dir PASSED [ 36%]
++tests/test_mcp_server.py::TestRepoDirArg::test_read_prd_from_project_dir PASSED [ 36%]
++tests/test_mcp_server.py::TestRepoDirArg::test_find_latest_summary_in_project_dir PASSED [ 36%]
++tests/test_mcp_server.py::TestRepoDirArg::test_repo_dir_cli_arg PASSED   [ 37%]
++tests/test_mcp_server.py::TestRepoDirArg::test_repo_dir_missing_value_exits PASSED [ 37%]
++tests/test_mcp_server.py::TestRepoDirArg::test_repo_dir_invalid_path_exits PASSED [ 37%]
++tests/test_orchestrator.py::TestCheckStopConditions::test_no_task_returns_all_complete PASSED [ 37%]
++tests/test_orchestrator.py::TestCheckStopConditions::test_human_task_returns_human_next PASSED [ 37%]
++tests/test_orchestrator.py::TestCheckStopConditions::test_ralph_task_returns_none PASSED [ 37%]
++tests/test_orchestrator.py::TestCheckCli::test_check_cli_returns_true_when_found PASSED [ 38%]
++tests/test_orchestrator.py::TestCheckCli::test_check_cli_returns_false_when_not_found PASSED [ 38%]
++tests/test_orchestrator.py::TestPreflight::test_preflight_raises_on_missing_gh PASSED [ 38%]
++tests/test_orchestrator.py::TestPreflight::test_preflight_raises_on_missing_git PASSED [ 38%]
++tests/test_orchestrator.py::TestPreflight::test_preflight_raises_on_https_remote PASSED [ 38%]
++tests/test_orchestrator.py::TestPreflight::test_preflight_raises_on_dirty_prd PASSED [ 38%]
++tests/test_orchestrator.py::TestPreflight::test_preflight_raises_on_plan_invalid PASSED [ 39%]
++tests/test_orchestrator.py::TestPreflight::test_preflight_validation_order PASSED [ 39%]
++tests/test_orchestrator.py::TestPreflightClaudeCodeWarning::test_claudecode_warning_logged_when_env_set PASSED [ 39%]
++tests/test_orchestrator.py::TestPreflightClaudeCodeWarning::test_no_claudecode_warning_when_env_not_set PASSED [ 39%]
++tests/test_orchestrator.py::TestRunTaskStandard::test_branch_sync_error_is_fatal PASSED [ 39%]
++tests/test_orchestrator.py::TestRunTaskStandard::test_branch_exists_error_is_fatal PASSED [ 40%]
++tests/test_orchestrator.py::TestRunTaskTdd::test_calls_test_writer_before_coder_in_tdd PASSED [ 40%]
++tests/test_orchestrator.py::TestRunTaskTdd::test_fails_on_test_quality_failure PASSED [ 40%]
++tests/test_orchestrator.py::TestRunTaskTdd::test_standard_mode_does_not_call_test_writer PASSED [ 40%]
++tests/test_orchestrator.py::TestRunTaskStandardIntegration::test_standard_mode_calls_components_in_correct_order PASSED [ 40%]
++tests/test_orchestrator.py::TestRunTaskStandardIntegration::test_branch_sync_error_returns_fatal_task_result PASSED [ 40%]
++tests/test_orchestrator.py::TestRunTaskStandardIntegration::test_branch_exists_error_returns_fatal_task_result PASSED [ 41%]
++tests/test_orchestrator.py::TestRunTaskStandardIntegration::test_coder_failed_error_returns_fatal_task_result PASSED [ 41%]
++tests/test_orchestrator.py::TestRunTaskStandardIntegration::test_precommit_failure_after_max_rounds_continues PASSED [ 41%]
++tests/test_orchestrator.py::TestRunTaskStandardIntegration::test_testrunner_failure_after_max_rounds_continues PASSED [ 41%]
++tests/test_orchestrator.py::TestRunTaskStandardIntegration::test_push_failure_returns_fatal_task_result PASSED [ 41%]
++tests/test_orchestrator.py::TestRunTaskStandardIntegration::test_review_max_rounds_exceeded_continues_to_ci PASSED [ 41%]
++tests/test_orchestrator.py::TestRunTaskStandardIntegration::test_ci_timeout_error_returns_fatal_task_result PASSED [ 42%]
++tests/test_orchestrator.py::TestRunTaskStandardIntegration::test_ci_failed_fatal_returns_fatal_task_result PASSED [ 42%]
++tests/test_orchestrator.py::TestRunTaskStandardIntegration::test_prd_guard_violation_closes_pr_and_returns_fatal PASSED [ 42%]
++tests/test_orchestrator.py::TestRunTaskStandardIntegration::test_success_calls_tracking_in_order PASSED [ 42%]
++tests/test_orchestrator.py::TestRunTaskStandardIntegration::test_skip_review_skips_review_loop PASSED [ 42%]
++tests/test_orchestrator.py::TestMainLoop::test_main_loop_logs_iteration_and_task_id PASSED [ 42%]
++tests/test_orchestrator.py::TestMainLoop::test_main_loop_stops_on_fatal_task_result PASSED [ 43%]
++tests/test_orchestrator.py::TestMainLoop::test_main_loop_logs_clean_exit_reason PASSED [ 43%]
++tests/test_orchestrator.py::TestMainLoop::test_main_loop_stops_on_human_task PASSED [ 43%]
++tests/test_placeholder.py::test_bootstrap PASSED                         [ 43%]
++tests/test_plan_checker.py::TestPlanCheckerStructuralValidation::test_structural_validation_fails_missing_required_field PASSED [ 43%]
++tests/test_plan_checker.py::TestPlanCheckerStructuralValidation::test_empty_acceptance_criteria_caught PASSED [ 43%]
++tests/test_plan_checker.py::TestPlanCheckerStructuralValidation::test_unresolved_depends_on_raises_error PASSED [ 44%]
++tests/test_plan_checker.py::TestPlanCheckerComplexityInference::test_complexity_inference_scores_1_for_simple_tasks PASSED [ 44%]
++tests/test_plan_checker.py::TestPlanCheckerComplexityInference::test_complexity_inference_scores_2_for_moderate_tasks PASSED [ 44%]
++tests/test_plan_checker.py::TestPlanCheckerComplexityInference::test_complexity_inference_scores_3_for_complex_tasks PASSED [ 44%]
++tests/test_plan_checker.py::test_check_structural_valid PASSED           [ 44%]
++tests/test_plan_checker.py::test_check_structural_missing_field PASSED   [ 45%]
++tests/test_plan_checker.py::test_check_structural_empty_ac PASSED        [ 45%]
++tests/test_plan_checker.py::test_check_structural_unresolved_dep PASSED  [ 45%]
++tests/test_plan_checker.py::test_infer_complexity PASSED                 [ 45%]
++tests/test_plan_checker.py::test_auto_decompose PASSED                   [ 45%]
++tests/test_plan_checker.py::test_run_raises_invalid_plan PASSED          [ 45%]
++tests/test_plan_consensus.py::TestPromptBuilderPlannerCritic::test_planner_prompt_without_feedback PASSED [ 46%]
++tests/test_plan_consensus.py::TestPromptBuilderPlannerCritic::test_planner_prompt_with_feedback PASSED [ 46%]
++tests/test_plan_consensus.py::TestPromptBuilderPlannerCritic::test_critic_prompt PASSED [ 46%]
++tests/test_plan_consensus.py::TestPlanConsensusInit::test_constructor PASSED [ 46%]
++tests/test_plan_consensus.py::TestPlanConsensusRun::test_okay_exit_early PASSED [ 46%]
++tests/test_plan_consensus.py::TestPlanConsensusRun::test_reject_loops_correctly PASSED [ 46%]
++tests/test_plan_consensus.py::TestPlanConsensusRun::test_max_iterations_respected PASSED [ 47%]
++tests/test_plan_consensus.py::TestPlanConsensusRun::test_plan_written_to_file PASSED [ 47%]
++tests/test_plan_consensus.py::TestPlanConsensusRun::test_parse_critic_reject_precedence PASSED [ 47%]
++tests/test_plan_consensus.py::TestPlanConsensusRun::test_parse_critic_unclear_treated_as_okay PASSED [ 47%]
++tests/test_plan_consensus.py::TestPlanConsensusOutput::test_format_plan_creates_markdown PASSED [ 47%]
++tests/test_plan_consensus.py::TestPlanConsensusOutput::test_render_markdown_tasks PASSED [ 47%]
++tests/test_pr_manager.py::TestPRManagerCreate::test_create_parses_pr_number_with_regex PASSED [ 48%]
++tests/test_pr_manager.py::TestPRManagerCreate::test_create_uses_head_flag PASSED [ 48%]
++tests/test_pr_manager.py::TestPRManagerCreate::test_create_parses_pr_number_with_higher_digits PASSED [ 48%]
++tests/test_pr_manager.py::TestPRManagerCreate::test_create_raises_on_failure PASSED [ 48%]
++tests/test_pr_manager.py::TestPRManagerCreate::test_create_raises_on_unparseable_output PASSED [ 48%]
++tests/test_pr_manager.py::TestPRManagerGetExisting::test_get_existing_returns_pr_info PASSED [ 48%]
++tests/test_pr_manager.py::TestPRManagerGetExisting::test_get_existing_returns_none_when_no_pr PASSED [ 49%]
++tests/test_pr_manager.py::TestPRManagerGetExisting::test_get_existing_returns_none_for_empty_list PASSED [ 49%]
++tests/test_pr_manager.py::TestPRManagerGetExisting::test_get_existing_raises_on_invalid_json PASSED [ 49%]
++tests/test_pr_manager.py::TestPRManagerGetDiff::test_get_diff_returns_content PASSED [ 49%]
++tests/test_pr_manager.py::TestPRManagerGetDiff::test_get_diff_retries_on_empty_diff PASSED [ 49%]
++tests/test_pr_manager.py::TestPRManagerGetDiff::test_get_diff_no_retries_when_content_exists PASSED [ 50%]
++tests/test_pr_manager.py::TestPRManagerGetDiffForFile::test_get_diff_for_specific_file PASSED [ 50%]
++tests/test_pr_manager.py::TestPRManagerGetChecks::test_get_checks_parses_json PASSED [ 50%]
++tests/test_pr_manager.py::TestPRManagerGetChecks::test_get_checks_returns_empty_on_error PASSED [ 50%]
++tests/test_pr_manager.py::TestPRManagerGetChecks::test_get_checks_returns_empty_on_no_output PASSED [ 50%]
++tests/test_pr_manager.py::TestPRManagerMerge::test_merge_uses_squash PASSED [ 50%]
++tests/test_pr_manager.py::TestPRManagerMerge::test_merge_raises_on_failure PASSED [ 51%]
++tests/test_pr_manager.py::TestPRManagerClose::test_close_posts_comment_before_closing PASSED [ 51%]
++tests/test_pr_manager.py::TestPRManagerClose::test_close_raises_on_close_failure PASSED [ 51%]
++tests/test_pr_manager.py::TestPRInfo::test_pr_info_fields PASSED         [ 51%]
++tests/test_prd_generator.py::TestPrdGeneratorGitHubUrlDetection::test_is_github_issue_url_matches PASSED [ 51%]
++tests/test_prd_generator.py::TestPrdGeneratorGitHubUrlDetection::test_is_github_issue_url_does_not_match_plain_text PASSED [ 51%]
++tests/test_prd_generator.py::TestPrdGeneratorGitHubUrlDetection::test_is_github_issue_url_does_not_match_pr_url PASSED [ 52%]
++tests/test_prd_generator.py::TestPrdGeneratorConstructor::test_constructor PASSED [ 52%]
++tests/test_prd_generator.py::TestPrdGeneratorInferNextEpicPrefix::test_infer_next_epic_prefix_empty PASSED [ 52%]
++tests/test_prd_generator.py::TestPrdGeneratorInferNextEpicPrefix::test_infer_next_epic_prefix_finds_max PASSED [ 52%]
++tests/test_prd_generator.py::TestPrdGeneratorGenerate::test_generate_parses_json_response PASSED [ 52%]
++tests/test_prd_generator.py::TestPrdGeneratorGenerate::test_generate_validates_each_task PASSED [ 52%]
++tests/test_prd_generator.py::TestPrdGeneratorGenerate::test_generate_calls_task_tracker_add_task PASSED [ 53%]
++tests/test_prd_generator.py::TestPrdGeneratorGHIssueFetch::test_fetch_issue_body PASSED [ 53%]
++tests/test_prd_generator.py::TestPrdGeneratorGHIssueFetch::test_fetch_issue_body_no_body PASSED [ 53%]
++tests/test_prd_guard.py::test_empty_prd_diff_passes PASSED               [ 53%]
++tests/test_prd_guard.py::test_any_prd_modification_raises_violation PASSED [ 53%]
++tests/test_prd_guard.py::test_completed_true_change_raises_violation PASSED [ 53%]
++tests/test_prd_guard.py::test_violation_includes_pr_number_and_offending_lines PASSED [ 54%]
++tests/test_prd_guard.py::test_diff_with_only_deletions_passes PASSED     [ 54%]
++tests/test_prd_validator.py::TestPrdValidator::test_validate_rule1_short_description_fails PASSED [ 54%]
++tests/test_prd_validator.py::TestPrdValidator::test_validate_rule2_no_file_path_fails PASSED [ 54%]
++tests/test_prd_validator.py::TestPrdValidator::test_validate_rule3_credential_in_description_fails PASSED [ 54%]
++tests/test_prd_validator.py::TestPrdValidator::test_validate_rule3_credential_password_fails PASSED [ 55%]
++tests/test_prd_validator.py::TestPrdValidator::test_validate_rule3_credential_token_fails PASSED [ 55%]
++tests/test_prd_validator.py::TestPrdValidator::test_validate_rule3_credential_api_key_fails PASSED [ 55%]
++tests/test_prd_validator.py::TestPrdValidator::test_validate_rule3_human_task_allows_credential PASSED [ 55%]
++tests/test_prd_validator.py::TestPrdValidator::test_validate_rule4_unknown_depends_on_id_fails PASSED [ 55%]
++tests/test_prd_validator.py::TestPrdValidator::test_validate_valid_task_passes PASSED [ 55%]
++tests/test_prd_validator.py::TestPrdValidator::test_validate_valid_task_with_file_path_pattern_dot_py PASSED [ 56%]
++tests/test_prd_validator.py::TestPrdValidator::test_validate_valid_task_with_tests_directory PASSED [ 56%]
++tests/test_prd_validator.py::TestPrdValidator::test_validate_valid_task_with_multiple_acs PASSED [ 56%]
++tests/test_precommit_gate.py::test_precommit_gate_success PASSED         [ 56%]
++tests/test_precommit_gate.py::test_precommit_gate_fail_then_success PASSED [ 56%]
++tests/test_precommit_gate.py::test_precommit_gate_max_rounds_reached PASSED [ 56%]
++tests/test_prompt_builder.py::test_coder_prompt PASSED                   [ 57%]
++tests/test_prompt_builder.py::test_coder_prompt_resume PASSED            [ 57%]
++tests/test_prompt_builder.py::test_reviewer_prompt_with_addenda PASSED   [ 57%]
++tests/test_prompt_builder.py::test_reviewer_prompt_without_addenda PASSED [ 57%]
++tests/test_prompt_builder.py::test_test_writer_prompt PASSED             [ 57%]
++tests/test_prompt_builder.py::test_test_quality_prompt PASSED            [ 57%]
++tests/test_prompt_builder.py::test_decompose_prompt PASSED               [ 58%]
++tests/test_prompt_builder.py::test_plan_check_prompt PASSED              [ 58%]
++tests/test_prompt_builder.py::test_precommit_fix_prompt PASSED           [ 58%]
++tests/test_prompt_builder.py::test_test_fix_prompt PASSED                [ 58%]
++tests/test_prompt_builder.py::test_review_fix_prompt PASSED              [ 58%]
++tests/test_prompt_builder.py::test_ci_fix_prompt PASSED                  [ 58%]
++tests/test_prompt_builder.py::test_all_methods_are_staticmethods PASSED  [ 59%]
++tests/test_prompt_builder.py::test_coder_prompt_includes_epic_addenda_when_matching PASSED [ 59%]
++tests/test_prompt_builder.py::test_coder_prompt_no_addenda_when_no_match PASSED [ 59%]
++tests/test_prompt_builder.py::test_reviewer_prompt_includes_all_six_review_categories PASSED [ 59%]
++tests/test_prompt_builder.py::test_test_writer_prompt_demands_failing_tests PASSED [ 59%]
++tests/test_prompt_builder.py::test_decompose_prompt_requests_json_list PASSED [ 60%]
++tests/test_prompt_builder.py::test_pr_body PASSED                        [ 60%]
++tests/test_quality_checker.py::test_constructor PASSED                   [ 60%]
++tests/test_quality_checker.py::test_ast_checks_no_assertions PASSED      [ 60%]
++tests/test_quality_checker.py::test_ast_checks_assert_true PASSED        [ 60%]
++tests/test_quality_checker.py::test_ast_checks_constant_assertion PASSED [ 60%]
++tests/test_quality_checker.py::test_ast_checks_pass_only_body PASSED     [ 61%]
++tests/test_quality_checker.py::test_ast_checks_fewer_tests_than_acs PASSED [ 61%]
++tests/test_quality_checker.py::test_ast_checks_no_module_import PASSED   [ 61%]
++tests/test_quality_checker.py::test_ast_checks_valid_passes PASSED       [ 61%]
++tests/test_quality_checker.py::test_check_returns_failed_result_when_ast_fails PASSED [ 61%]
++tests/test_quality_checker.py::test_check_calls_ai_when_ast_passes PASSED [ 61%]
++tests/test_quality_checker.py::test_check_parses_hollow_tests PASSED     [ 62%]
++tests/test_quality_checker.py::test_check_passes_when_no_hollow PASSED   [ 62%]
++tests/test_quality_checker.py::test_run_retries_test_writer PASSED       [ 62%]
++tests/test_quality_checker.py::test_run_respects_max_rounds PASSED       [ 62%]
++tests/test_review_loop.py::TestReviewQualityChecker::test_pass_when_review_has_all_elements PASSED [ 62%]
++tests/test_review_loop.py::TestReviewQualityChecker::test_fail_when_review_too_short PASSED [ 62%]
++tests/test_review_loop.py::TestReviewQualityChecker::test_fail_without_verdict PASSED [ 63%]
++tests/test_review_loop.py::TestReviewQualityChecker::test_fail_without_file_references PASSED [ 63%]
++tests/test_review_loop.py::TestReviewQualityChecker::test_fail_when_identical_to_previous PASSED [ 63%]
++tests/test_review_loop.py::TestReviewLoopVerdictParsing::test_changes_requested_takes_precedence PASSED [ 63%]
++tests/test_review_loop.py::TestReviewLoopVerdictParsing::test_approved_when_only_approved_present PASSED [ 63%]
++tests/test_review_loop.py::TestReviewLoopVerdictParsing::test_unclear_treated_as_approved_with_warning PASSED [ 63%]
++tests/test_review_loop.py::TestReviewLoopRun::test_approved_returns_approved_result PASSED [ 64%]
++tests/test_review_loop.py::TestReviewLoopRun::test_changes_requested_invokes_fix_loop PASSED [ 64%]
++tests/test_review_loop.py::TestReviewLoopRun::test_max_rounds_returns_max_reached PASSED [ 64%]
++tests/test_review_loop.py::TestReviewLoopRun::test_empty_diff_returns_approved PASSED [ 64%]
++tests/test_review_loop.py::TestPromptBuilder::test_reviewer_prompt_includes_task_info PASSED [ 64%]
++tests/test_review_loop.py::TestPromptBuilder::test_review_fix_prompt_includes_feedback PASSED [ 65%]
++tests/test_runner.py::test_airunner_base_is_abstract PASSED              [ 65%]
++tests/test_runner.py::test_airunner_base_has_abstract_methods PASSED     [ 65%]
++tests/test_runner.py::test_runtime_config_schema PASSED                  [ 65%]
++tests/test_runner.py::test_runtime_config_model_override PASSED          [ 65%]
++tests/test_runner.py::test_supported_runtimes PASSED                     [ 65%]
++tests/test_runner.py::test_detect_runtime PASSED                         [ 66%]
++tests/test_runner.py::test_detect_runtime_invalid PASSED                 [ 66%]
++tests/test_runner.py::test_get_runtime_version PASSED                    [ 66%]
++tests/test_runner.py::test_get_runtime_version_opencode PASSED           [ 66%]
++tests/test_runner.py::test_concrete_run_task PASSED                      [ 66%]
++tests/test_runner.py::test_concrete_run_coder PASSED                     [ 66%]
++tests/test_runner.py::test_concrete_run_reviewer PASSED                  [ 67%]
++tests/test_runner.py::test_concrete_check_available PASSED               [ 67%]
++tests/test_runner.py::test_concrete_get_version PASSED                   [ 67%]
++tests/test_runner.py::test_unsupported_runtime_error PASSED              [ 67%]
++tests/test_runner.py::test_airunner_base_enforces_contract PASSED        [ 67%]
++tests/test_scaffold.py::test_exceptions_hierarchy PASSED                 [ 67%]
++tests/test_scaffold.py::test_dataclass_instantiation PASSED              [ 68%]
++tests/test_scrum_master.py::TestIdentifiesStalesBranchesNoOpenPr::test_branch_with_no_open_pr_is_deleted PASSED [ 68%]
++tests/test_scrum_master.py::TestIdentifiesStalesBranchesNoOpenPr::test_returns_all_stale_branch_names PASSED [ 68%]
++tests/test_scrum_master.py::TestIdentifiesStalesBranchesNoOpenPr::test_no_ralph_branches_returns_empty PASSED [ 68%]
++tests/test_scrum_master.py::TestDeletesBranchesOlderThanSevenDays::test_branch_older_than_seven_days_is_deleted PASSED [ 68%]
++tests/test_scrum_master.py::TestDeletesBranchesOlderThanSevenDays::test_branch_exactly_at_boundary_is_deleted PASSED [ 68%]
++tests/test_scrum_master.py::TestDeletesBranchesOlderThanSevenDays::test_branch_with_empty_log_treated_as_infinitely_old PASSED [ 69%]
++tests/test_scrum_master.py::TestSkipsBranchesWithOpenPrs::test_branch_with_open_pr_is_not_deleted PASSED [ 69%]
++tests/test_scrum_master.py::TestSkipsBranchesWithOpenPrs::test_mixed_branches_only_deletes_stale PASSED [ 69%]
++tests/test_scrum_master.py::TestSkipsBranchesWithOpenPrs::test_all_branches_with_open_prs_none_deleted PASSED [ 69%]
++tests/test_scrum_master.py::TestLogsAllDeletedBranches::test_logs_each_deleted_branch PASSED [ 69%]
++tests/test_scrum_master.py::TestLogsAllDeletedBranches::test_logs_skipped_branch_with_open_pr PASSED [ 70%]
++tests/test_scrum_master.py::TestLogsAllDeletedBranches::test_logs_cleanup_summary PASSED [ 70%]
++tests/test_scrum_master.py::TestLogsAllDeletedBranches::test_delete_local_called_with_ignore_missing PASSED [ 70%]
++tests/test_sprint_summary.py::test_summary_file_created_with_correct_name PASSED [ 70%]
++tests/test_sprint_summary.py::test_frontmatter_parseable_yaml PASSED     [ 70%]
++tests/test_sprint_summary.py::test_includes_all_completed_tasks PASSED   [ 70%]
++tests/test_sprint_summary.py::test_includes_ci_results_per_task PASSED   [ 71%]
++tests/test_sprint_summary.py::test_includes_escalation_section PASSED    [ 71%]
++tests/test_subprocess_runner.py::test_subprocess_run_success PASSED      [ 71%]
++tests/test_subprocess_runner.py::test_subprocess_run_check_failure PASSED [ 71%]
++tests/test_subprocess_runner.py::test_subprocess_env_removals PASSED     [ 71%]
++tests/test_subprocess_runner.py::test_subprocess_cwd PASSED              [ 71%]
++tests/test_task_tracker.py::TestTaskTrackerFreshLoad::test_fresh_load_reads_disk_each_call PASSED [ 72%]
++tests/test_task_tracker.py::TestTaskTrackerGetNextTask::test_get_next_task_returns_incomplete_ralph_owned_task PASSED [ 72%]
++tests/test_task_tracker.py::TestTaskTrackerGetNextTask::test_get_next_task_skips_human_owned_tasks PASSED [ 72%]
++tests/test_task_tracker.py::TestTaskTrackerGetNextTask::test_get_next_task_respects_depends_on_completion PASSED [ 72%]
++tests/test_task_tracker.py::TestTaskTrackerMarkComplete::test_mark_complete_writes_back_to_disk PASSED [ 72%]
++tests/test_task_tracker.py::TestTaskTrackerCommitTracking::test_commit_tracking_issues_correct_git_commands PASSED [ 72%]
++tests/test_task_tracker.py::test_task_tracker_load PASSED                [ 73%]
++tests/test_task_tracker.py::test_get_next_task PASSED                    [ 73%]
++tests/test_task_tracker.py::test_mark_complete PASSED                    [ 73%]
++tests/test_task_tracker.py::test_mark_complete_already_done PASSED       [ 73%]
++tests/test_task_tracker.py::test_append_progress_writes_human_readable_format PASSED [ 73%]
++tests/test_task_tracker.py::test_symbols_correct_for_completed_tasks PASSED [ 73%]
++tests/test_task_tracker.py::test_header_includes_sprint_metadata PASSED  [ 74%]
++tests/test_task_tracker.py::test_add_task PASSED                         [ 74%]
++tests/test_task_tracker.py::test_mark_decomposed PASSED                  [ 74%]
++tests/test_task_tracker.py::TestRelativeTime::test_minutes_ago PASSED    [ 74%]
++tests/test_task_tracker.py::TestRelativeTime::test_hours_ago PASSED      [ 74%]
++tests/test_task_tracker.py::TestRelativeTime::test_one_day_ago PASSED    [ 75%]
++tests/test_task_tracker.py::TestRelativeTime::test_days_ago PASSED       [ 75%]
++tests/test_task_tracker.py::TestRelativeTime::test_invalid_timestamp_returns_unknown PASSED [ 75%]
++tests/test_test_runner.py::test_test_runner_success PASSED               [ 75%]
++tests/test_test_runner.py::test_test_runner_all_checks_run PASSED        [ 75%]
++tests/test_test_runner.py::test_test_runner_fail_then_success PASSED     [ 75%]
++tests/test_test_runner.py::test_test_runner_max_rounds_reached PASSED    [ 76%]
++tests/test_test_runner.py::test_test_runner_fix_loop_fires_on_failure PASSED [ 76%]
++tests/test_test_writer.py::test_test_writer_constructor PASSED           [ 76%]
++tests/test_test_writer.py::test_write_tests_invokes_test_writer PASSED   [ 76%]
++tests/test_test_writer.py::test_write_tests_commits_test_file PASSED     [ 76%]
++tests/test_test_writer.py::test_write_tests_returns_test_file_path PASSED [ 76%]
++tests/test_test_writer.py::test_discover_test_file_pattern PASSED        [ 77%]
++tests/test_test_writer.py::test_discover_test_file_not_found PASSED      [ 77%]
++tests/test_test_writer.py::test_discover_test_file_no_tests_dir PASSED   [ 77%]
++tests/test_test_writer.py::test_write_tests_uses_test_writer_from_assign_agents PASSED [ 77%]
++tests/test_test_writer.py::test_all_three_agents_are_distinct PASSED     [ 77%]
++tests/test_unblock_strategy.py::test_unblock_result_dataclass PASSED     [ 77%]
++tests/test_unblock_strategy.py::test_unblock_result_with_all_fields PASSED [ 78%]
++tests/test_unblock_strategy.py::TestMergeConflictStrategy::test_merge_conflict_strategy_resets_and_reapplies PASSED [ 78%]
++tests/test_unblock_strategy.py::TestMergeConflictStrategy::test_merge_conflict_strategy_fails_gracefully PASSED [ 78%]
++tests/test_unblock_strategy.py::TestCIFatalStrategy::test_ci_fatal_creates_fix_ticket_via_backlog_manager PASSED [ 78%]
++tests/test_unblock_strategy.py::TestCIFatalStrategy::test_ci_fatal_handles_ticket_creation_failure PASSED [ 78%]
++tests/test_unblock_strategy.py::TestPRDGuardViolationStrategy::test_prd_guard_rolls_back_and_escalates PASSED [ 78%]
++tests/test_unblock_strategy.py::TestPRDGuardViolationStrategy::test_prd_guard_creates_replacement_task PASSED [ 79%]
++tests/test_unblock_strategy.py::TestReviewerUnavailableStrategy::test_reviewer_unavailable_switches_model PASSED [ 79%]
++tests/test_unblock_strategy.py::TestUnknownBlockerKind::test_unknown_blocker_kind_escalates PASSED [ 79%]
++tests/test_validate_plan.py::TestValidatePlanFlag::test_flag_triggers_ai_validation PASSED [ 79%]
++tests/test_validate_plan.py::TestValidatePlanFlag::test_warn_format_parsed_correctly PASSED [ 79%]
++tests/test_validate_plan.py::TestValidatePlanFlag::test_warnings_logged_but_do_not_block PASSED [ 80%]
++tests/test_validate_plan.py::TestValidatePlanFlag::test_no_ai_call_when_flag_false PASSED [ 80%]
++tests/test_validate_plan.py::TestConfigValidatePlan::test_validate_plan_default_false PASSED [ 80%]
++tests/test_validate_plan.py::TestConfigValidatePlan::test_validate_plan_can_be_set_true PASSED [ 80%]
++tests/test_validate_plan.py::TestPlanCheckResultWarnings::test_plan_check_result_has_warnings_field PASSED [ 80%]
++tests/test_validate_plan.py::TestPlanCheckResultWarnings::test_plan_check_result_warnings_default_empty PASSED [ 80%]
++tests/test_wave_executor.py::TestBuildWaves::test_independent_tasks_same_wave PASSED [ 81%]
++tests/test_wave_executor.py::TestBuildWaves::test_dependent_tasks_sequential_waves PASSED [ 81%]
++tests/test_wave_executor.py::TestBuildWaves::test_linear_chain_three_waves PASSED [ 81%]
++tests/test_wave_executor.py::TestBuildWaves::test_diamond_two_waves PASSED [ 81%]
++tests/test_wave_executor.py::TestBuildWaves::test_external_dependency_treated_as_satisfied PASSED [ 81%]
++tests/test_wave_executor.py::TestBuildWaves::test_empty_task_list PASSED [ 81%]
++tests/test_wave_executor.py::TestBuildWaves::test_single_task_one_wave PASSED [ 82%]
++tests/test_wave_executor.py::TestBuildWaves::test_wave_ordering_is_deterministic PASSED [ 82%]
++tests/test_wave_executor.py::TestExecuteWave::test_returns_result_for_each_task PASSED [ 82%]
++tests/test_wave_executor.py::TestExecuteWave::test_successful_tasks_not_fatal PASSED [ 82%]
++tests/test_wave_executor.py::TestExecuteWave::test_failed_task_marked_fatal PASSED [ 82%]
++tests/test_wave_executor.py::TestExecuteWave::test_runs_tasks_concurrently_using_asyncio PASSED [ 82%]
++tests/test_wave_executor.py::TestExecuteWave::test_async_runner_is_supported PASSED [ 83%]
++tests/test_wave_executor.py::TestExecuteWave::test_empty_wave_returns_empty_dict PASSED [ 83%]
++tests/test_wave_executor.py::TestMaxWorkers::test_max_workers_limits_concurrency PASSED [ 83%]
++tests/test_wave_executor.py::TestMaxWorkers::test_max_workers_one_serialises PASSED [ 83%]
++tests/test_wave_executor.py::TestExecutionReport::test_report_contains_all_task_results PASSED [ 83%]
++tests/test_wave_executor.py::TestExecutionReport::test_report_waves_run_count PASSED [ 83%]
++tests/test_wave_executor.py::TestExecutionReport::test_report_tasks_blocked_empty_on_success PASSED [ 84%]
++tests/test_wave_executor.py::TestExecutionReport::test_per_task_success_status PASSED [ 84%]
++tests/test_wave_executor.py::TestExecutionReport::test_per_task_failure_status PASSED [ 84%]
++tests/test_wave_executor.py::TestFailureBlocking::test_failed_task_blocks_dependent_in_next_wave PASSED [ 84%]
++tests/test_wave_executor.py::TestFailureBlocking::test_failed_task_does_not_block_independent_sibling PASSED [ 84%]
++tests/test_wave_executor.py::TestFailureBlocking::test_transitive_blocking PASSED [ 85%]
++tests/test_wave_executor.py::TestFailureBlocking::test_wave_continues_despite_peer_failure PASSED [ 85%]
++tests/test_wave_summary.py::TestPrintWaveSummary::test_summary_prints_after_each_wave PASSED [ 85%]
++tests/test_wave_summary.py::TestPrintWaveSummary::test_summary_shows_wave_number PASSED [ 85%]
++tests/test_wave_summary.py::TestPrintWaveSummary::test_summary_shows_succeeded_count PASSED [ 85%]
++tests/test_wave_summary.py::TestPrintWaveSummary::test_summary_shows_failed_count PASSED [ 85%]
++tests/test_wave_summary.py::TestPrintWaveSummary::test_summary_shows_skipped_count PASSED [ 86%]
++tests/test_wave_summary.py::TestPrintWaveSummary::test_per_task_breakdown_includes_task_id PASSED [ 86%]
++tests/test_wave_summary.py::TestPrintWaveSummary::test_per_task_success_shows_checkmark PASSED [ 86%]
++tests/test_wave_summary.py::TestPrintWaveSummary::test_per_task_failure_shows_cross PASSED [ 86%]
++tests/test_wave_summary.py::TestPrintWaveSummary::test_per_task_skipped_shows_circle PASSED [ 86%]
++tests/test_wave_summary.py::TestPrintWaveSummary::test_failed_task_shows_error_message PASSED [ 86%]
++tests/test_wave_summary.py::TestPrintWaveSummary::test_skipped_task_does_not_show_error_message_as_failure PASSED [ 87%]
++tests/test_wave_summary.py::TestPrintWaveSummary::test_summary_uses_green_for_succeeded PASSED [ 87%]
++tests/test_wave_summary.py::TestPrintWaveSummary::test_summary_uses_red_for_failed PASSED [ 87%]
++tests/test_wave_summary.py::TestPrintWaveSummary::test_summary_uses_yellow_for_skipped PASSED [ 87%]
++tests/test_wave_summary.py::TestPrintWaveSummary::test_no_skipped_ids_defaults_to_empty PASSED [ 87%]
++tests/test_wave_summary.py::TestWaveHistories::test_wave_histories_populated_after_run PASSED [ 87%]
++tests/test_wave_summary.py::TestWaveHistories::test_wave_histories_count_matches_waves_run PASSED [ 88%]
++tests/test_wave_summary.py::TestWaveHistories::test_wave_histories_are_wave_summary_instances PASSED [ 88%]
++tests/test_wave_summary.py::TestWaveHistories::test_wave_summary_wave_number_sequential PASSED [ 88%]
++tests/test_wave_summary.py::TestWaveHistories::test_wave_summary_succeeded_count_all_ok PASSED [ 88%]
++tests/test_wave_summary.py::TestWaveHistories::test_wave_summary_failed_count PASSED [ 88%]
++tests/test_wave_summary.py::TestWaveHistories::test_wave_summary_skipped_count_blocked_deps PASSED [ 88%]
++tests/test_wave_summary.py::TestWaveHistories::test_wave_summary_total_matches_tasks_in_wave PASSED [ 89%]
++tests/test_wave_summary.py::TestWaveHistories::test_wave_summary_results_contains_task_results PASSED [ 89%]
++tests/test_wave_summary.py::TestWaveHistories::test_wave_histories_empty_list_on_no_tasks PASSED [ 89%]
++tests/test_wave_summary.py::TestWaveHistories::test_wave_summary_captures_error_message PASSED [ 89%]
++tests/test_wave_summary.py::TestWaveSummaryIntegration::test_summary_printed_for_each_wave PASSED [ 89%]
++tests/test_wave_summary.py::TestWaveSummaryIntegration::test_summary_printed_before_next_wave_starts PASSED [ 90%]
++tests/test_wave_summary.py::TestWaveSummaryIntegration::test_failed_task_error_visible_in_run_parallel_output PASSED [ 90%]
++tests/test_workstream.py::TestLoadTasks::test_no_workstream_returns_all_tasks PASSED [ 90%]
++tests/test_workstream.py::TestLoadTasks::test_workstream_on_instance_filters_by_prefix PASSED [ 90%]
++tests/test_workstream.py::TestLoadTasks::test_explicit_workstream_arg_overrides_instance PASSED [ 90%]
++tests/test_workstream.py::TestLoadTasks::test_explicit_none_arg_falls_back_to_instance_workstream PASSED [ 90%]
++tests/test_workstream.py::TestLoadTasks::test_returns_empty_list_when_no_tasks_match PASSED [ 91%]
++tests/test_workstream.py::TestGetNextTaskWorkstream::test_workstream_filters_eligible_tasks PASSED [ 91%]
++tests/test_workstream.py::TestGetNextTaskWorkstream::test_workstream_skips_tasks_from_other_streams PASSED [ 91%]
++tests/test_workstream.py::TestGetNextTaskWorkstream::test_without_workstream_all_tasks_eligible PASSED [ 91%]
++tests/test_workstream.py::TestGetNextTaskWorkstream::test_returns_none_when_no_matching_incomplete_tasks PASSED [ 91%]
++tests/test_workstream.py::TestGetNextTaskWorkstream::test_completed_ids_span_all_tasks_for_dependency_resolution PASSED [ 91%]
++tests/test_workstream.py::TestCountRemainingWorkstream::test_counts_only_workstream_tasks PASSED [ 92%]
++tests/test_workstream.py::TestCountRemainingWorkstream::test_without_workstream_counts_all PASSED [ 92%]
++tests/test_workstream.py::TestBranchNamingWithWorkstream::test_workstream_prefix_in_branch_name PASSED [ 92%]
++tests/test_workstream.py::TestBranchNamingWithWorkstream::test_no_workstream_no_prefix PASSED [ 92%]
++tests/test_workstream.py::TestBranchNamingWithWorkstream::test_different_workstreams_produce_distinct_branches PASSED [ 92%]
++tests/test_workstream.py::TestBranchNamingWithWorkstream::test_same_task_different_workstreams_do_not_collide PASSED [ 92%]
++tests/test_workstream.py::TestWorktreePathWithWorkstream::test_workstream_adds_subdirectory PASSED [ 93%]
++tests/test_workstream.py::TestWorktreePathWithWorkstream::test_no_workstream_path_unchanged PASSED [ 93%]
++tests/test_workstream.py::TestWorktreePathWithWorkstream::test_different_workstreams_have_isolated_paths PASSED [ 93%]
++tests/test_workstream.py::TestWorktreePathWithWorkstream::test_worktree_path_is_under_ralph_worktrees PASSED [ 93%]
++tests/test_workstream.py::TestCreateWorktreeWithWorkstream::test_create_worktree_returns_workstream_scoped_path PASSED [ 93%]
++tests/test_workstream.py::TestCreateWorktreeWithWorkstream::test_create_worktree_uses_workstream_branch_name PASSED [ 93%]
++tests/test_workstream.py::TestCreateWorktreeWithWorkstream::test_parent_dir_created_under_workstream_subdir PASSED [ 94%]
++tests/test_workstream.py::TestListActiveWorktreesWithWorkstream::test_lists_only_workstream_directory PASSED [ 94%]
++tests/test_workstream.py::TestListActiveWorktreesWithWorkstream::test_no_workstream_lists_top_level_dirs PASSED [ 94%]
++tests/test_workstream.py::TestListActiveWorktreesWithWorkstream::test_returns_empty_when_workstream_dir_missing PASSED [ 94%]
++tests/test_workstream.py::TestConcurrentWorkstreams::test_two_workstreams_produce_disjoint_branch_names PASSED [ 94%]
++tests/test_workstream.py::TestConcurrentWorkstreams::test_two_workstreams_produce_disjoint_worktree_paths PASSED [ 95%]
++tests/test_workstream.py::TestConcurrentWorkstreams::test_workstream_task_selection_is_independent PASSED [ 95%]
++tests/test_worktree_manager.py::TestBranchNaming::test_no_workstream_uses_feature_prefix PASSED [ 95%]
++tests/test_worktree_manager.py::TestBranchNaming::test_workstream_included_in_branch_name PASSED [ 95%]
++tests/test_worktree_manager.py::TestBranchNaming::test_workstream_none_omits_prefix PASSED [ 95%]
++tests/test_worktree_manager.py::TestBranchNaming::test_different_workstreams_produce_distinct_names PASSED [ 95%]
++tests/test_worktree_manager.py::TestWorktreePath::test_path_is_under_ralph_worktrees PASSED [ 96%]
++tests/test_worktree_manager.py::TestWorktreePath::test_different_tasks_get_different_paths PASSED [ 96%]
++tests/test_worktree_manager.py::TestCreateWorktree::test_creates_isolated_git_worktree_directory PASSED [ 96%]
++tests/test_worktree_manager.py::TestCreateWorktree::test_worktree_add_uses_correct_branch_and_base PASSED [ 96%]
++tests/test_worktree_manager.py::TestCreateWorktree::test_workstream_prefix_in_branch_name PASSED [ 96%]
++tests/test_worktree_manager.py::TestCreateWorktree::test_parent_directory_created_before_git_call PASSED [ 96%]
++tests/test_worktree_manager.py::TestCreateWorktree::test_raises_worktree_error_on_git_failure PASSED [ 97%]
++tests/test_worktree_manager.py::TestCreateWorktree::test_cwd_passed_to_runner PASSED [ 97%]
++tests/test_worktree_manager.py::TestCreateWorktree::test_parallel_tasks_get_separate_paths PASSED [ 97%]
++tests/test_worktree_manager.py::TestCleanupWorktree::test_calls_git_worktree_remove PASSED [ 97%]
++tests/test_worktree_manager.py::TestCleanupWorktree::test_calls_git_worktree_prune PASSED [ 97%]
++tests/test_worktree_manager.py::TestCleanupWorktree::test_removes_leftover_directory PASSED [ 97%]
++tests/test_worktree_manager.py::TestCleanupWorktree::test_safe_to_call_when_directory_missing PASSED [ 98%]
++tests/test_worktree_manager.py::TestCleanupWorktree::test_remove_called_with_force_flag PASSED [ 98%]
++tests/test_worktree_manager.py::TestListActiveWorktrees::test_returns_empty_list_when_no_worktrees_dir PASSED [ 98%]
++tests/test_worktree_manager.py::TestListActiveWorktrees::test_returns_task_ids_of_existing_directories PASSED [ 98%]
++tests/test_worktree_manager.py::TestListActiveWorktrees::test_ignores_files_only_returns_directories PASSED [ 98%]
++tests/test_worktree_manager.py::TestListActiveWorktrees::test_result_is_sorted PASSED [ 98%]
++tests/test_worktree_manager.py::TestMakeIsolatedRunner::test_worktree_created_before_inner_runner PASSED [ 99%]
++tests/test_worktree_manager.py::TestMakeIsolatedRunner::test_worktree_path_passed_to_inner PASSED [ 99%]
++tests/test_worktree_manager.py::TestMakeIsolatedRunner::test_cleanup_called_on_success PASSED [ 99%]
++tests/test_worktree_manager.py::TestMakeIsolatedRunner::test_cleanup_called_on_failure PASSED [ 99%]
++tests/test_worktree_manager.py::TestMakeIsolatedRunner::test_parallel_tasks_use_separate_worktrees PASSED [ 99%]
++tests/test_worktree_manager.py::TestMakeIsolatedRunner::test_task_execution_uses_worktree_as_working_directory PASSED [100%]
++
++=============================== warnings summary ===============================
++ralph.py:3889
++  /home/james/Programming/personal/ralphzilla/ralph.py:3889: PytestCollectionWarning: cannot collect test class 'TestQualityChecker' because it has a __init__ constructor (from: tests/test_quality_checker.py)
++    class TestQualityChecker:
++
++ralph.py:862
++  /home/james/Programming/personal/ralphzilla/ralph.py:862: PytestCollectionWarning: cannot collect test class 'TestQualityResult' because it has a __init__ constructor (from: tests/test_scaffold.py)
++    @dataclass
++
++ralph.py:3767
++  /home/james/Programming/personal/ralphzilla/ralph.py:3767: PytestCollectionWarning: cannot collect test class 'TestRunner' because it has a __init__ constructor (from: tests/test_test_runner.py)
++    class TestRunner:
++
++tests/test_escalation_manager.py: 13 warnings
++  /home/james/Programming/personal/ralphzilla/ralph.py:3026: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
++    timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%S")
++
++-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
++====================== 580 passed, 16 warnings in 59.66s =======================
++
++trim trailing whitespace.................................................Passed
++fix end of files.........................................................Failed
++- hook id: end-of-file-fixer
++- exit code: 1
++- files were modified by this hook
++
++Fixing prd.json
++
++check yaml...............................................................Passed
++check for added large files..............................................Passed
++check json...............................................................Passed
++
++
++Please fix the issues.
++
++2026-04-27 12:56:56 [INFO ] Running command: uv run pre-commit run --all-files
++2026-04-27 12:57:22 [WARN ] Pre-commit failed (round 2/2)
++2026-04-27 12:57:22 [ERROR] Pre-commit still failing after max rounds.
++2026-04-27 12:57:22 [WARN ] [_run_task_standard] Step 4: pre-commit failed after 2 rounds
++2026-04-27 12:57:22 [INFO ] [_run_task_standard] Step 5: TestRunner.run
++2026-04-27 12:57:22 [INFO ] Running quality checks...
++Traceback (most recent call last):
++  File "/home/james/Programming/personal/ralphzilla/.venv/bin/rzilla", line 10, in <module>
++    sys.exit(cli())
++             ~~~^^
++  File "/home/james/Programming/personal/ralphzilla/.venv/lib/python3.13/site-packages/click/core.py", line 1485, in __call__
++    return self.main(*args, **kwargs)
++           ~~~~~~~~~^^^^^^^^^^^^^^^^^
++  File "/home/james/Programming/personal/ralphzilla/.venv/lib/python3.13/site-packages/click/core.py", line 1406, in main
++    rv = self.invoke(ctx)
++  File "/home/james/Programming/personal/ralphzilla/.venv/lib/python3.13/site-packages/click/core.py", line 1873, in invoke
++    return _process_result(sub_ctx.command.invoke(sub_ctx))
++                           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
++  File "/home/james/Programming/personal/ralphzilla/.venv/lib/python3.13/site-packages/click/core.py", line 1269, in invoke
++    return ctx.invoke(self.callback, **ctx.params)
++           ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
++  File "/home/james/Programming/personal/ralphzilla/.venv/lib/python3.13/site-packages/click/core.py", line 824, in invoke
++    return callback(*args, **kwargs)
++  File "/home/james/Programming/personal/ralphzilla/ralph.py", line 4974, in run
++    orchestrator = Orchestrator(config, logger)
++    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
++  File "/home/james/Programming/personal/ralphzilla/ralph.py", line 4629, in run
++  File "/home/james/Programming/personal/ralphzilla/ralph.py", line 4596, in _run_task
++  File "/home/james/Programming/personal/ralphzilla/ralph.py", line 4360, in _run_task_standard
++    self.logger.info("[_run_task_standard] Step 5: TestRunner.run")
++                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
++  File "/home/james/Programming/personal/ralphzilla/ralph.py", line 3656, in run
++    self.logger.info("Running quality checks...")
++                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
++  File "/home/james/Programming/personal/ralphzilla/ralph.py", line 1711, in get_quality_checks
++    def get_quality_checks(self) -> list[str]:
++              ^^^^^^^^^^^
++  File "/home/james/Programming/personal/ralphzilla/ralph.py", line 1635, in load
++    with open(self.prd_path, "r", encoding="utf-8") as f:
++               ^^^^^^^^^^^^
++  File "/home/james/miniconda3/lib/python3.13/json/__init__.py", line 298, in load
++    return loads(fp.read(),
++        cls=cls, object_hook=object_hook,
++        parse_float=parse_float, parse_int=parse_int,
++        parse_constant=parse_constant, object_pairs_hook=object_pairs_hook, **kw)
++  File "/home/james/miniconda3/lib/python3.13/json/__init__.py", line 352, in loads
++    return _default_decoder.decode(s)
++           ~~~~~~~~~~~~~~~~~~~~~~~^^^
++  File "/home/james/miniconda3/lib/python3.13/json/decoder.py", line 345, in decode
++    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
++               ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
++  File "/home/james/miniconda3/lib/python3.13/json/decoder.py", line 361, in raw_decode
++    obj, end = self.scan_once(s, idx)
++               ~~~~~~~~~~~~~~^^^^^^^^
++json.decoder.JSONDecodeError: Illegal trailing comma before end of array: line 7 column 53 (char 307)
++2026-04-27 13:34:19 [INFO ] Running preflight checks...
++2026-04-27 13:34:19 [INFO ] Running command: gh --version
++2026-04-27 13:34:19 [INFO ] Running command: git --version
++2026-04-27 13:34:19 [INFO ] Running command: git remote get-url origin
++2026-04-27 13:34:19 [INFO ] Running command: git diff --quiet origin/main -- prd.json
++2026-04-27 13:34:19 [INFO ] Preflight passed.
++2026-04-27 13:34:19 [INFO ] Iteration 1/10: M6-01 multi_runtime_abstraction_layer
++2026-04-27 13:34:19 [INFO ] [_run_task_standard] START: M6-01
++2026-04-27 13:34:19 [INFO ] [_run_task_standard] Step 1: ensure_main_up_to_date
++2026-04-27 13:34:19 [INFO ] Running command: git checkout main
++2026-04-27 13:34:19 [INFO ] Running command: git fetch origin main
++2026-04-27 13:34:20 [INFO ] Running command: git reset --hard origin/main
++2026-04-27 13:34:20 [INFO ] [_run_task_standard] Step 1 complete
++2026-04-27 13:34:20 [INFO ] [_run_task_standard] Step 2: checkout_or_create
++2026-04-27 13:34:20 [INFO ] Running command: git branch --list ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-27 13:34:20 [INFO ] Creating new branch: ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-27 13:34:20 [INFO ] Running command: git checkout -b ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-27 13:34:20 [INFO ] Running command: git rev-list --count main..ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-27 13:34:20 [INFO ] [_run_task_standard] Step 2 complete
++2026-04-27 13:34:20 [INFO ] [_run_task_standard] Step 3: run_coder
++2026-04-27 13:34:20 [INFO ] Invoking coder: opencode
++2026-04-27 13:34:20 [INFO ] Running command: opencode run -m opencode/big-pickle --dangerously-skip-permissions You are opencode, an expert software engineer.
++Your task is: multi_runtime_abstraction_layer
++Description: Design and implement an abstraction layer in ralph.py to support multiple AI runtimes. Create a base `AIRunner` abstract class with common interface methods: `run_task(task_id, branch_name)` that returns completion status and output. Define the contract that all runtime implementations must follow including: command execution, output capture, error handling, and timeout management. This enables plugging in different AI tools (Aider, Cursor, Cline, Codex) without changing the core ralph loop logic. The abstraction should handle runtime detection, version checking, and graceful degradation when a runtime is unavailable.
++
++Acceptance Criteria:
++1. tests/test_runner.py: AIRunner base class exists with abstract methods
++2. tests/test_runner.py: Runtime configuration schema validates correctly
++3. tests/test_runner.py: Unsupported runtime raises clear error
++4. ralph.py: Base runner class implemented with proper abc module usage
++
++Files to modify: 
++
++
++
++IMPORTANT: Do NOT touch prd.json or progress.txt — the orchestrator
++handles all of that after your PR is merged.
++
++2026-04-27 13:37:43 [INFO ] [_run_task_standard] Step 3 complete
++2026-04-27 13:37:43 [INFO ] [_run_task_standard] Step 4: PreCommitGate.run
++2026-04-27 13:37:43 [INFO ] Running pre-commit gate...
++2026-04-27 13:37:43 [INFO ] Running command: uv run ruff check --fix .
++2026-04-27 13:37:43 [INFO ] Running command: uv run ruff format .
++2026-04-27 13:37:43 [INFO ] Running command: uv run pre-commit run --all-files
++2026-04-27 13:37:45 [WARN ] Pre-commit failed (round 1/2)
++2026-04-27 13:37:45 [INFO ] Invoking coder: opencode
++2026-04-27 13:37:45 [INFO ] Running command: opencode run -m opencode/big-pickle --dangerously-skip-permissions The task 'multi_runtime_abstraction_layer' failed pre-commit hooks.
++Failure output:
++ruff (legacy alias)......................................................Passed
++ruff format..............................................................Passed
++pytest...................................................................Failed
++- hook id: pytest
++- exit code: 2
++
++============================= test session starts ==============================
++platform linux -- Python 3.13.12, pytest-9.0.3, pluggy-1.6.0 -- /home/james/Programming/personal/ralphzilla/.venv/bin/python3
++cachedir: .pytest_cache
++rootdir: /home/james/Programming/personal/ralphzilla
++configfile: pyproject.toml
++plugins: anyio-4.13.0, cov-7.1.0
++collecting ... collected 564 items / 1 error
++
++==================================== ERRORS ====================================
++____________________ ERROR collecting tests/test_runner.py _____________________
++ImportError while importing test module '/home/james/Programming/personal/ralphzilla/tests/test_runner.py'.
++Hint: make sure your test modules/packages have valid Python names.
++Traceback:
++.venv/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
++    mod = import_path(
++.venv/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
++    importlib.import_module(module_name)
++../../../miniconda3/lib/python3.13/importlib/__init__.py:88: in import_module
++    return _bootstrap._gcd_import(name[level:], package, level)
++           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
++<frozen importlib._bootstrap>:1387: in _gcd_import
++    ???
++<frozen importlib._bootstrap>:1360: in _find_and_load
++    ???
++<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
++    ???
++<frozen importlib._bootstrap>:935: in _load_unlocked
++    ???
++.venv/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
++    exec(co, module.__dict__)
++tests/test_runner.py:5: in <module>
++    from ralph import (
++E   ImportError: cannot import name 'AIRunnerBase' from 'ralph' (/home/james/Programming/personal/ralphzilla/ralph.py)
++=============================== warnings summary ===============================
++ralph.py:3757
++  /home/james/Programming/personal/ralphzilla/ralph.py:3757: PytestCollectionWarning: cannot collect test class 'TestQualityChecker' because it has a __init__ constructor (from: tests/test_quality_checker.py)
++    class TestQualityChecker:
++
++ralph.py:730
++  /home/james/Programming/personal/ralphzilla/ralph.py:730: PytestCollectionWarning: cannot collect test class 'TestQualityResult' because it has a __init__ constructor (from: tests/test_scaffold.py)
++    @dataclass
++
++ralph.py:3635
++  /home/james/Programming/personal/ralphzilla/ralph.py:3635: PytestCollectionWarning: cannot collect test class 'TestRunner' because it has a __init__ constructor (from: tests/test_test_runner.py)
++    class TestRunner:
++
++-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
++=========================== short test summary info ============================
++ERROR tests/test_runner.py
++!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
++========================= 3 warnings, 1 error in 0.61s =========================
++
++trim trailing whitespace.................................................Passed
++fix end of files.........................................................Failed
++- hook id: end-of-file-fixer
++- exit code: 1
++- files were modified by this hook
++
++Fixing prd.json
++
++check yaml...............................................................Passed
++check for added large files..............................................Passed
++check json...............................................................Passed
++
++
++Please fix the issues.
++
++2026-04-27 13:54:34 [ERROR] Coder opencode failed.
++2026-04-27 13:54:34 [INFO ] Running command: uv run pre-commit run --all-files
++2026-04-27 13:55:33 [WARN ] Pre-commit failed (round 2/2)
++2026-04-27 13:55:33 [ERROR] Pre-commit still failing after max rounds.
++2026-04-27 13:55:33 [WARN ] [_run_task_standard] Step 4: pre-commit failed after 2 rounds
++2026-04-27 13:55:33 [INFO ] [_run_task_standard] Step 5: TestRunner.run
++2026-04-27 13:55:33 [INFO ] Running quality checks...
++2026-04-27 13:55:33 [INFO ] Running command: uv run pytest tests/ -v
++2026-04-27 13:55:35 [WARN ] Quality checks failed (round 1/2)
++2026-04-27 13:55:35 [INFO ] Invoking coder: opencode
++2026-04-27 13:55:35 [INFO ] Running command: opencode run -m opencode/big-pickle --dangerously-skip-permissions The task 'multi_runtime_abstraction_layer' failed quality checks/tests.
++Failure output:
++Command failed: uv run pytest tests/ -v
++============================= test session starts ==============================
++platform linux -- Python 3.13.12, pytest-9.0.3, pluggy-1.6.0 -- /home/james/Programming/personal/ralphzilla/.venv/bin/python3
++cachedir: .pytest_cache
++rootdir: /home/james/Programming/personal/ralphzilla
++configfile: pyproject.toml
++plugins: anyio-4.13.0, cov-7.1.0
++collecting ... collected 564 items / 1 error
++
++==================================== ERRORS ====================================
++____________________ ERROR collecting tests/test_runner.py _____________________
++ImportError while importing test module '/home/james/Programming/personal/ralphzilla/tests/test_runner.py'.
++Hint: make sure your test modules/packages have valid Python names.
++Traceback:
++.venv/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
++    mod = import_path(
++.venv/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
++    importlib.import_module(module_name)
++../../../miniconda3/lib/python3.13/importlib/__init__.py:88: in import_module
++    return _bootstrap._gcd_import(name[level:], package, level)
++           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
++<frozen importlib._bootstrap>:1387: in _gcd_import
++    ???
++<frozen importlib._bootstrap>:1360: in _find_and_load
++    ???
++<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
++    ???
++<frozen importlib._bootstrap>:935: in _load_unlocked
++    ???
++.venv/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
++    exec(co, module.__dict__)
++tests/test_runner.py:5: in <module>
++    from ralph import (
++E   ImportError: cannot import name 'AIRunnerBase' from 'ralph' (/home/james/Programming/personal/ralphzilla/ralph.py)
++=============================== warnings summary ===============================
++ralph.py:3756
++  /home/james/Programming/personal/ralphzilla/ralph.py:3756: PytestCollectionWarning: cannot collect test class 'TestQualityChecker' because it has a __init__ constructor (from: tests/test_quality_checker.py)
++    class TestQualityChecker:
++
++ralph.py:730
++  /home/james/Programming/personal/ralphzilla/ralph.py:730: PytestCollectionWarning: cannot collect test class 'TestQualityResult' because it has a __init__ constructor (from: tests/test_scaffold.py)
++    @dataclass
++
++ralph.py:3634
++  /home/james/Programming/personal/ralphzilla/ralph.py:3634: PytestCollectionWarning: cannot collect test class 'TestRunner' because it has a __init__ constructor (from: tests/test_test_runner.py)
++    class TestRunner:
++
++-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
++=========================== short test summary info ============================
++ERROR tests/test_runner.py
++!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
++========================= 3 warnings, 1 error in 0.72s =========================
++
++
++
++
++Please fix the implementation to pass the tests.
++
++2026-04-27 13:59:26 [INFO ] Running command: uv run pytest tests/ -v
++2026-04-27 13:59:52 [INFO ] Running command: uv run ruff check ralph.py tests/
++2026-04-27 13:59:52 [INFO ] Running command: uv run ruff format --check ralph.py tests/
++2026-04-27 13:59:52 [WARN ] Quality checks failed (round 2/2)
++2026-04-27 13:59:52 [ERROR] Quality checks still failing after max rounds.
++2026-04-27 13:59:52 [WARN ] [_run_task_standard] Step 5: tests failed after 2 rounds
++2026-04-27 13:59:52 [INFO ] [_run_task_standard] Step 6: push_branch
++2026-04-27 13:59:52 [INFO ] Running command: git remote get-url origin
++2026-04-27 13:59:52 [INFO ] Running command: git push --set-upstream origin ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-27 13:59:54 [INFO ] [_run_task_standard] Step 6 complete
++2026-04-27 13:59:54 [INFO ] [_run_task_standard] Step 6.5: create PR
++2026-04-27 13:59:54 [INFO ] Running command: gh pr create --head ralph/M6-01-multi-runtime-abstraction-layer --title multi_runtime_abstraction_layer --body ## Task: multi_runtime_abstraction_layer
++
++Design and implement an abstraction layer in ralph.py to support multiple AI runtimes. Create a base `AIRunner` abstract class with common interface methods: `run_task(task_id, branch_name)` that returns completion status and output. Define the contract that all runtime implementations must follow including: command execution, output capture, error handling, and timeout management. This enables plugging in different AI tools (Aider, Cursor, Cline, Codex) without changing the core ralph loop logic. The abstraction should handle runtime detection, version checking, and graceful degradation when a runtime is unavailable.
++
++### Acceptance Criteria
++- [ ] tests/test_runner.py: AIRunner base class exists with abstract methods
++- [ ] tests/test_runner.py: Runtime configuration schema validates correctly
++- [ ] tests/test_runner.py: Unsupported runtime raises clear error
++- [ ] ralph.py: Base runner class implemented with proper abc module usage
++
++2026-04-27 13:59:55 [ERROR] [_run_task_standard] Step 6.5 failed: Command '['gh', 'pr', 'create', '--head', 'ralph/M6-01-multi-runtime-abstraction-layer', '--title', 'multi_runtime_abstraction_layer', '--body', '## Task: multi_runtime_abstraction_layer\n\nDesign and implement an abstraction layer in ralph.py to support multiple AI runtimes. Create a base `AIRunner` abstract class with common interface methods: `run_task(task_id, branch_name)` that returns completion status and output. Define the contract that all runtime implementations must follow including: command execution, output capture, error handling, and timeout management. This enables plugging in different AI tools (Aider, Cursor, Cline, Codex) without changing the core ralph loop logic. The abstraction should handle runtime detection, version checking, and graceful degradation when a runtime is unavailable.\n\n### Acceptance Criteria\n- [ ] tests/test_runner.py: AIRunner base class exists with abstract methods\n- [ ] tests/test_runner.py: Runtime configuration schema validates correctly\n- [ ] tests/test_runner.py: Unsupported runtime raises clear error\n- [ ] ralph.py: Base runner class implemented with proper abc module usage\n']' returned non-zero exit status 1.
++2026-04-27 13:59:55 [ERROR] Task failed: PR creation failed: Command '['gh', 'pr', 'create', '--head', 'ralph/M6-01-multi-runtime-abstraction-layer', '--title', 'multi_runtime_abstraction_layer', '--body', '## Task: multi_runtime_abstraction_layer\n\nDesign and implement an abstraction layer in ralph.py to support multiple AI runtimes. Create a base `AIRunner` abstract class with common interface methods: `run_task(task_id, branch_name)` that returns completion status and output. Define the contract that all runtime implementations must follow including: command execution, output capture, error handling, and timeout management. This enables plugging in different AI tools (Aider, Cursor, Cline, Codex) without changing the core ralph loop logic. The abstraction should handle runtime detection, version checking, and graceful degradation when a runtime is unavailable.\n\n### Acceptance Criteria\n- [ ] tests/test_runner.py: AIRunner base class exists with abstract methods\n- [ ] tests/test_runner.py: Runtime configuration schema validates correctly\n- [ ] tests/test_runner.py: Unsupported runtime raises clear error\n- [ ] ralph.py: Base runner class implemented with proper abc module usage\n']' returned non-zero exit status 1.
++2026-04-27 13:59:55 [INFO ] Loop stopped due to fatal error.
++2026-04-27 13:59:55 [INFO ] Sprint complete
++2026-04-27 13:59:55 [INFO ] Loop finished.
++2026-04-27 13:59:55 [INFO ] Running command: git branch --list ralph/*
++2026-04-27 13:59:55 [INFO ] [ScrumMaster] Checking branch: ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-27 13:59:55 [INFO ] Running command: gh pr list --head ralph/M6-01-multi-runtime-abstraction-layer --state open --json number,url
++2026-04-27 13:59:55 [INFO ] Running command: git log -1 --format=%ct ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-27 13:59:55 [INFO ] [ScrumMaster] Deleting stale branch ralph/M6-01-multi-runtime-abstraction-layer: no open PR
++2026-04-27 13:59:55 [INFO ] Running command: git branch -D ralph/M6-01-multi-runtime-abstraction-layer
++2026-04-27 13:59:55 [INFO ] [ScrumMaster] Cleanup complete. Deleted 1 stale branch(es).
++2026-04-27 13:59:55 [INFO ] Sprint summary written to ralph-summary-2026-04-27T135955.md
++2026-04-27 13:59:55 [WARN ] Clean-exit verification failed: ['progress.txt update marker missing']
++2026-04-27 13:59:55 [INFO ] Recorded run history: unclean (54 tasks)
++2026-04-27 15:16:10 [INFO ] Running preflight checks...
++2026-04-27 15:16:10 [INFO ] Running command: gh --version
++2026-04-27 15:16:10 [INFO ] Running command: git --version
++2026-04-27 15:16:10 [INFO ] Running command: git remote get-url origin
++2026-04-27 15:16:10 [INFO ] Running command: git diff --quiet origin/main -- prd.json
++2026-04-27 15:16:10 [INFO ] Preflight passed.
++2026-04-27 15:16:10 [INFO ] Iteration 1/10: M6-02 aider_runtime_support
++2026-04-27 15:16:10 [INFO ] [_run_task_standard] START: M6-02
++2026-04-27 15:16:10 [INFO ] [_run_task_standard] Step 1: ensure_main_up_to_date
++2026-04-27 15:16:10 [INFO ] Running command: git status --porcelain
++2026-04-27 15:16:10 [WARN ] [BranchManager] Uncommitted changes before main reset — stashing
++2026-04-27 15:16:10 [INFO ] Running command: git stash push -m ralph-auto-stash
++2026-04-27 15:16:10 [INFO ] Running command: git checkout main
++2026-04-27 15:16:10 [INFO ] Running command: git fetch origin main
++2026-04-27 15:16:11 [INFO ] Running command: git reset --hard origin/main
++2026-04-27 15:16:11 [INFO ] [_run_task_standard] Step 1 complete
++2026-04-27 15:16:11 [INFO ] [_run_task_standard] Step 2: checkout_or_create
++2026-04-27 15:16:11 [INFO ] Running command: git branch --list ralph/M6-02-aider-runtime-support
++2026-04-27 15:16:11 [INFO ] Creating new branch: ralph/M6-02-aider-runtime-support
++2026-04-27 15:16:11 [INFO ] Running command: git checkout -b ralph/M6-02-aider-runtime-support
++2026-04-27 15:16:11 [INFO ] Running command: git rev-list --count main..ralph/M6-02-aider-runtime-support
++2026-04-27 15:16:11 [INFO ] [_run_task_standard] Step 2 complete
++2026-04-27 15:16:11 [INFO ] [_run_task_standard] Step 3: run_coder
++2026-04-27 15:16:11 [INFO ] Invoking coder: opencode
++2026-04-27 15:16:11 [INFO ] Running command: opencode run -m opencode/big-pickle --dangerously-skip-permissions You are opencode, an expert software engineer.
++Your task is: aider_runtime_support
++Description: Implement Aider runtime support by creating `AiderRunner` class that extends the AIRunner abstraction. Integrate with Aider's CLI interface to run tasks on branches. Handle Aider-specific flags like --model, --message, and --file. Capture Aider's output including any file modifications made during the session. Implement proper timeout handling since Aider may prompt for user input. Add detection logic to verify Aider is installed and accessible. This allows ralph to use Aider as an alternative AI coding agent alongside Claude.
++
++Acceptance Criteria:
++1. tests/test_aider_runner.py: AiderRunner detects aider CLI availability
++2. tests/test_aider_runner.py: run_task() executes aider with correct arguments
++3. tests/test_aider_runner.py: Output capture includes file modification summaries
++4. tests/test_aider_runner.py: Timeout handling prevents indefinite hangs
++5. ralph.py: AiderRunner class implemented and registered
++
++Files to modify: 
++
++
++
++IMPORTANT: Do NOT touch prd.json or progress.txt — the orchestrator
++handles all of that after your PR is merged.
++
++IMPORTANT: When finished, commit ALL your changes before exiting:
++  git add -A
++  git commit -m "feat: M6-02 <short description>"
++Do NOT leave changes uncommitted — the orchestrator cannot create a PR without commits.
++
++2026-04-27 15:36:10 [INFO ] [_run_task_standard] Step 3 complete
++2026-04-27 15:36:10 [INFO ] [_run_task_standard] Step 4: PreCommitGate.run
++2026-04-27 15:36:10 [INFO ] Running pre-commit gate...
++2026-04-27 15:36:10 [INFO ] Running command: uv run ruff check --fix .
++2026-04-27 15:36:10 [INFO ] Running command: uv run ruff format .
++2026-04-27 15:36:10 [INFO ] Running command: uv run pre-commit run --all-files
++2026-04-27 15:36:11 [WARN ] Pre-commit failed (round 1/2)
++2026-04-27 15:36:11 [INFO ] Invoking coder: opencode
++2026-04-27 15:36:11 [INFO ] Running command: opencode run -m opencode/big-pickle --dangerously-skip-permissions The task 'aider_runtime_support' failed pre-commit hooks.
++Failure output:
++ruff (legacy alias)......................................................Passed
++ruff format..............................................................Passed
++pytest...................................................................Failed
++- hook id: pytest
++- exit code: 2
++
++============================= test session starts ==============================
++platform linux -- Python 3.13.12, pytest-9.0.3, pluggy-1.6.0 -- /home/james/Programming/personal/ralphzilla/.venv/bin/python3
++cachedir: .pytest_cache
++rootdir: /home/james/Programming/personal/ralphzilla
++configfile: pyproject.toml
++plugins: anyio-4.13.0, cov-7.1.0
++collecting ... collected 581 items / 1 error
++
++==================================== ERRORS ====================================
++_________________ ERROR collecting tests/test_aider_runner.py __________________
++ImportError while importing test module '/home/james/Programming/personal/ralphzilla/tests/test_aider_runner.py'.
++Hint: make sure your test modules/packages have valid Python names.
++Traceback:
++.venv/lib/python3.13/site-packages/_pytest/python.py:507: in importtestmodule
++    mod = import_path(
++.venv/lib/python3.13/site-packages/_pytest/pathlib.py:587: in import_path
++    importlib.import_module(module_name)
++../../../miniconda3/lib/python3.13/importlib/__init__.py:88: in import_module
++    return _bootstrap._gcd_import(name[level:], package, level)
++           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
++<frozen importlib._bootstrap>:1387: in _gcd_import
++    ???
++<frozen importlib._bootstrap>:1360: in _find_and_load
++    ???
++<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
++    ???
++<frozen importlib._bootstrap>:935: in _load_unlocked
++    ???
++.venv/lib/python3.13/site-packages/_pytest/assertion/rewrite.py:197: in exec_module
++    exec(co, module.__dict__)
++tests/test_aider_runner.py:5: in <module>
++    from ralph import (
++E   ImportError: cannot import name 'AiderRunner' from 'ralph' (/home/james/Programming/personal/ralphzilla/ralph.py). Did you mean: 'AIRunner'?
++=============================== warnings summary ===============================
++ralph.py:3881
++  /home/james/Programming/personal/ralphzilla/ralph.py:3881: PytestCollectionWarning: cannot collect test class 'TestQualityChecker' because it has a __init__ constructor (from: tests/test_quality_checker.py)
++    class TestQualityChecker:
++
++ralph.py:731
++  /home/james/Programming/personal/ralphzilla/ralph.py:731: PytestCollectionWarning: cannot collect test class 'TestQualityResult' because it has a __init__ constructor (from: tests/test_scaffold.py)
++    @dataclass
++
++ralph.py:3759
++  /home/james/Programming/personal/ralphzilla/ralph.py:3759: PytestCollectionWarning: cannot collect test class 'TestRunner' because it has a __init__ constructor (from: tests/test_test_runner.py)
++    class TestRunner:
++
++-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
++=========================== short test summary info ============================
++ERROR tests/test_aider_runner.py
++!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
++========================= 3 warnings, 1 error in 0.63s =========================
++
++trim trailing whitespace.................................................Passed
++fix end of files.........................................................Failed
++- hook id: end-of-file-fixer
++- exit code: 1
++- files were modified by this hook
++
++Fixing prd.json
++
++check yaml...............................................................Passed
++check for added large files..............................................Passed
++check json...............................................................Passed
++
++
++Please fix the issues.
++
++2026-04-27 15:39:37 [INFO ] Running command: uv run pre-commit run --all-files
++2026-04-27 15:40:04 [INFO ] [_run_task_standard] Step 4 complete
++2026-04-27 15:40:04 [INFO ] [_run_task_standard] Step 5: TestRunner.run
++2026-04-27 15:40:04 [INFO ] Running quality checks...
++2026-04-27 15:40:04 [INFO ] Running command: uv run pytest tests/ -v
++2026-04-27 15:40:31 [INFO ] Running command: uv run ruff check ralph.py tests/
++2026-04-27 15:40:31 [INFO ] Running command: uv run ruff format --check ralph.py tests/
++2026-04-27 15:40:31 [INFO ] [_run_task_standard] Step 5 complete
+\ No newline at end of file
+diff --git a/ralph.py b/ralph.py
+index a93bc98..9ebb68a 100644
+--- a/ralph.py
++++ b/ralph.py
+@@ -59,6 +59,8 @@
+ DEFAULT_OPENCODE_TEST_WRITER_MODEL = "opencode/minimax-m2.7"
+ GEMINI_MODEL = "gemini-2.5-pro"
+ ESCALATIONS_FILE = ".ralph/escalations.json"
++MAX_PROMPT_ARG_BYTES = 100_000  # ~100KB — safe CLI arg limit; beyond this write to file
++RALPH_PROMPT_FILE = ".ralph_prompt.md"
+ MAX_RETRIES_PER_BLOCKER = 3
+ MAX_TOTAL_BLOCKERS_PER_SPRINT = 5
+ 
+@@ -3432,10 +3434,13 @@ class RuntimeUnavailableError(Exception):
+ class TaskRunResult:
+     """Result of running a task with an AI runtime."""
+ 
+-    success: bool
+-    task_id: str
+-    branch_name: str
+-    output: str
++    success: bool = False
++    task_id: str = ""
++    branch_name: str = ""
++    output: str = ""
++    agent: str = ""
++    error: str = ""
++    files_changed: list[str] = field(default_factory=list)
+ 
+ 
+ class RuntimeConfig:
+@@ -3457,6 +3462,9 @@ def __init__(
+         primary: str,
+         fallback: list[str] | None = None,
+         timeout: int = 600,
++        repo: str = "ralphzilla",
++        repo_path: Path | None = None,
++        aider_model: str | None = None,
+     ):
+         if primary not in self.SUPPORTED_RUNTIMES:
+             raise ValueError(f"Unsupported runtime: {primary}")
+@@ -3469,6 +3477,9 @@ def __init__(
+         self.primary = primary
+         self.fallback = fallback or []
+         self.timeout = timeout
++        self.repo = repo
++        self.repo_path = repo_path or Path.cwd()
++        self.aider_model = aider_model
+ 
+ 
+ class AIRunnerBase(ABC):
+@@ -3533,9 +3544,154 @@ def check_version(self, runtime: str) -> str | None:
+                 version = version.lstrip("v")
+                 return version.split()[0] if version else None
+ 
++        if runtime == "aider":
++            try:
++                result = self.runner.run(["aider", "--version"], capture_output=True)
++            except Exception:
++                return None
++            returncode = getattr(result, "returncode", None)
++            if returncode == 0:
++                version = result.stdout.strip() if result.stdout else ""
++                parts = version.split()
++                return parts[1] if len(parts) > 1 else parts[0]
++
+         return None
+ 
+ 
++class AiderRunner(AIRunnerBase):
++    """Aider implementation of AIRunnerBase."""
++
++    def get_available_runtimes(self) -> set[str]:
++        try:
++            result = self.runner.run(["aider", "--version"], capture_output=True)
++            if result.returncode == 0:
++                return {"aider"}
++        except Exception:
++            pass
++        return set()
++
++    def run_task(self, task_id: str, branch_name: str) -> TaskRunResult:
++        if not self.is_available():
++            raise RuntimeUnavailableError("aider runtime not available")
++
++        task_tracker = TaskTracker(self.config.repo_path or Path.cwd())
++        task = task_tracker.get_task_by_id(task_id)
++        if not task:
++            return TaskRunResult(
++                success=False,
++                task_id=task_id,
++                branch_name=branch_name,
++                error=f"Task {task_id} not found",
++                agent="aider",
++            )
++
++        task_url = self._build_task_url(branch_name)
++        description = task.get("description", "")
++        files = task.get("files", [])
++        message = (
++            f"Implement task: {task_id}\n{description}\nBranch: {branch_name}\nSee: {task_url}"
++        )
++
++        cmd = [
++            "aider",
++            "--no-auto-commits",
++            "--no-git",
++            "--yes",
++            "--message",
++            message,
++        ]
++
++        if self.config.aider_model:
++            cmd.extend(["--model", self.config.aider_model])
++
++        for f in files:
++            cmd.extend(["--file", str(f)])
++
++        files_before = self._get_changed_files()
++        try:
++            result = self.runner.run(
++                cmd,
++                cwd=self.config.repo_path,
++                timeout=self.config.timeout,
++                start_new_session=True,
++            )
++            output = result.stdout if result else ""
++            stderr = (result.stderr if result else "") or ""
++            if result and result.returncode != 0:
++                output = (output + "\n" + stderr).strip() if stderr else output
++                return TaskRunResult(
++                    success=False,
++                    task_id=task_id,
++                    branch_name=branch_name,
++                    output=output,
++                    error=f"aider exited with code {result.returncode}",
++                    agent="aider",
++                )
++            files_after = self._get_changed_files()
++            files_changed = list(files_after - files_before)
++            return TaskRunResult(
++                success=True,
++                task_id=task_id,
++                branch_name=branch_name,
++                output=output,
++                agent="aider",
++                files_changed=files_changed,
++            )
++        except subprocess.TimeoutExpired:
++            return TaskRunResult(
++                success=False,
++                task_id=task_id,
++                branch_name=branch_name,
++                output="TIMEOUT",
++                agent="aider",
++                error="Timeout expired",
++            )
++        except Exception as e:
++            return TaskRunResult(
++                success=False,
++                task_id=task_id,
++                branch_name=branch_name,
++                error=str(e),
++                agent="aider",
++            )
++
++    def _build_task_url(self, branch_name: str) -> str:
++        """Derive the task URL from git remote origin."""
++        try:
++            result = self.runner.run(
++                ["git", "remote", "get-url", "origin"],
++                cwd=self.config.repo_path,
++                capture_output=True,
++            )
++            if result and result.returncode == 0:
++                url = result.stdout.strip()
++                if url.startswith("git@"):
++                    url = url.replace("git@", "https://", 1).replace(":", "/", 1)
++                if url.endswith(".git"):
++                    url = url[:-4]
++                return f"{url}/tree/{branch_name}"
++        except Exception:
++            pass
++        return f"https://github.com/james-westwood/{self.config.repo}/tree/{branch_name}"
++
++    def _get_changed_files(self) -> set[str]:
++        """Return set of files modified relative to HEAD via git diff."""
++        try:
++            result = self.runner.run(
++                ["git", "diff", "--name-only", "HEAD"],
++                cwd=self.config.repo_path,
++                capture_output=True,
++            )
++            if result and result.returncode == 0 and result.stdout:
++                return {f for f in result.stdout.strip().splitlines() if f.strip()}
++        except Exception:
++            pass
++        return set()
++
++    def is_available(self) -> bool:
++        return "aider" in self.get_available_runtimes()
++
++
+ class AIRunner:
+     """
+     Subprocess wrappers for all AI backends (claude, gemini, opencode).
+@@ -3604,6 +3760,26 @@ def _clean_output(self, text: str) -> str:
+         result = re.sub(r"\n{3,}", "\n\n", result)
+         return result.strip()
+ 
++    def _deliver_prompt(self, prompt: str, cwd: Path) -> tuple[str, "Path | None"]:
++        """If prompt exceeds safe CLI arg size, write to a file and return a redirect.
++
++        Returns (effective_prompt, prompt_file_path_or_None).
++        Caller must delete the file after the subprocess completes.
++        """
++        if len(prompt.encode()) <= MAX_PROMPT_ARG_BYTES:
++            return prompt, None
++        prompt_file = cwd / RALPH_PROMPT_FILE
++        prompt_file.write_text(prompt, encoding="utf-8")
++        self.logger.warn(
++            f"[AIRunner] Prompt too large for CLI arg ({len(prompt.encode())} bytes) "
++            f"— written to {RALPH_PROMPT_FILE}"
++        )
++        redirect = (
++            f"Your full task instructions are in the file {RALPH_PROMPT_FILE} "
++            "in the current directory. Read that file first, then complete the task."
++        )
++        return redirect, prompt_file
++
+     def run_coder(
+         self,
+         agent: str,
+@@ -3614,17 +3790,18 @@ def run_coder(
+     ) -> bool:
+         """Invokes the agent subprocess, returns True on success."""
+         self.logger.info(f"Invoking coder: {agent}")
++        effective_prompt, prompt_file = self._deliver_prompt(prompt, cwd)
+         try:
+             if agent == "claude":
+                 self.runner.run(
+-                    ["claude", "--dangerously-skip-permissions", "--print", prompt],
++                    ["claude", "--dangerously-skip-permissions", "--print", effective_prompt],
+                     env_removals=["CLAUDECODE"],
+                     cwd=cwd,
+                     check=True,
+                 )
+             elif agent == "gemini":
+                 self.runner.run(
+-                    ["gemini", "-m", GEMINI_MODEL, "--yolo", "-p", prompt],
++                    ["gemini", "-m", GEMINI_MODEL, "--yolo", "-p", effective_prompt],
+                     cwd=cwd,
+                     check=True,
+                 )
+@@ -3637,7 +3814,7 @@ def run_coder(
+                         "-m",
+                         model,
+                         "--dangerously-skip-permissions",
+-                        prompt,
++                        effective_prompt,
+                     ],
+                     cwd=cwd,
+                     check=True,
+@@ -3647,6 +3824,9 @@ def run_coder(
+         except subprocess.CalledProcessError:
+             self.logger.error(f"Coder {agent} failed.")
+             return False
++        finally:
++            if prompt_file and prompt_file.exists():
++                prompt_file.unlink()
+ 
+     def run_reviewer(self, agent: str, prompt: str) -> str:
+         """Returns reviewer output; handles nested-Claude fallback."""
+@@ -3658,21 +3838,29 @@ def run_reviewer(self, agent: str, prompt: str) -> str:
+             return self.run_reviewer("gemini", prompt)
+ 
+         self.logger.info(f"Invoking reviewer: {agent}")
++        _cwd = Path(".")
++        effective_prompt, prompt_file = self._deliver_prompt(prompt, _cwd)
+         try:
+             if agent == "claude":
+                 result = self.runner.run(
+-                    ["claude", "--print", prompt],
++                    ["claude", "--print", effective_prompt],
+                     env_removals=["CLAUDECODE"],
+                     check=True,
+                 )
+             elif agent == "gemini":
+                 result = self.runner.run(
+-                    ["gemini", "-m", GEMINI_MODEL, "-p", prompt],
++                    ["gemini", "-m", GEMINI_MODEL, "-p", effective_prompt],
+                     check=True,
+                 )
+             else:  # opencode
+                 result = self.runner.run(
+-                    ["opencode", "run", "-m", self.config.opencode_reviewer_model, prompt],
++                    [
++                        "opencode",
++                        "run",
++                        "-m",
++                        self.config.opencode_reviewer_model,
++                        effective_prompt,
++                    ],
+                     timeout=300,
+                     check=True,
+                 )
+@@ -3680,6 +3868,9 @@ def run_reviewer(self, agent: str, prompt: str) -> str:
+         except subprocess.CalledProcessError:
+             self.logger.error(f"Reviewer {agent} failed.")
+             return ""
++        finally:
++            if prompt_file and prompt_file.exists():
++                prompt_file.unlink()
+ 
+     def run_test_writer(self, prompt: str, cwd: Path, agent: str | None = None) -> bool:
+         """Test writer always uses a different model from coder."""
+@@ -5037,7 +5228,7 @@ def cli():
+     "repo_dir",
+     type=click.Path(exists=True, file_okay=False, path_type=Path),
+     default=None,
+-    help="Repo root (default: directory containing ralph.py)",
++    help="Repo root (default: git repo root nearest to cwd)",
+ )
+ @click.option(
+     "--max-workers",
+@@ -5077,7 +5268,7 @@ def run(
+ ) -> int:
+     """Run the AI sprint loop."""
+     if repo_dir is None:
+-        repo_dir = Path(__file__).parent.resolve()
++        repo_dir = _find_repo_root()
+ 
+     log_file = repo_dir / LOG_FILE_NAME
+ 
+@@ -5156,14 +5347,14 @@ def run(
+     "repo_dir",
+     type=click.Path(file_okay=False, path_type=Path),
+     default=None,
+-    help="Repo root (default: directory containing ralph.py)",
++    help="Repo root (default: git repo root nearest to cwd)",
+ )
+ def init(
+     repo_dir: Path | None,
+ ) -> int:
+     """Initialize a new ralph project."""
+     if repo_dir is None:
+-        repo_dir = Path(__file__).parent.resolve()
++        repo_dir = _find_repo_root()
+ 
+     wizard = DiscoveryWizard(sys.stdin, sys.stdout)
+     spec = wizard.run()
+@@ -5269,6 +5460,24 @@ def init(
+     return 0
+ 
+ 
++def _find_repo_root() -> Path:
++    """Walk upward from cwd to find the git repo root.
++
++    Searches for a .git directory starting at cwd and walking up.
++    Falls back to cwd if no git root is found.
++    """
++    start = Path.cwd()
++    candidate = start
++    while True:
++        if (candidate / ".git").exists():
++            return candidate.resolve()
++        parent = candidate.parent
++        if parent == candidate:
++            break
++        candidate = parent
++    return start.resolve()
++
++
+ def _extract_milestone_spec(file_path: Path, milestone: str | None) -> str:
+     """Extract spec text from a roadmap file.
+ 
+@@ -5317,7 +5526,7 @@ def _extract_milestone_spec(file_path: Path, milestone: str | None) -> str:
+     "repo_dir",
+     type=click.Path(file_okay=False, path_type=Path),
+     default=None,
+-    help="Repo root (default: directory containing ralph.py)",
++    help="Repo root (default: git repo root nearest to cwd)",
+ )
+ def add(
+     spec: str,
+@@ -5338,7 +5547,7 @@ def add(
+       rzilla add "Build a login page with OAuth"
+     """
+     if repo_dir is None:
+-        repo_dir = Path(__file__).parent.resolve()
++        repo_dir = _find_repo_root()
+ 
+     # If SPEC is an existing file path, extract the milestone spec from it
+     spec_path = Path(spec)
+@@ -5398,7 +5607,7 @@ def add(
+     "repo_dir",
+     type=click.Path(file_okay=False, path_type=Path),
+     default=None,
+-    help="Repo root (default: directory containing ralph.py)",
++    help="Repo root (default: git repo root nearest to cwd)",
+ )
+ @click.option(
+     "--max-iterations",
+@@ -5412,7 +5621,7 @@ def plan(brief: str | None, repo_dir: Path | None, max_iterations: int) -> int:
+     BRIEF: Optional brief text (or reads from stdin if --brief is omitted).
+     """
+     if repo_dir is None:
+-        repo_dir = Path(__file__).parent.resolve()
++        repo_dir = _find_repo_root()
+ 
+     if brief is None:
+         brief = sys.stdin.read().strip()
+diff --git a/ralph_mcp.py b/ralph_mcp.py
+index 87597ca..0108f45 100644
+--- a/ralph_mcp.py
++++ b/ralph_mcp.py
+@@ -13,12 +13,19 @@
+ - rzilla_abort: Abort running sprint
+ 
+ Usage:
+-    # From ralphzilla repo only:
++    # Run from the ralphzilla checkout (so uv can find ralphzilla's pyproject.toml):
+     uv run --extra mcp python ralph_mcp.py
+     # For MCP client config (.mcp.json / opencode.json), use absolute venv path:
+     # /path/to/ralphzilla/.venv/bin/python /path/to/ralphzilla/ralph_mcp.py
+-    # To target a different project's prd.json:
++    # To target a specific project's prd.json:
+     #   ralph_mcp.py --repo-dir /path/to/project
++
++By default, the server resolves the project directory by walking up from cwd
++to find the nearest .git directory. This means each project's .mcp.json does
++not need to specify --repo-dir — just set cwd to the project root.
++Note: the uv subprocess (rzilla CLI) is always invoked from the ralphzilla
++checkout directory so that uv resolves its scripts correctly; --repo-dir is
++passed on every command to target the project's prd.json.
+ """
+ 
+ from __future__ import annotations
+@@ -36,7 +43,27 @@
+ import psutil
+ from mcp.server.fastmcp import FastMCP
+ 
+-REPO_DIR = Path(__file__).parent
++RALPH_DIR = Path(__file__).parent
++
++
++def _find_repo_root(start: Path | None = None) -> Path:
++    """Walk upward from start to find the git repo root.
++
++    Searches for a .git directory starting at start and walking up.
++    Falls back to start if no git root is found.
++    """
++    candidate = (start or Path.cwd()).resolve()
++    while True:
++        if (candidate / ".git").exists():
++            return candidate
++        parent = candidate.parent
++        if parent == candidate:
++            break
++        candidate = parent
++    return (start or Path.cwd()).resolve()
++
++
++REPO_DIR = _find_repo_root()
+ 
+ 
+ def _set_project_dir(project_dir: Path) -> None:
+@@ -46,11 +73,11 @@ def _set_project_dir(project_dir: Path) -> None:
+     PRD_FILE = PROJECT_DIR / "prd.json"
+     PROGRESS_FILE = PROJECT_DIR / "progress.txt"
+     LOG_FILE = PROJECT_DIR / "ralph-loop.log"
+-    _repo_dir_flag = ["--repo-dir", str(PROJECT_DIR)] if PROJECT_DIR != REPO_DIR else []
++    _repo_dir_flag = ["--repo-dir", str(PROJECT_DIR)]
+ 
+ 
+ def _parse_repo_dir_args(argv: list[str]) -> tuple[Path, list[str]]:
+-    project_dir = REPO_DIR
++    project_dir = _find_repo_root()
+     cleaned_argv = [argv[0]]
+     i = 1
+ 
+@@ -290,7 +317,7 @@ def rzilla_dry_run(task: str | None = None) -> str:
+             cmd,
+             capture_output=True,
+             text=True,
+-            cwd=str(REPO_DIR),
++            cwd=str(RALPH_DIR),
+             timeout=30,
+         )
+         output = result.stdout
+@@ -358,7 +385,7 @@ def rzilla_run(
+                 cmd,
+                 stdout=log_f,
+                 stderr=subprocess.STDOUT,
+-                cwd=str(REPO_DIR),
++                cwd=str(RALPH_DIR),
+                 start_new_session=True,
+             )
+ 
+@@ -405,7 +432,7 @@ def rzilla_add(spec: str) -> str:
+             cmd,
+             capture_output=True,
+             text=True,
+-            cwd=str(REPO_DIR),
++            cwd=str(RALPH_DIR),
+             timeout=60,
+         )
+         output = result.stdout
+diff --git a/tests/test_aider_runner.py b/tests/test_aider_runner.py
+new file mode 100644
+index 0000000..8ec3266
+--- /dev/null
++++ b/tests/test_aider_runner.py
+@@ -0,0 +1,279 @@
++import subprocess
++from pathlib import Path
++from unittest.mock import MagicMock, patch
++
++from ralph import (
++    AiderRunner,
++    AIRunnerBase,
++    RalphLogger,
++    RuntimeConfig,
++    SubprocessRunner,
++)
++
++
++def test_aider_runner_is_airunner_base():
++    """AiderRunner extends AIRunnerBase."""
++    runner = MagicMock(spec=SubprocessRunner)
++    logger = MagicMock(spec=RalphLogger)
++    config = RuntimeConfig(primary="aider", timeout=600)
++    aider = AiderRunner(runner, logger, config)
++    assert isinstance(aider, AIRunnerBase)
++
++
++def test_aider_runner_detects_cli_available(monkeypatch):
++    """AiderRunner detects aider CLI availability."""
++    runner = MagicMock(spec=SubprocessRunner)
++    logger = MagicMock(spec=RalphLogger)
++    config = RuntimeConfig(primary="aider", timeout=600)
++
++    mock_result = MagicMock()
++    mock_result.returncode = 0
++    mock_result.stdout = "aider 0.50.0"
++    runner.run.return_value = mock_result
++
++    aider = AiderRunner(runner, logger, config)
++    assert aider.is_available() is True
++
++
++def test_aider_runner_detects_cli_unavailable(monkeypatch):
++    """AiderRunner detects when aider CLI is not available."""
++    runner = MagicMock(spec=SubprocessRunner)
++    logger = MagicMock(spec=RalphLogger)
++    config = RuntimeConfig(primary="aider", timeout=600)
++
++    runner.run.side_effect = FileNotFoundError("aider not found")
++
++    aider = AiderRunner(runner, logger, config)
++    assert aider.is_available() is False
++
++
++def test_aider_runner_get_available_runtimes():
++    """get_available_runtimes returns {'aider'} when available."""
++    runner = MagicMock(spec=SubprocessRunner)
++    logger = MagicMock(spec=RalphLogger)
++    config = RuntimeConfig(primary="aider", timeout=600)
++
++    mock_result = MagicMock()
++    mock_result.returncode = 0
++    mock_result.stdout = "aider 0.50.0"
++    runner.run.return_value = mock_result
++
++    aider = AiderRunner(runner, logger, config)
++    assert aider.get_available_runtimes() == {"aider"}
++
++
++def test_aider_runner_run_task_builds_correct_command():
++    """run_task() executes aider with correct arguments."""
++    runner = MagicMock(spec=SubprocessRunner)
++    logger = MagicMock(spec=RalphLogger)
++    config = RuntimeConfig(primary="aider", timeout=600)
++    config.repo_path = Path("/repo")
++
++    with patch("ralph.TaskTracker") as mock_tracker_class:
++        mock_tracker = MagicMock()
++        mock_tracker_class.return_value = mock_tracker
++        mock_tracker.get_task_by_id.return_value = {
++            "id": "M1-01",
++            "title": "Test task",
++            "description": "A test task",
++            "acceptance_criteria": ["AC1"],
++            "files": ["ralph.py"],
++        }
++
++        mock_result = MagicMock()
++        mock_result.returncode = 0
++        mock_result.stdout = "Modified: ralph.py\nTask complete"
++        mock_result.stderr = ""
++        runner.run.return_value = mock_result
++
++        aider = AiderRunner(runner, logger, config)
++        aider.run_task("M1-01", "feature-M1-01")
++
++    aider_calls = [
++        c
++        for c in runner.run.call_args_list
++        if c.args and c.args[0][0] == "aider" and "--no-auto-commits" in c.args[0]
++    ]
++    assert aider_calls, "Expected an aider run call with --no-auto-commits"
++    cmd = aider_calls[0].args[0]
++    assert cmd[0] == "aider"
++    assert "--no-auto-commits" in cmd
++    assert "--no-git" in cmd
++    assert "--yes" in cmd
++    assert "--message" in cmd
++    assert "--file" in cmd
++
++
++def test_aider_runner_run_task_with_model():
++    """run_task() passes --model flag when aider_model is set."""
++    runner = MagicMock(spec=SubprocessRunner)
++    logger = MagicMock(spec=RalphLogger)
++    config = RuntimeConfig(primary="aider", timeout=600)
++    config.aider_model = "gpt-4"
++
++    with patch("ralph.TaskTracker") as mock_tracker_class:
++        mock_tracker = MagicMock()
++        mock_tracker_class.return_value = mock_tracker
++        mock_tracker.get_task_by_id.return_value = {
++            "id": "M1-01",
++            "title": "Test",
++            "description": "Test",
++            "acceptance_criteria": [],
++            "files": [],
++        }
++
++        mock_result = MagicMock()
++        mock_result.returncode = 0
++        mock_result.stdout = "Done"
++        mock_result.stderr = ""
++        runner.run.return_value = mock_result
++
++        aider = AiderRunner(runner, logger, config)
++        aider.run_task("M1-01", "feature-M1-01")
++
++    aider_calls = [
++        c
++        for c in runner.run.call_args_list
++        if c.args and c.args[0][0] == "aider" and "--no-auto-commits" in c.args[0]
++    ]
++    assert aider_calls, "Expected an aider run call with --no-auto-commits"
++    cmd = aider_calls[0].args[0]
++    assert "--model" in cmd
++    model_idx = cmd.index("--model")
++    assert cmd[model_idx + 1] == "gpt-4"
++
++
++def test_aider_runner_timeout_handling():
++    """Timeout handling prevents indefinite hangs."""
++    runner = MagicMock(spec=SubprocessRunner)
++    logger = MagicMock(spec=RalphLogger)
++    config = RuntimeConfig(primary="aider", timeout=10)
++
++    # Mock is_available to return True
++    with patch.object(AiderRunner, "is_available", return_value=True):
++        runner.run.side_effect = subprocess.TimeoutExpired(cmd=["aider"], timeout=10)
++
++        with patch("ralph.TaskTracker") as mock_tracker_class:
++            mock_tracker = MagicMock()
++            mock_tracker_class.return_value = mock_tracker
++            mock_tracker.get_task_by_id.return_value = {
++                "id": "M1-01",
++                "title": "Test",
++                "description": "Test",
++                "acceptance_criteria": [],
++                "files": [],
++            }
++            aider = AiderRunner(runner, logger, config)
++            result = aider.run_task("M1-01", "feature-M1-01")
++
++    assert result.success is False
++    assert result.output == "TIMEOUT"
++
++
++def test_aider_runner_output_capture():
++    """Output capture includes file modification summaries."""
++    runner = MagicMock(spec=SubprocessRunner)
++    logger = MagicMock(spec=RalphLogger)
++    config = RuntimeConfig(primary="aider", timeout=600)
++
++    mock_result = MagicMock()
++    mock_result.returncode = 0
++    mock_result.stdout = """Added: tests/test_new.py
++Modified: ralph.py
++Committed: Added new feature
++"""
++    mock_result.stderr = ""
++    runner.run.return_value = mock_result
++
++    with patch("ralph.TaskTracker") as mock_tracker_class:
++        mock_tracker = MagicMock()
++        mock_tracker_class.return_value = mock_tracker
++        mock_tracker.get_task_by_id.return_value = {
++            "id": "M1-01",
++            "title": "Test",
++            "description": "Test",
++            "acceptance_criteria": [],
++            "files": [],
++        }
++        aider = AiderRunner(runner, logger, config)
++        result = aider.run_task("M1-01", "feature-M1-01")
++
++    assert result.success is True
++    assert "Added: tests/test_new.py" in result.output
++    assert "Modified: ralph.py" in result.output
++
++
++def test_aider_runner_task_not_found():
++    """run_task returns failure when task_id is not found."""
++    runner = MagicMock(spec=SubprocessRunner)
++    logger = MagicMock(spec=RalphLogger)
++    config = RuntimeConfig(primary="aider", timeout=600)
++
++    # Mock is_available to return True
++    with patch.object(AiderRunner, "is_available", return_value=True):
++        with patch("ralph.TaskTracker") as mock_tracker_class:
++            mock_tracker = MagicMock()
++            mock_tracker_class.return_value = mock_tracker
++            mock_tracker.get_task_by_id.return_value = None
++            aider = AiderRunner(runner, logger, config)
++            result = aider.run_task("NONEXISTENT", "feature-nonexistent")
++
++    assert result.success is False
++    assert result.task_id == "NONEXISTENT"
++
++
++def test_aider_runner_start_new_session():
++    """run_task uses start_new_session to prevent input prompts."""
++    runner = MagicMock(spec=SubprocessRunner)
++    logger = MagicMock(spec=RalphLogger)
++    config = RuntimeConfig(primary="aider", timeout=600)
++
++    mock_result = MagicMock()
++    mock_result.returncode = 0
++    mock_result.stdout = "Done"
++    runner.run.return_value = mock_result
++
++    with patch("ralph.TaskTracker") as mock_tracker_class:
++        mock_tracker = MagicMock()
++        mock_tracker_class.return_value = mock_tracker
++        mock_tracker.get_task_by_id.return_value = {
++            "id": "M1-01",
++            "title": "Test",
++            "description": "Test",
++            "acceptance_criteria": [],
++            "files": [],
++        }
++        aider = AiderRunner(runner, logger, config)
++        aider.run_task("M1-01", "feature-M1-01")
++
++    session_calls = [c for c in runner.run.call_args_list if "start_new_session" in c.kwargs]
++    assert session_calls, "Expected a call with start_new_session kwarg"
++    assert session_calls[0].kwargs.get("start_new_session") is True
++
++
++def test_aider_runner_check_version():
++    """check_version returns version string when aider is available."""
++    runner = MagicMock(spec=SubprocessRunner)
++    logger = MagicMock(spec=RalphLogger)
++    config = RuntimeConfig(primary="aider", timeout=600)
++
++    mock_result = MagicMock()
++    mock_result.returncode = 0
++    mock_result.stdout = "aider 0.50.0"
++    runner.run.return_value = mock_result
++
++    aider = AiderRunner(runner, logger, config)
++    version = aider.check_version("aider")
++    assert version is not None
++    assert "0.50.0" in version
++
++
++def test_aider_runner_check_version_unsupported_runtime():
++    """check_version returns None for non-aider runtime."""
++    runner = MagicMock(spec=SubprocessRunner)
++    logger = MagicMock(spec=RalphLogger)
++    config = RuntimeConfig(primary="aider", timeout=600)
++
++    aider = AiderRunner(runner, logger, config)
++    version = aider.check_version("claude")
++    assert version is None

@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-oven-sh-bun-pr31302",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "branch=claude/"
+  },
+  "pr": {
+    "number": 31302,
+    "headSha": "d8ddb130eee52df113d34f3a18d3d98ba5f1c3c7",
+    "baseSha": "5da1ff86de6139ac08942992459e51eb1baec057",
+    "title": "fix(node:http): keep listener open in Server.closeAllConnections",
+    "body": "## Summary\n\nPer the [Node docs](https://nodejs.org/api/http.html#serverclosealllconnections), `Server.prototype.closeAllConnections()` is documented (since v18.2.0) to forcefully close every established HTTP(S) connection while leaving the **listening socket open** so subsequent connections can still be accepted. Bun's wrapper called `server.stop(true)`, which goes through `stop_listening` and tears down the listener — so any caller that relied on the documented contract got `ECONNREFUSED` on the next request.\n\nThe most user-visible victim is Playwright's `TestServer.reset()`, which calls `_server.closeAllConnections()` between tests to drop straggling sockets and assumes the listener stays up. Under Bun every test after the first failed with `ECONNREFUSED`. With this fix the relevant Playwright `tests/page/page-click.spec.ts` chromium-page suite goes from 0/87 → 82/87 passing on a debug build (the remaining 3 are an unrelated `Error.stack` divergence).\n\nFiled as #31301.\n\n## What changed\n\nA dedicated `closeAllConnections` path was added through every layer parallel to the existing `closeIdleConnections` plumbing, then the JS wrapper was switched to delegate to it without touching `serverSymbol`, `kConnectionsCheckingInterval`, or `listening` (those belong to `close()`):\n\n- `packages/bun-uws/src/App.h` — `TemplatedApp::closeAllConnections()`, walking `httpContext->getSocketGroup()->head_sockets` and `us_socket_close()`-ing each (mirror of `closeIdle()` minus the `isIdle` check; does not touch the listener).\n- `src/uws_sys/libuwsockets.cpp` — `uws_app_close_all_connections` C shim (SSL + non-SSL).\n- `src/uws_sys/App.rs` — `App::close_all_connections` Rust binding + extern decl.\n- `src/runtime/server/server_body.rs` — `close_all_connections` host fn next to `close_idle_connections`.\n- `src/runtime/server/server.classes.ts` — registration.\n- `src/js/node/_http_server.ts` — `Server.prototype.closeAllConnections` now calls `server.closeAllConnections?.()` and nothing else.\n\n## Related\n\n- Closes #31301.\n- Adjacent issue: #30501 (`@azure/msal-node` hang). PR #30505 targets that scenario but keeps the wrong `server.stop(true)` call in `closeAllConnections`. The two fixes are complementary — this PR addresses the listener-teardown bug; #30505 addresses the msal close-then-closeAllConnections sequencing. Reviewers may want to converge them.\n\n## Test plan\n\n- [x] New regression test in `test/js/node/http/node-http.test.ts` (`describe(\"Server.closeAllConnections\")`) with two cases: established keep-alive connection gets dropped *and* a follow-up `fetch` returns 200; no-op when no connections are established.\n- [x] Both new tests fail on system Bun (`USE_SYSTEM_BUN=1 bun test ...`) and pass on the debug build → load-bearing.\n- [x] `test/js/node/test/parallel/test-http-server-close-all.js` (Node parity script) exits 0.\n- [x] `test/js/node/test/parallel/test-http-server-close-idle-wait-response.js` (closeIdle parity) still exits 0.\n- [x] `HTTP Server Security Tests - Advanced` (14 tests, uses `closeAllConnections` in `afterEach`) all pass.\n- [ ] CI green.",
+    "author": "mxschmitt",
+    "headRef": "claude/http-close-all-connections",
+    "repository": "oven-sh/bun"
+  },
+  "diffRef": {
+    "repository": "oven-sh/bun",
+    "headSha": "d8ddb130eee52df113d34f3a18d3d98ba5f1c3c7",
+    "baseSha": "5da1ff86de6139ac08942992459e51eb1baec057"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-oven-sh-bun-pr31302.diff",
+  "vendoredAt": "2026-05-24T03:23:12.138Z",
+  "collectedAt": "2026-05-24T03:23:12.138Z"
+}

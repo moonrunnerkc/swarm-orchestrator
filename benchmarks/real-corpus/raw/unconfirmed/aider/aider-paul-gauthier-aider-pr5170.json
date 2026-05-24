@@ -1,0 +1,26 @@
+{
+  "id": "aider-paul-gauthier-aider-pr5170",
+  "agent": {
+    "vendor": "aider",
+    "confidence": "high",
+    "source": "repo-owner=paul-gauthier"
+  },
+  "pr": {
+    "number": 5170,
+    "headSha": "e88528a4da92d63f9de727aa796fadba21d3a2cb",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1",
+    "title": "Fix OpenRouter Anthropic weak/editor model name format (dash vs dot)",
+    "body": "## Summary\n\nFour \\`openrouter/anthropic/claude-*\\` entries in \\`aider/resources/model-settings.yml\\` reference their weak and editor models with the **dashed naming convention used by Anthropic's native API** (\\`claude-haiku-4-5\\`, \\`claude-sonnet-4-5\\`) instead of the **dotted convention used by OpenRouter** (\\`claude-haiku-4.5\\`, \\`claude-sonnet-4.5\\`).\n\n| Entry | weak_model_name was | editor_model_name was |\n|---|---|---|\n| \\`openrouter/anthropic/claude-opus-4.6\\` | \\`...-haiku-4-5\\` ❌ | \\`...-sonnet-4-5\\` ❌ |\n| \\`openrouter/anthropic/claude-opus-4.7\\` | \\`...-haiku-4-5\\` ❌ | \\`...-sonnet-4-5\\` ❌ |\n| \\`openrouter/anthropic/claude-sonnet-4.5\\` | \\`...-haiku-4-5\\` ❌ | \\`...-sonnet-4-5\\` ❌ |\n| \\`openrouter/anthropic/claude-haiku-4.5\\` | \\`...-haiku-4-5\\` ❌ | (not present) |\n\nThe dashed names **do not exist** as \\`openrouter/anthropic/\\` entries in this file or in upstream litellm's pricing JSON (which aider pulls model metadata from). Result: aider's model resolver falls back to defaults for the weak/editor models even when the user has explicitly selected a 4.x OpenRouter route.\n\n## Fix\n\nNormalize seven references to the dotted OpenRouter naming. No new entries; only the \\`weak_model_name\\` / \\`editor_model_name\\` fields change.\n\n## Test plan\n\n- YAML validity: \\`python -c \\\"import yaml; yaml.safe_load(open('aider/resources/model-settings.yml'))\\\"\\` parses cleanly.\n- Diff: 7 lines changed, all dash → dot in \\`weak_model_name\\` / \\`editor_model_name\\` fields.\n- The target entries (\\`openrouter/anthropic/claude-haiku-4.5\\`, \\`openrouter/anthropic/claude-sonnet-4.5\\`) already exist in this file at the dotted names.",
+    "author": "Cyberfilo",
+    "headRef": "fix/openrouter-anthropic-dash-vs-dot-model-names",
+    "repository": "paul-gauthier/aider"
+  },
+  "diffRef": {
+    "repository": "paul-gauthier/aider",
+    "headSha": "e88528a4da92d63f9de727aa796fadba21d3a2cb",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1"
+  },
+  "vendoredDiffPath": "unconfirmed/aider/aider-paul-gauthier-aider-pr5170.diff",
+  "vendoredAt": "2026-05-24T03:19:00.743Z",
+  "collectedAt": "2026-05-24T03:19:00.743Z"
+}

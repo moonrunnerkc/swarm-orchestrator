@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-python-pr1538",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1538,
+    "headSha": "d0a7c59f41cd4e0844bf2076ff16e25c3ed9fc96",
+    "baseSha": "e8e6f6692632b5fdbea5df1e44cdbd0193fac521",
+    "title": "fix(tools): append_messages() inside the tool runner loop no longer infinite-loops or drops the assistant turn",
+    "body": "Fixes #1536.\n\n## What was broken\n\nCalling `append_messages()` inside a tool runner loop had two failure modes, depending on what you appended.\n\nIf you added a plain context message like `{\"role\": \"user\", \"content\": \"Remember: be concise.\"}`, the loop ran forever. The runner used a `_messages_modified` flag to decide whether to skip the auto-generated `(assistant, tool_result)` pair. The problem was that both user appends and the auto-append itself set the flag to `True`, so once you called `append_messages()`, the flag never came back down and the loop never stopped.\n\nIf you manually provided a `tool_result` block (for cases where you want full control over what gets returned), the runner sent it to the API without the preceding assistant turn. That produced a 400 `unexpected tool_use_id` error every time.\n\n## How the fix works\n\nBefore yielding in the loop, the runner now snapshots the current message count. After yield returns, anything between that index and the end of the list is what the user appended. The runner checks whether any of those messages contain a `tool_result` block.\n\nIf yes: the user is handling tool results themselves. The runner inserts the assistant turn before their result only if they didn't include it already.\n\nIf no: the runner generates tool responses as usual, then splices the auto-generated `(assistant, tool_result)` pair in before any extra messages the user added.\n\nThe logic is the same in both the sync (`BaseSyncToolRunner`) and async (`BaseAsyncToolRunner`) paths. `BetaStreamingToolRunner` and `BetaAsyncStreamingToolRunner` both inherit `__run__` from the base classes, so they get the fix for free.\n\nThe four call sites that set the full message list now use a private `_set_messages_list` helper instead of inline lambdas. Capturing a loop variable in a lambda triggers `ruff B023`, and the default-arg workaround (`msgs=new_messages`) confuses mypy's callable-type inference. A method parameter solves both at once.\n\n## Tests\n\n`test_custom_message_handling` was previously marked `xfail` with a `# TODO: fix the append_messages method` comment. The xfail is removed and the HTTP fixture updated to replay a proper 200 response instead of the 400 the bug used to produce.\n\nThree new regression tests cover the scenarios from the issue: appending a plain user message (must not loop, must place the tool result correctly), providing a manual tool result (runner must prepend the assistant turn), and providing both the assistant turn and the tool result manually (runner must not insert a second assistant message).",
+    "author": "Zelys-DFKH",
+    "headRef": "fix/tool-runner-append-messages-loop",
+    "repository": "anthropics/anthropic-sdk-python"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-python",
+    "headSha": "d0a7c59f41cd4e0844bf2076ff16e25c3ed9fc96",
+    "baseSha": "e8e6f6692632b5fdbea5df1e44cdbd0193fac521"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-python-pr1538.diff",
+  "vendoredAt": "2026-05-24T03:17:34.218Z",
+  "collectedAt": "2026-05-24T03:17:34.218Z"
+}

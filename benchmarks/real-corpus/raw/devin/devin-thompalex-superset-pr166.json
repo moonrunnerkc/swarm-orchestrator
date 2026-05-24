@@ -1,0 +1,26 @@
+{
+  "id": "devin-thompalex-superset-pr166",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 166,
+    "headSha": "311e49311ce5c3d8a4ac22a09c78021f0a608c83",
+    "baseSha": "aab4b64d0ad85058d7be1055803a91c7027211e7",
+    "title": "fix(deps): bump pyopenssl from 25.1.0 to 26.0.0 (closes #91)",
+    "body": "### SUMMARY\n\nCompletes the remediation of **CVE-2026-27459** and **CVE-2026-27448** ([GHSA-5pwr-322w-8jr4](https://github.com/advisories/GHSA-5pwr-322w-8jr4)) — pyOpenSSL DTLS cookie callback buffer overflow (HIGH severity).\n\nMaster already bumped pyopenssl to 26.2.0 and cryptography to 46.0.7. This PR adds the remaining fixes:\n\n| File | Change |\n|------|--------|\n| `requirements/base.in` | Updated CVE comment to reference both CVE-2026-27459 and CVE-2026-27448 |\n| `requirements/base.txt` | Bumped `pycparser` 2.22 → 3.0 (required by cffi 2.0.0 / cryptography 46.x) |\n| `requirements/development.txt` | Same `pycparser` bump |\n| `superset/utils/core.py` | Restored missing `return cert` in `parse_ssl_cert()` (removed when the backend check was cleaned up) |\n\n### BEFORE/AFTER SCREENSHOTS OR ANIMATED GIF\n\nN/A — dependency-only change with a bugfix for a missing return statement.\n\n### TESTING INSTRUCTIONS\n\n1. `pip install -r requirements/development.txt` — should complete without errors\n2. `pytest tests/unit_tests/ -x -q` — should pass\n\n#### Unit test results\n\n```\n7008 passed, 4 skipped, 2 deselected in 689.04s (0:11:29)\n```\n\nThe 2 deselected tests are **pre-existing failures** unrelated to this PR (both due to `PlaywrightTimeout()` constructor requiring a `message` argument in newer Playwright versions):\n- `test_per_tile_spinner_timeout_logs_warning_and_continues`\n- `test_get_screenshot_handles_playwright_timeout`\n\n#### Integration tests\n\nIntegration tests could not be run because `docker-compose-non-dev.yml` does not expose Postgres port 5432 to localhost. Docker services start successfully but are only accessible within the docker network.\n\n### ADDITIONAL INFORMATION\n\n- [x] Has associated issue: Fixes #91\n- [ ] Required feature flags:\n- [ ] Changes UI\n- [ ] Includes DB Migration\n- [ ] Introduces new feature or API\n- [ ] Removes existing feature or API\n\nLink to Devin session: https://app.devin.ai/sessions/01adef28883c445883821e9332931a5e",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779565883-bump-pyopenssl",
+    "repository": "thompalex/superset"
+  },
+  "diffRef": {
+    "repository": "thompalex/superset",
+    "headSha": "311e49311ce5c3d8a4ac22a09c78021f0a608c83",
+    "baseSha": "aab4b64d0ad85058d7be1055803a91c7027211e7"
+  },
+  "vendoredDiffPath": "devin/devin-thompalex-superset-pr166.diff",
+  "vendoredAt": "2026-05-24T03:04:59.520Z",
+  "collectedAt": "2026-05-24T03:04:59.520Z"
+}

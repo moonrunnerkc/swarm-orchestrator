@@ -1,0 +1,500 @@
+diff --git a/app/(dashboard)/dashboard/page.tsx b/app/(dashboard)/dashboard/page.tsx
+index a40a237..bc7d5f9 100644
+--- a/app/(dashboard)/dashboard/page.tsx
++++ b/app/(dashboard)/dashboard/page.tsx
+@@ -110,6 +110,29 @@ const NAVIGATION_CARDS = [
+   },
+ ] as const;
+ 
++const RAPID_CAPTURE_ACTIONS = [
++  {
++    href: "/notes/new",
++    label: "Rapid note capture",
++    description: "Capture an operational observation with minimal navigation.",
++  },
++  {
++    href: "/tasks/new",
++    label: "Rapid follow-up capture",
++    description: "Create follow-up directly when unresolved work is identified.",
++  },
++  {
++    href: "/events?operationalIndicator=attendance_not_reviewed_recently",
++    label: "Attendance capture lane",
++    description: "Open event attendance gaps and capture updates in context.",
++  },
++  {
++    href: "/field-ops/bookings/new",
++    label: "Rapid FieldOps request",
++    description: "Create a booking request with current scoped context.",
++  },
++] as const;
++
+ const TASK_STATUS_SORT_WEIGHT: Record<string, number> = {
+   OPEN: 0,
+   IN_PROGRESS: 1,
+@@ -174,6 +197,23 @@ function renderEmptyList(message: string) {
+   return <p className="text-sm text-zinc-600 dark:text-zinc-400">{message}</p>;
+ }
+ 
++function renderRapidCaptureActions() {
++  return (
++    <div className="grid gap-3 md:grid-cols-2">
++      {RAPID_CAPTURE_ACTIONS.map((action) => (
++        <Link
++          key={action.href}
++          href={action.href}
++          className="rounded-lg border bg-white p-3 transition hover:bg-zinc-50 dark:bg-zinc-900 dark:hover:bg-zinc-800"
++        >
++          <p className="text-sm font-medium">{action.label}</p>
++          <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">{action.description}</p>
++        </Link>
++      ))}
++    </div>
++  );
++}
++
+ function buildScopedProgramWhere(
+   organizationId: string,
+   staffScopeResolution: ReturnType<typeof resolveStaffScopeResolution>,
+@@ -269,6 +309,14 @@ export default async function DashboardPage() {
+           <h3 className="text-base font-medium">Quick links</h3>
+           {renderNavigationCards()}
+         </div>
++
++        <div className="space-y-3">
++          <h3 className="text-base font-medium">Rapid operational capture</h3>
++          <p className="text-sm text-zinc-600 dark:text-zinc-400">
++            Quick-entry shortcuts for current staff-scoped workflows. No offline, messaging, or automation runtime is added.
++          </p>
++          {renderRapidCaptureActions()}
++        </div>
+       </section>
+     );
+   }
+@@ -1482,8 +1530,8 @@ export default async function DashboardPage() {
+                               Capture attendance
+                             </Link>
+                             <span className="text-zinc-500 dark:text-zinc-400">•</span>
+-                            <Link href={`/notes?eventId=${event.id}`} className="underline">
+-                              Event notes
++                            <Link href={`/notes/new?eventId=${event.id}`} className="underline">
++                              Capture event note
+                             </Link>
+                           </div>
+                         </div>
+@@ -1827,6 +1875,10 @@ export default async function DashboardPage() {
+                           <Link href={`/tasks?eventId=${event.id}&resolution=unresolved`} className="underline">
+                             Event unresolved tasks
+                           </Link>
++                          <span className="text-zinc-500 dark:text-zinc-400">•</span>
++                          <Link href={`/tasks/new?sourceEventId=${event.id}`} className="underline">
++                            Create follow-up task
++                          </Link>
+                         </div>
+                       </div>
+                     ))}
+diff --git a/app/(dashboard)/events/[eventId]/page.tsx b/app/(dashboard)/events/[eventId]/page.tsx
+index af33634..6d30440 100644
+--- a/app/(dashboard)/events/[eventId]/page.tsx
++++ b/app/(dashboard)/events/[eventId]/page.tsx
+@@ -461,6 +461,7 @@ export default async function EventDetailsPage({
+     : attendanceMissingCount > 0
+       ? `Attendance missing for part of ${selectedAttendanceSeason ? `${selectedAttendanceSeason.name} ` : ""}team roster`
+       : `Attendance captured for all ${selectedAttendanceSeason ? `${selectedAttendanceSeason.name} ` : ""}rostered team members`;
++  const fieldOpsBookingHref = `/field-ops/bookings/new?eventId=${event.id}`;
+ 
+   return (
+     <section className="space-y-6">
+@@ -470,25 +471,28 @@ export default async function EventDetailsPage({
+         <div className="flex flex-wrap gap-2">
+           <Link
+             href={`/events/${event.id}/edit`}
+-            className="inline-block rounded-md border px-3 py-1.5 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800"
++            className="inline-flex min-h-9 items-center rounded-md border px-3 py-1.5 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800"
+           >
+             Edit event
+           </Link>
+-          <Link href="#attendance-workflow" className="inline-block rounded-md border px-3 py-1.5 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800">
++          <Link href="#attendance-workflow" className="inline-flex min-h-9 items-center rounded-md border px-3 py-1.5 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800">
+             Attendance workflow
+           </Link>
+           <Link
+             href={`/tasks/new?sourceEventId=${event.id}`}
+-            className="inline-block rounded-md border px-3 py-1.5 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800"
++            className="inline-flex min-h-9 items-center rounded-md border px-3 py-1.5 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800"
+           >
+             Create follow-up task
+           </Link>
+           <Link
+             href={`/notes/new?eventId=${event.id}`}
+-            className="inline-block rounded-md border px-3 py-1.5 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800"
++            className="inline-flex min-h-9 items-center rounded-md border px-3 py-1.5 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800"
+           >
+             Add note
+           </Link>
++          <Link href={fieldOpsBookingHref} className="inline-flex min-h-9 items-center rounded-md border px-3 py-1.5 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800">
++            Request FieldOps booking
++          </Link>
+         </div>
+       </div>
+ 
+@@ -630,6 +634,12 @@ export default async function EventDetailsPage({
+           <Link href={`/tasks?eventId=${event.id}&changedWindow=last_7d`} className="rounded-full border px-2 py-1">
+             Recent related activity
+           </Link>
++          <Link href={`/notes/new?eventId=${event.id}`} className="rounded-full border px-2 py-1">
++            Add event note
++          </Link>
++          <Link href={`/tasks/new?sourceEventId=${event.id}`} className="rounded-full border px-2 py-1">
++            New event follow-up
++          </Link>
+           <Link href="#operational-history" className="rounded-full border px-2 py-1">
+             Event change history
+           </Link>
+@@ -918,10 +928,24 @@ export default async function EventDetailsPage({
+               <>
+                 <ul className="mt-2 space-y-1 text-sm text-zinc-600 dark:text-zinc-400">
+                   {missingRosterAttendance.map((person) => (
+-                    <li key={person.id}>
++                    <li key={person.id} className="flex flex-wrap items-center gap-2">
+                       <Link href={`/people/${person.id}`} className="underline">
+                         {person.firstName} {person.lastName}
+                       </Link>
++                      <span className="text-zinc-400 dark:text-zinc-500">•</span>
++                      <Link
++                        href={`/events/${event.id}?attendancePersonId=${person.id}&attendanceStatus=${AttendanceStatus.PRESENT}#attendance-capture-form`}
++                        className="underline"
++                      >
++                        Mark present
++                      </Link>
++                      <span className="text-zinc-400 dark:text-zinc-500">•</span>
++                      <Link
++                        href={`/events/${event.id}?attendancePersonId=${person.id}&attendanceStatus=${AttendanceStatus.UNEXCUSED_ABSENT}#attendance-capture-form`}
++                        className="underline"
++                      >
++                        Mark absent
++                      </Link>
+                     </li>
+                   ))}
+                 </ul>
+@@ -1041,7 +1065,7 @@ export default async function EventDetailsPage({
+             No people are available in the active organization yet.
+           </p>
+         ) : (
+-          <form action={`/events/${event.id}/attendance`} method="post" className="mt-3 space-y-4">
++          <form id="attendance-capture-form" action={`/events/${event.id}/attendance`} method="post" className="mt-3 space-y-4">
+             <div className="space-y-1">
+               <label htmlFor="attendancePersonId" className="text-sm font-medium">
+                 Person
+diff --git a/app/(dashboard)/field-ops/bookings/new/page.tsx b/app/(dashboard)/field-ops/bookings/new/page.tsx
+index 7ab86cb..e304787 100644
+--- a/app/(dashboard)/field-ops/bookings/new/page.tsx
++++ b/app/(dashboard)/field-ops/bookings/new/page.tsx
+@@ -27,6 +27,14 @@ function readSearchParam(searchParams: SearchParams, key: string) {
+   return value ?? "";
+ }
+ 
++function toDateTimeLocalValue(value: Date | null): string {
++  if (!value) {
++    return "";
++  }
++
++  return value.toISOString().slice(0, 16);
++}
++
+ export default async function NewFieldOpsBookingRequestPage({
+   searchParams,
+ }: {
+@@ -67,7 +75,9 @@ export default async function NewFieldOpsBookingRequestPage({
+     | null = null;
+   let programs: Array<{ id: string; name: string }> | null = null;
+   let teams: Array<{ id: string; name: string; programId: string; program: { id: string; name: string } }> | null = null;
+-  let events: Array<{ id: string; title: string; startsAt: Date; programId: string; teamId: string | null }> | null = null;
++  let events:
++    | Array<{ id: string; title: string; startsAt: Date; endsAt: Date | null; programId: string; teamId: string | null }>
++    | null = null;
+   let queryErrorMessage = "Unable to load booking request options right now. Please try again later.";
+ 
+   try {
+@@ -120,6 +130,7 @@ export default async function NewFieldOpsBookingRequestPage({
+           id: true,
+           title: true,
+           startsAt: true,
++          endsAt: true,
+           programId: true,
+           teamId: true,
+         },
+@@ -151,6 +162,12 @@ export default async function NewFieldOpsBookingRequestPage({
+   const programId = readSearchParam(resolvedSearchParams, "programId");
+   const teamId = readSearchParam(resolvedSearchParams, "teamId");
+   const eventId = readSearchParam(resolvedSearchParams, "eventId");
++  const selectedEventForContext = events.find((event) => event.id === eventId) ?? null;
++  const resolvedTitle = title || (selectedEventForContext ? `Booking for ${selectedEventForContext.title}` : "");
++  const resolvedStartsAt = startsAt || toDateTimeLocalValue(selectedEventForContext?.startsAt ?? null);
++  const resolvedEndsAt = endsAt || toDateTimeLocalValue(selectedEventForContext?.endsAt ?? null);
++  const resolvedProgramId = programId || selectedEventForContext?.programId || "";
++  const resolvedTeamId = teamId || selectedEventForContext?.teamId || "";
+   const generalError = readSearchParam(resolvedSearchParams, "error");
+   const activeResources = resources.filter((resource) => resource.status === "ACTIVE" && resource.facility.status === "ACTIVE");
+   const activeFacilities = facilities.filter((facility) => facility.status === "ACTIVE");
+@@ -215,7 +232,7 @@ export default async function NewFieldOpsBookingRequestPage({
+             <label htmlFor="title" className="text-sm font-medium">
+               Title
+             </label>
+-            <input id="title" name="title" defaultValue={title} className="w-full rounded-md border px-3 py-2 text-sm" />
++            <input id="title" name="title" defaultValue={resolvedTitle} className="w-full rounded-md border px-3 py-2 text-sm" />
+             {hasSearchParam(resolvedSearchParams, "titleError") ? (
+               <p className="text-sm text-red-600">{readSearchParam(resolvedSearchParams, "titleError")}</p>
+             ) : null}
+@@ -246,7 +263,7 @@ export default async function NewFieldOpsBookingRequestPage({
+                 id="startsAt"
+                 name="startsAt"
+                 type="datetime-local"
+-                defaultValue={startsAt}
++                defaultValue={resolvedStartsAt}
+                 className="w-full rounded-md border px-3 py-2 text-sm"
+               />
+               {hasSearchParam(resolvedSearchParams, "startsAtError") ? (
+@@ -262,7 +279,7 @@ export default async function NewFieldOpsBookingRequestPage({
+                 id="endsAt"
+                 name="endsAt"
+                 type="datetime-local"
+-                defaultValue={endsAt}
++                defaultValue={resolvedEndsAt}
+                 className="w-full rounded-md border px-3 py-2 text-sm"
+               />
+               {hasSearchParam(resolvedSearchParams, "endsAtError") ? (
+@@ -276,7 +293,7 @@ export default async function NewFieldOpsBookingRequestPage({
+               <label htmlFor="programId" className="text-sm font-medium">
+                 Program context (optional)
+               </label>
+-              <select id="programId" name="programId" defaultValue={programId} className="w-full rounded-md border px-3 py-2 text-sm">
++              <select id="programId" name="programId" defaultValue={resolvedProgramId} className="w-full rounded-md border px-3 py-2 text-sm">
+                 <option value="">No program context</option>
+                 {programs.map((program) => (
+                   <option key={program.id} value={program.id}>
+@@ -293,7 +310,7 @@ export default async function NewFieldOpsBookingRequestPage({
+               <label htmlFor="teamId" className="text-sm font-medium">
+                 Team context (optional)
+               </label>
+-              <select id="teamId" name="teamId" defaultValue={teamId} className="w-full rounded-md border px-3 py-2 text-sm">
++              <select id="teamId" name="teamId" defaultValue={resolvedTeamId} className="w-full rounded-md border px-3 py-2 text-sm">
+                 <option value="">No team context</option>
+                 {teams.map((team) => (
+                   <option key={team.id} value={team.id}>
+@@ -321,6 +338,10 @@ export default async function NewFieldOpsBookingRequestPage({
+             </select>
+             {hasSearchParam(resolvedSearchParams, "eventIdError") ? (
+               <p className="text-sm text-red-600">{readSearchParam(resolvedSearchParams, "eventIdError")}</p>
++            ) : selectedEventForContext ? (
++              <p className="text-xs text-zinc-500 dark:text-zinc-400">
++                Event context prefilled program/team/title/timing where available.
++              </p>
+             ) : null}
+           </div>
+ 
+diff --git a/app/(dashboard)/notes/new/page.tsx b/app/(dashboard)/notes/new/page.tsx
+index 7fe814d..2a3c501 100644
+--- a/app/(dashboard)/notes/new/page.tsx
++++ b/app/(dashboard)/notes/new/page.tsx
+@@ -63,7 +63,7 @@ export default async function NewNotePage({
+ 
+   let people: Array<{ id: string; firstName: string; lastName: string }> | null = null;
+   let teams: Array<{ id: string; name: string }> | null = null;
+-  let events: Array<{ id: string; title: string; startsAt: Date }> | null = null;
++  let events: Array<{ id: string; title: string; startsAt: Date; teamId: string | null }> | null = null;
+ 
+   try {
+     [people, teams, events] = await Promise.all([
+@@ -79,7 +79,7 @@ export default async function NewNotePage({
+       }),
+       db.event.findMany({
+         where: { organizationId: scope.organizationId },
+-        select: { id: true, title: true, startsAt: true },
++        select: { id: true, title: true, startsAt: true, teamId: true },
+         orderBy: [{ startsAt: "desc" }],
+         take: 200,
+       }),
+@@ -103,6 +103,8 @@ export default async function NewNotePage({
+   const athletePersonId = readSearchParam(resolvedSearchParams, "athletePersonId");
+   const teamId = readSearchParam(resolvedSearchParams, "teamId");
+   const eventId = readSearchParam(resolvedSearchParams, "eventId");
++  const selectedEventForContext = events.find((event) => event.id === eventId) ?? null;
++  const resolvedTeamId = teamId || selectedEventForContext?.teamId || "";
+   const generalError = readSearchParam(resolvedSearchParams, "error");
+ 
+   return (
+@@ -153,7 +155,7 @@ export default async function NewNotePage({
+             <label htmlFor="teamId" className="text-sm font-medium">
+               Team (optional)
+             </label>
+-            <select id="teamId" name="teamId" defaultValue={teamId} className="w-full rounded-md border px-3 py-2 text-sm">
++            <select id="teamId" name="teamId" defaultValue={resolvedTeamId} className="w-full rounded-md border px-3 py-2 text-sm">
+               <option value="">No team link</option>
+               {teams.map((team) => (
+                 <option key={team.id} value={team.id}>
+@@ -163,6 +165,8 @@ export default async function NewNotePage({
+             </select>
+             {readSearchParam(resolvedSearchParams, "teamIdError") ? (
+               <p className="text-sm text-red-600">{readSearchParam(resolvedSearchParams, "teamIdError")}</p>
++            ) : !teamId && eventId && selectedEventForContext?.teamId ? (
++              <p className="text-xs text-zinc-500 dark:text-zinc-400">Team prefilled from selected event context.</p>
+             ) : null}
+           </div>
+ 
+diff --git a/app/(dashboard)/tasks/new/page.tsx b/app/(dashboard)/tasks/new/page.tsx
+index 3f6abf4..353d477 100644
+--- a/app/(dashboard)/tasks/new/page.tsx
++++ b/app/(dashboard)/tasks/new/page.tsx
+@@ -86,6 +86,7 @@ export default async function NewTaskPage({
+     | Array<{
+         id: string;
+         body: string;
++        eventId: string | null;
+         athlete:
+           | {
+               id: string;
+@@ -117,6 +118,7 @@ export default async function NewTaskPage({
+         select: {
+           id: true,
+           body: true,
++          eventId: true,
+           athlete: {
+             select: {
+               id: true,
+@@ -179,6 +181,7 @@ export default async function NewTaskPage({
+   const sourceEventId = readSearchParam(resolvedSearchParams, "sourceEventId");
+   const generalError = readSearchParam(resolvedSearchParams, "error");
+   const selectedSourceNote = notes.find((note) => note.id === sourceNoteId) ?? null;
++  const resolvedSourceEventId = sourceEventId || selectedSourceNote?.eventId || "";
+   const selectedSourceNoteGuardianContext =
+     canViewGuardianRelationshipDetails && selectedSourceNote?.athlete
+       ? deriveGuardianOperationalContext(selectedSourceNote.athlete.athleteLinks ?? [])
+@@ -332,7 +335,7 @@ export default async function NewTaskPage({
+               <select
+                 id="sourceEventId"
+                 name="sourceEventId"
+-                defaultValue={sourceEventId}
++                defaultValue={resolvedSourceEventId}
+                 className="w-full rounded-md border px-3 py-2 text-sm"
+               >
+                 <option value="">No source event</option>
+@@ -344,6 +347,10 @@ export default async function NewTaskPage({
+               </select>
+               {hasSearchParam(resolvedSearchParams, "sourceEventIdError") ? (
+                 <p className="text-sm text-red-600">{readSearchParam(resolvedSearchParams, "sourceEventIdError")}</p>
++              ) : !sourceEventId && selectedSourceNote?.eventId ? (
++                <p className="text-xs text-zinc-500 dark:text-zinc-400">
++                  Source event prefilled from selected note context.
++                </p>
+               ) : null}
+             </div>
+           </div>
+diff --git a/planning/PHASE_14B_LIGHTWEIGHT_RAPID_OPERATIONAL_CAPTURE_OPTIMIZATIONS.md b/planning/PHASE_14B_LIGHTWEIGHT_RAPID_OPERATIONAL_CAPTURE_OPTIMIZATIONS.md
+new file mode 100644
+index 0000000..5ca2537
+--- /dev/null
++++ b/planning/PHASE_14B_LIGHTWEIGHT_RAPID_OPERATIONAL_CAPTURE_OPTIMIZATIONS.md
+@@ -0,0 +1,90 @@
++# Phase 14B — Lightweight Rapid Operational Capture Optimizations
++
++## Goal
++
++Introduce small, reversible rapid-capture improvements for existing staff workflows (attendance, observations, follow-up tasks, events, FieldOps) while preserving current authorization and organization-scoped runtime behavior.
++
++## Scope Guardrails (enforced)
++
++- No offline sync/runtime behavior.
++- No local persistence or sync queues.
++- No push notifications.
++- No mobile-native packaging/runtime behavior.
++- No Feed/Inbox runtime behavior.
++- No messaging/chat behavior.
++- No guardian-facing mobile workflow exposure.
++- No workflow automation.
++- No new major dependencies.
++
++## Runtime Optimizations Delivered
++
++### 1) Attendance capture (event workflow)
++
++- Added per-person rapid attendance prefill links from missing-roster attendance rows.
++- Added anchor targeting directly to attendance capture form for fewer scroll/tap steps.
++- Added event-level quick action link to create a FieldOps booking request in event context.
++
++### 2) Observation capture
++
++- Added event-context team prefill on `/notes/new` when event context is provided and team input is empty.
++- Kept explicit user-controlled submission and existing validation/authorization boundaries.
++
++### 3) Follow-up creation
++
++- Added source-event prefill on `/tasks/new` when a selected source note already has event context.
++- Preserved explicit task authoring and existing task visibility/linkage validation.
++
++### 4) Event workflow continuity
++
++- Expanded event relationship navigation with direct rapid links for event note capture and event follow-up creation.
++- Preserved event/team/program scoped access checks.
++
++### 5) FieldOps workflow continuity
++
++- Added event-context prefills on `/field-ops/bookings/new` for title/time/program/team when event context is available.
++- Kept create-route precheck, validation, and permission requirements unchanged.
++
++### 6) Dashboard navigation friction reduction
++
++- Added a lightweight "Rapid operational capture" shortcut section for note/task/attendance/FieldOps entry points.
++- Updated selected dashboard event concern links to open direct capture flows when safe.
++
++## Deferred Behavior Clarification
++
++Phase 14B explicitly defers:
++
++- offline write behavior and synchronization engines,
++- mobile-native runtime/app packaging behavior,
++- messaging/chat/notification delivery behavior,
++- Feed/Inbox runtime workflows,
++- autonomous workflow automation.
++
++## Authorization and Scope Safety
++
++- All optimizations remain server-authoritative and flow through existing route permissions.
++- Organization scoping remains anchored to `getOrganizationScope()` and existing route-level checks.
++- Staff-only operational surfaces and scope resolution remain unchanged.
++
++## Validation Guidance
++
++Run:
++
++- `npm run lint`
++- `npm run typecheck`
++- `DATABASE_URL=... ./node_modules/.bin/prisma validate`
++- `npm run build`
++
++Manual validation focus:
++
++- Attendance capture from event workflow (including rapid prefill links) still writes correctly.
++- Note/task/FieldOps prefills remain editable and preserve existing validation on submit.
++- Unauthorized or out-of-scope operations still fail with current authorization behavior.
++- No offline/mobile-native runtime, Feed/Inbox runtime, messaging, or notifications are present.
++
++## Phase 14B output summary
++
++Phase 14B delivers lightweight, reversible rapid operational capture improvements across event attendance, note/task creation continuity, dashboard quick-entry navigation, and FieldOps request prefills. The implementation reduces navigation/click friction and improves mobile-friendly operational flow continuity while preserving existing organization scoping, authorization boundaries, and server-authoritative runtime behavior. Offline sync, native mobile runtime, Feed/Inbox runtime, messaging, notifications, and automation remain explicitly deferred.
++
++## PR Summary
++
++This phase introduces low-risk rapid-capture workflow optimizations for existing staff operations: attendance prefill shortcuts in event workflows, context-driven prefill improvements for note/task/FieldOps capture pages, and dashboard rapid-entry shortcuts to reduce navigation friction. Changes are incremental and reversible, maintain current scoped authorization behavior, and do not add offline runtime, native mobile runtime, Feed/Inbox, messaging/notifications, or automation behavior.
+diff --git a/planning/README.md b/planning/README.md
+index 48af96c..73e6226 100644
+--- a/planning/README.md
++++ b/planning/README.md
+@@ -121,6 +121,7 @@ CadreOS is an **Athlete Program Operating System**.
+ - [Phase 13E Operational Intelligence Stabilization and Arc Closeout](./PHASE_13E_OPERATIONAL_INTELLIGENCE_STABILIZATION_CLOSEOUT.md)
+ - [Phase 13E Validation Checklist](./PHASE_13E_VALIDATION_CHECKLIST.md)
+ - [Phase 14A Mobile & Rapid Capture Architecture Boundaries](./PHASE_14A_MOBILE_RAPID_CAPTURE_ARCHITECTURE_BOUNDARIES.md)
++- [Phase 14B Lightweight Rapid Operational Capture Optimizations](./PHASE_14B_LIGHTWEIGHT_RAPID_OPERATIONAL_CAPTURE_OPTIMIZATIONS.md)
+ - [**MVP Stability Checklist**](./MVP_STABILITY_CHECKLIST.md)
+ - [Module Roadmap: FieldOps and GearOps](./MODULE_ROADMAP_FIELDOPS_GEAROPS.md)
+ - [Build Readiness Review](./BUILD_READINESS_REVIEW.md)

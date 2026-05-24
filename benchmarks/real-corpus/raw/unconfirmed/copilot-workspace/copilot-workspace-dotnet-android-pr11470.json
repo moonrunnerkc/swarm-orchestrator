@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-dotnet-android-pr11470",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 11470,
+    "headSha": "c686f5bd69e319345d39924875016b5652795537",
+    "baseSha": "ec8c61e1b1ca8e1e8ebec248069ef4659e59c61f",
+    "title": "Move hardcoded error strings in RemoveRegisterAttribute and GenerateCompressedAssembliesNativeSourceFiles to Properties.Resources",
+    "body": "Two MSBuild tasks used `Log.LogError` with hardcoded, non-localized strings and no XA error codes. This replaces them with `Log.LogCodedError` using `Properties.Resources` entries.\n\n### Changes\n\n- **New error codes XA2024 / XA2025** added to `Resources.resx` and `Resources.Designer.cs`\n- **`RemoveRegisterAttribute.cs`** and **`GenerateCompressedAssembliesNativeSourceFiles.cs`** — replaced `Log.LogError` with `Log.LogCodedError`\n- **Documentation** — added `xa2024.md`, `xa2025.md`, and updated `index.md`\n\n```csharp\n// Before\nLog.LogError ($\"Unable to load assembly '{mono_android}'\");\nLog.LogError ($\"Assembly {assembly.ItemSpec} does not exist\");\n\n// After\nLog.LogCodedError (\"XA2024\", Properties.Resources.XA2024, mono_android);\nLog.LogCodedError (\"XA2025\", Properties.Resources.XA2025, assembly.ItemSpec);\n```",
+    "author": "Copilot",
+    "headRef": "copilot/fix-log-error-strings",
+    "repository": "dotnet/android"
+  },
+  "diffRef": {
+    "repository": "dotnet/android",
+    "headSha": "c686f5bd69e319345d39924875016b5652795537",
+    "baseSha": "ec8c61e1b1ca8e1e8ebec248069ef4659e59c61f"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-dotnet-android-pr11470.diff",
+  "vendoredAt": "2026-05-24T03:06:05.586Z",
+  "collectedAt": "2026-05-24T03:06:05.586Z"
+}

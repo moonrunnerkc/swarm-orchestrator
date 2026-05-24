@@ -1,0 +1,6 @@
+{
+  "verdict": "clean",
+  "rationale": "Hotfix for SteamCMD permission-denied on cm2network/steamcmd:root image: backend/games/base.py removes the `user=f'{uid}:{gid}'` and `entrypoint=STEAMCMD_ENTRYPOINT` overrides on both run_steamcmd_install and run_steamcmd_workshop_download, replacing them with a new `_build_steamcmd_bash_command` helper that builds a `bash -c \"<steamcmd> <args>; rc=$?; chown -R <uid>:<gid> /data; exit $rc\"` script. The chown restores host ownership of the Bind-Mount so the unprivileged panel user can read the installed files, and `exit $rc` preserves the original SteamCMD exit code. Arguments are escaped via `shlex.quote(a)` to defend against injection from user-supplied extra_args. Three new tests in backend/tests/test_docker_service.py::TestSteamCMDHelpers verify the bash entrypoint, no --user override, chown to host UID 1001:1001, exit-code propagation, and that an injection attempt of `+app_set_config 'value with spaces; rm -rf /'` is contained inside shlex.quote (test_bash_script_is_safely_quoted asserts only one chown call appears). Detector firing on `mock-of-hallucination` is a false positive: shlex is a Python stdlib module and no imports are invented. Clean hotfix with proper tests.",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T13:40:00.000Z"
+}

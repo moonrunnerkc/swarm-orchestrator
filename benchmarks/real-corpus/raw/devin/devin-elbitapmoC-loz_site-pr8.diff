@@ -1,0 +1,2471 @@
+diff --git a/convex/adminAuth.ts b/convex/adminAuth.ts
+index e280e72..6e8b520 100644
+--- a/convex/adminAuth.ts
++++ b/convex/adminAuth.ts
+@@ -30,6 +30,46 @@ export async function requireAuthenticated(ctx: AuthCtx): Promise<AuthenticatedC
+   return { identity };
+ }
+ 
++export type BulletinEditorContext = {
++  user: Doc<"users">;
++  identity: AuthenticatedIdentity;
++};
++
++/**
++ * Ensures the caller has the Administrator or Columnist role.
++ * Use for bulletin-related mutations that either role may perform.
++ */
++export async function requireBulletinEditor(ctx: AuthCtx): Promise<BulletinEditorContext> {
++  const { identity } = await requireAuthenticated(ctx);
++
++  let user = await ctx.db
++    .query("users")
++    .withIndex("by_clerk_id", (q) => q.eq("clerkUserId", identity.subject))
++    .first();
++
++  if (!user && identity.email) {
++    user = await ctx.db
++      .query("users")
++      .withIndex("by_email", (q) => q.eq("email", identity.email as string))
++      .first();
++  }
++
++  if (!user) {
++    throw new Error("User not found");
++  }
++
++  if (!user.roleId) {
++    throw new Error("User does not have a role");
++  }
++
++  const role = await ctx.db.get(user.roleId);
++  if (role?.name !== "Administrator" && role?.name !== "Columnist") {
++    throw new Error("Unauthorized: requires Administrator or Columnist role");
++  }
++
++  return { user, identity };
++}
++
+ /**
+  * Ensures the caller is signed in and has the Administrator role.
+  * Use from queries and mutations that should only run for admins.
+diff --git a/convex/bulletins.ts b/convex/bulletins.ts
+index 59b3286..71554cf 100644
+--- a/convex/bulletins.ts
++++ b/convex/bulletins.ts
+@@ -1,19 +1,47 @@
+ import { v } from "convex/values";
+ import { mutation, query } from "./_generated/server";
+-import { requireAdministrator } from "./adminAuth";
++import { requireAdministrator, requireBulletinEditor } from "./adminAuth";
+ 
+ const bulletinKind = v.union(v.literal("recurring"), v.literal("one_time"));
+ const bulletinCategory = v.optional(
+-  v.union(v.literal("general"), v.literal("events"), v.literal("service")),
++  v.union(
++    v.literal("general"),
++    v.literal("events"),
++    v.literal("service"),
++    v.literal("national"),
++    v.literal("crypto"),
++    v.literal("broadcast"),
++    v.literal("community"),
++  ),
+ );
+ 
+ export const list = query({
+   args: {},
+   handler: async (ctx) => {
+-    return await ctx.db
++    const bulletins = await ctx.db
+       .query("bulletins")
+       .order("desc")
+       .collect();
++
++    return await Promise.all(
++      bulletins.map(async (b) => {
++        const imageUrl = b.imageStorageId
++          ? await ctx.storage.getUrl(b.imageStorageId)
++          : null;
++
++        let authorName: string | null = null;
++        if (b.authorId) {
++          const author = await ctx.db.get(b.authorId);
++          if (author) {
++            authorName = [author.firstName, author.lastName]
++              .filter(Boolean)
++              .join(" ") || author.email || null;
++          }
++        }
++
++        return { ...b, imageUrl, authorName };
++      }),
++    );
+   },
+ });
+ 
+@@ -30,10 +58,14 @@ export const create = mutation({
+     summary: v.string(),
+     body: v.optional(v.string()),
+     category: bulletinCategory,
++    imageStorageId: v.optional(v.id("_storage")),
+   },
+   handler: async (ctx, args) => {
+-    await requireAdministrator(ctx);
+-    return await ctx.db.insert("bulletins", args);
++    const { user } = await requireBulletinEditor(ctx);
++    return await ctx.db.insert("bulletins", {
++      ...args,
++      authorId: user._id,
++    });
+   },
+ });
+ 
+@@ -51,9 +83,10 @@ export const update = mutation({
+     summary: v.optional(v.string()),
+     body: v.optional(v.string()),
+     category: bulletinCategory,
++    imageStorageId: v.optional(v.id("_storage")),
+   },
+   handler: async (ctx, args) => {
+-    await requireAdministrator(ctx);
++    await requireBulletinEditor(ctx);
+     const { id, ...rest } = args;
+     await ctx.db.patch(id, rest);
+   },
+@@ -62,11 +95,35 @@ export const update = mutation({
+ export const remove = mutation({
+   args: { id: v.id("bulletins") },
+   handler: async (ctx, args) => {
+-    await requireAdministrator(ctx);
++    await requireBulletinEditor(ctx);
++    const bulletin = await ctx.db.get(args.id);
++    if (bulletin?.imageStorageId) {
++      await ctx.storage.delete(bulletin.imageStorageId);
++    }
+     await ctx.db.delete(args.id);
+   },
+ });
+ 
++export const generateBulletinImageUploadUrl = mutation({
++  args: {},
++  handler: async (ctx) => {
++    await requireBulletinEditor(ctx);
++    return await ctx.storage.generateUploadUrl();
++  },
++});
++
++export const removeImage = mutation({
++  args: { id: v.id("bulletins") },
++  handler: async (ctx, args) => {
++    await requireBulletinEditor(ctx);
++    const bulletin = await ctx.db.get(args.id);
++    if (bulletin?.imageStorageId) {
++      await ctx.storage.delete(bulletin.imageStorageId);
++      await ctx.db.patch(args.id, { imageStorageId: undefined });
++    }
++  },
++});
++
+ // --- Bulletin Flyers ---
+ 
+ export const listFlyers = query({
+@@ -92,7 +149,7 @@ export const listFlyers = query({
+ export const generateFlyerUploadUrl = mutation({
+   args: {},
+   handler: async (ctx) => {
+-    await requireAdministrator(ctx);
++    await requireBulletinEditor(ctx);
+     return await ctx.storage.generateUploadUrl();
+   },
+ });
+@@ -106,7 +163,7 @@ export const createFlyer = mutation({
+     displayOrder: v.number(),
+   },
+   handler: async (ctx, args) => {
+-    await requireAdministrator(ctx);
++    await requireBulletinEditor(ctx);
+     return await ctx.db.insert("bulletinFlyers", {
+       ...args,
+       isActive: true,
+@@ -122,7 +179,7 @@ export const updateFlyer = mutation({
+     isActive: v.optional(v.boolean()),
+   },
+   handler: async (ctx, args) => {
+-    await requireAdministrator(ctx);
++    await requireBulletinEditor(ctx);
+     const { id, ...rest } = args;
+     await ctx.db.patch(id, rest);
+   },
+@@ -131,7 +188,7 @@ export const updateFlyer = mutation({
+ export const removeFlyer = mutation({
+   args: { id: v.id("bulletinFlyers") },
+   handler: async (ctx, args) => {
+-    await requireAdministrator(ctx);
++    await requireBulletinEditor(ctx);
+     const flyer = await ctx.db.get(args.id);
+     if (flyer) {
+       await ctx.storage.delete(flyer.storageId);
+diff --git a/convex/schema.ts b/convex/schema.ts
+index 2a9c995..6117e49 100644
+--- a/convex/schema.ts
++++ b/convex/schema.ts
+@@ -120,8 +120,25 @@ export default defineSchema({
+     featuredTicketsUrl: v.optional(v.string()),
+     summary: v.string(),
+     body: v.optional(v.string()),
+-    category: v.optional(v.union(v.literal("general"), v.literal("events"), v.literal("service"))),
+-  }).index("by_published", ["publishedAt"]),
++    category: v.optional(
++      v.union(
++        v.literal("general"),
++        v.literal("events"),
++        v.literal("service"),
++        v.literal("national"),
++        v.literal("crypto"),
++        v.literal("broadcast"),
++        v.literal("community"),
++      ),
++    ),
++    /** Optional hero/cover image stored in Convex file storage. */
++    imageStorageId: v.optional(v.id("_storage")),
++    /** Author user ID (Columnist or Administrator who created this). */
++    authorId: v.optional(v.id("users")),
++  })
++    .index("by_published", ["publishedAt"])
++    .index("by_category", ["category"])
++    .index("by_author", ["authorId"]),
+   bulletinFlyers: defineTable({
+     storageId: v.id("_storage"),
+     alt: v.string(),
+diff --git a/convex/seed.ts b/convex/seed.ts
+new file mode 100644
+index 0000000..6b13e01
+--- /dev/null
++++ b/convex/seed.ts
+@@ -0,0 +1,339 @@
++import { internalMutation } from "./_generated/server";
++
++/**
++ * Seed the database with realistic congregation data.
++ * Run via: npx convex run seed:seedAll
++ */
++export const seedAll = internalMutation({
++  args: {},
++  handler: async (ctx) => {
++    // --- Roles ---
++    const existingRoles = await ctx.db.query("roles").collect();
++    const roleMap = new Map(existingRoles.map((r) => [r.name, r._id]));
++
++    const roleDefs = [
++      { name: "Administrator", description: "Full system access" },
++      { name: "Columnist", description: "Manages newsroom articles and bulletins" },
++      { name: "Soldier", description: "Active congregation member" },
++      { name: "Visitor", description: "Guest / new attendee" },
++    ];
++    for (const r of roleDefs) {
++      if (!roleMap.has(r.name)) {
++        const id = await ctx.db.insert("roles", r);
++        roleMap.set(r.name, id);
++      }
++    }
++
++    // --- Zones ---
++    const existingZones = await ctx.db.query("zones").collect();
++    const zoneMap = new Map(existingZones.map((z) => [z.name, z._id]));
++
++    const zoneDefs = [
++      { name: "Jerusalem", description: "Central zone — leadership & core families" },
++      { name: "Samaria", description: "Northern outreach region" },
++      { name: "Judea", description: "Southern region — local congregations" },
++      { name: "Galilee", description: "New members and visitors zone" },
++      { name: "Diaspora", description: "Remote / online members" },
++    ];
++    for (const z of zoneDefs) {
++      if (!zoneMap.has(z.name)) {
++        const id = await ctx.db.insert("zones", z);
++        zoneMap.set(z.name, id);
++      }
++    }
++
++    // --- Departments ---
++    const existingDepts = await ctx.db.query("departments").collect();
++    const deptMap = new Map(existingDepts.map((d) => [d.name, d._id]));
++
++    const deptDefs = [
++      { name: "Youth Ministry", description: "Programs for young members ages 5-17" },
++      { name: "Music & Worship", description: "Choir, instruments, and praise coordination" },
++      { name: "Education", description: "Torah study groups, Hebrew classes, and seminars" },
++      { name: "Hospitality", description: "Event coordination, meals, and guest services" },
++      { name: "Media & Broadcast", description: "Live streaming, recordings, and online presence" },
++      { name: "Outreach", description: "Community engagement and evangelism" },
++      { name: "Finance", description: "Treasury, budget planning, and donation management" },
++    ];
++    for (const d of deptDefs) {
++      if (!deptMap.has(d.name)) {
++        const id = await ctx.db.insert("departments", d);
++        deptMap.set(d.name, id);
++      }
++    }
++
++    // --- Members ---
++    const existingUsers = await ctx.db.query("users").collect();
++    const existingEmails = new Set(existingUsers.map((u) => u.email).filter(Boolean));
++
++    const soldierRoleId = roleMap.get("Soldier")!;
++    const visitorRoleId = roleMap.get("Visitor")!;
++    const columnistRoleId = roleMap.get("Columnist")!;
++    const zoneIds = [...zoneMap.values()];
++    const deptIds = [...deptMap.values()];
++
++    type Rank = "prospect" | "trooper" | "officer" | "captain_10" | "captain_50" | "captain_100" | "captain_1000" | "elder" | "chief";
++
++    const memberData: Array<{
++      firstName: string;
++      lastName: string;
++      email: string;
++      hebrewName?: string;
++      rank: Rank;
++      roleKey: string;
++      zoneIdx: number;
++      deptIdxs: number[];
++      joinedMonthsAgo: number;
++    }> = [
++      { firstName: "David", lastName: "Ben-Yosef", email: "david.benyosef@example.com", hebrewName: "דוד", rank: "elder", roleKey: "Soldier", zoneIdx: 0, deptIdxs: [2, 6], joinedMonthsAgo: 48 },
++      { firstName: "Miriam", lastName: "Goldstein", email: "miriam.g@example.com", hebrewName: "מרים", rank: "captain_100", roleKey: "Soldier", zoneIdx: 0, deptIdxs: [1, 3], joinedMonthsAgo: 36 },
++      { firstName: "Ezekiel", lastName: "Thompson", email: "ezekiel.t@example.com", hebrewName: "יחזקאל", rank: "officer", roleKey: "Soldier", zoneIdx: 1, deptIdxs: [0, 5], joinedMonthsAgo: 30 },
++      { firstName: "Sarah", lastName: "Williams", email: "sarah.w@example.com", hebrewName: "שרה", rank: "captain_50", roleKey: "Columnist", zoneIdx: 0, deptIdxs: [4], joinedMonthsAgo: 24 },
++      { firstName: "Isaiah", lastName: "Carter", email: "isaiah.c@example.com", hebrewName: "ישעיהו", rank: "trooper", roleKey: "Soldier", zoneIdx: 2, deptIdxs: [1], joinedMonthsAgo: 18 },
++      { firstName: "Ruth", lastName: "Johnson", email: "ruth.j@example.com", hebrewName: "רות", rank: "officer", roleKey: "Soldier", zoneIdx: 1, deptIdxs: [3, 2], joinedMonthsAgo: 24 },
++      { firstName: "Moses", lastName: "Abrams", email: "moses.a@example.com", hebrewName: "משה", rank: "captain_10", roleKey: "Soldier", zoneIdx: 2, deptIdxs: [5], joinedMonthsAgo: 36 },
++      { firstName: "Esther", lastName: "Davis", email: "esther.d@example.com", hebrewName: "אסתר", rank: "trooper", roleKey: "Soldier", zoneIdx: 3, deptIdxs: [0, 3], joinedMonthsAgo: 12 },
++      { firstName: "Aaron", lastName: "Mitchell", email: "aaron.m@example.com", hebrewName: "אהרן", rank: "officer", roleKey: "Soldier", zoneIdx: 0, deptIdxs: [6], joinedMonthsAgo: 42 },
++      { firstName: "Deborah", lastName: "Harris", email: "deborah.h@example.com", hebrewName: "דבורה", rank: "captain_50", roleKey: "Soldier", zoneIdx: 1, deptIdxs: [2, 4], joinedMonthsAgo: 20 },
++      { firstName: "Solomon", lastName: "Lee", email: "solomon.l@example.com", hebrewName: "שלמה", rank: "elder", roleKey: "Soldier", zoneIdx: 0, deptIdxs: [2, 6], joinedMonthsAgo: 60 },
++      { firstName: "Hannah", lastName: "Brown", email: "hannah.b@example.com", hebrewName: "חנה", rank: "trooper", roleKey: "Soldier", zoneIdx: 3, deptIdxs: [1], joinedMonthsAgo: 8 },
++      { firstName: "Elijah", lastName: "Jackson", email: "elijah.j@example.com", hebrewName: "אליהו", rank: "officer", roleKey: "Soldier", zoneIdx: 2, deptIdxs: [5, 0], joinedMonthsAgo: 15 },
++      { firstName: "Naomi", lastName: "White", email: "naomi.w@example.com", hebrewName: "נעמי", rank: "prospect", roleKey: "Visitor", zoneIdx: 3, deptIdxs: [], joinedMonthsAgo: 2 },
++      { firstName: "Joshua", lastName: "Green", email: "joshua.g@example.com", hebrewName: "יהושע", rank: "captain_10", roleKey: "Soldier", zoneIdx: 1, deptIdxs: [4, 5], joinedMonthsAgo: 28 },
++      { firstName: "Leah", lastName: "Taylor", email: "leah.t@example.com", hebrewName: "לאה", rank: "trooper", roleKey: "Soldier", zoneIdx: 4, deptIdxs: [3], joinedMonthsAgo: 10 },
++      { firstName: "Caleb", lastName: "Anderson", email: "caleb.a@example.com", hebrewName: "כלב", rank: "trooper", roleKey: "Soldier", zoneIdx: 4, deptIdxs: [2], joinedMonthsAgo: 6 },
++      { firstName: "Rachel", lastName: "Thomas", email: "rachel.t@example.com", hebrewName: "רחל", rank: "officer", roleKey: "Soldier", zoneIdx: 2, deptIdxs: [1, 3], joinedMonthsAgo: 22 },
++      { firstName: "Samuel", lastName: "Martinez", email: "samuel.m@example.com", hebrewName: "שמואל", rank: "captain_10", roleKey: "Soldier", zoneIdx: 0, deptIdxs: [0, 6], joinedMonthsAgo: 32 },
++      { firstName: "Abigail", lastName: "Robinson", email: "abigail.r@example.com", hebrewName: "אביגיל", rank: "trooper", roleKey: "Soldier", zoneIdx: 3, deptIdxs: [4], joinedMonthsAgo: 14 },
++      { firstName: "Nathan", lastName: "Clark", email: "nathan.c@example.com", hebrewName: "נתן", rank: "prospect", roleKey: "Visitor", zoneIdx: 3, deptIdxs: [], joinedMonthsAgo: 1 },
++      { firstName: "Priscilla", lastName: "Lewis", email: "priscilla.l@example.com", hebrewName: "פריסקילה", rank: "trooper", roleKey: "Soldier", zoneIdx: 4, deptIdxs: [5], joinedMonthsAgo: 9 },
++      { firstName: "Gideon", lastName: "Walker", email: "gideon.w@example.com", hebrewName: "גדעון", rank: "officer", roleKey: "Soldier", zoneIdx: 1, deptIdxs: [0, 2], joinedMonthsAgo: 26 },
++      { firstName: "Zipporah", lastName: "Hall", email: "zipporah.h@example.com", hebrewName: "ציפורה", rank: "captain_50", roleKey: "Soldier", zoneIdx: 0, deptIdxs: [1, 6], joinedMonthsAgo: 34 },
++      { firstName: "Malachi", lastName: "Young", email: "malachi.y@example.com", hebrewName: "מלאכי", rank: "trooper", roleKey: "Soldier", zoneIdx: 2, deptIdxs: [4], joinedMonthsAgo: 7 },
++      { firstName: "Keturah", lastName: "King", email: "keturah.k@example.com", hebrewName: "קטורה", rank: "prospect", roleKey: "Visitor", zoneIdx: 3, deptIdxs: [], joinedMonthsAgo: 1 },
++      { firstName: "Josiah", lastName: "Wright", email: "josiah.w@example.com", hebrewName: "יאשיהו", rank: "trooper", roleKey: "Soldier", zoneIdx: 4, deptIdxs: [3, 5], joinedMonthsAgo: 11 },
++      { firstName: "Bathsheba", lastName: "Lopez", email: "bathsheba.l@example.com", hebrewName: "בת-שבע", rank: "officer", roleKey: "Soldier", zoneIdx: 2, deptIdxs: [1], joinedMonthsAgo: 19 },
++      { firstName: "Ezra", lastName: "Hill", email: "ezra.h@example.com", hebrewName: "עזרא", rank: "captain_10", roleKey: "Soldier", zoneIdx: 1, deptIdxs: [2, 0], joinedMonthsAgo: 40 },
++      { firstName: "Tamar", lastName: "Scott", email: "tamar.s@example.com", hebrewName: "תמר", rank: "trooper", roleKey: "Soldier", zoneIdx: 0, deptIdxs: [3], joinedMonthsAgo: 16 },
++      { firstName: "Micah", lastName: "Adams", email: "micah.a@example.com", hebrewName: "מיכה", rank: "prospect", roleKey: "Visitor", zoneIdx: 3, deptIdxs: [], joinedMonthsAgo: 0 },
++      { firstName: "Hadassah", lastName: "Nelson", email: "hadassah.n@example.com", hebrewName: "הדסה", rank: "trooper", roleKey: "Soldier", zoneIdx: 4, deptIdxs: [4, 1], joinedMonthsAgo: 5 },
++    ];
++
++    const createdUserIds: string[] = [];
++    for (const m of memberData) {
++      if (existingEmails.has(m.email)) continue;
++
++      const now = Date.now();
++      const joinedAt = now - m.joinedMonthsAgo * 30 * 24 * 60 * 60 * 1000;
++      const roleId = m.roleKey === "Columnist"
++        ? columnistRoleId
++        : m.roleKey === "Visitor"
++          ? visitorRoleId
++          : soldierRoleId;
++
++      const userId = await ctx.db.insert("users", {
++        clerkUserId: `seed_${m.email}`,
++        firstName: m.firstName,
++        lastName: m.lastName,
++        email: m.email,
++        hebrewName: m.hebrewName,
++        hasAgreedToTerms: true,
++        roleId,
++        zoneId: zoneIds[m.zoneIdx % zoneIds.length],
++        rank: m.rank,
++        joinedAt,
++        departmentIds: m.deptIdxs.map((i) => deptIds[i % deptIds.length]),
++      });
++      createdUserIds.push(userId);
++    }
++
++    // Get all user IDs for donation assignment (include existing)
++    const allUsers = await ctx.db.query("users").collect();
++    const donorUsers = allUsers.filter(
++      (u) => u.email && !u.email.includes("example") ? true : Math.random() > 0.3,
++    );
++
++    // --- Donations ---
++    const existingDonations = await ctx.db.query("donations").collect();
++    if (existingDonations.length < 20) {
++      const now = Date.now();
++      const funds = ["General fund", "Building fund", "Youth ministry", "Missions", "Feast offerings"];
++      const frequencies = ["one_time", "weekly", "monthly"];
++
++      for (let i = 0; i < 120; i++) {
++        const donor = donorUsers[i % donorUsers.length];
++        if (!donor) continue;
++
++        const monthsAgo = Math.floor(Math.random() * 12);
++        const dayOffset = Math.floor(Math.random() * 28);
++        const createdAt = now - (monthsAgo * 30 + dayOffset) * 24 * 60 * 60 * 1000;
++
++        const frequency = frequencies[Math.floor(Math.random() * frequencies.length)];
++        const isSmall = Math.random() > 0.6;
++        const amountCents = isSmall
++          ? (Math.floor(Math.random() * 4) + 1) * 500 + 500  // $5-$25
++          : (Math.floor(Math.random() * 19) + 1) * 500 + 2500; // $25-$120
++
++        await ctx.db.insert("donations", {
++          clerkUserId: donor.clerkUserId,
++          userId: donor._id,
++          amountCents,
++          currency: "usd",
++          frequency,
++          status: Math.random() > 0.05 ? "succeeded" : "pending",
++          stripeSessionId: `seed_session_${i}_${Date.now()}`,
++          stripePaymentIntentId: `seed_pi_${i}_${Date.now()}`,
++          createdAt,
++          weeksCredit: frequency === "weekly" ? 1 : frequency === "monthly" ? 4 : 0,
++          fund: funds[Math.floor(Math.random() * funds.length)],
++          donationDate: createdAt,
++        });
++      }
++    }
++
++    // --- Bulletins ---
++    const existingBulletins = await ctx.db.query("bulletins").collect();
++    if (existingBulletins.length < 5) {
++      type BulletinCategory = "general" | "events" | "service" | "national" | "crypto" | "broadcast" | "community";
++
++      const bulletinData: Array<{
++        title: string;
++        summary: string;
++        body?: string;
++        category: BulletinCategory;
++        kind: "recurring" | "one_time";
++        isNew?: boolean;
++        isFeatured?: boolean;
++        daysAgo: number;
++      }> = [
++        {
++          title: "Bitcoin Surpasses $100K Milestone",
++          summary: "Historic moment as Bitcoin breaks through the $100,000 barrier. Here's what it means for believers managing their finances wisely.",
++          body: "The cryptocurrency market reached a significant milestone this week. As stewards of our resources, we encourage the congregation to approach digital assets with wisdom and prayer. Our Finance department is hosting a seminar on biblical money management next Sabbath.",
++          category: "crypto",
++          kind: "one_time",
++          isNew: true,
++          daysAgo: 2,
++        },
++        {
++          title: "Weekly Sabbath Gathering",
++          summary: "Join us every Sabbath for worship, teaching, and fellowship. Service begins at 10:00 AM.",
++          body: "Our weekly gathering includes praise & worship led by the Music & Worship team, Torah portion reading, a teaching from the elders, and a communal meal. Visitors are always welcome.",
++          category: "service",
++          kind: "recurring",
++          daysAgo: 7,
++        },
++        {
++          title: "Pentecost / Feast of Weeks 2026",
++          summary: "Annual Feast of Weeks celebration. Purchase tickets through Zeffy.",
++          category: "events",
++          kind: "one_time",
++          isFeatured: true,
++          isNew: true,
++          daysAgo: 5,
++        },
++        {
++          title: "Israel National Update: Peace Talks Continue",
++          summary: "Latest developments from the region as diplomatic efforts continue. Stay informed and keep the nation in prayer.",
++          body: "Recent diplomatic meetings have shown progress on several fronts. We encourage the congregation to remain watchful and prayerful. A special prayer session for the peace of Jerusalem will be held this Wednesday evening.",
++          category: "national",
++          kind: "one_time",
++          isNew: true,
++          daysAgo: 1,
++        },
++        {
++          title: "Live Broadcast: Elder Solomon's Teaching Series",
++          summary: "New weekly broadcast series on the prophets. Streaming every Thursday at 7 PM on our YouTube channel.",
++          body: "Elder Solomon Lee begins a 12-part series examining the major and minor prophets. Each session includes live Q&A. Subscribe to our channel and turn on notifications.",
++          category: "broadcast",
++          kind: "recurring",
++          daysAgo: 3,
++        },
++        {
++          title: "Youth Camp Registration Open",
++          summary: "Summer 2026 youth camp registration is now open. Ages 8-17. Limited spots available.",
++          body: "This year's theme is 'Mighty Warriors of Faith.' The camp runs July 14-21 at Cedar Ridge. Early registration discount of 15% ends June 1. Contact the Youth Ministry department for details.",
++          category: "community",
++          kind: "one_time",
++          isNew: true,
++          daysAgo: 4,
++        },
++        {
++          title: "Community Garden Project Launch",
++          summary: "Volunteer to help build our congregation's community garden. First workday is next Sunday.",
++          category: "community",
++          kind: "one_time",
++          daysAgo: 10,
++        },
++        {
++          title: "Monthly Finance Report — April 2026",
++          summary: "Transparent reporting on congregation finances. Total giving up 12% year-over-year.",
++          body: "General fund contributions totaled $14,230 this month. Building fund reached 68% of its annual goal. Missions giving supported three partner organizations. Full report available from the Finance department.",
++          category: "general",
++          kind: "one_time",
++          daysAgo: 8,
++        },
++        {
++          title: "Ethereum Staking Update for Congregation Treasury",
++          summary: "The finance committee approved a modest ETH staking position as part of our diversified treasury strategy.",
++          category: "crypto",
++          kind: "one_time",
++          daysAgo: 14,
++        },
++        {
++          title: "New Hebrew Study Group — Beginners Welcome",
++          summary: "Weekly Hebrew language class starts this month. No experience needed. Tuesdays at 6:30 PM.",
++          body: "Led by Sister Deborah Harris, this 10-week course covers the Hebrew alphabet, basic vocabulary, and prayer readings. Materials provided. Sign up through the Education department.",
++          category: "service",
++          kind: "recurring",
++          isNew: true,
++          daysAgo: 6,
++        },
++        {
++          title: "Passover Preparations — Save the Date",
++          summary: "Passover 2026 is approaching. Mark your calendars and begin preparations.",
++          category: "events",
++          kind: "one_time",
++          daysAgo: 20,
++        },
++        {
++          title: "Weekly Prayer Call",
++          summary: "Join the intercessory prayer line every Wednesday at 6 AM. Dial-in details in the body.",
++          body: "Call: (555) 123-4567, Access code: 7890#. Led by rotating elders. All are welcome to join and lift up the congregation and the nation.",
++          category: "service",
++          kind: "recurring",
++          daysAgo: 30,
++        },
++      ];
++
++      const now = Date.now();
++      for (const b of bulletinData) {
++        const pubDate = new Date(now - b.daysAgo * 24 * 60 * 60 * 1000);
++        const dateStr = pubDate.toISOString().slice(0, 10);
++
++        await ctx.db.insert("bulletins", {
++          title: b.title,
++          date: dateStr,
++          publishedAt: dateStr,
++          kind: b.kind,
++          isNew: b.isNew,
++          isFeatured: b.isFeatured,
++          summary: b.summary,
++          body: b.body,
++          category: b.category,
++          featuredTicketsUrl: b.isFeatured
++            ? "https://www.zeffy.com/en-US/ticketing/pentecostfeast-of-weeks--2026"
++            : undefined,
++        });
++      }
++    }
++
++    return {
++      roles: roleMap.size,
++      zones: zoneMap.size,
++      departments: deptMap.size,
++      newMembers: createdUserIds.length,
++      totalMembers: allUsers.length + createdUserIds.length,
++    };
++  },
++});
+diff --git a/src/components/admin/AdminDashboard.tsx b/src/components/admin/AdminDashboard.tsx
+index b3bcf68..09acea3 100644
+--- a/src/components/admin/AdminDashboard.tsx
++++ b/src/components/admin/AdminDashboard.tsx
+@@ -1,56 +1,80 @@
++"use client";
++
+ import React from "react";
+ import { Root, List, Trigger, Content } from "@radix-ui/react-tabs";
++import { useQuery } from "convex/react";
++import { api } from "../../../convex/_generated/api";
+ import UnifiedDashboard from "./UnifiedDashboard";
+ import CongregationMembersGrid from "./CongregationMembersGrid";
+ import BulletinsTab from "./BulletinsTab";
+ import { AdminErrorBoundary } from "./AdminErrorBoundary";
+ 
+ const AdminDashboard = () => {
++  const user = useQuery(api.users.getUser);
++  const roles = useQuery(api.roles.getRoles) ?? [];
++
++  const userRole = user?.roleId
++    ? roles.find((r) => r._id === user.roleId)
++    : null;
++  const isAdmin = userRole?.name === "Administrator";
++  const isColumnist = userRole?.name === "Columnist";
++
++  const defaultTab = isAdmin ? "overview" : "bulletins";
++
+   return (
+     <section className="container mx-auto min-w-0 py-10">
+       <header className="mb-6 max-w-2xl">
+         <h1 className="text-3xl font-bold tracking-tight">
+-          Admin | Congregation & giving
++          {isColumnist ? "Newsroom" : "Admin | Congregation & giving"}
+         </h1>
+         <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
+-          Overview for monthly giving and lifetime totals; directory for roster
+-          structure and profile fields.
++          {isColumnist
++            ? "Create and manage news articles, announcements, and broadcasts."
++            : "Overview for monthly giving and lifetime totals; directory for roster structure and profile fields."}
+         </p>
+       </header>
+ 
+-      <Root defaultValue="overview" className="flex w-full min-w-0 flex-col">
++      <Root defaultValue={defaultTab} className="flex w-full min-w-0 flex-col">
+         <List className="flex flex-wrap border-b gap-1">
+-          <Trigger
+-            value="overview"
+-            className="px-4 py-2 data-[state=active]:border-b-2 data-[state=active]:border-blue-500"
+-          >
+-            Overview
+-          </Trigger>
+-          <Trigger
+-            value="directory"
+-            className="px-4 py-2 data-[state=active]:border-b-2 data-[state=active]:border-blue-500"
+-          >
+-            Directory
+-          </Trigger>
++          {isAdmin && (
++            <>
++              <Trigger
++                value="overview"
++                className="px-4 py-2 data-[state=active]:border-b-2 data-[state=active]:border-blue-500"
++              >
++                Overview
++              </Trigger>
++              <Trigger
++                value="directory"
++                className="px-4 py-2 data-[state=active]:border-b-2 data-[state=active]:border-blue-500"
++              >
++                Directory
++              </Trigger>
++            </>
++          )}
+           <Trigger
+             value="bulletins"
+             className="px-4 py-2 data-[state=active]:border-b-2 data-[state=active]:border-blue-500"
+           >
+-            Bulletins
++            Newsroom
+           </Trigger>
+         </List>
+-        <Content value="overview" className="min-w-0 py-4">
+-          <AdminErrorBoundary fallbackTitle="Overview failed to load">
+-            <UnifiedDashboard />
+-          </AdminErrorBoundary>
+-        </Content>
+-        <Content value="directory" className="min-w-0 py-4">
+-          <AdminErrorBoundary fallbackTitle="Directory failed to load">
+-            <CongregationMembersGrid />
+-          </AdminErrorBoundary>
+-        </Content>
++        {isAdmin && (
++          <>
++            <Content value="overview" className="min-w-0 py-4">
++              <AdminErrorBoundary fallbackTitle="Overview failed to load">
++                <UnifiedDashboard />
++              </AdminErrorBoundary>
++            </Content>
++            <Content value="directory" className="min-w-0 py-4">
++              <AdminErrorBoundary fallbackTitle="Directory failed to load">
++                <CongregationMembersGrid />
++              </AdminErrorBoundary>
++            </Content>
++          </>
++        )}
+         <Content value="bulletins" className="min-w-0 py-4">
+-          <AdminErrorBoundary fallbackTitle="Bulletins failed to load">
++          <AdminErrorBoundary fallbackTitle="Newsroom failed to load">
+             <BulletinsTab />
+           </AdminErrorBoundary>
+         </Content>
+diff --git a/src/components/admin/BulletinsTab.tsx b/src/components/admin/BulletinsTab.tsx
+index 2ba9180..7f6416a 100644
+--- a/src/components/admin/BulletinsTab.tsx
++++ b/src/components/admin/BulletinsTab.tsx
+@@ -1,8 +1,9 @@
+ "use client";
+ 
+-import React, { useState } from "react";
++import React, { useState, useRef, useCallback } from "react";
+ import { useQuery, useMutation } from "convex/react";
+ import { api } from "../../../convex/_generated/api";
++import type { Id } from "../../../convex/_generated/dataModel";
+ import { Button } from "../ui/button";
+ import { Input } from "../ui/input";
+ import { Label } from "../ui/label";
+@@ -15,7 +16,19 @@ import {
+   SelectValue,
+ } from "../ui/select";
+ import { toast } from "sonner";
+-import { Trash2, Plus, Edit, X, Check, Star, Megaphone } from "lucide-react";
++import {
++  Trash2,
++  Plus,
++  Edit,
++  X,
++  Check,
++  Star,
++  Megaphone,
++  ImagePlus,
++  Upload,
++  Eye,
++  User,
++} from "lucide-react";
+ import {
+   AlertDialog,
+   AlertDialogAction,
+@@ -28,6 +41,18 @@ import {
+   AlertDialogTrigger,
+ } from "../ui/alert-dialog";
+ 
++const CATEGORIES = [
++  { value: "general", label: "General" },
++  { value: "events", label: "Events" },
++  { value: "service", label: "Worship & Gatherings" },
++  { value: "national", label: "National / Israel" },
++  { value: "crypto", label: "Crypto & Finance" },
++  { value: "broadcast", label: "Broadcasts & Media" },
++  { value: "community", label: "Community" },
++] as const;
++
++type CategoryValue = (typeof CATEGORIES)[number]["value"];
++
+ type BulletinFormData = {
+   title: string;
+   date: string;
+@@ -39,7 +64,7 @@ type BulletinFormData = {
+   featuredTicketsUrl: string;
+   summary: string;
+   body: string;
+-  category: "general" | "events" | "service";
++  category: CategoryValue;
+ };
+ 
+ const emptyForm: BulletinFormData = {
+@@ -61,10 +86,59 @@ export default function BulletinsTab() {
+   const createBulletin = useMutation(api.bulletins.create);
+   const updateBulletin = useMutation(api.bulletins.update);
+   const removeBulletin = useMutation(api.bulletins.remove);
++  const generateUploadUrl = useMutation(
++    api.bulletins.generateBulletinImageUploadUrl,
++  );
++  const removeImage = useMutation(api.bulletins.removeImage);
+ 
+   const [form, setForm] = useState<BulletinFormData>(emptyForm);
+   const [editingId, setEditingId] = useState<string | null>(null);
+   const [showForm, setShowForm] = useState(false);
++  const [imageFile, setImageFile] = useState<File | null>(null);
++  const [imagePreview, setImagePreview] = useState<string | null>(null);
++  const [uploading, setUploading] = useState(false);
++  const [filterCategory, setFilterCategory] = useState<
++    CategoryValue | "all"
++  >("all");
++  const fileInputRef = useRef<HTMLInputElement>(null);
++
++  const handleImageSelect = useCallback(
++    (e: React.ChangeEvent<HTMLInputElement>) => {
++      const file = e.target.files?.[0];
++      if (!file) return;
++      if (!file.type.startsWith("image/")) {
++        toast.error("Please select an image file");
++        return;
++      }
++      if (file.size > 5 * 1024 * 1024) {
++        toast.error("Image must be under 5 MB");
++        return;
++      }
++      setImageFile(file);
++      const reader = new FileReader();
++      reader.onload = () => setImagePreview(reader.result as string);
++      reader.readAsDataURL(file);
++    },
++    [],
++  );
++
++  const uploadImage = async (): Promise<Id<"_storage"> | undefined> => {
++    if (!imageFile) return undefined;
++    setUploading(true);
++    try {
++      const url = await generateUploadUrl();
++      const res = await fetch(url, {
++        method: "POST",
++        headers: { "Content-Type": imageFile.type },
++        body: imageFile,
++      });
++      if (!res.ok) throw new Error("Upload failed");
++      const { storageId } = await res.json();
++      return storageId as Id<"_storage">;
++    } finally {
++      setUploading(false);
++    }
++  };
+ 
+   const handleSubmit = async () => {
+     if (!form.title || !form.summary) {
+@@ -72,9 +146,11 @@ export default function BulletinsTab() {
+       return;
+     }
+     try {
++      const imageStorageId = await uploadImage();
++
+       if (editingId) {
+         await updateBulletin({
+-          id: editingId as any,
++          id: editingId as Id<"bulletins">,
+           title: form.title,
+           date: form.date,
+           publishedAt: form.publishedAt,
+@@ -86,6 +162,7 @@ export default function BulletinsTab() {
+           summary: form.summary,
+           body: form.body || undefined,
+           category: form.category,
++          ...(imageStorageId ? { imageStorageId } : {}),
+         });
+         toast.success("Bulletin updated");
+       } else {
+@@ -101,17 +178,25 @@ export default function BulletinsTab() {
+           summary: form.summary,
+           body: form.body || undefined,
+           category: form.category,
++          ...(imageStorageId ? { imageStorageId } : {}),
+         });
+         toast.success("Bulletin created");
+       }
+-      setForm(emptyForm);
+-      setEditingId(null);
+-      setShowForm(false);
+-    } catch (err) {
++      resetForm();
++    } catch {
+       toast.error("Failed to save bulletin");
+     }
+   };
+ 
++  const resetForm = () => {
++    setForm(emptyForm);
++    setEditingId(null);
++    setShowForm(false);
++    setImageFile(null);
++    setImagePreview(null);
++    if (fileInputRef.current) fileInputRef.current.value = "";
++  };
++
+   const handleEdit = (b: (typeof bulletins)[number]) => {
+     setForm({
+       title: b.title,
+@@ -124,13 +209,15 @@ export default function BulletinsTab() {
+       featuredTicketsUrl: b.featuredTicketsUrl ?? "",
+       summary: b.summary,
+       body: b.body ?? "",
+-      category: b.category ?? "general",
++      category: (b.category as CategoryValue) ?? "general",
+     });
+     setEditingId(b._id);
++    setImageFile(null);
++    setImagePreview(b.imageUrl ?? null);
+     setShowForm(true);
+   };
+ 
+-  const handleDelete = async (id: any) => {
++  const handleDelete = async (id: Id<"bulletins">) => {
+     try {
+       await removeBulletin({ id });
+       toast.success("Bulletin deleted");
+@@ -139,32 +226,83 @@ export default function BulletinsTab() {
+     }
+   };
+ 
++  const handleRemoveImage = async (id: Id<"bulletins">) => {
++    try {
++      await removeImage({ id });
++      toast.success("Image removed");
++    } catch {
++      toast.error("Failed to remove image");
++    }
++  };
++
++  const filteredBulletins =
++    filterCategory === "all"
++      ? bulletins
++      : bulletins.filter((b) => b.category === filterCategory);
++
++  const categoryLabel = (cat: string | undefined) =>
++    CATEGORIES.find((c) => c.value === cat)?.label ?? cat ?? "General";
++
+   return (
+     <div className="space-y-6">
+-      <div className="flex items-center justify-between">
++      {/* Header */}
++      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+         <div>
+-          <h2 className="text-xl font-semibold">Bulletin Board</h2>
++          <h2 className="text-xl font-semibold">Newsroom</h2>
+           <p className="text-sm text-muted-foreground">
+-            Manage congregation announcements and notices
++            Manage news, announcements, and broadcasts
+           </p>
+         </div>
+         <Button
+           onClick={() => {
+-            setForm(emptyForm);
+-            setEditingId(null);
+-            setShowForm(!showForm);
++            if (showForm) resetForm();
++            else setShowForm(true);
+           }}
+           className="gap-2"
+         >
+-          {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+-          {showForm ? "Cancel" : "New Bulletin"}
++          {showForm ? (
++            <X className="h-4 w-4" />
++          ) : (
++            <Plus className="h-4 w-4" />
++          )}
++          {showForm ? "Cancel" : "New Article"}
+         </Button>
+       </div>
+ 
++      {/* Category filter */}
++      <div className="flex flex-wrap gap-2">
++        <Button
++          variant={filterCategory === "all" ? "default" : "outline"}
++          size="sm"
++          onClick={() => setFilterCategory("all")}
++        >
++          All ({bulletins.length})
++        </Button>
++        {CATEGORIES.map((cat) => {
++          const count = bulletins.filter(
++            (b) => b.category === cat.value,
++          ).length;
++          if (count === 0) return null;
++          return (
++            <Button
++              key={cat.value}
++              variant={filterCategory === cat.value ? "default" : "outline"}
++              size="sm"
++              onClick={() => setFilterCategory(cat.value)}
++            >
++              {cat.label} ({count})
++            </Button>
++          );
++        })}
++      </div>
++
++      {/* Form */}
+       {showForm && (
+         <Card>
+           <CardHeader>
+-            <CardTitle>{editingId ? "Edit Bulletin" : "New Bulletin"}</CardTitle>
++            <CardTitle>
++              {editingId ? "Edit Article" : "New Article"}
++            </CardTitle>
+           </CardHeader>
+           <CardContent className="space-y-4">
+             <div className="grid gap-4 sm:grid-cols-2">
+@@ -173,23 +311,29 @@ export default function BulletinsTab() {
+                 <Input
+                   id="title"
+                   value={form.title}
+-                  onChange={(e) => setForm({ ...form, title: e.target.value })}
+-                  placeholder="Bulletin title"
++                  onChange={(e) =>
++                    setForm({ ...form, title: e.target.value })
++                  }
++                  placeholder="Article headline"
+                 />
+               </div>
+               <div className="space-y-2">
+                 <Label htmlFor="category">Category</Label>
+                 <Select
+                   value={form.category}
+-                  onValueChange={(v) => setForm({ ...form, category: v as any })}
++                  onValueChange={(v) =>
++                    setForm({ ...form, category: v as CategoryValue })
++                  }
+                 >
+                   <SelectTrigger id="category">
+                     <SelectValue />
+                   </SelectTrigger>
+                   <SelectContent>
+-                    <SelectItem value="general">General</SelectItem>
+-                    <SelectItem value="events">Events</SelectItem>
+-                    <SelectItem value="service">Worship & Gatherings</SelectItem>
++                    {CATEGORIES.map((cat) => (
++                      <SelectItem key={cat.value} value={cat.value}>
++                        {cat.label}
++                      </SelectItem>
++                    ))}
+                   </SelectContent>
+                 </Select>
+               </div>
+@@ -200,7 +344,12 @@ export default function BulletinsTab() {
+                 <Label htmlFor="kind">Type</Label>
+                 <Select
+                   value={form.kind}
+-                  onValueChange={(v) => setForm({ ...form, kind: v as any })}
++                  onValueChange={(v) =>
++                    setForm({
++                      ...form,
++                      kind: v as "recurring" | "one_time",
++                    })
++                  }
+                 >
+                   <SelectTrigger id="kind">
+                     <SelectValue />
+@@ -217,7 +366,9 @@ export default function BulletinsTab() {
+                   id="date"
+                   type="date"
+                   value={form.date}
+-                  onChange={(e) => setForm({ ...form, date: e.target.value })}
++                  onChange={(e) =>
++                    setForm({ ...form, date: e.target.value })
++                  }
+                 />
+               </div>
+               <div className="space-y-2">
+@@ -226,23 +377,83 @@ export default function BulletinsTab() {
+                   id="publishedAt"
+                   type="date"
+                   value={form.publishedAt}
+-                  onChange={(e) => setForm({ ...form, publishedAt: e.target.value })}
++                  onChange={(e) =>
++                    setForm({ ...form, publishedAt: e.target.value })
++                  }
+                 />
+               </div>
+             </div>
+ 
+             {form.kind === "one_time" && (
+               <div className="space-y-2">
+-                <Label htmlFor="eventEndsOn">Event ends on (optional)</Label>
++                <Label htmlFor="eventEndsOn">
++                  Event ends on (optional)
++                </Label>
+                 <Input
+                   id="eventEndsOn"
+                   type="date"
+                   value={form.eventEndsOn}
+-                  onChange={(e) => setForm({ ...form, eventEndsOn: e.target.value })}
++                  onChange={(e) =>
++                    setForm({ ...form, eventEndsOn: e.target.value })
++                  }
+                 />
+               </div>
+             )}
+ 
++            {/* Cover Image Upload */}
++            <div className="space-y-2">
++              <Label>Cover Image (optional)</Label>
++              <div className="flex items-start gap-4">
++                {imagePreview ? (
++                  <div className="relative group">
++                    <img
++                      src={imagePreview}
++                      alt="Preview"
++                      className="h-32 w-48 rounded-lg border object-cover"
++                    />
++                    <button
++                      type="button"
++                      onClick={() => {
++                        setImageFile(null);
++                        setImagePreview(null);
++                        if (fileInputRef.current)
++                          fileInputRef.current.value = "";
++                      }}
++                      className="absolute -right-2 -top-2 rounded-full bg-destructive p-1 text-white opacity-0 transition-opacity group-hover:opacity-100"
++                    >
++                      <X className="h-3 w-3" />
++                    </button>
++                  </div>
++                ) : (
++                  <button
++                    type="button"
++                    onClick={() => fileInputRef.current?.click()}
++                    className="flex h-32 w-48 flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-muted-foreground/25 text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
++                  >
++                    <ImagePlus className="h-8 w-8" />
++                    <span className="text-xs">Add cover</span>
++                  </button>
++                )}
++                <input
++                  ref={fileInputRef}
++                  type="file"
++                  accept="image/*"
++                  onChange={handleImageSelect}
++                  className="hidden"
++                />
++                {imagePreview && (
++                  <Button
++                    variant="outline"
++                    size="sm"
++                    onClick={() => fileInputRef.current?.click()}
++                  >
++                    <Upload className="mr-1 h-3 w-3" />
++                    Replace
++                  </Button>
++                )}
++              </div>
++            </div>
++
+             <div className="space-y-2">
+               <Label htmlFor="summary">Summary</Label>
+               <textarea
+@@ -250,7 +461,9 @@ export default function BulletinsTab() {
+                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                 rows={2}
+                 value={form.summary}
+-                onChange={(e) => setForm({ ...form, summary: e.target.value })}
++                onChange={(e) =>
++                  setForm({ ...form, summary: e.target.value })
++                }
+                 placeholder="Brief summary shown on the card"
+               />
+             </div>
+@@ -260,10 +473,12 @@ export default function BulletinsTab() {
+               <textarea
+                 id="body"
+                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-2 focus:ring-ring"
+-                rows={4}
++                rows={6}
+                 value={form.body}
+-                onChange={(e) => setForm({ ...form, body: e.target.value })}
+-                placeholder="Full content (shown when expanded)"
++                onChange={(e) =>
++                  setForm({ ...form, body: e.target.value })
++                }
++                placeholder="Full article content"
+               />
+             </div>
+ 
+@@ -272,7 +487,9 @@ export default function BulletinsTab() {
+                 <input
+                   type="checkbox"
+                   checked={form.isNew}
+-                  onChange={(e) => setForm({ ...form, isNew: e.target.checked })}
++                  onChange={(e) =>
++                    setForm({ ...form, isNew: e.target.checked })
++                  }
+                   className="h-4 w-4 rounded border-input"
+                 />
+                 Mark as &ldquo;New&rdquo;
+@@ -281,21 +498,28 @@ export default function BulletinsTab() {
+                 <input
+                   type="checkbox"
+                   checked={form.isFeatured}
+-                  onChange={(e) => setForm({ ...form, isFeatured: e.target.checked })}
++                  onChange={(e) =>
++                    setForm({ ...form, isFeatured: e.target.checked })
++                  }
+                   className="h-4 w-4 rounded border-input"
+                 />
+-                Featured event
++                Featured article
+               </label>
+             </div>
+ 
+             {form.isFeatured && (
+               <div className="space-y-2">
+-                <Label htmlFor="featuredTicketsUrl">Tickets URL</Label>
++                <Label htmlFor="featuredTicketsUrl">
++                  Tickets / Link URL
++                </Label>
+                 <Input
+                   id="featuredTicketsUrl"
+                   value={form.featuredTicketsUrl}
+                   onChange={(e) =>
+-                    setForm({ ...form, featuredTicketsUrl: e.target.value })
++                    setForm({
++                      ...form,
++                      featuredTicketsUrl: e.target.value,
++                    })
+                   }
+                   placeholder="https://..."
+                 />
+@@ -303,18 +527,19 @@ export default function BulletinsTab() {
+             )}
+ 
+             <div className="flex justify-end gap-2">
+-              <Button
+-                variant="outline"
+-                onClick={() => {
+-                  setForm(emptyForm);
+-                  setEditingId(null);
+-                  setShowForm(false);
+-                }}
+-              >
++              <Button variant="outline" onClick={resetForm}>
+                 Cancel
+               </Button>
+-              <Button onClick={handleSubmit} className="gap-2">
+-                <Check className="h-4 w-4" />
++              <Button
++                onClick={handleSubmit}
++                className="gap-2"
++                disabled={uploading}
++              >
++                {uploading ? (
++                  <Upload className="h-4 w-4 animate-spin" />
++                ) : (
++                  <Check className="h-4 w-4" />
++                )}
+                 {editingId ? "Update" : "Publish"}
+               </Button>
+             </div>
+@@ -322,91 +547,175 @@ export default function BulletinsTab() {
+         </Card>
+       )}
+ 
+-      {bulletins.length === 0 ? (
++      {/* Bulletin list */}
++      {filteredBulletins.length === 0 ? (
+         <Card>
+           <CardContent className="py-12 text-center">
+-            <Megaphone className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+-            <h3 className="text-lg font-medium mb-2">No bulletins yet</h3>
+-            <p className="text-muted-foreground mb-4">
+-              Click &ldquo;New Bulletin&rdquo; to create your first announcement.
+-              Bulletins posted here replace the hardcoded items and appear live on the site.
++            <Megaphone className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
++            <h3 className="mb-2 text-lg font-medium">
++              {filterCategory === "all"
++                ? "No articles yet"
++                : `No ${categoryLabel(filterCategory)} articles`}
++            </h3>
++            <p className="text-muted-foreground">
++              Click &ldquo;New Article&rdquo; to publish your first piece.
+             </p>
+           </CardContent>
+         </Card>
+       ) : (
+-        <div className="space-y-3">
+-          {bulletins.map((b) => (
+-            <Card key={b._id}>
+-              <CardContent className="flex items-start justify-between gap-4 py-4">
+-                <div className="min-w-0 flex-1 space-y-1">
+-                  <div className="flex items-center gap-2 flex-wrap">
+-                    <h3 className="font-medium">{b.title}</h3>
++        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
++          {filteredBulletins.map((b) => (
++            <Card
++              key={b._id}
++              className="group overflow-hidden transition-shadow hover:shadow-md"
++            >
++              {/* Image */}
++              {b.imageUrl && (
++                <div className="relative aspect-video overflow-hidden">
++                  <img
++                    src={b.imageUrl}
++                    alt={b.title}
++                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
++                  />
++                  <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
++                  <div className="absolute bottom-2 left-2 flex gap-1">
+                     {b.isNew && (
+-                      <span className="inline-flex items-center rounded-full bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary">
++                      <span className="rounded-full bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground">
+                         New
+                       </span>
+                     )}
+                     {b.isFeatured && (
+-                      <span className="inline-flex items-center gap-1 rounded-full bg-yellow-500/15 px-2 py-0.5 text-xs font-medium text-yellow-700 dark:text-yellow-400">
++                      <span className="flex items-center gap-1 rounded-full bg-yellow-500 px-2 py-0.5 text-xs font-medium text-black">
+                         <Star className="h-3 w-3" />
+                         Featured
+                       </span>
+                     )}
+-                    <span className="inline-flex rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+-                      {b.kind === "recurring" ? "Recurring" : "One-time"}
+-                    </span>
+-                    {b.category && (
+-                      <span className="inline-flex rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+-                        {b.category}
++                  </div>
++                </div>
++              )}
++              <CardContent className="space-y-2 p-4">
++                <div className="flex items-start justify-between gap-2">
++                  <div className="min-w-0 flex-1">
++                    <div className="mb-1 flex flex-wrap items-center gap-1.5">
++                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-primary">
++                        {categoryLabel(b.category)}
+                       </span>
++                      <span className="text-[10px] text-muted-foreground">
++                        {b.kind === "recurring" ? "Recurring" : "One-time"}
++                      </span>
++                    </div>
++                    <h3 className="font-semibold leading-tight">
++                      {b.title}
++                    </h3>
++                    {!b.imageUrl && (
++                      <div className="mt-1 flex gap-1">
++                        {b.isNew && (
++                          <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary">
++                            New
++                          </span>
++                        )}
++                        {b.isFeatured && (
++                          <span className="flex items-center gap-1 rounded-full bg-yellow-500/15 px-2 py-0.5 text-xs font-medium text-yellow-700 dark:text-yellow-400">
++                            <Star className="h-3 w-3" />
++                            Featured
++                          </span>
++                        )}
++                      </div>
+                     )}
+                   </div>
+-                  <p className="text-sm text-muted-foreground line-clamp-2">
+-                    {b.summary}
+-                  </p>
+-                  <p className="text-xs text-muted-foreground">
+-                    Published: {b.publishedAt} &middot; Date: {b.date}
+-                  </p>
+                 </div>
+-                <div className="flex gap-1 shrink-0">
+-                  <Button
+-                    variant="ghost"
+-                    size="sm"
+-                    onClick={() => handleEdit(b)}
+-                    aria-label={`Edit bulletin ${b.title}`}
+-                  >
+-                    <Edit className="h-4 w-4" />
+-                  </Button>
+-                  <AlertDialog>
+-                    <AlertDialogTrigger asChild>
+-                      <Button
+-                        variant="ghost"
+-                        size="sm"
+-                        className="text-destructive"
+-                        aria-label={`Delete bulletin ${b.title}`}
+-                      >
+-                        <Trash2 className="h-4 w-4" />
+-                      </Button>
+-                    </AlertDialogTrigger>
+-                    <AlertDialogContent>
+-                      <AlertDialogHeader>
+-                        <AlertDialogTitle>Delete Bulletin</AlertDialogTitle>
+-                        <AlertDialogDescription>
+-                          Are you sure you want to delete &ldquo;{b.title}&rdquo;?
+-                          This action cannot be undone.
+-                        </AlertDialogDescription>
+-                      </AlertDialogHeader>
+-                      <AlertDialogFooter>
+-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+-                        <AlertDialogAction
+-                          onClick={() => handleDelete(b._id)}
+-                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
++                <p className="line-clamp-2 text-sm text-muted-foreground">
++                  {b.summary}
++                </p>
++                <div className="flex items-center justify-between pt-1">
++                  <div className="flex flex-col text-[11px] text-muted-foreground">
++                    <span>{b.publishedAt}</span>
++                    {b.authorName && (
++                      <span className="flex items-center gap-1 mt-0.5">
++                        <User className="h-3 w-3" />
++                        {b.authorName}
++                      </span>
++                    )}
++                  </div>
++                  <div className="flex gap-1">
++                    {b.imageUrl && (
++                      <AlertDialog>
++                        <AlertDialogTrigger asChild>
++                          <Button
++                            variant="ghost"
++                            size="sm"
++                            className="h-7 w-7 p-0 text-muted-foreground"
++                            aria-label="Remove image"
++                          >
++                            <ImagePlus className="h-3.5 w-3.5" />
++                          </Button>
++                        </AlertDialogTrigger>
++                        <AlertDialogContent>
++                          <AlertDialogHeader>
++                            <AlertDialogTitle>
++                              Remove Image
++                            </AlertDialogTitle>
++                            <AlertDialogDescription>
++                              Remove the cover image from &ldquo;
++                              {b.title}&rdquo;?
++                            </AlertDialogDescription>
++                          </AlertDialogHeader>
++                          <AlertDialogFooter>
++                            <AlertDialogCancel>Cancel</AlertDialogCancel>
++                            <AlertDialogAction
++                              onClick={() =>
++                                handleRemoveImage(b._id)
++                              }
++                            >
++                              Remove
++                            </AlertDialogAction>
++                          </AlertDialogFooter>
++                        </AlertDialogContent>
++                      </AlertDialog>
++                    )}
++                    <Button
++                      variant="ghost"
++                      size="sm"
++                      className="h-7 w-7 p-0"
++                      onClick={() => handleEdit(b)}
++                      aria-label={`Edit ${b.title}`}
++                    >
++                      <Edit className="h-3.5 w-3.5" />
++                    </Button>
++                    <AlertDialog>
++                      <AlertDialogTrigger asChild>
++                        <Button
++                          variant="ghost"
++                          size="sm"
++                          className="h-7 w-7 p-0 text-destructive"
++                          aria-label={`Delete ${b.title}`}
+                         >
+-                          Delete
+-                        </AlertDialogAction>
+-                      </AlertDialogFooter>
+-                    </AlertDialogContent>
+-                  </AlertDialog>
++                          <Trash2 className="h-3.5 w-3.5" />
++                        </Button>
++                      </AlertDialogTrigger>
++                      <AlertDialogContent>
++                        <AlertDialogHeader>
++                          <AlertDialogTitle>
++                            Delete Article
++                          </AlertDialogTitle>
++                          <AlertDialogDescription>
++                            Are you sure you want to delete &ldquo;
++                            {b.title}&rdquo;? This action cannot be
++                            undone.
++                          </AlertDialogDescription>
++                        </AlertDialogHeader>
++                        <AlertDialogFooter>
++                          <AlertDialogCancel>Cancel</AlertDialogCancel>
++                          <AlertDialogAction
++                            onClick={() => handleDelete(b._id)}
++                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
++                          >
++                            Delete
++                          </AlertDialogAction>
++                        </AlertDialogFooter>
++                      </AlertDialogContent>
++                    </AlertDialog>
++                  </div>
+                 </div>
+               </CardContent>
+             </Card>
+diff --git a/src/components/admin/OverviewStatsCards.tsx b/src/components/admin/OverviewStatsCards.tsx
+index b77623a..a13a0fb 100644
+--- a/src/components/admin/OverviewStatsCards.tsx
++++ b/src/components/admin/OverviewStatsCards.tsx
+@@ -2,6 +2,13 @@
+ 
+ import React from "react";
+ import { formatCurrency } from "../../lib/utils";
++import {
++  Users,
++  DollarSign,
++  TrendingUp,
++  Calendar,
++  Wallet,
++} from "lucide-react";
+ 
+ export interface OverviewStatsData {
+   rosterCount: number;
+@@ -26,58 +33,91 @@ export function OverviewStatsCards({
+   monthlyTotalsLoading,
+   yearlyTotalsLoading,
+ }: OverviewStatsCardsProps) {
++  const avgPerDonor =
++    stats.withDonations > 0
++      ? Math.round(stats.twelveMonthTotalCents / stats.withDonations)
++      : 0;
++
+   return (
+-    <div className="min-w-0 flex-1 space-y-6">
+-      <div className="grid gap-6 sm:grid-cols-2">
+-        <StatBlock
+-          label="Roster members (filtered)"
++    <div className="min-w-0 flex-1 space-y-4">
++      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
++        <StatCard
++          icon={<Users className="h-4 w-4" />}
++          iconBg="bg-blue-500/10 text-blue-600 dark:text-blue-400"
++          label="Roster Members"
+           value={String(stats.rosterCount)}
+           footnote={
+             stats.donorSharePct != null
+-              ? `${stats.withDonations} have lifetime donations (${stats.donorSharePct}%)`
++              ? `${stats.donorSharePct}% have donated`
+               : undefined
+           }
+         />
+-        <StatBlock
++        <StatCard
++          icon={<Wallet className="h-4 w-4" />}
++          iconBg="bg-green-500/10 text-green-600 dark:text-green-400"
++          label="Active Donors"
++          value={String(stats.withDonations)}
++          footnote={`of ${stats.rosterCount} members`}
++        />
++        <StatCard
++          icon={<Calendar className="h-4 w-4" />}
++          iconBg="bg-amber-500/10 text-amber-600 dark:text-amber-400"
+           label={anchorMonthLabel}
+           value={
+             monthlyTotalsLoading
+               ? "…"
+               : formatCurrency(stats.anchorMonthTotalCents)
+           }
+-          footnote="Filtered members only"
++          footnote="This month's giving"
++        />
++        <StatCard
++          icon={<TrendingUp className="h-4 w-4" />}
++          iconBg="bg-purple-500/10 text-purple-600 dark:text-purple-400"
++          label={`12-month (${yearRangeLabel})`}
++          value={
++            yearlyTotalsLoading
++              ? "…"
++              : formatCurrency(stats.twelveMonthTotalCents)
++          }
++          footnote={
++            avgPerDonor > 0
++              ? `~${formatCurrency(avgPerDonor)} avg per donor`
++              : "Total succeeded donations"
++          }
+         />
+       </div>
+-      <StatBlock
+-        label={`12-month total (${yearRangeLabel})`}
+-        value={
+-          yearlyTotalsLoading
+-            ? "…"
+-            : formatCurrency(stats.twelveMonthTotalCents)
+-        }
+-        footnote="Sum of succeeded donations in the 12-month window for filtered members"
+-      />
+     </div>
+   );
+ }
+ 
+-function StatBlock({
++function StatCard({
++  icon,
++  iconBg,
+   label,
+   value,
+   footnote,
+ }: {
++  icon: React.ReactNode;
++  iconBg: string;
+   label: string;
+   value: string;
+   footnote?: string;
+ }) {
+   return (
+-    <div className="min-w-0">
+-      <p className="text-xs text-muted-foreground">{label}</p>
+-      <p className="mt-0.5 break-all text-2xl font-bold tabular-nums tracking-tight text-foreground">
++    <div className="rounded-xl border bg-card p-4 shadow-sm transition-shadow hover:shadow-md">
++      <div className="flex items-center gap-3">
++        <div
++          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${iconBg}`}
++        >
++          {icon}
++        </div>
++        <p className="text-xs font-medium text-muted-foreground">{label}</p>
++      </div>
++      <p className="mt-3 break-all text-2xl font-bold tabular-nums tracking-tight text-foreground">
+         {value}
+       </p>
+       {footnote && (
+-        <p className="mt-1 text-xs text-muted-foreground">{footnote}</p>
++        <p className="mt-1 text-[11px] text-muted-foreground">{footnote}</p>
+       )}
+     </div>
+   );
+diff --git a/src/components/auth/AdminGuard.tsx b/src/components/auth/AdminGuard.tsx
+index 90554f5..a9a900e 100644
+--- a/src/components/auth/AdminGuard.tsx
++++ b/src/components/auth/AdminGuard.tsx
+@@ -32,12 +32,15 @@ export const AdminGuard = ({ children }: PropsWithChildren) => {
+     return null; // Or a redirect to the login page
+   }
+ 
+-  const adminRole = resolvedRoles.find(
+-    (role: Doc<"roles">) => role.name === "Administrator",
++  const allowedRoles = resolvedRoles.filter(
++    (role: Doc<"roles">) =>
++      role.name === "Administrator" || role.name === "Columnist",
++  );
++  const hasAccess = allowedRoles.some(
++    (role) => resolvedUser?.roleId === role._id,
+   );
+-  const isAdmin = resolvedUser?.roleId === adminRole?._id;
+ 
+-  if (!isAdmin) {
++  if (!hasAccess) {
+     return (
+       <section className="container mx-auto py-10 text-center" aria-label="Authorization required">
+         <h1 className="text-3xl font-bold">Not Authorized</h1>
+diff --git a/src/components/bulletin/BulletinPage.tsx b/src/components/bulletin/BulletinPage.tsx
+index d0d5ad0..403fc94 100644
+--- a/src/components/bulletin/BulletinPage.tsx
++++ b/src/components/bulletin/BulletinPage.tsx
+@@ -1,6 +1,6 @@
+ "use client";
+ 
+-import React, { useMemo } from "react";
++import React, { useMemo, useState } from "react";
+ import { motion } from "framer-motion";
+ import { addDays, format, isAfter, parseISO, startOfDay } from "date-fns";
+ import Link from "next/link";
+@@ -10,11 +10,16 @@ import { VisualHierarchyText } from "../layout/VisualHierarchyText";
+ import {
+   ArrowUpRight,
+   Calendar,
+-  CalendarRange,
+   Mail,
+-  Pin,
+-  Repeat2,
+   Sparkles,
++  User,
++  Newspaper,
++  TrendingUp,
++  Radio,
++  Users,
++  Coins,
++  Church,
++  Star,
+ } from "lucide-react";
+ import { BulletinFlyersCarousel } from "./BulletinFlyersCarousel";
+ import { bulletinFlyers as staticFlyers } from "@/data/bulletinFlyers.generated";
+@@ -28,25 +33,21 @@ const FALLBACK_FEATURED_TICKETS_URL =
+ 
+ export type BulletinKind = "recurring" | "one_time";
+ 
+-/**
+- * - recurring: always shown (weekly reminders, standing notices). Clear manually when you replace them.
+- * - one_time: stays visible through the event, then 30 more days, then drops off this page (no archive).
+- *   Set `eventEndsOn` to the last relevant calendar day; it defaults to `date` if omitted.
+- * - isNew: surfaces under “Need to know” on the community board; clear when no longer urgent.
+- */
+ export type BulletinItem = {
+   id: string;
+   title: string;
+-  /** Shown on the card (e.g. event day or post date). */
+   date: string;
+-  /** Used for ordering; usually the day you published or last meaningfully updated. */
+   publishedAt: string;
+   kind: BulletinKind;
+   eventEndsOn?: string;
+   isNew?: boolean;
++  isFeatured?: boolean;
+   summary: string;
+   body?: string;
+-  category?: "general" | "events" | "service";
++  category?: string;
++  imageUrl?: string | null;
++  authorName?: string | null;
++  featuredTicketsUrl?: string;
+ };
+ 
+ const RETENTION_DAYS_AFTER_EVENT = 30;
+@@ -58,7 +59,27 @@ function isBulletinActive(item: BulletinItem, now: Date): boolean {
+   return !isAfter(startOfDay(now), lastVisibleDay);
+ }
+ 
+-/** Edit this list to publish updates; later you can swap for Convex/CMS + a cron to delete rows. */
++const CATEGORIES = [
++  { value: "all", label: "All", icon: Newspaper },
++  { value: "general", label: "General", icon: Star },
++  { value: "events", label: "Events", icon: Calendar },
++  { value: "service", label: "Worship", icon: Church },
++  { value: "national", label: "National", icon: TrendingUp },
++  { value: "crypto", label: "Crypto", icon: Coins },
++  { value: "broadcast", label: "Broadcasts", icon: Radio },
++  { value: "community", label: "Community", icon: Users },
++] as const;
++
++const categoryLabel: Record<string, string> = {
++  general: "General",
++  events: "Events",
++  service: "Worship & Gatherings",
++  national: "National / Israel",
++  crypto: "Crypto & Finance",
++  broadcast: "Broadcasts & Media",
++  community: "Community",
++};
++
+ const bulletin: BulletinItem[] = [
+   {
+     id: "welcome",
+@@ -69,8 +90,7 @@ const bulletin: BulletinItem[] = [
+     category: "general",
+     summary:
+       "This page is where we will share congregation news, schedule changes, and special notices.",
+-    body:
+-      "Check back regularly for updates on feast days, community gatherings, and ministry opportunities. If you have a question about anything posted here, reach out through our contact page.",
++    body: "Check back regularly for updates on feast days, community gatherings, and ministry opportunities. If you have a question about anything posted here, reach out through our contact page.",
+   },
+   {
+     id: "sabbath-reminder",
+@@ -81,196 +101,138 @@ const bulletin: BulletinItem[] = [
+     category: "service",
+     summary:
+       "We gather each Sabbath. Times and locations are listed on our locations page.",
+-    body:
+-      "Visitors are welcome. If it is your first time visiting, we encourage you to plan ahead using the addresses and service details on the Locations page.",
++    body: "Visitors are welcome. If it is your first time visiting, we encourage you to plan ahead using the addresses and service details on the Locations page.",
+   },
+ ];
+ 
+-const categoryLabel: Record<NonNullable<BulletinItem["category"]>, string> =
+-  {
+-    general: "General",
+-    events: "Events",
+-    service: "Worship & gatherings",
+-  };
+-
+-const kindLabel: Record<BulletinKind, string> = {
+-  recurring: "Each week",
+-  one_time: "Dated",
+-};
+-
+-function byPublishedDesc(a: BulletinItem, b: BulletinItem) {
+-  return parseISO(b.publishedAt).getTime() - parseISO(a.publishedAt).getTime();
+-}
+-
+-type BulletinNoteVariant = "priority" | "recurring" | "dated";
+-
+-type BulletinNoteProps = {
++function ArticleCard({
++  item,
++  index,
++  featured = false,
++}: {
+   item: BulletinItem;
+   index: number;
+-  variant: BulletinNoteVariant;
+-};
+-
+-const boardSectionMeta = {
+-  priority: {
+-    title: "Need to know",
+-    blurb: "Read these first—new or especially important for the family.",
+-    Icon: Pin,
+-  },
+-  recurring: {
+-    title: "Each week",
+-    blurb: "Standing reminders and rhythms that stay on the board.",
+-    Icon: Repeat2,
+-  },
+-  dated: {
+-    title: "Mark your calendar",
+-    blurb: "Dated notices roll off after the event, plus thirty days.",
+-    Icon: CalendarRange,
+-  },
+-} as const;
+-
+-function BulletinBoardSection({
+-  kind,
+-  children,
+-}: {
+-  kind: keyof typeof boardSectionMeta;
+-  children: React.ReactNode;
++  featured?: boolean;
+ }) {
+-  const { title, blurb, Icon } = boardSectionMeta[kind];
+-  return (
+-    <div className="space-y-5 md:space-y-6">
+-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+-        <div className="flex items-start gap-3 min-w-0">
+-          <span
+-            className={cn(
+-              "mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border shadow-sm",
+-              kind === "priority" &&
+-                "border-primary/30 bg-primary/10 text-primary dark:bg-primary/15",
+-              kind === "recurring" &&
+-                "border-emerald-500/25 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200/90",
+-              kind === "dated" &&
+-                "border-sky-500/25 bg-sky-500/10 text-sky-900 dark:text-sky-100/90",
+-            )}
+-            aria-hidden
+-          >
+-            <Icon className="h-5 w-5 opacity-90" />
+-          </span>
+-          <div className="min-w-0 pt-0.5">
+-            <h2 className="font-serif text-xl tracking-tight text-foreground sm:text-2xl md:text-[1.35rem]">
+-              {title}
+-            </h2>
+-            <p className="mt-1 text-sm leading-relaxed text-muted-foreground max-w-xl">
+-              {blurb}
+-            </p>
+-          </div>
+-        </div>
+-        <div
+-          className={cn(
+-            "hidden h-px flex-1 self-center sm:block min-w-[2rem]",
+-            kind === "priority" && "bg-gradient-to-r from-primary/35 to-transparent",
+-            kind === "recurring" &&
+-              "bg-gradient-to-r from-emerald-500/30 to-transparent",
+-            kind === "dated" && "bg-gradient-to-r from-sky-500/30 to-transparent",
+-          )}
+-          aria-hidden
+-        />
+-      </div>
+-      {children}
+-    </div>
+-  );
+-}
+-
+-function BulletinNote({ item, index, variant }: BulletinNoteProps) {
+-  const priority = variant === "priority";
+-
+   return (
+     <motion.article
+       initial={{ opacity: 0, y: 16 }}
+       whileInView={{ opacity: 1, y: 0 }}
+       viewport={{ once: true, margin: "-40px" }}
+-      transition={{ duration: 0.4, delay: index * 0.05 }}
++      transition={{ duration: 0.4, delay: index * 0.04 }}
+       className={cn(
+-        "group relative h-full",
+-        !priority &&
+-          "md:[transform:rotate(calc(var(--note-tilt,0deg)))] md:transition-transform md:duration-300 md:hover:[transform:rotate(0deg)]",
++        "group relative overflow-hidden rounded-xl border border-border/60 bg-card transition-all duration-300 hover:shadow-lg hover:border-primary/20",
++        featured && "md:col-span-2 md:row-span-2",
+       )}
+-      style={
+-        {
+-          "--note-tilt": `${index % 2 === 0 ? 0.35 : -0.35}deg`,
+-        } as React.CSSProperties
+-      }
+     >
+-      {/* thumbtack */}
+-      <div
+-        className="pointer-events-none absolute -top-1 left-1/2 z-10 flex -translate-x-1/2 justify-center"
+-        aria-hidden
+-      >
+-        <span
++      {/* Image */}
++      {item.imageUrl && (
++        <div
+           className={cn(
+-            "h-2.5 w-2.5 rounded-full shadow-md ring-2 ring-black/10 dark:ring-white/10",
+-            priority
+-              ? "bg-gradient-to-br from-primary via-primary/90 to-primary/70"
+-              : "bg-gradient-to-br from-muted-foreground/50 to-muted-foreground/30",
++            "relative overflow-hidden",
++            featured ? "aspect-[16/9]" : "aspect-video",
+           )}
+-        />
+-      </div>
+-
+-      <div
+-        className={cn(
+-          "relative h-full overflow-hidden rounded-xl border pt-4 shadow-md transition-shadow duration-300",
+-          priority
+-            ? "border-primary/30 bg-gradient-to-b from-primary/[0.06] to-card shadow-primary/10 ring-1 ring-primary/10 group-hover:shadow-lg group-hover:shadow-primary/15 dark:from-primary/[0.09]"
+-            : "border-border/80 bg-gradient-to-b from-card to-card/95 shadow-black/[0.04] dark:shadow-black/25 group-hover:border-primary/20 group-hover:shadow-lg",
+-        )}
+-      >
+-        {/* paper edge */}
+-        <div
+-          className="pointer-events-none absolute inset-x-0 top-0 h-6 bg-gradient-to-b from-white/25 to-transparent dark:from-white/[0.04]"
+-          aria-hidden
+-        />
++        >
++          <img
++            src={item.imageUrl}
++            alt={item.title}
++            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
++          />
++          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
++          <div className="absolute bottom-3 left-3 flex flex-wrap gap-1.5">
++            {item.isNew && (
++              <span className="inline-flex items-center gap-1 rounded-full bg-primary px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary-foreground">
++                <Sparkles className="h-3 w-3" />
++                New
++              </span>
++            )}
++            {item.category && (
++              <span className="rounded-full bg-white/20 px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-white backdrop-blur-sm">
++                {categoryLabel[item.category] ?? item.category}
++              </span>
++            )}
++          </div>
++        </div>
++      )}
+ 
+-        <div className="relative px-5 pb-5 pt-3 sm:px-6 sm:pb-6 sm:pt-4">
+-          <div className="flex flex-wrap items-center gap-2 gap-y-2 mb-4">
++      <div className={cn("p-4", featured && "p-5 md:p-6")}>
++        {/* Badges for items without images */}
++        {!item.imageUrl && (
++          <div className="mb-3 flex flex-wrap items-center gap-1.5">
+             {item.isNew && (
+-              <Badge className="text-[10px] uppercase tracking-wider gap-1 border-primary/30 bg-primary/12 text-primary dark:bg-primary/18">
+-                <Sparkles className="w-3 h-3" />
++              <Badge className="gap-1 border-primary/30 bg-primary/12 text-[10px] uppercase tracking-wider text-primary dark:bg-primary/18">
++                <Sparkles className="h-3 w-3" />
+                 New
+               </Badge>
+             )}
+-            <Badge
+-              variant="outline"
+-              className="text-[10px] uppercase tracking-wider border-border/80 text-muted-foreground font-medium"
+-            >
+-              {kindLabel[item.kind]}
+-            </Badge>
+             {item.category && (
+               <Badge
+                 variant="outline"
+-                className="text-[10px] uppercase tracking-wider border-primary/25 text-primary"
++                className="border-primary/25 text-[10px] uppercase tracking-wider text-primary"
+               >
+-                {categoryLabel[item.category]}
++                {categoryLabel[item.category] ?? item.category}
+               </Badge>
+             )}
+-            <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground tabular-nums">
+-              <Calendar className="w-3.5 h-3.5 shrink-0 text-primary/65" />
+-              {format(parseISO(item.date), "MMM d, yyyy")}
+-            </span>
++            <Badge
++              variant="outline"
++              className="border-border/80 text-[10px] uppercase tracking-wider text-muted-foreground"
++            >
++              {item.kind === "recurring" ? "Weekly" : "Dated"}
++            </Badge>
+           </div>
++        )}
+ 
+-          <h3
+-            className={cn(
+-              "font-serif text-foreground mb-2.5 leading-snug tracking-tight",
+-              priority ? "text-xl sm:text-2xl" : "text-lg sm:text-xl",
+-            )}
+-          >
+-            {item.title}
+-          </h3>
+-          <p className="text-sm leading-relaxed text-muted-foreground mb-3">
+-            {item.summary}
++        <h3
++          className={cn(
++            "font-serif leading-snug tracking-tight text-foreground",
++            featured
++              ? "mb-3 text-xl sm:text-2xl"
++              : "mb-2 text-base sm:text-lg",
++          )}
++        >
++          {item.title}
++        </h3>
++
++        <p
++          className={cn(
++            "leading-relaxed text-muted-foreground",
++            featured
++              ? "mb-4 text-sm line-clamp-4"
++              : "mb-3 text-sm line-clamp-3",
++          )}
++        >
++          {item.summary}
++        </p>
++
++        {featured && item.body && (
++          <p className="mb-4 line-clamp-3 rounded-r-md border-l-[3px] border-primary/30 bg-primary/[0.04] py-2 pl-3.5 text-sm leading-relaxed text-muted-foreground/90 dark:bg-primary/[0.06]">
++            {item.body}
+           </p>
+-          {item.body && (
+-            <p className="text-muted-foreground/90 text-sm leading-relaxed border-l-[3px] border-primary/30 pl-3.5 bg-primary/[0.04] py-2 rounded-r-md dark:bg-primary/[0.06]">
+-              {item.body}
+-            </p>
++        )}
++
++        <div className="flex items-center justify-between text-[11px] text-muted-foreground">
++          <div className="flex items-center gap-3">
++            <span className="inline-flex items-center gap-1.5 tabular-nums">
++              <Calendar className="h-3.5 w-3.5 text-primary/65" />
++              {format(parseISO(item.publishedAt), "MMM d, yyyy")}
++            </span>
++            {item.authorName && (
++              <span className="inline-flex items-center gap-1">
++                <User className="h-3 w-3" />
++                {item.authorName}
++              </span>
++            )}
++          </div>
++          {item.isFeatured && item.featuredTicketsUrl && (
++            <a
++              href={item.featuredTicketsUrl}
++              target="_blank"
++              rel="noopener noreferrer"
++              className="inline-flex items-center gap-1 text-primary hover:underline"
++            >
++              Details
++              <ArrowUpRight className="h-3 w-3" />
++            </a>
+           )}
+         </div>
+       </div>
+@@ -282,12 +244,11 @@ export function BulletinPage() {
+   const { resolvedTheme } = useTheme();
+   const isDark = resolvedTheme === "dark";
+   const now = useMemo(() => new Date(), []);
++  const [activeCategory, setActiveCategory] = useState("all");
+ 
+-  // Convex data (live from database)
+   const convexBulletins = useQuery(api.bulletins.list) ?? [];
+   const convexFlyers = useQuery(api.bulletins.listFlyers) ?? [];
+ 
+-  // Use Convex data if available, otherwise fall back to hardcoded
+   const allBulletins: BulletinItem[] = useMemo(() => {
+     if (convexBulletins.length > 0) {
+       return convexBulletins.map((b) => ({
+@@ -298,24 +259,30 @@ export function BulletinPage() {
+         kind: b.kind,
+         eventEndsOn: b.eventEndsOn,
+         isNew: b.isNew,
++        isFeatured: b.isFeatured,
+         summary: b.summary,
+         body: b.body,
+         category: b.category,
++        imageUrl: b.imageUrl,
++        authorName: b.authorName,
++        featuredTicketsUrl: b.featuredTicketsUrl,
+       }));
+     }
+     return bulletin;
+   }, [convexBulletins]);
+ 
+-  // Featured bulletin from Convex
+   const featuredBulletin = useMemo(
+     () => convexBulletins.find((b) => b.isFeatured),
+     [convexBulletins],
+   );
+-  const featuredTitle = featuredBulletin?.title ?? "Pentecost/Feast of Weeks | 2026";
+-  const featuredSummary = featuredBulletin?.summary ?? "Purchase tickets through Zeffy\u2014checkout opens in a new tab.";
+-  const featuredTicketsUrl = featuredBulletin?.featuredTicketsUrl ?? FALLBACK_FEATURED_TICKETS_URL;
++  const featuredTitle =
++    featuredBulletin?.title ?? "Pentecost/Feast of Weeks | 2026";
++  const featuredSummary =
++    featuredBulletin?.summary ??
++    "Purchase tickets through Zeffy\u2014checkout opens in a new tab.";
++  const featuredTicketsUrl =
++    featuredBulletin?.featuredTicketsUrl ?? FALLBACK_FEATURED_TICKETS_URL;
+ 
+-  // Use Convex flyers if uploaded, otherwise fall back to static generated
+   const bulletinFlyers = useMemo(() => {
+     if (convexFlyers.length > 0) {
+       return convexFlyers.map((f) => ({
+@@ -333,36 +300,35 @@ export function BulletinPage() {
+     [allBulletins, now],
+   );
+ 
+-  const newItems = useMemo(
+-    () => active.filter((a) => a.isNew).sort(byPublishedDesc),
+-    [active],
+-  );
++  const filtered = useMemo(() => {
++    if (activeCategory === "all") return active;
++    return active.filter((a) => a.category === activeCategory);
++  }, [active, activeCategory]);
+ 
+-  const recurringRest = useMemo(
+-    () =>
+-      active
+-        .filter((a) => a.kind === "recurring" && !a.isNew)
+-        .sort(byPublishedDesc),
+-    [active],
++  const heroArticle = useMemo(
++    () => filtered.find((a) => a.isFeatured) ?? filtered[0],
++    [filtered],
+   );
+ 
+-  const oneTimeRest = useMemo(
+-    () =>
+-      active
+-        .filter((a) => a.kind === "one_time" && !a.isNew)
+-        .sort(byPublishedDesc),
+-    [active],
++  const restArticles = useMemo(
++    () => filtered.filter((a) => a !== heroArticle),
++    [filtered, heroArticle],
+   );
+ 
+-  const hasWrittenBoard =
+-    newItems.length > 0 ||
+-    recurringRest.length > 0 ||
+-    oneTimeRest.length > 0;
++  const categoriesWithCounts = useMemo(() => {
++    return CATEGORIES.map((cat) => ({
++      ...cat,
++      count:
++        cat.value === "all"
++          ? active.length
++          : active.filter((a) => a.category === cat.value).length,
++    })).filter((cat) => cat.value === "all" || cat.count > 0);
++  }, [active]);
+ 
+   return (
+     <div className="relative min-h-[70vh] overflow-hidden">
+-      {/* Match home hero: soft orbs + grid */}
+-      <div className="absolute inset-0 -z-10 pointer-events-none">
++      {/* Background */}
++      <div className="pointer-events-none absolute inset-0 -z-10">
+         <div className="absolute -top-32 right-[5%] h-[520px] w-[520px] rounded-full bg-primary/5 blur-3xl" />
+         <div className="absolute bottom-0 left-0 h-[420px] w-[420px] rounded-full bg-primary/10 blur-3xl" />
+         <div
+@@ -376,18 +342,22 @@ export function BulletinPage() {
+         />
+       </div>
+ 
+-      <div className="container mx-auto px-4 pt-24 pb-16 md:pt-28 md:pb-20">
++      {/* Hero header */}
++      <div className="container mx-auto px-4 pt-24 pb-10 md:pt-28 md:pb-12">
+         <motion.div
+           initial={{ opacity: 0, y: 20 }}
+           animate={{ opacity: 1, y: 0 }}
+           transition={{ duration: 0.55 }}
+-          className="text-center max-w-3xl mx-auto"
++          className="mx-auto max-w-3xl text-center"
+         >
+-          <Badge className="mb-5 text-sm px-4 py-1">Congregation updates</Badge>
++          <Badge className="mb-5 px-4 py-1 text-sm">
++            <Newspaper className="mr-1.5 h-3.5 w-3.5" />
++            The source of truth for the nation
++          </Badge>
+ 
+           <div className="mb-6">
+             <VisualHierarchyText
+-              primary="Stay in the loop"
++              primary="Newsroom"
+               secondary="Bulletin"
+               secondaryFont="cinzel"
+               secondaryWeight="semibold"
+@@ -396,170 +366,169 @@ export function BulletinPage() {
+             />
+           </div>
+ 
+-          <p className="text-lg text-muted-foreground leading-relaxed max-w-2xl mx-auto">
+-            Flyers mirror what we pin up for the family. The written board below groups notices the
+-            same way: what matters most right now, what repeats every week, and dated items that come
+-            down after the event (plus thirty days).
++          <p className="mx-auto max-w-2xl text-lg leading-relaxed text-muted-foreground">
++            Congregation updates, national news, broadcasts, and more.
++            Your trusted source for what matters.
+           </p>
+         </motion.div>
+       </div>
+ 
+-      <div className="container mx-auto px-4 pb-16 md:pb-20 max-w-5xl space-y-10 md:space-y-12">
++      {/* Category filter tabs */}
++      <div className="container mx-auto px-4 pb-8">
+         <motion.div
+-          initial={{ opacity: 0, y: 12 }}
++          initial={{ opacity: 0, y: 8 }}
+           animate={{ opacity: 1, y: 0 }}
+-          transition={{ duration: 0.4, delay: 0.06 }}
+-          className="relative"
++          transition={{ duration: 0.3, delay: 0.15 }}
++          className="flex flex-wrap justify-center gap-2"
+         >
+-          <div
+-            className={cn(
+-              "relative overflow-hidden rounded-2xl border border-border/70",
+-              "bg-gradient-to-br from-primary/[0.06] via-card to-card",
+-              "dark:from-primary/[0.09] dark:via-card dark:to-card",
+-              "shadow-sm shadow-black/[0.03] dark:shadow-black/20",
+-            )}
+-          >
+-            <div
+-              className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent"
+-              aria-hidden
+-            />
+-            <div className="pointer-events-none absolute -right-20 -top-24 h-56 w-56 rounded-full bg-primary/[0.07] blur-3xl dark:bg-primary/[0.12]" />
+-            <div className="relative flex flex-col gap-6 p-6 sm:p-8 md:flex-row md:items-center md:justify-between md:gap-10">
+-              <div className="min-w-0 space-y-2">
+-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-primary/75 dark:text-primary/80">
+-                  Featured
+-                </p>
+-                <h2 className="font-serif text-xl tracking-tight text-foreground sm:text-2xl md:text-[1.65rem] md:leading-snug">
+-                  {featuredTitle}
+-                </h2>
+-                <p className="max-w-lg text-sm leading-relaxed text-muted-foreground">
+-                  {featuredSummary}
+-                  <span className="sr-only"> {featuredTicketsUrl}</span>
+-                </p>
+-              </div>
+-              <div className="flex w-full justify-center md:w-auto md:shrink-0 md:justify-end md:pl-2">
+-                <ThreeDButton
+-                  asChild
+-                  variant="secondary"
+-                  size="lg"
+-                  depth="raised"
+-                  className="min-w-[12.5rem]"
+-                >
+-                  <a
+-                    href={featuredTicketsUrl}
+-                    target="_blank"
+-                    rel="noopener noreferrer"
+-                    className="inline-flex items-center justify-center gap-2"
+-                  >
+-                    Purchase tickets
+-                    <ArrowUpRight
+-                      className="h-4 w-4 shrink-0 opacity-80"
+-                      aria-hidden
+-                    />
+-                  </a>
+-                </ThreeDButton>
+-              </div>
+-            </div>
+-          </div>
++          {categoriesWithCounts.map((cat) => {
++            const Icon = cat.icon;
++            return (
++              <button
++                key={cat.value}
++                onClick={() => setActiveCategory(cat.value)}
++                className={cn(
++                  "inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-all",
++                  activeCategory === cat.value
++                    ? "border-primary bg-primary text-primary-foreground shadow-sm"
++                    : "border-border/60 bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground",
++                )}
++              >
++                <Icon className="h-3.5 w-3.5" />
++                {cat.label}
++                <span className="ml-0.5 text-xs opacity-70">
++                  {cat.count}
++                </span>
++              </button>
++            );
++          })}
+         </motion.div>
+-
+-        <BulletinFlyersCarousel flyers={bulletinFlyers} />
+       </div>
+ 
+-      {hasWrittenBoard && (
+-        <div className="border-t border-border/70 bg-muted/25 dark:bg-muted/15">
+-          <section className="container max-w-5xl mx-auto px-4 py-14 md:py-20">
++      {/* Featured event banner (if exists) */}
++      {featuredBulletin && (
++        <div className="container mx-auto max-w-5xl px-4 pb-8">
++          <motion.div
++            initial={{ opacity: 0, y: 12 }}
++            animate={{ opacity: 1, y: 0 }}
++            transition={{ duration: 0.4, delay: 0.06 }}
++            className="relative"
++          >
+             <div
+               className={cn(
+-                "relative overflow-hidden rounded-[1.75rem] border-2 border-dashed border-primary/20",
+-                "bg-gradient-to-br from-amber-950/[0.04] via-muted/50 to-stone-200/35",
+-                "dark:from-stone-950/60 dark:via-stone-950/40 dark:to-stone-900/50",
+-                "shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_12px_40px_-12px_rgba(0,0,0,0.12)]",
+-                "dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_16px_48px_-16px_rgba(0,0,0,0.45)]",
++                "relative overflow-hidden rounded-2xl border border-border/70",
++                "bg-gradient-to-br from-primary/[0.06] via-card to-card",
++                "dark:from-primary/[0.09] dark:via-card dark:to-card",
++                "shadow-sm shadow-black/[0.03] dark:shadow-black/20",
+               )}
+             >
+-              <div
+-                className="pointer-events-none absolute inset-0 opacity-[0.45] dark:opacity-[0.2]"
+-                style={{
+-                  backgroundImage: `radial-gradient(circle at 1px 1px, ${isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.07)"} 1px, transparent 0)`,
+-                  backgroundSize: "20px 20px",
+-                }}
+-                aria-hidden
+-              />
+-              <div
+-                className="pointer-events-none absolute -right-24 top-1/2 h-64 w-64 -translate-y-1/2 rounded-full bg-primary/[0.06] blur-3xl dark:bg-primary/[0.08]"
+-                aria-hidden
+-              />
+-
+-              <div className="relative px-4 py-8 sm:px-6 sm:py-10 md:px-10 md:py-12 space-y-12 md:space-y-14">
+-                <div className="flex flex-wrap items-center justify-center gap-2 text-center sm:justify-between sm:text-left">
+-                  <p className="font-serif text-sm uppercase tracking-[0.25em] text-muted-foreground">
+-                    Community board
++              {featuredBulletin.imageUrl && (
++                <img
++                  src={featuredBulletin.imageUrl}
++                  alt={featuredTitle}
++                  className="absolute inset-0 h-full w-full object-cover opacity-20 dark:opacity-10"
++                />
++              )}
++              <div className="relative flex flex-col gap-6 p-6 sm:p-8 md:flex-row md:items-center md:justify-between md:gap-10">
++                <div className="min-w-0 space-y-2">
++                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-primary/75 dark:text-primary/80">
++                    Featured
++                  </p>
++                  <h2 className="font-serif text-xl tracking-tight text-foreground sm:text-2xl md:text-[1.65rem] md:leading-snug">
++                    {featuredTitle}
++                  </h2>
++                  <p className="max-w-lg text-sm leading-relaxed text-muted-foreground">
++                    {featuredSummary}
+                   </p>
+-                  <span className="hidden h-px w-24 bg-gradient-to-r from-transparent via-primary/30 to-transparent sm:block" />
+                 </div>
+-
+-                {newItems.length > 0 && (
+-                  <BulletinBoardSection kind="priority">
+-                    <div className="grid gap-5 md:gap-6">
+-                      {newItems.map((item, index) => (
+-                        <BulletinNote
+-                          key={item.id}
+-                          item={item}
+-                          index={index}
+-                          variant="priority"
+-                        />
+-                      ))}
+-                    </div>
+-                  </BulletinBoardSection>
+-                )}
+-
+-                {recurringRest.length > 0 && (
+-                  <BulletinBoardSection kind="recurring">
+-                    <div className="grid gap-5 sm:grid-cols-2 md:gap-6">
+-                      {recurringRest.map((item, index) => (
+-                        <BulletinNote
+-                          key={item.id}
+-                          item={item}
+-                          index={index}
+-                          variant="recurring"
+-                        />
+-                      ))}
+-                    </div>
+-                  </BulletinBoardSection>
+-                )}
+-
+-                {oneTimeRest.length > 0 && (
+-                  <BulletinBoardSection kind="dated">
+-                    <div className="grid gap-5 sm:grid-cols-2 md:gap-6">
+-                      {oneTimeRest.map((item, index) => (
+-                        <BulletinNote
+-                          key={item.id}
+-                          item={item}
+-                          index={index}
+-                          variant="dated"
+-                        />
+-                      ))}
+-                    </div>
+-                  </BulletinBoardSection>
+-                )}
++                <div className="flex w-full justify-center md:w-auto md:shrink-0 md:justify-end md:pl-2">
++                  <ThreeDButton
++                    asChild
++                    variant="secondary"
++                    size="lg"
++                    depth="raised"
++                    className="min-w-[12.5rem]"
++                  >
++                    <a
++                      href={featuredTicketsUrl}
++                      target="_blank"
++                      rel="noopener noreferrer"
++                      className="inline-flex items-center justify-center gap-2"
++                    >
++                      Learn more
++                      <ArrowUpRight
++                        className="h-4 w-4 shrink-0 opacity-80"
++                        aria-hidden
++                      />
++                    </a>
++                  </ThreeDButton>
++                </div>
+               </div>
+             </div>
+-          </section>
++          </motion.div>
+         </div>
+       )}
+ 
++      {/* Flyers carousel */}
++      <div className="container mx-auto max-w-5xl px-4 pb-10">
++        <BulletinFlyersCarousel flyers={bulletinFlyers} />
++      </div>
++
++      {/* Newsstand grid */}
++      <div className="border-t border-border/70 bg-muted/25 dark:bg-muted/15">
++        <section className="container mx-auto max-w-6xl px-4 py-12 md:py-16">
++          <div className="mb-8 flex items-center gap-4">
++            <h2 className="font-serif text-xl tracking-tight text-foreground sm:text-2xl">
++              {activeCategory === "all"
++                ? "Latest articles"
++                : categoryLabel[activeCategory] ?? "Articles"}
++            </h2>
++            <div className="hidden h-px flex-1 bg-gradient-to-r from-border/80 to-transparent sm:block" />
++            <span className="text-sm text-muted-foreground">
++              {filtered.length} article{filtered.length !== 1 ? "s" : ""}
++            </span>
++          </div>
++
++          {filtered.length === 0 ? (
++            <div className="py-16 text-center">
++              <Newspaper className="mx-auto mb-4 h-12 w-12 text-muted-foreground/50" />
++              <p className="text-muted-foreground">
++                No articles in this category yet.
++              </p>
++            </div>
++          ) : (
++            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
++              {heroArticle && (
++                <ArticleCard
++                  item={heroArticle}
++                  index={0}
++                  featured={!!heroArticle.imageUrl}
++                />
++              )}
++              {restArticles.map((item, i) => (
++                <ArticleCard key={item.id} item={item} index={i + 1} />
++              ))}
++            </div>
++          )}
++        </section>
++      </div>
++
++      {/* CTA */}
+       <motion.div
+         initial={{ opacity: 0 }}
+         whileInView={{ opacity: 1 }}
+         viewport={{ once: true }}
+-        className="container max-w-4xl mx-auto px-4 pb-24 md:pb-28 pt-12 text-center"
++        className="container mx-auto max-w-4xl px-4 pb-24 pt-12 text-center md:pb-28"
+       >
+-        <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+-          Questions about something you read here? Reach out and we will help.
++        <p className="mx-auto mb-6 max-w-md text-muted-foreground">
++          Questions about something you read here? Reach out and we will
++          help.
+         </p>
+         <ThreeDButton asChild variant="outline" size="lg" depth="raised">
+-          <Link href="/contact" className="gap-2 inline-flex items-center">
++          <Link
++            href="/contact"
++            className="inline-flex items-center gap-2"
++          >
+             <Mail className="h-4 w-4" />
+             Contact us
+           </Link>

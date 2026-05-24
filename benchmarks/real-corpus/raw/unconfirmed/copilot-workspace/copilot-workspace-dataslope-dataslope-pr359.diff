@@ -1,0 +1,493 @@
+diff --git a/agent-outputs/20260524-0058-sql-playgrounds-ux-audit.md b/agent-outputs/20260524-0058-sql-playgrounds-ux-audit.md
+new file mode 100644
+index 0000000..7fca0bf
+--- /dev/null
++++ b/agent-outputs/20260524-0058-sql-playgrounds-ux-audit.md
+@@ -0,0 +1,330 @@
++# SQL Playgrounds UX/UI Audit — SQLite, Postgres, DuckDB
++
++**Date:** 2026-05-24
++**Author:** Copilot coding agent (UX audit pass)
++**Scope:** `/playground/sqlite`, `/playground/postgres`, `/playground/duckdb`
++**Method:** Hands-on exploration with Playwright (Postgres loaded successfully; SQLite & DuckDB WASM modules were blocked by sandbox network policy, so equivalent workflows for those two engines were audited via source review) + targeted source-code analysis across `app/_components/sql/`, `app/_components/postgres/`, `app/_components/duckdb/`, and the engine runtimes in `app/_components/runtime/`.
++
++---
++
++## Table of Contents
++
++1. [Executive Summary](#1-executive-summary)
++2. [Severity & Impact Conventions](#2-severity--impact-conventions)
++3. [Top Findings at a Glance](#3-top-findings-at-a-glance)
++4. [Cross-Playground Consistency Matrix](#4-cross-playground-consistency-matrix)
++5. [Detailed Findings by Workflow](#5-detailed-findings-by-workflow)
++   - [5.1 First-load and engine-boot UX](#51-first-load-and-engine-boot-ux)
++   - [5.2 Creating a new table & adding columns](#52-creating-a-new-table--adding-columns)
++   - [5.3 Inline cell editing for non-trivial types](#53-inline-cell-editing-for-non-trivial-types)
++   - [5.4 Dropping a table & destructive actions](#54-dropping-a-table--destructive-actions)
++   - [5.5 Triggers, indexes, and views](#55-triggers-indexes-and-views)
++   - [5.6 Editing constraints, defaults, relationships](#56-editing-constraints-defaults-relationships)
++   - [5.7 Invalid queries & error states](#57-invalid-queries--error-states)
++   - [5.8 Schemas, databases, workspaces, and connections](#58-schemas-databases-workspaces-and-connections)
++   - [5.9 Import & export](#59-import--export)
++   - [5.10 Notifications, history, and undo](#510-notifications-history-and-undo)
++   - [5.11 Accessibility](#511-accessibility)
++   - [5.12 Responsiveness](#512-responsiveness)
++6. [Recommendations, Prioritized](#6-recommendations-prioritized)
++7. [Appendix A — Methodology, Environment, Screenshots](#appendix-a--methodology-environment-screenshots)
++
++---
++
++## 1. Executive Summary
++
++Dataslope's three SQL playgrounds (SQLite, Postgres, DuckDB) share an impressive amount of infrastructure: the editor, tab bar, results table, schema sidebar, query history, and most dialogs are the same React components reused across engines. That sharing pays off in baseline consistency — but it has also produced a long tail of UX bugs and inconsistencies that show up as soon as a user does anything beyond `SELECT * FROM …`.
++
++The most important themes:
++
++1. **The shared "SQLite-flavored" defaults leak across engines.** Hard-coded strings ("Loading SQLite engine…"), SQLite-only error hints, and SQLite-style truncation messages appear inside Postgres and DuckDB sessions (see [§5.1](#51-first-load-and-engine-boot-ux), [§5.7](#57-invalid-queries--error-states)). This breaks the illusion that each playground is a first-class environment.
++
++2. **Engine-boot failures are a dead end.** If the CDN-hosted WASM bundle fails to load (which is trivially reproducible in restrictive networks — and is the actual experience inside the audit sandbox), the user sees an enormous title-stamp loading screen with a tiny single-line error at the bottom, no retry button, and disabled Import/Export buttons with no tooltip explaining why ([§5.1](#51-first-load-and-engine-boot-ux)).
++
++3. **Destructive actions are too quiet.** `DROP TABLE` in Postgres silently adds `CASCADE`, and `TRUNCATE` silently adds `RESTART IDENTITY CASCADE`, but the confirmation dialogs say nothing about cascade effects or dependent objects. There is no "type the table name to confirm" affordance for dangerous operations ([§5.4](#54-dropping-a-table--destructive-actions)).
++
++4. **The Create Table dialog is the most-used metadata flow and has the most friction.** The 13-column wide table layout doesn't degrade on narrow viewports, the type combobox only shows entries matching whatever text is already in the field (so a user who types `int` then opens the dropdown sees a single entry and assumes there are no other types), Escape doesn't close the dialog reliably, and there is no SQL DDL preview ([§5.2](#52-creating-a-new-table--adding-columns)).
++
++5. **Inline cell editing has no type awareness.** Every cell — JSON, JSONB, BYTEA, TIMESTAMPTZ, UUID, arrays, STRUCTs — is edited through a single-line plain text input. Pending edits aren't applied until the user notices and clicks a separate "Commit" button. Once committed, there is no per-cell undo within the session ([§5.3](#53-inline-cell-editing-for-non-trivial-types)).
++
++6. **No creation/edit UI for triggers, indexes, views, or constraints.** Users can _see_ DDL for these objects and they can drop them, but to create or modify one they must drop into raw SQL — which makes the rich sidebar tree feel like a read-only museum ([§5.5](#55-triggers-indexes-and-views), [§5.6](#56-editing-constraints-defaults-relationships)).
++
++7. **Errors lose their context.** Multi-statement errors don't tell the user which statement failed; the editor does not highlight the offending line/column; partial results from preceding statements are discarded; and the error overlay auto-dismisses after ~3 seconds, which is often before the user has read it ([§5.7](#57-invalid-queries--error-states)).
++
++8. **Import / export parity across engines is poor.** SQLite has CSV/JSON/Parquet/XLSX/.db import; Postgres only has .sql dumps; DuckDB requires the user to write `read_csv(...)` SQL by hand even though the engine itself supports those formats natively ([§5.9](#59-import--export)).
++
++The good news: most of these are fixable without architectural surgery, since the shared `SqlPlayground` / `SqlPlaygroundShell` / `ResultView` components are the right place to centralize the fixes.
++
++---
++
++## 2. Severity & Impact Conventions
++
++| Symbol | Meaning |
++|---|---|
++| 🔴 **High** | User can be misled, lose data, or be blocked from completing a basic IDE task. |
++| 🟡 **Medium** | Workflow is achievable but inefficient, inconsistent, or confusing for non-experts. |
++| 🟢 **Low** | Visual polish, terminology, or minor inconsistencies. |
++| ♿ | Accessibility issue (often promoted in severity). |
++
++---
++
++## 3. Top Findings at a Glance
++
++| # | Finding | Severity | Engines | Code Reference |
++|---|---|---|---|---|
++| F-01 | Engine-boot failure has no retry, no actionable guidance, hides itself behind a giant title | 🔴 | All | `app/_components/sql/components/SqlPlaygroundShell.tsx:88-110`, `app/_components/sql/SqlPlayground.tsx:1747-1752` |
++| F-02 | Hard-coded "Loading SQLite engine…" string appears on Postgres & DuckDB pages | 🔴 | Postgres, DuckDB | `app/_components/sql/components/ResultView.tsx:890`, `app/_components/sql/SqlPlayground.tsx:1183,1669` |
++| F-03 | Postgres `DROP` silently uses `CASCADE`; dialog wording doesn't mention dependents | 🔴 | Postgres | `app/_components/runtime/postgres.ts:695`, `app/_components/sql/components/SchemaActionDialogs.tsx:31-50` |
++| F-04 | Inline cell edits are a single-line text input regardless of column type (JSON, BYTEA, TIMESTAMPTZ, arrays, STRUCT, UUID) | 🔴 | All | `app/_components/sql/components/ResultView.tsx:1786-1849`, `app/_components/sql/utils/cellUtils.ts:17-44` |
++| F-05 | Type combobox in Add Table dialog filters its own option list by current text, so a partial type name hides _all_ other options | 🔴 | Postgres, DuckDB | `app/_components/postgres/PostgresPlayground.tsx:442-568`, `app/_components/duckdb/DuckDbPlayground.tsx:469-595` |
++| F-06 | No editor highlight of error line/column; multi-statement errors don't indicate which statement failed and discard partial results | 🔴 | All | `app/_components/sql/components/ResultView.tsx:907-913`, `app/_components/sql/hooks/useQueryRunner.ts:115-234` |
++| F-07 | Long-running queries cannot be cancelled; no timeout, no progress, no elapsed-time indicator | 🔴 | All | `app/_components/sql/hooks/useQueryRunner.ts:115-234` |
++| F-08 | "Pending edits" require an additional explicit Commit click that isn't very discoverable; once committed there is no in-session undo | 🔴 | All | `ResultView.tsx:1786-1849`, dialog text at lines 1279-1280, 1312 |
++| F-09 | No UI for creating triggers, indexes, views, table-level constraints, or column comments / CHECK constraints | 🟡 | All | `app/_components/sql/components/SchemaLeafItem.tsx:80-99`, `ModifyStructureForm.tsx` |
++| F-10 | Toast auto-dismiss is 2.4 s, too short for error messages | 🟡 | All | `app/_components/sql/SqlPlayground.tsx:700` (`<Toast.Provider timeout={2400}>`) |
++| F-11 | Postgres `DROP` confirmation copy claims "in-memory only" but the dropped objects are not in-memory recoverable within the session | 🟡 | Postgres | `SchemaActionDialogs.tsx:31-50` |
++| F-12 | Escape does not close the Add Table dialog reliably in Postgres; user must use mouse → Cancel | 🟡 | Postgres (observed); likely all | reproduced live, see Appendix A |
++| F-13 | 13-column Add Table table has no responsive layout; on narrow widths the user must horizontally scroll within the modal | 🟡 ♿ | All | `app/_components/sql/sqlPlayground.css:1943-1973` (no per-table column hiding) |
++| F-14 | Import & export feature parity is wildly different across engines (Postgres lacks CSV/Parquet/JSON; DuckDB lacks any built-in CSV-import dialog) | 🟡 | Postgres, DuckDB | `ImportSqlDumpDialog.tsx`, `useDatabaseActions` hook, `DuckDbPlayground.tsx:4854` (FilesPanel) |
++| F-15 | Sidebar header casing differs ("Tables (0)" in SQLite vs "TABLES (4)" in Postgres/DuckDB) | 🟢 | All | observed in DOM; rendered in `SchemaSection.tsx` |
++| F-16 | Auto-incrementing column wording differs across engines ("Auto-increment" in SQLite, "Identity/serial" in Postgres, "Identity" in DuckDB) and column header wraps awkwardly | 🟢 | All | `ModifyStructureForm.tsx:630`, `PostgresPlayground.tsx:3830`, `DuckDbPlayground.tsx:4514` |
++| F-17 | Query history is in-memory only — lost on every reload | 🟡 | All | `app/_components/sql/stores/useQueryHistory.ts` |
++| F-18 | Workspace-lock warning when a workspace is opened in another tab is a non-blocking toast; user can still operate concurrently and corrupt state | 🟡 | All | `app/_components/postgres/PostgresPlayground.tsx:1634-1641` |
++| F-19 | Schema switch in Postgres/DuckDB does not warn that open Query tabs may still reference the old schema | 🟡 | Postgres, DuckDB | `PostgresPlayground.tsx:4071-4093`, `DuckDbPlayground.tsx:4758-4781` |
++| F-20 | Generated / view / read-only columns are not visually distinguished in the result grid and inline edits to them fail only on commit | 🟡 ♿ | All | `ResultView.tsx:1787-1849` |
++| F-21 | Inline edit input has no `aria-label`; NULL / pending-edit visual cues (italic / dashed underline) are not announced to screen readers | 🟡 ♿ | All | `ResultView.tsx:1786-1849` |
++| F-22 | NULL displayed as bare text "NULL" — typing the literal text `NULL` into a cell becomes the string "NULL" instead of a true NULL with no special affordance | 🟡 | All | `app/_components/sql/utils/cellUtils.ts:17-23` |
++| F-23 | BLOB displayed as `BLOB (N bytes)`; right-click → "Edit cell in modal" opens a plain `<textarea>` with no hex/base64 mode | 🟡 | All | `cellUtils.ts:17-23`, `ResultView.tsx:2175-2227` |
++| F-24 | DuckDB combobox "Open type list" trigger button is missing `aria-label` (Postgres has one) | 🟢 ♿ | DuckDB | `DuckDbPlayground.tsx:~556` vs Postgres `~528` |
++| F-25 | DuckDB `dropEntity` does **not** use CASCADE while Postgres always does — inconsistent destructive semantics for the same user gesture | 🟡 | Postgres + DuckDB | `runtime/postgres.ts:695`, `runtime/duckdb.ts:1291` |
++| F-26 | DuckDB "truncate" performs `DELETE FROM` rather than `TRUNCATE`; user-facing label and behavior diverge | 🟢 | DuckDB | `runtime/duckdb.ts:1295` |
++| F-27 | Google Fonts CDN is blocked → `document.fonts.ready` never resolves → small but real performance/UX issue (the page is functional but Playwright `page.screenshot()` and any code awaiting fonts hangs indefinitely) | 🟡 | All | observed via console error; `app/layout.tsx` font imports |
++
++---
++
++## 4. Cross-Playground Consistency Matrix
++
++| Capability | SQLite | Postgres | DuckDB | Notes |
++|---|---|---|---|---|
++| **Add table dialog UI** | Reuses `ModifyStructureForm` | Custom table | Custom table | Two implementations — minor divergence in column order, copy, terminology |
++| **Type list size** | **7 hard-coded types** (`INTEGER, REAL, TEXT, BLOB, NUMERIC, BOOLEAN, DATETIME`) | 30+ grouped + free-text | 30+ grouped + free-text | SQLite is dramatically less expressive |
++| **Type combobox open-shows-all behavior** | N/A (native `<select>`) | Filters by current text | Filters by current text | F-05 — filtering hides options |
++| **Default-value helper for `now()` / `uuid_*()`** | ❌ | ❌ (only placeholder text) | ❌ (only placeholder text) | No function picker |
++| **CHECK constraints UI** | ❌ | ❌ | ❌ | |
++| **Column comments UI** | ❌ | ❌ | ❌ | |
++| **Live DDL preview while editing** | ❌ | ❌ | ❌ | |
++| **Create Index UI** | ❌ | ❌ | ❌ | |
++| **Create Trigger UI** | ❌ | ❌ | N/A | DuckDB has no triggers |
++| **Create View UI** | ❌ | ❌ | ❌ | |
++| **Schema selector** | N/A | ✅ | ✅ | DuckDB sample loads into `main`; Postgres into `public` |
++| **Create new schema** | N/A | ✅ | ✅ | |
++| **Workspaces** | ✅ | ✅ | ✅ | |
++| **Workspace-lock blocking dialog** | ❌ (toast only) | ❌ (toast only) | ❌ (toast only) | |
++| **Drop = CASCADE** | N/A | ✅ silent | ❌ no CASCADE | Diverging semantics, same gesture |
++| **Truncate = TRUNCATE / DELETE** | DELETE-equivalent | `TRUNCATE … RESTART IDENTITY CASCADE` silent | `DELETE FROM` | Same UI label, very different effect |
++| **Import .sql dump** | ✅ | ✅ | ❌ | |
++| **Import CSV / JSON / Parquet / XLSX** | ✅ | ❌ | ❌ (must hand-write `read_csv()`) | |
++| **Export single result set (csv, json, sql, parquet, xlsx)** | ✅ | ✅ | ❌ | |
++| **Export whole DB binary** | ✅ (.db) | ❌ | ❌ (no .duckdb out) | |
++| **Query history persistence** | in-memory | in-memory | in-memory | |
++| **Error message hint patterns** | SQLite-specific in shared helper | falls back to raw text | falls back to raw text | F-02-adjacent |
++| **Editor placeholder when no result** | "Run a query to see results" | same | same | Good consistency |
++| **Loading copy** | "Loading SQLite engine…" | **"Loading SQLite engine…"** (bug) | **"Loading SQLite engine…"** (bug) | F-02 |
++| **Pre-populated tabs** | `Query 1-4` | `Query 1-4` | `Top customers / Sales by category / Order totals view` | Inconsistent — DuckDB ships pedagogical samples, others don't |
++| **Sidebar section header casing** | `Tables (0)` | `TABLES (4)` | `TABLES (0)` | F-15 |
++
++---
++
++## 5. Detailed Findings by Workflow
++
++### 5.1 First-load and engine-boot UX
++
++**Loading screen takes over the whole viewport.** The status overlay in `SqlPlaygroundShell.tsx:88-110` stamps the playground name four times at huge sizes; in the loading state the actual status text ("Bribing the WebAssembly elves with cookies…") is small relative to the title art. In the **error** state (e.g. CDN blocked), the same overlay simply swaps the small caption to the failure message — a single line at the bottom of the screen — without a retry button, fallback link, or visual escalation. See `sqlite-load-error.png` in `assets-20260524-sql-playground-audit/` for the exact rendered output.
++
++- 🔴 **F-01** — No retry. The loading promise (`SqlPlayground.tsx:1747-1752`) sets `loadingMessage` and never offers a recovery path. Users must reload the tab, which also loses every dirty buffer.
++- 🔴 **F-02** — While the loader is engine-aware, the **inner editor placeholder** is not. `ResultView.tsx:890` literally renders `<h3>Loading SQLite engine…</h3>` on the Postgres and DuckDB pages whenever `loading` is true in the results pane. Reproduced live in the Postgres page (page title is correctly "PostgreSQL Playground", body says "Loading SQLite engine…").
++- 🟡 **Disabled buttons offer no explanation.** While loading or in the error state, the Import and Export buttons in the header are `disabled` but have no `title` / `aria-describedby` saying "available after the engine has loaded." Users have no way to know if the buttons are temporarily disabled or permanently broken.
++- 🟡 **F-27** — Google Fonts is fetched cross-origin in `app/layout.tsx`. When that request is blocked, `document.fonts.ready` never resolves and any `requestAnimationFrame`-coupled measurement is delayed. We observed Playwright's `page.screenshot()` time out repeatedly because of this. Self-hosting Inter (or any other display font), or adding a `font-display: swap` fallback chain, removes the failure mode.
++
++### 5.2 Creating a new table & adding columns
++
++The Add-Table dialog ([screenshot `pg-02-add-table-dialog.png`](assets-20260524-sql-playground-audit/pg-02-add-table-dialog.png)) is the most user-facing metadata flow and has several friction points.
++
++- 🔴 **F-05 — Self-filtering type dropdown.** When the user clicks the chevron next to `bigserial` (the default), the listbox only shows `bigserial`. That's because the combobox treats the visible value as a filter substring (`PostgresPlayground.tsx:442-568`, `DuckDbPlayground.tsx:469-595`). The user has no signal that 30 other types exist behind a deletion of the current text. Reproduced live ([screenshot `pg-03-type-dropdown.png`](assets-20260524-sql-playground-audit/pg-03-type-dropdown.png)). **Recommendation:** When the popover opens via the explicit "Open type list" chevron (as opposed to typing), bypass filtering and show every group with the current value highlighted. Add a small "_Showing 1 of 31 — clear to see all_" caption when filtered.
++- 🔴 **F-13 — No responsive collapse.** The dialog renders a 13-column `<table>` (drag handle, name, type, NOT NULL, primary, unique, identity/serial, default, FK table, FK column, ON DELETE, ON UPDATE, actions). The `.sql-modify-table-wrap` wrapper enables only horizontal scroll; there is no media query (`sqlPlayground.css` only adapts `.sql-modify-col-grid`, which this table doesn't use). On a 700px-wide screen the user must scroll right to even reach the "Default" field, which throws the column name out of view. **Recommendation:** Collapse to a vertical "card per column" layout below ~900 px.
++- 🟡 **F-12 — Escape doesn't close the modal.** Pressing `Escape` while the type combobox or one of the cell text inputs is focused does not dismiss the dialog (reproduced live). The Base UI dialog should normally handle this, but the combobox / form-elements appear to be capturing the key. **Recommendation:** Add a top-level keydown handler on `Dialog.Popup` that calls `setOpen(false)` when `key === 'Escape'` and the active element is not currently inside an open popover.
++- 🟡 **No live DDL preview.** None of the three dialogs show the user the `CREATE TABLE` SQL that will be generated; novices have no learning path and experts cannot sanity-check edge cases like reserved keywords in column names. **Recommendation:** Add a collapsible "Show generated SQL" pane.
++- 🟡 **No CHECK constraints, COMMENT/description, or table-level constraint affordances.** Once the user closes the dialog they cannot add these without raw SQL.
++- 🟡 **Default-value field is a free-text input.** There is no helper for `now()`, `gen_random_uuid()`, `uuid_generate_v4()`, `nextval(...)`. The placeholder text mentions `now()` (Postgres / DuckDB) and `'foo'` (SQLite), but a dropdown of common functions would streamline the most repeated task. The Default field is also disabled for serial / identity columns without an explanation tooltip.
++- 🟡 **"Identity/serial" / "Identity" / "Auto-increment" terminology is inconsistent across the three engines.** Pick one user-visible label (e.g., "Auto-increment") and put the SQL-level keyword in a tooltip.
++- 🟡 **Validation message UX.** SQLite shows a single generic "Column names cannot be empty" alert at the bottom (`ModifyStructureForm.tsx:700-707`), Postgres / DuckDB show all per-field errors as a stacked alert above the buttons. The SQLite implementation also does **not** disable the Create button when invalid — the user clicks Create, gets a toast, has to find the offending row. Unify on the Postgres/DuckDB pattern (per-field error and disabled primary action).
++- 🟡 **Drawer header subtitle is rendered in bright green ("Create a new table").** It reads more like a status message than a subtitle and clashes with the dialog tone.
++- 🟢 The "Identity/ serial" column header wraps onto two lines mid-word ("Identity/" then "serial"); choose `Identity / serial` with a non-breaking slash or widen the column.
++
++### 5.3 Inline cell editing for non-trivial types
++
++The shared `ResultView.tsx` renders every cell through a single code path. The audit revealed that **column-type awareness is essentially absent** at edit time, which causes a chain of UX problems for every non-string type:
++
++- 🔴 **F-04 — Single-line `<input type="text">` for every type** (`ResultView.tsx:1786-1849`). JSONB documents, PostGIS geometries, arrays, intervals, TIMESTAMPTZ values, bytea blobs, and UUIDs all share the same editor. The only "advanced" path is right-click → **Edit cell in modal**, which opens an 8-row `<textarea>` (`ResultView.tsx:2175-2227`) with no syntax highlighting, no validation, no formatter, no hex/base64 toggle for BLOB.
++- 🔴 **F-08 — Pending-edit indirection.** Edits update an in-memory `pendingEdits` map (yellow background + dashed underline). The user must find a separate **Commit changes** button (which only appears once edits exist) to flush them to the engine. Several issues compound:
++  - No keyboard shortcut for commit.
++  - No "discard all pending edits" affordance per column or per row.
++  - The user can navigate to another tab; pending edits stay, with no indicator on the source tab.
++  - After commit, there is no per-cell undo within the session. The delete dialog text actually warns "cannot be reversed within this session" — a sign that the team is aware of this gap.
++- 🔴 **F-20 — No read-only column indication.** Generated columns (`GENERATED ALWAYS AS`), columns from a `JOIN`, and rows from a view are double-clickable just like any other cell. The error only surfaces when the engine rejects the `UPDATE` on commit, often as an unhelpful SQL string.
++- 🟡 **F-22 — NULL handling.** Cells with `NULL` render as italic "NULL". To enter a NULL, the user has to right-click → context-menu → **Set to NULL** (assumed; not consistently visible across rows). Typing the literal text `NULL` into the inline input stores the **string** `"NULL"`, not a true NULL — there is no warning or auto-coercion.
++- 🟡 **F-23 — BYTEA / BLOB.** Cells display `BLOB (N bytes)`. There is no inline hex/base64 viewer; the modal editor exposes a plain textarea that will mangle any non-UTF-8 byte sequence on save. There is also no "upload binary file into this cell" affordance.
++- 🟡 **TIMESTAMPTZ / DATE / TIME / INTERVAL.** No date picker, no timezone reminder, no calendar. The value is whatever stringification the engine emits. Users editing a `TIMESTAMPTZ` see no indication of whether the stored value will be normalized to UTC.
++- 🟡 **JSON / JSONB / STRUCT / ARRAY.** No pretty-print, no fold/unfold, no validator. The user gets a stringified blob in a 320-px-max truncated cell.
++- 🟡 **UUID and ENUM.** UUIDs are not visually distinguished from random text; there is no `Generate new UUID` affordance. ENUM columns are not rendered as a dropdown of valid values — the user has to know them and type one in.
++- 🟡 **DuckDB STRUCT / LIST / MAP types** receive no editor support despite being a marquee feature of the engine.
++- 🟡 **Serialization caveats.** `runtime/duckdb.ts:1397-1403` builds an `UPDATE` by string-concatenating the user's literal with single-quote escaping. Users entering a STRUCT/MAP/LIST literal (`{'k': 1}`) will get a parse error from DuckDB; users entering plain text will store it as `VARCHAR` even on numeric columns and only discover the error later. Postgres uses parameter binding so it's safer, but the same lack of pre-flight validation applies.
++
++### 5.4 Dropping a table & destructive actions
++
++- 🔴 **F-03 — Postgres CASCADE is silent.** `runtime/postgres.ts:695` issues `DROP … CASCADE`. The shared dialog (`SchemaActionDialogs.tsx:31-50`) doesn't mention "cascade", "dependent views", or "dependent constraints". A user expecting `RESTRICT` semantics may unknowingly take out a chain of dependent objects.
++- 🟡 **F-25 — Drop semantics diverge between Postgres (CASCADE) and DuckDB (no CASCADE)** for the same UI button. Decide and document.
++- 🟡 **F-11 — Misleading "in-memory only" wording.** The drop confirmation tells the user "This change is in-memory only and will be undone next page load" — but dropping a sample table _does_ persist until reload, and there is no in-session undo. The copy implies an `R` for reversible that doesn't exist.
++- 🟡 **No `type-the-table-name` safeguard.** Many IDE tools require typing the object name to confirm a drop on production-shaped databases. Given that the next features on the roadmap include workspace persistence, this safeguard should land before objects can be persisted.
++- 🟡 **TRUNCATE shows the same dialog for very different effects.** Postgres `TRUNCATE … RESTART IDENTITY CASCADE` resets sequences and cascades; DuckDB does a plain `DELETE FROM`. Same button, materially different results. Disclose the additional clauses in the dialog.
++
++### 5.5 Triggers, indexes, and views
++
++- 🟡 **F-09 — Read-only sidebar.** Triggers, indexes, and views are listed in the sidebar with rich icons, badges, and counts ("TRIGGERS (2)", "INDEXES (10)"), but the only actions are **View DDL** and **Drop** (`SchemaLeafItem.tsx:80-99`). Users who want to add a covering index after profiling a query must hand-write SQL in a tab. This is jarring next to a polished Create-Table dialog.
++- 🟡 **Trigger DDL viewer is opaque.** Clicking a trigger shows raw `CREATE TRIGGER …` text. There's no parsed view of timing (`BEFORE`/`AFTER`), event (`INSERT`/`UPDATE`/`DELETE`), or referenced function — those would have to be parsed out by the user.
++- 🟢 No REINDEX / VACUUM / ANALYZE affordances.
++- 🟡 DuckDB doesn't have triggers, but the sidebar still shows the section header only because the engine returns an empty array (`runtime/duckdb.ts:1044-1045`). Either suppress the section or label it "Not supported by DuckDB" for honesty.
++
++### 5.6 Editing constraints, defaults, relationships
++
++- 🔴 **No alter-in-place UI for FK/CHECK/UNIQUE on existing tables in Postgres or DuckDB.** SQLite reuses the Modify Structure form which is actually a table-rebuild (copy-rename-reload), and the user is not told about the destructive nature of this operation. Postgres and DuckDB don't even have that affordance.
++- 🟡 The ON DELETE / ON UPDATE select offers `NO ACTION` as the default. Postgres treats `NO ACTION` and `RESTRICT` differently in deferred-constraint scenarios — the dropdown should show a one-line tooltip explaining the difference.
++- 🟡 The FK target column dropdown stays disabled and reads "(column)" until a target table is picked. Once you pick the table, the placeholder text persists momentarily until you reopen the dropdown — there's no transient loading indicator.
++
++### 5.7 Invalid queries & error states
++
++- 🔴 **F-06 — Error attribution is missing.** When a multi-statement script fails, the error string from the engine ("ERROR: relation "x" does not exist") is rendered raw (`ResultView.tsx:907-913`). The editor does not highlight the line; the user is not told it was "Statement 3 of 5"; and the partial results from statements 1-2 are discarded by `useQueryRunner.ts:115-234`. For learning users this is especially harsh, because they don't know whether their first statement succeeded.
++- 🔴 **Errors are wiped after ~3 s.** `useQueryRunner.ts` flips `statusState` back to `"ready"` after 3 s, and the error pane in the results region also disappears with the result. **Recommendation:** Show errors until the next run or until the user dismisses them.
++- 🟡 The `getSqliteErrorHint()` helper (`ResultView.tsx:69-124`) is, despite its name, only SQLite-flavored. Postgres and DuckDB users see raw engine strings with no friendly hints. Rename and extend.
++- 🟡 The error block uses an emphatic red title `"Query failed"` but does not surface the engine name, SQLSTATE code, or a "Copy error" button. The Toast list has a copy button (`ToastList.tsx:44-50`) — apply the same idea here.
++- 🟡 Empty DDL result sets (e.g., `CREATE TABLE` succeeds) render as an empty tab with a small "Statement ran successfully" icon. The icon is small and easily missed.
++
++### 5.8 Schemas, databases, workspaces, and connections
++
++- 🟡 **F-19 — Switching schemas in Postgres / DuckDB silently changes the sidebar but leaves open Query tabs pointed at the previous schema.** No warning, no indication on the tab. Users can run a query that fails confusingly because the sidebar shows a different `public` than the one their `SELECT * FROM users` expects.
++- 🟡 **F-18 — Workspace conflict warning is a toast.** `PostgresPlayground.tsx:1634-1641` shows a non-blocking toast if the workspace is already open in another tab. Two tabs operating on the same workspace can corrupt OPFS state. Use a blocking dialog ("This workspace is open in another tab; switch to read-only?") instead.
++- 🟡 No "active connection" indicator beyond the workspace name. There is no concept of multiple Postgres servers, multiple SQLite files, or multiple DuckDB attached databases in the UI.
++- 🟡 The header has _two_ controls that look like database pickers: the **Switch playground** combobox (sqlite/postgres/duckdb/...) and the per-engine **Active workspace** button. New users we'd expect to confuse them. Consider visually grouping them with a divider.
++- 🟢 The sample-database picker label reads "Select sample database" but it can also load user-imported `.db` / `.duckdb` files — rename to "Active database" or split into two controls.
++- 🟢 The Postgres sidebar shows the schema selector ("public") with a database icon, but it's actually a _schema_ selector — easy to mistake for the database/file selector immediately above.
++
++### 5.9 Import & export
++
++- 🟡 **F-14 — Wildly inconsistent capability across engines.** The matrix in [§4](#4-cross-playground-consistency-matrix) shows the gaps. The most egregious is DuckDB: the engine has world-class `read_csv()` / `read_parquet()` / `read_json()` functions, but the playground exposes _none_ of them as a UI flow.
++- 🟡 Import drag-and-drop area (`ImportSqlDumpDialog.tsx:27-104`) accepts any file but only validates by extension; there's no preview, no row-count estimate, no schema-mapping step.
++- 🟡 Failed imports surface as toasts only, sometimes with raw error strings. There is no "first N parse errors" panel.
++- 🟡 Export from the result grid lets the user pick CSV/JSON/SQL/Parquet/XLSX, and offers "current page vs all rows" — good. But there is no per-table export from the sidebar and no "export entire database as multiple files" option for SQLite/DuckDB. Postgres has no `pg_dump`-style whole-database SQL dump export.
++- 🟢 No file-size warning for very large exports. A user accidentally exporting a million rows to XLSX can lock the browser tab.
++
++### 5.10 Notifications, history, and undo
++
++- 🟡 **F-10 — Toast timeout is 2.4 s** (`SqlPlayground.tsx:700`). Error toasts disappear before the user finishes reading. Bump to ≥ 8 s for errors and add an explicit close button (which exists for warnings but not info).
++- 🟡 Toast color/kind set is `info` and `warn` only (`ToastList.tsx:24-73`). No `success` / `error` variants — every error is styled as a warning.
++- 🟡 **F-17 — Query history is in-memory only.** `useQueryHistory` stores history in Zustand without persistence. Even a soft reload (Cmd-R) erases everything the user just learned. Persist (capped) history to localStorage.
++- 🟡 No global undo for destructive operations (drop table, drop column, commit cell edits). The only "undo" is to reload the page, which itself loses all unsaved work.
++
++### 5.11 Accessibility
++
++- ♿ 🟡 **F-21** — Inline cell input lacks `aria-label`; screen-reader users entering edit mode hear no announcement of which column they are editing. NULL is conveyed only by italic styling; "pending edit" by a dashed underline.
++- ♿ 🟡 **F-13** — Horizontal-only scroll in the Add Table modal traps low-vision users at small zoom levels.
++- ♿ 🟢 **F-24** — DuckDB type-list trigger button is missing `aria-label="Open type list"` (Postgres has it).
++- ♿ 🟡 The "Active workspace" pill is a single button that opens a switcher; arrow-key navigation through workspaces is not supported.
++- ♿ 🟡 No keyboard shortcut to enter edit mode on a cell (today requires double-click). Add `Enter` / `F2` from the grid like spreadsheet apps.
++- ♿ 🟡 Color-only signals: yellow background for pending edits, red title for errors, green subtitle text on the Add Table dialog. None of these have non-color cues (icon, label, role).
++- ♿ 🟢 The "Switch playground" combobox visually shows a logo + lowercase engine name; the accessible name is just the lowercase string ("sqlite"). Use the full name ("SQLite Playground") for screen readers.
++- ♿ 🟢 The big duplicated "SQLite Playground" overlay during loading sets up the title four times in DOM order — confusing for screen readers; should be one element with the rest visually decorative.
++
++### 5.12 Responsiveness
++
++- 🟡 **F-13** — Discussed above: the Add Table table has no responsive layout.
++- 🟡 The header (Dataslope logo + Switch playground + workspace + Import / Export / History / ER / Runtime info + workspace badge) wraps onto two lines below ~1280px. The wrap order is fine but the workspace button drops below the playground switcher in a way that creates the impression of two unrelated rows.
++- 🟢 The schema sidebar resizer can collapse the sidebar to zero width with no "restore" handle visible; users have reported losing it before.
++- 🟢 The results grid horizontal scroll doesn't have a "freeze first column" affordance, which is standard in spreadsheet UIs.
++
++---
++
++## 6. Recommendations, Prioritized
++
++### Tier 0 — quick wins, low risk (≤ 1 day each)
++
++1. **Fix hard-coded "Loading SQLite engine…" string in `ResultView.tsx:890` and `SqlPlayground.tsx:1183,1669`.** Use an engine prop / context. (F-02)
++2. **Disable Import/Export with a tooltip** explaining "Available after engine has loaded" during boot and error states. (F-01 partial)
++3. **Bump error toast timeout to 8 s and add a `success` / `error` toast kind.** (F-10)
++4. **Add `aria-label="Open type list"` to DuckDB's combobox chevron.** (F-24)
++5. **Make Escape close the Add Table modal.** (F-12)
++6. **Unify header casing across engines** (TABLES vs Tables). (F-15)
++7. **Persist query history to localStorage** (capped at 200 entries). (F-17)
++8. **Surface "Statement N of M failed" prefix on error rendering** (computed from `useQueryRunner` already). (F-06 partial)
++9. **Disable the Create-Table primary button in SQLite when validation fails** (parity with Postgres/DuckDB). (F-02 / Add Table)
++10. **Self-host the UI font** to remove the Google Fonts dependency and unlock `document.fonts.ready`. (F-27)
++
++### Tier 1 — meaningful UX improvements (1–3 days each)
++
++11. **Engine-load failure: add a "Retry" button** and a clearer "_The CDN for this engine is blocked_" message with a link to docs. (F-01)
++12. **Disclose CASCADE / RESTART IDENTITY** in drop/truncate dialogs. Show a preview of what will be dropped (dependent views, FKs). For drops, require typing the table name above 100 rows. (F-03, F-11, F-25)
++13. **Type combobox** — when opened via the chevron, show all groups even when the field is pre-filled. Add an "_x of N — clear to see all_" caption while filtered. (F-05)
++14. **Add a "Show generated SQL" pane** to the Create-Table dialog (read-only, auto-updates). (F-09 partial)
++15. **Persist and visualize partial results** for multi-statement queries, with per-statement success/error badges in the result tab bar. (F-06)
++16. **Centralize error formatting** into a single helper that knows the active engine and produces hints for Postgres/DuckDB, not just SQLite. Rename `getSqliteErrorHint`. (F-06 / F-07-adjacent)
++17. **Long-running query lifecycle** — wrap exec in an `AbortController` (or worker `terminate()`), show elapsed time, and expose a Cancel button after 1 s. (F-07)
++18. **Persist pending edits per-tab indicator** + global "Commit / Discard all" toolbar; add `Ctrl-Z` undo for the last commit batch. (F-08)
++19. **Show "schema may be stale" toast** when switching schemas while query tabs are open. (F-19)
++20. **Make workspace-conflict warning blocking** with a "Continue read-only" or "Switch workspace" choice. (F-18)
++21. **Unify DuckDB drop semantics with Postgres** (or document the difference inline). (F-25)
++22. **Visually distinguish view / generated / read-only columns** in the result grid (italic header? lock icon?). (F-20)
++23. **Function-picker dropdown for default values** (`now()`, `gen_random_uuid()`, `nextval('seq')`). (Add Table / F-09 partial)
++
++### Tier 2 — bigger investments (≥ 1 week)
++
++24. **Type-aware cell editors** — date pickers, JSON editor with linting, BLOB hex viewer with upload, array editor, enum dropdown (driven by introspection). (F-04, F-22, F-23)
++25. **Create-trigger / index / view / constraint UIs.** Even minimal forms (name, expression, columns) would close most of the gap. (F-09)
++26. **Responsive Add Table / Modify Structure dialog** — collapse to a "column card per row" layout below ~900 px and on portrait tablet. (F-13)
++27. **Postgres CSV / JSON / Parquet / XLSX import**; **DuckDB CSV / Parquet / JSON import wizard** that authors `read_csv(...)` for you. (F-14)
++28. **Whole-database export** for SQLite (.db), Postgres (.sql via PGlite dump), and DuckDB (.duckdb). (F-14)
++29. **CHECK constraints, column comments, table-level constraints** in the structure form. (F-09)
++30. **Refactor the two parallel Add Table implementations** (Postgres custom vs DuckDB custom) onto a shared `ModifyStructureForm` variant driven by per-engine type catalogs. The current divergence is the source of most of the F-04 / F-05 / F-15 / F-16 inconsistencies.
++
++---
++
++## Appendix A — Methodology, Environment, Screenshots
++
++### Environment
++
++- Repo at `/home/runner/work/dataslope/dataslope`, branch the agent was launched on.
++- `npm install` + `npm run dev` (Next.js 16.2.6 + Turbopack) — server live at `http://localhost:3000`.
++- Playwright Chromium 1223 headless, viewport 1600×1000.
++- Sandbox network policy blocked `https://cdn.jsdelivr.net` (used for the SQLite-WASM and DuckDB-WASM ESM modules) and `https://fonts.googleapis.com`. PGlite (Postgres) is bundled locally and loaded successfully, which is why most of the live walkthrough findings are from `/playground/postgres`.
++
++### What was tested live (Postgres)
++
++- Cold load of the playground; observed banner, sidebar, sample-DB picker, and the in-app workspace pill.
++- Opened **Add Table** dialog; tried the type combobox both by clicking the chevron and by typing.
++- Pressed **Escape** to verify it would close the modal — it did not.
++- Clicked **Cancel** to return to the playground.
++
++### What was audited via source
++
++- SQLite playground (`app/_components/sql/SqlPlayground.tsx`, shared `components/*`) — engine WASM failed to load, but the UI is the same shell used by Postgres so most observations transfer; engine-specific gaps were cross-referenced against the runtime in `app/_components/runtime/sqlite*.ts`.
++- DuckDB playground (`app/_components/duckdb/DuckDbPlayground.tsx`) — engine WASM failed to load; static audit covered the Create Table dialog, the schema/file sidebar, the unique pedagogical pre-populated tabs, and `app/_components/runtime/duckdb.ts` for `dropEntity`, `cleanDuckDbSchema`, `updateRows`.
++- All workflow-specific findings include `file:line` citations so they can be re-verified locally.
++
++### Screenshots
++
++Saved alongside this report in `agent-outputs/assets-20260524-sql-playground-audit/`:
++
++| File | What it shows |
++|---|---|
++| `sqlite-load-error.png` | SQLite playground when the WASM CDN is blocked — giant playground-name overlay with a tiny error caption at the bottom and no retry. Illustrates F-01. |
++| `pg-01-initial.png` | Postgres playground in its loaded "ready" state — sidebar, tabs, editor, and the empty-result welcome panel. |
++| `pg-02-add-table-dialog.png` | Add Table dialog opened — 13-column layout with the default `id bigserial` row. Illustrates F-13 and the green-subtitle issue. |
++| `pg-03-type-dropdown.png` | Type combobox opened with the default `bigserial` still in the input — listbox shows only `bigserial`, despite 30+ types being configured. Illustrates F-05. |
+diff --git a/agent-outputs/assets-20260524-sql-playground-audit/pg-01-initial.png b/agent-outputs/assets-20260524-sql-playground-audit/pg-01-initial.png
+new file mode 100644
+index 0000000..2564987
+Binary files /dev/null and b/agent-outputs/assets-20260524-sql-playground-audit/pg-01-initial.png differ
+diff --git a/agent-outputs/assets-20260524-sql-playground-audit/pg-02-add-table-dialog.png b/agent-outputs/assets-20260524-sql-playground-audit/pg-02-add-table-dialog.png
+new file mode 100644
+index 0000000..4b50185
+Binary files /dev/null and b/agent-outputs/assets-20260524-sql-playground-audit/pg-02-add-table-dialog.png differ
+diff --git a/agent-outputs/assets-20260524-sql-playground-audit/pg-03-type-dropdown.png b/agent-outputs/assets-20260524-sql-playground-audit/pg-03-type-dropdown.png
+new file mode 100644
+index 0000000..bc3ceee
+Binary files /dev/null and b/agent-outputs/assets-20260524-sql-playground-audit/pg-03-type-dropdown.png differ
+diff --git a/agent-outputs/assets-20260524-sql-playground-audit/sqlite-load-error.png b/agent-outputs/assets-20260524-sql-playground-audit/sqlite-load-error.png
+new file mode 100644
+index 0000000..04a4a45
+Binary files /dev/null and b/agent-outputs/assets-20260524-sql-playground-audit/sqlite-load-error.png differ
+diff --git a/package-lock.json b/package-lock.json
+index 46be8f8..c09316f 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -3540,7 +3540,6 @@
+       "cpu": [
+         "arm64"
+       ],
+-      "dev": true,
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -3557,7 +3556,6 @@
+       "cpu": [
+         "arm64"
+       ],
+-      "dev": true,
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -3574,7 +3572,6 @@
+       "cpu": [
+         "x64"
+       ],
+-      "dev": true,
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -3591,7 +3588,6 @@
+       "cpu": [
+         "x64"
+       ],
+-      "dev": true,
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -3608,7 +3604,6 @@
+       "cpu": [
+         "arm"
+       ],
+-      "dev": true,
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -3625,7 +3620,6 @@
+       "cpu": [
+         "arm64"
+       ],
+-      "dev": true,
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -3642,7 +3636,6 @@
+       "cpu": [
+         "arm64"
+       ],
+-      "dev": true,
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -3659,7 +3652,6 @@
+       "cpu": [
+         "x64"
+       ],
+-      "dev": true,
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -3676,7 +3668,6 @@
+       "cpu": [
+         "x64"
+       ],
+-      "dev": true,
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -3701,7 +3692,6 @@
+       "cpu": [
+         "wasm32"
+       ],
+-      "dev": true,
+       "license": "MIT",
+       "optional": true,
+       "dependencies": {
+@@ -3723,7 +3713,6 @@
+       "cpu": [
+         "arm64"
+       ],
+-      "dev": true,
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -3740,7 +3729,6 @@
+       "cpu": [
+         "x64"
+       ],
+-      "dev": true,
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -5181,17 +5169,6 @@
+         "node": ">=20.0.0"
+       }
+     },
+-    "node_modules/almostnode/node_modules/@types/node": {
+-      "version": "25.9.1",
+-      "resolved": "https://registry.npmjs.org/@types/node/-/node-25.9.1.tgz",
+-      "integrity": "sha512-xfrlY7UD5rMJk3ZVJP8BNzS28J36YJg+xp+LPXV1TdWxr8uMH5A860QNxYDGQe/ylDSgjxE52Q9VnO7p75tJxg==",
+-      "license": "MIT",
+-      "optional": true,
+-      "peer": true,
+-      "dependencies": {
+-        "undici-types": ">=7.24.0 <7.24.7"
+-      }
+-    },
+     "node_modules/almostnode/node_modules/fsevents": {
+       "version": "2.3.3",
+       "resolved": "https://registry.npmjs.org/fsevents/-/fsevents-2.3.3.tgz",
+@@ -5207,14 +5184,6 @@
+         "node": "^8.16.0 || ^10.6.0 || >=11.0.0"
+       }
+     },
+-    "node_modules/almostnode/node_modules/undici-types": {
+-      "version": "7.24.6",
+-      "resolved": "https://registry.npmjs.org/undici-types/-/undici-types-7.24.6.tgz",
+-      "integrity": "sha512-WRNW+sJgj5OBN4/0JpHFqtqzhpbnV0GuB+OozA9gCL7a993SmU+1JBZCzLNxYsbMfIeDL+lTsphD5jN5N+n0zg==",
+-      "license": "MIT",
+-      "optional": true,
+-      "peer": true
+-    },
+     "node_modules/almostnode/node_modules/uuid": {
+       "version": "10.0.0",
+       "resolved": "https://registry.npmjs.org/uuid/-/uuid-10.0.0.tgz",
+@@ -8187,7 +8156,6 @@
+       "version": "2.3.2",
+       "resolved": "https://registry.npmjs.org/fsevents/-/fsevents-2.3.2.tgz",
+       "integrity": "sha512-xiqMQR4xAeHTuB9uWm+fFRcIOgKBMiOBP+eXiyT7jsgVCq1bkVygt00oASowB7EdtpOHaaPgKt812P9ab+DDKA==",
+-      "dev": true,
+       "hasInstallScript": true,
+       "license": "MIT",
+       "optional": true,

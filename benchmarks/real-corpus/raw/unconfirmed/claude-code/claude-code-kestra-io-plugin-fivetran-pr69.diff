@@ -1,0 +1,17 @@
+diff --git a/src/main/resources/doc/io.kestra.plugin.fivetran.md b/src/main/resources/doc/io.kestra.plugin.fivetran.md
+new file mode 100644
+index 0000000..95a975e
+--- /dev/null
++++ b/src/main/resources/doc/io.kestra.plugin.fivetran.md
+@@ -0,0 +1,11 @@
++# How to use the Fivetran plugin
++
++Trigger Fivetran connector syncs from Kestra flows and optionally wait for completion.
++
++## Authentication
++
++Set `apiKey` and `apiSecret` (both required) for HTTP Basic authentication against the Fivetran API. Store secrets in [secrets](https://kestra.io/docs/concepts/secret) and apply connection properties globally with [plugin defaults](https://kestra.io/docs/workflow-components/plugin-defaults).
++
++## Tasks
++
++`connectors.Sync` triggers a sync for a `connectorId` (required) and waits for completion by default (`wait: true`). Set `force: true` to cancel any active sync before starting a new one — by default a running sync is left as-is and the task skips. Cap wait time with `maxDuration` (default 60 minutes).

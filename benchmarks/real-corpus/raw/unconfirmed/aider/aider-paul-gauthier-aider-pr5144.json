@@ -1,0 +1,26 @@
+{
+  "id": "aider-paul-gauthier-aider-pr5144",
+  "agent": {
+    "vendor": "aider",
+    "confidence": "high",
+    "source": "repo-owner=paul-gauthier"
+  },
+  "pr": {
+    "number": 5144,
+    "headSha": "843f1bc86703aa18ca59d44f5318da315b6336d1",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1",
+    "title": "Feature/one shot flag",
+    "body": "<html>\r\n<body>\r\n<!--StartFragment--><html><head></head><body><h1>Add <code>--one-shot</code> flag for sessionless single-prompt execution</h1>\r\nCloses #5143\r\n<h2>Summary</h2>\r\n<p>Adds a <code>--one-shot</code> flag for running a single prompt without git or session\r\ncontext, then exiting. Useful for quick lookups, code analysis, and\r\nscripting use cases.</p>\r\n<h2>Usage</h2>\r\n<pre><code class=\"language-bash\"># Simple prompt\r\naider --one-shot \"what is 2+2\"\r\n\r\n# Explain a file\r\naider --one-shot \"explain this file\" src/utils.py\r\n\r\n# Modify a file\r\naider --one-shot \"add type hints\" src/utils.py --one-shot-mode code\r\n</code></pre>\r\n<h2>Behavior</h2>\r\n<ul>\r\n<li>Implies <code>--no-git</code> — no repository initialization</li>\r\n<li>Non-interactive — no prompts, auto-accepts all actions</li>\r\n<li>Disables repo map</li>\r\n<li>Exits with code <code>0</code> on success, <code>1</code> on error</li>\r\n<li>Default mode is <code>ask</code> (read-only); use <code>--one-shot-mode code</code> to apply edits</li>\r\n</ul>\r\n<h2>New Flags</h2>\r\n\r\nFlag | Description\r\n-- | --\r\n--one-shot PROMPT | Run a single prompt and exit\r\n--one-shot-mode ask\\|code | Mode to use (default: ask)\r\n\r\n\r\n<h2>Changes</h2>\r\n<ul>\r\n<li><code>aider/args.py</code> — added <code>--one-shot</code> and <code>--one-shot-mode</code> arguments</li>\r\n<li><code>aider/main.py</code> — early block sets git/session defaults; handler block\r\nruns prompt and exits</li>\r\n<li><code>tests/basic/test_main.py</code> — 5 new tests covering no-git, prompt\r\nexecution, exit behavior, and file context in both modes</li>\r\n</ul>\r\n<h2>Tests</h2>\r\n<pre><code>tests/basic/test_main.py::TestMain::test_one_shot_no_git                   PASSED\r\ntests/basic/test_main.py::TestMain::test_one_shot_runs_prompt              PASSED\r\ntests/basic/test_main.py::TestMain::test_one_shot_exits_after_response     PASSED\r\ntests/basic/test_main.py::TestMain::test_one_shot_ask_mode_files_readonly  PASSED\r\ntests/basic/test_main.py::TestMain::test_one_shot_code_mode_files_editable PASSED\r\n</code></pre></body></html><!--EndFragment-->\r\n</body>\r\n</html>",
+    "author": "code-quad3",
+    "headRef": "feature/one-shot-flag",
+    "repository": "paul-gauthier/aider"
+  },
+  "diffRef": {
+    "repository": "paul-gauthier/aider",
+    "headSha": "843f1bc86703aa18ca59d44f5318da315b6336d1",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1"
+  },
+  "vendoredDiffPath": "unconfirmed/aider/aider-paul-gauthier-aider-pr5144.diff",
+  "vendoredAt": "2026-05-24T03:19:19.688Z",
+  "collectedAt": "2026-05-24T03:19:19.688Z"
+}

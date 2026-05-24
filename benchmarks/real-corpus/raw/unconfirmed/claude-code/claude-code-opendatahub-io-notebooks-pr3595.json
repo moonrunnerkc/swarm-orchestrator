@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-opendatahub-io-notebooks-pr3595",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "commit=claude-coauthor"
+  },
+  "pr": {
+    "number": 3595,
+    "headSha": "2fa3d10c36c33d65bb3f8230e3ee5262e2b09057",
+    "baseSha": "7adf08bdb4721eca958adef9df3497459f6f496d",
+    "title": "RHAIENG-5021: params-env-odh CI validation perpetually fails for N (latest) images",
+    "body": "The params-env-odh CI validation perpetually fails because the N\n(latest) image references in params-latest.env point to moving targets\nthat get rebuilt on each merge. Images may not exist yet, sizes drift\nbeyond thresholds, and commit IDs go stale between updates. This masks\nreal regressions and blocks unrelated PRs.\n\nApply the same proven pattern RHOAI already uses: replace N image URLs\nwith dummy placeholders and skip image validation for params-latest.env\nregardless of variant. The N images are replaced at deploy time anyway.\nThe uniqueness check in check_variables_uniq already excludes dummy\nvalues, so the params record count validation continues to work.\n\nCloses [RHAIENG-5021](https://redhat.atlassian.net/browse/RHAIENG-5021)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nSigned-off-by: Jiri Danek <jdanek@redhat.com>\n\n<!-- This is an auto-generated comment: release notes by coderabbit.ai -->\n## Summary by CodeRabbit\n\n* **Chores**\n  * Updated CI validation logic to apply uniformly across manifest variants instead of variant-specific handling.\n<!-- end of auto-generated comment: release notes by coderabbit.ai -->",
+    "author": "jira-autofix[bot]",
+    "headRef": "jira-autofix/RHAIENG-5021",
+    "repository": "opendatahub-io/notebooks"
+  },
+  "diffRef": {
+    "repository": "opendatahub-io/notebooks",
+    "headSha": "2fa3d10c36c33d65bb3f8230e3ee5262e2b09057",
+    "baseSha": "7adf08bdb4721eca958adef9df3497459f6f496d"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-opendatahub-io-notebooks-pr3595.diff",
+  "vendoredAt": "2026-05-24T03:10:03.947Z",
+  "collectedAt": "2026-05-24T03:10:03.947Z"
+}

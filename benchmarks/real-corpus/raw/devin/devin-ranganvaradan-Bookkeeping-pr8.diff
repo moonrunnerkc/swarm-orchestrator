@@ -1,0 +1,780 @@
+diff --git a/backend/pom.xml b/backend/pom.xml
+index 0a9fcc9..151fcee 100644
+--- a/backend/pom.xml
++++ b/backend/pom.xml
+@@ -91,6 +91,13 @@
+             <version>6.3.0</version>
+         </dependency>
+ 
++        <!-- Intuit QuickBooks Online Data Services SDK -->
++        <dependency>
++            <groupId>com.intuit.quickbooks-online</groupId>
++            <artifactId>ipp-v3-java-devkit</artifactId>
++            <version>6.3.0</version>
++        </dependency>
++
+         <!-- Validation -->
+         <dependency>
+             <groupId>org.springframework.boot</groupId>
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/config/AsyncConfig.java b/backend/src/main/java/com/billiontech/bookkeeping/config/AsyncConfig.java
+new file mode 100644
+index 0000000..0317f41
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/config/AsyncConfig.java
+@@ -0,0 +1,9 @@
++package com.billiontech.bookkeeping.config;
++
++import org.springframework.context.annotation.Configuration;
++import org.springframework.scheduling.annotation.EnableAsync;
++
++@Configuration
++@EnableAsync
++public class AsyncConfig {
++}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/controller/SyncController.java b/backend/src/main/java/com/billiontech/bookkeeping/controller/SyncController.java
+new file mode 100644
+index 0000000..bb5ad80
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/controller/SyncController.java
+@@ -0,0 +1,75 @@
++package com.billiontech.bookkeeping.controller;
++
++import com.billiontech.bookkeeping.controller.dto.JobResponse;
++import com.billiontech.bookkeeping.controller.dto.SyncRequest;
++import com.billiontech.bookkeeping.controller.dto.SyncResponse;
++import com.billiontech.bookkeeping.entity.AgentJob;
++import com.billiontech.bookkeeping.entity.Client;
++import com.billiontech.bookkeeping.repository.AgentJobRepository;
++import com.billiontech.bookkeeping.repository.ClientRepository;
++import com.billiontech.bookkeeping.security.TenantContext;
++import com.billiontech.bookkeeping.service.qbo.QboOAuthService;
++import com.billiontech.bookkeeping.service.qbo.QboSyncService;
++import jakarta.validation.Valid;
++import org.springframework.http.ResponseEntity;
++import org.springframework.web.bind.annotation.GetMapping;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.PostMapping;
++import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.RequestMapping;
++import org.springframework.web.bind.annotation.RestController;
++
++import java.util.UUID;
++
++@RestController
++@RequestMapping("/api")
++public class SyncController {
++
++    private final QboSyncService qboSyncService;
++    private final ClientRepository clientRepository;
++    private final AgentJobRepository agentJobRepository;
++
++    public SyncController(QboSyncService qboSyncService,
++                          ClientRepository clientRepository,
++                          AgentJobRepository agentJobRepository) {
++        this.qboSyncService = qboSyncService;
++        this.clientRepository = clientRepository;
++        this.agentJobRepository = agentJobRepository;
++    }
++
++    @PostMapping("/clients/{clientId}/sync")
++    public ResponseEntity<SyncResponse> sync(@PathVariable UUID clientId,
++                                             @Valid @RequestBody SyncRequest request) {
++        UUID tenantId = TenantContext.getTenantId();
++
++        Client client = clientRepository.findById(clientId)
++                .orElseThrow(() -> new QboOAuthService.QboException("Client not found"));
++
++        if (!client.getTenant().getId().equals(tenantId)) {
++            return ResponseEntity.status(403).build();
++        }
++
++        if (client.getQboRealmId() == null) {
++            throw new QboOAuthService.QboException("Client is not connected to QuickBooks");
++        }
++
++        AgentJob job = new AgentJob();
++        job.setClient(client);
++        job.setJobType("QBO_SYNC");
++        job.setStatus("PENDING");
++        agentJobRepository.save(job);
++
++        qboSyncService.executeSyncJob(job.getId(), clientId,
++                request.getFromDate(), request.getToDate());
++
++        return ResponseEntity.ok(new SyncResponse(job.getId()));
++    }
++
++    @GetMapping("/jobs/{jobId}")
++    public ResponseEntity<JobResponse> getJob(@PathVariable UUID jobId) {
++        AgentJob job = agentJobRepository.findById(jobId)
++                .orElseThrow(() -> new QboOAuthService.QboException("Job not found"));
++
++        return ResponseEntity.ok(JobResponse.from(job));
++    }
++}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/controller/dto/JobResponse.java b/backend/src/main/java/com/billiontech/bookkeeping/controller/dto/JobResponse.java
+new file mode 100644
+index 0000000..c81f86c
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/controller/dto/JobResponse.java
+@@ -0,0 +1,31 @@
++package com.billiontech.bookkeeping.controller.dto;
++
++import com.billiontech.bookkeeping.entity.AgentJob;
++
++import java.time.OffsetDateTime;
++import java.util.UUID;
++
++public class JobResponse {
++
++    private UUID id;
++    private String status;
++    private String resultSummary;
++    private OffsetDateTime startedAt;
++    private OffsetDateTime completedAt;
++
++    public static JobResponse from(AgentJob job) {
++        JobResponse r = new JobResponse();
++        r.id = job.getId();
++        r.status = job.getStatus();
++        r.resultSummary = job.getResultSummary();
++        r.startedAt = job.getStartedAt();
++        r.completedAt = job.getCompletedAt();
++        return r;
++    }
++
++    public UUID getId() { return id; }
++    public String getStatus() { return status; }
++    public String getResultSummary() { return resultSummary; }
++    public OffsetDateTime getStartedAt() { return startedAt; }
++    public OffsetDateTime getCompletedAt() { return completedAt; }
++}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/controller/dto/SyncRequest.java b/backend/src/main/java/com/billiontech/bookkeeping/controller/dto/SyncRequest.java
+new file mode 100644
+index 0000000..915e5ae
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/controller/dto/SyncRequest.java
+@@ -0,0 +1,20 @@
++package com.billiontech.bookkeeping.controller.dto;
++
++import jakarta.validation.constraints.NotNull;
++
++import java.time.LocalDate;
++
++public class SyncRequest {
++
++    @NotNull
++    private LocalDate fromDate;
++
++    @NotNull
++    private LocalDate toDate;
++
++    public LocalDate getFromDate() { return fromDate; }
++    public void setFromDate(LocalDate fromDate) { this.fromDate = fromDate; }
++
++    public LocalDate getToDate() { return toDate; }
++    public void setToDate(LocalDate toDate) { this.toDate = toDate; }
++}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/controller/dto/SyncResponse.java b/backend/src/main/java/com/billiontech/bookkeeping/controller/dto/SyncResponse.java
+new file mode 100644
+index 0000000..5a998da
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/controller/dto/SyncResponse.java
+@@ -0,0 +1,15 @@
++package com.billiontech.bookkeeping.controller.dto;
++
++import java.util.UUID;
++
++public class SyncResponse {
++
++    private UUID jobId;
++
++    public SyncResponse(UUID jobId) {
++        this.jobId = jobId;
++    }
++
++    public UUID getJobId() { return jobId; }
++    public void setJobId(UUID jobId) { this.jobId = jobId; }
++}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/entity/AgentJob.java b/backend/src/main/java/com/billiontech/bookkeeping/entity/AgentJob.java
+new file mode 100644
+index 0000000..5c400f3
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/entity/AgentJob.java
+@@ -0,0 +1,73 @@
++package com.billiontech.bookkeeping.entity;
++
++import jakarta.persistence.Column;
++import jakarta.persistence.Entity;
++import jakarta.persistence.GeneratedValue;
++import jakarta.persistence.GenerationType;
++import jakarta.persistence.Id;
++import jakarta.persistence.JoinColumn;
++import jakarta.persistence.ManyToOne;
++import jakarta.persistence.Table;
++
++import java.time.OffsetDateTime;
++import java.util.UUID;
++
++@Entity
++@Table(name = "agent_jobs")
++public class AgentJob {
++
++    @Id
++    @GeneratedValue(strategy = GenerationType.UUID)
++    private UUID id;
++
++    @ManyToOne(optional = false)
++    @JoinColumn(name = "client_id", nullable = false)
++    private Client client;
++
++    @Column(name = "job_type", nullable = false, length = 100)
++    private String jobType;
++
++    @Column(length = 20)
++    private String status = "PENDING";
++
++    @Column(name = "retry_count")
++    private Integer retryCount = 0;
++
++    @Column(name = "started_at")
++    private OffsetDateTime startedAt;
++
++    @Column(name = "completed_at")
++    private OffsetDateTime completedAt;
++
++    @Column(name = "result_summary", columnDefinition = "TEXT")
++    private String resultSummary;
++
++    @Column(name = "created_at", insertable = false, updatable = false)
++    private OffsetDateTime createdAt;
++
++    public UUID getId() { return id; }
++    public void setId(UUID id) { this.id = id; }
++
++    public Client getClient() { return client; }
++    public void setClient(Client client) { this.client = client; }
++
++    public String getJobType() { return jobType; }
++    public void setJobType(String jobType) { this.jobType = jobType; }
++
++    public String getStatus() { return status; }
++    public void setStatus(String status) { this.status = status; }
++
++    public Integer getRetryCount() { return retryCount; }
++    public void setRetryCount(Integer retryCount) { this.retryCount = retryCount; }
++
++    public OffsetDateTime getStartedAt() { return startedAt; }
++    public void setStartedAt(OffsetDateTime startedAt) { this.startedAt = startedAt; }
++
++    public OffsetDateTime getCompletedAt() { return completedAt; }
++    public void setCompletedAt(OffsetDateTime completedAt) { this.completedAt = completedAt; }
++
++    public String getResultSummary() { return resultSummary; }
++    public void setResultSummary(String resultSummary) { this.resultSummary = resultSummary; }
++
++    public OffsetDateTime getCreatedAt() { return createdAt; }
++}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/entity/GlAccount.java b/backend/src/main/java/com/billiontech/bookkeeping/entity/GlAccount.java
+new file mode 100644
+index 0000000..768a45d
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/entity/GlAccount.java
+@@ -0,0 +1,64 @@
++package com.billiontech.bookkeeping.entity;
++
++import jakarta.persistence.Column;
++import jakarta.persistence.Entity;
++import jakarta.persistence.GeneratedValue;
++import jakarta.persistence.GenerationType;
++import jakarta.persistence.Id;
++import jakarta.persistence.JoinColumn;
++import jakarta.persistence.ManyToOne;
++import jakarta.persistence.Table;
++import jakarta.persistence.UniqueConstraint;
++
++import java.util.UUID;
++
++@Entity
++@Table(name = "gl_accounts", uniqueConstraints = {
++    @UniqueConstraint(columnNames = {"client_id", "qbo_account_id"})
++})
++public class GlAccount {
++
++    @Id
++    @GeneratedValue(strategy = GenerationType.UUID)
++    private UUID id;
++
++    @ManyToOne(optional = false)
++    @JoinColumn(name = "client_id", nullable = false)
++    private Client client;
++
++    @Column(name = "qbo_account_id", nullable = false, length = 100)
++    private String qboAccountId;
++
++    @Column(nullable = false)
++    private String name;
++
++    @Column(name = "account_type", length = 100)
++    private String accountType;
++
++    @Column(name = "account_sub_type", length = 100)
++    private String accountSubType;
++
++    @Column
++    private Boolean active = true;
++
++    public UUID getId() { return id; }
++    public void setId(UUID id) { this.id = id; }
++
++    public Client getClient() { return client; }
++    public void setClient(Client client) { this.client = client; }
++
++    public String getQboAccountId() { return qboAccountId; }
++    public void setQboAccountId(String qboAccountId) { this.qboAccountId = qboAccountId; }
++
++    public String getName() { return name; }
++    public void setName(String name) { this.name = name; }
++
++    public String getAccountType() { return accountType; }
++    public void setAccountType(String accountType) { this.accountType = accountType; }
++
++    public String getAccountSubType() { return accountSubType; }
++    public void setAccountSubType(String accountSubType) { this.accountSubType = accountSubType; }
++
++    public Boolean getActive() { return active; }
++    public void setActive(Boolean active) { this.active = active; }
++}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/entity/Transaction.java b/backend/src/main/java/com/billiontech/bookkeeping/entity/Transaction.java
+new file mode 100644
+index 0000000..4345a4d
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/entity/Transaction.java
+@@ -0,0 +1,114 @@
++package com.billiontech.bookkeeping.entity;
++
++import jakarta.persistence.Column;
++import jakarta.persistence.Entity;
++import jakarta.persistence.GeneratedValue;
++import jakarta.persistence.GenerationType;
++import jakarta.persistence.Id;
++import jakarta.persistence.JoinColumn;
++import jakarta.persistence.ManyToOne;
++import jakarta.persistence.Table;
++import jakarta.persistence.UniqueConstraint;
++
++import java.math.BigDecimal;
++import java.time.LocalDate;
++import java.time.OffsetDateTime;
++import java.util.UUID;
++
++@Entity
++@Table(name = "transactions", uniqueConstraints = {
++    @UniqueConstraint(columnNames = {"client_id", "qbo_txn_id"})
++})
++public class Transaction {
++
++    @Id
++    @GeneratedValue(strategy = GenerationType.UUID)
++    private UUID id;
++
++    @ManyToOne(optional = false)
++    @JoinColumn(name = "client_id", nullable = false)
++    private Client client;
++
++    @Column(name = "qbo_txn_id", length = 100)
++    private String qboTxnId;
++
++    @Column(name = "txn_date", nullable = false)
++    private LocalDate txnDate;
++
++    @Column(length = 30)
++    private String type;
++
++    @Column(nullable = false, precision = 15, scale = 2)
++    private BigDecimal amount;
++
++    @Column(name = "vendor_customer")
++    private String vendorCustomer;
++
++    @Column(columnDefinition = "TEXT")
++    private String description;
++
++    @Column(name = "gl_account_code", length = 100)
++    private String glAccountCode;
++
++    @Column(name = "gl_account_name")
++    private String glAccountName;
++
++    @Column(name = "tax_code", length = 50)
++    private String taxCode;
++
++    @Column(name = "coding_confidence", precision = 4, scale = 3)
++    private BigDecimal codingConfidence;
++
++    @Column(name = "coding_status", length = 20)
++    private String codingStatus;
++
++    @Column(name = "raw_payload", columnDefinition = "TEXT")
++    private String rawPayload;
++
++    @Column(name = "created_at", insertable = false, updatable = false)
++    private OffsetDateTime createdAt;
++
++    public UUID getId() { return id; }
++    public void setId(UUID id) { this.id = id; }
++
++    public Client getClient() { return client; }
++    public void setClient(Client client) { this.client = client; }
++
++    public String getQboTxnId() { return qboTxnId; }
++    public void setQboTxnId(String qboTxnId) { this.qboTxnId = qboTxnId; }
++
++    public LocalDate getTxnDate() { return txnDate; }
++    public void setTxnDate(LocalDate txnDate) { this.txnDate = txnDate; }
++
++    public String getType() { return type; }
++    public void setType(String type) { this.type = type; }
++
++    public BigDecimal getAmount() { return amount; }
++    public void setAmount(BigDecimal amount) { this.amount = amount; }
++
++    public String getVendorCustomer() { return vendorCustomer; }
++    public void setVendorCustomer(String vendorCustomer) { this.vendorCustomer = vendorCustomer; }
++
++    public String getDescription() { return description; }
++    public void setDescription(String description) { this.description = description; }
++
++    public String getGlAccountCode() { return glAccountCode; }
++    public void setGlAccountCode(String glAccountCode) { this.glAccountCode = glAccountCode; }
++
++    public String getGlAccountName() { return glAccountName; }
++    public void setGlAccountName(String glAccountName) { this.glAccountName = glAccountName; }
++
++    public String getTaxCode() { return taxCode; }
++    public void setTaxCode(String taxCode) { this.taxCode = taxCode; }
++
++    public BigDecimal getCodingConfidence() { return codingConfidence; }
++    public void setCodingConfidence(BigDecimal codingConfidence) { this.codingConfidence = codingConfidence; }
++
++    public String getCodingStatus() { return codingStatus; }
++    public void setCodingStatus(String codingStatus) { this.codingStatus = codingStatus; }
++
++    public String getRawPayload() { return rawPayload; }
++    public void setRawPayload(String rawPayload) { this.rawPayload = rawPayload; }
++
++    public OffsetDateTime getCreatedAt() { return createdAt; }
++}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/repository/AgentJobRepository.java b/backend/src/main/java/com/billiontech/bookkeeping/repository/AgentJobRepository.java
+new file mode 100644
+index 0000000..1c256ee
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/repository/AgentJobRepository.java
+@@ -0,0 +1,9 @@
++package com.billiontech.bookkeeping.repository;
++
++import com.billiontech.bookkeeping.entity.AgentJob;
++import org.springframework.data.jpa.repository.JpaRepository;
++
++import java.util.UUID;
++
++public interface AgentJobRepository extends JpaRepository<AgentJob, UUID> {
++}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/repository/GlAccountRepository.java b/backend/src/main/java/com/billiontech/bookkeeping/repository/GlAccountRepository.java
+new file mode 100644
+index 0000000..70120f3
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/repository/GlAccountRepository.java
+@@ -0,0 +1,12 @@
++package com.billiontech.bookkeeping.repository;
++
++import com.billiontech.bookkeeping.entity.GlAccount;
++import org.springframework.data.jpa.repository.JpaRepository;
++
++import java.util.Optional;
++import java.util.UUID;
++
++public interface GlAccountRepository extends JpaRepository<GlAccount, UUID> {
++
++    Optional<GlAccount> findByClientIdAndQboAccountId(UUID clientId, String qboAccountId);
++}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/repository/TransactionRepository.java b/backend/src/main/java/com/billiontech/bookkeeping/repository/TransactionRepository.java
+new file mode 100644
+index 0000000..8aaea24
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/repository/TransactionRepository.java
+@@ -0,0 +1,12 @@
++package com.billiontech.bookkeeping.repository;
++
++import com.billiontech.bookkeeping.entity.Transaction;
++import org.springframework.data.jpa.repository.JpaRepository;
++
++import java.util.Optional;
++import java.util.UUID;
++
++public interface TransactionRepository extends JpaRepository<Transaction, UUID> {
++
++    Optional<Transaction> findByClientIdAndQboTxnId(UUID clientId, String qboTxnId);
++}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/service/qbo/QboSyncService.java b/backend/src/main/java/com/billiontech/bookkeeping/service/qbo/QboSyncService.java
+new file mode 100644
+index 0000000..fc94b06
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/service/qbo/QboSyncService.java
+@@ -0,0 +1,256 @@
++package com.billiontech.bookkeeping.service.qbo;
++
++import com.billiontech.bookkeeping.entity.AgentJob;
++import com.billiontech.bookkeeping.entity.Client;
++import com.billiontech.bookkeeping.entity.GlAccount;
++import com.billiontech.bookkeeping.entity.Transaction;
++import com.billiontech.bookkeeping.repository.AgentJobRepository;
++import com.billiontech.bookkeeping.repository.ClientRepository;
++import com.billiontech.bookkeeping.repository.GlAccountRepository;
++import com.billiontech.bookkeeping.repository.TransactionRepository;
++import com.fasterxml.jackson.core.JsonProcessingException;
++import com.fasterxml.jackson.databind.ObjectMapper;
++import com.intuit.ipp.core.Context;
++import com.intuit.ipp.core.ServiceType;
++import com.intuit.ipp.data.Account;
++import com.intuit.ipp.data.Bill;
++import com.intuit.ipp.data.Invoice;
++import com.intuit.ipp.data.JournalEntry;
++import com.intuit.ipp.data.Payment;
++import com.intuit.ipp.data.Purchase;
++import com.intuit.ipp.data.ReferenceType;
++import com.intuit.ipp.exception.FMSException;
++import com.intuit.ipp.security.OAuth2Authorizer;
++import com.intuit.ipp.services.DataService;
++import com.intuit.ipp.services.QueryResult;
++import org.slf4j.Logger;
++import org.slf4j.LoggerFactory;
++import org.springframework.scheduling.annotation.Async;
++import org.springframework.stereotype.Service;
++import org.springframework.transaction.annotation.Transactional;
++
++import java.math.BigDecimal;
++import java.time.LocalDate;
++import java.time.OffsetDateTime;
++import java.time.ZoneId;
++import java.util.Date;
++import java.util.List;
++import java.util.UUID;
++
++@Service
++public class QboSyncService {
++
++    private static final Logger log = LoggerFactory.getLogger(QboSyncService.class);
++
++    private final QboTokenService qboTokenService;
++    private final ClientRepository clientRepository;
++    private final GlAccountRepository glAccountRepository;
++    private final TransactionRepository transactionRepository;
++    private final AgentJobRepository agentJobRepository;
++    private final ObjectMapper objectMapper;
++
++    public QboSyncService(QboTokenService qboTokenService,
++                          ClientRepository clientRepository,
++                          GlAccountRepository glAccountRepository,
++                          TransactionRepository transactionRepository,
++                          AgentJobRepository agentJobRepository,
++                          ObjectMapper objectMapper) {
++        this.qboTokenService = qboTokenService;
++        this.clientRepository = clientRepository;
++        this.glAccountRepository = glAccountRepository;
++        this.transactionRepository = transactionRepository;
++        this.agentJobRepository = agentJobRepository;
++        this.objectMapper = objectMapper;
++    }
++
++    @Transactional
++    public int syncChartOfAccounts(UUID clientId) throws FMSException {
++        Client client = clientRepository.findById(clientId)
++                .orElseThrow(() -> new QboOAuthService.QboException("Client not found: " + clientId));
++
++        DataService dataService = createDataService(clientId, client.getQboRealmId());
++        QueryResult result = dataService.executeQuery("SELECT * FROM Account WHERE Active = true");
++
++        @SuppressWarnings("unchecked")
++        List<Account> accounts = (List<Account>) result.getEntities();
++        int count = 0;
++
++        if (accounts != null) {
++            for (Account acct : accounts) {
++                GlAccount glAccount = glAccountRepository
++                        .findByClientIdAndQboAccountId(clientId, acct.getId())
++                        .orElseGet(() -> {
++                            GlAccount newAcct = new GlAccount();
++                            newAcct.setClient(client);
++                            newAcct.setQboAccountId(acct.getId());
++                            return newAcct;
++                        });
++
++                glAccount.setName(acct.getName());
++                glAccount.setAccountType(
++                        acct.getAccountType() != null ? acct.getAccountType().value() : null);
++                glAccount.setAccountSubType(acct.getAccountSubType());
++                glAccount.setActive(acct.isActive());
++                glAccountRepository.save(glAccount);
++                count++;
++            }
++        }
++
++        log.info("Synced {} chart of accounts for client={}", count, clientId);
++        return count;
++    }
++
++    @Transactional
++    public int syncTransactions(UUID clientId, LocalDate fromDate, LocalDate toDate)
++            throws FMSException {
++        Client client = clientRepository.findById(clientId)
++                .orElseThrow(() -> new QboOAuthService.QboException("Client not found: " + clientId));
++
++        DataService dataService = createDataService(clientId, client.getQboRealmId());
++        String dateRange = String.format("'%s' AND '%s'", fromDate, toDate);
++        int count = 0;
++
++        count += syncEntityType(dataService, client, "Bill", "BILL",
++                "SELECT * FROM Bill WHERE TxnDate >= " + dateRange);
++        count += syncEntityType(dataService, client, "Invoice", "INVOICE",
++                "SELECT * FROM Invoice WHERE TxnDate >= " + dateRange);
++        count += syncEntityType(dataService, client, "Payment", "PAYMENT",
++                "SELECT * FROM Payment WHERE TxnDate >= " + dateRange);
++        count += syncEntityType(dataService, client, "JournalEntry", "JOURNAL",
++                "SELECT * FROM JournalEntry WHERE TxnDate >= " + dateRange);
++        count += syncEntityType(dataService, client, "Purchase", "BANK_TXN",
++                "SELECT * FROM Purchase WHERE TxnDate >= " + dateRange);
++
++        log.info("Synced {} transactions for client={} ({} to {})", count, clientId, fromDate, toDate);
++        return count;
++    }
++
++    private int syncEntityType(DataService dataService, Client client,
++                               String entityName, String txnType, String query)
++            throws FMSException {
++        QueryResult result = dataService.executeQuery(query);
++        List<?> entities = result.getEntities();
++        if (entities == null) return 0;
++
++        int count = 0;
++        for (Object entity : entities) {
++            upsertTransaction(client, entity, txnType);
++            count++;
++        }
++        log.debug("Synced {} {} records for client={}", count, entityName, client.getId());
++        return count;
++    }
++
++    private void upsertTransaction(Client client, Object entity, String txnType) {
++        String qboId = extractId(entity);
++        BigDecimal totalAmt = extractTotalAmt(entity);
++        String vendorCustomer = extractVendorCustomer(entity, txnType);
++        String description = extractDescription(entity);
++        LocalDate txnDate = extractTxnDate(entity);
++        String rawPayload = serializeToJson(entity);
++
++        Transaction txn = transactionRepository
++                .findByClientIdAndQboTxnId(client.getId(), qboId)
++                .orElseGet(() -> {
++                    Transaction newTxn = new Transaction();
++                    newTxn.setClient(client);
++                    newTxn.setQboTxnId(qboId);
++                    return newTxn;
++                });
++
++        txn.setTxnDate(txnDate != null ? txnDate : LocalDate.now());
++        txn.setType(txnType);
++        txn.setAmount(totalAmt != null ? totalAmt : BigDecimal.ZERO);
++        txn.setVendorCustomer(vendorCustomer);
++        txn.setDescription(description);
++        txn.setRawPayload(rawPayload);
++
++        // Do NOT overwrite coding fields if already set
++        // (preserves manual overrides and AI-coded values)
++
++        transactionRepository.save(txn);
++    }
++
++    /** Runs sync asynchronously and updates the job record with progress. */
++    @Async
++    public void executeSyncJob(UUID jobId, UUID clientId, LocalDate fromDate, LocalDate toDate) {
++        AgentJob job = agentJobRepository.findById(jobId).orElse(null);
++        if (job == null) return;
++
++        job.setStatus("RUNNING");
++        job.setStartedAt(OffsetDateTime.now());
++        agentJobRepository.save(job);
++
++        try {
++            int accountCount = syncChartOfAccounts(clientId);
++            int txnCount = syncTransactions(clientId, fromDate, toDate);
++
++            job.setStatus("DONE");
++            job.setResultSummary(String.format(
++                    "{\"accountsSynced\":%d,\"transactionsSynced\":%d}", accountCount, txnCount));
++        } catch (Exception e) {
++            log.error("Sync job {} failed for client={}: {}", jobId, clientId, e.getMessage(), e);
++            job.setStatus("FAILED");
++            job.setResultSummary(String.format("{\"error\":\"%s\"}",
++                    e.getMessage().replace("\"", "\\\"").replace("\n", " ")));
++        } finally {
++            job.setCompletedAt(OffsetDateTime.now());
++            agentJobRepository.save(job);
++        }
++    }
++
++    private DataService createDataService(UUID clientId, String realmId) throws FMSException {
++        String accessToken = qboTokenService.getAccessToken(clientId);
++        OAuth2Authorizer authorizer = new OAuth2Authorizer(accessToken);
++        Context context = new Context(authorizer, ServiceType.QBO, realmId);
++        return new DataService(context);
++    }
++
++    private String extractId(Object entity) {
++        if (entity instanceof com.intuit.ipp.data.IntuitEntity ie) return ie.getId();
++        return null;
++    }
++
++    private BigDecimal extractTotalAmt(Object entity) {
++        if (entity instanceof Bill b) return b.getTotalAmt();
++        if (entity instanceof Invoice i) return i.getTotalAmt();
++        if (entity instanceof Payment p) return p.getTotalAmt();
++        if (entity instanceof JournalEntry j) return j.getTotalAmt();
++        if (entity instanceof Purchase pu) return pu.getTotalAmt();
++        return BigDecimal.ZERO;
++    }
++
++    private String extractVendorCustomer(Object entity, String txnType) {
++        ReferenceType ref = null;
++        if (entity instanceof Bill b) ref = b.getVendorRef();
++        else if (entity instanceof Invoice i) ref = i.getCustomerRef();
++        else if (entity instanceof Payment p) ref = p.getCustomerRef();
++        else if (entity instanceof Purchase pu) ref = pu.getEntityRef();
++        return ref != null ? ref.getName() : null;
++    }
++
++    private String extractDescription(Object entity) {
++        if (entity instanceof com.intuit.ipp.data.Transaction txn) {
++            if (txn.getPrivateNote() != null) return txn.getPrivateNote();
++            return txn.getDocNumber();
++        }
++        return null;
++    }
++
++    private LocalDate extractTxnDate(Object entity) {
++        if (entity instanceof com.intuit.ipp.data.Transaction txn && txn.getTxnDate() != null) {
++            Date date = txn.getTxnDate();
++            return date.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
++        }
++        return null;
++    }
++
++    private String serializeToJson(Object entity) {
++        try {
++            return objectMapper.writeValueAsString(entity);
++        } catch (JsonProcessingException e) {
++            log.warn("Failed to serialize QBO entity to JSON: {}", e.getMessage());
++            return "{}";
++        }
++    }
++}

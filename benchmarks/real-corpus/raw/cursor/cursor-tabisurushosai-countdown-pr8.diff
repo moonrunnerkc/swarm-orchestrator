@@ -1,0 +1,154 @@
+diff --git a/src/background.ts b/src/background.ts
+index 3f64794..6abbacd 100644
+--- a/src/background.ts
++++ b/src/background.ts
+@@ -1,7 +1,7 @@
+ import { updateChromeBadge } from './chromeBadge';
+ import { getDeadlines } from './storage/deadlineStorage';
+ 
+-async function refreshBadge() {
++async function refreshBadge(): Promise<void> {
+   const deadlines = await getDeadlines();
+   updateChromeBadge(deadlines);
+ }
+diff --git a/src/chromeBadge.ts b/src/chromeBadge.ts
+index f8a7c4c..52e1fd5 100644
+--- a/src/chromeBadge.ts
++++ b/src/chromeBadge.ts
+@@ -1,7 +1,7 @@
+ import { getBadgeState } from './core/deadlines';
+ import type { Deadline } from './types';
+ 
+-export function updateChromeBadge(deadlines: Deadline[]): void {
++export function updateChromeBadge(deadlines: readonly Deadline[]): void {
+   const badgeState = getBadgeState(deadlines);
+   chrome.action.setBadgeText({ text: badgeState.text });
+ 
+diff --git a/src/core/deadlines.ts b/src/core/deadlines.ts
+index cc5208d..4c16482 100644
+--- a/src/core/deadlines.ts
++++ b/src/core/deadlines.ts
+@@ -34,7 +34,7 @@ export function getDeadlineStatus(daysUntil: number): DeadlineStatus {
+   return { kind: 'remaining', days: daysUntil };
+ }
+ 
+-export function sortDeadlinesByDate(deadlines: Deadline[]): Deadline[] {
++export function sortDeadlinesByDate(deadlines: readonly Deadline[]): Deadline[] {
+   return [...deadlines].sort((a, b) => {
+     return new Date(a.date).getTime() - new Date(b.date).getTime();
+   });
+@@ -52,7 +52,7 @@ export function getNextDate(dateStr: string, repeat: Deadline['repeat']): string
+   return date.toISOString().slice(0, 10);
+ }
+ 
+-export function getBadgeState(deadlines: Deadline[], today = new Date()): BadgeState {
++export function getBadgeState(deadlines: readonly Deadline[], today = new Date()): BadgeState {
+   if (deadlines.length === 0) {
+     return { text: '' };
+   }
+diff --git a/src/popup.ts b/src/popup.ts
+index 5797197..bae918c 100644
+--- a/src/popup.ts
++++ b/src/popup.ts
+@@ -47,7 +47,7 @@ const trialStatus = getRequiredElement('trial-status', HTMLSpanElement);
+ const upgradeBtn = getRequiredElement('upgrade-btn', HTMLButtonElement);
+ const onboardingGuide = getRequiredElement('onboarding-guide', HTMLElement);
+ 
+-function initI18n() {
++function initI18n(): void {
+   document.documentElement.lang = chrome.i18n.getUILanguage().startsWith('ja') ? 'ja' : 'en';
+ 
+   const titleEl = document.getElementById('title');
+@@ -70,7 +70,7 @@ function initI18n() {
+   listContainer.replaceChildren(createStateMessage(chrome.i18n.getMessage('loadingState')));
+ }
+ 
+-function setHidden(element: HTMLElement, hidden: boolean) {
++function setHidden(element: HTMLElement, hidden: boolean): void {
+   element.classList.toggle('is-hidden', hidden);
+ }
+ 
+@@ -199,7 +199,7 @@ function createDeadlineItem(deadline: Deadline): HTMLDivElement {
+   return item;
+ }
+ 
+-function renderDeadlines(deadlines: Deadline[]) {
++function renderDeadlines(deadlines: readonly Deadline[]): void {
+   const sortedDeadlines = sortDeadlinesByDate(deadlines);
+ 
+   updateChromeBadge(sortedDeadlines);
+@@ -218,9 +218,9 @@ function renderDeadlines(deadlines: Deadline[]) {
+   });
+ }
+ 
+-async function checkPremium() {
++async function checkPremium(): Promise<void> {
+   const snapshot = await getCountdownSnapshot();
+-  const trialStart = snapshot.trialStartTs || await ensureTrialStart();
++  const trialStart = snapshot.trialStartTs || (await ensureTrialStart());
+ 
+   if (snapshot.isPremium) {
+     trialStatus.textContent = chrome.i18n.getMessage('premiumActive');
+diff --git a/src/storage/chromeLocalStorageAdapter.ts b/src/storage/chromeLocalStorageAdapter.ts
+index 8c390fa..cbe9f7f 100644
+--- a/src/storage/chromeLocalStorageAdapter.ts
++++ b/src/storage/chromeLocalStorageAdapter.ts
+@@ -1,14 +1,20 @@
+-import type { CountdownStorageAdapter, CountdownStorageValues } from './storageAdapter';
++import type {
++  CountdownStorageAdapter,
++  CountdownStorageKey,
++  CountdownStorageSelection,
++} from './storageAdapter';
+ 
+ export const chromeLocalStorageAdapter: CountdownStorageAdapter = {
+-  get(keys) {
++  get<const Key extends readonly CountdownStorageKey[]>(
++    keys: Key,
++  ): Promise<CountdownStorageSelection<Key>> {
+     return new Promise((resolve) => {
+       chrome.storage.local.get([...keys], (result) => {
+-        resolve(result as CountdownStorageValues);
++        resolve(result as CountdownStorageSelection<Key>);
+       });
+     });
+   },
+-  set(values) {
++  set(values): Promise<void> {
+     return new Promise((resolve) => {
+       chrome.storage.local.set(values, () => {
+         resolve();
+diff --git a/src/storage/storageAdapter.ts b/src/storage/storageAdapter.ts
+index 98bf572..2b6a552 100644
+--- a/src/storage/storageAdapter.ts
++++ b/src/storage/storageAdapter.ts
+@@ -4,18 +4,19 @@ export const DEADLINES_KEY = 'deadlines';
+ export const IS_PREMIUM_KEY = 'isPremium';
+ export const TRIAL_START_KEY = 'trial_start_ts';
+ 
+-export type CountdownStorageKey =
+-  | typeof DEADLINES_KEY
+-  | typeof IS_PREMIUM_KEY
+-  | typeof TRIAL_START_KEY;
+-
+-export interface CountdownStorageValues {
+-  deadlines?: Deadline[];
+-  isPremium?: boolean;
+-  trial_start_ts?: number;
++export interface CountdownStorageSchema {
++  [DEADLINES_KEY]: Deadline[];
++  [IS_PREMIUM_KEY]: boolean;
++  [TRIAL_START_KEY]: number;
+ }
+ 
++export type CountdownStorageKey = keyof CountdownStorageSchema;
++export type CountdownStorageValues = Partial<CountdownStorageSchema>;
++export type CountdownStorageSelection<Key extends readonly CountdownStorageKey[]> = Partial<
++  Pick<CountdownStorageSchema, Key[number]>
++>;
++
+ export interface CountdownStorageAdapter {
+-  get(keys: readonly CountdownStorageKey[]): Promise<CountdownStorageValues>;
++  get<const Key extends readonly CountdownStorageKey[]>(keys: Key): Promise<CountdownStorageSelection<Key>>;
+   set(values: CountdownStorageValues): Promise<void>;
+ }

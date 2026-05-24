@@ -1,0 +1,300 @@
+diff --git a/src/anthropic/lib/tools/__init__.py b/src/anthropic/lib/tools/__init__.py
+index b8593e118..f68fb714b 100644
+--- a/src/anthropic/lib/tools/__init__.py
++++ b/src/anthropic/lib/tools/__init__.py
+@@ -1,3 +1,4 @@
++from ._skills import normalize_skill_files
+ from ._beta_runner import BetaToolRunner, BetaAsyncToolRunner, BetaStreamingToolRunner, BetaAsyncStreamingToolRunner
+ from ._beta_functions import (
+     ToolError,
+@@ -26,4 +27,5 @@
+     "BetaAbstractMemoryTool",
+     "BetaAsyncAbstractMemoryTool",
+     "ToolError",
++    "normalize_skill_files",
+ ]
+diff --git a/src/anthropic/lib/tools/_skills.py b/src/anthropic/lib/tools/_skills.py
+index f706c8c5c..0da8aa9ab 100644
+--- a/src/anthropic/lib/tools/_skills.py
++++ b/src/anthropic/lib/tools/_skills.py
+@@ -8,12 +8,13 @@
+ from __future__ import annotations
+ 
+ import os
++import re
+ import shutil
+ import logging
+ import tarfile
+ import zipfile
+ import tempfile
+-from typing import TYPE_CHECKING
++from typing import TYPE_CHECKING, Sequence
+ from pathlib import Path, PurePosixPath
+ from functools import partial
+ 
+@@ -21,9 +22,131 @@
+ from anyio.to_thread import run_sync
+ 
+ if TYPE_CHECKING:
++    from ..._types import FileTypes
+     from ..._client import AsyncAnthropic
+ 
+-__all__ = ["download_session_skills"]
++__all__ = ["download_session_skills", "normalize_skill_files"]
++
++
++def _read_file_entry_content(content: object) -> bytes | None:
++    """Return the raw bytes of a FileContent value, or None if unreadable."""
++    if isinstance(content, bytes):
++        return content
++    if hasattr(content, "read"):
++        data = content.read()
++        if hasattr(content, "seek"):
++            content.seek(0)
++        return data if isinstance(data, bytes) else None
++    try:
++        return Path(content).read_bytes()  # type: ignore[arg-type]
++    except Exception:
++        return None
++
++
++def _parse_skill_name_from_frontmatter(skill_md: bytes) -> str:
++    """Extract the ``name:`` field from SKILL.md YAML frontmatter.
++
++    Raises :exc:`ValueError` if the frontmatter block is absent or contains no
++    ``name:`` key.
++    """
++    text = skill_md.decode("utf-8", errors="replace")
++    fm = re.search(r"^---\s*\n(.*?)\n---", text, re.DOTALL)
++    if fm:
++        name_match = re.search(r"^name:\s*(\S+)", fm.group(1), re.MULTILINE)
++        if name_match:
++            return name_match.group(1).strip()
++    raise ValueError("SKILL.md must contain a 'name:' field in its YAML frontmatter, e.g.:\n---\nname: my-skill\n---")
++
++
++def normalize_skill_files(files: Sequence["FileTypes"]) -> list["FileTypes"]:
++    """Normalize file paths for :meth:`~anthropic.resources.beta.Skills.create`.
++
++    The ``beta.skills.create()`` API requires every file path to be prefixed
++    with a top-level directory whose name exactly matches the ``name:`` field in
++    the ``SKILL.md`` frontmatter.  This helper reads that name from the supplied
++    ``SKILL.md`` entry and rewrites any path that is missing the prefix (or has
++    a wrong prefix) to ``<name>/<basename>``.
++
++    Usage::
++
++        skill_md = b"---\\nname: my-skill\\n---\\n\\nSkill content."
++        files = normalize_skill_files(
++            [
++                ("SKILL.md", skill_md, "text/markdown"),
++                ("scripts/tool.py", script_bytes, "text/plain"),
++            ]
++        )
++        # files is now:
++        # [
++        #   ("my-skill/SKILL.md",         skill_md,     "text/markdown"),
++        #   ("my-skill/scripts/tool.py",  script_bytes, "text/plain"),
++        # ]
++        client.beta.skills.create(files=files)
++
++    Args:
++        files: The sequence of file entries to normalize.  Each entry must be a
++            tuple whose first element is the file path string.
++
++    Returns:
++        A new list with every file path prefixed by the skill name.
++
++    Raises:
++        ValueError: If no ``SKILL.md`` entry is found, or if its frontmatter
++            does not contain a ``name:`` field.
++    """
++    # First pass: locate SKILL.md, extract the skill name, and determine the
++    # current top-level prefix being used (if any).
++    skill_name: str | None = None
++    skill_md_prefix: str = ""  # top-level dir of the SKILL.md entry, or ""
++    for entry in files:
++        if not isinstance(entry, tuple) or len(entry) < 2:
++            continue
++        filename = entry[0]
++        if not isinstance(filename, str):
++            continue
++        basename = filename.rsplit("/", 1)[-1]
++        if basename != "SKILL.md":
++            continue
++        content = _read_file_entry_content(entry[1])
++        if content is not None:
++            skill_name = _parse_skill_name_from_frontmatter(content)
++            # Record the top-level directory of this SKILL.md entry so we can
++            # strip it uniformly from all other file paths.
++            parts = filename.split("/", 1)
++            skill_md_prefix = parts[0] if len(parts) == 2 else ""
++            break
++
++    if skill_name is None:
++        raise ValueError(
++            "No readable SKILL.md entry found in the files list. "
++            "Each entry must be a tuple (path, content, ...) where path is a str."
++        )
++
++    # Second pass: rewrite paths so they are all under `{skill_name}/`.
++    #
++    # Strategy: strip the current wrong prefix (if any) from every path that
++    # carries it, then prepend `{skill_name}/`.  Paths that already start with
++    # `{skill_name}/` are left unchanged.
++    prefix = f"{skill_name}/"
++    result: list[FileTypes] = []
++    for entry in files:
++        if isinstance(entry, tuple) and entry and isinstance(entry[0], str):
++            path = entry[0]
++            if path.startswith(prefix):
++                # Already correctly prefixed — leave unchanged.
++                result.append(entry)
++            elif skill_md_prefix and path.startswith(f"{skill_md_prefix}/"):
++                # Strip the wrong top-level prefix, then add the correct one.
++                relative = path[len(skill_md_prefix) + 1 :]
++                result.append((prefix + relative,) + entry[1:])  # type: ignore[arg-type]
++            else:
++                # No top-level prefix at all (or an unrecognised one) — just
++                # prepend the skill name.
++                result.append((prefix + path,) + entry[1:])  # type: ignore[arg-type]
++        else:
++            result.append(entry)
++    return result
++
+ 
+ # Skill dirs hold downloaded, possibly third-party content — keep them
+ # owner-only rather than inheriting whatever the process umask happens to be.
+diff --git a/src/anthropic/resources/beta/skills/skills.py b/src/anthropic/resources/beta/skills/skills.py
+index b2241a6da..fd6ce8081 100644
+--- a/src/anthropic/resources/beta/skills/skills.py
++++ b/src/anthropic/resources/beta/skills/skills.py
+@@ -92,8 +92,18 @@ def create(
+ 
+           files: Files to upload for the skill.
+ 
+-              All files must be in the same top-level directory and must include a SKILL.md
+-              file at the root of that directory.
++              All files must be organized under a **single top-level directory
++              whose name exactly matches the ``name:`` field in the ``SKILL.md``
++              frontmatter**.  For example, if ``SKILL.md`` contains
++              ``name: my-skill``, every path must start with ``my-skill/``::
++
++                  files=[
++                      ("my-skill/SKILL.md",        skill_md_bytes, "text/markdown"),
++                      ("my-skill/scripts/tool.py", script_bytes,   "text/plain"),
++                  ]
++
++              Use :func:`anthropic.lib.tools.normalize_skill_files` to apply the
++              correct prefix automatically.
+ 
+           betas: Optional header to specify the beta version(s) you want to use.
+ 
+@@ -364,8 +374,18 @@ async def create(
+ 
+           files: Files to upload for the skill.
+ 
+-              All files must be in the same top-level directory and must include a SKILL.md
+-              file at the root of that directory.
++              All files must be organized under a **single top-level directory
++              whose name exactly matches the ``name:`` field in the ``SKILL.md``
++              frontmatter**.  For example, if ``SKILL.md`` contains
++              ``name: my-skill``, every path must start with ``my-skill/``::
++
++                  files=[
++                      ("my-skill/SKILL.md",        skill_md_bytes, "text/markdown"),
++                      ("my-skill/scripts/tool.py", script_bytes,   "text/plain"),
++                  ]
++
++              Use :func:`anthropic.lib.tools.normalize_skill_files` to apply the
++              correct prefix automatically.
+ 
+           betas: Optional header to specify the beta version(s) you want to use.
+ 
+diff --git a/tests/lib/tools/test_skills.py b/tests/lib/tools/test_skills.py
+index ad3f2e0d2..5f4c7b6cb 100644
+--- a/tests/lib/tools/test_skills.py
++++ b/tests/lib/tools/test_skills.py
+@@ -23,7 +23,7 @@
+ 
+ import pytest
+ 
+-from anthropic.lib.tools._skills import _strip_top, _archive_top_dir, _extract_skill_archive
++from anthropic.lib.tools._skills import _strip_top, _archive_top_dir, normalize_skill_files, _extract_skill_archive
+ 
+ 
+ def _make_zip(path: Path, entries: dict[str, bytes]) -> None:
+@@ -194,3 +194,73 @@ def test_extract_drops_setuid_setgid_sticky(make: ArchiveModeMaker, tmp_path: Pa
+     # A non-executable member with setuid set must also drop the bit.
+     assert doc & 0o7000 == 0
+     assert doc == 0o644
++
++
++# ---------------------------------------------------------------------------
++# normalize_skill_files
++# ---------------------------------------------------------------------------
++
++_SKILL_MD = b"---\nname: my-skill\ndescription: Test skill.\n---\n\nSkill content."
++
++
++def test_normalize_skill_files_adds_prefix_to_bare_names() -> None:
++    files = [
++        ("SKILL.md", _SKILL_MD, "text/markdown"),
++        ("scripts/tool.py", b"print(1)", "text/plain"),
++    ]
++    result = normalize_skill_files(files)
++    assert result[0][0] == "my-skill/SKILL.md"
++    assert result[1][0] == "my-skill/scripts/tool.py"
++
++
++def test_normalize_skill_files_replaces_wrong_prefix() -> None:
++    files = [
++        ("wrong-dir/SKILL.md", _SKILL_MD, "text/markdown"),
++        ("wrong-dir/scripts/tool.py", b"x", "text/plain"),
++    ]
++    result = normalize_skill_files(files)
++    assert result[0][0] == "my-skill/SKILL.md"
++    assert result[1][0] == "my-skill/scripts/tool.py"
++
++
++def test_normalize_skill_files_leaves_correct_prefix_unchanged() -> None:
++    files = [
++        ("my-skill/SKILL.md", _SKILL_MD, "text/markdown"),
++        ("my-skill/scripts/tool.py", b"x", "text/plain"),
++    ]
++    result = normalize_skill_files(files)
++    assert result[0][0] == "my-skill/SKILL.md"
++    assert result[1][0] == "my-skill/scripts/tool.py"
++
++
++def test_normalize_skill_files_preserves_extra_tuple_fields() -> None:
++    headers: dict[str, str] = {"X-Custom": "val"}
++    files = [
++        ("SKILL.md", _SKILL_MD, "text/markdown", headers),
++    ]
++    result = normalize_skill_files(files)
++    assert result[0] == ("my-skill/SKILL.md", _SKILL_MD, "text/markdown", headers)
++
++
++def test_normalize_skill_files_raises_without_skill_md() -> None:
++    files = [("other.py", b"x", "text/plain")]
++    with pytest.raises(ValueError, match="SKILL.md"):
++        normalize_skill_files(files)
++
++
++def test_normalize_skill_files_raises_on_missing_name_field() -> None:
++    no_name_md = b"---\ndescription: No name.\n---\n\ncontent."
++    files = [("SKILL.md", no_name_md, "text/markdown")]
++    with pytest.raises(ValueError, match="name"):
++        normalize_skill_files(files)
++
++
++def test_normalize_skill_files_accepts_bytes_io_content() -> None:
++    import io
++
++    skill_md_io = io.BytesIO(_SKILL_MD)
++    files = [("SKILL.md", skill_md_io, "text/markdown")]
++    result = normalize_skill_files(files)
++    assert result[0][0] == "my-skill/SKILL.md"
++    # BytesIO should be seeked back to the start after reading.
++    assert skill_md_io.read() == _SKILL_MD

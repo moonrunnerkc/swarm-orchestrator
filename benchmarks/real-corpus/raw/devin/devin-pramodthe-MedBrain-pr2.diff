@@ -1,0 +1,181 @@
+diff --git a/SETUP_SUMMARY.md b/SETUP_SUMMARY.md
+index 81e7431..56b73c1 100644
+--- a/SETUP_SUMMARY.md
++++ b/SETUP_SUMMARY.md
+@@ -15,17 +15,19 @@ context-graph/
+ │
+ ├── 🔌 Core Integrations
+ │   ├── neo4j_utils.py              # Neo4j connection & query layer
+-│   ├── langchain_agent.py          # LangChain ReAct agent with 4 tools
++│   ├── langchain_agent.py          # LangChain agent with memory tools
++│   ├── context_memory.py           # neo4j-agent-memory service wrapper
+ │   └── graph_utils.py              # Graph analysis & visualization
+ │
+ ├── 🛠️ Utilities & Data
+-│   ├── init_sample_data.py         # Initialize sample knowledge graph
++│   ├── init_sample_data.py         # Initialize sample knowledge graph (POLE+O)
++│   ├── init_healthcare_data.py     # Initialize healthcare-specific graph
+ │   ├── requirements.txt            # Python dependencies
+ │   └── .env.example                # Environment template
+ │
+ └── 📚 Documentation
+-    └── .claude/skills/
+-        └── create-context-graph.md # Project architecture & patterns
++    ├── QUICKSTART.md               # 5-minute setup guide
++    └── GEMINI_SETUP.md             # Google Gemini API configuration
+ ```
+ 
+ ## Core Components Explained
+@@ -65,19 +67,19 @@ stats = connector.get_graph_stats()            # Graph metrics
+ - Context manager support (`with` statements)
+ 
+ ### 3. **langchain_agent.py** (AI Agent)
+-LangChain ReAct agent with specialized Neo4j tools:
++LangChain agent backed by neo4j-agent-memory with memory tools:
+ 
+ ```python
+-# 4 Core Tools
+-- search_nodes()      # Find nodes by name/description
+-- get_relationships() # Explore node connections
+-- query_graph()       # Execute Cypher queries
+-- get_insights()      # Graph statistics
++# 3 Memory Tools
++- memory_search()          # Search all memory layers
++- memory_get_context()     # Get assembled context for a query
++- memory_search_entities() # Search extracted entities in long-term memory
+ ```
+ 
+ **Features:**
+-- OpenAI function calling for reliable tool selection
+-- Conversation memory for multi-turn interactions
++- Google Gemini function calling for reliable tool selection
++- Short-term, long-term, and reasoning trace memory layers
++- StreamingTraceRecorder for capturing agent reasoning
+ - Error handling and graceful degradation
+ 
+ ### 4. **graph_utils.py** (Analysis & Visualization)
+@@ -141,7 +143,7 @@ python init_sample_data.py
+ ### Prerequisites
+ - Python 3.8+
+ - Neo4j (Docker or standalone)
+-- OpenAI API key
++- Google Gemini API key
+ 
+ ### Installation (5 minutes)
+ 
+diff --git a/graph_utils.py b/graph_utils.py
+index 48e4d4a..27ffd50 100644
+--- a/graph_utils.py
++++ b/graph_utils.py
+@@ -18,9 +18,9 @@ def get_subgraph(self, node_name: str, hops: int = 1) -> Dict[str, Any]:
+         """Get a subgraph centered on a specific node with specified hops"""
+         cypher = """
+         MATCH p = (n {name: $name})-[*0..%d]-(m)
+-        RETURN DISTINCT
+-            collect(distinct n) as nodes,
+-            collect(distinct r) as relationships
++        WITH [n] + collect(DISTINCT m) AS nodes,
++             reduce(acc = [], rels IN collect(relationships(p)) | acc + rels) AS relationships
++        RETURN nodes, relationships
+         """ % (
+             hops
+         )
+diff --git a/init_sample_data.py b/init_sample_data.py
+index 6724570..fe17847 100644
+--- a/init_sample_data.py
++++ b/init_sample_data.py
+@@ -84,11 +84,8 @@ def create_sample_nodes(connector: Neo4jConnector):
+     # Create Person nodes
+     for person in persons:
+         cypher = """
+-        CREATE (p:Person {
+-            name: $name,
+-            description: $description,
+-            domain: $domain
+-        })
++        MERGE (p:Person {name: $name})
++        SET p.description = $description, p.domain = $domain
+         """
+         try:
+             connector.execute(cypher, person)
+@@ -99,11 +96,8 @@ def create_sample_nodes(connector: Neo4jConnector):
+     # Create Organization nodes
+     for org in organizations:
+         cypher = """
+-        CREATE (o:Organization {
+-            name: $name,
+-            description: $description,
+-            domain: $domain
+-        })
++        MERGE (o:Organization {name: $name})
++        SET o.description = $description, o.domain = $domain
+         """
+         try:
+             connector.execute(cypher, org)
+@@ -114,11 +108,8 @@ def create_sample_nodes(connector: Neo4jConnector):
+     # Create Location nodes
+     for loc in locations:
+         cypher = """
+-        CREATE (l:Location {
+-            name: $name,
+-            description: $description,
+-            domain: $domain
+-        })
++        MERGE (l:Location {name: $name})
++        SET l.description = $description, l.domain = $domain
+         """
+         try:
+             connector.execute(cypher, loc)
+@@ -129,11 +120,8 @@ def create_sample_nodes(connector: Neo4jConnector):
+     # Create Event nodes
+     for event in events:
+         cypher = """
+-        CREATE (e:Event {
+-            name: $name,
+-            description: $description,
+-            domain: $domain
+-        })
++        MERGE (e:Event {name: $name})
++        SET e.description = $description, e.domain = $domain
+         """
+         try:
+             connector.execute(cypher, event)
+@@ -144,11 +132,8 @@ def create_sample_nodes(connector: Neo4jConnector):
+     # Create Object nodes
+     for obj in objects:
+         cypher = """
+-        CREATE (obj:Object {
+-            name: $name,
+-            description: $description,
+-            domain: $domain
+-        })
++        MERGE (obj:Object {name: $name})
++        SET obj.description = $description, obj.domain = $domain
+         """
+         try:
+             connector.execute(cypher, obj)
+@@ -225,9 +210,10 @@ def create_sample_relationships(connector: Neo4jConnector):
+ 
+     for rel in relationships:
+         cypher = f"""
+-        MATCH (a {"{name: $source}"})
+-        MATCH (b {"{name: $target}"})
+-        CREATE (a)-[r:{rel['type']} {{description: $description}}]->(b)
++        MATCH (a {{name: $source}})
++        MATCH (b {{name: $target}})
++        MERGE (a)-[r:{rel['type']}]->(b)
++        SET r.description = $description
+         """
+         try:
+             connector.execute(cypher, {"source": rel["source"], "target": rel["target"], "description": rel["description"]})
+diff --git a/requirements.txt b/requirements.txt
+index c40b83b..ef3e077 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -1,5 +1,5 @@
+ streamlit>=1.28.0
+-langchain>=0.1.0
++langchain>=1.0.0
+ langchain-google-genai
+ google-generativeai
+ neo4j>=5.0.0

@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-webgrip-homelab-cluster-pr219",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 219,
+    "headSha": "60f8ddf68d0a551ab6d18d2b8b10327086d0e6b8",
+    "baseSha": "988c30760ef642a4c74d7af9cab0e21022c64cba",
+    "title": "chore(review): Automated dependency risk assessment for loki chart 16.0.1 → 17.1.1 (PR #217)",
+    "body": "Delivers the Renovate agent risk assessment for PR #217 upgrading the `ghcr.io/grafana-community/helm-charts/loki` OCI chart from 16.0.1 to 17.1.1.\n\n## Findings\n\n- **App version unchanged** — both chart versions ship Loki 3.7.2; this is a chart-only change\n- **Breaking change in 17.0.0 is a non-issue here** — MinIO sub-chart was deprecated/hard-blocked (`minio.enabled: true` now fails chart render), but this deployment already uses external S3 via `observability-s3` secret\n- **Verdict: Yellow / Merge after checks** — stateful workload, major chart bump, but no values migration needed for this config\n\n## Skipped versions covered\n\n| Version | Notable change |\n|---|---|\n| 16.1.0 | `ipFamilyPolicy`/`ipFamilies` on Service resources |\n| 16.1.1 | HPA/KEDA zone-suffix bug fix |\n| 17.0.0 | **[breaking]** MinIO deprecation enforced via chart validation |\n| 17.0.1 | access-log-exporter image bump |\n| 17.0.2 | Replica rendering fix when `replicas: null` |\n| 17.1.0 | Workload template helpers for scalable components |\n| 17.1.1 | Workload template helper for monolithic/SingleBinary (active mode in this repo) |\n\n## Pre-merge checks flagged\n\n- Confirm `minio.enabled` is not set anywhere in the config tree\n- Watch Flux HelmRelease reconciliation post-merge\n- Verify Longhorn PVC re-attaches on pod restart\n- Spot-check S3 read/write path via Grafana log queries",
+    "author": "Copilot",
+    "headRef": "copilot/review-dependency-update-217",
+    "repository": "webgrip/homelab-cluster"
+  },
+  "diffRef": {
+    "repository": "webgrip/homelab-cluster",
+    "headSha": "60f8ddf68d0a551ab6d18d2b8b10327086d0e6b8",
+    "baseSha": "988c30760ef642a4c74d7af9cab0e21022c64cba"
+  },
+  "vendoredDiffPath": "negatives/closed-without-merge/copilot-workspace/copilot-workspace-webgrip-homelab-cluster-pr219.diff",
+  "vendoredAt": "2026-05-24T04:28:39.424Z",
+  "collectedAt": "2026-05-24T04:28:39.424Z"
+}

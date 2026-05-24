@@ -1,0 +1,82 @@
+diff --git a/src/app.js b/src/app.js
+index 63cc73a..8df7f49 100644
+--- a/src/app.js
++++ b/src/app.js
+@@ -2,6 +2,7 @@ import { resultToMarkdown } from "./export/markdownExport.js";
+ 
+ const STORAGE_KEY = "build-or-kill:last-result";
+ const THEME_KEY = "build-or-kill:theme";
++const DRAFT_KEY = "build-or-kill:draft";
+ 
+ const form = document.querySelector("#idea-form");
+ const validationMessage = document.querySelector("#validation-message");
+@@ -21,7 +22,8 @@ const state = {
+   activeInput: null,
+   clarificationQuestions: [],
+   clarificationTimer: null,
+-  requestInFlight: false
++  requestInFlight: false,
++  draftTimer: null
+ };
+ 
+ const requiredFields = [
+@@ -250,6 +252,7 @@ async function submitAnalysis({ input, clarificationAnswers = [], mode = "initia
+     state.clarificationQuestions = [];
+     clarificationQuestions.innerHTML = "";
+     persistLastResult(payload, input);
++    clearDraft();
+     renderResult();
+     setStatus("result");
+   } catch (error) {
+@@ -268,6 +271,33 @@ function escapeHtml(value) {
+     .replaceAll("'", "&#039;");
+ }
+ 
++function saveDraft() {
++  clearTimeout(state.draftTimer);
++  state.draftTimer = setTimeout(() => {
++    const input = readInput();
++    localStorage.setItem(DRAFT_KEY, JSON.stringify(input));
++  }, 300);
++}
++
++function restoreDraft() {
++  const raw = localStorage.getItem(DRAFT_KEY);
++  if (!raw) return;
++  try {
++    const draft = JSON.parse(raw);
++    const fields = ["ideaName", "description", "audience", "problem", "notes"];
++    fields.forEach((name) => {
++      const el = form.elements[name];
++      if (el && draft[name]) el.value = draft[name];
++    });
++  } catch {
++    localStorage.removeItem(DRAFT_KEY);
++  }
++}
++
++function clearDraft() {
++  localStorage.removeItem(DRAFT_KEY);
++}
++
+ function initTheme() {
+   const saved = localStorage.getItem(THEME_KEY);
+   if (saved === "dark") {
+@@ -286,7 +316,10 @@ initTheme();
+ 
+ document.querySelector("#theme-toggle").addEventListener("click", toggleTheme);
+ 
+-form.addEventListener("input", markResultStaleIfNeeded);
++form.addEventListener("input", () => {
++  markResultStaleIfNeeded();
++  saveDraft();
++});
+ 
+ clarificationQuestions.addEventListener("input", scheduleClarificationSubmit);
+ 
+@@ -317,4 +350,5 @@ form.addEventListener("submit", async (event) => {
+   await submitAnalysis({ input });
+ });
+ 
++restoreDraft();
+ restoreLastResult();

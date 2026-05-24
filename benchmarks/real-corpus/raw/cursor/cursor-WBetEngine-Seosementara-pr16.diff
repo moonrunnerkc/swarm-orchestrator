@@ -1,0 +1,50 @@
+diff --git a/mini-pc/DEPLOY.md b/mini-pc/DEPLOY.md
+index e42f5f5..8c14474 100644
+--- a/mini-pc/DEPLOY.md
++++ b/mini-pc/DEPLOY.md
+@@ -79,6 +79,10 @@ C:\Seosementara\scripts\install-github-runner.ps1
+ 
+ Token runner: https://github.com/WBetEngine/Seosementara/settings/actions/runners/new
+ 
++Runner **v2.334+** tidak punya `install.cmd` — service dipasang lewat `config.cmd --runasservice`.
++Jika sudah config tanpa service, jalankan `C:\actions-runner\run.cmd` (biarkan window terbuka)
++atau config ulang dengan token baru + `--runasservice`.
++
+ ### B. Docker + cloudflared
+ 
+ Sudah terpasang (prasyarat).
+diff --git a/scripts/install-github-runner.ps1 b/scripts/install-github-runner.ps1
+index 5e43bf8..2724d64 100644
+--- a/scripts/install-github-runner.ps1
++++ b/scripts/install-github-runner.ps1
+@@ -6,7 +6,7 @@ $ver = "2.334.0"
+ 
+ function Ensure-RunnerFiles {
+   param([string]$Dir, [string]$Version)
+-  $need = @("config.cmd", "install.cmd", "run.cmd")
++  $need = @("config.cmd", "run.cmd")
+   $missing = $need | Where-Object { -not (Test-Path (Join-Path $Dir $_)) }
+   if ($missing.Count -eq 0) { return }
+ 
+@@ -32,14 +32,19 @@ function Ensure-RunnerFiles {
+ }
+ 
+ Write-Host "Registration token: $repoUrl/settings/actions/runners/new" -ForegroundColor Yellow
++Write-Host "Catatan: runner v2.334+ tidak punya install.cmd — pakai --runasservice saat config." -ForegroundColor Cyan
+ if (-not (Test-Path $runnerDir)) { New-Item -ItemType Directory -Path $runnerDir -Force | Out-Null }
+ Ensure-RunnerFiles -Dir $runnerDir -Version $ver
+ 
+ $regToken = Read-Host "Registration token"
+ Push-Location $runnerDir
+ try {
+-  & cmd /c "config.cmd --url $repoUrl --token $regToken --name mini-pc-seosementara --work _work --unattended --replace"
+-  & cmd /c install.cmd
++  & cmd /c "config.cmd --url $repoUrl --token $regToken --name mini-pc-seosementara --work _work --unattended --replace --runasservice"
++  if (-not (Test-Path ".\install.cmd")) {
++    Write-Host "Runner v2.334+: service dipasang lewat config --runasservice (tanpa install.cmd)." -ForegroundColor Cyan
++  } else {
++    & cmd /c install.cmd
++  }
+ } finally {
+   Pop-Location
+ }

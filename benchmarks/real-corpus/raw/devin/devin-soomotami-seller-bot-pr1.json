@@ -1,0 +1,26 @@
+{
+  "id": "devin-soomotami-seller-bot-pr1",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 1,
+    "headSha": "4ff7318d5b9a64609f3cb1abfb481faa0a929dfd",
+    "baseSha": "5bcc5a306850f47f8495b205764264f67af49f8b",
+    "title": "docs(devin): WB sandbox notes + WB-first proof plan (Pass 3 prep)",
+    "body": "## Summary\n\nAdds two planning docs and tightens the Pass 3 acceptance checklist, all WB-first, with no Paperclip and no Ozon scope.\n\n- `docs/devin/WB_SANDBOX_NOTES.md` — full inventory of the official WB sandbox (`*-sandbox.wildberries.ru`), token types (Personal / Service / Base / Test), per-surface coverage table from `https://dev.wildberries.ru/en/sandbox`, and the explicit list of categories that have **no** sandbox twin (notably `common-api`, which is the only place `/api/v1/seller-info` lives).\n- `docs/devin/WB_API_PROOF_PLAN.md` — proof plan for SellerNerve Pass 3:\n  - First WB surface: `GET https://common-api.wildberries.ru/ping` and `GET https://common-api.wildberries.ru/api/v1/seller-info` (both read-only, mutation-free, work with any token category).\n  - Three operating modes: **A** production read-only token (recommended), **B** Test scope token + sandbox host, **C** no secret available (negative-only live check + mocked fixtures for the positive path).\n  - Exact paste-ready `curl` commands and a `scripts/wb_probe.sh` skeleton that masks the token (`wb_****abcd`) and never echoes it.\n  - HTTP 401 error classification table mapping the WB `detail` strings (`empty Authorization header`, `token is malformed`, `token is expired`, `wrong scope`, etc.) to safe internal classes for the audit log.\n  - PASS/FAIL evidence template to paste into the final validation report (only WB `requestId`s, masked token reference, `sid` presence — no raw secrets).\n- `docs/devin/ACCEPTANCE_CHECKLIST.md` — Pass 3 checklist now lists sandbox documentation, surface choice, probe mode, request-id capture, and the explicit \"no production mutations\" constraint.\n\nDirect probe evidence captured while writing the docs (no real token used): production and sandbox hosts both return a consistent `401 {\"title\":\"unauthorized\",\"detail\":\"empty Authorization header\"|\"access token problem; token is malformed: ...\"}` envelope, which makes a deterministic invalid-token negative test possible without any secret.\n\nWB API surface used first: **`common-api.wildberries.ru`** (`/ping` and `/api/v1/seller-info`).\n\nValid/invalid token testing:\n- Invalid → live HTTP probe against `common-api.wildberries.ru/api/v1/seller-info` with no `Authorization` header and with `Authorization: x.y.z` — both deterministic 401s, no secret required.\n- Valid → same endpoint with the owner-supplied `WB_API_TOKEN` in `Authorization`; PASS requires HTTP 200 plus non-empty `sid`. Token is referenced in logs only via the `mask()` helper.\n\nSafe-without-mutation guarantee: only GET methods are issued; no orders, prices, cards, supplies, or campaigns are touched. Sandbox is reserved for later passes that need writes.\n\n## Review & Testing Checklist for Human\n\n- [ ] Confirm `docs/devin/WB_SANDBOX_NOTES.md` accurately describes the sandbox coverage you want SellerNerve to depend on (especially the \"no `common-api` sandbox\" caveat).\n- [ ] Confirm `common-api.wildberries.ru/api/v1/seller-info` is acceptable as the first production read-only surface, or pick an alternative.\n- [ ] Confirm the masking convention (`wb_****<last 4>`) is acceptable for logs and the eventual validation report.\n- [ ] When you provide a token, decide which mode (A production read-only / B Test scope sandbox / C no-secret) is right and tag it in the report.\n\n### Notes\n\n- No source code changes; docs and checklist only.\n- No real tokens, no real seller `sid`s, and no `.env` contents appear anywhere in the diff or the recorded probe evidence. All `requestId`s in the report template are placeholders.\n- WB dev portal is gated by an antibot challenge for non-browser clients; the docs were verified in a real Chromium session.\n- Confirmation: **Secrets were not exposed.**\n\n\nLink to Devin session: https://app.devin.ai/sessions/f653dc73d03542ea933535078dbe1d9b\nRequested by: @soomotami",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779575054-wb-sandbox-proof-plan",
+    "repository": "soomotami/seller-bot"
+  },
+  "diffRef": {
+    "repository": "soomotami/seller-bot",
+    "headSha": "4ff7318d5b9a64609f3cb1abfb481faa0a929dfd",
+    "baseSha": "5bcc5a306850f47f8495b205764264f67af49f8b"
+  },
+  "vendoredDiffPath": "devin/devin-soomotami-seller-bot-pr1.diff",
+  "vendoredAt": "2026-05-24T03:05:05.782Z",
+  "collectedAt": "2026-05-24T03:05:05.782Z"
+}

@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-opendatahub-io-odh-dashboard-pr7537",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "commit=claude-coauthor"
+  },
+  "pr": {
+    "number": 7537,
+    "headSha": "032fa9dc3187a6f0673e6b42e78f277e03612a3c",
+    "baseSha": "eca145b97f6d7006a5509e3e8ef95c2ba37c57b0",
+    "title": "RHOAIENG-62268: [AutoML]: While deploying a model S3 location auto selected has all the fields filled. When we change the location to and then revert it, fields become empty",
+    "body": "The model location dropdown onChange handler always created new ModelLocationData\nwith empty fieldValues when switching between options. This caused prefilled S3\nconnection data (from AutoML model metadata) to be lost when the user switched\nto \"Existing connection\" and then back to \"S3 object storage\".\n\nThe fix stores the initial prefilled model location data in a ref and restores it\nwhen the user switches back to the same connection type (S3, OCI, or URI),\npreserving the original fieldValues and additionalFields instead of overwriting\nthem with empty objects.\n\nCloses [RHOAIENG-62268](https://redhat.atlassian.net/browse/RHOAIENG-62268)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nSigned-off-by: Zahra Jalia <zjalia@redhat.com>\n\n<!-- This is an auto-generated comment: release notes by coderabbit.ai -->\n## Summary by CodeRabbit\n\n* **Bug Fixes**\n  * Preserve and restore user-entered model location data when switching between connection options in the deployment wizard; returning to a previously used option now restores prior field values and selections.\n* **Tests**\n  * Added component tests that verify restoration of prefilled S3 and connection-backed model location data when switching away and back.\n<!-- end of auto-generated comment: release notes by coderabbit.ai -->",
+    "author": "jira-autofix[bot]",
+    "headRef": "jira-autofix/RHOAIENG-62268",
+    "repository": "opendatahub-io/odh-dashboard"
+  },
+  "diffRef": {
+    "repository": "opendatahub-io/odh-dashboard",
+    "headSha": "032fa9dc3187a6f0673e6b42e78f277e03612a3c",
+    "baseSha": "eca145b97f6d7006a5509e3e8ef95c2ba37c57b0"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-opendatahub-io-odh-dashboard-pr7537.diff",
+  "vendoredAt": "2026-05-24T03:09:49.521Z",
+  "collectedAt": "2026-05-24T03:09:49.521Z"
+}

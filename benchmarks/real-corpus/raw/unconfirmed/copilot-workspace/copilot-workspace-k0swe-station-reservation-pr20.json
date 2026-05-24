@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-k0swe-station-reservation-pr20",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 20,
+    "headSha": "1789de75d12ecdd042e84dd1e220129ba6c56d33",
+    "baseSha": "de02a42279ce88dd456e0db21c67a2680d6886b3",
+    "title": "feat: resource access approvals - gate grid bookings, apply/approve/deny flow",
+    "body": "Members must be explicitly approved per-resource before they can book. Adds the full approval lifecycle: member applies, admin approves/denies, grid enforces access.\n\n## Backend\n\n- **Migration `20260524000002`**: Two new `SECURITY DEFINER` RPCs:\n  - `get_my_resource_approvals(p_club_id)` — caller's approval records for a club's resources\n  - `list_club_resource_access_requests(p_club_id)` — admin-only; all approval records enriched with resource name + user identity\n\n## Service (`club.service.ts`)\n\nNew interfaces: `Membership`, `ResourceAccessApproval`, `ResourceAccessRequest`\n\nNew methods: `getUserMembership`, `getMyResourceApprovals`, `applyForResourceAccess`, `listClubResourceAccessRequests`, `setResourceAccessStatus`\n\n## Reservation Grid\n\nAccepts `approvedResourceIds: Set<string>`. \"open\" buttons are only rendered for resources the user is approved for — unapproved columns are simply blank.\n\n## Club Detail Page\n\nInit now fetches membership + approvals in parallel alongside existing loads.\n\n- **Resources/Stations section**: each row shows contextual status — `Approved` badge, `Pending approval` badge, or an \"Apply for access\" button (only if membership is approved)\n- **Admin card (bottom)**: replaces the old inline Create Resource section with two `mat-card` panels:\n  1. Create Resource form\n  2. Resource Access Requests — lists all requests across all resources with Approve/Deny actions per row",
+    "author": "Copilot",
+    "headRef": "copilot/add-resource-approvals-feature",
+    "repository": "k0swe/station-reservation"
+  },
+  "diffRef": {
+    "repository": "k0swe/station-reservation",
+    "headSha": "1789de75d12ecdd042e84dd1e220129ba6c56d33",
+    "baseSha": "de02a42279ce88dd456e0db21c67a2680d6886b3"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-k0swe-station-reservation-pr20.diff",
+  "vendoredAt": "2026-05-24T03:05:22.881Z",
+  "collectedAt": "2026-05-24T03:05:22.881Z"
+}

@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-opendatahub-io-kserve-pr1503",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "commit=claude-coauthor"
+  },
+  "pr": {
+    "number": 1503,
+    "headSha": "608006fe76805dc87573fa1bff31c5b4e009390d",
+    "baseSha": "b9527dbbf0c108845e922732f5ec8e012e389861",
+    "title": "INFERENG-6968: KServe P/D entrypoint script only considers first NIC / HCA",
+    "body": "The RoCE entrypoint script in P/D config templates referenced the ucx_hcas\nbash array variable without an index or splat (${ucx_hcas}), which only\nexpands to the first element. This caused NVSHMEM_HCA_LIST and UCX_NET_DEVICES\nto contain only one HCA instead of all detected HCAs. Use the same\n$(IFS=,; echo \"${ucx_hcas[*]}\") pattern already used for NCCL_IB_HCA to\nproduce the full comma-separated list.\n\nCloses [INFERENG-6968](https://redhat.atlassian.net/browse/INFERENG-6968)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nSigned-off-by: David Whyte-Gray <dagray@redhat.com>\n\n<!-- This is an auto-generated comment: release notes by coderabbit.ai -->\n## Summary by CodeRabbit\n\n* **Bug Fixes**\n  * Ensure RoCE-related environment variables (NVSHMEM_HCA_LIST, UCX_NET_DEVICES) are derived as comma-separated lists from detected HCAs when auto-inferred, so inferred network device values are consistently formatted across templates, startup scripts, and install manifests.\n<!-- end of auto-generated comment: release notes by coderabbit.ai -->",
+    "author": "jira-autofix[bot]",
+    "headRef": "jira-autofix/INFERENG-6968",
+    "repository": "opendatahub-io/kserve"
+  },
+  "diffRef": {
+    "repository": "opendatahub-io/kserve",
+    "headSha": "608006fe76805dc87573fa1bff31c5b4e009390d",
+    "baseSha": "b9527dbbf0c108845e922732f5ec8e012e389861"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-opendatahub-io-kserve-pr1503.diff",
+  "vendoredAt": "2026-05-24T03:09:24.565Z",
+  "collectedAt": "2026-05-24T03:09:24.565Z"
+}

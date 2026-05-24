@@ -1,0 +1,110 @@
+diff --git a/lib/src/scrolling.dart b/lib/src/scrolling.dart
+index 061f832..4ec4300 100644
+--- a/lib/src/scrolling.dart
++++ b/lib/src/scrolling.dart
+@@ -21,9 +21,9 @@ class _SheetExtent {
+ 
+   double get sheetHeight => childHeight + headerHeight + footerHeight;
+ 
+-  double get additionalMinExtent => 0.0;
++  double get additionalMinExtent => isAtMin ? 0.0 : 0.1;
+ 
+-  double get additionalMaxExtent => 0.1;
++  double get additionalMaxExtent => isAtMax ? 0.0 : 0.1;
+ 
+   bool get isAtMax => currentExtent >= maxExtent;
+ 
+@@ -281,11 +281,9 @@ class _SlidingSheetScrollPosition extends ScrollPositionWithSingleContext {
+     // We need to provide some extra extent if we haven't yet reached the max or
+     // min extents. Otherwise, a list with fewer children than the extent of
+     // the available space will get stuck.
+-    final adjustedMin = minScrollExtent - extent.additionalMinExtent;
+-    final adjustedMax = maxScrollExtent + extent.additionalMaxExtent;
+     return super.applyContentDimensions(
+-      adjustedMin,
+-      math.max(adjustedMin, adjustedMax),
++      minScrollExtent - extent.additionalMinExtent,
++      maxScrollExtent + extent.additionalMaxExtent,
+     );
+   }
+ 
+@@ -463,9 +461,7 @@ class _SlidingSheetScrollPosition extends ScrollPositionWithSingleContext {
+       position: currentExtent,
+       velocity: velocity,
+       friction: friction,
+-      tolerance: scrollController.hasClients
+-          ? physics.toleranceFor(scrollController.position)
+-          : Tolerance.defaultTolerance,
++      tolerance: physics.toleranceFor(scrollController.position),
+     );
+ 
+     final ballisticController = AnimationController.unbounded(
+@@ -492,11 +488,9 @@ class _SlidingSheetScrollPosition extends ScrollPositionWithSingleContext {
+         // Make sure we pass along enough velocity to keep scrolling - otherwise
+         // we just "bounce" off the top making it look like the list doesn't
+         // have more to scroll.
+-        final tolerance = scrollController.hasClients
+-            ? physics.toleranceFor(scrollController.position)
+-            : Tolerance.defaultTolerance;
+         velocity = ballisticController.velocity +
+-            (tolerance.velocity * ballisticController.velocity.sign);
++            (physics.toleranceFor(scrollController.position).velocity *
++                ballisticController.velocity.sign);
+         super.goBallistic(shouldMakeSheetNonDismissable ? 0.0 : velocity);
+         ballisticController.stop();
+ 
+diff --git a/lib/src/sheet.dart b/lib/src/sheet.dart
+index 1b4aa47..2aea0b1 100644
+--- a/lib/src/sheet.dart
++++ b/lib/src/sheet.dart
+@@ -488,8 +488,6 @@ class _SlidingSheetState extends State<SlidingSheet>
+   SheetController? sheetController;
+   late _SlidingSheetScrollController controller;
+ 
+-  bool _measureScheduled = false;
+-
+   bool get isCustom => widget.customBuilder != null;
+ 
+   // Whether the sheet has drawn its first frame.
+@@ -657,12 +655,7 @@ class _SlidingSheetState extends State<SlidingSheet>
+ 
+   // Measure the height of all sheet components.
+   void _measure() {
+-    if (_measureScheduled) return;
+-    _measureScheduled = true;
+     postFrame(() {
+-      _measureScheduled = false;
+-      if (!mounted) return;
+-
+       final child = childKey.currentContext?.findRenderObject() as RenderBox?;
+       final header = headerKey.currentContext?.findRenderObject() as RenderBox?;
+       final footer = footerKey.currentContext?.findRenderObject() as RenderBox?;
+@@ -684,11 +677,10 @@ class _SlidingSheetState extends State<SlidingSheet>
+ 
+       isLaidOut = true;
+ 
+-      final childChanged = (childHeight - prevChildHeight).abs() > 0.5;
+-      final headerChanged = (headerHeight - prevHeaderHeight).abs() > 0.5;
+-      final footerChanged = (footerHeight - prevFooterHeight).abs() > 0.5;
+-
+-      if (childChanged || headerChanged || footerChanged) {
++      if (mounted &&
++          (childHeight != prevChildHeight ||
++              headerHeight != prevHeaderHeight ||
++              footerHeight != prevFooterHeight)) {
+         _updateSnappingsAndExtent(previousMaxExtent: previousMaxExtent);
+         setState(() {});
+       }
+diff --git a/lib/src/sheet_dialog.dart b/lib/src/sheet_dialog.dart
+index bfc7961..02c7cf6 100644
+--- a/lib/src/sheet_dialog.dart
++++ b/lib/src/sheet_dialog.dart
+@@ -94,7 +94,7 @@ Future<T?> showSlidingBottomSheet<T>(
+                 child: sheet,
+               );
+             }
+-            return sheet;
++            return Theme(data: theme, child: sheet);
+           },
+         );
+       },

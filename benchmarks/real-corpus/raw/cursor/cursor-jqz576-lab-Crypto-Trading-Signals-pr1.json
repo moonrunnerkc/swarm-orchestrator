@@ -1,0 +1,26 @@
+{
+  "id": "cursor-jqz576-lab-Crypto-Trading-Signals-pr1",
+  "agent": {
+    "vendor": "cursor",
+    "confidence": "medium",
+    "source": "branch=cursor/+body=cursor-session-url"
+  },
+  "pr": {
+    "number": 1,
+    "headSha": "666673b1a1223f5290af8733f3382908c91efae2",
+    "baseSha": "52fb5eedfc87042857aab15e1ed12f55c4c038f1",
+    "title": "Fix Tier1 monitor: replace stub with TradingView-aligned 21-strategy logic",
+    "body": "<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n## Summary\n\nReplaces the placeholder Tier1 monitor with TradingView-aligned logic for all 21 Minara Tier-1 strategies, plus **5-minute signal lifecycle** and **confirmed-position exit** monitoring.\n\n## Signal lifecycle (every 5m)\n\n- **New trigger** → Telegram “signal active” + hint `/confirm {id}`\n- **Still active** → silent (updates `last_seen_at`)\n- **Disappeared** → Telegram “signal ended”\n- **Re-trigger** after flat → new active alert\n\n## Confirmed positions\n\n- `/confirm 12` or `python3 scripts/tier1_monitor.py confirm 12 [price]`\n- Monitors strategy-specific exit rules (#1, #7, #8, #11, #12, #13) or default “signal no longer in direction”\n- **Close alert** on exit; `/close 12` for manual untrack\n\n## Ops\n\n```bash\n*/5 * * * * python3 scripts/tier1_monitor.py run\n# or: python3 scripts/tier1_monitor.py loop\n```\n\nTelegram: `/confirm`, `/close`, `/status` (polled each cycle when bot token is set).\n\n## Testing\n\n- `python3 -m py_compile scripts/tier1_monitor.py`\n- `python3 scripts/tier1_monitor.py run` — live Binance data-api\n<!-- CURSOR_AGENT_PR_BODY_END -->\n\n<div><a href=\"https://cursor.com/agents/bc-86931cca-e937-4cd5-846a-42461635b28a\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/background-agent?bcId=bc-86931cca-e937-4cd5-846a-42461635b28a\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-light.png\"><img alt=\"Open in Cursor\" width=\"131\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"></picture></a>&nbsp;</div>\n\n",
+    "author": "jqz576-lab",
+    "headRef": "cursor/fix-tier1-monitor-logic-b28a",
+    "repository": "jqz576-lab/Crypto-Trading-Signals"
+  },
+  "diffRef": {
+    "repository": "jqz576-lab/Crypto-Trading-Signals",
+    "headSha": "666673b1a1223f5290af8733f3382908c91efae2",
+    "baseSha": "52fb5eedfc87042857aab15e1ed12f55c4c038f1"
+  },
+  "vendoredDiffPath": "cursor/cursor-jqz576-lab-Crypto-Trading-Signals-pr1.diff",
+  "vendoredAt": "2026-05-24T03:11:22.923Z",
+  "collectedAt": "2026-05-24T03:11:22.923Z"
+}

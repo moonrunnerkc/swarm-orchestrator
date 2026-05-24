@@ -1,0 +1,64 @@
+diff --git a/.cursor/rules/template-hierarchy.mdc b/.cursor/rules/template-hierarchy.mdc
+index 1603296..4d82516 100644
+--- a/.cursor/rules/template-hierarchy.mdc
++++ b/.cursor/rules/template-hierarchy.mdc
+@@ -22,7 +22,7 @@ This repo is the **meta** cookiecutter (`cookiecutter-cookiecutter`). It bakes *
+ | Kind of change | Meta root | `{{cookiecutter.project_slug}}/` | Nested project dir |
+ |----------------|-----------|-----------------------------------|--------------------|
+ | `overcommit-signing.mdc` | Yes | Yes | Yes |
+-| `template-hierarchy.mdc` | Yes (this file) | Yes (tier-specific) | Yes (tier-specific) |
++| `template-hierarchy.mdc` | Yes (this file) | Yes (tier-specific) | No |
+ | `fix.sh`, `bin/git-*` hooks, `.githooks/post-checkout`, shared `.overcommit.yml` bootstrap | Yes | Yes | Yes |
+ | Boilerplate sync skills/docs | No — in baked child path | Yes | No |
+ | Language-specific hooks (RuboCop, etc.) | No | Yes | Maybe (framework-only → nested) |
+diff --git a/{{cookiecutter.project_slug}}/.cursor/rules/template-hierarchy.mdc b/{{cookiecutter.project_slug}}/.cursor/rules/template-hierarchy.mdc
+index b218ba4..60c04ec 100644
+--- a/{{cookiecutter.project_slug}}/.cursor/rules/template-hierarchy.mdc
++++ b/{{cookiecutter.project_slug}}/.cursor/rules/template-hierarchy.mdc
+@@ -15,7 +15,7 @@ Cookiecutter templates in this family stack **general → specific** (meta → l
+ | Kind of change | Meta ancestor | **This repo** | Nested `{% raw %}{{cookiecutter.project_slug}}/{% endraw %}` |
+ |----------------|---------------|---------------|----------------------------------------------------------------|
+ | `overcommit-signing.mdc` | Yes | Yes | Yes |
+-| `template-hierarchy.mdc` | Yes | Yes (this file) | Yes (project tier) |
++| `template-hierarchy.mdc` | Yes | Yes (this file) | No |
+ | `fix.sh`, `bin/git-*` hooks, `.githooks/post-checkout`, shared `.overcommit.yml` bootstrap | Yes | Yes | Yes |
+ | Boilerplate sync skill + `SYNCING_BOILERPLATE.md` | Baked path only | **Yes** | No |
+ | Language hooks (RuboCop, etc.) | No | **Yes** | Framework-only → nested |
+diff --git a/{{cookiecutter.project_slug}}/{% raw %}{{cookiecutter.project_slug}}{% endraw %}/.cursor/rules/template-hierarchy.mdc b/{{cookiecutter.project_slug}}/{% raw %}{{cookiecutter.project_slug}}{% endraw %}/.cursor/rules/template-hierarchy.mdc
+deleted file mode 100644
+index f82e761..0000000
+--- a/{{cookiecutter.project_slug}}/{% raw %}{{cookiecutter.project_slug}}{% endraw %}/.cursor/rules/template-hierarchy.mdc	
++++ /dev/null
+@@ -1,32 +0,0 @@
+----
+-description: >-
+-  Editing the project cookiecutter inside {{ cookiecutter.project_slug }} — what to
+-  port at this tier; never push specificity to ancestor templates
+-alwaysApply: false
+----
+-
+-# Template hierarchy (project)
+-
+-**This tree** is the **project** cookiecutter nested under `{{ cookiecutter.project_slug }}` ({{ cookiecutter.language_or_tool }}). Ancestors: meta cookiecutter → language/tool template. Descendants: none (end-user repos baked from here).
+-
+-| Direction | Rule |
+-|-----------|------|
+-| **Reference → this template** | Port only what belongs in **every** project this cookiecutter generates. |
+-| **Reference → ancestors** | Do **not** add language-wide or meta-only config here — belongs upstream. |
+-| **Ancestor → this template** | Pull agnostic improvements down; never push framework/app specifics **up**. |
+-
+-## At this level
+-
+-- If a reference repo is more specific than this template (e.g. Rails app vs Ruby repo), treat extra config as **out of scope** for this cookiecutter (or a different child template).
+-- Do **not** add cookiecutter-family sync skills, `SYNCING_BOILERPLATE.md`, or pytest bake tips unless this project template is Python-specific by design.
+-- From baked private apps: do **not** port reference `.overcommit.yml` Ruby hooks, Sorbet yamllint ignores, or `fix.sh` **`rugged`** (Ruby repos only, e.g. `cookiecutter-gem`) / `handlebars` / `mini_racer` / `chromedriver`. Agnostic `env.local` / `.envrc` ports are still fine when this tree has `config/env.1p`. Do not name private reference repos in public text.
+-
+-## Propagate across tiers (agent checklist)
+-
+-Cross-language boilerplate (`fix.sh`, `.overcommit.yml`, `.githooks/post-checkout`, `bin/git-*`, etc.) is mirrored at **meta root**, the language/tool template, and **this** nested project template. When editing one copy, check whether the same file exists upstream or downstream and keep all applicable tiers in sync. If unsure whether a change belongs here only or at every tier, **ask the user**. See ancestor `template-hierarchy.mdc` rules (meta and `{{ cookiecutter.project_slug }}/`).
+-
+-## Referenced paths must exist here
+-
+-When porting `.envrc`, Makefile paths, or hook `include`s — if the path does not exist in this tree, it likely belongs in an **ancestor** or a different template, not here.
+-
+-When unsure: **too specific for every baked project → do not add**; **too general to live only here → ancestor**.

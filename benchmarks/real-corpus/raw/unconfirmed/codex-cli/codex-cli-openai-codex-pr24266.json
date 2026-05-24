@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24266",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24266,
+    "headSha": "125552bd75f5cf32416e0a15a7e70dd2647dd96d",
+    "baseSha": "7d47056ea42636271ac020b86347fbbef49490aa",
+    "title": "TUI config cleanup: plugin mentions",
+    "body": "## Summary\n\nTUI plugin mention refresh still joined app-server plugin inventory with client-local plugin config, which can diverge once plugin state is owned by the app server.\n\nThis changes the TUI to mirror the GUI client: `plugin/list` is the autocomplete source, and mention candidates are plugin-level entries filtered to installed, enabled, and not disabled by admin. The TUI no longer reads local plugin config or calls `plugin/read` while refreshing plugin mention candidates.\n\n## API shape and limitations\n\nThe current app-server API does not expose effective per-session plugin capability summaries for mention autocomplete. As in the GUI, autocomplete now trusts `plugin/list` metadata rather than proving which plugin capabilities are loaded in the active session.\n\nThat avoids stale client-local reads and the cwd/remote detail gaps in `plugin/read`, but intentionally accepts the same list-level tradeoff as the app: if `plugin/list` reports a remote plugin before its local bundle is materialized, the plugin can still appear as a mention candidate.",
+    "author": "etraut-openai",
+    "headRef": "etraut/tui-plugin-mentions-app-server-read",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "125552bd75f5cf32416e0a15a7e70dd2647dd96d",
+    "baseSha": "7d47056ea42636271ac020b86347fbbef49490aa"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24266.diff",
+  "vendoredAt": "2026-05-24T03:20:33.675Z",
+  "collectedAt": "2026-05-24T03:20:33.675Z"
+}

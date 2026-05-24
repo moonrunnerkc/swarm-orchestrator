@@ -1,0 +1,26 @@
+{
+  "id": "devin-Alexendros-plantillas-pr2",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 2,
+    "headSha": "c88968ade5781fdca2de9d9e67f9a221e4c11c14",
+    "baseSha": "c7e24110a8bde1e6a72d2595e2e7f7f59ceaf6b1",
+    "title": "ci(workflows): overhaul CI/CD — DRY, fixes de seguridad y nueva automatización",
+    "body": "## Summary\n\nPR consolidado con el overhaul completo de CI/CD. Incluye los 3 segmentos originales:\n\n**Segmento 1 — fix(lint):**\n- Issue templates (4 archivos): Fix YAML syntax — indentación y valores con `:` sin comillas\n- Validadores (5 archivos): Fix 8 errores ruff — imports y variables sin usar\n- ruff.toml: Per-file-ignores para `validadores/base.py` (archivo protegido)\n- READMEs faltantes en `ejemplo_agente/tools/custom/` y subdirs de `ejemplo_dot_claude/`\n- requirements.txt: `pyyaml` como dependencia explícita\n\n**Segmento 2 — ci(workflows) DRY + refactor:**\n- `module-map.sh`: Script centralizado para mapeo módulo→validador→ejemplo (elimina ~80 líneas duplicadas)\n- `setup-validadores`: Composite action para setup DRY de Python + pyyaml\n- `ci-global.yml`: Excluir `.pre-commit-config.yaml` de yamllint, fix ruff scope, fix shellcheck subshell\n- `pr-guardian.yml`: Excepción inteligente para CHANGELOG.md, fix inyección de código\n- `validar-todos.yml`: Refactor con matrix dinámica basada en module-map\n- `security-scan.yml`: Eliminar `fetch-depth: 0` innecesario\n\n**Segmento 3 — ci(automation) nuevos workflows:**\n- `release.yml`: GitHub Releases automáticas por tag semver (ROADMAP 3.1.4)\n- `link-check.yml`: Detección semanal de enlaces rotos con lychee (ROADMAP 4.2.1)\n\n**Fix adicional (Devin Review):**\n- `release.yml`: Usar `env:` en vez de `${{ }}` inline para evitar inyección de código via tag names\n- `release.yml`: Usar `index()` en vez de regex para matching exacto de versiones en CHANGELOG\n\n## Review & Testing Checklist for Human\n\n- [ ] Verificar que los issue templates se renderizan correctamente en GitHub (Settings → Features → Issues)\n- [ ] Ejecutar `ruff check validadores/ */validar_*.py validar_repo.py` para confirmar 0 errores\n- [ ] Probar `release.yml` creando un tag test: `git tag v0.1.0-test && git push origin v0.1.0-test`\n- [ ] Verificar `link-check.yml` desde Actions → Link Check → Run workflow\n- [ ] Revisar que `module-map.sh` mapea correctamente los 10 módulos canónicos\n\n### Notes\n\n- **Tamaño del PR** ⚠️ — 817 líneas porque los 3 segmentos convergen aquí (PRs #5/#6 se mergearon en ramas PR, no directamente en main)\n- **Lint Shell/Markdown** ⚠️ — advisory (`continue-on-error: true`), errores pre-existentes en archivos protegidos (`auditoria-canon-repo.sh`, `install.sh`)\n- **24/27 checks ✅** — todos los bloqueantes pasan incluido Resumen CI Global y 10/10 validadores de módulos\n\nLink to Devin session: https://app.devin.ai/sessions/6f804378338444c38ab4b76356fc9482\nRequested by: @Alexendros",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779562363-fix-lint",
+    "repository": "Alexendros/plantillas"
+  },
+  "diffRef": {
+    "repository": "Alexendros/plantillas",
+    "headSha": "c88968ade5781fdca2de9d9e67f9a221e4c11c14",
+    "baseSha": "c7e24110a8bde1e6a72d2595e2e7f7f59ceaf6b1"
+  },
+  "vendoredDiffPath": "negatives/closed-without-merge/devin/devin-Alexendros-plantillas-pr2.diff",
+  "vendoredAt": "2026-05-24T04:27:39.821Z",
+  "collectedAt": "2026-05-24T04:27:39.821Z"
+}

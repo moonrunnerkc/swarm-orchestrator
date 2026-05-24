@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-J2WFFDev-CadreOS-pr111",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 111,
+    "headSha": "47092754d67e1f5ad137f9a014ab9944f147d049",
+    "baseSha": "86ff4ce3c71ade869af7f2d79d9ba794aeed7a1e",
+    "title": "Add Phase 15A practical user test suite and planning index entry",
+    "body": "Phase 15A requires a practical, persona-driven manual test suite to uncover workflow friction, authorization gaps, deployment issues, and data consistency problems across currently implemented CadreOS behavior only. This PR adds that suite and links it from the planning index so execution can be tracked and reviewed centrally.\n\n- **New Phase 15A test suite artifact**\n  - Added `planning/PHASE_15A_USER_TEST_CASE_SUITE.md`.\n  - Defines guardrails to prevent scope drift into deferred areas (messaging/notifications/feed/inbox/journal/AI/automation/offline/native mobile).\n  - Documents shared preconditions and supported workflow baseline to keep tests aligned with current implementation.\n\n- **Persona-based test matrix**\n  - Organizes cases by: organization admin, program director, coach, assistant coach, athlete, guardian/parent (visibility-context scope).\n  - Each case includes: test ID, persona, scenario, preconditions, steps, expected result, failure symptoms, priority, and module area.\n\n- **Required coverage blocks included**\n  - End-to-end operational flow chain (roster → roles → guardian visibility → event → attendance → note → follow-up task → dashboard/review → entry wrapper inspection).\n  - Negative/edge cases (missing guardian link, missing role assignment, unauthorized access attempts, empty roster, event with no attendance, unlinked note context, task without due date, stale/overdue task, missing entry wrapper link).\n  - Mobile/rapid-capture checks (small-screen usability, repeated attendance, quick note/task capture, navigation return-path continuity).\n  - Deployment smoke checks (deployment load, DB connectivity, Prisma client runtime, seed/demo data presence, key route stability).\n\n- **Execution governance**\n  - Adds a normalized status tracker model (`NOT TESTED`, `PASS`, `FAIL`, `BLOCKED`, `NEEDS RETEST`).\n  - Adds a structured defect logging template (title/module/persona/severity/repro/expected/actual/artifacts/suspected cause).\n  - Includes a concise “coverage + known gaps” summary to make deferred boundaries explicit.\n\n- **Planning index update**\n  - Updated `planning/README.md` to include and summarize the new Phase 15A suite in the phase listing.\n\n```md\n- [Phase 15A Practical User Test Case Suite](./PHASE_15A_USER_TEST_CASE_SUITE.md)\n  - Summary: provides a persona-based practical manual test suite for implemented CadreOS workflows...\n```",
+    "author": "Copilot",
+    "headRef": "copilot/create-user-test-case-suite",
+    "repository": "J2WFFDev/CadreOS"
+  },
+  "diffRef": {
+    "repository": "J2WFFDev/CadreOS",
+    "headSha": "47092754d67e1f5ad137f9a014ab9944f147d049",
+    "baseSha": "86ff4ce3c71ade869af7f2d79d9ba794aeed7a1e"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-J2WFFDev-CadreOS-pr111.diff",
+  "vendoredAt": "2026-05-24T03:35:48.400Z",
+  "collectedAt": "2026-05-24T03:35:48.400Z"
+}

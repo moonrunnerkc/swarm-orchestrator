@@ -1,0 +1,145 @@
+diff --git a/_locales/en/messages.json b/_locales/en/messages.json
+index c972e6d..368339f 100644
+--- a/_locales/en/messages.json
++++ b/_locales/en/messages.json
+@@ -8,6 +8,7 @@
+   "deadlineListLabel": { "message": "Deadline list" },
+   "premiumInfoLabel": { "message": "Premium information" },
+   "namePlaceholder": { "message": "Name" },
++  "onboardingGuide": { "message": "Add a name and date first, then the remaining days will appear here." },
+   "addButton": { "message": "Add" },
+   "deleteButton": { "message": "Delete" },
+   "deleteDeadlineButtonLabel": {
+@@ -39,6 +40,8 @@
+   "limitReached": { "message": "Free limit reached (max 5). Upgrade for unlimited!" },
+   "loadingState": { "message": "Loading..." },
+   "emptyState": { "message": "No deadlines yet" },
++  "emptyStateTitle": { "message": "No deadlines yet" },
++  "emptyStateBody": { "message": "Enter a name and date above to add your first deadline." },
+   "nextOccurrenceButtonTitle": { "message": "Move to the next occurrence" },
+   "nextOccurrenceButtonLabel": {
+   "message": "Move $NAME$ to the next occurrence",
+diff --git a/_locales/ja/messages.json b/_locales/ja/messages.json
+index 606217a..922a802 100644
+--- a/_locales/ja/messages.json
++++ b/_locales/ja/messages.json
+@@ -8,6 +8,7 @@
+   "deadlineListLabel": { "message": "締切一覧" },
+   "premiumInfoLabel": { "message": "Premium情報" },
+   "namePlaceholder": { "message": "名前" },
++  "onboardingGuide": { "message": "まず締切名と日付を入れて「追加」を押すと、残り日数が表示されます。" },
+   "addButton": { "message": "追加" },
+   "deleteButton": { "message": "削除" },
+   "deleteDeadlineButtonLabel": {
+@@ -39,6 +40,8 @@
+   "limitReached": { "message": "無料版の制限(5件)に達しました。無制限にするにはPremiumへ！" },
+   "loadingState": { "message": "読み込み中..." },
+   "emptyState": { "message": "締切はまだありません" },
++  "emptyStateTitle": { "message": "締切はまだありません" },
++  "emptyStateBody": { "message": "上の入力欄に名前と日付を入れて、最初の締切を追加しましょう。" },
+   "nextOccurrenceButtonTitle": { "message": "次の予定日に進める" },
+   "nextOccurrenceButtonLabel": {
+   "message": "$NAME$ を次の予定日に進める",
+diff --git a/popup.html b/popup.html
+index b55b228..ae824fa 100644
+--- a/popup.html
++++ b/popup.html
+@@ -8,6 +8,7 @@
+     <main class="app-shell">
+         <header class="app-header">
+             <h1 id="title">締切カウントダウン</h1>
++            <p id="onboarding-guide" class="onboarding-guide is-hidden">まず締切名と日付を入れて追加しましょう。</p>
+         </header>
+ 
+         <form id="input-form" class="deadline-form">
+diff --git a/src/popup.css b/src/popup.css
+index cba9b3e..fad7eb1 100644
+--- a/src/popup.css
++++ b/src/popup.css
+@@ -49,6 +49,12 @@ select {
+   padding-bottom: 2px;
+ }
+ 
++.onboarding-guide {
++  margin: 6px 0 0;
++  color: #526071;
++  line-height: 1.45;
++}
++
+ h1 {
+   margin: 0;
+   color: #101828;
+@@ -220,6 +226,15 @@ button:focus-visible {
+   text-align: center;
+ }
+ 
++.state-title {
++  color: #101828;
++  font-weight: 700;
++}
++
++.state-body {
++  margin: 6px 0 0;
++}
++
+ .premium-info {
+   display: flex;
+   gap: 8px;
+diff --git a/src/popup.ts b/src/popup.ts
+index 9b5e3af..5797197 100644
+--- a/src/popup.ts
++++ b/src/popup.ts
+@@ -45,6 +45,7 @@ const inputForm = getRequiredElement('input-form', HTMLFormElement);
+ const listContainer = getRequiredElement('deadline-list', HTMLElement);
+ const trialStatus = getRequiredElement('trial-status', HTMLSpanElement);
+ const upgradeBtn = getRequiredElement('upgrade-btn', HTMLButtonElement);
++const onboardingGuide = getRequiredElement('onboarding-guide', HTMLElement);
+ 
+ function initI18n() {
+   document.documentElement.lang = chrome.i18n.getUILanguage().startsWith('ja') ? 'ja' : 'en';
+@@ -57,6 +58,7 @@ function initI18n() {
+   setTextById('deadline-list-title', chrome.i18n.getMessage('deadlineListLabel'));
+   setTextById('premium-info-title', chrome.i18n.getMessage('premiumInfoLabel'));
+   nameInput.placeholder = chrome.i18n.getMessage('namePlaceholder');
++  onboardingGuide.textContent = chrome.i18n.getMessage('onboardingGuide');
+   addBtn.textContent = chrome.i18n.getMessage('addButton');
+ 
+   setTextById('repeat-none', chrome.i18n.getMessage('repeatNone'));
+@@ -80,6 +82,24 @@ function createStateMessage(message: string): HTMLDivElement {
+   return state;
+ }
+ 
++function createEmptyStateMessage(): HTMLDivElement {
++  const state = document.createElement('div');
++  state.className = 'state-message empty-state';
++  state.setAttribute('role', 'status');
++
++  const title = document.createElement('div');
++  title.className = 'state-title';
++  title.textContent = chrome.i18n.getMessage('emptyStateTitle');
++  state.appendChild(title);
++
++  const body = document.createElement('p');
++  body.className = 'state-body';
++  body.textContent = chrome.i18n.getMessage('emptyStateBody');
++  state.appendChild(body);
++
++  return state;
++}
++
+ function formatDeadlineStatus(status: DeadlineStatus): string {
+   if (status.kind === 'overdue') {
+     return chrome.i18n.getMessage('statusOverdue');
+@@ -184,10 +204,11 @@ function renderDeadlines(deadlines: Deadline[]) {
+ 
+   updateChromeBadge(sortedDeadlines);
+   listContainer.replaceChildren();
++  setHidden(onboardingGuide, sortedDeadlines.length !== 0);
+ 
+   if (sortedDeadlines.length === 0) {
+     listContainer.removeAttribute('role');
+-    listContainer.appendChild(createStateMessage(chrome.i18n.getMessage('emptyState')));
++    listContainer.appendChild(createEmptyStateMessage());
+     return;
+   }
+ 

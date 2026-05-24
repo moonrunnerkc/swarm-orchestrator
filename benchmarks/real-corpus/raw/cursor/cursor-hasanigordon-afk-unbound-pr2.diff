@@ -1,0 +1,2122 @@
+diff --git a/base44/entities/AIRecommendations.jsonc b/base44/entities/AIRecommendations.jsonc
+new file mode 100644
+index 0000000..d437a7d
+--- /dev/null
++++ b/base44/entities/AIRecommendations.jsonc
+@@ -0,0 +1,48 @@
++{
++  "name": "AIRecommendations",
++  "type": "object",
++  "properties": {
++    "user_id": {
++      "type": "string"
++    },
++    "source": {
++      "type": "string",
++      "enum": [
++        "SEE",
++        "AskAI",
++        "risk_engine",
++        "resource_map"
++      ],
++      "default": "SEE"
++    },
++    "prompt": {
++      "type": "string"
++    },
++    "recommendation": {
++      "type": "string"
++    },
++    "confidence": {
++      "type": "number"
++    },
++    "actions": {
++      "type": "array",
++      "items": {
++        "type": "object"
++      }
++    },
++    "status": {
++      "type": "string",
++      "enum": [
++        "suggested",
++        "accepted",
++        "dismissed",
++        "completed"
++      ],
++      "default": "suggested"
++    }
++  },
++  "required": [
++    "user_id",
++    "recommendation"
++  ]
++}
+diff --git a/base44/entities/AhHaMoments.jsonc b/base44/entities/AhHaMoments.jsonc
+new file mode 100644
+index 0000000..7b57cf6
+--- /dev/null
++++ b/base44/entities/AhHaMoments.jsonc
+@@ -0,0 +1,56 @@
++{
++  "name": "AhHaMoments",
++  "type": "object",
++  "properties": {
++    "user_id": {
++      "type": "string"
++    },
++    "display_name": {
++      "type": "string"
++    },
++    "media_type": {
++      "type": "string",
++      "enum": [
++        "text",
++        "audio",
++        "video"
++      ],
++      "default": "text"
++    },
++    "body": {
++      "type": "string"
++    },
++    "media_url": {
++      "type": "string"
++    },
++    "anonymous": {
++      "type": "boolean",
++      "default": false
++    },
++    "visibility": {
++      "type": "string",
++      "enum": [
++        "private",
++        "first_name",
++        "anonymous_public"
++      ],
++      "default": "private"
++    },
++    "moderation_status": {
++      "type": "string",
++      "enum": [
++        "draft",
++        "pending",
++        "approved",
++        "rejected"
++      ],
++      "default": "draft"
++    },
++    "supportive_reactions": {
++      "type": "object"
++    }
++  },
++  "required": [
++    "user_id"
++  ]
++}
+diff --git a/base44/entities/AudioLibrary.jsonc b/base44/entities/AudioLibrary.jsonc
+new file mode 100644
+index 0000000..024bea6
+--- /dev/null
++++ b/base44/entities/AudioLibrary.jsonc
+@@ -0,0 +1,45 @@
++{
++  "name": "AudioLibrary",
++  "type": "object",
++  "properties": {
++    "title": {
++      "type": "string"
++    },
++    "category": {
++      "type": "string",
++      "enum": [
++        "NA audio",
++        "AA speakers",
++        "motivation",
++        "meditation",
++        "calming frequencies",
++        "binaural beats",
++        "success stories",
++        "podcasts"
++      ]
++    },
++    "duration_seconds": {
++      "type": "number"
++    },
++    "audio_url": {
++      "type": "string"
++    },
++    "speaker": {
++      "type": "string"
++    },
++    "mood_tags": {
++      "type": "array",
++      "items": {
++        "type": "string"
++      }
++    },
++    "is_featured": {
++      "type": "boolean",
++      "default": false
++    }
++  },
++  "required": [
++    "title",
++    "category"
++  ]
++}
+diff --git a/base44/entities/CheckIns.jsonc b/base44/entities/CheckIns.jsonc
+new file mode 100644
+index 0000000..9927356
+--- /dev/null
++++ b/base44/entities/CheckIns.jsonc
+@@ -0,0 +1,44 @@
++{
++  "name": "CheckIns",
++  "type": "object",
++  "properties": {
++    "user_id": {
++      "type": "string"
++    },
++    "check_in_date": {
++      "type": "string",
++      "format": "date"
++    },
++    "mood": {
++      "type": "number"
++    },
++    "stress": {
++      "type": "number"
++    },
++    "energy": {
++      "type": "number"
++    },
++    "meetings_attended": {
++      "type": "number"
++    },
++    "cravings": {
++      "type": "number"
++    },
++    "sleep_hours": {
++      "type": "number"
++    },
++    "notes": {
++      "type": "string"
++    },
++    "engagement_score": {
++      "type": "number"
++    },
++    "risk_indicator": {
++      "type": "string"
++    }
++  },
++  "required": [
++    "user_id",
++    "check_in_date"
++  ]
++}
+diff --git a/base44/entities/Facilities.jsonc b/base44/entities/Facilities.jsonc
+new file mode 100644
+index 0000000..99664e5
+--- /dev/null
++++ b/base44/entities/Facilities.jsonc
+@@ -0,0 +1,31 @@
++{
++  "name": "Facilities",
++  "type": "object",
++  "properties": {
++    "name": {
++      "type": "string"
++    },
++    "facility_type": {
++      "type": "string"
++    },
++    "address": {
++      "type": "string"
++    },
++    "phone": {
++      "type": "string"
++    },
++    "admin_user_id": {
++      "type": "string"
++    },
++    "active_clients": {
++      "type": "number",
++      "default": 0
++    },
++    "discharge_readiness_score": {
++      "type": "number"
++    }
++  },
++  "required": [
++    "name"
++  ]
++}
+diff --git a/base44/entities/Goals.jsonc b/base44/entities/Goals.jsonc
+new file mode 100644
+index 0000000..65d4ec2
+--- /dev/null
++++ b/base44/entities/Goals.jsonc
+@@ -0,0 +1,42 @@
++{
++  "name": "Goals",
++  "type": "object",
++  "properties": {
++    "user_id": {
++      "type": "string"
++    },
++    "title": {
++      "type": "string"
++    },
++    "category": {
++      "type": "string"
++    },
++    "priority": {
++      "type": "number"
++    },
++    "status": {
++      "type": "string",
++      "enum": [
++        "active",
++        "paused",
++        "completed"
++      ],
++      "default": "active"
++    },
++    "progress": {
++      "type": "number",
++      "default": 0
++    },
++    "target_date": {
++      "type": "string",
++      "format": "date"
++    },
++    "is_non_negotiable": {
++      "type": "boolean",
++      "default": false
++    }
++  },
++  "required": [
++    "title"
++  ]
++}
+diff --git a/base44/entities/Meetings.jsonc b/base44/entities/Meetings.jsonc
+new file mode 100644
+index 0000000..da45612
+--- /dev/null
++++ b/base44/entities/Meetings.jsonc
+@@ -0,0 +1,36 @@
++{
++  "name": "Meetings",
++  "type": "object",
++  "properties": {
++    "name": {
++      "type": "string"
++    },
++    "meeting_type": {
++      "type": "string"
++    },
++    "day": {
++      "type": "string"
++    },
++    "time": {
++      "type": "string"
++    },
++    "location": {
++      "type": "string"
++    },
++    "virtual_link": {
++      "type": "string"
++    },
++    "distance": {
++      "type": "string"
++    },
++    "saved_by": {
++      "type": "array",
++      "items": {
++        "type": "string"
++      }
++    }
++  },
++  "required": [
++    "name"
++  ]
++}
+diff --git a/base44/entities/Milestones.jsonc b/base44/entities/Milestones.jsonc
+new file mode 100644
+index 0000000..9f21f1f
+--- /dev/null
++++ b/base44/entities/Milestones.jsonc
+@@ -0,0 +1,34 @@
++{
++  "name": "Milestones",
++  "type": "object",
++  "properties": {
++    "user_id": {
++      "type": "string"
++    },
++    "title": {
++      "type": "string"
++    },
++    "category": {
++      "type": "string"
++    },
++    "achieved_at": {
++      "type": "string"
++    },
++    "visibility": {
++      "type": "string",
++      "enum": [
++        "private",
++        "support_circle",
++        "public"
++      ],
++      "default": "private"
++    },
++    "badge_icon": {
++      "type": "string"
++    }
++  },
++  "required": [
++    "user_id",
++    "title"
++  ]
++}
+diff --git a/base44/entities/Notifications.jsonc b/base44/entities/Notifications.jsonc
+new file mode 100644
+index 0000000..a226270
+--- /dev/null
++++ b/base44/entities/Notifications.jsonc
+@@ -0,0 +1,42 @@
++{
++  "name": "Notifications",
++  "type": "object",
++  "properties": {
++    "user_id": {
++      "type": "string"
++    },
++    "title": {
++      "type": "string"
++    },
++    "message": {
++      "type": "string"
++    },
++    "notification_type": {
++      "type": "string"
++    },
++    "scheduled_at": {
++      "type": "string"
++    },
++    "recurrence": {
++      "type": "string"
++    },
++    "delivery_method": {
++      "type": "string",
++      "enum": [
++        "in_app",
++        "push",
++        "sms",
++        "email"
++      ],
++      "default": "in_app"
++    },
++    "read": {
++      "type": "boolean",
++      "default": false
++    }
++  },
++  "required": [
++    "user_id",
++    "title"
++  ]
++}
+diff --git a/base44/entities/Resources.jsonc b/base44/entities/Resources.jsonc
+new file mode 100644
+index 0000000..137ef94
+--- /dev/null
++++ b/base44/entities/Resources.jsonc
+@@ -0,0 +1,41 @@
++{
++  "name": "Resources",
++  "type": "object",
++  "properties": {
++    "name": {
++      "type": "string"
++    },
++    "category": {
++      "type": "string"
++    },
++    "address": {
++      "type": "string"
++    },
++    "phone": {
++      "type": "string"
++    },
++    "website": {
++      "type": "string"
++    },
++    "distance": {
++      "type": "string"
++    },
++    "latitude": {
++      "type": "number"
++    },
++    "longitude": {
++      "type": "number"
++    },
++    "eligibility": {
++      "type": "string"
++    },
++    "saved_count": {
++      "type": "number",
++      "default": 0
++    }
++  },
++  "required": [
++    "name",
++    "category"
++  ]
++}
+diff --git a/base44/entities/RiskScores.jsonc b/base44/entities/RiskScores.jsonc
+new file mode 100644
+index 0000000..01492c8
+--- /dev/null
++++ b/base44/entities/RiskScores.jsonc
+@@ -0,0 +1,45 @@
++{
++  "name": "RiskScores",
++  "type": "object",
++  "properties": {
++    "user_id": {
++      "type": "string"
++    },
++    "score_date": {
++      "type": "string",
++      "format": "date"
++    },
++    "risk_level": {
++      "type": "string",
++      "enum": [
++        "low",
++        "moderate",
++        "high",
++        "urgent"
++      ],
++      "default": "low"
++    },
++    "engagement_score": {
++      "type": "number"
++    },
++    "consistency_score": {
++      "type": "number"
++    },
++    "risk_indicators": {
++      "type": "array",
++      "items": {
++        "type": "string"
++      }
++    },
++    "recommended_actions": {
++      "type": "array",
++      "items": {
++        "type": "string"
++      }
++    }
++  },
++  "required": [
++    "user_id",
++    "score_date"
++  ]
++}
+diff --git a/base44/entities/Roadmaps.jsonc b/base44/entities/Roadmaps.jsonc
+new file mode 100644
+index 0000000..decd0ae
+--- /dev/null
++++ b/base44/entities/Roadmaps.jsonc
+@@ -0,0 +1,38 @@
++{
++  "name": "Roadmaps",
++  "type": "object",
++  "properties": {
++    "user_id": {
++      "type": "string"
++    },
++    "phase": {
++      "type": "string"
++    },
++    "label": {
++      "type": "string"
++    },
++    "start_day": {
++      "type": "number"
++    },
++    "end_day": {
++      "type": "number"
++    },
++    "progress": {
++      "type": "number",
++      "default": 0
++    },
++    "milestones": {
++      "type": "array",
++      "items": {
++        "type": "string"
++      }
++    },
++    "vision_statement": {
++      "type": "string"
++    }
++  },
++  "required": [
++    "user_id",
++    "phase"
++  ]
++}
+diff --git a/base44/entities/SupportContacts.jsonc b/base44/entities/SupportContacts.jsonc
+new file mode 100644
+index 0000000..0bd1020
+--- /dev/null
++++ b/base44/entities/SupportContacts.jsonc
+@@ -0,0 +1,42 @@
++{
++  "name": "SupportContacts",
++  "type": "object",
++  "properties": {
++    "user_id": {
++      "type": "string"
++    },
++    "name": {
++      "type": "string"
++    },
++    "role": {
++      "type": "string"
++    },
++    "phone": {
++      "type": "string"
++    },
++    "email": {
++      "type": "string"
++    },
++    "last_contact_at": {
++      "type": "string"
++    },
++    "encouragement": {
++      "type": "string"
++    },
++    "permissions": {
++      "type": "array",
++      "items": {
++        "type": "string"
++      }
++    },
++    "emergency_contact": {
++      "type": "boolean",
++      "default": false
++    }
++  },
++  "required": [
++    "user_id",
++    "name",
++    "role"
++  ]
++}
+diff --git a/base44/entities/Tasks.jsonc b/base44/entities/Tasks.jsonc
+new file mode 100644
+index 0000000..5ba0ba2
+--- /dev/null
++++ b/base44/entities/Tasks.jsonc
+@@ -0,0 +1,44 @@
++{
++  "name": "Tasks",
++  "type": "object",
++  "properties": {
++    "user_id": {
++      "type": "string"
++    },
++    "plan_id": {
++      "type": "string"
++    },
++    "title": {
++      "type": "string"
++    },
++    "category": {
++      "type": "string"
++    },
++    "due_date": {
++      "type": "string",
++      "format": "date"
++    },
++    "due_time": {
++      "type": "string"
++    },
++    "recurrence": {
++      "type": "string"
++    },
++    "priority": {
++      "type": "string",
++      "enum": [
++        "low",
++        "medium",
++        "high"
++      ],
++      "default": "medium"
++    },
++    "completed": {
++      "type": "boolean",
++      "default": false
++    }
++  },
++  "required": [
++    "title"
++  ]
++}
+diff --git a/base44/entities/Transportation.jsonc b/base44/entities/Transportation.jsonc
+new file mode 100644
+index 0000000..a972484
+--- /dev/null
++++ b/base44/entities/Transportation.jsonc
+@@ -0,0 +1,39 @@
++{
++  "name": "Transportation",
++  "type": "object",
++  "properties": {
++    "user_id": {
++      "type": "string"
++    },
++    "event_id": {
++      "type": "string"
++    },
++    "pickup_location": {
++      "type": "string"
++    },
++    "destination": {
++      "type": "string"
++    },
++    "requested_time": {
++      "type": "string"
++    },
++    "transportation_type": {
++      "type": "string"
++    },
++    "status": {
++      "type": "string",
++      "enum": [
++        "needed",
++        "requested",
++        "confirmed",
++        "completed",
++        "cancelled"
++      ],
++      "default": "needed"
++    }
++  },
++  "required": [
++    "user_id",
++    "destination"
++  ]
++}
+diff --git a/base44/entities/Users.jsonc b/base44/entities/Users.jsonc
+new file mode 100644
+index 0000000..5c4451c
+--- /dev/null
++++ b/base44/entities/Users.jsonc
+@@ -0,0 +1,52 @@
++{
++  "name": "Users",
++  "type": "object",
++  "properties": {
++    "full_name": {
++      "type": "string"
++    },
++    "email": {
++      "type": "string"
++    },
++    "role": {
++      "type": "string",
++      "enum": [
++        "client",
++        "counselor",
++        "sponsor",
++        "mentor",
++        "probation_officer",
++        "family_supporter",
++        "facility_admin",
++        "veteran",
++        "returning_citizen",
++        "person_seeking_help"
++      ]
++    },
++    "facility_id": {
++      "type": "string"
++    },
++    "support_circle_ids": {
++      "type": "array",
++      "items": {
++        "type": "string"
++      }
++    },
++    "onboarding_complete": {
++      "type": "boolean",
++      "default": false
++    },
++    "profile_visibility": {
++      "type": "string",
++      "enum": [
++        "private",
++        "support_circle",
++        "facility"
++      ],
++      "default": "private"
++    }
++  },
++  "required": [
++    "email"
++  ]
++}
+diff --git a/base44/entities/VeteransResources.jsonc b/base44/entities/VeteransResources.jsonc
+new file mode 100644
+index 0000000..d792cb0
+--- /dev/null
++++ b/base44/entities/VeteransResources.jsonc
+@@ -0,0 +1,36 @@
++{
++  "name": "VeteransResources",
++  "type": "object",
++  "properties": {
++    "name": {
++      "type": "string"
++    },
++    "category": {
++      "type": "string"
++    },
++    "va_program": {
++      "type": "boolean",
++      "default": false
++    },
++    "address": {
++      "type": "string"
++    },
++    "phone": {
++      "type": "string"
++    },
++    "website": {
++      "type": "string"
++    },
++    "benefit_type": {
++      "type": "string"
++    },
++    "mentor_available": {
++      "type": "boolean",
++      "default": false
++    }
++  },
++  "required": [
++    "name",
++    "category"
++  ]
++}
+diff --git a/src/App.jsx b/src/App.jsx
+index 637d2b4..f068916 100644
+--- a/src/App.jsx
++++ b/src/App.jsx
+@@ -155,7 +155,7 @@ const AuthenticatedApp = () => {
+     if (authError.type === 'auth_required') {
+       // Logged-out visitors land on the public ReZilient marketing page.
+       const path = window.location.pathname.toLowerCase();
+-      const publicPaths = ['/resiliant', '/about', '/onboarding'];
++      const publicPaths = ['/', '/home', '/resiliant', '/about', '/onboarding', '/roleselect', '/audiovault'];
+       if (!publicPaths.includes(path)) {
+         return <Navigate to="/Resiliant" replace />;
+       }
+diff --git a/src/Layout.jsx b/src/Layout.jsx
+index d3d0d22..492f699 100644
+--- a/src/Layout.jsx
++++ b/src/Layout.jsx
+@@ -24,14 +24,14 @@ const pageTitles = {
+ 
+ export default function Layout({ children, currentPageName }) {
+   const location = useLocation();
+-  const title = pageTitles[currentPageName] || currentPageName?.replace(/([A-Z])/g, " $1").trim() || "ReZilient Pilot";
++  const title = pageTitles[currentPageName] || currentPageName?.replace(/([A-Z])/g, " $1").trim() || "ReZilient";
+ 
+   return (
+     <div className="min-h-screen bg-transparent text-white pb-28">
+       <header className="sticky top-0 z-30 px-4 pt-[calc(14px+env(safe-area-inset-top))] pb-3 backdrop-blur-2xl bg-[#07101f]/80 border-b border-white/10">
+         <div className="max-w-5xl mx-auto flex items-center justify-between gap-3">
+           <div className="flex items-center gap-3">
+-            <ReZilientLogo className="h-12 w-12" />
++            <ReZilientLogo size={48} className="h-12 w-12" />
+             <div>
+               <p className="text-xs uppercase tracking-[0.24em] text-blue-200/70 font-bold">ReZilient</p>
+               <h1 className="text-2xl font-semibold tracking-tight font-sans">{title}</h1>
+@@ -51,7 +51,7 @@ export default function Layout({ children, currentPageName }) {
+       <nav className="fixed bottom-0 left-0 right-0 z-40 px-3 pb-[calc(10px+env(safe-area-inset-bottom))] pt-2 bg-[#07101f]/85 backdrop-blur-2xl border-t border-white/10">
+         <div className="max-w-md mx-auto grid grid-cols-5 gap-1 rounded-[28px] bg-white/8 border border-white/10 p-1.5 shadow-2xl">
+           {tabs.map(({ label, to, icon: Icon }) => {
+-            const active = location.pathname === to || (to === "/" && location.pathname === "/");
++            const active = location.pathname === to || (to === "/" && ["/", "/Home"].includes(location.pathname));
+             return (
+               <Link key={to} to={to} className={`min-h-[58px] rounded-3xl flex flex-col items-center justify-center gap-1 text-[10px] font-bold transition active:scale-95 ${active ? "bg-white text-slate-950 shadow-lg" : "text-slate-300"}`}>
+                 <Icon className="w-5 h-5" />
+diff --git a/src/components/commandCenter/EmergencyCalmMode.jsx b/src/components/commandCenter/EmergencyCalmMode.jsx
+index 15fd922..2655e48 100644
+--- a/src/components/commandCenter/EmergencyCalmMode.jsx
++++ b/src/components/commandCenter/EmergencyCalmMode.jsx
+@@ -1,5 +1,5 @@
+ import React, { useRef, useState } from "react";
+-import { HeartHandshake, Play, X } from "lucide-react";
++import { HeartHandshake, MessageCircle, Phone, Play, Shield, X } from "lucide-react";
+ 
+ export default function EmergencyCalmMode() {
+   const [open, setOpen] = useState(false);
+@@ -37,8 +37,10 @@ export default function EmergencyCalmMode() {
+             <h2 className="text-3xl font-serif font-semibold text-[var(--text)] mt-4">You are here. You are breathing. This moment can pass.</h2>
+             <div className="mx-auto my-8 w-44 h-44 rounded-full border border-[var(--border-glow)] flex items-center justify-center calm-breathe"><span className="text-sm font-black uppercase tracking-[.2em] text-[var(--text-muted)]">Breathe</span></div>
+             <div className="grid md:grid-cols-2 gap-3 text-left text-sm text-[var(--text-muted)]">
+-              <div className="rounded-2xl bg-white/5 border border-white/10 p-4">Name 5 things you can see, 4 you can feel, 3 you can hear, 2 you can smell, 1 thing you can control.</div>
+-              <div className="rounded-2xl bg-white/5 border border-white/10 p-4">Text or call someone safe. If you may hurt yourself or someone else, call emergency services now.</div>
++              <div className="rounded-2xl bg-white/5 border border-white/10 p-4"><Shield className="mb-2 h-5 w-5 text-emerald-300" />Name 5 things you can see, 4 you can feel, 3 you can hear, 2 you can smell, 1 thing you can control.</div>
++              <div className="rounded-2xl bg-white/5 border border-white/10 p-4"><HeartHandshake className="mb-2 h-5 w-5 text-blue-200" />You are not failing. You are having a hard moment. The next right step is smaller than the whole problem.</div>
++              <a href="tel:988" className="rounded-2xl bg-white/5 border border-white/10 p-4 text-[var(--text-muted)] no-underline"><Phone className="mb-2 h-5 w-5 text-rose-200" />Call or text 988 if you may hurt yourself or someone else. Call emergency services for immediate danger.</a>
++              <a href="/InnerCircle" className="rounded-2xl bg-white/5 border border-white/10 p-4 text-[var(--text-muted)] no-underline"><MessageCircle className="mb-2 h-5 w-5 text-[var(--gold)]" />Open your support circle and message your mentor, sponsor, counselor, or safe contact.</a>
+             </div>
+             <button onClick={playTone} className="btn-ghost mt-5 inline-flex items-center gap-2"><Play className="w-4 h-4" /> Play calming tone</button>
+           </section>
+diff --git a/src/pages.config.js b/src/pages.config.js
+index 723219a..d72c6f4 100644
+--- a/src/pages.config.js
++++ b/src/pages.config.js
+@@ -1,4 +1,5 @@
+ import AftercareMonitoring from './pages/AftercareMonitoring';
++import AudioVault from './pages/AudioVault';
+ import BenefitsAssistance from './pages/BenefitsAssistance';
+ import BillingDashboard from './pages/BillingDashboard';
+ import ClientProgress from './pages/ClientProgress';
+@@ -21,7 +22,7 @@ import FindHelpNow from './pages/FindHelpNow';
+ import ForwardPlan from './pages/ForwardPlan';
+ import GoalBoard from './pages/GoalBoard';
+ import GuidedProfileSetup from './pages/GuidedProfileSetup';
+-import Home from './pages/Home';
++import Home from './pages/ReZilientHome';
+ import HousingAssistance from './pages/HousingAssistance';
+ import IdentityBridge from './pages/IdentityBridge';
+ import Journal from './pages/Journal';
+@@ -54,6 +55,7 @@ import __Layout from './Layout.jsx';
+ 
+ export const PAGES = {
+     "AftercareMonitoring": AftercareMonitoring,
++    "AudioVault": AudioVault,
+     "BenefitsAssistance": BenefitsAssistance,
+     "BillingDashboard": BillingDashboard,
+     "ClientProgress": ClientProgress,
+diff --git a/src/pages/AudioVault.jsx b/src/pages/AudioVault.jsx
+new file mode 100644
+index 0000000..d1bb734
+--- /dev/null
++++ b/src/pages/AudioVault.jsx
+@@ -0,0 +1,148 @@
++import React, { useMemo, useState } from "react";
++import { Link } from "react-router-dom";
++import {
++  ArrowLeft,
++  Headphones,
++  Heart,
++  Mic,
++  Music2,
++  Pause,
++  Play,
++  Radio,
++  Search,
++  Shield,
++  Sparkles,
++  Waves,
++} from "lucide-react";
++
++const categories = [
++  "All",
++  "NA audio",
++  "AA speakers",
++  "Motivation",
++  "Meditation",
++  "Calming frequencies",
++  "Binaural beats",
++  "Success stories",
++  "Podcasts",
++];
++
++const tracks = [
++  { title: "Just Stay For Today", category: "NA audio", duration: "18 min", mood: "steady", icon: Mic },
++  { title: "A New Honest Life", category: "AA speakers", duration: "42 min", mood: "hopeful", icon: Radio },
++  { title: "Comeback Morning", category: "Motivation", duration: "9 min", mood: "powerful", icon: Sparkles },
++  { title: "Ten Minute Reset", category: "Meditation", duration: "10 min", mood: "calm", icon: Headphones },
++  { title: "174 Hz Grounding Tone", category: "Calming frequencies", duration: "30 min", mood: "grounded", icon: Waves },
++  { title: "Focus Binaural Flow", category: "Binaural beats", duration: "25 min", mood: "focused", icon: Music2 },
++  { title: "From Shelter To Sponsor", category: "Success stories", duration: "16 min", mood: "inspired", icon: Heart },
++  { title: "Reentry Roundtable", category: "Podcasts", duration: "35 min", mood: "practical", icon: Shield },
++];
++
++export default function AudioVault() {
++  const [activeCategory, setActiveCategory] = useState("All");
++  const [playing, setPlaying] = useState("Ten Minute Reset");
++  const [query, setQuery] = useState("");
++
++  const visibleTracks = useMemo(() => {
++    return tracks.filter((track) => {
++      const categoryMatch = activeCategory === "All" || track.category === activeCategory;
++      const queryMatch = !query.trim() || `${track.title} ${track.category} ${track.mood}`.toLowerCase().includes(query.toLowerCase());
++      return categoryMatch && queryMatch;
++    });
++  }, [activeCategory, query]);
++
++  const activeTrack = tracks.find((track) => track.title === playing) || tracks[0];
++
++  return (
++    <main className="audio-vault-shell">
++      <section className="audio-hero">
++        <Link to="/" className="audio-back"><ArrowLeft size={17} /> Back home</Link>
++        <div className="audio-hero-copy">
++          <span>Recovery Audio Vault</span>
++          <h1>Sound for the moment you are in.</h1>
++          <p>NA audio, AA speakers, motivation, meditation, calming frequencies, binaural beats, success stories and podcasts in one safe place.</p>
++        </div>
++        <div className="audio-player-card">
++          <div className="audio-disc"><Waves size={34} /></div>
++          <div>
++            <span>Now playing</span>
++            <h2>{activeTrack.title}</h2>
++            <p>{activeTrack.category} · {activeTrack.duration} · {activeTrack.mood}</p>
++          </div>
++          <button onClick={() => setPlaying(playing ? "" : activeTrack.title)}>{playing ? <Pause size={20} /> : <Play size={20} />}</button>
++        </div>
++      </section>
++
++      <section className="audio-search-card">
++        <Search size={18} />
++        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search calm, motivation, speakers, stories..." />
++      </section>
++
++      <div className="audio-category-row">
++        {categories.map((category) => (
++          <button key={category} onClick={() => setActiveCategory(category)} className={category === activeCategory ? "active" : ""}>{category}</button>
++        ))}
++      </div>
++
++      <section className="audio-track-grid">
++        {visibleTracks.map((track) => {
++          const Icon = track.icon;
++          const isPlaying = playing === track.title;
++          return (
++            <article key={track.title} className={isPlaying ? "active" : ""}>
++              <div className="audio-track-icon"><Icon size={22} /></div>
++              <div>
++                <span>{track.category}</span>
++                <h3>{track.title}</h3>
++                <p>{track.duration} · {track.mood}</p>
++              </div>
++              <button onClick={() => setPlaying(isPlaying ? "" : track.title)}>{isPlaying ? <Pause size={18} /> : <Play size={18} />}</button>
++            </article>
++          );
++        })}
++      </section>
++
++      <section className="audio-safety-card">
++        <Shield size={22} />
++        <div>
++          <h2>Audio is support, not pressure.</h2>
++          <p>Use the global reset button if stress or cravings spike. Reach your support circle or emergency services if you are in immediate danger.</p>
++        </div>
++        <Link to="/Lifeline">Open lifeline</Link>
++      </section>
++
++      <style>{`
++        .audio-vault-shell { max-width: 1040px; margin: 0 auto; padding: clamp(16px, 3vw, 34px) clamp(12px, 3vw, 28px) 124px; color: var(--text); }
++        .audio-hero { position: relative; overflow: hidden; min-height: 540px; border-radius: 38px; padding: clamp(20px, 5vw, 48px); display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(190,225,255,.18); background: radial-gradient(circle at 24% 16%, rgba(52,211,153,.22), transparent 34%), radial-gradient(circle at 82% 12%, rgba(91,141,239,.28), transparent 34%), linear-gradient(145deg, rgba(255,255,255,.12), rgba(7,10,20,.74)); box-shadow: 0 34px 100px rgba(0,0,0,.46), inset 0 1px 0 rgba(255,255,255,.12); backdrop-filter: blur(30px) saturate(170%); }
++        .audio-back { width: fit-content; min-height: 42px; display: inline-flex; align-items: center; gap: 8px; padding: 0 14px; border-radius: 999px; text-decoration: none; color: var(--text); background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12); font-weight: 950; }
++        .audio-hero-copy { max-width: 720px; margin: 58px 0 28px; }
++        .audio-hero-copy span, .audio-player-card span, .audio-track-grid article span { color: #8bdcff; text-transform: uppercase; letter-spacing: .16em; font-size: 11px; font-weight: 950; }
++        .audio-hero h1 { margin: 10px 0 0; font-size: clamp(46px, 9vw, 96px); line-height: .9; letter-spacing: -.06em; }
++        .audio-hero p, .audio-track-grid p, .audio-safety-card p { color: var(--text-muted); line-height: 1.6; }
++        .audio-player-card { display: grid; grid-template-columns: 86px 1fr 58px; gap: 16px; align-items: center; border-radius: 32px; padding: 16px; background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.14); }
++        .audio-disc { width: 86px; height: 86px; border-radius: 28px; display: grid; place-items: center; color: #07101f; background: conic-gradient(from 90deg, #67e8f9, #f0b753, #a78bfa, #67e8f9); box-shadow: 0 0 44px rgba(103,232,249,.24); animation: audioPulse 4s ease-in-out infinite; }
++        .audio-player-card h2 { margin: 4px 0 0; font-size: clamp(24px, 5vw, 42px); }
++        .audio-player-card button, .audio-track-grid button { min-width: 52px; min-height: 52px; border-radius: 999px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.18); background: #fff; color: #07101f; }
++        .audio-search-card { margin-top: 18px; min-height: 58px; display: flex; align-items: center; gap: 12px; border-radius: 24px; padding: 0 16px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12); }
++        .audio-search-card svg { color: var(--gold); }
++        .audio-search-card input { flex: 1; min-height: 48px; border: 0; outline: 0; background: transparent; color: var(--text); font-weight: 850; }
++        .audio-category-row { display: flex; gap: 9px; overflow-x: auto; padding: 16px 0 8px; }
++        .audio-category-row button { min-height: 42px; white-space: nowrap; border-radius: 999px; padding: 0 14px; color: var(--text); background: rgba(255,255,255,.075); border: 1px solid rgba(255,255,255,.12); font-size: 12px; font-weight: 950; }
++        .audio-category-row button.active { color: #07101f; background: linear-gradient(135deg, #f0b753, #67e8f9); }
++        .audio-track-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 10px; }
++        .audio-track-grid article { display: grid; grid-template-columns: 60px 1fr 52px; gap: 13px; align-items: center; min-height: 132px; border-radius: 30px; padding: 16px; background: linear-gradient(145deg, rgba(255,255,255,.095), rgba(13,18,32,.64)); border: 1px solid rgba(190,225,255,.14); box-shadow: 0 20px 58px rgba(0,0,0,.30); }
++        .audio-track-grid article.active { border-color: rgba(240,183,83,.42); box-shadow: 0 0 40px rgba(240,183,83,.16), 0 20px 58px rgba(0,0,0,.30); }
++        .audio-track-icon { width: 60px; height: 60px; border-radius: 22px; display: grid; place-items: center; color: #07101f; background: linear-gradient(135deg, #67e8f9, #a78bfa); }
++        .audio-track-grid h3 { margin: 5px 0 0; font-family: 'DM Sans', sans-serif; font-size: 18px; font-weight: 950; }
++        .audio-track-grid p { margin: 5px 0 0; font-size: 13px; }
++        .audio-safety-card { margin-top: 18px; display: grid; grid-template-columns: 44px 1fr auto; gap: 14px; align-items: center; border-radius: 30px; padding: 18px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12); }
++        .audio-safety-card svg { color: #6ee7b7; }
++        .audio-safety-card h2 { margin: 0; font-size: 24px; }
++        .audio-safety-card a { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; padding: 0 16px; border-radius: 999px; color: #07101f; background: #fff; text-decoration: none; font-weight: 950; }
++        @keyframes audioPulse { 0%,100% { transform: scale(.96); } 50% { transform: scale(1.04); } }
++        @media (max-width: 760px) { .audio-hero { min-height: auto; } .audio-player-card, .audio-track-grid, .audio-safety-card { grid-template-columns: 1fr; } .audio-track-grid article { grid-template-columns: 54px 1fr 48px; } }
++        @media (max-width: 520px) { .audio-vault-shell { padding-inline: 10px; } .audio-player-card { text-align: left; } .audio-track-grid article { grid-template-columns: 1fr; } }
++      `}</style>
++    </main>
++  );
++}
+diff --git a/src/pages/ReZilientHome.jsx b/src/pages/ReZilientHome.jsx
+new file mode 100644
+index 0000000..7ca7037
+--- /dev/null
++++ b/src/pages/ReZilientHome.jsx
+@@ -0,0 +1,671 @@
++import React, { useMemo, useState } from "react";
++import { Link } from "react-router-dom";
++import {
++  ArrowRight,
++  BadgeCheck,
++  Bot,
++  Briefcase,
++  Car,
++  CheckCircle2,
++  ChevronRight,
++  Church,
++  ClipboardCheck,
++  Compass,
++  Flame,
++  Heart,
++  HeartHandshake,
++  Home,
++  MapPin,
++  Mic,
++  Mountain,
++  Music2,
++  Phone,
++  Play,
++  Shield,
++  ShieldCheck,
++  Star,
++  Users,
++  Utensils,
++  Waves,
++} from "lucide-react";
++import ReZilientLogo from "@/components/shared/ReZilientLogo";
++
++const roles = [
++  { id: "client", label: "Client / Participant", dashboard: "Daily structure and support", permissions: "Own plan, check-ins, messages, resources" },
++  { id: "counselor", label: "Counselor", dashboard: "Caseload and S.E.E. planner", permissions: "Create plans, review risk, message clients" },
++  { id: "sponsor", label: "Sponsor", dashboard: "Support circle", permissions: "Encouragement, milestones, check-in visibility" },
++  { id: "mentor", label: "Mentor", dashboard: "Growth coaching", permissions: "Goals, habits, career and purpose support" },
++  { id: "probation", label: "Probation Officer", dashboard: "Compliance overview", permissions: "Court dates, requirements, verified activity" },
++  { id: "family", label: "Family Supporter", dashboard: "Family connection", permissions: "Encouragement, safe messaging, wins" },
++  { id: "facility_admin", label: "Facility Admin", dashboard: "Facility command center", permissions: "Staff, clients, outcomes, resources" },
++  { id: "veteran", label: "Veteran", dashboard: "Veteran hub", permissions: "VA benefits, military mentors, housing support" },
++  { id: "returning_citizen", label: "Returning Citizen", dashboard: "Reentry roadmap", permissions: "Housing, ID, jobs, legal and transportation" },
++  { id: "seeking_help", label: "Person Seeking Help", dashboard: "Immediate help", permissions: "Find help now, calm mode, local support" },
++];
++
++const weeklyItems = [
++  { day: "Mon", time: "3:00 PM", title: "Therapy", meta: "Video session", icon: HeartHandshake, tone: "blue" },
++  { day: "Tue", time: "7:00 PM", title: "NA meeting", meta: "Riverside Hall", icon: Users, tone: "green" },
++  { day: "Wed", time: "10:00 AM", title: "Job search", meta: "2 applications", icon: Briefcase, tone: "gold" },
++  { day: "Thu", time: "8:30 AM", title: "Court check-in", meta: "Ride needed", icon: ShieldCheck, tone: "rose" },
++  { day: "Fri", time: "7:00 PM", title: "NA meeting", meta: "Sponsor attends", icon: Users, tone: "green" },
++];
++
++const roadmap = [
++  { label: "Days 1-14", title: "Stabilization", progress: 82 },
++  { label: "Days 15-30", title: "Structure", progress: 54 },
++  { label: "Days 31-60", title: "Rebuild", progress: 22 },
++  { label: "Days 61-90", title: "Growth", progress: 8 },
++  { label: "6 month", title: "Momentum", progress: 0 },
++  { label: "1 year", title: "Purpose", progress: 0 },
++  { label: "5 year", title: "Vision", progress: 0 },
++];
++
++const pillars = [
++  {
++    title: "Recovery",
++    icon: Shield,
++    href: "/RecoveryPath",
++    accent: "emerald",
++    summary: "Daily check-ins, meetings, cravings, journaling, meditation, breathing, mood, triggers, gratitude, streaks and recovery score.",
++    actions: [["Daily Strength Check", "/DailyCheckIn"], ["Meetings", "/MeetingDirectory"], ["Calm reset", "/MentalReset"], ["Audio vault", "/AudioVault"]],
++  },
++  {
++    title: "Reentry",
++    icon: Home,
++    href: "/RecoveryMapFinder",
++    accent: "blue",
++    summary: "Housing, food, jobs, benefits, legal, transportation, shelters, education, ID assistance and government help.",
++    actions: [["Resource map", "/RecoveryMapFinder"], ["Housing", "/HousingAssistance"], ["Jobs", "/EmploymentOpportunities"], ["ID help", "/IdentityBridge"]],
++  },
++  {
++    title: "Community",
++    icon: Users,
++    href: "/AhHaCommunity",
++    accent: "violet",
++    summary: "Ah Ha Moments, support circles, stories, groups, peer interaction, mentor matching and safe encouragement.",
++    actions: [["Ah Ha Moment", "/AhHaMoment"], ["Support circle", "/InnerCircle"], ["Mentors", "/Mentors"], ["Stories", "/StoriesHub"]],
++  },
++  {
++    title: "Growth",
++    icon: Mountain,
++    href: "/GrowthHub",
++    accent: "gold",
++    summary: "Fitness, habits, books, career, education, purpose, learning and personal growth that creates a future.",
++    actions: [["Goals", "/GoalBoard"], ["Fitness", "/MindBodyRecovery"], ["Learning", "/LearnRecovery"], ["Future You", "/FutureYou"]],
++  },
++];
++
++const resources = [
++  { category: "food", name: "Community Food Pantry", distance: "0.7 mi", meta: "Open until 6 PM", icon: Utensils },
++  { category: "shelters", name: "Safe Rest Shelter", distance: "1.4 mi", meta: "Beds available", icon: Home },
++  { category: "rehabs", name: "Recovery IOP Center", distance: "2.1 mi", meta: "Medicaid accepted", icon: Heart },
++  { category: "employment", name: "Second Chance Staffing", distance: "1.8 mi", meta: "Walk-ins today", icon: Briefcase },
++  { category: "transportation", name: "Transit Support Desk", distance: "0.4 mi", meta: "Bus passes", icon: Car },
++  { category: "churches", name: "Hope Fellowship", distance: "0.9 mi", meta: "Dinner tonight", icon: Church },
++  { category: "government help", name: "Benefits Enrollment Office", distance: "2.7 mi", meta: "SNAP and ID assistance", icon: BadgeCheck },
++  { category: "legal aid", name: "Reentry Legal Clinic", distance: "3.2 mi", meta: "Free consults", icon: ShieldCheck },
++];
++
++const supportCircle = [
++  { role: "Counselor", name: "Dana R.", last: "Today", activity: "Reviewed weekly plan", icon: ClipboardCheck },
++  { role: "Sponsor", name: "Mike T.", last: "2h ago", activity: "Sent encouragement", icon: HeartHandshake },
++  { role: "Mentor", name: "Alicia M.", last: "Yesterday", activity: "Career goal updated", icon: Star },
++  { role: "Family", name: "Mom", last: "3d ago", activity: "Proud of your consistency", icon: Heart },
++  { role: "PO", name: "Officer Lane", last: "Fri", activity: "Court reminder confirmed", icon: ShieldCheck },
++];
++
++const audioCollections = [
++  "NA audio",
++  "AA speakers",
++  "Motivation",
++  "Meditation",
++  "Calming frequencies",
++  "Binaural beats",
++  "Success stories",
++  "Podcasts",
++];
++
++function answerFor(prompt) {
++  const normalized = prompt.toLowerCase();
++  if (normalized.includes("housing")) return "Start with the Resource Map housing filter, save two options, then message your counselor to confirm eligibility and transportation.";
++  if (normalized.includes("food")) return "I found nearby food support. Prioritize the pantry open today, then save the church dinner option as backup.";
++  if (normalized.includes("calm") || normalized.includes("panic")) return "Put both feet on the floor. Breathe in for 4, hold for 4, out for 6. Use the reset button if the feeling keeps rising.";
++  if (normalized.includes("meeting")) return "Tonight has a 7 PM NA meeting on your itinerary. Leave 30 minutes early and confirm your ride now.";
++  if (normalized.includes("job")) return "Open your employment task, apply to one realistic listing, then log the win. One honest step counts today.";
++  return "Your next best step is to complete the Daily Strength Check, review your next appointment, and choose one mission board action.";
++}
++
++function RoleSelectionPanel({ activeRole, onSelect }) {
++  return (
++    <section className="rez-section" id="roles">
++      <div className="rez-section-head">
++        <span>Onboarding</span>
++        <h2>Choose the role that matches your path.</h2>
++        <p>Each role gets a unique dashboard, permissions, language, and support model.</p>
++      </div>
++      <div className="rez-role-grid">
++        {roles.map((role) => (
++          <button key={role.id} onClick={() => onSelect(role.id)} className={`rez-role-card ${activeRole === role.id ? "active" : ""}`}>
++            <strong>{role.label}</strong>
++            <span>{role.dashboard}</span>
++            <small>{role.permissions}</small>
++          </button>
++        ))}
++      </div>
++    </section>
++  );
++}
++
++function ItineraryCard() {
++  return (
++    <section className="rez-card rez-itinerary">
++      <div className="rez-card-head">
++        <div>
++          <span>Weekly Itinerary</span>
++          <h2>What do I need today?</h2>
++        </div>
++        <Link to="/AftercarePlanView">Full plan <ChevronRight size={16} /></Link>
++      </div>
++      <div className="rez-timeline">
++        {weeklyItems.map((item) => {
++          const Icon = item.icon;
++          return (
++            <Link to="/AftercarePlanView" key={`${item.day}-${item.title}`} className={`rez-time-row ${item.tone}`}>
++              <div className="rez-day">{item.day}</div>
++              <div className="rez-time-icon"><Icon size={18} /></div>
++              <div>
++                <strong>{item.title}</strong>
++                <span>{item.time} · {item.meta}</span>
++              </div>
++              <ArrowRight size={16} />
++            </Link>
++          );
++        })}
++      </div>
++    </section>
++  );
++}
++
++function MissionBoard() {
++  const [missions, setMissions] = useState(["Get custody back", "Stay sober", "Employment", "Housing", "Family"]);
++  return (
++    <section className="rez-card rez-mission">
++      <div className="rez-card-head">
++        <div>
++          <span>Top 5 Mission Board</span>
++          <h2>Non-negotiables</h2>
++        </div>
++        <Link to="/TopFiveNonNegotiables">Open board <ChevronRight size={16} /></Link>
++      </div>
++      <div className="rez-whiteboard">
++        {missions.map((mission, index) => (
++          <label key={index}>
++            <small>{index + 1}</small>
++            <input value={mission} onChange={(event) => setMissions((prev) => prev.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} />
++          </label>
++        ))}
++      </div>
++    </section>
++  );
++}
++
++function RoadmapTimeline() {
++  return (
++    <section className="rez-section">
++      <div className="rez-section-head compact">
++        <span>My Roadmap</span>
++        <h2>From stabilization to vision.</h2>
++      </div>
++      <div className="rez-roadmap-scroll">
++        {roadmap.map((phase) => (
++          <div key={phase.label} className="rez-roadmap-card">
++            <small>{phase.label}</small>
++            <strong>{phase.title}</strong>
++            <div className="rez-progress"><i style={{ width: `${phase.progress}%` }} /></div>
++          </div>
++        ))}
++      </div>
++    </section>
++  );
++}
++
++function PillarsGrid() {
++  return (
++    <section className="rez-section">
++      <div className="rez-section-head">
++        <span>Help · Hope · Healing</span>
++        <h2>The four systems that rebuild life.</h2>
++        <p>Recovery is one pillar. ReZilient also handles reentry, community, purpose, and practical stability.</p>
++      </div>
++      <div className="rez-pillars-grid">
++        {pillars.map((pillar) => {
++          const Icon = pillar.icon;
++          return (
++            <article key={pillar.title} className={`rez-pillar ${pillar.accent}`}>
++              <Link to={pillar.href} className="rez-pillar-main">
++                <div className="rez-pillar-icon"><Icon size={26} /></div>
++                <div>
++                  <p>{pillar.title}</p>
++                  <h3>{pillar.summary}</h3>
++                </div>
++              </Link>
++              <div className="rez-action-chips">
++                {pillar.actions.map(([label, href]) => <Link key={label} to={href}>{label}</Link>)}
++              </div>
++            </article>
++          );
++        })}
++      </div>
++    </section>
++  );
++}
++
++function AskAI() {
++  const [prompt, setPrompt] = useState("How do I get housing?");
++  const answer = useMemo(() => answerFor(prompt), [prompt]);
++  const prompts = ["How do I get housing?", "Find food near me", "Help me calm down", "What meetings tonight?", "What jobs near me?"];
++  return (
++    <section className="rez-card rez-ai">
++      <div className="rez-ai-orb"><Bot size={34} /></div>
++      <div>
++        <span>Ask ReZilient AI</span>
++        <h2>Context-aware support in plain English.</h2>
++        <p>Ask about housing, food, meetings, transportation, jobs, calm mode, goals, or what to do next.</p>
++      </div>
++      <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} aria-label="Ask ReZilient AI" />
++      <div className="rez-prompt-row">
++        {prompts.map((item) => <button key={item} onClick={() => setPrompt(item)}>{item}</button>)}
++      </div>
++      <div className="rez-ai-answer">
++        <strong>S.E.E. recommends</strong>
++        <p>{answer}</p>
++      </div>
++      <Link className="btn-primary rez-full-link" to="/SuperAgentChat">Open full AI companion</Link>
++    </section>
++  );
++}
++
++function SEEPlanner() {
++  const [notes, setNotes] = useState("John attends NA every Tuesday and Friday at 7pm. Job search every weekday. Therapy Mondays at 3pm. Wants gym three times weekly.");
++  const plan = useMemo(() => {
++    const hasNA = /na|meeting/i.test(notes);
++    const hasJob = /job|work|employment/i.test(notes);
++    const hasTherapy = /therapy|counsel/i.test(notes);
++    const hasGym = /gym|fitness|workout/i.test(notes);
++    return [
++      hasTherapy && "Calendar: Therapy Mondays at 3 PM with 1-hour reminder",
++      hasNA && "Recurring meetings: Tuesday and Friday at 7 PM",
++      hasJob && "Daily tasks: Weekday job search block with progress check",
++      hasGym && "Goal: Gym 3x weekly with transportation review",
++      "Roadmap: 30/60/90 day milestones and risk indicators",
++      "Notifications: Daily check-in and weekly counselor review",
++    ].filter(Boolean);
++  }, [notes]);
++  return (
++    <section className="rez-card rez-see">
++      <div className="rez-card-head">
++        <div>
++          <span>S.E.E. Super AI</span>
++          <h2>Structure. Engagement. Empowerment.</h2>
++        </div>
++        <Link to="/SEESuperAgent">Counselor planner <ChevronRight size={16} /></Link>
++      </div>
++      <textarea value={notes} onChange={(event) => setNotes(event.target.value)} aria-label="S.E.E. planner input" />
++      <div className="rez-see-output">
++        {plan.map((item) => <div key={item}><CheckCircle2 size={16} />{item}</div>)}
++      </div>
++    </section>
++  );
++}
++
++function ResourceMapPreview() {
++  const [filter, setFilter] = useState("food");
++  const categories = ["food", "shelters", "rehabs", "IOP", "employment", "transportation", "churches", "YMCA", "government help", "Goodwill", "Salvation Army", "legal aid"];
++  const visible = resources.filter((item) => item.category === filter || (filter === "IOP" && item.category === "rehabs") || !resources.some((resource) => resource.category === filter)).slice(0, 4);
++  return (
++    <section className="rez-section">
++      <div className="rez-section-head compact">
++        <span>Local Resource Map</span>
++        <h2>Practical help near me.</h2>
++      </div>
++      <div className="rez-filter-row">
++        {categories.map((category) => <button key={category} onClick={() => setFilter(category)} className={filter === category ? "active" : ""}>{category}</button>)}
++      </div>
++      <div className="rez-resource-grid">
++        {visible.map((resource) => {
++          const Icon = resource.icon;
++          return (
++            <article key={resource.name} className="rez-resource-card">
++              <div><Icon size={21} /></div>
++              <strong>{resource.name}</strong>
++              <span>{resource.distance} · {resource.meta}</span>
++              <div>
++                <Link to="/RecoveryMapFinder"><MapPin size={14} /> Directions</Link>
++                <a href="tel:+18005550199"><Phone size={14} /> Call</a>
++                <button><Star size={14} /> Save</button>
++              </div>
++            </article>
++          );
++        })}
++      </div>
++    </section>
++  );
++}
++
++function AccountabilityPanel() {
++  const [check, setCheck] = useState({ mood: 7, stress: 4, energy: 6, cravings: 2, sleep: 7, meetings: true });
++  const engagement = Math.round((check.mood + (10 - check.stress) + check.energy + (10 - check.cravings) + check.sleep + (check.meetings ? 10 : 4)) / 6 * 10);
++  const risk = check.cravings > 6 || check.stress > 7 ? "Needs support" : check.energy < 4 ? "Watch energy" : "Steady";
++  return (
++    <section className="rez-card">
++      <div className="rez-card-head">
++        <div>
++          <span>Daily Strength Check</span>
++          <h2>Accountability without shame.</h2>
++        </div>
++        <strong className="rez-score">{engagement}</strong>
++      </div>
++      <div className="rez-slider-grid">
++        {["mood", "stress", "energy", "cravings", "sleep"].map((key) => (
++          <label key={key}>
++            <span>{key}</span>
++            <input type="range" min="0" max="10" value={check[key]} onChange={(event) => setCheck({ ...check, [key]: Number(event.target.value) })} />
++            <small>{check[key]}/10</small>
++          </label>
++        ))}
++      </div>
++      <button className={`rez-toggle ${check.meetings ? "active" : ""}`} onClick={() => setCheck({ ...check, meetings: !check.meetings })}>Meeting attended today</button>
++      <div className="rez-metric-row">
++        <span>Streak: 18 days</span>
++        <span>Consistency: 86%</span>
++        <span>Risk: {risk}</span>
++        <span>Badge: Structure Builder</span>
++      </div>
++    </section>
++  );
++}
++
++function SupportCircle() {
++  return (
++    <section className="rez-section">
++      <div className="rez-section-head compact">
++        <span>Support Circle</span>
++        <h2>Your people stay close.</h2>
++      </div>
++      <div className="rez-support-grid">
++        {supportCircle.map((person) => {
++          const Icon = person.icon;
++          return (
++            <Link key={person.role} to="/InnerCircle" className="rez-support-card">
++              <Icon size={20} />
++              <strong>{person.role}</strong>
++              <span>{person.name} · {person.last}</span>
++              <small>{person.activity}</small>
++            </Link>
++          );
++        })}
++      </div>
++    </section>
++  );
++}
++
++function AhHaFeature() {
++  const reactions = ["Respect", "Powerful", "Needed This", "Proud Of You", "Inspired"];
++  return (
++    <section className="rez-card rez-ahha">
++      <div>
++        <span>Flagship Feature</span>
++        <h2>Ah Ha Moment</h2>
++        <p>The exact moment life changed, captured privately or shared safely with moderation and supportive reactions only.</p>
++      </div>
++      <div className="rez-media-options">
++        <button><Mic size={16} /> Audio</button>
++        <button><Play size={16} /> Video</button>
++        <button><ShieldCheck size={16} /> Private</button>
++        <button><Users size={16} /> Moderated public</button>
++      </div>
++      <textarea placeholder="What was the moment you knew life had to change?" />
++      <div className="rez-reactions">{reactions.map((reaction) => <span key={reaction}>{reaction}</span>)}</div>
++      <Link className="btn-gold rez-full-link" to="/AhHaMoment">Create my Ah Ha Moment</Link>
++    </section>
++  );
++}
++
++function AudioVaultPreview() {
++  return (
++    <section className="rez-card">
++      <div className="rez-card-head">
++        <div>
++          <span>Recovery Audio Vault</span>
++          <h2>Calm, motivation, and voices that help.</h2>
++        </div>
++        <Link to="/AudioVault">Open vault <ChevronRight size={16} /></Link>
++      </div>
++      <div className="rez-audio-grid">
++        {audioCollections.map((item, index) => (
++          <Link to="/AudioVault" key={item} className="rez-audio-card">
++            {index % 3 === 0 ? <Music2 size={19} /> : index % 3 === 1 ? <Waves size={19} /> : <Mic size={19} />}
++            <strong>{item}</strong>
++          </Link>
++        ))}
++      </div>
++    </section>
++  );
++}
++
++function VeteranAndProfile() {
++  return (
++    <section className="rez-split">
++      <article className="rez-card">
++        <span>Veteran Hub</span>
++        <h2>Built for transition, benefits, housing, VA help, and military mentorship.</h2>
++        <div className="rez-action-chips">
++          <Link to="/VeteranSupportHub">VA help</Link>
++          <Link to="/VeteranResourceMap">Veteran map</Link>
++          <Link to="/VeteranMode">Military mentorship</Link>
++        </div>
++      </article>
++      <article className="rez-card">
++        <span>Positive Growth Profile</span>
++        <h2>Wins, milestones, goals, favorite memories, hobbies, support network, and improvement graphs.</h2>
++        <p className="rez-muted">ReZilient shows forward movement only. No shame walls. No clinical scoreboard.</p>
++        <Link className="btn-ghost rez-full-link" to="/Profile">Open profile</Link>
++      </article>
++    </section>
++  );
++}
++
++function CounselorDashboardPreview({ role }) {
++  const isProfessional = ["counselor", "probation", "facility_admin"].includes(role);
++  return (
++    <section className={`rez-card rez-counselor ${isProfessional ? "active" : ""}`}>
++      <div className="rez-card-head">
++        <div>
++          <span>Counselor Dashboard</span>
++          <h2>Aftercare is ready before discharge.</h2>
++        </div>
++        <Link to="/SEESuperAgent">Launch S.E.E. <ChevronRight size={16} /></Link>
++      </div>
++      <div className="rez-dashboard-grid">
++        {[
++          ["Client overview", "42 active"],
++          ["Progress", "86% engaged"],
++          ["Risk level", "6 need review"],
++          ["Roadmaps", "19 live"],
++          ["Messages", "12 unread"],
++          ["Calendar", "31 events"],
++        ].map(([label, value]) => <div key={label}><small>{label}</small><strong>{value}</strong></div>)}
++      </div>
++      <p className="rez-muted">Counselors can type plain English notes, review AI-generated plans, create calendar events, transportation needs, goals, tasks, notifications, check-ins and risk indicators.</p>
++    </section>
++  );
++}
++
++export default function ReZilientHome() {
++  const [activeRole, setActiveRole] = useState(() => sessionStorage.getItem("unbound_role") || "client");
++  const selectedRole = roles.find((role) => role.id === activeRole) || roles[0];
++  const selectRole = (roleId) => {
++    sessionStorage.setItem("unbound_role", roleId);
++    setActiveRole(roleId);
++  };
++
++  return (
++    <main className="rez-app-shell">
++      <section className="rez-hero">
++        <div className="rez-hero-brand">
++          <ReZilientLogo size={64} className="h-16 w-16" />
++          <div>
++            <p>ReZilient</p>
++            <span>Built For Life's Biggest Comebacks.</span>
++          </div>
++        </div>
++        <div className="rez-hero-copy">
++          <span>Help · Hope · Healing</span>
++          <h1>The operating system for rebuilding your life.</h1>
++          <p>AI-powered digital recovery, aftercare, accountability, and reentry support for life after treatment, incarceration, homelessness, trauma, military transition, or a major setback.</p>
++        </div>
++        <div className="rez-hero-actions">
++          <a className="btn-primary" href="#today">Show me today</a>
++          <Link className="btn-gold" to="/RoleSelect">Start onboarding</Link>
++          <Link className="btn-ghost" to="/SEESuperAgent">Counselor S.E.E.</Link>
++        </div>
++        <div className="rez-role-pill">
++          <Compass size={18} />
++          <span>Current role</span>
++          <strong>{selectedRole.label}</strong>
++        </div>
++      </section>
++
++      <RoleSelectionPanel activeRole={activeRole} onSelect={selectRole} />
++
++      <section className="rez-today-grid" id="today">
++        <ItineraryCard />
++        <MissionBoard />
++      </section>
++
++      <RoadmapTimeline />
++      <PillarsGrid />
++
++      <section className="rez-duo-grid">
++        <AskAI />
++        <SEEPlanner />
++      </section>
++
++      <ResourceMapPreview />
++
++      <section className="rez-duo-grid">
++        <AccountabilityPanel />
++        <AhHaFeature />
++      </section>
++
++      <SupportCircle />
++
++      <section className="rez-duo-grid">
++        <AudioVaultPreview />
++        <CounselorDashboardPreview role={activeRole} />
++      </section>
++
++      <VeteranAndProfile />
++
++      <section className="rez-closing-card">
++        <Flame size={28} />
++        <h2>This app actually understands me.</h2>
++        <p>Structure when the day is confusing. Support when things get heavy. Purpose when the future feels far away.</p>
++      </section>
++
++      <style>{`
++        .rez-app-shell { max-width: 1180px; margin: 0 auto; padding: clamp(16px, 3vw, 34px) clamp(12px, 3vw, 28px) 124px; color: var(--text); }
++        .rez-hero { position: relative; overflow: hidden; border: 1px solid rgba(190,225,255,.20); border-radius: 38px; padding: clamp(22px, 5vw, 54px); min-height: 620px; display: flex; flex-direction: column; justify-content: space-between; background: radial-gradient(circle at 18% 12%, rgba(91,141,239,.42), transparent 34%), radial-gradient(circle at 76% 28%, rgba(240,183,83,.20), transparent 32%), linear-gradient(145deg, rgba(255,255,255,.13), rgba(7,10,20,.76)); box-shadow: 0 34px 100px rgba(0,0,0,.48), inset 0 1px 0 rgba(255,255,255,.12); backdrop-filter: blur(30px) saturate(170%); }
++        .rez-hero:after { content: ""; position: absolute; inset: auto -14% -32% 28%; height: 420px; border-radius: 999px; background: linear-gradient(90deg, rgba(52,211,153,.18), rgba(91,141,239,.26), rgba(167,139,250,.14)); filter: blur(16px); transform: rotate(-8deg); }
++        .rez-hero > * { position: relative; z-index: 1; }
++        .rez-hero-brand { display: flex; align-items: center; gap: 14px; }
++        .rez-hero-brand p { margin: 0; text-transform: uppercase; letter-spacing: .24em; color: #dbeafe; font-weight: 950; font-size: 12px; }
++        .rez-hero-brand span { color: var(--gold); font-weight: 900; }
++        .rez-hero-copy { max-width: 790px; margin: 72px 0 34px; }
++        .rez-hero-copy > span, .rez-section-head > span, .rez-card span:first-child, .rez-ai > div:nth-child(2) > span, .rez-ahha > div:first-child span { color: #8bdcff; text-transform: uppercase; letter-spacing: .18em; font-weight: 950; font-size: 11px; }
++        .rez-hero h1 { margin: 12px 0 0; font-size: clamp(48px, 9vw, 112px); line-height: .88; letter-spacing: -.065em; }
++        .rez-hero-copy p { max-width: 720px; margin: 22px 0 0; color: var(--text-muted); font-size: clamp(16px, 2vw, 20px); line-height: 1.65; }
++        .rez-hero-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
++        .rez-role-pill { position: absolute; right: clamp(18px, 4vw, 44px); bottom: clamp(18px, 4vw, 44px); min-width: 250px; border-radius: 26px; padding: 16px; display: grid; gap: 4px; background: rgba(255,255,255,.09); border: 1px solid rgba(255,255,255,.14); box-shadow: inset 0 1px 0 rgba(255,255,255,.10); }
++        .rez-role-pill svg { color: var(--gold); }
++        .rez-role-pill span { color: var(--text-dim); text-transform: uppercase; letter-spacing: .14em; font-size: 10px; font-weight: 950; }
++        .rez-role-pill strong { font-size: 18px; }
++        .rez-section { margin-top: 22px; }
++        .rez-section-head { margin-bottom: 16px; max-width: 780px; }
++        .rez-section-head.compact { margin-bottom: 12px; }
++        .rez-section-head h2, .rez-card h2, .rez-closing-card h2 { margin: 7px 0 0; font-size: clamp(28px, 4vw, 48px); line-height: 1; letter-spacing: -.035em; }
++        .rez-section-head p, .rez-card p, .rez-muted { color: var(--text-muted); line-height: 1.58; }
++        .rez-role-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
++        .rez-role-card { min-height: 150px; border-radius: 26px; padding: 16px; text-align: left; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.12); color: var(--text); box-shadow: none; }
++        .rez-role-card.active { background: linear-gradient(145deg, rgba(240,183,83,.22), rgba(91,141,239,.14)); border-color: rgba(240,183,83,.44); box-shadow: 0 0 32px rgba(240,183,83,.15); }
++        .rez-role-card strong, .rez-role-card span, .rez-role-card small { display: block; }
++        .rez-role-card strong { font-size: 15px; }
++        .rez-role-card span { color: var(--gold); margin-top: 8px; font-size: 12px; font-weight: 950; }
++        .rez-role-card small { color: var(--text-muted); margin-top: 7px; line-height: 1.45; }
++        .rez-today-grid, .rez-duo-grid, .rez-split { display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(0, .92fr); gap: 16px; margin-top: 22px; }
++        .rez-card { border: 1px solid rgba(190,225,255,.16); border-radius: 32px; padding: clamp(18px, 3vw, 28px); background: linear-gradient(145deg, rgba(255,255,255,.105), rgba(13,18,32,.66)); box-shadow: 0 24px 70px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.10); backdrop-filter: blur(26px) saturate(165%); }
++        .rez-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
++        .rez-card-head a { color: var(--gold); text-decoration: none; font-weight: 950; display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
++        .rez-timeline { display: grid; gap: 10px; }
++        .rez-time-row { display: grid; grid-template-columns: 48px 44px 1fr 18px; align-items: center; gap: 12px; min-height: 76px; border-radius: 24px; padding: 12px; text-decoration: none; color: var(--text); background: rgba(255,255,255,.065); border: 1px solid rgba(255,255,255,.10); }
++        .rez-day, .rez-time-icon { display: grid; place-items: center; border-radius: 16px; font-weight: 950; }
++        .rez-day { height: 44px; background: rgba(255,255,255,.09); color: #dbeafe; }
++        .rez-time-icon { height: 44px; color: #07101f; }
++        .rez-time-row.blue .rez-time-icon { background: #93c5fd; } .rez-time-row.green .rez-time-icon { background: #6ee7b7; } .rez-time-row.gold .rez-time-icon { background: #fbbf24; } .rez-time-row.rose .rez-time-icon { background: #fda4af; }
++        .rez-time-row strong, .rez-time-row span { display: block; } .rez-time-row span { color: var(--text-muted); margin-top: 3px; font-size: 13px; }
++        .rez-whiteboard { display: grid; gap: 10px; }
++        .rez-whiteboard label { display: grid; grid-template-columns: 38px 1fr; align-items: center; gap: 10px; border-radius: 20px; padding: 10px; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.10); }
++        .rez-whiteboard small { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 999px; background: linear-gradient(135deg, var(--gold), #67e8f9); color: #07101f; font-weight: 950; }
++        .rez-whiteboard input, .rez-card textarea, .rez-card input[type="range"] { width: 100%; }
++        .rez-whiteboard input, .rez-card textarea { min-height: 48px; border: 0; outline: 0; border-radius: 16px; padding: 12px 14px; background: rgba(7,10,20,.42); color: var(--text); font-weight: 850; }
++        .rez-card textarea { min-height: 150px; resize: vertical; border: 1px solid rgba(255,255,255,.12); }
++        .rez-roadmap-scroll { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(210px, 1fr); gap: 12px; overflow-x: auto; padding-bottom: 8px; scroll-snap-type: x mandatory; }
++        .rez-roadmap-card { scroll-snap-align: start; min-height: 144px; border-radius: 28px; padding: 18px; background: linear-gradient(145deg, rgba(255,255,255,.09), rgba(91,141,239,.09)); border: 1px solid rgba(255,255,255,.12); }
++        .rez-roadmap-card small { color: var(--gold); font-weight: 950; text-transform: uppercase; letter-spacing: .12em; }
++        .rez-roadmap-card strong { display: block; margin-top: 10px; font-size: 22px; }
++        .rez-progress { height: 9px; margin-top: 20px; border-radius: 999px; overflow: hidden; background: rgba(255,255,255,.09); }
++        .rez-progress i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #34d399, #67e8f9, #f0b753); }
++        .rez-pillars-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
++        .rez-pillar { border-radius: 32px; padding: 18px; border: 1px solid rgba(255,255,255,.13); background: linear-gradient(145deg, rgba(255,255,255,.095), rgba(7,10,20,.50)); box-shadow: 0 20px 58px rgba(0,0,0,.28); }
++        .rez-pillar-main { display: grid; grid-template-columns: 62px 1fr; gap: 16px; text-decoration: none; color: var(--text); }
++        .rez-pillar-icon { width: 62px; height: 62px; display: grid; place-items: center; border-radius: 22px; color: #07101f; }
++        .rez-pillar.emerald .rez-pillar-icon { background: #6ee7b7; } .rez-pillar.blue .rez-pillar-icon { background: #93c5fd; } .rez-pillar.violet .rez-pillar-icon { background: #c4b5fd; } .rez-pillar.gold .rez-pillar-icon { background: #fbbf24; }
++        .rez-pillar p { margin: 0; color: var(--gold); font-weight: 950; text-transform: uppercase; letter-spacing: .14em; font-size: 11px; }
++        .rez-pillar h3 { margin: 8px 0 0; font-family: 'DM Sans', sans-serif; font-size: 16px; line-height: 1.45; color: var(--text); }
++        .rez-action-chips, .rez-prompt-row, .rez-filter-row, .rez-media-options, .rez-reactions, .rez-metric-row { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 16px; }
++        .rez-action-chips a, .rez-prompt-row button, .rez-filter-row button, .rez-media-options button, .rez-reactions span, .rez-metric-row span, .rez-toggle { min-height: 38px; border-radius: 999px; padding: 9px 12px; text-decoration: none; color: var(--text); background: rgba(255,255,255,.075); border: 1px solid rgba(255,255,255,.12); font-size: 12px; font-weight: 950; box-shadow: none; }
++        .rez-filter-row button.active, .rez-toggle.active { color: #07101f; background: linear-gradient(135deg, #f0b753, #67e8f9); }
++        .rez-ai { display: grid; gap: 15px; }
++        .rez-ai-orb { width: 78px; height: 78px; display: grid; place-items: center; border-radius: 28px; color: #07101f; background: linear-gradient(135deg, #67e8f9, #c4b5fd); box-shadow: 0 0 42px rgba(103,232,249,.28); }
++        .rez-ai-answer, .rez-see-output div { border-radius: 22px; padding: 14px; background: rgba(255,255,255,.075); border: 1px solid rgba(255,255,255,.10); }
++        .rez-ai-answer strong { color: var(--gold); }
++        .rez-full-link { width: 100%; text-align: center; justify-content: center; display: inline-flex; align-items: center; }
++        .rez-see-output { display: grid; gap: 9px; margin-top: 14px; }
++        .rez-see-output div { display: flex; align-items: center; gap: 10px; color: var(--text-muted); font-weight: 800; }
++        .rez-see-output svg { color: #6ee7b7; flex: 0 0 auto; }
++        .rez-resource-grid, .rez-support-grid, .rez-audio-grid, .rez-dashboard-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
++        .rez-resource-card, .rez-support-card, .rez-audio-card, .rez-dashboard-grid div { min-height: 150px; border-radius: 26px; padding: 16px; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.12); color: var(--text); text-decoration: none; }
++        .rez-resource-card > div:first-child, .rez-support-card svg, .rez-audio-card svg { color: var(--gold); }
++        .rez-resource-card strong, .rez-resource-card span, .rez-support-card strong, .rez-support-card span, .rez-support-card small, .rez-audio-card strong, .rez-dashboard-grid small, .rez-dashboard-grid strong { display: block; }
++        .rez-resource-card span, .rez-support-card span, .rez-support-card small { color: var(--text-muted); margin-top: 6px; }
++        .rez-resource-card > div:last-child { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
++        .rez-resource-card a, .rez-resource-card button { min-height: 32px; border-radius: 999px; padding: 7px 9px; display: inline-flex; align-items: center; gap: 5px; color: var(--text); background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.10); text-decoration: none; font-size: 11px; font-weight: 950; }
++        .rez-score { width: 64px; height: 64px; display: grid; place-items: center; border-radius: 50%; color: #07101f; background: conic-gradient(#34d399 86%, rgba(255,255,255,.14) 0); }
++        .rez-slider-grid { display: grid; gap: 12px; }
++        .rez-slider-grid label { display: grid; grid-template-columns: 82px 1fr 48px; gap: 10px; align-items: center; color: var(--text-muted); font-weight: 900; text-transform: capitalize; }
++        .rez-ahha { display: grid; gap: 16px; background: radial-gradient(circle at 24% 8%, rgba(240,183,83,.18), transparent 36%), linear-gradient(145deg, rgba(255,255,255,.11), rgba(13,18,32,.66)); }
++        .rez-reactions span { color: #07101f; background: #f0b753; }
++        .rez-audio-card { min-height: 98px; display: flex; flex-direction: column; justify-content: space-between; }
++        .rez-dashboard-grid div { min-height: 110px; }
++        .rez-dashboard-grid small { color: var(--text-muted); text-transform: uppercase; letter-spacing: .12em; font-weight: 950; }
++        .rez-dashboard-grid strong { margin-top: 12px; font-size: 24px; }
++        .rez-counselor.active { border-color: rgba(52,211,153,.34); box-shadow: 0 0 40px rgba(52,211,153,.12), 0 24px 70px rgba(0,0,0,.34); }
++        .rez-closing-card { margin-top: 24px; text-align: center; border-radius: 34px; padding: 34px 20px; background: linear-gradient(135deg, rgba(240,183,83,.16), rgba(91,141,239,.15)); border: 1px solid rgba(255,255,255,.14); }
++        .rez-closing-card svg { color: var(--gold); margin: 0 auto 10px; }
++        @media (max-width: 980px) { .rez-role-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .rez-today-grid, .rez-duo-grid, .rez-split, .rez-pillars-grid { grid-template-columns: 1fr; } .rez-resource-grid, .rez-support-grid, .rez-audio-grid, .rez-dashboard-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .rez-role-pill { position: static; margin-top: 18px; } }
++        @media (max-width: 600px) { .rez-app-shell { padding-inline: 10px; } .rez-hero { min-height: auto; } .rez-hero-copy { margin: 46px 0 24px; } .rez-hero-actions a { width: 100%; justify-content: center; } .rez-role-grid, .rez-resource-grid, .rez-support-grid, .rez-audio-grid, .rez-dashboard-grid { grid-template-columns: 1fr; } .rez-card-head { flex-direction: column; } .rez-time-row { grid-template-columns: 42px 40px 1fr; } .rez-time-row > svg { display: none; } .rez-slider-grid label { grid-template-columns: 1fr; } }
++      `}</style>
++    </main>
++  );
++}
+diff --git a/src/pages/RoleSelect.jsx b/src/pages/RoleSelect.jsx
+index 184678b..423dbd9 100644
+--- a/src/pages/RoleSelect.jsx
++++ b/src/pages/RoleSelect.jsx
+@@ -1,192 +1,197 @@
+-import React, { useState, useEffect } from "react";
++import React, { useState } from "react";
+ import { useNavigate } from "react-router-dom";
+ import { base44 } from "@/api/base44Client";
+-import { createPageUrl } from "./utils";
+-import { Loader2 } from "lucide-react";
+-import AhHaLogo from "@/components/shared/AhHaLogo";
+-
+-// Ah Ha brand palette
+-const C = {
+-  amber:  "#B8823A",
+-  green:  "#7A9E7E",
+-  indigo: "#7B8FA8",
+-  bg:     "#F7F3EE",
+-  card:   "#FDFAF6",
+-  border: "#E8E2D9",
+-  text:   "#1C1410",
+-  muted:  "#4A3F35",
+-  dim:    "#9B8E83",
+-};
+-
+-const CLIENT_OPTION = {
+-  id: "client",
+-  label: "I'm here for myself",
+-  sub: "Check in daily, find help near you, message your support team, and track your progress.",
+-  emoji: "🙋",
+-  color: C.amber,
+-  bg: "rgba(184,130,58,0.08)",
+-  page: "Home",
+-};
+-
+-const PROFESSIONAL_OPTIONS = [
+-  { id: "counselor",        label: "Counselor",          sub: "Monitor clients, send messages, track progress." },
+-  { id: "probation_officer",label: "Probation Officer",  sub: "Supervision check-ins, compliance, case notes." },
+-  { id: "sponsor",          label: "Sponsor",            sub: "Support your sponsee, stay connected." },
+-  { id: "recovery_coach",   label: "Recovery Coach",     sub: "Coach clients through goals and stability." },
+-  { id: "case_manager",     label: "Case Manager",       sub: "Track plans, resources, and client needs." },
+-  { id: "facility_admin",   label: "Facility Admin",     sub: "Manage staff accounts and program overview." },
++import ReZilientLogo from "@/components/shared/ReZilientLogo";
++import {
++  ArrowRight,
++  BadgeCheck,
++  Briefcase,
++  Building2,
++  HeartHandshake,
++  Home,
++  ShieldCheck,
++  Sparkles,
++  Star,
++  UserRound,
++  Users,
++} from "lucide-react";
++
++const ROLE_OPTIONS = [
++  {
++    id: "client",
++    label: "Client / Participant",
++    destination: "/Home",
++    icon: UserRound,
++    focus: "Daily structure, appointments, goals, check-ins, meetings and support circle.",
++    permissions: ["Own plan", "Daily check-ins", "Resources", "Messages"],
++  },
++  {
++    id: "counselor",
++    label: "Counselor",
++    destination: "/SEESuperAgent",
++    icon: HeartHandshake,
++    focus: "Build aftercare before discharge with S.E.E. and monitor client progress.",
++    permissions: ["Aftercare builder", "Risk review", "Calendar", "Messaging"],
++  },
++  {
++    id: "sponsor",
++    label: "Sponsor",
++    destination: "/InnerCircle",
++    icon: ShieldCheck,
++    focus: "Stay connected with encouragement, meeting support and permission-based updates.",
++    permissions: ["Encouragement", "Milestones", "Check-in visibility"],
++  },
++  {
++    id: "mentor",
++    label: "Mentor",
++    destination: "/Mentors",
++    icon: Star,
++    focus: "Support purpose, career, habits, learning and healthy accountability.",
++    permissions: ["Growth goals", "Messages", "Wins"],
++  },
++  {
++    id: "probation_officer",
++    label: "Probation Officer",
++    destination: "/ProbationOfficerDashboard",
++    icon: BadgeCheck,
++    focus: "Track court dates, compliance tasks, verified activity and support needs.",
++    permissions: ["Compliance", "Court calendar", "Reports"],
++  },
++  {
++    id: "family_supporter",
++    label: "Family Supporter",
++    destination: "/SupportUserDashboard",
++    icon: Users,
++    focus: "Offer safe encouragement and see positive progress with consent.",
++    permissions: ["Encouragement", "Wins", "Safe messaging"],
++  },
++  {
++    id: "facility_admin",
++    label: "Facility Admin",
++    destination: "/FacilityPilotDashboard",
++    icon: Building2,
++    focus: "Manage staff, facility clients, outcomes, resources and discharge readiness.",
++    permissions: ["Facility overview", "Staff", "Outcomes", "Resources"],
++  },
++  {
++    id: "veteran",
++    label: "Veteran",
++    destination: "/VeteranSupportHub",
++    icon: ShieldCheck,
++    focus: "VA help, benefits, housing, military mentorship and transition support.",
++    permissions: ["VA resources", "Mentors", "Housing", "Benefits"],
++  },
++  {
++    id: "returning_citizen",
++    label: "Returning Citizen",
++    destination: "/RecoveryMapFinder",
++    icon: Home,
++    focus: "Reentry support for housing, ID, jobs, transportation, food and legal aid.",
++    permissions: ["Reentry map", "ID help", "Jobs", "Legal"],
++  },
++  {
++    id: "person_seeking_help",
++    label: "Person Seeking Help",
++    destination: "/HelpHub",
++    icon: Sparkles,
++    focus: "Immediate non-judgmental help, calm tools, local resources and next steps.",
++    permissions: ["Find help", "Calm mode", "Ask AI", "Resources"],
++  },
+ ];
+ 
+ export default function RoleSelect() {
+   const navigate = useNavigate();
+-  const [checking, setChecking] = useState(true);
+-  const [showProfessionalExpanded, setShowProfessionalExpanded] = useState(false);
+-
+-  // Auto-detect role from existing profiles
+-  useEffect(() => {
+-    (async () => {
+-      try {
+-        const user = await base44.auth.me();
+-        if (!user) { setChecking(false); return; }
+-
+-        const [counselorProfiles, memberProfiles] = await Promise.all([
+-          base44.entities.CounselorProfile.filter({ counselor_email: user.email }),
+-          base44.entities.MemberProfile.filter({ created_by: user.email }),
+-        ]);
+-
+-        if (counselorProfiles.length > 0) {
+-          navigate(createPageUrl("ProfessionalPortal"), { replace: true });
+-          return;
+-        }
+-        if (memberProfiles.length > 0 && memberProfiles[0]?.onboarding_complete) {
+-          navigate(createPageUrl("Home"), { replace: true });
+-          return;
+-        }
+-      } catch {
+-        // not logged in, show role select
+-      }
+-      setChecking(false);
+-    })();
+-  }, [navigate]);
+-
+-  const handleClient = async () => {
+-    sessionStorage.setItem("unbound_role", "client");
+-    try { await base44.auth.updateMe({ role: "client" }); } catch {}
+-    navigate(createPageUrl("Home"));
+-  };
+-
+-  const handleSupportUser = async () => {
+-    sessionStorage.setItem("unbound_role", "support_user");
+-    try { await base44.auth.updateMe({ role: "support_user" }); } catch {}
+-    navigate("/SupportUserDashboard");
++  const [selectedRole, setSelectedRole] = useState("client");
++  const [saving, setSaving] = useState(false);
++  const activeRole = ROLE_OPTIONS.find((role) => role.id === selectedRole) || ROLE_OPTIONS[0];
++
++  const continueWithRole = async (role = activeRole) => {
++    setSaving(true);
++    sessionStorage.setItem("unbound_role", role.id);
++    try {
++      await base44.auth.updateMe({ role: role.id, rezilient_role: role.id });
++    } catch {
++      // Preview and logged-out paths still keep the selected role locally.
++    }
++    setSaving(false);
++    navigate(role.destination);
+   };
+ 
+-  const handleProfessional = (roleId) => {
+-    sessionStorage.setItem("unbound_role", roleId);
+-    navigate(createPageUrl("ProfessionalPortal"));
+-  };
+-
+-  if (checking) {
+-    return (
+-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: C.bg }}>
+-        <Loader2 className="w-6 h-6 animate-spin" style={{ color: C.amber }} />
+-      </div>
+-    );
+-  }
+-
+   return (
+-    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "32px 20px" }}>
+-      <div style={{ width: "100%", maxWidth: 440 }}>
+-
+-        {/* Brand */}
+-        <div style={{ textAlign: "center", marginBottom: 36 }}>
+-          <div style={{ marginBottom: 14 }}>
+-            <AhHaLogo size={72} layout="column" showWordmark={false} />
++    <main className="role-select-shell">
++      <section className="role-select-hero">
++        <div className="role-brand">
++          <ReZilientLogo size={64} className="h-16 w-16" />
++          <div>
++            <p>ReZilient onboarding</p>
++            <span>Built For Life's Biggest Comebacks.</span>
+           </div>
+-          <h1 style={{ fontFamily: "'Lora', Georgia, serif", fontSize: 24, fontWeight: 600, color: C.text, marginBottom: 8, lineHeight: 1.2 }}>Who's logging in?</h1>
+-          <p style={{ fontSize: 14, color: C.muted }}>Pick the option that fits you.</p>
+         </div>
+-
+-        {/* Client option */}
+-        <button onClick={handleClient}
+-          style={{
+-            width: "100%", textAlign: "left", padding: "20px", borderRadius: 16,
+-            background: CLIENT_OPTION.bg, border: `1.5px solid ${CLIENT_OPTION.color}`,
+-            cursor: "pointer", display: "flex", alignItems: "flex-start", gap: 16, marginBottom: 12,
+-          }}>
+-          <div style={{ width: 48, height: 48, borderRadius: 14, background: CLIENT_OPTION.color, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+-            <span style={{ fontSize: 22 }}>{CLIENT_OPTION.emoji}</span>
+-          </div>
+-          <div style={{ flex: 1 }}>
+-            <p style={{ fontWeight: 700, fontSize: 16, color: C.text, marginBottom: 4 }}>{CLIENT_OPTION.label}</p>
+-            <p style={{ fontSize: 13, color: C.muted, lineHeight: 1.5 }}>{CLIENT_OPTION.sub}</p>
+-          </div>
+-          <span style={{ fontSize: 20, color: CLIENT_OPTION.color, alignSelf: "center" }}>›</span>
+-        </button>
+-
+-        {/* Support User option */}
+-        <button onClick={handleSupportUser}
+-          style={{
+-            width: "100%", textAlign: "left", padding: "20px", borderRadius: 16,
+-            background: "rgba(122,158,126,0.08)", border: `1.5px solid ${C.green}`,
+-            cursor: "pointer", display: "flex", alignItems: "flex-start", gap: 16, marginBottom: 12,
+-          }}>
+-          <div style={{ width: 48, height: 48, borderRadius: 14, background: C.green, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+-            <span style={{ fontSize: 22 }}>🤝</span>
+-          </div>
+-          <div style={{ flex: 1 }}>
+-            <p style={{ fontWeight: 700, fontSize: 16, color: C.text, marginBottom: 4 }}>I'm a Support Person</p>
+-            <p style={{ fontSize: 13, color: C.muted, lineHeight: 1.5 }}>Sponsor, coach, counselor, or family member. View client progress with their consent.</p>
+-          </div>
+-          <span style={{ fontSize: 20, color: C.green, alignSelf: "center" }}>›</span>
++        <div className="role-copy">
++          <span>Help · Hope · Healing</span>
++          <h1>Who are you here as today?</h1>
++          <p>ReZilient changes the dashboard, permissions, language and next steps for each person in the recovery and reentry ecosystem.</p>
++        </div>
++        <button onClick={() => continueWithRole()} className="btn-primary role-primary" disabled={saving}>
++          Continue as {activeRole.label} <ArrowRight size={18} />
+         </button>
+-
+-        {/* Professional / Facility section */}
+-        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, overflow: "hidden" }}>
+-          <button
+-            onClick={() => setShowProfessionalExpanded(!showProfessionalExpanded)}
+-            style={{
+-              width: "100%", textAlign: "left", padding: "20px", background: "none", border: "none",
+-              cursor: "pointer", display: "flex", alignItems: "center", gap: 16,
+-            }}>
+-            <div style={{ width: 48, height: 48, borderRadius: 14, background: "rgba(123,143,168,0.10)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+-              <span style={{ fontSize: 22 }}>💼</span>
+-            </div>
+-            <div style={{ flex: 1 }}>
+-              <p style={{ fontWeight: 700, fontSize: 16, color: C.text, marginBottom: 2 }}>Facility / Clinical Staff</p>
+-              <p style={{ fontSize: 13, color: C.muted }}>Counselor portal, compliance, EHR, billing</p>
+-            </div>
+-            <span style={{ fontSize: 18, color: C.dim, transform: showProfessionalExpanded ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}>›</span>
+-          </button>
+-
+-          {showProfessionalExpanded && (
+-            <div style={{ borderTop: `1px solid ${C.border}` }}>
+-              {PROFESSIONAL_OPTIONS.map((opt, i) => (
+-                <button key={opt.id} onClick={() => handleProfessional(opt.id)}
+-                  style={{
+-                    width: "100%", textAlign: "left", padding: "14px 20px",
+-                    background: "none", border: "none", cursor: "pointer",
+-                    borderTop: i > 0 ? `1px solid ${C.border}` : "none",
+-                    display: "flex", alignItems: "center", gap: 12,
+-                  }}
+-                  onMouseEnter={e => e.currentTarget.style.background = C.bg}
+-                  onMouseLeave={e => e.currentTarget.style.background = "none"}
+-                >
+-                  <div style={{ flex: 1 }}>
+-                    <p style={{ fontWeight: 600, fontSize: 14, color: C.text, marginBottom: 2 }}>{opt.label}</p>
+-                    <p style={{ fontSize: 12, color: C.muted }}>{opt.sub}</p>
+-                  </div>
+-                  <span style={{ color: C.dim, fontSize: 16 }}>›</span>
+-                </button>
+-              ))}
+-            </div>
+-          )}
++      </section>
++
++      <section className="role-grid-section">
++        <div className="role-grid">
++          {ROLE_OPTIONS.map((role) => {
++            const Icon = role.icon;
++            const active = role.id === selectedRole;
++            return (
++              <button key={role.id} onClick={() => setSelectedRole(role.id)} onDoubleClick={() => continueWithRole(role)} className={active ? "role-card active" : "role-card"}>
++                <div className="role-icon"><Icon size={23} /></div>
++                <strong>{role.label}</strong>
++                <span>{role.focus}</span>
++                <div>{role.permissions.map((permission) => <small key={permission}>{permission}</small>)}</div>
++              </button>
++            );
++          })}
+         </div>
++      </section>
+ 
+-        <p style={{ textAlign: "center", fontSize: 12, color: C.dim, marginTop: 24 }}>
+-          Ah Ha — built for people rebuilding their lives
+-        </p>
+-      </div>
+-    </div>
++      <section className="role-summary-card">
++        <Briefcase size={22} />
++        <div>
++          <h2>{activeRole.label} dashboard</h2>
++          <p>{activeRole.focus}</p>
++        </div>
++        <button onClick={() => continueWithRole()} disabled={saving}>Open dashboard</button>
++      </section>
++
++      <style>{`
++        .role-select-shell { min-height: 100vh; max-width: 1180px; margin: 0 auto; padding: clamp(16px, 3vw, 34px) clamp(12px, 3vw, 28px) 120px; color: var(--text); }
++        .role-select-hero { min-height: 520px; display: flex; flex-direction: column; justify-content: space-between; border-radius: 38px; padding: clamp(22px, 5vw, 52px); background: radial-gradient(circle at 18% 10%, rgba(91,141,239,.36), transparent 34%), radial-gradient(circle at 82% 18%, rgba(240,183,83,.22), transparent 32%), linear-gradient(145deg, rgba(255,255,255,.13), rgba(7,10,20,.76)); border: 1px solid rgba(190,225,255,.20); box-shadow: 0 34px 100px rgba(0,0,0,.48), inset 0 1px 0 rgba(255,255,255,.12); backdrop-filter: blur(30px) saturate(170%); }
++        .role-brand { display: flex; align-items: center; gap: 14px; }
++        .role-brand p { margin: 0; text-transform: uppercase; letter-spacing: .22em; color: #dbeafe; font-size: 12px; font-weight: 950; }
++        .role-brand span, .role-copy > span { color: var(--gold); font-weight: 950; }
++        .role-copy { max-width: 760px; margin: 64px 0 28px; }
++        .role-copy > span { text-transform: uppercase; letter-spacing: .18em; font-size: 11px; }
++        .role-copy h1 { margin: 12px 0 0; font-size: clamp(48px, 9vw, 104px); line-height: .88; letter-spacing: -.06em; }
++        .role-copy p { max-width: 700px; color: var(--text-muted); font-size: clamp(16px, 2vw, 20px); line-height: 1.62; }
++        .role-primary { width: fit-content; display: inline-flex; align-items: center; gap: 9px; }
++        .role-grid-section { margin-top: 18px; }
++        .role-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
++        .role-card { min-height: 232px; text-align: left; border-radius: 28px; padding: 16px; color: var(--text); background: linear-gradient(145deg, rgba(255,255,255,.08), rgba(13,18,32,.58)); border: 1px solid rgba(255,255,255,.12); box-shadow: 0 18px 46px rgba(0,0,0,.24); }
++        .role-card.active { border-color: rgba(240,183,83,.48); background: linear-gradient(145deg, rgba(240,183,83,.20), rgba(91,141,239,.14)); box-shadow: 0 0 42px rgba(240,183,83,.16), 0 18px 46px rgba(0,0,0,.28); }
++        .role-icon { width: 52px; height: 52px; border-radius: 20px; display: grid; place-items: center; color: #07101f; background: linear-gradient(135deg, #f0b753, #67e8f9); margin-bottom: 14px; }
++        .role-card strong, .role-card span { display: block; }
++        .role-card strong { font-size: 16px; }
++        .role-card span { margin-top: 9px; color: var(--text-muted); line-height: 1.45; font-size: 13px; }
++        .role-card div:last-child { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 13px; }
++        .role-card small { border-radius: 999px; padding: 6px 8px; background: rgba(255,255,255,.075); border: 1px solid rgba(255,255,255,.10); color: #dbeafe; font-weight: 900; font-size: 10px; }
++        .role-summary-card { margin-top: 18px; display: grid; grid-template-columns: 46px 1fr auto; gap: 14px; align-items: center; border-radius: 30px; padding: 18px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12); }
++        .role-summary-card svg { color: var(--gold); }
++        .role-summary-card h2 { margin: 0; font-size: 28px; }
++        .role-summary-card p { margin: 5px 0 0; color: var(--text-muted); line-height: 1.55; }
++        .role-summary-card button { min-height: 46px; border-radius: 999px; padding: 0 18px; color: #07101f; background: #fff; border: 0; font-weight: 950; }
++        @media (max-width: 980px) { .role-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .role-summary-card { grid-template-columns: 1fr; } }
++        @media (max-width: 560px) { .role-select-shell { padding-inline: 10px; } .role-select-hero { min-height: auto; } .role-copy { margin: 46px 0 24px; } .role-primary { width: 100%; justify-content: center; } .role-grid { grid-template-columns: 1fr; } }
++      `}</style>
++    </main>
+   );
+-}
+\ No newline at end of file
++}

@@ -1,0 +1,26 @@
+{
+  "id": "devin-einmalmaik-maunting-server-manager-pr9",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 9,
+    "headSha": "cc93307a7bfaae28714015c4b906cd479712727f",
+    "baseSha": "8e96236e607818b505c82a807773f82b4324c22d",
+    "title": "Hotfix: SteamCMD im :root-Image als root + chown /data zurück",
+    "body": "## Summary\n\nFix für den nächsten SteamCMD-Fehler aus deinem Smoke-Test:\n\n```\n[MSM] SteamCMD fehlgeschlagen: docker: Error response from daemon: …\n  exec: \"/home/steam/steamcmd/steamcmd.sh\": stat /home/steam/steamcmd/steamcmd.sh:\n  permission denied\n```\n\n### Ursache\n\nDas `cm2network/steamcmd:root`-Image hat `/home/steam` mit Mode `750` (steam-User-only). Unser `--user msm-uid:msm-gid` matched diesen User im Image nicht — also kann der Container weder den Wrapper traversieren noch ausführen. Der `:root`-Tag ist explizit dafür gemacht, **im Container als root zu laufen**.\n\n### Fix\n\nSteamCMD läuft jetzt im Container als root (kein `--user`-Override). Damit die Dateien danach trotzdem dem msm-Host-User gehören, packen wir den SteamCMD-Aufruf in ein `bash -c`-Wrapper-Skript, das nach SteamCMD ein `chown -R <host-uid>:<host-gid> /data` ausführt:\n\n```sh\n/home/steam/steamcmd/steamcmd.sh +force_install_dir /data +login anonymous +app_update 443030 validate +quit\nrc=$?\nchown -R 1001:1001 /data\nexit $rc\n```\n\nDer Exit-Code von SteamCMD bleibt erhalten (`exit $rc`), das `chown` läuft auch bei SteamCMD-Fehler (gut, damit der Panel-User die Reste aufräumen kann).\n\n### Sicherheit\n\n- Hardening unverändert: `--cap-drop=ALL --security-opt=no-new-privileges --rm`. Container-Root hat damit keine eskalierbaren CAPs, und das einzige Schreibziel ist der Bind-Mount `/data`.\n- **Shell-Injection-Schutz:** Alle SteamCMD-Argumente werden mit `shlex.quote()` escaped, bevor sie in den `bash -c`-String eingesetzt werden. Test `test_bash_script_is_safely_quoted` verifiziert das mit einem präparierten `+app_set_config \"value; rm -rf /\"`.\n\n### Tests\n\n3 neue Tests in `backend/tests/test_docker_service.py::TestSteamCMDHelpers`:\n\n- `test_steamcmd_install_runs_as_root_and_chowns` — verifiziert bash-Entrypoint, kein `--user`, chown am Ende, HOME=/data, Exit-Code-Propagation.\n- `test_workshop_download_runs_as_root_and_chowns` — gleiche Garantien für Workshop-Downloads.\n- `test_bash_script_is_safely_quoted` — Shell-Injection-Versuch über `extra_args` darf nicht ausbrechen.\n\nKomplette Backend-Suite weiterhin grün: **96 passed**.\n\n### Dokumentation\n\n`docs/agent-rules/architecture.md` §12.4 enthält jetzt das Ausführungsmodell ausführlich (Container-Root + chown + HOME-Redirect + shlex-Escaping + Hardening-Flags).\n\n## Review & Testing Checklist for Human\n\nRisiko: **gelb** — SteamCMD schreibt initial als Container-Root, wir chown'en danach. Wenn das `chown` aus irgendeinem Grund nicht durchläuft (sollte nicht passieren, weil Container-Root das einfach kann), bleiben Dateien als root im Bind-Mount liegen und das Panel kann sie nicht lesen. Ist aber abgefangen, weil `chown` immer läuft (auch bei SteamCMD-Fehler).\n\n- [ ] **Smoke-Test wiederholen:** alten Test-Server-Ordner löschen, Server neu erstellen, Install starten. Im Console-Log muss SteamCMD jetzt durchlaufen.\n- [ ] Nach erfolgreichem Install: `ls -la /opt/msm/servers/<id>/` — alle Dateien müssen msm:msm gehören, nicht root:root.\n- [ ] Optional: `ls -la /opt/msm/servers/<id>/Steam/` zeigt SteamCMDs persistenten Cache.\n\nTest-Plan kurz:\n\n```bash\n# 1) Alten Server-Ordner aufräumen\nrm -rf /opt/msm/servers/conan_exiles_ue5_*\n# 2) Update + Restart\ncd /opt/msm && git pull && systemctl restart msm-panel\n# 3) Im Panel: Server erstellen → Install starten\n# 4) Console-Log beobachten\n# 5) Eigentümer-Check:\nstat -c '%U:%G %n' /opt/msm/servers/<id>/* | head\n```\n\n### Notes\n\n- Sollte beim nächsten Run noch ein Problem auftauchen (z. B. SteamCMD-Login-Failure, Disk-Voll, fehlende Steam-App-ID-Berechtigung), bitte den exakten Console-Output schicken — dann iteriere ich nach.\n- Das `chown` im Container ist ein leichter Layering-Bruch (Container weiß über Host-UIDs Bescheid), aber in der Praxis pragmatisch und gut testbar. Mit rootless Docker (TODO §12.5) löst sich das automatisch auf, weil dann das Container-Root = Host-msm-UID gemappt wird und kein chown mehr nötig ist.\n\n\nLink to Devin session: https://app.devin.ai/sessions/226db64a5e62433d87404f2c1b15137d\nRequested by: @einmalmaik",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779577509-steamcmd-root-chown",
+    "repository": "einmalmaik/maunting-server-manager"
+  },
+  "diffRef": {
+    "repository": "einmalmaik/maunting-server-manager",
+    "headSha": "cc93307a7bfaae28714015c4b906cd479712727f",
+    "baseSha": "8e96236e607818b505c82a807773f82b4324c22d"
+  },
+  "vendoredDiffPath": "devin/devin-einmalmaik-maunting-server-manager-pr9.diff",
+  "vendoredAt": "2026-05-24T03:04:49.322Z",
+  "collectedAt": "2026-05-24T03:04:49.322Z"
+}

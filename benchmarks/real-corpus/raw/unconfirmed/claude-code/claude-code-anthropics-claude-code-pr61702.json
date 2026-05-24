@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-claude-code-pr61702",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 61702,
+    "headSha": "a83c7d178d543ab19d53a67b029dd1ade074eca2",
+    "baseSha": "39e853e4074d90f27afdfb7ea601e0fc378bd0c5",
+    "title": "[docs] Add stats cache freeze troubleshooting entry for lastComputedDate stagnation (#61686)",
+    "body": "## Summary\n\nAdds a troubleshooting entry for ~/.claude/stats-cache.json \\lastComputedDate\\ not advancing — a silent failure in the stats recompute path that causes new model IDs to be missing from \\modelUsage\\ and the stats dashboard to show increasingly stale data.\n\nReferences #61686\n\n## Problem\n\nThe incremental recompute silently fails when encountering session files with unknown model IDs, multi-day sessions (first-message date < \\lastComputedDate\\ but last-message > it), or corrupt data. Once \\lastComputedDate\\ stops advancing, the freeze is self-perpetuating — no new sessions are ever scanned.\n\n## Workaround documented\n\n\\\\\\\bash\nrm ~/.claude/stats-cache.json\n# Restart Claude Code to force a full rebuild\n\\\\\\\n\n## Related issues\n\n- #46139 (same freeze, March 2026)\n- #50404 (cache drops days on reinstall)\n- #48213 (streak broken despite valid session files)",
+    "author": "giruuuuj",
+    "headRef": "fix/stats-cache-freeze-61686",
+    "repository": "anthropics/claude-code"
+  },
+  "diffRef": {
+    "repository": "anthropics/claude-code",
+    "headSha": "a83c7d178d543ab19d53a67b029dd1ade074eca2",
+    "baseSha": "39e853e4074d90f27afdfb7ea601e0fc378bd0c5"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-claude-code-pr61702.diff",
+  "vendoredAt": "2026-05-24T03:15:40.036Z",
+  "collectedAt": "2026-05-24T03:15:40.036Z"
+}

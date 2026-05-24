@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr23813",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 23813,
+    "headSha": "8825aa4714128d902105af8710bdfbd7d7c3e83b",
+    "baseSha": "195ba3eb881d38288166f910134df9a13d658d89",
+    "title": "windows-sandbox: remove SandboxPolicy runner plumbing",
+    "body": "## Why\n\nThe Windows sandbox runner still carried the old `SandboxPolicy` compatibility path even though core now computes `PermissionProfile`. That meant Windows command-runner execution could only see the legacy projection, so profile-only filesystem rules such as deny globs were not part of the runner input.\n\n## What Changed\n\n- Removed the Windows-local `SandboxPolicy` parser/export and deleted `windows-sandbox-rs/src/policy.rs`.\n- Changed restricted-token capture/session setup, elevated setup, world-writable audit, read-root grant, and command-runner session APIs to accept `PermissionProfile` plus the profile cwd.\n- Bumped the elevated command-runner IPC protocol to version 2 because `SpawnRequest` now carries `permission_profile` / `permission_profile_cwd` instead of the legacy `policy_json_or_preset` / `sandbox_policy_cwd` fields.\n- Updated core exec, unified exec, debug-sandbox, TUI setup/grant flows, and app-server setup to pass the actual effective `PermissionProfile`.\n- Left regression coverage asserting the old IPC policy fields are absent and the runner serializes tagged `PermissionProfile` JSON.\n\n## Verification\n\n- `cargo test -p codex-windows-sandbox`\n- `cargo test -p codex-core windows_sandbox`\n- `cargo test -p codex-app-server request_processors::windows_sandbox_processor`\n- `just fix -p codex-windows-sandbox -p codex-core -p codex-app-server -p codex-cli -p codex-tui`\n- `just fix -p codex-cli -p codex-tui`\n- `just fix -p codex-windows-sandbox -p codex-tui`\n- `rg \"\\\\bSandboxPolicy\\\\b\" codex-rs/windows-sandbox-rs` returned no matches.\n\nNote: `cargo test -p codex-cli` was attempted but did not reach crate tests because local disk filled while compiling dependencies (`No space left on device`). The targeted clippy pass compiled the affected CLI/TUI surfaces afterward.\n\n\n\n\n---\n[//]: # (BEGIN SAPLING FOOTER)\nStack created with [Sapling](https://sapling-scm.com). Best reviewed with [ReviewStack](https://reviewstack.dev/openai/codex/pull/23813).\n* #24108\n* __->__ #23813",
+    "author": "bolinfest",
+    "headRef": "pr23813",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "8825aa4714128d902105af8710bdfbd7d7c3e83b",
+    "baseSha": "195ba3eb881d38288166f910134df9a13d658d89"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr23813.diff",
+  "vendoredAt": "2026-05-24T03:13:28.353Z",
+  "collectedAt": "2026-05-24T03:13:28.353Z"
+}

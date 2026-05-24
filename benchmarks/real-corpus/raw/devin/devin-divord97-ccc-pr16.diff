@@ -1,0 +1,3011 @@
+diff --git a/cmd/server/main.go b/cmd/server/main.go
+index 8a7b3b2..5c28304 100644
+--- a/cmd/server/main.go
++++ b/cmd/server/main.go
+@@ -249,6 +249,26 @@ func main() {
+ 	llmGatewayHandler := handler.NewLLMGatewayHandler(llmGatewaySvc)
+ 	webrtcQualityHandler := handler.NewWebRTCQualityHandler(webrtcQualityRepo)
+ 
++	// Advanced AI Repositories
++	commAgentRepo := infraMySQL.NewCommAgentRepo(db)
++	commAgentSessionRepo := infraMySQL.NewCommAgentSessionRepo(db)
++	voiceProfileRepo := infraMySQL.NewVoiceProfileRepo(db)
++	analysisTaskRepo := infraMySQL.NewConversationAnalysisTaskRepo(db)
++	trainingCourseRepo := infraMySQL.NewTrainingCourseRepo(db)
++	trainingExamRepo := infraMySQL.NewTrainingExamRepo(db)
++	simulatedCallRepo := infraMySQL.NewSimulatedCallRepo(db)
++	ringAnalysisConfigRepo := infraMySQL.NewRingAnalysisConfigRepo(db)
++	ringAnalysisLogRepo := infraMySQL.NewRingAnalysisLogRepo(db)
++	fullDuplexConfigRepo := infraMySQL.NewFullDuplexConfigRepo(db)
++
++	// Advanced AI Domain Services
++	commAgentSvc := ai.NewCommAgentService(commAgentRepo, commAgentSessionRepo)
++	voiceProfileSvc := ai.NewVoiceProfileService(voiceProfileRepo)
++	conversationAnalysisSvc := ai.NewConversationAnalysisService(analysisTaskRepo)
++	trainingSvc := ai.NewTrainingService(trainingCourseRepo, trainingExamRepo, simulatedCallRepo)
++	ringAnalysisSvc := ai.NewRingAnalysisService(ringAnalysisConfigRepo, ringAnalysisLogRepo)
++	fullDuplexSvc := ai.NewFullDuplexService(fullDuplexConfigRepo)
++
+ 	// --- Router ---
+ 	router := httpRouter.NewRouter(httpRouter.RouterDeps{
+ 		TenantHandler:        tenantHandler,
+@@ -298,6 +318,12 @@ func main() {
+ 		AnnotationHandler:      annotationHandler,
+ 		LLMGatewayHandler:      llmGatewayHandler,
+ 		WebRTCQualityHandler:   webrtcQualityHandler,
++		CommAgentSvc:           commAgentSvc,
++		VoiceSvc:               voiceProfileSvc,
++		AnalysisSvc:            conversationAnalysisSvc,
++		TrainingSvc:            trainingSvc,
++		RingSvc:                ringAnalysisSvc,
++		FullDuplexSvc:          fullDuplexSvc,
+ 		RateLimiter:          rateLimiter,
+ 		AuditLogRepo:         auditLogRepo,
+ 		JWTSecret:            cfg.JWT.Secret,
+diff --git a/internal/application/advancedai/service.go b/internal/application/advancedai/service.go
+new file mode 100644
+index 0000000..923158b
+--- /dev/null
++++ b/internal/application/advancedai/service.go
+@@ -0,0 +1,124 @@
++package advancedai
++
++import (
++	"context"
++	"fmt"
++
++	"github.com/divord97/ccc/internal/domain/ai"
++	"github.com/divord97/ccc/internal/infrastructure/llm"
++	"github.com/rs/zerolog"
++)
++
++// Service orchestrates advanced AI operations.
++type Service struct {
++	commAgentSvc    *ai.CommAgentService
++	voiceSvc        *ai.VoiceProfileService
++	analysisSvc     *ai.ConversationAnalysisService
++	trainingSvc     *ai.TrainingService
++	ringSvc         *ai.RingAnalysisService
++	fullDuplexSvc   *ai.FullDuplexService
++	commAgentLLM    llm.CommAgentProvider
++	voiceCloneLLM   llm.VoiceCloningProvider
++	analyticsLLM    llm.ConversationAnalyticsProvider
++	ringLLM         llm.RingAnalysisProvider
++	fullDuplexLLM   llm.FullDuplexProvider
++	trainingLLM     llm.TrainingProvider
++	logger          zerolog.Logger
++}
++
++// Deps holds all dependencies for the advanced AI service.
++type Deps struct {
++	CommAgentSvc  *ai.CommAgentService
++	VoiceSvc      *ai.VoiceProfileService
++	AnalysisSvc   *ai.ConversationAnalysisService
++	TrainingSvc   *ai.TrainingService
++	RingSvc       *ai.RingAnalysisService
++	FullDuplexSvc *ai.FullDuplexService
++	CommAgentLLM  llm.CommAgentProvider
++	VoiceCloneLLM llm.VoiceCloningProvider
++	AnalyticsLLM  llm.ConversationAnalyticsProvider
++	RingLLM       llm.RingAnalysisProvider
++	FullDuplexLLM llm.FullDuplexProvider
++	TrainingLLM   llm.TrainingProvider
++	Logger        zerolog.Logger
++}
++
++func NewService(d Deps) *Service {
++	return &Service{
++		commAgentSvc:  d.CommAgentSvc,
++		voiceSvc:      d.VoiceSvc,
++		analysisSvc:   d.AnalysisSvc,
++		trainingSvc:   d.TrainingSvc,
++		ringSvc:       d.RingSvc,
++		fullDuplexSvc: d.FullDuplexSvc,
++		commAgentLLM:  d.CommAgentLLM,
++		voiceCloneLLM: d.VoiceCloneLLM,
++		analyticsLLM:  d.AnalyticsLLM,
++		ringLLM:       d.RingLLM,
++		fullDuplexLLM: d.FullDuplexLLM,
++		trainingLLM:   d.TrainingLLM,
++		logger:        d.Logger,
++	}
++}
++
++// HandleConversationTurn processes a single turn in an autonomous agent conversation.
++func (s *Service) HandleConversationTurn(ctx context.Context, tenantID, commAgentID int64, userMessage string) (string, bool, error) {
++	agent, err := s.commAgentSvc.Get(ctx, tenantID, commAgentID)
++	if err != nil {
++		return "", false, err
++	}
++
++	reply, err := s.commAgentLLM.GenerateReply(ctx, agent.SystemPrompt, "", userMessage)
++	if err != nil {
++		s.logger.Error().Err(err).Msg("advancedai: generate reply failed")
++		return "", false, err
++	}
++
++	shouldTransfer, reason, err := s.commAgentLLM.ShouldTransfer(ctx, agent.SystemPrompt, userMessage+"\n"+reply)
++	if err != nil {
++		s.logger.Warn().Err(err).Msg("advancedai: transfer check failed, continuing")
++		shouldTransfer = false
++	}
++	if shouldTransfer {
++		s.logger.Info().Str("reason", reason).Msg("advancedai: transfer recommended")
++	}
++
++	return reply, shouldTransfer, nil
++}
++
++// RunConversationAnalysis executes a batch analysis task.
++func (s *Service) RunConversationAnalysis(ctx context.Context, tenantID, taskID int64, transcripts []string) error {
++	task, err := s.analysisSvc.Get(ctx, tenantID, taskID)
++	if err != nil {
++		return err
++	}
++
++	if err := s.analysisSvc.MarkRunning(ctx, task); err != nil {
++		return err
++	}
++
++	var resultJSON string
++	switch task.Type {
++	case ai.AnalysisTypeIntent:
++		resultJSON, err = s.analyticsLLM.MineIntents(ctx, transcripts)
++	case ai.AnalysisTypeSOP:
++		resultJSON, err = s.analyticsLLM.DiscoverSOPs(ctx, transcripts)
++	case ai.AnalysisTypeSalesTalk:
++		resultJSON, err = s.analyticsLLM.ExtractSalesScripts(ctx, transcripts)
++	case ai.AnalysisTypeTopic:
++		resultJSON, err = s.analyticsLLM.ClusterTopics(ctx, transcripts)
++	default:
++		return fmt.Errorf("advancedai: unsupported analysis type: %s", task.Type)
++	}
++	if err != nil {
++		s.logger.Error().Err(err).Msg("advancedai: analysis failed")
++		return err
++	}
++
++	return s.analysisSvc.Complete(ctx, task, resultJSON)
++}
++
++// EvaluateSimulatedCall uses AI to score a practice call.
++func (s *Service) EvaluateSimulatedCall(ctx context.Context, scenario, transcript string) (string, int, error) {
++	return s.trainingLLM.EvaluateSimulatedCall(ctx, scenario, transcript)
++}
+diff --git a/internal/domain/ai/entity_advanced.go b/internal/domain/ai/entity_advanced.go
+new file mode 100644
+index 0000000..b61a7f7
+--- /dev/null
++++ b/internal/domain/ai/entity_advanced.go
+@@ -0,0 +1,220 @@
++package ai
++
++import "time"
++
++// ─── 1. Communication Agent (通信智能体) ───
++
++type AgentMode string
++
++const (
++	AgentModeInbound  AgentMode = "inbound"
++	AgentModeOutbound AgentMode = "outbound"
++)
++
++type AgentSessionStatus string
++
++const (
++	AgentSessionActive    AgentSessionStatus = "active"
++	AgentSessionCompleted AgentSessionStatus = "completed"
++	AgentSessionTransfer  AgentSessionStatus = "transferred"
++	AgentSessionFailed    AgentSessionStatus = "failed"
++)
++
++// CommAgent is an LLM-powered communication agent that autonomously handles calls.
++type CommAgent struct {
++	ID              int64     `db:"id" json:"id"`
++	TenantID        int64     `db:"tenant_id" json:"tenant_id"`
++	DigitalEmployeeID int64   `db:"digital_employee_id" json:"digital_employee_id"`
++	Name            string    `db:"name" json:"name"`
++	Mode            AgentMode `db:"mode" json:"mode"`
++	SystemPrompt    string    `db:"system_prompt" json:"system_prompt"`
++	MaxTurns        int       `db:"max_turns" json:"max_turns"`
++	TransferSkillGroupID *int64 `db:"transfer_skill_group_id" json:"transfer_skill_group_id,omitempty"`
++	LLMModelID      *int64    `db:"llm_model_id" json:"llm_model_id,omitempty"`
++	IsActive        bool      `db:"is_active" json:"is_active"`
++	CreatedAt       time.Time `db:"created_at" json:"created_at"`
++	UpdatedAt       time.Time `db:"updated_at" json:"updated_at"`
++}
++
++// CommAgentSession tracks a single autonomous conversation session.
++type CommAgentSession struct {
++	ID           int64              `db:"id" json:"id"`
++	TenantID     int64              `db:"tenant_id" json:"tenant_id"`
++	CommAgentID  int64              `db:"comm_agent_id" json:"comm_agent_id"`
++	CallID       int64              `db:"call_id" json:"call_id"`
++	Status       AgentSessionStatus `db:"status" json:"status"`
++	TurnCount    int                `db:"turn_count" json:"turn_count"`
++	Transcript   string             `db:"transcript" json:"transcript"`
++	Summary      string             `db:"summary" json:"summary"`
++	TransferredTo *int64            `db:"transferred_to" json:"transferred_to,omitempty"`
++	StartedAt    time.Time          `db:"started_at" json:"started_at"`
++	EndedAt      *time.Time         `db:"ended_at" json:"ended_at,omitempty"`
++}
++
++// ─── 2. Voice Cloning (声纹复刻) ───
++
++type VoiceProfileStatus string
++
++const (
++	VoiceProfilePending   VoiceProfileStatus = "pending"
++	VoiceProfileTraining  VoiceProfileStatus = "training"
++	VoiceProfileReady     VoiceProfileStatus = "ready"
++	VoiceProfileFailed    VoiceProfileStatus = "failed"
++)
++
++// VoiceProfile represents a custom TTS voice clone.
++type VoiceProfile struct {
++	ID            int64              `db:"id" json:"id"`
++	TenantID      int64              `db:"tenant_id" json:"tenant_id"`
++	Name          string             `db:"name" json:"name"`
++	SampleAudioURL string            `db:"sample_audio_url" json:"sample_audio_url"`
++	ProviderVoiceID string           `db:"provider_voice_id" json:"provider_voice_id"`
++	Status        VoiceProfileStatus `db:"status" json:"status"`
++	Language      string             `db:"language" json:"language"`
++	CreatedAt     time.Time          `db:"created_at" json:"created_at"`
++	UpdatedAt     time.Time          `db:"updated_at" json:"updated_at"`
++}
++
++// ─── 3. Conversation Analytics (智能对话分析) ───
++
++type AnalysisType string
++
++const (
++	AnalysisTypeIntent    AnalysisType = "intent_mining"
++	AnalysisTypeSOP       AnalysisType = "sop_discovery"
++	AnalysisTypeSalesTalk AnalysisType = "sales_script"
++	AnalysisTypeTopic     AnalysisType = "topic_cluster"
++)
++
++type AnalysisTaskStatus string
++
++const (
++	AnalysisTaskPending    AnalysisTaskStatus = "pending"
++	AnalysisTaskRunning    AnalysisTaskStatus = "running"
++	AnalysisTaskCompleted  AnalysisTaskStatus = "completed"
++	AnalysisTaskFailed     AnalysisTaskStatus = "failed"
++)
++
++// ConversationAnalysisTask is a batch analysis job over historical transcripts.
++type ConversationAnalysisTask struct {
++	ID           int64              `db:"id" json:"id"`
++	TenantID     int64              `db:"tenant_id" json:"tenant_id"`
++	Name         string             `db:"name" json:"name"`
++	Type         AnalysisType       `db:"type" json:"type"`
++	DateFrom     string             `db:"date_from" json:"date_from"`
++	DateTo       string             `db:"date_to" json:"date_to"`
++	TotalCalls   int                `db:"total_calls" json:"total_calls"`
++	ProcessedCalls int              `db:"processed_calls" json:"processed_calls"`
++	Status       AnalysisTaskStatus `db:"status" json:"status"`
++	ResultJSON   string             `db:"result_json" json:"result_json"` // JSON array of findings
++	CreatedAt    time.Time          `db:"created_at" json:"created_at"`
++	CompletedAt  *time.Time         `db:"completed_at" json:"completed_at,omitempty"`
++}
++
++// ─── 4. Training System (智能培训) ───
++
++type CourseStatus string
++
++const (
++	CourseStatusDraft     CourseStatus = "draft"
++	CourseStatusPublished CourseStatus = "published"
++	CourseStatusArchived  CourseStatus = "archived"
++)
++
++type ExamStatus string
++
++const (
++	ExamStatusPending  ExamStatus = "pending"
++	ExamStatusPassed   ExamStatus = "passed"
++	ExamStatusFailed   ExamStatus = "failed"
++)
++
++// TrainingCourse is a knowledge course for agent training.
++type TrainingCourse struct {
++	ID          int64        `db:"id" json:"id"`
++	TenantID    int64        `db:"tenant_id" json:"tenant_id"`
++	Title       string       `db:"title" json:"title"`
++	Description string       `db:"description" json:"description"`
++	ContentJSON string       `db:"content_json" json:"content_json"` // structured course content
++	PassScore   int          `db:"pass_score" json:"pass_score"`
++	Status      CourseStatus `db:"status" json:"status"`
++	CreatedAt   time.Time    `db:"created_at" json:"created_at"`
++	UpdatedAt   time.Time    `db:"updated_at" json:"updated_at"`
++}
++
++// TrainingExam records an agent's exam attempt.
++type TrainingExam struct {
++	ID         int64      `db:"id" json:"id"`
++	TenantID   int64      `db:"tenant_id" json:"tenant_id"`
++	CourseID   int64      `db:"course_id" json:"course_id"`
++	AgentID    int64      `db:"agent_id" json:"agent_id"`
++	Score      int        `db:"score" json:"score"`
++	MaxScore   int        `db:"max_score" json:"max_score"`
++	Status     ExamStatus `db:"status" json:"status"`
++	AnswersJSON string    `db:"answers_json" json:"answers_json"`
++	CreatedAt  time.Time  `db:"created_at" json:"created_at"`
++}
++
++// SimulatedCall is an AI-powered practice call for agent training.
++type SimulatedCall struct {
++	ID          int64     `db:"id" json:"id"`
++	TenantID    int64     `db:"tenant_id" json:"tenant_id"`
++	AgentID     int64     `db:"agent_id" json:"agent_id"`
++	ScenarioID  int64     `db:"scenario_id" json:"scenario_id"` // links to DEScene
++	Transcript  string    `db:"transcript" json:"transcript"`
++	AIFeedback  string    `db:"ai_feedback" json:"ai_feedback"`
++	Score       int       `db:"score" json:"score"`
++	DurationSec int       `db:"duration_sec" json:"duration_sec"`
++	CreatedAt   time.Time `db:"created_at" json:"created_at"`
++}
++
++// ─── 5. Ring Analysis (彩铃识别) ───
++
++type RingDetectionResult string
++
++const (
++	RingDetectionHuman     RingDetectionResult = "human"
++	RingDetectionVoicemail RingDetectionResult = "voicemail"
++	RingDetectionBusy      RingDetectionResult = "busy"
++	RingDetectionNoAnswer  RingDetectionResult = "no_answer"
++	RingDetectionFax       RingDetectionResult = "fax"
++	RingDetectionUnknown   RingDetectionResult = "unknown"
++)
++
++// RingAnalysisConfig stores per-tenant ring analysis settings.
++type RingAnalysisConfig struct {
++	ID            int64     `db:"id" json:"id"`
++	TenantID      int64     `db:"tenant_id" json:"tenant_id"`
++	Enabled       bool      `db:"enabled" json:"enabled"`
++	DetectionTimeoutMs int  `db:"detection_timeout_ms" json:"detection_timeout_ms"`
++	HangUpOnVoicemail bool  `db:"hangup_on_voicemail" json:"hangup_on_voicemail"`
++	HangUpOnFax       bool  `db:"hangup_on_fax" json:"hangup_on_fax"`
++	CreatedAt     time.Time `db:"created_at" json:"created_at"`
++	UpdatedAt     time.Time `db:"updated_at" json:"updated_at"`
++}
++
++// RingAnalysisLog records a ring analysis event for an outbound call.
++type RingAnalysisLog struct {
++	ID         int64               `db:"id" json:"id"`
++	TenantID   int64               `db:"tenant_id" json:"tenant_id"`
++	CallID     int64               `db:"call_id" json:"call_id"`
++	Result     RingDetectionResult `db:"result" json:"result"`
++	Confidence float64             `db:"confidence" json:"confidence"`
++	DurationMs int                 `db:"duration_ms" json:"duration_ms"`
++	CreatedAt  time.Time           `db:"created_at" json:"created_at"`
++}
++
++// ─── 6. Full-Duplex Interaction (全双工交互) ───
++
++// FullDuplexConfig stores per-tenant full-duplex interaction settings.
++type FullDuplexConfig struct {
++	ID                  int64     `db:"id" json:"id"`
++	TenantID            int64     `db:"tenant_id" json:"tenant_id"`
++	Enabled             bool      `db:"enabled" json:"enabled"`
++	InterruptionEnabled bool      `db:"interruption_enabled" json:"interruption_enabled"`
++	SilenceThresholdMs  int       `db:"silence_threshold_ms" json:"silence_threshold_ms"`
++	InterruptionSensitivity float64 `db:"interruption_sensitivity" json:"interruption_sensitivity"` // 0.0-1.0
++	VoiceContinuity     bool      `db:"voice_continuity" json:"voice_continuity"`
++	CreatedAt           time.Time `db:"created_at" json:"created_at"`
++	UpdatedAt           time.Time `db:"updated_at" json:"updated_at"`
++}
+diff --git a/internal/domain/ai/mock_repo_advanced.go b/internal/domain/ai/mock_repo_advanced.go
+new file mode 100644
+index 0000000..eedaf9e
+--- /dev/null
++++ b/internal/domain/ai/mock_repo_advanced.go
+@@ -0,0 +1,453 @@
++package ai
++
++import (
++	"context"
++	"errors"
++	"sync"
++)
++
++var errNotFound = errors.New("not found")
++
++// ─── CommAgent Mock ───
++
++type MockCommAgentRepo struct {
++	mu    sync.RWMutex
++	items map[int64]*CommAgent
++}
++
++func NewMockCommAgentRepo() *MockCommAgentRepo {
++	return &MockCommAgentRepo{items: make(map[int64]*CommAgent)}
++}
++
++func (m *MockCommAgentRepo) Create(_ context.Context, a *CommAgent) error {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	m.items[a.ID] = a
++	return nil
++}
++
++func (m *MockCommAgentRepo) GetByID(_ context.Context, tenantID, id int64) (*CommAgent, error) {
++	m.mu.RLock()
++	defer m.mu.RUnlock()
++	a, ok := m.items[id]
++	if !ok || a.TenantID != tenantID {
++		return nil, errNotFound
++	}
++	return a, nil
++}
++
++func (m *MockCommAgentRepo) List(_ context.Context, tenantID int64) ([]CommAgent, error) {
++	m.mu.RLock()
++	defer m.mu.RUnlock()
++	var result []CommAgent
++	for _, a := range m.items {
++		if a.TenantID == tenantID {
++			result = append(result, *a)
++		}
++	}
++	return result, nil
++}
++
++func (m *MockCommAgentRepo) Update(_ context.Context, a *CommAgent) error {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	m.items[a.ID] = a
++	return nil
++}
++
++func (m *MockCommAgentRepo) Delete(_ context.Context, tenantID, id int64) error {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	a, ok := m.items[id]
++	if !ok || a.TenantID != tenantID {
++		return errNotFound
++	}
++	delete(m.items, id)
++	return nil
++}
++
++// ─── CommAgentSession Mock ───
++
++type MockCommAgentSessionRepo struct {
++	mu    sync.RWMutex
++	items map[int64]*CommAgentSession
++}
++
++func NewMockCommAgentSessionRepo() *MockCommAgentSessionRepo {
++	return &MockCommAgentSessionRepo{items: make(map[int64]*CommAgentSession)}
++}
++
++func (m *MockCommAgentSessionRepo) Create(_ context.Context, s *CommAgentSession) error {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	m.items[s.ID] = s
++	return nil
++}
++
++func (m *MockCommAgentSessionRepo) GetByID(_ context.Context, tenantID, id int64) (*CommAgentSession, error) {
++	m.mu.RLock()
++	defer m.mu.RUnlock()
++	s, ok := m.items[id]
++	if !ok || s.TenantID != tenantID {
++		return nil, errNotFound
++	}
++	return s, nil
++}
++
++func (m *MockCommAgentSessionRepo) ListByAgent(_ context.Context, tenantID, agentID int64) ([]CommAgentSession, error) {
++	m.mu.RLock()
++	defer m.mu.RUnlock()
++	var result []CommAgentSession
++	for _, s := range m.items {
++		if s.TenantID == tenantID && s.CommAgentID == agentID {
++			result = append(result, *s)
++		}
++	}
++	return result, nil
++}
++
++func (m *MockCommAgentSessionRepo) Update(_ context.Context, s *CommAgentSession) error {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	m.items[s.ID] = s
++	return nil
++}
++
++// ─── VoiceProfile Mock ───
++
++type MockVoiceProfileRepo struct {
++	mu    sync.RWMutex
++	items map[int64]*VoiceProfile
++}
++
++func NewMockVoiceProfileRepo() *MockVoiceProfileRepo {
++	return &MockVoiceProfileRepo{items: make(map[int64]*VoiceProfile)}
++}
++
++func (m *MockVoiceProfileRepo) Create(_ context.Context, v *VoiceProfile) error {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	m.items[v.ID] = v
++	return nil
++}
++
++func (m *MockVoiceProfileRepo) GetByID(_ context.Context, tenantID, id int64) (*VoiceProfile, error) {
++	m.mu.RLock()
++	defer m.mu.RUnlock()
++	v, ok := m.items[id]
++	if !ok || v.TenantID != tenantID {
++		return nil, errNotFound
++	}
++	return v, nil
++}
++
++func (m *MockVoiceProfileRepo) List(_ context.Context, tenantID int64) ([]VoiceProfile, error) {
++	m.mu.RLock()
++	defer m.mu.RUnlock()
++	var result []VoiceProfile
++	for _, v := range m.items {
++		if v.TenantID == tenantID {
++			result = append(result, *v)
++		}
++	}
++	return result, nil
++}
++
++func (m *MockVoiceProfileRepo) Update(_ context.Context, v *VoiceProfile) error {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	m.items[v.ID] = v
++	return nil
++}
++
++func (m *MockVoiceProfileRepo) Delete(_ context.Context, tenantID, id int64) error {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	v, ok := m.items[id]
++	if !ok || v.TenantID != tenantID {
++		return errNotFound
++	}
++	delete(m.items, id)
++	return nil
++}
++
++// ─── ConversationAnalysisTask Mock ───
++
++type MockAnalysisTaskRepo struct {
++	mu    sync.RWMutex
++	items map[int64]*ConversationAnalysisTask
++}
++
++func NewMockAnalysisTaskRepo() *MockAnalysisTaskRepo {
++	return &MockAnalysisTaskRepo{items: make(map[int64]*ConversationAnalysisTask)}
++}
++
++func (m *MockAnalysisTaskRepo) Create(_ context.Context, t *ConversationAnalysisTask) error {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	m.items[t.ID] = t
++	return nil
++}
++
++func (m *MockAnalysisTaskRepo) GetByID(_ context.Context, tenantID, id int64) (*ConversationAnalysisTask, error) {
++	m.mu.RLock()
++	defer m.mu.RUnlock()
++	t, ok := m.items[id]
++	if !ok || t.TenantID != tenantID {
++		return nil, errNotFound
++	}
++	return t, nil
++}
++
++func (m *MockAnalysisTaskRepo) List(_ context.Context, tenantID int64) ([]ConversationAnalysisTask, error) {
++	m.mu.RLock()
++	defer m.mu.RUnlock()
++	var result []ConversationAnalysisTask
++	for _, t := range m.items {
++		if t.TenantID == tenantID {
++			result = append(result, *t)
++		}
++	}
++	return result, nil
++}
++
++func (m *MockAnalysisTaskRepo) Update(_ context.Context, t *ConversationAnalysisTask) error {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	m.items[t.ID] = t
++	return nil
++}
++
++// ─── TrainingCourse Mock ───
++
++type MockTrainingCourseRepo struct {
++	mu    sync.RWMutex
++	items map[int64]*TrainingCourse
++}
++
++func NewMockTrainingCourseRepo() *MockTrainingCourseRepo {
++	return &MockTrainingCourseRepo{items: make(map[int64]*TrainingCourse)}
++}
++
++func (m *MockTrainingCourseRepo) Create(_ context.Context, c *TrainingCourse) error {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	m.items[c.ID] = c
++	return nil
++}
++
++func (m *MockTrainingCourseRepo) GetByID(_ context.Context, tenantID, id int64) (*TrainingCourse, error) {
++	m.mu.RLock()
++	defer m.mu.RUnlock()
++	c, ok := m.items[id]
++	if !ok || c.TenantID != tenantID {
++		return nil, errNotFound
++	}
++	return c, nil
++}
++
++func (m *MockTrainingCourseRepo) List(_ context.Context, tenantID int64) ([]TrainingCourse, error) {
++	m.mu.RLock()
++	defer m.mu.RUnlock()
++	var result []TrainingCourse
++	for _, c := range m.items {
++		if c.TenantID == tenantID {
++			result = append(result, *c)
++		}
++	}
++	return result, nil
++}
++
++func (m *MockTrainingCourseRepo) Update(_ context.Context, c *TrainingCourse) error {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	m.items[c.ID] = c
++	return nil
++}
++
++func (m *MockTrainingCourseRepo) Delete(_ context.Context, tenantID, id int64) error {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	c, ok := m.items[id]
++	if !ok || c.TenantID != tenantID {
++		return errNotFound
++	}
++	delete(m.items, id)
++	return nil
++}
++
++// ─── TrainingExam Mock ───
++
++type MockTrainingExamRepo struct {
++	mu    sync.RWMutex
++	items map[int64]*TrainingExam
++}
++
++func NewMockTrainingExamRepo() *MockTrainingExamRepo {
++	return &MockTrainingExamRepo{items: make(map[int64]*TrainingExam)}
++}
++
++func (m *MockTrainingExamRepo) Create(_ context.Context, e *TrainingExam) error {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	m.items[e.ID] = e
++	return nil
++}
++
++func (m *MockTrainingExamRepo) GetByID(_ context.Context, tenantID, id int64) (*TrainingExam, error) {
++	m.mu.RLock()
++	defer m.mu.RUnlock()
++	e, ok := m.items[id]
++	if !ok || e.TenantID != tenantID {
++		return nil, errNotFound
++	}
++	return e, nil
++}
++
++func (m *MockTrainingExamRepo) ListByAgent(_ context.Context, tenantID, agentID int64) ([]TrainingExam, error) {
++	m.mu.RLock()
++	defer m.mu.RUnlock()
++	var result []TrainingExam
++	for _, e := range m.items {
++		if e.TenantID == tenantID && e.AgentID == agentID {
++			result = append(result, *e)
++		}
++	}
++	return result, nil
++}
++
++func (m *MockTrainingExamRepo) ListByCourse(_ context.Context, tenantID, courseID int64) ([]TrainingExam, error) {
++	m.mu.RLock()
++	defer m.mu.RUnlock()
++	var result []TrainingExam
++	for _, e := range m.items {
++		if e.TenantID == tenantID && e.CourseID == courseID {
++			result = append(result, *e)
++		}
++	}
++	return result, nil
++}
++
++// ─── SimulatedCall Mock ───
++
++type MockSimulatedCallRepo struct {
++	mu    sync.RWMutex
++	items map[int64]*SimulatedCall
++}
++
++func NewMockSimulatedCallRepo() *MockSimulatedCallRepo {
++	return &MockSimulatedCallRepo{items: make(map[int64]*SimulatedCall)}
++}
++
++func (m *MockSimulatedCallRepo) Create(_ context.Context, s *SimulatedCall) error {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	m.items[s.ID] = s
++	return nil
++}
++
++func (m *MockSimulatedCallRepo) GetByID(_ context.Context, tenantID, id int64) (*SimulatedCall, error) {
++	m.mu.RLock()
++	defer m.mu.RUnlock()
++	s, ok := m.items[id]
++	if !ok || s.TenantID != tenantID {
++		return nil, errNotFound
++	}
++	return s, nil
++}
++
++func (m *MockSimulatedCallRepo) ListByAgent(_ context.Context, tenantID, agentID int64) ([]SimulatedCall, error) {
++	m.mu.RLock()
++	defer m.mu.RUnlock()
++	var result []SimulatedCall
++	for _, s := range m.items {
++		if s.TenantID == tenantID && s.AgentID == agentID {
++			result = append(result, *s)
++		}
++	}
++	return result, nil
++}
++
++// ─── RingAnalysis Mocks ───
++
++type MockRingAnalysisConfigRepo struct {
++	mu    sync.RWMutex
++	items map[int64]*RingAnalysisConfig
++}
++
++func NewMockRingAnalysisConfigRepo() *MockRingAnalysisConfigRepo {
++	return &MockRingAnalysisConfigRepo{items: make(map[int64]*RingAnalysisConfig)}
++}
++
++func (m *MockRingAnalysisConfigRepo) Get(_ context.Context, tenantID int64) (*RingAnalysisConfig, error) {
++	m.mu.RLock()
++	defer m.mu.RUnlock()
++	c, ok := m.items[tenantID]
++	if !ok {
++		return nil, errNotFound
++	}
++	return c, nil
++}
++
++func (m *MockRingAnalysisConfigRepo) Upsert(_ context.Context, c *RingAnalysisConfig) error {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	m.items[c.TenantID] = c
++	return nil
++}
++
++type MockRingAnalysisLogRepo struct {
++	mu    sync.RWMutex
++	items []RingAnalysisLog
++}
++
++func NewMockRingAnalysisLogRepo() *MockRingAnalysisLogRepo {
++	return &MockRingAnalysisLogRepo{}
++}
++
++func (m *MockRingAnalysisLogRepo) Create(_ context.Context, l *RingAnalysisLog) error {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	m.items = append(m.items, *l)
++	return nil
++}
++
++func (m *MockRingAnalysisLogRepo) ListByCall(_ context.Context, tenantID, callID int64) ([]RingAnalysisLog, error) {
++	m.mu.RLock()
++	defer m.mu.RUnlock()
++	var result []RingAnalysisLog
++	for _, l := range m.items {
++		if l.TenantID == tenantID && l.CallID == callID {
++			result = append(result, l)
++		}
++	}
++	return result, nil
++}
++
++// ─── FullDuplex Mock ───
++
++type MockFullDuplexConfigRepo struct {
++	mu    sync.RWMutex
++	items map[int64]*FullDuplexConfig
++}
++
++func NewMockFullDuplexConfigRepo() *MockFullDuplexConfigRepo {
++	return &MockFullDuplexConfigRepo{items: make(map[int64]*FullDuplexConfig)}
++}
++
++func (m *MockFullDuplexConfigRepo) Get(_ context.Context, tenantID int64) (*FullDuplexConfig, error) {
++	m.mu.RLock()
++	defer m.mu.RUnlock()
++	c, ok := m.items[tenantID]
++	if !ok {
++		return nil, errNotFound
++	}
++	return c, nil
++}
++
++func (m *MockFullDuplexConfigRepo) Upsert(_ context.Context, c *FullDuplexConfig) error {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	m.items[c.TenantID] = c
++	return nil
++}
+diff --git a/internal/domain/ai/repository_advanced.go b/internal/domain/ai/repository_advanced.go
+new file mode 100644
+index 0000000..d7afb6e
+--- /dev/null
++++ b/internal/domain/ai/repository_advanced.go
+@@ -0,0 +1,79 @@
++package ai
++
++import "context"
++
++// CommAgentRepository persists communication agents.
++type CommAgentRepository interface {
++	Create(ctx context.Context, a *CommAgent) error
++	GetByID(ctx context.Context, tenantID, id int64) (*CommAgent, error)
++	List(ctx context.Context, tenantID int64) ([]CommAgent, error)
++	Update(ctx context.Context, a *CommAgent) error
++	Delete(ctx context.Context, tenantID, id int64) error
++}
++
++// CommAgentSessionRepository persists agent conversation sessions.
++type CommAgentSessionRepository interface {
++	Create(ctx context.Context, s *CommAgentSession) error
++	GetByID(ctx context.Context, tenantID, id int64) (*CommAgentSession, error)
++	ListByAgent(ctx context.Context, tenantID, agentID int64) ([]CommAgentSession, error)
++	Update(ctx context.Context, s *CommAgentSession) error
++}
++
++// VoiceProfileRepository persists voice clone profiles.
++type VoiceProfileRepository interface {
++	Create(ctx context.Context, v *VoiceProfile) error
++	GetByID(ctx context.Context, tenantID, id int64) (*VoiceProfile, error)
++	List(ctx context.Context, tenantID int64) ([]VoiceProfile, error)
++	Update(ctx context.Context, v *VoiceProfile) error
++	Delete(ctx context.Context, tenantID, id int64) error
++}
++
++// ConversationAnalysisTaskRepository persists analysis tasks.
++type ConversationAnalysisTaskRepository interface {
++	Create(ctx context.Context, t *ConversationAnalysisTask) error
++	GetByID(ctx context.Context, tenantID, id int64) (*ConversationAnalysisTask, error)
++	List(ctx context.Context, tenantID int64) ([]ConversationAnalysisTask, error)
++	Update(ctx context.Context, t *ConversationAnalysisTask) error
++}
++
++// TrainingCourseRepository persists training courses.
++type TrainingCourseRepository interface {
++	Create(ctx context.Context, c *TrainingCourse) error
++	GetByID(ctx context.Context, tenantID, id int64) (*TrainingCourse, error)
++	List(ctx context.Context, tenantID int64) ([]TrainingCourse, error)
++	Update(ctx context.Context, c *TrainingCourse) error
++	Delete(ctx context.Context, tenantID, id int64) error
++}
++
++// TrainingExamRepository persists exam attempts.
++type TrainingExamRepository interface {
++	Create(ctx context.Context, e *TrainingExam) error
++	GetByID(ctx context.Context, tenantID, id int64) (*TrainingExam, error)
++	ListByAgent(ctx context.Context, tenantID, agentID int64) ([]TrainingExam, error)
++	ListByCourse(ctx context.Context, tenantID, courseID int64) ([]TrainingExam, error)
++}
++
++// SimulatedCallRepository persists simulated call practices.
++type SimulatedCallRepository interface {
++	Create(ctx context.Context, s *SimulatedCall) error
++	GetByID(ctx context.Context, tenantID, id int64) (*SimulatedCall, error)
++	ListByAgent(ctx context.Context, tenantID, agentID int64) ([]SimulatedCall, error)
++}
++
++// RingAnalysisConfigRepository persists ring analysis configs.
++type RingAnalysisConfigRepository interface {
++	Get(ctx context.Context, tenantID int64) (*RingAnalysisConfig, error)
++	Upsert(ctx context.Context, c *RingAnalysisConfig) error
++}
++
++// RingAnalysisLogRepository persists ring analysis results.
++type RingAnalysisLogRepository interface {
++	Create(ctx context.Context, l *RingAnalysisLog) error
++	ListByCall(ctx context.Context, tenantID, callID int64) ([]RingAnalysisLog, error)
++}
++
++// FullDuplexConfigRepository persists full-duplex configs.
++type FullDuplexConfigRepository interface {
++	Get(ctx context.Context, tenantID int64) (*FullDuplexConfig, error)
++	Upsert(ctx context.Context, c *FullDuplexConfig) error
++}
+diff --git a/internal/domain/ai/service_advanced.go b/internal/domain/ai/service_advanced.go
+new file mode 100644
+index 0000000..c586157
+--- /dev/null
++++ b/internal/domain/ai/service_advanced.go
+@@ -0,0 +1,494 @@
++package ai
++
++import (
++	"context"
++	"errors"
++	"time"
++
++	"github.com/divord97/ccc/pkg/snowflake"
++)
++
++var (
++	ErrCommAgentNameEmpty     = errors.New("communication agent name is required")
++	ErrCommAgentPromptEmpty   = errors.New("system prompt is required")
++	ErrCommAgentMaxTurns      = errors.New("max_turns must be between 1 and 100")
++	ErrSessionAlreadyEnded    = errors.New("session already ended")
++	ErrSessionMaxTurns        = errors.New("session exceeded max turns")
++	ErrVoiceProfileNameEmpty  = errors.New("voice profile name is required")
++	ErrVoiceSampleURLEmpty    = errors.New("sample audio URL is required")
++	ErrAnalysisNameEmpty      = errors.New("analysis task name is required")
++	ErrAnalysisDateRange      = errors.New("date range is required")
++	ErrCourseNameEmpty        = errors.New("course title is required")
++	ErrCoursePassScore        = errors.New("pass score must be between 1 and 100")
++	ErrExamAlreadySubmitted   = errors.New("exam already submitted")
++	ErrFullDuplexSensitivity  = errors.New("interruption sensitivity must be between 0 and 1")
++)
++
++// ─── CommAgent Service ───
++
++type CommAgentService struct {
++	agentRepo   CommAgentRepository
++	sessionRepo CommAgentSessionRepository
++}
++
++func NewCommAgentService(ar CommAgentRepository, sr CommAgentSessionRepository) *CommAgentService {
++	return &CommAgentService{agentRepo: ar, sessionRepo: sr}
++}
++
++type CreateCommAgentInput struct {
++	TenantID            int64     `json:"tenant_id"`
++	DigitalEmployeeID   int64     `json:"digital_employee_id"`
++	Name                string    `json:"name"`
++	Mode                AgentMode `json:"mode"`
++	SystemPrompt        string    `json:"system_prompt"`
++	MaxTurns            int       `json:"max_turns"`
++	TransferSkillGroupID *int64   `json:"transfer_skill_group_id,omitempty"`
++	LLMModelID          *int64    `json:"llm_model_id,omitempty"`
++}
++
++func (s *CommAgentService) Create(ctx context.Context, in CreateCommAgentInput) (*CommAgent, error) {
++	if in.Name == "" {
++		return nil, ErrCommAgentNameEmpty
++	}
++	if in.SystemPrompt == "" {
++		return nil, ErrCommAgentPromptEmpty
++	}
++	if in.MaxTurns < 1 || in.MaxTurns > 100 {
++		return nil, ErrCommAgentMaxTurns
++	}
++	if in.Mode == "" {
++		in.Mode = AgentModeInbound
++	}
++	a := &CommAgent{
++		ID:                   snowflake.NextID(),
++		TenantID:             in.TenantID,
++		DigitalEmployeeID:    in.DigitalEmployeeID,
++		Name:                 in.Name,
++		Mode:                 in.Mode,
++		SystemPrompt:         in.SystemPrompt,
++		MaxTurns:             in.MaxTurns,
++		TransferSkillGroupID: in.TransferSkillGroupID,
++		LLMModelID:           in.LLMModelID,
++		IsActive:             true,
++		CreatedAt:            time.Now(),
++		UpdatedAt:            time.Now(),
++	}
++	if err := s.agentRepo.Create(ctx, a); err != nil {
++		return nil, err
++	}
++	return a, nil
++}
++
++func (s *CommAgentService) Get(ctx context.Context, tenantID, id int64) (*CommAgent, error) {
++	return s.agentRepo.GetByID(ctx, tenantID, id)
++}
++
++func (s *CommAgentService) List(ctx context.Context, tenantID int64) ([]CommAgent, error) {
++	return s.agentRepo.List(ctx, tenantID)
++}
++
++func (s *CommAgentService) Delete(ctx context.Context, tenantID, id int64) error {
++	return s.agentRepo.Delete(ctx, tenantID, id)
++}
++
++// StartSession creates a new conversation session for the comm agent.
++func (s *CommAgentService) StartSession(ctx context.Context, tenantID, commAgentID, callID int64) (*CommAgentSession, error) {
++	sess := &CommAgentSession{
++		ID:          snowflake.NextID(),
++		TenantID:    tenantID,
++		CommAgentID: commAgentID,
++		CallID:      callID,
++		Status:      AgentSessionActive,
++		TurnCount:   0,
++		StartedAt:   time.Now(),
++	}
++	if err := s.sessionRepo.Create(ctx, sess); err != nil {
++		return nil, err
++	}
++	return sess, nil
++}
++
++// AddTurn records a dialogue turn and checks max turn limit.
++func (s *CommAgentService) AddTurn(ctx context.Context, sess *CommAgentSession, userMsg, aiReply string, maxTurns int) error {
++	if sess.Status != AgentSessionActive {
++		return ErrSessionAlreadyEnded
++	}
++	sess.TurnCount++
++	if sess.TurnCount > maxTurns {
++		return ErrSessionMaxTurns
++	}
++	sess.Transcript += "User: " + userMsg + "\nAI: " + aiReply + "\n"
++	return s.sessionRepo.Update(ctx, sess)
++}
++
++// EndSession marks the session as completed or transferred.
++func (s *CommAgentService) EndSession(ctx context.Context, sess *CommAgentSession, status AgentSessionStatus, summary string, transferTo *int64) error {
++	if sess.Status != AgentSessionActive {
++		return ErrSessionAlreadyEnded
++	}
++	now := time.Now()
++	sess.Status = status
++	sess.Summary = summary
++	sess.EndedAt = &now
++	sess.TransferredTo = transferTo
++	return s.sessionRepo.Update(ctx, sess)
++}
++
++// ─── VoiceProfile Service ───
++
++type VoiceProfileService struct {
++	repo VoiceProfileRepository
++}
++
++func NewVoiceProfileService(r VoiceProfileRepository) *VoiceProfileService {
++	return &VoiceProfileService{repo: r}
++}
++
++type CreateVoiceProfileInput struct {
++	TenantID       int64  `json:"tenant_id"`
++	Name           string `json:"name"`
++	SampleAudioURL string `json:"sample_audio_url"`
++	Language       string `json:"language"`
++}
++
++func (s *VoiceProfileService) Create(ctx context.Context, in CreateVoiceProfileInput) (*VoiceProfile, error) {
++	if in.Name == "" {
++		return nil, ErrVoiceProfileNameEmpty
++	}
++	if in.SampleAudioURL == "" {
++		return nil, ErrVoiceSampleURLEmpty
++	}
++	if in.Language == "" {
++		in.Language = "zh-CN"
++	}
++	v := &VoiceProfile{
++		ID:             snowflake.NextID(),
++		TenantID:       in.TenantID,
++		Name:           in.Name,
++		SampleAudioURL: in.SampleAudioURL,
++		Status:         VoiceProfilePending,
++		Language:       in.Language,
++		CreatedAt:      time.Now(),
++		UpdatedAt:      time.Now(),
++	}
++	if err := s.repo.Create(ctx, v); err != nil {
++		return nil, err
++	}
++	return v, nil
++}
++
++func (s *VoiceProfileService) Get(ctx context.Context, tenantID, id int64) (*VoiceProfile, error) {
++	return s.repo.GetByID(ctx, tenantID, id)
++}
++
++func (s *VoiceProfileService) List(ctx context.Context, tenantID int64) ([]VoiceProfile, error) {
++	return s.repo.List(ctx, tenantID)
++}
++
++// StartTraining transitions the profile to training state.
++func (s *VoiceProfileService) StartTraining(ctx context.Context, tenantID, id int64) (*VoiceProfile, error) {
++	v, err := s.repo.GetByID(ctx, tenantID, id)
++	if err != nil {
++		return nil, err
++	}
++	v.Status = VoiceProfileTraining
++	v.UpdatedAt = time.Now()
++	if err := s.repo.Update(ctx, v); err != nil {
++		return nil, err
++	}
++	return v, nil
++}
++
++// MarkReady marks the voice profile as ready after training completes.
++func (s *VoiceProfileService) MarkReady(ctx context.Context, tenantID, id int64, providerVoiceID string) (*VoiceProfile, error) {
++	v, err := s.repo.GetByID(ctx, tenantID, id)
++	if err != nil {
++		return nil, err
++	}
++	v.Status = VoiceProfileReady
++	v.ProviderVoiceID = providerVoiceID
++	v.UpdatedAt = time.Now()
++	if err := s.repo.Update(ctx, v); err != nil {
++		return nil, err
++	}
++	return v, nil
++}
++
++func (s *VoiceProfileService) Delete(ctx context.Context, tenantID, id int64) error {
++	return s.repo.Delete(ctx, tenantID, id)
++}
++
++// ─── ConversationAnalysis Service ───
++
++type ConversationAnalysisService struct {
++	repo ConversationAnalysisTaskRepository
++}
++
++func NewConversationAnalysisService(r ConversationAnalysisTaskRepository) *ConversationAnalysisService {
++	return &ConversationAnalysisService{repo: r}
++}
++
++type CreateAnalysisTaskInput struct {
++	TenantID   int64        `json:"tenant_id"`
++	Name       string       `json:"name"`
++	Type       AnalysisType `json:"type"`
++	DateFrom   string       `json:"date_from"`
++	DateTo     string       `json:"date_to"`
++	TotalCalls int          `json:"total_calls"`
++}
++
++func (s *ConversationAnalysisService) Create(ctx context.Context, in CreateAnalysisTaskInput) (*ConversationAnalysisTask, error) {
++	if in.Name == "" {
++		return nil, ErrAnalysisNameEmpty
++	}
++	if in.DateFrom == "" || in.DateTo == "" {
++		return nil, ErrAnalysisDateRange
++	}
++	t := &ConversationAnalysisTask{
++		ID:         snowflake.NextID(),
++		TenantID:   in.TenantID,
++		Name:       in.Name,
++		Type:       in.Type,
++		DateFrom:   in.DateFrom,
++		DateTo:     in.DateTo,
++		TotalCalls: in.TotalCalls,
++		Status:     AnalysisTaskPending,
++		CreatedAt:  time.Now(),
++	}
++	if err := s.repo.Create(ctx, t); err != nil {
++		return nil, err
++	}
++	return t, nil
++}
++
++func (s *ConversationAnalysisService) Get(ctx context.Context, tenantID, id int64) (*ConversationAnalysisTask, error) {
++	return s.repo.GetByID(ctx, tenantID, id)
++}
++
++func (s *ConversationAnalysisService) List(ctx context.Context, tenantID int64) ([]ConversationAnalysisTask, error) {
++	return s.repo.List(ctx, tenantID)
++}
++
++// MarkRunning transitions the task to running.
++func (s *ConversationAnalysisService) MarkRunning(ctx context.Context, task *ConversationAnalysisTask) error {
++	task.Status = AnalysisTaskRunning
++	return s.repo.Update(ctx, task)
++}
++
++// Complete marks the task as completed with results.
++func (s *ConversationAnalysisService) Complete(ctx context.Context, task *ConversationAnalysisTask, resultJSON string) error {
++	now := time.Now()
++	task.Status = AnalysisTaskCompleted
++	task.ResultJSON = resultJSON
++	task.ProcessedCalls = task.TotalCalls
++	task.CompletedAt = &now
++	return s.repo.Update(ctx, task)
++}
++
++// ─── Training Service ───
++
++type TrainingService struct {
++	courseRepo TrainingCourseRepository
++	examRepo  TrainingExamRepository
++	simRepo   SimulatedCallRepository
++}
++
++func NewTrainingService(cr TrainingCourseRepository, er TrainingExamRepository, sr SimulatedCallRepository) *TrainingService {
++	return &TrainingService{courseRepo: cr, examRepo: er, simRepo: sr}
++}
++
++type CreateCourseInput struct {
++	TenantID    int64  `json:"tenant_id"`
++	Title       string `json:"title"`
++	Description string `json:"description"`
++	ContentJSON string `json:"content_json"`
++	PassScore   int    `json:"pass_score"`
++}
++
++func (s *TrainingService) CreateCourse(ctx context.Context, in CreateCourseInput) (*TrainingCourse, error) {
++	if in.Title == "" {
++		return nil, ErrCourseNameEmpty
++	}
++	if in.PassScore < 1 || in.PassScore > 100 {
++		return nil, ErrCoursePassScore
++	}
++	c := &TrainingCourse{
++		ID:          snowflake.NextID(),
++		TenantID:    in.TenantID,
++		Title:       in.Title,
++		Description: in.Description,
++		ContentJSON: in.ContentJSON,
++		PassScore:   in.PassScore,
++		Status:      CourseStatusDraft,
++		CreatedAt:   time.Now(),
++		UpdatedAt:   time.Now(),
++	}
++	if err := s.courseRepo.Create(ctx, c); err != nil {
++		return nil, err
++	}
++	return c, nil
++}
++
++func (s *TrainingService) GetCourse(ctx context.Context, tenantID, id int64) (*TrainingCourse, error) {
++	return s.courseRepo.GetByID(ctx, tenantID, id)
++}
++
++func (s *TrainingService) ListCourses(ctx context.Context, tenantID int64) ([]TrainingCourse, error) {
++	return s.courseRepo.List(ctx, tenantID)
++}
++
++func (s *TrainingService) PublishCourse(ctx context.Context, tenantID, id int64) (*TrainingCourse, error) {
++	c, err := s.courseRepo.GetByID(ctx, tenantID, id)
++	if err != nil {
++		return nil, err
++	}
++	c.Status = CourseStatusPublished
++	c.UpdatedAt = time.Now()
++	if err := s.courseRepo.Update(ctx, c); err != nil {
++		return nil, err
++	}
++	return c, nil
++}
++
++type SubmitExamInput struct {
++	TenantID    int64  `json:"tenant_id"`
++	CourseID    int64  `json:"course_id"`
++	AgentID     int64  `json:"agent_id"`
++	Score       int    `json:"score"`
++	MaxScore    int    `json:"max_score"`
++	AnswersJSON string `json:"answers_json"`
++}
++
++func (s *TrainingService) SubmitExam(ctx context.Context, in SubmitExamInput) (*TrainingExam, error) {
++	course, err := s.courseRepo.GetByID(ctx, in.TenantID, in.CourseID)
++	if err != nil {
++		return nil, err
++	}
++	status := ExamStatusFailed
++	pct := 0
++	if in.MaxScore > 0 {
++		pct = in.Score * 100 / in.MaxScore
++	}
++	if pct >= course.PassScore {
++		status = ExamStatusPassed
++	}
++	e := &TrainingExam{
++		ID:          snowflake.NextID(),
++		TenantID:    in.TenantID,
++		CourseID:    in.CourseID,
++		AgentID:     in.AgentID,
++		Score:       in.Score,
++		MaxScore:    in.MaxScore,
++		Status:      status,
++		AnswersJSON: in.AnswersJSON,
++		CreatedAt:   time.Now(),
++	}
++	if err := s.examRepo.Create(ctx, e); err != nil {
++		return nil, err
++	}
++	return e, nil
++}
++
++func (s *TrainingService) ListExamsByAgent(ctx context.Context, tenantID, agentID int64) ([]TrainingExam, error) {
++	return s.examRepo.ListByAgent(ctx, tenantID, agentID)
++}
++
++type CreateSimulatedCallInput struct {
++	TenantID    int64  `json:"tenant_id"`
++	AgentID     int64  `json:"agent_id"`
++	ScenarioID  int64  `json:"scenario_id"`
++	Transcript  string `json:"transcript"`
++	AIFeedback  string `json:"ai_feedback"`
++	Score       int    `json:"score"`
++	DurationSec int    `json:"duration_sec"`
++}
++
++func (s *TrainingService) CreateSimulatedCall(ctx context.Context, in CreateSimulatedCallInput) (*SimulatedCall, error) {
++	sc := &SimulatedCall{
++		ID:          snowflake.NextID(),
++		TenantID:    in.TenantID,
++		AgentID:     in.AgentID,
++		ScenarioID:  in.ScenarioID,
++		Transcript:  in.Transcript,
++		AIFeedback:  in.AIFeedback,
++		Score:       in.Score,
++		DurationSec: in.DurationSec,
++		CreatedAt:   time.Now(),
++	}
++	if err := s.simRepo.Create(ctx, sc); err != nil {
++		return nil, err
++	}
++	return sc, nil
++}
++
++func (s *TrainingService) ListSimulatedCalls(ctx context.Context, tenantID, agentID int64) ([]SimulatedCall, error) {
++	return s.simRepo.ListByAgent(ctx, tenantID, agentID)
++}
++
++// ─── RingAnalysis Service ───
++
++type RingAnalysisService struct {
++	configRepo RingAnalysisConfigRepository
++	logRepo    RingAnalysisLogRepository
++}
++
++func NewRingAnalysisService(cr RingAnalysisConfigRepository, lr RingAnalysisLogRepository) *RingAnalysisService {
++	return &RingAnalysisService{configRepo: cr, logRepo: lr}
++}
++
++func (s *RingAnalysisService) GetConfig(ctx context.Context, tenantID int64) (*RingAnalysisConfig, error) {
++	return s.configRepo.Get(ctx, tenantID)
++}
++
++func (s *RingAnalysisService) UpsertConfig(ctx context.Context, c *RingAnalysisConfig) error {
++	if c.ID == 0 {
++		c.ID = snowflake.NextID()
++	}
++	c.UpdatedAt = time.Now()
++	return s.configRepo.Upsert(ctx, c)
++}
++
++func (s *RingAnalysisService) LogResult(ctx context.Context, tenantID, callID int64, result RingDetectionResult, confidence float64, durationMs int) (*RingAnalysisLog, error) {
++	l := &RingAnalysisLog{
++		ID:         snowflake.NextID(),
++		TenantID:   tenantID,
++		CallID:     callID,
++		Result:     result,
++		Confidence: confidence,
++		DurationMs: durationMs,
++		CreatedAt:  time.Now(),
++	}
++	if err := s.logRepo.Create(ctx, l); err != nil {
++		return nil, err
++	}
++	return l, nil
++}
++
++func (s *RingAnalysisService) GetCallLogs(ctx context.Context, tenantID, callID int64) ([]RingAnalysisLog, error) {
++	return s.logRepo.ListByCall(ctx, tenantID, callID)
++}
++
++// ─── FullDuplex Service ───
++
++type FullDuplexService struct {
++	repo FullDuplexConfigRepository
++}
++
++func NewFullDuplexService(r FullDuplexConfigRepository) *FullDuplexService {
++	return &FullDuplexService{repo: r}
++}
++
++func (s *FullDuplexService) GetConfig(ctx context.Context, tenantID int64) (*FullDuplexConfig, error) {
++	return s.repo.Get(ctx, tenantID)
++}
++
++func (s *FullDuplexService) UpsertConfig(ctx context.Context, c *FullDuplexConfig) error {
++	if c.InterruptionSensitivity < 0 || c.InterruptionSensitivity > 1 {
++		return ErrFullDuplexSensitivity
++	}
++	if c.ID == 0 {
++		c.ID = snowflake.NextID()
++	}
++	c.UpdatedAt = time.Now()
++	return s.repo.Upsert(ctx, c)
++}
+diff --git a/internal/domain/ai/service_advanced_test.go b/internal/domain/ai/service_advanced_test.go
+new file mode 100644
+index 0000000..167814e
+--- /dev/null
++++ b/internal/domain/ai/service_advanced_test.go
+@@ -0,0 +1,391 @@
++package ai
++
++import (
++	"context"
++	"testing"
++)
++
++func TestCommAgent_Create_Success(t *testing.T) {
++	svc := NewCommAgentService(NewMockCommAgentRepo(), NewMockCommAgentSessionRepo())
++	a, err := svc.Create(context.Background(), CreateCommAgentInput{
++		TenantID:          1,
++		DigitalEmployeeID: 10,
++		Name:              "Sales Bot",
++		Mode:              AgentModeInbound,
++		SystemPrompt:      "You are a sales assistant",
++		MaxTurns:          20,
++	})
++	if err != nil {
++		t.Fatalf("unexpected error: %v", err)
++	}
++	if a.Name != "Sales Bot" || a.MaxTurns != 20 || !a.IsActive {
++		t.Fatalf("unexpected agent: %+v", a)
++	}
++}
++
++func TestCommAgent_Create_EmptyName(t *testing.T) {
++	svc := NewCommAgentService(NewMockCommAgentRepo(), NewMockCommAgentSessionRepo())
++	_, err := svc.Create(context.Background(), CreateCommAgentInput{
++		TenantID:     1,
++		SystemPrompt: "prompt",
++		MaxTurns:     10,
++	})
++	if err != ErrCommAgentNameEmpty {
++		t.Fatalf("expected ErrCommAgentNameEmpty, got %v", err)
++	}
++}
++
++func TestCommAgent_Create_InvalidMaxTurns(t *testing.T) {
++	svc := NewCommAgentService(NewMockCommAgentRepo(), NewMockCommAgentSessionRepo())
++	_, err := svc.Create(context.Background(), CreateCommAgentInput{
++		TenantID:     1,
++		Name:         "Bot",
++		SystemPrompt: "prompt",
++		MaxTurns:     0,
++	})
++	if err != ErrCommAgentMaxTurns {
++		t.Fatalf("expected ErrCommAgentMaxTurns, got %v", err)
++	}
++}
++
++func TestCommAgent_Session_Lifecycle(t *testing.T) {
++	svc := NewCommAgentService(NewMockCommAgentRepo(), NewMockCommAgentSessionRepo())
++	a, _ := svc.Create(context.Background(), CreateCommAgentInput{
++		TenantID:     1,
++		Name:         "Bot",
++		SystemPrompt: "prompt",
++		MaxTurns:     3,
++	})
++
++	sess, err := svc.StartSession(context.Background(), 1, a.ID, 100)
++	if err != nil {
++		t.Fatalf("start session: %v", err)
++	}
++	if sess.Status != AgentSessionActive {
++		t.Fatalf("expected active, got %s", sess.Status)
++	}
++
++	// Add turns
++	if err := svc.AddTurn(context.Background(), sess, "hello", "hi there", 3); err != nil {
++		t.Fatalf("add turn 1: %v", err)
++	}
++	if sess.TurnCount != 1 {
++		t.Fatalf("expected 1 turn, got %d", sess.TurnCount)
++	}
++
++	if err := svc.AddTurn(context.Background(), sess, "question", "answer", 3); err != nil {
++		t.Fatalf("add turn 2: %v", err)
++	}
++	if err := svc.AddTurn(context.Background(), sess, "more", "response", 3); err != nil {
++		t.Fatalf("add turn 3: %v", err)
++	}
++
++	// Exceed max turns
++	err = svc.AddTurn(context.Background(), sess, "too many", "overflow", 3)
++	if err != ErrSessionMaxTurns {
++		t.Fatalf("expected ErrSessionMaxTurns, got %v", err)
++	}
++
++	// End session
++	err = svc.EndSession(context.Background(), sess, AgentSessionCompleted, "conversation complete", nil)
++	if err != nil {
++		t.Fatalf("end session: %v", err)
++	}
++	if sess.Status != AgentSessionCompleted {
++		t.Fatalf("expected completed, got %s", sess.Status)
++	}
++
++	// Cannot add turn after ending
++	err = svc.AddTurn(context.Background(), sess, "late", "msg", 3)
++	if err != ErrSessionAlreadyEnded {
++		t.Fatalf("expected ErrSessionAlreadyEnded, got %v", err)
++	}
++}
++
++func TestCommAgent_Session_Transfer(t *testing.T) {
++	svc := NewCommAgentService(NewMockCommAgentRepo(), NewMockCommAgentSessionRepo())
++	a, _ := svc.Create(context.Background(), CreateCommAgentInput{
++		TenantID:     1,
++		Name:         "Bot",
++		SystemPrompt: "prompt",
++		MaxTurns:     10,
++	})
++
++	sess, _ := svc.StartSession(context.Background(), 1, a.ID, 200)
++	transferTo := int64(42)
++	err := svc.EndSession(context.Background(), sess, AgentSessionTransfer, "transferring to human", &transferTo)
++	if err != nil {
++		t.Fatalf("transfer: %v", err)
++	}
++	if sess.Status != AgentSessionTransfer {
++		t.Fatalf("expected transferred, got %s", sess.Status)
++	}
++	if sess.TransferredTo == nil || *sess.TransferredTo != 42 {
++		t.Fatalf("expected transfer to 42")
++	}
++}
++
++func TestVoiceProfile_Lifecycle(t *testing.T) {
++	svc := NewVoiceProfileService(NewMockVoiceProfileRepo())
++
++	v, err := svc.Create(context.Background(), CreateVoiceProfileInput{
++		TenantID:       1,
++		Name:           "Custom Voice",
++		SampleAudioURL: "https://example.com/sample.wav",
++	})
++	if err != nil {
++		t.Fatalf("create: %v", err)
++	}
++	if v.Status != VoiceProfilePending || v.Language != "zh-CN" {
++		t.Fatalf("unexpected profile: %+v", v)
++	}
++
++	// Start training
++	v, err = svc.StartTraining(context.Background(), 1, v.ID)
++	if err != nil {
++		t.Fatalf("start training: %v", err)
++	}
++	if v.Status != VoiceProfileTraining {
++		t.Fatalf("expected training, got %s", v.Status)
++	}
++
++	// Mark ready
++	v, err = svc.MarkReady(context.Background(), 1, v.ID, "provider-voice-123")
++	if err != nil {
++		t.Fatalf("mark ready: %v", err)
++	}
++	if v.Status != VoiceProfileReady || v.ProviderVoiceID != "provider-voice-123" {
++		t.Fatalf("unexpected profile: %+v", v)
++	}
++}
++
++func TestVoiceProfile_Create_Validation(t *testing.T) {
++	svc := NewVoiceProfileService(NewMockVoiceProfileRepo())
++
++	_, err := svc.Create(context.Background(), CreateVoiceProfileInput{TenantID: 1, SampleAudioURL: "url"})
++	if err != ErrVoiceProfileNameEmpty {
++		t.Fatalf("expected ErrVoiceProfileNameEmpty, got %v", err)
++	}
++
++	_, err = svc.Create(context.Background(), CreateVoiceProfileInput{TenantID: 1, Name: "test"})
++	if err != ErrVoiceSampleURLEmpty {
++		t.Fatalf("expected ErrVoiceSampleURLEmpty, got %v", err)
++	}
++}
++
++func TestConversationAnalysis_Lifecycle(t *testing.T) {
++	svc := NewConversationAnalysisService(NewMockAnalysisTaskRepo())
++
++	task, err := svc.Create(context.Background(), CreateAnalysisTaskInput{
++		TenantID:   1,
++		Name:       "Q4 Intent Mining",
++		Type:       AnalysisTypeIntent,
++		DateFrom:   "2025-10-01",
++		DateTo:     "2025-12-31",
++		TotalCalls: 5000,
++	})
++	if err != nil {
++		t.Fatalf("create: %v", err)
++	}
++	if task.Status != AnalysisTaskPending {
++		t.Fatalf("expected pending, got %s", task.Status)
++	}
++
++	// Mark running
++	if err := svc.MarkRunning(context.Background(), task); err != nil {
++		t.Fatalf("mark running: %v", err)
++	}
++	if task.Status != AnalysisTaskRunning {
++		t.Fatalf("expected running, got %s", task.Status)
++	}
++
++	// Complete
++	if err := svc.Complete(context.Background(), task, `[{"intent":"billing","count":1200}]`); err != nil {
++		t.Fatalf("complete: %v", err)
++	}
++	if task.Status != AnalysisTaskCompleted || task.CompletedAt == nil {
++		t.Fatalf("expected completed with timestamp")
++	}
++}
++
++func TestConversationAnalysis_Validation(t *testing.T) {
++	svc := NewConversationAnalysisService(NewMockAnalysisTaskRepo())
++
++	_, err := svc.Create(context.Background(), CreateAnalysisTaskInput{TenantID: 1, DateFrom: "a", DateTo: "b"})
++	if err != ErrAnalysisNameEmpty {
++		t.Fatalf("expected ErrAnalysisNameEmpty, got %v", err)
++	}
++
++	_, err = svc.Create(context.Background(), CreateAnalysisTaskInput{TenantID: 1, Name: "test"})
++	if err != ErrAnalysisDateRange {
++		t.Fatalf("expected ErrAnalysisDateRange, got %v", err)
++	}
++}
++
++func TestTraining_Course_ExamPass(t *testing.T) {
++	svc := NewTrainingService(NewMockTrainingCourseRepo(), NewMockTrainingExamRepo(), NewMockSimulatedCallRepo())
++
++	course, err := svc.CreateCourse(context.Background(), CreateCourseInput{
++		TenantID:  1,
++		Title:     "Product Knowledge",
++		PassScore: 80,
++	})
++	if err != nil {
++		t.Fatalf("create course: %v", err)
++	}
++	if course.Status != CourseStatusDraft {
++		t.Fatalf("expected draft, got %s", course.Status)
++	}
++
++	// Publish
++	course, err = svc.PublishCourse(context.Background(), 1, course.ID)
++	if err != nil {
++		t.Fatalf("publish: %v", err)
++	}
++	if course.Status != CourseStatusPublished {
++		t.Fatalf("expected published, got %s", course.Status)
++	}
++
++	// Submit passing exam (85/100 = 85% >= 80%)
++	exam, err := svc.SubmitExam(context.Background(), SubmitExamInput{
++		TenantID: 1,
++		CourseID: course.ID,
++		AgentID:  10,
++		Score:    85,
++		MaxScore: 100,
++	})
++	if err != nil {
++		t.Fatalf("submit exam: %v", err)
++	}
++	if exam.Status != ExamStatusPassed {
++		t.Fatalf("expected passed, got %s", exam.Status)
++	}
++}
++
++func TestTraining_Course_ExamFail(t *testing.T) {
++	svc := NewTrainingService(NewMockTrainingCourseRepo(), NewMockTrainingExamRepo(), NewMockSimulatedCallRepo())
++
++	course, _ := svc.CreateCourse(context.Background(), CreateCourseInput{
++		TenantID:  1,
++		Title:     "Hard Course",
++		PassScore: 90,
++	})
++
++	// Submit failing exam (70/100 = 70% < 90%)
++	exam, err := svc.SubmitExam(context.Background(), SubmitExamInput{
++		TenantID: 1,
++		CourseID: course.ID,
++		AgentID:  10,
++		Score:    70,
++		MaxScore: 100,
++	})
++	if err != nil {
++		t.Fatalf("submit exam: %v", err)
++	}
++	if exam.Status != ExamStatusFailed {
++		t.Fatalf("expected failed, got %s", exam.Status)
++	}
++}
++
++func TestTraining_SimulatedCall(t *testing.T) {
++	svc := NewTrainingService(NewMockTrainingCourseRepo(), NewMockTrainingExamRepo(), NewMockSimulatedCallRepo())
++
++	sc, err := svc.CreateSimulatedCall(context.Background(), CreateSimulatedCallInput{
++		TenantID:    1,
++		AgentID:     10,
++		ScenarioID:  5,
++		Transcript:  "Customer: I want to cancel\nAgent: Let me help you",
++		AIFeedback:  "Good empathy, missed retention offer",
++		Score:       75,
++		DurationSec: 180,
++	})
++	if err != nil {
++		t.Fatalf("create sim call: %v", err)
++	}
++	if sc.Score != 75 || sc.DurationSec != 180 {
++		t.Fatalf("unexpected sim call: %+v", sc)
++	}
++}
++
++func TestTraining_Course_Validation(t *testing.T) {
++	svc := NewTrainingService(NewMockTrainingCourseRepo(), NewMockTrainingExamRepo(), NewMockSimulatedCallRepo())
++
++	_, err := svc.CreateCourse(context.Background(), CreateCourseInput{TenantID: 1, PassScore: 80})
++	if err != ErrCourseNameEmpty {
++		t.Fatalf("expected ErrCourseNameEmpty, got %v", err)
++	}
++
++	_, err = svc.CreateCourse(context.Background(), CreateCourseInput{TenantID: 1, Title: "Test", PassScore: 0})
++	if err != ErrCoursePassScore {
++		t.Fatalf("expected ErrCoursePassScore, got %v", err)
++	}
++}
++
++func TestRingAnalysis_LogAndQuery(t *testing.T) {
++	svc := NewRingAnalysisService(NewMockRingAnalysisConfigRepo(), NewMockRingAnalysisLogRepo())
++
++	// Upsert config
++	cfg := &RingAnalysisConfig{
++		TenantID:           1,
++		Enabled:            true,
++		DetectionTimeoutMs: 5000,
++		HangUpOnVoicemail:  true,
++	}
++	if err := svc.UpsertConfig(context.Background(), cfg); err != nil {
++		t.Fatalf("upsert config: %v", err)
++	}
++
++	// Log results
++	l, err := svc.LogResult(context.Background(), 1, 100, RingDetectionHuman, 0.95, 1200)
++	if err != nil {
++		t.Fatalf("log result: %v", err)
++	}
++	if l.Result != RingDetectionHuman || l.Confidence != 0.95 {
++		t.Fatalf("unexpected log: %+v", l)
++	}
++
++	// Query
++	logs, err := svc.GetCallLogs(context.Background(), 1, 100)
++	if err != nil {
++		t.Fatalf("get logs: %v", err)
++	}
++	if len(logs) != 1 {
++		t.Fatalf("expected 1 log, got %d", len(logs))
++	}
++}
++
++func TestFullDuplex_Config(t *testing.T) {
++	svc := NewFullDuplexService(NewMockFullDuplexConfigRepo())
++
++	cfg := &FullDuplexConfig{
++		TenantID:                1,
++		Enabled:                 true,
++		InterruptionEnabled:     true,
++		SilenceThresholdMs:      500,
++		InterruptionSensitivity: 0.7,
++		VoiceContinuity:         true,
++	}
++	if err := svc.UpsertConfig(context.Background(), cfg); err != nil {
++		t.Fatalf("upsert: %v", err)
++	}
++
++	got, err := svc.GetConfig(context.Background(), 1)
++	if err != nil {
++		t.Fatalf("get: %v", err)
++	}
++	if !got.InterruptionEnabled || got.InterruptionSensitivity != 0.7 {
++		t.Fatalf("unexpected config: %+v", got)
++	}
++}
++
++func TestFullDuplex_InvalidSensitivity(t *testing.T) {
++	svc := NewFullDuplexService(NewMockFullDuplexConfigRepo())
++
++	err := svc.UpsertConfig(context.Background(), &FullDuplexConfig{
++		TenantID:                1,
++		InterruptionSensitivity: 1.5,
++	})
++	if err != ErrFullDuplexSensitivity {
++		t.Fatalf("expected ErrFullDuplexSensitivity, got %v", err)
++	}
++}
+diff --git a/internal/infrastructure/llm/advanced_provider.go b/internal/infrastructure/llm/advanced_provider.go
+new file mode 100644
+index 0000000..2aa5a59
+--- /dev/null
++++ b/internal/infrastructure/llm/advanced_provider.go
+@@ -0,0 +1,55 @@
++package llm
++
++import "context"
++
++// CommAgentProvider handles multi-turn autonomous conversations.
++type CommAgentProvider interface {
++	// GenerateReply produces a reply given system prompt, conversation history, and user message.
++	GenerateReply(ctx context.Context, systemPrompt, conversationHistory, userMessage string) (string, error)
++	// ShouldTransfer decides if the conversation should be transferred to a human agent.
++	ShouldTransfer(ctx context.Context, systemPrompt, conversationHistory string) (bool, string, error)
++}
++
++// VoiceCloningProvider handles voice profile training and synthesis.
++type VoiceCloningProvider interface {
++	// StartCloneTraining initiates voice cloning from a sample audio.
++	StartCloneTraining(ctx context.Context, sampleAudioURL string) (providerJobID string, err error)
++	// CheckTrainingStatus checks if training is complete.
++	CheckTrainingStatus(ctx context.Context, providerJobID string) (ready bool, providerVoiceID string, err error)
++	// SynthesizeWithClone generates speech using a cloned voice.
++	SynthesizeWithClone(ctx context.Context, text, providerVoiceID string) (audioData []byte, err error)
++}
++
++// ConversationAnalyticsProvider runs batch analysis over transcripts.
++type ConversationAnalyticsProvider interface {
++	// MineIntents discovers common customer intents from transcripts.
++	MineIntents(ctx context.Context, transcripts []string) (resultJSON string, err error)
++	// DiscoverSOPs extracts standard operating procedures from agent transcripts.
++	DiscoverSOPs(ctx context.Context, transcripts []string) (resultJSON string, err error)
++	// ExtractSalesScripts identifies effective sales scripts.
++	ExtractSalesScripts(ctx context.Context, transcripts []string) (resultJSON string, err error)
++	// ClusterTopics groups transcripts by topic.
++	ClusterTopics(ctx context.Context, transcripts []string) (resultJSON string, err error)
++}
++
++// RingAnalysisProvider detects call answering patterns.
++type RingAnalysisProvider interface {
++	// AnalyzeRingAudio classifies early call audio (human, voicemail, busy, fax).
++	AnalyzeRingAudio(ctx context.Context, audioData []byte) (result string, confidence float64, err error)
++}
++
++// FullDuplexProvider handles real-time full-duplex interaction.
++type FullDuplexProvider interface {
++	// DetectInterruption checks if the user is trying to interrupt.
++	DetectInterruption(ctx context.Context, audioChunk []byte, sensitivity float64) (interrupted bool, err error)
++	// ContinueVoice generates seamless continuation after interruption.
++	ContinueVoice(ctx context.Context, previousText, interruptionPoint string) (continuationText string, err error)
++}
++
++// TrainingProvider generates AI feedback for simulated calls.
++type TrainingProvider interface {
++	// EvaluateSimulatedCall provides AI feedback and scoring for a practice call.
++	EvaluateSimulatedCall(ctx context.Context, scenario, transcript string) (feedback string, score int, err error)
++	// GenerateExamQuestions creates exam questions from course content.
++	GenerateExamQuestions(ctx context.Context, courseContent string, count int) (questionsJSON string, err error)
++}
+diff --git a/internal/infrastructure/llm/stub_advanced_provider.go b/internal/infrastructure/llm/stub_advanced_provider.go
+new file mode 100644
+index 0000000..f77f60a
+--- /dev/null
++++ b/internal/infrastructure/llm/stub_advanced_provider.go
+@@ -0,0 +1,91 @@
++package llm
++
++import "context"
++
++// StubCommAgentProvider is a placeholder for autonomous conversation.
++type StubCommAgentProvider struct{}
++
++func NewStubCommAgentProvider() *StubCommAgentProvider { return &StubCommAgentProvider{} }
++
++func (p *StubCommAgentProvider) GenerateReply(_ context.Context, _, _, userMessage string) (string, error) {
++	return "[ai-reply] " + userMessage, nil
++}
++
++func (p *StubCommAgentProvider) ShouldTransfer(_ context.Context, _, _ string) (bool, string, error) {
++	return false, "", nil
++}
++
++// StubVoiceCloningProvider is a placeholder for voice cloning.
++type StubVoiceCloningProvider struct{}
++
++func NewStubVoiceCloningProvider() *StubVoiceCloningProvider { return &StubVoiceCloningProvider{} }
++
++func (p *StubVoiceCloningProvider) StartCloneTraining(_ context.Context, _ string) (string, error) {
++	return "stub-job-001", nil
++}
++
++func (p *StubVoiceCloningProvider) CheckTrainingStatus(_ context.Context, jobID string) (bool, string, error) {
++	return true, "stub-voice-" + jobID, nil
++}
++
++func (p *StubVoiceCloningProvider) SynthesizeWithClone(_ context.Context, text, _ string) ([]byte, error) {
++	return []byte("[audio:" + text + "]"), nil
++}
++
++// StubConversationAnalyticsProvider is a placeholder for batch analysis.
++type StubConversationAnalyticsProvider struct{}
++
++func NewStubConversationAnalyticsProvider() *StubConversationAnalyticsProvider {
++	return &StubConversationAnalyticsProvider{}
++}
++
++func (p *StubConversationAnalyticsProvider) MineIntents(_ context.Context, _ []string) (string, error) {
++	return `[{"intent":"billing","count":100}]`, nil
++}
++
++func (p *StubConversationAnalyticsProvider) DiscoverSOPs(_ context.Context, _ []string) (string, error) {
++	return `[{"sop":"greeting","steps":["greet","identify","resolve"]}]`, nil
++}
++
++func (p *StubConversationAnalyticsProvider) ExtractSalesScripts(_ context.Context, _ []string) (string, error) {
++	return `[{"script":"objection_handling","effectiveness":0.85}]`, nil
++}
++
++func (p *StubConversationAnalyticsProvider) ClusterTopics(_ context.Context, _ []string) (string, error) {
++	return `[{"topic":"billing","count":50},{"topic":"technical","count":30}]`, nil
++}
++
++// StubRingAnalysisProvider is a placeholder for ring detection.
++type StubRingAnalysisProvider struct{}
++
++func NewStubRingAnalysisProvider() *StubRingAnalysisProvider { return &StubRingAnalysisProvider{} }
++
++func (p *StubRingAnalysisProvider) AnalyzeRingAudio(_ context.Context, _ []byte) (string, float64, error) {
++	return "human", 0.92, nil
++}
++
++// StubFullDuplexProvider is a placeholder for full-duplex interaction.
++type StubFullDuplexProvider struct{}
++
++func NewStubFullDuplexProvider() *StubFullDuplexProvider { return &StubFullDuplexProvider{} }
++
++func (p *StubFullDuplexProvider) DetectInterruption(_ context.Context, _ []byte, _ float64) (bool, error) {
++	return false, nil
++}
++
++func (p *StubFullDuplexProvider) ContinueVoice(_ context.Context, _, interruptionPoint string) (string, error) {
++	return "[continued from: " + interruptionPoint + "]", nil
++}
++
++// StubTrainingProvider is a placeholder for training AI.
++type StubTrainingProvider struct{}
++
++func NewStubTrainingProvider() *StubTrainingProvider { return &StubTrainingProvider{} }
++
++func (p *StubTrainingProvider) EvaluateSimulatedCall(_ context.Context, _, _ string) (string, int, error) {
++	return "Good performance overall. Consider improving empathy.", 75, nil
++}
++
++func (p *StubTrainingProvider) GenerateExamQuestions(_ context.Context, _ string, count int) (string, error) {
++	return `[{"question":"What is the refund policy?","options":["A","B","C","D"],"answer":"A"}]`, nil
++}
+diff --git a/internal/infrastructure/mysql/advanced_ai_repo.go b/internal/infrastructure/mysql/advanced_ai_repo.go
+new file mode 100644
+index 0000000..8207c62
+--- /dev/null
++++ b/internal/infrastructure/mysql/advanced_ai_repo.go
+@@ -0,0 +1,380 @@
++package mysql
++
++import (
++	"context"
++	"database/sql"
++
++	"github.com/divord97/ccc/internal/domain/ai"
++	"github.com/jmoiron/sqlx"
++)
++
++// ─── CommAgent ───
++
++type CommAgentRepo struct{ db *sqlx.DB }
++
++func NewCommAgentRepo(db *sqlx.DB) *CommAgentRepo { return &CommAgentRepo{db: db} }
++
++func (r *CommAgentRepo) Create(ctx context.Context, a *ai.CommAgent) error {
++	_, err := r.db.ExecContext(ctx,
++		`INSERT INTO comm_agents (id,tenant_id,digital_employee_id,name,mode,system_prompt,max_turns,transfer_skill_group_id,llm_model_id,is_active,created_at,updated_at)
++		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
++		a.ID, a.TenantID, a.DigitalEmployeeID, a.Name, a.Mode, a.SystemPrompt, a.MaxTurns,
++		a.TransferSkillGroupID, a.LLMModelID, a.IsActive, a.CreatedAt, a.UpdatedAt)
++	return err
++}
++
++func (r *CommAgentRepo) GetByID(ctx context.Context, tenantID, id int64) (*ai.CommAgent, error) {
++	var a ai.CommAgent
++	err := r.db.GetContext(ctx, &a, "SELECT * FROM comm_agents WHERE tenant_id=? AND id=?", tenantID, id)
++	if err != nil {
++		return nil, err
++	}
++	return &a, nil
++}
++
++func (r *CommAgentRepo) List(ctx context.Context, tenantID int64) ([]ai.CommAgent, error) {
++	var items []ai.CommAgent
++	err := r.db.SelectContext(ctx, &items, "SELECT * FROM comm_agents WHERE tenant_id=? ORDER BY created_at DESC", tenantID)
++	return items, err
++}
++
++func (r *CommAgentRepo) Update(ctx context.Context, a *ai.CommAgent) error {
++	_, err := r.db.ExecContext(ctx,
++		`UPDATE comm_agents SET name=?,mode=?,system_prompt=?,max_turns=?,transfer_skill_group_id=?,llm_model_id=?,is_active=?,updated_at=?
++		 WHERE tenant_id=? AND id=?`,
++		a.Name, a.Mode, a.SystemPrompt, a.MaxTurns, a.TransferSkillGroupID, a.LLMModelID, a.IsActive, a.UpdatedAt,
++		a.TenantID, a.ID)
++	return err
++}
++
++func (r *CommAgentRepo) Delete(ctx context.Context, tenantID, id int64) error {
++	_, err := r.db.ExecContext(ctx, "DELETE FROM comm_agents WHERE tenant_id=? AND id=?", tenantID, id)
++	return err
++}
++
++// ─── CommAgentSession ───
++
++type CommAgentSessionRepo struct{ db *sqlx.DB }
++
++func NewCommAgentSessionRepo(db *sqlx.DB) *CommAgentSessionRepo {
++	return &CommAgentSessionRepo{db: db}
++}
++
++func (r *CommAgentSessionRepo) Create(ctx context.Context, s *ai.CommAgentSession) error {
++	_, err := r.db.ExecContext(ctx,
++		`INSERT INTO comm_agent_sessions (id,tenant_id,comm_agent_id,call_id,status,turn_count,transcript,summary,transferred_to,started_at,ended_at)
++		 VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
++		s.ID, s.TenantID, s.CommAgentID, s.CallID, s.Status, s.TurnCount, s.Transcript, s.Summary, s.TransferredTo, s.StartedAt, s.EndedAt)
++	return err
++}
++
++func (r *CommAgentSessionRepo) GetByID(ctx context.Context, tenantID, id int64) (*ai.CommAgentSession, error) {
++	var s ai.CommAgentSession
++	err := r.db.GetContext(ctx, &s, "SELECT * FROM comm_agent_sessions WHERE tenant_id=? AND id=?", tenantID, id)
++	if err != nil {
++		return nil, err
++	}
++	return &s, nil
++}
++
++func (r *CommAgentSessionRepo) ListByAgent(ctx context.Context, tenantID, agentID int64) ([]ai.CommAgentSession, error) {
++	var items []ai.CommAgentSession
++	err := r.db.SelectContext(ctx, &items,
++		"SELECT * FROM comm_agent_sessions WHERE tenant_id=? AND comm_agent_id=? ORDER BY started_at DESC", tenantID, agentID)
++	return items, err
++}
++
++func (r *CommAgentSessionRepo) Update(ctx context.Context, s *ai.CommAgentSession) error {
++	_, err := r.db.ExecContext(ctx,
++		`UPDATE comm_agent_sessions SET status=?,turn_count=?,transcript=?,summary=?,transferred_to=?,ended_at=?
++		 WHERE tenant_id=? AND id=?`,
++		s.Status, s.TurnCount, s.Transcript, s.Summary, s.TransferredTo, s.EndedAt, s.TenantID, s.ID)
++	return err
++}
++
++// ─── VoiceProfile ───
++
++type VoiceProfileRepo struct{ db *sqlx.DB }
++
++func NewVoiceProfileRepo(db *sqlx.DB) *VoiceProfileRepo { return &VoiceProfileRepo{db: db} }
++
++func (r *VoiceProfileRepo) Create(ctx context.Context, v *ai.VoiceProfile) error {
++	_, err := r.db.ExecContext(ctx,
++		`INSERT INTO voice_profiles (id,tenant_id,name,sample_audio_url,provider_voice_id,status,language,created_at,updated_at)
++		 VALUES (?,?,?,?,?,?,?,?,?)`,
++		v.ID, v.TenantID, v.Name, v.SampleAudioURL, v.ProviderVoiceID, v.Status, v.Language, v.CreatedAt, v.UpdatedAt)
++	return err
++}
++
++func (r *VoiceProfileRepo) GetByID(ctx context.Context, tenantID, id int64) (*ai.VoiceProfile, error) {
++	var v ai.VoiceProfile
++	err := r.db.GetContext(ctx, &v, "SELECT * FROM voice_profiles WHERE tenant_id=? AND id=?", tenantID, id)
++	if err != nil {
++		return nil, err
++	}
++	return &v, nil
++}
++
++func (r *VoiceProfileRepo) List(ctx context.Context, tenantID int64) ([]ai.VoiceProfile, error) {
++	var items []ai.VoiceProfile
++	err := r.db.SelectContext(ctx, &items, "SELECT * FROM voice_profiles WHERE tenant_id=? ORDER BY created_at DESC", tenantID)
++	return items, err
++}
++
++func (r *VoiceProfileRepo) Update(ctx context.Context, v *ai.VoiceProfile) error {
++	_, err := r.db.ExecContext(ctx,
++		`UPDATE voice_profiles SET name=?,sample_audio_url=?,provider_voice_id=?,status=?,language=?,updated_at=?
++		 WHERE tenant_id=? AND id=?`,
++		v.Name, v.SampleAudioURL, v.ProviderVoiceID, v.Status, v.Language, v.UpdatedAt, v.TenantID, v.ID)
++	return err
++}
++
++func (r *VoiceProfileRepo) Delete(ctx context.Context, tenantID, id int64) error {
++	_, err := r.db.ExecContext(ctx, "DELETE FROM voice_profiles WHERE tenant_id=? AND id=?", tenantID, id)
++	return err
++}
++
++// ─── ConversationAnalysisTask ───
++
++type ConversationAnalysisTaskRepo struct{ db *sqlx.DB }
++
++func NewConversationAnalysisTaskRepo(db *sqlx.DB) *ConversationAnalysisTaskRepo {
++	return &ConversationAnalysisTaskRepo{db: db}
++}
++
++func (r *ConversationAnalysisTaskRepo) Create(ctx context.Context, t *ai.ConversationAnalysisTask) error {
++	_, err := r.db.ExecContext(ctx,
++		`INSERT INTO conversation_analysis_tasks (id,tenant_id,name,type,date_from,date_to,total_calls,processed_calls,status,result_json,created_at,completed_at)
++		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
++		t.ID, t.TenantID, t.Name, t.Type, t.DateFrom, t.DateTo, t.TotalCalls, t.ProcessedCalls, t.Status, t.ResultJSON, t.CreatedAt, t.CompletedAt)
++	return err
++}
++
++func (r *ConversationAnalysisTaskRepo) GetByID(ctx context.Context, tenantID, id int64) (*ai.ConversationAnalysisTask, error) {
++	var t ai.ConversationAnalysisTask
++	err := r.db.GetContext(ctx, &t, "SELECT * FROM conversation_analysis_tasks WHERE tenant_id=? AND id=?", tenantID, id)
++	if err != nil {
++		return nil, err
++	}
++	return &t, nil
++}
++
++func (r *ConversationAnalysisTaskRepo) List(ctx context.Context, tenantID int64) ([]ai.ConversationAnalysisTask, error) {
++	var items []ai.ConversationAnalysisTask
++	err := r.db.SelectContext(ctx, &items,
++		"SELECT * FROM conversation_analysis_tasks WHERE tenant_id=? ORDER BY created_at DESC", tenantID)
++	return items, err
++}
++
++func (r *ConversationAnalysisTaskRepo) Update(ctx context.Context, t *ai.ConversationAnalysisTask) error {
++	_, err := r.db.ExecContext(ctx,
++		`UPDATE conversation_analysis_tasks SET status=?,processed_calls=?,result_json=?,completed_at=?
++		 WHERE tenant_id=? AND id=?`,
++		t.Status, t.ProcessedCalls, t.ResultJSON, t.CompletedAt, t.TenantID, t.ID)
++	return err
++}
++
++// ─── TrainingCourse ───
++
++type TrainingCourseRepo struct{ db *sqlx.DB }
++
++func NewTrainingCourseRepo(db *sqlx.DB) *TrainingCourseRepo { return &TrainingCourseRepo{db: db} }
++
++func (r *TrainingCourseRepo) Create(ctx context.Context, c *ai.TrainingCourse) error {
++	_, err := r.db.ExecContext(ctx,
++		`INSERT INTO training_courses (id,tenant_id,title,description,content_json,pass_score,status,created_at,updated_at)
++		 VALUES (?,?,?,?,?,?,?,?,?)`,
++		c.ID, c.TenantID, c.Title, c.Description, c.ContentJSON, c.PassScore, c.Status, c.CreatedAt, c.UpdatedAt)
++	return err
++}
++
++func (r *TrainingCourseRepo) GetByID(ctx context.Context, tenantID, id int64) (*ai.TrainingCourse, error) {
++	var c ai.TrainingCourse
++	err := r.db.GetContext(ctx, &c, "SELECT * FROM training_courses WHERE tenant_id=? AND id=?", tenantID, id)
++	if err != nil {
++		return nil, err
++	}
++	return &c, nil
++}
++
++func (r *TrainingCourseRepo) List(ctx context.Context, tenantID int64) ([]ai.TrainingCourse, error) {
++	var items []ai.TrainingCourse
++	err := r.db.SelectContext(ctx, &items, "SELECT * FROM training_courses WHERE tenant_id=? ORDER BY created_at DESC", tenantID)
++	return items, err
++}
++
++func (r *TrainingCourseRepo) Update(ctx context.Context, c *ai.TrainingCourse) error {
++	_, err := r.db.ExecContext(ctx,
++		`UPDATE training_courses SET title=?,description=?,content_json=?,pass_score=?,status=?,updated_at=?
++		 WHERE tenant_id=? AND id=?`,
++		c.Title, c.Description, c.ContentJSON, c.PassScore, c.Status, c.UpdatedAt, c.TenantID, c.ID)
++	return err
++}
++
++func (r *TrainingCourseRepo) Delete(ctx context.Context, tenantID, id int64) error {
++	_, err := r.db.ExecContext(ctx, "DELETE FROM training_courses WHERE tenant_id=? AND id=?", tenantID, id)
++	return err
++}
++
++// ─── TrainingExam ───
++
++type TrainingExamRepo struct{ db *sqlx.DB }
++
++func NewTrainingExamRepo(db *sqlx.DB) *TrainingExamRepo { return &TrainingExamRepo{db: db} }
++
++func (r *TrainingExamRepo) Create(ctx context.Context, e *ai.TrainingExam) error {
++	_, err := r.db.ExecContext(ctx,
++		`INSERT INTO training_exams (id,tenant_id,course_id,agent_id,score,max_score,status,answers_json,created_at)
++		 VALUES (?,?,?,?,?,?,?,?,?)`,
++		e.ID, e.TenantID, e.CourseID, e.AgentID, e.Score, e.MaxScore, e.Status, e.AnswersJSON, e.CreatedAt)
++	return err
++}
++
++func (r *TrainingExamRepo) GetByID(ctx context.Context, tenantID, id int64) (*ai.TrainingExam, error) {
++	var e ai.TrainingExam
++	err := r.db.GetContext(ctx, &e, "SELECT * FROM training_exams WHERE tenant_id=? AND id=?", tenantID, id)
++	if err != nil {
++		return nil, err
++	}
++	return &e, nil
++}
++
++func (r *TrainingExamRepo) ListByAgent(ctx context.Context, tenantID, agentID int64) ([]ai.TrainingExam, error) {
++	var items []ai.TrainingExam
++	err := r.db.SelectContext(ctx, &items,
++		"SELECT * FROM training_exams WHERE tenant_id=? AND agent_id=? ORDER BY created_at DESC", tenantID, agentID)
++	return items, err
++}
++
++func (r *TrainingExamRepo) ListByCourse(ctx context.Context, tenantID, courseID int64) ([]ai.TrainingExam, error) {
++	var items []ai.TrainingExam
++	err := r.db.SelectContext(ctx, &items,
++		"SELECT * FROM training_exams WHERE tenant_id=? AND course_id=? ORDER BY created_at DESC", tenantID, courseID)
++	return items, err
++}
++
++// ─── SimulatedCall ───
++
++type SimulatedCallRepo struct{ db *sqlx.DB }
++
++func NewSimulatedCallRepo(db *sqlx.DB) *SimulatedCallRepo { return &SimulatedCallRepo{db: db} }
++
++func (r *SimulatedCallRepo) Create(ctx context.Context, s *ai.SimulatedCall) error {
++	_, err := r.db.ExecContext(ctx,
++		`INSERT INTO simulated_calls (id,tenant_id,agent_id,scenario_id,transcript,ai_feedback,score,duration_sec,created_at)
++		 VALUES (?,?,?,?,?,?,?,?,?)`,
++		s.ID, s.TenantID, s.AgentID, s.ScenarioID, s.Transcript, s.AIFeedback, s.Score, s.DurationSec, s.CreatedAt)
++	return err
++}
++
++func (r *SimulatedCallRepo) GetByID(ctx context.Context, tenantID, id int64) (*ai.SimulatedCall, error) {
++	var s ai.SimulatedCall
++	err := r.db.GetContext(ctx, &s, "SELECT * FROM simulated_calls WHERE tenant_id=? AND id=?", tenantID, id)
++	if err != nil {
++		return nil, err
++	}
++	return &s, nil
++}
++
++func (r *SimulatedCallRepo) ListByAgent(ctx context.Context, tenantID, agentID int64) ([]ai.SimulatedCall, error) {
++	var items []ai.SimulatedCall
++	err := r.db.SelectContext(ctx, &items,
++		"SELECT * FROM simulated_calls WHERE tenant_id=? AND agent_id=? ORDER BY created_at DESC", tenantID, agentID)
++	return items, err
++}
++
++// ─── RingAnalysisConfig ───
++
++type RingAnalysisConfigRepo struct{ db *sqlx.DB }
++
++func NewRingAnalysisConfigRepo(db *sqlx.DB) *RingAnalysisConfigRepo {
++	return &RingAnalysisConfigRepo{db: db}
++}
++
++func (r *RingAnalysisConfigRepo) Get(ctx context.Context, tenantID int64) (*ai.RingAnalysisConfig, error) {
++	var c ai.RingAnalysisConfig
++	err := r.db.GetContext(ctx, &c, "SELECT * FROM ring_analysis_configs WHERE tenant_id=?", tenantID)
++	if err != nil {
++		return nil, err
++	}
++	return &c, nil
++}
++
++func (r *RingAnalysisConfigRepo) Upsert(ctx context.Context, c *ai.RingAnalysisConfig) error {
++	_, err := r.db.ExecContext(ctx,
++		`INSERT INTO ring_analysis_configs (id,tenant_id,enabled,detection_timeout_ms,hangup_on_voicemail,hangup_on_fax,created_at,updated_at)
++		 VALUES (?,?,?,?,?,?,?,?)
++		 ON DUPLICATE KEY UPDATE enabled=VALUES(enabled),detection_timeout_ms=VALUES(detection_timeout_ms),
++		 hangup_on_voicemail=VALUES(hangup_on_voicemail),hangup_on_fax=VALUES(hangup_on_fax),updated_at=VALUES(updated_at)`,
++		c.ID, c.TenantID, c.Enabled, c.DetectionTimeoutMs, c.HangUpOnVoicemail, c.HangUpOnFax, c.CreatedAt, c.UpdatedAt)
++	return err
++}
++
++// ─── RingAnalysisLog ───
++
++type RingAnalysisLogRepo struct{ db *sqlx.DB }
++
++func NewRingAnalysisLogRepo(db *sqlx.DB) *RingAnalysisLogRepo {
++	return &RingAnalysisLogRepo{db: db}
++}
++
++func (r *RingAnalysisLogRepo) Create(ctx context.Context, l *ai.RingAnalysisLog) error {
++	_, err := r.db.ExecContext(ctx,
++		`INSERT INTO ring_analysis_logs (id,tenant_id,call_id,result,confidence,duration_ms,created_at)
++		 VALUES (?,?,?,?,?,?,?)`,
++		l.ID, l.TenantID, l.CallID, l.Result, l.Confidence, l.DurationMs, l.CreatedAt)
++	return err
++}
++
++func (r *RingAnalysisLogRepo) ListByCall(ctx context.Context, tenantID, callID int64) ([]ai.RingAnalysisLog, error) {
++	var items []ai.RingAnalysisLog
++	err := r.db.SelectContext(ctx, &items,
++		"SELECT * FROM ring_analysis_logs WHERE tenant_id=? AND call_id=?", tenantID, callID)
++	return items, err
++}
++
++// ─── FullDuplexConfig ───
++
++type FullDuplexConfigRepo struct{ db *sqlx.DB }
++
++func NewFullDuplexConfigRepo(db *sqlx.DB) *FullDuplexConfigRepo {
++	return &FullDuplexConfigRepo{db: db}
++}
++
++func (r *FullDuplexConfigRepo) Get(ctx context.Context, tenantID int64) (*ai.FullDuplexConfig, error) {
++	var c ai.FullDuplexConfig
++	err := r.db.GetContext(ctx, &c, "SELECT * FROM full_duplex_configs WHERE tenant_id=?", tenantID)
++	if err != nil {
++		return nil, err
++	}
++	return &c, nil
++}
++
++func (r *FullDuplexConfigRepo) Upsert(ctx context.Context, c *ai.FullDuplexConfig) error {
++	_, err := r.db.ExecContext(ctx,
++		`INSERT INTO full_duplex_configs (id,tenant_id,enabled,interruption_enabled,silence_threshold_ms,interruption_sensitivity,voice_continuity,created_at,updated_at)
++		 VALUES (?,?,?,?,?,?,?,?,?)
++		 ON DUPLICATE KEY UPDATE enabled=VALUES(enabled),interruption_enabled=VALUES(interruption_enabled),
++		 silence_threshold_ms=VALUES(silence_threshold_ms),interruption_sensitivity=VALUES(interruption_sensitivity),
++		 voice_continuity=VALUES(voice_continuity),updated_at=VALUES(updated_at)`,
++		c.ID, c.TenantID, c.Enabled, c.InterruptionEnabled, c.SilenceThresholdMs,
++		c.InterruptionSensitivity, c.VoiceContinuity, c.CreatedAt, c.UpdatedAt)
++	return err
++}
++
++// Compile-time interface checks.
++var (
++	_ ai.CommAgentRepository              = (*CommAgentRepo)(nil)
++	_ ai.CommAgentSessionRepository       = (*CommAgentSessionRepo)(nil)
++	_ ai.VoiceProfileRepository           = (*VoiceProfileRepo)(nil)
++	_ ai.ConversationAnalysisTaskRepository = (*ConversationAnalysisTaskRepo)(nil)
++	_ ai.TrainingCourseRepository         = (*TrainingCourseRepo)(nil)
++	_ ai.TrainingExamRepository           = (*TrainingExamRepo)(nil)
++	_ ai.SimulatedCallRepository          = (*SimulatedCallRepo)(nil)
++	_ ai.RingAnalysisConfigRepository     = (*RingAnalysisConfigRepo)(nil)
++	_ ai.RingAnalysisLogRepository        = (*RingAnalysisLogRepo)(nil)
++	_ ai.FullDuplexConfigRepository       = (*FullDuplexConfigRepo)(nil)
++)
++
++// sql import guard
++var _ = sql.ErrNoRows
+diff --git a/internal/interfaces/http/handler/advanced_ai.go b/internal/interfaces/http/handler/advanced_ai.go
+new file mode 100644
+index 0000000..8857240
+--- /dev/null
++++ b/internal/interfaces/http/handler/advanced_ai.go
+@@ -0,0 +1,379 @@
++package handler
++
++import (
++	"encoding/json"
++	"net/http"
++	"strconv"
++
++	"github.com/divord97/ccc/internal/domain/ai"
++	"github.com/divord97/ccc/internal/interfaces/http/middleware"
++	"github.com/divord97/ccc/pkg/response"
++	"github.com/go-chi/chi/v5"
++)
++
++// ─── CommAgent Handlers ───
++
++func ListCommAgents(svc *ai.CommAgentService) http.HandlerFunc {
++	return func(w http.ResponseWriter, r *http.Request) {
++		tenantID := middleware.TenantIDFromCtx(r.Context())
++		items, err := svc.List(r.Context(), tenantID)
++		if err != nil {
++			response.Error(w, 500, err.Error())
++			return
++		}
++		response.JSON(w, 200, items)
++	}
++}
++
++func CreateCommAgent(svc *ai.CommAgentService) http.HandlerFunc {
++	return func(w http.ResponseWriter, r *http.Request) {
++		tenantID := middleware.TenantIDFromCtx(r.Context())
++		var in ai.CreateCommAgentInput
++		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++			response.Error(w, 400, err.Error())
++			return
++		}
++		in.TenantID = tenantID
++		a, err := svc.Create(r.Context(), in)
++		if err != nil {
++			response.Error(w, 422, err.Error())
++			return
++		}
++		response.JSON(w, 201, a)
++	}
++}
++
++func GetCommAgent(svc *ai.CommAgentService) http.HandlerFunc {
++	return func(w http.ResponseWriter, r *http.Request) {
++		tenantID := middleware.TenantIDFromCtx(r.Context())
++		id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++		a, err := svc.Get(r.Context(), tenantID, id)
++		if err != nil {
++			response.Error(w, 404, err.Error())
++			return
++		}
++		response.JSON(w, 200, a)
++	}
++}
++
++func DeleteCommAgent(svc *ai.CommAgentService) http.HandlerFunc {
++	return func(w http.ResponseWriter, r *http.Request) {
++		tenantID := middleware.TenantIDFromCtx(r.Context())
++		id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++		if err := svc.Delete(r.Context(), tenantID, id); err != nil {
++			response.Error(w, 500, err.Error())
++			return
++		}
++		w.WriteHeader(204)
++	}
++}
++
++// ─── VoiceProfile Handlers ───
++
++func ListVoiceProfiles(svc *ai.VoiceProfileService) http.HandlerFunc {
++	return func(w http.ResponseWriter, r *http.Request) {
++		tenantID := middleware.TenantIDFromCtx(r.Context())
++		items, err := svc.List(r.Context(), tenantID)
++		if err != nil {
++			response.Error(w, 500, err.Error())
++			return
++		}
++		response.JSON(w, 200, items)
++	}
++}
++
++func CreateVoiceProfile(svc *ai.VoiceProfileService) http.HandlerFunc {
++	return func(w http.ResponseWriter, r *http.Request) {
++		tenantID := middleware.TenantIDFromCtx(r.Context())
++		var in ai.CreateVoiceProfileInput
++		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++			response.Error(w, 400, err.Error())
++			return
++		}
++		in.TenantID = tenantID
++		v, err := svc.Create(r.Context(), in)
++		if err != nil {
++			response.Error(w, 422, err.Error())
++			return
++		}
++		response.JSON(w, 201, v)
++	}
++}
++
++func GetVoiceProfile(svc *ai.VoiceProfileService) http.HandlerFunc {
++	return func(w http.ResponseWriter, r *http.Request) {
++		tenantID := middleware.TenantIDFromCtx(r.Context())
++		id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++		v, err := svc.Get(r.Context(), tenantID, id)
++		if err != nil {
++			response.Error(w, 404, err.Error())
++			return
++		}
++		response.JSON(w, 200, v)
++	}
++}
++
++func StartVoiceTraining(svc *ai.VoiceProfileService) http.HandlerFunc {
++	return func(w http.ResponseWriter, r *http.Request) {
++		tenantID := middleware.TenantIDFromCtx(r.Context())
++		id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++		v, err := svc.StartTraining(r.Context(), tenantID, id)
++		if err != nil {
++			response.Error(w, 500, err.Error())
++			return
++		}
++		response.JSON(w, 200, v)
++	}
++}
++
++func DeleteVoiceProfile(svc *ai.VoiceProfileService) http.HandlerFunc {
++	return func(w http.ResponseWriter, r *http.Request) {
++		tenantID := middleware.TenantIDFromCtx(r.Context())
++		id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++		if err := svc.Delete(r.Context(), tenantID, id); err != nil {
++			response.Error(w, 500, err.Error())
++			return
++		}
++		w.WriteHeader(204)
++	}
++}
++
++// ─── ConversationAnalysis Handlers ───
++
++func ListAnalysisTasks(svc *ai.ConversationAnalysisService) http.HandlerFunc {
++	return func(w http.ResponseWriter, r *http.Request) {
++		tenantID := middleware.TenantIDFromCtx(r.Context())
++		items, err := svc.List(r.Context(), tenantID)
++		if err != nil {
++			response.Error(w, 500, err.Error())
++			return
++		}
++		response.JSON(w, 200, items)
++	}
++}
++
++func CreateAnalysisTask(svc *ai.ConversationAnalysisService) http.HandlerFunc {
++	return func(w http.ResponseWriter, r *http.Request) {
++		tenantID := middleware.TenantIDFromCtx(r.Context())
++		var in ai.CreateAnalysisTaskInput
++		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++			response.Error(w, 400, err.Error())
++			return
++		}
++		in.TenantID = tenantID
++		t, err := svc.Create(r.Context(), in)
++		if err != nil {
++			response.Error(w, 422, err.Error())
++			return
++		}
++		response.JSON(w, 201, t)
++	}
++}
++
++func GetAnalysisTask(svc *ai.ConversationAnalysisService) http.HandlerFunc {
++	return func(w http.ResponseWriter, r *http.Request) {
++		tenantID := middleware.TenantIDFromCtx(r.Context())
++		id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++		t, err := svc.Get(r.Context(), tenantID, id)
++		if err != nil {
++			response.Error(w, 404, err.Error())
++			return
++		}
++		response.JSON(w, 200, t)
++	}
++}
++
++// ─── Training Handlers ───
++
++func ListCourses(svc *ai.TrainingService) http.HandlerFunc {
++	return func(w http.ResponseWriter, r *http.Request) {
++		tenantID := middleware.TenantIDFromCtx(r.Context())
++		items, err := svc.ListCourses(r.Context(), tenantID)
++		if err != nil {
++			response.Error(w, 500, err.Error())
++			return
++		}
++		response.JSON(w, 200, items)
++	}
++}
++
++func CreateCourse(svc *ai.TrainingService) http.HandlerFunc {
++	return func(w http.ResponseWriter, r *http.Request) {
++		tenantID := middleware.TenantIDFromCtx(r.Context())
++		var in ai.CreateCourseInput
++		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++			response.Error(w, 400, err.Error())
++			return
++		}
++		in.TenantID = tenantID
++		c, err := svc.CreateCourse(r.Context(), in)
++		if err != nil {
++			response.Error(w, 422, err.Error())
++			return
++		}
++		response.JSON(w, 201, c)
++	}
++}
++
++func GetCourse(svc *ai.TrainingService) http.HandlerFunc {
++	return func(w http.ResponseWriter, r *http.Request) {
++		tenantID := middleware.TenantIDFromCtx(r.Context())
++		id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++		c, err := svc.GetCourse(r.Context(), tenantID, id)
++		if err != nil {
++			response.Error(w, 404, err.Error())
++			return
++		}
++		response.JSON(w, 200, c)
++	}
++}
++
++func PublishCourse(svc *ai.TrainingService) http.HandlerFunc {
++	return func(w http.ResponseWriter, r *http.Request) {
++		tenantID := middleware.TenantIDFromCtx(r.Context())
++		id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++		c, err := svc.PublishCourse(r.Context(), tenantID, id)
++		if err != nil {
++			response.Error(w, 500, err.Error())
++			return
++		}
++		response.JSON(w, 200, c)
++	}
++}
++
++func SubmitExam(svc *ai.TrainingService) http.HandlerFunc {
++	return func(w http.ResponseWriter, r *http.Request) {
++		tenantID := middleware.TenantIDFromCtx(r.Context())
++		var in ai.SubmitExamInput
++		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++			response.Error(w, 400, err.Error())
++			return
++		}
++		in.TenantID = tenantID
++		e, err := svc.SubmitExam(r.Context(), in)
++		if err != nil {
++			response.Error(w, 422, err.Error())
++			return
++		}
++		response.JSON(w, 201, e)
++	}
++}
++
++func ListExamsByAgent(svc *ai.TrainingService) http.HandlerFunc {
++	return func(w http.ResponseWriter, r *http.Request) {
++		tenantID := middleware.TenantIDFromCtx(r.Context())
++		agentID, _ := strconv.ParseInt(chi.URLParam(r, "agentID"), 10, 64)
++		items, err := svc.ListExamsByAgent(r.Context(), tenantID, agentID)
++		if err != nil {
++			response.Error(w, 500, err.Error())
++			return
++		}
++		response.JSON(w, 200, items)
++	}
++}
++
++func CreateSimulatedCall(svc *ai.TrainingService) http.HandlerFunc {
++	return func(w http.ResponseWriter, r *http.Request) {
++		tenantID := middleware.TenantIDFromCtx(r.Context())
++		var in ai.CreateSimulatedCallInput
++		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++			response.Error(w, 400, err.Error())
++			return
++		}
++		in.TenantID = tenantID
++		sc, err := svc.CreateSimulatedCall(r.Context(), in)
++		if err != nil {
++			response.Error(w, 422, err.Error())
++			return
++		}
++		response.JSON(w, 201, sc)
++	}
++}
++
++func ListSimulatedCalls(svc *ai.TrainingService) http.HandlerFunc {
++	return func(w http.ResponseWriter, r *http.Request) {
++		tenantID := middleware.TenantIDFromCtx(r.Context())
++		agentID, _ := strconv.ParseInt(chi.URLParam(r, "agentID"), 10, 64)
++		items, err := svc.ListSimulatedCalls(r.Context(), tenantID, agentID)
++		if err != nil {
++			response.Error(w, 500, err.Error())
++			return
++		}
++		response.JSON(w, 200, items)
++	}
++}
++
++// ─── RingAnalysis Handlers ───
++
++func GetRingAnalysisConfig(svc *ai.RingAnalysisService) http.HandlerFunc {
++	return func(w http.ResponseWriter, r *http.Request) {
++		tenantID := middleware.TenantIDFromCtx(r.Context())
++		c, err := svc.GetConfig(r.Context(), tenantID)
++		if err != nil {
++			response.Error(w, 404, err.Error())
++			return
++		}
++		response.JSON(w, 200, c)
++	}
++}
++
++func UpsertRingAnalysisConfig(svc *ai.RingAnalysisService) http.HandlerFunc {
++	return func(w http.ResponseWriter, r *http.Request) {
++		tenantID := middleware.TenantIDFromCtx(r.Context())
++		var c ai.RingAnalysisConfig
++		if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
++			response.Error(w, 400, err.Error())
++			return
++		}
++		c.TenantID = tenantID
++		if err := svc.UpsertConfig(r.Context(), &c); err != nil {
++			response.Error(w, 500, err.Error())
++			return
++		}
++		response.JSON(w, 200, c)
++	}
++}
++
++func GetRingAnalysisLogs(svc *ai.RingAnalysisService) http.HandlerFunc {
++	return func(w http.ResponseWriter, r *http.Request) {
++		tenantID := middleware.TenantIDFromCtx(r.Context())
++		callID, _ := strconv.ParseInt(chi.URLParam(r, "callID"), 10, 64)
++		logs, err := svc.GetCallLogs(r.Context(), tenantID, callID)
++		if err != nil {
++			response.Error(w, 500, err.Error())
++			return
++		}
++		response.JSON(w, 200, logs)
++	}
++}
++
++// ─── FullDuplex Handlers ───
++
++func GetFullDuplexConfig(svc *ai.FullDuplexService) http.HandlerFunc {
++	return func(w http.ResponseWriter, r *http.Request) {
++		tenantID := middleware.TenantIDFromCtx(r.Context())
++		c, err := svc.GetConfig(r.Context(), tenantID)
++		if err != nil {
++			response.Error(w, 404, err.Error())
++			return
++		}
++		response.JSON(w, 200, c)
++	}
++}
++
++func UpsertFullDuplexConfig(svc *ai.FullDuplexService) http.HandlerFunc {
++	return func(w http.ResponseWriter, r *http.Request) {
++		tenantID := middleware.TenantIDFromCtx(r.Context())
++		var c ai.FullDuplexConfig
++		if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
++			response.Error(w, 400, err.Error())
++			return
++		}
++		c.TenantID = tenantID
++		if err := svc.UpsertConfig(r.Context(), &c); err != nil {
++			response.Error(w, 422, err.Error())
++			return
++		}
++		response.JSON(w, 200, c)
++	}
++}
+diff --git a/internal/interfaces/http/router.go b/internal/interfaces/http/router.go
+index 5655056..5b9bcc8 100644
+--- a/internal/interfaces/http/router.go
++++ b/internal/interfaces/http/router.go
+@@ -1,6 +1,7 @@
+ package http
+ 
+ import (
++	"github.com/divord97/ccc/internal/domain/ai"
+ 	"github.com/divord97/ccc/internal/domain/platform"
+ 	"github.com/divord97/ccc/internal/infrastructure/redis"
+ 	"github.com/divord97/ccc/internal/interfaces/http/handler"
+@@ -81,6 +82,14 @@ type RouterDeps struct {
+ 	LLMGatewayHandler    *handler.LLMGatewayHandler
+ 	WebRTCQualityHandler *handler.WebRTCQualityHandler
+ 
++	// Advanced AI
++	CommAgentSvc  *ai.CommAgentService
++	VoiceSvc      *ai.VoiceProfileService
++	AnalysisSvc   *ai.ConversationAnalysisService
++	TrainingSvc   *ai.TrainingService
++	RingSvc       *ai.RingAnalysisService
++	FullDuplexSvc *ai.FullDuplexService
++
+ 	// Infrastructure
+ 	RateLimiter  *redis.RateLimiter
+ 	AuditLogRepo platform.AuditLogRepository
+@@ -526,6 +535,47 @@ func NewRouter(deps RouterDeps) *chi.Mux {
+ 		r.Post("/webrtc-quality", deps.WebRTCQualityHandler.Save)
+ 		r.Get("/calls/{callId}/webrtc-quality", deps.WebRTCQualityHandler.ListByCall)
+ 		r.Get("/agents/{agentId}/webrtc-quality", deps.WebRTCQualityHandler.ListByAgent)
++
++		// --- Advanced AI Routes ---
++
++		r.Route("/comm-agents", func(r chi.Router) {
++			r.Get("/", handler.ListCommAgents(deps.CommAgentSvc))
++			r.Post("/", handler.CreateCommAgent(deps.CommAgentSvc))
++			r.Get("/{id}", handler.GetCommAgent(deps.CommAgentSvc))
++			r.Delete("/{id}", handler.DeleteCommAgent(deps.CommAgentSvc))
++		})
++
++		r.Route("/voice-profiles", func(r chi.Router) {
++			r.Get("/", handler.ListVoiceProfiles(deps.VoiceSvc))
++			r.Post("/", handler.CreateVoiceProfile(deps.VoiceSvc))
++			r.Get("/{id}", handler.GetVoiceProfile(deps.VoiceSvc))
++			r.Post("/{id}/train", handler.StartVoiceTraining(deps.VoiceSvc))
++			r.Delete("/{id}", handler.DeleteVoiceProfile(deps.VoiceSvc))
++		})
++
++		r.Route("/conversation-analysis", func(r chi.Router) {
++			r.Get("/", handler.ListAnalysisTasks(deps.AnalysisSvc))
++			r.Post("/", handler.CreateAnalysisTask(deps.AnalysisSvc))
++			r.Get("/{id}", handler.GetAnalysisTask(deps.AnalysisSvc))
++		})
++
++		r.Route("/training/courses", func(r chi.Router) {
++			r.Get("/", handler.ListCourses(deps.TrainingSvc))
++			r.Post("/", handler.CreateCourse(deps.TrainingSvc))
++			r.Get("/{id}", handler.GetCourse(deps.TrainingSvc))
++			r.Post("/{id}/publish", handler.PublishCourse(deps.TrainingSvc))
++		})
++		r.Post("/training/exams", handler.SubmitExam(deps.TrainingSvc))
++		r.Get("/training/agents/{agentID}/exams", handler.ListExamsByAgent(deps.TrainingSvc))
++		r.Post("/training/simulated-calls", handler.CreateSimulatedCall(deps.TrainingSvc))
++		r.Get("/training/agents/{agentID}/simulated-calls", handler.ListSimulatedCalls(deps.TrainingSvc))
++
++		r.Get("/ring-analysis/config", handler.GetRingAnalysisConfig(deps.RingSvc))
++		r.Put("/ring-analysis/config", handler.UpsertRingAnalysisConfig(deps.RingSvc))
++		r.Get("/calls/{callID}/ring-analysis", handler.GetRingAnalysisLogs(deps.RingSvc))
++
++		r.Get("/full-duplex/config", handler.GetFullDuplexConfig(deps.FullDuplexSvc))
++		r.Put("/full-duplex/config", handler.UpsertFullDuplexConfig(deps.FullDuplexSvc))
+ 	})
+ 
+ 	// --- Public Routes (no JWT auth) ---
+diff --git a/migrations/000003_advanced_ai.down.sql b/migrations/000003_advanced_ai.down.sql
+new file mode 100644
+index 0000000..4b2300a
+--- /dev/null
++++ b/migrations/000003_advanced_ai.down.sql
+@@ -0,0 +1,10 @@
++DROP TABLE IF EXISTS full_duplex_configs;
++DROP TABLE IF EXISTS ring_analysis_logs;
++DROP TABLE IF EXISTS ring_analysis_configs;
++DROP TABLE IF EXISTS simulated_calls;
++DROP TABLE IF EXISTS training_exams;
++DROP TABLE IF EXISTS training_courses;
++DROP TABLE IF EXISTS conversation_analysis_tasks;
++DROP TABLE IF EXISTS voice_profiles;
++DROP TABLE IF EXISTS comm_agent_sessions;
++DROP TABLE IF EXISTS comm_agents;
+diff --git a/migrations/000003_advanced_ai.up.sql b/migrations/000003_advanced_ai.up.sql
+new file mode 100644
+index 0000000..46056ce
+--- /dev/null
++++ b/migrations/000003_advanced_ai.up.sql
+@@ -0,0 +1,144 @@
++-- Advanced AI: Communication Agents
++CREATE TABLE IF NOT EXISTS comm_agents (
++    id BIGINT NOT NULL PRIMARY KEY,
++    tenant_id BIGINT NOT NULL,
++    digital_employee_id BIGINT NOT NULL,
++    name VARCHAR(255) NOT NULL,
++    mode VARCHAR(20) NOT NULL DEFAULT 'inbound',
++    system_prompt TEXT NOT NULL,
++    max_turns INT NOT NULL DEFAULT 20,
++    transfer_skill_group_id BIGINT,
++    llm_model_id BIGINT,
++    is_active BOOLEAN NOT NULL DEFAULT TRUE,
++    created_at DATETIME(3) NOT NULL,
++    updated_at DATETIME(3) NOT NULL,
++    INDEX idx_comm_agents_tenant (tenant_id)
++) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
++
++CREATE TABLE IF NOT EXISTS comm_agent_sessions (
++    id BIGINT NOT NULL PRIMARY KEY,
++    tenant_id BIGINT NOT NULL,
++    comm_agent_id BIGINT NOT NULL,
++    call_id BIGINT NOT NULL,
++    status VARCHAR(20) NOT NULL DEFAULT 'active',
++    turn_count INT NOT NULL DEFAULT 0,
++    transcript LONGTEXT,
++    summary TEXT,
++    transferred_to BIGINT,
++    started_at DATETIME(3) NOT NULL,
++    ended_at DATETIME(3),
++    INDEX idx_cas_tenant (tenant_id),
++    INDEX idx_cas_agent (comm_agent_id),
++    INDEX idx_cas_call (call_id)
++) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
++
++-- Advanced AI: Voice Cloning
++CREATE TABLE IF NOT EXISTS voice_profiles (
++    id BIGINT NOT NULL PRIMARY KEY,
++    tenant_id BIGINT NOT NULL,
++    name VARCHAR(255) NOT NULL,
++    sample_audio_url VARCHAR(1024) NOT NULL,
++    provider_voice_id VARCHAR(255) NOT NULL DEFAULT '',
++    status VARCHAR(20) NOT NULL DEFAULT 'pending',
++    language VARCHAR(10) NOT NULL DEFAULT 'zh-CN',
++    created_at DATETIME(3) NOT NULL,
++    updated_at DATETIME(3) NOT NULL,
++    INDEX idx_vp_tenant (tenant_id)
++) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
++
++-- Advanced AI: Conversation Analytics
++CREATE TABLE IF NOT EXISTS conversation_analysis_tasks (
++    id BIGINT NOT NULL PRIMARY KEY,
++    tenant_id BIGINT NOT NULL,
++    name VARCHAR(255) NOT NULL,
++    type VARCHAR(30) NOT NULL,
++    date_from VARCHAR(20) NOT NULL,
++    date_to VARCHAR(20) NOT NULL,
++    total_calls INT NOT NULL DEFAULT 0,
++    processed_calls INT NOT NULL DEFAULT 0,
++    status VARCHAR(20) NOT NULL DEFAULT 'pending',
++    result_json LONGTEXT,
++    created_at DATETIME(3) NOT NULL,
++    completed_at DATETIME(3),
++    INDEX idx_cat_tenant (tenant_id)
++) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
++
++-- Advanced AI: Training
++CREATE TABLE IF NOT EXISTS training_courses (
++    id BIGINT NOT NULL PRIMARY KEY,
++    tenant_id BIGINT NOT NULL,
++    title VARCHAR(255) NOT NULL,
++    description TEXT,
++    content_json LONGTEXT,
++    pass_score INT NOT NULL DEFAULT 80,
++    status VARCHAR(20) NOT NULL DEFAULT 'draft',
++    created_at DATETIME(3) NOT NULL,
++    updated_at DATETIME(3) NOT NULL,
++    INDEX idx_tc_tenant (tenant_id)
++) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
++
++CREATE TABLE IF NOT EXISTS training_exams (
++    id BIGINT NOT NULL PRIMARY KEY,
++    tenant_id BIGINT NOT NULL,
++    course_id BIGINT NOT NULL,
++    agent_id BIGINT NOT NULL,
++    score INT NOT NULL DEFAULT 0,
++    max_score INT NOT NULL DEFAULT 100,
++    status VARCHAR(20) NOT NULL DEFAULT 'pending',
++    answers_json LONGTEXT,
++    created_at DATETIME(3) NOT NULL,
++    INDEX idx_te_tenant (tenant_id),
++    INDEX idx_te_agent (agent_id),
++    INDEX idx_te_course (course_id)
++) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
++
++CREATE TABLE IF NOT EXISTS simulated_calls (
++    id BIGINT NOT NULL PRIMARY KEY,
++    tenant_id BIGINT NOT NULL,
++    agent_id BIGINT NOT NULL,
++    scenario_id BIGINT NOT NULL,
++    transcript LONGTEXT,
++    ai_feedback TEXT,
++    score INT NOT NULL DEFAULT 0,
++    duration_sec INT NOT NULL DEFAULT 0,
++    created_at DATETIME(3) NOT NULL,
++    INDEX idx_sc_tenant (tenant_id),
++    INDEX idx_sc_agent (agent_id)
++) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
++
++-- Advanced AI: Ring Analysis
++CREATE TABLE IF NOT EXISTS ring_analysis_configs (
++    id BIGINT NOT NULL PRIMARY KEY,
++    tenant_id BIGINT NOT NULL UNIQUE,
++    enabled BOOLEAN NOT NULL DEFAULT FALSE,
++    detection_timeout_ms INT NOT NULL DEFAULT 5000,
++    hangup_on_voicemail BOOLEAN NOT NULL DEFAULT FALSE,
++    hangup_on_fax BOOLEAN NOT NULL DEFAULT FALSE,
++    created_at DATETIME(3) NOT NULL,
++    updated_at DATETIME(3) NOT NULL
++) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
++
++CREATE TABLE IF NOT EXISTS ring_analysis_logs (
++    id BIGINT NOT NULL PRIMARY KEY,
++    tenant_id BIGINT NOT NULL,
++    call_id BIGINT NOT NULL,
++    result VARCHAR(20) NOT NULL,
++    confidence DOUBLE NOT NULL DEFAULT 0,
++    duration_ms INT NOT NULL DEFAULT 0,
++    created_at DATETIME(3) NOT NULL,
++    INDEX idx_ral_tenant (tenant_id),
++    INDEX idx_ral_call (call_id)
++) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
++
++-- Advanced AI: Full-Duplex
++CREATE TABLE IF NOT EXISTS full_duplex_configs (
++    id BIGINT NOT NULL PRIMARY KEY,
++    tenant_id BIGINT NOT NULL UNIQUE,
++    enabled BOOLEAN NOT NULL DEFAULT FALSE,
++    interruption_enabled BOOLEAN NOT NULL DEFAULT FALSE,
++    silence_threshold_ms INT NOT NULL DEFAULT 500,
++    interruption_sensitivity DOUBLE NOT NULL DEFAULT 0.5,
++    voice_continuity BOOLEAN NOT NULL DEFAULT FALSE,
++    created_at DATETIME(3) NOT NULL,
++    updated_at DATETIME(3) NOT NULL
++) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

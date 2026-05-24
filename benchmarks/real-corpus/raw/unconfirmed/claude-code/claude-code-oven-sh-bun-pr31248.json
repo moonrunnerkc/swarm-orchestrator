@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-oven-sh-bun-pr31248",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "branch=claude/"
+  },
+  "pr": {
+    "number": 31248,
+    "headSha": "e76598eb4e03ace39bfd6a6d17358e09ebf2be1b",
+    "baseSha": "4df6154f0928c7ccbc003fafde26e558d9e03348",
+    "title": "fix(bun_core): remove ArrayLike set_len_and_slice",
+    "body": "## Summary\n\nThis fixes audit finding EXP-078 by removing `ArrayLike::set_len_and_slice`, the helper that exposed a typed mutable slice over newly-live `Vec` capacity.\n\nThe old `Vec<T>` implementation called `set_len(n)` and returned `&mut [T]` before the new elements were initialized. Safe Rust could call it on `Vec<bool>` and read from the returned slice, exposing uninitialized memory through a safe public trait method.\n\n## Changes\n\n- Remove `ArrayLike::set_len_and_slice`\n- Add a safe `ArrayLike::extend_from_slice` method instead\n- Change `from_slice` to initialize through `extend_from_slice`, not by raising length first\n- Implement the Vec path with `Vec::extend_from_slice`, so initialization happens through Vec's safe API\n\nThis is slightly stronger than just marking the old helper unsafe: no typed slice over spare capacity escapes at all.\n\n## Audit context\n\nThe audit witness `experiments/EXP-078-bun-core-crate/` imports the real `bun_core::util::ArrayLike`, calls the actual old `Vec<bool>` implementation, and Miri reports an uninitialized read through the returned slice.\n\nI checked for duplicate work before opening this PR. No existing PR targets EXP-078, `ArrayLike`, or `set_len_and_slice`. The open `bun_core` util split PR (#31202) preserves the same old helper shape, so this fix is still incremental rather than duplicative.\n\n## Verification\n\n- `bun run fmt:rust`\n- `cargo check -p bun_core`\n- `cargo check --workspace`\n- `bun bd test test/cli/run/run_command.test.ts -t \"should error with missing script\"`\n- External old-API smoke at `/tmp/exp-078-old-api-check`: calling `values.set_len_and_slice(1)` now fails with `E0599`\n\nNote: I also tried `cargo test -p bun_core`, but the standalone test binary does not link in this checkout due pre-existing external Bun dispatch and simdutf symbols.",
+    "author": "Dicklesworthstone",
+    "headRef": "claude/ub-fix-arraylike-set-len-unsafe",
+    "repository": "oven-sh/bun"
+  },
+  "diffRef": {
+    "repository": "oven-sh/bun",
+    "headSha": "e76598eb4e03ace39bfd6a6d17358e09ebf2be1b",
+    "baseSha": "4df6154f0928c7ccbc003fafde26e558d9e03348"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-oven-sh-bun-pr31248.diff",
+  "vendoredAt": "2026-05-24T03:23:44.865Z",
+  "collectedAt": "2026-05-24T03:23:44.865Z"
+}

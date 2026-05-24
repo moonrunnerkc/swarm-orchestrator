@@ -1,0 +1,6 @@
+{
+  "verdict": "clean",
+  "rationale": "Fixes the stated post-import P&L percentage problem with four cohesive changes to `app.py` and `database/portfolio_db.py`. In `/api/portfolio/prices`, `price = info.get('currentPrice') or info.get('regularMarketPrice') or prev or 0` adds `previousClose` as a fallback so weekend/holiday quotes do not collapse to zero, and the change/pct guards correctly avoid showing a non-zero delta when current price equals previous close. `/api/portfolio/export` now conditionally appends `price_override` to each exported stock entry so manually-overridden prices survive a round trip. `batch_add_stocks` consumes both `price_override` (JSON path) and `market_price` (screenshot OCR path), picking the first positive float, and adds `Optional[float] = None` support to `add_stock`. Null-safe coercions (`float(stock.get('shares') or 0)`, `(stock.get('symbol') or '').strip()`) prevent `float(None)` crashes when imported JSON has explicit `null`. The `error-swallow` detector firing on the inner `try/except (TypeError, ValueError): pass` is a false positive: that block is a controlled type-coercion guard where falling through to leave `price_override = None` is the correct, documented behavior, not error suppression.",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T14:00:00.000Z"
+}

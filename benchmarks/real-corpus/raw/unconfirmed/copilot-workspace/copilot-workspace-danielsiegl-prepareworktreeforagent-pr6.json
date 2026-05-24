@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-danielsiegl-prepareworktreeforagent-pr6",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 6,
+    "headSha": "8e7b1426f7fac7261716a9be6d4d0c24e8e0440a",
+    "baseSha": "a180796345a5a70d7f6f97bd032812a688ebdaac",
+    "title": "Add optional Codex-in-container launch mode for worktree sessions",
+    "body": "This change adds a containerized Codex workflow to the existing worktree launcher: create/reuse a dedicated Git worktree, then optionally run Codex inside Docker with only that worktree mounted. It keeps the default local CLI behavior unchanged for Copilot/Claude and non-container Codex.\n\n- **Script interface updates**\n  - Added `-CodexInContainer` (switch) and `-CodexContainerImage <image>` (default: `my-codex-image`) to `new-cli-worktree.ps1`.\n  - Added argument guard so container mode is valid only with `-Cli codex`.\n\n- **Containerized Codex execution path**\n  - When `-Cli codex -CodexInContainer` is used, the script now runs:\n    - `docker run --rm -it`\n    - `--workdir /workspace`\n    - bind mount of the generated worktree to `/workspace`\n    - named volume `codex-home` mounted to `/home/codex`\n    - `HOME=/home/codex`\n  - If available, the script resolves host `uid:gid` via `id` and passes `--user uid:gid`.\n  - For API auth parity, forwards `OPENAI_API_KEY` when present.\n\n- **Docker image definition**\n  - Added a repository `Dockerfile` that builds `my-codex-image`:\n    - Base image: `node:22-bookworm`\n    - Installs: `git`, `ripgrep`, `ca-certificates`, `openssh-client`\n    - Installs Codex CLI globally: `npm install -g @openai/codex`\n    - Sets `WORKDIR /workspace` and default command `codex`\n\n- **Documentation**\n  - Updated README usage and parameter docs for the new flags.\n  - Added a Codex-in-Docker example aligned with the worktree-first workflow.\n  - Added Docker build instructions for the included `Dockerfile`:\n\n```bash\ndocker build -t my-codex-image .\n```\n\n```powershell\n.\\new-cli-worktree.ps1 -Cli codex -CodexInContainer -CodexContainerImage my-codex-image\n```",
+    "author": "Copilot",
+    "headRef": "copilot/run-codex-in-container",
+    "repository": "danielsiegl/prepareworktreeforagent"
+  },
+  "diffRef": {
+    "repository": "danielsiegl/prepareworktreeforagent",
+    "headSha": "8e7b1426f7fac7261716a9be6d4d0c24e8e0440a",
+    "baseSha": "a180796345a5a70d7f6f97bd032812a688ebdaac"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-danielsiegl-prepareworktreeforagent-pr6.diff",
+  "vendoredAt": "2026-05-24T03:13:18.689Z",
+  "collectedAt": "2026-05-24T03:13:18.689Z"
+}

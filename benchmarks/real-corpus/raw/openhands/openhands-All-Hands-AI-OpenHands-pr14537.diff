@@ -1,0 +1,34 @@
+diff --git a/.github/workflows/issue-opened.yml b/.github/workflows/issue-opened.yml
+index c9f5cb203308..0c23f8b92a8a 100644
+--- a/.github/workflows/issue-opened.yml
++++ b/.github/workflows/issue-opened.yml
+@@ -519,12 +519,15 @@ jobs:
+ 
+             - name: Summarize skipped good first issue check
+               if: steps.precheck.outputs.should_run != 'true'
++              env:
++                  ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
++                  SKIP_REASON: ${{ steps.precheck.outputs.skip_reason }}
+               run: |
+                   {
+                     echo "## Good first issue check"
+                     echo
+-                    echo "- Issue: #${{ github.event.issue.number || inputs.issue_number }}"
+-                    echo "- Skipped: ${{ steps.precheck.outputs.skip_reason }}"
++                    echo "- Issue: #$ISSUE_NUMBER"
++                    echo "- Skipped: $SKIP_REASON"
+                   } >> "$GITHUB_STEP_SUMMARY"
+ 
+             - name: Run OpenHands good first issue conversation
+@@ -658,8 +661,10 @@ jobs:
+ 
+             - name: Summarize good first issue label action
+               if: steps.precheck.outputs.should_run == 'true'
++              env:
++                  SHOULD_APPLY_LABEL: ${{ steps.parsed_result.outputs.should_apply_label }}
+               run: |
+-                  if [ "${{ steps.parsed_result.outputs.should_apply_label }}" = "true" ]; then
++                  if [ "$SHOULD_APPLY_LABEL" = "true" ]; then
+                     echo "- Applied label: good first issue" >> "$GITHUB_STEP_SUMMARY"
+                   else
+                     echo "- Label not applied" >> "$GITHUB_STEP_SUMMARY"

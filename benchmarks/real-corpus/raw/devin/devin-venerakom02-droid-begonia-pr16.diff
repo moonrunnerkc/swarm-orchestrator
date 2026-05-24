@@ -1,0 +1,87 @@
+diff --git a/.github/workflows/lint-fix.yml b/.github/workflows/lint-fix.yml
+new file mode 100644
+index 0000000..0960733
+--- /dev/null
++++ b/.github/workflows/lint-fix.yml
+@@ -0,0 +1,44 @@
++name: Lint & Auto-fix
++
++on:
++  pull_request:
++    branches: [main]
++
++permissions:
++  contents: write
++
++jobs:
++  lint-fix:
++    runs-on: ubuntu-latest
++    steps:
++      - name: Checkout PR branch
++        uses: actions/checkout@v4
++        with:
++          ref: ${{ github.head_ref }}
++          token: ${{ secrets.GITHUB_TOKEN }}
++
++      - name: Setup Node.js
++        uses: actions/setup-node@v4
++        with:
++          node-version: 22
++          cache: npm
++
++      - name: Install dependencies
++        run: npm ci
++
++      - name: Run ESLint with auto-fix
++        run: npx eslint --fix . || true
++
++      - name: Check for changes
++        id: diff
++        run: |
++          git diff --quiet && echo "changed=false" >> "$GITHUB_OUTPUT" || echo "changed=true" >> "$GITHUB_OUTPUT"
++
++      - name: Commit and push fixes
++        if: steps.diff.outputs.changed == 'true'
++        run: |
++          git config user.name "github-actions[bot]"
++          git config user.email "github-actions[bot]@users.noreply.github.com"
++          git add -A
++          git commit -m "fix: автоисправление ошибок линтинга"
++          git push
+diff --git a/app/cart/page.tsx b/app/cart/page.tsx
+index 83f28c0..c296f8f 100644
+--- a/app/cart/page.tsx
++++ b/app/cart/page.tsx
+@@ -1,6 +1,6 @@
+ "use client";
+ 
+-import { useState, useEffect, Suspense } from "react";
++import { useState, Suspense } from "react";
+ import Link from "next/link";
+ import { useSearchParams } from "next/navigation";
+ import { CONTACTS, SOCIAL_LINKS } from "@/lib/contacts";
+@@ -31,10 +31,6 @@ function PreorderForm() {
+   const [submitted, setSubmitted] = useState(false);
+   const [error, setError] = useState("");
+ 
+-  useEffect(() => {
+-    if (presetProduct) setProducts(presetProduct);
+-  }, [presetProduct]);
+-
+   const onSubmit = async (e: React.FormEvent) => {
+     e.preventDefault();
+     if (!agree) {
+diff --git a/eslint.config.mjs b/eslint.config.mjs
+new file mode 100644
+index 0000000..27d387b
+--- /dev/null
++++ b/eslint.config.mjs
+@@ -0,0 +1,8 @@
++import { createRequire } from "module";
++
++const require = createRequire(import.meta.url);
++const nextConfig = require("eslint-config-next");
++
++const eslintConfig = [...nextConfig];
++
++export default eslintConfig;

@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-python-pr1592",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1592,
+    "headSha": "473f268fadc3cc7cc3474446f846d6b0fa20a6eb",
+    "baseSha": "5db69c6d5f3e7e39023973ca4b235046e5661157",
+    "title": "docs: fix incorrect docstring in AsyncAnthropicFoundry.models",
+    "body": "## Problem\n\nIn `src/anthropic/lib/foundry.py`, the `AsyncAnthropicFoundry.models` stub docstring still says \"Azure Anthropic client\", while its synchronous counterpart `AnthropicFoundry.models` correctly says \"Anthropic Foundry client\". This looks like a leftover from the rename of the Azure client to the Foundry client.\n\n## Evidence\n\n`src/anthropic/lib/foundry.py:366` (async):\n\n```python\ndef models(self) -> None:  # type: ignore[override]\n    \"\"\"Models endpoint is not supported for Azure Anthropic client.\"\"\"\n```\n\n`src/anthropic/lib/foundry.py:183` (sync, the correct phrasing):\n\n```python\ndef models(self) -> None:  # type: ignore[override]\n    \"\"\"Models endpoint is not supported for Anthropic Foundry client.\"\"\"\n```\n\nAll other \"not supported\" docstrings in this file consistently say \"Anthropic Foundry client\" — the async `models` stub is the only outlier.\n\n## Fix\n\nAlign the async docstring with the sync one so the user-facing wording is consistent and accurately refers to the Foundry client.\n\n## Why it's correct\n\n- The class itself is `AsyncAnthropicFoundry`, not an Azure client.\n- Every other stub in the file (`batches`, sync `models`, `messages`, `beta`) refers to the \"Anthropic Foundry client\".\n- One-line, docs-only change — no behavioral or type impact.",
+    "author": "aryanmotgi",
+    "headRef": "fix/foundry-async-docstring",
+    "repository": "anthropics/anthropic-sdk-python"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-python",
+    "headSha": "473f268fadc3cc7cc3474446f846d6b0fa20a6eb",
+    "baseSha": "5db69c6d5f3e7e39023973ca4b235046e5661157"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-python-pr1592.diff",
+  "vendoredAt": "2026-05-24T03:16:52.941Z",
+  "collectedAt": "2026-05-24T03:16:52.941Z"
+}

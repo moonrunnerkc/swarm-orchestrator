@@ -1,0 +1,26 @@
+{
+  "id": "openhands-All-Hands-AI-OpenHands-pr14520",
+  "agent": {
+    "vendor": "openhands",
+    "confidence": "high",
+    "source": "repo-owner=All-Hands-AI+body=openhands-attribution"
+  },
+  "pr": {
+    "number": 14520,
+    "headSha": "6bacf0139bbd47345f1d7fda25aaab5fc29a79bf",
+    "baseSha": "9979a989510bd131e00f9758974fa9e98667d107",
+    "title": "Get Jira Data Center Resolver working in OHE",
+    "body": "## Summary\r\n\r\nMakes the Jira Data Center PAT/webhook flow usable as a first-class integration path.\r\n\r\n- fixes email-match user resolution when Jira DC OAuth is disabled\r\n- expands repository inference for self-hosted Git, GitLab, GitHub Enterprise, and Bitbucket Data Center URLs\r\n- always starts a fresh conversation for each `@openhands` Jira DC mention\r\n- adds account-not-linked fallback handling with an acknowledgement reaction\r\n- adds service-account PAT webhook setup, transient admin PAT auto-enrollment, and stored-token preservation on edit\r\n- injects Jira issue comment history into the agent prompt and frames label-triggered issues as the task\r\n- redesigns the Jira DC setup UI with auto-populated host/service-account values, a table summary, and an edit modal\r\n- includes a one-line CI stabilization for current `main` good-first-issue label sorting, which was blocking the generic Python test job\r\n\r\n## Validation\r\n\r\nSuccessful end to end testing in a real OHE instance and a real Jira Data center instance.\r\n\r\n[x] Human tested changes\r\n\r\nhttps://github.com/user-attachments/assets/53f72f31-c370-4c58-8d5a-24f647c071db\r\n\r\nhttps://github.com/user-attachments/assets/62f6bd9e-4825-4d60-8a19-6feba079d463\r\n\r\n<img width=\"1682\" height=\"954\" alt=\"Screenshot 2026-05-22 at 10 49 00 AM\" src=\"https://github.com/user-attachments/assets/e9f3b92c-94c7-4081-a68c-1dadb843b600\" />\r\n\r\n<img width=\"1692\" height=\"952\" alt=\"Screenshot 2026-05-22 at 10 49 09 AM\" src=\"https://github.com/user-attachments/assets/8174f2e6-1a77-4425-a93e-d2408584ab5b\" />\r\n\r\n- `env PYTHONPATH=enterprise:. uv run --with python-keycloak --with pytest-asyncio --with aiosqlite --with limits --with coredis pytest enterprise/tests/unit/integrations/jira_dc/test_jira_dc_manager.py enterprise/tests/unit/integrations/jira_dc/test_jira_dc_view.py enterprise/tests/unit/server/routes/test_jira_dc_integration_routes.py enterprise/tests/unit/test_utils.py -q` -> 121 passed\r\n- `env PYTHONPATH=enterprise:. uv run ruff check --config enterprise/dev_config/python/ruff.toml ...` on affected Jira DC files/tests\r\n- `env PYTHONPATH=enterprise:. uv run ruff format --check --config enterprise/dev_config/python/ruff.toml ...` on affected Jira DC files/tests\r\n- `env PYTHONPATH=enterprise:. uv run --with types-requests mypy --config-file enterprise/dev_config/python/mypy.ini enterprise/integrations/jira_dc/jira_dc_manager.py enterprise/server/routes/integration/jira_dc.py`\r\n- `env PYTHONPATH=enterprise:. uv run pytest tests/unit/test_issue_good_first_issue_check_openhands.py -q` -> 7 passed\r\n\r\n---\r\n\r\n\r\n\nTo run this PR locally, use the following command:\n\nGUI with Docker:\n```\ndocker run -it --rm   -p 3000:3000   -v /var/run/docker.sock:/var/run/docker.sock   --add-host host.docker.internal:host-gateway   --name openhands-app-6bacf01   docker.openhands.dev/openhands/openhands:6bacf01\n```",
+    "author": "ak684",
+    "headRef": "alona/jira-dc-pat",
+    "repository": "All-Hands-AI/OpenHands"
+  },
+  "diffRef": {
+    "repository": "All-Hands-AI/OpenHands",
+    "headSha": "6bacf0139bbd47345f1d7fda25aaab5fc29a79bf",
+    "baseSha": "9979a989510bd131e00f9758974fa9e98667d107"
+  },
+  "vendoredDiffPath": "openhands/openhands-All-Hands-AI-OpenHands-pr14520.diff",
+  "vendoredAt": "2026-05-24T03:18:02.917Z",
+  "collectedAt": "2026-05-24T03:18:02.917Z"
+}

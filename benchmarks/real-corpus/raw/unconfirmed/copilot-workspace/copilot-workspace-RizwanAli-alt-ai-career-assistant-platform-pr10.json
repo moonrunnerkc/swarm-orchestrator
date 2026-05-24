@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-RizwanAli-alt-ai-career-assistant-platform-pr10",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 10,
+    "headSha": "90800f15ed41493edc293437a318b52c78d8a240",
+    "baseSha": "f1964663f6e5624276e703b6e6e8dc1ba7fe35a2",
+    "title": "Fix theme toggle/landing nav behavior and prepaint theme init",
+    "body": "Landing page must remain dark with a minimal navbar, while authenticated inner pages show theme controls without a flash on load.\n\n- **Prepaint theme bootstrap**\n  - Insert synchronous theme selection in `<head>` and skip on landing pages.\n- **Navbar visibility rules**\n  - Hide toggle/notifications/logout on landing; show them only for authenticated inner pages.\n- **Landing-only dark mode**\n  - Add `landing-page` body class and enforce dark CSS variables for that scope.\n- **Theme persistence**\n  - Skip JS theme initialization on landing and default toggle state safely.\n\n```html\n<script>\n  (function() {\n    var isLanding = window.location.pathname === '/' ||\n                    window.location.pathname === '/index' ||\n                    document.body.classList.contains('landing-page');\n    if (isLanding) return;\n    var theme = localStorage.getItem('theme') || 'dark';\n    document.documentElement.setAttribute('data-theme', theme);\n  })();\n</script>\n```",
+    "author": "Copilot",
+    "headRef": "copilot/fix-theme-toggle-behavior",
+    "repository": "RizwanAli-alt/ai-career-assistant-platform"
+  },
+  "diffRef": {
+    "repository": "RizwanAli-alt/ai-career-assistant-platform",
+    "headSha": "90800f15ed41493edc293437a318b52c78d8a240",
+    "baseSha": "f1964663f6e5624276e703b6e6e8dc1ba7fe35a2"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-RizwanAli-alt-ai-career-assistant-platform-pr10.diff",
+  "vendoredAt": "2026-05-24T03:35:49.018Z",
+  "collectedAt": "2026-05-24T03:35:49.018Z"
+}

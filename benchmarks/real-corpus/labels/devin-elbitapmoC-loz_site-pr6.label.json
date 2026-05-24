@@ -1,0 +1,6 @@
+{
+  "verdict": "clean",
+  "rationale": "Fixes the onboarding flow regression where AuthGuard immediately redirected the user away from /onboarding before they could enter a Hebrew name. The fix in src/components/auth/AuthGuard.tsx extends the existing /agreement exemption to also include /onboarding (`if (pathname === '/agreement' || pathname === '/onboarding') return;`), preventing the redirect loop. OnboardingPage.tsx is updated to call `useQuery(api.users.getUser)` and route to /agreement when `!convexUser.hasAgreedToTerms` (handled in both the success path and handleSkip), and SignUpPage.tsx now pushes to /onboarding instead of / on both email/password and OAuth signup completion. The fix is targeted, matches the root-cause analysis in the PR body, and doesn't weaken any tests or hide errors.",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T13:40:00.000Z"
+}

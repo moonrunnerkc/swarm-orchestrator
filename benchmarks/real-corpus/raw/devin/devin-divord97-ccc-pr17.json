@@ -1,0 +1,26 @@
+{
+  "id": "devin-divord97-ccc-pr17",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 17,
+    "headSha": "1ab88349a7ac7b57ace25079eb3a0e7cdc9d781f",
+    "baseSha": "0a19ec5152dc63e3c0a77d8bdd3cd5df29617b00",
+    "title": "feat: Social Channels — WeChat/Weibo integration (DDD/TDD)",
+    "body": "## Summary\n\nImplements social media channel integration (WeChat/Weibo) as an extension of the IM BC. Follows DDD with TDD — 16 new tests covering config validation, webhook signature verification, and inbound message processing.\n\n**12 files changed, +989 lines, 16 new TDD tests**\n\n### Domain Layer (IM BC extension)\n- `SocialChannelConfig` entity: platform credentials (AppID/AppSecret/Token/EncodingAESKey), webhook URL, verification status\n- `SocialMessage` value object: normalized inbound message from any social platform\n- `SocialChannelService`: config CRUD, WeChat SHA1 signature verification (`sort(token,timestamp,nonce) → sha1`), Weibo signature verification, inbound message processing (auto-create IM session + message), mark verified lifecycle\n- `ChannelTypeWeChat` / `ChannelTypeWeibo` added to valid channel types\n\n### TDD Tests (16 tests)\n1. Config create success (WeChat + Weibo)\n2. Invalid platform rejection\n3. Empty AppID / AppSecret / Token validation\n4. Channel not found guard\n5. WeChat signature: empty, wrong, correct\n6. Weibo signature: wrong, correct\n7. Inbound message: text success, empty OpenID, empty content, disabled channel, image/media URL\n8. MarkVerified lifecycle\n9. Channel type registration check\n\n### Infrastructure\n- MySQL `SocialChannelConfigRepo` with compile-time interface check\n- Migration `000004_social_channels`: `social_channel_configs` table with unique channel index\n- HTTP handler: `CreateConfig` / `GetConfig` / `DeleteConfig` (under JWT auth)\n- Webhook endpoints (public, no JWT):\n  - `GET /api/v1/social/wechat/{channelID}` — WeChat server URL verification (echostr handshake)\n  - `POST /api/v1/social/wechat/{channelID}` — WeChat inbound message (XML → SocialMessage → IM session+message)\n  - `GET /api/v1/social/weibo/{channelID}` — Weibo webhook verification\n  - `POST /api/v1/social/weibo/{channelID}` — Weibo inbound message (JSON)\n- Config CRUD routes under authenticated `/api/v1/social-configs/`\n\n## Review & Testing Checklist for Human\n\n- [ ] Verify WeChat XML parsing covers all message types you need (currently: text, image, voice, video/shortvideo). Production may need location, link, event types\n- [ ] Review `SocialChannelConfig` fields — `EncodingAESKey` is optional (used only for WeChat encrypted mode)\n- [ ] Check webhook endpoint URLs match your WeChat/Weibo developer console configuration\n- [ ] Run `go test -race -count=1 ./internal/domain/im/...` — all 23 IM tests should pass (16 new social + 7 existing)\n- [ ] Verify migration `000004_social_channels.up.sql` — table uses BIGINT IDs consistent with Snowflake ID scheme\n\n### Notes\n- WeChat XML parsing uses a simplified string-based extractor; production deployment should use `encoding/xml` struct unmarshaling for robustness\n- Weibo signature uses simplified `sha1(appSecret + body)` — verify against actual Weibo developer documentation for your account type\n- Social channels reuse existing IM session/message infrastructure — messages from WeChat/Weibo automatically create IM sessions that agents can handle in the same workbench\n\nLink to Devin session: https://app.devin.ai/sessions/35e328fa681447e98fa82466c8f69b99\nRequested by: @divord97\n<!-- devin-review-badge-begin -->\n\n---\n\n<a href=\"https://app.devin.ai/review/divord97/ccc/pull/17\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-open-in-devin-review-dark.svg?v=1\">\n    <img src=\"https://static.devin.ai/assets/gh-open-in-devin-review-light.svg?v=1\" alt=\"Open in Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779579219-social-channels",
+    "repository": "divord97/ccc"
+  },
+  "diffRef": {
+    "repository": "divord97/ccc",
+    "headSha": "1ab88349a7ac7b57ace25079eb3a0e7cdc9d781f",
+    "baseSha": "0a19ec5152dc63e3c0a77d8bdd3cd5df29617b00"
+  },
+  "vendoredDiffPath": "devin/devin-divord97-ccc-pr17.diff",
+  "vendoredAt": "2026-05-24T03:04:40.416Z",
+  "collectedAt": "2026-05-24T03:04:40.416Z"
+}

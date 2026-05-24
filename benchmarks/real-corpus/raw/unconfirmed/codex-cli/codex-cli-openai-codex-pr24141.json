@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24141",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24141,
+    "headSha": "a27c68d53c641507aef71d28c9b9fd445464d552",
+    "baseSha": "3c83e57bfa88a071fcf88df8da9ab9e32eb7a814",
+    "title": "feat(app-server): migrate remote control to server tokens",
+    "body": "## Why\n\n`codex-backend` now authenticates remote-control server websocket connections with short-lived server tokens instead of the user's ChatGPT access token. `app-server` needs to mint and refresh those server tokens without persisting them, so a restart can reconnect from durable enrollment identity while keeping the bearer token memory-only.\n\n## What Changed\n\nUpdated the remote-control transport to consume `remote_control_token` and `expires_at` from server enroll responses and added `/server/refresh` support for persisted enrollments or expiring cached tokens.\n\nWebsocket handshakes now send `Authorization: Bearer <remote_control_token>` with the existing server identity headers, and no longer send the ChatGPT bearer token or `chatgpt-account-id` on that websocket path.\n\nThe in-memory enrollment state now owns the ephemeral server token cache, while SQLite still persists only `server_id`, `environment_id`, and `server_name`. Websocket `401`/`403` clears only the cached token for refresh on reconnect; websocket or refresh `404` clears stale persisted enrollment and re-enrolls. Response body previews redact `remote_control_token` before surfacing parse errors.\n\n## Verification\n\nTargeted remote-control transport coverage now exercises restart refresh, cached-token reconnects, websocket token invalidation, stale enrollment re-enrollment, and server-token handshake headers in `codex-app-server-transport` tests.\n",
+    "author": "apanasenko-oai",
+    "headRef": "codex/remote-control-server-token",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "a27c68d53c641507aef71d28c9b9fd445464d552",
+    "baseSha": "3c83e57bfa88a071fcf88df8da9ab9e32eb7a814"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24141.diff",
+  "vendoredAt": "2026-05-24T03:20:58.927Z",
+  "collectedAt": "2026-05-24T03:20:58.927Z"
+}

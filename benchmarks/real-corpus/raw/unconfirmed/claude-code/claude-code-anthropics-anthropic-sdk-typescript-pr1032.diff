@@ -1,0 +1,76 @@
+diff --git a/.release-please-manifest.json b/.release-please-manifest.json
+index 85513415..a6fe1346 100644
+--- a/.release-please-manifest.json
++++ b/.release-please-manifest.json
+@@ -1,5 +1,5 @@
+ {
+-  ".": "0.95.0",
++  ".": "0.95.1",
+   "packages/vertex-sdk": "0.16.0",
+   "packages/bedrock-sdk": "0.29.1",
+   "packages/foundry-sdk": "0.2.3",
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 51a2a955..ffd8137e 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,5 +1,13 @@
+ # Changelog
+ 
++## 0.95.1 (2026-05-07)
++
++Full Changelog: [sdk-v0.95.0...sdk-v0.95.1](https://github.com/anthropics/anthropic-sdk-typescript/compare/sdk-v0.95.0...sdk-v0.95.1)
++
++### Chores
++
++* redact api-key headers in debug logs ([fad8fee](https://github.com/anthropics/anthropic-sdk-typescript/commit/fad8feeb51d1b9bafaf85cf8345bb28627728e00))
++
+ ## 0.95.0 (2026-05-06)
+ 
+ Full Changelog: [sdk-v0.94.0...sdk-v0.95.0](https://github.com/anthropics/anthropic-sdk-typescript/compare/sdk-v0.94.0...sdk-v0.95.0)
+diff --git a/package.json b/package.json
+index ee520965..9cd668b1 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "@anthropic-ai/sdk",
+-  "version": "0.95.0",
++  "version": "0.95.1",
+   "description": "The official TypeScript library for the Anthropic API",
+   "author": "Anthropic <support@anthropic.com>",
+   "types": "dist/index.d.ts",
+diff --git a/packages/vertex-sdk/yarn.lock b/packages/vertex-sdk/yarn.lock
+index 29b19730..1ff7601e 100644
+--- a/packages/vertex-sdk/yarn.lock
++++ b/packages/vertex-sdk/yarn.lock
+@@ -17,7 +17,7 @@
+ 
+ "@anthropic-ai/sdk@file:../../dist":
+   # x-release-please-start-version
+-  version "0.95.0"
++  version "0.95.1"
+   # x-release-please-end-version
+   dependencies:
+     json-schema-to-ts "^3.1.1"
+diff --git a/src/internal/utils/log.ts b/src/internal/utils/log.ts
+index aa0dc3bb..56d23135 100644
+--- a/src/internal/utils/log.ts
++++ b/src/internal/utils/log.ts
+@@ -106,8 +106,9 @@ export const formatRequestDetails = (details: {
+         ([name, value]) => [
+           name,
+           (
+-            name.toLowerCase() === 'x-api-key' ||
+             name.toLowerCase() === 'authorization' ||
++            name.toLowerCase() === 'api-key' ||
++            name.toLowerCase() === 'x-api-key' ||
+             name.toLowerCase() === 'cookie' ||
+             name.toLowerCase() === 'set-cookie'
+           ) ?
+diff --git a/src/version.ts b/src/version.ts
+index d1d95222..6501a554 100644
+--- a/src/version.ts
++++ b/src/version.ts
+@@ -1 +1 @@
+-export const VERSION = '0.95.0'; // x-release-please-version
++export const VERSION = '0.95.1'; // x-release-please-version

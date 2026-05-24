@@ -1,0 +1,2230 @@
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..f94a297
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,19 @@
++# Secrets
++.env
++
++# Python
++__pycache__/
++*.pyc
++venv/
++.venv/
++
++# Hugging Face model cache (kept local, can be huge)
++.cache/
++
++# Logs (generated on Day 6)
++logs/*.csv
++
++# IDE
++.vscode/
++.idea/
++.DS_Store
+diff --git a/Day-1/README.md b/Day-1/README.md
+new file mode 100644
+index 0000000..1382e16
+--- /dev/null
++++ b/Day-1/README.md
+@@ -0,0 +1,163 @@
++# 📅 Day 1 — Foundations & Your First Sentiment Prediction
++
++> "A journey of a thousand reviews begins with a single `pip install`."
++
++Welcome to Day 1! Today is about **setting up cleanly** and then writing your **very first AI-powered sentiment script**. Don't worry — by the end of today you will have a working program that reads a sentence and tells you if it's happy or angry.
++
++---
++
++## 🎯 What You'll Learn Today
++
++- How to set up a clean Python virtual environment (and why it matters)
++- What a **pre-trained model** is and why we *don't* train one ourselves
++- How to use the Hugging Face `transformers` library
++- Run your first sentiment classification in under 10 lines of code
++
++---
++
++## 🤔 The Problem
++
++Imagine you run a small online shop. Every morning 50 new reviews come in. You want to know, *fast*:
++
++> "Are people happy today, or angry today?"
++
++Reading them all takes 30 minutes. By the end of today you'll do it in **0.5 seconds**.
++
++But there's a sub-problem: **training an AI model from scratch is hard.** It requires:
++- A huge dataset of labelled reviews
++- A GPU
++- Hours of training time
++- Math we don't want to think about yet
++
++**The trick:** somebody already did all that work and put the model online for free. We just *download and use* it. This is called a **pre-trained model**, and the website that hosts them is **Hugging Face** 🤗.
++
++---
++
++## 💡 The Solution
++
++We use Hugging Face's `pipeline()` helper. It's a one-line shortcut that:
++
++1. Downloads a pre-trained sentiment model (only the first time — then it's cached locally)
++2. Handles all the tokenization, tensors, math
++3. Returns a clean Python dict with a label and a confidence score
++
++That's it. No ML degree required.
++
++---
++
++## 🛠️ Step 1 — Set Up Your Environment
++
++Open a terminal in the `Day-1/` folder and run:
++
++```bash
++# 1. Create an isolated Python environment so we don't pollute your system
++python -m venv venv
++
++# 2. Activate it
++#    On Mac/Linux:
++source venv/bin/activate
++#    On Windows (PowerShell):
++venv\Scripts\Activate.ps1
++
++# 3. Install the two libraries we need today
++pip install -r requirements.txt
++```
++
++**Why a virtual environment?** Different projects need different library versions. A venv is like a little sandbox just for this project, so it never breaks another one. Always use one.
++
++---
++
++## 🧑‍💻 Step 2 — The Code
++
++Create a file called `sentiment_first.py` (or just open the one provided here) and look at this 10-line script:
++
++```python
++# sentiment_first.py
++# Day 1: Our very first sentiment analyzer using Hugging Face.
++
++from transformers import pipeline   # 1️⃣ The "pipeline" is a ready-to-use AI shortcut
++
++# 2️⃣ Build the sentiment analyzer.
++#    The first time you run this, it downloads a small model (~250MB).
++#    Every run after that is instant because the model is cached.
++analyzer = pipeline("sentiment-analysis")
++
++# 3️⃣ A few example reviews to try.
++reviews = [
++    "I absolutely love this product, best purchase of the year!",
++    "Worst experience ever. The item broke in two days.",
++    "It's fine. Nothing special, but it works.",
++]
++
++# 4️⃣ Loop through each review, ask the model, and print the result.
++for review in reviews:
++    result = analyzer(review)[0]    # The pipeline returns a list; we take [0]
++    label  = result["label"]        # 'POSITIVE' or 'NEGATIVE'
++    score  = result["score"]        # confidence from 0 → 1
++    print(f"📝 {review}")
++    print(f"   → {label} ({score:.2%} confident)\n")
++```
++
++### 🧠 What just happened, line-by-line?
++
++| Line | What it does |
++|------|--------------|
++| `from transformers import pipeline` | Imports Hugging Face's one-stop helper. |
++| `pipeline("sentiment-analysis")` | Tells HF: *"I want the sentiment-analysis task — pick a default good model for me."* It downloads `distilbert-base-uncased-finetuned-sst-2-english`. |
++| `analyzer(review)` | Sends the text into the model. Internally it tokenises the text, runs the neural network, and returns the prediction. |
++| `result["label"]` and `result["score"]` | The model's verdict and how sure it is. |
++
++That's literally it. You just used a real deep-learning model.
++
++---
++
++## ▶️ Try It Yourself
++
++```bash
++python sentiment_first.py
++```
++
++You should see something like:
++
++```
++📝 I absolutely love this product, best purchase of the year!
++   → POSITIVE (99.98% confident)
++
++📝 Worst experience ever. The item broke in two days.
++   → NEGATIVE (99.97% confident)
++
++📝 It's fine. Nothing special, but it works.
++   → POSITIVE (87.42% confident)
++```
++
++🎉 **Congratulations** — you just ran your first AI sentiment classifier.
++
++### 🧪 Mini-Experiments
++Edit the `reviews` list and try:
++- A sarcastic sentence: *"Oh great, another broken charger. Just what I needed."* — Does the model get fooled? (It usually does! This is *why* we add OpenAI tomorrow.)
++- A mixed sentence: *"Battery is amazing but the camera is terrible."*
++- A non-English sentence — observe what happens.
++
++These limitations are *exactly* the problems we'll fix on Day 2 and Day 5.
++
++---
++
++## 🤓 A Note on the "Neutral" Label
++
++You'll notice today's model only outputs **POSITIVE** or **NEGATIVE** — there's no "Neutral". That's a limitation of this particular default model.
++
++On **Day 2**, OpenAI will give us a real Neutral label.
++On **Day 4**, we'll swap in a better Hugging Face model (`cardiffnlp/twitter-roberta-base-sentiment`) that also supports Neutral.
++
++Small steps. Don't worry about it yet.
++
++---
++
++## 🔭 Tomorrow's Preview — Day 2
++
++Tomorrow we plug in the **OpenAI API**. Why? Because:
++- We want a **third label**: Neutral
++- We want a **reason** — *"this review is negative because the customer mentions slow delivery and a missing accessory"*
++- We want to learn **prompt engineering** — the new "programming" of the AI era
++
++See you on **[Day 2 →](../Day-2)**.
+diff --git a/Day-1/requirements.txt b/Day-1/requirements.txt
+new file mode 100644
+index 0000000..4b05136
+--- /dev/null
++++ b/Day-1/requirements.txt
+@@ -0,0 +1,2 @@
++transformers>=4.40.0
++torch>=2.2.0
+diff --git a/Day-1/sentiment_first.py b/Day-1/sentiment_first.py
+new file mode 100644
+index 0000000..a2cdcaf
+--- /dev/null
++++ b/Day-1/sentiment_first.py
+@@ -0,0 +1,23 @@
++# Day 1: Your very first sentiment analyzer using Hugging Face.
++# Goal: read a review, return POSITIVE/NEGATIVE + a confidence score.
++
++from transformers import pipeline   # 1️⃣ pipeline = a ready-to-use AI shortcut
++
++# 2️⃣ Build the analyzer.
++#    First run downloads a small model (~250MB) and caches it locally.
++analyzer = pipeline("sentiment-analysis")
++
++# 3️⃣ Sample reviews to test with.
++reviews = [
++    "I absolutely love this product, best purchase of the year!",
++    "Worst experience ever. The item broke in two days.",
++    "It's fine. Nothing special, but it works.",
++]
++
++# 4️⃣ Run each review through the model and print the result.
++for review in reviews:
++    result = analyzer(review)[0]    # pipeline returns a list — take the first item
++    label  = result["label"]        # 'POSITIVE' or 'NEGATIVE'
++    score  = result["score"]        # confidence 0 → 1
++    print(f"📝 {review}")
++    print(f"   → {label} ({score:.2%} confident)\n")
+diff --git a/Day-2/.env.example b/Day-2/.env.example
+new file mode 100644
+index 0000000..84f4f78
+--- /dev/null
++++ b/Day-2/.env.example
+@@ -0,0 +1,2 @@
++# Put your real key here on your machine. NEVER commit this file.
++OPENAI_API_KEY=sk-replace-me
+diff --git a/Day-2/README.md b/Day-2/README.md
+new file mode 100644
+index 0000000..0cd69d6
+--- /dev/null
++++ b/Day-2/README.md
+@@ -0,0 +1,185 @@
++# 📅 Day 2 — Adding OpenAI for Deep Reasoning
++
++> "Yesterday the model told us *what*. Today we'll teach it to tell us *why*."
++
++Yesterday you ran a Hugging Face model that returned **POSITIVE / NEGATIVE** + a score. That's great for speed, but it can't *explain itself*, and it doesn't know **Neutral**.
++
++Today we add the **OpenAI API** so we can get a smarter, more nuanced verdict — with a reason in plain English.
++
++---
++
++## 🎯 What You'll Learn Today
++
++- How to call the OpenAI Chat Completions API from Python
++- The difference between a **system prompt** and a **user prompt** (prompt engineering basics)
++- How to make an LLM return structured **JSON** so our code can use it
++- How to safely store your API key using a `.env` file
++
++---
++
++## 🤔 The Problem
++
++Look at this review: *"It works, I guess."*
++
++Yesterday's model says: **POSITIVE (76%)** ❌
++
++But that's not really positive — it's neutral and slightly disappointed. A small Hugging Face model can't catch that nuance. Also, it can't tell us *why* it made its decision, which is bad for trust.
++
++We need something smarter — something that can read between the lines.
++
++---
++
++## 💡 The Solution
++
++OpenAI's GPT models are huge LLMs trained on the entire internet. They are excellent at:
++- Understanding nuance and sarcasm
++- Outputting structured data (JSON) when asked
++- Explaining their reasoning
++
++We will write a **prompt** that says: *"You are a sentiment analyst. For the review I give you, return JSON with `sentiment` (Positive/Negative/Neutral) and a one-sentence `reason`."*
++
++That's it. Prompt engineering = writing very clear instructions in English.
++
++---
++
++## 🛠️ Step 1 — Carry Forward Yesterday's Setup
++
++If you already created a virtual environment yesterday, **activate it** and we'll just add two new packages:
++
++```bash
++# From Day-2/
++pip install -r requirements.txt
++```
++
++This installs `openai` (the official client) and `python-dotenv` (to load secrets from a file).
++
++---
++
++## 🛠️ Step 2 — Add Your OpenAI API Key (the safe way)
++
++1. Get a key from <https://platform.openai.com/api-keys>
++2. Create a file called `.env` inside `Day-2/`
++3. Add this single line (no spaces, no quotes):
++
++```
++OPENAI_API_KEY=sk-your-real-key-goes-here
++```
++
++4. **Never commit `.env` to git.** A `.gitignore` is already provided.
++
++> 🔐 Why this matters: hard-coding a key into your script and pushing it to GitHub is the #1 way developers leak credentials. `.env` keeps it on your machine only.
++
++---
++
++## 🧑‍💻 Step 3 — The Code
++
++Open `openai_analyzer.py`:
++
++```python
++# openai_analyzer.py
++# Day 2: Sentiment + reasoning, powered by OpenAI.
++
++import os
++import json
++from dotenv import load_dotenv     # loads variables from .env into os.environ
++from openai import OpenAI
++
++# 1️⃣ Load the API key from .env so it never appears in the code.
++load_dotenv()
++client = OpenAI()  # automatically reads OPENAI_API_KEY from the environment
++
++# 2️⃣ The SYSTEM prompt sets the AI's "role" and rules.
++#    It's the most important piece of prompt engineering.
++SYSTEM_PROMPT = """You are a precise product-review sentiment analyst.
++For the review the user gives you, reply with ONLY valid JSON in this exact shape:
++{"sentiment": "Positive" | "Negative" | "Neutral", "reason": "one short sentence"}
++No markdown, no extra keys, no text outside the JSON."""
++
++def analyze(review: str) -> dict:
++    """Send one review to OpenAI and return a Python dict."""
++    response = client.chat.completions.create(
++        model="gpt-4o-mini",          # cheap + fast + plenty smart for this task
++        temperature=0,                # 0 = deterministic, good for classification
++        messages=[
++            {"role": "system", "content": SYSTEM_PROMPT},
++            {"role": "user",   "content": review},
++        ],
++    )
++    raw = response.choices[0].message.content   # the model's reply (a JSON string)
++    return json.loads(raw)                      # turn the JSON string into a dict
++
++# 3️⃣ Run a quick demo when the file is executed directly.
++if __name__ == "__main__":
++    reviews = [
++        "I absolutely love this product, best purchase of the year!",
++        "Worst experience ever. The item broke in two days.",
++        "It works, I guess.",
++        "Oh great, ANOTHER broken charger. Exactly what I wanted.",  # sarcasm 🔥
++    ]
++    for r in reviews:
++        result = analyze(r)
++        print(f"📝 {r}")
++        print(f"   → {result['sentiment']}: {result['reason']}\n")
++```
++
++### 🧠 What just happened?
++
++| Concept | Plain-English explanation |
++|---------|---------------------------|
++| `system` message | The rules the AI must follow. Think "job description". |
++| `user` message | The actual input we want analysed. Think "the customer's question". |
++| `temperature=0` | How "creative" the model is. **0 = boring & consistent**, which is exactly what we want for classification. We'd use higher numbers for poetry or brainstorming. |
++| `model="gpt-4o-mini"` | A small, fast, inexpensive OpenAI model — perfect for short tasks like ours. |
++| Returning JSON | We *force* the model to reply in JSON so Python can use it directly. This is a fundamental prompt-engineering pattern. |
++
++---
++
++## ▶️ Try It Yourself
++
++```bash
++python openai_analyzer.py
++```
++
++Expected output (yours will vary slightly — that's normal):
++
++```
++📝 I absolutely love this product, best purchase of the year!
++   → Positive: The reviewer expresses strong enthusiasm about their purchase.
++
++📝 Worst experience ever. The item broke in two days.
++   → Negative: The reviewer reports a defective product and a poor experience.
++
++📝 It works, I guess.
++   → Neutral: The reviewer is unenthusiastic and offers no strong opinion.
++
++📝 Oh great, ANOTHER broken charger. Exactly what I wanted.
++   → Negative: The sarcastic tone indicates frustration about a broken charger.
++```
++
++Notice two wins over Day 1:
++- ✅ **Neutral** is now a real option
++- ✅ **Sarcasm** is correctly detected
++
++---
++
++## 🧪 Mini-Experiments
++
++- Change `temperature` to `1.0` and rerun. The reasons should become more varied and creative.
++- Edit `SYSTEM_PROMPT` to demand a third field: `"keywords": ["..."]`. See how easy it is to extend behaviour with just English.
++- Feed a non-English review like *"El producto es excelente, lo recomiendo."* — does GPT-4o-mini handle it? (Yes, it does.)
++
++---
++
++## 💸 A Word on Cost
++
++`gpt-4o-mini` is extremely cheap — roughly **$0.15 per million input tokens**. Analysing one review costs *less than a thousandth of a cent*. You can experiment freely.
++
++---
++
++## 🔭 Tomorrow's Preview — Day 3
++
++So far everything runs in the terminal. That's fine for us, but no real user wants to install Python just to read a sentiment label.
++
++Tomorrow we wrap our `analyze()` function in a **Gradio web UI**: a real browser app you can share with a single link. It takes about 15 lines of code. You're going to love it.
++
++See you on **[Day 3 →](../Day-3)**.
+diff --git a/Day-2/openai_analyzer.py b/Day-2/openai_analyzer.py
+new file mode 100644
+index 0000000..f009340
+--- /dev/null
++++ b/Day-2/openai_analyzer.py
+@@ -0,0 +1,46 @@
++# Day 2: Sentiment + reasoning, powered by OpenAI.
++# Builds on Day 1 by adding a third label (Neutral) and a written reason.
++
++import os
++import json
++from dotenv import load_dotenv     # loads variables from .env into os.environ
++from openai import OpenAI
++
++# 1️⃣ Load the API key from .env so it never appears in the code.
++load_dotenv()
++client = OpenAI()  # automatically reads OPENAI_API_KEY from the environment
++
++# 2️⃣ The SYSTEM prompt sets the AI's "role" and rules.
++#    This is the heart of prompt engineering: a clear job description.
++SYSTEM_PROMPT = """You are a precise product-review sentiment analyst.
++For the review the user gives you, reply with ONLY valid JSON in this exact shape:
++{"sentiment": "Positive" | "Negative" | "Neutral", "reason": "one short sentence"}
++No markdown, no extra keys, no text outside the JSON."""
++
++
++def analyze(review: str) -> dict:
++    """Send one review to OpenAI and return a Python dict."""
++    response = client.chat.completions.create(
++        model="gpt-4o-mini",     # cheap + fast + plenty smart for this task
++        temperature=0,           # 0 = deterministic, good for classification
++        messages=[
++            {"role": "system", "content": SYSTEM_PROMPT},
++            {"role": "user",   "content": review},
++        ],
++    )
++    raw = response.choices[0].message.content   # the model's reply (a JSON string)
++    return json.loads(raw)                      # turn the JSON string into a dict
++
++
++# 3️⃣ Quick demo when this file is run directly.
++if __name__ == "__main__":
++    reviews = [
++        "I absolutely love this product, best purchase of the year!",
++        "Worst experience ever. The item broke in two days.",
++        "It works, I guess.",
++        "Oh great, ANOTHER broken charger. Exactly what I wanted.",  # sarcasm 🔥
++    ]
++    for r in reviews:
++        result = analyze(r)
++        print(f"📝 {r}")
++        print(f"   → {result['sentiment']}: {result['reason']}\n")
+diff --git a/Day-2/requirements.txt b/Day-2/requirements.txt
+new file mode 100644
+index 0000000..60b1de2
+--- /dev/null
++++ b/Day-2/requirements.txt
+@@ -0,0 +1,2 @@
++openai>=1.30.0
++python-dotenv>=1.0.0
+diff --git a/Day-3/README.md b/Day-3/README.md
+new file mode 100644
+index 0000000..1ca155b
+--- /dev/null
++++ b/Day-3/README.md
+@@ -0,0 +1,188 @@
++# 📅 Day 3 — Building the Gradio Interface
++
++> "Code that nobody can use isn't a product. It's a hobby."
++
++You now have a working sentiment function (Day 2). Today we turn it into a **real web app** that anyone — your friend, your boss, your grandma — can open in a browser.
++
++We won't write a single line of HTML, CSS, or JavaScript. We'll use **Gradio**, a library specifically designed to wrap Python functions in a UI.
++
++---
++
++## 🎯 What You'll Learn Today
++
++- What Gradio is and why AI engineers love it
++- How to wrap any Python function in a web interface using `gr.Interface`
++- Adding labels, examples, and a title to make the UI feel polished
++- How to share your app instantly with a public link
++
++---
++
++## 🤔 The Problem
++
++Right now, the only way to use our analyzer is:
++1. Install Python
++2. Install our packages
++3. Run a script in a terminal
++4. Read JSON output
++
++That's fine for *us*, but useless for non-developers. The product won't have impact until people who *aren't* engineers can use it.
++
++---
++
++## 💡 The Solution
++
++Gradio turns a Python function like this:
++
++```python
++def analyze(review): ...
++```
++
++into a fully working browser app, with one line:
++
++```python
++gr.Interface(fn=analyze, inputs="text", outputs="json").launch()
++```
++
++That's it. We get a textbox, a Submit button, an output area, and a local web server — all for free.
++
++---
++
++## 🛠️ Step 1 — Install Gradio
++
++Inside your `Day-3/` folder, with your venv active:
++
++```bash
++pip install -r requirements.txt
++```
++
++(`requirements.txt` here includes everything from Day 2 plus `gradio`.)
++
++Also copy your `.env` file from Day 2 into `Day-3/` (or set the `OPENAI_API_KEY` environment variable). Same key as yesterday.
++
++---
++
++## 🧑‍💻 Step 2 — The Code
++
++Open `app.py`:
++
++```python
++# app.py — Day 3
++# Same OpenAI analyzer as Day 2, now with a Gradio UI on top.
++
++import json
++import os
++import gradio as gr
++from dotenv import load_dotenv
++from openai import OpenAI
++
++# ---------- The analyzer (copied from Day 2) ----------
++load_dotenv()
++client = OpenAI()
++
++SYSTEM_PROMPT = """You are a precise product-review sentiment analyst.
++Reply with ONLY valid JSON: {"sentiment": "Positive"|"Negative"|"Neutral",
++"reason": "one short sentence"}. No markdown, no extra keys."""
++
++def analyze(review: str) -> dict:
++    """Return {'sentiment': ..., 'reason': ...} for one review."""
++    if not review.strip():
++        return {"sentiment": "—", "reason": "Please paste a review first."}
++    resp = client.chat.completions.create(
++        model="gpt-4o-mini",
++        temperature=0,
++        messages=[
++            {"role": "system", "content": SYSTEM_PROMPT},
++            {"role": "user",   "content": review},
++        ],
++    )
++    return json.loads(resp.choices[0].message.content)
++
++# ---------- The UI ----------
++demo = gr.Interface(
++    fn=analyze,                                  # the function to call
++    inputs=gr.Textbox(
++        lines=4,
++        placeholder="Paste a product review here…",
++        label="Customer review",
++    ),
++    outputs=gr.JSON(label="Analysis"),
++    title="🛒 Product Review Sentiment Analyzer",
++    description="Paste a product review and let GPT-4o-mini tell you "
++                "the sentiment and the reason behind it.",
++    examples=[
++        ["I absolutely love this product, best purchase of the year!"],
++        ["Worst experience ever. The item broke in two days."],
++        ["It works, I guess."],
++        ["Oh great, ANOTHER broken charger. Exactly what I wanted."],
++    ],
++    allow_flagging="never",
++)
++
++if __name__ == "__main__":
++    # share=True gives you a public link valid for 72 hours (great for demos).
++    demo.launch()
++```
++
++### 🧠 The Gradio Mental Model
++
++Gradio is built around **components**. Every input and output is a component:
++- `gr.Textbox`, `gr.Slider`, `gr.Image`, `gr.Audio` → for inputs
++- `gr.JSON`, `gr.Label`, `gr.Dataframe`, `gr.Image` → for outputs
++
++`gr.Interface` says: *"Connect these inputs to this Python function, and show the result in these output components."* Gradio handles the rest — the form, the button, the layout, the HTTP server.
++
++| Parameter | What it does |
++|-----------|--------------|
++| `fn=analyze` | The function to call when the user clicks Submit. |
++| `inputs=...` | One or more components Gradio passes to `fn` as arguments. |
++| `outputs=...` | One or more components Gradio fills with `fn`'s return value. |
++| `examples=[...]` | Clickable example inputs at the bottom — huge for usability. |
++| `allow_flagging="never"` | Hide the default "Flag" button we don't need. |
++
++---
++
++## ▶️ Try It Yourself
++
++```bash
++python app.py
++```
++
++Open the URL it prints (something like `http://127.0.0.1:7860`). You'll see:
++
++- A textbox for the review
++- A Submit button
++- A JSON output area
++- Clickable example reviews at the bottom
++
++Paste a review, hit Submit, and watch your AI go to work in the browser.
++
++### Want a public link?
++Change the launch line to:
++
++```python
++demo.launch(share=True)
++```
++
++Gradio gives you a `https://xxxxxxxx.gradio.live` URL you can text to a friend. *(It expires after 72 hours; for permanent hosting see Day 6.)*
++
++---
++
++## 🧪 Mini-Experiments
++
++- Add a slider for `temperature` and pass it into `analyze()`. Watch how higher values give wilder reasons.
++- Swap `outputs=gr.JSON()` for `outputs=[gr.Label(label="Sentiment"), gr.Textbox(label="Reason")]` and split the return value into two outputs. (Hint: return a tuple `(sentiment, reason)`.)
++- Change the `title` and `description` to something fun.
++
++---
++
++## 🔭 Tomorrow's Preview — Day 4
++
++Right now the app analyses **one review at a time**. Businesses want to drop in **a whole list** and get back a table.
++
++Tomorrow we will:
++- Accept many reviews at once (one per line)
++- Run **both** Hugging Face *and* OpenAI on each one
++- Show a comparison **table** with confidence bars
++- Use a better HF model that supports Neutral
++
++See you on **[Day 4 →](../Day-4)**.
+diff --git a/Day-3/app.py b/Day-3/app.py
+new file mode 100644
+index 0000000..08fb634
+--- /dev/null
++++ b/Day-3/app.py
+@@ -0,0 +1,57 @@
++# app.py — Day 3
++# Same OpenAI analyzer as Day 2, now with a Gradio UI on top.
++
++import json
++import gradio as gr
++from dotenv import load_dotenv
++from openai import OpenAI
++
++# ---------- The analyzer (carried over from Day 2) ----------
++load_dotenv()
++client = OpenAI()
++
++SYSTEM_PROMPT = """You are a precise product-review sentiment analyst.
++Reply with ONLY valid JSON: {"sentiment": "Positive"|"Negative"|"Neutral",
++"reason": "one short sentence"}. No markdown, no extra keys."""
++
++
++def analyze(review: str) -> dict:
++    """Return {'sentiment': ..., 'reason': ...} for one review."""
++    if not review.strip():
++        return {"sentiment": "—", "reason": "Please paste a review first."}
++    resp = client.chat.completions.create(
++        model="gpt-4o-mini",
++        temperature=0,
++        messages=[
++            {"role": "system", "content": SYSTEM_PROMPT},
++            {"role": "user",   "content": review},
++        ],
++    )
++    return json.loads(resp.choices[0].message.content)
++
++
++# ---------- The UI ----------
++demo = gr.Interface(
++    fn=analyze,                                  # the function Gradio calls on Submit
++    inputs=gr.Textbox(
++        lines=4,
++        placeholder="Paste a product review here…",
++        label="Customer review",
++    ),
++    outputs=gr.JSON(label="Analysis"),
++    title="🛒 Product Review Sentiment Analyzer",
++    description="Paste a product review and let GPT-4o-mini tell you "
++                "the sentiment and the reason behind it.",
++    examples=[
++        ["I absolutely love this product, best purchase of the year!"],
++        ["Worst experience ever. The item broke in two days."],
++        ["It works, I guess."],
++        ["Oh great, ANOTHER broken charger. Exactly what I wanted."],
++    ],
++    allow_flagging="never",
++)
++
++
++if __name__ == "__main__":
++    # Use share=True to get a temporary public link.
++    demo.launch()
+diff --git a/Day-3/requirements.txt b/Day-3/requirements.txt
+new file mode 100644
+index 0000000..3da05b0
+--- /dev/null
++++ b/Day-3/requirements.txt
+@@ -0,0 +1,3 @@
++openai>=1.30.0
++python-dotenv>=1.0.0
++gradio>=4.30.0
+diff --git a/Day-4/README.md b/Day-4/README.md
+new file mode 100644
+index 0000000..7136ba3
+--- /dev/null
++++ b/Day-4/README.md
+@@ -0,0 +1,188 @@
++# 📅 Day 4 — Batch Reviews & Side-by-Side Comparison
++
++> "One review at a time is a toy. A hundred at a time is a tool."
++
++Today we level up the app from a single-review demo into something a small business could actually use.
++
++---
++
++## 🎯 What You'll Learn Today
++
++- How to handle **multiple inputs** in a single function call
++- How to use a better Hugging Face model that supports **Neutral** + confidence per class
++- How to display results as a **table** in Gradio (`gr.Dataframe`)
++- How to compare **two AI engines side by side**
++
++---
++
++## 🤔 The Problem
++
++Yesterday's app analyses **one** review. A real shop has **hundreds**. We need:
++1. A way to paste many reviews at once (one per line is the simplest UX).
++2. Two engines analysing each review (Hugging Face for speed + confidence, OpenAI for reasoning).
++3. A side-by-side table so a human can decide who they trust more.
++
++This is **also a great evaluation pattern**: comparing models head-to-head is how AI engineers pick the right tool for a job.
++
++---
++
++## 💡 The Solution
++
++Two small Python files:
++
++- `hf_analyzer.py` — uses `cardiffnlp/twitter-roberta-base-sentiment-latest`, a popular HF model that returns a probability for *each* of Positive / Negative / Neutral.
++- `openai_analyzer.py` — same as Day 2.
++
++Then an updated `app.py` that:
++1. Splits the input by newlines into a list of reviews.
++2. For each review, calls **both** analyzers.
++3. Builds a list of rows: `[review, HF sentiment, HF confidence, OpenAI sentiment, OpenAI reason]`.
++4. Shows it in a Gradio dataframe.
++
++---
++
++## 🛠️ Step 1 — Install
++
++From `Day-4/`:
++
++```bash
++pip install -r requirements.txt
++```
++
++The first run will download the new HF model (~500MB). Make a coffee.
++
++---
++
++## 🧑‍💻 Step 2 — The Code
++
++### `hf_analyzer.py` — the Hugging Face engine
++
++```python
++# hf_analyzer.py — Day 4
++# A better HF model: it returns a probability for Positive, Negative AND Neutral.
++
++from transformers import pipeline
++
++# return_all_scores=True → we get the probability for every label, not just the top one.
++_hf = pipeline(
++    "sentiment-analysis",
++    model="cardiffnlp/twitter-roberta-base-sentiment-latest",
++    top_k=None,   # equivalent to "give me every label's score"
++)
++
++# The model uses cryptic labels ('LABEL_0'…); this maps them to human words.
++# (For this specific model the labels are already 'negative'/'neutral'/'positive',
++#  but we normalise the capitalisation here to match OpenAI's output.)
++_LABEL_FIX = {"negative": "Negative", "neutral": "Neutral", "positive": "Positive"}
++
++def analyze(review: str) -> dict:
++    """Return the winning sentiment + its confidence."""
++    all_scores = _hf(review)[0]                              # list of {label, score}
++    best = max(all_scores, key=lambda x: x["score"])         # pick highest score
++    return {
++        "sentiment":  _LABEL_FIX.get(best["label"].lower(), best["label"]),
++        "confidence": round(best["score"], 4),               # 0.0 → 1.0
++    }
++```
++
++### `openai_analyzer.py` — unchanged from Day 2
++
++(copy it over, no changes needed)
++
++### `app.py` — the new Gradio UI
++
++```python
++# app.py — Day 4
++# Batch input + side-by-side HF vs OpenAI comparison.
++
++import gradio as gr
++import pandas as pd
++from hf_analyzer import analyze as hf_analyze
++from openai_analyzer import analyze as oai_analyze
++
++def analyze_batch(text_block: str) -> pd.DataFrame:
++    """Take many reviews (one per line) and return a comparison table."""
++    reviews = [line.strip() for line in text_block.splitlines() if line.strip()]
++    rows = []
++    for r in reviews:
++        hf  = hf_analyze(r)
++        oai = oai_analyze(r)
++        rows.append({
++            "Review":         r[:120] + ("…" if len(r) > 120 else ""),
++            "HF Sentiment":   hf["sentiment"],
++            "HF Confidence":  f"{hf['confidence']:.0%}",   # nice percentage string
++            "OpenAI Sentiment": oai["sentiment"],
++            "OpenAI Reason":  oai["reason"],
++        })
++    return pd.DataFrame(rows)
++
++demo = gr.Interface(
++    fn=analyze_batch,
++    inputs=gr.Textbox(
++        lines=10,
++        placeholder="Paste one review per line…",
++        label="Reviews (one per line)",
++    ),
++    outputs=gr.Dataframe(label="Side-by-side comparison", wrap=True),
++    title="🛒 Product Review Sentiment Analyzer — Batch Mode",
++    description="Compare Hugging Face (fast, with confidence) against "
++                "OpenAI (slower, with reasoning) for many reviews at once.",
++    examples=[[
++        "I absolutely love this product, best purchase of the year!\n"
++        "Worst experience ever. The item broke in two days.\n"
++        "It works, I guess.\n"
++        "Oh great, ANOTHER broken charger. Exactly what I wanted.\n"
++        "Delivery was super quick but the packaging was damaged."
++    ]],
++    allow_flagging="never",
++)
++
++if __name__ == "__main__":
++    demo.launch()
++```
++
++### 🧠 What's new and why
++
++| Idea | Why it matters |
++|------|----------------|
++| `text.splitlines()` + strip | Simplest "batch input" UX possible — no CSV upload required yet. |
++| `pandas.DataFrame` | Gradio's `gr.Dataframe` understands pandas natively. Free table rendering. |
++| Two engines per row | Lets the user **trust but verify** — a core LLMOps idea. |
++| `top_k=None` in the HF pipeline | Returns probability of *every* class so we can pick the winner ourselves and also display its confidence. |
++
++---
++
++## ▶️ Try It Yourself
++
++```bash
++python app.py
++```
++
++Paste the example reviews (or use the example button), hit Submit, and you'll see a clean table with **5 columns**.
++
++Notice things like:
++- HF sometimes calls something "Neutral" while OpenAI calls it "Negative" — that's the value of a second opinion.
++- HF is much **faster** (it's a small local model). OpenAI is **smarter** (real reasoning).
++- The sarcastic charger review is now correctly **Negative** in both columns 🎉.
++
++---
++
++## 🧪 Mini-Experiments
++
++- Add a 6th column showing the **agreement**: ✅ if both engines agree, ⚠️ if not. (Hint: just compare the two sentiment strings.)
++- Add a `gr.File` input that accepts a `.txt` file of reviews and reads it with `open()`.
++- Sort the resulting DataFrame so all Negative reviews appear first.
++
++---
++
++## 🔭 Tomorrow's Preview — Day 5
++
++We have *labels*. Tomorrow we want *insights*. The boss doesn't only want to know "35% negative" — she wants to know **WHY** they're negative. Is it the delivery? The pricing? The build quality?
++
++On Day 5 we'll add:
++- **Aspect-based analysis** (e.g. *Delivery: Negative, Quality: Positive*)
++- **Top keyword extraction** across all reviews
++- An **overall product score** (X out of 10)
++- Auto-translation for non-English reviews
++
++See you on **[Day 5 →](../Day-5)**.
+diff --git a/Day-4/app.py b/Day-4/app.py
+new file mode 100644
+index 0000000..dc0ab45
+--- /dev/null
++++ b/Day-4/app.py
+@@ -0,0 +1,51 @@
++# app.py — Day 4
++# Batch input + side-by-side HF vs OpenAI comparison.
++
++import gradio as gr
++import pandas as pd
++
++from hf_analyzer import analyze as hf_analyze
++from openai_analyzer import analyze as oai_analyze
++
++
++def analyze_batch(text_block: str) -> pd.DataFrame:
++    """Take many reviews (one per line) and return a comparison table."""
++    reviews = [line.strip() for line in text_block.splitlines() if line.strip()]
++    rows = []
++    for r in reviews:
++        hf  = hf_analyze(r)
++        oai = oai_analyze(r)
++        rows.append({
++            "Review":           r[:120] + ("…" if len(r) > 120 else ""),
++            "HF Sentiment":     hf["sentiment"],
++            "HF Confidence":    f"{hf['confidence']:.0%}",
++            "OpenAI Sentiment": oai["sentiment"],
++            "OpenAI Reason":    oai["reason"],
++        })
++    return pd.DataFrame(rows)
++
++
++demo = gr.Interface(
++    fn=analyze_batch,
++    inputs=gr.Textbox(
++        lines=10,
++        placeholder="Paste one review per line…",
++        label="Reviews (one per line)",
++    ),
++    outputs=gr.Dataframe(label="Side-by-side comparison", wrap=True),
++    title="🛒 Product Review Sentiment Analyzer — Batch Mode",
++    description=("Compare Hugging Face (fast, with confidence) against "
++                 "OpenAI (slower, with reasoning) for many reviews at once."),
++    examples=[[
++        "I absolutely love this product, best purchase of the year!\n"
++        "Worst experience ever. The item broke in two days.\n"
++        "It works, I guess.\n"
++        "Oh great, ANOTHER broken charger. Exactly what I wanted.\n"
++        "Delivery was super quick but the packaging was damaged."
++    ]],
++    allow_flagging="never",
++)
++
++
++if __name__ == "__main__":
++    demo.launch()
+diff --git a/Day-4/hf_analyzer.py b/Day-4/hf_analyzer.py
+new file mode 100644
+index 0000000..8d2c8d5
+--- /dev/null
++++ b/Day-4/hf_analyzer.py
+@@ -0,0 +1,33 @@
++# hf_analyzer.py — Day 4
++# A better HF model: returns a probability for Positive, Negative AND Neutral.
++
++from transformers import pipeline
++
++# top_k=None → return the score for every label, not only the winner.
++_hf = pipeline(
++    "sentiment-analysis",
++    model="cardiffnlp/twitter-roberta-base-sentiment-latest",
++    top_k=None,
++)
++
++# Normalise label casing so it lines up with what OpenAI returns.
++_LABEL_FIX = {"negative": "Negative", "neutral": "Neutral", "positive": "Positive"}
++
++
++def analyze(review: str) -> dict:
++    """Return the winning sentiment + its confidence (0.0 → 1.0)."""
++    all_scores = _hf(review)[0]                       # [{label, score}, ...]
++    best = max(all_scores, key=lambda x: x["score"])  # pick highest score
++    return {
++        "sentiment":  _LABEL_FIX.get(best["label"].lower(), best["label"]),
++        "confidence": round(best["score"], 4),
++    }
++
++
++if __name__ == "__main__":
++    for r in [
++        "I absolutely love this product!",
++        "It works, I guess.",
++        "Worst experience ever.",
++    ]:
++        print(r, "→", analyze(r))
+diff --git a/Day-4/openai_analyzer.py b/Day-4/openai_analyzer.py
+new file mode 100644
+index 0000000..c9d735c
+--- /dev/null
++++ b/Day-4/openai_analyzer.py
+@@ -0,0 +1,25 @@
++# openai_analyzer.py — Day 4 (unchanged from Day 2)
++# Sentiment + reasoning powered by OpenAI.
++
++import json
++from dotenv import load_dotenv
++from openai import OpenAI
++
++load_dotenv()
++client = OpenAI()
++
++SYSTEM_PROMPT = """You are a precise product-review sentiment analyst.
++Reply with ONLY valid JSON: {"sentiment": "Positive"|"Negative"|"Neutral",
++"reason": "one short sentence"}. No markdown, no extra keys."""
++
++
++def analyze(review: str) -> dict:
++    resp = client.chat.completions.create(
++        model="gpt-4o-mini",
++        temperature=0,
++        messages=[
++            {"role": "system", "content": SYSTEM_PROMPT},
++            {"role": "user",   "content": review},
++        ],
++    )
++    return json.loads(resp.choices[0].message.content)
+diff --git a/Day-4/requirements.txt b/Day-4/requirements.txt
+new file mode 100644
+index 0000000..43167a6
+--- /dev/null
++++ b/Day-4/requirements.txt
+@@ -0,0 +1,6 @@
++openai>=1.30.0
++python-dotenv>=1.0.0
++gradio>=4.30.0
++transformers>=4.40.0
++torch>=2.2.0
++pandas>=2.0.0
+diff --git a/Day-5/README.md b/Day-5/README.md
+new file mode 100644
+index 0000000..c56e272
+--- /dev/null
++++ b/Day-5/README.md
+@@ -0,0 +1,309 @@
++# 📅 Day 5 — Aspects, Keywords, Overall Score & Language Detection
++
++> "Sentiment tells you the temperature. Aspects tell you where the fire is."
++
++We can already classify many reviews at once. Today we turn the analyzer into something a *manager* would actually love — answers to:
++
++- **What** are customers complaining about? (delivery? price? quality?)
++- **Which words** keep coming up in the praise vs the complaints?
++- **How well** is this product doing overall, out of 10?
++- And does it still work for reviews **in other languages**?
++
++---
++
++## 🎯 What You'll Learn Today
++
++- **Aspect-Based Sentiment Analysis (ABSA)** — extracting which feature a sentiment refers to
++- Designing a more advanced JSON output from a prompt
++- Aggregating results across many reviews to produce keyword lists and a final score
++- Using OpenAI to auto-detect and translate non-English reviews
++
++---
++
++## 🤔 The Problem
++
++A boss reads our Day 4 table and says:
++
++> *"Great, 35% of my customers are negative. But WHY? Should I fire my delivery partner, lower my price, or improve my product?"*
++
++A single sentiment label can't answer that. We need to break each review into its **aspects** — the *things* being judged — and apply sentiment to each one.
++
++Example:
++> *"The phone is gorgeous and the camera is amazing, but the battery dies in 4 hours and delivery took 3 weeks."*
++
++This should yield:
++- Design: Positive
++- Camera: Positive
++- Battery: Negative
++- Delivery: Negative
++
++That's **gold** to a business.
++
++---
++
++## 💡 The Solution
++
++We extend our OpenAI prompt to return **a richer JSON object** containing:
++
++```json
++{
++  "sentiment": "Negative",
++  "reason": "...",
++  "language": "en",
++  "translation": "..." | null,
++  "aspects": [
++    {"aspect": "Battery",  "sentiment": "Negative"},
++    {"aspect": "Delivery", "sentiment": "Negative"},
++    {"aspect": "Camera",   "sentiment": "Positive"}
++  ],
++  "keywords": {"positive": ["gorgeous","amazing"], "negative": ["dies","took 3 weeks"]}
++}
++```
++
++Then in Python we:
++1. Loop the function over every review.
++2. Pool the aspects into a **summary table** (aspect → count of Pos/Neg/Neu).
++3. Pool the keywords across all reviews into **top-10 positive** and **top-10 negative** lists.
++4. Convert the sentiment counts into a single **score out of 10**.
++
++All of this stays in **one extra Python file** (`aspects.py`) and a small upgrade to `app.py`.
++
++---
++
++## 🛠️ Step 1 — Install
++
++From `Day-5/`:
++
++```bash
++pip install -r requirements.txt
++```
++
++(Same as Day 4 — nothing new to install.)
++
++---
++
++## 🧑‍💻 Step 2 — The Code
++
++### `aspects.py` — the upgraded OpenAI engine
++
++```python
++# aspects.py — Day 5
++# Asks OpenAI for sentiment + aspects + keywords + language in one call.
++
++import json
++from collections import Counter
++from dotenv import load_dotenv
++from openai import OpenAI
++
++load_dotenv()
++client = OpenAI()
++
++SYSTEM_PROMPT = """You are a product-review analyst.
++For the review, return ONLY valid JSON with this exact shape:
++
++{
++  "sentiment": "Positive" | "Negative" | "Neutral",
++  "reason":    "one short sentence",
++  "language":  "ISO 639-1 code, e.g. en, es, hi",
++  "translation": "English translation if language != en, else null",
++  "aspects":   [{"aspect": "Battery", "sentiment": "Negative"}, ...],
++  "keywords":  {"positive": ["..."], "negative": ["..."]}
++}
++
++Rules:
++- Aspects are concrete product features ('Battery', 'Delivery', 'Price', 'Camera').
++- Keywords are 1-2 word phrases taken directly from the review.
++- No markdown, no extra keys, no text outside the JSON."""
++
++
++def deep_analyze(review: str) -> dict:
++    """Run the full Day-5 analysis on one review."""
++    resp = client.chat.completions.create(
++        model="gpt-4o-mini",
++        temperature=0,
++        messages=[
++            {"role": "system", "content": SYSTEM_PROMPT},
++            {"role": "user",   "content": review},
++        ],
++    )
++    return json.loads(resp.choices[0].message.content)
++
++
++# ---------- Aggregation helpers ----------
++
++# Map sentiments to numeric values, used to compute the 0-10 product score.
++_SENT_TO_VALUE = {"Positive": 1.0, "Neutral": 0.5, "Negative": 0.0}
++
++
++def overall_score(results: list[dict]) -> float:
++    """Average sentiment value across all reviews → 0–10 scale."""
++    if not results:
++        return 0.0
++    values = [_SENT_TO_VALUE.get(r["sentiment"], 0.5) for r in results]
++    return round((sum(values) / len(values)) * 10, 1)
++
++
++def top_keywords(results: list[dict], polarity: str, n: int = 10) -> list[tuple]:
++    """Most frequent positive OR negative keywords across all reviews."""
++    bag = []
++    for r in results:
++        bag.extend(r.get("keywords", {}).get(polarity, []))
++    # Lower-case so "Battery" and "battery" merge; strip punctuation/spaces.
++    bag = [w.strip().lower() for w in bag if w and w.strip()]
++    return Counter(bag).most_common(n)
++
++
++def aspect_summary(results: list[dict]) -> dict:
++    """Per-aspect counts of Positive / Negative / Neutral."""
++    summary: dict = {}
++    for r in results:
++        for a in r.get("aspects", []):
++            name = a["aspect"]
++            sent = a["sentiment"]
++            summary.setdefault(name, {"Positive": 0, "Negative": 0, "Neutral": 0})
++            summary[name][sent] = summary[name].get(sent, 0) + 1
++    return summary
++```
++
++### 🧠 What's going on?
++
++| Function | One-line purpose |
++|----------|------------------|
++| `deep_analyze` | Asks GPT-4o-mini for the *whole picture* of one review (sentiment, reason, aspects, keywords, language). |
++| `overall_score` | Maps each sentiment to a number (Pos=1, Neu=0.5, Neg=0) and averages → a friendly 0–10 score. |
++| `top_keywords` | Uses `collections.Counter` (the secret weapon of Python) to find the most-repeated words. |
++| `aspect_summary` | Tallies how often each aspect (Delivery, Price…) is praised or criticised. |
++
++### `app.py` — the new dashboard UI
++
++```python
++# app.py — Day 5
++# Full dashboard: deep analysis + summary + keywords + product score.
++
++import gradio as gr
++import pandas as pd
++
++from aspects import (
++    deep_analyze,
++    overall_score,
++    top_keywords,
++    aspect_summary,
++)
++
++def run(text_block: str):
++    reviews = [l.strip() for l in text_block.splitlines() if l.strip()]
++    if not reviews:
++        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), "—"
++
++    # 1) Analyse each review
++    results = [deep_analyze(r) for r in reviews]
++
++    # 2) Per-review table
++    per_review = pd.DataFrame([{
++        "Review":      r[:80] + ("…" if len(r) > 80 else ""),
++        "Language":    res["language"],
++        "Sentiment":   res["sentiment"],
++        "Reason":      res["reason"],
++        "Translation": res.get("translation") or "",
++    } for r, res in zip(reviews, results)])
++
++    # 3) Aspect summary table
++    aspects = aspect_summary(results)
++    aspect_df = pd.DataFrame([
++        {"Aspect": a, **counts} for a, counts in aspects.items()
++    ])
++
++    # 4) Top keywords (positive / negative)
++    pos_df = pd.DataFrame(top_keywords(results, "positive"),
++                          columns=["Positive keyword", "Mentions"])
++    neg_df = pd.DataFrame(top_keywords(results, "negative"),
++                          columns=["Negative keyword", "Mentions"])
++
++    # 5) Overall product score
++    score = f"⭐ Overall product score: **{overall_score(results)} / 10**"
++
++    return per_review, aspect_df, pos_df, neg_df, score
++
++
++with gr.Blocks(title="🛒 Product Review Analyzer — Day 5") as demo:
++    gr.Markdown("## 🛒 Product Review Sentiment Analyzer\n"
++                "Paste one review per line. We will return a per-review breakdown, "
++                "an aspect summary, top keywords and an overall product score.")
++
++    inp = gr.Textbox(lines=10, label="Reviews (one per line)")
++    btn = gr.Button("Analyse", variant="primary")
++
++    score_box = gr.Markdown()
++    per_review_tbl = gr.Dataframe(label="Per-review breakdown", wrap=True)
++    aspect_tbl     = gr.Dataframe(label="Aspect summary")
++    with gr.Row():
++        pos_tbl = gr.Dataframe(label="Top positive keywords")
++        neg_tbl = gr.Dataframe(label="Top negative keywords")
++
++    btn.click(
++        fn=run,
++        inputs=inp,
++        outputs=[per_review_tbl, aspect_tbl, pos_tbl, neg_tbl, score_box],
++    )
++
++if __name__ == "__main__":
++    demo.launch()
++```
++
++### 🧠 New Gradio concept: `gr.Blocks`
++
++`gr.Interface` is great for one-function apps. But once you have multiple outputs in custom layouts, `gr.Blocks` is the way. Think of `Blocks` as a layout container:
++
++- `gr.Markdown` → rich text
++- `gr.Row()` / `gr.Column()` → arrange components horizontally / vertically
++- `btn.click(fn, inputs, outputs)` → wire a button to a function
++
++It's still pure Python — no HTML.
++
++---
++
++## ▶️ Try It Yourself
++
++```bash
++python app.py
++```
++
++Try this batch:
++
++```
++The phone is gorgeous and the camera is amazing, but the battery dies in 4 hours and delivery took 3 weeks.
++Great value for money. Build quality is solid and shipping was fast.
++Customer service was awful. They never replied to my emails.
++El producto es excelente, lo recomiendo totalmente.
++It works, I guess. Nothing special.
++```
++
++You'll get:
++- A per-review breakdown (with **language detection** + **translation** of the Spanish review!)
++- An aspect table showing *Delivery: 1 Neg, 1 Pos*, *Battery: 1 Neg*, *Camera: 1 Pos* etc.
++- Top positive keywords (gorgeous, amazing, fast…)
++- Top negative keywords (dies, awful, took 3 weeks…)
++- A bold overall score, e.g. **⭐ 5.0 / 10**
++
++That's a real analytics dashboard built in ~120 lines of Python.
++
++---
++
++## 🧪 Mini-Experiments
++
++- Add an `aspects` filter dropdown that hides reviews not mentioning a chosen aspect.
++- Show a bar chart of aspect sentiments using `gr.BarPlot` instead of a dataframe.
++- Add a `gr.File` input that accepts a CSV and uses pandas to read it.
++
++---
++
++## 🔭 Tomorrow's Preview — Day 6 (Final Day!)
++
++The app *works*, but it isn't yet "production-shaped". Tomorrow we add the **LLMOps polish** that separates a homework project from a portfolio project:
++
++- 🗂️ **Prompt versioning** — move the prompt to a text file we can swap / A-B test
++- 🧾 **Response logging** — write every analysis to `logs/results.csv` for auditing
++- 🧹 Clean project layout & a final, polished `app.py`
++- 🚀 **Deployment notes** — how to share your app on Hugging Face Spaces for free
++
++See you on **[Day 6 →](../Day-6)**. You're almost there!
+diff --git a/Day-5/app.py b/Day-5/app.py
+new file mode 100644
+index 0000000..1a69a3c
+--- /dev/null
++++ b/Day-5/app.py
+@@ -0,0 +1,75 @@
++# app.py — Day 5
++# Full dashboard: deep analysis + aspect summary + keywords + product score.
++
++import gradio as gr
++import pandas as pd
++
++from aspects import (
++    deep_analyze,
++    overall_score,
++    top_keywords,
++    aspect_summary,
++)
++
++
++def run(text_block: str):
++    reviews = [l.strip() for l in text_block.splitlines() if l.strip()]
++    if not reviews:
++        empty = pd.DataFrame()
++        return empty, empty, empty, empty, "—"
++
++    # 1) Analyse each review
++    results = [deep_analyze(r) for r in reviews]
++
++    # 2) Per-review breakdown table
++    per_review = pd.DataFrame([{
++        "Review":      r[:80] + ("…" if len(r) > 80 else ""),
++        "Language":    res.get("language", ""),
++        "Sentiment":   res.get("sentiment", ""),
++        "Reason":      res.get("reason", ""),
++        "Translation": res.get("translation") or "",
++    } for r, res in zip(reviews, results)])
++
++    # 3) Aspect summary table
++    aspects = aspect_summary(results)
++    aspect_df = pd.DataFrame([{"Aspect": a, **counts}
++                              for a, counts in aspects.items()])
++
++    # 4) Top keywords (positive / negative)
++    pos_df = pd.DataFrame(top_keywords(results, "positive"),
++                          columns=["Positive keyword", "Mentions"])
++    neg_df = pd.DataFrame(top_keywords(results, "negative"),
++                          columns=["Negative keyword", "Mentions"])
++
++    # 5) Overall product score
++    score = f"⭐ Overall product score: **{overall_score(results)} / 10**"
++
++    return per_review, aspect_df, pos_df, neg_df, score
++
++
++with gr.Blocks(title="🛒 Product Review Analyzer — Day 5") as demo:
++    gr.Markdown(
++        "## 🛒 Product Review Sentiment Analyzer\n"
++        "Paste one review per line. We will return a per-review breakdown, "
++        "an aspect summary, top keywords and an overall product score."
++    )
++
++    inp = gr.Textbox(lines=10, label="Reviews (one per line)")
++    btn = gr.Button("Analyse", variant="primary")
++
++    score_box      = gr.Markdown()
++    per_review_tbl = gr.Dataframe(label="Per-review breakdown", wrap=True)
++    aspect_tbl     = gr.Dataframe(label="Aspect summary")
++    with gr.Row():
++        pos_tbl = gr.Dataframe(label="Top positive keywords")
++        neg_tbl = gr.Dataframe(label="Top negative keywords")
++
++    btn.click(
++        fn=run,
++        inputs=inp,
++        outputs=[per_review_tbl, aspect_tbl, pos_tbl, neg_tbl, score_box],
++    )
++
++
++if __name__ == "__main__":
++    demo.launch()
+diff --git a/Day-5/aspects.py b/Day-5/aspects.py
+new file mode 100644
+index 0000000..aabebc1
+--- /dev/null
++++ b/Day-5/aspects.py
+@@ -0,0 +1,76 @@
++# aspects.py — Day 5
++# Asks OpenAI for sentiment + aspects + keywords + language in one call,
++# and provides helpers to aggregate results across many reviews.
++
++import json
++from collections import Counter
++from dotenv import load_dotenv
++from openai import OpenAI
++
++load_dotenv()
++client = OpenAI()
++
++SYSTEM_PROMPT = """You are a product-review analyst.
++For the review, return ONLY valid JSON with this exact shape:
++
++{
++  "sentiment": "Positive" | "Negative" | "Neutral",
++  "reason":    "one short sentence",
++  "language":  "ISO 639-1 code, e.g. en, es, hi",
++  "translation": "English translation if language != en, else null",
++  "aspects":   [{"aspect": "Battery", "sentiment": "Negative"}, ...],
++  "keywords":  {"positive": ["..."], "negative": ["..."]}
++}
++
++Rules:
++- Aspects are concrete product features ('Battery', 'Delivery', 'Price', 'Camera').
++- Keywords are 1-2 word phrases taken directly from the review.
++- No markdown, no extra keys, no text outside the JSON."""
++
++
++def deep_analyze(review: str) -> dict:
++    """Run the full Day-5 analysis on one review."""
++    resp = client.chat.completions.create(
++        model="gpt-4o-mini",
++        temperature=0,
++        messages=[
++            {"role": "system", "content": SYSTEM_PROMPT},
++            {"role": "user",   "content": review},
++        ],
++    )
++    return json.loads(resp.choices[0].message.content)
++
++
++# ---------- Aggregation helpers ----------
++
++# Numeric mapping used to compute the 0–10 product score.
++_SENT_TO_VALUE = {"Positive": 1.0, "Neutral": 0.5, "Negative": 0.0}
++
++
++def overall_score(results: list) -> float:
++    """Average sentiment value across all reviews → 0–10 scale."""
++    if not results:
++        return 0.0
++    values = [_SENT_TO_VALUE.get(r["sentiment"], 0.5) for r in results]
++    return round((sum(values) / len(values)) * 10, 1)
++
++
++def top_keywords(results: list, polarity: str, n: int = 10) -> list:
++    """Most frequent positive OR negative keywords across all reviews."""
++    bag = []
++    for r in results:
++        bag.extend(r.get("keywords", {}).get(polarity, []))
++    bag = [w.strip().lower() for w in bag if w and w.strip()]
++    return Counter(bag).most_common(n)
++
++
++def aspect_summary(results: list) -> dict:
++    """Per-aspect counts of Positive / Negative / Neutral."""
++    summary: dict = {}
++    for r in results:
++        for a in r.get("aspects", []):
++            name = a["aspect"]
++            sent = a["sentiment"]
++            summary.setdefault(name, {"Positive": 0, "Negative": 0, "Neutral": 0})
++            summary[name][sent] = summary[name].get(sent, 0) + 1
++    return summary
+diff --git a/Day-5/requirements.txt b/Day-5/requirements.txt
+new file mode 100644
+index 0000000..32937f2
+--- /dev/null
++++ b/Day-5/requirements.txt
+@@ -0,0 +1,4 @@
++openai>=1.30.0
++python-dotenv>=1.0.0
++gradio>=4.30.0
++pandas>=2.0.0
+diff --git a/Day-6/README.md b/Day-6/README.md
+new file mode 100644
+index 0000000..89d12c7
+--- /dev/null
++++ b/Day-6/README.md
+@@ -0,0 +1,302 @@
++# 📅 Day 6 — LLMOps Polish + Final App 🎉
++
++> "Day 5 made it smart. Day 6 makes it shippable."
++
++Welcome to the final day! Today is about turning your project from a notebook-y demo into something you would happily put in a portfolio or show in an interview.
++
++We will:
++1. Move the prompt out of the code into a **versioned text file** (so swapping prompts doesn't touch the code).
++2. **Log every analysis to a CSV** for auditing and future evaluation.
++3. Clean up the final `app.py` and folder structure.
++4. Learn how to **deploy** the app for free on Hugging Face Spaces.
++
++By the end you'll have a complete, polished, real-world AI engineering project. 🥳
++
++---
++
++## 🎯 What You'll Learn Today
++
++- **Prompt versioning** — why and how (the simplest possible LLMOps technique)
++- **Response logging** to CSV using the `csv` module
++- Final project structure best practices
++- How to deploy a Gradio app to **Hugging Face Spaces** in 5 minutes
++
++---
++
++## 🤔 The Problem
++
++In a real company, prompts change *constantly*. A product manager says *"add the word 'concise'"*, a data scientist says *"return 4 aspects max"*, and so on. If your prompt lives inside a `.py` file, every tiny change requires:
++
++- A code change
++- A code review
++- A redeploy
++
++That's expensive friction. We want prompts to live in a **plain text file** that anyone (even non-developers) can edit.
++
++Similarly, when something goes wrong — *"why did the model say Negative for this glowing review?"* — you need to look up the exact input/output. Without logging, that information is gone forever.
++
++These two practices are the **absolute basics of LLMOps** (the discipline of operating LLM-based systems in production).
++
++---
++
++## 💡 The Solution
++
++### 1️⃣ Prompt versioning (the simplest form)
++
++We move the system prompt out of `aspects.py` and into `prompts/sentiment_prompt.txt`.
++The file name itself is the "version" (`sentiment_prompt.txt`, later `sentiment_prompt_v2.txt`, etc.).
++The Python code just does `open(...).read()`.
++
++That's it. No fancy registry, no MLflow yet. Just a text file under version control. **This single change is what 80% of teams actually do.**
++
++### 2️⃣ Response logging
++
++After every `deep_analyze` call we append one row to `logs/results.csv`:
++
++```
++timestamp, prompt_version, model, review, sentiment, reason
++```
++
++This gives you a permanent audit trail — and a dataset you can later use to evaluate prompt changes (was v2 actually better than v1?).
++
++---
++
++## 🛠️ Step 1 — Install
++
++From `Day-6/`:
++
++```bash
++pip install -r requirements.txt
++```
++
++(No new dependencies — `csv`, `datetime`, `pathlib` are all in the Python standard library.)
++
++---
++
++## 🗂️ Step 2 — Final Project Structure
++
++```
++Day-6/
++├── app.py                    # Gradio UI (the finished app)
++├── analyzer.py               # All the analysis logic (was aspects.py)
++├── logger.py                 # Tiny CSV-logging helper
++├── prompts/
++│   └── sentiment_prompt.txt  # 🔑 Versioned system prompt
++├── logs/
++│   └── .gitkeep              # results.csv is auto-created on first run
++└── requirements.txt
++```
++
++The actual files are already in this folder — read on for explanations.
++
++---
++
++## 🧑‍💻 Step 3 — The Code, Explained
++
++### `prompts/sentiment_prompt.txt`
++
++A plain text file holding the rules. **No Python here.** Anyone on the team can edit it — even your PM with a text editor.
++
++### `analyzer.py`
++
++```python
++# analyzer.py — Day 6
++# Wraps OpenAI with versioned prompts + automatic logging.
++
++import json
++from collections import Counter
++from pathlib import Path
++from dotenv import load_dotenv
++from openai import OpenAI
++
++from logger import log_result
++
++# ----- 1) Load the versioned prompt from a text file -----
++PROMPT_FILE   = Path(__file__).parent / "prompts" / "sentiment_prompt.txt"
++PROMPT_TEXT   = PROMPT_FILE.read_text(encoding="utf-8")
++PROMPT_VERSION = PROMPT_FILE.stem        # e.g. 'sentiment_prompt'
++
++# ----- 2) OpenAI client -----
++load_dotenv()
++client = OpenAI()
++MODEL = "gpt-4o-mini"
++
++
++def deep_analyze(review: str) -> dict:
++    """Analyse one review and log the result."""
++    resp = client.chat.completions.create(
++        model=MODEL,
++        temperature=0,
++        messages=[
++            {"role": "system", "content": PROMPT_TEXT},
++            {"role": "user",   "content": review},
++        ],
++    )
++    result = json.loads(resp.choices[0].message.content)
++
++    # 🪵 Audit trail — fire and forget.
++    log_result(
++        prompt_version=PROMPT_VERSION,
++        model=MODEL,
++        review=review,
++        result=result,
++    )
++    return result
++
++
++# ----- 3) Aggregation helpers (same as Day 5) -----
++_SENT_TO_VALUE = {"Positive": 1.0, "Neutral": 0.5, "Negative": 0.0}
++
++def overall_score(results):
++    if not results: return 0.0
++    vals = [_SENT_TO_VALUE.get(r["sentiment"], 0.5) for r in results]
++    return round((sum(vals) / len(vals)) * 10, 1)
++
++def top_keywords(results, polarity, n=10):
++    bag = []
++    for r in results:
++        bag.extend(r.get("keywords", {}).get(polarity, []))
++    bag = [w.strip().lower() for w in bag if w and w.strip()]
++    return Counter(bag).most_common(n)
++
++def aspect_summary(results):
++    out = {}
++    for r in results:
++        for a in r.get("aspects", []):
++            out.setdefault(a["aspect"], {"Positive": 0, "Negative": 0, "Neutral": 0})
++            out[a["aspect"]][a["sentiment"]] += 1
++    return out
++```
++
++### 🧠 What changed vs Day 5?
++
++| Day 5 | Day 6 |
++|-------|-------|
++| Prompt hard-coded inside a Python string | Prompt loaded from `prompts/sentiment_prompt.txt` |
++| No logging | Every call appends a row to `logs/results.csv` |
++| `PROMPT_VERSION` doesn't exist | We capture the file stem as the version |
++
++### `logger.py` — the tiny logger
++
++```python
++# logger.py — Day 6
++# Append a row to logs/results.csv for every analysis.
++
++import csv
++from datetime import datetime, timezone
++from pathlib import Path
++
++LOG_FILE = Path(__file__).parent / "logs" / "results.csv"
++LOG_FILE.parent.mkdir(exist_ok=True)        # make sure the folder exists
++
++# Header written only the first time the file is created.
++_HEADER = ["timestamp", "prompt_version", "model",
++           "review", "sentiment", "reason"]
++
++
++def log_result(prompt_version: str, model: str,
++               review: str, result: dict) -> None:
++    """Append one analysis to results.csv (creates the file if needed)."""
++    new_file = not LOG_FILE.exists()
++    with LOG_FILE.open("a", newline="", encoding="utf-8") as f:
++        writer = csv.writer(f)
++        if new_file:
++            writer.writerow(_HEADER)
++        writer.writerow([
++            datetime.now(timezone.utc).isoformat(timespec="seconds"),
++            prompt_version,
++            model,
++            review,
++            result.get("sentiment", ""),
++            result.get("reason", ""),
++        ])
++```
++
++### 🧠 Why this is enough
++
++A log line, a timestamp, a version, the input, the output. That's everything you need to later:
++
++- Replay a problematic review
++- Compare prompt v1 vs v2 (group rows by `prompt_version` and compare sentiment distributions)
++- Build an evaluation dataset for free
++
++**This is real LLMOps** — not a fancy SaaS platform, just rigour.
++
++### `app.py` — the finished UI
++
++It's the Day 5 UI, but it now imports from `analyzer.py` (which logs in the background). Nothing in the UI itself reveals that — that's the beauty of clean separation of concerns.
++
++---
++
++## ▶️ Try It Yourself
++
++```bash
++python app.py
++```
++
++Submit a batch of reviews. Then check:
++
++```bash
++cat logs/results.csv
++```
++
++You should see one row per review, with timestamp + prompt version + sentiment. **You are now a person who keeps audit logs of their AI system.** That's an upgrade.
++
++---
++
++## 🧪 Mini-Experiments
++
++1. **Try prompt v2.** Copy the prompt file to `prompts/sentiment_prompt_v2.txt`, edit a rule (e.g. demand `aspects` max length 3), and point `PROMPT_FILE` at it. Re-run the app on the same reviews. Compare the CSV rows side by side. **You just performed an A/B test.** 🎉
++2. **Filter the log:** open `results.csv` in Excel / pandas and group by `sentiment`. What's your true product score over time?
++
++---
++
++## 🚀 Deployment — Push It to the World
++
++Your project deserves to be live. The easiest free option is **Hugging Face Spaces**:
++
++1. Create a free account at <https://huggingface.co>.
++2. Click **New Space** → choose **Gradio** as the SDK.
++3. Upload all files from `Day-6/` (or `git push` to the Space's repo).
++4. In the Space **Settings → Variables and secrets**, add `OPENAI_API_KEY` as a secret.
++5. Wait ~2 minutes for the build. Done — your app has a public URL.
++
++That's all. No Docker, no servers.
++
++Alternative options:
++- **Render.com / Railway.app** — free tier for Python apps
++- **Streamlit Community Cloud** — if you rewrite the UI in Streamlit
++- **AWS Lambda + API Gateway** — for the headless `analyzer.py` part
++
++---
++
++## 🎓 What You've Built
++
++In 6 days you went from a stub README to a complete product:
++
++✅ Pre-trained Hugging Face sentiment model (Day 1)
++✅ OpenAI-powered reasoning + Neutral support (Day 2)
++✅ Gradio web UI (Day 3)
++✅ Batch input + side-by-side comparison (Day 4)
++✅ Aspect-based analysis, keyword extraction, language detection, product score (Day 5)
++✅ Prompt versioning, response logging, deployment-ready (Day 6)
++
++That's a **portfolio-grade AI engineering project** that ticks every keyword in any modern job description: *Python, prompt engineering, LLM APIs, Hugging Face, Gradio, LLMOps*.
++
++---
++
++## 🙌 What's Next?
++
++If you want to keep going on your own, here are great next steps:
++
++- Add a `gr.File` CSV upload for thousands of reviews.
++- Build a **dashboard view** (matplotlib / plotly) for trends over time using the log file.
++- Add **caching** with `functools.lru_cache` so repeat reviews don't re-hit the API.
++- Replace the CSV log with a **SQLite** database (only ~10 more lines).
++- Set up a small **eval suite**: 50 hand-labeled reviews and a script that scores each prompt version.
++
++But honestly — you've already done a lot. **Celebrate.** Then add this repo to your CV. 🎉
++
++> *"You started with a sentence in a README. You ended with a real product. That's the whole job."*
++
++— *End of journey. Thank you for following along.* 🛒✨
+diff --git a/Day-6/analyzer.py b/Day-6/analyzer.py
+new file mode 100644
+index 0000000..309a430
+--- /dev/null
++++ b/Day-6/analyzer.py
+@@ -0,0 +1,71 @@
++# analyzer.py — Day 6
++# Wraps OpenAI with versioned prompts + automatic logging.
++
++import json
++from collections import Counter
++from pathlib import Path
++
++from dotenv import load_dotenv
++from openai import OpenAI
++
++from logger import log_result
++
++# ----- 1) Load the versioned prompt from a text file -----
++PROMPT_FILE    = Path(__file__).parent / "prompts" / "sentiment_prompt.txt"
++PROMPT_TEXT    = PROMPT_FILE.read_text(encoding="utf-8")
++PROMPT_VERSION = PROMPT_FILE.stem        # e.g. 'sentiment_prompt'
++
++# ----- 2) OpenAI client -----
++load_dotenv()
++client = OpenAI()
++MODEL = "gpt-4o-mini"
++
++
++def deep_analyze(review: str) -> dict:
++    """Analyse one review and log the result."""
++    resp = client.chat.completions.create(
++        model=MODEL,
++        temperature=0,
++        messages=[
++            {"role": "system", "content": PROMPT_TEXT},
++            {"role": "user",   "content": review},
++        ],
++    )
++    result = json.loads(resp.choices[0].message.content)
++
++    # 🪵 Audit trail — fire and forget.
++    log_result(
++        prompt_version=PROMPT_VERSION,
++        model=MODEL,
++        review=review,
++        result=result,
++    )
++    return result
++
++
++# ----- 3) Aggregation helpers (same as Day 5) -----
++_SENT_TO_VALUE = {"Positive": 1.0, "Neutral": 0.5, "Negative": 0.0}
++
++
++def overall_score(results):
++    if not results:
++        return 0.0
++    vals = [_SENT_TO_VALUE.get(r["sentiment"], 0.5) for r in results]
++    return round((sum(vals) / len(vals)) * 10, 1)
++
++
++def top_keywords(results, polarity, n=10):
++    bag = []
++    for r in results:
++        bag.extend(r.get("keywords", {}).get(polarity, []))
++    bag = [w.strip().lower() for w in bag if w and w.strip()]
++    return Counter(bag).most_common(n)
++
++
++def aspect_summary(results):
++    out = {}
++    for r in results:
++        for a in r.get("aspects", []):
++            out.setdefault(a["aspect"], {"Positive": 0, "Negative": 0, "Neutral": 0})
++            out[a["aspect"]][a["sentiment"]] += 1
++    return out
+diff --git a/Day-6/app.py b/Day-6/app.py
+new file mode 100644
+index 0000000..0c3e773
+--- /dev/null
++++ b/Day-6/app.py
+@@ -0,0 +1,72 @@
++# app.py — Day 6 (final)
++# Full Gradio dashboard backed by versioned prompts + CSV logging.
++
++import gradio as gr
++import pandas as pd
++
++from analyzer import (
++    deep_analyze,
++    overall_score,
++    top_keywords,
++    aspect_summary,
++    PROMPT_VERSION,
++    MODEL,
++)
++
++
++def run(text_block: str):
++    reviews = [l.strip() for l in text_block.splitlines() if l.strip()]
++    if not reviews:
++        empty = pd.DataFrame()
++        return empty, empty, empty, empty, "—"
++
++    results = [deep_analyze(r) for r in reviews]
++
++    per_review = pd.DataFrame([{
++        "Review":      r[:80] + ("…" if len(r) > 80 else ""),
++        "Language":    res.get("language", ""),
++        "Sentiment":   res.get("sentiment", ""),
++        "Reason":      res.get("reason", ""),
++        "Translation": res.get("translation") or "",
++    } for r, res in zip(reviews, results)])
++
++    aspect_df = pd.DataFrame([{"Aspect": a, **counts}
++                              for a, counts in aspect_summary(results).items()])
++
++    pos_df = pd.DataFrame(top_keywords(results, "positive"),
++                          columns=["Positive keyword", "Mentions"])
++    neg_df = pd.DataFrame(top_keywords(results, "negative"),
++                          columns=["Negative keyword", "Mentions"])
++
++    score = f"⭐ Overall product score: **{overall_score(results)} / 10**"
++    return per_review, aspect_df, pos_df, neg_df, score
++
++
++with gr.Blocks(title="🛒 Product Review Sentiment Analyzer") as demo:
++    gr.Markdown(
++        "## 🛒 Product Review Sentiment Analyzer\n"
++        "Paste one review per line. The app returns per-review sentiment, "
++        "aspect summaries, top keywords and an overall product score.\n\n"
++        f"*Powered by `{MODEL}` · prompt version `{PROMPT_VERSION}` · "
++        "every analysis is logged to `logs/results.csv`.*"
++    )
++
++    inp = gr.Textbox(lines=10, label="Reviews (one per line)")
++    btn = gr.Button("Analyse", variant="primary")
++
++    score_box      = gr.Markdown()
++    per_review_tbl = gr.Dataframe(label="Per-review breakdown", wrap=True)
++    aspect_tbl     = gr.Dataframe(label="Aspect summary")
++    with gr.Row():
++        pos_tbl = gr.Dataframe(label="Top positive keywords")
++        neg_tbl = gr.Dataframe(label="Top negative keywords")
++
++    btn.click(
++        fn=run,
++        inputs=inp,
++        outputs=[per_review_tbl, aspect_tbl, pos_tbl, neg_tbl, score_box],
++    )
++
++
++if __name__ == "__main__":
++    demo.launch()
+diff --git a/Day-6/logger.py b/Day-6/logger.py
+new file mode 100644
+index 0000000..443fc87
+--- /dev/null
++++ b/Day-6/logger.py
+@@ -0,0 +1,31 @@
++# logger.py — Day 6
++# Append a row to logs/results.csv for every analysis.
++
++import csv
++from datetime import datetime, timezone
++from pathlib import Path
++
++LOG_FILE = Path(__file__).parent / "logs" / "results.csv"
++LOG_FILE.parent.mkdir(exist_ok=True)        # ensure the folder exists
++
++# Header written only the first time the file is created.
++_HEADER = ["timestamp", "prompt_version", "model",
++           "review", "sentiment", "reason"]
++
++
++def log_result(prompt_version: str, model: str,
++               review: str, result: dict) -> None:
++    """Append one analysis to results.csv (creates the file if needed)."""
++    new_file = not LOG_FILE.exists()
++    with LOG_FILE.open("a", newline="", encoding="utf-8") as f:
++        writer = csv.writer(f)
++        if new_file:
++            writer.writerow(_HEADER)
++        writer.writerow([
++            datetime.now(timezone.utc).isoformat(timespec="seconds"),
++            prompt_version,
++            model,
++            review,
++            result.get("sentiment", ""),
++            result.get("reason", ""),
++        ])
+diff --git a/Day-6/logs/.gitkeep b/Day-6/logs/.gitkeep
+new file mode 100644
+index 0000000..9738600
+--- /dev/null
++++ b/Day-6/logs/.gitkeep
+@@ -0,0 +1 @@
++# Keep this folder in git. results.csv will be created on first run and is gitignored.
+diff --git a/Day-6/prompts/sentiment_prompt.txt b/Day-6/prompts/sentiment_prompt.txt
+new file mode 100644
+index 0000000..f1f422d
+--- /dev/null
++++ b/Day-6/prompts/sentiment_prompt.txt
+@@ -0,0 +1,16 @@
++You are a product-review analyst.
++For the review, return ONLY valid JSON with this exact shape:
++
++{
++  "sentiment": "Positive" | "Negative" | "Neutral",
++  "reason":    "one short sentence",
++  "language":  "ISO 639-1 code, e.g. en, es, hi",
++  "translation": "English translation if language != en, else null",
++  "aspects":   [{"aspect": "Battery", "sentiment": "Negative"}, ...],
++  "keywords":  {"positive": ["..."], "negative": ["..."]}
++}
++
++Rules:
++- Aspects are concrete product features ('Battery', 'Delivery', 'Price', 'Camera').
++- Keywords are 1-2 word phrases taken directly from the review.
++- No markdown, no extra keys, no text outside the JSON.
+diff --git a/Day-6/requirements.txt b/Day-6/requirements.txt
+new file mode 100644
+index 0000000..32937f2
+--- /dev/null
++++ b/Day-6/requirements.txt
+@@ -0,0 +1,4 @@
++openai>=1.30.0
++python-dotenv>=1.0.0
++gradio>=4.30.0
++pandas>=2.0.0
+diff --git a/README.md b/README.md
+index dc70941..2dfcc31 100644
+--- a/README.md
++++ b/README.md
+@@ -1 +1,107 @@
+-# Product-Review-Sentiment-Analyzer
+\ No newline at end of file
++# 🛒 Product Review Sentiment Analyzer — A 6-Day Learning Journey
++
++Welcome! This isn't just a project repository — it's a **6-day guided learning journey**.
++
++By the end of Day 6, you will have built a real-world AI tool that takes product reviews and tells you:
++- Whether each review is **Positive / Negative / Neutral**
++- A **confidence score** from a Hugging Face model
++- A **reasoning explanation** from an OpenAI LLM
++- **Aspects** being praised or criticized (e.g. *"Delivery: Negative"*)
++- An **overall product score** + most common positive/negative keywords
++- Everything wrapped in a clean **Gradio web interface**
++
++…and all of it logged for tracking, with versioned prompts — the LLMOps way.
++
++---
++
++## 🎯 The Real-World Problem
++
++Businesses receive **thousands of reviews** every day on Amazon, Flipkart, Google Maps, app stores, and more. No human can read them all. They need an AI tool that can:
++
++1. Quickly classify the **mood** of each review
++2. Explain **why** a review is negative or positive
++3. Surface **what customers actually care about** (price, delivery, quality, support…)
++4. Give a **single number** that summarises overall customer happiness
++
++This project solves exactly that.
++
++---
++
++## 🧰 What You'll Use
++
++| Tool | Role |
++|------|------|
++| **Python** | The glue language |
++| **Hugging Face Transformers** | Fast, free, offline-capable sentiment model |
++| **OpenAI API** | Deep reasoning + aspect analysis |
++| **Gradio** | Instant web UI without any HTML/CSS |
++| **LLMOps practices** | Prompt versioning + response logging |
++
++---
++
++## 🗓️ The 6-Day Plan
++
++Each day builds **directly on the previous day**. Don't skip ahead — the magic is in the progression.
++
++| Day | Theme | What you'll build |
++|-----|-------|-------------------|
++| [Day 1](./Day-1) | **Foundations & First Sentiment Script** | Setup Python env, install Hugging Face, run your first sentiment prediction in 10 lines |
++| [Day 2](./Day-2) | **Adding OpenAI for Deep Reasoning** | Plug in OpenAI API, learn prompt engineering, get sentiment + reasoning |
++| [Day 3](./Day-3) | **Building the Gradio Interface** | Turn your Day 2 script into a real web app anyone can use |
++| [Day 4](./Day-4) | **Batch Reviews & Side-by-Side Comparison** | Analyse many reviews at once, compare HF vs OpenAI in a table with confidence bars |
++| [Day 5](./Day-5) | **Aspect Analysis + Overall Score + Keywords** | Extract *what* customers love/hate, compute a product score, language detection |
++| [Day 6](./Day-6) | **LLMOps Polish + Final App** | Prompt versioning, CSV logging, deployment notes — and your finished portfolio project |
++
++---
++
++## ✅ Before You Start (Prerequisites)
++
++- Basic Python (variables, functions, lists, dicts)
++- Python 3.9 or newer installed
++- An **OpenAI API key** (you'll only need it from Day 2 onwards)
++- Curiosity 🙂
++
++You do **not** need to know:
++- Machine learning theory
++- Web development (Gradio handles it)
++- Deployment (we cover it on Day 6)
++
++---
++
++## 📐 How Each Day Is Structured
++
++Every day's README follows the same pattern so your brain knows what to expect:
++
++1. **🎯 What you'll learn today** — bullet points
++2. **🤔 The problem** — the real pain point we're solving
++3. **💡 The solution** — the high-level idea, in plain English
++4. **🧑‍💻 The code** — short, readable, and **explained line-by-line**
++5. **▶️ Try it yourself** — exact commands to run
++6. **🔭 Tomorrow's preview** — what we'll add next
++
++The code is intentionally **short and simple**. We always pick the *clearest* line over the *cleverest* line.
++
++---
++
++## 📁 Final Project Structure (by end of Day 6)
++
++```
++Day-6/
++├── app.py                    # Gradio UI (the finished app)
++├── openai_analyzer.py        # OpenAI API logic
++├── hf_analyzer.py            # Hugging Face model logic
++├── aspects.py                # Aspect-based analysis
++├── prompts/
++│   └── sentiment_prompt.txt  # Versioned system prompt
++├── logs/
++│   └── results.csv           # Response logging (auto-generated)
++└── requirements.txt
++```
++
++---
++
++## 🚀 Ready?
++
++Head over to **[Day 1 →](./Day-1)** and let's begin.
++
++> *"The best way to learn AI engineering isn't to read about it. It's to build something tiny, every day, for six days in a row."*

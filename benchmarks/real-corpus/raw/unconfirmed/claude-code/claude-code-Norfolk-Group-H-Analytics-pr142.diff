@@ -1,0 +1,798 @@
+diff --git a/attached_assets/image_1778646055029.png b/attached_assets/image_1778646055029.png
+new file mode 100644
+index 000000000..b4cf42991
+Binary files /dev/null and b/attached_assets/image_1778646055029.png differ
+diff --git a/attached_assets/image_1778646207547.png b/attached_assets/image_1778646207547.png
+new file mode 100644
+index 000000000..32e890bf4
+Binary files /dev/null and b/attached_assets/image_1778646207547.png differ
+diff --git a/attached_assets/image_1778646456181.png b/attached_assets/image_1778646456181.png
+new file mode 100644
+index 000000000..fb15ce559
+Binary files /dev/null and b/attached_assets/image_1778646456181.png differ
+diff --git a/docs/concepts/bracket-mix.md b/docs/concepts/bracket-mix.md
+new file mode 100644
+index 000000000..e5317af02
+--- /dev/null
++++ b/docs/concepts/bracket-mix.md
+@@ -0,0 +1,375 @@
++---
++date: 2026-05-13
++status: canonical
++supersedes: docs/brainstorms/icp-simplification/requirements.md for definitional purposes only — the brainstorm remains the planning record
++---
++
++# ICP Bracket Mix (Canonical Concept)
++
++## 1) One-sentence definition (the elevator)
++
++ICP Bracket Mix is the Management Company–level weighted distribution of shared customer-property archetypes that serves two narrow purposes: (a) scale service-line fee consumption (hotel vs STR behavior) in company-level financial calculations, and (b) generate the **default values for default variables** that seed new Management Companies and new Properties from a DB-stored template — the same DB defaults that act as the dev-environment seed.
++
++---
++
++## 2) User direction (verbatim source, 2026-05-11)
++
++Source: `docs/brainstorms/icp-simplification/requirements.md` (§"User direction (2026-05-11) — verbatim source of truth").
++
++> "What I have to say about ICP is that we need to keep it simple and base the ICP to be used by the Management Company financial calculations in the market research and tables that show the other hospitality brands that are on the market. By understanding these companies that I provided 6 names and you found many more, you can provide the user with a fairly good estimate of what their ICP companies look like. You can even have 3 to 5 ICP brackets so that you can mix them when calculating what the revenue and expenses will be as far as influenced by the ICP for the management company. As far as services sourced by ICP companies the app should assume that hotels will consume all the services and the STR will only pay for marketing, branding and performance bonus type of fees. That is enough. All the complexity of defining an ICP by the admin or the app AI should be simplified and the agents working on ICPs should focus on looking at competitors and similar companies that are in the market and what kind of customer properties they have. If they own the properties or not is not relevant because you want to know the revenue side most of all. As far as vendor costs for pass-through services the app should do a national research and establish these costs as percentage of revenue and similarly for the markup factors to be used by the management companies to charge these services to clients properties."
++
++Interpretation rule:
++- This quote is the governing intent.
++- If implementation details drift, this quote is the correction anchor.
++
++### 2a) User direction extension (verbatim source, 2026-05-13)
++
++> "Bracket mix should be used to guide user and generate default values for default variables and in the case of dev, these values are also seed values. But they start as stored default values in the database that we use as seed in the development environment. If a new management company is added or a new property is added, they will be seeded with the default values from the database."
++
++Interpretation rule (additive — does not replace 2026-05-11):
++- Bracket catalog rows in the DB carry **default-value templates** for the default variables a ManCo or Property needs at creation time (e.g. cost-per-key, ADR band, occupancy band, exit cap, ramp months, F&B/event mix).
++- These DB-stored defaults are the **single source of truth** for both:
++  - the dev-environment seed, and
++  - the initial values copied into a newly-created Management Company or Property in **any** environment (dev, staging, prod).
++- "Default values" here means values in the **DEFAULT VARIABLES** tier of `hplus-variable-taxonomy` — they become user-editable Assumption Variables the moment the entity is created, and the engine reads the entity's stored value, not the bracket, at calculation time.
++
++---
++
++## 3) What problem this replaces (the legacy ~70-field per-company ICP)
++
++The previous ICP model overfit the use case.
++
++It required a per-company, high-granularity freeform profile (`lib/shared/src/icp-types.ts`) and a heavy pipeline to maintain assumptions that are not load-bearing for the Management Company revenue/cost use case.
++
++What was wrong with the old shape:
++- It asked every company to author bespoke detail.
++- It coupled ICP to property descriptors at excessive granularity.
++- It made the system harder to maintain and harder to migrate.
++
++What Bracket Mix replaces it with:
++- Shared reusable brackets (3–5, currently 4 canonical rows).
++- One per-company mix of weights across those shared brackets.
++- Service-consumption behavior embedded in bracket type (hotel/str/mixed), not user toggles.
++
++Legacy status contract (R17–R20):
++- Legacy schema is superseded for new calculation input.
++- Existing records are preserved read-only for historical reference.
++- No automatic backfill from old 70-field ICP into bracket mix.
++
++Primary source:
++- `docs/brainstorms/icp-simplification/requirements.md` (R1–R24).
++
++---
++
++## 4) Canonical bracket catalog (current 4)
++
++Code source of truth:
++- `artifacts/api-server/src/ai/icp/bracket-catalog.ts`.
++
++Service-consumption doctrine:
++- `hotel` => consumes all Management Company service lines.
++- `str` => consumes only marketing, branding, performance-bonus lines.
++- `mixed` => blended hotel/STR consumption behavior.
++
++Current canonical brackets:
++
++1. `boutique-upscale-hotel`
++   - Name: Boutique Upscale Hotel
++   - serviceConsumption: `hotel`
++   - Canonical rule: full service-line consumption.
++
++2. `soft-brand-boutique`
++   - Name: Soft-Brand Boutique
++   - serviceConsumption: `hotel`
++   - Canonical rule: full service-line consumption.
++
++3. `performance-managed-str`
++   - Name: Performance-Managed STR Cluster
++   - serviceConsumption: `str`
++   - Canonical rule: only STR-eligible categories (`ICP_STR_ELIGIBLE_SERVICE_CATEGORIES`).
++
++4. `agritourism-experiential`
++   - Name: Agritourism / Experiential Lodge
++   - serviceConsumption: `mixed`
++   - Canonical rule: blended hotel + STR behavior. At engine-input time the entry is split 50/50 into a synthetic full + str_only pair via `lib/engine/src/helpers/normalize-bracket-mix.ts`.
++
++Design note:
++- These are shared catalog entries, not company-specific copies. Bracket count must remain in `[3, 5]` (R1) without code changes per bracket.
++
++---
++
++## 5) Mix shape (BracketMixData)
++
++Canonical persisted shape (`global_assumptions.bracket_mix`):
++
++```ts
++type BracketMixData = {
++  entries: BracketEntry[];
++  assignedAt?: string; // ISO timestamp
++  evidence?: string;
++};
++
++type BracketEntry = {
++  id: string;
++  name: string;
++  archetypeLabel: string;
++  serviceConsumption: "hotel" | "str" | "mixed";
++  weight: number;
++  rationale?: string;
++};
++```
++
++Engine-facing compatibility shape:
++
++```ts
++type BracketMixEntry = {
++  bracketSlug: string;
++  weight: number;
++};
++```
++
++Constraint contract:
++- Weight sum must be `1.0 ± ICP_BRACKET_MIX_WEIGHT_TOLERANCE`.
++- Entry count must be `<= ICP_BRACKET_MIX_MAX_ENTRIES`.
++- Each weight must be `>= 0`.
++
++Relevant code:
++- `artifacts/api-server/src/routes/icp-brackets.ts` (validation and persistence boundary).
++- `lib/engine/src/helpers/normalize-bracket-mix.ts` (normalization and mixed splitting).
++- `lib/engine/src/company/icp-bracket-types.ts`.
++
++---
++
++## 6) Storage location and ownership rules
++
++Single source of truth:
++- `global_assumptions.bracket_mix` (jsonb), per-user row.
++
++Critical ownership rule:
++- Never patch the shared platform-default row (`userId IS NULL`) when writing a user mix.
++- Writes must target the caller's own `global_assumptions` row.
++- If the user row does not exist, create/upsert a user-scoped row.
++
++Evidence:
++- `artifacts/api-server/src/routes/icp-brackets.ts` enforces own-row writes in `handleSaveMix`.
++- `artifacts/api-server/src/routes/global-assumptions.ts` exposes company mix read/assign/patch endpoints.
++
++Catalog storage:
++- Shared table `icp_brackets` (`lib/db/src/schema/icp-brackets.ts`), not user-scoped.
++
++### 6a) DB-stored defaults flow (per §2a, 2026-05-13)
++
++Bracket catalog rows are not just labels — each row carries a **default-value template** for the variables a Mgmt Co or Property needs at creation time. The flow is one-directional:
++
++```
++icp_brackets row (DB)  ──►  default-values template  ──►  copied into new ManCo / Property at creation
++                                                     ──►  dev-environment seed (same values)
++```
++
++Rules:
++- The template lives in the DB row (not in code constants), so admin edits to the bracket catalog change future seeds without a deploy.
++- On `POST /api/properties` (new property) and on Mgmt Co creation, the server resolves the active company bracket mix, looks up each component bracket's default-value template, weight-blends numeric defaults across the mix entries, and writes the resulting values into the new entity's columns.
++- Once written, the new entity's values are owned by the entity. Subsequent changes to the bracket catalog **do not** retroactively update existing entities (per `hplus-assumption-lifecycle`).
++- The dev seed script reads the same bracket catalog + default-value templates and applies them to the demo Mgmt Co and demo properties, so dev parity is automatic.
++
++Why this matters operationally:
++- An unrealistic seed (e.g. $80K/key boutique purchase price) is almost always evidence that the seeded entity bypassed the bracket-defaults pathway. Fixing the bracket-row template fixes both dev seed and all future entity creations in one place.
++
++---
++
++## 7) Authoring sources (exactly 3)
++
++### A) Deterministic assignment minion (current)
++- File: `artifacts/api-server/src/ai/icp/bracket-assignment-minion.ts`.
++- Role: deterministic portfolio classifier and mix proposer.
++- No LLM usage. Classifies each Mgmt Co property as hotel/str/mixed via `businessModel` + `propertyType` + name keywords. Splits hotel bucket into boutique-upscale vs soft-brand by `starRating` / `qualityTier` / asset definition level.
++- Empty-portfolio fallback: `EMPTY_PORTFOLIO_DEFAULT_MIX` (45/25/20/10 across the 4 brackets).
++- Trigger: `POST /api/company/bracket-mix/assign` (UI: "Assign Brackets" button).
++
++### B) Tiago peer-derived Specialist (Phase C target)
++- Planned file: `artifacts/api-server/src/ai/ambient/specialists/tiago.ts` (per Phase C handoff spec).
++- Role: LLM-backed bracket characterization from peer market comps in the new `icp_peer_companies` table.
++- Scope: revenue-side characterization from comps; ownership of comps is irrelevant (R5/R6).
++- Output validated by Carlo-style Zod before persistence. Persisted in `bracket_mix_runs`; dual-run diffs in `bracket_mix_dual_run_diffs`.
++
++### C) User edit
++- UI entrypoint: `artifacts/hospitality-business-portal/src/pages/CompanyBracketMix.tsx`.
++- Server paths:
++  - `/api/icp/brackets/mix` (PUT/PATCH full-replace semantics).
++  - `/api/company/bracket-mix` (PATCH merge/normalize semantics).
++
++---
++
++## 8) Single load-bearing engine integration
++
++Only load-bearing integration point:
++- `lib/engine/src/company/company-engine.ts`
++- Function: `generateCompanyProForma()`.
++
++What it does:
++1. Detects STR presence using `bracketMixHasStrComponent()`.
++2. Computes per-category scalars in [0,1] via `computeServiceConsumptionScalars(bracketMix, brackets, categoryNames)`.
++   - `full` profile → all categories at 1.0 (hotels)
++   - `str_only` profile → only categories in `ICP_STR_ELIGIBLE_SERVICE_CATEGORIES` at 1.0; rest 0
++   - Final scalar per category = Σ(weight_i × applies(bracket_i, category)).
++3. Applies scalars to `serviceFeeBreakdown.byCategory` BEFORE `computeCostOfServices(...)` so vendor cost-of-services reflects only revenue actually billed in each line.
++4. Re-derives base fee revenue from scaled category totals.
++5. Preserves `byCategoryByPropertyId` as unscaled gross drill-down for audit.
++6. Pure-hotel mixes skip scaling entirely (scalars are all 1.0 — short-circuit).
++
++What it does NOT do:
++- Does not modify property-engine math (`lib/engine/src/property/property-engine.ts`).
++- Does not modify ADR, RevPAR, occupancy, or property-level revenue formation.
++- Does not alter partner comp, staffing-tier logic, or fixed-cost lines.
++- Does not introduce per-property bracket mix.
++
++Plumbing:
++- Route validators: `artifacts/api-server/src/routes/finance.ts` (portfolio + company compute endpoints).
++- Enrichment: `artifacts/api-server/src/finance/recompute.ts` (`enrichWithBrackets`, `loadBracketProfilesForMix`).
++- Persisted-shape normalization: `lib/engine/src/helpers/normalize-bracket-mix.ts`.
++
++Engine authoring boundary (hard rule):
++- Per `CLAUDE.md` §156, edits in `lib/engine/src/company/**` require shell CC authoring discipline.
++- Keep new bracket-mix write/read logic OUTSIDE the engine. Phase C plan locates the shared writer at `artifacts/api-server/src/services/bracketMix/effective.ts`.
++
++---
++
++## 9) Narrow UI surface (allowed front-of-app usage)
++
++Bracket mix is intentionally narrow in UI.
++
++Allowed front-of-app surfaces:
++1. `artifacts/hospitality-business-portal/src/pages/CompanyBracketMix.tsx`
++   - Route: `/company/icp-definition`.
++   - Full edit + impact preview (revenue/GP delta vs saved mix; cash-shortfall warning).
++   - Tabs: Bracket Mix · Market Evidence · Data Sources · Legacy ICP.
++
++2. `artifacts/hospitality-business-portal/src/components/company/BracketMixSummaryCard.tsx`
++   - Read-only chip on Company overview, links to (1).
++
++3. `artifacts/hospitality-business-portal/src/components/company-assumptions/IcpMixSummary.tsx`
++   - Read-only chip row on Company Assumptions page.
++
++Admin/K&R catalog surface:
++- `artifacts/hospitality-business-portal/src/components/admin/intelligence/knowledge-registry/AssetPanel.tsx`.
++- Catalog and national tables belong in Admin Information Architecture, not front-of-app editing (R21, `front-of-app-admin-isolation`).
++
++---
++
++## 10) Rebecca parity (required tools)
++
++Per parity contract (`CLAUDE.md` §7), user-editable actions must have Rebecca parity.
++
++Canonical bracket-mix parity tools:
++- `get_bracket_mix` — read mix + catalog.
++- `update_bracket_mix` — write user mix; server normalizes to 1.0.
++
++Deterministic assignment trigger endpoint:
++- `POST /api/company/bracket-mix/assign`
++  - Runs bracket-assignment minion.
++  - Rebecca reads resulting state through `get_bracket_mix`.
++
++References:
++- `docs/discipline/agent-native-parity-map.md` (lines 144–148).
++- Tool defs/dispatch:
++  - `artifacts/api-server/src/chat/rebecca-tool-defs-admin.ts`
++  - `artifacts/api-server/src/chat/rebecca-tool-impls-admin.ts`
++
++---
++
++## 11) Phase C peer-derived future state (planned)
++
++Phase C target architecture (per `docs/handoffs/phase-c-icp-bracket-mix-peer-derived.md`):
++
++- Tiago Specialist:
++  - LLM-backed peer-comp bracket characterization.
++  - Grounded outputs validated before persistence.
++
++- Hugo minion:
++  - Deterministic aggregator over per-peer Specialist outputs.
++  - Produces a single global-default mix candidate.
++
++- Override sentinel:
++  - Nullable FK on `global_assumptions` to `bracket_mix_runs.id`.
++  - Prevents silent overwrite of a user override by a recompute.
++
++- Shared writer:
++  - `writeEffectiveBracketMix` as single mutation gateway.
++  - All bracket-mix writers route through it.
++
++- Provisional mode:
++  - `provisional: true` when peer evidence is cold-start/incomplete.
++  - Surfaced with `analyst-intelligence-display` contracts: provisional badge + Fabio range-quality dot.
++
++- Feature flag:
++  - `BRACKET_MIX_PHASE_B` controls staged rollout.
++
++- Freshness governance:
++  - Costantino `peer_research_stale` finding kind, 90-day default cadence.
++
++References:
++- `docs/handoffs/phase-c-icp-bracket-mix-peer-derived.md`.
++- `docs/plans/2026-05-13-001-feat-icp-bracket-mix-peer-derived-phase-b-plan.md` (local-branch reference per handoff context).
++
++---
++
++## 12) PRECISION BOUNDARIES — Do not use Bracket Mix here
++
++This section is intentionally strict. Bracket Mix is a narrow Mgmt Co–level control, not a universal modeling primitive. Its power comes from precise placement, not broad reuse.
++
++Out of scope / prohibited uses:
++
++- ❌ Property-level engine math (`lib/engine/src/property/property-engine.ts`).
++- ❌ ADR, RevPAR, occupancy, or property-level revenue formation.
++- ❌ Vendor pass-through cost percentages as bracket attributes (R11 — those are national tables in K&R).
++- ❌ Mgmt Co markup factor percentages as bracket attributes (R12 — same).
++- ❌ Per-bracket vendor cost tables.
++- ❌ Per-company vendor pass-through or markup authoring.
++- ❌ Inferring property descriptors (rooms, suites, baths, F&B seats, event sqft, acreage) from bracket mix.
++- ❌ Introducing `property.bracketMix` or any per-property bracket assignment field.
++- ❌ Backfilling from legacy `lib/shared/src/icp-types.ts` 70-field schema into bracket mix.
++- ❌ Front-of-app editor for bracket catalog rows (R21 — admin-only, read-only in K&R).
++- ❌ Front-of-app display of raw national pass-through / markup tables.
++- ❌ User-facing toggles for hotel-vs-STR consumption behavior (R10 — it is a property of the bracket, never a user choice).
++
++If you find yourself reaching for one of the above, you are using the wrong primitive. Re-read §2 before adding code.
++
++---
++
++## 13) Cross-references (skills, ADRs, brainstorm, handoff)
++
++Primary concept and requirements:
++- `docs/brainstorms/icp-simplification/requirements.md`
++
++Execution / handoff docs:
++- `docs/handoffs/phase-c-icp-bracket-mix-peer-derived.md`
++- `docs/plans/2026-05-13-001-feat-icp-bracket-mix-peer-derived-phase-b-plan.md` (local-branch reference per handoff context)
++- `docs/discipline/agent-native-parity-map.md`
++
++Core implementation references:
++- `artifacts/api-server/src/ai/icp/bracket-catalog.ts`
++- `artifacts/api-server/src/ai/icp/bracket-assignment-minion.ts`
++- `artifacts/api-server/src/routes/icp-brackets.ts`
++- `artifacts/api-server/src/routes/global-assumptions.ts`
++- `artifacts/api-server/src/routes/finance.ts`
++- `artifacts/api-server/src/finance/recompute.ts`
++- `lib/engine/src/company/company-engine.ts`
++- `lib/engine/src/company/bracket-service-consumption.ts`
++- `lib/engine/src/company/icp-bracket-types.ts`
++- `lib/engine/src/helpers/normalize-bracket-mix.ts`
++- `lib/db/src/schema/icp-brackets.ts`
++
++Governing contracts:
++- `CLAUDE.md` §1 — no magic numbers / named constants discipline.
++- `CLAUDE.md` §7 — agent-native parity.
++- `CLAUDE.md` §10 — agent taxonomy (Specialist / minion / orchestrator names).
++- `CLAUDE.md` §156 — financial-engine authoring restriction.
++
++Skills:
++- `hplus-admin-nav-ia` — where the bracket catalog and national tables live in admin IA.
++- `front-of-app-admin-isolation` — why the catalog editor never appears on front-of-app.
++- `analyst-research-buttons` — re-run button contract for the bracket-mix page.
++- `analyst-intelligence-display` — range-badge + provisional badge + Fabio dot contract.
++- `slide-factory` — reserved-name registry (Tiago, Hugo).
++- `external-data-source-integration` — pattern for the national pass-through and markup tables.
++- `costantino-data-custodian` — `peer_research_stale` finding kind.
+diff --git a/docs/plans/2026-05-13-001-feat-seed-calibration-bracket-defaults-and-irr-views-plan.md b/docs/plans/2026-05-13-001-feat-seed-calibration-bracket-defaults-and-irr-views-plan.md
+new file mode 100644
+index 000000000..3cf4a24e4
+--- /dev/null
++++ b/docs/plans/2026-05-13-001-feat-seed-calibration-bracket-defaults-and-irr-views-plan.md
+@@ -0,0 +1,260 @@
++---
++title: "feat: Seed calibration and bracket-default extension"
++type: feat
++status: active
++date: 2026-05-13
++---
++
++# feat: Seed calibration and bracket-default extension
++
++## Summary
++
++Bring the demo portfolio's combined IRR from the current ~50%+ band into a defensible 25–30% boutique value-add target, while fixing the structural causes that produced the unrealistic seed in the first place. Three coordinated work streams: (1) **Tactical seed corrections** in the live DB — exit caps and Duplex occupancy; (2) **Engine + UI changes** for a configurable refi-LTV-to-original cap that prevents inflated mid-projection cash-out spikes; (3) **Structural bracket-default extension** that wires `exit_cap_rate` and `refi_max_ltv_to_original` into the bracket-default template pathway introduced in `docs/concepts/bracket-mix.md` § 6a, so future seeds and new entities inherit market-anchored values automatically.
++
++The tactical fix unblocks the demo; the structural fix prevents the same drift from recurring. IRR continues to be computed as today (single combined-portfolio figure) — no view changes in scope.
++
++**Canonical flow (locked in 2026-05-13, layered model = Option C):** No number used by the engine or shown in the UI may originate from a TypeScript literal, a `DEFAULT_*` constant, or a hardcoded seed assignment. Defaults are resolved through three DB-backed layers, each visible in admin:
++
++```
++LAYER 1 — Universal default
++  model_defaults table, row keyed e.g. property.template.exitCapRate, scope = NULL/NULL/NULL/NULL
++  Surfaces in:  Admin → Steady State → Property (PropertyUnderwritingTab)
++                Admin → Steady State → Management Co. (CompanyTab)
++                Admin → Steady State → Constants (ModelConstantsTab)  ← + model_constant_overrides for TS-factory departures
++                Admin → Steady State → Analyst Tables / Reference Ranges  ← market-data tables some defaults derive from
++                          ↓
++LAYER 2 — Bracket overlay (resolved at entity creation)
++  icp_brackets row carries default-value template (per docs/concepts/bracket-mix.md §6a).
++  POST /api/properties resolves the company's bracket mix, weight-blends each templated
++  field across mix entries, and overlays the result on top of Layer 1.
++                          ↓
++LAYER 3 — Per-entity value (DEFAULT → ASSUMPTION → CONFIRMED)
++  The blended value is written onto the new property row in DEFAULT state per
++  hplus-assumption-lifecycle. User edit → ASSUMPTION → confirm → CONFIRMED.
++  Per-entity strategic overrides (Duplex exit_cap_rate = 0.075) live here as CONFIRMED
++  deviations from the bracket-blended value, with provenance metadata.
++                          ↓
++Engine reads Layer 3 (the entity's own column), never Layer 1 or 2 directly.
++```
++
++**Read-time precedence:** Layer 3 (entity row) > Layer 2 (bracket overlay at create) > Layer 1 (universal model_defaults). The engine only ever sees Layer 3.
++
++**Write-time precedence:** Bracket-overlay (Layer 2) writes happen ONLY at entity creation, never retroactively (per `hplus-assumption-lifecycle`). Admin edits to Layer 1 or to bracket templates affect future entity creations only.
++
++**Dev seed parity:** The dev seed script invokes the same `POST /api/properties` handler logic, so dev-environment values flow through the exact same three-layer pipeline. No literals.
++
++This means the bracket-default work (U5 → U6 → U7 in critical-path order) MUST land **before** the demo properties get their corrected values — otherwise we'd be doing exactly the hardcoded-literal anti-pattern this plan exists to fix.
++
++---
++
++## Problem Frame
++
++Investigation on 2026-05-13 confirmed:
++- **Engine math is correct.** `lib/analytics/src/returns/irr.ts` (Newton-Raphson with relative-tolerance fallback) and `lib/engine/src/aggregation/yearlyAggregator.ts` correctly construct cash-flow vectors and compute IRR. No engine fix is in scope.
++- **Seed assumptions are systematically off.** Three compounding causes: (a) every property's exit cap is tight to market by 100–600 bp and ignores the standard 75 bp 10-year hold-period premium (HVS / PwC / CBRE 2025 convention); (b) the Medellin Duplex's `max_occupancy` of 0.65 contradicts its $1,500 ADR ultra-luxury positioning, which mathematically requires 20–35% steady-state occupancy; (c) the refinance pass uses `NOI / exit_cap × refi_LTV` with no constraint relative to the original loan, producing $7–11M cash-out spikes in years 5–7.
++- **The Duplex is structurally invisible to the dashboard.** Three blind spots stack: room-weighted averages give it 0.87% influence (1 of 115 rooms), `Full Equity` properties are silently skipped by ~5 financed-only branches in the calculation checker, and `vrbo_owner_managed` business-model routing diverges from hotel paths. Out of scope here (separate follow-up); noted because it explains why the bad Duplex assumptions went unnoticed.
++- **No structural pathway exists for market-anchored defaults.** Per `docs/concepts/bracket-mix.md` § 6a (added 2026-05-13), bracket catalog rows should carry default-value templates that seed both the dev environment AND new entities at creation. Today, exit cap and refi LTV are not part of that template — they are set ad hoc at property-creation time, which is how the seed drifted off market in the first place.
++
++User direction (2026-05-13):
++- Target portfolio IRR: **25–30%** (typical boutique value-add).
++- Show LP / asset / sponsor IRR side-by-side.
++- Exit cap policy: **market going-in + 75 bp** for 10-year holds.
++- Refinance: conservative, only refi if new loan ≤ user-configurable LTV × original loan; **default 70%**.
++- Hold period: 10 years for all (institutional convention).
++- Duplex exit cap may stay lower than market 11% to reflect strategic package-sale-to-Cartagena-guests thesis; document the rationale rather than fight it.
++
++---
++
++## Requirements
++
++- **R1.** After U5/U6/U7 land, the seven demo properties' `exit_cap_rate` values arrive at U1's expected table by re-running the dev seed through the bracket-default pathway — NOT by direct UPDATE. The two Duplex deviations (`exit_cap_rate = 0.075`, `max_occupancy = 0.30`) are applied as CONFIRMED-state per-entity overrides on top, with provenance metadata.
++- **R2.** No hardcoded number representing a default exit cap, refi LTV, or any other bracket-level default may exist in code — neither in seed scripts, nor in `DEFAULT_*` constants, nor as TypeScript literals in route handlers. All such values originate from `icp_brackets` rows in the DB.
++- **R3.** Add a user-editable property-level field `refi_max_ltv_to_original` (numeric, default 0.70). Surface in `client/src/pages/PropertyEdit` debt section. Type: DEFAULT VARIABLE per `hplus-variable-taxonomy`.
++- **R4.** The refinance pass in `lib/engine/src/property/refinance-pass.ts` must compute its target new-loan amount as today (`NOI / exit_cap × refi_LTV`) but then **cap** it at `original_loan × refi_max_ltv_to_original`. If the cap binds, log the binding through the existing engine diagnostic channel; do not silently produce an inflated cash-out.
++- **R5.** Extend `icp_brackets` schema with two new numeric columns: `default_exit_cap_rate` and `default_refi_max_ltv_to_original`. Add a parallel pair of `model_defaults` rows (`property.template.exitCapRate`, `property.template.refiMaxLtvToOriginal`) seeded with universal Layer-1 fallback values. Both bracket columns participate as Layer 2 (bracket overlay) per the canonical flow; both `model_defaults` rows are visible/editable under Admin → Steady State → Property.
++- **R6.** Backfill the seven `icp_brackets` rows with market-anchored values for both new columns per the U1 recommendation table. The backfill is the only write to Layer 2; the dev-seed re-run in U1 propagates these to the demo properties through the layered resolver.
++- **R7.** `POST /api/properties` implements the three-layer resolver per the canonical-flow diagram: Layer 1 (universal `model_defaults`) → Layer 2 (bracket-mix-weight-blended overlay from `icp_brackets`) → write Layer 3 (DEFAULT-state property row). Per-entity overrides are written separately as CONFIRMED-state values. Resolver code lives in a single shared helper used by both the route handler and the dev-seed script — no parallel implementations, no hardcoded literals.
++- **R8.** After all DB changes, run `/api/finance/compute` against the demo company and verify combined portfolio IRR lands in **25–30%**. Document the before/after IRR table in the plan's completion notes. IRR computation itself is unchanged — single combined-portfolio figure as today.
++
++---
++
++## Non-Goals (Deferred)
++
++- **Engine algorithm changes.** IRR Newton-Raphson, NOI roll-up, and exit-value formula stay as-is. Only inputs change.
++- **Three-IRR / LP-vs-asset-vs-sponsor view.** Out of scope. Pure IRR — one figure — as today.
++- **GP/LP equity split, waterfall, preferred return, or promote.** Out of scope. Pure IRR on the consolidated cash flow vector. No equity-share gymnastics.
++- **Dashboard "show the Duplex" fixes.** The room-weighted blind-spot, financed-only-skip, and STR-routing issues are real but distinct; track as a separate follow-up. This plan only fixes the Duplex's *values*, not its visibility.
++- **Confirmed → Default reconciliation.** Per `hplus-assumption-lifecycle`, existing entity values are owned by the entity and bracket-template changes do not retroactively update them. The seven demo properties are updated by direct DB write in U1; no auto-cascade.
++- **Cap-rate research automation.** The market-anchored values in U1 come from manual research synthesizing HVS / PwC / CBRE / Airbnb / Tripadvisor 2024–2025 data. A future plan can wire this into a Pietro / Costantino periodic refresh.
++- **Hold-period flexibility.** Holds remain 10-yr for all per user direction. A configurable hold period per property is out of scope.
++- **Mgmt Co fee or vendor pass-through recalibration.** Out of scope; if combined IRR still lands above 30% after U1–U7 land, revisit in a follow-up.
++
++---
++
++## Implementation Units
++
++### U1: Re-seed demo properties through the new bracket-default pathway
++
++**Prerequisite:** U5, U6, U7 MUST land first (bracket-default schema + seeding pathway + market-value backfill). This unit cannot be done as a "tactical direct UPDATE" — that would violate the canonical flow.
++
++**Files:**
++- Dev seed script (located in U6) — re-run end-to-end against the demo company. Properties either get re-created OR have their DEFAULT-state values reset to the bracket-blended values resolved through `POST /api/properties` logic.
++- `scripts/src/apply-per-entity-overrides-2026-05-13.ts` (new, one-off) — applies the two per-entity strategic overrides as if a user had edited and confirmed them: writes `Medellin Duplex.exit_cap_rate = 0.075` (CONFIRMED state) and `Medellin Duplex.max_occupancy = 0.30` (CONFIRMED state). Both with provenance metadata pointing at this plan + runbook for rationale.
++
++**Per-entity overrides applied on top of bracket defaults** (NOT bracket-level — these are deliberate CONFIRMED-state deviations from the bracket-blended values, per `hplus-assumption-lifecycle`):
++
++| Property | Field | Bracket-blended default | Per-entity override | Rationale |
++|---|---|---|---|---|
++| Medellin Duplex | exit_cap_rate | ~11.0% (LatAm luxury STR) | **7.5%** | Strategic package-sale-to-Cartagena-guests exit thesis — trophy buyer pays compressed cap |
++| Medellin Duplex | max_occupancy | ~0.50 (LatAm luxury STR) | **0.30** | Ultra-luxury $1500 ADR positioning — 20–35% steady-state per user direction |
++
++**Bracket-blended values for the other six properties land naturally** through U6's seeding pathway from the U7-backfilled `icp_brackets` rows. The expected exit caps land at:
++
++| Property | Bracket(s) → blended exit cap |
++|---|---|
++| Belleayre Mountain | US tertiary boutique resort → 9.75% |
++| Loch Sheldrake | US tertiary boutique resort → 9.75% |
++| Lakeview Haven Lodge | US tertiary boutique resort → 9.75% |
++| Scott's House | US tertiary boutique resort → 9.75% |
++| Jano Grande Ranch | LatAm rural / illiquid → 12.00% |
++| "San Diego" Cartagena | LatAm prime urban boutique → 10.50% |
++
++**Acceptance:**
++- Demo company's properties hold the values shown above WITHOUT any literal in code paths.
++- The two Duplex overrides are stored as CONFIRMED-state per-entity values with provenance metadata.
++- Re-running the dev seed produces deterministic values (idempotent: same bracket rows → same blended defaults).
++- A short markdown note in `docs/runbooks/seed-calibration-2026-05-13.md` records the before/after IRR table and the rationale for the Duplex per-entity overrides (so a future engineer doesn't "correct" the 7.5% to market 11%).
++
++**Tests:** Manual — re-run `GET /api/finance/compute` and confirm combined IRR moves into 25–30% band. This is the calibration sanity check that gates U2/U3 and U8.
++
++### U2: Refi LTV cap — schema + engine
++
++**Files:**
++- `lib/db/src/schema/properties.ts` — add column `refi_max_ltv_to_original numeric default 0.70 not null`.
++- `lib/db/migrations/` — new migration file (next sequential number; check `drizzle/migrations/__drizzle_migrations` per `docs/runbooks/schema-migrations.md`).
++- `lib/engine/src/property/refinance-pass.ts` — read `refi_max_ltv_to_original` from property context; cap target loan at `original_loan_amount × refi_max_ltv_to_original`; emit diagnostic when cap binds.
++- `lib/engine/src/property/resolve-assumptions.ts` — surface field on property context.
++- `artifacts/api-server/src/routes/properties.ts` — accept and validate field on PATCH/POST.
++
++**Tests:**
++- `lib/engine/src/property/__tests__/refinance-pass.test.ts` — three scenarios: (a) cap does not bind (refi target < cap, behavior unchanged); (b) cap binds at 70% default (target = original × 0.70); (c) custom 50% cap binds tighter.
++- `lib/engine/src/property/__tests__/resolve-assumptions.test.ts` — default value 0.70 applied when field absent.
++
++**Acceptance:** Engine never produces a refinance loan amount above `original_loan × refi_max_ltv_to_original`. Diagnostic logged when cap binds. Test suite green.
++
++### U3: Refi LTV cap — UI
++
++**Files:**
++- `artifacts/hospitality-business-portal/src/components/property-edit/DebtSection.tsx` (or wherever the existing refi LTV field lives — confirm in research) — add input for `refi_max_ltv_to_original` next to existing `refi_ltv` field. Default 70%, 0–100% range, helper text: "Maximum new loan as % of original loan basis. Caps cash-out refinance to prevent inflated mid-projection spikes."
++
++**Tests:** Manual — load a property's edit page, confirm field renders with default 0.70, save round-trips correctly.
++
++**Acceptance:** Field editable, saves to DB, engine reads it on next compute.
++
++### U5: Bracket-default schema extension
++
++**Files:**
++- `lib/db/src/schema/icp-brackets.ts` (or wherever bracket-default templates live — `artifacts/api-server/src/ai/icp/bracket-catalog.ts` per `important_files`) — add `default_exit_cap_rate numeric` and `default_refi_max_ltv_to_original numeric default 0.70` to whatever DB-row + Zod schema models the bracket template.
++- `lib/db/migrations/` — sequential migration adding the two columns.
++- Admin editor for bracket catalog (locate in research, likely under `artifacts/hospitality-business-portal/src/pages/admin/brackets/`) — add two numeric inputs.
++
++**Tests:**
++- `lib/db/__tests__/icp-brackets-schema.test.ts` (extend existing) — round-trip new fields.
++- Admin editor: manual save/load round-trip.
++
++**Acceptance:** Both fields editable in admin, persisted in DB, available on bracket-row reads.
++
++### U6: Bracket-default seeding pathway
++
++**Files:**
++- `artifacts/api-server/src/routes/properties.ts` `POST /api/properties` handler — after resolving company bracket mix, weight-blend `default_exit_cap_rate` and `default_refi_max_ltv_to_original` across mix entries and write into the new property's columns.
++- ManCo creation handler (locate via `rg "POST.*companies" artifacts/api-server/src/routes/`) — same blending applied to any ManCo-level defaults that consume these.
++- Dev seed script (locate via `rg "icp_brackets" artifacts/api-server/src/seed/` or `lib/db/seed/`) — read bracket rows for both fields; remove any hardcoded exit cap or refi LTV literals.
++
++**Tests:**
++- Integration test against `POST /api/properties` with a known bracket mix → asserts the new property's exit cap and refi LTV match the weight-blended bracket-template values.
++- Re-run dev seed; confirm seven demo properties end up with U1's exit-cap values purely from bracket templates (no hardcoded literals in seed code).
++
++**Acceptance:** Creating a new property in dev/staging/prod inherits market-anchored exit cap and refi LTV from the active bracket mix. Dev seed is fully bracket-driven.
++
++### U7: Bracket catalog backfill
++
++**Files (data):** UPDATE the seven `icp_brackets` rows so each carries the right `default_exit_cap_rate` and `default_refi_max_ltv_to_original` for its tier:
++
++| Bracket tier | default_exit_cap_rate | default_refi_max_ltv_to_original |
++|---|---|---|
++| US tertiary boutique resort | 9.75% | 0.70 |
++| US gateway boutique | 8.50% | 0.70 |
++| Latin America prime urban boutique | 10.50% | 0.65 |
++| Latin America rural / illiquid | 12.00% | 0.60 |
++| Latin America luxury STR (single-key) | 11.00% (note: Duplex uses overridden 7.50% per package-sale exception) | 0.70 |
++| (and any other existing brackets — enumerate during U7 from `artifacts/api-server/src/ai/icp/bracket-catalog.ts`) | (research at U7 start) | (research at U7 start) |
++
++**Acceptance:** All bracket rows carry both fields. The dev seed re-run from U6 produces the U1 exit caps for the seven demo properties (modulo the Duplex package-sale override, which is set per-entity not per-bracket).
++
++### U8: Verification + documentation
++
++**Files:**
++- `docs/runbooks/seed-calibration-2026-05-13.md` (created in U1) — append before/after IRR table for all 7 properties + portfolio combined.
++- `docs/concepts/bracket-mix.md` § 6a — add a sentence to the "Why this matters operationally" callout pointing at this plan as the first concrete bracket-default fields beyond the original list.
++
++**Acceptance:**
++- Combined portfolio IRR lands in **25–30%** band.
++- Per-property IRRs all defensible: outliers (Jano, Loch Sheldrake) brought below 50%; Duplex IRR may sit lower (10–15%) consistent with the strategic package-sale exit and the corrected occupancy.
++- IRR computation unchanged from today — single combined-portfolio figure surfaced as before.
++- Documentation reflects the new defaults pathway.
++
++---
++
++## Sequencing
++
++```
++U5 (bracket-default schema) ──► U6 (seeding pathway, no-literals) ──► U7 (catalog backfill with market values)
++                                                                                  │
++                                                                                  ▼
++                                                                   U1 (re-seed demo + Duplex per-entity overrides)
++                                                                                  │
++                                                                                  ▼
++                                                                  sanity-check combined IRR in 25-30% band
++                                                                                  │
++                                                                                  ├──► U2 (refi cap engine) ──► U3 (refi cap UI)
++                                                                                  │
++                                                                                  └──► U8 (verify + doc)
++```
++
++**U5 → U6 → U7 → U1 is the critical path** because the canonical flow forbids hardcoded property values. U2/U3 (refi cap) is independent of the bracket-default chain and can run in parallel with U5–U7. U1 cannot start until U5–U7 are done. U8 is the final close-out.
++
++---
++
++## Key Technical Decisions
++
++- **Refi LTV cap is a per-property DEFAULT VARIABLE, not a TRUE CONSTANT.** Default 0.70 lives in the bracket-default template; per-property override is allowed (per `hplus-variable-taxonomy`).
++- **Duplex exit cap stays at 7.5% per user direction** — this is a per-entity strategic-exit override, NOT a market-anchored default. The bracket-default template for "Latin America luxury STR (single-key)" carries 11% as the market-anchored value; the Duplex's 7.5% is documented as a deliberate deviation in U1's runbook note.
++- **IRR computation is unchanged — pure IRR (levered / equity).** Single combined-portfolio IRR per current code paths (`computeIRR(consolidatedFlows, 1)` in `lib/engine/src/aggregation/yearlyAggregator.ts`). "Pure IRR" here means the standard textbook IRR formula on a single net cash flow vector — equity outlay out, (NOI − debt service + refi proceeds) in, (sale − loan payoff) at exit. **This is levered / equity IRR, NOT unlevered project IRR** (confirmed with user 2026-05-13). One IRR figure only — no GP/LP split, no waterfall overlay, no preferred return, no promote tiers, no LP/asset/sponsor variants. The `lpEquityPct` field and `computeWaterfall` machinery exist in the codebase but are out of scope. The 25–30% target band is calibrated to this levered/equity IRR figure.
++- **No hardcoded literals anywhere per `no-magic-numbers` and the canonical flow.** This applies to every layer: route handlers, engine modules, admin UI, dev seed. Default values flow through the three-layer resolver (universal `model_defaults` → bracket overlay → per-entity row); see canonical flow in Summary. Per-entity overrides (Duplex 7.5%) are CONFIRMED-state values written to the property row with provenance, NOT literals in the seed script.
++- **Layered precedence locked as Option C (2026-05-13).** Universal `model_defaults` row → bracket overlay at create → per-entity value. Engine reads only the per-entity value. Bracket overlay writes happen ONLY at entity creation, never retroactively. Admin can edit any layer; edits affect future creations only (per `hplus-assumption-lifecycle`).
++- **Admin surface for default editing is Admin → Steady State** (legacy internal name "Model Defaults"; user-facing label "Steady State"; sub-tabs: Management Co., Property, Constants, Analyst Tables, Reference Ranges). It is NOT under `AI → Intelligence → Knowledge & Resources` — that's a separate area for analyst-facing tables. New default fields surface in Steady State → Property or Steady State → Management Co. as appropriate.
++- **Migrations follow `docs/runbooks/schema-migrations.md`.** Both U2 and U5 add a sequential migration; verify the journal sync state after applying.
++
++---
++
++## Risks
++
++- **Engine refi-cap regression.** The cap could mis-trigger on edge cases (no original loan, full-equity refi, etc.). Mitigation: test cases U2 cover three branches; engine diagnostic when cap binds is the safety net.
++- **Bracket mix weight-blending math drift.** If two brackets in a mix have very different exit caps, weight-blending the numeric value may not match what a user intuitively expects. Mitigation: U6 integration test pins the blending math; admin can always override per-property post-creation.
++- **Duplex package-sale rationale degrades over time.** A future engineer may "correct" the 7.5% cap to market 11% without context. Mitigation: the U1 runbook note + a comment on the Duplex's `exit_cap_rate` row in `properties` (via DB COMMENT) documenting the package-sale rationale.
++- **Combined IRR may land below 25% after all changes.** If so, two follow-up levers are available: (a) tighten exit caps closer to going-in (drop the 75 bp hold premium toward 50 bp), or (b) revisit Mgmt Co fees / vendor pass-throughs which are explicitly out of scope here. Document the as-landed IRR in U8 and call out the lever choice if needed.
++- **`Drizzle migration journal lag` per `replit.md` gotcha.** After U2 and U5 migrations apply, verify `drizzle.__drizzle_migrations` is in sync per the runbook; do not assume `drizzle-kit push` succeeded silently.
++
++---
++
++## References
++
++- `docs/concepts/bracket-mix.md` § 6a — defaults-template flow this plan operationalizes.
++- `docs/runbooks/schema-migrations.md` — migration discipline for U2 and U5.
++- `hplus-variable-taxonomy` skill — DEFAULT vs ASSUMPTION variable classification.
++- `hplus-assumption-lifecycle` skill — why bracket changes do not retroactively update existing entities.
++- `no-magic-numbers` skill — why seed code must not carry hardcoded exit caps.
++- `front-of-app-admin-isolation` skill — bracket-template editing must live in admin only.
++- HVS, PwC Investor Survey 2025, CBRE — exit-cap convention sources backing the +75 bp hold-period premium.
++- Prior IRR investigation (this conversation, 2026-05-13) — engine math verified clean; seed identified as the cause.
+diff --git a/docs/solutions/workflow-issues/cc-replit-branch-hygiene-2026-05-10.md b/docs/solutions/workflow-issues/cc-replit-branch-hygiene-2026-05-10.md
+index 6b0256a82..347604a2a 100644
+--- a/docs/solutions/workflow-issues/cc-replit-branch-hygiene-2026-05-10.md
++++ b/docs/solutions/workflow-issues/cc-replit-branch-hygiene-2026-05-10.md
+@@ -1,7 +1,7 @@
+ ---
+ title: "CC branch hygiene: Replit Agent stages unreviewed commits on CC PR branches"
+ date: 2026-05-10
+-last_updated: 2026-05-12
++last_updated: 2026-05-13
+ category: docs/solutions/workflow-issues
+ module: cc-replit-branch-hygiene
+ problem_type: workflow_issue
+@@ -17,6 +17,9 @@ applies_when:
+   - Multiple PRs need to wait for CI gates and manual polling would otherwise be required
+   - CC is actively authoring a file across multiple bash calls and the Replit Agent may touch the same path
+   - "An agent's edits appear to have vanished after a branch switch — check reflog and `git log --all` before redoing the work"
++  - "A handoff brief, plan, or schema file referenced by CC is missing on origin even though the Replit Agent reported writing it"
++  - "`git ls-remote` shows no `replit-agent` branch on origin even after Replit Agent claimed a successful commit"
++  - "Replit sandbox `git push` or `git fetch` returns lock errors or reports success while origin remains unchanged"
+ tags:
+   - git-hygiene
+   - branch-management
+@@ -442,6 +445,115 @@ f22bbe44 Add fields to track property improvements and their descriptions
+ - **Do not re-apply edits onto whatever branch is currently checked out post-resume.** The current HEAD is whatever CC left it on — almost never the right target for your task. Always verify intended branch (`git branch --show-current`) and create or check out a task-scoped branch before redoing.
+ - **Treat orphan auto-checkpoint commits as recoverable assets, not garbage.** Cherry-pick them into the right branch instead of ignoring them — the commit message preserves the agent's edit summary.
+ 
++## Sub-pattern: Replit Agent commits stranded on local `replit-agent` branch — origin never receives them
++
++The three patterns above all assume the Replit Agent's commits **reached origin**. A fourth, more insidious variant: the Replit Agent commits to a local `replit-agent` branch in its sandbox, but those commits **never reach GitHub** because (a) Replit's auto-checkpoint flow does not push, (b) the in-sandbox `git push` from a Replit Agent bash tool fails or hangs on a `.git/index.lock`, and (c) the user has not (or cannot) manually push from the Replit Git pane. CC then sees a stale or non-existent `origin/replit-agent` and reports "the file you mentioned isn't on the branch" — when in reality the file exists fine, just only inside the Replit sandbox.
++
++### When it surfaces
++
++- A handoff brief, plan, schema migration, or any file the Replit Agent claims to have authored is missing when CC clones / fetches origin
++- `git ls-remote origin replit-agent` returns nothing (no such ref on origin)
++- Replit Agent reports "committed and pushed" but `gh api repos/<owner>/<repo>/branches/replit-agent` returns 404
++- Replit's "Git" UI panel is unresponsive, shows a spinner indefinitely, or reports a generic error
++- A Replit Agent `git push` bash call exits non-zero with `fatal: Unable to create '/home/runner/workspace/.git/index.lock'` or completes silently with no remote update
++- A Replit Agent `git fetch` bash call hangs or fails with the same lock error
++- LFS upload logs show success on the sandbox side but `git ls-remote` still shows the old SHA on origin
++
++### Why it happens
++
++Replit Agent's auto-commit/auto-checkpoint mechanism only writes to the local `replit-agent` branch in the sandbox — it intentionally does not push to GitHub origin (push requires user-initiated action via the Replit Git pane to keep destructive ops user-gated, per the platform's `<rules_of_engagement>`).
++
++The sandbox additionally restricts most write-side `git` commands. `git push`, `git fetch`, `git commit`, `git merge`, `git rebase`, `git reset`, `git checkout` are gated. When the Replit Agent attempts `git push` from a bash tool to work around the missing auto-push, it usually fails one of two ways:
++
++1. **Lock collision**: another concurrent operation (auto-commit thread, LSP, validation worker) holds `.git/index.lock`, returning `fatal: Unable to create '.git/index.lock': File exists`.
++2. **Partial success that doesn't land**: LFS objects upload successfully, the command appears to exit 0, but the ref on origin doesn't move. Verifying with `git ls-remote origin <branch>` shows the old SHA.
++
++The Replit Git pane is the supported path, but it is itself flaky in several contexts and silently no-ops when broken.
++
++Net effect: there is a real divergence between **local `replit-agent`** (truth, in the Replit sandbox) and **origin** (stale or branch-doesn't-exist), invisible to CC.
++
++### Diagnostic — confirm the divergence
++
++Run these from CC (which has working `git push`/`fetch`):
++
++```bash
++# 1. Is the branch even on origin?
++git ls-remote origin replit-agent
++# Empty output = branch doesn't exist on GitHub
++
++# 2. If origin DOES have the branch, is it stale relative to what Replit Agent reports?
++git fetch origin replit-agent
++git log origin/replit-agent --oneline -10
++# Compare against the SHAs Replit Agent reported in its conversation
++
++# 3. Verify the missing files via GitHub API (bypasses local fetch entirely)
++gh api repos/<owner>/<repo>/contents/<path-to-missing-file>?ref=replit-agent
++# 404 confirms the file is not on origin's replit-agent
++```
++
++If origin's `replit-agent` is missing or stale, the work is stranded on the Replit sandbox side.
++
++### Recovery — two paths
++
++**Path A (preferred): user pushes from the Replit Git pane.** The Replit Agent asks the user to open the Replit Git pane, stage anything pending on `replit-agent`, and click Push. This is the only fully-supported flow. After the push completes, CC runs `git fetch origin replit-agent` and proceeds normally.
++
++**Path B (when the Git pane is broken): CC cherry-picks the stranded SHAs onto a fresh branch off origin/main.** The Replit Agent enumerates the stranded commits in its conversation output (SHAs + one-line subjects + which files each commit changed), and if helpful pastes the full content of the most-critical file (e.g., a handoff brief) inline so CC can recreate it byte-for-byte if cherry-pick is impossible. CC then:
++
++```bash
++git fetch origin main
++git checkout -b chore/recover-replit-agent-handoff origin/main
++
++# If the user can manually paste the SHAs into the CC shell after temporarily
++# pushing replit-agent from the Replit pane, cherry-pick them in order:
++git cherry-pick <replit-sha-1> <replit-sha-2> <replit-sha-3>
++
++# Otherwise (Replit Git pane fully dead, no SHAs reachable from CC's clone),
++# CC recreates the file content from the inline paste in the Replit Agent's
++# conversation output and authors a fresh CC commit:
++mkdir -p docs/handoffs
++cat > docs/handoffs/<brief-name>.md <<'EOF'
++<paste full content from Replit Agent conversation here>
++EOF
++git add docs/handoffs/<brief-name>.md
++git commit -m "docs(handoff): recreate <brief-name> from Replit Agent (SHA <sha> stranded on sandbox)"
++
++git push -u origin chore/recover-replit-agent-handoff
++gh pr create --title "..." --body "Recovered from stranded Replit Agent commits — original SHAs: ..."
++```
++
++Authorship trade-off: Path A preserves Replit Agent authorship in the commit metadata. Path B's manual recreate loses it (the recreate commit is CC-authored), so the PR body must explicitly state "recreated from Replit Agent commit `<sha>` stranded on sandbox" to keep the audit trail.
++
++### Anti-patterns (would lose work or waste time)
++
++- **Replit Agent retrying `git push` in a loop hoping the lock clears.** The lock is held by another sandbox process; spinning on it burns user wall-clock without making progress. After one retry, switch to Path A or Path B.
++- **CC re-deriving the missing file from scratch without first checking the Replit Agent's conversation output.** The Replit Agent typically pastes the full content inline (or at minimum a clear summary); recreating is much faster than re-deriving.
++- **Pushing from CC's shell with `--force` to a `replit-agent` branch CC doesn't own.** This rewrites history on a branch the Replit Agent expects to be authoritative on its side; on the next Replit Agent restart, the sandbox's local `replit-agent` and origin's `replit-agent` will diverge in the opposite direction.
++- **Treating "Replit Agent reported it pushed" as proof.** Always verify with `git ls-remote origin <branch>` or the GitHub API before downstream work depends on the file being on origin.
++
++### Prevention
++
++- **Replit Agent: never claim "pushed to origin" from a sandbox bash tool.** The Replit Agent should say "committed locally to `replit-agent` — please push from the Replit Git pane to reach origin." If the user is depending on the file being on origin (e.g., for a CC handoff), surface this explicitly before declaring the task complete.
++- **Handoff briefs that reference files: include the SHA AND a one-liner on where the file lives.** Example: "`docs/plans/<file>.md` — written on local `replit-agent` (SHA `<sha>`); user must push the branch from the Replit Git pane before CC can read it." This eliminates the "I can't find the file" round-trip.
++- **CC: before opening any work that depends on a Replit Agent handoff file, verify the file exists on origin.** `gh api repos/<owner>/<repo>/contents/<path>?ref=<branch>` is the cheapest check. If 404, ask for the Replit Git pane push or the inline content paste before proceeding.
++- **Use `project_tasks` for any destructive git op the sandbox blocks.** `git push --force`, `git rebase`, `git reset --hard`, `git checkout <other-branch>` — when the Replit Agent needs these, propose them as background project tasks (which run with elevated permissions) rather than retrying gated bash calls.
++
++### Worked example — 2026-05-13 Phase C ICP bracket-mix handoff
++
++The Replit Agent wrote three artifacts for a CC handoff: Phase A schema (`2d4daac80`), Phase B plan (`3a8b32d8a` / `5f8e0adf0`), and a 137-line handoff brief (`docs/handoffs/phase-c-icp-bracket-mix-peer-derived.md`, post-ce.code-review HEAD `22bf2e822`). All three commits landed on local `replit-agent` in the sandbox. None reached origin: `git ls-remote origin replit-agent` returned empty.
++
++Diagnostic confirmed the divergence:
++
++- `origin/main` HEAD: `1d0077c4f` — no Phase A schema, no plan, no brief
++- Local `main`: `286cecd1b` (1 ahead with brief, but rejected non-fast-forward on attempted push)
++- Local `replit-agent`: contained all three artifacts at `22bf2e822`
++- Replit sandbox `git push` partially worked (LFS upload succeeded for `replit-agent`) but the ref didn't land on origin
++- Subsequent `git fetch` blocked with `.git/index.lock` error
++- Replit Git pane reported broken by the user
++
++User chose Path B (cherry-pick): the Replit Agent enumerated the three stranded SHAs (`2d4daac80` schema, `3a8b32d8a` plan, `71153f770` brief) and provided the **full updated content** of the brief inline, since `71153f770` was pre-ce.code-review and CC needed the post-review version (4 fixes applied: parity-test discovery cmd, schema-migrations runbook ref, branch-hygiene ref, DoD wording). CC then cherry-picked the schema and plan commits, then committed a fresh CC-authored commit with the pasted-over brief content as commit #4 on a clean branch off `origin/main`. PR opened from CC's shell, with the PR body acknowledging the recreate origin: "Brief recreated from Replit Agent SHA `22bf2e822` stranded on sandbox; original SHAs `2d4daac80` and `3a8b32d8a` cherry-picked."
++
++Net cost: ~15 minutes of coordination overhead (mostly the user copy-pasting the brief content). The alternative — re-deriving 137 lines of handoff brief from scratch — would have been ~45 minutes plus a high risk of CC and Replit Agent drifting on what the brief said.
++
+ ## Related
+ 
+ - `CLAUDE.md` § "CC branch hygiene — Replit agent staging risk" — the live enforcement rule (added PR #67, 2026-05-10)

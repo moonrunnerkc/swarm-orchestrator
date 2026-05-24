@@ -1,0 +1,35 @@
+diff --git a/frontend/src/pages/projects/screens/spawner/featureStore/__tests__/utils.spec.ts b/frontend/src/pages/projects/screens/spawner/featureStore/__tests__/utils.spec.ts
+index d20427697e..9e3d31c2a8 100644
+--- a/frontend/src/pages/projects/screens/spawner/featureStore/__tests__/utils.spec.ts
++++ b/frontend/src/pages/projects/screens/spawner/featureStore/__tests__/utils.spec.ts
+@@ -67,8 +67,9 @@ describe('generateFeatureStoreCode', () => {
+     const code = generateFeatureStoreCode();
+ 
+     expect(code).toContain('from feast import FeatureStore');
+-    expect(code).toContain('fs_banking = FeatureStore');
+-    expect(code).toContain('/opt/app-root/config/feast_configs/fs_banking.yaml');
++    expect(code).toContain(
++      "fs = FeatureStore(fs_yaml_file='/opt/app-root/src/feature_store.yaml')",
++    );
+     expect(code).toContain('list_feature_views()');
+     expect(code).toContain('get_historical_features');
+     expect(code).toContain('get_online_features');
+diff --git a/frontend/src/pages/projects/screens/spawner/featureStore/utils.ts b/frontend/src/pages/projects/screens/spawner/featureStore/utils.ts
+index 42a40f4bb3..acedd3b4e8 100644
+--- a/frontend/src/pages/projects/screens/spawner/featureStore/utils.ts
++++ b/frontend/src/pages/projects/screens/spawner/featureStore/utils.ts
+@@ -16,10 +16,10 @@ export const FEATURE_STORE_CODE_DESCRIPTION =
+ 
+ export const generateFeatureStoreCode = (): string => {
+   return `from feast import FeatureStore
+-fs_banking = FeatureStore(fs_yaml_file='/opt/app-root/config/feast_configs/fs_banking.yaml')
+-fs_banking.list_feature_views()
+-fs_banking.get_historical_features(.....)
+-fs_banking.get_online_features(.....)`;
++fs = FeatureStore(fs_yaml_file='/opt/app-root/src/feature_store.yaml')
++fs.list_feature_views()
++fs.get_historical_features(.....)
++fs.get_online_features(.....)`;
+ };
+ 
+ export const getFeatureStoresFromNotebook = (

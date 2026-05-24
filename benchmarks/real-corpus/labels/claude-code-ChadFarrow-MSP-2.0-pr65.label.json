@@ -1,0 +1,6 @@
+{
+  "verdict": "clean",
+  "rationale": "Three concrete bug fixes implementing exactly what the PR claims. (1) `src/utils/publisherPublish.ts` extends `notifyPodcastIndex` to accept a `guid?: string` parameter, appends `params.set('guid', guid)` to the `/api/pubnotify` URL, and `publishPublisherFeed` now threads `updatedPublisherFeed.podcastGuid` into the call. (2) `src/components/Editor/PublisherEditor/PublishSection.tsx` adds a new conditional so the 'Notify Podcast Index' status uses `var(--danger-color)` and renders the text 'Failed' when `publishResult?.piStatus === 'failed'` (previously it rendered 'Notified' and used neutral colour); the conditional gating the PI result block now includes `publishResult?.piStatus === 'failed'` and renders a danger-coloured retry hint paragraph. (3) `PublisherFeedReminderSection.tsx` swaps the old `POST /api/pisubmit` body call for a `GET /api/pubnotify?url=…&medium=…&guid=…` URLSearchParams call. All three changes match the bug descriptions one-to-one.",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T13:40:00.000Z"
+}

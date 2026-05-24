@@ -1,0 +1,26 @@
+{
+  "id": "cursor-PorscheWen-Stock_AI_Holding-pr3",
+  "agent": {
+    "vendor": "cursor",
+    "confidence": "medium",
+    "source": "branch=cursor/+body=cursor-session-url"
+  },
+  "pr": {
+    "number": 3,
+    "headSha": "97d1b7335d0cf8f9f72ca03172f304a5ea1d784d",
+    "baseSha": "6eb188d451734a5300575ff9a912daed3695f16f",
+    "title": "fix: add Yahoo Finance retry/back-off and TTL cache to resolve rate-limit errors",
+    "body": "<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n## Problem\n\nUsers were seeing **\"API 請求過於頻繁（00631L.TW）\"** errors because:\n\n1. `/api/portfolio/prices` called `yf.Ticker(symbol).info` in a tight loop with **zero delay** between symbols — easily triggering Yahoo Finance's 429 limit for portfolios with several holdings.\n2. `_analyze_one()` in the advisor agent had a 1 s inter-stock delay but **no retry logic** — a single transient 429 immediately produced the rate-limit error message with no recovery attempt.\n3. No shared cache existed, so the advisor pipeline and the prices endpoint each independently fetched the same symbol's `.info` data, doubling the request count.\n\n## Solution\n\n### New file: `utils/yfinance_utils.py`\n\n| Feature | Detail |\n|---|---|\n| `is_rate_limit_error(exc)` | Detects 429 / rate-limit exceptions by keyword matching |\n| `yf_info_with_retry()` | Fetches `Ticker.info` with up to 3 retries; delays: 5 s → 10 s → 20 s (exponential back-off) |\n| `yf_history_with_retry()` | Same back-off for `Ticker.history()` |\n| 5-min TTL in-memory cache | `.info` results are cached keyed by symbol; advisor agent and prices endpoint share the same cache — avoids duplicate HTTP requests |\n\n### `agents/holding_advisor_agent.py`\n\n- Replace bare `yf.Ticker` calls with `yf_info_with_retry` / `yf_history_with_retry`\n- Refactor `_yahoo_price_and_bar()` to accept a plain `dict` instead of a `Ticker` object\n- Increase `REQUEST_DELAY` from **1.0 s → 1.5 s** between stocks\n- Use `is_rate_limit_error()` in the except handler; error message now accurately states that auto-retry was already attempted before showing the failure\n\n### `agents/tw_market_agent.py`\n\n- Use `yf_history_with_retry()` in `build_taiwan_market_snapshot()`\n\n### `app.py` — `/api/portfolio/prices`\n\n- Use `yf_info_with_retry()` (cache + retry) instead of bare `yf.Ticker().info`\n- Add **0.5 s inter-symbol delay** to spread requests\n- Log rate-limit failures distinctly from other errors\n\n## Expected outcome\n\n- Transient Yahoo Finance 429 errors are silently retried with back-off; users only see the error message if all 3 retries fail\n- The prices endpoint no longer fires burst requests for multi-symbol portfolios\n- If the advisor runs within 5 minutes of the prices fetch, `.info` comes from cache — halving the effective request count\n<!-- CURSOR_AGENT_PR_BODY_END -->\n\n<div><a href=\"https://cursor.com/agents/bc-5b6fa5a4-1bea-4ff6-93f9-1faa3efa641d\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/background-agent?bcId=bc-5b6fa5a4-1bea-4ff6-93f9-1faa3efa641d\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-light.png\"><img alt=\"Open in Cursor\" width=\"131\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"></picture></a>&nbsp;</div>\n\n",
+    "author": "PorscheWen",
+    "headRef": "cursor/fix-api-rate-limit-retry-cache-641d",
+    "repository": "PorscheWen/Stock_AI_Holding"
+  },
+  "diffRef": {
+    "repository": "PorscheWen/Stock_AI_Holding",
+    "headSha": "97d1b7335d0cf8f9f72ca03172f304a5ea1d784d",
+    "baseSha": "6eb188d451734a5300575ff9a912daed3695f16f"
+  },
+  "vendoredDiffPath": "cursor/cursor-PorscheWen-Stock_AI_Holding-pr3.diff",
+  "vendoredAt": "2026-05-24T03:11:21.505Z",
+  "collectedAt": "2026-05-24T03:11:21.505Z"
+}

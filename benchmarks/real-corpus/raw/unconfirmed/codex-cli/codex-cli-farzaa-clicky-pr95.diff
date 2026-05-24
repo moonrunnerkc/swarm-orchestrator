@@ -1,0 +1,1607 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index 6946d441..0f3e7107 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -5,35 +5,36 @@
+ 
+ ## Overview
+ 
+-macOS menu bar companion app. Lives entirely in the macOS status bar (no dock icon, no main window). Clicking the menu bar icon opens a custom floating panel with companion voice controls. Uses push-to-talk (ctrl+option) to capture voice input, transcribes it via AssemblyAI streaming, and sends the transcript + a screenshot of the user's screen to Claude. Claude responds with text (streamed via SSE) and voice (ElevenLabs TTS). A blue cursor overlay can fly to and point at UI elements Claude references on any connected monitor.
++macOS menu bar companion app. Lives entirely in the macOS status bar (no dock icon, no main window). Clicking the menu bar icon opens a custom floating panel with companion voice controls. Uses push-to-talk (ctrl+option) to capture voice input, transcribes it via AssemblyAI streaming, and sends the transcript + a screenshot of the user's screen to the selected AI provider. The app can use Codex through the local Codex CLI session or Claude through Anthropic Messages. The selected model responds with text and voice (ElevenLabs TTS). A blue cursor overlay can fly to and point at UI elements the model references on any connected monitor.
+ 
+-All API keys live on a Cloudflare Worker proxy — nothing sensitive ships in the app.
++Claude, ElevenLabs, and AssemblyAI API keys live on a Cloudflare Worker proxy — nothing sensitive ships in the app. Codex uses the user's installed `codex` CLI and existing `codex login` session instead of a Worker API key.
+ 
+ ## Architecture
+ 
+ - **App Type**: Menu bar-only (`LSUIElement=true`), no dock icon or main window
+ - **Framework**: SwiftUI (macOS native) with AppKit bridging for menu bar panel and cursor overlay
+ - **Pattern**: MVVM with `@StateObject` / `@Published` state management
+-- **AI Chat**: Claude (Sonnet 4.6 default, Opus 4.6 optional) via Cloudflare Worker proxy with SSE streaming
++- **AI Chat**: User-selectable in the panel. Codex (`gpt-5.5` default, plus the other Codex CLI model options in `CompanionManager.swift`) runs through the local Codex CLI. Claude (`claude-sonnet-4-6` default, `claude-opus-4-6` optional) uses Anthropic Messages through the Cloudflare Worker proxy.
+ - **Speech-to-Text**: AssemblyAI real-time streaming (`u3-rt-pro` model) via websocket, with OpenAI and Apple Speech as fallbacks
+ - **Text-to-Speech**: ElevenLabs (`eleven_flash_v2_5` model) via Cloudflare Worker proxy
+ - **Screen Capture**: ScreenCaptureKit (macOS 14.2+), multi-monitor support
+ - **Voice Input**: Push-to-talk via `AVAudioEngine` + pluggable transcription-provider layer. System-wide keyboard shortcut via listen-only CGEvent tap.
+-- **Element Pointing**: Claude embeds `[POINT:x,y:label:screenN]` tags in responses. The overlay parses these, maps coordinates to the correct monitor, and animates the blue cursor along a bezier arc to the target.
++- **Element Pointing**: The selected AI model embeds `[POINT:x,y:label:screenN]` tags in responses. The overlay parses these, maps coordinates to the correct monitor, and animates the blue cursor along a bezier arc to the target.
+ - **Concurrency**: `@MainActor` isolation, async/await throughout
+ - **Analytics**: PostHog via `ClickyAnalytics.swift`
+ 
+ ### API Proxy (Cloudflare Worker)
+ 
+-The app never calls external APIs directly. All requests go through a Cloudflare Worker (`worker/src/index.ts`) that holds the real API keys as secrets.
++Claude, ElevenLabs, and AssemblyAI requests go through a Cloudflare Worker (`worker/src/index.ts`) that holds the real API keys as secrets. Codex chat does not use the Worker; it runs `codex exec` locally.
+ 
+ | Route | Upstream | Purpose |
+ |-------|----------|---------|
+ | `POST /chat` | `api.anthropic.com/v1/messages` | Claude vision + streaming chat |
++| `POST /chat/claude` | `api.anthropic.com/v1/messages` | Claude vision + streaming chat |
+ | `POST /tts` | `api.elevenlabs.io/v1/text-to-speech/{voiceId}` | ElevenLabs TTS audio |
+ | `POST /transcribe-token` | `streaming.assemblyai.com/v3/token` | Fetches a short-lived (480s) AssemblyAI websocket token |
+ 
+-Worker secrets: `ANTHROPIC_API_KEY`, `ASSEMBLYAI_API_KEY`, `ELEVENLABS_API_KEY`
++Worker chat secrets: `ANTHROPIC_API_KEY` for Claude. Voice secrets: `ASSEMBLYAI_API_KEY`, `ELEVENLABS_API_KEY`
+ Worker vars: `ELEVENLABS_VOICE_ID`
+ 
+ ### Key Architecture Decisions
+@@ -53,9 +54,9 @@ Worker vars: `ELEVENLABS_VOICE_ID`
+ | File | Lines | Purpose |
+ |------|-------|---------|
+ | `leanring_buddyApp.swift` | ~89 | Menu bar app entry point. Uses `@NSApplicationDelegateAdaptor` with `CompanionAppDelegate` which creates `MenuBarPanelManager` and starts `CompanionManager`. No main window — the app lives entirely in the status bar. |
+-| `CompanionManager.swift` | ~1026 | Central state machine. Owns dictation, shortcut monitoring, screen capture, Claude API, ElevenLabs TTS, and overlay management. Tracks voice state (idle/listening/processing/responding), conversation history, model selection, and cursor visibility. Coordinates the full push-to-talk → screenshot → Claude → TTS → pointing pipeline. |
++| `CompanionManager.swift` | ~1175 | Central state machine. Owns dictation, shortcut monitoring, screen capture, provider/model selection, Codex/Claude API clients, ElevenLabs TTS, and overlay management. Tracks voice state (idle/listening/processing/responding), conversation history, model selection, and cursor visibility. Coordinates the full push-to-talk → screenshot → selected AI provider → TTS → pointing pipeline. |
+ | `MenuBarPanelManager.swift` | ~243 | NSStatusItem + custom NSPanel lifecycle. Creates the menu bar icon, manages the floating companion panel (show/hide/position), installs click-outside-to-dismiss monitor. |
+-| `CompanionPanelView.swift` | ~761 | SwiftUI panel content for the menu bar dropdown. Shows companion status, push-to-talk instructions, model picker (Sonnet/Opus), permissions UI, DM feedback button, and quit button. Dark aesthetic using `DS` design system. |
++| `CompanionPanelView.swift` | ~809 | SwiftUI panel content for the menu bar dropdown. Shows companion status, push-to-talk instructions, AI provider picker, provider-specific model picker, permissions UI, DM feedback button, and quit button. Dark aesthetic using `DS` design system. |
+ | `OverlayWindow.swift` | ~881 | Full-screen transparent overlay hosting the blue cursor, response text, waveform, and spinner. Handles cursor animation, element pointing with bezier arcs, multi-monitor coordinate mapping, and fade-out transitions. |
+ | `CompanionResponseOverlay.swift` | ~217 | SwiftUI view for the response text bubble and waveform displayed next to the cursor in the overlay. |
+ | `CompanionScreenCaptureUtility.swift` | ~132 | Multi-monitor screenshot capture using ScreenCaptureKit. Returns labeled image data for each connected display. |
+@@ -66,15 +67,14 @@ Worker vars: `ELEVENLABS_VOICE_ID`
+ | `AppleSpeechTranscriptionProvider.swift` | ~147 | Local fallback transcription provider backed by Apple's Speech framework. |
+ | `BuddyAudioConversionSupport.swift` | ~108 | Audio conversion helpers. Converts live mic buffers to PCM16 mono audio and builds WAV payloads for upload-based providers. |
+ | `GlobalPushToTalkShortcutMonitor.swift` | ~132 | System-wide push-to-talk monitor. Owns the listen-only `CGEvent` tap and publishes press/release transitions. |
+-| `ClaudeAPI.swift` | ~291 | Claude vision API client with streaming (SSE) and non-streaming modes. TLS warmup optimization, image MIME detection, conversation history support. |
+-| `OpenAIAPI.swift` | ~142 | OpenAI GPT vision API client. |
++| `CodexCLIAPI.swift` | ~225 | Local Codex CLI client. Writes screenshots to a temp directory, runs `codex exec` with the selected Codex model, and reads the final response from `--output-last-message`. |
++| `ClaudeAPI.swift` | ~291 | Claude Messages API client with streaming (SSE) and non-streaming modes. TLS warmup optimization, image MIME detection, conversation history support. |
+ | `ElevenLabsTTSClient.swift` | ~81 | ElevenLabs TTS client. Sends text to the Worker proxy, plays back audio via `AVAudioPlayer`. Exposes `isPlaying` for transient cursor scheduling. |
+-| `ElementLocationDetector.swift` | ~335 | Detects UI element locations in screenshots for cursor pointing. |
+ | `DesignSystem.swift` | ~880 | Design system tokens — colors, corner radii, shared styles. All UI references `DS.Colors`, `DS.CornerRadius`, etc. |
+ | `ClickyAnalytics.swift` | ~121 | PostHog analytics integration for usage tracking. |
+ | `WindowPositionManager.swift` | ~262 | Window placement logic, Screen Recording permission flow, and accessibility permission helpers. |
+ | `AppBundleConfiguration.swift` | ~28 | Runtime configuration reader for keys stored in the app bundle Info.plist. |
+-| `worker/src/index.ts` | ~142 | Cloudflare Worker proxy. Three routes: `/chat` (Claude), `/tts` (ElevenLabs), `/transcribe-token` (AssemblyAI temp token). |
++| `worker/src/index.ts` | ~135 | Cloudflare Worker proxy. Routes: `/chat` and `/chat/claude` (Anthropic Messages), `/tts` (ElevenLabs), `/transcribe-token` (AssemblyAI temp token). |
+ 
+ ## Build & Run
+ 
+diff --git a/README.md b/README.md
+index 5ea1fbab..2ad21364 100644
+--- a/README.md
++++ b/README.md
+@@ -19,23 +19,37 @@ Here's the [original tweet](https://x.com/FarzaTV/status/2041314633978659092) th
+ 
+ This is the open-source version of Clicky for those that want to hack on it, build their own features, or just see how it works under the hood.
+ 
+-## Get started with Claude Code
++## Get started with an agent
+ 
+-The fastest way to get this running is with [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
++Clicky includes repo instructions for coding agents. Codex reads `AGENTS.md`; Claude Code reads `CLAUDE.md`, which points to the same instructions.
+ 
+-Once you get Claude running, paste this:
++### Codex
+ 
++Once you have [Codex CLI](https://github.com/openai/codex) running, paste this:
++
++```
++Clone https://github.com/farzaa/clicky.git into my current directory.
++
++Then read AGENTS.md. I want to get Clicky running locally on my Mac.
++
++Help me set up everything: the Cloudflare Worker with my own API keys, the proxy URLs, and getting it building in Xcode. Walk me through it.
+ ```
+-Hi Claude.
+ 
++Codex will use the root `AGENTS.md` for architecture, build constraints, and coding conventions. The nested `leanring-buddy/AGENTS.md` adds guidance for the native macOS app target.
++
++### Claude Code
++
++Once you have [Claude Code](https://docs.anthropic.com/en/docs/claude-code) running, paste this:
++
++```
+ Clone https://github.com/farzaa/clicky.git into my current directory.
+ 
+-Then read the CLAUDE.md. I want to get Clicky running locally on my Mac.
++Then read CLAUDE.md. I want to get Clicky running locally on my Mac.
+ 
+-Help me set up everything — the Cloudflare Worker with my own API keys, the proxy URLs, and getting it building in Xcode. Walk me through it.
++Help me set up everything: the Cloudflare Worker with my own API keys, the proxy URLs, and getting it building in Xcode. Walk me through it.
+ ```
+ 
+-That's it. It'll clone the repo, read the docs, and walk you through the whole setup. Once you're running you can just keep talking to it — build features, fix bugs, whatever. Go crazy.
++That's it. It'll clone the repo, read the docs, and walk you through the whole setup. Once you're running you can just keep talking to it: build features, fix bugs, whatever. Go crazy.
+ 
+ ## Manual setup
+ 
+@@ -47,7 +61,9 @@ If you want to do it yourself, here's the deal.
+ - Xcode 15+
+ - Node.js 18+ (for the Cloudflare Worker)
+ - A [Cloudflare](https://cloudflare.com) account (free tier works)
+-- API keys for: [Anthropic](https://console.anthropic.com), [AssemblyAI](https://www.assemblyai.com), [ElevenLabs](https://elevenlabs.io)
++- [Codex CLI](https://github.com/openai/codex) installed and logged in with `codex login` if you want to use Codex
++- An [Anthropic](https://console.anthropic.com) API key if you want to use Claude
++- API keys for: [AssemblyAI](https://www.assemblyai.com) and [ElevenLabs](https://elevenlabs.io)
+ 
+ ### 1. Set up the Cloudflare Worker
+ 
+@@ -66,6 +82,8 @@ npx wrangler secret put ASSEMBLYAI_API_KEY
+ npx wrangler secret put ELEVENLABS_API_KEY
+ ```
+ 
++You only need `ANTHROPIC_API_KEY` if you plan to use Claude. Codex does not use a Worker secret; the macOS app runs the local Codex CLI with the user's existing `codex login` session.
++
+ For the ElevenLabs voice ID, open `wrangler.toml` and set it there (it's not sensitive):
+ 
+ ```toml
+@@ -113,6 +131,8 @@ You'll find it in:
+ - `CompanionManager.swift` — Claude chat + ElevenLabs TTS
+ - `AssemblyAIStreamingTranscriptionProvider.swift` — AssemblyAI token endpoint
+ 
++Codex chat is local to the Mac. Make sure `codex` is installed and that `codex login` has completed before selecting Codex in the Clicky panel.
++
+ ### 4. Open in Xcode and run
+ 
+ ```bash
+@@ -135,9 +155,9 @@ The app will appear in your menu bar (not the dock). Click the icon to open the
+ 
+ ## Architecture
+ 
+-If you want the full technical breakdown, read `CLAUDE.md`. But here's the short version:
++If you want the full technical breakdown, read `AGENTS.md` or `CLAUDE.md`. But here's the short version:
+ 
+-**Menu bar app** (no dock icon) with two `NSPanel` windows — one for the control panel dropdown, one for the full-screen transparent cursor overlay. Push-to-talk streams audio over a websocket to AssemblyAI, sends the transcript + screenshot to Claude via streaming SSE, and plays the response through ElevenLabs TTS. Claude can embed `[POINT:x,y:label:screenN]` tags in its responses to make the cursor fly to specific UI elements across multiple monitors. All three APIs are proxied through a Cloudflare Worker.
++**Menu bar app** (no dock icon) with two `NSPanel` windows — one for the control panel dropdown, one for the full-screen transparent cursor overlay. Push-to-talk streams audio over a websocket to AssemblyAI, sends the transcript + screenshot to the selected AI provider, and plays the response through ElevenLabs TTS. The panel lets users choose Codex or Claude, plus a provider-specific model. Codex runs locally through `codex exec`; Claude, ElevenLabs, and AssemblyAI go through the Cloudflare Worker. The selected model can embed `[POINT:x,y:label:screenN]` tags in its responses to make the cursor fly to specific UI elements across multiple monitors.
+ 
+ ## Project structure
+ 
+@@ -145,18 +165,20 @@ If you want the full technical breakdown, read `CLAUDE.md`. But here's the short
+ leanring-buddy/          # Swift source (yes, the typo stays)
+   CompanionManager.swift    # Central state machine
+   CompanionPanelView.swift  # Menu bar panel UI
++  CodexCLIAPI.swift         # Local Codex CLI client
+   ClaudeAPI.swift           # Claude streaming client
+   ElevenLabsTTSClient.swift # Text-to-speech playback
+   OverlayWindow.swift       # Blue cursor overlay
+   AssemblyAI*.swift         # Real-time transcription
+   BuddyDictation*.swift     # Push-to-talk pipeline
+ worker/                  # Cloudflare Worker proxy
+-  src/index.ts              # Three routes: /chat, /tts, /transcribe-token
+-CLAUDE.md                # Full architecture doc (agents read this)
++  src/index.ts              # /chat/claude, /tts, /transcribe-token
++AGENTS.md                # Full architecture doc for Codex and other agents
++CLAUDE.md                # Symlink to AGENTS.md for Claude Code
+ ```
+ 
+ ## Contributing
+ 
+-PRs welcome. If you're using Claude Code, it already knows the codebase — just tell it what you want to build and point it at `CLAUDE.md`.
++PRs welcome. If you're using Codex, point it at `AGENTS.md`. If you're using Claude Code, point it at `CLAUDE.md`; both files describe the same architecture and conventions.
+ 
+ Got feedback? DM me on X [@farzatv](https://x.com/farzatv).
+diff --git a/leanring-buddy/AGENTS.md b/leanring-buddy/AGENTS.md
+index b59cb091..c243027c 100644
+--- a/leanring-buddy/AGENTS.md
++++ b/leanring-buddy/AGENTS.md
+@@ -1,28 +1,21 @@
+-# AGENTS.md - leanring-buddy (Main App Target)
++# AGENTS.md - leanring-buddy
+ 
+-## Source Files
++This directory contains the native macOS app target. Start with the root `AGENTS.md` for the full architecture, build constraints, and coding conventions; this file only adds target-specific guidance for edits under `leanring-buddy/`.
+ 
+-### FloatingSessionButton.swift
+-- `FloatingSessionButtonManager` — `@MainActor` class managing the `NSPanel` lifecycle
+-  - `showFloatingButton()` — Creates/shows the panel in top-right of primary screen
+-  - `hideFloatingButton()` — Hides panel (keeps it alive for quick re-show)
+-  - `destroyFloatingButton()` — Removes panel permanently (session ended)
+-  - `onFloatingButtonClicked` — Callback closure, set by ContentView to bring main window to front
+-  - `floatingButtonPanel` — Exposed `NSPanel` reference for screenshot exclusion
+-- `FloatingButtonView` — Private SwiftUI view with gradient circle, scale+glow hover animation, pointer cursor
++## Target Shape
+ 
+-### ContentView.swift
+-- Receives `FloatingSessionButtonManager` via `@EnvironmentObject`
+-- `isMainWindowCurrentlyFocused` — Tracks main window focus state
+-- `configureFloatingButtonManager()` — Wires up the click callback
+-- `startObservingMainWindowFocusChanges()` — Sets up `NSWindow` notification observers
+-- `updateFloatingButtonVisibility()` — Core logic: show if running + not focused, hide otherwise
+-- `bringMainWindowToFront()` — Activates app and orders main window front
++- `leanring_buddyApp.swift` is the menu-bar app entry point and wires `CompanionAppDelegate`, `MenuBarPanelManager`, and `CompanionManager` together.
++- `CompanionManager.swift` owns the core interaction state machine: push-to-talk, screenshot capture, AI provider/model selection, Codex/Claude streaming, TTS playback, cursor visibility, and pointing coordination.
++- `CompanionPanelView.swift`, `CompanionResponseOverlay.swift`, `OverlayWindow.swift`, and `DesignSystem.swift` own the visible SwiftUI/AppKit UI surfaces.
++- `BuddyDictationManager.swift` plus the `*TranscriptionProvider.swift` files own microphone capture and transcription-provider behavior.
++- `CodexCLIAPI.swift` runs the local Codex CLI for Codex chat. `ClaudeAPI.swift`, `ElevenLabsTTSClient.swift`, and `AssemblyAIStreamingTranscriptionProvider.swift` talk to the Worker proxy for Claude chat, TTS, and AssemblyAI tokens.
++- `AppBundleConfiguration.swift` is the runtime reader for app-bundle configuration values stored in `Info.plist`.
+ 
+-### ScreenshotManager.swift
+-- `floatingButtonWindowToExcludeFromCaptures` — `NSWindow?` reference set by ContentView
+-- `captureScreen()` — Matches the floating window to an `SCWindow` and excludes it from capture filter
++## Editing Rules
+ 
+-### leanring_buddyApp.swift
+-- Owns `FloatingSessionButtonManager` as `@StateObject`
+-- Injects it into ContentView via `.environmentObject()`
++- Keep changes local to the file that owns the behavior. Do not route new app state through `CompanionManager` unless it needs to coordinate the main interaction pipeline.
++- Preserve the menu-bar-only app model. Do not introduce a dock window, document scene, or ordinary app lifecycle unless the root architecture changes first.
++- Keep all UI mutations on the main actor. Prefer explicit `@MainActor` isolation over detached main-thread hops.
++- Use the existing `DS` design tokens for panel and overlay UI. Do not add one-off colors, spacing scales, or button styles.
++- Do not put API keys, bearer tokens, or provider secrets in Swift source, `Info.plist`, or project build settings. Claude, ElevenLabs, and AssemblyAI secrets belong in the Worker environment. Codex uses the user's local `codex login` session.
++- Do not run `xcodebuild` from the terminal. Open the Xcode project and build there so macOS permissions do not get reset.
+diff --git a/leanring-buddy/BuddyDictationManager.swift b/leanring-buddy/BuddyDictationManager.swift
+index 5bca2677..3ee268a0 100644
+--- a/leanring-buddy/BuddyDictationManager.swift
++++ b/leanring-buddy/BuddyDictationManager.swift
+@@ -654,8 +654,6 @@ final class BuddyDictationManager: NSObject, ObservableObject {
+             "makesomething",
+             "Learning Buddy",
+             "Codex",
+-            "Claude",
+-            "Anthropic",
+             "OpenAI",
+             "SwiftUI",
+             "Xcode",
+diff --git a/leanring-buddy/ClickyAnalytics.swift b/leanring-buddy/ClickyAnalytics.swift
+index 29e26138..2988aab9 100644
+--- a/leanring-buddy/ClickyAnalytics.swift
++++ b/leanring-buddy/ClickyAnalytics.swift
+@@ -87,7 +87,7 @@ enum ClickyAnalytics {
+         ])
+     }
+ 
+-    /// Claude responded and the response is being spoken via TTS.
++    /// The AI responded and the response is being spoken via TTS.
+     static func trackAIResponseReceived(response: String) {
+         PostHogSDK.shared.capture("ai_response_received", properties: [
+             "response": response,
+@@ -95,7 +95,7 @@ enum ClickyAnalytics {
+         ])
+     }
+ 
+-    /// Claude's response included a [POINT:x,y:label] coordinate tag,
++    /// The AI response included a [POINT:x,y:label] coordinate tag,
+     /// so the buddy is flying to point at a UI element.
+     static func trackElementPointed(elementLabel: String?) {
+         PostHogSDK.shared.capture("element_pointed", properties: [
+diff --git a/leanring-buddy/CodexCLIAPI.swift b/leanring-buddy/CodexCLIAPI.swift
+new file mode 100644
+index 00000000..b05cb8b4
+--- /dev/null
++++ b/leanring-buddy/CodexCLIAPI.swift
+@@ -0,0 +1,221 @@
++//
++//  CodexCLIAPI.swift
++//  Local Codex CLI integration
++//
++
++import Foundation
++
++/// Runs the local Codex CLI so Clicky can use the user's existing Codex login
++/// instead of requiring an OpenAI API key in the Worker.
++class CodexCLIAPI {
++    var model: String
++
++    init(model: String = "gpt-5.5") {
++        self.model = model
++    }
++
++    func analyzeImageStreaming(
++        images: [(data: Data, label: String)],
++        systemPrompt: String,
++        conversationHistory: [(userPlaceholder: String, assistantResponse: String)] = [],
++        userPrompt: String,
++        onTextChunk: @MainActor @Sendable (String) -> Void
++    ) async throws -> (text: String, duration: TimeInterval) {
++        let startTime = Date()
++        let responseText = try await runCodexCLI(
++            images: images,
++            systemPrompt: systemPrompt,
++            conversationHistory: conversationHistory,
++            userPrompt: userPrompt
++        )
++        await onTextChunk(responseText)
++        return (text: responseText, duration: Date().timeIntervalSince(startTime))
++    }
++
++    func analyzeImage(
++        images: [(data: Data, label: String)],
++        systemPrompt: String,
++        conversationHistory: [(userPlaceholder: String, assistantResponse: String)] = [],
++        userPrompt: String
++    ) async throws -> (text: String, duration: TimeInterval) {
++        let startTime = Date()
++        let responseText = try await runCodexCLI(
++            images: images,
++            systemPrompt: systemPrompt,
++            conversationHistory: conversationHistory,
++            userPrompt: userPrompt
++        )
++        return (text: responseText, duration: Date().timeIntervalSince(startTime))
++    }
++
++    private func runCodexCLI(
++        images: [(data: Data, label: String)],
++        systemPrompt: String,
++        conversationHistory: [(userPlaceholder: String, assistantResponse: String)],
++        userPrompt: String
++    ) async throws -> String {
++        let selectedModel = model
++        return try await Task.detached(priority: .userInitiated) {
++            let temporaryDirectory = try Self.makeTemporaryDirectory()
++            defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
++
++            let imageFileURLs = try Self.writeImages(images, to: temporaryDirectory)
++            let outputFileURL = temporaryDirectory.appendingPathComponent("codex-response.txt")
++            let prompt = Self.makePrompt(
++                images: images,
++                systemPrompt: systemPrompt,
++                conversationHistory: conversationHistory,
++                userPrompt: userPrompt
++            )
++
++            var arguments = [
++                "exec",
++                "--skip-git-repo-check",
++                "--ephemeral",
++                "--sandbox", "read-only",
++                "--cd", temporaryDirectory.path,
++                "--model", selectedModel,
++                "--output-last-message", outputFileURL.path,
++                "--color", "never"
++            ]
++
++            for imageFileURL in imageFileURLs {
++                arguments.append("--image")
++                arguments.append(imageFileURL.path)
++            }
++
++            arguments.append(prompt)
++
++            let process = Process()
++            process.executableURL = try Self.codexExecutableURL()
++            process.arguments = arguments
++
++            let outputPipe = Pipe()
++            let errorPipe = Pipe()
++            process.standardOutput = outputPipe
++            process.standardError = errorPipe
++
++            try process.run()
++            process.waitUntilExit()
++
++            let standardOutput = String(data: outputPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
++            let standardError = String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
++
++            guard process.terminationStatus == 0 else {
++                throw NSError(
++                    domain: "CodexCLIAPI",
++                    code: Int(process.terminationStatus),
++                    userInfo: [NSLocalizedDescriptionKey: Self.makeFailureMessage(standardError: standardError, standardOutput: standardOutput)]
++                )
++            }
++
++            if let responseText = try? String(contentsOf: outputFileURL, encoding: .utf8),
++               !responseText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
++                return responseText.trimmingCharacters(in: .whitespacesAndNewlines)
++            }
++
++            let fallbackText = standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
++            guard !fallbackText.isEmpty else {
++                throw NSError(
++                    domain: "CodexCLIAPI",
++                    code: -1,
++                    userInfo: [NSLocalizedDescriptionKey: "Codex CLI finished without a response"]
++                )
++            }
++
++            return fallbackText
++        }.value
++    }
++
++    private static func codexExecutableURL() throws -> URL {
++        let candidatePaths = [
++            "/opt/homebrew/bin/codex",
++            "/usr/local/bin/codex",
++            "/usr/bin/codex"
++        ]
++
++        for candidatePath in candidatePaths where FileManager.default.isExecutableFile(atPath: candidatePath) {
++            return URL(fileURLWithPath: candidatePath)
++        }
++
++        throw NSError(
++            domain: "CodexCLIAPI",
++            code: -2,
++            userInfo: [NSLocalizedDescriptionKey: "Codex CLI was not found. Install Codex CLI and run `codex login` before using the Codex provider."]
++        )
++    }
++
++    private static func makeTemporaryDirectory() throws -> URL {
++        let directoryURL = URL(fileURLWithPath: NSTemporaryDirectory())
++            .appendingPathComponent("clicky-codex-")
++            .appendingPathComponent(UUID().uuidString, isDirectory: true)
++        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
++        return directoryURL
++    }
++
++    private static func writeImages(
++        _ images: [(data: Data, label: String)],
++        to directoryURL: URL
++    ) throws -> [URL] {
++        try images.enumerated().map { index, image in
++            let fileExtension = detectImageFileExtension(for: image.data)
++            let fileURL = directoryURL.appendingPathComponent("screen-\(index + 1).\(fileExtension)")
++            try image.data.write(to: fileURL, options: .atomic)
++            return fileURL
++        }
++    }
++
++    private static func detectImageFileExtension(for imageData: Data) -> String {
++        if imageData.count >= 4 {
++            let pngSignature: [UInt8] = [0x89, 0x50, 0x4E, 0x47]
++            let firstFourBytes = [UInt8](imageData.prefix(4))
++            if firstFourBytes == pngSignature {
++                return "png"
++            }
++        }
++        return "jpg"
++    }
++
++    private static func makePrompt(
++        images: [(data: Data, label: String)],
++        systemPrompt: String,
++        conversationHistory: [(userPlaceholder: String, assistantResponse: String)],
++        userPrompt: String
++    ) -> String {
++        let imageLabels = images.map(\.label).joined(separator: "\n")
++        let conversationContext = conversationHistory.isEmpty
++            ? "None"
++            : conversationHistory
++                .map { "User: \($0.userPlaceholder)\nAssistant: \($0.assistantResponse)" }
++                .joined(separator: "\n\n")
++
++        return """
++        You are running inside Clicky, a macOS cursor buddy. Do not inspect or modify local files. Do not run shell commands. Use only the attached screenshot images and this prompt.
++
++        System instructions:
++        \(systemPrompt)
++
++        Attached screenshot labels:
++        \(imageLabels)
++
++        Recent conversation context:
++        \(conversationContext)
++
++        Current user request:
++        \(userPrompt)
++        """
++    }
++
++    private static func makeFailureMessage(standardError: String, standardOutput: String) -> String {
++        let combinedOutput = [standardError, standardOutput]
++            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
++            .filter { !$0.isEmpty }
++            .joined(separator: "\n")
++
++        guard !combinedOutput.isEmpty else {
++            return "Codex CLI failed. Run `codex doctor` and confirm `codex login` is complete."
++        }
++
++        return combinedOutput
++    }
++}
+diff --git a/leanring-buddy/CompanionManager.swift b/leanring-buddy/CompanionManager.swift
+index 0234cf19..26feba56 100644
+--- a/leanring-buddy/CompanionManager.swift
++++ b/leanring-buddy/CompanionManager.swift
+@@ -21,6 +21,30 @@ enum CompanionVoiceState {
+     case responding
+ }
+ 
++enum CompanionAIProvider: String {
++    case codex
++    case claude
++
++    var defaultsKey: String {
++        switch self {
++        case .codex:
++            return "selectedCodexModel"
++        case .claude:
++            return "selectedClaudeModel"
++        }
++    }
++}
++
++struct CompanionAIProviderOption {
++    let label: String
++    let provider: CompanionAIProvider
++}
++
++struct CompanionModelOption {
++    let label: String
++    let modelID: String
++}
++
+ @MainActor
+ final class CompanionManager: ObservableObject {
+     @Published private(set) var voiceState: CompanionVoiceState = .idle
+@@ -32,7 +56,7 @@ final class CompanionManager: ObservableObject {
+     @Published private(set) var hasScreenContentPermission = false
+ 
+     /// Screen location (global AppKit coords) of a detected UI element the
+-    /// buddy should fly to and point at. Parsed from Claude's response;
++    /// buddy should fly to and point at. Parsed from the Codex response;
+     /// observed by BlueCursorView to trigger the flight animation.
+     @Published var detectedElementScreenLocation: CGPoint?
+     /// The display frame (global AppKit coords) of the screen the detected
+@@ -72,16 +96,20 @@ final class CompanionManager: ObservableObject {
+     /// through this so keys never ship in the app binary.
+     private static let workerBaseURL = "https://your-worker-name.your-subdomain.workers.dev"
+ 
++    private lazy var codexCLIAPI: CodexCLIAPI = {
++        return CodexCLIAPI(model: selectedModel)
++    }()
++
+     private lazy var claudeAPI: ClaudeAPI = {
+-        return ClaudeAPI(proxyURL: "\(Self.workerBaseURL)/chat", model: selectedModel)
++        return ClaudeAPI(proxyURL: "\(Self.workerBaseURL)/chat/claude", model: selectedModel)
+     }()
+ 
+     private lazy var elevenLabsTTSClient: ElevenLabsTTSClient = {
+         return ElevenLabsTTSClient(proxyURL: "\(Self.workerBaseURL)/tts")
+     }()
+ 
+-    /// Conversation history so Claude remembers prior exchanges within a session.
+-    /// Each entry is the user's transcript and Claude's response.
++    /// Conversation history so the selected AI model remembers prior exchanges within a session.
++    /// Each entry is the user's transcript and the assistant response.
+     private var conversationHistory: [(userTranscript: String, assistantResponse: String)] = []
+ 
+     /// The currently running AI response task, if any. Cancelled when the user
+@@ -107,13 +135,152 @@ final class CompanionManager: ObservableObject {
+     /// Used by the panel to show accurate status text ("Active" vs "Ready").
+     @Published private(set) var isOverlayVisible: Bool = false
+ 
+-    /// The Claude model used for voice responses. Persisted to UserDefaults.
+-    @Published var selectedModel: String = UserDefaults.standard.string(forKey: "selectedClaudeModel") ?? "claude-sonnet-4-6"
++    /// The selected AI provider and model used for voice responses. Persisted to UserDefaults.
++    private static let defaultAIProvider: CompanionAIProvider = .codex
++    private static let defaultCodexModel = "gpt-5.5"
++    private static let defaultClaudeModel = "claude-sonnet-4-6"
++    private static let supportedCodexModels = [
++        "gpt-5.5",
++        "gpt-5.4",
++        "gpt-5.4-mini",
++        "gpt-5.3-codex",
++        "gpt-5.3-codex-spark",
++        "gpt-5.2"
++    ]
++    private static let supportedClaudeModels = ["claude-sonnet-4-6", "claude-opus-4-6"]
++
++    @Published var selectedAIProvider: CompanionAIProvider = CompanionManager.persistedAIProvider()
++    @Published var selectedModel: String = CompanionManager.persistedModel(for: CompanionManager.persistedAIProvider())
++
++    var aiProviderOptions: [CompanionAIProviderOption] {
++        [
++            CompanionAIProviderOption(label: "Codex", provider: .codex),
++            CompanionAIProviderOption(label: "Claude", provider: .claude)
++        ]
++    }
++
++    var modelOptions: [CompanionModelOption] {
++        Self.modelOptions(for: selectedAIProvider)
++    }
++
++    var selectedModelLabel: String {
++        modelOptions.first(where: { $0.modelID == selectedModel })?.label ?? selectedModel
++    }
++
++    private static func persistedAIProvider() -> CompanionAIProvider {
++        guard let storedProvider = UserDefaults.standard.string(forKey: "selectedAIProvider"),
++              let provider = CompanionAIProvider(rawValue: storedProvider) else {
++            return defaultAIProvider
++        }
++
++        return provider
++    }
++
++    private static func persistedModel(for provider: CompanionAIProvider) -> String {
++        let supportedModels = supportedModelIDs(for: provider)
++        let defaultModel = defaultModelID(for: provider)
++
++        guard let storedModel = UserDefaults.standard.string(forKey: provider.defaultsKey),
++              supportedModels.contains(storedModel) else {
++            return defaultModel
++        }
++
++        return storedModel
++    }
++
++    private static func modelOptions(for provider: CompanionAIProvider) -> [CompanionModelOption] {
++        switch provider {
++        case .codex:
++            return [
++                CompanionModelOption(label: "GPT-5.5", modelID: "gpt-5.5"),
++                CompanionModelOption(label: "GPT-5.4", modelID: "gpt-5.4"),
++                CompanionModelOption(label: "5.4 Mini", modelID: "gpt-5.4-mini"),
++                CompanionModelOption(label: "5.3 Codex", modelID: "gpt-5.3-codex"),
++                CompanionModelOption(label: "Spark", modelID: "gpt-5.3-codex-spark"),
++                CompanionModelOption(label: "GPT-5.2", modelID: "gpt-5.2")
++            ]
++        case .claude:
++            return [
++                CompanionModelOption(label: "Sonnet", modelID: "claude-sonnet-4-6"),
++                CompanionModelOption(label: "Opus", modelID: "claude-opus-4-6")
++            ]
++        }
++    }
++
++    private static func supportedModelIDs(for provider: CompanionAIProvider) -> [String] {
++        switch provider {
++        case .codex:
++            return supportedCodexModels
++        case .claude:
++            return supportedClaudeModels
++        }
++    }
++
++    private static func defaultModelID(for provider: CompanionAIProvider) -> String {
++        switch provider {
++        case .codex:
++            return defaultCodexModel
++        case .claude:
++            return defaultClaudeModel
++        }
++    }
++
++    func setSelectedAIProvider(_ provider: CompanionAIProvider) {
++        selectedAIProvider = provider
++        UserDefaults.standard.set(provider.rawValue, forKey: "selectedAIProvider")
++
++        let modelForProvider = Self.persistedModel(for: provider)
++        selectedModel = modelForProvider
++        updateActiveAPIModel(to: modelForProvider)
++    }
+ 
+     func setSelectedModel(_ model: String) {
+-        selectedModel = model
+-        UserDefaults.standard.set(model, forKey: "selectedClaudeModel")
+-        claudeAPI.model = model
++        let supportedModels = Self.supportedModelIDs(for: selectedAIProvider)
++        let validatedModel = supportedModels.contains(model) ? model : Self.defaultModelID(for: selectedAIProvider)
++        selectedModel = validatedModel
++        UserDefaults.standard.set(validatedModel, forKey: selectedAIProvider.defaultsKey)
++        updateActiveAPIModel(to: validatedModel)
++    }
++
++    private func updateActiveAPIModel(to model: String) {
++        switch selectedAIProvider {
++        case .codex:
++            codexCLIAPI.model = model
++        case .claude:
++            claudeAPI.model = model
++        }
++    }
++
++    private func analyzeImageWithSelectedProvider(
++        images: [(data: Data, label: String)],
++        systemPrompt: String,
++        conversationHistory: [(userPlaceholder: String, assistantResponse: String)] = [],
++        userPrompt: String
++    ) async throws -> String {
++        switch selectedAIProvider {
++        case .codex:
++            let (text, _) = try await codexCLIAPI.analyzeImageStreaming(
++                images: images,
++                systemPrompt: systemPrompt,
++                conversationHistory: conversationHistory,
++                userPrompt: userPrompt,
++                onTextChunk: { _ in
++                    // No streaming text display — spinner stays until TTS plays.
++                }
++            )
++            return text
++        case .claude:
++            let (text, _) = try await claudeAPI.analyzeImageStreaming(
++                images: images,
++                systemPrompt: systemPrompt,
++                conversationHistory: conversationHistory,
++                userPrompt: userPrompt,
++                onTextChunk: { _ in
++                    // No streaming text display — spinner stays until TTS plays.
++                }
++            )
++            return text
++        }
+     }
+ 
+     /// User preference for whether the Clicky cursor should be shown.
+@@ -179,8 +346,9 @@ final class CompanionManager: ObservableObject {
+         bindVoiceStateObservation()
+         bindAudioPowerLevel()
+         bindShortcutTransitions()
+-        // Eagerly touch the Claude API so its TLS warmup handshake completes
+-        // well before the onboarding demo fires at ~40s into the video.
++        // Eagerly initialize both AI clients so setup issues surface before
++        // the onboarding demo fires at ~40s into the video.
++        _ = codexCLIAPI
+         _ = claudeAPI
+ 
+         // If the user already completed onboarding AND all permissions are
+@@ -521,7 +689,7 @@ final class CompanionManager: ObservableObject {
+                         self?.lastTranscript = finalTranscript
+                         print("🗣️ Companion received transcript: \(finalTranscript)")
+                         ClickyAnalytics.trackUserMessageSent(transcript: finalTranscript)
+-                        self?.sendTranscriptToClaudeWithScreenshot(transcript: finalTranscript)
++                        self?.sendTranscriptToCodexWithScreenshot(transcript: finalTranscript)
+                     }
+                 )
+             }
+@@ -578,12 +746,12 @@ final class CompanionManager: ObservableObject {
+ 
+     // MARK: - AI Response Pipeline
+ 
+-    /// Captures a screenshot, sends it along with the transcript to Claude,
++    /// Captures a screenshot, sends it along with the transcript to Codex,
+     /// and plays the response aloud via ElevenLabs TTS. The cursor stays in
+     /// the spinner/processing state until TTS audio begins playing.
+-    /// Claude's response may include a [POINT:x,y:label] tag which triggers
++    /// The Codex response may include a [POINT:x,y:label] tag which triggers
+     /// the buddy to fly to that element on screen.
+-    private func sendTranscriptToClaudeWithScreenshot(transcript: String) {
++    private func sendTranscriptToCodexWithScreenshot(transcript: String) {
+         currentResponseTask?.cancel()
+         elevenLabsTTSClient.stopPlayback()
+ 
+@@ -598,35 +766,32 @@ final class CompanionManager: ObservableObject {
+                 guard !Task.isCancelled else { return }
+ 
+                 // Build image labels with the actual screenshot pixel dimensions
+-                // so Claude's coordinate space matches the image it sees. We
++                // so the model's coordinate space matches the image it sees. We
+                 // scale from screenshot pixels to display points ourselves.
+                 let labeledImages = screenCaptures.map { capture in
+                     let dimensionInfo = " (image dimensions: \(capture.screenshotWidthInPixels)x\(capture.screenshotHeightInPixels) pixels)"
+                     return (data: capture.imageData, label: capture.label + dimensionInfo)
+                 }
+ 
+-                // Pass conversation history so Claude remembers prior exchanges
++                // Pass conversation history so the selected model remembers prior exchanges
+                 let historyForAPI = conversationHistory.map { entry in
+                     (userPlaceholder: entry.userTranscript, assistantResponse: entry.assistantResponse)
+                 }
+ 
+-                let (fullResponseText, _) = try await claudeAPI.analyzeImageStreaming(
++                let fullResponseText = try await analyzeImageWithSelectedProvider(
+                     images: labeledImages,
+                     systemPrompt: Self.companionVoiceResponseSystemPrompt,
+                     conversationHistory: historyForAPI,
+-                    userPrompt: transcript,
+-                    onTextChunk: { _ in
+-                        // No streaming text display — spinner stays until TTS plays
+-                    }
++                    userPrompt: transcript
+                 )
+ 
+                 guard !Task.isCancelled else { return }
+ 
+-                // Parse the [POINT:...] tag from Claude's response
++                // Parse the [POINT:...] tag from the Codex response
+                 let parseResult = Self.parsePointingCoordinates(from: fullResponseText)
+                 let spokenText = parseResult.spokenText
+ 
+-                // Handle element pointing if Claude returned coordinates.
++                // Handle element pointing if Codex returned coordinates.
+                 // Switch to idle BEFORE setting the location so the triangle
+                 // becomes visible and can fly to the target. Without this, the
+                 // spinner hides the triangle and the flight animation is invisible.
+@@ -635,7 +800,7 @@ final class CompanionManager: ObservableObject {
+                     voiceState = .idle
+                 }
+ 
+-                // Pick the screen capture matching Claude's screen number,
++                // Pick the screen capture matching the model's screen number,
+                 // falling back to the cursor screen if not specified.
+                 let targetScreenCapture: CompanionScreenCapture? = {
+                     if let screenNumber = parseResult.screenNumber,
+@@ -647,7 +812,7 @@ final class CompanionManager: ObservableObject {
+ 
+                 if let pointCoordinate = parseResult.coordinate,
+                    let targetScreenCapture {
+-                    // Claude's coordinates are in the screenshot's pixel space
++                    // Codex coordinates are in the screenshot's pixel space
+                     // (top-left origin, e.g. 1280x831). Scale to the display's
+                     // point space (e.g. 1512x982), then convert to AppKit global coords.
+                     let screenshotWidth = CGFloat(targetScreenCapture.screenshotWidthInPixels)
+@@ -767,11 +932,11 @@ final class CompanionManager: ObservableObject {
+ 
+     // MARK: - Point Tag Parsing
+ 
+-    /// Result of parsing a [POINT:...] tag from Claude's response.
++    /// Result of parsing a [POINT:...] tag from the Codex response.
+     struct PointingParseResult {
+         /// The response text with the [POINT:...] tag removed — this is what gets spoken.
+         let spokenText: String
+-        /// The parsed pixel coordinate, or nil if Claude said "none" or no tag was found.
++        /// The parsed pixel coordinate, or nil if the model said "none" or no tag was found.
+         let coordinate: CGPoint?
+         /// Short label describing the element (e.g. "run button"), or "none".
+         let elementLabel: String?
+@@ -779,7 +944,7 @@ final class CompanionManager: ObservableObject {
+         let screenNumber: Int?
+     }
+ 
+-    /// Parses a [POINT:x,y:label:screenN] or [POINT:none] tag from the end of Claude's response.
++    /// Parses a [POINT:x,y:label:screenN] or [POINT:none] tag from the end of the Codex response.
+     /// Returns the spoken text (tag removed) and the optional coordinate + label + screen number.
+     static func parsePointingCoordinates(from responseText: String) -> PointingParseResult {
+         // Match [POINT:none] or [POINT:123,456:label] or [POINT:123,456:label:screen2]
+@@ -961,7 +1126,7 @@ final class CompanionManager: ObservableObject {
+     the screenshot images are labeled with their pixel dimensions. use those dimensions as the coordinate space. origin (0,0) is top-left. x increases rightward, y increases downward.
+     """
+ 
+-    /// Captures a screenshot and asks Claude to find something interesting to
++    /// Captures a screenshot and asks Codex to find something interesting to
+     /// point at, then triggers the buddy's flight animation. Used during
+     /// onboarding to demo the pointing feature while the intro video plays.
+     func performOnboardingDemoInteraction() {
+@@ -972,7 +1137,7 @@ final class CompanionManager: ObservableObject {
+             do {
+                 let screenCaptures = try await CompanionScreenCaptureUtility.captureAllScreensAsJPEG()
+ 
+-                // Only send the cursor screen so Claude can't pick something
++                // Only send the cursor screen so Codex can't pick something
+                 // on a different monitor that we can't point at.
+                 guard let cursorScreenCapture = screenCaptures.first(where: { $0.isCursorScreen }) else {
+                     print("🎯 Onboarding demo: no cursor screen found")
+@@ -982,11 +1147,10 @@ final class CompanionManager: ObservableObject {
+                 let dimensionInfo = " (image dimensions: \(cursorScreenCapture.screenshotWidthInPixels)x\(cursorScreenCapture.screenshotHeightInPixels) pixels)"
+                 let labeledImages = [(data: cursorScreenCapture.imageData, label: cursorScreenCapture.label + dimensionInfo)]
+ 
+-                let (fullResponseText, _) = try await claudeAPI.analyzeImageStreaming(
++                let fullResponseText = try await analyzeImageWithSelectedProvider(
+                     images: labeledImages,
+                     systemPrompt: Self.onboardingDemoSystemPrompt,
+                     userPrompt: "look around my screen and find something interesting to point at",
+-                    onTextChunk: { _ in }
+                 )
+ 
+                 let parseResult = Self.parsePointingCoordinates(from: fullResponseText)
+@@ -1012,7 +1176,7 @@ final class CompanionManager: ObservableObject {
+                     y: appKitY + displayFrame.origin.y
+                 )
+ 
+-                // Set custom bubble text so the pointing animation uses Claude's
++                // Set custom bubble text so the pointing animation uses Codex's
+                 // comment instead of a random phrase
+                 detectedElementBubbleText = parseResult.spokenText
+                 detectedElementScreenLocation = globalLocation
+diff --git a/leanring-buddy/CompanionPanelView.swift b/leanring-buddy/CompanionPanelView.swift
+index 76789b4c..fec46834 100644
+--- a/leanring-buddy/CompanionPanelView.swift
++++ b/leanring-buddy/CompanionPanelView.swift
+@@ -29,7 +29,10 @@ struct CompanionPanelView: View {
+                 Spacer()
+                     .frame(height: 12)
+ 
+-                modelPickerRow
++                VStack(spacing: 2) {
++                    aiProviderPickerRow
++                    modelPickerRow
++                }
+                     .padding(.horizontal, 16)
+             }
+ 
+@@ -596,19 +599,20 @@ struct CompanionPanelView: View {
+         .padding(.vertical, 4)
+     }
+ 
+-    // MARK: - Model Picker
++    // MARK: - AI Provider and Model Picker
+ 
+-    private var modelPickerRow: some View {
++    private var aiProviderPickerRow: some View {
+         HStack {
+-            Text("Model")
++            Text("AI")
+                 .font(.system(size: 13, weight: .medium))
+                 .foregroundColor(DS.Colors.textSecondary)
+ 
+             Spacer()
+ 
+             HStack(spacing: 0) {
+-                modelOptionButton(label: "Sonnet", modelID: "claude-sonnet-4-6")
+-                modelOptionButton(label: "Opus", modelID: "claude-opus-4-6")
++                ForEach(companionManager.aiProviderOptions, id: \.label) { option in
++                    aiProviderOptionButton(label: option.label, provider: option.provider)
++                }
+             }
+             .background(
+                 RoundedRectangle(cornerRadius: 6, style: .continuous)
+@@ -622,10 +626,10 @@ struct CompanionPanelView: View {
+         .padding(.vertical, 4)
+     }
+ 
+-    private func modelOptionButton(label: String, modelID: String) -> some View {
+-        let isSelected = companionManager.selectedModel == modelID
++    private func aiProviderOptionButton(label: String, provider: CompanionAIProvider) -> some View {
++        let isSelected = companionManager.selectedAIProvider == provider
+         return Button(action: {
+-            companionManager.setSelectedModel(modelID)
++            companionManager.setSelectedAIProvider(provider)
+         }) {
+             Text(label)
+                 .font(.system(size: 11, weight: .medium))
+@@ -641,6 +645,50 @@ struct CompanionPanelView: View {
+         .pointerCursor()
+     }
+ 
++    private var modelPickerRow: some View {
++        HStack {
++            Text("Model")
++                .font(.system(size: 13, weight: .medium))
++                .foregroundColor(DS.Colors.textSecondary)
++
++            Spacer()
++
++            Menu {
++                ForEach(companionManager.modelOptions, id: \.modelID) { option in
++                    Button(action: {
++                        companionManager.setSelectedModel(option.modelID)
++                    }) {
++                        Text(option.label)
++                    }
++                }
++            } label: {
++                HStack(spacing: 6) {
++                    Text(companionManager.selectedModelLabel)
++                        .font(.system(size: 11, weight: .medium))
++                        .foregroundColor(DS.Colors.textPrimary)
++
++                    Image(systemName: "chevron.down")
++                        .font(.system(size: 9, weight: .semibold))
++                        .foregroundColor(DS.Colors.textTertiary)
++                }
++                .padding(.horizontal, 10)
++                .padding(.vertical, 5)
++                .background(
++                    RoundedRectangle(cornerRadius: 6, style: .continuous)
++                        .fill(Color.white.opacity(0.06))
++                )
++                .overlay(
++                    RoundedRectangle(cornerRadius: 6, style: .continuous)
++                        .stroke(DS.Colors.borderSubtle, lineWidth: 0.5)
++                )
++            }
++            .menuStyle(.borderlessButton)
++            .buttonStyle(.plain)
++            .pointerCursor()
++        }
++        .padding(.vertical, 4)
++    }
++
+     // MARK: - DM Farza Button
+ 
+     private var dmFarzaButton: some View {
+diff --git a/leanring-buddy/ElementLocationDetector.swift b/leanring-buddy/ElementLocationDetector.swift
+deleted file mode 100644
+index 47072b11..00000000
+--- a/leanring-buddy/ElementLocationDetector.swift
++++ /dev/null
+@@ -1,335 +0,0 @@
+-//
+-//  ElementLocationDetector.swift
+-//  leanring-buddy
+-//
+-//  Uses Claude's Computer Use API to identify the screen location of UI elements
+-//  in screenshots. When a user asks about a visible element (e.g., "click the
+-//  blue button"), this detects the element's coordinates so the buddy can
+-//  animate to it and point at it.
+-//
+-
+-import AppKit
+-import Foundation
+-
+-/// Detects the screen location of UI elements in screenshots using Claude's Computer Use API.
+-/// The Computer Use tool definition activates Claude's specialized pixel-counting training,
+-/// which is significantly more accurate than regular vision API coordinate extraction.
+-///
+-/// **Aspect ratio matching**: Instead of always resizing to 1024x768 (4:3), we pick the
+-/// Anthropic-recommended resolution closest to the display's actual aspect ratio. Most
+-/// Macs are 16:10 → 1280x800. This avoids distorting the image Claude sees, which
+-/// significantly improves X-axis coordinate accuracy.
+-class ElementLocationDetector {
+-    private let apiKey: String
+-    private let apiURL: URL
+-    private let model: String
+-    private let session: URLSession
+-
+-    /// Anthropic-recommended resolutions for Computer Use, paired with their aspect ratios.
+-    /// We pick the one closest to the actual display aspect ratio to avoid distortion.
+-    /// Higher resolutions get downsampled by the API and degrade precision, so these
+-    /// are intentionally small.
+-    private static let supportedComputerUseResolutions: [(width: Int, height: Int, aspectRatio: Double)] = [
+-        (1024, 768,  1024.0 / 768.0),  // 4:3   = 1.333 (legacy displays)
+-        (1280, 800,  1280.0 / 800.0),  // 16:10  = 1.600 (MacBook Air, MacBook Pro, most Macs)
+-        (1366, 768,  1366.0 / 768.0)   // ~16:9  = 1.779 (external monitors, ultrawide fallback)
+-    ]
+-
+-    init(apiKey: String, model: String = "claude-sonnet-4-6") {
+-        self.apiKey = apiKey
+-        self.apiURL = URL(string: "https://api.anthropic.com/v1/messages")!
+-        self.model = model
+-
+-        let config = URLSessionConfiguration.default
+-        config.timeoutIntervalForRequest = 15
+-        config.timeoutIntervalForResource = 20
+-        config.waitsForConnectivity = false
+-        config.urlCache = nil
+-        config.httpCookieStorage = nil
+-        self.session = URLSession(configuration: config)
+-    }
+-
+-    /// Detects the screen location of a UI element the user is asking about.
+-    ///
+-    /// - Parameters:
+-    ///   - screenshotData: JPEG or PNG screenshot data from ScreenCaptureKit
+-    ///   - userQuestion: The user's voice transcript (e.g., "How do I add a project?")
+-    ///   - displayWidthInPoints: The captured display's width in screen points
+-    ///   - displayHeightInPoints: The captured display's height in screen points
+-    ///
+-    /// - Returns: A `CGPoint` in display-local macOS coordinates (bottom-left origin) if an
+-    ///   element was identified, or `nil` if no element was found or detection failed.
+-    func detectElementLocation(
+-        screenshotData: Data,
+-        userQuestion: String,
+-        displayWidthInPoints: Int,
+-        displayHeightInPoints: Int
+-    ) async -> CGPoint? {
+-        // Pick the Computer Use resolution that best matches this display's aspect ratio.
+-        // This avoids stretching the screenshot (e.g., squishing a 16:10 Mac display
+-        // into 4:3), which would distort the image Claude sees and degrade X-axis accuracy.
+-        let computerUseResolution = bestComputerUseResolution(
+-            forDisplayWidth: displayWidthInPoints,
+-            displayHeight: displayHeightInPoints
+-        )
+-
+-        print("🎯 ElementLocationDetector: display is \(displayWidthInPoints)x\(displayHeightInPoints) " +
+-              "(ratio \(String(format: "%.3f", Double(displayWidthInPoints) / Double(displayHeightInPoints)))), " +
+-              "using Computer Use resolution \(computerUseResolution.width)x\(computerUseResolution.height)")
+-
+-        // Resize the screenshot to the chosen Computer Use resolution
+-        guard let resizedScreenshotData = resizeScreenshotForComputerUse(
+-            originalImageData: screenshotData,
+-            targetWidth: computerUseResolution.width,
+-            targetHeight: computerUseResolution.height
+-        ) else {
+-            print("⚠️ ElementLocationDetector: failed to resize screenshot")
+-            return nil
+-        }
+-
+-        // Make the Computer Use API call with the matching resolution declared
+-        guard let computerUseCoordinate = await callComputerUseAPI(
+-            resizedScreenshotData: resizedScreenshotData,
+-            userQuestion: userQuestion,
+-            declaredDisplayWidth: computerUseResolution.width,
+-            declaredDisplayHeight: computerUseResolution.height
+-        ) else {
+-            return nil
+-        }
+-
+-        // Clamp coordinates to the valid range — Claude occasionally returns
+-        // values slightly outside the declared display dimensions, which would
+-        // map to off-screen positions after scaling.
+-        let clampedX = max(0, min(computerUseCoordinate.x, CGFloat(computerUseResolution.width)))
+-        let clampedY = max(0, min(computerUseCoordinate.y, CGFloat(computerUseResolution.height)))
+-
+-        // Scale coordinates from the Computer Use resolution back to actual display point dimensions
+-        let scaledX = (clampedX / CGFloat(computerUseResolution.width)) * CGFloat(displayWidthInPoints)
+-        let scaledYTopLeftOrigin = (clampedY / CGFloat(computerUseResolution.height)) * CGFloat(displayHeightInPoints)
+-
+-        // Convert from top-left origin (Computer Use / CoreGraphics) to bottom-left origin (AppKit)
+-        let scaledYBottomLeftOrigin = CGFloat(displayHeightInPoints) - scaledYTopLeftOrigin
+-
+-        print("🎯 ElementLocationDetector: mapped (\(Int(clampedX)), \(Int(clampedY))) in " +
+-              "\(computerUseResolution.width)x\(computerUseResolution.height) → " +
+-              "(\(Int(scaledX)), \(Int(scaledYBottomLeftOrigin))) in " +
+-              "\(displayWidthInPoints)x\(displayHeightInPoints) display-local AppKit coords")
+-
+-        return CGPoint(x: scaledX, y: scaledYBottomLeftOrigin)
+-    }
+-
+-    // MARK: - Private Helpers
+-
+-    /// Picks the Anthropic-recommended Computer Use resolution whose aspect ratio
+-    /// is closest to the actual display, minimizing image distortion.
+-    private func bestComputerUseResolution(
+-        forDisplayWidth displayWidth: Int,
+-        displayHeight: Int
+-    ) -> (width: Int, height: Int) {
+-        let displayAspectRatio = Double(displayWidth) / Double(max(1, displayHeight))
+-
+-        var bestWidth = 1280
+-        var bestHeight = 800
+-        var smallestAspectRatioDifference = Double.greatestFiniteMagnitude
+-
+-        for resolution in Self.supportedComputerUseResolutions {
+-            let difference = abs(displayAspectRatio - resolution.aspectRatio)
+-            if difference < smallestAspectRatioDifference {
+-                smallestAspectRatioDifference = difference
+-                bestWidth = resolution.width
+-                bestHeight = resolution.height
+-            }
+-        }
+-
+-        return (width: bestWidth, height: bestHeight)
+-    }
+-
+-    /// Calls the Claude Computer Use API with a resized screenshot and user question.
+-    /// Returns the raw coordinate from Claude's response in the declared resolution space, or nil.
+-    private func callComputerUseAPI(
+-        resizedScreenshotData: Data,
+-        userQuestion: String,
+-        declaredDisplayWidth: Int,
+-        declaredDisplayHeight: Int
+-    ) async -> CGPoint? {
+-        var request = URLRequest(url: apiURL)
+-        request.httpMethod = "POST"
+-        request.timeoutInterval = 15
+-        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+-        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+-        // The beta header activates Computer Use capabilities and the specialized
+-        // pixel-counting training that makes coordinate detection accurate.
+-        request.setValue("computer-use-2025-11-24", forHTTPHeaderField: "anthropic-beta")
+-
+-        // Detect image media type (PNG vs JPEG)
+-        let mediaType = detectImageMediaType(for: resizedScreenshotData)
+-        let base64Screenshot = resizedScreenshotData.base64EncodedString()
+-
+-        let userPrompt = """
+-        The user asked this question while looking at their screen: "\(userQuestion)"
+-
+-        Look at the screenshot. If there is a specific UI element (button, link, menu item, text field, icon, etc.) that the user should interact with or is asking about, click on that element.
+-
+-        If the question is purely conceptual (e.g., "what does HTML mean?") and there's no specific element to point to, just respond with text saying "no specific element".
+-        """
+-
+-        let body: [String: Any] = [
+-            "model": model,
+-            "max_tokens": 256,
+-            "tools": [
+-                [
+-                    "type": "computer_20251124",
+-                    "name": "computer",
+-                    "display_width_px": declaredDisplayWidth,
+-                    "display_height_px": declaredDisplayHeight
+-                ]
+-            ],
+-            "messages": [
+-                [
+-                    "role": "user",
+-                    "content": [
+-                        [
+-                            "type": "image",
+-                            "source": [
+-                                "type": "base64",
+-                                "media_type": mediaType,
+-                                "data": base64Screenshot
+-                            ]
+-                        ],
+-                        [
+-                            "type": "text",
+-                            "text": userPrompt
+-                        ]
+-                    ]
+-                ]
+-            ]
+-        ]
+-
+-        do {
+-            let bodyData = try JSONSerialization.data(withJSONObject: body)
+-            request.httpBody = bodyData
+-
+-            let payloadMB = Double(bodyData.count) / 1_048_576.0
+-            print("🎯 ElementLocationDetector: sending \(String(format: "%.1f", payloadMB))MB request " +
+-                  "(declared \(declaredDisplayWidth)x\(declaredDisplayHeight))")
+-
+-            let (data, response) = try await session.data(for: request)
+-
+-            guard let httpResponse = response as? HTTPURLResponse,
+-                  (200...299).contains(httpResponse.statusCode) else {
+-                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+-                let errorBody = String(data: data, encoding: .utf8) ?? "unknown"
+-                print("⚠️ ElementLocationDetector: API error \(statusCode): \(errorBody.prefix(200))")
+-                return nil
+-            }
+-
+-            return parseCoordinateFromResponse(data: data)
+-
+-        } catch {
+-            print("⚠️ ElementLocationDetector: request failed: \(error.localizedDescription)")
+-            return nil
+-        }
+-    }
+-
+-    /// Parses the Computer Use API response to extract click coordinates.
+-    /// Claude returns a `tool_use` content block with `{"action": "left_click", "coordinate": [x, y]}`.
+-    /// If Claude returns text instead (no element found), returns nil.
+-    private func parseCoordinateFromResponse(data: Data) -> CGPoint? {
+-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+-              let contentBlocks = json["content"] as? [[String: Any]] else {
+-            print("⚠️ ElementLocationDetector: could not parse response JSON")
+-            return nil
+-        }
+-
+-        // Look for a tool_use content block (Claude's Computer Use response format)
+-        for block in contentBlocks {
+-            guard let blockType = block["type"] as? String,
+-                  blockType == "tool_use",
+-                  let input = block["input"] as? [String: Any],
+-                  let coordinate = input["coordinate"] as? [NSNumber],
+-                  coordinate.count == 2 else {
+-                continue
+-            }
+-
+-            let x = CGFloat(coordinate[0].doubleValue)
+-            let y = CGFloat(coordinate[1].doubleValue)
+-            print("🎯 ElementLocationDetector: raw coordinate (\(Int(x)), \(Int(y)))")
+-            return CGPoint(x: x, y: y)
+-        }
+-
+-        // No tool_use block found — Claude responded with text (no element to point at)
+-        print("🎯 ElementLocationDetector: no specific element detected (conceptual question)")
+-        return nil
+-    }
+-
+-    /// Resizes screenshot data to the specified Computer Use resolution.
+-    /// The target resolution should match the display's aspect ratio to avoid
+-    /// distortion that degrades coordinate accuracy.
+-    ///
+-    /// **Critical Retina fix**: Uses `NSBitmapImageRep` directly instead of
+-    /// `NSImage.lockFocus()`. On Retina displays (2x backing scale), lockFocus
+-    /// creates a bitmap at 2× the declared size (e.g., 2560×1600 for a 1280×800
+-    /// NSImage). This means the JPEG sent to Claude would be 2× larger than the
+-    /// resolution declared in the Computer Use tool definition, causing Claude's
+-    /// pixel-counting to return coordinates in the wrong scale.
+-    private func resizeScreenshotForComputerUse(
+-        originalImageData: Data,
+-        targetWidth: Int,
+-        targetHeight: Int
+-    ) -> Data? {
+-        guard let originalImage = NSImage(data: originalImageData) else { return nil }
+-
+-        // Create a bitmap representation with exact pixel dimensions.
+-        // This bypasses NSImage's Retina-aware coordinate system which would
+-        // otherwise double the actual pixel count on 2x displays.
+-        guard let bitmapRep = NSBitmapImageRep(
+-            bitmapDataPlanes: nil,
+-            pixelsWide: targetWidth,
+-            pixelsHigh: targetHeight,
+-            bitsPerSample: 8,
+-            samplesPerPixel: 4,
+-            hasAlpha: true,
+-            isPlanar: false,
+-            colorSpaceName: .deviceRGB,
+-            bytesPerRow: 0,
+-            bitsPerPixel: 0
+-        ) else {
+-            return nil
+-        }
+-
+-        // Set the point size to match pixel dimensions (1:1, no Retina scaling).
+-        bitmapRep.size = NSSize(width: targetWidth, height: targetHeight)
+-
+-        // Draw the original image into the exact-pixel-dimension bitmap
+-        NSGraphicsContext.saveGraphicsState()
+-        let graphicsContext = NSGraphicsContext(bitmapImageRep: bitmapRep)
+-        NSGraphicsContext.current = graphicsContext
+-        graphicsContext?.imageInterpolation = .high
+-        originalImage.draw(
+-            in: NSRect(x: 0, y: 0, width: targetWidth, height: targetHeight),
+-            from: NSRect(origin: .zero, size: originalImage.size),
+-            operation: .copy,
+-            fraction: 1.0
+-        )
+-        NSGraphicsContext.restoreGraphicsState()
+-
+-        guard let jpegData = bitmapRep.representation(using: .jpeg, properties: [.compressionFactor: 0.85]) else {
+-            return nil
+-        }
+-
+-        return jpegData
+-    }
+-
+-    /// Detects MIME type by inspecting the first bytes of image data.
+-    private func detectImageMediaType(for imageData: Data) -> String {
+-        if imageData.count >= 4 {
+-            let pngSignature: [UInt8] = [0x89, 0x50, 0x4E, 0x47]
+-            let firstFourBytes = [UInt8](imageData.prefix(4))
+-            if firstFourBytes == pngSignature {
+-                return "image/png"
+-            }
+-        }
+-        return "image/jpeg"
+-    }
+-}
+diff --git a/leanring-buddy/OpenAIAPI.swift b/leanring-buddy/OpenAIAPI.swift
+deleted file mode 100644
+index d0c3f2ae..00000000
+--- a/leanring-buddy/OpenAIAPI.swift
++++ /dev/null
+@@ -1,142 +0,0 @@
+-//
+-//  OpenAIAPI.swift
+-//  OpenAI API Implementation
+-//
+-
+-import Foundation
+-
+-/// OpenAI API helper for vision analysis
+-class OpenAIAPI {
+-    private let apiKey: String
+-    private let apiURL: URL
+-    private let model: String
+-    private let session: URLSession
+-
+-    init(apiKey: String, model: String = "gpt-5.2-2025-12-11") {
+-        self.apiKey = apiKey
+-        self.apiURL = URL(string: "https://api.openai.com/v1/chat/completions")!
+-        self.model = model
+-
+-        // Use .default instead of .ephemeral so TLS session tickets are cached.
+-        // Ephemeral sessions do a full TLS handshake on every request, which causes
+-        // transient -1200 (errSSLPeerHandshakeFail) errors with large image payloads.
+-        // Disable URL/cookie caching to avoid storing responses or credentials on disk.
+-        let config = URLSessionConfiguration.default
+-        config.timeoutIntervalForRequest = 120
+-        config.timeoutIntervalForResource = 300
+-        config.waitsForConnectivity = true
+-        config.urlCache = nil
+-        config.httpCookieStorage = nil
+-        self.session = URLSession(configuration: config)
+-
+-        // Fire a lightweight HEAD request in the background to pre-establish the TLS
+-        // connection. This caches the TLS session ticket so the first real API call
+-        // (which carries a large image payload) doesn't need a cold TLS handshake.
+-        warmUpTLSConnection()
+-    }
+-
+-    /// Sends a no-op HEAD request to the API host to establish and cache a TLS session.
+-    /// Failures are silently ignored — this is purely an optimization.
+-    private func warmUpTLSConnection() {
+-        var warmupRequest = URLRequest(url: apiURL)
+-        warmupRequest.httpMethod = "HEAD"
+-        warmupRequest.timeoutInterval = 10
+-        session.dataTask(with: warmupRequest) { _, _, _ in
+-            // Response doesn't matter — the TLS handshake is the goal
+-        }.resume()
+-    }
+-
+-    /// Send a vision request to OpenAI with one or more labeled images.
+-    func analyzeImage(
+-        images: [(data: Data, label: String)],
+-        systemPrompt: String,
+-        conversationHistory: [(userPlaceholder: String, assistantResponse: String)] = [],
+-        userPrompt: String
+-    ) async throws -> (text: String, duration: TimeInterval) {
+-        let startTime = Date()
+-
+-        // Build request
+-        var request = URLRequest(url: apiURL)
+-        request.httpMethod = "POST"
+-        request.timeoutInterval = 120
+-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+-
+-        // Build messages array
+-        var messages: [[String: Any]] = []
+-
+-        // Add system message first
+-        messages.append([
+-            "role": "system",
+-            "content": systemPrompt
+-        ])
+-
+-        // Add conversation history
+-        for (userPlaceholder, assistantResponse) in conversationHistory {
+-            messages.append(["role": "user", "content": userPlaceholder])
+-            messages.append(["role": "assistant", "content": assistantResponse])
+-        }
+-
+-        // Build current message with all labeled images + prompt
+-        var contentBlocks: [[String: Any]] = []
+-        for image in images {
+-            contentBlocks.append([
+-                "type": "text",
+-                "text": image.label
+-            ])
+-            contentBlocks.append([
+-                "type": "image_url",
+-                "image_url": [
+-                    "url": "data:image/jpeg;base64,\(image.data.base64EncodedString())"
+-                ]
+-            ])
+-        }
+-        contentBlocks.append([
+-            "type": "text",
+-            "text": userPrompt
+-        ])
+-        messages.append(["role": "user", "content": contentBlocks])
+-
+-        // Build request body
+-        let body: [String: Any] = [
+-            "model": model,
+-            // `max_tokens` is deprecated/incompatible for some newer OpenAI models.
+-            "max_completion_tokens": 600,
+-            "messages": messages
+-        ]
+-
+-        let bodyData = try JSONSerialization.data(withJSONObject: body)
+-        request.httpBody = bodyData
+-        let payloadMB = Double(bodyData.count) / 1_048_576.0
+-        print("🌐 OpenAI request: \(String(format: "%.1f", payloadMB))MB, \(images.count) image(s)")
+-
+-        // Send request
+-        let (data, response) = try await session.data(for: request)
+-
+-        guard let httpResponse = response as? HTTPURLResponse,
+-              (200...299).contains(httpResponse.statusCode) else {
+-            let responseString = String(data: data, encoding: .utf8) ?? "Unknown error"
+-            throw NSError(
+-                domain: "OpenAIAPI",
+-                code: (response as? HTTPURLResponse)?.statusCode ?? -1,
+-                userInfo: [NSLocalizedDescriptionKey: "API Error: \(responseString)"]
+-            )
+-        }
+-
+-        // Parse response
+-        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+-        guard let choices = json?["choices"] as? [[String: Any]],
+-              let firstChoice = choices.first,
+-              let message = firstChoice["message"] as? [String: Any],
+-              let text = message["content"] as? String else {
+-            throw NSError(
+-                domain: "OpenAIAPI",
+-                code: -1,
+-                userInfo: [NSLocalizedDescriptionKey: "Invalid response format"]
+-            )
+-        }
+-
+-        let duration = Date().timeIntervalSince(startTime)
+-        return (text: text, duration: duration)
+-    }
+-}
+diff --git a/leanring-buddy/OverlayWindow.swift b/leanring-buddy/OverlayWindow.swift
+index 884ebcbf..f566e68d 100644
+--- a/leanring-buddy/OverlayWindow.swift
++++ b/leanring-buddy/OverlayWindow.swift
+@@ -329,7 +329,7 @@ struct BlueCursorView: View {
+                 .animation(.spring(response: 0.2, dampingFraction: 0.6, blendDuration: 0), value: cursorPosition)
+                 .animation(.easeIn(duration: 0.15), value: companionManager.voiceState)
+ 
+-            // Blue spinner — shown while the AI is processing (transcription + Claude + waiting for TTS)
++            // Blue spinner — shown while the AI is processing (transcription + AI response + waiting for TTS)
+             BlueCursorSpinnerView()
+                 .opacity(buddyIsVisibleOnThisScreen && companionManager.voiceState == .processing ? cursorOpacity : 0)
+                 .position(cursorPosition)
+diff --git a/worker/src/index.ts b/worker/src/index.ts
+index 2e3e9345..3fc7bd93 100644
+--- a/worker/src/index.ts
++++ b/worker/src/index.ts
+@@ -1,19 +1,21 @@
+ /**
+  * Clicky Proxy Worker
+  *
+- * Proxies requests to Claude and ElevenLabs APIs so the app never
+- * ships with raw API keys. Keys are stored as Cloudflare secrets.
++ * Proxies requests to Anthropic, AssemblyAI, and ElevenLabs APIs so the app
++ * never ships with raw API keys. Codex runs through the user's local Codex CLI.
+  *
+  * Routes:
+- *   POST /chat  → Anthropic Messages API (streaming)
+- *   POST /tts   → ElevenLabs TTS API
++ *   POST /chat             → Anthropic Messages API (Claude, streaming)
++ *   POST /chat/claude      → Anthropic Messages API (Claude, streaming)
++ *   POST /tts              → ElevenLabs TTS API
++ *   POST /transcribe-token → AssemblyAI temporary streaming token
+  */
+ 
+ interface Env {
+-  ANTHROPIC_API_KEY: string;
+-  ELEVENLABS_API_KEY: string;
+-  ELEVENLABS_VOICE_ID: string;
+-  ASSEMBLYAI_API_KEY: string;
++  ANTHROPIC_API_KEY?: string;
++  ELEVENLABS_API_KEY?: string;
++  ELEVENLABS_VOICE_ID?: string;
++  ASSEMBLYAI_API_KEY?: string;
+ }
+ 
+ export default {
+@@ -25,8 +27,8 @@ export default {
+     }
+ 
+     try {
+-      if (url.pathname === "/chat") {
+-        return await handleChat(request, env);
++      if (url.pathname === "/chat" || url.pathname === "/chat/claude") {
++        return await handleClaudeChat(request, env);
+       }
+ 
+       if (url.pathname === "/tts") {
+@@ -48,7 +50,11 @@ export default {
+   },
+ };
+ 
+-async function handleChat(request: Request, env: Env): Promise<Response> {
++async function handleClaudeChat(request: Request, env: Env): Promise<Response> {
++  if (!env.ANTHROPIC_API_KEY) {
++    return missingSecretResponse("ANTHROPIC_API_KEY");
++  }
++
+   const body = await request.text();
+ 
+   const response = await fetch("https://api.anthropic.com/v1/messages", {
+@@ -63,7 +69,7 @@ async function handleChat(request: Request, env: Env): Promise<Response> {
+ 
+   if (!response.ok) {
+     const errorBody = await response.text();
+-    console.error(`[/chat] Anthropic API error ${response.status}: ${errorBody}`);
++    console.error(`[/chat/claude] Anthropic API error ${response.status}: ${errorBody}`);
+     return new Response(errorBody, {
+       status: response.status,
+       headers: { "content-type": "application/json" },
+@@ -80,6 +86,10 @@ async function handleChat(request: Request, env: Env): Promise<Response> {
+ }
+ 
+ async function handleTranscribeToken(env: Env): Promise<Response> {
++  if (!env.ASSEMBLYAI_API_KEY) {
++    return missingSecretResponse("ASSEMBLYAI_API_KEY");
++  }
++
+   const response = await fetch(
+     "https://streaming.assemblyai.com/v3/token?expires_in_seconds=480",
+     {
+@@ -107,6 +117,14 @@ async function handleTranscribeToken(env: Env): Promise<Response> {
+ }
+ 
+ async function handleTTS(request: Request, env: Env): Promise<Response> {
++  if (!env.ELEVENLABS_API_KEY) {
++    return missingSecretResponse("ELEVENLABS_API_KEY");
++  }
++
++  if (!env.ELEVENLABS_VOICE_ID) {
++    return missingSecretResponse("ELEVENLABS_VOICE_ID");
++  }
++
+   const body = await request.text();
+   const voiceId = env.ELEVENLABS_VOICE_ID;
+ 
+@@ -139,3 +157,15 @@ async function handleTTS(request: Request, env: Env): Promise<Response> {
+     },
+   });
+ }
++
++function missingSecretResponse(secretName: string): Response {
++  return new Response(
++    JSON.stringify({
++      error: `Missing Cloudflare Worker secret: ${secretName}`,
++    }),
++    {
++      status: 500,
++      headers: { "content-type": "application/json" },
++    }
++  );
++}

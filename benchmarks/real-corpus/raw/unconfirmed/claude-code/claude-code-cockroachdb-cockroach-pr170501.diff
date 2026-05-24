@@ -1,0 +1,151 @@
+diff --git a/pkg/ccl/changefeedccl/sink_kafka.go b/pkg/ccl/changefeedccl/sink_kafka.go
+index fd94f01e6976..ee93c2bc26ec 100644
+--- a/pkg/ccl/changefeedccl/sink_kafka.go
++++ b/pkg/ccl/changefeedccl/sink_kafka.go
+@@ -31,6 +31,7 @@ import (
+ 	"github.com/cockroachdb/cockroach/pkg/util/bufalloc"
+ 	"github.com/cockroachdb/cockroach/pkg/util/cidr"
+ 	"github.com/cockroachdb/cockroach/pkg/util/hlc"
++	"github.com/cockroachdb/cockroach/pkg/util/humanizeutil"
+ 	"github.com/cockroachdb/cockroach/pkg/util/log"
+ 	"github.com/cockroachdb/cockroach/pkg/util/syncutil"
+ 	"github.com/cockroachdb/cockroach/pkg/util/timeutil"
+@@ -201,8 +202,9 @@ type saramaConfig struct {
+ 		MaxMessages int          `json:",omitempty"`
+ 		// MaxBytes overrides the cluster setting
+ 		// changefeed.kafka.max_request_size for this changefeed.
+-		// int32 to match kgo.ProducerBatchMaxBytes.
+-		MaxBytes int32 `json:",omitempty"`
++		// Accepts both raw int32 values and human-readable byte
++		// strings (e.g. "1MiB").
++		MaxBytes jsonByteSize `json:",omitempty"`
+ 	}
+ 
+ 	Compression      compressionCodec `json:",omitempty"`
+@@ -802,6 +804,36 @@ func (j *jsonDuration) UnmarshalJSON(b []byte) error {
+ 	return nil
+ }
+ 
++type jsonByteSize int32
++
++func (j *jsonByteSize) UnmarshalJSON(b []byte) error {
++	var n json.Number
++	if err := json.Unmarshal(b, &n); err == nil {
++		i, err := n.Int64()
++		if err != nil {
++			return err
++		}
++		if i < math.MinInt32 || i > math.MaxInt32 {
++			return errors.Newf("byte size value %d overflows int32", i)
++		}
++		*j = jsonByteSize(i)
++		return nil
++	}
++	var s string
++	if err := json.Unmarshal(b, &s); err != nil {
++		return err
++	}
++	val, err := humanizeutil.ParseBytes(s)
++	if err != nil {
++		return err
++	}
++	if val < math.MinInt32 || val > math.MaxInt32 {
++		return errors.Newf("byte size value %d overflows int32", val)
++	}
++	*j = jsonByteSize(val)
++	return nil
++}
++
+ // Apply configures provided kafka configuration struct based on this config.
+ func (c *saramaConfig) Apply(kafka *sarama.Config) error {
+ 	// Sarama limits the size of each message to be MaxMessageSize (1MB) bytes.
+diff --git a/pkg/ccl/changefeedccl/sink_kafka_v2.go b/pkg/ccl/changefeedccl/sink_kafka_v2.go
+index 2bf8ebe35645..1a3a35937e5b 100644
+--- a/pkg/ccl/changefeedccl/sink_kafka_v2.go
++++ b/pkg/ccl/changefeedccl/sink_kafka_v2.go
+@@ -513,7 +513,7 @@ func buildKgoConfig(
+ 				changefeedbase.KafkaMaxRequestSizeLimit, sinkCfg.Flush.MaxBytes)
+ 		}
+ 		// Override the cluster setting default set in baseOpts; kgo uses last-writer-wins.
+-		opts = append(opts, kgo.ProducerBatchMaxBytes(sinkCfg.Flush.MaxBytes))
++		opts = append(opts, kgo.ProducerBatchMaxBytes(int32(sinkCfg.Flush.MaxBytes)))
+ 	}
+ 
+ 	// If the user sets MaxMessages, use that as kgo's overall max batch size.
+diff --git a/pkg/ccl/changefeedccl/sink_kafka_v2_test.go b/pkg/ccl/changefeedccl/sink_kafka_v2_test.go
+index 131c600adc0d..a9a2104b3af8 100644
+--- a/pkg/ccl/changefeedccl/sink_kafka_v2_test.go
++++ b/pkg/ccl/changefeedccl/sink_kafka_v2_test.go
+@@ -828,6 +828,9 @@ func TestMaxRequestSize(t *testing.T) {
+ 		// perChangefeed is the value set in the config option on the changefeed
+ 		// as MaxBytes in the json.
+ 		perChangefeed int
++		// perChangefeedStr is used instead of perChangefeed when set,
++		// allowing string values like "2MiB".
++		perChangefeedStr string
+ 
+ 		// wantValue is the expected value of the kgo "ProducerBatchMaxBytes"
+ 		// option. If we expect the setting to be valid we assert that the
+@@ -882,6 +885,16 @@ func TestMaxRequestSize(t *testing.T) {
+ 			perChangefeed:   256<<20 + 1,
+ 			wantErrContains: fmt.Sprintf("at most %d", changefeedbase.KafkaMaxRequestSizeLimit),
+ 		},
++		{
++			name:             "per_changefeed_human_readable",
++			perChangefeedStr: "2MiB",
++			wantValue:        int32(2 << 20),
++		},
++		{
++			name:             "per_changefeed_human_readable_kib",
++			perChangefeedStr: "512KiB",
++			wantValue:        int32(512 * 1024),
++		},
+ 	}
+ 
+ 	for _, tc := range tests {
+@@ -897,7 +910,10 @@ func TestMaxRequestSize(t *testing.T) {
+ 					)
+ 				}))
+ 			}
+-			if tc.perChangefeed != 0 {
++			if tc.perChangefeedStr != "" {
++				jsonStr := fmt.Sprintf(`{"Flush": {"MaxBytes": %q}}`, tc.perChangefeedStr)
++				opts = append(opts, withJSONConfig(jsonStr))
++			} else if tc.perChangefeed != 0 {
+ 				jsonBs, err := json.Marshal(map[string]any{
+ 					"Flush": map[string]any{
+ 						"MaxBytes": tc.perChangefeed,
+diff --git a/pkg/ccl/changefeedccl/sink_test.go b/pkg/ccl/changefeedccl/sink_test.go
+index 8745404044f4..c01176fc452e 100644
+--- a/pkg/ccl/changefeedccl/sink_test.go
++++ b/pkg/ccl/changefeedccl/sink_test.go
+@@ -839,6 +839,29 @@ func TestSaramaConfigOptionParsing(t *testing.T) {
+ 			})
+ 		}
+ 	})
++	t.Run("MaxBytes accepts human-readable byte strings", func(t *testing.T) {
++		opts := changefeedbase.SinkSpecificJSONConfig(`{"Flush": {"MaxBytes": "1MiB"}}`)
++		cfg, err := getSaramaConfig(opts)
++		require.NoError(t, err)
++		require.Equal(t, jsonByteSize(1<<20), cfg.Flush.MaxBytes)
++	})
++	t.Run("MaxBytes accepts integer values", func(t *testing.T) {
++		opts := changefeedbase.SinkSpecificJSONConfig(`{"Flush": {"MaxBytes": 1048576}}`)
++		cfg, err := getSaramaConfig(opts)
++		require.NoError(t, err)
++		require.Equal(t, jsonByteSize(1<<20), cfg.Flush.MaxBytes)
++	})
++	t.Run("MaxBytes accepts other byte units", func(t *testing.T) {
++		opts := changefeedbase.SinkSpecificJSONConfig(`{"Flush": {"MaxBytes": "512KiB"}}`)
++		cfg, err := getSaramaConfig(opts)
++		require.NoError(t, err)
++		require.Equal(t, jsonByteSize(512*1024), cfg.Flush.MaxBytes)
++	})
++	t.Run("MaxBytes returns error for invalid string", func(t *testing.T) {
++		opts := changefeedbase.SinkSpecificJSONConfig(`{"Flush": {"MaxBytes": "notabyte"}}`)
++		_, err := getSaramaConfig(opts)
++		require.Error(t, err)
++	})
+ 	t.Run("validate returns err for bad compression level", func(t *testing.T) {
+ 		opts := changefeedbase.SinkSpecificJSONConfig(`{"Compression": "GZIP", "CompressionLevel": "invalid"}`)
+ 		_, err := getSaramaConfig(opts)

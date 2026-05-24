@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-ManLOK-Chu-cc-switch-pr2",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "commit=codex-cli-footer"
+  },
+  "pr": {
+    "number": 2,
+    "headSha": "b6924ba914837766520d809787342f5ad32dd349",
+    "baseSha": "d5680293d4821bbda56b3eddab05fe2e9c0ae564",
+    "title": "feat(proxy): Codex → Anthropic API router with upstream compatibility normalization",
+    "body": "## Summary\n\n- Add full request/response format conversion pipeline for Codex CLI clients talking to Anthropic-compatible upstreams (e.g. Xiaomi MiMo, third-party Anthropic proxies)\n- Add request body normalizer that fixes strict upstream rejections for `tool_choice` format and missing/empty message content blocks\n- Add frontend configuration support for Anthropic API format in Codex provider settings\n\n## Changes\n\n### Backend (Rust)\n\n**New modules:**\n- `transform_anthropic_to_codex.rs` — Anthropic → OpenAI response streaming conversion (Chat Completions + Responses API)\n- `streaming_codex_anthropic.rs` — SSE streaming adapter for Anthropic upstream responses back to Codex client format\n\n**Modified modules:**\n- `forwarder.rs` — New `codex_to_anthropic` routing path with Anthropic auth (x-api-key), URL building, and `normalize_anthropic_request_body()` for upstream compatibility:\n  - `tool_choice`: string shorthand (`\"auto\"`) → Anthropic object format (`{\"type\": \"auto\"}`)\n  - `messages[].content`: inject placeholder for missing, null, or empty-text content blocks\n- `handlers.rs` — Handle Codex requests targeting Anthropic endpoints, response streaming dispatch\n- `codex.rs` — `codex_provider_uses_anthropic_api()`, `should_convert_codex_to_anthropic()`, `extract_anthropic_api_key_for_codex()`, `build_anthropic_url_for_codex()`\n- `transform.rs` — `openai_chat_request_to_anthropic()` for Chat Completions → Anthropic Messages conversion\n- `transform_responses.rs` — `responses_request_to_anthropic()` for Responses API → Anthropic Messages conversion\n- `stream_check.rs` — Extended for Anthropic streaming detection\n\n### Frontend (TypeScript)\n\n- `CodexFormFields.tsx` / `ProviderForm.tsx` — Added `api_format` selector for Codex providers (native / anthropic / openai_chat)\n- `useProviderActions.ts` — Handle `api_format` metadata in provider save flow\n- `types.ts` / `providerConfigUtils.ts` — Extended types and config utilities\n\n## Test plan\n\n- [x] `pnpm typecheck` passes\n- [x] `pnpm format:check` passes\n- [x] `pnpm test:unit` — 241 tests pass\n- [x] `cargo fmt --check` passes\n- [x] `cargo clippy --all-targets` passes\n- [x] `cargo test` — 1333 tests pass (including 20 new `normalize_anthropic_request_body` tests)\n- [ ] Manual test: Codex CLI → proxy → MiMo with single-turn request\n- [ ] Manual test: Codex CLI → proxy → MiMo with multi-turn conversation\n- [ ] Manual test: Codex CLI → proxy → Anthropic native API (regression)",
+    "author": "ManLOK-Chu",
+    "headRef": "feat/codex-api-router",
+    "repository": "ManLOK-Chu/cc-switch"
+  },
+  "diffRef": {
+    "repository": "ManLOK-Chu/cc-switch",
+    "headSha": "b6924ba914837766520d809787342f5ad32dd349",
+    "baseSha": "d5680293d4821bbda56b3eddab05fe2e9c0ae564"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-ManLOK-Chu-cc-switch-pr2.diff",
+  "vendoredAt": "2026-05-24T03:13:09.934Z",
+  "collectedAt": "2026-05-24T03:13:09.934Z"
+}

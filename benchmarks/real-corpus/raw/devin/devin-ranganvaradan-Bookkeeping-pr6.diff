@@ -1,0 +1,1144 @@
+diff --git a/backend/pom.xml b/backend/pom.xml
+index 51239bb..d0726dd 100644
+--- a/backend/pom.xml
++++ b/backend/pom.xml
+@@ -59,6 +59,31 @@
+             <artifactId>spring-boot-starter-actuator</artifactId>
+         </dependency>
+ 
++        <!-- Spring Security -->
++        <dependency>
++            <groupId>org.springframework.boot</groupId>
++            <artifactId>spring-boot-starter-security</artifactId>
++        </dependency>
++
++        <!-- JWT (JJWT) -->
++        <dependency>
++            <groupId>io.jsonwebtoken</groupId>
++            <artifactId>jjwt-api</artifactId>
++            <version>0.12.3</version>
++        </dependency>
++        <dependency>
++            <groupId>io.jsonwebtoken</groupId>
++            <artifactId>jjwt-impl</artifactId>
++            <version>0.12.3</version>
++            <scope>runtime</scope>
++        </dependency>
++        <dependency>
++            <groupId>io.jsonwebtoken</groupId>
++            <artifactId>jjwt-jackson</artifactId>
++            <version>0.12.3</version>
++            <scope>runtime</scope>
++        </dependency>
++
+         <!-- Validation -->
+         <dependency>
+             <groupId>org.springframework.boot</groupId>
+@@ -72,6 +97,13 @@
+             <scope>test</scope>
+         </dependency>
+ 
++        <!-- Spring Security Test -->
++        <dependency>
++            <groupId>org.springframework.security</groupId>
++            <artifactId>spring-security-test</artifactId>
++            <scope>test</scope>
++        </dependency>
++
+         <!-- H2 for integration tests -->
+         <dependency>
+             <groupId>com.h2database</groupId>
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/controller/AuthController.java b/backend/src/main/java/com/billiontech/bookkeeping/controller/AuthController.java
+new file mode 100644
+index 0000000..c5c9e02
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/controller/AuthController.java
+@@ -0,0 +1,95 @@
++package com.billiontech.bookkeeping.controller;
++
++import com.billiontech.bookkeeping.controller.dto.LoginRequest;
++import com.billiontech.bookkeeping.controller.dto.LoginResponse;
++import com.billiontech.bookkeeping.controller.dto.TokenResponse;
++import com.billiontech.bookkeeping.service.AuthService;
++import com.billiontech.bookkeeping.service.AuthService.LoginResult;
++import jakarta.servlet.http.Cookie;
++import jakarta.servlet.http.HttpServletRequest;
++import jakarta.servlet.http.HttpServletResponse;
++import jakarta.validation.Valid;
++import org.springframework.http.ResponseEntity;
++import org.springframework.web.bind.annotation.PostMapping;
++import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.RequestMapping;
++import org.springframework.web.bind.annotation.RestController;
++
++import java.util.Map;
++
++@RestController
++@RequestMapping("/api/auth")
++public class AuthController {
++
++    private static final String REFRESH_COOKIE = "refreshToken";
++    private static final int REFRESH_COOKIE_MAX_AGE = 7 * 24 * 60 * 60; // 7 days in seconds
++
++    private final AuthService authService;
++
++    public AuthController(AuthService authService) {
++        this.authService = authService;
++    }
++
++    @PostMapping("/login")
++    public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest request,
++                                               HttpServletResponse response) {
++        LoginResult result = authService.login(request.email(), request.password());
++
++        addRefreshCookie(response, result.refreshToken());
++
++        return ResponseEntity.ok(new LoginResponse(
++                result.accessToken(),
++                result.refreshToken(),
++                result.userId(),
++                result.tenantId(),
++                result.role()
++        ));
++    }
++
++    @PostMapping("/refresh")
++    public ResponseEntity<TokenResponse> refresh(HttpServletRequest request) {
++        String refreshToken = extractRefreshCookie(request);
++        if (refreshToken == null) {
++            return ResponseEntity.status(401).build();
++        }
++
++        String accessToken = authService.refresh(refreshToken);
++        return ResponseEntity.ok(new TokenResponse(accessToken));
++    }
++
++    @PostMapping("/logout")
++    public ResponseEntity<Map<String, String>> logout(HttpServletRequest request,
++                                                       HttpServletResponse response) {
++        String refreshToken = extractRefreshCookie(request);
++        if (refreshToken != null) {
++            authService.logout(refreshToken);
++        }
++
++        // Clear the cookie
++        Cookie cookie = new Cookie(REFRESH_COOKIE, "");
++        cookie.setHttpOnly(true);
++        cookie.setPath("/");
++        cookie.setMaxAge(0);
++        response.addCookie(cookie);
++
++        return ResponseEntity.ok(Map.of("message", "Logged out"));
++    }
++
++    private void addRefreshCookie(HttpServletResponse response, String refreshToken) {
++        Cookie cookie = new Cookie(REFRESH_COOKIE, refreshToken);
++        cookie.setHttpOnly(true);
++        cookie.setPath("/");
++        cookie.setMaxAge(REFRESH_COOKIE_MAX_AGE);
++        response.addCookie(cookie);
++    }
++
++    private String extractRefreshCookie(HttpServletRequest request) {
++        if (request.getCookies() == null) return null;
++        for (Cookie cookie : request.getCookies()) {
++            if (REFRESH_COOKIE.equals(cookie.getName())) {
++                return cookie.getValue();
++            }
++        }
++        return null;
++    }
++}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/controller/ClientController.java b/backend/src/main/java/com/billiontech/bookkeeping/controller/ClientController.java
+new file mode 100644
+index 0000000..a5d9e71
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/controller/ClientController.java
+@@ -0,0 +1,38 @@
++package com.billiontech.bookkeeping.controller;
++
++import com.billiontech.bookkeeping.controller.dto.ClientResponse;
++import com.billiontech.bookkeeping.repository.ClientRepository;
++import com.billiontech.bookkeeping.security.TenantContext;
++import org.springframework.http.ResponseEntity;
++import org.springframework.web.bind.annotation.GetMapping;
++import org.springframework.web.bind.annotation.RequestMapping;
++import org.springframework.web.bind.annotation.RestController;
++
++import java.util.List;
++import java.util.UUID;
++
++@RestController
++@RequestMapping("/api/clients")
++public class ClientController {
++
++    private final ClientRepository clientRepository;
++
++    public ClientController(ClientRepository clientRepository) {
++        this.clientRepository = clientRepository;
++    }
++
++    @GetMapping
++    public ResponseEntity<List<ClientResponse>> listClients() {
++        UUID tenantId = TenantContext.getTenantId();
++        if (tenantId == null) {
++            return ResponseEntity.status(401).build();
++        }
++
++        List<ClientResponse> clients = clientRepository.findByTenantId(tenantId)
++                .stream()
++                .map(c -> new ClientResponse(c.getId(), c.getName(), c.getEntityType(), c.getTenant().getId()))
++                .toList();
++
++        return ResponseEntity.ok(clients);
++    }
++}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/controller/GlobalExceptionHandler.java b/backend/src/main/java/com/billiontech/bookkeeping/controller/GlobalExceptionHandler.java
+new file mode 100644
+index 0000000..4dd6fa5
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/controller/GlobalExceptionHandler.java
+@@ -0,0 +1,17 @@
++package com.billiontech.bookkeeping.controller;
++
++import com.billiontech.bookkeeping.service.AuthService;
++import org.springframework.http.ResponseEntity;
++import org.springframework.web.bind.annotation.ExceptionHandler;
++import org.springframework.web.bind.annotation.RestControllerAdvice;
++
++import java.util.Map;
++
++@RestControllerAdvice
++public class GlobalExceptionHandler {
++
++    @ExceptionHandler(AuthService.AuthException.class)
++    public ResponseEntity<Map<String, String>> handleAuthException(AuthService.AuthException ex) {
++        return ResponseEntity.status(401).body(Map.of("error", ex.getMessage()));
++    }
++}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/controller/dto/ClientResponse.java b/backend/src/main/java/com/billiontech/bookkeeping/controller/dto/ClientResponse.java
+new file mode 100644
+index 0000000..0a77b78
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/controller/dto/ClientResponse.java
+@@ -0,0 +1,10 @@
++package com.billiontech.bookkeeping.controller.dto;
++
++import java.util.UUID;
++
++public record ClientResponse(
++        UUID id,
++        String name,
++        String entityType,
++        UUID tenantId
++) {}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/controller/dto/LoginRequest.java b/backend/src/main/java/com/billiontech/bookkeeping/controller/dto/LoginRequest.java
+new file mode 100644
+index 0000000..f7424cd
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/controller/dto/LoginRequest.java
+@@ -0,0 +1,9 @@
++package com.billiontech.bookkeeping.controller.dto;
++
++import jakarta.validation.constraints.Email;
++import jakarta.validation.constraints.NotBlank;
++
++public record LoginRequest(
++        @NotBlank @Email String email,
++        @NotBlank String password
++) {}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/controller/dto/LoginResponse.java b/backend/src/main/java/com/billiontech/bookkeeping/controller/dto/LoginResponse.java
+new file mode 100644
+index 0000000..5bc2523
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/controller/dto/LoginResponse.java
+@@ -0,0 +1,11 @@
++package com.billiontech.bookkeeping.controller.dto;
++
++import java.util.UUID;
++
++public record LoginResponse(
++        String accessToken,
++        String refreshToken,
++        UUID userId,
++        UUID tenantId,
++        String role
++) {}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/controller/dto/TokenResponse.java b/backend/src/main/java/com/billiontech/bookkeeping/controller/dto/TokenResponse.java
+new file mode 100644
+index 0000000..c019d08
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/controller/dto/TokenResponse.java
+@@ -0,0 +1,3 @@
++package com.billiontech.bookkeeping.controller.dto;
++
++public record TokenResponse(String accessToken) {}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/entity/Client.java b/backend/src/main/java/com/billiontech/bookkeeping/entity/Client.java
+new file mode 100644
+index 0000000..a9cb027
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/entity/Client.java
+@@ -0,0 +1,73 @@
++package com.billiontech.bookkeeping.entity;
++
++import jakarta.persistence.Column;
++import jakarta.persistence.Entity;
++import jakarta.persistence.GeneratedValue;
++import jakarta.persistence.GenerationType;
++import jakarta.persistence.Id;
++import jakarta.persistence.JoinColumn;
++import jakarta.persistence.ManyToOne;
++import jakarta.persistence.Table;
++
++import java.time.OffsetDateTime;
++import java.util.UUID;
++
++@Entity
++@Table(name = "clients")
++public class Client {
++
++    @Id
++    @GeneratedValue(strategy = GenerationType.UUID)
++    private UUID id;
++
++    @ManyToOne(optional = false)
++    @JoinColumn(name = "tenant_id", nullable = false)
++    private Tenant tenant;
++
++    @Column(nullable = false)
++    private String name;
++
++    @Column(name = "entity_type", length = 20)
++    private String entityType;
++
++    @Column(name = "qbo_realm_id", length = 100)
++    private String qboRealmId;
++
++    @Column(name = "qbo_access_token")
++    private String qboAccessToken;
++
++    @Column(name = "qbo_refresh_token")
++    private String qboRefreshToken;
++
++    @Column(name = "token_expires_at")
++    private OffsetDateTime tokenExpiresAt;
++
++    @Column(name = "created_at", insertable = false, updatable = false)
++    private OffsetDateTime createdAt;
++
++    public UUID getId() { return id; }
++    public void setId(UUID id) { this.id = id; }
++
++    public Tenant getTenant() { return tenant; }
++    public void setTenant(Tenant tenant) { this.tenant = tenant; }
++
++    public String getName() { return name; }
++    public void setName(String name) { this.name = name; }
++
++    public String getEntityType() { return entityType; }
++    public void setEntityType(String entityType) { this.entityType = entityType; }
++
++    public String getQboRealmId() { return qboRealmId; }
++    public void setQboRealmId(String qboRealmId) { this.qboRealmId = qboRealmId; }
++
++    public String getQboAccessToken() { return qboAccessToken; }
++    public void setQboAccessToken(String qboAccessToken) { this.qboAccessToken = qboAccessToken; }
++
++    public String getQboRefreshToken() { return qboRefreshToken; }
++    public void setQboRefreshToken(String qboRefreshToken) { this.qboRefreshToken = qboRefreshToken; }
++
++    public OffsetDateTime getTokenExpiresAt() { return tokenExpiresAt; }
++    public void setTokenExpiresAt(OffsetDateTime tokenExpiresAt) { this.tokenExpiresAt = tokenExpiresAt; }
++
++    public OffsetDateTime getCreatedAt() { return createdAt; }
++}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/entity/RefreshToken.java b/backend/src/main/java/com/billiontech/bookkeeping/entity/RefreshToken.java
+new file mode 100644
+index 0000000..ee1db5b
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/entity/RefreshToken.java
+@@ -0,0 +1,49 @@
++package com.billiontech.bookkeeping.entity;
++
++import jakarta.persistence.Column;
++import jakarta.persistence.Entity;
++import jakarta.persistence.GeneratedValue;
++import jakarta.persistence.GenerationType;
++import jakarta.persistence.Id;
++import jakarta.persistence.JoinColumn;
++import jakarta.persistence.ManyToOne;
++import jakarta.persistence.Table;
++
++import java.time.OffsetDateTime;
++import java.util.UUID;
++
++@Entity
++@Table(name = "refresh_tokens")
++public class RefreshToken {
++
++    @Id
++    @GeneratedValue(strategy = GenerationType.UUID)
++    private UUID id;
++
++    @Column(nullable = false, unique = true)
++    private String token;
++
++    @ManyToOne(optional = false)
++    @JoinColumn(name = "user_id", nullable = false)
++    private User user;
++
++    @Column(name = "expires_at", nullable = false)
++    private OffsetDateTime expiresAt;
++
++    @Column(name = "created_at", insertable = false, updatable = false)
++    private OffsetDateTime createdAt;
++
++    public UUID getId() { return id; }
++    public void setId(UUID id) { this.id = id; }
++
++    public String getToken() { return token; }
++    public void setToken(String token) { this.token = token; }
++
++    public User getUser() { return user; }
++    public void setUser(User user) { this.user = user; }
++
++    public OffsetDateTime getExpiresAt() { return expiresAt; }
++    public void setExpiresAt(OffsetDateTime expiresAt) { this.expiresAt = expiresAt; }
++
++    public OffsetDateTime getCreatedAt() { return createdAt; }
++}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/entity/Tenant.java b/backend/src/main/java/com/billiontech/bookkeeping/entity/Tenant.java
+new file mode 100644
+index 0000000..4b4786b
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/entity/Tenant.java
+@@ -0,0 +1,40 @@
++package com.billiontech.bookkeeping.entity;
++
++import jakarta.persistence.Column;
++import jakarta.persistence.Entity;
++import jakarta.persistence.GeneratedValue;
++import jakarta.persistence.GenerationType;
++import jakarta.persistence.Id;
++import jakarta.persistence.Table;
++
++import java.time.OffsetDateTime;
++import java.util.UUID;
++
++@Entity
++@Table(name = "tenants")
++public class Tenant {
++
++    @Id
++    @GeneratedValue(strategy = GenerationType.UUID)
++    private UUID id;
++
++    @Column(nullable = false)
++    private String name;
++
++    @Column(nullable = false, unique = true, length = 100)
++    private String subdomain;
++
++    @Column(name = "created_at", insertable = false, updatable = false)
++    private OffsetDateTime createdAt;
++
++    public UUID getId() { return id; }
++    public void setId(UUID id) { this.id = id; }
++
++    public String getName() { return name; }
++    public void setName(String name) { this.name = name; }
++
++    public String getSubdomain() { return subdomain; }
++    public void setSubdomain(String subdomain) { this.subdomain = subdomain; }
++
++    public OffsetDateTime getCreatedAt() { return createdAt; }
++}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/entity/User.java b/backend/src/main/java/com/billiontech/bookkeeping/entity/User.java
+new file mode 100644
+index 0000000..7be4bf5
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/entity/User.java
+@@ -0,0 +1,61 @@
++package com.billiontech.bookkeeping.entity;
++
++import jakarta.persistence.Column;
++import jakarta.persistence.Entity;
++import jakarta.persistence.GeneratedValue;
++import jakarta.persistence.GenerationType;
++import jakarta.persistence.Id;
++import jakarta.persistence.JoinColumn;
++import jakarta.persistence.ManyToOne;
++import jakarta.persistence.Table;
++
++import java.time.OffsetDateTime;
++import java.util.UUID;
++
++@Entity
++@Table(name = "users")
++public class User {
++
++    @Id
++    @GeneratedValue(strategy = GenerationType.UUID)
++    private UUID id;
++
++    @ManyToOne(optional = false)
++    @JoinColumn(name = "tenant_id", nullable = false)
++    private Tenant tenant;
++
++    @Column(nullable = false, unique = true)
++    private String email;
++
++    @Column(name = "password_hash", nullable = false)
++    private String passwordHash;
++
++    @Column(nullable = false, length = 20)
++    private String role;
++
++    @Column(nullable = false)
++    private Boolean active = true;
++
++    @Column(name = "created_at", insertable = false, updatable = false)
++    private OffsetDateTime createdAt;
++
++    public UUID getId() { return id; }
++    public void setId(UUID id) { this.id = id; }
++
++    public Tenant getTenant() { return tenant; }
++    public void setTenant(Tenant tenant) { this.tenant = tenant; }
++
++    public String getEmail() { return email; }
++    public void setEmail(String email) { this.email = email; }
++
++    public String getPasswordHash() { return passwordHash; }
++    public void setPasswordHash(String passwordHash) { this.passwordHash = passwordHash; }
++
++    public String getRole() { return role; }
++    public void setRole(String role) { this.role = role; }
++
++    public Boolean getActive() { return active; }
++    public void setActive(Boolean active) { this.active = active; }
++
++    public OffsetDateTime getCreatedAt() { return createdAt; }
++}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/repository/ClientRepository.java b/backend/src/main/java/com/billiontech/bookkeeping/repository/ClientRepository.java
+new file mode 100644
+index 0000000..d5ff6df
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/repository/ClientRepository.java
+@@ -0,0 +1,12 @@
++package com.billiontech.bookkeeping.repository;
++
++import com.billiontech.bookkeeping.entity.Client;
++import org.springframework.data.jpa.repository.JpaRepository;
++
++import java.util.List;
++import java.util.UUID;
++
++public interface ClientRepository extends JpaRepository<Client, UUID> {
++
++    List<Client> findByTenantId(UUID tenantId);
++}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/repository/RefreshTokenRepository.java b/backend/src/main/java/com/billiontech/bookkeeping/repository/RefreshTokenRepository.java
+new file mode 100644
+index 0000000..ebb3cba
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/repository/RefreshTokenRepository.java
+@@ -0,0 +1,16 @@
++package com.billiontech.bookkeeping.repository;
++
++import com.billiontech.bookkeeping.entity.RefreshToken;
++import org.springframework.data.jpa.repository.JpaRepository;
++
++import java.util.Optional;
++import java.util.UUID;
++
++public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID> {
++
++    Optional<RefreshToken> findByToken(String token);
++
++    void deleteByToken(String token);
++
++    void deleteByUserId(UUID userId);
++}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/repository/TenantRepository.java b/backend/src/main/java/com/billiontech/bookkeeping/repository/TenantRepository.java
+new file mode 100644
+index 0000000..4a920c9
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/repository/TenantRepository.java
+@@ -0,0 +1,9 @@
++package com.billiontech.bookkeeping.repository;
++
++import com.billiontech.bookkeeping.entity.Tenant;
++import org.springframework.data.jpa.repository.JpaRepository;
++
++import java.util.UUID;
++
++public interface TenantRepository extends JpaRepository<Tenant, UUID> {
++}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/repository/UserRepository.java b/backend/src/main/java/com/billiontech/bookkeeping/repository/UserRepository.java
+new file mode 100644
+index 0000000..c414502
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/repository/UserRepository.java
+@@ -0,0 +1,12 @@
++package com.billiontech.bookkeeping.repository;
++
++import com.billiontech.bookkeeping.entity.User;
++import org.springframework.data.jpa.repository.JpaRepository;
++
++import java.util.Optional;
++import java.util.UUID;
++
++public interface UserRepository extends JpaRepository<User, UUID> {
++
++    Optional<User> findByEmail(String email);
++}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/security/JwtFilter.java b/backend/src/main/java/com/billiontech/bookkeeping/security/JwtFilter.java
+new file mode 100644
+index 0000000..60691eb
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/security/JwtFilter.java
+@@ -0,0 +1,59 @@
++package com.billiontech.bookkeeping.security;
++
++import com.billiontech.bookkeeping.service.JwtService;
++import io.jsonwebtoken.Claims;
++import jakarta.servlet.FilterChain;
++import jakarta.servlet.ServletException;
++import jakarta.servlet.http.HttpServletRequest;
++import jakarta.servlet.http.HttpServletResponse;
++import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
++import org.springframework.security.core.authority.SimpleGrantedAuthority;
++import org.springframework.security.core.context.SecurityContextHolder;
++import org.springframework.stereotype.Component;
++import org.springframework.web.filter.OncePerRequestFilter;
++
++import java.io.IOException;
++import java.util.List;
++import java.util.UUID;
++
++@Component
++public class JwtFilter extends OncePerRequestFilter {
++
++    private static final String AUTH_HEADER = "Authorization";
++    private static final String BEARER_PREFIX = "Bearer ";
++
++    private final JwtService jwtService;
++
++    public JwtFilter(JwtService jwtService) {
++        this.jwtService = jwtService;
++    }
++
++    @Override
++    protected void doFilterInternal(HttpServletRequest request,
++                                    HttpServletResponse response,
++                                    FilterChain filterChain)
++            throws ServletException, IOException {
++        try {
++            String header = request.getHeader(AUTH_HEADER);
++            if (header != null && header.startsWith(BEARER_PREFIX)) {
++                String token = header.substring(BEARER_PREFIX.length());
++                Claims claims = jwtService.parseToken(token);
++
++                if (claims != null) {
++                    String userId = claims.getSubject();
++                    String tenantId = claims.get("tenantId", String.class);
++                    String role = claims.get("role", String.class);
++
++                    TenantContext.setTenantId(UUID.fromString(tenantId));
++
++                    var authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role));
++                    var auth = new UsernamePasswordAuthenticationToken(userId, null, authorities);
++                    SecurityContextHolder.getContext().setAuthentication(auth);
++                }
++            }
++            filterChain.doFilter(request, response);
++        } finally {
++            TenantContext.clear();
++        }
++    }
++}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/security/SecurityConfig.java b/backend/src/main/java/com/billiontech/bookkeeping/security/SecurityConfig.java
+new file mode 100644
+index 0000000..7495e24
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/security/SecurityConfig.java
+@@ -0,0 +1,57 @@
++package com.billiontech.bookkeeping.security;
++
++import org.springframework.context.annotation.Bean;
++import org.springframework.context.annotation.Configuration;
++import org.springframework.security.config.annotation.web.builders.HttpSecurity;
++import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
++import org.springframework.security.config.http.SessionCreationPolicy;
++import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
++import org.springframework.security.crypto.password.PasswordEncoder;
++import org.springframework.security.web.SecurityFilterChain;
++import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
++import org.springframework.web.filter.CorsFilter;
++
++@Configuration
++@EnableWebSecurity
++public class SecurityConfig {
++
++    private final JwtFilter jwtFilter;
++    private final CorsFilter corsFilter;
++
++    public SecurityConfig(JwtFilter jwtFilter, CorsFilter corsFilter) {
++        this.jwtFilter = jwtFilter;
++        this.corsFilter = corsFilter;
++    }
++
++    @Bean
++    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
++        http
++            .csrf(csrf -> csrf.disable())
++            .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
++            // Apply CORS before security filters
++            .addFilterBefore(corsFilter, UsernamePasswordAuthenticationFilter.class)
++            .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
++            .authorizeHttpRequests(auth -> auth
++                .requestMatchers("/api/auth/**").permitAll()
++                .requestMatchers("/api/health").permitAll()
++                .requestMatchers("/actuator/**").permitAll()
++                .requestMatchers("/api/**").authenticated()
++                .anyRequest().permitAll()
++            )
++            // Return 401 for unauthenticated requests to protected endpoints
++            .exceptionHandling(ex -> ex
++                .authenticationEntryPoint((request, response, authException) -> {
++                    response.setStatus(401);
++                    response.setContentType("application/json");
++                    response.getWriter().write("{\"error\":\"Unauthorized\"}");
++                })
++            );
++
++        return http.build();
++    }
++
++    @Bean
++    public PasswordEncoder passwordEncoder() {
++        return new BCryptPasswordEncoder(10);
++    }
++}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/security/TenantContext.java b/backend/src/main/java/com/billiontech/bookkeeping/security/TenantContext.java
+new file mode 100644
+index 0000000..b6d6a5e
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/security/TenantContext.java
+@@ -0,0 +1,26 @@
++package com.billiontech.bookkeeping.security;
++
++import java.util.UUID;
++
++/**
++ * Holds the current tenant ID for the duration of a request using ThreadLocal.
++ * Set by JwtFilter after token validation; cleared in the filter's finally block.
++ */
++public final class TenantContext {
++
++    private static final ThreadLocal<UUID> CURRENT_TENANT = new ThreadLocal<>();
++
++    private TenantContext() {}
++
++    public static UUID getTenantId() {
++        return CURRENT_TENANT.get();
++    }
++
++    public static void setTenantId(UUID tenantId) {
++        CURRENT_TENANT.set(tenantId);
++    }
++
++    public static void clear() {
++        CURRENT_TENANT.remove();
++    }
++}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/service/AuthService.java b/backend/src/main/java/com/billiontech/bookkeeping/service/AuthService.java
+new file mode 100644
+index 0000000..39862ce
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/service/AuthService.java
+@@ -0,0 +1,98 @@
++package com.billiontech.bookkeeping.service;
++
++import com.billiontech.bookkeeping.entity.RefreshToken;
++import com.billiontech.bookkeeping.entity.User;
++import com.billiontech.bookkeeping.repository.RefreshTokenRepository;
++import com.billiontech.bookkeeping.repository.UserRepository;
++import org.springframework.security.crypto.password.PasswordEncoder;
++import org.springframework.stereotype.Service;
++import org.springframework.transaction.annotation.Transactional;
++
++import java.time.Duration;
++import java.time.OffsetDateTime;
++import java.util.Optional;
++import java.util.UUID;
++
++@Service
++public class AuthService {
++
++    private static final Duration REFRESH_TOKEN_TTL = Duration.ofDays(7);
++
++    private final UserRepository userRepository;
++    private final RefreshTokenRepository refreshTokenRepository;
++    private final JwtService jwtService;
++    private final PasswordEncoder passwordEncoder;
++
++    public AuthService(UserRepository userRepository,
++                       RefreshTokenRepository refreshTokenRepository,
++                       JwtService jwtService,
++                       PasswordEncoder passwordEncoder) {
++        this.userRepository = userRepository;
++        this.refreshTokenRepository = refreshTokenRepository;
++        this.jwtService = jwtService;
++        this.passwordEncoder = passwordEncoder;
++    }
++
++    public record LoginResult(String accessToken, String refreshToken,
++                              UUID userId, UUID tenantId, String role) {}
++
++    @Transactional
++    public LoginResult login(String email, String password) {
++        User user = userRepository.findByEmail(email)
++                .orElseThrow(() -> new AuthException("Invalid email or password"));
++
++        if (!user.getActive()) {
++            throw new AuthException("Account is disabled");
++        }
++
++        if (!passwordEncoder.matches(password, user.getPasswordHash())) {
++            throw new AuthException("Invalid email or password");
++        }
++
++        UUID userId = user.getId();
++        UUID tenantId = user.getTenant().getId();
++        String role = user.getRole();
++
++        String accessToken = jwtService.generateAccessToken(userId, tenantId, role);
++        String refreshTokenValue = UUID.randomUUID().toString();
++
++        RefreshToken refreshToken = new RefreshToken();
++        refreshToken.setToken(refreshTokenValue);
++        refreshToken.setUser(user);
++        refreshToken.setExpiresAt(OffsetDateTime.now().plus(REFRESH_TOKEN_TTL));
++        refreshTokenRepository.save(refreshToken);
++
++        return new LoginResult(accessToken, refreshTokenValue, userId, tenantId, role);
++    }
++
++    @Transactional
++    public String refresh(String refreshTokenValue) {
++        RefreshToken refreshToken = refreshTokenRepository.findByToken(refreshTokenValue)
++                .orElseThrow(() -> new AuthException("Invalid refresh token"));
++
++        if (refreshToken.getExpiresAt().isBefore(OffsetDateTime.now())) {
++            refreshTokenRepository.delete(refreshToken);
++            throw new AuthException("Refresh token expired");
++        }
++
++        User user = refreshToken.getUser();
++        return jwtService.generateAccessToken(
++                user.getId(), user.getTenant().getId(), user.getRole());
++    }
++
++    @Transactional
++    public void logout(String refreshTokenValue) {
++        refreshTokenRepository.findByToken(refreshTokenValue)
++                .ifPresent(refreshTokenRepository::delete);
++    }
++
++    public Optional<User> findByEmail(String email) {
++        return userRepository.findByEmail(email);
++    }
++
++    public static class AuthException extends RuntimeException {
++        public AuthException(String message) {
++            super(message);
++        }
++    }
++}
+diff --git a/backend/src/main/java/com/billiontech/bookkeeping/service/JwtService.java b/backend/src/main/java/com/billiontech/bookkeeping/service/JwtService.java
+new file mode 100644
+index 0000000..06323df
+--- /dev/null
++++ b/backend/src/main/java/com/billiontech/bookkeeping/service/JwtService.java
+@@ -0,0 +1,54 @@
++package com.billiontech.bookkeeping.service;
++
++import io.jsonwebtoken.Claims;
++import io.jsonwebtoken.JwtException;
++import io.jsonwebtoken.Jwts;
++import io.jsonwebtoken.security.Keys;
++import org.springframework.beans.factory.annotation.Value;
++import org.springframework.stereotype.Service;
++
++import javax.crypto.SecretKey;
++import java.nio.charset.StandardCharsets;
++import java.time.Duration;
++import java.time.Instant;
++import java.util.Date;
++import java.util.UUID;
++
++@Service
++public class JwtService {
++
++    private static final Duration ACCESS_TOKEN_TTL = Duration.ofHours(24);
++
++    private final SecretKey signingKey;
++
++    public JwtService(@Value("${jwt.secret}") String secret) {
++        this.signingKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
++    }
++
++    public String generateAccessToken(UUID userId, UUID tenantId, String role) {
++        Instant now = Instant.now();
++        return Jwts.builder()
++                .subject(userId.toString())
++                .claim("tenantId", tenantId.toString())
++                .claim("role", role)
++                .issuedAt(Date.from(now))
++                .expiration(Date.from(now.plus(ACCESS_TOKEN_TTL)))
++                .signWith(signingKey)
++                .compact();
++    }
++
++    /**
++     * Parses and validates the JWT. Returns null if the token is invalid or expired.
++     */
++    public Claims parseToken(String token) {
++        try {
++            return Jwts.parser()
++                    .verifyWith(signingKey)
++                    .build()
++                    .parseSignedClaims(token)
++                    .getPayload();
++        } catch (JwtException | IllegalArgumentException e) {
++            return null;
++        }
++    }
++}
+diff --git a/backend/src/main/resources/application-test.yml b/backend/src/main/resources/application-test.yml
+index 840c3e7..b4f82af 100644
+--- a/backend/src/main/resources/application-test.yml
++++ b/backend/src/main/resources/application-test.yml
+@@ -17,3 +17,6 @@ spring:
+ 
+   flyway:
+     enabled: false
++
++jwt:
++  secret: test-secret-key-must-be-at-least-32-characters-long!!
+diff --git a/backend/src/main/resources/application.yml b/backend/src/main/resources/application.yml
+index 4c3d37f..e855915 100644
+--- a/backend/src/main/resources/application.yml
++++ b/backend/src/main/resources/application.yml
+@@ -35,6 +35,9 @@ spring:
+     cors:
+       allowed-origins: ${FRONTEND_URL:http://localhost:3010}
+ 
++jwt:
++  secret: ${JWT_SECRET:default-dev-secret-must-be-at-least-32-chars!!}
++
+ management:
+   endpoints:
+     web:
+diff --git a/backend/src/main/resources/db/migration/V3__refresh_tokens.sql b/backend/src/main/resources/db/migration/V3__refresh_tokens.sql
+new file mode 100644
+index 0000000..89513e5
+--- /dev/null
++++ b/backend/src/main/resources/db/migration/V3__refresh_tokens.sql
+@@ -0,0 +1,12 @@
++-- V3: Refresh tokens table for JWT authentication
++
++CREATE TABLE refresh_tokens (
++    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
++    token VARCHAR(255) UNIQUE NOT NULL,
++    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
++    expires_at TIMESTAMPTZ NOT NULL,
++    created_at TIMESTAMPTZ DEFAULT NOW()
++);
++
++CREATE INDEX idx_refresh_tokens_user_id ON refresh_tokens(user_id);
++CREATE INDEX idx_refresh_tokens_token ON refresh_tokens(token);
+diff --git a/backend/src/test/java/com/billiontech/bookkeeping/auth/MultiTenantAuthTest.java b/backend/src/test/java/com/billiontech/bookkeeping/auth/MultiTenantAuthTest.java
+new file mode 100644
+index 0000000..dcbb3f1
+--- /dev/null
++++ b/backend/src/test/java/com/billiontech/bookkeeping/auth/MultiTenantAuthTest.java
+@@ -0,0 +1,176 @@
++package com.billiontech.bookkeeping.auth;
++
++import com.billiontech.bookkeeping.entity.Client;
++import com.billiontech.bookkeeping.entity.Tenant;
++import com.billiontech.bookkeeping.entity.User;
++import com.billiontech.bookkeeping.repository.ClientRepository;
++import com.billiontech.bookkeeping.repository.RefreshTokenRepository;
++import com.billiontech.bookkeeping.repository.TenantRepository;
++import com.billiontech.bookkeeping.repository.UserRepository;
++import com.billiontech.bookkeeping.service.JwtService;
++import com.fasterxml.jackson.databind.ObjectMapper;
++import org.junit.jupiter.api.BeforeEach;
++import org.junit.jupiter.api.Test;
++import org.springframework.beans.factory.annotation.Autowired;
++import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
++import org.springframework.boot.test.context.SpringBootTest;
++import org.springframework.http.MediaType;
++import org.springframework.security.crypto.password.PasswordEncoder;
++import org.springframework.test.context.ActiveProfiles;
++import org.springframework.test.web.servlet.MockMvc;
++
++import static org.hamcrest.Matchers.hasSize;
++import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
++import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
++import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
++import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
++
++@SpringBootTest
++@AutoConfigureMockMvc
++@ActiveProfiles("test")
++class MultiTenantAuthTest {
++
++    @Autowired private MockMvc mockMvc;
++    @Autowired private TenantRepository tenantRepository;
++    @Autowired private UserRepository userRepository;
++    @Autowired private ClientRepository clientRepository;
++    @Autowired private RefreshTokenRepository refreshTokenRepository;
++    @Autowired private PasswordEncoder passwordEncoder;
++    @Autowired private JwtService jwtService;
++    @Autowired private ObjectMapper objectMapper;
++
++    private Tenant tenantA;
++    private Tenant tenantB;
++    private User userA;
++    private User userB;
++
++    @BeforeEach
++    void setUp() {
++        refreshTokenRepository.deleteAll();
++        clientRepository.deleteAll();
++        userRepository.deleteAll();
++        tenantRepository.deleteAll();
++
++        tenantA = new Tenant();
++        tenantA.setName("Firm A");
++        tenantA.setSubdomain("firm-a");
++        tenantA = tenantRepository.save(tenantA);
++
++        tenantB = new Tenant();
++        tenantB.setName("Firm B");
++        tenantB.setSubdomain("firm-b");
++        tenantB = tenantRepository.save(tenantB);
++
++        userA = new User();
++        userA.setTenant(tenantA);
++        userA.setEmail("user-a@firma.com");
++        userA.setPasswordHash(passwordEncoder.encode("PasswordA1!"));
++        userA.setRole("ADMIN");
++        userA = userRepository.save(userA);
++
++        userB = new User();
++        userB.setTenant(tenantB);
++        userB.setEmail("user-b@firmb.com");
++        userB.setPasswordHash(passwordEncoder.encode("PasswordB1!"));
++        userB.setRole("ADMIN");
++        userB = userRepository.save(userB);
++
++        // Two clients for tenant A
++        Client clientA1 = new Client();
++        clientA1.setTenant(tenantA);
++        clientA1.setName("Client A1");
++        clientRepository.save(clientA1);
++
++        Client clientA2 = new Client();
++        clientA2.setTenant(tenantA);
++        clientA2.setName("Client A2");
++        clientRepository.save(clientA2);
++
++        // One client for tenant B
++        Client clientB1 = new Client();
++        clientB1.setTenant(tenantB);
++        clientB1.setName("Client B1");
++        clientRepository.save(clientB1);
++    }
++
++    @Test
++    void loginAndListClients_shouldReturnOnlyTenantAClients() throws Exception {
++        // Login as user A via the auth endpoint
++        String loginJson = objectMapper.writeValueAsString(
++                new java.util.LinkedHashMap<>() {{
++                    put("email", "user-a@firma.com");
++                    put("password", "PasswordA1!");
++                }});
++
++        String loginResponse = mockMvc.perform(post("/api/auth/login")
++                        .contentType(MediaType.APPLICATION_JSON)
++                        .content(loginJson))
++                .andExpect(status().isOk())
++                .andExpect(jsonPath("$.accessToken").isNotEmpty())
++                .andExpect(jsonPath("$.tenantId").value(tenantA.getId().toString()))
++                .andExpect(jsonPath("$.role").value("ADMIN"))
++                .andReturn().getResponse().getContentAsString();
++
++        String accessToken = objectMapper.readTree(loginResponse).get("accessToken").asText();
++
++        // GET /api/clients with user A's token — should return only tenant A's clients
++        mockMvc.perform(get("/api/clients")
++                        .header("Authorization", "Bearer " + accessToken))
++                .andExpect(status().isOk())
++                .andExpect(jsonPath("$", hasSize(2)))
++                .andExpect(jsonPath("$[0].tenantId").value(tenantA.getId().toString()))
++                .andExpect(jsonPath("$[1].tenantId").value(tenantA.getId().toString()));
++    }
++
++    @Test
++    void loginAsUserB_shouldReturnOnlyTenantBClients() throws Exception {
++        String loginJson = objectMapper.writeValueAsString(
++                new java.util.LinkedHashMap<>() {{
++                    put("email", "user-b@firmb.com");
++                    put("password", "PasswordB1!");
++                }});
++
++        String loginResponse = mockMvc.perform(post("/api/auth/login")
++                        .contentType(MediaType.APPLICATION_JSON)
++                        .content(loginJson))
++                .andExpect(status().isOk())
++                .andReturn().getResponse().getContentAsString();
++
++        String accessToken = objectMapper.readTree(loginResponse).get("accessToken").asText();
++
++        mockMvc.perform(get("/api/clients")
++                        .header("Authorization", "Bearer " + accessToken))
++                .andExpect(status().isOk())
++                .andExpect(jsonPath("$", hasSize(1)))
++                .andExpect(jsonPath("$[0].tenantId").value(tenantB.getId().toString()))
++                .andExpect(jsonPath("$[0].name").value("Client B1"));
++    }
++
++    @Test
++    void accessClientsWithoutToken_shouldReturn401() throws Exception {
++        mockMvc.perform(get("/api/clients"))
++                .andExpect(status().isUnauthorized());
++    }
++
++    @Test
++    void accessHealthEndpoint_shouldNotRequireAuth() throws Exception {
++        mockMvc.perform(get("/api/health"))
++                .andExpect(status().isOk())
++                .andExpect(jsonPath("$.status").value("ok"));
++    }
++
++    @Test
++    void loginWithWrongPassword_shouldReturn401() throws Exception {
++        String loginJson = objectMapper.writeValueAsString(
++                new java.util.LinkedHashMap<>() {{
++                    put("email", "user-a@firma.com");
++                    put("password", "WrongPassword!");
++                }});
++
++        mockMvc.perform(post("/api/auth/login")
++                        .contentType(MediaType.APPLICATION_JSON)
++                        .content(loginJson))
++                .andExpect(status().isUnauthorized())
++                .andExpect(jsonPath("$.error").value("Invalid email or password"));
++    }
++}

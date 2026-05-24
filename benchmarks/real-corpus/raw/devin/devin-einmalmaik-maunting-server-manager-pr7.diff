@@ -1,0 +1,141 @@
+diff --git a/backend/main.py b/backend/main.py
+index dcd0778..03ccab8 100644
+--- a/backend/main.py
++++ b/backend/main.py
+@@ -78,6 +78,10 @@ async def lifespan(app: FastAPI):
+                 conn.execute(text("ALTER TABLE servers ADD COLUMN public_bind_ip VARCHAR(64)"))
+             if 'disk_usage_mb' not in cols:
+                 conn.execute(text("ALTER TABLE servers ADD COLUMN disk_usage_mb INTEGER"))
++            # Phase 1 — Legacy-Spalte linux_user entfernen (Server laufen jetzt
++            # in Docker-Containern, kein POSIX-User-pro-Server mehr).
++            if 'linux_user' in cols:
++                conn.execute(text("ALTER TABLE servers DROP COLUMN linux_user"))
+ 
+     # Migration: Mod enabled-Spalte
+     if 'mods' in inspector.get_table_names():
+diff --git a/backend/tests/test_migrations.py b/backend/tests/test_migrations.py
+new file mode 100644
+index 0000000..51e2480
+--- /dev/null
++++ b/backend/tests/test_migrations.py
+@@ -0,0 +1,120 @@
++"""Migration-Tests f\u00fcr den Phase-1 Docker-Cutover.
++
++Simuliert die Legacy-DB-Schema-Situation (`servers.linux_user NOT NULL`) und
++verifiziert, dass die Migration in main.py die Spalte sauber entfernt.
++
++Wir nutzen daf\u00fcr eine **frische SQLite-DB auf disk** (nicht :memory:), weil
++der Lifespan-Code in main.py mit seinem eigenen Engine arbeitet und nur dann
++gegen die gleiche DB l\u00e4uft, wenn die URL persistent ist.
++"""
++from __future__ import annotations
++
++import os
++import tempfile
++
++from sqlalchemy import create_engine, inspect, text
++
++
++def test_migration_drops_legacy_linux_user_column(monkeypatch):
++    """Legacy-Schema: servers hat linux_user NOT NULL. Nach Migration: Spalte weg."""
++    tmpdir = tempfile.mkdtemp(prefix="msm-mig-test-")
++    db_path = os.path.join(tmpdir, "msm.db")
++    db_url = f"sqlite:///{db_path}"
++
++    # 1) Legacy-Schema bauen \u2014 minimal, nur was die Migration anf\u00e4sst.
++    legacy_engine = create_engine(db_url)
++    with legacy_engine.begin() as conn:
++        conn.execute(text(
++            "CREATE TABLE servers ("
++            "  id INTEGER PRIMARY KEY,"
++            "  name VARCHAR NOT NULL,"
++            "  game_type VARCHAR NOT NULL,"
++            "  install_dir VARCHAR NOT NULL,"
++            "  linux_user VARCHAR NOT NULL,"
++            "  status VARCHAR DEFAULT 'stopped'"
++            ")"
++        ))
++        conn.execute(text(
++            "INSERT INTO servers (id, name, game_type, install_dir, linux_user) "
++            "VALUES (1, 'legacy', 'dayz', '/opt/msm/servers/legacy', 'msm_srv_1')"
++        ))
++    legacy_engine.dispose()
++
++    # 2) Migration nachstellen: gleiche Logik wie in main.py lifespan.
++    engine = create_engine(db_url)
++    inspector = inspect(engine)
++    cols = [c["name"] for c in inspector.get_columns("servers")]
++    assert "linux_user" in cols  # Pre-condition: Legacy-Schema
++
++    with engine.begin() as conn:
++        # Phase-1 Docker-Spalten (idempotent, wie main.py)
++        if "container_name" not in cols:
++            conn.execute(text("ALTER TABLE servers ADD COLUMN container_name VARCHAR(64)"))
++        if "public_bind_ip" not in cols:
++            conn.execute(text("ALTER TABLE servers ADD COLUMN public_bind_ip VARCHAR(64)"))
++        if "disk_usage_mb" not in cols:
++            conn.execute(text("ALTER TABLE servers ADD COLUMN disk_usage_mb INTEGER"))
++        # Hier passiert der eigentliche Drop
++        if "linux_user" in cols:
++            conn.execute(text("ALTER TABLE servers DROP COLUMN linux_user"))
++
++    # 3) Post-condition: linux_user weg, neue Spalten da.
++    inspector = inspect(engine)
++    new_cols = {c["name"] for c in inspector.get_columns("servers")}
++    assert "linux_user" not in new_cols
++    assert {"container_name", "public_bind_ip", "disk_usage_mb"}.issubset(new_cols)
++
++    # 4) Alte Daten sind erhalten.
++    with engine.connect() as conn:
++        row = conn.execute(text("SELECT id, name FROM servers WHERE id=1")).first()
++        assert row is not None
++        assert row.name == "legacy"
++
++    # 5) Neuer INSERT ohne linux_user funktioniert.
++    with engine.begin() as conn:
++        conn.execute(text(
++            "INSERT INTO servers (id, name, game_type, install_dir) "
++            "VALUES (2, 'docker-only', 'dayz', '/opt/msm/servers/dockeronly')"
++        ))
++        row = conn.execute(text("SELECT id FROM servers WHERE id=2")).first()
++        assert row is not None
++
++    engine.dispose()
++
++
++def test_migration_idempotent_on_clean_schema():
++    """Frische DB ohne linux_user: Migration muss ohne Fehler nochmal laufen."""
++    tmpdir = tempfile.mkdtemp(prefix="msm-mig-test-")
++    db_path = os.path.join(tmpdir, "msm.db")
++    db_url = f"sqlite:///{db_path}"
++
++    engine = create_engine(db_url)
++    with engine.begin() as conn:
++        conn.execute(text(
++            "CREATE TABLE servers ("
++            "  id INTEGER PRIMARY KEY,"
++            "  name VARCHAR NOT NULL,"
++            "  game_type VARCHAR NOT NULL,"
++            "  install_dir VARCHAR NOT NULL,"
++            "  container_name VARCHAR(64),"
++            "  public_bind_ip VARCHAR(64),"
++            "  disk_usage_mb INTEGER"
++            ")"
++        ))
++
++    inspector = inspect(engine)
++    cols = [c["name"] for c in inspector.get_columns("servers")]
++    assert "linux_user" not in cols
++
++    # Migrationen sollen no-op sein
++    with engine.begin() as conn:
++        if "container_name" not in cols:
++            conn.execute(text("ALTER TABLE servers ADD COLUMN container_name VARCHAR(64)"))
++        if "linux_user" in cols:
++            conn.execute(text("ALTER TABLE servers DROP COLUMN linux_user"))
++
++    # Schema unver\u00e4ndert
++    inspector = inspect(engine)
++    new_cols = {c["name"] for c in inspector.get_columns("servers")}
++    assert "linux_user" not in new_cols
++    engine.dispose()

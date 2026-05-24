@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-IliyanGochev-Quake-III-Arena-vk-pr5",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "commit=claude-coauthor"
+  },
+  "pr": {
+    "number": 5,
+    "headSha": "bdf3adc85e8d7959e4cb4df712e46f8a5bec2655",
+    "baseSha": "4bf45ee1081f78b293da0cd0115540f10b1bdf3b",
+    "title": "fix(vulkan): fix white cinematic screen and transfer sync",
+    "body": "## Summary\n\n- **Root cause**: Scratch cinematic images are created at 16x16 in `R_CreateBuiltinImages()`, but cinematic frames are 256x256. The old code never recreated the image when dimensions changed, causing `vkCmdCopyBufferToImage` to overflow the undersized buffer, resulting in a corrupted/white texture.\n- **Transfer semaphore gap**: No GPU-side synchronization between texture upload (transfer queue) and render commands sampling the uploaded image, causing race conditions.\n\n## Changes\n\n### `vk_image.cpp` — Size-mismatch detection & recreation\n- Detect dimension mismatch in `VKDrv_UpdateCinematic()` and recreate the image/view with correct size before copying data\n- Full image creation pipeline: `vmaCreateImage`, view creation, mip level calculation, layout barrier, one-time init command buffer\n\n### `vk_device.cpp` — Transfer semaphore infrastructure\n- Add `g_vkTransferSemaphores[VK_MAX_FRAMES_IN_FLIGHT]` for per-frame GPU synchronization\n- Signal transfer semaphore on transfer submissions, wait on it during `SubmitAndPresent`\n\n### `vk_draw.cpp` — Viewport/scissor fix & descriptor update\n- Fix `DrawQuad()` viewport/scissor to use proper width/height from coordinate deltas\n- Update skybox VS eye descriptor binding to pass quad color buffer\n\n## Test plan\n- [ ] Verify intro cinematic displays correctly (no white screen)\n- [ ] Verify cinematics play through without corruption\n- [ ] Verify normal rendering is unaffected (skybox, UI, world geometry)\n- [ ] Verify no memory leaks or validation errors in Vulkan validation layers\n\nCo-Authored-By: Claude <noreply@anthropic.com>",
+    "author": "IliyanGochev",
+    "headRef": "worca/debug-white-screen-during-cinematic-rend-3f5",
+    "repository": "IliyanGochev/Quake-III-Arena-vk"
+  },
+  "diffRef": {
+    "repository": "IliyanGochev/Quake-III-Arena-vk",
+    "headSha": "bdf3adc85e8d7959e4cb4df712e46f8a5bec2655",
+    "baseSha": "4bf45ee1081f78b293da0cd0115540f10b1bdf3b"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-IliyanGochev-Quake-III-Arena-vk-pr5.diff",
+  "vendoredAt": "2026-05-24T03:09:43.551Z",
+  "collectedAt": "2026-05-24T03:09:43.551Z"
+}

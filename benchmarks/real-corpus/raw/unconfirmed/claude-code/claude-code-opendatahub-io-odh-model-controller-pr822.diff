@@ -1,0 +1,219 @@
+diff --git a/internal/controller/serving/llm/gateway_controller.go b/internal/controller/serving/llm/gateway_controller.go
+index 4486e2a1fc..38eb6aa3c2 100644
+--- a/internal/controller/serving/llm/gateway_controller.go
++++ b/internal/controller/serving/llm/gateway_controller.go
+@@ -26,6 +26,7 @@ import (
+ 
+ 	"github.com/go-logr/logr"
+ 	kservev1alpha2 "github.com/kserve/kserve/pkg/apis/serving/v1alpha2"
++	kserveutils "github.com/kserve/kserve/pkg/utils"
+ 	kuadrantv1 "github.com/kuadrant/kuadrant-operator/api/v1"
+ 	istioclientv1alpha3 "istio.io/client-go/pkg/apis/networking/v1alpha3"
+ 	corev1 "k8s.io/api/core/v1"
+@@ -339,6 +340,9 @@ func (r *GatewayReconciler) isGatewayReferencedByLLMService(ctx context.Context,
+ 	}
+ 
+ 	for i := range llmSvcList.Items {
++		if kserveutils.GetForceStopRuntime(&llmSvcList.Items[i]) {
++			continue
++		}
+ 		for _, ref := range r.getEffectiveGatewayRefs(ctx, gateway, &llmSvcList.Items[i]) {
+ 			ns := string(ref.Namespace)
+ 			if ns == "" {
+@@ -817,6 +821,9 @@ func (r *GatewayReconciler) SetupWithManager(mgr ctrl.Manager, setupLog logr.Log
+ 				UpdateFunc: func(e event.UpdateEvent) bool {
+ 					oldSvc := e.ObjectOld.(*kservev1alpha2.LLMInferenceService)
+ 					newSvc := e.ObjectNew.(*kservev1alpha2.LLMInferenceService)
++					if kserveutils.GetForceStopRuntime(oldSvc) != kserveutils.GetForceStopRuntime(newSvc) {
++						return true
++					}
+ 					return gatewayRefsChanged(oldSvc, newSvc)
+ 				},
+ 				DeleteFunc: func(_ event.DeleteEvent) bool {
+diff --git a/internal/controller/serving/llm/gateway_controller_test.go b/internal/controller/serving/llm/gateway_controller_test.go
+index 96fe6a17c0..6d62c27e2a 100644
+--- a/internal/controller/serving/llm/gateway_controller_test.go
++++ b/internal/controller/serving/llm/gateway_controller_test.go
+@@ -28,6 +28,8 @@ import (
+ 	"sigs.k8s.io/controller-runtime/pkg/client"
+ 	gatewayapiv1 "sigs.k8s.io/gateway-api/apis/v1"
+ 
++	kserveconstants "github.com/kserve/kserve/pkg/constants"
++
+ 	"github.com/opendatahub-io/odh-model-controller/internal/controller/constants"
+ 	"github.com/opendatahub-io/odh-model-controller/internal/controller/serving/llm/fixture"
+ 	pkgtest "github.com/opendatahub-io/odh-model-controller/internal/controller/testing"
+@@ -309,6 +311,62 @@ var _ = Describe("Gateway Controller", func() {
+ 		})
+ 	})
+ 
++	Context("Stopped LLMInferenceService", func() {
++		It("should delete EnvoyFilter and AuthPolicy when the only referencing LLMInferenceService is stopped", func(ctx SpecContext) {
++			gatewayName := setupReferencedGateway(ctx)
++
++			// Stop the LLMInferenceService
++			Eventually(func() error {
++				llmSvc := &kservev1alpha2.LLMInferenceService{}
++				if err := envTest.Client.Get(ctx, types.NamespacedName{Name: "test-llmisvc", Namespace: testNs}, llmSvc); err != nil {
++					return err
++				}
++				if llmSvc.Annotations == nil {
++					llmSvc.Annotations = make(map[string]string)
++				}
++				llmSvc.Annotations[kserveconstants.StopAnnotationKey] = "true"
++				return envTest.Client.Update(ctx, llmSvc)
++			}).WithContext(ctx).Should(Succeed())
++
++			fixture.VerifyGatewayEnvoyFilterNotExist(ctx, envTest.Client, testNs, gatewayName)
++			fixture.VerifyGatewayAuthPolicyNotExist(ctx, envTest.Client, testNs, gatewayName)
++		})
++
++		It("should recreate EnvoyFilter and AuthPolicy when a stopped LLMInferenceService is restarted", func(ctx SpecContext) {
++			gatewayName := setupReferencedGateway(ctx)
++
++			// Stop the LLMInferenceService and confirm the gateway-level resources are torn down.
++			Eventually(func() error {
++				llmSvc := &kservev1alpha2.LLMInferenceService{}
++				if err := envTest.Client.Get(ctx, types.NamespacedName{Name: "test-llmisvc", Namespace: testNs}, llmSvc); err != nil {
++					return err
++				}
++				if llmSvc.Annotations == nil {
++					llmSvc.Annotations = make(map[string]string)
++				}
++				llmSvc.Annotations[kserveconstants.StopAnnotationKey] = "true"
++				return envTest.Client.Update(ctx, llmSvc)
++			}).WithContext(ctx).Should(Succeed())
++
++			fixture.VerifyGatewayEnvoyFilterNotExist(ctx, envTest.Client, testNs, gatewayName)
++			fixture.VerifyGatewayAuthPolicyNotExist(ctx, envTest.Client, testNs, gatewayName)
++
++			// Restart by clearing the stop annotation. The watch predicate should
++			// re-trigger reconciliation and the gateway-level resources should return.
++			Eventually(func() error {
++				llmSvc := &kservev1alpha2.LLMInferenceService{}
++				if err := envTest.Client.Get(ctx, types.NamespacedName{Name: "test-llmisvc", Namespace: testNs}, llmSvc); err != nil {
++					return err
++				}
++				delete(llmSvc.Annotations, kserveconstants.StopAnnotationKey)
++				return envTest.Client.Update(ctx, llmSvc)
++			}).WithContext(ctx).Should(Succeed())
++
++			fixture.VerifyGatewayEnvoyFilterExists(ctx, envTest.Client, testNs, gatewayName)
++			fixture.VerifyGatewayAuthPolicyExists(ctx, envTest.Client, testNs, gatewayName)
++		})
++	})
++
+ 	Context("LLMInferenceService gateway ref changes", func() {
+ 		It("should create resources when gateway ref is added to LLMInferenceService", func(ctx SpecContext) {
+ 			gatewayName := pkgtest.GenerateUniqueTestName("managed-gateway")
+diff --git a/internal/controller/serving/llm/llm_inferenceservice_controller.go b/internal/controller/serving/llm/llm_inferenceservice_controller.go
+index d5bc94c6d9..fe3f727ddb 100644
+--- a/internal/controller/serving/llm/llm_inferenceservice_controller.go
++++ b/internal/controller/serving/llm/llm_inferenceservice_controller.go
+@@ -25,6 +25,7 @@ import (
+ 	"github.com/hashicorp/go-multierror"
+ 	kservev1alpha2 "github.com/kserve/kserve/pkg/apis/serving/v1alpha2"
+ 	kservellmisvc "github.com/kserve/kserve/pkg/controller/v1alpha2/llmisvc"
++	kserveutils "github.com/kserve/kserve/pkg/utils"
+ 	authorinooperatorv1beta1 "github.com/kuadrant/authorino-operator/api/v1beta1"
+ 	kuadrantv1 "github.com/kuadrant/kuadrant-operator/api/v1"
+ 	kuadrantv1beta1 "github.com/kuadrant/kuadrant-operator/api/v1beta1"
+@@ -118,6 +119,11 @@ func (r *LLMInferenceServiceReconciler) Reconcile(ctx context.Context, req ctrl.
+ 	llmisvc = llmisvc.DeepCopy()
+ 	llmisvc.Spec = spec
+ 
++	if kserveutils.GetForceStopRuntime(llmisvc) {
++		logger.V(1).Info("Service is stopped, skipping sub-resource reconciliation")
++		return ctrl.Result{}, nil
++	}
++
+ 	if err := r.reconcileSubResources(ctx, logger, llmisvc); err != nil {
+ 		logger.Error(err, "Failed to reconcile LLMInferenceService sub-resources")
+ 		r.Recorder.Eventf(llmisvc, corev1.EventTypeWarning, "ReconcileError", "Failed to reconcile LLMInferenceService: %v", err)
+diff --git a/internal/controller/serving/llm/llm_inferenceservice_controller_test.go b/internal/controller/serving/llm/llm_inferenceservice_controller_test.go
+index 8e3bf222a7..ff8f42c559 100644
+--- a/internal/controller/serving/llm/llm_inferenceservice_controller_test.go
++++ b/internal/controller/serving/llm/llm_inferenceservice_controller_test.go
+@@ -20,7 +20,10 @@ import (
+ 	"context"
+ 	"os"
+ 
++	"time"
++
+ 	kservev1alpha2 "github.com/kserve/kserve/pkg/apis/serving/v1alpha2"
++	kserveconstants "github.com/kserve/kserve/pkg/constants"
+ 	kuadrantv1 "github.com/kuadrant/kuadrant-operator/api/v1"
+ 	. "github.com/onsi/ginkgo/v2"
+ 	. "github.com/onsi/gomega"
+@@ -209,6 +212,42 @@ var _ = Describe("LLMInferenceService Controller", func() {
+ 				})
+ 			})
+ 		})
++
++		Context("Stopped service behavior", func() {
++			It("should skip AuthPolicy reconciliation when LLMInferenceService is stopped and HTTPRoute is absent", func(ctx SpecContext) {
++				// Create the HTTPRoute before the LLMInferenceService so
++				// that the first reconciliation finds it and does not
++				// generate a stale ReconcileError event.
++				fixture.CreateHTTPRouteForLLMService(ctx, envTest.Client, testNs, LLMInferenceServiceName)
++
++				enableAuth := false
++				llmisvc := fixture.CreateBasicLLMInferenceService(ctx, envTest.Client, testNs, LLMInferenceServiceName, &enableAuth)
++
++				fixture.VerifyHTTPRouteAuthPolicyExists(ctx, envTest.Client, testNs, LLMInferenceServiceName)
++
++				// Snapshot current ReconcileError event count so we only
++				// detect NEW errors after the stop annotation is set.
++				initialErrorCount := countReconcileErrors(ctx, envTest.Client, testNs, LLMInferenceServiceName)
++
++				// Delete the HTTPRoute first to simulate kserve stop cleanup.
++				httpRouteName := constants.GetHTTPRouteName(LLMInferenceServiceName)
++				httpRoute := &gatewayapiv1.HTTPRoute{}
++				Expect(envTest.Client.Get(ctx, types.NamespacedName{Name: httpRouteName, Namespace: testNs}, httpRoute)).Should(Succeed())
++				Expect(envTest.Client.Delete(ctx, httpRoute)).Should(Succeed())
++
++				// Then set the stop annotation, so the reconcile it triggers
++				// observes the missing route.
++				llmisvc.Annotations[kserveconstants.StopAnnotationKey] = "true"
++				Expect(envTest.Client.Update(ctx, llmisvc)).Should(Succeed())
++
++				// The controller should not produce ReconcileError events for the
++				// stopped service (the bug's symptom was continuous warning events
++				// because AuthPolicy reconciliation tried to look up the deleted HTTPRoute).
++				Consistently(func() bool {
++					return countReconcileErrors(ctx, envTest.Client, testNs, LLMInferenceServiceName) > initialErrorCount
++				}).WithTimeout(2 * time.Second).WithPolling(100 * time.Millisecond).WithContext(ctx).Should(BeFalse())
++			})
++		})
+ 	})
+ })
+ 
+@@ -430,6 +469,28 @@ func createCrossNamespaceGateway(ctx context.Context, name, namespace string) {
+ 	Expect(envTest.Client.Create(ctx, gw)).Should(Succeed())
+ }
+ 
++// countReconcileErrors returns the number of ReconcileError events for the
++// given LLMInferenceService, including aggregated event counts.
++func countReconcileErrors(ctx context.Context, c client.Client, namespace, name string) int32 {
++	eventList := &corev1.EventList{}
++	if err := c.List(ctx, eventList, client.InNamespace(namespace)); err != nil {
++		return 0
++	}
++	var total int32
++	for _, ev := range eventList.Items {
++		if ev.Reason == "ReconcileError" &&
++			ev.InvolvedObject.Name == name &&
++			ev.InvolvedObject.Kind == "LLMInferenceService" {
++			if ev.Count > 0 {
++				total += ev.Count
++			} else {
++				total++
++			}
++		}
++	}
++	return total
++}
++
+ // verifyResourcePersistentlyAbsent checks that a resource remains absent (Consistently + IsNotFound).
+ func verifyResourcePersistentlyAbsent[T client.Object](ctx context.Context, namespace, name string, obj T) {
+ 	GinkgoHelper()

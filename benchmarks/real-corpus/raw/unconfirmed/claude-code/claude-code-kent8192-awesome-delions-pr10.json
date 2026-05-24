@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-kent8192-awesome-delions-pr10",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "body=claude-code-footer"
+  },
+  "pr": {
+    "number": 10,
+    "headSha": "b2ffcb3cc4a9cf0d7099b31d474ebd64a2a83622",
+    "baseSha": "c01219296e7fa9afcbea808dfc469f9d0b497347",
+    "title": "chore(codex): add codex cli configuration and agents instructions",
+    "body": "## Summary\n\nAdd Codex CLI parallel setup so contributors using Codex CLI get the same project guardrails as Claude Code users.\n\nThis PR addresses:\n\n- AGENTS.md as the Codex-CLI counterpart of CLAUDE.md (generated from CLAUDE.md via textual substitutions: `Claude Code` → `Codex`, `CLAUDE.md` → `AGENTS.md`, `@CLAUDE.local.md` → `@AGENTS.local.md`)\n- `.codex/config.toml` (shell environment policy: `inherit = \"core\"`, `MAX_THINKING_TOKENS=31999`)\n- `.codex/agents/frontend-qa-tester.toml` (project-specific Codex agent for frontend QA workflows; same content shared with reinhardt-web and reinhardt-cloud)\n- Local overrides (`AGENTS.local.md`) follow the same gitignore convention as `CLAUDE.local.md` (handled via the user's global git ignore — out of repo)\n\n## Type of Change\n\n- [x] Documentation update\n\n## Motivation and Context\n\nawesome-delions's project guardrails currently live in `CLAUDE.md` and `instructions/`, which Claude Code reads automatically. Contributors using Codex CLI need the same instructions in `AGENTS.md` (Codex's standard project file) plus project-level Codex configuration in `.codex/`. Without this, Codex CLI users either operate without project guardrails or have to maintain their own copy out-of-band.\n\nThis change is documentation/tooling only and has no impact on delion crate code, build, or release-plz.\n\nFixes #\n\nRelated to: #\n\n## How Was This Tested?\n\n- Verified `AGENTS.md` matches `CLAUDE.md` content (only the expected substitutions; line count matches CLAUDE.md exactly at 515 lines)\n- Confirmed no broken references remain (`grep -E \"(@Codex\\.local|Claude Code attribution)\" AGENTS.md` returns no matches)\n- Verified `.codex/config.toml` and `.codex/agents/frontend-qa-tester.toml` parse as valid TOML\n- `git status` clean on the worktree after commit\n\n## Checklist\n\n- [x] I have followed the [Contributing Guidelines](../blob/main/CONTRIBUTING.md)\n- [x] I have followed the [Commit Guidelines](../blob/main/instructions/COMMIT_GUIDELINE.md)\n- [x] I have updated the documentation (this IS the documentation change)\n- [x] My changes generate no new warnings\n\n## Related Issues\n\n- None\n\n## Labels to Apply\n\n- `documentation`\n\n---\n\n**Additional Context:**\n\n- Companion PRs are being raised in `kent8192/reinhardt-web` and `kent8192/reinhardt-cloud` to land the same Codex CLI setup across the family.\n- `AGENTS.md` is intentionally kept as a textual mirror of `CLAUDE.md`. If `CLAUDE.md` changes meaningfully later, a follow-up sync PR will refresh `AGENTS.md` from it.\n- Branch name differs from the other two repos (`chore/codex-cli-setup` instead of `chore/add-codex-cli-support`) to avoid worktree path collision under the shared `Projects/worktrees/` parent. Branch naming is per-repo so this does not affect the PRs themselves.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+    "author": "kent8192",
+    "headRef": "chore/codex-cli-setup",
+    "repository": "kent8192/awesome-delions"
+  },
+  "diffRef": {
+    "repository": "kent8192/awesome-delions",
+    "headSha": "b2ffcb3cc4a9cf0d7099b31d474ebd64a2a83622",
+    "baseSha": "c01219296e7fa9afcbea808dfc469f9d0b497347"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-kent8192-awesome-delions-pr10.diff",
+  "vendoredAt": "2026-05-24T03:13:06.952Z",
+  "collectedAt": "2026-05-24T03:13:06.952Z"
+}

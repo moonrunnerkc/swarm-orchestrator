@@ -1,0 +1,26 @@
+{
+  "id": "devin-divord97-ccc-pr20",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 20,
+    "headSha": "9c7e6aa4bfecf0589cfbd8005cbd442e167cadec",
+    "baseSha": "0bee828309a9a15aca3c752e86238aef8cebae2a",
+    "title": "fix: social channel security & error handling (WeChat/Weibo verify)",
+    "body": "## Summary\n\nFixes 3 bugs in the WeChat/Weibo social channel verification code:\n\n1. **Timing attack prevention** — `VerifyWeChatSignature` and `VerifyWeiboSignature` in `internal/domain/im/service_social.go` now use `crypto/subtle.ConstantTimeCompare` instead of `==` to compare signatures, preventing timing side-channel attacks.\n\n2. **WeChatVerify error handling** — The `WeChatVerify` handler in `internal/interfaces/http/handler/social_channel.go` now checks and handles the error returned by `MarkVerified`, returning a 500 if it fails.\n\n3. **WeiboVerify validation** — The `WeiboVerify` handler was previously just echoing back `echostr` with no validation. It now:\n   - Looks up the channel config\n   - Verifies the request signature using `VerifyWeiboSignature`\n   - Calls `MarkVerified` (with error handling)\n\n## Review & Testing Checklist for Human\n\n- [ ] Verify `VerifyWeChatSignature` and `VerifyWeiboSignature` correctly use `subtle.ConstantTimeCompare` — confirm existing unit tests still pass\n- [ ] Verify `WeChatVerify` handler returns 500 when `MarkVerified` fails (e.g., DB error)\n- [ ] Verify `WeiboVerify` handler rejects requests with missing/invalid channel config (404) or bad signature (403)\n- [ ] Test the full WeChat/Weibo webhook verification flow end-to-end in a staging environment\n\n### Notes\n\n- All existing tests pass (`go test ./...` clean).\n- `go vet ./...` clean.\n- The `WeiboVerify` signature input uses `token + timestamp + nonce` concatenation, matching the Weibo verification protocol convention.\n\nLink to Devin session: https://app.devin.ai/sessions/ff3457a710a14521882dd7449645989b\nRequested by: @divord97\n<!-- devin-review-badge-begin -->\n\n---\n\n<a href=\"https://app.devin.ai/review/divord97/ccc/pull/20\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-open-in-devin-review-dark.svg?v=1\">\n    <img src=\"https://static.devin.ai/assets/gh-open-in-devin-review-light.svg?v=1\" alt=\"Open in Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779584431-fix-social-channel-bugs",
+    "repository": "divord97/ccc"
+  },
+  "diffRef": {
+    "repository": "divord97/ccc",
+    "headSha": "9c7e6aa4bfecf0589cfbd8005cbd442e167cadec",
+    "baseSha": "0bee828309a9a15aca3c752e86238aef8cebae2a"
+  },
+  "vendoredDiffPath": "devin/devin-divord97-ccc-pr20.diff",
+  "vendoredAt": "2026-05-24T03:04:28.247Z",
+  "collectedAt": "2026-05-24T03:04:28.247Z"
+}

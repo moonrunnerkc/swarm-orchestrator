@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-k0swe-station-reservation-pr23",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 23,
+    "headSha": "d30fc65bf0b0b2fe64ca1c89842a2d10d3ffaa56",
+    "baseSha": "54b451c3fc1c6e8ca6ec8040f724ebffcda5d612",
+    "title": "Show \"Denied\" chip for rejected resource access instead of \"Apply for access\"",
+    "body": "When an admin denies a user's resource access request, the resource list still showed \"Apply for access\" — because the `denied` status fell through to the default branch. This also caused a duplicate-key DB error when the user clicked it.\n\n## Changes\n\n- **`club-detail.html`** — Insert a `denied` branch in the resource access status chain, before the \"Apply for access\" button:\n  ```html\n  } @else if (getApprovalStatus(resource.id) === 'denied') {\n    <span class=\"approval-badge denied\">Denied</span>\n  } @else if (userMembership()?.status === 'approved') {\n    <!-- Apply for access button -->\n  ```\n\n- **`club-detail.scss`** — Add `.approval-badge.denied` styled with M3 error-container tokens, consistent with the existing `approved`/`pending` pill chips:\n  ```scss\n  &.denied {\n    background-color: var(--mat-sys-error-container);\n    color: var(--mat-sys-on-error-container);\n  }\n  ```",
+    "author": "Copilot",
+    "headRef": "copilot/add-denied-chip-for-access",
+    "repository": "k0swe/station-reservation"
+  },
+  "diffRef": {
+    "repository": "k0swe/station-reservation",
+    "headSha": "d30fc65bf0b0b2fe64ca1c89842a2d10d3ffaa56",
+    "baseSha": "54b451c3fc1c6e8ca6ec8040f724ebffcda5d612"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-k0swe-station-reservation-pr23.diff",
+  "vendoredAt": "2026-05-24T03:35:38.471Z",
+  "collectedAt": "2026-05-24T03:35:38.471Z"
+}

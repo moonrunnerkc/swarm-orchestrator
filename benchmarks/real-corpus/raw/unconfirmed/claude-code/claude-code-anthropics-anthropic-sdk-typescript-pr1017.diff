@@ -1,0 +1,1072 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index bd4c3fa6..e8f5de65 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -109,3 +109,45 @@ jobs:
+ 
+       - name: Run tests
+         run: ./scripts/test
++
++  detect_breaking_changes:
++    timeout-minutes: 10
++    name: detect-breaking-changes
++    runs-on: ${{ github.repository == 'stainless-sdks/anthropic-typescript' && 'depot-ubuntu-24.04' || 'ubuntu-latest' }}
++    if: |
++      (github.event_name == 'push' &&
++       github.ref != 'refs/heads/next' &&
++       !startsWith(github.ref, 'refs/heads/release-please--')) ||
++      github.event_name == 'pull_request'
++    steps:
++      - uses: actions/checkout@v6
++
++      - name: Fetch history for current branch and target branches
++        run: |
++          git fetch origin --filter=blob:none --no-tags --depth=2147483647 ${{ github.sha }}
++          git fetch origin --filter=blob:none --no-tags next main 2>/dev/null || true
++
++      - name: Set up Node
++        uses: actions/setup-node@v4
++        with:
++          node-version: '20'
++
++      - name: Install dependencies
++        run: yarn install
++
++      - name: Determine base SHA
++        run: |
++          if [ "${{ github.event_name }}" = "pull_request" ]; then
++            echo "BASE_SHA=${{ github.event.pull_request.base.sha }}" >> $GITHUB_ENV
++          else
++            BASE_SHA=$(git merge-base HEAD origin/next 2>/dev/null || git merge-base HEAD origin/main 2>/dev/null || echo "")
++            echo "BASE_SHA=$BASE_SHA" >> $GITHUB_ENV
++          fi
++
++      - name: Detect breaking changes
++        if: env.BASE_SHA != ''
++        run: |
++          # Try to check out previous versions of the breaking change detection script. This ensures that
++          # we still detect breaking changes when entire files and their tests are removed.
++          git checkout "$BASE_SHA" -- ./scripts/detect-breaking-changes 2>/dev/null || true
++          ./scripts/detect-breaking-changes "$BASE_SHA"
+diff --git a/.github/workflows/create-releases.yml b/.github/workflows/create-releases.yml
+index ec7cef08..07003fe3 100644
+--- a/.github/workflows/create-releases.yml
++++ b/.github/workflows/create-releases.yml
+@@ -16,7 +16,7 @@ jobs:
+     steps:
+       - uses: actions/checkout@v6
+ 
+-      - uses: stainless-api/trigger-release-please@v1
++      - uses: stainless-api/trigger-release-please@bb6677c5a04578eec1ccfd9e1913b5b78ed64c61 # v1.4.0
+         id: release
+         with:
+           repo: ${{ github.event.repository.full_name }}
+diff --git a/.github/workflows/detect-breaking-changes.yml b/.github/workflows/detect-breaking-changes.yml
+deleted file mode 100644
+index 3ab767bc..00000000
+--- a/.github/workflows/detect-breaking-changes.yml
++++ /dev/null
+@@ -1,36 +0,0 @@
+-name: CI
+-on:
+-  pull_request:
+-    branches:
+-      - main
+-      - next
+-
+-jobs:
+-  detect_breaking_changes:
+-    runs-on: 'ubuntu-latest'
+-    name: detect-breaking-changes
+-    if: github.repository == 'anthropics/anthropic-sdk-typescript'
+-    steps:
+-      - name: Calculate fetch-depth
+-        run: |
+-          echo "FETCH_DEPTH=$(expr ${{ github.event.pull_request.commits }} + 1)" >> $GITHUB_ENV
+-
+-      - uses: actions/checkout@v6
+-        with:
+-          # Ensure we can check out the pull request base in the script below.
+-          fetch-depth: ${{ env.FETCH_DEPTH }}
+-
+-      - name: Set up Node
+-        uses: actions/setup-node@v3
+-        with:
+-          node-version: '20'
+-      - name: Install dependencies
+-        run: |
+-          yarn install
+-
+-      - name: Detect breaking changes
+-        run: |
+-          # Try to check out previous versions of the breaking change detection script. This ensures that
+-          # we still detect breaking changes when entire files and their tests are removed.
+-          git checkout "${{ github.event.pull_request.base.sha }}" -- ./scripts/detect-breaking-changes 2>/dev/null || true
+-          ./scripts/detect-breaking-changes ${{ github.event.pull_request.base.sha }}
+diff --git a/.release-please-manifest.json b/.release-please-manifest.json
+index 21491228..cdfeb788 100644
+--- a/.release-please-manifest.json
++++ b/.release-please-manifest.json
+@@ -1,7 +1,7 @@
+ {
+-  ".": "0.91.1",
++  ".": "0.92.0",
+   "packages/vertex-sdk": "0.16.0",
+-  "packages/bedrock-sdk": "0.29.0",
++  "packages/bedrock-sdk": "0.29.1",
+   "packages/foundry-sdk": "0.2.3",
+   "packages/aws-sdk": "0.2.5"
+ }
+diff --git a/.stats.yml b/.stats.yml
+index bd587136..2cbdd921 100644
+--- a/.stats.yml
++++ b/.stats.yml
+@@ -1,4 +1,4 @@
+ configured_endpoints: 91
+-openapi_spec_url: https://storage.googleapis.com/stainless-sdk-openapi-specs/anthropic%2Fanthropic-2d9a6272c569b37615ae2f2dc675bf9185bc2ea3dc2ecd32eb46b68f263b9924.yml
+-openapi_spec_hash: 3716f6d62e618fe9018aee00e7c6dd80
+-config_hash: 9c24b5adcecc3649a6ec0380bd583cdf
++openapi_spec_url: https://storage.googleapis.com/stainless-sdk-openapi-specs/anthropic/anthropic-4175787f21d24cc3d87dcecce2df2469d10f92eee8e4f00af8a6dd36f7e13ffa.yml
++openapi_spec_hash: dc43ed54947d427a084a891b7c4a783a
++config_hash: 486e52c2d1bedf2dca1e33dcf8132987
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 07950305..1ca444da 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,5 +1,25 @@
+ # Changelog
+ 
++## 0.92.0 (2026-04-30)
++
++Full Changelog: [sdk-v0.91.1...sdk-v0.92.0](https://github.com/anthropics/anthropic-sdk-typescript/compare/sdk-v0.91.1...sdk-v0.92.0)
++
++### Features
++
++* **api:** improve Managed Agents APIs ([ca1bf4a](https://github.com/anthropics/anthropic-sdk-typescript/commit/ca1bf4a9b278fddc7f082b1c4f2b3a3e4e20298d))
++* support setting headers via env ([32f67d4](https://github.com/anthropics/anthropic-sdk-typescript/commit/32f67d47952b12bb930c8bbfe87ab2ba2aee1882))
++
++
++### Bug Fixes
++
++* **bedrock:** throw APIError for error events delivered in chunk frames ([#1021](https://github.com/anthropics/anthropic-sdk-typescript/issues/1021)) ([3ae887b](https://github.com/anthropics/anthropic-sdk-typescript/commit/3ae887b89bde1721c75dc9c9812cb9ac191ffc92))
++
++
++### Chores
++
++* **format:** run eslint and prettier separately ([7ce257c](https://github.com/anthropics/anthropic-sdk-typescript/commit/7ce257c1b1ad9ff4e1cee19e82851bcb65e0e044))
++* **internal:** codegen related update ([f08cc77](https://github.com/anthropics/anthropic-sdk-typescript/commit/f08cc771efd596026f4247ecff418e7ef6a3b38a))
++
+ ## 0.91.1 (2026-04-24)
+ 
+ Full Changelog: [sdk-v0.91.0...sdk-v0.91.1](https://github.com/anthropics/anthropic-sdk-typescript/compare/sdk-v0.91.0...sdk-v0.91.1)
+diff --git a/package.json b/package.json
+index 30746765..7632d777 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "@anthropic-ai/sdk",
+-  "version": "0.91.1",
++  "version": "0.92.0",
+   "description": "The official TypeScript library for the Anthropic API",
+   "author": "Anthropic <support@anthropic.com>",
+   "types": "dist/index.d.ts",
+diff --git a/packages/bedrock-sdk/CHANGELOG.md b/packages/bedrock-sdk/CHANGELOG.md
+index e20f31e9..093b32f1 100644
+--- a/packages/bedrock-sdk/CHANGELOG.md
++++ b/packages/bedrock-sdk/CHANGELOG.md
+@@ -1,5 +1,13 @@
+ # Changelog
+ 
++## 0.29.1 (2026-04-30)
++
++Full Changelog: [bedrock-sdk-v0.29.0...bedrock-sdk-v0.29.1](https://github.com/anthropics/anthropic-sdk-typescript/compare/bedrock-sdk-v0.29.0...bedrock-sdk-v0.29.1)
++
++### Bug Fixes
++
++* **bedrock:** throw APIError for error events delivered in chunk frames ([#1021](https://github.com/anthropics/anthropic-sdk-typescript/issues/1021)) ([3ae887b](https://github.com/anthropics/anthropic-sdk-typescript/commit/3ae887b89bde1721c75dc9c9812cb9ac191ffc92))
++
+ ## 0.29.0 (2026-04-23)
+ 
+ Full Changelog: [bedrock-sdk-v0.28.1...bedrock-sdk-v0.29.0](https://github.com/anthropics/anthropic-sdk-typescript/compare/bedrock-sdk-v0.28.1...bedrock-sdk-v0.29.0)
+diff --git a/packages/bedrock-sdk/package.json b/packages/bedrock-sdk/package.json
+index 8204d741..0050c3ac 100644
+--- a/packages/bedrock-sdk/package.json
++++ b/packages/bedrock-sdk/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "@anthropic-ai/bedrock-sdk",
+-  "version": "0.29.0",
++  "version": "0.29.1",
+   "description": "The official TypeScript library for the Anthropic Bedrock API",
+   "author": "Anthropic <support@anthropic.com>",
+   "types": "dist/index.d.ts",
+diff --git a/packages/vertex-sdk/yarn.lock b/packages/vertex-sdk/yarn.lock
+index 94d494c5..ef54e24b 100644
+--- a/packages/vertex-sdk/yarn.lock
++++ b/packages/vertex-sdk/yarn.lock
+@@ -17,7 +17,7 @@
+ 
+ "@anthropic-ai/sdk@file:../../dist":
+   # x-release-please-start-version
+-  version "0.91.1"
++  version "0.92.0"
+   # x-release-please-end-version
+   dependencies:
+     json-schema-to-ts "^3.1.1"
+diff --git a/scripts/fast-format b/scripts/fast-format
+index e1723136..f1873aef 100755
+--- a/scripts/fast-format
++++ b/scripts/fast-format
+@@ -31,8 +31,7 @@ if ! [ -z "$ESLINT_FILES" ]; then
+ fi
+ 
+ echo "==> Running prettier --write"
+-PRETTIER_FILES="$(grep '\.\([mc]?tsx?\|[mc]?jsx?\|json\)$' "$FILE_LIST" || true)"
+-if ! [ -z "$PRETTIER_FILES" ]; then
+-   echo "$PRETTIER_FILES" | xargs ./node_modules/.bin/prettier \
+-      --write --cache --cache-strategy metadata --no-error-on-unmatched-pattern
++if ! [ -z "$FILE_LIST" ]; then
++   cat "$FILE_LIST" | xargs ./node_modules/.bin/prettier \
++      --write --cache --cache-strategy metadata --no-error-on-unmatched-pattern --ignore-unknown
+ fi
+diff --git a/scripts/utils/postprocess-files.cjs b/scripts/utils/postprocess-files.cjs
+index deae575e..a8cdeb7c 100644
+--- a/scripts/utils/postprocess-files.cjs
++++ b/scripts/utils/postprocess-files.cjs
+@@ -23,12 +23,19 @@ async function postprocess() {
+ 
+     // strip out lib="dom", types="node", and types="react" references; these
+     // are needed at build time, but would pollute the user's TS environment
+-    const transformed = code.replace(
++    let transformed = code.replace(
+       /^ *\/\/\/ *<reference +(lib="dom"|types="(node|react)").*?\n/gm,
+       // replace with same number of characters to avoid breaking source maps
+       (match) => ' '.repeat(match.length - 1) + '\n',
+     );
+ 
++    // TypeScript's declaration emitter collapses /** @ts-ignore */ onto the same
++    // line as the type declaration, which doesn't work. So we convert to // @ts-ignore
++    // on its own line to properly suppresses errors.
++    if (file.endsWith('.d.ts') || file.endsWith('.d.mts') || file.endsWith('.d.cts')) {
++      transformed = transformed.replace(/\/\*\* @ts-ignore\b[^*]*\*\/ /gm, '// @ts-ignore\n');
++    }
++
+     if (transformed !== code) {
+       console.error(`wrote ${path.relative(process.cwd(), file)}`);
+       await fs.promises.writeFile(file, transformed, 'utf8');
+diff --git a/src/client.ts b/src/client.ts
+index 66f052fe..6039f428 100644
+--- a/src/client.ts
++++ b/src/client.ts
+@@ -413,6 +413,18 @@ export class BaseAnthropic {
+     this.fetch = options.fetch ?? Shims.getDefaultFetch();
+     this.#encoder = Opts.FallbackEncoder;
+ 
++    const customHeadersEnv = readEnv('ANTHROPIC_CUSTOM_HEADERS');
++    if (customHeadersEnv) {
++      const parsed: Record<string, string> = {};
++      for (const line of customHeadersEnv.split('\n')) {
++        const colon = line.indexOf(':');
++        if (colon >= 0) {
++          parsed[line.substring(0, colon).trim()] = line.substring(colon + 1).trim();
++        }
++      }
++      options.defaultHeaders = { ...parsed, ...options.defaultHeaders };
++    }
++
+     this._options = options;
+ 
+     this.apiKey = typeof apiKey === 'string' ? apiKey : null;
+diff --git a/src/resources/beta/environments.ts b/src/resources/beta/environments.ts
+index b7fe347e..0e83df6b 100644
+--- a/src/resources/beta/environments.ts
++++ b/src/resources/beta/environments.ts
+@@ -214,7 +214,7 @@ export interface BetaCloudConfigParams {
+ }
+ 
+ /**
+- * Unified Environment resource for both cloud and BYOC environments.
++ * Unified Environment resource for both cloud and self-hosted environments.
+  */
+ export interface BetaEnvironment {
+   /**
+diff --git a/src/resources/beta/index.ts b/src/resources/beta/index.ts
+index 09354ba2..21478dac 100644
+--- a/src/resources/beta/index.ts
++++ b/src/resources/beta/index.ts
+@@ -177,6 +177,7 @@ export {
+   type BetaInputJSONDelta,
+   type BetaInputTokensClearAtLeast,
+   type BetaInputTokensTrigger,
++  type BetaIterationsUsage,
+   type BetaJSONOutputFormat,
+   type BetaMCPToolConfig,
+   type BetaMCPToolDefaultConfig,
+diff --git a/src/resources/beta/memory-stores/memories.ts b/src/resources/beta/memory-stores/memories.ts
+index 3966e268..5ecc137d 100644
+--- a/src/resources/beta/memory-stores/memories.ts
++++ b/src/resources/beta/memory-stores/memories.ts
+@@ -10,7 +10,7 @@ import { path } from '../../../internal/utils/path';
+ 
+ export class Memories extends APIResource {
+   /**
+-   * CreateMemory
++   * Create a memory
+    *
+    * @example
+    * ```ts
+@@ -39,7 +39,7 @@ export class Memories extends APIResource {
+   }
+ 
+   /**
+-   * GetMemory
++   * Retrieve a memory
+    *
+    * @example
+    * ```ts
+@@ -67,7 +67,7 @@ export class Memories extends APIResource {
+   }
+ 
+   /**
+-   * UpdateMemory
++   * Update a memory
+    *
+    * @example
+    * ```ts
+@@ -96,7 +96,7 @@ export class Memories extends APIResource {
+   }
+ 
+   /**
+-   * ListMemories
++   * List memories
+    *
+    * @example
+    * ```ts
+@@ -129,7 +129,7 @@ export class Memories extends APIResource {
+   }
+ 
+   /**
+-   * DeleteMemory
++   * Delete a memory
+    *
+    * @example
+    * ```ts
+@@ -165,13 +165,37 @@ export interface BetaManagedAgentsConflictError {
+   message?: string;
+ }
+ 
++/**
++ * Optimistic-concurrency precondition: the update applies only if the memory's
++ * stored `content_sha256` equals the supplied value. On mismatch, the request
++ * returns `memory_precondition_failed_error` (HTTP 409); re-read the memory and
++ * retry against the fresh state. If the precondition fails but the stored state
++ * already exactly matches the requested `content` and `path`, the server returns
++ * 200 instead of 409.
++ */
+ export interface BetaManagedAgentsContentSha256Precondition {
+   type: 'content_sha256';
+ 
++  /**
++   * Expected `content_sha256` of the stored memory (64 lowercase hexadecimal
++   * characters). Typically the `content_sha256` returned by a prior read or list
++   * call. Because the server applies no content normalization, clients can also
++   * compute this locally as the SHA-256 of the UTF-8 content bytes.
++   */
+   content_sha256?: string;
+ }
+ 
++/**
++ * Tombstone returned by
++ * [Delete a memory](/en/api/beta/memory_stores/memories/delete). The memory's
++ * version history persists and remains listable via
++ * [List memory versions](/en/api/beta/memory_stores/memory_versions/list) until
++ * the store itself is deleted.
++ */
+ export interface BetaManagedAgentsDeletedMemory {
++  /**
++   * ID of the deleted memory (a `mem_...` value).
++   */
+   id: string;
+ 
+   type: 'memory_deleted';
+@@ -191,11 +215,33 @@ export type BetaManagedAgentsError =
+   | BetaManagedAgentsMemoryPathConflictError
+   | BetaManagedAgentsConflictError;
+ 
++/**
++ * A `memory` object: a single text document at a hierarchical path inside a memory
++ * store. The `content` field is populated when `view=full` and `null` when
++ * `view=basic`; the `content_size_bytes` and `content_sha256` fields are always
++ * populated so sync clients can diff without fetching content. Memories are
++ * addressed by their `mem_...` ID; the path is the create key and can be changed
++ * via update.
++ */
+ export interface BetaManagedAgentsMemory {
++  /**
++   * Unique identifier for this memory (a `mem_...` value). Stable across renames;
++   * use this ID, not the path, to read, update, or delete the memory.
++   */
+   id: string;
+ 
++  /**
++   * Lowercase hex SHA-256 digest of the UTF-8 `content` bytes (64 characters). The
++   * server applies no normalization, so clients can compute the same hash locally
++   * for staleness checks and as the value for a `content_sha256` precondition on
++   * update. Always populated, regardless of `view`.
++   */
+   content_sha256: string;
+ 
++  /**
++   * Size of `content` in bytes (the UTF-8 plaintext length). Always populated,
++   * regardless of `view`.
++   */
+   content_size_bytes: number;
+ 
+   /**
+@@ -203,10 +249,25 @@ export interface BetaManagedAgentsMemory {
+    */
+   created_at: string;
+ 
++  /**
++   * ID of the memory store this memory belongs to (a `memstore_...` value).
++   */
+   memory_store_id: string;
+ 
++  /**
++   * ID of the `memory_version` representing this memory's current content (a
++   * `memver_...` value). This is the authoritative head pointer; `memory_version`
++   * objects do not carry an `is_latest` flag, so compare against this field instead.
++   * Enumerate the full history via
++   * [List memory versions](/en/api/beta/memory_stores/memory_versions/list).
++   */
+   memory_version_id: string;
+ 
++  /**
++   * Hierarchical path of the memory within the store, e.g. `/projects/foo/notes.md`.
++   * Always starts with `/`. Paths are case-sensitive and unique within a store.
++   * Maximum 1,024 bytes.
++   */
+   path: string;
+ 
+   type: 'memory';
+@@ -216,9 +277,18 @@ export interface BetaManagedAgentsMemory {
+    */
+   updated_at: string;
+ 
++  /**
++   * The memory's UTF-8 text content. Populated when `view=full`; `null` when
++   * `view=basic`. Maximum 100 kB (102,400 bytes).
++   */
+   content?: string | null;
+ }
+ 
++/**
++ * One item in a [List memories](/en/api/beta/memory_stores/memories/list)
++ * response: either a `memory` object or, when `depth` is set, a `memory_prefix`
++ * rollup marker.
++ */
+ export type BetaManagedAgentsMemoryListItem = BetaManagedAgentsMemory | BetaManagedAgentsMemoryPrefix;
+ 
+ export interface BetaManagedAgentsMemoryPathConflictError {
+@@ -237,31 +307,66 @@ export interface BetaManagedAgentsMemoryPreconditionFailedError {
+   message?: string;
+ }
+ 
++/**
++ * A rolled-up directory marker returned by
++ * [List memories](/en/api/beta/memory_stores/memories/list) when `depth` is set.
++ * Indicates that one or more memories exist deeper than the requested depth under
++ * this prefix. This is a list-time rollup, not a stored resource; it has no ID and
++ * no lifecycle. Each prefix counts toward the page `limit` and interleaves with
++ * `memory` items in path order.
++ */
+ export interface BetaManagedAgentsMemoryPrefix {
++  /**
++   * The rolled-up path prefix, including a trailing `/` (e.g. `/projects/foo/`).
++   * Pass this value as `path_prefix` on a subsequent list call to drill into the
++   * directory.
++   */
+   path: string;
+ 
+   type: 'memory_prefix';
+ }
+ 
+ /**
+- * MemoryView enum
++ * Selects which projection of a `memory` or `memory_version` the server returns.
++ * `basic` returns the object with `content` set to `null`; `full` populates
++ * `content`. When omitted, the default is endpoint-specific: retrieve operations
++ * default to `full`; list, create, and update operations default to `basic`.
++ * Listing with `view=full` caps `limit` at 20.
+  */
+ export type BetaManagedAgentsMemoryView = 'basic' | 'full';
+ 
++/**
++ * Optimistic-concurrency precondition: the update applies only if the memory's
++ * stored `content_sha256` equals the supplied value. On mismatch, the request
++ * returns `memory_precondition_failed_error` (HTTP 409); re-read the memory and
++ * retry against the fresh state. If the precondition fails but the stored state
++ * already exactly matches the requested `content` and `path`, the server returns
++ * 200 instead of 409.
++ */
+ export interface BetaManagedAgentsPrecondition {
+   type: 'content_sha256';
+ 
++  /**
++   * Expected `content_sha256` of the stored memory (64 lowercase hexadecimal
++   * characters). Typically the `content_sha256` returned by a prior read or list
++   * call. Because the server applies no content normalization, clients can also
++   * compute this locally as the SHA-256 of the UTF-8 content bytes.
++   */
+   content_sha256?: string;
+ }
+ 
+ export interface MemoryCreateParams {
+   /**
+-   * Body param
++   * Body param: UTF-8 text content for the new memory. Maximum 100 kB (102,400
++   * bytes). Required; pass `""` explicitly to create an empty memory.
+    */
+   content: string | null;
+ 
+   /**
+-   * Body param
++   * Body param: Hierarchical path for the new memory, e.g. `/projects/foo/notes.md`.
++   * Must start with `/`, contain at least one non-empty segment, and be at most
++   * 1,024 bytes. Must not contain empty segments, `.` or `..` segments, control or
++   * format characters, and must be NFC-normalized. Paths are case-sensitive.
+    */
+   path: string;
+ 
+@@ -305,17 +410,27 @@ export interface MemoryUpdateParams {
+   view?: BetaManagedAgentsMemoryView;
+ 
+   /**
+-   * Body param
++   * Body param: New UTF-8 text content for the memory. Maximum 100 kB (102,400
++   * bytes). Omit to leave the content unchanged (e.g., for a rename-only update).
+    */
+   content?: string | null;
+ 
+   /**
+-   * Body param
++   * Body param: New path for the memory (a rename). Must start with `/`, contain at
++   * least one non-empty segment, and be at most 1,024 bytes. Must not contain empty
++   * segments, `.` or `..` segments, control or format characters, and must be
++   * NFC-normalized. Paths are case-sensitive. The memory's `id` is preserved across
++   * renames. Omit to leave the path unchanged.
+    */
+   path?: string | null;
+ 
+   /**
+-   * Body param
++   * Body param: Optimistic-concurrency precondition: the update applies only if the
++   * memory's stored `content_sha256` equals the supplied value. On mismatch, the
++   * request returns `memory_precondition_failed_error` (HTTP 409); re-read the
++   * memory and retry against the fresh state. If the precondition fails but the
++   * stored state already exactly matches the requested `content` and `path`, the
++   * server returns 200 instead of 409.
+    */
+   precondition?: BetaManagedAgentsPrecondition;
+ 
+diff --git a/src/resources/beta/memory-stores/memory-stores.ts b/src/resources/beta/memory-stores/memory-stores.ts
+index d2d92e51..1c661fc3 100644
+--- a/src/resources/beta/memory-stores/memory-stores.ts
++++ b/src/resources/beta/memory-stores/memory-stores.ts
+@@ -48,7 +48,7 @@ export class MemoryStores extends APIResource {
+   memoryVersions: MemoryVersionsAPI.MemoryVersions = new MemoryVersionsAPI.MemoryVersions(this._client);
+ 
+   /**
+-   * CreateMemoryStore
++   * Create a memory store
+    *
+    * @example
+    * ```ts
+@@ -72,7 +72,7 @@ export class MemoryStores extends APIResource {
+   }
+ 
+   /**
+-   * GetMemoryStore
++   * Retrieve a memory store
+    *
+    * @example
+    * ```ts
+@@ -98,7 +98,7 @@ export class MemoryStores extends APIResource {
+   }
+ 
+   /**
+-   * UpdateMemoryStore
++   * Update a memory store
+    *
+    * @example
+    * ```ts
+@@ -123,7 +123,7 @@ export class MemoryStores extends APIResource {
+   }
+ 
+   /**
+-   * ListMemoryStores
++   * List memory stores
+    *
+    * @example
+    * ```ts
+@@ -149,7 +149,7 @@ export class MemoryStores extends APIResource {
+   }
+ 
+   /**
+-   * DeleteMemoryStore
++   * Delete a memory store
+    *
+    * @example
+    * ```ts
+@@ -173,7 +173,7 @@ export class MemoryStores extends APIResource {
+   }
+ 
+   /**
+-   * ArchiveMemoryStore
++   * Archive a memory store
+    *
+    * @example
+    * ```ts
+@@ -199,13 +199,30 @@ export class MemoryStores extends APIResource {
+ 
+ export type BetaManagedAgentsMemoryStoresPageCursor = PageCursor<BetaManagedAgentsMemoryStore>;
+ 
++/**
++ * Confirmation that a `memory_store` was deleted.
++ */
+ export interface BetaManagedAgentsDeletedMemoryStore {
++  /**
++   * ID of the deleted memory store (a `memstore_...` identifier). The store and all
++   * its memories and versions are no longer retrievable.
++   */
+   id: string;
+ 
+   type: 'memory_store_deleted';
+ }
+ 
++/**
++ * A `memory_store`: a named container for agent memories, scoped to a workspace.
++ * Attach a store to a session via `resources[]` to mount it as a directory the
++ * agent can read and write.
++ */
+ export interface BetaManagedAgentsMemoryStore {
++  /**
++   * Unique identifier for the memory store (a `memstore_...` tagged ID). Use this
++   * when attaching the store to a session, or in the `{memory_store_id}` path
++   * parameter of subsequent calls.
++   */
+   id: string;
+ 
+   /**
+@@ -213,6 +230,10 @@ export interface BetaManagedAgentsMemoryStore {
+    */
+   created_at: string;
+ 
++  /**
++   * Human-readable name for the store. 1–255 characters. The store's mount-path slug
++   * under `/mnt/memory/` is derived from this name.
++   */
+   name: string;
+ 
+   type: 'memory_store';
+@@ -227,24 +248,41 @@ export interface BetaManagedAgentsMemoryStore {
+    */
+   archived_at?: string | null;
+ 
++  /**
++   * Free-text description of what the store contains, up to 1024 characters.
++   * Included in the agent's system prompt when the store is attached, so word it to
++   * be useful to the agent. Empty string when unset.
++   */
+   description?: string;
+ 
++  /**
++   * Arbitrary key-value tags for your own bookkeeping (such as the end user a store
++   * belongs to). Up to 16 pairs; keys 1–64 characters; values up to 512 characters.
++   * Returned on retrieve/list but not filterable.
++   */
+   metadata?: { [key: string]: string };
+ }
+ 
+ export interface MemoryStoreCreateParams {
+   /**
+-   * Body param
++   * Body param: Human-readable name for the store. Required; 1–255 characters; no
++   * control characters. The mount-path slug under `/mnt/memory/` is derived from
++   * this name (lowercased, non-alphanumeric runs collapsed to a hyphen). Names need
++   * not be unique within a workspace.
+    */
+   name: string;
+ 
+   /**
+-   * Body param
++   * Body param: Free-text description of what the store contains, up to 1024
++   * characters. Included in the agent's system prompt when the store is attached, so
++   * word it to be useful to the agent.
+    */
+   description?: string;
+ 
+   /**
+-   * Body param
++   * Body param: Arbitrary key-value tags for your own bookkeeping (such as the end
++   * user a store belongs to). Up to 16 pairs; keys 1–64 characters; values up to 512
++   * characters. Not visible to the agent.
+    */
+   metadata?: { [key: string]: string };
+ 
+@@ -263,7 +301,8 @@ export interface MemoryStoreRetrieveParams {
+ 
+ export interface MemoryStoreUpdateParams {
+   /**
+-   * Body param
++   * Body param: New description for the store, up to 1024 characters. Pass an empty
++   * string to clear it.
+    */
+   description?: string | null;
+ 
+@@ -275,7 +314,9 @@ export interface MemoryStoreUpdateParams {
+   metadata?: { [key: string]: string | null } | null;
+ 
+   /**
+-   * Body param
++   * Body param: New human-readable name for the store. 1–255 characters; no control
++   * characters. Renaming changes the slug used for the store's `mount_path` in
++   * sessions created after the update.
+    */
+   name?: string | null;
+ 
+@@ -287,17 +328,20 @@ export interface MemoryStoreUpdateParams {
+ 
+ export interface MemoryStoreListParams extends PageCursorParams {
+   /**
+-   * Query param: Return stores created at or after this time (inclusive).
++   * Query param: Return only stores whose `created_at` is at or after this time
++   * (inclusive). Sent on the wire as `created_at[gte]`.
+    */
+   'created_at[gte]'?: string;
+ 
+   /**
+-   * Query param: Return stores created at or before this time (inclusive).
++   * Query param: Return only stores whose `created_at` is at or before this time
++   * (inclusive). Sent on the wire as `created_at[lte]`.
+    */
+   'created_at[lte]'?: string;
+ 
+   /**
+-   * Query param: Query parameter for include_archived
++   * Query param: When `true`, archived stores are included in the results. Defaults
++   * to `false` (archived stores are excluded).
+    */
+   include_archived?: boolean;
+ 
+diff --git a/src/resources/beta/memory-stores/memory-versions.ts b/src/resources/beta/memory-stores/memory-versions.ts
+index 7701ddcc..e854b42e 100644
+--- a/src/resources/beta/memory-stores/memory-versions.ts
++++ b/src/resources/beta/memory-stores/memory-versions.ts
+@@ -11,7 +11,7 @@ import { path } from '../../../internal/utils/path';
+ 
+ export class MemoryVersions extends APIResource {
+   /**
+-   * GetMemoryVersion
++   * Retrieve a memory version
+    *
+    * @example
+    * ```ts
+@@ -42,7 +42,7 @@ export class MemoryVersions extends APIResource {
+   }
+ 
+   /**
+-   * ListMemoryVersions
++   * List memory versions
+    *
+    * @example
+    * ```ts
+@@ -75,7 +75,7 @@ export class MemoryVersions extends APIResource {
+   }
+ 
+   /**
+-   * RedactMemoryVersion
++   * Redact a memory version
+    *
+    * @example
+    * ```ts
+@@ -107,18 +107,44 @@ export class MemoryVersions extends APIResource {
+ 
+ export type BetaManagedAgentsMemoryVersionsPageCursor = PageCursor<BetaManagedAgentsMemoryVersion>;
+ 
++/**
++ * Identifies who performed a write or redact operation. Captured at write time on
++ * the `memory_version` row. The API key that created a session is not recorded on
++ * agent writes; attribution answers who made the write, not who is ultimately
++ * responsible. Look up session provenance separately via the
++ * [Sessions API](/en/api/sessions-retrieve).
++ */
+ export type BetaManagedAgentsActor =
+   | BetaManagedAgentsSessionActor
+   | BetaManagedAgentsAPIActor
+   | BetaManagedAgentsUserActor;
+ 
++/**
++ * Attribution for a write made directly via the public API (outside of any
++ * session).
++ */
+ export interface BetaManagedAgentsAPIActor {
++  /**
++   * ID of the API key that performed the write. This identifies the key, not the
++   * secret.
++   */
+   api_key_id: string;
+ 
+   type: 'api_actor';
+ }
+ 
++/**
++ * A `memory_version` object: one immutable, attributed row in a memory's
++ * append-only history. Every non-no-op mutation to a memory produces a new
++ * version. Versions belong to the store (not the individual memory) and persist
++ * after the memory is deleted. Retrieving a redacted version returns 200 with
++ * `content`, `path`, `content_size_bytes`, and `content_sha256` set to `null`;
++ * branch on `redacted_at`, not HTTP status.
++ */
+ export interface BetaManagedAgentsMemoryVersion {
++  /**
++   * Unique identifier for this version (a `memver_...` value).
++   */
+   id: string;
+ 
+   /**
+@@ -126,25 +152,59 @@ export interface BetaManagedAgentsMemoryVersion {
+    */
+   created_at: string;
+ 
++  /**
++   * ID of the memory this version snapshots (a `mem_...` value). Remains valid after
++   * the memory is deleted; pass it as `memory_id` to
++   * [List memory versions](/en/api/beta/memory_stores/memory_versions/list) to
++   * retrieve the full lineage including the `deleted` row.
++   */
+   memory_id: string;
+ 
++  /**
++   * ID of the memory store this version belongs to (a `memstore_...` value).
++   */
+   memory_store_id: string;
+ 
+   /**
+-   * MemoryVersionOperation enum
++   * The kind of mutation a `memory_version` records. Every non-no-op mutation to a
++   * memory appends exactly one version row with one of these values.
+    */
+   operation: BetaManagedAgentsMemoryVersionOperation;
+ 
+   type: 'memory_version';
+ 
++  /**
++   * The memory's UTF-8 text content as of this version. `null` when `view=basic`,
++   * when `operation` is `deleted`, or when `redacted_at` is set.
++   */
+   content?: string | null;
+ 
++  /**
++   * Lowercase hex SHA-256 digest of `content` as of this version (64 characters).
++   * `null` when `redacted_at` is set or `operation` is `deleted`. Populated
++   * regardless of `view` otherwise.
++   */
+   content_sha256?: string | null;
+ 
++  /**
++   * Size of `content` in bytes as of this version. `null` when `redacted_at` is set
++   * or `operation` is `deleted`. Populated regardless of `view` otherwise.
++   */
+   content_size_bytes?: number | null;
+ 
++  /**
++   * Identifies who performed a write or redact operation. Captured at write time on
++   * the `memory_version` row. The API key that created a session is not recorded on
++   * agent writes; attribution answers who made the write, not who is ultimately
++   * responsible. Look up session provenance separately via the
++   * [Sessions API](/en/api/sessions-retrieve).
++   */
+   created_by?: BetaManagedAgentsActor;
+ 
++  /**
++   * The memory's path at the time of this write. `null` if and only if `redacted_at`
++   * is set.
++   */
+   path?: string | null;
+ 
+   /**
+@@ -152,23 +212,46 @@ export interface BetaManagedAgentsMemoryVersion {
+    */
+   redacted_at?: string | null;
+ 
++  /**
++   * Identifies who performed a write or redact operation. Captured at write time on
++   * the `memory_version` row. The API key that created a session is not recorded on
++   * agent writes; attribution answers who made the write, not who is ultimately
++   * responsible. Look up session provenance separately via the
++   * [Sessions API](/en/api/sessions-retrieve).
++   */
+   redacted_by?: BetaManagedAgentsActor;
+ }
+ 
+ /**
+- * MemoryVersionOperation enum
++ * The kind of mutation a `memory_version` records. Every non-no-op mutation to a
++ * memory appends exactly one version row with one of these values.
+  */
+ export type BetaManagedAgentsMemoryVersionOperation = 'created' | 'modified' | 'deleted';
+ 
++/**
++ * Attribution for a write made by an agent during a session, through the mounted
++ * filesystem at `/mnt/memory/`.
++ */
+ export interface BetaManagedAgentsSessionActor {
++  /**
++   * ID of the session that performed the write (a `sesn_...` value). Look up the
++   * session via [Retrieve a session](/en/api/sessions-retrieve) for further
++   * provenance.
++   */
+   session_id: string;
+ 
+   type: 'session_actor';
+ }
+ 
++/**
++ * Attribution for a write made by a human user through the Anthropic Console.
++ */
+ export interface BetaManagedAgentsUserActor {
+   type: 'user_actor';
+ 
++  /**
++   * ID of the user who performed the write (a `user_...` value).
++   */
+   user_id: string;
+ }
+ 
+diff --git a/src/resources/beta/messages/batches.ts b/src/resources/beta/messages/batches.ts
+index 554658ca..1122a99a 100644
+--- a/src/resources/beta/messages/batches.ts
++++ b/src/resources/beta/messages/batches.ts
+@@ -459,6 +459,10 @@ export namespace BatchCreateParams {
+        * Note that our models may stop _before_ reaching this maximum. This parameter
+        * only specifies the absolute maximum number of tokens to generate.
+        *
++       * Set to `0` to populate the
++       * [prompt cache](https://docs.claude.com/en/docs/build-with-claude/prompt-caching#pre-warming-the-cache)
++       * without generating a response.
++       *
+        * Different models have different maximum values for this parameter. See
+        * [models](https://docs.claude.com/en/docs/models-overview) for details.
+        */
+diff --git a/src/resources/beta/messages/index.ts b/src/resources/beta/messages/index.ts
+index c5ade671..0a81f8e6 100644
+--- a/src/resources/beta/messages/index.ts
++++ b/src/resources/beta/messages/index.ts
+@@ -101,6 +101,7 @@ export {
+   type BetaInputJSONDelta,
+   type BetaInputTokensClearAtLeast,
+   type BetaInputTokensTrigger,
++  type BetaIterationsUsage,
+   type BetaJSONOutputFormat,
+   type BetaMCPToolResultBlock,
+   type BetaMCPToolUseBlock,
+diff --git a/src/resources/beta/messages/messages.ts b/src/resources/beta/messages/messages.ts
+index cfbeeac2..a69c88a9 100644
+--- a/src/resources/beta/messages/messages.ts
++++ b/src/resources/beta/messages/messages.ts
+@@ -2,6 +2,7 @@
+ 
+ import { AnthropicError } from '../../../error';
+ import { Anthropic } from '../../../client';
++import * as BatchesAPI from './batches';
+ import { APIPromise } from '../../../core/api-promise';
+ import { APIResource } from '../../../core/resource';
+ import { Stream } from '../../../core/streaming';
+@@ -25,7 +26,6 @@ import type { Model } from '../../messages/messages';
+ import * as BetaMessagesAPI from './messages';
+ import * as MessagesAPI from '../../messages/messages';
+ import * as BetaAPI from '../beta';
+-import * as BatchesAPI from './batches';
+ import {
+   BatchCancelParams,
+   BatchCreateParams,
+@@ -3755,6 +3755,10 @@ export interface MessageCreateParamsBase {
+    * Note that our models may stop _before_ reaching this maximum. This parameter
+    * only specifies the absolute maximum number of tokens to generate.
+    *
++   * Set to `0` to populate the
++   * [prompt cache](https://docs.claude.com/en/docs/build-with-claude/prompt-caching#pre-warming-the-cache)
++   * without generating a response.
++   *
+    * Different models have different maximum values for this parameter. See
+    * [models](https://docs.claude.com/en/docs/models-overview) for details.
+    */
+diff --git a/src/resources/beta/sessions/sessions.ts b/src/resources/beta/sessions/sessions.ts
+index 1a4a460a..6641684f 100644
+--- a/src/resources/beta/sessions/sessions.ts
++++ b/src/resources/beta/sessions/sessions.ts
+@@ -626,6 +626,12 @@ export interface SessionListParams extends PageCursorParams {
+    */
+   include_archived?: boolean;
+ 
++  /**
++   * Query param: Filter sessions whose resources contain a memory_store with this
++   * memory store ID.
++   */
++  memory_store_id?: string;
++
+   /**
+    * Query param: Sort direction for results, ordered by created_at. Defaults to desc
+    * (newest first).
+diff --git a/src/resources/messages/messages.ts b/src/resources/messages/messages.ts
+index ae91e5f8..3d732535 100644
+--- a/src/resources/messages/messages.ts
++++ b/src/resources/messages/messages.ts
+@@ -2673,6 +2673,10 @@ export interface MessageCreateParamsBase {
+    * Note that our models may stop _before_ reaching this maximum. This parameter
+    * only specifies the absolute maximum number of tokens to generate.
+    *
++   * Set to `0` to populate the
++   * [prompt cache](https://docs.claude.com/en/docs/build-with-claude/prompt-caching#pre-warming-the-cache)
++   * without generating a response.
++   *
+    * Different models have different maximum values for this parameter. See
+    * [models](https://docs.claude.com/en/docs/models-overview) for details.
+    */
+diff --git a/src/version.ts b/src/version.ts
+index dce6a375..4457d999 100644
+--- a/src/version.ts
++++ b/src/version.ts
+@@ -1 +1 @@
+-export const VERSION = '0.91.1'; // x-release-please-version
++export const VERSION = '0.92.0'; // x-release-please-version
+diff --git a/tests/api-resources/beta/sessions/sessions.test.ts b/tests/api-resources/beta/sessions/sessions.test.ts
+index c37d1786..4b77eb3e 100644
+--- a/tests/api-resources/beta/sessions/sessions.test.ts
++++ b/tests/api-resources/beta/sessions/sessions.test.ts
+@@ -99,6 +99,7 @@ describe('resource sessions', () => {
+           'created_at[lte]': '2019-12-27T18:11:19.117Z',
+           include_archived: true,
+           limit: 0,
++          memory_store_id: 'memory_store_id',
+           order: 'asc',
+           page: 'page',
+           betas: ['message-batches-2024-09-24'],
+diff --git a/yarn.lock b/yarn.lock
+index 2019da00..37a9bfb9 100644
+--- a/yarn.lock
++++ b/yarn.lock
+@@ -776,11 +776,6 @@
+   resolved "https://registry.yarnpkg.com/@open-draft/until/-/until-2.1.0.tgz#0acf32f470af2ceaf47f095cdecd40d68666efda"
+   integrity sha512-U69T3ItWHvLwGg5eJ0n3I62nWuE6ilHlmz7zM0npLBRvPRd7e6NYmg54vvRtP5mZG7kZqZCFVdsTWo7BPtBujg==
+ 
+-"@pkgr/core@^0.2.4":
+-  version "0.2.4"
+-  resolved "https://registry.yarnpkg.com/@pkgr/core/-/core-0.2.4.tgz#d897170a2b0ba51f78a099edccd968f7b103387c"
+-  integrity sha512-ROFF39F6ZrnzSUEmQQZUar0Jt4xVoP9WnDRdWwF4NNcXs3xBTLgBUDoOwW141y1jP+S8nahIbdxbFC7IShw9Iw==
+-
+ "@sinclair/typebox@^0.27.8":
+   version "0.27.8"
+   resolved "https://registry.yarnpkg.com/@sinclair/typebox/-/typebox-0.27.8.tgz#6667fac16c436b5434a387a34dedb013198f6e6e"

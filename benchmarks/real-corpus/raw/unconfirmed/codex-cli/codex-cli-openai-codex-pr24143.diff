@@ -1,0 +1,555 @@
+diff --git a/codex-rs/analytics/src/analytics_client_tests.rs b/codex-rs/analytics/src/analytics_client_tests.rs
+index b8e3950005d..895c0962cd6 100644
+--- a/codex-rs/analytics/src/analytics_client_tests.rs
++++ b/codex-rs/analytics/src/analytics_client_tests.rs
+@@ -32,6 +32,7 @@ use crate::events::ReviewTrigger;
+ use crate::events::Reviewer;
+ use crate::events::ThreadInitializedEvent;
+ use crate::events::ThreadInitializedEventParams;
++use crate::events::ThreadStartTimingEventParams;
+ use crate::events::ToolItemTerminalStatus;
+ use crate::events::TrackEventRequest;
+ use crate::events::codex_app_metadata;
+@@ -64,6 +65,7 @@ use crate::facts::SkillInvocation;
+ use crate::facts::SkillInvokedInput;
+ use crate::facts::SubAgentThreadStartedInput;
+ use crate::facts::ThreadInitializationMode;
++use crate::facts::ThreadStartTimingFact;
+ use crate::facts::TrackEventsContext;
+ use crate::facts::TurnResolvedConfigFact;
+ use crate::facts::TurnStatus;
+@@ -1328,6 +1330,12 @@ fn thread_initialized_event_serializes_expected_shape() {
+             initialization_mode: ThreadInitializationMode::New,
+             subagent_source: None,
+             parent_thread_id: None,
++            thread_start_timing: ThreadStartTimingEventParams {
++                thread_start_duration_ms: Some(321),
++                thread_start_prepare_duration_ms: Some(111),
++                thread_start_spawn_duration_ms: Some(123),
++                thread_start_finalize_duration_ms: Some(87),
++            },
+             created_at: 1,
+         },
+     });
+@@ -1359,6 +1367,10 @@ fn thread_initialized_event_serializes_expected_shape() {
+                 "initialization_mode": "new",
+                 "subagent_source": null,
+                 "parent_thread_id": null,
++                "thread_start_duration_ms": 321,
++                "thread_start_prepare_duration_ms": 111,
++                "thread_start_spawn_duration_ms": 123,
++                "thread_start_finalize_duration_ms": 87,
+                 "created_at": 1
+             }
+         })
+@@ -1673,6 +1685,22 @@ async fn initialize_caches_client_and_thread_lifecycle_publishes_once_initialize
+         payload[0]["event_params"]["runtime"]["runtime_arch"],
+         "x86_64"
+     );
++    assert_eq!(
++        payload[0]["event_params"]["thread_start_duration_ms"],
++        json!(null)
++    );
++    assert_eq!(
++        payload[0]["event_params"]["thread_start_prepare_duration_ms"],
++        json!(null)
++    );
++    assert_eq!(
++        payload[0]["event_params"]["thread_start_spawn_duration_ms"],
++        json!(null)
++    );
++    assert_eq!(
++        payload[0]["event_params"]["thread_start_finalize_duration_ms"],
++        json!(null)
++    );
+ }
+ 
+ #[tokio::test]
+@@ -1714,6 +1742,59 @@ async fn app_server_started_fact_emits_event() {
+     );
+ }
+ 
++#[tokio::test]
++async fn thread_start_timing_fact_enriches_thread_initialized_event() {
++    let mut reducer = AnalyticsReducer::default();
++    let mut events = Vec::new();
++
++    ingest_initialize(&mut reducer, &mut events).await;
++    reducer
++        .ingest(
++            AnalyticsFact::Custom(CustomAnalyticsFact::ThreadStartTiming(
++                ThreadStartTimingFact {
++                    thread_id: "thread-1".to_string(),
++                    duration_ms: 222,
++                    prepare_duration_ms: 12,
++                    spawn_duration_ms: 123,
++                    finalize_duration_ms: 87,
++                },
++            )),
++            &mut events,
++        )
++        .await;
++    reducer
++        .ingest(
++            AnalyticsFact::ClientResponse {
++                connection_id: 7,
++                request_id: RequestId::Integer(2),
++                response: Box::new(sample_thread_start_response(
++                    "thread-1", /*ephemeral*/ true, "gpt-5",
++                )),
++            },
++            &mut events,
++        )
++        .await;
++
++    let payload = serde_json::to_value(&events).expect("serialize events");
++    assert_eq!(payload[0]["event_type"], json!("codex_thread_initialized"));
++    assert_eq!(
++        payload[0]["event_params"]["thread_start_duration_ms"],
++        json!(222)
++    );
++    assert_eq!(
++        payload[0]["event_params"]["thread_start_prepare_duration_ms"],
++        json!(12)
++    );
++    assert_eq!(
++        payload[0]["event_params"]["thread_start_spawn_duration_ms"],
++        json!(123)
++    );
++    assert_eq!(
++        payload[0]["event_params"]["thread_start_finalize_duration_ms"],
++        json!(87)
++    );
++}
++
+ #[tokio::test]
+ async fn unrelated_client_requests_are_ignored_by_reducer() {
+     let mut reducer = AnalyticsReducer::default();
+diff --git a/codex-rs/analytics/src/client.rs b/codex-rs/analytics/src/client.rs
+index fac6644bca4..3124ecc2565 100644
+--- a/codex-rs/analytics/src/client.rs
++++ b/codex-rs/analytics/src/client.rs
+@@ -18,6 +18,7 @@ use crate::facts::PluginStateChangedInput;
+ use crate::facts::SkillInvocation;
+ use crate::facts::SkillInvokedInput;
+ use crate::facts::SubAgentThreadStartedInput;
++use crate::facts::ThreadStartTimingFact;
+ use crate::facts::TrackEventsContext;
+ use crate::facts::TurnResolvedConfigFact;
+ use crate::facts::TurnTokenUsageFact;
+@@ -205,6 +206,12 @@ impl AnalyticsEventsClient {
+         ));
+     }
+ 
++    pub fn track_thread_start_timing(&self, fact: ThreadStartTimingFact) {
++        self.record_fact(AnalyticsFact::Custom(
++            CustomAnalyticsFact::ThreadStartTiming(fact),
++        ));
++    }
++
+     pub fn track_guardian_review(
+         &self,
+         tracking: &GuardianReviewTrackContext,
+diff --git a/codex-rs/analytics/src/events.rs b/codex-rs/analytics/src/events.rs
+index 48d668573c1..870de097c6d 100644
+--- a/codex-rs/analytics/src/events.rs
++++ b/codex-rs/analytics/src/events.rs
+@@ -159,6 +159,14 @@ pub(crate) struct CodexAppServerStartedEventRequest {
+     pub(crate) event_params: CodexAppServerStartedEventParams,
+ }
+ 
++#[derive(Default, Serialize)]
++pub(crate) struct ThreadStartTimingEventParams {
++    pub(crate) thread_start_duration_ms: Option<u64>,
++    pub(crate) thread_start_prepare_duration_ms: Option<u64>,
++    pub(crate) thread_start_spawn_duration_ms: Option<u64>,
++    pub(crate) thread_start_finalize_duration_ms: Option<u64>,
++}
++
+ #[derive(Serialize)]
+ pub(crate) struct ThreadInitializedEventParams {
+     pub(crate) thread_id: String,
+@@ -170,6 +178,8 @@ pub(crate) struct ThreadInitializedEventParams {
+     pub(crate) initialization_mode: ThreadInitializationMode,
+     pub(crate) subagent_source: Option<String>,
+     pub(crate) parent_thread_id: Option<String>,
++    #[serde(flatten)]
++    pub(crate) thread_start_timing: ThreadStartTimingEventParams,
+     pub(crate) created_at: u64,
+ }
+ 
+@@ -1057,6 +1067,7 @@ pub(crate) fn subagent_thread_started_event_request(
+         parent_thread_id: input
+             .parent_thread_id
+             .or_else(|| subagent_parent_thread_id(&input.subagent_source)),
++        thread_start_timing: ThreadStartTimingEventParams::default(),
+         created_at: input.created_at,
+     };
+     ThreadInitializedEvent {
+diff --git a/codex-rs/analytics/src/facts.rs b/codex-rs/analytics/src/facts.rs
+index 7ca0736c00a..e22e6d241ee 100644
+--- a/codex-rs/analytics/src/facts.rs
++++ b/codex-rs/analytics/src/facts.rs
+@@ -281,6 +281,14 @@ pub(crate) struct AppServerStartedInput {
+     pub completed_at: u64,
+ }
+ 
++pub struct ThreadStartTimingFact {
++    pub thread_id: String,
++    pub duration_ms: u64,
++    pub prepare_duration_ms: u64,
++    pub spawn_duration_ms: u64,
++    pub finalize_duration_ms: u64,
++}
++
+ #[allow(dead_code)]
+ pub(crate) enum AnalyticsFact {
+     Initialize {
+@@ -332,6 +340,7 @@ pub(crate) enum AnalyticsFact {
+ pub(crate) enum CustomAnalyticsFact {
+     AppServerStarted(AppServerStartedInput),
+     SubAgentThreadStarted(SubAgentThreadStartedInput),
++    ThreadStartTiming(ThreadStartTimingFact),
+     Compaction(Box<CodexCompactionEvent>),
+     GuardianReview(Box<GuardianReviewEventParams>),
+     TurnResolvedConfig(Box<TurnResolvedConfigFact>),
+diff --git a/codex-rs/analytics/src/lib.rs b/codex-rs/analytics/src/lib.rs
+index a1ebd25c6ce..d4bbcabc11c 100644
+--- a/codex-rs/analytics/src/lib.rs
++++ b/codex-rs/analytics/src/lib.rs
+@@ -38,6 +38,7 @@ pub use facts::InvocationType;
+ pub use facts::SkillInvocation;
+ pub use facts::SubAgentThreadStartedInput;
+ pub use facts::ThreadInitializationMode;
++pub use facts::ThreadStartTimingFact;
+ pub use facts::TrackEventsContext;
+ pub use facts::TurnResolvedConfigFact;
+ pub use facts::TurnStatus;
+diff --git a/codex-rs/analytics/src/reducer.rs b/codex-rs/analytics/src/reducer.rs
+index f68e42c1d1c..1476dc5f3e7 100644
+--- a/codex-rs/analytics/src/reducer.rs
++++ b/codex-rs/analytics/src/reducer.rs
+@@ -47,6 +47,7 @@ use crate::events::SkillInvocationEventParams;
+ use crate::events::SkillInvocationEventRequest;
+ use crate::events::ThreadInitializedEvent;
+ use crate::events::ThreadInitializedEventParams;
++use crate::events::ThreadStartTimingEventParams;
+ use crate::events::ToolItemFailureKind;
+ use crate::events::ToolItemTerminalStatus;
+ use crate::events::TrackEventRequest;
+@@ -74,6 +75,7 @@ use crate::facts::PluginUsedInput;
+ use crate::facts::SkillInvokedInput;
+ use crate::facts::SubAgentThreadStartedInput;
+ use crate::facts::ThreadInitializationMode;
++use crate::facts::ThreadStartTimingFact;
+ use crate::facts::TurnResolvedConfigFact;
+ use crate::facts::TurnStatus;
+ use crate::facts::TurnSteerRejectionReason;
+@@ -150,6 +152,15 @@ struct ConnectionState {
+ struct ThreadAnalyticsState {
+     connection_id: Option<u64>,
+     metadata: Option<ThreadMetadataState>,
++    thread_start_timing: Option<ThreadStartTimingState>,
++}
++
++#[derive(Clone, Copy)]
++struct ThreadStartTimingState {
++    duration_ms: u64,
++    prepare_duration_ms: u64,
++    spawn_duration_ms: u64,
++    finalize_duration_ms: u64,
+ }
+ 
+ #[derive(Clone, Copy)]
+@@ -455,6 +466,9 @@ impl AnalyticsReducer {
+                 CustomAnalyticsFact::SubAgentThreadStarted(input) => {
+                     self.ingest_subagent_thread_started(input, out);
+                 }
++                CustomAnalyticsFact::ThreadStartTiming(input) => {
++                    self.ingest_thread_start_timing(input);
++                }
+                 CustomAnalyticsFact::Compaction(input) => {
+                     self.ingest_compaction(*input, out);
+                 }
+@@ -562,6 +576,19 @@ impl AnalyticsReducer {
+         ));
+     }
+ 
++    fn ingest_thread_start_timing(&mut self, input: ThreadStartTimingFact) {
++        let thread_start_timing = ThreadStartTimingState {
++            duration_ms: input.duration_ms,
++            prepare_duration_ms: input.prepare_duration_ms,
++            spawn_duration_ms: input.spawn_duration_ms,
++            finalize_duration_ms: input.finalize_duration_ms,
++        };
++        self.threads
++            .entry(input.thread_id)
++            .or_default()
++            .thread_start_timing = Some(thread_start_timing);
++    }
++
+     fn ingest_guardian_review(
+         &mut self,
+         input: GuardianReviewEventParams,
+@@ -1264,13 +1291,12 @@ impl AnalyticsReducer {
+             thread.thread_source.map(Into::into),
+             initialization_mode,
+         );
+-        self.threads.insert(
+-            thread_id.clone(),
+-            ThreadAnalyticsState {
+-                connection_id: Some(connection_id),
+-                metadata: Some(thread_metadata.clone()),
+-            },
+-        );
++        let thread_state = self.threads.entry(thread_id.clone()).or_default();
++        thread_state.connection_id = Some(connection_id);
++        thread_state.metadata = Some(thread_metadata.clone());
++        let thread_start_timing = matches!(initialization_mode, ThreadInitializationMode::New)
++            .then_some(thread_state.thread_start_timing)
++            .flatten();
+         out.push(TrackEventRequest::ThreadInitialized(
+             ThreadInitializedEvent {
+                 event_type: "codex_thread_initialized",
+@@ -1284,6 +1310,15 @@ impl AnalyticsReducer {
+                     initialization_mode,
+                     subagent_source: thread_metadata.subagent_source.clone(),
+                     parent_thread_id: thread_metadata.parent_thread_id,
++                    thread_start_timing: match thread_start_timing {
++                        Some(timing) => ThreadStartTimingEventParams {
++                            thread_start_duration_ms: Some(timing.duration_ms),
++                            thread_start_prepare_duration_ms: Some(timing.prepare_duration_ms),
++                            thread_start_spawn_duration_ms: Some(timing.spawn_duration_ms),
++                            thread_start_finalize_duration_ms: Some(timing.finalize_duration_ms),
++                        },
++                        None => ThreadStartTimingEventParams::default(),
++                    },
+                     created_at: u64::try_from(thread.created_at).unwrap_or_default(),
+                 },
+             },
+diff --git a/codex-rs/app-server/tests/suite/v2/analytics.rs b/codex-rs/app-server/tests/suite/v2/analytics.rs
+index 06adf862b93..9c12610c65e 100644
+--- a/codex-rs/app-server/tests/suite/v2/analytics.rs
++++ b/codex-rs/app-server/tests/suite/v2/analytics.rs
+@@ -21,6 +21,12 @@ use wiremock::matchers::path;
+ 
+ const SERVICE_VERSION: &str = "0.0.0-test";
+ 
++#[cfg(any(target_os = "macos", windows))]
++pub(crate) const ANALYTICS_TEST_TIMEOUT: Duration = Duration::from_secs(25);
++
++#[cfg(not(any(target_os = "macos", windows)))]
++pub(crate) const ANALYTICS_TEST_TIMEOUT: Duration = Duration::from_secs(10);
++
+ fn set_metrics_exporter(config: &mut codex_core::config::Config) {
+     config.otel.metrics_exporter = OtelExporterKind::OtlpHttp {
+         endpoint: "http://localhost:4318".to_string(),
+diff --git a/codex-rs/app-server/tests/suite/v2/thread_fork.rs b/codex-rs/app-server/tests/suite/v2/thread_fork.rs
+index d0006b2e5b0..098b26a76ef 100644
+--- a/codex-rs/app-server/tests/suite/v2/thread_fork.rs
++++ b/codex-rs/app-server/tests/suite/v2/thread_fork.rs
+@@ -41,6 +41,7 @@ use wiremock::ResponseTemplate;
+ use wiremock::matchers::method;
+ use wiremock::matchers::path;
+ 
++use super::analytics::ANALYTICS_TEST_TIMEOUT;
+ use super::analytics::assert_basic_thread_initialized_event;
+ use super::analytics::mount_analytics_capture;
+ use super::analytics::wait_for_analytics_event;
+@@ -403,7 +404,8 @@ async fn thread_fork_tracks_thread_initialized_analytics() -> Result<()> {
+     let ThreadForkResponse { thread, .. } = to_response::<ThreadForkResponse>(fork_resp)?;
+ 
+     let event =
+-        wait_for_analytics_event(&server, DEFAULT_READ_TIMEOUT, "codex_thread_initialized").await?;
++        wait_for_analytics_event(&server, ANALYTICS_TEST_TIMEOUT, "codex_thread_initialized")
++            .await?;
+     assert_basic_thread_initialized_event(&event, &thread.id, "mock-model", "forked", "user");
+     Ok(())
+ }
+diff --git a/codex-rs/app-server/tests/suite/v2/thread_resume.rs b/codex-rs/app-server/tests/suite/v2/thread_resume.rs
+index baaa783c068..07706d36e23 100644
+--- a/codex-rs/app-server/tests/suite/v2/thread_resume.rs
++++ b/codex-rs/app-server/tests/suite/v2/thread_resume.rs
+@@ -92,6 +92,7 @@ use wiremock::ResponseTemplate;
+ use wiremock::matchers::method;
+ use wiremock::matchers::path;
+ 
++use super::analytics::ANALYTICS_TEST_TIMEOUT;
+ use super::analytics::assert_basic_thread_initialized_event;
+ use super::analytics::mount_analytics_capture;
+ use super::analytics::wait_for_analytics_event;
+@@ -419,7 +420,8 @@ async fn thread_resume_tracks_thread_initialized_analytics() -> Result<()> {
+     assert_eq!(thread.thread_source, Some(ThreadSource::User));
+ 
+     let event =
+-        wait_for_analytics_event(&server, DEFAULT_READ_TIMEOUT, "codex_thread_initialized").await?;
++        wait_for_analytics_event(&server, ANALYTICS_TEST_TIMEOUT, "codex_thread_initialized")
++            .await?;
+     assert_basic_thread_initialized_event(&event, &thread.id, "gpt-5.3-codex", "resumed", "user");
+     assert_eq!(event["event_params"]["thread_source"], "user");
+     Ok(())
+diff --git a/codex-rs/app-server/tests/suite/v2/thread_start.rs b/codex-rs/app-server/tests/suite/v2/thread_start.rs
+index 1c6759152d1..aa5b10709cb 100644
+--- a/codex-rs/app-server/tests/suite/v2/thread_start.rs
++++ b/codex-rs/app-server/tests/suite/v2/thread_start.rs
+@@ -44,6 +44,7 @@ use wiremock::ResponseTemplate;
+ use wiremock::matchers::method;
+ use wiremock::matchers::path;
+ 
++use super::analytics::ANALYTICS_TEST_TIMEOUT;
+ use super::analytics::assert_basic_thread_initialized_event;
+ use super::analytics::mount_analytics_capture;
+ use super::analytics::wait_for_analytics_event;
+@@ -436,8 +437,17 @@ async fn thread_start_tracks_thread_initialized_analytics() -> Result<()> {
+     let ThreadStartResponse { thread, .. } = to_response::<ThreadStartResponse>(resp)?;
+ 
+     let event =
+-        wait_for_analytics_event(&server, DEFAULT_READ_TIMEOUT, "codex_thread_initialized").await?;
++        wait_for_analytics_event(&server, ANALYTICS_TEST_TIMEOUT, "codex_thread_initialized")
++            .await?;
+     assert_basic_thread_initialized_event(&event, &thread.id, "mock-model", "new", "user");
++    let thread_start_timings = [
++        "thread_start_duration_ms",
++        "thread_start_prepare_duration_ms",
++        "thread_start_spawn_duration_ms",
++        "thread_start_finalize_duration_ms",
++    ]
++    .map(|field| event["event_params"][field].as_u64().is_some());
++    assert_eq!(thread_start_timings, [true, true, true, true]);
+     Ok(())
+ }
+ 
+diff --git a/codex-rs/core/src/lib.rs b/codex-rs/core/src/lib.rs
+index d5c12376385..6b8145c9205 100644
+--- a/codex-rs/core/src/lib.rs
++++ b/codex-rs/core/src/lib.rs
+@@ -137,6 +137,7 @@ pub(crate) mod state_db_bridge;
+ pub use state_db_bridge::StateDbHandle;
+ pub use state_db_bridge::init_state_db;
+ mod thread_rollout_truncation;
++mod thread_start_timing;
+ mod tools;
+ pub(crate) mod turn_diff_tracker;
+ mod turn_metadata;
+diff --git a/codex-rs/core/src/thread_manager.rs b/codex-rs/core/src/thread_manager.rs
+index 232f12ca711..2d79bb5c632 100644
+--- a/codex-rs/core/src/thread_manager.rs
++++ b/codex-rs/core/src/thread_manager.rs
+@@ -15,6 +15,7 @@ use crate::session::INITIAL_SUBMIT_ID;
+ use crate::shell_snapshot::ShellSnapshot;
+ use crate::tasks::InterruptedTurnHistoryMarker;
+ use crate::tasks::interrupted_turn_history_marker;
++use crate::thread_start_timing::ThreadStartTiming;
+ use codex_analytics::AnalyticsEventsClient;
+ use codex_app_server_protocol::ThreadHistoryBuilder;
+ use codex_app_server_protocol::TurnStatus;
+@@ -1188,6 +1189,7 @@ impl ThreadManagerState {
+         user_shell_override: Option<crate::shell::Shell>,
+     ) -> CodexResult<NewThread> {
+         let is_resumed_thread = matches!(&initial_history, InitialHistory::Resumed(_));
++        let mut thread_start_timing = ThreadStartTiming::start();
+         if let InitialHistory::Resumed(resumed) = &initial_history {
+             let mut threads = self.threads.write().await;
+             if let Some(thread) = threads.get(&resumed.conversation_id).cloned() {
+@@ -1200,6 +1202,12 @@ impl ThreadManagerState {
+                             resumed.conversation_id
+                         )));
+                     }
++                    thread_start_timing.mark_prepare_completed();
++                    if let Some(analytics_events_client) = self.analytics_events_client.as_ref() {
++                        analytics_events_client.track_thread_start_timing(
++                            thread_start_timing.into_fact(resumed.conversation_id.to_string()),
++                        );
++                    }
+                     return Ok(NewThread {
+                         thread_id: resumed.conversation_id,
+                         session_configured: thread.session_configured(),
+@@ -1214,6 +1222,7 @@ impl ThreadManagerState {
+         let parent_rollout_thread_trace = self
+             .parent_rollout_thread_trace_for_source(&session_source, &initial_history)
+             .await;
++        thread_start_timing.mark_prepare_completed();
+         let tracked_session_source = session_source.clone();
+         let CodexSpawnOk {
+             codex, thread_id, ..
+@@ -1245,9 +1254,16 @@ impl ThreadManagerState {
+             attestation_provider: self.attestation_provider.clone(),
+         })
+         .await?;
++        thread_start_timing.mark_spawn_completed();
+         let new_thread = self
+             .finalize_thread_spawn(codex, thread_id, tracked_session_source)
+             .await?;
++        thread_start_timing.mark_finalize_completed();
++        if let Some(analytics_events_client) = self.analytics_events_client.as_ref() {
++            analytics_events_client.track_thread_start_timing(
++                thread_start_timing.into_fact(new_thread.thread_id.to_string()),
++            );
++        }
+         if is_resumed_thread {
+             new_thread.thread.emit_thread_resume_lifecycle().await;
+             if let Err(err) = new_thread.thread.apply_goal_resume_runtime_effects().await {
+diff --git a/codex-rs/core/src/thread_start_timing.rs b/codex-rs/core/src/thread_start_timing.rs
+new file mode 100644
+index 00000000000..0cf5457d5a3
+--- /dev/null
++++ b/codex-rs/core/src/thread_start_timing.rs
+@@ -0,0 +1,58 @@
++use std::time::Duration;
++use std::time::Instant;
++
++use codex_analytics::ThreadStartTimingFact;
++
++#[derive(Debug)]
++pub(crate) struct ThreadStartTiming {
++    phase_started_at: Instant,
++    prepare_duration: Option<Duration>,
++    spawn_duration: Option<Duration>,
++    finalize_duration: Option<Duration>,
++}
++
++impl ThreadStartTiming {
++    pub(crate) fn start() -> Self {
++        Self {
++            phase_started_at: Instant::now(),
++            prepare_duration: None,
++            spawn_duration: None,
++            finalize_duration: None,
++        }
++    }
++
++    pub(crate) fn mark_prepare_completed(&mut self) {
++        self.prepare_duration = Some(self.finish_phase());
++    }
++
++    pub(crate) fn mark_spawn_completed(&mut self) {
++        self.spawn_duration = Some(self.finish_phase());
++    }
++
++    pub(crate) fn mark_finalize_completed(&mut self) {
++        self.finalize_duration = Some(self.finish_phase());
++    }
++
++    pub(crate) fn into_fact(self, thread_id: String) -> ThreadStartTimingFact {
++        let prepare_duration = self.prepare_duration.unwrap_or_default();
++        let spawn_duration = self.spawn_duration.unwrap_or_default();
++        let finalize_duration = self.finalize_duration.unwrap_or_default();
++        ThreadStartTimingFact {
++            thread_id,
++            duration_ms: duration_ms(prepare_duration + spawn_duration + finalize_duration),
++            prepare_duration_ms: duration_ms(prepare_duration),
++            spawn_duration_ms: duration_ms(spawn_duration),
++            finalize_duration_ms: duration_ms(finalize_duration),
++        }
++    }
++
++    fn finish_phase(&mut self) -> Duration {
++        let duration = self.phase_started_at.elapsed();
++        self.phase_started_at = Instant::now();
++        duration
++    }
++}
++
++fn duration_ms(duration: Duration) -> u64 {
++    duration.as_millis().try_into().unwrap_or(u64::MAX)
++}

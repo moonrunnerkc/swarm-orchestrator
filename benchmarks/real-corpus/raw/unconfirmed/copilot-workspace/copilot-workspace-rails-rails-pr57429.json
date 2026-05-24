@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-rails-rails-pr57429",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 57429,
+    "headSha": "61f9d51bbc1b19a4174a90b9a8649ce9818c243c",
+    "baseSha": "1188705fe428b5a4b2c13230ba8dd00f206a5f09",
+    "title": "Preserve SafeBuffer encoding in ActiveSupport::MessagePack",
+    "body": "### Motivation / Background\n\nThis Pull Request has been created because `ActiveSupport::MessagePack` round-trips `ActiveSupport::SafeBuffer` as `ASCII-8BIT`, which breaks UTF-8 concatenation for cached safe strings.\n\n### Detail\n\nThis Pull Request changes SafeBuffer MessagePack serialization to preserve the underlying string encoding across dump/load.\n\n- **Serialization**\n  - Encode `ActiveSupport::SafeBuffer` through a nested MessagePack string payload instead of raw extension bytes.\n  - Rebuild the SafeBuffer from the decoded string so UTF-8 survives round-trip.\n\n- **Regression coverage**\n  - Add shared serializer coverage for `SafeBuffer` round-tripping.\n  - Assert the result remains a `SafeBuffer`, stays `html_safe?`, preserves `Encoding::UTF_8`, and concatenates with UTF-8 strings without raising.\n\n### Additional information\n\nExample of the behavior covered by the change:\n\n```ruby\nloaded = ActiveSupport::MessagePack.load(\n  ActiveSupport::MessagePack.dump(ActiveSupport::SafeBuffer.new(\"Mäßig\"))\n)\n\nloaded.encoding\n# => #<Encoding:UTF-8>\n\n\"prefix \" + loaded\n# => \"prefix Mäßig\"\n```\n\n### Checklist\n\nBefore submitting the PR make sure the following are checked:\n\n* [x] This Pull Request is related to one change. Unrelated changes should be opened in separate PRs.\n* [x] Commit message has a detailed description of what changed and why. If this PR fixes a related issue include it in the commit message. Ex: `[Fix #issue-number]`\n* [x] Tests are added or updated if you fix a bug or add a feature.\n* [x] CHANGELOG files are updated for the changed libraries if there is a behavior change or additional feature. Minor bug fixes and documentation changes should not be included.",
+    "author": "Copilot",
+    "headRef": "copilot/fix-messagepack-safe-buffer-serialization",
+    "repository": "rails/rails"
+  },
+  "diffRef": {
+    "repository": "rails/rails",
+    "headSha": "61f9d51bbc1b19a4174a90b9a8649ce9818c243c",
+    "baseSha": "1188705fe428b5a4b2c13230ba8dd00f206a5f09"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-rails-rails-pr57429.diff",
+  "vendoredAt": "2026-05-24T03:23:54.071Z",
+  "collectedAt": "2026-05-24T03:23:54.071Z"
+}

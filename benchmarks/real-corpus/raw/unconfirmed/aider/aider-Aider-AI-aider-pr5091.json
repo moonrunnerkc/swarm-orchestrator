@@ -1,0 +1,26 @@
+{
+  "id": "aider-Aider-AI-aider-pr5091",
+  "agent": {
+    "vendor": "aider",
+    "confidence": "high",
+    "source": "repo-owner=Aider-AI"
+  },
+  "pr": {
+    "number": 5091,
+    "headSha": "e549a5bdee565dfb688ba58cb5d19b688968abb1",
+    "baseSha": "3ec8ec5a7d695b08a6c24fe6c0c235c8f87df9af",
+    "title": "Handle unwritable version check cache",
+    "body": "Fixes #2865.\n\nThe version check currently writes `~/.aider/caches/versioncheck` in a `finally` block. In Docker/user setups where `HOME` resolves to an unwritable location such as `/`, that cache write can raise `PermissionError` and crash startup even though the version check itself is non-critical.\n\nThis change wraps the cache write in a small helper and ignores `OSError` by default. In verbose mode it reports the skipped cache write as a warning.\n\nLocal verification:\n\n* `python3 -m pytest tests/basic/test_versioncheck.py`\n* `ruff check aider/versioncheck.py tests/basic/test_versioncheck.py`\n* `ruff format --check aider/versioncheck.py tests/basic/test_versioncheck.py`\n",
+    "author": "Kcstring",
+    "headRef": "fix-versioncheck-cache-permission",
+    "repository": "Aider-AI/aider"
+  },
+  "diffRef": {
+    "repository": "Aider-AI/aider",
+    "headSha": "e549a5bdee565dfb688ba58cb5d19b688968abb1",
+    "baseSha": "3ec8ec5a7d695b08a6c24fe6c0c235c8f87df9af"
+  },
+  "vendoredDiffPath": "unconfirmed/aider/aider-Aider-AI-aider-pr5091.diff",
+  "vendoredAt": "2026-05-24T03:20:30.857Z",
+  "collectedAt": "2026-05-24T03:20:30.857Z"
+}

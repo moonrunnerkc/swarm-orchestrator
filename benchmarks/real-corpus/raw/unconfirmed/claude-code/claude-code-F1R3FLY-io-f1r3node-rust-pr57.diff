@@ -1,0 +1,2175 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 573e2d69..c747aa71 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -135,8 +135,8 @@ jobs:
+           args: >-
+             --no-progress
+             --exclude-loopback
+-            --max-retries 2
+-            --retry-wait-time 5
++            --max-retries 5
++            --retry-wait-time 15
+             --accept 200..=299,429
+             './**/*.md'
+           fail: true
+@@ -446,7 +446,6 @@ jobs:
+             --deselect integration-tests/test/tests/shared/test_bonding_validators.py \
+             --deselect integration-tests/test/tests/custom/test_joiner_self_proposes_at_epoch_boundary.py \
+             --deselect integration-tests/test/tests/shared/test_observer_lfs_sync.py \
+-            --deselect integration-tests/test/tests/custom/test_shard_degradation.py \
+             --deselect integration-tests/test/tests/shared/test_contract_lifecycle.py \
+             --deselect integration-tests/test/tests/custom/test_consensus_safety.py::test_epoch_transition_under_heartbeat \
+             --provider=${{ matrix.provider }} \
+diff --git a/casper/src/rust/blocks/block_processor.rs b/casper/src/rust/blocks/block_processor.rs
+index 1080b3de..b130986a 100644
+--- a/casper/src/rust/blocks/block_processor.rs
++++ b/casper/src/rust/blocks/block_processor.rs
+@@ -72,19 +72,17 @@ fn maybe_trim_allocator_after_block() {
+         return;
+     }
+     let n = MALLOC_TRIM_BLOCK_COUNTER.fetch_add(1, Ordering::Relaxed) + 1;
+-    if !n.is_multiple_of(interval) {
+-        return;
+-    }
+-
+-    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+-    {
+-        use crate::rust::metrics_constants::ALLOCATOR_TRIM_TOTAL_METRIC;
+-        // Best-effort return of free heap pages to OS to limit RSS ratcheting.
+-        unsafe {
+-            let _ = malloc_trim(0);
++    if n.is_multiple_of(interval) {
++        #[cfg(all(target_os = "linux", target_env = "gnu"))]
++        {
++            use crate::rust::metrics_constants::ALLOCATOR_TRIM_TOTAL_METRIC;
++            // Best-effort return of free heap pages to OS to limit RSS ratcheting.
++            unsafe {
++                let _ = malloc_trim(0);
++            }
++            metrics::counter!(ALLOCATOR_TRIM_TOTAL_METRIC, "source" => BLOCK_PROCESSOR_METRICS_SOURCE)
++                .increment(1);
+         }
+-        metrics::counter!(ALLOCATOR_TRIM_TOTAL_METRIC, "source" => BLOCK_PROCESSOR_METRICS_SOURCE)
+-            .increment(1);
+     }
+ }
+ 
+diff --git a/casper/src/rust/merging/conflict_set_merger.rs b/casper/src/rust/merging/conflict_set_merger.rs
+index a18e82a6..a4e18568 100644
+--- a/casper/src/rust/merging/conflict_set_merger.rs
++++ b/casper/src/rust/merging/conflict_set_merger.rs
+@@ -3,6 +3,7 @@
+ use std::collections::{HashMap, HashSet};
+ use std::time::{Duration, Instant};
+ 
++use hex::ToHex;
+ use models::rhoapi::ListParWithRandom;
+ use rholang::rust::interpreter::merging::rholang_merging_logic::RholangMergingLogic;
+ use rspace_plus_plus::rspace::errors::HistoryError;
+@@ -335,27 +336,59 @@ where
+     // uses bitwise OR through u64. Branches must agree on merge_type for a given
+     // channel; disagreement yields a tagged error so callers reject the merge
+     // rather than crashing the validator.
++    info!(
++        target: "f1r3.trace.compute_merged_state",
++        "[TRACE-COMPUTE-MERGED-STATE-ENTRY] to_merge_items_count={}",
++        to_merge_items.len()
++    );
+     let mut all_mergeable_channels = NumberChannelsDiff::new();
+-    for item in &to_merge_items {
++    for (item_idx, item) in to_merge_items.iter().enumerate() {
+         let item_channels = mergeable_channels(item);
++        info!(
++            target: "f1r3.trace.compute_merged_state",
++            "[TRACE-COMPUTE-MERGED-STATE-ITEM] item_idx={} channels_count={}",
++            item_idx, item_channels.len()
++        );
+         for (key, value) in item_channels.iter() {
+             let (incoming_diff, incoming_mt) = *value;
++            let ch_hex: String = key.encode_hex();
+             match all_mergeable_channels.get_mut(key) {
+                 Some(existing) => {
+                     if existing.1 != incoming_mt {
++                        info!(
++                            target: "f1r3.trace.compute_merged_state",
++                            "[TRACE-MERGE-TYPE-MISMATCH] channel={} existing={:?} incoming={:?}",
++                            ch_hex, existing.1, incoming_mt
++                        );
+                         return Err(HistoryError::MergeError(format!(
+                             "MergeType mismatch on channel {:?}: {:?} vs {:?}",
+                             key, existing.1, incoming_mt,
+                         )));
+                     }
++                    let prev = existing.0;
+                     existing.0 = combine_mergeable_value(existing.0, incoming_diff, incoming_mt);
++                    info!(
++                        target: "f1r3.trace.compute_merged_state",
++                        "[TRACE-MERGE-CHANNEL-COMBINE] channel={} merge_type={:?} prev_diff={} incoming_diff={} combined_diff={}",
++                        ch_hex, incoming_mt, prev, incoming_diff, existing.0
++                    );
+                 }
+                 None => {
+                     all_mergeable_channels.insert(key.clone(), (incoming_diff, incoming_mt));
++                    info!(
++                        target: "f1r3.trace.compute_merged_state",
++                        "[TRACE-MERGE-CHANNEL-FIRST] channel={} merge_type={:?} diff={}",
++                        ch_hex, incoming_mt, incoming_diff
++                    );
+                 }
+             }
+         }
+     }
++    info!(
++        target: "f1r3.trace.compute_merged_state",
++        "[TRACE-COMPUTE-MERGED-STATE-AGGREGATED] total_mergeable_channels={}",
++        all_mergeable_channels.len()
++    );
+ 
+     // Compute and apply trie actions with timing
+     let (trie_actions, compute_actions_time) =
+diff --git a/casper/src/rust/merging/dag_merger.rs b/casper/src/rust/merging/dag_merger.rs
+index b3f91860..7dc3e977 100644
+--- a/casper/src/rust/merging/dag_merger.rs
++++ b/casper/src/rust/merging/dag_merger.rs
+@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
+ use std::sync::Arc;
+ 
+ use block_storage::rust::dag::block_dag_key_value_storage::KeyValueDagRepresentation;
++use hex::ToHex;
+ use models::rust::block_hash::BlockHash;
+ use prost::bytes::Bytes;
+ use rholang::rust::interpreter::merging::rholang_merging_logic::RholangMergingLogic;
+@@ -13,6 +14,7 @@ use rspace_plus_plus::rspace::hashing::blake2b256_hash::Blake2b256Hash;
+ use rspace_plus_plus::rspace::merger::merging_logic::{self, NumberChannelsDiff};
+ use rspace_plus_plus::rspace::merger::state_change_merger;
+ use shared::rust::hashable_set::HashableSet;
++use tracing::info;
+ 
+ use super::conflict_set_merger;
+ use super::deploy_chain_index::DeployChainIndex;
+@@ -61,6 +63,170 @@ fn descendants_within_scope(
+     result
+ }
+ 
++/// Pre-computed data for a branch — aggregated user-deploy IDs and event
++/// logs split by deploy provenance.
++///
++/// `combined_user_event_log` aggregates the `user_event_log_index` of every
++/// chain in the branch; it feeds the existing CSP-level conflict checks
++/// (`compute_conflict_map_event_indexed`).
++///
++/// `combined_system_event_log` aggregates the `system_event_log_index` of
++/// every chain; it feeds the system-deploy state-mutation checks.
++///
++/// Per-deploy event provenance replaces the old chain-level
++/// system-deploy filter: instead of stripping any chain that carries a
++/// system-deploy id (which masked user-deploy effects on tagged channels
++/// when the runtime grouped them with closeBlock), each chain
++/// contributes its user and system events to the respective combined
++/// logs.
++pub struct BranchDerived {
++    pub user_deploy_ids: HashSet<Bytes>,
++    pub combined_user_event_log: rspace_plus_plus::rspace::merger::event_log_index::EventLogIndex,
++    pub combined_system_event_log: rspace_plus_plus::rspace::merger::event_log_index::EventLogIndex,
++    pub combined_all_event_log: rspace_plus_plus::rspace::merger::event_log_index::EventLogIndex,
++}
++
++pub fn compute_branch_derived(
++    branch: &HashableSet<DeployChainIndex>,
++) -> Result<BranchDerived, rspace_plus_plus::rspace::errors::HistoryError> {
++    let user_deploy_ids: HashSet<_> = branch
++        .0
++        .iter()
++        .flat_map(|chain| chain.deploys_with_cost.0.iter())
++        .filter(|deploy| !is_system_deploy_id(&deploy.deploy_id))
++        .map(|deploy| deploy.deploy_id.clone())
++        .collect();
++
++    let combined_user_event_log = branch
++        .0
++        .iter()
++        .map(|chain| &chain.user_event_log_index)
++        .try_fold(
++            rspace_plus_plus::rspace::merger::event_log_index::EventLogIndex::empty(),
++            |acc, index| {
++                rspace_plus_plus::rspace::merger::event_log_index::EventLogIndex::combine(
++                    &acc, index,
++                )
++            },
++        )?;
++
++    let combined_system_event_log = branch
++        .0
++        .iter()
++        .map(|chain| &chain.system_event_log_index)
++        .try_fold(
++            rspace_plus_plus::rspace::merger::event_log_index::EventLogIndex::empty(),
++            |acc, index| {
++                rspace_plus_plus::rspace::merger::event_log_index::EventLogIndex::combine(
++                    &acc, index,
++                )
++            },
++        )?;
++
++    let combined_all_event_log =
++        rspace_plus_plus::rspace::merger::event_log_index::EventLogIndex::combine(
++            &combined_user_event_log,
++            &combined_system_event_log,
++        )?;
++
++    Ok(BranchDerived {
++        user_deploy_ids,
++        combined_user_event_log,
++        combined_system_event_log,
++        combined_all_event_log,
++    })
++}
++
++/// Group `merge_set` chains into branches whose elements depend on each other.
++/// Builds inverted indexes over each chain's `EventLogIndex` and emits depends
++/// pairs in a single pass, then groups via `gather_related_sets`.
++pub fn compute_branches(
++    merge_set: &HashableSet<DeployChainIndex>,
++) -> HashableSet<HashableSet<DeployChainIndex>> {
++    let chains_vec: Vec<DeployChainIndex> = merge_set.0.iter().cloned().collect();
++    let event_logs: Vec<&rspace_plus_plus::rspace::merger::event_log_index::EventLogIndex> =
++        chains_vec.iter().map(|c| &c.event_log_index).collect();
++    #[allow(clippy::mutable_key_type)]
++    let depends_map = merging_logic::compute_depends_map_event_indexed(&chains_vec, &event_logs);
++    merging_logic::gather_related_sets(&depends_map)
++}
++
++/// Build the conflict map between branches. Combines event-log conflicts
++/// (races, potential COMMs, produces touching base joins) with the
++/// same-user-deploy-id check: two branches that share any user deploy ID
++/// must be flagged as conflicting regardless of their event logs.
++///
++/// `EventLogIndex::combine` inside `compute_branch_derived` is fallible — a
++/// MergeType mismatch propagates as a hard error so the merge is rejected
++/// rather than silently absorbing the invariant violation.
++pub fn compute_conflict_map(
++    branches_set: &HashableSet<HashableSet<DeployChainIndex>>,
++) -> Result<
++    HashMap<HashableSet<DeployChainIndex>, HashableSet<HashableSet<DeployChainIndex>>>,
++    rspace_plus_plus::rspace::errors::HistoryError,
++> {
++    // Snapshot branch references in a stable order so the parallel arrays
++    // passed into the indexed map and the deploy-id pass below line up.
++    let branches_refs: Vec<&HashableSet<DeployChainIndex>> = branches_set.0.iter().collect();
++    let branches_owned: Vec<HashableSet<DeployChainIndex>> =
++        branches_refs.iter().map(|b| (*b).clone()).collect();
++
++    // Compute branch-derived data fresh for each branch. The original closure
++    // form cached this in a RefCell, but `resolve_conflicts` calls this
++    // exactly once per merge, so the cache was effectively unused — dropping
++    // it has zero perf impact on production.
++    let derived: Vec<BranchDerived> = branches_refs
++        .iter()
++        .map(|b| compute_branch_derived(b))
++        .collect::<Result<_, _>>()?;
++
++    // Option 2 experiment: feed BOTH user and system events into Check #1.
++    // Hypothesis: heartbeat closeBlocks read stateCh via peek (`<<-`), so
++    // they populate `produces_peeked`, not `produces_consumed`. Only true
++    // state-mutating runMVar consumes (regular `<-` inside `runMVar`)
++    // populate `produces_consumed`. Feeding system events should surface
++    // bonding-bug conflicts without re-triggering the bf3d274a flood —
++    // because that flood was about consume/produce matching at the
++    // potential-comms layer, not produces_consumed races.
++    let all_event_logs: Vec<&rspace_plus_plus::rspace::merger::event_log_index::EventLogIndex> =
++        derived.iter().map(|d| &d.combined_all_event_log).collect();
++
++    // Event-log conflicts: races, potential COMMs, base-join touches.
++    // `mutable_key_type` is a false positive here: prost::bytes::Bytes uses an
++    // internal Arc, not interior mutability, but clippy can't distinguish.
++    #[allow(clippy::mutable_key_type)]
++    let mut conflict_map =
++        merging_logic::compute_conflict_map_event_indexed(&branches_owned, &all_event_logs);
++
++    // Same-user-deploy-id pass: for any user deploy ID appearing in multiple
++    // branches, mark all such branches as mutual conflicts.
++    let mut deploy_to_branches: HashMap<prost::bytes::Bytes, Vec<usize>> = HashMap::new();
++    for (idx, d) in derived.iter().enumerate() {
++        for id in &d.user_deploy_ids {
++            deploy_to_branches.entry(id.clone()).or_default().push(idx);
++        }
++    }
++    for branch_ids in deploy_to_branches.values() {
++        if branch_ids.len() < 2 {
++            continue;
++        }
++        for i in 0..branch_ids.len() {
++            for j in (i + 1)..branch_ids.len() {
++                let a = branches_owned[branch_ids[i]].clone();
++                let b = branches_owned[branch_ids[j]].clone();
++                if let Some(set_a) = conflict_map.get_mut(&a) {
++                    set_a.0.insert(b.clone());
++                }
++                if let Some(set_b) = conflict_map.get_mut(&b) {
++                    set_b.0.insert(a.clone());
++                }
++            }
++        }
++    }
++
++    Ok(conflict_map)
++}
++
+ pub fn merge(
+     dag: &KeyValueDagRepresentation,
+     lfb: &BlockHash,
+@@ -268,54 +434,10 @@ pub fn merge(
+         consumes_created: HashableSet<rspace_plus_plus::rspace::trace::event::Consume>,
+     }
+ 
+-    // Pre-computed data for a branch (HashableSet<DeployChainIndex>), cached by
+-    // pointer address to avoid recomputing on every O(B²) conflicts() call.
+-    struct BranchDerived {
+-        user_deploy_ids: HashSet<Bytes>,
+-        combined_event_log: rspace_plus_plus::rspace::merger::event_log_index::EventLogIndex,
+-    }
+-
+-    fn compute_branch_derived(
+-        branch: &HashableSet<DeployChainIndex>,
+-    ) -> Result<BranchDerived, rspace_plus_plus::rspace::errors::HistoryError> {
+-        let user_deploy_ids: HashSet<_> = branch
+-            .0
+-            .iter()
+-            .flat_map(|chain| chain.deploys_with_cost.0.iter())
+-            .filter(|deploy| !is_system_deploy_id(&deploy.deploy_id))
+-            .map(|deploy| deploy.deploy_id.clone())
+-            .collect();
+-
+-        let combined_event_log = branch
+-            .0
+-            .iter()
+-            .filter(|idx| {
+-                idx.deploys_with_cost
+-                    .0
+-                    .iter()
+-                    .all(|d| !is_system_deploy_id(&d.deploy_id))
+-            })
+-            .map(|chain| &chain.event_log_index)
+-            .try_fold(
+-                rspace_plus_plus::rspace::merger::event_log_index::EventLogIndex::empty(),
+-                |acc, index| {
+-                    rspace_plus_plus::rspace::merger::event_log_index::EventLogIndex::combine(
+-                        &acc, index,
+-                    )
+-                },
+-            )?;
+-
+-        Ok(BranchDerived {
+-            user_deploy_ids,
+-            combined_event_log,
+-        })
+-    }
+-
+-    // Lazy caches keyed by pointer address. Safe because:
++    // Lazy chain-derived cache keyed by pointer address. Safe because:
+     // - References come from HashSet iteration, addresses stable during iteration
+-    // - DerivedSets/BranchDerived are pure functions of the item
++    // - DerivedSets is a pure function of the item
+     let chain_cache: RefCell<HashMap<usize, ChainDerived>> = RefCell::new(HashMap::new());
+-    let branch_cache: RefCell<HashMap<usize, BranchDerived>> = RefCell::new(HashMap::new());
+ 
+     let get_chain_derived = |chain: &DeployChainIndex| -> usize {
+         let addr = std::ptr::addr_of!(*chain) as usize;
+@@ -331,17 +453,6 @@ pub fn merge(
+         addr
+     };
+ 
+-    let get_branch_derived =
+-        |branch: &HashableSet<DeployChainIndex>| -> Result<usize, rspace_plus_plus::rspace::errors::HistoryError> {
+-            let addr = std::ptr::addr_of!(*branch) as usize;
+-            let mut cache = branch_cache.borrow_mut();
+-            if !cache.contains_key(&addr) {
+-                let derived = compute_branch_derived(branch)?;
+-                cache.insert(addr, derived);
+-            }
+-            Ok(addr)
+-        };
+-
+     // Create history reader for base state
+     let history_reader = std::sync::Arc::new(
+         history_repository
+@@ -399,8 +510,20 @@ pub fn merge(
+                 &*reader,
+                 &mergeable_chs,
+                 |hash: &Blake2b256Hash, channel_changes, number_chs: &NumberChannelsDiff| {
++                    let ch_hex: String = hash.encode_hex();
++                    let in_mergeable = number_chs.contains_key(hash);
++                    info!(
++                        target: "f1r3.trace.dispatcher",
++                        "[TRACE-DISPATCHER] channel={} in_mergeable_chs={} number_chs_size={}",
++                        ch_hex, in_mergeable, number_chs.len()
++                    );
+                     if let Some(number_ch_val) = number_chs.get(hash) {
+                         let (diff, merge_type) = *number_ch_val;
++                        info!(
++                            target: "f1r3.trace.dispatcher",
++                            "[TRACE-DISPATCHER-FOLD] channel={} merge_type={:?} diff={}",
++                            ch_hex, merge_type, diff
++                        );
+                         let base_get_data = |h: &Blake2b256Hash| reader.get_data(h);
+                         Ok(Some(RholangMergingLogic::calculate_number_channel_merge(
+                             hash,
+@@ -410,6 +533,11 @@ pub fn merge(
+                             base_get_data,
+                         )?))
+                     } else {
++                        info!(
++                            target: "f1r3.trace.dispatcher",
++                            "[TRACE-DISPATCHER-FALLBACK] channel={} (not in mergeable_chs)",
++                            ch_hex
++                        );
+                         Ok(None)
+                     }
+                 },
+@@ -417,106 +545,40 @@ pub fn merge(
+         }
+     };
+ 
+-    let apply_trie_actions_fn = |actions| {
++    let lfb_hex: String = lfb_post_state.encode_hex();
++    info!(
++        target: "f1r3.trace.dag_merger",
++        "[TRACE-DAG-MERGE-LFB-POST-STATE] lfb_post_state={}",
++        lfb_hex
++    );
++    let apply_trie_actions_fn = |actions: Vec<_>| {
++        info!(
++            target: "f1r3.trace.dag_merger",
++            "[TRACE-DAG-MERGE-APPLY-ACTIONS] actions_count={}",
++            actions.len()
++        );
+         history_repository
+             .reset(lfb_post_state)
+             .map(|reset_repo| reset_repo.do_checkpoint(actions))
+-            .map(|checkpoint| checkpoint.root())
++            .map(|checkpoint| {
++                let root = checkpoint.root();
++                let root_hex: String = root.encode_hex();
++                info!(
++                    target: "f1r3.trace.dag_merger",
++                    "[TRACE-DAG-MERGE-APPLY-RESULT] new_root={}",
++                    root_hex
++                );
++                root
++            })
+             .map_err(|e| e.into())
+     };
+ 
+     let get_data_fn = |hash| history_reader.get_data(&hash).map_err(|e| e.into());
+ 
+-    // Build the conflict map for branches. Combines event-log conflicts
+-    // (races, potential COMMs, produces touching base joins) with the
+-    // same-user-deploy-id check: two branches that share any user deploy
+-    // ID must be flagged as conflicting regardless of their event logs.
+-    //
+-    // `EventLogIndex::combine` inside `get_branch_derived` is fallible —
+-    // a MergeType mismatch propagates as a hard error so the merge is
+-    // rejected rather than silently absorbing the invariant violation.
+-    let compute_conflict_map_fn = |branches_set: &HashableSet<HashableSet<DeployChainIndex>>| -> Result<
+-        HashMap<HashableSet<DeployChainIndex>, HashableSet<HashableSet<DeployChainIndex>>>,
+-        rspace_plus_plus::rspace::errors::HistoryError,
+-    > {
+-        // Populate `branch_cache` for every branch so the borrow below can
+-        // read combined event logs without recomputing, and any combine
+-        // failure surfaces here before we read.
+-        for branch in branches_set.0.iter() {
+-            get_branch_derived(branch)?;
+-        }
+-
+-        // Snapshot branch references in a stable order so the parallel
+-        // arrays passed into the indexed map and the deploy-id pass below
+-        // line up.
+-        let branches_refs: Vec<&HashableSet<DeployChainIndex>> = branches_set.0.iter().collect();
+-        let branches_owned: Vec<HashableSet<DeployChainIndex>> =
+-            branches_refs.iter().map(|b| (*b).clone()).collect();
+-
+-        let cache = branch_cache.borrow();
+-        let event_logs: Vec<&rspace_plus_plus::rspace::merger::event_log_index::EventLogIndex> =
+-            branches_refs
+-                .iter()
+-                .map(|b| {
+-                    let addr = std::ptr::addr_of!(**b) as usize;
+-                    &cache.get(&addr).unwrap().combined_event_log
+-                })
+-                .collect();
+-
+-        // Event-log conflicts: races, potential COMMs, base-join touches.
+-        // `mutable_key_type` is a false positive here: prost::bytes::Bytes uses an
+-        // internal Arc, not interior mutability, but clippy can't distinguish.
+-        #[allow(clippy::mutable_key_type)]
+-        let mut conflict_map =
+-            merging_logic::compute_conflict_map_event_indexed(&branches_owned, &event_logs);
+-
+-        // Same-user-deploy-id pass: for any user deploy ID appearing in
+-        // multiple branches, mark all such branches as mutual conflicts.
+-        let mut deploy_to_branches: HashMap<prost::bytes::Bytes, Vec<usize>> = HashMap::new();
+-        for (idx, b) in branches_refs.iter().enumerate() {
+-            let addr = std::ptr::addr_of!(**b) as usize;
+-            let derived = cache.get(&addr).unwrap();
+-            for d in &derived.user_deploy_ids {
+-                deploy_to_branches.entry(d.clone()).or_default().push(idx);
+-            }
+-        }
+-        for branch_ids in deploy_to_branches.values() {
+-            if branch_ids.len() < 2 {
+-                continue;
+-            }
+-            for i in 0..branch_ids.len() {
+-                for j in (i + 1)..branch_ids.len() {
+-                    let a = branches_owned[branch_ids[i]].clone();
+-                    let b = branches_owned[branch_ids[j]].clone();
+-                    if let Some(set_a) = conflict_map.get_mut(&a) {
+-                        set_a.0.insert(b.clone());
+-                    }
+-                    if let Some(set_b) = conflict_map.get_mut(&b) {
+-                        set_b.0.insert(a.clone());
+-                    }
+-                }
+-            }
+-        }
+-
+-        Ok(conflict_map)
+-    };
+-
+-    // Group chains in merge_set into branches whose elements depend on each
+-    // other. Builds inverted indexes over each chain's `EventLogIndex` and
+-    // emits depends pairs in a single pass, then groups via
+-    // `gather_related_sets`.
+-    let compute_branches_fn =
+-        |merge_set: &HashableSet<DeployChainIndex>| -> HashableSet<HashableSet<DeployChainIndex>> {
+-            let chains_vec: Vec<DeployChainIndex> = merge_set.0.iter().cloned().collect();
+-            let event_logs: Vec<&rspace_plus_plus::rspace::merger::event_log_index::EventLogIndex> =
+-                chains_vec.iter().map(|c| &c.event_log_index).collect();
+-            #[allow(clippy::mutable_key_type)]
+-            let depends_map =
+-                merging_logic::compute_depends_map_event_indexed(&chains_vec, &event_logs);
+-            merging_logic::gather_related_sets(&depends_map)
+-        };
+-
+     // Resolve conflicts: detect conflicts and select the cost-optimal rejection set.
++    // Both branch-grouping and conflict-mapping are module-level pub functions
++    // (see `compute_branches`, `compute_conflict_map` above) so the test suite
++    // can exercise the exact production call path.
+     let mut resolved = conflict_set_merger::resolve_conflicts(
+         actual_seq,
+         late_seq,
+@@ -524,8 +586,8 @@ pub fn merge(
+         &rejection_cost_f,
+         &mergeable_channels_fn,
+         &get_data_fn,
+-        &compute_branches_fn,
+-        &compute_conflict_map_fn,
++        &compute_branches,
++        &compute_conflict_map,
+     )
+     .map_err(|e| CasperError::HistoryError(e))?;
+ 
+diff --git a/casper/src/rust/merging/deploy_chain_index.rs b/casper/src/rust/merging/deploy_chain_index.rs
+index e3665bb7..5a11e91d 100644
+--- a/casper/src/rust/merging/deploy_chain_index.rs
++++ b/casper/src/rust/merging/deploy_chain_index.rs
+@@ -15,6 +15,7 @@ use rspace_plus_plus::rspace::merger::state_change::StateChange;
+ use shared::rust::hashable_set::HashableSet;
+ 
+ use super::deploy_index::DeployIndex;
++use crate::rust::system_deploy::is_system_deploy_id;
+ 
+ #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+ pub struct DeployIdWithCost {
+@@ -22,11 +23,29 @@ pub struct DeployIdWithCost {
+     pub cost: u64,
+ }
+ 
+-/** index of deploys depending on each other inside a single block (state transition) */
++/// Index of deploys depending on each other inside a single block (state
++/// transition).
++///
++/// Events are tracked along three primitive views, all populated at
++/// construction:
++///   * `user_event_log_index` — events emitted by user deploys only
++///     (PreCharge + user body + Refund, all of which the runtime wraps
++///     into a single user-deploy `deploy_log`).
++///   * `system_event_log_index` — events emitted by system deploys
++///     (closeBlock, slash, heartbeat).
++///   * `event_log_index` — combined view, equal to
++///     `EventLogIndex::combine(&user_event_log_index, &system_event_log_index)`.
++///     Used by `depends_fn` / `compute_depends_map_event_indexed` for
++///     inter-chain dependency checks where the user/system distinction is
++///     irrelevant.
++///
++/// Classification uses `is_system_deploy_id` on each `DeployIndex.deploy_id`.
+ #[derive(Debug, Clone)]
+ pub struct DeployChainIndex {
+     pub deploys_with_cost: HashableSet<DeployIdWithCost>,
+     post_state_hash: Blake2b256Hash,
++    pub user_event_log_index: EventLogIndex,
++    pub system_event_log_index: EventLogIndex,
+     pub event_log_index: EventLogIndex,
+     pub state_changes: StateChange,
+     // Source block identity. Allows the merge algorithm to identify chains
+@@ -64,11 +83,51 @@ impl DeployChainIndex {
+             })
+             .collect();
+ 
+-        let event_log_index = deploys
+-            .into_iter()
+-            .try_fold(EventLogIndex::empty(), |acc, deploy| {
+-                EventLogIndex::combine(&acc, &deploy.event_log_index)
+-            })?;
++        let (user_event_log_index, system_event_log_index) = deploys.into_iter().try_fold(
++            (EventLogIndex::empty(), EventLogIndex::empty()),
++            |(user_acc, system_acc), deploy| -> Result<_, HistoryError> {
++                if is_system_deploy_id(&deploy.deploy_id) {
++                    let merged = EventLogIndex::combine(&system_acc, &deploy.event_log_index)?;
++                    Ok((user_acc, merged))
++                } else {
++                    let merged = EventLogIndex::combine(&user_acc, &deploy.event_log_index)?;
++                    Ok((merged, system_acc))
++                }
++            },
++        )?;
++
++        let event_log_index =
++            EventLogIndex::combine(&user_event_log_index, &system_event_log_index)?;
++
++        tracing::info!(
++            target: "f1r3.trace.deploy_chain_index",
++            "[TRACE-DEPLOY-CHAIN-INDEX-NEW] source_block={} block_num={} deploys={} user_produces_consumed={} system_produces_consumed={} user_produces_linear={} system_produces_linear={}",
++            hex::encode(&source_block_hash),
++            source_block_number,
++            deploys.0.len(),
++            user_event_log_index.produces_consumed.0.len(),
++            system_event_log_index.produces_consumed.0.len(),
++            user_event_log_index.produces_linear.0.len(),
++            system_event_log_index.produces_linear.0.len()
++        );
++        for p in user_event_log_index.produces_consumed.0.iter() {
++            tracing::info!(
++                target: "f1r3.trace.deploy_chain_index",
++                "[TRACE-DCI-USER-PRODUCE-CONSUMED] source_block={} channel={} produce_hash={}",
++                hex::encode(&source_block_hash),
++                hex::encode(p.channel_hash.bytes()),
++                hex::encode(p.hash.bytes())
++            );
++        }
++        for p in system_event_log_index.produces_consumed.0.iter() {
++            tracing::info!(
++                target: "f1r3.trace.deploy_chain_index",
++                "[TRACE-DCI-SYSTEM-PRODUCE-CONSUMED] source_block={} channel={} produce_hash={}",
++                hex::encode(&source_block_hash),
++                hex::encode(p.channel_hash.bytes()),
++                hex::encode(p.hash.bytes())
++            );
++        }
+ 
+         let pre_history_reader = history_repository.get_history_reader_struct(pre_state_hash)?;
+         let post_history_reader = history_repository.get_history_reader_struct(post_state_hash)?;
+@@ -79,6 +138,8 @@ impl DeployChainIndex {
+         Ok(Self {
+             deploys_with_cost: HashableSet(deploys_with_cost),
+             post_state_hash: post_state_hash.clone(),
++            user_event_log_index,
++            system_event_log_index,
+             event_log_index,
+             state_changes,
+             source_block_hash,
+@@ -87,17 +148,27 @@ impl DeployChainIndex {
+     }
+ 
+     /// Construct a DeployChainIndex directly from its parts (for testing).
++    /// Caller supplies the user/system event-log split; the combined
++    /// `event_log_index` is built here so it stays in sync.
+     pub fn from_parts(
+         deploys_with_cost: HashableSet<DeployIdWithCost>,
+         post_state_hash: Blake2b256Hash,
+-        event_log_index: EventLogIndex,
++        user_event_log_index: EventLogIndex,
++        system_event_log_index: EventLogIndex,
+         state_changes: StateChange,
+         source_block_hash: BlockHash,
+         source_block_number: i64,
+     ) -> Self {
++        let event_log_index =
++            EventLogIndex::combine(&user_event_log_index, &system_event_log_index).expect(
++                "EventLogIndex::combine in DeployChainIndex::from_parts must not fail — \
++             callers are responsible for supplying consistent MergeType data",
++            );
+         DeployChainIndex {
+             deploys_with_cost,
+             post_state_hash,
++            user_event_log_index,
++            system_event_log_index,
+             event_log_index,
+             state_changes,
+             source_block_hash,
+@@ -207,6 +278,8 @@ mod tests {
+         DeployChainIndex {
+             deploys_with_cost: HashableSet(deploys_with_cost),
+             post_state_hash: Blake2b256Hash::from_bytes(vec![post_state_seed; 32]),
++            user_event_log_index: EventLogIndex::empty(),
++            system_event_log_index: EventLogIndex::empty(),
+             event_log_index: EventLogIndex::empty(),
+             state_changes: StateChange::empty(),
+             source_block_hash: Bytes::from(vec![post_state_seed; 32]),
+diff --git a/casper/src/rust/rholang/runtime.rs b/casper/src/rust/rholang/runtime.rs
+index 55b707e9..e7baa515 100644
+--- a/casper/src/rust/rholang/runtime.rs
++++ b/casper/src/rust/rholang/runtime.rs
+@@ -589,12 +589,39 @@ impl RuntimeOps {
+             rspace_plus_plus::rspace::merger::merging_logic::MergeType,
+         >,
+     ) -> Result<NumberChannelsEndVal, CasperError> {
++        tracing::info!(
++            target: "f1r3.trace.classify",
++            "[TRACE-GET-NUMBER-CHANNELS-DATA-ENTRY] tagged_channels_count={}",
++            channels.len()
++        );
+         let mut result = BTreeMap::new();
+         for (channel, merge_type) in channels {
+-            if let Some((hash, value)) = self.get_number_channel(channel, *merge_type).await? {
+-                result.insert(hash, (value, *merge_type));
++            match self.get_number_channel(channel, *merge_type).await? {
++                Some((hash, value)) => {
++                    let ch_hex = hex::encode(hash.bytes());
++                    tracing::info!(
++                        target: "f1r3.trace.classify",
++                        "[TRACE-GET-NUMBER-CHANNELS-DATA-INCLUDED] channel={} merge_type={:?} value={}",
++                        ch_hex, merge_type, value
++                    );
++                    result.insert(hash, (value, *merge_type));
++                }
++                None => {
++                    let ch_hash = stable_hash_provider::hash(channel);
++                    let ch_hex = hex::encode(ch_hash.bytes());
++                    tracing::info!(
++                        target: "f1r3.trace.classify",
++                        "[TRACE-GET-NUMBER-CHANNELS-DATA-EXCLUDED] channel={} merge_type={:?} (tagged but no numeric value at observation)",
++                        ch_hex, merge_type
++                    );
++                }
+             }
+         }
++        tracing::info!(
++            target: "f1r3.trace.classify",
++            "[TRACE-GET-NUMBER-CHANNELS-DATA-EXIT] result_size={}",
++            result.len()
++        );
+         Ok(result)
+     }
+ 
+@@ -622,12 +649,28 @@ impl RuntimeOps {
+         merge_type: MergeType,
+     ) -> Result<Option<(Blake2b256Hash, i64)>, CasperError> {
+         let ch_values = self.runtime.get_data(channel).await;
++        let ch_hash = stable_hash_provider::hash(channel);
++        let ch_hex = hex::encode(ch_hash.bytes());
++        tracing::info!(
++            target: "f1r3.trace.classify",
++            "[TRACE-GET-NUMBER-CHANNEL] channel={} merge_type={:?} ch_values_len={}",
++            ch_hex, merge_type, ch_values.len()
++        );
+ 
+         if ch_values.is_empty() {
++            tracing::info!(
++                target: "f1r3.trace.classify",
++                "[TRACE-GET-NUMBER-CHANNEL-EMPTY] channel={} merge_type={:?} (no value at observation)",
++                ch_hex, merge_type
++            );
+             Ok(None)
+         } else {
+-            let ch_hash = stable_hash_provider::hash(channel);
+             if ch_values.len() != 1 {
++                tracing::info!(
++                    target: "f1r3.trace.classify",
++                    "[TRACE-GET-NUMBER-CHANNEL-MULTI-DATUM-OBSERVED] channel={} merge_type={:?} ch_values_len={} (HOT store has multi-Datum at observation — sanitize path)",
++                    ch_hex, merge_type, ch_values.len()
++                );
+                 // Liveness-first fallback: ambiguous mergeable channel values should not wedge
+                 // proposing. Non-numeric values are skipped — they aren't candidates for the
+                 // numeric merge path and fall through to existing conflict handling.
+@@ -640,7 +683,14 @@ impl RuntimeOps {
+ 
+                 let num = match Self::fold_multi_value(&nums, merge_type) {
+                     Some(n) => n,
+-                    None => return Ok(None),
++                    None => {
++                        tracing::info!(
++                            target: "f1r3.trace.classify",
++                            "[TRACE-GET-NUMBER-CHANNEL-NO-NUMERIC] channel={} merge_type={:?} (no numeric values among the multi-Datum)",
++                            ch_hex, merge_type
++                        );
++                        return Ok(None);
++                    }
+                 };
+ 
+                 tracing::warn!(
+@@ -651,6 +701,11 @@ impl RuntimeOps {
+                     num,
+                     hex::encode(ch_hash.clone().bytes()),
+                 );
++                tracing::info!(
++                    target: "f1r3.trace.classify",
++                    "[TRACE-GET-NUMBER-CHANNEL-SANITIZED] channel={} merge_type={:?} folded_value={} from {} datums",
++                    ch_hex, merge_type, num, ch_values.len()
++                );
+                 metrics::counter!(
+                     "mergeable_channel_number_sanitized_total",
+                     "source" => "casper_runtime"
+@@ -665,8 +720,22 @@ impl RuntimeOps {
+             // skipped here and fall through to the existing conflict path.
+             let num_par = &ch_values[0].a;
+             match RholangMergingLogic::try_get_number_with_rnd(num_par) {
+-                Some((num, _)) => Ok(Some((ch_hash, num))),
+-                None => Ok(None),
++                Some((num, _)) => {
++                    tracing::info!(
++                        target: "f1r3.trace.classify",
++                        "[TRACE-GET-NUMBER-CHANNEL-NUMERIC] channel={} merge_type={:?} value={}",
++                        ch_hex, merge_type, num
++                    );
++                    Ok(Some((ch_hash, num)))
++                }
++                None => {
++                    tracing::info!(
++                        target: "f1r3.trace.classify",
++                        "[TRACE-GET-NUMBER-CHANNEL-NON-NUMERIC] channel={} merge_type={:?} (single value but non-numeric — excluded from number_channels_data)",
++                        ch_hex, merge_type
++                    );
++                    Ok(None)
++                }
+             }
+         }
+     }
+diff --git a/casper/src/rust/util/rholang/interpreter_util.rs b/casper/src/rust/util/rholang/interpreter_util.rs
+index e87cc808..062e1ae2 100644
+--- a/casper/src/rust/util/rholang/interpreter_util.rs
++++ b/casper/src/rust/util/rholang/interpreter_util.rs
+@@ -1128,6 +1128,21 @@ pub fn compute_parents_post_state(
+ 
+             // Use DagMerger to merge parent states with scope
+             let merge_started = std::time::Instant::now();
++            tracing::info!(
++                target: "f1r3.trace.compute_parents_post_state",
++                "[TRACE-COMPUTE-PARENTS-MULTI-PARENT-ENTRY] parents_count={} lfb_state={} visible_blocks={}",
++                parents.len(),
++                hex::encode(lfb_state.bytes()),
++                visible_blocks.len()
++            );
++            for p in &parents {
++                tracing::info!(
++                    target: "f1r3.trace.compute_parents_post_state",
++                    "[TRACE-COMPUTE-PARENTS-PARENT] parent={} post_state={}",
++                    hex::encode(&p.block_hash),
++                    hex::encode(&p.body.state.post_state_hash)
++                );
++            }
+             let merger_result = dag_merger::merge(
+                 &s.dag,
+                 &lfb_for_descendants,
+@@ -1144,6 +1159,14 @@ pub fn compute_parents_post_state(
+             let merge_ms = merge_started.elapsed().as_millis();
+ 
+             let (state, rejected_user_pairs, rejected_slash_pairs) = merger_result;
++            tracing::info!(
++                target: "f1r3.trace.compute_parents_post_state",
++                "[TRACE-COMPUTE-PARENTS-MULTI-PARENT-RESULT] new_state={} merge_ms={} rejected_user_count={} rejected_slash_count={}",
++                hex::encode(state.bytes()),
++                merge_ms,
++                rejected_user_pairs.len(),
++                rejected_slash_pairs.len()
++            );
+ 
+             // Populate the rejected-deploy buffer from (sig, source_block_hash) pairs.
+             // Looking up the `Signed<DeployData>` from the block store lets the block
+diff --git a/casper/src/rust/util/rholang/runtime_manager.rs b/casper/src/rust/util/rholang/runtime_manager.rs
+index 26013abe..4db14a7e 100644
+--- a/casper/src/rust/util/rholang/runtime_manager.rs
++++ b/casper/src/rust/util/rholang/runtime_manager.rs
+@@ -634,6 +634,13 @@ impl RuntimeManager {
+         if let Some(ref cache) = self.replay_cache {
+             if let Some(entry) = cache.get(&replay_cache_key) {
+                 tracing::info!("[CACHE] ReplayCache hit for sender seq={}", seq_num);
++                tracing::info!(
++                    target: "f1r3.trace.replay_cache",
++                    "[TRACE-REPLAY-CACHE-HIT] sender_seq={} post_state={} event_log_count={} (returning without save_mergeable_channels)",
++                    seq_num,
++                    hex::encode(&entry.post_state),
++                    entry.event_log.len()
++                );
+ 
+                 // Rig the replay runtime with cached event log
+                 let replay_runtime = self.spawn_replay_runtime().await;
+@@ -725,14 +732,39 @@ impl RuntimeManager {
+     }
+ 
+     pub async fn compute_bonds(&self, hash: &StateHash) -> Result<Vec<Bond>, CasperError> {
++        let state_hex = hex::encode(hash);
++        tracing::info!(
++            target: "f1r3.trace.bonds_validation",
++            "[TRACE-COMPUTE-BONDS-ENTRY] state={}",
++            state_hex
++        );
+         if let Some(cached) = self.bonds_cache.get(hash) {
+             Self::touch_cache_key(&self.bonds_cache_order, hash);
++            tracing::info!(
++                target: "f1r3.trace.bonds_validation",
++                "[TRACE-COMPUTE-BONDS-CACHE-HIT] state={} bonds_count={}",
++                state_hex, cached.len()
++            );
+             return Ok(cached.clone());
+         }
+ 
+         let runtime = self.spawn_runtime().await;
+         let mut runtime_ops = RuntimeOps::new(runtime);
+         let computed = runtime_ops.compute_bonds(hash).await?;
++        tracing::info!(
++            target: "f1r3.trace.bonds_validation",
++            "[TRACE-COMPUTE-BONDS-RUNTIME] state={} bonds_count={}",
++            state_hex, computed.len()
++        );
++        for bond in &computed {
++            tracing::info!(
++                target: "f1r3.trace.bonds_validation",
++                "[TRACE-COMPUTE-BONDS-RUNTIME-BOND] state={} validator={} stake={}",
++                state_hex,
++                hex::encode(&bond.validator),
++                bond.stake
++            );
++        }
+ 
+         let max_entries = Self::max_bonds_cache_entries();
+         if self.bonds_cache.len() >= max_entries {
+@@ -910,6 +942,29 @@ impl RuntimeManager {
+                             .collect::<BTreeMap<_, _>>()
+                     })
+                     .collect::<Vec<_>>();
++                let total_channels: usize = res_map.iter().map(|m| m.len()).sum();
++                tracing::info!(
++                    target: "f1r3.trace.mergeable_store",
++                    "[TRACE-LOAD-MERGEABLE-CHANNELS] state_hash={} creator={} seq={} deploys={} total_channels={}",
++                    state_hash.bytes().encode_hex::<String>(),
++                    creator.encode_hex::<String>(),
++                    seq_num,
++                    res_map.len(),
++                    total_channels
++                );
++                for (deploy_idx, m) in res_map.iter().enumerate() {
++                    for (ch, (diff, mt)) in m.iter() {
++                        tracing::info!(
++                            target: "f1r3.trace.mergeable_store",
++                            "[TRACE-LOAD-MERGEABLE-CHANNELS-ENTRY] state_hash={} deploy_idx={} channel={} merge_type={:?} diff={}",
++                            state_hash.bytes().encode_hex::<String>(),
++                            deploy_idx,
++                            hex::encode(ch.bytes()),
++                            mt,
++                            diff
++                        );
++                    }
++                }
+                 Ok(res_map)
+             }
+             None => {
+@@ -920,6 +975,13 @@ impl RuntimeManager {
+                     seq_num
+                 );
+                 tracing::error!("{}", msg);
++                tracing::info!(
++                    target: "f1r3.trace.mergeable_store",
++                    "[TRACE-LOAD-MERGEABLE-CHANNELS-MISSING] state_hash={} creator={} seq={}",
++                    state_hash.bytes().encode_hex::<String>(),
++                    creator.encode_hex::<String>(),
++                    seq_num
++                );
+                 Err(CasperError::KvStoreError(KvStoreError::KeyNotFound(msg)))
+             }
+         }
+@@ -966,12 +1028,36 @@ impl RuntimeManager {
+         key_bytes: Vec<u8>,
+         value_bytes: Vec<u8>,
+     ) -> Result<(), CasperError> {
++        tracing::info!(
++            target: "f1r3.trace.lfs_import",
++            "[TRACE-LFS-PUT-MERGEABLE-ENTRY] key_bytes_len={} value_bytes_len={}",
++            key_bytes.len(), value_bytes.len()
++        );
+         if value_bytes.is_empty() {
++            tracing::info!(
++                target: "f1r3.trace.lfs_import",
++                "[TRACE-LFS-PUT-MERGEABLE-ENTRY-EMPTY] (peer had no entry, no-op)"
++            );
+             return Ok(());
+         }
+         let value: Vec<DeployMergeableData> = bincode::deserialize(&value_bytes).map_err(|e| {
+             CasperError::KvStoreError(KvStoreError::SerializationError(e.to_string()))
+         })?;
++        let total_channels: usize = value.iter().map(|d| d.channels.len()).sum();
++        tracing::info!(
++            target: "f1r3.trace.lfs_import",
++            "[TRACE-LFS-PUT-MERGEABLE-ENTRY-DECODED] deploys={} total_channels={}",
++            value.len(), total_channels
++        );
++        for (deploy_idx, d) in value.iter().enumerate() {
++            for ch in d.channels.iter() {
++                tracing::info!(
++                    target: "f1r3.trace.lfs_import",
++                    "[TRACE-LFS-PUT-MERGEABLE-ENTRY-CH] deploy_idx={} channel={} merge_type={:?} diff={}",
++                    deploy_idx, hex::encode(ch.hash.bytes()), ch.merge_type, ch.diff
++                );
++            }
++        }
+         self.mergeable_store
+             .put_one(key_bytes, value)
+             .map_err(CasperError::KvStoreError)
+@@ -1014,8 +1100,39 @@ impl RuntimeManager {
+         // Used to calculate value difference from final values
+         pre_state_hash: &Blake2b256Hash,
+     ) -> Result<(), CasperError> {
++        let total_endvals: usize = channels_data.iter().map(|m| m.len()).sum();
++        tracing::info!(
++            target: "f1r3.trace.mergeable_store",
++            "[TRACE-SAVE-MERGEABLE-CHANNELS-ENTRY] post_state={} pre_state={} creator={} seq={} deploys={} total_endval_channels={}",
++            post_state_hash.bytes().encode_hex::<String>(),
++            pre_state_hash.bytes().encode_hex::<String>(),
++            creator.encode_hex::<String>(),
++            seq_num,
++            channels_data.len(),
++            total_endvals
++        );
+         // Calculate difference values from final values on number channels
+         let diffs = self.convert_number_channels_to_diff(channels_data, pre_state_hash)?;
++        let total_diffs: usize = diffs.iter().map(|m| m.len()).sum();
++        tracing::info!(
++            target: "f1r3.trace.mergeable_store",
++            "[TRACE-SAVE-MERGEABLE-CHANNELS-DIFFS] post_state={} total_diff_channels={}",
++            post_state_hash.bytes().encode_hex::<String>(),
++            total_diffs
++        );
++        for (deploy_idx, m) in diffs.iter().enumerate() {
++            for (ch, (diff, mt)) in m.iter() {
++                tracing::info!(
++                    target: "f1r3.trace.mergeable_store",
++                    "[TRACE-SAVE-MERGEABLE-CHANNELS-ENTRY] post_state={} deploy_idx={} channel={} merge_type={:?} diff={}",
++                    post_state_hash.bytes().encode_hex::<String>(),
++                    deploy_idx,
++                    hex::encode(ch.bytes()),
++                    mt,
++                    diff
++                );
++            }
++        }
+ 
+         // Convert to storage types
+         let deploy_channels = diffs
+@@ -1047,6 +1164,11 @@ impl RuntimeManager {
+ 
+         // Save to mergeable channels store
+         self.mergeable_store.put_one(key_encoded, deploy_channels)?;
++        tracing::info!(
++            target: "f1r3.trace.mergeable_store",
++            "[TRACE-SAVE-MERGEABLE-CHANNELS-EXIT] post_state={} (persisted)",
++            post_state_hash.bytes().encode_hex::<String>()
++        );
+ 
+         Ok(())
+     }
+diff --git a/casper/src/rust/validate.rs b/casper/src/rust/validate.rs
+index afc9782f..56b10778 100644
+--- a/casper/src/rust/validate.rs
++++ b/casper/src/rust/validate.rs
+@@ -1208,9 +1208,39 @@ impl Validate {
+     ) -> ValidBlockProcessing {
+         let bonds = proto_util::bonds(b);
+         let tuplespace_hash = proto_util::post_state_hash(b);
++        let block_hash_hex = hex::encode(&b.block_hash);
++        let post_state_hex = hex::encode(&tuplespace_hash);
++        tracing::info!(
++            target: "f1r3.trace.bonds_validation",
++            "[TRACE-BONDS-CACHE-VALIDATE-ENTRY] block={} post_state={} block_bonds_count={}",
++            block_hash_hex, post_state_hex, bonds.len()
++        );
++        for bond in &bonds {
++            tracing::info!(
++                target: "f1r3.trace.bonds_validation",
++                "[TRACE-BONDS-CACHE-VALIDATE-BLOCK-BOND] block={} validator={} stake={}",
++                block_hash_hex,
++                hex::encode(&bond.validator),
++                bond.stake
++            );
++        }
+ 
+         match runtime_manager.compute_bonds(&tuplespace_hash).await {
+             Ok(computed_bonds) => {
++                tracing::info!(
++                    target: "f1r3.trace.bonds_validation",
++                    "[TRACE-BONDS-CACHE-VALIDATE-COMPUTED] block={} computed_bonds_count={}",
++                    block_hash_hex, computed_bonds.len()
++                );
++                for bond in &computed_bonds {
++                    tracing::info!(
++                        target: "f1r3.trace.bonds_validation",
++                        "[TRACE-BONDS-CACHE-VALIDATE-COMPUTED-BOND] block={} validator={} stake={}",
++                        block_hash_hex,
++                        hex::encode(&bond.validator),
++                        bond.stake
++                    );
++                }
+                 let bonds_set: HashSet<_> = bonds
+                     .iter()
+                     .map(|bond| (&bond.validator, bond.stake))
+@@ -1221,16 +1251,31 @@ impl Validate {
+                     .collect();
+ 
+                 if bonds_set == computed_bonds_set {
++                    tracing::info!(
++                        target: "f1r3.trace.bonds_validation",
++                        "[TRACE-BONDS-CACHE-VALIDATE-MATCH] block={}",
++                        block_hash_hex
++                    );
+                     Either::Right(ValidBlock::Valid)
+                 } else {
+                     tracing::warn!(
+                         "Bonds in proof of stake contract do not match block's bond cache."
+                     );
++                    tracing::info!(
++                        target: "f1r3.trace.bonds_validation",
++                        "[TRACE-BONDS-CACHE-VALIDATE-MISMATCH] block={} post_state={} block_count={} computed_count={}",
++                        block_hash_hex, post_state_hex, bonds_set.len(), computed_bonds_set.len()
++                    );
+                     Either::Left(BlockError::Invalid(InvalidBlock::InvalidBondsCache))
+                 }
+             }
+             Err(ex) => {
+                 tracing::warn!("Failed to compute bonds from tuplespace hash: {}", ex);
++                tracing::info!(
++                    target: "f1r3.trace.bonds_validation",
++                    "[TRACE-BONDS-CACHE-VALIDATE-COMPUTE-FAILED] block={} error={}",
++                    block_hash_hex, ex
++                );
+                 Either::Left(BlockError::BlockException(ex))
+             }
+         }
+diff --git a/casper/tests/merging/conflict_detection_perf_spec.rs b/casper/tests/merging/conflict_detection_perf_spec.rs
+index 9147628f..b9d51f17 100644
+--- a/casper/tests/merging/conflict_detection_perf_spec.rs
++++ b/casper/tests/merging/conflict_detection_perf_spec.rs
+@@ -49,6 +49,7 @@ fn make_chain(idx: usize) -> DeployChainIndex {
+         HashableSet(deploys),
+         Blake2b256Hash::from_bytes(vec![1u8; 32]),
+         event_log,
++        rspace_plus_plus::rspace::merger::event_log_index::EventLogIndex::empty(),
+         rspace_plus_plus::rspace::merger::state_change::StateChange::empty(),
+         Bytes::from(dh.to_vec()),
+         0,
+@@ -250,6 +251,7 @@ fn make_chain_active_produce(idx: usize, channel_byte: u8) -> DeployChainIndex {
+         HashableSet(deploys),
+         Blake2b256Hash::from_bytes(vec![1u8; 32]),
+         event_log,
++        rspace_plus_plus::rspace::merger::event_log_index::EventLogIndex::empty(),
+         rspace_plus_plus::rspace::merger::state_change::StateChange::empty(),
+         Bytes::from(dh.to_vec()),
+         0,
+@@ -292,6 +294,7 @@ fn make_chain_active_consume(idx: usize, channel_byte: u8) -> DeployChainIndex {
+         HashableSet(deploys),
+         Blake2b256Hash::from_bytes(vec![1u8; 32]),
+         event_log,
++        rspace_plus_plus::rspace::merger::event_log_index::EventLogIndex::empty(),
+         rspace_plus_plus::rspace::merger::state_change::StateChange::empty(),
+         Bytes::from(dh.to_vec()),
+         0,
+@@ -338,6 +341,7 @@ fn make_chain_join_touch(idx: usize) -> DeployChainIndex {
+         HashableSet(deploys),
+         Blake2b256Hash::from_bytes(vec![1u8; 32]),
+         event_log,
++        rspace_plus_plus::rspace::merger::event_log_index::EventLogIndex::empty(),
+         rspace_plus_plus::rspace::merger::state_change::StateChange::empty(),
+         Bytes::from(dh.to_vec()),
+         0,
+@@ -526,6 +530,7 @@ fn make_chain_sized(idx: usize, n_events: usize, consumed_ratio: f32) -> DeployC
+         HashableSet(deploys),
+         Blake2b256Hash::from_bytes(vec![1u8; 32]),
+         event_log,
++        rspace_plus_plus::rspace::merger::event_log_index::EventLogIndex::empty(),
+         rspace_plus_plus::rspace::merger::state_change::StateChange::empty(),
+         Bytes::from(dh.to_vec()),
+         0,
+@@ -687,6 +692,7 @@ fn make_chain_overlapping(
+         HashableSet(deploys),
+         Blake2b256Hash::from_bytes(vec![1u8; 32]),
+         event_log,
++        rspace_plus_plus::rspace::merger::event_log_index::EventLogIndex::empty(),
+         rspace_plus_plus::rspace::merger::state_change::StateChange::empty(),
+         Bytes::from(dh.to_vec()),
+         0,
+@@ -827,6 +833,7 @@ fn make_depends_pair(
+         HashableSet(producer_deploys),
+         Blake2b256Hash::from_bytes(vec![1u8; 32]),
+         producer_event_log,
++        rspace_plus_plus::rspace::merger::event_log_index::EventLogIndex::empty(),
+         rspace_plus_plus::rspace::merger::state_change::StateChange::empty(),
+         Bytes::from(producer_dh.to_vec()),
+         0,
+@@ -850,6 +857,7 @@ fn make_depends_pair(
+         HashableSet(consumer_deploys),
+         Blake2b256Hash::from_bytes(vec![1u8; 32]),
+         consumer_event_log,
++        rspace_plus_plus::rspace::merger::event_log_index::EventLogIndex::empty(),
+         rspace_plus_plus::rspace::merger::state_change::StateChange::empty(),
+         Bytes::from(consumer_dh.to_vec()),
+         0,
+diff --git a/node/src/rust/instances/block_processor_instance.rs b/node/src/rust/instances/block_processor_instance.rs
+index 4c009520..ecb8a2d2 100644
+--- a/node/src/rust/instances/block_processor_instance.rs
++++ b/node/src/rust/instances/block_processor_instance.rs
+@@ -32,13 +32,11 @@ fn maybe_trim_allocator_after_block() {
+     }
+ 
+     let count = PROCESSED_BLOCKS.fetch_add(1, Ordering::Relaxed) + 1;
+-    if !count.is_multiple_of(interval) {
+-        return;
+-    }
+-
+-    #[cfg(target_os = "linux")]
+-    unsafe {
+-        let _ = malloc_trim(0);
++    if count.is_multiple_of(interval) {
++        #[cfg(target_os = "linux")]
++        unsafe {
++            let _ = malloc_trim(0);
++        }
+     }
+ }
+ 
+diff --git a/rholang/src/rust/interpreter/merging/rholang_merging_logic.rs b/rholang/src/rust/interpreter/merging/rholang_merging_logic.rs
+index 206fdee9..a9d756d3 100644
+--- a/rholang/src/rust/interpreter/merging/rholang_merging_logic.rs
++++ b/rholang/src/rust/interpreter/merging/rholang_merging_logic.rs
+@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, HashSet};
+ use std::hash::Hash;
+ 
+ use crypto::rust::hash::blake2b512_random::Blake2b512Random;
++use hex::ToHex;
+ use indexmap::IndexSet;
+ use models::rhoapi::{BindPattern, ListParWithRandom, Par, TaggedContinuation};
+ use rspace_plus_plus::rspace::errors::HistoryError;
+@@ -17,6 +18,7 @@ use rspace_plus_plus::rspace::merger::channel_change::ChannelChange;
+ use rspace_plus_plus::rspace::merger::merging_logic::MergeType;
+ use rspace_plus_plus::rspace::serializers::serializers;
+ use rspace_plus_plus::rspace::trace::event::Produce;
++use tracing::info;
+ 
+ use crate::rust::interpreter::rho_type::RhoNumber;
+ 
+@@ -96,15 +98,43 @@ impl RholangMergingLogic {
+         HotStoreTrieAction<Par, BindPattern, ListParWithRandom, TaggedContinuation>,
+         HistoryError,
+     > {
++        let ch_hex: String = channel_hash.encode_hex();
++        info!(
++            target: "f1r3.trace.fold",
++            "[TRACE-MERGE-FOLD-ENTRY] channel={} merge_type={:?} diff={} added_len={} removed_len={}",
++            ch_hex, merge_type, diff, changes.added.len(), changes.removed.len()
++        );
+         // Read initial value of number channel from base state.
+         // None = channel doesn't exist yet (treat as 0); Err = invariant
+         // violation (non-numeric or multi-value pre-state) — propagate so the
+         // merge is rejected rather than silently substituting 0.
+-        let init_num = Self::convert_to_read_number(get_base_data)(channel_hash)?.unwrap_or(0);
++        let init_num = match Self::convert_to_read_number(get_base_data)(channel_hash)? {
++            Some(n) => {
++                info!(
++                    target: "f1r3.trace.fold",
++                    "[TRACE-MERGE-FOLD-PRESTATE] channel={} init_num={}",
++                    ch_hex, n
++                );
++                n
++            }
++            None => {
++                info!(
++                    target: "f1r3.trace.fold",
++                    "[TRACE-MERGE-FOLD-PRESTATE] channel={} init_num=0 (channel empty)",
++                    ch_hex
++                );
++                0
++            }
++        };
+         let new_val = match merge_type {
+             MergeType::IntegerAdd => init_num.wrapping_add(diff),
+             MergeType::BitmaskOr => ((init_num as u64) | (diff as u64)) as i64,
+         };
++        info!(
++            target: "f1r3.trace.fold",
++            "[TRACE-MERGE-FOLD-RESULT] channel={} merge_type={:?} init_num={} diff={} new_val={}",
++            ch_hex, merge_type, init_num, diff, new_val
++        );
+ 
+         // Calculate merged random generator (use only unique changes as input)
+         let new_rnd = if changes.added.iter().collect::<HashSet<_>>().len() == 1 {
+@@ -219,7 +249,18 @@ impl RholangMergingLogic {
+     where F: Fn(&Blake2b256Hash) -> Result<Vec<Datum<ListParWithRandom>>, HistoryError> {
+         move |hash: &Blake2b256Hash| {
+             let data = get_data_func(hash)?;
++            let ch_hex: String = hash.encode_hex();
++            info!(
++                target: "f1r3.trace.fold",
++                "[TRACE-PRE-STATE-READ] channel={} data_len={}",
++                ch_hex, data.len()
++            );
+             if data.len() > 1 {
++                info!(
++                    target: "f1r3.trace.fold",
++                    "[TRACE-PRE-STATE-VIOLATION] channel={} data_len={} (single-value invariant violated at pre-state read)",
++                    ch_hex, data.len()
++                );
+                 return Err(HistoryError::MergeError(format!(
+                     "Number channel {:?} has {} pre-state values; single-value invariant violated",
+                     hash,
+diff --git a/rholang/src/rust/interpreter/reduce.rs b/rholang/src/rust/interpreter/reduce.rs
+index fe610c9e..8b9eb1ee 100644
+--- a/rholang/src/rust/interpreter/reduce.rs
++++ b/rholang/src/rust/interpreter/reduce.rs
+@@ -31,6 +31,7 @@ use models::rust::utils::{
+     new_elist_par, new_emap_par, new_gint_expr, new_gint_par, new_gstring_par, union,
+ };
+ use prost::Message;
++use rspace_plus_plus::rspace::hashing::stable_hash_provider;
+ use rspace_plus_plus::rspace::merger::merging_logic::MergeType;
+ use rspace_plus_plus::rspace::util::unpack_option_with_peek;
+ use tokio::sync::RwLock;
+@@ -783,6 +784,13 @@ impl DebruijnInterpreter {
+ 
+     async fn update_mergeable_channels(&self, chan: &Par) -> () {
+         if let Some(merge_type) = self.is_mergeable_channel(chan) {
++            let ch_hash = stable_hash_provider::hash(chan);
++            let ch_hex = hex::encode(ch_hash.bytes());
++            tracing::info!(
++                target: "f1r3.trace.classify",
++                "[TRACE-UPDATE-MERGEABLE-CHANNELS] channel={} merge_type={:?} (classified by tag match)",
++                ch_hex, merge_type
++            );
+             let mut merge_chs_write = self.merge_chs.write().await;
+             merge_chs_write.insert(chan.clone(), merge_type);
+         }
+@@ -1142,9 +1150,21 @@ impl DebruijnInterpreter {
+         env: Env<Par>,
+         mut rand: Blake2b512Random,
+     ) -> Result<(), InterpreterError> {
++        let new_uri = new.uri.clone();
++        // Body fingerprint: content-addressed hash of the New block's body Par.
++        // Same Rholang `new x, y in {...}` source → same body_hash regardless of
++        // caller. Lets us correlate channel-creation events back to the specific
++        // source position in PoS.rhox / RevVault.rho / etc.
++        let body_hash = stable_hash_provider::hash(new.p.as_ref().expect("New::p must be present"));
++        let body_hex = hex::encode(&body_hash.bytes()[..8]);
++        // Rand path: identifies the execution-path context at this `new`.
++        // Stable for the same deploy + same control-flow path.
++        let path_hex = hex::encode(&rand.path_view[..rand.path_position]);
+         let mut alloc = |count: usize, urns: Vec<String>| {
++            let total_simple_news = count - urns.len();
++            let mut new_idx: usize = 0;
+             let simple_news =
+-                (0..(count - urns.len()))
++                (0..total_simple_news)
+                     .into_iter()
+                     .fold(env.clone(), |mut _env: Env<Par>, _| {
+                         let addr: Par = Par::default().with_unforgeables(vec![GUnforgeable {
+@@ -1152,6 +1172,19 @@ impl DebruijnInterpreter {
+                                 id: rand.next().iter().map(|&x| x as u8).collect::<Vec<u8>>(),
+                             })),
+                         }]);
++                        let ch_hash = stable_hash_provider::hash(&addr);
++                        tracing::info!(
++                            target: "f1r3.trace.channel_created",
++                            "[TRACE-CHANNEL-CREATED] channel={} new_idx={} total={} urns_count={} uri_count={} body_hash={} path={}",
++                            hex::encode(ch_hash.bytes()),
++                            new_idx,
++                            total_simple_news,
++                            urns.len(),
++                            new_uri.len(),
++                            body_hex,
++                            path_hex
++                        );
++                        new_idx += 1;
+                         _env.put(addr)
+                     });
+ 
+@@ -1208,6 +1241,13 @@ impl DebruijnInterpreter {
+                                     hex,
+                                 );
+                             }
++                            let ch_hash = stable_hash_provider::hash(p);
++                            tracing::info!(
++                                target: "f1r3.trace.channel_created",
++                                "[TRACE-CHANNEL-CREATED-URN] urn={} channel={}",
++                                urn,
++                                hex::encode(ch_hash.bytes())
++                            );
+                             Ok(new_env.put(p.clone()))
+                         }
+                         None => Err(InterpreterError::ReduceError(format!(
+diff --git a/rspace++/src/rspace/history/history_repository_impl.rs b/rspace++/src/rspace/history/history_repository_impl.rs
+index ad5a73c9..4eb9f1bb 100644
+--- a/rspace++/src/rspace/history/history_repository_impl.rs
++++ b/rspace++/src/rspace/history/history_repository_impl.rs
+@@ -1,10 +1,11 @@
+ use std::marker::PhantomData;
+ use std::sync::{Arc, Mutex};
+ 
++use hex::ToHex;
+ use rayon::prelude::*;
+ use serde::{Deserialize, Serialize};
+ use shared::rust::store::key_value_store::KeyValueStore;
+-use tracing::{Level, debug};
++use tracing::{Level, debug, info};
+ 
+ use super::cold_store::{ContinuationsLeaf, DataLeaf, JoinsLeaf};
+ use super::history_action::{DeleteAction, HistoryAction, InsertAction};
+@@ -130,6 +131,12 @@ where
+     ) -> (ColdAction, HistoryAction) {
+         match action {
+             HotStoreTrieAction::TrieInsertAction(TrieInsertAction::TrieInsertProduce(i)) => {
++                let channel_hex: String = i.hash.encode_hex();
++                info!(
++                    target: "f1r3.trace.trie_write",
++                    "[TRACE-TRIE-WRITE] action=TrieInsertProduce channel={} data_len={}",
++                    channel_hex, i.data.len()
++                );
+                 let data = encode_datums(&i.data);
+                 let data_leaf = DataLeaf { bytes: data };
+                 let data_leaf_encoded = bincode::serialize(&data_leaf)
+@@ -145,6 +152,12 @@ where
+                 )
+             }
+             HotStoreTrieAction::TrieInsertAction(TrieInsertAction::TrieInsertConsume(i)) => {
++                let channel_hex: String = i.hash.encode_hex();
++                info!(
++                    target: "f1r3.trace.trie_write",
++                    "[TRACE-TRIE-WRITE] action=TrieInsertConsume channels_hash={} cont_len={}",
++                    channel_hex, i.continuations.len()
++                );
+                 let data = encode_continuations(&i.continuations);
+                 let continuations_leaf = ContinuationsLeaf { bytes: data };
+                 let continuations_leaf_encoded = bincode::serialize(&continuations_leaf)
+@@ -163,6 +176,12 @@ where
+                 )
+             }
+             HotStoreTrieAction::TrieInsertAction(TrieInsertAction::TrieInsertJoins(i)) => {
++                let channel_hex: String = i.hash.encode_hex();
++                info!(
++                    target: "f1r3.trace.trie_write",
++                    "[TRACE-TRIE-WRITE] action=TrieInsertJoins channel={} joins_len={}",
++                    channel_hex, i.joins.len()
++                );
+                 let data = encode_joins(&i.joins);
+                 let joins_leaf = JoinsLeaf { bytes: data };
+                 let joins_leaf_encoded = bincode::serialize(&joins_leaf)
+@@ -178,6 +197,19 @@ where
+                 )
+             }
+             HotStoreTrieAction::TrieInsertAction(TrieInsertAction::TrieInsertBinaryProduce(i)) => {
++                let channel_hex: String = i.hash.encode_hex();
++                info!(
++                    target: "f1r3.trace.trie_write",
++                    "[TRACE-TRIE-WRITE] action=TrieInsertBinaryProduce channel={} data_len={}",
++                    channel_hex, i.data.len()
++                );
++                if i.data.len() > 1 {
++                    info!(
++                        target: "f1r3.trace.trie_write",
++                        "[TRACE-TRIE-WRITE-MULTI] channel={} multi_datum_write data_len={}",
++                        channel_hex, i.data.len()
++                    );
++                }
+                 // Sort data before serializing for deterministic hashing regardless of
+                 // insertion order
+                 let mut sorted_data = i.data.clone();
+@@ -198,6 +230,12 @@ where
+                 )
+             }
+             HotStoreTrieAction::TrieInsertAction(TrieInsertAction::TrieInsertBinaryConsume(i)) => {
++                let channel_hex: String = i.hash.encode_hex();
++                info!(
++                    target: "f1r3.trace.trie_write",
++                    "[TRACE-TRIE-WRITE] action=TrieInsertBinaryConsume channels_hash={} cont_len={}",
++                    channel_hex, i.continuations.len()
++                );
+                 // Sort continuations before serializing for deterministic hashing regardless of
+                 // insertion order
+                 let mut sorted_continuations = i.continuations.clone();
+@@ -221,6 +259,12 @@ where
+                 )
+             }
+             HotStoreTrieAction::TrieInsertAction(TrieInsertAction::TrieInsertBinaryJoins(i)) => {
++                let channel_hex: String = i.hash.encode_hex();
++                info!(
++                    target: "f1r3.trace.trie_write",
++                    "[TRACE-TRIE-WRITE] action=TrieInsertBinaryJoins channel={} joins_len={}",
++                    channel_hex, i.joins.len()
++                );
+                 // Sort joins before serializing for deterministic hashing regardless of
+                 // insertion order
+                 let mut sorted_joins = i.joins.clone();
+@@ -240,24 +284,48 @@ where
+                     }),
+                 )
+             }
+-            HotStoreTrieAction::TrieDeleteAction(TrieDeleteAction::TrieDeleteProduce(d)) => (
+-                (d.hash.clone(), None),
+-                HistoryAction::Delete(DeleteAction {
+-                    key: prepend_bytes(PREFIX_DATUM, &d.hash.bytes()),
+-                }),
+-            ),
+-            HotStoreTrieAction::TrieDeleteAction(TrieDeleteAction::TrieDeleteConsume(d)) => (
+-                (d.hash.clone(), None),
+-                HistoryAction::Delete(DeleteAction {
+-                    key: prepend_bytes(PREFIX_KONT, &d.hash.bytes()),
+-                }),
+-            ),
+-            HotStoreTrieAction::TrieDeleteAction(TrieDeleteAction::TrieDeleteJoins(d)) => (
+-                (d.hash.clone(), None),
+-                HistoryAction::Delete(DeleteAction {
+-                    key: prepend_bytes(PREFIX_JOINS, &d.hash.bytes()),
+-                }),
+-            ),
++            HotStoreTrieAction::TrieDeleteAction(TrieDeleteAction::TrieDeleteProduce(d)) => {
++                let channel_hex: String = d.hash.encode_hex();
++                info!(
++                    target: "f1r3.trace.trie_write",
++                    "[TRACE-TRIE-WRITE] action=TrieDeleteProduce channel={}",
++                    channel_hex
++                );
++                (
++                    (d.hash.clone(), None),
++                    HistoryAction::Delete(DeleteAction {
++                        key: prepend_bytes(PREFIX_DATUM, &d.hash.bytes()),
++                    }),
++                )
++            }
++            HotStoreTrieAction::TrieDeleteAction(TrieDeleteAction::TrieDeleteConsume(d)) => {
++                let channel_hex: String = d.hash.encode_hex();
++                info!(
++                    target: "f1r3.trace.trie_write",
++                    "[TRACE-TRIE-WRITE] action=TrieDeleteConsume channels_hash={}",
++                    channel_hex
++                );
++                (
++                    (d.hash.clone(), None),
++                    HistoryAction::Delete(DeleteAction {
++                        key: prepend_bytes(PREFIX_KONT, &d.hash.bytes()),
++                    }),
++                )
++            }
++            HotStoreTrieAction::TrieDeleteAction(TrieDeleteAction::TrieDeleteJoins(d)) => {
++                let channel_hex: String = d.hash.encode_hex();
++                info!(
++                    target: "f1r3.trace.trie_write",
++                    "[TRACE-TRIE-WRITE] action=TrieDeleteJoins channel={}",
++                    channel_hex
++                );
++                (
++                    (d.hash.clone(), None),
++                    HistoryAction::Delete(DeleteAction {
++                        key: prepend_bytes(PREFIX_JOINS, &d.hash.bytes()),
++                    }),
++                )
++            }
+         }
+     }
+ 
+@@ -342,6 +410,11 @@ where
+         &self,
+         trie_actions: Vec<HotStoreTrieAction<C, P, A, K>>,
+     ) -> Box<dyn HistoryRepository<C, P, A, K> + Send + Sync + 'static> {
++        info!(
++            target: "f1r3.trace.checkpoint",
++            "[TRACE-CHECKPOINT-ENTRY] trie_actions_count={}",
++            trie_actions.len()
++        );
+         if trie_actions.is_empty() {
+             return self.checkpoint_noop_clone();
+         }
+@@ -407,6 +480,12 @@ where
+ 
+         let new_root = new_history.root();
+         store_root(&new_root).expect("History Repository Impl: Unable to store root");
++        let new_root_hex: String = new_root.encode_hex();
++        info!(
++            target: "f1r3.trace.checkpoint",
++            "[TRACE-CHECKPOINT-EXIT] new_root={}",
++            new_root_hex
++        );
+ 
+         ();
+ 
+diff --git a/rspace++/src/rspace/merger/channel_change.rs b/rspace++/src/rspace/merger/channel_change.rs
+index 9b6ad419..665b6e5b 100644
+--- a/rspace++/src/rspace/merger/channel_change.rs
++++ b/rspace++/src/rspace/merger/channel_change.rs
+@@ -14,25 +14,45 @@ impl<A> ChannelChange<A> {
+         }
+     }
+ 
+-    /// Multiset union: self ++ (other diff self) = max(count_self, count_other)
+-    /// per element.
++    /// Multiset union with cross-set cancellation.
+     ///
+-    /// When two sibling blocks (same parent/LCA) execute identical system
+-    /// deploys, plain concatenation would double entries. Multiset union
+-    /// prevents this by only appending elements from `other` that are not
+-    /// already present in `self` (accounting for multiplicities).
++    /// 1. Multiset union per side: `max(count_self, count_other)` per element.
++    ///    Prevents duplication when sibling blocks execute identical deploys.
++    /// 2. Cross-set cancellation: items in BOTH `added` and `removed` after
++    ///    union are intermediates — produced by one chain in the merge
++    ///    aggregation and consumed by a later chain in the same chain sequence.
++    ///    Net effect on the channel is zero for those items, so they must drop
++    ///    from both sets. Without this, the multiset-diff `vec_diff(init,
++    ///    removed) ++ added` in `make_trie_action` can fail to remove an
++    ///    intermediate `D_X` from `init` (it isn't there) yet add `D_X` from
++    ///    `added`, leaving the channel with `D_X` plus the "real" terminal
++    ///    Datum — a multi-Datum write on a single-value channel.
+     pub fn combine(self, other: Self) -> Self
+     where A: PartialEq {
+         let added_only_in_other = Self::vec_diff(other.added, &self.added);
+         let removed_only_in_other = Self::vec_diff(other.removed, &self.removed);
+-        Self {
+-            added: self.added.into_iter().chain(added_only_in_other).collect(),
+-            removed: self
+-                .removed
+-                .into_iter()
+-                .chain(removed_only_in_other)
+-                .collect(),
++        let mut added: Vec<A> = self.added.into_iter().chain(added_only_in_other).collect();
++        let mut removed: Vec<A> = self
++            .removed
++            .into_iter()
++            .chain(removed_only_in_other)
++            .collect();
++
++        // Cross-cancel intermediates: any item present in both `added` and
++        // `removed` is an intermediate that should disappear from the net
++        // effect. Cancellation is per-element multiset (pair one add with
++        // one removal at a time).
++        let mut i = 0;
++        while i < added.len() {
++            if let Some(rem_pos) = removed.iter().position(|x| x == &added[i]) {
++                removed.remove(rem_pos);
++                added.remove(i);
++            } else {
++                i += 1;
++            }
+         }
++
++        Self { added, removed }
+     }
+ 
+     /// Multiset difference: for each element in `to_remove`, removes at most
+diff --git a/rspace++/src/rspace/merger/event_log_index.rs b/rspace++/src/rspace/merger/event_log_index.rs
+index d1a160a9..8837494e 100644
+--- a/rspace++/src/rspace/merger/event_log_index.rs
++++ b/rspace++/src/rspace/merger/event_log_index.rs
+@@ -258,6 +258,38 @@ impl EventLogIndex {
+                 .collect(),
+         );
+ 
++        tracing::info!(
++            target: "f1r3.trace.event_log_index",
++            "[TRACE-EVENT-LOG-INDEX-NEW] produces_linear={} produces_persistent={} produces_consumed={} produces_peeked={} consumes_linear_and_peeks={} consumes_persistent={} consumes_produced={} produces_mergeable={} consumes_mergeable={}",
++            produces_linear.0.len(),
++            produces_persistent.0.len(),
++            produces_consumed.0.len(),
++            produces_peeked.0.len(),
++            consumes_linear_and_peeks.0.len(),
++            consumes_persistent.0.len(),
++            consumes_produced.0.len(),
++            produces_mergeable.0.len(),
++            consumes_mergeable.0.len()
++        );
++        for p in produces_consumed.0.iter() {
++            tracing::info!(
++                target: "f1r3.trace.event_log_index",
++                "[TRACE-EVENT-LOG-INDEX-PRODUCES-CONSUMED] channel={} produce_hash={} persistent={}",
++                hex::encode(p.channel_hash.bytes()),
++                hex::encode(p.hash.bytes()),
++                p.persistent
++            );
++        }
++        for p in produces_linear.0.iter() {
++            tracing::info!(
++                target: "f1r3.trace.event_log_index",
++                "[TRACE-EVENT-LOG-INDEX-PRODUCES-LINEAR] channel={} produce_hash={} persistent={}",
++                hex::encode(p.channel_hash.bytes()),
++                hex::encode(p.hash.bytes()),
++                p.persistent
++            );
++        }
++
+         EventLogIndex {
+             produces_linear,
+             produces_persistent,
+diff --git a/rspace++/src/rspace/merger/merging_logic.rs b/rspace++/src/rspace/merger/merging_logic.rs
+index 2fde8800..a190326f 100644
+--- a/rspace++/src/rspace/merger/merging_logic.rs
++++ b/rspace++/src/rspace/merger/merging_logic.rs
+@@ -555,6 +555,36 @@ where
+         HashMap::new();
+     let mut global_branches: HashSet<usize> = HashSet::new();
+ 
++    // Check #4 inputs — channel-keyed consume-then-produce signature.
++    // For each branch, find channels where the branch BOTH consumed a
++    // pre-state produce AND emitted a new produce (linear or persistent).
++    // This is the structural signature of `runMVar(ch, ...)` and any
++    // contract pattern that treats `ch` as single-value.
++    //
++    // Refinement: the bare presence of the signature in 2+ branches is
++    // not sufficient to imply conflict. If all branches produce
++    // identical Datums on the channel, `ChannelChange::combine`'s
++    // multiset-max-count merge dedupes them to a single Datum — no
++    // multi-Datum results. Conflict only when 2+ branches produce
++    // DIFFERENT Datums on a non-commutative channel (per CSV cell
++    // `4 ! × 4 !`: "Could have matched same produce. Mergeable if
++    // different linear produces.").
++    //
++    // Track per channel: which branches have the signature, and the
++    // set of distinct produces each branch emitted on the channel.
++    // A pair of branches conflicts on the channel iff their emitted
++    // produce sets differ (and the channel isn't in number_channels_data
++    // for both, which is the existing commutative-merge bypass).
++    let mut consume_then_produce_by_channel: HashMap<&Blake2b256Hash, HashSet<usize>> =
++        HashMap::new();
++    let mut produces_emitted_by_channel_branch: HashMap<
++        (&Blake2b256Hash, usize),
++        HashSet<&Blake2b256Hash>,
++    > = HashMap::new();
++    // For the commutative bypass: which branches treat which channels as
++    // mergeable (IntegerAdd / BitmaskOr).
++    let mut mergeable_chs_by_channel: HashMap<&Blake2b256Hash, HashSet<usize>> = HashMap::new();
++
+     for (idx, e) in event_logs.iter().enumerate() {
+         // #1 race candidates: events destroyed in COMM (consumed produces /
+         // produced consumes) and their mergeable counterparts.
+@@ -628,6 +658,125 @@ where
+         if !e.produces_touching_base_joins.0.is_empty() {
+             global_branches.insert(idx);
+         }
++
++        // #4 channel-keyed external-linear-consume-then-local-produce signature.
++        //
++        // A branch has the runMVar-on-persistent-state signature on
++        // channel C iff:
++        //
++        //   * branch has a LINEAR consume on C that was destroyed via COMM (`c in
++        //     consumes_produced where !c.persistent`). This excludes CSV `! C` / `!! C`
++        //     (linear send matched by persistent receiver) — persistent consumes aren't
++        //     destroyed, so produce-into-persistent-contract is mergeable per CSV.
++        //
++        //   * branch.produces_consumed contains a produce on C whose hash is NOT in
++        //     branch.produces_linear ∪ produces_persistent (i.e., the consumed Datum
++        //     came from outside the branch — LFB or an upstream block — not from a
++        //     produce the branch itself emitted in the same chain). This excludes the
++        //     single-deploy `@x!(v) | for (@y <- @x) { @x!(y) }` pattern where the
++        //     consume matches the deploy's own produce — a local round-trip that
++        //     doesn't race across branches.
++        //
++        //   * branch.produces_linear ∪ produces_persistent contains a produce on C (the
++        //     branch emitted a new value).
++        //
++        // This is the structural signature for runMVar on a persistent
++        // state channel: linear consume of a pre-existing (LFB or
++        // upstream) Datum + linear produce of a new Datum. Two+
++        // branches with this signature on a non-mergeable channel race
++        // for the single-value invariant.
++        let local_produce_hashes: HashSet<&Blake2b256Hash> = e
++            .produces_linear
++            .0
++            .iter()
++            .chain(e.produces_persistent.0.iter())
++            .map(|p| &p.hash)
++            .collect();
++        let linearly_consumed_channels: HashSet<&Blake2b256Hash> = e
++            .consumes_produced
++            .0
++            .iter()
++            .filter(|c| !c.persistent)
++            .flat_map(|c| c.channel_hashes.iter())
++            .collect();
++        let externally_consumed_channels: HashSet<&Blake2b256Hash> = e
++            .produces_consumed
++            .0
++            .iter()
++            .filter(|p| !local_produce_hashes.contains(&p.hash))
++            .map(|p| &p.channel_hash)
++            .collect();
++        let produced_channels: HashSet<&Blake2b256Hash> = e
++            .produces_linear
++            .0
++            .iter()
++            .chain(e.produces_persistent.0.iter())
++            .map(|p| &p.channel_hash)
++            .collect();
++        // Channel qualifies iff all three conditions hold.
++        let candidate_channels: HashSet<&Blake2b256Hash> = linearly_consumed_channels
++            .intersection(&externally_consumed_channels)
++            .copied()
++            .collect::<HashSet<_>>()
++            .intersection(&produced_channels)
++            .copied()
++            .collect();
++        for ch in candidate_channels.iter() {
++            consume_then_produce_by_channel
++                .entry(*ch)
++                .or_default()
++                .insert(idx);
++            // Collect produce hashes emitted by this branch on this channel.
++            let emitted_set = produces_emitted_by_channel_branch
++                .entry((*ch, idx))
++                .or_default();
++            for p in e
++                .produces_linear
++                .0
++                .iter()
++                .chain(e.produces_persistent.0.iter())
++            {
++                if &p.channel_hash == *ch {
++                    emitted_set.insert(&p.hash);
++                }
++            }
++        }
++        for ch in e.number_channels_data.keys() {
++            mergeable_chs_by_channel.entry(ch).or_default().insert(idx);
++        }
++    }
++
++    // Diagnostic: dump the branch-count distribution for produces_consumed
++    // so we can verify Check #1 has the inputs we expect.
++    tracing::info!(
++        target: "f1r3.trace.conflict_map",
++        "[TRACE-CONFLICT-MAP-BUILT] n_branches={} pc_keys={} pm_keys={} cp_keys={} cm_keys={}",
++        n,
++        produces_consumed_by_branches.len(),
++        produces_mergeable_by_branches.len(),
++        consumes_produced_by_branches.len(),
++        consumes_mergeable_by_branches.len()
++    );
++    for (produce, branches_set) in &produces_consumed_by_branches {
++        if branches_set.len() >= 2 {
++            tracing::info!(
++                target: "f1r3.trace.conflict_map",
++                "[TRACE-CONFLICT-MAP-PRODUCE-MULTI] channel={} produce_hash={} persistent={} branch_count={}",
++                hex::encode(produce.channel_hash.bytes()),
++                hex::encode(produce.hash.bytes()),
++                produce.persistent,
++                branches_set.len()
++            );
++        } else {
++            tracing::info!(
++                target: "f1r3.trace.conflict_map",
++                "[TRACE-CONFLICT-MAP-PRODUCE-SINGLE] channel={} produce_hash={} persistent={} branch_count={}",
++                hex::encode(produce.channel_hash.bytes()),
++                hex::encode(produce.hash.bytes()),
++                produce.persistent,
++                branches_set.len()
++            );
++        }
+     }
+ 
+     // Collect conflict pairs (i, j) with i < j; duplicate insertions into
+@@ -636,9 +785,25 @@ where
+ 
+     // #1 race on produces_consumed.
+     for (produce, branches_set) in &produces_consumed_by_branches {
+-        if produce.persistent || branches_set.len() < 2 {
++        if produce.persistent {
++            tracing::info!(
++                target: "f1r3.trace.conflict_map",
++                "[TRACE-CHECK-1-SKIP-PERSISTENT] channel={} produce_hash={}",
++                hex::encode(produce.channel_hash.bytes()),
++                hex::encode(produce.hash.bytes())
++            );
++            continue;
++        }
++        if branches_set.len() < 2 {
+             continue;
+         }
++        tracing::info!(
++            target: "f1r3.trace.conflict_map",
++            "[TRACE-CHECK-1-MULTI-BRANCH] channel={} produce_hash={} branch_count={}",
++            hex::encode(produce.channel_hash.bytes()),
++            hex::encode(produce.hash.bytes()),
++            branches_set.len()
++        );
+         let mergeable = produces_mergeable_by_branches.get(produce);
+         let pos: Vec<usize> = branches_set.iter().copied().collect();
+         for i in 0..pos.len() {
+@@ -705,6 +870,66 @@ where
+         }
+     }
+ 
++    // #4 channel-keyed consume-then-produce signature. The structural
++    // form of CSV cell `4 ! × 4 !`. Each branch that round-trips a
++    // channel (consume-then-produce) carries the runMVar pattern's
++    // signature on that channel. Two+ branches with this signature on
++    // the same non-commutative channel conflict ONLY IF the branches'
++    // emitted produces differ — if all emit identical Datums, the
++    // multiset-max-count combine dedupes to a single Datum and no
++    // multi-Datum results. Bypassed when the channel is in
++    // `number_channels_data` for both branches (commutative merge).
++    for (channel, branches_set) in &consume_then_produce_by_channel {
++        if branches_set.len() < 2 {
++            continue;
++        }
++        tracing::info!(
++            target: "f1r3.trace.conflict_map",
++            "[TRACE-CHECK-4-CANDIDATE] channel={} branch_count={}",
++            hex::encode(channel.bytes()),
++            branches_set.len()
++        );
++        let mergeable_branches = mergeable_chs_by_channel.get(channel);
++        let pos: Vec<usize> = branches_set.iter().copied().collect();
++        for i in 0..pos.len() {
++            for j in (i + 1)..pos.len() {
++                let (a, b) = (pos[i], pos[j]);
++                let both_mergeable = mergeable_branches
++                    .map(|m| m.contains(&a) && m.contains(&b))
++                    .unwrap_or(false);
++                if both_mergeable {
++                    continue;
++                }
++                let empty: HashSet<&Blake2b256Hash> = HashSet::new();
++                let emitted_a = produces_emitted_by_channel_branch
++                    .get(&(*channel, a))
++                    .unwrap_or(&empty);
++                let emitted_b = produces_emitted_by_channel_branch
++                    .get(&(*channel, b))
++                    .unwrap_or(&empty);
++                if emitted_a == emitted_b {
++                    tracing::info!(
++                        target: "f1r3.trace.conflict_map",
++                        "[TRACE-CHECK-4-SKIP-IDENTICAL] channel={} branches=({},{}) emitted_count={}",
++                        hex::encode(channel.bytes()),
++                        a, b,
++                        emitted_a.len()
++                    );
++                    continue;
++                }
++                tracing::info!(
++                    target: "f1r3.trace.conflict_map",
++                    "[TRACE-CHECK-4-CONFLICT] channel={} branches=({},{}) emitted_a={} emitted_b={}",
++                    hex::encode(channel.bytes()),
++                    a, b,
++                    emitted_a.len(), emitted_b.len()
++                );
++                let (lo, hi) = if a < b { (a, b) } else { (b, a) };
++                pairs.push((lo, hi));
++            }
++        }
++    }
++
+     // Populate result map. HashSet inserts dedupe so duplicate pairs are
+     // safe; we don't need to sort or dedupe `pairs` first.
+     for (a, b) in pairs {
+diff --git a/rspace++/src/rspace/merger/state_change_merger.rs b/rspace++/src/rspace/merger/state_change_merger.rs
+index 8ece9c88..59abdb3d 100644
+--- a/rspace++/src/rspace/merger/state_change_merger.rs
++++ b/rspace++/src/rspace/merger/state_change_merger.rs
+@@ -1,6 +1,8 @@
+ // See rspace/src/main/scala/coop/rchain/rspace/merger/StateChangeMerger.scala
+ 
++use hex::ToHex;
+ use shared::rust::ByteVector;
++use tracing::info;
+ 
+ use super::channel_change::ChannelChange;
+ use super::merging_logic::NumberChannelsDiff;
+@@ -42,6 +44,22 @@ pub fn compute_trie_actions<C: Clone, P: Clone, A: Clone, K: Clone>(
+         &NumberChannelsDiff,
+     ) -> Result<Option<HotStoreTrieAction<C, P, A, K>>, HistoryError>,
+ ) -> Result<Vec<HotStoreTrieAction<C, P, A, K>>, HistoryError> {
++    info!(
++        target: "f1r3.trace.merger",
++        "[TRACE-COMPUTE-TRIE-ACTIONS-ENTRY] datums_channels={} cont_channels={} joins_channels={} mergeable_chs={}",
++        changes.datums_changes.len(),
++        changes.cont_changes.len(),
++        changes.consume_channels_to_join_serialized_map.len(),
++        mergeable_chs.len()
++    );
++    for (ch, (diff, mt)) in mergeable_chs.iter() {
++        let ch_hex: String = ch.encode_hex();
++        info!(
++            target: "f1r3.trace.merger",
++            "[TRACE-MERGEABLE-CH-ENTRY] channel={} merge_type={:?} diff={}",
++            ch_hex, mt, diff
++        );
++    }
+     // Sort continuation changes by hash of consume channels for deterministic
+     // ordering
+     let mut cont_changes_sorted: Vec<_> = changes
+@@ -130,7 +148,29 @@ pub fn compute_trie_actions<C: Clone, P: Clone, A: Clone, K: Clone>(
+     let produce_trie_actions = datums_changes_sorted
+         .iter()
+         .map(|(history_pointer, changes)| {
++            let ch_hex: String = history_pointer.encode_hex();
++            info!(
++                target: "f1r3.trace.merger",
++                "[TRACE-PER-CHANNEL-DATUM-CHANGE] channel={} added_len={} removed_len={} in_mergeable_chs={}",
++                ch_hex,
++                changes.added.len(),
++                changes.removed.len(),
++                mergeable_chs.contains_key(history_pointer)
++            );
+             handle_channel_change(history_pointer, changes, mergeable_chs).and_then(|action| {
++                if action.is_some() {
++                    info!(
++                        target: "f1r3.trace.merger",
++                        "[TRACE-DISPATCH-DECISION] channel={} path=fold",
++                        ch_hex
++                    );
++                } else {
++                    info!(
++                        target: "f1r3.trace.merger",
++                        "[TRACE-DISPATCH-DECISION] channel={} path=fallback_multiset",
++                        ch_hex
++                    );
++                }
+                 action.map(Ok).unwrap_or_else(|| {
+                     make_trie_action(
+                         history_pointer,
+@@ -242,6 +282,7 @@ fn make_trie_action<C: Clone, P: Clone, A: Clone, K: Clone>(
+     update_action: impl Fn(&Blake2b256Hash, Vec<ByteVector>) -> HotStoreTrieAction<C, P, A, K>,
+ ) -> Result<HotStoreTrieAction<C, P, A, K>, HistoryError> {
+     let init = init_value(history_pointer)?;
++    let ch_hex: String = history_pointer.encode_hex();
+ 
+     let new_val = {
+         // Use multiset diff: remove each item in 'removed' exactly once from 'init'
+@@ -250,13 +291,41 @@ fn make_trie_action<C: Clone, P: Clone, A: Clone, K: Clone>(
+         result
+     };
+ 
++    info!(
++        target: "f1r3.trace.merger",
++        "[TRACE-MAKE-TRIE-ACTION] channel={} init_len={} added_len={} removed_len={} new_val_len={}",
++        ch_hex, init.len(), changes.added.len(), changes.removed.len(), new_val.len()
++    );
++    if new_val.len() > 1 {
++        info!(
++            target: "f1r3.trace.merger",
++            "[TRACE-MAKE-TRIE-ACTION-MULTI] channel={} new_val_len={} (this writes multi-Datum)",
++            ch_hex, new_val.len()
++        );
++    }
++
+     if new_val.is_empty() && !init.is_empty() {
++        info!(
++            target: "f1r3.trace.merger",
++            "[TRACE-MAKE-TRIE-ACTION-RESULT] channel={} case=remove",
++            ch_hex
++        );
+         // Case 1: All items present in base are removed - remove action
+         Ok(remove_action(history_pointer))
+     } else if init != new_val {
++        info!(
++            target: "f1r3.trace.merger",
++            "[TRACE-MAKE-TRIE-ACTION-RESULT] channel={} case=update new_val_len={}",
++            ch_hex, new_val.len()
++        );
+         // Case 2: Items were updated - update action
+         Ok(update_action(history_pointer, new_val))
+     } else {
++        info!(
++            target: "f1r3.trace.merger",
++            "[TRACE-MAKE-TRIE-ACTION-RESULT] channel={} case=no-change-error",
++            ch_hex
++        );
+         // Case 3: Error case - no changes
+         Err(HistoryError::MergeError(
+             "Merging logic error: empty channel change for produce or join when computing trie \
+diff --git a/rspace++/src/rspace/rspace.rs b/rspace++/src/rspace/rspace.rs
+index cdd4e38c..00709d41 100644
+--- a/rspace++/src/rspace/rspace.rs
++++ b/rspace++/src/rspace/rspace.rs
+@@ -167,6 +167,10 @@ where
+         // async
+         let _span = tracing::info_span!(target: "f1r3fly.rspace", "create-checkpoint").entered();
+         event!(Level::DEBUG, mark = "started-create-checkpoint", "create_checkpoint");
++        tracing::info!(
++            target: "f1r3.trace.rspace_checkpoint",
++            "[TRACE-RSPACE-CREATE-CHECKPOINT-ENTRY]"
++        );
+ 
+         // Get changes with span
+         let changes = {
+@@ -174,6 +178,11 @@ where
+                 tracing::info_span!(target: "f1r3fly.rspace", CHANGES_SPAN).entered();
+             self.get_store().changes()
+         };
++        tracing::info!(
++            target: "f1r3.trace.rspace_checkpoint",
++            "[TRACE-RSPACE-CREATE-CHECKPOINT-CHANGES] changes_count={}",
++            changes.len()
++        );
+ 
+         // Create history checkpoint with span
+         let next_history = {
+diff --git a/rspace++/src/rspace/state/instances/rspace_importer_store.rs b/rspace++/src/rspace/state/instances/rspace_importer_store.rs
+index 49856ffb..13b106b7 100644
+--- a/rspace++/src/rspace/state/instances/rspace_importer_store.rs
++++ b/rspace++/src/rspace/state/instances/rspace_importer_store.rs
+@@ -46,6 +46,19 @@ impl RSpaceImporter for RSpaceImporterImpl {
+ 
+ impl TrieImporter for RSpaceImporterImpl {
+     fn set_history_items(&self, data: Vec<(KeyHash, Value)>) {
++        tracing::info!(
++            target: "f1r3.trace.lfs_import",
++            "[TRACE-LFS-SET-HISTORY-ITEMS] count={}",
++            data.len()
++        );
++        for (key_hash, _) in data.iter() {
++            let key_hex = hex::encode(key_hash.bytes());
++            tracing::info!(
++                target: "f1r3.trace.lfs_import",
++                "[TRACE-LFS-SET-HISTORY-ITEM] history_key={}",
++                key_hex
++            );
++        }
+         self.history_store
+             .put(
+                 data.iter()
+@@ -56,6 +69,19 @@ impl TrieImporter for RSpaceImporterImpl {
+     }
+ 
+     fn set_data_items(&self, data: Vec<(KeyHash, Value)>) {
++        tracing::info!(
++            target: "f1r3.trace.lfs_import",
++            "[TRACE-LFS-SET-DATA-ITEMS] count={}",
++            data.len()
++        );
++        for (key_hash, value) in data.iter() {
++            let key_hex = hex::encode(key_hash.bytes());
++            tracing::info!(
++                target: "f1r3.trace.lfs_import",
++                "[TRACE-LFS-SET-DATA-ITEM] data_key={} value_bytes_len={}",
++                key_hex, value.len()
++            );
++        }
+         self.value_store
+             .put(
+                 data.iter()
+@@ -66,6 +92,12 @@ impl TrieImporter for RSpaceImporterImpl {
+     }
+ 
+     fn set_root(&self, key: &KeyHash) {
++        let key_hex = hex::encode(key.bytes());
++        tracing::info!(
++            target: "f1r3.trace.lfs_import",
++            "[TRACE-LFS-SET-ROOT] root={}",
++            key_hex
++        );
+         let roots = RootsStoreInstances::roots_store(self.roots_store.clone());
+         roots
+             .record_root(key)

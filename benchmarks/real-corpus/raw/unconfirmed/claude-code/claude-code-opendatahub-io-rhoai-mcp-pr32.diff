@@ -1,0 +1,276 @@
+diff --git a/docs/ARCHITECTURE.md b/docs/ARCHITECTURE.md
+index 2afc09e..eef9239 100644
+--- a/docs/ARCHITECTURE.md
++++ b/docs/ARCHITECTURE.md
+@@ -23,6 +23,7 @@ src/rhoai_mcp/
+     ├── cluster/          # Cluster-wide summaries and exploration
+     ├── training/         # Training workflow orchestration
+     ├── meta/             # Tool discovery and guidance
++    ├── neuralnav/        # Neural Navigator (Project Navigator) model recommendations
+     └── registry.py       # Composite plugin registry
+ ```
+ 
+@@ -352,6 +353,71 @@ def train_model(model_id: str, dataset_id: str, namespace: str, method: str = "l
+ - **Handle edge cases**: Mention what to do if something goes wrong
+ - **Keep focused**: Each prompt should address one workflow
+ 
++## NeuralNav Composite - Model Recommendations (Project Navigator)
++
++**Location:** `src/rhoai_mcp/composites/neuralnav/`
++
++NeuralNav (also known as Project Navigator) provides AI-driven LLM model recommendations. It communicates with an external Neural Navigator backend service via REST API to recommend optimal model + GPU configurations for a given use case.
++
++### Architecture
++
++```text
++composites/neuralnav/
++├── __init__.py
++├── client.py      # HTTP client for Neural Navigator API
++├── models.py      # Pydantic models (DeploymentIntent, RecommendationResult, etc.)
++└── tools.py       # MCP tool implementations
++```
++
++### Key Differences from Other Composites
++
++| Aspect | Other Composites | NeuralNav |
++|--------|-----------------|-----------|
++| **Client** | Uses domain K8s clients | Uses `httpx` HTTP client |
++| **Backend** | Kubernetes API | Neural Navigator REST API |
++| **Configuration** | K8s auth settings | `RHOAI_MCP_NEURALNAV_URL`, `RHOAI_MCP_NEURALNAV_TIMEOUT` |
++
++### Tools
++
++| Tool | Purpose |
++| ---- | ------- |
++| `recommend_model()` | Get LLM model recommendations from natural language |
++| `get_deployment_config()` | Generate K8s deployment YAML for a recommended model |
++
++### `recommend_model()` - Model Recommendation
++
++**Purpose:** Runs the full NeuralNav recommendation flow: extracts intent from natural language, builds technical specifications, and returns three ranked recommendations (top_performance, top_cost, top_balanced).
++
++**Implementation notes:**
++- Validates all inputs before calling the API (use case, GPU types, SLO targets, etc.)
++- `OPTIMIZATION_PROFILES` dict maps profile names to weight dicts for scoring
++- Returns compact formatted recommendations via `_format_recommendation()` helper
++- Handles `NeuralNavConnectionError` and `NeuralNavAPIError` gracefully
++
++### `get_deployment_config()` - Deployment Config Generation
++
++**Purpose:** Takes specification values from `recommend_model` output plus a category name, and generates InferenceService, HPA, and ServiceMonitor YAML configurations.
++
++**Implementation notes:**
++- `CATEGORY_MAP` maps user-facing category names to API category keys
++- Validates Kubernetes namespace against DNS-1123 label rules
++- Returns deployment_id, namespace, model name, and YAML config strings
++
++### Client Flow
++
++The `NeuralNavClient` chains multiple API calls:
++
++1. **Extract intent**: `POST /api/v1/extract` — parses natural language into `DeploymentIntent`
++2. **Fetch defaults**: `GET /api/v1/slo-defaults/{use_case}`, `GET /api/v1/workload-profile/{use_case}`, `GET /api/v1/expected-rps/{use_case}`
++3. **Get recommendations**: `POST /api/v1/ranked-recommend-from-spec` — returns ranked model+GPU configs
++4. **Generate config** (optional): `POST /api/v1/deploy` — produces K8s YAML
++
++Intent extraction is skipped when all override fields (use_case, user_count, gpu_types) are provided.
++
++### Health Check
++
++The NeuralNav plugin health check (`composites/registry.py`) calls `GET /health` on the Neural Navigator backend. If the service is unreachable, the plugin reports as unhealthy but does not block server startup.
++
+ ## Common Patterns
+ 
+ ### Lazy Imports
+diff --git a/src/rhoai_mcp/composites/meta/resources.py b/src/rhoai_mcp/composites/meta/resources.py
+index a51dd6d..0ab50d3 100644
+--- a/src/rhoai_mcp/composites/meta/resources.py
++++ b/src/rhoai_mcp/composites/meta/resources.py
+@@ -38,6 +38,10 @@ def tool_categories() -> dict:
+                     "2. deploy_model() - Deploy model",
+                     "3. test_model_endpoint() - Verify",
+                 ],
++                "recommendation_workflow": [
++                    "1. recommend_model() - Get AI-driven model recommendations",
++                    "2. get_deployment_config() - Generate K8s deployment YAML",
++                ],
+                 "troubleshooting": [
+                     "diagnose_resource() - Comprehensive diagnostics",
+                     "analyze_training_failure() - Training failure analysis",
+@@ -50,6 +54,8 @@ def tool_categories() -> dict:
+                     "prepare_model_deployment - Combines runtime discovery + validation + resource estimation",
+                     "explore_cluster - Complete cluster exploration in one call",
+                     "diagnose_resource - Comprehensive resource diagnostics",
++                    "recommend_model - AI-driven model selection via Neural Navigator",
++                    "get_deployment_config - Generate K8s YAML for recommended model",
+                 ],
+             },
+         }
+@@ -133,6 +139,26 @@ def tool_workflows() -> dict:
+                     },
+                 ],
+             },
++            "recommend_model": {
++                "description": "Get AI-driven model recommendations and generate deployment configs",
++                "steps": [
++                    {
++                        "step": 1,
++                        "tool": "recommend_model",
++                        "purpose": "Get model recommendations from natural language description",
++                        "example": {
++                            "text": "I need a chatbot for 5000 users with low latency",
++                        },
++                    },
++                    {
++                        "step": 2,
++                        "tool": "get_deployment_config",
++                        "purpose": "Generate K8s deployment YAML for a recommended model",
++                        "note": "Use specification values from recommend_model result",
++                        "conditional": "If you want to deploy the recommended model",
++                    },
++                ],
++            },
+             "explore_cluster": {
+                 "description": "Understand what's in the cluster",
+                 "steps": [
+diff --git a/src/rhoai_mcp/composites/meta/tools.py b/src/rhoai_mcp/composites/meta/tools.py
+index e9f420a..ba1f752 100644
+--- a/src/rhoai_mcp/composites/meta/tools.py
++++ b/src/rhoai_mcp/composites/meta/tools.py
+@@ -83,6 +83,17 @@
+             "create_s3_data_connection",
+         ],
+     },
++    "recommendation": {
++        "description": "AI-driven model selection and deployment config generation (Project Navigator)",
++        "tools": [
++            "recommend_model",
++            "get_deployment_config",
++        ],
++        "typical_workflow": [
++            "recommend_model",
++            "get_deployment_config",
++        ],
++    },
+ }
+ 
+ 
+@@ -129,6 +140,22 @@
+         "workflow": ["list_storage", "list_data_connections"],
+         "explanation": "Use list_storage() for PVCs, list_data_connections() for S3 connections.",
+     },
++    {
++        "patterns": [
++            "recommend",
++            "model selection",
++            "which model",
++            "best model",
++            "gpu config",
++            "neuralnav",
++            "neural navigator",
++            "project navigator",
++        ],
++        "category": "recommendation",
++        "workflow": ["recommend_model", "get_deployment_config"],
++        "explanation": "Use recommend_model() to get AI-driven model recommendations, "
++        "then get_deployment_config() to generate K8s deployment YAML.",
++    },
+ ]
+ 
+ # Discovery pattern for fallback when no pattern matches
+@@ -246,6 +273,25 @@ def suggest_tools(
+                         },
+                     }
+                 )
++            elif tool == "recommend_model":
++                example_calls.append(
++                    {
++                        "tool": tool,
++                        "args": {
++                            "text": "I need a chatbot for 5000 users with low latency",
++                        },
++                    }
++                )
++            elif tool == "get_deployment_config":
++                example_calls.append(
++                    {
++                        "tool": tool,
++                        "args": {
++                            "category": "balanced",
++                            "namespace": namespace,
++                        },
++                    }
++                )
+             elif tool == "explore_cluster":
+                 example_calls.append(
+                     {
+diff --git a/tests/composites/meta/test_tools.py b/tests/composites/meta/test_tools.py
+index df3e31c..0b2d851 100644
+--- a/tests/composites/meta/test_tools.py
++++ b/tests/composites/meta/test_tools.py
+@@ -5,7 +5,6 @@
+ import pytest
+ 
+ from rhoai_mcp.composites.meta.tools import (
+-    DISCOVERY_PATTERN,
+     INTENT_PATTERNS,
+     TOOL_CATEGORIES,
+     register_tools,
+@@ -42,7 +41,16 @@ class TestToolCategories:
+ 
+     def test_categories_defined(self) -> None:
+         """All expected categories are defined."""
+-        expected = ["discovery", "training", "inference", "workbenches", "diagnostics", "resources", "storage"]
++        expected = [
++            "discovery",
++            "training",
++            "inference",
++            "workbenches",
++            "diagnostics",
++            "resources",
++            "storage",
++            "recommendation",
++        ]
+         for cat in expected:
+             assert cat in TOOL_CATEGORIES
+ 
+@@ -133,6 +141,39 @@ def test_suggest_with_context(self, mock_mcp: MagicMock, mock_server: MagicMock)
+         # Check that namespace from context is used
+         assert result["example_calls"][0]["args"]["namespace"] == "my-project"
+ 
++    def test_suggest_recommend_intent(self, mock_mcp: MagicMock, mock_server: MagicMock) -> None:
++        """Recommend intent returns recommendation workflow."""
++        register_tools(mock_mcp, mock_server)
++        suggest_tools = mock_mcp._registered_tools["suggest_tools"]
++
++        result = suggest_tools("which model should I use for my chatbot", None)
++
++        assert result["category"] == "recommendation"
++        assert "recommend_model" in result["workflow"]
++        assert "get_deployment_config" in result["workflow"]
++
++    def test_suggest_deploy_does_not_match_recommendation(
++        self, mock_mcp: MagicMock, mock_server: MagicMock
++    ) -> None:
++        """Deploy intent should match inference, not recommendation."""
++        register_tools(mock_mcp, mock_server)
++        suggest_tools = mock_mcp._registered_tools["suggest_tools"]
++
++        result = suggest_tools("deploy a model for serving", None)
++
++        assert result["category"] == "inference"
++
++    def test_suggest_train_does_not_match_recommendation(
++        self, mock_mcp: MagicMock, mock_server: MagicMock
++    ) -> None:
++        """Training intent should match training, not recommendation."""
++        register_tools(mock_mcp, mock_server)
++        suggest_tools = mock_mcp._registered_tools["suggest_tools"]
++
++        result = suggest_tools("fine-tune a model on my dataset", None)
++
++        assert result["category"] == "training"
++
+     def test_suggest_unknown_intent_defaults_to_discovery(
+         self, mock_mcp: MagicMock, mock_server: MagicMock
+     ) -> None:

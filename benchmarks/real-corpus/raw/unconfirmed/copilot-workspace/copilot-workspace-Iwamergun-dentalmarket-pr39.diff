@@ -1,0 +1,491 @@
+diff --git a/__tests__/components/error-page.test.tsx b/__tests__/components/error-page.test.tsx
+index 0663007..669cad5 100644
+--- a/__tests__/components/error-page.test.tsx
++++ b/__tests__/components/error-page.test.tsx
+@@ -13,6 +13,11 @@ describe('Error page', () => {
+     expect(screen.getByText('Bir Hata Oluştu')).toBeInTheDocument()
+   })
+ 
++  it('yeni marka logosunu göstermeli', () => {
++    render(<ErrorPage error={mockError} reset={mockReset} />)
++    expect(screen.getByAltText('dentalışveriş')).toHaveAttribute('src', '/brand/dentalisveris-logo.svg')
++  })
++
+   it('"Tekrar Dene" butonu görünmeli', () => {
+     render(<ErrorPage error={mockError} reset={mockReset} />)
+     expect(screen.getByText('Tekrar Dene')).toBeInTheDocument()
+diff --git a/__tests__/components/loading-page.test.tsx b/__tests__/components/loading-page.test.tsx
+index 2fa4d9e..6ed2e70 100644
+--- a/__tests__/components/loading-page.test.tsx
++++ b/__tests__/components/loading-page.test.tsx
+@@ -9,6 +9,11 @@ describe('Loading page', () => {
+     expect(screen.getByText(/yükleniyor/i)).toBeInTheDocument()
+   })
+ 
++  it('yeni marka logosu render edilmeli', () => {
++    render(<Loading />)
++    expect(screen.getByAltText('dentalışveriş')).toHaveAttribute('src', '/brand/dentalisveris-logo.svg')
++  })
++
+   it('spinner (animate-spin class\'lı element) mevcut olmalı', () => {
+     const { container } = render(<Loading />)
+     const spinner = container.querySelector('.animate-spin')
+diff --git a/__tests__/components/not-found-page.test.tsx b/__tests__/components/not-found-page.test.tsx
+index ca2ae5d..4a0b7f4 100644
+--- a/__tests__/components/not-found-page.test.tsx
++++ b/__tests__/components/not-found-page.test.tsx
+@@ -9,6 +9,11 @@ describe('NotFound page', () => {
+     expect(screen.getByText('404')).toBeInTheDocument()
+   })
+ 
++  it('yeni marka logosunu göstermeli', () => {
++    render(<NotFound />)
++    expect(screen.getByAltText('dentalışveriş')).toHaveAttribute('src', '/brand/dentalisveris-logo.svg')
++  })
++
+   it('"Sayfa Bulunamadı" başlığı render edilmeli', () => {
+     render(<NotFound />)
+     expect(screen.getByText('Sayfa Bulunamadı')).toBeInTheDocument()
+diff --git a/app/error.tsx b/app/error.tsx
+index b7b9acf..9ac5782 100644
+--- a/app/error.tsx
++++ b/app/error.tsx
+@@ -2,6 +2,7 @@
+ 
+ import { useEffect } from 'react'
+ import Link from 'next/link'
++import { BrandLogo } from '@/components/brand/BrandLogo'
+ 
+ export default function Error({
+   error,
+@@ -24,14 +25,11 @@ export default function Error({
+         .tooth-wobble { animation: wobble 1.8s ease-in-out infinite; }
+       `}</style>
+ 
+-      {/* Brand Logo */}
+-      <div className="mb-8 flex items-center gap-2">
+-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary shadow-md">
+-          <span className="text-lg font-bold text-white">DA</span>
+-        </div>
+-        <span className="text-xl font-extrabold text-primary">
+-          Dent Alışveriş
+-        </span>
++      <div className="mb-8 flex justify-center">
++        <BrandLogo
++          variant="full"
++          className="h-11 w-auto max-w-[240px]"
++        />
+       </div>
+ 
+       <div className="w-full max-w-md rounded-2xl border border-border bg-background-card p-8 text-center shadow-lg">
+diff --git a/app/layout.tsx b/app/layout.tsx
+index ca0b63e..a41f45a 100644
+--- a/app/layout.tsx
++++ b/app/layout.tsx
+@@ -25,6 +25,22 @@ export const metadata: Metadata = {
+   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'),
+   title: "Dent Alışveriş - Diş Hekimliği Ürünleri ve Ekipmanları",
+   description: "Diş hekimliği ürünleri ve ekipmanları için önde gelen B2B e-ticaret platformu",
++  icons: {
++    icon: [{ url: '/favicon.svg', type: 'image/svg+xml' }],
++    shortcut: '/favicon.svg',
++    apple: [{ url: '/apple-touch-icon.svg', type: 'image/svg+xml' }],
++  },
++  openGraph: {
++    title: 'Dent Alışveriş - Diş Hekimliği Ürünleri ve Ekipmanları',
++    description: 'Diş hekimliği ürünleri ve ekipmanları için önde gelen B2B e-ticaret platformu',
++    images: [
++      {
++        url: '/brand/dentalisveris-logo.svg',
++        type: 'image/svg+xml',
++        alt: 'dentalışveriş premium brand logo',
++      },
++    ],
++  },
+ };
+ 
+ export default function RootLayout({
+diff --git a/app/loading.tsx b/app/loading.tsx
+index 0a132c0..b25b715 100644
+--- a/app/loading.tsx
++++ b/app/loading.tsx
+@@ -1,14 +1,13 @@
++import { BrandLogo } from '@/components/brand/BrandLogo'
++
+ export default function Loading() {
+   return (
+     <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4">
+-      {/* Brand Logo */}
+-      <div className="mb-8 flex items-center gap-2">
+-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary shadow-md">
+-          <span className="text-sm font-bold text-white">DA</span>
+-        </div>
+-        <span className="text-lg font-extrabold text-primary">
+-          Dent Alışveriş
+-        </span>
++      <div className="mb-8 flex justify-center">
++        <BrandLogo
++          variant="full"
++          className="h-10 w-auto max-w-[220px]"
++        />
+       </div>
+ 
+       {/* Tooth with spinner ring */}
+diff --git a/app/not-found.tsx b/app/not-found.tsx
+index 4e76ca5..f7f7234 100644
+--- a/app/not-found.tsx
++++ b/app/not-found.tsx
+@@ -1,4 +1,5 @@
+ import Link from 'next/link'
++import { BrandLogo } from '@/components/brand/BrandLogo'
+ 
+ export default function NotFound() {
+   return (
+@@ -11,14 +12,11 @@ export default function NotFound() {
+         .tooth-bounce { animation: bounce-tooth 2s ease-in-out infinite; }
+       `}</style>
+ 
+-      {/* Brand Logo */}
+-      <div className="mb-8 flex items-center gap-2">
+-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary shadow-md">
+-          <span className="text-lg font-bold text-white">DA</span>
+-        </div>
+-        <span className="text-xl font-extrabold text-primary">
+-          Dent Alışveriş
+-        </span>
++      <div className="mb-8 flex justify-center">
++        <BrandLogo
++          variant="full"
++          className="h-11 w-auto max-w-[240px]"
++        />
+       </div>
+ 
+       <div className="w-full max-w-lg rounded-2xl border border-border bg-background-card p-8 text-center shadow-lg">
+diff --git a/components/admin/AdminSidebar.tsx b/components/admin/AdminSidebar.tsx
+index 12d17c1..4af6a59 100644
+--- a/components/admin/AdminSidebar.tsx
++++ b/components/admin/AdminSidebar.tsx
+@@ -13,9 +13,9 @@ import {
+   Settings,
+   Warehouse,
+   MessageSquarePlus,
+-  Sparkles,
+   X,
+ } from 'lucide-react'
++import { BrandLogo } from '@/components/brand/BrandLogo'
+ 
+ const menuGroups = [
+   {
+@@ -58,9 +58,10 @@ export default function AdminSidebar({ mobileOpen = false, onClose }: AdminSideb
+       <div className="border-b border-white/10 px-6 py-6">
+         <div className="flex items-start justify-between gap-3">
+           <div className="inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur-sm">
+-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-secondary via-secondary to-accent text-white shadow-lg">
+-              <Sparkles className="h-5 w-5" />
+-            </div>
++            <BrandLogo
++              variant="icon"
++              className="h-11 w-11 shrink-0"
++            />
+             <div>
+               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-white/45">
+                 Spark Admin
+diff --git a/components/brand/BrandLogo.tsx b/components/brand/BrandLogo.tsx
+new file mode 100644
+index 0000000..d10c274
+--- /dev/null
++++ b/components/brand/BrandLogo.tsx
+@@ -0,0 +1,44 @@
++import Image from 'next/image'
++
++type BrandLogoVariant = 'full' | 'icon'
++
++interface BrandLogoProps {
++  variant?: BrandLogoVariant
++  alt?: string
++  className?: string
++  priority?: boolean
++  sizes?: string
++}
++
++const brandLogoSources: Record<BrandLogoVariant, { src: string; width: number; height: number }> = {
++  full: {
++    src: '/brand/dentalisveris-logo.svg',
++    width: 960,
++    height: 240,
++  },
++  icon: {
++    src: '/brand/dentalisveris-icon.svg',
++    width: 512,
++    height: 512,
++  },
++}
++
++export function BrandLogo({
++  variant = 'full',
++  alt = 'dentalışveriş',
++  className,
++  ...props
++}: BrandLogoProps) {
++  const logo = brandLogoSources[variant]
++
++  return (
++    <Image
++      src={logo.src}
++      alt={alt}
++      width={logo.width}
++      height={logo.height}
++      className={className}
++      {...props}
++    />
++  )
++}
+diff --git a/components/layout/footer.tsx b/components/layout/footer.tsx
+index 2058012..7c2756e 100644
+--- a/components/layout/footer.tsx
++++ b/components/layout/footer.tsx
+@@ -1,6 +1,7 @@
+ import Link from 'next/link'
+ import { Mail, MapPin, Phone } from 'lucide-react'
+ import { createClient } from '@/lib/supabase/server'
++import { BrandLogo } from '@/components/brand/BrandLogo'
+ 
+ async function getFooterStats() {
+   try {
+@@ -78,14 +79,12 @@ export async function Footer() {
+         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.35fr_0.8fr_0.8fr_1fr]">
+           <div className="rounded-[1.75rem] border border-primary/15 bg-gradient-to-br from-primary via-secondary to-[#0f172a] px-6 py-7 text-slate-200 shadow-[0_24px_60px_rgba(15,23,42,0.14)]">
+             <Link href="/" className="mb-5 flex items-center gap-3">
+-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-primary via-secondary to-accent shadow-lg shadow-primary/20">
+-                <span className="text-lg font-bold text-white">DA</span>
+-              </div>
+-              <div>
+-                <span className="block text-2xl font-extrabold text-white">Dent Alışveriş</span>
+-                <span className="text-xs font-medium uppercase tracking-[0.22em] text-slate-400">Premium dental marketplace</span>
+-              </div>
++              <BrandLogo
++                variant="full"
++                className="h-10 w-auto max-w-full"
++              />
+             </Link>
++            <p className="mb-5 text-xs font-medium uppercase tracking-[0.22em] text-slate-400">Premium dental marketplace</p>
+             <p className="max-w-md text-sm leading-6 text-slate-300">
+               Türkiye&apos;nin dental B2B ticaretini daha hızlı, daha güvenilir ve daha okunabilir bir arayüzle yeniden düzenliyoruz.
+             </p>
+diff --git a/components/layout/header.tsx b/components/layout/header.tsx
+index 5168567..543b453 100644
+--- a/components/layout/header.tsx
++++ b/components/layout/header.tsx
+@@ -6,6 +6,7 @@ import { CartButton } from '@/components/cart/CartButton'
+ import { useAuth } from '@/app/contexts/AuthContext'
+ import { createClient } from '@/lib/supabase/client'
+ import { getAuthMetadata, hasAdminAccess } from '@/lib/auth/access'
++import { BrandLogo } from '@/components/brand/BrandLogo'
+ import { Shield, Phone, Mail, Menu, X, Search, Heart, Sparkles } from 'lucide-react'
+ 
+ export function Header() {
+@@ -14,7 +15,6 @@ export function Header() {
+   const [isProfileOpen, setIsProfileOpen] = useState(false)
+   const [isAdmin, setIsAdmin] = useState(false)
+   const [isScrolled, setIsScrolled] = useState(false)
+-  const [scrollOffset, setScrollOffset] = useState(0)
+   const profileRef = useRef<HTMLDivElement>(null)
+   const { user, loading } = useAuth()
+ 
+@@ -60,7 +60,6 @@ export function Header() {
+   useEffect(() => {
+     function handleScroll() {
+       const nextScrollOffset = Math.min(window.scrollY, 180)
+-      setScrollOffset(nextScrollOffset)
+       setIsScrolled(nextScrollOffset > 24)
+     }
+ 
+@@ -118,18 +117,15 @@ export function Header() {
+           </div>
+           <div className={['relative flex items-center justify-between gap-4 transition-all duration-300', headerHeight].join(' ')}>
+             {/* Logo */}
+-            <Link href="/" className="flex items-center gap-2 shrink-0">
+-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary via-secondary to-accent shadow-lg shadow-secondary/20">
+-                <span className="text-white font-bold text-xl">DA</span>
+-              </div>
+-              <div className="hidden sm:block">
+-                <span className="text-2xl font-extrabold text-primary">
+-                  Dent Alışveriş
+-                </span>
+-                <p className="text-xs font-medium uppercase tracking-[0.18em] text-secondary-text">
+-                  Premium dental marketplace
+-                </p>
+-              </div>
++            <Link href="/" className="flex items-center gap-3 shrink-0">
++              <BrandLogo
++                variant="icon"
++                className="h-12 w-12 shrink-0 sm:hidden"
++              />
++              <BrandLogo
++                variant="full"
++                className="hidden h-10 w-auto sm:block md:h-11"
++              />
+             </Link>
+ 
+             {/* Search Bar - Desktop */}
+diff --git a/components/supplier/SupplierSidebar.tsx b/components/supplier/SupplierSidebar.tsx
+index 118f2a3..4bfee08 100644
+--- a/components/supplier/SupplierSidebar.tsx
++++ b/components/supplier/SupplierSidebar.tsx
+@@ -2,6 +2,7 @@
+ 
+ import Link from 'next/link'
+ import { usePathname } from 'next/navigation'
++import { BrandLogo } from '@/components/brand/BrandLogo'
+ import {
+   LayoutDashboard,
+   Package,
+@@ -21,9 +22,17 @@ export default function SupplierSidebar() {
+ 
+   return (
+     <aside className="w-64 bg-gray-900 text-white">
+-      <div className="p-6">
+-        <h1 className="text-xl font-bold">Dent Alışveriş</h1>
+-        <p className="text-xs text-gray-400 mt-1">Tedarikçi Paneli</p>
++      <div className="border-b border-white/10 p-6">
++        <Link href="/supplier/dashboard" className="flex items-center gap-3">
++          <BrandLogo
++            variant="icon"
++            className="h-11 w-11 shrink-0"
++          />
++          <div>
++            <h1 className="text-lg font-bold leading-tight text-white">Dent Alışveriş</h1>
++            <p className="mt-1 text-xs text-gray-400">Tedarikçi Paneli</p>
++          </div>
++        </Link>
+       </div>
+       <nav className="mt-6">
+         {menuItems.map((item) => {
+diff --git a/public/apple-touch-icon.svg b/public/apple-touch-icon.svg
+new file mode 100644
+index 0000000..2c74c6b
+--- /dev/null
++++ b/public/apple-touch-icon.svg
+@@ -0,0 +1,15 @@
++<svg width="180" height="180" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
++  <title>dentalışveriş apple touch icon</title>
++  <rect width="512" height="512" rx="116" fill="#0B1220"/>
++  <rect x="86" y="86" width="340" height="340" rx="96" fill="#111827" stroke="#D7B56D" stroke-width="8"/>
++  <circle cx="256" cy="256" r="136" fill="url(#glow)" opacity="0.3"/>
++  <path d="M255.6 154.2C230 128 177.4 136 163 177C147.5 221.4 169.6 293 195.7 338.7C206.8 358.2 231.1 354.8 235 332.8L245.5 274.8C247.5 263.6 264.5 263.6 266.5 274.8L277 332.8C280.9 354.8 305.2 358.2 316.3 338.7C342.4 293 364.5 221.4 349 177C334.6 136 282 128 255.6 154.2Z" fill="#F8FAFC"/>
++  <path d="M186 243C212.9 267.3 299.1 267.3 326 243" stroke="#D7B56D" stroke-width="18" stroke-linecap="round"/>
++  <path d="M334 112L347.5 147.5L383 161L347.5 174.5L334 210L320.5 174.5L285 161L320.5 147.5L334 112Z" fill="#D7B56D"/>
++  <defs>
++    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(256 256) rotate(90) scale(136)">
++      <stop stop-color="#D7B56D"/>
++      <stop offset="1" stop-color="#D7B56D" stop-opacity="0"/>
++    </radialGradient>
++  </defs>
++</svg>
+diff --git a/public/brand/dentalisveris-icon.svg b/public/brand/dentalisveris-icon.svg
+new file mode 100644
+index 0000000..cd5a4ae
+--- /dev/null
++++ b/public/brand/dentalisveris-icon.svg
+@@ -0,0 +1,16 @@
++<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
++  <title>dentalışveriş icon</title>
++  <rect width="512" height="512" rx="128" fill="#0B1220"/>
++  <rect x="64" y="64" width="384" height="384" rx="104" fill="#111827" stroke="#D7B56D" stroke-width="8"/>
++  <circle cx="256" cy="256" r="150" fill="url(#glow)" opacity="0.4"/>
++  <path d="M255.6 154.2C230 128 177.4 136 163 177C147.5 221.4 169.6 293 195.7 338.7C206.8 358.2 231.1 354.8 235 332.8L245.5 274.8C247.5 263.6 264.5 263.6 266.5 274.8L277 332.8C280.9 354.8 305.2 358.2 316.3 338.7C342.4 293 364.5 221.4 349 177C334.6 136 282 128 255.6 154.2Z" fill="#F8FAFC"/>
++  <path d="M186 243C212.9 267.3 299.1 267.3 326 243" stroke="#D7B56D" stroke-width="18" stroke-linecap="round"/>
++  <path d="M334 112L347.5 147.5L383 161L347.5 174.5L334 210L320.5 174.5L285 161L320.5 147.5L334 112Z" fill="#D7B56D"/>
++  <circle cx="172" cy="124" r="10" fill="#D7B56D"/>
++  <defs>
++    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(256 256) rotate(90) scale(150)">
++      <stop stop-color="#D7B56D"/>
++      <stop offset="1" stop-color="#D7B56D" stop-opacity="0"/>
++    </radialGradient>
++  </defs>
++</svg>
+diff --git a/public/brand/dentalisveris-logo.svg b/public/brand/dentalisveris-logo.svg
+new file mode 100644
+index 0000000..ec83dc3
+--- /dev/null
++++ b/public/brand/dentalisveris-logo.svg
+@@ -0,0 +1,25 @@
++<svg width="960" height="240" viewBox="0 0 960 240" fill="none" xmlns="http://www.w3.org/2000/svg">
++  <title>dentalışveriş premium logo</title>
++  <rect x="24" y="24" width="192" height="192" rx="52" fill="#0B1220"/>
++  <rect x="36" y="36" width="168" height="168" rx="44" fill="#111827" stroke="#D7B56D" stroke-width="4"/>
++  <circle cx="120" cy="120" r="66" fill="url(#glow)" opacity="0.42"/>
++  <path d="M119.9 73.5C107.1 60.4 80.7 64.4 73.5 85.1C65.7 107.5 76.8 143.6 89.8 166.8C95.4 176.6 107.6 174.9 109.6 163.8L114.7 134.6C115.8 128.9 124 128.9 125.1 134.6L130.2 163.8C132.2 174.9 144.4 176.6 150 166.8C163 143.6 174.1 107.5 166.3 85.1C159.1 64.4 132.7 60.4 119.9 73.5Z" fill="#F8FAFC"/>
++  <path d="M84 116C97.9 128.6 142.1 128.6 156 116" stroke="#D7B56D" stroke-width="9" stroke-linecap="round"/>
++  <path d="M158 58L163.8 72.4L178 78L163.8 83.6L158 98L152.2 83.6L138 78L152.2 72.4L158 58Z" fill="#D7B56D"/>
++  <circle cx="78" cy="64" r="5" fill="#D7B56D"/>
++  <text x="252" y="112" fill="#0B1220" font-family="Outfit, Inter, Arial, sans-serif" font-size="72" font-weight="800" letter-spacing="-2.5">dentalışveriş</text>
++  <path d="M253 139H667" stroke="url(#goldLine)" stroke-width="6" stroke-linecap="round"/>
++  <circle cx="688" cy="139" r="6" fill="#D7B56D"/>
++  <text x="252" y="182" fill="#6B7280" font-family="DM Sans, Inter, Arial, sans-serif" font-size="24" font-weight="600" letter-spacing="3">PREMIUM DENTAL MARKETPLACE</text>
++  <defs>
++    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(120 120) rotate(90) scale(66)">
++      <stop stop-color="#D7B56D"/>
++      <stop offset="1" stop-color="#D7B56D" stop-opacity="0"/>
++    </radialGradient>
++    <linearGradient id="goldLine" x1="253" y1="139" x2="667" y2="139" gradientUnits="userSpaceOnUse">
++      <stop stop-color="#B98A32"/>
++      <stop offset="0.5" stop-color="#F3D790"/>
++      <stop offset="1" stop-color="#B98A32"/>
++    </linearGradient>
++  </defs>
++</svg>
+diff --git a/public/favicon.svg b/public/favicon.svg
+new file mode 100644
+index 0000000..e2682d8
+--- /dev/null
++++ b/public/favicon.svg
+@@ -0,0 +1,8 @@
++<svg width="64" height="64" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
++  <title>dentalışveriş favicon</title>
++  <rect width="512" height="512" rx="128" fill="#0B1220"/>
++  <rect x="72" y="72" width="368" height="368" rx="100" fill="#111827" stroke="#D7B56D" stroke-width="10"/>
++  <path d="M255.6 154.2C230 128 177.4 136 163 177C147.5 221.4 169.6 293 195.7 338.7C206.8 358.2 231.1 354.8 235 332.8L245.5 274.8C247.5 263.6 264.5 263.6 266.5 274.8L277 332.8C280.9 354.8 305.2 358.2 316.3 338.7C342.4 293 364.5 221.4 349 177C334.6 136 282 128 255.6 154.2Z" fill="#F8FAFC"/>
++  <path d="M186 243C212.9 267.3 299.1 267.3 326 243" stroke="#D7B56D" stroke-width="18" stroke-linecap="round"/>
++  <path d="M334 112L347.5 147.5L383 161L347.5 174.5L334 210L320.5 174.5L285 161L320.5 147.5L334 112Z" fill="#D7B56D"/>
++</svg>
+diff --git a/public/push-notifications-sw.js b/public/push-notifications-sw.js
+index e53646d..e93d8ba 100644
+--- a/public/push-notifications-sw.js
++++ b/public/push-notifications-sw.js
+@@ -11,13 +11,13 @@ self.addEventListener('push', (event) => {
+     payload = { title: 'Bildirim', body: event.data.text() }
+   }
+ 
+-  const { title = 'Dent Alışveriş', body = '', url = '/', icon = '/favicon.ico' } = payload
++  const { title = 'Dent Alışveriş', body = '', url = '/', icon = '/favicon.svg' } = payload
+ 
+   event.waitUntil(
+     self.registration.showNotification(title, {
+       body,
+       icon,
+-      badge: '/favicon.ico',
++      badge: '/favicon.svg',
+       data: { url },
+     })
+   )
+diff --git a/public/sw.js b/public/sw.js
+index 7749370..c9b9994 100644
+--- a/public/sw.js
++++ b/public/sw.js
+@@ -11,13 +11,13 @@ self.addEventListener('push', (event) => {
+     payload = { title: 'Bildirim', body: event.data.text() }
+   }
+ 
+-  const { title = 'Dent Alışveriş', body = '', url = '/', icon = '/favicon.ico' } = payload
++  const { title = 'Dent Alışveriş', body = '', url = '/', icon = '/favicon.svg' } = payload
+ 
+   event.waitUntil(
+     self.registration.showNotification(title, {
+       body,
+       icon,
+-      badge: '/favicon.ico',
++      badge: '/favicon.svg',
+       data: { url },
+     })
+   )

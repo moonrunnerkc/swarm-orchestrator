@@ -1,0 +1,102 @@
+diff --git a/codex-rs/core/src/tools/hook_names.rs b/codex-rs/core/src/tools/hook_names.rs
+index 9d3b6c2409ef..92ebe8aa56de 100644
+--- a/codex-rs/core/src/tools/hook_names.rs
++++ b/codex-rs/core/src/tools/hook_names.rs
+@@ -38,6 +38,18 @@ impl HookToolName {
+         }
+     }
+ 
++    /// Returns the hook identity for spawning sub-agents.
++    ///
++    /// The serialized name remains `spawn_agent`, while `Agent` is accepted as
++    /// a matcher alias for compatibility with hook configurations that describe
++    /// sub-agent creation using Claude Code-style names.
++    pub(crate) fn spawn_agent() -> Self {
++        Self {
++            name: "spawn_agent".to_string(),
++            matcher_aliases: vec!["Agent".to_string()],
++        }
++    }
++
+     /// Returns the hook identity historically used for shell-like tools.
+     pub(crate) fn bash() -> Self {
+         Self::new("Bash")
+diff --git a/codex-rs/core/src/tools/registry.rs b/codex-rs/core/src/tools/registry.rs
+index 8443162a4f44..8babe665d9de 100644
+--- a/codex-rs/core/src/tools/registry.rs
++++ b/codex-rs/core/src/tools/registry.rs
+@@ -19,6 +19,7 @@ use crate::tools::context::ToolInvocation;
+ use crate::tools::context::ToolOutput;
+ use crate::tools::context::ToolPayload;
+ use crate::tools::flat_tool_name;
++use crate::tools::handlers::multi_agents_spec::MULTI_AGENT_V1_NAMESPACE;
+ use crate::tools::hook_names::HookToolName;
+ use crate::tools::lifecycle::notify_tool_finish;
+ use crate::tools::lifecycle::notify_tool_start;
+@@ -672,6 +673,15 @@ async fn handle_any_tool(
+ }
+ 
+ fn function_hook_tool_name(invocation: &ToolInvocation) -> HookToolName {
++    if invocation.tool_name.name == "spawn_agent"
++        && matches!(
++            invocation.tool_name.namespace.as_deref(),
++            None | Some(MULTI_AGENT_V1_NAMESPACE)
++        )
++    {
++        return HookToolName::spawn_agent();
++    }
++
+     HookToolName::new(flat_tool_name(&invocation.tool_name).into_owned())
+ }
+ 
+diff --git a/codex-rs/core/src/tools/registry_tests.rs b/codex-rs/core/src/tools/registry_tests.rs
+index a3099d284a49..f89aa62b3e4d 100644
+--- a/codex-rs/core/src/tools/registry_tests.rs
++++ b/codex-rs/core/src/tools/registry_tests.rs
+@@ -241,6 +241,46 @@ async fn function_hook_input_defaults_empty_arguments_to_object() {
+     );
+ }
+ 
++#[tokio::test]
++async fn spawn_agent_function_tools_use_agent_matcher_alias() {
++    let (session, turn) = crate::session::tests::make_session_and_context().await;
++    let session = Arc::new(session);
++    let turn = Arc::new(turn);
++
++    let hook_payloads = [
++        codex_tools::ToolName::plain("spawn_agent"),
++        codex_tools::ToolName::namespaced(MULTI_AGENT_V1_NAMESPACE, "spawn_agent"),
++    ]
++    .into_iter()
++    .map(|tool_name| {
++        let handler = TestHandler {
++            tool_name: tool_name.clone(),
++        };
++        let invocation = ToolInvocation {
++            payload: ToolPayload::Function {
++                arguments: serde_json::json!({ "message": "inspect this repo" }).to_string(),
++            },
++            ..test_invocation(Arc::clone(&session), Arc::clone(&turn), "call-1", tool_name)
++        };
++        handler.pre_tool_use_payload(&invocation)
++    })
++    .collect::<Vec<_>>();
++
++    assert_eq!(
++        hook_payloads,
++        vec![
++            Some(PreToolUsePayload {
++                tool_name: HookToolName::spawn_agent(),
++                tool_input: serde_json::json!({ "message": "inspect this repo" }),
++            }),
++            Some(PreToolUsePayload {
++                tool_name: HookToolName::spawn_agent(),
++                tool_input: serde_json::json!({ "message": "inspect this repo" }),
++            }),
++        ]
++    );
++}
++
+ #[tokio::test]
+ async fn code_mode_wait_does_not_expose_default_hook_payloads() {
+     let (session, turn) = crate::session::tests::make_session_and_context().await;

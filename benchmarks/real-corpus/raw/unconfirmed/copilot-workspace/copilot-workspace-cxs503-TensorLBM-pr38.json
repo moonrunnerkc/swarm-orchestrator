@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-cxs503-TensorLBM-pr38",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 38,
+    "headSha": "0671cf48865bcdc1ea7837e2d656c7ee84b022c1",
+    "baseSha": "8c45a0314082f0cf0537f3ea0665b0be28ce08cd",
+    "title": "feat: Ship hull CAD module with full CFD workflow integration",
+    "body": "Adds a parametric ship hull CAD module to the TensorLBM platform, enabling an end-to-end workflow: **CAD modelling → pre-processing → LBM fluid simulation → post-processing** — all from the browser UI.\n\n## New library module: `src/tensorlbm/ship_cad.py`\n\nThree standard hull forms with analytical block coefficients:\n\n| Hull | Form | Cb (theoretical) |\n|------|------|-----------------|\n| Wigley | `(1−ξ²)(1−(1−ζ)²)` | 4/9 ≈ 0.444 |\n| Series 60 | `(1−ξ²)^0.51 · ζ^0.30` | 0.600 |\n| KCS | `(1−ξ²)^0.45 · ζ^0.24` | 0.651 |\n\nKey exports:\n- `series60_hull_mask` / `kcs_hull_mask` — 3D boolean voxel masks (same interface as existing `wigley_hull_mask`)\n- `hull_block_coefficient` / `hull_statistics` — Cb, Cwp, Cm, Cp, L/B, B/T\n- `generate_hull_previews` — 3-panel matplotlib figure (body plan + waterplane + side profile)\n- `export_hull_stl` — ASCII STL export\n- `build_hull_mask` — unified wrapper for all hull types\n- `ship_lbm_parameters` — converts physical ship dimensions → LBM τ, Ma, Re, Fr\n\n```python\nfrom tensorlbm import build_ship_hull_mask, hull_statistics, ship_lbm_parameters\n\nmask, stats = build_ship_hull_mask(\"series60\", nx=160, ny=60, nz=40,\n                                    length=80, beam=8, draft=12)\n# stats: {\"Cb\": 0.6, \"Cwp\": ..., \"Cm\": ..., \"solid_cells\": ..., ...}\n\nparams = ship_lbm_parameters(length_m=100.0, speed_ms=5.0, froude_target=0.25)\n# params: {\"re_physical\": ..., \"lbm_tau\": ..., \"stable\": True, ...}\n```\n\n## Platform integration\n\n**REST API** — `platform/backend/routers/cad.py` (mounted at `/api/cad/`):\n- `POST /preview` — multi-view hull figure + form coefficients\n- `POST /hull-mask` — 3D voxel mask with top-view PNG\n- `POST /lbm-parameters` — physical → LBM parameter conversion\n- `POST /send-to-solver` — submit hull LBM job directly from CAD params (Series 60/KCS achieved via monkey-patching `wigley_hull_mask` inside the existing `run_ship_hull_flow` runner)\n- `POST /export-stl` — STL file download\n\n**Frontend** — new **CAD** tab in `index.html`:\n- Hull type selector + parametric form (L, B, T, stations)\n- Live multi-view preview panel\n- Physical → LBM parameter calculator (with Froude target override)\n- 3D voxel mask generator\n- \"Launch LBM Solver\" panel that submits directly and navigates to Post-process\n\n## Tests\n35 new tests in `tests/test_ship_cad.py` covering mask shapes, Cb ordering (KCS > Series60 > Wigley), form coefficient keys, section/profile extraction, preview figure generation, STL validity, and full CAD→mask→Cb workflow.",
+    "author": "Copilot",
+    "headRef": "copilot/develop-cad-modeling-module",
+    "repository": "cxs503/TensorLBM"
+  },
+  "diffRef": {
+    "repository": "cxs503/TensorLBM",
+    "headSha": "0671cf48865bcdc1ea7837e2d656c7ee84b022c1",
+    "baseSha": "8c45a0314082f0cf0537f3ea0665b0be28ce08cd"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-cxs503-TensorLBM-pr38.diff",
+  "vendoredAt": "2026-05-24T03:05:37.777Z",
+  "collectedAt": "2026-05-24T03:05:37.777Z"
+}

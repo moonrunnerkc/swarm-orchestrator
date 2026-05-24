@@ -1,0 +1,306 @@
+diff --git a/internal/oidc/handlers.go b/internal/oidc/handlers.go
+index 2fb1572..3f188ff 100644
+--- a/internal/oidc/handlers.go
++++ b/internal/oidc/handlers.go
+@@ -490,6 +490,7 @@ func (s *Server) dcrHandler(store ClientStore) http.Handler {
+ 			slog.Any("redirect_uris", req.RedirectURIs),
+ 			slog.String("token_endpoint_auth_method", req.TokenEndpointAuthMethod),
+ 			slog.String("client_name", req.ClientName),
++			slog.String("requested_scope", req.Scope),
+ 		)
+ 
+ 		if len(req.RedirectURIs) == 0 {
+@@ -519,6 +520,12 @@ func (s *Server) dcrHandler(store ClientStore) http.Handler {
+ 		if req.TokenEndpointAuthMethod == "" {
+ 			req.TokenEndpointAuthMethod = "none"
+ 		}
++		req.Scope = normalizeScope(req.Scope, defaultRegisteredClientScope)
++		if err := validateSupportedScope(req.Scope); err != nil {
++			log.WarnContext(r.Context(), "DCR: invalid scope", slog.Any("error", err), slog.String("scope", req.Scope))
++			writeOAuthError(w, "invalid_client_metadata", err.Error(), http.StatusBadRequest)
++			return
++		}
+ 
+ 		now := time.Now()
+ 		clientID := uuid.New().String()
+@@ -542,6 +549,10 @@ func (s *Server) dcrHandler(store ClientStore) http.Handler {
+ 				return
+ 			}
+ 		}
++		log.InfoContext(ctx, "DCR client registered",
++			slog.String("client_id", clientID),
++			slog.String("registered_scope", req.Scope),
++		)
+ 
+ 		resp := &oauthex.ClientRegistrationResponse{
+ 			ClientRegistrationMetadata: req,
+@@ -679,13 +690,15 @@ func (s *Server) AuthorizeHandler() http.Handler {
+ 			return
+ 		}
+ 
++		var client *storepkg.OAuthClient
+ 		if s.clients != nil {
+ 			if clientID == "" {
+ 				log.WarnContext(ctx, "authorize: missing client_id")
+ 				writeOAuthError(w, "invalid_request", "client_id is required", http.StatusBadRequest)
+ 				return
+ 			}
+-			client, err := s.clients.GetClient(ctx, clientID)
++			var err error
++			client, err = s.clients.GetClient(ctx, clientID)
+ 			if errors.Is(err, storepkg.ErrNotFound) {
+ 				log.WarnContext(ctx, "authorize: unknown client_id")
+ 				writeOAuthError(w, "invalid_client", "unknown client_id", http.StatusBadRequest)
+@@ -718,16 +731,30 @@ func (s *Server) AuthorizeHandler() http.Handler {
+ 			return
+ 		}
+ 
+-		scope := q.Get("scope")
+-		if scope == "" {
+-			scope = "insights:read"
+-		}
+-		for _, sc := range strings.Fields(scope) {
+-			if !supportedScopes[sc] {
+-				log.WarnContext(ctx, "authorize: unknown scope", slog.String("scope", sc))
+-				writeOAuthError(w, "invalid_scope", "unknown scope: "+sc, http.StatusBadRequest)
++		rawScope := q.Get("scope")
++		scope := normalizeScope(rawScope, defaultAuthorizeScope)
++		if client != nil {
++			registeredScope := normalizeScope(client.Scope, defaultAuthorizeScope)
++			if err := validateSupportedScope(registeredScope); err != nil {
++				log.ErrorContext(ctx, "registered client has invalid scope", slog.Any("error", err))
++				writeOAuthError(w, "server_error", "registered client has invalid scope", http.StatusInternalServerError)
+ 				return
+ 			}
++			if len(strings.Fields(rawScope)) == 0 {
++				scope = registeredScope
++			} else if sc, ok := firstScopeOutsideAllowed(scope, registeredScope); ok {
++				log.WarnContext(ctx, "authorize: scope not registered for client",
++					slog.String("scope", sc),
++					slog.String("registered_scope", registeredScope),
++				)
++				writeOAuthError(w, "invalid_scope", "scope not registered for this client: "+sc, http.StatusBadRequest)
++				return
++			}
++		}
++		if err := validateSupportedScope(scope); err != nil {
++			log.WarnContext(ctx, "authorize: invalid scope", slog.Any("error", err), slog.String("scope", scope))
++			writeOAuthError(w, "invalid_scope", err.Error(), http.StatusBadRequest)
++			return
+ 		}
+ 
+ 		githubState := uuid.New().String()
+diff --git a/internal/oidc/scopes.go b/internal/oidc/scopes.go
+index 4dcb4e7..5b196f6 100644
+--- a/internal/oidc/scopes.go
++++ b/internal/oidc/scopes.go
+@@ -2,8 +2,15 @@ package oidc
+ 
+ import (
+ 	"encoding/json"
++	"fmt"
+ 	"log/slog"
+ 	"net/http"
++	"strings"
++)
++
++const (
++	defaultAuthorizeScope        = "insights:read"
++	defaultRegisteredClientScope = "insights:read insights:write"
+ )
+ 
+ var supportedScopes = map[string]bool{
+@@ -12,6 +19,46 @@ var supportedScopes = map[string]bool{
+ 	"org:admin":      true,
+ }
+ 
++func normalizeScope(scope, fallback string) string {
++	fields := strings.Fields(scope)
++	if len(fields) == 0 {
++		fields = strings.Fields(fallback)
++	}
++
++	seen := make(map[string]bool, len(fields))
++	normalized := make([]string, 0, len(fields))
++	for _, sc := range fields {
++		if seen[sc] {
++			continue
++		}
++		seen[sc] = true
++		normalized = append(normalized, sc)
++	}
++	return strings.Join(normalized, " ")
++}
++
++func validateSupportedScope(scope string) error {
++	for _, sc := range strings.Fields(scope) {
++		if !supportedScopes[sc] {
++			return fmt.Errorf("unknown scope: %s", sc)
++		}
++	}
++	return nil
++}
++
++func firstScopeOutsideAllowed(scope, allowedScope string) (string, bool) {
++	allowed := make(map[string]bool)
++	for _, sc := range strings.Fields(allowedScope) {
++		allowed[sc] = true
++	}
++	for _, sc := range strings.Fields(scope) {
++		if !allowed[sc] {
++			return sc, true
++		}
++	}
++	return "", false
++}
++
+ func writeOAuthError(w http.ResponseWriter, errCode, description string, status int) {
+ 	w.Header().Set("Content-Type", "application/json")
+ 	w.Header().Set("Cache-Control", "no-store")
+diff --git a/internal/oidc/server_test.go b/internal/oidc/server_test.go
+index dfa8c20..9bafeff 100644
+--- a/internal/oidc/server_test.go
++++ b/internal/oidc/server_test.go
+@@ -368,6 +368,7 @@ func TestDCRHandler_DefaultsApplied(t *testing.T) {
+ 	require.Equal(t, []any{"authorization_code"}, resp["grant_types"])
+ 	require.Equal(t, []any{"code"}, resp["response_types"])
+ 	require.Equal(t, "none", resp["token_endpoint_auth_method"])
++	require.Equal(t, defaultRegisteredClientScope, resp["scope"])
+ }
+ 
+ func TestDCRHandler_WrongMethod(t *testing.T) {
+@@ -378,6 +379,22 @@ func TestDCRHandler_WrongMethod(t *testing.T) {
+ 	require.Equal(t, http.StatusMethodNotAllowed, w.Code)
+ }
+ 
++func TestDCRHandler_UnknownScope(t *testing.T) {
++	srv := newTestOIDCServer(t)
++
++	body := `{"redirect_uris":["https://client.example.com/callback"],"scope":"insights:read unknown:scope"}`
++	req := httptest.NewRequest(http.MethodPost, "/oauth2/register", strings.NewReader(body))
++	req.Header.Set("Content-Type", "application/json")
++	w := httptest.NewRecorder()
++	srv.DCRHandler().ServeHTTP(w, req)
++
++	require.Equal(t, http.StatusBadRequest, w.Code)
++	var errResp map[string]string
++	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &errResp))
++	require.Equal(t, "invalid_client_metadata", errResp["error"])
++	require.Contains(t, errResp["error_description"], "unknown:scope")
++}
++
+ // --- Authorize ---
+ 
+ func TestAuthorizeHandler_ValidParams_RedirectsToGitHub(t *testing.T) {
+@@ -420,6 +437,64 @@ func TestAuthorizeHandler_DefaultsScope(t *testing.T) {
+ 	require.Equal(t, http.StatusFound, w.Code)
+ }
+ 
++func TestAuthorizeHandler_UsesRegisteredScopeWhenRequestOmitsScope(t *testing.T) {
++	srv := newTestOIDCServer(t)
++	srv.clients = &testClientStore{records: []store.OAuthClient{{
++		ClientID:     "registered-client",
++		RedirectURIs: []string{"https://client.example.com/callback"},
++		Scope:        "insights:read insights:write",
++		ExpiresAt:    time.Now().Add(time.Hour),
++	}}}
++
++	q := url.Values{
++		"response_type":         {"code"},
++		"client_id":             {"registered-client"},
++		"redirect_uri":          {"https://client.example.com/callback"},
++		"code_challenge":        {pkceChallenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")},
++		"code_challenge_method": {"S256"},
++	}
++
++	req := httptest.NewRequest(http.MethodGet, "/oauth2/authorize?"+q.Encode(), nil)
++	w := httptest.NewRecorder()
++	srv.AuthorizeHandler().ServeHTTP(w, req)
++
++	require.Equal(t, http.StatusFound, w.Code)
++	location, err := url.Parse(w.Header().Get("Location"))
++	require.NoError(t, err)
++	pending, err := srv.authState.ConsumePendingAuth(context.Background(), location.Query().Get("state"))
++	require.NoError(t, err)
++	require.Equal(t, "insights:read insights:write", pending.Scope)
++}
++
++func TestAuthorizeHandler_RejectsScopeOutsideRegisteredClient(t *testing.T) {
++	srv := newTestOIDCServer(t)
++	srv.clients = &testClientStore{records: []store.OAuthClient{{
++		ClientID:     "read-only-client",
++		RedirectURIs: []string{"https://client.example.com/callback"},
++		Scope:        "insights:read",
++		ExpiresAt:    time.Now().Add(time.Hour),
++	}}}
++
++	q := url.Values{
++		"response_type":         {"code"},
++		"client_id":             {"read-only-client"},
++		"redirect_uri":          {"https://client.example.com/callback"},
++		"scope":                 {"insights:read insights:write"},
++		"code_challenge":        {pkceChallenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")},
++		"code_challenge_method": {"S256"},
++	}
++
++	req := httptest.NewRequest(http.MethodGet, "/oauth2/authorize?"+q.Encode(), nil)
++	w := httptest.NewRecorder()
++	srv.AuthorizeHandler().ServeHTTP(w, req)
++
++	require.Equal(t, http.StatusBadRequest, w.Code)
++	var errResp map[string]string
++	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &errResp))
++	require.Equal(t, "invalid_scope", errResp["error"])
++	require.Contains(t, errResp["error_description"], "insights:write")
++}
++
+ func TestAuthorizeHandler_MissingCodeChallenge(t *testing.T) {
+ 	srv := newTestOIDCServer(t)
+ 
+diff --git a/internal/store/postgres/store_test.go b/internal/store/postgres/store_test.go
+index 0947c7f..c69dd2e 100644
+--- a/internal/store/postgres/store_test.go
++++ b/internal/store/postgres/store_test.go
+@@ -579,6 +579,18 @@ func TestSaveClient(t *testing.T) {
+ 	}
+ 
+ 	require.NoError(t, st.SaveClient(ctx, c))
++
++	got, err := st.GetClient(ctx, c.ClientID)
++	require.NoError(t, err)
++	require.Equal(t, c.ClientID, got.ClientID)
++	require.Equal(t, c.ClientName, got.ClientName)
++	require.Equal(t, c.RedirectURIs, got.RedirectURIs)
++	require.Equal(t, c.GrantTypes, got.GrantTypes)
++	require.Equal(t, c.ResponseTypes, got.ResponseTypes)
++	require.Equal(t, c.TokenEndpointAuthMethod, got.TokenEndpointAuthMethod)
++	require.Equal(t, c.Scope, got.Scope)
++	require.WithinDuration(t, c.IssuedAt, got.IssuedAt, time.Second)
++	require.WithinDuration(t, c.ExpiresAt, got.ExpiresAt, time.Second)
+ }
+ 
+ func TestSaveClient_DuplicateClientID(t *testing.T) {
+diff --git a/spec/auth.md b/spec/auth.md
+index 6d1c6e9..dfbf28d 100644
+--- a/spec/auth.md
++++ b/spec/auth.md
+@@ -168,6 +168,8 @@ discovery document MUST refuse to proceed.
+      &code_challenge=<challenge>
+      &code_challenge_method=S256
+    ```
++   If `scope` is omitted, the server uses the registered client scope from DCR
++   when available, otherwise `insights:read`.
+ 5. **GitHub redirect** — server stores PKCE state in short-lived session,
+    redirects to GitHub OAuth2
+ 6. **Callback** — GitHub redirects to `GET /auth/github/callback?code=...&state=...`
+@@ -218,6 +220,10 @@ Only `token_endpoint_auth_method=none` is accepted (public clients only).
+ `grant_types` is normalised to `["authorization_code"]` — unsupported types
+ are silently dropped per RFC 7591 §3.2.1 rather than rejected.
+ 
++If `scope` is omitted, it defaults to `insights:read insights:write`. Supplied
++scopes are validated against the server's supported scope set and stored as the
++client's registered default and maximum allowed scope set.
++
+ Client registrations are persisted to the `oauth_clients` table with a 90-day TTL
+ (`expires_at = issued_at + 90 days`). A future cleanup job can prune expired rows.
+ 

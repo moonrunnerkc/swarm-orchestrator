@@ -1,0 +1,26 @@
+{
+  "id": "devin-benjisho-windows-mtr-pr202",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 202,
+    "headSha": "be9aff6f8c18af5c4dcb722272c501fdbe755363",
+    "baseSha": "62042d1943efb053219003305e7bc0aa7807f5ac",
+    "title": "refactor: rename native_ui to dashboard_ui and remove stale error variants",
+    "body": "## Summary\n\nInternal naming cleanup: rename the legacy \"native UI\" module to \"dashboard UI\" and remove dead error variants from the pre-embedded-Trippy era. Also fixes a pre-existing CI fuzz gate failure. No public CLI behavior changes.\n\n## Why\n\nThe internal module `native_ui.rs` and its type `NativeUiApp` use \"native\" terminology that implies this is the primary/native UI, when it's actually the experimental dashboard fallback. This causes confusion when reading the codebase. Similarly, `MtrError::TrippyNotFound`, `TrippyInstallFailed`, and `TrippyExecutionFailed` are leftover from before Trippy was embedded (v1.1.3) — no code constructs them and they will never fire since Trippy is now a library dependency, not an external binary.\n\n## Changes\n\n- [x] Code changes\n- [x] Tests added/updated\n- [x] Documentation updated\n\n**Renames (no public CLI change):**\n- `src/native_ui.rs` → `src/dashboard_ui.rs`\n- `NativeUiApp` → `DashboardApp`\n- `run_native_ui()` → `run_dashboard_ui()`\n\n**Dead code removal:**\n- Remove `MtrError::TrippyNotFound`, `TrippyInstallFailed`, `TrippyExecutionFailed` (Trippy is embedded since v1.1.3)\n- Remove corresponding `From<MtrError>` match arms in `api_error.rs`\n- Remove stale `problem_type()` URL mappings for removed error codes\n- Replace `TrippyExecutionFailed` test with `IoError` coverage\n\n**New tests:**\n- `default_ui_is_the_default_preset` — verifies default UI preset when no `--ui` flag\n- `ui_mode_from_cli_maps_all_presets` — verifies all three UiPreset→UiMode mappings\n\n**CI fix:**\n- Fix `ci.yml` security-audit job: install `nightly-2025-06-23` for `cargo-fuzz` (matching `security.yml`), since `cargo fuzz` requires nightly for `-Zsanitizer=address`\n\n**Docs fix:**\n- Fix pre-existing markdownlint violation in `DEVELOPMENT.md:128` (double blank line)\n\n## Testing\n\n```bash\ncargo check --workspace             # PASS\ncargo clippy --all-targets --all-features -- -D warnings  # PASS\n```\n\nCI: 24/24 checks pass (including the previously-broken fuzz regression gate).\n\n## Compatibility / Risk Notes\n\n- CLI compatibility impact: **None** — `--ui dashboard`, `--ui native` alias, `--ui enhanced` all work identically\n- Output/report format impact: **None**\n- Operational risk and rollback plan: Zero risk — internal renames only, no behavioral changes\n\n## Security Considerations\n\nRemoved stale API error mappings for `probe_backend_unavailable`, `probe_backend_install_failed`, `probe_execution_failed` problem types. These were never triggered (no code constructed the underlying `MtrError` variants). Existing API error contract for all live error paths is preserved.\n\n## Checklist\n\n- [x] I followed the contribution guidelines in `CONTRIBUTING.md`\n- [x] I ran relevant checks locally\n- [x] I updated docs/changelog as needed\n- [x] I confirmed no sensitive data is included\n\nLink to Devin session: https://app.devin.ai/sessions/871fb66468ba497e98d69036cb2a90fc\nRequested by: @benjisho\n<!-- devin-review-badge-begin -->\n\n---\n\n<a href=\"https://app.devin.ai/review/benjisho/windows-mtr/pull/202\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-open-in-devin-review-dark.svg?v=1\">\n    <img src=\"https://static.devin.ai/assets/gh-open-in-devin-review-light.svg?v=1\" alt=\"Open in Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779580900-cli-runtime-cleanup",
+    "repository": "benjisho/windows-mtr"
+  },
+  "diffRef": {
+    "repository": "benjisho/windows-mtr",
+    "headSha": "be9aff6f8c18af5c4dcb722272c501fdbe755363",
+    "baseSha": "62042d1943efb053219003305e7bc0aa7807f5ac"
+  },
+  "vendoredDiffPath": "devin/devin-benjisho-windows-mtr-pr202.diff",
+  "vendoredAt": "2026-05-24T03:04:36.831Z",
+  "collectedAt": "2026-05-24T03:04:36.831Z"
+}

@@ -1,0 +1,6 @@
+{
+  "verdict": "clean",
+  "rationale": "PR title 'feat(acp): persist current_model_id on conversations' and body describe replacing the hard-coded `llm_model = None` for ACP agents in live_status_app_conversation_service.py with a getattr-based lookup. The single-file diff in openhands/app_server/app_conversation/live_status_app_conversation_service.py does exactly this inside the `if request_agent.agent_kind == 'acp':` branch, using `getattr(info, 'current_model_name', None) or getattr(info, 'current_model_id', None)` with a thorough explanatory comment about SDK forward/backward compatibility. The implementation actually goes slightly beyond the PR body (also checks current_model_name) which is documented in the inline comment and matches the safer behavior described. No tests changed (acceptable for a draft PR pending SDK release per the body), no error swallowing introduced.",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T14:00:00.000Z"
+}

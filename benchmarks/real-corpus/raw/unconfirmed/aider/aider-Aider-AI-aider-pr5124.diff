@@ -1,0 +1,28 @@
+diff --git a/aider/main.py b/aider/main.py
+index afb3f836624..c7e1de69738 100644
+--- a/aider/main.py
++++ b/aider/main.py
+@@ -519,7 +519,7 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
+     if not args.verify_ssl:
+         import httpx
+ 
+-        os.environ["SSL_VERIFY"] = ""
++        os.environ["SSL_VERIFY"] = "False"
+         litellm._load_litellm()
+         litellm._lazy_module.client_session = httpx.Client(verify=False)
+         litellm._lazy_module.aclient_session = httpx.AsyncClient(verify=False)
+diff --git a/tests/basic/test_ssl_verification.py b/tests/basic/test_ssl_verification.py
+index 3a12f85811e..941994f45cf 100644
+--- a/tests/basic/test_ssl_verification.py
++++ b/tests/basic/test_ssl_verification.py
+@@ -64,8 +64,8 @@ def test_no_verify_ssl_flag_sets_model_info_manager(
+                 mock_client.assert_called_once_with(verify=False)
+                 mock_async_client.assert_called_once_with(verify=False)
+ 
+-                # Verify SSL_VERIFY environment variable was set to empty string
+-                self.assertEqual(os.environ.get("SSL_VERIFY"), "")
++                # Verify SSL_VERIFY environment variable was set to "False"
++                self.assertEqual(os.environ.get("SSL_VERIFY"), "False")
+ 
+     @patch("aider.io.InputOutput.offer_url")
+     @patch("aider.models.model_info_manager.set_verify_ssl")

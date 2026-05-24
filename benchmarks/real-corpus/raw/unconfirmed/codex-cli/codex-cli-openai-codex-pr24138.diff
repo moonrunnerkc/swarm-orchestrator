@@ -1,0 +1,877 @@
+diff --git a/codex-rs/core/src/exec_policy_tests.rs b/codex-rs/core/src/exec_policy_tests.rs
+index 7b0883db2a90..baf8247a3064 100644
+--- a/codex-rs/core/src/exec_policy_tests.rs
++++ b/codex-rs/core/src/exec_policy_tests.rs
+@@ -1052,8 +1052,8 @@ prefix_rule(pattern=["git"], decision="prompt")
+             sandbox_permissions: SandboxPermissions::UseDefault,
+             prefix_rule: None,
+         },
+-        ExecApprovalRequirement::Skip {
+-            bypass_sandbox: false,
++        ExecApprovalRequirement::NeedsApproval {
++            reason: None,
+             proposed_execpolicy_amendment: Some(ExecPolicyAmendment::new(vec![
+                 disallowed_git_path,
+                 "status".to_string(),
+diff --git a/codex-rs/core/src/git_info_tests.rs b/codex-rs/core/src/git_info_tests.rs
+index 946779d06b24..363d42e9fde2 100644
+--- a/codex-rs/core/src/git_info_tests.rs
++++ b/codex-rs/core/src/git_info_tests.rs
+@@ -380,6 +380,58 @@ async fn test_get_has_changes_ignores_repo_fsmonitor_config() {
+     );
+ }
+ 
++#[cfg(unix)]
++#[tokio::test]
++async fn test_get_has_changes_ignores_configured_filters() {
++    let temp_dir = TempDir::new().expect("Failed to create temp dir");
++    let repo_path = create_test_git_repo(&temp_dir).await;
++    let helper_path = repo_path.join("clean-filter.sh");
++    let marker_path = repo_path.join("filter-ran");
++
++    fs::write(
++        &helper_path,
++        format!(
++            "#!/bin/sh\nprintf ran > \"{}\"\ncat\n",
++            marker_path.to_string_lossy()
++        ),
++    )
++    .expect("write filter helper");
++    let mut permissions = fs::metadata(&helper_path)
++        .expect("read filter helper metadata")
++        .permissions();
++    permissions.set_mode(0o755);
++    fs::set_permissions(&helper_path, permissions).expect("mark filter helper executable");
++    fs::write(
++        repo_path.join(".git/info/attributes"),
++        "*.txt filter=codex-test\n",
++    )
++    .expect("configure attributes");
++
++    Command::new("git")
++        .args([
++            "config",
++            "filter.codex-test.clean",
++            &format!("sh \"{}\"", helper_path.to_string_lossy()),
++        ])
++        .current_dir(&repo_path)
++        .output()
++        .await
++        .expect("configure clean filter");
++    Command::new("git")
++        .args(["config", "filter.codex-test.required", "true"])
++        .current_dir(&repo_path)
++        .output()
++        .await
++        .expect("configure required filter");
++
++    fs::write(repo_path.join("test.txt"), "modified").expect("modify tracked file");
++    assert_eq!(get_has_changes(&repo_path).await, Some(true));
++    assert!(
++        !marker_path.exists(),
++        "metadata collection should not invoke configured filters"
++    );
++}
++
+ #[cfg(unix)]
+ #[tokio::test]
+ async fn test_get_has_changes_ignores_configured_hooks_path() {
+@@ -475,6 +527,67 @@ async fn test_get_git_working_tree_state_with_changes() {
+     assert!(state.diff.contains("untracked.txt"));
+ }
+ 
++#[cfg(unix)]
++#[tokio::test]
++async fn test_get_git_working_tree_state_ignores_configured_filters() {
++    let temp_dir = TempDir::new().expect("Failed to create temp dir");
++    let (repo_path, _branch) = create_test_git_repo_with_remote(&temp_dir).await;
++    let helper_path = repo_path.join("clean-filter.sh");
++    let marker_path = repo_path.join("filter-ran");
++
++    fs::write(
++        &helper_path,
++        format!(
++            "#!/bin/sh\nprintf ran > \"{}\"\ncat\n",
++            marker_path.to_string_lossy()
++        ),
++    )
++    .expect("write filter helper");
++    let mut permissions = fs::metadata(&helper_path)
++        .expect("read filter helper metadata")
++        .permissions();
++    permissions.set_mode(0o755);
++    fs::set_permissions(&helper_path, permissions).expect("mark filter helper executable");
++    fs::write(
++        repo_path.join(".git/info/attributes"),
++        "*.txt filter=codex-test\n",
++    )
++    .expect("configure attributes");
++
++    Command::new("git")
++        .args([
++            "config",
++            "filter.codex-test.clean",
++            &format!("sh \"{}\"", helper_path.to_string_lossy()),
++        ])
++        .current_dir(&repo_path)
++        .output()
++        .await
++        .expect("configure clean filter");
++    Command::new("git")
++        .args(["config", "filter.codex-test.smudge", "cat"])
++        .current_dir(&repo_path)
++        .output()
++        .await
++        .expect("configure smudge filter");
++    Command::new("git")
++        .args(["config", "filter.codex-test.required", "true"])
++        .current_dir(&repo_path)
++        .output()
++        .await
++        .expect("configure required filter");
++
++    fs::write(repo_path.join("test.txt"), "modified").expect("modify tracked file");
++    let state = git_diff_to_remote(&repo_path)
++        .await
++        .expect("Should collect working tree state");
++    assert!(state.diff.contains("test.txt"));
++    assert!(
++        !marker_path.exists(),
++        "working tree state should not invoke configured filters"
++    );
++}
++
+ #[tokio::test]
+ async fn test_get_git_working_tree_state_branch_fallback() {
+     let temp_dir = TempDir::new().expect("Failed to create temp dir");
+diff --git a/codex-rs/git-utils/src/apply.rs b/codex-rs/git-utils/src/apply.rs
+index b9adb82e6b3c..06407134c3a1 100644
+--- a/codex-rs/git-utils/src/apply.rs
++++ b/codex-rs/git-utils/src/apply.rs
+@@ -13,6 +13,10 @@ use std::io;
+ use std::path::Path;
+ use std::path::PathBuf;
+ 
++use crate::safe_git_config::ATTRIBUTE_FILTER_CONFIG_REGEXP;
++use crate::safe_git_config::base_internal_git_config_overrides;
++use crate::safe_git_config::safe_attribute_filter_overrides_from_config_keys;
++
+ /// Parameters for invoking [`apply_git_patch`].
+ #[derive(Debug, Clone)]
+ pub struct ApplyGitRequest {
+@@ -40,6 +44,7 @@ pub struct ApplyGitResult {
+ /// leaves the working tree untouched while still parsing the command output for diagnostics.
+ pub fn apply_git_patch(req: &ApplyGitRequest) -> io::Result<ApplyGitResult> {
+     let git_root = resolve_git_root(&req.cwd)?;
++    let safe_config_overrides = safe_worktree_git_config_overrides(&git_root)?;
+ 
+     // Write unified diff into a temporary file
+     let (tmpdir, patch_path) = write_temp_patch(&req.diff)?;
+@@ -48,7 +53,7 @@ pub fn apply_git_patch(req: &ApplyGitRequest) -> io::Result<ApplyGitResult> {
+ 
+     if req.revert && !req.preflight {
+         // Stage WT paths first to avoid index mismatch on revert.
+-        stage_paths(&git_root, &req.diff)?;
++        stage_paths_with_config_overrides(&git_root, &req.diff, &safe_config_overrides)?;
+     }
+ 
+     // Build git args
+@@ -69,6 +74,7 @@ pub fn apply_git_patch(req: &ApplyGitRequest) -> io::Result<ApplyGitResult> {
+             cfg_parts.push(p.to_string());
+         }
+     }
++    cfg_parts.extend(safe_config_overrides);
+ 
+     args.push(patch_path.to_string_lossy().to_string());
+ 
+@@ -141,6 +147,31 @@ fn resolve_git_root(cwd: &Path) -> io::Result<PathBuf> {
+     Ok(PathBuf::from(root))
+ }
+ 
++fn safe_worktree_git_config_overrides(cwd: &Path) -> io::Result<Vec<String>> {
++    let mut config_overrides = base_internal_git_config_overrides();
++    let out = std::process::Command::new("git")
++        .args(&config_overrides)
++        .args([
++            "config",
++            "--name-only",
++            "--get-regexp",
++            ATTRIBUTE_FILTER_CONFIG_REGEXP,
++        ])
++        .current_dir(cwd)
++        .output()?;
++    if !out.status.success() && out.status.code() != Some(1) {
++        return Err(io::Error::other(format!(
++            "failed to query git configuration (exit {}): {}",
++            out.status.code().unwrap_or(-1),
++            String::from_utf8_lossy(&out.stderr)
++        )));
++    }
++    config_overrides.extend(safe_attribute_filter_overrides_from_config_keys(
++        &String::from_utf8_lossy(&out.stdout),
++    ));
++    Ok(config_overrides)
++}
++
+ fn write_temp_patch(diff: &str) -> io::Result<(tempfile::TempDir, PathBuf)> {
+     let dir = tempfile::tempdir()?;
+     let path = dir.path().join("patch.diff");
+@@ -318,6 +349,15 @@ fn unescape_c_string(input: &str) -> String {
+ 
+ /// Stage only the files that actually exist on disk for the given diff.
+ pub fn stage_paths(git_root: &Path, diff: &str) -> io::Result<()> {
++    let config_overrides = safe_worktree_git_config_overrides(git_root)?;
++    stage_paths_with_config_overrides(git_root, diff, &config_overrides)
++}
++
++fn stage_paths_with_config_overrides(
++    git_root: &Path,
++    diff: &str,
++    config_overrides: &[String],
++) -> io::Result<()> {
+     let paths = extract_paths_from_patch(diff);
+     let mut existing: Vec<String> = Vec::new();
+     for p in paths {
+@@ -330,6 +370,7 @@ pub fn stage_paths(git_root: &Path, diff: &str) -> io::Result<()> {
+         return Ok(());
+     }
+     let mut cmd = std::process::Command::new("git");
++    cmd.args(config_overrides);
+     cmd.arg("add");
+     cmd.arg("--");
+     for p in &existing {
+@@ -758,6 +799,60 @@ mod tests {
+         assert_eq!(after_revert, "orig\n");
+     }
+ 
++    #[cfg(unix)]
++    #[test]
++    fn stage_paths_ignores_repository_conversion_config() {
++        use std::os::unix::fs::PermissionsExt;
++
++        let _g = env_lock().lock().unwrap();
++        let repo = init_repo();
++        let root = repo.path();
++        std::fs::write(root.join("file.txt"), "orig\n").unwrap();
++        let _ = run(root, &["git", "add", "file.txt"]);
++        let _ = run(root, &["git", "commit", "-m", "seed"]);
++
++        let marker_path = root.join("filter-ran");
++        let helper_path = root.join("clean-filter.sh");
++        std::fs::write(
++            &helper_path,
++            format!(
++                "#!/bin/sh\nprintf ran > \"{}\"\ncat\n",
++                marker_path.to_string_lossy()
++            ),
++        )
++        .expect("write filter helper");
++        let mut permissions = std::fs::metadata(&helper_path).unwrap().permissions();
++        permissions.set_mode(0o755);
++        std::fs::set_permissions(&helper_path, permissions).unwrap();
++        std::fs::write(
++            root.join(".git/info/attributes"),
++            "*.txt filter=codex-test\n",
++        )
++        .expect("configure attributes");
++        let _ = run(
++            root,
++            &[
++                "git",
++                "config",
++                "filter.codex-test.clean",
++                &format!("sh \"{}\"", helper_path.to_string_lossy()),
++            ],
++        );
++        let _ = run(
++            root,
++            &["git", "config", "filter.codex-test.required", "true"],
++        );
++        std::fs::write(root.join("file.txt"), "modified\n").unwrap();
++
++        let diff = "diff --git a/file.txt b/file.txt\n--- a/file.txt\n+++ b/file.txt\n@@ -1,1 +1,1 @@\n-orig\n+modified\n";
++        stage_paths(root, diff).expect("stage paths");
++
++        assert!(
++            !marker_path.exists(),
++            "staging should ignore repository conversion configuration"
++        );
++    }
++
+     #[test]
+     fn revert_preflight_does_not_stage_index() {
+         let _g = env_lock().lock().unwrap();
+diff --git a/codex-rs/git-utils/src/info.rs b/codex-rs/git-utils/src/info.rs
+index a188d9a876b8..0c1bcfd36081 100644
+--- a/codex-rs/git-utils/src/info.rs
++++ b/codex-rs/git-utils/src/info.rs
+@@ -16,6 +16,9 @@ use tokio::time::timeout;
+ use ts_rs::TS;
+ 
+ use crate::GitSha;
++use crate::safe_git_config::ATTRIBUTE_FILTER_CONFIG_REGEXP;
++use crate::safe_git_config::base_internal_git_config_overrides;
++use crate::safe_git_config::safe_attribute_filter_overrides_from_config_keys;
+ 
+ /// Return `true` if the project folder specified by the `Config` is inside a
+ /// Git repository.
+@@ -57,7 +60,6 @@ pub async fn get_git_repo_root_with_fs(
+ 
+ /// Timeout for git commands to prevent freezing on large repositories
+ const GIT_COMMAND_TIMEOUT: TokioDuration = TokioDuration::from_secs(5);
+-const DISABLED_HOOKS_PATH: &str = if cfg!(windows) { "NUL" } else { "/dev/null" };
+ 
+ #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, TS)]
+ pub struct GitInfo {
+@@ -279,7 +281,10 @@ fn trim_git_suffix(value: &str) -> &str {
+ }
+ 
+ pub async fn get_has_changes(cwd: &Path) -> Option<bool> {
+-    let output = run_git_command_with_timeout(&["status", "--porcelain"], cwd).await?;
++    let config_overrides = get_safe_attribute_filter_overrides(cwd).await?;
++    let output =
++        run_git_command_with_config_overrides(&["status", "--porcelain"], cwd, &config_overrides)
++            .await?;
+     if !output.status.success() {
+         return None;
+     }
+@@ -390,12 +395,19 @@ pub async fn git_diff_to_remote(cwd: &Path) -> Option<GitDiffToRemote> {
+ 
+ /// Run a git command with a timeout to prevent blocking on large repositories
+ async fn run_git_command_with_timeout(args: &[&str], cwd: &Path) -> Option<std::process::Output> {
++    run_git_command_with_config_overrides(args, cwd, &[]).await
++}
++
++async fn run_git_command_with_config_overrides(
++    args: &[&str],
++    cwd: &Path,
++    config_overrides: &[String],
++) -> Option<std::process::Output> {
+     let mut command = Command::new("git");
+     command
+         .env("GIT_OPTIONAL_LOCKS", "0")
+-        // Keep internal Git helper commands independent of configured hook directories.
+-        .args(["-c", &format!("core.hooksPath={DISABLED_HOOKS_PATH}")])
+-        .args(["-c", "core.fsmonitor=false"])
++        .args(base_internal_git_config_overrides())
++        .args(config_overrides)
+         .args(args)
+         .current_dir(cwd)
+         .kill_on_drop(true);
+@@ -407,6 +419,26 @@ async fn run_git_command_with_timeout(args: &[&str], cwd: &Path) -> Option<std::
+     }
+ }
+ 
++async fn get_safe_attribute_filter_overrides(cwd: &Path) -> Option<Vec<String>> {
++    let output = run_git_command_with_timeout(
++        &[
++            "config",
++            "--name-only",
++            "--get-regexp",
++            ATTRIBUTE_FILTER_CONFIG_REGEXP,
++        ],
++        cwd,
++    )
++    .await?;
++    if !output.status.success() && output.status.code() != Some(1) {
++        return None;
++    }
++
++    Some(safe_attribute_filter_overrides_from_config_keys(
++        &String::from_utf8(output.stdout).ok()?,
++    ))
++}
++
+ async fn get_git_remotes(cwd: &Path) -> Option<Vec<String>> {
+     let output = run_git_command_with_timeout(&["remote"], cwd).await?;
+     if !output.status.success() {
+@@ -684,9 +716,13 @@ async fn find_closest_sha(cwd: &Path, branches: &[String], remotes: &[String]) -
+ }
+ 
+ async fn diff_against_sha(cwd: &Path, sha: &GitSha) -> Option<String> {
+-    let output =
+-        run_git_command_with_timeout(&["diff", "--no-textconv", "--no-ext-diff", &sha.0], cwd)
+-            .await?;
++    let config_overrides = get_safe_attribute_filter_overrides(cwd).await?;
++    let output = run_git_command_with_config_overrides(
++        &["diff", "--no-textconv", "--no-ext-diff", &sha.0],
++        cwd,
++        &config_overrides,
++    )
++    .await?;
+     // 0 is success and no diff.
+     // 1 is success but there is a diff.
+     let exit_ok = output.status.code().is_some_and(|c| c == 0 || c == 1);
+@@ -709,6 +745,7 @@ async fn diff_against_sha(cwd: &Path, sha: &GitSha) -> Option<String> {
+         if !untracked.is_empty() {
+             // Use platform-appropriate null device and guard paths with `--`.
+             let null_device: &str = if cfg!(windows) { "NUL" } else { "/dev/null" };
++            let config_overrides = &config_overrides;
+             let futures_iter = untracked.into_iter().map(|file| async move {
+                 let file_owned = file;
+                 let args_vec: Vec<&str> = vec![
+@@ -722,7 +759,7 @@ async fn diff_against_sha(cwd: &Path, sha: &GitSha) -> Option<String> {
+                     null_device,
+                     &file_owned,
+                 ];
+-                run_git_command_with_timeout(&args_vec, cwd).await
++                run_git_command_with_config_overrides(&args_vec, cwd, config_overrides).await
+             });
+             let results = join_all(futures_iter).await;
+             for extra in results.into_iter().flatten() {
+diff --git a/codex-rs/git-utils/src/lib.rs b/codex-rs/git-utils/src/lib.rs
+index 986a7434d2c5..5c8c4c9d2410 100644
+--- a/codex-rs/git-utils/src/lib.rs
++++ b/codex-rs/git-utils/src/lib.rs
+@@ -5,6 +5,7 @@ mod errors;
+ mod info;
+ mod operations;
+ mod platform;
++mod safe_git_config;
+ 
+ pub use apply::ApplyGitRequest;
+ pub use apply::ApplyGitResult;
+@@ -39,3 +40,6 @@ pub use info::local_git_branches;
+ pub use info::recent_commits;
+ pub use info::resolve_root_git_project_for_trust;
+ pub use platform::create_symlink;
++pub use safe_git_config::ATTRIBUTE_FILTER_CONFIG_REGEXP;
++pub use safe_git_config::base_internal_git_config_overrides;
++pub use safe_git_config::safe_attribute_filter_overrides_from_config_keys;
+diff --git a/codex-rs/git-utils/src/safe_git_config.rs b/codex-rs/git-utils/src/safe_git_config.rs
+new file mode 100644
+index 000000000000..c331d7f665b0
+--- /dev/null
++++ b/codex-rs/git-utils/src/safe_git_config.rs
+@@ -0,0 +1,67 @@
++use std::collections::BTreeSet;
++
++pub const ATTRIBUTE_FILTER_CONFIG_REGEXP: &str = "^filter\\..*\\.(clean|smudge|process|required)$";
++
++const DISABLED_HOOKS_PATH: &str = if cfg!(windows) { "NUL" } else { "/dev/null" };
++
++pub fn base_internal_git_config_overrides() -> Vec<String> {
++    vec![
++        "-c".to_string(),
++        format!("core.hooksPath={DISABLED_HOOKS_PATH}"),
++        "-c".to_string(),
++        // Empty disables both legacy hook-backed and current fsmonitor behavior.
++        "core.fsmonitor=".to_string(),
++    ]
++}
++
++pub fn safe_attribute_filter_overrides_from_config_keys(stdout: &str) -> Vec<String> {
++    let mut drivers = BTreeSet::new();
++    for key in stdout.lines() {
++        let Some(key) = key.strip_prefix("filter.") else {
++            continue;
++        };
++        let Some((driver, setting)) = key.rsplit_once('.') else {
++            continue;
++        };
++        if matches!(setting, "clean" | "smudge" | "process" | "required") {
++            drivers.insert(driver);
++        }
++    }
++
++    let mut config_overrides = vec![
++        "-c".to_string(),
++        "attr.tree=".to_string(),
++        "-c".to_string(),
++        "core.attributesFile=".to_string(),
++    ];
++    for driver in drivers {
++        for (setting, value) in [
++            ("clean", ""),
++            ("smudge", ""),
++            ("process", ""),
++            ("required", "false"),
++        ] {
++            config_overrides.push("-c".to_string());
++            config_overrides.push(format!("filter.{driver}.{setting}={value}"));
++        }
++    }
++    config_overrides
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn attribute_filter_overrides_disable_each_configured_driver() {
++        let overrides = safe_attribute_filter_overrides_from_config_keys(
++            "filter.beta.process\nfilter.alpha.clean\nfilter.alpha.required\n",
++        );
++
++        assert!(overrides.contains(&"attr.tree=".to_string()));
++        assert!(overrides.contains(&"core.attributesFile=".to_string()));
++        assert!(overrides.contains(&"filter.alpha.clean=".to_string()));
++        assert!(overrides.contains(&"filter.alpha.required=false".to_string()));
++        assert!(overrides.contains(&"filter.beta.process=".to_string()));
++    }
++}
+diff --git a/codex-rs/shell-command/src/command_safety/is_safe_command.rs b/codex-rs/shell-command/src/command_safety/is_safe_command.rs
+index b35144a12bb7..9a29b0ad3d87 100644
+--- a/codex-rs/shell-command/src/command_safety/is_safe_command.rs
++++ b/codex-rs/shell-command/src/command_safety/is_safe_command.rs
+@@ -170,7 +170,7 @@ fn is_safe_to_call_with_exec(command: &[String]) -> bool {
+ 
+ pub(crate) fn is_safe_git_command(command: &[String]) -> bool {
+     let Some((subcommand_idx, subcommand)) =
+-        find_git_subcommand(command, &["status", "log", "diff", "show", "branch"])
++        find_git_subcommand(command, &["log", "show", "branch"])
+     else {
+         return false;
+     };
+@@ -183,7 +183,7 @@ pub(crate) fn is_safe_git_command(command: &[String]) -> bool {
+     let subcommand_args = &command[subcommand_idx + 1..];
+ 
+     match subcommand {
+-        "status" | "log" | "diff" | "show" => git_subcommand_args_are_read_only(subcommand_args),
++        "log" | "show" => git_subcommand_args_are_read_only(subcommand_args),
+         "branch" => {
+             git_subcommand_args_are_read_only(subcommand_args)
+                 && git_branch_is_read_only(subcommand_args)
+@@ -341,7 +341,7 @@ mod tests {
+     #[test]
+     fn known_safe_examples() {
+         assert!(is_safe_to_call_with_exec(&vec_str(&["ls"])));
+-        assert!(is_safe_to_call_with_exec(&vec_str(&["git", "status"])));
++        assert!(!is_safe_to_call_with_exec(&vec_str(&["git", "status"])));
+         assert!(is_safe_to_call_with_exec(&vec_str(&["git", "branch"])));
+         assert!(is_safe_to_call_with_exec(&vec_str(&[
+             "git",
+@@ -457,9 +457,8 @@ mod tests {
+     }
+ 
+     #[test]
+-    fn git_subcommand_patch_flags_remain_safe() {
++    fn git_object_read_patch_flags_remain_safe() {
+         assert!(is_known_safe_command(&vec_str(&["git", "log", "-p", "-1"])));
+-        assert!(is_known_safe_command(&vec_str(&["git", "diff", "-p"])));
+         assert!(is_known_safe_command(&vec_str(&[
+             "git", "show", "-p", "HEAD",
+         ])));
+@@ -470,6 +469,12 @@ mod tests {
+         ])));
+     }
+ 
++    #[test]
++    fn git_worktree_inspection_requires_approval() {
++        assert!(!is_known_safe_command(&vec_str(&["git", "status"])));
++        assert!(!is_known_safe_command(&vec_str(&["git", "diff", "-p"])));
++    }
++
+     #[test]
+     fn git_global_override_flags_are_not_safe() {
+         assert!(!is_known_safe_command(&vec_str(&[
+@@ -637,7 +642,7 @@ mod tests {
+             return;
+         }
+ 
+-        assert!(is_known_safe_command(&vec_str(&[
++        assert!(!is_known_safe_command(&vec_str(&[
+             r"C:\Program Files\Git\cmd\git.exe",
+             "status",
+         ])));
+@@ -647,7 +652,7 @@ mod tests {
+     fn bash_lc_safe_examples() {
+         assert!(is_known_safe_command(&vec_str(&["bash", "-lc", "ls"])));
+         assert!(is_known_safe_command(&vec_str(&["bash", "-lc", "ls -1"])));
+-        assert!(is_known_safe_command(&vec_str(&[
++        assert!(!is_known_safe_command(&vec_str(&[
+             "bash",
+             "-lc",
+             "git status"
+diff --git a/codex-rs/shell-command/src/command_safety/windows_safe_commands.rs b/codex-rs/shell-command/src/command_safety/windows_safe_commands.rs
+index a8dcef6de61e..8e73dd8f4b1f 100644
+--- a/codex-rs/shell-command/src/command_safety/windows_safe_commands.rs
++++ b/codex-rs/shell-command/src/command_safety/windows_safe_commands.rs
+@@ -242,7 +242,7 @@ mod tests {
+             "Get-ChildItem -Path .",
+         ])));
+ 
+-        assert!(is_safe_command_windows(&vec_str(&[
++        assert!(!is_safe_command_windows(&vec_str(&[
+             "powershell.exe",
+             "-NoProfile",
+             "-Command",
+diff --git a/codex-rs/tui/src/get_git_diff.rs b/codex-rs/tui/src/get_git_diff.rs
+index a7b4b668fbac..cd35f907686a 100644
+--- a/codex-rs/tui/src/get_git_diff.rs
++++ b/codex-rs/tui/src/get_git_diff.rs
+@@ -8,6 +8,10 @@
+ use std::path::Path;
+ use std::time::Duration;
+ 
++use codex_git_utils::ATTRIBUTE_FILTER_CONFIG_REGEXP;
++use codex_git_utils::base_internal_git_config_overrides;
++use codex_git_utils::safe_attribute_filter_overrides_from_config_keys;
++
+ use crate::workspace_command::WorkspaceCommand;
+ use crate::workspace_command::WorkspaceCommandExecutor;
+ use crate::workspace_command::WorkspaceCommandOutput;
+@@ -26,11 +30,17 @@ pub(crate) async fn get_git_diff(
+     if !inside_git_repo(runner, cwd).await? {
+         return Ok((false, String::new()));
+     }
++    let config_overrides = safe_worktree_git_config_overrides(runner, cwd).await?;
+ 
+     // Run tracked diff and untracked file listing in parallel.
+     let (tracked_diff_res, untracked_output_res) = tokio::join!(
+-        run_git_capture_diff(runner, cwd, &["diff", "--color"]),
+-        run_git_capture_stdout(runner, cwd, &["ls-files", "--others", "--exclude-standard"]),
++        run_git_capture_diff(runner, cwd, &config_overrides, &["diff", "--color"]),
++        run_git_capture_stdout(
++            runner,
++            cwd,
++            &config_overrides,
++            &["ls-files", "--others", "--exclude-standard"],
++        ),
+     );
+     let tracked_diff = tracked_diff_res?;
+     let untracked_output = untracked_output_res?;
+@@ -49,7 +59,7 @@ pub(crate) async fn get_git_diff(
+         .filter(|s| !s.is_empty())
+     {
+         let args = ["diff", "--color", "--no-index", "--", null_path, file];
+-        let diff = run_git_capture_diff(runner, cwd, &args).await?;
++        let diff = run_git_capture_diff(runner, cwd, &config_overrides, &args).await?;
+         untracked_diff.push_str(&diff);
+     }
+ 
+@@ -61,9 +71,10 @@ pub(crate) async fn get_git_diff(
+ async fn run_git_capture_stdout(
+     runner: &dyn WorkspaceCommandExecutor,
+     cwd: &Path,
++    config_overrides: &[String],
+     args: &[&str],
+ ) -> Result<String, String> {
+-    let output = run_git_command(runner, cwd, args).await?;
++    let output = run_git_command(runner, cwd, config_overrides, args).await?;
+     if output.success() {
+         Ok(output.stdout)
+     } else {
+@@ -79,9 +90,10 @@ async fn run_git_capture_stdout(
+ async fn run_git_capture_diff(
+     runner: &dyn WorkspaceCommandExecutor,
+     cwd: &Path,
++    config_overrides: &[String],
+     args: &[&str],
+ ) -> Result<String, String> {
+-    let output = run_git_command(runner, cwd, args).await?;
++    let output = run_git_command(runner, cwd, config_overrides, args).await?;
+     if output.success() || output.exit_code == 1 {
+         Ok(output.stdout)
+     } else {
+@@ -97,17 +109,50 @@ async fn inside_git_repo(
+     runner: &dyn WorkspaceCommandExecutor,
+     cwd: &Path,
+ ) -> Result<bool, String> {
+-    let output = run_git_command(runner, cwd, &["rev-parse", "--is-inside-work-tree"]).await?;
++    let output = run_git_command(runner, cwd, &[], &["rev-parse", "--is-inside-work-tree"]).await?;
+     Ok(output.success())
+ }
+ 
++async fn safe_worktree_git_config_overrides(
++    runner: &dyn WorkspaceCommandExecutor,
++    cwd: &Path,
++) -> Result<Vec<String>, String> {
++    let base_overrides = base_internal_git_config_overrides();
++    let output = run_git_command(
++        runner,
++        cwd,
++        &base_overrides,
++        &[
++            "config",
++            "--name-only",
++            "--get-regexp",
++            ATTRIBUTE_FILTER_CONFIG_REGEXP,
++        ],
++    )
++    .await?;
++    if !output.success() && output.exit_code != 1 {
++        return Err(format!(
++            "git config filter query failed with status {}",
++            output.exit_code
++        ));
++    }
++
++    let mut config_overrides = base_overrides;
++    config_overrides.extend(safe_attribute_filter_overrides_from_config_keys(
++        &output.stdout,
++    ));
++    Ok(config_overrides)
++}
++
+ async fn run_git_command(
+     runner: &dyn WorkspaceCommandExecutor,
+     cwd: &Path,
++    config_overrides: &[String],
+     args: &[&str],
+ ) -> Result<WorkspaceCommandOutput, String> {
+-    let mut argv = Vec::with_capacity(args.len() + 1);
++    let mut argv = Vec::with_capacity(config_overrides.len() + args.len() + 1);
+     argv.push("git".to_string());
++    argv.extend(config_overrides.iter().cloned());
+     argv.extend(args.iter().map(|arg| (*arg).to_string()));
+     runner
+         .run(
+@@ -145,7 +190,7 @@ mod tests {
+         assert_eq!(result, Ok((false, String::new())));
+         assert_commands(
+             &runner.commands(),
+-            &[&["git", "rev-parse", "--is-inside-work-tree"]],
++            &[args(&["git", "rev-parse", "--is-inside-work-tree"])],
+             &cwd,
+         );
+     }
+@@ -159,26 +204,26 @@ mod tests {
+                 /*exit_code*/ 0,
+                 "true\n",
+             ),
+-            response(
+-                &["git", "diff", "--color"],
++            response_vec(config_query_args(), /*exit_code*/ 1, ""),
++            response_vec(
++                guarded_args(&["diff", "--color"]),
+                 /*exit_code*/ 1,
+                 "tracked\n",
+             ),
+-            response(
+-                &["git", "ls-files", "--others", "--exclude-standard"],
++            response_vec(
++                guarded_args(&["ls-files", "--others", "--exclude-standard"]),
+                 /*exit_code*/ 0,
+                 "new.txt\n",
+             ),
+-            response(
+-                &[
+-                    "git",
++            response_vec(
++                guarded_args(&[
+                     "diff",
+                     "--color",
+                     "--no-index",
+                     "--",
+                     null_device(),
+                     "new.txt",
+-                ],
++                ]),
+                 /*exit_code*/ 1,
+                 "untracked\n",
+             ),
+@@ -190,18 +235,18 @@ mod tests {
+         assert_commands(
+             &runner.commands(),
+             &[
+-                &["git", "rev-parse", "--is-inside-work-tree"],
+-                &["git", "diff", "--color"],
+-                &["git", "ls-files", "--others", "--exclude-standard"],
+-                &[
+-                    "git",
++                args(&["git", "rev-parse", "--is-inside-work-tree"]),
++                config_query_args(),
++                guarded_args(&["diff", "--color"]),
++                guarded_args(&["ls-files", "--others", "--exclude-standard"]),
++                guarded_args(&[
+                     "diff",
+                     "--color",
+                     "--no-index",
+                     "--",
+                     null_device(),
+                     "new.txt",
+-                ],
++                ]),
+             ],
+             &cwd,
+         );
+@@ -216,13 +261,14 @@ mod tests {
+                 /*exit_code*/ 0,
+                 "true\n",
+             ),
+-            response(
+-                &["git", "diff", "--color"],
++            response_vec(config_query_args(), /*exit_code*/ 1, ""),
++            response_vec(
++                guarded_args(&["diff", "--color"]),
+                 /*exit_code*/ 1,
+                 "tracked\n",
+             ),
+-            response(
+-                &["git", "ls-files", "--others", "--exclude-standard"],
++            response_vec(
++                guarded_args(&["ls-files", "--others", "--exclude-standard"]),
+                 /*exit_code*/ 0,
+                 "",
+             ),
+@@ -242,9 +288,10 @@ mod tests {
+                 /*exit_code*/ 0,
+                 "true\n",
+             ),
+-            response(&["git", "diff", "--color"], /*exit_code*/ 2, ""),
+-            response(
+-                &["git", "ls-files", "--others", "--exclude-standard"],
++            response_vec(config_query_args(), /*exit_code*/ 1, ""),
++            response_vec(guarded_args(&["diff", "--color"]), /*exit_code*/ 2, ""),
++            response_vec(
++                guarded_args(&["ls-files", "--others", "--exclude-standard"]),
+                 /*exit_code*/ 0,
+                 "",
+             ),
+@@ -261,8 +308,12 @@ mod tests {
+     }
+ 
+     fn response(argv: &[&str], exit_code: i32, stdout: &str) -> FakeResponse {
++        response_vec(args(argv), exit_code, stdout)
++    }
++
++    fn response_vec(argv: Vec<String>, exit_code: i32, stdout: &str) -> FakeResponse {
+         FakeResponse {
+-            argv: argv.iter().map(|arg| (*arg).to_string()).collect(),
++            argv,
+             output: WorkspaceCommandOutput {
+                 exit_code,
+                 stdout: stdout.to_string(),
+@@ -275,15 +326,35 @@ mod tests {
+         if cfg!(windows) { "NUL" } else { "/dev/null" }
+     }
+ 
+-    fn assert_commands(commands: &[WorkspaceCommand], expected: &[&[&str]], cwd: &Path) {
++    fn args(argv: &[&str]) -> Vec<String> {
++        argv.iter().map(|arg| (*arg).to_string()).collect()
++    }
++
++    fn config_query_args() -> Vec<String> {
++        let mut argv = vec!["git".to_string()];
++        argv.extend(base_internal_git_config_overrides());
++        argv.extend(args(&[
++            "config",
++            "--name-only",
++            "--get-regexp",
++            ATTRIBUTE_FILTER_CONFIG_REGEXP,
++        ]));
++        argv
++    }
++
++    fn guarded_args(args: &[&str]) -> Vec<String> {
++        let mut argv = vec!["git".to_string()];
++        argv.extend(base_internal_git_config_overrides());
++        argv.extend(safe_attribute_filter_overrides_from_config_keys(""));
++        argv.extend(args.iter().map(|arg| (*arg).to_string()));
++        argv
++    }
++
++    fn assert_commands(commands: &[WorkspaceCommand], expected: &[Vec<String>], cwd: &Path) {
+         let actual: Vec<Vec<String>> = commands
+             .iter()
+             .map(|command| command.argv.clone())
+             .collect();
+-        let expected: Vec<Vec<String>> = expected
+-            .iter()
+-            .map(|argv| argv.iter().map(|arg| (*arg).to_string()).collect())
+-            .collect();
+         assert_eq!(actual, expected);
+ 
+         for command in commands {

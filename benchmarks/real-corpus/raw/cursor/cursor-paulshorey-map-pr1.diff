@@ -1,0 +1,516 @@
+diff --git a/.cursor/plans/new-map-app.md b/.cursor/plans/new-map-app.md
+new file mode 100644
+index 0000000..8030558
+--- /dev/null
++++ b/.cursor/plans/new-map-app.md
+@@ -0,0 +1,510 @@
++# Implementation Plan: Multi-Provider MapLibre GL JS POI Web Map
++
++> **Default tile provider:** OpenFreeMap Liberty — no API key, no domain setup, no usage limits.
++> All other providers (Stadia, Stamen, CARTO, Thunderforest, etc.) are available as user-selectable options.
++
++---
++
++## Table of Contents
++
++1. [Overview](#overview)
++2. [Tech Stack](#tech-stack)
++3. [Project Structure](#project-structure)
++4. [Architecture Diagram](#architecture-diagram)
++5. [Implementation Steps](#implementation-steps)
++   - [Phase 0: Project Scaffold](#phase-0-project-scaffold)
++   - [Phase 1: Provider Registry + Map Shell](#phase-1-provider-registry--map-shell)
++   - [Phase 2: Basemap Switcher UI](#phase-2-basemap-switcher-ui)
++   - [Phase 3: Backend + PostGIS + POI API](#phase-3-backend--postgis--poi-api)
++   - [Phase 4: Viewport-Driven POI Layer + Clustering](#phase-4-viewport-driven-poi-layer--clustering)
++   - [Phase 5: POI Detail Drawer + Selection State](#phase-5-poi-detail-drawer--selection-state)
++   - [Phase 6: Auth + Entitlements](#phase-6-auth--entitlements)
++   - [Phase 7: Premium Provider Integration (Thunderforest)](#phase-7-premium-provider-integration-thunderforest)
++   - [Phase 8: Geolocation + UX Polish](#phase-8-geolocation--ux-polish)
++   - [Phase 9: Production Hardening](#phase-9-production-hardening)
++6. [Provider Reference](#provider-reference)
++7. [Key Security Model](#key-security-model)
++8. [Caveats + Known Constraints](#caveats--known-constraints)
++
++---
++
++## Overview
++
++A React + TypeScript web app that renders an interactive map with POI (point-of-interest) markers, backed by a PostGIS database. The map supports multiple basemap tile providers via a config-driven "provider registry" abstraction. Users can switch between providers in the UI; the app persists their choice in `localStorage` + URL query params.
++
++**Core decisions:**
++- **Default provider:** OpenFreeMap Liberty — genuinely free, no API key, no usage limits, no cookies
++- **Map renderer:** MapLibre GL JS (v5.x line, pin to 5.24) via `react-map-gl/maplibre` v8.x
++- **Provider switching:** reload-on-switch (simplest; avoids `setStyle()` edge cases)
++- **Clustering:** built-in MapLibre `cluster: true` on GeoJSON source (supercluster under the hood)
++- **Backend:** Node 22 LTS + Fastify (or Supabase) with Postgres 16 + PostGIS 3.4
++- **Premium gating:** simple `tier` column on users table; Thunderforest key delivered via authenticated endpoint
++
++---
++
++## Tech Stack
++
++| Layer | Choice | Version | Notes |
++|---|---|---|---|
++| Bundler | Vite | 8.x | |
++| Framework | React | 19.x | |
++| Language | TypeScript | 5.7+ | |
++| Map renderer | `maplibre-gl` | 5.24 | Final v5 line; pin this, v6 is ESM-only breaking change |
++| React wrapper | `react-map-gl/maplibre` | 8.1+ | Import from `/maplibre` subpath specifically |
++| Data fetching | TanStack Query | 5.x | |
++| Styling | Tailwind CSS | v4 | |
++| Routing | TanStack Router or React Router 7 | latest | |
++| Backend | Node 22 LTS + Fastify | latest | Alternative: Supabase Edge Functions |
++| Database | Postgres 16 + PostGIS 3.4 | — | Or Supabase (hosted Postgres+PostGIS) |
++| PMTiles (optional) | `pmtiles` | 3.2+ | For future self-hosted tiles |
++
++---
++
++## Project Structure
++
++```
++app/
++├── public/
++├── src/
++│   ├── basemap/
++│   │   ├── providers.ts            # Provider registry (config array + types)
++│   │   ├── useBasemap.ts           # Provider selection, persistence, switching
++│   │   └── BasemapSwitcher.tsx     # Dropdown UI with lock icons on premium
++│   ├── map/
++│   │   ├── MapView.tsx             # Main MapLibre wrapper component
++│   │   ├── PoiLayer.tsx            # GeoJSON source + cluster layers
++│   │   ├── PoiDrawer.tsx           # Side panel for POI details
++│   │   └── usePoiSelection.ts     # Selected feature state management
++│   ├── api/
++│   │   ├── client.ts               # Fetch wrapper, error normalization
++│   │   ├── pois.ts                 # Bbox + detail query hooks
++│   │   └── entitlements.ts         # /me, /providers/:id/credentials
++│   ├── auth/
++│   │   ├── AuthProvider.tsx
++│   │   ├── useEntitlements.ts
++│   │   └── usePremiumKey.ts        # Caches per-provider key
++│   ├── lib/
++│   │   ├── useDebouncedValue.ts
++│   │   ├── bbox.ts                 # Bbox formatting helpers
++│   │   └── env.ts                  # Typed env access
++│   ├── routes/
++│   │   └── Home.tsx
++│   ├── App.tsx
++│   └── main.tsx
++├── server/
++│   ├── src/
++│   │   ├── routes/pois.ts
++│   │   ├── routes/me.ts
++│   │   ├── routes/credentials.ts
++│   │   └── db.ts
++│   └── migrations/
++│       └── 0001_pois.sql
++├── vite.config.ts
++├── tailwind.config.ts
++├── tsconfig.json
++└── package.json
++```
++
++---
++
++## Architecture Diagram
++
++```
++┌──────────────────────────────────────────────────────────────────┐
++│  Browser (React + Vite + TypeScript)                             │
++│                                                                  │
++│  ┌────────────────┐   ┌──────────────────┐   ┌────────────────┐  │
++│  │ Provider       │   │ <MapView/>       │   │ <PoiDrawer/>   │  │
++│  │ Registry       │──▶│  • maplibre-gl   │   │  • details     │  │
++│  │ (config-driven)│   │  • basemap layer │◀──│  • photo       │  │
++│  └────────────────┘   │  • POI source    │   └────────────────┘  │
++│         ▲             │  • cluster layer │           ▲           │
++│         │             └──────────────────┘           │           │
++│  ┌────────────────┐           │                      │           │
++│  │ Basemap        │           │ moveend (debounced)  │           │
++│  │ Switcher UI    │           ▼                      │           │
++│  └────────────────┘   ┌──────────────────┐           │           │
++│         ▲             │ usePoisInBbox()  │───────────┘           │
++│         │             │  (TanStack Query)│                       │
++│  ┌────────────────┐   └──────────────────┘                       │
++│  │ useEntitlements│           │                                  │
++│  └────────────────┘           │ HTTPS                            │
++└────────│──────────────────────│──────────────────────────────────┘
++         │                      │
++         ▼                      ▼
++┌────────────────────┐   ┌───────────────────────────────────┐
++│ Auth/User service  │   │ POI API (Node/Fastify or          │
++│ (Supabase Auth or  │   │ Supabase RPC)                     │
++│ Clerk)             │   │  GET /pois?bbox=…&zoom=…          │
++│                    │   │  GET /pois/:id                    │
++│                    │   │  GET /me                          │
++│                    │   │  GET /providers/:id/credentials   │
++└────────────────────┘   └───────────────────────────────────┘
++                                       │
++                                       ▼
++                          ┌────────────────────────────┐
++                          │ Postgres + PostGIS         │
++                          │  • pois (geography POINT)  │
++                          │  • GIST index on geom      │
++                          │  • users (tier column)     │
++                          └────────────────────────────┘
++
++External tile providers (browser → CDN directly):
++  OpenFreeMap (default) · Stadia Maps · Stamen-on-Stadia · CARTO
++  · Thunderforest (premium) · OpenTopoMap
++```
++
++---
++
++## Implementation Steps
++
++### Phase 0: Project Scaffold
++
++**Goal:** Empty app renders in the browser with Vite + React + TypeScript + Tailwind.
++
++- [ ] **0.1** Run `npm create vite@latest app -- --template react-ts` to scaffold the project
++- [ ] **0.2** Install core dependencies:
++  ```
++  npm install maplibre-gl react-map-gl @tanstack/react-query
++  ```
++- [ ] **0.3** Install Tailwind CSS v4 and configure it
++- [ ] **0.4** Verify `npm run dev` starts and renders the default Vite page
++- [ ] **0.5** Clean up boilerplate: remove default Vite content from `App.tsx`, set up a blank canvas
++
++**Output:** Browser shows an empty styled page at `localhost:5173`.
++
++---
++
++### Phase 1: Provider Registry + Map Shell
++
++**Goal:** A full-screen map renders using OpenFreeMap Liberty. The provider registry abstraction is in place.
++
++- [ ] **1.1** Create `src/basemap/providers.ts` with the `BasemapProvider` interface and `ProviderCredentials` type:
++  - `id`, `label`, `description`, `kind` (vector | raster), `tier` (free | premium), `maxZoom`, `attribution`, `getStyle(creds?)`, `docsUrl`
++  - Helper function `rasterStyle()` that synthesizes a `StyleSpecification` for raster providers
++- [ ] **1.2** Add all provider entries to the `PROVIDERS` array:
++
++  **Free providers (available to all users):**
++  | ID | Label | Kind | Style URL / Tile URL |
++  |---|---|---|---|
++  | `openfreemap-liberty` | OpenFreeMap Liberty | vector | `https://tiles.openfreemap.org/styles/liberty` |
++  | `openfreemap-positron` | OpenFreeMap Positron | vector | `https://tiles.openfreemap.org/styles/positron` |
++  | `openfreemap-bright` | OpenFreeMap Bright | vector | `https://tiles.openfreemap.org/styles/bright` |
++  | `stadia-outdoors` | Stadia Outdoors | vector | `https://tiles.stadiamaps.com/styles/outdoors.json` |
++  | `stamen-terrain` | Stamen Terrain (Stadia) | vector | `https://tiles.stadiamaps.com/styles/stamen_terrain.json` |
++  | `alidade-satellite` | Alidade Satellite | vector | `https://tiles.stadiamaps.com/styles/alidade_satellite.json` |
++  | `alidade-smooth` | Alidade Smooth | vector | `https://tiles.stadiamaps.com/styles/alidade_smooth.json` |
++  | `carto-voyager` | CARTO Voyager | vector | `https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json` |
++  | `carto-positron` | CARTO Positron | vector | `https://basemaps.cartocdn.com/gl/positron-gl-style/style.json` |
++  | `carto-dark-matter` | CARTO Dark Matter | vector | `https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json` |
++  | `opentopomap` | OpenTopoMap | raster | `https://{a,b,c}.tile.opentopomap.org/{z}/{x}/{y}.png` |
++
++  **Premium providers (require entitlement + API key):**
++  | ID | Label | Kind | Tile URL |
++  |---|---|---|---|
++  | `thunderforest-outdoors` | Thunderforest Outdoors | raster | `https://tile.thunderforest.com/outdoors/{z}/{x}/{y}@2x.png?apikey=…` |
++  | `thunderforest-landscape` | Thunderforest Landscape | raster | `https://tile.thunderforest.com/landscape/{z}/{x}/{y}@2x.png?apikey=…` |
++
++- [ ] **1.3** Set `DEFAULT_PROVIDER_ID = 'openfreemap-liberty'`
++- [ ] **1.4** Export `getProvider(id)` lookup function (falls back to default)
++- [ ] **1.5** Create `src/map/MapView.tsx`:
++  - Import `Map`, `NavigationControl`, `GeolocateControl`, `AttributionControl` from `react-map-gl/maplibre`
++  - Import `maplibre-gl/dist/maplibre-gl.css`
++  - Use the default provider's `getStyle()` as `mapStyle`
++  - Set `initialViewState` to `{ longitude: 0, latitude: 20, zoom: 2 }`
++  - Full viewport: `style={{ width: '100%', height: '100vh' }}`
++  - Add `NavigationControl` (top-right), `AttributionControl` (compact)
++- [ ] **1.6** Wire `MapView` into `App.tsx`, wrap with `QueryClientProvider`
++- [ ] **1.7** Verify: map loads with OpenFreeMap tiles, zoom/pan works, attribution displays
++
++**Output:** Full-screen interactive map with OpenFreeMap Liberty tiles.
++
++---
++
++### Phase 2: Basemap Switcher UI
++
++**Goal:** User can switch between all free providers. Choice persists across reloads.
++
++- [ ] **2.1** Create `src/basemap/useBasemap.ts` hook:
++  - Read initial provider from URL `?basemap=` param, then `localStorage`, then `DEFAULT_PROVIDER_ID`
++  - `switchProvider(id)`: saves to `localStorage`, updates URL `?basemap=` param, calls `location.assign()` to reload
++  - Returns `{ provider, providerId, switchProvider, allProviders }`
++  - For now, stub entitlements so all free providers are "allowed"
++- [ ] **2.2** Create `src/basemap/BasemapSwitcher.tsx`:
++  - Floating control (bottom-left or top-left) with a dropdown/popover listing all providers
++  - Group by: "Free" and "Premium" sections
++  - Show provider label + short description
++  - Highlight the currently active provider
++  - Premium providers show a lock icon (disabled until auth is wired)
++  - Clicking a free provider triggers `switchProvider(id)` (page reloads)
++- [ ] **2.3** Add `BasemapSwitcher` inside the `<Map>` component in `MapView.tsx`
++- [ ] **2.4** Verify persistence: select a provider, reload, confirm it sticks
++- [ ] **2.5** Verify URL sync: manually set `?basemap=carto-voyager`, confirm it loads that provider
++- [ ] **2.6** Verify fallback: set `?basemap=nonsense`, confirm it falls back to OpenFreeMap Liberty
++
++**Output:** Working basemap switcher with persistence. All free providers render correctly.
++
++---
++
++### Phase 3: Backend + PostGIS + POI API
++
++**Goal:** A running API server with a PostGIS database serving POIs by bounding box.
++
++- [ ] **3.1** Set up the `server/` directory:
++  - `package.json` with Fastify, `pg` (node-postgres), `@fastify/cors`
++  - TypeScript config
++- [ ] **3.2** Create database migration `server/migrations/0001_pois.sql`:
++  ```sql
++  CREATE EXTENSION IF NOT EXISTS postgis;
++  CREATE TABLE pois (
++    id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
++    name        text NOT NULL,
++    category    text NOT NULL,
++    description text,
++    photo_url   text,
++    geom        geography(POINT, 4326) NOT NULL,
++    created_at  timestamptz NOT NULL DEFAULT now()
++  );
++  CREATE INDEX pois_geom_gix ON pois USING GIST (geom);
++  CREATE INDEX pois_category_idx ON pois (category);
++  ```
++- [ ] **3.3** Create a seed script that inserts ~1,000 sample POIs (spread globally, varied categories)
++- [ ] **3.4** Implement `GET /pois?bbox=minLng,minLat,maxLng,maxLat&zoom=N&category=X`:
++  - Parse and validate bbox from query string
++  - Query PostGIS: `WHERE geom && ST_MakeEnvelope($1,$2,$3,$4,4326)::geography`
++  - Apply `LIMIT` based on zoom level (zoom < 6 → 500, else 5000)
++  - Return GeoJSON `FeatureCollection` built in SQL with `jsonb_build_object` + `jsonb_agg`
++  - Round coordinates to 6 decimals with `ST_AsGeoJSON(geom::geometry, 6)`
++  - Set `Cache-Control: public, max-age=30, stale-while-revalidate=300`
++- [ ] **3.5** Implement `GET /pois/:id`:
++  - Return full POI detail (name, category, description, photo_url, geometry)
++  - 404 if not found
++- [ ] **3.6** Configure CORS for `localhost:5173`
++- [ ] **3.7** Add Vite proxy config: `/api` → `http://localhost:3000` (so frontend fetches go through Vite dev server)
++- [ ] **3.8** Verify with curl: `curl "http://localhost:3000/pois?bbox=-180,-90,180,90&zoom=2"` returns GeoJSON
++
++**Output:** API returns POI GeoJSON for any bounding box. Database is seeded with test data.
++
++---
++
++### Phase 4: Viewport-Driven POI Layer + Clustering
++
++**Goal:** Map shows clustered POI markers that update as the user pans/zooms.
++
++- [ ] **4.1** Create `src/lib/useDebouncedValue.ts` — generic debounce hook (250ms default)
++- [ ] **4.2** In `MapView.tsx`, wire `onMoveEnd` to capture `map.getBounds()` as a `[w, s, e, n]` tuple in state
++- [ ] **4.3** Create `src/map/PoiLayer.tsx`:
++  - Accept `bbox` prop
++  - Debounce the bbox (250ms)
++  - Use TanStack Query to fetch `/api/pois?bbox=…&zoom=…`
++  - Set `keepPreviousData: true` and `staleTime: 30_000` for smooth panning
++  - Render a `<Source>` with `type="geojson"`, `cluster={true}`, `clusterRadius={50}`, `clusterMaxZoom={14}`, `promoteId="id"`
++  - Three `<Layer>` components:
++    1. **Cluster circles:** `type="circle"`, `filter={['has', 'point_count']}`, color stepped by count
++    2. **Cluster labels:** `type="symbol"`, `text-field='{point_count_abbreviated}'`
++    3. **Individual points:** `type="circle"`, blue with white stroke
++- [ ] **4.4** Add `PoiLayer` to `MapView` (conditionally rendered when bbox is available)
++- [ ] **4.5** Wire click handler on cluster circles → zoom to `getClusterExpansionZoom`
++- [ ] **4.6** Verify: pan around the map, see clusters and individual POI dots loading
++
++**Output:** Map shows clustered markers that respond to viewport changes.
++
++---
++
++### Phase 5: POI Detail Drawer + Selection State
++
++**Goal:** Clicking a POI opens a side panel with details. Selected POI is visually highlighted.
++
++- [ ] **5.1** Create `src/map/usePoiSelection.ts`:
++  - Track `selectedPoiId` in state
++  - On select: call `map.setFeatureState({ source: 'pois', id }, { selected: true })`
++  - On deselect: clear previous feature state
++  - Fetch full POI detail via `GET /pois/:id`
++- [ ] **5.2** Create `src/map/PoiDrawer.tsx`:
++  - Slide-in panel from the right (or bottom on mobile)
++  - Show POI name, category, description, photo
++  - Close button clears selection
++  - Style with Tailwind (clean, modern look)
++- [ ] **5.3** Wire click handler on `poi-points` layer in `MapView`:
++  - Set selected POI → opens drawer
++  - Use `interactiveLayerIds` on the `<Map>` component or `map.on('click', 'poi-points', …)`
++- [ ] **5.4** Add visual feedback: selected POI circle gets `circle-opacity: 1` via feature-state (already in PoiLayer paint spec)
++- [ ] **5.5** Verify: click a POI → drawer opens with details, click another → drawer updates, close drawer → selection clears
++
++**Output:** Interactive POI selection with detail panel.
++
++---
++
++### Phase 6: Auth + Entitlements
++
++**Goal:** Users can log in. Backend returns their tier and allowed providers.
++
++- [ ] **6.1** Choose auth provider: Supabase Auth (recommended for simplicity) or Clerk
++- [ ] **6.2** Add `tier` column to users table:
++  ```sql
++  ALTER TABLE auth.users ADD COLUMN tier text NOT NULL DEFAULT 'free'
++    CHECK (tier IN ('free', 'premium'));
++  ```
++- [ ] **6.3** Implement `GET /me` endpoint:
++  - Requires auth (JWT)
++  - Returns `{ id, tier, allowedProviders: [...] }`
++  - Compute `allowedProviders` server-side from tier:
++    - Free: all free provider IDs
++    - Premium: free IDs + `thunderforest-outdoors`, `thunderforest-landscape`
++- [ ] **6.4** Create `src/auth/AuthProvider.tsx` — wraps app with auth context
++- [ ] **6.5** Create `src/auth/useEntitlements.ts`:
++  - Calls `/me` on mount (only when authenticated)
++  - Returns `{ tier, allowedProviderIds }` 
++  - Unauthenticated users get all free providers (no login required to use the app)
++- [ ] **6.6** Wire `useEntitlements` into `useBasemap.ts`:
++  - Demote to default if persisted choice is no longer entitled
++  - `switchProvider` checks entitlements before proceeding
++- [ ] **6.7** Update `BasemapSwitcher.tsx`:
++  - Premium providers show lock icon for free/unauthed users
++  - Clicking locked provider shows upsell message or login prompt
++- [ ] **6.8** Verify: unauthenticated user sees all free providers unlocked, premium locked
++
++**Output:** Auth flow works. Entitlements gate premium providers.
++
++---
++
++### Phase 7: Premium Provider Integration (Thunderforest)
++
++**Goal:** Premium users can select Thunderforest maps. API key is securely delivered.
++
++- [ ] **7.1** Register a Thunderforest Hobby key (free, 150k tiles/month)
++- [ ] **7.2** Restrict the key by Referer to your production domain on the Thunderforest dashboard
++- [ ] **7.3** Implement `GET /providers/thunderforest/credentials`:
++  - Requires auth
++  - Returns `{ apiKey: '…' }` only if `tier === 'premium'`
++  - Returns 403 for free users
++  - The key is stored as a server-side env var, never in the client bundle
++- [ ] **7.4** Create `src/auth/usePremiumKey.ts`:
++  - For premium provider IDs, fetch `/providers/thunderforest/credentials` lazily
++  - Cache the key in memory for the session
++  - Return `null` for free providers
++- [ ] **7.5** Wire into `MapView.tsx`:
++  - Pass key to `provider.getStyle({ apiKey })` for raster style synthesis
++  - Add `transformRequest` fallback: inject `?apikey=…` on Thunderforest tile URLs
++- [ ] **7.6** Verify: premium user selects Thunderforest → tiles load; free user → sees lock icon
++
++**Output:** End-to-end premium provider flow works.
++
++---
++
++### Phase 8: Geolocation + UX Polish
++
++**Goal:** Map centers on user's location. Overall UX is polished.
++
++- [ ] **8.1** Wire `GeolocateControl` with `trigger()` on mount to prompt for location
++- [ ] **8.2** Fall back to a sensible default center if permission denied
++- [ ] **8.3** Add loading spinner overlay while map style is loading
++- [ ] **8.4** Add keyboard navigation to the basemap switcher (arrow keys, Enter, Escape)
++- [ ] **8.5** Add responsive layout: drawer becomes bottom sheet on mobile
++- [ ] **8.6** Verify attribution renders correctly for every provider (required by all ToS)
++- [ ] **8.7** Add proper page title, favicon, meta tags
++
++**Output:** Polished, accessible, responsive map application.
++
++---
++
++### Phase 9: Production Hardening
++
++**Goal:** App is ready for deployment.
++
++- [ ] **9.1** Set up Sentry (or similar) for error tracking on both client and server
++- [ ] **9.2** Add CDN caching for `/pois` responses (`Cache-Control` headers already set in Phase 3)
++- [ ] **9.3** Add rate limiting to API endpoints
++- [ ] **9.4** Add health check endpoint (`GET /health`)
++- [ ] **9.5** Set up CI/CD pipeline (GitHub Actions):
++  - Lint (ESLint + TypeScript check)
++  - Build
++  - Deploy frontend to Cloudflare Pages or Vercel
++  - Deploy backend to Fly.io, Railway, or Supabase
++- [ ] **9.6** Configure `Referrer-Policy: strict-origin-when-cross-origin` (needed for Stadia domain auth)
++- [ ] **9.7** Add a feature-flag mechanism (even a simple DB table) for kill-switching individual providers
++- [ ] **9.8** Move POI photos to object storage (Cloudflare R2 or Supabase Storage)
++- [ ] **9.9** Monitor Thunderforest tile quota (alert on 4xx spike from Sentry breadcrumbs)
++
++**Output:** Production-ready deployed application.
++
++---
++
++## Provider Reference
++
++### OpenFreeMap (DEFAULT)
++
++- **Styles:** `liberty`, `positron`, `bright` at `https://tiles.openfreemap.org/styles/{style}`
++- **Key:** None required
++- **Limits:** None (genuinely free, no cookies)
++- **Attribution:** `OpenFreeMap © OpenMapTiles Data from OpenStreetMap` (required, auto-added by MapLibre)
++- **Why default:** Zero setup friction — no API key, no domain registration, no usage limits. Perfect for development and production.
++
++### Stadia Maps
++
++- **Styles:** `outdoors`, `alidade_smooth`, `alidade_smooth_dark`, `alidade_satellite`, `osm_bright`, `stamen_terrain`, `stamen_toner`, `stamen_watercolor` at `https://tiles.stadiamaps.com/styles/{style}.json`
++- **Key:** Domain-based auth (no key in code). `localhost`/`127.0.0.1` works automatically. Add production domain in Stadia dashboard.
++- **Limits:** 200,000 credits/month free (non-commercial). 1 credit/tile (satellite = 4 credits/tile).
++- **Commercial use:** Requires paid plan.
++
++### Thunderforest (PREMIUM)
++
++- **Tiles:** `https://tile.thunderforest.com/{variant}/{z}/{x}/{y}@2x.png?apikey=…`
++- **Key:** Mandatory URL parameter. Restrict by Referer in dashboard.
++- **Limits:** Hobby free = 150,000 tiles/month. Solo = $125/mo for 1.5M tiles.
++- **ToS constraint:** Caching proxies are explicitly forbidden. Do NOT build a backend tile proxy.
++
++### CARTO
++
++- **Styles:** `voyager`, `positron`, `dark-matter` at `https://basemaps.cartocdn.com/gl/{style}-gl-style/style.json`
++- **Key:** None
++- **Attribution:** OSM + CARTO required
++
++### OpenTopoMap
++
++- **Tiles:** `https://{a,b,c}.tile.opentopomap.org/{z}/{x}/{y}.png`
++- **Key:** None
++- **Max zoom:** 17
++- **Note:** Not actively maintained since 2024; tiles still available. Community/low-volume use only.
++
++---
++
++## Key Security Model
++
++| Provider | Approach | Rationale |
++|---|---|---|
++| **OpenFreeMap** | No key needed | Completely open |
++| **Stadia** | Domain auth (no key in code) | Their recommended approach; `localhost` works out of the box |
++| **Thunderforest** | Authenticated endpoint delivers key to premium users; injected via `transformRequest` | ToS forbids proxying; Referer-restricted key + authenticated delivery is the safest compliant option |
++| **CARTO / OpenTopoMap** | No key needed, just attribution | Anonymously accessible |
++
++**Anti-pattern to avoid:** Do NOT put `VITE_THUNDERFOREST_API_KEY` in the build. Any user can extract it from the bundle. Use the authenticated `/providers/thunderforest/credentials` endpoint instead.
++
++---
++
++## Caveats + Known Constraints
++
++### MapLibre Version Pinning
++- Pin `maplibre-gl` to **5.24** (final v5 release). v6 is ESM-only and requires import changes (`import * as maplibregl` instead of default import).
++- `react-map-gl` v8 requires importing from `/maplibre` subpath. Do not use v7 patterns.
++
++### Style Switching
++- `map.setStyle()` destroys all programmatically-added sources and layers. The reload-on-switch strategy avoids this entirely. If switching to in-place later, re-add POI layers in the `style.load` event.
++
++### Stadia Commercial Use
++- Free tier is **non-commercial only**. If the app monetizes, either upgrade Stadia or move those styles behind a paid tier while keeping OpenFreeMap as the free default.
++
++### Domain Auth Referer Dependency
++- Stadia domain auth requires the browser to send a `Referer` header. Platforms with `Referrer-Policy: no-referrer` will break it. Use `strict-origin-when-cross-origin` at minimum.
++
++### OpenTopoMap Maintenance
++- Not actively maintained as of 2024. Tiles work but data may be stale. Acceptable for a "topographic" toggle, not for critical features.
++
++### OSM Tile Usage Policy
++- `tile.openstreetmap.org` has strict usage rules (no bulk download, valid User-Agent/Referer). Use OpenFreeMap or CARTO instead for production traffic.
++
++### Coordinate Precision
++- Round GeoJSON coordinates to 6 decimals (~0.1m precision) via `ST_AsGeoJSON(geom, 6)` to reduce payload size.
++
++### Viewport Query Protection
++- Always apply a `LIMIT` keyed to zoom level to prevent world-spanning viewports from returning the entire database.

@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-typescript-pr1040",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1040,
+    "headSha": "94ad1cf64e97fb975d5ba8bf56d863e50c6ef081",
+    "baseSha": "e3bcdd4b5dbc73ff2093e4f91dd230fc6b3957ca",
+    "title": "fix(helpers): give a clear error when a zod v3 schema is passed to the zod helpers",
+    "body": "The zod helpers all call `z.toJSONSchema` imported from `zod/v4`, but the package's peerDeps say `zod ^3.25.0 || ^4.0.0` is supported. When someone running against zod 3.x does `import { z } from 'zod'` and passes that schema into `zodOutputFormat`/`betaZodOutputFormat`/`betaZodTool`, the call dies inside the zod v4 internals with a confusing `TypeError: Cannot read properties of undefined (reading 'def')`. Repro from #1035 is a few lines:\n\n```ts\nimport { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';\nimport zod3 from 'zod';\nzodOutputFormat(zod3.object({ foo: zod3.string() })); // throws TypeError\n```\n\nI traced this to the shape difference: zod v4 schemas always have a `_zod` property (the new internal namespace), zod v3 schemas don't. `z.toJSONSchema` reaches into `_zod.def` immediately, which is where the `undefined`-deref comes from. The peerDeps wording is honest in spirit because zod 3.25+ ships a `zod/v4` subpath as a backport, so a v3-installed project can import `zod/v4` and get a v4-shaped schema. The user just has to know that's the contract.\n\nSo this PR doesn't try to make v3 schemas work (that'd want a different JSON Schema converter and a new dep). It just adds a `src/lib/check-zod-version.ts` helper that detects the v3 shape and throws an `AnthropicError` pointing at the two unblock paths. Wired into the three callsites in `src/helpers/zod.ts` and `src/helpers/beta/zod.ts`. Tests cover all three functions with a v3-shaped mock so we can exercise the detection without juggling two zod installs in dev.\n\nCloses #1035\n\nTest plan:\n- [x] `yarn jest tests/helpers/zod.test.ts` passes (23/23, 20 existing + 3 new v3-rejection cases)\n- [x] Confirmed against a real `zod@3.25.76` schema in a scratch project that the new error message fires instead of the `TypeError`\n- [x] `yarn lint` clean on the touched files\n",
+    "author": "Zawwarsami16",
+    "headRef": "fix/zod-v3-clear-error",
+    "repository": "anthropics/anthropic-sdk-typescript"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-typescript",
+    "headSha": "94ad1cf64e97fb975d5ba8bf56d863e50c6ef081",
+    "baseSha": "e3bcdd4b5dbc73ff2093e4f91dd230fc6b3957ca"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-typescript-pr1040.diff",
+  "vendoredAt": "2026-05-24T03:16:31.853Z",
+  "collectedAt": "2026-05-24T03:16:31.853Z"
+}

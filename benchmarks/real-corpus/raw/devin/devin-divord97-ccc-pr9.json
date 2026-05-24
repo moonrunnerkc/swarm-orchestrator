@@ -1,0 +1,26 @@
+{
+  "id": "devin-divord97-ccc-pr9",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 9,
+    "headSha": "7e0b63e12bfc5cbb438853c0ebbfb1956dd9a36c",
+    "baseSha": "010482d405b0341a673461220fcb1d0fb8000acc",
+    "title": "Phase 7: CRM BC + Ticket BC + Knowledge Base + Agent Scripts (DDD/TDD)",
+    "body": "## Summary\n\nPhase 7 implementation: 3 new bounded contexts following DDD + Clean Architecture + TDD.\n\n**CRM BC** (13 TDD tests):\n- `Customer` entity with multi-phone support (`customer_phones` relation table)\n- Phone validation: exactly 1 primary, valid types (mobile/landline/backup)\n- `CustomerInteraction` — tracks all interactions (call/ticket/im) per customer\n- `CustomFieldDefinition` — extensible custom fields for customer/ticket entities\n- Batch import with partial failure handling\n- Phone-based customer lookup (any phone number matches)\n\n**Ticket BC** (12 TDD tests):\n- `TicketCategory` — hierarchical categories with parent_id\n- `TicketTemplate` — lifecycle: draft → published → offline, with JSON flow graph validation\n- `Ticket` — state machine: open → in_progress → pending → resolved → closed (invalid transitions rejected)\n- Assignment, comments, resolved timestamp auto-set\n\n**AI BC** (7 TDD tests):\n- `KnowledgeCategory` + `KnowledgeArticle` — CRUD + full-text search (published only)\n- `AgentScript` — JSON content validation, active/inactive toggle\n- `SessionInfoTemplate` — configurable session info fields\n\n**Application Layer:**\n- Enhanced `ScreenPop`: now matches customer by caller phone + returns interaction history\n- Customer batch import/export\n\n**Infrastructure:** 12 new MySQL repos, 40+ new API endpoints\n\n**Bug fixes from PR #8 Devin Review:**\n- Campaign Update handler now persists changes (`svc.Update()`)\n- `PreviewAccept` uses `GetCaseByID(caseID)` instead of hardcoded `0`\n- `TrunkHealthService`: added `sync.RWMutex` for concurrent map access\n\n**Bug fixes from PR #9 Devin Review:**\n- Added JSON struct tags to all domain input structs (`PhoneInput`, `CreateCustomerInput`, `CreateTicketInput`, `CreateTemplateInput`, `CreateArticleInput`, `CreateScriptInput`)\n- `GetHealthStatus` now returns a copy of `TrunkHealthStatus` to prevent race on shared pointer\n\n33 files changed, +3492 lines. 154 total tests, all passing with `-race`. CI green.\n\n## Review & Testing Checklist for Human\n\n- [ ] **Ticket state machine transitions** — verify `open→closed` is correctly rejected, `in_progress→resolved` sets `resolved_at` timestamp\n- [ ] **CRM multi-phone validation** — test that creating a customer with 0 or 2+ primary phones returns error\n- [ ] **Knowledge search** — verify draft articles are excluded from search results, published articles match by title/content/tags\n- [ ] **TrunkHealthService mutex + copy** — confirm no race conditions under concurrent access (run `go test -race ./internal/domain/telephony/...`)\n- [ ] **Campaign Update handler** — test that PUT `/campaigns/{id}` actually persists name changes to DB\n\nRecommended test plan:\n1. `go test -race -count=1 ./...` — all 154 tests should pass\n2. Review the 3 bug fixes against the original PR #8 Devin Review comments\n3. Spot-check ticket state machine edge cases in `service_test.go`\n\n### Notes\n\n- CRM `FindByPhone` has a mock fallback path for unit tests (scans phone repo) and a MySQL JOIN path for production\n- Ticket template `FlowGraph` field stores JSON DAG but validation is limited to `json.Valid()` — full DAG validation can be added in a future phase\n\nLink to Devin session: https://app.devin.ai/sessions/35e328fa681447e98fa82466c8f69b99\nRequested by: @divord97\n<!-- devin-review-badge-begin -->\n\n---\n\n<a href=\"https://app.devin.ai/review/divord97/ccc/pull/9\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-open-in-devin-review-dark.svg?v=1\">\n    <img src=\"https://static.devin.ai/assets/gh-open-in-devin-review-light.svg?v=1\" alt=\"Open in Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779573210-phase7-crm-ticket-knowledge",
+    "repository": "divord97/ccc"
+  },
+  "diffRef": {
+    "repository": "divord97/ccc",
+    "headSha": "7e0b63e12bfc5cbb438853c0ebbfb1956dd9a36c",
+    "baseSha": "010482d405b0341a673461220fcb1d0fb8000acc"
+  },
+  "vendoredDiffPath": "devin/devin-divord97-ccc-pr9.diff",
+  "vendoredAt": "2026-05-24T03:05:15.069Z",
+  "collectedAt": "2026-05-24T03:05:15.069Z"
+}

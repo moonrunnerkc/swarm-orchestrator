@@ -1,0 +1,137 @@
+diff --git a/src/anthropic/lib/bedrock/_client.py b/src/anthropic/lib/bedrock/_client.py
+index cda0690df..d89907f66 100644
+--- a/src/anthropic/lib/bedrock/_client.py
++++ b/src/anthropic/lib/bedrock/_client.py
+@@ -114,6 +114,9 @@ def _make_status_error(
+         if response.status_code == 409:
+             return _exceptions.ConflictError(err_msg, response=response, body=body)
+ 
++        if response.status_code == 413:
++            return _exceptions.RequestTooLargeError(err_msg, response=response, body=body)
++
+         if response.status_code == 422:
+             return _exceptions.UnprocessableEntityError(err_msg, response=response, body=body)
+ 
+@@ -123,6 +126,9 @@ def _make_status_error(
+         if response.status_code == 503:
+             return _exceptions.ServiceUnavailableError(err_msg, response=response, body=body)
+ 
++        if response.status_code == 529:
++            return _exceptions.OverloadedError(err_msg, response=response, body=body)
++
+         if response.status_code >= 500:
+             return _exceptions.InternalServerError(err_msg, response=response, body=body)
+         return APIStatusError(err_msg, response=response, body=body)
+diff --git a/src/anthropic/lib/vertex/_client.py b/src/anthropic/lib/vertex/_client.py
+index 516931815..8d1258690 100644
+--- a/src/anthropic/lib/vertex/_client.py
++++ b/src/anthropic/lib/vertex/_client.py
+@@ -70,6 +70,9 @@ def _make_status_error(
+         if response.status_code == 409:
+             return _exceptions.ConflictError(err_msg, response=response, body=body)
+ 
++        if response.status_code == 413:
++            return _exceptions.RequestTooLargeError(err_msg, response=response, body=body)
++
+         if response.status_code == 422:
+             return _exceptions.UnprocessableEntityError(err_msg, response=response, body=body)
+ 
+@@ -82,6 +85,9 @@ def _make_status_error(
+         if response.status_code == 504:
+             return _exceptions.DeadlineExceededError(err_msg, response=response, body=body)
+ 
++        if response.status_code == 529:
++            return _exceptions.OverloadedError(err_msg, response=response, body=body)
++
+         if response.status_code >= 500:
+             return _exceptions.InternalServerError(err_msg, response=response, body=body)
+         return APIStatusError(err_msg, response=response, body=body)
+diff --git a/tests/lib/test_bedrock.py b/tests/lib/test_bedrock.py
+index 6e45c27f7..d1dcec6cf 100644
+--- a/tests/lib/test_bedrock.py
++++ b/tests/lib/test_bedrock.py
+@@ -275,3 +275,37 @@ def test_region_infer_from_specified_profile(
+     client = AnthropicBedrock()
+ 
+     assert client.aws_region == next(profile for profile in profiles if profile["name"] == aws_profile)["region"]
++
++
++@pytest.mark.parametrize(
++    "status_code,expected_type",
++    [
++        (400, "BadRequestError"),
++        (401, "AuthenticationError"),
++        (403, "PermissionDeniedError"),
++        (404, "NotFoundError"),
++        (409, "ConflictError"),
++        (413, "RequestTooLargeError"),
++        (422, "UnprocessableEntityError"),
++        (429, "RateLimitError"),
++        (500, "InternalServerError"),
++        (503, "ServiceUnavailableError"),
++        (529, "OverloadedError"),
++    ],
++)
++def test_bedrock_make_status_error_maps_codes_to_typed_exceptions(
++    status_code: int, expected_type: str
++) -> None:
++    # Bedrock surfaces Anthropic-API status codes; this test pins the mapping
++    # to match the canonical client (see tests/test_client.py) so the two
++    # don't drift. 413 and 529 had been missing on Bedrock — users got a
++    # generic APIStatusError / InternalServerError for request-too-large and
++    # overloaded responses.
++    response = httpx.Response(status_code, request=httpx.Request("GET", "/"))
++
++    for client in (sync_client, async_client):
++        err = client._make_status_error("msg", body=None, response=response)
++        assert type(err).__name__ == expected_type, (
++            f"status {status_code} on {type(client).__name__}: "
++            f"got {type(err).__name__}, expected {expected_type}"
++        )
+diff --git a/tests/lib/test_vertex.py b/tests/lib/test_vertex.py
+index d683b0606..9ca43304a 100644
+--- a/tests/lib/test_vertex.py
++++ b/tests/lib/test_vertex.py
+@@ -296,3 +296,42 @@ def test_env_var_base_url_override(self, monkeypatch: pytest.MonkeyPatch) -> Non
+             base_url="https://test.googleapis.com/v1",
+         )
+         assert str(client.base_url).rstrip("/") == "https://test.googleapis.com/v1"
++
++
++# Module-level fixtures for the status-error parity test
++_vertex_sync = AnthropicVertex(region="us-central1", project_id="proj", access_token="tok")
++_vertex_async = AsyncAnthropicVertex(region="us-central1", project_id="proj", access_token="tok")
++
++
++@pytest.mark.parametrize(
++    "status_code,expected_type",
++    [
++        (400, "BadRequestError"),
++        (401, "AuthenticationError"),
++        (403, "PermissionDeniedError"),
++        (404, "NotFoundError"),
++        (409, "ConflictError"),
++        (413, "RequestTooLargeError"),
++        (422, "UnprocessableEntityError"),
++        (429, "RateLimitError"),
++        (500, "InternalServerError"),
++        (503, "ServiceUnavailableError"),
++        (504, "DeadlineExceededError"),
++        (529, "OverloadedError"),
++    ],
++)
++def test_vertex_make_status_error_maps_codes_to_typed_exceptions(
++    status_code: int, expected_type: str
++) -> None:
++    # Pins the Vertex status-error mapping to match the canonical client
++    # plus its own 504 (Google-frontend deadline-exceeded) and 503 mappings.
++    # 413 and 529 had been missing — users got a generic APIStatusError /
++    # InternalServerError for request-too-large and overloaded responses.
++    response = httpx.Response(status_code, request=httpx.Request("GET", "/"))
++
++    for client in (_vertex_sync, _vertex_async):
++        err = client._make_status_error("msg", body=None, response=response)
++        assert type(err).__name__ == expected_type, (
++            f"status {status_code} on {type(client).__name__}: "
++            f"got {type(err).__name__}, expected {expected_type}"
++        )

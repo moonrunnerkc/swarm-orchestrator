@@ -1,0 +1,547 @@
+diff --git a/src/anthropic/lib/tools/_beta_runner.py b/src/anthropic/lib/tools/_beta_runner.py
+index 52e486988..8adb31cd8 100644
+--- a/src/anthropic/lib/tools/_beta_runner.py
++++ b/src/anthropic/lib/tools/_beta_runner.py
+@@ -15,6 +15,7 @@
+     Iterator,
+     Coroutine,
+     AsyncIterator,
++    cast,
+ )
+ from contextlib import contextmanager, asynccontextmanager
+ from typing_extensions import TypedDict, override
+@@ -55,6 +56,17 @@
+ log = logging.getLogger(__name__)
+ 
+ 
++def _has_tool_result(messages: List[BetaMessageParam]) -> bool:
++    """Return True if any message in the list contains a tool_result content block."""
++    for msg in messages:
++        content = msg.get("content", [])
++        if isinstance(content, list) and any(
++            isinstance(b, dict) and b.get("type") == "tool_result" for b in content
++        ):
++            return True
++    return False
++
++
+ class RequestOptions(TypedDict, total=False):
+     extra_headers: Headers | None
+     extra_query: Query | None
+@@ -85,7 +97,6 @@ def __init__(
+             merged_headers = {**helper_header, **(options.get("extra_headers") or {})}
+             options = {**options, "extra_headers": merged_headers}
+         self._options = options
+-        self._messages_modified = False
+         self._cached_tool_call_response: BetaMessageParam | None = None
+         self._max_iterations = max_iterations
+         self._iteration_count = 0
+@@ -116,10 +127,14 @@ def append_messages(self, *messages: BetaMessageParam | ParsedBetaMessage[Respon
+             {"role": message.role, "content": message.content} if isinstance(message, BetaMessage) else message
+             for message in messages
+         ]
+-        self._messages_modified = True
+         self.set_messages_params(lambda params: {**params, "messages": [*params["messages"], *message_params]})
+         self._cached_tool_call_response = None
+ 
++    def _set_messages_list(self, messages: List[BetaMessageParam]) -> None:
++        # `messages` is a parameter here (not a loop variable), so lambdas that
++        # capture it satisfy both ruff B023 and mypy's callable-type inference.
++        self.set_messages_params(lambda params: {**params, "messages": messages})
++
+     def _should_stop(self) -> bool:
+         if self._max_iterations is not None and self._iteration_count >= self._max_iterations:
+             return True
+@@ -260,6 +275,7 @@ def _check_and_compact(self) -> bool:
+     def __run__(self) -> Iterator[RunnerItemT]:
+         while not self._should_stop():
+             with self._handle_request() as item:
++                pre_yield_message_count = len(cast(List[BetaMessageParam], self._params["messages"]))
+                 yield item
+                 message = self._get_last_message()
+                 assert message is not None
+@@ -273,15 +289,41 @@ def __run__(self) -> Iterator[RunnerItemT]:
+ 
+             # If the compaction was performed, skip tool call generation this iteration
+             if not self._check_and_compact():
+-                response = self.generate_tool_call_response()
+-                if response is None:
+-                    log.debug("Tool call was not requested, exiting from tool runner loop.")
+-                    return
+-
+-                if not self._messages_modified:
+-                    self.append_messages(message, response)
++                all_messages = list(self._params["messages"])
++                user_appended = all_messages[pre_yield_message_count:]
++
++                if _has_tool_result(user_appended):
++                    # User provided their own tool result. Ensure the assistant message
++                    # precedes it — insert it only when the user did not include it.
++                    if not any(m.get("role") == "assistant" for m in user_appended):
++                        asst_param: BetaMessageParam = {"role": message.role, "content": message.content}
++                        new_messages: List[BetaMessageParam] = [
++                            *all_messages[:pre_yield_message_count],
++                            asst_param,
++                            *user_appended,
++                        ]
++                        self._set_messages_list(new_messages)
++                else:
++                    response = self.generate_tool_call_response()
++                    if response is None:
++                        log.debug("Tool call was not requested, exiting from tool runner loop.")
++                        return
++
++                    if user_appended:
++                        # User appended extra (non-tool_result) messages. Insert the
++                        # auto-generated (assistant, tool_result) pair before them so
++                        # message ordering stays valid for the API.
++                        asst_param = {"role": message.role, "content": message.content}
++                        new_messages = [
++                            *all_messages[:pre_yield_message_count],
++                            asst_param,
++                            response,
++                            *user_appended,
++                        ]
++                        self._set_messages_list(new_messages)
++                    else:
++                        self.append_messages(message, response)
+ 
+-            self._messages_modified = False
+             self._cached_tool_call_response = None
+ 
+     def until_done(self) -> ParsedBetaMessage[ResponseFormatT]:
+@@ -541,6 +583,7 @@ async def _check_and_compact(self) -> bool:
+     async def __run__(self) -> AsyncIterator[RunnerItemT]:
+         while not self._should_stop():
+             async with self._handle_request() as item:
++                pre_yield_message_count = len(cast(List[BetaMessageParam], self._params["messages"]))
+                 yield item
+                 message = await self._get_last_message()
+                 assert message is not None
+@@ -554,15 +597,41 @@ async def __run__(self) -> AsyncIterator[RunnerItemT]:
+ 
+             # If the compaction was performed, skip tool call generation this iteration
+             if not await self._check_and_compact():
+-                response = await self.generate_tool_call_response()
+-                if response is None:
+-                    log.debug("Tool call was not requested, exiting from tool runner loop.")
+-                    return
+-
+-                if not self._messages_modified:
+-                    self.append_messages(message, response)
++                all_messages = list(self._params["messages"])
++                user_appended = all_messages[pre_yield_message_count:]
++
++                if _has_tool_result(user_appended):
++                    # User provided their own tool result. Ensure the assistant message
++                    # precedes it — insert it only when the user did not include it.
++                    if not any(m.get("role") == "assistant" for m in user_appended):
++                        asst_param: BetaMessageParam = {"role": message.role, "content": message.content}
++                        new_messages: List[BetaMessageParam] = [
++                            *all_messages[:pre_yield_message_count],
++                            asst_param,
++                            *user_appended,
++                        ]
++                        self._set_messages_list(new_messages)
++                else:
++                    response = await self.generate_tool_call_response()
++                    if response is None:
++                        log.debug("Tool call was not requested, exiting from tool runner loop.")
++                        return
++
++                    if user_appended:
++                        # User appended extra (non-tool_result) messages. Insert the
++                        # auto-generated (assistant, tool_result) pair before them so
++                        # message ordering stays valid for the API.
++                        asst_param = {"role": message.role, "content": message.content}
++                        new_messages = [
++                            *all_messages[:pre_yield_message_count],
++                            asst_param,
++                            response,
++                            *user_appended,
++                        ]
++                        self._set_messages_list(new_messages)
++                    else:
++                        self.append_messages(message, response)
+ 
+-            self._messages_modified = False
+             self._cached_tool_call_response = None
+ 
+     async def until_done(self) -> ParsedBetaMessage[ResponseFormatT]:
+diff --git a/tests/lib/tools/__inline_snapshot__/test_runners/TestSyncRunTools/f59a9391-643b-422c-96dc-1f28bc7ea4d7.json b/tests/lib/tools/__inline_snapshot__/test_runners/TestSyncRunTools/f59a9391-643b-422c-96dc-1f28bc7ea4d7.json
+index 804a5a7c7..de80c1845 100644
+--- a/tests/lib/tools/__inline_snapshot__/test_runners/TestSyncRunTools/f59a9391-643b-422c-96dc-1f28bc7ea4d7.json
++++ b/tests/lib/tools/__inline_snapshot__/test_runners/TestSyncRunTools/f59a9391-643b-422c-96dc-1f28bc7ea4d7.json
+@@ -137,7 +137,7 @@
+         "anthropic-beta": "structured-outputs-2025-12-15",
+         "x-stainless-retry-count": "0",
+         "x-stainless-read-timeout": "600",
+-        "content-length": "789"
++        "content-length": "598"
+       },
+       "body": {
+         "max_tokens": 1024,
+@@ -146,12 +146,29 @@
+             "role": "user",
+             "content": "What's the weather in SF in Celsius?"
+           },
++          {
++            "role": "assistant",
++            "content": [
++              {
++                "type": "tool_use",
++                "id": "toolu_01GHndag5wQmbzNihYmV2UBj",
++                "name": "get_weather",
++                "input": {
++                  "location": "San Francisco, CA",
++                  "units": "c"
++                },
++                "caller": {
++                  "type": "direct"
++                }
++              }
++            ]
++          },
+           {
+             "role": "user",
+             "content": [
+               {
+                 "tool_use_id": "toolu_01GHndag5wQmbzNihYmV2UBj",
+-                "content": "The weather in San Francisco, CA is currently sunny with a temperature of 20°C.",
++                "content": "The weather in San Francisco, CA is currently sunny with a temperature of 20\u00b0C.",
+                 "type": "tool_result"
+               }
+             ]
+@@ -191,12 +208,10 @@
+       }
+     },
+     "response": {
+-      "status_code": 400,
++      "status_code": 200,
+       "headers": {
+         "content-type": "application/json",
+-        "content-length": "316",
+         "connection": "keep-alive",
+-        "x-should-retry": "false",
+         "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+         "server": "cloudflare",
+         "cf-cache-status": "DYNAMIC",
+@@ -204,12 +219,29 @@
+         "content-security-policy": "default-src 'none'; frame-ancestors 'none'"
+       },
+       "body": {
+-        "type": "error",
+-        "error": {
+-          "type": "invalid_request_error",
+-          "message": "messages.0.content.1: unexpected `tool_use_id` found in `tool_result` blocks: toolu_01GHndag5wQmbzNihYmV2UBj. Each `tool_result` block must have a corresponding `tool_use` block in the previous message."
+-        },
+-        "request_id": "req_011CYHyk9NPsBYeGbC9LuDNK"
++        "model": "claude-haiku-4-5-20251001",
++        "id": "msg_01DSPL7PHKQYTe9VAFkHzsA3",
++        "type": "message",
++        "role": "assistant",
++        "content": [
++          {
++            "type": "text",
++            "text": "The weather in San Francisco, CA is currently **20\u00b0C** and **Sunny**. Nice weather!"
++          }
++        ],
++        "stop_reason": "end_turn",
++        "stop_sequence": null,
++        "usage": {
++          "input_tokens": 787,
++          "cache_creation_input_tokens": 0,
++          "cache_read_input_tokens": 0,
++          "cache_creation": {
++            "ephemeral_5m_input_tokens": 0,
++            "ephemeral_1h_input_tokens": 0
++          },
++          "output_tokens": 26,
++          "service_tier": "standard"
++        }
+       }
+     }
+   }
+diff --git a/tests/lib/tools/test_runners.py b/tests/lib/tools/test_runners.py
+index 6b92e7a9b..8c44cb553 100644
+--- a/tests/lib/tools/test_runners.py
++++ b/tests/lib/tools/test_runners.py
+@@ -1,6 +1,7 @@
+ import json
+ import logging
+ from typing import Any, Dict, List, Union, cast
++from unittest.mock import NonCallableMagicMock, patch
+ from typing_extensions import Literal
+ 
+ import pytest
+@@ -73,7 +74,39 @@
+             ]
+         ),
+         "result": snapshot(
+-            "ParsedBetaMessage(container=None, content=[ParsedBetaTextBlock(citations=None, parsed_output=None, text='The weather in San Francisco, CA is currently **20°C** and **Sunny**. Nice weather!', type='text')], context_management=None, id='msg_01DSPL7PHKQYTe9VAFkHzsA3', model='claude-haiku-4-5-20251001', role='assistant', stop_details=None, stop_reason='end_turn', stop_sequence=None, type='message', usage=BetaUsage(cache_creation=BetaCacheCreation(ephemeral_1h_input_tokens=0, ephemeral_5m_input_tokens=0), cache_creation_input_tokens=0, cache_read_input_tokens=0, inference_geo=None, input_tokens=787, iterations=None, output_tokens=26, server_tool_use=None, service_tier='standard', speed=None))\n"
++            """\
++ParsedBetaMessage(
++    container=None,
++    content=[
++        ParsedBetaTextBlock(
++            citations=None,
++            parsed_output=None,
++            text='The weather in San Francisco, CA is currently **20°C** and **Sunny**. Nice weather!',
++            type='text'
++        )
++    ],
++    context_management=None,
++    id='msg_01DSPL7PHKQYTe9VAFkHzsA3',
++    model='claude-haiku-4-5-20251001',
++    role='assistant',
++    stop_details=None,
++    stop_reason='end_turn',
++    stop_sequence=None,
++    type='message',
++    usage=BetaUsage(
++        cache_creation=BetaCacheCreation(ephemeral_1h_input_tokens=0, ephemeral_5m_input_tokens=0),
++        cache_creation_input_tokens=0,
++        cache_read_input_tokens=0,
++        inference_geo=None,
++        input_tokens=787,
++        iterations=None,
++        output_tokens=26,
++        server_tool_use=None,
++        service_tier='standard',
++        speed=None
++    )
++)
++"""
+         ),
+     },
+     "streaming": {
+@@ -239,8 +272,6 @@ def get_weather(location: str, units: Literal["c", "f"]) -> BetaFunctionToolResu
+             cast(Any, external("uuid:f59a9391-643b-422c-96dc-1f28bc7ea4d7.json")),
+         ],
+     )
+-    # TODO: fix the append_messages method
+-    @pytest.mark.xfail(reason="bug in append messages")
+     def test_custom_message_handling(self, snapshot_client: Anthropic) -> None:
+         @beta_tool
+         def get_weather(location: str, units: Literal["c", "f"]) -> BetaFunctionToolResultType:
+@@ -280,6 +311,220 @@ def get_weather(location: str, units: Literal["c", "f"]) -> BetaFunctionToolResu
+ 
+         assert print_obj(message) == snapshots["custom"]["result"]
+ 
++    def test_append_extra_message_does_not_cause_infinite_loop(self) -> None:
++        """append_messages() with a non-tool_result message must not skip the
++        auto-generated (assistant, tool_result) pair (regression for issue #1536)."""
++
++        @beta_tool
++        def get_weather(location: str) -> BetaFunctionToolResultType:
++            """Get the weather for a location."""
++            return f"Sunny in {location}"
++
++        tool_use_block = NonCallableMagicMock()
++        tool_use_block.type = "tool_use"
++        tool_use_block.id = "toolu_unit_001"
++        tool_use_block.name = "get_weather"
++        tool_use_block.input = {"location": "SF"}
++
++        tool_use_msg = NonCallableMagicMock()
++        tool_use_msg.role = "assistant"
++        tool_use_msg.stop_reason = "tool_use"
++        tool_use_msg.container = None
++        tool_use_msg.content = [tool_use_block]
++
++        text_block = NonCallableMagicMock()
++        text_block.type = "text"
++        text_block.text = "The weather is sunny."
++
++        end_turn_msg = NonCallableMagicMock()
++        end_turn_msg.role = "assistant"
++        end_turn_msg.stop_reason = "end_turn"
++        end_turn_msg.container = None
++        end_turn_msg.content = [text_block]
++
++        call_count = 0
++        parse_calls: List[Any] = []
++
++        def mock_parse(**kwargs: Any) -> Any:
++            nonlocal call_count
++            call_count += 1
++            parse_calls.append(kwargs)
++            return tool_use_msg if call_count == 1 else end_turn_msg
++
++        client = Anthropic(api_key="test-key", base_url="http://127.0.0.1:1")
++        runner = client.beta.messages.tool_runner(
++            model="claude-haiku-4-5",
++            max_tokens=1024,
++            tools=[get_weather],
++            messages=[{"role": "user", "content": "What's the weather in SF?"}],
++        )
++
++        with patch.object(client.beta.messages, "parse", side_effect=mock_parse):
++            for _ in runner:
++                runner.append_messages({"role": "user", "content": "Remember: be concise."})
++
++        assert call_count == 2, "Expected exactly 2 API calls, not an infinite loop"
++
++        second_messages: List[Any] = parse_calls[1]["messages"]
++        roles = [m["role"] for m in second_messages]
++        assert roles == ["user", "assistant", "user", "user"], (
++            "Expected [initial_user, asst(tool_use), user(tool_result), user(extra)]"
++        )
++        tool_result_content = second_messages[2].get("content", [])
++        assert isinstance(tool_result_content, list) and any(
++            isinstance(b, dict) and b.get("type") == "tool_result" for b in tool_result_content
++        ), "Third message must be the auto-generated tool_result"
++        assert second_messages[3].get("content") == "Remember: be concise.", (
++            "Extra user message must come after the tool_result"
++        )
++
++    def test_append_manual_tool_result_prepends_assistant_message(self) -> None:
++        """When the user provides a tool_result manually, the runner must insert
++        the assistant message before it (regression for issue #1536)."""
++
++        @beta_tool
++        def get_weather(location: str) -> BetaFunctionToolResultType:
++            """Get the weather for a location."""
++            return f"Sunny in {location}"
++
++        tool_use_block = NonCallableMagicMock()
++        tool_use_block.type = "tool_use"
++        tool_use_block.id = "toolu_unit_002"
++        tool_use_block.name = "get_weather"
++        tool_use_block.input = {"location": "SF"}
++
++        tool_use_msg = NonCallableMagicMock()
++        tool_use_msg.role = "assistant"
++        tool_use_msg.stop_reason = "tool_use"
++        tool_use_msg.container = None
++        tool_use_msg.content = [tool_use_block]
++
++        text_block = NonCallableMagicMock()
++        text_block.type = "text"
++        text_block.text = "The weather is sunny."
++
++        end_turn_msg = NonCallableMagicMock()
++        end_turn_msg.role = "assistant"
++        end_turn_msg.stop_reason = "end_turn"
++        end_turn_msg.container = None
++        end_turn_msg.content = [text_block]
++
++        call_count = 0
++        parse_calls: List[Any] = []
++
++        def mock_parse(**kwargs: Any) -> Any:
++            nonlocal call_count
++            call_count += 1
++            parse_calls.append(kwargs)
++            return tool_use_msg if call_count == 1 else end_turn_msg
++
++        client = Anthropic(api_key="test-key", base_url="http://127.0.0.1:1")
++        runner = client.beta.messages.tool_runner(
++            model="claude-haiku-4-5",
++            max_tokens=1024,
++            tools=[get_weather],
++            messages=[{"role": "user", "content": "What's the weather in SF?"}],
++        )
++
++        with patch.object(client.beta.messages, "parse", side_effect=mock_parse):
++            for msg in runner:
++                if msg.stop_reason == "tool_use":
++                    runner.append_messages(
++                        BetaMessageParam(
++                            role="user",
++                            content=[
++                                BetaToolResultBlockParam(
++                                    tool_use_id=msg.content[0].id,
++                                    content="20°C and sunny",
++                                    type="tool_result",
++                                )
++                            ],
++                        )
++                    )
++
++        assert call_count == 2, "Expected exactly 2 API calls"
++
++        second_messages: List[Any] = parse_calls[1]["messages"]
++        assert len(second_messages) == 3, "Expected [initial_user, asst(tool_use), user(tool_result)]"
++        assert second_messages[1]["role"] == "assistant", "Assistant message must be auto-inserted before tool_result"
++        tool_result_content = second_messages[2].get("content", [])
++        assert isinstance(tool_result_content, list) and any(
++            isinstance(b, dict) and b.get("type") == "tool_result" for b in tool_result_content
++        ), "Third message must contain the tool_result block"
++
++    def test_manual_tool_result_with_assistant_not_double_inserted(self) -> None:
++        """When the user provides both the assistant turn AND tool_result themselves,
++        the runner must not insert a second assistant message (regression guard for issue #1536)."""
++
++        @beta_tool
++        def get_weather(location: str) -> BetaFunctionToolResultType:
++            """Get the weather for a location."""
++            return f"Sunny in {location}"
++
++        tool_use_block = NonCallableMagicMock()
++        tool_use_block.type = "tool_use"
++        tool_use_block.id = "toolu_unit_003"
++        tool_use_block.name = "get_weather"
++        tool_use_block.input = {"location": "SF"}
++
++        tool_use_msg = NonCallableMagicMock()
++        tool_use_msg.role = "assistant"
++        tool_use_msg.stop_reason = "tool_use"
++        tool_use_msg.container = None
++        tool_use_msg.content = [tool_use_block]
++
++        text_block = NonCallableMagicMock()
++        text_block.type = "text"
++        text_block.text = "The weather is sunny."
++
++        end_turn_msg = NonCallableMagicMock()
++        end_turn_msg.role = "assistant"
++        end_turn_msg.stop_reason = "end_turn"
++        end_turn_msg.container = None
++        end_turn_msg.content = [text_block]
++
++        call_count = 0
++        parse_calls: List[Any] = []
++
++        def mock_parse(**kwargs: Any) -> Any:
++            nonlocal call_count
++            call_count += 1
++            parse_calls.append(kwargs)
++            return tool_use_msg if call_count == 1 else end_turn_msg
++
++        client = Anthropic(api_key="test-key", base_url="http://127.0.0.1:1")
++        runner = client.beta.messages.tool_runner(
++            model="claude-haiku-4-5",
++            max_tokens=1024,
++            tools=[get_weather],
++            messages=[{"role": "user", "content": "What's the weather in SF?"}],
++        )
++
++        with patch.object(client.beta.messages, "parse", side_effect=mock_parse):
++            for msg in runner:
++                if msg.stop_reason == "tool_use":
++                    # User manually builds the full (assistant, tool_result) pair.
++                    runner.append_messages(
++                        BetaMessageParam(role="assistant", content=msg.content),
++                        BetaMessageParam(
++                            role="user",
++                            content=[
++                                BetaToolResultBlockParam(
++                                    tool_use_id=msg.content[0].id,
++                                    content="20°C and sunny",
++                                    type="tool_result",
++                                )
++                            ],
++                        ),
++                    )
++
++        assert call_count == 2, "Expected exactly 2 API calls"
++
++        second_messages: List[Any] = parse_calls[1]["messages"]
++        assert len(second_messages) == 3, "Expected [initial_user, asst(tool_use), user(tool_result)] — no duplicates"
++        roles = [m["role"] for m in second_messages]
++        assert roles == ["user", "assistant", "user"], "Runner must not double-insert the assistant message"
++
+     @pytest.mark.parametrize(
+         "http_snapshot",
+         [

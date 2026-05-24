@@ -1,0 +1,158 @@
+diff --git a/docs/PORTING.md b/docs/PORTING.md
+index a0c66aa..9bf5a91 100644
+--- a/docs/PORTING.md
++++ b/docs/PORTING.md
+@@ -7,6 +7,16 @@ eye-guide is currently packaged as a Chrome MV3 extension, but the code should k
+ - `src/core/` contains pure TypeScript logic and shared types. Do not import or reference `chrome.*`, DOM extension APIs, platform SDKs, network APIs, remote code, or UI framework code from this layer.
+ - `src/storage/` defines the storage adapter interface and platform implementations. The Chrome extension uses `chromeStorage`, which is the only place that should call `chrome.storage.local` directly.
+ - UI entrypoints such as `src/popup.ts` and `src/content.ts` may use Chrome tab/scripting/i18n/runtime APIs while this project is an extension, but saving and loading app data should go through a `StorageAdapter`.
++- `src/core/**/*.ts` is guarded by lint against `chrome` global usage. Keep any future platform SDK access in entrypoints or adapters.
++
++## Storage adapter contract
++
++`StorageAdapter` exposes two platform-neutral operations:
++
++- `read(keys)`: load one storage key or a readonly list of storage keys.
++- `write(values)`: persist a partial snapshot of known storage values.
++
++Adapters must keep the key names below unchanged. Platform-specific adapters may translate `read`/`write` to Chrome storage, iOS local storage, Android shared preferences, or another local persistence mechanism, but they should not change the serialized value shapes.
+ 
+ ## Storage compatibility
+ 
+diff --git a/eslint.config.js b/eslint.config.js
+index fae9de6..1a31afb 100644
+--- a/eslint.config.js
++++ b/eslint.config.js
+@@ -17,6 +17,18 @@ export default tseslint.config(
+       }
+     }
+   },
++  {
++    files: ['src/core/**/*.ts'],
++    rules: {
++      'no-restricted-globals': [
++        'error',
++        {
++          name: 'chrome',
++          message: 'Keep src/core platform-neutral. Use a storage adapter or platform entrypoint instead.'
++        }
++      ]
++    }
++  },
+   {
+     files: ['vite.config.ts'],
+     languageOptions: {
+diff --git a/src/popup.ts b/src/popup.ts
+index 4853b15..b5a1535 100644
+--- a/src/popup.ts
++++ b/src/popup.ts
+@@ -150,10 +150,10 @@ const setPremiumControlsAccess = (hasAccess: boolean) => {
+ };
+ 
+ const checkPremium = async () => {
+-  const data = await chromeStorage.get(['trial_start_ts', 'isPremium']);
++  const data = await chromeStorage.read(['trial_start_ts', 'isPremium']);
+   const premiumAccess = getPremiumAccess(data.trial_start_ts, data.isPremium);
+   if (premiumAccess.shouldStoreTrialStart) {
+-    await chromeStorage.set({ trial_start_ts: premiumAccess.trialStart });
++    await chromeStorage.write({ trial_start_ts: premiumAccess.trialStart });
+   }
+ 
+   const upgradeContainer = getElementById<HTMLDivElement>('upgrade-container');
+@@ -188,7 +188,7 @@ document.addEventListener('DOMContentLoaded', async () => {
+   const tab = await getActiveTab();
+   if (tab?.url && hasAccess) {
+     const hostname = getHostnameFromUrl(tab.url);
+-    const data = await chromeStorage.get('autoOnSites');
++    const data = await chromeStorage.read('autoOnSites');
+     if (isAutoOnSite(data.autoOnSites ?? [], hostname)) {
+       const autoOnEl = getElementById<HTMLInputElement>('auto-on');
+       if (autoOnEl) autoOnEl.checked = true;
+@@ -209,8 +209,8 @@ const getSettings = (): Settings => {
+ 
+ const saveSettings = async (): Promise<Settings> => {
+   const settings = getSettings();
+-  const data = await chromeStorage.get('settings');
+-  await chromeStorage.set({ settings: mergeSettingsForStorage(data.settings, settings) });
++  const data = await chromeStorage.read('settings');
++  await chromeStorage.write({ settings: mergeSettingsForStorage(data.settings, settings) });
+   setOnboardingGuideVisible(false);
+ 
+   // Handle autoOnSites
+@@ -218,9 +218,9 @@ const saveSettings = async (): Promise<Settings> => {
+   if (tab?.url) {
+     const hostname = getHostnameFromUrl(tab.url);
+     if (hostname) {
+-      const storageData = await chromeStorage.get('autoOnSites');
++      const storageData = await chromeStorage.read('autoOnSites');
+       const autoOnSites = updateAutoOnSites(storageData.autoOnSites ?? [], hostname, settings.autoOn);
+-      await chromeStorage.set({ autoOnSites });
++      await chromeStorage.write({ autoOnSites });
+     }
+   }
+ 
+@@ -239,7 +239,7 @@ const updateContent = async (settings: Partial<Settings>) => {
+ };
+ 
+ const loadInitialSettings = async () => {
+-  const data = await chromeStorage.get(['settings', 'autoOnSites']);
++  const data = await chromeStorage.read(['settings', 'autoOnSites']);
+   setOnboardingGuideVisible(shouldShowOnboardingGuide(data.settings));
+ 
+   if (data.settings) {
+diff --git a/src/storage/chromeStorage.ts b/src/storage/chromeStorage.ts
+index d570b51..90e8752 100644
+--- a/src/storage/chromeStorage.ts
++++ b/src/storage/chromeStorage.ts
+@@ -1,10 +1,14 @@
+-import type { StorageAdapter, StorageData } from './types';
++import type { StorageAdapter, StorageReadRequest, StorageSnapshot } from './types';
++
++const toChromeStorageKeys = (keys: StorageReadRequest): string | string[] => {
++  return typeof keys === 'string' ? keys : [...keys];
++};
+ 
+ export const chromeStorage: StorageAdapter = {
+-  async get(keys) {
+-    return chrome.storage.local.get(keys) as Promise<StorageData>;
++  async read(keys) {
++    return chrome.storage.local.get(toChromeStorageKeys(keys)) as Promise<StorageSnapshot>;
+   },
+-  async set(values) {
++  async write(values) {
+     await chrome.storage.local.set(values);
+   }
+ };
+diff --git a/src/storage/types.ts b/src/storage/types.ts
+index f81f572..c88a717 100644
+--- a/src/storage/types.ts
++++ b/src/storage/types.ts
+@@ -1,15 +1,20 @@
+ import type { Settings } from '../core/settings';
+ 
+-export interface StorageData {
+-  settings?: Partial<Settings>;
+-  autoOnSites?: string[];
+-  trial_start_ts?: number;
+-  isPremium?: boolean;
++export const STORAGE_KEYS = ['settings', 'autoOnSites', 'trial_start_ts', 'isPremium'] as const;
++
++export type StorageKey = (typeof STORAGE_KEYS)[number];
++
++export interface StorageValues {
++  settings: Partial<Settings>;
++  autoOnSites: string[];
++  trial_start_ts: number;
++  isPremium: boolean;
+ }
+ 
+-export type StorageKey = keyof StorageData;
++export type StorageSnapshot = Partial<StorageValues>;
++export type StorageReadRequest = StorageKey | readonly StorageKey[];
+ 
+ export interface StorageAdapter {
+-  get(keys: StorageKey | StorageKey[]): Promise<StorageData>;
+-  set(values: StorageData): Promise<void>;
++  read(keys: StorageReadRequest): Promise<StorageSnapshot>;
++  write(values: StorageSnapshot): Promise<void>;
+ }

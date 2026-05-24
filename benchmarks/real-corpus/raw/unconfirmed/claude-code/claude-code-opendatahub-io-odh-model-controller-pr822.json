@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-opendatahub-io-odh-model-controller-pr822",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "commit=claude-coauthor"
+  },
+  "pr": {
+    "number": 822,
+    "headSha": "1d203da7c8c544d9ef5ed806129261468ac9d3d5",
+    "baseSha": "3632f68dc8c0b2be5b473d50f6e87a8f9268e344",
+    "title": "RHOAIENG-56131: odh-model-controller reconciliation fails when LLMInferenceService is stopped - AuthPolicy targets deleted HTTPRoute",
+    "body": "When an LLMInferenceService is stopped via the serving.kserve.io/stop\nannotation, the HTTPRoute is deleted as part of the stop cleanup but the\nAuthPolicy (owned by the LLMInferenceService) remains. The controller\nthen fails continuously trying to look up the deleted HTTPRoute that the\nAuthPolicy targets, producing noisy error logs and Warning events.\n\nCheck the stop annotation at the start of KserveAuthPolicyReconciler.Reconcile\nand skip AuthPolicy reconciliation when the service is stopped. The AuthPolicy\nis preserved for future use when the service is restarted.\n\nCloses [RHOAIENG-56131](https://redhat.atlassian.net/browse/RHOAIENG-56131)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nSigned-off-by: Laurent Tourreau <ltourrea@redhat.com>\n\n<!-- This is an auto-generated comment: release notes by coderabbit.ai -->\n## Summary by CodeRabbit\n\n* **Tests**\n  * Added coverage for stopped-service behavior: verifies that when a service is marked stopped and its dependent route is removed, controllers do not produce new reconciliation error events.\n\n* **Bug Fixes**\n  * Reconciliation now bypasses AuthPolicy updates for services marked as stopped, preventing unnecessary reconciliation and spurious error events during teardown.\n<!-- end of auto-generated comment: release notes by coderabbit.ai -->",
+    "author": "jira-autofix[bot]",
+    "headRef": "jira-autofix/RHOAIENG-56131",
+    "repository": "opendatahub-io/odh-model-controller"
+  },
+  "diffRef": {
+    "repository": "opendatahub-io/odh-model-controller",
+    "headSha": "1d203da7c8c544d9ef5ed806129261468ac9d3d5",
+    "baseSha": "3632f68dc8c0b2be5b473d50f6e87a8f9268e344"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-opendatahub-io-odh-model-controller-pr822.diff",
+  "vendoredAt": "2026-05-24T03:08:42.250Z",
+  "collectedAt": "2026-05-24T03:08:42.250Z"
+}

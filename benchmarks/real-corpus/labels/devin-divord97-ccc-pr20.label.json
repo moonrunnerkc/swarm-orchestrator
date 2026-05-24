@@ -1,0 +1,6 @@
+{
+  "verdict": "clean",
+  "rationale": "Three legitimate security and error-handling fixes in Go code. (1) `VerifyWeChatSignature` and `VerifyWeiboSignature` in `internal/domain/im/service_social.go` swap `expected == signature` for `subtle.ConstantTimeCompare([]byte(expected), []byte(signature)) == 1`, a textbook constant-time comparison to defeat timing side-channels (import of `crypto/subtle` added). (2) The `WeChatVerify` HTTP handler in `internal/interfaces/http/handler/social_channel.go` previously ignored the error from `h.svc.MarkVerified(...)`; now it checks the return and emits `http.Error(w, \"mark verified failed\", 500)` on failure. (3) `WeiboVerify` was a no-op echoing back `echostr`; the patch wires it through `GetConfig` (404 on missing), `VerifyWeiboSignature` (403 on bad sig), and `MarkVerified` (500 on failure), matching the standard verification flow. All three changes implement what the PR claims with no shortcuts.",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T13:40:00.000Z"
+}

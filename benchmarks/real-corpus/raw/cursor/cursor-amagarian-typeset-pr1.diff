@@ -1,0 +1,32 @@
+diff --git a/AGENTS.md b/AGENTS.md
+new file mode 100644
+index 0000000..4bedfb1
+--- /dev/null
++++ b/AGENTS.md
+@@ -0,0 +1,26 @@
++# AGENTS.md
++
++## Cursor Cloud specific instructions
++
++### Overview
++
++Typeset is a Tauri 2 desktop app (Rust backend + React/TypeScript frontend) for auto-filling film production PDFs. In the Cloud VM there is no windowing system, so `npm run tauri dev` cannot launch the native window. Use **`npm run dev`** (Vite-only) for frontend development and testing at http://localhost:5173.
++
++### Key commands
++
++| Task | Command |
++|------|---------|
++| Install deps | `npm install` |
++| Frontend dev server | `npm run dev` (port 5173) |
++| TypeScript check | `npx tsc -b` |
++| Production build (frontend) | `npm run build` |
++| Rust backend build | `cd src-tauri && cargo build` |
++
++### Caveats
++
++- **Rust toolchain**: Must be ≥1.85 (edition2024 support required by `zbus` transitive dep). Run `rustup default stable` if the default is pinned to an older version.
++- **System libraries for Tauri**: `libwebkit2gtk-4.1-dev`, `libappindicator3-dev`, `librsvg2-dev`, `patchelf`, `libdbus-1-dev`, `libssl-dev` are required for `cargo build` in `src-tauri/`.
++- **No lint script configured**: There is no ESLint config or `lint` script in `package.json`. Use `npx tsc -b` as the primary static analysis check.
++- **No test framework configured**: There are no automated test scripts in `package.json`. Verify changes via TypeScript checking and manual browser testing.
++- **Supabase env vars are optional**: The app works fully without `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` — it falls back to local-only template storage.
++- **Anthropic API key**: Not an env var; stored via OS keychain in Tauri. In web-only mode the Claude features are unavailable but the UI renders and local template features work.

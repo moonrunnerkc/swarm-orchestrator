@@ -1,0 +1,26 @@
+{
+  "id": "devin-Alexendros-plantillas-pr8",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 8,
+    "headSha": "9fde2db5f6513a20318ee1ebbfbd4057140c417a",
+    "baseSha": "628810b1eccba35ec9803aadf799a27538f948c5",
+    "title": "ci(workflows): consolidar CI de 29 → 6 checks por PR",
+    "body": "## Summary\n\nConsolida los 27 jobs propios (+ 2 externos) en 4 jobs con steps secuenciales. Misma cobertura, menos ruido en PRs.\n\n| Workflow | Antes → Después |\n|---|---|\n| `ci-global.yml` | 7 jobs → **1** \"Lint & Estructura\" |\n| `pr-guardian.yml` | 5 jobs → **1** \"PR Guardian\" |\n| `validar-todos.yml` | 12 jobs (matrix) → **1** \"Validar Módulos\" |\n| `security-scan.yml` | 3 jobs → **1** \"Security\" |\n\nCada check individual usa `::group::` para trazabilidad en logs. Advisory lints (Shell, Markdown) siguen sin bloquear (`|| true`).\n\nNet: -93 líneas de YAML workflow.\n\n## CI Status\n\n**Security ✅** y **GitGuardian ✅** pasan correctamente.\n\nLos 3 checks restantes fallan por **errores pre-existentes en main** (no introducidos por esta PR):\n\n| Check | Error | Pre-existente? |\n|---|---|---|\n| Lint & Estructura | yamllint falla en `.github/ISSUE_TEMPLATE/*.yml` y `.pre-commit-config.yaml` | ✅ Verificado en main |\n| Validar Módulos | `agentes/ejemplo_agente/tools/custom/` no existe; `repositorios` incompleto | ✅ Verificado en main |\n| PR Guardian | Placeholder check falla en `dot-claude/ejemplo_dot_claude` (dirs faltantes) | ✅ Verificado en main |\n\nAntes de la consolidación, estos mismos errores existían pero se veían como jobs individuales fallidos. Ahora se ven como un solo job fallido por workflow.\n\n## Review & Testing Checklist for Human\n\n- [ ] Verificar que `::group::` aparece por cada check en los logs de cada job\n- [ ] Confirmar que los errores reportados coinciden con el estado actual de main\n- [ ] (Opcional) Corregir los errores pre-existentes en un PR separado para que CI pase limpio\n\n### Notes\n\n- 478 líneas cambiadas — bajo el límite de 500\n- `link-check.yml` y `release.yml` no se tocan (triggers diferentes)\n- GitGuardian y Devin Review son externos y siguen apareciendo independientemente\n\nLink to Devin session: https://app.devin.ai/sessions/6f804378338444c38ab4b76356fc9482\nRequested by: @Alexendros",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779569026-consolidate-ci",
+    "repository": "Alexendros/plantillas"
+  },
+  "diffRef": {
+    "repository": "Alexendros/plantillas",
+    "headSha": "9fde2db5f6513a20318ee1ebbfbd4057140c417a",
+    "baseSha": "628810b1eccba35ec9803aadf799a27538f948c5"
+  },
+  "vendoredDiffPath": "negatives/closed-without-merge/devin/devin-Alexendros-plantillas-pr8.diff",
+  "vendoredAt": "2026-05-24T04:27:36.596Z",
+  "collectedAt": "2026-05-24T04:27:36.596Z"
+}

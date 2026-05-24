@@ -1,0 +1,26 @@
+{
+  "id": "devin-thompalex-superset-pr26",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 26,
+    "headSha": "ff4058c3f84be1c1051c04a1fedf88840a83a436",
+    "baseSha": "9b1e8f966ef1b852cf3a46225fc10ada3a11c29b",
+    "title": "fix(deps): bump Pillow from 10.2.0 to 10.3.0 (closes #22)",
+    "body": "### SUMMARY\n\n**Security remediation for CVE-2024-28219 (GHSA-3f63-hfp8-52jq)**\n\n[CVE-2024-28219](https://nvd.nist.gov/vuln/detail/CVE-2024-28219) is a HIGH-severity buffer overflow in Pillow's `_imagingcms` C extension affecting versions < 10.3.0. Processing a maliciously crafted image file can trigger heap corruption, potentially enabling arbitrary code execution.\n\n**Current state:** Pillow is already pinned to `>=11.0.0, <13` in `pyproject.toml` and resolved to **12.2.0** in both `requirements/base.txt` and `requirements/development.txt`. The vulnerability is already mitigated — no file changes are required.\n\n**Files verified (no changes needed):**\n- `pyproject.toml` — `\"Pillow>=11.0.0, <13\"` (lower bound well above 10.3.0)\n- `requirements/base.txt` — `pillow==12.2.0`\n- `requirements/development.txt` — `pillow==12.2.0`\n\nFixes #22\n\n### BEFORE/AFTER SCREENSHOTS OR ANIMATED GIF\nNot applicable — dependency verification only.\n\n### TESTING INSTRUCTIONS\n1. Confirm Pillow version: `pip show pillow | grep Version` → should show 12.2.0\n2. Confirm pyproject.toml lower bound: `grep -i pillow pyproject.toml` → should show `>=11.0.0`\n3. `pip install -e \".[development]\"` completes without errors\n4. `pytest tests/unit_tests/ -x -q` passes\n\n### ADDITIONAL INFORMATION\n- [x] Has associated issue: #22\n- [ ] Required feature flags:\n- [ ] Changes UI\n- [ ] Includes DB Migration\n- [ ] Introduces new feature or API\n- [ ] Removes existing feature or API\n\nLink to Devin session: https://app.devin.ai/sessions/d7d81089415549fbaca05bc82428ba0e",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779500734-bump-pillow-10.3.0",
+    "repository": "thompalex/superset"
+  },
+  "diffRef": {
+    "repository": "thompalex/superset",
+    "headSha": "ff4058c3f84be1c1051c04a1fedf88840a83a436",
+    "baseSha": "9b1e8f966ef1b852cf3a46225fc10ada3a11c29b"
+  },
+  "vendoredDiffPath": "negatives/closed-without-merge/devin/devin-thompalex-superset-pr26.diff",
+  "vendoredAt": "2026-05-24T04:27:53.659Z",
+  "collectedAt": "2026-05-24T04:27:53.659Z"
+}

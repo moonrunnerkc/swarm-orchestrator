@@ -1,0 +1,515 @@
+diff --git a/src/App.tsx b/src/App.tsx
+index 8864739..c2180c0 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -40,7 +40,13 @@ const App: React.FC = () => {
+ 
+     try {
+       const { latitude, longitude } = await getDeviceCoordinates();
+-      const deviceLocation = await reverseGeocode(latitude, longitude);
++
++      let deviceLocation: Location | null = null;
++      try {
++        deviceLocation = await reverseGeocode(latitude, longitude);
++      } catch {
++        // Reverse geocoding failed; fall through to use coordinates only
++      }
+ 
+       if (deviceLocation) {
+         saveLocation(deviceLocation);
+diff --git a/src/api/geocoding.ts b/src/api/geocoding.ts
+index 6b9aea7..4705474 100644
+--- a/src/api/geocoding.ts
++++ b/src/api/geocoding.ts
+@@ -117,24 +117,26 @@ export const getDefaultLocation = async (): Promise<Location> => {
+ };
+ 
+ export const reverseGeocode = async (latitude: number, longitude: number): Promise<Location | null> => {
++  const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/reverse';
+   const params = new URLSearchParams({
+-    latitude: latitude.toString(),
+-    longitude: longitude.toString(),
+-    count: '1',
+-    language: 'en',
+-    format: 'json'
++    lat: latitude.toString(),
++    lon: longitude.toString(),
++    format: 'json',
++    zoom: '10'
+   });
+ 
+-  const reverseUrl = GEOCODING_API_URL.replace('/search', '/reverse');
+   const controller = new AbortController();
+   let timeoutId: ReturnType<typeof setTimeout> | undefined;
+ 
+   try {
+     const requestPromise = CapacitorHttp.request({
+-      url: `${reverseUrl}?${params}`,
++      url: `${NOMINATIM_URL}?${params}`,
+       method: 'GET',
+       connectTimeout: 8000,
+       readTimeout: 8000,
++      headers: {
++        'User-Agent': 'WeatherApp/1.0'
++      },
+       webFetchExtra: {
+         signal: controller.signal
+       }
+@@ -156,28 +158,30 @@ export const reverseGeocode = async (latitude: number, longitude: number): Promi
+     }
+ 
+     if (response.status < 200 || response.status >= 300) {
+-      throw new Error(`Reverse geocoding API error: ${response.status}`);
++      return null;
+     }
+ 
+     const data = response.data;
+-    if (!validateGeocodingResponse(data)) {
+-      throw new Error('Invalid reverse geocoding API response structure');
++    if (!data || typeof data !== 'object') {
++      return null;
+     }
+ 
+-    if (!data.results || data.results.length === 0) {
++    const name = data.address?.city || data.address?.town || data.address?.village || data.name;
++    if (typeof name !== 'string' || name.length === 0) {
+       return null;
+     }
+ 
+-    const location = data.results[0];
++    const location: Location = {
++      name,
++      latitude,
++      longitude,
++      country: typeof data.address?.country === 'string' ? data.address.country : undefined,
++      admin1: typeof data.address?.state === 'string' ? data.address.state : undefined
++    };
++
+     return validateLocation(location) ? location : null;
+-  } catch (error) {
+-    if (timeoutId) {
+-      clearTimeout(timeoutId);
+-    }
+-    if (error instanceof Error && error.name === 'AbortError') {
+-      throw new Error('Reverse geocoding request timeout');
+-    }
+-    throw error instanceof Error ? error : new Error('Unknown reverse geocoding error');
++  } catch {
++    return null;
+   }
+ };
+ 
+@@ -217,7 +221,9 @@ const requestNativeLocationPermission = async (): Promise<void> => {
+ };
+ 
+ export const getDeviceCoordinates = async (): Promise<{ latitude: number; longitude: number }> => {
+-  if (!isNativePlatform() && typeof window !== 'undefined' && typeof navigator !== 'undefined' && 'geolocation' in navigator) {
++  const native = isNativePlatform();
++
++  if (!native && typeof window !== 'undefined' && typeof navigator !== 'undefined' && 'geolocation' in navigator) {
+     return new Promise((resolve, reject) => {
+       navigator.geolocation.getCurrentPosition(
+         position => {
+@@ -237,7 +243,7 @@ export const getDeviceCoordinates = async (): Promise<{ latitude: number; longit
+     });
+   }
+ 
+-  if (isNativePlatform()) {
++  if (native) {
+     try {
+       await requestNativeLocationPermission();
+       const position = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 15000 });
+diff --git a/src/components/HourlyRow/index.tsx b/src/components/HourlyRow/index.tsx
+index 26e1969..fa4e1bf 100644
+--- a/src/components/HourlyRow/index.tsx
++++ b/src/components/HourlyRow/index.tsx
+@@ -10,25 +10,45 @@ interface HourlyRowProps {
+ }
+ 
+ export const HourlyRow: React.FC<HourlyRowProps> = ({ hourly, timezone }) => {
+-  // Get specific hours for today's forecast: 06:00, 09:00, 12:00, 15:00, 18:00, 21:00, 00:00
+   const targetHours = [6, 9, 12, 15, 18, 21, 0];
+   
+   const getHourlyData = () => {
++    const todayStr = new Date().toISOString().split('T')[0];
++
+     return targetHours.map(targetHour => {
+-      // Find the data point closest to the target hour
+-      const closestIndex = hourly.time.reduce((closestIndex, time, index) => {
+-        const hour = new Date(time).getHours();
+-        const currentDiff = Math.abs(hour - targetHour);
+-        const closestDiff = Math.abs(new Date(hourly.time[closestIndex]).getHours() - targetHour);
+-        return currentDiff < closestDiff ? index : closestIndex;
+-      }, 0);
+-
+-      const weather = getWeatherCode(hourly.weathercode[closestIndex]);
++      let bestIndex = 0;
++      let bestDiff = Infinity;
++
++      for (let i = 0; i < hourly.time.length; i++) {
++        const entryDate = new Date(hourly.time[i]);
++        const entryDateStr = hourly.time[i].split('T')[0];
++        const entryHour = entryDate.getHours();
++
++        if (targetHour === 0) {
++          // For midnight, look for 00:00 on the day after today
++          const tomorrow = new Date(todayStr);
++          tomorrow.setDate(tomorrow.getDate() + 1);
++          const tomorrowStr = tomorrow.toISOString().split('T')[0];
++          if (entryDateStr === tomorrowStr && entryHour === 0) {
++            bestIndex = i;
++            break;
++          }
++        } else {
++          if (entryDateStr !== todayStr) continue;
++          const diff = Math.abs(entryHour - targetHour);
++          if (diff < bestDiff) {
++            bestDiff = diff;
++            bestIndex = i;
++          }
++        }
++      }
++
++      const weather = getWeatherCode(hourly.weathercode[bestIndex]);
+       
+       return {
+-        time: formatHour(hourly.time[closestIndex], timezone),
+-        temperature: formatTemperature(hourly.temperature_2m[closestIndex]),
+-        feelsLike: formatTemperature(hourly.apparent_temperature[closestIndex]),
++        time: formatHour(hourly.time[bestIndex], timezone),
++        temperature: formatTemperature(hourly.temperature_2m[bestIndex]),
++        feelsLike: formatTemperature(hourly.apparent_temperature[bestIndex]),
+         condition: weather.label,
+         icon: weather.icon
+       };
+diff --git a/src/components/LocationHeader/index.tsx b/src/components/LocationHeader/index.tsx
+index 6020dc5..12bb999 100644
+--- a/src/components/LocationHeader/index.tsx
++++ b/src/components/LocationHeader/index.tsx
+@@ -27,6 +27,7 @@ export const LocationHeader: React.FC<LocationHeaderProps> = ({
+ }) => {
+   const [isEditing, setIsEditing] = useState(false);
+   const [inputValue, setInputValue] = useState('');
++  const [hasSearched, setHasSearched] = useState(false);
+   const inputRef = useRef<HTMLInputElement>(null);
+   const debouncedInputValue = useDebounce(inputValue, 300);
+ 
+@@ -38,12 +39,15 @@ export const LocationHeader: React.FC<LocationHeaderProps> = ({
+ 
+   useEffect(() => {
+     if (isEditing) {
+-      onSearch(debouncedInputValue);
++      onSearch(debouncedInputValue).then(() => {
++        setHasSearched(true);
++      });
+     }
+   }, [debouncedInputValue, isEditing, onSearch]);
+ 
+   const handleEdit = () => {
+     setInputValue(searchQuery || location?.name || '');
++    setHasSearched(false);
+     setIsEditing(true);
+   };
+ 
+@@ -56,6 +60,7 @@ export const LocationHeader: React.FC<LocationHeaderProps> = ({
+   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+     const value = sanitizeText(e.target.value);
+     setInputValue(value);
++    setHasSearched(false);
+   };
+ 
+   const handleLocationSelect = (selectedLocation: Location) => {
+@@ -111,7 +116,7 @@ export const LocationHeader: React.FC<LocationHeaderProps> = ({
+             ))}
+           </div>
+         )}
+-        {!searchLoading && inputValue && searchResults.length === 0 && !error && (
++        {!searchLoading && hasSearched && inputValue && searchResults.length === 0 && !error && (
+           <div className={styles.searchStatus}>NO RESULTS FOUND</div>
+         )}
+       </div>
+diff --git a/src/components/TimeOfDayGrid/index.tsx b/src/components/TimeOfDayGrid/index.tsx
+index e81acee..137b842 100644
+--- a/src/components/TimeOfDayGrid/index.tsx
++++ b/src/components/TimeOfDayGrid/index.tsx
+@@ -11,36 +11,57 @@ interface TimeOfDayGridProps {
+ }
+ 
+ export const TimeOfDayGrid: React.FC<TimeOfDayGridProps> = ({ hourly, timezone }) => {
+-  const currentHour = getCurrentHour();
++  const currentHour = getCurrentHour(timezone);
+   
+   // Get 4 time periods: morning (6-12), afternoon (12-17), evening (17-22), night (22-6)
+   const getTimeSlots = () => {
+     const timeSlots = [
+-      { label: 'MORNING', hour: 9 },    // Middle of 6-12 period
+-      { label: 'AFTERNOON', hour: 14 }, // Middle of 12-17 period
+-      { label: 'EVENING', hour: 19 },   // Middle of 17-22 period
+-      { label: 'NIGHT', hour: 2 }       // Middle of 22-6 period
++      { label: 'MORNING', hour: 9, periodEnd: 12 },
++      { label: 'AFTERNOON', hour: 14, periodEnd: 17 },
++      { label: 'EVENING', hour: 19, periodEnd: 22 },
++      { label: 'NIGHT', hour: 2, periodEnd: 6 }
+     ];
+ 
++    const todayStr = new Date().toISOString().split('T')[0];
++
+     return timeSlots.map(slot => {
+-      // Find the closest hourly data to the target hour
+-      const targetIndex = hourly.time.findIndex(time => {
+-        const hour = new Date(time).getHours();
+-        return hour === slot.hour;
+-      });
++      let dataIndex = 0;
++      let bestDiff = Infinity;
++
++      for (let i = 0; i < hourly.time.length; i++) {
++        const entryDateStr = hourly.time[i].split('T')[0];
++        const entryHour = new Date(hourly.time[i]).getHours();
+ 
+-      let dataIndex = targetIndex;
+-      if (dataIndex === -1) {
+-        // If exact hour not found, find the closest one
+-        dataIndex = hourly.time.reduce((closestIndex, time, index) => {
+-          const hour = new Date(time).getHours();
+-          const currentDiff = Math.abs(hour - slot.hour);
+-          const closestDiff = Math.abs(new Date(hourly.time[closestIndex]).getHours() - slot.hour);
+-          return currentDiff < closestDiff ? index : closestIndex;
+-        }, 0);
++        if (slot.label === 'NIGHT') {
++          // NIGHT data: look for the next night period (tomorrow early morning)
++          const tomorrow = new Date(todayStr);
++          tomorrow.setDate(tomorrow.getDate() + 1);
++          const tomorrowStr = tomorrow.toISOString().split('T')[0];
++          if (entryDateStr === tomorrowStr) {
++            const diff = Math.abs(entryHour - slot.hour);
++            if (diff < bestDiff) {
++              bestDiff = diff;
++              dataIndex = i;
++            }
++          }
++        } else {
++          if (entryDateStr !== todayStr) continue;
++          const diff = Math.abs(entryHour - slot.hour);
++          if (diff < bestDiff) {
++            bestDiff = diff;
++            dataIndex = i;
++          }
++        }
+       }
+ 
+-      const isPast = slot.hour < currentHour && !(slot.hour === 0 && currentHour >= 0);
++      let isPast: boolean;
++      if (slot.label === 'NIGHT') {
++        // NIGHT (22-6) is past only if we're already past 6 AM the next day,
++        // which can't happen for "today's" view, so it's never past.
++        isPast = currentHour >= slot.periodEnd && currentHour < 22;
++      } else {
++        isPast = currentHour >= slot.periodEnd;
++      }
+       const isNight = isNightTime(slot.hour);
+ 
+       return {
+diff --git a/src/hooks/useLocationSearch.ts b/src/hooks/useLocationSearch.ts
+index cb542d8..1fa2183 100644
+--- a/src/hooks/useLocationSearch.ts
++++ b/src/hooks/useLocationSearch.ts
+@@ -1,4 +1,4 @@
+-import { useState, useEffect, useCallback } from 'react';
++import { useState, useEffect, useCallback, useRef } from 'react';
+ import type { Location } from '../types/location';
+ import { searchLocation, getDefaultLocation } from '../api/geocoding';
+ 
+@@ -129,7 +129,11 @@ export const useLocationSearch = () => {
+     }
+   }, []);
+ 
++  const searchSeqRef = useRef(0);
++
+   const search = useCallback(async (query: string) => {
++    const seq = ++searchSeqRef.current;
++
+     if (!query.trim()) {
+       setState(prev => ({
+         ...prev,
+@@ -150,12 +154,14 @@ export const useLocationSearch = () => {
+ 
+     try {
+       const results = await searchLocation(query);
++      if (seq !== searchSeqRef.current) return;
+       setState(prev => ({
+         ...prev,
+         searchResults: results,
+         searchLoading: false
+       }));
+     } catch (err) {
++      if (seq !== searchSeqRef.current) return;
+       setState(prev => ({
+         ...prev,
+         searchResults: [],
+diff --git a/src/hooks/useWeather.ts b/src/hooks/useWeather.ts
+index 75e8b8c..d3b5517 100644
+--- a/src/hooks/useWeather.ts
++++ b/src/hooks/useWeather.ts
+@@ -83,6 +83,7 @@ const saveCachedWeather = (latitude: number, longitude: number, data: WeatherDat
+   }
+ 
+   try {
++    cleanExpiredCacheEntries();
+     localStorage.setItem(
+       getCacheKey(latitude, longitude),
+       JSON.stringify({ timestamp: Date.now(), data })
+@@ -92,6 +93,31 @@ const saveCachedWeather = (latitude: number, longitude: number, data: WeatherDat
+   }
+ };
+ 
++const cleanExpiredCacheEntries = () => {
++  try {
++    const keysToRemove: string[] = [];
++    for (let i = 0; i < localStorage.length; i++) {
++      const key = localStorage.key(i);
++      if (!key || !key.startsWith(CACHE_KEY_PREFIX)) continue;
++      try {
++        const raw = localStorage.getItem(key);
++        if (!raw) continue;
++        const parsed = JSON.parse(raw);
++        if (typeof parsed.timestamp === 'number' && Date.now() - parsed.timestamp > CACHE_TTL_MS) {
++          keysToRemove.push(key);
++        }
++      } catch {
++        keysToRemove.push(key);
++      }
++    }
++    for (const key of keysToRemove) {
++      localStorage.removeItem(key);
++    }
++  } catch {
++    // Ignore cleanup failures
++  }
++};
++
+ interface UseWeatherState {
+   data: WeatherData | null;
+   loading: boolean;
+diff --git a/src/types/weather.ts b/src/types/weather.ts
+index d7152c3..5be31c5 100644
+--- a/src/types/weather.ts
++++ b/src/types/weather.ts
+@@ -4,7 +4,7 @@ export interface CurrentWeather {
+   windspeed_10m: number;
+   apparent_temperature: number;
+   relative_humidity_2m: number;
+-  time: string;
++  time?: string;
+ }
+ 
+ export interface HourlyWeather {
+diff --git a/src/utils/date.ts b/src/utils/date.ts
+index 01b7c6c..042ca60 100644
+--- a/src/utils/date.ts
++++ b/src/utils/date.ts
+@@ -1,19 +1,18 @@
+-export const getCurrentHour = (): number => {
++export const getCurrentHour = (timezone?: string): number => {
++  if (timezone) {
++    try {
++      const hour = parseInt(
++        new Date().toLocaleString('en-US', { hour: 'numeric', hour12: false, timeZone: timezone }),
++        10
++      );
++      return hour === 24 ? 0 : hour;
++    } catch {
++      // Fall back to local time if timezone is invalid
++    }
++  }
+   return new Date().getHours();
+ };
+ 
+-export const getTodayDateString = (): string => {
+-  const now = new Date();
+-  return now.toISOString().split('T')[0];
+-};
+-
+-export const isToday = (dateString: string): boolean => {
+-  const today = getTodayDateString();
+-  const date = new Date(dateString);
+-  const dateStr = date.toISOString().split('T')[0];
+-  return today === dateStr;
+-};
+-
+ export const isNightTime = (hour: number): boolean => {
+   return hour >= 20 || hour < 6;
+ };
+diff --git a/src/utils/temperature.ts b/src/utils/temperature.ts
+index aa0063f..8bc7940 100644
+--- a/src/utils/temperature.ts
++++ b/src/utils/temperature.ts
+@@ -16,14 +16,3 @@ export const getFeelsLikeDescription = (actual: number, feelsLike: number): stri
+   if (diff > -6) return 'FEELS COLDER';
+   return 'FEELS MUCH COLDER';
+ };
+-
+-export const getTemperatureTrend = (temps: number[]): 'rising' | 'falling' | 'stable' => {
+-  if (temps.length < 2) return 'stable';
+-  
+-  const recent = temps.slice(-3);
+-  const avgChange = (recent[recent.length - 1] - recent[0]) / (recent.length - 1);
+-  
+-  if (avgChange > 1) return 'rising';
+-  if (avgChange < -1) return 'falling';
+-  return 'stable';
+-};
+diff --git a/src/utils/weatherCodes.ts b/src/utils/weatherCodes.ts
+index ef3f44f..8741064 100644
+--- a/src/utils/weatherCodes.ts
++++ b/src/utils/weatherCodes.ts
+@@ -1,21 +1,34 @@
+ import type { WeatherCode } from '../types/weather';
+ 
+ export const weatherCodes: Record<number, WeatherCode> = {
+-  0:  { label: "Clear Sky",      icon: "☀" },
+-  1:  { label: "Mainly Clear",   icon: "🌤" },
+-  2:  { label: "Partly Cloudy",  icon: "⛅" },
+-  3:  { label: "Overcast",       icon: "☁" },
+-  45: { label: "Foggy",          icon: "🌫" },
+-  48: { label: "Icy Fog",        icon: "🌫" },
+-  51: { label: "Light Drizzle",  icon: "🌦" },
+-  61: { label: "Light Rain",     icon: "🌧" },
+-  63: { label: "Rain",           icon: "🌧" },
+-  65: { label: "Heavy Rain",     icon: "🌧" },
+-  71: { label: "Light Snow",     icon: "🌨" },
+-  73: { label: "Snow",           icon: "❄" },
+-  75: { label: "Heavy Snow",     icon: "❄" },
+-  80: { label: "Showers",        icon: "🌦" },
+-  95: { label: "Thunderstorm",   icon: "⛈" },
++  0:  { label: "Clear Sky",            icon: "☀" },
++  1:  { label: "Mainly Clear",         icon: "🌤" },
++  2:  { label: "Partly Cloudy",        icon: "⛅" },
++  3:  { label: "Overcast",             icon: "☁" },
++  45: { label: "Foggy",                icon: "🌫" },
++  48: { label: "Icy Fog",              icon: "🌫" },
++  51: { label: "Light Drizzle",        icon: "🌦" },
++  53: { label: "Moderate Drizzle",     icon: "🌦" },
++  55: { label: "Dense Drizzle",        icon: "🌧" },
++  56: { label: "Light Freezing Drizzle", icon: "🌧" },
++  57: { label: "Dense Freezing Drizzle", icon: "🌧" },
++  61: { label: "Light Rain",           icon: "🌧" },
++  63: { label: "Rain",                 icon: "🌧" },
++  65: { label: "Heavy Rain",           icon: "🌧" },
++  66: { label: "Light Freezing Rain",  icon: "🌧" },
++  67: { label: "Heavy Freezing Rain",  icon: "🌧" },
++  71: { label: "Light Snow",           icon: "🌨" },
++  73: { label: "Snow",                 icon: "❄" },
++  75: { label: "Heavy Snow",           icon: "❄" },
++  77: { label: "Snow Grains",          icon: "❄" },
++  80: { label: "Light Showers",        icon: "🌦" },
++  81: { label: "Moderate Showers",     icon: "🌦" },
++  82: { label: "Violent Showers",      icon: "🌧" },
++  85: { label: "Light Snow Showers",   icon: "🌨" },
++  86: { label: "Heavy Snow Showers",   icon: "🌨" },
++  95: { label: "Thunderstorm",         icon: "⛈" },
++  96: { label: "Thunderstorm w/ Hail", icon: "⛈" },
++  99: { label: "Thunderstorm w/ Heavy Hail", icon: "⛈" },
+ };
+ 
+ export const getWeatherCode = (code: number): WeatherCode => {

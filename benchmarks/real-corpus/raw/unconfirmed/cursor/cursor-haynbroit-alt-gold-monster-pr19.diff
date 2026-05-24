@@ -1,0 +1,3064 @@
+diff --git a/.env.example b/.env.example
+index a686f63..42c2c87 100644
+--- a/.env.example
++++ b/.env.example
+@@ -7,6 +7,15 @@ NEXT_PUBLIC_CLERK_SIGN_UP_URL="/sign-up"
+ # Supabase (Project Settings → API)
+ NEXT_PUBLIC_SUPABASE_URL="https://xxxx.supabase.co"
+ SUPABASE_SERVICE_ROLE_KEY=""
++# Optionnel — client JWT Clerk + RLS (voir docs/security-rls.md)
++NEXT_PUBLIC_SUPABASE_ANON_KEY=""
++
++# Apollo — import `mixed_people/search` depuis /api/ai/prospects (source « apollo »)
++APOLLO_API_KEY=""
++
++# Resend — POST /api/outbound/email (expéditeur domaine vérifié en prod)
++RESEND_API_KEY=""
++RESEND_FROM_EMAIL="Gold Monster <onboarding@resend.dev>"
+ 
+ # OpenRouter
+ OPENROUTER_API_KEY=""
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 1660960..2f54f91 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -29,5 +29,8 @@ jobs:
+       - name: Lint
+         run: npm run lint
+ 
++      - name: Unit tests
++        run: npm test
++
+       - name: Build
+         run: npm run build
+diff --git a/README.md b/README.md
+index 0c4f91c..71e09a3 100644
+--- a/README.md
++++ b/README.md
+@@ -2,7 +2,7 @@
+ 
+ **gold-monster** est une usine à agents autonomes high-ticket : découverte de niches (OpenRouter / Claude), génération de prospects et de messages LinkedIn + email, pipeline de vente, compteur d’envois, intégration **Stripe** (Payment Link + webhook), mode **meta-agent** (blueprints), le tout sur **Next.js 15** prêt pour **Vercel**.
+ 
+-**Positionnement honnête** : le produit cible d’abord le **gain de temps sur la rédaction** et l’itération sur des messages personnalisés ; l’**envoi réel** (SMTP, LinkedIn) et l’**acquisition de contacts réels** type Apollo ne sont pas encore une boucle « clé en main » dans le repo. Voir **`docs/product-positioning-honest.md`** (résumé aussi sur `/`, `/pricing`, dashboard et prospects).
++**Positionnement honnête** : le produit cible d’abord le **gain de temps sur la rédaction** et l’itération sur des messages personnalisés. L’**envoi réel** LinkedIn reste de ton côté ; pour l’**email**, une route **`POST /api/outbound/email`** (Resend + journal `outbound_logs`) est disponible si tu configures `RESEND_API_KEY`. Les prospects **IA** restent des brouillons réalistes ; avec **`APOLLO_API_KEY`** tu peux choisir la source **Apollo** sur `/api/ai/prospects`. Voir **`docs/product-positioning-honest.md`** et **`docs/security-rls.md`** (RLS Supabase + JWT Clerk).
+ 
+ ## Stack
+ 
+@@ -10,7 +10,7 @@
+ |--------|--------|
+ | Framework | Next.js 15 (App Router), TypeScript, Tailwind v4, shadcn/ui |
+ | Auth | [Clerk](https://clerk.com) |
+-| Base | [Supabase](https://supabase.com) (PostgreSQL) — client officiel **service role** côté serveur uniquement |
++| Base | [Supabase](https://supabase.com) (PostgreSQL) — **service role** côté serveur ; **RLS** activable (migration + clé **anon** + JWT Clerk) |
+ | IA | [OpenRouter](https://openrouter.ai) — Claude 3.5 Sonnet + fallback Haiku |
+ | Paiements | Stripe (Payment Link + `client_reference_id` + webhook `checkout.session.completed`) |
+ 
+@@ -86,13 +86,14 @@ npm install
+ npm run dev
+ npm run build
+ npm run lint
++npm test
+ ```
+ 
+ ## Structure utile
+ 
+ - `app/(protected)/` — dashboard, prospects, campagnes, réglages (protégés par Clerk middleware)
+ - `app/sign-in`, `app/sign-up` — pages Clerk
+-- `app/api/` — IA, prospects, feedback, settings, webhooks Stripe, cron, blueprints, **health**, **self-heal (diagnostic)**
++- `app/api/` — IA, prospects, feedback, settings, webhooks Stripe, cron, blueprints, **outbound/email** (Resend), **health**, **self-heal (diagnostic)**
+ - `lib/supabase/admin.ts` — client admin
+ - `lib/data/stats.ts` — agrégations dashboard + série 6 mois pour le graphique
+ - `supabase/migrations/` — schéma versionné
+@@ -107,7 +108,7 @@ npm run lint
+ 
+ ## CI GitHub
+ 
+-Le workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) exécute **`npm ci`**, **`npm run lint`** et **`npm run build`** sur chaque push et pull request vers `main`. Si seul le check **Vercel** échoue (réglages projet, variables d’environnement), le workflow **CI** peut quand même être vert : ouvre le détail du ❌ sur le commit pour voir quel service a échoué.
++Le workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) exécute **`npm ci`**, **`npm run lint`**, **`npm test`** et **`npm run build`** sur chaque push et pull request vers `main`. Si seul le check **Vercel** échoue (réglages projet, variables d’environnement), le workflow **CI** peut quand même être vert : ouvre le détail du ❌ sur le commit pour voir quel service a échoué.
+ 
+ ## Licence
+ 
+diff --git a/__tests__/openrouter.test.ts b/__tests__/openrouter.test.ts
+new file mode 100644
+index 0000000..ae9c57c
+--- /dev/null
++++ b/__tests__/openrouter.test.ts
+@@ -0,0 +1,30 @@
++import { describe, expect, it, vi } from "vitest";
++import type OpenAI from "openai";
++import { chatCompletion } from "@/lib/openrouter";
++
++describe("chatCompletion", () => {
++  it("essaie le second modèle si le premier appel échoue", async () => {
++    const create = vi
++      .fn()
++      .mockRejectedValueOnce(new Error("rate limit"))
++      .mockResolvedValueOnce({
++        choices: [{ message: { content: "réponse de secours" } }],
++        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
++      });
++
++    const mockClient = {
++      chat: {
++        completions: {
++          create,
++        },
++      },
++    } as unknown as OpenAI;
++
++    const result = await chatCompletion([{ role: "user", content: "ping" }], {
++      openaiClient: mockClient,
++    });
++
++    expect(result.text).toBe("réponse de secours");
++    expect(create).toHaveBeenCalledTimes(2);
++  });
++});
+diff --git a/app/api/ai/follow-up/route.ts b/app/api/ai/follow-up/route.ts
+index 8306494..f4c9da2 100644
+--- a/app/api/ai/follow-up/route.ts
++++ b/app/api/ai/follow-up/route.ts
+@@ -6,7 +6,7 @@ import {
+   extractJsonObject,
+   type ChatMessage,
+ } from "@/lib/openrouter";
+-import { getRandomPriceLabel, messageGenerationPrompt } from "@/lib/prompts";
++import { getStickyAbPriceLabel, messageGenerationPrompt } from "@/lib/prompts";
+ import { stripePaymentLinkWithClientRef } from "@/lib/stripe";
+ import { assertAiQuota, consumeAiQuota } from "@/lib/quotas";
+ import type { UserSettingsRow } from "@/lib/supabase/types";
+@@ -23,6 +23,7 @@ type ProspectFollowUpRow = {
+   linkedin_handle: string | null;
+   currency: string;
+   status: string;
++  proposed_price_cents: number | null;
+ };
+ 
+ export async function GET(req: Request) {
+@@ -41,7 +42,7 @@ export async function GET(req: Request) {
+   const { data: prospects, error: pe } = await sb
+     .from("prospects")
+     .select(
+-      "id, clerk_user_id, niche, name, company, need_summary, linkedin_handle, currency, status, updated_at",
++      "id, clerk_user_id, niche, name, company, need_summary, linkedin_handle, currency, status, proposed_price_cents, updated_at",
+     )
+     .in("status", ["CONTACTED", "REPLIED"])
+     .lt("updated_at", twoDaysAgo)
+@@ -90,14 +91,14 @@ export async function GET(req: Request) {
+   for (const row of prospects as ProspectFollowUpRow[]) {
+     const userId = row.clerk_user_id;
+     if (!(await assertAiQuota(sb, userId))) {
+-      errors.push("quota_insuffisant");
+-      break;
++      errors.push(`quota_insuffisant:${userId}`);
++      continue;
+     }
+ 
+     const settings = await getSettings(userId);
+ 
+     const feedbackDigest = await feedbackDigestFor(userId);
+-    const price = getRandomPriceLabel(row.currency || "EUR");
++    const price = getStickyAbPriceLabel(row.currency || "EUR", row.proposed_price_cents);
+ 
+     const paymentLinkWithRef = settings?.stripe_payment_link?.trim()
+       ? stripePaymentLinkWithClientRef(settings.stripe_payment_link.trim(), row.id)
+@@ -136,7 +137,7 @@ export async function GET(req: Request) {
+ 
+       if (!(await consumeAiQuota(sb, userId, { messages: 1, tokens: usage.total_tokens }))) {
+         errors.push(`consume_quota:${row.id}`);
+-        break;
++        continue;
+       }
+ 
+       const emailDraft = `${parsedOut.email.subject}\n---\n${parsedOut.email.body}`;
+diff --git a/app/api/ai/full-auto/route.ts b/app/api/ai/full-auto/route.ts
+index e886fa1..0f13b0d 100644
+--- a/app/api/ai/full-auto/route.ts
++++ b/app/api/ai/full-auto/route.ts
+@@ -10,7 +10,7 @@ import {
+ } from "@/lib/openrouter";
+ import {
+   fullAutoSummaryPrompt,
+-  getRandomPriceLabel,
++  getStickyAbPriceLabel,
+   messageGenerationPrompt,
+   nicheDiscoveryPrompt,
+   prospectGenerationPrompt,
+@@ -181,7 +181,7 @@ export async function POST(req: Request) {
+       if (!(await assertAiQuota(sb, userId))) return quotaExceededResponse();
+ 
+       const pr = p as ProspectRow;
+-      const price = getRandomPriceLabel(pr.currency || "EUR");
++      const price = getStickyAbPriceLabel(pr.currency || "EUR", pr.proposed_price_cents);
+       const paymentLinkWithRef =
+         settings?.stripe_payment_link?.trim()
+           ? stripePaymentLinkWithClientRef(settings.stripe_payment_link.trim(), pr.id)
+diff --git a/app/api/ai/messages/route.ts b/app/api/ai/messages/route.ts
+index 9cf724d..d4c0b69 100644
+--- a/app/api/ai/messages/route.ts
++++ b/app/api/ai/messages/route.ts
+@@ -8,7 +8,7 @@ import {
+   extractJsonObject,
+   type ChatMessage,
+ } from "@/lib/openrouter";
+-import { getRandomPriceLabel, messageGenerationPrompt } from "@/lib/prompts";
++import { getStickyAbPriceLabel, messageGenerationPrompt } from "@/lib/prompts";
+ import { stripePaymentLinkWithClientRef } from "@/lib/stripe";
+ import { messagesSchema } from "@/lib/validators";
+ import type { ProspectRow } from "@/lib/supabase/types";
+@@ -56,7 +56,7 @@ export async function POST(req: Request) {
+     const feedbackDigest =
+       feedbackRows?.map((r) => `- ${r.correction_text}`).join("\n") ?? "";
+ 
+-    const price = getRandomPriceLabel(p.currency);
++    const price = getStickyAbPriceLabel(p.currency, p.proposed_price_cents);
+ 
+     const paymentLinkWithRef =
+       settings?.stripe_payment_link?.trim()
+diff --git a/app/api/ai/prospects/route.ts b/app/api/ai/prospects/route.ts
+index a411685..864375a 100644
+--- a/app/api/ai/prospects/route.ts
++++ b/app/api/ai/prospects/route.ts
+@@ -1,6 +1,7 @@
+ import { auth } from "@clerk/nextjs/server";
+ import { NextResponse } from "next/server";
+ import { logAgentAction } from "@/lib/agent/log";
++import { fetchApolloProspects } from "@/lib/prospects/prospect-source";
+ import { createSupabaseAdmin } from "@/lib/supabase/admin";
+ import { toProspectUi } from "@/lib/models/prospect-ui";
+ import {
+@@ -33,7 +34,7 @@ export async function POST(req: Request) {
+     if (!parsed.success) {
+       return NextResponse.json({ error: "Payload invalide." }, { status: 400 });
+     }
+-    const { niche, count, campaignId } = parsed.data;
++    const { niche, count, campaignId, source } = parsed.data;
+ 
+     if (campaignId) {
+       const { data: camp, error: ce } = await sb
+@@ -46,30 +47,64 @@ export async function POST(req: Request) {
+       }
+     }
+ 
+-    if (!(await assertAiQuota(sb, userId))) return quotaExceededResponse();
+-
+-    const messages: ChatMessage[] = [
+-      {
+-        role: "system",
+-        content: "Tu réponds uniquement avec du JSON valide (tableau d’objets).",
+-      },
+-      {
+-        role: "user",
+-        content: prospectGenerationPrompt(niche, count),
+-      },
+-    ];
+-
+-    const { text, model, usage } = await chatCompletion(messages, { temperature: 0.45 });
+-    const rows = extractJsonArray<AiProspect>(text);
+-
+-    if (!(await consumeAiQuota(sb, userId, { messages: 1, tokens: usage.total_tokens }))) {
+-      console.error("consumeAiQuota post-prospects", { userId });
++    if (source === "apollo" && !process.env.APOLLO_API_KEY?.trim()) {
+       return NextResponse.json(
+-        { error: "Quota IA : consommation impossible. Réessaie dans un instant." },
+-        { status: 503 },
++        {
++          error:
++            "APOLLO_API_KEY manquant. Configure la clé Apollo ou choisis la source « ai ».",
++        },
++        { status: 400 },
+       );
+     }
+ 
++    if (!(await assertAiQuota(sb, userId))) return quotaExceededResponse();
++
++    let rows: AiProspect[] = [];
++    let model = "";
++
++    let usedApolloOnly = false;
++
++    if (source === "apollo") {
++      rows = await fetchApolloProspects(niche, count);
++      usedApolloOnly = rows.length > 0;
++      if (usedApolloOnly) {
++        model = "apollo/mixed_people";
++      }
++    }
++
++    if (rows.length === 0) {
++      const messages: ChatMessage[] = [
++        {
++          role: "system",
++          content: "Tu réponds uniquement avec du JSON valide (tableau d’objets).",
++        },
++        {
++          role: "user",
++          content: prospectGenerationPrompt(niche, count),
++        },
++      ];
++
++      const { text, model: m, usage } = await chatCompletion(messages, { temperature: 0.45 });
++      model = m;
++      rows = extractJsonArray<AiProspect>(text);
++
++      if (!(await consumeAiQuota(sb, userId, { messages: 1, tokens: usage.total_tokens }))) {
++        console.error("consumeAiQuota post-prospects", { userId });
++        return NextResponse.json(
++          { error: "Quota IA : consommation impossible. Réessaie dans un instant." },
++          { status: 503 },
++        );
++      }
++    } else if (usedApolloOnly) {
++      if (!(await consumeAiQuota(sb, userId, { messages: 1, tokens: 0 }))) {
++        console.error("consumeAiQuota post-prospects-apollo", { userId });
++        return NextResponse.json(
++          { error: "Quota IA : consommation impossible. Réessaie dans un instant." },
++          { status: 503 },
++        );
++      }
++    }
++
+     const insertRows = rows.map((r) => ({
+       clerk_user_id: userId,
+       campaign_id: campaignId ?? null,
+@@ -87,12 +122,16 @@ export async function POST(req: Request) {
+       clerkUserId: userId,
+       type: "prospects",
+       message: `${inserted?.length ?? 0} prospects générés pour « ${niche} ».`,
+-      payload: { model, niche, count: inserted?.length ?? 0 },
++      payload: { model, niche, count: inserted?.length ?? 0, source },
+       campaignId: campaignId ?? null,
+     });
+ 
+     const prospects = (inserted ?? []).map((r) => toProspectUi(r as ProspectRow));
+-    return NextResponse.json({ prospects, model });
++    return NextResponse.json({
++      prospects,
++      model,
++      sourceUsed: usedApolloOnly ? "apollo" : "ai",
++    });
+   } catch (e) {
+     console.error(e);
+     const message = e instanceof Error ? e.message : "Erreur inconnue";
+diff --git a/app/api/outbound/email/route.ts b/app/api/outbound/email/route.ts
+new file mode 100644
+index 0000000..d9861f7
+--- /dev/null
++++ b/app/api/outbound/email/route.ts
+@@ -0,0 +1,48 @@
++import { auth } from "@clerk/nextjs/server";
++import { NextResponse } from "next/server";
++import { sendProspectEmail } from "@/lib/email/resend";
++import { createSupabaseAdmin } from "@/lib/supabase/admin";
++import { outboundEmailSchema } from "@/lib/validators";
++
++export const runtime = "nodejs";
++
++export async function POST(req: Request) {
++  const { userId } = await auth();
++  if (!userId) {
++    return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
++  }
++
++  const body = await req.json().catch(() => null);
++  const parsed = outboundEmailSchema.safeParse(body);
++  if (!parsed.success) {
++    return NextResponse.json({ error: "Payload invalide." }, { status: 400 });
++  }
++
++  const { prospectId, to, subject, body: htmlBody } = parsed.data;
++  const sb = createSupabaseAdmin();
++
++  const { data: prospect, error: pe } = await sb
++    .from("prospects")
++    .select("id")
++    .eq("id", prospectId)
++    .eq("clerk_user_id", userId)
++    .maybeSingle();
++
++  if (pe || !prospect) {
++    return NextResponse.json({ error: "Prospect introuvable." }, { status: 404 });
++  }
++
++  try {
++    const result = await sendProspectEmail({
++      clerkUserId: userId,
++      prospectId,
++      to,
++      subject,
++      bodyHtml: htmlBody,
++    });
++    return NextResponse.json({ success: true, messageId: result.id });
++  } catch (e) {
++    const message = e instanceof Error ? e.message : "Erreur d'envoi";
++    return NextResponse.json({ error: message }, { status: 500 });
++  }
++}
+diff --git a/components/message-generator.tsx b/components/message-generator.tsx
+index 7f02f9d..f3470c6 100644
+--- a/components/message-generator.tsx
++++ b/components/message-generator.tsx
+@@ -16,10 +16,12 @@ import {
+   SelectValue,
+ } from "@/components/ui/select";
+ import type { ProspectUi } from "@/lib/models/prospect-ui";
++import { ProspectDisclaimer } from "@/components/prospect-disclaimer";
+ 
+ export function ProspectFactory({ onCreated }: { onCreated?: () => void }) {
+   const [niche, setNiche] = useState("");
+   const [count, setCount] = useState("5");
++  const [source, setSource] = useState<"ai" | "apollo">("ai");
+   const [pending, start] = useTransition();
+ 
+   function run() {
+@@ -32,11 +34,16 @@ export function ProspectFactory({ onCreated }: { onCreated?: () => void }) {
+         const res = await fetch("/api/ai/prospects", {
+           method: "POST",
+           headers: { "Content-Type": "application/json" },
+-          body: JSON.stringify({ niche: niche.trim(), count: Number(count) || 5 }),
++          body: JSON.stringify({
++            niche: niche.trim(),
++            count: Number(count) || 5,
++            source,
++          }),
+         });
+         const data = await res.json();
+         if (!res.ok) throw new Error(data.error ?? "Erreur");
+-        toast.success(`${data.prospects?.length ?? 0} prospects générés.`);
++        const via = data.sourceUsed === "apollo" ? " (Apollo)" : " (IA)";
++        toast.success(`${data.prospects?.length ?? 0} prospects générés${via}.`);
+         onCreated?.();
+       } catch (e) {
+         toast.error(e instanceof Error ? e.message : "Erreur");
+@@ -48,9 +55,27 @@ export function ProspectFactory({ onCreated }: { onCreated?: () => void }) {
+     <Card className="border-white/10 bg-white/[0.03]">
+       <CardHeader>
+         <CardTitle className="text-lg">Génération de prospects</CardTitle>
+-        <CardDescription>IA → profils réalistes (nom, entreprise, besoin, handle LinkedIn).</CardDescription>
++        <CardDescription>
++          IA ou Apollo (clé <code className="text-xs">APOLLO_API_KEY</code>) — profils à valider avant prospection
++          réelle.
++        </CardDescription>
+       </CardHeader>
+       <CardContent className="grid gap-4 sm:grid-cols-3">
++        <div className="sm:col-span-3">
++          <ProspectDisclaimer />
++        </div>
++        <div className="space-y-2 sm:col-span-3 sm:max-w-md">
++          <Label>Source</Label>
++          <Select value={source} onValueChange={(v) => setSource(v as "ai" | "apollo")}>
++            <SelectTrigger className="border-white/10 bg-black/40">
++              <SelectValue />
++            </SelectTrigger>
++            <SelectContent>
++              <SelectItem value="ai">IA (défaut)</SelectItem>
++              <SelectItem value="apollo">Apollo</SelectItem>
++            </SelectContent>
++          </Select>
++        </div>
+         <div className="space-y-2 sm:col-span-2">
+           <Label>Niche cible</Label>
+           <Input
+diff --git a/components/prospect-disclaimer.tsx b/components/prospect-disclaimer.tsx
+new file mode 100644
+index 0000000..ace3e1a
+--- /dev/null
++++ b/components/prospect-disclaimer.tsx
+@@ -0,0 +1,20 @@
++/**
++ * Rappel honnête : les profils issus de l’IA ou d’Apollo sans validation restent des données de travail, pas des leads qualifiés tant que tu ne les as pas vérifiés.
++ */
++export function ProspectDisclaimer() {
++  return (
++    <div
++      className="mb-4 rounded-lg border border-amber-500/35 bg-amber-500/10 p-3 text-sm text-foreground"
++      role="note"
++    >
++      <p className="font-semibold text-amber-200">Données de démonstration / brouillon</p>
++      <p className="mt-1 text-muted-foreground">
++        Les prospects générés par l’IA sont <strong className="text-foreground/90">fictifs mais réalistes</strong> pour
++        t’entraîner. Avec <strong className="text-foreground/90">Apollo</strong> (clé API), tu peux importer des profils
++        publics — tu restes responsable de la conformité (RGPD, opt-out, prospection B2B). L’
++        <strong className="text-foreground/90">envoi réel</strong> d’emails ou messages LinkedIn reste de ton côté ;
++        l’app t’aide sur la rédaction et le suivi.
++      </p>
++    </div>
++  );
++}
+diff --git a/components/settings-form.tsx b/components/settings-form.tsx
+index d997840..0a89f3d 100644
+--- a/components/settings-form.tsx
++++ b/components/settings-form.tsx
+@@ -98,11 +98,22 @@ export function SettingsForm({
+           </p>
+           <p>
+             <span className="font-medium text-foreground">NEXT_PUBLIC_SUPABASE_URL</span> +{" "}
+-            <span className="font-medium text-foreground">SUPABASE_SERVICE_ROLE_KEY</span>
++            <span className="font-medium text-foreground">SUPABASE_SERVICE_ROLE_KEY</span>{" "}
++            <span className="text-xs">— optionnel RLS : </span>
++            <span className="font-medium text-foreground">NEXT_PUBLIC_SUPABASE_ANON_KEY</span>{" "}
++            <span className="text-xs">(voir docs/security-rls.md)</span>
+           </p>
+           <p>
+             <span className="font-medium text-foreground">OPENROUTER_API_KEY</span> — IA serveur
+           </p>
++          <p>
++            <span className="font-medium text-foreground">APOLLO_API_KEY</span> — import prospects (source Apollo)
++          </p>
++          <p>
++            <span className="font-medium text-foreground">RESEND_API_KEY</span> +{" "}
++            <span className="font-medium text-foreground">RESEND_FROM_EMAIL</span> — envoi email (
++            <code className="text-amber-200">/api/outbound/email</code>)
++          </p>
+           <p>
+             <span className="font-medium text-foreground">STRIPE_SECRET_KEY</span> +{" "}
+             <span className="font-medium text-foreground">STRIPE_WEBHOOK_SECRET</span>
+diff --git a/docs/product-positioning-honest.md b/docs/product-positioning-honest.md
+index c0f634a..4000b8a 100644
+--- a/docs/product-positioning-honest.md
++++ b/docs/product-positioning-honest.md
+@@ -16,11 +16,11 @@ Pour ce profil, le projet **délivre déjà quelque chose de réel** : brouillon
+ 
+ ## Ce que le produit **ne peut pas encore** satisfaire
+ 
+-**Quelqu’un qui veut prospecter de vraies personnes et envoyer réellement les messages** (délivrabilité, conformité plateforme, identités réelles, envoi SMTP/API opéré de bout en bout).
++**Quelqu’un qui veut prospecter de vraies personnes et envoyer réellement les messages** (délivrabilité, conformité plateforme, identités réelles, envoi SMTP/API opéré de bout en bout) **sans configuration**.
+ 
+-La boucle **n’est pas fermée** : pas d’envoi e-mail transactionnel intégré « un clic », pas d’intégration LinkedIn officielle, pas d’import systématique de contacts réels (Apollo, etc.) dans le cœur produit par défaut.
++La boucle **n’est pas fermée par défaut** : pas d’intégration LinkedIn officielle. En revanche le repo propose des **briques optionnelles** : route **`POST /api/outbound/email`** (Resend + `RESEND_API_KEY`) et import **Apollo** (`APOLLO_API_KEY`, source « apollo » sur `/api/ai/prospects`) — à configurer, valider juridiquement et opérer toi-même.
+ 
+-**Formulation courte** : non pour **l’envoi réel** et les **vrais prospects** — pas encore (le socle actuel sert de base pour cette étape).
++**Formulation courte** : non pour **l’envoi réel** et les **vrais prospects** en « zéro config » — pas encore ; oui pour des **extensions** explicites une fois les clés et la conformité assurées.
+ 
+ ---
+ 
+@@ -35,3 +35,4 @@ Le **deuxième cas** se construit sur le **premier**. Le premier est déjà là
+ - Page d’accueil (`components/marketing/landing.tsx`) et **Tarifs** (`app/pricing/page.tsx`) : encart « aujourd’hui / pas encore ».
+ - **Dashboard** et **Prospects** : rappel court sous les titres.
+ - Ce fichier + lien depuis le `README.md`.
++- **Sécurité données** : `docs/security-rls.md` + migration RLS Supabase.
+diff --git a/docs/security-rls.md b/docs/security-rls.md
+new file mode 100644
+index 0000000..db9c0cc
+--- /dev/null
++++ b/docs/security-rls.md
+@@ -0,0 +1,31 @@
++# Row Level Security (Supabase + Clerk)
++
++## Rôle des migrations
++
++Le fichier `supabase/migrations/20260531120000_rls_outbound_logs.sql` :
++
++- active **RLS** sur les tables applicatives (`prospects`, `campaigns`, etc.) ;
++- définit des politiques **par utilisateur** : `clerk_user_id = auth.jwt() ->> 'sub'` ;
++- crée la table **`outbound_logs`** pour tracer les envois email (Resend).
++
++## JWT Clerk
++
++Les politiques supposent que Supabase reçoit un JWT Clerk dont le claim standard **`sub`** est l’identifiant Clerk (`user_...`), identique à la colonne `clerk_user_id`.
++
++1. Dans le [dashboard Clerk](https://dashboard.clerk.com), crée un **JWT template** nommé `supabase` (voir [doc Clerk × Supabase](https://clerk.com/docs/integrations/databases/supabase)).
++2. Dans Supabase : **Authentication → Providers → Third-party auth** (ou **JWT Secret** / intégration Clerk selon la version), aligne la vérification du JWT avec Clerk.
++
++Si tu utilises un claim custom `clerk_user_id` au lieu de `sub`, adapte les expressions `USING` / `WITH CHECK` dans la migration.
++
++## Client `service_role` (état actuel de l’app)
++
++Les route handlers Next.js utilisent `SUPABASE_SERVICE_ROLE_KEY` via `createSupabaseAdmin()`. Le rôle **service_role** **contourne RLS** : l’application actuelle continue de fonctionner comme avant.
++
++RLS protège surtout :
++
++- une exposition future du client navigateur avec la **clé anon** + JWT utilisateur ;
++- les accès directs à l’API PostgREST avec un jeton utilisateur.
++
++## Client navigateur (optionnel)
++
++Pour migrer progressivement vers un client Supabase authentifié par le JWT Clerk, utilise `createSupabaseWithClerkJwt()` dans `lib/supabase/clerk-jwt.ts` (clé **`NEXT_PUBLIC_SUPABASE_ANON_KEY`** requise). Les politiques RLS s’appliquent alors automatiquement.
+diff --git a/docs/vercel-deploy-checklist.md b/docs/vercel-deploy-checklist.md
+index 78dba61..b7092eb 100644
+--- a/docs/vercel-deploy-checklist.md
++++ b/docs/vercel-deploy-checklist.md
+@@ -26,6 +26,10 @@ Dans **Settings → Environment Variables**, pour **Production** (et **Preview**
+ | `NEXT_PUBLIC_CLERK_SIGN_UP_URL` | Ex. `/sign-up` |
+ | `NEXT_PUBLIC_SUPABASE_URL` | URL projet Supabase |
+ | `SUPABASE_SERVICE_ROLE_KEY` | **Secret** — uniquement serveur |
++| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Optionnel — client Supabase avec JWT Clerk + RLS (`docs/security-rls.md`) |
++| `APOLLO_API_KEY` | Optionnel — import prospects Apollo depuis `/api/ai/prospects` |
++| `RESEND_API_KEY` | Optionnel — envoi email via `POST /api/outbound/email` |
++| `RESEND_FROM_EMAIL` | Optionnel — expéditeur vérifié (ex. `Gold Monster <news@ton-domaine.com>`) |
+ | `OPENROUTER_API_KEY` | Appels IA |
+ | `NEXT_PUBLIC_APP_URL` | URL canonique du site (**`https://ton-domaine.vercel.app`** ou domaine custom) — utilisée par OpenRouter / liens |
+ | `CRON_SECRET` | Chaîne aléatoire longue ; Vercel envoie `Authorization: Bearer <CRON_SECRET>` sur les **Cron Jobs** |
+diff --git a/lib/email/resend.ts b/lib/email/resend.ts
+new file mode 100644
+index 0000000..2ce7941
+--- /dev/null
++++ b/lib/email/resend.ts
+@@ -0,0 +1,58 @@
++import { Resend } from "resend";
++import { createSupabaseAdmin } from "@/lib/supabase/admin";
++
++export type SendProspectEmailParams = {
++  clerkUserId: string;
++  prospectId: string;
++  to: string;
++  subject: string;
++  /** HTML ou texte brut (Resend accepte html) */
++  bodyHtml: string;
++};
++
++/**
++ * Envoie un email via Resend et trace dans `outbound_logs`.
++ * Requiert `RESEND_API_KEY` et de préférence `RESEND_FROM_EMAIL` (domaine vérifié chez Resend).
++ */
++export async function sendProspectEmail(params: SendProspectEmailParams): Promise<{ id: string | null }> {
++  const apiKey = process.env.RESEND_API_KEY?.trim();
++  if (!apiKey) {
++    throw new Error(
++      "RESEND_API_KEY manquant. Ajoute la clé dans les variables d'environnement pour activer l'envoi.",
++    );
++  }
++
++  const from =
++    process.env.RESEND_FROM_EMAIL?.trim() ||
++    "Gold Monster <onboarding@resend.dev>";
++
++  const resend = new Resend(apiKey);
++  const { data, error } = await resend.emails.send({
++    from,
++    to: params.to,
++    subject: params.subject,
++    html: params.bodyHtml,
++  });
++
++  const sb = createSupabaseAdmin();
++  if (error) {
++    await sb.from("outbound_logs").insert({
++      clerk_user_id: params.clerkUserId,
++      prospect_id: params.prospectId,
++      type: "email",
++      status: "error",
++      response: error.message,
++    });
++    throw new Error(error.message);
++  }
++
++  await sb.from("outbound_logs").insert({
++    clerk_user_id: params.clerkUserId,
++    prospect_id: params.prospectId,
++    type: "email",
++    status: "sent",
++    response: data?.id ?? null,
++  });
++
++  return { id: data?.id ?? null };
++}
+diff --git a/lib/openrouter.ts b/lib/openrouter.ts
+index 1eff243..ed2d387 100644
+--- a/lib/openrouter.ts
++++ b/lib/openrouter.ts
+@@ -3,7 +3,7 @@ import OpenAI from "openai";
+ const PRIMARY_MODEL = "anthropic/claude-3.5-sonnet";
+ const FALLBACK_MODEL = "anthropic/claude-3-haiku";
+ 
+-function getClient() {
++function getClient(): OpenAI {
+   const apiKey = process.env.OPENROUTER_API_KEY;
+   if (!apiKey) {
+     throw new Error(
+@@ -39,9 +39,9 @@ export type ChatCompletionResult = {
+  */
+ export async function chatCompletion(
+   messages: ChatMessage[],
+-  options?: { temperature?: number },
++  options?: { temperature?: number; openaiClient?: OpenAI },
+ ): Promise<ChatCompletionResult> {
+-  const client = getClient();
++  const client = options?.openaiClient ?? getClient();
+   const temperature = options?.temperature ?? 0.4;
+   const errors: string[] = [];
+ 
+diff --git a/lib/prompts/index.ts b/lib/prompts/index.ts
+index aa8842a..20bf23a 100644
+--- a/lib/prompts/index.ts
++++ b/lib/prompts/index.ts
+@@ -73,6 +73,21 @@ export function getRandomPriceLabel(currency = "EUR", priceTier?: 0 | 1 | 2) {
+   return { cents, label };
+ }
+ 
++const AB_TEST_CENTS_SET = new Set<number>(AB_TEST_PRICE_CENTS);
++
++/**
++ * A/B « sticky » : si le prospect a déjà un `proposed_price_cents` correspondant à une variante connue, on la réutilise ; sinon on en tire une au hasard et on la persiste côté API.
++ */
++export function getStickyAbPriceLabel(currency = "EUR", existingCents?: number | null) {
++  if (existingCents != null && AB_TEST_CENTS_SET.has(existingCents)) {
++    const idx = AB_TEST_PRICE_CENTS.indexOf(
++      existingCents as (typeof AB_TEST_PRICE_CENTS)[number],
++    );
++    if (idx >= 0) return getRandomPriceLabel(currency, idx as 0 | 1 | 2);
++  }
++  return getRandomPriceLabel(currency);
++}
++
+ export function messageGenerationPrompt(params: {
+   niche: string;
+   prospect: {
+diff --git a/lib/prospects/prospect-source.ts b/lib/prospects/prospect-source.ts
+new file mode 100644
+index 0000000..1cdc50c
+--- /dev/null
++++ b/lib/prospects/prospect-source.ts
+@@ -0,0 +1,81 @@
++/**
++ * Sources de prospects : IA (défaut) ou Apollo quand `APOLLO_API_KEY` est défini.
++ * Apollo renvoie souvent moins de lignes que demandé ; en cas d’échec ou liste vide, l’API `/api/ai/prospects` retombe sur la génération IA.
++ */
++
++export type ProspectSource = "ai" | "apollo";
++
++export type AiProspectRow = {
++  name: string;
++  company: string;
++  needSummary: string;
++  linkedinHandle: string;
++};
++
++function slugFromLinkedinUrl(url: string | null | undefined): string {
++  if (!url || typeof url !== "string") return "";
++  const m = url.match(/linkedin\.com\/in\/([^/?#]+)/i);
++  return m?.[1]?.replace(/\/$/, "") ?? "";
++}
++
++/**
++ * Recherche Apollo (`mixed_people/search`). Retourne [] si clé absente, erreur HTTP, ou parsing impossible.
++ */
++export async function fetchApolloProspects(
++  niche: string,
++  count: number,
++): Promise<AiProspectRow[]> {
++  const apiKey = process.env.APOLLO_API_KEY?.trim();
++  if (!apiKey) return [];
++
++  const perPage = Math.min(Math.max(count, 1), 50);
++  const res = await fetch("https://api.apollo.io/api/v1/mixed_people/search", {
++    method: "POST",
++    headers: {
++      "Content-Type": "application/json",
++      "Cache-Control": "no-cache",
++      "X-Api-Key": apiKey,
++    },
++    body: JSON.stringify({
++      q_keywords: niche,
++      page: 1,
++      per_page: perPage,
++    }),
++  });
++
++  if (!res.ok) {
++    console.error("Apollo mixed_people/search", res.status, await res.text().catch(() => ""));
++    return [];
++  }
++
++  const data = (await res.json()) as {
++    people?: Array<{
++      first_name?: string | null;
++      last_name?: string | null;
++      title?: string | null;
++      linkedin_url?: string | null;
++      organization?: { name?: string | null } | null;
++    }>;
++  };
++
++  const people = Array.isArray(data.people) ? data.people : [];
++  const out: AiProspectRow[] = [];
++
++  for (const p of people) {
++    if (out.length >= count) break;
++    const first = (p.first_name ?? "").trim();
++    const last = (p.last_name ?? "").trim();
++    const name = `${first} ${last}`.trim() || "Contact";
++    const company = (p.organization?.name ?? "").trim() || "Organisation inconnue";
++    const needSummary = (p.title ?? "").trim() || `Rôle ciblé — ${niche}`;
++    const linkedinHandle = slugFromLinkedinUrl(p.linkedin_url ?? undefined);
++    out.push({
++      name,
++      company,
++      needSummary,
++      linkedinHandle: linkedinHandle || "a-completer",
++    });
++  }
++
++  return out;
++}
+diff --git a/lib/supabase/clerk-jwt.ts b/lib/supabase/clerk-jwt.ts
+new file mode 100644
+index 0000000..5f177c8
+--- /dev/null
++++ b/lib/supabase/clerk-jwt.ts
+@@ -0,0 +1,28 @@
++import { auth } from "@clerk/nextjs/server";
++import { createClient, type SupabaseClient } from "@supabase/supabase-js";
++
++/**
++ * Client Supabase avec le JWT Clerk (template `supabase`).
++ * Les politiques RLS (`clerk_user_id` = `sub`) s’appliquent.
++ * Réservé au serveur (Route Handlers / Server Components) — ne pas exposer la clé anon autrement que via `NEXT_PUBLIC_*`.
++ */
++export async function createSupabaseWithClerkJwt(): Promise<SupabaseClient> {
++  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
++  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
++  if (!url || !anon) {
++    throw new Error(
++      "NEXT_PUBLIC_SUPABASE_URL ou NEXT_PUBLIC_SUPABASE_ANON_KEY manquant — requis pour le client JWT.",
++    );
++  }
++  const { getToken } = await auth();
++  const token = await getToken({ template: "supabase" });
++  if (!token) {
++    throw new Error(
++      "Jeton Clerk (template « supabase ») indisponible. Configure le template JWT dans Clerk.",
++    );
++  }
++  return createClient(url, anon, {
++    auth: { persistSession: false, autoRefreshToken: false },
++    global: { headers: { Authorization: `Bearer ${token}` } },
++  });
++}
+diff --git a/lib/supabase/types.ts b/lib/supabase/types.ts
+index e842393..f0a3cd9 100644
+--- a/lib/supabase/types.ts
++++ b/lib/supabase/types.ts
+@@ -54,3 +54,13 @@ export type AgentBlueprintRow = {
+   capabilities: unknown[];
+   created_at: string;
+ };
++
++export type OutboundLogRow = {
++  id: string;
++  clerk_user_id: string;
++  prospect_id: string | null;
++  type: string;
++  status: string;
++  response: string | null;
++  created_at: string;
++};
+diff --git a/lib/validators.ts b/lib/validators.ts
+index a5cc67c..417f862 100644
+--- a/lib/validators.ts
++++ b/lib/validators.ts
+@@ -9,6 +9,8 @@ export const prospectsSchema = z.object({
+   niche: z.string().min(3).max(400),
+   count: z.number().int().min(1).max(12).optional().default(5),
+   campaignId: z.string().uuid().optional(),
++  /** `apollo` exige `APOLLO_API_KEY` ; sinon erreur 400. Si Apollo ne renvoie personne, retombée sur l’IA. */
++  source: z.enum(["ai", "apollo"]).optional().default("ai"),
+ });
+ 
+ export const messagesSchema = z.object({
+@@ -57,3 +59,11 @@ export const metaAgentSchema = z.object({
+   /** Objectif du sous-agent à concevoir */
+   brief: z.string().min(10).max(2000),
+ });
++
++export const outboundEmailSchema = z.object({
++  prospectId: z.string().uuid(),
++  to: z.string().email(),
++  subject: z.string().min(1).max(400),
++  /** Contenu HTML ou texte (traité comme HTML côté Resend) */
++  body: z.string().min(1).max(100_000),
++});
+diff --git a/package-lock.json b/package-lock.json
+index 2105e90..9e6b7ab 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -20,6 +20,7 @@
+         "react": "^19.0.0",
+         "react-dom": "^19.0.0",
+         "recharts": "^2.15.2",
++        "resend": "^4.0.0",
+         "shadcn": "^4.7.0",
+         "sonner": "^2.0.7",
+         "stripe": "^17.0.0",
+@@ -36,7 +37,8 @@
+         "eslint": "^9",
+         "eslint-config-next": "^15.0.0",
+         "tailwindcss": "^4.0.0",
+-        "typescript": "^5.0.0"
++        "typescript": "^5.0.0",
++        "vitest": "^3.0.0"
+       },
+       "engines": {
+         "node": ">=20"
+@@ -879,6 +881,448 @@
+         "tslib": "^2.4.0"
+       }
+     },
++    "node_modules/@esbuild/aix-ppc64": {
++      "version": "0.27.7",
++      "resolved": "https://registry.npmjs.org/@esbuild/aix-ppc64/-/aix-ppc64-0.27.7.tgz",
++      "integrity": "sha512-EKX3Qwmhz1eMdEJokhALr0YiD0lhQNwDqkPYyPhiSwKrh7/4KRjQc04sZ8db+5DVVnZ1LmbNDI1uAMPEUBnQPg==",
++      "cpu": [
++        "ppc64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "aix"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/android-arm": {
++      "version": "0.27.7",
++      "resolved": "https://registry.npmjs.org/@esbuild/android-arm/-/android-arm-0.27.7.tgz",
++      "integrity": "sha512-jbPXvB4Yj2yBV7HUfE2KHe4GJX51QplCN1pGbYjvsyCZbQmies29EoJbkEc+vYuU5o45AfQn37vZlyXy4YJ8RQ==",
++      "cpu": [
++        "arm"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "android"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/android-arm64": {
++      "version": "0.27.7",
++      "resolved": "https://registry.npmjs.org/@esbuild/android-arm64/-/android-arm64-0.27.7.tgz",
++      "integrity": "sha512-62dPZHpIXzvChfvfLJow3q5dDtiNMkwiRzPylSCfriLvZeq0a1bWChrGx/BbUbPwOrsWKMn8idSllklzBy+dgQ==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "android"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/android-x64": {
++      "version": "0.27.7",
++      "resolved": "https://registry.npmjs.org/@esbuild/android-x64/-/android-x64-0.27.7.tgz",
++      "integrity": "sha512-x5VpMODneVDb70PYV2VQOmIUUiBtY3D3mPBG8NxVk5CogneYhkR7MmM3yR/uMdITLrC1ml/NV1rj4bMJuy9MCg==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "android"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/darwin-arm64": {
++      "version": "0.27.7",
++      "resolved": "https://registry.npmjs.org/@esbuild/darwin-arm64/-/darwin-arm64-0.27.7.tgz",
++      "integrity": "sha512-5lckdqeuBPlKUwvoCXIgI2D9/ABmPq3Rdp7IfL70393YgaASt7tbju3Ac+ePVi3KDH6N2RqePfHnXkaDtY9fkw==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "darwin"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/darwin-x64": {
++      "version": "0.27.7",
++      "resolved": "https://registry.npmjs.org/@esbuild/darwin-x64/-/darwin-x64-0.27.7.tgz",
++      "integrity": "sha512-rYnXrKcXuT7Z+WL5K980jVFdvVKhCHhUwid+dDYQpH+qu+TefcomiMAJpIiC2EM3Rjtq0sO3StMV/+3w3MyyqQ==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "darwin"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/freebsd-arm64": {
++      "version": "0.27.7",
++      "resolved": "https://registry.npmjs.org/@esbuild/freebsd-arm64/-/freebsd-arm64-0.27.7.tgz",
++      "integrity": "sha512-B48PqeCsEgOtzME2GbNM2roU29AMTuOIN91dsMO30t+Ydis3z/3Ngoj5hhnsOSSwNzS+6JppqWsuhTp6E82l2w==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "freebsd"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/freebsd-x64": {
++      "version": "0.27.7",
++      "resolved": "https://registry.npmjs.org/@esbuild/freebsd-x64/-/freebsd-x64-0.27.7.tgz",
++      "integrity": "sha512-jOBDK5XEjA4m5IJK3bpAQF9/Lelu/Z9ZcdhTRLf4cajlB+8VEhFFRjWgfy3M1O4rO2GQ/b2dLwCUGpiF/eATNQ==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "freebsd"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/linux-arm": {
++      "version": "0.27.7",
++      "resolved": "https://registry.npmjs.org/@esbuild/linux-arm/-/linux-arm-0.27.7.tgz",
++      "integrity": "sha512-RkT/YXYBTSULo3+af8Ib0ykH8u2MBh57o7q/DAs3lTJlyVQkgQvlrPTnjIzzRPQyavxtPtfg0EopvDyIt0j1rA==",
++      "cpu": [
++        "arm"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/linux-arm64": {
++      "version": "0.27.7",
++      "resolved": "https://registry.npmjs.org/@esbuild/linux-arm64/-/linux-arm64-0.27.7.tgz",
++      "integrity": "sha512-RZPHBoxXuNnPQO9rvjh5jdkRmVizktkT7TCDkDmQ0W2SwHInKCAV95GRuvdSvA7w4VMwfCjUiPwDi0ZO6Nfe9A==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/linux-ia32": {
++      "version": "0.27.7",
++      "resolved": "https://registry.npmjs.org/@esbuild/linux-ia32/-/linux-ia32-0.27.7.tgz",
++      "integrity": "sha512-GA48aKNkyQDbd3KtkplYWT102C5sn/EZTY4XROkxONgruHPU72l+gW+FfF8tf2cFjeHaRbWpOYa/uRBz/Xq1Pg==",
++      "cpu": [
++        "ia32"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/linux-loong64": {
++      "version": "0.27.7",
++      "resolved": "https://registry.npmjs.org/@esbuild/linux-loong64/-/linux-loong64-0.27.7.tgz",
++      "integrity": "sha512-a4POruNM2oWsD4WKvBSEKGIiWQF8fZOAsycHOt6JBpZ+JN2n2JH9WAv56SOyu9X5IqAjqSIPTaJkqN8F7XOQ5Q==",
++      "cpu": [
++        "loong64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/linux-mips64el": {
++      "version": "0.27.7",
++      "resolved": "https://registry.npmjs.org/@esbuild/linux-mips64el/-/linux-mips64el-0.27.7.tgz",
++      "integrity": "sha512-KabT5I6StirGfIz0FMgl1I+R1H73Gp0ofL9A3nG3i/cYFJzKHhouBV5VWK1CSgKvVaG4q1RNpCTR2LuTVB3fIw==",
++      "cpu": [
++        "mips64el"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/linux-ppc64": {
++      "version": "0.27.7",
++      "resolved": "https://registry.npmjs.org/@esbuild/linux-ppc64/-/linux-ppc64-0.27.7.tgz",
++      "integrity": "sha512-gRsL4x6wsGHGRqhtI+ifpN/vpOFTQtnbsupUF5R5YTAg+y/lKelYR1hXbnBdzDjGbMYjVJLJTd2OFmMewAgwlQ==",
++      "cpu": [
++        "ppc64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/linux-riscv64": {
++      "version": "0.27.7",
++      "resolved": "https://registry.npmjs.org/@esbuild/linux-riscv64/-/linux-riscv64-0.27.7.tgz",
++      "integrity": "sha512-hL25LbxO1QOngGzu2U5xeXtxXcW+/GvMN3ejANqXkxZ/opySAZMrc+9LY/WyjAan41unrR3YrmtTsUpwT66InQ==",
++      "cpu": [
++        "riscv64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/linux-s390x": {
++      "version": "0.27.7",
++      "resolved": "https://registry.npmjs.org/@esbuild/linux-s390x/-/linux-s390x-0.27.7.tgz",
++      "integrity": "sha512-2k8go8Ycu1Kb46vEelhu1vqEP+UeRVj2zY1pSuPdgvbd5ykAw82Lrro28vXUrRmzEsUV0NzCf54yARIK8r0fdw==",
++      "cpu": [
++        "s390x"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/linux-x64": {
++      "version": "0.27.7",
++      "resolved": "https://registry.npmjs.org/@esbuild/linux-x64/-/linux-x64-0.27.7.tgz",
++      "integrity": "sha512-hzznmADPt+OmsYzw1EE33ccA+HPdIqiCRq7cQeL1Jlq2gb1+OyWBkMCrYGBJ+sxVzve2ZJEVeePbLM2iEIZSxA==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/netbsd-arm64": {
++      "version": "0.27.7",
++      "resolved": "https://registry.npmjs.org/@esbuild/netbsd-arm64/-/netbsd-arm64-0.27.7.tgz",
++      "integrity": "sha512-b6pqtrQdigZBwZxAn1UpazEisvwaIDvdbMbmrly7cDTMFnw/+3lVxxCTGOrkPVnsYIosJJXAsILG9XcQS+Yu6w==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "netbsd"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/netbsd-x64": {
++      "version": "0.27.7",
++      "resolved": "https://registry.npmjs.org/@esbuild/netbsd-x64/-/netbsd-x64-0.27.7.tgz",
++      "integrity": "sha512-OfatkLojr6U+WN5EDYuoQhtM+1xco+/6FSzJJnuWiUw5eVcicbyK3dq5EeV/QHT1uy6GoDhGbFpprUiHUYggrw==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "netbsd"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/openbsd-arm64": {
++      "version": "0.27.7",
++      "resolved": "https://registry.npmjs.org/@esbuild/openbsd-arm64/-/openbsd-arm64-0.27.7.tgz",
++      "integrity": "sha512-AFuojMQTxAz75Fo8idVcqoQWEHIXFRbOc1TrVcFSgCZtQfSdc1RXgB3tjOn/krRHENUB4j00bfGjyl2mJrU37A==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "openbsd"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/openbsd-x64": {
++      "version": "0.27.7",
++      "resolved": "https://registry.npmjs.org/@esbuild/openbsd-x64/-/openbsd-x64-0.27.7.tgz",
++      "integrity": "sha512-+A1NJmfM8WNDv5CLVQYJ5PshuRm/4cI6WMZRg1by1GwPIQPCTs1GLEUHwiiQGT5zDdyLiRM/l1G0Pv54gvtKIg==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "openbsd"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/openharmony-arm64": {
++      "version": "0.27.7",
++      "resolved": "https://registry.npmjs.org/@esbuild/openharmony-arm64/-/openharmony-arm64-0.27.7.tgz",
++      "integrity": "sha512-+KrvYb/C8zA9CU/g0sR6w2RBw7IGc5J2BPnc3dYc5VJxHCSF1yNMxTV5LQ7GuKteQXZtspjFbiuW5/dOj7H4Yw==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "openharmony"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/sunos-x64": {
++      "version": "0.27.7",
++      "resolved": "https://registry.npmjs.org/@esbuild/sunos-x64/-/sunos-x64-0.27.7.tgz",
++      "integrity": "sha512-ikktIhFBzQNt/QDyOL580ti9+5mL/YZeUPKU2ivGtGjdTYoqz6jObj6nOMfhASpS4GU4Q/Clh1QtxWAvcYKamA==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "sunos"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/win32-arm64": {
++      "version": "0.27.7",
++      "resolved": "https://registry.npmjs.org/@esbuild/win32-arm64/-/win32-arm64-0.27.7.tgz",
++      "integrity": "sha512-7yRhbHvPqSpRUV7Q20VuDwbjW5kIMwTHpptuUzV+AA46kiPze5Z7qgt6CLCK3pWFrHeNfDd1VKgyP4O+ng17CA==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "win32"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/win32-ia32": {
++      "version": "0.27.7",
++      "resolved": "https://registry.npmjs.org/@esbuild/win32-ia32/-/win32-ia32-0.27.7.tgz",
++      "integrity": "sha512-SmwKXe6VHIyZYbBLJrhOoCJRB/Z1tckzmgTLfFYOfpMAx63BJEaL9ExI8x7v0oAO3Zh6D/Oi1gVxEYr5oUCFhw==",
++      "cpu": [
++        "ia32"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "win32"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
++    "node_modules/@esbuild/win32-x64": {
++      "version": "0.27.7",
++      "resolved": "https://registry.npmjs.org/@esbuild/win32-x64/-/win32-x64-0.27.7.tgz",
++      "integrity": "sha512-56hiAJPhwQ1R4i+21FVF7V8kSD5zZTdHcVuRFMW0hn753vVfQN8xlx4uOPT4xoGH0Z/oVATuR82AiqSTDIpaHg==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "win32"
++      ],
++      "engines": {
++        "node": ">=18"
++      }
++    },
+     "node_modules/@eslint-community/eslint-utils": {
+       "version": "4.9.1",
+       "resolved": "https://registry.npmjs.org/@eslint-community/eslint-utils/-/eslint-utils-4.9.1.tgz",
+@@ -2046,45 +2490,413 @@
+       "resolved": "https://registry.npmjs.org/@nodelib/fs.walk/-/fs.walk-1.2.8.tgz",
+       "integrity": "sha512-oGB+UxlgWcgQkgwo8GcEGwemoTFt3FIO9ababBmaGwXIoBKZ+GTy0pP185beGg7Llih/NSHSV2XAs1lnznocSg==",
+       "license": "MIT",
+-      "dependencies": {
+-        "@nodelib/fs.scandir": "2.1.5",
+-        "fastq": "^1.6.0"
+-      },
+-      "engines": {
+-        "node": ">= 8"
+-      }
++      "dependencies": {
++        "@nodelib/fs.scandir": "2.1.5",
++        "fastq": "^1.6.0"
++      },
++      "engines": {
++        "node": ">= 8"
++      }
++    },
++    "node_modules/@nolyfill/is-core-module": {
++      "version": "1.0.39",
++      "resolved": "https://registry.npmjs.org/@nolyfill/is-core-module/-/is-core-module-1.0.39.tgz",
++      "integrity": "sha512-nn5ozdjYQpUCZlWGuxcJY/KpxkWQs4DcbMCmKojjyrYDEAGy4Ce19NN4v5MduafTwJlbKc99UA8YhSVqq9yPZA==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=12.4.0"
++      }
++    },
++    "node_modules/@open-draft/deferred-promise": {
++      "version": "3.0.0",
++      "resolved": "https://registry.npmjs.org/@open-draft/deferred-promise/-/deferred-promise-3.0.0.tgz",
++      "integrity": "sha512-XW375UK8/9SqUVNVa6M0yEy8+iTi4QN5VZ7aZuRFQmy76LRwI9wy5F4YIBU6T+eTe2/DNDo8tqu8RHlwLHM6RA==",
++      "license": "MIT"
++    },
++    "node_modules/@open-draft/logger": {
++      "version": "0.3.0",
++      "resolved": "https://registry.npmjs.org/@open-draft/logger/-/logger-0.3.0.tgz",
++      "integrity": "sha512-X2g45fzhxH238HKO4xbSr7+wBS8Fvw6ixhTDuvLd5mqh6bJJCFAPwU9mPDxbcrRtfxv4u5IHCEH77BmxvXmmxQ==",
++      "license": "MIT",
++      "dependencies": {
++        "is-node-process": "^1.2.0",
++        "outvariant": "^1.4.0"
++      }
++    },
++    "node_modules/@open-draft/until": {
++      "version": "2.1.0",
++      "resolved": "https://registry.npmjs.org/@open-draft/until/-/until-2.1.0.tgz",
++      "integrity": "sha512-U69T3ItWHvLwGg5eJ0n3I62nWuE6ilHlmz7zM0npLBRvPRd7e6NYmg54vvRtP5mZG7kZqZCFVdsTWo7BPtBujg==",
++      "license": "MIT"
++    },
++    "node_modules/@react-email/render": {
++      "version": "1.1.2",
++      "resolved": "https://registry.npmjs.org/@react-email/render/-/render-1.1.2.tgz",
++      "integrity": "sha512-RnRehYN3v9gVlNMehHPHhyp2RQo7+pSkHDtXPvg3s0GbzM9SQMW4Qrf8GRNvtpLC4gsI+Wt0VatNRUFqjvevbw==",
++      "license": "MIT",
++      "dependencies": {
++        "html-to-text": "^9.0.5",
++        "prettier": "^3.5.3",
++        "react-promise-suspense": "^0.3.4"
++      },
++      "engines": {
++        "node": ">=18.0.0"
++      },
++      "peerDependencies": {
++        "react": "^18.0 || ^19.0 || ^19.0.0-rc",
++        "react-dom": "^18.0 || ^19.0 || ^19.0.0-rc"
++      }
++    },
++    "node_modules/@rollup/rollup-android-arm-eabi": {
++      "version": "4.60.4",
++      "resolved": "https://registry.npmjs.org/@rollup/rollup-android-arm-eabi/-/rollup-android-arm-eabi-4.60.4.tgz",
++      "integrity": "sha512-F5QXMSiFebS9hKZj02XhWLLnRpJ3B3AROP0tWbFBSj+6kCbg5m9j5JoHKd4mmSVy5mS/IMQloYgYxCuJC0fxEQ==",
++      "cpu": [
++        "arm"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "android"
++      ]
++    },
++    "node_modules/@rollup/rollup-android-arm64": {
++      "version": "4.60.4",
++      "resolved": "https://registry.npmjs.org/@rollup/rollup-android-arm64/-/rollup-android-arm64-4.60.4.tgz",
++      "integrity": "sha512-GxxTKApUpzRhof7poWvCJHRF51C67u1R7D6DiluBE8wKU1u5GWE8t+v81JvJYtbawoBFX1hLv5Ei4eVjkWokaw==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "android"
++      ]
++    },
++    "node_modules/@rollup/rollup-darwin-arm64": {
++      "version": "4.60.4",
++      "resolved": "https://registry.npmjs.org/@rollup/rollup-darwin-arm64/-/rollup-darwin-arm64-4.60.4.tgz",
++      "integrity": "sha512-tua0TaJxMOB1R0V0RS1jFZ/RpURFDJIOR2A6jWwQeawuFyS4gBW+rntLRaQd0EQ4bd6Vp44Z2rXW+YYDBsj6IA==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "darwin"
++      ]
++    },
++    "node_modules/@rollup/rollup-darwin-x64": {
++      "version": "4.60.4",
++      "resolved": "https://registry.npmjs.org/@rollup/rollup-darwin-x64/-/rollup-darwin-x64-4.60.4.tgz",
++      "integrity": "sha512-CSKq7MsP+5PFIcydhAiR1K0UhEI1A2jWXVKHPCBZ151yOutENwvnPocgVHkivu2kviURtCEB6zUQw0vs8RrhMg==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "darwin"
++      ]
++    },
++    "node_modules/@rollup/rollup-freebsd-arm64": {
++      "version": "4.60.4",
++      "resolved": "https://registry.npmjs.org/@rollup/rollup-freebsd-arm64/-/rollup-freebsd-arm64-4.60.4.tgz",
++      "integrity": "sha512-+O8OkVdyvXMtJEciu2wS/pzm1IxntEEQx3z5TAVy4l32G0etZn+RsA48ARRrFm6Ri8fvqPQfgrvNxSjKAbnd3g==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "freebsd"
++      ]
++    },
++    "node_modules/@rollup/rollup-freebsd-x64": {
++      "version": "4.60.4",
++      "resolved": "https://registry.npmjs.org/@rollup/rollup-freebsd-x64/-/rollup-freebsd-x64-4.60.4.tgz",
++      "integrity": "sha512-Iw3oMskH3AfNuhU0MSN7vNbdi4me/NiYo2azqPz/Le16zHSa+3RRmliCMWWQmh4lcndccU40xcJuTYJZxNo/lw==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "freebsd"
++      ]
++    },
++    "node_modules/@rollup/rollup-linux-arm-gnueabihf": {
++      "version": "4.60.4",
++      "resolved": "https://registry.npmjs.org/@rollup/rollup-linux-arm-gnueabihf/-/rollup-linux-arm-gnueabihf-4.60.4.tgz",
++      "integrity": "sha512-EIPRXTVQpHyF8WOo219AD2yEltPehLTcTMz2fn6JsatLYSzQf00hj3rulF+yauOlF9/FtM2WpkT/hJh/KJFGhA==",
++      "cpu": [
++        "arm"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ]
++    },
++    "node_modules/@rollup/rollup-linux-arm-musleabihf": {
++      "version": "4.60.4",
++      "resolved": "https://registry.npmjs.org/@rollup/rollup-linux-arm-musleabihf/-/rollup-linux-arm-musleabihf-4.60.4.tgz",
++      "integrity": "sha512-J3Yh9PzzF1Ovah2At+lHiGQdsYgArxBbXv/zHfSyaiFQEqvNv7DcW98pCrmdjCZBrqBiKrKKe2V+aaSGWuBe/w==",
++      "cpu": [
++        "arm"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ]
++    },
++    "node_modules/@rollup/rollup-linux-arm64-gnu": {
++      "version": "4.60.4",
++      "resolved": "https://registry.npmjs.org/@rollup/rollup-linux-arm64-gnu/-/rollup-linux-arm64-gnu-4.60.4.tgz",
++      "integrity": "sha512-BFDEZMYfUvLn37ONE1yMBojPxnMlTFsdyNoqncT0qFq1mAfllL+ATMMJd8TeuVMiX84s1KbcxcZbXInmcO2mRg==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ]
++    },
++    "node_modules/@rollup/rollup-linux-arm64-musl": {
++      "version": "4.60.4",
++      "resolved": "https://registry.npmjs.org/@rollup/rollup-linux-arm64-musl/-/rollup-linux-arm64-musl-4.60.4.tgz",
++      "integrity": "sha512-pc9EYOSlOgdQ2uPl1o9PF6/kLSgaUosia7gOuS8mB69IxJvlclko1MECXysjs5ryez1/5zjYqx3+xYU0TU6R1A==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ]
++    },
++    "node_modules/@rollup/rollup-linux-loong64-gnu": {
++      "version": "4.60.4",
++      "resolved": "https://registry.npmjs.org/@rollup/rollup-linux-loong64-gnu/-/rollup-linux-loong64-gnu-4.60.4.tgz",
++      "integrity": "sha512-NxnomyxYerDh5n4iLrNa+sH+Z+U4BMEE46V2PgQ/hoB909i8gV1M5wPojWg9fk1jWpO3IQnOs20K4wyZuFLEFQ==",
++      "cpu": [
++        "loong64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ]
++    },
++    "node_modules/@rollup/rollup-linux-loong64-musl": {
++      "version": "4.60.4",
++      "resolved": "https://registry.npmjs.org/@rollup/rollup-linux-loong64-musl/-/rollup-linux-loong64-musl-4.60.4.tgz",
++      "integrity": "sha512-nbJnQ8a3z1mtmrwImCYhc6BGpThAyYVRQxw9uKSKG4wR6aAYno9sVjJ0zaZcW9BPJX1GbrDPf+SvdWjgTuDmnw==",
++      "cpu": [
++        "loong64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ]
++    },
++    "node_modules/@rollup/rollup-linux-ppc64-gnu": {
++      "version": "4.60.4",
++      "resolved": "https://registry.npmjs.org/@rollup/rollup-linux-ppc64-gnu/-/rollup-linux-ppc64-gnu-4.60.4.tgz",
++      "integrity": "sha512-2EU6acNrQLd8tYvo/LXW535wupT3m6fo7HKo6lr7ktQoItxTyOL1ZCR/GfGCuXl2vR+zmfI6eRXkSemafv+iVg==",
++      "cpu": [
++        "ppc64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ]
++    },
++    "node_modules/@rollup/rollup-linux-ppc64-musl": {
++      "version": "4.60.4",
++      "resolved": "https://registry.npmjs.org/@rollup/rollup-linux-ppc64-musl/-/rollup-linux-ppc64-musl-4.60.4.tgz",
++      "integrity": "sha512-WeBtoMuaMxiiIrO2IYP3xs6GMWkJP2C0EoT8beTLkUPmzV1i/UcOSVw1d5r9KBODtHKilG5yFxsGRnBbK3wJ4A==",
++      "cpu": [
++        "ppc64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ]
++    },
++    "node_modules/@rollup/rollup-linux-riscv64-gnu": {
++      "version": "4.60.4",
++      "resolved": "https://registry.npmjs.org/@rollup/rollup-linux-riscv64-gnu/-/rollup-linux-riscv64-gnu-4.60.4.tgz",
++      "integrity": "sha512-FJHFfqpKUI3A10WrWKiFbBZ7yVbGT4q4B5o1qKFFojqpaYoh9LrQgqWCmmcxQzVSXYtyB5bzkXrYzlHTs21MYA==",
++      "cpu": [
++        "riscv64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ]
++    },
++    "node_modules/@rollup/rollup-linux-riscv64-musl": {
++      "version": "4.60.4",
++      "resolved": "https://registry.npmjs.org/@rollup/rollup-linux-riscv64-musl/-/rollup-linux-riscv64-musl-4.60.4.tgz",
++      "integrity": "sha512-mcEl6CUT5IAUmQf1m9FYSmVqCJlpQ8r8eyftFUHG8i9OhY7BkBXSUdnLH5DOf0wCOjcP9v/QO93zpmF1SptCCw==",
++      "cpu": [
++        "riscv64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ]
++    },
++    "node_modules/@rollup/rollup-linux-s390x-gnu": {
++      "version": "4.60.4",
++      "resolved": "https://registry.npmjs.org/@rollup/rollup-linux-s390x-gnu/-/rollup-linux-s390x-gnu-4.60.4.tgz",
++      "integrity": "sha512-ynt3JxVd2w2buzoKDWIyiV1pJW93xlQic1THVLXilz429oijRpSHivZAgp65KBu+cMcgf1eVVjdnTLvPxgCuoQ==",
++      "cpu": [
++        "s390x"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ]
++    },
++    "node_modules/@rollup/rollup-linux-x64-gnu": {
++      "version": "4.60.4",
++      "resolved": "https://registry.npmjs.org/@rollup/rollup-linux-x64-gnu/-/rollup-linux-x64-gnu-4.60.4.tgz",
++      "integrity": "sha512-Boiz5+MsaROEWDf+GGEwF8VMHGhlUoQMtIPjOgA5fv4osupqTVnJteQNKJwUcnUog2G55jYXH7KZFFiJe0TEzQ==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ]
++    },
++    "node_modules/@rollup/rollup-linux-x64-musl": {
++      "version": "4.60.4",
++      "resolved": "https://registry.npmjs.org/@rollup/rollup-linux-x64-musl/-/rollup-linux-x64-musl-4.60.4.tgz",
++      "integrity": "sha512-+qfSY27qIrFfI/Hom04KYFw3GKZSGU4lXus51wsb5EuySfFlWRwjkKWoE9emgRw/ukoT4Udsj4W/+xxG8VbPKg==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "linux"
++      ]
++    },
++    "node_modules/@rollup/rollup-openbsd-x64": {
++      "version": "4.60.4",
++      "resolved": "https://registry.npmjs.org/@rollup/rollup-openbsd-x64/-/rollup-openbsd-x64-4.60.4.tgz",
++      "integrity": "sha512-VpTfOPHgVXEBeeR8hZ2O0F3aSso+JDWqTWmTmzcQKted54IAdUVbxE+j/MVxUsKa8L20HJhv3vUezVPoquqWjA==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "openbsd"
++      ]
++    },
++    "node_modules/@rollup/rollup-openharmony-arm64": {
++      "version": "4.60.4",
++      "resolved": "https://registry.npmjs.org/@rollup/rollup-openharmony-arm64/-/rollup-openharmony-arm64-4.60.4.tgz",
++      "integrity": "sha512-IPOsh5aRYuLv/nkU51X10Bf75Bsf6+gZdx1X+QP5QM6lIJFHHqbHLG0uJn/hWthzo13UAc2umiUorqZy3axoZg==",
++      "cpu": [
++        "arm64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "openharmony"
++      ]
+     },
+-    "node_modules/@nolyfill/is-core-module": {
+-      "version": "1.0.39",
+-      "resolved": "https://registry.npmjs.org/@nolyfill/is-core-module/-/is-core-module-1.0.39.tgz",
+-      "integrity": "sha512-nn5ozdjYQpUCZlWGuxcJY/KpxkWQs4DcbMCmKojjyrYDEAGy4Ce19NN4v5MduafTwJlbKc99UA8YhSVqq9yPZA==",
++    "node_modules/@rollup/rollup-win32-arm64-msvc": {
++      "version": "4.60.4",
++      "resolved": "https://registry.npmjs.org/@rollup/rollup-win32-arm64-msvc/-/rollup-win32-arm64-msvc-4.60.4.tgz",
++      "integrity": "sha512-4QzE9E81OohJ/HKzHhsqU+zcYYojVOXlFMs1DdyMT6qXl/niOH7AVElmmEdUNHHS/oRkc++d5k6Vy85zFs0DEw==",
++      "cpu": [
++        "arm64"
++      ],
+       "dev": true,
+       "license": "MIT",
+-      "engines": {
+-        "node": ">=12.4.0"
+-      }
++      "optional": true,
++      "os": [
++        "win32"
++      ]
+     },
+-    "node_modules/@open-draft/deferred-promise": {
+-      "version": "3.0.0",
+-      "resolved": "https://registry.npmjs.org/@open-draft/deferred-promise/-/deferred-promise-3.0.0.tgz",
+-      "integrity": "sha512-XW375UK8/9SqUVNVa6M0yEy8+iTi4QN5VZ7aZuRFQmy76LRwI9wy5F4YIBU6T+eTe2/DNDo8tqu8RHlwLHM6RA==",
+-      "license": "MIT"
++    "node_modules/@rollup/rollup-win32-ia32-msvc": {
++      "version": "4.60.4",
++      "resolved": "https://registry.npmjs.org/@rollup/rollup-win32-ia32-msvc/-/rollup-win32-ia32-msvc-4.60.4.tgz",
++      "integrity": "sha512-zTPgT1YuHHcd+Tmx7h8aml0FWFVelV5N54oHow9SLj+GfoDy/huQ+UV396N/C7KpMDMiPspRktzM1/0r1usYEA==",
++      "cpu": [
++        "ia32"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "win32"
++      ]
+     },
+-    "node_modules/@open-draft/logger": {
+-      "version": "0.3.0",
+-      "resolved": "https://registry.npmjs.org/@open-draft/logger/-/logger-0.3.0.tgz",
+-      "integrity": "sha512-X2g45fzhxH238HKO4xbSr7+wBS8Fvw6ixhTDuvLd5mqh6bJJCFAPwU9mPDxbcrRtfxv4u5IHCEH77BmxvXmmxQ==",
++    "node_modules/@rollup/rollup-win32-x64-gnu": {
++      "version": "4.60.4",
++      "resolved": "https://registry.npmjs.org/@rollup/rollup-win32-x64-gnu/-/rollup-win32-x64-gnu-4.60.4.tgz",
++      "integrity": "sha512-DRS4G7mi9lJxqEDezIkKCaUIKCrLUUDCUaCsTPCi/rtqaC6D/jjwslMQyiDU50Ka0JKpeXeRBFBAXwArY52vBw==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
+       "license": "MIT",
+-      "dependencies": {
+-        "is-node-process": "^1.2.0",
+-        "outvariant": "^1.4.0"
+-      }
++      "optional": true,
++      "os": [
++        "win32"
++      ]
+     },
+-    "node_modules/@open-draft/until": {
+-      "version": "2.1.0",
+-      "resolved": "https://registry.npmjs.org/@open-draft/until/-/until-2.1.0.tgz",
+-      "integrity": "sha512-U69T3ItWHvLwGg5eJ0n3I62nWuE6ilHlmz7zM0npLBRvPRd7e6NYmg54vvRtP5mZG7kZqZCFVdsTWo7BPtBujg==",
+-      "license": "MIT"
++    "node_modules/@rollup/rollup-win32-x64-msvc": {
++      "version": "4.60.4",
++      "resolved": "https://registry.npmjs.org/@rollup/rollup-win32-x64-msvc/-/rollup-win32-x64-msvc-4.60.4.tgz",
++      "integrity": "sha512-QVTUovf40zgTqlFVrKA1uXMVvU2QWEFWfAH8Wdc48IxLvrJMQVMBRjuQyUpzZCDkakImib9eVazbWlC6ksWtJw==",
++      "cpu": [
++        "x64"
++      ],
++      "dev": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "win32"
++      ]
+     },
+     "node_modules/@rtsao/scc": {
+       "version": "1.1.0",
+@@ -2106,6 +2918,19 @@
+       "integrity": "sha512-831qok9r2t8AlxLko40y2ebgSDhenenCatLVeW/uBtnHPyhHOvG0C7TvfgecV+wHzIm5KUICgzmVpWS+IMEAeg==",
+       "license": "MIT"
+     },
++    "node_modules/@selderee/plugin-htmlparser2": {
++      "version": "0.11.0",
++      "resolved": "https://registry.npmjs.org/@selderee/plugin-htmlparser2/-/plugin-htmlparser2-0.11.0.tgz",
++      "integrity": "sha512-P33hHGdldxGabLFjPPpaTxVolMrzrcegejx+0GxjrIb9Zv48D8yAIA/QTDR2dFl7Uz7urX8aX6+5bCZslr+gWQ==",
++      "license": "MIT",
++      "dependencies": {
++        "domhandler": "^5.0.3",
++        "selderee": "^0.11.0"
++      },
++      "funding": {
++        "url": "https://ko-fi.com/killymxi"
++      }
++    },
+     "node_modules/@sindresorhus/merge-streams": {
+       "version": "4.0.0",
+       "resolved": "https://registry.npmjs.org/@sindresorhus/merge-streams/-/merge-streams-4.0.0.tgz",
+@@ -2574,6 +3399,17 @@
+         "tslib": "^2.4.0"
+       }
+     },
++    "node_modules/@types/chai": {
++      "version": "5.2.3",
++      "resolved": "https://registry.npmjs.org/@types/chai/-/chai-5.2.3.tgz",
++      "integrity": "sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@types/deep-eql": "*",
++        "assertion-error": "^2.0.1"
++      }
++    },
+     "node_modules/@types/d3-array": {
+       "version": "3.2.2",
+       "resolved": "https://registry.npmjs.org/@types/d3-array/-/d3-array-3.2.2.tgz",
+@@ -2637,6 +3473,13 @@
+       "integrity": "sha512-Ps3T8E8dZDam6fUyNiMkekK3XUsaUEik+idO9/YjPtfj2qruF8tFBXS7XhtE4iIXBLxhmLjP3SXpLhVf21I9Lw==",
+       "license": "MIT"
+     },
++    "node_modules/@types/deep-eql": {
++      "version": "4.0.2",
++      "resolved": "https://registry.npmjs.org/@types/deep-eql/-/deep-eql-4.0.2.tgz",
++      "integrity": "sha512-c9h9dVVMigMPc4bwTvC5dxqtqJZwQPePsWjPlpSOnojbor6pGqdk541lfA7AqFQr5pB1BRdq0juY9db81BwyFw==",
++      "dev": true,
++      "license": "MIT"
++    },
+     "node_modules/@types/estree": {
+       "version": "1.0.9",
+       "resolved": "https://registry.npmjs.org/@types/estree/-/estree-1.0.9.tgz",
+@@ -3320,6 +4163,121 @@
+         "win32"
+       ]
+     },
++    "node_modules/@vitest/expect": {
++      "version": "3.2.4",
++      "resolved": "https://registry.npmjs.org/@vitest/expect/-/expect-3.2.4.tgz",
++      "integrity": "sha512-Io0yyORnB6sikFlt8QW5K7slY4OjqNX9jmJQ02QDda8lyM6B5oNgVWoSoKPac8/kgnCUzuHQKrSLtu/uOqqrig==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@types/chai": "^5.2.2",
++        "@vitest/spy": "3.2.4",
++        "@vitest/utils": "3.2.4",
++        "chai": "^5.2.0",
++        "tinyrainbow": "^2.0.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/vitest"
++      }
++    },
++    "node_modules/@vitest/mocker": {
++      "version": "3.2.4",
++      "resolved": "https://registry.npmjs.org/@vitest/mocker/-/mocker-3.2.4.tgz",
++      "integrity": "sha512-46ryTE9RZO/rfDd7pEqFl7etuyzekzEhUbTW3BvmeO/BcCMEgq59BKhek3dXDWgAj4oMK6OZi+vRr1wPW6qjEQ==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@vitest/spy": "3.2.4",
++        "estree-walker": "^3.0.3",
++        "magic-string": "^0.30.17"
++      },
++      "funding": {
++        "url": "https://opencollective.com/vitest"
++      },
++      "peerDependencies": {
++        "msw": "^2.4.9",
++        "vite": "^5.0.0 || ^6.0.0 || ^7.0.0-0"
++      },
++      "peerDependenciesMeta": {
++        "msw": {
++          "optional": true
++        },
++        "vite": {
++          "optional": true
++        }
++      }
++    },
++    "node_modules/@vitest/pretty-format": {
++      "version": "3.2.4",
++      "resolved": "https://registry.npmjs.org/@vitest/pretty-format/-/pretty-format-3.2.4.tgz",
++      "integrity": "sha512-IVNZik8IVRJRTr9fxlitMKeJeXFFFN0JaB9PHPGQ8NKQbGpfjlTx9zO4RefN8gp7eqjNy8nyK3NZmBzOPeIxtA==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "tinyrainbow": "^2.0.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/vitest"
++      }
++    },
++    "node_modules/@vitest/runner": {
++      "version": "3.2.4",
++      "resolved": "https://registry.npmjs.org/@vitest/runner/-/runner-3.2.4.tgz",
++      "integrity": "sha512-oukfKT9Mk41LreEW09vt45f8wx7DordoWUZMYdY/cyAk7w5TWkTRCNZYF7sX7n2wB7jyGAl74OxgwhPgKaqDMQ==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@vitest/utils": "3.2.4",
++        "pathe": "^2.0.3",
++        "strip-literal": "^3.0.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/vitest"
++      }
++    },
++    "node_modules/@vitest/snapshot": {
++      "version": "3.2.4",
++      "resolved": "https://registry.npmjs.org/@vitest/snapshot/-/snapshot-3.2.4.tgz",
++      "integrity": "sha512-dEYtS7qQP2CjU27QBC5oUOxLE/v5eLkGqPE0ZKEIDGMs4vKWe7IjgLOeauHsR0D5YuuycGRO5oSRXnwnmA78fQ==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@vitest/pretty-format": "3.2.4",
++        "magic-string": "^0.30.17",
++        "pathe": "^2.0.3"
++      },
++      "funding": {
++        "url": "https://opencollective.com/vitest"
++      }
++    },
++    "node_modules/@vitest/spy": {
++      "version": "3.2.4",
++      "resolved": "https://registry.npmjs.org/@vitest/spy/-/spy-3.2.4.tgz",
++      "integrity": "sha512-vAfasCOe6AIK70iP5UD11Ac4siNUNJ9i/9PZ3NKx07sG6sUxeag1LWdNrMWeKKYBLlzuK+Gn65Yd5nyL6ds+nw==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "tinyspy": "^4.0.3"
++      },
++      "funding": {
++        "url": "https://opencollective.com/vitest"
++      }
++    },
++    "node_modules/@vitest/utils": {
++      "version": "3.2.4",
++      "resolved": "https://registry.npmjs.org/@vitest/utils/-/utils-3.2.4.tgz",
++      "integrity": "sha512-fB2V0JFrQSMsCo9HiSq3Ezpdv4iYaXRG1Sx8edX3MwxfyNn83mKiGzOcH+Fkxt4MHxr3y42fQi1oeAInqgX2QA==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@vitest/pretty-format": "3.2.4",
++        "loupe": "^3.1.4",
++        "tinyrainbow": "^2.0.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/vitest"
++      }
++    },
+     "node_modules/abort-controller": {
+       "version": "3.0.0",
+       "resolved": "https://registry.npmjs.org/abort-controller/-/abort-controller-3.0.0.tgz",
+@@ -3679,6 +4637,16 @@
+         "url": "https://github.com/sponsors/ljharb"
+       }
+     },
++    "node_modules/assertion-error": {
++      "version": "2.0.1",
++      "resolved": "https://registry.npmjs.org/assertion-error/-/assertion-error-2.0.1.tgz",
++      "integrity": "sha512-Izi8RQcffqCeNVgFigKli1ssklIbpHnCYc6AknXGYoB6grJqyeby7jv12JUQgmTAnIDnbck1uxksT4dzN3PWBA==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=12"
++      }
++    },
+     "node_modules/ast-types": {
+       "version": "0.16.1",
+       "resolved": "https://registry.npmjs.org/ast-types/-/ast-types-0.16.1.tgz",
+@@ -3873,6 +4841,16 @@
+         "node": ">= 0.8"
+       }
+     },
++    "node_modules/cac": {
++      "version": "6.7.14",
++      "resolved": "https://registry.npmjs.org/cac/-/cac-6.7.14.tgz",
++      "integrity": "sha512-b6Ilus+c3RrdDk+JhLKUAQfzzgLEPy6wcXqS7f/xe1EETvsDP6GORG7SFuOs6cID5YkqchW/LXZbX5bc8j7ZcQ==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=8"
++      }
++    },
+     "node_modules/call-bind": {
+       "version": "1.0.9",
+       "resolved": "https://registry.npmjs.org/call-bind/-/call-bind-1.0.9.tgz",
+@@ -3950,6 +4928,23 @@
+       ],
+       "license": "CC-BY-4.0"
+     },
++    "node_modules/chai": {
++      "version": "5.3.3",
++      "resolved": "https://registry.npmjs.org/chai/-/chai-5.3.3.tgz",
++      "integrity": "sha512-4zNhdJD/iOjSH0A05ea+Ke6MU5mmpQcbQsSOkgdaUMJ9zTlDTD/GYlwohmIE2u0gaxHYiVHEn1Fw9mZ/ktJWgw==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "assertion-error": "^2.0.1",
++        "check-error": "^2.1.1",
++        "deep-eql": "^5.0.1",
++        "loupe": "^3.1.0",
++        "pathval": "^2.0.0"
++      },
++      "engines": {
++        "node": ">=18"
++      }
++    },
+     "node_modules/chalk": {
+       "version": "4.1.2",
+       "resolved": "https://registry.npmjs.org/chalk/-/chalk-4.1.2.tgz",
+@@ -3967,6 +4962,16 @@
+         "url": "https://github.com/chalk/chalk?sponsor=1"
+       }
+     },
++    "node_modules/check-error": {
++      "version": "2.1.3",
++      "resolved": "https://registry.npmjs.org/check-error/-/check-error-2.1.3.tgz",
++      "integrity": "sha512-PAJdDJusoxnwm1VwW07VWwUN1sl7smmC3OKggvndJFadxxDRyFJBX/ggnu/KE4kQAB7a3Dp8f/YXC1FlUprWmA==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">= 16"
++      }
++    },
+     "node_modules/class-variance-authority": {
+       "version": "0.7.1",
+       "resolved": "https://registry.npmjs.org/class-variance-authority/-/class-variance-authority-0.7.1.tgz",
+@@ -4465,6 +5470,16 @@
+         }
+       }
+     },
++    "node_modules/deep-eql": {
++      "version": "5.0.2",
++      "resolved": "https://registry.npmjs.org/deep-eql/-/deep-eql-5.0.2.tgz",
++      "integrity": "sha512-h5k/5U50IJJFpzfL6nO9jaaumfjO/f2NjK/oYB2Djzm4p9L+3T9qWpZqZ2hAbLPuuYq9wrU08WQyBTL5GbPk5Q==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=6"
++      }
++    },
+     "node_modules/deep-is": {
+       "version": "0.1.4",
+       "resolved": "https://registry.npmjs.org/deep-is/-/deep-is-0.1.4.tgz",
+@@ -4626,6 +5641,61 @@
+         "csstype": "^3.0.2"
+       }
+     },
++    "node_modules/dom-serializer": {
++      "version": "2.0.0",
++      "resolved": "https://registry.npmjs.org/dom-serializer/-/dom-serializer-2.0.0.tgz",
++      "integrity": "sha512-wIkAryiqt/nV5EQKqQpo3SToSOV9J0DnbJqwK7Wv/Trc92zIAYZ4FlMu+JPFW1DfGFt81ZTCGgDEabffXeLyJg==",
++      "license": "MIT",
++      "dependencies": {
++        "domelementtype": "^2.3.0",
++        "domhandler": "^5.0.2",
++        "entities": "^4.2.0"
++      },
++      "funding": {
++        "url": "https://github.com/cheeriojs/dom-serializer?sponsor=1"
++      }
++    },
++    "node_modules/domelementtype": {
++      "version": "2.3.0",
++      "resolved": "https://registry.npmjs.org/domelementtype/-/domelementtype-2.3.0.tgz",
++      "integrity": "sha512-OLETBj6w0OsagBwdXnPdN0cnMfF9opN69co+7ZrbfPGrdpPVNBUj02spi6B1N7wChLQiPn4CSH/zJvXw56gmHw==",
++      "funding": [
++        {
++          "type": "github",
++          "url": "https://github.com/sponsors/fb55"
++        }
++      ],
++      "license": "BSD-2-Clause"
++    },
++    "node_modules/domhandler": {
++      "version": "5.0.3",
++      "resolved": "https://registry.npmjs.org/domhandler/-/domhandler-5.0.3.tgz",
++      "integrity": "sha512-cgwlv/1iFQiFnU96XXgROh8xTeetsnJiDsTc7TYCLFd9+/WNkIqPTxiM/8pSd8VIrhXGTf1Ny1q1hquVqDJB5w==",
++      "license": "BSD-2-Clause",
++      "dependencies": {
++        "domelementtype": "^2.3.0"
++      },
++      "engines": {
++        "node": ">= 4"
++      },
++      "funding": {
++        "url": "https://github.com/fb55/domhandler?sponsor=1"
++      }
++    },
++    "node_modules/domutils": {
++      "version": "3.2.2",
++      "resolved": "https://registry.npmjs.org/domutils/-/domutils-3.2.2.tgz",
++      "integrity": "sha512-6kZKyUajlDuqlHKVX1w7gyslj9MPIXzIFiz/rGu35uC1wMi+kMhQwGhl4lt9unC9Vb9INnY9Z3/ZA3+FhASLaw==",
++      "license": "BSD-2-Clause",
++      "dependencies": {
++        "dom-serializer": "^2.0.0",
++        "domelementtype": "^2.3.0",
++        "domhandler": "^5.0.3"
++      },
++      "funding": {
++        "url": "https://github.com/fb55/domutils?sponsor=1"
++      }
++    },
+     "node_modules/dotenv": {
+       "version": "17.4.2",
+       "resolved": "https://registry.npmjs.org/dotenv/-/dotenv-17.4.2.tgz",
+@@ -4724,6 +5794,18 @@
+         "node": ">=8.6"
+       }
+     },
++    "node_modules/entities": {
++      "version": "4.5.0",
++      "resolved": "https://registry.npmjs.org/entities/-/entities-4.5.0.tgz",
++      "integrity": "sha512-V0hjH4dGPh9Ao5p0MoRY6BVqtwCjhz6vI5LT8AJ55H+4g9/4vbHx1I54fS0XuclLhDHArPQCiMjDxjaL8fPxhw==",
++      "license": "BSD-2-Clause",
++      "engines": {
++        "node": ">=0.12"
++      },
++      "funding": {
++        "url": "https://github.com/fb55/entities?sponsor=1"
++      }
++    },
+     "node_modules/env-paths": {
+       "version": "2.2.1",
+       "resolved": "https://registry.npmjs.org/env-paths/-/env-paths-2.2.1.tgz",
+@@ -4857,6 +5939,13 @@
+         "node": ">= 0.4"
+       }
+     },
++    "node_modules/es-module-lexer": {
++      "version": "1.7.0",
++      "resolved": "https://registry.npmjs.org/es-module-lexer/-/es-module-lexer-1.7.0.tgz",
++      "integrity": "sha512-jEQoCwk8hyb2AZziIOLhDqpm5+2ww5uIE6lkO/6jcOCusfk6LhMHpXXfBLXTZ7Ydyt0j4VoUQv6uGNYbdW+kBA==",
++      "dev": true,
++      "license": "MIT"
++    },
+     "node_modules/es-object-atoms": {
+       "version": "1.1.2",
+       "resolved": "https://registry.npmjs.org/es-object-atoms/-/es-object-atoms-1.1.2.tgz",
+@@ -4915,6 +6004,48 @@
+         "url": "https://github.com/sponsors/ljharb"
+       }
+     },
++    "node_modules/esbuild": {
++      "version": "0.27.7",
++      "resolved": "https://registry.npmjs.org/esbuild/-/esbuild-0.27.7.tgz",
++      "integrity": "sha512-IxpibTjyVnmrIQo5aqNpCgoACA/dTKLTlhMHihVHhdkxKyPO1uBBthumT0rdHmcsk9uMonIWS0m4FljWzILh3w==",
++      "dev": true,
++      "hasInstallScript": true,
++      "license": "MIT",
++      "bin": {
++        "esbuild": "bin/esbuild"
++      },
++      "engines": {
++        "node": ">=18"
++      },
++      "optionalDependencies": {
++        "@esbuild/aix-ppc64": "0.27.7",
++        "@esbuild/android-arm": "0.27.7",
++        "@esbuild/android-arm64": "0.27.7",
++        "@esbuild/android-x64": "0.27.7",
++        "@esbuild/darwin-arm64": "0.27.7",
++        "@esbuild/darwin-x64": "0.27.7",
++        "@esbuild/freebsd-arm64": "0.27.7",
++        "@esbuild/freebsd-x64": "0.27.7",
++        "@esbuild/linux-arm": "0.27.7",
++        "@esbuild/linux-arm64": "0.27.7",
++        "@esbuild/linux-ia32": "0.27.7",
++        "@esbuild/linux-loong64": "0.27.7",
++        "@esbuild/linux-mips64el": "0.27.7",
++        "@esbuild/linux-ppc64": "0.27.7",
++        "@esbuild/linux-riscv64": "0.27.7",
++        "@esbuild/linux-s390x": "0.27.7",
++        "@esbuild/linux-x64": "0.27.7",
++        "@esbuild/netbsd-arm64": "0.27.7",
++        "@esbuild/netbsd-x64": "0.27.7",
++        "@esbuild/openbsd-arm64": "0.27.7",
++        "@esbuild/openbsd-x64": "0.27.7",
++        "@esbuild/openharmony-arm64": "0.27.7",
++        "@esbuild/sunos-x64": "0.27.7",
++        "@esbuild/win32-arm64": "0.27.7",
++        "@esbuild/win32-ia32": "0.27.7",
++        "@esbuild/win32-x64": "0.27.7"
++      }
++    },
+     "node_modules/escalade": {
+       "version": "3.2.0",
+       "resolved": "https://registry.npmjs.org/escalade/-/escalade-3.2.0.tgz",
+@@ -5353,6 +6484,16 @@
+         "node": ">=4.0"
+       }
+     },
++    "node_modules/estree-walker": {
++      "version": "3.0.3",
++      "resolved": "https://registry.npmjs.org/estree-walker/-/estree-walker-3.0.3.tgz",
++      "integrity": "sha512-7RUKfXgSMMkzt6ZuXmqapOurLGPPfgj6l9uRZ7lRGolvk0y2yocc35LdcxKC5PQZdn2DMqioAQ2NoWcrTKmm6g==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@types/estree": "^1.0.0"
++      }
++    },
+     "node_modules/esutils": {
+       "version": "2.0.3",
+       "resolved": "https://registry.npmjs.org/esutils/-/esutils-2.0.3.tgz",
+@@ -5434,6 +6575,16 @@
+         "url": "https://github.com/sindresorhus/execa?sponsor=1"
+       }
+     },
++    "node_modules/expect-type": {
++      "version": "1.3.0",
++      "resolved": "https://registry.npmjs.org/expect-type/-/expect-type-1.3.0.tgz",
++      "integrity": "sha512-knvyeauYhqjOYvQ66MznSMs83wmHrCycNEN6Ao+2AeYEfxUIkuiVxdEa1qlGEPK+We3n0THiDciYSsCcgW/DoA==",
++      "dev": true,
++      "license": "Apache-2.0",
++      "engines": {
++        "node": ">=12.0.0"
++      }
++    },
+     "node_modules/express": {
+       "version": "5.2.1",
+       "resolved": "https://registry.npmjs.org/express/-/express-5.2.1.tgz",
+@@ -5874,7 +7025,22 @@
+         "universalify": "^2.0.0"
+       },
+       "engines": {
+-        "node": ">=14.14"
++        "node": ">=14.14"
++      }
++    },
++    "node_modules/fsevents": {
++      "version": "2.3.3",
++      "resolved": "https://registry.npmjs.org/fsevents/-/fsevents-2.3.3.tgz",
++      "integrity": "sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==",
++      "dev": true,
++      "hasInstallScript": true,
++      "license": "MIT",
++      "optional": true,
++      "os": [
++        "darwin"
++      ],
++      "engines": {
++        "node": "^8.16.0 || ^10.6.0 || >=11.0.0"
+       }
+     },
+     "node_modules/function-bind": {
+@@ -6245,6 +7411,41 @@
+         "node": ">=16.9.0"
+       }
+     },
++    "node_modules/html-to-text": {
++      "version": "9.0.5",
++      "resolved": "https://registry.npmjs.org/html-to-text/-/html-to-text-9.0.5.tgz",
++      "integrity": "sha512-qY60FjREgVZL03vJU6IfMV4GDjGBIoOyvuFdpBDIX9yTlDw0TjxVBQp+P8NvpdIXNJvfWBTNul7fsAQJq2FNpg==",
++      "license": "MIT",
++      "dependencies": {
++        "@selderee/plugin-htmlparser2": "^0.11.0",
++        "deepmerge": "^4.3.1",
++        "dom-serializer": "^2.0.0",
++        "htmlparser2": "^8.0.2",
++        "selderee": "^0.11.0"
++      },
++      "engines": {
++        "node": ">=14"
++      }
++    },
++    "node_modules/htmlparser2": {
++      "version": "8.0.2",
++      "resolved": "https://registry.npmjs.org/htmlparser2/-/htmlparser2-8.0.2.tgz",
++      "integrity": "sha512-GYdjWKDkbRLkZ5geuHs5NY1puJ+PXwP7+fHPRz06Eirsb9ugf6d8kkXav6ADhcODhFFPMIXyxkxSuMf3D6NCFA==",
++      "funding": [
++        "https://github.com/fb55/htmlparser2?sponsor=1",
++        {
++          "type": "github",
++          "url": "https://github.com/sponsors/fb55"
++        }
++      ],
++      "license": "MIT",
++      "dependencies": {
++        "domelementtype": "^2.3.0",
++        "domhandler": "^5.0.3",
++        "domutils": "^3.0.1",
++        "entities": "^4.4.0"
++      }
++    },
+     "node_modules/http-errors": {
+       "version": "2.0.1",
+       "resolved": "https://registry.npmjs.org/http-errors/-/http-errors-2.0.1.tgz",
+@@ -7164,6 +8365,15 @@
+         "node": ">=0.10"
+       }
+     },
++    "node_modules/leac": {
++      "version": "0.6.0",
++      "resolved": "https://registry.npmjs.org/leac/-/leac-0.6.0.tgz",
++      "integrity": "sha512-y+SqErxb8h7nE/fiEX07jsbuhrpO9lL8eca7/Y1nuWV2moNlXhyd59iDGcRf6moVyDMbmTNzL40SUyrFU/yDpg==",
++      "license": "MIT",
++      "funding": {
++        "url": "https://ko-fi.com/killymxi"
++      }
++    },
+     "node_modules/levn": {
+       "version": "0.4.1",
+       "resolved": "https://registry.npmjs.org/levn/-/levn-0.4.1.tgz",
+@@ -7526,6 +8736,13 @@
+         "loose-envify": "cli.js"
+       }
+     },
++    "node_modules/loupe": {
++      "version": "3.2.1",
++      "resolved": "https://registry.npmjs.org/loupe/-/loupe-3.2.1.tgz",
++      "integrity": "sha512-CdzqowRJCeLU72bHvWqwRBBlLcMEtIvGrlvef74kMnV2AolS9Y8xUv1I0U/MNAWMhBlKIoyuEgoJ0t/bbwHbLQ==",
++      "dev": true,
++      "license": "MIT"
++    },
+     "node_modules/lru-cache": {
+       "version": "5.1.1",
+       "resolved": "https://registry.npmjs.org/lru-cache/-/lru-cache-5.1.1.tgz",
+@@ -8403,6 +9620,19 @@
+         "url": "https://github.com/sponsors/sindresorhus"
+       }
+     },
++    "node_modules/parseley": {
++      "version": "0.12.1",
++      "resolved": "https://registry.npmjs.org/parseley/-/parseley-0.12.1.tgz",
++      "integrity": "sha512-e6qHKe3a9HWr0oMRVDTRhKce+bRO8VGQR3NyVwcjwrbhMmFCX9KszEV35+rn4AdilFAq9VPxP/Fe1wC9Qjd2lw==",
++      "license": "MIT",
++      "dependencies": {
++        "leac": "^0.6.0",
++        "peberminta": "^0.9.0"
++      },
++      "funding": {
++        "url": "https://ko-fi.com/killymxi"
++      }
++    },
+     "node_modules/parseurl": {
+       "version": "1.3.3",
+       "resolved": "https://registry.npmjs.org/parseurl/-/parseurl-1.3.3.tgz",
+@@ -8450,6 +9680,32 @@
+       "integrity": "sha512-Yhpw4T9C6hPpgPeA28us07OJeqZ5EzQTkbfwuhsUg0c237RomFoETJgmp2sa3F/41gfLE6G5cqcYwznmeEeOlQ==",
+       "license": "MIT"
+     },
++    "node_modules/pathe": {
++      "version": "2.0.3",
++      "resolved": "https://registry.npmjs.org/pathe/-/pathe-2.0.3.tgz",
++      "integrity": "sha512-WUjGcAqP1gQacoQe+OBJsFA7Ld4DyXuUIjZ5cc75cLHvJ7dtNsTugphxIADwspS+AraAUePCKrSVtPLFj/F88w==",
++      "dev": true,
++      "license": "MIT"
++    },
++    "node_modules/pathval": {
++      "version": "2.0.1",
++      "resolved": "https://registry.npmjs.org/pathval/-/pathval-2.0.1.tgz",
++      "integrity": "sha512-//nshmD55c46FuFw26xV/xFAaB5HF9Xdap7HJBBnrKdAd6/GxDBaNA1870O79+9ueg61cZLSVc+OaFlfmObYVQ==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">= 14.16"
++      }
++    },
++    "node_modules/peberminta": {
++      "version": "0.9.0",
++      "resolved": "https://registry.npmjs.org/peberminta/-/peberminta-0.9.0.tgz",
++      "integrity": "sha512-XIxfHpEuSJbITd1H3EeQwpcZbTLHc+VVr8ANI9t5sit565tsI4/xK3KWTUFE2e6QiangUkh3B0jihzmGnNrRsQ==",
++      "license": "MIT",
++      "funding": {
++        "url": "https://ko-fi.com/killymxi"
++      }
++    },
+     "node_modules/picocolors": {
+       "version": "1.1.1",
+       "resolved": "https://registry.npmjs.org/picocolors/-/picocolors-1.1.1.tgz",
+@@ -8550,6 +9806,21 @@
+         "node": ">= 0.8.0"
+       }
+     },
++    "node_modules/prettier": {
++      "version": "3.8.3",
++      "resolved": "https://registry.npmjs.org/prettier/-/prettier-3.8.3.tgz",
++      "integrity": "sha512-7igPTM53cGHMW8xWuVTydi2KO233VFiTNyF5hLJqpilHfmn8C8gPf+PS7dUT64YcXFbiMGZxS9pCSxL/Dxm/Jw==",
++      "license": "MIT",
++      "bin": {
++        "prettier": "bin/prettier.cjs"
++      },
++      "engines": {
++        "node": ">=14"
++      },
++      "funding": {
++        "url": "https://github.com/prettier/prettier?sponsor=1"
++      }
++    },
+     "node_modules/pretty-ms": {
+       "version": "9.3.0",
+       "resolved": "https://registry.npmjs.org/pretty-ms/-/pretty-ms-9.3.0.tgz",
+@@ -8707,6 +9978,21 @@
+       "integrity": "sha512-24e6ynE2H+OKt4kqsOvNd8kBpV65zoxbA4BVsEOB3ARVWQki/DHzaUoC5KuON/BiccDaCCTZBuOcfZs70kR8bQ==",
+       "license": "MIT"
+     },
++    "node_modules/react-promise-suspense": {
++      "version": "0.3.4",
++      "resolved": "https://registry.npmjs.org/react-promise-suspense/-/react-promise-suspense-0.3.4.tgz",
++      "integrity": "sha512-I42jl7L3Ze6kZaq+7zXWSunBa3b1on5yfvUW6Eo/3fFOj6dZ5Bqmcd264nJbTK/gn1HjjILAjSwnZbV4RpSaNQ==",
++      "license": "MIT",
++      "dependencies": {
++        "fast-deep-equal": "^2.0.1"
++      }
++    },
++    "node_modules/react-promise-suspense/node_modules/fast-deep-equal": {
++      "version": "2.0.1",
++      "resolved": "https://registry.npmjs.org/fast-deep-equal/-/fast-deep-equal-2.0.1.tgz",
++      "integrity": "sha512-bCK/2Z4zLidyB4ReuIsvALH6w31YfAQDmXMqMx6FyfHqvBxtjC0eRumeSu4Bs3XtXwpyIywtSTrVT99BxY1f9w==",
++      "license": "MIT"
++    },
+     "node_modules/react-smooth": {
+       "version": "4.0.4",
+       "resolved": "https://registry.npmjs.org/react-smooth/-/react-smooth-4.0.4.tgz",
+@@ -8860,6 +10146,18 @@
+       "integrity": "sha512-AgZ3UOZm3YndfrJ4OYjgrT7bmCm/1iqkjvEfH/oYjzh6PD2qw4QuT3jjnXIrpdt4MTpMXclMT3lXbmRY+XRakw==",
+       "license": "MIT"
+     },
++    "node_modules/resend": {
++      "version": "4.8.0",
++      "resolved": "https://registry.npmjs.org/resend/-/resend-4.8.0.tgz",
++      "integrity": "sha512-R8eBOFQDO6dzRTDmaMEdpqrkmgSjPpVXt4nGfWsZdYOet0kqra0xgbvTES6HmCriZEXbmGk3e0DiGIaLFTFSHA==",
++      "license": "MIT",
++      "dependencies": {
++        "@react-email/render": "1.1.2"
++      },
++      "engines": {
++        "node": ">=18"
++      }
++    },
+     "node_modules/resolve": {
+       "version": "2.0.0-next.7",
+       "resolved": "https://registry.npmjs.org/resolve/-/resolve-2.0.0-next.7.tgz",
+@@ -8935,6 +10233,58 @@
+         "node": ">=0.10.0"
+       }
+     },
++    "node_modules/rollup": {
++      "version": "4.60.4",
++      "resolved": "https://registry.npmjs.org/rollup/-/rollup-4.60.4.tgz",
++      "integrity": "sha512-WHeFSbZYsPu3+bLoNRUuAO+wavNlocOPf3wSHTP7hcFKVnJeWsYlCDbr3mTS14FCizf9ccIxXA8sGL8zKeQN3g==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@types/estree": "1.0.8"
++      },
++      "bin": {
++        "rollup": "dist/bin/rollup"
++      },
++      "engines": {
++        "node": ">=18.0.0",
++        "npm": ">=8.0.0"
++      },
++      "optionalDependencies": {
++        "@rollup/rollup-android-arm-eabi": "4.60.4",
++        "@rollup/rollup-android-arm64": "4.60.4",
++        "@rollup/rollup-darwin-arm64": "4.60.4",
++        "@rollup/rollup-darwin-x64": "4.60.4",
++        "@rollup/rollup-freebsd-arm64": "4.60.4",
++        "@rollup/rollup-freebsd-x64": "4.60.4",
++        "@rollup/rollup-linux-arm-gnueabihf": "4.60.4",
++        "@rollup/rollup-linux-arm-musleabihf": "4.60.4",
++        "@rollup/rollup-linux-arm64-gnu": "4.60.4",
++        "@rollup/rollup-linux-arm64-musl": "4.60.4",
++        "@rollup/rollup-linux-loong64-gnu": "4.60.4",
++        "@rollup/rollup-linux-loong64-musl": "4.60.4",
++        "@rollup/rollup-linux-ppc64-gnu": "4.60.4",
++        "@rollup/rollup-linux-ppc64-musl": "4.60.4",
++        "@rollup/rollup-linux-riscv64-gnu": "4.60.4",
++        "@rollup/rollup-linux-riscv64-musl": "4.60.4",
++        "@rollup/rollup-linux-s390x-gnu": "4.60.4",
++        "@rollup/rollup-linux-x64-gnu": "4.60.4",
++        "@rollup/rollup-linux-x64-musl": "4.60.4",
++        "@rollup/rollup-openbsd-x64": "4.60.4",
++        "@rollup/rollup-openharmony-arm64": "4.60.4",
++        "@rollup/rollup-win32-arm64-msvc": "4.60.4",
++        "@rollup/rollup-win32-ia32-msvc": "4.60.4",
++        "@rollup/rollup-win32-x64-gnu": "4.60.4",
++        "@rollup/rollup-win32-x64-msvc": "4.60.4",
++        "fsevents": "~2.3.2"
++      }
++    },
++    "node_modules/rollup/node_modules/@types/estree": {
++      "version": "1.0.8",
++      "resolved": "https://registry.npmjs.org/@types/estree/-/estree-1.0.8.tgz",
++      "integrity": "sha512-dWHzHa2WqEXI/O1E9OjrocMTKJl2mSrEolh1Iomrv6U+JuNwaHXsXx9bLu5gG7BUWFIN0skIQJQ/L1rIex4X6w==",
++      "dev": true,
++      "license": "MIT"
++    },
+     "node_modules/router": {
+       "version": "2.2.0",
+       "resolved": "https://registry.npmjs.org/router/-/router-2.2.0.tgz",
+@@ -9063,6 +10413,18 @@
+       "integrity": "sha512-eNv+WrVbKu1f3vbYJT/xtiF5syA5HPIMtf9IgY/nKg0sWqzAUEvqY/xm7OcZc/qafLx/iO9FgOmeSAp4v5ti/Q==",
+       "license": "MIT"
+     },
++    "node_modules/selderee": {
++      "version": "0.11.0",
++      "resolved": "https://registry.npmjs.org/selderee/-/selderee-0.11.0.tgz",
++      "integrity": "sha512-5TF+l7p4+OsnP8BCCvSyZiSPc4x4//p5uPwK8TCnVPJYRmU2aYKMpOXvw8zM5a5JvuuCGN1jmsMwuU2W02ukfA==",
++      "license": "MIT",
++      "dependencies": {
++        "parseley": "^0.12.0"
++      },
++      "funding": {
++        "url": "https://ko-fi.com/killymxi"
++      }
++    },
+     "node_modules/semver": {
+       "version": "7.8.1",
+       "resolved": "https://registry.npmjs.org/semver/-/semver-7.8.1.tgz",
+@@ -9478,6 +10840,13 @@
+         "url": "https://github.com/sponsors/ljharb"
+       }
+     },
++    "node_modules/siginfo": {
++      "version": "2.0.0",
++      "resolved": "https://registry.npmjs.org/siginfo/-/siginfo-2.0.0.tgz",
++      "integrity": "sha512-ybx0WO1/8bSBLEWXZvEd7gMW3Sn3JFlW3TvX1nREbDLRNQNaeNN8WK0meBwPdAaOI7TtRRRJn/Es1zhrrCHu7g==",
++      "dev": true,
++      "license": "ISC"
++    },
+     "node_modules/signal-exit": {
+       "version": "4.1.0",
+       "resolved": "https://registry.npmjs.org/signal-exit/-/signal-exit-4.1.0.tgz",
+@@ -9531,6 +10900,13 @@
+       "dev": true,
+       "license": "MIT"
+     },
++    "node_modules/stackback": {
++      "version": "0.0.2",
++      "resolved": "https://registry.npmjs.org/stackback/-/stackback-0.0.2.tgz",
++      "integrity": "sha512-1XMJE5fQo1jGH6Y/7ebnwPOBEkIEnT4QF32d5R1+VXdXveM0IBMJt8zfaxX1P3QhVwrYe+576+jkANtSS2mBbw==",
++      "dev": true,
++      "license": "MIT"
++    },
+     "node_modules/standardwebhooks": {
+       "version": "1.0.0",
+       "resolved": "https://registry.npmjs.org/standardwebhooks/-/standardwebhooks-1.0.0.tgz",
+@@ -9814,6 +11190,26 @@
+         "url": "https://github.com/sponsors/sindresorhus"
+       }
+     },
++    "node_modules/strip-literal": {
++      "version": "3.1.0",
++      "resolved": "https://registry.npmjs.org/strip-literal/-/strip-literal-3.1.0.tgz",
++      "integrity": "sha512-8r3mkIM/2+PpjHoOtiAW8Rg3jJLHaV7xPwG+YRGrv6FP0wwk/toTpATxWYOW0BKdWwl82VT2tFYi5DlROa0Mxg==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "js-tokens": "^9.0.1"
++      },
++      "funding": {
++        "url": "https://github.com/sponsors/antfu"
++      }
++    },
++    "node_modules/strip-literal/node_modules/js-tokens": {
++      "version": "9.0.1",
++      "resolved": "https://registry.npmjs.org/js-tokens/-/js-tokens-9.0.1.tgz",
++      "integrity": "sha512-mxa9E9ITFOt0ban3j6L5MpjwegGz6lBQmM1IJkWeBZGcMxto50+eWdjC/52xDbS2vy0k7vIMK0Fe2wfL9OQSpQ==",
++      "dev": true,
++      "license": "MIT"
++    },
+     "node_modules/stripe": {
+       "version": "17.7.0",
+       "resolved": "https://registry.npmjs.org/stripe/-/stripe-17.7.0.tgz",
+@@ -9938,6 +11334,20 @@
+       "integrity": "sha512-+FbBPE1o9QAYvviau/qC5SE3caw21q3xkvWKBtja5vgqOWIHHJ3ioaq1VPfn/Szqctz2bU/oYeKd9/z5BL+PVg==",
+       "license": "MIT"
+     },
++    "node_modules/tinybench": {
++      "version": "2.9.0",
++      "resolved": "https://registry.npmjs.org/tinybench/-/tinybench-2.9.0.tgz",
++      "integrity": "sha512-0+DUvqWMValLmha6lr4kD8iAMK1HzV0/aKnCtWb9v9641TnP/MFb7Pc2bxoxQjTXAErryXVgUOfv2YqNllqGeg==",
++      "dev": true,
++      "license": "MIT"
++    },
++    "node_modules/tinyexec": {
++      "version": "0.3.2",
++      "resolved": "https://registry.npmjs.org/tinyexec/-/tinyexec-0.3.2.tgz",
++      "integrity": "sha512-KQQR9yN7R5+OSwaK0XQoj22pwHoTlgYqmUscPYoknOoWCWfj/5/ABTMRi69FrKU5ffPVh5QcFikpWJI/P1ocHA==",
++      "dev": true,
++      "license": "MIT"
++    },
+     "node_modules/tinyglobby": {
+       "version": "0.2.16",
+       "resolved": "https://registry.npmjs.org/tinyglobby/-/tinyglobby-0.2.16.tgz",
+@@ -9968,6 +11378,36 @@
+         "url": "https://github.com/sponsors/jonschlinkert"
+       }
+     },
++    "node_modules/tinypool": {
++      "version": "1.1.1",
++      "resolved": "https://registry.npmjs.org/tinypool/-/tinypool-1.1.1.tgz",
++      "integrity": "sha512-Zba82s87IFq9A9XmjiX5uZA/ARWDrB03OHlq+Vw1fSdt0I+4/Kutwy8BP4Y/y/aORMo61FQ0vIb5j44vSo5Pkg==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": "^18.0.0 || >=20.0.0"
++      }
++    },
++    "node_modules/tinyrainbow": {
++      "version": "2.0.0",
++      "resolved": "https://registry.npmjs.org/tinyrainbow/-/tinyrainbow-2.0.0.tgz",
++      "integrity": "sha512-op4nsTR47R6p0vMUUoYl/a+ljLFVtlfaXkLQmqfLR1qHma1h/ysYk4hEXZ880bf2CYgTskvTa/e196Vd5dDQXw==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=14.0.0"
++      }
++    },
++    "node_modules/tinyspy": {
++      "version": "4.0.4",
++      "resolved": "https://registry.npmjs.org/tinyspy/-/tinyspy-4.0.4.tgz",
++      "integrity": "sha512-azl+t0z7pw/z958Gy9svOTuzqIk6xq+NSheJzn5MMWtWTFywIacg2wUlzKFGtt3cthx0r2SxMK0yzJOR0IES7Q==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=14.0.0"
++      }
++    },
+     "node_modules/tldts": {
+       "version": "7.0.30",
+       "resolved": "https://registry.npmjs.org/tldts/-/tldts-7.0.30.tgz",
+@@ -10449,6 +11889,203 @@
+         "d3-timer": "^3.0.1"
+       }
+     },
++    "node_modules/vite": {
++      "version": "7.3.3",
++      "resolved": "https://registry.npmjs.org/vite/-/vite-7.3.3.tgz",
++      "integrity": "sha512-/4XH147Ui7OGTjg3HbdWe5arnZQSbfuRzdr9Ec7TQi5I7R+ir0Rlc9GIvD4v0XZurELqA035KVXJXpR61xhiTA==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "esbuild": "^0.27.0",
++        "fdir": "^6.5.0",
++        "picomatch": "^4.0.3",
++        "postcss": "^8.5.6",
++        "rollup": "^4.43.0",
++        "tinyglobby": "^0.2.15"
++      },
++      "bin": {
++        "vite": "bin/vite.js"
++      },
++      "engines": {
++        "node": "^20.19.0 || >=22.12.0"
++      },
++      "funding": {
++        "url": "https://github.com/vitejs/vite?sponsor=1"
++      },
++      "optionalDependencies": {
++        "fsevents": "~2.3.3"
++      },
++      "peerDependencies": {
++        "@types/node": "^20.19.0 || >=22.12.0",
++        "jiti": ">=1.21.0",
++        "less": "^4.0.0",
++        "lightningcss": "^1.21.0",
++        "sass": "^1.70.0",
++        "sass-embedded": "^1.70.0",
++        "stylus": ">=0.54.8",
++        "sugarss": "^5.0.0",
++        "terser": "^5.16.0",
++        "tsx": "^4.8.1",
++        "yaml": "^2.4.2"
++      },
++      "peerDependenciesMeta": {
++        "@types/node": {
++          "optional": true
++        },
++        "jiti": {
++          "optional": true
++        },
++        "less": {
++          "optional": true
++        },
++        "lightningcss": {
++          "optional": true
++        },
++        "sass": {
++          "optional": true
++        },
++        "sass-embedded": {
++          "optional": true
++        },
++        "stylus": {
++          "optional": true
++        },
++        "sugarss": {
++          "optional": true
++        },
++        "terser": {
++          "optional": true
++        },
++        "tsx": {
++          "optional": true
++        },
++        "yaml": {
++          "optional": true
++        }
++      }
++    },
++    "node_modules/vite-node": {
++      "version": "3.2.4",
++      "resolved": "https://registry.npmjs.org/vite-node/-/vite-node-3.2.4.tgz",
++      "integrity": "sha512-EbKSKh+bh1E1IFxeO0pg1n4dvoOTt0UDiXMd/qn++r98+jPO1xtJilvXldeuQ8giIB5IkpjCgMleHMNEsGH6pg==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "cac": "^6.7.14",
++        "debug": "^4.4.1",
++        "es-module-lexer": "^1.7.0",
++        "pathe": "^2.0.3",
++        "vite": "^5.0.0 || ^6.0.0 || ^7.0.0-0"
++      },
++      "bin": {
++        "vite-node": "vite-node.mjs"
++      },
++      "engines": {
++        "node": "^18.0.0 || ^20.0.0 || >=22.0.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/vitest"
++      }
++    },
++    "node_modules/vite/node_modules/picomatch": {
++      "version": "4.0.4",
++      "resolved": "https://registry.npmjs.org/picomatch/-/picomatch-4.0.4.tgz",
++      "integrity": "sha512-QP88BAKvMam/3NxH6vj2o21R6MjxZUAd6nlwAS/pnGvN9IVLocLHxGYIzFhg6fUQ+5th6P4dv4eW9jX3DSIj7A==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=12"
++      },
++      "funding": {
++        "url": "https://github.com/sponsors/jonschlinkert"
++      }
++    },
++    "node_modules/vitest": {
++      "version": "3.2.4",
++      "resolved": "https://registry.npmjs.org/vitest/-/vitest-3.2.4.tgz",
++      "integrity": "sha512-LUCP5ev3GURDysTWiP47wRRUpLKMOfPh+yKTx3kVIEiu5KOMeqzpnYNsKyOoVrULivR8tLcks4+lga33Whn90A==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "@types/chai": "^5.2.2",
++        "@vitest/expect": "3.2.4",
++        "@vitest/mocker": "3.2.4",
++        "@vitest/pretty-format": "^3.2.4",
++        "@vitest/runner": "3.2.4",
++        "@vitest/snapshot": "3.2.4",
++        "@vitest/spy": "3.2.4",
++        "@vitest/utils": "3.2.4",
++        "chai": "^5.2.0",
++        "debug": "^4.4.1",
++        "expect-type": "^1.2.1",
++        "magic-string": "^0.30.17",
++        "pathe": "^2.0.3",
++        "picomatch": "^4.0.2",
++        "std-env": "^3.9.0",
++        "tinybench": "^2.9.0",
++        "tinyexec": "^0.3.2",
++        "tinyglobby": "^0.2.14",
++        "tinypool": "^1.1.1",
++        "tinyrainbow": "^2.0.0",
++        "vite": "^5.0.0 || ^6.0.0 || ^7.0.0-0",
++        "vite-node": "3.2.4",
++        "why-is-node-running": "^2.3.0"
++      },
++      "bin": {
++        "vitest": "vitest.mjs"
++      },
++      "engines": {
++        "node": "^18.0.0 || ^20.0.0 || >=22.0.0"
++      },
++      "funding": {
++        "url": "https://opencollective.com/vitest"
++      },
++      "peerDependencies": {
++        "@edge-runtime/vm": "*",
++        "@types/debug": "^4.1.12",
++        "@types/node": "^18.0.0 || ^20.0.0 || >=22.0.0",
++        "@vitest/browser": "3.2.4",
++        "@vitest/ui": "3.2.4",
++        "happy-dom": "*",
++        "jsdom": "*"
++      },
++      "peerDependenciesMeta": {
++        "@edge-runtime/vm": {
++          "optional": true
++        },
++        "@types/debug": {
++          "optional": true
++        },
++        "@types/node": {
++          "optional": true
++        },
++        "@vitest/browser": {
++          "optional": true
++        },
++        "@vitest/ui": {
++          "optional": true
++        },
++        "happy-dom": {
++          "optional": true
++        },
++        "jsdom": {
++          "optional": true
++        }
++      }
++    },
++    "node_modules/vitest/node_modules/picomatch": {
++      "version": "4.0.4",
++      "resolved": "https://registry.npmjs.org/picomatch/-/picomatch-4.0.4.tgz",
++      "integrity": "sha512-QP88BAKvMam/3NxH6vj2o21R6MjxZUAd6nlwAS/pnGvN9IVLocLHxGYIzFhg6fUQ+5th6P4dv4eW9jX3DSIj7A==",
++      "dev": true,
++      "license": "MIT",
++      "engines": {
++        "node": ">=12"
++      },
++      "funding": {
++        "url": "https://github.com/sponsors/jonschlinkert"
++      }
++    },
+     "node_modules/web-streams-polyfill": {
+       "version": "4.0.0-beta.3",
+       "resolved": "https://registry.npmjs.org/web-streams-polyfill/-/web-streams-polyfill-4.0.0-beta.3.tgz",
+@@ -10578,6 +12215,23 @@
+         "url": "https://github.com/sponsors/ljharb"
+       }
+     },
++    "node_modules/why-is-node-running": {
++      "version": "2.3.0",
++      "resolved": "https://registry.npmjs.org/why-is-node-running/-/why-is-node-running-2.3.0.tgz",
++      "integrity": "sha512-hUrmaWBdVDcxvYqnyh09zunKzROWjbZTiNy8dBEjkS7ehEDQibXJ7XvlmtbwuTclUiIyN+CyXQD4Vmko8fNm8w==",
++      "dev": true,
++      "license": "MIT",
++      "dependencies": {
++        "siginfo": "^2.0.0",
++        "stackback": "0.0.2"
++      },
++      "bin": {
++        "why-is-node-running": "cli.js"
++      },
++      "engines": {
++        "node": ">=8"
++      }
++    },
+     "node_modules/word-wrap": {
+       "version": "1.2.5",
+       "resolved": "https://registry.npmjs.org/word-wrap/-/word-wrap-1.2.5.tgz",
+diff --git a/package.json b/package.json
+index 7ef51eb..7b46e38 100644
+--- a/package.json
++++ b/package.json
+@@ -10,6 +10,7 @@
+     "build": "next build",
+     "start": "next start",
+     "lint": "next lint",
++    "test": "vitest run",
+     "verify:middleware": "node scripts/verify-middleware-public.mjs"
+   },
+   "dependencies": {
+@@ -24,6 +25,7 @@
+     "openai": "^4.0.0",
+     "react": "^19.0.0",
+     "react-dom": "^19.0.0",
++    "resend": "^4.0.0",
+     "recharts": "^2.15.2",
+     "shadcn": "^4.7.0",
+     "sonner": "^2.0.7",
+@@ -41,6 +43,7 @@
+     "eslint": "^9",
+     "eslint-config-next": "^15.0.0",
+     "tailwindcss": "^4.0.0",
+-    "typescript": "^5.0.0"
++    "typescript": "^5.0.0",
++    "vitest": "^3.0.0"
+   }
+ }
+diff --git a/supabase/migrations/20260531120000_rls_outbound_logs.sql b/supabase/migrations/20260531120000_rls_outbound_logs.sql
+new file mode 100644
+index 0000000..8f339be
+--- /dev/null
++++ b/supabase/migrations/20260531120000_rls_outbound_logs.sql
+@@ -0,0 +1,123 @@
++-- RLS (Clerk JWT via intégration Supabase : claim `sub` = `user_...` = clerk_user_id)
++-- Le client service_role continue de bypasser RLS côté Next.js.
++-- Voir docs/security-rls.md pour le template JWT Clerk « supabase ».
++
++-- Journal envois email (Resend / pipeline)
++create table if not exists public.outbound_logs (
++  id uuid primary key default gen_random_uuid(),
++  clerk_user_id text not null,
++  prospect_id uuid references public.prospects (id) on delete set null,
++  type text not null default 'email',
++  status text not null,
++  response text,
++  created_at timestamptz not null default now()
++);
++
++create index if not exists outbound_logs_clerk_created_idx
++  on public.outbound_logs (clerk_user_id, created_at desc);
++
++-- --- RLS : user_settings ---
++alter table public.user_settings enable row level security;
++
++create policy user_settings_select_own on public.user_settings
++  for select to authenticated using (clerk_user_id = (auth.jwt() ->> 'sub'));
++
++create policy user_settings_insert_own on public.user_settings
++  for insert to authenticated with check (clerk_user_id = (auth.jwt() ->> 'sub'));
++
++create policy user_settings_update_own on public.user_settings
++  for update to authenticated
++  using (clerk_user_id = (auth.jwt() ->> 'sub'))
++  with check (clerk_user_id = (auth.jwt() ->> 'sub'));
++
++-- --- RLS : campaigns ---
++alter table public.campaigns enable row level security;
++
++create policy campaigns_select_own on public.campaigns
++  for select to authenticated using (clerk_user_id = (auth.jwt() ->> 'sub'));
++
++create policy campaigns_insert_own on public.campaigns
++  for insert to authenticated with check (clerk_user_id = (auth.jwt() ->> 'sub'));
++
++create policy campaigns_update_own on public.campaigns
++  for update to authenticated
++  using (clerk_user_id = (auth.jwt() ->> 'sub'))
++  with check (clerk_user_id = (auth.jwt() ->> 'sub'));
++
++create policy campaigns_delete_own on public.campaigns
++  for delete to authenticated using (clerk_user_id = (auth.jwt() ->> 'sub'));
++
++-- --- RLS : prospects ---
++alter table public.prospects enable row level security;
++
++create policy prospects_select_own on public.prospects
++  for select to authenticated using (clerk_user_id = (auth.jwt() ->> 'sub'));
++
++create policy prospects_insert_own on public.prospects
++  for insert to authenticated with check (clerk_user_id = (auth.jwt() ->> 'sub'));
++
++create policy prospects_update_own on public.prospects
++  for update to authenticated
++  using (clerk_user_id = (auth.jwt() ->> 'sub'))
++  with check (clerk_user_id = (auth.jwt() ->> 'sub'));
++
++create policy prospects_delete_own on public.prospects
++  for delete to authenticated using (clerk_user_id = (auth.jwt() ->> 'sub'));
++
++-- --- RLS : message_feedbacks ---
++alter table public.message_feedbacks enable row level security;
++
++create policy message_feedbacks_select_own on public.message_feedbacks
++  for select to authenticated using (clerk_user_id = (auth.jwt() ->> 'sub'));
++
++create policy message_feedbacks_insert_own on public.message_feedbacks
++  for insert to authenticated with check (clerk_user_id = (auth.jwt() ->> 'sub'));
++
++create policy message_feedbacks_update_own on public.message_feedbacks
++  for update to authenticated
++  using (clerk_user_id = (auth.jwt() ->> 'sub'))
++  with check (clerk_user_id = (auth.jwt() ->> 'sub'));
++
++create policy message_feedbacks_delete_own on public.message_feedbacks
++  for delete to authenticated using (clerk_user_id = (auth.jwt() ->> 'sub'));
++
++-- --- RLS : agent_logs ---
++alter table public.agent_logs enable row level security;
++
++create policy agent_logs_select_own on public.agent_logs
++  for select to authenticated using (clerk_user_id = (auth.jwt() ->> 'sub'));
++
++create policy agent_logs_insert_own on public.agent_logs
++  for insert to authenticated with check (clerk_user_id = (auth.jwt() ->> 'sub'));
++
++-- --- RLS : agent_blueprints ---
++alter table public.agent_blueprints enable row level security;
++
++create policy agent_blueprints_select_own on public.agent_blueprints
++  for select to authenticated using (clerk_user_id = (auth.jwt() ->> 'sub'));
++
++create policy agent_blueprints_insert_own on public.agent_blueprints
++  for insert to authenticated with check (clerk_user_id = (auth.jwt() ->> 'sub'));
++
++create policy agent_blueprints_update_own on public.agent_blueprints
++  for update to authenticated
++  using (clerk_user_id = (auth.jwt() ->> 'sub'))
++  with check (clerk_user_id = (auth.jwt() ->> 'sub'));
++
++create policy agent_blueprints_delete_own on public.agent_blueprints
++  for delete to authenticated using (clerk_user_id = (auth.jwt() ->> 'sub'));
++
++-- --- RLS : user_quotas (lecture seule côté JWT ; écriture via RPC service_role) ---
++alter table public.user_quotas enable row level security;
++
++create policy user_quotas_select_own on public.user_quotas
++  for select to authenticated using (clerk_user_id = (auth.jwt() ->> 'sub'));
++
++-- --- RLS : outbound_logs ---
++alter table public.outbound_logs enable row level security;
++
++create policy outbound_logs_select_own on public.outbound_logs
++  for select to authenticated using (clerk_user_id = (auth.jwt() ->> 'sub'));
++
++create policy outbound_logs_insert_own on public.outbound_logs
++  for insert to authenticated with check (clerk_user_id = (auth.jwt() ->> 'sub'));
+diff --git a/supabase/schema.sql b/supabase/schema.sql
+index e087fd7..143db4b 100644
+--- a/supabase/schema.sql
++++ b/supabase/schema.sql
+@@ -140,4 +140,19 @@ revoke all on function public.consume_user_ai_quota(text, integer, bigint) from
+ grant execute on function public.consume_user_ai_quota(text, integer, bigint) to service_role;
+ 
+ -- L’application Next.js utilise SUPABASE_SERVICE_ROLE_KEY côté serveur uniquement (pas d’exposition client).
+--- Active RLS + policies si tu exposes le client Supabase au navigateur avec un JWT Clerk custom.
++-- RLS + politiques par utilisateur : migration `20260531120000_rls_outbound_logs.sql` + `docs/security-rls.md`.
++-- Client navigateur (optionnel) : `NEXT_PUBLIC_SUPABASE_ANON_KEY` + JWT Clerk template `supabase` → `lib/supabase/clerk-jwt.ts`.
++
++-- Envoi email (Resend) — créé aussi par la migration RLS du même lot
++create table if not exists public.outbound_logs (
++  id uuid primary key default gen_random_uuid(),
++  clerk_user_id text not null,
++  prospect_id uuid references public.prospects (id) on delete set null,
++  type text not null default 'email',
++  status text not null,
++  response text,
++  created_at timestamptz not null default now()
++);
++
++create index if not exists outbound_logs_clerk_created_idx
++  on public.outbound_logs (clerk_user_id, created_at desc);
+diff --git a/vitest.config.ts b/vitest.config.ts
+new file mode 100644
+index 0000000..a0d84be
+--- /dev/null
++++ b/vitest.config.ts
+@@ -0,0 +1,13 @@
++import path from "node:path";
++import { defineConfig } from "vitest/config";
++
++export default defineConfig({
++  resolve: {
++    alias: {
++      "@": path.resolve(__dirname, "."),
++    },
++  },
++  test: {
++    environment: "node",
++  },
++});

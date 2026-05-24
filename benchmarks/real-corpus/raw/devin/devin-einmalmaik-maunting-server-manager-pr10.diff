@@ -1,0 +1,164 @@
+diff --git a/backend/games/base.py b/backend/games/base.py
+index ff7807f..e52518a 100644
+--- a/backend/games/base.py
++++ b/backend/games/base.py
+@@ -175,6 +175,11 @@ def default_volume_binds(server) -> list[VolumeBind]:
+ STEAMCMD_IMAGE = "cm2network/steamcmd:root"
+ # Pfad des steamcmd-Wrappers im Image. Wird in den bash-Aufruf eingesetzt.
+ STEAMCMD_BIN = "/home/steam/steamcmd/steamcmd.sh"
++# Caps, die wir nach `--cap-drop=ALL` für den SteamCMD-Lauf wieder brauchen:
++# - DAC_OVERRIDE: /home/steam (mode 700, steam-User-only) traversieren
++# - DAC_READ_SEARCH: idem, für Read-Operationen ohne Owner-Match
++# - CHOWN + FOWNER: am Ende `chown -R uid:gid /data`
++STEAMCMD_CAPS = ["DAC_OVERRIDE", "DAC_READ_SEARCH", "CHOWN", "FOWNER"]
+ 
+ 
+ def _build_steamcmd_bash_command(steam_args: list[str], chown_uid: int, chown_gid: int) -> list[str]:
+@@ -229,10 +234,14 @@ def run_steamcmd_install(
+         image=STEAMCMD_IMAGE,
+         command=_build_steamcmd_bash_command(steam_args, uid, gid),
+         volumes=[VolumeBind(install_dir, CONTAINER_DATA_DIR, read_only=False)],
+-        # KEIN --user-Override: SteamCMD muss im Container als root laufen, weil
+-        # /home/steam im :root-Image Mode 750 hat. Files werden im bash-Wrapper
+-        # nach dem Run auf {uid}:{gid} ge-chown't.
+-        user=None,
++        # Explizit Container-Root: das `:root`-Image hat /home/steam Mode 700
++        # für den steam-User. Files werden im bash-Wrapper nach dem Run auf
++        # {uid}:{gid} ge-chown't, damit der Panel-User sie danach lesen kann.
++        user="0:0",
++        # Nach --cap-drop=ALL die minimal nötigen Caps wiederherstellen, damit
++        # Container-Root nicht von Linux-DAC eingeschränkt wird (sonst greift
++        # Mode-700 auch für root, weil CAP_DAC_OVERRIDE fehlt).
++        cap_adds=STEAMCMD_CAPS,
+         entrypoint="bash",
+         # SteamCMD legt Cache/Auth in $HOME ab. Auf /data umleiten, damit der
+         # Cache zwischen Runs persistent im Bind-Mount landet (kein Vollredownload).
+@@ -278,7 +287,8 @@ def run_steamcmd_workshop_download(
+         image=STEAMCMD_IMAGE,
+         command=_build_steamcmd_bash_command(steam_args, uid, gid),
+         volumes=[VolumeBind(install_dir, CONTAINER_DATA_DIR, read_only=False)],
+-        user=None,
++        user="0:0",
++        cap_adds=STEAMCMD_CAPS,
+         entrypoint="bash",
+         env={"HOME": CONTAINER_DATA_DIR},
+         timeout=3600,
+diff --git a/backend/services/docker_service.py b/backend/services/docker_service.py
+index bb10103..c8b9e6e 100644
+--- a/backend/services/docker_service.py
++++ b/backend/services/docker_service.py
+@@ -271,6 +271,7 @@ def run_ephemeral(
+     user: str | None = None,
+     workdir: str | None = None,
+     entrypoint: str | None = None,
++    cap_adds: list[str] | None = None,
+     timeout: int = 1800,
+ ) -> dict:
+     """Führt ein einmaliges `docker run --rm`-Kommando aus (für SteamCMD-Installs etc.).
+@@ -280,9 +281,19 @@ def run_ephemeral(
+     `entrypoint` setzt `--entrypoint <path>`, wenn das Image keinen passenden
+     Default-Entrypoint hat (z. B. `cm2network/steamcmd:root` startet bash und
+     erwartet ein Skript-Argument).
++
++    `cap_adds` reaktiviert nach `--cap-drop=ALL` einzelne Kernel-Capabilities
++    für diesen Lauf. Sinnvoll nur, wenn der Container-Prozess (selbst als root)
++    sonst nicht auf gemountete Verzeichnisse zugreifen kann — z. B. um eine
++    mode-700 Image-Directory zu traversieren (`DAC_OVERRIDE`) oder Dateien im
++    Bind-Mount auf die Host-UID zu chown'en (`CHOWN`, `FOWNER`). KEIN Risiko
++    für Host-Escape, weil userns-/no-new-privileges-Schutz unverändert greift.
+     """
+     args: list[str] = ["run", "--rm"]
+     args.extend(_HARDENING_FLAGS)
++    if cap_adds:
++        for cap in cap_adds:
++            args.extend(["--cap-add", cap])
+ 
+     if user:
+         args.extend(["--user", user])
+diff --git a/backend/tests/test_docker_service.py b/backend/tests/test_docker_service.py
+index 27117a5..f9b295e 100644
+--- a/backend/tests/test_docker_service.py
++++ b/backend/tests/test_docker_service.py
+@@ -190,7 +190,7 @@ class TestSteamCMDHelpers:
+     weiterarbeiten kann."""
+ 
+     def test_steamcmd_install_runs_as_root_and_chowns(self, tmp_path):
+-        from games.base import STEAMCMD_BIN, run_steamcmd_install
++        from games.base import STEAMCMD_BIN, STEAMCMD_CAPS, run_steamcmd_install
+ 
+         with patch("games.base.docker_service.run_ephemeral") as mock_eph, \
+              patch("games.base.docker_service.host_uid_gid", return_value=(1001, 1001)):
+@@ -208,13 +208,15 @@ def test_steamcmd_install_runs_as_root_and_chowns(self, tmp_path):
+         assert "chown -R 1001:1001 /data" in script
+         # rc bleibt erhalten
+         assert "exit $rc" in script
+-        # KEIN --user-Override (l\u00e4uft als root im Container)
+-        assert kwargs.get("user") is None
++        # Explizit Container-Root, sonst greift userns-remap auf das Image
++        assert kwargs.get("user") == "0:0"
++        # Caps wiederhergestellt, sonst blockt DAC schon root am Traversieren
++        assert kwargs.get("cap_adds") == STEAMCMD_CAPS
+         # HOME wandert ins Volume f\u00fcr persistenten Cache
+         assert kwargs["env"].get("HOME") == "/data"
+ 
+     def test_workshop_download_runs_as_root_and_chowns(self, tmp_path):
+-        from games.base import run_steamcmd_workshop_download
++        from games.base import STEAMCMD_CAPS, run_steamcmd_workshop_download
+ 
+         with patch("games.base.docker_service.run_ephemeral") as mock_eph, \
+              patch("games.base.docker_service.host_uid_gid", return_value=(1001, 1001)):
+@@ -228,9 +230,36 @@ def test_workshop_download_runs_as_root_and_chowns(self, tmp_path):
+         script = kwargs["command"][1]
+         assert "+workshop_download_item" in script and "221100" in script and "12345" in script
+         assert "chown -R 1001:1001 /data" in script
+-        assert kwargs.get("user") is None
++        assert kwargs.get("user") == "0:0"
++        assert kwargs.get("cap_adds") == STEAMCMD_CAPS
+         assert kwargs["env"].get("HOME") == "/data"
+ 
++    def test_cap_adds_appear_after_cap_drop_in_args(self):
++        """`--cap-add` muss in den Docker-Args **nach** `--cap-drop=ALL` stehen,
++        sonst werden die Caps wieder weggedroppt. Auch der Wert muss korrekt
++        als `--cap-add CHOWN` (zwei Args) gerendert sein."""
++        with patch.object(docker_service, "_check_docker", return_value=True), \
++             patch.object(docker_service, "_run_docker") as mock_run:
++            mock_run.return_value = {"ok": True, "stdout": "", "stderr": ""}
++            docker_service.run_ephemeral(
++                image="cm2network/steamcmd:root",
++                command=["-c", "true"],
++                volumes=[],
++                env={},
++                user="0:0",
++                entrypoint="bash",
++                cap_adds=["DAC_OVERRIDE", "CHOWN", "FOWNER"],
++            )
++        args = mock_run.call_args.args[0]
++        drop_idx = args.index("--cap-drop=ALL")
++        # Jede angegebene Cap muss als getrennte --cap-add <CAP>-Sequenz vorkommen
++        for cap in ("DAC_OVERRIDE", "CHOWN", "FOWNER"):
++            # Index des Flags, dahinter muss der Cap-Name stehen
++            flag_positions = [i for i, a in enumerate(args) if a == "--cap-add" and i + 1 < len(args) and args[i + 1] == cap]
++            assert flag_positions, f"--cap-add {cap} fehlt in den Docker-Args"
++            # Reihenfolge: nach --cap-drop=ALL
++            assert all(pos > drop_idx for pos in flag_positions)
++
+     def test_bash_script_is_safely_quoted(self, tmp_path):
+         """Wenn jemand extra_args mit Shell-Metazeichen reinreicht (z. B. ' oder ;),
+         darf das Script nicht aus dem SteamCMD-Kontext ausbrechen."""
+diff --git a/docs/agent-rules/architecture.md b/docs/agent-rules/architecture.md
+index 07ea24f..3878cd1 100644
+--- a/docs/agent-rules/architecture.md
++++ b/docs/agent-rules/architecture.md
+@@ -398,10 +398,10 @@ Hartes Disk-Quota (XFS-Projekt-Quota oder Overlay-Quota) ist explizit Phase-2-Ma
+ Es gibt kein Host-`steamcmd` mehr. Installs und Workshop-Downloads laufen in ephemeren Containern (`cm2network/steamcmd:root`), die in `games/base.run_steamcmd_install()` und `run_steamcmd_workshop_download()` gekapselt sind. Das nutzt das gleiche Bind-Mount-Layout (`<install_dir>` → `/data`).
+ 
+ **Ausführungsmodell:**
+-- Container läuft als **root im Container** (nicht via `--user`-Override), weil das `:root`-Image `/home/steam` mit Mode 750 hat und SteamCMD sonst nicht mal seinen eigenen Wrapper ausführen kann.
++- Container läuft explizit als `--user 0:0` (Container-Root), weil das `:root`-Image `/home/steam` mit Mode 700 hat und SteamCMD sonst seinen eigenen Wrapper nicht ausführen kann.
+ - Entrypoint ist `bash`, der eigentliche SteamCMD-Aufruf läuft als `bash -c '<steamcmd> <args>; rc=$?; chown -R <uid>:<gid> /data; exit $rc'`. Damit landen Dateien am Ende auf der msm-Host-UID, nicht auf 0:0.
+ - `HOME=/data` lenkt SteamCMDs Auth-/Cache-Verzeichnis (`~/Steam/`) in den Bind-Mount um. Persistent zwischen Runs, kein Schreibversuch auf `/home/steam` (root-owned).
+-- Hardening bleibt aktiv (`--cap-drop=ALL`, `--security-opt=no-new-privileges`, `--rm`). Container-Root hat damit kein Kernel-CAP außer dem Default-Set, kann nicht eskalieren, und das einzige Schreibziel ist der Bind-Mount.
++- Hardening bleibt aktiv (`--cap-drop=ALL`, `--security-opt=no-new-privileges`, `--rm`). Nach dem ALL-Drop werden **gezielt** vier Caps wieder zugefügt (`--cap-add`): `DAC_OVERRIDE`, `DAC_READ_SEARCH`, `CHOWN`, `FOWNER`. Ohne diese Caps kann selbst Container-Root keine Mode-700-Verzeichnisse traversieren oder die Bind-Mount-Files zurück-chown'en. Kein Risiko für Host-Escape, weil userns- und no-new-privileges-Schutz unverändert greifen und das einzige Schreibziel der Bind-Mount bleibt.
+ - Alle SteamCMD-Argumente werden mit `shlex.quote()` escaped, bevor sie in den `bash -c`-String eingesetzt werden — Shell-Injection über `extra_args` ist nicht möglich.
+ 
+ Intelligentes Mod-Update bleibt erhalten: SteamCMD selbst entscheidet, ob ein `workshop_download_item` einen Refresh braucht — wir starten den Container einfach jedes Mal, und SteamCMD validiert die lokalen Dateien gegen das Manifest. Kein Voll-Redownload, wenn nichts geändert hat.

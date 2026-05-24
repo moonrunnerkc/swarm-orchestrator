@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-webtransport-webtransport-pr1",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 1,
+    "headSha": "ac44f8196ac75617ffd582a9260fd9266da4493a",
+    "baseSha": "11d211be61a9631b3ac63329ebffc0cc87111c33",
+    "title": "Enrich pkg.go.dev API docs for exported js/wasm symbols",
+    "body": "Exported symbols in the js/wasm surface had little or no Go doc, so pkg.go.dev rendered an incomplete API reference. This updates symbol-level documentation to make the public WebTransport API discoverable and self-describing on pkg.go.dev.\n\n- **API entrypoint docs**\n  - Added doc comment for `Dial` in `dial_js.go` describing connection readiness semantics.\n\n- **Session API docs**\n  - Added doc comments for `Session` and exported methods in `session_js.go`:\n    - `Accept`\n    - `Open`\n    - `Close`\n    - `Context`\n\n- **Connection API docs**\n  - Added doc comments for `Conn` and all exported methods in `conn_js.go`:\n    - `Read`, `Write`, `Close`\n    - `LocalAddr`, `RemoteAddr`\n    - `SetDeadline`, `SetReadDeadline`, `SetWriteDeadline`\n    - `CloseRead`, `CloseWrite`\n\n```go\n// Session represents a WebTransport connection that can open and accept\n// bidirectional streams.\ntype Session struct { /* ... */ }\n\n// Open creates and returns a new outgoing bidirectional stream.\nfunc (s *Session) Open(ctx context.Context) (net.Conn, error) { /* ... */ }\n```",
+    "author": "Copilot",
+    "headRef": "copilot/enrich-go-doc-for-exported-symbols",
+    "repository": "webtransport/webtransport"
+  },
+  "diffRef": {
+    "repository": "webtransport/webtransport",
+    "headSha": "ac44f8196ac75617ffd582a9260fd9266da4493a",
+    "baseSha": "11d211be61a9631b3ac63329ebffc0cc87111c33"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-webtransport-webtransport-pr1.diff",
+  "vendoredAt": "2026-05-24T03:06:32.306Z",
+  "collectedAt": "2026-05-24T03:06:32.306Z"
+}

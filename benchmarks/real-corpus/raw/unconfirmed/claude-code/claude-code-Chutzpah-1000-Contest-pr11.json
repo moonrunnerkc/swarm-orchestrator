@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-Chutzpah-1000-Contest-pr11",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "commit=claude-coauthor"
+  },
+  "pr": {
+    "number": 11,
+    "headSha": "395c5aaeb7495904e3b8069abd0c4a47032afd0b",
+    "baseSha": "243cb0a3d3e62cb61a5fd2a0740d6858eb341803",
+    "title": "Round 28 — 페이지 헤더 헬퍼 추출 + XSS escape 가드 (stacked on R27)",
+    "body": "## Round 28\n\n**Stacked PR**: base = `agent/round-27-modal-card-hover` (PR #10). 머지 순서: R22 → R23 → R24 → R25 → R26 → R27 → R28.\n\n### Slack 메시지\n> Round 28 ✅ 페이지 헤더 헬퍼 추출 + XSS escape 가드 — main.py 응집도 ↑, 68 tests.\n\n### Scores\n모두 9 유지. 코드 응집도 ↑ + XSS 회귀 가드 +2.\n\n### Lowest area\n동률 9. `app/main.py:44~49` H1 + subtitle 인라인 `unsafe_allow_html=True`. 향후 다국어/동적 제목 도입 시 escape 누락 위험 + 코드 응집도 낮음.\n\n### Planned improvement (K1 소진)\n`app/components/cards.py` 에 두 함수 추가:\n- `page_header_html(title, subtitle) -> str` (순수 함수, HTML escape, 단위 테스트 가능)\n- `render_page_header(title, subtitle) -> None` (Streamlit wrapper)\n\n`main.py` 인라인 마크업을 호출 1줄로 교체.\n\n### Files changed\n- `app/components/cards.py` — 두 함수 신규\n- `app/main.py` — 인라인 4줄 → 1줄 호출\n- `tests/test_app.py` — escape 회귀 + class 토큰 회귀 가드 2건\n\n### Verification\n- `uv run ruff check --fix .` → All checks passed\n- `uv run ruff format .` → 43 files left unchanged\n- `uv run pyright` → **0 errors, 137 warnings**\n- `uv run pytest` → **68 passed** (이전 66 → +2), coverage **65.32%**\n\n@claude\n\nCo-Authored-By: Claude <noreply@anthropic.com>",
+    "author": "IBORY-PURPLE",
+    "headRef": "agent/round-28-page-header-helper",
+    "repository": "Chutzpah-1000/Contest"
+  },
+  "diffRef": {
+    "repository": "Chutzpah-1000/Contest",
+    "headSha": "395c5aaeb7495904e3b8069abd0c4a47032afd0b",
+    "baseSha": "243cb0a3d3e62cb61a5fd2a0740d6858eb341803"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-Chutzpah-1000-Contest-pr11.diff",
+  "vendoredAt": "2026-05-24T03:09:37.652Z",
+  "collectedAt": "2026-05-24T03:09:37.652Z"
+}

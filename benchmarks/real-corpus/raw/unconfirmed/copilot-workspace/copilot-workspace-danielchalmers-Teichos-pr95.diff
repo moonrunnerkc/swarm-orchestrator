@@ -1,0 +1,410 @@
+diff --git a/src/background/tabController.ts b/src/background/tabController.ts
+index c67c674..4fdad5f 100644
+--- a/src/background/tabController.ts
++++ b/src/background/tabController.ts
+@@ -11,9 +11,10 @@ import { PAGES } from '../shared/constants';
+ import {
+   STORAGE_KEY,
+   type BlockedTabState,
++  type BlockedPageRuleSummary,
+   type GetBlockedPageStateResponse,
+ } from '../shared/types';
+-import { isInternalUrl, type FilterDecision } from '../shared/utils';
++import { formatGroupScheduleSummary, isInternalUrl, type FilterDecision } from '../shared/utils';
+ import { getRulesProvider, type CurrentRules, type RulesProvider } from './rulesProvider';
+ 
+ interface ResolvedBlockedTarget {
+@@ -118,9 +119,10 @@ class TabController {
+       return { status: 'unavailable' };
+     }
+ 
+-    const state = await this.refreshBlockedTabState(tabId, resolvedTarget.targetUrl);
++    const rules = await this.getRules();
++    const state = await this.refreshBlockedTabState(tabId, resolvedTarget.targetUrl, rules);
+     if (state) {
+-      return { status: 'blocked', state };
++      return { status: 'blocked', state, details: getBlockedPageRuleSummary(rules, state) };
+     }
+ 
+     return { status: 'allowed', targetUrl: resolvedTarget.targetUrl };
+@@ -313,3 +315,23 @@ const tabController = new TabController(getRulesProvider());
+ export function getTabController(): TabController {
+   return tabController;
+ }
++
++function getBlockedPageRuleSummary(
++  rules: CurrentRules,
++  state: BlockedTabState
++): BlockedPageRuleSummary {
++  const filter = rules.data.filters.find((candidate) => candidate.id === state.blockedBy.filterId);
++  const group = rules.data.groups.find((candidate) => candidate.id === state.blockedBy.groupId);
++  const filterDescription = filter?.description?.trim();
++  const filterName =
++    filterDescription && filterDescription.length > 0
++      ? filterDescription
++      : (filter?.pattern ?? 'Unknown Filter');
++
++  return {
++    filterName,
++    filterPattern: filter?.pattern ?? 'Unknown Pattern',
++    groupName: group?.name ?? 'Unknown Group',
++    groupSchedule: group ? formatGroupScheduleSummary(group) : 'Unknown Schedule',
++  };
++}
+diff --git a/src/blocked/index.html b/src/blocked/index.html
+index 333d9b4..9640e64 100644
+--- a/src/blocked/index.html
++++ b/src/blocked/index.html
+@@ -12,6 +12,27 @@
+       <h1>Page Blocked</h1>
+       <p>This page has been blocked by Teichos based on your filter settings.</p>
+       <div class="url" id="blocked-url" role="status" aria-label="Blocked URL"></div>
++      <section class="details" id="block-details" aria-label="Blocking details" hidden>
++        <h2>Blocking details</h2>
++        <dl class="details-list">
++          <div class="detail-row">
++            <dt>Filter</dt>
++            <dd id="blocked-filter"></dd>
++          </div>
++          <div class="detail-row" id="blocked-pattern-row" hidden>
++            <dt>Pattern</dt>
++            <dd id="blocked-pattern"></dd>
++          </div>
++          <div class="detail-row">
++            <dt>Group</dt>
++            <dd id="blocked-group"></dd>
++          </div>
++          <div class="detail-row">
++            <dt>Schedule</dt>
++            <dd id="blocked-schedule"></dd>
++          </div>
++        </dl>
++      </section>
+       <div class="actions">
+         <button class="button" id="go-back" type="button">Go Back</button>
+         <button class="button secondary" id="open-options" type="button">Manage Filters</button>
+diff --git a/src/blocked/index.ts b/src/blocked/index.ts
+index c516d6c..3569f6a 100644
+--- a/src/blocked/index.ts
++++ b/src/blocked/index.ts
+@@ -6,6 +6,7 @@
+ import { openOptionsPage } from '../shared/api/runtime';
+ import {
+   MessageType,
++  type BlockedPageRuleSummary,
+   type GetBlockedPageStateResponse,
+   type GoBackActiveTabResponse,
+ } from '../shared/types';
+@@ -13,6 +14,7 @@ import { getElementByIdOrNull } from '../shared/utils/dom';
+ 
+ interface BlockedPageState {
+   readonly targetUrl: string;
++  readonly details?: BlockedPageRuleSummary;
+ }
+ 
+ /**
+@@ -50,7 +52,7 @@ async function getBlockedPageState(): Promise<BlockedPageState> {
+     }
+ 
+     if (response.status === 'blocked') {
+-      return { targetUrl: response.state.targetUrl };
++      return { targetUrl: response.state.targetUrl, details: response.details };
+     }
+ 
+     if (response.status === 'allowed') {
+@@ -84,10 +86,21 @@ function isBlockedPageStateResponse(response: unknown): response is GetBlockedPa
+   return (
+     response.status === 'blocked' &&
+     'state' in response &&
++    'details' in response &&
+     typeof response.state === 'object' &&
+     response.state !== null &&
++    typeof response.details === 'object' &&
++    response.details !== null &&
+     'targetUrl' in response.state &&
+-    typeof response.state.targetUrl === 'string'
++    typeof response.state.targetUrl === 'string' &&
++    'filterName' in response.details &&
++    typeof response.details.filterName === 'string' &&
++    'filterPattern' in response.details &&
++    typeof response.details.filterPattern === 'string' &&
++    'groupName' in response.details &&
++    typeof response.details.groupName === 'string' &&
++    'groupSchedule' in response.details &&
++    typeof response.details.groupSchedule === 'string'
+   );
+ }
+ 
+@@ -106,6 +119,35 @@ function renderBlockedUrl(state: BlockedPageState): void {
+   if (blockedUrlElement) {
+     blockedUrlElement.textContent = state.targetUrl;
+   }
++
++  const detailsSection = getElementByIdOrNull('block-details');
++  const filterElement = getElementByIdOrNull('blocked-filter');
++  const filterPatternRow = getElementByIdOrNull('blocked-pattern-row');
++  const filterPatternElement = getElementByIdOrNull('blocked-pattern');
++  const groupElement = getElementByIdOrNull('blocked-group');
++  const scheduleElement = getElementByIdOrNull('blocked-schedule');
++
++  if (
++    !state.details ||
++    !detailsSection ||
++    !filterElement ||
++    !filterPatternRow ||
++    !filterPatternElement ||
++    !groupElement ||
++    !scheduleElement
++  ) {
++    detailsSection?.setAttribute('hidden', '');
++    return;
++  }
++
++  filterElement.textContent = state.details.filterName;
++  groupElement.textContent = state.details.groupName;
++  scheduleElement.textContent = state.details.groupSchedule;
++
++  const shouldShowFilterPattern = state.details.filterName !== state.details.filterPattern;
++  filterPatternElement.textContent = state.details.filterPattern;
++  filterPatternRow.toggleAttribute('hidden', !shouldShowFilterPattern);
++  detailsSection.removeAttribute('hidden');
+ }
+ 
+ // Initialize on load
+diff --git a/src/blocked/styles/blocked.css b/src/blocked/styles/blocked.css
+index daf3c30..af43463 100644
+--- a/src/blocked/styles/blocked.css
++++ b/src/blocked/styles/blocked.css
+@@ -77,6 +77,44 @@ p {
+   font-size: var(--text-md);
+ }
+ 
++.details {
++  text-align: left;
++  background: var(--url-bg);
++  border: 1px solid var(--url-border);
++  border-radius: 8px;
++  padding: 1rem;
++  margin-bottom: 2rem;
++}
++
++.details h2 {
++  font-size: 1rem;
++  margin: 0 0 0.75rem 0;
++}
++
++.details-list {
++  margin: 0;
++}
++
++.detail-row {
++  display: grid;
++  grid-template-columns: minmax(80px, auto) 1fr;
++  gap: 0.75rem;
++  align-items: start;
++}
++
++.detail-row + .detail-row {
++  margin-top: 0.75rem;
++}
++
++.detail-row dt {
++  font-weight: 700;
++}
++
++.detail-row dd {
++  margin: 0;
++  word-break: break-word;
++}
++
+ .actions {
+   display: flex;
+   justify-content: center;
+diff --git a/src/shared/types/messages.ts b/src/shared/types/messages.ts
+index 3740e5e..b2b5a3e 100644
+--- a/src/shared/types/messages.ts
++++ b/src/shared/types/messages.ts
+@@ -50,10 +50,18 @@ export interface GoBackActiveTabResponse {
+   readonly restored: boolean;
+ }
+ 
++export interface BlockedPageRuleSummary {
++  readonly filterName: string;
++  readonly filterPattern: string;
++  readonly groupName: string;
++  readonly groupSchedule: string;
++}
++
+ export type GetBlockedPageStateResponse =
+   | {
+       readonly status: 'blocked';
+       readonly state: BlockedTabState;
++      readonly details: BlockedPageRuleSummary;
+     }
+   | {
+       readonly status: 'allowed';
+diff --git a/test/e2e/blocked.spec.ts b/test/e2e/blocked.spec.ts
+index 3e6e008..4a13cea 100644
+--- a/test/e2e/blocked.spec.ts
++++ b/test/e2e/blocked.spec.ts
+@@ -64,10 +64,25 @@ test('renders the blocked url from fresh tab state when query params are missing
+         {
+           id: 'blocked-state-filter',
+           pattern: 'blocked-state.example.test',
+-          groupId: defaultGroup.id,
++          groupId: 'work-hours',
+           enabled: true,
+           matchMode: 'contains',
+-          description: 'Blocked State',
++          description: 'Focus Block',
++        },
++      ],
++      groups: [
++        defaultGroup,
++        {
++          id: 'work-hours',
++          name: 'Work Hours',
++          schedules: [
++            {
++              daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
++              startTime: '00:00',
++              endTime: '23:59',
++            },
++          ],
++          is24x7: false,
+         },
+       ],
+       rulesVersion: 1,
+@@ -87,7 +102,7 @@ test('renders the blocked url from fresh tab state when query params are missing
+         rulesVersion: 1,
+         blockedBy: {
+           filterId: 'blocked-state-filter',
+-          groupId: 'default-24x7',
++          groupId: 'work-hours',
+         },
+       },
+     });
+@@ -97,6 +112,10 @@ test('renders the blocked url from fresh tab state when query params are missing
+ 
+   await expect(page.getByRole('heading', { name: 'Page Blocked' })).toBeVisible();
+   await expect(page.getByLabel('Blocked URL')).toHaveText(targetUrl);
++  await expect(page.getByLabel('Blocking details')).toContainText('Focus Block');
++  await expect(page.getByLabel('Blocking details')).toContainText('blocked-state.example.test');
++  await expect(page.getByLabel('Blocking details')).toContainText('Work Hours');
++  await expect(page.getByLabel('Blocking details')).toContainText('Daily 00:00-23:59');
+ });
+ 
+ test('handles missing or malformed blocked urls and no-op go back safely', async ({
+diff --git a/test/unit/background/messages.test.ts b/test/unit/background/messages.test.ts
+index e80bd06..c897064 100644
+--- a/test/unit/background/messages.test.ts
++++ b/test/unit/background/messages.test.ts
+@@ -114,7 +114,16 @@ describe('handleMessage', () => {
+         groupId: DEFAULT_GROUP_ID,
+       },
+     };
+-    mocks.getFreshBlockedPageState.mockResolvedValue({ status: 'blocked', state: blockedState });
++    mocks.getFreshBlockedPageState.mockResolvedValue({
++      status: 'blocked',
++      state: blockedState,
++      details: {
++        filterName: 'Focus Block',
++        filterPattern: 'blocked.com',
++        groupName: '24/7',
++        groupSchedule: 'Always Active',
++      },
++    });
+     const sendResponse = vi.fn();
+ 
+     expect(
+@@ -132,7 +141,16 @@ describe('handleMessage', () => {
+     ).toBe(true);
+ 
+     await vi.waitFor(() => {
+-      expect(sendResponse).toHaveBeenCalledWith({ status: 'blocked', state: blockedState });
++      expect(sendResponse).toHaveBeenCalledWith({
++        status: 'blocked',
++        state: blockedState,
++        details: {
++          filterName: 'Focus Block',
++          filterPattern: 'blocked.com',
++          groupName: '24/7',
++          groupSchedule: 'Always Active',
++        },
++      });
+     });
+     expect(mocks.getFreshBlockedPageState).toHaveBeenCalledWith(
+       7,
+diff --git a/test/unit/background/tabController.test.ts b/test/unit/background/tabController.test.ts
+index 0826123..09a2acc 100644
+--- a/test/unit/background/tabController.test.ts
++++ b/test/unit/background/tabController.test.ts
+@@ -243,6 +243,68 @@ describe('TabController', () => {
+     });
+   });
+ 
++  it('returns blocking details for the current blocked page target', async () => {
++    const chromeMock = getChromeMock();
++    chromeMock.storage.sync._data.set(
++      STORAGE_KEY,
++      createStorageData({
++        groups: [
++          { id: DEFAULT_GROUP_ID, name: 'Deep Work', schedules: [], is24x7: true },
++          {
++            id: 'office-hours',
++            name: 'Office Hours',
++            is24x7: false,
++            schedules: [
++              {
++                daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
++                startTime: '00:00',
++                endTime: '23:59',
++              },
++            ],
++          },
++        ],
++        filters: [
++          {
++            id: 'office-filter',
++            pattern: 'focus.example.test',
++            groupId: 'office-hours',
++            enabled: true,
++            matchMode: 'contains',
++            description: 'Focus Block',
++          },
++        ],
++        rulesVersion: 11,
++      })
++    );
++
++    const { getTabController } = await import('../../../src/background/tabController');
++
++    await expect(
++      getTabController().getFreshBlockedPageState(
++        11,
++        `chrome-extension://test-extension-id/${PAGES.BLOCKED}?url=${encodeURIComponent('https://focus.example.test/tasks')}`
++      )
++    ).resolves.toEqual({
++      status: 'blocked',
++      state: {
++        tabId: 11,
++        targetUrl: 'https://focus.example.test/tasks',
++        blockedAt: expect.any(Number),
++        rulesVersion: 11,
++        blockedBy: {
++          filterId: 'office-filter',
++          groupId: 'office-hours',
++        },
++      },
++      details: {
++        filterName: 'Focus Block',
++        filterPattern: 'focus.example.test',
++        groupName: 'Office Hours',
++        groupSchedule: 'Daily 00:00-23:59',
++      },
++    });
++  });
++
+   it('reconciles open tabs after storage changes', async () => {
+     const chromeMock = getChromeMock();
+     chromeMock.tabs.query.mockImplementation(

@@ -1,0 +1,81 @@
+diff --git a/attached_assets/Pasted-Browser-Test-Gap-Report-Restless-Field-Toolkit-What-I-T_1779088346460.txt b/attached_assets/Pasted-Browser-Test-Gap-Report-Restless-Field-Toolkit-What-I-T_1779088346460.txt
+new file mode 100644
+index 0000000..0e8d546
+--- /dev/null
++++ b/attached_assets/Pasted-Browser-Test-Gap-Report-Restless-Field-Toolkit-What-I-T_1779088346460.txt
+@@ -0,0 +1,32 @@
++Browser Test & Gap Report — Restless Field Toolkit
++What I Tested
++The app is running and renders correctly in the preview. It shows the phone-frame shell with the "RESTLESS FIELD OS" header, bottom navigation (Sales OS, Field Manual, Claim Check, Lane Plan), and the Step 01 Prepare / Pre-Call Checklist. The UI itself is polished and functional.
++
++Browser console had 3 active 404 errors — resources failing to load at runtime. These are worth investigating but didn't break the visible UI.
++
++Gap Analysis: Current State vs. Strategy Document
++Area	Strategy Requires	Current State	Gap
++Storage — Domain Data	IndexedDB via idb-keyval	sessionStorage snapshots only	🔴 Critical — data is lost on tab close
++Storage — UI Prefs	localStorage for theme/prefs	Mixed into same session snapshot	🟠 High
++PWA navigateFallback	/index.html	Unknown — likely offline.html or unset	🔴 Critical — deep links break offline
++Cross-Tab Sync	BroadcastChannel	Not implemented	🟠 High
++Reducer Purity	Pure reducers, useEffect for persistence	State managed in contexts, but persistence is sync in sessionStorage	🟠 High
++Context Architecture	Existing sliced contexts (draft/stats/trials/ui)	✅ Already modular — this matches	✅ Good
++Routes: /network	NetworkTracker page	Not in routing	🟡 Medium
++Routes: /simulator	RoleplaySimulator page	Not in routing	🟡 Medium
++Routes: /settings	Data export/import + storage status	Not in routing	🟡 Medium
++Camera/EXIF	No EXIF on video stream; use browser-image-compression	ClaimScanner.tsx exists — EXIF handling unknown	🟠 High
++Reminders	.ics calendar export	Not implemented	🟠 High
++Backend	Deprecate server/ directory	Express server actively used for static hosting	🟡 Medium
++idb-keyval install	Bundled via pnpm, no CDN	Not installed	🔴 Critical (blocking everything above)
++The Core Problem
++The entire strategy document is built around migrating from sessionStorage to IndexedDB. Right now, every opportunity, draft, and form entry disappears when the user closes the tab. For a field sales tool used on mobile by reps between calls, that's a data-reliability showstopper.
++
++Everything else in the document (BroadcastChannel, pure reducers, PWA routing) flows from that single foundational change.
++
++What's Already in Good Shape
++The modular context architecture (draft/stats/trials/ui) the strategy requires already exists — no rewrite needed there
++The UI and step flow are solid and don't need touching
++Wouter routing is in place
++React 19 + Vite + Tailwind 4 stack is correct
++Would you like me to plan out the implementation of these fixes as a task? I can scope it as a single end-to-end task covering the storage migration, PWA fix, missing routes, and camera/calendar corrections — or break it into phases if you'd prefer to tackle it incrementally.
+\ No newline at end of file
+diff --git a/attached_assets/Pasted-Verification-Static-check-npm-run-typecheck-or-tsc-noEm_1779088490739.txt b/attached_assets/Pasted-Verification-Static-check-npm-run-typecheck-or-tsc-noEm_1779088490739.txt
+new file mode 100644
+index 0000000..7c4e949
+--- /dev/null
++++ b/attached_assets/Pasted-Verification-Static-check-npm-run-typecheck-or-tsc-noEm_1779088490739.txt
+@@ -0,0 +1,35 @@
++Verification
++Static check: npm run typecheck (or tsc --noEmit) passes.
++Build: npm run build succeeds.
++Manual smoke test — Standalone builder:
++Navigate to /story (direct URL load — confirms Router wiring) → Build tab shows 5-C form + live preview.
++Fill title + 5 fields; preview updates each keystroke; copy buttons show toast and write to clipboard.
++Save → toast confirms, form clears, switches to Vault; card appears with formatted date.
++Search filters by title/character/context.
++Edit pencil → loads card back into Build form; Save now updates instead of inserting.
++Delete trash → window.confirm prompts; cancel keeps card, confirm removes.
++Refresh page → vault persists from localStorage under key restless_story_vault_v01.
++Empty state on first visit shows "Vault is Empty" copy.
++Manual smoke test — Roleplay integration:
++Save a story in the vault.
++Navigate to Roleplay → setup phase shows a "Load Story Context" button.
++Picker shows the saved story; selecting it shows "Story: <title>" badge.
++Start the roleplay → confirm the system prompt sent to the LLM contains the buyer-background block derived from the story (inspect via dev tools network or temporary console log).
++Clear story → badge disappears; subsequent prompts omit the block.
++Manual smoke test — Lane integration:
++On a fresh install, navigate to Lane Plan → existing scoring works unchanged (forward compat with v01 storage).
++"Link Story" on a lane opens picker; selection persists across refresh.
++"Copy 15s" copies the script for the linked story; toast confirms.
++"Unlink" clears the link.
++Live-sync check (cross-tab): Open Builder and Roleplay in two browser tabs (same origin). Add a story in Builder → Roleplay's picker should reflect the new story automatically via the storage event subscription in StoryVaultProvider. No refresh required.
++Cross-browser clipboard fallback: force a non-secure-context test (or stub navigator.clipboard = undefined); confirm the try/catch path fires and toast shows 'Copy failed — long-press to copy manually'.
++Deleted-story link resilience: Link a story to a lane, then delete it from the Builder. Reload Lane Plan → the lane should render with a faint "Linked story removed" caption and an Unlink action; nothing should throw.
++Critical files (for reference during execution)
++client/src/pages/NetworkTracker.tsx:15-29, 39-41 — CRUD-on-localStorage pattern to mirror in lib/storyVault.ts
++client/src/pages/ClaimScanner.tsx — single-file tool page convention with inline styles
++client/src/pages/Home.tsx:20, 22-26, 30-37, 39-41, 110-155, 167-182 — exact insertion points + tab styling precedent
++client/src/pages/RoleplaySimulator.tsx:561, 704-720, 737, 754 — system prompt assembler and setup-phase state to integrate against
++client/src/pages/LaneSelector.tsx:13-19, 75, 96-107, 219-262 — type definition, storage key, save/load, mutator
++client/src/App.tsx:23-35, 38-48 — Router Switch (add /story) and provider chain (insert StoryVaultProvider)
++client/src/components/FieldManual/tools/Tool10StoryVault.tsx — framework reference; the new builder is its interactive companion
++client/src/contexts/AppState.tsx — useToastActions source
+\ No newline at end of file

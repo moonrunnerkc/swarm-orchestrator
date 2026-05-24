@@ -1,0 +1,62 @@
+diff --git a/bundle/additional-images-patch.yaml b/bundle/additional-images-patch.yaml
+index 5d35fe489..1933b40e3 100644
+--- a/bundle/additional-images-patch.yaml
++++ b/bundle/additional-images-patch.yaml
+@@ -18,7 +18,7 @@ additionalImages:
+     value: "registry.redhat.io/rhel9/mariadb-105:latest@sha256:e1a32e8e475d579b45ec8f41478123172868d4d3b7edb6473b09fd51812c179b"
+   - name: RELATED_IMAGE_OSE_OAUTH_PROXY_IMAGE
+     value: "registry.redhat.io/openshift4/ose-oauth-proxy-rhel9:v4.18@sha256:ed78d0c5946a2cc75c8bc2db6dbad5d757102acfa9defcd3f4a30829aa47d9d1"
+-  # - name: RELATED_IMAGE_OSE_KUBE_RBAC_PROXY_IMAGE
++  # - name: RELATED_IMAGE_ODH_KUBE_RBAC_PROXY_IMAGE
+   #   value: "registry.redhat.io/openshift4/ose-kube-rbac-proxy-rhel9@sha256:467557f453bde3feaa0129f38c52fba00c3b98acddbf8978bf21ef13a9890fab"
+   - name: RELATED_IMAGE_OSE_ETCD_IMAGE
+     value: "registry.redhat.io/openshift4/ose-etcd-rhel9:v4.18@sha256:de67ebe1de42971f1cb99df039044a6c79471802dedf666282e349c579f79c3a"
+diff --git a/bundle/bundle-patch.yaml b/bundle/bundle-patch.yaml
+index 4dc2287a2..247fcf9b4 100644
+--- a/bundle/bundle-patch.yaml
++++ b/bundle/bundle-patch.yaml
+@@ -208,9 +208,6 @@ patch:
+     - name: RELATED_IMAGE_ODH_MOD_ARCH_MODEL_REGISTRY_IMAGE
+       value: quay.io/opendatahub/odh-mod-arch-modular-architecture@sha256:943fdbe618b61651883090f09d1735e02f28a317e474f75fe05dd1ff7d00d294
+       component: odh-mod-arch-model-registry
+-    - name: RELATED_IMAGE_OSE_KUBE_RBAC_PROXY_IMAGE
+-      value: quay.io/opendatahub/odh-kube-auth-proxy@sha256:a528c85ba07a473250d72119de75b65b5d1cc6f0ce5d61abcfe89b3bb20d2839
+-      component: odh-kube-auth-proxy
+     - name: RELATED_IMAGE_ODH_TRAINER_IMAGE
+       value: quay.io/opendatahub/trainer@sha256:e83875f1d341b6fec5ffc6c30b6e957ce4b9239ab7c06c97c57ee0c1d410e390
+       component: odh-trainer
+diff --git a/bundle/manifests/rhods-operator.clusterserviceversion.yaml b/bundle/manifests/rhods-operator.clusterserviceversion.yaml
+index 30be05b33..3d03ea1e7 100644
+--- a/bundle/manifests/rhods-operator.clusterserviceversion.yaml
++++ b/bundle/manifests/rhods-operator.clusterserviceversion.yaml
+@@ -1939,8 +1939,6 @@ spec:
+                   value: "quay.io/opendatahub/odh-training-rocm64-torch28-py312@sha256:93a61d145e11bfad80357cb166155566018d9ea924877c6b16c68d50c72fb81f"
+                 - name: RELATED_IMAGE_ODH_MOD_ARCH_MODEL_REGISTRY_IMAGE
+                   value: "quay.io/opendatahub/odh-mod-arch-modular-architecture@sha256:c4f3b42a6cab830badcb11ccfcf48b0cf6c673ea9c7496eddbdd889e64459314"
+-                - name: RELATED_IMAGE_OSE_KUBE_RBAC_PROXY_IMAGE
+-                  value: "quay.io/opendatahub/odh-kube-auth-proxy@sha256:991738994868923eb1228b1c25587acc4abdd83d29d7b471f52462435f6156e5"
+                 - name: RELATED_IMAGE_ODH_TRAINER_IMAGE
+                   value: "quay.io/opendatahub/trainer@sha256:6a8dfd585ca6b3bc1e9dc31c69230321d3c0d040d2fc5a2b963d99b14e6e8bd2"
+                 - name: RELATED_IMAGE_ODH_MLSERVER_IMAGE
+@@ -2654,8 +2652,6 @@ spec:
+     image: "quay.io/opendatahub/odh-training-rocm64-torch28-py312@sha256:93a61d145e11bfad80357cb166155566018d9ea924877c6b16c68d50c72fb81f"
+   - name: odh_mod_arch_model_registry_image
+     image: "quay.io/opendatahub/odh-mod-arch-modular-architecture@sha256:c4f3b42a6cab830badcb11ccfcf48b0cf6c673ea9c7496eddbdd889e64459314"
+-  - name: ose_kube_rbac_proxy_image
+-    image: "quay.io/opendatahub/odh-kube-auth-proxy@sha256:991738994868923eb1228b1c25587acc4abdd83d29d7b471f52462435f6156e5"
+   - name: odh_trainer_image
+     image: "quay.io/opendatahub/trainer@sha256:6a8dfd585ca6b3bc1e9dc31c69230321d3c0d040d2fc5a2b963d99b14e6e8bd2"
+   - name: odh_mlserver_image
+diff --git a/catalog/v4.20/rhods-operator/catalog.yaml b/catalog/v4.20/rhods-operator/catalog.yaml
+index bc95d78ad..0cea636f8 100644
+--- a/catalog/v4.20/rhods-operator/catalog.yaml
++++ b/catalog/v4.20/rhods-operator/catalog.yaml
+@@ -665,8 +665,6 @@ relatedImages:
+   name: odh_kserve_localmodel_controller_image
+ - image: quay.io/opendatahub/odh-kserve-localmodelnode-agent@sha256:9268abce4d2aeb59962d78953b08a776b007a14bb15f6833add713b797b4d10d
+   name: odh_kserve_localmodelnode_agent_image
+-- image: quay.io/opendatahub/odh-kube-auth-proxy@sha256:991738994868923eb1228b1c25587acc4abdd83d29d7b471f52462435f6156e5
+-  name: ose_kube_rbac_proxy_image
+ - image: quay.io/opendatahub/odh-kube-auth-proxy@sha256:991738994868923eb1228b1c25587acc4abdd83d29d7b471f52462435f6156e5
+   name: odh_kube_auth_proxy_image
+ - image: quay.io/opendatahub/odh-kube-rbac-proxy@sha256:677385e790ac042d4f887efdf37cdf0b139da49336be7b5b775ae6ce2f1a4ba4

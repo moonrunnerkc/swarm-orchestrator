@@ -1,0 +1,26 @@
+{
+  "id": "aider-paul-gauthier-aider-pr5172",
+  "agent": {
+    "vendor": "aider",
+    "confidence": "high",
+    "source": "repo-owner=paul-gauthier"
+  },
+  "pr": {
+    "number": 5172,
+    "headSha": "6d34a22313557099f83893340c77c29577db44e8",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1",
+    "title": "Expand OPENAI_MODELS list with recent OpenAI model names",
+    "body": "## Summary\n\n\\`OPENAI_MODELS\\` in \\`aider/models.py\\` is used by \\`sanity_check_models\\` to map a bare OpenAI model name (no provider prefix) to the \\`OPENAI_API_KEY\\` environment variable. Models not in this list fall through to the keymap provider lookup, which fails when the user passes the name without a provider prefix.\n\nThe list was stale: it had \\`o1\\`, \\`o1-preview\\`, \\`o1-mini\\`, \\`o3-mini\\`, the \\`gpt-4*\\` family, \\`gpt-4o*\\`, \\`gpt-3.5-*\\`, plus \\`gpt-5.5\\` and \\`gpt-5.5-pro\\` — but was **missing**:\n\n- The entire \\`o3\\` / \\`o3-pro\\` / \\`o4-mini\\` reasoning series.\n- The \\`gpt-4.1\\` family (4.1, 4.1-mini, 4.1-nano).\n- All \\`gpt-5\\` / \\`gpt-5.1\\` / \\`gpt-5.2\\` / \\`gpt-5.3\\` / \\`gpt-5.4\\` family variants (chat / pro / mini / nano / codex).\n\nAll added names already have corresponding entries in \\`aider/resources/model-settings.yml\\`, so the list now matches the rest of the project.\n\n## Effect\n\nBefore this change, a user running \\`aider --model gpt-5.4-mini\\` with \\`OPENAI_API_KEY\\` set in the environment would see \\\"OPENAI_API_KEY: Not set\\\" because the bare name didn't match the OPENAI_MODELS string list. After this change, the API key is correctly detected.\n\n## Test plan\n\n- \\`python -c \\\"from aider.models import OPENAI_MODELS; print(len(OPENAI_MODELS), 'o4-mini' in OPENAI_MODELS, 'gpt-5.4-mini' in OPENAI_MODELS, 'gpt-4.1' in OPENAI_MODELS)\\\"\\` -> \\`61 True True True\\`\n- Diff is purely additive: 30 lines added to the OPENAI_MODELS string + 1 line in HISTORY.md.",
+    "author": "Cyberfilo",
+    "headRef": "feat/openai_models-list-completeness",
+    "repository": "paul-gauthier/aider"
+  },
+  "diffRef": {
+    "repository": "paul-gauthier/aider",
+    "headSha": "6d34a22313557099f83893340c77c29577db44e8",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1"
+  },
+  "vendoredDiffPath": "unconfirmed/aider/aider-paul-gauthier-aider-pr5172.diff",
+  "vendoredAt": "2026-05-24T03:18:58.596Z",
+  "collectedAt": "2026-05-24T03:18:58.596Z"
+}

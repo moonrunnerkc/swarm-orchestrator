@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-Tanjiro-1122-Rune-pr173",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 173,
+    "headSha": "712d1828593a17e0267882cdf7b04a11658262ba",
+    "baseSha": "d246aeb5e4567dc9196bfa8edc574b05fc48404c",
+    "title": "docs: operational capability readiness assessment for Merge, Deploy, Rollback, Payments, Entitlements, and Schema/DNS/Customer mutations",
+    "body": "Adds `docs/operational-capability-readiness.md` — a codebase-evidence-grounded gap analysis assessing how close Rune is to executing six sensitive operational capabilities.\n\n## Findings at a glance\n\n| Capability | Rating | Blocker |\n|---|---|---|\n| Merge | 🟢 Ready | `GITHUB_TOKEN` + repo allowlist confirmation |\n| Deploy | 🟡 Partial | Needs `RUNE_DEPLOYMENT_MUTATION_MODE=cli_runner` + external runner process |\n| Rollback | 🟡 Partial | Same as Deploy |\n| Change payments | 🔴 Not connected | No RevenueCat write client; read-only only |\n| Grant entitlements | 🔴 Not connected | Same; no admin API key or write endpoints |\n| Mutate schema/DNS/customer systems | 🔴 Not connected | Gate policies exist; no executor for any of the three |\n\n## What the document contains\n\n- **Per-capability sections**: current state, evidence citations (file + line), gaps/blockers, readiness rating, and ordered next steps\n- **Capability matrix**: one-row-per-capability table covering gate policy, audit log, executor, runner dependency, and real integration status\n- **Progress checklist**: pre-populated with what already exists (gate policies, audit wiring, dry-run enforcement, allowlist enforcement, CLI command allowlist) so contributors can track remaining items to completion\n\n## Key cross-cutting observations captured\n\nThe gate and audit infrastructure (`lib/privileged-operations.ts`, `rune_action_events` table, `auditPrivilegedOperationGate`) is solid across all eight operation kinds. The split is clean: Merge and Deploy/Rollback have real executors; the payments/entitlements/mutation capabilities have only gate + audit stubs, consistent with what `RUNE_NOT_CONNECTED_YET` in `lib/project-registry.ts` already documents.\n\n<!-- START COPILOT ORIGINAL PROMPT -->\n\n\n\n<details>\n\n<summary>Original prompt</summary>\n\n> Analyze the repository `Tanjiro-1122/Rune` and create a pull request that adds a clear, actionable assessment of how far the project is from being able to support the following operational capabilities:\n> \n> - Merge\n> - Deploy\n> - Rollback\n> - Change payments\n> - Grant entitlements\n> - Mutate schemas/DNS/customer systems\n> \n> The pull request should:\n> \n> 1. Inspect the existing codebase, documentation, workflows, configuration, and any relevant artifacts in the repository.\n> 2. Determine what infrastructure, code paths, interfaces, automation, permissions model, safety controls, auditability, and operator workflows already exist that are relevant to each capability listed above.\n> 3. Identify missing pieces, blockers, risks, and assumptions for each capability.\n> 4. Produce a concise but useful artifact in the repository (for example, a markdown assessment document) summarizing:\n>    - current state\n>    - evidence found in the repo\n>    - gaps\n>    - estimated readiness / distance to capability\n>    - recommended next steps\n> 5. If appropriate, add lightweight structure such as a capability matrix or checklist so future contributors can track progress.\n> 6. Avoid making speculative claims that are not grounded in repository evidence; clearly distinguish evidence from inference.\n> 7. Keep the change scoped to analysis/documentation unless the repo already has an obvious place for this assessment.\n> \n> Create the pull request against the repository with a concise title reflecting this readiness assessment work.\n> \n> The following is the prior conversation context from the user's chat exploration (may be truncated):\n> \n> User: Create pr to analyze rune and see how far is it from being able to Merge\n> Deploy\n> Rollback\n> Change payments\n> Grant entitlements\n> Mutate schemas/DNS/customer systems\n> \n> Assistant: I’ve started the PR creation flow and am waiting for your response to the confirmation dialog before I can continue.\n> \n> \n\n\n</details>\n\n\n\n<!-- START COPILOT CODING AGENT SUFFIX -->\n\n*This pull request was created from Copilot chat.*\n>",
+    "author": "Copilot",
+    "headRef": "copilot/add-capabilities-assessment-document",
+    "repository": "Tanjiro-1122/Rune"
+  },
+  "diffRef": {
+    "repository": "Tanjiro-1122/Rune",
+    "headSha": "712d1828593a17e0267882cdf7b04a11658262ba",
+    "baseSha": "d246aeb5e4567dc9196bfa8edc574b05fc48404c"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-Tanjiro-1122-Rune-pr173.diff",
+  "vendoredAt": "2026-05-24T03:35:47.486Z",
+  "collectedAt": "2026-05-24T03:35:47.486Z"
+}

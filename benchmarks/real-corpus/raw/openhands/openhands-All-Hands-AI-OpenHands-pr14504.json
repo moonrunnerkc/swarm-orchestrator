@@ -1,0 +1,26 @@
+{
+  "id": "openhands-All-Hands-AI-OpenHands-pr14504",
+  "agent": {
+    "vendor": "openhands",
+    "confidence": "high",
+    "source": "author=openhands-agent+body=openhands-attribution"
+  },
+  "pr": {
+    "number": 14504,
+    "headSha": "54dc191e1183c2fa3322531e20fa88f8aa728fb3",
+    "baseSha": "f4c76596fc2c0a2641fa384351a7c8d2514f956c",
+    "title": "Use user email as Laminar trace user_id when available",
+    "body": "## Summary\n\nFollow-up to [#14412](https://github.com/OpenHands/OpenHands/pull/14412) and [software-agent-sdk#3242](https://github.com/OpenHands/software-agent-sdk/pull/3242). Today the OpenHands internal user id (a pseudo-anonymous UUID) is what gets sent to `Laminar.set_trace_user_id()`, which means inspecting a trace in Laminar shows an opaque id that requires a separate lookup to attribute. This PR switches the value to the user's **email** when available, falling back to the internal id when it isn't (e.g. OSS mode), so traces are transparent in the Laminar UI right away.\n\n## Changes\n\n- **`UserContext`**: add `get_user_email()` to the abstract interface.\n- **`AuthUserContext`**, **`SpecifyUserContext`**, and (enterprise) **`ResolverUserContext`**: implement `get_user_email()` by delegating to `UserAuth.get_user_email()`, which already exists in both `DefaultUserAuth` (returns `None`) and `SaasUserAuth` (returns the Keycloak email).\n- **`LiveStatusAppConversationService`**: at the three callsites that feed `user_id` into `StartConversationRequest`, compute\n\n  ```python\n  laminar_user_id = await self.user_context.get_user_email() or user.id\n  ```\n\n  and pass `laminar_user_id` instead of `user.id` / the OpenHands `user_id`. This covers:\n  1. the normal LLM path (`create_request(StartConversationRequest, agent=agent, user_id=...)`)\n  2. the ACP path (`create_request(StartConversationRequest, agent=acp_agent, user_id=...)`)\n  3. the forward-compatible JSON-body injection (still needed because the pinned `openhands-sdk==1.22.1` doesn't yet expose `user_id` on `StartConversationRequest`; the field landed in software-agent-sdk#3242 and will be picked up on the next SDK bump).\n- **`created_by_user_id`** and other ownership/DB fields are deliberately left as `user_id` — they need the stable internal id, not the email.\n\n## Behavior\n\n| Mode | `get_user_email()` | What Laminar sees |\n|---|---|---|\n| SaaS (Keycloak) | `user@example.com` | `user@example.com` ✅ |\n| OSS / default auth | `None` | falls back to internal `user_id` (today's behavior) |\n| Admin (`SpecifyUserContext`) | `None` | falls back to internal `user_id` |\n\n## Type\n\n- [x] Bug fix\n- [ ] Feature\n- [ ] Refactor\n- [ ] Breaking change\n- [ ] Docs / chore\n\n## How to verify\n\nAfter deploying to staging (see companion deploy PR), start a conversation as a logged-in user and look at the Laminar trace — the `user_id` attribute should now be the user's email instead of the UUID. In OSS mode the value is still the internal id, unchanged.\n\n---\n_This PR was created by an AI agent (OpenHands) on behalf of the user._\n\n@juanmichelini can click here to [continue refining the PR](https://app.all-hands.dev/conversations/331ba2f4-e9a4-41e5-9163-70092e3b746d)\n\n---\n\nTo run this PR locally, use the following command:\n\nGUI with Docker:\n```\ndocker run -it --rm   -p 3000:3000   -v /var/run/docker.sock:/var/run/docker.sock   --add-host host.docker.internal:host-gateway   --name openhands-app-54dc191   docker.openhands.dev/openhands/openhands:54dc191\n```",
+    "author": "juanmichelini",
+    "headRef": "openhands/laminar-user-id-email",
+    "repository": "All-Hands-AI/OpenHands"
+  },
+  "diffRef": {
+    "repository": "All-Hands-AI/OpenHands",
+    "headSha": "54dc191e1183c2fa3322531e20fa88f8aa728fb3",
+    "baseSha": "f4c76596fc2c0a2641fa384351a7c8d2514f956c"
+  },
+  "vendoredDiffPath": "openhands/openhands-All-Hands-AI-OpenHands-pr14504.diff",
+  "vendoredAt": "2026-05-24T03:18:22.854Z",
+  "collectedAt": "2026-05-24T03:18:22.854Z"
+}

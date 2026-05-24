@@ -1,0 +1,51 @@
+diff --git a/.copilot-review/result.md b/.copilot-review/result.md
+new file mode 100644
+index 00000000..52372aab
+--- /dev/null
++++ b/.copilot-review/result.md
+@@ -0,0 +1,45 @@
++pr: 214
++
++## Dependency Update Review
++
++**Verdict:** Yellow Caution
++**Recommendation:** Merge after checks
++**Confidence:** High
++
++### Executive summary
++
++This PR updates the bootstrap Helm chart source for cert-manager from `v1.19.3` to `v1.20.2` in `bootstrap/helmfile.d/01-apps.yaml`. Upstream includes security-driven patch releases in `v1.19.4`/`v1.19.5` plus a minor-series jump (`v1.20.0`) with behavior changes in cert-manager/controller defaults and Helm chart functionality. The local blast radius is mostly bootstrap-time (initial cluster bring-up), but cert-manager is a critical PKI dependency for ingress TLS and ACME issuance. Merge is reasonable after confirming bootstrap render/install and post-upgrade cert-manager health signals.
++
++### Update inventory
++
++| Dependency | Ecosystem | Change | Scope | Local role | Risk |
++|---|---|---|---|---|---|
++| `quay.io/jetstack/charts/cert-manager` | Helm OCI chart | `v1.19.3 → v1.20.2` | minor | infra / deploy / runtime PKI | Yellow |
++
++### Important upstream changes
++
++- [security] `v1.19.4` is a patch release called out by maintainers to address vulnerabilities (including CVE references) and recommends all users upgrade ([release v1.19.4](https://github.com/cert-manager/cert-manager/releases/tag/v1.19.4), [cert-manager/cert-manager#8526](https://github.com/cert-manager/cert-manager/pull/8526), [cert-manager/cert-manager#8531](https://github.com/cert-manager/cert-manager/pull/8531)).
++- [security] `v1.19.5` continues vulnerability-focused dependency/toolchain bumps ([release v1.19.5](https://github.com/cert-manager/cert-manager/releases/tag/v1.19.5), [cert-manager/cert-manager#8628](https://github.com/cert-manager/cert-manager/pull/8628), [cert-manager/cert-manager#8705](https://github.com/cert-manager/cert-manager/pull/8705), [cert-manager/cert-manager#8706](https://github.com/cert-manager/cert-manager/pull/8706)).
++- [behavior] `v1.20.0` changes container runtime defaults to UID/GID `65532` (from `1000/0`), which can affect file permission assumptions and PSP/PodSecurity contexts ([release v1.20.0](https://github.com/cert-manager/cert-manager/releases/tag/v1.20.0), [cert-manager/cert-manager#8408](https://github.com/cert-manager/cert-manager/pull/8408)).
++- [behavior] `v1.20.0` promotes `OtherNames` to Beta/default and makes `DefaultPrivateKeyRotationPolicyAlways` GA/non-disableable, changing certificate handling defaults ([release v1.20.0](https://github.com/cert-manager/cert-manager/releases/tag/v1.20.0), [cert-manager/cert-manager#8288](https://github.com/cert-manager/cert-manager/pull/8288), [cert-manager/cert-manager#8287](https://github.com/cert-manager/cert-manager/pull/8287)).
++- [bugfix] `v1.20.1` includes Gateway API `parentRef` bug fix and finalizer RBAC fix (OpenShift-focused), plus grpc dependency bump ([release v1.20.1](https://github.com/cert-manager/cert-manager/releases/tag/v1.20.1), [cert-manager/cert-manager#8658](https://github.com/cert-manager/cert-manager/pull/8658), [cert-manager/cert-manager#8655](https://github.com/cert-manager/cert-manager/pull/8655), [cert-manager/cert-manager#8657](https://github.com/cert-manager/cert-manager/pull/8657)).
++- [bugfix] `v1.20.2` fixes Helm chart YAML generation when both `webhook.config` and `webhook.volumes` are set; also includes Go/dependency vulnerability bumps ([release v1.20.2](https://github.com/cert-manager/cert-manager/releases/tag/v1.20.2), [cert-manager/cert-manager#8665](https://github.com/cert-manager/cert-manager/pull/8665), [cert-manager/cert-manager#8703](https://github.com/cert-manager/cert-manager/pull/8703), [cert-manager/cert-manager#8704](https://github.com/cert-manager/cert-manager/pull/8704)).
++
++### Local impact
++
++This dependency is updated in bootstrap only (`bootstrap/helmfile.d/01-apps.yaml`), where cert-manager is installed early and is a prerequisite for later Flux components (`needs: ['cert-manager/cert-manager']` for `flux-operator`). Bootstrap renders chart values from `kubernetes/apps/cert-manager/cert-manager/app/helmrelease.yaml` via `bootstrap/helmfile.d/templates/values.yaml.gotmpl`; current local values are minimal (`crds.enabled`, `replicaCount`, DNS resolver and ServiceMonitor) and do not set `webhook.config`/`webhook.volumes`. cert-manager is operationally critical in this repo (`kubernetes/apps/cert-manager/...`) because ClusterIssuers and TLS certs back platform ingress/cert flows (`clusterissuer.yaml`, envoy/gateway cert references, monitoring/runbooks).
++
++### Pre-merge checks
++
++- [ ] Confirm bootstrap render/install still succeeds with `cert-manager v1.20.2` (Helmfile bootstrap path).
++- [ ] Validate cert-manager controller/webhook/cainjector pods become Ready and stay healthy after reconcile.
++- [ ] Verify `ClusterIssuer/letsencrypt-production` reports `Ready=True` and certificate issuance/renewal path remains healthy.
++- [ ] Check cert-manager logs/events for permission/security-context regressions related to UID/GID default changes in v1.20.0.
++- [ ] Confirm no custom chart values rely on legacy behavior of feature gates/private key rotation defaults.
++
++### Evidence reviewed
++
++- PR: `feat(container): update image quay.io/jetstack/charts/cert-manager ( v1.19.3 ➔ v1.20.2 )`; labels `area/bootstrap`, `renovate/container`, `type/minor`, `dependencies`; diff summary: 1 file changed, version line only.
++- Files in repo: `bootstrap/helmfile.d/01-apps.yaml`, `bootstrap/helmfile.d/templates/values.yaml.gotmpl`, `kubernetes/apps/cert-manager/cert-manager/app/helmrelease.yaml`, `kubernetes/apps/cert-manager/cert-manager/app/ocirepository.yaml`, `kubernetes/apps/cert-manager/cert-manager/app/clusterissuer.yaml`, `kubernetes/apps/cert-manager/cert-manager/ks.yaml`.
++- Upstream sources checked: https://github.com/cert-manager/cert-manager/releases/tag/v1.19.4, https://github.com/cert-manager/cert-manager/releases/tag/v1.19.5, https://github.com/cert-manager/cert-manager/releases/tag/v1.20.0, https://github.com/cert-manager/cert-manager/releases/tag/v1.20.1, https://github.com/cert-manager/cert-manager/releases/tag/v1.20.2.
++- Notable uncertainty: runtime Flux-managed cert-manager source currently tracks `kubernetes/apps/cert-manager/cert-manager/app/ocirepository.yaml` (`v1.19.5`), so this PR appears bootstrap-path focused rather than the ongoing Flux runtime version.

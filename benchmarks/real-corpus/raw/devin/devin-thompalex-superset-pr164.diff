@@ -1,0 +1,48 @@
+diff --git a/requirements/development.txt b/requirements/development.txt
+index 20e70f1b0835..4ef6078d2f33 100644
+--- a/requirements/development.txt
++++ b/requirements/development.txt
+@@ -360,7 +360,7 @@ google-cloud-bigquery==3.27.0
+     #   apache-superset
+     #   pandas-gbq
+     #   sqlalchemy-bigquery
+-google-cloud-bigquery-storage==2.19.1
++google-cloud-bigquery-storage==2.27.0
+     # via pandas-gbq
+ google-cloud-core==2.4.1
+     # via google-cloud-bigquery
+@@ -699,7 +699,7 @@ proto-plus==1.25.0
+     # via
+     #   google-api-core
+     #   google-cloud-bigquery-storage
+-protobuf==4.25.8
++protobuf==5.29.6
+     # via
+     #   google-api-core
+     #   google-cloud-bigquery-storage
+diff --git a/tests/unit_tests/utils/test_screenshot_utils.py b/tests/unit_tests/utils/test_screenshot_utils.py
+index c6127374f04b..fd0ef1230f65 100644
+--- a/tests/unit_tests/utils/test_screenshot_utils.py
++++ b/tests/unit_tests/utils/test_screenshot_utils.py
+@@ -342,7 +342,7 @@ def test_per_tile_spinner_timeout_logs_warning_and_continues(self, mock_page):
+         """A per-tile spinner timeout logs a warning but still takes the screenshot."""
+         from superset.utils.screenshot_utils import PlaywrightTimeout
+ 
+-        timeout = PlaywrightTimeout()
++        timeout = PlaywrightTimeout("Timeout 30000ms exceeded.")
+         mock_page.wait_for_function.side_effect = timeout
+ 
+         with patch("superset.utils.screenshot_utils.logger") as mock_logger:
+diff --git a/tests/unit_tests/utils/webdriver_test.py b/tests/unit_tests/utils/webdriver_test.py
+index a27220908cc4..c233643a8da1 100644
+--- a/tests/unit_tests/utils/webdriver_test.py
++++ b/tests/unit_tests/utils/webdriver_test.py
+@@ -521,7 +521,7 @@ def test_get_screenshot_handles_playwright_timeout(
+         mock_playwright_instance.chromium.launch.return_value = mock_browser
+         mock_browser.new_context.return_value = mock_context
+         mock_context.new_page.return_value = mock_page
+-        mock_page.goto.side_effect = PlaywrightTimeout()
++        mock_page.goto.side_effect = PlaywrightTimeout("Timeout 30000ms exceeded.")
+ 
+         with patch("superset.utils.webdriver.app") as mock_app:
+             mock_app.config = {

@@ -1,0 +1,2305 @@
+diff --git a/.env.example b/.env.example
+index b6447ab..c2a5694 100644
+--- a/.env.example
++++ b/.env.example
+@@ -39,6 +39,15 @@ NATS_URL=nats://nats:4222
+ # ─── Kafka ───
+ KAFKA_BROKERS=kafka:9092
+ 
++# ─── Aliyun (AI / SMS) ───
++ALIYUN_ACCESS_KEY_ID=
++ALIYUN_ACCESS_KEY_SECRET=
++ALIYUN_NLS_APP_KEY=
++
++# ─── DashScope (通义千问 LLM) ───
++DASHSCOPE_API_KEY=
++DASHSCOPE_MODEL=qwen-plus
++
+ # ─── Frontend ───
+ VITE_API_BASE_URL=/api/v1
+ 
+diff --git a/cmd/server/main.go b/cmd/server/main.go
+index 08fd771..8a277f3 100644
+--- a/cmd/server/main.go
++++ b/cmd/server/main.go
+@@ -167,7 +167,15 @@ func main() {
+ 	b2bSvc := b2b.NewService(callRepo, callEventRepo, nil, logger)
+ 	_ = callbackRepo // used via callSvc
+ 	emailSvc := email.NewService(imSvc, logger)
+-	llmProvider := llm.NewStubProvider()
++	// LLM Provider: use DashScope when API key configured, otherwise fallback to stub.
++	var llmProvider llm.Provider
++	if cfg.Aliyun.DashScopeAPIKey != "" {
++		llmProvider = llm.NewDashScopeProvider(cfg.Aliyun.DashScopeAPIKey, cfg.Aliyun.DashScopeModel)
++		logger.Info().Msg("LLM: using DashScope provider")
++	} else {
++		llmProvider = llm.NewStubProvider()
++		logger.Warn().Msg("LLM: DASHSCOPE_API_KEY not set, using stub provider")
++	}
+ 	imAssistSvc := imassist.NewService(llmProvider, logger)
+ 
+ 	// --- Phase 9 Repositories ---
+@@ -186,6 +194,9 @@ func main() {
+ 	performanceSvc := ai.NewPerformanceScorecardService(performanceScorecardRepo)
+ 	aiAnalysisSvc := aianalysis.NewService(llmProvider, logger)
+ 
++	// Set LLM provider on QI service for LLM-type QA rules.
++	qiSvc.SetLLMProvider(llmProvider)
++
+ 	// --- Infrastructure ---
+ 	rateLimiter := infraRedis.NewRateLimiter(redisClient)
+ 
+@@ -267,6 +278,39 @@ func main() {
+ 	ringAnalysisLogRepo := infraMySQL.NewRingAnalysisLogRepo(db)
+ 	fullDuplexConfigRepo := infraMySQL.NewFullDuplexConfigRepo(db)
+ 
++	// Advanced AI Providers: use DashScope when API key configured, otherwise stubs.
++	var (
++		commAgentProv    llm.CommAgentProvider
++		voiceCloneProv   llm.VoiceCloningProvider
++		convAnalyticsProv llm.ConversationAnalyticsProvider
++		ringAnalysisProv  llm.RingAnalysisProvider
++		fullDuplexProv    llm.FullDuplexProvider
++		trainingProv      llm.TrainingProvider
++	)
++	if cfg.Aliyun.DashScopeAPIKey != "" {
++		commAgentProv = llm.NewDashScopeCommAgentProvider(cfg.Aliyun.DashScopeAPIKey, cfg.Aliyun.DashScopeModel)
++		voiceCloneProv = llm.NewDashScopeVoiceCloningProvider(cfg.Aliyun.DashScopeAPIKey, cfg.Aliyun.DashScopeModel)
++		convAnalyticsProv = llm.NewDashScopeConversationAnalyticsProvider(cfg.Aliyun.DashScopeAPIKey, cfg.Aliyun.DashScopeModel)
++		ringAnalysisProv = llm.NewDashScopeRingAnalysisProvider(cfg.Aliyun.DashScopeAPIKey, cfg.Aliyun.DashScopeModel)
++		fullDuplexProv = llm.NewDashScopeFullDuplexProvider(cfg.Aliyun.DashScopeAPIKey, cfg.Aliyun.DashScopeModel)
++		trainingProv = llm.NewDashScopeTrainingProvider(cfg.Aliyun.DashScopeAPIKey, cfg.Aliyun.DashScopeModel)
++		logger.Info().Msg("Advanced AI: using DashScope providers")
++	} else {
++		commAgentProv = llm.NewStubCommAgentProvider()
++		voiceCloneProv = llm.NewStubVoiceCloningProvider()
++		convAnalyticsProv = llm.NewStubConversationAnalyticsProvider()
++		ringAnalysisProv = llm.NewStubRingAnalysisProvider()
++		fullDuplexProv = llm.NewStubFullDuplexProvider()
++		trainingProv = llm.NewStubTrainingProvider()
++		logger.Warn().Msg("Advanced AI: DASHSCOPE_API_KEY not set, using stub providers")
++	}
++	_ = commAgentProv
++	_ = voiceCloneProv
++	_ = convAnalyticsProv
++	_ = ringAnalysisProv
++	_ = fullDuplexProv
++	_ = trainingProv
++
+ 	// Advanced AI Domain Services
+ 	commAgentSvc := ai.NewCommAgentService(commAgentRepo, commAgentSessionRepo)
+ 	voiceProfileSvc := ai.NewVoiceProfileService(voiceProfileRepo)
+diff --git a/go.mod b/go.mod
+index f5988a1..60e36ce 100644
+--- a/go.mod
++++ b/go.mod
+@@ -7,6 +7,7 @@ require (
+ 	github.com/go-chi/chi/v5 v5.3.0
+ 	github.com/go-sql-driver/mysql v1.10.0
+ 	github.com/golang-jwt/jwt/v5 v5.3.1
++	github.com/google/uuid v1.6.0
+ 	github.com/jmoiron/sqlx v1.4.0
+ 	github.com/minio/minio-go/v7 v7.1.0
+ 	github.com/nats-io/nats.go v1.52.0
+@@ -24,7 +25,6 @@ require (
+ 	github.com/davecgh/go-spew v1.1.1 // indirect
+ 	github.com/dustin/go-humanize v1.0.1 // indirect
+ 	github.com/go-ini/ini v1.67.0 // indirect
+-	github.com/google/uuid v1.6.0 // indirect
+ 	github.com/klauspost/compress v1.18.5 // indirect
+ 	github.com/klauspost/cpuid/v2 v2.2.11 // indirect
+ 	github.com/klauspost/crc32 v1.3.0 // indirect
+diff --git a/internal/application/sms/service.go b/internal/application/sms/service.go
+index b178222..e01c5dc 100644
+--- a/internal/application/sms/service.go
++++ b/internal/application/sms/service.go
+@@ -6,16 +6,32 @@ import (
+ 	"fmt"
+ 
+ 	"github.com/divord97/ccc/internal/domain/integration"
++	"github.com/divord97/ccc/internal/infrastructure/aliyunsms"
+ 	"github.com/rs/zerolog"
+ )
+ 
++// SMSSender abstracts SMS sending for testability.
++type SMSSender interface {
++	SendSms(ctx context.Context, signName, templateID, phone string, params map[string]string) error
++}
++
+ type Service struct {
+ 	configs integration.SmsConfigRepository
++	sender  SMSSender
+ 	logger  zerolog.Logger
+ }
+ 
+-func NewService(configs integration.SmsConfigRepository, logger zerolog.Logger) *Service {
+-	return &Service{configs: configs, logger: logger}
++func NewService(configs integration.SmsConfigRepository, sender SMSSender, logger zerolog.Logger) *Service {
++	return &Service{configs: configs, sender: sender, logger: logger}
++}
++
++// NewServiceWithAliyun creates a Service using Aliyun SMS as the default sender.
++func NewServiceWithAliyun(configs integration.SmsConfigRepository, accessKeyID, accessKeySecret string, logger zerolog.Logger) *Service {
++	return &Service{
++		configs: configs,
++		sender:  aliyunsms.NewClient(accessKeyID, accessKeySecret),
++		logger:  logger,
++	}
+ }
+ 
+ type SendRequest struct {
+@@ -58,9 +74,12 @@ func (s *Service) Send(ctx context.Context, req SendRequest) error {
+ 		Str("phone", req.Phone).
+ 		Str("template_id", templateID).
+ 		Str("sign", cfg.SignName).
+-		Msg("sms: sending (stub)")
++		Msg("sms: sending")
++
++	if err := s.sender.SendSms(ctx, cfg.SignName, templateID, req.Phone, req.Params); err != nil {
++		return fmt.Errorf("sms: send: %w", err)
++	}
+ 
+-	// In production: integrate with Alibaba Cloud SMS SDK
+-	// aliyun.SendSms(cfg.AccessKeyID, cfg.SignName, templateID, req.Phone, req.Params)
++	s.logger.Info().Str("phone", req.Phone).Msg("sms: sent successfully")
+ 	return nil
+ }
+diff --git a/internal/config/config.go b/internal/config/config.go
+index 9a9d154..f23515c 100644
+--- a/internal/config/config.go
++++ b/internal/config/config.go
+@@ -6,11 +6,12 @@ import (
+ )
+ 
+ type Config struct {
+-	Server   ServerConfig
+-	Database DatabaseConfig
+-	Redis    RedisConfig
+-	JWT      JWTConfig
++	Server    ServerConfig
++	Database  DatabaseConfig
++	Redis     RedisConfig
++	JWT       JWTConfig
+ 	Snowflake SnowflakeConfig
++	Aliyun    AliyunConfig
+ }
+ 
+ type ServerConfig struct {
+@@ -28,14 +29,22 @@ type RedisConfig struct {
+ }
+ 
+ type JWTConfig struct {
+-	Secret   string
+-	Issuer   string
++	Secret string
++	Issuer string
+ }
+ 
+ type SnowflakeConfig struct {
+ 	NodeID int64
+ }
+ 
++type AliyunConfig struct {
++	AccessKeyID     string
++	AccessKeySecret string
++	NLSAppKey       string
++	DashScopeAPIKey string
++	DashScopeModel  string
++}
++
+ func Load() *Config {
+ 	return &Config{
+ 		Server: ServerConfig{
+@@ -56,6 +65,13 @@ func Load() *Config {
+ 		Snowflake: SnowflakeConfig{
+ 			NodeID: int64(envOrInt("SNOWFLAKE_NODE_ID", 1)),
+ 		},
++		Aliyun: AliyunConfig{
++			AccessKeyID:     envOr("ALIYUN_ACCESS_KEY_ID", ""),
++			AccessKeySecret: envOr("ALIYUN_ACCESS_KEY_SECRET", ""),
++			NLSAppKey:       envOr("ALIYUN_NLS_APP_KEY", ""),
++			DashScopeAPIKey: envOr("DASHSCOPE_API_KEY", ""),
++			DashScopeModel:  envOr("DASHSCOPE_MODEL", "qwen-plus"),
++		},
+ 	}
+ }
+ 
+diff --git a/internal/domain/ai/service_phase9.go b/internal/domain/ai/service_phase9.go
+index 1f87db0..ddefcf5 100644
+--- a/internal/domain/ai/service_phase9.go
++++ b/internal/domain/ai/service_phase9.go
+@@ -3,8 +3,11 @@ package ai
+ import (
+ 	"context"
+ 	"encoding/json"
++	"fmt"
++	"regexp"
+ 	"strings"
+ 	"time"
++	"unicode/utf8"
+ 
+ 	"github.com/divord97/ccc/pkg/snowflake"
+ )
+@@ -164,17 +167,28 @@ func containsIgnoreCase(s, substr string) bool {
+ 	return len(substr) > 0 && strings.Contains(strings.ToLower(s), strings.ToLower(substr))
+ }
+ 
++// QALLMProvider is an optional LLM interface for LLM-type QA rules.
++type QALLMProvider interface {
++	QAInspectLLM(ctx context.Context, transcript, prompt string) (float64, string, error)
++}
++
+ // QualityInspectionService manages QA rules, schemes, and results.
+ type QualityInspectionService struct {
+ 	rules   QARuleRepository
+ 	schemes QASchemeRepository
+ 	results QAResultRepository
++	llm     QALLMProvider
+ }
+ 
+ func NewQualityInspectionService(rules QARuleRepository, schemes QASchemeRepository, results QAResultRepository) *QualityInspectionService {
+ 	return &QualityInspectionService{rules: rules, schemes: schemes, results: results}
+ }
+ 
++// SetLLMProvider sets an LLM provider for LLM-type QA rules.
++func (s *QualityInspectionService) SetLLMProvider(p QALLMProvider) {
++	s.llm = p
++}
++
+ type CreateQARuleInput struct {
+ 	TenantID int64  `json:"tenant_id"`
+ 	Name     string `json:"name"`
+@@ -317,7 +331,7 @@ func (s *QualityInspectionService) RunInspection(ctx context.Context, tenantID,
+ 		if !ok {
+ 			continue
+ 		}
+-		rr := evaluateRule(rule, transcript)
++		rr := evaluateRule(ctx, rule, transcript, s.llm)
+ 		ruleResults = append(ruleResults, rr)
+ 		totalScore += rr.Score * w.Weight
+ 		totalWeight += w.Weight
+@@ -349,7 +363,7 @@ func (s *QualityInspectionService) RunInspection(ctx context.Context, tenantID,
+ }
+ 
+ // evaluateRule evaluates a single QA rule against a transcript.
+-func evaluateRule(rule *QARule, transcript string) QARuleResult {
++func evaluateRule(ctx context.Context, rule *QARule, transcript string, llm QALLMProvider) QARuleResult {
+ 	rr := QARuleResult{
+ 		RuleID:   rule.ID,
+ 		RuleName: rule.Name,
+@@ -358,23 +372,31 @@ func evaluateRule(rule *QARule, transcript string) QARuleResult {
+ 
+ 	switch rule.Type {
+ 	case QARuleTypeKeyword:
+-		rr = evaluateKeywordRule(rule, transcript)
++		return evaluateKeywordRule(rule, transcript)
++	case QARuleTypeRegex:
++		return evaluateRegexRule(rule, transcript)
+ 	case QARuleTypeSilence:
+-		rr.Passed = true
+-		rr.Score = 100
+-		rr.Detail = "silence check passed (stub)"
++		return evaluateSilenceRule(rule, transcript)
+ 	case QARuleTypeSpeed:
+-		rr.Passed = true
+-		rr.Score = 100
+-		rr.Detail = "speed check passed (stub)"
++		return evaluateSpeedRule(rule, transcript)
++	case QARuleTypeInterruption:
++		return evaluateInterruptionRule(rule, transcript)
++	case QARuleTypeEnergy:
++		return evaluateEnergyRule(rule, transcript)
++	case QARuleTypeDuration:
++		return evaluateDurationRule(rule, transcript)
++	case QARuleTypeEntity:
++		return evaluateEntityRule(rule, transcript)
++	case QARuleTypeRole:
++		return evaluateRoleRule(rule, transcript)
++	case QARuleTypeAbnormalHangup:
++		return evaluateAbnormalHangupRule(rule, transcript)
+ 	case QARuleTypeLLM:
+-		rr.Passed = true
+-		rr.Score = 80
+-		rr.Detail = "LLM analysis passed (stub)"
++		return evaluateLLMRule(ctx, rule, transcript, llm)
+ 	default:
+ 		rr.Passed = true
+ 		rr.Score = 100
+-		rr.Detail = "rule check passed (stub)"
++		rr.Detail = "unknown rule type, passed by default"
+ 	}
+ 	return rr
+ }
+@@ -428,6 +450,447 @@ func evaluateKeywordRule(rule *QARule, transcript string) QARuleResult {
+ 	return rr
+ }
+ 
++// RegexRuleConfig represents the JSON config for a regex rule.
++type RegexRuleConfig struct {
++	Pattern string `json:"pattern"`
++	Require string `json:"require"` // "match" or "no_match"
++}
++
++func evaluateRegexRule(rule *QARule, transcript string) QARuleResult {
++	rr := QARuleResult{RuleID: rule.ID, RuleName: rule.Name, RuleType: rule.Type}
++
++	var cfg RegexRuleConfig
++	if err := json.Unmarshal([]byte(rule.Config), &cfg); err != nil {
++		rr.Detail = "invalid regex config"
++		return rr
++	}
++
++	re, err := regexp.Compile(cfg.Pattern)
++	if err != nil {
++		rr.Detail = "invalid regex pattern: " + err.Error()
++		return rr
++	}
++
++	matched := re.MatchString(transcript)
++	if cfg.Require == "no_match" {
++		rr.Passed = !matched
++		if rr.Passed {
++			rr.Score = 100
++			rr.Detail = "pattern correctly absent"
++		} else {
++			rr.Detail = "forbidden pattern matched: " + re.FindString(transcript)
++		}
++	} else {
++		rr.Passed = matched
++		if rr.Passed {
++			rr.Score = 100
++			rr.Detail = "required pattern matched"
++		} else {
++			rr.Detail = "required pattern not found"
++		}
++	}
++	return rr
++}
++
++// SilenceRuleConfig specifies silence detection thresholds.
++// The transcript is expected to contain metadata markers like [silence:5.2s].
++type SilenceRuleConfig struct {
++	MaxSilenceSec float64 `json:"max_silence_sec"`
++}
++
++func evaluateSilenceRule(rule *QARule, transcript string) QARuleResult {
++	rr := QARuleResult{RuleID: rule.ID, RuleName: rule.Name, RuleType: rule.Type}
++
++	var cfg SilenceRuleConfig
++	if err := json.Unmarshal([]byte(rule.Config), &cfg); err != nil {
++		rr.Detail = "invalid silence config"
++		return rr
++	}
++	if cfg.MaxSilenceSec <= 0 {
++		cfg.MaxSilenceSec = 5.0
++	}
++
++	// Parse [silence:Xs] markers from transcript metadata.
++	re := regexp.MustCompile(`\[silence:([\d.]+)s\]`)
++	matches := re.FindAllStringSubmatch(transcript, -1)
++	var maxFound float64
++	for _, m := range matches {
++		var dur float64
++		if _, err := fmt.Sscanf(m[1], "%f", &dur); err == nil && dur > maxFound {
++			maxFound = dur
++		}
++	}
++
++	if maxFound > cfg.MaxSilenceSec {
++		rr.Detail = fmt.Sprintf("long silence detected: %.1fs (max: %.1fs)", maxFound, cfg.MaxSilenceSec)
++	} else {
++		rr.Passed = true
++		rr.Score = 100
++		rr.Detail = fmt.Sprintf("no excessive silence (max found: %.1fs, limit: %.1fs)", maxFound, cfg.MaxSilenceSec)
++	}
++	return rr
++}
++
++// SpeedRuleConfig specifies speaking speed thresholds.
++// The transcript is expected to contain metadata like [speed:180wpm] or uses word count / duration.
++type SpeedRuleConfig struct {
++	MinWordsPerMin float64 `json:"min_words_per_min"`
++	MaxWordsPerMin float64 `json:"max_words_per_min"`
++}
++
++func evaluateSpeedRule(rule *QARule, transcript string) QARuleResult {
++	rr := QARuleResult{RuleID: rule.ID, RuleName: rule.Name, RuleType: rule.Type}
++
++	var cfg SpeedRuleConfig
++	if err := json.Unmarshal([]byte(rule.Config), &cfg); err != nil {
++		rr.Detail = "invalid speed config"
++		return rr
++	}
++
++	// Try to parse [speed:Xwpm] marker.
++	re := regexp.MustCompile(`\[speed:([\d.]+)wpm\]`)
++	var speed float64
++	var hasSpeed bool
++	if m := re.FindStringSubmatch(transcript); len(m) > 1 {
++		fmt.Sscanf(m[1], "%f", &speed)
++		hasSpeed = true
++	} else {
++		// Try to compute from character count and [duration:Xs] marker.
++		durRe := regexp.MustCompile(`\[duration:([\d.]+)s\]`)
++		if dm := durRe.FindStringSubmatch(transcript); len(dm) > 1 {
++			var durSec float64
++			fmt.Sscanf(dm[1], "%f", &durSec)
++			if durSec > 0 {
++				charCount := utf8.RuneCountInString(transcript)
++				speed = float64(charCount) / (durSec / 60)
++				hasSpeed = true
++			}
++		}
++	}
++
++	if !hasSpeed {
++		rr.Passed = true
++		rr.Score = 100
++		rr.Detail = "no speed or duration metadata available, skipped"
++		return rr
++	}
++
++	if cfg.MaxWordsPerMin > 0 && speed > cfg.MaxWordsPerMin {
++		rr.Detail = fmt.Sprintf("speaking too fast: %.0f wpm (max: %.0f)", speed, cfg.MaxWordsPerMin)
++	} else if cfg.MinWordsPerMin > 0 && speed < cfg.MinWordsPerMin {
++		rr.Detail = fmt.Sprintf("speaking too slow: %.0f wpm (min: %.0f)", speed, cfg.MinWordsPerMin)
++	} else {
++		rr.Passed = true
++		rr.Score = 100
++		rr.Detail = fmt.Sprintf("speaking speed normal: %.0f wpm", speed)
++	}
++	return rr
++}
++
++// InterruptionRuleConfig specifies interruption detection.
++// Expects [interruption] markers in transcript.
++type InterruptionRuleConfig struct {
++	MaxInterruptions int `json:"max_interruptions"`
++}
++
++func evaluateInterruptionRule(rule *QARule, transcript string) QARuleResult {
++	rr := QARuleResult{RuleID: rule.ID, RuleName: rule.Name, RuleType: rule.Type}
++
++	var cfg InterruptionRuleConfig
++	if err := json.Unmarshal([]byte(rule.Config), &cfg); err != nil {
++		rr.Detail = "invalid interruption config"
++		return rr
++	}
++	if cfg.MaxInterruptions <= 0 {
++		cfg.MaxInterruptions = 3
++	}
++
++	count := strings.Count(transcript, "[interruption]")
++	if count > cfg.MaxInterruptions {
++		rr.Detail = fmt.Sprintf("too many interruptions: %d (max: %d)", count, cfg.MaxInterruptions)
++	} else {
++		rr.Passed = true
++		rr.Score = 100
++		rr.Detail = fmt.Sprintf("interruptions within limit: %d (max: %d)", count, cfg.MaxInterruptions)
++	}
++	return rr
++}
++
++// EnergyRuleConfig specifies volume/energy thresholds.
++// Expects [energy:X] markers in transcript (0-100 scale).
++type EnergyRuleConfig struct {
++	MinEnergy float64 `json:"min_energy"`
++	MaxEnergy float64 `json:"max_energy"`
++}
++
++func evaluateEnergyRule(rule *QARule, transcript string) QARuleResult {
++	rr := QARuleResult{RuleID: rule.ID, RuleName: rule.Name, RuleType: rule.Type}
++
++	var cfg EnergyRuleConfig
++	if err := json.Unmarshal([]byte(rule.Config), &cfg); err != nil {
++		rr.Detail = "invalid energy config"
++		return rr
++	}
++
++	re := regexp.MustCompile(`\[energy:([\d.]+)\]`)
++	matches := re.FindAllStringSubmatch(transcript, -1)
++	if len(matches) == 0 {
++		rr.Passed = true
++		rr.Score = 100
++		rr.Detail = "no energy data available, passed by default"
++		return rr
++	}
++
++	var total, maxE float64
++	for _, m := range matches {
++		var e float64
++		fmt.Sscanf(m[1], "%f", &e)
++		total += e
++		if e > maxE {
++			maxE = e
++		}
++	}
++	avg := total / float64(len(matches))
++
++	if cfg.MaxEnergy > 0 && maxE > cfg.MaxEnergy {
++		rr.Detail = fmt.Sprintf("peak volume too high: %.0f (max: %.0f)", maxE, cfg.MaxEnergy)
++	} else if cfg.MinEnergy > 0 && avg < cfg.MinEnergy {
++		rr.Detail = fmt.Sprintf("average volume too low: %.0f (min: %.0f)", avg, cfg.MinEnergy)
++	} else {
++		rr.Passed = true
++		rr.Score = 100
++		rr.Detail = fmt.Sprintf("volume normal (avg: %.0f, peak: %.0f)", avg, maxE)
++	}
++	return rr
++}
++
++// DurationRuleConfig specifies call duration thresholds in seconds.
++// Expects [duration:Xs] marker in transcript.
++type DurationRuleConfig struct {
++	MinDurationSec float64 `json:"min_duration_sec"`
++	MaxDurationSec float64 `json:"max_duration_sec"`
++}
++
++func evaluateDurationRule(rule *QARule, transcript string) QARuleResult {
++	rr := QARuleResult{RuleID: rule.ID, RuleName: rule.Name, RuleType: rule.Type}
++
++	var cfg DurationRuleConfig
++	if err := json.Unmarshal([]byte(rule.Config), &cfg); err != nil {
++		rr.Detail = "invalid duration config"
++		return rr
++	}
++
++	re := regexp.MustCompile(`\[duration:([\d.]+)s\]`)
++	var duration float64
++	if m := re.FindStringSubmatch(transcript); len(m) > 1 {
++		fmt.Sscanf(m[1], "%f", &duration)
++	}
++
++	if cfg.MaxDurationSec > 0 && duration > cfg.MaxDurationSec {
++		rr.Detail = fmt.Sprintf("call too long: %.0fs (max: %.0fs)", duration, cfg.MaxDurationSec)
++	} else if cfg.MinDurationSec > 0 && duration < cfg.MinDurationSec {
++		rr.Detail = fmt.Sprintf("call too short: %.0fs (min: %.0fs)", duration, cfg.MinDurationSec)
++	} else {
++		rr.Passed = true
++		rr.Score = 100
++		rr.Detail = fmt.Sprintf("call duration normal: %.0fs", duration)
++	}
++	return rr
++}
++
++// EntityRuleConfig specifies required named entities in the transcript.
++type EntityRuleConfig struct {
++	Entities []string `json:"entities"` // e.g. ["order_number", "phone", "name"]
++	Require  string   `json:"require"`  // "all" or "any"
++}
++
++func evaluateEntityRule(rule *QARule, transcript string) QARuleResult {
++	rr := QARuleResult{RuleID: rule.ID, RuleName: rule.Name, RuleType: rule.Type}
++
++	var cfg EntityRuleConfig
++	if err := json.Unmarshal([]byte(rule.Config), &cfg); err != nil {
++		rr.Detail = "invalid entity config"
++		return rr
++	}
++
++	entityPatterns := map[string]*regexp.Regexp{
++		"phone":        regexp.MustCompile(`1[3-9]\d{9}`),
++		"email":        regexp.MustCompile(`[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}`),
++		"order_number": regexp.MustCompile(`(?i)(订单|order)\s*[号:：#]?\s*[A-Z0-9]{6,}`),
++		"id_card":      regexp.MustCompile(`\d{17}[\dXx]`),
++		"name":         regexp.MustCompile(`(?:我叫|姓名[是：:]\s*|先生|女士|您好\s*)[\p{Han}]{2,4}`),
++	}
++
++	var found, missing []string
++	for _, entity := range cfg.Entities {
++		pat, ok := entityPatterns[entity]
++		if !ok {
++			// Treat unknown entity as keyword search.
++			if containsIgnoreCase(transcript, entity) {
++				found = append(found, entity)
++			} else {
++				missing = append(missing, entity)
++			}
++			continue
++		}
++		if pat.MatchString(transcript) {
++			found = append(found, entity)
++		} else {
++			missing = append(missing, entity)
++		}
++	}
++
++	requireAll := cfg.Require != "any"
++	if requireAll {
++		rr.Passed = len(missing) == 0
++	} else {
++		rr.Passed = len(found) > 0
++	}
++
++	if rr.Passed {
++		rr.Score = 100
++		rr.Detail = fmt.Sprintf("entities found: %s", strings.Join(found, ", "))
++	} else {
++		rr.Detail = fmt.Sprintf("entities missing: %s", strings.Join(missing, ", "))
++	}
++	return rr
++}
++
++// RoleRuleConfig checks if agent followed specific role-based requirements.
++type RoleRuleConfig struct {
++	RequireGreeting bool     `json:"require_greeting"`
++	RequireClosing  bool     `json:"require_closing"`
++	RequiredPhrases []string `json:"required_phrases"`
++}
++
++func evaluateRoleRule(rule *QARule, transcript string) QARuleResult {
++	rr := QARuleResult{RuleID: rule.ID, RuleName: rule.Name, RuleType: rule.Type}
++
++	var cfg RoleRuleConfig
++	if err := json.Unmarshal([]byte(rule.Config), &cfg); err != nil {
++		rr.Detail = "invalid role config"
++		return rr
++	}
++
++	var issues []string
++
++	if cfg.RequireGreeting {
++		greetingPatterns := []string{"您好", "你好", "欢迎", "感谢来电", "感谢致电"}
++		hasGreeting := false
++		for _, g := range greetingPatterns {
++			if containsIgnoreCase(transcript, g) {
++				hasGreeting = true
++				break
++			}
++		}
++		if !hasGreeting {
++			issues = append(issues, "missing greeting")
++		}
++	}
++
++	if cfg.RequireClosing {
++		closingPatterns := []string{"再见", "再会", "感谢", "祝您", "还有什么"}
++		hasClosure := false
++		for _, c := range closingPatterns {
++			if containsIgnoreCase(transcript, c) {
++				hasClosure = true
++				break
++			}
++		}
++		if !hasClosure {
++			issues = append(issues, "missing closing")
++		}
++	}
++
++	for _, phrase := range cfg.RequiredPhrases {
++		if !containsIgnoreCase(transcript, phrase) {
++			issues = append(issues, "missing phrase: "+phrase)
++		}
++	}
++
++	if len(issues) == 0 {
++		rr.Passed = true
++		rr.Score = 100
++		rr.Detail = "all role requirements met"
++	} else {
++		rr.Detail = strings.Join(issues, "; ")
++	}
++	return rr
++}
++
++// AbnormalHangupRuleConfig checks for abnormal call termination.
++// Expects [hangup:abnormal] or [hangup:normal] marker.
++type AbnormalHangupRuleConfig struct {
++	CheckMarker bool `json:"check_marker"`
++}
++
++func evaluateAbnormalHangupRule(rule *QARule, transcript string) QARuleResult {
++	rr := QARuleResult{RuleID: rule.ID, RuleName: rule.Name, RuleType: rule.Type}
++
++	if strings.Contains(transcript, "[hangup:abnormal]") {
++		rr.Detail = "abnormal hangup detected"
++		return rr
++	}
++
++	// Heuristic: if the call ends abruptly without closing phrases, flag it.
++	closingPatterns := []string{"再见", "再会", "拜拜", "结束", "挂了"}
++	lines := strings.Split(transcript, "\n")
++	if len(lines) > 0 {
++		lastLine := lines[len(lines)-1]
++		for _, c := range closingPatterns {
++			if containsIgnoreCase(lastLine, c) {
++				rr.Passed = true
++				rr.Score = 100
++				rr.Detail = "normal hangup detected"
++				return rr
++			}
++		}
++	}
++
++	// No closing marker, no explicit closing phrase — default to pass with note.
++	rr.Passed = true
++	rr.Score = 80
++	rr.Detail = "no abnormal hangup marker, but closing phrase not found"
++	return rr
++}
++
++// LLMRuleConfig specifies LLM-based inspection parameters.
++type LLMRuleConfig struct {
++	Prompt       string  `json:"prompt"`
++	PassThreshold float64 `json:"pass_threshold"`
++}
++
++func evaluateLLMRule(ctx context.Context, rule *QARule, transcript string, llm QALLMProvider) QARuleResult {
++	rr := QARuleResult{RuleID: rule.ID, RuleName: rule.Name, RuleType: rule.Type}
++
++	var cfg LLMRuleConfig
++	if err := json.Unmarshal([]byte(rule.Config), &cfg); err != nil {
++		rr.Detail = "invalid LLM rule config"
++		return rr
++	}
++	if cfg.PassThreshold <= 0 {
++		cfg.PassThreshold = 60
++	}
++
++	if llm == nil {
++		rr.Passed = true
++		rr.Score = 100
++		rr.Detail = "LLM provider not configured, skipped"
++		return rr
++	}
++
++	score, detail, err := llm.QAInspectLLM(ctx, transcript, cfg.Prompt)
++	if err != nil {
++		rr.Detail = "LLM inspection error: " + err.Error()
++		return rr
++	}
++
++	rr.Score = score
++	rr.Passed = score >= cfg.PassThreshold
++	rr.Detail = detail
++	return rr
++}
++
+ // Appeal submits an appeal for a QA result.
+ func (s *QualityInspectionService) Appeal(ctx context.Context, resultID int64, note string) (*QAResult, error) {
+ 	result, err := s.results.GetByID(ctx, resultID)
+diff --git a/internal/domain/ai/service_phase9_test.go b/internal/domain/ai/service_phase9_test.go
+index 545c802..04bbf02 100644
+--- a/internal/domain/ai/service_phase9_test.go
++++ b/internal/domain/ai/service_phase9_test.go
+@@ -15,12 +15,21 @@ func newTestDEService() *DigitalEmployeeService {
+ 	)
+ }
+ 
++// mockQALLM is a test LLM provider that returns fixed scores.
++type mockQALLM struct{}
++
++func (m *mockQALLM) QAInspectLLM(_ context.Context, _, _ string) (float64, string, error) {
++	return 80, "LLM inspection passed (mock)", nil
++}
++
+ func newTestQIService() *QualityInspectionService {
+-	return NewQualityInspectionService(
++	svc := NewQualityInspectionService(
+ 		NewMockQARuleRepo(),
+ 		NewMockQASchemeRepo(),
+ 		NewMockQAResultRepo(),
+ 	)
++	svc.SetLLMProvider(&mockQALLM{})
++	return svc
+ }
+ 
+ // --- Digital Employee Tests ---
+diff --git a/internal/infrastructure/aliyunsms/client.go b/internal/infrastructure/aliyunsms/client.go
+new file mode 100644
+index 0000000..529ed0e
+--- /dev/null
++++ b/internal/infrastructure/aliyunsms/client.go
+@@ -0,0 +1,120 @@
++package aliyunsms
++
++import (
++	"context"
++	"crypto/hmac"
++	"crypto/sha1"
++	"encoding/base64"
++	"encoding/json"
++	"fmt"
++	"io"
++	"net/http"
++	"net/url"
++	"sort"
++	"strings"
++	"time"
++
++	"github.com/google/uuid"
++)
++
++const smsEndpoint = "https://dysmsapi.aliyuncs.com"
++
++// Client is an Aliyun SMS (dysmsapi) client.
++type Client struct {
++	accessKeyID     string
++	accessKeySecret string
++	httpClient      *http.Client
++}
++
++func NewClient(accessKeyID, accessKeySecret string) *Client {
++	return &Client{
++		accessKeyID:     accessKeyID,
++		accessKeySecret: accessKeySecret,
++		httpClient:      &http.Client{Timeout: 10 * time.Second},
++	}
++}
++
++// SendSms sends an SMS via Aliyun dysmsapi.
++func (c *Client) SendSms(ctx context.Context, signName, templateID, phone string, params map[string]string) error {
++	paramsJSON, _ := json.Marshal(params)
++
++	queryParams := map[string]string{
++		"AccessKeyId":      c.accessKeyID,
++		"Action":           "SendSms",
++		"Format":           "JSON",
++		"PhoneNumbers":     phone,
++		"RegionId":         "cn-hangzhou",
++		"SignName":         signName,
++		"SignatureMethod":  "HMAC-SHA1",
++		"SignatureNonce":   uuid.New().String(),
++		"SignatureVersion": "1.0",
++		"TemplateCode":     templateID,
++		"TemplateParam":    string(paramsJSON),
++		"Timestamp":        time.Now().UTC().Format("2006-01-02T15:04:05Z"),
++		"Version":          "2017-05-25",
++	}
++
++	signature := c.sign(queryParams)
++	queryParams["Signature"] = signature
++
++	vals := url.Values{}
++	for k, v := range queryParams {
++		vals.Set(k, v)
++	}
++
++	reqURL := smsEndpoint + "/?" + vals.Encode()
++	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
++	if err != nil {
++		return fmt.Errorf("sms: create request: %w", err)
++	}
++
++	resp, err := c.httpClient.Do(req)
++	if err != nil {
++		return fmt.Errorf("sms: http call: %w", err)
++	}
++	defer resp.Body.Close()
++
++	body, err := io.ReadAll(resp.Body)
++	if err != nil {
++		return fmt.Errorf("sms: read response: %w", err)
++	}
++
++	var result struct {
++		Code    string `json:"Code"`
++		Message string `json:"Message"`
++	}
++	if err := json.Unmarshal(body, &result); err != nil {
++		return fmt.Errorf("sms: parse response: %w", err)
++	}
++	if result.Code != "OK" {
++		return fmt.Errorf("sms: API error %s: %s", result.Code, result.Message)
++	}
++	return nil
++}
++
++func (c *Client) sign(params map[string]string) string {
++	keys := make([]string, 0, len(params))
++	for k := range params {
++		keys = append(keys, k)
++	}
++	sort.Strings(keys)
++
++	var pairs []string
++	for _, k := range keys {
++		pairs = append(pairs, specialURLEncode(k)+"="+specialURLEncode(params[k]))
++	}
++	canonicalized := strings.Join(pairs, "&")
++	stringToSign := "GET&" + specialURLEncode("/") + "&" + specialURLEncode(canonicalized)
++
++	mac := hmac.New(sha1.New, []byte(c.accessKeySecret+"&"))
++	mac.Write([]byte(stringToSign))
++	return base64.StdEncoding.EncodeToString(mac.Sum(nil))
++}
++
++func specialURLEncode(s string) string {
++	encoded := url.QueryEscape(s)
++	encoded = strings.ReplaceAll(encoded, "+", "%20")
++	encoded = strings.ReplaceAll(encoded, "*", "%2A")
++	encoded = strings.ReplaceAll(encoded, "%7E", "~")
++	return encoded
++}
+diff --git a/internal/infrastructure/llm/aliyun_asr_provider.go b/internal/infrastructure/llm/aliyun_asr_provider.go
+new file mode 100644
+index 0000000..4abb406
+--- /dev/null
++++ b/internal/infrastructure/llm/aliyun_asr_provider.go
+@@ -0,0 +1,151 @@
++package llm
++
++import (
++	"bytes"
++	"context"
++	"encoding/json"
++	"fmt"
++	"io"
++	"net/http"
++	"time"
++)
++
++const (
++	nlsFileTransURL = "https://nls-gateway-cn-shanghai.aliyuncs.com/stream/v1/FlashRecognizer"
++)
++
++// AliyunASRProvider implements ASRProvider using Aliyun NLS (Intelligent Speech Interaction).
++type AliyunASRProvider struct {
++	accessKeyID     string
++	accessKeySecret string
++	appKey          string
++	client          *http.Client
++}
++
++func NewAliyunASRProvider(accessKeyID, accessKeySecret, appKey string) *AliyunASRProvider {
++	return &AliyunASRProvider{
++		accessKeyID:     accessKeyID,
++		accessKeySecret: accessKeySecret,
++		appKey:          appKey,
++		client:          &http.Client{Timeout: 120 * time.Second},
++	}
++}
++
++// Transcribe sends audio to Aliyun NLS for speech-to-text via the file transcription API.
++func (p *AliyunASRProvider) Transcribe(ctx context.Context, audioURL string) (string, error) {
++	token, err := p.getToken(ctx)
++	if err != nil {
++		return "", fmt.Errorf("asr: get token: %w", err)
++	}
++
++	taskReq := map[string]interface{}{
++		"appkey":          p.appKey,
++		"file_link":      audioURL,
++		"version":        "4.0",
++		"enable_words":   true,
++	}
++	body, _ := json.Marshal(taskReq)
++
++	submitURL := "https://nls-gateway-cn-shanghai.aliyuncs.com/stream/v1/asr"
++	req, err := http.NewRequestWithContext(ctx, http.MethodPost, submitURL, bytes.NewReader(body))
++	if err != nil {
++		return "", fmt.Errorf("asr: create request: %w", err)
++	}
++	req.Header.Set("Content-Type", "application/json")
++	req.Header.Set("X-NLS-Token", token)
++
++	resp, err := p.client.Do(req)
++	if err != nil {
++		return "", fmt.Errorf("asr: http call: %w", err)
++	}
++	defer resp.Body.Close()
++
++	respBody, err := io.ReadAll(resp.Body)
++	if err != nil {
++		return "", fmt.Errorf("asr: read response: %w", err)
++	}
++
++	var result struct {
++		TaskID  string `json:"TaskId"`
++		Status  int    `json:"StatusCode"`
++		Message string `json:"StatusText"`
++		Result  struct {
++			Sentences []struct {
++				Text string `json:"Text"`
++			} `json:"Sentences"`
++		} `json:"Result"`
++	}
++
++	if err := json.Unmarshal(respBody, &result); err != nil {
++		return "", fmt.Errorf("asr: unmarshal: %w", err)
++	}
++
++	if result.Status != 200 && result.Status != 21050000 {
++		return "", fmt.Errorf("asr: API error %d: %s", result.Status, result.Message)
++	}
++
++	var texts []string
++	for _, s := range result.Result.Sentences {
++		if s.Text != "" {
++			texts = append(texts, s.Text)
++		}
++	}
++	return joinTexts(texts), nil
++}
++
++func joinTexts(texts []string) string {
++	if len(texts) == 0 {
++		return ""
++	}
++	result := texts[0]
++	for i := 1; i < len(texts); i++ {
++		result += " " + texts[i]
++	}
++	return result
++}
++
++type nlsTokenResponse struct {
++	NlsRequestID string `json:"NlsRequestId"`
++	RequestID    string `json:"RequestId"`
++	Token        struct {
++		ID         string `json:"Id"`
++		ExpireTime int64  `json:"ExpireTime"`
++	} `json:"Token"`
++	ErrMsg string `json:"ErrMsg"`
++}
++
++func (p *AliyunASRProvider) getToken(ctx context.Context) (string, error) {
++	tokenURL := "https://nls-meta.cn-shanghai.aliyuncs.com/pop/2018-05-18/tokens"
++
++	reqBody := map[string]string{
++		"AccessKeyId":     p.accessKeyID,
++		"AccessKeySecret": p.accessKeySecret,
++	}
++	body, _ := json.Marshal(reqBody)
++
++	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, bytes.NewReader(body))
++	if err != nil {
++		return "", err
++	}
++	req.Header.Set("Content-Type", "application/json")
++
++	resp, err := p.client.Do(req)
++	if err != nil {
++		return "", err
++	}
++	defer resp.Body.Close()
++
++	respBody, err := io.ReadAll(resp.Body)
++	if err != nil {
++		return "", err
++	}
++
++	var tokenResp nlsTokenResponse
++	if err := json.Unmarshal(respBody, &tokenResp); err != nil {
++		return "", fmt.Errorf("asr: parse token response: %w", err)
++	}
++	if tokenResp.Token.ID == "" {
++		return "", fmt.Errorf("asr: empty token: %s", tokenResp.ErrMsg)
++	}
++	return tokenResp.Token.ID, nil
++}
+diff --git a/internal/infrastructure/llm/aliyun_tts_provider.go b/internal/infrastructure/llm/aliyun_tts_provider.go
+new file mode 100644
+index 0000000..837bb3f
+--- /dev/null
++++ b/internal/infrastructure/llm/aliyun_tts_provider.go
+@@ -0,0 +1,116 @@
++package llm
++
++import (
++	"bytes"
++	"context"
++	"encoding/json"
++	"fmt"
++	"io"
++	"net/http"
++	"time"
++)
++
++// AliyunTTSProvider implements TTSProvider using Aliyun NLS text-to-speech.
++type AliyunTTSProvider struct {
++	accessKeyID     string
++	accessKeySecret string
++	appKey          string
++	client          *http.Client
++}
++
++func NewAliyunTTSProvider(accessKeyID, accessKeySecret, appKey string) *AliyunTTSProvider {
++	return &AliyunTTSProvider{
++		accessKeyID:     accessKeyID,
++		accessKeySecret: accessKeySecret,
++		appKey:          appKey,
++		client:          &http.Client{Timeout: 30 * time.Second},
++	}
++}
++
++// Synthesize converts text to speech audio bytes using Aliyun NLS REST API.
++func (p *AliyunTTSProvider) Synthesize(ctx context.Context, text string, voice string) ([]byte, error) {
++	token, err := p.getToken(ctx)
++	if err != nil {
++		return nil, fmt.Errorf("tts: get token: %w", err)
++	}
++
++	if voice == "" {
++		voice = "xiaoyun"
++	}
++
++	reqBody := map[string]interface{}{
++		"appkey":      p.appKey,
++		"text":        text,
++		"format":      "wav",
++		"sample_rate": 16000,
++		"voice":       voice,
++	}
++	body, _ := json.Marshal(reqBody)
++
++	ttsURL := "https://nls-gateway-cn-shanghai.aliyuncs.com/stream/v1/tts"
++	req, err := http.NewRequestWithContext(ctx, http.MethodPost, ttsURL, bytes.NewReader(body))
++	if err != nil {
++		return nil, fmt.Errorf("tts: create request: %w", err)
++	}
++	req.Header.Set("Content-Type", "application/json")
++	req.Header.Set("X-NLS-Token", token)
++
++	resp, err := p.client.Do(req)
++	if err != nil {
++		return nil, fmt.Errorf("tts: http call: %w", err)
++	}
++	defer resp.Body.Close()
++
++	contentType := resp.Header.Get("Content-Type")
++	respBody, err := io.ReadAll(resp.Body)
++	if err != nil {
++		return nil, fmt.Errorf("tts: read response: %w", err)
++	}
++
++	if contentType == "application/json" {
++		var errResp struct {
++			Status  int    `json:"status"`
++			Message string `json:"message"`
++		}
++		if err := json.Unmarshal(respBody, &errResp); err == nil && errResp.Status != 200 {
++			return nil, fmt.Errorf("tts: API error %d: %s", errResp.Status, errResp.Message)
++		}
++	}
++
++	return respBody, nil
++}
++
++func (p *AliyunTTSProvider) getToken(ctx context.Context) (string, error) {
++	tokenURL := "https://nls-meta.cn-shanghai.aliyuncs.com/pop/2018-05-18/tokens"
++	reqBody := map[string]string{
++		"AccessKeyId":     p.accessKeyID,
++		"AccessKeySecret": p.accessKeySecret,
++	}
++	body, _ := json.Marshal(reqBody)
++
++	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, bytes.NewReader(body))
++	if err != nil {
++		return "", err
++	}
++	req.Header.Set("Content-Type", "application/json")
++
++	resp, err := p.client.Do(req)
++	if err != nil {
++		return "", err
++	}
++	defer resp.Body.Close()
++
++	respBody, err := io.ReadAll(resp.Body)
++	if err != nil {
++		return "", err
++	}
++
++	var tokenResp nlsTokenResponse
++	if err := json.Unmarshal(respBody, &tokenResp); err != nil {
++		return "", fmt.Errorf("tts: parse token: %w", err)
++	}
++	if tokenResp.Token.ID == "" {
++		return "", fmt.Errorf("tts: empty token: %s", tokenResp.ErrMsg)
++	}
++	return tokenResp.Token.ID, nil
++}
+diff --git a/internal/infrastructure/llm/dashscope_advanced_provider.go b/internal/infrastructure/llm/dashscope_advanced_provider.go
+new file mode 100644
+index 0000000..8ea251a
+--- /dev/null
++++ b/internal/infrastructure/llm/dashscope_advanced_provider.go
+@@ -0,0 +1,277 @@
++package llm
++
++import (
++	"context"
++	"encoding/json"
++	"fmt"
++	"strings"
++)
++
++// DashScopeCommAgentProvider implements CommAgentProvider using DashScope.
++type DashScopeCommAgentProvider struct {
++	base *DashScopeProvider
++}
++
++func NewDashScopeCommAgentProvider(apiKey, model string) *DashScopeCommAgentProvider {
++	return &DashScopeCommAgentProvider{base: NewDashScopeProvider(apiKey, model)}
++}
++
++func (p *DashScopeCommAgentProvider) GenerateReply(ctx context.Context, systemPrompt, conversationHistory, userMessage string) (string, error) {
++	combined := systemPrompt + "\n\n历史对话：\n" + conversationHistory
++	return p.base.call(ctx, combined, userMessage)
++}
++
++func (p *DashScopeCommAgentProvider) ShouldTransfer(ctx context.Context, systemPrompt, conversationHistory string) (bool, string, error) {
++	resp, err := p.base.call(ctx,
++		`你是一个转人工判断助手。根据对话历史判断是否需要转接人工坐席。返回 JSON 格式：{"transfer":true/false,"reason":"原因"}。只返回 JSON。`+"\n\n系统提示："+systemPrompt,
++		conversationHistory)
++	if err != nil {
++		return false, "", err
++	}
++
++	resp = extractJSON(resp)
++	var result struct {
++		Transfer bool   `json:"transfer"`
++		Reason   string `json:"reason"`
++	}
++	if err := json.Unmarshal([]byte(resp), &result); err != nil {
++		return false, "", nil
++	}
++	return result.Transfer, result.Reason, nil
++}
++
++// DashScopeVoiceCloningProvider implements VoiceCloningProvider using DashScope CosyVoice API.
++type DashScopeVoiceCloningProvider struct {
++	base *DashScopeProvider
++}
++
++func NewDashScopeVoiceCloningProvider(apiKey, model string) *DashScopeVoiceCloningProvider {
++	return &DashScopeVoiceCloningProvider{base: NewDashScopeProvider(apiKey, model)}
++}
++
++func (p *DashScopeVoiceCloningProvider) StartCloneTraining(ctx context.Context, sampleAudioURL string) (string, error) {
++	reqBody := map[string]interface{}{
++		"model": "cosyvoice-clone-v1",
++		"input": map[string]string{
++			"audio_url": sampleAudioURL,
++			"action":    "create_voice",
++		},
++	}
++	body, _ := json.Marshal(reqBody)
++
++	resp, err := postDashScopeRaw(ctx, p.base.apiKey, "https://dashscope.aliyuncs.com/api/v1/services/audio/voice-clone/create", body, p.base.client)
++	if err != nil {
++		return "", fmt.Errorf("voice clone: start training: %w", err)
++	}
++
++	var result struct {
++		Output struct {
++			TaskID string `json:"task_id"`
++		} `json:"output"`
++		Code    string `json:"code"`
++		Message string `json:"message"`
++	}
++	if err := json.Unmarshal(resp, &result); err != nil {
++		return "", fmt.Errorf("voice clone: parse response: %w", err)
++	}
++	if result.Code != "" {
++		return "", fmt.Errorf("voice clone: API error %s: %s", result.Code, result.Message)
++	}
++	return result.Output.TaskID, nil
++}
++
++func (p *DashScopeVoiceCloningProvider) CheckTrainingStatus(ctx context.Context, providerJobID string) (bool, string, error) {
++	url := fmt.Sprintf("https://dashscope.aliyuncs.com/api/v1/tasks/%s", providerJobID)
++
++	resp, err := getDashScopeRaw(ctx, p.base.apiKey, url, p.base.client)
++	if err != nil {
++		return false, "", fmt.Errorf("voice clone: check status: %w", err)
++	}
++
++	var result struct {
++		Output struct {
++			TaskStatus string `json:"task_status"`
++			VoiceID    string `json:"voice_id"`
++		} `json:"output"`
++	}
++	if err := json.Unmarshal(resp, &result); err != nil {
++		return false, "", fmt.Errorf("voice clone: parse status: %w", err)
++	}
++
++	if result.Output.TaskStatus == "SUCCEEDED" {
++		return true, result.Output.VoiceID, nil
++	}
++	return false, "", nil
++}
++
++func (p *DashScopeVoiceCloningProvider) SynthesizeWithClone(ctx context.Context, text, providerVoiceID string) ([]byte, error) {
++	reqBody := map[string]interface{}{
++		"model": "cosyvoice-clone-v1",
++		"input": map[string]string{
++			"text":     text,
++			"voice_id": providerVoiceID,
++		},
++	}
++	body, _ := json.Marshal(reqBody)
++
++	resp, err := postDashScopeRaw(ctx, p.base.apiKey, "https://dashscope.aliyuncs.com/api/v1/services/audio/tts/synthesize", body, p.base.client)
++	if err != nil {
++		return nil, fmt.Errorf("voice clone synthesize: %w", err)
++	}
++	return resp, nil
++}
++
++// DashScopeConversationAnalyticsProvider implements ConversationAnalyticsProvider.
++type DashScopeConversationAnalyticsProvider struct {
++	base *DashScopeProvider
++}
++
++func NewDashScopeConversationAnalyticsProvider(apiKey, model string) *DashScopeConversationAnalyticsProvider {
++	return &DashScopeConversationAnalyticsProvider{base: NewDashScopeProvider(apiKey, model)}
++}
++
++func (p *DashScopeConversationAnalyticsProvider) MineIntents(ctx context.Context, transcripts []string) (string, error) {
++	combined := strings.Join(transcripts, "\n---\n")
++	return p.base.call(ctx,
++		`你是一个客户意图挖掘助手。分析以下多通通话记录，提取常见客户意图并统计频次。返回 JSON 数组格式：[{"intent":"意图名","count":数量,"examples":["示例"]}]。只返回 JSON。`,
++		combined)
++}
++
++func (p *DashScopeConversationAnalyticsProvider) DiscoverSOPs(ctx context.Context, transcripts []string) (string, error) {
++	combined := strings.Join(transcripts, "\n---\n")
++	return p.base.call(ctx,
++		`你是一个 SOP 发现助手。从坐席通话记录中提取标准操作流程。返回 JSON 数组格式：[{"sop":"SOP名称","steps":["步骤1","步骤2"],"frequency":出现次数}]。只返回 JSON。`,
++		combined)
++}
++
++func (p *DashScopeConversationAnalyticsProvider) ExtractSalesScripts(ctx context.Context, transcripts []string) (string, error) {
++	combined := strings.Join(transcripts, "\n---\n")
++	return p.base.call(ctx,
++		`你是一个销售话术分析助手。从通话记录中提取高效销售话术。返回 JSON 数组格式：[{"script":"话术名称","content":"话术内容","effectiveness":0.0-1.0}]。只返回 JSON。`,
++		combined)
++}
++
++func (p *DashScopeConversationAnalyticsProvider) ClusterTopics(ctx context.Context, transcripts []string) (string, error) {
++	combined := strings.Join(transcripts, "\n---\n")
++	return p.base.call(ctx,
++		`你是一个话题聚类助手。将以下通话记录按话题分类。返回 JSON 数组格式：[{"topic":"话题名","count":数量,"keywords":["关键词"]}]。只返回 JSON。`,
++		combined)
++}
++
++// DashScopeRingAnalysisProvider implements RingAnalysisProvider using audio classification.
++type DashScopeRingAnalysisProvider struct {
++	base *DashScopeProvider
++}
++
++func NewDashScopeRingAnalysisProvider(apiKey, model string) *DashScopeRingAnalysisProvider {
++	return &DashScopeRingAnalysisProvider{base: NewDashScopeProvider(apiKey, model)}
++}
++
++func (p *DashScopeRingAnalysisProvider) AnalyzeRingAudio(ctx context.Context, audioData []byte) (string, float64, error) {
++	reqBody := map[string]interface{}{
++		"model": "paraformer-realtime-v2",
++		"input": map[string]interface{}{
++			"audio_data": audioData,
++			"task":       "audio-classification",
++		},
++	}
++	body, _ := json.Marshal(reqBody)
++
++	resp, err := postDashScopeRaw(ctx, p.base.apiKey, "https://dashscope.aliyuncs.com/api/v1/services/audio/asr/recognition", body, p.base.client)
++	if err != nil {
++		return "unknown", 0, fmt.Errorf("ring analysis: %w", err)
++	}
++
++	var result struct {
++		Output struct {
++			Classification string  `json:"classification"`
++			Confidence     float64 `json:"confidence"`
++		} `json:"output"`
++	}
++	if err := json.Unmarshal(resp, &result); err != nil {
++		return "unknown", 0, nil
++	}
++
++	label := result.Output.Classification
++	if label == "" {
++		label = "human"
++	}
++	return label, result.Output.Confidence, nil
++}
++
++// DashScopeFullDuplexProvider implements FullDuplexProvider.
++type DashScopeFullDuplexProvider struct {
++	base *DashScopeProvider
++}
++
++func NewDashScopeFullDuplexProvider(apiKey, model string) *DashScopeFullDuplexProvider {
++	return &DashScopeFullDuplexProvider{base: NewDashScopeProvider(apiKey, model)}
++}
++
++func (p *DashScopeFullDuplexProvider) DetectInterruption(ctx context.Context, audioChunk []byte, sensitivity float64) (bool, error) {
++	reqBody := map[string]interface{}{
++		"model": "paraformer-realtime-v2",
++		"input": map[string]interface{}{
++			"audio_data":  audioChunk,
++			"task":        "vad",
++			"sensitivity": sensitivity,
++		},
++	}
++	body, _ := json.Marshal(reqBody)
++
++	resp, err := postDashScopeRaw(ctx, p.base.apiKey, "https://dashscope.aliyuncs.com/api/v1/services/audio/asr/recognition", body, p.base.client)
++	if err != nil {
++		return false, fmt.Errorf("full duplex detect: %w", err)
++	}
++
++	var result struct {
++		Output struct {
++			SpeechDetected bool `json:"speech_detected"`
++		} `json:"output"`
++	}
++	if err := json.Unmarshal(resp, &result); err != nil {
++		return false, nil
++	}
++	return result.Output.SpeechDetected, nil
++}
++
++func (p *DashScopeFullDuplexProvider) ContinueVoice(ctx context.Context, previousText, interruptionPoint string) (string, error) {
++	return p.base.call(ctx,
++		"你是一个智能语音助手。用户在你说到以下位置时打断了你，请从打断点自然地继续说下去，保持连贯性。之前说的内容："+previousText,
++		"打断位置："+interruptionPoint)
++}
++
++// DashScopeTrainingProvider implements TrainingProvider.
++type DashScopeTrainingProvider struct {
++	base *DashScopeProvider
++}
++
++func NewDashScopeTrainingProvider(apiKey, model string) *DashScopeTrainingProvider {
++	return &DashScopeTrainingProvider{base: NewDashScopeProvider(apiKey, model)}
++}
++
++func (p *DashScopeTrainingProvider) EvaluateSimulatedCall(ctx context.Context, scenario, transcript string) (string, int, error) {
++	resp, err := p.base.call(ctx,
++		`你是一个坐席培训评估助手。根据训练场景和模拟通话内容进行评分。返回 JSON 格式：{"feedback":"详细反馈","score":0-100,"strengths":["优点"],"improvements":["改进建议"]}。只返回 JSON。`+"\n\n场景："+scenario,
++		transcript)
++	if err != nil {
++		return "", 0, err
++	}
++
++	resp = extractJSON(resp)
++	var result struct {
++		Feedback string `json:"feedback"`
++		Score    int    `json:"score"`
++	}
++	if err := json.Unmarshal([]byte(resp), &result); err != nil {
++		return resp, 50, nil
++	}
++	return result.Feedback, result.Score, nil
++}
++
++func (p *DashScopeTrainingProvider) GenerateExamQuestions(ctx context.Context, courseContent string, count int) (string, error) {
++	prompt := fmt.Sprintf(
++		`你是一个培训考试出题助手。根据以下课程内容生成 %d 道选择题。返回 JSON 数组格式：[{"question":"题目","options":["A.选项","B.选项","C.选项","D.选项"],"answer":"A","explanation":"解析"}]。只返回 JSON。`,
++		count)
++	return p.base.call(ctx, prompt, courseContent)
++}
+diff --git a/internal/infrastructure/llm/dashscope_provider.go b/internal/infrastructure/llm/dashscope_provider.go
+new file mode 100644
+index 0000000..5f89041
+--- /dev/null
++++ b/internal/infrastructure/llm/dashscope_provider.go
+@@ -0,0 +1,301 @@
++package llm
++
++import (
++	"bytes"
++	"context"
++	"encoding/json"
++	"fmt"
++	"io"
++	"net/http"
++	"strings"
++	"time"
++)
++
++const (
++	dashScopeBaseURL      = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
++	dashScopeDefaultModel = "qwen-plus"
++)
++
++// DashScopeProvider implements Provider using Aliyun DashScope (通义千问) API.
++type DashScopeProvider struct {
++	apiKey string
++	model  string
++	client *http.Client
++}
++
++func NewDashScopeProvider(apiKey, model string) *DashScopeProvider {
++	if model == "" {
++		model = dashScopeDefaultModel
++	}
++	return &DashScopeProvider{
++		apiKey: apiKey,
++		model:  model,
++		client: &http.Client{Timeout: 60 * time.Second},
++	}
++}
++
++type dashScopeRequest struct {
++	Model string              `json:"model"`
++	Input dashScopeInput      `json:"input"`
++	Param *dashScopeParameter `json:"parameters,omitempty"`
++}
++
++type dashScopeInput struct {
++	Messages []dashScopeMessage `json:"messages"`
++}
++
++type dashScopeMessage struct {
++	Role    string `json:"role"`
++	Content string `json:"content"`
++}
++
++type dashScopeParameter struct {
++	ResultFormat string  `json:"result_format,omitempty"`
++	Temperature  float64 `json:"temperature,omitempty"`
++	MaxTokens    int     `json:"max_tokens,omitempty"`
++}
++
++type dashScopeResponse struct {
++	Output struct {
++		Text    string `json:"text"`
++		Choices []struct {
++			Message struct {
++				Content string `json:"content"`
++			} `json:"message"`
++		} `json:"choices"`
++	} `json:"output"`
++	Usage struct {
++		InputTokens  int `json:"input_tokens"`
++		OutputTokens int `json:"output_tokens"`
++	} `json:"usage"`
++	RequestID string `json:"request_id"`
++	Code      string `json:"code"`
++	Message   string `json:"message"`
++}
++
++func (p *DashScopeProvider) call(ctx context.Context, systemPrompt, userMessage string) (string, error) {
++	messages := []dashScopeMessage{
++		{Role: "system", Content: systemPrompt},
++		{Role: "user", Content: userMessage},
++	}
++	reqBody := dashScopeRequest{
++		Model: p.model,
++		Input: dashScopeInput{Messages: messages},
++		Param: &dashScopeParameter{
++			ResultFormat: "message",
++			Temperature:  0.7,
++			MaxTokens:    2048,
++		},
++	}
++
++	body, err := json.Marshal(reqBody)
++	if err != nil {
++		return "", fmt.Errorf("dashscope: marshal request: %w", err)
++	}
++
++	req, err := http.NewRequestWithContext(ctx, http.MethodPost, dashScopeBaseURL, bytes.NewReader(body))
++	if err != nil {
++		return "", fmt.Errorf("dashscope: create request: %w", err)
++	}
++	req.Header.Set("Content-Type", "application/json")
++	req.Header.Set("Authorization", "Bearer "+p.apiKey)
++
++	resp, err := p.client.Do(req)
++	if err != nil {
++		return "", fmt.Errorf("dashscope: http call: %w", err)
++	}
++	defer resp.Body.Close()
++
++	respBody, err := io.ReadAll(resp.Body)
++	if err != nil {
++		return "", fmt.Errorf("dashscope: read response: %w", err)
++	}
++
++	var dsResp dashScopeResponse
++	if err := json.Unmarshal(respBody, &dsResp); err != nil {
++		return "", fmt.Errorf("dashscope: unmarshal response: %w", err)
++	}
++	if dsResp.Code != "" {
++		return "", fmt.Errorf("dashscope: API error %s: %s", dsResp.Code, dsResp.Message)
++	}
++
++	if len(dsResp.Output.Choices) > 0 {
++		return dsResp.Output.Choices[0].Message.Content, nil
++	}
++	if dsResp.Output.Text != "" {
++		return dsResp.Output.Text, nil
++	}
++	return "", fmt.Errorf("dashscope: empty response")
++}
++
++func (p *DashScopeProvider) Correct(ctx context.Context, text string) (string, error) {
++	return p.call(ctx,
++		"你是一个中文文本纠错助手。请纠正用户输入中的错别字、语法错误，只返回纠正后的文本，不要解释。",
++		text)
++}
++
++func (p *DashScopeProvider) Expand(ctx context.Context, text string) (string, error) {
++	return p.call(ctx,
++		"你是一个客服话术扩写助手。请将用户输入的简短回复扩展为更专业、详细的客服回复，保持礼貌和专业性。只返回扩写后的文本。",
++		text)
++}
++
++func (p *DashScopeProvider) Optimize(ctx context.Context, text string) (string, error) {
++	return p.call(ctx,
++		"你是一个客服话术优化助手。请优化用户输入的客服回复，使其更加专业、得体、有说服力。只返回优化后的文本。",
++		text)
++}
++
++func (p *DashScopeProvider) Summarize(ctx context.Context, transcript string) (string, error) {
++	return p.call(ctx,
++		"你是一个通话摘要生成助手。请根据以下通话内容生成简洁的摘要，包含：1.客户诉求 2.处理过程 3.处理结果。以 JSON 格式返回：{\"subject\":\"主题\",\"summary\":\"摘要\",\"result\":\"结果\"}",
++		transcript)
++}
++
++func (p *DashScopeProvider) AnalyzeSentiment(ctx context.Context, text string) (SentimentResult, error) {
++	resp, err := p.call(ctx,
++		`你是一个情绪分析助手。分析以下文本的情绪，返回 JSON 格式：{"label":"positive/negative/neutral","confidence":0.0-1.0}。只返回 JSON。`,
++		text)
++	if err != nil {
++		return SentimentResult{}, err
++	}
++
++	resp = extractJSON(resp)
++	var result SentimentResult
++	if err := json.Unmarshal([]byte(resp), &result); err != nil {
++		return SentimentResult{Label: "neutral", Confidence: 0.5}, nil
++	}
++	return result, nil
++}
++
++func (p *DashScopeProvider) ExtractTags(ctx context.Context, transcript string) ([]string, error) {
++	resp, err := p.call(ctx,
++		`你是一个会话标签分析助手。根据通话内容提取3-5个语义标签，返回 JSON 数组格式：["标签1","标签2","标签3"]。只返回 JSON 数组。`,
++		transcript)
++	if err != nil {
++		return nil, err
++	}
++
++	resp = extractJSON(resp)
++	var tags []string
++	if err := json.Unmarshal([]byte(resp), &tags); err != nil {
++		return []string{"general"}, nil
++	}
++	return tags, nil
++}
++
++func (p *DashScopeProvider) PredictSatisfaction(ctx context.Context, transcript string) (float64, error) {
++	resp, err := p.call(ctx,
++		`你是一个客户满意度预测助手。根据通话内容预测客户满意度，返回 JSON 格式：{"score":1.0-5.0,"reason":"原因"}。只返回 JSON。`,
++		transcript)
++	if err != nil {
++		return 0, err
++	}
++
++	resp = extractJSON(resp)
++	var result struct {
++		Score float64 `json:"score"`
++	}
++	if err := json.Unmarshal([]byte(resp), &result); err != nil {
++		return 3.0, nil
++	}
++	return result.Score, nil
++}
++
++func (p *DashScopeProvider) AnalyzeIVRPath(ctx context.Context, ivrPath string) (string, error) {
++	return p.call(ctx,
++		"你是一个 IVR 路径分析助手。根据用户的 IVR 导航路径，分析客户可能的意图和关键信息，生成简洁的分析报告供坐席参考。",
++		ivrPath)
++}
++
++func (p *DashScopeProvider) JudgeCompletion(ctx context.Context, transcript string) (float64, error) {
++	resp, err := p.call(ctx,
++		`你是一个通话完成度判断助手。根据通话内容判断客户诉求是否已被解决，返回 JSON 格式：{"score":1-5,"reason":"原因"}。1=完全未解决，5=完全解决。只返回 JSON。`,
++		transcript)
++	if err != nil {
++		return 0, err
++	}
++
++	resp = extractJSON(resp)
++	var result struct {
++		Score float64 `json:"score"`
++	}
++	if err := json.Unmarshal([]byte(resp), &result); err != nil {
++		return 3.0, nil
++	}
++	return result.Score, nil
++}
++
++func (p *DashScopeProvider) ExtractPostCallActions(ctx context.Context, transcript string) ([]string, error) {
++	resp, err := p.call(ctx,
++		`你是一个话后动作提取助手。从通话内容中提取坐席需要后续跟进的待办事项，返回 JSON 数组格式：["待办1","待办2"]。只返回 JSON 数组。`,
++		transcript)
++	if err != nil {
++		return nil, err
++	}
++
++	resp = extractJSON(resp)
++	var actions []string
++	if err := json.Unmarshal([]byte(resp), &actions); err != nil {
++		return []string{}, nil
++	}
++	return actions, nil
++}
++
++func (p *DashScopeProvider) AutoFillTicket(ctx context.Context, transcript string) (map[string]string, error) {
++	resp, err := p.call(ctx,
++		`你是一个工单自动填充助手。从通话内容中提取关键信息用于填充工单，返回 JSON 格式：{"subject":"主题","description":"描述","category":"分类","priority":"紧急程度","customer_name":"客户姓名","contact":"联系方式"}。缺失字段留空字符串。只返回 JSON。`,
++		transcript)
++	if err != nil {
++		return nil, err
++	}
++
++	resp = extractJSON(resp)
++	var fields map[string]string
++	if err := json.Unmarshal([]byte(resp), &fields); err != nil {
++		return map[string]string{"subject": "Auto-generated", "description": transcript}, nil
++	}
++	return fields, nil
++}
++
++func (p *DashScopeProvider) RecommendScript(ctx context.Context, transcript string, scripts []string) (string, error) {
++	scriptList := strings.Join(scripts, "\n---\n")
++	return p.call(ctx,
++		"你是一个实时话术推荐助手。根据当前通话内容，从以下可用话术脚本中选择最适合的一个推荐给坐席。只返回推荐的话术内容，不要解释。\n\n可用话术：\n"+scriptList,
++		transcript)
++}
++
++func (p *DashScopeProvider) QAInspectLLM(ctx context.Context, transcript, prompt string) (float64, string, error) {
++	systemPrompt := `你是一个智能质检助手。根据质检提示词分析通话内容，返回 JSON 格式：{"score":0-100,"detail":"质检详情"}。只返回 JSON。`
++	resp, err := p.call(ctx, systemPrompt, "质检规则："+prompt+"\n\n通话内容："+transcript)
++	if err != nil {
++		return 0, "", err
++	}
++
++	resp = extractJSON(resp)
++	var result struct {
++		Score  float64 `json:"score"`
++		Detail string  `json:"detail"`
++	}
++	if err := json.Unmarshal([]byte(resp), &result); err != nil {
++		return 60, "LLM analysis completed", nil
++	}
++	return result.Score, result.Detail, nil
++}
++
++// extractJSON tries to extract JSON content from LLM response that may contain markdown code blocks.
++func extractJSON(s string) string {
++	s = strings.TrimSpace(s)
++	if idx := strings.Index(s, "```json"); idx >= 0 {
++		s = s[idx+7:]
++		if end := strings.Index(s, "```"); end >= 0 {
++			s = s[:end]
++		}
++	} else if idx := strings.Index(s, "```"); idx >= 0 {
++		s = s[idx+3:]
++		if end := strings.Index(s, "```"); end >= 0 {
++			s = s[:end]
++		}
++	}
++	return strings.TrimSpace(s)
++}
+diff --git a/internal/infrastructure/llm/http_helpers.go b/internal/infrastructure/llm/http_helpers.go
+new file mode 100644
+index 0000000..0bfc104
+--- /dev/null
++++ b/internal/infrastructure/llm/http_helpers.go
+@@ -0,0 +1,42 @@
++package llm
++
++import (
++	"bytes"
++	"context"
++	"fmt"
++	"io"
++	"net/http"
++)
++
++func postDashScopeRaw(ctx context.Context, apiKey, url string, body []byte, client *http.Client) ([]byte, error) {
++	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
++	if err != nil {
++		return nil, fmt.Errorf("create request: %w", err)
++	}
++	req.Header.Set("Content-Type", "application/json")
++	req.Header.Set("Authorization", "Bearer "+apiKey)
++
++	resp, err := client.Do(req)
++	if err != nil {
++		return nil, fmt.Errorf("http call: %w", err)
++	}
++	defer resp.Body.Close()
++
++	return io.ReadAll(resp.Body)
++}
++
++func getDashScopeRaw(ctx context.Context, apiKey, url string, client *http.Client) ([]byte, error) {
++	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
++	if err != nil {
++		return nil, fmt.Errorf("create request: %w", err)
++	}
++	req.Header.Set("Authorization", "Bearer "+apiKey)
++
++	resp, err := client.Do(req)
++	if err != nil {
++		return nil, fmt.Errorf("http call: %w", err)
++	}
++	defer resp.Body.Close()
++
++	return io.ReadAll(resp.Body)
++}
+diff --git a/internal/infrastructure/wechat/api.go b/internal/infrastructure/wechat/api.go
+new file mode 100644
+index 0000000..26d9af3
+--- /dev/null
++++ b/internal/infrastructure/wechat/api.go
+@@ -0,0 +1,179 @@
++package wechat
++
++import (
++	"bytes"
++	"context"
++	"encoding/json"
++	"fmt"
++	"io"
++	"net/http"
++	"sync"
++	"time"
++)
++
++// API is a WeChat Official Account API client.
++type API struct {
++	appID     string
++	appSecret string
++	client    *http.Client
++
++	mu          sync.RWMutex
++	accessToken string
++	expiresAt   time.Time
++}
++
++func NewAPI(appID, appSecret string) *API {
++	return &API{
++		appID:     appID,
++		appSecret: appSecret,
++		client:    &http.Client{Timeout: 10 * time.Second},
++	}
++}
++
++type accessTokenResp struct {
++	AccessToken string `json:"access_token"`
++	ExpiresIn   int    `json:"expires_in"`
++	ErrCode     int    `json:"errcode"`
++	ErrMsg      string `json:"errmsg"`
++}
++
++// GetAccessToken retrieves or refreshes the access token.
++func (a *API) GetAccessToken(ctx context.Context) (string, error) {
++	a.mu.RLock()
++	if a.accessToken != "" && time.Now().Before(a.expiresAt) {
++		token := a.accessToken
++		a.mu.RUnlock()
++		return token, nil
++	}
++	a.mu.RUnlock()
++
++	a.mu.Lock()
++	defer a.mu.Unlock()
++
++	// Double-check after acquiring write lock.
++	if a.accessToken != "" && time.Now().Before(a.expiresAt) {
++		return a.accessToken, nil
++	}
++
++	url := fmt.Sprintf(
++		"https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=%s&secret=%s",
++		a.appID, a.appSecret)
++
++	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
++	if err != nil {
++		return "", fmt.Errorf("wechat: create token request: %w", err)
++	}
++
++	resp, err := a.client.Do(req)
++	if err != nil {
++		return "", fmt.Errorf("wechat: token request: %w", err)
++	}
++	defer resp.Body.Close()
++
++	body, err := io.ReadAll(resp.Body)
++	if err != nil {
++		return "", fmt.Errorf("wechat: read token response: %w", err)
++	}
++
++	var result accessTokenResp
++	if err := json.Unmarshal(body, &result); err != nil {
++		return "", fmt.Errorf("wechat: parse token: %w", err)
++	}
++	if result.ErrCode != 0 {
++		return "", fmt.Errorf("wechat: token error %d: %s", result.ErrCode, result.ErrMsg)
++	}
++
++	a.accessToken = result.AccessToken
++	a.expiresAt = time.Now().Add(time.Duration(result.ExpiresIn-300) * time.Second)
++	return a.accessToken, nil
++}
++
++// SendTextMessage sends a text message to a WeChat user via customer service API.
++func (a *API) SendTextMessage(ctx context.Context, openID, content string) error {
++	token, err := a.GetAccessToken(ctx)
++	if err != nil {
++		return err
++	}
++
++	msg := map[string]interface{}{
++		"touser":  openID,
++		"msgtype": "text",
++		"text": map[string]string{
++			"content": content,
++		},
++	}
++	body, _ := json.Marshal(msg)
++
++	url := fmt.Sprintf("https://api.weixin.qq.com/cgi-bin/message/custom/send?access_token=%s", token)
++	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
++	if err != nil {
++		return fmt.Errorf("wechat: create send request: %w", err)
++	}
++	req.Header.Set("Content-Type", "application/json")
++
++	resp, err := a.client.Do(req)
++	if err != nil {
++		return fmt.Errorf("wechat: send message: %w", err)
++	}
++	defer resp.Body.Close()
++
++	respBody, err := io.ReadAll(resp.Body)
++	if err != nil {
++		return fmt.Errorf("wechat: read send response: %w", err)
++	}
++
++	var result struct {
++		ErrCode int    `json:"errcode"`
++		ErrMsg  string `json:"errmsg"`
++	}
++	if err := json.Unmarshal(respBody, &result); err != nil {
++		return fmt.Errorf("wechat: parse send response: %w", err)
++	}
++	if result.ErrCode != 0 {
++		return fmt.Errorf("wechat: send error %d: %s", result.ErrCode, result.ErrMsg)
++	}
++	return nil
++}
++
++// SendImageMessage sends an image message to a WeChat user.
++func (a *API) SendImageMessage(ctx context.Context, openID, mediaID string) error {
++	token, err := a.GetAccessToken(ctx)
++	if err != nil {
++		return err
++	}
++
++	msg := map[string]interface{}{
++		"touser":  openID,
++		"msgtype": "image",
++		"image": map[string]string{
++			"media_id": mediaID,
++		},
++	}
++	body, _ := json.Marshal(msg)
++
++	url := fmt.Sprintf("https://api.weixin.qq.com/cgi-bin/message/custom/send?access_token=%s", token)
++	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
++	if err != nil {
++		return fmt.Errorf("wechat: create image send request: %w", err)
++	}
++	req.Header.Set("Content-Type", "application/json")
++
++	resp, err := a.client.Do(req)
++	if err != nil {
++		return fmt.Errorf("wechat: send image: %w", err)
++	}
++	defer resp.Body.Close()
++
++	respBody, _ := io.ReadAll(resp.Body)
++	var result struct {
++		ErrCode int    `json:"errcode"`
++		ErrMsg  string `json:"errmsg"`
++	}
++	if err := json.Unmarshal(respBody, &result); err != nil {
++		return fmt.Errorf("wechat: parse image send response: %w", err)
++	}
++	if result.ErrCode != 0 {
++		return fmt.Errorf("wechat: send image error %d: %s", result.ErrCode, result.ErrMsg)
++	}
++	return nil
++}
+diff --git a/internal/infrastructure/wechat/crypto.go b/internal/infrastructure/wechat/crypto.go
+new file mode 100644
+index 0000000..a364e63
+--- /dev/null
++++ b/internal/infrastructure/wechat/crypto.go
+@@ -0,0 +1,176 @@
++package wechat
++
++import (
++	"bytes"
++	"crypto/aes"
++	"crypto/cipher"
++	"crypto/hmac"
++	"crypto/rand"
++	"crypto/sha1"
++	"encoding/base64"
++	"encoding/binary"
++	"encoding/xml"
++	"fmt"
++	"io"
++	"sort"
++	"strings"
++)
++
++// MsgCrypt handles WeChat message encryption/decryption using AES-CBC.
++type MsgCrypt struct {
++	token          string
++	encodingAESKey string
++	appID          string
++	aesKey         []byte
++}
++
++func NewMsgCrypt(token, encodingAESKey, appID string) (*MsgCrypt, error) {
++	if len(encodingAESKey) != 43 {
++		return nil, fmt.Errorf("wechat: invalid encoding_aes_key length %d, expected 43", len(encodingAESKey))
++	}
++	aesKey, err := base64.StdEncoding.DecodeString(encodingAESKey + "=")
++	if err != nil {
++		return nil, fmt.Errorf("wechat: decode aes key: %w", err)
++	}
++	return &MsgCrypt{
++		token:          token,
++		encodingAESKey: encodingAESKey,
++		appID:          appID,
++		aesKey:         aesKey,
++	}, nil
++}
++
++// VerifySignature verifies the WeChat callback signature.
++func (mc *MsgCrypt) VerifySignature(signature, timestamp, nonce string) bool {
++	strs := []string{mc.token, timestamp, nonce}
++	sort.Strings(strs)
++	h := sha1.New()
++	h.Write([]byte(strings.Join(strs, "")))
++	expected := fmt.Sprintf("%x", h.Sum(nil))
++	return hmac.Equal([]byte(expected), []byte(signature))
++}
++
++// VerifyEncryptedSignature verifies signature including encrypted message.
++func (mc *MsgCrypt) VerifyEncryptedSignature(signature, timestamp, nonce, encrypt string) bool {
++	strs := []string{mc.token, timestamp, nonce, encrypt}
++	sort.Strings(strs)
++	h := sha1.New()
++	h.Write([]byte(strings.Join(strs, "")))
++	expected := fmt.Sprintf("%x", h.Sum(nil))
++	return hmac.Equal([]byte(expected), []byte(signature))
++}
++
++// DecryptMessage decrypts an AES-encrypted WeChat message.
++func (mc *MsgCrypt) DecryptMessage(encryptedBase64 string) ([]byte, string, error) {
++	cipherText, err := base64.StdEncoding.DecodeString(encryptedBase64)
++	if err != nil {
++		return nil, "", fmt.Errorf("wechat: base64 decode: %w", err)
++	}
++
++	block, err := aes.NewCipher(mc.aesKey)
++	if err != nil {
++		return nil, "", fmt.Errorf("wechat: new cipher: %w", err)
++	}
++
++	iv := mc.aesKey[:aes.BlockSize]
++	mode := cipher.NewCBCDecrypter(block, iv)
++
++	plainText := make([]byte, len(cipherText))
++	mode.CryptBlocks(plainText, cipherText)
++	plainText = pkcs7Unpad(plainText)
++
++	// Format: 16-byte random + 4-byte msg_len (big-endian) + msg + appid
++	if len(plainText) < 20 {
++		return nil, "", fmt.Errorf("wechat: decrypted data too short")
++	}
++
++	msgLen := binary.BigEndian.Uint32(plainText[16:20])
++	if int(msgLen)+20 > len(plainText) {
++		return nil, "", fmt.Errorf("wechat: invalid message length")
++	}
++
++	msg := plainText[20 : 20+msgLen]
++	appID := string(plainText[20+msgLen:])
++
++	return msg, appID, nil
++}
++
++// EncryptMessage encrypts a message for WeChat reply.
++func (mc *MsgCrypt) EncryptMessage(plainText []byte) (string, error) {
++	randomBytes := make([]byte, 16)
++	if _, err := io.ReadFull(rand.Reader, randomBytes); err != nil {
++		return "", fmt.Errorf("wechat: gen random: %w", err)
++	}
++
++	msgLen := make([]byte, 4)
++	binary.BigEndian.PutUint32(msgLen, uint32(len(plainText)))
++
++	buf := bytes.NewBuffer(randomBytes)
++	buf.Write(msgLen)
++	buf.Write(plainText)
++	buf.WriteString(mc.appID)
++
++	padded := pkcs7Pad(buf.Bytes(), aes.BlockSize)
++
++	block, err := aes.NewCipher(mc.aesKey)
++	if err != nil {
++		return "", fmt.Errorf("wechat: new cipher: %w", err)
++	}
++
++	iv := mc.aesKey[:aes.BlockSize]
++	mode := cipher.NewCBCEncrypter(block, iv)
++
++	cipherText := make([]byte, len(padded))
++	mode.CryptBlocks(cipherText, padded)
++
++	return base64.StdEncoding.EncodeToString(cipherText), nil
++}
++
++// GenerateSignature generates a signature for encrypted reply.
++func (mc *MsgCrypt) GenerateSignature(timestamp, nonce, encrypt string) string {
++	strs := []string{mc.token, timestamp, nonce, encrypt}
++	sort.Strings(strs)
++	h := sha1.New()
++	h.Write([]byte(strings.Join(strs, "")))
++	return fmt.Sprintf("%x", h.Sum(nil))
++}
++
++func pkcs7Pad(data []byte, blockSize int) []byte {
++	padding := blockSize - len(data)%blockSize
++	padText := bytes.Repeat([]byte{byte(padding)}, padding)
++	return append(data, padText...)
++}
++
++func pkcs7Unpad(data []byte) []byte {
++	if len(data) == 0 {
++		return data
++	}
++	padding := int(data[len(data)-1])
++	if padding < 1 || padding > len(data) || padding > aes.BlockSize {
++		return data
++	}
++	for i := 0; i < padding; i++ {
++		if data[len(data)-1-i] != byte(padding) {
++			return data
++		}
++	}
++	return data[:len(data)-padding]
++}
++
++// EncryptedXMLMessage is the WeChat encrypted message XML envelope.
++type EncryptedXMLMessage struct {
++	XMLName    xml.Name `xml:"xml"`
++	Encrypt    string   `xml:"Encrypt"`
++	MsgSig     string   `xml:"MsgSignature"`
++	TimeStamp  string   `xml:"TimeStamp"`
++	Nonce      string   `xml:"Nonce"`
++}
++
++// EncryptedReply formats an encrypted reply for WeChat.
++type EncryptedReply struct {
++	XMLName    xml.Name `xml:"xml"`
++	Encrypt    string   `xml:"Encrypt"`
++	MsgSig     string   `xml:"MsgSignature"`
++	TimeStamp  string   `xml:"TimeStamp"`
++	Nonce      string   `xml:"Nonce"`
++}
+diff --git a/internal/infrastructure/weibo/api.go b/internal/infrastructure/weibo/api.go
+new file mode 100644
+index 0000000..026cffc
+--- /dev/null
++++ b/internal/infrastructure/weibo/api.go
+@@ -0,0 +1,82 @@
++package weibo
++
++import (
++	"bytes"
++	"context"
++	"crypto/hmac"
++	"crypto/sha256"
++	"encoding/hex"
++	"encoding/json"
++	"fmt"
++	"io"
++	"net/http"
++	"time"
++)
++
++// API is a Weibo Open Platform API client for private messages.
++type API struct {
++	appKey    string
++	appSecret string
++	client    *http.Client
++}
++
++func NewAPI(appKey, appSecret string) *API {
++	return &API{
++		appKey:    appKey,
++		appSecret: appSecret,
++		client:    &http.Client{Timeout: 10 * time.Second},
++	}
++}
++
++// VerifySignature verifies a Weibo webhook signature using HMAC-SHA256.
++func (a *API) VerifySignature(body, signature string) bool {
++	mac := hmac.New(sha256.New, []byte(a.appSecret))
++	mac.Write([]byte(body))
++	expected := hex.EncodeToString(mac.Sum(nil))
++	return hmac.Equal([]byte(expected), []byte(signature))
++}
++
++// SendPrivateMessage sends a private message to a Weibo user.
++func (a *API) SendPrivateMessage(ctx context.Context, accessToken, recipientID, text string) error {
++	msg := map[string]interface{}{
++		"type": 1,
++		"receiver_id": recipientID,
++		"data": map[string]string{
++			"text": text,
++		},
++	}
++	body, _ := json.Marshal(msg)
++
++	url := fmt.Sprintf(
++		"https://m.api.weibo.com/2/messages/reply.json?access_token=%s",
++		accessToken)
++
++	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
++	if err != nil {
++		return fmt.Errorf("weibo: create request: %w", err)
++	}
++	req.Header.Set("Content-Type", "application/json")
++
++	resp, err := a.client.Do(req)
++	if err != nil {
++		return fmt.Errorf("weibo: send message: %w", err)
++	}
++	defer resp.Body.Close()
++
++	respBody, err := io.ReadAll(resp.Body)
++	if err != nil {
++		return fmt.Errorf("weibo: read response: %w", err)
++	}
++
++	var result struct {
++		ErrorCode int    `json:"error_code"`
++		Error     string `json:"error"`
++	}
++	if err := json.Unmarshal(respBody, &result); err != nil {
++		return fmt.Errorf("weibo: parse response: %w", err)
++	}
++	if result.ErrorCode != 0 {
++		return fmt.Errorf("weibo: API error %d: %s", result.ErrorCode, result.Error)
++	}
++	return nil
++}

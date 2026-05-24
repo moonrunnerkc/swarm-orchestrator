@@ -1,0 +1,1144 @@
+diff --git a/cmd/server/main.go b/cmd/server/main.go
+index 5c28304..08fd771 100644
+--- a/cmd/server/main.go
++++ b/cmd/server/main.go
+@@ -154,8 +154,11 @@ func main() {
+ 	imSessionRepo := infraMySQL.NewIMSessionRepo(db)
+ 	imMessageRepo := infraMySQL.NewIMMessageRepo(db)
+ 
++	socialConfigRepo := infraMySQL.NewSocialChannelConfigRepo(db)
++
+ 	// --- Phase 8 Domain Services ---
+ 	imSvc := im.NewIMService(imChannelRepo, imSessionRepo, imMessageRepo, 5)
++	socialChannelSvc := im.NewSocialChannelService(socialConfigRepo, imChannelRepo, imSessionRepo, imMessageRepo)
+ 
+ 	// --- Application Services ---
+ 	outboundSvc := outbound.NewService(callSvc, routingSvc, cliSvc, dncSvc, nil)
+@@ -234,6 +237,9 @@ func main() {
+ 	asrHotwordsHandler := handler.NewASRHotwordsHandler(asrHotwordsSvc)
+ 	performanceHandler := handler.NewPerformanceHandler(performanceSvc)
+ 
++	// Social Channels
++	socialChannelHandler := handler.NewSocialChannelHandler(socialChannelSvc)
++
+ 	// Phase 10 Repositories
+ 	annotationTaskRepo := infraMySQL.NewAnnotationTaskRepo(db)
+ 	annotationResultRepo := infraMySQL.NewAnnotationResultRepo(db)
+@@ -324,6 +330,7 @@ func main() {
+ 		TrainingSvc:            trainingSvc,
+ 		RingSvc:                ringAnalysisSvc,
+ 		FullDuplexSvc:          fullDuplexSvc,
++		SocialChannelHandler:  socialChannelHandler,
+ 		RateLimiter:          rateLimiter,
+ 		AuditLogRepo:         auditLogRepo,
+ 		JWTSecret:            cfg.JWT.Secret,
+diff --git a/internal/domain/im/entity_social.go b/internal/domain/im/entity_social.go
+new file mode 100644
+index 0000000..1c044a2
+--- /dev/null
++++ b/internal/domain/im/entity_social.go
+@@ -0,0 +1,42 @@
++package im
++
++import "time"
++
++const (
++	ChannelTypeWeChat ChannelType = "wechat"
++	ChannelTypeWeibo  ChannelType = "weibo"
++)
++
++type SocialPlatform string
++
++const (
++	PlatformWeChat SocialPlatform = "wechat"
++	PlatformWeibo  SocialPlatform = "weibo"
++)
++
++// SocialChannelConfig stores platform-specific credentials for a social channel.
++type SocialChannelConfig struct {
++	ID             int64          `db:"id" json:"id"`
++	TenantID       int64          `db:"tenant_id" json:"tenant_id"`
++	ChannelID      int64          `db:"channel_id" json:"channel_id"`
++	Platform       SocialPlatform `db:"platform" json:"platform"`
++	AppID          string         `db:"app_id" json:"app_id"`
++	AppSecret      string         `db:"app_secret" json:"-"`
++	Token          string         `db:"token" json:"-"`
++	EncodingAESKey string         `db:"encoding_aes_key" json:"-"`
++	WebhookURL     string         `db:"webhook_url" json:"webhook_url"`
++	IsVerified     bool           `db:"is_verified" json:"is_verified"`
++	CreatedAt      time.Time      `db:"created_at" json:"created_at"`
++	UpdatedAt      time.Time      `db:"updated_at" json:"updated_at"`
++}
++
++// SocialMessage represents a normalized inbound message from a social platform.
++type SocialMessage struct {
++	Platform    SocialPlatform
++	OpenID      string
++	ContentType ContentType
++	Content     string
++	MediaURL    string
++	MsgID       string
++	Timestamp   int64
++}
+diff --git a/internal/domain/im/mock_social_repo.go b/internal/domain/im/mock_social_repo.go
+new file mode 100644
+index 0000000..2b8d7ed
+--- /dev/null
++++ b/internal/domain/im/mock_social_repo.go
+@@ -0,0 +1,59 @@
++package im
++
++import (
++	"context"
++	"sync"
++)
++
++// MockSocialChannelConfigRepo is an in-memory mock for testing.
++type MockSocialChannelConfigRepo struct {
++	mu    sync.RWMutex
++	items map[int64]*SocialChannelConfig
++}
++
++func NewMockSocialChannelConfigRepo() *MockSocialChannelConfigRepo {
++	return &MockSocialChannelConfigRepo{items: make(map[int64]*SocialChannelConfig)}
++}
++
++func (m *MockSocialChannelConfigRepo) Create(_ context.Context, c *SocialChannelConfig) error {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	m.items[c.ID] = c
++	return nil
++}
++
++func (m *MockSocialChannelConfigRepo) GetByChannelID(_ context.Context, channelID int64) (*SocialChannelConfig, error) {
++	m.mu.RLock()
++	defer m.mu.RUnlock()
++	for _, c := range m.items {
++		if c.ChannelID == channelID {
++			return c, nil
++		}
++	}
++	return nil, nil
++}
++
++func (m *MockSocialChannelConfigRepo) GetByPlatformAndAppID(_ context.Context, platform SocialPlatform, appID string) (*SocialChannelConfig, error) {
++	m.mu.RLock()
++	defer m.mu.RUnlock()
++	for _, c := range m.items {
++		if c.Platform == platform && c.AppID == appID {
++			return c, nil
++		}
++	}
++	return nil, nil
++}
++
++func (m *MockSocialChannelConfigRepo) Update(_ context.Context, c *SocialChannelConfig) error {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	m.items[c.ID] = c
++	return nil
++}
++
++func (m *MockSocialChannelConfigRepo) Delete(_ context.Context, id int64) error {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	delete(m.items, id)
++	return nil
++}
+diff --git a/internal/domain/im/repository_social.go b/internal/domain/im/repository_social.go
+new file mode 100644
+index 0000000..60b2b9a
+--- /dev/null
++++ b/internal/domain/im/repository_social.go
+@@ -0,0 +1,11 @@
++package im
++
++import "context"
++
++type SocialChannelConfigRepository interface {
++	Create(ctx context.Context, c *SocialChannelConfig) error
++	GetByChannelID(ctx context.Context, channelID int64) (*SocialChannelConfig, error)
++	GetByPlatformAndAppID(ctx context.Context, platform SocialPlatform, appID string) (*SocialChannelConfig, error)
++	Update(ctx context.Context, c *SocialChannelConfig) error
++	Delete(ctx context.Context, id int64) error
++}
+diff --git a/internal/domain/im/service.go b/internal/domain/im/service.go
+index 06e476d..2caabe7 100644
+--- a/internal/domain/im/service.go
++++ b/internal/domain/im/service.go
+@@ -10,6 +10,7 @@ import (
+ var validChannelTypes = map[ChannelType]bool{
+ 	ChannelTypeWebWidget: true, ChannelTypeApp: true, ChannelTypeMiniProg: true,
+ 	ChannelTypeDingTalk: true, ChannelTypeEmail: true, ChannelTypeAPI: true,
++	ChannelTypeWeChat: true, ChannelTypeWeibo: true,
+ }
+ 
+ var validContentTypes = map[ContentType]bool{
+diff --git a/internal/domain/im/service_social.go b/internal/domain/im/service_social.go
+new file mode 100644
+index 0000000..dea90a7
+--- /dev/null
++++ b/internal/domain/im/service_social.go
+@@ -0,0 +1,212 @@
++package im
++
++import (
++	"context"
++	"crypto/sha1"
++	"errors"
++	"fmt"
++	"sort"
++	"strings"
++	"time"
++
++	"github.com/divord97/ccc/pkg/snowflake"
++)
++
++var (
++	ErrSocialConfigNotFound    = errors.New("social channel config not found")
++	ErrSocialAppIDEmpty        = errors.New("app_id is required")
++	ErrSocialAppSecretEmpty    = errors.New("app_secret is required")
++	ErrSocialTokenEmpty        = errors.New("webhook token is required")
++	ErrSocialInvalidPlatform   = errors.New("invalid social platform")
++	ErrSocialSignatureInvalid  = errors.New("webhook signature verification failed")
++	ErrSocialOpenIDEmpty       = errors.New("open_id is required")
++	ErrSocialMessageEmpty      = errors.New("message content is required")
++)
++
++var validPlatforms = map[SocialPlatform]bool{
++	PlatformWeChat: true,
++	PlatformWeibo:  true,
++}
++
++// SocialChannelService manages social channel configs and message processing.
++type SocialChannelService struct {
++	configs  SocialChannelConfigRepository
++	channels IMChannelRepository
++	sessions IMSessionRepository
++	messages IMMessageRepository
++}
++
++func NewSocialChannelService(
++	configs SocialChannelConfigRepository,
++	channels IMChannelRepository,
++	sessions IMSessionRepository,
++	messages IMMessageRepository,
++) *SocialChannelService {
++	return &SocialChannelService{
++		configs:  configs,
++		channels: channels,
++		sessions: sessions,
++		messages: messages,
++	}
++}
++
++// CreateConfig creates a social channel config linked to an existing IM channel.
++type CreateSocialConfigInput struct {
++	TenantID       int64          `json:"tenant_id"`
++	ChannelID      int64          `json:"channel_id"`
++	Platform       SocialPlatform `json:"platform"`
++	AppID          string         `json:"app_id"`
++	AppSecret      string         `json:"app_secret"`
++	Token          string         `json:"token"`
++	EncodingAESKey string         `json:"encoding_aes_key"`
++}
++
++func (s *SocialChannelService) CreateConfig(ctx context.Context, in CreateSocialConfigInput) (*SocialChannelConfig, error) {
++	if !validPlatforms[in.Platform] {
++		return nil, ErrSocialInvalidPlatform
++	}
++	if in.AppID == "" {
++		return nil, ErrSocialAppIDEmpty
++	}
++	if in.AppSecret == "" {
++		return nil, ErrSocialAppSecretEmpty
++	}
++	if in.Token == "" {
++		return nil, ErrSocialTokenEmpty
++	}
++
++	ch, err := s.channels.GetByID(ctx, in.ChannelID)
++	if err != nil {
++		return nil, err
++	}
++	if ch == nil {
++		return nil, ErrChannelNotFound
++	}
++
++	now := time.Now()
++	cfg := &SocialChannelConfig{
++		ID:             snowflake.NextID(),
++		TenantID:       in.TenantID,
++		ChannelID:      in.ChannelID,
++		Platform:       in.Platform,
++		AppID:          in.AppID,
++		AppSecret:      in.AppSecret,
++		Token:          in.Token,
++		EncodingAESKey: in.EncodingAESKey,
++		IsVerified:     false,
++		CreatedAt:      now,
++		UpdatedAt:      now,
++	}
++	if err := s.configs.Create(ctx, cfg); err != nil {
++		return nil, err
++	}
++	return cfg, nil
++}
++
++func (s *SocialChannelService) GetConfig(ctx context.Context, channelID int64) (*SocialChannelConfig, error) {
++	cfg, err := s.configs.GetByChannelID(ctx, channelID)
++	if err != nil {
++		return nil, err
++	}
++	if cfg == nil {
++		return nil, ErrSocialConfigNotFound
++	}
++	return cfg, nil
++}
++
++func (s *SocialChannelService) DeleteConfig(ctx context.Context, id int64) error {
++	return s.configs.Delete(ctx, id)
++}
++
++// VerifyWeChatSignature validates a WeChat server verification request.
++// WeChat sends signature=sha1(sort(token, timestamp, nonce)).
++func (s *SocialChannelService) VerifyWeChatSignature(token, timestamp, nonce, signature string) bool {
++	strs := []string{token, timestamp, nonce}
++	sort.Strings(strs)
++	h := sha1.New()
++	h.Write([]byte(strings.Join(strs, "")))
++	expected := fmt.Sprintf("%x", h.Sum(nil))
++	return expected == signature
++}
++
++// VerifyWeiboSignature validates a Weibo webhook signature (simplified HMAC check).
++func (s *SocialChannelService) VerifyWeiboSignature(appSecret, body, signature string) bool {
++	h := sha1.New()
++	h.Write([]byte(appSecret + body))
++	expected := fmt.Sprintf("%x", h.Sum(nil))
++	return expected == signature
++}
++
++// ProcessInboundMessage converts a social platform message into an IM session + message.
++func (s *SocialChannelService) ProcessInboundMessage(ctx context.Context, channelID int64, msg SocialMessage) (*IMSession, *IMMessage, error) {
++	if msg.OpenID == "" {
++		return nil, nil, ErrSocialOpenIDEmpty
++	}
++	if msg.Content == "" && msg.MediaURL == "" {
++		return nil, nil, ErrSocialMessageEmpty
++	}
++
++	ch, err := s.channels.GetByID(ctx, channelID)
++	if err != nil {
++		return nil, nil, err
++	}
++	if ch == nil {
++		return nil, nil, ErrChannelNotFound
++	}
++	if ch.Status == ChannelStatusDisabled {
++		return nil, nil, ErrChannelDisabled
++	}
++
++	now := time.Now()
++	sess := &IMSession{
++		ID:           snowflake.NextID(),
++		TenantID:     ch.TenantID,
++		ChannelID:    channelID,
++		VisitorID:    msg.OpenID,
++		SkillGroupID: ch.SkillGroupID,
++		Status:       SessionStatusWaiting,
++		StartAt:      now,
++		CreatedAt:    now,
++	}
++	if err := s.sessions.Create(ctx, sess); err != nil {
++		return nil, nil, err
++	}
++
++	ct := msg.ContentType
++	if ct == "" {
++		ct = ContentTypeText
++	}
++	content := msg.Content
++	if content == "" {
++		content = msg.MediaURL
++	}
++
++	imMsg := &IMMessage{
++		ID:          snowflake.NextID(),
++		SessionID:   sess.ID,
++		SenderType:  SenderTypeVisitor,
++		SenderID:    msg.OpenID,
++		ContentType: ct,
++		Content:     content,
++		CreatedAt:   now,
++	}
++	if err := s.messages.Create(ctx, imMsg); err != nil {
++		return nil, nil, err
++	}
++
++	return sess, imMsg, nil
++}
++
++// MarkVerified marks a social channel config as verified after webhook handshake.
++func (s *SocialChannelService) MarkVerified(ctx context.Context, channelID int64) error {
++	cfg, err := s.configs.GetByChannelID(ctx, channelID)
++	if err != nil {
++		return err
++	}
++	if cfg == nil {
++		return ErrSocialConfigNotFound
++	}
++	cfg.IsVerified = true
++	cfg.UpdatedAt = time.Now()
++	return s.configs.Update(ctx, cfg)
++}
+diff --git a/internal/domain/im/service_social_test.go b/internal/domain/im/service_social_test.go
+new file mode 100644
+index 0000000..3c5bc45
+--- /dev/null
++++ b/internal/domain/im/service_social_test.go
+@@ -0,0 +1,348 @@
++package im
++
++import (
++	"context"
++	"crypto/sha1"
++	"fmt"
++	"sort"
++	"strings"
++	"testing"
++)
++
++func newSocialTestService() (*SocialChannelService, *MockIMChannelRepo) {
++	chRepo := NewMockIMChannelRepo()
++	sessRepo := NewMockIMSessionRepo()
++	msgRepo := NewMockIMMessageRepo()
++	cfgRepo := NewMockSocialChannelConfigRepo()
++	svc := NewSocialChannelService(cfgRepo, chRepo, sessRepo, msgRepo)
++	return svc, chRepo
++}
++
++func createSocialTestChannel(chRepo *MockIMChannelRepo, channelType ChannelType) *IMChannel {
++	ch := &IMChannel{
++		ID:          1001,
++		TenantID:    1,
++		ChannelType: channelType,
++		Name:        "test-channel",
++		Status:      ChannelStatusActive,
++	}
++	chRepo.Create(context.Background(), ch)
++	return ch
++}
++
++func computeWeChatSig(token, timestamp, nonce string) string {
++	strs := []string{token, timestamp, nonce}
++	sort.Strings(strs)
++	h := sha1.New()
++	h.Write([]byte(strings.Join(strs, "")))
++	return fmt.Sprintf("%x", h.Sum(nil))
++}
++
++func TestSocialConfig_Create_Success(t *testing.T) {
++	svc, chRepo := newSocialTestService()
++	createSocialTestChannel(chRepo, ChannelTypeWeChat)
++
++	cfg, err := svc.CreateConfig(context.Background(), CreateSocialConfigInput{
++		TenantID:  1,
++		ChannelID: 1001,
++		Platform:  PlatformWeChat,
++		AppID:     "wx1234567890",
++		AppSecret: "secret123",
++		Token:     "verify_token",
++	})
++	if err != nil {
++		t.Fatalf("expected no error, got %v", err)
++	}
++	if cfg.Platform != PlatformWeChat {
++		t.Fatalf("expected wechat, got %s", cfg.Platform)
++	}
++	if cfg.IsVerified {
++		t.Fatal("expected not verified initially")
++	}
++}
++
++func TestSocialConfig_Create_InvalidPlatform(t *testing.T) {
++	svc, chRepo := newSocialTestService()
++	createSocialTestChannel(chRepo, ChannelTypeWeChat)
++
++	_, err := svc.CreateConfig(context.Background(), CreateSocialConfigInput{
++		TenantID:  1,
++		ChannelID: 1001,
++		Platform:  "telegram",
++		AppID:     "test",
++		AppSecret: "secret",
++		Token:     "token",
++	})
++	if err != ErrSocialInvalidPlatform {
++		t.Fatalf("expected ErrSocialInvalidPlatform, got %v", err)
++	}
++}
++
++func TestSocialConfig_Create_EmptyAppID(t *testing.T) {
++	svc, chRepo := newSocialTestService()
++	createSocialTestChannel(chRepo, ChannelTypeWeChat)
++
++	_, err := svc.CreateConfig(context.Background(), CreateSocialConfigInput{
++		TenantID:  1,
++		ChannelID: 1001,
++		Platform:  PlatformWeChat,
++		AppID:     "",
++		AppSecret: "secret",
++		Token:     "token",
++	})
++	if err != ErrSocialAppIDEmpty {
++		t.Fatalf("expected ErrSocialAppIDEmpty, got %v", err)
++	}
++}
++
++func TestSocialConfig_Create_EmptySecret(t *testing.T) {
++	svc, chRepo := newSocialTestService()
++	createSocialTestChannel(chRepo, ChannelTypeWeChat)
++
++	_, err := svc.CreateConfig(context.Background(), CreateSocialConfigInput{
++		TenantID:  1,
++		ChannelID: 1001,
++		Platform:  PlatformWeChat,
++		AppID:     "wx123",
++		AppSecret: "",
++		Token:     "token",
++	})
++	if err != ErrSocialAppSecretEmpty {
++		t.Fatalf("expected ErrSocialAppSecretEmpty, got %v", err)
++	}
++}
++
++func TestSocialConfig_Create_EmptyToken(t *testing.T) {
++	svc, chRepo := newSocialTestService()
++	createSocialTestChannel(chRepo, ChannelTypeWeChat)
++
++	_, err := svc.CreateConfig(context.Background(), CreateSocialConfigInput{
++		TenantID:  1,
++		ChannelID: 1001,
++		Platform:  PlatformWeChat,
++		AppID:     "wx123",
++		AppSecret: "secret",
++		Token:     "",
++	})
++	if err != ErrSocialTokenEmpty {
++		t.Fatalf("expected ErrSocialTokenEmpty, got %v", err)
++	}
++}
++
++func TestSocialConfig_Create_ChannelNotFound(t *testing.T) {
++	svc, _ := newSocialTestService()
++
++	_, err := svc.CreateConfig(context.Background(), CreateSocialConfigInput{
++		TenantID:  1,
++		ChannelID: 9999,
++		Platform:  PlatformWeChat,
++		AppID:     "wx123",
++		AppSecret: "secret",
++		Token:     "token",
++	})
++	if err != ErrChannelNotFound {
++		t.Fatalf("expected ErrChannelNotFound, got %v", err)
++	}
++}
++
++func TestWeChat_SignatureVerification(t *testing.T) {
++	svc, _ := newSocialTestService()
++
++	token := "test_token"
++	timestamp := "1619000000"
++	nonce := "abc123"
++
++	// Empty signature should fail
++	if svc.VerifyWeChatSignature(token, timestamp, nonce, "") {
++		t.Fatal("empty signature should not pass")
++	}
++
++	// Wrong signature should fail
++	if svc.VerifyWeChatSignature(token, timestamp, nonce, "wrong_sig") {
++		t.Fatal("wrong signature should not pass")
++	}
++
++	// Correct signature should pass
++	correctSig := computeWeChatSig(token, timestamp, nonce)
++	if !svc.VerifyWeChatSignature(token, timestamp, nonce, correctSig) {
++		t.Fatal("valid signature should pass verification")
++	}
++}
++
++func TestWeibo_SignatureVerification(t *testing.T) {
++	svc, _ := newSocialTestService()
++
++	appSecret := "my_secret"
++	body := `{"text":"hello"}`
++
++	h := sha1.New()
++	h.Write([]byte(appSecret + body))
++	correctSig := fmt.Sprintf("%x", h.Sum(nil))
++
++	if svc.VerifyWeiboSignature(appSecret, body, "wrong") {
++		t.Fatal("wrong signature should fail")
++	}
++	if !svc.VerifyWeiboSignature(appSecret, body, correctSig) {
++		t.Fatal("correct signature should pass")
++	}
++}
++
++func TestSocial_ProcessInboundMessage_Success(t *testing.T) {
++	svc, chRepo := newSocialTestService()
++	createSocialTestChannel(chRepo, ChannelTypeWeChat)
++
++	sess, msg, err := svc.ProcessInboundMessage(context.Background(), 1001, SocialMessage{
++		Platform:    PlatformWeChat,
++		OpenID:      "oWx_user123",
++		ContentType: ContentTypeText,
++		Content:     "你好，我想咨询一下",
++		MsgID:       "msg001",
++	})
++	if err != nil {
++		t.Fatalf("expected no error, got %v", err)
++	}
++	if sess.Status != SessionStatusWaiting {
++		t.Fatalf("expected waiting, got %s", sess.Status)
++	}
++	if sess.VisitorID != "oWx_user123" {
++		t.Fatalf("expected oWx_user123, got %s", sess.VisitorID)
++	}
++	if msg.Content != "你好，我想咨询一下" {
++		t.Fatalf("unexpected content: %s", msg.Content)
++	}
++	if msg.SenderType != SenderTypeVisitor {
++		t.Fatalf("expected visitor sender, got %s", msg.SenderType)
++	}
++}
++
++func TestSocial_ProcessInboundMessage_EmptyOpenID(t *testing.T) {
++	svc, chRepo := newSocialTestService()
++	createSocialTestChannel(chRepo, ChannelTypeWeChat)
++
++	_, _, err := svc.ProcessInboundMessage(context.Background(), 1001, SocialMessage{
++		Platform: PlatformWeChat,
++		OpenID:   "",
++		Content:  "hello",
++	})
++	if err != ErrSocialOpenIDEmpty {
++		t.Fatalf("expected ErrSocialOpenIDEmpty, got %v", err)
++	}
++}
++
++func TestSocial_ProcessInboundMessage_EmptyContent(t *testing.T) {
++	svc, chRepo := newSocialTestService()
++	createSocialTestChannel(chRepo, ChannelTypeWeChat)
++
++	_, _, err := svc.ProcessInboundMessage(context.Background(), 1001, SocialMessage{
++		Platform: PlatformWeChat,
++		OpenID:   "user1",
++		Content:  "",
++		MediaURL: "",
++	})
++	if err != ErrSocialMessageEmpty {
++		t.Fatalf("expected ErrSocialMessageEmpty, got %v", err)
++	}
++}
++
++func TestSocial_ProcessInboundMessage_DisabledChannel(t *testing.T) {
++	svc, chRepo := newSocialTestService()
++	ch := createSocialTestChannel(chRepo, ChannelTypeWeChat)
++	ch.Status = ChannelStatusDisabled
++	chRepo.Update(context.Background(), ch)
++
++	_, _, err := svc.ProcessInboundMessage(context.Background(), 1001, SocialMessage{
++		Platform: PlatformWeChat,
++		OpenID:   "user1",
++		Content:  "hello",
++	})
++	if err != ErrChannelDisabled {
++		t.Fatalf("expected ErrChannelDisabled, got %v", err)
++	}
++}
++
++func TestSocial_ProcessInboundMessage_MediaURL(t *testing.T) {
++	svc, chRepo := newSocialTestService()
++	createSocialTestChannel(chRepo, ChannelTypeWeChat)
++
++	sess, msg, err := svc.ProcessInboundMessage(context.Background(), 1001, SocialMessage{
++		Platform:    PlatformWeChat,
++		OpenID:      "user1",
++		ContentType: ContentTypeImage,
++		MediaURL:    "https://wx.qq.com/image/123.jpg",
++	})
++	if err != nil {
++		t.Fatalf("expected no error, got %v", err)
++	}
++	if sess == nil {
++		t.Fatal("expected session")
++	}
++	if msg.ContentType != ContentTypeImage {
++		t.Fatalf("expected image, got %s", msg.ContentType)
++	}
++	if msg.Content != "https://wx.qq.com/image/123.jpg" {
++		t.Fatalf("expected media URL as content, got %s", msg.Content)
++	}
++}
++
++func TestSocial_MarkVerified(t *testing.T) {
++	svc, chRepo := newSocialTestService()
++	createSocialTestChannel(chRepo, ChannelTypeWeChat)
++
++	cfg, _ := svc.CreateConfig(context.Background(), CreateSocialConfigInput{
++		TenantID:  1,
++		ChannelID: 1001,
++		Platform:  PlatformWeChat,
++		AppID:     "wx123",
++		AppSecret: "secret",
++		Token:     "token",
++	})
++	if cfg.IsVerified {
++		t.Fatal("expected not verified initially")
++	}
++
++	err := svc.MarkVerified(context.Background(), 1001)
++	if err != nil {
++		t.Fatalf("expected no error, got %v", err)
++	}
++
++	updated, _ := svc.GetConfig(context.Background(), 1001)
++	if !updated.IsVerified {
++		t.Fatal("expected verified after MarkVerified")
++	}
++}
++
++func TestSocial_Weibo_CreateConfig(t *testing.T) {
++	svc, chRepo := newSocialTestService()
++	ch := &IMChannel{
++		ID:          2001,
++		TenantID:    1,
++		ChannelType: ChannelTypeWeibo,
++		Name:        "weibo-channel",
++		Status:      ChannelStatusActive,
++	}
++	chRepo.Create(context.Background(), ch)
++
++	cfg, err := svc.CreateConfig(context.Background(), CreateSocialConfigInput{
++		TenantID:  1,
++		ChannelID: 2001,
++		Platform:  PlatformWeibo,
++		AppID:     "wb_app_key",
++		AppSecret: "wb_secret",
++		Token:     "wb_token",
++	})
++	if err != nil {
++		t.Fatalf("expected no error, got %v", err)
++	}
++	if cfg.Platform != PlatformWeibo {
++		t.Fatalf("expected weibo, got %s", cfg.Platform)
++	}
++}
++
++func TestSocial_ChannelTypes_Registered(t *testing.T) {
++	if !validChannelTypes[ChannelTypeWeChat] {
++		t.Fatal("wechat should be a valid channel type")
++	}
++	if !validChannelTypes[ChannelTypeWeibo] {
++		t.Fatal("weibo should be a valid channel type")
++	}
++}
+diff --git a/internal/infrastructure/mysql/social_channel_repo.go b/internal/infrastructure/mysql/social_channel_repo.go
+new file mode 100644
+index 0000000..4e83679
+--- /dev/null
++++ b/internal/infrastructure/mysql/social_channel_repo.go
+@@ -0,0 +1,62 @@
++package mysql
++
++import (
++	"context"
++	"database/sql"
++
++	"github.com/divord97/ccc/internal/domain/im"
++	"github.com/jmoiron/sqlx"
++)
++
++type SocialChannelConfigRepo struct{ db *sqlx.DB }
++
++func NewSocialChannelConfigRepo(db *sqlx.DB) *SocialChannelConfigRepo {
++	return &SocialChannelConfigRepo{db: db}
++}
++
++func (r *SocialChannelConfigRepo) Create(ctx context.Context, c *im.SocialChannelConfig) error {
++	_, err := r.db.ExecContext(ctx,
++		`INSERT INTO social_channel_configs (id,tenant_id,channel_id,platform,app_id,app_secret,token,encoding_aes_key,webhook_url,is_verified,created_at,updated_at)
++		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
++		c.ID, c.TenantID, c.ChannelID, c.Platform, c.AppID, c.AppSecret, c.Token, c.EncodingAESKey, c.WebhookURL, c.IsVerified, c.CreatedAt, c.UpdatedAt)
++	return err
++}
++
++func (r *SocialChannelConfigRepo) GetByChannelID(ctx context.Context, channelID int64) (*im.SocialChannelConfig, error) {
++	var c im.SocialChannelConfig
++	err := r.db.GetContext(ctx, &c, "SELECT * FROM social_channel_configs WHERE channel_id=?", channelID)
++	if err == sql.ErrNoRows {
++		return nil, nil
++	}
++	if err != nil {
++		return nil, err
++	}
++	return &c, nil
++}
++
++func (r *SocialChannelConfigRepo) GetByPlatformAndAppID(ctx context.Context, platform im.SocialPlatform, appID string) (*im.SocialChannelConfig, error) {
++	var c im.SocialChannelConfig
++	err := r.db.GetContext(ctx, &c, "SELECT * FROM social_channel_configs WHERE platform=? AND app_id=?", platform, appID)
++	if err == sql.ErrNoRows {
++		return nil, nil
++	}
++	if err != nil {
++		return nil, err
++	}
++	return &c, nil
++}
++
++func (r *SocialChannelConfigRepo) Update(ctx context.Context, c *im.SocialChannelConfig) error {
++	_, err := r.db.ExecContext(ctx,
++		`UPDATE social_channel_configs SET app_id=?,app_secret=?,token=?,encoding_aes_key=?,webhook_url=?,is_verified=?,updated_at=?
++		 WHERE id=?`,
++		c.AppID, c.AppSecret, c.Token, c.EncodingAESKey, c.WebhookURL, c.IsVerified, c.UpdatedAt, c.ID)
++	return err
++}
++
++func (r *SocialChannelConfigRepo) Delete(ctx context.Context, id int64) error {
++	_, err := r.db.ExecContext(ctx, "DELETE FROM social_channel_configs WHERE id=?", id)
++	return err
++}
++
++var _ im.SocialChannelConfigRepository = (*SocialChannelConfigRepo)(nil)
+diff --git a/internal/interfaces/http/handler/social_channel.go b/internal/interfaces/http/handler/social_channel.go
+new file mode 100644
+index 0000000..9802158
+--- /dev/null
++++ b/internal/interfaces/http/handler/social_channel.go
+@@ -0,0 +1,249 @@
++package handler
++
++import (
++	"encoding/json"
++	"io"
++	"net/http"
++	"strconv"
++
++	"github.com/divord97/ccc/internal/domain/im"
++	"github.com/divord97/ccc/pkg/response"
++	"github.com/go-chi/chi/v5"
++)
++
++type SocialChannelHandler struct {
++	svc *im.SocialChannelService
++}
++
++func NewSocialChannelHandler(svc *im.SocialChannelService) *SocialChannelHandler {
++	return &SocialChannelHandler{svc: svc}
++}
++
++// CreateConfig creates a social channel config (WeChat/Weibo credentials).
++func (h *SocialChannelHandler) CreateConfig(w http.ResponseWriter, r *http.Request) {
++	var in im.CreateSocialConfigInput
++	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
++		response.Error(w, 400, err.Error())
++		return
++	}
++	cfg, err := h.svc.CreateConfig(r.Context(), in)
++	if err != nil {
++		response.Error(w, 422, err.Error())
++		return
++	}
++	response.JSON(w, 201, cfg)
++}
++
++// GetConfig returns social config for a channel.
++func (h *SocialChannelHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
++	channelID, _ := strconv.ParseInt(chi.URLParam(r, "channelID"), 10, 64)
++	cfg, err := h.svc.GetConfig(r.Context(), channelID)
++	if err != nil {
++		response.Error(w, 404, err.Error())
++		return
++	}
++	response.JSON(w, 200, cfg)
++}
++
++// DeleteConfig removes a social channel config.
++func (h *SocialChannelHandler) DeleteConfig(w http.ResponseWriter, r *http.Request) {
++	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
++	if err := h.svc.DeleteConfig(r.Context(), id); err != nil {
++		response.Error(w, 500, err.Error())
++		return
++	}
++	w.WriteHeader(204)
++}
++
++// WeChatVerify handles WeChat server URL verification (GET request).
++// WeChat sends: signature, timestamp, nonce, echostr.
++func (h *SocialChannelHandler) WeChatVerify(w http.ResponseWriter, r *http.Request) {
++	channelID, _ := strconv.ParseInt(chi.URLParam(r, "channelID"), 10, 64)
++	sig := r.URL.Query().Get("signature")
++	timestamp := r.URL.Query().Get("timestamp")
++	nonce := r.URL.Query().Get("nonce")
++	echoStr := r.URL.Query().Get("echostr")
++
++	cfg, err := h.svc.GetConfig(r.Context(), channelID)
++	if err != nil {
++		http.Error(w, "config not found", 404)
++		return
++	}
++
++	if !h.svc.VerifyWeChatSignature(cfg.Token, timestamp, nonce, sig) {
++		http.Error(w, "invalid signature", 403)
++		return
++	}
++
++	h.svc.MarkVerified(r.Context(), channelID)
++	w.WriteHeader(200)
++	w.Write([]byte(echoStr))
++}
++
++// WeChatReceive handles inbound WeChat messages (POST request).
++func (h *SocialChannelHandler) WeChatReceive(w http.ResponseWriter, r *http.Request) {
++	channelID, _ := strconv.ParseInt(chi.URLParam(r, "channelID"), 10, 64)
++
++	sig := r.URL.Query().Get("signature")
++	timestamp := r.URL.Query().Get("timestamp")
++	nonce := r.URL.Query().Get("nonce")
++
++	cfg, err := h.svc.GetConfig(r.Context(), channelID)
++	if err != nil {
++		http.Error(w, "config not found", 404)
++		return
++	}
++	if !h.svc.VerifyWeChatSignature(cfg.Token, timestamp, nonce, sig) {
++		http.Error(w, "invalid signature", 403)
++		return
++	}
++
++	body, err := io.ReadAll(r.Body)
++	if err != nil {
++		http.Error(w, "read body failed", 400)
++		return
++	}
++
++	msg, err := parseWeChatXML(body)
++	if err != nil {
++		http.Error(w, "parse failed", 400)
++		return
++	}
++
++	sess, imMsg, err := h.svc.ProcessInboundMessage(r.Context(), channelID, msg)
++	if err != nil {
++		response.Error(w, 500, err.Error())
++		return
++	}
++
++	response.JSON(w, 200, map[string]interface{}{
++		"session": sess,
++		"message": imMsg,
++	})
++}
++
++// WeiboVerify handles Weibo webhook verification.
++func (h *SocialChannelHandler) WeiboVerify(w http.ResponseWriter, r *http.Request) {
++	echoStr := r.URL.Query().Get("echostr")
++	w.WriteHeader(200)
++	w.Write([]byte(echoStr))
++}
++
++// WeiboReceive handles inbound Weibo messages (POST request).
++func (h *SocialChannelHandler) WeiboReceive(w http.ResponseWriter, r *http.Request) {
++	channelID, _ := strconv.ParseInt(chi.URLParam(r, "channelID"), 10, 64)
++
++	cfg, err := h.svc.GetConfig(r.Context(), channelID)
++	if err != nil {
++		http.Error(w, "config not found", 404)
++		return
++	}
++
++	rawBody, err := io.ReadAll(r.Body)
++	if err != nil {
++		http.Error(w, "read body failed", 400)
++		return
++	}
++
++	weiboSig := r.URL.Query().Get("signature")
++	if !h.svc.VerifyWeiboSignature(cfg.AppSecret, string(rawBody), weiboSig) {
++		http.Error(w, "invalid signature", 403)
++		return
++	}
++
++	var payload struct {
++		SenderID string `json:"sender_id"`
++		Text     string `json:"text"`
++		MsgID    string `json:"msg_id"`
++	}
++	if err := json.Unmarshal(rawBody, &payload); err != nil {
++		http.Error(w, "parse failed", 400)
++		return
++	}
++
++	msg := im.SocialMessage{
++		Platform:    im.PlatformWeibo,
++		OpenID:      payload.SenderID,
++		ContentType: im.ContentTypeText,
++		Content:     payload.Text,
++		MsgID:       payload.MsgID,
++	}
++
++	sess, imMsg, err := h.svc.ProcessInboundMessage(r.Context(), channelID, msg)
++	if err != nil {
++		response.Error(w, 500, err.Error())
++		return
++	}
++
++	response.JSON(w, 200, map[string]interface{}{
++		"session": sess,
++		"message": imMsg,
++	})
++}
++
++// parseWeChatXML extracts key fields from WeChat XML message payload.
++func parseWeChatXML(body []byte) (im.SocialMessage, error) {
++	// Simplified XML parsing — production would use encoding/xml struct mapping.
++	// WeChat sends XML like: <xml><ToUserName>...</ToUserName><FromUserName>openid</FromUserName>
++	//   <MsgType>text</MsgType><Content>hello</Content><MsgId>123</MsgId></xml>
++	msg := im.SocialMessage{
++		Platform:    im.PlatformWeChat,
++		ContentType: im.ContentTypeText,
++	}
++
++	msg.OpenID = extractXMLTag(body, "FromUserName")
++	msg.MsgID = extractXMLTag(body, "MsgId")
++
++	msgType := extractXMLTag(body, "MsgType")
++	switch msgType {
++	case "image":
++		msg.ContentType = im.ContentTypeImage
++		msg.MediaURL = extractXMLTag(body, "PicUrl")
++		msg.Content = msg.MediaURL
++	case "voice":
++		msg.ContentType = im.ContentTypeAudio
++		msg.MediaURL = extractXMLTag(body, "MediaId")
++		msg.Content = extractXMLTag(body, "Recognition")
++	case "video", "shortvideo":
++		msg.ContentType = im.ContentTypeVideo
++		msg.MediaURL = extractXMLTag(body, "MediaId")
++		msg.Content = msg.MediaURL
++	default:
++		msg.Content = extractXMLTag(body, "Content")
++	}
++
++	return msg, nil
++}
++
++// extractXMLTag extracts value between <tag>value</tag> or <tag><![CDATA[value]]></tag>.
++func extractXMLTag(data []byte, tag string) string {
++	s := string(data)
++	start := "<" + tag + ">"
++	startCDATA := "<" + tag + "><![CDATA["
++	end := "</" + tag + ">"
++
++	var idx int
++	var val string
++	if idx = indexOf(s, startCDATA); idx >= 0 {
++		val = s[idx+len(startCDATA):]
++		if endIdx := indexOf(val, "]]>"); endIdx >= 0 {
++			return val[:endIdx]
++		}
++	}
++	if idx = indexOf(s, start); idx >= 0 {
++		val = s[idx+len(start):]
++		if endIdx := indexOf(val, end); endIdx >= 0 {
++			return val[:endIdx]
++		}
++	}
++	return ""
++}
++
++func indexOf(s, substr string) int {
++	for i := 0; i+len(substr) <= len(s); i++ {
++		if s[i:i+len(substr)] == substr {
++			return i
++		}
++	}
++	return -1
++}
+diff --git a/internal/interfaces/http/router.go b/internal/interfaces/http/router.go
+index 3a099f7..b09a32a 100644
+--- a/internal/interfaces/http/router.go
++++ b/internal/interfaces/http/router.go
+@@ -90,6 +90,9 @@ type RouterDeps struct {
+ 	RingSvc       *ai.RingAnalysisService
+ 	FullDuplexSvc *ai.FullDuplexService
+ 
++	// Social Channels
++	SocialChannelHandler *handler.SocialChannelHandler
++
+ 	// Infrastructure
+ 	RateLimiter  *redis.RateLimiter
+ 	AuditLogRepo platform.AuditLogRepository
+@@ -577,6 +580,13 @@ func NewRouter(deps RouterDeps) *chi.Mux {
+ 
+ 		r.Get("/full-duplex/config", handler.GetFullDuplexConfig(deps.FullDuplexSvc))
+ 		r.Put("/full-duplex/config", handler.UpsertFullDuplexConfig(deps.FullDuplexSvc))
++
++		// --- Social Channel Config ---
++		r.Route("/social-configs", func(r chi.Router) {
++			r.Post("/", deps.SocialChannelHandler.CreateConfig)
++			r.Get("/channels/{channelID}", deps.SocialChannelHandler.GetConfig)
++			r.Delete("/{id}", deps.SocialChannelHandler.DeleteConfig)
++		})
+ 	})
+ 
+ 	// --- Public Routes (no JWT auth) ---
+@@ -588,5 +598,13 @@ func NewRouter(deps RouterDeps) *chi.Mux {
+ 
+ 	r.Post("/api/v1/email/inbound", deps.EmailInboundHandler.Inbound)
+ 
++	// --- Social Channel Webhooks (public, no JWT) ---
++	r.Route("/api/v1/social", func(r chi.Router) {
++		r.Get("/wechat/{channelID}", deps.SocialChannelHandler.WeChatVerify)
++		r.Post("/wechat/{channelID}", deps.SocialChannelHandler.WeChatReceive)
++		r.Get("/weibo/{channelID}", deps.SocialChannelHandler.WeiboVerify)
++		r.Post("/weibo/{channelID}", deps.SocialChannelHandler.WeiboReceive)
++	})
++
+ 	return r
+ }
+diff --git a/migrations/000004_social_channels.down.sql b/migrations/000004_social_channels.down.sql
+new file mode 100644
+index 0000000..c79bcaa
+--- /dev/null
++++ b/migrations/000004_social_channels.down.sql
+@@ -0,0 +1 @@
++DROP TABLE IF EXISTS social_channel_configs;
+diff --git a/migrations/000004_social_channels.up.sql b/migrations/000004_social_channels.up.sql
+new file mode 100644
+index 0000000..5aa9b43
+--- /dev/null
++++ b/migrations/000004_social_channels.up.sql
+@@ -0,0 +1,18 @@
++-- Social Channels: WeChat / Weibo platform config
++CREATE TABLE IF NOT EXISTS social_channel_configs (
++    id BIGINT NOT NULL PRIMARY KEY,
++    tenant_id BIGINT NOT NULL,
++    channel_id BIGINT NOT NULL,
++    platform VARCHAR(20) NOT NULL,
++    app_id VARCHAR(255) NOT NULL,
++    app_secret VARCHAR(512) NOT NULL,
++    token VARCHAR(255) NOT NULL,
++    encoding_aes_key VARCHAR(512) NOT NULL DEFAULT '',
++    webhook_url VARCHAR(1024) NOT NULL DEFAULT '',
++    is_verified BOOLEAN NOT NULL DEFAULT FALSE,
++    created_at DATETIME(3) NOT NULL,
++    updated_at DATETIME(3) NOT NULL,
++    UNIQUE INDEX idx_scc_channel (channel_id),
++    INDEX idx_scc_tenant (tenant_id),
++    INDEX idx_scc_platform_app (platform, app_id)
++) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

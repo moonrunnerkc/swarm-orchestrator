@@ -1,0 +1,160 @@
+diff --git a/scripts/main.js b/scripts/main.js
+index f6e9fce..abbcc47 100644
+--- a/scripts/main.js
++++ b/scripts/main.js
+@@ -4,6 +4,13 @@ const MAX_SAMPLE_INSET = 8;
+ const SAMPLE_INSET_DIVISOR = 4;
+ const FLOAT_EPSILON = 0.001;
+ const PATCH_FLAG = Symbol.for(`${MODULE_ID}.patched`);
++const OVERLAY_CONTAINER_NAME = `${MODULE_ID}.overlay`;
++
++let originalTestVisibilityRef = null;
++const overlayState = {
++  container: null,
++  sprites: new Map()
++};
+ 
+ function toFiniteNumber(value, fallback) {
+   const numeric = Number(value);
+@@ -117,6 +124,7 @@ function patchVisibilityTesting() {
+   if ( prototype[PATCH_FLAG] ) return;
+ 
+   const originalTestVisibility = prototype.testVisibility;
++  originalTestVisibilityRef = originalTestVisibility;
+   prototype.testVisibility = function(point, options = {}) {
+     const isVisible = originalTestVisibility.call(this, point, options);
+     if ( isVisible ) return true;
+@@ -142,4 +150,133 @@ function patchVisibilityTesting() {
+ 
+ export {buildVisibilitySamplePoints, getTokenBottomElevation, getTokenTopElevation};
+ 
++function isVisibleOnlyVia3D(token) {
++  if ( !originalTestVisibilityRef ) return false;
++  if ( !shouldTestAlternateVisibility(token) ) return false;
++  const visibility = canvas?.visibility;
++  if ( !visibility ) return false;
++  if ( token?.document?.hidden ) return false;
++
++  const center = token.center;
++  if ( !center || !Number.isFinite(center.x) || !Number.isFinite(center.y) ) return false;
++  const probe = {x: center.x, y: center.y, elevation: getTokenBottomElevation(token, center)};
++
++  try {
++    if ( originalTestVisibilityRef.call(visibility, probe, {object: token}) ) return false;
++    for ( const samplePoint of buildVisibilitySamplePoints(token, probe) ) {
++      if ( originalTestVisibilityRef.call(visibility, samplePoint, {object: token}) ) return true;
++    }
++  } catch (err) {
++    console.warn(`${MODULE_ID} | Error while probing alternate visibility:`, err);
++  }
++  return false;
++}
++
++function getOverlayParent() {
++  return canvas?.interface ?? canvas?.controls ?? canvas?.stage ?? null;
++}
++
++function ensureOverlayContainer() {
++  const parent = getOverlayParent();
++  if ( !parent ) return null;
++  let container = overlayState.container;
++  if ( !container || container.destroyed || container.parent !== parent ) {
++    if ( container && !container.destroyed ) container.destroy({children: true});
++    overlayState.sprites.clear();
++    container = new PIXI.Container();
++    container.name = OVERLAY_CONTAINER_NAME;
++    container.eventMode = "none";
++    container.interactiveChildren = false;
++    container.sortableChildren = false;
++    parent.addChild(container);
++    overlayState.container = container;
++  }
++  return container;
++}
++
++function destroyOverlaySprite(id) {
++  const sprite = overlayState.sprites.get(id);
++  if ( sprite ) {
++    if ( !sprite.destroyed ) sprite.destroy();
++    overlayState.sprites.delete(id);
++  }
++}
++
++function getTokenTexture(token) {
++  const candidate = token?.texture ?? token?.mesh?.texture;
++  if ( candidate && candidate !== PIXI.Texture.EMPTY ) return candidate;
++  return null;
++}
++
++function refreshTokenOverlay(token) {
++  if ( !token?.id ) return;
++  const container = ensureOverlayContainer();
++  if ( !container ) return;
++
++  const shouldShow = isVisibleOnlyVia3D(token);
++  if ( !shouldShow ) {
++    destroyOverlaySprite(token.id);
++    return;
++  }
++
++  const texture = getTokenTexture(token);
++  if ( !texture ) {
++    destroyOverlaySprite(token.id);
++    return;
++  }
++
++  let sprite = overlayState.sprites.get(token.id);
++  if ( !sprite || sprite.destroyed ) {
++    sprite = new PIXI.Sprite(texture);
++    sprite.anchor.set(0.5);
++    sprite.eventMode = "none";
++    container.addChild(sprite);
++    overlayState.sprites.set(token.id, sprite);
++  } else if ( sprite.texture !== texture ) {
++    sprite.texture = texture;
++  }
++
++  const bounds = getTokenBounds(token, token.center);
++  sprite.position.set(bounds.left + (bounds.width / 2), bounds.top + (bounds.height / 2));
++  sprite.width = bounds.width;
++  sprite.height = bounds.height;
++  sprite.rotation = toFiniteNumber(token.mesh?.rotation, toFiniteNumber(token.document?.rotation, 0) * Math.PI / 180);
++  sprite.tint = toFiniteNumber(token.mesh?.tint, 0xFFFFFF);
++  sprite.alpha = 1;
++}
++
++function refreshAllTokenOverlays() {
++  if ( !canvas?.ready ) return;
++  if ( !originalTestVisibilityRef ) return;
++  const tokens = canvas.tokens?.placeables;
++  if ( !tokens ) return;
++
++  const activeIds = new Set();
++  for ( const token of tokens ) {
++    activeIds.add(token.id);
++    refreshTokenOverlay(token);
++  }
++  for ( const id of [...overlayState.sprites.keys()] ) {
++    if ( !activeIds.has(id) ) destroyOverlaySprite(id);
++  }
++}
++
++function teardownOverlays() {
++  if ( overlayState.container && !overlayState.container.destroyed ) {
++    overlayState.container.destroy({children: true});
++  }
++  overlayState.container = null;
++  overlayState.sprites.clear();
++}
++
+ Hooks.once("setup", patchVisibilityTesting);
++Hooks.on("canvasReady", () => {
++  teardownOverlays();
++  refreshAllTokenOverlays();
++});
++Hooks.on("canvasTearDown", teardownOverlays);
++Hooks.on("sightRefresh", refreshAllTokenOverlays);
++Hooks.on("lightingRefresh", refreshAllTokenOverlays);
++Hooks.on("refreshToken", refreshTokenOverlay);
++Hooks.on("destroyToken", token => destroyOverlaySprite(token?.id));
++Hooks.on("deleteToken", document => destroyOverlaySprite(document?.id));

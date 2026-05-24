@@ -1,0 +1,1215 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 7038f89..29e0f2c 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -29,10 +29,10 @@ jobs:
+         # Style rules (W293, E501) are deferred — see setup.cfg for full config.
+         run: |
+           flake8 \
+-            media_inspect.py compare_core.py config.py models.py \
+-            orchestrator.py llm_polish.py srt_writer.py \
+-            audio_utils.py subtitle_utils.py asr.py mt.py \
+-            tracing.py batch_process.py benchmark.py \
++            core/media/__init__.py core/benchmark/compare_core.py core/runtime/config.py core/subtitles/models.py \
++            core/runtime/orchestrator.py core/polish/__init__.py core/subtitles/srt_writer.py \
++            core/extract/audio_utils.py core/extract/subtitle_utils.py core/asr/__init__.py core/mt/__init__.py \
++            core/runtime/tracing.py core/runtime/batch_process.py core/benchmark/__init__.py \
+             --select=E9,F --extend-ignore=F401,F841 --exclude venv
+ 
+       - name: Run unit tests
+diff --git a/CLAUDE.md b/CLAUDE.md
+index 62dc820..840c0b2 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -13,10 +13,10 @@ pytest tests/test_config.py -v
+ pytest tests/test_config.py::test_profile_merge -v
+ 
+ # Lint (subset matching CI)
+-flake8 media_inspect.py compare_core.py config.py models.py \
+-  orchestrator.py llm_polish.py srt_writer.py \
+-  audio_utils.py subtitle_utils.py asr.py mt.py \
+-  tracing.py batch_process.py benchmark.py \
++flake8 core/media/__init__.py core/benchmark/compare_core.py core/runtime/config.py core/subtitles/models.py \
++  core/runtime/orchestrator.py core/polish/__init__.py core/subtitles/srt_writer.py \
++  core/extract/audio_utils.py core/extract/subtitle_utils.py core/asr/__init__.py core/mt/__init__.py \
++  core/runtime/tracing.py core/runtime/batch_process.py core/benchmark/__init__.py \
+   --select=E9,F --extend-ignore=F401,F841 --exclude venv
+ 
+ # Run the pipeline
+@@ -42,19 +42,14 @@ MKV/MP4 → ffmpeg (audio extraction) → WAV
+ 
+ ### Module layout
+ 
+-The repo is mid-migration from a flat-file layout to `core/` + `packs/`. Both co-exist.
++The repo is mid-migration to `core/` + `packs/`. Runtime entrypoints remain at the root.
+ 
+-**Root-level modules (original flat layout):**
++**Root-level runtime entrypoints/shims:**
+ - `main.py` — CLI entry point
+ - `orchestrator.py` — top-level generate/benchmark flow control
+ - `config.py` — YAML config loader with dev/prod profile merging
+-- `models.py` — core data types (`Segment`, `SubtitleCandidate`)
+-- `asr.py`, `mt.py`, `llm_polish.py` — model wrappers
+-- `audio_utils.py` — ffmpeg audio extraction and muxing
+-- `media_inspect.py` — ffprobe metadata extraction
+-- `srt_writer.py` — SRT formatting
+-- `subtitle_qc.py`, `subtitle_utils.py` — QC and subtitle extraction
+-- `benchmark.py` — WER/BLEU/chrF comparison across sources
++- `batch_process.py` — batch run wrapper
++- `subtitle_qc.py`, `translation_qc.py` — QC and quality gates
+ 
+ **`core/` (new modular layer):**
+ - `core/artifacts/` — SQLite registry for media assets, streams, pipeline runs, subtitle candidates
+diff --git a/CONTRIBUTING.md b/CONTRIBUTING.md
+index 24f291b..ac145df 100644
+--- a/CONTRIBUTING.md
++++ b/CONTRIBUTING.md
+@@ -110,9 +110,9 @@ Run locally (same commands as CI):
+ pip install -r requirements-ci.txt
+ 
+ # Lint
+-flake8 media_inspect.py compare_core.py config.py models.py orchestrator.py \
+-  llm_polish.py srt_writer.py audio_utils.py subtitle_utils.py asr.py mt.py \
+-  tracing.py batch_process.py benchmark.py \
++flake8 core/media/__init__.py core/benchmark/compare_core.py core/runtime/config.py core/subtitles/models.py core/runtime/orchestrator.py \
++  core/polish/__init__.py core/subtitles/srt_writer.py core/extract/audio_utils.py core/extract/subtitle_utils.py core/asr/__init__.py core/mt/__init__.py \
++  core/runtime/tracing.py core/runtime/batch_process.py core/benchmark/__init__.py \
+   --select=E9,F --extend-ignore=F401,F841 --exclude venv
+ 
+ # Unit tests (no live services required) — covers both root and tests/
+diff --git a/asr.py b/asr.py
+deleted file mode 100644
+index 663826e..0000000
+--- a/asr.py
++++ /dev/null
+@@ -1,17 +0,0 @@
+-"""asr — re-exported from core.asr."""
+-
+-from core.asr import (  # noqa: F401
+-    FasterWhisperASR,
+-    BatchASR,
+-    build_candidate_from_segments,
+-    transcribe_audio_to_candidate,
+-    transcribe_audio_to_segments,
+-)
+-
+-__all__ = [
+-    "FasterWhisperASR",
+-    "BatchASR",
+-    "build_candidate_from_segments",
+-    "transcribe_audio_to_candidate",
+-    "transcribe_audio_to_segments",
+-]
+diff --git a/attic/test_pipeline.py b/attic/test_pipeline.py
+index d13759f..6ff5942 100644
+--- a/attic/test_pipeline.py
++++ b/attic/test_pipeline.py
+@@ -11,11 +11,11 @@
+ import pytest
+ 
+ from config import Config, set_config
+-from audio_utils import check_ffmpeg_available, get_audio_tracks
+-from asr import FasterWhisperASR, Segment
+-from mt import MarianTranslator
+-from llm_polish import LLMPolisher
+-from srt_writer import SRTWriter
++from core.extract.audio_utils import check_ffmpeg_available, get_audio_tracks
++from core.asr import FasterWhisperASR, Segment
++from core.mt import MarianTranslator
++from core.polish import LLMPolisher
++from core.subtitles.srt_writer import SRTWriter
+ 
+ logging.basicConfig(level=logging.INFO)
+ logger = logging.getLogger(__name__)
+@@ -211,7 +211,7 @@ def test_srt_writer(config: Config = None):
+             logger.info("✓ Segment validation passed")
+         
+         # Test SRT formatting
+-        from srt_writer import format_timestamp_srt
++        from core.subtitles.srt_writer import format_timestamp_srt
+         test_time = 90.5
+         formatted = format_timestamp_srt(test_time)
+         expected = "00:01:30,500"
+diff --git a/audio_utils.py b/audio_utils.py
+deleted file mode 100644
+index 385d76f..0000000
+--- a/audio_utils.py
++++ /dev/null
+@@ -1,17 +0,0 @@
+-"""audio_utils — re-exported from core.extract.audio_utils."""
+-
+-from core.extract.audio_utils import (  # noqa: F401
+-    AudioTrackInfo,
+-    check_ffmpeg_available,
+-    get_audio_tracks,
+-    extract_audio_with_ffmpeg,
+-    mux_subtitle_to_video,
+-)
+-
+-__all__ = [
+-    "AudioTrackInfo",
+-    "check_ffmpeg_available",
+-    "get_audio_tracks",
+-    "extract_audio_with_ffmpeg",
+-    "mux_subtitle_to_video",
+-]
+diff --git a/benchmark.py b/benchmark.py
+deleted file mode 100644
+index 6bf7b17..0000000
+--- a/benchmark.py
++++ /dev/null
+@@ -1,13 +0,0 @@
+-"""benchmark — re-exported from core.benchmark."""
+-
+-from core.benchmark import (  # noqa: F401
+-    find_all_tracks_by_language,
+-    select_reference_candidate,
+-    run_benchmark,
+-)
+-
+-__all__ = [
+-    "find_all_tracks_by_language",
+-    "select_reference_candidate",
+-    "run_benchmark",
+-]
+diff --git a/compare_core.py b/compare_core.py
+deleted file mode 100644
+index fd1ccc6..0000000
+--- a/compare_core.py
++++ /dev/null
+@@ -1,15 +0,0 @@
+-"""Subtitle candidate comparison utilities — re-exported from core.benchmark."""
+-
+-from core.benchmark import (  # noqa: F401
+-    compute_overlap,
+-    align_segments,
+-    compute_metrics,
+-    compare_candidates,
+-)
+-
+-__all__ = [
+-    "compute_overlap",
+-    "align_segments",
+-    "compute_metrics",
+-    "compare_candidates",
+-]
+diff --git a/compare_srt.py b/compare_srt.py
+index 33f9aaf..09113d6 100644
+--- a/compare_srt.py
++++ b/compare_srt.py
+@@ -23,8 +23,8 @@
+ from pathlib import Path
+ from typing import List
+ 
+-from models import Segment, SubtitleCandidate
+-from compare_core import compare_candidates
++from core.subtitles import Segment, SubtitleCandidate
++from core.benchmark.compare_core import compare_candidates
+ 
+ 
+ _TS_RE = re.compile(
+diff --git a/core/asr/__init__.py b/core/asr/__init__.py
+index fbb0678..5dbeddc 100644
+--- a/core/asr/__init__.py
++++ b/core/asr/__init__.py
+@@ -10,8 +10,7 @@
+ Public API
+ ----------
+ ASRBackend                            Abstract base class.
+-FasterWhisperASR                      Concrete Faster-Whisper implementation
+-                                      (lives in root ``asr.py`` during migration).
++FasterWhisperASR                      Concrete Faster-Whisper implementation.
+ build_candidate_from_segments(…)      Helper — wraps raw ASR output.
+ transcribe_audio_to_candidate(…)      One-shot convenience function.
+ """
+@@ -26,9 +25,8 @@
+ class ASRBackend(ABC):
+     """Abstract interface for all ASR engine adapters.
+ 
+-    Concrete implementations live in root ``asr.py`` (during migration) or in
+-    language pack–specific modules.  Core orchestration code must only depend
+-    on this interface.
++    Concrete implementations live in core or language pack–specific modules.
++    Core orchestration code must only depend on this interface.
+     """
+ 
+     @abstractmethod
+diff --git a/core/benchmark/__init__.py b/core/benchmark/__init__.py
+index fbc5d85..c0ddfa6 100644
+--- a/core/benchmark/__init__.py
++++ b/core/benchmark/__init__.py
+@@ -32,8 +32,8 @@
+ )
+ from core.subtitles import SubtitleCandidate
+ from config import Config
+-from media_inspect import MediaInfo, inspect_media
+-from tracing import start_span
++from core.media import MediaInfo, inspect_media
++from core.runtime.tracing import start_span
+ from translation_qc import run_translation_qc
+ 
+ logger = logging.getLogger(__name__)
+diff --git a/core/benchmark/compare_core.py b/core/benchmark/compare_core.py
+index 4086be3..714d517 100644
+--- a/core/benchmark/compare_core.py
++++ b/core/benchmark/compare_core.py
+@@ -2,7 +2,6 @@
+ 
+ Measures subtitle quality by comparing candidates to a reference using
+ WER, BLEU, and chrF.
+-The root-level ``compare_core.py`` is a re-export shim pointing here.
+ ``core.benchmark.__init__`` re-exports from this module.
+ 
+ Public API
+diff --git a/core/extract/subtitle_utils.py b/core/extract/subtitle_utils.py
+index d4a9705..022fd90 100644
+--- a/core/extract/subtitle_utils.py
++++ b/core/extract/subtitle_utils.py
+@@ -16,7 +16,7 @@
+ 
+ from core.ocr import OCRBackend, ocr_subtitle_track
+ from core.subtitles import Segment, SubtitleCandidate
+-from media_inspect import inspect_media, MediaInfo, SubtitleStream
++from core.media import inspect_media, MediaInfo, SubtitleStream
+ 
+ logger = logging.getLogger(__name__)
+ 
+diff --git a/core/media/__init__.py b/core/media/__init__.py
+index cb02fa7..5793cd2 100644
+--- a/core/media/__init__.py
++++ b/core/media/__init__.py
+@@ -4,7 +4,6 @@
+ All language-code normalization here is protocol-level (ISO-639 mapping)
+ and must not contain language-pack-specific aliases.
+ Implementation lives in ``core.media.media_inspect``.
+-The root-level ``media_inspect.py`` is a re-export shim pointing here.
+ 
+ Public API
+ ----------
+diff --git a/core/media/media_inspect.py b/core/media/media_inspect.py
+index 89a0505..111bb41 100644
+--- a/core/media/media_inspect.py
++++ b/core/media/media_inspect.py
+@@ -3,7 +3,6 @@
+ Wraps ffprobe to parse media containers into structured metadata.
+ All language-code normalization here is protocol-level (ISO-639 mapping)
+ and must not contain language-pack-specific aliases.
+-The root-level ``media_inspect.py`` is a re-export shim pointing here.
+ ``core.media.__init__`` re-exports from this module.
+ 
+ Public API
+diff --git a/core/mt/__init__.py b/core/mt/__init__.py
+index 0d34d7e..8dc8690 100644
+--- a/core/mt/__init__.py
++++ b/core/mt/__init__.py
+@@ -12,7 +12,6 @@
+ MTBackend                     Abstract base class.
+ MarianTranslator              Concrete MarianMT implementation
+ LLMDirectTranslator           Ollama-compatible direct translation backend
+-                              (both live in root ``mt.py`` during migration).
+ translate_candidate(…)        Direction-agnostic translation helper.
+ """
+ 
+diff --git a/core/polish/__init__.py b/core/polish/__init__.py
+index 410aee4..86f7958 100644
+--- a/core/polish/__init__.py
++++ b/core/polish/__init__.py
+@@ -12,8 +12,7 @@
+ Public API
+ ----------
+ PolishBackend                 Abstract base class.
+-LLMPolisher                   Concrete Ollama implementation
+-                              (lives in root ``llm_polish.py`` during migration).
++LLMPolisher                   Concrete Ollama implementation.
+ polish_candidate_with_llm(…)  One-shot convenience wrapper.
+ enforce_constraints_on_candidate(…)  Timing / line-length normalisation.
+ """
+@@ -260,7 +259,7 @@ def _enforce_constraints(self, text: str) -> str:
+         "full moon." The wrapping was also redundant with
+         srt_writer.split_into_lines, which already word-wraps cleanly at
+         max_chars_per_line boundaries. The original implementation is preserved
+-        in git history; revert via `git log -p llm_polish.py` if needed.
++        in git history; revert via `git log -p core/polish/__init__.py` if needed.
+         """
+         if not text:
+             return text
+diff --git a/core/runtime/batch_process.py b/core/runtime/batch_process.py
+index 92ca7db..1abc7f6 100644
+--- a/core/runtime/batch_process.py
++++ b/core/runtime/batch_process.py
+@@ -28,7 +28,7 @@
+ from core.runtime.config import Config, set_config
+ from core.runtime.orchestrator import run_generate
+ from main import setup_logging
+-from media_inspect import inspect_media
++from core.media import inspect_media
+ 
+ logger = logging.getLogger(__name__)
+ 
+diff --git a/core/runtime/orchestrator.py b/core/runtime/orchestrator.py
+index 5bea398..6febfcd 100644
+--- a/core/runtime/orchestrator.py
++++ b/core/runtime/orchestrator.py
+@@ -37,14 +37,14 @@
+ from typing import Dict, Any
+ 
+ from core.runtime.config import Config
+-from media_inspect import MediaInfo
+-from subtitle_utils import extract_subtitle_track, discover_sidecar_subtitles
+-from audio_utils import extract_audio_with_ffmpeg
+-from asr import FasterWhisperASR, build_candidate_from_segments
+-from mt import translate_candidate_jp_to_en_workflow
+-from llm_polish import polish_candidate_with_llm, enforce_constraints_on_candidate
+-from srt_writer import write_candidate_srt
+-from models import SubtitleCandidate
++from core.media import MediaInfo
++from core.extract.subtitle_utils import extract_subtitle_track, discover_sidecar_subtitles
++from core.extract.audio_utils import extract_audio_with_ffmpeg
++from core.asr import FasterWhisperASR, build_candidate_from_segments
++from core.mt import translate_candidate_jp_to_en_workflow
++from core.polish import polish_candidate_with_llm, enforce_constraints_on_candidate
++from core.subtitles.srt_writer import write_candidate_srt
++from core.subtitles import SubtitleCandidate
+ from subtitle_qc import run_qc
+ from translation_qc import run_translation_qc
+ from core.runtime.tracing import start_span
+diff --git a/core/subtitles/models.py b/core/subtitles/models.py
+index 10659a8..3e31ac6 100644
+--- a/core/subtitles/models.py
++++ b/core/subtitles/models.py
+@@ -1,7 +1,6 @@
+ """Subtitle data structures.
+ 
+ Authoritative home for ``Segment`` and ``SubtitleCandidate``.
+-The root-level ``models.py`` is a re-export shim pointing here.
+ ``core.subtitles.__init__`` re-exports from this module.
+ 
+ Public API
+diff --git a/example_usage.py b/example_usage.py
+index 390621b..162f185 100644
+--- a/example_usage.py
++++ b/example_usage.py
+@@ -6,11 +6,11 @@
+ 
+ from pathlib import Path
+ from config import Config, set_config
+-from audio_utils import extract_audio_with_ffmpeg
+-from asr import FasterWhisperASR, transcribe_audio_to_candidate
+-from mt import translate_candidate_jp_to_en
+-from llm_polish import polish_candidate_with_llm, enforce_constraints_on_candidate
+-from srt_writer import write_candidate_srt
++from core.extract.audio_utils import extract_audio_with_ffmpeg
++from core.asr import FasterWhisperASR, transcribe_audio_to_candidate
++from core.mt import translate_candidate_jp_to_en
++from core.polish import polish_candidate_with_llm, enforce_constraints_on_candidate
++from core.subtitles.srt_writer import write_candidate_srt
+ import logging
+ 
+ logging.basicConfig(
+@@ -88,7 +88,7 @@ def example_custom_processing():
+     ja_candidate = transcribe_audio_to_candidate(audio_path, config, language="ja")
+ 
+     # Filter out very short segments before translation
+-    from models import SubtitleCandidate, Segment as GenericSegment
++    from core.subtitles import SubtitleCandidate, Segment as GenericSegment
+     short_filtered = SubtitleCandidate(
+         id=ja_candidate.id,
+         language=ja_candidate.language,
+diff --git a/llm_polish.py b/llm_polish.py
+deleted file mode 100644
+index b0c4f20..0000000
+--- a/llm_polish.py
++++ /dev/null
+@@ -1,23 +0,0 @@
+-"""llm_polish — re-exported from core.polish."""
+-
+-from core.polish import (  # noqa: F401
+-    LLMPolisher,
+-    PolishStats,
+-    _CJK_RE,
+-    _is_stock_phrase_collapse,
+-    _recover_leading_english,
+-    adapt_candidate_from_literal,
+-    polish_candidate_with_llm,
+-    enforce_constraints_on_candidate,
+-)
+-
+-__all__ = [
+-    "LLMPolisher",
+-    "PolishStats",
+-    "_CJK_RE",
+-    "_is_stock_phrase_collapse",
+-    "_recover_leading_english",
+-    "adapt_candidate_from_literal",
+-    "polish_candidate_with_llm",
+-    "enforce_constraints_on_candidate",
+-]
+diff --git a/llm_translate.py b/llm_translate.py
+index 6920ef4..34afc93 100644
+--- a/llm_translate.py
++++ b/llm_translate.py
+@@ -5,8 +5,8 @@
+ from typing import Optional
+ 
+ from config import Config
+-from models import SubtitleCandidate
+-from mt import LLMDirectTranslator
++from core.subtitles import SubtitleCandidate
++from core.mt import LLMDirectTranslator
+ 
+ 
+ class LLMTranslator(LLMDirectTranslator):
+diff --git a/main.py b/main.py
+index 7381d09..a7e766d 100644
+--- a/main.py
++++ b/main.py
+@@ -7,12 +7,12 @@
+ from pathlib import Path
+ from typing import Optional
+ 
+-from audio_utils import check_ffmpeg_available
++from core.extract.audio_utils import check_ffmpeg_available
+ from core.artifacts.pipeline_wiring import compute_media_hash, open_registry
+ from core.ocr import create_backend as create_ocr_backend
+ from core.runtime import Config, run_generate, set_config, setup_tracing
+-from media_inspect import inspect_media
+-from srt_writer import write_candidate_srt
++from core.media import inspect_media
++from core.subtitles.srt_writer import write_candidate_srt
+ 
+ 
+ # Configure logging
+@@ -287,7 +287,7 @@ def main():
+     # reference/embedded subs and the freshly-generated output for comparison.
+     if args.extract_en_subs and not args.inspect_only:
+         try:
+-            from subtitle_utils import extract_subtitle_track as _extract_sub
++            from core.extract.subtitle_utils import extract_subtitle_track as _extract_sub
+             _media_for_extract = inspect_media(args.video)
+         except Exception as e:
+             logger.error(f"Failed to inspect media for EN sub extraction: {e}")
+@@ -382,7 +382,7 @@ def main():
+                 registry.close()
+             sys.exit(0)
+         elif args.mode == "benchmark":
+-            from benchmark import run_benchmark
++            from core.benchmark import run_benchmark
+             logger.info("Running in BENCHMARK mode (compare all candidate sources)")
+             ocr_backend = create_ocr_backend(config)
+             if ocr_backend is None:
+diff --git a/media_inspect.py b/media_inspect.py
+deleted file mode 100644
+index 0c5c4ac..0000000
+--- a/media_inspect.py
++++ /dev/null
+@@ -1,23 +0,0 @@
+-"""Media inspection utilities — re-exported from core.media."""
+-
+-from core.media import (  # noqa: F401
+-    MediaInfo,
+-    AudioStream,
+-    SubtitleStream,
+-    StreamBase,
+-    inspect_media,
+-    choose_audio_track,
+-    LANG_MAP,
+-    _norm_lang,
+-)
+-
+-__all__ = [
+-    "MediaInfo",
+-    "AudioStream",
+-    "SubtitleStream",
+-    "StreamBase",
+-    "inspect_media",
+-    "choose_audio_track",
+-    "LANG_MAP",
+-    "_norm_lang",
+-]
+diff --git a/models.py b/models.py
+deleted file mode 100644
+index a2b70b6..0000000
+--- a/models.py
++++ /dev/null
+@@ -1,5 +0,0 @@
+-"""Subtitle data structures — re-exported from core.subtitles."""
+-
+-from core.subtitles import Segment, SubtitleCandidate  # noqa: F401
+-
+-__all__ = ["Segment", "SubtitleCandidate"]
+diff --git a/mt.py b/mt.py
+deleted file mode 100644
+index d684d79..0000000
+--- a/mt.py
++++ /dev/null
+@@ -1,25 +0,0 @@
+-"""mt — re-exported from core.mt."""
+-
+-from core.mt import (  # noqa: F401
+-    InvalidTranslationEngineError,
+-    LLMDirectTranslator,
+-    MarianTranslator,
+-    VALID_TRANSLATION_ENGINES,
+-    VALID_TRANSLATION_WORKFLOWS,
+-    translate_candidate,
+-    translate_candidate_jp_to_en,
+-    translate_candidate_jp_to_en_workflow,
+-    run_two_pass_translation,
+-)
+-
+-__all__ = [
+-    "InvalidTranslationEngineError",
+-    "LLMDirectTranslator",
+-    "MarianTranslator",
+-    "VALID_TRANSLATION_ENGINES",
+-    "VALID_TRANSLATION_WORKFLOWS",
+-    "translate_candidate",
+-    "translate_candidate_jp_to_en",
+-    "translate_candidate_jp_to_en_workflow",
+-    "run_two_pass_translation",
+-]
+diff --git a/packs/language/__init__.py b/packs/language/__init__.py
+index 04ca2ee..b85b79f 100644
+--- a/packs/language/__init__.py
++++ b/packs/language/__init__.py
+@@ -23,7 +23,7 @@
+ 
+ if TYPE_CHECKING:
+     from config import Config
+-    from models import SubtitleCandidate
++    from core.subtitles import SubtitleCandidate
+ 
+ 
+ @dataclass(frozen=True)
+diff --git a/packs/language/ja_en/routing.py b/packs/language/ja_en/routing.py
+index 3136d07..d10f632 100644
+--- a/packs/language/ja_en/routing.py
++++ b/packs/language/ja_en/routing.py
+@@ -3,8 +3,8 @@
+ from __future__ import annotations
+ 
+ from config import Config
+-from models import SubtitleCandidate
+-from mt import translate_candidate_jp_to_en_workflow
++from core.subtitles import SubtitleCandidate
++from core.mt import translate_candidate_jp_to_en_workflow
+ 
+ from . import SOURCE_LANG
+ 
+diff --git a/srt_writer.py b/srt_writer.py
+deleted file mode 100644
+index fcb1313..0000000
+--- a/srt_writer.py
++++ /dev/null
+@@ -1,19 +0,0 @@
+-"""srt_writer — re-exported from core.subtitles.srt_writer."""
+-
+-from core.subtitles.srt_writer import (  # noqa: F401
+-    SRTWriter,
+-    format_timestamp_srt,
+-    split_text_by_punctuation,
+-    split_into_lines,
+-    write_candidate_srt,
+-    read_srt_file,
+-)
+-
+-__all__ = [
+-    "SRTWriter",
+-    "format_timestamp_srt",
+-    "split_text_by_punctuation",
+-    "split_into_lines",
+-    "write_candidate_srt",
+-    "read_srt_file",
+-]
+diff --git a/subtitle_qc.py b/subtitle_qc.py
+index 78a32ff..f95eed7 100644
+--- a/subtitle_qc.py
++++ b/subtitle_qc.py
+@@ -74,7 +74,7 @@
+ from pathlib import Path
+ from typing import Any, Dict, List, Tuple
+ 
+-from models import SubtitleCandidate
++from core.subtitles import SubtitleCandidate
+ 
+ logger = logging.getLogger(__name__)
+ 
+diff --git a/subtitle_utils.py b/subtitle_utils.py
+deleted file mode 100644
+index 47fcdfd..0000000
+--- a/subtitle_utils.py
++++ /dev/null
+@@ -1,15 +0,0 @@
+-"""subtitle_utils — re-exported from core.extract.subtitle_utils."""
+-
+-from core.extract.subtitle_utils import (  # noqa: F401
+-    extract_subtitle_track,
+-    parse_srt,
+-    parse_subtitle_file,
+-    discover_sidecar_subtitles,
+-)
+-
+-__all__ = [
+-    "extract_subtitle_track",
+-    "parse_srt",
+-    "parse_subtitle_file",
+-    "discover_sidecar_subtitles",
+-]
+diff --git a/tests/test_asr_candidate.py b/tests/test_asr_candidate.py
+index 8089aa8..af1a9b4 100644
+--- a/tests/test_asr_candidate.py
++++ b/tests/test_asr_candidate.py
+@@ -13,8 +13,8 @@
+ from unittest.mock import MagicMock, patch
+ 
+ from config import Config
+-from asr import build_candidate_from_segments, FasterWhisperASR
+-from models import Segment
++from core.asr import build_candidate_from_segments, FasterWhisperASR
++from core.subtitles import Segment
+ 
+ logging.basicConfig(level=logging.INFO)
+ logger = logging.getLogger(__name__)
+diff --git a/tests/test_asr_quality_propagation.py b/tests/test_asr_quality_propagation.py
+index e3efb79..4cc1891 100644
+--- a/tests/test_asr_quality_propagation.py
++++ b/tests/test_asr_quality_propagation.py
+@@ -2,8 +2,8 @@
+ 
+ from __future__ import annotations
+ 
+-from models import Segment, SubtitleCandidate
+-from mt import MarianTranslator
++from core.subtitles import Segment, SubtitleCandidate
++from core.mt import MarianTranslator
+ from subtitle_qc import run_qc
+ 
+ 
+diff --git a/tests/test_asr_warning_routing.py b/tests/test_asr_warning_routing.py
+index 8abef1f..e55a65a 100644
+--- a/tests/test_asr_warning_routing.py
++++ b/tests/test_asr_warning_routing.py
+@@ -3,7 +3,7 @@
+ from __future__ import annotations
+ 
+ from config import Config
+-from models import Segment, SubtitleCandidate
++from core.subtitles import Segment, SubtitleCandidate
+ from orchestrator import score_candidate
+ from core.policy import PolicyEngine
+ 
+diff --git a/tests/test_audio_selection.py b/tests/test_audio_selection.py
+index ef5020a..4920c38 100644
+--- a/tests/test_audio_selection.py
++++ b/tests/test_audio_selection.py
+@@ -1,6 +1,6 @@
+ """Test audio track selection via `choose_audio_track` with synthetic MediaInfo."""
+ 
+-from media_inspect import MediaInfo, AudioStream, choose_audio_track
++from core.media import MediaInfo, AudioStream, choose_audio_track
+ from pathlib import Path
+ 
+ 
+diff --git a/tests/test_batch_process.py b/tests/test_batch_process.py
+index 4af4bc9..872fcfb 100644
+--- a/tests/test_batch_process.py
++++ b/tests/test_batch_process.py
+@@ -4,7 +4,7 @@
+ 
+ from core.runtime import Config
+ from core.runtime import batch_process
+-from media_inspect import AudioStream, MediaInfo
++from core.media import AudioStream, MediaInfo
+ 
+ 
+ def _make_config(tmp_path: Path) -> Config:
+diff --git a/tests/test_benchmark.py b/tests/test_benchmark.py
+index b894ac1..419f857 100644
+--- a/tests/test_benchmark.py
++++ b/tests/test_benchmark.py
+@@ -6,8 +6,8 @@
+ pytest.importorskip("jiwer")
+ pytest.importorskip("sacrebleu")
+ 
+-from models import Segment, SubtitleCandidate
+-from compare_core import align_segments, compute_metrics, compare_candidates, compute_overlap
++from core.subtitles import Segment, SubtitleCandidate
++from core.benchmark.compare_core import align_segments, compute_metrics, compare_candidates, compute_overlap
+ 
+ 
+ def test_compute_overlap():
+diff --git a/tests/test_benchmark_generalized.py b/tests/test_benchmark_generalized.py
+index 16e193b..3d3249a 100644
+--- a/tests/test_benchmark_generalized.py
++++ b/tests/test_benchmark_generalized.py
+@@ -17,8 +17,8 @@
+ 
+ from config import Config
+ from core.ocr import OCRBackend
+-from models import Segment, SubtitleCandidate
+-from media_inspect import MediaInfo, AudioStream, SubtitleStream
++from core.subtitles import Segment, SubtitleCandidate
++from core.media import MediaInfo, AudioStream, SubtitleStream
+ import core.benchmark as bm
+ 
+ 
+diff --git a/tests/test_benchmark_hardening.py b/tests/test_benchmark_hardening.py
+index b431060..b7b5e59 100644
+--- a/tests/test_benchmark_hardening.py
++++ b/tests/test_benchmark_hardening.py
+@@ -158,8 +158,8 @@ def test_run_benchmark_persists_comparisons(self, tmp_path, monkeypatch):
+ 
+         import core.benchmark as bm
+         from config import Config
+-        from models import Segment, SubtitleCandidate
+-        from media_inspect import MediaInfo, AudioStream, SubtitleStream
++        from core.subtitles import Segment, SubtitleCandidate
++        from core.media import MediaInfo, AudioStream, SubtitleStream
+ 
+         synth_media = MediaInfo(
+             path=Path("dummy.mkv"),
+@@ -234,8 +234,8 @@ def test_run_benchmark_without_registry_does_not_raise(self, tmp_path, monkeypat
+ 
+         import core.benchmark as bm
+         from config import Config
+-        from models import Segment, SubtitleCandidate
+-        from media_inspect import MediaInfo, AudioStream, SubtitleStream
++        from core.subtitles import Segment, SubtitleCandidate
++        from core.media import MediaInfo, AudioStream, SubtitleStream
+ 
+         synth = MediaInfo(
+             path=Path("x.mkv"), format_name="matroska", duration=10.0,
+@@ -286,8 +286,8 @@ def test_stored_run_metrics_match_comparison(self, tmp_path, monkeypatch):
+ 
+         import core.benchmark as bm
+         from config import Config
+-        from models import Segment, SubtitleCandidate
+-        from media_inspect import MediaInfo, AudioStream, SubtitleStream
++        from core.subtitles import Segment, SubtitleCandidate
++        from core.media import MediaInfo, AudioStream, SubtitleStream
+ 
+         synth = MediaInfo(
+             path=Path("x.mkv"), format_name="matroska", duration=10.0,
+@@ -427,8 +427,8 @@ def test_scorecards_attached_to_run_benchmark_results(self, tmp_path, monkeypatc
+ 
+         import core.benchmark as bm
+         from config import Config
+-        from models import Segment, SubtitleCandidate
+-        from media_inspect import MediaInfo, AudioStream, SubtitleStream
++        from core.subtitles import Segment, SubtitleCandidate
++        from core.media import MediaInfo, AudioStream, SubtitleStream
+ 
+         synth = MediaInfo(
+             path=Path("x.mkv"), format_name="matroska", duration=10.0,
+@@ -579,8 +579,8 @@ def test_html_benchmark_report_written_by_run_benchmark(self, tmp_path, monkeypa
+ 
+         import core.benchmark as bm
+         from config import Config
+-        from models import Segment, SubtitleCandidate
+-        from media_inspect import MediaInfo, AudioStream, SubtitleStream
++        from core.subtitles import Segment, SubtitleCandidate
++        from core.media import MediaInfo, AudioStream, SubtitleStream
+ 
+         synth = MediaInfo(
+             path=Path("x.mkv"), format_name="matroska", duration=10.0,
+@@ -782,8 +782,8 @@ def test_run_benchmark_adds_warning_field_for_single_candidate(
+ 
+         import core.benchmark as bm
+         from config import Config
+-        from models import Segment, SubtitleCandidate
+-        from media_inspect import MediaInfo, SubtitleStream
++        from core.subtitles import Segment, SubtitleCandidate
++        from core.media import MediaInfo, SubtitleStream
+ 
+         # Only one EN subtitle stream -> single candidate -> no comparisons
+         synth = MediaInfo(
+@@ -829,8 +829,8 @@ def test_persist_comparison_skips_self_comparison(self, tmp_path, monkeypatch):
+ 
+         import core.benchmark as bm
+         from config import Config
+-        from models import Segment, SubtitleCandidate
+-        from media_inspect import MediaInfo, SubtitleStream
++        from core.subtitles import Segment, SubtitleCandidate
++        from core.media import MediaInfo, SubtitleStream
+         from core.artifacts import ArtifactRegistry
+ 
+         synth = MediaInfo(
+@@ -885,8 +885,8 @@ def test_registry_record_includes_num_segments(self, tmp_path, monkeypatch):
+ 
+         import core.benchmark as bm
+         from config import Config
+-        from models import Segment, SubtitleCandidate
+-        from media_inspect import MediaInfo, AudioStream, SubtitleStream
++        from core.subtitles import Segment, SubtitleCandidate
++        from core.media import MediaInfo, AudioStream, SubtitleStream
+         from core.artifacts import ArtifactRegistry
+         from core.artifacts.pipeline_wiring import compute_media_hash
+ 
+@@ -955,8 +955,8 @@ def test_json_output_no_tmp_file_after_success(self, tmp_path, monkeypatch):
+ 
+         import core.benchmark as bm
+         from config import Config
+-        from models import Segment, SubtitleCandidate
+-        from media_inspect import MediaInfo, AudioStream, SubtitleStream
++        from core.subtitles import Segment, SubtitleCandidate
++        from core.media import MediaInfo, AudioStream, SubtitleStream
+ 
+         synth = MediaInfo(
+             path=Path("x.mkv"), format_name="matroska", duration=10.0,
+@@ -1014,8 +1014,8 @@ def _make_single_candidate_results(self, tmp_path, monkeypatch):
+         """Run run_benchmark with only one EN candidate available."""
+         import core.benchmark as bm
+         from config import Config
+-        from models import Segment, SubtitleCandidate
+-        from media_inspect import MediaInfo, SubtitleStream
++        from core.subtitles import Segment, SubtitleCandidate
++        from core.media import MediaInfo, SubtitleStream
+ 
+         synth = MediaInfo(
+             path=Path("x.mkv"),
+@@ -1132,8 +1132,8 @@ def test_multi_candidate_status_is_ok(self, tmp_path, monkeypatch):
+ 
+         import core.benchmark as bm
+         from config import Config
+-        from models import Segment, SubtitleCandidate
+-        from media_inspect import MediaInfo, AudioStream, SubtitleStream
++        from core.subtitles import Segment, SubtitleCandidate
++        from core.media import MediaInfo, AudioStream, SubtitleStream
+ 
+         synth = MediaInfo(
+             path=Path("x.mkv"),
+diff --git a/tests/test_candidate_pipeline.py b/tests/test_candidate_pipeline.py
+index 847858d..51ae725 100644
+--- a/tests/test_candidate_pipeline.py
++++ b/tests/test_candidate_pipeline.py
+@@ -6,10 +6,10 @@
+ import pytest
+ 
+ from config import Config
+-from models import Segment, SubtitleCandidate
+-from mt import translate_candidate_jp_to_en
+-from llm_polish import polish_candidate_with_llm, enforce_constraints_on_candidate
+-from srt_writer import write_candidate_srt
++from core.subtitles import Segment, SubtitleCandidate
++from core.mt import translate_candidate_jp_to_en
++from core.polish import polish_candidate_with_llm, enforce_constraints_on_candidate
++from core.subtitles.srt_writer import write_candidate_srt
+ 
+ 
+ @pytest.mark.integration
+diff --git a/tests/test_compare_core.py b/tests/test_compare_core.py
+index f439fa2..84a1982 100644
+--- a/tests/test_compare_core.py
++++ b/tests/test_compare_core.py
+@@ -7,8 +7,8 @@
+ 
+ import pytest
+ 
+-from compare_core import compute_overlap, align_segments, compute_metrics
+-from models import Segment, SubtitleCandidate
++from core.benchmark.compare_core import compute_overlap, align_segments, compute_metrics
++from core.subtitles import Segment, SubtitleCandidate
+ 
+ 
+ def make_candidate(id_: str, segs: List[tuple]) -> SubtitleCandidate:
+diff --git a/tests/test_constraints.py b/tests/test_constraints.py
+index 3b8d3be..858ad9c 100644
+--- a/tests/test_constraints.py
++++ b/tests/test_constraints.py
+@@ -6,13 +6,13 @@
+ 
+ import pytest
+ 
+-from llm_polish import (
++from core.polish import (
+     LLMPolisher,
+     _CJK_RE,
+     _recover_leading_english,
+     enforce_constraints_on_candidate,
+ )
+-from models import Segment, SubtitleCandidate
++from core.subtitles import Segment, SubtitleCandidate
+ 
+ 
+ def make_polisher() -> LLMPolisher:
+diff --git a/tests/test_llm_polish_drift.py b/tests/test_llm_polish_drift.py
+index d77b3de..21ba5ed 100644
+--- a/tests/test_llm_polish_drift.py
++++ b/tests/test_llm_polish_drift.py
+@@ -20,8 +20,8 @@
+ 
+ import pytest
+ 
+-from models import Segment as GenericSegment, SubtitleCandidate
+-from llm_polish import (
++from core.subtitles import Segment as GenericSegment, SubtitleCandidate
++from core.polish import (
+     LLMPolisher,
+     PolishStats,
+     _is_stock_phrase_collapse,
+diff --git a/tests/test_main_ocr_wiring.py b/tests/test_main_ocr_wiring.py
+index 3d69407..2b97bb4 100644
+--- a/tests/test_main_ocr_wiring.py
++++ b/tests/test_main_ocr_wiring.py
+@@ -7,8 +7,8 @@
+ 
+ import main
+ from core.ocr import OCRBackend
+-from media_inspect import MediaInfo, SubtitleStream
+-from models import Segment, SubtitleCandidate
++from core.media import MediaInfo, SubtitleStream
++from core.subtitles import Segment, SubtitleCandidate
+ 
+ 
+ class FakeOCRBackend(OCRBackend):
+diff --git a/tests/test_main_registry_integration.py b/tests/test_main_registry_integration.py
+index 80345de..6e7c993 100644
+--- a/tests/test_main_registry_integration.py
++++ b/tests/test_main_registry_integration.py
+@@ -16,8 +16,8 @@
+ )
+ from core.runtime import Config, run_generate
+ from main import _emit_registry_run_id
+-from media_inspect import AudioStream, MediaInfo
+-from models import Segment, SubtitleCandidate
++from core.media import AudioStream, MediaInfo
++from core.subtitles import Segment, SubtitleCandidate
+ from packs.language import LanguageRoutingHooks
+ 
+ 
+diff --git a/tests/test_media_inspect.py b/tests/test_media_inspect.py
+index 14bd1b9..9223b0a 100644
+--- a/tests/test_media_inspect.py
++++ b/tests/test_media_inspect.py
+@@ -9,7 +9,7 @@
+ 
+ import pytest
+ 
+-from media_inspect import (
++from core.media import (
+     _norm_lang,
+     AudioStream,
+     SubtitleStream,
+diff --git a/tests/test_models_and_inspect.py b/tests/test_models_and_inspect.py
+index 27cf407..2aa4c7a 100644
+--- a/tests/test_models_and_inspect.py
++++ b/tests/test_models_and_inspect.py
+@@ -11,8 +11,8 @@
+ 
+ import pytest
+ 
+-from models import Segment, SubtitleCandidate
+-from media_inspect import inspect_media, MediaInfo
++from core.subtitles import Segment, SubtitleCandidate
++from core.media import inspect_media, MediaInfo
+ 
+ logger = logging.getLogger(__name__)
+ 
+diff --git a/tests/test_ocr_sidecar_support.py b/tests/test_ocr_sidecar_support.py
+index d6e1301..caf62b2 100644
+--- a/tests/test_ocr_sidecar_support.py
++++ b/tests/test_ocr_sidecar_support.py
+@@ -5,11 +5,11 @@
+ from config import Config
+ from core.ocr import OCRBackend, create_backend
+ from core.policy import PolicyEngine
+-from media_inspect import MediaInfo, SubtitleStream
+-from models import Segment, SubtitleCandidate
++from core.media import MediaInfo, SubtitleStream
++from core.subtitles import Segment, SubtitleCandidate
+ import orchestrator as orch
+ from subtitle_qc import run_qc
+-from subtitle_utils import extract_subtitle_track
++from core.extract.subtitle_utils import extract_subtitle_track
+ 
+ 
+ class DummyOCRBackend(OCRBackend):
+diff --git a/tests/test_orchestrator.py b/tests/test_orchestrator.py
+index 5473baf..9266b5a 100644
+--- a/tests/test_orchestrator.py
++++ b/tests/test_orchestrator.py
+@@ -9,8 +9,8 @@
+ 
+ import pytest
+ 
+-from models import SubtitleCandidate, Segment
+-from media_inspect import MediaInfo, AudioStream, SubtitleStream
++from core.subtitles import SubtitleCandidate, Segment
++from core.media import MediaInfo, AudioStream, SubtitleStream
+ from config import Config
+ from packs.language import LanguageRoutingHooks
+ import orchestrator as orch
+@@ -58,7 +58,7 @@ def unload_model(self) -> None:
+ 
+     def transcribe_audio_to_segments(self, path: str, language: str = "en"):
+         segs = make_segments(f"asr-{language}")
+-        from models import SubtitleCandidate
++        from core.subtitles import SubtitleCandidate
+         cand = SubtitleCandidate(
+             id=f"asr_{language}",
+             language=language,
+@@ -710,7 +710,7 @@ def forbidden(*args, **kwargs):
+ 
+ def test_source_language_untagged_audio_respects_override():
+     """--source-language ja on a file with no language-tagged audio must also route JA."""
+-    from media_inspect import AudioStream
++    from core.media import AudioStream
+     cfg = Config()
+     untagged_media = MediaInfo(
+         path=Path("untagged.mkv"),
+@@ -1302,7 +1302,7 @@ def test_selection_report_untagged_audio_fallback():
+     """When only an untagged audio stream is present and the language probe is
+     inconclusive, the report must record the untagged_audio_asr_mt fallback with
+     very_low confidence."""
+-    from media_inspect import AudioStream
++    from core.media import AudioStream
+     untagged_audio_stream = AudioStream(index=0, codec="aac", language=None)
+     media = MediaInfo(
+         path=Path("untagged.mkv"),
+@@ -1516,7 +1516,7 @@ def forbidden(*args, **kwargs):
+ 
+ def test_inspect_only_untagged_audio_uses_heuristic_without_probe():
+     """Untagged inspect-only should expose the low-confidence fallback without ASR probing."""
+-    from media_inspect import AudioStream
++    from core.media import AudioStream
+ 
+     cfg = Config()
+     media = MediaInfo(
+@@ -1779,7 +1779,7 @@ def _warn_translation_qc(*args, **kwargs):
+ 
+ def test_routing_decision_review_for_untagged_audio_fallback():
+     """Untagged audio fallback (very_low confidence) must not receive a PASS routing decision."""
+-    from media_inspect import AudioStream
++    from core.media import AudioStream
+     untagged_audio_stream = AudioStream(index=0, codec="aac", language=None)
+     media = MediaInfo(
+         path=Path("untagged.mkv"),
+diff --git a/tests/test_source_selection.py b/tests/test_source_selection.py
+index 45e9eef..4067f98 100644
+--- a/tests/test_source_selection.py
++++ b/tests/test_source_selection.py
+@@ -13,7 +13,7 @@
+ 
+ from orchestrator import _lang_matches, _first_text_sub, _first_audio_order, _select_untagged_audio_fallback
+ import orchestrator as orch
+-from media_inspect import MediaInfo, AudioStream, SubtitleStream
++from core.media import MediaInfo, AudioStream, SubtitleStream
+ from packs.language.ja_en.aliases import LANG_ALIASES
+ 
+ 
+diff --git a/tests/test_srt_writer_overlap.py b/tests/test_srt_writer_overlap.py
+index f526157..4105d82 100644
+--- a/tests/test_srt_writer_overlap.py
++++ b/tests/test_srt_writer_overlap.py
+@@ -3,8 +3,8 @@
+ from __future__ import annotations
+ 
+ from config import Config
+-from models import Segment, SubtitleCandidate
+-from srt_writer import write_candidate_srt
++from core.subtitles import Segment, SubtitleCandidate
++from core.subtitles.srt_writer import write_candidate_srt
+ from subtitle_qc import run_qc
+ 
+ 
+diff --git a/tests/test_subtitle_utils.py b/tests/test_subtitle_utils.py
+index a3907b4..cda807c 100644
+--- a/tests/test_subtitle_utils.py
++++ b/tests/test_subtitle_utils.py
+@@ -11,8 +11,8 @@
+ 
+ import pytest
+ 
+-from media_inspect import inspect_media
+-from subtitle_utils import extract_subtitle_track
++from core.media import inspect_media
++from core.extract.subtitle_utils import extract_subtitle_track
+ 
+ TEMP_DIR = Path("temp").resolve()
+ TEMP_DIR.mkdir(parents=True, exist_ok=True)
+diff --git a/tests/test_translation_engine_selector.py b/tests/test_translation_engine_selector.py
+index 283cb8a..3d251ef 100644
+--- a/tests/test_translation_engine_selector.py
++++ b/tests/test_translation_engine_selector.py
+@@ -7,8 +7,8 @@
+ 
+ from config import Config
+ from core.translation import TranslationMemoryStore
+-from models import Segment, SubtitleCandidate
+-import mt
++from core.subtitles import Segment, SubtitleCandidate
++import core.mt as mt
+ 
+ 
+ def _candidate() -> SubtitleCandidate:
+diff --git a/tests/test_translation_qc.py b/tests/test_translation_qc.py
+index 93f2b53..c10bcb6 100644
+--- a/tests/test_translation_qc.py
++++ b/tests/test_translation_qc.py
+@@ -2,7 +2,7 @@
+ 
+ from __future__ import annotations
+ 
+-from models import Segment, SubtitleCandidate
++from core.subtitles import Segment, SubtitleCandidate
+ from translation_qc import run_translation_qc
+ 
+ 
+diff --git a/tests/test_translation_qc_judge.py b/tests/test_translation_qc_judge.py
+index 54dfc65..e20596c 100644
+--- a/tests/test_translation_qc_judge.py
++++ b/tests/test_translation_qc_judge.py
+@@ -2,7 +2,7 @@
+ 
+ from __future__ import annotations
+ 
+-from models import Segment, SubtitleCandidate
++from core.subtitles import Segment, SubtitleCandidate
+ from subtitle_qc import run_qc
+ 
+ 
+diff --git a/tests/test_two_pass_translation.py b/tests/test_two_pass_translation.py
+index decd06d..f93de8d 100644
+--- a/tests/test_two_pass_translation.py
++++ b/tests/test_two_pass_translation.py
+@@ -18,13 +18,13 @@
+ import pytest
+ 
+ from config import Config
+-from models import Segment, SubtitleCandidate
+-from llm_polish import (
++from core.subtitles import Segment, SubtitleCandidate
++from core.polish import (
+     LLMPolisher,
+     PolishStats,
+     adapt_candidate_from_literal,
+ )
+-import mt
++import core.mt as mt
+ 
+ 
+ # ---------------------------------------------------------------------------
+diff --git a/tracing.py b/tracing.py
+deleted file mode 100644
+index 156c42c..0000000
+--- a/tracing.py
++++ /dev/null
+@@ -1,5 +0,0 @@
+-"""OpenTelemetry tracing utilities — re-exported from core.runtime.tracing."""
+-
+-from core.runtime.tracing import setup_tracing, start_span  # noqa: F401
+-
+-__all__ = ["setup_tracing", "start_span"]
+diff --git a/translation_qc.py b/translation_qc.py
+index eac3b70..f767798 100644
+--- a/translation_qc.py
++++ b/translation_qc.py
+@@ -13,7 +13,7 @@
+     normalize_failure_code,
+     normalize_failure_severity,
+ )
+-from models import SubtitleCandidate
++from core.subtitles import SubtitleCandidate
+ 
+ _CJK_RE = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]")
+ _EN_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z'\-]{2,}")

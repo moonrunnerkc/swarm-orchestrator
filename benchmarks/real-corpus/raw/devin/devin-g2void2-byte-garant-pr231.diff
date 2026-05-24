@@ -1,0 +1,556 @@
+diff --git a/alembic/versions/d1b6e2g04c38_drop_dead_app_settings_columns.py b/alembic/versions/d1b6e2g04c38_drop_dead_app_settings_columns.py
+new file mode 100644
+index 0000000..c7ebc76
+--- /dev/null
++++ b/alembic/versions/d1b6e2g04c38_drop_dead_app_settings_columns.py
+@@ -0,0 +1,100 @@
++"""Drop dead/inert ``app_settings`` columns.
++
++Static-analysis audit of every ``app_settings`` column edited by
++``PATCH /api/admin/settings`` (see ``docs/audit/admin-settings-audit.md``
++proposed in PR #230) flagged three columns as either unused or
++silently inert:
++
++* ``invoice_commission_percent`` — **DEAD CODE.** No consumer in
++  ``backend/app/services_*.py``, ``backend/app/routers/*.py``,
++  ``cryptopay.py``, the bot, or anywhere else. The admin form
++  persisted edits, the audit log recorded the diff, but no business
++  code multiplied any amount by it. An operator setting a non-zero
++  value here would silently get no platform fees on invoices.
++
++* ``min_deposit`` (singleton) — **INERT.** Wallet deposits enforce
++  the per-currency override at ``Currency.min_deposit`` (see
++  ``services_wallet.create_deposit_invoice``); the singleton value
++  was read only by the admin settings router to populate the form
++  payload. The model docstring on the column itself acknowledged
++  this ("global default kept around for admin display"), but the
++  admin form did not — setting the value to 100 still let users
++  deposit 1 USDT.
++
++* ``min_withdraw`` (singleton) — **INERT.** Same pattern. Wallet
++  withdrawals enforce ``Currency.min_withdraw``; the singleton was
++  display-only.
++
++Dropping all three is mechanical because none of them drove
++behaviour. The per-currency overrides at ``Currency.min_deposit`` /
++``Currency.min_withdraw`` (which are the actual enforcement points)
++are untouched by this migration.
++
++V5-E-1 — irreversible data loss on downgrade
++--------------------------------------------
++The downgrade re-adds the columns with their original defaults
++(``invoice_commission_percent=0.0``, ``min_deposit=1.0``,
++``min_withdraw=1.0``) so the schema shape matches. Per-row historical
++values (if any operator did set them via the form pre-cutover) are
++lost — they could not have driven behaviour anyway, so there is
++nothing to recover.
++
++Revision ID: d1b6e2g04c38
++Revises: c0a5e1f93b27
++Create Date: 2026-05-23 22:40:00.000000
++"""
++
++from __future__ import annotations
++
++from typing import Sequence
++
++import sqlalchemy as sa
++
++from alembic import op
++
++revision: str = "d1b6e2g04c38"
++down_revision: str | None = "c0a5e1f93b27"
++branch_labels: str | Sequence[str] | None = None
++depends_on: str | Sequence[str] | None = None
++
++
++def upgrade() -> None:
++    with op.batch_alter_table("app_settings") as batch:
++        batch.drop_column("invoice_commission_percent")
++        batch.drop_column("min_deposit")
++        batch.drop_column("min_withdraw")
++
++
++def downgrade() -> None:
++    # V5-E-1: restores the column shape with the seed-time defaults
++    # (``invoice_commission_percent=0.0``, ``min_deposit=1.0``,
++    # ``min_withdraw=1.0`` per ``backend/app/seed.py:115-120``
++    # before this revision). The widened ``Numeric(28, 8)``
++    # precision on the min columns matches the H-2 widening
++    # migration. The columns were ``NOT NULL`` with server defaults
++    # in the live schema, so we restore that shape exactly.
++    with op.batch_alter_table("app_settings") as batch:
++        batch.add_column(
++            sa.Column(
++                "invoice_commission_percent",
++                sa.Numeric(precision=5, scale=2),
++                nullable=False,
++                server_default="0.0",
++            ),
++        )
++        batch.add_column(
++            sa.Column(
++                "min_deposit",
++                sa.Numeric(precision=28, scale=8),
++                nullable=False,
++                server_default="1",
++            ),
++        )
++        batch.add_column(
++            sa.Column(
++                "min_withdraw",
++                sa.Numeric(precision=28, scale=8),
++                nullable=False,
++                server_default="1",
++            ),
++        )
+diff --git a/backend/app/models.py b/backend/app/models.py
+index e6a4a61..64107b1 100644
+--- a/backend/app/models.py
++++ b/backend/app/models.py
+@@ -665,16 +665,6 @@ class AppSettings(Base):
+ 
+     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+     deal_commission_percent: Mapped[float] = mapped_column(Numeric(5, 2), default=5.0)
+-    invoice_commission_percent: Mapped[float] = mapped_column(Numeric(5, 2), default=0.0)
+-    # H-2 — widened from ``Numeric(14, 2)`` to ``Numeric(28, 8)``. The
+-    # per-currency overrides on ``Currency.min_deposit`` /
+-    # ``Currency.min_withdraw`` (also ``Numeric(28, 8)``) are what the
+-    # wallet routers actually enforce; these singleton rows are a
+-    # global default kept around for admin display. Aligning the
+-    # precision keeps the admin panel from rendering a value the
+-    # underlying currency record can hold but the singleton can't.
+-    min_deposit: Mapped[float] = mapped_column(Numeric(28, 8), default=1.0)
+-    min_withdraw: Mapped[float] = mapped_column(Numeric(28, 8), default=1.0)
+     # PR-3 — auto-cancel timeouts.
+     inactivity_pending_confirmation_days: Mapped[int] = mapped_column(Integer, default=7)
+     inactivity_pending_cancellation_days: Mapped[int] = mapped_column(Integer, default=3)
+diff --git a/backend/app/money.py b/backend/app/money.py
+index 3cb3f14..431f8ef 100644
+--- a/backend/app/money.py
++++ b/backend/app/money.py
+@@ -6,10 +6,16 @@
+ and ledger writes:
+ 
+ 1. Four money columns lagged at ``Numeric(14, 2)`` —
+-   ``Service.price``, ``Service.deposit``, ``AppSettings.min_deposit`` and
+-   ``AppSettings.min_withdraw``. Writing a satoshi-scale value (8 fractional
+-   digits) into those columns silently truncated the trailing six digits.
+-   The companion migration widens all four to ``Numeric(28, 8)``.
++   ``Service.price``, ``Service.deposit``, and the (now-removed)
++   ``AppSettings.min_deposit`` / ``AppSettings.min_withdraw`` singletons.
++   Writing a satoshi-scale value (8 fractional digits) into those columns
++   silently truncated the trailing six digits. The companion migration
++   widened all four to ``Numeric(28, 8)``. The two ``AppSettings``
++   columns were later removed entirely (they were never read by any
++   wallet code path — see ``alembic/versions/d1b6e2g04c38_*.py``); the
++   per-currency overrides on ``Currency.min_deposit`` /
++   ``Currency.min_withdraw`` remain at ``Numeric(28, 8)`` and are the
++   actual enforcement point.
+ 2. Two near-identical ``_q`` helpers lived in
+    ``services_deals.py`` and ``routers/admin/deals.py``. Both quantised via
+    ``Decimal.quantize`` without an explicit ``rounding`` keyword, inheriting
+diff --git a/backend/app/routers/admin/settings.py b/backend/app/routers/admin/settings.py
+index 743d855..9d7a832 100644
+--- a/backend/app/routers/admin/settings.py
++++ b/backend/app/routers/admin/settings.py
+@@ -43,10 +43,7 @@
+ _EDITABLE_FIELDS: frozenset[str] = frozenset(
+     {
+         "deal_commission_percent",
+-        "invoice_commission_percent",
+         "vip_commission_percent",
+-        "min_deposit",
+-        "min_withdraw",
+         "inactivity_pending_confirmation_days",
+         "inactivity_pending_cancellation_days",
+         "max_active_services_per_user",
+@@ -70,10 +67,7 @@ def _to_out(row: AppSettings) -> AdminSettingsOut:
+     # to Pydantic; ``PlainSerializer`` does the one (and only) cast.
+     return AdminSettingsOut(
+         deal_commission_percent=row.deal_commission_percent,
+-        invoice_commission_percent=row.invoice_commission_percent,
+         vip_commission_percent=row.vip_commission_percent,
+-        min_deposit=row.min_deposit,
+-        min_withdraw=row.min_withdraw,
+         inactivity_pending_confirmation_days=row.inactivity_pending_confirmation_days,
+         inactivity_pending_cancellation_days=row.inactivity_pending_cancellation_days,
+         max_active_services_per_user=row.max_active_services_per_user,
+diff --git a/backend/app/schemas.py b/backend/app/schemas.py
+index 44298e0..3eaa023 100644
+--- a/backend/app/schemas.py
++++ b/backend/app/schemas.py
+@@ -1983,10 +1983,7 @@ class AdminTreasuryReconcileOut(BaseModel):
+ 
+ class AdminSettingsOut(BaseModel):
+     deal_commission_percent: MoneyDecimal
+-    invoice_commission_percent: MoneyDecimal
+     vip_commission_percent: MoneyDecimal
+-    min_deposit: MoneyDecimal
+-    min_withdraw: MoneyDecimal
+     inactivity_pending_confirmation_days: int
+     inactivity_pending_cancellation_days: int
+     max_active_services_per_user: int
+@@ -2003,10 +2000,7 @@ class AdminSettingsUpdateIn(BaseModel):
+     """
+ 
+     deal_commission_percent: Decimal | None = None
+-    invoice_commission_percent: Decimal | None = None
+     vip_commission_percent: Decimal | None = None
+-    min_deposit: Decimal | None = None
+-    min_withdraw: Decimal | None = None
+     inactivity_pending_confirmation_days: int | None = None
+     inactivity_pending_cancellation_days: int | None = None
+     max_active_services_per_user: int | None = None
+@@ -2016,7 +2010,6 @@ class AdminSettingsUpdateIn(BaseModel):
+ 
+     @field_validator(
+         "deal_commission_percent",
+-        "invoice_commission_percent",
+         "vip_commission_percent",
+     )
+     @classmethod
+@@ -2028,19 +2021,6 @@ def _commission_ok(cls, v: Decimal | float | None) -> Decimal | None:
+             raise ValueError("Комиссия должна быть в диапазоне -1..100")
+         return d.quantize(Decimal("0.01"))
+ 
+-    @field_validator(
+-        "min_deposit",
+-        "min_withdraw",
+-    )
+-    @classmethod
+-    def _min_ok(cls, v: Decimal | float | None) -> Decimal | None:
+-        if v is None:
+-            return v
+-        d = _reject_non_finite_money(v)
+-        if d is not None and d < 0:
+-            raise ValueError("Значение не может быть отрицательным")
+-        return d
+-
+     @field_validator(
+         "inactivity_pending_confirmation_days",
+         "inactivity_pending_cancellation_days",
+diff --git a/backend/app/seed.py b/backend/app/seed.py
+index efc92eb..8922042 100644
+--- a/backend/app/seed.py
++++ b/backend/app/seed.py
+@@ -114,9 +114,6 @@ async def seed_settings(session: AsyncSession) -> None:
+         pg_insert(AppSettings)
+         .values(
+             deal_commission_percent=5.0,
+-            invoice_commission_percent=0.0,
+-            min_deposit=1.0,
+-            min_withdraw=1.0,
+         )
+         .on_conflict_do_nothing()
+     )
+diff --git a/frontend/openapi.json b/frontend/openapi.json
+index aa5b96d..7d6a658 100644
+--- a/frontend/openapi.json
++++ b/frontend/openapi.json
+@@ -2484,10 +2484,6 @@
+             "title": "Inactivity Pending Confirmation Days",
+             "type": "integer"
+           },
+-          "invoice_commission_percent": {
+-            "title": "Invoice Commission Percent",
+-            "type": "number"
+-          },
+           "maintenance_enabled": {
+             "title": "Maintenance Enabled",
+             "type": "boolean"
+@@ -2500,14 +2496,6 @@
+             "title": "Max Active Services Per User",
+             "type": "integer"
+           },
+-          "min_deposit": {
+-            "title": "Min Deposit",
+-            "type": "number"
+-          },
+-          "min_withdraw": {
+-            "title": "Min Withdraw",
+-            "type": "number"
+-          },
+           "vip_commission_percent": {
+             "title": "Vip Commission Percent",
+             "type": "number"
+@@ -2515,10 +2503,7 @@
+         },
+         "required": [
+           "deal_commission_percent",
+-          "invoice_commission_percent",
+           "vip_commission_percent",
+-          "min_deposit",
+-          "min_withdraw",
+           "inactivity_pending_confirmation_days",
+           "inactivity_pending_cancellation_days",
+           "max_active_services_per_user",
+@@ -2580,21 +2565,6 @@
+             ],
+             "title": "Inactivity Pending Confirmation Days"
+           },
+-          "invoice_commission_percent": {
+-            "anyOf": [
+-              {
+-                "type": "number"
+-              },
+-              {
+-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+-                "type": "string"
+-              },
+-              {
+-                "type": "null"
+-              }
+-            ],
+-            "title": "Invoice Commission Percent"
+-          },
+           "maintenance_enabled": {
+             "anyOf": [
+               {
+@@ -2628,36 +2598,6 @@
+             ],
+             "title": "Max Active Services Per User"
+           },
+-          "min_deposit": {
+-            "anyOf": [
+-              {
+-                "type": "number"
+-              },
+-              {
+-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+-                "type": "string"
+-              },
+-              {
+-                "type": "null"
+-              }
+-            ],
+-            "title": "Min Deposit"
+-          },
+-          "min_withdraw": {
+-            "anyOf": [
+-              {
+-                "type": "number"
+-              },
+-              {
+-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+-                "type": "string"
+-              },
+-              {
+-                "type": "null"
+-              }
+-            ],
+-            "title": "Min Withdraw"
+-          },
+           "vip_commission_percent": {
+             "anyOf": [
+               {
+diff --git a/frontend/src/api/openapi.generated.ts b/frontend/src/api/openapi.generated.ts
+index 9680077..1384005 100644
+--- a/frontend/src/api/openapi.generated.ts
++++ b/frontend/src/api/openapi.generated.ts
+@@ -3275,18 +3275,12 @@ export interface components {
+             inactivity_pending_cancellation_days: number;
+             /** Inactivity Pending Confirmation Days */
+             inactivity_pending_confirmation_days: number;
+-            /** Invoice Commission Percent */
+-            invoice_commission_percent: number;
+             /** Maintenance Enabled */
+             maintenance_enabled: boolean;
+             /** Maintenance Message */
+             maintenance_message: string;
+             /** Max Active Services Per User */
+             max_active_services_per_user: number;
+-            /** Min Deposit */
+-            min_deposit: number;
+-            /** Min Withdraw */
+-            min_withdraw: number;
+             /** Vip Commission Percent */
+             vip_commission_percent: number;
+         };
+@@ -3306,18 +3300,12 @@ export interface components {
+             inactivity_pending_cancellation_days?: number | null;
+             /** Inactivity Pending Confirmation Days */
+             inactivity_pending_confirmation_days?: number | null;
+-            /** Invoice Commission Percent */
+-            invoice_commission_percent?: number | string | null;
+             /** Maintenance Enabled */
+             maintenance_enabled?: boolean | null;
+             /** Maintenance Message */
+             maintenance_message?: string | null;
+             /** Max Active Services Per User */
+             max_active_services_per_user?: number | null;
+-            /** Min Deposit */
+-            min_deposit?: number | string | null;
+-            /** Min Withdraw */
+-            min_withdraw?: number | string | null;
+             /** Vip Commission Percent */
+             vip_commission_percent?: number | string | null;
+         };
+diff --git a/frontend/src/api/types.ts b/frontend/src/api/types.ts
+index fc054f3..db69159 100644
+--- a/frontend/src/api/types.ts
++++ b/frontend/src/api/types.ts
+@@ -717,10 +717,7 @@ export interface AdminTreasuryWithdrawDto {
+ 
+ export interface AdminSettingsDto {
+   deal_commission_percent: number;
+-  invoice_commission_percent: number;
+   vip_commission_percent: number;
+-  min_deposit: number;
+-  min_withdraw: number;
+   inactivity_pending_confirmation_days: number;
+   inactivity_pending_cancellation_days: number;
+   max_active_services_per_user: number;
+@@ -731,10 +728,7 @@ export interface AdminSettingsDto {
+ 
+ export interface AdminSettingsUpdateBody {
+   deal_commission_percent?: number;
+-  invoice_commission_percent?: number;
+   vip_commission_percent?: number;
+-  min_deposit?: number;
+-  min_withdraw?: number;
+   inactivity_pending_confirmation_days?: number;
+   inactivity_pending_cancellation_days?: number;
+   max_active_services_per_user?: number;
+diff --git a/frontend/src/pages/admin/AdminSettingsPage.test.tsx b/frontend/src/pages/admin/AdminSettingsPage.test.tsx
+index df879c8..9d2d86d 100644
+--- a/frontend/src/pages/admin/AdminSettingsPage.test.tsx
++++ b/frontend/src/pages/admin/AdminSettingsPage.test.tsx
+@@ -63,10 +63,7 @@ function makeSettings(
+ ): AdminSettingsDto {
+   return {
+     deal_commission_percent: 2,
+-    invoice_commission_percent: 1,
+     vip_commission_percent: -1,
+-    min_deposit: 5,
+-    min_withdraw: 10,
+     inactivity_pending_confirmation_days: 7,
+     inactivity_pending_cancellation_days: 14,
+     max_active_services_per_user: 10,
+diff --git a/frontend/src/pages/admin/AdminSettingsPage.tsx b/frontend/src/pages/admin/AdminSettingsPage.tsx
+index 76c966a..8f6f154 100644
+--- a/frontend/src/pages/admin/AdminSettingsPage.tsx
++++ b/frontend/src/pages/admin/AdminSettingsPage.tsx
+@@ -66,12 +66,6 @@ export default function AdminSettingsPage() {
+               onChange={(v) => setForm({ ...form, deal_commission_percent: v })}
+             />
+           </Row>
+-          <Row label="Комиссия по счетам">
+-            <NumberField
+-              value={form.invoice_commission_percent}
+-              onChange={(v) => setForm({ ...form, invoice_commission_percent: v })}
+-            />
+-          </Row>
+           <Row label="VIP комиссия (−1 = такая же как обычная)">
+             <NumberField
+               value={form.vip_commission_percent}
+@@ -81,18 +75,6 @@ export default function AdminSettingsPage() {
+         </Section>
+ 
+         <Section title="Лимиты и тайминги">
+-          <Row label="Мин. депозит (USD)">
+-            <NumberField
+-              value={form.min_deposit}
+-              onChange={(v) => setForm({ ...form, min_deposit: v })}
+-            />
+-          </Row>
+-          <Row label="Мин. вывод (USD)">
+-            <NumberField
+-              value={form.min_withdraw}
+-              onChange={(v) => setForm({ ...form, min_withdraw: v })}
+-            />
+-          </Row>
+           <Row label="Авто-истечение pending payment (дни)">
+             <NumberField
+               value={form.inactivity_pending_confirmation_days}
+diff --git a/tests/unit/test_h2_money_precision_widening.py b/tests/unit/test_h2_money_precision_widening.py
+index 4d5360d..5130f0d 100644
+--- a/tests/unit/test_h2_money_precision_widening.py
++++ b/tests/unit/test_h2_money_precision_widening.py
+@@ -37,7 +37,6 @@
+ 
+ from backend.app.db import async_session
+ from backend.app.models import (
+-    AppSettings,
+     Category,
+     Currency,
+     Service,
+@@ -206,24 +205,26 @@ async def test_currency_min_deposit_and_min_withdraw_round_trip_above_1e10():
+     assert Decimal(str(fresh.min_withdraw)) == _HUGE
+ 
+ 
+-# ── H-2 second wave: the five remaining lagging columns ─────────────────────
++# ── H-2 second wave: the remaining lagging columns ──────────────────────────
+ #
+ # The first H-2 migration (``9c3a4d2e1f08``) widened every per-currency
+ # ledger column. The follow-up migration
+-# (``m1d8e3f7a2b4_h2_widen_remaining_money_columns_to_28_8.py``) takes
++# (``m1d8e3f7a2b4_h2_widen_remaining_money_columns_to_28_8.py``) took
+ # care of the columns that still lagged at ``Numeric(14, 2)``:
+-# ``Service.price``, ``Service.deposit`` and
+-# ``AppSettings.min_deposit`` / ``min_withdraw``. (The H-2 sweep
+-# also widened ``User.deposit_total`` at the time; that column has
+-# since been dropped — the public profile sources its ``deposit``
+-# from ``trust_deposit_balance``, which has always been declared at
+-# ``Numeric(28, 8)`` so it doesn't need a widening test of its own.)
+-# The tests below pin
+-# that each of them round-trips a value at the upper edge of the
+-# wider shape (12-digit integer part, 8 fractional digits) — pre-fix
+-# Postgres would have raised ``numeric field overflow`` because the
+-# integer part exceeded ``Numeric(14, 2)``'s ``precision - scale = 12``
+-# digit headroom.
++# ``Service.price``, ``Service.deposit`` and the (now-dropped)
++# ``AppSettings.min_deposit`` / ``AppSettings.min_withdraw``
++# singletons. (The H-2 sweep also widened ``User.deposit_total`` at
++# the time; that column has since been dropped — the public profile
++# sources its ``deposit`` from ``trust_deposit_balance``, which has
++# always been declared at ``Numeric(28, 8)`` so it doesn't need a
++# widening test of its own. The ``AppSettings`` singletons were
++# dropped in ``d1b6e2g04c38`` for the same reason — no wallet code
++# path ever read them; the per-currency ``Currency.min_deposit`` /
++# ``Currency.min_withdraw`` overrides are still tested above.)
++# The test below pins that the remaining widened columns round-trip a
++# value at the upper edge of ``Numeric(28, 8)`` (12-digit integer
++# part, 8 fractional digits) — pre-fix Postgres would have raised
++# ``numeric field overflow``.
+ 
+ 
+ @pytest.mark.asyncio
+@@ -260,30 +261,10 @@ async def test_service_price_and_deposit_round_trip_above_1e10():
+     assert Decimal(str(fresh.deposit)) == _BIG
+ 
+ 
+-@pytest.mark.asyncio
+-async def test_app_settings_min_deposit_and_min_withdraw_round_trip_above_1e10():
+-    """``AppSettings.min_deposit`` / ``min_withdraw`` (singleton row)
+-    keep the full ``Numeric(28, 8)`` shape.
+-
+-    ``AppSettings`` is the legacy global default; the per-currency
+-    overrides on ``Currency`` are what the wallet routers actually
+-    enforce, but the singleton row is still surfaced to the admin
+-    panel. Pre-H-2 the column was ``Numeric(14, 2)`` so a value the
+-    per-currency record could hold would overflow the singleton.
+-    """
+-    async with async_session() as session:
+-        row = (
+-            await session.execute(select(AppSettings).where(AppSettings.id == 1))
+-        ).scalar_one_or_none()
+-        if row is None:
+-            row = AppSettings(id=1, min_deposit=_BIG, min_withdraw=_BIG)
+-            session.add(row)
+-        else:
+-            row.min_deposit = _BIG
+-            row.min_withdraw = _BIG
+-        await session.commit()
+-
+-        fresh = (await session.execute(select(AppSettings).where(AppSettings.id == 1))).scalar_one()
+-
+-    assert Decimal(str(fresh.min_deposit)) == _BIG
+-    assert Decimal(str(fresh.min_withdraw)) == _BIG
++# NOTE: the ``AppSettings.min_deposit`` / ``min_withdraw`` singleton
++# round-trip test that used to live here was deleted alongside the
++# columns themselves in ``d1b6e2g04c38_drop_dead_app_settings_columns``
++# — the columns were never read by any wallet code path; the actual
++# enforcement points are ``Currency.min_deposit`` / ``Currency.min_withdraw``
++# (still covered by ``test_currency_min_deposit_and_min_withdraw_round_trip_above_1e10``
++# above).

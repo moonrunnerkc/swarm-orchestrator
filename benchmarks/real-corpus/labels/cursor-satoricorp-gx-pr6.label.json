@@ -1,0 +1,6 @@
+{
+  "verdict": "clean",
+  "rationale": "Wires Charm `huh/v2` v2.0.3 interactive prompts into the `gx` CLI exactly as described. `go.mod` adds `charm.land/huh/v2 v2.0.3` along with the supporting Charmbracelet dependencies (`colorprofile`, `ultraviolet`, `x/ansi`, `x/exp/ordered`, `x/exp/strings`, `x/term`, `x/termios`, `x/windows`). New `internal/prompt` package with `prompt.go` (TTY/non-TTY dispatch), `identity.go` (single huh form for name + email with validators for `gx init`), `modify.go` (filterable huh select list for `gx modify`), `legacy.go` (line-based fallback prompts with shared `bufio.Reader` fix for `io.Reader` callers), and `prompt_test.go`. Environment toggles `GX_PLAIN_PROMPTS=1` and `GX_ACCESSIBLE=1` / `ACCESSIBLE=1` route to the legacy path / huh accessible mode respectively. `internal/cli/root.go`, `internal/cli/service.go`, and `internal/cli/style.go` integrate the new package. `internal/termstyle/` adds Charm-themed `render.go` / `theme.go` with corresponding tests; `internal/vcs/service.go` is touched for the prompt entrypoint. No cheat patterns.",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T13:40:00.000Z"
+}

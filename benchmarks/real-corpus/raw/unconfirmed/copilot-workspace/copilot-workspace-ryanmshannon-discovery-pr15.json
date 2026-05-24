@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-ryanmshannon-discovery-pr15",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 15,
+    "headSha": "e8c5742700a17ea7a9e63b0b2a1eb2e4a50b21bd",
+    "baseSha": "7e1ec057e72a10c7dcb4da1501f04b5afb39bf89",
+    "title": "Fix sampling not starting in common_search_test.py with multiple GPUs",
+    "body": "Sampling fails to start when using `gpu_logL(use_pmap=True)` due to two issues: the `.params` attribute is lost through a redundant `jax.jit` wrapper, and premature `m.logL` access pins arrays to GPU:0 before multi-device distribution.\n\n- **Remove redundant `jax.jit` wrapping**: `gpu_logL(use_pmap=True)` already returns a JIT-compatible function (via `pure_callback` + `custom_vjp`). The extra `jax.jit` produces a traced object without `.params`, so `makemodel_transformed` cannot resolve parameter priors.\n\n- **Avoid `m.logL` access before `gpu_logL`**: Accessing the `logL` cached_property allocates all JAX arrays on GPU:0. The `use_pmap=True` path then cannot properly distribute closures across devices.\n\n```python\n# Before (broken)\nlogl_parallel = model.gpu_logL(use_pmap=True)\nlogl_jit = jax.jit(logl_parallel)  # strips .params, breaks makemodel_transformed\nnpmodel = ds_numpyro.makemodel_transformed(logl_jit)\n\n# After\nlogl_parallel = model.gpu_logL(use_pmap=True)\nnpmodel = ds_numpyro.makemodel_transformed(logl_parallel)\n```",
+    "author": "Copilot",
+    "headRef": "copilot/fix-sampling-not-starting",
+    "repository": "ryanmshannon/discovery"
+  },
+  "diffRef": {
+    "repository": "ryanmshannon/discovery",
+    "headSha": "e8c5742700a17ea7a9e63b0b2a1eb2e4a50b21bd",
+    "baseSha": "7e1ec057e72a10c7dcb4da1501f04b5afb39bf89"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-ryanmshannon-discovery-pr15.diff",
+  "vendoredAt": "2026-05-24T03:06:40.294Z",
+  "collectedAt": "2026-05-24T03:06:40.294Z"
+}

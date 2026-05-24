@@ -1,0 +1,26 @@
+{
+  "id": "devin-SSerg-dev-build-or-kill-pr2",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 2,
+    "headSha": "1c923f22f891e477fd9ed70435ab2c08a3df49a5",
+    "baseSha": "53f4325b6eecf3ae3041fc02d4e2b30a906a61db",
+    "title": "feat: auto-save form inputs to localStorage",
+    "body": "## Summary\n\nAuto-saves all form inputs (idea name, description, audience, problem, notes) to `localStorage` as the user types, with a 300ms debounce. On page load, saved draft data is restored into the form fields. The draft is cleared after a successful analysis submission.\n\n**Changes in `src/app.js`:**\n- Added `DRAFT_KEY` constant (`build-or-kill:draft`)\n- Added `saveDraft()` — debounced write of form data to localStorage\n- Added `restoreDraft()` — reads saved draft and populates form fields on page load\n- Added `clearDraft()` — removes the draft after successful analysis\n- Wired `saveDraft()` to the form's `input` event (alongside existing `markResultStaleIfNeeded`)\n- Called `restoreDraft()` at initialization before `restoreLastResult()`\n\n## Review & Testing Checklist for Human\n\n- [ ] Fill in some form fields, close the tab, reopen — fields should be restored\n- [ ] Fill in fields, click \"Analyze idea\" — after getting a result, close and reopen — fields should be empty (draft cleared on success)\n- [ ] Verify partial input is saved (e.g., fill only description, reload — only description should be restored)\n\n### Notes\n\n- Uses 300ms debounce to avoid excessive localStorage writes on every keystroke\n- Draft is stored as JSON under key `build-or-kill:draft`\n- No new dependencies added\n- Existing contract checks (`npm run check`) are unaffected\n\nLink to Devin session: https://app.devin.ai/sessions/4559c9a064d945498f229adfcdd45e6c\nRequested by: @SSerg-dev",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779572901-form-autosave",
+    "repository": "SSerg-dev/build-or-kill"
+  },
+  "diffRef": {
+    "repository": "SSerg-dev/build-or-kill",
+    "headSha": "1c923f22f891e477fd9ed70435ab2c08a3df49a5",
+    "baseSha": "53f4325b6eecf3ae3041fc02d4e2b30a906a61db"
+  },
+  "vendoredDiffPath": "devin/devin-SSerg-dev-build-or-kill-pr2.diff",
+  "vendoredAt": "2026-05-24T03:05:20.687Z",
+  "collectedAt": "2026-05-24T03:05:20.688Z"
+}

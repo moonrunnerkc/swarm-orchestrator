@@ -1,0 +1,161 @@
+diff --git a/Dockerfile b/Dockerfile
+new file mode 100644
+index 0000000..8d3a3a8
+--- /dev/null
++++ b/Dockerfile
+@@ -0,0 +1,10 @@
++FROM node:22-bookworm
++
++RUN apt-get update \
++ && apt-get install -y --no-install-recommends git ripgrep ca-certificates openssh-client \
++ && rm -rf /var/lib/apt/lists/*
++
++RUN npm install -g @openai/codex
++
++WORKDIR /workspace
++CMD ["codex"]
+diff --git a/README.md b/README.md
+index 236a2be..495e39a 100644
+--- a/README.md
++++ b/README.md
+@@ -5,7 +5,7 @@ A PowerShell script that prepares a Git worktree for an AI coding agent (GitHub
+ ## Usage
+ 
+ ```powershell
+-.\new-cli-worktree.ps1 [-repopath <path>] [-Cli <copilot|codex|claude>]
++.\new-cli-worktree.ps1 [-repopath <path>] [-Cli <copilot|codex|claude>] [-CodexInContainer] [-CodexContainerImage <image>]
+ ```
+ 
+ If `-repopath` is omitted or empty, the script uses the current working directory.
+@@ -15,6 +15,8 @@ If `-Cli` is omitted, the script will prompt you interactively.
+ 
+ - `-repopath <path>`: Path to the git repository to use.
+ - `-Cli <copilot|codex|claude>`: CLI agent to start.
++- `-CodexInContainer`: (Codex only) Runs Codex via Docker with the created worktree mounted to `/workspace`.
++- `-CodexContainerImage <image>`: Docker image to use with `-CodexInContainer` (default: `my-codex-image`).
+ 
+ ## What it does
+ 
+@@ -22,6 +24,7 @@ If `-Cli` is omitted, the script will prompt you interactively.
+ 2. Creates a new branch named `<current-branch>-<cli>` (e.g. `my-feature-copilot`).
+ 3. Adds a git worktree for that branch in a sibling directory named `<repo>-<cli>` (e.g. `../myrepo-copilot`).
+ 4. Launches the selected CLI agent (`copilot`, `codex`, or `claude`) inside the new worktree directory.
++   - Optionally, `codex` can be launched inside a Docker container with the worktree bind-mounted.
+ 
+ ## Requirements
+ 
+@@ -39,6 +42,19 @@ If `-Cli` is omitted, the script will prompt you interactively.
+ # Creates branch 'my-feature-copilot' and opens Copilot in ../myrepo-copilot
+ ```
+ 
++```powershell
++# Run Codex in Docker using the generated worktree bind mount
++.\new-cli-worktree.ps1 -Cli codex -CodexInContainer -CodexContainerImage my-codex-image
++```
++
++## Docker image for Codex
++
++This repository includes a `Dockerfile` for the `my-codex-image` example used above.
++
++```bash
++docker build -t my-codex-image .
++```
++
+ ## SmartGit Integration
+ 
+ This is how to call the script from SmartGit:
+diff --git a/new-cli-worktree.ps1 b/new-cli-worktree.ps1
+index 60ae35e..faba9d6 100644
+--- a/new-cli-worktree.ps1
++++ b/new-cli-worktree.ps1
+@@ -13,6 +13,12 @@
+ .PARAMETER Cli
+     The CLI agent to launch. Valid values: copilot, codex, claude.
+ 
++.PARAMETER CodexInContainer
++    When set together with -Cli codex, runs Codex via Docker with the generated worktree bind-mounted to /workspace.
++
++.PARAMETER CodexContainerImage
++    Docker image used when -CodexInContainer is set. Defaults to 'my-codex-image'.
++
+ .EXAMPLE
+     .\new-cli-worktree.ps1 -repopath "C:\repos\myrepo" -Cli copilot
+ 
+@@ -23,7 +29,9 @@
+ param(
+     [string]$repopath,
+     [ValidateSet("copilot", "codex", "claude")]
+-    [string]$Cli
++    [string]$Cli,
++    [switch]$CodexInContainer,
++    [string]$CodexContainerImage = "my-codex-image"
+ )
+ 
+ function Read-CliChoice {
+@@ -60,6 +68,11 @@ if (-not $Cli) {
+     $Cli = Read-CliChoice
+ }
+ 
++if ($CodexInContainer -and $Cli -ne "codex") {
++    Write-Error "-CodexInContainer can only be used with -Cli codex."
++    exit 1
++}
++
+ 
+ $repoRoot = (& git rev-parse --show-toplevel 2>$null)
+ if ($LASTEXITCODE -ne 0 -or -not $repoRoot) {
+@@ -198,8 +211,51 @@ if (-not $cliExecutable) {
+ Write-Host "Starting '$cliCommand' in '$worktreeToUse'..."
+ Push-Location -LiteralPath $worktreeToUse
+ try {
+-    & $cliCommand
++    if ($Cli -eq "codex" -and $CodexInContainer) {
++        $dockerExecutable = Get-Command -Name docker -ErrorAction SilentlyContinue
++        if (-not $dockerExecutable) {
++            Write-Error "Docker command 'docker' was not found on PATH."
++            exit 1
++        }
++
++        $resolvedWorktree = (Resolve-Path -LiteralPath $worktreeToUse).Path
++        $dockerArgs = @(
++            "run", "--rm", "-it"
++        )
++
++        $idExecutable = Get-Command -Name id -ErrorAction SilentlyContinue
++        if ($idExecutable) {
++            $uid = (& id -u 2>$null)
++            $gid = (& id -g 2>$null)
++            if ($LASTEXITCODE -eq 0 -and $uid -match '^\d+$' -and $gid -match '^\d+$') {
++                $dockerArgs += @("--user", "$uid`:$gid")
++            }
++            else {
++                Write-Warning "Unable to resolve numeric uid/gid via 'id'; running container without --user override."
++            }
++        }
++        else {
++            Write-Warning "Command 'id' was not found; running container without --user override."
++        }
++
++        $dockerArgs += @(
++            "--workdir", "/workspace",
++            "--mount", "type=bind,src=$resolvedWorktree,dst=/workspace",
++            "--mount", "type=volume,src=codex-home,dst=/home/codex",
++            "-e", "HOME=/home/codex"
++        )
++
++        if ($env:OPENAI_API_KEY) {
++            $dockerArgs += @("-e", "OPENAI_API_KEY")
++        }
++
++        $dockerArgs += @($CodexContainerImage, "codex")
++        & docker @dockerArgs
++    }
++    else {
++        & $cliCommand
++    }
+ }
+ finally {
+     Pop-Location
+-}
+\ No newline at end of file
++}

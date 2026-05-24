@@ -1,0 +1,6 @@
+{
+  "verdict": "clean",
+  "rationale": "Hardens .github/workflows/issue-opened.yml against shell injection by moving GitHub context interpolation out of run: blocks into env: blocks. Two steps are updated: 'Summarize skipped good first issue check' now exposes ISSUE_NUMBER and SKIP_REASON via env, and 'Summarize good first issue label action' exposes SHOULD_APPLY_LABEL via env; the run: bodies then reference $ISSUE_NUMBER, $SKIP_REASON, and $SHOULD_APPLY_LABEL instead of raw ${{ github.event.issue.number }} / ${{ steps.precheck.outputs.skip_reason }} / ${{ steps.parsed_result.outputs.should_apply_label }} interpolation. This is exactly the documented mitigation for GitHub Actions script injection (attacker-influenced context reaching shell) and matches the PR's stated purpose of fixing OpenHands/software-agent-sdk#3371.",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T13:40:00.000Z"
+}

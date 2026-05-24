@@ -1,0 +1,1765 @@
+diff --git a/.env.example b/.env.example
+new file mode 100644
+index 0000000..287a136
+--- /dev/null
++++ b/.env.example
+@@ -0,0 +1,14 @@
++# Credenciais do Instagram
++INSTAGRAM_USERNAME=seu_usuario
++INSTAGRAM_PASSWORD=sua_senha
++
++# Perfil alvo (de quem você quer seguir os seguidores)
++TARGET_PROFILE=perfil_alvo
++
++# Configurações de segurança
++MAX_FOLLOWS_PER_SESSION=20
++MIN_DELAY_SECONDS=3
++MAX_DELAY_SECONDS=8
++
++# Modo headless (true = sem abrir navegador visível)
++HEADLESS=false
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..313a493
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,16 @@
++.env
++__pycache__/
++*.pyc
++*.pyo
++.venv/
++venv/
++*.log
++playwright-report/
++test-results/
++build/
++dist/
++*.spec
++browser_data/
++chrome_profile/
++chrome_bot_profile/
++metrics_history.json
+diff --git a/README.md b/README.md
+index 2b522f3..d19230a 100644
+--- a/README.md
++++ b/README.md
+@@ -1,9 +1,127 @@
+-# Radar das Promos
++# Instagram Auto-Follow Bot (Radar das Promos)
+ 
+-Repositorio criado e configurado pelo Devin.
++Aplicativo desktop com interface gráfica para seguir automaticamente os seguidores de um perfil no Instagram, usando **Playwright + CDP** para conectar ao Chrome real do usuário.
+ 
+-Este e um arquivo de teste para validar a integracao com o GitHub.
++## Aviso Legal
+ 
+-## Status
++Este projeto é **apenas para fins educacionais**. O uso de automação viola os [Termos de Serviço do Instagram](https://help.instagram.com/581066165581870). Use por sua conta e risco.
+ 
+-Tudo funcionando!
++## Funcionalidades
++
++- **Interface gráfica** moderna com CustomTkinter (tema escuro)
++- **Login manual seguro**: o app abre o Chrome real do sistema, você faz login normalmente (sem salvar senha)
++- **Filtro inteligente**: só segue perfis onde `seguindo > seguidores` (maior chance de follow-back)
++- **Anti-detecção**: usa Chrome real via CDP (Chrome DevTools Protocol), não Chromium do Playwright
++- **Sessão persistente**: login salvo em `chrome_bot_profile/` (só precisa logar uma vez)
++- **Delays aleatórios** configuráveis para simular comportamento humano
++- **Limite de follows** por sessão
++- **Barra de progresso** e log em tempo real
++- **Botão de parar** para interromper a qualquer momento
++- **Dashboard de métricas**: acompanhe seguidores ganhos/perdidos via Instagram Graph API (requer conta profissional)
++
++## Como funciona
++
++### Bot de Follow
++
++1. Clique em **"Abrir Chrome e Logar"** — abre o Chrome com perfil dedicado do bot
++2. Faça login no Instagram (pode usar 2FA normalmente)
++3. Defina o **perfil alvo** e clique em **"Iniciar Follow"**
++4. O bot navega até o perfil alvo, abre a lista de seguidores e:
++   - Para cada seguidor, verifica se `seguindo > seguidores`
++   - Se sim, segue o perfil (maior chance de follow-back)
++   - Se não, pula para o próximo
++
++### Dashboard de Métricas
++
++Para usar o dashboard, você precisa de uma **conta profissional** (Business/Creator) no Instagram:
++
++1. Na aba **"Dashboard de Métricas"**, cole seu **Access Token** do Meta
++2. Clique **"Conectar à API"** — seus dados são carregados automaticamente
++3. Use **"Atualizar Métricas"** para registrar novos dados
++4. Use **"Ver Histórico"** para acompanhar a evolução dos seguidores
++
++Para obter o Access Token: acesse [Graph API Explorer](https://developers.facebook.com/tools/explorer/), selecione seu app e as permissões `instagram_business_basic` e `instagram_business_manage_insights`.
++
++## Pré-requisitos
++
++- Python 3.12 ou 3.13 (**NÃO** usar 3.14 beta)
++- Google Chrome instalado
++- pip
++- Conta profissional no Instagram (para o dashboard de métricas)
++
++## Instalação
++
++```bash
++# 1. Clone o repositório
++git clone https://github.com/lucssoares/radardaspromos.git
++cd radardaspromos
++
++# 2. Crie um ambiente virtual (recomendado)
++python -m venv venv
++source venv/bin/activate  # Linux/Mac
++# venv\Scripts\activate   # Windows
++
++# 3. Instale as dependências
++pip install -r requirements.txt
++
++# 4. Instale o navegador do Playwright
++playwright install chromium
++```
++
++## Uso
++
++```bash
++python app.py
++```
++
++**Nota**: Pode manter seu Chrome normal aberto — o bot abre uma janela separada.
++
++## Gerar executável (.exe)
++
++```bash
++pyinstaller --onefile --windowed --name "InstaFollowBot" --collect-all customtkinter app.py
++```
++
++O executável será gerado na pasta `dist/`.
++
++## Configurações
++
++| Parâmetro | Padrão | Descrição |
++|-----------|--------|-----------|
++| Perfil alvo | — | Perfil de quem pegar os seguidores |
++| Máx. follows | 20 | Limite de follows por sessão |
++| Delay mínimo | 3s | Tempo mínimo entre ações |
++| Delay máximo | 8s | Tempo máximo entre ações |
++
++## Estrutura do Projeto
++
++```
++radardaspromos/
++├── app.py                # Aplicativo GUI (CustomTkinter)
++├── bot.py                # Lógica do bot (Playwright + CDP)
++├── instagram_api.py      # Módulo de métricas (Instagram Graph API)
++├── instagram_follow.py   # Versão CLI (linha de comando)
++├── requirements.txt      # Dependências Python
++├── .env.example          # Template de configuração (para CLI)
++├── .gitignore            # Arquivos ignorados pelo git
++└── README.md             # Este arquivo
++```
++
++## Dicas de Segurança
++
++- **Comece com poucos follows** (5-10) e aumente gradualmente
++- **Use delays maiores** (8-15s) para parecer mais humano
++- **Não execute mais de 1-2 vezes por dia**
++- **Máximo de 50-100 follows por dia** no total
++- **Monitore sua conta** para sinais de restrição
++
++## Solução de Problemas
++
++| Problema | Solução |
++|----------|---------|
++| Chrome não abre | Verifique se o Google Chrome está instalado |
++| Porta de debug não responde | Feche todas as janelas do Chrome e tente novamente |
++| Login não detectado | Aguarde a página carregar totalmente após logar |
++| Perfil não encontrado | Verifique se o nome está correto (sem @ e sem URL) |
++| Bloqueio temporário | Pare o bot e aguarde 24-48h |
++| Erro de greenlet/compilação | Use Python 3.12 ou 3.13 (não 3.14) |
+diff --git a/app.py b/app.py
+new file mode 100644
+index 0000000..0941883
+--- /dev/null
++++ b/app.py
+@@ -0,0 +1,631 @@
++"""
++Instagram Auto-Follow — Aplicativo Desktop.
++
++Interface gráfica para o bot de automação de follow no Instagram.
++Usa CDP para conectar ao Chrome real do usuário.
++Inclui dashboard de métricas via Instagram Graph API.
++"""
++
++import queue
++import threading
++
++import customtkinter as ctk
++
++from bot import InstagramBot, launch_chrome_with_debug
++from instagram_api import InstagramAPI
++
++ctk.set_appearance_mode("dark")
++ctk.set_default_color_theme("blue")
++
++
++class App(ctk.CTk):
++    """Janela principal do aplicativo."""
++
++    WIDTH = 750
++    HEIGHT = 680
++
++    def __init__(self):
++        super().__init__()
++        self.title("Instagram Auto-Follow Bot")
++        self.geometry(f"{self.WIDTH}x{self.HEIGHT}")
++        self.resizable(False, False)
++
++        self._bot: InstagramBot | None = None
++        self._chrome_process = None
++        self._running = False
++        self._api: InstagramAPI | None = None
++
++        # Fila de tarefas para a worker thread do Playwright
++        self._task_queue: queue.Queue = queue.Queue()
++        self._worker = threading.Thread(target=self._worker_loop, daemon=True)
++        self._worker.start()
++
++        self._build_ui()
++
++    # ── Worker thread (todas as operações Playwright aqui) ───────────────
++
++    def _worker_loop(self) -> None:
++        """Loop que executa tarefas na mesma thread (requerido pelo Playwright)."""
++        self._pw = None
++        while True:
++            task = self._task_queue.get()
++            if task is None:
++                break
++            try:
++                task()
++            except Exception as exc:
++                self._safe_log(f"Erro: {exc}")
++            finally:
++                self._task_queue.task_done()
++
++    def _submit_task(self, fn) -> None:
++        """Envia uma tarefa para a worker thread."""
++        self._task_queue.put(fn)
++
++    # ── UI ────────────────────────────────────────────────────────────────
++
++    def _build_ui(self) -> None:
++        title = ctk.CTkLabel(
++            self,
++            text="Instagram Auto-Follow Bot",
++            font=ctk.CTkFont(size=22, weight="bold"),
++        )
++        title.pack(pady=(18, 4))
++
++        subtitle = ctk.CTkLabel(
++            self,
++            text="Siga automaticamente seguidores de um perfil",
++            font=ctk.CTkFont(size=13),
++            text_color="gray",
++        )
++        subtitle.pack(pady=(0, 10))
++
++        # ── Abas ──────────────────────────────────────────────────────────
++        self.tabview = ctk.CTkTabview(self, width=710, height=560)
++        self.tabview.pack(padx=20, pady=(0, 10), fill="both", expand=True)
++
++        self.tab_bot = self.tabview.add("Bot de Follow")
++        self.tab_dashboard = self.tabview.add("Dashboard de Métricas")
++
++        self._build_bot_tab()
++        self._build_dashboard_tab()
++
++    def _build_bot_tab(self) -> None:
++        """Constrói a aba do bot de follow."""
++        tab = self.tab_bot
++
++        # ── Frame de configuração ────────────────────────────────────────
++        config_frame = ctk.CTkFrame(tab)
++        config_frame.pack(padx=10, pady=(5, 8), fill="x")
++
++        ctk.CTkLabel(
++            config_frame,
++            text="Perfil alvo (sem @):",
++            font=ctk.CTkFont(size=13, weight="bold"),
++        ).grid(row=0, column=0, padx=12, pady=(12, 4), sticky="w")
++
++        self.target_entry = ctk.CTkEntry(
++            config_frame, placeholder_text="ex: nike", width=300
++        )
++        self.target_entry.grid(row=0, column=1, padx=12, pady=(12, 4), sticky="w")
++
++        ctk.CTkLabel(
++            config_frame,
++            text="Máximo de follows:",
++            font=ctk.CTkFont(size=13, weight="bold"),
++        ).grid(row=1, column=0, padx=12, pady=4, sticky="w")
++
++        self.max_follows_entry = ctk.CTkEntry(
++            config_frame, placeholder_text="20", width=100
++        )
++        self.max_follows_entry.insert(0, "20")
++        self.max_follows_entry.grid(row=1, column=1, padx=12, pady=4, sticky="w")
++
++        ctk.CTkLabel(
++            config_frame,
++            text="Delay (seg):",
++            font=ctk.CTkFont(size=13, weight="bold"),
++        ).grid(row=2, column=0, padx=12, pady=4, sticky="w")
++
++        delay_frame = ctk.CTkFrame(config_frame, fg_color="transparent")
++        delay_frame.grid(row=2, column=1, padx=12, pady=4, sticky="w")
++
++        self.min_delay_entry = ctk.CTkEntry(delay_frame, placeholder_text="3", width=60)
++        self.min_delay_entry.insert(0, "3")
++        self.min_delay_entry.pack(side="left")
++
++        ctk.CTkLabel(delay_frame, text=" a ").pack(side="left")
++
++        self.max_delay_entry = ctk.CTkEntry(delay_frame, placeholder_text="8", width=60)
++        self.max_delay_entry.insert(0, "8")
++        self.max_delay_entry.pack(side="left")
++
++        filter_label = ctk.CTkLabel(
++            config_frame,
++            text="Filtro: seguindo > seguidores (ativado automaticamente)",
++            font=ctk.CTkFont(size=11),
++            text_color="#4CAF50",
++        )
++        filter_label.grid(
++            row=3, column=0, columnspan=2, padx=12, pady=(4, 12), sticky="w"
++        )
++
++        # ── Botões ───────────────────────────────────────────────────────
++        btn_frame = ctk.CTkFrame(tab, fg_color="transparent")
++        btn_frame.pack(padx=10, pady=(0, 6), fill="x")
++
++        self.login_btn = ctk.CTkButton(
++            btn_frame,
++            text="1. Abrir Chrome e Logar",
++            command=self._on_open_chrome,
++            width=200,
++            height=38,
++            font=ctk.CTkFont(size=13, weight="bold"),
++        )
++        self.login_btn.pack(side="left", padx=(0, 10))
++
++        self.start_btn = ctk.CTkButton(
++            btn_frame,
++            text="2. Iniciar Follow",
++            command=self._on_start,
++            width=180,
++            height=38,
++            font=ctk.CTkFont(size=13, weight="bold"),
++            state="disabled",
++            fg_color="#4CAF50",
++            hover_color="#388E3C",
++        )
++        self.start_btn.pack(side="left", padx=(0, 10))
++
++        self.stop_btn = ctk.CTkButton(
++            btn_frame,
++            text="Parar",
++            command=self._on_stop,
++            width=100,
++            height=38,
++            font=ctk.CTkFont(size=13, weight="bold"),
++            state="disabled",
++            fg_color="#F44336",
++            hover_color="#D32F2F",
++        )
++        self.stop_btn.pack(side="left")
++
++        # ── Barra de progresso ───────────────────────────────────────────
++        self.progress = ctk.CTkProgressBar(tab, width=660)
++        self.progress.pack(padx=10, pady=(4, 2))
++        self.progress.set(0)
++
++        self.progress_label = ctk.CTkLabel(
++            tab, text="Pronto", font=ctk.CTkFont(size=12), text_color="gray"
++        )
++        self.progress_label.pack(pady=(0, 4))
++
++        # ── Log ──────────────────────────────────────────────────────────
++        self.log_box = ctk.CTkTextbox(tab, width=660, height=170, state="disabled")
++        self.log_box.pack(padx=10, pady=(0, 10))
++
++    def _build_dashboard_tab(self) -> None:
++        """Constrói a aba do dashboard de métricas."""
++        tab = self.tab_dashboard
++
++        # ── Token de acesso ──────────────────────────────────────────────
++        token_frame = ctk.CTkFrame(tab)
++        token_frame.pack(padx=10, pady=(5, 8), fill="x")
++
++        ctk.CTkLabel(
++            token_frame,
++            text="Access Token do Meta:",
++            font=ctk.CTkFont(size=13, weight="bold"),
++        ).grid(row=0, column=0, padx=12, pady=(12, 4), sticky="w")
++
++        self.token_entry = ctk.CTkEntry(
++            token_frame, placeholder_text="Cole seu token aqui", width=400, show="*"
++        )
++        self.token_entry.grid(row=0, column=1, padx=12, pady=(12, 4), sticky="w")
++
++        help_label = ctk.CTkLabel(
++            token_frame,
++            text="Obtenha em: developers.facebook.com/tools/explorer",
++            font=ctk.CTkFont(size=11),
++            text_color="#2196F3",
++            cursor="hand2",
++        )
++        help_label.grid(
++            row=1, column=0, columnspan=2, padx=12, pady=(0, 12), sticky="w"
++        )
++
++        # ── Botões do dashboard ──────────────────────────────────────────
++        dash_btn_frame = ctk.CTkFrame(tab, fg_color="transparent")
++        dash_btn_frame.pack(padx=10, pady=(0, 8), fill="x")
++
++        self.connect_api_btn = ctk.CTkButton(
++            dash_btn_frame,
++            text="Conectar à API",
++            command=self._on_connect_api,
++            width=160,
++            height=38,
++            font=ctk.CTkFont(size=13, weight="bold"),
++            fg_color="#2196F3",
++            hover_color="#1976D2",
++        )
++        self.connect_api_btn.pack(side="left", padx=(0, 10))
++
++        self.refresh_btn = ctk.CTkButton(
++            dash_btn_frame,
++            text="Atualizar Métricas",
++            command=self._on_refresh_metrics,
++            width=160,
++            height=38,
++            font=ctk.CTkFont(size=13, weight="bold"),
++            state="disabled",
++            fg_color="#4CAF50",
++            hover_color="#388E3C",
++        )
++        self.refresh_btn.pack(side="left", padx=(0, 10))
++
++        self.history_btn = ctk.CTkButton(
++            dash_btn_frame,
++            text="Ver Histórico",
++            command=self._on_show_history,
++            width=140,
++            height=38,
++            font=ctk.CTkFont(size=13, weight="bold"),
++            state="disabled",
++        )
++        self.history_btn.pack(side="left")
++
++        # ── Cards de métricas ────────────────────────────────────────────
++        cards_frame = ctk.CTkFrame(tab, fg_color="transparent")
++        cards_frame.pack(padx=10, pady=(0, 8), fill="x")
++
++        self.card_followers = self._create_metric_card(
++            cards_frame, "Seguidores", "---", "#4CAF50"
++        )
++        self.card_followers.pack(side="left", padx=(0, 8), expand=True, fill="x")
++
++        self.card_following = self._create_metric_card(
++            cards_frame, "Seguindo", "---", "#2196F3"
++        )
++        self.card_following.pack(side="left", padx=(0, 8), expand=True, fill="x")
++
++        self.card_posts = self._create_metric_card(
++            cards_frame, "Posts", "---", "#FF9800"
++        )
++        self.card_posts.pack(side="left", padx=(0, 8), expand=True, fill="x")
++
++        self.card_change = self._create_metric_card(
++            cards_frame, "Variação", "---", "#9C27B0"
++        )
++        self.card_change.pack(side="left", expand=True, fill="x")
++
++        # ── Info do perfil ───────────────────────────────────────────────
++        self.profile_info_label = ctk.CTkLabel(
++            tab,
++            text="Conecte à API para ver métricas do seu perfil",
++            font=ctk.CTkFont(size=13),
++            text_color="gray",
++        )
++        self.profile_info_label.pack(pady=(4, 4))
++
++        # ── Log do dashboard ────────────────────────────────────────────
++        self.dash_log = ctk.CTkTextbox(tab, width=660, height=140, state="disabled")
++        self.dash_log.pack(padx=10, pady=(0, 10))
++
++    def _create_metric_card(
++        self, parent, title: str, value: str, color: str
++    ) -> ctk.CTkFrame:
++        """Cria um card de métrica para o dashboard."""
++        card = ctk.CTkFrame(parent, corner_radius=10)
++
++        ctk.CTkLabel(
++            card,
++            text=title,
++            font=ctk.CTkFont(size=11),
++            text_color="gray",
++        ).pack(pady=(10, 0))
++
++        label = ctk.CTkLabel(
++            card,
++            text=value,
++            font=ctk.CTkFont(size=24, weight="bold"),
++            text_color=color,
++        )
++        label.pack(pady=(0, 10))
++
++        card._value_label = label
++        return card
++
++    def _update_card(self, card: ctk.CTkFrame, value: str) -> None:
++        """Atualiza o valor exibido em um card de métrica."""
++        card._value_label.configure(text=value)
++
++    # ── Callbacks ────────────────────────────────────────────────────────
++
++    def _append_log(self, msg: str) -> None:
++        self.log_box.configure(state="normal")
++        self.log_box.insert("end", msg + "\n")
++        self.log_box.see("end")
++        self.log_box.configure(state="disabled")
++
++    def _safe_log(self, msg: str) -> None:
++        self.after(0, self._append_log, msg)
++
++    def _append_dash_log(self, msg: str) -> None:
++        self.dash_log.configure(state="normal")
++        self.dash_log.insert("end", msg + "\n")
++        self.dash_log.see("end")
++        self.dash_log.configure(state="disabled")
++
++    def _safe_dash_log(self, msg: str) -> None:
++        self.after(0, self._append_dash_log, msg)
++
++    def _safe_progress(self, current: int, total: int) -> None:
++        def _update():
++            if total > 0:
++                self.progress.set(current / total)
++            self.progress_label.configure(text=f"Seguidos: {current} / {total}")
++
++        self.after(0, _update)
++
++    # ── Bot callbacks ────────────────────────────────────────────────────
++
++    def _on_open_chrome(self) -> None:
++        """Abre o Chrome com debug e conecta via CDP."""
++        self.login_btn.configure(state="disabled")
++        self._safe_log("Abrindo Chrome do bot (pode manter seu Chrome aberto)...")
++
++        def _task():
++            # Abrir Chrome com porta de debug
++            self._chrome_process = launch_chrome_with_debug(on_log=self._safe_log)
++
++            # Conectar via CDP (na mesma thread que vai executar as ações)
++            try:
++                from playwright.sync_api import sync_playwright as start_pw
++
++                self._pw = start_pw().start()
++                self._bot = InstagramBot(
++                    max_follows=self._get_max_follows(),
++                    min_delay=self._get_min_delay(),
++                    max_delay=self._get_max_delay(),
++                    on_log=self._safe_log,
++                    on_progress=self._safe_progress,
++                )
++                self._bot.connect_to_chrome(self._pw)
++
++                if self._bot.is_already_logged_in():
++                    self._safe_log("Sessão anterior detectada! Já está logado.")
++                else:
++                    self._safe_log("Faça login no Instagram e clique 'Iniciar Follow'.")
++
++                self.after(0, lambda: self.start_btn.configure(state="normal"))
++
++            except Exception as exc:
++                self._safe_log(f"Erro ao conectar: {exc}")
++                self._safe_log(
++                    "Tente novamente. Se o erro persistir, feche o Chrome "
++                    "manualmente e clique no botão de novo."
++                )
++                self.after(0, lambda: self.login_btn.configure(state="normal"))
++
++        self._submit_task(_task)
++
++    def _on_start(self) -> None:
++        target = self.target_entry.get().strip().lstrip("@").strip("/")
++        if not target:
++            self._append_log("Preencha o perfil alvo!")
++            return
++
++        if "instagram.com/" in target:
++            parts = target.split("instagram.com/")
++            target = parts[-1].strip("/").split("/")[0]
++
++        if self._bot:
++            self._bot.max_follows = self._get_max_follows()
++            self._bot.min_delay = self._get_min_delay()
++            self._bot.max_delay = self._get_max_delay()
++            self._bot._stop_requested = False
++
++        self.start_btn.configure(state="disabled")
++        self.stop_btn.configure(state="normal")
++        self.login_btn.configure(state="disabled")
++        self._running = True
++
++        def _task():
++            try:
++                if not self._bot.open_followers(target):
++                    self._safe_log("Falha ao abrir seguidores. Verifique o perfil.")
++                    self.after(0, self._reset_buttons)
++                    return
++
++                stats = self._bot.follow_users(target)
++
++                self._safe_log("=" * 50)
++                self._safe_log("Processo finalizado!")
++                self._safe_log(f"  Seguidos: {stats['followed']}")
++                self._safe_log(f"  Filtrados: {stats['filtered_out']}")
++                self._safe_log(f"  Verificados: {stats['checked']}")
++                self._safe_log(f"  Erros: {stats['errors']}")
++                self._safe_log("=" * 50)
++            except Exception as exc:
++                self._safe_log(f"Erro: {exc}")
++            finally:
++                self._running = False
++                self.after(0, self._reset_buttons)
++
++        self._submit_task(_task)
++
++    def _on_stop(self) -> None:
++        if self._bot:
++            self._bot.request_stop()
++            self._safe_log("Parando... aguarde a ação atual finalizar.")
++        self.stop_btn.configure(state="disabled")
++
++    def _reset_buttons(self) -> None:
++        self.start_btn.configure(state="normal")
++        self.stop_btn.configure(state="disabled")
++        self.login_btn.configure(state="normal")
++
++    # ── Dashboard callbacks ──────────────────────────────────────────────
++
++    def _on_connect_api(self) -> None:
++        """Conecta à Instagram Graph API com o token fornecido."""
++        token = self.token_entry.get().strip()
++        if not token:
++            self._safe_dash_log("Cole o Access Token do Meta para conectar.")
++            return
++
++        self.connect_api_btn.configure(state="disabled")
++        self._safe_dash_log("Conectando à API do Instagram...")
++
++        def _connect():
++            try:
++                self._api = InstagramAPI(access_token=token)
++                ig_user_id = self._api.discover_user_id()
++                self._safe_dash_log(f"Conectado! IG User ID: {ig_user_id}")
++
++                metrics = self._api.record_metrics()
++                self._display_metrics(metrics)
++
++                self.after(0, lambda: self.refresh_btn.configure(state="normal"))
++                self.after(0, lambda: self.history_btn.configure(state="normal"))
++                self._safe_dash_log("Métricas carregadas com sucesso!")
++
++            except Exception as exc:
++                self._safe_dash_log(f"Erro: {exc}")
++                self.after(0, lambda: self.connect_api_btn.configure(state="normal"))
++
++        threading.Thread(target=_connect, daemon=True).start()
++
++    def _on_refresh_metrics(self) -> None:
++        """Atualiza as métricas do perfil."""
++        if not self._api:
++            self._safe_dash_log("Conecte à API primeiro.")
++            return
++
++        self.refresh_btn.configure(state="disabled")
++        self._safe_dash_log("Atualizando métricas...")
++
++        def _refresh():
++            try:
++                metrics = self._api.record_metrics()
++                self._display_metrics(metrics)
++                self._safe_dash_log("Métricas atualizadas!")
++            except Exception as exc:
++                self._safe_dash_log(f"Erro ao atualizar: {exc}")
++            finally:
++                self.after(0, lambda: self.refresh_btn.configure(state="normal"))
++
++        threading.Thread(target=_refresh, daemon=True).start()
++
++    def _on_show_history(self) -> None:
++        """Mostra o histórico de métricas."""
++        if not self._api:
++            return
++
++        change_data = self._api.get_followers_change()
++        history = self._api.get_history()
++
++        self._safe_dash_log("=" * 50)
++        self._safe_dash_log(f"Histórico de métricas ({change_data['records']} registros)")
++        self._safe_dash_log("-" * 50)
++
++        if change_data["records"] >= 2:
++            sign = "+" if change_data["change"] >= 0 else ""
++            self._safe_dash_log(
++                f"Última variação: {sign}{change_data['change']} seguidores"
++            )
++            total_sign = "+" if change_data.get("total_change", 0) >= 0 else ""
++            self._safe_dash_log(
++                f"Variação total: {total_sign}{change_data.get('total_change', 0)} seguidores"
++            )
++            self._safe_dash_log(
++                f"Desde: {change_data.get('first_record', 'N/A')}"
++            )
++
++        self._safe_dash_log("-" * 50)
++
++        for entry in history[-10:]:
++            ts = entry.get("timestamp", "")[:19].replace("T", " ")
++            followers = entry.get("followers_count", 0)
++            following = entry.get("follows_count", 0)
++            self._safe_dash_log(f"  {ts} | Seg: {followers} | Sdo: {following}")
++
++        if len(history) > 10:
++            self._safe_dash_log(f"  ... e mais {len(history) - 10} registros anteriores")
++
++        self._safe_dash_log("=" * 50)
++
++    def _display_metrics(self, metrics: dict) -> None:
++        """Atualiza os cards e labels com as métricas."""
++        def _update():
++            self._update_card(
++                self.card_followers,
++                f"{metrics.get('followers_count', 0):,}".replace(",", "."),
++            )
++            self._update_card(
++                self.card_following,
++                f"{metrics.get('follows_count', 0):,}".replace(",", "."),
++            )
++            self._update_card(
++                self.card_posts,
++                f"{metrics.get('media_count', 0):,}".replace(",", "."),
++            )
++
++            change_data = self._api.get_followers_change()
++            if change_data["records"] >= 2:
++                change = change_data["change"]
++                sign = "+" if change >= 0 else ""
++                self._update_card(self.card_change, f"{sign}{change}")
++            else:
++                self._update_card(self.card_change, "---")
++
++            username = metrics.get("username", "")
++            name = metrics.get("name", "")
++            if username:
++                self.profile_info_label.configure(
++                    text=f"@{username} — {name}",
++                    text_color="white",
++                )
++
++        self.after(0, _update)
++
++    # ── Helpers de config ────────────────────────────────────────────────
++
++    def _get_max_follows(self) -> int:
++        try:
++            return int(self.max_follows_entry.get())
++        except ValueError:
++            return 20
++
++    def _get_min_delay(self) -> float:
++        try:
++            return float(self.min_delay_entry.get())
++        except ValueError:
++            return 3.0
++
++    def _get_max_delay(self) -> float:
++        try:
++            return float(self.max_delay_entry.get())
++        except ValueError:
++            return 8.0
++
++    def destroy(self):
++        if self._bot:
++            self._bot.request_stop()
++            self._bot.close_browser()
++        if hasattr(self, "_pw") and self._pw:
++            try:
++                self._pw.stop()
++            except Exception:
++                pass
++        self._task_queue.put(None)
++        super().destroy()
++
++
++def main():
++    app = App()
++    app.mainloop()
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/bot.py b/bot.py
+new file mode 100644
+index 0000000..26ef1d4
+--- /dev/null
++++ b/bot.py
+@@ -0,0 +1,449 @@
++"""Lógica do bot de automação do Instagram via CDP (Chrome DevTools Protocol).
++
++Conecta ao Chrome real do usuário aberto com --remote-debugging-port.
++O Instagram não detecta automação porque é literalmente o Chrome normal.
++"""
++
++import logging
++import os
++import platform
++import random
++import re
++import shutil
++import subprocess
++import time
++import urllib.request
++
++from playwright.sync_api import Browser, BrowserContext, Page, Playwright
++from playwright.sync_api import TimeoutError as PlaywrightTimeout
++
++logger = logging.getLogger("instabot")
++
++CDP_PORT = 9222
++
++
++def _find_chrome() -> str:
++    """Encontra o executável do Chrome no sistema."""
++    if platform.system() == "Windows":
++        candidates = [
++            os.path.expandvars(r"%ProgramFiles%\Google\Chrome\Application\chrome.exe"),
++            os.path.expandvars(
++                r"%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"
++            ),
++            os.path.expandvars(r"%LocalAppData%\Google\Chrome\Application\chrome.exe"),
++        ]
++        for path in candidates:
++            if os.path.isfile(path):
++                return path
++    elif platform.system() == "Darwin":
++        mac_path = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
++        if os.path.isfile(mac_path):
++            return mac_path
++    else:
++        found = shutil.which("google-chrome") or shutil.which("google-chrome-stable")
++        if found:
++            return found
++
++    return "chrome"
++
++
++# Perfil separado para o bot (evita conflito com Chrome já aberto)
++BOT_PROFILE_DIR = os.path.join(
++    os.path.dirname(os.path.abspath(__file__)), "chrome_bot_profile"
++)
++
++
++def _wait_for_cdp_port(port: int, timeout: int = 30, on_log=None) -> bool:
++    """Espera a porta CDP ficar disponível."""
++    log = on_log or (lambda msg: None)
++    start = time.time()
++    while time.time() - start < timeout:
++        try:
++            url = f"http://127.0.0.1:{port}/json/version"
++            req = urllib.request.urlopen(url, timeout=2)
++            req.close()
++            log(f"Porta CDP {port} respondendo!")
++            return True
++        except Exception:
++            pass
++        time.sleep(1)
++    return False
++
++
++def launch_chrome_with_debug(on_log=None) -> subprocess.Popen:
++    """Abre o Chrome com perfil separado e porta de debug ativa.
++
++    Usa um perfil dedicado para o bot (chrome_bot_profile/) em vez do
++    perfil real do Chrome. Isso evita conflito com o Chrome já aberto
++    e garante que a porta de debug funcione.
++    O login é salvo neste perfil — só precisa logar uma vez.
++    """
++    log = on_log or (lambda msg: None)
++    chrome_path = _find_chrome()
++    log(f"Chrome encontrado: {chrome_path}")
++
++    os.makedirs(BOT_PROFILE_DIR, exist_ok=True)
++    log(f"Usando perfil do bot: {BOT_PROFILE_DIR}")
++
++    cmd = [
++        chrome_path,
++        f"--remote-debugging-port={CDP_PORT}",
++        f"--user-data-dir={BOT_PROFILE_DIR}",
++        "--no-first-run",
++        "--no-default-browser-check",
++        "--start-maximized",
++        "https://www.instagram.com/",
++    ]
++
++    log("Abrindo Chrome (janela separada para o bot)...")
++    process = subprocess.Popen(
++        cmd,
++        stdout=subprocess.DEVNULL,
++        stderr=subprocess.DEVNULL,
++    )
++
++    # Aguardar porta CDP ficar disponível
++    log("Aguardando porta de debug ficar pronta...")
++    if _wait_for_cdp_port(CDP_PORT, timeout=30, on_log=log):
++        log("Chrome pronto para conexão!")
++    else:
++        log("AVISO: Porta de debug não respondeu. A conexão pode falhar.")
++
++    return process
++
++
++class InstagramBot:
++    """Bot para seguir seguidores de um perfil no Instagram."""
++
++    def __init__(
++        self,
++        *,
++        max_follows: int = 20,
++        min_delay: float = 3,
++        max_delay: float = 8,
++        on_log: callable = None,
++        on_progress: callable = None,
++    ):
++        self.max_follows = max_follows
++        self.min_delay = min_delay
++        self.max_delay = max_delay
++        self.on_log = on_log or (lambda msg: None)
++        self.on_progress = on_progress or (lambda current, total: None)
++        self._stop_requested = False
++        self._playwright: Playwright | None = None
++        self._browser: Browser | None = None
++        self._context: BrowserContext | None = None
++        self._page: Page | None = None
++
++    def request_stop(self) -> None:
++        self._stop_requested = True
++
++    def _log(self, msg: str) -> None:
++        logger.info(msg)
++        self.on_log(msg)
++
++    def _delay(
++        self, min_sec: float | None = None, max_sec: float | None = None
++    ) -> None:
++        lo = min_sec if min_sec is not None else self.min_delay
++        hi = max_sec if max_sec is not None else self.max_delay
++        delay = random.uniform(lo, hi)
++        time.sleep(delay)
++
++    # ── Conectar ao Chrome via CDP ───────────────────────────────────────
++
++    def connect_to_chrome(self, pw: Playwright, max_retries: int = 3) -> Page:
++        """Conecta ao Chrome já aberto via CDP, com retries."""
++        self._playwright = pw
++
++        for attempt in range(1, max_retries + 1):
++            try:
++                self._log(f"Conectando ao Chrome via CDP (tentativa {attempt})...")
++                self._browser = pw.chromium.connect_over_cdp(
++                    f"http://127.0.0.1:{CDP_PORT}"
++                )
++                self._context = self._browser.contexts[0]
++
++                if self._context.pages:
++                    self._page = self._context.pages[0]
++                else:
++                    self._page = self._context.new_page()
++
++                self._log("Conectado ao Chrome com sucesso!")
++                return self._page
++
++            except Exception as exc:
++                self._log(f"Tentativa {attempt} falhou: {exc}")
++                if attempt < max_retries:
++                    self._log("Aguardando antes de tentar novamente...")
++                    time.sleep(5)
++                else:
++                    raise
++
++    def close_browser(self) -> None:
++        if self._browser:
++            try:
++                self._browser.close()
++            except Exception:
++                pass
++            self._browser = None
++            self._context = None
++
++    # ── Login ────────────────────────────────────────────────────────────
++
++    def navigate_to_instagram(self) -> None:
++        self._log("Navegando para Instagram...")
++        self._page.goto(
++            "https://www.instagram.com/",
++            wait_until="domcontentloaded",
++            timeout=30000,
++        )
++
++    def wait_for_login(self, timeout_sec: int = 300) -> bool:
++        """Espera o usuário fazer login manualmente. Retorna True se logado."""
++        self._log("Faça login no Instagram (você tem 5 minutos)...")
++        start = time.time()
++        while time.time() - start < timeout_sec:
++            if self._stop_requested:
++                return False
++            try:
++                url = self._page.url
++                if "instagram.com" in url and "/accounts/login" not in url:
++                    # Checar se há elementos de usuário logado
++                    nav = self._page.locator("nav")
++                    if nav.count() > 0:
++                        self._delay(2, 3)
++                        self._dismiss_popups()
++                        self._log("Login detectado com sucesso!")
++                        return True
++            except Exception:
++                pass
++            time.sleep(2)
++        self._log("Tempo limite para login atingido.")
++        return False
++
++    def is_already_logged_in(self) -> bool:
++        """Verifica se já está logado (sessão salva)."""
++        try:
++            url = self._page.url
++            if "instagram.com" in url and "/accounts/login" not in url:
++                nav = self._page.locator("nav")
++                if nav.count() > 0:
++                    return True
++        except Exception:
++            pass
++        return False
++
++    def _dismiss_popups(self) -> None:
++        for _ in range(3):
++            try:
++                btn = self._page.locator(
++                    "button:has-text('Agora não'), "
++                    "button:has-text('Not Now'), "
++                    "button:has-text('Not now'), "
++                    "button:has-text('Ahora no')"
++                )
++                if btn.count() > 0:
++                    btn.first.click()
++                    self._delay(1, 2)
++            except Exception:
++                pass
++
++    # ── Navegar até seguidores ───────────────────────────────────────────
++
++    def open_followers(self, target_profile: str) -> bool:
++        self._log(f"Navegando para @{target_profile}...")
++        self._page.goto(
++            f"https://www.instagram.com/{target_profile}/",
++            wait_until="domcontentloaded",
++            timeout=30000,
++        )
++        self._delay(2, 3)
++
++        not_found = self._page.locator(
++            "h2:has-text('Esta página não está disponível'), "
++            "h2:has-text('Sorry, this page')"
++        )
++        if not_found.count() > 0:
++            self._log(f"Perfil @{target_profile} não encontrado.")
++            return False
++
++        followers_link = self._page.locator(f'a[href="/{target_profile}/followers/"]')
++        if followers_link.count() == 0:
++            followers_link = self._page.locator(
++                "a:has-text('seguidores'), a:has-text('followers')"
++            )
++        if followers_link.count() == 0:
++            self._log("Não encontrei o link de seguidores. Perfil pode ser privado.")
++            return False
++
++        followers_link.first.click()
++        self._delay(2, 3)
++        self._log("Lista de seguidores aberta!")
++        return True
++
++    # ── Checar perfil (filtro seguindo > seguidores) ─────────────────────
++
++    def _parse_count(self, text: str) -> int:
++        """Converte textos como '1,234' ou '12.3K' ou '1.2M' em int."""
++        text = text.strip().replace(",", "").replace(".", "")
++        match = re.search(r"([\d.]+)\s*([KkMm]?)", text)
++        if not match:
++            return 0
++        num = float(match.group(1))
++        suffix = match.group(2).upper()
++        if suffix == "K":
++            num *= 1000
++        elif suffix == "M":
++            num *= 1_000_000
++        return int(num)
++
++    def _check_profile_filter(self, username: str) -> bool:
++        """Abre o perfil em nova aba e verifica se seguindo > seguidores."""
++        page2 = self._context.new_page()
++        try:
++            page2.goto(
++                f"https://www.instagram.com/{username}/",
++                wait_until="domcontentloaded",
++                timeout=15000,
++            )
++            self._delay(1, 2)
++
++            header = page2.locator("header section")
++            stats_items = header.locator("li")
++            if stats_items.count() < 3:
++                self._log(f"  @{username}: não consegui ler os dados. Pulando.")
++                return False
++
++            followers_text = stats_items.nth(1).text_content()
++            following_text = stats_items.nth(2).text_content()
++
++            followers_count = self._parse_count(followers_text)
++            following_count = self._parse_count(following_text)
++
++            passes = following_count > followers_count
++            status = "Aprovado" if passes else "Reprovado"
++            self._log(
++                f"  @{username}: {followers_count} seguidores, "
++                f"{following_count} seguindo -> {status}"
++            )
++            return passes
++        except (PlaywrightTimeout, Exception) as exc:
++            self._log(f"  @{username}: erro ao verificar perfil ({exc}). Pulando.")
++            return False
++        finally:
++            page2.close()
++
++    # ── Scroll na lista de seguidores ────────────────────────────────────
++
++    def _scroll_followers(self) -> None:
++        dialog = self._page.locator("div[role='dialog']")
++        if dialog.count() > 0:
++            scrollable = dialog.locator("div[style*='overflow']")
++            if scrollable.count() > 0:
++                scrollable.first.evaluate("el => el.scrollTop = el.scrollHeight")
++
++    # ── Extrair usernames da lista ───────────────────────────────────────
++
++    def _get_visible_usernames(self) -> list[str]:
++        """Retorna os usernames visíveis na lista de seguidores."""
++        dialog = self._page.locator("div[role='dialog']")
++        links = dialog.locator("a[href^='/']")
++        usernames = set()
++        for i in range(links.count()):
++            href = links.nth(i).get_attribute("href")
++            if href and href.count("/") == 2:
++                name = href.strip("/")
++                if name and name not in ("explore", "accounts", "direct"):
++                    usernames.add(name)
++        return list(usernames)
++
++    # ── Follow principal ─────────────────────────────────────────────────
++
++    def follow_users(self, target_profile: str) -> dict:
++        """Segue usuários da lista de seguidores com filtro."""
++        stats = {"followed": 0, "filtered_out": 0, "errors": 0, "checked": 0}
++        already_processed: set[str] = set()
++
++        self._log(f"Iniciando processo (máximo: {self.max_follows} follows)...")
++        self._delay(1, 2)
++
++        stale_rounds = 0
++
++        while stats["followed"] < self.max_follows and not self._stop_requested:
++            usernames = self._get_visible_usernames()
++            new_usernames = [u for u in usernames if u not in already_processed]
++
++            if not new_usernames:
++                stale_rounds += 1
++                if stale_rounds >= 3:
++                    self._log("Não há mais perfis novos na lista.")
++                    break
++                self._log("Rolando para carregar mais perfis...")
++                self._scroll_followers()
++                self._delay(2, 3)
++                continue
++
++            stale_rounds = 0
++
++            for username in new_usernames:
++                if self._stop_requested or stats["followed"] >= self.max_follows:
++                    break
++
++                already_processed.add(username)
++                if username == target_profile:
++                    continue
++
++                stats["checked"] += 1
++                self.on_progress(stats["followed"], self.max_follows)
++
++                self._log(f"Verificando @{username}...")
++                if not self._check_profile_filter(username):
++                    stats["filtered_out"] += 1
++                    continue
++
++                if self._follow_single_user(username, stats):
++                    self.on_progress(stats["followed"], self.max_follows)
++
++            self._scroll_followers()
++            self._delay(2, 3)
++
++        return stats
++
++    def _follow_single_user(self, username: str, stats: dict) -> bool:
++        """Segue um único usuário pelo perfil dele."""
++        page2 = self._context.new_page()
++        try:
++            page2.goto(
++                f"https://www.instagram.com/{username}/",
++                wait_until="domcontentloaded",
++                timeout=15000,
++            )
++            self._delay(1, 2)
++
++            follow_btn = page2.locator(
++                "header button:has-text('Seguir'):not(:has-text('Seguindo')), "
++                "header button:has-text('Follow'):not(:has-text('Following'))"
++            )
++            if follow_btn.count() > 0:
++                btn_text = follow_btn.first.text_content().strip().lower()
++                if btn_text in ("seguir", "follow"):
++                    follow_btn.first.click()
++                    stats["followed"] += 1
++                    self._log(
++                        f"[{stats['followed']}/{self.max_follows}] "
++                        f"Seguindo @{username}!"
++                    )
++                    self._delay()
++                    return True
++                else:
++                    self._log(f"  @{username}: já está seguindo ou botão indisponível.")
++            else:
++                self._log(f"  @{username}: botão 'Seguir' não encontrado.")
++            return False
++        except Exception as exc:
++            self._log(f"  Erro ao seguir @{username}: {exc}")
++            stats["errors"] += 1
++            return False
++        finally:
++            page2.close()
+diff --git a/instagram_api.py b/instagram_api.py
+new file mode 100644
+index 0000000..4a05909
+--- /dev/null
++++ b/instagram_api.py
+@@ -0,0 +1,164 @@
++"""Módulo para interagir com a Instagram Graph API (contas profissionais).
++
++Permite obter métricas do perfil como seguidores, seguindo, posts,
++e acompanhar a evolução dos seguidores ao longo do tempo.
++"""
++
++import json
++import os
++from datetime import datetime
++from urllib.error import HTTPError
++from urllib.request import Request, urlopen
++
++API_VERSION = "v25.0"
++BASE_URL = f"https://graph.facebook.com/{API_VERSION}"
++
++# Arquivo local para salvar histórico de métricas
++HISTORY_FILE = os.path.join(
++    os.path.dirname(os.path.abspath(__file__)), "metrics_history.json"
++)
++
++
++class InstagramAPI:
++    """Cliente para a Instagram Graph API."""
++
++    def __init__(self, access_token: str, ig_user_id: str = ""):
++        self.access_token = access_token
++        self.ig_user_id = ig_user_id
++
++    def _request(self, url: str) -> dict:
++        """Faz uma requisição GET à API."""
++        separator = "&" if "?" in url else "?"
++        full_url = f"{url}{separator}access_token={self.access_token}"
++        req = Request(full_url)
++        req.add_header("User-Agent", "InstaFollowBot/1.0")
++        try:
++            with urlopen(req, timeout=15) as resp:
++                return json.loads(resp.read().decode())
++        except HTTPError as exc:
++            body = exc.read().decode()
++            raise RuntimeError(f"Erro na API ({exc.code}): {body}") from exc
++
++    # ── Descobrir IG User ID ─────────────────────────────────────────────
++
++    def discover_user_id(self) -> str:
++        """Descobre o IG User ID a partir do access token."""
++        data = self._request(f"{BASE_URL}/me?fields=id,name")
++        fb_user_id = data.get("id", "")
++
++        pages = self._request(
++            f"{BASE_URL}/{fb_user_id}/accounts?fields=id,name,instagram_business_account"
++        )
++
++        for page in pages.get("data", []):
++            ig_account = page.get("instagram_business_account")
++            if ig_account:
++                self.ig_user_id = ig_account["id"]
++                return self.ig_user_id
++
++        raise RuntimeError(
++            "Nenhuma conta profissional do Instagram encontrada. "
++            "Verifique se sua conta é Business ou Creator e está "
++            "vinculada a uma página do Facebook."
++        )
++
++    # ── Métricas do perfil ───────────────────────────────────────────────
++
++    def get_profile_metrics(self) -> dict:
++        """Retorna métricas do perfil (seguidores, seguindo, posts, bio)."""
++        if not self.ig_user_id:
++            self.discover_user_id()
++
++        fields = "username,name,biography,followers_count,follows_count,media_count,profile_picture_url"
++        data = self._request(
++            f"{BASE_URL}/{self.ig_user_id}?fields={fields}"
++        )
++        return {
++            "username": data.get("username", ""),
++            "name": data.get("name", ""),
++            "biography": data.get("biography", ""),
++            "followers_count": data.get("followers_count", 0),
++            "follows_count": data.get("follows_count", 0),
++            "media_count": data.get("media_count", 0),
++            "profile_picture_url": data.get("profile_picture_url", ""),
++            "timestamp": datetime.now().isoformat(),
++        }
++
++    # ── Business Discovery (ver perfis de outros) ────────────────────────
++
++    def get_other_profile(self, username: str) -> dict:
++        """Retorna dados públicos de outro perfil profissional."""
++        if not self.ig_user_id:
++            self.discover_user_id()
++
++        fields = (
++            f"business_discovery.username({username})"
++            "{username,name,biography,followers_count,follows_count,media_count}"
++        )
++        data = self._request(
++            f"{BASE_URL}/{self.ig_user_id}?fields={fields}"
++        )
++        bd = data.get("business_discovery", {})
++        return {
++            "username": bd.get("username", username),
++            "name": bd.get("name", ""),
++            "biography": bd.get("biography", ""),
++            "followers_count": bd.get("followers_count", 0),
++            "follows_count": bd.get("follows_count", 0),
++            "media_count": bd.get("media_count", 0),
++        }
++
++    # ── Histórico de métricas ────────────────────────────────────────────
++
++    def _load_history(self) -> list:
++        """Carrega histórico de métricas do arquivo JSON."""
++        if os.path.isfile(HISTORY_FILE):
++            with open(HISTORY_FILE, encoding="utf-8") as f:
++                return json.load(f)
++        return []
++
++    def _save_history(self, history: list) -> None:
++        """Salva histórico no arquivo JSON."""
++        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
++            json.dump(history, f, ensure_ascii=False, indent=2)
++
++    def record_metrics(self) -> dict:
++        """Busca métricas atuais e salva no histórico. Retorna os dados."""
++        metrics = self.get_profile_metrics()
++        history = self._load_history()
++        history.append(metrics)
++        self._save_history(history)
++        return metrics
++
++    def get_history(self) -> list:
++        """Retorna todo o histórico de métricas salvo."""
++        return self._load_history()
++
++    def get_followers_change(self) -> dict:
++        """Calcula a variação de seguidores baseado no histórico."""
++        history = self._load_history()
++        if len(history) < 2:
++            return {
++                "current": history[-1]["followers_count"] if history else 0,
++                "previous": 0,
++                "change": 0,
++                "records": len(history),
++            }
++
++        current = history[-1]
++        previous = history[-2]
++        change = current["followers_count"] - previous["followers_count"]
++
++        # Variação desde o primeiro registro
++        first = history[0]
++        total_change = current["followers_count"] - first["followers_count"]
++
++        return {
++            "current": current["followers_count"],
++            "previous": previous["followers_count"],
++            "change": change,
++            "total_change": total_change,
++            "first_record": first["timestamp"],
++            "last_record": current["timestamp"],
++            "records": len(history),
++        }
+diff --git a/instagram_follow.py b/instagram_follow.py
+new file mode 100644
+index 0000000..454b8f5
+--- /dev/null
++++ b/instagram_follow.py
+@@ -0,0 +1,309 @@
++"""
++Instagram Auto-Follow Bot usando Playwright.
++
++Automatiza o processo de seguir os seguidores de um perfil específico.
++"""
++
++import logging
++import os
++import random
++import sys
++import time
++
++from dotenv import load_dotenv
++from playwright.sync_api import TimeoutError as PlaywrightTimeout
++from playwright.sync_api import sync_playwright
++
++load_dotenv()
++
++# ── Configuração de logging ──────────────────────────────────────────────────
++
++logging.basicConfig(
++    level=logging.INFO,
++    format="%(asctime)s [%(levelname)s] %(message)s",
++    handlers=[
++        logging.StreamHandler(sys.stdout),
++        logging.FileHandler("instagram_follow.log", encoding="utf-8"),
++    ],
++)
++logger = logging.getLogger(__name__)
++
++# ── Configurações ────────────────────────────────────────────────────────────
++
++USERNAME = os.getenv("INSTAGRAM_USERNAME", "")
++PASSWORD = os.getenv("INSTAGRAM_PASSWORD", "")
++TARGET_PROFILE = os.getenv("TARGET_PROFILE", "")
++MAX_FOLLOWS = int(os.getenv("MAX_FOLLOWS_PER_SESSION", "20"))
++MIN_DELAY = int(os.getenv("MIN_DELAY_SECONDS", "3"))
++MAX_DELAY = int(os.getenv("MAX_DELAY_SECONDS", "8"))
++HEADLESS = os.getenv("HEADLESS", "false").lower() == "true"
++
++
++def random_delay(min_sec: int = MIN_DELAY, max_sec: int = MAX_DELAY) -> None:
++    """Espera um tempo aleatório entre ações para simular comportamento humano."""
++    delay = random.uniform(min_sec, max_sec)
++    logger.info("Aguardando %.1f segundos...", delay)
++    time.sleep(delay)
++
++
++def login(page) -> bool:
++    """Realiza login no Instagram."""
++    logger.info("Navegando para a página de login...")
++    page.goto("https://www.instagram.com/accounts/login/", wait_until="networkidle")
++    random_delay(2, 4)
++
++    # Aceitar cookies se o banner aparecer
++    try:
++        cookie_btn = page.locator(
++            "button:has-text('Permitir'), button:has-text('Allow'), button:has-text('Accept')"
++        )
++        if cookie_btn.count() > 0:
++            cookie_btn.first.click()
++            random_delay(1, 2)
++    except Exception:
++        pass
++
++    logger.info("Preenchendo credenciais para @%s...", USERNAME)
++    username_input = page.locator('input[name="username"]')
++    username_input.fill(USERNAME)
++    random_delay(0.5, 1.5)
++
++    password_input = page.locator('input[name="password"]')
++    password_input.fill(PASSWORD)
++    random_delay(0.5, 1.5)
++
++    # Clicar no botão de login
++    login_button = page.locator('button[type="submit"]')
++    login_button.click()
++
++    logger.info("Aguardando login...")
++    try:
++        page.wait_for_url("**/instagram.com/**", timeout=30000)
++        random_delay(3, 5)
++    except PlaywrightTimeout:
++        logger.error("Timeout ao aguardar login. Verifique suas credenciais.")
++        return False
++
++    # Verificar se houve erro de login
++    error_message = page.locator("#slfErrorAlert, [data-testid='login-error-message']")
++    if error_message.count() > 0:
++        logger.error("Erro de login: %s", error_message.text_content())
++        return False
++
++    # Fechar popup "Salvar informações de login" se aparecer
++    try:
++        not_now_btn = page.locator(
++            "button:has-text('Agora não'), button:has-text('Not Now'), button:has-text('Not now')"
++        )
++        if not_now_btn.count() > 0:
++            not_now_btn.first.click()
++            random_delay(1, 2)
++    except Exception:
++        pass
++
++    # Fechar popup de notificações se aparecer
++    try:
++        not_now_btn = page.locator(
++            "button:has-text('Agora não'), button:has-text('Not Now'), button:has-text('Not now')"
++        )
++        if not_now_btn.count() > 0:
++            not_now_btn.first.click()
++            random_delay(1, 2)
++    except Exception:
++        pass
++
++    logger.info("Login realizado com sucesso!")
++    return True
++
++
++def open_followers_dialog(page, target_profile: str) -> bool:
++    """Navega até o perfil alvo e abre a lista de seguidores."""
++    profile_url = f"https://www.instagram.com/{target_profile}/"
++    logger.info("Navegando para o perfil @%s...", target_profile)
++    page.goto(profile_url, wait_until="networkidle")
++    random_delay(2, 4)
++
++    # Verificar se o perfil existe
++    if (
++        page.locator(
++            "h2:has-text('Esta página não está disponível'), h2:has-text('Sorry, this page')"
++        ).count()
++        > 0
++    ):
++        logger.error("Perfil @%s não encontrado.", target_profile)
++        return False
++
++    # Clicar no link de seguidores
++    logger.info("Abrindo lista de seguidores...")
++    followers_link = page.locator(f'a[href="/{target_profile}/followers/"]')
++    if followers_link.count() == 0:
++        # Tentar seletor alternativo
++        followers_link = page.locator(
++            "a:has-text('seguidores'), a:has-text('followers')"
++        )
++
++    if followers_link.count() == 0:
++        logger.error(
++            "Não foi possível encontrar o link de seguidores. O perfil pode ser privado."
++        )
++        return False
++
++    followers_link.first.click()
++    random_delay(2, 3)
++
++    logger.info("Lista de seguidores aberta com sucesso!")
++    return True
++
++
++def scroll_followers_list(page) -> None:
++    """Rola a lista de seguidores para carregar mais perfis."""
++    dialog = page.locator("div[role='dialog']")
++    if dialog.count() > 0:
++        scrollable = dialog.locator("div[style*='overflow']").first
++        scrollable.evaluate("el => el.scrollTop = el.scrollHeight")
++
++
++def follow_users(page, max_follows: int) -> dict:
++    """Segue usuários da lista de seguidores aberta."""
++    stats = {"followed": 0, "skipped": 0, "errors": 0}
++
++    logger.info("Iniciando processo de follow (máximo: %d)...", max_follows)
++
++    # Aguardar a lista de seguidores carregar
++    random_delay(2, 3)
++
++    while stats["followed"] < max_follows:
++        # Buscar botões "Seguir" / "Follow" dentro do diálogo
++        dialog = page.locator("div[role='dialog']")
++        follow_buttons = dialog.locator(
++            "button:has-text('Seguir'):not(:has-text('Seguindo')), "
++            "button:has-text('Follow'):not(:has-text('Following'))"
++        )
++
++        available = follow_buttons.count()
++        if available == 0:
++            logger.info("Nenhum botão 'Seguir' encontrado. Rolando a lista...")
++            scroll_followers_list(page)
++            random_delay(2, 3)
++
++            # Verificar novamente após rolar
++            follow_buttons = dialog.locator(
++                "button:has-text('Seguir'):not(:has-text('Seguindo')), "
++                "button:has-text('Follow'):not(:has-text('Following'))"
++            )
++            if follow_buttons.count() == 0:
++                logger.info("Não há mais usuários para seguir nesta lista.")
++                break
++
++        # Iterar pelos botões disponíveis
++        for i in range(min(follow_buttons.count(), max_follows - stats["followed"])):
++            try:
++                button = follow_buttons.nth(i)
++                button_text = button.text_content().strip()
++
++                # Garantir que é um botão de "Seguir" e não "Seguindo"
++                if button_text.lower() in ("seguir", "follow"):
++                    # Tentar pegar o username do usuário
++                    parent_row = button.locator(
++                        "xpath=ancestor::li | xpath=ancestor::div[contains(@class, 'user')]"
++                    )
++                    username_el = parent_row.locator("a span, a").first
++                    username = (
++                        username_el.text_content().strip()
++                        if username_el.count() > 0
++                        else "desconhecido"
++                    )
++
++                    logger.info(
++                        "[%d/%d] Seguindo @%s...",
++                        stats["followed"] + 1,
++                        max_follows,
++                        username,
++                    )
++                    button.click()
++                    stats["followed"] += 1
++                    random_delay()
++                else:
++                    stats["skipped"] += 1
++
++            except PlaywrightTimeout:
++                logger.warning("Timeout ao tentar seguir usuário. Pulando...")
++                stats["errors"] += 1
++                random_delay(1, 2)
++            except Exception as e:
++                logger.warning("Erro ao seguir usuário: %s", e)
++                stats["errors"] += 1
++                random_delay(1, 2)
++
++        # Rolar para carregar mais
++        if stats["followed"] < max_follows:
++            scroll_followers_list(page)
++            random_delay(2, 3)
++
++    return stats
++
++
++def run() -> None:
++    """Função principal que executa o bot."""
++    # Validar configurações
++    if not USERNAME or not PASSWORD:
++        logger.error(
++            "Configure INSTAGRAM_USERNAME e INSTAGRAM_PASSWORD no arquivo .env"
++        )
++        sys.exit(1)
++
++    if not TARGET_PROFILE:
++        logger.error("Configure TARGET_PROFILE no arquivo .env")
++        sys.exit(1)
++
++    logger.info("=" * 60)
++    logger.info("Instagram Auto-Follow Bot")
++    logger.info("Perfil alvo: @%s", TARGET_PROFILE)
++    logger.info("Máximo de follows: %d", MAX_FOLLOWS)
++    logger.info("Delay entre ações: %d-%d segundos", MIN_DELAY, MAX_DELAY)
++    logger.info("Modo headless: %s", HEADLESS)
++    logger.info("=" * 60)
++
++    with sync_playwright() as p:
++        browser = p.chromium.launch(headless=HEADLESS)
++        context = browser.new_context(
++            viewport={"width": 1280, "height": 800},
++            user_agent=(
++                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
++                "AppleWebKit/537.36 (KHTML, like Gecko) "
++                "Chrome/120.0.0.0 Safari/537.36"
++            ),
++            locale="pt-BR",
++        )
++        page = context.new_page()
++
++        try:
++            if not login(page):
++                logger.error("Falha no login. Encerrando.")
++                return
++
++            if not open_followers_dialog(page, TARGET_PROFILE):
++                logger.error("Falha ao abrir lista de seguidores. Encerrando.")
++                return
++
++            stats = follow_users(page, MAX_FOLLOWS)
++
++            logger.info("=" * 60)
++            logger.info("Processo finalizado!")
++            logger.info("Seguidos: %d", stats["followed"])
++            logger.info("Pulados: %d", stats["skipped"])
++            logger.info("Erros: %d", stats["errors"])
++            logger.info("=" * 60)
++
++        except KeyboardInterrupt:
++            logger.info("Processo interrompido pelo usuário.")
++        except Exception as e:
++            logger.error("Erro inesperado: %s", e, exc_info=True)
++        finally:
++            random_delay(1, 2)
++            browser.close()
++            logger.info("Navegador fechado. Até a próxima!")
++
++
++if __name__ == "__main__":
++    run()
+diff --git a/requirements.txt b/requirements.txt
+new file mode 100644
+index 0000000..a3f204f
+--- /dev/null
++++ b/requirements.txt
+@@ -0,0 +1,3 @@
++playwright==1.49.1
++python-dotenv==1.0.1
++customtkinter==5.2.2

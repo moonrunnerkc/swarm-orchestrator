@@ -1,0 +1,26 @@
+{
+  "id": "aider-paul-gauthier-aider-pr5108",
+  "agent": {
+    "vendor": "aider",
+    "confidence": "high",
+    "source": "repo-owner=paul-gauthier"
+  },
+  "pr": {
+    "number": 5108,
+    "headSha": "4dd70d732c86cc0771ed5661f2a789184c99b27a",
+    "baseSha": "3ec8ec5a7d695b08a6c24fe6c0c235c8f87df9af",
+    "title": "fix: the onboarding module uses python's hashlib in onboarding.py",
+    "body": "## Summary\nFix high severity security issue in `aider/onboarding.py`.\n\n## Vulnerability\n| Field | Value |\n|-------|-------|\n| **ID** | V-001 |\n| **Severity** | HIGH |\n| **Scanner** | multi_agent_ai |\n| **Rule** | `V-001` |\n| **File** | `aider/onboarding.py:168` |\n\n**Description**: The onboarding module uses Python's hashlib.sha256() to hash credentials or API keys at line 168. SHA-256 is a general-purpose cryptographic hash function designed for speed — it is not suitable for password or credential storage. Without per-entry salting, identical credentials produce identical hashes, enabling rainbow table lookups. Without key-stretching (iterative hashing), modern GPUs can compute billions of SHA-256 hashes per second, making offline brute-force attacks trivially fast. This pattern is confirmed in both production code and tests.\n\n## Changes\n- `aider/onboarding.py`\n\n## Verification\n- [x] Build passes\n- [x] Scanner re-scan confirms fix\n- [x] LLM code review passed\n\n---\n*Automated security fix by [OrbisAI Security](https://orbisappsec.com)*\n",
+    "author": "orbisai0security",
+    "headRef": "fix-v-001-pkce-sha256-pattern",
+    "repository": "paul-gauthier/aider"
+  },
+  "diffRef": {
+    "repository": "paul-gauthier/aider",
+    "headSha": "4dd70d732c86cc0771ed5661f2a789184c99b27a",
+    "baseSha": "3ec8ec5a7d695b08a6c24fe6c0c235c8f87df9af"
+  },
+  "vendoredDiffPath": "unconfirmed/aider/aider-paul-gauthier-aider-pr5108.diff",
+  "vendoredAt": "2026-05-24T03:19:38.428Z",
+  "collectedAt": "2026-05-24T03:19:38.428Z"
+}

@@ -1,0 +1,20 @@
+diff --git a/qemu-components/display/src/display.cc b/qemu-components/display/src/display.cc
+index c46d8cfa..5b6a0e41 100644
+--- a/qemu-components/display/src/display.cc
++++ b/qemu-components/display/src/display.cc
+@@ -210,7 +210,14 @@ display::display(const sc_core::sc_module_name& _name, sc_core::sc_object* o)
+     // Use QEMU's integrated display only if we are NOT on MacOS.
+     // On MacOS use libqbox's display SystemC module.
+     QemuDevice* gpu = (dynamic_cast<QemuDevice*>(o));
+-    gpu->get_qemu_inst().set_display_arg("sdl,gl=on");
++    std::string display_params("sdl");
++#ifdef _WIN32
++    display_params += ",gl=off";
++#else
++    display_params += ",gl=on";
++#endif
++    gpu->get_qemu_inst().set_display_arg(display_params);
++    SCP_INFO(SCMOD) << "display: request backend: " << display_params;
+ #endif
+ }
+ 

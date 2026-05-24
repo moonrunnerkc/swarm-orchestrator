@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-python-pr1519",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1519,
+    "headSha": "d6dbba8b884ae96e1995360155a83386d41baac7",
+    "baseSha": "5db69c6d5f3e7e39023973ca4b235046e5661157",
+    "title": "chore(examples): update messages_stream.py shebang from rye to uv",
+    "body": "## What\n\nUpdates the shebang line in `examples/messages_stream.py` from `#!/usr/bin/env -S rye run python` to `#!/usr/bin/env -S uv run python`.\n\n## Why\n\nThe project migrated from rye to uv (documented in `CONTRIBUTING.md`), and newer examples like `agents.py`, `agents_comprehensive.py`, and `agents_with_files.py` already use the uv shebang. `messages_stream.py` was the only remaining example still using the rye shebang.\n\nThis is a companion fix to #1497, which converted four other older examples from `poetry` to `uv`. No `requirements-rye.lock` exists in the repo anymore, so running this example with `./examples/messages_stream.py` would fail unless a user happened to have rye installed globally.\n\n## Verification\n\n- Lint: `ruff check examples/messages_stream.py` → All checks passed!\n- Format: `ruff format --check examples/messages_stream.py` → 1 file already formatted\n- Syntax: `python -c \"import ast; ast.parse(open('examples/messages_stream.py').read())\"` → OK\n- Scope: only the shebang line changed, no other modifications",
+    "author": "lucky-verma",
+    "headRef": "chore/shebang-messages-stream-rye-to-uv",
+    "repository": "anthropics/anthropic-sdk-python"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-python",
+    "headSha": "d6dbba8b884ae96e1995360155a83386d41baac7",
+    "baseSha": "5db69c6d5f3e7e39023973ca4b235046e5661157"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-python-pr1519.diff",
+  "vendoredAt": "2026-05-24T03:17:40.320Z",
+  "collectedAt": "2026-05-24T03:17:40.320Z"
+}

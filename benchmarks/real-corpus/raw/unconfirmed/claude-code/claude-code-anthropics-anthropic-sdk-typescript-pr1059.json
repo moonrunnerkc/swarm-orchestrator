@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-typescript-pr1059",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1059,
+    "headSha": "447b18efd7c4ea44ad885a7ca0b0794fe3ad85c7",
+    "baseSha": "32ce8c0d08074532deb3a3be9dc128cd7924092e",
+    "title": "fix(partial-json): keep complete trailing numbers in arrays",
+    "body": "## Bug\n\n`partialParse` drops complete numeric array elements while a JSON buffer is still being streamed:\n\n```ts\npartialParse('{\"foo\": [1, 2');        // => { foo: [1] }          (expected { foo: [1, 2] })\npartialParse('{\"nums\": [10, 20, 3');  // => { nums: [10] }        (expected { nums: [10, 20, 3] })\n```\n\nIt only happens for numbers that come after a `,` or directly after `{`. Numbers in other positions are kept correctly, so the behavior is inconsistent:\n\n```ts\npartialParse('{\"foo\": 123');  // => { foo: 123 }  ✅ (number after `:`)\npartialParse('[1');           // => [1]           ✅ (single element)\npartialParse('[1, 2');        // => [1]           ❌ (element after `,`)\n```\n\nThis shows up in real usage via `MessageStream` / `BetaMessageStream`, which call `partialParse` on the accumulated buffer for every `input_json_delta`. When a tool's input contains a numeric array, the in-progress `content[i].input` snapshot loses the most recent elements until the next non-number token arrives, so values appear to flicker/disappear during streaming.\n\n## Root cause\n\nIn `strip()`, the `number` case is missing a `break`:\n\n```ts\ncase 'number':\n  let lastCharacterOfLastToken = lastToken.value[lastToken.value.length - 1];\n  if (lastCharacterOfLastToken === '.' || lastCharacterOfLastToken === '-') {\n    tokens = tokens.slice(0, tokens.length - 1);\n    return strip(tokens);\n  }\n  // falls through to `case 'string'`\ncase 'string':\n  ...\n```\n\nWhen a complete number does **not** end in `.`/`-`, execution falls through into the `string` case, which strips a trailing token if the token before it is a `delimiter` (`,`) or an opening `{`. That logic is meant for possibly-incomplete strings/keys, not for complete numbers, so it removes a valid number. Because `strip()` recurses, a run of trailing numbers gets removed one after another (e.g. `[10, 20, 3` collapses to `[10]`).\n\nThe intent of the `number` case is to strip only *incomplete* numbers (those ending in `.` or `-`); a complete number should be kept, exactly as it already is when it appears as an object value or as the sole array element.\n\n## Fix\n\nAdd the missing `break` so a complete number is preserved instead of falling through into the string-stripping logic. Incomplete numbers (ending in `.`/`-`) are still stripped as before.\n\n## Testing\n\nAdded cases to `tests/lib/partial-json.test.ts` covering complete trailing numbers in arrays (single and multiple) and an incomplete trailing number. The new \"complete trailing number\" tests fail before the change and pass after it; the incomplete-number test passes both ways. `yarn lint` and the existing partial-json / streaming suites are green.",
+    "author": "ATOM00blue",
+    "headRef": "fix/partial-json-trailing-number",
+    "repository": "anthropics/anthropic-sdk-typescript"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-typescript",
+    "headSha": "447b18efd7c4ea44ad885a7ca0b0794fe3ad85c7",
+    "baseSha": "32ce8c0d08074532deb3a3be9dc128cd7924092e"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-typescript-pr1059.diff",
+  "vendoredAt": "2026-05-24T03:16:12.465Z",
+  "collectedAt": "2026-05-24T03:16:12.465Z"
+}

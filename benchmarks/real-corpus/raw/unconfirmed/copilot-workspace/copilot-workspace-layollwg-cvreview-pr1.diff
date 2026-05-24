@@ -1,0 +1,279 @@
+diff --git a/README.md b/README.md
+new file mode 100644
+index 0000000..d8c450d
+--- /dev/null
++++ b/README.md
+@@ -0,0 +1,273 @@
++# 期末复习宝典（基于 `final review.pdf` + 已上传课件）
++
++这份笔记是按 `final review.pdf` 的考试说明整理的，目标是把课件里的核心概念、题型和易错点压缩成一份复习清单。
++
++## 1. 先看考试规则
++
++- **闭卷，90 分钟，100 分**
++- **Section I：单选题**  
++  10 题 × 2 分 = 20 分
++- **Section II：多选题**  
++  10 题 × 2 分 = 20 分  
++  - 全对 2 分
++  - 只选对一部分且**没有错选**：1 分
++  - 有错选 / 空题 / 乱填：0 分
++- **Section III：计算题**  
++  3 题 × 10 分 = 30 分
++- **Section IV：简答题**  
++  3 题 × 10 分 = 30 分
++
++> 官方提醒：**难度比 in-class quiz 更高**，会在熟悉方法上做小扩展，不是纯背答案。
++
++## 2. 复习总策略
++
++1. **先抓 tutorial 的“核心结论”**，不是只记关键词。
++2. **每章至少包含“定义 + 直觉 + 公式/流程 + 典型题”**。
++3. **计算题要会写过程**，只给答案通常不够。
++4. **简答题要分点写清楚因果关系**，避免空泛表述。
++
++---
++
++## 3. 高频复习模块
++
++### 3.1 Image Filters / 图像滤波与应用
++对应课件：`image filters.pdf`、`AIAA3201-week5.pdf`
++
++**核心内容**
++- local neighborhood / 局部邻域
++- convolution / 卷积
++- box filter、Gaussian smoothing
++- 去噪、缩放、模板匹配、纹理/边缘信息提取
++
++**你要会的**
++- 为什么滤波能去噪
++- 卷积核在做什么
++- 平滑和保边之间的权衡
++- 滤波在后续边缘、特征、检测中的作用
++
++**常见易错点**
++- 把“卷积”当成“随便乘一下”
++- 以为所有滤波都在保细节；实际上很多操作会损失高频信息
++
++---
++
++### 3.2 Edges & Contours / 边缘与轮廓
++对应课件：`lecture-week03.pdf`、`Features & Matching.pdf`
++
++**核心内容**
++- gradient / 梯度
++- Sobel X / Sobel Y
++- gradient magnitude / direction
++- Canny edge detection 五步流程：
++  1. Gaussian smoothing
++  2. Gradient computation
++  3. Non-maximum suppression
++  4. Dual threshold
++  5. Hysteresis
++
++**你要会的**
++- Sobel X 主要对应**左右亮度变化明显的边**，通常表现为**竖直边缘**
++- Sobel Y 主要对应**上下亮度变化明显的边**，通常表现为**水平边缘**
++- Non-maximum suppression 的作用是把边变细
++- Hysteresis 的作用是保留和强边连通的弱边
++
++**常考点**
++- 计算 Sobel 响应
++- 判断梯度方向
++- 解释 Canny 各步骤的必要性
++
++---
++
++### 3.3 Features & Matching / 特征与匹配
++对应课件：`Features & Matching.pdf`
++
++**核心内容**
++- corner detection：Harris corner
++- keypoint vs descriptor
++- SIFT 的基本思想
++- Lowe ratio test
++
++**你要会的**
++- **keypoint** 负责“在哪里”
++- **descriptor** 负责“长什么样”
++- 为什么只用最近邻距离不够
++- ratio test 如何减少重复纹理下的错误匹配
++
++**一句话记忆**
++- **Harris 找点，SIFT 描述点，ratio test 过滤假匹配。**
++
++**高频易错点**
++- 只会背 `d1 / d2 < 0.75`，不会解释它为什么比固定阈值稳健
++
++---
++
++### 3.4 Detection & Segmentation / 检测与分割
++对应课件：`Detection & Segmentation.pdf`、`generation-and-reconstruction.pdf`
++
++**任务区分**
++- **Semantic Segmentation**：每个像素分类
++- **Object Detection**：找框 + 分类
++- **Instance Segmentation**：既分实例又分像素
++
++**重要路线**
++- Sliding Window
++- Fully Convolutional Network (FCN)
++- U-Net
++- R-CNN
++- Fast R-CNN
++- Mask R-CNN
++- RPN / anchor
++- DETR
++
++**你要会的**
++- 为什么 sliding window 很慢
++- 为什么 FCN / U-Net 更适合像素级预测
++- R-CNN 系列如何从“慢”走向“快”
++- DETR 为什么是 end-to-end detection
++
++**附加视觉理解**
++- saliency map
++- CAM / Grad-CAM
++- model layer visualization
++
++---
++
++### 3.5 Machine Learning Basics / 机器学习基础
++对应课件：`AIAA3201-week5.pdf`、`AIAA5023-6-MLP-CNN(1).pdf`
++
++**核心内容**
++- perceptron / MLP
++- softmax
++- loss / cross entropy
++- train / validation / test
++- overfitting / regularization
++- gradient descent
++
++**你要会的**
++- softmax 的作用
++- 多分类输出怎么写
++- 为什么要有 validation set
++- 过拟合和正则化之间的关系
++
++---
++
++### 3.6 CNN 与优化
++对应课件：`AIAA5023-6-MLP-CNN(1).pdf`、`AIAA3201-Training-wo-quiz.pdf`
++
++**核心内容**
++- convolution layer
++- activation map
++- pooling
++- backpropagation
++- initialization
++- momentum
++- Adam
++- batch normalization
++- dropout
++- transfer learning
++- AlexNet / VGG / ResNet
++
++**你要会的**
++- pooling 的作用：**降采样 + 一定程度的平移不变性**
++- batch norm 常放在什么位置
++- 为什么深层网络更依赖合理初始化和优化技巧
++- 迁移学习为什么在视觉任务里很常见
++
++**典型计算题方向**
++- 卷积输出尺寸
++- 参数量
++- 前向/反向传播的基本链式法则
++
++---
++
++### 3.7 RNN & Transformer
++对应课件：`AIAA-3201-transformer.pdf`
++
++**核心内容**
++- RNN 的 hidden state
++- sequence modeling
++- attention
++- self-attention
++- positional encoding
++- masked attention
++- multi-head attention
++- Transformer
++
++**你要会的**
++- RNN 为什么适合序列
++- attention 为什么能建模长程依赖
++- self-attention 和普通 attention 的区别
++- positional encoding 为什么必须有
++- masked attention 在生成任务中的作用
++
++**常见简答题**
++- 比较 RNN 和 Transformer
++- 解释 attention 的直觉和优势
++
++---
++
++### 3.8 Generation Models & 3D Reconstruction / 生成与重建
++对应课件：`generation-and-reconstruction.pdf`
++
++**核心内容**
++- autoencoder
++- VAE
++- GAN
++- diffusion
++- 3D reconstruction
++- NeRF
++- 3D Gaussian splatting
++
++**你要会的**
++- autoencoder 为什么能学到低维表示
++- VAE、GAN、diffusion 的基本区别
++- 3D 重建的目标是什么
++- NeRF / Gaussian splatting 的基本思路与应用前景
++
++---
++
++## 4. 按题型准备
++
++### 单选题
++- 找“最核心的定义”
++- 区分相近概念：  
++  例如 pooling vs activation、descriptor vs keypoint、semantic vs instance segmentation
++
++### 多选题
++- 先判断每个选项是否独立正确
++- 只要有一个错选，整题就可能掉到 0 分
++
++### 计算题
++- 写清楚公式
++- 写中间步骤
++- 不要只写最后结果
++
++### 简答题
++- 用“定义 → 原理 → 为什么 → 例子”四步写
++- 每小问单独回答
++- 术语要准确，避免空话
++
++---
++
++## 5. 最后 1 天冲刺清单
++
++- [ ] 记住考试结构和分值
++- [ ] 复习 Canny / Sobel / ratio test / pooling / attention 的核心定义
++- [ ] 会做卷积、梯度、softmax、基本尺寸/参数量计算
++- [ ] 能把 detection / segmentation / generation / transformer 讲成完整段落
++- [ ] 把每章的“为什么”再读一遍，而不是只背结论
++
++---
++
++## 6. 课件来源
++
++- `final review.pdf`
++- `image filters.pdf`
++- `lecture-week03.pdf`
++- `Features & Matching.pdf`
++- `Detection & Segmentation.pdf`
++- `AIAA3201-week5.pdf`
++- `AIAA5023-6-MLP-CNN(1).pdf`
++- `AIAA3201-Training-wo-quiz.pdf`
++- `AIAA-3201-transformer.pdf`
++- `generation-and-reconstruction.pdf`

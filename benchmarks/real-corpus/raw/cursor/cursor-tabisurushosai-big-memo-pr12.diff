@@ -1,0 +1,158 @@
+diff --git a/docs/PORTING.md b/docs/PORTING.md
+index a7a3f2d..b4827d6 100644
+--- a/docs/PORTING.md
++++ b/docs/PORTING.md
+@@ -20,9 +20,17 @@ The persisted app data key is `bigMemoAppData`. Do not change the key or the
+ stored shape without a migration, because existing users already have data in
+ that format.
+ 
++The storage layer has two boundaries:
++
++- `KeyValueStoragePort` is the platform boundary. It exposes key-based `get`
++  and `set` operations and is the only place a platform API should be wrapped.
++- `AppDataStorageAdapter` is the app boundary consumed by `AppRepository`. It
++  loads the existing partial stored shape and saves the normalized `AppData`
++  shape without changing the persisted format.
++
+ For a new platform:
+ 
+-1. Implement `KeyValueStorageAdapter` with the platform's local, offline storage
++1. Implement `KeyValueStoragePort` with the platform's local, offline storage
+    API.
+ 2. Wrap it with `createAppDataStorageAdapter`.
+ 3. Pass the resulting `AppDataStorageAdapter` to `AppRepository`.
+@@ -33,7 +41,9 @@ ports can map the same adapter to their local persistence layer while keeping
+ 
+ ## Checks before porting changes
+ 
+-- Run `npm run build`; it includes a core-only typecheck without Chrome types.
++- Run `npm run build`; it includes `tsconfig.portable.json`, which typechecks
++  `src/core/`, `src/storage/storageAdapter.ts`, and
++  `src/storage/appRepository.ts` without Chrome or DOM types.
+ - Keep Manifest V3 permissions unchanged for the extension build unless a
+   separate, reviewed change explicitly requires otherwise.
+ - Do not add remote code, external CDNs, external fonts, network APIs, or `eval`.
+diff --git a/package.json b/package.json
+index f94ca9c..586fad9 100644
+--- a/package.json
++++ b/package.json
+@@ -4,8 +4,8 @@
+   "private": true,
+   "type": "module",
+   "scripts": {
+-    "build": "tsc -p tsconfig.core.json && tsc --noEmit && vite build",
+-    "typecheck": "tsc -p tsconfig.core.json && tsc --noEmit"
++    "build": "tsc -p tsconfig.portable.json && tsc --noEmit && vite build",
++    "typecheck": "tsc -p tsconfig.portable.json && tsc --noEmit"
+   },
+   "devDependencies": {
+     "@types/chrome": "^0.1.42",
+diff --git a/src/storage/chromeStorage.ts b/src/storage/chromeStorage.ts
+index e36a0fb..796a896 100644
+--- a/src/storage/chromeStorage.ts
++++ b/src/storage/chromeStorage.ts
+@@ -1,14 +1,14 @@
+ import {
+   createAppDataStorageAdapter,
+-  type KeyValueStorageAdapter,
++  type KeyValueStoragePort,
+ } from "./storageAdapter";
+ 
+-export const chromeLocalStorage: KeyValueStorageAdapter = {
+-  async load<T>(key: string) {
++export const chromeLocalStorage: KeyValueStoragePort = {
++  async get<T>(key: string) {
+     const result = await chrome.storage.local.get(key);
+     return result[key] as T | undefined;
+   },
+-  async save<T>(key: string, value: T) {
++  async set<T>(key: string, value: T) {
+     await chrome.storage.local.set({ [key]: value });
+   },
+ };
+diff --git a/src/storage/storageAdapter.ts b/src/storage/storageAdapter.ts
+index 1459f63..b9ba644 100644
+--- a/src/storage/storageAdapter.ts
++++ b/src/storage/storageAdapter.ts
+@@ -4,25 +4,37 @@ export const APP_DATA_STORAGE_KEY = "bigMemoAppData";
+ 
+ export type StoredAppData = Partial<AppData>;
+ 
+-export type KeyValueStorageAdapter = {
+-  load<T>(key: string): Promise<T | undefined>;
+-  save<T>(key: string, value: T): Promise<void>;
++export type KeyValueStoragePort = {
++  get<TValue>(key: string): Promise<TValue | undefined>;
++  set<TValue>(key: string, value: TValue): Promise<void>;
+ };
+ 
+-export type AppDataStorageAdapter = {
+-  load(): Promise<StoredAppData | undefined>;
+-  save(value: AppData): Promise<void>;
++export type StorageAdapter<TStored, TWritable = TStored> = {
++  load(): Promise<TStored | undefined>;
++  save(value: TWritable): Promise<void>;
+ };
+ 
+-export function createAppDataStorageAdapter(
+-  storage: KeyValueStorageAdapter,
+-): AppDataStorageAdapter {
++export type AppDataStorageAdapter = StorageAdapter<StoredAppData, AppData>;
++
++export function createKeyedStorageAdapter<TStored, TWritable = TStored>(
++  storage: KeyValueStoragePort,
++  key: string,
++): StorageAdapter<TStored, TWritable> {
+   return {
+     load() {
+-      return storage.load<StoredAppData>(APP_DATA_STORAGE_KEY);
++      return storage.get<TStored>(key);
+     },
+     save(value) {
+-      return storage.save(APP_DATA_STORAGE_KEY, value);
++      return storage.set(key, value);
+     },
+   };
+ }
++
++export function createAppDataStorageAdapter(
++  storage: KeyValueStoragePort,
++): AppDataStorageAdapter {
++  return createKeyedStorageAdapter<StoredAppData, AppData>(
++    storage,
++    APP_DATA_STORAGE_KEY,
++  );
++}
+diff --git a/tsconfig.portable.json b/tsconfig.portable.json
+new file mode 100644
+index 0000000..b96bfe2
+--- /dev/null
++++ b/tsconfig.portable.json
+@@ -0,0 +1,27 @@
++{
++  "compilerOptions": {
++    "target": "ES2021",
++    "allowUnreachableCode": false,
++    "allowUnusedLabels": false,
++    "lib": ["ES2021"],
++    "module": "ESNext",
++    "moduleResolution": "Bundler",
++    "strict": true,
++    "exactOptionalPropertyTypes": true,
++    "noImplicitReturns": true,
++    "noPropertyAccessFromIndexSignature": true,
++    "noUncheckedSideEffectImports": true,
++    "noUncheckedIndexedAccess": true,
++    "noUnusedLocals": true,
++    "noUnusedParameters": true,
++    "skipLibCheck": true,
++    "isolatedModules": true,
++    "noEmit": true,
++    "types": []
++  },
++  "include": [
++    "src/core/**/*.ts",
++    "src/storage/appRepository.ts",
++    "src/storage/storageAdapter.ts"
++  ]
++}

@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-BrianZamacona-ChordMaster-Free-pr43",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 43,
+    "headSha": "e56e79947e7195aa7f4b588b2f499bf8baa56bc4",
+    "baseSha": "4c5cfa893dd6a9aee3a75fdc91130acd13f066f1",
+    "title": "Refactor scales to algorithmic pattern generation and remove `ScalePattern` model ambiguity",
+    "body": "Scale diagrams were backed by hand-authored coordinate JSON, and the codebase had two unrelated `ScalePattern` types (`scale.dart` vs `scale_pattern.dart`), creating drift risk and type confusion. This change moves pattern coordinates to deterministic Dart generation and makes the theory model naming unambiguous.\n\n- **Model boundary cleanup (theory vs diagram)**\n  - Kept diagram model in `features/scales/data/models/scale_pattern.dart` (strict fretboard coordinates).\n  - Renamed the legacy theory-side `ScalePattern` in `lib/models/scale.dart` to `ScaleFingering`.\n  - Updated dependent legacy consumers (`scale_fretboard_diagram`, validator, screen/test references) to use `ScaleFingering`.\n\n- **Algorithmic pattern generation (no manual coordinates)**\n  - Added `features/scales/data/scale_pattern_generator.dart` with positional/CAGED/3NPS/4NPS/7-patterns/pentatonic/Berklee/full-neck generation.\n  - Generation derives coordinates from tuning + scale intervals; no hardcoded fret/string maps are authored per scale shape.\n\n- **Repository refactor to `scales.json` as source of truth**\n  - Replaced `features/scales/data/scale_repository.dart` to load theory from `assets/data/scales.json` and generate requested systems on demand.\n  - Added APIs for per-system (`loadPatterns`), all-systems (`loadAllSystems`), and positional (`loadPositional`) generation.\n  - Removed dependency on `scale_patterns_coordinates.json`.\n\n- **Diagram rendering enhancement**\n  - Updated `FretboardDiagram` painter to render note labels inside markers.\n  - Extended `_drawText` with a `fontSize` parameter for marker-relative text sizing.\n\n- **Asset/data cleanup**\n  - Deleted `assets/data/scale_patterns_coordinates.json` (manual coordinate source removed).\n\n```dart\nFuture<List<ScalePattern>> loadPatterns({\n  required String scaleName,\n  required String root,\n  required String system,\n  int userStartFret = 0,\n  int userEndFret = 12,\n}) async {\n  final theory = await _find(scaleName, root);\n  if (theory == null) return [];\n  return _generate(\n    theory: theory,\n    system: system,\n    userStartFret: userStartFret,\n    userEndFret: userEndFret,\n  );\n}\n```",
+    "author": "Copilot",
+    "headRef": "copilot/refactor-scale-pattern-system",
+    "repository": "BrianZamacona/ChordMaster-Free"
+  },
+  "diffRef": {
+    "repository": "BrianZamacona/ChordMaster-Free",
+    "headSha": "e56e79947e7195aa7f4b588b2f499bf8baa56bc4",
+    "baseSha": "4c5cfa893dd6a9aee3a75fdc91130acd13f066f1"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-BrianZamacona-ChordMaster-Free-pr43.diff",
+  "vendoredAt": "2026-05-24T03:05:31.945Z",
+  "collectedAt": "2026-05-24T03:05:31.945Z"
+}

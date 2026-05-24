@@ -1,0 +1,1622 @@
+diff --git a/components/about-content.tsx b/components/about-content.tsx
+index 81899c3..602796b 100644
+--- a/components/about-content.tsx
++++ b/components/about-content.tsx
+@@ -1,58 +1,63 @@
++"use client"
++
+ import { Badge } from "@/components/ui/badge"
+ import { Card } from "@/components/ui/card"
+ import { Heart, Award, Shield, Users, Mountain, Compass } from "lucide-react"
++import { useLanguage } from "@/contexts/language-context"
++
++export function AboutContent() {
++  const { t } = useLanguage()
+ 
+-const values = [
+-  {
+-    icon: Heart,
+-    title: "Pasión por la Naturaleza",
+-    description: "Amamos la Patagonia y queremos compartir su belleza preservándola para futuras generaciones.",
+-  },
+-  {
+-    icon: Shield,
+-    title: "Seguridad Primero",
+-    description: "Guías certificados, equipamiento de primera calidad y protocolos estrictos en cada expedición.",
+-  },
+-  {
+-    icon: Users,
+-    title: "Grupos Reducidos",
+-    description: "Experiencias íntimas con grupos pequeños para una atención personalizada y menor impacto ambiental.",
+-  },
+-  {
+-    icon: Award,
+-    title: "Experiencia Comprobada",
+-    description: "Más de 10 años guiando expediciones en la Patagonia con cientos de clientes satisfechos.",
+-  },
+-]
++  const values = [
++    {
++      icon: Heart,
++      title: t("Pasión por la Naturaleza", "Passion for Nature"),
++      description: t("Amamos la Patagonia y queremos compartir su belleza preservándola para futuras generaciones.", "We love Patagonia and want to share its beauty while preserving it for future generations."),
++    },
++    {
++      icon: Shield,
++      title: t("Seguridad Primero", "Safety First"),
++      description: t("Guías certificados, equipamiento de primera calidad y protocolos estrictos en cada expedición.", "Certified guides, top-quality equipment, and strict safety protocols on every expedition."),
++    },
++    {
++      icon: Users,
++      title: t("Grupos Reducidos", "Small Groups"),
++      description: t("Experiencias íntimas con grupos pequeños para una atención personalizada y menor impacto ambiental.", "Intimate experiences with small groups for personalized attention and less environmental impact."),
++    },
++    {
++      icon: Award,
++      title: t("Experiencia Comprobada", "Proven Experience"),
++      description: t("Más de 10 años guiando expediciones en la Patagonia con cientos de clientes satisfechos.", "Over 10 years guiding expeditions in Patagonia with hundreds of satisfied clients."),
++    },
++  ]
+ 
+-const team = [
+-  {
+-    name: "Martín Roca",
+-    role: "Fundador & Guía Principal",
+-    description: "15 años de experiencia en trekking de alta montaña. Certificado AAGM.",
+-    image: "/placeholder.svg?key=vr3i7",
+-  },
+-  {
+-    name: "Laura Fernández",
+-    role: "Guía de Naturaleza",
+-    description: "Bióloga especializada en ecosistemas patagónicos. 8 años de experiencia.",
+-    image: "/placeholder.svg?key=39n4b",
+-  },
+-  {
+-    name: "Diego Torres",
+-    role: "Guía de Glaciares",
+-    description: "Especialista en trekking sobre hielo. Rescatista certificado.",
+-    image: "/placeholder.svg?key=w05yg",
+-  },
+-  {
+-    name: "Ana Gutiérrez",
+-    role: "Coordinadora de Expediciones",
+-    description: "Organiza cada detalle para que tu experiencia sea inolvidable.",
+-    image: "/placeholder.svg?key=m7vsu",
+-  },
+-]
++  const team = [
++    {
++      name: "Martín Roca",
++      role: t("Fundador & Guía Principal", "Founder & Lead Guide"),
++      description: t("15 años de experiencia en trekking de alta montaña. Certificado AAGM.", "15 years of high-altitude trekking experience. AAGM certified."),
++      image: "/placeholder.svg?key=vr3i7",
++    },
++    {
++      name: "Laura Fernández",
++      role: t("Guía de Naturaleza", "Nature Guide"),
++      description: t("Bióloga especializada en ecosistemas patagónicos. 8 años de experiencia.", "Biologist specializing in Patagonian ecosystems. 8 years of experience."),
++      image: "/placeholder.svg?key=39n4b",
++    },
++    {
++      name: "Diego Torres",
++      role: t("Guía de Glaciares", "Glacier Guide"),
++      description: t("Especialista en trekking sobre hielo. Rescatista certificado.", "Ice trekking specialist. Certified rescuer."),
++      image: "/placeholder.svg?key=w05yg",
++    },
++    {
++      name: "Ana Gutiérrez",
++      role: t("Coordinadora de Expediciones", "Expedition Coordinator"),
++      description: t("Organiza cada detalle para que tu experiencia sea inolvidable.", "Organizes every detail to make your experience unforgettable."),
++      image: "/placeholder.svg?key=m7vsu",
++    },
++  ]
+ 
+-export function AboutContent() {
+   return (
+     <div className="min-h-screen bg-background">
+       {/* Hero Section */}
+@@ -61,12 +66,12 @@ export function AboutContent() {
+         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/40 to-transparent" />
+         <div className="absolute bottom-0 left-0 right-0 p-8">
+           <div className="max-w-7xl mx-auto">
+-            <Badge className="mb-4 bg-primary/90 text-primary-foreground">Quiénes Somos</Badge>
++            <Badge className="mb-4 bg-primary/90 text-primary-foreground">{t("Quiénes Somos", "About Us")}</Badge>
+             <h1 className="text-4xl md:text-5xl font-bold text-white mb-4 text-balance">
+-              Conectando personas con la naturaleza
++              {t("Conectando personas con la naturaleza", "Connecting people with nature")}
+             </h1>
+             <p className="text-xl text-white/90 max-w-2xl text-pretty">
+-              Somos un equipo apasionado por la Patagonia y comprometidos con el turismo sustentable
++              {t("Somos un equipo apasionado por la Patagonia y comprometidos con el turismo sustentable", "We are a team passionate about Patagonia and committed to sustainable tourism")}
+             </p>
+           </div>
+         </div>
+@@ -77,22 +82,17 @@ export function AboutContent() {
+         <div className="max-w-4xl mx-auto">
+           <div className="flex items-center gap-3 mb-6">
+             <Mountain className="h-8 w-8 text-primary" />
+-            <h2 className="text-3xl font-bold">Nuestra Historia</h2>
++            <h2 className="text-3xl font-bold">{t("Nuestra Historia", "Our Story")}</h2>
+           </div>
+           <div className="space-y-4 text-lg text-muted-foreground leading-relaxed">
+             <p>
+-              Patagonia Trek nació en 2014 del sueño de Martín Roca, un guía de montaña apasionado por compartir la
+-              belleza de la Patagonia con viajeros de todo el mundo. Lo que comenzó con pequeñas expediciones al Fitz
+-              Roy se ha convertido en una empresa que organiza trekkings por toda la región.
++              {t("Patagonia Trek nació en 2014 del sueño de Martín Roca, un guía de montaña apasionado por compartir la belleza de la Patagonia con viajeros de todo el mundo. Lo que comenzó con pequeñas expediciones al Fitz Roy se ha convertido en una empresa que organiza trekkings por toda la región.", "Patagonia Trek was born in 2014 from the dream of Martín Roca, a mountain guide passionate about sharing the beauty of Patagonia with travelers from around the world. What began with small expeditions to Fitz Roy has grown into a company organizing treks across the entire region.")}
+             </p>
+             <p>
+-              Creemos que la mejor forma de conocer un lugar es caminándolo. Cada sendero tiene una historia, cada
+-              montaña guarda secretos, y cada laguna refleja la inmensidad del paisaje patagónico. Nuestra misión es
+-              guiarte por estos lugares con seguridad, respeto por el medio ambiente y la calidez que nos caracteriza.
++              {t("Creemos que la mejor forma de conocer un lugar es caminándolo. Cada sendero tiene una historia, cada montaña guarda secretos, y cada laguna refleja la inmensidad del paisaje patagónico. Nuestra misión es guiarte por estos lugares con seguridad, respeto por el medio ambiente y la calidez que nos caracteriza.", "We believe the best way to know a place is by walking it. Every trail has a story, every mountain holds secrets, and every lagoon reflects the vastness of the Patagonian landscape. Our mission is to guide you through these places with safety, respect for the environment, and the warmth that defines us.")}
+             </p>
+             <p>
+-              Trabajamos con grupos reducidos para ofrecer experiencias auténticas y personalizadas. Nuestros guías no
+-              solo conocen las rutas, sino también la flora, fauna, historia y geología de cada rincón que visitamos.
++              {t("Trabajamos con grupos reducidos para ofrecer experiencias auténticas y personalizadas. Nuestros guías no solo conocen las rutas, sino también la flora, fauna, historia y geología de cada rincón que visitamos.", "We work with small groups to offer authentic, personalized experiences. Our guides don't just know the trails — they also know the flora, fauna, history, and geology of every corner we visit.")}
+             </p>
+           </div>
+         </div>
+@@ -104,10 +104,10 @@ export function AboutContent() {
+           <div className="text-center mb-12">
+             <div className="flex items-center gap-3 justify-center mb-4">
+               <Compass className="h-8 w-8 text-primary" />
+-              <h2 className="text-3xl font-bold">Nuestros Valores</h2>
++              <h2 className="text-3xl font-bold">{t("Nuestros Valores", "Our Values")}</h2>
+             </div>
+             <p className="text-xl text-muted-foreground max-w-2xl mx-auto text-pretty">
+-              Los principios que guían cada una de nuestras expediciones
++              {t("Los principios que guían cada una de nuestras expediciones", "The principles that guide every one of our expeditions")}
+             </p>
+           </div>
+ 
+@@ -132,9 +132,9 @@ export function AboutContent() {
+       <section className="py-20 px-4">
+         <div className="max-w-7xl mx-auto">
+           <div className="text-center mb-12">
+-            <h2 className="text-3xl font-bold mb-4">Nuestro Equipo</h2>
++            <h2 className="text-3xl font-bold mb-4">{t("Nuestro Equipo", "Our Team")}</h2>
+             <p className="text-xl text-muted-foreground max-w-2xl mx-auto text-pretty">
+-              Guías profesionales certificados con años de experiencia en la Patagonia
++              {t("Guías profesionales certificados con años de experiencia en la Patagonia", "Certified professional guides with years of experience in Patagonia")}
+             </p>
+           </div>
+ 
+@@ -168,19 +168,19 @@ export function AboutContent() {
+           <div className="grid md:grid-cols-4 gap-8 text-center">
+             <div>
+               <p className="text-5xl font-bold mb-2">10+</p>
+-              <p className="text-lg opacity-90">Años de experiencia</p>
++              <p className="text-lg opacity-90">{t("Años de experiencia", "Years of experience")}</p>
+             </div>
+             <div>
+               <p className="text-5xl font-bold mb-2">2,500+</p>
+-              <p className="text-lg opacity-90">Clientes felices</p>
++              <p className="text-lg opacity-90">{t("Clientes felices", "Happy clients")}</p>
+             </div>
+             <div>
+               <p className="text-5xl font-bold mb-2">15+</p>
+-              <p className="text-lg opacity-90">Rutas diferentes</p>
++              <p className="text-lg opacity-90">{t("Rutas diferentes", "Different routes")}</p>
+             </div>
+             <div>
+               <p className="text-5xl font-bold mb-2">100%</p>
+-              <p className="text-lg opacity-90">Seguridad garantizada</p>
++              <p className="text-lg opacity-90">{t("Seguridad garantizada", "Guaranteed safety")}</p>
+             </div>
+           </div>
+         </div>
+diff --git a/components/actividades-view.tsx b/components/actividades-view.tsx
+index b1583e4..7f57b0a 100644
+--- a/components/actividades-view.tsx
++++ b/components/actividades-view.tsx
+@@ -3,6 +3,7 @@
+ import { useState, useMemo, useRef, useEffect } from "react"
+ import { Search, X, ChevronDown, Users, Calendar, MapPin, Clock, TrendingUp } from "lucide-react"
+ import { useRouter, useSearchParams } from "next/navigation"
++import { useLanguage } from "@/contexts/language-context"
+ 
+ // ─── Types ────────────────────────────────────────────────────────────────────
+ 
+@@ -249,9 +250,9 @@ export function dateToIso(d: Date) {
+   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+ }
+ 
+-function formatDisplayDate(iso: string) {
++function formatDisplayDate(iso: string, locale: string = "es-AR") {
+   const d = isoToDate(iso)
+-  return d.toLocaleDateString("es-AR", { day: "numeric", month: "short" })
++  return d.toLocaleDateString(locale, { day: "numeric", month: "short" })
+ }
+ 
+ function getDaysInMonth(year: number, month: number) {
+@@ -269,6 +270,7 @@ function MiniCalendar({
+   endDate: string | null
+   onSelect: (start: string, end: string | null) => void
+ }) {
++  const { language } = useLanguage()
+   const today = new Date()
+   const [viewYear, setViewYear] = useState(today.getFullYear())
+   const [viewMonth, setViewMonth] = useState(today.getMonth())
+@@ -285,7 +287,7 @@ function MiniCalendar({
+     else setViewMonth(m => m + 1)
+   }
+ 
+-  const monthName = new Date(viewYear, viewMonth).toLocaleDateString("es-AR", { month: "long", year: "numeric" })
++  const monthName = new Date(viewYear, viewMonth).toLocaleDateString(language === "es" ? "es-AR" : "en-US", { month: "long", year: "numeric" })
+ 
+   const handleDayClick = (day: number) => {
+     const iso = dateToIso(new Date(viewYear, viewMonth, day))
+@@ -321,7 +323,7 @@ function MiniCalendar({
+       </div>
+       {/* Day labels */}
+       <div className="grid grid-cols-7 mb-1">
+-        {["Do","Lu","Ma","Mi","Ju","Vi","Sa"].map(d => (
++        {(language === "es" ? ["Do","Lu","Ma","Mi","Ju","Vi","Sa"] : ["Su","Mo","Tu","We","Th","Fr","Sa"]).map(d => (
+           <div key={d} className="text-center text-xs text-muted-foreground font-medium py-1">{d}</div>
+         ))}
+       </div>
+@@ -377,6 +379,7 @@ function SearchBar({
+   guests, setGuests,
+   hasFilters, onClear,
+ }: SearchBarProps) {
++  const { t, language } = useLanguage()
+   const [openPanel, setOpenPanel] = useState<"where" | "when" | "who" | null>(null)
+   const barRef = useRef<HTMLDivElement>(null)
+ 
+@@ -391,13 +394,31 @@ function SearchBar({
+     return () => document.removeEventListener("mousedown", handler)
+   }, [])
+ 
+-  const wherLabel = (category === "all" || category === "Todas") ? "¿Qué actividad?" : category
++  const locale = language === "es" ? "es-AR" : "en-US"
++
++  const getCategoryLabel = (label: string) => {
++    const translations: Record<string, string> = {
++      "Ver todas": t("Ver todas", "View all"),
++      "Laguna Esmeralda": "Laguna Esmeralda",
++      "Glaciar Vinciguerra": "Glaciar Vinciguerra",
++      "Ojo del Albino": "Ojo del Albino",
++      "Valle Tierra Mayor": "Valle Tierra Mayor",
++      "Valle de Andorra": "Valle de Andorra",
++      "Trekking": "Trekking",
++      "Parque Nacional": t("Parque Nacional", "National Park"),
++      "Canal Beagle": "Canal Beagle",
++      "City Tour": "City Tour",
++    }
++    return translations[label] ?? label
++  }
++
++  const wherLabel = (category === "all" || category === "Todas") ? t("¿Qué actividad?", "Which activity?") : category
+   const whenLabel = startDate
+     ? endDate && endDate !== startDate
+-      ? `${formatDisplayDate(startDate)} – ${formatDisplayDate(endDate)}`
+-      : formatDisplayDate(startDate)
+-    : "¿Cuándo?"
+-  const whoLabel = guests > 1 ? `${guests} personas` : "1 persona"
++      ? `${formatDisplayDate(startDate, locale)} – ${formatDisplayDate(endDate, locale)}`
++      : formatDisplayDate(startDate, locale)
++    : t("¿Cuándo?", "When?")
++  const whoLabel = guests > 1 ? `${guests} ${t("personas", "people")}` : t("1 persona", "1 person")
+ 
+   const toggle = (panel: "where" | "when" | "who") =>
+     setOpenPanel(prev => (prev === panel ? null : panel))
+@@ -411,7 +432,7 @@ function SearchBar({
+           onClick={() => toggle("where")}
+           className={`flex flex-col items-start px-6 py-3 rounded-l-full hover:bg-muted/60 transition-colors min-w-0 flex-1 ${openPanel === "where" ? "bg-muted/60" : ""}`}
+         >
+-          <span className="text-xs font-semibold text-foreground">Actividad</span>
++          <span className="text-xs font-semibold text-foreground">{t("Actividad", "Activity")}</span>
+           <span className="text-sm text-muted-foreground truncate max-w-[160px]">{wherLabel}</span>
+         </button>
+ 
+@@ -420,7 +441,7 @@ function SearchBar({
+           onClick={() => toggle("when")}
+           className={`flex flex-col items-start px-6 py-3 hover:bg-muted/60 transition-colors min-w-0 flex-1 ${openPanel === "when" ? "bg-muted/60" : ""}`}
+         >
+-          <span className="text-xs font-semibold text-foreground">Fecha</span>
++          <span className="text-xs font-semibold text-foreground">{t("Fecha", "Date")}</span>
+           <span className="text-sm text-muted-foreground truncate">{whenLabel}</span>
+         </button>
+ 
+@@ -429,7 +450,7 @@ function SearchBar({
+           onClick={() => toggle("who")}
+           className={`flex flex-col items-start px-6 py-3 hover:bg-muted/60 transition-colors min-w-0 flex-1 ${openPanel === "who" ? "bg-muted/60" : ""}`}
+         >
+-          <span className="text-xs font-semibold text-foreground">Personas</span>
++          <span className="text-xs font-semibold text-foreground">{t("Personas", "People")}</span>
+           <span className="text-sm text-muted-foreground">{whoLabel}</span>
+         </button>
+ 
+@@ -437,7 +458,7 @@ function SearchBar({
+         <div className="flex items-center px-3 pr-2">
+           <button
+             className="bg-primary text-primary-foreground rounded-full p-3 hover:bg-primary/90 transition-colors"
+-            aria-label="Buscar actividades"
++            aria-label={t("Buscar actividades", "Search activities")}
+             onClick={() => setOpenPanel(null)}
+           >
+             <Search className="h-4 w-4" />
+@@ -453,7 +474,7 @@ function SearchBar({
+             className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+           >
+             <X className="h-3.5 w-3.5" />
+-            Limpiar filtros
++            {t("Limpiar filtros", "Clear filters")}
+           </button>
+         </div>
+       )}
+@@ -462,7 +483,7 @@ function SearchBar({
+       {openPanel === "where" && (
+         <div className="absolute top-[calc(100%+12px)] left-0 bg-card border border-border rounded-3xl shadow-xl z-50 p-4 w-72">
+           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-1">
+-            Actividad
++            {t("Actividad", "Activity")}
+           </p>
+           <div className="flex flex-col gap-1">
+             {CATEGORIES.map(({ label, value }) => (
+@@ -475,7 +496,7 @@ function SearchBar({
+                     : "hover:bg-muted text-foreground"
+                   }`}
+               >
+-                {label}
++                {getCategoryLabel(label)}
+               </button>
+             ))}
+           </div>
+@@ -496,13 +517,13 @@ function SearchBar({
+                 onClick={() => setDates(null, null)}
+                 className="flex-1 py-2 text-sm border border-border rounded-xl hover:bg-muted transition-colors"
+               >
+-                Borrar
++                {t("Borrar", "Clear")}
+               </button>
+               <button
+                 onClick={() => setOpenPanel(null)}
+                 className="flex-1 py-2 text-sm bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 transition-colors font-medium"
+               >
+-                Aplicar
++                {t("Aplicar", "Apply")}
+               </button>
+             </div>
+           )}
+@@ -514,8 +535,8 @@ function SearchBar({
+         <div className="absolute top-[calc(100%+12px)] right-16 bg-card border border-border rounded-3xl shadow-xl z-50 p-5 w-64">
+           <div className="flex items-center justify-between">
+             <div>
+-              <p className="font-semibold text-sm">Personas</p>
+-              <p className="text-xs text-muted-foreground">¿Cuántos van?</p>
++              <p className="font-semibold text-sm">{t("Personas", "People")}</p>
++              <p className="text-xs text-muted-foreground">{t("¿Cuántos van?", "How many?")}</p>
+             </div>
+             <div className="flex items-center gap-3">
+               <button
+@@ -543,6 +564,7 @@ function SearchBar({
+ // ─── Activity Card ────────────────────────────────────────────────────────────
+ 
+ function ActivityCard({ activity }: { activity: Activity }) {
++  const { t } = useLanguage()
+   const router = useRouter()
+ 
+   const nextDate = activity.availability_dates
+@@ -591,7 +613,7 @@ function ActivityCard({ activity }: { activity: Activity }) {
+         {/* Price */}
+         <p className="text-sm pt-1">
+           <span className="font-semibold text-foreground">{activity.currency} {activity.price_from}</span>
+-          <span className="text-muted-foreground"> / persona</span>
++          <span className="text-muted-foreground"> {t("/ persona", "/ person")}</span>
+         </p>
+       </div>
+     </article>
+@@ -601,18 +623,19 @@ function ActivityCard({ activity }: { activity: Activity }) {
+ // ─── Empty state ──────────────────────────────────────────────────────────────
+ 
+ function EmptyState({ onClear }: { onClear: () => void }) {
++  const { t } = useLanguage()
+   return (
+     <div className="flex flex-col items-center justify-center py-24 text-center">
+       <div className="text-5xl mb-4">🔍</div>
+-      <h3 className="text-xl font-semibold mb-2">Sin resultados</h3>
++      <h3 className="text-xl font-semibold mb-2">{t("Sin resultados", "No results")}</h3>
+       <p className="text-muted-foreground mb-6 max-w-sm">
+-        No hay actividades disponibles con esos filtros. Probá ajustando la búsqueda.
++        {t("No hay actividades disponibles con esos filtros. Probá ajustando la búsqueda.", "No activities match your filters. Try adjusting your search.")}
+       </p>
+       <button
+         onClick={onClear}
+         className="px-5 py-2.5 bg-primary text-primary-foreground rounded-full font-medium hover:bg-primary/90 transition-colors"
+       >
+-        Limpiar filtros
++        {t("Limpiar filtros", "Clear filters")}
+       </button>
+     </div>
+   )
+@@ -630,6 +653,7 @@ const SLUG_TO_CATEGORY: Record<string, Category> = {
+ }
+ 
+ export function ActividadesView() {
++  const { t } = useLanguage()
+   const searchParams = useSearchParams()
+ 
+   const initialCategory: Category | "all" = (() => {
+@@ -700,7 +724,7 @@ export function ActividadesView() {
+       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+         {/* Count */}
+         <p className="text-sm text-muted-foreground mb-6">
+-          {filtered.length} {filtered.length === 1 ? "actividad disponible" : "actividades disponibles"}
++          {filtered.length} {filtered.length === 1 ? t("actividad disponible", "activity available") : t("actividades disponibles", "activities available")}
+         </p>
+ 
+         {filtered.length === 0 ? (
+diff --git a/components/calendar-view.tsx b/components/calendar-view.tsx
+index 2ece492..e3ceccf 100644
+--- a/components/calendar-view.tsx
++++ b/components/calendar-view.tsx
+@@ -7,6 +7,7 @@ import { MapPin, Clock, Users, ChevronRight, X } from "lucide-react"
+ import Link from "next/link"
+ import { useState, useMemo, useEffect } from "react"
+ import { useSearchParams, useRouter } from "next/navigation"
++import { useLanguage } from "@/contexts/language-context"
+ 
+ // ─── Difficulty icons (neutral SVG, no color) ───────────────────────────────
+ 
+@@ -114,6 +115,7 @@ calendarEvents.forEach((e) => { TITLE_TO_SLUG[e.title] = e.id })
+ export function CalendarView() {
+   const searchParams = useSearchParams()
+   const router = useRouter()
++  const { t, language } = useLanguage()
+ 
+   // Resolve initial state from URL query params
+   const initialActivity = useMemo(() => {
+@@ -218,10 +220,10 @@ export function CalendarView() {
+       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+   }, [isAllMonths, selectedMonth, selectedYear, resolvedActivity, selectedDifficulties])
+ 
+-  const summaryActivity = resolvedActivity === "Todas" ? "Todas las actividades" : resolvedActivity
++  const summaryActivity = resolvedActivity === "Todas" ? t("Todas las actividades", "All activities") : resolvedActivity
+   const summaryDifficulty = selectedDifficulties.length > 0
+-    ? `Dificultad: ${selectedDifficulties.join(", ")}`
+-    : "Dificultad: Todas"
++    ? t(`Dificultad: ${selectedDifficulties.join(", ")}`, `Difficulty: ${selectedDifficulties.join(", ")}`)
++    : t("Dificultad: Todas", "Difficulty: All")
+ 
+   // ─── Select base classes
+   const selectClass =
+@@ -233,24 +235,24 @@ export function CalendarView() {
+ 
+         {/* Header */}
+         <div className="text-center mb-12">
+-          <Badge className="mb-4 bg-primary/10 text-primary border-primary/20">Próximas Salidas</Badge>
+-          <h1 className="text-4xl md:text-5xl font-bold mb-4 text-balance">Calendario de Expediciones</h1>
++          <Badge className="mb-4 bg-primary/10 text-primary border-primary/20">{t("Próximas Salidas", "Upcoming Departures")}</Badge>
++          <h1 className="text-4xl md:text-5xl font-bold mb-4 text-balance">{t("Calendario de Expediciones", "Expedition Calendar")}</h1>
+           <p className="text-lg text-muted-foreground max-w-xl mx-auto text-pretty">
+-            Elegí la fecha que mejor se adapte a tus planes
++            {t("Elegí la fecha que mejor se adapte a tus planes", "Choose the date that best fits your plans")}
+           </p>
+         </div>
+ 
+         {/* Filter Panel */}
+         <div className="bg-card border rounded-2xl p-6 mb-8 shadow-sm">
+           <div className="flex items-center justify-between mb-5">
+-            <p className="text-sm font-semibold text-foreground">Elegir salidas</p>
++            <p className="text-sm font-semibold text-foreground">{t("Elegir salidas", "Filter departures")}</p>
+             {hasActiveFilters && (
+               <button
+                 onClick={clearFilters}
+                 className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+               >
+                 <X className="h-3.5 w-3.5" />
+-                Limpiar filtros
++                {t("Limpiar filtros", "Clear filters")}
+               </button>
+             )}
+           </div>
+@@ -260,7 +262,7 @@ export function CalendarView() {
+             {/* Row 1 — Mes */}
+             <div className="flex flex-col gap-1.5">
+               <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+-                Mes
++                {t("Mes", "Month")}
+               </label>
+               <div className="relative">
+                 <select
+@@ -268,7 +270,7 @@ export function CalendarView() {
+                   onChange={(e) => handleMonthChange(e.target.value)}
+                   className={selectClass}
+                 >
+-                  <option value={ALL_MONTHS_KEY}>Todos los meses</option>
++                  <option value={ALL_MONTHS_KEY}>{t("Todos los meses", "All months")}</option>
+                   {availableMonthYears.map(({ key, month, year }) => (
+                     <option key={key} value={key}>
+                       {month} {year}
+@@ -282,7 +284,7 @@ export function CalendarView() {
+             {/* Row 2 — Actividad (dependent) */}
+             <div className="flex flex-col gap-1.5">
+               <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+-                {"Lugar\n"}
++                {t("Lugar", "Location")}
+               </label>
+               <div className="relative">
+                 <select
+@@ -290,7 +292,7 @@ export function CalendarView() {
+                   onChange={(e) => handleActivityChange(e.target.value)}
+                   className={selectClass}
+                 >
+-                  <option value="Todas">Todas</option>
++                  <option value="Todas">{t("Todas", "All")}</option>
+                   {Object.entries(activitiesInMonth).map(([title, count]) => (
+                     <option key={title} value={title}>
+                       {title} ({count})
+@@ -301,7 +303,7 @@ export function CalendarView() {
+               </div>
+               {activityResetMsg && (
+                 <p className="text-xs text-muted-foreground italic">
+-                  No hay salidas de esa actividad en el mes seleccionado.
++                  {t("No hay salidas de esa actividad en el mes seleccionado.", "No departures for this activity in the selected month.")}
+                 </p>
+               )}
+             </div>
+@@ -309,7 +311,7 @@ export function CalendarView() {
+             {/* Row 3 — Dificultad (segmented, persistent) */}
+             <div className="flex flex-col gap-1.5">
+               <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+-                Dificultad
++                {t("Dificultad", "Difficulty")}
+               </label>
+               <div className="flex rounded-lg border border-input overflow-hidden bg-background divide-x divide-border h-[38px]">
+                 {Object.entries(DIFFICULTY_CONFIG).map(([key, { label, icon: Icon }]) => {
+@@ -343,7 +345,7 @@ export function CalendarView() {
+             {filteredEvents.map((event, index) => {
+               const dateObj  = new Date(event.date + "T12:00:00")
+               const dayNum   = dateObj.getDate()
+-              const monthShort = dateObj.toLocaleDateString("es", { month: "short" }).toUpperCase().replace(".", "")
++              const monthShort = dateObj.toLocaleDateString(language === "es" ? "es" : "en", { month: "short" }).toUpperCase().replace(".", "")
+               const lowSpots = event.spotsLeft <= 3
+               const DiffIcon = DIFFICULTY_CONFIG[event.difficulty]?.icon
+ 
+@@ -382,7 +384,7 @@ export function CalendarView() {
+                         </span>
+                         <span className="flex items-center gap-1">
+                           <Users className="h-3.5 w-3.5 text-primary/70" />
+-                          {event.groupSize} personas
++                          {event.groupSize} {t("personas", "people")}
+                         </span>
+                       </div>
+                     </div>
+@@ -390,17 +392,17 @@ export function CalendarView() {
+                     {/* Price + CTA */}
+                     <div className="flex sm:flex-col items-center sm:items-end gap-3 sm:gap-1.5 flex-shrink-0">
+                       <div className="text-right">
+-                        <p className="text-xs text-muted-foreground">Desde</p>
++                        <p className="text-xs text-muted-foreground">{t("Desde", "From")}</p>
+                         <p className="text-xl font-bold text-foreground leading-tight">{event.price}</p>
+                       </div>
+                       <p className={`text-xs font-medium ${lowSpots ? "text-rose-500" : "text-primary"}`}>
+                         {lowSpots
+-                          ? `¡Solo ${event.spotsLeft} lugares!`
+-                          : `${event.spotsLeft} lugares disponibles`}
++                          ? t(`¡Solo ${event.spotsLeft} lugares!`, `Only ${event.spotsLeft} spots left!`)
++                          : t(`${event.spotsLeft} lugares disponibles`, `${event.spotsLeft} spots available`)}
+                       </p>
+                       <Link href={`/trekkings/${event.id}`}>
+                         <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90 whitespace-nowrap mt-1">
+-                          Reservar
++                          {t("Reservar", "Book now")}
+                           <ChevronRight className="ml-1 h-3.5 w-3.5" />
+                         </Button>
+                       </Link>
+@@ -413,9 +415,9 @@ export function CalendarView() {
+           </div>
+         ) : (
+           <div className="text-center py-20 text-muted-foreground">
+-            <p className="text-lg font-medium mb-1">No hay salidas disponibles con estos filtros.</p>
++            <p className="text-lg font-medium mb-1">{t("No hay salidas disponibles con estos filtros.", "No departures available with these filters.")}</p>
+             <button onClick={clearFilters} className="text-sm text-primary hover:underline">
+-              Limpiar filtros
++              {t("Limpiar filtros", "Clear filters")}
+             </button>
+           </div>
+         )}
+diff --git a/components/contact-form.tsx b/components/contact-form.tsx
+index a377f25..06c6275 100644
+--- a/components/contact-form.tsx
++++ b/components/contact-form.tsx
+@@ -10,8 +10,10 @@ import { Textarea } from "@/components/ui/textarea"
+ import { Label } from "@/components/ui/label"
+ import { Mail, Phone, MapPin, Clock, Send } from "lucide-react"
+ import { useState } from "react"
++import { useLanguage } from "@/contexts/language-context"
+ 
+ export function ContactForm() {
++  const { t } = useLanguage()
+   const [formData, setFormData] = useState({
+     name: "",
+     email: "",
+@@ -24,7 +26,7 @@ export function ContactForm() {
+     e.preventDefault()
+     // Handle form submission
+     console.log("Form submitted:", formData)
+-    alert("¡Gracias por contactarnos! Te responderemos pronto.")
++    alert(t("¡Gracias por contactarnos! Te responderemos pronto.", "Thank you for contacting us! We'll get back to you soon."))
+   }
+ 
+   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+@@ -39,10 +41,10 @@ export function ContactForm() {
+       <div className="max-w-7xl mx-auto">
+         {/* Header */}
+         <div className="text-center mb-12">
+-          <Badge className="mb-4 bg-primary/10 text-primary border-primary/20">Contacto</Badge>
+-          <h1 className="text-4xl md:text-5xl font-bold mb-4 text-balance">Hablemos de tu próxima aventura</h1>
++          <Badge className="mb-4 bg-primary/10 text-primary border-primary/20">{t("Contacto", "Contact")}</Badge>
++          <h1 className="text-4xl md:text-5xl font-bold mb-4 text-balance">{t("Hablemos de tu próxima aventura", "Let's talk about your next adventure")}</h1>
+           <p className="text-xl text-muted-foreground max-w-2xl mx-auto text-pretty">
+-            Estamos aquí para responder todas tus preguntas y ayudarte a planificar el trekking perfecto
++            {t("Estamos aquí para responder todas tus preguntas y ayudarte a planificar el trekking perfecto", "We're here to answer all your questions and help you plan the perfect trek")}
+           </p>
+         </div>
+ 
+@@ -50,7 +52,7 @@ export function ContactForm() {
+           {/* Contact Info */}
+           <div className="lg:col-span-1 space-y-6">
+             <Card className="p-6 border-2">
+-              <h2 className="text-2xl font-bold mb-6">Información de Contacto</h2>
++              <h2 className="text-2xl font-bold mb-6">{t("Información de Contacto", "Contact Information")}</h2>
+               <div className="space-y-6">
+                 <div className="flex items-start gap-4">
+                   <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0">
+@@ -69,7 +71,7 @@ export function ContactForm() {
+                     <Phone className="h-6 w-6 text-primary" />
+                   </div>
+                   <div>
+-                    <p className="font-semibold mb-1">Teléfono</p>
++                    <p className="font-semibold mb-1">{t("Teléfono", "Phone")}</p>
+                     <a href="tel:+542902491234" className="text-muted-foreground hover:text-primary">
+                       +54 2902 49-1234
+                     </a>
+@@ -85,7 +87,7 @@ export function ContactForm() {
+                     <MapPin className="h-6 w-6 text-primary" />
+                   </div>
+                   <div>
+-                    <p className="font-semibold mb-1">Oficina</p>
++                    <p className="font-semibold mb-1">{t("Oficina", "Office")}</p>
+                     <p className="text-muted-foreground">
+                       Av. Libertador 123
+                       <br />
+@@ -101,13 +103,13 @@ export function ContactForm() {
+                     <Clock className="h-6 w-6 text-primary" />
+                   </div>
+                   <div>
+-                    <p className="font-semibold mb-1">Horario de Atención</p>
++                    <p className="font-semibold mb-1">{t("Horario de Atención", "Business Hours")}</p>
+                     <p className="text-muted-foreground">
+-                      Lunes a Viernes: 9:00 - 18:00
++                      {t("Lunes a Viernes: 9:00 - 18:00", "Monday to Friday: 9:00 AM - 6:00 PM")}
+                       <br />
+-                      Sábados: 10:00 - 14:00
++                      {t("Sábados: 10:00 - 14:00", "Saturdays: 10:00 AM - 2:00 PM")}
+                       <br />
+-                      Domingos: Cerrado
++                      {t("Domingos: Cerrado", "Sundays: Closed")}
+                     </p>
+                   </div>
+                 </div>
+@@ -115,9 +117,9 @@ export function ContactForm() {
+             </Card>
+ 
+             <Card className="p-6 bg-primary text-primary-foreground border-2 border-primary">
+-              <h3 className="text-xl font-bold mb-3">¿Necesitás ayuda inmediata?</h3>
++              <h3 className="text-xl font-bold mb-3">{t("¿Necesitás ayuda inmediata?", "Need immediate help?")}</h3>
+               <p className="mb-4 opacity-90">
+-                Nuestro equipo está disponible para consultas urgentes sobre expediciones en curso.
++                {t("Nuestro equipo está disponible para consultas urgentes sobre expediciones en curso.", "Our team is available for urgent queries about ongoing expeditions.")}
+               </p>
+               <Button variant="secondary" className="w-full" size="lg">
+                 WhatsApp: +54 9 11 2345-6789
+@@ -128,11 +130,11 @@ export function ContactForm() {
+           {/* Contact Form */}
+           <div className="lg:col-span-2">
+             <Card className="p-8 border-2">
+-              <h2 className="text-2xl font-bold mb-6">Envianos un mensaje</h2>
++              <h2 className="text-2xl font-bold mb-6">{t("Envianos un mensaje", "Send us a message")}</h2>
+               <form onSubmit={handleSubmit} className="space-y-6">
+                 <div className="grid md:grid-cols-2 gap-6">
+                   <div className="space-y-2">
+-                    <Label htmlFor="name">Nombre completo *</Label>
++                    <Label htmlFor="name">{t("Nombre completo *", "Full name *")}</Label>
+                     <Input
+                       id="name"
+                       name="name"
+@@ -159,7 +161,7 @@ export function ContactForm() {
+ 
+                 <div className="grid md:grid-cols-2 gap-6">
+                   <div className="space-y-2">
+-                    <Label htmlFor="phone">Teléfono</Label>
++                    <Label htmlFor="phone">{t("Teléfono", "Phone")}</Label>
+                     <Input
+                       id="phone"
+                       name="phone"
+@@ -171,11 +173,11 @@ export function ContactForm() {
+                   </div>
+ 
+                   <div className="space-y-2">
+-                    <Label htmlFor="subject">Asunto *</Label>
++                    <Label htmlFor="subject">{t("Asunto *", "Subject *")}</Label>
+                     <Input
+                       id="subject"
+                       name="subject"
+-                      placeholder="Consulta sobre Fitz Roy"
++                      placeholder={t("Consulta sobre Fitz Roy", "Inquiry about Fitz Roy")}
+                       value={formData.subject}
+                       onChange={handleChange}
+                       required
+@@ -184,11 +186,11 @@ export function ContactForm() {
+                 </div>
+ 
+                 <div className="space-y-2">
+-                  <Label htmlFor="message">Mensaje *</Label>
++                  <Label htmlFor="message">{t("Mensaje *", "Message *")}</Label>
+                   <Textarea
+                     id="message"
+                     name="message"
+-                    placeholder="Contanos sobre tu experiencia de trekking previa, nivel de fitness, fechas preferidas, y cualquier pregunta que tengas..."
++                    placeholder={t("Contanos sobre tu experiencia de trekking previa, nivel de fitness, fechas preferidas, y cualquier pregunta que tengas...", "Tell us about your previous trekking experience, fitness level, preferred dates, and any questions you may have...")}
+                     value={formData.message}
+                     onChange={handleChange}
+                     rows={6}
+@@ -198,7 +200,7 @@ export function ContactForm() {
+ 
+                 <Button type="submit" size="lg" className="w-full md:w-auto bg-primary text-primary-foreground">
+                   <Send className="mr-2 h-5 w-5" />
+-                  Enviar Mensaje
++                  {t("Enviar Mensaje", "Send Message")}
+                 </Button>
+               </form>
+             </Card>
+@@ -207,36 +209,33 @@ export function ContactForm() {
+ 
+         {/* FAQ Section */}
+         <div className="mt-16">
+-          <h2 className="text-3xl font-bold mb-8 text-center">Preguntas Frecuentes</h2>
++          <h2 className="text-3xl font-bold mb-8 text-center">{t("Preguntas Frecuentes", "Frequently Asked Questions")}</h2>
+           <div className="grid md:grid-cols-2 gap-6 max-w-5xl mx-auto">
+             <Card className="p-6 border-2">
+-              <h3 className="font-bold mb-2">¿Cuándo es la mejor época para hacer trekking?</h3>
++              <h3 className="font-bold mb-2">{t("¿Cuándo es la mejor época para hacer trekking?", "When is the best time for trekking?")}</h3>
+               <p className="text-muted-foreground text-sm">
+-                La temporada alta es de noviembre a marzo, con días más largos y clima más estable. Diciembre y enero
+-                son los meses más populares.
++                {t("La temporada alta es de noviembre a marzo, con días más largos y clima más estable. Diciembre y enero son los meses más populares.", "High season runs from November to March, with longer days and more stable weather. December and January are the most popular months.")}
+               </p>
+             </Card>
+ 
+             <Card className="p-6 border-2">
+-              <h3 className="font-bold mb-2">¿Qué nivel de fitness necesito?</h3>
++              <h3 className="font-bold mb-2">{t("¿Qué nivel de fitness necesito?", "What fitness level do I need?")}</h3>
+               <p className="text-muted-foreground text-sm">
+-                Depende del trekking. Tenemos opciones para todos los niveles, desde caminatas fáciles hasta
+-                expediciones avanzadas que requieren buena condición física.
++                {t("Depende del trekking. Tenemos opciones para todos los niveles, desde caminatas fáciles hasta expediciones avanzadas que requieren buena condición física.", "It depends on the trek. We have options for all levels, from easy walks to advanced expeditions requiring good physical condition.")}
+               </p>
+             </Card>
+ 
+             <Card className="p-6 border-2">
+-              <h3 className="font-bold mb-2">¿Proveen equipamiento?</h3>
++              <h3 className="font-bold mb-2">{t("¿Proveen equipamiento?", "Do you provide equipment?")}</h3>
+               <p className="text-muted-foreground text-sm">
+-                Sí, incluimos equipamiento técnico (crampones, carpas, etc.). El equipamiento personal como botas y ropa
+-                es responsabilidad del participante.
++                {t("Sí, incluimos equipamiento técnico (crampones, carpas, etc.). El equipamiento personal como botas y ropa es responsabilidad del participante.", "Yes, we include technical equipment (crampons, tents, etc.). Personal gear like boots and clothing is the participant's responsibility.")}
+               </p>
+             </Card>
+ 
+             <Card className="p-6 border-2">
+-              <h3 className="font-bold mb-2">¿Puedo hacer un trekking privado?</h3>
++              <h3 className="font-bold mb-2">{t("¿Puedo hacer un trekking privado?", "Can I book a private trek?")}</h3>
+               <p className="text-muted-foreground text-sm">
+-                Sí, ofrecemos expediciones privadas para grupos. Contactanos para armar un itinerario personalizado.
++                {t("Sí, ofrecemos expediciones privadas para grupos. Contactanos para armar un itinerario personalizado.", "Yes, we offer private expeditions for groups. Contact us to create a custom itinerary.")}
+               </p>
+             </Card>
+           </div>
+diff --git a/components/lugar-landing.tsx b/components/lugar-landing.tsx
+index 97c6b2e..39187e9 100644
+--- a/components/lugar-landing.tsx
++++ b/components/lugar-landing.tsx
+@@ -7,6 +7,7 @@ import { Footer } from "@/components/footer"
+ import { ChevronRight } from "lucide-react"
+ import { useRef, useEffect, useState, useCallback } from "react"
+ import Script from "next/script"
++import { useLanguage } from "@/contexts/language-context"
+ 
+ // ─── Interfaces ───────────────────────────────────────────────────────────────
+ 
+@@ -142,6 +143,8 @@ function GalleryCarousel({ images }: { images: { src: string; alt: string }[] })
+ // ─── Main Component ───────────────────────────────────────────────────────────
+ 
+ export function LugarLanding({ data }: Props) {
++  const { t } = useLanguage()
++
+   // JSON-LD structured data
+   const jsonLd = {
+     "@context": "https://schema.org",
+@@ -215,7 +218,7 @@ export function LugarLanding({ data }: Props) {
+                 className="bg-primary text-primary-foreground hover:bg-primary/90 rounded-full px-7 group"
+               >
+                 <Link href="/actividades">
+-                  Ver próximas salidas
++                  {t("Ver próximas salidas", "View upcoming departures")}
+                   <ChevronRight className="ml-1.5 h-4 w-4 group-hover:translate-x-1 transition-transform" />
+                 </Link>
+               </Button>
+@@ -226,7 +229,7 @@ export function LugarLanding({ data }: Props) {
+                 className="bg-white/10 hover:bg-white/20 text-white border-white/30 rounded-full px-7 backdrop-blur-sm"
+               >
+                 <Link href="/nosotros">
+-                  Conocer al equipo
++                  {t("Conocer al equipo", "Meet the team")}
+                 </Link>
+               </Button>
+             </div>
+@@ -239,7 +242,7 @@ export function LugarLanding({ data }: Props) {
+           {/* ② Sobre la experiencia — was heroIntro, now first content section */}
+           <section>
+             <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-5 text-balance">
+-              Sobre la experiencia
++              {t("Sobre la experiencia", "About the experience")}
+             </h2>
+             <p className="text-muted-foreground leading-relaxed text-pretty">
+               {data.heroIntro}
+@@ -249,7 +252,7 @@ export function LugarLanding({ data }: Props) {
+           {/* ④ Ubicacion */}
+           <section>
+             <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-5 text-balance">
+-              ¿Dónde se encuentra?
++              {t("¿Dónde se encuentra?", "Where is it located?")}
+             </h2>
+             <div className="text-muted-foreground leading-relaxed space-y-4">
+               {data.ubicacion}
+@@ -259,7 +262,7 @@ export function LugarLanding({ data }: Props) {
+           {/* ③ Características naturales */}
+           <section>
+             <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-5 text-balance">
+-              Características naturales
++              {t("Características naturales", "Natural features")}
+             </h2>
+             <div className="text-muted-foreground leading-relaxed">
+               {data.caracteristicas}
+@@ -269,7 +272,7 @@ export function LugarLanding({ data }: Props) {
+           {/* ④ Importancia */}
+           <section>
+             <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-5 text-balance">
+-              Importancia dentro de Tierra del Fuego
++              {t("Importancia dentro de Tierra del Fuego", "Importance within Tierra del Fuego")}
+             </h2>
+             <div className="text-muted-foreground leading-relaxed space-y-4">
+               {data.importancia}
+@@ -279,7 +282,7 @@ export function LugarLanding({ data }: Props) {
+           {/* ⑤ Popularidad */}
+           <section>
+             <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-5 text-balance">
+-              ¿Por qué es uno de los lugares más visitados de Ushuaia?
++              {t("¿Por qué es uno de los lugares más visitados de Ushuaia?", "Why is it one of the most visited places in Ushuaia?")}
+             </h2>
+             <div className="text-muted-foreground leading-relaxed space-y-4">
+               {data.popularidad}
+@@ -296,7 +299,7 @@ export function LugarLanding({ data }: Props) {
+           {/* ⑦ Map */}
+           <section>
+             <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-5 text-balance">
+-              Ubicación en el mapa
++              {t("Ubicación en el mapa", "Map location")}
+             </h2>
+             <div className="rounded-2xl overflow-hidden border border-border bg-muted" style={{ height: "380px" }}>
+               <iframe
+@@ -307,7 +310,7 @@ export function LugarLanding({ data }: Props) {
+                 allowFullScreen
+                 loading="lazy"
+                 referrerPolicy="no-referrer-when-downgrade"
+-                title={`Mapa de ${data.title} en Ushuaia, Tierra del Fuego`}
++                title={t(`Mapa de ${data.title} en Ushuaia, Tierra del Fuego`, `Map of ${data.title} in Ushuaia, Tierra del Fuego`)}
+               />
+             </div>
+           </section>
+@@ -316,7 +319,7 @@ export function LugarLanding({ data }: Props) {
+           {data.faqs.length > 0 && (
+             <section>
+               <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-8 text-balance">
+-                Preguntas frecuentes
++                {t("Preguntas frecuentes", "Frequently asked questions")}
+               </h2>
+               <div className="space-y-6">
+                 {data.faqs.map((faq, i) => (
+@@ -333,10 +336,10 @@ export function LugarLanding({ data }: Props) {
+           {data.calendarSlug && (
+             <section className="border border-border rounded-2xl px-8 py-12 bg-muted/40">
+               <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-3 text-balance">
+-                ¿Querés vivir la experiencia?
++                {t("¿Querés vivir la experiencia?", "Ready to live the experience?")}
+               </h2>
+               <p className="text-muted-foreground mb-8 max-w-xl text-pretty leading-relaxed">
+-                Si estás planificando tu visita a Ushuaia y querés conocer {data.title} con acompañamiento profesional y organización previa, podés reservar tu salida directamente desde nuestra plataforma.
++                {t("Si estás planificando tu visita a Ushuaia y querés conocer", "If you're planning your visit to Ushuaia and want to experience")} {data.title} {t("con acompañamiento profesional y organización previa, podés reservar tu salida directamente desde nuestra plataforma.", "with professional guidance and advance planning, you can book your departure directly from our platform.")}
+               </p>
+               <Button
+                 asChild
+@@ -344,7 +347,7 @@ export function LugarLanding({ data }: Props) {
+                 className="bg-primary text-primary-foreground hover:bg-primary/90 rounded-full px-8 group"
+               >
+                 <Link href="/actividades">
+-                  Reservar salida
++                  {t("Reservar salida", "Book departure")}
+                   <ChevronRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
+                 </Link>
+               </Button>
+diff --git a/components/reservar-view.tsx b/components/reservar-view.tsx
+index 1b983db..1a6d815 100644
+--- a/components/reservar-view.tsx
++++ b/components/reservar-view.tsx
+@@ -6,12 +6,13 @@ import { ACTIVITIES } from "@/components/actividades-view"
+ import { Button } from "@/components/ui/button"
+ import { Calendar, ChevronLeft, Users } from "lucide-react"
+ import Link from "next/link"
++import { useLanguage } from "@/contexts/language-context"
+ 
+ // ─── Helpers ─────────────────────────────────────────────────────────────────
+ 
+-function isoToDisplayDate(iso: string) {
++function isoToDisplayDate(iso: string, locale: string = "es-AR") {
+   const [y, m, d] = iso.split("-").map(Number)
+-  return new Date(y, m - 1, d).toLocaleDateString("es-AR", {
++  return new Date(y, m - 1, d).toLocaleDateString(locale, {
+     weekday: "long",
+     day: "numeric",
+     month: "long",
+@@ -19,9 +20,9 @@ function isoToDisplayDate(iso: string) {
+   })
+ }
+ 
+-function isoToShortDate(iso: string) {
++function isoToShortDate(iso: string, locale: string = "es-AR") {
+   const [y, m, d] = iso.split("-").map(Number)
+-  return new Date(y, m - 1, d).toLocaleDateString("es-AR", {
++  return new Date(y, m - 1, d).toLocaleDateString(locale, {
+     day: "numeric",
+     month: "short",
+     year: "numeric",
+@@ -108,6 +109,8 @@ function SectionCard({ title, children }: { title: string; children: React.React
+ // ─── Main component ───────────────────────────────────────────────────────────
+ 
+ export function ReservarView() {
++  const { t, language } = useLanguage()
++  const locale = language === "es" ? "es-AR" : "en-US"
+   const searchParams = useSearchParams()
+   const departureId = searchParams.get("departureId") ?? ""
+ 
+@@ -164,31 +167,31 @@ export function ReservarView() {
+     const errs: FormErrors = {}
+     switch (field) {
+       case "firstName":
+-        if (!values.firstName.trim()) errs.firstName = "El nombre es obligatorio."
++        if (!values.firstName.trim()) errs.firstName = t("El nombre es obligatorio.", "First name is required.")
+         break
+       case "lastName":
+-        if (!values.lastName.trim()) errs.lastName = "El apellido es obligatorio."
++        if (!values.lastName.trim()) errs.lastName = t("El apellido es obligatorio.", "Last name is required.")
+         break
+       case "email":
+-        if (!values.email.trim()) errs.email = "El email es obligatorio."
+-        else if (!isValidEmail(values.email)) errs.email = "Ingresá un email válido."
++        if (!values.email.trim()) errs.email = t("El email es obligatorio.", "Email is required.")
++        else if (!isValidEmail(values.email)) errs.email = t("Ingresá un email válido.", "Enter a valid email.")
+         break
+       case "phone":
+-        if (!values.phone.trim()) errs.phone = "El teléfono es obligatorio."
+-        else if (!isValidPhone(values.phone)) errs.phone = "Ingresá un número válido (mín. 7 dígitos)."
++        if (!values.phone.trim()) errs.phone = t("El teléfono es obligatorio.", "Phone number is required.")
++        else if (!isValidPhone(values.phone)) errs.phone = t("Ingresá un número válido (mín. 7 dígitos).", "Enter a valid number (min. 7 digits).")
+         break
+       case "pickupAddress":
+-        if (!values.pickupAddress.trim()) errs.pickupAddress = "La dirección es obligatoria."
++        if (!values.pickupAddress.trim()) errs.pickupAddress = t("La dirección es obligatoria.", "Address is required.")
+         break
+       case "city":
+-        if (!values.city.trim()) errs.city = "La ciudad es obligatoria."
++        if (!values.city.trim()) errs.city = t("La ciudad es obligatoria.", "City is required.")
+         break
+       case "hotelName":
+-        if (values.isHotel && !values.hotelName.trim()) errs.hotelName = "Ingresá el nombre del hotel."
++        if (values.isHotel && !values.hotelName.trim()) errs.hotelName = t("Ingresá el nombre del hotel.", "Enter the hotel name.")
+         break
+     }
+     return errs
+-  }, [])
++  }, [t])
+ 
+   const validateAll = useCallback((values: BookingForm): FormErrors => {
+     const fields: (keyof BookingForm)[] = ["firstName", "lastName", "email", "phone", "pickupAddress", "city"]
+@@ -223,12 +226,12 @@ export function ReservarView() {
+   if (!activity || !date) {
+     return (
+       <div className="max-w-2xl mx-auto px-6 py-24 text-center">
+-        <h1 className="text-2xl font-bold mb-4">Reserva no encontrada</h1>
++        <h1 className="text-2xl font-bold mb-4">{t("Reserva no encontrada", "Booking not found")}</h1>
+         <p className="text-muted-foreground mb-8">
+-          No pudimos encontrar la salida. Volvé a actividades y seleccioná una fecha.
++          {t("No pudimos encontrar la salida. Volvé a actividades y seleccioná una fecha.", "We couldn't find this departure. Go back to activities and select a date.")}
+         </p>
+         <Button asChild>
+-          <Link href="/actividades">Ver Actividades</Link>
++          <Link href="/actividades">{t("Ver Actividades", "View Activities")}</Link>
+         </Button>
+       </div>
+     )
+@@ -242,15 +245,15 @@ export function ReservarView() {
+             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+           </svg>
+         </div>
+-        <h1 className="text-3xl font-bold mb-3">Solicitud enviada</h1>
++        <h1 className="text-3xl font-bold mb-3">{t("Solicitud enviada", "Request submitted")}</h1>
+         <p className="text-muted-foreground mb-2 text-lg">
+-          Recibimos tu solicitud para <strong>{activity.title}</strong>.
++          {t("Recibimos tu solicitud para", "We received your request for")} <strong>{activity.title}</strong>.
+         </p>
+         <p className="text-muted-foreground mb-8">
+-          Te contactaremos a <strong>{form.email}</strong> en las próximas horas para confirmar tu lugar.
++          {t("Te contactaremos a", "We'll contact you at")} <strong>{form.email}</strong> {t("en las próximas horas para confirmar tu lugar.", "within the next few hours to confirm your spot.")}
+         </p>
+         <Button asChild variant="outline">
+-          <Link href="/actividades">Ver más actividades</Link>
++          <Link href="/actividades">{t("Ver más actividades", "View more activities")}</Link>
+         </Button>
+       </div>
+     )
+@@ -269,11 +272,11 @@ export function ReservarView() {
+         className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-8 transition-colors group"
+       >
+         <ChevronLeft className="h-4 w-4 group-hover:-translate-x-0.5 transition-transform" />
+-        Volver a {activity.title}
++        {t("Volver a ", "Back to ")}{activity.title}
+       </Link>
+ 
+-      <h1 className="text-3xl font-bold text-foreground mb-1">Confirmar y pagar</h1>
+-      <p className="text-muted-foreground mb-10 text-sm">Completá los datos para confirmar tu lugar.</p>
++      <h1 className="text-3xl font-bold text-foreground mb-1">{t("Confirmar y pagar", "Confirm and pay")}</h1>
++      <p className="text-muted-foreground mb-10 text-sm">{t("Completá los datos para confirmar tu lugar.", "Fill in your details to confirm your spot.")}</p>
+ 
+       <div className="grid lg:grid-cols-[1fr_400px] gap-10 items-start">
+ 
+@@ -281,11 +284,11 @@ export function ReservarView() {
+         <div className="space-y-6">
+ 
+           {/* 1. Datos del participante */}
+-          <SectionCard title="Datos del participante">
++          <SectionCard title={t("Datos del participante", "Participant details")}>
+             <div className="space-y-4">
+               {/* Nombre + Apellido row */}
+               <div className="grid sm:grid-cols-2 gap-4">
+-                <Field label="Nombre" id="firstName" error={errors.firstName}>
++                <Field label={t("Nombre", "First name")} id="firstName" error={errors.firstName}>
+                   <input
+                     ref={firstNameRef}
+                     id="firstName"
+@@ -297,7 +300,7 @@ export function ReservarView() {
+                     className={inputClass(errors.firstName)}
+                   />
+                 </Field>
+-                <Field label="Apellido" id="lastName" error={errors.lastName}>
++                <Field label={t("Apellido", "Last name")} id="lastName" error={errors.lastName}>
+                   <input
+                     ref={lastNameRef}
+                     id="lastName"
+@@ -324,7 +327,7 @@ export function ReservarView() {
+                 />
+               </Field>
+ 
+-              <Field label="Teléfono / WhatsApp" id="phone" error={errors.phone}>
++              <Field label={t("Teléfono / WhatsApp", "Phone / WhatsApp")} id="phone" error={errors.phone}>
+                 <div className="flex gap-2">
+                   <span className="flex items-center justify-center border border-border rounded-xl px-3 bg-muted text-sm text-muted-foreground shrink-0 select-none">
+                     +54
+@@ -345,12 +348,12 @@ export function ReservarView() {
+           </SectionCard>
+ 
+           {/* 2. Dirección de pick-up */}
+-          <SectionCard title="Dirección de pick-up">
++          <SectionCard title={t("Dirección de pick-up", "Pick-up address")}>
+             <p className="text-sm text-muted-foreground mb-4 -mt-2">
+-              Indicanos dónde te pasamos a buscar antes de la salida.
++              {t("Indicanos dónde te pasamos a buscar antes de la salida.", "Let us know where to pick you up before departure.")}
+             </p>
+             <div className="space-y-4">
+-              <Field label="Dirección (calle y número)" id="pickupAddress" error={errors.pickupAddress}>
++              <Field label={t("Dirección (calle y número)", "Address (street and number)")} id="pickupAddress" error={errors.pickupAddress}>
+                 <input
+                   ref={addressRef}
+                   id="pickupAddress"
+@@ -363,7 +366,7 @@ export function ReservarView() {
+                 />
+               </Field>
+ 
+-              <Field label="Ciudad" id="city" error={errors.city}>
++              <Field label={t("Ciudad", "City")} id="city" error={errors.city}>
+                 <input
+                   ref={cityRef}
+                   id="city"
+@@ -376,7 +379,7 @@ export function ReservarView() {
+                 />
+               </Field>
+ 
+-              <Field label="Referencias (opcional)" id="references">
++              <Field label={t("Referencias (opcional)", "References (optional)")} id="references">
+                 <textarea
+                   id="references"
+                   value={form.references}
+@@ -395,11 +398,11 @@ export function ReservarView() {
+                   onChange={set("isHotel")}
+                   className="w-4 h-4 rounded border-border accent-primary cursor-pointer"
+                 />
+-                <span className="text-sm text-foreground select-none">Es un hotel</span>
++                <span className="text-sm text-foreground select-none">{t("Es un hotel", "This is a hotel")}</span>
+               </label>
+ 
+               {form.isHotel && (
+-                <Field label="Nombre del hotel" id="hotelName" error={errors.hotelName}>
++                <Field label={t("Nombre del hotel", "Hotel name")} id="hotelName" error={errors.hotelName}>
+                   <input
+                     id="hotelName"
+                     type="text"
+@@ -415,17 +418,17 @@ export function ReservarView() {
+           </SectionCard>
+ 
+           {/* 3. Método de pago */}
+-          <SectionCard title="Método de pago">
++          <SectionCard title={t("Método de pago", "Payment method")}>
+             <div className="flex items-center justify-between py-3 px-4 border border-border rounded-xl bg-muted/30">
+               <div className="flex items-center gap-3">
+                 {/* Mock card icon */}
+                 <div className="w-10 h-7 rounded-md bg-gradient-to-br from-slate-700 to-slate-900 flex items-center justify-center">
+                   <div className="w-5 h-3 rounded-sm bg-yellow-400/80" />
+                 </div>
+-                <span className="text-sm text-foreground">Tarjeta terminada en 4242</span>
++                <span className="text-sm text-foreground">{t("Tarjeta terminada en 4242", "Card ending in 4242")}</span>
+               </div>
+               <button className="text-sm font-medium text-primary hover:underline">
+-                Cambiar
++                {t("Cambiar", "Change")}
+               </button>
+             </div>
+             {/* Payment icons row */}
+@@ -447,16 +450,16 @@ export function ReservarView() {
+               className="w-full bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl h-14 text-base font-semibold"
+               onClick={handleSubmit}
+             >
+-              Confirmar y pagar
++              {t("Confirmar y pagar", "Confirm and pay")}
+             </Button>
+             <p className="mt-3 text-xs text-muted-foreground text-center leading-relaxed">
+-              Al confirmar, aceptás los{" "}
++              {t("Al confirmar, aceptás los ", "By confirming, you accept the ")}
+               <a href="#" className="underline hover:text-foreground transition-colors">
+-                Términos de reserva
+-              </a>{" "}
+-              y la{" "}
++                {t("Términos de reserva", "Booking terms")}
++              </a>
++              {t(" y la ", " and the ")}
+               <a href="#" className="underline hover:text-foreground transition-colors">
+-                Política de privacidad
++                {t("Política de privacidad", "Privacy policy")}
+               </a>
+               .
+             </p>
+@@ -491,8 +494,8 @@ export function ReservarView() {
+               {/* Date */}
+               <div className="flex items-start justify-between gap-4">
+                 <div>
+-                  <p className="text-xs text-muted-foreground mb-0.5">Fecha</p>
+-                  <p className="text-sm font-medium capitalize">{isoToShortDate(date)}</p>
++                  <p className="text-xs text-muted-foreground mb-0.5">{t("Fecha", "Date")}</p>
++                  <p className="text-sm font-medium capitalize">{isoToShortDate(date, locale)}</p>
+                 </div>
+                 <Calendar className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+               </div>
+@@ -500,7 +503,7 @@ export function ReservarView() {
+               {/* Guests */}
+               <div className="flex items-center justify-between">
+                 <div>
+-                  <p className="text-xs text-muted-foreground mb-0.5">Personas</p>
++                  <p className="text-xs text-muted-foreground mb-0.5">{t("Personas", "People")}</p>
+                   <div className="flex items-center gap-3">
+                     <button
+                       onClick={() => setForm((f) => ({ ...f, guests: Math.max(1, f.guests - 1) }))}
+@@ -521,7 +524,7 @@ export function ReservarView() {
+                 </div>
+                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                   <Users className="h-3.5 w-3.5" />
+-                  <span>{activity.capacity_remaining} disponibles</span>
++                  <span>{activity.capacity_remaining} {t("disponibles", "available")}</span>
+                 </div>
+               </div>
+ 
+@@ -530,10 +533,10 @@ export function ReservarView() {
+ 
+               {/* Price breakdown */}
+               <div className="space-y-2">
+-                <h4 className="text-sm font-semibold text-foreground">Detalle del precio</h4>
++                <h4 className="text-sm font-semibold text-foreground">{t("Detalle del precio", "Price breakdown")}</h4>
+                 <div className="flex justify-between text-sm">
+                   <span className="text-muted-foreground underline decoration-dotted cursor-help">
+-                    {activity.currency} {pricePerPerson} × {form.guests} {form.guests === 1 ? "persona" : "personas"}
++                    {activity.currency} {pricePerPerson} × {form.guests} {form.guests === 1 ? t("persona", "person") : t("personas", "people")}
+                   </span>
+                   <span>{activity.currency} {subtotal}</span>
+                 </div>
+@@ -550,11 +553,11 @@ export function ReservarView() {
+               <div className="flex gap-2">
+                 <input
+                   type="text"
+-                  placeholder="Código de descuento"
++                  placeholder={t("Código de descuento", "Discount code")}
+                   className="flex-1 border border-border rounded-xl px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                 />
+                 <button className="px-4 py-2 rounded-xl border border-border text-sm font-medium hover:bg-muted transition-colors">
+-                  Aplicar
++                  {t("Aplicar", "Apply")}
+                 </button>
+               </div>
+             </div>
+diff --git a/components/trekking-detail.tsx b/components/trekking-detail.tsx
+index 71c4ed6..213c118 100644
+--- a/components/trekking-detail.tsx
++++ b/components/trekking-detail.tsx
+@@ -10,6 +10,7 @@ import { useSearchParams, useRouter } from "next/navigation"
+ import { ACTIVITIES, dateToIso } from "@/components/actividades-view"
+ import { createWhatsAppHref } from "@/lib/whatsapp"
+ import { ImageGalleryLightbox } from "@/components/image-gallery-lightbox"
++import { useLanguage } from "@/contexts/language-context"
+ 
+ const trekkingData: Record<string, any> = {
+   "susana-pm": {
+@@ -301,13 +302,14 @@ const trekkingData: Record<string, any> = {
+ 
+ // ─── Date helpers (local) ─────────────────────────────────────────────────────
+ 
+-function isoToDisplayDate(iso: string) {
++function isoToDisplayDate(iso: string, locale: string = "es-AR") {
+   const [y, m, d] = iso.split("-").map(Number)
+   const date = new Date(y, m - 1, d)
+-  return date.toLocaleDateString("es-AR", { weekday: "short", day: "numeric", month: "short" })
++  return date.toLocaleDateString(locale, { weekday: "short", day: "numeric", month: "short" })
+ }
+ 
+ export function TrekkingDetail({ id }: { id: string }) {
++  const { t, language } = useLanguage()
+   const trekking = trekkingData[id]
+   const searchParams = useSearchParams()
+   const router = useRouter()
+@@ -337,9 +339,9 @@ export function TrekkingDetail({ id }: { id: string }) {
+   if (!trekking) {
+     return (
+       <div className="py-20 px-4 text-center">
+-        <h1 className="text-3xl font-bold mb-4">Actividad no encontrada</h1>
++        <h1 className="text-3xl font-bold mb-4">{t("Actividad no encontrada", "Activity not found")}</h1>
+         <Link href="/actividades">
+-          <Button>Ver Actividades</Button>
++          <Button>{t("Ver Actividades", "View Activities")}</Button>
+         </Link>
+       </div>
+     )
+@@ -367,7 +369,7 @@ export function TrekkingDetail({ id }: { id: string }) {
+             onClick={() => setIsGalleryOpen(true)}
+             className="absolute bottom-6 right-6 w-12 h-12 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-sm flex items-center justify-center text-white transition-all hover:shadow-lg hover:scale-105"
+             aria-label="View gallery"
+-            title="Ver galería"
++            title={t("Ver galería", "View gallery")}
+           >
+             <ImageIcon className="h-6 w-6" />
+           </button>
+@@ -378,7 +380,7 @@ export function TrekkingDetail({ id }: { id: string }) {
+             <Link href="/actividades">
+               <Button variant="ghost" className="mb-4 text-white hover:text-white hover:bg-white/20">
+                 <ChevronLeft className="mr-2 h-4 w-4" />
+-                Volver a Actividades
++                {t("Volver a Actividades", "Back to Activities")}
+               </Button>
+             </Link>
+             <Badge className={`mb-4 ${difficultyColors[trekking.difficulty as keyof typeof difficultyColors]} border`}>
+@@ -396,7 +398,7 @@ export function TrekkingDetail({ id }: { id: string }) {
+               </div>
+               <div className="flex items-center gap-2">
+                 <Users className="h-5 w-5" />
+-                <span>Grupo: {trekking.groupSize} personas</span>
++                <span>{t("Grupo: ", "Group: ")}{trekking.groupSize}{t(" personas", " people")}</span>
+               </div>
+             </div>
+           </div>
+@@ -410,14 +412,14 @@ export function TrekkingDetail({ id }: { id: string }) {
+           <div className="lg:col-span-2 space-y-8">
+             {/* Description */}
+             <Card className="p-6">
+-              <h2 className="text-2xl font-bold mb-4">Descripción</h2>
++              <h2 className="text-2xl font-bold mb-4">{t("Descripción", "Description")}</h2>
+               <p className="text-muted-foreground mb-4 leading-relaxed">{trekking.description}</p>
+               <p className="text-muted-foreground leading-relaxed">{trekking.longDescription}</p>
+             </Card>
+ 
+             {/* Itinerary */}
+             <Card className="p-6">
+-              <h2 className="text-2xl font-bold mb-6">Itinerario</h2>
++              <h2 className="text-2xl font-bold mb-6">{t("Itinerario", "Itinerary")}</h2>
+               <div className="space-y-6">
+                 {trekking.itinerary.map((day: any, index: number) => (
+                   <div key={index} className="flex gap-4">
+@@ -439,12 +441,12 @@ export function TrekkingDetail({ id }: { id: string }) {
+ 
+             {/* What's Included */}
+             <Card className="p-6">
+-              <h2 className="text-2xl font-bold mb-6">Qué está incluido</h2>
++              <h2 className="text-2xl font-bold mb-6">{t("Qué está incluido", "What's included")}</h2>
+               <div className="grid md:grid-cols-2 gap-8">
+                 <div>
+                   <h3 className="font-semibold mb-4 flex items-center gap-2 text-green-600">
+                     <Check className="h-5 w-5" />
+-                    Incluye
++                    {t("Incluye", "Included")}
+                   </h3>
+                   <ul className="space-y-2">
+                     {trekking.included.map((item: string, index: number) => (
+@@ -458,7 +460,7 @@ export function TrekkingDetail({ id }: { id: string }) {
+                 <div>
+                   <h3 className="font-semibold mb-4 flex items-center gap-2 text-red-600">
+                     <X className="h-5 w-5" />
+-                    No Incluye
++                    {t("No Incluye", "Not Included")}
+                   </h3>
+                   <ul className="space-y-2">
+                     {trekking.notIncluded.map((item: string, index: number) => (
+@@ -476,7 +478,7 @@ export function TrekkingDetail({ id }: { id: string }) {
+             <Card className="p-6">
+               <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+                 <Info className="h-6 w-6 text-primary" />
+-                Requisitos
++                {t("Requisitos", "Requirements")}
+               </h2>
+               <ul className="space-y-2">
+                 {trekking.requirements.map((req: string, index: number) => (
+@@ -495,22 +497,22 @@ export function TrekkingDetail({ id }: { id: string }) {
+               {/* Price */}
+               {activityData && (
+                 <div className="mb-6">
+-                  <p className="text-sm text-muted-foreground mb-1">Desde</p>
++                  <p className="text-sm text-muted-foreground mb-1">{t("Desde", "From")}</p>
+                   <p className="text-3xl font-bold text-foreground">
+                     {activityData.currency} {activityData.price_from}
+-                    <span className="text-base font-normal text-muted-foreground"> / persona</span>
++                    <span className="text-base font-normal text-muted-foreground"> {t("/ persona", "/ person")}</span>
+                   </p>
+                 </div>
+               )}
+ 
+               {/* Fechas disponibles */}
+               <div className="mb-6">
+-                <h2 className="text-base font-semibold mb-3">Fechas disponibles</h2>
++                <h2 className="text-base font-semibold mb-3">{t("Fechas disponibles", "Available dates")}</h2>
+ 
+                 {futureDates.length === 0 ? (
+                   <div className="rounded-xl border border-border bg-muted/40 p-4">
+                     <p className="text-sm text-muted-foreground leading-relaxed">
+-                      No hay fechas disponibles por el momento. Consultanos y te avisamos apenas haya nuevas salidas.
++                      {t("No hay fechas disponibles por el momento. Consultanos y te avisamos apenas haya nuevas salidas.", "No dates currently available. Contact us and we'll let you know when new departures open.")}
+                     </p>
+                     <a
+                       href={createWhatsAppHref()}
+@@ -518,7 +520,7 @@ export function TrekkingDetail({ id }: { id: string }) {
+                       rel="noopener noreferrer"
+                       className="inline-block mt-3 text-sm font-medium text-primary hover:underline"
+                     >
+-                      Consultanos →
++                      {t("Consultanos →", "Contact us →")}
+                     </a>
+                   </div>
+                 ) : (
+@@ -540,12 +542,12 @@ export function TrekkingDetail({ id }: { id: string }) {
+                             <div className="flex items-center gap-2.5">
+                               <Calendar className={`h-4 w-4 shrink-0 ${isSelected ? "text-primary" : "text-muted-foreground"}`} />
+                               <span className={`font-medium text-sm capitalize ${isSelected ? "text-foreground" : "text-foreground"}`}>
+-                                {isoToDisplayDate(date)}
++                                {isoToDisplayDate(date, language === "es" ? "es-AR" : "en-US")}
+                               </span>
+                             </div>
+                             {capacity !== null && (
+                               <span className="text-xs text-muted-foreground shrink-0">
+-                                {capacity} lugares
++                                {capacity}{t(" lugares", " spots")}
+                               </span>
+                             )}
+                           </div>
+@@ -563,20 +565,20 @@ export function TrekkingDetail({ id }: { id: string }) {
+                 disabled={!selectedDate}
+                 onClick={() => selectedDate && router.push(reservaUrl)}
+               >
+-                Continuar a reserva
++                {t("Continuar a reserva", "Continue to booking")}
+                 <ChevronRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
+               </Button>
+ 
+               <div className="mt-5 pt-5 border-t border-border">
+                 <p className="text-sm text-muted-foreground text-center">
+-                  ¿Tenés dudas?{" "}
++                  {t("¿Tenés dudas? ", "Have questions? ")}
+                   <a 
+                     href={createWhatsAppHref()} 
+                     target="_blank" 
+                     rel="noopener noreferrer"
+                     className="text-primary hover:underline font-medium"
+                   >
+-                    Contactanos
++                    {t("Contactanos", "Contact us")}
+                   </a>
+                 </p>
+               </div>
+diff --git a/components/trekkings-list.tsx b/components/trekkings-list.tsx
+index f9c9b54..02ec200 100644
+--- a/components/trekkings-list.tsx
++++ b/components/trekkings-list.tsx
+@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
+ import { Button } from "@/components/ui/button"
+ import { MapPin, Clock, Users, Calendar, ChevronRight, Filter } from "lucide-react"
+ import Link from "next/link"
++import { useLanguage } from "@/contexts/language-context"
+ 
+ const trekkings = [
+   {
+@@ -121,6 +122,7 @@ const difficultyColors = {
+ }
+ 
+ export function TrekkingsList() {
++  const { t } = useLanguage()
+   const [selectedDifficulty, setSelectedDifficulty] = useState<string | null>(null)
+   const [selectedDuration, setSelectedDuration] = useState<string | null>(null)
+ 
+@@ -140,10 +142,10 @@ export function TrekkingsList() {
+       <div className="max-w-7xl mx-auto">
+         {/* Header */}
+         <div className="text-center mb-12">
+-          <Badge className="mb-4 bg-primary/10 text-primary border-primary/20">Todas las Aventuras</Badge>
+-          <h1 className="text-4xl md:text-5xl font-bold mb-4 text-balance">Nuestros Trekkings</h1>
++          <Badge className="mb-4 bg-primary/10 text-primary border-primary/20">{t("Todas las Aventuras", "All Adventures")}</Badge>
++          <h1 className="text-4xl md:text-5xl font-bold mb-4 text-balance">{t("Nuestros Trekkings", "Our Treks")}</h1>
+           <p className="text-xl text-muted-foreground max-w-2xl mx-auto text-pretty">
+-            Explorá la Patagonia y Tierra del Fuego con guías expertos
++            {t("Explorá la Patagonia y Tierra del Fuego con guías expertos", "Explore Patagonia and Tierra del Fuego with expert guides")}
+           </p>
+         </div>
+ 
+@@ -151,7 +153,7 @@ export function TrekkingsList() {
+         <div className="mb-8 flex flex-col sm:flex-row gap-4 items-center justify-center">
+           <div className="flex items-center gap-2">
+             <Filter className="h-5 w-5 text-muted-foreground" />
+-            <span className="text-sm font-medium">Filtrar por:</span>
++            <span className="text-sm font-medium">{t("Filtrar por:", "Filter by:")}</span>
+           </div>
+ 
+           {/* Difficulty Filter */}
+@@ -162,7 +164,7 @@ export function TrekkingsList() {
+               onClick={() => setSelectedDifficulty(null)}
+               className="transition-all"
+             >
+-              Todas
++              {t("Todas", "All")}
+             </Button>
+             <Button
+               variant={selectedDifficulty === "Fácil" ? "default" : "outline"}
+@@ -170,7 +172,7 @@ export function TrekkingsList() {
+               onClick={() => setSelectedDifficulty("Fácil")}
+               className="transition-all"
+             >
+-              Fácil
++              {t("Fácil", "Easy")}
+             </Button>
+             <Button
+               variant={selectedDifficulty === "Moderado" ? "default" : "outline"}
+@@ -178,7 +180,7 @@ export function TrekkingsList() {
+               onClick={() => setSelectedDifficulty("Moderado")}
+               className="transition-all"
+             >
+-              Moderado
++              {t("Moderado", "Moderate")}
+             </Button>
+             <Button
+               variant={selectedDifficulty === "Avanzado" ? "default" : "outline"}
+@@ -186,7 +188,7 @@ export function TrekkingsList() {
+               onClick={() => setSelectedDifficulty("Avanzado")}
+               className="transition-all"
+             >
+-              Avanzado
++              {t("Avanzado", "Advanced")}
+             </Button>
+           </div>
+ 
+@@ -198,7 +200,7 @@ export function TrekkingsList() {
+               onClick={() => setSelectedDuration(selectedDuration === "1" ? null : "1")}
+               className="transition-all"
+             >
+-              1 día
++              {t("1 día", "1 day")}
+             </Button>
+             <Button
+               variant={selectedDuration === "2-3" ? "default" : "outline"}
+@@ -206,7 +208,7 @@ export function TrekkingsList() {
+               onClick={() => setSelectedDuration(selectedDuration === "2-3" ? null : "2-3")}
+               className="transition-all"
+             >
+-              2-3 días
++              {t("2-3 días", "2-3 days")}
+             </Button>
+             <Button
+               variant={selectedDuration === "4+" ? "default" : "outline"}
+@@ -214,14 +216,14 @@ export function TrekkingsList() {
+               onClick={() => setSelectedDuration(selectedDuration === "4+" ? null : "4+")}
+               className="transition-all"
+             >
+-              4+ días
++              {t("4+ días", "4+ days")}
+             </Button>
+           </div>
+         </div>
+ 
+         {/* Results Count */}
+         <p className="text-center text-muted-foreground mb-8">
+-          Mostrando {filteredTrekkings.length} {filteredTrekkings.length === 1 ? "trekking" : "trekkings"}
++          {t("Mostrando", "Showing")} {filteredTrekkings.length} {filteredTrekkings.length === 1 ? "trekking" : "trekkings"}
+         </p>
+ 
+         {/* Trekkings Grid */}
+@@ -265,23 +267,23 @@ export function TrekkingsList() {
+                   </div>
+                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                     <Users className="h-4 w-4 text-primary" />
+-                    <span>Grupo: {trek.groupSize} personas</span>
++                    <span>{t("Grupo: ", "Group: ")}{trek.groupSize}{t(" personas", " people")}</span>
+                   </div>
+                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                     <Calendar className="h-4 w-4 text-primary" />
+-                    <span>Próxima: {trek.nextDate}</span>
++                    <span>{t("Próxima: ", "Next: ")}{trek.nextDate}</span>
+                   </div>
+                 </div>
+ 
+                 {/* Footer */}
+                 <div className="pt-4 border-t border-border flex items-center justify-between">
+                   <div>
+-                    <p className="text-sm text-muted-foreground">Desde</p>
++                    <p className="text-sm text-muted-foreground">{t("Desde", "From")}</p>
+                     <p className="text-2xl font-bold text-primary">{trek.price}</p>
+                   </div>
+                   <Link href={`/trekkings/${trek.id}`}>
+                     <Button className="group/btn bg-primary text-primary-foreground hover:bg-primary/90">
+-                      Ver más
++                      {t("Ver más", "View more")}
+                       <ChevronRight className="ml-1 h-4 w-4 group-hover/btn:translate-x-1 transition-transform" />
+                     </Button>
+                   </Link>
+@@ -294,7 +296,7 @@ export function TrekkingsList() {
+         {/* No Results */}
+         {filteredTrekkings.length === 0 && (
+           <div className="text-center py-12">
+-            <p className="text-xl text-muted-foreground mb-4">No se encontraron trekkings con estos filtros</p>
++            <p className="text-xl text-muted-foreground mb-4">{t("No se encontraron trekkings con estos filtros", "No treks found with these filters")}</p>
+             <Button
+               onClick={() => {
+                 setSelectedDifficulty(null)
+@@ -302,7 +304,7 @@ export function TrekkingsList() {
+               }}
+               variant="outline"
+             >
+-              Limpiar filtros
++              {t("Limpiar filtros", "Clear filters")}
+             </Button>
+           </div>
+         )}

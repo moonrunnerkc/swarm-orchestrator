@@ -1,0 +1,446 @@
+diff --git a/.release-please-manifest.json b/.release-please-manifest.json
+index 7a9a29ad..21491228 100644
+--- a/.release-please-manifest.json
++++ b/.release-please-manifest.json
+@@ -1,5 +1,5 @@
+ {
+-  ".": "0.91.0",
++  ".": "0.91.1",
+   "packages/vertex-sdk": "0.16.0",
+   "packages/bedrock-sdk": "0.29.0",
+   "packages/foundry-sdk": "0.2.3",
+diff --git a/.stats.yml b/.stats.yml
+index 129aa034..bd587136 100644
+--- a/.stats.yml
++++ b/.stats.yml
+@@ -1,4 +1,4 @@
+ configured_endpoints: 91
+-openapi_spec_url: https://storage.googleapis.com/stainless-sdk-openapi-specs/anthropic%2Fanthropic-6811827071199207cf69c4e64cae1b41e7e74cdb14048e9c748701e474c694a7.yml
+-openapi_spec_hash: 0feddcbb70c1d373b305f9c95f7df8e6
+-config_hash: c7cdab4e4eb2befb0d99f6db5c3d4737
++openapi_spec_url: https://storage.googleapis.com/stainless-sdk-openapi-specs/anthropic%2Fanthropic-2d9a6272c569b37615ae2f2dc675bf9185bc2ea3dc2ecd32eb46b68f263b9924.yml
++openapi_spec_hash: 3716f6d62e618fe9018aee00e7c6dd80
++config_hash: 9c24b5adcecc3649a6ec0380bd583cdf
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index c02852fd..07950305 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,5 +1,18 @@
+ # Changelog
+ 
++## 0.91.1 (2026-04-24)
++
++Full Changelog: [sdk-v0.91.0...sdk-v0.91.1](https://github.com/anthropics/anthropic-sdk-typescript/compare/sdk-v0.91.0...sdk-v0.91.1)
++
++### Bug Fixes
++
++* **memory:** use restrictive file mode for memory files ([#901](https://github.com/anthropics/anthropic-sdk-typescript/issues/901)) ([6db3b7e](https://github.com/anthropics/anthropic-sdk-typescript/commit/6db3b7e2218430971cbc137081b5a55ad593fca8))
++
++
++### Chores
++
++* **formatter:** run prettier and eslint separately ([974d22f](https://github.com/anthropics/anthropic-sdk-typescript/commit/974d22fcf607b942bff3376c699bc3f6cb3b3ae5))
++
+ ## 0.91.0 (2026-04-23)
+ 
+ Full Changelog: [sdk-v0.90.0...sdk-v0.91.0](https://github.com/anthropics/anthropic-sdk-typescript/compare/sdk-v0.90.0...sdk-v0.91.0)
+diff --git a/eslint.config.mjs b/eslint.config.mjs
+index e4b86426..69c427f8 100644
+--- a/eslint.config.mjs
++++ b/eslint.config.mjs
+@@ -1,7 +1,6 @@
+ // @ts-check
+ import tseslint from 'typescript-eslint';
+ import unusedImports from 'eslint-plugin-unused-imports';
+-import prettier from 'eslint-plugin-prettier';
+ 
+ export default tseslint.config(
+   {
+@@ -14,11 +13,9 @@ export default tseslint.config(
+     plugins: {
+       '@typescript-eslint': tseslint.plugin,
+       'unused-imports': unusedImports,
+-      prettier,
+     },
+     rules: {
+       'no-unused-vars': 'off',
+-      'prettier/prettier': 'error',
+       'unused-imports/no-unused-imports': 'error',
+       'no-restricted-imports': [
+         'error',
+diff --git a/package.json b/package.json
+index 2a008a3f..30746765 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "@anthropic-ai/sdk",
+-  "version": "0.91.0",
++  "version": "0.91.1",
+   "description": "The official TypeScript library for the Anthropic API",
+   "author": "Anthropic <support@anthropic.com>",
+   "types": "dist/index.d.ts",
+@@ -48,7 +48,6 @@
+     "@typescript-eslint/parser": "8.31.1",
+     "deep-object-diff": "^1.1.9",
+     "eslint": "^9.39.1",
+-    "eslint-plugin-prettier": "^5.4.1",
+     "eslint-plugin-unused-imports": "^4.1.4",
+     "iconv-lite": "^0.6.3",
+     "jest": "^29.4.0",
+diff --git a/packages/vertex-sdk/yarn.lock b/packages/vertex-sdk/yarn.lock
+index cdac8e66..94d494c5 100644
+--- a/packages/vertex-sdk/yarn.lock
++++ b/packages/vertex-sdk/yarn.lock
+@@ -17,7 +17,7 @@
+ 
+ "@anthropic-ai/sdk@file:../../dist":
+   # x-release-please-start-version
+-  version "0.91.0"
++  version "0.91.1"
+   # x-release-please-end-version
+   dependencies:
+     json-schema-to-ts "^3.1.1"
+diff --git a/scripts/fast-format b/scripts/fast-format
+index 53721ac0..e1723136 100755
+--- a/scripts/fast-format
++++ b/scripts/fast-format
+@@ -31,10 +31,8 @@ if ! [ -z "$ESLINT_FILES" ]; then
+ fi
+ 
+ echo "==> Running prettier --write"
+-# format things eslint didn't
+-PRETTIER_FILES="$(grep '\.\(js\|json\)$' "$FILE_LIST" || true)"
++PRETTIER_FILES="$(grep '\.\([mc]?tsx?\|[mc]?jsx?\|json\)$' "$FILE_LIST" || true)"
+ if ! [ -z "$PRETTIER_FILES" ]; then
+    echo "$PRETTIER_FILES" | xargs ./node_modules/.bin/prettier \
+-      --write --cache --cache-strategy metadata --no-error-on-unmatched-pattern \
+-      '!**/dist' '!**/*.ts' '!**/*.mts' '!**/*.cts' '!**/*.js' '!**/*.mjs' '!**/*.cjs'
++      --write --cache --cache-strategy metadata --no-error-on-unmatched-pattern
+ fi
+diff --git a/scripts/format b/scripts/format
+index 7a756401..b1b2c17a 100755
+--- a/scripts/format
++++ b/scripts/format
+@@ -8,5 +8,4 @@ echo "==> Running eslint --fix"
+ ./node_modules/.bin/eslint --fix .
+ 
+ echo "==> Running prettier --write"
+-# format things eslint didn't
+-./node_modules/.bin/prettier --write --cache --cache-strategy metadata . '!**/dist' '!**/*.ts' '!**/*.mts' '!**/*.cts' '!**/*.js' '!**/*.mjs' '!**/*.cjs'
++./node_modules/.bin/prettier --write --cache --cache-strategy metadata .
+diff --git a/scripts/lint b/scripts/lint
+index 3ffb78a6..1f532548 100755
+--- a/scripts/lint
++++ b/scripts/lint
+@@ -4,6 +4,9 @@ set -e
+ 
+ cd "$(dirname "$0")/.."
+ 
++echo "==> Running prettier --check"
++./node_modules/.bin/prettier --check .
++
+ echo "==> Running eslint"
+ ./node_modules/.bin/eslint .
+ 
+diff --git a/src/internal/types.ts b/src/internal/types.ts
+index c90ac3e0..6954ef90 100644
+--- a/src/internal/types.ts
++++ b/src/internal/types.ts
+@@ -40,7 +40,6 @@ type OverloadedParameters<T> =
+   : T extends (...args: infer A) => unknown ? A
+   : never;
+ 
+-/* eslint-disable */
+ /**
+  * These imports attempt to get types from a parent package's dependencies.
+  * Unresolved bare specifiers can trigger [automatic type acquisition][1] in some projects, which
+@@ -63,19 +62,18 @@ type OverloadedParameters<T> =
+  *
+  * [1]: https://www.typescriptlang.org/tsconfig/#typeAcquisition
+  */
+-/** @ts-ignore For users with \@types/node */
++/** @ts-ignore For users with \@types/node */ /* prettier-ignore */
+ type UndiciTypesRequestInit = NotAny<import('undici-types').RequestInit> | NotAny<import('undici-types').RequestInit> | NotAny<import('../../../node_modules/undici-types/index.d.ts').RequestInit> | NotAny<import('../../../../node_modules/undici-types/index.d.ts').RequestInit> | NotAny<import('../../../../../node_modules/undici-types/index.d.ts').RequestInit> | NotAny<import('../../../../../../node_modules/undici-types/index.d.ts').RequestInit> | NotAny<import('../../../../../../../node_modules/undici-types/index.d.ts').RequestInit> | NotAny<import('../../../../../../../../node_modules/undici-types/index.d.ts').RequestInit> | NotAny<import('../../../../../../../../../node_modules/undici-types/index.d.ts').RequestInit> | NotAny<import('../../../../../../../../../../node_modules/undici-types/index.d.ts').RequestInit>;
+-/** @ts-ignore For users with undici */
++/** @ts-ignore For users with undici */ /* prettier-ignore */
+ type UndiciRequestInit = NotAny<import('undici').RequestInit> | NotAny<import('undici').RequestInit> | NotAny<import('../../../node_modules/undici/index.d.ts').RequestInit> | NotAny<import('../../../../node_modules/undici/index.d.ts').RequestInit> | NotAny<import('../../../../../node_modules/undici/index.d.ts').RequestInit> | NotAny<import('../../../../../../node_modules/undici/index.d.ts').RequestInit> | NotAny<import('../../../../../../../node_modules/undici/index.d.ts').RequestInit> | NotAny<import('../../../../../../../../node_modules/undici/index.d.ts').RequestInit> | NotAny<import('../../../../../../../../../node_modules/undici/index.d.ts').RequestInit> | NotAny<import('../../../../../../../../../../node_modules/undici/index.d.ts').RequestInit>;
+-/** @ts-ignore For users with \@types/bun */
++/** @ts-ignore For users with \@types/bun */ /* prettier-ignore */
+ type BunRequestInit = globalThis.FetchRequestInit;
+-/** @ts-ignore For users with node-fetch@2 */
++/** @ts-ignore For users with node-fetch@2 */ /* prettier-ignore */
+ type NodeFetch2RequestInit = NotAny<import('node-fetch').RequestInit> | NotAny<import('node-fetch').RequestInit> | NotAny<import('../../../node_modules/@types/node-fetch/index.d.ts').RequestInit> | NotAny<import('../../../../node_modules/@types/node-fetch/index.d.ts').RequestInit> | NotAny<import('../../../../../node_modules/@types/node-fetch/index.d.ts').RequestInit> | NotAny<import('../../../../../../node_modules/@types/node-fetch/index.d.ts').RequestInit> | NotAny<import('../../../../../../../node_modules/@types/node-fetch/index.d.ts').RequestInit> | NotAny<import('../../../../../../../../node_modules/@types/node-fetch/index.d.ts').RequestInit> | NotAny<import('../../../../../../../../../node_modules/@types/node-fetch/index.d.ts').RequestInit> | NotAny<import('../../../../../../../../../../node_modules/@types/node-fetch/index.d.ts').RequestInit>;
+-/** @ts-ignore For users with node-fetch@3, doesn't need file extension because types are at ./@types/index.d.ts */
++/** @ts-ignore For users with node-fetch@3, doesn't need file extension because types are at ./@types/index.d.ts */ /* prettier-ignore */
+ type NodeFetch3RequestInit =  NotAny<import('node-fetch.js').RequestInit> | NotAny<import('node-fetch.js').RequestInit> | NotAny<import('../../../node_modules/node-fetch').RequestInit> | NotAny<import('../../../../node_modules/node-fetch').RequestInit> | NotAny<import('../../../../../node_modules/node-fetch').RequestInit> | NotAny<import('../../../../../../node_modules/node-fetch').RequestInit> | NotAny<import('../../../../../../../node_modules/node-fetch').RequestInit> | NotAny<import('../../../../../../../../node_modules/node-fetch').RequestInit> | NotAny<import('../../../../../../../../../node_modules/node-fetch').RequestInit> | NotAny<import('../../../../../../../../../../node_modules/node-fetch').RequestInit>;
+-/** @ts-ignore For users who use Deno */
++/** @ts-ignore For users who use Deno */ /* prettier-ignore */
+ type FetchRequestInit = NonNullable<OverloadedParameters<typeof fetch>[1]>;
+-/* eslint-enable */
+ 
+ type RequestInits =
+   | NotAny<UndiciTypesRequestInit>
+diff --git a/src/resources/beta/files.ts b/src/resources/beta/files.ts
+index 20e32998..964c1834 100644
+--- a/src/resources/beta/files.ts
++++ b/src/resources/beta/files.ts
+@@ -28,7 +28,7 @@ export class Files extends APIResource {
+     options?: RequestOptions,
+   ): PagePromise<FileMetadataPage, FileMetadata> {
+     const { betas, ...query } = params ?? {};
+-    return this._client.getAPIList('/v1/files', Page<FileMetadata>, {
++    return this._client.getAPIList('/v1/files?beta=true', Page<FileMetadata>, {
+       query,
+       ...options,
+       headers: buildHeaders([
+@@ -54,7 +54,7 @@ export class Files extends APIResource {
+     options?: RequestOptions,
+   ): APIPromise<DeletedFile> {
+     const { betas } = params ?? {};
+-    return this._client.delete(path`/v1/files/${fileID}`, {
++    return this._client.delete(path`/v1/files/${fileID}?beta=true`, {
+       ...options,
+       headers: buildHeaders([
+         { 'anthropic-beta': [...(betas ?? []), 'files-api-2025-04-14'].toString() },
+@@ -82,7 +82,7 @@ export class Files extends APIResource {
+     options?: RequestOptions,
+   ): APIPromise<Response> {
+     const { betas } = params ?? {};
+-    return this._client.get(path`/v1/files/${fileID}/content`, {
++    return this._client.get(path`/v1/files/${fileID}/content?beta=true`, {
+       ...options,
+       headers: buildHeaders([
+         {
+@@ -110,7 +110,7 @@ export class Files extends APIResource {
+     options?: RequestOptions,
+   ): APIPromise<FileMetadata> {
+     const { betas } = params ?? {};
+-    return this._client.get(path`/v1/files/${fileID}`, {
++    return this._client.get(path`/v1/files/${fileID}?beta=true`, {
+       ...options,
+       headers: buildHeaders([
+         { 'anthropic-beta': [...(betas ?? []), 'files-api-2025-04-14'].toString() },
+@@ -133,7 +133,7 @@ export class Files extends APIResource {
+     const { betas, ...body } = params;
+ 
+     return this._client.post(
+-      '/v1/files',
++      '/v1/files?beta=true',
+       multipartFormRequestOptions(
+         {
+           body,
+diff --git a/src/tools/memory/node.ts b/src/tools/memory/node.ts
+index 5557fd2d..f769d5fe 100644
+--- a/src/tools/memory/node.ts
++++ b/src/tools/memory/node.ts
+@@ -14,6 +14,14 @@ import {
+   BetaMemoryTool20250818ViewCommand,
+ } from '../../resources/beta';
+ 
++// Owner read/write only. Avoids the Node.js default of 0o666 which, in
++// environments with a permissive umask (e.g. Docker where umask is often
++// 0o000), would make memory files world-readable or even world-writable.
++const FILE_CREATE_MODE = 0o600;
++// fs.mkdir defaults to 0o777; restrict memory directories so they aren't
++// world-accessible in environments with permissive umasks.
++const DIR_CREATE_MODE = 0o700;
++
+ async function exists(path: string) {
+   return await fs
+     .access(path)
+@@ -40,7 +48,7 @@ async function atomicWriteFile(targetPath: string, content: string): Promise<voi
+ 
+   let handle: fs.FileHandle | undefined;
+   try {
+-    handle = await fs.open(tempPath, 'wx');
++    handle = await fs.open(tempPath, 'wx', FILE_CREATE_MODE);
+     await handle.writeFile(content, 'utf-8');
+     await handle.sync();
+     await handle.close();
+@@ -126,7 +134,7 @@ export class BetaLocalFilesystemMemoryTool implements MemoryToolHandlers {
+   static async init(basePath: string = './memory'): Promise<BetaLocalFilesystemMemoryTool> {
+     const memory = new BetaLocalFilesystemMemoryTool(basePath);
+ 
+-    await fs.mkdir(memory.memoryRoot, { recursive: true });
++    await fs.mkdir(memory.memoryRoot, { recursive: true, mode: DIR_CREATE_MODE });
+ 
+     return memory;
+   }
+@@ -240,11 +248,11 @@ export class BetaLocalFilesystemMemoryTool implements MemoryToolHandlers {
+   async create(command: BetaMemoryTool20250818CreateCommand): Promise<string> {
+     const fullPath = await this.validatePath(command.path);
+ 
+-    await fs.mkdir(path.dirname(fullPath), { recursive: true });
++    await fs.mkdir(path.dirname(fullPath), { recursive: true, mode: DIR_CREATE_MODE });
+ 
+     let handle: fs.FileHandle | undefined;
+     try {
+-      handle = await fs.open(fullPath, 'wx');
++      handle = await fs.open(fullPath, 'wx', FILE_CREATE_MODE);
+       await handle.writeFile(command.file_text, 'utf-8');
+       await handle.sync();
+     } catch (err: any) {
+@@ -376,7 +384,7 @@ export class BetaLocalFilesystemMemoryTool implements MemoryToolHandlers {
+     }
+ 
+     const newDir = path.dirname(newFullPath);
+-    await fs.mkdir(newDir, { recursive: true });
++    await fs.mkdir(newDir, { recursive: true, mode: DIR_CREATE_MODE });
+ 
+     try {
+       await fs.rename(oldFullPath, newFullPath);
+diff --git a/src/version.ts b/src/version.ts
+index 3fe97c6e..dce6a375 100644
+--- a/src/version.ts
++++ b/src/version.ts
+@@ -1 +1 @@
+-export const VERSION = '0.91.0'; // x-release-please-version
++export const VERSION = '0.91.1'; // x-release-please-version
+diff --git a/tests/lib/tools/BetaLocalFilesystemMemoryTool.test.ts b/tests/lib/tools/BetaLocalFilesystemMemoryTool.test.ts
+index 47129654..68c60018 100644
+--- a/tests/lib/tools/BetaLocalFilesystemMemoryTool.test.ts
++++ b/tests/lib/tools/BetaLocalFilesystemMemoryTool.test.ts
+@@ -602,4 +602,83 @@ describe('BetaLocalFilesystemMemoryTool', () => {
+       ).rejects.toThrow('Path would escape /memories directory via symlink');
+     });
+   });
++
++  describe('file permissions', () => {
++    const itPosix = process.platform === 'win32' ? it.skip : it;
++    let prevUmask: number;
++
++    beforeEach(() => {
++      prevUmask = process.umask(0o000);
++    });
++
++    afterEach(() => {
++      process.umask(prevUmask);
++    });
++
++    itPosix('should create the memory root with mode 0o700', async () => {
++      const freshDir = await fs.mkdtemp(path.join(os.tmpdir(), 'memory-perm-'));
++      try {
++        await BetaLocalFilesystemMemoryTool.init(freshDir);
++        const stat = await fs.stat(path.join(freshDir, 'memories'));
++        expect(stat.mode & 0o777).toBe(0o700);
++      } finally {
++        await fs.rm(freshDir, { recursive: true, force: true });
++      }
++    });
++
++    itPosix('should create files with mode 0o600', async () => {
++      await tool.create({
++        command: 'create',
++        file_text: 'secret',
++        path: '/memories/perm-test.txt',
++      });
++
++      const stat = await fs.stat(path.join(tempDir, 'memories', 'perm-test.txt'));
++      expect(stat.mode & 0o777).toBe(0o600);
++    });
++
++    itPosix('should create intermediate directories with mode 0o700', async () => {
++      await tool.create({
++        command: 'create',
++        file_text: 'secret',
++        path: '/memories/nested/perm-test.txt',
++      });
++
++      const stat = await fs.stat(path.join(tempDir, 'memories', 'nested'));
++      expect(stat.mode & 0o777).toBe(0o700);
++    });
++
++    itPosix('should create rename destination directories with mode 0o700', async () => {
++      await tool.create({
++        command: 'create',
++        file_text: 'x',
++        path: '/memories/src.txt',
++      });
++      await tool.rename({
++        command: 'rename',
++        old_path: '/memories/src.txt',
++        new_path: '/memories/renamed/dst.txt',
++      });
++
++      const stat = await fs.stat(path.join(tempDir, 'memories', 'renamed'));
++      expect(stat.mode & 0o777).toBe(0o700);
++    });
++
++    itPosix('should write atomic temp files with mode 0o600', async () => {
++      await tool.create({
++        command: 'create',
++        file_text: 'old',
++        path: '/memories/perm-test.txt',
++      });
++      await tool.str_replace({
++        command: 'str_replace',
++        path: '/memories/perm-test.txt',
++        old_str: 'old',
++        new_str: 'new',
++      });
++
++      const stat = await fs.stat(path.join(tempDir, 'memories', 'perm-test.txt'));
++      expect(stat.mode & 0o777).toBe(0o600);
++    });
++  });
+ });
+diff --git a/yarn.lock b/yarn.lock
+index 0fafc8ca..2019da00 100644
+--- a/yarn.lock
++++ b/yarn.lock
+@@ -1758,14 +1758,6 @@ escape-string-regexp@^4.0.0:
+   resolved "https://registry.yarnpkg.com/escape-string-regexp/-/escape-string-regexp-4.0.0.tgz#14ba83a5d373e3d311e5afca29cf5bfad965bf34"
+   integrity sha512-TtpcNJ3XAzx3Gq8sWRzJaVajRs0uVxA2YAkdb1jm2YkPz4G6egUFAyA3n5vtEIZefPk5Wa4UXbKuS5fKkJWdgA==
+ 
+-eslint-plugin-prettier@^5.4.1:
+-  version "5.4.1"
+-  resolved "https://registry.yarnpkg.com/eslint-plugin-prettier/-/eslint-plugin-prettier-5.4.1.tgz#99b55d7dd70047886b2222fdd853665f180b36af"
+-  integrity sha512-9dF+KuU/Ilkq27A8idRP7N2DH8iUR6qXcjF3FR2wETY21PZdBrIjwCau8oboyGj9b7etWmTGEeM8e7oOed6ZWg==
+-  dependencies:
+-    prettier-linter-helpers "^1.0.0"
+-    synckit "^0.11.7"
+-
+ eslint-plugin-unused-imports@^4.1.4:
+   version "4.1.4"
+   resolved "https://registry.yarnpkg.com/eslint-plugin-unused-imports/-/eslint-plugin-unused-imports-4.1.4.tgz#62ddc7446ccbf9aa7b6f1f0b00a980423cda2738"
+@@ -1973,11 +1965,6 @@ fast-deep-equal@^3.1.1, fast-deep-equal@^3.1.3:
+   resolved "https://registry.yarnpkg.com/fast-deep-equal/-/fast-deep-equal-3.1.3.tgz#3a7d56b559d6cbc3eb512325244e619a65c6c525"
+   integrity sha512-f3qQ9oQy9j2AhBe/H9VC91wLmKBCCU/gDOnKNAYG5hswO7BLKj09Hc5HYNz9cGI++xlpDCIgDaitVs03ATR84Q==
+ 
+-fast-diff@^1.1.2:
+-  version "1.3.0"
+-  resolved "https://registry.yarnpkg.com/fast-diff/-/fast-diff-1.3.0.tgz#ece407fa550a64d638536cd727e129c61616e0f0"
+-  integrity sha512-VxPP4NqbUjj6MaAOafWeUn2cXWLcCtljklUtZf0Ind4XQ+QPtmA0b18zZy0jIQx+ExRVCR/ZQpBmik5lXshNsw==
+-
+ fast-glob@^3.3.2:
+   version "3.3.2"
+   resolved "https://registry.yarnpkg.com/fast-glob/-/fast-glob-3.3.2.tgz#a904501e57cfdd2ffcded45e99a54fef55e46129"
+@@ -3360,13 +3347,6 @@ prelude-ls@^1.2.1:
+   resolved "https://registry.yarnpkg.com/prelude-ls/-/prelude-ls-1.2.1.tgz#debc6489d7a6e6b0e7611888cec880337d316396"
+   integrity sha512-vkcDPrRZo1QZLbn5RLGPpg/WmIQ65qoWWhcGKf/b5eplkkarX0m9z8ppCat4mlOqUsWpyNuYgO3VRyrYHSzX5g==
+ 
+-prettier-linter-helpers@^1.0.0:
+-  version "1.0.0"
+-  resolved "https://registry.yarnpkg.com/prettier-linter-helpers/-/prettier-linter-helpers-1.0.0.tgz#d23d41fe1375646de2d0104d3454a3008802cf7b"
+-  integrity sha512-GbK2cP9nraSSUF9N2XwUwqfzlAFlMNYYl+ShE/V+H8a9uNl/oUqB1w2EL54Jh0OlyRSd8RfWYJ3coVS4TROP2w==
+-  dependencies:
+-    fast-diff "^1.1.2"
+-
+ prettier@^3.0.0:
+   version "3.1.1"
+   resolved "https://registry.yarnpkg.com/prettier/-/prettier-3.1.1.tgz#6ba9f23165d690b6cbdaa88cb0807278f7019848"
+@@ -3803,13 +3783,6 @@ supports-preserve-symlinks-flag@^1.0.0:
+   resolved "https://registry.yarnpkg.com/supports-preserve-symlinks-flag/-/supports-preserve-symlinks-flag-1.0.0.tgz#6eda4bd344a3c94aea376d4cc31bc77311039e09"
+   integrity sha512-ot0WnXS9fgdkgIcePe6RHNk1WA8+muPa6cSjeR3V8K27q9BB1rTE3R1p7Hv0z1ZyAc8s6Vvv8DIyWf681MAt0w==
+ 
+-synckit@^0.11.7:
+-  version "0.11.8"
+-  resolved "https://registry.yarnpkg.com/synckit/-/synckit-0.11.8.tgz#b2aaae998a4ef47ded60773ad06e7cb821f55457"
+-  integrity sha512-+XZ+r1XGIJGeQk3VvXhT6xx/VpbHsRzsTkGgF6E5RX9TTXD0118l87puaEBZ566FhqblC6U0d4XnubznJDm30A==
+-  dependencies:
+-    "@pkgr/core" "^0.2.4"
+-
+ test-exclude@^6.0.0:
+   version "6.0.0"
+   resolved "https://registry.yarnpkg.com/test-exclude/-/test-exclude-6.0.0.tgz#04a8698661d805ea6fa293b6cb9e63ac044ef15e"

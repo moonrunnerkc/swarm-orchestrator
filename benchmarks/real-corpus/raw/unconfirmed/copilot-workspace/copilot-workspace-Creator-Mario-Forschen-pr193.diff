@@ -1,0 +1,94 @@
+diff --git a/src/app/(public)/page.tsx b/src/app/(public)/page.tsx
+index e79c93a3..719be253 100644
+--- a/src/app/(public)/page.tsx
++++ b/src/app/(public)/page.tsx
+@@ -11,10 +11,13 @@ import { getMonthData, type MonthCalendarEntry } from '@/lib/churchCalendarHelpe
+ import { canonicalSiteUrl, siteName } from '@/lib/config';
+ import { getCurrentPublicationDate } from '@/lib/publishing';
+ import { createPageMetadata, serializeJsonLd } from '@/lib/seo';
++import { loadCurrentSermon, type ArchivedSermon } from '@/lib/sermonArchive';
+ 
+-import dailySermon from '../../../data/daily-sermon.json';
++import staticDailySermon from '../../../data/daily-sermon.json';
+ import sermonHistory from '../../../data/sermon-history.json';
+ 
++export const dynamic = 'force-dynamic';
++
+ const weekdayHeadings = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'] as const;
+ const may2026 = getMonthData(2026, 5);
+ const headerDateFormatter = new Intl.DateTimeFormat('de-DE', {
+@@ -84,8 +87,11 @@ function buildCalendarWeeks(entries: MonthCalendarEntry[]) {
+   return weeks;
+ }
+ 
+-export default function HomePage() {
++export default async function HomePage() {
+   const publicationDate = getCurrentPublicationDate();
++  const freshSermon = await loadCurrentSermon().catch(() => null);
++  const dailySermon: ArchivedSermon = freshSermon ?? staticDailySermon;
++
+   const generatedBundle =
+     getGeneratedTopicBundleByDate(publicationDate)
+     ?? getGeneratedTopicBundleByDate(dailySermon.date)
+diff --git a/src/app/api/generate-sermon/route.ts b/src/app/api/generate-sermon/route.ts
+index d6e452d1..e7a3a4c6 100644
+--- a/src/app/api/generate-sermon/route.ts
++++ b/src/app/api/generate-sermon/route.ts
+@@ -3,6 +3,7 @@ import OpenAI from 'openai';
+ 
+ import { getCurrentPublicationDate } from '@/lib/publishing';
+ import { getLiturgicalDay } from '@/lib/churchCalendar';
++import { getLiturgicalReadings } from '@/lib/churchCalendarHelpers';
+ import {
+   areSermonTitlesSimilar,
+   getAllSermons,
+@@ -101,15 +102,26 @@ async function requestUniqueSermon(date: string, liturgicalDay: string): Promise
+       ]
+     : ['Es gibt noch keine gespeicherten Predigten im Archiv.'];
+   const uniquenessInstruction = uniquenessInstructionLines.join('\n');
++
++  const readings = getLiturgicalReadings(parseIsoDate(date));
++  const readingsLines = readings.length > 0
++    ? [
++        `Die Predigt orientiert sich an folgenden liturgischen Texten des Kirchentages „${liturgicalDay}":`,
++        ...readings.map((r) => `${r.label}: ${r.reference}`),
++        'Beziehe diese Schriftstellen ausdrücklich und korrekt in die Predigt ein. Erfinde keine anderen Bibelstellen.',
++      ]
++    : [];
++
+   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+     {
+       role: 'system',
+-      content: 'Du schreibst deutschsprachige, seelsorglich warme Tagespredigten für eine christliche Website. Halte dich exakt an das gewünschte Format.',
++      content: 'Du schreibst deutschsprachige, seelsorglich warme Tagespredigten für eine christliche Website. Halte dich exakt an das gewünschte Format und verwende ausschließlich die angegebenen Schriftstellen.',
+     },
+     {
+       role: 'user',
+       content: [
+         `Erstelle eine ausführliche, geistlich tiefgehende Predigt (ca. ${SERMON_WORD_COUNT_RANGE} Wörter) für den ${liturgicalDay}.`,
++        ...readingsLines,
+         'Die Predigt soll mit Einleitung, Hauptteil, praktischer Anwendung und einem abschließenden Gebet aufgebaut sein.',
+         'Stil: warm, einladend, geistlich tiefgehend, nicht dogmatisch, mit Bibelbezug und seelsorglicher Klarheit.',
+         uniquenessInstruction,
+diff --git a/src/test/pages.test.tsx b/src/test/pages.test.tsx
+index 1ab122cf..b5733dde 100644
+--- a/src/test/pages.test.tsx
++++ b/src/test/pages.test.tsx
+@@ -1006,12 +1006,16 @@ describe('HomePage', () => {
+       }),
+       getGeneratedTopicBundleByDate: () => undefined,
+       getGeneratedTopicBundles: () => [],
++      readStoredDocumentFresh: vi.fn().mockResolvedValue(null),
++    }));
++    vi.doMock('@/lib/sermonArchive', () => ({
++      loadCurrentSermon: vi.fn().mockResolvedValue(null),
+     }));
+     vi.doMock('@/components/BibleVerseCard', () => ({ default: () => null }));
+     vi.doMock('@/components/WeeklyThemeCard', () => ({ default: () => null }));
+     vi.doMock('@/components/Logo', () => ({ default: () => React.createElement('div', null, 'Logo') }));
+     const { default: HomePage } = await import('@/app/(public)/page');
+-    const jsx = HomePage();
++    const jsx = await HomePage();
+     render(React.createElement(React.Fragment, null, jsx));
+     expect(screen.getByRole('heading', { name: /Freie christliche Bibelforschung/i, level: 1 })).toBeInTheDocument();
+     expect(screen.getAllByText(/Der Fluss des Lebens/i).length).toBeGreaterThan(0);

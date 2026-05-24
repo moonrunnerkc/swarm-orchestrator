@@ -1,0 +1,577 @@
+diff --git a/.coderabbit.yaml b/.coderabbit.yaml
+index 529e3f0..0d2db94 100644
+--- a/.coderabbit.yaml
++++ b/.coderabbit.yaml
+@@ -56,4 +56,8 @@ reviews:
+ 
+     - path: "AGENTS.md"
+       instructions: |
+-        Keep versioning rules in sync with `.coderabbit.yaml`, `.cursor/rules/versioning.mdc`, and CLAUDE.md.
++        Keep versioning rules in sync with `.coderabbit.yaml`, `.cursor/rules/versioning.mdc`, CLAUDE.md, and **replit.md** (Replit Agent policy).
++
++    - path: "replit.md"
++      instructions: |
++        **Replit Agent** instructions must stay aligned with **CLAUDE.md**, **AGENTS.md**, **`.cursor/rules/versioning.mdc`**, **`.cursor/rules/review_tools.mdc`**, and the global **`reviews.instructions`** in this file. Do not document a separate or weaker policy for Replit-only agents. Update the policy table when any of those sources change.
+diff --git a/.replit b/.replit
+new file mode 100644
+index 0000000..3d1a887
+--- /dev/null
++++ b/.replit
+@@ -0,0 +1,25 @@
++# Bailey-Forbes-Flinstone — Replit app configuration
++# https://docs.replit.com/replit-app/configuration
++# Hosted IDE: https://replit.com/~
++# Replit Agent policy: replit.md (same rules as CLAUDE.md, AGENTS.md, .cursor/rules/, .coderabbit.yaml)
++
++run = "./BPForbes_Flinstone_Shell help"
++compile = "make -j$(nproc 2>/dev/null || echo 2)"
++entrypoint = "BPForbes_Flinstone_Shell"
++
++modules = ["cpp-clang14"]
++
++hidden = [".git", "deps", "build", "obj", ".cursor"]
++
++[nix]
++channel = "stable-24_05"
++
++[gitHubImport]
++requiredFiles = [".replit", "replit.nix"]
++
++[env]
++MAKEFLAGS = "-j2"
++
++[deployment]
++run = ["./BPForbes_Flinstone_Shell", "help"]
++ignorePorts = true
+diff --git a/AGENTS.md b/AGENTS.md
+index 1b5882b..a035a65 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -19,7 +19,11 @@ Notes:
+ - `curl`, `cmake`, `autoconf`, `automake`, `libtool`, `bzip2`, and `tar` are required by `make deps`, `make deps-sdl2`, and `make deps-cunit`.
+ - Optional (not required to compile or run the shell): `dosfstools` (`dosfsck`, `mkfs.fat`) helps validate FAT32 disk images the project creates; it is not linked into the binary. See `docs/dependencies.md` for a consolidated list of system packages versus `make deps`.
+ 
+-## AI feature-branch workflow (Cursor / Claude / Codex)
++## Replit Agent
++
++On [Replit](https://replit.com/~), the in-Repl **Replit Agent** uses **`replit.md`**, which states the **full explicit rules** (versioning, lock system, git workflow, build/test)—the **same** mandatory policy as **CLAUDE.md**, **AGENTS.md** (this file), **`.cursor/rules/*.mdc`**, and **`.coderabbit.yaml`**. App config: **`.replit`**, **`replit.nix`**.
++
++## AI feature-branch workflow (Cursor / Claude / Codex / Replit)
+ 
+ When an agent opens a pull request or branch for one task and later needs to implement **another** item that is **not** part of that branch’s original goal, **do not** create a new branch **unless** a human explicitly allows it. **Stay on the current** feature branch and commit the additional work there—unless a human tells you to use a separate branch.
+ 
+diff --git a/CLAUDE.md b/CLAUDE.md
+index d44b457..751fe99 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -62,7 +62,8 @@ Export current numbers without compiling: **`./scripts/export_version_record.sh`
+ 
+ ## Where else this is documented
+ 
+-- **AGENTS.md** — Cursor Cloud agents, versioning summary, and **AI feature-branch workflow** (stay on one `cursor/*` / agent branch unless a human allows a split; merge side work with **`git merge --no-ff`**; delete duplicate **`.ver`** files, do not edit immutable merge-base rows, fold notes into the **newest** row or a **new** **`.ver`**, re-run **`./scripts/check_version_entries_semver_dev_unique.sh`**)  
++- **AGENTS.md** — Cursor Cloud agents, versioning summary, and **AI feature-branch workflow**
++- **replit.md** — Replit hosting; **Replit Agent** bound to the same policy as this file, **AGENTS.md**, **`.cursor/rules/*.mdc`**, and **`.coderabbit.yaml`** (stay on one `cursor/*` / agent branch unless a human allows a split; merge side work with **`git merge --no-ff`**; delete duplicate **`.ver`** files, do not edit immutable merge-base rows, fold notes into the **newest** row or a **new** **`.ver`**, re-run **`./scripts/check_version_entries_semver_dev_unique.sh`**)  
+ - **`docs/ROADMAP.md`** — phased **P0–P9** work; **module contracts** abstraction + **❌/⚠️/✅** snapshot: [Module contracts (abstraction and P0-P9 coverage)](./docs/ROADMAP.md#module-contracts-abstraction-and-p0-p9-coverage)  
+ - **`docs/versioning.md`** — `.ver` authoring, `RELEASE_DATE` automation, **A / B / C** semantics  
+ - **`.coderabbit.yaml`** — optional CodeRabbit integration when enabled on the repo  
+diff --git a/README.md b/README.md
+index f5525a9..d01a85b 100644
+--- a/README.md
++++ b/README.md
+@@ -176,6 +176,8 @@ make vm-sdl      # Uses deps/install if present, else pkg-config
+ ./scripts/run_vm_wsl.sh  # Run only (requires prior build)
+ ```
+ 
++**Replit** ([replit.com/~](https://replit.com/~)): import from GitHub with `.replit` and `replit.nix`; use **Run** or `make` in the Shell. See [docs/replit.md](docs/replit.md).
++
+ ### Run
+ 
+ ```bash
+diff --git a/docs/dependencies.md b/docs/dependencies.md
+index eb6ccce..291d255 100644
+--- a/docs/dependencies.md
++++ b/docs/dependencies.md
+@@ -2,6 +2,10 @@
+ 
+ This project uses **system packages** (via `apt` on Debian/Ubuntu) for the toolchain and optional libraries, and **`make deps`** for in-tree builds of SDL2 and CUnit. The canonical one-line install for Cursor Cloud and similar images is in [AGENTS.md](../AGENTS.md) at the repository root.
+ 
++## Replit ([replit.com/~](https://replit.com/~))
++
++Import the repo as a Replit App with **`.replit`** and **`replit.nix`** (see [docs/replit.md](replit.md) and [replit.md](../replit.md)). Nix package names are also listed in [`nix/deps.json`](../nix/deps.json).
++
+ ## Required to compile (typical Linux host)
+ 
+ | Component | Purpose |
+diff --git a/docs/replit.md b/docs/replit.md
+new file mode 100644
+index 0000000..b221a78
+--- /dev/null
++++ b/docs/replit.md
+@@ -0,0 +1,27 @@
++# Replit support
++
++This project can run on [Replit](https://replit.com/~) using Nix-backed system dependencies.
++
++## Configuration files
++
++| File | Role |
++|------|------|
++| [`.replit`](../.replit) | Run/compile commands, `cpp-clang14` module, Nix channel `stable-24_05` |
++| [`replit.nix`](../replit.nix) | `deps` array — mirrors [AGENTS.md](../AGENTS.md) / [dependencies.md](dependencies.md) |
++| [`replit.md`](../replit.md) | Replit onboarding; **explicit Replit Agent rules** (same policy as `CLAUDE.md`, `AGENTS.md`, `.cursor/rules/`, `.coderabbit.yaml`) |
++| [`nix/deps.json`](../nix/deps.json) | JSON manifest (apt ↔ nix names, profiles) |
++
++## Import from GitHub
++
++Replit expects both `.replit` and `replit.nix` ([gitHubImport] in `.replit`). After import, open the **Shell** and run `make` if **Run** did not compile yet.
++
++## Limits on Replit
++
++- **SDL VM** (`make vm-sdl`) may need a graphical Repl; headless tiers should use `make` or `make vm` only.
++- **AArch64 cross** (`make ARCH=arm`) is not preinstalled in `replit.nix`; use `flake.nix` / `nix develop .#cross-aarch64` locally, or extend `replit.nix` with cross packages.
++- **dosfstools** / **file** for FAT image validation are optional; add `pkgs.dosfstools` and `pkgs.file` to `replit.nix` if needed.
++
++## Related
++
++- [dependencies.md](dependencies.md) — apt one-liner and linked libraries
++- [AGENTS.md](../AGENTS.md) — full toolchain list
+diff --git a/flake.nix b/flake.nix
+new file mode 100644
+index 0000000..b846734
+--- /dev/null
++++ b/flake.nix
+@@ -0,0 +1,54 @@
++{
++  description = "Bailey-Forbes-Flinstone — dev shells (local Nix; Replit uses replit.nix)";
++
++  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
++
++  outputs = { self, nixpkgs }:
++    let
++      forAllSystems = nixpkgs.lib.genAttrs [ "x86_64-linux" "aarch64-linux" ];
++
++      resolvePackages = pkgs: names:
++        map (name:
++          pkgs.${name} or builtins.throw "unknown package '${name}' on ${pkgs.system}"
++        ) names;
++
++      baseNative = pkgs: resolvePackages pkgs [
++        "pkg-config" "curl" "cacert" "cmake" "autoconf" "automake" "libtool"
++        "bzip2" "gnutar" "nasm" "gnumake" "gcc" "binutils"
++      ];
++
++      baseBuild = pkgs: resolvePackages pkgs [ "sqlite" "openssl" ];
++
++      crossAarch64Shell = pkgs:
++        let
++          cross = pkgs.pkgsCross.aarch64-multiplatform;
++        in pkgs.mkShell {
++          buildInputs = baseBuild cross;
++          nativeBuildInputs = baseNative pkgs ++ [ cross.stdenv.cc ];
++        };
++
++    in {
++      devShells = forAllSystems (system:
++        let pkgs = import nixpkgs { inherit system; };
++        in {
++          default = pkgs.mkShell {
++            buildInputs = baseBuild pkgs;
++            nativeBuildInputs = baseNative pkgs;
++          };
++          vm-sdl = pkgs.mkShell {
++            buildInputs = baseBuild pkgs ++ [ pkgs.SDL2 ];
++            nativeBuildInputs = baseNative pkgs;
++          };
++          tests = pkgs.mkShell {
++            buildInputs = baseBuild pkgs ++ [ pkgs.libcunit ];
++            nativeBuildInputs = baseNative pkgs;
++          };
++          cross-aarch64 =
++            if system == "x86_64-linux" then crossAarch64Shell pkgs
++            else pkgs.mkShell {
++              buildInputs = baseBuild pkgs;
++              nativeBuildInputs = baseNative pkgs;
++            };
++        });
++    };
++}
+diff --git a/nix/deps.json b/nix/deps.json
+new file mode 100644
+index 0000000..cbfb241
+--- /dev/null
++++ b/nix/deps.json
+@@ -0,0 +1,121 @@
++{
++  "schema_version": 1,
++  "project": "Bailey-Forbes-Flinstone",
++  "description": "System and library dependencies mapped from AGENTS.md, docs/dependencies.md, and Makefile link flags.",
++  "nixpkgs_channel": "nixpkgs-unstable",
++  "profiles": {
++    "default": {
++      "description": "Host build: shell, USE_ASM_ALLOC, tests, VM (no SDL window)",
++      "systems": ["x86_64-linux"],
++      "linked_libraries": [
++        { "name": "sqlite3", "nix": "sqlite", "apt": "libsqlite3-dev", "make_flag": "-lsqlite3" },
++        { "name": "openssl-crypto", "nix": "openssl", "apt": "libssl-dev", "make_flag": "-lcrypto" },
++        { "name": "libstdc++", "nix": "stdenv.cc.cc.lib", "apt": "g++", "make_flag": "-lstdc++" },
++        { "name": "pthread", "nix": null, "apt": "(libc/gcc)", "make_flag": "-pthread", "note": "Provided by stdenv / gcc" }
++      ],
++      "nativeBuildInputs": [
++        "pkg-config",
++        "curl",
++        "cacert",
++        "cmake",
++        "autoconf",
++        "automake",
++        "libtool",
++        "bzip2",
++        "gnutar",
++        "nasm",
++        "gnumake"
++      ],
++      "buildInputs": [
++        "sqlite",
++        "openssl"
++      ]
++    },
++    "vm_sdl": {
++      "description": "Adds SDL2 for make vm-sdl",
++      "extends": "default",
++      "buildInputs": ["SDL2"],
++      "apt": ["libsdl2-dev"],
++      "make_target": "vm-sdl",
++      "in_repo_alternative": "make deps / deps/install"
++    },
++    "tests_cunit": {
++      "description": "CUnit test binary BPForbes_Flinstone_Tests",
++      "extends": "default",
++      "buildInputs": ["libcunit"],
++      "apt": ["libcunit1-dev"],
++      "make_target": "BPForbes_Flinstone_Tests",
++      "in_repo_alternative": "make deps-cunit / deps/install"
++    },
++    "arch_nasm": {
++      "description": "make ARCH=x86_64_nasm",
++      "extends": "default",
++      "nativeBuildInputs_extra": ["nasm"],
++      "apt_extra": ["nasm"]
++    },
++    "cross_aarch64": {
++      "description": "make ARCH=arm on x86_64-linux host",
++      "systems": ["x86_64-linux"],
++      "crossSystem": "aarch64-unknown-linux-gnu",
++      "linked_libraries": [
++        { "name": "sqlite3", "nix_cross": "sqlite", "apt": "libsqlite3-dev:arm64", "in_repo": "make deps-sqlite-aarch64" },
++        { "name": "openssl-crypto", "nix_cross": "openssl", "apt": "libssl-dev:arm64", "in_repo": "make deps-openssl-aarch64" },
++        { "name": "libstdc++", "nix_cross": "stdenv.cc.cc.lib", "apt": "g++-aarch64-linux-gnu" },
++        { "name": "libdl", "nix_cross": null, "make_flag": "-ldl", "note": "glibc on target" }
++      ],
++      "nativeBuildInputs": [
++        "pkg-config",
++        "curl",
++        "cacert",
++        "cmake",
++        "autoconf",
++        "automake",
++        "libtool",
++        "bzip2",
++        "gnutar",
++        "nasm",
++        "gnumake"
++      ],
++      "buildInputs_cross": ["sqlite", "openssl"]
++    },
++    "optional_tools": {
++      "description": "Not linked; validation only",
++      "packages": [
++        { "nix": "dosfstools", "apt": "dosfstools", "purpose": "dosfsck / mkfs.fat for FAT32 images" },
++        { "nix": "file", "apt": "file", "purpose": "magic checks on disk images" }
++      ]
++    }
++  },
++  "apt_one_liner": {
++    "comment": "Equivalent to AGENTS.md Cursor Cloud install",
++    "packages": [
++      "build-essential",
++      "gcc",
++      "g++",
++      "make",
++      "binutils",
++      "nasm",
++      "gcc-aarch64-linux-gnu",
++      "g++-aarch64-linux-gnu",
++      "binutils-aarch64-linux-gnu",
++      "pkg-config",
++      "curl",
++      "ca-certificates",
++      "cmake",
++      "autoconf",
++      "automake",
++      "libtool",
++      "bzip2",
++      "tar",
++      "libsdl2-dev",
++      "libcunit1-dev",
++      "libsqlite3-dev",
++      "libssl-dev"
++    ]
++  },
++  "make_deps_in_repo": {
++    "deps": ["SDL2", "libcunit"],
++    "deps_sqlite_aarch64": ["sqlite static in deps/install-aarch64"],
++    "deps_openssl_aarch64": ["openssl libcrypto in deps/install-aarch64"]
++  }
++}
+diff --git a/replit.md b/replit.md
+new file mode 100644
+index 0000000..9bb8465
+--- /dev/null
++++ b/replit.md
+@@ -0,0 +1,188 @@
++# Replit — Bailey-Forbes-Flinstone
++
++Run this repo on [Replit](https://replit.com/~) (import from GitHub or fork).
++
++## Replit Agent policy (required — explicit rules)
++
++> **INDICATOR — REPLIT AGENT:** Any **Replit Agent** (Replit AI, Ghostwriter, or other in-Repl coding assistants) **is bound to the same mandatory rules** as **Cursor** (`.cursor/rules/`, **AGENTS.md**), **Claude** (**CLAUDE.md**), and **CodeRabbit** (**.coderabbit.yaml**). These rules are **not optional** and **not a lighter Replit-only policy**. The sections below state them **explicitly** for Replit; when maintaining policy, keep this file aligned with those sources.
++
++**Canonical copies (update together when policy changes):** [`CLAUDE.md`](CLAUDE.md) · [`AGENTS.md`](AGENTS.md) · [`.cursor/rules/versioning.mdc`](.cursor/rules/versioning.mdc) · [`.cursor/rules/review_tools.mdc`](.cursor/rules/review_tools.mdc) · [`.coderabbit.yaml`](.coderabbit.yaml) · [`docs/versioning.md`](docs/versioning.md)
++
++---
++
++### 1. Project context
++
++- This repo is **Bailey-Forbes-Flinstone**: educational OS/shell-style C/C++ with **`BPForbes_Flinstone_Shell`**, kernel modules, drivers, optional VM builds. Build from repo root with **`make`**.
++- A **module contract** is a **normative data-distribution model** across a boundary (ownership, lifetimes, errors, named surfaces)—**not** product features by themselves. Contract headers live under **`contracts/foundations/`** and related **`fl/*`**; **implementation enforces** but does not replace written contracts. See **`docs/ROADMAP.md`** (module contracts table) when changing contract coverage.
++
++---
++
++### 2. Code change rules (all agents)
++
++- **Minimize scope:** smallest correct diff; no unrelated refactors or drive-by edits.
++- **Match existing style:** naming, types, patterns, and documentation level of surrounding code.
++- **Comments:** aim for roughly **15% comments / 85% code** in new or heavily touched areas—explain non-obvious intent and invariants, not line-by-line narration.
++- **Tests:** before changing code, run the **most relevant** existing tests for that area; after each change, rerun until the affected behavior passes. Add or update tests for new behavior, bug fixes, and regressions when a suitable target exists (`make test_drivers`, `test_core`, `test_alloc_asm`, etc.).
++- **Do not** bulk-edit **`version/locked/**`** or historical **`version/entries/**`** paths from the merge base in automated refactors.
++
++---
++
++### 3. Versioning and release files (mandatory)
++
++Format is semantic **`A.B.C`** (not date-based). **`userland/shell/version_def.h`** is **generated** by **`scripts/gen_version_def.sh`** / **`make`** from **`version/locked/`** and **`version/entries/**/*.ver`** (with **`PRERELEASE=1`** / **`GM=1`** exceptions—see **`docs/versioning.md`**).
++
++#### 3.1 Semver components and bumps
++
++| Component | Field in `.ver` | Meaning |
++|-----------|-----------------|--------|
++| **A** | `MAJOR_VERSION` | Major milestones, architecture, large incompatible/foundational changes |
++| **B** | `STANDARD_VERSION` | New additive features |
++| **C** | `RELEASE_VERSION` | Bug fixes and small corrections |
++
++**Precedence:** **`A` > `B` > `C`**. For each release, bump **only the highest** level that applies to the **whole** release:
++
++- **Increment** that component only.
++- **Leave unchanged** all components to the **left** (more significant).
++- **Set to `0`** all components to the **right** (less significant).
++
++Examples: **`2.2.4` → `2.3.0`** (minor); **`2.3.7` → `3.0.0`** (major); **`2.3.0` → `2.3.1`** (patch). If work mixes categories, **one bump** at the highest level only (e.g. milestone + features → bump **A** only → **`3.0.0`**).
++
++#### 3.2 Lock system — never rewrite published history
++
++- **`version/locked/`** on the **merge target** is the **published** record. **Do not modify** any path under **`version/locked/`** that already exists on the branch you merge **into**.
++- **`version/entries/`** is where you **author** new release rows (at the **entries root** only—see **§3.4**). After CI, **`preproduction <A>.<B>.<C>/`** trees may appear under **`version/entries/`**; they are **not** where Replit Agent hand-writes new PR rows.
++- **Do not commit `version/locked/**`** on normal agent feature PRs. After merge to **`develop`**, **Version lock on merge** (GitHub Actions) relocates root **`PRERELEASE=1`** rows, finalizes **`version/locked/`**, regenerates **`version_def.h`**, and may open a housekeeping PR.
++- **`version/entries/ABOUT.txt`** must **byte-match** the merge target’s **`version/locked/ABOUT.txt`** while **`version/locked/`** on the target is unchanged.
++
++#### 3.3 Immutable `.ver` rows — add new files; do not rewrite history
++
++- Any **`version/entries/**/*.ver`** path on the **merge base** is **immutable**: **do not** edit **`DESCRIPTION`**, **`DEV_VERSION`**, **`GM`**, **`PRERELEASE`**, or semver fields in those files (including rows already under **`preproduction */`** on the merge base).
++- Each PR / iteration: **add exactly one new** **`version/entries/A_B_C_short_slug.ver`** at the **`version/entries/` root** (prefer **`A_B_C_slug.ver`**; avoid legacy **`NNN_`** filename prefixes unless matching existing files).
++- The **one new root `.ver` this PR adds** (the file you created at **`version/entries/`**, even after CI moves it under **`preproduction */`**): you may change **`DESCRIPTION` only** until merge to **`develop`** (no **`DEV_VERSION`** re-bump). After merge, that path is immutable.
++- **Do not** edit other **`.ver`** files on your branch—especially under **`preproduction */`** from an earlier train, another PR, or merge-base history. “Only on my branch” is **not** permission to rewrite semver fields or unrelated rows.
++
++#### 3.4 Replit Agent — where to author `.ver` files (same-repo PRs)
++
++| Action | Replit Agent |
++|--------|----------------|
++| New PR / train row | **Add** **`version/entries/A_B_C_slug.ver`** at the **`version/entries/` directory root only |
++| **`PRERELEASE=1`** | Set on a **new root** **`*.ver`**; CI **`relocate_root_prerelease_ver_to_preproduction.sh`** moves it into **`preproduction <A>.<B>.<C>/`** |
++| Hand-add under **`preproduction */`** | **Never** (no new **`*.ver`**, no **`PRERELEASE=1`**, no **`GM=1`**) |
++| Edit a row already under **`preproduction */`** | **Only** the **one** **`.ver` this PR created at the entries root (after CI relocate): **`DESCRIPTION` only**. **Never** edit other trains’ rows there; for a new train, add another **root** **`.ver`** |
++| **`RELEASE_DATE=`** on new rows | **Omit**; CI stamps on relocate / Version lock |
++
++#### 3.5 `DEV_VERSION`, `PRERELEASE`, and `GM`
++
++- **`PRERELEASE`** and **`GM`**: when present, values must be exactly **`0`** or **`1`**.
++- **`DEV_VERSION`:** compare to **`develop`** (merge base). Let **`N`** = **`DEV_VERSION`** on **`develop`** for that path, or **`0`** if absent. You may set **`DEV_VERSION`** to exactly **`N+1`** **once** when establishing that row; **never** change **`DEV_VERSION`** again on that path—update **`DESCRIPTION`** only. **Never** increase mid-PR (e.g. **8→9**). **Do not** run **`./scripts/bump_dev_version.sh`** to chase BUILD numbers.
++- With **`PRERELEASE=1`**, use **`DEV_VERSION >= 1`**.
++- **`(MAJOR, STANDARD, RELEASE, DEV_VERSION)`** must be **unique** across **`version/entries/**/*.ver`** (missing **`DEV_VERSION=`** counts as **0**). Before push: **`./scripts/check_version_entries_semver_dev_unique.sh`**.
++- **`GM=1` (go-to-main):** **Replit Agent must not set `GM=1` or hand-add any row under `version/entries/preproduction */`.** Go-to-main is **maintainer-only**. When a maintainer runs promotion, they add a **new** **`.ver`** under the existing **`preproduction <A>.<B>.<C>/`** folder (next **`DEV_VERSION`**, **`GM=1`**, **`DESCRIPTION`** starting with **`A.B.C:`**)—**never** on a root **`*.ver`**. **`promote_preproduction_for_main.sh`** then writes one GA root **`.ver`** at **`version/entries/`** before **`main`**.
++
++#### 3.6 No semver backtracking (AI)
++
++- Active preproduction version is **A.B.C** from **`version/entries/preproduction <A>.<B>.<C>/`** (after relocate).
++- **Do not** add a **new root** **`.ver`** whose **A.B.C** is **numerically below** that preproduction **A.B.C** unless a **human maintainer** explicitly requests a separate GA release.
++- Default for a new train: **another root** **`PRERELEASE=1`** **`.ver`** with the same semver and the next free **`DEV_VERSION`**.
++
++#### 3.7 `userland/shell/version_def.h` (generated — do not commit on feature PRs)
++
++- **Never** stage or **commit** **`userland/shell/version_def.h`** on same-repo agent feature PRs. **`make`** may rewrite it locally—**do not** **`git add`** it; reset to merge target if needed.
++- **Do not** hand-edit **`VERSION_MAJOR`**, **`VERSION_STANDARD`**, **`VERSION_PATCH`**, or **`VERSION_LINE`**.
++- **Do not** run **`./scripts/gen_version_def.sh`** just to “publish” header updates after **`GM=1`** on **`.ver`**—GitHub Actions (**`.github/workflows/c-cpp.yml`**, **Version lock on merge**) owns that.
++- Local verify only: **`./scripts/gen_version_def.sh`** or **`make`** then leave unstaged; or **`./scripts/export_version_record.sh --json`**.
++
++#### 3.8 First substantive change on a PR
++
++- On the **first** substantive code change for a pull request, **add** a **new** **`version/entries/A_B_C_slug.ver`** at the **entries root** if the branch has no entry covering **that** PR’s work.
++
++#### 3.9 Merge version checks (incoming → base)
++
++Before merging (e.g. **`bug/*` → `develop`**, **`develop` → `main`**):
++
++1. Read target **`VERSION`** from **`userland/shell/version_def.h`** (from **`version/locked/`** on the target, unless **`PRERELEASE=1`** + **`GM=1`** in entries overrides per **`gen_version_def.sh`**).
++2. Incoming **`version/entries/*.ver`** must record a semver **strictly greater** than target **VERSION** when the PR ships a new release (unless maintainer already finalized **`version/locked/`** on the branch).
++3. If both are the **same** (e.g. both **`2.0.0`**), bump incoming **entries** one appropriate step (example: bugfix → **`2.0.1`**).
++
++**Automation-only version PRs** (`chore(version): sync…`, **`cursor/version-lock-from-entries-*`**): routine housekeeping—no proactive deep review unless a human asks.
++
++---
++
++### 4. Git and branch workflow (Replit Agent)
++
++- Stay on the **current feature branch** for related work. **Do not** open a new branch for extra scope **unless** a human explicitly allows it.
++- When combining agent branches (**`cursor/*`**, **`claude/*`**, **`codex/*`**, Replit, etc.) into one PR:
++  - Use **`git merge --no-ff <other-branch>`** (visible combine point—**not** silent fast-forward).
++  - **Delete** duplicate **`.ver`** for the same **A.B.C** train from the merged-in branch.
++  - **Do not edit** immutable merge-base **`.ver`** rows—fold prose into the **newest** **`.ver`** the combined PR adds, or add **one new** root **`.ver`** with the next **`DEV_VERSION`**.
++  - Re-run **`./scripts/check_version_entries_semver_dev_unique.sh`**.
++
++---
++
++### 5. Build, test, and toolchain (Replit)
++
++- Install/use packages from **`replit.nix`** (or **`nix/deps.json`** manifest). Equivalent apt list is in **`AGENTS.md`** / **`docs/dependencies.md`**.
++- **Default:** `make` → **`BPForbes_Flinstone_Shell`**
++- **Other targets:** `make clean`, `make ARCH=x86_64_nasm`, `make ARCH=arm` (cross; may need extra deps), `make USE_ASM_ALLOC=1`, `make test_alloc_asm`, `make test_drivers`, `make test_core`, `make vm`, `make vm-sdl` (SDL may need display tier), `make BPForbes_Flinstone_Tests`, `make deps` for in-tree SDL2/CUnit.
++- **Policy:** run relevant tests for the area you change; do not skip because “Replit”—document real blockers with the failing command.
++- **Implementation boundaries:** low-level memory, sync, port I/O, and hardware-facing paths use the **ASM layer**; keep C for orchestration, drivers, VM, filesystem policy. Prefer extending existing ASM-backed primitives over parallel libc-only paths for kernel/driver/baremetal.
++
++---
++
++### 6. Pull request and review alignment (CodeRabbit / human review)
++
++- Incoming version must **exceed** target when the change warrants a release bump.
++- **Do not** approve or produce edits to **`version/locked/**`** on the merge base.
++- **Do not** commit **`userland/shell/version_def.h`** on agent feature PRs (CI/GitHub Actions may commit it on automation flows—that is not agent-authored feature work).
++- Optional **CodeRabbit** / **Codex** CLI is **not** required before **`git push`**; ordinary GitHub PR review applies (**`.cursor/rules/review_tools.mdc`**).
++- When changing versioning policy text, keep **`replit.md`**, **`CLAUDE.md`**, **`AGENTS.md`**, **`.cursor/rules/versioning.mdc`**, **`.coderabbit.yaml`**, and **`docs/versioning.md`** aligned.
++
++---
++
++### 7. Conflict resolution
++
++If this **`replit.md`** explicit section and **`CLAUDE.md`**, **`AGENTS.md`**, **`.cursor/rules/*.mdc`**, or **`.coderabbit.yaml`** disagree, **follow those four sources** and open a follow-up change to fix **`replit.md`**.
++
++## Required files
++
++- `.replit` — run/compile, Nix channel, modules
++- `replit.nix` — system packages (gcc, make, nasm, sqlite, openssl, SDL2, CUnit, …)
++
++## Quick start
++
++1. Import the repository into a Replit App (GitHub import keeps `.replit` and `replit.nix`).
++2. Wait for the Nix environment to sync (shell reload after `replit.nix` changes).
++3. **Run** — builds via `compile`, then runs `./BPForbes_Flinstone_Shell help`.
++4. In the **Shell** pane for an interactive session:
++
++   ```bash
++   make
++   ./BPForbes_Flinstone_Shell
++   ```
++
++## Common make targets
++
++| Command | Purpose |
++|---------|---------|
++| `make` | Default host shell |
++| `make USE_ASM_ALLOC=1 test_alloc_asm` | ASM allocator tests |
++| `make ARCH=x86_64_nasm` | NASM build |
++| `make vm-sdl` | VM + SDL2 window (needs display; may not work on all Replit tiers) |
++| `make BPForbes_Flinstone_Tests` | CUnit tests |
++
++## Optional: in-repo deps
++
++If Nix SDL2/CUnit versions are insufficient:
++
++```bash
++make deps
++make vm-sdl
++```
++
++## Manifest
++
++Package list and profiles: `nix/deps.json`. Local Nix flakes: `flake.nix` (not used by Replit directly).
++
++## Versioning (quick reminder)
++
++Full rules are in **§3** above. Replit Agent: **one new** root **`version/entries/A_B_C_slug.ver`** per PR train; **`PRERELEASE=1` at root only** (CI moves to **`preproduction */`**); **never** hand-add or hand-edit under **`preproduction */`**; **never** **`GM=1`**; **never** merge-base **`.ver`** edits; **`DESCRIPTION` only** on the new row this PR added; **never** **`version/locked/**`** or **`version_def.h`** commits.
+diff --git a/replit.nix b/replit.nix
+new file mode 100644
+index 0000000..2776d9e
+--- /dev/null
++++ b/replit.nix
+@@ -0,0 +1,26 @@
++# Replit system dependencies for Bailey-Forbes-Flinstone.
++# See nix/deps.json (manifest) and docs/replit.md.
++# Import on Replit: https://replit.com/~ — requires .replit + replit.nix (GitHub import).
++{ pkgs }: {
++  deps = [
++    pkgs.gcc
++    pkgs.gnumake
++    pkgs.binutils
++    pkgs.nasm
++    pkgs.pkg-config
++    pkgs.sqlite
++    pkgs.openssl
++    pkgs.libcunit
++    pkgs.SDL2
++    pkgs.curl
++    pkgs.cacert
++    pkgs.cmake
++    pkgs.autoconf
++    pkgs.automake
++    pkgs.libtool
++    pkgs.bzip2
++    pkgs.gnutar
++    pkgs.python3
++    pkgs.bashInteractive
++  ];
++}
+diff --git a/userland/shell/version_def.h b/userland/shell/version_def.h
+index 1b79860..45b2523 100644
+--- a/userland/shell/version_def.h
++++ b/userland/shell/version_def.h
+@@ -30,6 +30,6 @@
+ #define VERSION \
+     VERSION_STR(VERSION_MAJOR) "." VERSION_STR(VERSION_STANDARD) "." VERSION_STR(VERSION_PATCH)
+ 
+-#define VERSION_LINE "PRE 4.1.0, BUILD 2"
++#define VERSION_LINE "PRE 4.1.0, BUILD 3"
+ 
+ #endif /* VERSION_DEF_H */
+diff --git a/version/entries/preproduction 4.1.0/4_1_0_replit_support.ver b/version/entries/preproduction 4.1.0/4_1_0_replit_support.ver
+new file mode 100644
+index 0000000..2b36bfb
+--- /dev/null
++++ b/version/entries/preproduction 4.1.0/4_1_0_replit_support.ver	
+@@ -0,0 +1,9 @@
++MAJOR_VERSION=4
++STANDARD_VERSION=1
++RELEASE_VERSION=0
++PRERELEASE=1
++DEV_VERSION=3
++GM=0
++DESCRIPTION=Replit support: .replit and replit.nix for https://replit.com/~ GitHub import; replit.md explicit Replit Agent rules (versioning, lock, semver, DEV_VERSION, GM, git merge --no-ff) same as CLAUDE.md, AGENTS.md, .cursor/rules/, .coderabbit.yaml; docs/replit.md; nix/deps.json; flake.nix.
++
++RELEASE_DATE=2026-05-22

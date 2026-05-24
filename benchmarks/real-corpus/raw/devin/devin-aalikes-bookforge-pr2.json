@@ -1,0 +1,26 @@
+{
+  "id": "devin-aalikes-bookforge-pr2",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 2,
+    "headSha": "8bd6a09b8b6927a98f25a68b20837710f72fd94b",
+    "baseSha": "d40b088d4b8e61039e7a431833e11f2bea804c88",
+    "title": "feat: Goodreads integration, Readwise↔Notion pipeline, reading status & ratings",
+    "body": "## Summary\n\nAdds Goodreads integration, enhances Readwise and Notion to support bidirectional sync, and introduces a Readwise→Notion highlight pipeline. Also adds reading status tracking and 5-star ratings across the platform.\n\n**New Features:**\n- **Goodreads integration** — Import your full library via CSV export or RSS feed sync. Imports shelves, ratings, reading status, reviews, and page counts.\n- **Readwise↔Notion pipeline** — One-click flow that pulls all Readwise highlights and syncs them to Notion as organized book pages with quote blocks, notes, and tags.\n- **Readwise bidirectional sync** — Push highlights TO Readwise and pull highlights FROM Readwise into BookForge.\n- **Enhanced Notion sync** — Rich database properties: Status (select), Rating (number), Pages, Date Read, Highlights count, Source.\n- **Reading status tracking** — To Read, Currently Reading, Finished, Abandoned — synced across all integrations.\n- **5-star rating system** — Rate books, synced to Goodreads data and Notion.\n- **Pipeline UI** — Visual pipeline cards on the Integrations dashboard showing Readwise→Notion and Readwise→BookForge flows.\n- **Goodreads import modal** — Drag-drop CSV upload and RSS feed import with import statistics.\n\n**Technical:**\n- New `lib/integrations/goodreads.js` module (CSV parsing, RSS feed fetching, shelf mapping)\n- Enhanced `readwise.js` with paginated `getHighlights()`, `getBooksWithHighlights()`, `importHighlights()`\n- Enhanced `notion.js` with `syncReadwiseHighlights()`, `getPages()`, rich property support, block appending\n- New `readwiseToNotion()` orchestrator in integrations index\n- Database migrations for `reading_status`, `my_rating`, `goodreads_id`, `pages`, `date_read`, `review` columns\n- New API endpoints: `/api/integrations/goodreads/import-csv`, `/api/integrations/goodreads/import-rss`, `/api/integrations/goodreads/import-all`, `/api/integrations/readwise/import`, `/api/integrations/readwise-to-notion`, `/api/books/:id/status`, `/api/books/:id/rating`, `/api/books/stats`\n\n## Review & Testing Checklist for Human\n\n- [ ] Test Goodreads CSV import: export from [goodreads.com/review/import](https://www.goodreads.com/review/import), upload via Integrations → Goodreads → Import Library. Verify books appear with correct status, rating, and tags.\n- [ ] Test Readwise→Notion pipeline: configure `READWISE_ACCESS_TOKEN`, `NOTION_API_KEY`, and `NOTION_DATABASE_ID` in `.env`, then click \"Readwise → Notion\" pipeline card. Verify Notion pages are created with highlights.\n- [ ] Test reading status and rating: open a book detail, click status buttons and star ratings. Verify they persist on page reload.\n- [ ] Test Goodreads RSS import: set `GOODREADS_USER_ID` in `.env` (or enter in the RSS tab), import a shelf. Works best with public Goodreads profiles.\n\n### Notes\n- Goodreads shut down their official API in Dec 2020. This integration uses CSV export (most reliable) and RSS feeds (auto-sync). No OAuth needed.\n- The Readwise→Notion pipeline requires both Readwise and Notion to be configured. It pulls all book highlights from Readwise and creates rich Notion pages.\n- Database migrations run automatically — existing BookForge databases will get the new columns on first startup.\n- `csv-parse` added as a new dependency for Goodreads CSV parsing.\n\nLink to Devin session: https://app.devin.ai/sessions/2373b4bc39a943f6a0f0905f24b3c498\nRequested by: @aalikes",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779589894-goodreads-enhanced-integrations",
+    "repository": "aalikes/bookforge"
+  },
+  "diffRef": {
+    "repository": "aalikes/bookforge",
+    "headSha": "8bd6a09b8b6927a98f25a68b20837710f72fd94b",
+    "baseSha": "d40b088d4b8e61039e7a431833e11f2bea804c88"
+  },
+  "vendoredDiffPath": "devin/devin-aalikes-bookforge-pr2.diff",
+  "vendoredAt": "2026-05-24T03:04:05.479Z",
+  "collectedAt": "2026-05-24T03:04:05.479Z"
+}

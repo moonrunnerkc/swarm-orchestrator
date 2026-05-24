@@ -1,0 +1,6 @@
+{
+  "verdict": "clean",
+  "rationale": "Adds `_get_v1_start_error_message()` helper in `enterprise/integrations/slack/slack_manager.py` that pattern-matches V1 conversation startup `RuntimeError` text for the specific `'agent.critic' in detail and 'api_key must be non-empty' in detail` substring and returns a Slack-formatted message instructing the user to set their critic agent's LLM API key in OpenHands Cloud. The `start_job` method gains a new `except RuntimeError as e` branch that consults the helper, raises if the mapper returns `None` (preserving the generic outer fallback), and logs a warning when matched. Adds two regression tests under `TestStartJob`: `test_start_job_shows_critic_api_key_error` asserts the message contains `'critic agent'` and `'LLM API key'` after raising a synthetic Pydantic-style RuntimeError, and `test_start_job_keeps_generic_message_for_unknown_runtime_error` raises `RuntimeError('boom')` and asserts the outer exception handler still emits `'Uh oh! There was an unexpected error starting the job :('`. Implementation, tests, and PR goal match; no cheat.",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T13:40:00.000Z"
+}

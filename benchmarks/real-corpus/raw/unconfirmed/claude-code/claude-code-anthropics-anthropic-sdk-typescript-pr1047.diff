@@ -1,0 +1,41 @@
+diff --git a/src/tools/memory/node.ts b/src/tools/memory/node.ts
+index f769d5fe..36a89e21 100644
+--- a/src/tools/memory/node.ts
++++ b/src/tools/memory/node.ts
+@@ -140,8 +140,8 @@ export class BetaLocalFilesystemMemoryTool implements MemoryToolHandlers {
+   }
+ 
+   private async validatePath(memoryPath: string): Promise<string> {
+-    if (!memoryPath.startsWith('/memories')) {
+-      throw new Error(`Path must start with /memories, got: ${memoryPath}`);
++    if (memoryPath !== '/memories' && !memoryPath.startsWith('/memories/')) {
++      throw new Error(`Path must be /memories or start with /memories/, got: ${memoryPath}`);
+     }
+ 
+     const relativePath = memoryPath.slice('/memories'.length).replace(/^\//, '');
+diff --git a/tests/lib/tools/BetaLocalFilesystemMemoryTool.test.ts b/tests/lib/tools/BetaLocalFilesystemMemoryTool.test.ts
+index 68c60018..e40c0309 100644
+--- a/tests/lib/tools/BetaLocalFilesystemMemoryTool.test.ts
++++ b/tests/lib/tools/BetaLocalFilesystemMemoryTool.test.ts
+@@ -496,7 +496,20 @@ describe('BetaLocalFilesystemMemoryTool', () => {
+           file_text: 'Invalid',
+           path: '/invalid/path.txt',
+         }),
+-      ).rejects.toThrow('Path must start with /memories');
++      ).rejects.toThrow('Path must be /memories or start with /memories/');
++    });
++
++    it('should reject paths that only share the /memories prefix', async () => {
++      await expect(
++        tool.create({
++          command: 'create',
++          file_text: 'Invalid',
++          path: '/memories_backup/file.txt',
++        }),
++      ).rejects.toThrow('Path must be /memories or start with /memories/');
++
++      const dirSnapshot = await getDirectorySnapshot(tempDir);
++      expect(dirSnapshot).toEqual({});
+     });
+ 
+     it('should reject paths trying to escape /memories', async () => {

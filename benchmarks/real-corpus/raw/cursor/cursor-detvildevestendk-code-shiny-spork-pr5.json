@@ -1,0 +1,26 @@
+{
+  "id": "cursor-detvildevestendk-code-shiny-spork-pr5",
+  "agent": {
+    "vendor": "cursor",
+    "confidence": "medium",
+    "source": "branch=cursor/+body=cursor-session-url"
+  },
+  "pr": {
+    "number": 5,
+    "headSha": "78888a23751010e4284a24361cc73b300f0d9c22",
+    "baseSha": "a66081b59d8bc3f80506dfc4adca0c0c8421720a",
+    "title": "Scaffold and harden AI futures trading bot",
+    "body": "<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n## Summary\n- Add FastAPI backend scaffold with trading engine, risk/safety controls, AI trade filter, CCXT exchange abstraction, strategies, backtesting, database models, and migrations.\n- Add Docker Compose deployment for API, worker, frontend, PostgreSQL, and Redis.\n- Harden paper-trading deployment with API key auth, restricted CORS, Redis auth, required DB/Redis secrets, Alembic psycopg driver, non-root containers, readiness checks, worker heartbeat/scanning loop, and persisted paper trades/dashboard data.\n- Force deployed dashboard API call to `GET http://81.27.108.159:8000/api/v1/dashboard/summary` inside the React dashboard component `useEffect()` on page load.\n- Ensure the dashboard summary request sends `x-api-key: testkey123`, logs `Fetching dashboard summary...`, logs `Dashboard API response:`, and uses `console.error` on failures.\n- Replace blank/static card behavior with live API state mapping and exact realistic paper fallback values when backend data is empty/unavailable: balance 10000, daily PnL 127.45, open PnL 42.10, win rate 62%, max drawdown 4.8%, BTC long / ETH short positions, and fake recent trades.\n- Add visible frontend API error messages and loading states.\n- Add realistic paper trading simulation with fake execution, simulated balance, long/short positions, leverage-aware margin, live market price marking from exchange OHLCV, simulated stop-loss/take-profit closures, PnL updates, and trade history dashboard integration.\n- Add structured Telegram alerts for startup/shutdown, simulated trades, errors, warnings, strategy signals, worker loop failures, and fatal worker crashes.\n- Enforce production paper/sandbox mode by rejecting `LIVE_TRADING_ENABLED=true`, `PAPER_TRADING_ENABLED=false`, or `EXCHANGE_SANDBOX=false` at startup.\n- Merge latest `origin/main`; current conflicts were simple frontend conflicts where `main` had the previous multi-endpoint/env dashboard version and this branch had the latest explicit summary fetch fix. Resolved by keeping this branch's newer summary-fetch implementation.\n\n## Validation\n- `npm run build` in `frontend`\n- Merge validation confirmed the dashboard retains:\n  - `const API_BASE_URL = \"http://81.27.108.159:8000\"`\n  - `const API_KEY = \"testkey123\"`\n  - `const DASHBOARD_SUMMARY_URL = `${API_BASE_URL}/api/v1/dashboard/summary``\n  - `Fetching dashboard summary...`\n  - `Dashboard API response:`\n  - `console.error(\"Dashboard API fetch failed:\"...)`\n  - `\"x-api-key\": API_KEY`\n  - `GET /api/v1/dashboard/summary`\n  - fallback values `balance: 10000` and `dailyPnL: 127.45`\n- `git diff --check`\n- Previous validations include backend compile, route protection, paper simulation smoke tests, Telegram alert smoke tests, and production safety checks\n- `docker compose config` could not be run because Docker is not installed in this environment.\n<!-- CURSOR_AGENT_PR_BODY_END -->\n\n<div><a href=\"https://cursor.com/agents/bc-4d177743-0225-4168-ae8d-b692ae462acd\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/background-agent?bcId=bc-4d177743-0225-4168-ae8d-b692ae462acd\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-light.png\"><img alt=\"Open in Cursor\" width=\"131\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"></picture></a>&nbsp;</div>\n\n",
+    "author": "detvildevestendk-code",
+    "headRef": "cursor/ai-futures-bot-scaffold-2acd",
+    "repository": "detvildevestendk-code/shiny-spork"
+  },
+  "diffRef": {
+    "repository": "detvildevestendk-code/shiny-spork",
+    "headSha": "78888a23751010e4284a24361cc73b300f0d9c22",
+    "baseSha": "a66081b59d8bc3f80506dfc4adca0c0c8421720a"
+  },
+  "vendoredDiffPath": "cursor/cursor-detvildevestendk-code-shiny-spork-pr5.diff",
+  "vendoredAt": "2026-05-24T03:12:17.703Z",
+  "collectedAt": "2026-05-24T03:12:17.703Z"
+}

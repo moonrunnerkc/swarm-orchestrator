@@ -1,0 +1,40 @@
+diff --git a/src/app/play/[id]/play-view.tsx b/src/app/play/[id]/play-view.tsx
+index a96cd3e..076b552 100644
+--- a/src/app/play/[id]/play-view.tsx
++++ b/src/app/play/[id]/play-view.tsx
+@@ -141,7 +141,7 @@ export function PlayView({ quizId }: PlayViewProps) {
+   const store = usePlaySessionStore()
+   const [quiz, setQuiz] = useState<QuizData | null>(null)
+   const [questions, setQuestions] = useState<Question[]>([])
+-  const [playToken, setPlayToken] = useState<string>('')
++  const playTokenRef = useRef<string>('')
+   const [loading, setLoading] = useState(true)
+   const [timeRemainingMs, setTimeRemainingMs] = useState(0)
+   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+@@ -187,7 +187,7 @@ export function PlayView({ quizId }: PlayViewProps) {
+       const res = await fetch('/api/play/submit', {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+-        body: JSON.stringify({ playToken, quizId, mode, answers }),
++        body: JSON.stringify({ playToken: playTokenRef.current, quizId, mode, answers }),
+       })
+       if (!res.ok) {
+         const err = await res.json()
+@@ -217,7 +217,7 @@ export function PlayView({ quizId }: PlayViewProps) {
+       addToast(msg, 'error')
+       store.setStatus('playing')
+     }
+-  }, [store, playToken, quizId, mode, router, addToast, clearTimer])
++  }, [store, quizId, mode, router, addToast, clearTimer])
+ 
+   useEffect(() => {
+     onFinishRef.current = handleFinish
+@@ -399,7 +399,7 @@ export function PlayView({ quizId }: PlayViewProps) {
+         const data = await res.json()
+         if (!cancelled) {
+           setQuiz(data.quiz)
+-          setPlayToken(data.playToken)
++          playTokenRef.current = data.playToken
+           let qs: Question[] = data.questions
+           if (mode === 'daily') {
+             const dailyRes = await fetch(`/api/daily/${quizId}`)

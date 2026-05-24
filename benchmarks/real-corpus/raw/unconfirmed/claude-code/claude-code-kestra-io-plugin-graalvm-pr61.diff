@@ -1,0 +1,29 @@
+diff --git a/src/main/resources/doc/io.kestra.plugin.graalvm.md b/src/main/resources/doc/io.kestra.plugin.graalvm.md
+new file mode 100644
+index 0000000..b992768
+--- /dev/null
++++ b/src/main/resources/doc/io.kestra.plugin.graalvm.md
+@@ -0,0 +1,23 @@
++# How to use the GraalVM plugin
++
++Execute inline JavaScript, Python, or Ruby scripts directly within Kestra flows using GraalVM's polyglot runtime — no Docker container or external runtime needed.
++
++## Tasks
++
++### JavaScript
++
++`js.Eval` executes a JavaScript script — set `script` (required). Optionally declare `outputs` (a list of variable names to capture from the script's scope and expose as task outputs).
++
++`js.FileTransform` applies a JavaScript transformation to each row of an ION file — set `script` (required) and `from` (required, a `kestra://` URI). Optionally set `concurrent` (minimum 2) to process rows in parallel.
++
++### Python
++
++`python.Eval` executes a Python script — set `script` (required). Optionally declare `outputs` and `modules` (a map of module names to install or configure before execution).
++
++`python.FileTransform` applies a Python transformation to each row of an ION file — set `script` (required) and `from` (required, a `kestra://` URI). Optionally set `concurrent` (minimum 2).
++
++### Ruby
++
++`ruby.Eval` executes a Ruby script — set `script` (required). Optionally declare `outputs`.
++
++`ruby.FileTransform` applies a Ruby transformation to each row of an ION file — set `script` (required) and `from` (required, a `kestra://` URI). Optionally set `concurrent` (minimum 2).

@@ -1,0 +1,358 @@
+diff --git a/enterprise/migrations/versions/115_enforce_single_active_jira_dc_user_link.py b/enterprise/migrations/versions/115_enforce_single_active_jira_dc_user_link.py
+new file mode 100644
+index 000000000000..8d9ba71988f3
+--- /dev/null
++++ b/enterprise/migrations/versions/115_enforce_single_active_jira_dc_user_link.py
+@@ -0,0 +1,71 @@
++"""Enforce single active Jira DC user link.
++
++Revision ID: 115
++Revises: 114
++Create Date: 2026-05-23 00:00:00.000000
++
++"""
++
++from typing import Sequence, Union
++
++import sqlalchemy as sa
++from alembic import op
++
++# revision identifiers, used by Alembic.
++revision: str = '115'
++down_revision: Union[str, None] = '114'
++branch_labels: Union[str, Sequence[str], None] = None
++depends_on: Union[str, Sequence[str], None] = None
++
++INDEX_NAME = 'uq_jira_dc_users_one_active_per_user'
++
++
++def upgrade() -> None:
++    # Keep the newest active link per user before adding the uniqueness guard.
++    op.execute(
++        sa.text(
++            """
++            UPDATE jira_dc_users
++            SET status = 'inactive'
++            WHERE status = 'active'
++              AND id NOT IN (
++                SELECT id
++                FROM (
++                  SELECT
++                    id,
++                    ROW_NUMBER() OVER (
++                      PARTITION BY keycloak_user_id
++                      ORDER BY created_at DESC, id DESC
++                    ) AS row_num
++                  FROM jira_dc_users
++                  WHERE status = 'active'
++                ) ranked
++                WHERE row_num = 1
++              )
++            """
++        )
++    )
++
++    dialect_name = op.get_bind().dialect.name
++    kwargs = {}
++    if dialect_name == 'postgresql':
++        kwargs['postgresql_where'] = sa.text("status = 'active'")
++    elif dialect_name == 'sqlite':
++        kwargs['sqlite_where'] = sa.text("status = 'active'")
++    else:
++        raise NotImplementedError(
++            'Partial unique index for jira_dc_users active links is only '
++            f'implemented for postgresql/sqlite, got {dialect_name}'
++        )
++
++    op.create_index(
++        INDEX_NAME,
++        'jira_dc_users',
++        ['keycloak_user_id'],
++        unique=True,
++        **kwargs,
++    )
++
++
++def downgrade() -> None:
++    op.drop_index(INDEX_NAME, table_name='jira_dc_users')
+diff --git a/enterprise/server/routes/integration/jira_dc.py b/enterprise/server/routes/integration/jira_dc.py
+index 10b3ec7f3c65..e4b3472fb15e 100644
+--- a/enterprise/server/routes/integration/jira_dc.py
++++ b/enterprise/server/routes/integration/jira_dc.py
+@@ -210,7 +210,7 @@ async def _handle_workspace_link_creation(
+     if existing_link:
+         # Reactivate previous link to this workspace
+         await jira_dc_manager.integration_store.update_user_integration_status(
+-            user_id, 'active'
++            user_id, workspace.id, 'active'
+         )
+     else:
+         # Create new workspace link
+@@ -894,7 +894,7 @@ async def unlink_workspace(request: Request):
+             )
+         else:
+             await jira_dc_manager.integration_store.update_user_integration_status(
+-                user_id, 'inactive'
++                user_id, user.jira_dc_workspace_id, 'inactive'
+             )
+ 
+         return JSONResponse({'success': True, 'webhookRemoved': webhook_removed})
+diff --git a/enterprise/storage/jira_dc_integration_store.py b/enterprise/storage/jira_dc_integration_store.py
+index c03c84af5fa0..6a9afbf9a3f7 100644
+--- a/enterprise/storage/jira_dc_integration_store.py
++++ b/enterprise/storage/jira_dc_integration_store.py
+@@ -26,7 +26,6 @@ async def create_workspace(
+         status: str = 'active',
+     ) -> JiraDcWorkspace:
+         """Create a new Jira DC workspace with encrypted sensitive data."""
+-
+         async with a_session_maker() as session:
+             workspace = JiraDcWorkspace(
+                 name=name.lower(),
+@@ -92,7 +91,6 @@ async def create_workspace_link(
+         status: str = 'active',
+     ) -> JiraDcUser:
+         """Create a new Jira DC workspace link."""
+-
+         jira_dc_user = JiraDcUser(
+             keycloak_user_id=keycloak_user_id,
+             jira_dc_user_id=jira_dc_user_id,
+@@ -134,7 +132,6 @@ async def get_user_by_active_workspace(
+         self, keycloak_user_id: str
+     ) -> Optional[JiraDcUser]:
+         """Retrieve user by Keycloak user ID."""
+-
+         async with a_session_maker() as session:
+             result = await session.execute(
+                 select(JiraDcUser).where(
+@@ -186,21 +183,22 @@ async def get_active_user_by_keycloak_id_and_workspace(
+             return result.scalar_one_or_none()
+ 
+     async def update_user_integration_status(
+-        self, keycloak_user_id: str, status: str
++        self, keycloak_user_id: str, jira_dc_workspace_id: int, status: str
+     ) -> JiraDcUser:
+         """Update the status of a Jira DC user mapping."""
+-
+         async with a_session_maker() as session:
+             result = await session.execute(
+                 select(JiraDcUser).where(
+-                    JiraDcUser.keycloak_user_id == keycloak_user_id
++                    JiraDcUser.keycloak_user_id == keycloak_user_id,
++                    JiraDcUser.jira_dc_workspace_id == jira_dc_workspace_id,
+                 )
+             )
+             user = result.scalar_one_or_none()
+ 
+             if not user:
+                 raise ValueError(
+-                    f"User with keycloak_user_id '{keycloak_user_id}' not found"
++                    f"User with keycloak_user_id '{keycloak_user_id}' and "
++                    f"jira_dc_workspace_id '{jira_dc_workspace_id}' not found"
+                 )
+ 
+             user.status = status
+diff --git a/enterprise/storage/jira_dc_user.py b/enterprise/storage/jira_dc_user.py
+index 29394fcf7f75..df5966a57f6d 100644
+--- a/enterprise/storage/jira_dc_user.py
++++ b/enterprise/storage/jira_dc_user.py
+@@ -1,12 +1,21 @@
+ from datetime import datetime
+ 
+-from sqlalchemy import DateTime, String, text
++from sqlalchemy import DateTime, Index, String, text
+ from sqlalchemy.orm import Mapped, mapped_column
+ from storage.base import Base
+ 
+ 
+ class JiraDcUser(Base):
+     __tablename__ = 'jira_dc_users'
++    __table_args__ = (
++        Index(
++            'uq_jira_dc_users_one_active_per_user',
++            'keycloak_user_id',
++            unique=True,
++            postgresql_where=text("status = 'active'"),
++            sqlite_where=text("status = 'active'"),
++        ),
++    )
+ 
+     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+     keycloak_user_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+diff --git a/enterprise/tests/unit/server/routes/test_jira_dc_integration_routes.py b/enterprise/tests/unit/server/routes/test_jira_dc_integration_routes.py
+index 12acde70b573..32160f48f9da 100644
+--- a/enterprise/tests/unit/server/routes/test_jira_dc_integration_routes.py
++++ b/enterprise/tests/unit/server/routes/test_jira_dc_integration_routes.py
+@@ -1208,7 +1208,7 @@ async def test_unlink_workspace_non_admin(
+     content = json.loads(response.body)
+     assert content['success'] is True
+     mock_manager.integration_store.update_user_integration_status.assert_called_once_with(
+-        user_id, 'inactive'
++        user_id, 10, 'inactive'
+     )
+ 
+ 
+@@ -1380,7 +1380,7 @@ async def test_handle_workspace_link_creation_reactivate_existing_link(mock_mana
+     await _handle_workspace_link_creation('user1', 'jira_user_123', 'test-workspace')
+ 
+     mock_manager.integration_store.update_user_integration_status.assert_called_once_with(
+-        'user1', 'active'
++        'user1', 1, 'active'
+     )
+     mock_manager.integration_store.create_workspace_link.assert_not_called()
+ 
+diff --git a/enterprise/tests/unit/storage/test_jira_dc_active_link_constraint.py b/enterprise/tests/unit/storage/test_jira_dc_active_link_constraint.py
+new file mode 100644
+index 000000000000..334a1dc9552b
+--- /dev/null
++++ b/enterprise/tests/unit/storage/test_jira_dc_active_link_constraint.py
+@@ -0,0 +1,149 @@
++from __future__ import annotations
++
++import importlib.util
++from contextlib import asynccontextmanager
++from datetime import datetime
++from pathlib import Path
++from unittest.mock import AsyncMock, Mock, patch
++
++import pytest
++import sqlalchemy as sa
++from alembic.migration import MigrationContext
++from alembic.operations import Operations
++from sqlalchemy import create_engine
++from sqlalchemy.exc import IntegrityError
++from storage.jira_dc_integration_store import JiraDcIntegrationStore
++from storage.jira_dc_user import JiraDcUser
++
++
++def _load_migration_module():
++    migration_path = (
++        Path(__file__).parents[3]
++        / 'migrations'
++        / 'versions'
++        / '115_enforce_single_active_jira_dc_user_link.py'
++    )
++    spec = importlib.util.spec_from_file_location(
++        'migration_115_enforce_single_active_jira_dc_user_link', migration_path
++    )
++    assert spec and spec.loader
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    return module
++
++
++def test_active_link_migration_deduplicates_and_enforces_one_active_link_per_user():
++    engine = create_engine('sqlite:///:memory:')
++    metadata = sa.MetaData()
++    jira_dc_users = sa.Table(
++        'jira_dc_users',
++        metadata,
++        sa.Column('id', sa.Integer, primary_key=True),
++        sa.Column('keycloak_user_id', sa.String, nullable=False),
++        sa.Column('jira_dc_user_id', sa.String, nullable=False),
++        sa.Column('jira_dc_workspace_id', sa.Integer, nullable=False),
++        sa.Column('status', sa.String, nullable=False),
++        sa.Column('created_at', sa.DateTime, nullable=False),
++        sa.Column('updated_at', sa.DateTime, nullable=False),
++    )
++
++    migration = _load_migration_module()
++    with engine.begin() as connection:
++        metadata.create_all(connection)
++        connection.execute(
++            jira_dc_users.insert(),
++            [
++                {
++                    'id': 1,
++                    'keycloak_user_id': 'user-1',
++                    'jira_dc_user_id': 'jira-user',
++                    'jira_dc_workspace_id': 1,
++                    'status': 'active',
++                    'created_at': datetime(2026, 5, 21),
++                    'updated_at': datetime(2026, 5, 21),
++                },
++                {
++                    'id': 2,
++                    'keycloak_user_id': 'user-1',
++                    'jira_dc_user_id': 'jira-user',
++                    'jira_dc_workspace_id': 2,
++                    'status': 'active',
++                    'created_at': datetime(2026, 5, 22),
++                    'updated_at': datetime(2026, 5, 22),
++                },
++                {
++                    'id': 3,
++                    'keycloak_user_id': 'user-2',
++                    'jira_dc_user_id': 'jira-user-2',
++                    'jira_dc_workspace_id': 3,
++                    'status': 'active',
++                    'created_at': datetime(2026, 5, 21),
++                    'updated_at': datetime(2026, 5, 21),
++                },
++            ],
++        )
++
++        context = MigrationContext.configure(connection)
++        operations = Operations(context)
++        with patch.object(migration, 'op', operations):
++            migration.upgrade()
++
++        rows = connection.execute(
++            sa.text(
++                """
++                SELECT id, keycloak_user_id, status
++                FROM jira_dc_users
++                ORDER BY id
++                """
++            )
++        ).all()
++        assert rows == [
++            (1, 'user-1', 'inactive'),
++            (2, 'user-1', 'active'),
++            (3, 'user-2', 'active'),
++        ]
++
++        with pytest.raises(IntegrityError):
++            connection.execute(
++                jira_dc_users.insert(),
++                {
++                    'id': 4,
++                    'keycloak_user_id': 'user-1',
++                    'jira_dc_user_id': 'jira-user',
++                    'jira_dc_workspace_id': 4,
++                    'status': 'active',
++                    'created_at': datetime(2026, 5, 23),
++                    'updated_at': datetime(2026, 5, 23),
++                },
++            )
++
++
++@pytest.mark.asyncio
++async def test_update_user_integration_status_targets_workspace_link():
++    store = JiraDcIntegrationStore()
++    user = Mock(spec=JiraDcUser)
++    user.status = 'inactive'
++
++    result = Mock()
++    result.scalar_one_or_none.return_value = user
++    session = Mock()
++    session.execute = AsyncMock(return_value=result)
++    session.commit = AsyncMock()
++    session.refresh = AsyncMock()
++
++    @asynccontextmanager
++    async def mock_session_maker():
++        yield session
++
++    with patch('storage.jira_dc_integration_store.a_session_maker', mock_session_maker):
++        updated_user = await store.update_user_integration_status(
++            'user-1', 42, 'active'
++        )
++
++    assert updated_user is user
++    assert user.status == 'active'
++    session.execute.assert_called_once()
++    executed_statement = session.execute.call_args.args[0]
++    assert 'jira_dc_users.jira_dc_workspace_id' in str(executed_statement)
++    session.commit.assert_awaited_once()
++    session.refresh.assert_awaited_once_with(user)

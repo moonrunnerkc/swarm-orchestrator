@@ -1,0 +1,92 @@
+diff --git a/app/transactions/services.py b/app/transactions/services.py
+index 29a1675..459e3d9 100644
+--- a/app/transactions/services.py
++++ b/app/transactions/services.py
+@@ -826,6 +826,7 @@ class Upload:
+     filename: str
+     uploaded_at: datetime  # UTC
+     transaction_count: int
++    account_name: str
+ 
+ 
+ def get_uploads(user_id: str) -> "list[Upload]":
+@@ -838,12 +839,12 @@ def get_uploads(user_id: str) -> "list[Upload]":
+     with engine.connect() as conn:
+         rows = conn.execute(
+             text(
+-                "SELECT u.id, u.filename, u.uploaded_at, COUNT(t.id) AS transaction_count"
++                "SELECT u.id, u.filename, u.uploaded_at, COUNT(t.id) AS transaction_count, a.name AS account_name"
+                 " FROM public.uploads u"
+                 " JOIN public.accounts a ON a.id = u.account_id"
+                 " LEFT JOIN public.transactions t ON t.source_file_id = u.id"
+                 " WHERE a.user_id = :uid"
+-                " GROUP BY u.id, u.filename, u.uploaded_at"
++                " GROUP BY u.id, u.filename, u.uploaded_at, a.name"
+                 " ORDER BY u.uploaded_at DESC"
+             ),
+             {"uid": user_id},
+@@ -855,6 +856,7 @@ def get_uploads(user_id: str) -> "list[Upload]":
+             filename=row[1],
+             uploaded_at=row[2],
+             transaction_count=int(row[3]),
++            account_name=row[4],
+         )
+         for row in rows
+     ]
+diff --git a/templates/transactions/files.html b/templates/transactions/files.html
+index a24f421..b279208 100644
+--- a/templates/transactions/files.html
++++ b/templates/transactions/files.html
+@@ -19,6 +19,7 @@ <h1 style="font-family: 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+             <thead>
+                 <tr>
+                     <th>Filename</th>
++                    <th>Account</th>
+                     <th>Uploaded</th>
+                     <th>Transactions</th>
+                     <th></th>
+@@ -28,6 +29,7 @@ <h1 style="font-family: 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+                 {% for f in uploads %}
+                 <tr>
+                     <td style="font-weight: 600;">{{ f.filename }}</td>
++                    <td style="color: var(--muted);">{{ f.account_name }}</td>
+                     <td style="color: var(--muted); white-space: nowrap;">
+                         {{ f.uploaded_at.strftime("%b %d, %Y %H:%M") }} UTC
+                     </td>
+diff --git a/tests/test_upload_file_management.py b/tests/test_upload_file_management.py
+index 5f223bf..7b403bb 100644
+--- a/tests/test_upload_file_management.py
++++ b/tests/test_upload_file_management.py
+@@ -58,6 +58,7 @@
+     filename="jan_2026.csv",
+     uploaded_at=datetime(2026, 1, 15, 10, 0, tzinfo=timezone.utc),
+     transaction_count=42,
++    account_name="Chequing",
+ )
+ 
+ _UPLOAD_2 = Upload(
+@@ -65,6 +66,7 @@
+     filename="feb_2026.csv",
+     uploaded_at=datetime(2026, 2, 1, 9, 0, tzinfo=timezone.utc),
+     transaction_count=18,
++    account_name="Chequing",
+ )
+ 
+ # ---------------------------------------------------------------------------
+@@ -81,7 +83,7 @@ def test_is_frozen_dataclass(self):
+ 
+     def test_has_required_fields(self):
+         field_names = {f.name for f in dataclasses.fields(Upload)}
+-        assert field_names == {"id", "filename", "uploaded_at", "transaction_count"}
++        assert field_names == {"id", "filename", "uploaded_at", "transaction_count", "account_name"}
+ 
+     def test_is_immutable(self):
+         u = Upload(
+@@ -89,6 +91,7 @@ def test_is_immutable(self):
+             filename="test.csv",
+             uploaded_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+             transaction_count=5,
++            account_name="Chequing",
+         )
+         with pytest.raises((dataclasses.FrozenInstanceError, AttributeError)):
+             u.transaction_count = 99  # type: ignore[misc]

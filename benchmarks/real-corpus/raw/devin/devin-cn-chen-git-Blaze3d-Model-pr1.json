@@ -1,0 +1,26 @@
+{
+  "id": "devin-cn-chen-git-Blaze3d-Model-pr1",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 1,
+    "headSha": "93bccd1f2c259fc16c1fa72b8b1be4555219ccd8",
+    "baseSha": "2d5a3a431c4127dd95e8e3d14cd1c17991e0f9c2",
+    "title": "refactor(kotlin): prune unused wrappers and consolidate per-package files",
+    "body": "## Summary\n\nComprehensive Kotlin-side refactor — kills dead code that only existed to wrap Rust JNI calls (none of which were reachable from the rest of the codebase), then collapses tiny single-class files into per-package units so the module structure is easier to navigate.\n\n**Deletions (only-self-referenced code):**\n- `rust/NativeIk.kt`, `rust/NativeMesh.kt`, `rust/NativeStats.kt`, `rust/NativeSoftbody.kt` — wrappers around JNI functions that no caller used\n- `anim/MorphAccumulator.kt` — internal-only utility, no callers\n- `physics/Softbody.kt` — `SoftbodyBase`/`ClothSimulation`/`HairStrand`/`HairSimulation`/`SoftbodyManager` had no external users\n- `live2d/L2dKeyframe.kt`, `L2dSmoothing.kt`, `L2dMask.kt`, `L2dNetSync.kt` — wrappers around `BlazeNative.l2d*` helpers no caller used\n- `L2dHeader` + `parseMoc3Header` in `L2dParser.kt` — unused\n- `ModelFormat` enum in `ModelApi.kt` — never referenced\n- `TASK_UNLOAD` / `TASK_REFRESH` / `TASK_PERSIST` constants in `BlazeExtras.kt` — never referenced\n\n**`BlazeNative` cleanup:** 101 → 65 external declarations. Removed every `@JvmStatic external fun` whose only callers were the wrappers above (ikSolve*, mesh{Tangents,Optimize,Dedup,Lod,Batch}, softbody*, nativeStats, plus loadFile/version/l2dRuntimeDrawableCount).\n\n**Consolidations (no behavior change, identical class FQNs):**\n- `math/` 5 files → `Math.kt` (Vec3, Vec4, Quat, Mat4, AABB)\n- `material/` 3 files → `Material.kt` (TexType, TexInfo, UVTransform, EmbeddedTex, all KHR ext records, Material)\n- `api/` 3 files → `ModelApi.kt` (ModelFeature, ModelSupport, ModelFormats, ResourceIndex, ModelPackage, ModelFormatRegistry, BuiltinFormats, RustBackedFormat)\n- `core/` 8 files → `Scene.kt` + `BonePose.kt` + `AnimClip.kt` (large classes kept separate)\n- `client/` 3 files → `ClientRuntime.kt` (ClientInit, Blaze3dRuntime, MemoryPressureMonitor)\n- `async/` 2 files → `AsyncRuntime.kt`\n- `vehicle/` 5 files → `VehicleSystem.kt`\n- `physics/` 3 files → `PhysicsWorld.kt` + `PhysicsBinding.kt`\n- `anim/` 3 files → `Animator.kt` + `StateMachineDsl.kt`\n- `render/npr/` 5 files → `NprState.kt` + `RampLut.kt` + `SdfFace.kt`\n\nAll imports across the source tree continue to resolve — grep verified no remaining references to any deleted symbol.\n\n## Review & Testing Checklist for Human\n\n- [ ] Bazel build still produces `blaze3d-model-1.0.0.jar` (`bazel build //:blaze3d-model`)\n- [ ] In-game smoke test: model loading (gltf/fbx/obj/mmd/ysm) still works, render, animation, vehicle hook still functional\n- [ ] Confirm Fabric entrypoint `cn.chen.blaze3d.client.ClientInit` is still discovered (class moved into `ClientRuntime.kt` but FQN preserved)\n- [ ] Confirm no native crash from removed JNI declarations — the Rust side still exports those symbols, only the Kotlin bindings were dropped\n\n### Notes\n- Behavior is intentionally identical. This is purely shape/size cleanup so subsequent feature work has less noise to wade through.\n- File renames are reported as renames by git where possible (`PhysicsShape.kt` → `PhysicsWorld.kt`, `RenderWorker.kt` → `AsyncRuntime.kt`, `MemoryPressureMonitor.kt` → `ClientRuntime.kt`).\n\n\nLink to Devin session: https://app.devin.ai/sessions/a13f303ef9f645a7bcf8b8da875cb534\nRequested by: @cn-chen-git",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779592075-kotlin-refactor",
+    "repository": "cn-chen-git/Blaze3d-Model"
+  },
+  "diffRef": {
+    "repository": "cn-chen-git/Blaze3d-Model",
+    "headSha": "93bccd1f2c259fc16c1fa72b8b1be4555219ccd8",
+    "baseSha": "2d5a3a431c4127dd95e8e3d14cd1c17991e0f9c2"
+  },
+  "vendoredDiffPath": "devin/devin-cn-chen-git-Blaze3d-Model-pr1.diff",
+  "vendoredAt": "2026-05-24T03:34:16.881Z",
+  "collectedAt": "2026-05-24T03:34:16.881Z"
+}

@@ -1,0 +1,26 @@
+{
+  "id": "devin-sayouuuuud-upgrade-itqan-pr50",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 50,
+    "headSha": "c3f76b633ab0169baabe1b98f58cc08aa3039df0",
+    "baseSha": "c886238cd9bc60900603c271ec4c3ae1c3be03d9",
+    "title": "fix(shell): استيراد Trophy المفقود — حل خطأ 500 على /admin",
+    "body": "## Summary\n\nإصلاح خطأ `ReferenceError: Trophy is not defined` اللي بيظهر على `/admin` في الإنتاج.\n\n**السبب:** المكوّن `components/dashboard-shell.tsx` بيستخدم أيقونة `Trophy` في 3 مواضع (قوائم المسابقات للطالب/المقرئ/المدير) لكن مش مستوردة من `lucide-react`. الـ dev mode بيتسامح مع المرجع المفقود، لكن الـ production build بيرمي ReferenceError لحظة render dashboard.\n\n```\nReferenceError: Trophy is not defined\n  at .next/server/chunks/ssr/components_dashboard-shell_tsx_0k_aezx._.js:1:6531\n```\n\n**الإصلاح:** إضافة `Trophy` لقائمة الـ imports من `lucide-react`.\n\nكمان عملت scan آلي لكل أيقونات `dashboard-shell.tsx` و`academy-dashboard-shell.tsx` للتأكد من عدم وجود أيقونات أخرى مفقودة — كله سليم.\n\nالبق ده موجود من قبل (تم تقديمه في commit 14b4486 — feature المسابقات) ومش متعلق بالـ PR السابق للمنتدى.\n\n## Review & Testing Checklist for Human\n\n- [ ] افتح `/admin` على الـ Preview وتأكد أنه بيفتح بدون 500.\n- [ ] افتح `/student` و `/reader` بحسابات مناسبة وتأكد إن أيقونة كأس المسابقات بتظهر طبيعي.\n\n### Notes\n- One-line fix. لا تغيير في أي logic أو UI.\n\nLink to Devin session: https://app.devin.ai/sessions/6a041a341c40490da91354e1e01acd53\nRequested by: @sayouuuuud",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779587130-fix-trophy-import",
+    "repository": "sayouuuuud/upgrade-itqan"
+  },
+  "diffRef": {
+    "repository": "sayouuuuud/upgrade-itqan",
+    "headSha": "c3f76b633ab0169baabe1b98f58cc08aa3039df0",
+    "baseSha": "c886238cd9bc60900603c271ec4c3ae1c3be03d9"
+  },
+  "vendoredDiffPath": "devin/devin-sayouuuuud-upgrade-itqan-pr50.diff",
+  "vendoredAt": "2026-05-24T03:04:10.787Z",
+  "collectedAt": "2026-05-24T03:04:10.787Z"
+}

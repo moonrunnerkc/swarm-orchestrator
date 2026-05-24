@@ -1,0 +1,26 @@
+{
+  "id": "cursor-achase1982-afk-Alpha-Terminal-pr498",
+  "agent": {
+    "vendor": "cursor",
+    "confidence": "medium",
+    "source": "branch=cursor/+body=cursor-session-url"
+  },
+  "pr": {
+    "number": 498,
+    "headSha": "9ebb64157f9b3c2d90cf96275e5700329eb86136",
+    "baseSha": "b1388ee27a21e286f061b8f7765dfa8da1948fc0",
+    "title": "fix(movers): UNKNOWN catalyst fallback, remove collapsed posture",
+    "body": "<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n## Summary\n\nFixes two confirmed Movers defects on `main`:\n\n1. **12/12 SECTOR bug** — `classifyCatalystTypeFromHeadline` used `SECTOR` as the catch-all for any non-empty headline with no keyword hit. Unclassified headlines now return **`UNKNOWN`**; **`SECTOR`** is assigned only on a positive match against the SECTOR keyword group.\n\n2. **Collapsed posture** — Removes the posture badge and **Posture** column from the collapsed row. Posture remains in the expanded detail card (lazy read).\n\n## Classifier (`lib/movers-types`)\n\n- Added **`UNKNOWN`** to `MoversCatalystType`.\n- Keyword matching uses **token/phrase boundaries** (whitespace tokens; hyphenated compounds like `defense-sector` no longer match bare `sector`).\n- MA → EARNINGS → CONTRACT → GOV → ANALYST → **SECTOR** order unchanged; empty headline still **`NONE`**.\n\n## UI (`MoversFeed.tsx`)\n\n- **`UNKNOWN`** displays as **NO CATALYST** (same as `NONE` in the tag; distinct in data for telemetry).\n- Collapsed grid/header: **Ticker / Price / % Change / Catalyst** (four data columns + chevron).\n\n## Telemetry\n\n- Each poll logs `catalystTypeCounts` for all types including **`UNKNOWN`** and **`NONE`** separately (`Movers catalyst type counts`).\n\n## Verification\n\n- `pnpm run typecheck` — api-server and alpha-terminal\n- `vitest` — `catalystKeywords.test.ts` (UNKNOWN vs SECTOR, defense-sector, CONTRACT before SECTOR)\n\n## Diagnose note\n\n`api-server` build already runs `tsc --noEmit` via `pnpm run typecheck` before `build.mjs`; no pipeline change required.\n<!-- CURSOR_AGENT_PR_BODY_END -->\n\n<div><a href=\"https://cursor.com/agents/bc-fbf7fcfa-5db5-402b-b521-e7abb8bd8bb7\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/background-agent?bcId=bc-fbf7fcfa-5db5-402b-b521-e7abb8bd8bb7\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-light.png\"><img alt=\"Open in Cursor\" width=\"131\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"></picture></a>&nbsp;</div>\n\n",
+    "author": "achase1982-afk",
+    "headRef": "cursor/movers-unknown-catalyst-no-collapsed-posture-8bb7",
+    "repository": "achase1982-afk/Alpha-Terminal"
+  },
+  "diffRef": {
+    "repository": "achase1982-afk/Alpha-Terminal",
+    "headSha": "9ebb64157f9b3c2d90cf96275e5700329eb86136",
+    "baseSha": "b1388ee27a21e286f061b8f7765dfa8da1948fc0"
+  },
+  "vendoredDiffPath": "cursor/cursor-achase1982-afk-Alpha-Terminal-pr498.diff",
+  "vendoredAt": "2026-05-24T03:11:04.364Z",
+  "collectedAt": "2026-05-24T03:11:04.364Z"
+}

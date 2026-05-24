@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-runatlantis-atlantis-pr6507",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 6507,
+    "headSha": "1d5f63891910ee1ca321fa3228e09b327f392557",
+    "baseSha": "834da7fe37d084d03857cd8569b1c4665d05b331",
+    "title": "test: Improve utility-layer test coverage for untested file and slice helpers",
+    "body": "This PR addresses low coverage in `server/utils` by adding focused tests for previously untested helper functions. It targets missing branches and generic behavior so coverage better reflects real utility usage.\n\n- **Coverage gaps addressed**\n  - Added tests for `RemoveIgnoreNonExistent` (`server/utils/os.go`), which previously had no direct coverage.\n  - Added tests for `SlicesContains` (`server/utils/slices.go`), including generic usage across types.\n\n- **`RemoveIgnoreNonExistent` branch coverage**\n  - Covers successful deletion of an existing file.\n  - Covers ignored-not-found behavior when the target path does not exist.\n  - Covers real error propagation (e.g., remove on non-empty directory).\n\n- **`SlicesContains` behavior coverage**\n  - Covers found / not found cases for `[]string`.\n  - Covers nil-slice behavior.\n  - Covers generic use with non-string comparable types (`[]int`).\n\n```go\nerr := utils.RemoveIgnoreNonExistent(file) // existing file, missing file, and error cases now covered\n\nokStr := utils.SlicesContains([]string{\"atlantis\", \"terraform\"}, \"terraform\")\nokInt := utils.SlicesContains([]int{1, 2, 3}, 2)\n```",
+    "author": "Copilot",
+    "headRef": "copilot/analyze-test-coverage",
+    "repository": "runatlantis/atlantis"
+  },
+  "diffRef": {
+    "repository": "runatlantis/atlantis",
+    "headSha": "1d5f63891910ee1ca321fa3228e09b327f392557",
+    "baseSha": "834da7fe37d084d03857cd8569b1c4665d05b331"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-runatlantis-atlantis-pr6507.diff",
+  "vendoredAt": "2026-05-24T03:06:34.488Z",
+  "collectedAt": "2026-05-24T03:06:34.488Z"
+}

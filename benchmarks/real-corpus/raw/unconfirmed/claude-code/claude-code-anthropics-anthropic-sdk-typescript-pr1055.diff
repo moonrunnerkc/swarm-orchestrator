@@ -1,0 +1,208 @@
+diff --git a/src/helpers/index.ts b/src/helpers/index.ts
+index 7ffebce3..91bf104b 100644
+--- a/src/helpers/index.ts
++++ b/src/helpers/index.ts
+@@ -1,2 +1,3 @@
+ export { jsonSchemaOutputFormat } from './json-schema';
+-export { zodOutputFormat } from './zod';
++export { zodOutputFormat, zodTool } from './zod';
++export type { RunnableTool, ToolRunContext } from '../lib/tools/RunnableTool';
+diff --git a/src/helpers/zod.ts b/src/helpers/zod.ts
+index 606d5123..92d225a0 100644
+--- a/src/helpers/zod.ts
++++ b/src/helpers/zod.ts
+@@ -2,6 +2,8 @@ import { transformJSONSchema } from '../lib/transform-json-schema';
+ import * as z from 'zod/v4';
+ import { AnthropicError } from '../core/error';
+ import { AutoParseableOutputFormat } from '../lib/parser';
++import { Promisable, RunnableTool, ToolRunContext } from '../lib/tools/RunnableTool';
++import { ToolResultBlockParam } from '../resources/messages';
+ 
+ /**
+  * Creates a JSON schema output format object from the given Zod schema.
+@@ -55,3 +57,41 @@ export function zodOutputFormat<ZodInput extends z.ZodType>(
+     },
+   };
+ }
++
++/**
++ * Creates a tool using the provided Zod schema for use with the non-beta
++ * `messages.create` / `messages.stream` API. The Zod schema is automatically
++ * converted to JSON Schema and passed to the API. The `run` callback is invoked
++ * with Zod-validated input, and `parse` can be used to validate raw tool inputs
++ * before calling `run` manually.
++ *
++ * The returned `RunnableTool` is a `Tool` and is directly assignable to the
++ * `tools` array accepted by `messages.create` and `messages.stream`.
++ */
++export function zodTool<InputSchema extends z.ZodType>(options: {
++  name: string;
++  inputSchema: InputSchema;
++  description: string;
++  run: (
++    args: z.infer<InputSchema>,
++    context?: ToolRunContext,
++  ) => Promisable<string | Array<ToolResultBlockParam>>;
++}): RunnableTool<z.infer<InputSchema>> {
++  const jsonSchema = z.toJSONSchema(options.inputSchema, { reused: 'ref' });
++
++  if (jsonSchema.type !== 'object') {
++    throw new Error(`Zod schema for tool "${options.name}" must be an object, but got ${jsonSchema.type}`);
++  }
++
++  // TypeScript doesn't narrow the type after the runtime check, so we need to assert it
++  const objectSchema = jsonSchema as typeof jsonSchema & { type: 'object' };
++
++  return {
++    type: 'custom',
++    name: options.name,
++    input_schema: objectSchema,
++    description: options.description,
++    run: options.run,
++    parse: (args: unknown) => options.inputSchema.parse(args) as z.infer<InputSchema>,
++  } as RunnableTool<z.infer<InputSchema>>;
++}
+diff --git a/src/lib/tools/RunnableTool.ts b/src/lib/tools/RunnableTool.ts
+new file mode 100644
+index 00000000..f0bafbe1
+--- /dev/null
++++ b/src/lib/tools/RunnableTool.ts
+@@ -0,0 +1,22 @@
++import { Tool, ToolResultBlockParam, ToolUseBlock } from '../../resources/messages';
++
++export type Promisable<T> = T | Promise<T>;
++
++export type ToolRunContext = {
++  toolUseBlock: ToolUseBlock;
++  signal?: AbortSignal | null | undefined;
++};
++
++/**
++ * Tool types that can be implemented on the client for the non-beta messages API.
++ */
++export type ClientRunnableToolType = Tool;
++
++// Extension of Tool with run and parse methods for client-side tool execution
++export type RunnableTool<Input = any> = ClientRunnableToolType & {
++  run: (
++    args: Input,
++    context?: ToolRunContext,
++  ) => Promisable<string | Array<ToolResultBlockParam>>;
++  parse: (content: unknown) => Input;
++};
+diff --git a/tests/helpers/zod.test.ts b/tests/helpers/zod.test.ts
+index 14ea8457..b1834efb 100644
+--- a/tests/helpers/zod.test.ts
++++ b/tests/helpers/zod.test.ts
+@@ -1,6 +1,6 @@
+ import { z } from 'zod/v4';
+ import { betaZodOutputFormat } from '../../src/helpers/beta/zod';
+-import { zodOutputFormat } from '../../src/helpers/zod';
++import { zodOutputFormat, zodTool } from '../../src/helpers/zod';
+ 
+ describe('beta zod helpers', () => {
+   describe('betaZodOutputFormat', () => {
+@@ -505,3 +505,103 @@ describe('GA zod helpers', () => {
+     });
+   });
+ });
++
++describe('GA zodTool helper', () => {
++  describe('zodTool', () => {
++    it('creates a runnable tool with valid zod schema', () => {
++      const fn = (args: { name: string; age?: number | undefined }) => `Hello, ${args.name}!`;
++
++      const schema = z.object({
++        name: z.string().describe('The name of the user'),
++        age: z.number().optional().describe('The age of the user'),
++      });
++
++      const tool = zodTool({
++        name: 'test_tool',
++        inputSchema: schema,
++        description: 'A test tool',
++        run: fn,
++      });
++
++      expect(tool).toEqual({
++        type: 'custom',
++        name: 'test_tool',
++        description: 'A test tool',
++        input_schema: {
++          $schema: 'https://json-schema.org/draft/2020-12/schema',
++          additionalProperties: false,
++          properties: {
++            age: {
++              type: 'number',
++              description: 'The age of the user',
++            },
++            name: {
++              type: 'string',
++              description: 'The name of the user',
++            },
++          },
++          required: ['name'],
++          type: 'object',
++        },
++        parse: expect.any(Function),
++        run: fn,
++      });
++
++      const input = { name: 'Alice', age: 30 };
++
++      expect(tool.run(input)).toBe('Hello, Alice!');
++      expect(tool.parse(input)).toEqual({ name: 'Alice', age: 30 });
++    });
++
++    it('throws error for non-object zod schema', () => {
++      const schema = z.string();
++
++      expect(() =>
++        zodTool({
++          name: 'invalid_tool',
++          inputSchema: schema,
++          description: 'Invalid tool',
++          run: () => 'result',
++        }),
++      ).toThrow('Zod schema for tool "invalid_tool" must be an object, but got string');
++    });
++
++    it('throws parse error for invalid input', () => {
++      const schema = z.object({
++        name: z.string(),
++        age: z.number(),
++      });
++
++      const tool = zodTool({
++        name: 'strict_tool',
++        inputSchema: schema,
++        description: 'Strict tool',
++        run: (args) => args.name,
++      });
++
++      expect(() => tool.parse({ name: 'Alice' })).toThrow();
++      expect(() => tool.parse({ name: 123, age: 30 })).toThrow();
++      expect(() => tool.parse({})).toThrow();
++    });
++
++    it('handles async run functions', async () => {
++      const schema = z.object({
++        delay: z.number().default(0),
++        message: z.string(),
++      });
++
++      const tool = zodTool({
++        name: 'async_tool',
++        inputSchema: schema,
++        description: 'Async tool',
++        run: async (args) => {
++          await new Promise((resolve) => setTimeout(resolve, args.delay));
++          return args.message;
++        },
++      });
++
++      const result = await tool.run({ delay: 1, message: 'done' });
++      expect(result).toBe('done');
++    });
++  });
++});

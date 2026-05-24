@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-ryanw341-horses-3dvisibility-pr4",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 4,
+    "headSha": "37bbe8979a67278f3b8a8a727f1cff1204a9f5cd",
+    "baseSha": "1e223d85476b5a81f8478cd8633515cd6a7ca140",
+    "title": "Surface 3D-visible token icons above the vision/fog mask",
+    "body": "The screenshot in the issue shows that even when our `testVisibility` override correctly reports a token as visible via height-aware sampling, the token still appears as solid black because Foundry's vision/fog mask is composited on top of the token sprite. The patch was returning `true` but the renderer had already painted darkness over the area behind the wall.\n\n### Changes\n\n- **Hoist the original `testVisibility` reference** out of the patch closure into a module-level `originalTestVisibilityRef` so other code paths can probe the *unpatched* visibility without re-entering our override.\n- **Add `isVisibleOnlyVia3D(token)`** which returns true when the original sweep says the token center is *not* visible but at least one height-aware sample point *is* — i.e. the case where the icon would be rendered black.\n- **Mirror those tokens into an overlay container** parented to `canvas.interface`, which is rendered above the vision/fog mask. The overlay sprite matches the token's texture, bounds, rotation, and tint.\n- **Wire lifecycle hooks** to keep the overlay in sync: `canvasReady`, `canvasTearDown`, `sightRefresh`, `lightingRefresh`, `refreshToken`, `destroyToken`, `deleteToken`. Sprites are removed as soon as the token becomes normally visible, hidden, deleted, or the scene is torn down.\n\n### Scope note\n\nThis makes the token *icon* punch through the darkness; the surrounding fog wedge is unchanged. Lighting and explored-area rendering behind the wall would require extending the vision polygon itself and is not addressed here.",
+    "author": "Copilot",
+    "headRef": "copilot/debug-game-module-visibility-issues",
+    "repository": "ryanw341/horses-3dvisibility"
+  },
+  "diffRef": {
+    "repository": "ryanw341/horses-3dvisibility",
+    "headSha": "37bbe8979a67278f3b8a8a727f1cff1204a9f5cd",
+    "baseSha": "1e223d85476b5a81f8478cd8633515cd6a7ca140"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-ryanw341-horses-3dvisibility-pr4.diff",
+  "vendoredAt": "2026-05-24T03:05:26.361Z",
+  "collectedAt": "2026-05-24T03:05:26.361Z"
+}

@@ -1,0 +1,3237 @@
+diff --git a/DESIGN_PHILOSOPHY.md b/DESIGN_PHILOSOPHY.md
+new file mode 100644
+index 00000000000..5ca9b98e2f8
+--- /dev/null
++++ b/DESIGN_PHILOSOPHY.md
+@@ -0,0 +1,155 @@
++# Threshold Luminism
++
++*A design philosophy for interfaces that exist at the edge of thought*
++
++---
++
++## The Movement
++
++**Threshold Luminism** — from *limen*, the Latin word for threshold. The charged boundary between two states: before and after, signal and silence, the half-formed thought and the precise expression. This is not a philosophy of light as decoration. It is a philosophy of light as *evidence* — the faint photon emitted at the moment a mind touches a machine.
++
++---
++
++## Philosophy
++
++### I. Space and Form
++
++Space is not emptiness — it is potential. In Threshold Luminism, negative space carries weight equal to any rendered element. Every void is a pause in a sentence, every margin a held breath. Forms emerge from darkness not as objects placed against shadow but as disturbances in an otherwise undisturbed field — like heat signatures, like the faint afterimage of a thought. Structure should feel discovered, not imposed. Panels do not divide; they reveal what was already there. The geometry is spare: hairline rules, single-pixel separations, corners that are either perfectly sharp or gently resolved — never decorative, always load-bearing. The meticulous placement of every element must feel inevitable, as if it could not be positioned any other way without breaking the logic of the whole.
++
++### II. Color and Material
++
++The palette is derived from emission, not reflection. Deep charcoal grounds — not true black, which is absolute and dead, but the near-black of a console at rest, the color of deep water under overcast sky: `#0B0D11`, `#0F1117`. From this ground, luminescence surfaces in narrow frequency bands: a cold electric blue-white for primary presence, a amber-phosphor warmth for human trace, a barely-there teal for system whisper. Color is applied with the restraint of a master craftsman who knows that a single stroke of true pigment on a vast ground carries more authority than a canvas saturated with effort. Gradients behave like light bleeding through a crack — directional, physics-obeying, never decorative. The result of painstaking chromatic calibration: each hue chosen as if it were the last color left in the world.
++
++### III. Scale and Rhythm
++
++Typography operates at two registers simultaneously and never in between: the very large and the very small. Monospaced forms carry functional information — they are the trace of computation, the direct speech of the machine. Proportional serifs, used sparingly, speak in human time. The scale contrast between a 9px system label and a moment of 48px weight is the entire grammar; the middle sizes are mostly silence. Rhythm is established not by repetition of form but by repetition of interval — the same 8px unit governing the space between a cursor blink and a content block, between a status indicator and the edge of the world. Everything is a multiple of this atom. The rhythm should feel inevitable to the eye even before the mind names it, the product of deep expertise in how human perception anchors itself to pattern.
++
++### IV. Composition and Balance
++
++Balance in Threshold Luminism is asymmetric and intentional — a composition that reads as perfectly resolved from a distance while revealing meticulous asymmetric counterweighting up close. Primary content occupies a vertical axis slightly left of center; the right margin carries only trace signals: annotations, timestamps, system states written at 9px in a muted register. This creates a directed reading path that mirrors the way a focused mind moves: anchored left, peripherally aware right. Layering is used precisely once per interface context — a subtle depth plane that lifts interactive surfaces 1-2px above their ground without shadows, achieved through fractional luminosity difference alone. Every compositional decision reflects the work of countless refinements, arrived at through elimination rather than addition.
++
++### V. Visual Hierarchy
++
++Hierarchy is expressed through luminosity delta, not color variety. The most important element is simply the brightest thing in the frame — everything else falls away in carefully calibrated steps toward the dark ground. There are exactly three tiers: primary (full luminosity, direct attention), secondary (65% luminosity, available attention), ambient (25% luminosity, peripheral awareness). Interactive states are a fourth tier reached only by hover or focus — a brief bloom of warmth that confirms the interface noticed the human before returning to rest. No element decorates another. Every border, every radius, every color choice is a functional decision about where the eye should go and in what order. The result should feel less like designed software and more like a precision instrument — the kind of tool a craftsman reaches for because it disappears in the hand and lets the work speak.
++
++---
++
++## CSS Token Specification
++
++### Color Tokens
++
++```
++Background Ground:       #0B0D11   (depth-0, the void)
++Background Surface:      #0F1117   (depth-1, panels)
++Background Elevated:     #141720   (depth-2, cards, inputs)
++Background Active:       #1A1E2B   (depth-3, hover/focus states)
++Background Overlay:      #0B0D11E6 (modals, 90% opacity)
++
++Border Hairline:         #1E2333   (structural, lowest presence)
++Border Default:          #252A3D   (default container edge)
++Border Focus:            #3D4870   (keyboard focus ring)
++Border Accent:           #4A5580   (active/selected edge)
++
++Text Primary:            #E8EAF0   (full luminosity, headings, critical output)
++Text Secondary:          #8B91A8   (65% luminosity, body, labels)
++Text Tertiary:           #454D6A   (25% luminosity, timestamps, ambient)
++Text Disabled:           #2A2F45   (near-invisible, placeholder)
++Text Code:               #A8B5D1   (monospace output, slightly cool)
++Text Accent-Blue:        #7CA7E8   (primary interaction, links)
++Text Accent-Amber:       #C8925A   (human trace, warnings, attention)
++Text Accent-Teal:        #4FA89E   (system signals, success states)
++Text Accent-Violet:      #9B7FD4   (AI response, special output)
++
++Glow-Blue:               #1A3A6E   (subtle luminescence behind primary elements)
++Glow-Amber:              #3D2210   (warm presence behind human-authored content)
++```
++
++### Typography Tokens
++
++```
++Font-Mono:       "JetBrains Mono", "Geist Mono", "IBM Plex Mono", ui-monospace, monospace
++Font-Sans:       "Instrument Sans", "Work Sans", system-ui, sans-serif
++Font-Serif:      "Instrument Serif", "IBM Plex Serif", Georgia, serif
++
++Size-2xs:  9px    (system labels, timestamps, ambient text)
++Size-xs:   11px   (secondary labels, meta information)
++Size-sm:   13px   (body text, code)
++Size-md:   15px   (primary body, chat messages)
++Size-lg:   18px   (section headers)
++Size-xl:   24px   (page headers)
++Size-2xl:  36px   (display, rare punctuation)
++Size-3xl:  52px   (single-word typographic gesture)
++
++Weight-Thin:     300
++Weight-Regular:  400
++Weight-Medium:   500
++Weight-Bold:     600  (never heavier)
++
++Line-Height-Tight:   1.25  (headings, labels)
++Line-Height-Code:    1.5   (monospace blocks)
++Line-Height-Body:    1.65  (prose, chat messages)
++
++Letter-Spacing-Tight:  -0.02em  (display sizes)
++Letter-Spacing-Normal:  0em
++Letter-Spacing-Wide:    0.06em  (small caps, labels, uppercase micro-text)
++Letter-Spacing-Wider:   0.12em  (9px ambient labels, system text)
++```
++
++### Spacing Scale
++
++```
++Space-1:   4px
++Space-2:   8px    (base atom)
++Space-3:   12px
++Space-4:   16px
++Space-5:   20px
++Space-6:   24px
++Space-8:   32px
++Space-10:  40px
++Space-12:  48px
++Space-16:  64px
++Space-20:  80px
++Space-24:  96px
++Space-32:  128px
++```
++
++### Border Radius
++
++```
++Radius-None:    0px    (terminal elements, code blocks, pure data)
++Radius-Sm:      3px    (buttons, badges — barely perceptible)
++Radius-Md:      6px    (cards, inputs — functional softening)
++Radius-Lg:      10px   (panels, modals)
++Radius-Full:    9999px (only for status dots and avatar circles)
++```
++
++*Philosophy: radius should be invisible as a design choice. The smallest radius that removes visual harshness. Never decorative roundness.*
++
++### Animation Tokens
++
++```
++Duration-Instant:    60ms    (state changes, focus rings)
++Duration-Fast:       120ms   (hover transitions, micro-feedback)
++Duration-Default:    200ms   (most transitions)
++Duration-Slow:       350ms   (panel open/close, modal entrance)
++Duration-Deliberate: 500ms   (full-screen transitions, only when justified)
++
++Easing-Sharp:    cubic-bezier(0.2, 0, 0, 1)     (entrances — fast in, slow settle)
++Easing-Smooth:   cubic-bezier(0.4, 0, 0.2, 1)   (exits and cross-fades)
++Easing-Spring:   cubic-bezier(0.34, 1.56, 0.64, 1) (confirmation states only)
++Easing-Linear:   linear                           (opacity only, never position)
++```
++
++### Shadow / Depth
++
++```
++Elevation-0:  none
++Elevation-1:  0 1px 2px rgba(0,0,0,0.4)
++Elevation-2:  0 2px 8px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.04)
++Elevation-3:  0 8px 24px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.06)
++Glow-Focus:   0 0 0 2px #1A3A6E, 0 0 0 4px rgba(124,167,232,0.15)
++```
++
++---
++
++*Threshold Luminism is a philosophy of restraint deployed with precision. It does not ask for beauty — it earns it through the patient elimination of everything that is not necessary.*
+diff --git a/README.md b/README.md
+index 816c876cb67..ba7500903d1 100644
+--- a/README.md
++++ b/README.md
+@@ -178,3 +178,15 @@ See the [installation instructions](https://aider.chat/docs/install.html) and [u
+ - *"Aider ... is the tool to benchmark against."* — [BeetleB on Hacker News](https://news.ycombinator.com/item?id=43930201)
+ - *"aider is really cool"* — [kache on X](https://x.com/yacineMTB/status/1911224442430124387)
+ 
++
++---
++
++## Development Log
++
++### May 7, 2026 — Local Model + Skill System Integration
++
++Testing Qwen 3.5 35B-A3B (MoE, 256 experts, 3B active params) running locally via Ollama as the coding agent backend. Working on skill file access, system prompt calibration, and thinking mode integration.
++
++**Overview:** [Loom Recording](https://www.loom.com/share/aa65b23acaaf419eb6b348500c2a9df3)
++
++**Setup Guide:** See [docs/aider-setup.md](docs/aider-setup.md) for configuring Aider with local Claude Code skills.
+diff --git a/aider/generative_bg.py b/aider/generative_bg.py
+new file mode 100644
+index 00000000000..0ce061d7c70
+--- /dev/null
++++ b/aider/generative_bg.py
+@@ -0,0 +1,210 @@
++"""
++generative_bg.py — Living generative art background for the aider Streamlit GUI.
++
++Usage (in gui.py or any Streamlit entrypoint):
++
++    from aider.generative_bg import inject_generative_background
++    inject_generative_background()
++
++Call it once, early in the Streamlit script (before st.title / st.write calls),
++so the fixed-position canvas is registered before the rest of the page renders.
++
++The canvas is z-index: -1, pointer-events: none — completely invisible to clicks.
++"""
++
++
++def inject_generative_background():
++    """Injects a living generative art background behind the Streamlit UI."""
++    import streamlit.components.v1 as components
++
++    html = """
++<!DOCTYPE html>
++<html>
++<head>
++<style>
++  * { margin: 0; padding: 0; box-sizing: border-box; }
++  html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
++
++  #bg-canvas-wrapper {
++    position: fixed;
++    top: 0;
++    left: 0;
++    width: 100vw;
++    height: 100vh;
++    z-index: -1;
++    pointer-events: none;
++    overflow: hidden;
++  }
++
++  /* Subtle gradient veil at the bottom — fades art into the dark base */
++  #bg-canvas-wrapper::after {
++    content: '';
++    position: absolute;
++    bottom: 0;
++    left: 0;
++    right: 0;
++    height: 35vh;
++    background: linear-gradient(
++      to bottom,
++      transparent 0%,
++      rgba(13, 17, 23, 0.55) 60%,
++      rgba(13, 17, 23, 0.85) 100%
++    );
++    pointer-events: none;
++  }
++
++  #defaultCanvas0 {
++    display: block;
++    position: absolute;
++    top: 0;
++    left: 0;
++  }
++</style>
++</head>
++<body>
++<div id="bg-canvas-wrapper"></div>
++
++<script src="https://cdn.jsdelivr.net/npm/p5@1.9.4/lib/p5.min.js"></script>
++<script>
++// ─── Flow Field + Particle System ─────────────────────────────────────────────
++//
++// Design goals
++//   • Subtle enough that the eye catches it only after a few seconds
++//   • Noise-driven vectors create gentle, organic drift — not random jitter
++//   • Deep indigo / blue-violet palette on near-black (#0d1117)
++//   • Very low opacity trails accumulate into barely-visible wisps
++//   • Fixed seed → same opening composition on every reload
++//   • 30 fps cap → roughly halves GPU cost vs uncapped rAF
++// ─────────────────────────────────────────────────────────────────────────────
++
++const SEED           = 4217;
++const NUM_PARTICLES  = 220;
++const PARTICLE_SPEED = 0.55;   // px / frame at 30fps
++const NOISE_SCALE    = 0.0023; // spatial frequency of the noise field
++const NOISE_Z_SPEED  = 0.0004; // how fast the field evolves over time
++const TRAIL_ALPHA    = 0.06;   // 0–255 — opacity of each paint stroke
++const FADE_ALPHA     = 6;      // how aggressively old trails fade each frame
++const MIN_PX         = 1.0;
++const MAX_PX         = 2.2;
++
++// Palette: indigo → deep blue → violet, very dark
++const PALETTE = [
++  [60,  50,  120],  // deep indigo
++  [40,  60,  140],  // navy-indigo
++  [70,  40,  110],  // purple-indigo
++  [30,  80,  150],  // blue-indigo
++  [55,  35,  100],  // dark violet
++  [45,  90,  160],  // muted blue
++];
++
++const sketch = (p) => {
++
++  let particles = [];
++  let noiseZ    = 0;
++  let lastMs    = 0;
++  const FRAME_MS = 1000 / 30; // ~33 ms
++
++  // ── helpers ────────────────────────────────────────────────────────────────
++
++  function makeParticle() {
++    const col = PALETTE[p.floor(p.random(PALETTE.length))];
++    return {
++      x:   p.random(p.width),
++      y:   p.random(p.height),
++      px:  0,
++      py:  0,
++      sz:  p.random(MIN_PX, MAX_PX),
++      r:   col[0],
++      g:   col[1],
++      b:   col[2],
++    };
++  }
++
++  function resetParticle(pt) {
++    // Respawn at a random edge so particles don't cluster in the center
++    const edge = p.floor(p.random(4));
++    if (edge === 0) { pt.x = p.random(p.width);  pt.y = -5; }
++    else if (edge === 1) { pt.x = p.width + 5;   pt.y = p.random(p.height); }
++    else if (edge === 2) { pt.x = p.random(p.width);  pt.y = p.height + 5; }
++    else                 { pt.x = -5;             pt.y = p.random(p.height); }
++    const col = PALETTE[p.floor(p.random(PALETTE.length))];
++    pt.r = col[0]; pt.g = col[1]; pt.b = col[2];
++  }
++
++  // ── p5 lifecycle ───────────────────────────────────────────────────────────
++
++  p.setup = () => {
++    p.randomSeed(SEED);
++    p.noiseSeed(SEED);
++
++    const cnv = p.createCanvas(p.windowWidth, p.windowHeight);
++    cnv.parent('bg-canvas-wrapper');
++
++    p.background(13, 17, 23); // #0d1117
++    p.noStroke();
++    p.frameRate(30);
++
++    for (let i = 0; i < NUM_PARTICLES; i++) {
++      particles.push(makeParticle());
++    }
++  };
++
++  p.draw = () => {
++    // Manual 30 fps gate (belt + suspenders alongside p.frameRate(30))
++    const now = performance.now();
++    if (now - lastMs < FRAME_MS - 2) return;
++    lastMs = now;
++
++    // Very slow fade — let trails linger for a ghostly smear effect
++    p.fill(13, 17, 23, FADE_ALPHA);
++    p.rect(0, 0, p.width, p.height);
++
++    noiseZ += NOISE_Z_SPEED;
++
++    for (let i = 0; i < particles.length; i++) {
++      const pt = particles[i];
++
++      // Sample Perlin noise to get a flow angle
++      const nx    = pt.x * NOISE_SCALE;
++      const ny    = pt.y * NOISE_SCALE;
++      const angle = p.noise(nx, ny, noiseZ) * p.TWO_PI * 2.5;
++
++      pt.px = pt.x;
++      pt.py = pt.y;
++      pt.x += Math.cos(angle) * PARTICLE_SPEED;
++      pt.y += Math.sin(angle) * PARTICLE_SPEED;
++
++      // Respawn if out of bounds
++      if (pt.x < -10 || pt.x > p.width + 10 ||
++          pt.y < -10 || pt.y > p.height + 10) {
++        resetParticle(pt);
++        continue;
++      }
++
++      // Draw as a tiny ellipse — not a line — for a dotted-mist look
++      p.fill(pt.r, pt.g, pt.b, TRAIL_ALPHA * 255);
++      p.ellipse(pt.x, pt.y, pt.sz, pt.sz);
++    }
++  };
++
++  p.windowResized = () => {
++    p.resizeCanvas(p.windowWidth, p.windowHeight);
++    p.background(13, 17, 23);
++  };
++};
++
++// Attach to the wrapper div, not document.body
++new p5(sketch);
++</script>
++</body>
++</html>
++""".strip()
++
++    # height=0 with scrolling="no" lets the fixed-positioned canvas fill the
++    # real viewport without the iframe itself taking up layout space.
++    # The iframe is transparent; only the canvas inside it is visible.
++    components.html(
++        html,
++        height=0,
++        scrolling=False,
++    )
+diff --git a/aider/gui.py b/aider/gui.py
+index 6c5b012dc49..94dca79b787 100755
+--- a/aider/gui.py
++++ b/aider/gui.py
+@@ -1,10 +1,13 @@
+ #!/usr/bin/env python
+ 
++import json
+ import os
+ import random
++import re
+ import sys
+ 
+ import streamlit as st
++import streamlit.components.v1 as components
+ 
+ from aider import urls
+ from aider.coders import Coder
+@@ -12,6 +15,8 @@
+ from aider.io import InputOutput
+ from aider.main import main as cli_main
+ from aider.scrape import Scraper, has_playwright
++from aider.generative_bg import inject_generative_background
++from aider import skill_loader
+ 
+ 
+ class CaptureIO(InputOutput):
+@@ -113,27 +118,47 @@ def show_edit_info(self, edit):
+             return
+ 
+         show_undo = False
+-        res = ""
+         if commit_hash:
+-            res += f"Commit `{commit_hash}`: {commit_message}  \n"
+             if commit_hash == self.coder.last_aider_commit_hash:
+                 show_undo = True
+ 
++        # Build file tags HTML
++        file_tags_html = ""
+         if fnames:
+-            fnames = [f"`{fname}`" for fname in fnames]
+-            fnames = ", ".join(fnames)
+-            res += f"Applied edits to {fnames}."
+-
+-        if diff:
+-            with st.expander(res):
+-                st.code(diff, language="diff")
+-                if show_undo:
+-                    self.add_undo(commit_hash)
+-        else:
+-            with st.container(border=True):
+-                st.write(res)
+-                if show_undo:
+-                    self.add_undo(commit_hash)
++            for fname in fnames:
++                basename = os.path.basename(fname)
++                file_tags_html += (
++                    f'<span class="commit-file-tag" title="{fname}">{basename}</span>'
++                )
++
++        if commit_hash:
++            card_html = f"""
++<div class="commit-card">
++  <div class="commit-card-header">
++    <span class="commit-hash-badge">{commit_hash}</span>
++    <span class="commit-message">{commit_message or ""}</span>
++  </div>
++  {f'<div class="commit-file-tags">{file_tags_html}</div>' if file_tags_html else ""}
++</div>
++"""
++            st.markdown(card_html, unsafe_allow_html=True)
++            if diff:
++                with st.expander("View diff", expanded=False):
++                    st.code(diff, language="diff")
++                    if show_undo:
++                        self.add_undo(commit_hash)
++            elif show_undo:
++                self.add_undo(commit_hash)
++        elif fnames:
++            card_html = f"""
++<div class="commit-card">
++  <div class="commit-card-header">
++    <span class="commit-message">Applied edits</span>
++  </div>
++  <div class="commit-file-tags">{file_tags_html}</div>
++</div>
++"""
++            st.markdown(card_html, unsafe_allow_html=True)
+ 
+     def add_undo(self, commit_hash):
+         if self.last_undo_empty:
+@@ -148,24 +173,77 @@ def add_undo(self, commit_hash):
+ 
+     def do_sidebar(self):
+         with st.sidebar:
+-            st.title("Aider")
+-            # self.cmds_tab, self.settings_tab = st.tabs(["Commands", "Settings"])
++            # --- Model badge + project name header ---
++            try:
++                model_name = self.coder.main_model.name
++            except Exception:
++                model_name = "unknown"
++
++            try:
++                repo_root = self.coder.repo.root
++                project_name = os.path.basename(repo_root.rstrip("/\\"))
++            except Exception:
++                project_name = "project"
++
++            st.markdown(
++                f"""
++<div class="sidebar-header">
++  <div class="sidebar-project-name">{project_name}</div>
++  <div class="sidebar-model-badge">{model_name}</div>
++</div>
++""",
++                unsafe_allow_html=True,
++            )
+ 
+-            # self.do_recommended_actions()
+             self.do_add_to_chat()
+             self.do_recent_msgs()
+             self.do_clear_chat_history()
+-            # st.container(height=150, border=False)
+-            # st.write("### Experimental")
++            self.do_skills_panel()
+ 
+-            st.warning(
+-                "This browser version of aider is experimental. Please share feedback in [GitHub"
+-                " issues](https://github.com/Aider-AI/aider/issues)."
++            # De-emphasised experimental notice
++            st.markdown(
++                '<p class="experimental-notice">Browser UI is experimental. '
++                '<a href="https://github.com/Aider-AI/aider/issues" target="_blank">'
++                "Share feedback</a></p>",
++                unsafe_allow_html=True,
+             )
+ 
+     def do_settings_tab(self):
+         pass
+ 
++    def do_skills_panel(self):
++        """Sidebar skills queue — select skills to prepend as invocation prompts on next send."""
++        st.markdown("---")
++
++        # Multiselect: pick any skills to queue
++        # NOT disabled during processing — users should be able to queue skills
++        # for the next turn while the model is working
++        selected_labels = st.multiselect(
++            "Queue skills",
++            options=self.state.skill_labels,
++            default=self.state.queued_skills,
++            placeholder="Type / to filter skills...",
++            help=(
++                "Select one or more skills to invoke on your next message. "
++                "The skill instructions will be appended to whatever you type."
++            ),
++            key="skills_multiselect",
++        )
++
++        # Persist selection back into state
++        self.state.queued_skills = selected_labels
++
++        # Show queued indicator if any skills are selected
++        if selected_labels:
++            names = [f"/{skill_loader.skill_name_from_label(lbl)}" for lbl in selected_labels]
++            queued_display = "  ".join(
++                [f'<span class="skill-queue-badge">{n}</span>' for n in names]
++            )
++            st.markdown(
++                f'<div class="skill-queue-indicator">Queued: {queued_display}</div>',
++                unsafe_allow_html=True,
++            )
++
+     def do_recommended_actions(self):
+         text = "Aider works best when your code is stored in a git repo.  \n"
+         text += f"[See the FAQ for more info]({urls.git})"
+@@ -312,7 +390,11 @@ def do_messages_container(self):
+                 if role == "edit":
+                     self.show_edit_info(msg)
+                 elif role == "info":
+-                    st.info(msg["content"])
++                    content = msg["content"]
++                    first_line = content.splitlines()[0] if content else "Info"
++                    summary = first_line[:80] + ("..." if len(first_line) > 80 else "")
++                    with st.expander(f"ℹ  {summary}", expanded=False):
++                        st.markdown(content)
+                 elif role == "text":
+                     text = msg["content"]
+                     line = text.splitlines()[0]
+@@ -337,10 +419,16 @@ def initialize_state(self):
+         self.state.init("recent_msgs_num", 0)
+         self.state.init("web_content_num", 0)
+         self.state.init("prompt")
++        self.state.init("user_visible_text")
+         self.state.init("scraper")
+ 
+         self.state.init("initial_inchat_files", self.coder.get_inchat_relative_files())
+ 
++        # Skills autocomplete state
++        self.state.init("skills", skill_loader.load_skills())
++        self.state.init("queued_skills", [])
++        self.state.init("skill_labels", skill_loader.build_skill_option_labels(self.state.skills))
++
+         if "input_history" not in self.state.keys:
+             input_history = list(self.coder.io.get_input_history())
+             seen = set()
+@@ -371,10 +459,37 @@ def __init__(self):
+         self.do_messages_container()
+         self.do_sidebar()
+ 
+-        user_inp = st.chat_input("Say something")
++        user_inp = st.chat_input("Ask me to edit code...")
+         if user_inp:
+             self.prompt = user_inp
+ 
++            # --- Expand inline /skillname tokens typed directly in the chat input ---
++            visible_text, inline_skill_prefix = _expand_skill_tokens(user_inp)
++
++            # --- Also honour any skills queued via the sidebar multiselect ---
++            sidebar_skill_prefix = ""
++            if self.state.queued_skills:
++                skill_names = [
++                    skill_loader.skill_name_from_label(lbl)
++                    for lbl in self.state.queued_skills
++                ]
++                sidebar_skill_prefix = skill_loader.get_multi_skill_prompt(skill_names)
++                self.state.queued_skills = []
++                # Clear the Streamlit widget's persisted value so it doesn't re-populate on rerun
++                if "skills_multiselect" in st.session_state:
++                    st.session_state["skills_multiselect"] = []
++
++            # Append skill instructions AFTER the user's message — never before
++            skill_suffixes = [p for p in [sidebar_skill_prefix, inline_skill_prefix] if p]
++            if skill_suffixes:
++                skill_expansion = "\n\n".join(skill_suffixes)
++                # Model gets: user's exact message, then skill instructions below it
++                self.prompt = user_inp + "\n\n" + skill_expansion
++            else:
++                self.prompt = user_inp
++            # Display always shows the user's original input exactly as typed
++            self.state.user_visible_text = user_inp
++
+         if self.prompt_pending():
+             self.process_chat()
+ 
+@@ -389,10 +504,12 @@ def __init__(self):
+         self.state.input_history.append(self.prompt)
+ 
+         if self.prompt_as:
+-            self.state.messages.append({"role": self.prompt_as, "content": self.prompt})
++            # Show user's clean text in chat history, not the skill-appended prompt
++            display_text = getattr(self.state, 'user_visible_text', self.prompt)
++            self.state.messages.append({"role": self.prompt_as, "content": display_text})
+         if self.prompt_as == "user":
+             with self.messages.chat_message("user"):
+-                st.write(self.prompt)
++                st.write(getattr(self.state, 'user_visible_text', self.prompt))
+         elif self.prompt_as == "text":
+             line = self.prompt.splitlines()[0]
+             line += "??"
+@@ -419,7 +536,8 @@ def process_chat(self):
+ 
+         while prompt:
+             with self.messages.chat_message("assistant"):
+-                res = st.write_stream(self.coder.run_stream(prompt))
++                with st.spinner("Thinking..."):
++                    res = st.write_stream(self.coder.run_stream(prompt))
+                 self.state.messages.append({"role": "assistant", "content": res})
+                 # self.cost()
+ 
+@@ -457,9 +575,12 @@ def info(self, message, echo=True):
+         info = dict(role="info", content=message)
+         self.state.messages.append(info)
+ 
+-        # We will render the tail of the messages array after this call
++        # Render inline as collapsible expander
+         if echo:
+-            self.messages.info(message)
++            first_line = message.splitlines()[0] if message else "Info"
++            summary = first_line[:80] + ("..." if len(first_line) > 80 else "")
++            with self.messages.expander(f"ℹ  {summary}", expanded=False):
++                st.markdown(message)
+ 
+     def do_web(self):
+         st.markdown("Add the text content of a web page to the chat")
+@@ -521,6 +642,1022 @@ def do_undo(self, commit_hash):
+             self.prompt = reply
+ 
+ 
++def inject_custom_css():
++    st.markdown(
++        """
++<style>
++/* ============================================================
++   AIDER DARK THEME — claude.ai-inspired premium dark mode
++   ============================================================ */
++
++/* --- Root palette --- */
++:root {
++    --bg-base:        #0d1117;
++    --bg-surface:     #161b22;
++    --bg-elevated:    #1c2128;
++    --bg-hover:       #21262d;
++    --bg-sidebar:     #0f1318;
++    --border:         rgba(48, 54, 61, 0.8);
++    --border-subtle:  rgba(48, 54, 61, 0.4);
++    --accent:         #58a6ff;
++    --accent-dim:     rgba(88, 166, 255, 0.12);
++    --accent-glow:    rgba(88, 166, 255, 0.25);
++    --text-primary:   #e6edf3;
++    --text-secondary: #8b949e;
++    --text-muted:     #484f58;
++    --user-bubble-bg: rgba(88, 166, 255, 0.10);
++    --user-bubble-border: rgba(88, 166, 255, 0.25);
++    --assistant-bubble-border: rgba(48, 54, 61, 0.6);
++    --success:        #3fb950;
++    --warning:        #d29922;
++    --error:          #f85149;
++    --radius-sm:      6px;
++    --radius-md:      10px;
++    --radius-lg:      14px;
++    --font-sans:      -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Helvetica, Arial, sans-serif;
++    --font-mono:      "JetBrains Mono", "Fira Code", "Cascadia Code", ui-monospace, SFMono-Regular, Menlo, monospace;
++    --transition:     0.18s ease;
++}
++
++/* --- Global page background --- */
++.stApp, .main, [data-testid="stAppViewContainer"] {
++    background-color: var(--bg-base) !important;
++    color: var(--text-primary) !important;
++    font-family: var(--font-sans) !important;
++}
++
++/* --- Keep header functional, only hide deploy button and footer --- */
++footer {
++    display: none !important;
++}
++header[data-testid="stHeader"] {
++    background-color: var(--bg-surface) !important;
++    border-bottom: 1px solid var(--border) !important;
++    backdrop-filter: blur(12px) !important;
++}
++/* Ensure header buttons (sidebar toggle, stop, menu) are visible */
++header[data-testid="stHeader"] button,
++header[data-testid="stHeader"] [data-testid="stStatusWidget"],
++[data-testid="collapsedControl"],
++[data-testid="stSidebarCollapsedControl"] {
++    color: var(--text-primary) !important;
++    opacity: 1 !important;
++    visibility: visible !important;
++}
++[data-testid="stToolbar"] {
++    background-color: transparent !important;
++}
++.stDeployButton {
++    display: none !important;
++}
++
++/* --- Main content area padding --- */
++.block-container {
++    padding-top: 1.5rem !important;
++    padding-bottom: 1rem !important;
++    max-width: 100% !important;
++}
++
++/* --- Sidebar --- */
++[data-testid="stSidebar"] {
++    background-color: var(--bg-sidebar) !important;
++    border-right: 1px solid var(--border) !important;
++}
++[data-testid="stSidebar"] * {
++    color: var(--text-primary) !important;
++}
++[data-testid="stSidebar"] .stMarkdown h1,
++[data-testid="stSidebar"] h1 {
++    font-size: 1.15rem !important;
++    font-weight: 600 !important;
++    letter-spacing: -0.01em !important;
++    color: var(--text-primary) !important;
++    margin-bottom: 1rem !important;
++}
++[data-testid="stSidebar"] [data-testid="stWidgetLabel"] {
++    color: var(--text-secondary) !important;
++    font-size: 0.78rem !important;
++    text-transform: uppercase !important;
++    letter-spacing: 0.05em !important;
++}
++
++/* --- Multiselect (file picker) --- */
++[data-testid="stMultiSelect"] > div {
++    background-color: var(--bg-elevated) !important;
++    border: 1px solid var(--border) !important;
++    border-radius: var(--radius-md) !important;
++    transition: border-color var(--transition), box-shadow var(--transition) !important;
++}
++[data-testid="stMultiSelect"] > div:focus-within {
++    border-color: var(--accent) !important;
++    box-shadow: 0 0 0 3px var(--accent-dim) !important;
++}
++[data-testid="stMultiSelect"] span[data-baseweb="tag"] {
++    background-color: var(--accent-dim) !important;
++    border: 1px solid var(--user-bubble-border) !important;
++    border-radius: var(--radius-sm) !important;
++    color: var(--accent) !important;
++    font-size: 0.8rem !important;
++}
++
++/* --- Selectbox / dropdowns --- */
++[data-testid="stSelectbox"] > div > div {
++    background-color: var(--bg-elevated) !important;
++    border: 1px solid var(--border) !important;
++    border-radius: var(--radius-md) !important;
++    color: var(--text-primary) !important;
++    transition: border-color var(--transition) !important;
++}
++[data-testid="stSelectbox"] > div > div:focus-within {
++    border-color: var(--accent) !important;
++    box-shadow: 0 0 0 3px var(--accent-dim) !important;
++}
++
++/* --- Text inputs --- */
++[data-testid="stTextInput"] input {
++    background-color: var(--bg-elevated) !important;
++    border: 1px solid var(--border) !important;
++    border-radius: var(--radius-md) !important;
++    color: var(--text-primary) !important;
++    transition: border-color var(--transition), box-shadow var(--transition) !important;
++}
++[data-testid="stTextInput"] input:focus {
++    border-color: var(--accent) !important;
++    box-shadow: 0 0 0 3px var(--accent-dim) !important;
++    outline: none !important;
++}
++
++/* --- Chat input (main prompt bar) --- */
++[data-testid="stChatInput"] {
++    background-color: var(--bg-elevated) !important;
++    border: 1px solid var(--border) !important;
++    border-radius: var(--radius-lg) !important;
++    padding: 0.1rem 0.25rem !important;
++    transition: border-color var(--transition), box-shadow var(--transition) !important;
++    backdrop-filter: blur(8px) !important;
++}
++[data-testid="stChatInput"]:focus-within {
++    border-color: var(--accent) !important;
++    box-shadow: 0 0 0 3px var(--accent-dim), 0 4px 24px rgba(0,0,0,0.4) !important;
++}
++[data-testid="stChatInput"] textarea {
++    background: transparent !important;
++    color: var(--text-primary) !important;
++    font-family: var(--font-sans) !important;
++    font-size: 0.95rem !important;
++    caret-color: var(--accent) !important;
++}
++[data-testid="stChatInput"] textarea::placeholder {
++    color: var(--text-muted) !important;
++}
++[data-testid="stChatInputSubmitButton"] button {
++    background-color: var(--accent) !important;
++    border-radius: var(--radius-sm) !important;
++    border: none !important;
++    transition: opacity var(--transition) !important;
++}
++[data-testid="stChatInputSubmitButton"] button:hover {
++    opacity: 0.85 !important;
++}
++
++/* --- Chat messages: container --- */
++[data-testid="stChatMessageContent"] {
++    font-family: var(--font-sans) !important;
++    font-size: 0.93rem !important;
++    line-height: 1.7 !important;
++    color: var(--text-primary) !important;
++}
++
++/* --- Chat messages: user bubble --- */
++[data-testid="stChatMessage"][data-testid*="user"],
++.stChatMessage[aria-label*="user"] {
++    background-color: var(--user-bubble-bg) !important;
++    border: 1px solid var(--user-bubble-border) !important;
++    border-radius: var(--radius-lg) !important;
++    margin: 0.5rem 0 !important;
++    padding: 0.75rem 1rem !important;
++    backdrop-filter: blur(4px) !important;
++    display: flex !important;
++    align-items: center !important;
++}
++
++/* --- Chat messages: assistant bubble --- */
++[data-testid="stChatMessage"][data-testid*="assistant"],
++.stChatMessage[aria-label*="assistant"] {
++    background-color: transparent !important;
++    border: 1px solid var(--assistant-bubble-border) !important;
++    border-radius: var(--radius-lg) !important;
++    margin: 0.5rem 0 !important;
++    padding: 0.75rem 1rem !important;
++    display: flex !important;
++    align-items: center !important;
++}
++
++/* ALL avatars hidden — design decision, distinguish messages by styling not icons */
++[data-testid="chatAvatarIcon-user"],
++[data-testid="chatAvatarIcon-assistant"],
++[data-testid="stChatMessageAvatarContainer"],
++.stChatMessageAvatarContainer {
++    display: none !important;
++    width: 0 !important;
++    height: 0 !important;
++    overflow: hidden !important;
++}
++
++/* --- Code blocks --- */
++pre, code {
++    font-family: var(--font-mono) !important;
++    font-size: 0.875rem !important;
++    font-feature-settings: "liga" 1, "calt" 1 !important;
++}
++pre {
++    background-color: var(--bg-elevated) !important;
++    border: 1px solid var(--border) !important;
++    border-radius: var(--radius-md) !important;
++    padding: 1rem 1.25rem !important;
++    overflow-x: auto !important;
++}
++code:not(pre code) {
++    background-color: var(--bg-elevated) !important;
++    border: 1px solid var(--border-subtle) !important;
++    border-radius: 4px !important;
++    padding: 0.15em 0.4em !important;
++    color: #d2a8ff !important;
++}
++/* Streamlit's syntax highlight wrapper */
++.stCodeBlock pre {
++    background-color: var(--bg-elevated) !important;
++    border: 1px solid var(--border) !important;
++    border-radius: var(--radius-md) !important;
++}
++.stCodeBlock code {
++    background: transparent !important;
++    border: none !important;
++    padding: 0 !important;
++    color: inherit !important;
++}
++
++/* --- Expanders (diff views, etc.) --- */
++[data-testid="stExpander"] {
++    background-color: var(--bg-surface) !important;
++    border: 1px solid var(--border) !important;
++    border-radius: var(--radius-md) !important;
++    transition: border-color var(--transition) !important;
++}
++[data-testid="stExpander"]:hover {
++    border-color: var(--accent) !important;
++}
++[data-testid="stExpander"] summary {
++    color: var(--text-primary) !important;
++    font-weight: 500 !important;
++}
++[data-testid="stExpander"] > div {
++    background-color: var(--bg-elevated) !important;
++    border-top: 1px solid var(--border) !important;
++}
++
++/* --- Containers with border --- */
++[data-testid="stVerticalBlockBorderWrapper"] {
++    background-color: var(--bg-surface) !important;
++    border: 1px solid var(--border) !important;
++    border-radius: var(--radius-md) !important;
++    backdrop-filter: blur(4px) !important;
++}
++
++/* --- Buttons --- */
++.stButton > button {
++    background-color: var(--bg-elevated) !important;
++    border: 1px solid var(--border) !important;
++    border-radius: var(--radius-md) !important;
++    color: var(--text-primary) !important;
++    font-family: var(--font-sans) !important;
++    font-size: 0.875rem !important;
++    font-weight: 500 !important;
++    padding: 0.4rem 0.9rem !important;
++    transition: background-color var(--transition), border-color var(--transition), box-shadow var(--transition) !important;
++}
++.stButton > button:hover {
++    background-color: var(--bg-hover) !important;
++    border-color: var(--accent) !important;
++    box-shadow: 0 0 0 1px var(--accent-dim) !important;
++    color: var(--accent) !important;
++}
++.stButton > button:active {
++    background-color: var(--accent-dim) !important;
++}
++/* Undo button — give it a subtle warning tint */
++.stButton > button[kind="secondary"] {
++    border-color: rgba(210, 153, 34, 0.4) !important;
++    color: var(--warning) !important;
++}
++.stButton > button[kind="secondary"]:hover {
++    border-color: var(--warning) !important;
++    background-color: rgba(210, 153, 34, 0.08) !important;
++    color: var(--warning) !important;
++}
++
++/* --- Popover --- */
++[data-testid="stPopover"] > div {
++    background-color: var(--bg-elevated) !important;
++    border: 1px solid var(--border) !important;
++    border-radius: var(--radius-lg) !important;
++    box-shadow: 0 8px 32px rgba(0,0,0,0.5) !important;
++    backdrop-filter: blur(12px) !important;
++}
++
++/* --- Info / warning / error banners --- */
++[data-testid="stInfo"] {
++    background-color: var(--accent-dim) !important;
++    border: 1px solid var(--accent) !important;
++    border-radius: var(--radius-md) !important;
++    color: var(--text-primary) !important;
++}
++[data-testid="stWarning"],
++.stAlert[data-baseweb="notification"][kind="warning"] {
++    background-color: rgba(210, 153, 34, 0.10) !important;
++    border: 1px solid rgba(210, 153, 34, 0.4) !important;
++    border-radius: var(--radius-md) !important;
++    color: var(--text-primary) !important;
++}
++[data-testid="stWarning"] a,
++[data-testid="stWarning"] a:visited {
++    color: var(--warning) !important;
++}
++
++/* --- Markdown general --- */
++.stMarkdown h1, .stMarkdown h2, .stMarkdown h3 {
++    color: var(--text-primary) !important;
++    font-weight: 600 !important;
++    letter-spacing: -0.015em !important;
++}
++.stMarkdown p {
++    color: var(--text-primary) !important;
++    line-height: 1.7 !important;
++}
++.stMarkdown a {
++    color: var(--accent) !important;
++    text-decoration: none !important;
++    transition: opacity var(--transition) !important;
++}
++.stMarkdown a:hover {
++    opacity: 0.8 !important;
++    text-decoration: underline !important;
++}
++.stMarkdown ul, .stMarkdown ol {
++    color: var(--text-primary) !important;
++}
++
++/* --- Scrollbar — thin, dark, minimal --- */
++* {
++    scrollbar-width: thin !important;
++    scrollbar-color: var(--bg-hover) transparent !important;
++}
++*::-webkit-scrollbar {
++    width: 5px !important;
++    height: 5px !important;
++}
++*::-webkit-scrollbar-track {
++    background: transparent !important;
++}
++*::-webkit-scrollbar-thumb {
++    background-color: var(--bg-hover) !important;
++    border-radius: 99px !important;
++}
++*::-webkit-scrollbar-thumb:hover {
++    background-color: var(--text-muted) !important;
++}
++
++/* --- Caption / helper text --- */
++.stCaption, [data-testid="stCaptionContainer"] {
++    color: var(--text-secondary) !important;
++    font-size: 0.8rem !important;
++}
++
++/* --- Glassmorphism: top-level chat container --- */
++[data-testid="stChatMessageContainer"],
++section.main > div > div > div[data-testid="stVerticalBlock"] {
++    background: transparent !important;
++}
++
++/* Subtle glass card on the main messages pane */
++.stChatFloatingInputContainer {
++    background: linear-gradient(
++        to top,
++        rgba(13, 17, 23, 0.95) 70%,
++        rgba(13, 17, 23, 0.0) 100%
++    ) !important;
++    backdrop-filter: blur(6px) !important;
++    padding-top: 1.5rem !important;
++}
++
++/* --- Spinner / processing indicator --- */
++.stSpinner > div {
++    border-color: var(--accent) transparent transparent transparent !important;
++}
++.stSpinner p {
++    color: var(--text-secondary) !important;
++    font-size: 0.85rem !important;
++    animation: pulse-text 1.5s ease-in-out infinite !important;
++}
++@keyframes pulse-text {
++    0%, 100% { opacity: 0.5; }
++    50% { opacity: 1; }
++}
++
++/* ---- Smooth scroll ---- */
++html, [data-testid="stChatMessageContainer"], .main .block-container {
++    scroll-behavior: smooth !important;
++}
++
++/* ---- Chat message line-height and paragraph spacing ---- */
++[data-testid="stChatMessageContent"] {
++    line-height: 1.7 !important;
++}
++[data-testid="stChatMessageContent"] p {
++    line-height: 1.7 !important;
++    margin-bottom: 0.75rem !important;
++}
++[data-testid="stChatMessageContent"] p:last-child {
++    margin-bottom: 0 !important;
++}
++[data-testid="stChatMessageContent"] pre,
++[data-testid="stChatMessageContent"] code {
++    line-height: 1.5 !important;
++}
++[data-testid="stChatMessage"] {
++    margin-bottom: 0.75rem !important;
++}
++
++/* ---- Diff syntax: green additions, red deletions ---- */
++.stCodeBlock .token.inserted,
++.language-diff .token.inserted {
++    background-color: rgba(63, 185, 80, 0.12) !important;
++    display: block !important;
++    width: 100% !important;
++    border-left: 3px solid var(--success) !important;
++    padding-left: 0.4em !important;
++    margin-left: -0.4em !important;
++}
++.stCodeBlock .token.deleted,
++.language-diff .token.deleted {
++    background-color: rgba(248, 81, 73, 0.12) !important;
++    display: block !important;
++    width: 100% !important;
++    border-left: 3px solid var(--error) !important;
++    padding-left: 0.4em !important;
++    margin-left: -0.4em !important;
++}
++
++/* ---- Expander refinements ---- */
++[data-testid="stExpander"] {
++    margin-bottom: 0.5rem !important;
++}
++[data-testid="stExpander"] summary {
++    font-size: 0.88rem !important;
++}
++
++/* ---- Sidebar header: project name + model badge ---- */
++.sidebar-header {
++    display: flex;
++    align-items: center;
++    justify-content: space-between;
++    padding: 0.5rem 0 1rem 0;
++    border-bottom: 1px solid var(--border-subtle);
++    margin-bottom: 1rem;
++}
++.sidebar-project-name {
++    font-size: 1rem;
++    font-weight: 700;
++    color: var(--text-primary);
++    letter-spacing: -0.02em;
++    white-space: nowrap;
++    overflow: hidden;
++    text-overflow: ellipsis;
++    max-width: 160px;
++}
++.sidebar-model-badge {
++    display: inline-flex;
++    align-items: center;
++    padding: 0.2rem 0.6rem;
++    background: var(--accent-dim);
++    border: 1px solid var(--user-bubble-border);
++    border-radius: 99px;
++    font-size: 0.72rem;
++    font-weight: 600;
++    color: var(--accent) !important;
++    white-space: nowrap;
++    letter-spacing: 0.01em;
++    font-family: var(--font-mono);
++}
++
++/* ---- Experimental notice (de-emphasised) ---- */
++.experimental-notice {
++    font-size: 0.75rem !important;
++    color: var(--text-muted) !important;
++    margin-top: 1.5rem !important;
++    line-height: 1.5 !important;
++}
++.experimental-notice a {
++    color: var(--text-secondary) !important;
++    text-decoration: underline !important;
++    text-decoration-color: var(--border) !important;
++}
++.experimental-notice a:hover {
++    color: var(--accent) !important;
++}
++
++/* ---- Markdown paragraph spacing ---- */
++.stMarkdown p {
++    margin-bottom: 0.75rem !important;
++}
++
++/* ============================================================
++   COMMIT CARD — git commit visualization
++   ============================================================ */
++.commit-card {
++    background-color: var(--bg-surface);
++    border: 1px solid var(--border);
++    border-left: 3px solid var(--success);
++    border-radius: var(--radius-md);
++    padding: 0.65rem 0.9rem;
++    margin: 0.5rem 0;
++    font-family: var(--font-sans);
++}
++.commit-card-header {
++    display: flex;
++    align-items: center;
++    gap: 0.6rem;
++    flex-wrap: wrap;
++}
++.commit-hash-badge {
++    font-family: var(--font-mono);
++    font-size: 0.75rem;
++    font-weight: 600;
++    color: var(--success);
++    background: rgba(63, 185, 80, 0.1);
++    border: 1px solid rgba(63, 185, 80, 0.3);
++    border-radius: 99px;
++    padding: 0.15rem 0.55rem;
++    white-space: nowrap;
++    letter-spacing: 0.02em;
++    flex-shrink: 0;
++}
++.commit-message {
++    font-size: 0.88rem;
++    color: var(--text-primary);
++    font-weight: 500;
++    line-height: 1.4;
++    flex: 1;
++}
++.commit-file-tags {
++    display: flex;
++    flex-wrap: wrap;
++    gap: 0.35rem;
++    margin-top: 0.4rem;
++}
++.commit-file-tag {
++    font-family: var(--font-mono);
++    font-size: 0.72rem;
++    color: var(--text-secondary);
++    background: var(--bg-elevated);
++    border: 1px solid var(--border-subtle);
++    border-radius: var(--radius-sm);
++    padding: 0.1rem 0.45rem;
++    white-space: nowrap;
++    cursor: default;
++}
++.commit-file-tag:hover {
++    color: var(--accent);
++    border-color: var(--user-bubble-border);
++    background: var(--accent-dim);
++}
++
++/* ============================================================
++   SKILLS QUEUE — sidebar skill badge strip
++   ============================================================ */
++.skill-queue-indicator {
++    display: flex;
++    flex-wrap: wrap;
++    gap: 0.3rem;
++    align-items: center;
++    margin-top: 0.4rem;
++    font-size: 0.75rem;
++    color: var(--text-secondary);
++    line-height: 1.6;
++}
++.skill-queue-badge {
++    display: inline-flex;
++    align-items: center;
++    padding: 0.15rem 0.5rem;
++    background: rgba(88, 166, 255, 0.08);
++    border: 1px solid rgba(88, 166, 255, 0.3);
++    border-radius: 99px;
++    font-size: 0.72rem;
++    font-weight: 600;
++    color: var(--accent);
++    font-family: var(--font-mono);
++    white-space: nowrap;
++    letter-spacing: 0.01em;
++}
++
++/* ============================================================
++   SIDEBAR SKILLS — hover expand tags + styled dropdown
++   ============================================================ */
++
++/* Selected skill tags — show full text, no truncation */
++[data-testid="stSidebar"] [data-baseweb="tag"] {
++    white-space: normal !important;
++    max-width: 100% !important;
++    height: auto !important;
++    padding: 0.25rem 0.5rem !important;
++    line-height: 1.35 !important;
++    font-size: 0.78rem !important;
++    transition: all 0.15s ease !important;
++}
++[data-testid="stSidebar"] [data-baseweb="tag"]:hover {
++    background: var(--bg-elevated) !important;
++    border-color: var(--accent) !important;
++    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(88, 166, 255, 0.15) !important;
++}
++
++/* Dropdown options — full description, no truncation */
++[data-testid="stSidebar"] [data-baseweb="menu"] li,
++[data-testid="stSidebar"] [role="option"] {
++    white-space: normal !important;
++    line-height: 1.4 !important;
++    padding: 8px 12px !important;
++    font-size: 0.82rem !important;
++    color: var(--text-primary) !important;
++    border-bottom: 1px solid var(--border-subtle) !important;
++}
++[data-testid="stSidebar"] [data-baseweb="menu"] li:hover,
++[data-testid="stSidebar"] [role="option"]:hover {
++    background: rgba(88, 166, 255, 0.08) !important;
++}
++
++/* Dropdown panel itself */
++[data-testid="stSidebar"] [data-baseweb="popover"],
++[data-testid="stSidebar"] [data-baseweb="menu"] {
++    background: var(--bg-elevated) !important;
++    border: 1px solid var(--border) !important;
++    border-radius: 10px !important;
++    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;
++    backdrop-filter: blur(12px) !important;
++    max-height: 350px !important;
++    overflow-y: auto !important;
++}
++</style>
++        """,
++        unsafe_allow_html=True,
++    )
++
++
++def inject_skill_autocomplete():
++    """
++    Inject a JS-powered slash-command autocomplete popover above the Streamlit chat textarea.
++
++    Approach:
++    - Build a JSON payload of all skills (name + description) once per page load.
++    - Render a zero-height streamlit.components.v1.html() iframe whose script reaches
++      into the parent document (window.parent.document) to find the chat textarea.
++    - Attach a keyup/input listener; when the current word starts with '/', show a
++      floating popover of matching skills above the input bar.
++    - Clicking / pressing Enter on a skill replaces the '/partial' token in the textarea
++      with the full '/skillname' readable text.
++    - The Python submit handler (in __init__) later expands those tokens to full prompts.
++    """
++    skills = skill_loader.load_skills()
++    # Build a compact JSON array: [{n: "name", d: "description"}, ...]
++    skills_json = json.dumps(
++        [{"n": s["name"], "d": s["description"][:100]} for s in skills],
++        ensure_ascii=False,
++    )
++
++    html_src = f"""
++<style>
++  body {{ margin: 0; padding: 0; overflow: hidden; background: transparent; }}
++</style>
++<script>
++(function() {{
++  var SKILLS = {skills_json};
++
++  // --- State ---
++  var popover = null;
++  var activeIdx = 0;
++  var filtered = [];
++  var currentSlashStart = -1;   // caret position where the '/' started
++  var textarea = null;
++
++  // --- Find the Streamlit chat textarea (cross-iframe) ---
++  function findTextarea() {{
++    try {{
++      var doc = window.parent.document;
++      // Try multiple selectors Streamlit uses across versions
++      var selectors = [
++        '[data-testid="stChatInput"] textarea',
++        '[data-testid="stChatInputTextArea"]',
++        'textarea[data-testid]',
++        '.stChatInput textarea',
++        'textarea[placeholder]',
++      ];
++      for (var i = 0; i < selectors.length; i++) {{
++        var el = doc.querySelector(selectors[i]);
++        if (el) return el;
++      }}
++    }} catch(e) {{}}
++    return null;
++  }}
++
++  // --- Build/update the popover ---
++  function buildPopover(doc) {{
++    if (!popover) {{
++      popover = doc.createElement('div');
++      popover.id = 'aider-skill-popover';
++      popover.style.cssText = [
++        'position:fixed',
++        'bottom:80px',
++        'left:50%',
++        'transform:translateX(-50%)',
++        'width:520px',
++        'max-height:320px',
++        'overflow-y:auto',
++        'background:#141720',
++        'border:1px solid #252A3D',
++        'border-radius:10px',
++        'box-shadow:0 8px 32px rgba(0,0,0,0.55)',
++        'backdrop-filter:blur(12px)',
++        '-webkit-backdrop-filter:blur(12px)',
++        'z-index:999999',
++        'font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif',
++        'display:none',
++        'scrollbar-width:thin',
++        'scrollbar-color:#252A3D transparent',
++      ].join(';');
++
++      // Header hint
++      var header = doc.createElement('div');
++      header.style.cssText = 'padding:6px 14px 4px;font-size:11px;color:#484f58;letter-spacing:0.04em;text-transform:uppercase;border-bottom:1px solid #1E2333;';
++      header.textContent = 'Skills — press ↑↓ to navigate, Enter to select, Esc to close';
++      popover.appendChild(header);
++
++      var list = doc.createElement('div');
++      list.id = 'aider-skill-list';
++      popover.appendChild(list);
++
++      doc.body.appendChild(popover);
++    }}
++    return popover;
++  }}
++
++  function renderItems(doc, query) {{
++    var list = doc.getElementById('aider-skill-list');
++    if (!list) return;
++    list.innerHTML = '';
++    activeIdx = 0;
++
++    var q = query.toLowerCase();
++    filtered = q === '' ? SKILLS : SKILLS.filter(function(s) {{
++      return s.n.toLowerCase().indexOf(q) !== -1 ||
++             (s.d && s.d.toLowerCase().indexOf(q) !== -1);
++    }});
++
++    if (filtered.length === 0) {{
++      hidePopover();
++      return;
++    }}
++
++    // Cap visible items to keep the list snappy
++    var visible = filtered.slice(0, 80);
++    visible.forEach(function(skill, idx) {{
++      var item = doc.createElement('div');
++      item.style.cssText = [
++        'padding:8px 14px',
++        'cursor:pointer',
++        'display:flex',
++        'justify-content:space-between',
++        'align-items:center',
++        'border-bottom:1px solid #1E2333',
++        'gap:12px',
++      ].join(';');
++      item.dataset.idx = idx;
++
++      var nameEl = doc.createElement('span');
++      nameEl.style.cssText = 'color:#7CA7E8;font-family:monospace;font-size:13px;font-weight:600;white-space:nowrap;flex-shrink:0;';
++      nameEl.textContent = '/' + skill.n;
++
++      var descEl = doc.createElement('span');
++      descEl.style.cssText = 'color:#8B91A8;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;text-align:right;';
++      descEl.textContent = skill.d || '';
++
++      item.appendChild(nameEl);
++      item.appendChild(descEl);
++
++      item.addEventListener('mouseenter', function() {{
++        activeIdx = parseInt(this.dataset.idx);
++        highlightActive(doc);
++      }});
++      item.addEventListener('mousedown', function(e) {{
++        e.preventDefault(); // don't blur textarea
++        selectSkill(filtered[parseInt(this.dataset.idx)]);
++      }});
++
++      list.appendChild(item);
++    }});
++
++    highlightActive(doc);
++    showPopover();
++  }}
++
++  function highlightActive(doc) {{
++    var list = doc.getElementById('aider-skill-list');
++    if (!list) return;
++    var items = list.children;
++    for (var i = 0; i < items.length; i++) {{
++      if (i === activeIdx) {{
++        items[i].style.background = 'rgba(88,166,255,0.10)';
++        items[i].style.borderLeft = '2px solid #58a6ff';
++        items[i].style.paddingLeft = '12px';
++        // scroll into view
++        items[i].scrollIntoView({{ block: 'nearest' }});
++      }} else {{
++        items[i].style.background = '';
++        items[i].style.borderLeft = '';
++        items[i].style.paddingLeft = '';
++      }}
++    }}
++  }}
++
++  function showPopover() {{
++    if (popover) popover.style.display = 'block';
++  }}
++
++  function hidePopover() {{
++    if (popover) popover.style.display = 'none';
++    currentSlashStart = -1;
++  }}
++
++  function selectSkill(skill) {{
++    if (!textarea || !skill) return;
++
++    var val = textarea.value;
++    var caret = textarea.selectionStart;
++
++    // Find the slash token start: scan backward from caret
++    var slashPos = currentSlashStart;
++    if (slashPos === -1) {{
++      // Fallback: scan backward for '/'
++      slashPos = caret - 1;
++      while (slashPos > 0 && val[slashPos] !== '/') slashPos--;
++    }}
++
++    // Replace from slashPos up to caret with the canonical skill token
++    var replacement = '/' + skill.n;
++    var newVal = val.slice(0, slashPos) + replacement + val.slice(caret);
++
++    // Use the native input value setter so React/Streamlit sees the change
++    var nativeSetter = Object.getOwnPropertyDescriptor(window.parent.HTMLTextAreaElement.prototype, 'value');
++    if (nativeSetter && nativeSetter.set) {{
++      nativeSetter.set.call(textarea, newVal);
++    }} else {{
++      textarea.value = newVal;
++    }}
++
++    // Fire synthetic input event so Streamlit picks up the new value
++    textarea.dispatchEvent(new Event('input', {{ bubbles: true }}));
++    textarea.dispatchEvent(new Event('change', {{ bubbles: true }}));
++
++    // Place caret right after the inserted token
++    var newCaret = slashPos + replacement.length;
++    textarea.setSelectionRange(newCaret, newCaret);
++    textarea.focus();
++
++    hidePopover();
++  }}
++
++  // --- Get the word currently being typed at the caret ---
++  function getCurrentSlashToken(ta) {{
++    var val = ta.value;
++    var caret = ta.selectionStart;
++
++    // Walk backward to find the start of the current word
++    var start = caret - 1;
++    while (start >= 0 && !/\\s/.test(val[start])) start--;
++    start++; // step back to include the first non-space char
++
++    var word = val.slice(start, caret);
++    if (word.startsWith('/')) {{
++      currentSlashStart = start;
++      return word.slice(1); // query without the leading '/'
++    }}
++    currentSlashStart = -1;
++    return null;
++  }}
++
++  // --- Attach listeners once the textarea is available ---
++  function attachListeners(ta) {{
++    textarea = ta;
++    var doc = window.parent.document;
++    buildPopover(doc);
++
++    ta.addEventListener('keydown', function(e) {{
++      if (popover && popover.style.display !== 'none') {{
++        if (e.key === 'ArrowDown') {{
++          e.preventDefault();
++          activeIdx = Math.min(activeIdx + 1, filtered.length - 1);
++          highlightActive(doc);
++        }} else if (e.key === 'ArrowUp') {{
++          e.preventDefault();
++          activeIdx = Math.max(activeIdx - 1, 0);
++          highlightActive(doc);
++        }} else if (e.key === 'Enter' || e.key === 'Tab') {{
++          if (filtered.length > 0) {{
++            e.preventDefault();
++            e.stopImmediatePropagation();
++            selectSkill(filtered[activeIdx]);
++          }}
++        }} else if (e.key === 'Escape') {{
++          e.preventDefault();
++          hidePopover();
++        }}
++      }}
++    }}, true);  // capture phase so we intercept before Streamlit's submit handler
++
++    ta.addEventListener('input', function() {{
++      var query = getCurrentSlashToken(ta);
++      if (query === null) {{
++        hidePopover();
++      }} else {{
++        renderItems(doc, query);
++      }}
++    }});
++
++    ta.addEventListener('blur', function() {{
++      // Small delay so mousedown selection fires first
++      setTimeout(function() {{
++        if (popover && !popover.matches(':hover')) hidePopover();
++      }}, 150);
++    }});
++
++    // Click anywhere outside closes the popover
++    doc.addEventListener('click', function(e) {{
++      if (popover && !popover.contains(e.target) && e.target !== ta) {{
++        hidePopover();
++      }}
++    }});
++  }}
++
++  // --- Poll until the textarea appears (Streamlit renders async) ---
++  function waitForTextarea() {{
++    var ta = findTextarea();
++    if (ta) {{
++      attachListeners(ta);
++    }} else {{
++      setTimeout(waitForTextarea, 300);
++    }}
++  }}
++
++  waitForTextarea();
++}})();
++</script>
++"""
++    # height=0 so the component takes no visible space
++    components.html(html_src, height=0, scrolling=False)
++
++
++def _expand_skill_tokens(text):
++    """
++    Scan *text* for /skillname tokens and return (visible_text, skill_prompt_prefix).
++
++    visible_text      — the user's message with /skillname tokens stripped out
++    skill_prompt_prefix — the full invocation prompts to prepend (may be empty string)
++
++    A /skillname token is any '/word' where 'word' matches a known skill name.
++    Unknown /words are left in the visible text untouched.
++    """
++    skills = skill_loader.load_skills()
++    skill_names_set = {s["name"].lower() for s in skills}
++
++    found_skill_names = []
++    # Match /word tokens (word = letters, digits, hyphens, underscores)
++    token_pattern = re.compile(r'/([A-Za-z][A-Za-z0-9_-]*)')
++
++    def replace_token(m):
++        name = m.group(1).lower()
++        if name in skill_names_set:
++            found_skill_names.append(name)
++            return m.group(0)  # keep the /command visible in the user's message
++        return m.group(0)
++
++    # Don't modify the visible text — keep it exactly as typed
++    visible = text.strip()
++
++    if not found_skill_names:
++        return text, ""
++
++    skill_prompt_prefix = skill_loader.get_multi_skill_prompt(found_skill_names)
++    return visible, skill_prompt_prefix
++
++
+ def gui_main():
+     st.set_page_config(
+         layout="wide",
+@@ -533,6 +1670,10 @@ def gui_main():
+         },
+     )
+ 
++    inject_custom_css()
++    inject_generative_background()
++    inject_skill_autocomplete()
++
+     # config_options = st.config._config_options
+     # for key, value in config_options.items():
+     #    print(f"{key}: {value.value}")
+diff --git a/aider/skill_loader.py b/aider/skill_loader.py
+new file mode 100644
+index 00000000000..6ed8c0bd1fc
+--- /dev/null
++++ b/aider/skill_loader.py
+@@ -0,0 +1,197 @@
++"""
++skill_loader.py — Loads Claude Code skills for the aider GUI.
++
++Scans a skills directory for subdirectories containing SKILL.md files with
++YAML frontmatter and returns a list of skill dicts: {name, description, path}.
++
++Skills directory is resolved in order:
++  1. AIDER_SKILLS_DIR env var (if set)
++  2. ~/.claude/skills/ (default for Claude Code users)
++
++Results are cached for the lifetime of the process (one scan per session).
++"""
++
++import os
++import re
++
++_SKILLS_DIR = os.environ.get("AIDER_SKILLS_DIR", os.path.expanduser("~/.claude/skills"))
++_SKILLS_CACHE = None
++
++
++def _parse_frontmatter(text):
++    """
++    Extract YAML frontmatter from a SKILL.md string.
++    Returns a dict with at least 'name' and 'description' keys, or an empty dict.
++    Only parses what we need (name, description, triggers) — no external YAML dep required.
++    """
++    if not text.startswith("---"):
++        return {}
++
++    end = text.find("\n---", 3)
++    if end == -1:
++        return {}
++
++    block = text[3:end].strip()
++    result = {}
++
++    # Parse name
++    name_match = re.search(r'^name:\s*["\']?(.*?)["\']?\s*$', block, re.MULTILINE)
++    if name_match:
++        result["name"] = name_match.group(1).strip()
++
++    # Parse description (may be quoted with single or double quotes, or unquoted multiline)
++    desc_match = re.search(r'^description:\s*["\']?(.*?)["\']?\s*$', block, re.MULTILINE)
++    if desc_match:
++        result["description"] = desc_match.group(1).strip()
++
++    # Parse triggers (YAML list)
++    triggers_block = re.search(r'^triggers:\s*\n((?:\s+-\s+.*\n?)+)', block, re.MULTILINE)
++    if triggers_block:
++        raw_lines = triggers_block.group(1).splitlines()
++        triggers = []
++        for line in raw_lines:
++            m = re.match(r'\s+-\s+["\']?(.*?)["\']?\s*$', line)
++            if m:
++                triggers.append(m.group(1).strip())
++        result["triggers"] = triggers
++
++    return result
++
++
++def load_skills():
++    """
++    Scan ~/.claude/skills/ and return a sorted list of skill dicts:
++      {name: str, description: str, path: str (absolute path to SKILL.md)}
++
++    Result is cached — call this as many times as you like, disk is only hit once.
++    """
++    global _SKILLS_CACHE
++    if _SKILLS_CACHE is not None:
++        return _SKILLS_CACHE
++
++    skills = []
++
++    if not os.path.isdir(_SKILLS_DIR):
++        _SKILLS_CACHE = skills
++        return skills
++
++    for entry in os.scandir(_SKILLS_DIR):
++        if not entry.is_dir():
++            continue
++        skill_md_path = os.path.join(entry.path, "SKILL.md")
++        if not os.path.isfile(skill_md_path):
++            continue
++
++        try:
++            with open(skill_md_path, "r", encoding="utf-8", errors="replace") as fh:
++                content = fh.read(4096)  # frontmatter is always in the first few KB
++        except OSError:
++            continue
++
++        meta = _parse_frontmatter(content)
++        skill_name = meta.get("name") or entry.name
++        skill_desc = meta.get("description") or ""
++
++        skills.append(
++            {
++                "name": skill_name,
++                "description": skill_desc,
++                "path": skill_md_path,
++            }
++        )
++
++    # Sort alphabetically by name
++    skills.sort(key=lambda s: s["name"].lower())
++
++    _SKILLS_CACHE = skills
++    return skills
++
++
++def get_skill_by_name(skill_name):
++    """
++    Look up a single skill by its name (case-insensitive). Returns the skill dict or None.
++    """
++    target = skill_name.lstrip("/").lower()
++    for skill in load_skills():
++        if skill["name"].lower() == target:
++            return skill
++    return None
++
++
++def get_skill_prompt(skill_name):
++    """
++    Return the injection prompt for a single skill invocation.
++    If the skill is not found, return a best-effort prompt using the skill name alone.
++    """
++    skill = get_skill_by_name(skill_name)
++    clean_name = skill_name.lstrip("/")
++
++    if skill:
++        path = skill["path"]
++        return (
++            f"The user has invoked the /{clean_name} command. "
++            f"Load the skill file at {path} into your working memory and execute its "
++            f"contents as your directions. Read the file now and follow it."
++        )
++    else:
++        return (
++            f"The user has invoked the /{clean_name} command. "
++            f"Execute the /{clean_name} skill as your directions."
++        )
++
++
++def get_multi_skill_prompt(skill_names):
++    """
++    Return a sequenced injection prompt for multiple skills.
++    skill_names: list of str, each may have a leading "/" or not.
++    """
++    if not skill_names:
++        return ""
++    if len(skill_names) == 1:
++        return get_skill_prompt(skill_names[0])
++
++    lines = [
++        "The user has invoked multiple skills in sequence. "
++        "Execute them one at a time in order:",
++        "",
++    ]
++    for i, sname in enumerate(skill_names, start=1):
++        skill = get_skill_by_name(sname)
++        clean = sname.lstrip("/")
++        if skill:
++            lines.append(f"Task {i}: /{clean} — Load {skill['path']} and execute its directions.")
++        else:
++            lines.append(f"Task {i}: /{clean} — Execute the /{clean} skill as your directions.")
++
++    lines.append("")
++    lines.append("Start with Task 1. When complete, proceed to the next task. Do not skip any task.")
++    return "\n".join(lines)
++
++
++def build_skill_option_labels(skills=None):
++    """
++    Return a list of display strings for use in a multiselect widget.
++    Format: "/name — description (truncated)"
++    """
++    if skills is None:
++        skills = load_skills()
++    labels = []
++    for s in skills:
++        desc = s["description"]
++        if len(desc) > 80:
++            desc = desc[:77] + "..."
++        if desc:
++            labels.append(f"/{s['name']} — {desc}")
++        else:
++            labels.append(f"/{s['name']}")
++    return labels
++
++
++def skill_name_from_label(label):
++    """
++    Parse the skill name back out of a display label produced by build_skill_option_labels().
++    Returns the plain name without the leading "/".
++    """
++    # Label format: "/name — ..." or "/name"
++    name_part = label.split(" — ")[0].lstrip("/").strip()
++    return name_part
+diff --git a/docs/aider-setup.md b/docs/aider-setup.md
+new file mode 100644
+index 00000000000..af1fbae0a8e
+--- /dev/null
++++ b/docs/aider-setup.md
+@@ -0,0 +1,94 @@
++# Aider Setup — Local Model Coding Agent
++
++Run a local AI coding agent (Qwen 3.5 35B-A3B) with access to your Claude Code skills, memory, and operating protocol.
++
++## Prerequisites
++
++- [Ollama](https://ollama.com) installed
++- Qwen 3.5 35B-A3B model: `ollama pull qwen3.5:35b-a3b`
++- Python 3.10+
++- 64GB+ RAM recommended (128GB for full performance)
++
++## Install
++
++```bash
++pip install aider-chat
++```
++
++## Configure
++
++### 1. Create `.aider-context/` (gitignored — your local files stay local)
++
++```bash
++mkdir -p .aider-context
++ln -sf ~/.claude .aider-context/.claude
++```
++
++This symlinks your local Claude config so the model can access your skills, memory, and hooks. Nothing is copied. Nothing is committed.
++
++### 2. Create `.aider.conf.yml`
++
++```yaml
++model: ollama/qwen3.5:35b-a3b
++
++read:
++  - .aider-context/system-prompt.md
++  - CLAUDE.md
++
++map-tokens: 4096
++no-show-model-warnings: true
++no-auto-commits: true
++```
++
++### 3. Write your system prompt
++
++Create `.aider-context/system-prompt.md` with instructions for how the model should behave. This is your system prompt — write it however you want.
++
++### 4. Create `.aiderignore`
++
++```
++*
++!gptcoach2/**
++!ixcoach-api/**
++!ixcoach-landing/**
++!CLAUDE.md
++!.claude/**
++!.claude/skills/**
++!portfolio/**
++!shared-modules/**
++!shared-tools/**
++
++# Exclude build artifacts
++**/node_modules/**
++**/.next/**
++**/dist/**
++**/build/**
++**/*.db
++**/.git/**
++**/pnpm-lock.yaml
++**/package-lock.json
++**/*.log
++.claude/worktrees/**
++.claude/logs/**
++```
++
++## Run
++
++```bash
++# Terminal UI
++aider
++
++# Browser UI
++aider --browser
++```
++
++## Skills Access
++
++Your Claude Code skills are accessible via the symlink at `.aider-context/.claude/skills/`. The model can read any skill file during conversation. Skills are never copied into the repo — they stay on your machine.
++
++## Important
++
++- `.aider-context/` is gitignored — it contains symlinks to YOUR local files
++- `.aider.conf.yml` is gitignored — it may contain local paths
++- `.aiderignore` is gitignored — customize for your needs
++- **NEVER commit `.aider-context/` contents** — they point to private local files
+diff --git a/philosophy_theme.css b/philosophy_theme.css
+new file mode 100644
+index 00000000000..f6d0139be3f
+--- /dev/null
++++ b/philosophy_theme.css
+@@ -0,0 +1,1211 @@
++/*
++ * Threshold Luminism — CSS Theme
++ * Philosophy: The charged boundary between human thought and machine computation.
++ * Every token is a functional decision, not a decoration.
++ *
++ * Drop this file into your Streamlit app via st.markdown() or a local CSS inject.
++ * All custom properties are on :root. Streamlit overrides follow.
++ */
++
++/* ============================================================
++   DESIGN TOKENS — Custom Properties
++   ============================================================ */
++
++:root {
++  /* --- COLOR: Ground & Surface --- */
++  --color-bg-ground:    #0B0D11;   /* the void — depth-0 */
++  --color-bg-surface:   #0F1117;   /* panels — depth-1 */
++  --color-bg-elevated:  #141720;   /* cards, inputs — depth-2 */
++  --color-bg-active:    #1A1E2B;   /* hover, focus states — depth-3 */
++  --color-bg-overlay:   rgba(11, 13, 17, 0.92); /* modals */
++
++  /* --- COLOR: Borders (luminosity-stepped, never decorative) --- */
++  --color-border-hairline: #1E2333; /* structural minimum */
++  --color-border-default:  #252A3D; /* default container edge */
++  --color-border-focus:    #3D4870; /* keyboard focus ring */
++  --color-border-accent:   #4A5580; /* active / selected edge */
++
++  /* --- COLOR: Text (luminosity tiers, not color variety) --- */
++  --color-text-primary:   #E8EAF0; /* full luminosity */
++  --color-text-secondary: #8B91A8; /* 65% — body, labels */
++  --color-text-tertiary:  #454D6A; /* 25% — timestamps, ambient */
++  --color-text-disabled:  #2A2F45; /* near-invisible */
++  --color-text-code:      #A8B5D1; /* monospace output, slightly cool */
++
++  /* --- COLOR: Accent (emission spectrum, narrow bands) --- */
++  --color-accent-blue:    #7CA7E8; /* primary interaction, links */
++  --color-accent-amber:   #C8925A; /* human trace, warnings */
++  --color-accent-teal:    #4FA89E; /* system signals, success */
++  --color-accent-violet:  #9B7FD4; /* AI response, special output */
++
++  /* --- COLOR: Glow (luminescence, not shadow) --- */
++  --color-glow-blue:   #1A3A6E;
++  --color-glow-amber:  #3D2210;
++
++  /* --- TYPOGRAPHY: Font Families --- */
++  --font-mono:  "JetBrains Mono", "Geist Mono", "IBM Plex Mono", ui-monospace, "Cascadia Code", "Fira Code", monospace;
++  --font-sans:  "Instrument Sans", "Work Sans", "Inter", system-ui, -apple-system, sans-serif;
++  --font-serif: "Instrument Serif", "IBM Plex Serif", Georgia, "Times New Roman", serif;
++
++  /* --- TYPOGRAPHY: Size Scale (two registers: very small + very large) --- */
++  --size-2xs: 9px;
++  --size-xs:  11px;
++  --size-sm:  13px;
++  --size-md:  15px;
++  --size-lg:  18px;
++  --size-xl:  24px;
++  --size-2xl: 36px;
++  --size-3xl: 52px;
++
++  /* --- TYPOGRAPHY: Weight --- */
++  --weight-thin:    300;
++  --weight-regular: 400;
++  --weight-medium:  500;
++  --weight-bold:    600;
++
++  /* --- TYPOGRAPHY: Line Height --- */
++  --line-tight:  1.25;
++  --line-code:   1.5;
++  --line-body:   1.65;
++
++  /* --- TYPOGRAPHY: Letter Spacing --- */
++  --tracking-tight:  -0.02em;
++  --tracking-normal:  0em;
++  --tracking-wide:    0.06em;
++  --tracking-wider:   0.12em;
++
++  /* --- SPACING: 8px atom, all multiples --- */
++  --space-1:  4px;
++  --space-2:  8px;
++  --space-3:  12px;
++  --space-4:  16px;
++  --space-5:  20px;
++  --space-6:  24px;
++  --space-8:  32px;
++  --space-10: 40px;
++  --space-12: 48px;
++  --space-16: 64px;
++  --space-20: 80px;
++  --space-24: 96px;
++  --space-32: 128px;
++
++  /* --- BORDER RADIUS: invisible as a design choice --- */
++  --radius-none: 0px;
++  --radius-sm:   3px;
++  --radius-md:   6px;
++  --radius-lg:   10px;
++  --radius-full: 9999px;
++
++  /* --- ANIMATION: Deliberate, physics-obeying --- */
++  --duration-instant:    60ms;
++  --duration-fast:       120ms;
++  --duration-default:    200ms;
++  --duration-slow:       350ms;
++  --duration-deliberate: 500ms;
++
++  --ease-sharp:  cubic-bezier(0.2, 0, 0, 1);
++  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
++  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
++
++  /* --- ELEVATION: Fractional luminosity difference, not heavy shadows --- */
++  --elevation-0: none;
++  --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.4);
++  --elevation-2: 0 2px 8px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
++  --elevation-3: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.06);
++  --glow-focus:  0 0 0 2px #1A3A6E, 0 0 0 4px rgba(124, 167, 232, 0.15);
++}
++
++
++/* ============================================================
++   BASE RESET — Ground state
++   ============================================================ */
++
++*,
++*::before,
++*::after {
++  box-sizing: border-box;
++  margin: 0;
++  padding: 0;
++}
++
++html {
++  font-size: 16px;
++  -webkit-font-smoothing: antialiased;
++  -moz-osx-font-smoothing: grayscale;
++  text-rendering: optimizeLegibility;
++}
++
++body {
++  background-color: var(--color-bg-ground);
++  color: var(--color-text-primary);
++  font-family: var(--font-sans);
++  font-size: var(--size-md);
++  font-weight: var(--weight-regular);
++  line-height: var(--line-body);
++  letter-spacing: var(--tracking-normal);
++}
++
++/* Focus rings — luminosity bloom, not decorative outline */
++:focus-visible {
++  outline: none;
++  box-shadow: var(--glow-focus);
++}
++
++/* Selection — barely there */
++::selection {
++  background-color: rgba(124, 167, 232, 0.15);
++  color: var(--color-text-primary);
++}
++
++/* Scrollbar — thread-thin, luminosity-stepped */
++::-webkit-scrollbar {
++  width: 4px;
++  height: 4px;
++}
++::-webkit-scrollbar-track {
++  background: var(--color-bg-ground);
++}
++::-webkit-scrollbar-thumb {
++  background: var(--color-border-default);
++  border-radius: var(--radius-full);
++}
++::-webkit-scrollbar-thumb:hover {
++  background: var(--color-border-focus);
++}
++
++
++/* ============================================================
++   TYPOGRAPHY — Two registers: very small and very large
++   ============================================================ */
++
++h1, h2, h3, h4, h5, h6 {
++  font-family: var(--font-sans);
++  font-weight: var(--weight-medium);
++  line-height: var(--line-tight);
++  letter-spacing: var(--tracking-tight);
++  color: var(--color-text-primary);
++}
++
++h1 { font-size: var(--size-2xl); }
++h2 { font-size: var(--size-xl); }
++h3 { font-size: var(--size-lg); }
++h4 { font-size: var(--size-md); font-weight: var(--weight-medium); letter-spacing: var(--tracking-wide); text-transform: uppercase; color: var(--color-text-secondary); }
++
++p {
++  font-size: var(--size-md);
++  line-height: var(--line-body);
++  color: var(--color-text-secondary);
++  max-width: 68ch;
++}
++
++/* Monospaced — the direct speech of the machine */
++code, pre, kbd, samp {
++  font-family: var(--font-mono);
++  font-size: var(--size-sm);
++  line-height: var(--line-code);
++  color: var(--color-text-code);
++}
++
++pre {
++  background-color: var(--color-bg-elevated);
++  border: 1px solid var(--color-border-hairline);
++  border-radius: var(--radius-md);
++  padding: var(--space-4) var(--space-5);
++  overflow-x: auto;
++  tab-size: 2;
++}
++
++code:not(pre code) {
++  background-color: var(--color-bg-elevated);
++  border: 1px solid var(--color-border-hairline);
++  border-radius: var(--radius-sm);
++  padding: 2px 6px;
++  font-size: 0.875em;
++}
++
++/* Micro-text — ambient system labels */
++.label-system,
++.text-micro {
++  font-family: var(--font-mono);
++  font-size: var(--size-2xs);
++  font-weight: var(--weight-regular);
++  letter-spacing: var(--tracking-wider);
++  text-transform: uppercase;
++  color: var(--color-text-tertiary);
++  line-height: var(--line-tight);
++}
++
++/* Display text — rare, deliberate typographic gesture */
++.text-display {
++  font-family: var(--font-serif);
++  font-size: var(--size-3xl);
++  font-weight: var(--weight-thin);
++  letter-spacing: var(--tracking-tight);
++  color: var(--color-text-primary);
++  line-height: 1.1;
++}
++
++a {
++  color: var(--color-accent-blue);
++  text-decoration: none;
++  transition: color var(--duration-fast) var(--ease-smooth),
++              opacity var(--duration-fast) var(--ease-smooth);
++}
++a:hover {
++  color: var(--color-text-primary);
++}
++
++
++/* ============================================================
++   LAYOUT — Asymmetric balance, directed reading path
++   ============================================================ */
++
++.threshold-layout {
++  display: grid;
++  grid-template-columns: 260px 1fr 200px;
++  grid-template-rows: 48px 1fr;
++  height: 100vh;
++  overflow: hidden;
++  background-color: var(--color-bg-ground);
++}
++
++.threshold-sidebar {
++  grid-row: 1 / -1;
++  background-color: var(--color-bg-surface);
++  border-right: 1px solid var(--color-border-hairline);
++  overflow-y: auto;
++  padding: var(--space-4);
++}
++
++.threshold-header {
++  grid-column: 2 / -1;
++  background-color: var(--color-bg-ground);
++  border-bottom: 1px solid var(--color-border-hairline);
++  display: flex;
++  align-items: center;
++  padding: 0 var(--space-6);
++  gap: var(--space-4);
++}
++
++.threshold-main {
++  grid-column: 2;
++  overflow-y: auto;
++  padding: var(--space-8) var(--space-10);
++}
++
++/* Right margin — trace signals only */
++.threshold-rail {
++  grid-row: 2;
++  border-left: 1px solid var(--color-border-hairline);
++  padding: var(--space-4) var(--space-3);
++  overflow-y: auto;
++  background-color: var(--color-bg-surface);
++}
++
++
++/* ============================================================
++   COMPONENTS — Functional surfaces
++   ============================================================ */
++
++/* --- Panel / Card --- */
++.panel {
++  background-color: var(--color-bg-surface);
++  border: 1px solid var(--color-border-hairline);
++  border-radius: var(--radius-lg);
++  box-shadow: var(--elevation-1);
++  overflow: hidden;
++}
++
++.panel-elevated {
++  background-color: var(--color-bg-elevated);
++  border: 1px solid var(--color-border-default);
++  border-radius: var(--radius-lg);
++  box-shadow: var(--elevation-2);
++}
++
++.panel-header {
++  padding: var(--space-4) var(--space-5);
++  border-bottom: 1px solid var(--color-border-hairline);
++  display: flex;
++  align-items: center;
++  justify-content: space-between;
++  gap: var(--space-3);
++}
++
++.panel-body {
++  padding: var(--space-5);
++}
++
++/* --- Input --- */
++input,
++textarea,
++select {
++  background-color: var(--color-bg-elevated);
++  border: 1px solid var(--color-border-default);
++  border-radius: var(--radius-md);
++  color: var(--color-text-primary);
++  font-family: var(--font-mono);
++  font-size: var(--size-sm);
++  padding: var(--space-2) var(--space-3);
++  width: 100%;
++  transition: border-color var(--duration-fast) var(--ease-smooth),
++              box-shadow var(--duration-fast) var(--ease-smooth);
++  outline: none;
++}
++
++input:hover,
++textarea:hover,
++select:hover {
++  border-color: var(--color-border-focus);
++}
++
++input:focus,
++textarea:focus,
++select:focus {
++  border-color: var(--color-accent-blue);
++  box-shadow: var(--glow-focus);
++}
++
++input::placeholder,
++textarea::placeholder {
++  color: var(--color-text-disabled);
++}
++
++textarea {
++  resize: vertical;
++  min-height: 80px;
++  line-height: var(--line-code);
++}
++
++/* Chat / prompt input — the primary threshold */
++.prompt-input {
++  font-family: var(--font-mono);
++  font-size: var(--size-sm);
++  background-color: var(--color-bg-elevated);
++  border: 1px solid var(--color-border-default);
++  border-radius: var(--radius-lg);
++  padding: var(--space-4) var(--space-5);
++  color: var(--color-text-primary);
++  width: 100%;
++  min-height: 52px;
++  transition: border-color var(--duration-default) var(--ease-smooth),
++              box-shadow var(--duration-default) var(--ease-smooth);
++  outline: none;
++  line-height: var(--line-code);
++}
++
++.prompt-input:focus {
++  border-color: var(--color-border-focus);
++  box-shadow: 0 0 0 1px rgba(124, 167, 232, 0.08),
++              0 4px 16px rgba(0, 0, 0, 0.3);
++}
++
++/* --- Button --- */
++button,
++.btn {
++  display: inline-flex;
++  align-items: center;
++  justify-content: center;
++  gap: var(--space-2);
++  font-family: var(--font-sans);
++  font-size: var(--size-sm);
++  font-weight: var(--weight-medium);
++  letter-spacing: var(--tracking-wide);
++  border-radius: var(--radius-sm);
++  padding: var(--space-2) var(--space-4);
++  cursor: pointer;
++  border: 1px solid transparent;
++  transition: background-color var(--duration-fast) var(--ease-smooth),
++              border-color var(--duration-fast) var(--ease-smooth),
++              color var(--duration-fast) var(--ease-smooth),
++              box-shadow var(--duration-fast) var(--ease-smooth);
++  white-space: nowrap;
++  user-select: none;
++  outline: none;
++}
++
++/* Primary — luminosity bloom */
++.btn-primary {
++  background-color: var(--color-accent-blue);
++  color: var(--color-bg-ground);
++  border-color: var(--color-accent-blue);
++}
++.btn-primary:hover {
++  background-color: #93B8EF;
++  border-color: #93B8EF;
++}
++.btn-primary:active {
++  background-color: #6A96D6;
++}
++
++/* Ghost — visible when attended */
++.btn-ghost {
++  background-color: transparent;
++  color: var(--color-text-secondary);
++  border-color: var(--color-border-default);
++}
++.btn-ghost:hover {
++  background-color: var(--color-bg-active);
++  color: var(--color-text-primary);
++  border-color: var(--color-border-focus);
++}
++
++/* Minimal — no border, pure text signal */
++.btn-minimal {
++  background-color: transparent;
++  color: var(--color-text-tertiary);
++  border-color: transparent;
++  padding: var(--space-1) var(--space-2);
++}
++.btn-minimal:hover {
++  color: var(--color-text-secondary);
++  background-color: var(--color-bg-elevated);
++}
++
++/* --- Separator / Divider --- */
++hr,
++.divider {
++  border: none;
++  border-top: 1px solid var(--color-border-hairline);
++  margin: var(--space-4) 0;
++}
++
++/* --- Badge / Status Indicator --- */
++.badge {
++  display: inline-flex;
++  align-items: center;
++  gap: var(--space-1);
++  font-family: var(--font-mono);
++  font-size: var(--size-2xs);
++  font-weight: var(--weight-regular);
++  letter-spacing: var(--tracking-wider);
++  text-transform: uppercase;
++  padding: 2px var(--space-2);
++  border-radius: var(--radius-sm);
++  border: 1px solid currentColor;
++  white-space: nowrap;
++}
++
++.badge-blue   { color: var(--color-accent-blue);   background-color: rgba(124, 167, 232, 0.08); border-color: rgba(124, 167, 232, 0.2); }
++.badge-amber  { color: var(--color-accent-amber);  background-color: rgba(200, 146, 90, 0.08);  border-color: rgba(200, 146, 90, 0.2); }
++.badge-teal   { color: var(--color-accent-teal);   background-color: rgba(79, 168, 158, 0.08);  border-color: rgba(79, 168, 158, 0.2); }
++.badge-violet { color: var(--color-accent-violet); background-color: rgba(155, 127, 212, 0.08); border-color: rgba(155, 127, 212, 0.2); }
++
++/* Status dot — the minimal signal */
++.status-dot {
++  display: inline-block;
++  width: 6px;
++  height: 6px;
++  border-radius: var(--radius-full);
++  background-color: var(--color-text-tertiary);
++}
++.status-dot-active  { background-color: var(--color-accent-teal); box-shadow: 0 0 6px rgba(79, 168, 158, 0.4); }
++.status-dot-pending { background-color: var(--color-accent-amber); }
++.status-dot-error   { background-color: #D46B6B; }
++
++/* --- Chat Message — the core interface moment --- */
++.message {
++  display: flex;
++  flex-direction: column;
++  gap: var(--space-2);
++  padding: var(--space-4) 0;
++  border-bottom: 1px solid var(--color-border-hairline);
++}
++
++.message-meta {
++  display: flex;
++  align-items: center;
++  gap: var(--space-3);
++}
++
++.message-role {
++  font-family: var(--font-mono);
++  font-size: var(--size-2xs);
++  font-weight: var(--weight-regular);
++  letter-spacing: var(--tracking-wider);
++  text-transform: uppercase;
++  color: var(--color-text-tertiary);
++}
++
++.message-role-human { color: var(--color-accent-amber); }
++.message-role-ai    { color: var(--color-accent-violet); }
++
++.message-timestamp {
++  font-family: var(--font-mono);
++  font-size: var(--size-2xs);
++  color: var(--color-text-disabled);
++  letter-spacing: var(--tracking-wide);
++}
++
++.message-content {
++  font-size: var(--size-md);
++  color: var(--color-text-secondary);
++  line-height: var(--line-body);
++  max-width: 72ch;
++}
++
++.message-content p:not(:last-child) {
++  margin-bottom: var(--space-3);
++}
++
++/* AI response — faint violet tinge signals source */
++.message-ai .message-content {
++  color: var(--color-text-primary);
++}
++
++/* Human message — amber warmth */
++.message-human {
++  background-color: rgba(61, 34, 16, 0.12);
++  padding: var(--space-3) var(--space-4);
++  border-radius: var(--radius-md);
++  border-left: 2px solid var(--color-accent-amber);
++}
++
++/* --- Code Block with syntax hint --- */
++.code-block {
++  position: relative;
++  margin: var(--space-4) 0;
++}
++
++.code-block-header {
++  display: flex;
++  align-items: center;
++  justify-content: space-between;
++  padding: var(--space-2) var(--space-4);
++  background-color: var(--color-bg-active);
++  border: 1px solid var(--color-border-hairline);
++  border-bottom: none;
++  border-radius: var(--radius-md) var(--radius-md) 0 0;
++}
++
++.code-block-lang {
++  font-family: var(--font-mono);
++  font-size: var(--size-2xs);
++  letter-spacing: var(--tracking-wider);
++  text-transform: uppercase;
++  color: var(--color-text-tertiary);
++}
++
++.code-block pre {
++  margin: 0;
++  border-top-left-radius: 0;
++  border-top-right-radius: 0;
++  border-top: none;
++}
++
++/* --- Sidebar Navigation --- */
++.nav-section {
++  margin-bottom: var(--space-6);
++}
++
++.nav-section-label {
++  font-family: var(--font-mono);
++  font-size: var(--size-2xs);
++  letter-spacing: var(--tracking-wider);
++  text-transform: uppercase;
++  color: var(--color-text-tertiary);
++  padding: 0 var(--space-2);
++  margin-bottom: var(--space-2);
++}
++
++.nav-item {
++  display: flex;
++  align-items: center;
++  gap: var(--space-2);
++  padding: var(--space-2) var(--space-3);
++  border-radius: var(--radius-md);
++  font-size: var(--size-sm);
++  color: var(--color-text-secondary);
++  cursor: pointer;
++  transition: background-color var(--duration-fast) var(--ease-smooth),
++              color var(--duration-fast) var(--ease-smooth);
++  text-decoration: none;
++  user-select: none;
++  border: 1px solid transparent;
++}
++
++.nav-item:hover {
++  background-color: var(--color-bg-elevated);
++  color: var(--color-text-primary);
++}
++
++.nav-item-active {
++  background-color: var(--color-bg-active);
++  color: var(--color-text-primary);
++  border-color: var(--color-border-hairline);
++}
++
++/* --- Modal / Overlay --- */
++.modal-backdrop {
++  position: fixed;
++  inset: 0;
++  background-color: var(--color-bg-overlay);
++  display: flex;
++  align-items: center;
++  justify-content: center;
++  z-index: 1000;
++  animation: fadeIn var(--duration-slow) var(--ease-smooth);
++}
++
++.modal {
++  background-color: var(--color-bg-surface);
++  border: 1px solid var(--color-border-default);
++  border-radius: var(--radius-lg);
++  box-shadow: var(--elevation-3);
++  width: 100%;
++  max-width: 560px;
++  max-height: 80vh;
++  overflow-y: auto;
++  animation: slideUp var(--duration-slow) var(--ease-sharp);
++}
++
++.modal-header {
++  padding: var(--space-5) var(--space-6);
++  border-bottom: 1px solid var(--color-border-hairline);
++  display: flex;
++  align-items: center;
++  justify-content: space-between;
++}
++
++.modal-body {
++  padding: var(--space-6);
++}
++
++.modal-footer {
++  padding: var(--space-4) var(--space-6);
++  border-top: 1px solid var(--color-border-hairline);
++  display: flex;
++  justify-content: flex-end;
++  gap: var(--space-3);
++}
++
++/* --- Tooltip --- */
++.tooltip {
++  position: absolute;
++  font-family: var(--font-mono);
++  font-size: var(--size-2xs);
++  letter-spacing: var(--tracking-wide);
++  color: var(--color-text-secondary);
++  background-color: var(--color-bg-active);
++  border: 1px solid var(--color-border-default);
++  border-radius: var(--radius-sm);
++  padding: 4px var(--space-2);
++  white-space: nowrap;
++  box-shadow: var(--elevation-2);
++  pointer-events: none;
++  z-index: 100;
++}
++
++/* --- Cursor blink — the ambient pulse of the interface --- */
++.cursor {
++  display: inline-block;
++  width: 2px;
++  height: 1.1em;
++  background-color: var(--color-accent-blue);
++  border-radius: var(--radius-sm);
++  margin-left: 1px;
++  animation: cursorBlink 1.1s step-end infinite;
++}
++
++/* Thinking state — distributed luminescence */
++.thinking-indicator {
++  display: flex;
++  align-items: center;
++  gap: var(--space-2);
++}
++
++.thinking-dot {
++  width: 4px;
++  height: 4px;
++  border-radius: var(--radius-full);
++  background-color: var(--color-accent-violet);
++  animation: thinkingPulse 1.4s ease-in-out infinite;
++}
++
++.thinking-dot:nth-child(2) { animation-delay: 0.2s; }
++.thinking-dot:nth-child(3) { animation-delay: 0.4s; }
++
++/* --- Progress / Loading bar --- */
++.progress-track {
++  width: 100%;
++  height: 2px;
++  background-color: var(--color-bg-elevated);
++  border-radius: var(--radius-full);
++  overflow: hidden;
++}
++
++.progress-fill {
++  height: 100%;
++  background: linear-gradient(90deg, var(--color-accent-blue) 0%, var(--color-accent-violet) 100%);
++  border-radius: var(--radius-full);
++  transition: width var(--duration-slow) var(--ease-smooth);
++}
++
++.progress-indeterminate .progress-fill {
++  width: 40%;
++  animation: progressSweep 1.6s ease-in-out infinite;
++}
++
++
++/* ============================================================
++   STREAMLIT OVERRIDES — Map Streamlit's generated classes to the philosophy
++   ============================================================ */
++
++/* App container */
++.stApp {
++  background-color: var(--color-bg-ground) !important;
++  color: var(--color-text-primary) !important;
++  font-family: var(--font-sans) !important;
++}
++
++/* Main content area */
++.main .block-container {
++  background-color: var(--color-bg-ground) !important;
++  padding: var(--space-8) var(--space-10) !important;
++  max-width: 900px !important;
++}
++
++/* Sidebar */
++[data-testid="stSidebar"] {
++  background-color: var(--color-bg-surface) !important;
++  border-right: 1px solid var(--color-border-hairline) !important;
++}
++
++[data-testid="stSidebar"] > div {
++  padding: var(--space-4) !important;
++}
++
++/* Header / toolbar */
++header[data-testid="stHeader"] {
++  background-color: var(--color-bg-ground) !important;
++  border-bottom: 1px solid var(--color-border-hairline) !important;
++}
++
++/* Markdown text */
++.stMarkdown p {
++  color: var(--color-text-secondary) !important;
++  font-size: var(--size-md) !important;
++  line-height: var(--line-body) !important;
++}
++
++.stMarkdown h1 { color: var(--color-text-primary) !important; font-family: var(--font-sans) !important; font-size: var(--size-xl) !important; font-weight: var(--weight-medium) !important; letter-spacing: var(--tracking-tight) !important; }
++.stMarkdown h2 { color: var(--color-text-primary) !important; font-family: var(--font-sans) !important; font-size: var(--size-lg) !important; font-weight: var(--weight-medium) !important; }
++.stMarkdown h3 { color: var(--color-text-secondary) !important; font-family: var(--font-sans) !important; font-size: var(--size-md) !important; font-weight: var(--weight-medium) !important; letter-spacing: var(--tracking-wide) !important; text-transform: uppercase !important; }
++
++.stMarkdown code {
++  font-family: var(--font-mono) !important;
++  font-size: var(--size-sm) !important;
++  color: var(--color-text-code) !important;
++  background-color: var(--color-bg-elevated) !important;
++  border: 1px solid var(--color-border-hairline) !important;
++  border-radius: var(--radius-sm) !important;
++  padding: 2px 6px !important;
++}
++
++.stMarkdown pre {
++  background-color: var(--color-bg-elevated) !important;
++  border: 1px solid var(--color-border-hairline) !important;
++  border-radius: var(--radius-md) !important;
++  padding: var(--space-4) var(--space-5) !important;
++}
++
++.stMarkdown pre code {
++  background: none !important;
++  border: none !important;
++  padding: 0 !important;
++  font-size: var(--size-sm) !important;
++  color: var(--color-text-code) !important;
++}
++
++/* Chat message container */
++[data-testid="stChatMessage"] {
++  background-color: transparent !important;
++  border-bottom: 1px solid var(--color-border-hairline) !important;
++  padding: var(--space-4) 0 !important;
++}
++
++/* Human message */
++[data-testid="stChatMessage"][data-role="user"] {
++  background-color: rgba(61, 34, 16, 0.08) !important;
++  border-left: 2px solid var(--color-accent-amber) !important;
++  padding: var(--space-3) var(--space-4) !important;
++  border-radius: var(--radius-md) !important;
++}
++
++/* AI message */
++[data-testid="stChatMessage"][data-role="assistant"] {
++  padding-left: var(--space-4) !important;
++}
++
++/* Chat input */
++[data-testid="stChatInput"] {
++  background-color: var(--color-bg-elevated) !important;
++  border: 1px solid var(--color-border-default) !important;
++  border-radius: var(--radius-lg) !important;
++}
++
++[data-testid="stChatInput"] textarea {
++  background-color: transparent !important;
++  color: var(--color-text-primary) !important;
++  font-family: var(--font-mono) !important;
++  font-size: var(--size-sm) !important;
++  border: none !important;
++}
++
++[data-testid="stChatInput"]:focus-within {
++  border-color: var(--color-border-focus) !important;
++  box-shadow: var(--glow-focus) !important;
++}
++
++/* Text input */
++.stTextInput > div > div > input {
++  background-color: var(--color-bg-elevated) !important;
++  border: 1px solid var(--color-border-default) !important;
++  border-radius: var(--radius-md) !important;
++  color: var(--color-text-primary) !important;
++  font-family: var(--font-mono) !important;
++  font-size: var(--size-sm) !important;
++  padding: var(--space-2) var(--space-3) !important;
++  transition: border-color var(--duration-fast) var(--ease-smooth),
++              box-shadow var(--duration-fast) var(--ease-smooth) !important;
++}
++
++.stTextInput > div > div > input:focus {
++  border-color: var(--color-accent-blue) !important;
++  box-shadow: var(--glow-focus) !important;
++  outline: none !important;
++}
++
++/* Buttons */
++.stButton > button {
++  background-color: var(--color-bg-elevated) !important;
++  border: 1px solid var(--color-border-default) !important;
++  border-radius: var(--radius-sm) !important;
++  color: var(--color-text-secondary) !important;
++  font-family: var(--font-sans) !important;
++  font-size: var(--size-sm) !important;
++  font-weight: var(--weight-medium) !important;
++  letter-spacing: var(--tracking-wide) !important;
++  padding: var(--space-2) var(--space-4) !important;
++  transition: background-color var(--duration-fast) var(--ease-smooth),
++              color var(--duration-fast) var(--ease-smooth),
++              border-color var(--duration-fast) var(--ease-smooth) !important;
++}
++
++.stButton > button:hover {
++  background-color: var(--color-bg-active) !important;
++  color: var(--color-text-primary) !important;
++  border-color: var(--color-border-focus) !important;
++}
++
++/* Primary Streamlit button variant */
++.stButton > button[kind="primary"] {
++  background-color: var(--color-accent-blue) !important;
++  border-color: var(--color-accent-blue) !important;
++  color: var(--color-bg-ground) !important;
++}
++
++.stButton > button[kind="primary"]:hover {
++  background-color: #93B8EF !important;
++  border-color: #93B8EF !important;
++}
++
++/* Select box */
++.stSelectbox > div > div {
++  background-color: var(--color-bg-elevated) !important;
++  border: 1px solid var(--color-border-default) !important;
++  border-radius: var(--radius-md) !important;
++  color: var(--color-text-primary) !important;
++  font-family: var(--font-mono) !important;
++  font-size: var(--size-sm) !important;
++}
++
++/* Expander */
++.streamlit-expanderHeader {
++  background-color: var(--color-bg-surface) !important;
++  border: 1px solid var(--color-border-hairline) !important;
++  border-radius: var(--radius-md) !important;
++  color: var(--color-text-secondary) !important;
++  font-family: var(--font-sans) !important;
++  font-size: var(--size-sm) !important;
++}
++
++.streamlit-expanderContent {
++  background-color: var(--color-bg-surface) !important;
++  border: 1px solid var(--color-border-hairline) !important;
++  border-top: none !important;
++  border-radius: 0 0 var(--radius-md) var(--radius-md) !important;
++  padding: var(--space-4) !important;
++}
++
++/* Tabs */
++.stTabs [data-baseweb="tab-list"] {
++  background-color: transparent !important;
++  border-bottom: 1px solid var(--color-border-hairline) !important;
++  gap: 0 !important;
++}
++
++.stTabs [data-baseweb="tab"] {
++  background-color: transparent !important;
++  color: var(--color-text-tertiary) !important;
++  font-family: var(--font-mono) !important;
++  font-size: var(--size-xs) !important;
++  letter-spacing: var(--tracking-wider) !important;
++  text-transform: uppercase !important;
++  padding: var(--space-2) var(--space-4) !important;
++  border: none !important;
++  border-bottom: 2px solid transparent !important;
++  transition: color var(--duration-fast) var(--ease-smooth),
++              border-color var(--duration-fast) var(--ease-smooth) !important;
++}
++
++.stTabs [aria-selected="true"] {
++  color: var(--color-text-primary) !important;
++  border-bottom-color: var(--color-accent-blue) !important;
++}
++
++/* Metrics / KPI cards */
++[data-testid="stMetric"] {
++  background-color: var(--color-bg-surface) !important;
++  border: 1px solid var(--color-border-hairline) !important;
++  border-radius: var(--radius-lg) !important;
++  padding: var(--space-4) var(--space-5) !important;
++}
++
++[data-testid="stMetricValue"] {
++  color: var(--color-text-primary) !important;
++  font-family: var(--font-mono) !important;
++  font-size: var(--size-xl) !important;
++  font-weight: var(--weight-medium) !important;
++  letter-spacing: var(--tracking-tight) !important;
++}
++
++[data-testid="stMetricLabel"] {
++  color: var(--color-text-tertiary) !important;
++  font-family: var(--font-mono) !important;
++  font-size: var(--size-2xs) !important;
++  letter-spacing: var(--tracking-wider) !important;
++  text-transform: uppercase !important;
++}
++
++[data-testid="stMetricDelta"] {
++  font-family: var(--font-mono) !important;
++  font-size: var(--size-xs) !important;
++}
++
++/* Info / Warning / Error / Success boxes */
++[data-testid="stAlert"] {
++  border-radius: var(--radius-md) !important;
++  border-left-width: 2px !important;
++  font-family: var(--font-mono) !important;
++  font-size: var(--size-sm) !important;
++}
++
++/* Spinner */
++.stSpinner > div {
++  border-color: var(--color-accent-violet) transparent transparent transparent !important;
++}
++
++/* Progress bar */
++.stProgress > div > div > div {
++  background: linear-gradient(90deg, var(--color-accent-blue), var(--color-accent-violet)) !important;
++  border-radius: var(--radius-full) !important;
++}
++
++.stProgress > div > div {
++  background-color: var(--color-bg-elevated) !important;
++  border-radius: var(--radius-full) !important;
++}
++
++/* Slider */
++.stSlider [data-baseweb="slider"] [data-testid="stThumbValue"] {
++  color: var(--color-text-secondary) !important;
++  font-family: var(--font-mono) !important;
++  font-size: var(--size-xs) !important;
++}
++
++/* Divider */
++hr {
++  border-color: var(--color-border-hairline) !important;
++  margin: var(--space-6) 0 !important;
++}
++
++/* Dataframe / Table */
++[data-testid="stDataFrame"] {
++  border: 1px solid var(--color-border-hairline) !important;
++  border-radius: var(--radius-md) !important;
++  overflow: hidden !important;
++}
++
++/* Code blocks (st.code) */
++.stCodeBlock pre {
++  background-color: var(--color-bg-elevated) !important;
++  border: 1px solid var(--color-border-hairline) !important;
++  border-radius: var(--radius-md) !important;
++  font-family: var(--font-mono) !important;
++  font-size: var(--size-sm) !important;
++  color: var(--color-text-code) !important;
++}
++
++/* Sidebar navigation items */
++[data-testid="stSidebarNav"] a {
++  color: var(--color-text-secondary) !important;
++  font-family: var(--font-sans) !important;
++  font-size: var(--size-sm) !important;
++  border-radius: var(--radius-md) !important;
++  transition: color var(--duration-fast) var(--ease-smooth),
++              background-color var(--duration-fast) var(--ease-smooth) !important;
++}
++
++[data-testid="stSidebarNav"] a:hover {
++  color: var(--color-text-primary) !important;
++  background-color: var(--color-bg-elevated) !important;
++}
++
++
++/* ============================================================
++   UTILITY CLASSES
++   ============================================================ */
++
++/* Luminosity tiers */
++.text-primary   { color: var(--color-text-primary) !important; }
++.text-secondary { color: var(--color-text-secondary) !important; }
++.text-tertiary  { color: var(--color-text-tertiary) !important; }
++.text-disabled  { color: var(--color-text-disabled) !important; }
++
++/* Accent colors */
++.text-blue   { color: var(--color-accent-blue) !important; }
++.text-amber  { color: var(--color-accent-amber) !important; }
++.text-teal   { color: var(--color-accent-teal) !important; }
++.text-violet { color: var(--color-accent-violet) !important; }
++
++/* Font utilities */
++.font-mono   { font-family: var(--font-mono) !important; }
++.font-sans   { font-family: var(--font-sans) !important; }
++.font-serif  { font-family: var(--font-serif) !important; }
++
++/* Size utilities */
++.text-2xs { font-size: var(--size-2xs) !important; }
++.text-xs  { font-size: var(--size-xs) !important; }
++.text-sm  { font-size: var(--size-sm) !important; }
++.text-md  { font-size: var(--size-md) !important; }
++.text-lg  { font-size: var(--size-lg) !important; }
++.text-xl  { font-size: var(--size-xl) !important; }
++.text-2xl { font-size: var(--size-2xl) !important; }
++
++/* Label style (system / ambient) */
++.label {
++  font-family: var(--font-mono);
++  font-size: var(--size-2xs);
++  letter-spacing: var(--tracking-wider);
++  text-transform: uppercase;
++  color: var(--color-text-tertiary);
++}
++
++/* Glow effects (luminescence, not decoration) */
++.glow-blue   { box-shadow: 0 0 12px rgba(124, 167, 232, 0.15); }
++.glow-amber  { box-shadow: 0 0 12px rgba(200, 146, 90, 0.15); }
++.glow-violet { box-shadow: 0 0 12px rgba(155, 127, 212, 0.15); }
++
++/* Surface backgrounds */
++.bg-ground   { background-color: var(--color-bg-ground) !important; }
++.bg-surface  { background-color: var(--color-bg-surface) !important; }
++.bg-elevated { background-color: var(--color-bg-elevated) !important; }
++.bg-active   { background-color: var(--color-bg-active) !important; }
++
++/* Border utilities */
++.border           { border: 1px solid var(--color-border-hairline) !important; }
++.border-default   { border: 1px solid var(--color-border-default) !important; }
++.border-focus     { border: 1px solid var(--color-border-focus) !important; }
++
++/* Elevation */
++.elevation-0 { box-shadow: var(--elevation-0); }
++.elevation-1 { box-shadow: var(--elevation-1); }
++.elevation-2 { box-shadow: var(--elevation-2); }
++.elevation-3 { box-shadow: var(--elevation-3); }
++
++/* Spacing utilities */
++.gap-1 { gap: var(--space-1); }
++.gap-2 { gap: var(--space-2); }
++.gap-3 { gap: var(--space-3); }
++.gap-4 { gap: var(--space-4); }
++.gap-6 { gap: var(--space-6); }
++.gap-8 { gap: var(--space-8); }
++
++.p-3  { padding: var(--space-3); }
++.p-4  { padding: var(--space-4); }
++.p-5  { padding: var(--space-5); }
++.p-6  { padding: var(--space-6); }
++.p-8  { padding: var(--space-8); }
++
++.px-4 { padding-left: var(--space-4); padding-right: var(--space-4); }
++.px-6 { padding-left: var(--space-6); padding-right: var(--space-6); }
++.py-3 { padding-top: var(--space-3); padding-bottom: var(--space-3); }
++.py-4 { padding-top: var(--space-4); padding-bottom: var(--space-4); }
++
++/* Flex utilities */
++.flex         { display: flex; }
++.flex-col     { display: flex; flex-direction: column; }
++.items-center { align-items: center; }
++.items-start  { align-items: flex-start; }
++.justify-between { justify-content: space-between; }
++.justify-end  { justify-content: flex-end; }
++
++
++/* ============================================================
++   KEYFRAME ANIMATIONS
++   ============================================================ */
++
++@keyframes fadeIn {
++  from { opacity: 0; }
++  to   { opacity: 1; }
++}
++
++@keyframes slideUp {
++  from {
++    opacity: 0;
++    transform: translateY(12px);
++  }
++  to {
++    opacity: 1;
++    transform: translateY(0);
++  }
++}
++
++@keyframes cursorBlink {
++  0%, 100% { opacity: 1; }
++  50%       { opacity: 0; }
++}
++
++@keyframes thinkingPulse {
++  0%, 80%, 100% {
++    opacity: 0.2;
++    transform: scale(0.8);
++  }
++  40% {
++    opacity: 1;
++    transform: scale(1);
++  }
++}
++
++@keyframes progressSweep {
++  0%   { transform: translateX(-200%); }
++  100% { transform: translateX(350%); }
++}
++
++@keyframes luminescencePulse {
++  0%, 100% { box-shadow: 0 0 8px rgba(124, 167, 232, 0.1); }
++  50%       { box-shadow: 0 0 20px rgba(124, 167, 232, 0.25); }
++}
++
++/* Subtle ambient animation for AI response in-progress */
++.streaming {
++  animation: luminescencePulse 2s ease-in-out infinite;
++}
++
++/*
++ * — Threshold Luminism —
++ * Every property here is a functional decision.
++ * The philosophy: restraint deployed with precision.
++ * The result: an interface that disappears and lets thought speak.
++ */

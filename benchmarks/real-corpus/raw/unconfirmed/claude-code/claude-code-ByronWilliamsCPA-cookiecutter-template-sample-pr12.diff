@@ -1,0 +1,21 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index d693a12..43faf17 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -107,16 +107,6 @@ jobs:
+           }
+           echo "::endgroup::"
+ 
+-      - name: Dependency vulnerability scan
+-        run: |
+-          echo "::group::Safety Dependency Scan"
+-          # Export requirements and scan
+-          uv pip compile pyproject.toml -o requirements.txt
+-          uv run safety check -r requirements.txt || {
+-            echo "::warning::Vulnerable dependencies detected"
+-          }
+-          echo "::endgroup::"
+-
+       - name: Upload coverage
+         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+         with:

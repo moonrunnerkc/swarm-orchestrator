@@ -1,0 +1,951 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 0b842585..d48357c6 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -21,10 +21,10 @@ jobs:
+     runs-on: ${{ github.repository == 'stainless-sdks/anthropic-typescript' && 'depot-ubuntu-24.04' || 'ubuntu-latest' }}
+     if: (github.event_name == 'push' || github.event.pull_request.head.repo.fork)
+     steps:
+-      - uses: actions/checkout@v6
++      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+ 
+       - name: Set up Node
+-        uses: actions/setup-node@v4
++        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+         with:
+           node-version: '20'
+ 
+@@ -50,10 +50,10 @@ jobs:
+       contents: read
+       id-token: write
+     steps:
+-      - uses: actions/checkout@v6
++      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+ 
+       - name: Set up Node
+-        uses: actions/setup-node@v4
++        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+         with:
+           node-version: '20'
+ 
+@@ -71,7 +71,7 @@ jobs:
+           github.repository == 'stainless-sdks/anthropic-typescript' &&
+           !startsWith(github.ref, 'refs/heads/stl/')
+         id: github-oidc
+-        uses: actions/github-script@v8
++        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+         with:
+           script: core.setOutput('github_token', await core.getIDToken());
+ 
+@@ -90,10 +90,10 @@ jobs:
+     runs-on: ${{ github.repository == 'stainless-sdks/anthropic-typescript' && 'depot-ubuntu-24.04' || 'ubuntu-latest' }}
+     if: github.event_name == 'push' || github.event.pull_request.head.repo.fork
+     steps:
+-      - uses: actions/checkout@v6
++      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+ 
+       - name: Set up Node
+-        uses: actions/setup-node@v4
++        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+         with:
+           node-version: '20'
+ 
+diff --git a/.github/workflows/create-releases.yml b/.github/workflows/create-releases.yml
+index 07003fe3..873bb7d4 100644
+--- a/.github/workflows/create-releases.yml
++++ b/.github/workflows/create-releases.yml
+@@ -14,7 +14,7 @@ jobs:
+     environment: production-release
+ 
+     steps:
+-      - uses: actions/checkout@v6
++      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+ 
+       - uses: stainless-api/trigger-release-please@bb6677c5a04578eec1ccfd9e1913b5b78ed64c61 # v1.4.0
+         id: release
+@@ -24,7 +24,7 @@ jobs:
+ 
+       - name: Set up Node
+         if: ${{ steps.release.outputs.releases_created }}
+-        uses: actions/setup-node@v3
++        uses: actions/setup-node@3235b876344d2a9aa001b8d1453c930bba69e610 # v3.9.1
+         with:
+           node-version: '20'
+ 
+diff --git a/.github/workflows/publish-npm.yml b/.github/workflows/publish-npm.yml
+index d4809bef..9d486bfe 100644
+--- a/.github/workflows/publish-npm.yml
++++ b/.github/workflows/publish-npm.yml
+@@ -15,7 +15,7 @@ jobs:
+     environment: production-release
+ 
+     steps:
+-      - uses: actions/checkout@v6
++      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+ 
+       - name: Set up Node
+         uses: actions/setup-node@v4
+diff --git a/.release-please-manifest.json b/.release-please-manifest.json
+index c419b847..e284d65c 100644
+--- a/.release-please-manifest.json
++++ b/.release-please-manifest.json
+@@ -1,5 +1,5 @@
+ {
+-  ".": "0.95.2",
++  ".": "0.96.0",
+   "packages/vertex-sdk": "0.16.0",
+   "packages/bedrock-sdk": "0.29.1",
+   "packages/foundry-sdk": "0.2.3",
+diff --git a/.stats.yml b/.stats.yml
+index 5a84c2e7..0997c882 100644
+--- a/.stats.yml
++++ b/.stats.yml
+@@ -1,4 +1,4 @@
+ configured_endpoints: 97
+-openapi_spec_url: https://storage.googleapis.com/stainless-sdk-openapi-specs/anthropic/anthropic-0df2c793ea4c3ad955e8e488be39d7041a0a95e2fe144dd69ae4d9fb72835190.yml
+-openapi_spec_hash: b169b786bdf1f07d7f77f18f7b94abfa
+-config_hash: ed43b84afda7441f472a59dda6badb05
++openapi_spec_url: https://storage.googleapis.com/stainless-sdk-openapi-specs/anthropic/anthropic-9bc52c052beb11ccfff68e9d96335774c8377f914bcf36278e5774c68aa84e69.yml
++openapi_spec_hash: 3a5f6e11b9fda1c165c6f9edbdee7d90
++config_hash: ed200254fa6776c7b124706c91c80475
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 8ebda8b7..092553bd 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,5 +1,24 @@
+ # Changelog
+ 
++## 0.96.0 (2026-05-13)
++
++Full Changelog: [sdk-v0.95.2...sdk-v0.96.0](https://github.com/anthropics/anthropic-sdk-typescript/compare/sdk-v0.95.2...sdk-v0.96.0)
++
++### Features
++
++* **api:** Add BetaManagedAgentsSearchResultBlock types ([08f02f3](https://github.com/anthropics/anthropic-sdk-typescript/commit/08f02f3d0c34a9563b17af40b227acf3b105f8a3))
++* **api:** Add support for cache diagnostics beta ([eafbd6d](https://github.com/anthropics/anthropic-sdk-typescript/commit/eafbd6d78b81253c79cb861de6a9232b18eb60de))
++
++
++### Bug Fixes
++
++* **zod:** ensure only zod/v4 types are used ([#992](https://github.com/anthropics/anthropic-sdk-typescript/issues/992)) ([9e08bcc](https://github.com/anthropics/anthropic-sdk-typescript/commit/9e08bcc988697c195b31569b7519b7954aea6372))
++
++
++### Chores
++
++* **api:** spec updates ([27d64ef](https://github.com/anthropics/anthropic-sdk-typescript/commit/27d64ef828dc4ec11d44118a7ed1fcf83d67da0d))
++
+ ## 0.95.2 (2026-05-11)
+ 
+ Full Changelog: [sdk-v0.95.1...sdk-v0.95.2](https://github.com/anthropics/anthropic-sdk-typescript/compare/sdk-v0.95.1...sdk-v0.95.2)
+diff --git a/api.md b/api.md
+index 0d2b0728..c9203782 100644
+--- a/api.md
++++ b/api.md
+@@ -296,6 +296,12 @@ Types:
+ - <code><a href="./src/resources/beta/messages/messages.ts">BetaBashCodeExecutionToolResultErrorParam</a></code>
+ - <code><a href="./src/resources/beta/messages/messages.ts">BetaCacheControlEphemeral</a></code>
+ - <code><a href="./src/resources/beta/messages/messages.ts">BetaCacheCreation</a></code>
++- <code><a href="./src/resources/beta/messages/messages.ts">BetaCacheMissMessagesChanged</a></code>
++- <code><a href="./src/resources/beta/messages/messages.ts">BetaCacheMissModelChanged</a></code>
++- <code><a href="./src/resources/beta/messages/messages.ts">BetaCacheMissPreviousMessageNotFound</a></code>
++- <code><a href="./src/resources/beta/messages/messages.ts">BetaCacheMissSystemChanged</a></code>
++- <code><a href="./src/resources/beta/messages/messages.ts">BetaCacheMissToolsChanged</a></code>
++- <code><a href="./src/resources/beta/messages/messages.ts">BetaCacheMissUnavailable</a></code>
+ - <code><a href="./src/resources/beta/messages/messages.ts">BetaCitationCharLocation</a></code>
+ - <code><a href="./src/resources/beta/messages/messages.ts">BetaCitationCharLocationParam</a></code>
+ - <code><a href="./src/resources/beta/messages/messages.ts">BetaCitationConfig</a></code>
+@@ -343,6 +349,8 @@ Types:
+ - <code><a href="./src/resources/beta/messages/messages.ts">BetaContextManagementConfig</a></code>
+ - <code><a href="./src/resources/beta/messages/messages.ts">BetaContextManagementResponse</a></code>
+ - <code><a href="./src/resources/beta/messages/messages.ts">BetaCountTokensContextManagementResponse</a></code>
++- <code><a href="./src/resources/beta/messages/messages.ts">BetaDiagnostics</a></code>
++- <code><a href="./src/resources/beta/messages/messages.ts">BetaDiagnosticsParam</a></code>
+ - <code><a href="./src/resources/beta/messages/messages.ts">BetaDirectCaller</a></code>
+ - <code><a href="./src/resources/beta/messages/messages.ts">BetaDocumentBlock</a></code>
+ - <code><a href="./src/resources/beta/messages/messages.ts">BetaEncryptedCodeExecutionResultBlock</a></code>
+@@ -651,6 +659,9 @@ Types:
+ - <code><a href="./src/resources/beta/sessions/events.ts">BetaManagedAgentsRetryStatusExhausted</a></code>
+ - <code><a href="./src/resources/beta/sessions/events.ts">BetaManagedAgentsRetryStatusRetrying</a></code>
+ - <code><a href="./src/resources/beta/sessions/events.ts">BetaManagedAgentsRetryStatusTerminal</a></code>
++- <code><a href="./src/resources/beta/sessions/events.ts">BetaManagedAgentsSearchResultBlock</a></code>
++- <code><a href="./src/resources/beta/sessions/events.ts">BetaManagedAgentsSearchResultCitations</a></code>
++- <code><a href="./src/resources/beta/sessions/events.ts">BetaManagedAgentsSearchResultContent</a></code>
+ - <code><a href="./src/resources/beta/sessions/events.ts">BetaManagedAgentsSendSessionEvents</a></code>
+ - <code><a href="./src/resources/beta/sessions/events.ts">BetaManagedAgentsSessionDeletedEvent</a></code>
+ - <code><a href="./src/resources/beta/sessions/events.ts">BetaManagedAgentsSessionEndTurn</a></code>
+diff --git a/examples/structured-outputs-streaming.ts b/examples/structured-outputs-streaming.ts
+index 5dfb6d0a..dca8fe1b 100755
+--- a/examples/structured-outputs-streaming.ts
++++ b/examples/structured-outputs-streaming.ts
+@@ -2,7 +2,7 @@
+ 
+ import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
+ import Anthropic from '@anthropic-ai/sdk';
+-import { z } from 'zod';
++import { z } from 'zod/v4';
+ 
+ const WeatherResponse = z.object({
+   city: z.string(),
+diff --git a/examples/structured-outputs-zod.ts b/examples/structured-outputs-zod.ts
+index b3077295..ec259bff 100755
+--- a/examples/structured-outputs-zod.ts
++++ b/examples/structured-outputs-zod.ts
+@@ -2,7 +2,7 @@
+ 
+ import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
+ import Anthropic from '@anthropic-ai/sdk';
+-import { z } from 'zod';
++import { z } from 'zod/v4';
+ 
+ const NumbersResponse = z.object({
+   primes: z.array(z.number()),
+diff --git a/examples/tools-helpers-advanced-streaming.ts b/examples/tools-helpers-advanced-streaming.ts
+index 8ffb3ec7..8ab48b32 100755
+--- a/examples/tools-helpers-advanced-streaming.ts
++++ b/examples/tools-helpers-advanced-streaming.ts
+@@ -3,7 +3,7 @@
+ import Anthropic from '@anthropic-ai/sdk';
+ import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
+ import { BetaToolUseBlock } from '@anthropic-ai/sdk/resources/beta';
+-import { z } from 'zod';
++import { z } from 'zod/v4';
+ 
+ const client = new Anthropic();
+ 
+diff --git a/examples/tools-helpers-advanced.ts b/examples/tools-helpers-advanced.ts
+index 056af0d7..43d086f1 100755
+--- a/examples/tools-helpers-advanced.ts
++++ b/examples/tools-helpers-advanced.ts
+@@ -3,7 +3,7 @@
+ import Anthropic from '@anthropic-ai/sdk';
+ import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
+ import { BetaToolUseBlock } from '@anthropic-ai/sdk/resources/beta';
+-import { z } from 'zod';
++import { z } from 'zod/v4';
+ 
+ const client = new Anthropic();
+ 
+diff --git a/examples/tools-helpers-zod.ts b/examples/tools-helpers-zod.ts
+index 0ef7adec..e99deb96 100755
+--- a/examples/tools-helpers-zod.ts
++++ b/examples/tools-helpers-zod.ts
+@@ -2,7 +2,7 @@
+ 
+ import Anthropic from '@anthropic-ai/sdk';
+ import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
+-import { z } from 'zod';
++import { z } from 'zod/v4';
+ 
+ const client = new Anthropic();
+ 
+diff --git a/helpers.md b/helpers.md
+index f0330cae..7d3acaed 100644
+--- a/helpers.md
++++ b/helpers.md
+@@ -108,7 +108,7 @@ The SDK provides helpers for parsing structured JSON outputs from Claude using J
+ ```ts
+ import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
+ import Anthropic from '@anthropic-ai/sdk';
+-import { z } from 'zod';
++import { z } from 'zod/v4';
+ 
+ const client = new Anthropic();
+ 
+@@ -183,7 +183,7 @@ The SDK provides helper functions to create runnable tools that can be automatic
+ 
+ ```ts
+ import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
+-import { z } from 'zod';
++import { z } from 'zod/v4';
+ 
+ const weatherTool = betaZodTool({
+   name: 'get_weather',
+diff --git a/package.json b/package.json
+index 7f9f2e5b..9cb4484f 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "@anthropic-ai/sdk",
+-  "version": "0.95.2",
++  "version": "0.96.0",
+   "description": "The official TypeScript library for the Anthropic API",
+   "author": "Anthropic <support@anthropic.com>",
+   "types": "dist/index.d.ts",
+diff --git a/packages/vertex-sdk/yarn.lock b/packages/vertex-sdk/yarn.lock
+index c8c3d6ca..a4ed3490 100644
+--- a/packages/vertex-sdk/yarn.lock
++++ b/packages/vertex-sdk/yarn.lock
+@@ -17,7 +17,7 @@
+ 
+ "@anthropic-ai/sdk@file:../../dist":
+   # x-release-please-start-version
+-  version "0.95.2"
++  version "0.96.0"
+   # x-release-please-end-version
+   dependencies:
+     json-schema-to-ts "^3.1.1"
+diff --git a/src/helpers/beta/zod.ts b/src/helpers/beta/zod.ts
+index 452a28d6..c1acf524 100644
+--- a/src/helpers/beta/zod.ts
++++ b/src/helpers/beta/zod.ts
+@@ -1,5 +1,4 @@
+ import { transformJSONSchema } from '../..//lib/transform-json-schema';
+-import type { infer as zodInfer, ZodType } from 'zod';
+ import * as z from 'zod/v4';
+ import { AnthropicError } from '../../core/error';
+ import { AutoParseableBetaOutputFormat } from '../../lib/beta-parser';
+@@ -14,9 +13,9 @@ import { BetaToolResultContentBlockParam } from '../../resources/beta';
+  * This can be passed directly to the `.create()` method but will not
+  * result in any automatic parsing, you'll have to parse the response yourself.
+  */
+-export function betaZodOutputFormat<ZodInput extends ZodType>(
++export function betaZodOutputFormat<ZodInput extends z.ZodType>(
+   zodObject: ZodInput,
+-): AutoParseableBetaOutputFormat<zodInfer<ZodInput>> {
++): AutoParseableBetaOutputFormat<z.infer<ZodInput>> {
+   let jsonSchema = z.toJSONSchema(zodObject, { reused: 'ref' });
+ 
+   jsonSchema = transformJSONSchema(jsonSchema);
+@@ -46,15 +45,15 @@ export function betaZodOutputFormat<ZodInput extends ZodType>(
+  * converted into JSON Schema when passed to the API. The provided function's
+  * input arguments will also be validated against the provided schema.
+  */
+-export function betaZodTool<InputSchema extends ZodType>(options: {
++export function betaZodTool<InputSchema extends z.ZodType>(options: {
+   name: string;
+   inputSchema: InputSchema;
+   description: string;
+   run: (
+-    args: zodInfer<InputSchema>,
++    args: z.infer<InputSchema>,
+     context?: BetaToolRunContext,
+   ) => Promisable<string | Array<BetaToolResultContentBlockParam>>;
+-}): BetaRunnableTool<zodInfer<InputSchema>> {
++}): BetaRunnableTool<z.infer<InputSchema>> {
+   const jsonSchema = z.toJSONSchema(options.inputSchema, { reused: 'ref' });
+ 
+   if (jsonSchema.type !== 'object') {
+@@ -70,6 +69,6 @@ export function betaZodTool<InputSchema extends ZodType>(options: {
+     input_schema: objectSchema,
+     description: options.description,
+     run: options.run,
+-    parse: (args: unknown) => options.inputSchema.parse(args) as zodInfer<InputSchema>,
++    parse: (args: unknown) => options.inputSchema.parse(args) as z.infer<InputSchema>,
+   };
+ }
+diff --git a/src/helpers/zod.ts b/src/helpers/zod.ts
+index 57be86a3..606d5123 100644
+--- a/src/helpers/zod.ts
++++ b/src/helpers/zod.ts
+@@ -1,5 +1,4 @@
+ import { transformJSONSchema } from '../lib/transform-json-schema';
+-import type { infer as zodInfer, ZodType } from 'zod';
+ import * as z from 'zod/v4';
+ import { AnthropicError } from '../core/error';
+ import { AutoParseableOutputFormat } from '../lib/parser';
+@@ -13,9 +12,9 @@ import { AutoParseableOutputFormat } from '../lib/parser';
+  * This can be passed directly to the `.create()` method but will not
+  * result in any automatic parsing, you'll have to parse the response yourself.
+  */
+-export function zodOutputFormat<ZodInput extends ZodType>(
++export function zodOutputFormat<ZodInput extends z.ZodType>(
+   zodObject: ZodInput,
+-): AutoParseableOutputFormat<zodInfer<ZodInput>> {
++): AutoParseableOutputFormat<z.infer<ZodInput>> {
+   let jsonSchema = z.toJSONSchema(zodObject, { reused: 'ref' });
+ 
+   jsonSchema = transformJSONSchema(jsonSchema);
+diff --git a/src/resources/beta/beta.ts b/src/resources/beta/beta.ts
+index 52492d79..2fbe6c42 100644
+--- a/src/resources/beta/beta.ts
++++ b/src/resources/beta/beta.ts
+@@ -171,6 +171,12 @@ import {
+   BetaBashCodeExecutionToolResultErrorParam,
+   BetaCacheControlEphemeral,
+   BetaCacheCreation,
++  BetaCacheMissMessagesChanged,
++  BetaCacheMissModelChanged,
++  BetaCacheMissPreviousMessageNotFound,
++  BetaCacheMissSystemChanged,
++  BetaCacheMissToolsChanged,
++  BetaCacheMissUnavailable,
+   BetaCitationCharLocation,
+   BetaCitationCharLocationParam,
+   BetaCitationConfig,
+@@ -218,6 +224,8 @@ import {
+   BetaContextManagementConfig,
+   BetaContextManagementResponse,
+   BetaCountTokensContextManagementResponse,
++  BetaDiagnostics,
++  BetaDiagnosticsParam,
+   BetaDirectCaller,
+   BetaDocumentBlock,
+   BetaEncryptedCodeExecutionResultBlock,
+@@ -448,7 +456,8 @@ export type AnthropicBeta =
+   | 'output-300k-2026-03-24'
+   | 'user-profiles-2026-03-24'
+   | 'advisor-tool-2026-03-01'
+-  | 'managed-agents-2026-04-01';
++  | 'managed-agents-2026-04-01'
++  | 'cache-diagnosis-2026-04-07';
+ 
+ export interface BetaAPIError {
+   message: string;
+@@ -590,6 +599,12 @@ export declare namespace Beta {
+     type BetaBashCodeExecutionToolResultErrorParam as BetaBashCodeExecutionToolResultErrorParam,
+     type BetaCacheControlEphemeral as BetaCacheControlEphemeral,
+     type BetaCacheCreation as BetaCacheCreation,
++    type BetaCacheMissMessagesChanged as BetaCacheMissMessagesChanged,
++    type BetaCacheMissModelChanged as BetaCacheMissModelChanged,
++    type BetaCacheMissPreviousMessageNotFound as BetaCacheMissPreviousMessageNotFound,
++    type BetaCacheMissSystemChanged as BetaCacheMissSystemChanged,
++    type BetaCacheMissToolsChanged as BetaCacheMissToolsChanged,
++    type BetaCacheMissUnavailable as BetaCacheMissUnavailable,
+     type BetaCitationCharLocation as BetaCitationCharLocation,
+     type BetaCitationCharLocationParam as BetaCitationCharLocationParam,
+     type BetaCitationConfig as BetaCitationConfig,
+@@ -637,6 +652,8 @@ export declare namespace Beta {
+     type BetaContextManagementConfig as BetaContextManagementConfig,
+     type BetaContextManagementResponse as BetaContextManagementResponse,
+     type BetaCountTokensContextManagementResponse as BetaCountTokensContextManagementResponse,
++    type BetaDiagnostics as BetaDiagnostics,
++    type BetaDiagnosticsParam as BetaDiagnosticsParam,
+     type BetaDirectCaller as BetaDirectCaller,
+     type BetaDocumentBlock as BetaDocumentBlock,
+     type BetaEncryptedCodeExecutionResultBlock as BetaEncryptedCodeExecutionResultBlock,
+diff --git a/src/resources/beta/index.ts b/src/resources/beta/index.ts
+index 54dcf969..b842ecaa 100644
+--- a/src/resources/beta/index.ts
++++ b/src/resources/beta/index.ts
+@@ -124,6 +124,12 @@ export {
+   type BetaBashCodeExecutionToolResultErrorParam,
+   type BetaCacheControlEphemeral,
+   type BetaCacheCreation,
++  type BetaCacheMissMessagesChanged,
++  type BetaCacheMissModelChanged,
++  type BetaCacheMissPreviousMessageNotFound,
++  type BetaCacheMissSystemChanged,
++  type BetaCacheMissToolsChanged,
++  type BetaCacheMissUnavailable,
+   type BetaCitationCharLocation,
+   type BetaCitationCharLocationParam,
+   type BetaCitationConfig,
+@@ -171,6 +177,8 @@ export {
+   type BetaContextManagementConfig,
+   type BetaContextManagementResponse,
+   type BetaCountTokensContextManagementResponse,
++  type BetaDiagnostics,
++  type BetaDiagnosticsParam,
+   type BetaDirectCaller,
+   type BetaDocumentBlock,
+   type BetaEncryptedCodeExecutionResultBlock,
+diff --git a/src/resources/beta/messages/batches.ts b/src/resources/beta/messages/batches.ts
+index 1122a99a..cf1f347e 100644
+--- a/src/resources/beta/messages/batches.ts
++++ b/src/resources/beta/messages/batches.ts
+@@ -563,6 +563,12 @@ export namespace BatchCreateParams {
+        */
+       context_management?: BetaMessagesAPI.BetaContextManagementConfig | null;
+ 
++      /**
++       * Request-level diagnostics. Currently carries the previous response id for
++       * prompt-cache divergence reporting.
++       */
++      diagnostics?: BetaMessagesAPI.BetaDiagnosticsParam | null;
++
+       /**
+        * Specifies the geographic region for inference processing. If not specified, the
+        * workspace's `default_inference_geo` is used.
+diff --git a/src/resources/beta/messages/index.ts b/src/resources/beta/messages/index.ts
+index 0a81f8e6..77942b25 100644
+--- a/src/resources/beta/messages/index.ts
++++ b/src/resources/beta/messages/index.ts
+@@ -44,6 +44,12 @@ export {
+   type BetaBashCodeExecutionToolResultErrorParam,
+   type BetaCacheControlEphemeral,
+   type BetaCacheCreation,
++  type BetaCacheMissMessagesChanged,
++  type BetaCacheMissModelChanged,
++  type BetaCacheMissPreviousMessageNotFound,
++  type BetaCacheMissSystemChanged,
++  type BetaCacheMissToolsChanged,
++  type BetaCacheMissUnavailable,
+   type BetaCitationCharLocation,
+   type BetaCitationCharLocationParam,
+   type BetaCitationConfig,
+@@ -91,6 +97,8 @@ export {
+   type BetaContextManagementConfig,
+   type BetaContextManagementResponse,
+   type BetaCountTokensContextManagementResponse,
++  type BetaDiagnostics,
++  type BetaDiagnosticsParam,
+   type BetaDirectCaller,
+   type BetaDocumentBlock,
+   type BetaEncryptedCodeExecutionResultBlock,
+diff --git a/src/resources/beta/messages/messages.ts b/src/resources/beta/messages/messages.ts
+index b1375dda..b5687648 100644
+--- a/src/resources/beta/messages/messages.ts
++++ b/src/resources/beta/messages/messages.ts
+@@ -562,6 +562,54 @@ export interface BetaCacheCreation {
+   ephemeral_5m_input_tokens: number;
+ }
+ 
++export interface BetaCacheMissMessagesChanged {
++  /**
++   * Approximate number of input tokens that would have been read from cache had the
++   * prefix matched the previous request.
++   */
++  cache_missed_input_tokens: number;
++
++  type: 'messages_changed';
++}
++
++export interface BetaCacheMissModelChanged {
++  /**
++   * Approximate number of input tokens that would have been read from cache had the
++   * prefix matched the previous request.
++   */
++  cache_missed_input_tokens: number;
++
++  type: 'model_changed';
++}
++
++export interface BetaCacheMissPreviousMessageNotFound {
++  type: 'previous_message_not_found';
++}
++
++export interface BetaCacheMissSystemChanged {
++  /**
++   * Approximate number of input tokens that would have been read from cache had the
++   * prefix matched the previous request.
++   */
++  cache_missed_input_tokens: number;
++
++  type: 'system_changed';
++}
++
++export interface BetaCacheMissToolsChanged {
++  /**
++   * Approximate number of input tokens that would have been read from cache had the
++   * prefix matched the previous request.
++   */
++  cache_missed_input_tokens: number;
++
++  type: 'tools_changed';
++}
++
++export interface BetaCacheMissUnavailable {
++  type: 'unavailable';
++}
++
+ export interface BetaCitationCharLocation {
+   cited_text: string;
+ 
+@@ -1330,6 +1378,42 @@ export interface BetaCountTokensContextManagementResponse {
+   original_input_tokens: number;
+ }
+ 
++/**
++ * Response envelope for request-level diagnostics. Present (possibly null)
++ * whenever the caller supplied `diagnostics` on the request.
++ */
++export interface BetaDiagnostics {
++  /**
++   * Explains why the prompt cache could not fully reuse the prefix from the request
++   * identified by `diagnostics.previous_message_id`. `null` means diagnosis is still
++   * pending — the response was serialized before the background comparison
++   * completed.
++   */
++  cache_miss_reason:
++    | BetaCacheMissModelChanged
++    | BetaCacheMissSystemChanged
++    | BetaCacheMissToolsChanged
++    | BetaCacheMissMessagesChanged
++    | BetaCacheMissPreviousMessageNotFound
++    | BetaCacheMissUnavailable
++    | null;
++}
++
++/**
++ * Request-level diagnostics. Currently carries the previous response id for
++ * prompt-cache divergence reporting.
++ */
++export interface BetaDiagnosticsParam {
++  /**
++   * The `id` (`msg_...`) from this client's previous /v1/messages response. The
++   * server compares that request's prompt fingerprint against this one and returns
++   * `diagnostics.cache_miss_reason` when the prompt-cache prefix could not be
++   * reused. Pass `null` on the first turn to opt in without a prior message to
++   * compare.
++   */
++  previous_message_id?: string | null;
++}
++
+ /**
+  * Tool invocation directly from the model.
+  */
+@@ -1746,6 +1830,12 @@ export interface BetaMessage {
+    */
+   context_management: BetaContextManagementResponse | null;
+ 
++  /**
++   * Response envelope for request-level diagnostics. Present (possibly null)
++   * whenever the caller supplied `diagnostics` on the request.
++   */
++  diagnostics: BetaDiagnostics | null;
++
+   /**
+    * The model that will complete your prompt.\n\nSee
+    * [models](https://docs.anthropic.com/en/docs/models-overview) for additional
+@@ -3947,6 +4037,12 @@ export interface MessageCreateParamsBase {
+    */
+   context_management?: BetaContextManagementConfig | null;
+ 
++  /**
++   * Body param: Request-level diagnostics. Currently carries the previous response
++   * id for prompt-cache divergence reporting.
++   */
++  diagnostics?: BetaDiagnosticsParam | null;
++
+   /**
+    * Body param: Specifies the geographic region for inference processing. If not
+    * specified, the workspace's `default_inference_geo` is used.
+@@ -4465,6 +4561,12 @@ export declare namespace Messages {
+     type BetaBashCodeExecutionToolResultErrorParam as BetaBashCodeExecutionToolResultErrorParam,
+     type BetaCacheControlEphemeral as BetaCacheControlEphemeral,
+     type BetaCacheCreation as BetaCacheCreation,
++    type BetaCacheMissMessagesChanged as BetaCacheMissMessagesChanged,
++    type BetaCacheMissModelChanged as BetaCacheMissModelChanged,
++    type BetaCacheMissPreviousMessageNotFound as BetaCacheMissPreviousMessageNotFound,
++    type BetaCacheMissSystemChanged as BetaCacheMissSystemChanged,
++    type BetaCacheMissToolsChanged as BetaCacheMissToolsChanged,
++    type BetaCacheMissUnavailable as BetaCacheMissUnavailable,
+     type BetaCitationCharLocation as BetaCitationCharLocation,
+     type BetaCitationCharLocationParam as BetaCitationCharLocationParam,
+     type BetaCitationConfig as BetaCitationConfig,
+@@ -4512,6 +4614,8 @@ export declare namespace Messages {
+     type BetaContextManagementConfig as BetaContextManagementConfig,
+     type BetaContextManagementResponse as BetaContextManagementResponse,
+     type BetaCountTokensContextManagementResponse as BetaCountTokensContextManagementResponse,
++    type BetaDiagnostics as BetaDiagnostics,
++    type BetaDiagnosticsParam as BetaDiagnosticsParam,
+     type BetaDirectCaller as BetaDirectCaller,
+     type BetaDocumentBlock as BetaDocumentBlock,
+     type BetaEncryptedCodeExecutionResultBlock as BetaEncryptedCodeExecutionResultBlock,
+diff --git a/src/resources/beta/sessions/events.ts b/src/resources/beta/sessions/events.ts
+index 0fa9e35b..bd7490df 100644
+--- a/src/resources/beta/sessions/events.ts
++++ b/src/resources/beta/sessions/events.ts
+@@ -172,7 +172,12 @@ export interface BetaManagedAgentsAgentMCPToolResultEvent {
+   /**
+    * The result content returned by the tool.
+    */
+-  content?: Array<BetaManagedAgentsTextBlock | BetaManagedAgentsImageBlock | BetaManagedAgentsDocumentBlock>;
++  content?: Array<
++    | BetaManagedAgentsTextBlock
++    | BetaManagedAgentsImageBlock
++    | BetaManagedAgentsDocumentBlock
++    | BetaManagedAgentsSearchResultBlock
++  >;
+ 
+   /**
+    * Whether the tool execution resulted in an error.
+@@ -374,7 +379,12 @@ export interface BetaManagedAgentsAgentToolResultEvent {
+   /**
+    * The result content returned by the tool.
+    */
+-  content?: Array<BetaManagedAgentsTextBlock | BetaManagedAgentsImageBlock | BetaManagedAgentsDocumentBlock>;
++  content?: Array<
++    | BetaManagedAgentsTextBlock
++    | BetaManagedAgentsImageBlock
++    | BetaManagedAgentsDocumentBlock
++    | BetaManagedAgentsSearchResultBlock
++  >;
+ 
+   /**
+    * Whether the tool execution resulted in an error.
+@@ -732,6 +742,55 @@ export interface BetaManagedAgentsRetryStatusTerminal {
+   type: 'terminal';
+ }
+ 
++/**
++ * A block containing a web search result.
++ */
++export interface BetaManagedAgentsSearchResultBlock {
++  /**
++   * Citation settings for a search result.
++   */
++  citations: BetaManagedAgentsSearchResultCitations;
++
++  /**
++   * Array of text content blocks from the search result.
++   */
++  content: Array<BetaManagedAgentsSearchResultContent>;
++
++  /**
++   * The URL source of the search result.
++   */
++  source: string;
++
++  /**
++   * The title of the search result.
++   */
++  title: string;
++
++  type: 'search_result';
++}
++
++/**
++ * Citation settings for a search result.
++ */
++export interface BetaManagedAgentsSearchResultCitations {
++  /**
++   * Whether citations are enabled for this search result.
++   */
++  enabled: boolean;
++}
++
++/**
++ * Text content within a search result.
++ */
++export interface BetaManagedAgentsSearchResultContent {
++  /**
++   * The text content.
++   */
++  text: string;
++
++  type: 'text';
++}
++
+ /**
+  * Events that were successfully sent to the session.
+  */
+@@ -1428,7 +1487,12 @@ export interface BetaManagedAgentsUserCustomToolResultEvent {
+   /**
+    * The result content returned by the tool.
+    */
+-  content?: Array<BetaManagedAgentsTextBlock | BetaManagedAgentsImageBlock | BetaManagedAgentsDocumentBlock>;
++  content?: Array<
++    | BetaManagedAgentsTextBlock
++    | BetaManagedAgentsImageBlock
++    | BetaManagedAgentsDocumentBlock
++    | BetaManagedAgentsSearchResultBlock
++  >;
+ 
+   /**
+    * Whether the tool execution resulted in an error.
+@@ -1464,7 +1528,12 @@ export interface BetaManagedAgentsUserCustomToolResultEventParams {
+   /**
+    * The result content returned by the tool.
+    */
+-  content?: Array<BetaManagedAgentsTextBlock | BetaManagedAgentsImageBlock | BetaManagedAgentsDocumentBlock>;
++  content?: Array<
++    | BetaManagedAgentsTextBlock
++    | BetaManagedAgentsImageBlock
++    | BetaManagedAgentsDocumentBlock
++    | BetaManagedAgentsSearchResultBlock
++  >;
+ 
+   /**
+    * Whether the tool execution resulted in an error.
+@@ -1765,6 +1834,9 @@ export declare namespace Events {
+     type BetaManagedAgentsRetryStatusExhausted as BetaManagedAgentsRetryStatusExhausted,
+     type BetaManagedAgentsRetryStatusRetrying as BetaManagedAgentsRetryStatusRetrying,
+     type BetaManagedAgentsRetryStatusTerminal as BetaManagedAgentsRetryStatusTerminal,
++    type BetaManagedAgentsSearchResultBlock as BetaManagedAgentsSearchResultBlock,
++    type BetaManagedAgentsSearchResultCitations as BetaManagedAgentsSearchResultCitations,
++    type BetaManagedAgentsSearchResultContent as BetaManagedAgentsSearchResultContent,
+     type BetaManagedAgentsSendSessionEvents as BetaManagedAgentsSendSessionEvents,
+     type BetaManagedAgentsSessionDeletedEvent as BetaManagedAgentsSessionDeletedEvent,
+     type BetaManagedAgentsSessionEndTurn as BetaManagedAgentsSessionEndTurn,
+diff --git a/src/resources/beta/sessions/index.ts b/src/resources/beta/sessions/index.ts
+index 4dbf9c74..49cf7e52 100644
+--- a/src/resources/beta/sessions/index.ts
++++ b/src/resources/beta/sessions/index.ts
+@@ -31,6 +31,9 @@ export {
+   type BetaManagedAgentsRetryStatusExhausted,
+   type BetaManagedAgentsRetryStatusRetrying,
+   type BetaManagedAgentsRetryStatusTerminal,
++  type BetaManagedAgentsSearchResultBlock,
++  type BetaManagedAgentsSearchResultCitations,
++  type BetaManagedAgentsSearchResultContent,
+   type BetaManagedAgentsSendSessionEvents,
+   type BetaManagedAgentsSessionDeletedEvent,
+   type BetaManagedAgentsSessionEndTurn,
+diff --git a/src/resources/beta/sessions/sessions.ts b/src/resources/beta/sessions/sessions.ts
+index 8fc4f76d..bd257bc0 100644
+--- a/src/resources/beta/sessions/sessions.ts
++++ b/src/resources/beta/sessions/sessions.ts
+@@ -34,6 +34,9 @@ import {
+   BetaManagedAgentsRetryStatusExhausted,
+   BetaManagedAgentsRetryStatusRetrying,
+   BetaManagedAgentsRetryStatusTerminal,
++  BetaManagedAgentsSearchResultBlock,
++  BetaManagedAgentsSearchResultCitations,
++  BetaManagedAgentsSearchResultContent,
+   BetaManagedAgentsSendSessionEvents,
+   BetaManagedAgentsSessionDeletedEvent,
+   BetaManagedAgentsSessionEndTurn,
+@@ -480,9 +483,9 @@ export interface BetaManagedAgentsOutcomeEvaluationResource {
+   outcome_id: string;
+ 
+   /**
+-   * Current evaluation state. 'pending' before the agent begins work; 'running'
+-   * while producing or revising; 'evaluating' while the grader scores;
+-   * 'satisfied'/'max_iterations_reached'/'failed'/'interrupted' are terminal.
++   * Current evaluation state. `pending` before the agent begins work; `running`
++   * while producing or revising; `evaluating` while the grader scores;
++   * `satisfied`/`max_iterations_reached`/`failed`/`interrupted` are terminal.
+    */
+   result: string;
+ 
+@@ -864,6 +867,9 @@ export declare namespace Sessions {
+     type BetaManagedAgentsRetryStatusExhausted as BetaManagedAgentsRetryStatusExhausted,
+     type BetaManagedAgentsRetryStatusRetrying as BetaManagedAgentsRetryStatusRetrying,
+     type BetaManagedAgentsRetryStatusTerminal as BetaManagedAgentsRetryStatusTerminal,
++    type BetaManagedAgentsSearchResultBlock as BetaManagedAgentsSearchResultBlock,
++    type BetaManagedAgentsSearchResultCitations as BetaManagedAgentsSearchResultCitations,
++    type BetaManagedAgentsSearchResultContent as BetaManagedAgentsSearchResultContent,
+     type BetaManagedAgentsSendSessionEvents as BetaManagedAgentsSendSessionEvents,
+     type BetaManagedAgentsSessionDeletedEvent as BetaManagedAgentsSessionDeletedEvent,
+     type BetaManagedAgentsSessionEndTurn as BetaManagedAgentsSessionEndTurn,
+diff --git a/src/version.ts b/src/version.ts
+index f2f956c4..b75d8d52 100644
+--- a/src/version.ts
++++ b/src/version.ts
+@@ -1 +1 @@
+-export const VERSION = '0.95.2'; // x-release-please-version
++export const VERSION = '0.96.0'; // x-release-please-version
+diff --git a/tests/api-resources/beta/messages/batches.test.ts b/tests/api-resources/beta/messages/batches.test.ts
+index 718975eb..6e41b383 100644
+--- a/tests/api-resources/beta/messages/batches.test.ts
++++ b/tests/api-resources/beta/messages/batches.test.ts
+@@ -63,6 +63,7 @@ describe('resource batches', () => {
+                 },
+               ],
+             },
++            diagnostics: { previous_message_id: 'previous_message_id' },
+             inference_geo: 'inference_geo',
+             mcp_servers: [
+               {
+diff --git a/tests/api-resources/beta/messages/messages.test.ts b/tests/api-resources/beta/messages/messages.test.ts
+index 67b1eb63..5a3a0d46 100644
+--- a/tests/api-resources/beta/messages/messages.test.ts
++++ b/tests/api-resources/beta/messages/messages.test.ts
+@@ -51,6 +51,7 @@ describe('resource messages', () => {
+           },
+         ],
+       },
++      diagnostics: { previous_message_id: 'previous_message_id' },
+       inference_geo: 'inference_geo',
+       mcp_servers: [
+         {
+diff --git a/tests/helpers/beta/zod.test.ts b/tests/helpers/beta/zod.test.ts
+index 370a8361..0451b727 100644
+--- a/tests/helpers/beta/zod.test.ts
++++ b/tests/helpers/beta/zod.test.ts
+@@ -1,4 +1,4 @@
+-import * as z from 'zod';
++import * as z from 'zod/v4';
+ import { betaZodTool } from '../../../src/helpers/beta/zod';
+ 
+ describe('zod helpers', () => {
+diff --git a/tests/helpers/zod.test.ts b/tests/helpers/zod.test.ts
+index 9285ded5..14ea8457 100644
+--- a/tests/helpers/zod.test.ts
++++ b/tests/helpers/zod.test.ts
+@@ -1,4 +1,4 @@
+-import { z } from 'zod';
++import { z } from 'zod/v4';
+ import { betaZodOutputFormat } from '../../src/helpers/beta/zod';
+ import { zodOutputFormat } from '../../src/helpers/zod';
+ 
+diff --git a/tests/lib/parser.test.ts b/tests/lib/parser.test.ts
+index d5046f35..5de89b11 100644
+--- a/tests/lib/parser.test.ts
++++ b/tests/lib/parser.test.ts
+@@ -1,6 +1,6 @@
+ import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
+ import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
+-import { z } from 'zod';
++import { z } from 'zod/v4';
+ import { AnthropicError } from '../../src/core/error';
+ import {
+   BetaParseableMessageCreateParams,
+@@ -75,6 +75,7 @@ describe('Beta Parser', () => {
+         },
+       ],
+       context_management: null,
++      diagnostics: null,
+       stop_details: null,
+       stop_reason: 'end_turn',
+       stop_sequence: null,
+@@ -253,6 +254,7 @@ describe('Beta Parser', () => {
+         },
+       ],
+       context_management: null,
++      diagnostics: null,
+       stop_details: null,
+       stop_reason: 'end_turn',
+       stop_sequence: null,
+diff --git a/tests/lib/tools/ToolRunner.test.ts b/tests/lib/tools/ToolRunner.test.ts
+index 8c454451..22edce4b 100644
+--- a/tests/lib/tools/ToolRunner.test.ts
++++ b/tests/lib/tools/ToolRunner.test.ts
+@@ -103,6 +103,7 @@ function betaMessageToStreamEvents(message: BetaMessage): BetaRawMessageStreamEv
+       stop_sequence: null,
+       container: null,
+       context_management: null,
++      diagnostics: null,
+       usage: {
+         cache_creation: null,
+         cache_creation_input_tokens: null,
+@@ -234,6 +235,7 @@ function setupTest(params: Partial<ToolRunnerParams> = {}): SetupTestResult<bool
+       stop_sequence: null,
+       container: null,
+       context_management: null,
++      diagnostics: null,
+       usage: {
+         input_tokens: 10,
+         output_tokens: 20,
+@@ -271,6 +273,7 @@ function setupTest(params: Partial<ToolRunnerParams> = {}): SetupTestResult<bool
+       stop_sequence: null,
+       container: null,
+       context_management: null,
++      diagnostics: null,
+       usage: {
+         input_tokens: 10,
+         output_tokens: 20,
+diff --git a/tests/lib/tools/ToolRunnerE2E.test.ts b/tests/lib/tools/ToolRunnerE2E.test.ts
+index 1b9c7473..249cbe3d 100644
+--- a/tests/lib/tools/ToolRunnerE2E.test.ts
++++ b/tests/lib/tools/ToolRunnerE2E.test.ts
+@@ -1,6 +1,6 @@
+ import { Anthropic } from '../../../src';
+ import { betaZodTool } from '../../../src/helpers/beta/zod';
+-import * as z from 'zod';
++import * as z from 'zod/v4';
+ import nock from 'nock';
+ import { gunzipSync } from 'zlib';
+ import { RequestInfo } from '@anthropic-ai/sdk/internal/builtin-types';
+diff --git a/tests/resources/beta/messages/parse.test.ts b/tests/resources/beta/messages/parse.test.ts
+index 1d543922..4bbd1041 100644
+--- a/tests/resources/beta/messages/parse.test.ts
++++ b/tests/resources/beta/messages/parse.test.ts
+@@ -1,4 +1,4 @@
+-import { z } from 'zod';
++import { z } from 'zod/v4';
+ import { betaZodOutputFormat } from '../../../../src/helpers/beta/zod';
+ import { Messages } from '../../../../src/resources/beta/messages/messages';
+ import { AnthropicError } from '../../../../src/error';
+diff --git a/tests/resources/messages/parse.test.ts b/tests/resources/messages/parse.test.ts
+index ed33af4a..c0cf2eed 100644
+--- a/tests/resources/messages/parse.test.ts
++++ b/tests/resources/messages/parse.test.ts
+@@ -1,4 +1,4 @@
+-import { z } from 'zod';
++import { z } from 'zod/v4';
+ import { zodOutputFormat } from '../../../src/helpers/zod';
+ import { Messages } from '../../../src/resources/messages/messages';
+ 

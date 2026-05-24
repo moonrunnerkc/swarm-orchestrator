@@ -1,0 +1,6 @@
+{
+  "verdict": "clean",
+  "rationale": "Refactors AccountsView.jsx to replace inline Edit / Delete / Disconnect buttons on each account tile with a single overflow control (⋮) and a dropdown menu. Adds state `accountActionsMenuId` plus a `useEffect` that registers a `document.addEventListener('click', handle, true)` capture-phase listener to close the menu when the user clicks outside the matching `[data-account-actions-root]` element, with a cleanup callback that removes the listener. The dropdown renders 'Edit account' (only when `!account.plaidItemId && account.status === 'Manual'`, preserving the original guard) and 'Remove…' / 'Disconnect…' (label depends on `account.plaidItemId`, both wired to the same `setDeleteTarget` flow as before). openEditModal and the cancel-delete handler both call `setAccountActionsMenuId(null)` so the menu state is cleared on action. Pure UI refactor; the underlying remove and edit handlers are unchanged.",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T13:40:00.000Z"
+}

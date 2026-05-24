@@ -1,0 +1,26 @@
+{
+  "id": "devin-divord97-ccc-pr16",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 16,
+    "headSha": "27c85ab290c2003131b43514b565b71028145311",
+    "baseSha": "6911db8fea32544173ca34899e780d3c1b92e0f2",
+    "title": "feat: Advanced AI Services — LLM Agent, Voice Cloning, Analytics, Training, Ring Analysis, Full-Duplex",
+    "body": "## Summary\n\nImplements all 6 advanced AI services from Phase 10 implementation plan (items 10.12-10.17). Each service follows DDD with TDD, includes domain entities, provider interfaces, stub implementations, MySQL repos, HTTP handlers, and API routes.\n\n**14 files changed, +2892 lines, 18 new TDD tests (total: 217)**\n\n### 1. Communication Agent (通信智能体) — LLM Agent autonomous call handling\n- `CommAgent` entity: mode (inbound/outbound), system prompt, max turns, skill group transfer\n- `CommAgentSession`: lifecycle (active → completed/transferred/failed), turn tracking, transcript\n- `CommAgentProvider` interface: `GenerateReply`, `ShouldTransfer`\n- Application orchestration: conversation turn processing with transfer decision\n- **5 TDD tests**: create, validation, session lifecycle, max turns exceeded, transfer\n\n### 2. Voice Cloning (声纹复刻) — Custom TTS voice synthesis\n- `VoiceProfile` entity: status lifecycle (pending → training → ready/failed)\n- `VoiceCloningProvider` interface: `StartCloneTraining`, `CheckTrainingStatus`, `SynthesizeWithClone`\n- **3 TDD tests**: full lifecycle, name/URL validation\n\n### 3. Conversation Analytics (智能对话分析) — Intent mining, SOP discovery\n- `ConversationAnalysisTask`: 4 analysis types (intent_mining, sop_discovery, sales_script, topic_cluster)\n- `ConversationAnalyticsProvider`: `MineIntents`, `DiscoverSOPs`, `ExtractSalesScripts`, `ClusterTopics`\n- **3 TDD tests**: task lifecycle (pending → running → completed), validation\n\n### 4. Training System (智能培训) — Courses, exams, simulated calls\n- `TrainingCourse` (draft → published → archived), `TrainingExam` (auto pass/fail by course pass score)\n- `SimulatedCall` (AI feedback + scoring for practice calls)\n- `TrainingProvider`: `EvaluateSimulatedCall`, `GenerateExamQuestions`\n- **4 TDD tests**: course publish, exam pass/fail, simulated call, validation\n\n### 5. Ring Analysis (彩铃识别) — Outbound call answer detection\n- `RingAnalysisConfig` (per-tenant: detection timeout, hangup on voicemail/fax)\n- `RingAnalysisLog` (human/voicemail/busy/no_answer/fax/unknown with confidence)\n- `RingAnalysisProvider`: `AnalyzeRingAudio`\n- **1 TDD test**: config upsert + log + query\n\n### 6. Full-Duplex Interaction (全双工交互) — Smart interruption + voice continuity\n- `FullDuplexConfig` (interruption sensitivity 0-1, silence threshold, voice continuity toggle)\n- `FullDuplexProvider`: `DetectInterruption`, `ContinueVoice`\n- **2 TDD tests**: config upsert, invalid sensitivity validation\n\n### Infrastructure\n- Migration `000003_advanced_ai`: 10 new MySQL tables\n- 10 MySQL repository implementations with compile-time interface checks\n- Stub providers for all 6 services (pluggable architecture)\n- 30+ new API endpoints wired into router under `/tenants/{tenantID}/`\n\n## Review & Testing Checklist for Human\n\n- [ ] Review domain entity field completeness — verify `CommAgent.SystemPrompt` and `FullDuplexConfig.InterruptionSensitivity` ranges match your AI provider requirements\n- [ ] Verify migration `000003_advanced_ai.up.sql` table definitions match your MySQL version (uses `LONGTEXT`, `DOUBLE`)\n- [ ] Check stub providers return reasonable defaults — production deployment needs real LLM/ASR/TTS provider implementations\n- [ ] Run `go test -race ./internal/domain/ai/...` to verify all 50 AI domain tests pass\n\n### Notes\n- All provider interfaces are pluggable — replace `Stub*Provider` with real implementations (Tongyi, OpenAI, etc.) in production\n- `CommAgentProvider.ShouldTransfer` enables autonomous transfer-to-human decisions based on conversation context\n- `RingAnalysisConfig` supports per-tenant customization of outbound detection behavior\n- `FullDuplexConfig.InterruptionSensitivity` is validated to [0, 1] range at domain level\n\nLink to Devin session: https://app.devin.ai/sessions/35e328fa681447e98fa82466c8f69b99\nRequested by: @divord97\n<!-- devin-review-badge-begin -->\n\n---\n\n<a href=\"https://app.devin.ai/review/divord97/ccc/pull/16\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-open-in-devin-review-dark.svg?v=1\">\n    <img src=\"https://static.devin.ai/assets/gh-open-in-devin-review-light.svg?v=1\" alt=\"Open in Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779578687-advanced-ai",
+    "repository": "divord97/ccc"
+  },
+  "diffRef": {
+    "repository": "divord97/ccc",
+    "headSha": "27c85ab290c2003131b43514b565b71028145311",
+    "baseSha": "6911db8fea32544173ca34899e780d3c1b92e0f2"
+  },
+  "vendoredDiffPath": "devin/devin-divord97-ccc-pr16.diff",
+  "vendoredAt": "2026-05-24T03:04:43.769Z",
+  "collectedAt": "2026-05-24T03:04:43.769Z"
+}

@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-python-pr1590",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1590,
+    "headSha": "41176eff8b9d9e34db214e3b1cd222f1d7cbd1be",
+    "baseSha": "5db69c6d5f3e7e39023973ca4b235046e5661157",
+    "title": "fix(skills): add normalize_skill_files() helper and document path naming convention",
+    "body": "## Summary\n\nCloses #1575.\n\n`beta.skills.create(files=...)` silently requires every path to be prefixed with\na top-level directory whose name **exactly matches** the `name:` field in `SKILL.md`\nfrontmatter (e.g. `my-skill/SKILL.md`, `my-skill/scripts/tool.py`).  When callers\npass bare names like `SKILL.md` they receive an opaque API 400 with no guidance on\nwhat went wrong.\n\nThis PR adds a `normalize_skill_files()` helper in `anthropic.lib.tools` that:\n\n- Reads the `name:` field from the `SKILL.md` entry in the supplied file list\n- Re-prefixes every path to `<name>/…`, stripping any existing wrong prefix\n- Is a no-op when paths are already correct\n\nIt also updates the `files=` param docstring in the generated `beta.skills` resource\nto explain the naming convention and cross-reference the helper.\n\n## Changes\n\n- `src/anthropic/lib/tools/_skills.py` — new `_read_file_entry_content`,\n  `_parse_skill_name_from_frontmatter`, and `normalize_skill_files` functions\n- `src/anthropic/lib/tools/__init__.py` — re-export `normalize_skill_files`\n- `src/anthropic/resources/beta/skills/skills.py` — improved `files=` docstring\n- `tests/lib/tools/test_skills.py` — 7 new unit tests (all passing)\n\n## Test plan\n\n- [x] `python -m pytest tests/lib/tools/test_skills.py -v` → 19 passed\n- [x] Bare names → correctly prefixed with skill name\n- [x] Wrong top-level prefix → replaced with correct skill name\n- [x] Already-correct prefix → left unchanged\n- [x] Extra tuple fields (headers) → preserved\n- [x] Missing `SKILL.md` → `ValueError`\n- [x] Missing `name:` frontmatter field → `ValueError`\n- [x] `BytesIO` content → read and seeked back",
+    "author": "ppradyoth",
+    "headRef": "fix/skills-create-normalize-file-paths",
+    "repository": "anthropics/anthropic-sdk-python"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-python",
+    "headSha": "41176eff8b9d9e34db214e3b1cd222f1d7cbd1be",
+    "baseSha": "5db69c6d5f3e7e39023973ca4b235046e5661157"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-python-pr1590.diff",
+  "vendoredAt": "2026-05-24T03:16:55.126Z",
+  "collectedAt": "2026-05-24T03:16:55.126Z"
+}

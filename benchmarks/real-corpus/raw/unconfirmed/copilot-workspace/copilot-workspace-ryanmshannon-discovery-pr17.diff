@@ -1,0 +1,116 @@
+diff --git a/crn_example/common_search_test.py b/crn_example/common_search_test.py
+index 1540db2..2415c3a 100755
+--- a/crn_example/common_search_test.py
++++ b/crn_example/common_search_test.py
+@@ -137,10 +137,12 @@ def has_param(df, param_string="red_noise"):
+ 
+ 
+ # Set up sampler, sample, and save results
++ds_numpyro.warmup_jit(logl_parallel)
+ npmodel=  ds_numpyro.makemodel_transformed(logl_parallel)
+ sampler = ds_numpyro.makesampler_nuts(npmodel, num_warmup=512, num_samples=100)
+ # start with random seed
+ key = jax.random.PRNGKey( np.random.randint(0, 2**32 - 1) )
++print("Starting sampling...", flush=True)
+ sampler.run(key)
+ 
+ chain = sampler.to_df()
+diff --git a/src/discovery/gpu_utils.py b/src/discovery/gpu_utils.py
+index 36a44a9..1e418c5 100644
+--- a/src/discovery/gpu_utils.py
++++ b/src/discovery/gpu_utils.py
+@@ -561,10 +561,14 @@ def loglike(params):
+ 
+         def _fwd_callback(*flat_args):
+             p = treedef.unflatten(flat_args)
+-            return loglike_eager(p)
++            result = loglike_eager(p)
++            # Ensure result matches the declared dtype to avoid callback errors
++            return jnp.asarray(result, dtype=result_dtype)
+ 
+         result_shape = jax.ShapeDtypeStruct((), result_dtype)
+-        result = jax.pure_callback(_fwd_callback, result_shape, *flat)
++        result = jax.pure_callback(
++            _fwd_callback, result_shape, *flat, vmap_method='sequential'
++        )
+         return jax.device_put(result, primary_device)
+ 
+     def loglike_fwd(params):
+@@ -578,10 +582,14 @@ def loglike_bwd(params, g):
+         def _bwd_callback(*flat_args):
+             p = treedef.unflatten(flat_args)
+             grads = jax.grad(loglike_eager)(p)
+-            return jax.tree_util.tree_leaves(grads)
++            grad_leaves = jax.tree_util.tree_leaves(grads)
++            # Ensure gradient dtypes match their corresponding input dtypes
++            return [jnp.asarray(gl, dtype=fa.dtype) for gl, fa in zip(grad_leaves, flat_args)]
+ 
+         grad_shapes = [jax.ShapeDtypeStruct(x.shape, x.dtype) for x in flat]
+-        flat_grads = jax.pure_callback(_bwd_callback, grad_shapes, *flat)
++        flat_grads = jax.pure_callback(
++            _bwd_callback, grad_shapes, *flat, vmap_method='sequential'
++        )
+         grad_dict = treedef.unflatten(flat_grads)
+         return (jax.tree_util.tree_map(lambda x: x * g, grad_dict),)
+ 
+diff --git a/src/discovery/samplers/numpyro.py b/src/discovery/samplers/numpyro.py
+index da062a9..d168798 100644
+--- a/src/discovery/samplers/numpyro.py
++++ b/src/discovery/samplers/numpyro.py
+@@ -1,7 +1,10 @@
+ import inspect
++import time
+ import numpy as np
+ import pandas as pd
+ 
++import jax
++import jax.numpy as jnp
+ import numpyro
+ from numpyro import infer
+ from numpyro import distributions as dist
+@@ -89,3 +92,45 @@ def _make_plots(save_name=None, diagnostics=False):
+     sampler.make_plots = _make_plots
+ 
+     return sampler
++
++
++def warmup_jit(logl_func):
++    """Trigger JIT compilation of the likelihood and its gradient before sampling.
++
++    On multi-GPU setups, the first evaluation of a ``gpu_logL`` function
++    involves compiling per-device kernels, which can take minutes. Calling
++    this function before ``sampler.run()`` provides clear progress feedback
++    so that long compilation times are not mistaken for a hang.
++
++    Args:
++        logl_func: A likelihood function with a ``.params`` attribute (e.g.
++            the return value of ``GlobalLikelihood.gpu_logL``).
++
++    Returns:
++        The (discarded) scalar log-likelihood evaluated at the prior midpoint,
++        useful as a sanity check.
++    """
++    params = logl_func.params
++
++    # Build a dummy parameter dict at the prior midpoint
++    dummy = {}
++    for par in params:
++        if '(' in par:
++            l = int(par[par.index('(') + 1:par.index(')')])
++            dummy[par] = jnp.zeros(l)
++        else:
++            dummy[par] = jnp.zeros(())
++
++    print("Compiling likelihood (forward pass)...", flush=True)
++    t0 = time.time()
++    result = jax.jit(logl_func)(dummy)
++    jax.block_until_ready(result)
++    print(f"  Forward compilation done in {time.time() - t0:.1f}s (logL = {float(result):.2f})")
++
++    print("Compiling likelihood (gradient)...", flush=True)
++    t0 = time.time()
++    grad_result = jax.jit(jax.grad(logl_func))(dummy)
++    jax.block_until_ready(jax.tree_util.tree_leaves(grad_result))
++    print(f"  Gradient compilation done in {time.time() - t0:.1f}s")
++
++    return result

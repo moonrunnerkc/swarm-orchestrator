@@ -1,0 +1,337 @@
+diff --git a/index.html b/index.html
+index 7e2ccf3..27a1c92 100644
+--- a/index.html
++++ b/index.html
+@@ -49,6 +49,163 @@
+       background: #4d4d4f;
+     }
+ 
++    .header-right {
++      display: flex;
++      align-items: center;
++      gap: 8px;
++    }
++
++    /* Tabs */
++    .tabs {
++      display: flex;
++      background: #202123;
++      border-bottom: 1px solid #4d4d4f;
++    }
++
++    .tab {
++      padding: 10px 24px;
++      background: none;
++      border: none;
++      color: #8e8ea0;
++      font-size: 14px;
++      font-weight: 600;
++      cursor: pointer;
++      border-bottom: 2px solid transparent;
++      transition: all 0.2s;
++    }
++
++    .tab:hover {
++      color: #ececf1;
++    }
++
++    .tab.active {
++      color: #ececf1;
++      border-bottom-color: #19c37d;
++    }
++
++    /* Documents panel */
++    .docs-panel {
++      flex: 1;
++      overflow-y: auto;
++      padding: 20px;
++    }
++
++    .docs-content {
++      max-width: 768px;
++      margin: 0 auto;
++    }
++
++    .docs-content h2 {
++      font-size: 20px;
++      margin-bottom: 8px;
++    }
++
++    .docs-content p {
++      font-size: 14px;
++      color: #8e8ea0;
++      margin-bottom: 16px;
++      line-height: 1.6;
++    }
++
++    .upload-area {
++      border: 2px dashed #4d4d4f;
++      border-radius: 12px;
++      padding: 32px;
++      text-align: center;
++      cursor: pointer;
++      transition: all 0.2s;
++      margin-bottom: 20px;
++    }
++
++    .upload-area:hover {
++      border-color: #19c37d;
++      background: rgba(25, 195, 125, 0.05);
++    }
++
++    .upload-area .upload-icon {
++      font-size: 36px;
++      margin-bottom: 8px;
++    }
++
++    .upload-area .upload-text {
++      font-size: 15px;
++      color: #ececf1;
++      margin-bottom: 4px;
++    }
++
++    .upload-area .upload-hint {
++      font-size: 13px;
++      color: #8e8ea0;
++    }
++
++    .doc-list {
++      list-style: none;
++    }
++
++    .doc-item {
++      display: flex;
++      align-items: center;
++      justify-content: space-between;
++      padding: 12px 16px;
++      background: #40414f;
++      border-radius: 8px;
++      margin-bottom: 8px;
++    }
++
++    .doc-item-info {
++      display: flex;
++      align-items: center;
++      gap: 12px;
++      flex: 1;
++      min-width: 0;
++    }
++
++    .doc-item-icon {
++      font-size: 20px;
++      flex-shrink: 0;
++    }
++
++    .doc-item-name {
++      font-size: 14px;
++      font-weight: 600;
++      white-space: nowrap;
++      overflow: hidden;
++      text-overflow: ellipsis;
++    }
++
++    .doc-item-size {
++      font-size: 12px;
++      color: #8e8ea0;
++    }
++
++    .doc-item-remove {
++      background: none;
++      border: none;
++      color: #ef4444;
++      cursor: pointer;
++      font-size: 18px;
++      padding: 4px 8px;
++      border-radius: 4px;
++      flex-shrink: 0;
++    }
++
++    .doc-item-remove:hover {
++      background: rgba(239, 68, 68, 0.1);
++    }
++
++    .doc-status {
++      display: flex;
++      align-items: center;
++      gap: 8px;
++      padding: 12px 16px;
++      background: rgba(25, 195, 125, 0.1);
++      border: 1px solid rgba(25, 195, 125, 0.3);
++      border-radius: 8px;
++      margin-bottom: 16px;
++      font-size: 14px;
++      color: #19c37d;
++    }
++
+     /* Chat area */
+     .chat-container {
+       flex: 1;
+@@ -317,6 +474,9 @@
+       const [systemPrompt, setSystemPrompt] = useState('');
+       const [tempSystemPrompt, setTempSystemPrompt] = useState('');
+       const [error, setError] = useState('');
++      const [activeTab, setActiveTab] = useState('chat');
++      const [documents, setDocuments] = useState([]);
++      const fileInputRef = useRef(null);
+       const chatEndRef = useRef(null);
+       const textareaRef = useRef(null);
+ 
+@@ -373,10 +533,13 @@
+             },
+             body: JSON.stringify({
+               model: model,
+-              messages: [
+-                ...(systemPrompt ? [{ role: 'system', content: systemPrompt }] : []),
+-                ...newMessages.map(m => ({ role: m.role, content: m.content })),
+-              ],
++              messages: (() => {
++                const sysMsg = buildSystemMessage();
++                return [
++                  ...(sysMsg ? [{ role: 'system', content: sysMsg }] : []),
++                  ...newMessages.map(m => ({ role: m.role, content: m.content })),
++                ];
++              })(),
+             }),
+           });
+ 
+@@ -406,17 +569,68 @@
+         }
+       };
+ 
++      const handleFileUpload = (e) => {
++        const files = Array.from(e.target.files);
++        files.forEach(file => {
++          const reader = new FileReader();
++          reader.onload = (ev) => {
++            setDocuments(prev => [...prev, {
++              id: Date.now() + Math.random(),
++              name: file.name,
++              size: file.size,
++              content: ev.target.result,
++            }]);
++          };
++          reader.readAsText(file);
++        });
++        if (fileInputRef.current) fileInputRef.current.value = '';
++      };
++
++      const removeDocument = (id) => {
++        setDocuments(prev => prev.filter(d => d.id !== id));
++      };
++
++      const formatFileSize = (bytes) => {
++        if (bytes < 1024) return bytes + ' B';
++        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
++        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
++      };
++
++      const buildSystemMessage = () => {
++        let msg = systemPrompt || '';
++        if (documents.length > 0) {
++          const docContext = documents.map(d => `--- ${d.name} ---\n${d.content}`).join('\n\n');
++          const docInstruction = '以下のドキュメントの内容に基づいて回答してください。ドキュメントに記載のない情報については、その旨を伝えてください。';
++          msg = msg
++            ? `${msg}\n\n${docInstruction}\n\n${docContext}`
++            : `${docInstruction}\n\n${docContext}`;
++        }
++        return msg;
++      };
++
+       return (
+         <>
+           {/* Header */}
+           <div className="header">
+             <h1>ChatGPT Web Chat</h1>
+-            <button className="settings-btn" onClick={openSettings} title="設定">
+-              ⚙
+-            </button>
++            <div className="header-right">
++              {documents.length > 0 && (
++                <span style={{ fontSize: '12px', color: '#19c37d' }}>📄 {documents.length}件</span>
++              )}
++              <button className="settings-btn" onClick={openSettings} title="設定">
++                ⚙
++              </button>
++            </div>
++          </div>
++
++          {/* Tabs */}
++          <div className="tabs">
++            <button className={`tab ${activeTab === 'chat' ? 'active' : ''}`} onClick={() => setActiveTab('chat')}>💬 チャット</button>
++            <button className={`tab ${activeTab === 'docs' ? 'active' : ''}`} onClick={() => setActiveTab('docs')}>📄 ドキュメント</button>
+           </div>
+ 
+           {/* Chat */}
++          {activeTab === 'chat' ? (
+           <div className="chat-container">
+             {messages.length === 0 ? (
+               <div className="welcome">
+@@ -447,7 +661,60 @@ <h2>ChatGPT Web Chat</h2>
+             <div ref={chatEndRef} />
+           </div>
+ 
++          ) : (
++          <div className="docs-panel">
++            <div className="docs-content">
++              <h2>📄 ドキュメント管理</h2>
++              <p>
++                テキストファイルをアップロードすると、AIがドキュメントの内容に基づいて回答します。
++                対応形式: .txt, .md, .csv, .json, .xml, .html, .log
++              </p>
++
++              {documents.length > 0 && (
++                <div className="doc-status">
++                  📋 {documents.length}件のドキュメントが読み込まれています（チャット時に自動で参照されます）
++                </div>
++              )}
++
++              <div
++                className="upload-area"
++                onClick={() => fileInputRef.current?.click()}
++              >
++                <div className="upload-icon">📁</div>
++                <div className="upload-text">クリックしてファイルを選択</div>
++                <div className="upload-hint">テキストファイル（.txt, .md, .csv 等）に対応</div>
++              </div>
++              <input
++                ref={fileInputRef}
++                type="file"
++                accept=".txt,.md,.csv,.json,.xml,.html,.log,.yml,.yaml,.toml,.ini,.cfg,.conf"
++                multiple
++                onChange={handleFileUpload}
++                style={{ display: 'none' }}
++              />
++
++              {documents.length > 0 && (
++                <ul className="doc-list">
++                  {documents.map(doc => (
++                    <li key={doc.id} className="doc-item">
++                      <div className="doc-item-info">
++                        <span className="doc-item-icon">📄</span>
++                        <div>
++                          <div className="doc-item-name">{doc.name}</div>
++                          <div className="doc-item-size">{formatFileSize(doc.size)}</div>
++                        </div>
++                      </div>
++                      <button className="doc-item-remove" onClick={() => removeDocument(doc.id)} title="削除">✕</button>
++                    </li>
++                  ))}
++                </ul>
++              )}
++            </div>
++          </div>
++          )}
++
+           {/* Input */}
++          {activeTab === 'chat' && (
+           <div className="input-area">
+             <div className="input-wrapper">
+               <textarea
+@@ -467,6 +734,7 @@ <h2>ChatGPT Web Chat</h2>
+               </button>
+             </div>
+           </div>
++          )}
+ 
+           {/* Settings Modal */}
+           {showSettings && (

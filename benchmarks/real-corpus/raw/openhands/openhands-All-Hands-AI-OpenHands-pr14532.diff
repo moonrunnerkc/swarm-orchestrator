@@ -1,0 +1,306 @@
+diff --git a/enterprise/integrations/jira_dc/jira_dc_manager.py b/enterprise/integrations/jira_dc/jira_dc_manager.py
+index 01b6a5eb403a..12ec4d6380c3 100644
+--- a/enterprise/integrations/jira_dc/jira_dc_manager.py
++++ b/enterprise/integrations/jira_dc/jira_dc_manager.py
+@@ -50,8 +50,39 @@
+ JIRA_DC_REACTION_EMOJI_ID = '1f44d'
+ 
+ # Events the OpenHands webhook subscribes to, used when auto-enrolling the
+-# webhook in Jira. Mirrors what parse_webhook handles.
+-JIRA_DC_WEBHOOK_EVENTS = ['comment_created', 'jira:issue_updated']
++# webhook in Jira. The resolver only creates jobs for a narrower subset in
++# parse_webhook, but automations can subscribe to these broader issue/comment
++# lifecycle events.
++JIRA_DC_WEBHOOK_EVENTS = [
++    'jira:issue_created',
++    'jira:issue_updated',
++    'jira:issue_deleted',
++    'comment_created',
++    'comment_updated',
++    'comment_deleted',
++]
++
++
++def _extract_workspace_url(payload: Dict) -> str:
++    """Return a Jira URL whose host identifies the configured workspace."""
++    paths = (
++        ('comment', 'author', 'self'),
++        ('user', 'self'),
++        ('issue', 'self'),
++        ('comment', 'self'),
++    )
++
++    for path in paths:
++        value: object = payload
++        for key in path:
++            if not isinstance(value, dict):
++                break
++            value = value.get(key)
++        else:
++            if isinstance(value, str) and value:
++                return value
++
++    return ''
+ 
+ 
+ class JiraDcManager(Manager[JiraDcViewInterface]):
+@@ -138,14 +169,8 @@ async def validate_request_context(
+         body = await request.body()
+         payload = await request.json()
+         workspace_name = ''
+-        selfUrl = ''
+-
+-        if payload.get('webhookEvent') == 'comment_created':
+-            selfUrl = payload.get('comment', {}).get('author', {}).get('self')
+-        elif payload.get('webhookEvent') == 'jira:issue_updated':
+-            selfUrl = payload.get('user', {}).get('self')
+ 
+-        parsedUrl = urlparse(selfUrl)
++        parsedUrl = urlparse(_extract_workspace_url(payload))
+         if parsedUrl.hostname:
+             workspace_name = parsedUrl.hostname
+ 
+diff --git a/enterprise/tests/unit/integrations/jira_dc/conftest.py b/enterprise/tests/unit/integrations/jira_dc/conftest.py
+index 1c6e63abe358..70daa95b83d3 100644
+--- a/enterprise/tests/unit/integrations/jira_dc/conftest.py
++++ b/enterprise/tests/unit/integrations/jira_dc/conftest.py
+@@ -139,6 +139,44 @@ def sample_issue_update_webhook_payload():
+     }
+ 
+ 
++@pytest.fixture
++def sample_issue_created_webhook_payload():
++    """Sample issue created webhook payload."""
++    return {
++        'webhookEvent': 'jira:issue_created',
++        'issue': {
++            'id': '12345',
++            'key': 'PROJ-123',
++            'self': 'https://jira.company.com/rest/api/2/issue/12345',
++        },
++        'user': {
++            'emailAddress': 'user@company.com',
++            'displayName': 'Test User',
++            'key': 'testuser',
++            'accountId': 'user456',
++            'self': 'https://jira.company.com/rest/api/2/user?username=testuser',
++        },
++    }
++
++
++@pytest.fixture
++def sample_comment_updated_webhook_payload():
++    """Sample comment updated webhook payload."""
++    return {
++        'webhookEvent': 'comment_updated',
++        'comment': {
++            'id': '10001',
++            'body': 'Edited comment',
++            'self': 'https://jira.company.com/rest/api/2/issue/12345/comment/10001',
++        },
++        'issue': {
++            'id': '12345',
++            'key': 'PROJ-123',
++            'self': 'https://jira.company.com/rest/api/2/issue/12345',
++        },
++    }
++
++
+ @pytest.fixture
+ def sample_repositories():
+     """Create sample repositories for testing."""
+diff --git a/enterprise/tests/unit/integrations/jira_dc/test_jira_dc_manager.py b/enterprise/tests/unit/integrations/jira_dc/test_jira_dc_manager.py
+index d4f5f8c1975a..c342afe787d5 100644
+--- a/enterprise/tests/unit/integrations/jira_dc/test_jira_dc_manager.py
++++ b/enterprise/tests/unit/integrations/jira_dc/test_jira_dc_manager.py
+@@ -8,7 +8,7 @@
+ import httpx
+ import pytest
+ from fastapi import Request
+-from integrations.jira_dc.jira_dc_manager import JiraDcManager
++from integrations.jira_dc.jira_dc_manager import JIRA_DC_WEBHOOK_EVENTS, JiraDcManager
+ from integrations.jira_dc.jira_dc_types import JiraDcViewInterface
+ from integrations.jira_dc.jira_dc_view import (
+     JiraDcExistingConversationView,
+@@ -208,6 +208,74 @@ async def test_validate_request_success(
+         assert returned_signature == signature
+         assert payload == sample_comment_webhook_payload
+ 
++    @pytest.mark.asyncio
++    async def test_validate_request_issue_created_success(
++        self,
++        jira_dc_manager,
++        mock_token_manager,
++        sample_jira_dc_workspace,
++        sample_issue_created_webhook_payload,
++    ):
++        """Issue-created webhooks validate for automation forwarding."""
++        mock_token_manager.decrypt_text.return_value = 'test_secret'
++        jira_dc_manager.integration_store.get_workspace_by_name.return_value = (
++            sample_jira_dc_workspace
++        )
++
++        body = json.dumps(sample_issue_created_webhook_payload).encode()
++        signature = hmac.new('test_secret'.encode(), body, hashlib.sha256).hexdigest()
++
++        mock_request = MagicMock(spec=Request)
++        mock_request.headers = {'x-hub-signature': f'sha256={signature}'}
++        mock_request.body = AsyncMock(return_value=body)
++        mock_request.json = AsyncMock(return_value=sample_issue_created_webhook_payload)
++
++        is_valid, returned_signature, payload = await jira_dc_manager.validate_request(
++            mock_request
++        )
++
++        assert is_valid is True
++        assert returned_signature == signature
++        assert payload == sample_issue_created_webhook_payload
++        jira_dc_manager.integration_store.get_workspace_by_name.assert_called_with(
++            'jira.company.com'
++        )
++
++    @pytest.mark.asyncio
++    async def test_validate_request_comment_updated_success(
++        self,
++        jira_dc_manager,
++        mock_token_manager,
++        sample_jira_dc_workspace,
++        sample_comment_updated_webhook_payload,
++    ):
++        """Comment update webhooks can identify the workspace from issue.self."""
++        mock_token_manager.decrypt_text.return_value = 'test_secret'
++        jira_dc_manager.integration_store.get_workspace_by_name.return_value = (
++            sample_jira_dc_workspace
++        )
++
++        body = json.dumps(sample_comment_updated_webhook_payload).encode()
++        signature = hmac.new('test_secret'.encode(), body, hashlib.sha256).hexdigest()
++
++        mock_request = MagicMock(spec=Request)
++        mock_request.headers = {'x-hub-signature': f'sha256={signature}'}
++        mock_request.body = AsyncMock(return_value=body)
++        mock_request.json = AsyncMock(
++            return_value=sample_comment_updated_webhook_payload
++        )
++
++        is_valid, returned_signature, payload = await jira_dc_manager.validate_request(
++            mock_request
++        )
++
++        assert is_valid is True
++        assert returned_signature == signature
++        assert payload == sample_comment_updated_webhook_payload
++        jira_dc_manager.integration_store.get_workspace_by_name.assert_called_with(
++            'jira.company.com'
++        )
++
+     @pytest.mark.asyncio
+     async def test_validate_request_missing_signature(
+         self, jira_dc_manager, sample_comment_webhook_payload
+@@ -384,6 +452,39 @@ def test_parse_webhook_unsupported_event(self, jira_dc_manager):
+         job_context = jira_dc_manager.parse_webhook(payload)
+         assert job_context is None
+ 
++    @pytest.mark.parametrize(
++        'event_type',
++        [
++            'jira:issue_created',
++            'jira:issue_deleted',
++            'comment_updated',
++            'comment_deleted',
++        ],
++    )
++    def test_parse_webhook_automation_only_events_do_not_start_resolver(
++        self, jira_dc_manager, event_type
++    ):
++        """Automation-only events should not create resolver jobs."""
++        payload = {
++            'webhookEvent': event_type,
++            'comment': {
++                'body': 'Please fix this @openhands',
++                'author': {
++                    'emailAddress': 'user@company.com',
++                    'displayName': 'Test User',
++                    'self': 'https://jira.company.com/rest/api/2/user?username=testuser',
++                },
++            },
++            'issue': {
++                'id': '12345',
++                'key': 'PROJ-123',
++                'self': 'https://jira.company.com/rest/api/2/issue/12345',
++            },
++        }
++
++        job_context = jira_dc_manager.parse_webhook(payload)
++        assert job_context is None
++
+     def test_parse_webhook_missing_required_fields(self, jira_dc_manager):
+         """Test parsing webhook with missing required fields."""
+         payload = {
+@@ -1125,10 +1226,7 @@ async def test_register_webhook_updates_existing_url(self, jira_dc_manager):
+             'SECRET': 'webhook-secret',
+             'EXCLUDE_BODY': 'false',
+         }
+-        assert client.put.call_args.kwargs['json']['events'] == [
+-            'comment_created',
+-            'jira:issue_updated',
+-        ]
++        assert client.put.call_args.kwargs['json']['events'] == JIRA_DC_WEBHOOK_EVENTS
+         update_response.raise_for_status.assert_called_once()
+ 
+     @pytest.mark.asyncio
+diff --git a/enterprise/tests/unit/server/routes/test_jira_dc_integration_routes.py b/enterprise/tests/unit/server/routes/test_jira_dc_integration_routes.py
+index 50a0d9e7aa18..12acde70b573 100644
+--- a/enterprise/tests/unit/server/routes/test_jira_dc_integration_routes.py
++++ b/enterprise/tests/unit/server/routes/test_jira_dc_integration_routes.py
+@@ -525,6 +525,50 @@ async def test_jira_dc_events_forwards_to_automations(
+     assert background_tasks.add_task.call_count == 2
+ 
+ 
++@pytest.mark.asyncio
++@patch('server.routes.integration.jira_dc.automation_event_service')
++@patch('server.routes.integration.jira_dc.jira_dc_manager', new_callable=AsyncMock)
++@patch('server.routes.integration.jira_dc.redis_client', new_callable=MagicMock)
++async def test_jira_dc_events_forwards_issue_created_to_automations(
++    mock_redis, mock_manager, mock_automation_service, mock_request
++):
++    org_id = uuid.UUID('00000000-0000-0000-0000-000000000123')
++    payload = {
++        'webhookEvent': 'jira:issue_created',
++        'issue': {'key': 'PROJ-123'},
++    }
++    mock_workspace = MagicMock()
++    mock_workspace.org_id = org_id
++    mock_workspace.name = 'jira.company.com'
++    mock_manager.validate_request_context.return_value = (
++        True,
++        'sig123',
++        payload,
++        mock_workspace,
++    )
++    mock_redis.exists.return_value = False
++
++    with (
++        patch('server.routes.integration.jira_dc.JIRA_DC_WEBHOOKS_ENABLED', True),
++        patch(
++            'server.routes.integration.jira_dc.AUTOMATION_EVENT_FORWARDING_ENABLED',
++            True,
++        ),
++    ):
++        background_tasks = MagicMock()
++        response = await jira_dc_events(mock_request, background_tasks)
++
++    assert response.status_code == 200
++    background_tasks.add_task.assert_any_call(
++        mock_automation_service.forward_jira_dc_event,
++        org_id=org_id,
++        payload=payload,
++        workspace_name='jira.company.com',
++        delivery_id='sig123',
++    )
++    assert background_tasks.add_task.call_count == 2
++
++
+ @pytest.mark.asyncio
+ @patch('server.routes.integration.jira_dc.jira_dc_manager', new_callable=AsyncMock)
+ @patch('server.routes.integration.jira_dc.redis_client', new_callable=MagicMock)

@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-claude-code-pr59275",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 59275,
+    "headSha": "58cf40d314f58ce9ded109bbcb8032402015aa6f",
+    "baseSha": "d61bfb5b562eea5091b11ad1858a9ae429b6bd23",
+    "title": "Add new-session plugin with /new command",
+    "body": "## Summary\n\nAdds a new `new-session` plugin that introduces a `/new` slash command. It bridges the gap between the built-in `/clear` and `/branch` commands:\n\n- `/clear` — wipes context in the same session\n- `/branch` — forks the current session, copying full history\n- `/new` — starts a fresh session while preserving the current one for `/resume`\n\nOptional argument labels the saved session for easier retrieval (e.g. `/new auth-refactor`).\n\n## Implementation\n\nThe plugin is a single markdown command that instructs Claude to invoke the built-in `/clear` (with an optional label argument) so the old session remains accessible via `/resume`. No new code paths or destructive operations.\n\nFiles added:\n- `plugins/new-session/.claude-plugin/plugin.json`\n- `plugins/new-session/commands/new.md`\n- `plugins/new-session/README.md`\n\nFiles modified:\n- `plugins/README.md` — added entry to plugins table\n\n## Test plan\n\n- [x] Installed locally by adding the plugin path to `.claude/settings.json`\n- [x] Verified `/new` (no args) clears context and old session appears in `/resume`\n- [x] Verified `/new <name>` labels the saved session for easier identification\n- [x] Confirmed no session data is deleted — old conversations remain fully resumable",
+    "author": "ajaycj",
+    "headRef": "add-new-session-plugin",
+    "repository": "anthropics/claude-code"
+  },
+  "diffRef": {
+    "repository": "anthropics/claude-code",
+    "headSha": "58cf40d314f58ce9ded109bbcb8032402015aa6f",
+    "baseSha": "d61bfb5b562eea5091b11ad1858a9ae429b6bd23"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-claude-code-pr59275.diff",
+  "vendoredAt": "2026-05-24T03:16:05.535Z",
+  "collectedAt": "2026-05-24T03:16:05.535Z"
+}

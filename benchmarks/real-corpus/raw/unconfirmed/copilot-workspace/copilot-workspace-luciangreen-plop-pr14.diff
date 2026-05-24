@@ -1,0 +1,192 @@
+diff --git a/README.md b/README.md
+index f504a95..8072b2e 100644
+--- a/README.md
++++ b/README.md
+@@ -10,6 +10,7 @@ Implemented stages from `pr3.txt`:
+ - Stage 6: subterm address system
+ - Stage 7: recursive index-loop analysis with `needed_subterms/3`
+ - Stage 8: Gaussian elimination formula discovery
++- Stage 9: list-manipulation-to-formula optimisation
+ 
+ ## Run tests
+ 
+diff --git a/list_formula.pl b/list_formula.pl
+new file mode 100644
+index 0000000..60b9edc
+--- /dev/null
++++ b/list_formula.pl
+@@ -0,0 +1,61 @@
++:- module(list_formula, [optimise_list_formulas/3]).
++
++optimise_list_formulas(ProgramIR, OptimisedIR, Report) :-
++    optimise_clauses(ProgramIR, OptimisedIR, [], ReportRaw),
++    sort(ReportRaw, Report).
++
++optimise_clauses([], [], Report, Report).
++optimise_clauses([Clause | Rest], [UpdatedClause | UpdatedRest], Report0, Report) :-
++    optimise_clause(Clause, UpdatedClause, Item),
++    (   nonvar(Item)
++    ->  Report1 = [Item | Report0]
++    ;   Report1 = Report0
++    ),
++    optimise_clauses(Rest, UpdatedRest, Report1, Report).
++
++optimise_clause(ir_clause(Id, Head, Body, Meta), ir_clause(Id, Head, OptimisedBody, Meta), ReportItem) :-
++    (   rewrite_list_sum_pattern(Head, Body, OptimisedBody, FormulaTag)
++    ->  predicate_from_head(Head, Pred),
++        ReportItem = formula_discovered(Pred, FormulaTag)
++    ;   OptimisedBody = Body
++    ).
++
++rewrite_list_sum_pattern(Head, Body, OptimisedBody, n_times_n_plus_1_over_2) :-
++    append(Prefix, [build_1_to_n(N, L), sum_list(L, S) | Suffix], Body),
++    \+ term_contains_var(L, Head),
++    variable_occurrences_in_goals(L, Body, 2),
++    OptimisedGoal = (S is N * (N + 1) // 2),
++    append(Prefix, [OptimisedGoal | Suffix], OptimisedBody).
++rewrite_list_sum_pattern(Head, Body, OptimisedBody, arithmetic_progression_sum) :-
++    append(Prefix, [build_sequence(N, Start, Step, L), sum_list(L, S) | Suffix], Body),
++    \+ term_contains_var(L, Head),
++    variable_occurrences_in_goals(L, Body, 2),
++    OptimisedGoal = (S is N * (2 * Start + (N - 1) * Step) // 2),
++    append(Prefix, [OptimisedGoal | Suffix], OptimisedBody).
++
++predicate_from_head(Head, Name/Arity) :-
++    functor(Head, Name, Arity).
++
++variable_occurrences_in_goals(Var, Goals, Count) :-
++    occurrences_in_goals(Var, Goals, Count).
++
++occurrences_in_goals(_, [], 0).
++occurrences_in_goals(Var, [Goal | Rest], Count) :-
++    occurrences_in_term(Var, Goal, C1),
++    occurrences_in_goals(Var, Rest, C2),
++    Count is C1 + C2.
++
++occurrences_in_term(Var, Term, Count) :-
++    (   var(Term)
++    ->  (Term == Var -> Count = 1 ; Count = 0)
++    ;   atomic(Term)
++    ->  Count = 0
++    ;   Term =.. [_ | Args],
++        occurrences_in_terms(Var, Args, Count)
++    ).
++
++occurrences_in_terms(_, [], 0).
++occurrences_in_terms(Var, [Term | Rest], Count) :-
++    occurrences_in_term(Var, Term, C1),
++    occurrences_in_terms(Var, Rest, C2),
++    Count is C1 + C2.
+diff --git a/optimiser.pl b/optimiser.pl
+index e1e6093..a9becbf 100644
+--- a/optimiser.pl
++++ b/optimiser.pl
+@@ -4,6 +4,7 @@
+ :- use_module(unfold).
+ :- use_module(memoise).
+ :- use_module(simplify).
++:- use_module(list_formula).
+ :- use_module(enumerators).
+ :- use_module(indexical).
+ :- use_module(recursive_index).
+@@ -17,27 +18,31 @@
+     unfold_program(ProgramIR, UnfoldedIR, UnfoldItems),
+     memoise_program(UnfoldedIR, MemoisedIR, MemoItems),
+     simplify_program(MemoisedIR, SimplifiedIR, SimplifyItems),
+-    optimise_indexicals(SimplifiedIR, IndexicalIR, IndexicalItems),
++    optimise_list_formulas(SimplifiedIR, ListFormulaIR, ListFormulaItems),
++    optimise_indexicals(ListFormulaIR, IndexicalIR, IndexicalItems),
+     optimise_recursive_index_loops(IndexicalIR, OptimisedIR, RecursiveIndexItems),
+     analyse_enumerators(ProgramIR, OptimisedIR, EnumeratorItems),
+     append(UnfoldItems, MemoItems, Items0),
+     append(Items0, SimplifyItems, Items1),
+-    append(Items1, IndexicalItems, Items2),
+-    append(Items2, RecursiveIndexItems, Items3),
+-    append(Items3, EnumeratorItems, Items).
++    append(Items1, ListFormulaItems, Items2),
++    append(Items2, IndexicalItems, Items3),
++    append(Items3, RecursiveIndexItems, Items4),
++    append(Items4, EnumeratorItems, Items).
+ 
+ optimise_predicate(PredicateNameArity, ProgramIR, OptimisedIR, optimisation_report(Items)) :-
+     unfold_predicate(PredicateNameArity, ProgramIR, UnfoldedIR, UnfoldItems),
+     memoise_program(UnfoldedIR, MemoisedIR, MemoItems),
+     simplify_program(MemoisedIR, SimplifiedIR, SimplifyItems),
+-    optimise_indexicals(SimplifiedIR, IndexicalIR, IndexicalItems),
++    optimise_list_formulas(SimplifiedIR, ListFormulaIR, ListFormulaItems),
++    optimise_indexicals(ListFormulaIR, IndexicalIR, IndexicalItems),
+     optimise_recursive_index_loops(IndexicalIR, OptimisedIR, RecursiveIndexItems),
+     analyse_enumerators(ProgramIR, OptimisedIR, EnumeratorItems),
+     append(UnfoldItems, MemoItems, Items0),
+     append(Items0, SimplifyItems, Items1),
+-    append(Items1, IndexicalItems, Items2),
+-    append(Items2, RecursiveIndexItems, Items3),
+-    append(Items3, EnumeratorItems, Items).
++    append(Items1, ListFormulaItems, Items2),
++    append(Items2, IndexicalItems, Items3),
++    append(Items3, RecursiveIndexItems, Items4),
++    append(Items4, EnumeratorItems, Items).
+ 
+ write_program(OutputPath, ProgramIR) :-
+     setup_call_cleanup(
+diff --git a/tests/test_optimiser.pl b/tests/test_optimiser.pl
+index b60e039..1de6b46 100644
+--- a/tests/test_optimiser.pl
++++ b/tests/test_optimiser.pl
+@@ -305,6 +305,56 @@
+ 
+ :- end_tests(recursive_index).
+ 
++:- begin_tests(list_formula).
++
++:- use_module('../optimiser').
++:- use_module('../list_formula').
++
++test(rewrites_build_1_to_n_sum_list_to_formula) :-
++    ProgramIR = [
++        ir_clause(c1, seq_sum(N, S), [build_1_to_n(N, L), sum_list(L, S)], [])
++    ],
++    optimise_list_formulas(ProgramIR, OptimisedIR, Report),
++    member(ir_clause(_, seq_sum(_, _), Body, _), OptimisedIR),
++    assertion(Body = [S is N * (N + 1) // 2]),
++    assertion(member(formula_discovered(seq_sum/2, n_times_n_plus_1_over_2), Report)).
++
++test(rewrites_build_sequence_sum_list_to_formula) :-
++    ProgramIR = [
++        ir_clause(c1, seq_sum(N, Start, Step, S), [build_sequence(N, Start, Step, L), sum_list(L, S)], [])
++    ],
++    optimise_list_formulas(ProgramIR, OptimisedIR, Report),
++    member(ir_clause(_, seq_sum(_, _, _, _), Body, _), OptimisedIR),
++    assertion(Body = [S is N * (2 * Start + (N - 1) * Step) // 2]),
++    assertion(member(formula_discovered(seq_sum/4, arithmetic_progression_sum), Report)).
++
++test(does_not_rewrite_when_list_is_reused_elsewhere) :-
++    ProgramIR = [
++        ir_clause(c1, seq_sum(N, S, Len), [build_1_to_n(N, L), sum_list(L, S), length(L, Len)], [])
++    ],
++    optimise_list_formulas(ProgramIR, OptimisedIR, Report),
++    member(ir_clause(_, seq_sum(_, _, _), Body, _), OptimisedIR),
++    assertion(Body = [build_1_to_n(N, L), sum_list(L, S), length(L, Len)]),
++    assertion(Report = []).
++
++test(does_not_rewrite_when_list_escapes_in_head) :-
++    ProgramIR = [
++        ir_clause(c1, seq_sum(N, L, S), [build_1_to_n(N, L), sum_list(L, S)], [])
++    ],
++    optimise_list_formulas(ProgramIR, OptimisedIR, Report),
++    member(ir_clause(_, seq_sum(_, _, _), Body, _), OptimisedIR),
++    assertion(Body = [build_1_to_n(N, L), sum_list(L, S)]),
++    assertion(Report = []).
++
++test(optimise_program_includes_stage9_report_items) :-
++    ProgramIR = [
++        ir_clause(c1, seq_sum(N, S), [build_1_to_n(N, L), sum_list(L, S)], [])
++    ],
++    optimise_program(ProgramIR, _OptimisedIR, optimisation_report(Report)),
++    assertion(member(formula_discovered(seq_sum/2, n_times_n_plus_1_over_2), Report)).
++
++:- end_tests(list_formula).
++
+ :- begin_tests(gaussian).
+ 
+ :- use_module('../gaussian').

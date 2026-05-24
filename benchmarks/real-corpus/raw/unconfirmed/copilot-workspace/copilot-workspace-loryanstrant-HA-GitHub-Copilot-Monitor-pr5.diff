@@ -1,0 +1,380 @@
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..43ae0e2
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,2 @@
++__pycache__/
++*.py[cod]
+diff --git a/README.md b/README.md
+index 7143fbc..22e52fb 100644
+--- a/README.md
++++ b/README.md
+@@ -1,11 +1,11 @@
+ # GitHub Copilot Monitor
+ 
+ [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)](https://github.com/hacs/integration)
+-![Version](https://img.shields.io/badge/version-0.1.0-blue.svg?style=for-the-badge)
++![Version](https://img.shields.io/badge/version-0.2.0-blue.svg?style=for-the-badge)
+ 
+-A Home Assistant custom component to track your **GitHub Copilot** usage, allocated credit pool, and remaining safety buffer. 
++A Home Assistant custom component to track your **GitHub Copilot** premium interactions (requests), monthly quota, and remaining allowance.
+ 
+-As GitHub transitions Copilot accounts toward usage-based consumption patterns driven by **GitHub AI Credits**, this integration ensures you avoid unexpected plan overages or sudden agent cutoff thresholds by exposing real-time metrics directly into your Home Assistant dashboards.
++The integration surfaces premium interaction usage against your monthly quota model so you can avoid unexpected overages and monitor remaining requests directly from Home Assistant dashboards.
+ 
+ ---
+ 
+@@ -21,9 +21,9 @@ The integration provisions the following core tracking entities inside Home Assi
+ 
+ | Entity Name | Unit | Description |
+ | ----------- | ---- | ----------- |
+-| `sensor.github_copilot_allocated_credits` | Credits | Total amount of AI credits allocated to your profile for the billing window. |
+-| `sensor.github_copilot_used_credits` | Credits | Aggregated count of credits currently consumed by downstream models and code completions. |
+-| `sensor.github_copilot_buffer` | Credits | Calculated delta representing the remaining computational capacity available. |
++| `sensor.github_copilot_premium_interactions_limit` | requests | Total monthly premium interaction allowance for your Copilot plan. |
++| `sensor.github_copilot_premium_interactions_used` | requests | Number of premium interactions consumed in the current billing period. |
++| `sensor.github_copilot_premium_interactions_remaining` | requests | Remaining premium interactions available until the quota resets. |
+ 
+ ---
+ 
+@@ -53,7 +53,7 @@ Setting up the monitor happens entirely within the Home Assistant frontend UI:
+ 2. Click the **+ Add Integration** button in the bottom right corner.
+ 3. Search for **GitHub Copilot Monitor**.
+ 4. Provide the requested onboarding variables:
+-   - **Personal Access Token:** A GitHub Classic or Fine-Grained PAT possessing the standard `user:billing:read` scope.
++   - **Personal Access Token:** A GitHub **Classic PAT** with the `manage_billing:copilot` scope (found under the "Billing" category when creating the token). Fine-grained PATs are not supported for user-level billing endpoints.
+    - **Organization Name (Optional):** Enter your target organization handle if you are fetching workspace tenant credentials rather than a basic user subscription profile.
+ 5. Click **Submit**.
+ 
+@@ -66,8 +66,8 @@ Keep an immediate visual track of your consumption limits using a native Gauge:
+ 
+ ```yaml
+ type: gauge
+-entity: sensor.github_copilot_buffer
+-name: Copilot Capacity Buffer
++entity: sensor.github_copilot_premium_interactions_remaining
++name: Copilot Premium Interactions Remaining
+ min: 0
+ max: 1000
+ severity:
+diff --git a/custom_components/github_copilot_monitor/config_flow.py b/custom_components/github_copilot_monitor/config_flow.py
+index d526f87..f23d8f0 100644
+--- a/custom_components/github_copilot_monitor/config_flow.py
++++ b/custom_components/github_copilot_monitor/config_flow.py
+@@ -1,6 +1,7 @@
+ """Config flow for GitHub Copilot Monitor integration."""
+ from __future__ import annotations
+ 
++import logging
+ from typing import Any
+ import aiohttp
+ import voluptuous as vol
+@@ -8,7 +9,9 @@
+ from homeassistant import config_entries
+ from homeassistant.data_entry_flow import FlowResult
+ 
+-from .const import DOMAIN, CONF_TOKEN, CONF_ORG, API_VERSION
++from .const import API_VERSION, CONF_ORG, CONF_TOKEN, CONF_USERNAME, DOMAIN
++
++_LOGGER = logging.getLogger(__name__)
+ 
+ class GithubCopilotMonitorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+     """Handle a config flow for GitHub Copilot Monitor."""
+@@ -24,21 +27,59 @@ async def async_step_user(
+         if user_input is not None:
+             token = user_input[CONF_TOKEN]
+             org = user_input.get(CONF_ORG)
+-            
+-            # Validate credentials against the target GitHub billing endpoints
+-            url = f"https://api.github.com/orgs/{org}/billing/copilot" if org else "https://api.github.com/user/billing/copilot"
+             headers = {
+                 "Authorization": f"Bearer {token}",
+                 "Accept": "application/vnd.github+json",
+                 "X-GitHub-Api-Version": API_VERSION,
+             }
+-            
++
+             async with aiohttp.ClientSession() as session:
+                 try:
+-                    async with session.get(url, headers=headers) as response:
++                    async with session.get("https://api.github.com/user", headers=headers) as response:
++                        if response.status != 200:
++                            if response.status == 401:
++                                errors["base"] = "invalid_auth"
++                            elif response.status == 403:
++                                errors["base"] = "invalid_permissions"
++                            else:
++                                errors["base"] = "cannot_connect"
++                            return self.async_show_form(
++                                step_id="user",
++                                data_schema=vol.Schema(
++                                    {
++                                        vol.Required(CONF_TOKEN): str,
++                                        vol.Optional(CONF_ORG): str,
++                                    }
++                                ),
++                                errors=errors,
++                            )
++
++                        user_data = await response.json()
++                        username = user_data.get("login")
++                        if not username:
++                            errors["base"] = "cannot_connect"
++                            return self.async_show_form(
++                                step_id="user",
++                                data_schema=vol.Schema(
++                                    {
++                                        vol.Required(CONF_TOKEN): str,
++                                        vol.Optional(CONF_ORG): str,
++                                    }
++                                ),
++                                errors=errors,
++                            )
++
++                    billing_url = (
++                        f"https://api.github.com/orgs/{org}/copilot/billing"
++                        if org
++                        else f"https://api.github.com/users/{username}/settings/billing/usage/premium_requests"
++                    )
++
++                    async with session.get(billing_url, headers=headers) as response:
+                         if response.status == 200:
++                            entry_data = {**user_input, CONF_USERNAME: username}
+                             title = f"GitHub Copilot Monitor ({org})" if org else "GitHub Copilot Monitor"
+-                            return self.async_create_entry(title=title, data=user_input)
++                            return self.async_create_entry(title=title, data=entry_data)
+                         elif response.status == 401:
+                             errors["base"] = "invalid_auth"
+                         elif response.status == 403:
+@@ -46,6 +87,7 @@ async def async_step_user(
+                         else:
+                             errors["base"] = "cannot_connect"
+                 except Exception:  # pylint: disable=broad-except
++                    _LOGGER.exception("Unexpected error validating GitHub Copilot Monitor credentials")
+                     errors["base"] = "cannot_connect"
+ 
+         data_schema = vol.Schema(
+diff --git a/custom_components/github_copilot_monitor/const.py b/custom_components/github_copilot_monitor/const.py
+index 96683ef..19739d5 100644
+--- a/custom_components/github_copilot_monitor/const.py
++++ b/custom_components/github_copilot_monitor/const.py
+@@ -3,5 +3,6 @@
+ DOMAIN = "github_copilot_monitor"
+ CONF_TOKEN = "personal_access_token"
+ CONF_ORG = "organization_name"
++CONF_USERNAME = "username"
+ 
+-API_VERSION = "2022-11-28"
++API_VERSION = "2026-03-10"
+diff --git a/custom_components/github_copilot_monitor/manifest.json b/custom_components/github_copilot_monitor/manifest.json
+index 34b00dc..e1c129e 100644
+--- a/custom_components/github_copilot_monitor/manifest.json
++++ b/custom_components/github_copilot_monitor/manifest.json
+@@ -9,5 +9,5 @@
+   "iot_class": "cloud_polling",
+   "issue_tracker": "https://github.com/loryanstrant/HA-GitHub-Copilot-Monitor/issues",
+   "requirements": ["aiohttp>=3.9.0"],
+-  "version": "0.1.3"
++  "version": "0.2.0"
+ }
+diff --git a/custom_components/github_copilot_monitor/sensor.py b/custom_components/github_copilot_monitor/sensor.py
+index dec75a3..ea3b418 100644
+--- a/custom_components/github_copilot_monitor/sensor.py
++++ b/custom_components/github_copilot_monitor/sensor.py
+@@ -11,7 +11,7 @@
+ from homeassistant.helpers.entity_platform import AddEntitiesCallback
+ from homeassistant.helpers.event import async_track_time_interval
+ 
+-from .const import DOMAIN, CONF_TOKEN, CONF_ORG, API_VERSION
++from .const import API_VERSION, CONF_ORG, CONF_TOKEN, CONF_USERNAME, DOMAIN
+ 
+ _LOGGER = logging.getLogger(__name__)
+ SCAN_INTERVAL = timedelta(hours=1)
+@@ -25,11 +25,33 @@ async def async_setup_entry(
+     config = hass.data[DOMAIN][config_entry.entry_id]
+     token = config[CONF_TOKEN]
+     org = config.get(CONF_ORG)
++    username = config.get(CONF_USERNAME)
+ 
+     sensors = [
+-        CopilotMonitorSensor(token, org, "Allocated Credits", "allocated_credits", "mdi:github"),
+-        CopilotMonitorSensor(token, org, "Used Credits", "used_credits", "mdi:brain-compute"),
+-        CopilotMonitorSensor(token, org, "Buffer", "buffer", "mdi:shield-check-outline"),
++        CopilotMonitorSensor(
++            token,
++            org,
++            username,
++            "Premium Interactions Limit",
++            "premium_interactions_limit",
++            "mdi:github",
++        ),
++        CopilotMonitorSensor(
++            token,
++            org,
++            username,
++            "Premium Interactions Used",
++            "premium_interactions_used",
++            "mdi:brain-compute",
++        ),
++        CopilotMonitorSensor(
++            token,
++            org,
++            username,
++            "Premium Interactions Remaining",
++            "premium_interactions_remaining",
++            "mdi:shield-check-outline",
++        ),
+     ]
+ 
+     async_add_entities(sensors, update_before_add=True)
+@@ -45,17 +67,26 @@ async def async_update_sensors(now):
+ class CopilotMonitorSensor(SensorEntity):
+     """Representation of a GitHub Copilot Monitor sensor."""
+ 
+-    def __init__(self, token: str, org: str | None, sensor_type: str, key: str, icon: str) -> None:
++    def __init__(
++        self,
++        token: str,
++        org: str | None,
++        username: str | None,
++        sensor_type: str,
++        key: str,
++        icon: str,
++    ) -> None:
+         """Initialize the sensor."""
+         self._token = token
+         self._org = org
++        self._username = username
+         self._sensor_type = sensor_type
+         self._key = key
+         self._icon = icon
+         self._state = None
+         self._attr_name = f"GitHub Copilot {sensor_type}"
+         self._attr_unique_id = f"github_copilot_monitor_{org or 'user'}_{key}"
+-        self._attr_native_unit_of_measurement = "Credits"
++        self._attr_native_unit_of_measurement = "requests"
+ 
+     @property
+     def state(self):
+@@ -69,7 +100,6 @@ def icon(self):
+ 
+     async def async_update(self) -> None:
+         """Fetch fresh metrics from GitHub's billing engine."""
+-        url = f"https://api.github.com/orgs/{self._org}/billing/copilot" if self._org else "https://api.github.com/user/billing/copilot"
+         headers = {
+             "Authorization": f"Bearer {self._token}",
+             "Accept": "application/vnd.github+json",
+@@ -78,21 +108,96 @@ async def async_update(self) -> None:
+ 
+         async with aiohttp.ClientSession() as session:
+             try:
+-                async with session.get(url, headers=headers) as response:
+-                    if response.status == 200:
+-                        data = await response.json()
+-                        breakdown = data.get("itemized_breakdown", {})
+-                        
+-                        allocated = float(breakdown.get("total_allocated_credits", 0))
+-                        used = float(breakdown.get("total_used_credits", 0))
+-                        
+-                        if self._key == "allocated_credits":
+-                            self._state = allocated
+-                        elif self._key == "used_credits":
+-                            self._state = used
+-                        elif self._key == "buffer":
+-                            self._state = max(0.0, allocated - used)
+-                    else:
+-                        _LOGGER.error("Failed to fetch billing data from GitHub: %s", response.status)
++                limit, used = await self._async_get_usage_metrics(session, headers)
++                if self._key == "premium_interactions_limit":
++                    self._state = limit
++                elif self._key == "premium_interactions_used":
++                    self._state = used
++                elif self._key == "premium_interactions_remaining":
++                    self._state = max(0.0, limit - used)
+             except Exception as err:
+                 _LOGGER.error("Error communicating with GitHub API: %s", err)
++
++    async def _async_get_usage_metrics(
++        self, session: aiohttp.ClientSession, headers: dict[str, str]
++    ) -> tuple[float, float]:
++        """Fetch usage metrics for either user or organization scope."""
++        if self._org:
++            async with session.get(
++                f"https://api.github.com/orgs/{self._org}/copilot/billing", headers=headers
++            ) as response:
++                if response.status != 200:
++                    _LOGGER.error("Failed to fetch org billing data from GitHub: %s", response.status)
++                    return 0.0, 0.0
++                data = await response.json()
++                breakdown = data.get("seat_breakdown", {})
++                limit = float(breakdown.get("total", 0))
++                used = float(
++                    breakdown.get(
++                        "active_this_cycle",
++                        breakdown.get("active", 0),
++                    )
++                )
++                return limit, used
++
++        username = await self._async_resolve_username(session, headers)
++        if not username:
++            return 0.0, 0.0
++
++        async with session.get(
++            f"https://api.github.com/users/{username}/settings/billing/usage/summary",
++            headers=headers,
++        ) as response:
++            if response.status == 200:
++                data = await response.json()
++                limit = float(data.get("userPremiumRequestEntitlement", 0))
++                used = self._calculate_used_requests(data)
++                return limit, used
++
++        async with session.get(
++            f"https://api.github.com/users/{username}/settings/billing/usage/premium_requests",
++            headers=headers,
++        ) as response:
++            if response.status != 200:
++                _LOGGER.error("Failed to fetch user billing data from GitHub: %s", response.status)
++                return 0.0, 0.0
++
++            data = await response.json()
++            quotas = data.get("quotas", {})
++            limits = quotas.get("limits", {})
++            remaining = quotas.get("remaining", {})
++
++            limit = float(
++                data.get(
++                    "userPremiumRequestEntitlement",
++                    limits.get("premiumInteractions", 0),
++                )
++            )
++            used = self._calculate_used_requests(data)
++            if used == 0 and "premiumInteractions" in remaining and limit:
++                used = max(0.0, limit - float(remaining["premiumInteractions"]))
++
++            return limit, used
++
++    async def _async_resolve_username(
++        self, session: aiohttp.ClientSession, headers: dict[str, str]
++    ) -> str | None:
++        """Resolve the username for user-level billing requests."""
++        if self._username:
++            return self._username
++
++        async with session.get("https://api.github.com/user", headers=headers) as response:
++            if response.status != 200:
++                _LOGGER.error("Failed to resolve username from GitHub: %s", response.status)
++                return None
++            user_data = await response.json()
++            username = user_data.get("login")
++            if not username:
++                _LOGGER.error("GitHub user lookup succeeded but no login value was returned")
++                return None
++            return username
++
++    @staticmethod
++    def _calculate_used_requests(data: dict) -> float:
++        """Calculate used premium requests as included usage plus billed overage usage."""
++        return float(data.get("discountQuantity", 0)) + float(data.get("netQuantity", 0))

@@ -1,0 +1,206 @@
+diff --git a/docs/glossary.md b/docs/glossary.md
+new file mode 100644
+index 0000000..4729d12
+--- /dev/null
++++ b/docs/glossary.md
+@@ -0,0 +1,200 @@
++# Glossary
++
++Every word other orgs-reins docs use, in one sentence each, in plain
++language. If a term you saw on a screen is not here, please open an
++issue — that is a doc bug.
++
++Terms are grouped so that a reader skimming for "the word my agent just
++said at me" can find it by context. If you prefer alphabetical, your
++browser's `Ctrl-F` works fine.
++
++---
++
++## The big picture
++
++- **Agent** — an AI program that takes actions on your behalf, like
++  editing files, running shell commands, or calling outside services.
++  Claude Code, OpenClaw, Hermes, and Replit Agent are all agents (or
++  hosts for agents).
++
++- **Runtime** — the product the agent runs inside of. The runtime is what
++  shows you the chat window, executes the agent's tool calls, and exposes
++  the integration points Reins plugs into. Claude Code is a runtime;
++  OpenClaw is a runtime; this repo ships per-runtime sub-skills under
++  [`skills/`](../skills/) as they get written.
++
++- **Reins** — the security-control layer that sits between your agent and
++  whatever it is about to do, decides whether to allow it, and writes the
++  outcome down. See [pegasi-ai/reins](https://github.com/pegasi-ai/reins).
++
++- **Reins Cloud** — the web app at `app.pegasi.ai` your admin uses to
++  push org-wide policy and review audit data across the team. Connect
++  during `reins init`; the agent on your laptop keeps enforcing even if
++  Reins Cloud is unreachable
++  ([upstream skill](https://github.com/pegasi-ai/reins/blob/main/plugin/skills/reins/SKILL.md)).
++
++---
++
++## How Reins plugs in
++
++- **Hook** — a small program your AI runtime runs before or after every
++  agent action. Reins ships as a hook so it can interpose on every action
++  the agent tries to take.
++
++- **PreToolUse** — the hook that fires *before* the agent runs an action,
++  giving Reins the chance to block it. Exit code `2` from a PreToolUse
++  hook is what stops the action
++  ([upstream `src/hooks/pre-tool-use.ts`](https://github.com/pegasi-ai/reins/blob/main/src/hooks/pre-tool-use.ts)).
++
++- **PostToolUse** — the hook that fires *after* an action has run. It
++  cannot stop the action — it just records what happened, in the audit
++  log
++  ([upstream `src/hooks/post-tool-use.ts`](https://github.com/pegasi-ai/reins/blob/main/src/hooks/post-tool-use.ts)).
++
++- **MCP (Model Context Protocol)** — the standard way modern agents talk
++  to outside services like Notion, Gmail, or your database. If the agent
++  is reading your inbox or writing to a Notion page, it is going through
++  MCP, and Reins's MCP rules apply.
++
++---
++
++## How Reins decides
++
++- **Policy** — the file that lists which actions to allow, warn on, ask
++  about, or block. Defaults are sensible; your admin can tighten or
++  loosen them. Lives at `~/.openclaw/reins/policy.json`.
++
++- **Module** — a category of thing the agent can touch. `FileSystem`,
++  `Shell`, `Browser`, `Gateway`, `Network`, and `MCP` are the modules
++  Reins ships with. Each module has methods.
++
++- **Method** — a specific action inside a module. `FileSystem.write`
++  means "the agent is trying to write a file"; `Shell.bash` means "the
++  agent is trying to run a shell command."
++
++- **Rule** — one entry in the policy: a module, a method, and what to do
++  when that method is invoked. The shape is defined by `SecurityRule` in
++  [upstream `src/types.ts`](https://github.com/pegasi-ai/reins/blob/main/src/types.ts).
++
++- **Action** — what a rule says to do. One of three values:
++  - `ALLOW` — just run it, do not interrupt.
++  - `ASK` — pause and prompt a human yes/no.
++  - `DENY` — refuse outright.
++  Defined as `Decision` in
++  [upstream `src/types.ts`](https://github.com/pegasi-ai/reins/blob/main/src/types.ts).
++
++- **Decision** — what Reins logged after evaluating an action: `ALLOWED`,
++  `BLOCKED`, or (rarer) `WARN`. The decision is what shows up in
++  `reins audit`. Easy to confuse with **action** above, which is what the
++  policy *says* to do; the decision is what actually *happened*.
++
++- **Severity** — a label Reins puts on blocked actions to indicate how
++  bad they were. The labels used in the source are `HIGH`, `CRITICAL`,
++  and `CATASTROPHIC`
++  ([upstream `src/hooks/pre-tool-use.ts`](https://github.com/pegasi-ai/reins/blob/main/src/hooks/pre-tool-use.ts)).
++  Some docs and UIs collapse these into `CRITICAL / HIGH / MEDIUM / LOW`
++  for end users — assume `CRITICAL` and `CATASTROPHIC` are the
++  unbypassable end of the spectrum on your machine.
++
++- **denyPaths** — a list of file-path patterns that get refused even if
++  the method's action is `ALLOW` or `ASK`. A reverse-allowlist for the
++  things you most want to protect. Implemented by `Interceptor` in
++  [upstream `src/core/Interceptor.ts`](https://github.com/pegasi-ai/reins/blob/main/src/core/Interceptor.ts).
++
++- **allowPaths** — the opposite of `denyPaths`: an explicit list of paths
++  that bypass an otherwise-restrictive rule. Useful for "the agent can
++  write anywhere under `~/workspace`, nowhere else."
++
++- **Glob pattern** — the syntax Reins uses for `denyPaths` and
++  `allowPaths`. `*` matches any chunk of a path segment, `**` matches any
++  number of segments (including across directories), `?` matches one
++  character, and `~` is expanded to your home directory. So
++  `~/.ssh/**` covers `~/.ssh/id_rsa` *and* `~/.ssh/keys/foo`.
++
++---
++
++## When something is blocked
++
++- **Block** — Reins refused to let the agent run an action because a
++  `DENY` rule (or a `denyPaths` entry) fired. The agent will see the
++  block and the runbook in [`when-blocked.md`](./when-blocked.md) covers
++  what to do next.
++
++- **Safe alternative** — the rephrased action Reins suggests when it
++  blocks something. Most blocks happen because the agent reached for the
++  blunt version of a request; the safe alternative is the targeted
++  version that does the same job without tripping the rule.
++
++- **Override** — accepting a non-critical block by pasting an explicit
++  approval token. Available only for `HIGH`-severity blocks, not for
++  `CRITICAL` or `CATASTROPHIC` ones, and only for rules the policy
++  flagged as user-overridable.
++
++- **`CONFIRM-` token** — the short six-character hex token Reins prints
++  when an override is available. Format `CONFIRM-XXXXXX`, generated per
++  block from a hash of the action being approved
++  ([upstream `src/core/Arbitrator.ts`](https://github.com/pegasi-ai/reins/blob/main/src/core/Arbitrator.ts)).
++  A token approves *this specific action* — pasting it again later does
++  not re-approve a different action.
++
++---
++
++## Record-keeping
++
++- **Audit log** — the append-only file at
++  `~/.openclaw/reins/decisions.jsonl` recording every decision Reins
++  made. View with `reins audit -n 50` or tail with
++  `tail -f ~/.openclaw/reins/decisions.jsonl`.
++
++- **`decisions.jsonl`** — the file path of the audit log. JSONL means
++  "one JSON object per line"; each line is one decision.
++
++- **Security scan** — the periodic configuration check Reins runs with
++  `reins scan`. Looks for things like exposed API keys, weak file
++  permissions, and missing TLS — see the check list in
++  [upstream `src/core/SecurityScanner.ts`](https://github.com/pegasi-ai/reins/blob/main/src/core/SecurityScanner.ts).
++  Reins's README describes the scan target as
++  ["OWASP ASI10" vulnerabilities](https://github.com/pegasi-ai/reins/blob/main/README.md);
++  the upstream docs do not expand the acronym, so we don't either.
++
++- **Drift** — a change in your configuration since the last saved scan.
++  `reins scan --monitor` compares against the previous baseline and
++  alerts when something moved
++  ([upstream `src/cli/scan.ts`](https://github.com/pegasi-ai/reins/blob/main/src/cli/scan.ts)).
++  An admin watching drift catches "someone disabled a hook" or "an API
++  key got committed" without having to look every day.
++
++---
++
++## For admins
++
++- **Org policy** — the highest-priority layer of rules, pushed from
++  Reins Cloud by your org's admin. CRITICAL rules in the org policy are
++  immutable on your laptop: a local edit cannot soften them.
++
++- **Team policy** — the second-priority layer, scoped to a team. Use it
++  for "the data team can talk to the database but the marketing team
++  cannot."
++
++- **Local override** — your own edits at
++  `~/.openclaw/reins/policy.json`. Apply unless a higher-priority layer
++  marked a rule immutable.
++
++- **Built-in defaults** — the lowest-priority layer, baked into Reins.
++  Used when no higher layer has spoken on a method. Reads `ALLOW`,
++  writes `ASK`, deletes `DENY`
++  ([upstream `src/config.ts`](https://github.com/pegasi-ai/reins/blob/main/src/config.ts)).
++
++- **Merge order** — the rule for which layer wins on a conflict, highest
++  to lowest: org policy → team policy → local override → built-in
++  defaults. Cloud being unreachable does *not* fail open; the last
++  cached cloud policy is still enforced.
++
++---
++
++## Where to go next
++
++- Got blocked and unsure what to do? — [`docs/when-blocked.md`](./when-blocked.md)
++- Picking your first policy? — [`policies/README.md`](../policies/README.md)
++- Setting orgs-reins up for a team? — `docs/admin-rollout.md` (forthcoming)
++- Walking through your first install? — `docs/onboarding.md` (forthcoming)

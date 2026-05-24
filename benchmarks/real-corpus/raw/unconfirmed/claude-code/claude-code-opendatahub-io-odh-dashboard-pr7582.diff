@@ -1,0 +1,187 @@
+diff --git a/packages/automl/frontend/src/app/components/configure/AutomlConfigure.tsx b/packages/automl/frontend/src/app/components/configure/AutomlConfigure.tsx
+index 7588ac51b1..555237c64f 100644
+--- a/packages/automl/frontend/src/app/components/configure/AutomlConfigure.tsx
++++ b/packages/automl/frontend/src/app/components/configure/AutomlConfigure.tsx
+@@ -723,13 +723,13 @@ function AutomlConfigure({
+                 {!trainDataFileKey ? (
+                   <EmptyState
+                     variant="xs"
+-                    titleText="Select an S3 connection or upload a file to get started"
++                    titleText="Select a file from your S3 connection or upload a file to get started"
+                     headingLevel="h4"
+                     icon={CubesIcon}
+                   >
+                     <EmptyStateBody>
+-                      In order to configure details and run an experiment, add a document or
+-                      connection in the widget on the left.
++                      In order to configure details and run an experiment, select a file or upload
++                      one in the Knowledge setup panel.
+                     </EmptyStateBody>
+                   </EmptyState>
+                 ) : (
+diff --git a/packages/automl/frontend/src/app/components/configure/__tests__/AutomlConfigure.spec.tsx b/packages/automl/frontend/src/app/components/configure/__tests__/AutomlConfigure.spec.tsx
+index 5802e6173c..ebf6d437fd 100644
+--- a/packages/automl/frontend/src/app/components/configure/__tests__/AutomlConfigure.spec.tsx
++++ b/packages/automl/frontend/src/app/components/configure/__tests__/AutomlConfigure.spec.tsx
+@@ -260,11 +260,11 @@ describe('AutomlConfigure', () => {
+       renderComponent();
+ 
+       expect(
+-        screen.getByText('Select an S3 connection or upload a file to get started'),
++        screen.getByText('Select a file from your S3 connection or upload a file to get started'),
+       ).toBeInTheDocument();
+       expect(
+         screen.getByText(
+-          'In order to configure details and run an experiment, add a document or connection in the widget on the left.',
++          'In order to configure details and run an experiment, select a file or upload one in the Knowledge setup panel.',
+         ),
+       ).toBeInTheDocument();
+     });
+@@ -441,7 +441,7 @@ describe('AutomlConfigure', () => {
+ 
+       // Initially should show empty state
+       expect(
+-        screen.getByText('Select an S3 connection or upload a file to get started'),
++        screen.getByText('Select a file from your S3 connection or upload a file to get started'),
+       ).toBeInTheDocument();
+ 
+       // Select a secret
+@@ -450,7 +450,7 @@ describe('AutomlConfigure', () => {
+ 
+       // Empty state should still be shown (no file selected yet)
+       expect(
+-        screen.getByText('Select an S3 connection or upload a file to get started'),
++        screen.getByText('Select a file from your S3 connection or upload a file to get started'),
+       ).toBeInTheDocument();
+ 
+       // Select a file via the file explorer
+@@ -459,7 +459,7 @@ describe('AutomlConfigure', () => {
+ 
+       // Empty state should be hidden
+       expect(
+-        screen.queryByText('Select an S3 connection or upload a file to get started'),
++        screen.queryByText('Select a file from your S3 connection or upload a file to get started'),
+       ).not.toBeInTheDocument();
+ 
+       // Configure details fields should be visible
+@@ -587,11 +587,11 @@ describe('AutomlConfigure', () => {
+       fireEvent.click(selectInvalidButton);
+ 
+       expect(
+-        screen.getByText('Select an S3 connection or upload a file to get started'),
++        screen.getByText('Select a file from your S3 connection or upload a file to get started'),
+       ).toBeInTheDocument();
+       expect(
+         screen.getByText(
+-          'In order to configure details and run an experiment, add a document or connection in the widget on the left.',
++          'In order to configure details and run an experiment, select a file or upload one in the Knowledge setup panel.',
+         ),
+       ).toBeInTheDocument();
+     });
+@@ -707,7 +707,7 @@ describe('AutomlConfigure', () => {
+ 
+         // Configure details should revert to empty state
+         expect(
+-          screen.getByText('Select an S3 connection or upload a file to get started'),
++          screen.getByText('Select a file from your S3 connection or upload a file to get started'),
+         ).toBeInTheDocument();
+ 
+         // Re-select a file — prediction type should be deselected
+@@ -832,7 +832,7 @@ describe('AutomlConfigure', () => {
+ 
+         // Empty state should be rendered
+         expect(
+-          screen.getByText('Select an S3 connection or upload a file to get started'),
++          screen.getByText('Select a file from your S3 connection or upload a file to get started'),
+         ).toBeInTheDocument();
+ 
+         // Label column should not exist since configure details is hidden
+diff --git a/packages/autorag/frontend/src/app/components/configure/AutoragConfigure.tsx b/packages/autorag/frontend/src/app/components/configure/AutoragConfigure.tsx
+index 9dd6ee3a52..2c6fc702f3 100644
+--- a/packages/autorag/frontend/src/app/components/configure/AutoragConfigure.tsx
++++ b/packages/autorag/frontend/src/app/components/configure/AutoragConfigure.tsx
+@@ -698,13 +698,13 @@ function AutoragConfigure({
+                 {!inputDataKey ? (
+                   <EmptyState
+                     variant="xs"
+-                    titleText="Select an S3 connection or upload a file to get started"
++                    titleText="Select a file from your S3 connection or upload a file to get started"
+                     headingLevel="h4"
+                     icon={CubesIcon}
+                   >
+                     <EmptyStateBody>
+-                      In order to configure details and run an experiment, add a document or
+-                      connection in the widget on the left.
++                      In order to configure details and run an experiment, select a file or upload
++                      one in the Knowledge setup panel.
+                     </EmptyStateBody>
+                   </EmptyState>
+                 ) : (
+diff --git a/packages/autorag/frontend/src/app/components/configure/__tests__/AutoragConfigure.spec.tsx b/packages/autorag/frontend/src/app/components/configure/__tests__/AutoragConfigure.spec.tsx
+index ac39ad41d1..f1c9bfd24c 100644
+--- a/packages/autorag/frontend/src/app/components/configure/__tests__/AutoragConfigure.spec.tsx
++++ b/packages/autorag/frontend/src/app/components/configure/__tests__/AutoragConfigure.spec.tsx
+@@ -298,11 +298,11 @@ describe('AutoragConfigure', () => {
+       renderComponent();
+ 
+       expect(
+-        screen.getByText('Select an S3 connection or upload a file to get started'),
++        screen.getByText('Select a file from your S3 connection or upload a file to get started'),
+       ).toBeInTheDocument();
+       expect(
+         screen.getByText(
+-          'In order to configure details and run an experiment, add a document or connection in the widget on the left.',
++          'In order to configure details and run an experiment, select a file or upload one in the Knowledge setup panel.',
+         ),
+       ).toBeInTheDocument();
+     });
+@@ -530,7 +530,7 @@ describe('AutoragConfigure', () => {
+ 
+       // Initially should show empty state
+       expect(
+-        screen.getByText('Select an S3 connection or upload a file to get started'),
++        screen.getByText('Select a file from your S3 connection or upload a file to get started'),
+       ).toBeInTheDocument();
+ 
+       // Select a secret
+@@ -539,7 +539,7 @@ describe('AutoragConfigure', () => {
+ 
+       // Empty state should still be shown (no file selected yet)
+       expect(
+-        screen.getByText('Select an S3 connection or upload a file to get started'),
++        screen.getByText('Select a file from your S3 connection or upload a file to get started'),
+       ).toBeInTheDocument();
+ 
+       // Select a file via the file explorer
+@@ -548,7 +548,7 @@ describe('AutoragConfigure', () => {
+ 
+       // Empty state should be hidden
+       expect(
+-        screen.queryByText('Select an S3 connection or upload a file to get started'),
++        screen.queryByText('Select a file from your S3 connection or upload a file to get started'),
+       ).not.toBeInTheDocument();
+ 
+       // Configure details fields should be visible
+@@ -985,11 +985,11 @@ describe('AutoragConfigure', () => {
+       fireEvent.click(selectInvalidButton);
+ 
+       expect(
+-        screen.getByText('Select an S3 connection or upload a file to get started'),
++        screen.getByText('Select a file from your S3 connection or upload a file to get started'),
+       ).toBeInTheDocument();
+       expect(
+         screen.getByText(
+-          'In order to configure details and run an experiment, add a document or connection in the widget on the left.',
++          'In order to configure details and run an experiment, select a file or upload one in the Knowledge setup panel.',
+         ),
+       ).toBeInTheDocument();
+     });
+@@ -1047,7 +1047,7 @@ describe('AutoragConfigure', () => {
+ 
+       // Before file selection, the configure details panel shows the empty state
+       expect(
+-        screen.getByText('Select an S3 connection or upload a file to get started'),
++        screen.getByText('Select a file from your S3 connection or upload a file to get started'),
+       ).toBeInTheDocument();
+       expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+ 

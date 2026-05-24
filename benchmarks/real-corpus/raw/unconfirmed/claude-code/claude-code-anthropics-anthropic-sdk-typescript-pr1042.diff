@@ -1,0 +1,205 @@
+diff --git a/packages/vertex-sdk/src/client.ts b/packages/vertex-sdk/src/client.ts
+index bfbdbac3..587d0434 100644
+--- a/packages/vertex-sdk/src/client.ts
++++ b/packages/vertex-sdk/src/client.ts
+@@ -6,6 +6,7 @@ import { FinalRequestOptions } from './internal/request-options';
+ import { FinalizedRequestInit } from './internal/types';
+ import { isObj } from './internal/utils/values';
+ import { buildHeaders } from './internal/headers';
++import { AnthropicError } from './core/error';
+ 
+ export { BaseAnthropic } from '@anthropic-ai/sdk/client';
+ 
+@@ -179,6 +180,8 @@ export class AnthropicVertex extends BaseAnthropic {
+       const specifier = stream ? 'streamRawPredict' : 'rawPredict';
+ 
+       options.path = `/projects/${this.projectId}/locations/${this.region}/publishers/anthropic/models/${model}:${specifier}`;
++
++      validateNoDocumentUrlSources(options.body);
+     }
+ 
+     if (
+@@ -198,6 +201,36 @@ export class AnthropicVertex extends BaseAnthropic {
+   }
+ }
+ 
++function validateNoDocumentUrlSources(body: Record<string, unknown>): void {
++  const messages = body['messages'];
++  if (!Array.isArray(messages)) return;
++  for (const message of messages) {
++    if (!message || !Array.isArray(message.content)) continue;
++    for (const block of message.content) {
++      checkBlock(block);
++      if (block?.type === 'tool_result' && Array.isArray(block.content)) {
++        for (const nested of block.content) {
++          checkBlock(nested);
++        }
++      }
++    }
++  }
++}
++
++function checkBlock(block: unknown): void {
++  if (
++    block != null &&
++    typeof block === 'object' &&
++    (block as any).type === 'document' &&
++    (block as any).source?.type === 'url'
++  ) {
++    throw new AnthropicError(
++      'Vertex AI does not support URL sources for document content blocks. ' +
++        'Use base64-encoded content (source.type: "base64") or plain text (source.type: "text") instead.',
++    );
++  }
++}
++
+ /**
+  * The Vertex SDK does not currently support the Batch API.
+  */
+diff --git a/packages/vertex-sdk/tests/client.test.ts b/packages/vertex-sdk/tests/client.test.ts
+index df8fa747..d0dc2c56 100644
+--- a/packages/vertex-sdk/tests/client.test.ts
++++ b/packages/vertex-sdk/tests/client.test.ts
+@@ -1,6 +1,7 @@
+ // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
+ 
+ import { AnthropicVertex } from '../src/client';
++import { AnthropicError } from '../src/core/error';
+ 
+ // Mock GoogleAuth to prevent credential loading during tests
+ jest.mock('google-auth-library', () => ({
+@@ -68,6 +69,134 @@ describe('AnthropicVertex', () => {
+       expect(client.baseURL).toBe(customUrl);
+     });
+ 
++    test('throws AnthropicError when a document block uses a URL source', async () => {
++      const client = new AnthropicVertex({
++        region: 'us-central1',
++        projectId: 'test-project',
++        accessToken: 'fake-token',
++      });
++      await expect(
++        (client as any).buildRequest({
++          method: 'post',
++          path: '/v1/messages',
++          body: {
++            model: 'claude-opus-4-5',
++            max_tokens: 1024,
++            messages: [
++              {
++                role: 'user',
++                content: [
++                  {
++                    type: 'document',
++                    source: { type: 'url', url: 'https://example.com/doc.pdf' },
++                  },
++                ],
++              },
++            ],
++          },
++        }),
++      ).rejects.toThrow(AnthropicError);
++      await expect(
++        (client as any).buildRequest({
++          method: 'post',
++          path: '/v1/messages',
++          body: {
++            model: 'claude-opus-4-5',
++            max_tokens: 1024,
++            messages: [
++              {
++                role: 'user',
++                content: [
++                  {
++                    type: 'document',
++                    source: { type: 'url', url: 'https://example.com/doc.pdf' },
++                  },
++                ],
++              },
++            ],
++          },
++        }),
++      ).rejects.toThrow(/does not support URL sources/);
++    });
++
++    test('throws AnthropicError when a document URL source is nested inside a tool_result', async () => {
++      const client = new AnthropicVertex({
++        region: 'us-central1',
++        projectId: 'test-project',
++        accessToken: 'fake-token',
++      });
++      await expect(
++        (client as any).buildRequest({
++          method: 'post',
++          path: '/v1/messages',
++          body: {
++            model: 'claude-opus-4-5',
++            max_tokens: 1024,
++            messages: [
++              {
++                role: 'user',
++                content: [
++                  {
++                    type: 'tool_result',
++                    tool_use_id: 'tool_abc',
++                    content: [
++                      {
++                        type: 'document',
++                        source: { type: 'url', url: 'https://example.com/doc.pdf' },
++                      },
++                    ],
++                  },
++                ],
++              },
++            ],
++          },
++        }),
++      ).rejects.toThrow(AnthropicError);
++    });
++
++    test('does not throw for document blocks with base64 or text sources', async () => {
++      const client = new AnthropicVertex({
++        region: 'us-central1',
++        projectId: 'test-project',
++        accessToken: 'fake-token',
++      });
++      const base64Request = (client as any).buildRequest({
++        method: 'post',
++        path: '/v1/messages',
++        body: {
++          model: 'claude-opus-4-5',
++          max_tokens: 1024,
++          messages: [
++            {
++              role: 'user',
++              content: [
++                {
++                  type: 'document',
++                  source: { type: 'base64', media_type: 'application/pdf', data: 'AAAA' },
++                },
++              ],
++            },
++          ],
++        },
++      });
++      const textRequest = (client as any).buildRequest({
++        method: 'post',
++        path: '/v1/messages',
++        body: {
++          model: 'claude-opus-4-5',
++          max_tokens: 1024,
++          messages: [
++            {
++              role: 'user',
++              content: [{ type: 'document', source: { type: 'text', data: 'hello world' } }],
++            },
++          ],
++        },
++      });
++      await expect(base64Request).resolves.toBeDefined();
++      await expect(textRequest).resolves.toBeDefined();
++    });
++
+     test('throws error when region is not provided', () => {
+       const originalEnv = process.env['CLOUD_ML_REGION'];
+       delete process.env['CLOUD_ML_REGION'];

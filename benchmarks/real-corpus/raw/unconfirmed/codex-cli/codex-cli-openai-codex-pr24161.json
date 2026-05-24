@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24161",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24161,
+    "headSha": "6872d8497072f726a8f0c537be1666faae6c0fd7",
+    "baseSha": "458564df67d30422da0c092bbbc77cb024e754af",
+    "title": "Add subagent lineage turn metadata",
+    "body": "## Why\n\nStacked on #24160.\n\n`forked_from_thread_id` captures copied-history lineage, but it intentionally does not describe subagent control lineage. A subagent can be spawned without copied history, and when history is copied the copied-history source and immediate spawning parent are related but distinct concepts. Responses API metadata should preserve that distinction so consumers can accurately classify the current thread and reconstruct its lineage.\n\n## What changed\n\n- Adds `parent_thread_id` and `subagent_type` to core-owned `x-codex-turn-metadata`.\n- Documents the distinction between copied-history lineage (`forked_from_thread_id`) and subagent/control lineage (`parent_thread_id`) beside the turn metadata model.\n- Derives `subagent_type` from `SessionSource::SubAgent` and sets `parent_thread_id` only for `SubAgentSource::ThreadSpawn`.\n- Rehydrates resumed session source metadata from stored thread metadata so follow-up turns after app-server restart plus `thread/resume` preserve subagent lineage.\n- Extends reserved-key, git-enrichment, thread-spawn, and app-server v2 metadata coverage for the new subagent fields.\n\n## Verification\n\n- Not run to completion after splitting this stack; the focused subagent `codex-core` test run was canceled before completion.\n",
+    "author": "owenlin0",
+    "headRef": "owen/subagent_lineage",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "6872d8497072f726a8f0c537be1666faae6c0fd7",
+    "baseSha": "458564df67d30422da0c092bbbc77cb024e754af"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24161.diff",
+  "vendoredAt": "2026-05-24T03:20:47.249Z",
+  "collectedAt": "2026-05-24T03:20:47.249Z"
+}

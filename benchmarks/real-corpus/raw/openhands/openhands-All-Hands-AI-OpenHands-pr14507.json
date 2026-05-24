@@ -1,0 +1,26 @@
+{
+  "id": "openhands-All-Hands-AI-OpenHands-pr14507",
+  "agent": {
+    "vendor": "openhands",
+    "confidence": "high",
+    "source": "repo-owner=All-Hands-AI+body=openhands-attribution"
+  },
+  "pr": {
+    "number": 14507,
+    "headSha": "00c99e92015fcabcb1289e5254a5f66b409d3fbc",
+    "baseSha": "8350c498aa6557d6e7e5c6f3c1385808191b1500",
+    "title": "chore(lint): pyproject.toml as single source of truth for ruff",
+    "body": "## Summary\n\n- Move the full ruff config into `[tool.ruff]` in `pyproject.toml` — the Python-ecosystem standard location.\n- Drop the explicit `--config dev_config/python/ruff.toml` flags from the pre-commit hooks so ruff auto-discovers `pyproject.toml`.\n- Delete the now-redundant `dev_config/python/ruff.toml`.\n- Bump pre-commit ruff from `v0.11.8` → `v0.12.5` to match the pinned dev dependency.\n\n## Why\n\nTwo configs were silently diverging:\n\n| | `dev_config/python/ruff.toml` (CI) | `[tool.ruff]` in `pyproject.toml` (local) |\n|---|---|---|\n| Quote style | single ✅ | not enforced ❌ |\n| Q / B / ASYNC / UP rules | ✅ | ❌ |\n| D (docstring) rules | ❌ | ✅ |\n\nCode that passed `uv run ruff` locally could still fail CI with hundreds of fixable errors (311 quote-style fixes landed as a follow-up commit in #14295).\n\n## Excludes and ignores — why they're needed\n\n### `exclude: ^(enterprise/)` on the pre-commit hooks\nWas already present in the old `ruff.toml`. Enterprise has its own separate `Lint enterprise python` CI job with different rules. Without this pre-commit-level exclude, ruff would run on enterprise files with the OSS config in addition to the enterprise config.\n\n### `lint.ignore` entries in `pyproject.toml`\nAll but one were copied verbatim from the old `ruff.toml`:\n\n| Rule | Reason |\n|------|---------|\n| `E501` | Line length — enforcing would touch hundreds of files |\n| `B003, B007, B009, B010, B018, B904` | Pre-existing bugbear violations across the repo |\n| `ASYNC110, 220, 221, 230, 251` | Already ignored before; comment says \"fix in a separate PR\" |\n| `ASYNC109` | **New here** — rule didn't exist in ruff 0.11.8 (old CI version); pre-existing violations in `app_server/` on main that were never caught. Ignoring preserves the status quo rather than requiring a repo-wide fix in this PR. |\n\n### D rules not included in `lint.select`\nThe old CI config never enforced D (docstring) rules — only the old local `pyproject.toml` did. Adding them now would surface hundreds of pre-existing violations across the repo and block CI. They can be re-added in a dedicated clean-up PR once the backlog is cleared.\n\n## Files changed\n\n| File | Change |\n|---|---|\n| `pyproject.toml` | Full ruff config in dotted-key format (pyproject-fmt-stable) |\n| `dev_config/python/.pre-commit-config.yaml` | Remove `--config` flags; add `exclude: ^(enterprise/)` back; bump ruff to `v0.12.5` |\n| `dev_config/python/ruff.toml` | Deleted |\n| `openhands/app_server/app_lifespan/alembic/versions/*.py` | Auto-fix pre-existing `UP007`/`F401` violations (ruff was modifying these in CI, causing hook failures) |\n| `openhands/app_server/sandbox/remote_sandbox_service.py` | Same — auto-fix `UP007` |\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+    "author": "simonrosenberg",
+    "headRef": "fix-ruff-single-config",
+    "repository": "All-Hands-AI/OpenHands"
+  },
+  "diffRef": {
+    "repository": "All-Hands-AI/OpenHands",
+    "headSha": "00c99e92015fcabcb1289e5254a5f66b409d3fbc",
+    "baseSha": "8350c498aa6557d6e7e5c6f3c1385808191b1500"
+  },
+  "vendoredDiffPath": "openhands/openhands-All-Hands-AI-OpenHands-pr14507.diff",
+  "vendoredAt": "2026-05-24T03:18:19.274Z",
+  "collectedAt": "2026-05-24T03:18:19.274Z"
+}

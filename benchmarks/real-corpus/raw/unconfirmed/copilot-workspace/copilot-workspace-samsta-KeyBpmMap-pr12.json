@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-samsta-KeyBpmMap-pr12",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 12,
+    "headSha": "019ca0961b3c9075e9db75449adf09c05d723f58",
+    "baseSha": "a75086d44c2f349b6a15f6a8ff20249500aebf99",
+    "title": "Add social media sharing for plots to Facebook and Instagram",
+    "body": "## Summary\nAdded social media sharing functionality to allow users to share the music library analysis plots (Polar Harmonic Density Map and BPM vs Key Heatmap) to Facebook and Instagram. The shared posts include a link back to the GitHub Pages deployment.\n\n## Changes Made\n\n### 1. New Sharing Utility Module (`src/lib/sharePlots.ts`)\n- Created comprehensive sharing utilities supporting both Web Share API and fallback methods\n- **`sharePlot()`** - Main sharing function with graceful fallbacks:\n  - Uses native Web Share API on modern browsers for seamless UX\n  - Falls back to platform-specific URLs on older browsers\n  - For Facebook: Uses standard `sharer.php` endpoint (no app ID required)\n  - For Instagram: Copies message to clipboard and opens Instagram.com\n- **Supporting functions**:\n  - `generateShareMessage()` - Creates share messages with GitHub Pages link\n  - `createFacebookShareUrl()` - Generates Facebook share URLs\n  - `createInstagramShareUrl()` - Opens Instagram web\n  - `canShare()` - Detects Web Share API support\n  - `getShareButtonLabel()` - Provides contextual button labels\n\n### 2. Updated Main App (`src/App.tsx`)\n- Added import for sharing utilities\n- Created share handlers:\n  - `sharePolarChart()` - Shares the Polar Harmonic Density Map\n  - `shareHeatmapChart()` - Shares the BPM vs Key Heatmap\n- Added share buttons to both chart headers:\n  - \"Share to Facebook\" button\n  - \"Share to Instagram\" button\n  - Placed alongside existing \"Export PNG\" button\n\n### 3. Version Bump (`package.json`)\n- Updated version from 0.1.0 → 0.2.0 (minor version increment per convention)\n\n## Features\n✅ **Web Share API Integration** - Uses native sharing on modern browsers  \n✅ **Graceful Fallbacks** - Works on all browsers with fallback URLs  \n✅ **No App ID Required** - Facebook sharing works without requiring developer registration  \n✅ **Individual Sharing** - Each chart can be shared independently  \n✅ **GitHub Pages Link** - All shares include link back to the app  \n✅ **User Guidance** - Console logs guide users through the sharing process  \n\n## Testing & Validation\n- ✅ Linting: No issues found\n- ✅ Build: Successful production build\n- ✅ Tests: All 24 existing tests pass\n- ✅ Security: CodeQL scan found 0 vulnerabilities\n- ✅ Code Review: All feedback addressed\n  - Removed Facebook app_id placeholder\n  - Replaced alert() with console.log()\n  - Documented Instagram API limitations\n  - Fixed formatting issues",
+    "author": "Copilot",
+    "headRef": "copilot/add-share-plots-to-social-media",
+    "repository": "samsta/KeyBpmMap"
+  },
+  "diffRef": {
+    "repository": "samsta/KeyBpmMap",
+    "headSha": "019ca0961b3c9075e9db75449adf09c05d723f58",
+    "baseSha": "a75086d44c2f349b6a15f6a8ff20249500aebf99"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-samsta-KeyBpmMap-pr12.diff",
+  "vendoredAt": "2026-05-24T03:05:52.902Z",
+  "collectedAt": "2026-05-24T03:05:52.902Z"
+}

@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-python-pr1570",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1570,
+    "headSha": "0eddd38d1c3cc39ae98b798a5b44a586f8f1fb16",
+    "baseSha": "28cdc33644bfb3f8310d51867619cafb5dd8cf23",
+    "title": "fix(streaming): guard against out-of-bounds content index; fix BetaAsyncAbstractMemoryTool docstring",
+    "body": "Two fixes in this PR.\n\n---\n\n## Fix 1 — `IndexError` when `content_block_delta`/`stop` arrives before `content_block_start` (fixes #1192)\n\n**Files:** `src/anthropic/lib/streaming/_messages.py`, `src/anthropic/lib/streaming/_beta_messages.py`\n\n`accumulate_event` indexes directly into `current_snapshot.content[event.index]` for both `content_block_delta` and `content_block_stop` events. If the server sends a delta or stop for an index that hasn't been populated by a preceding `content_block_start` (server error, reconnect, or race condition), an unhandled `IndexError` propagates to the caller.\n\nAdd a bounds guard and return the snapshot unchanged in that case:\n\n```python\n# BEFORE\nelif event.type == \"content_block_delta\":\n    content = current_snapshot.content[event.index]\n\n# AFTER\nelif event.type == \"content_block_delta\":\n    if event.index >= len(current_snapshot.content):\n        return current_snapshot\n    content = current_snapshot.content[event.index]\n```\n\nApplied to both `content_block_delta` and `content_block_stop` in both `_messages.py` and `_beta_messages.py` (4 guards total).\n\n---\n\n## Fix 2 — `BetaAsyncAbstractMemoryTool` docstring is a copy-paste of the sync class (fixes #1290)\n\n**File:** `src/anthropic/lib/tools/_beta_builtin_memory_tool.py`\n\nThe docstring for `BetaAsyncAbstractMemoryTool` was a verbatim copy of `BetaAbstractMemoryTool`'s docstring, instructing users to:\n- Subclass `BetaAbstractMemoryTool` (the sync class) ❌\n- Use `def view` / `def create` (sync methods) ❌  \n- Use `Anthropic()` (sync client) ❌\n\nFollowing the example verbatim raises `TypeError` at runtime. Updated to show the correct async class name, `async def` methods, `AsyncAnthropic` client, and `asyncio.run()` wrapper.",
+    "author": "rmotgi1227",
+    "headRef": "fix/streaming-index-bounds-and-async-docstring",
+    "repository": "anthropics/anthropic-sdk-python"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-python",
+    "headSha": "0eddd38d1c3cc39ae98b798a5b44a586f8f1fb16",
+    "baseSha": "28cdc33644bfb3f8310d51867619cafb5dd8cf23"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-python-pr1570.diff",
+  "vendoredAt": "2026-05-24T03:17:07.795Z",
+  "collectedAt": "2026-05-24T03:17:07.795Z"
+}

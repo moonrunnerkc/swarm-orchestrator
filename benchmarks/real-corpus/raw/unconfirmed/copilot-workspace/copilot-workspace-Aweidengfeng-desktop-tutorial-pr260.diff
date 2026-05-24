@@ -1,0 +1,262 @@
+diff --git a/www/index.html b/www/index.html
+index 7646517..bab5d3d 100644
+--- a/www/index.html
++++ b/www/index.html
+@@ -280,34 +280,100 @@
+       <div class="flex items-center gap-2 bg-slate-800 rounded-xl px-3 py-2">
+         <span class="material-symbols-outlined text-slate-400 text-lg">search</span>
+         <input x-model="searchQuery" @input.debounce.300ms="globalSearch(searchQuery)" type="text" placeholder="搜索山峰、向导、俱乐部、动态..." class="bg-transparent flex-1 text-white text-sm outline-none placeholder-slate-500">
+-        <button @click="showSearch=false;searchQuery=''" class="text-slate-400 hover:text-white">
++        <button @click="showSearch=false;searchQuery='';searchResults=[]" class="text-slate-400 hover:text-white">
+           <span class="material-symbols-outlined text-lg">close</span>
+         </button>
+       </div>
+-      <!-- 搜索历史 -->
+-      <div x-show="!globalSearchResults.length" class="flex gap-2 mt-2 overflow-x-auto scroll-hide pb-1">
+-        <template x-for="h in searchHistory" :key="h">
+-          <button @click="searchQuery = h; globalSearch(h)" class="flex-shrink-0 px-3 py-1 rounded-full bg-slate-700 text-slate-300 text-xs hover:bg-slate-600 transition-colors" x-text="h"></button>
++      <!-- 搜索结果面板 -->
++      <div x-show="searchResults.length > 0 || searchLoading" class="mt-2 rounded-xl overflow-hidden bg-slate-800 border border-white/10 max-h-80 overflow-y-auto">
++        <!-- Loading -->
++        <div x-show="searchLoading" class="flex items-center justify-center py-4 gap-2">
++          <span class="material-symbols-outlined text-slate-400 animate-spin text-base">progress_activity</span>
++          <span class="text-slate-400 text-sm">搜索中...</span>
++        </div>
++        <!-- 无结果提示 -->
++        <div x-show="!searchLoading && searchResults.length === 0 && searchQuery.trim()" class="text-center py-4 text-slate-400 text-sm">
++          未找到与「<span x-text="searchQuery"></span>」相关的内容
++        </div>
++        <!-- 山峰结果 -->
++        <template x-if="!searchLoading && searchResults.filter(r => r.type === 'peak').length > 0">
++          <div>
++            <div class="px-3 pt-2 pb-1 text-xs text-slate-500 font-semibold uppercase tracking-wide">🏔️ 山峰</div>
++            <template x-for="item in searchResults.filter(r => r.type === 'peak')" :key="item.id">
++              <button @click="selectSearchResult(item)" class="w-full flex items-center gap-3 px-3 py-2 hover:bg-white/5 transition-colors text-left">
++                <img x-show="item.image" :src="item.image" class="w-9 h-9 rounded-lg object-cover flex-shrink-0">
++                <span x-show="!item.image" class="w-9 h-9 rounded-lg bg-slate-700 flex items-center justify-center flex-shrink-0 text-base">🏔️</span>
++                <div class="flex-1 min-w-0">
++                  <div class="text-white text-sm font-medium truncate" x-text="item.name"></div>
++                  <div class="text-slate-400 text-xs" x-text="(item.altitude ? item.altitude.toLocaleString() + 'm' : '') + (item.country ? ' · ' + item.country : '')"></div>
++                </div>
++              </button>
++            </template>
++          </div>
+         </template>
+-      </div>
+-      <!-- 全局搜索结果 -->
+-      <div x-show="globalSearchResults.length > 0" class="mt-2 space-y-2 max-h-72 overflow-y-auto">
+-        <template x-for="group in globalSearchResults" :key="group.type">
++        <!-- 向导结果 -->
++        <template x-if="!searchLoading && searchResults.filter(r => r.type === 'guide').length > 0">
++          <div>
++            <div class="px-3 pt-2 pb-1 text-xs text-slate-500 font-semibold uppercase tracking-wide">🧭 向导</div>
++            <template x-for="item in searchResults.filter(r => r.type === 'guide')" :key="item.id">
++              <button @click="selectSearchResult(item)" class="w-full flex items-center gap-3 px-3 py-2 hover:bg-white/5 transition-colors text-left">
++                <img x-show="item.avatar" :src="item.avatar" class="w-9 h-9 rounded-full object-cover flex-shrink-0">
++                <span x-show="!item.avatar" class="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center flex-shrink-0 text-base">🧭</span>
++                <div class="flex-1 min-w-0">
++                  <div class="text-white text-sm font-medium truncate" x-text="item.name"></div>
++                  <div class="text-slate-400 text-xs" x-text="(item.specialty || '') + (item.region ? ' · ' + item.region : '')"></div>
++                </div>
++                <div x-show="item.rating" class="text-xs text-amber-400 flex-shrink-0">⭐ <span x-text="item.rating"></span></div>
++              </button>
++            </template>
++          </div>
++        </template>
++        <!-- 俱乐部结果 -->
++        <template x-if="!searchLoading && searchResults.filter(r => r.type === 'club').length > 0">
++          <div>
++            <div class="px-3 pt-2 pb-1 text-xs text-slate-500 font-semibold uppercase tracking-wide">🏛️ 俱乐部</div>
++            <template x-for="item in searchResults.filter(r => r.type === 'club')" :key="item.id">
++              <button @click="selectSearchResult(item)" class="w-full flex items-center gap-3 px-3 py-2 hover:bg-white/5 transition-colors text-left">
++                <img x-show="item.cover" :src="item.cover" class="w-9 h-9 rounded-lg object-cover flex-shrink-0">
++                <span x-show="!item.cover" class="w-9 h-9 rounded-lg bg-slate-700 flex items-center justify-center flex-shrink-0 text-base">🏛️</span>
++                <div class="flex-1 min-w-0">
++                  <div class="text-white text-sm font-medium truncate" x-text="item.name"></div>
++                  <div class="text-slate-400 text-xs" x-text="(item.specialty || '') + (item.members_count ? ' · ' + item.members_count + '人' : '')"></div>
++                </div>
++                <span x-show="item.verified" class="text-xs text-primary-light flex-shrink-0">✓ 认证</span>
++              </button>
++            </template>
++          </div>
++        </template>
++        <!-- 帖子结果 -->
++        <template x-if="!searchLoading && searchResults.filter(r => r.type === 'post').length > 0">
+           <div>
+-            <p class="text-xs text-slate-400 font-semibold px-1 mb-1" x-text="group.label"></p>
+-            <template x-for="item in group.items" :key="item.id || item.name">
+-              <button @click="handleGlobalSearchClick(item); showSearch=false; globalSearchResults=[];" class="w-full text-left px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 transition-colors mb-1 flex items-center gap-2">
+-                <span class="text-base" x-text="group.icon"></span>
++            <div class="px-3 pt-2 pb-1 text-xs text-slate-500 font-semibold uppercase tracking-wide">📝 动态</div>
++            <template x-for="item in searchResults.filter(r => r.type === 'post')" :key="item.id">
++              <button @click="selectSearchResult(item)" class="w-full flex items-center gap-3 px-3 py-2 hover:bg-white/5 transition-colors text-left">
++                <img x-show="item.author_avatar" :src="item.author_avatar" class="w-9 h-9 rounded-full object-cover flex-shrink-0">
++                <span x-show="!item.author_avatar" class="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center flex-shrink-0 text-base">👤</span>
+                 <div class="flex-1 min-w-0">
+-                  <p class="text-white text-xs font-semibold truncate" x-text="item.name || item.title || item.content"></p>
+-                  <p class="text-slate-400 text-[10px] truncate" x-text="item.country || item.specialty || item.type || ''"></p>
++                  <div class="text-slate-300 text-xs truncate" x-text="item.author_name || '匿名'"></div>
++                  <div class="text-white text-sm truncate" x-text="item.content"></div>
+                 </div>
+               </button>
+             </template>
+-            <button x-show="group.total > 3" @click="handleGlobalSearchViewAll(group); showSearch=false;" class="w-full text-center text-xs text-primary-light py-1">查看全部 <span x-text="group.type"></span> 结果</button>
+           </div>
+         </template>
+       </div>
++      <!-- 搜索历史（无结果时展示） -->
++      <div x-show="!searchLoading && searchResults.length === 0 && !searchQuery.trim() && searchHistory.length > 0" class="mt-2">
++        <div class="flex items-center justify-between px-1 mb-1">
++          <span class="text-xs text-slate-500 font-semibold">最近搜索</span>
++          <button @click="searchHistory = []" class="text-xs text-slate-500 hover:text-slate-300">清除</button>
++        </div>
++        <div class="flex flex-wrap gap-2">
++          <template x-for="(h, i) in searchHistory" :key="i">
++            <button @click="globalSearch(h)" class="px-3 py-1 rounded-full text-xs bg-slate-700 text-slate-300 hover:bg-slate-600 transition-colors" x-text="h"></button>
++          </template>
++        </div>
++      </div>
+     </div>
+   </header>
+ 
+@@ -6154,6 +6220,7 @@ <h2 class="text-white font-display font-bold text-lg">我的订单</h2>
+     showSearch: false,
+     searchQuery: '',
+     searchResults: [],
++    searchLoading: false,
+     searchHistory: ['珠穆朗玛峰', 'K2', '马特洪峰'],
+     useMetric: true,
+     currentCurrency: 'CNY',
+@@ -6560,52 +6627,9 @@ <h2 class="text-white font-display font-bold text-lg">我的订单</h2>
+     },
+ 
+     // 全局搜索（搜索所有模块）
+-    globalSearch(query) {
+-      if (!query || !query.trim()) { this.globalSearchResults = []; return; }
+-      const q = query.trim().toLowerCase();
+-      const results = [];
+-      // 搜索山峰（记录总数后再截取）
+-      const allPeaks = [...this.eightThousanders, ...this.continentalPeaks, ...this.worldPeaks].filter(p =>
+-        (p.name && p.name.toLowerCase().includes(q)) ||
+-        (p.nameEn && p.nameEn.toLowerCase().includes(q)) ||
+-        (p.country && p.country.toLowerCase().includes(q))
+-      );
+-      if (allPeaks.length) results.push({ type: '山峰', label: '🏔️ 山峰', icon: '🏔️', items: allPeaks.slice(0, 3), total: allPeaks.length });
+-      // 搜索向导
+-      const allGuides = [...(this.nearbyGuides || []), ...(this.guides || [])].filter((g, i, arr) => arr.findIndex(x => x.id === g.id) === i).filter(g =>
+-        (g.name && g.name.toLowerCase().includes(q)) ||
+-        (g.specialty && g.specialty.toLowerCase().includes(q))
+-      );
+-      if (allGuides.length) results.push({ type: '向导', label: '🧗 向导', icon: '🧗', items: allGuides.slice(0, 3), total: allGuides.length });
+-      // 搜索俱乐部
+-      const allClubs = (this.featuredClubs || []).filter(c =>
+-        (c.name && c.name.toLowerCase().includes(q)) ||
+-        (c.specialty && c.specialty.toLowerCase().includes(q))
+-      );
+-      if (allClubs.length) results.push({ type: '俱乐部', label: '🏛️ 俱乐部', icon: '🏛️', items: allClubs.slice(0, 3), total: allClubs.length });
+-      // 搜索动态
+-      const allPosts = (this.communityPosts || []).filter(p =>
+-        (p.content && p.content.toLowerCase().includes(q)) ||
+-        (p.author && p.author.toLowerCase().includes(q))
+-      );
+-      if (allPosts.length) results.push({ type: '动态', label: '💬 动态', icon: '💬', items: allPosts.slice(0, 3).map(p => ({ ...p, name: p.content ? p.content.slice(0, 40) : '' })), total: allPosts.length });
+-      // 搜索队伍
+-      const allTeams = (this.teams || []).filter(t =>
+-        (t.name && t.name.toLowerCase().includes(q)) ||
+-        (t.peak && t.peak.toLowerCase().includes(q))
+-      );
+-      if (allTeams.length) results.push({ type: '队伍', label: '👥 队伍', icon: '👥', items: allTeams.slice(0, 3), total: allTeams.length });
+-      // 搜索轨迹
+-      const allTracks = (this.tracks || []).filter(t =>
+-        t.name && t.name.toLowerCase().includes(q)
+-      );
+-      if (allTracks.length) results.push({ type: '轨迹', label: '📍 轨迹', icon: '📍', items: allTracks.slice(0, 3), total: allTracks.length });
+-      this.globalSearchResults = results;
+-      // 同时保存搜索历史
+-      if (query.trim() && !this.searchHistory.includes(query.trim())) {
+-        this.searchHistory.unshift(query.trim());
+-        if (this.searchHistory.length > 10) this.searchHistory.pop();
+-      }
++    async globalSearch(query) {
++      this.searchQuery = query;
++      await this.performSearch();
+     },
+     handleGlobalSearchClick(item) {
+       if (item._type === 'guide' || item.dayRate !== undefined || item.rating !== undefined) {
+@@ -6627,7 +6651,18 @@ <h2 class="text-white font-display font-bold text-lg">我的订单</h2>
+     // Search (legacy - kept for compatibility)
+     async performSearch() {
+       if (!this.searchQuery.trim()) { this.searchResults = []; return; }
+-      this.globalSearch(this.searchQuery);
++      this.searchLoading = true;
++      try {
++        const res = await fetch(`/api/search?q=${encodeURIComponent(this.searchQuery)}&type=all&limit=20`, { headers: this.getAuthHeaders() });
++        if (res.ok) {
++          const data = await res.json();
++          this.searchResults = Array.isArray(data) ? data : (data.results || []);
++        }
++      } catch(e) {
++        this.searchResults = [];
++      } finally {
++        this.searchLoading = false;
++      }
+     },
+     selectSearchResult(result) {
+       if (result.type === 'peak') this.openPeakDetail(result);
+@@ -6635,7 +6670,10 @@ <h2 class="text-white font-display font-bold text-lg">我的订单</h2>
+       else if (result.type === 'guide') this.viewGuideProfile(result);
+       else if (result.type === 'club') this.openClubDetail(result);
+       else if (result.type === 'gear') this.openGearDetail(result);
++      else if (result.type === 'post') { this.currentPage = 'discover'; }
+       this.showSearch = false;
++      this.searchQuery = '';
++      this.searchResults = [];
+     },
+     searchByKeyword(keyword) { this.searchQuery = keyword; this.performSearch(); },
+     removeHistory(index) { this.searchHistory.splice(index, 1); },
+diff --git a/www/js/app-core.js b/www/js/app-core.js
+index 24f2115..ef8a0f8 100644
+--- a/www/js/app-core.js
++++ b/www/js/app-core.js
+@@ -486,6 +486,7 @@ function alpineLink() {
+     showSearch: false,
+     searchQuery: '',
+     searchResults: [],
++    searchLoading: false,
+     searchHistory: ['珠穆朗玛峰', 'K2', '马特洪峰'],
+     useMetric: true,
+     currentCurrency: 'CNY',
+@@ -872,8 +873,13 @@ function alpineLink() {
+     },
+ 
+     // Search
++    async globalSearch(query) {
++      this.searchQuery = query;
++      await this.performSearch();
++    },
+     async performSearch() {
+       if (!this.searchQuery.trim()) { this.searchResults = []; return; }
++      this.searchLoading = true;
+       try {
+         const res = await fetch(`/api/search?q=${encodeURIComponent(this.searchQuery)}&type=all&limit=20`, { headers: this.getAuthHeaders() });
+         if (res.ok) {
+@@ -882,6 +888,8 @@ function alpineLink() {
+         }
+       } catch(e) {
+         this.searchResults = [];
++      } finally {
++        this.searchLoading = false;
+       }
+     },
+     selectSearchResult(result) {
+@@ -890,7 +898,10 @@ function alpineLink() {
+       else if (result.type === 'guide') this.viewGuideProfile(result);
+       else if (result.type === 'club') this.openClubDetail(result);
+       else if (result.type === 'gear') this.openGearDetail(result);
++      else if (result.type === 'post') { this.currentPage = 'discover'; }
+       this.showSearch = false;
++      this.searchQuery = '';
++      this.searchResults = [];
+     },
+     searchByKeyword(keyword) { this.searchQuery = keyword; this.performSearch(); },
+     removeHistory(index) { this.searchHistory.splice(index, 1); },

@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-Renumics-spotlight-pr558",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 558,
+    "headSha": "68989963e7ab95cbf0b71e8661de207745a048f9",
+    "baseSha": "1a533cfdf7438c338abd8c45f4907262a5924e62",
+    "title": "Patch transitive `qs` dependency to 6.15.2 to remediate Dependabot DoS alert",
+    "body": "This PR addresses the open Dependabot alert for `qs` (remotely triggerable DoS in `stringify` under comma-format + `encodeValuesOnly`). The repository did not declare `qs` directly, so remediation is applied at the lockfile level for the transitive path in use.\n\n- **Dependency remediation (lockfile-only)**\n  - Updated `qs` from `6.15.0` to `6.15.2` in `pnpm-lock.yaml`.\n  - The resolved transitive path is:\n    - `vite-plugin-node-polyfills` → `node-stdlib-browser` → `url@0.11.4` → `qs`.\n\n- **Blast-radius-oriented scope**\n  - No application source changes.\n  - No dependency graph expansion; only the vulnerable transitive version was bumped to the fixed release.\n\n```yaml\n# pnpm-lock.yaml (effective dependency edge)\nurl@0.11.4:\n  dependencies:\n    punycode: 1.4.1\n    qs: 6.15.2\n```\n\n> [!WARNING]\n>\n> <details>\n> <summary>Firewall rules blocked me from connecting to one or more addresses (expand for details)</summary>\n>\n> #### I tried to connect to the following addresses, but was blocked by firewall rules:\n>\n> - `https://api.github.com/repos/Renumics/spotlight/dependabot/alerts`\n>   - Triggering command: `/usr/bin/gh gh api -H Accept: application/vnd.github&#43;json /repos/Renumics/spotlight/dependabot/alerts?state=open&amp;per_page=100` (http block)\n>\n> If you need me to access, download, or install something from one of these locations, you can either:\n>\n> - Configure [Actions setup steps](https://gh.io/copilot/actions-setup-steps) to set up my environment, which run before the firewall is enabled\n> - Add the appropriate URLs or hosts to the custom allowlist in this repository's [Copilot coding agent settings](https://github.com/Renumics/spotlight/settings/copilot/coding_agent) (admins only)\n>\n> </details>",
+    "author": "Copilot",
+    "headRef": "copilot/update-qs-dependency",
+    "repository": "Renumics/spotlight"
+  },
+  "diffRef": {
+    "repository": "Renumics/spotlight",
+    "headSha": "68989963e7ab95cbf0b71e8661de207745a048f9",
+    "baseSha": "1a533cfdf7438c338abd8c45f4907262a5924e62"
+  },
+  "vendoredDiffPath": "negatives/closed-without-merge/copilot-workspace/copilot-workspace-Renumics-spotlight-pr558.diff",
+  "vendoredAt": "2026-05-24T04:28:32.458Z",
+  "collectedAt": "2026-05-24T04:28:32.458Z"
+}

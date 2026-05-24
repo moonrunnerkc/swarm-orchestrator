@@ -1,0 +1,19 @@
+diff --git a/src/main/resources/doc/io.kestra.plugin.cloudquery.md b/src/main/resources/doc/io.kestra.plugin.cloudquery.md
+new file mode 100644
+index 0000000..daedda8
+--- /dev/null
++++ b/src/main/resources/doc/io.kestra.plugin.cloudquery.md
+@@ -0,0 +1,13 @@
++# How to use the CloudQuery plugin
++
++Sync cloud infrastructure data across sources and destinations using CloudQuery from Kestra flows.
++
++## Authentication
++
++Pass credentials via the `env` map — at minimum set `CLOUDQUERY_API_KEY` (required to download CloudQuery plugins). Add provider-specific variables (e.g. `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `PG_CONNECTION_STRING`) for each source and destination. Store secrets in [secrets](https://kestra.io/docs/concepts/secret) and apply connection properties globally with [plugin defaults](https://kestra.io/docs/workflow-components/plugin-defaults).
++
++## Tasks
++
++`Sync` runs a CloudQuery sync from a set of source/destination configs — set `configs` (required, a list of CloudQuery source and destination configuration objects). Set `incremental: true` to persist state between runs (default `false`). The task runs in a container (default image `ghcr.io/cloudquery/cloudquery:latest-ubuntu`). Use `namespaceFiles` to reference [namespace files](https://kestra.io/docs/concepts/namespace-files), `inputFiles` to stage additional files, and `outputFiles` to retrieve results.
++
++`CloudQueryCLI` runs arbitrary CloudQuery CLI commands — set `commands` (required). Use `beforeCommands`, `env`, `namespaceFiles`, `inputFiles`, and `outputFiles` the same way as `Sync`.

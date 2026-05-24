@@ -1,0 +1,439 @@
+diff --git a/backend/src/sap_consultant/api/app.py b/backend/src/sap_consultant/api/app.py
+index 160cd01..df700cd 100644
+--- a/backend/src/sap_consultant/api/app.py
++++ b/backend/src/sap_consultant/api/app.py
+@@ -1000,9 +1000,19 @@ async def _run_availability_pings() -> None:
+             except httpx.ConnectError as exc:
+                 detail = f"Connection refused: {exc}"
+             except httpx.ConnectTimeout:
+-                detail = "Connection timeout (10s)"
++                detail = (
++                    "SAP system did not respond within the timeout period. "
++                    "The system may be overloaded or unreachable."
++                )
+             except Exception as exc:
+-                detail = str(exc)[:500]
++                exc_str = str(exc)
++                if "timeout" in exc_str.lower() or "timed out" in exc_str.lower():
++                    detail = (
++                        "SAP system did not respond within the timeout period. "
++                        "The system may be overloaded or unreachable."
++                    )
++                else:
++                    detail = exc_str[:500]
+ 
+             # Update DB metadata — we already have `meta` from the lookup above
+             try:
+diff --git a/backend/src/sap_consultant/api/routes/v1_routes_admin.py b/backend/src/sap_consultant/api/routes/v1_routes_admin.py
+index e9a4452..bbcfbd4 100644
+--- a/backend/src/sap_consultant/api/routes/v1_routes_admin.py
++++ b/backend/src/sap_consultant/api/routes/v1_routes_admin.py
+@@ -1846,9 +1846,19 @@ async def check_system_availability(
+     except httpx.ConnectError as exc:
+         detail = f"Connection refused: {exc}"
+     except httpx.ConnectTimeout:
+-        detail = "Connection timeout (10s)"
++        detail = (
++            "SAP system did not respond within the timeout period. "
++            "The system may be overloaded or unreachable."
++        )
+     except Exception as exc:
+-        detail = str(exc)[:500]
++        exc_str = str(exc)
++        if "timeout" in exc_str.lower() or "timed out" in exc_str.lower():
++            detail = (
++                "SAP system did not respond within the timeout period. "
++                "The system may be overloaded or unreachable."
++            )
++        else:
++            detail = exc_str[:500]
+ 
+     # Persist result
+     result = await db.execute(select(SAPSystemMetadata).where(SAPSystemMetadata.system_key == system_key))
+diff --git a/backend/src/sap_consultant/api/routes/v1_routes_devtools.py b/backend/src/sap_consultant/api/routes/v1_routes_devtools.py
+index 7d4e9d6..e2c4cf1 100644
+--- a/backend/src/sap_consultant/api/routes/v1_routes_devtools.py
++++ b/backend/src/sap_consultant/api/routes/v1_routes_devtools.py
+@@ -67,6 +67,43 @@ def _sap_error_detail(exc: httpx.HTTPStatusError) -> str:
+     return f"SAP system returned HTTP {status}: {body[:300]}"
+ 
+ 
++def _format_sap_error(exc: Exception) -> str:
++    """Return a human-readable message for any SAP-related exception."""
++    import httpx as _httpx
++
++    exc_str = str(exc)
++    exc_type = type(exc).__name__
++
++    if isinstance(exc, (_httpx.TimeoutException,)) or "timeout" in exc_str.lower() or "timed out" in exc_str.lower():
++        return (
++            "SAP system did not respond within the timeout period. "
++            "The system may be overloaded, unreachable, or processing a large request. "
++            "Try again or check SAP system availability."
++        )
++    if isinstance(exc, (_httpx.ConnectError,)) or "connect" in exc_str.lower() and "refused" in exc_str.lower():
++        return (
++            "Cannot connect to SAP system. "
++            "Check that the hostname, port, and network are correct and the system is running."
++        )
++    if "TABLE_WITHOUT_DATA" in exc_str:
++        return "The requested SAP table contains no data for the given filter criteria."
++    if "403" in exc_str or "Forbidden" in exc_str:
++        return (
++            "Access denied (HTTP 403). Check user authorizations and ensure the required "
++            "ICF service is activated in transaction SICF."
++        )
++    if "404" in exc_str or "Not Found" in exc_str:
++        return (
++            "Endpoint not found (HTTP 404). The requested SAP service or object may not exist "
++            "or the ICF service may not be activated."
++        )
++    if "401" in exc_str or "Unauthorized" in exc_str:
++        return "Authentication failed (HTTP 401). Check SAP system credentials."
++
++    detail = exc_str[:500] if exc_str else exc_type
++    return f"SAP system error: {detail}"
++
++
+ def _raise_sap_error(exc: Exception) -> None:
+     """Convert httpx transport/status errors into HTTPException with clear details."""
+     if isinstance(exc, httpx.HTTPStatusError):
+@@ -78,7 +115,14 @@ def _raise_sap_error(exc: Exception) -> None:
+             detail=f"Cannot connect to SAP system — check hostname, port, and network: {exc}",
+         ) from exc
+     if isinstance(exc, httpx.TimeoutException):
+-        raise HTTPException(status_code=504, detail=f"SAP system request timed out: {exc}") from exc
++        raise HTTPException(
++            status_code=504,
++            detail=(
++                "SAP system did not respond within the timeout period. "
++                "The system may be overloaded, unreachable, or processing a large request. "
++                "Try again or check SAP system availability."
++            ),
++        ) from exc
+     raise
+ 
+ 
+@@ -98,8 +142,7 @@ async def _safe_adt(system_key: str, db: AsyncSession) -> AsyncIterator[Any]:
+         raise
+     except Exception as exc:
+         log.warning("Unexpected error for system %s: %s: %s", system_key, type(exc).__name__, exc)
+-        detail = str(exc)[:500] if str(exc) else type(exc).__name__
+-        raise HTTPException(status_code=502, detail=f"SAP system error: {detail}") from exc
++        raise HTTPException(status_code=502, detail=_format_sap_error(exc)) from exc
+ 
+ 
+ async def _get_system_config(system_key: str, db: AsyncSession):
+diff --git a/backend/src/sap_consultant/api/routes/v1_routes_monitoring.py b/backend/src/sap_consultant/api/routes/v1_routes_monitoring.py
+index bfe00f0..373a706 100644
+--- a/backend/src/sap_consultant/api/routes/v1_routes_monitoring.py
++++ b/backend/src/sap_consultant/api/routes/v1_routes_monitoring.py
+@@ -35,6 +35,58 @@ def _abap_escape(val: str) -> str:
+ router = APIRouter()
+ 
+ 
++def _format_sap_error(exc: Exception) -> str:
++    """Return a human-readable message for any SAP-related exception."""
++    exc_str = str(exc)
++    exc_type = type(exc).__name__
++
++    if "timeout" in exc_str.lower() or "timed out" in exc_str.lower() or exc_type in ("TimeoutException", "ReadTimeout", "ConnectTimeout", "PoolTimeout"):
++        return (
++            "SAP system did not respond within the timeout period. "
++            "The system may be overloaded, unreachable, or processing a large request. "
++            "Try again or check SAP system availability."
++        )
++    if "connect" in exc_str.lower() and ("refused" in exc_str.lower() or "error" in exc_str.lower()):
++        return (
++            "Cannot connect to SAP system. "
++            "Check that the hostname, port, and network are correct and the system is running."
++        )
++    if "TABLE_WITHOUT_DATA" in exc_str:
++        return "The requested SAP table contains no data for the given filter criteria."
++
++    return exc_str
++
++
++def _sap_error_with_hints(exc: Exception) -> str:
++    """Format SAP exception with contextual hints for common error patterns."""
++    exc_str = str(exc)
++    exc_type = type(exc).__name__
++
++    if "timeout" in exc_str.lower() or "timed out" in exc_str.lower() or exc_type in ("TimeoutException", "ReadTimeout", "ConnectTimeout", "PoolTimeout"):
++        return (
++            "SAP system did not respond within the timeout period. "
++            "The system may be overloaded, unreachable, or processing a large request. "
++            "Try again or check SAP system availability."
++        )
++    if "connect" in exc_str.lower() and ("refused" in exc_str.lower() or "error" in exc_str.lower()):
++        return (
++            "Cannot connect to SAP system. "
++            "Check that the hostname, port, and network are correct and the system is running."
++        )
++
++    hint = ""
++    if "403" in exc_str or "Forbidden" in exc_str:
++        hint = (
++            " — RFC_READ_TABLE may not be authorized for this user. "
++            "Check S_RFC authorization for RFC_READ_TABLE."
++        )
++    elif "404" in exc_str or "Not Found" in exc_str:
++        hint = " — SOAP/RFC endpoint may not be active. Check ICF service /sap/bc/soap/rfc."
++    elif "SSO" in exc_str or "302" in exc_str:
++        hint = " — SSO redirect detected. The system may require Principal Propagation or OBO authentication."
++    return exc_str + hint
++
++
+ def _get_system(system_key: str):
+     """Resolve a SAPSystemConfig from the registry."""
+     registry = SAPSystemRegistry.load()
+@@ -88,7 +140,7 @@ async def list_short_dumps(
+             }
+     except Exception as exc:
+         log.exception("Short dump query failed for %s", system_key)
+-        return {"dumps": [], "error": str(exc)}
++        return {"dumps": [], "error": _format_sap_error(exc)}
+ 
+ 
+ class _DumpDetailBody(BaseModel):
+@@ -147,9 +199,9 @@ async def get_short_dump_detail(
+                 "id": dump_id,
+                 "source": "summary_fallback",
+                 "summary_text": summary,
+-                "detail_error": str(exc),
++                "detail_error": _format_sap_error(exc),
+             }
+-        return {"error": str(exc)}
++        return {"error": _format_sap_error(exc)}
+ 
+ 
+ # ------------------------------------------------------------------
+@@ -301,17 +353,7 @@ async def list_background_jobs(
+             }
+     except Exception as exc:
+         log.exception("Job query failed for %s", system_key)
+-        hint = ""
+-        exc_str = str(exc)
+-        if "403" in exc_str or "Forbidden" in exc_str:
+-            hint = (
+-                " — RFC_READ_TABLE may not be authorized for this user. Check S_RFC authorization for RFC_READ_TABLE."
+-            )
+-        elif "404" in exc_str or "Not Found" in exc_str:
+-            hint = " — SOAP/RFC endpoint may not be active. Check ICF service /sap/bc/soap/rfc."
+-        elif "SSO" in exc_str or "302" in exc_str:
+-            hint = " — SSO redirect detected. The system may require Principal Propagation or OBO authentication."
+-        return {"jobs": [], "error": exc_str + hint}
++        return {"jobs": [], "error": _sap_error_with_hints(exc)}
+ 
+ 
+ # ------------------------------------------------------------------
+@@ -435,15 +477,7 @@ async def list_application_logs(
+             }
+     except Exception as exc:
+         log.exception("App log query failed for %s", system_key)
+-        hint = ""
+-        exc_str = str(exc)
+-        if "403" in exc_str or "Forbidden" in exc_str:
+-            hint = " — RFC_READ_TABLE may not be authorized. Check S_RFC authorization."
+-        elif "404" in exc_str or "Not Found" in exc_str:
+-            hint = " — SOAP/RFC endpoint may not be active. Check ICF service /sap/bc/soap/rfc."
+-        elif "SSO" in exc_str or "302" in exc_str:
+-            hint = " — SSO redirect detected. The system may require Principal Propagation or OBO."
+-        return {"logs": [], "error": exc_str + hint}
++        return {"logs": [], "error": _sap_error_with_hints(exc)}
+ 
+ 
+ # ------------------------------------------------------------------
+@@ -502,7 +536,7 @@ async def list_system_logs(
+                 }
+     except Exception as exc:
+         log.exception("System log query failed for %s", system_key)
+-        return {"logs": [], "error": str(exc)}
++        return {"logs": [], "error": _format_sap_error(exc)}
+ 
+ 
+ # ------------------------------------------------------------------
+@@ -739,15 +773,13 @@ async def _read_view(
+             log.info("HANA metrics: table empty for %s", system_key)
+             return {"metrics": metrics}
+         log.exception("HANA metrics query failed for %s", system_key)
+-        hint = ""
++        formatted = _sap_error_with_hints(exc)
+         if "500" in exc_str or "Internal Server Error" in exc_str:
+-            hint = (
++            formatted += (
+                 " — HTTP 500 from SAP. HANA M_ monitoring views are not accessible via "
+                 "RFC_READ_TABLE. Metrics are now sourced from ABAP dictionary tables."
+             )
+-        elif "403" in exc_str or "Forbidden" in exc_str:
+-            hint = " — Insufficient authorization to query system tables via RFC_READ_TABLE."
+-        return {"error": exc_str + hint}
++        return {"error": formatted}
+ 
+     return {"metrics": metrics}
+ 
+@@ -888,14 +920,7 @@ async def list_ccdb_changes(
+                 "query_info": {"table": "E070", "filter": "TRSTATUS = 'R'", "raw_rows": 0},
+             }
+         log.exception("CCDB query failed for %s", system_key)
+-        hint = ""
+-        if "403" in exc_str or "Forbidden" in exc_str:
+-            hint = " — RFC_READ_TABLE may not be authorized. Check S_RFC authorization for RFC_READ_TABLE."
+-        elif "404" in exc_str or "Not Found" in exc_str:
+-            hint = " — SOAP/RFC endpoint may not be active. Check ICF service /sap/bc/soap/rfc."
+-        elif "SSO" in exc_str or "302" in exc_str:
+-            hint = " — SSO redirect detected. System may need Principal Propagation or OBO authentication."
+-        return {"changes": [], "error": exc_str + hint}
++        return {"changes": [], "error": _sap_error_with_hints(exc)}
+ 
+ 
+ # ------------------------------------------------------------------
+@@ -948,7 +973,7 @@ async def _dumps():
+                         ],
+                     }
+                 except Exception as e:
+-                    return {"error": str(e)}
++                    return {"error": _format_sap_error(e)}
+ 
+             async def _transports():
+                 try:
+@@ -962,7 +987,7 @@ async def _transports():
+                         ],
+                     }
+                 except Exception as e:
+-                    return {"error": str(e)}
++                    return {"error": _format_sap_error(e)}
+ 
+             async def _sysinfo():
+                 try:
+@@ -975,7 +1000,7 @@ async def _sysinfo():
+                         "kernel_release": info.kernel_release,
+                     }
+                 except Exception as e:
+-                    return {"error": str(e)}
++                    return {"error": _format_sap_error(e)}
+ 
+             dumps_res, tr_res, sys_res = await asyncio.gather(_dumps(), _transports(), _sysinfo())
+ 
+@@ -985,7 +1010,7 @@ async def _sysinfo():
+ 
+     except Exception as exc:
+         log.exception("Monitoring overview failed for %s", system_key)
+-        overview["error"] = str(exc)
++        overview["error"] = _format_sap_error(exc)
+ 
+     return overview
+ 
+@@ -1213,7 +1238,7 @@ async def _stream():
+             )
+         except Exception as exc:
+             log.exception("Monitoring investigation failed")
+-            yield _sse({"type": "error", "content": str(exc)})
++            yield _sse({"type": "error", "content": _format_sap_error(exc)})
+ 
+     return StreamingResponse(_stream(), media_type="text/event-stream")
+ 
+@@ -1309,7 +1334,7 @@ async def list_transports(
+             }
+     except Exception as exc:
+         log.exception("Transport list failed for %s", system_key)
+-        return {"transports": [], "error": str(exc)}
++        return {"transports": [], "error": _format_sap_error(exc)}
+ 
+ 
+ @router.get("/ping")
+@@ -1338,7 +1363,7 @@ async def ping_system(
+                 "kernel_release": info.kernel_release,
+             }
+     except Exception as exc:
+-        return {"system_key": system_key, "available": False, "error": str(exc)}
++        return {"system_key": system_key, "available": False, "error": _format_sap_error(exc)}
+ 
+ 
+ # ------------------------------------------------------------------
+diff --git a/backend/src/sap_consultant/api/routes/v1_routes_security.py b/backend/src/sap_consultant/api/routes/v1_routes_security.py
+index 093a3da..b478ac4 100644
+--- a/backend/src/sap_consultant/api/routes/v1_routes_security.py
++++ b/backend/src/sap_consultant/api/routes/v1_routes_security.py
+@@ -39,6 +39,36 @@ def _abap_escape(val: str) -> str:
+     return val.replace("'", "''")
+ 
+ 
++def _format_sap_error(exc: Exception) -> str:
++    """Return a human-readable message for any SAP-related exception."""
++    import httpx as _httpx
++
++    exc_str = str(exc)
++    exc_type = type(exc).__name__
++
++    if isinstance(exc, (_httpx.TimeoutException,)) or "timeout" in exc_str.lower() or "timed out" in exc_str.lower():
++        return (
++            "SAP system did not respond within the timeout period. "
++            "The system may be overloaded, unreachable, or processing a large request. "
++            "Try again or check SAP system availability."
++        )
++    if isinstance(exc, (_httpx.ConnectError,)) or "connect" in exc_str.lower() and "refused" in exc_str.lower():
++        return (
++            "Cannot connect to SAP system. "
++            "Check that the hostname, port, and network are correct and the system is running."
++        )
++    if "TABLE_WITHOUT_DATA" in exc_str:
++        return "The requested SAP table contains no data for the given filter criteria."
++    if "403" in exc_str or "Forbidden" in exc_str:
++        return (
++            "Access denied (HTTP 403). Check user authorizations and ensure the required "
++            "ICF service is activated in transaction SICF."
++        )
++
++    detail = exc_str[:500] if exc_str else exc_type
++    return f"SAP system error: {detail}"
++
++
+ async def _get_system_config(system_key: str, db: AsyncSession):
+     """Resolve SAP system config from registry."""
+     registry = await get_system_registry(db)
+@@ -72,13 +102,19 @@ async def _safe_adt(system_key: str, db: AsyncSession) -> AsyncIterator[Any]:
+     except httpx.ConnectError as exc:
+         raise HTTPException(status_code=502, detail=f"Cannot connect to SAP system: {exc}") from exc
+     except httpx.TimeoutException as exc:
+-        raise HTTPException(status_code=504, detail=f"Request timed out: {exc}") from exc
++        raise HTTPException(
++            status_code=504,
++            detail=(
++                "SAP system did not respond within the timeout period. "
++                "The system may be overloaded, unreachable, or processing a large request. "
++                "Try again or check SAP system availability."
++            ),
++        ) from exc
+     except HTTPException:
+         raise
+     except Exception as exc:
+         log.warning("Unexpected error for system %s: %s: %s", system_key, type(exc).__name__, exc)
+-        detail = str(exc)[:500] if str(exc) else type(exc).__name__
+-        raise HTTPException(status_code=502, detail=f"SAP system error: {detail}") from exc
++        raise HTTPException(status_code=502, detail=_format_sap_error(exc)) from exc
+ 
+ 
+ def _parse_rfc_table(result, fields: list[str]) -> list[dict[str, str]]:
+diff --git a/backend/src/sap_consultant/sap/adt_client.py b/backend/src/sap_consultant/sap/adt_client.py
+index ac7d224..c9bab2c 100644
+--- a/backend/src/sap_consultant/sap/adt_client.py
++++ b/backend/src/sap_consultant/sap/adt_client.py
+@@ -931,11 +931,15 @@ async def call_function_module(
+                 success=False,
+                 error_message=f"Cannot connect to SAP system SOAP endpoint: {exc}",
+             )
+-        except httpx.TimeoutException as exc:
++        except httpx.TimeoutException:
+             return FunctionModuleResult(
+                 function_module=fm_name,
+                 success=False,
+-                error_message=f"SOAP RFC call timed out: {exc}",
++                error_message=(
++                    "SAP system did not respond within the timeout period. "
++                    "The system may be overloaded, unreachable, or processing a large request. "
++                    "Try again or check SAP system availability."
++                ),
+             )
+ 
+         # Parse the SOAP response

@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-opendatahub-io-odh-dashboard-pr7499",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "commit=claude-coauthor"
+  },
+  "pr": {
+    "number": 7499,
+    "headSha": "64fc26916f79d88ae40447211588c1c250f83a12",
+    "baseSha": "5e3c55e0c3ee45bf3b6680311b07c1835c47166c",
+    "title": "RHOAIENG-61570: [Connections tech-debt] Don't make new hidden connection on edit",
+    "body": "When redeploying a model with a hidden connection type (e.g., OCI),\nprefilledModelLocationData converts the connection from EXISTING to NEW\nfor UI display purposes. This caused handleConnectionCreation to create\na brand-new secret and delete the old one, even when nothing changed.\n\nThis fix adds an early return in handleConnectionCreation that detects\nwhen the connection references an existing hidden secret (annotated with\nopendatahub.io/connection-hidden). In that case it preserves the\nexisting secret, only patching the protocol annotation if needed,\ninstead of recreating it.\n\nCloses [RHOAIENG-61570](https://redhat.atlassian.net/browse/RHOAIENG-61570)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nSigned-off-by: Emily Samoylov <esamoylo@redhat.com>\n\n<!-- This is an auto-generated comment: release notes by coderabbit.ai -->\n## Summary by CodeRabbit\n\n* **Bug Fixes**\n  * Improved the model deployment wizard's handling of prefilled connections so they are correctly treated as new or existing based on connection visibility and ownership.\n<!-- end of auto-generated comment: release notes by coderabbit.ai -->",
+    "author": "jira-autofix[bot]",
+    "headRef": "jira-autofix/RHOAIENG-61570",
+    "repository": "opendatahub-io/odh-dashboard"
+  },
+  "diffRef": {
+    "repository": "opendatahub-io/odh-dashboard",
+    "headSha": "64fc26916f79d88ae40447211588c1c250f83a12",
+    "baseSha": "5e3c55e0c3ee45bf3b6680311b07c1835c47166c"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-opendatahub-io-odh-dashboard-pr7499.diff",
+  "vendoredAt": "2026-05-24T03:09:57.287Z",
+  "collectedAt": "2026-05-24T03:09:57.287Z"
+}

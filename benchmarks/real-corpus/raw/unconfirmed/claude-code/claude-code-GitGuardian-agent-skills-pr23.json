@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-GitGuardian-agent-skills-pr23",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "body=claude-code-footer"
+  },
+  "pr": {
+    "number": 23,
+    "headSha": "08105e2df8cbd1d070f94dea8f8a7566f1c3da74",
+    "baseSha": "a3df9d051de0fdb42f3773a33f7fa63a48d517b3",
+    "title": "feat: distribute the plugin via Codex's marketplace",
+    "body": "## Summary\n- Adds **`.codex-plugin/plugin.json`** — Codex plugin manifest mirroring the existing Claude/Cursor manifests, with Codex-specific fields (`skills`, `mcpServers`, `interface`).\n- Adds **`.agents/plugins/marketplace.json`** — Codex's native repo-scoped marketplace location (sits outside the manifest folder, unlike Claude/Cursor). Codex also reads `.claude-plugin/marketplace.json` as a fallback; we ship the native path anyway.\n- Users on Codex CLI v0.117.0+ can now install with `codex plugin marketplace add GitGuardian/agent-skills` instead of falling through to the skills.sh CLI.\n- README gets a Codex install subsection; Codex is removed from the skills.sh agent list since it now has a native path.\n- AGENTS.md picks up a Codex marketplace section, repo-structure tree updates, structural-rules notes for `.codex-plugin/` and the marketplace location, and the renamed \"Vendor docs index\" (was \"Anthropic docs index\") with Codex / Cursor / cross-vendor URLs added for future reference.\n\n## Test plan\n- [x] All JSON manifests parse (`jq empty`)\n- [x] `claude plugin validate .` passes (existing manifests unaffected)\n- [ ] On a machine with Codex CLI v0.117.0+: `codex plugin marketplace add GitGuardian/agent-skills` and `codex plugin install gitguardian` succeed, and `codex plugin list` shows the plugin enabled\n- [ ] Spot-check: the bundled `.mcp.json` is picked up by Codex on install\n\n## References\n- https://developers.openai.com/codex/plugins\n- https://developers.openai.com/codex/plugins/build\n- https://developers.openai.com/codex/skills\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+    "author": "mathieubellon",
+    "headRef": "feat/codex-marketplace-distribution",
+    "repository": "GitGuardian/agent-skills"
+  },
+  "diffRef": {
+    "repository": "GitGuardian/agent-skills",
+    "headSha": "08105e2df8cbd1d070f94dea8f8a7566f1c3da74",
+    "baseSha": "a3df9d051de0fdb42f3773a33f7fa63a48d517b3"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-GitGuardian-agent-skills-pr23.diff",
+  "vendoredAt": "2026-05-24T03:13:47.315Z",
+  "collectedAt": "2026-05-24T03:13:47.315Z"
+}

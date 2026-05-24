@@ -1,0 +1,1958 @@
+diff --git a/.dockerignore b/.dockerignore
+new file mode 100644
+index 0000000..ce58133
+--- /dev/null
++++ b/.dockerignore
+@@ -0,0 +1,10 @@
++.git
++.github
++docs
++tests
++web
++*.md
++.env
++.env.*
++bin/
++deploy/
+diff --git a/.env.example b/.env.example
+new file mode 100644
+index 0000000..b6447ab
+--- /dev/null
++++ b/.env.example
+@@ -0,0 +1,50 @@
++# ─── Server ───
++SERVER_PORT=8080
++
++# ─── MySQL ───
++MYSQL_ROOT_PASSWORD=ccc_root_pass
++MYSQL_DATABASE=ccc
++MYSQL_USER=ccc
++MYSQL_PASSWORD=ccc_pass
++DATABASE_DSN=ccc:ccc_pass@tcp(mysql:3306)/ccc?parseTime=true&charset=utf8mb4&collation=utf8mb4_0900_ai_ci
++
++# ─── Redis ───
++REDIS_ADDR=redis:6379
++REDIS_PASSWORD=
++REDIS_DB=0
++
++# ─── JWT ───
++JWT_SECRET=change-me-in-production-use-openssl-rand-base64-32
++JWT_ISSUER=ccc-platform
++
++# ─── Snowflake ───
++SNOWFLAKE_NODE_ID=1
++
++# ─── MinIO (S3-compatible) ───
++MINIO_ROOT_USER=minioadmin
++MINIO_ROOT_PASSWORD=minioadmin123
++MINIO_ENDPOINT=minio:9000
++MINIO_BUCKET=ccc-recordings
++MINIO_ACCESS_KEY=minioadmin
++MINIO_SECRET_KEY=minioadmin123
++
++# ─── FreeSWITCH ESL ───
++ESL_HOST=freeswitch
++ESL_PORT=8021
++ESL_PASSWORD=ClueCon
++
++# ─── NATS ───
++NATS_URL=nats://nats:4222
++
++# ─── Kafka ───
++KAFKA_BROKERS=kafka:9092
++
++# ─── Frontend ───
++VITE_API_BASE_URL=/api/v1
++
++# ─── Prometheus ───
++PROMETHEUS_ENABLED=true
++
++# ─── Grafana ───
++GF_SECURITY_ADMIN_USER=admin
++GF_SECURITY_ADMIN_PASSWORD=admin
+diff --git a/Dockerfile b/Dockerfile
+new file mode 100644
+index 0000000..d00c904
+--- /dev/null
++++ b/Dockerfile
+@@ -0,0 +1,31 @@
++# Stage 1: Build
++FROM golang:1.25-alpine AS builder
++
++RUN apk add --no-cache git ca-certificates tzdata
++
++WORKDIR /src
++COPY go.mod go.sum ./
++RUN go mod download
++
++COPY . .
++RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
++    go build -ldflags="-s -w" -o /app/server ./cmd/server
++
++# Stage 2: Runtime
++FROM alpine:3.21
++
++RUN apk add --no-cache ca-certificates tzdata curl
++RUN adduser -D -u 1000 appuser
++
++COPY --from=builder /app/server /app/server
++COPY migrations /app/migrations
++
++USER appuser
++WORKDIR /app
++
++EXPOSE 8080
++
++HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
++    CMD curl -f http://localhost:8080/health || exit 1
++
++ENTRYPOINT ["/app/server"]
+diff --git a/Makefile b/Makefile
+new file mode 100644
+index 0000000..5233283
+--- /dev/null
++++ b/Makefile
+@@ -0,0 +1,111 @@
++.PHONY: help dev build test vet lint clean \
++       docker-build docker-up docker-down docker-logs \
++       migrate-up migrate-down migrate-partitions \
++       web-dev web-build
++
++# ─── Variables ───
++APP_NAME   := ccc-server
++GO_FILES   := $(shell find . -name '*.go' -not -path './vendor/*')
++COMPOSE    := docker compose
++
++help: ## Show this help
++	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
++		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
++
++# ─── Development ───
++
++dev: ## Run Go server locally (hot reload with air if available)
++	@if command -v air > /dev/null; then air; else go run ./cmd/server; fi
++
++build: ## Build Go binary
++	CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/$(APP_NAME) ./cmd/server
++
++test: ## Run all tests with race detection
++	go test -race -count=1 ./...
++
++vet: ## Run go vet
++	go vet ./...
++
++lint: vet ## Alias for vet (add golangci-lint if available)
++	@if command -v golangci-lint > /dev/null; then golangci-lint run; fi
++
++clean: ## Remove build artifacts
++	rm -rf bin/ web/dist/
++
++# ─── Docker ───
++
++docker-build: ## Build all Docker images
++	$(COMPOSE) build
++
++docker-up: ## Start all services
++	$(COMPOSE) up -d
++
++docker-down: ## Stop all services
++	$(COMPOSE) down
++
++docker-logs: ## Tail logs from all services
++	$(COMPOSE) logs -f
++
++docker-restart: ## Restart API service
++	$(COMPOSE) restart api
++
++docker-ps: ## Show service status
++	$(COMPOSE) ps
++
++# ─── Database ───
++
++migrate-up: ## Run database migrations (up)
++	@echo "Applying migrations from ./migrations/"
++	@if command -v migrate > /dev/null; then \
++		migrate -path ./migrations -database "$$DATABASE_DSN" up; \
++	else \
++		echo "golang-migrate CLI not found. Using docker:"; \
++		$(COMPOSE) exec mysql mysql -u root -p$$MYSQL_ROOT_PASSWORD ccc < migrations/001_initial.up.sql; \
++	fi
++
++migrate-down: ## Rollback last migration
++	@if command -v migrate > /dev/null; then \
++		migrate -path ./migrations -database "$$DATABASE_DSN" down 1; \
++	else \
++		echo "golang-migrate CLI not found."; \
++	fi
++
++migrate-partitions: ## Apply MySQL partitioning
++	@echo "Applying partition SQL..."
++	$(COMPOSE) exec mysql mysql -u root -p$$MYSQL_ROOT_PASSWORD ccc < deploy/mysql/partitions.sql
++
++# ─── Frontend ───
++
++web-dev: ## Start frontend dev server
++	cd web && npm run dev
++
++web-build: ## Build frontend for production
++	cd web && npm run build
++
++web-install: ## Install frontend dependencies
++	cd web && npm ci
++
++# ─── Full Stack ───
++
++up: docker-up ## Start everything (alias)
++
++down: docker-down ## Stop everything (alias)
++
++all: build web-build ## Build both backend and frontend
++
++# ─── Load Testing ───
++
++k6-inbound: ## Run inbound load test
++	k6 run tests/k6/inbound.js
++
++k6-outbound: ## Run outbound load test
++	k6 run tests/k6/outbound.js
++
++k6-mixed: ## Run mixed load test
++	k6 run tests/k6/mixed.js
++
++k6-websocket: ## Run WebSocket load test
++	k6 run tests/k6/websocket.js
++
++k6-report: ## Run report query load test
++	k6 run tests/k6/report-query.js
+diff --git a/deploy/freeswitch/conf/autoload_configs/event_socket.conf.xml b/deploy/freeswitch/conf/autoload_configs/event_socket.conf.xml
+new file mode 100644
+index 0000000..e896b06
+--- /dev/null
++++ b/deploy/freeswitch/conf/autoload_configs/event_socket.conf.xml
+@@ -0,0 +1,10 @@
++<!-- ESL Configuration — Go backend connects here -->
++<configuration name="event_socket.conf" description="Socket Client">
++  <settings>
++    <param name="nat-map" value="false"/>
++    <param name="listen-ip" value="0.0.0.0"/>
++    <param name="listen-port" value="8021"/>
++    <param name="password" value="$${event_socket_password}"/>
++    <param name="apply-inbound-acl" value="any_v4.auto"/>
++  </settings>
++</configuration>
+diff --git a/deploy/freeswitch/conf/autoload_configs/verto.conf.xml b/deploy/freeswitch/conf/autoload_configs/verto.conf.xml
+new file mode 100644
+index 0000000..eaa8a5d
+--- /dev/null
++++ b/deploy/freeswitch/conf/autoload_configs/verto.conf.xml
+@@ -0,0 +1,50 @@
++<!-- mod_verto — WebRTC JSON-RPC over WebSocket -->
++<configuration name="verto.conf" description="mod_verto">
++  <settings>
++    <param name="debug" value="0"/>
++    <param name="enable-fs-dtmf" value="true"/>
++    <param name="enable-3pcc" value="false"/>
++  </settings>
++
++  <profiles>
++    <!-- Plain WebSocket (dev/internal) -->
++    <profile name="default-v4">
++      <param name="bind-local" value="0.0.0.0:$${verto_listen_port}"/>
++      <param name="force-register-domain" value="$${domain_name}"/>
++      <param name="secure-combined" value="$${internal_ssl_dir}/wss.pem"/>
++      <param name="secure-chain" value="$${internal_ssl_dir}/wss.pem"/>
++      <param name="userauth" value="true"/>
++      <param name="context" value="default"/>
++      <param name="dialplan" value="XML"/>
++      <param name="mcast-ip" value="224.1.1.1"/>
++      <param name="mcast-port" value="1337"/>
++      <param name="rtp-ip" value="$${local_ip_v4}"/>
++      <param name="ext-rtp-ip" value="auto-nat"/>
++      <param name="local-network" value="localnet.auto"/>
++      <param name="outbound-codec-string" value="opus,PCMU,PCMA"/>
++      <param name="inbound-codec-string" value="opus,PCMU,PCMA"/>
++      <param name="apply-candidate-acl" value="localnet.auto"/>
++      <param name="apply-candidate-acl" value="wan_v4.auto"/>
++      <param name="timer-name" value="soft"/>
++    </profile>
++
++    <!-- WSS (TLS WebSocket for production) -->
++    <profile name="default-v4-wss">
++      <param name="bind-local" value="0.0.0.0:$${verto_wss_port}"/>
++      <param name="force-register-domain" value="$${domain_name}"/>
++      <param name="secure-combined" value="$${internal_ssl_dir}/wss.pem"/>
++      <param name="secure-chain" value="$${internal_ssl_dir}/wss.pem"/>
++      <param name="userauth" value="true"/>
++      <param name="context" value="default"/>
++      <param name="dialplan" value="XML"/>
++      <param name="rtp-ip" value="$${local_ip_v4}"/>
++      <param name="ext-rtp-ip" value="auto-nat"/>
++      <param name="local-network" value="localnet.auto"/>
++      <param name="outbound-codec-string" value="opus,PCMU,PCMA"/>
++      <param name="inbound-codec-string" value="opus,PCMU,PCMA"/>
++      <param name="apply-candidate-acl" value="localnet.auto"/>
++      <param name="apply-candidate-acl" value="wan_v4.auto"/>
++      <param name="timer-name" value="soft"/>
++    </profile>
++  </profiles>
++</configuration>
+diff --git a/deploy/freeswitch/conf/sip_profiles/external.xml b/deploy/freeswitch/conf/sip_profiles/external.xml
+new file mode 100644
+index 0000000..c58d20d
+--- /dev/null
++++ b/deploy/freeswitch/conf/sip_profiles/external.xml
+@@ -0,0 +1,38 @@
++<!-- External SIP Profile — PSTN trunks -->
++<profile name="external">
++  <settings>
++    <param name="debug" value="0"/>
++    <param name="sip-trace" value="no"/>
++
++    <!-- Network -->
++    <param name="sip-ip" value="$${local_ip_v4}"/>
++    <param name="sip-port" value="5080"/>
++    <param name="rtp-ip" value="$${local_ip_v4}"/>
++    <param name="ext-rtp-ip" value="auto-nat"/>
++    <param name="ext-sip-ip" value="auto-nat"/>
++
++    <!-- RTP -->
++    <param name="rtp-timer-name" value="soft"/>
++
++    <!-- Codec -->
++    <param name="codec-prefs" value="$${outbound_codec_prefs}"/>
++    <param name="inbound-codec-negotiation" value="generous"/>
++
++    <!-- TLS for trunk connections -->
++    <param name="tls" value="true"/>
++    <param name="tls-bind-params" value="transport=tls"/>
++    <param name="tls-sip-port" value="5081"/>
++    <param name="tls-cert-dir" value="$${internal_ssl_dir}"/>
++    <param name="tls-version" value="tlsv1.2"/>
++
++    <!-- SRTP -->
++    <param name="inbound-zrtp-passthru" value="true"/>
++
++    <!-- Auth -->
++    <param name="apply-inbound-acl" value="domains"/>
++
++    <!-- Context -->
++    <param name="context" value="public"/>
++    <param name="dialplan" value="XML"/>
++  </settings>
++</profile>
+diff --git a/deploy/freeswitch/conf/sip_profiles/internal.xml b/deploy/freeswitch/conf/sip_profiles/internal.xml
+new file mode 100644
+index 0000000..bc68858
+--- /dev/null
++++ b/deploy/freeswitch/conf/sip_profiles/internal.xml
+@@ -0,0 +1,56 @@
++<!-- Internal SIP Profile — Agent SIP phones + WebRTC via mod_verto -->
++<profile name="internal">
++  <settings>
++    <param name="debug" value="0"/>
++    <param name="sip-trace" value="no"/>
++    <param name="sip-capture" value="no"/>
++
++    <!-- Network -->
++    <param name="sip-ip" value="$${local_ip_v4}"/>
++    <param name="sip-port" value="5060"/>
++    <param name="rtp-ip" value="$${local_ip_v4}"/>
++    <param name="ext-rtp-ip" value="auto-nat"/>
++    <param name="ext-sip-ip" value="auto-nat"/>
++
++    <!-- RTP -->
++    <param name="rtp-timer-name" value="soft"/>
++    <param name="rtp-start-port" value="$${rtp_start_port}"/>
++    <param name="rtp-end-port" value="$${rtp_end_port}"/>
++
++    <!-- Codec -->
++    <param name="codec-prefs" value="$${global_codec_prefs}"/>
++    <param name="inbound-codec-negotiation" value="generous"/>
++
++    <!-- TLS -->
++    <param name="tls" value="$${internal_ssl_enable}"/>
++    <param name="tls-bind-params" value="transport=tls"/>
++    <param name="tls-sip-port" value="5061"/>
++    <param name="tls-cert-dir" value="$${internal_ssl_dir}"/>
++    <param name="tls-version" value="tlsv1.2"/>
++
++    <!-- SRTP -->
++    <param name="inbound-zrtp-passthru" value="true"/>
++
++    <!-- NAT -->
++    <param name="apply-nat-acl" value="nat.auto"/>
++    <param name="local-network-acl" value="localnet.auto"/>
++    <param name="aggressive-nat-detection" value="true"/>
++    <param name="NDLB-force-rport" value="safe"/>
++
++    <!-- Auth -->
++    <param name="apply-inbound-acl" value="domains"/>
++    <param name="challenge-realm" value="auto_from"/>
++
++    <!-- Recording -->
++    <param name="record-path" value="$${recordings_dir}"/>
++    <param name="record-template" value="${caller_id_number}.${strftime(%Y%m%d-%H%M%S)}.wav"/>
++
++    <!-- Other -->
++    <param name="context" value="default"/>
++    <param name="dialplan" value="XML"/>
++    <param name="dtmf-duration" value="2000"/>
++    <param name="hold-music" value="$${hold_music}"/>
++    <param name="manage-presence" value="true"/>
++    <param name="presence-hosts" value="$${domain_name}"/>
++  </settings>
++</profile>
+diff --git a/deploy/freeswitch/conf/vars.xml b/deploy/freeswitch/conf/vars.xml
+new file mode 100644
+index 0000000..de7952f
+--- /dev/null
++++ b/deploy/freeswitch/conf/vars.xml
+@@ -0,0 +1,30 @@
++<!-- FreeSWITCH Global Variables -->
++<include>
++  <!-- SIP -->
++  <X-PRE-PROCESS cmd="set" data="default_password=1234"/>
++  <X-PRE-PROCESS cmd="set" data="domain=$${local_ip_v4}"/>
++  <X-PRE-PROCESS cmd="set" data="domain_name=$${domain}"/>
++  <X-PRE-PROCESS cmd="set" data="hold_music=local_stream://moh"/>
++  <X-PRE-PROCESS cmd="set" data="use_profile=internal"/>
++  <X-PRE-PROCESS cmd="set" data="default_acodec=PCMA"/>
++  <X-PRE-PROCESS cmd="set" data="global_codec_prefs=PCMA,PCMU,G729,opus"/>
++  <X-PRE-PROCESS cmd="set" data="outbound_codec_prefs=PCMA,PCMU,G729"/>
++
++  <!-- ESL -->
++  <X-PRE-PROCESS cmd="set" data="event_socket_password=ClueCon"/>
++
++  <!-- TLS/SRTP -->
++  <X-PRE-PROCESS cmd="set" data="internal_ssl_enable=true"/>
++  <X-PRE-PROCESS cmd="set" data="internal_ssl_dir=$${base_dir}/certs"/>
++
++  <!-- RTP Ports -->
++  <X-PRE-PROCESS cmd="set" data="rtp_start_port=16384"/>
++  <X-PRE-PROCESS cmd="set" data="rtp_end_port=32768"/>
++
++  <!-- Recording -->
++  <X-PRE-PROCESS cmd="set" data="recordings_dir=$${base_dir}/recordings"/>
++
++  <!-- mod_verto (WebRTC) -->
++  <X-PRE-PROCESS cmd="set" data="verto_listen_port=8081"/>
++  <X-PRE-PROCESS cmd="set" data="verto_wss_port=8082"/>
++</include>
+diff --git a/deploy/grafana/dashboards/ccc-overview.json b/deploy/grafana/dashboards/ccc-overview.json
+new file mode 100644
+index 0000000..6fa4412
+--- /dev/null
++++ b/deploy/grafana/dashboards/ccc-overview.json
+@@ -0,0 +1,135 @@
++{
++  "annotations": { "list": [] },
++  "editable": true,
++  "fiscalYearStartMonth": 0,
++  "graphTooltip": 1,
++  "id": null,
++  "links": [],
++  "panels": [
++    {
++      "title": "HTTP Request Rate",
++      "type": "timeseries",
++      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
++      "targets": [
++        {
++          "expr": "sum(rate(ccc_http_requests_total[5m])) by (method)",
++          "legendFormat": "{{method}}"
++        }
++      ]
++    },
++    {
++      "title": "HTTP Request Duration (p95)",
++      "type": "timeseries",
++      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
++      "targets": [
++        {
++          "expr": "histogram_quantile(0.95, sum(rate(ccc_http_request_duration_seconds_bucket[5m])) by (le))",
++          "legendFormat": "p95"
++        },
++        {
++          "expr": "histogram_quantile(0.99, sum(rate(ccc_http_request_duration_seconds_bucket[5m])) by (le))",
++          "legendFormat": "p99"
++        }
++      ]
++    },
++    {
++      "title": "Active Calls",
++      "type": "stat",
++      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 8 },
++      "targets": [
++        { "expr": "ccc_active_calls", "legendFormat": "Active Calls" }
++      ],
++      "fieldConfig": {
++        "defaults": { "thresholds": { "steps": [
++          { "color": "green", "value": null },
++          { "color": "yellow", "value": 500 },
++          { "color": "red", "value": 900 }
++        ]}}
++      }
++    },
++    {
++      "title": "Requests In-Flight",
++      "type": "stat",
++      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 8 },
++      "targets": [
++        { "expr": "ccc_http_requests_in_flight", "legendFormat": "In-Flight" }
++      ]
++    },
++    {
++      "title": "ESL Connections",
++      "type": "stat",
++      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 8 },
++      "targets": [
++        { "expr": "ccc_esl_connections_active", "legendFormat": "ESL" }
++      ]
++    },
++    {
++      "title": "Agent Status Distribution",
++      "type": "piechart",
++      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 12 },
++      "targets": [
++        { "expr": "ccc_active_agents", "legendFormat": "{{status}}" }
++      ]
++    },
++    {
++      "title": "Queue Depth by Skill Group",
++      "type": "bargauge",
++      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 12 },
++      "targets": [
++        { "expr": "ccc_queue_depth", "legendFormat": "{{skill_group}}" }
++      ]
++    },
++    {
++      "title": "ESL Command Duration (p95)",
++      "type": "timeseries",
++      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 12 },
++      "targets": [
++        {
++          "expr": "histogram_quantile(0.95, sum(rate(ccc_esl_command_duration_seconds_bucket[5m])) by (le, command))",
++          "legendFormat": "{{command}}"
++        }
++      ]
++    },
++    {
++      "title": "HTTP Error Rate (5xx)",
++      "type": "timeseries",
++      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
++      "targets": [
++        {
++          "expr": "sum(rate(ccc_http_requests_total{status=~\"5..\"}[5m]))",
++          "legendFormat": "5xx/s"
++        }
++      ],
++      "fieldConfig": {
++        "defaults": { "thresholds": { "steps": [
++          { "color": "green", "value": null },
++          { "color": "red", "value": 0.1 }
++        ]}}
++      }
++    },
++    {
++      "title": "Campaign Progress",
++      "type": "gauge",
++      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
++      "targets": [
++        { "expr": "ccc_campaign_progress_ratio", "legendFormat": "Campaign {{campaign_id}}" }
++      ],
++      "fieldConfig": {
++        "defaults": {
++          "min": 0, "max": 1,
++          "thresholds": { "steps": [
++            { "color": "red", "value": null },
++            { "color": "yellow", "value": 0.5 },
++            { "color": "green", "value": 0.9 }
++          ]}
++        }
++      }
++    }
++  ],
++  "schemaVersion": 39,
++  "tags": ["ccc"],
++  "templating": { "list": [] },
++  "time": { "from": "now-1h", "to": "now" },
++  "title": "CCC Platform Overview",
++  "uid": "ccc-overview"
++}
+diff --git a/deploy/grafana/provisioning/dashboards/default.yml b/deploy/grafana/provisioning/dashboards/default.yml
+new file mode 100644
+index 0000000..0303495
+--- /dev/null
++++ b/deploy/grafana/provisioning/dashboards/default.yml
+@@ -0,0 +1,12 @@
++apiVersion: 1
++
++providers:
++  - name: "CCC Dashboards"
++    orgId: 1
++    folder: "CCC"
++    type: file
++    disableDeletion: false
++    editable: true
++    options:
++      path: /var/lib/grafana/dashboards
++      foldersFromFilesStructure: false
+diff --git a/deploy/grafana/provisioning/datasources/prometheus.yml b/deploy/grafana/provisioning/datasources/prometheus.yml
+new file mode 100644
+index 0000000..bb009bb
+--- /dev/null
++++ b/deploy/grafana/provisioning/datasources/prometheus.yml
+@@ -0,0 +1,9 @@
++apiVersion: 1
++
++datasources:
++  - name: Prometheus
++    type: prometheus
++    access: proxy
++    url: http://prometheus:9090
++    isDefault: true
++    editable: false
+diff --git a/deploy/mysql/partitions.sql b/deploy/mysql/partitions.sql
+new file mode 100644
+index 0000000..4578104
+--- /dev/null
++++ b/deploy/mysql/partitions.sql
+@@ -0,0 +1,145 @@
++-- ============================================================
++-- MySQL Monthly Partitioning for High-Volume Tables
++-- Run after initial migration; adjust date range as needed.
++-- Partitions: 2024-01 through 2027-12 (36 months)
++-- ============================================================
++
++-- Helper: Generate RANGE partition clauses by month.
++-- Each partition stores rows WHERE created_at < 'YYYY-MM-01'.
++
++-- ─── 1. calls ───
++ALTER TABLE calls PARTITION BY RANGE (TO_DAYS(created_at)) (
++    PARTITION p2024_01 VALUES LESS THAN (TO_DAYS('2024-02-01')),
++    PARTITION p2024_02 VALUES LESS THAN (TO_DAYS('2024-03-01')),
++    PARTITION p2024_03 VALUES LESS THAN (TO_DAYS('2024-04-01')),
++    PARTITION p2024_04 VALUES LESS THAN (TO_DAYS('2024-05-01')),
++    PARTITION p2024_05 VALUES LESS THAN (TO_DAYS('2024-06-01')),
++    PARTITION p2024_06 VALUES LESS THAN (TO_DAYS('2024-07-01')),
++    PARTITION p2024_07 VALUES LESS THAN (TO_DAYS('2024-08-01')),
++    PARTITION p2024_08 VALUES LESS THAN (TO_DAYS('2024-09-01')),
++    PARTITION p2024_09 VALUES LESS THAN (TO_DAYS('2024-10-01')),
++    PARTITION p2024_10 VALUES LESS THAN (TO_DAYS('2024-11-01')),
++    PARTITION p2024_11 VALUES LESS THAN (TO_DAYS('2024-12-01')),
++    PARTITION p2024_12 VALUES LESS THAN (TO_DAYS('2025-01-01')),
++    PARTITION p2025_01 VALUES LESS THAN (TO_DAYS('2025-02-01')),
++    PARTITION p2025_02 VALUES LESS THAN (TO_DAYS('2025-03-01')),
++    PARTITION p2025_03 VALUES LESS THAN (TO_DAYS('2025-04-01')),
++    PARTITION p2025_04 VALUES LESS THAN (TO_DAYS('2025-05-01')),
++    PARTITION p2025_05 VALUES LESS THAN (TO_DAYS('2025-06-01')),
++    PARTITION p2025_06 VALUES LESS THAN (TO_DAYS('2025-07-01')),
++    PARTITION p2025_07 VALUES LESS THAN (TO_DAYS('2025-08-01')),
++    PARTITION p2025_08 VALUES LESS THAN (TO_DAYS('2025-09-01')),
++    PARTITION p2025_09 VALUES LESS THAN (TO_DAYS('2025-10-01')),
++    PARTITION p2025_10 VALUES LESS THAN (TO_DAYS('2025-11-01')),
++    PARTITION p2025_11 VALUES LESS THAN (TO_DAYS('2025-12-01')),
++    PARTITION p2025_12 VALUES LESS THAN (TO_DAYS('2026-01-01')),
++    PARTITION p2026_01 VALUES LESS THAN (TO_DAYS('2026-02-01')),
++    PARTITION p2026_02 VALUES LESS THAN (TO_DAYS('2026-03-01')),
++    PARTITION p2026_03 VALUES LESS THAN (TO_DAYS('2026-04-01')),
++    PARTITION p2026_04 VALUES LESS THAN (TO_DAYS('2026-05-01')),
++    PARTITION p2026_05 VALUES LESS THAN (TO_DAYS('2026-06-01')),
++    PARTITION p2026_06 VALUES LESS THAN (TO_DAYS('2026-07-01')),
++    PARTITION p2026_07 VALUES LESS THAN (TO_DAYS('2026-08-01')),
++    PARTITION p2026_08 VALUES LESS THAN (TO_DAYS('2026-09-01')),
++    PARTITION p2026_09 VALUES LESS THAN (TO_DAYS('2026-10-01')),
++    PARTITION p2026_10 VALUES LESS THAN (TO_DAYS('2026-11-01')),
++    PARTITION p2026_11 VALUES LESS THAN (TO_DAYS('2026-12-01')),
++    PARTITION p2026_12 VALUES LESS THAN (TO_DAYS('2027-01-01')),
++    PARTITION p_future VALUES LESS THAN MAXVALUE
++);
++
++-- ─── 2. call_events ───
++ALTER TABLE call_events PARTITION BY RANGE (TO_DAYS(created_at)) (
++    PARTITION p2024_01 VALUES LESS THAN (TO_DAYS('2024-02-01')),
++    PARTITION p2024_06 VALUES LESS THAN (TO_DAYS('2024-07-01')),
++    PARTITION p2024_12 VALUES LESS THAN (TO_DAYS('2025-01-01')),
++    PARTITION p2025_06 VALUES LESS THAN (TO_DAYS('2025-07-01')),
++    PARTITION p2025_12 VALUES LESS THAN (TO_DAYS('2026-01-01')),
++    PARTITION p2026_06 VALUES LESS THAN (TO_DAYS('2026-07-01')),
++    PARTITION p2026_12 VALUES LESS THAN (TO_DAYS('2027-01-01')),
++    PARTITION p_future VALUES LESS THAN MAXVALUE
++);
++
++-- ─── 3. agent_presence_log ───
++ALTER TABLE agent_presence_log PARTITION BY RANGE (TO_DAYS(created_at)) (
++    PARTITION p2024_01 VALUES LESS THAN (TO_DAYS('2024-02-01')),
++    PARTITION p2024_06 VALUES LESS THAN (TO_DAYS('2024-07-01')),
++    PARTITION p2024_12 VALUES LESS THAN (TO_DAYS('2025-01-01')),
++    PARTITION p2025_06 VALUES LESS THAN (TO_DAYS('2025-07-01')),
++    PARTITION p2025_12 VALUES LESS THAN (TO_DAYS('2026-01-01')),
++    PARTITION p2026_06 VALUES LESS THAN (TO_DAYS('2026-07-01')),
++    PARTITION p2026_12 VALUES LESS THAN (TO_DAYS('2027-01-01')),
++    PARTITION p_future VALUES LESS THAN MAXVALUE
++);
++
++-- ─── 4. im_messages ───
++ALTER TABLE im_messages PARTITION BY RANGE (TO_DAYS(created_at)) (
++    PARTITION p2024_01 VALUES LESS THAN (TO_DAYS('2024-02-01')),
++    PARTITION p2024_06 VALUES LESS THAN (TO_DAYS('2024-07-01')),
++    PARTITION p2024_12 VALUES LESS THAN (TO_DAYS('2025-01-01')),
++    PARTITION p2025_06 VALUES LESS THAN (TO_DAYS('2025-07-01')),
++    PARTITION p2025_12 VALUES LESS THAN (TO_DAYS('2026-01-01')),
++    PARTITION p2026_06 VALUES LESS THAN (TO_DAYS('2026-07-01')),
++    PARTITION p2026_12 VALUES LESS THAN (TO_DAYS('2027-01-01')),
++    PARTITION p_future VALUES LESS THAN MAXVALUE
++);
++
++-- ─── 5. audit_logs ───
++ALTER TABLE audit_logs PARTITION BY RANGE (TO_DAYS(created_at)) (
++    PARTITION p2024_01 VALUES LESS THAN (TO_DAYS('2024-02-01')),
++    PARTITION p2024_06 VALUES LESS THAN (TO_DAYS('2024-07-01')),
++    PARTITION p2024_12 VALUES LESS THAN (TO_DAYS('2025-01-01')),
++    PARTITION p2025_06 VALUES LESS THAN (TO_DAYS('2025-07-01')),
++    PARTITION p2025_12 VALUES LESS THAN (TO_DAYS('2026-01-01')),
++    PARTITION p2026_06 VALUES LESS THAN (TO_DAYS('2026-07-01')),
++    PARTITION p2026_12 VALUES LESS THAN (TO_DAYS('2027-01-01')),
++    PARTITION p_future VALUES LESS THAN MAXVALUE
++);
++
++-- ─── 6. qa_results ───
++ALTER TABLE qa_results PARTITION BY RANGE (TO_DAYS(created_at)) (
++    PARTITION p2024_01 VALUES LESS THAN (TO_DAYS('2024-02-01')),
++    PARTITION p2024_06 VALUES LESS THAN (TO_DAYS('2024-07-01')),
++    PARTITION p2024_12 VALUES LESS THAN (TO_DAYS('2025-01-01')),
++    PARTITION p2025_06 VALUES LESS THAN (TO_DAYS('2025-07-01')),
++    PARTITION p2025_12 VALUES LESS THAN (TO_DAYS('2026-01-01')),
++    PARTITION p2026_06 VALUES LESS THAN (TO_DAYS('2026-07-01')),
++    PARTITION p2026_12 VALUES LESS THAN (TO_DAYS('2027-01-01')),
++    PARTITION p_future VALUES LESS THAN MAXVALUE
++);
++
++-- ─── 7. webrtc_quality_logs ───
++ALTER TABLE webrtc_quality_logs PARTITION BY RANGE (TO_DAYS(created_at)) (
++    PARTITION p2024_01 VALUES LESS THAN (TO_DAYS('2024-02-01')),
++    PARTITION p2024_06 VALUES LESS THAN (TO_DAYS('2024-07-01')),
++    PARTITION p2024_12 VALUES LESS THAN (TO_DAYS('2025-01-01')),
++    PARTITION p2025_06 VALUES LESS THAN (TO_DAYS('2025-07-01')),
++    PARTITION p2025_12 VALUES LESS THAN (TO_DAYS('2026-01-01')),
++    PARTITION p2026_06 VALUES LESS THAN (TO_DAYS('2026-07-01')),
++    PARTITION p2026_12 VALUES LESS THAN (TO_DAYS('2027-01-01')),
++    PARTITION p_future VALUES LESS THAN MAXVALUE
++);
++
++-- ─── 8. annotation_results ───
++ALTER TABLE annotation_results PARTITION BY RANGE (TO_DAYS(created_at)) (
++    PARTITION p2024_01 VALUES LESS THAN (TO_DAYS('2024-02-01')),
++    PARTITION p2024_06 VALUES LESS THAN (TO_DAYS('2024-07-01')),
++    PARTITION p2024_12 VALUES LESS THAN (TO_DAYS('2025-01-01')),
++    PARTITION p2025_06 VALUES LESS THAN (TO_DAYS('2025-07-01')),
++    PARTITION p2025_12 VALUES LESS THAN (TO_DAYS('2026-01-01')),
++    PARTITION p2026_06 VALUES LESS THAN (TO_DAYS('2026-07-01')),
++    PARTITION p2026_12 VALUES LESS THAN (TO_DAYS('2027-01-01')),
++    PARTITION p_future VALUES LESS THAN MAXVALUE
++);
++
++-- ============================================================
++-- Partition Maintenance: Run monthly to add future partitions
++-- ============================================================
++-- Example: Add January 2027 partition
++-- ALTER TABLE calls REORGANIZE PARTITION p_future INTO (
++--     PARTITION p2027_01 VALUES LESS THAN (TO_DAYS('2027-02-01')),
++--     PARTITION p_future VALUES LESS THAN MAXVALUE
++-- );
++--
++-- To drop old partitions (after retention period):
++-- ALTER TABLE calls DROP PARTITION p2024_01;
+diff --git a/deploy/prometheus/prometheus.yml b/deploy/prometheus/prometheus.yml
+new file mode 100644
+index 0000000..49cac37
+--- /dev/null
++++ b/deploy/prometheus/prometheus.yml
+@@ -0,0 +1,33 @@
++global:
++  scrape_interval: 15s
++  evaluation_interval: 15s
++
++scrape_configs:
++  - job_name: "ccc-api"
++    metrics_path: /metrics
++    static_configs:
++      - targets: ["api:8080"]
++        labels:
++          service: "ccc-api"
++
++  - job_name: "freeswitch"
++    metrics_path: /metrics
++    static_configs:
++      - targets: ["freeswitch:8088"]
++        labels:
++          service: "freeswitch"
++    scrape_interval: 30s
++
++  - job_name: "mysql-exporter"
++    static_configs:
++      - targets: ["mysql-exporter:9104"]
++        labels:
++          service: "mysql"
++    scrape_interval: 30s
++
++  - job_name: "redis-exporter"
++    static_configs:
++      - targets: ["redis-exporter:9121"]
++        labels:
++          service: "redis"
++    scrape_interval: 30s
+diff --git a/docker-compose.yml b/docker-compose.yml
+new file mode 100644
+index 0000000..d2c8bd5
+--- /dev/null
++++ b/docker-compose.yml
+@@ -0,0 +1,197 @@
++version: "3.9"
++
++services:
++  # ─── Go API Server ───
++  api:
++    build:
++      context: .
++      dockerfile: Dockerfile
++    ports:
++      - "8080:8080"
++    environment:
++      - SERVER_PORT=8080
++      - DATABASE_DSN=${DATABASE_DSN:-ccc:ccc_pass@tcp(mysql:3306)/ccc?parseTime=true&charset=utf8mb4&collation=utf8mb4_0900_ai_ci}
++      - REDIS_ADDR=redis:6379
++      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
++      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
++      - JWT_ISSUER=${JWT_ISSUER:-ccc-platform}
++      - SNOWFLAKE_NODE_ID=${SNOWFLAKE_NODE_ID:-1}
++      - ESL_HOST=freeswitch
++      - ESL_PORT=8021
++      - ESL_PASSWORD=${ESL_PASSWORD:-ClueCon}
++      - MINIO_ENDPOINT=minio:9000
++      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
++      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin123}
++      - NATS_URL=nats://nats:4222
++      - KAFKA_BROKERS=kafka:9092
++      - PROMETHEUS_ENABLED=true
++    depends_on:
++      mysql:
++        condition: service_healthy
++      redis:
++        condition: service_healthy
++    restart: unless-stopped
++    networks:
++      - ccc-net
++
++  # ─── React Frontend ───
++  web:
++    build:
++      context: ./web
++      dockerfile: Dockerfile
++    ports:
++      - "80:80"
++    depends_on:
++      - api
++    restart: unless-stopped
++    networks:
++      - ccc-net
++
++  # ─── MySQL 8.0 ───
++  mysql:
++    image: mysql:8.0
++    ports:
++      - "3306:3306"
++    environment:
++      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-ccc_root_pass}
++      - MYSQL_DATABASE=${MYSQL_DATABASE:-ccc}
++      - MYSQL_USER=${MYSQL_USER:-ccc}
++      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-ccc_pass}
++    volumes:
++      - mysql-data:/var/lib/mysql
++      - ./migrations:/docker-entrypoint-initdb.d
++    command: >
++      --character-set-server=utf8mb4
++      --collation-server=utf8mb4_0900_ai_ci
++      --default-authentication-plugin=mysql_native_password
++      --max-connections=500
++      --innodb-buffer-pool-size=512M
++      --slow-query-log=ON
++      --long-query-time=1
++    healthcheck:
++      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-ccc_root_pass}"]
++      interval: 10s
++      timeout: 5s
++      retries: 5
++      start_period: 30s
++    restart: unless-stopped
++    networks:
++      - ccc-net
++
++  # ─── Redis 7 ───
++  redis:
++    image: redis:7-alpine
++    ports:
++      - "6379:6379"
++    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
++    volumes:
++      - redis-data:/data
++    healthcheck:
++      test: ["CMD", "redis-cli", "ping"]
++      interval: 10s
++      timeout: 5s
++      retries: 3
++    restart: unless-stopped
++    networks:
++      - ccc-net
++
++  # ─── MinIO (S3-compatible storage for recordings) ───
++  minio:
++    image: minio/minio:latest
++    ports:
++      - "9000:9000"
++      - "9001:9001"
++    environment:
++      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
++      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin123}
++    command: server /data --console-address ":9001"
++    volumes:
++      - minio-data:/data
++    healthcheck:
++      test: ["CMD", "mc", "ready", "local"]
++      interval: 30s
++      timeout: 10s
++      retries: 3
++    restart: unless-stopped
++    networks:
++      - ccc-net
++
++  # ─── FreeSWITCH ───
++  freeswitch:
++    image: signalwire/freeswitch:1.10
++    ports:
++      - "5060:5060/udp"
++      - "5060:5060/tcp"
++      - "5061:5061/tcp"
++      - "8021:8021/tcp"
++      - "8081:8081/tcp"
++      - "8082:8082/tcp"
++      - "16384-16394:16384-16394/udp"
++    volumes:
++      - ./deploy/freeswitch/conf:/etc/freeswitch
++      - freeswitch-recordings:/var/lib/freeswitch/recordings
++      - freeswitch-sounds:/usr/share/freeswitch/sounds
++    restart: unless-stopped
++    networks:
++      - ccc-net
++
++  # ─── NATS (event bus) ───
++  nats:
++    image: nats:2-alpine
++    ports:
++      - "4222:4222"
++      - "8222:8222"
++    command: --jetstream --store_dir /data --http_port 8222
++    volumes:
++      - nats-data:/data
++    restart: unless-stopped
++    networks:
++      - ccc-net
++
++  # ─── Prometheus ───
++  prometheus:
++    image: prom/prometheus:v2.53.0
++    ports:
++      - "9090:9090"
++    volumes:
++      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
++      - prometheus-data:/prometheus
++    command:
++      - "--config.file=/etc/prometheus/prometheus.yml"
++      - "--storage.tsdb.retention.time=30d"
++    restart: unless-stopped
++    networks:
++      - ccc-net
++
++  # ─── Grafana ───
++  grafana:
++    image: grafana/grafana:11.1.0
++    ports:
++      - "3000:3000"
++    environment:
++      - GF_SECURITY_ADMIN_USER=${GF_SECURITY_ADMIN_USER:-admin}
++      - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD:-admin}
++      - GF_INSTALL_PLUGINS=grafana-clock-panel
++    volumes:
++      - grafana-data:/var/lib/grafana
++      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
++      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
++    depends_on:
++      - prometheus
++    restart: unless-stopped
++    networks:
++      - ccc-net
++
++volumes:
++  mysql-data:
++  redis-data:
++  minio-data:
++  freeswitch-recordings:
++  freeswitch-sounds:
++  nats-data:
++  prometheus-data:
++  grafana-data:
++
++networks:
++  ccc-net:
++    driver: bridge
+diff --git a/docs/deployment.md b/docs/deployment.md
+new file mode 100644
+index 0000000..a7ad661
+--- /dev/null
++++ b/docs/deployment.md
+@@ -0,0 +1,252 @@
++# CCC Platform — Deployment Guide
++
++## Architecture Overview
++
++```
++                    ┌─────────────┐
++                    │   Nginx     │ :80/:443
++                    │ (Frontend)  │
++                    └──────┬──────┘
++                           │
++              ┌────────────┼────────────┐
++              │            │            │
++         /api/v1      /ws/       static files
++              │            │            │
++              ▼            ▼            ▼
++        ┌──────────────────────┐   ┌──────────┐
++        │    Go API Server     │   │ React SPA │
++        │       :8080          │   │  (Nginx)  │
++        └──┬───┬───┬───┬───┬──┘   └──────────┘
++           │   │   │   │   │
++    ┌──────┘   │   │   │   └──────┐
++    ▼          ▼   ▼   ▼          ▼
++┌───────┐ ┌─────┐ ┌──────┐ ┌──────────┐ ┌──────┐
++│ MySQL │ │Redis│ │MinIO │ │FreeSWITCH│ │ NATS │
++│ :3306 │ │:6379│ │:9000 │ │:5060/8021│ │:4222 │
++└───────┘ └─────┘ └──────┘ └──────────┘ └──────┘
++                                │
++                    ┌───────────┤
++                    ▼           ▼
++              ┌──────────┐ ┌──────────┐
++              │Prometheus│ │ Grafana  │
++              │  :9090   │ │  :3000   │
++              └──────────┘ └──────────┘
++```
++
++## Quick Start (Docker Compose)
++
++```bash
++# 1. Clone and configure
++cp .env.example .env
++# Edit .env — at minimum change JWT_SECRET and passwords
++
++# 2. Start all services
++make docker-up
++# or: docker compose up -d
++
++# 3. Apply database migrations
++make migrate-up
++
++# 4. (Optional) Apply MySQL partitions for production
++make migrate-partitions
++
++# 5. Access
++# Frontend:      http://localhost
++# API:           http://localhost:8080/api/v1
++# Grafana:       http://localhost:3000 (admin/admin)
++# MinIO Console: http://localhost:9001 (minioadmin/minioadmin123)
++# Prometheus:    http://localhost:9090
++# NATS Monitor:  http://localhost:8222
++```
++
++## Service Ports
++
++| Service      | Port          | Protocol | Description                    |
++|-------------|---------------|----------|--------------------------------|
++| Nginx (Web)  | 80            | HTTP     | Frontend + API reverse proxy   |
++| Go API       | 8080          | HTTP     | Backend REST API + WebSocket   |
++| MySQL        | 3306          | TCP      | Database                       |
++| Redis        | 6379          | TCP      | Cache + rate limiting          |
++| MinIO        | 9000 / 9001   | HTTP     | S3 storage / Console           |
++| FreeSWITCH   | 5060 (UDP/TCP)| SIP      | Voice signaling                |
++| FreeSWITCH   | 5061          | TLS      | Secure SIP                     |
++| FreeSWITCH   | 8021          | TCP      | ESL (Event Socket)             |
++| FreeSWITCH   | 8081          | WS       | mod_verto WebSocket            |
++| FreeSWITCH   | 8082          | WSS      | mod_verto Secure WebSocket     |
++| NATS         | 4222 / 8222   | TCP/HTTP | Message bus / Monitor          |
++| Prometheus   | 9090          | HTTP     | Metrics collection             |
++| Grafana      | 3000          | HTTP     | Monitoring dashboards          |
++
++## Environment Variables
++
++See `.env.example` for all available variables. Critical ones:
++
++| Variable              | Required | Description                       |
++|----------------------|----------|-----------------------------------|
++| `DATABASE_DSN`       | Yes      | MySQL connection string           |
++| `REDIS_ADDR`         | Yes      | Redis host:port                   |
++| `JWT_SECRET`         | Yes      | JWT signing key (min 32 chars)    |
++| `ESL_HOST`           | Yes      | FreeSWITCH ESL host              |
++| `ESL_PASSWORD`       | Yes      | FreeSWITCH ESL password          |
++| `MINIO_ENDPOINT`     | Yes      | MinIO S3 endpoint                |
++| `SNOWFLAKE_NODE_ID`  | Yes      | Unique per instance (1-1023)     |
++
++## Production Deployment
++
++### Prerequisites
++
++- Docker 24+ with Compose v2
++- 8GB+ RAM (16GB recommended for 500+ agents)
++- 4+ CPU cores
++- SSD storage for MySQL and MinIO
++
++### Security Checklist
++
++- [ ] Change all default passwords in `.env`
++- [ ] Generate strong JWT_SECRET: `openssl rand -base64 32`
++- [ ] Enable TLS on Nginx (add SSL cert + redirect 80→443)
++- [ ] Enable TLS/SRTP on FreeSWITCH (place certs in `deploy/freeswitch/conf/certs/`)
++- [ ] Restrict ESL access to internal network only
++- [ ] Set up MySQL replication for HA
++- [ ] Configure Redis Cluster or Sentinel for HA
++- [ ] Set up MinIO distributed mode for HA
++- [ ] Enable audit logging
++- [ ] Review API rate limits per tenant
++
++### TLS/SRTP Setup
++
++```bash
++# Generate self-signed certs for FreeSWITCH (production: use CA-signed)
++mkdir -p deploy/freeswitch/conf/certs
++openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
++  -keyout deploy/freeswitch/conf/certs/wss.pem \
++  -out deploy/freeswitch/conf/certs/wss.pem \
++  -subj "/CN=ccc.example.com"
++
++# For Nginx TLS
++# Place fullchain.pem and privkey.pem in deploy/nginx/certs/
++```
++
++### MySQL Partitioning
++
++Partitioning is recommended for tables with high write volume:
++
++```bash
++# Apply partitions (after migrations)
++make migrate-partitions
++
++# Tables partitioned by month:
++# - calls, call_events, agent_presence_log
++# - im_messages, audit_logs, qa_results
++# - webrtc_quality_logs, annotation_results
++```
++
++Partition maintenance (run monthly via cron):
++```sql
++-- Add new month partition
++ALTER TABLE calls REORGANIZE PARTITION p_future INTO (
++    PARTITION p2027_01 VALUES LESS THAN (TO_DAYS('2027-02-01')),
++    PARTITION p_future VALUES LESS THAN MAXVALUE
++);
++
++-- Drop partitions older than retention period
++ALTER TABLE calls DROP PARTITION p2024_01;
++```
++
++### Scaling
++
++**Multiple Go API instances:**
++```bash
++# Scale API to 3 instances behind a load balancer
++docker compose up -d --scale api=3
++
++# Each instance needs unique SNOWFLAKE_NODE_ID (1, 2, 3)
++```
++
++**FreeSWITCH cluster with OpenSIPS/Kamailio SIP LB:**
++```
++                    ┌──────────┐
++    SIP ──────────► │ OpenSIPS │ ◄── SIP Load Balancer
++                    │ (SIP LB) │
++                    └─┬──────┬─┘
++                      │      │
++              ┌───────┘      └───────┐
++              ▼                      ▼
++        ┌──────────┐          ┌──────────┐
++        │   FS #1  │          │   FS #2  │
++        └──────────┘          └──────────┘
++```
++
++## Monitoring
++
++### Grafana Dashboards
++
++Pre-configured dashboards are auto-provisioned:
++
++- **CCC Platform Overview**: HTTP rates, latency percentiles, active calls, ESL connections, agent status distribution, queue depths, error rates
++
++### Custom Metrics
++
++| Metric                          | Type      | Description                    |
++|--------------------------------|-----------|--------------------------------|
++| `ccc_http_requests_total`      | Counter   | Total HTTP requests            |
++| `ccc_http_request_duration_seconds` | Histogram | Request latency           |
++| `ccc_http_requests_in_flight`  | Gauge     | Current active requests        |
++| `ccc_active_calls`             | Gauge     | Active calls                   |
++| `ccc_active_agents`            | Gauge     | Agents by status               |
++| `ccc_esl_connections_active`   | Gauge     | ESL connection pool size       |
++| `ccc_esl_command_duration_seconds` | Histogram | ESL command latency       |
++| `ccc_queue_depth`              | Gauge     | Queue depth per skill group    |
++| `ccc_campaign_progress_ratio`  | Gauge     | Campaign completion ratio      |
++
++## Load Testing
++
++```bash
++# Install k6
++# macOS: brew install k6
++# Linux: snap install k6
++
++# Set auth token
++export AUTH_TOKEN="your-jwt-token"
++
++# Run individual tests
++make k6-inbound     # 1000 concurrent inbound calls
++make k6-outbound    # 500 concurrent outbound
++make k6-mixed       # 500 inbound + 500 outbound
++make k6-websocket   # 500 agents + 10 admin WS
++make k6-report      # Report query performance
++```
++
++## Troubleshooting
++
++**API won't start:**
++```bash
++docker compose logs api
++# Common: MySQL not ready → wait for healthcheck
++# Common: Bad DATABASE_DSN → check .env
++```
++
++**FreeSWITCH ESL connection refused:**
++```bash
++docker compose exec freeswitch fs_cli -x "status"
++# Check ESL is listening on 8021
++```
++
++**High memory usage:**
++```bash
++# Check MySQL buffer pool
++docker compose exec mysql mysql -e "SHOW VARIABLES LIKE 'innodb_buffer_pool_size';"
++
++# Check Redis memory
++docker compose exec redis redis-cli INFO memory
++```
++
++**Partition maintenance:**
++```bash
++# Check partition status
++docker compose exec mysql mysql -e "
++  SELECT TABLE_NAME, PARTITION_NAME, TABLE_ROWS
++  FROM INFORMATION_SCHEMA.PARTITIONS
++  WHERE TABLE_SCHEMA='ccc' AND PARTITION_NAME IS NOT NULL
++  ORDER BY TABLE_NAME, PARTITION_NAME;"
++```
+diff --git a/internal/interfaces/http/middleware/metrics.go b/internal/interfaces/http/middleware/metrics.go
+new file mode 100644
+index 0000000..60d9df0
+--- /dev/null
++++ b/internal/interfaces/http/middleware/metrics.go
+@@ -0,0 +1,157 @@
++package middleware
++
++import (
++	"net/http"
++	"strconv"
++	"time"
++
++	"github.com/prometheus/client_golang/prometheus"
++	"github.com/prometheus/client_golang/prometheus/promauto"
++)
++
++var (
++	httpRequestsTotal = promauto.NewCounterVec(
++		prometheus.CounterOpts{
++			Name: "ccc_http_requests_total",
++			Help: "Total number of HTTP requests",
++		},
++		[]string{"method", "path", "status"},
++	)
++
++	httpRequestDuration = promauto.NewHistogramVec(
++		prometheus.HistogramOpts{
++			Name:    "ccc_http_request_duration_seconds",
++			Help:    "HTTP request duration in seconds",
++			Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
++		},
++		[]string{"method", "path"},
++	)
++
++	httpRequestsInFlight = promauto.NewGauge(
++		prometheus.GaugeOpts{
++			Name: "ccc_http_requests_in_flight",
++			Help: "Number of HTTP requests currently being served",
++		},
++	)
++
++	ActiveCalls = promauto.NewGauge(
++		prometheus.GaugeOpts{
++			Name: "ccc_active_calls",
++			Help: "Number of active calls",
++		},
++	)
++
++	ActiveAgents = promauto.NewGaugeVec(
++		prometheus.GaugeOpts{
++			Name: "ccc_active_agents",
++			Help: "Number of active agents by status",
++		},
++		[]string{"status"},
++	)
++
++	ESLConnections = promauto.NewGauge(
++		prometheus.GaugeOpts{
++			Name: "ccc_esl_connections_active",
++			Help: "Number of active ESL connections to FreeSWITCH",
++		},
++	)
++
++	ESLCommandDuration = promauto.NewHistogramVec(
++		prometheus.HistogramOpts{
++			Name:    "ccc_esl_command_duration_seconds",
++			Help:    "ESL command execution duration",
++			Buckets: []float64{0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5},
++		},
++		[]string{"command"},
++	)
++
++	QueueDepth = promauto.NewGaugeVec(
++		prometheus.GaugeOpts{
++			Name: "ccc_queue_depth",
++			Help: "Number of calls waiting in queue per skill group",
++		},
++		[]string{"skill_group"},
++	)
++
++	CampaignProgress = promauto.NewGaugeVec(
++		prometheus.GaugeOpts{
++			Name: "ccc_campaign_progress_ratio",
++			Help: "Campaign completion ratio (0-1)",
++		},
++		[]string{"campaign_id"},
++	)
++)
++
++func Metrics(next http.Handler) http.Handler {
++	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		if r.URL.Path == "/metrics" || r.URL.Path == "/health" {
++			next.ServeHTTP(w, r)
++			return
++		}
++
++		httpRequestsInFlight.Inc()
++		defer httpRequestsInFlight.Dec()
++
++		start := time.Now()
++		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
++
++		next.ServeHTTP(sw, r)
++
++		duration := time.Since(start).Seconds()
++		path := normalizePath(r.URL.Path)
++
++		httpRequestsTotal.WithLabelValues(r.Method, path, strconv.Itoa(sw.status)).Inc()
++		httpRequestDuration.WithLabelValues(r.Method, path).Observe(duration)
++	})
++}
++
++func normalizePath(path string) string {
++	// Collapse numeric IDs to :id to reduce cardinality
++	parts := splitPath(path)
++	for i, part := range parts {
++		if isNumeric(part) {
++			parts[i] = ":id"
++		}
++	}
++	result := "/"
++	for _, p := range parts {
++		if p != "" {
++			result += p + "/"
++		}
++	}
++	if len(result) > 1 {
++		result = result[:len(result)-1]
++	}
++	return result
++}
++
++func splitPath(path string) []string {
++	var parts []string
++	current := ""
++	for _, c := range path {
++		if c == '/' {
++			if current != "" {
++				parts = append(parts, current)
++				current = ""
++			}
++		} else {
++			current += string(c)
++		}
++	}
++	if current != "" {
++		parts = append(parts, current)
++	}
++	return parts
++}
++
++func isNumeric(s string) bool {
++	if s == "" {
++		return false
++	}
++	for _, c := range s {
++		if c < '0' || c > '9' {
++			return false
++		}
++	}
++	return true
++}
+diff --git a/internal/interfaces/http/router.go b/internal/interfaces/http/router.go
+index 5655056..713d343 100644
+--- a/internal/interfaces/http/router.go
++++ b/internal/interfaces/http/router.go
+@@ -93,6 +93,7 @@ func NewRouter(deps RouterDeps) *chi.Mux {
+ 
+ 	r.Use(chiMiddleware.Recoverer)
+ 	r.Use(chiMiddleware.RequestID)
++	r.Use(middleware.Metrics)
+ 	r.Use(middleware.RequestLogger(deps.Logger))
+ 
+ 	r.Get("/health", handler.Health)
+diff --git a/tests/k6/inbound.js b/tests/k6/inbound.js
+new file mode 100644
+index 0000000..c8566e1
+--- /dev/null
++++ b/tests/k6/inbound.js
+@@ -0,0 +1,62 @@
++// k6 load test: Inbound call pressure test
++// Target: 1000 concurrent inbound calls → IVR → ACD → answer → recording
++import http from 'k6/http';
++import { check, sleep } from 'k6';
++import { Rate, Trend } from 'k6/metrics';
++
++const BASE_URL = __ENV.API_BASE_URL || 'http://localhost:8080/api/v1';
++const TOKEN = __ENV.AUTH_TOKEN || '';
++
++const errorRate = new Rate('errors');
++const callDuration = new Trend('call_setup_duration');
++
++export const options = {
++  stages: [
++    { duration: '1m', target: 200 },
++    { duration: '2m', target: 500 },
++    { duration: '3m', target: 1000 },
++    { duration: '5m', target: 1000 },  // sustain
++    { duration: '2m', target: 0 },     // ramp down
++  ],
++  thresholds: {
++    http_req_duration: ['p(95)<500', 'p(99)<1000'],
++    errors: ['rate<0.01'],
++  },
++};
++
++const headers = {
++  'Content-Type': 'application/json',
++  'Authorization': `Bearer ${TOKEN}`,
++};
++
++export default function () {
++  // 1. Simulate inbound call creation
++  const callPayload = JSON.stringify({
++    call_type: 'INBOUND',
++    caller: `+861380000${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`,
++    callee: '+862112345678',
++    tenant_id: 1,
++  });
++
++  const start = Date.now();
++  const createRes = http.post(`${BASE_URL}/calls`, callPayload, { headers });
++  callDuration.add(Date.now() - start);
++
++  check(createRes, {
++    'call created (201)': (r) => r.status === 201 || r.status === 200,
++  }) || errorRate.add(1);
++
++  // 2. Query call records
++  const listRes = http.get(`${BASE_URL}/calls?page=1&page_size=20`, { headers });
++  check(listRes, {
++    'list calls (200)': (r) => r.status === 200,
++  }) || errorRate.add(1);
++
++  // 3. Query dashboard metrics
++  const dashRes = http.get(`${BASE_URL}/dashboard/metrics`, { headers });
++  check(dashRes, {
++    'dashboard metrics (200)': (r) => r.status === 200,
++  }) || errorRate.add(1);
++
++  sleep(0.5);
++}
+diff --git a/tests/k6/mixed.js b/tests/k6/mixed.js
+new file mode 100644
+index 0000000..e62fbff
+--- /dev/null
++++ b/tests/k6/mixed.js
+@@ -0,0 +1,78 @@
++// k6 load test: Mixed workload — 500 inbound + 500 outbound simultaneous
++import http from 'k6/http';
++import { check, sleep } from 'k6';
++import { Rate } from 'k6/metrics';
++
++const BASE_URL = __ENV.API_BASE_URL || 'http://localhost:8080/api/v1';
++const TOKEN = __ENV.AUTH_TOKEN || '';
++
++const errorRate = new Rate('errors');
++
++export const options = {
++  scenarios: {
++    inbound: {
++      executor: 'ramping-vus',
++      startVUs: 0,
++      stages: [
++        { duration: '1m', target: 100 },
++        { duration: '2m', target: 300 },
++        { duration: '3m', target: 500 },
++        { duration: '5m', target: 500 },
++        { duration: '2m', target: 0 },
++      ],
++      exec: 'inbound',
++    },
++    outbound: {
++      executor: 'ramping-vus',
++      startVUs: 0,
++      stages: [
++        { duration: '1m', target: 100 },
++        { duration: '2m', target: 300 },
++        { duration: '3m', target: 500 },
++        { duration: '5m', target: 500 },
++        { duration: '2m', target: 0 },
++      ],
++      exec: 'outbound',
++    },
++  },
++  thresholds: {
++    http_req_duration: ['p(95)<1000'],
++    errors: ['rate<0.03'],
++  },
++};
++
++const headers = {
++  'Content-Type': 'application/json',
++  'Authorization': `Bearer ${TOKEN}`,
++};
++
++export function inbound() {
++  const res = http.post(`${BASE_URL}/calls`, JSON.stringify({
++    call_type: 'INBOUND',
++    caller: `+861380000${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`,
++    callee: '+862112345678',
++    tenant_id: 1,
++  }), { headers });
++
++  check(res, { 'inbound call created': (r) => r.status === 201 || r.status === 200 })
++    || errorRate.add(1);
++
++  http.get(`${BASE_URL}/dashboard/metrics`, { headers });
++  sleep(0.5);
++}
++
++export function outbound() {
++  const res = http.post(`${BASE_URL}/calls/dial`, JSON.stringify({
++    call_type: 'OUTBOUND',
++    caller: '+862112345678',
++    callee: `+861390000${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`,
++    agent_id: Math.floor(Math.random() * 100) + 1,
++    tenant_id: 1,
++  }), { headers });
++
++  check(res, { 'outbound call created': (r) => r.status === 201 || r.status === 200 })
++    || errorRate.add(1);
++
++  http.get(`${BASE_URL}/calls?page=1&page_size=10`, { headers });
++  sleep(0.5);
++}
+diff --git a/tests/k6/outbound.js b/tests/k6/outbound.js
+new file mode 100644
+index 0000000..48a09b6
+--- /dev/null
++++ b/tests/k6/outbound.js
+@@ -0,0 +1,79 @@
++// k6 load test: Outbound campaign pressure test
++// Target: Predictive Campaign with 500 concurrent outbound calls
++import http from 'k6/http';
++import { check, sleep } from 'k6';
++import { Rate } from 'k6/metrics';
++
++const BASE_URL = __ENV.API_BASE_URL || 'http://localhost:8080/api/v1';
++const TOKEN = __ENV.AUTH_TOKEN || '';
++
++const errorRate = new Rate('errors');
++
++export const options = {
++  stages: [
++    { duration: '1m', target: 100 },
++    { duration: '2m', target: 300 },
++    { duration: '3m', target: 500 },
++    { duration: '5m', target: 500 },  // sustain
++    { duration: '2m', target: 0 },
++  ],
++  thresholds: {
++    http_req_duration: ['p(95)<500'],
++    errors: ['rate<0.02'],
++  },
++};
++
++const headers = {
++  'Content-Type': 'application/json',
++  'Authorization': `Bearer ${TOKEN}`,
++};
++
++export function setup() {
++  // Create a campaign for testing
++  const res = http.post(`${BASE_URL}/campaigns`, JSON.stringify({
++    name: `k6-campaign-${Date.now()}`,
++    dialing_mode: 'PREDICTIVE',
++    skill_group_id: 1,
++    concurrent_limit: 50,
++    max_abandon_rate: 5,
++    caller_number: '+862112345678',
++    tenant_id: 1,
++  }), { headers });
++
++  return { campaignId: res.json('id') || 1 };
++}
++
++export default function (data) {
++  // 1. Import case
++  const casePayload = JSON.stringify({
++    phone: `+861390000${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`,
++    name: `Test Customer ${__VU}`,
++    priority: Math.floor(Math.random() * 3) + 1,
++  });
++
++  const importRes = http.post(
++    `${BASE_URL}/campaigns/${data.campaignId}/cases`,
++    casePayload,
++    { headers }
++  );
++  check(importRes, {
++    'case imported': (r) => r.status === 201 || r.status === 200,
++  }) || errorRate.add(1);
++
++  // 2. Get campaign stats
++  const statsRes = http.get(
++    `${BASE_URL}/campaigns/${data.campaignId}/stats`,
++    { headers }
++  );
++  check(statsRes, {
++    'stats fetched': (r) => r.status === 200,
++  }) || errorRate.add(1);
++
++  // 3. List campaigns
++  const listRes = http.get(`${BASE_URL}/campaigns`, { headers });
++  check(listRes, {
++    'campaigns listed': (r) => r.status === 200,
++  }) || errorRate.add(1);
++
++  sleep(0.3);
++}
+diff --git a/tests/k6/report-query.js b/tests/k6/report-query.js
+new file mode 100644
+index 0000000..41ebbbc
+--- /dev/null
++++ b/tests/k6/report-query.js
+@@ -0,0 +1,97 @@
++// k6 load test: Report query performance
++// Target: 1M CDR records, complex aggregation queries < 5s
++import http from 'k6/http';
++import { check, sleep } from 'k6';
++import { Rate, Trend } from 'k6/metrics';
++
++const BASE_URL = __ENV.API_BASE_URL || 'http://localhost:8080/api/v1';
++const TOKEN = __ENV.AUTH_TOKEN || '';
++
++const errorRate = new Rate('errors');
++const queryDuration = new Trend('report_query_duration');
++
++export const options = {
++  scenarios: {
++    agent_report: {
++      executor: 'constant-vus',
++      vus: 20,
++      duration: '5m',
++      exec: 'agentReport',
++    },
++    skill_group_report: {
++      executor: 'constant-vus',
++      vus: 10,
++      duration: '5m',
++      exec: 'skillGroupReport',
++    },
++    call_records: {
++      executor: 'constant-vus',
++      vus: 30,
++      duration: '5m',
++      exec: 'callRecords',
++    },
++    export_csv: {
++      executor: 'constant-vus',
++      vus: 5,
++      duration: '5m',
++      exec: 'exportCsv',
++    },
++  },
++  thresholds: {
++    report_query_duration: ['p(95)<5000'],
++    errors: ['rate<0.05'],
++  },
++};
++
++const headers = {
++  'Authorization': `Bearer ${TOKEN}`,
++};
++
++export function agentReport() {
++  const start = Date.now();
++  const res = http.get(
++    `${BASE_URL}/reports/agents?start_date=2025-01-01&end_date=2025-12-31`,
++    { headers }
++  );
++  queryDuration.add(Date.now() - start);
++
++  check(res, { 'agent report ok': (r) => r.status === 200 }) || errorRate.add(1);
++  sleep(1);
++}
++
++export function skillGroupReport() {
++  const start = Date.now();
++  const res = http.get(
++    `${BASE_URL}/reports/skill-groups?start_date=2025-01-01&end_date=2025-12-31`,
++    { headers }
++  );
++  queryDuration.add(Date.now() - start);
++
++  check(res, { 'skill group report ok': (r) => r.status === 200 }) || errorRate.add(1);
++  sleep(1);
++}
++
++export function callRecords() {
++  const page = Math.floor(Math.random() * 100) + 1;
++  const start = Date.now();
++  const res = http.get(
++    `${BASE_URL}/calls?page=${page}&page_size=50&start_date=2025-01-01&end_date=2025-12-31`,
++    { headers }
++  );
++  queryDuration.add(Date.now() - start);
++
++  check(res, { 'call records ok': (r) => r.status === 200 }) || errorRate.add(1);
++  sleep(0.5);
++}
++
++export function exportCsv() {
++  const start = Date.now();
++  const res = http.get(
++    `${BASE_URL}/reports/agents/export?start_date=2025-06-01&end_date=2025-06-30&format=csv`,
++    { headers }
++  );
++  queryDuration.add(Date.now() - start);
++
++  check(res, { 'csv export ok': (r) => r.status === 200 }) || errorRate.add(1);
++  sleep(5);
++}
+diff --git a/tests/k6/websocket.js b/tests/k6/websocket.js
+new file mode 100644
+index 0000000..b56ac6e
+--- /dev/null
++++ b/tests/k6/websocket.js
+@@ -0,0 +1,85 @@
++// k6 load test: WebSocket pressure test
++// Target: 500 agents + 10 admin dashboards simultaneously connected
++import ws from 'k6/ws';
++import http from 'k6/http';
++import { check, sleep } from 'k6';
++import { Rate } from 'k6/metrics';
++
++const WS_URL = __ENV.WS_URL || 'ws://localhost:8080/ws';
++const BASE_URL = __ENV.API_BASE_URL || 'http://localhost:8080/api/v1';
++const TOKEN = __ENV.AUTH_TOKEN || '';
++
++const errorRate = new Rate('errors');
++
++export const options = {
++  scenarios: {
++    agents: {
++      executor: 'ramping-vus',
++      startVUs: 0,
++      stages: [
++        { duration: '1m', target: 100 },
++        { duration: '2m', target: 300 },
++        { duration: '3m', target: 500 },
++        { duration: '5m', target: 500 },
++        { duration: '1m', target: 0 },
++      ],
++      exec: 'agentWs',
++    },
++    admins: {
++      executor: 'constant-vus',
++      vus: 10,
++      duration: '12m',
++      exec: 'adminDashboard',
++    },
++  },
++  thresholds: {
++    errors: ['rate<0.05'],
++  },
++};
++
++const headers = {
++  'Authorization': `Bearer ${TOKEN}`,
++};
++
++export function agentWs() {
++  const res = ws.connect(`${WS_URL}/agent?token=${TOKEN}`, {}, function (socket) {
++    socket.on('open', () => {
++      socket.send(JSON.stringify({ type: 'heartbeat', agent_id: __VU }));
++    });
++
++    socket.on('message', (data) => {
++      const msg = JSON.parse(data);
++      check(msg, { 'received message': (m) => m.type !== undefined });
++    });
++
++    socket.on('error', () => {
++      errorRate.add(1);
++    });
++
++    // Keep connection open for 30s, send periodic heartbeats
++    for (let i = 0; i < 6; i++) {
++      sleep(5);
++      socket.send(JSON.stringify({ type: 'heartbeat', agent_id: __VU }));
++    }
++
++    socket.close();
++  });
++
++  check(res, { 'ws connected': (r) => r && r.status === 101 }) || errorRate.add(1);
++}
++
++export function adminDashboard() {
++  // Simulate admin polling dashboard every 5s
++  for (let i = 0; i < 24; i++) {
++    const res = http.get(`${BASE_URL}/dashboard/metrics`, { headers });
++    check(res, { 'dashboard ok': (r) => r.status === 200 }) || errorRate.add(1);
++
++    const agentRes = http.get(`${BASE_URL}/dashboard/agents`, { headers });
++    check(agentRes, { 'agent status ok': (r) => r.status === 200 }) || errorRate.add(1);
++
++    const funnelRes = http.get(`${BASE_URL}/dashboard/funnel`, { headers });
++    check(funnelRes, { 'funnel ok': (r) => r.status === 200 }) || errorRate.add(1);
++
++    sleep(5);
++  }
++}
+diff --git a/web/.dockerignore b/web/.dockerignore
+new file mode 100644
+index 0000000..62b26e1
+--- /dev/null
++++ b/web/.dockerignore
+@@ -0,0 +1,4 @@
++node_modules
++dist
++.git
++*.md
+diff --git a/web/Dockerfile b/web/Dockerfile
+new file mode 100644
+index 0000000..e0c7e7c
+--- /dev/null
++++ b/web/Dockerfile
+@@ -0,0 +1,20 @@
++# Stage 1: Build
++FROM node:20-alpine AS builder
++
++WORKDIR /app
++COPY package.json package-lock.json ./
++RUN npm ci
++
++COPY . .
++RUN npm run build
++
++# Stage 2: Serve via Nginx
++FROM nginx:1.27-alpine
++
++COPY --from=builder /app/dist /usr/share/nginx/html
++COPY nginx.conf /etc/nginx/conf.d/default.conf
++
++EXPOSE 80
++
++HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
++    CMD wget -q --spider http://localhost/health || exit 1
+diff --git a/web/nginx.conf b/web/nginx.conf
+new file mode 100644
+index 0000000..86de6c9
+--- /dev/null
++++ b/web/nginx.conf
+@@ -0,0 +1,45 @@
++server {
++    listen 80;
++    server_name _;
++    root /usr/share/nginx/html;
++    index index.html;
++
++    # Health check
++    location /health {
++        access_log off;
++        return 200 'ok';
++        add_header Content-Type text/plain;
++    }
++
++    # API proxy → backend
++    location /api/ {
++        proxy_pass http://api:8080;
++        proxy_set_header Host $host;
++        proxy_set_header X-Real-IP $remote_addr;
++        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
++        proxy_set_header X-Forwarded-Proto $scheme;
++        proxy_read_timeout 60s;
++    }
++
++    # WebSocket proxy
++    location /ws/ {
++        proxy_pass http://api:8080;
++        proxy_http_version 1.1;
++        proxy_set_header Upgrade $http_upgrade;
++        proxy_set_header Connection "upgrade";
++        proxy_set_header Host $host;
++        proxy_set_header X-Real-IP $remote_addr;
++        proxy_read_timeout 86400s;
++    }
++
++    # SPA fallback
++    location / {
++        try_files $uri $uri/ /index.html;
++    }
++
++    # Cache static assets
++    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff2?)$ {
++        expires 30d;
++        add_header Cache-Control "public, immutable";
++    }
++}

@@ -1,0 +1,1989 @@
+diff --git a/.github/actions/softlight-capture/action.yml b/.github/actions/softlight-capture/action.yml
+new file mode 100644
+index 00000000..ff410783
+--- /dev/null
++++ b/.github/actions/softlight-capture/action.yml
+@@ -0,0 +1,179 @@
++name: Softlight Design Review Capture
++description: Run a PR app locally, capture it with Playwright, and trigger a real-UI design review.
++inputs:
++  config-path:
++    description: Path to the Softlight review config in the checked-out repository.
++    required: false
++    default: .softlight/review.yml
++  softlight-url:
++    description: Base URL for the Softlight API.
++    required: false
++    default: https://softlight.orianna.ai
++  review-endpoint:
++    description: Review endpoint to call after local screenshots are captured.
++    required: false
++    default: /api/review/run
++  capture-plan-endpoint:
++    description: Endpoint used to ask Softlight which PR UI states to capture.
++    required: false
++    default: /api/review/capture-plan
++  review-base-url:
++    description: Optional API base URL override for local smoke tests.
++    required: false
++    default: ""
++  softlight-api-token:
++    description: Optional bearer token for the Softlight API.
++    required: false
++    default: ""
++  capture-mode:
++    description: Capture mode for the review service.
++    required: false
++    default: real
++  skip-capture-plan:
++    description: Use only captures configured in .softlight/review.yml.
++    required: false
++    default: "false"
++  mode:
++    description: Run "capture" for normal PR review, "doctor" for deterministic setup verification, or "agent-doctor" for Claude Code /goal setup repair.
++    required: false
++    default: capture
++  doctor-write:
++    description: Write generated .softlight/review.yml and auth setup files when running in doctor mode.
++    required: false
++    default: "true"
++  doctor-verify:
++    description: Start the app and capture the public route when running in doctor mode.
++    required: false
++    default: "true"
++  doctor-skip-install:
++    description: Skip install commands when running the doctor. Useful for local smoke tests.
++    required: false
++    default: "false"
++  doctor-fail-on-blocker:
++    description: Exit non-zero when the doctor finds auth/setup blockers.
++    required: false
++    default: "false"
++  claude-code-oauth-token:
++    description: Optional CLAUDE_CODE_OAUTH_TOKEN for agent-doctor mode.
++    required: false
++    default: ""
++  anthropic-api-key:
++    description: Optional ANTHROPIC_API_KEY for agent-doctor mode.
++    required: false
++    default: ""
++  anthropic-auth-token:
++    description: Optional ANTHROPIC_AUTH_TOKEN for agent-doctor mode.
++    required: false
++    default: ""
++  claude-model:
++    description: Claude Code model for agent-doctor mode.
++    required: false
++    default: opus
++  claude-effort:
++    description: Claude Code effort level for agent-doctor mode.
++    required: false
++    default: low
++  claude-max-turns:
++    description: Maximum Claude Code turns for the /goal session.
++    required: false
++    default: "1000"
++  claude-permission-mode:
++    description: Claude Code permission mode for agent-doctor mode.
++    required: false
++    default: auto
++  contract-repair-attempts:
++    description: Number of extra Claude runs for repairing invalid capture contracts.
++    required: false
++    default: "2"
++  install-claude-code:
++    description: Install Claude Code in agent-doctor mode when it is missing.
++    required: false
++    default: "true"
++  preview:
++    description: Start a temporary public tunnel to the running app and post a clickable preview link on the PR (capture mode only).
++    required: false
++    default: "false"
++  preview-hold-seconds:
++    description: How long to keep the preview tunnel (and the app) alive after capture, in seconds.
++    required: false
++    default: "1800"
++  github-token:
++    description: Token used to post the preview comment on the PR. Defaults to the workflow github.token (needs pull-requests:write).
++    required: false
++    default: ""
++  review-optional:
++    description: Continue (and still post the preview) when the review POST fails, instead of failing the job. Useful for repos not yet wired to the Softlight API.
++    required: false
++    default: "false"
++runs:
++  using: composite
++  steps:
++    - name: Run Softlight capture runner
++      shell: bash
++      env:
++        SOFTLIGHT_API_TOKEN: ${{ inputs.softlight-api-token }}
++        SOFTLIGHT_BASE_URL: ${{ inputs.softlight-url }}
++        SOFTLIGHT_CAPTURE_PLAN_ENDPOINT: ${{ inputs.capture-plan-endpoint }}
++        SOFTLIGHT_CAPTURE_MODE: ${{ inputs.capture-mode }}
++        SOFTLIGHT_CONFIG_PATH: ${{ inputs.config-path }}
++        SOFTLIGHT_REVIEW_BASE_URL: ${{ inputs.review-base-url }}
++        SOFTLIGHT_REVIEW_ENDPOINT: ${{ inputs.review-endpoint }}
++        SOFTLIGHT_SKIP_CAPTURE_PLAN: ${{ inputs.skip-capture-plan }}
++        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
++        ANTHROPIC_AUTH_TOKEN: ${{ inputs.anthropic-auth-token }}
++        CLAUDE_CODE_OAUTH_TOKEN: ${{ inputs.claude-code-oauth-token }}
++        SOFTLIGHT_PREVIEW: ${{ inputs.preview }}
++        SOFTLIGHT_PREVIEW_HOLD_SECONDS: ${{ inputs.preview-hold-seconds }}
++        SOFTLIGHT_REVIEW_OPTIONAL: ${{ inputs.review-optional }}
++        GH_TOKEN: ${{ inputs.github-token || github.token }}
++      run: |
++        SOFTLIGHT_CAPTURE_VENV="${RUNNER_TEMP:-/tmp}/softlight-capture-venv"
++        python3 -m venv "$SOFTLIGHT_CAPTURE_VENV"
++        "$SOFTLIGHT_CAPTURE_VENV/bin/python" -m pip install --quiet --upgrade pip
++        "$SOFTLIGHT_CAPTURE_VENV/bin/python" -m pip install --quiet pyyaml playwright
++        "$SOFTLIGHT_CAPTURE_VENV/bin/python" -m playwright install chromium
++        export PATH="$SOFTLIGHT_CAPTURE_VENV/bin:$PATH"
++        export SOFTLIGHT_CAPTURE_PYTHON="$SOFTLIGHT_CAPTURE_VENV/bin/python"
++        if [[ "${{ inputs.preview }}" == "true" ]]; then
++          echo "softlight: installing cloudflared for the preview tunnel"
++          curl -fsSL -o "$SOFTLIGHT_CAPTURE_VENV/bin/cloudflared" \
++            https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
++          chmod +x "$SOFTLIGHT_CAPTURE_VENV/bin/cloudflared"
++        fi
++        if [[ "${{ inputs.mode }}" == "agent-doctor" ]]; then
++          AGENT_ARGS=(
++            --config-path "$SOFTLIGHT_CONFIG_PATH"
++            --model "${{ inputs.claude-model }}"
++            --effort "${{ inputs.claude-effort }}"
++            --max-turns "${{ inputs.claude-max-turns }}"
++            --permission-mode "${{ inputs.claude-permission-mode }}"
++            --contract-repair-attempts "${{ inputs.contract-repair-attempts }}"
++          )
++          if [[ "${{ inputs.doctor-skip-install }}" == "true" ]]; then
++            AGENT_ARGS+=(--skip-install)
++          fi
++          if [[ "${{ inputs.doctor-fail-on-blocker }}" == "true" ]]; then
++            AGENT_ARGS+=(--fail-on-blocker)
++          fi
++          if [[ "${{ inputs.install-claude-code }}" == "true" ]]; then
++            AGENT_ARGS+=(--install-claude-code)
++          fi
++          "$SOFTLIGHT_CAPTURE_VENV/bin/python" "$GITHUB_ACTION_PATH/environment_doctor_agent.py" "${AGENT_ARGS[@]}"
++        elif [[ "${{ inputs.mode }}" == "doctor" ]]; then
++          DOCTOR_ARGS=(--config-path "$SOFTLIGHT_CONFIG_PATH")
++          if [[ "${{ inputs.doctor-write }}" == "true" ]]; then
++            DOCTOR_ARGS+=(--write)
++          fi
++          if [[ "${{ inputs.doctor-verify }}" == "true" ]]; then
++            DOCTOR_ARGS+=(--verify)
++          fi
++          if [[ "${{ inputs.doctor-skip-install }}" == "true" ]]; then
++            DOCTOR_ARGS+=(--skip-install)
++          fi
++          if [[ "${{ inputs.doctor-fail-on-blocker }}" == "true" ]]; then
++            DOCTOR_ARGS+=(--fail-on-blocker)
++          fi
++          "$SOFTLIGHT_CAPTURE_VENV/bin/python" "$GITHUB_ACTION_PATH/doctor.py" "${DOCTOR_ARGS[@]}"
++        else
++          "$SOFTLIGHT_CAPTURE_VENV/bin/python" "$GITHUB_ACTION_PATH/capture.py"
++        fi
+diff --git a/.github/actions/softlight-capture/capture.py b/.github/actions/softlight-capture/capture.py
+new file mode 100644
+index 00000000..e105fd1d
+--- /dev/null
++++ b/.github/actions/softlight-capture/capture.py
+@@ -0,0 +1,1232 @@
++from __future__ import annotations
++
++import base64
++import contextlib
++import dataclasses
++import json
++import os
++import pathlib
++import re
++import signal
++import subprocess
++import sys
++import tempfile
++import time
++import urllib.error
++import urllib.parse
++import urllib.request
++from typing import Any
++
++import runtime
++import yaml
++
++DEFAULT_COMMAND_TIMEOUT_SECONDS = 600
++DEFAULT_COMMAND_TIMEOUTS_BY_LABEL = {
++    "auth": 300,
++    "service": 300,
++    "teardown": 120,
++}
++DEFAULT_APP_HOST = "127.0.0.1"
++UNBOUNDED_POLL_PATTERN = re.compile(r"\b(?:while|until)\b")
++TIMEOUT_WRAPPER_PATTERN = re.compile(r"(?:^|[;&|]\s*)timeout\s+[0-9]+")
++HIDDEN_TMP_LOG_REDIRECT_PATTERN = re.compile(r"(?:^|\s)(?:\d?>|&>)\s*/tmp/")
++TRYCLOUDFLARE_URL_PATTERN = re.compile(r"https://[a-z0-9.-]+\.trycloudflare\.com")
++DEFAULT_PREVIEW_HOLD_SECONDS = 1800
++
++
++@dataclasses.dataclass(frozen=True)
++class RunningProcess:
++    process: subprocess.Popen[bytes]
++
++    def stop(self) -> None:
++        _stop_process(self.process)
++
++
++def main() -> None:
++    workspace = pathlib.Path(os.environ.get("GITHUB_WORKSPACE", ".")).resolve()
++    config_path = workspace / os.environ.get("SOFTLIGHT_CONFIG_PATH", ".softlight/review.yml")
++    config = _load_config(config_path)
++    working_directory = (workspace / config.get("working_directory", ".")).resolve()
++    env = _command_env(config)
++    env = runtime.prepare_runtime_env(workspace=working_directory, env=env, config=config)
++
++    for command in _commands(config.get("install")):
++        _run_command(
++            command,
++            cwd=working_directory,
++            env=env,
++            label="install",
++            timeout_seconds=_configured_command_timeout_seconds(config, "install"),
++        )
++    for command in _commands(config.get("services")):
++        _run_command(
++            command,
++            cwd=working_directory,
++            env=env,
++            label="service",
++            timeout_seconds=_configured_command_timeout_seconds(config, "service"),
++        )
++
++    start_command = _required_string(config, "start")
++    port = int(config.get("port") or 3000)
++    healthcheck = str(config.get("healthcheck") or "/")
++    timeout_seconds = float(config.get("timeout_seconds") or 180)
++    app_url = _app_url_from_config(config=config, port=port)
++
++    auth_state_path = _auth_state_path(config=config, workspace=workspace)
++    env["SOFTLIGHT_APP_URL"] = app_url
++    env["SOFTLIGHT_AUTH_STATE"] = str(auth_state_path)
++
++    app = _start_process(start_command, cwd=working_directory, env=env)
++    try:
++        app_url = _wait_for_app(
++            app_url=app_url,
++            healthcheck=healthcheck,
++            timeout_seconds=timeout_seconds,
++            process=app.process,
++        )
++        env["SOFTLIGHT_APP_URL"] = app_url
++        _run_auth_setup(config=config, cwd=working_directory, env=env)
++        try:
++            capture_targets = _fetch_capture_plan(config=config)
++        except Exception:
++            if not _capture_targets(config=config):
++                raise
++            print(
++                "softlight: capture plan failed; using configured captures from review.yml",
++                file=sys.stderr,
++                flush=True,
++            )
++            capture_targets = []
++        if not capture_targets:
++            capture_targets = _capture_targets(config=config)
++        if not capture_targets:
++            capture_targets = _default_capture_targets(config=config)
++
++        capture_artifacts = _capture_screenshots(
++            app_url=app_url,
++            auth_state_path=auth_state_path,
++            config=config,
++            capture_targets=capture_targets,
++            workspace=workspace,
++        )
++        payload = _review_payload(config=config, capture_artifacts=capture_artifacts)
++        try:
++            _post_review(payload)
++        except Exception as error:  # noqa: BLE001
++            if not _truthy(os.environ.get("SOFTLIGHT_REVIEW_OPTIONAL")):
++                raise
++            print(
++                f"softlight: review post failed (SOFTLIGHT_REVIEW_OPTIONAL set; continuing): {error}",
++                file=sys.stderr,
++                flush=True,
++            )
++        _maybe_serve_preview(
++            app_url=app_url,
++            capture_targets=capture_targets,
++            app_process=app.process,
++        )
++    finally:
++        app.stop()
++        for command in reversed(_commands(config.get("teardown"))):
++            _run_command(
++                command,
++                cwd=working_directory,
++                env=env,
++                label="teardown",
++                timeout_seconds=_configured_command_timeout_seconds(config, "teardown"),
++            )
++
++
++def _load_config(path: pathlib.Path) -> dict[str, Any]:
++    if not path.exists():
++        raise FileNotFoundError(f"Softlight review config not found: {path}")
++
++    data = yaml.safe_load(path.read_text()) or {}
++    if not isinstance(data, dict):
++        raise ValueError(f"Softlight review config must be a mapping: {path}")
++
++    return data
++
++
++def _command_env(config: dict[str, Any]) -> dict[str, str]:
++    env = dict(os.environ)
++    configured_env = config.get("env") or {}
++    if not isinstance(configured_env, dict):
++        raise ValueError("review.yml env must be a mapping when provided")
++
++    for key, value in configured_env.items():
++        env[str(key)] = os.path.expandvars(str(value))
++
++    return env
++
++
++def _commands(value: Any) -> list[str]:
++    if value is None:
++        return []
++
++    if isinstance(value, str):
++        return [value]
++
++    if isinstance(value, list) and all(isinstance(item, str) for item in value):
++        return value
++
++    raise ValueError("review.yml command fields must be a string or list of strings")
++
++
++def _required_string(config: dict[str, Any], key: str) -> str:
++    value = config.get(key)
++    if not isinstance(value, str) or not value.strip():
++        raise ValueError(f"review.yml must define a non-empty {key!r} command")
++
++    return value
++
++
++def _run_command(
++    command: str,
++    *,
++    cwd: pathlib.Path,
++    env: dict[str, str],
++    label: str,
++    timeout_seconds: float | None = None,
++) -> None:
++    _validate_bounded_command(command=command, label=label)
++    timeout = (
++        float(timeout_seconds)
++        if timeout_seconds is not None
++        else _default_command_timeout_seconds(label)
++    )
++    print(f"softlight: running {label} (timeout {timeout:g}s): {command}", flush=True)
++    process = subprocess.Popen(
++        command,
++        cwd=cwd,
++        env=env,
++        shell=True,
++        start_new_session=True,
++    )
++    try:
++        return_code = process.wait(timeout=timeout)
++    except subprocess.TimeoutExpired as error:
++        _stop_process(process)
++        raise TimeoutError(
++            f"Timed out after {timeout:g}s running {label}: {command}",
++        ) from error
++    if return_code != 0:
++        raise subprocess.CalledProcessError(return_code, command)
++
++
++def _validate_bounded_command(*, command: str, label: str) -> None:
++    if UNBOUNDED_POLL_PATTERN.search(command) and not TIMEOUT_WRAPPER_PATTERN.search(command):
++        raise ValueError(
++            f"review.yml {label} command uses while/until polling without timeout: {command}",
++        )
++
++
++def _configured_command_timeout_seconds(config: dict[str, Any], label: str) -> float:
++    specific_key = f"{label}_timeout_seconds"
++    value = config.get(specific_key, config.get("command_timeout_seconds"))
++    if value is None:
++        return _default_command_timeout_seconds(label)
++    return float(value)
++
++
++def _default_command_timeout_seconds(label: str) -> float:
++    normalized = label.removeprefix("doctor ").strip()
++    return float(
++        DEFAULT_COMMAND_TIMEOUTS_BY_LABEL.get(
++            normalized,
++            DEFAULT_COMMAND_TIMEOUT_SECONDS,
++        ),
++    )
++
++
++def _app_url_from_config(*, config: dict[str, Any], port: int) -> str:
++    configured_url = config.get("app_url") or config.get("base_url")
++    if configured_url:
++        value = str(configured_url).strip()
++        if not value:
++            raise ValueError("review.yml app_url/base_url must not be empty")
++        if urllib.parse.urlparse(value).scheme not in {"http", "https"}:
++            value = f"http://{value}"
++        parsed = urllib.parse.urlparse(value)
++        if not parsed.netloc:
++            raise ValueError(f"review.yml app_url/base_url is not a valid URL: {configured_url}")
++        return value.rstrip("/")
++
++    host = str(config.get("host") or DEFAULT_APP_HOST).strip() or DEFAULT_APP_HOST
++    if ":" in host and not host.startswith("["):
++        host = f"[{host}]"
++    return f"http://{host}:{port}"
++
++
++def _candidate_app_urls(app_url: str) -> list[str]:
++    candidates = [app_url.rstrip("/")]
++    parsed = urllib.parse.urlparse(candidates[0])
++    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
++        return candidates
++
++    host = parsed.hostname
++    if host not in {"127.0.0.1", "localhost"}:
++        return candidates
++
++    alternate_host = "localhost" if host == "127.0.0.1" else "127.0.0.1"
++    alternate_netloc = alternate_host
++    if parsed.port is not None:
++        alternate_netloc = f"{alternate_host}:{parsed.port}"
++    alternate = urllib.parse.urlunparse(
++        (
++            parsed.scheme,
++            alternate_netloc,
++            parsed.path,
++            parsed.params,
++            parsed.query,
++            parsed.fragment,
++        ),
++    ).rstrip("/")
++    if alternate not in candidates:
++        candidates.append(alternate)
++    return candidates
++
++
++def _start_process(
++    command: str,
++    *,
++    cwd: pathlib.Path,
++    env: dict[str, str],
++) -> RunningProcess:
++    _validate_streaming_start_command(command)
++    print(f"softlight: starting app: {command}", flush=True)
++    return RunningProcess(
++        process=subprocess.Popen(
++            command,
++            cwd=cwd,
++            env=env,
++            shell=True,
++            start_new_session=True,
++        ),
++    )
++
++
++def _wait_for_app(
++    *,
++    app_url: str | None = None,
++    port: int | None = None,
++    healthcheck: str,
++    process: subprocess.Popen[bytes] | None = None,
++    timeout_seconds: float,
++) -> str:
++    if app_url is None:
++        if port is None:
++            raise ValueError("_wait_for_app requires app_url or port")
++        app_url = _app_url_from_config(config={}, port=port)
++    app_urls = _candidate_app_urls(app_url)
++    deadline = time.monotonic() + timeout_seconds
++    last_error = "not checked yet"
++    last_log_at = 0.0
++    first_http_error_at_by_status: dict[int, float] = {}
++    http_error_retry_seconds = _http_error_retry_seconds()
++    while time.monotonic() < deadline:
++        if process is not None:
++            return_code = process.poll()
++            if return_code is not None:
++                raise RuntimeError(
++                    "App start command exited before the app became ready "
++                    f"(exit code {return_code})",
++                )
++        for candidate_app_url in app_urls:
++            url = _target_url(app_url=candidate_app_url, route=healthcheck)
++            try:
++                request = urllib.request.Request(url, headers={"User-Agent": "softlight-capture"})
++                with urllib.request.urlopen(request, timeout=5) as response:
++                    if _http_status_indicates_app_ready(response.status):
++                        print(f"softlight: app is ready at {url} ({response.status})", flush=True)
++                        return candidate_app_url
++            except urllib.error.HTTPError as error:
++                if _http_status_indicates_app_ready(error.code):
++                    print(f"softlight: app is ready at {url} ({error.code})", flush=True)
++                    return candidate_app_url
++                last_error = f"{url}: HTTP {error.code}"
++                first_seen_at = first_http_error_at_by_status.setdefault(error.code, time.monotonic())
++                if time.monotonic() - first_seen_at >= http_error_retry_seconds:
++                    raise TimeoutError(
++                        "App returned a stable non-ready HTTP status while waiting for "
++                        f"{url}: HTTP {error.code} for at least {http_error_retry_seconds:g}s",
++                    ) from error
++            except (urllib.error.URLError, OSError) as error:
++                last_error = f"{url}: {error}"
++                first_http_error_at_by_status.clear()
++
++        now = time.monotonic()
++        if now - last_log_at >= 10:
++            print(
++                "softlight: waiting for app at "
++                f"{', '.join(_target_url(app_url=url, route=healthcheck) for url in app_urls)}; "
++                f"last error: {last_error}",
++                flush=True,
++            )
++            last_log_at = now
++
++        time.sleep(1)
++
++    urls = ", ".join(_target_url(app_url=url, route=healthcheck) for url in app_urls)
++    raise TimeoutError(f"Timed out waiting for app at {urls}: {last_error}")
++
++
++def _http_status_indicates_app_ready(status: int) -> bool:
++    return 200 <= status < 400 or status in {401, 403}
++
++
++def _http_error_retry_seconds() -> float:
++    value = os.environ.get("SOFTLIGHT_HTTP_ERROR_RETRY_SECONDS")
++    if value is None:
++        return 45.0
++    return max(0.0, float(value))
++
++
++def _validate_streaming_start_command(command: str) -> None:
++    if HIDDEN_TMP_LOG_REDIRECT_PATTERN.search(command) and "tee" not in command:
++        raise ValueError(
++            "review.yml start command redirects logs to /tmp without tee; "
++            "stream app logs to stdout/stderr so Softlight can show startup progress",
++        )
++
++
++def _run_auth_setup(
++    *,
++    config: dict[str, Any],
++    cwd: pathlib.Path,
++    env: dict[str, str],
++) -> None:
++    auth = config.get("auth") or {}
++    if not isinstance(auth, dict):
++        raise ValueError("review.yml auth must be a mapping when provided")
++
++    strategy = str(auth.get("strategy") or "").strip().lower()
++    if strategy in {"", "none", "public"}:
++        return
++
++    commands = (
++        _commands(auth.get("command"))
++        or _commands(auth.get("commands"))
++        or _commands(auth.get("setup"))
++    )
++    if not commands:
++        raise ValueError(
++            "review.yml auth.strategy requires auth.command, auth.commands, or auth.setup",
++        )
++
++    for command in commands:
++        _run_command(
++            command,
++            cwd=cwd,
++            env=env,
++            label="auth",
++            timeout_seconds=_configured_command_timeout_seconds(config, "auth"),
++        )
++
++
++def _auth_state_path(
++    *,
++    config: dict[str, Any],
++    workspace: pathlib.Path,
++) -> pathlib.Path:
++    auth = config.get("auth") or {}
++    if not isinstance(auth, dict):
++        raise ValueError("review.yml auth must be a mapping when provided")
++
++    configured = auth.get("storage_state") or ".softlight/.auth/reviewer.json"
++    path = pathlib.Path(str(configured))
++    if not path.is_absolute():
++        path = workspace / path
++    path.parent.mkdir(parents=True, exist_ok=True)
++    return path
++
++
++def _fetch_capture_plan(config: dict[str, Any]) -> list[dict[str, Any]]:
++    if _truthy(os.environ.get("SOFTLIGHT_SKIP_CAPTURE_PLAN")):
++        return []
++
++    base_url = (
++        os.environ.get("SOFTLIGHT_REVIEW_BASE_URL")
++        or os.environ.get("SOFTLIGHT_BASE_URL")
++        or "https://softlight.orianna.ai"
++    ).rstrip("/")
++    endpoint = os.environ.get("SOFTLIGHT_CAPTURE_PLAN_ENDPOINT", "/api/review/capture-plan")
++    url = f"{base_url}/{endpoint.lstrip('/')}"
++    payload = _plan_payload()
++    headers = {"Content-Type": "application/json"}
++    token = os.environ.get("SOFTLIGHT_API_TOKEN")
++    if token:
++        headers["Authorization"] = f"Bearer {token}"
++
++    print(f"softlight: requesting capture plan at {url}", flush=True)
++    request = urllib.request.Request(
++        url,
++        data=json.dumps(payload).encode("utf-8"),
++        headers=headers,
++        method="POST",
++    )
++    try:
++        with urllib.request.urlopen(request, timeout=float(config.get("plan_timeout_seconds") or 600)) as response:
++            data = json.loads(response.read().decode("utf-8"))
++    except urllib.error.HTTPError as error:
++        print(error.read().decode("utf-8"), file=sys.stderr)
++        raise
++
++    targets = data.get("targets") or []
++    if not isinstance(targets, list):
++        raise ValueError("capture plan response must contain a targets array")
++
++    print(f"softlight: capture plan returned {len(targets)} target(s)", flush=True)
++    return targets
++
++
++def _capture_targets(config: dict[str, Any]) -> list[dict[str, Any]]:
++    captures = config.get("captures") or []
++    if not captures:
++        return []
++    if not isinstance(captures, list) or not all(isinstance(item, dict) for item in captures):
++        raise ValueError("review.yml captures must be a list of mappings")
++
++    return [_target_from_config_capture(capture, index=index) for index, capture in enumerate(captures, start=1)]
++
++
++def _default_capture_targets(config: dict[str, Any]) -> list[dict[str, Any]]:
++    viewports = config.get("viewports") or [{"width": 1440, "height": 932}]
++    if not isinstance(viewports, list):
++        raise ValueError("review.yml viewports must be a list when provided")
++
++    targets = []
++    for index, viewport in enumerate(viewports, start=1):
++        if not isinstance(viewport, dict):
++            raise ValueError("review.yml viewports entries must be mappings")
++        width = int(viewport.get("width") or 1440)
++        height = int(viewport.get("height") or 932)
++        targets.append(
++            _target(
++                name=f"default route {width}x{height}",
++                route="/",
++                viewport_width=width,
++                viewport_height=height,
++                steps=[],
++            ),
++        )
++    return targets
++
++
++def _target_from_config_capture(
++    capture: dict[str, Any],
++    *,
++    index: int,
++) -> dict[str, Any]:
++    viewport = capture.get("viewport") or {}
++    if not isinstance(viewport, dict):
++        raise ValueError("capture viewport must be a mapping when provided")
++
++    width = int(capture.get("width") or viewport.get("width") or 1440)
++    height = int(capture.get("height") or viewport.get("height") or 932)
++    route = str(capture.get("route") or capture.get("url") or "/")
++    target = _target(
++        name=str(capture.get("name") or f"configured capture {index}"),
++        route=route,
++        viewport_width=width,
++        viewport_height=height,
++        steps=capture.get("steps") or [],
++        wait_for=capture.get("wait_for"),
++    )
++    for key in (
++        "allow_minimal_component",
++        "allow_clipped_elements",
++        "allow_narrow_viewport",
++        "allow_obscuring_overlays",
++        "allow_visual_anomalies",
++        "expected_terms",
++        "min_body_text_chars",
++        "min_visible_elements",
++        "min_viewport_height",
++        "min_viewport_width",
++        "review_surface",
++        "required_selectors",
++        "surface_rationale",
++    ):
++        if key in capture:
++            target[key] = capture[key]
++    return target
++
++
++def _target(
++    *,
++    name: str,
++    route: str,
++    viewport_width: int,
++    viewport_height: int,
++    steps: list[Any],
++    wait_for: Any = None,
++) -> dict[str, Any]:
++    return {
++        "auth_and_data": "Use the Softlight reviewer auth state configured during onboarding.",
++        "clone_guardrails": "Captured from the real application running in the PR checkout.",
++        "current_pr_expectations": "The head checkout should render the PR UI in the real app.",
++        "final_state_must_show": str(wait_for or "The requested route renders meaningful UI."),
++        "interaction_to_reach_state": "configured Playwright steps" if steps else "none",
++        "name": name,
++        "route_or_entrypoint": route,
++        "ui_change_to_inspect": name,
++        "user_state": "Authenticated reviewer state when auth is configured.",
++        "viewport": f"{viewport_width}x{viewport_height}",
++        "viewport_height": viewport_height,
++        "viewport_width": viewport_width,
++        "_softlight_steps": steps,
++        "_softlight_wait_for": wait_for,
++    }
++
++
++def _capture_screenshots(
++    *,
++    app_url: str,
++    auth_state_path: pathlib.Path,
++    config: dict[str, Any],
++    capture_targets: list[dict[str, Any]],
++    workspace: pathlib.Path,
++) -> list[dict[str, Any]]:
++    try:
++        from playwright.sync_api import TimeoutError as PlaywrightTimeoutError  # noqa: PLC0415
++        from playwright.sync_api import sync_playwright  # noqa: PLC0415
++    except ImportError as error:
++        raise RuntimeError(
++            "Python package 'playwright' is required. The Softlight action installs it by "
++            "default; local runs should use `python3 -m pip install playwright` and "
++            "`python3 -m playwright install chromium`.",
++        ) from error
++
++    artifacts: list[dict[str, Any]] = []
++    timeout_ms = int(float(config.get("navigation_timeout_seconds") or 60) * 1000)
++    settle_ms = int(
++        float(
++            config.get("settle_seconds")
++            or config.get("capture_settle_seconds")
++            or 1,
++        )
++        * 1000,
++    )
++    storage_state = str(auth_state_path) if auth_state_path.exists() else None
++
++    with sync_playwright() as playwright:
++        browser = playwright.chromium.launch()
++        try:
++            for index, target in enumerate(capture_targets, start=1):
++                target_for_backend = _strip_runner_fields(target)
++                width = int(target_for_backend.get("viewport_width") or 1440)
++                height = int(target_for_backend.get("viewport_height") or 932)
++                route = str(target_for_backend.get("route_or_entrypoint") or "/")
++                url = _target_url(app_url=app_url, route=route)
++                print(
++                    f"softlight: capturing {target_for_backend['name']} at {url} "
++                    f"({width}x{height})",
++                    flush=True,
++                )
++                context_options: dict[str, Any] = {
++                    "viewport": {"width": width, "height": height},
++                }
++                if storage_state:
++                    context_options["storage_state"] = storage_state
++                context = browser.new_context(**context_options)
++                _apply_route_mocks(context=context, config=config, workspace=workspace)
++                page = context.new_page()
++                console_messages: list[str] = []
++                page_errors: list[str] = []
++                page.on("console", lambda message: console_messages.append(f"{message.type}: {message.text}"))
++                page.on("pageerror", lambda error: page_errors.append(str(error)))
++
++                try:
++                    page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
++                    _apply_steps(page=page, steps=target.get("_softlight_steps") or [], timeout_ms=timeout_ms)
++                    _wait_for_target(page=page, wait_for=target.get("_softlight_wait_for"), timeout_ms=timeout_ms)
++                    with contextlib.suppress(PlaywrightTimeoutError):
++                        page.wait_for_load_state("networkidle", timeout=5_000)
++                    page.wait_for_timeout(settle_ms)
++                    _wait_for_rendered_ui(page=page, timeout_ms=timeout_ms)
++                    screenshot = page.screenshot(full_page=True, type="png", timeout=timeout_ms)
++                finally:
++                    context.close()
++
++                data_url = "data:image/png;base64," + base64.b64encode(screenshot).decode("ascii")
++                artifacts.append(
++                    {
++                        "data_url": data_url,
++                        "target": target_for_backend,
++                        "console": console_messages[-50:],
++                        "page_errors": page_errors[-20:],
++                    },
++                )
++        finally:
++            browser.close()
++
++    print(f"softlight: captured {len(artifacts)} screenshot artifact(s)", flush=True)
++    return artifacts
++
++
++def _apply_route_mocks(*, context: Any, config: dict[str, Any], workspace: pathlib.Path) -> None:
++    for mock in _route_mocks(config):
++        pattern = str(
++            mock.get("url")
++            or mock.get("pattern")
++            or mock.get("glob")
++            or mock.get("match")
++            or "",
++        ).strip()
++        if not pattern:
++            raise ValueError("route_mocks entries must include url, pattern, glob, or match")
++        method = str(mock.get("method") or "").upper().strip()
++        status = int(mock.get("status") or 200)
++        headers_raw = mock.get("headers")
++        headers: dict[str, Any] = headers_raw if isinstance(headers_raw, dict) else {}
++        content_type = str(mock.get("content_type") or mock.get("contentType") or "").strip()
++        body = _route_mock_body(mock=mock, workspace=workspace)
++        if not content_type:
++            content_type = "application/json" if "json" in mock else "text/plain"
++
++        def handler(
++            route: Any,
++            request: Any,
++            *,
++            route_body: str = body,
++            route_content_type: str = content_type,
++            route_headers: dict[str, Any] = headers,
++            route_method: str = method,
++            route_status: int = status,
++        ) -> None:
++            if route_method and str(request.method).upper() != route_method:
++                route.continue_()
++                return
++            route.fulfill(
++                status=route_status,
++                headers={str(key): str(value) for key, value in route_headers.items()},
++                content_type=route_content_type,
++                body=route_body,
++            )
++
++        context.route(pattern, handler)
++
++
++def _route_mocks(config: dict[str, Any]) -> list[dict[str, Any]]:
++    route_mocks = config.get("route_mocks") or config.get("network_mocks") or []
++    if isinstance(route_mocks, dict):
++        route_mocks = [route_mocks]
++    if not isinstance(route_mocks, list):
++        raise ValueError("route_mocks must be a list of mappings")
++    if not all(isinstance(mock, dict) for mock in route_mocks):
++        raise ValueError("route_mocks must be a list of mappings")
++    return route_mocks
++
++
++def _route_mock_body(*, mock: dict[str, Any], workspace: pathlib.Path) -> str:
++    if "json" in mock:
++        return json.dumps(mock["json"])
++    if "body" in mock:
++        body = mock["body"]
++        return body if isinstance(body, str) else json.dumps(body)
++    fixture = mock.get("fixture") or mock.get("file") or mock.get("path")
++    if fixture:
++        fixture_path = pathlib.Path(str(fixture))
++        if not fixture_path.is_absolute():
++            fixture_path = workspace / fixture_path
++        return fixture_path.read_text()
++    return ""
++
++
++def _apply_steps(
++    *,
++    page: Any,
++    steps: list[Any],
++    timeout_ms: int,
++) -> None:
++    if not isinstance(steps, list):
++        raise ValueError("capture steps must be a list")
++
++    for step in steps:
++        if isinstance(step, str):
++            page.locator(step).click(timeout=timeout_ms)
++            continue
++        if not isinstance(step, dict):
++            raise ValueError("capture steps must be strings or mappings")
++
++        if "click" in step:
++            page.locator(str(step["click"])).click(timeout=timeout_ms)
++        elif "click_role" in step:
++            _click_role(page=page, value=step["click_role"], timeout_ms=timeout_ms)
++        elif "fill" in step:
++            fill = step["fill"]
++            if not isinstance(fill, dict) or "selector" not in fill:
++                raise ValueError("fill step must contain selector and value")
++            page.locator(str(fill["selector"])).fill(str(fill.get("value") or ""), timeout=timeout_ms)
++        elif "press" in step:
++            press = step["press"]
++            if not isinstance(press, dict) or "key" not in press:
++                raise ValueError("press step must contain key")
++            selector = press.get("selector")
++            if selector:
++                page.locator(str(selector)).press(str(press["key"]), timeout=timeout_ms)
++            else:
++                page.keyboard.press(str(press["key"]))
++        elif "evaluate" in step:
++            expression = step["evaluate"]
++            if not isinstance(expression, str) or not expression.strip():
++                raise ValueError("evaluate step must contain a non-empty JavaScript expression")
++            page.evaluate(expression)
++        elif "select" in step:
++            select = step["select"]
++            if not isinstance(select, dict) or "selector" not in select:
++                raise ValueError("select step must contain selector and value")
++            page.locator(str(select["selector"])).select_option(str(select.get("value") or ""), timeout=timeout_ms)
++        elif "wait_for_selector" in step:
++            _wait_for_selector(page=page, selector=str(step["wait_for_selector"]), timeout_ms=timeout_ms)
++        elif "wait_for_js" in step:
++            _wait_for_js(page=page, expression=str(step["wait_for_js"]), timeout_ms=timeout_ms)
++        elif "wait_for_text" in step:
++            _wait_for_visible_text(page=page, text=str(step["wait_for_text"]), timeout_ms=timeout_ms)
++        elif "wait_for_url" in step:
++            page.wait_for_url(str(step["wait_for_url"]), timeout=timeout_ms)
++        elif "sleep" in step:
++            page.wait_for_timeout(int(float(step["sleep"]) * 1000))
++        else:
++            raise ValueError(f"Unsupported capture step: {step}")
++
++
++def _click_role(*, page: Any, value: Any, timeout_ms: int) -> None:
++    if isinstance(value, str):
++        role = value
++        name = None
++        exact = None
++        nth = None
++    elif isinstance(value, dict):
++        role = str(value.get("role") or "").strip()
++        name = value.get("name")
++        exact = value.get("exact")
++        nth = value.get("nth")
++    else:
++        raise ValueError("click_role step must be a role string or mapping")
++    if not role:
++        raise ValueError("click_role step must define a non-empty role")
++
++    options: dict[str, Any] = {}
++    if name is not None:
++        options["name"] = str(name)
++    if exact is not None:
++        options["exact"] = bool(exact)
++    locator = page.get_by_role(role, **options)
++    if nth is not None:
++        locator = locator.nth(int(nth))
++    locator.click(timeout=timeout_ms)
++
++
++def _wait_for_target(
++    *,
++    page: Any,
++    wait_for: Any,
++    timeout_ms: int,
++) -> None:
++    if not wait_for:
++        return
++    if isinstance(wait_for, str):
++        _wait_for_visible_text(page=page, text=wait_for, timeout_ms=timeout_ms)
++        return
++    if not isinstance(wait_for, dict):
++        raise ValueError("capture wait_for must be a string or mapping")
++    if "selector" in wait_for:
++        _wait_for_selector(page=page, selector=str(wait_for["selector"]), timeout_ms=timeout_ms)
++    elif "text" in wait_for:
++        _wait_for_visible_text(page=page, text=str(wait_for["text"]), timeout_ms=timeout_ms)
++    elif "url" in wait_for:
++        page.wait_for_url(str(wait_for["url"]), timeout=timeout_ms)
++    elif "js" in wait_for:
++        _wait_for_js(page=page, expression=str(wait_for["js"]), timeout_ms=timeout_ms)
++    else:
++        raise ValueError("capture wait_for must contain selector, text, url, or js")
++
++
++def _wait_for_selector(*, page: Any, selector: str, timeout_ms: int) -> None:
++    if not selector:
++        raise ValueError("wait_for selector must not be empty")
++    locator: Any = page.locator(selector)
++    first = getattr(locator, "first", None)
++    if callable(first):
++        locator = first()
++    locator.wait_for(timeout=timeout_ms)
++
++
++def _wait_for_js(*, page: Any, expression: str, timeout_ms: int) -> None:
++    if not expression.strip():
++        raise ValueError("wait_for_js must not be empty")
++    page.wait_for_function(expression, timeout=timeout_ms)
++
++
++def _wait_for_visible_text(*, page: Any, text: str, timeout_ms: int) -> None:
++    if not text:
++        raise ValueError("wait_for_text must not be empty")
++    page.wait_for_function(
++        """text => (document.body?.innerText || '').includes(text)""",
++        arg=text,
++        timeout=timeout_ms,
++    )
++
++
++def _wait_for_rendered_ui(
++    *,
++    page: Any,
++    timeout_ms: int,
++) -> None:
++    deadline = time.monotonic() + timeout_ms / 1000
++    last_state: dict[str, Any] = {}
++    while time.monotonic() < deadline:
++        last_state = page.evaluate(
++            """() => {
++                const body = document.body;
++                const root = document.querySelector('#root, #__next, [data-reactroot], main, [role="main"]');
++                const visible = [...document.querySelectorAll('body *')].filter((element) => {
++                  const style = window.getComputedStyle(element);
++                  const rect = element.getBoundingClientRect();
++                  return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
++                }).length;
++                return {
++                  bodyTextLength: (body?.innerText || '').trim().length,
++                  readyState: document.readyState,
++                  rootElementCount: root ? root.querySelectorAll('*').length : 0,
++                  title: document.title,
++                  url: window.location.href,
++                  visibleElementCount: visible,
++                };
++            }""",
++        )
++        if (
++            int(last_state.get("bodyTextLength") or 0) >= 20
++            or int(last_state.get("visibleElementCount") or 0) >= 8
++            or int(last_state.get("rootElementCount") or 0) >= 5
++        ):
++            return
++        page.wait_for_timeout(500)
++
++    raise TimeoutError(f"Timed out waiting for rendered UI; last page state: {last_state}")
++
++
++def _strip_runner_fields(target: dict[str, Any]) -> dict[str, Any]:
++    return {key: value for key, value in target.items() if not key.startswith("_softlight_")}
++
++
++def _target_url(
++    *,
++    app_url: str,
++    route: str,
++) -> str:
++    parsed = urllib.parse.urlparse(route)
++    if parsed.scheme in {"http", "https"}:
++        return route
++
++    if not route or re.search(r"\s", route):
++        route = "/"
++    if not route.startswith("/"):
++        route = f"/{route}"
++
++    return urllib.parse.urljoin(app_url.rstrip("/") + "/", route.lstrip("/"))
++
++
++def _review_payload(
++    *,
++    config: dict[str, Any],
++    capture_artifacts: list[dict[str, Any]],
++) -> dict[str, Any]:
++    owner, repo = _repository()
++    return {
++        "repository_owner": owner,
++        "repository_name": repo,
++        "pull_number": _pull_number(),
++        "base_sha": _base_sha(),
++        "capture_artifacts": [
++            {
++                "data_url": artifact["data_url"],
++                "target": artifact["target"],
++            }
++            for artifact in capture_artifacts
++        ],
++        "capture_mode": config.get("capture_mode")
++        or os.environ.get("SOFTLIGHT_CAPTURE_MODE")
++        or "real",
++        "head_sha": _head_sha(),
++    }
++
++
++def _plan_payload() -> dict[str, Any]:
++    owner, repo = _repository()
++    return {
++        "repository_owner": owner,
++        "repository_name": repo,
++        "pull_number": _pull_number(),
++        "base_sha": _base_sha(),
++        "head_sha": _head_sha(),
++    }
++
++
++def _post_review(payload: dict[str, Any]) -> None:
++    base_url = (
++        os.environ.get("SOFTLIGHT_REVIEW_BASE_URL")
++        or os.environ.get("SOFTLIGHT_BASE_URL")
++        or "https://softlight.orianna.ai"
++    ).rstrip("/")
++    endpoint = os.environ.get("SOFTLIGHT_REVIEW_ENDPOINT", "/api/review/run")
++    url = f"{base_url}/{endpoint.lstrip('/')}"
++    headers = {"Content-Type": "application/json"}
++    token = os.environ.get("SOFTLIGHT_API_TOKEN")
++    if token:
++        headers["Authorization"] = f"Bearer {token}"
++
++    print(f"softlight: triggering review at {url}", flush=True)
++    request = urllib.request.Request(
++        url,
++        data=json.dumps(payload).encode("utf-8"),
++        headers=headers,
++        method="POST",
++    )
++    try:
++        with urllib.request.urlopen(request) as response:
++            print(response.read().decode("utf-8"), flush=True)
++    except urllib.error.HTTPError as error:
++        print(error.read().decode("utf-8"), file=sys.stderr)
++        raise
++
++
++def _repository() -> tuple[str, str]:
++    repository = os.environ.get("GITHUB_REPOSITORY")
++    if not repository or "/" not in repository:
++        raise ValueError("GITHUB_REPOSITORY must be set to owner/repo")
++
++    owner, repo = repository.split("/", 1)
++    return owner, repo
++
++
++def _event() -> dict[str, Any]:
++    event_path = os.environ.get("GITHUB_EVENT_PATH")
++    if not event_path:
++        return {}
++
++    with open(event_path) as file:
++        return json.load(file)
++
++
++def _pull_number() -> int:
++    event = _event()
++    pull_request = event.get("pull_request") or {}
++    number = pull_request.get("number") or event.get("number")
++    if number is None:
++        raise ValueError("Could not infer pull request number from the GitHub event")
++
++    return int(number)
++
++
++def _head_sha() -> str | None:
++    event = _event()
++    pull_request = event.get("pull_request") or {}
++    return (pull_request.get("head") or {}).get("sha") or os.environ.get("GITHUB_SHA")
++
++
++def _base_sha() -> str | None:
++    event = _event()
++    pull_request = event.get("pull_request") or {}
++    return (pull_request.get("base") or {}).get("sha")
++
++
++def _truthy(value: str | None) -> bool:
++    return (value or "").strip().lower() in {"1", "true", "yes", "on"}
++
++
++def _stop_process(process: subprocess.Popen[bytes]) -> None:
++    if process.poll() is not None:
++        return
++
++    with contextlib.suppress(ProcessLookupError):
++        os.killpg(process.pid, signal.SIGTERM)
++
++    try:
++        process.wait(timeout=10)
++    except subprocess.TimeoutExpired:
++        with contextlib.suppress(ProcessLookupError):
++            os.killpg(process.pid, signal.SIGKILL)
++        process.wait()
++
++
++def _maybe_serve_preview(
++    *,
++    app_url: str,
++    capture_targets: list[dict[str, Any]],
++    app_process: subprocess.Popen[bytes],
++) -> None:
++    """Tunnel the running app and post a clickable preview link on the PR (v0 hack).
++
++    Gated on SOFTLIGHT_PREVIEW. Holds the app + tunnel alive for
++    SOFTLIGHT_PREVIEW_HOLD_SECONDS so reviewers can click the link, then tears
++    the tunnel down. The link dies when the run ends; this is intentionally a
++    throwaway demo path, not a durable preview deploy.
++    """
++    if not _truthy(os.environ.get("SOFTLIGHT_PREVIEW")):
++        return
++
++    try:
++        hold_seconds = float(
++            os.environ.get("SOFTLIGHT_PREVIEW_HOLD_SECONDS") or DEFAULT_PREVIEW_HOLD_SECONDS,
++        )
++    except ValueError:
++        hold_seconds = float(DEFAULT_PREVIEW_HOLD_SECONDS)
++
++    tunnel: subprocess.Popen[bytes] | None = None
++    try:
++        tunnel, public_url = _start_tunnel(app_url=app_url)
++        if public_url is None:
++            print(
++                "softlight: cloudflared did not report a public URL; skipping preview",
++                file=sys.stderr,
++                flush=True,
++            )
++            return
++        links = _preview_links(public_url=public_url, capture_targets=capture_targets)
++        _post_pr_preview_comment(links=links, hold_seconds=hold_seconds)
++        print(f"softlight: preview live at {public_url} for ~{hold_seconds:g}s", flush=True)
++        _hold_preview(hold_seconds=hold_seconds, app_process=app_process, tunnel=tunnel)
++    except Exception as error:  # noqa: BLE001 - a preview failure must not fail the review
++        print(f"softlight: preview failed: {error}", file=sys.stderr, flush=True)
++    finally:
++        if tunnel is not None:
++            _stop_process(tunnel)
++
++
++def _start_tunnel(*, app_url: str) -> tuple[subprocess.Popen[bytes] | None, str | None]:
++    # Rewrite the Host header the dev server sees to its own loopback origin so
++    # framework host-checks (Vite allowedHosts, etc.) accept the public tunnel
++    # hostname without any per-app config change.
++    host_header = urllib.parse.urlparse(app_url).netloc or "localhost"
++    last_log = ""
++    for attempt in range(1, 4):
++        log_path = pathlib.Path(tempfile.gettempdir()) / f"softlight-cloudflared-{attempt}.log"
++        log_file = log_path.open("w+b")
++        print(f"softlight: starting cloudflared tunnel to {app_url} (attempt {attempt})", flush=True)
++        try:
++            process = subprocess.Popen(
++                [
++                    "cloudflared",
++                    "tunnel",
++                    "--url",
++                    app_url,
++                    "--http-host-header",
++                    host_header,
++                    "--no-autoupdate",
++                ],
++                stdout=log_file,
++                stderr=subprocess.STDOUT,
++                start_new_session=True,
++            )
++        finally:
++            log_file.close()
++
++        deadline = time.monotonic() + 40
++        while time.monotonic() < deadline:
++            last_log = log_path.read_text(errors="replace")
++            match = TRYCLOUDFLARE_URL_PATTERN.search(last_log)
++            if match:
++                return process, match.group(0)
++            if process.poll() is not None:
++                break
++            time.sleep(0.5)
++
++        _stop_process(process)
++        print(
++            f"softlight: cloudflared attempt {attempt} produced no URL; retrying",
++            file=sys.stderr,
++            flush=True,
++        )
++
++    print(last_log, file=sys.stderr, flush=True)
++    return None, None
++
++
++def _preview_links(
++    *,
++    public_url: str,
++    capture_targets: list[dict[str, Any]],
++) -> list[tuple[str, str]]:
++    base = public_url.rstrip("/")
++    seen: set[str] = set()
++    links: list[tuple[str, str]] = []
++    for target in capture_targets:
++        route = str(target.get("route_or_entrypoint") or "/")
++        url = _target_url(app_url=base, route=route)
++        if url in seen:
++            continue
++        seen.add(url)
++        links.append((str(target.get("name") or route), url))
++    if not links:
++        links.append(("App", base))
++    return links
++
++
++def _post_pr_preview_comment(
++    *,
++    links: list[tuple[str, str]],
++    hold_seconds: float,
++) -> None:
++    owner, repo = _repository()
++    pull_number = _pull_number()
++    body = "\n".join(
++        [
++            "### ▶ Interactive prototype",
++            "",
++            f"A live, clickable preview of this PR is running for ~{hold_seconds / 60:.0f} min. "
++            "This is a temporary tunnel — the link stops working once the review run ends.",
++            "",
++            *[f"- [{name}]({url})" for name, url in links],
++        ],
++    )
++    result = subprocess.run(
++        [
++            "gh",
++            "pr",
++            "comment",
++            str(pull_number),
++            "--repo",
++            f"{owner}/{repo}",
++            "--body",
++            body,
++        ],
++        capture_output=True,
++        text=True,
++        check=False,
++    )
++    if result.returncode != 0:
++        raise RuntimeError(
++            f"gh pr comment failed (exit {result.returncode}): {result.stdout}{result.stderr}",
++        )
++    print(f"softlight: posted preview link comment to {owner}/{repo}#{pull_number}", flush=True)
++
++
++def _hold_preview(
++    *,
++    hold_seconds: float,
++    app_process: subprocess.Popen[bytes],
++    tunnel: subprocess.Popen[bytes],
++) -> None:
++    deadline = time.monotonic() + hold_seconds
++    last_log_at = 0.0
++    while time.monotonic() < deadline:
++        if app_process.poll() is not None:
++            print("softlight: app exited; ending preview early", file=sys.stderr, flush=True)
++            return
++        if tunnel.poll() is not None:
++            print("softlight: cloudflared exited; ending preview early", file=sys.stderr, flush=True)
++            return
++        now = time.monotonic()
++        if now - last_log_at >= 60:
++            print(f"softlight: preview live; ~{(deadline - now) / 60:.0f} min remaining", flush=True)
++            last_log_at = now
++        time.sleep(2)
++    print("softlight: preview hold elapsed; tearing down", flush=True)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/.github/actions/softlight-capture/runtime.py b/.github/actions/softlight-capture/runtime.py
+new file mode 100644
+index 00000000..50ef0e55
+--- /dev/null
++++ b/.github/actions/softlight-capture/runtime.py
+@@ -0,0 +1,484 @@
++from __future__ import annotations
++
++import dataclasses
++import json
++import os
++import pathlib
++import re
++import shlex
++import shutil
++import subprocess
++import tomllib
++from typing import Any
++
++
++@dataclasses.dataclass(frozen=True)
++class RuntimeRequirement:
++    tool: str
++    version: str
++    source: str
++
++
++def prepare_runtime_env(
++    *,
++    workspace: pathlib.Path,
++    env: dict[str, str],
++    config: dict[str, Any] | None = None,
++) -> dict[str, str]:
++    """Provision repo-declared runtimes and return the command environment."""
++    prepared_env = dict(env)
++    requirements = detect_runtime_requirements(
++        workspace=workspace,
++        env=prepared_env,
++        config=config,
++    )
++    if requirements:
++        prepared_env["SOFTLIGHT_RUNTIME_REQUIREMENTS"] = json.dumps(
++            [dataclasses.asdict(requirement) for requirement in requirements],
++        )
++
++    ensure_system_packages(packages=_configured_system_packages(config), env=prepared_env)
++
++    for requirement in requirements:
++        env_var = _runtime_env_var(requirement.tool)
++        if env_var:
++            prepared_env[env_var] = requirement.version
++        runtime_bin = ensure_runtime(
++            requirement=requirement,
++            workspace=workspace,
++            env=prepared_env,
++        )
++        if runtime_bin:
++            prepared_env["PATH"] = _prepend_path(prepared_env.get("PATH", ""), runtime_bin)
++    return prepared_env
++
++
++def ensure_system_packages(*, packages: list[str], env: dict[str, str]) -> None:
++    if not packages:
++        return
++    apt_get = shutil.which("apt-get", path=env.get("PATH"))
++    if not apt_get:
++        raise RuntimeError(
++            "review.yml requested system packages but apt-get is not available",
++        )
++    sudo = shutil.which("sudo", path=env.get("PATH"))
++    prefix = [sudo] if sudo else []
++    _run([*prefix, apt_get, "update"], env=env)
++    _run([*prefix, apt_get, "install", "-y", *packages], env=env)
++
++
++def detect_runtime_requirements(
++    *,
++    workspace: pathlib.Path,
++    env: dict[str, str] | None = None,
++    config: dict[str, Any] | None = None,
++) -> list[RuntimeRequirement]:
++    """Return repo-declared runtime requirements in provisioning order."""
++    env = env or {}
++    requirements: list[RuntimeRequirement] = []
++    for tool, detector in (
++        ("node", detect_node_version),
++        ("python", detect_python_version),
++        ("go", detect_go_version),
++        ("ruby", detect_ruby_version),
++        ("rust", detect_rust_version),
++        ("java", detect_java_version),
++    ):
++        version = _configured_runtime_version(tool=tool, env=env, config=config)
++        source = "review.yml" if version else ""
++        if not version:
++            detected = detector(workspace)
++            if detected:
++                version, source = detected
++        if version:
++            requirements.append(
++                RuntimeRequirement(
++                    tool=tool,
++                    version=extract_version(version) or version,
++                    source=source,
++                ),
++            )
++    return requirements
++
++
++def detect_node_version(workspace: pathlib.Path) -> tuple[str, str] | None:
++    for filename in (".node-version", ".nvmrc"):
++        path = workspace / filename
++        if path.exists():
++            version = extract_version(path.read_text().strip())
++            if version:
++                return version, filename
++
++    package_json = workspace / "package.json"
++    if package_json.exists():
++        try:
++            package = json.loads(package_json.read_text())
++        except json.JSONDecodeError:
++            return None
++        engines = package.get("engines") or {}
++        if isinstance(engines, dict):
++            version = extract_version(str(engines.get("node") or ""))
++            if version:
++                return version, "package.json engines.node"
++    return None
++
++
++def detect_python_version(workspace: pathlib.Path) -> tuple[str, str] | None:
++    python_version = _version_file(workspace / ".python-version")
++    if python_version:
++        return python_version, ".python-version"
++
++    pyproject = workspace / "pyproject.toml"
++    if pyproject.exists():
++        try:
++            data = tomllib.loads(pyproject.read_text())
++        except tomllib.TOMLDecodeError:
++            return None
++        project = data.get("project")
++        if isinstance(project, dict):
++            version = extract_version(str(project.get("requires-python") or ""))
++            if version:
++                return version, "pyproject.toml project.requires-python"
++    return None
++
++
++def detect_go_version(workspace: pathlib.Path) -> tuple[str, str] | None:
++    go_mod = workspace / "go.mod"
++    if not go_mod.exists():
++        return None
++    for line in go_mod.read_text().splitlines():
++        if match := re.match(r"\s*toolchain\s+go(\d+(?:\.\d+){0,2})\s*$", line):
++            return match.group(1), "go.mod toolchain"
++    for line in go_mod.read_text().splitlines():
++        if match := re.match(r"\s*go\s+(\d+(?:\.\d+){0,2})\s*$", line):
++            return match.group(1), "go.mod go"
++    return None
++
++
++def detect_ruby_version(workspace: pathlib.Path) -> tuple[str, str] | None:
++    ruby_version = _version_file(workspace / ".ruby-version")
++    if ruby_version:
++        return ruby_version, ".ruby-version"
++
++    gemfile = workspace / "Gemfile"
++    if gemfile.exists():
++        match = re.search(
++            r"^\s*ruby\s+['\"]([^'\"]+)['\"]",
++            gemfile.read_text(),
++            flags=re.MULTILINE,
++        )
++        if match:
++            version = extract_version(match.group(1))
++            if version:
++                return version, "Gemfile ruby"
++    return None
++
++
++def detect_rust_version(workspace: pathlib.Path) -> tuple[str, str] | None:
++    rust_toolchain = workspace / "rust-toolchain"
++    if rust_toolchain.exists():
++        version = extract_version(rust_toolchain.read_text().strip())
++        if version:
++            return version, "rust-toolchain"
++
++    rust_toolchain_toml = workspace / "rust-toolchain.toml"
++    if rust_toolchain_toml.exists():
++        try:
++            data = tomllib.loads(rust_toolchain_toml.read_text())
++        except tomllib.TOMLDecodeError:
++            return None
++        toolchain = data.get("toolchain")
++        if isinstance(toolchain, dict):
++            version = extract_version(str(toolchain.get("channel") or ""))
++            if version:
++                return version, "rust-toolchain.toml toolchain.channel"
++    return None
++
++
++def detect_java_version(workspace: pathlib.Path) -> tuple[str, str] | None:
++    java_version = _version_file(workspace / ".java-version")
++    if java_version:
++        return java_version, ".java-version"
++
++    sdkmanrc = workspace / ".sdkmanrc"
++    if sdkmanrc.exists():
++        for line in sdkmanrc.read_text().splitlines():
++            if line.startswith("java="):
++                version = extract_version(line.partition("=")[2])
++                if version:
++                    return version, ".sdkmanrc java"
++    return None
++
++
++def ensure_runtime(
++    *,
++    requirement: RuntimeRequirement,
++    workspace: pathlib.Path,
++    env: dict[str, str],
++) -> pathlib.Path | None:
++    if runtime_is_satisfied(requirement=requirement, env=env):
++        print(
++            f"softlight: runtime satisfied: {requirement.tool} {requirement.version}",
++            flush=True,
++        )
++        return None
++
++    if requirement.tool == "node":
++        try:
++            return ensure_node_runtime(
++                version=requirement.version,
++                workspace=workspace,
++                env=env,
++            )
++        except FileNotFoundError:
++            print(
++                "softlight: npm not available for Node provisioning; falling back to mise",
++                flush=True,
++            )
++
++    return ensure_mise_runtime(
++        requirement=requirement,
++        workspace=workspace,
++        env=env,
++    )
++
++
++def runtime_is_satisfied(
++    *,
++    requirement: RuntimeRequirement,
++    env: dict[str, str],
++) -> bool:
++    current = current_runtime_version(tool=requirement.tool, env=env)
++    if not current:
++        return False
++    precision = "major" if requirement.tool in {"node", "java"} else "minor"
++    return version_matches(current=current, required=requirement.version, precision=precision)
++
++
++def ensure_node_runtime(
++    *,
++    version: str,
++    workspace: pathlib.Path,
++    env: dict[str, str],
++) -> pathlib.Path | None:
++    current_major = current_node_major(env=env)
++    required_major = major_version(version)
++    if current_major and required_major and current_major == required_major:
++        return None
++
++    cache_dir = _runtime_cache(workspace=workspace, env=env) / "node" / f"node-{version}"
++    package_bin = cache_dir / "node_modules" / ".bin"
++    node_binary = package_bin / "node"
++    corepack_binary = package_bin / "corepack"
++    marker = cache_dir / ".softlight-ready"
++    if marker.exists() and node_binary.exists() and corepack_binary.exists():
++        return package_bin
++
++    cache_dir.mkdir(parents=True, exist_ok=True)
++    _run(
++        [
++            "npm",
++            "install",
++            "--silent",
++            "--prefix",
++            str(cache_dir),
++            f"node@{version}",
++            "corepack",
++        ],
++        env=env,
++    )
++    if not node_binary.exists():
++        raise FileNotFoundError(f"node was not installed at {node_binary}")
++    if not corepack_binary.exists():
++        raise FileNotFoundError(f"corepack was not installed at {corepack_binary}")
++    marker.write_text("ok\n")
++    print(f"softlight: using Node {version} from {node_binary}", flush=True)
++    return package_bin
++
++
++def ensure_mise_runtime(
++    *,
++    requirement: RuntimeRequirement,
++    workspace: pathlib.Path,
++    env: dict[str, str],
++) -> pathlib.Path:
++    mise_env, mise_binary, shim_dir = _mise_env(workspace=workspace, env=env)
++    tool_spec = f"{requirement.tool}@{requirement.version}"
++    marker = _runtime_cache(workspace=workspace, env=env) / "mise" / "markers" / tool_spec
++    if not marker.exists():
++        _run([str(mise_binary), "install", tool_spec], env=mise_env)
++        _run([str(mise_binary), "use", "--global", tool_spec], env=mise_env)
++        marker.parent.mkdir(parents=True, exist_ok=True)
++        marker.write_text("ok\n")
++    print(
++        f"softlight: using {requirement.tool} {requirement.version} via mise",
++        flush=True,
++    )
++    env.update(mise_env)
++    return shim_dir
++
++
++def extract_version(value: str) -> str | None:
++    match = re.search(r"(\d+)(?:\.(\d+))?(?:\.(\d+))?", value)
++    if not match:
++        return None
++    parts = [part for part in match.groups() if part is not None]
++    return ".".join(parts)
++
++
++def current_runtime_version(*, tool: str, env: dict[str, str]) -> str | None:
++    commands = {
++        "node": ["node", "--version"],
++        "python": ["python3", "--version"],
++        "go": ["go", "version"],
++        "ruby": ["ruby", "--version"],
++        "rust": ["rustc", "--version"],
++        "java": ["java", "-version"],
++    }
++    command = commands.get(tool)
++    if not command:
++        return None
++    try:
++        completed = subprocess.run(
++            command,
++            text=True,
++            capture_output=True,
++            check=False,
++            env=env,
++        )
++    except FileNotFoundError:
++        return None
++    return extract_version(f"{completed.stdout}\n{completed.stderr}")
++
++
++def current_node_major(*, env: dict[str, str]) -> int | None:
++    version = current_runtime_version(tool="node", env=env)
++    return major_version(version or "")
++
++
++def major_version(version: str) -> int | None:
++    match = re.search(r"(\d+)", version)
++    return int(match.group(1)) if match else None
++
++
++def version_matches(*, current: str, required: str, precision: str) -> bool:
++    current_parts = _version_parts(current)
++    required_parts = _version_parts(required)
++    if not current_parts or not required_parts:
++        return False
++    if precision == "major":
++        return current_parts[0] == required_parts[0]
++    if len(required_parts) == 1:
++        return current_parts[0] == required_parts[0]
++    return current_parts[:2] == required_parts[:2]
++
++
++def _runtime_cache(
++    *,
++    workspace: pathlib.Path,
++    env: dict[str, str],
++) -> pathlib.Path:
++    if configured := env.get("SOFTLIGHT_RUNTIME_CACHE"):
++        return pathlib.Path(configured)
++    if runner_temp := env.get("RUNNER_TEMP"):
++        return pathlib.Path(runner_temp) / "softlight-runtime"
++    return workspace / ".softlight" / ".runtime"
++
++
++def _configured_runtime_version(
++    *,
++    tool: str,
++    env: dict[str, str],
++    config: dict[str, Any] | None,
++) -> str | None:
++    if env_var := _runtime_env_var(tool):
++        if version := env.get(env_var):
++            return str(version)
++
++    runtime_config = (config or {}).get("runtime") or {}
++    if isinstance(runtime_config, dict):
++        configured = runtime_config.get(tool)
++        if isinstance(configured, dict):
++            configured = configured.get("version")
++        if configured:
++            return str(configured)
++    return None
++
++
++def _configured_system_packages(config: dict[str, Any] | None) -> list[str]:
++    runtime_config = (config or {}).get("runtime") or {}
++    if not isinstance(runtime_config, dict):
++        return []
++    packages = (
++        runtime_config.get("apt")
++        or runtime_config.get("apt_packages")
++        or runtime_config.get("system_packages")
++        or []
++    )
++    if isinstance(packages, str):
++        return [packages]
++    if isinstance(packages, list) and all(isinstance(package, str) for package in packages):
++        return packages
++    raise ValueError("review.yml runtime system packages must be a string or list of strings")
++
++
++def _runtime_env_var(tool: str) -> str | None:
++    return {
++        "node": "SOFTLIGHT_NODE_VERSION",
++        "python": "SOFTLIGHT_PYTHON_VERSION",
++        "go": "SOFTLIGHT_GO_VERSION",
++        "ruby": "SOFTLIGHT_RUBY_VERSION",
++        "rust": "SOFTLIGHT_RUST_VERSION",
++        "java": "SOFTLIGHT_JAVA_VERSION",
++    }.get(tool)
++
++
++def _version_file(path: pathlib.Path) -> str | None:
++    if not path.exists():
++        return None
++    return extract_version(path.read_text().strip())
++
++
++def _version_parts(version: str) -> tuple[int, ...]:
++    return tuple(int(part) for part in re.findall(r"\d+", version)[:3])
++
++
++def _prepend_path(existing_path: str, path: pathlib.Path) -> str:
++    return f"{path}{os.pathsep}{existing_path}" if existing_path else str(path)
++
++
++def _mise_env(
++    *,
++    workspace: pathlib.Path,
++    env: dict[str, str],
++) -> tuple[dict[str, str], pathlib.Path, pathlib.Path]:
++    cache = _runtime_cache(workspace=workspace, env=env) / "mise"
++    bin_dir = cache / "bin"
++    data_dir = cache / "data"
++    config_dir = cache / "config"
++    cache_dir = cache / "cache"
++    shim_dir = data_dir / "shims"
++    mise_binary = pathlib.Path(
++        shutil.which("mise", path=env.get("PATH")) or bin_dir / "mise",
++    )
++    mise_env = dict(env)
++    mise_env["MISE_DATA_DIR"] = str(data_dir)
++    mise_env["MISE_CONFIG_DIR"] = str(config_dir)
++    mise_env["MISE_CACHE_DIR"] = str(cache_dir)
++    mise_env["PATH"] = _prepend_path(
++        _prepend_path(mise_env.get("PATH", ""), shim_dir),
++        bin_dir,
++    )
++    if not mise_binary.exists():
++        bin_dir.mkdir(parents=True, exist_ok=True)
++        install_command = (
++            f"curl -fsSL https://mise.run | "
++            f"MISE_INSTALL_PATH={shlex.quote(str(mise_binary))} sh"
++        )
++        _run(["sh", "-c", install_command], env=mise_env)
++    return mise_env, mise_binary, shim_dir
++
++
++def _run(command: list[str], *, env: dict[str, str]) -> None:
++    print(f"softlight: provisioning runtime: {' '.join(command)}", flush=True)
++    subprocess.run(command, env=env, check=True)
+diff --git a/.github/workflows/softlight-preview.yml b/.github/workflows/softlight-preview.yml
+new file mode 100644
+index 00000000..01ca4702
+--- /dev/null
++++ b/.github/workflows/softlight-preview.yml
+@@ -0,0 +1,25 @@
++name: Softlight preview demo
++on:
++  pull_request:
++    types: [opened, reopened, synchronize, ready_for_review]
++permissions:
++  contents: read
++  pull-requests: write
++jobs:
++  preview:
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@v4
++        with:
++          ref: ${{ github.event.pull_request.head.sha }}
++      - uses: pnpm/action-setup@v4
++      - uses: actions/setup-node@v4
++        with:
++          node-version: "20"
++      - uses: ./.github/actions/softlight-capture
++        with:
++          config-path: .softlight/review.yml
++          preview: "true"
++          preview-hold-seconds: "1200"
++          skip-capture-plan: "true"
++          review-optional: "true"
+diff --git a/.softlight/review.yml b/.softlight/review.yml
+new file mode 100644
+index 00000000..065b07ef
+--- /dev/null
++++ b/.softlight/review.yml
+@@ -0,0 +1,39 @@
++working_directory: .
++runtime:
++  node: "20.18.0"
++env:
++  SKIP_ENV_VALIDATION: "1"
++  DATABASE_URL: "postgres://user:pass@localhost:5432/postgres"
++  POSTGRES_URL: "postgres://user:pass@localhost:5432/postgres"
++  NEXTAUTH_SECRET: "dummy-secret-for-preview-0123456789"
++  AUTH_SECRET: "dummy-secret-for-preview-0123456789"
++  NEXTAUTH_URL: "http://127.0.0.1:3000"
++  APP_URL: "http://127.0.0.1:3000"
++  BASE_URL: "http://127.0.0.1:3000"
++  NEXT_PUBLIC_APP_URL: "http://127.0.0.1:3000"
++  NEXT_PUBLIC_SITE_URL: "http://127.0.0.1:3000"
++  STRIPE_SECRET_KEY: "sk_test_dummy"
++  STRIPE_API_KEY: "sk_test_dummy"
++  STRIPE_WEBHOOK_SECRET: "whsec_dummy"
++  NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: "pk_test_dummy"
++  NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co"
++  NEXT_PUBLIC_SUPABASE_ANON_KEY: "dummy-anon-key"
++  SUPABASE_SERVICE_ROLE_KEY: "dummy-service-role-key"
++  NEXT_PUBLIC_CONVEX_URL: "https://example.convex.cloud"
++  WORKOS_API_KEY: "sk_test_dummy"
++  WORKOS_CLIENT_ID: "client_dummy"
++  WORKOS_COOKIE_PASSWORD: "dummypassworddummypassworddummy12"
++  NEXT_PUBLIC_WORKOS_REDIRECT_URI: "http://127.0.0.1:3000/callback"
++  RESEND_API_KEY: "dummy"
++  EMAIL_FROM: "preview@example.com"
++install: pnpm install --no-frozen-lockfile
++start: pnpm exec next dev --hostname 127.0.0.1 --port 3000
++port: 3000
++healthcheck: /
++timeout_seconds: 300
++captures:
++  - name: Homepage
++    route: /
++    viewport:
++      width: 1440
++      height: 932

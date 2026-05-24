@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-opendatahub-io-odh-gitops-pr103",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "commit=claude-coauthor"
+  },
+  "pr": {
+    "number": 103,
+    "headSha": "f7cc37e0e1686bff4572d3a04bb75f7f02510e08",
+    "baseSha": "5beea1535c84b36730587de3d2551c431d62d1bd",
+    "title": "INFERENG-7126: Gateway created by rhai-on-xks helm chart uses insecure allowedRoutes.namespaces.from:ALL without an ability to override ",
+    "body": "The rhai-on-xks chart hardcoded allowedRoutes.namespaces.from to \"All\"\nin the post-install gateway Job, allowing any namespace to attach\nHTTPRoutes to the inference Gateway. This creates a security risk in\nmulti-tenant clusters where unauthorized services could hijack traffic\nor expose services through the Gateway's load balancer.\n\nThis change adds allowedRoutes configuration to values.yaml under\ncomponents.kserve.gateway, supporting All, Same, and Selector modes\nwith an optional label selector. The default remains \"All\" for backward\ncompatibility. The JSON schema is updated to validate the new fields,\nand all snapshot tests are regenerated.\n\nCloses INFERENG-7126\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nSigned-off-by: Aneesh Puttur <aputtur@redhat.com>\n\n<!-- This is an auto-generated comment: release notes by coderabbit.ai -->\n## Summary by CodeRabbit\n\n* **New Features**\n  * Added configurable namespace access controls for KServe gateway routes, enabling administrators to restrict which namespaces can attach routes using label-based selectors or built-in policies.\n\n* **Documentation**\n  * Updated configuration schema and API documentation with new gateway route access control settings and examples.\n<!-- end of auto-generated comment: release notes by coderabbit.ai -->",
+    "author": "jira-autofix[bot]",
+    "headRef": "jira-autofix/INFERENG-7126",
+    "repository": "opendatahub-io/odh-gitops"
+  },
+  "diffRef": {
+    "repository": "opendatahub-io/odh-gitops",
+    "headSha": "f7cc37e0e1686bff4572d3a04bb75f7f02510e08",
+    "baseSha": "5beea1535c84b36730587de3d2551c431d62d1bd"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-opendatahub-io-odh-gitops-pr103.diff",
+  "vendoredAt": "2026-05-24T03:09:25.662Z",
+  "collectedAt": "2026-05-24T03:09:25.662Z"
+}

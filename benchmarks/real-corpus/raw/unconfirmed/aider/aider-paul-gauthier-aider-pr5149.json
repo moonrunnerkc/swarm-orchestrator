@@ -1,0 +1,26 @@
+{
+  "id": "aider-paul-gauthier-aider-pr5149",
+  "agent": {
+    "vendor": "aider",
+    "confidence": "high",
+    "source": "repo-owner=paul-gauthier"
+  },
+  "pr": {
+    "number": 5149,
+    "headSha": "857be1120eb45fedecdeb795c4f9f4e014e3515f",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1",
+    "title": "feat: add --one-shot flag for sessionless single-prompt execution",
+    "body": "## Summary\n\nAdd a `--one-shot` flag that allows running a single prompt without initializing a git repository, then exits immediately after delivering the response. This is useful for quick one-off tasks like explaining code or simple refactoring where you don't need a full session.\n\n## Usage\n\n```bash\n# Message via --message flag\naider --one-shot --message \"explain this function\" src/utils.js\n\n# Message as positional argument (more concise)\naider --one-shot \"explain this function\" src/utils.js\n\n# Message from file\naider --one-shot --message-file prompt.txt src/utils.js\n```\n\n## Implementation\n\n- **`aider/args.py`**: Added `--one-shot` argument to the \"Modes\" group\n- **`aider/main.py`**: When `--one-shot` is set:\n  - Forces `--no-git` to skip all git repository initialization\n  - If no `--message` or `--message-file` is provided, treats the first positional argument as the message\n  - Shows an error if no message source is found\n- The existing `--message` handler in `main.py` runs the coder with the message and exits, which works unchanged\n\n## Testing\n\n- Manually tested with both `--message` and positional-arg message syntax\n- Verified git repo is skipped (`Git repo: none`)\n- Verified file modifications work correctly\n- All existing pytest tests pass (the one failure on Windows is pre-existing and unrelated)\n\nCloses #5143",
+    "author": "12310312long",
+    "headRef": "feat/one-shot-mode",
+    "repository": "paul-gauthier/aider"
+  },
+  "diffRef": {
+    "repository": "paul-gauthier/aider",
+    "headSha": "857be1120eb45fedecdeb795c4f9f4e014e3515f",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1"
+  },
+  "vendoredDiffPath": "unconfirmed/aider/aider-paul-gauthier-aider-pr5149.diff",
+  "vendoredAt": "2026-05-24T03:19:17.434Z",
+  "collectedAt": "2026-05-24T03:19:17.434Z"
+}

@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24151",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24151,
+    "headSha": "46257d5aaeb57e3860b839e03351a18bf165a44b",
+    "baseSha": "195ba3eb881d38288166f910134df9a13d658d89",
+    "title": "[codex] Use TurnInput for session task input",
+    "body": "## Why\r\n\r\nThe idea here is to erase the difference between initial and followup inputs to a turn. Followup inputs are already represented as TurnInput. \r\n\r\nEventual goal is not to have explicit on task input at all and pull everything from input Q.\r\n\r\n## What Changed\r\n\r\n- Changes `SessionTask::run` and the erased `AnySessionTask::run` path to accept `Vec<TurnInput>`.\r\n- Wraps user-submitted spawn input as `TurnInput::UserInput` at the session task start boundary.\r\n- Updates `run_turn` to record initial `TurnInput` using the same hook and recording path used for pending input.\r\n- Keeps review-specific conversion local to `ReviewTask`, where the sub-Codex one-shot API still expects `Vec<UserInput>`.\r\n- Moves the synthetic compact prompt into `CompactTask` and starts compact tasks with empty task input.\r\n\r\n## Validation\r\n\r\n- `cargo check -p codex-core`\r\n- `just test -p codex-core -E 'test(task_finish_emits_turn_item_lifecycle_for_leftover_pending_user_input) | test(queued_response_items_for_next_turn_move_into_next_active_turn) | test(steered_input_reopens_mailbox_delivery_for_current_turn)'`\r\n",
+    "author": "pakrym-oai",
+    "headRef": "pakrym/session-task-turn-input",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "46257d5aaeb57e3860b839e03351a18bf165a44b",
+    "baseSha": "195ba3eb881d38288166f910134df9a13d658d89"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24151.diff",
+  "vendoredAt": "2026-05-24T03:20:53.565Z",
+  "collectedAt": "2026-05-24T03:20:53.565Z"
+}

@@ -1,0 +1,32 @@
+diff --git a/aider/linter.py b/aider/linter.py
+index d386696e50f..c7e5c01b499 100644
+--- a/aider/linter.py
++++ b/aider/linter.py
+@@ -217,7 +217,10 @@ def basic_lint(fname, code):
+         print(f"Unable to load parser: {err}")
+         return
+ 
+-    tree = parser.parse(bytes(code, "utf-8"))
++    try:
++        tree = parser.parse(bytes(code, "utf-8"))
++    except TypeError:
++        tree = parser.parse(code)
+ 
+     try:
+         errors = traverse_tree(tree.root_node)
+diff --git a/aider/repomap.py b/aider/repomap.py
+index 541bba6ef4a..ebfc9d9c6ff 100644
+--- a/aider/repomap.py
++++ b/aider/repomap.py
+@@ -296,7 +296,10 @@ def get_tags_raw(self, fname, rel_fname):
+         code = self.io.read_text(fname)
+         if not code:
+             return
+-        tree = parser.parse(bytes(code, "utf-8"))
++        try:
++            tree = parser.parse(bytes(code, "utf-8"))
++        except TypeError:
++            tree = parser.parse(code)
+ 
+         # Run the tags queries
+         captures = self._run_captures(Query(language, query_scm), tree.root_node)

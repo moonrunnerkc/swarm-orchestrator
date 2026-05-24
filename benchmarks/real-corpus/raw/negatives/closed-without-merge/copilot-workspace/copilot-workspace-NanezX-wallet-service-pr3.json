@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-NanezX-wallet-service-pr3",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 3,
+    "headSha": "118aae536a8fa6397de3d104126562dae99e88b6",
+    "baseSha": "27363778dc7398aadd257f3fe397dc9f90fa2f53",
+    "title": "feat: add ProblemDetailsFilter and withIdempotency helper (Phase 4 cross-cutting)",
+    "body": "Adds two shared pieces that every write endpoint depends on: a uniform error envelope and a reusable idempotency pattern. Without these, each new slice (transfers, etc.) would duplicate the try/catch logic and produce inconsistent error shapes.\n\n## ProblemDetailsFilter (`src/common/filters/problem-details.filter.ts`)\n\nGlobal `@Catch()` registered in `bootstrap.ts`. Three behaviours:\n- **Pass-through** — exceptions already shaped as `{ error: { code, message } }` are returned as-is (all existing endpoints unaffected).\n- **Normalize** — NestJS default shapes (e.g. ValidationPipe message arrays, plain 404s) are mapped to the same envelope using a status→code table.\n- **Unknown errors** → `500 { error: { code: 'INTERNAL_ERROR', … } }`.\n\n## withIdempotency helper (`src/common/idempotency/with-idempotency.ts`)\n\nGeneric function that encapsulates the full idempotency flow:\n\n```ts\nreturn withIdempotency({\n  insertFn:  () => db.transaction(async (tx) => { /* lock → insert → update */ }),\n  lookupFn:  () => findTransactionByIdempotencyKey(idempotencyKey),\n  matchFn:   (existing) => existing.accountId === account.id && existing.type === DEPOSIT && …,\n  replayFn:  (existing) => toDepositResponse(existing),\n});\n// returns { response, replayed: boolean }\n// throws ConflictException(IDEMPOTENCY_KEY_REUSED) on payload mismatch\n```\n\n`TransactionsService.createDeposit` and `createWithdrawal` now delegate to this helper, removing three duplicated private methods (`isUniqueViolation`, `extractErrorCode`, `idempotencyKeyReusedException`). The extracted `isUniqueViolation` lives in `src/common/db/pg-errors.ts` for reuse by the upcoming transfers slice.",
+    "author": "Copilot",
+    "headRef": "copilot/bootstrap-project-setup",
+    "repository": "NanezX/wallet-service"
+  },
+  "diffRef": {
+    "repository": "NanezX/wallet-service",
+    "headSha": "118aae536a8fa6397de3d104126562dae99e88b6",
+    "baseSha": "27363778dc7398aadd257f3fe397dc9f90fa2f53"
+  },
+  "vendoredDiffPath": "negatives/closed-without-merge/copilot-workspace/copilot-workspace-NanezX-wallet-service-pr3.diff",
+  "vendoredAt": "2026-05-24T04:28:12.222Z",
+  "collectedAt": "2026-05-24T04:28:12.222Z"
+}

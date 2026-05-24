@@ -1,0 +1,503 @@
+diff --git a/docs/chem_pipeline.md b/docs/chem_pipeline.md
+index 264170a..23ef31d 100644
+--- a/docs/chem_pipeline.md
++++ b/docs/chem_pipeline.md
+@@ -122,8 +122,17 @@ PGHOST=localhost PGDATABASE=... PGUSER=... PGPASSWORD=... \\
+   python3 scripts/diagnose_chem_compliance.py --brief
+ PGHOST=localhost PGDATABASE=... PGUSER=... PGPASSWORD=... \\
+   python3 scripts/suggest_chem_spec_aliases.py > /tmp/alias_snippets.sql
++PGHOST=localhost PGDATABASE=... PGUSER=... PGPASSWORD=... \\
++  python3 scripts/audit_spec_mapping.py
++PGHOST=localhost PGDATABASE=... PGUSER=... PGPASSWORD=... \\
++  python3 scripts/audit_spec_mapping.py --brief
+ ```
+ 
++`audit_spec_mapping.py` prints heat-level coverage from `v_chem_compliance_summary`, top `NO_SPEC` /
++`MISSING_SPEC` drivers, orphan `grade_spec_map` specs vs `chem_element_specs`, and optional cleanup flags
++(documented in the script header). **`chem_spec_code_alias` maps product spec strings** (as resolved in
++`v_chem_compliance`), not raw lab “grade” text, unless the compliance view is changed to join on grade.
++
+ `suggest_chem_spec_aliases.py` emits `INSERT` statements when an orphan `grade_spec_map.spec_code`
+ **collapses** to the same alphanumeric key as exactly one `chem_element_specs.spec_code`. **Review**
+ the file before running it; ambiguous matches are commented out.
+diff --git a/scripts/README.md b/scripts/README.md
+index d8b5b3d..1363430 100644
+--- a/scripts/README.md
++++ b/scripts/README.md
+@@ -44,6 +44,7 @@ and later transform into normalized core tables.
+ - `run_chemistry_workflow.py` -> one-command workflow to run DB init, spec import, grade/spec map import, chemistry import, and classification exports.
+ - `export_chem_classification.py` -> exports `v_chem_compliance_summary` + non-OK rows from `v_chem_compliance` to CSV files.
+ - `diagnose_chem_compliance.py` -> read-only summary of `v_chem_compliance` statuses, orphan `grade_spec_map` spec codes vs limits, and `chem_spec_code_alias` row count.
++- `audit_spec_mapping.py` -> broader audit (summary, NO_SPEC/MISSING_SPEC drivers, orphan specs, old readings without `lot_tracking`); optional `--fix` (rebuild `grade_spec_map`), `--delete-orphans`, `--refresh-alerts` (see script docstring).
+ - `suggest_chem_spec_aliases.py` -> prints SQL `INSERT` snippets for `chem_spec_code_alias` when orphan specs match a unique `chem_element_specs.spec_code` by alphanumeric collapse (review before applying).
+ - `refresh_chem_compliance_alerts.py` -> rebuild `chem_compliance_alerts` from `v_chem_compliance` without importing a chemistry workbook (use after alias or view changes).
+ 
+diff --git a/scripts/audit_spec_mapping.py b/scripts/audit_spec_mapping.py
+new file mode 100644
+index 0000000..542612e
+--- /dev/null
++++ b/scripts/audit_spec_mapping.py
+@@ -0,0 +1,463 @@
++#!/usr/bin/env python3
++"""
++Audit chemistry spec mapping: summary counts, NO_SPEC/MISSING_SPEC drivers,
++orphan grade_spec_map specs vs chem_element_specs, old readings without lot_tracking.
++
++Requires PGDATABASE and PGUSER; optional PGPASSWORD, PGHOST, PGPORT / PG_PORT
++(same pattern as refresh_chem_compliance_alerts.py).
++
++Usage:
++  PGHOST=localhost python3 scripts/audit_spec_mapping.py
++  PGHOST=localhost python3 scripts/audit_spec_mapping.py --brief
++  PGHOST=localhost python3 scripts/audit_spec_mapping.py --verbose
++
++  # Rebuild grade_spec_map from products CSV (runs build_grade_spec_map.py)
++  PGHOST=localhost python3 scripts/audit_spec_mapping.py --fix --yes \\
++    --products-csv data/mt1320_products_3.csv
++
++  # Delete very old chemistry rows with no lot_tracking row (narrow cleanup)
++  PGHOST=localhost python3 scripts/audit_spec_mapping.py --delete-orphans --yes
++
++  # After deletes or mapping fixes, rebuild alerts (subprocess)
++  PGHOST=localhost python3 scripts/audit_spec_mapping.py --delete-orphans --yes --refresh-alerts
++
++  # Rebuild compliance alerts (runs a full audit first, then refresh script)
++  PGHOST=localhost python3 scripts/audit_spec_mapping.py --refresh-alerts
++  # Lighter: summary only, then refresh
++  PGHOST=localhost python3 scripts/audit_spec_mapping.py --brief --refresh-alerts
++
++Note on chem_spec_code_alias (db/init/086, view 094): aliases map **product
++Specification strings** (joined as grade_spec_map.spec_code on the heat’s
++product) to chem_element_specs.spec_code. They are **not** matched against raw
++chemistry “grade” text from the lab file; bulk-inserting grade→spec as
++source_spec would not apply unless v_chem_compliance is changed to join aliases
++on grade.
++"""
++
++from __future__ import annotations
++
++import argparse
++import os
++import subprocess
++import sys
++from datetime import datetime
++from pathlib import Path
++
++import psycopg2
++from dotenv import load_dotenv
++from psycopg2 import ProgrammingError
++from psycopg2.extras import RealDictCursor
++
++REPO_ROOT = Path(__file__).resolve().parent.parent
++
++load_dotenv()
++
++
++def connect():
++    try:
++        return psycopg2.connect(
++            host=os.getenv("PGHOST", "localhost"),
++            port=int(os.getenv("PGPORT", os.getenv("PG_PORT", "5432"))),
++            dbname=os.environ["PGDATABASE"],
++            user=os.environ["PGUSER"],
++            password=os.getenv("PGPASSWORD", ""),
++        )
++    except KeyError as exc:
++        missing = exc.args[0]
++        raise SystemExit(
++            f"Missing required environment variable: {missing}. "
++            "Set PGDATABASE and PGUSER (and PGPASSWORD if required). "
++            "Tip: run from repo root with: set -a && source .env && set +a"
++        ) from exc
++
++
++def log(msg: str, verbose: bool = False) -> None:
++    ts = datetime.now().strftime("%H:%M:%S")
++    print(f"[{ts}] {msg}")
++
++
++def query(conn, sql: str, params=None, verbose: bool = False):
++    with conn.cursor(cursor_factory=RealDictCursor) as cur:
++        cur.execute(sql, params or [])
++        rows = cur.fetchall()
++        if verbose:
++            log(f"query returned {len(rows)} row(s)")
++        return rows
++
++
++class SpecMappingAuditor:
++    """Audit (and optionally remediate) chemistry spec mapping coverage."""
++
++    def __init__(self, conn, verbose: bool = False):
++        self.conn = conn
++        self.verbose = verbose
++        self.issues: list[str] = []
++
++    def audit_phase1(self):
++        """Heat-level summary from v_chem_compliance_summary."""
++        log("=== PHASE 1: Chemistry spec mapping health (v_chem_compliance_summary) ===")
++        sql = """
++        SELECT
++            COUNT(DISTINCT heat_number) AS total_heats,
++            COUNT(DISTINCT heat_number) FILTER (WHERE heat_status = 'OK') AS heats_ok,
++            COUNT(DISTINCT heat_number) FILTER (
++                WHERE heat_status IN ('INCOMPLETE', 'OUT_OF_SPEC')
++            ) AS heats_with_gaps,
++            COUNT(DISTINCT heat_number) FILTER (WHERE grade = 'UNKNOWN') AS heats_unknown_grade,
++            SUM(element_count) AS total_elements,
++            SUM(no_spec_count) AS total_no_spec,
++            SUM(missing_spec_count) AS total_missing_spec,
++            ROUND(
++                100.0 * SUM(no_spec_count) / NULLIF(SUM(element_count), 0),
++                2
++            ) AS pct_no_spec,
++            ROUND(
++                100.0 * SUM(missing_spec_count) / NULLIF(SUM(element_count), 0),
++                2
++            ) AS pct_missing_spec
++        FROM v_chem_compliance_summary;
++        """
++        rows = query(self.conn, sql, verbose=self.verbose)
++        if not rows:
++            print("  (no rows from summary view)")
++            return None
++        r = rows[0]
++        total = int(r["total_heats"] or 0)
++        ok = int(r["heats_ok"] or 0)
++        gaps = int(r["heats_with_gaps"] or 0)
++        unk = int(r["heats_unknown_grade"] or 0)
++        pct_gaps = (gaps * 100 // total) if total else 0
++
++        print(
++            f"""
++  Total heats (summary):     {total:>8,}
++  Heats OK:                  {ok:>8,}  ({ok * 100 // max(total, 1)}%)
++  Heats incomplete/out:    {gaps:>8,}  ({pct_gaps}%)
++  Heats UNKNOWN grade:       {unk:>8,}
++
++  Total element readings:    {int(r['total_elements'] or 0):>8,}
++  no_spec_count (rows):      {int(r['total_no_spec'] or 0):>8,}  ({r['pct_no_spec']}%)
++  missing_spec_count:        {int(r['total_missing_spec'] or 0):>8,}  ({r['pct_missing_spec']}%)
++"""
++        )
++
++        if pct_gaps < 5:
++            print("  Grade: A (most heats fully resolved in the summary view)")
++        elif pct_gaps < 15:
++            print("  Grade: B")
++        elif pct_gaps < 30:
++            print("  Grade: C — remediation recommended")
++            self.issues.append("high_spec_gap_percentage")
++        else:
++            print("  Grade: D — many heats still missing product/spec linkage or limits")
++            self.issues.append("critical_spec_gap_percentage")
++        return r
++
++    def audit_phase2(self):
++        """Top drivers for NO_SPEC / MISSING_SPEC and mapping inventory."""
++        log("\n=== PHASE 2: NO_SPEC / MISSING_SPEC drivers (v_chem_compliance) ===")
++        sql = """
++        SELECT
++            compliance_status,
++            COALESCE(spec_code, '(NULL)') AS spec_code,
++            COUNT(DISTINCT heat_number) AS heat_count,
++            COUNT(*) AS reading_count
++        FROM v_chem_compliance
++        WHERE measured_value IS NOT NULL
++          AND compliance_status IN ('NO_SPEC', 'MISSING_SPEC')
++        GROUP BY 1, 2
++        ORDER BY reading_count DESC
++        LIMIT 20;
++        """
++        rows = query(self.conn, sql, verbose=self.verbose)
++        if rows:
++            for row in rows:
++                print(
++                    f"  {row['compliance_status']!s:14} spec={str(row['spec_code'])[:42]!s:42} "
++                    f"heats={row['heat_count']!s:>6} readings={row['reading_count']!s:>8}"
++                )
++                if int(row["heat_count"] or 0) > 5000:
++                    self.issues.append(
++                        f"high_volume_status:{row['compliance_status']}:{row['spec_code']}"
++                    )
++
++        sql2 = """
++        SELECT COUNT(DISTINCT spec_code) AS spec_count, COUNT(*) AS map_rows
++        FROM grade_spec_map
++        WHERE NULLIF(BTRIM(spec_code), '') IS NOT NULL;
++        """
++        inv = query(self.conn, sql2, verbose=self.verbose)
++        if inv:
++            m = inv[0]
++            print("\n  grade_spec_map:")
++            print(f"    distinct spec_code: {int(m['spec_count'] or 0):,}")
++            print(f"    rows:               {int(m['map_rows'] or 0):,}")
++
++        sql3 = "SELECT COUNT(*) AS n FROM chem_spec_code_alias;"
++        try:
++            a = query(self.conn, sql3, verbose=self.verbose)
++            if a:
++                print(f"  chem_spec_code_alias rows: {int(a[0]['n']):,}")
++        except ProgrammingError as exc:
++            if getattr(exc, "pgcode", None) == "42P01" or "chem_spec_code_alias" in str(exc).lower():
++                print(
++                    "  chem_spec_code_alias: (table missing — apply db/init/086 and apply_db_init.sh)"
++                )
++            else:
++                raise
++
++        print(
++            "\n  Note: chem_spec_code_alias.source_spec matches **product spec text** "
++            "(psc.spec_code), not the heat’s chemistry file grade string, unless the view is changed."
++        )
++
++    def audit_phase3(self):
++        """Old chem_readings with no lot_tracking row (candidate cleanup)."""
++        log("\n=== PHASE 3: Old readings without lot_tracking (candidates for delete) ===")
++        sql = """
++        SELECT
++            cr.heat_number,
++            MIN(COALESCE(cr.tested_at, cr.imported_at)) AS earliest_ts,
++            COUNT(*) AS reading_count,
++            SUM(CASE WHEN cr.measured_value IS NULL THEN 1 ELSE 0 END) AS null_values
++        FROM chem_readings cr
++        LEFT JOIN lot_tracking lt ON lt.heat_number = cr.heat_number
++        WHERE lt.heat_number IS NULL
++          AND COALESCE(cr.tested_at, cr.imported_at) < NOW() - INTERVAL '18 months'
++        GROUP BY cr.heat_number
++        ORDER BY earliest_ts ASC
++        LIMIT 30;
++        """
++        rows = query(self.conn, sql, verbose=self.verbose)
++        sql_count = """
++        SELECT COUNT(*) AS heat_count FROM (
++            SELECT cr.heat_number
++            FROM chem_readings cr
++            LEFT JOIN lot_tracking lt ON lt.heat_number = cr.heat_number
++            WHERE lt.heat_number IS NULL
++              AND COALESCE(cr.tested_at, cr.imported_at) < NOW() - INTERVAL '18 months'
++            GROUP BY cr.heat_number
++        ) s;
++        """
++        cnt = query(self.conn, sql_count, verbose=self.verbose)
++        hc = int(cnt[0]["heat_count"]) if cnt else 0
++        if not rows:
++            print(f"  Distinct orphan heats (18mo+, no lot): {hc:,}")
++            print("  (no sample rows in top 30)")
++            return
++        print(f"  Distinct orphan heats (18mo+, no lot): {hc:,}")
++        print("  Sample (oldest 30 heats):")
++        for row in rows[:10]:
++            print(
++                f"    {str(row['heat_number'])[:24]:24} | {row['earliest_ts']} | "
++                f"{row['reading_count']} readings ({row['null_values']} null values)"
++            )
++        if len(rows) > 10:
++            print(f"    ... ({len(rows)} heats in sample window)")
++        if hc > 200:
++            self.issues.append("high_volume_orphaned_data")
++
++    def audit_phase4(self):
++        """grade_spec_map spec_code with no chem_element_specs limits."""
++        log("\n=== PHASE 4: grade_spec_map spec_code vs chem_element_specs ===")
++        sql = """
++        SELECT gsm.spec_code, COUNT(*) AS product_rows
++        FROM grade_spec_map gsm
++        LEFT JOIN chem_element_specs ces
++          ON UPPER(BTRIM(ces.spec_code)) = UPPER(BTRIM(gsm.spec_code))
++        WHERE ces.spec_code IS NULL
++          AND NULLIF(BTRIM(gsm.spec_code), '') IS NOT NULL
++        GROUP BY gsm.spec_code
++        ORDER BY product_rows DESC
++        LIMIT 25;
++        """
++        rows = query(self.conn, sql, verbose=self.verbose)
++        sql_n = """
++        SELECT COUNT(DISTINCT gsm.spec_code) AS orphan_specs
++        FROM grade_spec_map gsm
++        LEFT JOIN chem_element_specs ces
++          ON UPPER(BTRIM(ces.spec_code)) = UPPER(BTRIM(gsm.spec_code))
++        WHERE ces.spec_code IS NULL
++          AND NULLIF(BTRIM(gsm.spec_code), '') IS NOT NULL;
++        """
++        n = query(self.conn, sql_n, verbose=self.verbose)
++        oc = int(n[0]["orphan_specs"]) if n else 0
++        print(f"  Distinct orphan spec_code (no limits table match): {oc:,}")
++        if oc > 0:
++            self.issues.append("specs_missing_element_limits")
++        if rows:
++            print("  Top orphan spec_code by grade_spec_map rows:")
++            for row in rows[:15]:
++                print(f"    {str(row['spec_code'])[:48]:48} {int(row['product_rows']):>5} rows")
++        else:
++            print("  All non-empty grade_spec_map.spec_code values have at least one limits row.")
++
++    def summary(self) -> bool:
++        log("\n=== AUDIT SUMMARY ===")
++        uniq = sorted(set(self.issues))
++        if not uniq:
++            print("  No high-severity flags recorded (see phases above for detail).")
++            return True
++        print(f"  Flags ({len(uniq)}):")
++        for issue in uniq:
++            print(f"    - {issue}")
++        print("\n  Suggested actions:")
++        if "critical_spec_gap_percentage" in self.issues or "high_spec_gap_percentage" in self.issues:
++            print("    - Ensure lot/heats/production/HT/scrap/pour carry product_number for chem heats.")
++            print("    - Run: python3 scripts/build_grade_spec_map.py data/mt1320_products_3.csv")
++            print("    - Regenerate limits from Odyssey: scripts/generate_chem_specs_sql.py …")
++        if "specs_missing_element_limits" in self.issues:
++            print("    - Import/update specchemicals; use chem_spec_code_alias for label mismatches.")
++        if "high_volume_orphaned_data" in self.issues:
++            print("    - Review PHASE 3; optional: --delete-orphans --yes (after backup / SELECT checks).")
++        return False
++
++
++def confirm_live(yes: bool) -> bool:
++    if yes:
++        return True
++    try:
++        reply = input("Type 'yes' to modify the database: ").strip().lower()
++    except EOFError:
++        return False
++    return reply == "yes"
++
++
++def run_fix_grade_map(products_csv: Path, verbose: bool) -> bool:
++    if not products_csv.is_file():
++        log(f"Products file not found: {products_csv}")
++        return False
++    cmd = [sys.executable, str(REPO_ROOT / "scripts" / "build_grade_spec_map.py"), str(products_csv)]
++    log(f"Running: {' '.join(cmd)}")
++    try:
++        subprocess.run(cmd, cwd=str(REPO_ROOT), check=True)
++        log("build_grade_spec_map.py finished OK")
++        return True
++    except subprocess.CalledProcessError as exc:
++        log(f"build_grade_spec_map.py failed (exit {exc.returncode})")
++        return False
++
++
++def run_delete_orphans(conn, verbose: bool) -> int:
++    """Caller must already have confirmed LIVE MODE (see main())."""
++    count_sql = """
++    SELECT COUNT(*) AS n FROM chem_readings cr
++    LEFT JOIN lot_tracking lt ON lt.heat_number = cr.heat_number
++    WHERE lt.heat_number IS NULL
++      AND COALESCE(cr.tested_at, cr.imported_at) < NOW() - INTERVAL '18 months';
++    """
++    before = query(conn, count_sql, verbose=verbose)[0]["n"]
++    log(f"Deleting up to {int(before):,} chem_readings rows matching orphan+18mo rule …")
++    delete_sql = """
++    DELETE FROM chem_readings
++    WHERE id IN (
++        SELECT cr.id
++        FROM chem_readings cr
++        LEFT JOIN lot_tracking lt ON lt.heat_number = cr.heat_number
++        WHERE lt.heat_number IS NULL
++          AND COALESCE(cr.tested_at, cr.imported_at) < NOW() - INTERVAL '18 months'
++    );
++    """
++    with conn.cursor() as cur:
++        cur.execute(delete_sql)
++        deleted = cur.rowcount
++    conn.commit()
++    log(f"Deleted {deleted:,} rows from chem_readings")
++
++    with conn.cursor() as cur:
++        cur.execute(
++            """
++            DELETE FROM chem_compliance_alerts a
++            WHERE NOT EXISTS (
++                SELECT 1 FROM chem_readings cr WHERE cr.heat_number = a.heat_number
++            );
++            """
++        )
++        ac = cur.rowcount
++    conn.commit()
++    log(f"Removed {ac:,} alerts for heats with no remaining chem_readings")
++    return int(deleted)
++
++
++def run_refresh_alerts(verbose: bool) -> bool:
++    cmd = [sys.executable, str(REPO_ROOT / "scripts" / "refresh_chem_compliance_alerts.py")]
++    log(f"Running: {' '.join(cmd)}")
++    try:
++        subprocess.run(cmd, cwd=str(REPO_ROOT), check=True)
++        return True
++    except subprocess.CalledProcessError as exc:
++        log(f"refresh_chem_compliance_alerts.py failed (exit {exc.returncode})")
++        return False
++
++
++def main() -> None:
++    parser = argparse.ArgumentParser(
++        description=__doc__.split("\n\n")[0],
++        formatter_class=argparse.RawDescriptionHelpFormatter,
++    )
++    parser.add_argument("--brief", action="store_true", help="Only phase 1 summary")
++    parser.add_argument("--verbose", action="store_true", help="Log row counts for queries")
++    parser.add_argument(
++        "--fix",
++        action="store_true",
++        help="Run build_grade_spec_map.py on --products-csv (updates grade_spec_map)",
++    )
++    parser.add_argument(
++        "--products-csv",
++        type=Path,
++        default=REPO_ROOT / "data" / "mt1320_products_3.csv",
++        help="Products CSV for --fix (default: data/mt1320_products_3.csv)",
++    )
++    parser.add_argument(
++        "--delete-orphans",
++        action="store_true",
++        help="Delete chem_readings rows: no lot_tracking and older than 18 months",
++    )
++    parser.add_argument(
++        "--yes",
++        action="store_true",
++        help="Skip interactive confirmation for --fix / --delete-orphans",
++    )
++    parser.add_argument(
++        "--refresh-alerts",
++        action="store_true",
++        help="Run refresh_chem_compliance_alerts.py after the audit (and after any deletes)",
++    )
++    args = parser.parse_args()
++
++    if args.fix or args.delete_orphans:
++        print("\nLIVE MODE: database may be modified.")
++        if not confirm_live(args.yes):
++            raise SystemExit(0)
++        if args.fix and not run_fix_grade_map(args.products_csv.resolve(), args.verbose):
++            raise SystemExit(1)
++
++    conn = connect()
++    try:
++        auditor = SpecMappingAuditor(conn, verbose=args.verbose)
++        auditor.audit_phase1()
++        if args.brief:
++            auditor.summary()
++        else:
++            auditor.audit_phase2()
++            auditor.audit_phase3()
++            auditor.audit_phase4()
++            auditor.summary()
++
++        if args.delete_orphans:
++            run_delete_orphans(conn, verbose=args.verbose)
++            log("=== POST-DELETE: summary snapshot ===")
++            auditor.audit_phase1()
++
++        if args.refresh_alerts:
++            run_refresh_alerts(args.verbose)
++    finally:
++        conn.close()
++
++
++if __name__ == "__main__":
++    try:
++        main()
++    except psycopg2.OperationalError as exc:
++        print(f"ERROR: {exc}", file=sys.stderr)
++        sys.exit(1)

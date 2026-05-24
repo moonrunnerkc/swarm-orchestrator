@@ -1,0 +1,94 @@
+diff --git a/charts/rhai-on-xks-chart/api-docs.md b/charts/rhai-on-xks-chart/api-docs.md
+index 355fbcd0..91b84e17 100644
+--- a/charts/rhai-on-xks-chart/api-docs.md
++++ b/charts/rhai-on-xks-chart/api-docs.md
+@@ -35,6 +35,7 @@ RHAI on XKS Helm chart for non-OLM installation on non-OpenShift Kubernetes serv
+ | azure.kubernetesEngine.spec.dependencies.sailOperator.configuration.namespace | string | `"istio-system"` |  |
+ | azure.kubernetesEngine.spec.dependencies.sailOperator.managementPolicy | string | `"Managed"` |  |
+ | components.kserve.enabled | bool | `true` |  |
++| components.kserve.gateway.allowedRoutes.namespaces.from | string | `"All"` |  |
+ | components.kserve.gateway.create | bool | `true` |  |
+ | components.kserve.spec | object | `{}` |  |
+ | coreweave.cloudManager.image | string | `"quay.io/opendatahub/opendatahub-operator:latest"` |  |
+diff --git a/charts/rhai-on-xks-chart/templates/hooks/post-install-gateway-job.yaml b/charts/rhai-on-xks-chart/templates/hooks/post-install-gateway-job.yaml
+index 8e838ee5..2553a460 100644
+--- a/charts/rhai-on-xks-chart/templates/hooks/post-install-gateway-job.yaml
++++ b/charts/rhai-on-xks-chart/templates/hooks/post-install-gateway-job.yaml
+@@ -151,7 +151,11 @@ spec:
+                     protocol: HTTP
+                     allowedRoutes:
+                       namespaces:
+-                        from: All
++                        from: {{ .Values.components.kserve.gateway.allowedRoutes.namespaces.from }}
++              {{- if and (eq .Values.components.kserve.gateway.allowedRoutes.namespaces.from "Selector") .Values.components.kserve.gateway.allowedRoutes.namespaces.selector.matchLabels }}
++                        selector:
++                          {{- toYaml .Values.components.kserve.gateway.allowedRoutes.namespaces.selector | nindent 26 }}
++              {{- end }}
+                 infrastructure:
+                   labels:
+                     serving.kserve.io/gateway: kserve-ingress-gateway
+diff --git a/charts/rhai-on-xks-chart/values.schema.json b/charts/rhai-on-xks-chart/values.schema.json
+index 43acc2b6..450345f9 100644
+--- a/charts/rhai-on-xks-chart/values.schema.json
++++ b/charts/rhai-on-xks-chart/values.schema.json
+@@ -85,9 +85,39 @@
+                   "type": "boolean",
+                   "description": "Create Gateway and ConfigMaps via post-install hook",
+                   "default": true
++                },
++                "allowedRoutes": {
++                  "type": "object",
++                  "description": "Gateway allowedRoutes configuration for controlling which namespaces can attach HTTPRoutes",
++                  "properties": {
++                    "namespaces": {
++                      "type": "object",
++                      "description": "Namespace-based route attachment policy",
++                      "properties": {
++                        "from": {
++                          "type": "string",
++                          "description": "Which namespaces can attach routes to the Gateway (All, Same, or Selector)",
++                          "enum": ["All", "Same", "Selector"],
++                          "default": "All"
++                        },
++                        "selector": {
++                          "type": "object",
++                          "description": "Label selector for namespaces when from is Selector",
++                          "properties": {
++                            "matchLabels": {
++                              "type": "object",
++                              "description": "Label key-value pairs that namespaces must match",
++                              "additionalProperties": {
++                                "type": "string"
++                              }
++                            }
++                          }
++                        }
++                      }
++                    }
++                  }
+                 }
+-              },
+-              "additionalProperties": false
++              }
+             }
+           }
+         }
+diff --git a/charts/rhai-on-xks-chart/values.yaml b/charts/rhai-on-xks-chart/values.yaml
+index 26dfa9ad..c1471d6a 100644
+--- a/charts/rhai-on-xks-chart/values.yaml
++++ b/charts/rhai-on-xks-chart/values.yaml
+@@ -38,6 +38,14 @@ components:
+     gateway:
+       # Create Gateway and ConfigMaps via post-install hook
+       create: true
++      allowedRoutes:
++        namespaces:
++          from: All
++          # The following is an example of how to restrict the namespaces to the interested ones.
++          # from: Selector
++          # selector:
++          #   matchLabels:
++          #     inference-gateway-access: "true"
+ 
+ # Azure cloud configuration
+ azure:

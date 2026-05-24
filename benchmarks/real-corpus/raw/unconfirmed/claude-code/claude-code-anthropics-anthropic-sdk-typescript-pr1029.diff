@@ -1,0 +1,623 @@
+diff --git a/.release-please-manifest.json b/.release-please-manifest.json
+index 5a026735..ed3215ab 100644
+--- a/.release-please-manifest.json
++++ b/.release-please-manifest.json
+@@ -1,5 +1,5 @@
+ {
+-  ".": "0.93.0",
++  ".": "0.94.0",
+   "packages/vertex-sdk": "0.16.0",
+   "packages/bedrock-sdk": "0.29.1",
+   "packages/foundry-sdk": "0.2.3",
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 0d5fda07..c885766a 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,5 +1,13 @@
+ # Changelog
+ 
++## 0.94.0 (2026-05-05)
++
++Full Changelog: [sdk-v0.93.0...sdk-v0.94.0](https://github.com/anthropics/anthropic-sdk-typescript/compare/sdk-v0.93.0...sdk-v0.94.0)
++
++### Features
++
++* **client:** allow targeting a workspace for OIDC federation token exchange ([bde6620](https://github.com/anthropics/anthropic-sdk-typescript/commit/bde6620d68c2dd9e8e641b4cfed8847486ff046f))
++
+ ## 0.93.0 (2026-05-04)
+ 
+ Full Changelog: [sdk-v0.92.0...sdk-v0.93.0](https://github.com/anthropics/anthropic-sdk-typescript/compare/sdk-v0.92.0...sdk-v0.93.0)
+diff --git a/package.json b/package.json
+index 18964351..38414771 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "@anthropic-ai/sdk",
+-  "version": "0.93.0",
++  "version": "0.94.0",
+   "description": "The official TypeScript library for the Anthropic API",
+   "author": "Anthropic <support@anthropic.com>",
+   "types": "dist/index.d.ts",
+diff --git a/packages/vertex-sdk/yarn.lock b/packages/vertex-sdk/yarn.lock
+index bbbceb32..9e054594 100644
+--- a/packages/vertex-sdk/yarn.lock
++++ b/packages/vertex-sdk/yarn.lock
+@@ -17,7 +17,7 @@
+ 
+ "@anthropic-ai/sdk@file:../../dist":
+   # x-release-please-start-version
+-  version "0.93.0"
++  version "0.94.0"
+   # x-release-please-end-version
+   dependencies:
+     json-schema-to-ts "^3.1.1"
+diff --git a/src/core/credentials.ts b/src/core/credentials.ts
+index e4663ba1..93d02fbd 100644
+--- a/src/core/credentials.ts
++++ b/src/core/credentials.ts
+@@ -105,6 +105,7 @@ function validateProfileName(name: string): void {
+  *     in the file take precedence — env vars only fill gaps:
+  *       - `ANTHROPIC_BASE_URL` → `base_url`
+  *       - `ANTHROPIC_ORGANIZATION_ID` → `organization_id`
++ *       - `ANTHROPIC_WORKSPACE_ID` → `workspace_id`
+  *       - `ANTHROPIC_SCOPE` → `authentication.scope`
+  *       - `ANTHROPIC_FEDERATION_RULE_ID` → `authentication.federation_rule_id` (oidc_federation)
+  *       - `ANTHROPIC_IDENTITY_TOKEN_FILE` → `authentication.identity_token` (oidc_federation)
+@@ -114,6 +115,26 @@ function validateProfileName(name: string): void {
+  *     and `ANTHROPIC_ORGANIZATION_ID` are set.
+  */
+ export const loadConfig = async (profile?: string): Promise<AnthropicConfig | null> => {
++  return (await loadConfigWithSource(profile))?.config ?? null;
++};
++
++/**
++ * Source-tagged result of {@link loadConfigWithSource}. `fromFile` is `true`
++ * when `<config_dir>/configs/<profile>.json` exists on disk; `false` when the
++ * config was synthesized purely from environment variables.
++ *
++ * The credential chain uses this distinction to decide whether to back the
++ * federation exchange with a disk cache: file-backed profiles get a cache at
++ * `<config_dir>/credentials/<profile>.json`, env-only configs do not.
++ */
++export type LoadedConfig = { config: AnthropicConfig; fromFile: boolean };
++
++/**
++ * Same as {@link loadConfig}, but also reports whether the config was loaded
++ * from a profile file on disk (`fromFile: true`) or synthesized entirely from
++ * environment variables (`fromFile: false`).
++ */
++export const loadConfigWithSource = async (profile?: string): Promise<LoadedConfig | null> => {
+   const rootConfigPath = await getRootConfigPath();
+   if (rootConfigPath === null) {
+     return null;
+@@ -143,14 +164,22 @@ export const loadConfig = async (profile?: string): Promise<AnthropicConfig | nu
+     const federationRuleId = readEnv('ANTHROPIC_FEDERATION_RULE_ID');
+     if (federationRuleId && organizationId) {
+       return {
+-        organization_id: organizationId,
+-        base_url: readEnv('ANTHROPIC_BASE_URL'),
+-        authentication: {
+-          type: 'oidc_federation',
+-          federation_rule_id: federationRuleId,
+-          service_account_id: readEnv('ANTHROPIC_SERVICE_ACCOUNT_ID'),
+-          identity_token: identityTokenFile ? { source: 'file', path: identityTokenFile } : undefined,
+-          scope: readEnv('ANTHROPIC_SCOPE'),
++        fromFile: false,
++        config: {
++          organization_id: organizationId,
++          // A defaulted-but-empty CI variable (`ANTHROPIC_WORKSPACE_ID=""`) is
++          // treated as unset — readEnv coerces empty to undefined, and the body
++          // builder's truthy check skips it — so `"workspace_id": ""` never goes
++          // on the wire.
++          workspace_id: readEnv('ANTHROPIC_WORKSPACE_ID'),
++          base_url: readEnv('ANTHROPIC_BASE_URL'),
++          authentication: {
++            type: 'oidc_federation',
++            federation_rule_id: federationRuleId,
++            service_account_id: readEnv('ANTHROPIC_SERVICE_ACCOUNT_ID'),
++            identity_token: identityTokenFile ? { source: 'file', path: identityTokenFile } : undefined,
++            scope: readEnv('ANTHROPIC_SCOPE'),
++          },
+         },
+       };
+     }
+@@ -173,6 +202,7 @@ export const loadConfig = async (profile?: string): Promise<AnthropicConfig | nu
+ 
+   // File values are authoritative; env vars only fill fields the file left unset.
+   config.organization_id ??= readEnv('ANTHROPIC_ORGANIZATION_ID');
++  config.workspace_id ??= readEnv('ANTHROPIC_WORKSPACE_ID');
+   config.base_url ??= readEnv('ANTHROPIC_BASE_URL');
+   config.authentication.scope ??= readEnv('ANTHROPIC_SCOPE');
+ 
+@@ -197,7 +227,7 @@ export const loadConfig = async (profile?: string): Promise<AnthropicConfig | nu
+     config.authentication.service_account_id ??= readEnv('ANTHROPIC_SERVICE_ACCOUNT_ID');
+   }
+ 
+-  return config;
++  return { config, fromFile: true };
+ };
+ 
+ /**
+diff --git a/src/lib/credentials/credential-chain.ts b/src/lib/credentials/credential-chain.ts
+index 4fd675a0..b04411be 100644
+--- a/src/lib/credentials/credential-chain.ts
++++ b/src/lib/credentials/credential-chain.ts
+@@ -2,7 +2,7 @@ import type { Fetch } from '../../internal/builtin-types';
+ import { readEnv } from '../../internal/utils/env';
+ import {
+   CREDENTIALS_FILE_VERSION,
+-  loadConfig,
++  loadConfigWithSource,
+   getCredentialsPath,
+   type AnthropicConfig,
+ } from '../../core/credentials';
+@@ -47,9 +47,9 @@ export function resolveCredentialsFromConfig(
+   const provider = buildProvider(config, credentialsPath, effectiveBaseURL, options);
+ 
+   const extraHeaders: Record<string, string> = {};
+-  // Workspace scoping for oidc_federation is server-side (the federation rule
+-  // encodes the workspace and the minted token is workspace-scoped), so the
+-  // header is only meaningful for user_oauth.
++  // For federation profiles workspace_id is sent in the jwt-bearer exchange
++  // body, not as a request header (the minted token is already
++  // workspace-scoped, so the header would be ignored).
+   if (config.workspace_id && config.authentication.type === 'user_oauth') {
+     extraHeaders['anthropic-workspace-id'] = config.workspace_id;
+   }
+@@ -79,17 +79,24 @@ export async function defaultCredentials(
+   options: ResolverOptions,
+   profile?: string,
+ ): Promise<CredentialResult | null> {
+-  const config = await loadConfig(profile);
+-  if (!config) {
++  const loaded = await loadConfigWithSource(profile);
++  if (!loaded) {
+     return null;
+   }
++  const { config, fromFile } = loaded;
+ 
+-  // For env/file-loaded configs, default credentials_path to the
+-  // per-profile location so user_oauth and federation caching work.
+-  // Shallow-clone first so callers that retain a reference to the loaded
+-  // config don't observe the patched-in default.
++  // For file-loaded configs, default credentials_path to the per-profile
++  // location so user_oauth and federation caching work. Shallow-clone first
++  // so callers that retain a reference to the loaded config don't observe the
++  // patched-in default.
++  //
++  // Env-only credentials (no profile file on disk) skip the disk cache —
++  // matching the other SDKs. A disk cache keyed by profile path would
++  // re-serve a stale token after a change to ANTHROPIC_WORKSPACE_ID (or
++  // ANTHROPIC_ORGANIZATION_ID / ANTHROPIC_FEDERATION_RULE_ID) until the
++  // cached token expired, so the env-only chain stays in-memory only.
+   const withPath: AnthropicConfig =
+-    config.authentication.credentials_path ?
++    config.authentication.credentials_path || !fromFile ?
+       config
+     : {
+         ...config,
+@@ -134,6 +141,7 @@ function buildProvider(
+         federationRuleId: auth.federation_rule_id,
+         organizationId: config.organization_id,
+         serviceAccountId: auth.service_account_id,
++        workspaceId: config.workspace_id,
+         baseURL,
+         fetch: options.fetch,
+         userAgent: options.userAgent,
+diff --git a/src/lib/credentials/oidc-federation.ts b/src/lib/credentials/oidc-federation.ts
+index 4c89d819..27eb6371 100644
+--- a/src/lib/credentials/oidc-federation.ts
++++ b/src/lib/credentials/oidc-federation.ts
+@@ -18,6 +18,18 @@ export type OIDCFederationConfig = {
+   federationRuleId: string;
+   organizationId: string;
+   serviceAccountId?: string | undefined;
++  /**
++   * Optional `wrkspc_*` tagged ID, or the literal `"default"` to scope the
++   * token to the organization's default workspace. When omitted the server
++   * picks the rule's sole enabled workspace, else the org default if the rule
++   * covers it. Required when the rule enables more than one non-default
++   * workspace, or to target a specific workspace other than the one the
++   * server would pick. The minted token is workspace-scoped: per-request
++   * workspace selection (the `anthropic-workspace-id` header) is not supported
++   * for federation tokens — switching workspaces requires a new token exchange
++   * with a different `workspaceId`.
++   */
++  workspaceId?: string | undefined;
+   baseURL: string;
+   fetch: Fetch;
+   /**
+@@ -61,6 +73,9 @@ export function oidcFederationProvider(config: OIDCFederationConfig): AccessToke
+     if (config.serviceAccountId) {
+       body['service_account_id'] = config.serviceAccountId;
+     }
++    if (config.workspaceId) {
++      body['workspace_id'] = config.workspaceId;
++    }
+ 
+     const url = `${config.baseURL}${TOKEN_ENDPOINT}`;
+     let resp: Response;
+@@ -83,10 +98,23 @@ export function oidcFederationProvider(config: OIDCFederationConfig): AccessToke
+     if (!resp.ok) {
+       const text = await resp.text().catch(() => '');
+       const redacted = redactSensitive(text);
++      // A 401 is hard to debug from the status code alone, so surface
++      // guidance: check the federation rule, optionally set a workspace ID
++      // (the most common fix when no workspaceId is configured), and point at
++      // the Workload identity page in Claude Console for the server-side
++      // authentication event log. Other statuses (5xx, 400, ...) get no hint.
++      let hint = '';
++      if (resp.status === 401) {
++        const hintMiddle =
++          config.workspaceId ? '' : (
++            "If your federation rule is scoped to multiple workspaces, set the ANTHROPIC_WORKSPACE_ID environment variable, the 'workspace_id' config key, or the `workspaceId` option. "
++          );
++        hint = ` Ensure your federation rule matches your identity token. ${hintMiddle}View your authentication events in the Workload identity page of Claude Console for more details.`;
++      }
+       throw new WorkloadIdentityError(
+         `Token exchange failed with status ${resp.status}${
+           requestId ? ` (request-id ${requestId})` : ''
+-        }: ${redacted}`,
++        }: ${redacted}${hint}`,
+         resp.status,
+         redacted,
+         requestId,
+diff --git a/src/version.ts b/src/version.ts
+index 37e6f5a8..a914c676 100644
+--- a/src/version.ts
++++ b/src/version.ts
+@@ -1 +1 @@
+-export const VERSION = '0.93.0'; // x-release-please-version
++export const VERSION = '0.94.0'; // x-release-please-version
+diff --git a/tests/lib/credentials/client-integration.test.ts b/tests/lib/credentials/client-integration.test.ts
+index d5b09bda..97131d0e 100644
+--- a/tests/lib/credentials/client-integration.test.ts
++++ b/tests/lib/credentials/client-integration.test.ts
+@@ -336,6 +336,7 @@ describe('client credentials integration', () => {
+       apiKey: null,
+       config: {
+         organization_id: 'org-explicit',
++        workspace_id: 'wrkspc_x',
+         authentication: {
+           type: 'oidc_federation',
+           federation_rule_id: 'fdrl_explicit',
+@@ -349,9 +350,12 @@ describe('client credentials integration', () => {
+           const body = JSON.parse(init!.body as string);
+           expect(body.federation_rule_id).toBe('fdrl_explicit');
+           expect(body.assertion).toBe('explicit-jwt');
++          expect(body.workspace_id).toBe('wrkspc_x');
+           return jsonResponse({ access_token: 'explicit-tok', expires_in: 3600 });
+         }
+         expect(getHeader(init, 'authorization')).toBe('Bearer explicit-tok');
++        // Federation profiles send workspace_id in the exchange body, not as a header.
++        expect(getHeader(init, 'anthropic-workspace-id')).toBeNull();
+         return jsonResponse(VALID_MSG_RESPONSE);
+       },
+     });
+diff --git a/tests/lib/credentials/credential-chain.test.ts b/tests/lib/credentials/credential-chain.test.ts
+index 77893a8f..0cfb78f1 100644
+--- a/tests/lib/credentials/credential-chain.test.ts
++++ b/tests/lib/credentials/credential-chain.test.ts
+@@ -36,6 +36,7 @@ describe('defaultCredentials', () => {
+     'ANTHROPIC_PROFILE',
+     'ANTHROPIC_SCOPE',
+     'ANTHROPIC_SERVICE_ACCOUNT_ID',
++    'ANTHROPIC_WORKSPACE_ID',
+     'APPDATA',
+     'HOME',
+     'XDG_CONFIG_HOME',
+@@ -120,12 +121,16 @@ describe('defaultCredentials', () => {
+         identity_token: { source: 'file', path: tokenPath },
+       },
+     });
+-    const fedResult = await defaultCredentials({
+-      ...baseOptions,
+-      fetch: jest.fn().mockResolvedValue(jsonResponse({ access_token: 'tok', expires_in: 60 })),
+-    });
+-    // Federation tokens are workspace-scoped at issue time → header omitted
++    const fedFetch: Fetch = jest
++      .fn()
++      .mockResolvedValue(jsonResponse({ access_token: 'tok', expires_in: 60 }));
++    const fedResult = await defaultCredentials({ ...baseOptions, fetch: fedFetch });
++    // Federation profiles send workspace_id in the exchange body, not as a header.
+     expect(fedResult!.extraHeaders).toEqual({});
++    // forceRefresh bypasses the still-fresh user_oauth credential cache from above.
++    await fedResult!.provider({ forceRefresh: true });
++    const fedBody = JSON.parse((fedFetch as jest.Mock).mock.calls[0]![1].body);
++    expect(fedBody.workspace_id).toBe('ws-fed');
+   });
+ 
+   it('resolves oidc_federation from config with identity_token file', async () => {
+@@ -338,6 +343,178 @@ describe('defaultCredentials', () => {
+     expect(body.assertion).toBe('static-jwt');
+   });
+ 
++  it('does not write a disk cache for the env-only federation chain', async () => {
++    // No profile file on disk: <testDir>/configs/ does not exist. The chain
++    // is synthesized purely from env vars and must stay in-memory only.
++    // Before this fix the chain wrote <config_dir>/credentials/default.json
++    // anyway, so a CI run that changed ANTHROPIC_WORKSPACE_ID (or
++    // ANTHROPIC_ORGANIZATION_ID / ANTHROPIC_FEDERATION_RULE_ID) between runs
++    // would re-serve the stale cached token until it expired. The other
++    // disk-caching SDKs already skip the cache on the env-only path.
++    process.env['ANTHROPIC_FEDERATION_RULE_ID'] = 'fdrl_env';
++    process.env['ANTHROPIC_ORGANIZATION_ID'] = 'org-env';
++    process.env['ANTHROPIC_IDENTITY_TOKEN'] = 'env-jwt';
++    process.env['ANTHROPIC_WORKSPACE_ID'] = 'wrkspc_env';
++
++    const mockFetch: Fetch = jest
++      .fn()
++      .mockResolvedValue(jsonResponse({ access_token: 'env-tok', expires_in: 3600 }));
++
++    const result = await defaultCredentials({ ...baseOptions, fetch: mockFetch });
++    expect(result).not.toBeNull();
++    const token = await result!.provider();
++    expect(token.token).toBe('env-tok');
++
++    expect(fs.existsSync(path.join(testDir, 'credentials', 'default.json'))).toBe(false);
++    expect(fs.existsSync(path.join(testDir, 'credentials'))).toBe(false);
++  });
++
++  it('does not read a stale disk cache for the env-only federation chain', async () => {
++    // Even if a stray credentials/default.json exists (e.g. left over from a
++    // file-backed profile that was later removed), the env-only chain must
++    // ignore it and perform a fresh exchange.
++    writeCredentials('default', {
++      access_token: 'stale-disk-tok',
++      expires_at: NOW_IN_SECONDS + 3600, // still valid → would be served if cached
++    });
++
++    process.env['ANTHROPIC_FEDERATION_RULE_ID'] = 'fdrl_env';
++    process.env['ANTHROPIC_ORGANIZATION_ID'] = 'org-env';
++    process.env['ANTHROPIC_IDENTITY_TOKEN'] = 'env-jwt';
++
++    const mockFetch: Fetch = jest
++      .fn()
++      .mockResolvedValue(jsonResponse({ access_token: 'fresh-tok', expires_in: 3600 }));
++
++    const result = await defaultCredentials({ ...baseOptions, fetch: mockFetch });
++    const token = await result!.provider();
++
++    expect(token.token).toBe('fresh-tok');
++    expect(mockFetch).toHaveBeenCalledTimes(1);
++    // The stray file is not overwritten either — env-only never touches disk.
++    const onDisk = JSON.parse(fs.readFileSync(path.join(testDir, 'credentials', 'default.json'), 'utf-8'));
++    expect(onDisk.access_token).toBe('stale-disk-tok');
++  });
++
++  it('passes ANTHROPIC_WORKSPACE_ID through the pure-env-var federation chain', async () => {
++    delete process.env['ANTHROPIC_CONFIG_DIR'];
++    process.env['ANTHROPIC_CONFIG_DIR'] = path.join(testDir, 'nonexistent');
++
++    process.env['ANTHROPIC_FEDERATION_RULE_ID'] = 'fdrl_01abc';
++    process.env['ANTHROPIC_ORGANIZATION_ID'] = 'org-uuid';
++    process.env['ANTHROPIC_IDENTITY_TOKEN'] = 'literal-jwt';
++    process.env['ANTHROPIC_WORKSPACE_ID'] = 'wrkspc_01abc';
++
++    const mockFetch: Fetch = jest
++      .fn()
++      .mockResolvedValue(jsonResponse({ access_token: 'tok', expires_in: 60 }));
++
++    const result = await defaultCredentials({ ...baseOptions, fetch: mockFetch });
++    expect(result).not.toBeNull();
++    await result!.provider();
++
++    const body = JSON.parse((mockFetch as jest.Mock).mock.calls[0]![1].body);
++    expect(body.workspace_id).toBe('wrkspc_01abc');
++  });
++
++  it('treats ANTHROPIC_WORKSPACE_ID="" as unset on the pure-env-var federation chain', async () => {
++    // A defaulted-but-empty CI variable should never put `"workspace_id": ""`
++    // on the wire. readEnv coerces empty to undefined, and the body builder's
++    // truthy check skips it — this pins both layers.
++    delete process.env['ANTHROPIC_CONFIG_DIR'];
++    process.env['ANTHROPIC_CONFIG_DIR'] = path.join(testDir, 'nonexistent');
++
++    process.env['ANTHROPIC_FEDERATION_RULE_ID'] = 'fdrl_01abc';
++    process.env['ANTHROPIC_ORGANIZATION_ID'] = 'org-uuid';
++    process.env['ANTHROPIC_IDENTITY_TOKEN'] = 'literal-jwt';
++    process.env['ANTHROPIC_WORKSPACE_ID'] = '';
++
++    const mockFetch: Fetch = jest
++      .fn()
++      .mockResolvedValue(jsonResponse({ access_token: 'tok', expires_in: 60 }));
++
++    const result = await defaultCredentials({ ...baseOptions, fetch: mockFetch });
++    expect(result).not.toBeNull();
++    await result!.provider();
++
++    const body = JSON.parse((mockFetch as jest.Mock).mock.calls[0]![1].body);
++    expect(body).not.toHaveProperty('workspace_id');
++  });
++
++  it('ANTHROPIC_WORKSPACE_ID fills a missing top-level workspace_id from a profile config', async () => {
++    const tokenPath = path.join(testDir, 'id-token');
++    fs.writeFileSync(tokenPath, 'my-jwt');
++    process.env['ANTHROPIC_ORGANIZATION_ID'] = 'org_x';
++    process.env['ANTHROPIC_WORKSPACE_ID'] = 'wrkspc_from_env';
++    process.env['ANTHROPIC_IDENTITY_TOKEN_FILE'] = tokenPath;
++
++    // Profile file has oidc_federation auth but no workspace_id.
++    writeConfig('default', {
++      authentication: {
++        type: 'oidc_federation',
++        federation_rule_id: 'fdrl_01abc',
++      },
++    });
++
++    const mockFetch: Fetch = jest
++      .fn()
++      .mockResolvedValue(jsonResponse({ access_token: 'tok', expires_in: 60 }));
++
++    const result = await defaultCredentials({ ...baseOptions, fetch: mockFetch });
++    expect(result).not.toBeNull();
++    await result!.provider();
++
++    const body = JSON.parse((mockFetch as jest.Mock).mock.calls[0]![1].body);
++    expect(body.workspace_id).toBe('wrkspc_from_env');
++  });
++
++  it('ANTHROPIC_WORKSPACE_ID fills a missing workspace_id for a user_oauth profile (header)', async () => {
++    // The env var fills `workspace_id` uniformly across profile types — not
++    // just federation. For user_oauth the filled value surfaces as the
++    // anthropic-workspace-id request header (federation routes it into the
++    // exchange body instead).
++    process.env['ANTHROPIC_WORKSPACE_ID'] = 'wrkspc_env';
++    writeConfig('default', { authentication: { type: 'user_oauth' } });
++    writeCredentials('default', {
++      access_token: 'tok',
++      refresh_token: 'ref',
++      expires_at: NOW_IN_SECONDS + 3600,
++    });
++
++    const result = await defaultCredentials(baseOptions);
++    expect(result).not.toBeNull();
++    expect(result!.extraHeaders).toEqual({ 'anthropic-workspace-id': 'wrkspc_env' });
++  });
++
++  it('config-file workspace_id beats ANTHROPIC_WORKSPACE_ID env var (precedence)', async () => {
++    // File values are authoritative; env vars only fill fields the file left
++    // unset. This pins the precedence model: profile > env var.
++    const tokenPath = path.join(testDir, 'id-token');
++    fs.writeFileSync(tokenPath, 'my-jwt');
++    process.env['ANTHROPIC_ORGANIZATION_ID'] = 'org_x';
++    process.env['ANTHROPIC_WORKSPACE_ID'] = 'wrkspc_env';
++    process.env['ANTHROPIC_IDENTITY_TOKEN_FILE'] = tokenPath;
++
++    writeConfig('default', {
++      workspace_id: 'wrkspc_file',
++      authentication: {
++        type: 'oidc_federation',
++        federation_rule_id: 'fdrl_01abc',
++      },
++    });
++
++    const mockFetch: Fetch = jest
++      .fn()
++      .mockResolvedValue(jsonResponse({ access_token: 'tok', expires_in: 60 }));
++
++    const result = await defaultCredentials({ ...baseOptions, fetch: mockFetch });
++    expect(result).not.toBeNull();
++    await result!.provider();
++
++    const body = JSON.parse((mockFetch as jest.Mock).mock.calls[0]![1].body);
++    expect(body.workspace_id).toBe('wrkspc_file');
++  });
++
+   it('throws clear error for oidc_federation env vars without identity token', async () => {
+     delete process.env['ANTHROPIC_CONFIG_DIR'];
+     process.env['ANTHROPIC_CONFIG_DIR'] = path.join(testDir, 'nonexistent');
+diff --git a/tests/lib/credentials/oidc-federation.test.ts b/tests/lib/credentials/oidc-federation.test.ts
+index e786d768..67262e2a 100644
+--- a/tests/lib/credentials/oidc-federation.test.ts
++++ b/tests/lib/credentials/oidc-federation.test.ts
+@@ -54,6 +54,7 @@ describe('oidcFederationProvider', () => {
+     expect(body.assertion).toBe('my-jwt');
+     expect(body.federation_rule_id).toBe('fdrl_01abc');
+     expect(body.organization_id).toBe('org-uuid-123');
++    expect(body).not.toHaveProperty('workspace_id');
+   });
+ 
+   it('includes service_account_id when provided and never sends scope', async () => {
+@@ -73,6 +74,38 @@ describe('oidcFederationProvider', () => {
+     expect(body).not.toHaveProperty('scope');
+   });
+ 
++  it('includes workspace_id when provided', async () => {
++    const mockFetch: Fetch = jest
++      .fn()
++      .mockResolvedValue(jsonResponse({ access_token: 'tok', expires_in: 60 }));
++
++    const provider = oidcFederationProvider({
++      ...baseConfig,
++      fetch: mockFetch,
++      workspaceId: 'wrkspc_01abc',
++    });
++    await provider();
++
++    const body = JSON.parse((mockFetch as jest.Mock).mock.calls[0]![1].body);
++    expect(body.workspace_id).toBe('wrkspc_01abc');
++  });
++
++  it('passes through the literal "default" workspace_id sentinel', async () => {
++    const mockFetch: Fetch = jest
++      .fn()
++      .mockResolvedValue(jsonResponse({ access_token: 'tok', expires_in: 60 }));
++
++    const provider = oidcFederationProvider({
++      ...baseConfig,
++      fetch: mockFetch,
++      workspaceId: 'default',
++    });
++    await provider();
++
++    const body = JSON.parse((mockFetch as jest.Mock).mock.calls[0]![1].body);
++    expect(body.workspace_id).toBe('default');
++  });
++
+   it('uses custom userAgent when provided', async () => {
+     const mockFetch: Fetch = jest
+       .fn()
+@@ -109,6 +142,61 @@ describe('oidcFederationProvider', () => {
+     }
+   });
+ 
++  it('appends the full token-exchange hint on 401 when workspaceId is unset', async () => {
++    // Without a workspaceId the most common cause is a federation rule that
++    // spans multiple workspaces — surface the workspace-ID fix alongside the
++    // generic guidance and the Console auth-event pointer.
++    const mockFetch: Fetch = jest.fn().mockResolvedValue(jsonResponse({ error: 'unauthorized' }, 401));
++
++    const provider = oidcFederationProvider({ ...baseConfig, fetch: mockFetch });
++    try {
++      await provider();
++      fail('expected throw');
++    } catch (err) {
++      const message = (err as WorkloadIdentityError).message;
++      expect(message).toContain('Ensure your federation rule matches your identity token');
++      expect(message).toContain('ANTHROPIC_WORKSPACE_ID');
++      expect(message).toContain('View your authentication events');
++    }
++  });
++
++  it('omits the workspace-ID portion of the hint on 401 when workspaceId is set', async () => {
++    // When workspaceId is already configured the workspace-ID suggestion is
++    // noise, but the generic guidance and Console auth-event pointer still apply.
++    const mockFetch: Fetch = jest.fn().mockResolvedValue(jsonResponse({ error: 'unauthorized' }, 401));
++
++    const provider = oidcFederationProvider({
++      ...baseConfig,
++      fetch: mockFetch,
++      workspaceId: 'wrkspc_x',
++    });
++    try {
++      await provider();
++      fail('expected throw');
++    } catch (err) {
++      const message = (err as WorkloadIdentityError).message;
++      expect(message).toContain('Ensure your federation rule');
++      expect(message).toContain('View your authentication events');
++      expect(message).not.toContain('ANTHROPIC_WORKSPACE_ID');
++    }
++  });
++
++  it('omits hint on non-401 errors', async () => {
++    // The hint is 401-specific; a 5xx or 400 should not append any guidance.
++    const mockFetch: Fetch = jest.fn().mockResolvedValue(jsonResponse({ error: 'server_error' }, 500));
++
++    const provider = oidcFederationProvider({ ...baseConfig, fetch: mockFetch });
++    try {
++      await provider();
++      fail('expected throw');
++    } catch (err) {
++      const message = (err as WorkloadIdentityError).message;
++      expect(message).not.toContain('Ensure your federation rule');
++      expect(message).not.toContain('View your authentication events');
++      expect(message).not.toContain('ANTHROPIC_WORKSPACE_ID');
++    }
++  });
++
+   it('throws WorkloadIdentityError on missing access_token', async () => {
+     const mockFetch: Fetch = jest.fn().mockResolvedValue(jsonResponse({ expires_in: 3600 }));
+ 

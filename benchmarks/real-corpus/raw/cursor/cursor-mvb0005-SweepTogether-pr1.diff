@@ -1,0 +1,3662 @@
+diff --git a/CLAUDE.md b/CLAUDE.md
+index 4d3f44d..3b0ea39 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -38,10 +38,11 @@ nginx (:8080)
+ | `backend/src/application/` | Service layer (game, player actions, score, leaderboard) |
+ | `backend/src/domain/` | Core logic (gridLogic, worldGenerator, BoardManager, Chunk) |
+ | `frontend/src/App.tsx` | Routes + socket join logic |
+-| `frontend/src/components/Viewport.tsx` | Render-prop wrapper for viewport state **(stub — pan handlers are no-ops)** |
+-| `frontend/src/hooks/useViewport.tsx` | Full pan/keyboard navigation logic **(not yet wired to Viewport.tsx)** |
+-| `frontend/src/components/ChunkLoader.tsx` | Chunk subscribe/unsubscribe + data fetching |
+-| `frontend/src/components/ChunkedBoard.tsx` | Renders visible chunks |
++| `frontend/src/renderer/BoardRenderer.ts` | Canvas 2D board renderer (cells, grid, chunk borders) |
++| `frontend/src/hooks/useViewport.tsx` | Viewport pan/zoom/keyboard state |
++| `frontend/src/contexts/ViewportContext.tsx` | Chunk subscription regions + pan/zoom API |
++| `frontend/src/hooks/useChunkStore.ts` | Chunk subscribe/unsubscribe + socket deltas |
++| `frontend/src/components/GameView.tsx` | Main game shell (HUD + canvas) |
+ 
+ ## Known Incomplete Work
+ 
+diff --git a/frontend/src/App.css b/frontend/src/App.css
+deleted file mode 100644
+index 6de512e..0000000
+--- a/frontend/src/App.css
++++ /dev/null
+@@ -1,56 +0,0 @@
+-.game-controls {
+-  margin-bottom: 10px;
+-  display: flex;
+-  justify-content: center;
+-}
+-
+-.view-chunk-button {
+-  padding: 8px 16px;
+-  background-color: #2196F3;
+-  color: white;
+-  border: none;
+-  border-radius: 4px;
+-  cursor: pointer;
+-  font-size: 14px;
+-}
+-
+-.view-chunk-button:hover {
+-  background-color: #1976D2;
+-}
+-
+-.app {
+-  width: 100vw;
+-  height: 100vh;
+-  display: flex;
+-  flex-direction: column;
+-  background-color: #f0f0f0;
+-}
+-
+-.game-container {
+-  flex: 1;
+-  position: relative;
+-  overflow: hidden;
+-  background-color: #e0e0e0;
+-}
+-
+-.loading-message,
+-.error-message {
+-  position: absolute;
+-  top: 50%;
+-  left: 50%;
+-  transform: translate(-50%, -50%);
+-  padding: 1rem;
+-  background-color: rgba(255, 255, 255, 0.9);
+-  border-radius: 4px;
+-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+-  text-align: center;
+-}
+-
+-.error-message {
+-  color: #dc3545;
+-  border: 1px solid #dc3545;
+-}
+-
+-.loading-message {
+-  color: #0d6efd;
+-} 
+\ No newline at end of file
+diff --git a/frontend/src/App.tsx b/frontend/src/App.tsx
+index 654762c..db753b0 100644
+--- a/frontend/src/App.tsx
++++ b/frontend/src/App.tsx
+@@ -3,13 +3,9 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+ import { SocketProvider, useSocket } from './hooks/useSocket';
+ import { ViewportProvider } from './contexts/ViewportContext';
+ import { GameProvider } from './contexts/GameContext';
+-import ChunkLoader from './components/ChunkLoader';
+-import SingleChunkPage from './components/SingleChunkPage';
+-import './App.css';
++import GameView from './components/GameView';
++import { CHUNK_SIZE } from './constants';
+ 
+-const CHUNK_SIZE = 32;
+-
+-// Stable player ID — persisted across page reloads
+ function getOrCreatePlayerId(): string {
+   const key = 'sweeptogether_player_id';
+   let id = localStorage.getItem(key);
+@@ -25,13 +21,11 @@ const AppContent: React.FC = () => {
+   const [isPlayerLocked, setIsPlayerLocked] = useState(false);
+   const playerId = useRef(getOrCreatePlayerId()).current;
+ 
+-  // Send join on every (re)connection for player ID attribution
+   useEffect(() => {
+     if (!isConnected) return;
+     send({ type: 'join', playerId });
+   }, [isConnected, send, playerId]);
+ 
+-  // Mine hit listener
+   useEffect(() => {
+     if (!isConnected) return;
+     const handleMineHit = () => setIsPlayerLocked(true);
+@@ -39,20 +33,29 @@ const AppContent: React.FC = () => {
+     return () => off('mineHit', handleMineHit);
+   }, [isConnected, on, off]);
+ 
+-  const handleRevealCell = useCallback((x: number, y: number) => {
+-    if (!isConnected || isPlayerLocked) return;
+-    send({ type: 'reveal', worldX: x, worldY: y });
+-  }, [isConnected, isPlayerLocked, send]);
++  const handleRevealCell = useCallback(
++    (x: number, y: number) => {
++      if (!isConnected || isPlayerLocked) return;
++      send({ type: 'reveal', worldX: x, worldY: y });
++    },
++    [isConnected, isPlayerLocked, send],
++  );
+ 
+-  const handleFlagCell = useCallback((x: number, y: number) => {
+-    if (!isConnected || isPlayerLocked) return;
+-    send({ type: 'flag', worldX: x, worldY: y });
+-  }, [isConnected, isPlayerLocked, send]);
++  const handleFlagCell = useCallback(
++    (x: number, y: number) => {
++      if (!isConnected || isPlayerLocked) return;
++      send({ type: 'flag', worldX: x, worldY: y });
++    },
++    [isConnected, isPlayerLocked, send],
++  );
+ 
+-  const handleChordCell = useCallback((x: number, y: number) => {
+-    if (!isConnected || isPlayerLocked) return;
+-    send({ type: 'chord', worldX: x, worldY: y });
+-  }, [isConnected, isPlayerLocked, send]);
++  const handleChordCell = useCallback(
++    (x: number, y: number) => {
++      if (!isConnected || isPlayerLocked) return;
++      send({ type: 'chord', worldX: x, worldY: y });
++    },
++    [isConnected, isPlayerLocked, send],
++  );
+ 
+   if (!isConnected) {
+     return <div className="loading-message">Connecting…</div>;
+@@ -61,22 +64,24 @@ const AppContent: React.FC = () => {
+   return (
+     <div className="app">
+       <Routes>
+-        <Route path="/chunk/:gameId/:chunkX/:chunkY" element={<SingleChunkPage />} />
+-        <Route path="/" element={
+-          <div className="game-container">
+-            <GameProvider
+-              gameId="default"
+-              isPlayerLocked={isPlayerLocked}
+-              onRevealCell={handleRevealCell}
+-              onFlagCell={handleFlagCell}
+-              onChordCell={handleChordCell}
+-            >
+-              <ViewportProvider chunkSize={CHUNK_SIZE}>
+-                <ChunkLoader />
+-              </ViewportProvider>
+-            </GameProvider>
+-          </div>
+-        } />
++        <Route
++          path="/"
++          element={
++            <div className="game-container">
++              <GameProvider
++                gameId="default"
++                isPlayerLocked={isPlayerLocked}
++                onRevealCell={handleRevealCell}
++                onFlagCell={handleFlagCell}
++                onChordCell={handleChordCell}
++              >
++                <ViewportProvider chunkSize={CHUNK_SIZE}>
++                  <GameView isConnected={isConnected} />
++                </ViewportProvider>
++              </GameProvider>
++            </div>
++          }
++        />
+       </Routes>
+     </div>
+   );
+diff --git a/frontend/src/chunkWire.ts b/frontend/src/chunkWire.ts
+new file mode 100644
+index 0000000..7e77420
+--- /dev/null
++++ b/frontend/src/chunkWire.ts
+@@ -0,0 +1,82 @@
++import { CHUNK_SIZE } from './constants';
++import { Chunk } from './types';
++
++export interface WireCellState {
++  index: number;
++  isMine: boolean;
++  adjacentMines: number;
++  revealedBy?: string;
++  flaggedBy?: string;
++}
++
++export interface WireRevealedCell {
++  index: number;
++  isMine: boolean;
++  adjacentMines: number;
++  playerId: string;
++}
++
++export function buildChunk(chunkX: number, chunkY: number, wireCells: WireCellState[]): Chunk {
++  const grid = Array.from({ length: CHUNK_SIZE }, (_, ly) =>
++    Array.from({ length: CHUNK_SIZE }, (_, lx) => ({
++      x: chunkX * CHUNK_SIZE + lx,
++      y: chunkY * CHUNK_SIZE + ly,
++      revealed: false,
++      flagged: false,
++    })),
++  );
++  for (const c of wireCells) {
++    const lx = c.index % CHUNK_SIZE;
++    const ly = Math.floor(c.index / CHUNK_SIZE);
++    grid[ly][lx] = {
++      x: chunkX * CHUNK_SIZE + lx,
++      y: chunkY * CHUNK_SIZE + ly,
++      revealed: !!c.revealedBy,
++      flagged: !!c.flaggedBy,
++      ...(c.revealedBy && { isMine: c.isMine, adjacentMines: c.adjacentMines }),
++    };
++  }
++  return { coords: { x: chunkX, y: chunkY }, cells: grid };
++}
++
++export function applyChunkDelta(
++  chunk: Chunk,
++  revealed: WireRevealedCell[] | undefined,
++  flagged: { index: number; playerId: string }[] | undefined,
++  unflagged: number[] | undefined,
++): Chunk {
++  const grid = chunk.cells.map(row => [...row]);
++
++  if (revealed) {
++    for (const c of revealed) {
++      const lx = c.index % CHUNK_SIZE;
++      const ly = Math.floor(c.index / CHUNK_SIZE);
++      grid[ly][lx] = {
++        ...grid[ly][lx],
++        revealed: true,
++        isMine: c.isMine,
++        adjacentMines: c.adjacentMines,
++      };
++    }
++  }
++  if (flagged) {
++    for (const c of flagged) {
++      const lx = c.index % CHUNK_SIZE;
++      const ly = Math.floor(c.index / CHUNK_SIZE);
++      grid[ly][lx] = { ...grid[ly][lx], flagged: true };
++    }
++  }
++  if (unflagged) {
++    for (const idx of unflagged) {
++      const lx = idx % CHUNK_SIZE;
++      const ly = Math.floor(idx / CHUNK_SIZE);
++      grid[ly][lx] = { ...grid[ly][lx], flagged: false };
++    }
++  }
++
++  return { ...chunk, cells: grid };
++}
++
++export function chunkKey(x: number, y: number): string {
++  return `${x}_${y}`;
++}
+diff --git a/frontend/src/components/Board.css b/frontend/src/components/Board.css
+deleted file mode 100644
+index 893468c..0000000
+--- a/frontend/src/components/Board.css
++++ /dev/null
+@@ -1,70 +0,0 @@
+-.board {
+-  width: 100%;
+-  height: 100%;
+-  position: relative;
+-  overflow: hidden;
+-  background-color: #e0e0e0;
+-  user-select: none;
+-}
+-
+-.board-content {
+-  position: absolute;
+-  will-change: transform;
+-  width: 100%;
+-  height: 100%;
+-}
+-
+-.chunk {
+-  position: absolute;
+-  display: grid;
+-  grid-template-columns: repeat(16, 1fr);
+-  grid-template-rows: repeat(16, 1fr);
+-  gap: 1px;
+-  background-color: #999;
+-  border: 1px solid #666;
+-}
+-
+-.cell {
+-  width: 30px;
+-  height: 30px;
+-  background-color: #ccc;
+-  display: flex;
+-  align-items: center;
+-  justify-content: center;
+-  font-weight: bold;
+-  cursor: pointer;
+-  transition: background-color 0.2s;
+-}
+-
+-.cell:hover {
+-  background-color: #ddd;
+-}
+-
+-.cell.revealed {
+-  background-color: #eee;
+-}
+-
+-.cell.flagged {
+-  background-color: #ffd700;
+-}
+-
+-.number {
+-  font-size: 16px;
+-}
+-
+-.number-1 { color: #0000ff; }
+-.number-2 { color: #008000; }
+-.number-3 { color: #ff0000; }
+-.number-4 { color: #000080; }
+-.number-5 { color: #800000; }
+-.number-6 { color: #008080; }
+-.number-7 { color: #000000; }
+-.number-8 { color: #808080; }
+-
+-.mine {
+-  font-size: 20px;
+-}
+-
+-.flag {
+-  font-size: 20px;
+-} 
+\ No newline at end of file
+diff --git a/frontend/src/components/Board.tsx b/frontend/src/components/Board.tsx
+deleted file mode 100644
+index b22d591..0000000
+--- a/frontend/src/components/Board.tsx
++++ /dev/null
+@@ -1,160 +0,0 @@
+-import React from 'react';
+-import { ChunkMap, ViewportState } from '../types';
+-import './Board.css';
+-
+-interface BoardProps {
+-  chunkMap: ChunkMap;
+-  chunkSize: number;
+-  viewport: ViewportState;
+-  onRevealCell: (x: number, y: number) => void;
+-  onFlagCell: (x: number, y: number) => void;
+-  onChordCell: (x: number, y: number) => void;
+-  isPlayerLocked: boolean;
+-  onPanStart: (clientX: number, clientY: number) => void;
+-  onPanMove: (clientX: number, clientY: number) => void;
+-  onPanEnd: () => void;
+-}
+-
+-const Board: React.FC<BoardProps> = ({
+-  chunkMap,
+-  chunkSize,
+-  viewport,
+-  onRevealCell,
+-  onFlagCell,
+-  onChordCell,
+-  isPlayerLocked,
+-  onPanStart,
+-  onPanMove,
+-  onPanEnd
+-}) => {
+-  const handleCellClick = (x: number, y: number) => {
+-    if (isPlayerLocked) return;
+-    onRevealCell(x, y);
+-  };
+-
+-  const handleCellRightClick = (e: React.MouseEvent, x: number, y: number) => {
+-    e.preventDefault();
+-    if (isPlayerLocked) return;
+-    onFlagCell(x, y);
+-  };
+-
+-  const handleCellDoubleClick = (x: number, y: number) => {
+-    if (isPlayerLocked) return;
+-    onChordCell(x, y);
+-  };
+-
+-  const handleMouseDown = (e: React.MouseEvent) => {
+-    if (e.button === 0) { // Left click
+-      onPanStart(e.clientX, e.clientY);
+-    }
+-  };
+-
+-  const handleMouseMove = (e: React.MouseEvent) => {
+-    if (e.buttons === 1) { // Left button is pressed
+-      onPanMove(e.clientX, e.clientY);
+-    }
+-  };
+-
+-  const handleMouseUp = () => {
+-    onPanEnd();
+-  };
+-
+-  const handleMouseLeave = () => {
+-    onPanEnd();
+-  };
+-
+-  // Calculate the visible area in world coordinates
+-  const worldLeft = viewport.center.x - viewport.width / 2;
+-  const worldTop = viewport.center.y - viewport.height / 2;
+-  const worldRight = viewport.center.x + viewport.width / 2;
+-  const worldBottom = viewport.center.y + viewport.height / 2;
+-
+-  // Calculate the transform to position the board
+-  const transform = {
+-    x: -worldLeft * viewport.scale,
+-    y: -worldTop * viewport.scale,
+-    scale: viewport.scale
+-  };
+-
+-  return (
+-    <div
+-      className="board"
+-      onMouseDown={handleMouseDown}
+-      onMouseMove={handleMouseMove}
+-      onMouseUp={handleMouseUp}
+-      onMouseLeave={handleMouseLeave}
+-    >
+-      <div
+-        className="board-content"
+-        style={{
+-          transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
+-          transformOrigin: '0 0'
+-        }}
+-      >
+-        {Object.entries(chunkMap).map(([key, chunk]) => {
+-          const { coords, cells } = chunk;
+-          // Position chunks based on their coordinates
+-          const chunkLeft = coords.x * chunkSize;
+-          const chunkTop = coords.y * chunkSize;
+-
+-          return (
+-            <div
+-              key={key}
+-              className="chunk"
+-              style={{
+-                position: 'absolute',
+-                left: `${chunkLeft}px`,
+-                top: `${chunkTop}px`,
+-                width: `${chunkSize}px`,
+-                height: `${chunkSize}px`,
+-                display: 'grid',
+-                gridTemplateColumns: `repeat(${chunkSize}, 1fr)`,
+-                gridTemplateRows: `repeat(${chunkSize}, 1fr)`,
+-                gap: '1px',
+-                backgroundColor: '#999',
+-                border: '1px solid #666'
+-              }}
+-            >
+-              {cells.map((row, y) =>
+-                row.map((cell, x) => {
+-                  const worldX = chunkLeft + x;
+-                  const worldY = chunkTop + y;
+-
+-                  // Only render cells that are within the viewport
+-                  if (
+-                    worldX < worldLeft ||
+-                    worldX > worldRight ||
+-                    worldY < worldTop ||
+-                    worldY > worldBottom
+-                  ) {
+-                    return null;
+-                  }
+-
+-                  return (
+-                    <div
+-                      key={`${x}-${y}`}
+-                      className={`cell ${cell.revealed ? 'revealed' : ''} ${cell.flagged ? 'flagged' : ''}`}
+-                      onClick={() => handleCellClick(worldX, worldY)}
+-                      onContextMenu={(e) => handleCellRightClick(e, worldX, worldY)}
+-                      onDoubleClick={() => handleCellDoubleClick(worldX, worldY)}
+-                    >
+-                      {cell.revealed && !cell.isMine && cell.adjacentMines !== undefined && cell.adjacentMines > 0 && (
+-                        <span className={`number number-${cell.adjacentMines}`}>
+-                          {cell.adjacentMines}
+-                        </span>
+-                      )}
+-                      {cell.revealed && cell.isMine && <span className="mine">💣</span>}
+-                      {cell.flagged && !cell.revealed && <span className="flag">🚩</span>}
+-                    </div>
+-                  );
+-                })
+-              )}
+-            </div>
+-          );
+-        })}
+-      </div>
+-    </div>
+-  );
+-};
+-
+-export default Board;
+diff --git a/frontend/src/components/BoardSVG.tsx b/frontend/src/components/BoardSVG.tsx
+deleted file mode 100644
+index 1345f17..0000000
+--- a/frontend/src/components/BoardSVG.tsx
++++ /dev/null
+@@ -1,158 +0,0 @@
+-import React, { useRef } from 'react';
+-import { ChunkMap } from '../types';
+-import { useViewportContext } from '../contexts/ViewportContext';
+-import { useGameContext } from '../contexts/GameContext';
+-
+-interface BoardSVGProps {
+-  chunks: ChunkMap;
+-  chunkSize: number;
+-}
+-
+-const CELL_SIZE = 30; // px
+-
+-const numberColors: Record<number, string> = {
+-  1: '#0000ff',
+-  2: '#008000',
+-  3: '#ff0000',
+-  4: '#000080',
+-  5: '#800000',
+-  6: '#008080',
+-  7: '#000000',
+-  8: '#808080',
+-};
+-
+-const BoardSVG: React.FC<BoardSVGProps> = ({ chunks, chunkSize }) => {
+-  const { viewport, onPanStart, onPanMove, onPanEnd, onZoom } = useViewportContext();
+-  const { isPlayerLocked, onRevealCell, onFlagCell, onChordCell } = useGameContext();
+-
+-  const draggingRef = useRef(false);
+-
+-  const worldLeft = viewport.center.x - viewport.width / 2;
+-  const worldTop = viewport.center.y - viewport.height / 2;
+-  const worldRight = viewport.center.x + viewport.width / 2;
+-  const worldBottom = viewport.center.y + viewport.height / 2;
+-
+-  const viewBox = `${worldLeft * CELL_SIZE} ${worldTop * CELL_SIZE} ${viewport.width * CELL_SIZE} ${viewport.height * CELL_SIZE}`;
+-
+-  const firstBorderX = Math.ceil(worldLeft / chunkSize) * chunkSize;
+-  const firstBorderY = Math.ceil(worldTop / chunkSize) * chunkSize;
+-  const chunkBorderLines: React.ReactElement[] = [];
+-  for (let cx = firstBorderX; cx <= worldRight; cx += chunkSize) {
+-    chunkBorderLines.push(
+-      <line key={`vb-${cx}`} x1={cx * CELL_SIZE} y1={worldTop * CELL_SIZE} x2={cx * CELL_SIZE} y2={worldBottom * CELL_SIZE}
+-        stroke="rgba(255,0,0,0.5)" strokeWidth={2} strokeDasharray="6 4" style={{ pointerEvents: 'none' }} />
+-    );
+-  }
+-  for (let cy = firstBorderY; cy <= worldBottom; cy += chunkSize) {
+-    chunkBorderLines.push(
+-      <line key={`hb-${cy}`} x1={worldLeft * CELL_SIZE} y1={cy * CELL_SIZE} x2={worldRight * CELL_SIZE} y2={cy * CELL_SIZE}
+-        stroke="rgba(255,0,0,0.5)" strokeWidth={2} strokeDasharray="6 4" style={{ pointerEvents: 'none' }} />
+-    );
+-  }
+-
+-  return (
+-    <svg
+-      width="100%"
+-      height="100%"
+-      viewBox={viewBox}
+-      style={{ display: 'block', background: '#e0e0e0', userSelect: 'none' }}
+-      onMouseDown={e => {
+-        if (e.button === 0) {
+-          draggingRef.current = false;
+-          onPanStart(e.clientX, e.clientY);
+-        }
+-      }}
+-      onMouseMove={e => {
+-        if (e.buttons === 1) {
+-          draggingRef.current = true;
+-          onPanMove(e.clientX, e.clientY);
+-        }
+-      }}
+-      onMouseUp={() => onPanEnd()}
+-      onMouseLeave={() => onPanEnd()}
+-      onWheel={e => {
+-        e.preventDefault();
+-        const delta = Math.max(-0.3, Math.min(0.3, -e.deltaY * 0.002));
+-        onZoom(delta);
+-      }}
+-    >
+-      {Object.values(chunks).map(chunk => {
+-        const chunkOffsetX = chunk.coords.x * chunkSize;
+-        const chunkOffsetY = chunk.coords.y * chunkSize;
+-        return chunk.cells.map((row, y) =>
+-          row.map((cell, x) => {
+-            const worldX = chunkOffsetX + x;
+-            const worldY = chunkOffsetY + y;
+-            if (
+-              worldX < worldLeft ||
+-              worldX >= worldRight ||
+-              worldY < worldTop ||
+-              worldY >= worldBottom
+-            ) {
+-              return null;
+-            }
+-            let fill = '#ccc';
+-            if (cell.revealed) fill = '#eee';
+-            if (cell.flagged && !cell.revealed) fill = '#ffd700';
+-            return (
+-              <g key={`${worldX},${worldY}`} style={{ pointerEvents: 'auto' }}>
+-                <rect
+-                  x={worldX * CELL_SIZE}
+-                  y={worldY * CELL_SIZE}
+-                  width={CELL_SIZE}
+-                  height={CELL_SIZE}
+-                  fill={fill}
+-                  stroke="#999"
+-                  strokeWidth={1}
+-                  onClick={() => {
+-                    if (draggingRef.current) return;
+-                    if (!isPlayerLocked) onRevealCell(worldX, worldY);
+-                  }}
+-                  onContextMenu={e => {
+-                    e.preventDefault();
+-                    if (!isPlayerLocked) onFlagCell(worldX, worldY);
+-                  }}
+-                  onDoubleClick={() => {
+-                    if (!isPlayerLocked) onChordCell(worldX, worldY);
+-                  }}
+-                  style={{ cursor: isPlayerLocked ? 'not-allowed' : 'pointer', pointerEvents: 'auto' }}
+-                />
+-                {cell.revealed && cell.isMine && (
+-                  <text
+-                    x={worldX * CELL_SIZE + CELL_SIZE / 2}
+-                    y={worldY * CELL_SIZE + CELL_SIZE / 2 + 6}
+-                    textAnchor="middle"
+-                    fontSize={20}
+-                    style={{ userSelect: 'none', pointerEvents: 'none' }}
+-                  >💣</text>
+-                )}
+-                {cell.flagged && !cell.revealed && (
+-                  <text
+-                    x={worldX * CELL_SIZE + CELL_SIZE / 2}
+-                    y={worldY * CELL_SIZE + CELL_SIZE / 2 + 6}
+-                    textAnchor="middle"
+-                    fontSize={20}
+-                    style={{ userSelect: 'none', pointerEvents: 'none' }}
+-                  >🚩</text>
+-                )}
+-                {cell.revealed && !cell.isMine && cell.adjacentMines !== undefined && cell.adjacentMines > 0 && (
+-                  <text
+-                    x={worldX * CELL_SIZE + CELL_SIZE / 2}
+-                    y={worldY * CELL_SIZE + CELL_SIZE / 2 + 6}
+-                    textAnchor="middle"
+-                    fontSize={16}
+-                    fill={numberColors[cell.adjacentMines] || '#333'}
+-                    style={{ userSelect: 'none', pointerEvents: 'none' }}
+-                  >{cell.adjacentMines}</text>
+-                )}
+-              </g>
+-            );
+-          })
+-        );
+-      })}
+-      {chunkBorderLines}
+-    </svg>
+-  );
+-};
+-
+-export default BoardSVG;
+diff --git a/frontend/src/components/CanvasBoard.tsx b/frontend/src/components/CanvasBoard.tsx
+deleted file mode 100644
+index 29e9d6f..0000000
+--- a/frontend/src/components/CanvasBoard.tsx
++++ /dev/null
+@@ -1,237 +0,0 @@
+-import React, { useCallback, useEffect, useRef } from 'react';
+-import { ChunkMap } from '../types';
+-import { useViewportContext } from '../contexts/ViewportContext';
+-import { useGameContext } from '../contexts/GameContext';
+-
+-interface CanvasBoardProps {
+-  chunks: ChunkMap;
+-  chunkSize: number;
+-}
+-
+-const BASE_CELL_PX = 30;
+-
+-const NUMBER_COLORS: Record<number, string> = {
+-  1: '#0000ff', 2: '#008000', 3: '#ff0000', 4: '#000080',
+-  5: '#800000', 6: '#008080', 7: '#000000', 8: '#808080',
+-};
+-
+-const CanvasBoard: React.FC<CanvasBoardProps> = ({ chunks, chunkSize }) => {
+-  const { viewport, scale, onPanStart, onPanMove, onPanEnd, onZoom } = useViewportContext();
+-  const { isPlayerLocked, onRevealCell, onFlagCell, onChordCell } = useGameContext();
+-
+-  const canvasRef = useRef<HTMLCanvasElement>(null);
+-  const draggingRef = useRef(false);
+-  const rafRef = useRef<number | null>(null);
+-
+-  // Keep refs pointing to latest values so draw() closure doesn't stale.
+-  const chunksRef = useRef(chunks);
+-  chunksRef.current = chunks;
+-  const viewportRef = useRef(viewport);
+-  viewportRef.current = viewport;
+-  const scaleRef = useRef(scale);
+-  scaleRef.current = scale;
+-
+-  const draw = useCallback(() => {
+-    const canvas = canvasRef.current;
+-    if (!canvas) return;
+-    const ctx = canvas.getContext('2d');
+-    if (!ctx) return;
+-
+-    const vp = viewportRef.current;
+-    const sc = scaleRef.current;
+-    const allChunks = chunksRef.current;
+-    const cellPx = BASE_CELL_PX * sc;
+-    const dpr = window.devicePixelRatio || 1;
+-
+-    // Resize canvas buffer to match physical pixels.
+-    const logW = canvas.clientWidth;
+-    const logH = canvas.clientHeight;
+-    if (canvas.width !== logW * dpr || canvas.height !== logH * dpr) {
+-      canvas.width = logW * dpr;
+-      canvas.height = logH * dpr;
+-    }
+-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+-    ctx.clearRect(0, 0, logW, logH);
+-
+-    const worldLeft = vp.center.x - vp.width / 2;
+-    const worldTop  = vp.center.y - vp.height / 2;
+-
+-    // Void background, then per-chunk fill; unrevealed cells are implied by the background.
+-    ctx.fillStyle = '#9e9e9e';
+-    ctx.fillRect(0, 0, logW, logH);
+-    ctx.fillStyle = '#bdbdbd';
+-    for (const chunk of Object.values(allChunks)) {
+-      const chunkPx = chunkSize * cellPx;
+-      const csx = (chunk.coords.x * chunkSize - worldLeft) * cellPx;
+-      const csy = (chunk.coords.y * chunkSize - worldTop)  * cellPx;
+-      if (csx + chunkPx < 0 || csx > logW || csy + chunkPx < 0 || csy > logH) continue;
+-      ctx.fillRect(csx, csy, chunkPx, chunkPx);
+-    }
+-
+-    // Cell grid lines + chunk border guides spanning full viewport.
+-    if (cellPx >= 2) {
+-      const c0 = Math.floor(worldLeft);
+-      const c1 = Math.ceil(worldLeft + logW / cellPx) + 1;
+-      const r0 = Math.floor(worldTop);
+-      const r1 = Math.ceil(worldTop + logH / cellPx) + 1;
+-
+-      ctx.lineWidth = 1;
+-      ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+-      ctx.beginPath();
+-      for (let c = c0; c <= c1; c++) {
+-        if (c % chunkSize === 0) continue;
+-        const sx = Math.round((c - worldLeft) * cellPx) + 0.5;
+-        ctx.moveTo(sx, 0); ctx.lineTo(sx, logH);
+-      }
+-      for (let r = r0; r <= r1; r++) {
+-        if (r % chunkSize === 0) continue;
+-        const sy = Math.round((r - worldTop) * cellPx) + 0.5;
+-        ctx.moveTo(0, sy); ctx.lineTo(logW, sy);
+-      }
+-      ctx.stroke();
+-
+-      ctx.strokeStyle = 'rgba(80,120,200,0.6)';
+-      ctx.lineWidth = 2;
+-      ctx.beginPath();
+-      for (let c = c0; c <= c1; c++) {
+-        if (c % chunkSize !== 0) continue;
+-        const sx = Math.round((c - worldLeft) * cellPx) + 0.5;
+-        ctx.moveTo(sx, 0); ctx.lineTo(sx, logH);
+-      }
+-      for (let r = r0; r <= r1; r++) {
+-        if (r % chunkSize !== 0) continue;
+-        const sy = Math.round((r - worldTop) * cellPx) + 0.5;
+-        ctx.moveTo(0, sy); ctx.lineTo(logW, sy);
+-      }
+-      ctx.stroke();
+-    }
+-
+-    for (const chunk of Object.values(allChunks)) {
+-      const baseX = chunk.coords.x * chunkSize;
+-      const baseY = chunk.coords.y * chunkSize;
+-
+-      for (let cy = 0; cy < chunk.cells.length; cy++) {
+-        const row = chunk.cells[cy];
+-        for (let cx = 0; cx < row.length; cx++) {
+-          const cell = row[cx];
+-          if (!cell.revealed && !cell.flagged) continue;
+-
+-          const sx = (baseX + cx - worldLeft) * cellPx;
+-          const sy = (baseY + cy - worldTop)  * cellPx;
+-
+-          if (sx + cellPx < 0 || sx > logW || sy + cellPx < 0 || sy > logH) continue;
+-
+-          ctx.fillStyle = cell.revealed ? '#eeeeee' : '#ffd700';
+-          ctx.fillRect(sx, sy, cellPx - 1, cellPx - 1);
+-
+-          if (cell.revealed && cell.isMine) {
+-            ctx.font = `${cellPx * 0.65}px serif`;
+-            ctx.textAlign = 'center';
+-            ctx.textBaseline = 'middle';
+-            ctx.fillText('💣', sx + cellPx / 2, sy + cellPx / 2);
+-          } else if (cell.flagged && !cell.revealed) {
+-            ctx.font = `${cellPx * 0.65}px serif`;
+-            ctx.textAlign = 'center';
+-            ctx.textBaseline = 'middle';
+-            ctx.fillText('🚩', sx + cellPx / 2, sy + cellPx / 2);
+-          } else if (cell.revealed && !cell.isMine && cell.adjacentMines && cell.adjacentMines > 0) {
+-            ctx.fillStyle = NUMBER_COLORS[cell.adjacentMines] ?? '#333';
+-            ctx.font = `bold ${Math.max(8, cellPx * 0.5)}px monospace`;
+-            ctx.textAlign = 'center';
+-            ctx.textBaseline = 'middle';
+-            ctx.fillText(String(cell.adjacentMines), sx + cellPx / 2, sy + cellPx / 2);
+-          }
+-        }
+-      }
+-    }
+-  }, []); // stable — reads everything from refs
+-
+-  const scheduleDraw = useCallback(() => {
+-    if (rafRef.current !== null) return;
+-    rafRef.current = requestAnimationFrame(() => {
+-      rafRef.current = null;
+-      draw();
+-    });
+-  }, [draw]);
+-
+-  // Redraw whenever data or viewport changes.
+-  useEffect(() => {
+-    scheduleDraw();
+-  }, [chunks, viewport, scale, scheduleDraw]);
+-
+-  // Redraw on window resize.
+-  useEffect(() => {
+-    window.addEventListener('resize', scheduleDraw);
+-    return () => window.removeEventListener('resize', scheduleDraw);
+-  }, [scheduleDraw]);
+-
+-  // Wheel zoom — must be non-passive to call preventDefault().
+-  useEffect(() => {
+-    const canvas = canvasRef.current;
+-    if (!canvas) return;
+-    const handler = (e: WheelEvent) => {
+-      e.preventDefault();
+-      const delta = Math.max(-0.3, Math.min(0.3, -e.deltaY * 0.002));
+-      onZoom(delta);
+-    };
+-    canvas.addEventListener('wheel', handler, { passive: false });
+-    return () => canvas.removeEventListener('wheel', handler);
+-  }, [onZoom]);
+-
+-  const getWorldCell = useCallback((clientX: number, clientY: number) => {
+-    const canvas = canvasRef.current!;
+-    const rect = canvas.getBoundingClientRect();
+-    const cellPx = BASE_CELL_PX * scaleRef.current;
+-    const vp = viewportRef.current;
+-    const worldLeft = vp.center.x - vp.width / 2;
+-    const worldTop  = vp.center.y - vp.height / 2;
+-    // Apply Math.floor to the full expression so fractional worldLeft doesn't
+-    // produce float cell coords (e.g. worldLeft=-31.5 → worldX=0.5).
+-    return {
+-      worldX: Math.floor((clientX - rect.left) / cellPx + worldLeft),
+-      worldY: Math.floor((clientY - rect.top)  / cellPx + worldTop),
+-    };
+-  }, []);
+-
+-  return (
+-    <canvas
+-      ref={canvasRef}
+-      style={{
+-        display: 'block',
+-        width: '100%',
+-        height: '100%',
+-        cursor: isPlayerLocked ? 'not-allowed' : 'default',
+-      }}
+-      onMouseDown={e => {
+-        if (e.button === 0) {
+-          draggingRef.current = false;
+-          onPanStart(e.clientX, e.clientY);
+-        }
+-      }}
+-      onMouseMove={e => {
+-        if (e.buttons === 1) {
+-          draggingRef.current = true;
+-          onPanMove(e.clientX, e.clientY);
+-        }
+-      }}
+-      onMouseUp={() => onPanEnd()}
+-      onMouseLeave={() => onPanEnd()}
+-      onClick={e => {
+-        if (draggingRef.current) return;
+-        const { worldX, worldY } = getWorldCell(e.clientX, e.clientY);
+-        if (!isPlayerLocked) onRevealCell(worldX, worldY);
+-      }}
+-      onDoubleClick={e => {
+-        const { worldX, worldY } = getWorldCell(e.clientX, e.clientY);
+-        if (!isPlayerLocked) onChordCell(worldX, worldY);
+-      }}
+-      onContextMenu={e => {
+-        e.preventDefault();
+-        const { worldX, worldY } = getWorldCell(e.clientX, e.clientY);
+-        if (!isPlayerLocked) onFlagCell(worldX, worldY);
+-      }}
+-    />
+-  );
+-};
+-
+-export default CanvasBoard;
+diff --git a/frontend/src/components/Cell.tsx b/frontend/src/components/Cell.tsx
+deleted file mode 100644
+index 2762fc4..0000000
+--- a/frontend/src/components/Cell.tsx
++++ /dev/null
+@@ -1,114 +0,0 @@
+-import React, { MouseEvent } from 'react';
+-import { CellState } from '../types';
+-
+-interface CellProps {
+-  cellData: CellState;
+-  rowIndex: number;
+-  colIndex: number;
+-  onReveal: (row: number, col: number) => void;
+-  onFlag: (row: number, col: number) => void;
+-  onChord: (row: number, col: number) => void; // Add chord click handler
+-  isLocked: boolean;
+-}
+-
+-const Cell: React.FC<CellProps> = ({ 
+-  cellData, 
+-  rowIndex, 
+-  colIndex, 
+-  onReveal, 
+-  onFlag, 
+-  onChord,
+-  isLocked 
+-}) => {
+-  const { revealed, flagged, isMine, adjacentMines } = cellData;
+-
+-  // Track mouse buttons for chord detection
+-  const [mouseButtons, setMouseButtons] = React.useState<{ left: boolean; right: boolean }>({
+-    left: false,
+-    right: false
+-  });
+-
+-  const handleMouseDown = (event: MouseEvent<HTMLDivElement>) => {
+-    // Left button is 0, right button is 2
+-    if (event.button === 0) setMouseButtons(prev => ({ ...prev, left: true }));
+-    if (event.button === 2) setMouseButtons(prev => ({ ...prev, right: true }));
+-    
+-    // Detect chord click (both buttons) or middle click (button 1)
+-    if (
+-      (mouseButtons.right && event.button === 0) || 
+-      (mouseButtons.left && event.button === 2) || 
+-      event.button === 1
+-    ) {
+-      // Perform chord click if the cell is revealed and has a number
+-      if (revealed && adjacentMines && adjacentMines > 0 && !isLocked) {
+-        onChord(rowIndex, colIndex);
+-      }
+-    }
+-  };
+-
+-  const handleMouseUp = (event: MouseEvent<HTMLDivElement>) => {
+-    // Reset mouse button state
+-    if (event.button === 0) setMouseButtons(prev => ({ ...prev, left: false }));
+-    if (event.button === 2) setMouseButtons(prev => ({ ...prev, right: false }));
+-  };
+-
+-  const handleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+-    event.preventDefault();
+-    // Only allow reveal if not revealed, not flagged, and player not locked
+-    if (!revealed && !flagged && !isLocked) {
+-      onReveal(rowIndex, colIndex);
+-    }
+-    // Chord click is now handled in handleMouseDown
+-  };
+-
+-  const handleContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
+-    event.preventDefault(); // Prevent browser context menu
+-    // Only allow flag/unflag if not revealed and player not locked
+-    if (!revealed && !isLocked) {
+-      onFlag(rowIndex, colIndex);
+-    }
+-  };
+-
+-  // Determine cell content and styling based on state
+-  let content = '';
+-  let className = 'cell hidden'; // Start with base classes
+-
+-  if (flagged) {
+-    content = '🚩'; // Flag emoji
+-    className = 'cell flagged';
+-  } else if (revealed) {
+-    className = 'cell revealed';
+-    if (isMine) {
+-      content = '💣'; // Bomb emoji
+-      className += ' mine'; // Add mine class for styling
+-    } else if (adjacentMines && adjacentMines > 0) {
+-      content = adjacentMines.toString();
+-      className += ` mines-${adjacentMines}`; // Class for styling numbers
+-    } else {
+-      // Empty revealed cell
+-      content = '';
+-    }
+-  }
+-
+-  // Add locked class if player is locked to visually disable interaction
+-  if (isLocked) {
+-    className += ' locked';
+-  }
+-
+-  return (
+-    <div
+-      className={className}
+-      onClick={handleClick}
+-      onContextMenu={handleContextMenu}
+-      onMouseDown={handleMouseDown}
+-      onMouseUp={handleMouseUp}
+-      onMouseLeave={() => setMouseButtons({ left: false, right: false })}
+-      data-row={rowIndex}
+-      data-col={colIndex}
+-    >
+-      {content}
+-    </div>
+-  );
+-};
+-
+-export default Cell;
+diff --git a/frontend/src/components/ChunkLoader.tsx b/frontend/src/components/ChunkLoader.tsx
+deleted file mode 100644
+index 09312a2..0000000
+--- a/frontend/src/components/ChunkLoader.tsx
++++ /dev/null
+@@ -1,250 +0,0 @@
+-import React, { useCallback, useEffect, useRef, useState } from 'react';
+-import { useSocket } from '../hooks/useSocket';
+-import { useViewportContext } from '../contexts/ViewportContext';
+-import { useGameContext } from '../contexts/GameContext';
+-import CanvasBoard from './CanvasBoard';
+-import { Chunk, ChunkMap, Coordinates } from '../types';
+-
+-const CHUNK_SIZE = 32;
+-const BUFFER_DEBOUNCE_MS = 300;
+-
+-// ── Wire → frontend Cell conversion helpers ───────────────────────────────────
+-
+-interface WireCellState {
+-  index: number;
+-  isMine: boolean;
+-  adjacentMines: number;
+-  revealedBy?: string;
+-  flaggedBy?: string;
+-}
+-
+-interface WireRevealedCell {
+-  index: number;
+-  isMine: boolean;
+-  adjacentMines: number;
+-  playerId: string;
+-}
+-
+-function buildChunk(chunkX: number, chunkY: number, wireCells: WireCellState[]): Chunk {
+-  const grid = Array.from({ length: CHUNK_SIZE }, (_, ly) =>
+-    Array.from({ length: CHUNK_SIZE }, (_, lx) => ({
+-      x: chunkX * CHUNK_SIZE + lx,
+-      y: chunkY * CHUNK_SIZE + ly,
+-      revealed: false,
+-      flagged: false,
+-    }))
+-  );
+-  for (const c of wireCells) {
+-    const lx = c.index % CHUNK_SIZE;
+-    const ly = Math.floor(c.index / CHUNK_SIZE);
+-    grid[ly][lx] = {
+-      x: chunkX * CHUNK_SIZE + lx,
+-      y: chunkY * CHUNK_SIZE + ly,
+-      revealed: !!c.revealedBy,
+-      flagged: !!c.flaggedBy,
+-      ...(c.revealedBy && { isMine: c.isMine, adjacentMines: c.adjacentMines }),
+-    };
+-  }
+-  return { coords: { x: chunkX, y: chunkY }, cells: grid };
+-}
+-
+-function applyDelta(
+-  chunk: Chunk,
+-  revealed: WireRevealedCell[] | undefined,
+-  flagged: { index: number; playerId: string }[] | undefined,
+-  unflagged: number[] | undefined,
+-): Chunk {
+-  const grid = chunk.cells.map(row => [...row]);
+-
+-  if (revealed) {
+-    for (const c of revealed) {
+-      const lx = c.index % CHUNK_SIZE;
+-      const ly = Math.floor(c.index / CHUNK_SIZE);
+-      grid[ly][lx] = {
+-        ...grid[ly][lx],
+-        revealed: true,
+-        isMine: c.isMine,
+-        adjacentMines: c.adjacentMines,
+-      };
+-    }
+-  }
+-  if (flagged) {
+-    for (const c of flagged) {
+-      const lx = c.index % CHUNK_SIZE;
+-      const ly = Math.floor(c.index / CHUNK_SIZE);
+-      grid[ly][lx] = { ...grid[ly][lx], flagged: true };
+-    }
+-  }
+-  if (unflagged) {
+-    for (const idx of unflagged) {
+-      const lx = idx % CHUNK_SIZE;
+-      const ly = Math.floor(idx / CHUNK_SIZE);
+-      grid[ly][lx] = { ...grid[ly][lx], flagged: false };
+-    }
+-  }
+-
+-  return { ...chunk, cells: grid };
+-}
+-
+-// ── Component ─────────────────────────────────────────────────────────────────
+-
+-const ChunkLoader: React.FC = () => {
+-  const { send, isConnected, connectionId, on, off } = useSocket();
+-  const { immediateChunks, bufferedChunks } = useViewportContext();
+-  const { gameId } = useGameContext();
+-  const [chunks, setChunks]   = useState<ChunkMap>({});
+-  const chunksRef             = useRef<ChunkMap>({});
+-  chunksRef.current           = chunks;
+-  const [isLoading, setIsLoading] = useState(true);
+-  const [error, setError]     = useState<string | null>(null);
+-  const subscribedRef         = useRef<Set<string>>(new Set());
+-  const [debouncedBuffered, setDebouncedBuffered] = useState<Coordinates[]>(bufferedChunks);
+-
+-  // Batch pending updates — flushed once per rAF
+-  const pendingRef = useRef<Map<string, Chunk>>(new Map());
+-  const rafRef     = useRef<number | null>(null);
+-
+-  const flushPending = useCallback(() => {
+-    const pending = pendingRef.current;
+-    if (pending.size === 0) return;
+-    pendingRef.current = new Map();
+-    setChunks(prev => {
+-      const next = { ...prev };
+-      pending.forEach((chunk, key) => { next[key] = chunk; });
+-      return next;
+-    });
+-    setIsLoading(false);
+-  }, []);
+-
+-  const scheduleFlush = useCallback(() => {
+-    if (rafRef.current !== null) return;
+-    rafRef.current = requestAnimationFrame(() => {
+-      rafRef.current = null;
+-      flushPending();
+-    });
+-  }, [flushPending]);
+-
+-  // On every new connection, reset stale subscription state so chunks are re-subscribed
+-  useEffect(() => {
+-    subscribedRef.current.clear();
+-    setIsLoading(true);
+-  }, [connectionId]);
+-
+-  // Debounce buffer region
+-  useEffect(() => {
+-    const t = setTimeout(() => setDebouncedBuffered(bufferedChunks), BUFFER_DEBOUNCE_MS);
+-    return () => clearTimeout(t);
+-    // eslint-disable-next-line react-hooks/exhaustive-deps
+-  }, [JSON.stringify(bufferedChunks)]);
+-
+-  // ── Stable message listeners ───────────────────────────────────────────────
+-
+-  useEffect(() => {
+-    if (!isConnected) return;
+-
+-    // Full state snapshot sent in response to a subscribe message
+-    const handleChunkState = (data: Record<string, unknown>) => {
+-      const { chunkX, chunkY, cells } = data as {
+-        chunkX: number; chunkY: number; cells: WireCellState[];
+-      };
+-      const key   = `${chunkX}_${chunkY}`;
+-      const chunk = buildChunk(chunkX, chunkY, cells ?? []);
+-      pendingRef.current.set(key, chunk);
+-      scheduleFlush();
+-    };
+-
+-    // Live delta — apply on top of existing chunk
+-    const handleChunkDelta = (data: Record<string, unknown>) => {
+-      const { chunkX, chunkY, revealed, flagged, unflagged } = data as {
+-        chunkX: number; chunkY: number;
+-        revealed?: WireRevealedCell[];
+-        flagged?: { index: number; playerId: string }[];
+-        unflagged?: number[];
+-      };
+-      const key = `${chunkX}_${chunkY}`;
+-
+-      // Merge with any already-pending update for this chunk
+-      const base = pendingRef.current.get(key)
+-        ?? chunksRef.current[key]
+-        ?? buildChunk(chunkX, chunkY, []);
+-
+-      pendingRef.current.set(key, applyDelta(base, revealed, flagged, unflagged));
+-      scheduleFlush();
+-    };
+-
+-    const handleError = (data: Record<string, unknown>) => {
+-      setError(String(data.message ?? 'Server error'));
+-      setIsLoading(false);
+-    };
+-
+-    on('chunkState', handleChunkState);
+-    on('chunkDelta', handleChunkDelta);
+-    on('error',      handleError);
+-    return () => {
+-      off('chunkState', handleChunkState);
+-      off('chunkDelta', handleChunkDelta);
+-      off('error',      handleError);
+-    };
+-  // eslint-disable-next-line react-hooks/exhaustive-deps
+-  }, [isConnected, scheduleFlush]);
+-
+-  // ── Subscription management ────────────────────────────────────────────────
+-
+-  const syncSubscriptions = useCallback((targetKeys: Set<string>, targetChunks: Coordinates[]) => {
+-    if (!isConnected || !gameId) return;
+-
+-    const toSubscribe = targetChunks.filter(c => !subscribedRef.current.has(`${c.x}_${c.y}`));
+-    for (const c of toSubscribe) {
+-      send({ type: 'subscribe', chunkX: c.x, chunkY: c.y });
+-      subscribedRef.current.add(`${c.x}_${c.y}`);
+-    }
+-
+-    for (const key of Array.from(subscribedRef.current)) {
+-      if (!targetKeys.has(key)) {
+-        const [x, y] = key.split('_').map(Number);
+-        send({ type: 'unsubscribe', chunkX: x, chunkY: y });
+-        subscribedRef.current.delete(key);
+-      }
+-    }
+-  }, [isConnected, gameId, send]);
+-
+-  // Immediately subscribe visible chunks
+-  useEffect(() => {
+-    if (!isConnected || !gameId) return;
+-    const keys = new Set(immediateChunks.map(c => `${c.x}_${c.y}`));
+-    syncSubscriptions(keys, immediateChunks);
+-    // eslint-disable-next-line react-hooks/exhaustive-deps
+-  }, [isConnected, gameId, JSON.stringify(immediateChunks)]);
+-
+-  // After debounce, expand to buffer + directional chunks
+-  useEffect(() => {
+-    if (!isConnected || !gameId) return;
+-    const keys = new Set(debouncedBuffered.map(c => `${c.x}_${c.y}`));
+-    syncSubscriptions(keys, debouncedBuffered);
+-    // eslint-disable-next-line react-hooks/exhaustive-deps
+-  }, [isConnected, gameId, JSON.stringify(debouncedBuffered)]);
+-
+-  // Unsubscribe everything on unmount (best-effort; server also cleans up on WS close)
+-  const sendRef = useRef(send);
+-  sendRef.current = send;
+-  useEffect(() => {
+-    return () => {
+-      for (const key of Array.from(subscribedRef.current)) {
+-        const [x, y] = key.split('_').map(Number);
+-        sendRef.current({ type: 'unsubscribe', chunkX: x, chunkY: y });
+-      }
+-      subscribedRef.current.clear();
+-    };
+-  }, []);
+-
+-  if (error)     return <div className="error-message">{error}</div>;
+-  if (isLoading) return <div className="loading-message">Loading chunks…</div>;
+-
+-  return (
+-    <div style={{ width: '100%', height: '100%' }}>
+-      <CanvasBoard chunks={chunks} chunkSize={CHUNK_SIZE} />
+-    </div>
+-  );
+-};
+-
+-export default ChunkLoader;
+diff --git a/frontend/src/components/ChunkedBoard.css b/frontend/src/components/ChunkedBoard.css
+deleted file mode 100644
+index 685cd0b..0000000
+--- a/frontend/src/components/ChunkedBoard.css
++++ /dev/null
+@@ -1,29 +0,0 @@
+-.chunked-board {
+-  position: relative;
+-  width: 100%;
+-  height: 100%;
+-  overflow: hidden;
+-  background-color: #f0f0f0;
+-}
+-
+-.loading-message,
+-.error-message {
+-  position: absolute;
+-  top: 50%;
+-  left: 50%;
+-  transform: translate(-50%, -50%);
+-  padding: 1rem;
+-  background-color: rgba(255, 255, 255, 0.9);
+-  border-radius: 4px;
+-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+-  text-align: center;
+-}
+-
+-.error-message {
+-  color: #dc3545;
+-  border: 1px solid #dc3545;
+-}
+-
+-.loading-message {
+-  color: #0d6efd;
+-} 
+\ No newline at end of file
+diff --git a/frontend/src/components/GameCanvas.tsx b/frontend/src/components/GameCanvas.tsx
+new file mode 100644
+index 0000000..b6765c7
+--- /dev/null
++++ b/frontend/src/components/GameCanvas.tsx
+@@ -0,0 +1,151 @@
++import React, { useCallback, useEffect, useRef } from 'react';
++import { ChunkMap } from '../types';
++import { useViewportContext } from '../contexts/ViewportContext';
++import { useGameContext } from '../contexts/GameContext';
++import { BoardRenderer, screenToWorldCell } from '../renderer';
++
++interface GameCanvasProps {
++  chunks: ChunkMap;
++  chunkSize: number;
++}
++
++const DRAG_THRESHOLD_PX = 4;
++
++const GameCanvas: React.FC<GameCanvasProps> = ({ chunks, chunkSize }) => {
++  const {
++    viewport,
++    cellPx,
++    onPanStart,
++    onPanMove,
++    onPanEnd,
++    onZoom,
++    setHoverCell,
++  } = useViewportContext();
++  const { isPlayerLocked, onRevealCell, onFlagCell, onChordCell } = useGameContext();
++
++  const canvasRef = useRef<HTMLCanvasElement>(null);
++  const rendererRef = useRef<BoardRenderer | null>(null);
++  const rafRef = useRef<number | null>(null);
++  const draggingRef = useRef(false);
++  const panStartRef = useRef<{ x: number; y: number } | null>(null);
++
++  const chunksRef = useRef(chunks);
++  chunksRef.current = chunks;
++  const viewportRef = useRef(viewport);
++  viewportRef.current = viewport;
++  const cellPxRef = useRef(cellPx);
++  cellPxRef.current = cellPx;
++
++  const paint = useCallback(() => {
++    const renderer = rendererRef.current;
++    if (!renderer) return;
++    renderer.render({
++      chunks: chunksRef.current,
++      chunkSize,
++      viewport: viewportRef.current,
++      cellPx: cellPxRef.current,
++    });
++  }, [chunkSize]);
++
++  const schedulePaint = useCallback(() => {
++    if (rafRef.current !== null) return;
++    rafRef.current = requestAnimationFrame(() => {
++      rafRef.current = null;
++      paint();
++    });
++  }, [paint]);
++
++  useEffect(() => {
++    const canvas = canvasRef.current;
++    if (!canvas) return;
++    rendererRef.current = new BoardRenderer(canvas);
++    schedulePaint();
++  }, [schedulePaint]);
++
++  useEffect(() => {
++    schedulePaint();
++  }, [chunks, viewport, cellPx, schedulePaint]);
++
++  useEffect(() => {
++    window.addEventListener('resize', schedulePaint);
++    return () => window.removeEventListener('resize', schedulePaint);
++  }, [schedulePaint]);
++
++  useEffect(() => {
++    const canvas = canvasRef.current;
++    if (!canvas) return;
++    const handler = (e: WheelEvent) => {
++      e.preventDefault();
++      const delta = Math.max(-0.3, Math.min(0.3, -e.deltaY * 0.002));
++      onZoom(delta);
++    };
++    canvas.addEventListener('wheel', handler, { passive: false });
++    return () => canvas.removeEventListener('wheel', handler);
++  }, [onZoom]);
++
++  const pickCell = useCallback((clientX: number, clientY: number) => {
++    const canvas = canvasRef.current;
++    if (!canvas) return null;
++    return screenToWorldCell(
++      clientX,
++      clientY,
++      canvas.getBoundingClientRect(),
++      viewportRef.current,
++      cellPxRef.current,
++    );
++  }, []);
++
++  return (
++    <canvas
++      ref={canvasRef}
++      className="game-canvas"
++      aria-label="Minesweeper board"
++      style={{ cursor: isPlayerLocked ? 'not-allowed' : 'crosshair' }}
++      onMouseDown={e => {
++        if (e.button === 0) {
++          draggingRef.current = false;
++          panStartRef.current = { x: e.clientX, y: e.clientY };
++          onPanStart(e.clientX, e.clientY);
++        }
++      }}
++      onMouseMove={e => {
++        const cell = pickCell(e.clientX, e.clientY);
++        setHoverCell(cell ? { x: cell.worldX, y: cell.worldY } : null);
++
++        if (e.buttons === 1 && panStartRef.current) {
++          const dx = e.clientX - panStartRef.current.x;
++          const dy = e.clientY - panStartRef.current.y;
++          if (Math.hypot(dx, dy) > DRAG_THRESHOLD_PX) draggingRef.current = true;
++          onPanMove(e.clientX, e.clientY);
++        }
++      }}
++      onMouseUp={() => {
++        onPanEnd();
++        panStartRef.current = null;
++      }}
++      onMouseLeave={() => {
++        onPanEnd();
++        panStartRef.current = null;
++        setHoverCell(null);
++      }}
++      onClick={e => {
++        if (draggingRef.current || isPlayerLocked) return;
++        const cell = pickCell(e.clientX, e.clientY);
++        if (cell) onRevealCell(cell.worldX, cell.worldY);
++      }}
++      onDoubleClick={e => {
++        if (isPlayerLocked) return;
++        const cell = pickCell(e.clientX, e.clientY);
++        if (cell) onChordCell(cell.worldX, cell.worldY);
++      }}
++      onContextMenu={e => {
++        e.preventDefault();
++        if (isPlayerLocked) return;
++        const cell = pickCell(e.clientX, e.clientY);
++        if (cell) onFlagCell(cell.worldX, cell.worldY);
++      }}
++    />
++  );
++};
++
++export default GameCanvas;
+diff --git a/frontend/src/components/GameHud.tsx b/frontend/src/components/GameHud.tsx
+new file mode 100644
+index 0000000..02e7610
+--- /dev/null
++++ b/frontend/src/components/GameHud.tsx
+@@ -0,0 +1,52 @@
++import React from 'react';
++import { useViewportContext } from '../contexts/ViewportContext';
++
++interface GameHudProps {
++  isConnected: boolean;
++  isPlayerLocked: boolean;
++  loadedChunkCount: number;
++  isInitialLoad: boolean;
++}
++
++const GameHud: React.FC<GameHudProps> = ({
++  isConnected,
++  isPlayerLocked,
++  loadedChunkCount,
++  isInitialLoad,
++}) => {
++  const { viewport, scale, hoverCell } = useViewportContext();
++  const centerX = Math.round(viewport.center.x);
++  const centerY = Math.round(viewport.center.y);
++
++  return (
++    <div className="game-hud" role="status">
++      <div className="game-hud__row">
++        <span className="game-hud__brand">SweepTogether</span>
++        <span className={`game-hud__pill ${isConnected ? 'game-hud__pill--ok' : ''}`}>
++          {isConnected ? 'Connected' : 'Reconnecting…'}
++        </span>
++      </div>
++      <div className="game-hud__row game-hud__stats">
++        <span>Center ({centerX}, {centerY})</span>
++        <span>Zoom {Math.round(scale * 100)}%</span>
++        <span>Chunks {loadedChunkCount}</span>
++        {hoverCell && (
++          <span>
++            Cell ({hoverCell.x}, {hoverCell.y})
++          </span>
++        )}
++      </div>
++      {isInitialLoad && <div className="game-hud__banner">Loading world…</div>}
++      {isPlayerLocked && (
++        <div className="game-hud__banner game-hud__banner--lockout">
++          You hit a mine — wait for unlock
++        </div>
++      )}
++      <div className="game-hud__help">
++        Drag pan · Click reveal · Right-click flag · Double-click chord · WASD move · Wheel zoom
++      </div>
++    </div>
++  );
++};
++
++export default GameHud;
+diff --git a/frontend/src/components/GameView.tsx b/frontend/src/components/GameView.tsx
+new file mode 100644
+index 0000000..6023014
+--- /dev/null
++++ b/frontend/src/components/GameView.tsx
+@@ -0,0 +1,38 @@
++import React from 'react';
++import { CHUNK_SIZE } from '../constants';
++import { useGameContext } from '../contexts/GameContext';
++import { useViewportContext } from '../contexts/ViewportContext';
++import { useChunkStore } from '../hooks/useChunkStore';
++import GameCanvas from './GameCanvas';
++import GameHud from './GameHud';
++
++interface GameViewProps {
++  isConnected: boolean;
++}
++
++const GameView: React.FC<GameViewProps> = ({ isConnected }) => {
++  const { gameId, isPlayerLocked } = useGameContext();
++  const { subscriptionChunks } = useViewportContext();
++  const { chunks, loadedChunkCount, isInitialLoad, error } = useChunkStore({
++    gameId,
++    subscribeChunks: subscriptionChunks,
++  });
++
++  if (error) {
++    return <div className="game-overlay game-overlay--error">{error}</div>;
++  }
++
++  return (
++    <div className="game-view">
++      <GameHud
++        isConnected={isConnected}
++        isPlayerLocked={isPlayerLocked}
++        loadedChunkCount={loadedChunkCount}
++        isInitialLoad={isInitialLoad}
++      />
++      <GameCanvas chunks={chunks} chunkSize={CHUNK_SIZE} />
++    </div>
++  );
++};
++
++export default GameView;
+diff --git a/frontend/src/components/SingleChunkPage.css b/frontend/src/components/SingleChunkPage.css
+deleted file mode 100644
+index 17b2797..0000000
+--- a/frontend/src/components/SingleChunkPage.css
++++ /dev/null
+@@ -1,45 +0,0 @@
+-.single-chunk-page {
+-  padding: 20px;
+-  max-width: 800px;
+-  margin: 0 auto;
+-}
+-
+-.chunk-header {
+-  display: flex;
+-  justify-content: space-between;
+-  align-items: center;
+-  margin-bottom: 20px;
+-}
+-
+-.back-button {
+-  padding: 8px 16px;
+-  background-color: #4CAF50;
+-  color: white;
+-  border: none;
+-  border-radius: 4px;
+-  cursor: pointer;
+-}
+-
+-.back-button:hover {
+-  background-color: #45a049;
+-}
+-
+-.error-message {
+-  color: #f44336;
+-  padding: 10px;
+-  margin: 10px 0;
+-  background-color: #ffebee;
+-  border-radius: 4px;
+-}
+-
+-.loading-message {
+-  text-align: center;
+-  padding: 20px;
+-  color: #666;
+-}
+-
+-.chunk-container {
+-  display: flex;
+-  justify-content: center;
+-  margin-top: 20px;
+-} 
+\ No newline at end of file
+diff --git a/frontend/src/components/SingleChunkPage.tsx b/frontend/src/components/SingleChunkPage.tsx
+deleted file mode 100644
+index a7f0905..0000000
+--- a/frontend/src/components/SingleChunkPage.tsx
++++ /dev/null
+@@ -1,11 +0,0 @@
+-import React, { useEffect } from 'react';
+-import { useNavigate } from 'react-router-dom';
+-
+-// This debug route is no longer needed — the canvas board handles all chunks.
+-const SingleChunkPage: React.FC = () => {
+-  const navigate = useNavigate();
+-  useEffect(() => { navigate('/'); }, [navigate]);
+-  return null;
+-};
+-
+-export default SingleChunkPage;
+diff --git a/frontend/src/constants.ts b/frontend/src/constants.ts
+new file mode 100644
+index 0000000..9fd6846
+--- /dev/null
++++ b/frontend/src/constants.ts
+@@ -0,0 +1,12 @@
++/** Must match backend `CHUNK_SIZE`. */
++export const CHUNK_SIZE = 32;
++
++/** Logical cell size in CSS pixels at scale 1. */
++export const BASE_CELL_PX = 28;
++
++export const CHUNK_BUFFER = 3;
++export const CHUNK_DIRECTION_EXTRA = 1;
++export const CHUNK_SUBSCRIBE_DEBOUNCE_MS = 300;
++
++export const MIN_SCALE = 0.25;
++export const MAX_SCALE = 4;
+diff --git a/frontend/src/contexts/ViewportContext.tsx b/frontend/src/contexts/ViewportContext.tsx
+index 9249cf0..f075a29 100644
+--- a/frontend/src/contexts/ViewportContext.tsx
++++ b/frontend/src/contexts/ViewportContext.tsx
+@@ -1,22 +1,34 @@
+-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
++import React, {
++  createContext,
++  useCallback,
++  useContext,
++  useEffect,
++  useMemo,
++  useRef,
++  useState,
++} from 'react';
+ import { useViewport } from '../hooks/useViewport';
++import {
++  BASE_CELL_PX,
++  CHUNK_BUFFER,
++  CHUNK_DIRECTION_EXTRA,
++  CHUNK_SUBSCRIBE_DEBOUNCE_MS,
++  MAX_SCALE,
++  MIN_SCALE,
++} from '../constants';
+ import { ChunkCoords, Coordinates, ViewportState } from '../types';
+ 
+-const CELL_SIZE = 30;
+-const CHUNK_BUFFER = 3;
+-const DIRECTION_EXTRA = 1;
+-
+ export interface ViewportContextValue {
+   viewport: ViewportState;
+   scale: number;
+-  /** Chunks exactly within the visible viewport — subscribe immediately. */
+-  immediateChunks: ChunkCoords[];
+-  /** Visible + buffer + directional bias — subscribe after debounce. */
+-  bufferedChunks: ChunkCoords[];
++  cellPx: number;
++  subscriptionChunks: ChunkCoords[];
+   onPanStart: (clientX: number, clientY: number) => void;
+   onPanMove: (clientX: number, clientY: number) => void;
+   onPanEnd: () => void;
+   onZoom: (delta: number) => void;
++  hoverCell: Coordinates | null;
++  setHoverCell: (cell: Coordinates | null) => void;
+ }
+ 
+ const ViewportContext = createContext<ViewportContextValue | null>(null);
+@@ -27,47 +39,66 @@ interface ViewportProviderProps {
+   children: React.ReactNode;
+ }
+ 
+-function getImmediateChunks(viewport: ViewportState, chunkSize: number): ChunkCoords[] {
++function getVisibleChunks(viewport: ViewportState, chunkSize: number): ChunkCoords[] {
+   const minX = Math.floor((viewport.center.x - viewport.width / 2) / chunkSize);
+   const maxX = Math.floor((viewport.center.x + viewport.width / 2) / chunkSize);
+   const minY = Math.floor((viewport.center.y - viewport.height / 2) / chunkSize);
+   const maxY = Math.floor((viewport.center.y + viewport.height / 2) / chunkSize);
+   const chunks: ChunkCoords[] = [];
+-  for (let cx = minX; cx <= maxX; cx++)
+-    for (let cy = minY; cy <= maxY; cy++)
++  for (let cx = minX; cx <= maxX; cx++) {
++    for (let cy = minY; cy <= maxY; cy++) {
+       chunks.push({ x: cx, y: cy });
++    }
++  }
+   return chunks;
+ }
+ 
+ function getBufferedChunks(
+   viewport: ViewportState,
+   chunkSize: number,
+-  panDir: { dx: number; dy: number }
++  panDir: { dx: number; dy: number },
+ ): ChunkCoords[] {
+   const minX = Math.floor((viewport.center.x - viewport.width / 2) / chunkSize);
+   const maxX = Math.floor((viewport.center.x + viewport.width / 2) / chunkSize);
+   const minY = Math.floor((viewport.center.y - viewport.height / 2) / chunkSize);
+   const maxY = Math.floor((viewport.center.y + viewport.height / 2) / chunkSize);
+ 
+-  const bufMinX = minX - CHUNK_BUFFER - (panDir.dx < 0 ? DIRECTION_EXTRA : 0);
+-  const bufMaxX = maxX + CHUNK_BUFFER + (panDir.dx > 0 ? DIRECTION_EXTRA : 0);
+-  const bufMinY = minY - CHUNK_BUFFER - (panDir.dy < 0 ? DIRECTION_EXTRA : 0);
+-  const bufMaxY = maxY + CHUNK_BUFFER + (panDir.dy > 0 ? DIRECTION_EXTRA : 0);
++  const bufMinX = minX - CHUNK_BUFFER - (panDir.dx < 0 ? CHUNK_DIRECTION_EXTRA : 0);
++  const bufMaxX = maxX + CHUNK_BUFFER + (panDir.dx > 0 ? CHUNK_DIRECTION_EXTRA : 0);
++  const bufMinY = minY - CHUNK_BUFFER - (panDir.dy < 0 ? CHUNK_DIRECTION_EXTRA : 0);
++  const bufMaxY = maxY + CHUNK_BUFFER + (panDir.dy > 0 ? CHUNK_DIRECTION_EXTRA : 0);
+ 
+   const chunks: ChunkCoords[] = [];
+-  for (let cx = bufMinX; cx <= bufMaxX; cx++)
+-    for (let cy = bufMinY; cy <= bufMaxY; cy++)
++  for (let cx = bufMinX; cx <= bufMaxX; cx++) {
++    for (let cy = bufMinY; cy <= bufMaxY; cy++) {
+       chunks.push({ x: cx, y: cy });
++    }
++  }
+   return chunks;
+ }
+ 
++function mergeChunkLists(...lists: ChunkCoords[][]): ChunkCoords[] {
++  const seen = new Set<string>();
++  const out: ChunkCoords[] = [];
++  for (const list of lists) {
++    for (const c of list) {
++      const k = `${c.x}_${c.y}`;
++      if (seen.has(k)) continue;
++      seen.add(k);
++      out.push(c);
++    }
++  }
++  return out;
++}
++
+ export const ViewportProvider: React.FC<ViewportProviderProps> = ({
+   chunkSize,
+   initialCenter,
+-  children
++  children,
+ }) => {
+-  const [scale, setScale] = useState(1.0);
+-  const cellSizePx = CELL_SIZE * scale;
++  const [scale, setScale] = useState(1);
++  const cellPx = BASE_CELL_PX * scale;
++  const [hoverCell, setHoverCell] = useState<Coordinates | null>(null);
+ 
+   const {
+     viewport,
+@@ -77,23 +108,27 @@ export const ViewportProvider: React.FC<ViewportProviderProps> = ({
+     resizeTo,
+   } = useViewport({
+     initialCenter: initialCenter ?? { x: 0, y: 0 },
+-    initialWidth: Math.ceil(window.innerWidth / CELL_SIZE),
+-    initialHeight: Math.ceil(window.innerHeight / CELL_SIZE),
+-    cellSizePx,
++    initialWidth: Math.ceil(window.innerWidth / BASE_CELL_PX),
++    initialHeight: Math.ceil(window.innerHeight / BASE_CELL_PX),
++    cellSizePx: cellPx,
+   });
+ 
+   useEffect(() => {
+-    resizeTo(
+-      Math.ceil(window.innerWidth / cellSizePx),
+-      Math.ceil(window.innerHeight / cellSizePx),
+-    );
+-  }, [scale]); // eslint-disable-line react-hooks/exhaustive-deps
++    const onResize = () => {
++      resizeTo(
++        Math.ceil(window.innerWidth / cellPx),
++        Math.ceil(window.innerHeight / cellPx),
++      );
++    };
++    onResize();
++    window.addEventListener('resize', onResize);
++    return () => window.removeEventListener('resize', onResize);
++  }, [cellPx, resizeTo]);
+ 
+   const onZoom = useCallback((delta: number) => {
+-    setScale(s => Math.max(0.1, Math.min(4, s * (1 + delta))));
++    setScale(s => Math.max(MIN_SCALE, Math.min(MAX_SCALE, s * (1 + delta))));
+   }, []);
+ 
+-  // Track pan direction from successive center positions without adding state.
+   const prevCenterRef = useRef(viewport.center);
+   const panDirRef = useRef({ dx: 0, dy: 0 });
+   const dx = viewport.center.x - prevCenterRef.current.x;
+@@ -103,25 +138,41 @@ export const ViewportProvider: React.FC<ViewportProviderProps> = ({
+     prevCenterRef.current = viewport.center;
+   }
+ 
+-  const immediateChunks = getImmediateChunks(viewport, chunkSize);
++  const visibleChunks = getVisibleChunks(viewport, chunkSize);
+   const bufferedChunks = getBufferedChunks(viewport, chunkSize, panDirRef.current);
++  const visibleKey = visibleChunks.map(c => `${c.x}_${c.y}`).join('|');
++  const bufferKey = bufferedChunks.map(c => `${c.x}_${c.y}`).join('|');
++  const [debouncedBuffer, setDebouncedBuffer] = useState(bufferedChunks);
++  const [debouncedBufferKey, setDebouncedBufferKey] = useState(bufferKey);
++
++  useEffect(() => {
++    const t = setTimeout(() => {
++      setDebouncedBuffer(bufferedChunks);
++      setDebouncedBufferKey(bufferKey);
++    }, CHUNK_SUBSCRIBE_DEBOUNCE_MS);
++    return () => clearTimeout(t);
++  }, [bufferKey, bufferedChunks]);
++
++  const subscriptionChunks = useMemo(
++    () => mergeChunkLists(visibleChunks, debouncedBuffer),
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++    [visibleKey, debouncedBufferKey],
++  );
+ 
+   const value: ViewportContextValue = {
+     viewport,
+     scale,
+-    immediateChunks,
+-    bufferedChunks,
++    cellPx,
++    subscriptionChunks,
+     onPanStart: handlePanStart,
+     onPanMove: handlePanMove,
+     onPanEnd: handlePanEnd,
+     onZoom,
++    hoverCell,
++    setHoverCell,
+   };
+ 
+-  return (
+-    <ViewportContext.Provider value={value}>
+-      {children}
+-    </ViewportContext.Provider>
+-  );
++  return <ViewportContext.Provider value={value}>{children}</ViewportContext.Provider>;
+ };
+ 
+ export function useViewportContext(): ViewportContextValue {
+diff --git a/frontend/src/gameClient.js.bak b/frontend/src/gameClient.js.bak
+deleted file mode 100644
+index 01645a5..0000000
+--- a/frontend/src/gameClient.js.bak
++++ /dev/null
+@@ -1,292 +0,0 @@
+-/**
+- * Game client module for handling game state and client-side logic.
+- */
+-
+-import * as UI from './ui.js';
+-import * as Network from './network.js';
+-
+-// Game state variables
+-let currentGameId = null;
+-let boardConfig = null;
+-let isGameOver = false;
+-let pendingMines = new Set(); // Track mines that are pending reveal
+-
+-/**
+- * Initializes the game client.
+- */
+-export function initGame() {
+-    // Initialize socket connection
+-    Network.connectSocket();
+-    
+-    // Set up event handlers for socket events
+-    setupSocketEventHandlers();
+-    
+-    // Setup chat submission handler
+-    setupChatHandler();
+-    
+-    // Start the game by detecting or generating a game ID and joining
+-    joinGame();
+-}
+-
+-/**
+- * Sets up all socket event handlers.
+- */
+-function setupSocketEventHandlers() {
+-    // Handle initial connection
+-    Network.onSocketEvent('connect', (socketId) => {
+-        console.log('Connected with socket ID:', socketId);
+-    });
+-    
+-    // Handle disconnection
+-    Network.onSocketEvent('disconnect', () => {
+-        UI.showMessage('Disconnected from server. Attempting to reconnect...', 'info');
+-    });
+-    
+-    // Handle errors
+-    Network.onSocketEvent('error', (error) => {
+-        UI.showMessage(`Error: ${error.message}`, 'alert');
+-    });
+-    
+-    // Handle game state updates
+-    Network.onSocketEvent('gameState', (state) => {
+-        console.log('Received gameState update:', state);
+-        
+-        // Store the board configuration
+-        if (state.boardConfig) {
+-            boardConfig = state.boardConfig;
+-        }
+-        
+-        // Update game over state
+-        if (state.gameOver !== undefined) {
+-            isGameOver = state.gameOver;
+-        }
+-        
+-        // Render board if we have both board state and config
+-        if (state.boardState && boardConfig) {
+-            UI.renderBoard(
+-                state.boardState, 
+-                boardConfig, 
+-                handleCellClick, 
+-                handleCellRightClick
+-            );
+-            
+-            // Disable board if game is over
+-            if (isGameOver) {
+-                UI.disableBoard();
+-            }
+-        }
+-        
+-        // Update player scores
+-        if (state.players) {
+-            UI.updateLeaderboard(state.players);
+-        }
+-        
+-        // Show any messages from the server
+-        if (state.message) {
+-            UI.addChatMessage(state.message);
+-        }
+-        
+-        // Handle pending mine reveals
+-        if (state.pendingReveals) {
+-            // Keep track of pending mine locations
+-            const newPendingSet = new Set();
+-            
+-            state.pendingReveals.forEach(coord => {
+-                const key = `${coord.row},${coord.col}`;
+-                newPendingSet.add(key);
+-                
+-                // If this is a new pending mine, mark it
+-                if (!pendingMines.has(key)) {
+-                    UI.markPendingMine(coord.row, coord.col);
+-                }
+-            });
+-            
+-            // Remove mines that are no longer pending
+-            pendingMines.forEach(key => {
+-                if (!newPendingSet.has(key)) {
+-                    const [row, col] = key.split(',').map(Number);
+-                    UI.clearPendingMine(row, col);
+-                }
+-            });
+-            
+-            pendingMines = newPendingSet;
+-        }
+-    });
+-    
+-    // Handle player updates
+-    Network.onSocketEvent('playerUpdate', (players) => {
+-        UI.updateLeaderboard(players);
+-    });
+-    
+-    // Handle player status updates
+-    Network.onSocketEvent('playerStatusUpdate', (statusUpdate) => {
+-        UI.updatePlayerStatus(
+-            statusUpdate.playerId,
+-            statusUpdate.status,
+-            statusUpdate.lockedUntil
+-        );
+-    });
+-    
+-    // Handle score updates
+-    Network.onSocketEvent('scoreUpdate', (scoreUpdate) => {
+-        UI.updatePlayerScore(
+-            scoreUpdate.playerId,
+-            scoreUpdate.newScore,
+-            scoreUpdate.scoreDelta,
+-            scoreUpdate.reason
+-        );
+-    });
+-    
+-    // Handle mine revealed events
+-    Network.onSocketEvent('mineRevealed', (mineReveal) => {
+-        // Remove from pending set if it was there
+-        const key = `${mineReveal.row},${mineReveal.col}`;
+-        if (pendingMines.has(key)) {
+-            pendingMines.delete(key);
+-            UI.clearPendingMine(mineReveal.row, mineReveal.col);
+-        }
+-        
+-        // Highlight the revealed mine with player contribution info
+-        UI.highlightRevealedMine(
+-            mineReveal.row,
+-            mineReveal.col,
+-            mineReveal.revealedBy
+-        );
+-        
+-        // Add a message to the chat
+-        const topPlayer = mineReveal.revealedBy.find(p => p.position === 1);
+-        if (topPlayer) {
+-            UI.addChatMessage(`Mine at (${mineReveal.row}, ${mineReveal.col}) revealed! First found by: ${topPlayer.playerId.substring(0, 6)}`);
+-        } else {
+-            UI.addChatMessage(`Mine at (${mineReveal.row}, ${mineReveal.col}) revealed!`);
+-        }
+-    });
+-    
+-    // Handle game over
+-    Network.onSocketEvent('gameOver', (data) => {
+-        isGameOver = true;
+-        
+-        // Render final board state
+-        if (data.boardState && boardConfig) {
+-            UI.renderBoard(
+-                data.boardState, 
+-                boardConfig, 
+-                handleCellClick, 
+-                handleCellRightClick
+-            );
+-            UI.disableBoard();
+-        }
+-        
+-        // Show game over message
+-        UI.showMessage(data.message || 'Game Over!', 'alert');
+-        // Also add to chat log
+-        UI.addChatMessage(`GAME OVER: ${data.message || 'Game Over!'}`);
+-    });
+-    
+-    // Handle chat messages
+-    Network.onSocketEvent('chat message', (msg) => {
+-        UI.addChatMessage(msg);
+-    });
+-}
+-
+-/**
+- * Sets up the chat form submission handler.
+- */
+-function setupChatHandler() {
+-    const form = document.getElementById('form');
+-    const input = document.getElementById('input');
+-    
+-    if (form && input) {
+-        form.addEventListener('submit', function(e) {
+-            e.preventDefault();
+-            if (input.value) {
+-                Network.sendChatMessage(input.value);
+-                input.value = '';
+-            }
+-        });
+-    }
+-}
+-
+-/**
+- * Extracts game ID from URL path or generates a simple one.
+- * 
+- * @returns {string} The game ID
+- */
+-function getGameIdFromUrl() {
+-    const path = window.location.pathname;
+-    const match = path.match(/^\/game\/([a-zA-Z0-9_-]+)/);
+-    
+-    if (match && match[1]) {
+-        return match[1];
+-    }
+-    
+-    // Generate a temporary ID if none in URL
+-    console.log('No valid game ID in URL, generating temporary one.');
+-    return `temp-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+-}
+-
+-/**
+- * Joins or creates a game.
+- */
+-function joinGame() {
+-    currentGameId = getGameIdFromUrl();
+-    console.log(`Joining game with ID: ${currentGameId}`);
+-    Network.sendJoinGame(currentGameId);
+-}
+-
+-/**
+- * Handles left-click on a cell (reveal action).
+- * 
+- * @param {number} row - The row of the clicked cell
+- * @param {number} col - The column of the clicked cell
+- */
+-function handleCellClick(row, col) {
+-    if (isGameOver) {
+-        console.log('Game is over, ignoring cell click');
+-        return;
+-    }
+-    
+-    Network.sendRevealTile(row, col);
+-}
+-
+-/**
+- * Handles right-click on a cell (flag action).
+- * 
+- * @param {number} row - The row of the clicked cell
+- * @param {number} col - The column of the clicked cell
+- */
+-function handleCellRightClick(row, col) {
+-    if (isGameOver) {
+-        console.log('Game is over, ignoring cell right-click');
+-        return;
+-    }
+-    
+-    Network.sendFlagTile(row, col);
+-}
+-
+-/**
+- * Gets the current game ID.
+- * 
+- * @returns {string|null} The current game ID or null
+- */
+-export function getCurrentGameId() {
+-    return currentGameId;
+-}
+-
+-/**
+- * Gets the current board configuration.
+- * 
+- * @returns {Object|null} The current board configuration or null
+- */
+-export function getBoardConfig() {
+-    return boardConfig;
+-}
+-
+-/**
+- * Checks if the game is over.
+- * 
+- * @returns {boolean} Whether the game is over
+- */
+-export function isGameFinished() {
+-    return isGameOver;
+-}
+\ No newline at end of file
+diff --git a/frontend/src/hooks/useChunkStore.ts b/frontend/src/hooks/useChunkStore.ts
+new file mode 100644
+index 0000000..b368445
+--- /dev/null
++++ b/frontend/src/hooks/useChunkStore.ts
+@@ -0,0 +1,157 @@
++import { useCallback, useEffect, useRef, useState } from 'react';
++import {
++  applyChunkDelta,
++  buildChunk,
++  chunkKey,
++  WireCellState,
++  WireRevealedCell,
++} from '../chunkWire';
++import { useSocket } from './useSocket';
++import { Chunk, ChunkMap, ChunkCoords } from '../types';
++
++interface UseChunkStoreOptions {
++  gameId: string;
++  subscribeChunks: ChunkCoords[];
++}
++
++interface UseChunkStoreResult {
++  chunks: ChunkMap;
++  loadedChunkCount: number;
++  isInitialLoad: boolean;
++  error: string | null;
++}
++
++export function useChunkStore({
++  gameId,
++  subscribeChunks,
++}: UseChunkStoreOptions): UseChunkStoreResult {
++  const { send, isConnected, connectionId, on, off } = useSocket();
++  const [chunks, setChunks] = useState<ChunkMap>({});
++  const chunksRef = useRef<ChunkMap>({});
++  chunksRef.current = chunks;
++  const [error, setError] = useState<string | null>(null);
++  const [hasReceivedChunk, setHasReceivedChunk] = useState(false);
++  const subscribedRef = useRef<Set<string>>(new Set());
++  const subscribeKey = subscribeChunks
++    .map(c => chunkKey(c.x, c.y))
++    .sort()
++    .join('|');
++
++  const pendingRef = useRef<Map<string, Chunk>>(new Map());
++  const rafRef = useRef<number | null>(null);
++
++  const flushPending = useCallback(() => {
++    const pending = pendingRef.current;
++    if (pending.size === 0) return;
++    pendingRef.current = new Map();
++    setChunks(prev => {
++      const next = { ...prev };
++      pending.forEach((chunk, key) => {
++        next[key] = chunk;
++      });
++      return next;
++    });
++    setHasReceivedChunk(true);
++  }, []);
++
++  const scheduleFlush = useCallback(() => {
++    if (rafRef.current !== null) return;
++    rafRef.current = requestAnimationFrame(() => {
++      rafRef.current = null;
++      flushPending();
++    });
++  }, [flushPending]);
++
++  useEffect(() => {
++    subscribedRef.current.clear();
++    setHasReceivedChunk(false);
++    setChunks({});
++  }, [connectionId]);
++
++  useEffect(() => {
++    if (!isConnected) return;
++
++    const handleChunkState = (data: Record<string, unknown>) => {
++      const { chunkX, chunkY, cells } = data as {
++        chunkX: number;
++        chunkY: number;
++        cells: WireCellState[];
++      };
++      const key = chunkKey(chunkX, chunkY);
++      pendingRef.current.set(key, buildChunk(chunkX, chunkY, cells ?? []));
++      scheduleFlush();
++    };
++
++    const handleChunkDelta = (data: Record<string, unknown>) => {
++      const { chunkX, chunkY, revealed, flagged, unflagged } = data as {
++        chunkX: number;
++        chunkY: number;
++        revealed?: WireRevealedCell[];
++        flagged?: { index: number; playerId: string }[];
++        unflagged?: number[];
++      };
++      const key = chunkKey(chunkX, chunkY);
++      const base =
++        pendingRef.current.get(key) ??
++        chunksRef.current[key] ??
++        buildChunk(chunkX, chunkY, []);
++      pendingRef.current.set(key, applyChunkDelta(base, revealed, flagged, unflagged));
++      scheduleFlush();
++    };
++
++    const handleError = (data: Record<string, unknown>) => {
++      setError(String(data.message ?? 'Server error'));
++    };
++
++    on('chunkState', handleChunkState);
++    on('chunkDelta', handleChunkDelta);
++    on('error', handleError);
++    return () => {
++      off('chunkState', handleChunkState);
++      off('chunkDelta', handleChunkDelta);
++      off('error', handleError);
++    };
++  }, [isConnected, on, off, scheduleFlush]);
++
++  useEffect(() => {
++    if (!isConnected || !gameId) return;
++
++    const targetKeys = new Set(subscribeChunks.map(c => chunkKey(c.x, c.y)));
++
++    for (const c of subscribeChunks) {
++      const key = chunkKey(c.x, c.y);
++      if (!subscribedRef.current.has(key)) {
++        send({ type: 'subscribe', chunkX: c.x, chunkY: c.y });
++        subscribedRef.current.add(key);
++      }
++    }
++
++    for (const key of Array.from(subscribedRef.current)) {
++      if (!targetKeys.has(key)) {
++        const [x, y] = key.split('_').map(Number);
++        send({ type: 'unsubscribe', chunkX: x, chunkY: y });
++        subscribedRef.current.delete(key);
++      }
++    }
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [isConnected, gameId, subscribeKey, send]);
++
++  const sendRef = useRef(send);
++  sendRef.current = send;
++  useEffect(() => {
++    return () => {
++      for (const key of Array.from(subscribedRef.current)) {
++        const [x, y] = key.split('_').map(Number);
++        sendRef.current({ type: 'unsubscribe', chunkX: x, chunkY: y });
++      }
++      subscribedRef.current.clear();
++    };
++  }, []);
++
++  return {
++    chunks,
++    loadedChunkCount: Object.keys(chunks).length,
++    isInitialLoad: !hasReceivedChunk && !error,
++    error,
++  };
++}
+diff --git a/frontend/src/hooks/useViewport.tsx b/frontend/src/hooks/useViewport.tsx
+index 48c8b17..7a8ae9b 100644
+--- a/frontend/src/hooks/useViewport.tsx
++++ b/frontend/src/hooks/useViewport.tsx
+@@ -149,27 +149,17 @@ export function useViewport({
+     });
+   }, [viewport.center]);
+ 
+-  // Pan movement - Optimize to reduce the number of state updates
++  // Smooth pixel panning — center may be fractional for fluid motion.
+   const handlePanMove = useCallback((clientX: number, clientY: number) => {
+     if (isPanning && panStart) {
+-      // Calculate the distance moved in pixels
+       const deltaX = panStart.x - clientX;
+       const deltaY = panStart.y - clientY;
+-      
+-      // Convert pixel movement to cell movement based on cell size
+-      const cellDeltaX = Math.round(deltaX / cellSizePx);
+-      const cellDeltaY = Math.round(deltaY / cellSizePx);
+-      
+-      // Check if we've moved at least 1 cell before updating
+-      if (cellDeltaX !== 0 || cellDeltaY !== 0) {
+-        // Update the center position
+-        updateViewport({
+-          center: {
+-            x: panStart.centerX + cellDeltaX,
+-            y: panStart.centerY + cellDeltaY
+-          }
+-        });
+-      }
++      updateViewport({
++        center: {
++          x: panStart.centerX + deltaX / cellSizePx,
++          y: panStart.centerY + deltaY / cellSizePx,
++        },
++      });
+     }
+   }, [isPanning, panStart, updateViewport, cellSizePx]);
+ 
+diff --git a/frontend/src/main.js.bak b/frontend/src/main.js.bak
+deleted file mode 100644
+index db047ba..0000000
+--- a/frontend/src/main.js.bak
++++ /dev/null
+@@ -1,12 +0,0 @@
+-/**
+- * Main entry point for the Minesweeper application.
+- * Initializes the game and sets up any global components.
+- */
+-
+-import { initGame } from './gameClient.js';
+-
+-// Initialize the game when the DOM is fully loaded
+-document.addEventListener('DOMContentLoaded', () => {
+-    console.log('DOM loaded, initializing game client...');
+-    initGame();
+-});
+\ No newline at end of file
+diff --git a/frontend/src/main.tsx b/frontend/src/main.tsx
+index 7248d73..388a115 100644
+--- a/frontend/src/main.tsx
++++ b/frontend/src/main.tsx
+@@ -1,7 +1,7 @@
+ import React from 'react';
+ import ReactDOM from 'react-dom/client';
+ import App from './App';
+-import './style.css'; // Import the old CSS
++import './styles/game.css';
+ 
+ ReactDOM.createRoot(document.getElementById('root')!).render(
+   <React.StrictMode>
+diff --git a/frontend/src/network.js.bak b/frontend/src/network.js.bak
+deleted file mode 100644
+index df266a4..0000000
+--- a/frontend/src/network.js.bak
++++ /dev/null
+@@ -1,128 +0,0 @@
+-/**
+- * Network module for handling all WebSocket communication.
+- */
+-
+-let socket;
+-let eventHandlers = {};
+-
+-/**
+- * Initializes the WebSocket connection.
+- * 
+- * @returns {Object} The socket.io instance
+- */
+-export function connectSocket() {
+-    // Connect to the origin - Nginx will proxy /socket.io/ requests to the backend
+-    socket = io();
+-    console.log('Socket connection initialized');
+-    
+-    // Set up the basic socket event listeners
+-    socket.on('connect', () => {
+-        console.log('Connected to server with ID:', socket.id);
+-        if (eventHandlers.connect) {
+-            eventHandlers.connect(socket.id);
+-        }
+-    });
+-
+-    socket.on('disconnect', () => {
+-        console.log('Disconnected from server.');
+-        if (eventHandlers.disconnect) {
+-            eventHandlers.disconnect();
+-        }
+-    });
+-
+-    socket.on('error', (error) => {
+-        console.error('Server error:', error.message);
+-        if (eventHandlers.error) {
+-            eventHandlers.error(error);
+-        }
+-    });
+-
+-    return socket;
+-}
+-
+-/**
+- * Registers an event handler for a specific socket event.
+- * 
+- * @param {string} event - The event name
+- * @param {Function} handler - The callback function to handle the event
+- */
+-export function onSocketEvent(event, handler) {
+-    if (!socket) {
+-        console.error('Socket not initialized. Call connectSocket() first.');
+-        return;
+-    }
+-    
+-    eventHandlers[event] = handler;
+-    socket.on(event, handler);
+-}
+-
+-/**
+- * Sends a join game action to the server.
+- * 
+- * @param {string} gameId - The ID of the game to join
+- */
+-export function sendJoinGame(gameId) {
+-    if (!socket) {
+-        console.error('Socket not initialized. Call connectSocket() first.');
+-        return;
+-    }
+-    
+-    console.log(`Sending joinGame event for game: ${gameId}`);
+-    socket.emit('joinGame', gameId);
+-}
+-
+-/**
+- * Sends a reveal tile action to the server.
+- * 
+- * @param {number} row - The row of the cell to reveal
+- * @param {number} col - The column of the cell to reveal
+- */
+-export function sendRevealTile(row, col) {
+-    if (!socket) {
+-        console.error('Socket not initialized. Call connectSocket() first.');
+-        return;
+-    }
+-    
+-    console.log(`Sending revealTile event for cell: (${row}, ${col})`);
+-    socket.emit('revealTile', { row, col });
+-}
+-
+-/**
+- * Sends a flag tile action to the server.
+- * 
+- * @param {number} row - The row of the cell to flag/unflag
+- * @param {number} col - The column of the cell to flag/unflag
+- */
+-export function sendFlagTile(row, col) {
+-    if (!socket) {
+-        console.error('Socket not initialized. Call connectSocket() first.');
+-        return;
+-    }
+-    
+-    console.log(`Sending flagTile event for cell: (${row}, ${col})`);
+-    socket.emit('flagTile', { row, col });
+-}
+-
+-/**
+- * Sends a chat message to the server.
+- * 
+- * @param {string} message - The message to send
+- */
+-export function sendChatMessage(message) {
+-    if (!socket) {
+-        console.error('Socket not initialized. Call connectSocket() first.');
+-        return;
+-    }
+-    
+-    console.log(`Sending chat message: ${message}`);
+-    socket.emit('chat message', message);
+-}
+-
+-/**
+- * Gets the current socket ID.
+- * 
+- * @returns {string|null} The socket ID or null if not connected
+- */
+-export function getSocketId() {
+-    return socket && socket.connected ? socket.id : null;
+-}
+\ No newline at end of file
+diff --git a/frontend/src/renderer/BoardRenderer.ts b/frontend/src/renderer/BoardRenderer.ts
+new file mode 100644
+index 0000000..813fa11
+--- /dev/null
++++ b/frontend/src/renderer/BoardRenderer.ts
+@@ -0,0 +1,207 @@
++import { Chunk, ChunkMap } from '../types';
++import { ViewportState } from '../types';
++import { viewportWorldOrigin } from './coordinates';
++import { NUMBER_COLORS, THEME } from './theme';
++
++export interface BoardRenderFrame {
++  chunks: ChunkMap;
++  chunkSize: number;
++  viewport: ViewportState;
++  cellPx: number;
++}
++
++function drawMine(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number): void {
++  ctx.fillStyle = THEME.mine;
++  ctx.beginPath();
++  ctx.arc(cx, cy, r * 0.35, 0, Math.PI * 2);
++  ctx.fill();
++  ctx.strokeStyle = THEME.mine;
++  ctx.lineWidth = Math.max(1, r * 0.12);
++  for (let i = 0; i < 8; i++) {
++    const a = (i * Math.PI) / 4;
++    ctx.beginPath();
++    ctx.moveTo(cx + Math.cos(a) * r * 0.4, cy + Math.sin(a) * r * 0.4);
++    ctx.lineTo(cx + Math.cos(a) * r * 0.75, cy + Math.sin(a) * r * 0.75);
++    ctx.stroke();
++  }
++}
++
++function drawFlag(ctx: CanvasRenderingContext2D, x: number, y: number, size: number): void {
++  const poleX = x + size * 0.35;
++  const baseY = y + size * 0.78;
++  ctx.strokeStyle = '#333';
++  ctx.lineWidth = Math.max(1, size * 0.06);
++  ctx.beginPath();
++  ctx.moveTo(poleX, y + size * 0.18);
++  ctx.lineTo(poleX, baseY);
++  ctx.stroke();
++  ctx.fillStyle = '#e53935';
++  ctx.beginPath();
++  ctx.moveTo(poleX, y + size * 0.2);
++  ctx.lineTo(poleX + size * 0.42, y + size * 0.32);
++  ctx.lineTo(poleX, y + size * 0.44);
++  ctx.closePath();
++  ctx.fill();
++}
++
++/**
++ * Canvas 2D renderer for the infinite chunk board.
++ * Keeps drawing logic out of React so the canvas loop stays cheap.
++ */
++export class BoardRenderer {
++  private canvas: HTMLCanvasElement;
++  private ctx: CanvasRenderingContext2D;
++  private dpr = 1;
++
++  constructor(canvas: HTMLCanvasElement) {
++    const ctx = canvas.getContext('2d', { alpha: false });
++    if (!ctx) throw new Error('Canvas 2D context unavailable');
++    this.canvas = canvas;
++    this.ctx = ctx;
++  }
++
++  render(frame: BoardRenderFrame): void {
++    const { chunks, chunkSize, viewport, cellPx } = frame;
++    const ctx = this.ctx;
++    this.syncCanvasSize();
++
++    const logW = this.canvas.clientWidth;
++    const logH = this.canvas.clientHeight;
++    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
++    ctx.clearRect(0, 0, logW, logH);
++
++    const { left: worldLeft, top: worldTop } = viewportWorldOrigin(viewport);
++
++    ctx.fillStyle = THEME.void;
++    ctx.fillRect(0, 0, logW, logH);
++
++    ctx.fillStyle = THEME.covered;
++    for (const chunk of Object.values(chunks)) {
++      const chunkPx = chunkSize * cellPx;
++      const sx = (chunk.coords.x * chunkSize - worldLeft) * cellPx;
++      const sy = (chunk.coords.y * chunkSize - worldTop) * cellPx;
++      if (sx + chunkPx < 0 || sx > logW || sy + chunkPx < 0 || sy > logH) continue;
++      ctx.fillRect(sx, sy, chunkPx, chunkPx);
++    }
++
++    if (cellPx >= 4) {
++      this.drawGrid(ctx, worldLeft, worldTop, logW, logH, cellPx, chunkSize);
++    }
++
++    for (const chunk of Object.values(chunks)) {
++      this.drawChunkCells(ctx, chunk, chunkSize, worldLeft, worldTop, cellPx, logW, logH);
++    }
++  }
++
++  private syncCanvasSize(): void {
++    this.dpr = window.devicePixelRatio || 1;
++    const logW = this.canvas.clientWidth;
++    const logH = this.canvas.clientHeight;
++    const bufW = Math.round(logW * this.dpr);
++    const bufH = Math.round(logH * this.dpr);
++    if (this.canvas.width !== bufW || this.canvas.height !== bufH) {
++      this.canvas.width = bufW;
++      this.canvas.height = bufH;
++    }
++  }
++
++  private drawGrid(
++    ctx: CanvasRenderingContext2D,
++    worldLeft: number,
++    worldTop: number,
++    logW: number,
++    logH: number,
++    cellPx: number,
++    chunkSize: number,
++  ): void {
++    const c0 = Math.floor(worldLeft);
++    const c1 = Math.ceil(worldLeft + logW / cellPx) + 1;
++    const r0 = Math.floor(worldTop);
++    const r1 = Math.ceil(worldTop + logH / cellPx) + 1;
++
++    ctx.lineWidth = 1;
++    ctx.strokeStyle = THEME.grid;
++    ctx.beginPath();
++    for (let c = c0; c <= c1; c++) {
++      if (c % chunkSize === 0) continue;
++      const sx = Math.round((c - worldLeft) * cellPx) + 0.5;
++      ctx.moveTo(sx, 0);
++      ctx.lineTo(sx, logH);
++    }
++    for (let r = r0; r <= r1; r++) {
++      if (r % chunkSize === 0) continue;
++      const sy = Math.round((r - worldTop) * cellPx) + 0.5;
++      ctx.moveTo(0, sy);
++      ctx.lineTo(logW, sy);
++    }
++    ctx.stroke();
++
++    ctx.strokeStyle = THEME.chunkBorder;
++    ctx.lineWidth = 2;
++    ctx.beginPath();
++    for (let c = c0; c <= c1; c++) {
++      if (c % chunkSize !== 0) continue;
++      const sx = Math.round((c - worldLeft) * cellPx) + 0.5;
++      ctx.moveTo(sx, 0);
++      ctx.lineTo(sx, logH);
++    }
++    for (let r = r0; r <= r1; r++) {
++      if (r % chunkSize !== 0) continue;
++      const sy = Math.round((r - worldTop) * cellPx) + 0.5;
++      ctx.moveTo(0, sy);
++      ctx.lineTo(logW, sy);
++    }
++    ctx.stroke();
++  }
++
++  private drawChunkCells(
++    ctx: CanvasRenderingContext2D,
++    chunk: Chunk,
++    chunkSize: number,
++    worldLeft: number,
++    worldTop: number,
++    cellPx: number,
++    logW: number,
++    logH: number,
++  ): void {
++    const baseX = chunk.coords.x * chunkSize;
++    const baseY = chunk.coords.y * chunkSize;
++    const pad = 1;
++
++    for (let ly = 0; ly < chunk.cells.length; ly++) {
++      const row = chunk.cells[ly];
++      for (let lx = 0; lx < row.length; lx++) {
++        const cell = row[lx];
++        if (!cell.revealed && !cell.flagged) continue;
++
++        const sx = (baseX + lx - worldLeft) * cellPx;
++        const sy = (baseY + ly - worldTop) * cellPx;
++        if (sx + cellPx < 0 || sx > logW || sy + cellPx < 0 || sy > logH) continue;
++
++        const inner = cellPx - pad;
++        ctx.fillStyle = cell.revealed ? THEME.revealed : THEME.flagged;
++        ctx.fillRect(sx, sy, inner, inner);
++
++        const midX = sx + cellPx / 2;
++        const midY = sy + cellPx / 2;
++
++        if (cell.revealed && cell.isMine) {
++          drawMine(ctx, midX, midY, cellPx * 0.45);
++        } else if (cell.flagged && !cell.revealed) {
++          drawFlag(ctx, sx, sy, cellPx);
++        } else if (
++          cell.revealed &&
++          !cell.isMine &&
++          cell.adjacentMines &&
++          cell.adjacentMines > 0
++        ) {
++          ctx.fillStyle = NUMBER_COLORS[cell.adjacentMines] ?? '#333';
++          ctx.font = `bold ${Math.max(9, cellPx * 0.52)}px "Segoe UI", system-ui, sans-serif`;
++          ctx.textAlign = 'center';
++          ctx.textBaseline = 'middle';
++          ctx.fillText(String(cell.adjacentMines), midX, midY);
++        }
++      }
++    }
++  }
++}
+diff --git a/frontend/src/renderer/coordinates.ts b/frontend/src/renderer/coordinates.ts
+new file mode 100644
+index 0000000..110dd53
+--- /dev/null
++++ b/frontend/src/renderer/coordinates.ts
+@@ -0,0 +1,46 @@
++import { ViewportState } from '../types';
++
++export interface ScreenPoint {
++  x: number;
++  y: number;
++}
++
++export interface WorldPoint {
++  worldX: number;
++  worldY: number;
++}
++
++/** World-space top-left corner of the viewport (cell units, may be fractional). */
++export function viewportWorldOrigin(viewport: ViewportState): { left: number; top: number } {
++  return {
++    left: viewport.center.x - viewport.width / 2,
++    top: viewport.center.y - viewport.height / 2,
++  };
++}
++
++export function screenToWorldCell(
++  clientX: number,
++  clientY: number,
++  canvasRect: DOMRect,
++  viewport: ViewportState,
++  cellPx: number,
++): WorldPoint {
++  const { left, top } = viewportWorldOrigin(viewport);
++  return {
++    worldX: Math.floor((clientX - canvasRect.left) / cellPx + left),
++    worldY: Math.floor((clientY - canvasRect.top) / cellPx + top),
++  };
++}
++
++export function worldCellToScreen(
++  worldX: number,
++  worldY: number,
++  viewport: ViewportState,
++  cellPx: number,
++): ScreenPoint {
++  const { left, top } = viewportWorldOrigin(viewport);
++  return {
++    x: (worldX - left) * cellPx,
++    y: (worldY - top) * cellPx,
++  };
++}
+diff --git a/frontend/src/renderer/index.ts b/frontend/src/renderer/index.ts
+new file mode 100644
+index 0000000..e6e2ba7
+--- /dev/null
++++ b/frontend/src/renderer/index.ts
+@@ -0,0 +1,4 @@
++export { BoardRenderer } from './BoardRenderer';
++export type { BoardRenderFrame } from './BoardRenderer';
++export { screenToWorldCell, viewportWorldOrigin } from './coordinates';
++export { THEME, NUMBER_COLORS } from './theme';
+diff --git a/frontend/src/renderer/theme.ts b/frontend/src/renderer/theme.ts
+new file mode 100644
+index 0000000..d79f223
+--- /dev/null
++++ b/frontend/src/renderer/theme.ts
+@@ -0,0 +1,24 @@
++export const THEME = {
++  void: '#8a8a8a',
++  covered: '#b5b5b5',
++  revealed: '#e8e8e8',
++  flagged: '#c9a227',
++  mine: '#1a1a1a',
++  grid: 'rgba(0, 0, 0, 0.12)',
++  chunkBorder: 'rgba(70, 110, 200, 0.55)',
++  hudBg: 'rgba(20, 22, 28, 0.82)',
++  hudText: '#e8eaed',
++  hudMuted: '#9aa0a6',
++  lockout: '#ff6b6b',
++} as const;
++
++export const NUMBER_COLORS: Record<number, string> = {
++  1: '#1a3cff',
++  2: '#1b7a1b',
++  3: '#d62828',
++  4: '#0d1b6e',
++  5: '#6b1414',
++  6: '#0d6e6e',
++  7: '#1a1a1a',
++  8: '#5c5c5c',
++};
+diff --git a/frontend/src/script.js.bak b/frontend/src/script.js.bak
+deleted file mode 100644
+index d2b935f..0000000
+--- a/frontend/src/script.js.bak
++++ /dev/null
+@@ -1,231 +0,0 @@
+-// Import UI functions
+-import { 
+-  renderBoard, 
+-  updateLeaderboard, 
+-  updatePlayerScore, 
+-  updatePlayerStatus,
+-  highlightRevealedMine,
+-  markPendingMine,
+-  clearPendingMine,
+-  showMessage,
+-  disableBoard
+-} from './ui.js';
+-
+-import {
+-  connectSocket,
+-  onSocketEvent,
+-  sendJoinGame,
+-  sendRevealTile,
+-  sendFlagTile,
+-  getSocketId
+-} from './network.js';
+-
+-// Connect to the WebSocket server
+-const socket = connectSocket();
+-
+-// Keep track of game state
+-let currentGameId = null;
+-let boardConfig = null;
+-let pendingMines = new Set(); // Store coordinates of mines pending reveal
+-
+-/**
+- * Extracts game ID from URL path or generates a simple one.
+- * Assumes paths like /game/<gameId> or /
+- */
+-function getGameIdFromUrl() {
+-    const path = window.location.pathname;
+-    const match = path.match(/^\/game\/([a-zA-Z0-9_-]+)/);
+-    if (match && match[1]) {
+-        return match[1];
+-    }
+-    // Handle root path or invalid paths - generate a simple ID for now
+-    console.log('No valid game ID in URL, generating temporary one.');
+-    return `temp-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+-}
+-
+-/**
+- * Called when cells in the game board are clicked.
+- * 
+- * @param {number} row - The row of the clicked cell
+- * @param {number} col - The column of the clicked cell
+- */
+-function handleCellClick(row, col) {
+-    console.log(`Cell clicked: (${row}, ${col})`);
+-    sendRevealTile(row, col);
+-}
+-
+-/**
+- * Called when cells in the game board are right-clicked.
+- * 
+- * @param {number} row - The row of the right-clicked cell
+- * @param {number} col - The column of the right-clicked cell
+- */
+-function handleCellRightClick(row, col) {
+-    console.log(`Cell right-clicked: (${row}, ${col})`);
+-    sendFlagTile(row, col);
+-}
+-
+-/**
+- * Updates the pending mines display.
+- * 
+- * @param {Array} pendingReveals - Array of {row, col} for pending mines
+- */
+-function updatePendingMines(pendingReveals) {
+-    // Clear any mines that are no longer pending
+-    for (const coords of pendingMines) {
+-        const [row, col] = coords.split(',').map(Number);
+-        const stillPending = pendingReveals.some(
+-            mine => mine.row === row && mine.col === col
+-        );
+-        
+-        if (!stillPending) {
+-            clearPendingMine(row, col);
+-            pendingMines.delete(coords);
+-        }
+-    }
+-    
+-    // Add new pending mines
+-    for (const mine of pendingReveals) {
+-        const coords = `${mine.row},${mine.col}`;
+-        if (!pendingMines.has(coords)) {
+-            markPendingMine(mine.row, mine.col);
+-            pendingMines.add(coords);
+-        }
+-    }
+-}
+-
+-// --- Socket Event Handlers ---
+-
+-// Handle connection event
+-onSocketEvent('connect', (socketId) => {
+-    console.log('Connected to server with ID:', socketId);
+-    currentGameId = getGameIdFromUrl();
+-    console.log(`Attempting to join game: ${currentGameId}`);
+-    sendJoinGame(currentGameId);
+-});
+-
+-// Handle disconnection
+-onSocketEvent('disconnect', () => {
+-    console.log('Disconnected from server.');
+-    document.getElementById('board').innerHTML = '<p>Disconnected. Attempting to reconnect...</p>';
+-    currentGameId = null;
+-    boardConfig = null;
+-});
+-
+-// Handle game state updates
+-onSocketEvent('gameState', (state) => {
+-    console.log('Received gameState:', state);
+-    
+-    // Update the board if we have valid data
+-    if (state.boardState && state.boardConfig) {
+-        boardConfig = state.boardConfig; // Store for later use
+-        renderBoard(state.boardState, state.boardConfig, handleCellClick, handleCellRightClick);
+-    } else {
+-        console.error('Received gameState is missing required properties', state);
+-    }
+-    
+-    // Update players list
+-    if (state.players) {
+-        updateLeaderboard(state.players);
+-    }
+-    
+-    // Update any pending mine reveals
+-    if (state.pendingReveals) {
+-        updatePendingMines(state.pendingReveals);
+-    }
+-    
+-    // Handle game over state
+-    if (state.gameOver) {
+-        disableBoard();
+-        const message = state.message || (state.winner ? 
+-            `Game over! Player ${state.winner} wins!` : 
+-            'Game over!');
+-        showMessage(message);
+-    }
+-    
+-    // Show message if provided
+-    if (state.message) {
+-        console.log(`Game message: ${state.message}`);
+-    }
+-});
+-
+-// Handle player updates
+-onSocketEvent('playerUpdate', (players) => {
+-    console.log('Received playerUpdate:', players);
+-    updateLeaderboard(players);
+-});
+-
+-// Handle score updates
+-onSocketEvent('scoreUpdate', (update) => {
+-    console.log('Received scoreUpdate:', update);
+-    const { playerId, newScore, scoreDelta, reason } = update;
+-    updatePlayerScore(playerId, newScore, scoreDelta, reason);
+-});
+-
+-// Handle player status updates
+-onSocketEvent('playerStatusUpdate', (update) => {
+-    console.log('Received playerStatusUpdate:', update);
+-    const { playerId, status, lockedUntil } = update;
+-    updatePlayerStatus(playerId, status, lockedUntil);
+-});
+-
+-// Handle mine revealed events
+-onSocketEvent('mineRevealed', (data) => {
+-    console.log('Received mineRevealed:', data);
+-    const { row, col, revealedBy } = data;
+-    
+-    // Remove from pending mines if it was there
+-    const coords = `${row},${col}`;
+-    if (pendingMines.has(coords)) {
+-        pendingMines.delete(coords);
+-    }
+-    
+-    // Highlight the revealed mine
+-    highlightRevealedMine(row, col, revealedBy);
+-});
+-
+-// Handle game over
+-onSocketEvent('gameOver', (data) => {
+-    console.log('Game Over:', data);
+-    
+-    // Render final board state if provided
+-    if (data.boardState && boardConfig) {
+-        renderBoard(data.boardState, boardConfig, handleCellClick, handleCellRightClick);
+-    }
+-    
+-    // Disable further interaction
+-    disableBoard();
+-    
+-    // Show game over message
+-    showMessage(data.message || 'Game Over!');
+-});
+-
+-// Handle errors
+-onSocketEvent('error', (error) => {
+-    console.error('Server error:', error.message);
+-    showMessage(`Error: ${error.message}`, 'error');
+-});
+-
+-// Set up the chat form
+-const form = document.getElementById('form');
+-const input = document.getElementById('input');
+-if (form && input) {
+-    form.addEventListener('submit', function(e) {
+-        e.preventDefault();
+-        if (input.value) {
+-            socket.emit('chat message', input.value);
+-            input.value = '';
+-        }
+-    });
+-}
+-
+-// Handle chat messages
+-onSocketEvent('chat message', (msg) => {
+-    const messages = document.getElementById('messages');
+-    if (messages) {
+-        const item = document.createElement('li');
+-        item.textContent = msg;
+-        messages.appendChild(item);
+-        messages.scrollTop = messages.scrollHeight;
+-    }
+-});
+diff --git a/frontend/src/styles/game.css b/frontend/src/styles/game.css
+new file mode 100644
+index 0000000..fac9de3
+--- /dev/null
++++ b/frontend/src/styles/game.css
+@@ -0,0 +1,141 @@
++*,
++*::before,
++*::after {
++  box-sizing: border-box;
++}
++
++html,
++body,
++#root {
++  margin: 0;
++  width: 100%;
++  height: 100%;
++  overflow: hidden;
++  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
++  background: #14161a;
++  color: #e8eaed;
++}
++
++.app {
++  width: 100vw;
++  height: 100vh;
++  display: flex;
++  flex-direction: column;
++}
++
++.game-container {
++  flex: 1;
++  position: relative;
++  overflow: hidden;
++  background: #1a1d23;
++}
++
++.game-view {
++  position: absolute;
++  inset: 0;
++}
++
++.game-canvas {
++  display: block;
++  width: 100%;
++  height: 100%;
++  touch-action: none;
++}
++
++.game-hud {
++  position: absolute;
++  top: 12px;
++  left: 12px;
++  right: 12px;
++  z-index: 10;
++  pointer-events: none;
++  display: flex;
++  flex-direction: column;
++  gap: 6px;
++}
++
++.game-hud__row {
++  display: flex;
++  flex-wrap: wrap;
++  align-items: center;
++  gap: 8px;
++}
++
++.game-hud__brand {
++  font-weight: 700;
++  font-size: 15px;
++  letter-spacing: 0.02em;
++  padding: 6px 10px;
++  border-radius: 6px;
++  background: rgba(20, 22, 28, 0.82);
++}
++
++.game-hud__stats {
++  font-size: 12px;
++  color: #c4c7cc;
++}
++
++.game-hud__stats span {
++  padding: 4px 8px;
++  border-radius: 4px;
++  background: rgba(20, 22, 28, 0.72);
++}
++
++.game-hud__pill {
++  font-size: 11px;
++  padding: 4px 8px;
++  border-radius: 999px;
++  background: rgba(180, 60, 60, 0.85);
++  color: #fff;
++}
++
++.game-hud__pill--ok {
++  background: rgba(40, 120, 70, 0.9);
++}
++
++.game-hud__banner {
++  align-self: flex-start;
++  padding: 6px 12px;
++  border-radius: 6px;
++  font-size: 13px;
++  background: rgba(30, 90, 160, 0.9);
++  color: #fff;
++}
++
++.game-hud__banner--lockout {
++  background: rgba(180, 50, 50, 0.92);
++}
++
++.game-hud__help {
++  font-size: 11px;
++  color: #9aa0a6;
++  padding: 4px 8px;
++  border-radius: 4px;
++  background: rgba(20, 22, 28, 0.55);
++  max-width: 520px;
++}
++
++.game-overlay {
++  position: absolute;
++  inset: 0;
++  display: flex;
++  align-items: center;
++  justify-content: center;
++  padding: 1rem;
++  text-align: center;
++}
++
++.game-overlay--error {
++  color: #ff8a80;
++  background: rgba(20, 22, 28, 0.95);
++}
++
++.loading-message {
++  position: absolute;
++  inset: 0;
++  display: flex;
++  align-items: center;
++  justify-content: center;
++  color: #9aa0a6;
++  font-size: 15px;
++}
+diff --git a/frontend/src/types.ts b/frontend/src/types.ts
+index 0a823d6..fa76452 100644
+--- a/frontend/src/types.ts
++++ b/frontend/src/types.ts
+@@ -16,7 +16,9 @@ export interface Coordinates {
+ }
+ 
+ export interface ViewportState {
++  /** World center in cell coordinates (fractional for smooth pan). */
+   center: { x: number; y: number };
++  /** Visible width/height in cell units. */
+   width: number;
+   height: number;
+   scale: number;
+diff --git a/frontend/src/ui.js.bak b/frontend/src/ui.js.bak
+deleted file mode 100644
+index 49ef68b..0000000
+--- a/frontend/src/ui.js.bak
++++ /dev/null
+@@ -1,372 +0,0 @@
+-/**
+- * UI module for handling DOM interactions and display updates.
+- */
+-
+-/**
+- * Player status types for CSS classes
+- */
+-const PLAYER_STATUS = {
+-  ACTIVE: 'active',
+-  LOCKED_OUT: 'locked-out'
+-};
+-
+-/**
+- * Renders the entire game board based on the provided state.
+- * 
+- * @param {Array<Array<Object>>} boardState - 2D array of cell states from the server
+- * @param {Object} boardConfig - Configuration details for the board (rows, cols, etc.)
+- * @param {Function} onCellClick - Callback for cell left-click actions (reveal)
+- * @param {Function} onCellRightClick - Callback for cell right-click actions (flag)
+- */
+-export function renderBoard(boardState, boardConfig, onCellClick, onCellRightClick) {
+-    console.log('renderBoard called with boardState (first row sample):', boardState ? boardState[0] : 'null', 'and boardConfig:', boardConfig);
+-    const boardElement = document.getElementById('board');
+-    boardElement.innerHTML = ''; // Clear previous board
+-    
+-    if (!boardConfig || !boardState) {
+-        console.error('renderBoard received invalid data');
+-        return;
+-    }
+-    
+-    boardElement.style.gridTemplateColumns = `repeat(${boardConfig.cols}, 30px)`;
+-
+-    for (let r = 0; r < boardConfig.rows; r++) {
+-        for (let c = 0; c < boardConfig.cols; c++) {
+-            const cellElement = document.createElement('div');
+-            cellElement.classList.add('cell');
+-            cellElement.dataset.row = r;
+-            cellElement.dataset.col = c;
+-
+-            const cellData = boardState[r][c]; // Get the ClientCell object
+-
+-            // Clear previous state classes and content
+-            cellElement.classList.remove('hidden', 'revealed', 'mine', 'flagged');
+-            cellElement.textContent = '';
+-            // Remove specific mine count classes
+-            cellElement.className = cellElement.className.replace(/mines-\d+/g, '').trim();
+-
+-            if (cellData.revealed) {
+-                cellElement.classList.add('revealed');
+-                if (cellData.isMine) {
+-                    cellElement.classList.add('mine');
+-                    cellElement.textContent = '💣';
+-                } else if (cellData.adjacentMines !== undefined && cellData.adjacentMines > 0) {
+-                    cellElement.classList.add(`mines-${cellData.adjacentMines}`);
+-                    cellElement.textContent = cellData.adjacentMines.toString();
+-                }
+-                // If revealed and not a mine and 0 adjacent mines, it remains blank
+-            } else {
+-                cellElement.classList.add('hidden');
+-                if (cellData.flagged) {
+-                    cellElement.classList.add('flagged');
+-                    cellElement.textContent = '🚩';
+-                }
+-            }
+-
+-            // Add click listener to reveal tile
+-            cellElement.addEventListener('click', () => {
+-                // Allow clicking hidden, unflagged cells OR revealed number cells (for chord clicks)
+-                if ((!cellData.revealed && !cellData.flagged) || (cellData.revealed && cellData.adjacentMines > 0)) {
+-                    console.log(`Clicked actionable cell: (${r}, ${c}) - revealed: ${cellData.revealed}, flagged: ${cellData.flagged}, adjacentMines: ${cellData.adjacentMines}`);
+-                    onCellClick(r, c);
+-                } else {
+-                    console.log(`Clicked non-actionable cell: (${r}, ${c}) - revealed: ${cellData.revealed}, flagged: ${cellData.flagged}, adjacentMines: ${cellData.adjacentMines}`);
+-                }
+-            });
+-
+-            // Add right-click listener to flag/unflag tile
+-            cellElement.addEventListener('contextmenu', (e) => {
+-                e.preventDefault(); // Prevent context menu
+-                // Only allow flagging/unflagging hidden cells
+-                if (!cellData.revealed) {
+-                    console.log(`Right-clicked hidden cell: (${r}, ${c}) - toggling flag`);
+-                    onCellRightClick(r, c);
+-                } else {
+-                    console.log(`Right-clicked revealed cell: (${r}, ${c}) - ignoring`);
+-                }
+-            });
+-
+-            boardElement.appendChild(cellElement);
+-        }
+-    }
+-    console.log('renderBoard finished.');
+-}
+-
+-/**
+- * Updates the leaderboard display with player information.
+- * Includes player status and score information.
+- * 
+- * @param {Object} players - Object containing player data
+- */
+-export function updateLeaderboard(players) {
+-    const scoresElement = document.getElementById('leaderboard');
+-    // Find the UL element within the leaderboard div
+-    const listElement = scoresElement ? scoresElement.querySelector('ul') : null;
+-    if (!listElement) {
+-        console.error('Could not find UL element within #leaderboard');
+-        return;
+-    }
+-    
+-    listElement.innerHTML = ''; // Clear previous scores from the UL
+-    
+-    // Sort players by score and create list items
+-    Object.values(players)
+-        .sort((a, b) => b.score - a.score)
+-        .forEach(player => {
+-            const item = document.createElement('li');
+-            item.dataset.playerId = player.id;
+-            
+-            // Add status class
+-            if (player.status) {
+-                item.classList.add(`player-${player.status}`);
+-            }
+-            
+-            // Create player name/score text
+-            const nameSpan = document.createElement('span');
+-            nameSpan.classList.add('player-name');
+-            nameSpan.textContent = player.username || player.id.substring(0, 6); // Use username or shortened ID
+-            
+-            const scoreSpan = document.createElement('span');
+-            scoreSpan.classList.add('player-score');
+-            scoreSpan.textContent = player.score || '0'; // Ensure score is displayed or default to '0'
+-            
+-            // Create status indicator
+-            const statusSpan = document.createElement('span');
+-            statusSpan.classList.add('status-indicator');
+-            
+-            if (player.status === PLAYER_STATUS.LOCKED_OUT && player.lockedUntil) {
+-                const remainingSeconds = Math.ceil((player.lockedUntil - Date.now()) / 1000);
+-                if (remainingSeconds > 0) {
+-                    statusSpan.textContent = `🔒 ${remainingSeconds}s`;
+-                }
+-            } else {
+-                statusSpan.textContent = '🟢';
+-            }
+-            
+-            // Assemble the list item with better spacing
+-            item.appendChild(nameSpan);
+-            
+-            // Add colon and space for visual separation
+-            const separator = document.createTextNode(': ');
+-            item.appendChild(separator);
+-            
+-            item.appendChild(scoreSpan);
+-            item.appendChild(statusSpan);
+-            
+-            listElement.appendChild(item);
+-        });
+-}
+-
+-/**
+- * Updates a single player's status in the leaderboard.
+- * 
+- * @param {string} playerId - The ID of the player to update 
+- * @param {string} status - The new status of the player
+- * @param {number} lockedUntil - Optional timestamp when lockout ends
+- */
+-export function updatePlayerStatus(playerId, status, lockedUntil) {
+-    const listItem = document.querySelector(`#leaderboard ul li[data-player-id="${playerId}"]`);
+-    if (!listItem) return;
+-    
+-    // Update status class
+-    listItem.classList.remove('player-active', 'player-locked-out');
+-    listItem.classList.add(`player-${status}`);
+-    
+-    // Update status indicator
+-    const statusSpan = listItem.querySelector('.status-indicator');
+-    if (statusSpan) {
+-        if (status === PLAYER_STATUS.LOCKED_OUT && lockedUntil) {
+-            const remainingSeconds = Math.ceil((lockedUntil - Date.now()) / 1000);
+-            if (remainingSeconds > 0) {
+-                statusSpan.textContent = `🔒 ${remainingSeconds}s`;
+-                
+-                // Start countdown timer
+-                const countdownInterval = setInterval(() => {
+-                    const newRemaining = Math.ceil((lockedUntil - Date.now()) / 1000);
+-                    if (newRemaining <= 0) {
+-                        statusSpan.textContent = '🟢';
+-                        clearInterval(countdownInterval);
+-                    } else {
+-                        statusSpan.textContent = `🔒 ${newRemaining}s`;
+-                    }
+-                }, 1000);
+-            }
+-        } else {
+-            statusSpan.textContent = '🟢';
+-        }
+-    }
+-}
+-
+-/**
+- * Updates a player's score with animation.
+- * 
+- * @param {string} playerId - The ID of the player
+- * @param {number} newScore - The new score
+- * @param {number} scoreDelta - The score change
+- * @param {string} reason - The reason for the score change
+- */
+-export function updatePlayerScore(playerId, newScore, scoreDelta, reason) {
+-    const listItem = document.querySelector(`#leaderboard ul li[data-player-id="${playerId}"]`);
+-    if (!listItem) return;
+-    
+-    // Update the score text
+-    const scoreSpan = listItem.querySelector('.player-score');
+-    if (scoreSpan) {
+-        scoreSpan.textContent = newScore;
+-        
+-        // Add animation class based on score change
+-        if (scoreDelta > 0) {
+-            scoreSpan.classList.add('score-increase');
+-            setTimeout(() => {
+-                scoreSpan.classList.remove('score-increase');
+-            }, 1500);
+-        } else if (scoreDelta < 0) {
+-            scoreSpan.classList.add('score-decrease');
+-            setTimeout(() => {
+-                scoreSpan.classList.remove('score-decrease');
+-            }, 1500);
+-        }
+-    }
+-    
+-    // Show a floating score change
+-    showScoreAnimation(listItem, scoreDelta, reason);
+-}
+-
+-/**
+- * Creates an animated score change notification.
+- * 
+- * @param {HTMLElement} targetElement - The element to anchor the animation to
+- * @param {number} scoreChange - The score change value
+- * @param {string} reason - The reason for the score change
+- */
+-function showScoreAnimation(targetElement, scoreChange, reason) {
+-    const animation = document.createElement('div');
+-    animation.classList.add('score-animation');
+-    
+-    if (scoreChange > 0) {
+-        animation.classList.add('positive');
+-        animation.textContent = `+${scoreChange}`;
+-    } else {
+-        animation.classList.add('negative');
+-        animation.textContent = scoreChange;
+-    }
+-    
+-    // Add tooltip with reason
+-    animation.title = reason;
+-    
+-    // Append the animation to the target element rather than positioning it absolutely
+-    targetElement.appendChild(animation);
+-    
+-    // Animate and remove
+-    setTimeout(() => {
+-        animation.classList.add('fade-out');
+-        setTimeout(() => {
+-            if (animation.parentNode) {
+-                animation.parentNode.removeChild(animation);
+-            }
+-        }, 500);
+-    }, 1000);
+-}
+-
+-/**
+- * Highlights a mine that has been safely revealed (flagged correctly).
+- * 
+- * @param {number} row - The row of the mine
+- * @param {number} col - The column of the mine
+- * @param {Array} revealedBy - List of players who revealed the mine
+- */
+-export function highlightRevealedMine(row, col, revealedBy) {
+-    const cell = document.querySelector(`.cell[data-row="${row}"][data-col="${col}"]`);
+-    if (!cell) return;
+-    
+-    // Add a special class for revealed mines
+-    cell.classList.add('mine-solved');
+-    
+-    // Create tooltip with player info
+-    let tooltipText = 'Revealed by:\n';
+-    revealedBy.forEach(player => {
+-        tooltipText += `${player.position}. ${player.playerId.substring(0, 6)} (+${player.points}pts)\n`;
+-    });
+-    
+-    cell.title = tooltipText;
+-    
+-    // Apply animation
+-    cell.classList.add('mine-reveal-animation');
+-    setTimeout(() => {
+-        cell.classList.remove('mine-reveal-animation');
+-    }, 2000);
+-}
+-
+-/**
+- * Highlights a pending mine that has been flagged but not yet revealed.
+- * 
+- * @param {number} row - The row of the mine
+- * @param {number} col - The column of the mine
+- */
+-export function markPendingMine(row, col) {
+-    const cell = document.querySelector(`.cell[data-row="${row}"][data-col="${col}"]`);
+-    if (!cell) return;
+-    
+-    // Add a special class for pending mines
+-    cell.classList.add('mine-pending');
+-    
+-    // Add a pulsing animation
+-    cell.classList.add('pulse-animation');
+-}
+-
+-/**
+- * Removes pending status from a mine (either revealed or unflagged).
+- * 
+- * @param {number} row - The row of the mine
+- * @param {number} col - The column of the mine
+- */
+-export function clearPendingMine(row, col) {
+-    const cell = document.querySelector(`.cell[data-row="${row}"][data-col="${col}"]`);
+-    if (!cell) return;
+-    
+-    // Remove pending classes
+-    cell.classList.remove('mine-pending', 'pulse-animation');
+-}
+-
+-/**
+- * Updates the chat display with a new message.
+- * 
+- * @param {string} message - The message to display
+- */
+-export function addChatMessage(message) {
+-    const messagesElement = document.getElementById('messages');
+-    if (!messagesElement) {
+-        console.error('Could not find messages element');
+-        return;
+-    }
+-    
+-    const item = document.createElement('li');
+-    item.textContent = message;
+-    messagesElement.appendChild(item);
+-    messagesElement.scrollTop = messagesElement.scrollHeight; // Scroll to bottom
+-}
+-
+-/**
+- * Displays a message to the user.
+- * 
+- * @param {string} message - The message to display
+- * @param {string} type - The type of message ('alert', 'info', etc.)
+- */
+-export function showMessage(message, type = 'alert') {
+-    if (type === 'alert') {
+-        alert(message);
+-    } else {
+-        console.log(`Message (${type}): ${message}`);
+-        // Could implement other message display types (toast, banner, etc.)
+-    }
+-}
+-
+-/**
+- * Disables interaction with the game board.
+- * Useful when a game ends.
+- */
+-export function disableBoard() {
+-    const boardElement = document.getElementById('board');
+-    boardElement.classList.add('disabled');
+-    // Could also add a visual overlay or other indication
+-}
+\ No newline at end of file

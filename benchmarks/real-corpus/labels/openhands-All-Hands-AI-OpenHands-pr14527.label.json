@@ -1,0 +1,6 @@
+{
+  "verdict": "clean",
+  "rationale": "PR title 'Require human context at the top of PR descriptions' is implemented across three files. .github/pull_request_template.md adds explicit `HUMAN:` and `AGENT:` section markers around the existing human-tested checkbox. .github/workflows/pr-readiness-confirm.yml adds the `edited` trigger plus a new `check-human-context` job that uses actions/github-script@v9 to extract content between HUMAN: and the checkbox via regex (humanSectionPattern), strip HTML comments, check for any non-empty line, then either delete a prior reminder comment + add a 👍 reaction (when filled) or post a `<!-- pr-human-context-required -->`-tagged reminder (when blank). Existing `ask-confirmation` job gains a guard `github.event.action != 'edited'` to avoid duplicate runs. AGENTS.md is updated to document the new template/workflow behavior. Implementation matches the body's How-to-Test list one-for-one with real conditional logic, not stubs.",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T14:00:00.000Z"
+}

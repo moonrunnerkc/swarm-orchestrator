@@ -1,0 +1,19 @@
+diff --git a/.npmrc b/.npmrc
+new file mode 100644
+index 0000000..3ab0bba
+--- /dev/null
++++ b/.npmrc
+@@ -0,0 +1,4 @@
++# Supply-chain mitigation: ignore package versions published in the last 7 days.
++# Gives the community time to flag compromised/typosquatted releases before we pull them.
++# Respected by both pnpm and npm (translates to a `before` registry filter).
++min-release-age=7
+diff --git a/pnpm-workspace.yaml b/pnpm-workspace.yaml
+index efc037a..5fac625 100644
+--- a/pnpm-workspace.yaml
++++ b/pnpm-workspace.yaml
+@@ -1,2 +1,4 @@
++minimumReleaseAge: 10080 # 7 days in minutes
++
+ onlyBuiltDependencies:
+   - esbuild

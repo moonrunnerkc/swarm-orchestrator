@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-claude-code-pr61584",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 61584,
+    "headSha": "1fe38330bd0918194647a03451f122c51c32fb8a",
+    "baseSha": "64e53823deb2b8e007c41cb6da5ac75264c3394d",
+    "title": "Use workload identity federation for Claude auth in CI workflows",
+    "body": "## What\n\nSwitches this repository's Claude automation workflows from the static `ANTHROPIC_API_KEY` secret to [Workload Identity Federation](https://platform.claude.com/docs/en/manage-claude/workload-identity-federation): the workflow's GitHub OIDC token is exchanged for a short-lived Claude API access token at runtime, so no long-lived API key needs to be stored in the repository.\n\n| Workflow | Change |\n| --- | --- |\n| `claude.yml` | `anthropic_api_key` → federation inputs (already requests `id-token: write`) |\n| `claude-issue-triage.yml` | `anthropic_api_key` → federation inputs, plus `id-token: write` |\n| `claude-dedupe-issues.yml` | `anthropic_api_key` → federation inputs, plus `id-token: write` |\n\nThis is the same feature [`claude-code-action`](https://github.com/anthropics/claude-code-action) ships for its users (anthropics/claude-code-action#1338, [`docs/setup.md`](https://github.com/anthropics/claude-code-action/blob/main/docs/setup.md)).\n\n## How it activates\n\nThe federation rule, organization, service account, and workspace IDs are read from repository **variables** (`vars.ANTHROPIC_FEDERATION_RULE_ID`, `vars.ANTHROPIC_ORGANIZATION_ID`, `vars.ANTHROPIC_SERVICE_ACCOUNT_ID`, `vars.ANTHROPIC_WORKSPACE_ID`). These are identifiers, not credentials. Until a repo admin sets them, the action fails fast at env validation with a clear \"authentication required\" message — so this PR is safe to merge ahead of that, and switching over is a settings change rather than another PR.\n\nThe `ANTHROPIC_API_KEY` secret is intentionally left in place until the federated path has produced green runs; rollback is reverting this PR.\n\n## Behavior notes\n\n- These workflows are triggered by issue/comment/review events, so they always run in the base repository context where the OIDC token is available. Fork-triggered `pull_request` runs don't receive `id-token: write` (GitHub withholds it the same way it withholds secrets), so behavior for forks is unchanged from the secret-based setup.\n",
+    "author": "ashwin-ant",
+    "headRef": "ci-wif-auth",
+    "repository": "anthropics/claude-code"
+  },
+  "diffRef": {
+    "repository": "anthropics/claude-code",
+    "headSha": "1fe38330bd0918194647a03451f122c51c32fb8a",
+    "baseSha": "64e53823deb2b8e007c41cb6da5ac75264c3394d"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-claude-code-pr61584.diff",
+  "vendoredAt": "2026-05-24T03:15:51.304Z",
+  "collectedAt": "2026-05-24T03:15:51.304Z"
+}

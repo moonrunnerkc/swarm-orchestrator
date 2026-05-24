@@ -1,0 +1,99 @@
+diff --git a/src/anthropic/lib/streaming/_beta_messages.py b/src/anthropic/lib/streaming/_beta_messages.py
+index 5a5a562a0..422ef7b7d 100644
+--- a/src/anthropic/lib/streaming/_beta_messages.py
++++ b/src/anthropic/lib/streaming/_beta_messages.py
+@@ -482,6 +482,8 @@ def accumulate_event(
+             ),
+         )
+     elif event.type == "content_block_delta":
++        if event.index >= len(current_snapshot.content):
++            return current_snapshot
+         content = current_snapshot.content[event.index]
+         if event.delta.type == "text_delta":
+             if content.type == "text":
+@@ -530,6 +532,8 @@ def accumulate_event(
+             if TYPE_CHECKING:  # type: ignore[unreachable]
+                 assert_never(event.delta)
+     elif event.type == "content_block_stop":
++        if event.index >= len(current_snapshot.content):
++            return current_snapshot
+         content_block = current_snapshot.content[event.index]
+         if content_block.type == "text" and is_given(output_format):
+             content_block.parsed_output = parse_text(content_block.text, output_format)
+diff --git a/src/anthropic/lib/streaming/_messages.py b/src/anthropic/lib/streaming/_messages.py
+index 5c0da9992..5c370a42b 100644
+--- a/src/anthropic/lib/streaming/_messages.py
++++ b/src/anthropic/lib/streaming/_messages.py
+@@ -462,6 +462,8 @@ def accumulate_event(
+             ),
+         )
+     elif event.type == "content_block_delta":
++        if event.index >= len(current_snapshot.content):
++            return current_snapshot
+         content = current_snapshot.content[event.index]
+         if event.delta.type == "text_delta":
+             if content.type == "text":
+@@ -497,6 +499,8 @@ def accumulate_event(
+             if TYPE_CHECKING:  # type: ignore[unreachable]
+                 assert_never(event.delta)
+     elif event.type == "content_block_stop":
++        if event.index >= len(current_snapshot.content):
++            return current_snapshot
+         content_block = current_snapshot.content[event.index]
+         if content_block.type == "text" and is_given(output_format):
+             content_block.parsed_output = parse_text(content_block.text, output_format)
+diff --git a/src/anthropic/lib/tools/_beta_builtin_memory_tool.py b/src/anthropic/lib/tools/_beta_builtin_memory_tool.py
+index edb948a26..f28c661fb 100644
+--- a/src/anthropic/lib/tools/_beta_builtin_memory_tool.py
++++ b/src/anthropic/lib/tools/_beta_builtin_memory_tool.py
+@@ -166,7 +166,7 @@ def clear_all_memory(self) -> BetaFunctionToolResultType:
+ 
+ 
+ class BetaAsyncAbstractMemoryTool(BetaAsyncBuiltinFunctionTool):
+-    """Abstract base class for memory tool implementations.
++    """Abstract base class for async memory tool implementations.
+ 
+     This class provides the interface for implementing a custom memory backend for Claude.
+ 
+@@ -175,25 +175,31 @@ class BetaAsyncAbstractMemoryTool(BetaAsyncBuiltinFunctionTool):
+     Example usage:
+ 
+     ```py
+-    class MyMemoryTool(BetaAbstractMemoryTool):
+-        def view(self, command: BetaMemoryTool20250818ViewCommand) -> BetaFunctionToolResultType:
++    import asyncio
++    from anthropic import AsyncAnthropic
++
++    class MyMemoryTool(BetaAsyncAbstractMemoryTool):
++        async def view(self, command: BetaMemoryTool20250818ViewCommand) -> BetaFunctionToolResultType:
+             ...
+             return "view result"
+ 
+-        def create(self, command: BetaMemoryTool20250818CreateCommand) -> BetaFunctionToolResultType:
++        async def create(self, command: BetaMemoryTool20250818CreateCommand) -> BetaFunctionToolResultType:
+             ...
+             return "created successfully"
+ 
+         # ... implement other abstract methods
+ 
+ 
+-    client = Anthropic()
+-    memory_tool = MyMemoryTool()
+-    message = client.beta.messages.run_tools(
+-        model="claude-sonnet-4-5",
+-        messages=[{"role": "user", "content": "Remember that I like coffee"}],
+-        tools=[memory_tool],
+-    ).until_done()
++    async def main() -> None:
++        client = AsyncAnthropic()
++        memory_tool = MyMemoryTool()
++        message = await client.beta.messages.run_tools(
++            model="claude-sonnet-4-5",
++            messages=[{"role": "user", "content": "Remember that I like coffee"}],
++            tools=[memory_tool],
++        ).until_done()
++
++    asyncio.run(main())
+     ```
+     """
+ 

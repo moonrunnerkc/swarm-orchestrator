@@ -1,0 +1,75 @@
+diff --git a/internal/domain/im/service_social.go b/internal/domain/im/service_social.go
+index dea90a7..cb6be7d 100644
+--- a/internal/domain/im/service_social.go
++++ b/internal/domain/im/service_social.go
+@@ -3,6 +3,7 @@ package im
+ import (
+ 	"context"
+ 	"crypto/sha1"
++	"crypto/subtle"
+ 	"errors"
+ 	"fmt"
+ 	"sort"
+@@ -126,7 +127,7 @@ func (s *SocialChannelService) VerifyWeChatSignature(token, timestamp, nonce, si
+ 	h := sha1.New()
+ 	h.Write([]byte(strings.Join(strs, "")))
+ 	expected := fmt.Sprintf("%x", h.Sum(nil))
+-	return expected == signature
++	return subtle.ConstantTimeCompare([]byte(expected), []byte(signature)) == 1
+ }
+ 
+ // VerifyWeiboSignature validates a Weibo webhook signature (simplified HMAC check).
+@@ -134,7 +135,7 @@ func (s *SocialChannelService) VerifyWeiboSignature(appSecret, body, signature s
+ 	h := sha1.New()
+ 	h.Write([]byte(appSecret + body))
+ 	expected := fmt.Sprintf("%x", h.Sum(nil))
+-	return expected == signature
++	return subtle.ConstantTimeCompare([]byte(expected), []byte(signature)) == 1
+ }
+ 
+ // ProcessInboundMessage converts a social platform message into an IM session + message.
+diff --git a/internal/interfaces/http/handler/social_channel.go b/internal/interfaces/http/handler/social_channel.go
+index 9802158..84e242e 100644
+--- a/internal/interfaces/http/handler/social_channel.go
++++ b/internal/interfaces/http/handler/social_channel.go
+@@ -75,7 +75,10 @@ func (h *SocialChannelHandler) WeChatVerify(w http.ResponseWriter, r *http.Reque
+ 		return
+ 	}
+ 
+-	h.svc.MarkVerified(r.Context(), channelID)
++	if err := h.svc.MarkVerified(r.Context(), channelID); err != nil {
++		http.Error(w, "mark verified failed", 500)
++		return
++	}
+ 	w.WriteHeader(200)
+ 	w.Write([]byte(echoStr))
+ }
+@@ -124,7 +127,28 @@ func (h *SocialChannelHandler) WeChatReceive(w http.ResponseWriter, r *http.Requ
+ 
+ // WeiboVerify handles Weibo webhook verification.
+ func (h *SocialChannelHandler) WeiboVerify(w http.ResponseWriter, r *http.Request) {
++	channelID, _ := strconv.ParseInt(chi.URLParam(r, "channelID"), 10, 64)
+ 	echoStr := r.URL.Query().Get("echostr")
++
++	cfg, err := h.svc.GetConfig(r.Context(), channelID)
++	if err != nil {
++		http.Error(w, "config not found", 404)
++		return
++	}
++
++	sig := r.URL.Query().Get("signature")
++	timestamp := r.URL.Query().Get("timestamp")
++	nonce := r.URL.Query().Get("nonce")
++	rawStr := cfg.Token + timestamp + nonce
++	if !h.svc.VerifyWeiboSignature(cfg.AppSecret, rawStr, sig) {
++		http.Error(w, "invalid signature", 403)
++		return
++	}
++
++	if err := h.svc.MarkVerified(r.Context(), channelID); err != nil {
++		http.Error(w, "mark verified failed", 500)
++		return
++	}
+ 	w.WriteHeader(200)
+ 	w.Write([]byte(echoStr))
+ }

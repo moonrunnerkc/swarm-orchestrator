@@ -1,0 +1,546 @@
+diff --git a/PSTViewer/app/src/main/java/com/pstviewer/EmailAdapter.java b/PSTViewer/app/src/main/java/com/pstviewer/EmailAdapter.java
+index 9530cae..f750c57 100644
+--- a/PSTViewer/app/src/main/java/com/pstviewer/EmailAdapter.java
++++ b/PSTViewer/app/src/main/java/com/pstviewer/EmailAdapter.java
+@@ -51,14 +51,19 @@ public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
+         PSTMessage msg = items.get(position);
+ 
+         try {
+-            // Subject
+-            String subject = msg.getSubject();
+-            holder.tvSubject.setText(subject != null && !subject.isEmpty() ? subject : "(no subject)");
+-
+             // Sender
+             String sender = msg.getSenderName();
+             if (sender == null || sender.isEmpty()) sender = msg.getSenderEmailAddress();
+-            holder.tvSender.setText(sender != null ? sender : "Unknown sender");
++            if (sender == null) sender = "?";
++            holder.tvSender.setText(sender);
++
++            // Avatar – first letter of sender name
++            String initial = sender.trim().isEmpty() ? "?" : sender.trim().substring(0, 1).toUpperCase(Locale.getDefault());
++            holder.tvAvatar.setText(initial);
++
++            // Subject
++            String subject = msg.getSubject();
++            holder.tvSubject.setText(subject != null && !subject.isEmpty() ? subject : "(no subject)");
+ 
+             // Date
+             Date date = msg.getMessageDeliveryTime();
+@@ -74,7 +79,6 @@ public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
+                 body = stripHtml(msg.getBodyHTML());
+             }
+             if (body != null && !body.isEmpty()) {
+-                // trim to first 120 chars
+                 body = body.trim().replace('\n', ' ').replace('\r', ' ');
+                 if (body.length() > 120) body = body.substring(0, 120) + "…";
+                 holder.tvPreview.setText(body);
+@@ -91,12 +95,17 @@ public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
+                 holder.tvAttachment.setVisibility(View.GONE);
+             }
+ 
+-            // Unread styling
++            // Unread styling: bold subject + blue stripe + bold sender
+             boolean read = msg.isRead();
+-            holder.tvSubject.setAlpha(read ? 0.75f : 1.0f);
+-            holder.tvSubject.setTypeface(null, read
+-                    ? android.graphics.Typeface.NORMAL
+-                    : android.graphics.Typeface.BOLD);
++            if (!read) {
++                holder.tvSubject.setTypeface(null, android.graphics.Typeface.BOLD);
++                holder.tvSender.setTypeface(null, android.graphics.Typeface.BOLD);
++                holder.viewUnreadIndicator.setVisibility(View.VISIBLE);
++            } else {
++                holder.tvSubject.setTypeface(null, android.graphics.Typeface.NORMAL);
++                holder.tvSender.setTypeface(null, android.graphics.Typeface.NORMAL);
++                holder.viewUnreadIndicator.setVisibility(View.GONE);
++            }
+ 
+         } catch (Exception e) {
+             holder.tvSubject.setText("(error loading message)");
+@@ -114,10 +123,14 @@ private static String stripHtml(String html) {
+     }
+ 
+     static class ViewHolder extends RecyclerView.ViewHolder {
++        final View viewUnreadIndicator;
++        final TextView tvAvatar;
+         final TextView tvSender, tvSubject, tvDate, tvPreview, tvAttachment;
+ 
+         ViewHolder(View v) {
+             super(v);
++            viewUnreadIndicator = v.findViewById(R.id.viewUnreadIndicator);
++            tvAvatar     = v.findViewById(R.id.tvAvatar);
+             tvSender     = v.findViewById(R.id.tvSender);
+             tvSubject    = v.findViewById(R.id.tvSubject);
+             tvDate       = v.findViewById(R.id.tvDate);
+diff --git a/PSTViewer/app/src/main/java/com/pstviewer/EmailListActivity.java b/PSTViewer/app/src/main/java/com/pstviewer/EmailListActivity.java
+index d419dca..5acb961 100644
+--- a/PSTViewer/app/src/main/java/com/pstviewer/EmailListActivity.java
++++ b/PSTViewer/app/src/main/java/com/pstviewer/EmailListActivity.java
+@@ -4,6 +4,7 @@
+ import android.os.Bundle;
+ import android.os.Handler;
+ import android.os.Looper;
++import android.view.Menu;
+ import android.view.MenuItem;
+ import android.view.View;
+ import android.widget.ProgressBar;
+@@ -12,7 +13,6 @@
+ import androidx.appcompat.app.AppCompatActivity;
+ import androidx.appcompat.widget.SearchView;
+ import androidx.appcompat.widget.Toolbar;
+-import androidx.recyclerview.widget.DividerItemDecoration;
+ import androidx.recyclerview.widget.LinearLayoutManager;
+ import androidx.recyclerview.widget.RecyclerView;
+ 
+@@ -45,11 +45,16 @@ public static PSTMessage getCurrentMessage() {
+         return currentMessage;
+     }
+ 
++    /** Available sort orders for the email list. */
++    private enum SortOrder { DATE_DESC, DATE_ASC, SENDER, SUBJECT }
++
+     private RecyclerView recyclerView;
+     private ProgressBar progressBar;
+     private TextView tvEmpty;
+     private EmailAdapter adapter;
+     private List<PSTMessage> allMessages = new ArrayList<>();
++    private SortOrder currentSort = SortOrder.DATE_DESC;
++    private String currentQuery = "";
+ 
+     private final ExecutorService executor = Executors.newSingleThreadExecutor();
+     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+@@ -74,18 +79,23 @@ protected void onCreate(Bundle savedInstanceState) {
+ 
+         SearchView searchView = findViewById(R.id.searchView);
+         searchView.setOnQueryTextListener(new SearchView.OnQueryTextListener() {
+-            @Override public boolean onQueryTextSubmit(String q)  { filter(q); return true; }
+-            @Override public boolean onQueryTextChange(String q)  { filter(q); return true; }
++            @Override public boolean onQueryTextSubmit(String q)  { currentQuery = q; applyFilterAndSort(); return true; }
++            @Override public boolean onQueryTextChange(String q)  { currentQuery = q; applyFilterAndSort(); return true; }
+         });
+ 
+         adapter = new EmailAdapter(this, new ArrayList<>(), this);
+         recyclerView.setLayoutManager(new LinearLayoutManager(this));
+-        recyclerView.addItemDecoration(new DividerItemDecoration(this, DividerItemDecoration.VERTICAL));
+         recyclerView.setAdapter(adapter);
+ 
+         loadMessages();
+     }
+ 
++    @Override
++    public boolean onCreateOptionsMenu(Menu menu) {
++        getMenuInflater().inflate(R.menu.menu_email_list, menu);
++        return true;
++    }
++
+     private void loadMessages() {
+         if (currentFolder == null) { finish(); return; }
+         progressBar.setVisibility(View.VISIBLE);
+@@ -96,32 +106,83 @@ private void loadMessages() {
+             mainHandler.post(() -> {
+                 progressBar.setVisibility(View.GONE);
+                 allMessages = messages;
+-                if (messages.isEmpty()) {
+-                    tvEmpty.setVisibility(View.VISIBLE);
+-                } else {
+-                    adapter.setItems(messages);
+-                }
++                applyFilterAndSort();
+             });
+         });
+     }
+ 
+-    private void filter(String query) {
+-        if (query == null || query.isEmpty()) {
+-            adapter.setItems(allMessages);
+-            return;
++    private void applyFilterAndSort() {
++        List<PSTMessage> result;
++
++        if (currentQuery == null || currentQuery.isEmpty()) {
++            result = new ArrayList<>(allMessages);
++        } else {
++            String q = currentQuery.toLowerCase(Locale.getDefault());
++            result = new ArrayList<>();
++            for (PSTMessage m : allMessages) {
++                try {
++                    if ((m.getSubject() != null && m.getSubject().toLowerCase(Locale.getDefault()).contains(q)) ||
++                        (m.getSenderName() != null && m.getSenderName().toLowerCase(Locale.getDefault()).contains(q))) {
++                        result.add(m);
++                    }
++                } catch (Exception ignored) {}
++            }
+         }
+-        String q = query.toLowerCase(Locale.getDefault());
+-        List<PSTMessage> filtered = new ArrayList<>();
+-        for (PSTMessage m : allMessages) {
+-            try {
+-                if ((m.getSubject() != null && m.getSubject().toLowerCase(Locale.getDefault()).contains(q)) ||
+-                    (m.getSenderName() != null && m.getSenderName().toLowerCase(Locale.getDefault()).contains(q))) {
+-                    filtered.add(m);
+-                }
+-            } catch (Exception ignored) {}
++
++        switch (currentSort) {
++            case DATE_ASC:
++                result.sort((a, b) -> {
++                    java.util.Date da, db;
++                    try { da = a.getMessageDeliveryTime(); } catch (Exception e) { da = null; }
++                    try { db = b.getMessageDeliveryTime(); } catch (Exception e) { db = null; }
++                    if (da == null && db == null) return 0;
++                    if (da == null) return 1;
++                    if (db == null) return -1;
++                    return da.compareTo(db);
++                });
++                break;
++            case SENDER:
++                result.sort((a, b) -> {
++                    String sa, sb;
++                    try { sa = a.getSenderName(); if (sa == null || sa.isEmpty()) sa = a.getSenderEmailAddress(); } catch (Exception e) { sa = null; }
++                    try { sb = b.getSenderName(); if (sb == null || sb.isEmpty()) sb = b.getSenderEmailAddress(); } catch (Exception e) { sb = null; }
++                    if (sa == null && sb == null) return 0;
++                    if (sa == null) return 1;
++                    if (sb == null) return -1;
++                    return sa.compareToIgnoreCase(sb);
++                });
++                break;
++            case SUBJECT:
++                result.sort((a, b) -> {
++                    String sa, sb;
++                    try { sa = a.getSubject(); } catch (Exception e) { sa = null; }
++                    try { sb = b.getSubject(); } catch (Exception e) { sb = null; }
++                    if (sa == null && sb == null) return 0;
++                    if (sa == null) return 1;
++                    if (sb == null) return -1;
++                    return sa.compareToIgnoreCase(sb);
++                });
++                break;
++            case DATE_DESC:
++            default:
++                result.sort((a, b) -> {
++                    java.util.Date da, db;
++                    try { da = a.getMessageDeliveryTime(); } catch (Exception e) { da = null; }
++                    try { db = b.getMessageDeliveryTime(); } catch (Exception e) { db = null; }
++                    if (da == null && db == null) return 0;
++                    if (da == null) return 1;
++                    if (db == null) return -1;
++                    return db.compareTo(da);
++                });
++                break;
++        }
++
++        if (result.isEmpty()) {
++            tvEmpty.setVisibility(View.VISIBLE);
++        } else {
++            tvEmpty.setVisibility(View.GONE);
+         }
+-        adapter.setItems(filtered);
+-        tvEmpty.setVisibility(filtered.isEmpty() ? View.VISIBLE : View.GONE);
++        adapter.setItems(result);
+     }
+ 
+     @Override
+@@ -132,7 +193,27 @@ public void onEmailClick(PSTMessage message) {
+ 
+     @Override
+     public boolean onOptionsItemSelected(MenuItem item) {
+-        if (item.getItemId() == android.R.id.home) { onBackPressed(); return true; }
++        int id = item.getItemId();
++        if (id == android.R.id.home) {
++            onBackPressed();
++            return true;
++        } else if (id == R.id.sort_date_desc) {
++            currentSort = SortOrder.DATE_DESC;
++            applyFilterAndSort();
++            return true;
++        } else if (id == R.id.sort_date_asc) {
++            currentSort = SortOrder.DATE_ASC;
++            applyFilterAndSort();
++            return true;
++        } else if (id == R.id.sort_sender) {
++            currentSort = SortOrder.SENDER;
++            applyFilterAndSort();
++            return true;
++        } else if (id == R.id.sort_subject) {
++            currentSort = SortOrder.SUBJECT;
++            applyFilterAndSort();
++            return true;
++        }
+         return super.onOptionsItemSelected(item);
+     }
+ 
+diff --git a/PSTViewer/app/src/main/java/com/pstviewer/PSTRepository.java b/PSTViewer/app/src/main/java/com/pstviewer/PSTRepository.java
+index 59e4fa0..eb56cf0 100644
+--- a/PSTViewer/app/src/main/java/com/pstviewer/PSTRepository.java
++++ b/PSTViewer/app/src/main/java/com/pstviewer/PSTRepository.java
+@@ -75,7 +75,7 @@ public static List<FolderItem> flattenFolders(PSTFolder parent, int depth) {
+     }
+ 
+     // ---------------------------------------------------------------------------
+-    // Helper: load all messages from a folder into a list
++    // Helper: load all messages from a folder, sorted newest-first by default
+     // ---------------------------------------------------------------------------
+     public static List<PSTMessage> loadMessages(PSTFolder folder) {
+         List<PSTMessage> messages = new ArrayList<>();
+@@ -90,6 +90,16 @@ public static List<PSTMessage> loadMessages(PSTFolder folder) {
+         } catch (Exception e) {
+             // partial results are fine
+         }
++        // Sort newest first by default
++        messages.sort((a, b) -> {
++            java.util.Date da, db;
++            try { da = a.getMessageDeliveryTime(); } catch (Exception e) { da = null; }
++            try { db = b.getMessageDeliveryTime(); } catch (Exception e) { db = null; }
++            if (da == null && db == null) return 0;
++            if (da == null) return 1;   // nulls last
++            if (db == null) return -1;
++            return db.compareTo(da);    // newest first
++        });
+         return messages;
+     }
+ 
+diff --git a/PSTViewer/app/src/main/res/drawable/bg_avatar.xml b/PSTViewer/app/src/main/res/drawable/bg_avatar.xml
+new file mode 100644
+index 0000000..143c783
+--- /dev/null
++++ b/PSTViewer/app/src/main/res/drawable/bg_avatar.xml
+@@ -0,0 +1,5 @@
++<?xml version="1.0" encoding="utf-8"?>
++<shape xmlns:android="http://schemas.android.com/apk/res/android"
++    android:shape="oval">
++    <solid android:color="@color/primary_light" />
++</shape>
+diff --git a/PSTViewer/app/src/main/res/layout/activity_email_list.xml b/PSTViewer/app/src/main/res/layout/activity_email_list.xml
+index ef00614..efd9a97 100644
+--- a/PSTViewer/app/src/main/res/layout/activity_email_list.xml
++++ b/PSTViewer/app/src/main/res/layout/activity_email_list.xml
+@@ -50,6 +50,7 @@
+         android:layout_width="match_parent"
+         android:layout_height="match_parent"
+         android:clipToPadding="false"
++        android:paddingTop="4dp"
+         android:paddingBottom="16dp" />
+ 
+ </LinearLayout>
+diff --git a/PSTViewer/app/src/main/res/layout/item_email.xml b/PSTViewer/app/src/main/res/layout/item_email.xml
+index f800c18..41b0b5e 100644
+--- a/PSTViewer/app/src/main/res/layout/item_email.xml
++++ b/PSTViewer/app/src/main/res/layout/item_email.xml
+@@ -1,77 +1,120 @@
+ <?xml version="1.0" encoding="utf-8"?>
+-<LinearLayout
++<com.google.android.material.card.MaterialCardView
+     xmlns:android="http://schemas.android.com/apk/res/android"
++    xmlns:app="http://schemas.android.com/apk/res-auto"
+     android:layout_width="match_parent"
+     android:layout_height="wrap_content"
+-    android:orientation="vertical"
+-    android:paddingStart="16dp"
+-    android:paddingEnd="16dp"
+-    android:paddingTop="12dp"
+-    android:paddingBottom="12dp"
+-    android:background="?attr/selectableItemBackground">
++    android:layout_marginStart="8dp"
++    android:layout_marginEnd="8dp"
++    android:layout_marginTop="4dp"
++    android:layout_marginBottom="4dp"
++    app:cardCornerRadius="8dp"
++    app:cardElevation="1dp"
++    app:rippleColor="@color/primary_light">
+ 
+-    <!-- Row 1: sender + date -->
+     <LinearLayout
+         android:layout_width="match_parent"
+         android:layout_height="wrap_content"
+         android:orientation="horizontal"
+-        android:layout_marginBottom="3dp">
++        android:minHeight="64dp">
+ 
++        <!-- Unread indicator stripe -->
++        <View
++            android:id="@+id/viewUnreadIndicator"
++            android:layout_width="4dp"
++            android:layout_height="match_parent"
++            android:background="@color/primary"
++            android:visibility="gone" />
++
++        <!-- Sender avatar -->
+         <TextView
+-            android:id="@+id/tvSender"
+-            android:layout_width="0dp"
+-            android:layout_height="wrap_content"
+-            android:layout_weight="1"
+-            android:textSize="14sp"
++            android:id="@+id/tvAvatar"
++            android:layout_width="40dp"
++            android:layout_height="40dp"
++            android:layout_gravity="center_vertical"
++            android:layout_marginStart="12dp"
++            android:layout_marginEnd="12dp"
++            android:gravity="center"
++            android:textSize="16sp"
+             android:textStyle="bold"
+-            android:textColor="@color/text_primary"
+-            android:maxLines="1"
+-            android:ellipsize="end" />
++            android:textColor="@color/primary"
++            android:background="@drawable/bg_avatar" />
+ 
+-        <TextView
+-            android:id="@+id/tvDate"
+-            android:layout_width="wrap_content"
++        <!-- Email content -->
++        <LinearLayout
++            android:layout_width="match_parent"
+             android:layout_height="wrap_content"
+-            android:textSize="12sp"
+-            android:textColor="@color/text_secondary"
+-            android:layout_marginStart="8dp" />
+-    </LinearLayout>
++            android:orientation="vertical"
++            android:layout_gravity="center_vertical"
++            android:paddingTop="10dp"
++            android:paddingBottom="10dp"
++            android:paddingEnd="12dp">
+ 
+-    <!-- Row 2: subject + attachment icon -->
+-    <LinearLayout
+-        android:layout_width="match_parent"
+-        android:layout_height="wrap_content"
+-        android:orientation="horizontal"
+-        android:layout_marginBottom="3dp">
++            <!-- Row 1: sender + date -->
++            <LinearLayout
++                android:layout_width="match_parent"
++                android:layout_height="wrap_content"
++                android:orientation="horizontal"
++                android:layout_marginBottom="2dp">
+ 
+-        <TextView
+-            android:id="@+id/tvSubject"
+-            android:layout_width="0dp"
+-            android:layout_height="wrap_content"
+-            android:layout_weight="1"
+-            android:textSize="14sp"
+-            android:textColor="@color/text_primary"
+-            android:maxLines="1"
+-            android:ellipsize="end" />
++                <TextView
++                    android:id="@+id/tvSender"
++                    android:layout_width="0dp"
++                    android:layout_height="wrap_content"
++                    android:layout_weight="1"
++                    android:textSize="14sp"
++                    android:textStyle="bold"
++                    android:textColor="@color/text_primary"
++                    android:maxLines="1"
++                    android:ellipsize="end" />
+ 
+-        <TextView
+-            android:id="@+id/tvAttachment"
+-            android:layout_width="wrap_content"
+-            android:layout_height="wrap_content"
+-            android:textSize="12sp"
+-            android:textColor="@color/text_secondary"
+-            android:layout_marginStart="8dp"
+-            android:visibility="gone" />
+-    </LinearLayout>
++                <TextView
++                    android:id="@+id/tvDate"
++                    android:layout_width="wrap_content"
++                    android:layout_height="wrap_content"
++                    android:textSize="11sp"
++                    android:textColor="@color/text_secondary"
++                    android:layout_marginStart="8dp" />
++            </LinearLayout>
+ 
+-    <!-- Row 3: body preview -->
+-    <TextView
+-        android:id="@+id/tvPreview"
+-        android:layout_width="match_parent"
+-        android:layout_height="wrap_content"
+-        android:textSize="12sp"
+-        android:textColor="@color/text_secondary"
+-        android:maxLines="2"
+-        android:ellipsize="end" />
++            <!-- Row 2: subject + attachment icon -->
++            <LinearLayout
++                android:layout_width="match_parent"
++                android:layout_height="wrap_content"
++                android:orientation="horizontal"
++                android:layout_marginBottom="2dp">
++
++                <TextView
++                    android:id="@+id/tvSubject"
++                    android:layout_width="0dp"
++                    android:layout_height="wrap_content"
++                    android:layout_weight="1"
++                    android:textSize="13sp"
++                    android:textColor="@color/text_primary"
++                    android:maxLines="1"
++                    android:ellipsize="end" />
++
++                <TextView
++                    android:id="@+id/tvAttachment"
++                    android:layout_width="wrap_content"
++                    android:layout_height="wrap_content"
++                    android:textSize="11sp"
++                    android:textColor="@color/text_secondary"
++                    android:layout_marginStart="8dp"
++                    android:visibility="gone" />
++            </LinearLayout>
++
++            <!-- Row 3: body preview -->
++            <TextView
++                android:id="@+id/tvPreview"
++                android:layout_width="match_parent"
++                android:layout_height="wrap_content"
++                android:textSize="12sp"
++                android:textColor="@color/text_secondary"
++                android:maxLines="1"
++                android:ellipsize="end" />
++
++        </LinearLayout>
++    </LinearLayout>
+ 
+-</LinearLayout>
++</com.google.android.material.card.MaterialCardView>
+diff --git a/PSTViewer/app/src/main/res/menu/menu_email_list.xml b/PSTViewer/app/src/main/res/menu/menu_email_list.xml
+new file mode 100644
+index 0000000..8d554c1
+--- /dev/null
++++ b/PSTViewer/app/src/main/res/menu/menu_email_list.xml
+@@ -0,0 +1,18 @@
++<?xml version="1.0" encoding="utf-8"?>
++<menu xmlns:android="http://schemas.android.com/apk/res/android"
++    xmlns:app="http://schemas.android.com/apk/res-auto">
++
++    <item
++        android:id="@+id/action_sort"
++        android:title="@string/sort"
++        android:icon="@android:drawable/ic_menu_sort_by_size"
++        app:showAsAction="ifRoom">
++        <menu>
++            <item android:id="@+id/sort_date_desc" android:title="@string/sort_newest_first" />
++            <item android:id="@+id/sort_date_asc"  android:title="@string/sort_oldest_first" />
++            <item android:id="@+id/sort_sender"    android:title="@string/sort_sender" />
++            <item android:id="@+id/sort_subject"   android:title="@string/sort_subject" />
++        </menu>
++    </item>
++
++</menu>
+diff --git a/PSTViewer/app/src/main/res/values/strings.xml b/PSTViewer/app/src/main/res/values/strings.xml
+index 69eda09..bbd14c9 100644
+--- a/PSTViewer/app/src/main/res/values/strings.xml
++++ b/PSTViewer/app/src/main/res/values/strings.xml
+@@ -15,4 +15,9 @@
+     <string name="loading_folders">Loading folders…</string>
+     <string name="loading_messages">Loading messages…</string>
+     <string name="open_with">Open with</string>
++    <string name="sort">Sort</string>
++    <string name="sort_newest_first">Newest first</string>
++    <string name="sort_oldest_first">Oldest first</string>
++    <string name="sort_sender">Sender (A–Z)</string>
++    <string name="sort_subject">Subject (A–Z)</string>
+ </resources>

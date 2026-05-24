@@ -1,0 +1,354 @@
+diff --git a/list_formula.pl b/list_formula.pl
+index 60b9edc..e5a9b65 100644
+--- a/list_formula.pl
++++ b/list_formula.pl
+@@ -36,6 +36,18 @@
+ predicate_from_head(Head, Name/Arity) :-
+     functor(Head, Name, Arity).
+ 
++% term_contains_var(+Var, +Term)
++%
++% True if Term syntactically contains the variable Var (identity check).
++term_contains_var(Var, Term) :-
++    (   var(Term)
++    ->  Var == Term
++    ;   compound(Term),
++        Term =.. [_ | Args],
++        member(Arg, Args),
++        term_contains_var(Var, Arg)
++    ).
++
+ variable_occurrences_in_goals(Var, Goals, Count) :-
+     occurrences_in_goals(Var, Goals, Count).
+ 
+diff --git a/optimiser.pl b/optimiser.pl
+index a9becbf..55041cd 100644
+--- a/optimiser.pl
++++ b/optimiser.pl
+@@ -8,6 +8,7 @@
+ :- use_module(enumerators).
+ :- use_module(indexical).
+ :- use_module(recursive_index).
++:- use_module(splice).
+ 
+ optimise_file(InputFile, OutputFile) :-
+     parse_file(InputFile, ProgramIR),
+@@ -20,14 +21,16 @@
+     simplify_program(MemoisedIR, SimplifiedIR, SimplifyItems),
+     optimise_list_formulas(SimplifiedIR, ListFormulaIR, ListFormulaItems),
+     optimise_indexicals(ListFormulaIR, IndexicalIR, IndexicalItems),
+-    optimise_recursive_index_loops(IndexicalIR, OptimisedIR, RecursiveIndexItems),
++    optimise_recursive_index_loops(IndexicalIR, RecursiveIndexIR, RecursiveIndexItems),
++    splice_program(RecursiveIndexIR, OptimisedIR, SpliceItems),
+     analyse_enumerators(ProgramIR, OptimisedIR, EnumeratorItems),
+     append(UnfoldItems, MemoItems, Items0),
+     append(Items0, SimplifyItems, Items1),
+     append(Items1, ListFormulaItems, Items2),
+     append(Items2, IndexicalItems, Items3),
+     append(Items3, RecursiveIndexItems, Items4),
+-    append(Items4, EnumeratorItems, Items).
++    append(Items4, SpliceItems, Items5),
++    append(Items5, EnumeratorItems, Items).
+ 
+ optimise_predicate(PredicateNameArity, ProgramIR, OptimisedIR, optimisation_report(Items)) :-
+     unfold_predicate(PredicateNameArity, ProgramIR, UnfoldedIR, UnfoldItems),
+@@ -35,14 +38,16 @@
+     simplify_program(MemoisedIR, SimplifiedIR, SimplifyItems),
+     optimise_list_formulas(SimplifiedIR, ListFormulaIR, ListFormulaItems),
+     optimise_indexicals(ListFormulaIR, IndexicalIR, IndexicalItems),
+-    optimise_recursive_index_loops(IndexicalIR, OptimisedIR, RecursiveIndexItems),
++    optimise_recursive_index_loops(IndexicalIR, RecursiveIndexIR, RecursiveIndexItems),
++    splice_program(RecursiveIndexIR, OptimisedIR, SpliceItems),
+     analyse_enumerators(ProgramIR, OptimisedIR, EnumeratorItems),
+     append(UnfoldItems, MemoItems, Items0),
+     append(Items0, SimplifyItems, Items1),
+     append(Items1, ListFormulaItems, Items2),
+     append(Items2, IndexicalItems, Items3),
+     append(Items3, RecursiveIndexItems, Items4),
+-    append(Items4, EnumeratorItems, Items).
++    append(Items4, SpliceItems, Items5),
++    append(Items5, EnumeratorItems, Items).
+ 
+ write_program(OutputPath, ProgramIR) :-
+     setup_call_cleanup(
+diff --git a/splice.pl b/splice.pl
+new file mode 100644
+index 0000000..b5b75be
+--- /dev/null
++++ b/splice.pl
+@@ -0,0 +1,131 @@
++:- module(splice, [splice_program/3]).
++
++% splice_program(+ProgramIR, -OptimisedIR, -Report)
++%
++% Stage 10 — Shortcut and Splicing Optimisation.
++%
++% Detects arithmetic variables assigned by a single `Var is Expr` goal that
++% are used exactly once in the remaining body goals and do not appear in the
++% clause head.  Such variables are spliced inline: the assignment goal is
++% removed and Expr is substituted for Var at its single use site.
++%
++% Example:
++%   A is X+1, Y is A*2  -->  Y is (X+1)*2
++%
++% Unsafe cases that are never rewritten:
++%   - the variable appears more than once (multi-use),
++%   - the variable appears in the clause head (would change the interface),
++%   - the variable appears before the assignment in the body.
++
++splice_program(ProgramIR, OptimisedIR, Report) :-
++    splice_clauses(ProgramIR, OptimisedIR, [], ReportRaw),
++    sort(ReportRaw, Report).
++
++splice_clauses([], [], Report, Report).
++splice_clauses([Clause | Rest], [SplicedClause | SplicedRest], Report0, Report) :-
++    splice_clause(Clause, SplicedClause, Item),
++    (   nonvar(Item)
++    ->  Report1 = [Item | Report0]
++    ;   Report1 = Report0
++    ),
++    splice_clauses(Rest, SplicedRest, Report1, Report).
++
++splice_clause(ir_clause(Id, Head, Body, Meta), ir_clause(Id, Head, SplicedBody, Meta), ReportItem) :-
++    splice_body_fully(Head, Body, SplicedBody),
++    (   SplicedBody \== Body
++    ->  predicate_from_head(Head, Pred),
++        ReportItem = spliced(Pred)
++    ;   true
++    ).
++
++% Repeatedly apply splice_once until no further splicing is possible.
++splice_body_fully(Head, Body, Final) :-
++    (   splice_once(Head, Body, Body1)
++    ->  splice_body_fully(Head, Body1, Final)
++    ;   Final = Body
++    ).
++
++% splice_once(+Head, +Body, -SplicedBody)
++%
++% Find the first eligible `Var is Expr` goal and inline it.  Eligible means:
++%   - Var is an uninstantiated variable,
++%   - Var does not appear anywhere before the assignment in the body,
++%   - Var does not appear in the clause head,
++%   - Var appears exactly once in the body goals that follow the assignment.
++splice_once(Head, Body, SplicedBody) :-
++    append(Prefix, [VarIs | Suffix], Body),
++    VarIs = (Var is Expr),
++    var(Var),
++    occurrences_in_goals(Var, Prefix, 0),
++    \+ term_contains_var(Var, Head),
++    occurrences_in_goals(Var, Suffix, 1),
++    !,
++    substitute_in_goals(Var, Expr, Suffix, SplicedSuffix),
++    append(Prefix, SplicedSuffix, SplicedBody).
++
++predicate_from_head(Head, Name/Arity) :-
++    functor(Head, Name, Arity).
++
++% substitute_in_goals(+Var, +Expr, +Goals, -SubstGoals)
++%
++% Replace the unique occurrence of Var in Goals with Expr.
++% Processing stops after the first goal in which the substitution was made.
++substitute_in_goals(_, _, [], []).
++substitute_in_goals(Var, Expr, [Goal | Rest], [SubstGoal | SubstRest]) :-
++    substitute_term(Var, Expr, Goal, SubstGoal),
++    (   SubstGoal == Goal
++    ->  substitute_in_goals(Var, Expr, Rest, SubstRest)
++    ;   SubstRest = Rest
++    ).
++
++% substitute_term(+Var, +Expr, +Term, -SubstTerm)
++%
++% Replace one occurrence of Var in Term with Expr.
++substitute_term(Var, Expr, Term, SubstTerm) :-
++    (   var(Term)
++    ->  (Term == Var -> SubstTerm = Expr ; SubstTerm = Term)
++    ;   atomic(Term)
++    ->  SubstTerm = Term
++    ;   Term =.. [F | Args],
++        substitute_terms(Var, Expr, Args, SubstArgs),
++        SubstTerm =.. [F | SubstArgs]
++    ).
++
++substitute_terms(_, _, [], []).
++substitute_terms(Var, Expr, [Term | Rest], [SubstTerm | SubstRest]) :-
++    substitute_term(Var, Expr, Term, SubstTerm),
++    substitute_terms(Var, Expr, Rest, SubstRest).
++
++% term_contains_var(+Var, +Term)
++%
++% True if Term syntactically contains the variable Var (identity check).
++term_contains_var(Var, Term) :-
++    (   var(Term)
++    ->  Var == Term
++    ;   compound(Term),
++        Term =.. [_ | Args],
++        member(Arg, Args),
++        term_contains_var(Var, Arg)
++    ).
++
++% occurrences_in_goals(+Var, +Goals, -Count)
++occurrences_in_goals(_, [], 0).
++occurrences_in_goals(Var, [Goal | Rest], Count) :-
++    occurrences_in_term(Var, Goal, N1),
++    occurrences_in_goals(Var, Rest, N2),
++    Count is N1 + N2.
++
++occurrences_in_term(Var, Term, Count) :-
++    (   var(Term)
++    ->  (Term == Var -> Count = 1 ; Count = 0)
++    ;   atomic(Term)
++    ->  Count = 0
++    ;   Term =.. [_ | Args],
++        occurrences_in_terms(Var, Args, Count)
++    ).
++
++occurrences_in_terms(_, [], 0).
++occurrences_in_terms(Var, [Term | Rest], Count) :-
++    occurrences_in_term(Var, Term, N1),
++    occurrences_in_terms(Var, Rest, N2),
++    Count is N1 + N2.
+diff --git a/tests/test_optimiser.pl b/tests/test_optimiser.pl
+index 1de6b46..76c1b02 100644
+--- a/tests/test_optimiser.pl
++++ b/tests/test_optimiser.pl
+@@ -402,3 +402,53 @@
+ test_sequence_identity(N, N).
+ 
+ :- end_tests(formula_discovery).
++
++:- begin_tests(splice).
++
++:- use_module('../optimiser').
++:- use_module('../splice').
++
++test(splices_single_use_arithmetic_variable) :-
++    ProgramIR = [
++        ir_clause(c1, p(X, Y), [(A is X + 1), (Y is A * 2)], [])
++    ],
++    splice_program(ProgramIR, OptimisedIR, Report),
++    member(ir_clause(_, p(_, _), Body, _), OptimisedIR),
++    assertion(Body = [Y is (X + 1) * 2]),
++    assertion(member(spliced(p/2), Report)).
++
++test(splices_chain_of_single_use_variables) :-
++    ProgramIR = [
++        ir_clause(c1, q(X, Y), [(A is X + 1), (B is A * 2), (Y is B + 3)], [])
++    ],
++    splice_program(ProgramIR, OptimisedIR, Report),
++    member(ir_clause(_, q(_, _), Body, _), OptimisedIR),
++    assertion(Body = [Y is (X + 1) * 2 + 3]),
++    assertion(member(spliced(q/2), Report)).
++
++test(does_not_splice_multi_use_variable) :-
++    ProgramIR = [
++        ir_clause(c1, p(X, Y, Z), [(A is X + 1), (Y is A * 2), (Z is A + 3)], [])
++    ],
++    splice_program(ProgramIR, OptimisedIR, Report),
++    member(ir_clause(_, p(_, _, _), Body, _), OptimisedIR),
++    assertion(Body = [(A is X + 1), (Y is A * 2), (Z is A + 3)]),
++    assertion(Report = []).
++
++test(does_not_splice_variable_used_in_head) :-
++    ProgramIR = [
++        ir_clause(c1, p(X, A), [(A is X + 1), (writeln(A))], [])
++    ],
++    splice_program(ProgramIR, OptimisedIR, Report),
++    member(ir_clause(_, p(_, _), Body, _), OptimisedIR),
++    assertion(Body = [(A is X + 1), (writeln(A))]),
++    assertion(Report = []).
++
++test(optimise_program_includes_stage10_report_items) :-
++    ProgramIR = [
++        ir_clause(c1, p(X, Y), [(A is X + 1), (Y is A * 2)], [])
++    ],
++    optimise_program(ProgramIR, _OptimisedIR, optimisation_report(Report)),
++    assertion(member(spliced(p/2), Report)).
++
++:- end_tests(splice).
+diff --git a/unfold.pl b/unfold.pl
+index 006d4a0..d503272 100644
+--- a/unfold.pl
++++ b/unfold.pl
+@@ -33,13 +33,8 @@
+     ),
+     unfold_clauses(Rest, Helpers, UpdatedRest, Report1, Report).
+ 
+-unfold_clause(ir_clause(Id, Head, Body, Meta), Helpers, ir_clause(Id, Head, SplicedBody, Meta), Changed) :-
+-    unfold_body(Body, Helpers, UnfoldedBody, false, ChangedUnfold),
+-    splice_arithmetic(UnfoldedBody, SplicedBody),
+-    (   ChangedUnfold == true
+-    ->  Changed = true
+-    ;   Changed = (SplicedBody \== Body)
+-    ).
++unfold_clause(ir_clause(Id, Head, Body, Meta), Helpers, ir_clause(Id, Head, UnfoldedBody, Meta), ChangedUnfold) :-
++    unfold_body(Body, Helpers, UnfoldedBody, false, ChangedUnfold).
+ 
+ unfold_body([], _, [], Changed, Changed).
+ unfold_body([Goal | Rest], Helpers, UpdatedBody, Changed0, Changed) :-
+@@ -103,65 +98,6 @@
+     callable(Goal),
+     functor(Goal, Name, Arity).
+ 
+-splice_arithmetic(Body, Spliced) :-
+-    splice_arithmetic_once(Body, Body1),
+-    (   Body1 == Body
+-    ->  Spliced = Body1
+-    ;   splice_arithmetic(Body1, Spliced)
+-    ).
+-
+-splice_arithmetic_once([], []).
+-splice_arithmetic_once([Goal | Rest], Result) :-
+-    (   Goal = (Var is Expr),
+-        var(Var),
+-        occurrences_in_goals(Var, Rest, 1),
+-        substitute_in_goals(Var, Expr, Rest, NewRest)
+-    ->  Result = NewRest
+-    ;   Result = [Goal | NewTail],
+-        splice_arithmetic_once(Rest, NewTail)
+-    ).
+-
+-occurrences_in_goals(_, [], 0).
+-occurrences_in_goals(Var, [Goal | Rest], Count) :-
+-    occurrences_in_term(Var, Goal, N1),
+-    occurrences_in_goals(Var, Rest, N2),
+-    Count is N1 + N2.
+-
+-occurrences_in_term(Var, Term, Count) :-
+-    (   var(Term)
+-    ->  (Term == Var -> Count = 1 ; Count = 0)
+-    ;   atomic(Term)
+-    ->  Count = 0
+-    ;   Term =.. [_ | Args],
+-        occurrences_in_terms(Var, Args, Count)
+-    ).
+-
+-occurrences_in_terms(_, [], 0).
+-occurrences_in_terms(Var, [Term | Rest], Count) :-
+-    occurrences_in_term(Var, Term, N1),
+-    occurrences_in_terms(Var, Rest, N2),
+-    Count is N1 + N2.
+-
+-substitute_in_goals(_, _, [], []).
+-substitute_in_goals(Var, Expr, [Goal | Rest], [NewGoal | NewRest]) :-
+-    substitute_term(Var, Expr, Goal, NewGoal),
+-    substitute_in_goals(Var, Expr, Rest, NewRest).
+-
+-substitute_term(Var, Expr, Term, Out) :-
+-    (   var(Term)
+-    ->  (Term == Var -> Out = Expr ; Out = Term)
+-    ;   atomic(Term)
+-    ->  Out = Term
+-    ;   Term =.. [F | Args],
+-        substitute_terms(Var, Expr, Args, NewArgs),
+-        Out =.. [F | NewArgs]
+-    ).
+-
+-substitute_terms(_, _, [], []).
+-substitute_terms(Var, Expr, [Term | Rest], [NewTerm | NewRest]) :-
+-    substitute_term(Var, Expr, Term, NewTerm),
+-    substitute_terms(Var, Expr, Rest, NewRest).
+-
+ unfold_predicate(Pred, ProgramIR, OptimisedIR, Report) :-
+     include(clause_matches_predicate_(Pred), ProgramIR, TargetClauses),
+     exclude(clause_matches_predicate_(Pred), ProgramIR, OtherClauses),

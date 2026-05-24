@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-awest813-psobbaddonplugin-pr1",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 1,
+    "headSha": "b9ffd8f1c9da739ddeef2c8bf704797cc894901f",
+    "baseSha": "8ebe94250e951fbe296027df414eba4c05dc5016",
+    "title": "Add Windows-first Tauri launcher for addon install/update, rollback, and release-driven delivery",
+    "body": "This PR introduces a dedicated launcher to replace the Electron-based direction with a Tauri architecture, while keeping the existing plugin build/release flow intact. The launcher now handles install/update lifecycle concerns (preflight, backup, rollback, release fetch, checksum verification, and launch) from a single Windows-first app boundary.\n\n- **Launcher architecture (separate ownership boundary)**\n  - Added a standalone `launcher/` Tauri app so plugin code and existing DLL packaging remain decoupled.\n  - Implemented privileged operations in Rust commands (filesystem/process/network) with a minimal frontend for operator actions.\n\n- **Installer/update lifecycle**\n  - Added local-zip install flow and “latest release” install flow against GitHub Releases (`bbmod.zip`).\n  - Added preflight and dry-run paths before mutation.\n  - Added post-install verification and tracked backup/rollback for addon payload files.\n\n- **Security/reliability controls**\n  - Enforced archive extraction allowlist (`addons/**`, `dinput8.dll`, `dinput8.pdb`, `README.md`, `CHANGELOG.md`).\n  - Added path validation (absolute paths), checksum verification (explicit SHA-256 or release asset-derived), and structured JSONL logging.\n  - Centralized executable candidate handling and status warnings from shared constants.\n\n- **UX surface**\n  - Replaced template UI with focused panels for:\n    - status + warnings\n    - install path settings\n    - local zip preflight/install\n    - latest release install\n    - rollback\n    - launch\n    - log viewing\n  - Added explicit destructive-action confirmations and VC++ runtime reminder.\n\n- **Release/docs integration**\n  - Updated root docs to make launcher-first installation the default with manual zip fallback.\n  - Added launcher maintainer/developer docs.\n  - Extended AppVeyor artifact publishing to include launcher bundle zip when present, without changing existing `bbmod.zip` packaging behavior.\n\n```rust\n#[tauri::command]\nfn install_latest_release(app: AppHandle, request: InstallLatestRequest) -> Result<InstallResult, String> {\n    let release = fetch_latest_release_internal()?;\n    let zip_destination = downloads_dir(&app)?.join(format!(\"bbmod-{}.zip\", release.tag_name));\n    download_to_path(&release.bbmod_zip_url, &zip_destination)?;\n    // optional SHA-256 verification...\n    install_from_zip_internal(&app, &zip_destination, &target, Some(release.tag_name), dry_run)\n}\n```",
+    "author": "Copilot",
+    "headRef": "copilot/create-launcher-for-hsi-addon",
+    "repository": "awest813/psobbaddonplugin"
+  },
+  "diffRef": {
+    "repository": "awest813/psobbaddonplugin",
+    "headSha": "b9ffd8f1c9da739ddeef2c8bf704797cc894901f",
+    "baseSha": "8ebe94250e951fbe296027df414eba4c05dc5016"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-awest813-psobbaddonplugin-pr1.diff",
+  "vendoredAt": "2026-05-24T03:05:24.447Z",
+  "collectedAt": "2026-05-24T03:05:24.447Z"
+}

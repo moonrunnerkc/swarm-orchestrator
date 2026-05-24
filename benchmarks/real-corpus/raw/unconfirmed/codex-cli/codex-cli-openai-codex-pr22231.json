@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr22231",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 22231,
+    "headSha": "cb0c69c215306d64c299163d738780c23c39d2fc",
+    "baseSha": "fd24c00b0bb1c6d99b2553d8d903523f3d4a6681",
+    "title": "[codex] Add not-so-yolo CLI mode",
+    "body": "## Summary\n\nAdds a shared `--not-so-yolo` CLI flag for interactive and exec entry points. The flag runs Codex with workspace-write sandboxing, on-request approvals, and auto-review as the approvals reviewer, giving a less-permissive alternative to `--yolo`.\n\nThe change keeps the behavior consistent with existing permission-mode handling: the flag conflicts with `--yolo`, conflicts with explicit approval-policy flags where applicable, inherits from the top-level `codex --not-so-yolo exec ...` form, and is documented in `codex-rs/README.md`.\n\n## Tests\n\n- `just fmt`\n- `cargo check -p codex-utils-cli -p codex-cli -p codex-exec -p codex-tui`\n- `cargo test -p codex-utils-cli`\n- `cargo test -p codex-cli -p codex-exec`\n- `RUST_MIN_STACK=8388608 cargo test -p codex-tui`\n- `git diff --check`\n\nNote: plain `cargo test -p codex-tui` stack-overflows in the existing `app::tests::attach_live_thread_for_selection_rejects_unmaterialized_fallback_threads`; that same test and the full TUI suite pass with `RUST_MIN_STACK=8388608`.",
+    "author": "jgershen-oai",
+    "headRef": "jgershen-not-so-yolo-cli",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "cb0c69c215306d64c299163d738780c23c39d2fc",
+    "baseSha": "fd24c00b0bb1c6d99b2553d8d903523f3d4a6681"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr22231.diff",
+  "vendoredAt": "2026-05-24T03:13:41.153Z",
+  "collectedAt": "2026-05-24T03:13:41.153Z"
+}

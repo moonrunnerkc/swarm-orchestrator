@@ -1,0 +1,380 @@
+diff --git a/.agents/plugins/marketplace.json b/.agents/plugins/marketplace.json
+new file mode 100644
+index 0000000..8973083
+--- /dev/null
++++ b/.agents/plugins/marketplace.json
+@@ -0,0 +1,20 @@
++{
++  "name": "gitguardian-agent-skills",
++  "interface": {
++    "displayName": "GitGuardian Agent Skills"
++  },
++  "plugins": [
++    {
++      "name": "gitguardian",
++      "source": {
++        "source": "local",
++        "path": "./"
++      },
++      "policy": {
++        "installation": "AVAILABLE",
++        "authentication": "ON_USE"
++      },
++      "category": "security"
++    }
++  ]
++}
+diff --git a/.codex-mcp.json b/.codex-mcp.json
+new file mode 100644
+index 0000000..1b71f37
+--- /dev/null
++++ b/.codex-mcp.json
+@@ -0,0 +1,12 @@
++{
++  "mcp_servers": {
++    "GitGuardianDeveloper": {
++      "command": "uvx",
++      "args": [
++        "--from",
++        "git+https://github.com/GitGuardian/ggmcp.git",
++        "developer-mcp-server"
++      ]
++    }
++  }
++}
+diff --git a/.codex-plugin/plugin.json b/.codex-plugin/plugin.json
+new file mode 100644
+index 0000000..18fee47
+--- /dev/null
++++ b/.codex-plugin/plugin.json
+@@ -0,0 +1,25 @@
++{
++  "name": "gitguardian",
++  "version": "0.1.0",
++  "description": "The official GitGuardian plugin for AI coding agents. Detect hardcoded secrets, plant honeytokens, and triage incidents using ggshield, the GitGuardian Developer MCP server, and the GitGuardian API.",
++  "author": {
++    "name": "GitGuardian",
++    "email": "support@gitguardian.com",
++    "url": "https://www.gitguardian.com"
++  },
++  "homepage": "https://www.gitguardian.com",
++  "repository": "https://github.com/GitGuardian/agent-skills",
++  "license": "MIT",
++  "keywords": ["gitguardian", "ggshield", "secrets", "credentials", "honeytoken", "dotenv", "secret-scanning"],
++  "skills": "./skills/",
++  "mcpServers": "./.codex-mcp.json",
++  "interface": {
++    "displayName": "GitGuardian",
++    "shortDescription": "Secret scanning, honeytoken creation, and incident triage for AI coding agents.",
++    "longDescription": "The official GitGuardian plugin for AI coding agents. Detects 700+ hardcoded secret types across files, git history, Docker images, and PyPI packages via the ggshield CLI; plants AWS honeytoken tripwires for the leaks scanning can't catch; and surfaces live incidents in your editor via the bundled GitGuardian Developer MCP server.",
++    "developerName": "GitGuardian",
++    "category": "security",
++    "websiteURL": "https://www.gitguardian.com",
++    "logo": "./assets/logo.png"
++  }
++}
+diff --git a/.github/workflows/validate.yml b/.github/workflows/validate.yml
+index 44778eb..fa64fc9 100644
+--- a/.github/workflows/validate.yml
++++ b/.github/workflows/validate.yml
+@@ -47,6 +47,42 @@ jobs:
+           jq -e '.name and .owner.name and (.plugins | type == "array" and length > 0)' "$F" > /dev/null
+           jq -e '.plugins | all(.name and .description and .source)' "$F" > /dev/null
+ 
++      - name: Check Codex plugin.json required fields
++        run: |
++          set -e
++          F=.codex-plugin/plugin.json
++          test -f "$F" || { echo "missing $F"; exit 1; }
++          jq -e '.name and .version and .description and .skills and .mcpServers and .interface.displayName' "$F" > /dev/null
++          jq -e '(.skills | startswith("./")) and (.mcpServers | startswith("./")) and (.interface.logo | startswith("./"))' "$F" > /dev/null
++
++      - name: Check Codex marketplace.json required fields
++        run: |
++          set -e
++          F=.agents/plugins/marketplace.json
++          test -f "$F" || { echo "missing $F"; exit 1; }
++          jq -e '.name and (.plugins | type == "array" and length > 0)' "$F" > /dev/null
++          jq -e '.plugins | all(.name and .source and .policy.installation and .policy.authentication and .category)' "$F" > /dev/null
++
++      - name: Check Codex MCP config shape
++        run: |
++          set -e
++          MCP="$(jq -r '.mcpServers' .codex-plugin/plugin.json)"
++          test -f "$MCP" || { echo "missing Codex MCP config $MCP"; exit 1; }
++          jq -e '
++            if has("mcp_servers") then
++              (.mcp_servers | type == "object")
++            elif has("mcpServers") then
++              false
++            else
++              (type == "object")
++            end
++          ' "$MCP" > /dev/null
++
++      - name: Check Codex docs do not use stale install command
++        run: |
++          set -e
++          ! grep -R "codex plugin install" README.md AGENTS.md
++
+       - name: Check each skill has SKILL.md with frontmatter
+         run: |
+           set -e
+diff --git a/AGENTS.md b/AGENTS.md
+index 0c8fda7..c9099c3 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -8,13 +8,16 @@ Read at the repo root as `AGENTS.md` (cross-vendor [agents.md](https://agents.md
+ 
+ This repo ships skill files that teach AI coding agents how to use [`ggshield`](https://github.com/GitGuardian/ggshield), GitGuardian's open-source CLI. The agent invokes `ggshield` directly; the skill files supply the missing instructions on when, how, and what to do with the output.
+ 
+-Target agents: Claude Code directly via the plugin marketplace, Cursor via the `.cursor-plugin/` manifest, and ~50 other agents (Kiro CLI, Codex, Copilot, OpenCode, Cline, Windsurf, Gemini CLI, …) via the [skills.sh](https://skills.sh) CLI.
++Target agents: Claude Code directly via the plugin marketplace, Cursor via the `.cursor-plugin/` manifest, Codex via the `.codex-plugin/` manifest (and the repo-scoped `.agents/plugins/marketplace.json`), and ~50 other agents (Kiro CLI, Copilot, OpenCode, Cline, Windsurf, Gemini CLI, …) via the [skills.sh](https://skills.sh) CLI.
+ 
+ ## Repository Structure
+ 
+ ```
+ .claude-plugin/                       # Claude Code plugin metadata (marketplace.json, plugin.json)
+ .cursor-plugin/                       # Cursor plugin metadata (same two files)
++.codex-plugin/                        # Codex plugin metadata (plugin.json only)
++.agents/plugins/                      # Codex repo-scoped marketplace (marketplace.json)
++.codex-mcp.json                       # Codex MCP server config
+ .github/workflows/                    # CI: JSON validation, frontmatter checks
+ skills/                               # one folder per skill — discovered by Claude/Cursor and skills.sh
+   scan-secrets/                       #   skill folder name = SKILL.md frontmatter `name:`
+@@ -224,9 +227,39 @@ Single centralized marketplace at https://cursor.com/marketplace. Submission via
+ 
+ The Cursor template defaults to a multi-plugin layout (`plugins/<name>/...`) and tells single-plugin authors to drop `marketplace.json` and put `plugin.json` at the repo root. **We can't follow that advice** — Claude Code's distribution model requires `marketplace.json` even for single-plugin repos. So we land in a documented hybrid: single-plugin shape with `marketplace.json` on both sides, plugin `source` pointing at `"./"`. Cursor reviewers will see a marketplace.json containing one plugin entry pointing at the repo root — not forbidden, just off the template default.
+ 
++### Codex marketplace
++
++Codex (OpenAI's CLI) introduced a first-class plugin marketplace in CLI v0.117.0 (March 2026). Plugin manifest lives in `.codex-plugin/plugin.json`; the marketplace pointer lives separately at `.agents/plugins/marketplace.json` (repo-scoped) — note the marketplace location is **outside** the manifest folder, different from Claude/Cursor where they sit side by side.
++
++Users install with the same shorthand pattern as Claude Code:
++
++```
++codex plugin marketplace add GitGuardian/agent-skills
++codex
++/plugins
++```
++
++In the plugin browser, select the GitGuardian marketplace, open `gitguardian`, and choose **Install plugin**.
++
++Codex also supports a legacy fallback path: if `.agents/plugins/marketplace.json` is missing, the CLI reads `.claude-plugin/marketplace.json` instead. We ship the native location anyway for cleaner Codex semantics.
++
++Distinctive fields in `.codex-plugin/plugin.json`:
++
++- `skills` (string) — path to skills dir, we use `"./skills/"`
++- `mcpServers` (string) — path to the Codex MCP config, we use `"./.codex-mcp.json"`
++- `interface` (object) — install-surface metadata: `displayName`, `shortDescription`, `longDescription`, `developerName`, `category`, `websiteURL`, `logo`, etc. Codex's marketplace UI consumes these.
++
++In `.agents/plugins/marketplace.json`, each plugin entry takes:
++
++- `source` (object) — `{"source": "local", "path": "./"}` for in-repo plugins; `git` / `git-subdir` / `url` variants for cross-repo
++- `policy` (object) — `installation` (`AVAILABLE` | `INSTALLED_BY_DEFAULT` | `NOT_AVAILABLE`), `authentication` (`ON_INSTALL` | `ON_USE`)
++- `category` (string) — we use `"security"`
++
++Reference docs: https://developers.openai.com/codex/plugins, https://developers.openai.com/codex/plugins/build, https://developers.openai.com/codex/skills.
++
+ ### Manifest field reference
+ 
+-Both `.claude-plugin/plugin.json` and `.cursor-plugin/plugin.json` carry the same field set (we keep them symmetric so they can't drift):
++`.claude-plugin/plugin.json` and `.cursor-plugin/plugin.json` carry the same field set (we keep them symmetric so they can't drift). `.codex-plugin/plugin.json` adds Codex-specific fields (`skills`, `mcpServers`, `interface`) on top of the shared base.
+ 
+ | Field | Required by | Notes |
+ |---|---|---|
+@@ -244,13 +277,19 @@ Both `.claude-plugin/marketplace.json` and `.cursor-plugin/marketplace.json` nee
+ - Required: `name`, `owner.{name, email}`, `plugins[]` with `name + source + description`
+ - Cursor-specific: `metadata.{description, version}` — Cursor template puts these under a metadata key (we keep top-level `description` too so Claude's schema still parses)
+ 
++`.agents/plugins/marketplace.json` (Codex) has its own shape:
++
++- Required at top level: `name`, `plugins[]`
++- Optional: `interface.{displayName}`
++- Each plugin entry requires: `name`, `source` (object — see Codex marketplace section above), `policy.installation`, `policy.authentication`, `category`
++
+ ### Plugin surfaces we ship + ones we deliberately don't
+ 
+ | Surface | Where it lives | We ship? | What it does |
+ |---|---|---|---|
+ | `skills/<name>/SKILL.md` | plugin root | ✅ | Model-invoked skills (Claude auto-triggers on description match). Each skill is also manually invokable as `/gitguardian:<skill-name>`. |
+ | `commands/*.md` | plugin root | ❌ | Anthropic's legacy "skills as flat Markdown files" pattern. We deliberately don't ship a `commands/` directory — see [Critical structural rules](#critical-structural-rules). |
+-| `.mcp.json` (Claude) + `mcp.json` (Cursor) | plugin root | ✅ | Auto-configure the GitGuardian Developer MCP server on install |
++| `.codex-mcp.json` (Codex) + `.mcp.json` (Claude) + `mcp.json` (Cursor) | plugin root | ✅ | Auto-configure the GitGuardian Developer MCP server on install |
+ | `assets/logo.png` | plugin root | ✅ (PR #12) | Marketplace card icon |
+ | `rules/*.mdc` | plugin root | ❌ | Cursor's always-on coding rules (different concept from skills — rules apply even when no skill triggers). Worth adding if we want a Cursor-side always-on "never commit a detected secret" rule beyond what's already in each SKILL.md's Core rule. |
+ | `agents/*.md` | plugin root | ❌ | Specialized subagents. No strong use case yet. |
+@@ -262,10 +301,11 @@ Both `.claude-plugin/marketplace.json` and `.cursor-plugin/marketplace.json` nee
+ 
+ ### Critical structural rules
+ 
+-- **Only `plugin.json` goes inside `.claude-plugin/` / `.cursor-plugin/`.** Every other directory (`skills/`, `agents/`, `hooks/`, `assets/`) must be at the plugin root, NOT nested inside the manifest folder. Cursor's `add-a-plugin.md` and Anthropic's `plugins.md` both call this out as a common mistake.
++- **Only `plugin.json` goes inside `.claude-plugin/` / `.cursor-plugin/` / `.codex-plugin/`.** Every other directory (`skills/`, `agents/`, `hooks/`, `assets/`) must be at the plugin root, NOT nested inside the manifest folder. Cursor's `add-a-plugin.md`, Anthropic's `plugins.md`, and OpenAI's Codex docs all call this out as a common mistake.
++- **Codex marketplace path lives outside `.codex-plugin/`.** Unlike Claude/Cursor where `marketplace.json` sits next to `plugin.json`, Codex looks for `.agents/plugins/marketplace.json` at the repo root. We ship the native location; Codex will also fall back to `.claude-plugin/marketplace.json` if the native one is missing.
+ - **No `commands/` directory.** Anthropic's plugin docs frame `commands/*.md` as "skills as flat Markdown files" and explicitly recommend `skills/<name>/SKILL.md` for new content. Shipping both at once creates duplicate slash-dropdown entries for the same capability (the flat command and the skill both show up). The skill primitive is strictly more capable (supports `references/`, `disable-model-invocation`, `allowed-tools`, folder structure). We migrated away from `commands/` in `refactor/remove-legacy-commands-directory` — don't re-introduce it.
+ - **`disable-model-invocation: true`** in a SKILL.md's YAML frontmatter is the canonical Claude Code field for hiding a skill from the initial agent metadata. Used by the router pattern (see Future scaling below). Documented in the Claude Code Quickstart — not vendor-specific.
+-- **Filename matters for MCP config**: Cursor specifically looks for `mcp.json` (not `.mcp.json`). Both files contain the same content; we ship both so each agent finds its expected filename.
++- **Filename and schema matter for MCP config**: Cursor specifically looks for `mcp.json` (not `.mcp.json`), Claude Code reads `.mcp.json` with `mcpServers`, and Codex uses `.codex-mcp.json` pointed to by `.codex-plugin/plugin.json` with the `mcp_servers` wrapper accepted by Codex.
+ - **Symlink `CLAUDE.md` → `AGENTS.md`** at the repo root. AGENTS.md is the cross-vendor name (agents.md spec); CLAUDE.md is what Claude Code reads for project instructions. One file, two entry points — recent Claude Code versions also fall back to AGENTS.md natively but the symlink makes the intent explicit and supports older versions.
+ 
+ ### CLI hints (future-only — official marketplace required)
+@@ -280,7 +320,9 @@ Claude Code scans output, strips the hint line before passing to the model, vali
+ 
+ Reference: https://code.claude.com/docs/en/plugin-hints
+ 
+-### Anthropic docs index (the ones we actually use)
++### Vendor docs index (the ones we actually use)
++
++**Anthropic (Claude Code):**
+ 
+ - https://code.claude.com/docs/en/plugins — primary authoring guide (Quickstart, directory layout, migration from `.claude/`, submission process)
+ - https://code.claude.com/docs/en/plugins-reference — full technical schema for `plugin.json`, version management, debugging tools
+@@ -289,9 +331,28 @@ Reference: https://code.claude.com/docs/en/plugin-hints
+ - https://code.claude.com/docs/en/plugin-hints — CLI-emitted install prompts (above)
+ - https://code.claude.com/docs/en/plugin-dependencies — declaring version constraints between plugins
+ - https://code.claude.com/docs/en/agent-sdk/plugins — loading plugins via the Agent SDK
+-- https://docs.gitguardian.com/llms.txt — GitGuardian's AI-agent docs index (append `.md` to any HTML page on docs.gitguardian.com to get Markdown)
+-- https://agentskills.io — the cross-vendor Agent Skills standard (also lives at `anthropics/skills/spec/agent-skills-spec.md`)
++
++**OpenAI (Codex):**
++
++- https://developers.openai.com/codex/plugins — plugin system overview, install flows, marketplace sources
++- https://developers.openai.com/codex/plugins/build — `plugin.json` schema (required + optional fields, `interface` block), `marketplace.json` schema (sources, policy, category), repo / personal / git / git-subdir sources, directory layout
++- https://developers.openai.com/codex/skills — Agent Skills format, SKILL.md frontmatter, discovery semantics
++- https://developers.openai.com/codex/guides/agents-md — AGENTS.md custom-instructions guide (the cross-vendor file we use here)
++- https://developers.openai.com/codex/changelog — versioned changelog; plugin system landed in CLI v0.117.0
++
++**Cursor:**
++
+ - https://github.com/cursor/plugin-template — Cursor's reference plugin layout + submission checklist
++- https://cursor.com/marketplace/publish — Cursor marketplace submission
++
++**Cross-vendor:**
++
++- https://agentskills.io — the cross-vendor Agent Skills standard (also lives at `anthropics/skills/spec/agent-skills-spec.md`)
++- https://agents.md — the cross-vendor AGENTS.md convention
++
++**GitGuardian:**
++
++- https://docs.gitguardian.com/llms.txt — GitGuardian's AI-agent docs index (append `.md` to any HTML page on docs.gitguardian.com to get Markdown)
+ 
+ ## Future scaling
+ 
+@@ -305,7 +366,8 @@ When the skill library crosses ~5 skills:
+ - ggshield CLI: https://github.com/GitGuardian/ggshield
+ - GitGuardian Developer MCP server: https://github.com/GitGuardian/ggmcp
+ - GitGuardian public docs: https://docs.gitguardian.com (append `.md` to any HTML page to get the Markdown version; AI-agent index at https://docs.gitguardian.com/llms.txt)
+-- Claude Code plugin docs: https://code.claude.com/docs/en/plugins (see "Anthropic docs index" above for the full set)
++- Claude Code plugin docs: https://code.claude.com/docs/en/plugins (see "Vendor docs index" above for the full set)
++- Codex plugin docs: https://developers.openai.com/codex/plugins
+ - Cursor plugin template: https://github.com/cursor/plugin-template
+ - Cursor plugin submission: https://cursor.com/marketplace/publish
+ - skills.sh CLI (cross-agent installer): https://skills.sh
+diff --git a/README.md b/README.md
+index 788dcb8..6c4b82b 100644
+--- a/README.md
++++ b/README.md
+@@ -2,7 +2,7 @@
+ 
+ Catch secrets before they ship, and plant decoys to catch the ones that already did. This repo ships skill files that teach AI coding agents how to use [`ggshield`](https://github.com/GitGuardian/ggshield), GitGuardian's open-source CLI — when to scan, which flags to use, how to interpret findings, how to walk the user through removal and rotation, and when and where to plant honeytokens to detect future leaks. The agent invokes `ggshield` directly.
+ 
+-Supported agents: [Claude Code](https://claude.ai/code), [Cursor](https://cursor.com), [Kiro](https://kiro.dev). Install instructions below.
++Supported agents: [Claude Code](https://claude.ai/code), [Codex](https://openai.com/codex/), [Cursor](https://cursor.com), [Kiro](https://kiro.dev). Install instructions below.
+ 
+ ## Installation
+ 
+@@ -30,7 +30,19 @@ Requires ggshield 1.49.0+. The hook is merged into `~/.claude/settings.json` (gl
+ 
+ **MCP server (bundled).** The plugin also ships a `.mcp.json` at the repo root that registers the [GitGuardian Developer MCP server](https://github.com/GitGuardian/ggmcp). Claude Code picks it up automatically on install — you get tools for incident triage, honeytoken management, and live scans against the GitGuardian API from inside the agent. Requires [`uvx`](https://docs.astral.sh/uv/) on your PATH (Claude Code will spawn the server with `uvx --from git+https://github.com/GitGuardian/ggmcp.git developer-mcp-server`). First run opens a browser for OAuth against your GitGuardian instance; subsequent runs reuse the cached token. For EU SaaS or self-hosted, set `GITGUARDIAN_URL` in the MCP server config (see the [ggmcp README](https://github.com/GitGuardian/ggmcp#configuration-for-different-gitguardian-instances)).
+ 
+-### Cursor, Codex, Copilot, and 50+ other agents
++### Codex
++
++Add this repo as a Codex plugin marketplace, then install the `gitguardian` plugin from the plugin browser:
++
++```
++codex plugin marketplace add GitGuardian/agent-skills
++codex
++/plugins
++```
++
++Requires Codex CLI v0.117.0 or later (plugin system). In the plugin browser, select the GitGuardian marketplace, open `gitguardian`, and choose **Install plugin**. The skills auto-trigger the same way they do in Claude Code; the bundled Codex MCP config is picked up automatically.
++
++### Cursor, Copilot, and 50+ other agents
+ 
+ Install with the [skills.sh](https://skills.sh) CLI — auto-detects which agents you have on your machine:
+ 
+@@ -38,7 +50,7 @@ Install with the [skills.sh](https://skills.sh) CLI — auto-detects which agent
+ npx skills add gitguardian/agent-skills
+ ```
+ 
+-Works with Cursor, Codex, GitHub Copilot, OpenCode, Cline, Windsurf, Gemini CLI, Kiro CLI, and [50+ other agents](https://github.com/vercel-labs/skills#supported-agents).
++Works with Cursor, GitHub Copilot, OpenCode, Cline, Windsurf, Gemini CLI, Kiro CLI, and [50+ other agents](https://github.com/vercel-labs/skills#supported-agents).
+ 
+ ### Kiro
+ 
+@@ -88,9 +100,14 @@ Both skills handle first-time setup — they detect the user's package manager,
+ .cursor-plugin/                       # Cursor plugin manifest
+   marketplace.json
+   plugin.json
++.codex-plugin/                        # Codex plugin manifest
++  plugin.json
++.agents/plugins/                      # Codex repo-scoped marketplace
++  marketplace.json
++.codex-mcp.json                       # GitGuardian Developer MCP server config (Codex)
+ .mcp.json                             # GitGuardian Developer MCP server config (Claude Code)
+ mcp.json                              # same, for Cursor
+-skills/                               # one folder per skill — shared by Claude Code & Cursor
++skills/                               # one folder per skill — shared by Claude Code, Codex & Cursor
+   scan-secrets/
+     SKILL.md
+     references/                       # heavy reference, loaded on demand
+diff --git a/skills/create-honeytokens/SKILL.md b/skills/create-honeytokens/SKILL.md
+index dc890fe..e654b99 100644
+--- a/skills/create-honeytokens/SKILL.md
++++ b/skills/create-honeytokens/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: create-honeytokens
+-description: Generate a GitGuardian honeytoken — a decoy AWS credential that alerts when used — and guide the user on where to plant it for highest signal (example configs, internal wikis, deploy scripts, pre-publication repos). Auto-triggers when creating `.env.example` or sample config files, when preparing to open-source a previously-private repository, when seeding internal wikis or runbooks with credentials, or when the user mentions honeytokens, canary tokens, decoys, or tripwire credentials.
++description: Use when generating or planting GitGuardian honeytokens, canary tokens, decoys, or tripwire credentials. Use around `.env.example`, sample configs, pre-publication open-source repos, internal wikis, runbooks, deploy scripts, or other attractive leak surfaces.
+ ---
+ 
+ # ggshield — Create Honeytokens
+diff --git a/skills/scan-secrets/SKILL.md b/skills/scan-secrets/SKILL.md
+index a8fa0db..fe31c55 100644
+--- a/skills/scan-secrets/SKILL.md
++++ b/skills/scan-secrets/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: scan-secrets
+-description: Scan code for hardcoded secrets via the ggshield CLI — 700+ types (AWS keys, GitHub tokens, database URLs, JWTs, private keys, Stripe keys, and more) across files, directories, git history, commits, Docker images, and PyPI packages. Auto-triggers when writing or editing code that handles credentials, `.env` files, CI/CD pipelines, GitHub Actions workflows, Dockerfiles, or deployment scripts, or when the user asks to scan or audit a repo, history, image, or package before committing or pushing.
++description: Use when scanning code, commits, git history, Docker images, or packages for hardcoded secrets. Use when editing credential-handling code, `.env` files, CI/CD workflows, Dockerfiles, deployment scripts, or before committing or pushing.
+ ---
+ 
+ # ggshield — GitGuardian Secret Scanner
+@@ -102,14 +102,21 @@ If not installed, **detect what's already on the user's machine and use that** 
+ - macOS: `.pkg` from https://github.com/GitGuardian/ggshield/releases
+ - Windows: `.zip` from the releases page — unpack and add to `%PATH%`
+ 
+-**4. If nothing above is available**, install `uv` (the lightest dependency, works on all platforms) and use it:
++**4. If nothing above is available**, install `uv` (the lightest dependency, works on all platforms) and use it. Unlike package-manager installs, this fetches a shell script at runtime, so do not pipe it directly to `sh`. Download it first, let the user inspect it or verify it against the checksum published in the uv install docs, then execute only after they confirm:
+ 
+ ```bash
+-curl -LsSf https://astral.sh/uv/install.sh | sh && source ~/.bashrc
++# Step 1: download the installer without executing it
++curl -LsSf https://astral.sh/uv/install.sh -o /tmp/uv-install.sh
++
++# Step 2: ask the user to inspect /tmp/uv-install.sh or verify its checksum
++# against https://docs.astral.sh/uv/getting-started/installation/
++
++# Step 3: once the user confirms, execute and load uv onto PATH
++sh /tmp/uv-install.sh && . ~/.bashrc
+ uv tool install ggshield
+ ```
+ 
+-(Replace `~/.bashrc` with the appropriate file for the user's shell, e.g. `~/.zshrc`.)
++(Replace `~/.bashrc` with the appropriate file for the user's shell, e.g. `~/.zshrc`.) If the user prefers not to run an unverified remote installer, fall back to a platform-native option from the tables above instead.
+ 
+ If a chosen method fails for an unexpected reason (network restrictions, missing tap, externally-managed Python), fall through to the next available option rather than retrying the same one. Once installed, confirm with `which ggshield` (or `where ggshield` on Windows) that the binary lives on the user's normal PATH.
+ 

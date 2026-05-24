@@ -1,0 +1,467 @@
+diff --git a/src/renderer/renderer.js b/src/renderer/renderer.js
+index 8b1e026..e52e8e1 100644
+--- a/src/renderer/renderer.js
++++ b/src/renderer/renderer.js
+@@ -16,6 +16,12 @@ let requestCounter = 0;
+ /** requestId of the currently in-flight generation, or null when idle. */
+ let currentRequestId = null;
+ 
++/** Information about the current in-flight generation (if any). */
++let activeGeneration = null;
++
++/** Information about the current prompt edit UI (if any). */
++let activePromptEdit = null;
++
+ /** Cached list of available Ollama model names (used by the model dropdown). */
+ let modelOptions = [];
+ 
+@@ -528,6 +534,9 @@ async function loadSession(id) {
+   messagesEl.innerHTML = '';
+   for (const m of messages) {
+     const el = appendMessage(m.role, m.content);
++    if (m.role === 'user') {
++      attachUserEditButton(el, m);
++    }
+     if (m.role === 'assistant') {
+       attachAssistantButtons(el, m.paramsSnapshot || null);
+     }
+@@ -597,6 +606,179 @@ function appendMessage(role, initialText) {
+   return wrapper; // return the whole wrapper so callers can attach extras
+ }
+ 
++function getChatRequestParams() {
++  const { model, system, options } = window.Params.splitParamsForChat(workingParams);
++  if (!model) {
++    setStatus('右ペインでモデルを選択してください', 'warn');
++    return null;
++  }
++  return { model, system, options };
++}
++
++function setMessageContent(contentEl, text) {
++  contentEl.dataset.raw = text;
++  contentEl.innerHTML = renderMarkdown(text);
++}
++
++function attachUserEditButton(wrapper, userMsg) {
++  if (wrapper.querySelector('.message__edit-btn')) return;
++
++  const editBtn = document.createElement('button');
++  editBtn.type = 'button';
++  editBtn.classList.add('message__edit-btn');
++  editBtn.textContent = '✎';
++  editBtn.title = 'プロンプトを編集';
++  editBtn.setAttribute('aria-label', 'プロンプトを編集');
++  editBtn.addEventListener('click', () => {
++    openUserPromptEdit(wrapper, userMsg);
++  });
++  wrapper.appendChild(editBtn);
++}
++
++function closeActivePromptEdit() {
++  if (!activePromptEdit) return;
++  const { wrapper, userMsg, originalText } = activePromptEdit;
++  const contentEl = wrapper.querySelector('.message__content');
++  if (contentEl) setMessageContent(contentEl, userMsg?.content ?? originalText);
++  wrapper.classList.remove('message--editing');
++  activePromptEdit = null;
++}
++
++function openUserPromptEdit(wrapper, userMsg) {
++  if (activePromptEdit && activePromptEdit.wrapper !== wrapper) {
++    closeActivePromptEdit();
++  }
++
++  const contentEl = wrapper.querySelector('.message__content');
++  if (!contentEl) return;
++  const originalText = userMsg.content || '';
++
++  wrapper.classList.add('message--editing');
++  contentEl.innerHTML = '';
++
++  const form = document.createElement('div');
++  form.classList.add('message__edit-form');
++
++  const textarea = document.createElement('textarea');
++  textarea.classList.add('message__edit-input');
++  textarea.value = originalText;
++  textarea.setAttribute('aria-label', 'プロンプト編集');
++
++  const actions = document.createElement('div');
++  actions.classList.add('message__edit-actions');
++
++  const doneBtn = document.createElement('button');
++  doneBtn.type = 'button';
++  doneBtn.classList.add('message__edit-action', 'message__edit-action--done');
++  doneBtn.textContent = '◯';
++  doneBtn.title = '完了';
++  doneBtn.setAttribute('aria-label', '編集を完了');
++
++  const cancelBtn = document.createElement('button');
++  cancelBtn.type = 'button';
++  cancelBtn.classList.add('message__edit-action', 'message__edit-action--cancel');
++  cancelBtn.textContent = '×';
++  cancelBtn.title = 'キャンセル';
++  cancelBtn.setAttribute('aria-label', '編集をキャンセル');
++
++  actions.appendChild(doneBtn);
++  actions.appendChild(cancelBtn);
++  form.appendChild(textarea);
++  form.appendChild(actions);
++  contentEl.appendChild(form);
++
++  activePromptEdit = { wrapper, userMsg, originalText };
++
++  const finishEdit = () => {
++    closeActivePromptEdit();
++  };
++
++  cancelBtn.addEventListener('click', finishEdit);
++
++  textarea.addEventListener('keydown', (e) => {
++    if (e.key === 'Escape') {
++      e.preventDefault();
++      finishEdit();
++    } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
++      e.preventDefault();
++      doneBtn.click();
++    }
++  });
++
++  doneBtn.addEventListener('click', async () => {
++    const nextText = textarea.value.trim();
++    if (!nextText) {
++      setStatus('プロンプトは空にできません', 'warn');
++      textarea.focus();
++      return;
++    }
++    if (nextText === originalText) {
++      finishEdit();
++      return;
++    }
++    await applyPromptEdit(userMsg, wrapper, nextText);
++    finishEdit();
++  });
++
++  textarea.focus();
++  textarea.selectionStart = textarea.value.length;
++  textarea.selectionEnd = textarea.value.length;
++}
++
++async function cancelActiveGenerationForEdit() {
++  if (!activeGeneration || currentRequestId === null) return;
++  activeGeneration.discardAssistantBubble = true;
++  activeGeneration.suppressCancelledStatus = true;
++  window.ollama.cancel(currentRequestId);
++  await activeGeneration.finished;
++}
++
++async function applyPromptEdit(userMsg, wrapper, nextText) {
++  const userIdx = messages.indexOf(userMsg);
++  if (userIdx === -1 || !activeSessionId) return;
++
++  await cancelActiveGenerationForEdit();
++
++  const previousText = userMsg.content;
++  const previousMessages = messages;
++  const truncatedMessages = previousMessages.slice(0, userIdx + 1);
++
++  userMsg.content = nextText;
++  messages = truncatedMessages;
++
++  try {
++    const saved = await window.sessions.update(activeSessionId, { messages });
++    if (!saved) throw new Error('セッションへの保存に失敗しました');
++  } catch (err) {
++    userMsg.content = previousText;
++    messages = previousMessages;
++    const errorMessage = err instanceof Error
++      ? (err.message || '不明なエラー')
++      : (String(err) || '不明なエラー');
++    setStatus(`セッション保存エラー: ${errorMessage}`, 'error');
++    return;
++  }
++
++  const contentEl = wrapper.querySelector('.message__content');
++  if (contentEl) setMessageContent(contentEl, nextText);
++
++  let node = wrapper.nextElementSibling;
++  while (node) {
++    const next = node.nextElementSibling;
++    node.remove();
++    node = next;
++  }
++
++  const chatParams = getChatRequestParams();
++  if (!chatParams) return;
++  const paramsSnapshot = JSON.parse(JSON.stringify(workingParams));
++  await startAssistantGeneration({
++    sessionId: activeSessionId,
++    ...chatParams,
++    paramsSnapshot,
++  });
++}
++
+ /**
+  * Attach a copy button and optional "ⓘ" params button to an assistant message.
+  * The popover hover is scoped to the info wrapper only, so the copy button
+@@ -688,48 +870,7 @@ function updateSendButton() {
+   sendBtn.disabled = !hasText || !hasModel || isGenerating;
+ }
+ 
+-async function sendMessage() {
+-  const text = messageInput.value.trim();
+-  if (!text || isGenerating) return;
+-
+-  const { model, system, options } = window.Params.splitParamsForChat(workingParams);
+-  if (!model) {
+-    setStatus('右ペインでモデルを選択してください', 'warn');
+-    return;
+-  }
+-
+-  // Snapshot the params at the moment generation starts, so edits made during
+-  // the response don't leak into this assistant turn's audit trail.
+-  const paramsSnapshot = JSON.parse(JSON.stringify(workingParams));
+-
+-  // Render user message
+-  const userMsg = { role: 'user', content: text };
+-  messages.push(userMsg);
+-  const userMsgEl = appendMessage('user', text);
+-  const elRect = userMsgEl.getBoundingClientRect();
+-  const containerRect = messagesEl.getBoundingClientRect();
+-  messagesEl.scrollTo({ top: messagesEl.scrollTop + elRect.top - containerRect.top, behavior: 'smooth' });
+-  messageInput.value = '';
+-  updateSendButton();
+-
+-  let sessionId;
+-  try {
+-    sessionId = await ensureSession(text);
+-    const savedSession = await window.sessions.appendMessage(sessionId, userMsg);
+-    if (!savedSession) throw new Error('セッションへの保存に失敗しました');
+-  } catch (err) {
+-    messages.pop();
+-    userMsgEl.remove();
+-    messageInput.value = text;
+-    updateSendButton();
+-    const errorMessage = err instanceof Error
+-      ? (err.message || '不明なエラー')
+-      : (String(err) || '不明なエラー');
+-    setStatus(`セッション保存エラー: ${errorMessage}`, 'error');
+-    return;
+-  }
+-
+-  // Prepare assistant bubble
++async function startAssistantGeneration({ sessionId, model, system, options, paramsSnapshot }) {
+   const assistantWrapper = appendMessage('assistant', '');
+   const assistantContent = assistantWrapper.querySelector('.message__content');
+   isGenerating = true;
+@@ -742,6 +883,17 @@ async function sendMessage() {
+   let responseText = '';
+   let done = false;
+   let finishCalled = false;
++  let finishResolve;
++  const finished = new Promise((resolve) => { finishResolve = resolve; });
++
++  const generation = {
++    requestId,
++    assistantWrapper,
++    discardAssistantBubble: false,
++    suppressCancelledStatus: false,
++    finished,
++  };
++  activeGeneration = generation;
+ 
+   const unsubChunk = window.ollama.onChatChunk(({ requestId: rid, content, done: isDone }) => {
+     if (rid !== requestId) return;
+@@ -759,12 +911,15 @@ async function sendMessage() {
+   const unsubError = window.ollama.onChatError(({ requestId: rid, error, cancelled }) => {
+     if (rid !== requestId) return;
+     if (cancelled) {
+-      // Voluntary cancel: keep any partial text; update status only.
+-      if (!responseText) {
++      // Voluntary cancel: keep partial text unless this request is being
++      // explicitly discarded by prompt editing.
++      if (!generation.discardAssistantBubble && !responseText) {
+         assistantContent.textContent = '[キャンセル]';
+         assistantContent.classList.add('message__content--error');
+       }
+-      setStatus('生成をキャンセルしました', 'warn');
++      if (!generation.suppressCancelledStatus) {
++        setStatus('生成をキャンセルしました', 'warn');
++      }
+     } else {
+       assistantContent.textContent = `[エラー: ${error}]`;
+       assistantContent.classList.add('message__content--error');
+@@ -781,8 +936,13 @@ async function sendMessage() {
+     isGenerating = false;
+     currentRequestId = null;
+     cancelBtn.style.display = 'none';
++    if (activeGeneration === generation) activeGeneration = null;
+ 
+-    if (done && responseText) {
++    if (generation.discardAssistantBubble) {
++      generation.assistantWrapper.remove();
++    }
++
++    if (!generation.discardAssistantBubble && done && responseText) {
+       const assistantMsg = {
+         role: 'assistant',
+         content: responseText,
+@@ -799,6 +959,7 @@ async function sendMessage() {
+       }
+     }
+     updateSendButton();
++    finishResolve();
+   }
+ 
+   window.ollama.chat(requestId, {
+@@ -809,12 +970,59 @@ async function sendMessage() {
+   });
+ }
+ 
++async function sendMessage() {
++  const text = messageInput.value.trim();
++  if (!text || isGenerating) return;
++
++  const chatParams = getChatRequestParams();
++  if (!chatParams) return;
++
++  // Snapshot the params at the moment generation starts, so edits made during
++  // the response don't leak into this assistant turn's audit trail.
++  const paramsSnapshot = JSON.parse(JSON.stringify(workingParams));
++
++  // Render user message
++  const userMsg = { role: 'user', content: text };
++  messages.push(userMsg);
++  const userMsgEl = appendMessage('user', text);
++  attachUserEditButton(userMsgEl, userMsg);
++  const elRect = userMsgEl.getBoundingClientRect();
++  const containerRect = messagesEl.getBoundingClientRect();
++  messagesEl.scrollTo({ top: messagesEl.scrollTop + elRect.top - containerRect.top, behavior: 'smooth' });
++  messageInput.value = '';
++  updateSendButton();
++
++  let sessionId;
++  try {
++    sessionId = await ensureSession(text);
++    const savedSession = await window.sessions.appendMessage(sessionId, userMsg);
++    if (!savedSession) throw new Error('セッションへの保存に失敗しました');
++  } catch (err) {
++    messages.pop();
++    userMsgEl.remove();
++    messageInput.value = text;
++    updateSendButton();
++    const errorMessage = err instanceof Error
++      ? (err.message || '不明なエラー')
++      : (String(err) || '不明なエラー');
++    setStatus(`セッション保存エラー: ${errorMessage}`, 'error');
++    return;
++  }
++
++  await startAssistantGeneration({
++    sessionId,
++    ...chatParams,
++    paramsSnapshot,
++  });
++}
++
+ // ---------------------------------------------------------------------------
+ // New chat
+ // ---------------------------------------------------------------------------
+ 
+ function startNewChat() {
+   if (isGenerating) return;
++  closeActivePromptEdit();
+   activeSessionId = null;
+   messages = [];
+   messagesEl.innerHTML = '';
+diff --git a/src/renderer/styles.css b/src/renderer/styles.css
+index 7aeffc3..73fbfde 100644
+--- a/src/renderer/styles.css
++++ b/src/renderer/styles.css
+@@ -311,6 +311,85 @@ body {
+   border: 1px solid var(--color-border);
+ }
+ 
++.message__edit-btn {
++  position: absolute;
++  top: 18px;
++  right: 4px;
++  background: transparent;
++  border: none;
++  color: var(--color-text-muted);
++  font-size: 12px;
++  line-height: 1;
++  padding: 3px 6px;
++  border-radius: 4px;
++  cursor: pointer;
++  opacity: 0;
++  pointer-events: none;
++  transition: opacity var(--transition), color var(--transition), background var(--transition);
++}
++
++.message--user:hover .message__edit-btn {
++  opacity: 1;
++  pointer-events: auto;
++}
++
++.message__edit-btn:hover {
++  color: var(--color-primary);
++  background: var(--color-secondary);
++}
++
++.message__edit-form {
++  display: flex;
++  flex-direction: column;
++  gap: 8px;
++}
++
++.message__edit-input {
++  width: 100%;
++  min-height: 72px;
++  resize: vertical;
++  background: var(--color-surface-raised);
++  color: var(--color-text);
++  border: 1px solid var(--color-border);
++  border-radius: 6px;
++  padding: 8px 10px;
++  font-size: 13px;
++  line-height: 1.5;
++  font-family: var(--font-sans);
++  outline: none;
++}
++
++.message__edit-input:focus {
++  border-color: var(--color-primary);
++}
++
++.message__edit-actions {
++  display: flex;
++  justify-content: flex-end;
++  gap: 6px;
++}
++
++.message__edit-action {
++  background: transparent;
++  border: 1px solid var(--color-border);
++  color: var(--color-text-muted);
++  width: 26px;
++  height: 26px;
++  border-radius: 50%;
++  cursor: pointer;
++  line-height: 1;
++  display: inline-flex;
++  align-items: center;
++  justify-content: center;
++  transition: color var(--transition), border-color var(--transition), background var(--transition);
++}
++
++.message__edit-action:hover {
++  border-color: var(--color-primary);
++  color: var(--color-primary);
++  background: var(--color-secondary);
++}
++
+ .message__content--error {
+   color: var(--color-error);
+   border-color: var(--color-error) !important;

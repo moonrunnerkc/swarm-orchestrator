@@ -1,0 +1,232 @@
+diff --git a/src/ouroboros/codex/cli_policy.py b/src/ouroboros/codex/cli_policy.py
+index f308aabd6..d91af6caa 100644
+--- a/src/ouroboros/codex/cli_policy.py
++++ b/src/ouroboros/codex/cli_policy.py
+@@ -11,11 +11,18 @@
+ DEFAULT_MAX_OUROBOROS_DEPTH = 5
+ DEFAULT_CODEX_CHILD_ENV_KEYS = ("OUROBOROS_AGENT_RUNTIME", "OUROBOROS_LLM_BACKEND")
+ DEFAULT_CODEX_CHILD_SESSION_ENV_KEYS = ("CODEX_THREAD_ID",)
+-_WRAPPER_MAGIC_HEADERS = (
++_COMPILED_BINARY_MAGIC_HEADERS = (
+     b"\xcf\xfa\xed\xfe",  # Mach-O 64-bit
+     b"\xce\xfa\xed\xfe",  # Mach-O 32-bit
+     b"\x7fELF",  # ELF
+ )
++_WRAPPER_SIGNATURES = (
++    b"zeude",
++    b"Zeude",
++    b"wrapper:codex",
++    b"codex-wrapper",
++)
++_WRAPPER_SIGNATURE_SCAN_BYTES = 128 * 1024
+ 
+ 
+ @dataclass(frozen=True, slots=True)
+@@ -38,8 +45,8 @@ def resolve_codex_cli_path(
+ ) -> CodexCliResolution:
+     """Resolve the safest Codex CLI path for nested automation.
+ 
+-    When the configured candidate is a compiled wrapper (for example a Zeude
+-    shim), prefer the next real ``codex`` binary on ``PATH`` instead.
++    When the configured candidate is a known compiled wrapper (for example a
++    Zeude shim), prefer the next real ``codex`` binary on ``PATH`` instead.
+     """
+     if explicit_cli_path is not None:
+         candidate = str(Path(explicit_cli_path).expanduser())
+@@ -57,7 +64,7 @@ def resolve_codex_cli_path(
+     logger.warning(
+         f"{log_namespace}.cli_wrapper_detected",
+         wrapper_path=resolved,
+-        hint="Searching PATH for the real Node.js codex CLI.",
++        hint="Searching PATH for the real Codex CLI.",
+     )
+     fallback = find_real_cli(default_cli_name=default_cli_name, skip=resolved)
+     if fallback is not None:
+@@ -84,13 +91,23 @@ def resolve_codex_cli_path(
+ 
+ 
+ def is_wrapper_binary(path: str) -> bool:
+-    """Return True when *path* looks like a compiled wrapper."""
++    """Return True when *path* looks like a known compiled Codex wrapper.
++
++    Older Zeude-era shims were compiled binaries, but the official OpenAI
++    Codex CLI is now also shipped as a native Mach-O/ELF Rust binary. A binary
++    magic header alone is therefore not enough evidence that a candidate is a
++    wrapper. Require both a compiled-binary header and a wrapper-specific
++    marker string so official Rust binaries are treated as real CLI targets.
++    """
+     try:
+         with open(path, "rb") as fh:
+-            magic = fh.read(4)
++            payload = fh.read(_WRAPPER_SIGNATURE_SCAN_BYTES)
+     except OSError:
+         return False
+-    return magic in _WRAPPER_MAGIC_HEADERS
++
++    if len(payload) < 4 or payload[:4] not in _COMPILED_BINARY_MAGIC_HEADERS:
++        return False
++    return any(signature in payload for signature in _WRAPPER_SIGNATURES)
+ 
+ 
+ def find_real_cli(*, default_cli_name: str = DEFAULT_CODEX_CLI_NAME, skip: str) -> str | None:
+diff --git a/tests/unit/codex/test_cli_policy.py b/tests/unit/codex/test_cli_policy.py
+index 21dd6d294..7274f26b7 100644
+--- a/tests/unit/codex/test_cli_policy.py
++++ b/tests/unit/codex/test_cli_policy.py
+@@ -8,6 +8,7 @@
+ 
+ from ouroboros.codex.cli_policy import (
+     build_codex_child_env,
++    is_wrapper_binary,
+     resolve_codex_cli_path,
+ )
+ 
+@@ -23,8 +24,19 @@ def info(self, event: str, **kwargs: object) -> None:
+         self.events.append(("info", event, kwargs))
+ 
+ 
+-def _write_wrapper(path: Path) -> Path:
+-    path.write_bytes(b"\xcf\xfa\xed\xfe")
++MACHO_64_MAGIC = b"\xcf\xfa\xed\xfe"
++ELF_MAGIC = b"\x7fELF"
++OFFICIAL_RUST_CODEX_MARKER = b"OpenAI Codex codex-rs 0.132.0"
++
++
++def _write_official_rust_codex(path: Path, *, magic: bytes) -> Path:
++    path.write_bytes(magic + b"\0" * 64 + OFFICIAL_RUST_CODEX_MARKER)
++    path.chmod(0o755)
++    return path
++
++
++def _write_wrapper(path: Path, *, magic: bytes = MACHO_64_MAGIC) -> Path:
++    path.write_bytes(magic + b"\0" * 32 + b"zeude codex-wrapper")
+     path.chmod(0o755)
+     return path
+ 
+@@ -35,7 +47,73 @@ def _write_script(path: Path) -> Path:
+     return path
+ 
+ 
++class TestIsWrapperBinary:
++    def test_official_rust_macho_codex_is_not_wrapper(self, tmp_path: Path) -> None:
++        """Native macOS OpenAI Codex Rust binaries must not be rejected as wrappers."""
++        codex = _write_official_rust_codex(tmp_path / "codex", magic=MACHO_64_MAGIC)
++
++        assert is_wrapper_binary(str(codex)) is False
++
++    def test_official_rust_elf_codex_is_not_wrapper(self, tmp_path: Path) -> None:
++        """Native Linux OpenAI Codex Rust binaries must not be rejected as wrappers."""
++        codex = _write_official_rust_codex(tmp_path / "codex", magic=ELF_MAGIC)
++
++        assert is_wrapper_binary(str(codex)) is False
++
++    def test_known_compiled_macho_codex_wrapper_is_wrapper(self, tmp_path: Path) -> None:
++        """Compiled candidates still need a wrapper-specific marker to be rejected."""
++        wrapper = _write_wrapper(tmp_path / "codex-wrapper", magic=MACHO_64_MAGIC)
++
++        assert is_wrapper_binary(str(wrapper)) is True
++
++    def test_known_compiled_elf_codex_wrapper_is_wrapper(self, tmp_path: Path) -> None:
++        """Linux compiled candidates also need a wrapper marker to be rejected."""
++        wrapper = _write_wrapper(tmp_path / "codex-wrapper", magic=ELF_MAGIC)
++
++        assert is_wrapper_binary(str(wrapper)) is True
++
++
+ class TestResolveCodexCliPath:
++    def test_keeps_official_rust_macho_codex_without_wrapper_warning(
++        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
++    ) -> None:
++        """macOS Codex Rust binaries should resolve as real CLI targets."""
++        codex = _write_official_rust_codex(tmp_path / "codex", magic=MACHO_64_MAGIC)
++        logger = _FakeLogger()
++
++        monkeypatch.setenv("PATH", str(tmp_path))
++
++        resolution = resolve_codex_cli_path(
++            explicit_cli_path=None,
++            configured_cli_path=None,
++            logger=logger,
++            log_namespace="codex_cli_runtime",
++        )
++
++        assert resolution.cli_path == str(codex)
++        assert resolution.wrapper_path is None
++        assert logger.events == []
++
++    def test_keeps_official_rust_elf_codex_without_wrapper_warning(
++        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
++    ) -> None:
++        """Linux Codex Rust binaries should resolve as real CLI targets."""
++        codex = _write_official_rust_codex(tmp_path / "codex", magic=ELF_MAGIC)
++        logger = _FakeLogger()
++
++        monkeypatch.setenv("PATH", str(tmp_path))
++
++        resolution = resolve_codex_cli_path(
++            explicit_cli_path=None,
++            configured_cli_path=None,
++            logger=logger,
++            log_namespace="codex_cli_runtime",
++        )
++
++        assert resolution.cli_path == str(codex)
++        assert resolution.wrapper_path is None
++        assert logger.events == []
++
+     def test_falls_back_from_wrapper_to_real_cli(
+         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+     ) -> None:
+@@ -64,7 +142,7 @@ def test_falls_back_from_wrapper_to_real_cli(
+                 "codex_cli_adapter.cli_wrapper_detected",
+                 {
+                     "wrapper_path": str(wrapper),
+-                    "hint": "Searching PATH for the real Node.js codex CLI.",
++                    "hint": "Searching PATH for the real Codex CLI.",
+                 },
+             ),
+             (
+diff --git a/tests/unit/orchestrator/test_codex_cli_runtime.py b/tests/unit/orchestrator/test_codex_cli_runtime.py
+index 343cf7f69..f87bd621c 100644
+--- a/tests/unit/orchestrator/test_codex_cli_runtime.py
++++ b/tests/unit/orchestrator/test_codex_cli_runtime.py
+@@ -174,7 +174,7 @@ class TestCodexCliRuntime:
+ 
+     @staticmethod
+     def _write_wrapper(path: Path) -> Path:
+-        path.write_bytes(b"\xcf\xfa\xed\xfe")
++        path.write_bytes(b"\xcf\xfa\xed\xfe" + b"\0" * 32 + b"zeude codex-wrapper")
+         path.chmod(0o755)
+         return path
+ 
+@@ -539,7 +539,7 @@ def test_resolve_cli_path_falls_back_from_wrapper(self, tmp_path: Path) -> None:
+         mock_warning.assert_called_once_with(
+             "codex_cli_runtime.cli_wrapper_detected",
+             wrapper_path=str(wrapper),
+-            hint="Searching PATH for the real Node.js codex CLI.",
++            hint="Searching PATH for the real Codex CLI.",
+         )
+         mock_info.assert_any_call(
+             "codex_cli_runtime.cli_resolved_via_fallback",
+diff --git a/tests/unit/providers/test_codex_cli_adapter.py b/tests/unit/providers/test_codex_cli_adapter.py
+index b6aa2e3f0..dd2716ee7 100644
+--- a/tests/unit/providers/test_codex_cli_adapter.py
++++ b/tests/unit/providers/test_codex_cli_adapter.py
+@@ -120,7 +120,7 @@ class TestCodexCliLLMAdapter:
+ 
+     @staticmethod
+     def _write_wrapper(path: Path) -> Path:
+-        path.write_bytes(b"\xcf\xfa\xed\xfe")
++        path.write_bytes(b"\xcf\xfa\xed\xfe" + b"\0" * 32 + b"zeude codex-wrapper")
+         path.chmod(0o755)
+         return path
+ 
+@@ -212,7 +212,7 @@ def test_resolve_cli_path_falls_back_from_wrapper(self, tmp_path: Path) -> None:
+         mock_warning.assert_called_once_with(
+             "codex_cli_adapter.cli_wrapper_detected",
+             wrapper_path=str(wrapper),
+-            hint="Searching PATH for the real Node.js codex CLI.",
++            hint="Searching PATH for the real Codex CLI.",
+         )
+         mock_info.assert_called_once_with(
+             "codex_cli_adapter.cli_resolved_via_fallback",

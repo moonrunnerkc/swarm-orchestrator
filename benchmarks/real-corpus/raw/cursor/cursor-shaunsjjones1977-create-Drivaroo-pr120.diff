@@ -1,0 +1,752 @@
+diff --git a/src/app/api/dealers/calendar/ics/route.ts b/src/app/api/dealers/calendar/ics/route.ts
+new file mode 100644
+index 0000000..c8c9f69
+--- /dev/null
++++ b/src/app/api/dealers/calendar/ics/route.ts
+@@ -0,0 +1,14 @@
++import { buildDealerCalendarIcs } from "@/lib/dealer-calendar-events";
++
++export async function GET(request: Request) {
++  const origin = new URL(request.url).origin;
++  const body = buildDealerCalendarIcs(origin);
++
++  return new Response(body, {
++    headers: {
++      "Cache-Control": "no-store",
++      "Content-Disposition": 'attachment; filename="drivaroo-dealer-calendar.ics"',
++      "Content-Type": "text/calendar; charset=utf-8",
++    },
++  });
++}
+diff --git a/src/app/api/dealers/calendar/reminders/route.ts b/src/app/api/dealers/calendar/reminders/route.ts
+new file mode 100644
+index 0000000..f1f0773
+--- /dev/null
++++ b/src/app/api/dealers/calendar/reminders/route.ts
+@@ -0,0 +1,54 @@
++import { cookies } from "next/headers";
++import { NextResponse } from "next/server";
++import { getNextDealerCalendarEvent } from "@/lib/dealer-calendar-events";
++import { insertNotification } from "@/lib/notification-events";
++import { getSupabaseAdmin } from "@/lib/supabase-admin";
++import { sendPushToUser } from "@/lib/web-push-server";
++import { createClient } from "@/utils/supabase/server";
++
++export async function POST() {
++  const authClient = createClient(await cookies());
++  const {
++    data: { user },
++  } = await authClient.auth.getUser();
++
++  if (!user) {
++    return NextResponse.json({ error: "Please sign in." }, { status: 401 });
++  }
++
++  const next = getNextDealerCalendarEvent();
++  if (!next) {
++    return NextResponse.json({ error: "No calendar items found." }, { status: 404 });
++  }
++
++  const title = `Upcoming: ${next.event.label}`;
++  const body = `${next.event.time} ${next.event.customerName} - ${next.event.vehicleTitle}`;
++
++  try {
++    await insertNotification(getSupabaseAdmin(), {
++      body,
++      title,
++      type: "dealer_calendar_reminder",
++      userId: user.id,
++    });
++  } catch {
++    // Push is the primary action for this endpoint; in-app notification is best effort.
++  }
++
++  const pushResult = await sendPushToUser(user.id, {
++    body,
++    title,
++    url: `/dealers/crm/${next.event.leadId}`,
++  });
++
++  return NextResponse.json({
++    nextEvent: {
++      customerName: next.event.customerName,
++      label: next.event.label,
++      time: next.event.time,
++      vehicleTitle: next.event.vehicleTitle,
++    },
++    push: pushResult,
++    success: true,
++  });
++}
+diff --git a/src/app/dealers/calendar/page.tsx b/src/app/dealers/calendar/page.tsx
+new file mode 100644
+index 0000000..881ca49
+--- /dev/null
++++ b/src/app/dealers/calendar/page.tsx
+@@ -0,0 +1,103 @@
++import Link from "next/link";
++import DealerCalendarReminderButton from "@/components/DealerCalendarReminderButton";
++import {
++  buildGoogleCalendarUrl,
++  getDealerCalendarEvents,
++} from "@/lib/dealer-calendar-events";
++
++const weekDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
++
++const scheduledItems = getDealerCalendarEvents();
++
++export default function DealerCalendarPage() {
++  return (
++    <main className="min-h-screen bg-[#0d0d0f] px-6 py-16 text-white">
++      <div className="mx-auto max-w-6xl">
++        <section className="mb-8 rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_85%_20%,rgba(212,175,55,0.18),transparent_30%),#15161a] p-8 shadow-2xl shadow-black/30">
++          <p className="mb-3 text-sm font-semibold uppercase tracking-[0.3em] text-[#d4af37]">
++            Dealer calendar
++          </p>
++          <h1 className="text-4xl font-black text-white sm:text-5xl">
++            Test drives, inspections and pickups.
++          </h1>
++          <p className="mt-4 max-w-3xl text-white/55">
++            View scheduled CRM activity by day. Live calendar sync can connect to
++            test drive bookings and lead tasks as those records come online.
++          </p>
++          <div className="mt-6 flex flex-wrap gap-3">
++            <Link
++              href="/dealers/dashboard"
++              className="rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold text-white hover:border-[#d4af37]/50 hover:text-[#d4af37]"
++            >
++              Dealer dashboard
++            </Link>
++            <Link
++              href="/dealers/crm"
++              className="rounded-xl bg-[#d4af37] px-4 py-2 text-sm font-bold text-black hover:bg-[#e6c65c]"
++            >
++              Dealer CRM
++            </Link>
++            <Link
++              href="/api/dealers/calendar/ics"
++              download
++              className="rounded-xl border border-[#d4af37]/45 px-4 py-2 text-sm font-bold text-[#f4d77c] hover:bg-[#d4af37]/10"
++            >
++              Sync iCal / Apple
++            </Link>
++          </div>
++          <div className="mt-4">
++            <DealerCalendarReminderButton />
++          </div>
++        </section>
++
++        <section className="grid gap-4 lg:grid-cols-5">
++          {weekDays.map((day) => {
++            const dayItems = scheduledItems.filter((item) => item.day === day);
++
++            return (
++              <article
++                key={day}
++                className="rounded-[1.5rem] border border-white/10 bg-[#15161a] p-4 shadow-xl shadow-black/20"
++              >
++                <h2 className="border-b border-white/10 pb-3 text-sm font-black uppercase tracking-[0.2em] text-[#d4af37]">
++                  {day}
++                </h2>
++                <div className="mt-4 space-y-3">
++                  {dayItems.map((item) => (
++                    <div key={`${item.day}-${item.time}-${item.label}`}>
++                      <Link
++                        href={`/dealers/crm/${item.leadId}`}
++                        className="block rounded-2xl border border-white/10 bg-black/25 p-4 transition hover:border-[#d4af37]/45"
++                      >
++                        <p className="text-lg font-black text-white">{item.time}</p>
++                        <p className="mt-1 font-semibold text-[#f4d77c]">
++                          {item.label}
++                        </p>
++                        <p className="mt-2 text-xs leading-5 text-white/45">
++                          {item.customerName} · {item.vehicleTitle}
++                        </p>
++                      </Link>
++                      <a
++                        href={buildGoogleCalendarUrl(item, "https://drivaroo.com")}
++                        target="_blank"
++                        rel="noreferrer"
++                        className="mt-2 block rounded-xl border border-[#d4af37]/35 px-3 py-2 text-center text-xs font-bold text-[#f4d77c] hover:bg-[#d4af37]/10"
++                      >
++                        Add to Google Calendar
++                      </a>
++                    </div>
++                  ))}
++                  {dayItems.length === 0 ? (
++                    <p className="rounded-2xl border border-dashed border-white/15 p-4 text-center text-sm text-white/35">
++                      No bookings
++                    </p>
++                  ) : null}
++                </div>
++              </article>
++            );
++          })}
++        </section>
++      </div>
++    </main>
++  );
++}
+diff --git a/src/app/dealers/crm/[leadId]/page.tsx b/src/app/dealers/crm/[leadId]/page.tsx
+index ad80994..322154c 100644
+--- a/src/app/dealers/crm/[leadId]/page.tsx
++++ b/src/app/dealers/crm/[leadId]/page.tsx
+@@ -43,6 +43,7 @@ export default function DealerCrmLeadPage() {
+   }
+ 
+   const pipelineStatus = inferDealerCrmPipelineStatus(lead);
++  const tasks = lead.tasks?.length ? lead.tasks : sampleTasks;
+ 
+   return (
+     <main className="min-h-screen bg-[#0d0d0f] px-6 py-16 text-white">
+@@ -101,7 +102,7 @@ export default function DealerCrmLeadPage() {
+             <div className="mt-4 rounded-2xl border border-white/10 bg-black/25 p-4">
+               <h3 className="font-bold text-white">Tasks</h3>
+               <ul className="mt-3 space-y-2 text-sm text-white/60">
+-                {sampleTasks.map((task) => (
++                {tasks.map((task) => (
+                   <li key={task} className="flex gap-2">
+                     <span className="text-[#d4af37]">□</span>
+                     <span>{task}</span>
+@@ -109,6 +110,31 @@ export default function DealerCrmLeadPage() {
+                 ))}
+               </ul>
+             </div>
++            {lead.schedule?.length ? (
++              <div className="mt-4 rounded-2xl border border-white/10 bg-black/25 p-4">
++                <h3 className="font-bold text-white">Schedule</h3>
++                <div className="mt-3 grid gap-3 sm:grid-cols-2">
++                  {lead.schedule.map((day) => (
++                    <div
++                      key={day.day}
++                      className="rounded-xl border border-white/10 bg-white/[0.03] p-3"
++                    >
++                      <p className="mb-2 font-bold text-[#f4d77c]">{day.day}</p>
++                      <div className="space-y-2 text-sm text-white/60">
++                        {day.items.map((item) => (
++                          <p key={`${day.day}-${item.time}-${item.label}`}>
++                            <span className="font-semibold text-white">
++                              {item.time}
++                            </span>{" "}
++                            {item.label}
++                          </p>
++                        ))}
++                      </div>
++                    </div>
++                  ))}
++                </div>
++              </div>
++            ) : null}
+             {lead.insights.length > 0 ? (
+               <div className="mt-4 flex flex-wrap gap-2">
+                 {lead.insights.map((insight) => (
+diff --git a/src/app/dealers/dashboard/page.tsx b/src/app/dealers/dashboard/page.tsx
+index 70e09c6..4a0763f 100644
+--- a/src/app/dealers/dashboard/page.tsx
++++ b/src/app/dealers/dashboard/page.tsx
+@@ -170,6 +170,12 @@ export default function DealerDashboardPage() {
+             >
+               Dealer CRM
+             </Link>
++            <Link
++              href="/dealers/calendar"
++              className="flex min-h-12 items-center justify-center rounded-xl border border-[#d4af37]/45 bg-[#d4af37]/5 px-4 py-3 text-center text-sm font-bold text-[#f4d77c] transition hover:bg-[#d4af37]/10 active:translate-y-px"
++            >
++              Calendar
++            </Link>
+             <Link
+               href="/dealers/finance-leads"
+               className="flex min-h-12 items-center justify-center rounded-xl border border-white/15 bg-white/[0.02] px-4 py-3 text-center text-sm font-bold text-white transition hover:border-[#d4af37]/50 hover:text-[#d4af37] active:translate-y-px"
+diff --git a/src/components/DealerCalendarReminderButton.tsx b/src/components/DealerCalendarReminderButton.tsx
+new file mode 100644
+index 0000000..731ee90
+--- /dev/null
++++ b/src/components/DealerCalendarReminderButton.tsx
+@@ -0,0 +1,54 @@
++"use client";
++
++import { useState } from "react";
++
++export default function DealerCalendarReminderButton() {
++  const [isSending, setIsSending] = useState(false);
++  const [status, setStatus] = useState("");
++
++  async function sendReminder() {
++    setIsSending(true);
++    setStatus("");
++
++    try {
++      const response = await fetch("/api/dealers/calendar/reminders", {
++        method: "POST",
++      });
++      const data = (await response.json().catch(() => null)) as {
++        error?: string;
++        push?: { sent?: number; skipped?: boolean };
++      } | null;
++
++      if (!response.ok) {
++        setStatus(data?.error ?? "Could not send calendar reminder.");
++        return;
++      }
++
++      if (data?.push?.sent) {
++        setStatus("Push reminder sent for the next calendar item.");
++      } else if (data?.push?.skipped) {
++        setStatus("Push reminders are not configured yet.");
++      } else {
++        setStatus("No push subscription found. Enable notifications first.");
++      }
++    } catch {
++      setStatus("Could not send calendar reminder.");
++    } finally {
++      setIsSending(false);
++    }
++  }
++
++  return (
++    <div>
++      <button
++        type="button"
++        onClick={sendReminder}
++        disabled={isSending}
++        className="rounded-xl border border-[#d4af37]/45 px-4 py-2 text-sm font-bold text-[#f4d77c] hover:bg-[#d4af37]/10 disabled:cursor-not-allowed disabled:opacity-60"
++      >
++        {isSending ? "Sending..." : "Send push reminder"}
++      </button>
++      {status ? <p className="mt-2 text-xs text-white/45">{status}</p> : null}
++    </div>
++  );
++}
+diff --git a/src/lib/dealer-calendar-events.ts b/src/lib/dealer-calendar-events.ts
+new file mode 100644
+index 0000000..ac9a7b0
+--- /dev/null
++++ b/src/lib/dealer-calendar-events.ts
+@@ -0,0 +1,128 @@
++import { sampleDealerCrmLeads } from "@/lib/dealer-crm-sample-leads";
++
++export type DealerCalendarEvent = {
++  customerName: string;
++  day: string;
++  label: string;
++  leadId: string;
++  time: string;
++  vehicleTitle: string;
++};
++
++const dayIndexes: Record<string, number> = {
++  Sunday: 0,
++  Monday: 1,
++  Tuesday: 2,
++  Wednesday: 3,
++  Thursday: 4,
++  Friday: 5,
++  Saturday: 6,
++};
++
++function pad(value: number) {
++  return String(value).padStart(2, "0");
++}
++
++export function getDealerCalendarEvents(): DealerCalendarEvent[] {
++  return sampleDealerCrmLeads.flatMap((lead) =>
++    (lead.schedule ?? []).flatMap((day) =>
++      day.items.map((item) => ({
++        ...item,
++        day: day.day,
++        leadId: lead.id,
++        customerName: lead.buyer.name,
++        vehicleTitle: lead.vehicle.title,
++      })),
++    ),
++  );
++}
++
++export function getNextEventDate(day: string, time: string, from = new Date()) {
++  const targetDay = dayIndexes[day] ?? 1;
++  const [hours = "9", minutes = "0"] = time.split(":");
++  const next = new Date(from);
++  const daysUntil = (targetDay - next.getDay() + 7) % 7;
++  next.setDate(next.getDate() + daysUntil);
++  next.setHours(Number(hours), Number(minutes), 0, 0);
++
++  if (next <= from) {
++    next.setDate(next.getDate() + 7);
++  }
++
++  return next;
++}
++
++export function formatIcsDate(date: Date) {
++  return `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}T${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}${pad(date.getUTCSeconds())}Z`;
++}
++
++function escapeIcsText(value: string) {
++  return value
++    .replace(/\\/g, "\\\\")
++    .replace(/;/g, "\\;")
++    .replace(/,/g, "\\,")
++    .replace(/\n/g, "\\n");
++}
++
++export function buildDealerCalendarIcs(origin: string) {
++  const now = new Date();
++  const events = getDealerCalendarEvents();
++  const lines = [
++    "BEGIN:VCALENDAR",
++    "VERSION:2.0",
++    "PRODID:-//Drivaroo//Dealer Calendar//EN",
++    "CALSCALE:GREGORIAN",
++    "METHOD:PUBLISH",
++  ];
++
++  for (const event of events) {
++    const start = getNextEventDate(event.day, event.time, now);
++    const end = new Date(start.getTime() + 60 * 60 * 1000);
++    const summary = `${event.label} - ${event.customerName}`;
++    const description = `${event.vehicleTitle} via Drivaroo dealer calendar`;
++
++    lines.push(
++      "BEGIN:VEVENT",
++      `UID:${event.leadId}-${event.day}-${event.time}@drivaroo.com`,
++      `DTSTAMP:${formatIcsDate(now)}`,
++      `DTSTART:${formatIcsDate(start)}`,
++      `DTEND:${formatIcsDate(end)}`,
++      `SUMMARY:${escapeIcsText(summary)}`,
++      `DESCRIPTION:${escapeIcsText(description)}`,
++      `URL:${origin}/dealers/crm/${encodeURIComponent(event.leadId)}`,
++      "BEGIN:VALARM",
++      "TRIGGER:-PT30M",
++      "ACTION:DISPLAY",
++      `DESCRIPTION:${escapeIcsText(summary)}`,
++      "END:VALARM",
++      "END:VEVENT",
++    );
++  }
++
++  lines.push("END:VCALENDAR");
++  return `${lines.join("\r\n")}\r\n`;
++}
++
++export function buildGoogleCalendarUrl(event: DealerCalendarEvent, origin: string) {
++  const start = getNextEventDate(event.day, event.time);
++  const end = new Date(start.getTime() + 60 * 60 * 1000);
++  const params = new URLSearchParams({
++    action: "TEMPLATE",
++    text: `${event.label} - ${event.customerName}`,
++    dates: `${formatIcsDate(start).replace(/Z$/, "Z")}/${formatIcsDate(end).replace(/Z$/, "Z")}`,
++    details: `${event.vehicleTitle} via Drivaroo dealer calendar`,
++    location: `${origin}/dealers/crm/${event.leadId}`,
++  });
++
++  return `https://calendar.google.com/calendar/render?${params.toString()}`;
++}
++
++export function getNextDealerCalendarEvent() {
++  const now = new Date();
++  return getDealerCalendarEvents()
++    .map((event) => ({
++      event,
++      start: getNextEventDate(event.day, event.time, now),
++    }))
++    .sort((first, second) => first.start.getTime() - second.start.getTime())[0];
++}
+diff --git a/src/lib/dealer-crm-sample-leads.ts b/src/lib/dealer-crm-sample-leads.ts
+index 4f38f1d..2397f73 100644
+--- a/src/lib/dealer-crm-sample-leads.ts
++++ b/src/lib/dealer-crm-sample-leads.ts
+@@ -14,6 +14,14 @@ export type DealerCrmLead = {
+   message: string;
+   notes?: string[];
+   pipelineStatus?: DealerCrmPipelineStatus;
++  schedule?: Array<{
++    day: string;
++    items: Array<{
++      label: string;
++      time: string;
++    }>;
++  }>;
++  tasks?: string[];
+   vehicle: {
+     id: string;
+     price: number | null;
+@@ -43,6 +51,20 @@ export const sampleDealerCrmLeads: DealerCrmLead[] = [
+       "Interested in tow package.",
+     ],
+     pipelineStatus: "new",
++    schedule: [
++      {
++        day: "Monday",
++        items: [
++          { label: "Test Drive", time: "10:00" },
++          { label: "Inspection", time: "12:00" },
++        ],
++      },
++      {
++        day: "Tuesday",
++        items: [{ label: "Vehicle Pickup", time: "9:30" }],
++      },
++    ],
++    tasks: ["Call customer tomorrow", "Send finance quote", "Arrange inspection"],
+     vehicle: { id: "sample-toyota-hilux-sr5", price: 34500, title: "Toyota Hilux" },
+   },
+   {
+diff --git a/supabase/RUN_IN_SUPABASE.sql b/supabase/RUN_IN_SUPABASE.sql
+index 300fb04..0e4bc37 100644
+--- a/supabase/RUN_IN_SUPABASE.sql
++++ b/supabase/RUN_IN_SUPABASE.sql
+@@ -282,6 +282,123 @@ create policy "Dealers can manage own lead_notes"
+     )
+   );
+ 
++create table if not exists public.lead_tasks (
++  id uuid primary key default gen_random_uuid(),
++  lead_id uuid references public.dealer_leads(id) on delete cascade,
++  title text,
++  due_date timestamptz,
++  completed boolean default false
++);
++
++alter table public.lead_tasks
++  add column if not exists lead_id uuid references public.dealer_leads(id) on delete cascade;
++
++alter table public.lead_tasks
++  add column if not exists title text;
++
++alter table public.lead_tasks
++  add column if not exists due_date timestamptz;
++
++alter table public.lead_tasks
++  add column if not exists completed boolean default false;
++
++create index if not exists lead_tasks_lead_id_idx
++  on public.lead_tasks(lead_id, due_date);
++
++create index if not exists lead_tasks_completed_idx
++  on public.lead_tasks(completed);
++
++alter table public.lead_tasks enable row level security;
++
++drop policy if exists "Dealers can view own lead_tasks"
++  on public.lead_tasks;
++create policy "Dealers can view own lead_tasks"
++  on public.lead_tasks
++  for select
++  to authenticated
++  using (
++    exists (
++      select 1
++      from public.dealer_leads
++      where dealer_leads.id = lead_tasks.lead_id
++        and dealer_leads.dealer_id = auth.uid()
++    )
++  );
++
++drop policy if exists "Dealers can manage own lead_tasks"
++  on public.lead_tasks;
++create policy "Dealers can manage own lead_tasks"
++  on public.lead_tasks
++  for all
++  to authenticated
++  using (
++    exists (
++      select 1
++      from public.dealer_leads
++      where dealer_leads.id = lead_tasks.lead_id
++        and dealer_leads.dealer_id = auth.uid()
++    )
++  )
++  with check (
++    exists (
++      select 1
++      from public.dealer_leads
++      where dealer_leads.id = lead_tasks.lead_id
++        and dealer_leads.dealer_id = auth.uid()
++    )
++  );
++
++create table if not exists public.test_drive_bookings (
++  id uuid primary key default gen_random_uuid(),
++  vehicle_id uuid references public.vehicles(id) on delete set null,
++  dealer_id uuid,
++  customer_name text,
++  booking_time timestamptz,
++  status text default 'pending'
++);
++
++alter table public.test_drive_bookings
++  add column if not exists vehicle_id uuid references public.vehicles(id) on delete set null;
++
++alter table public.test_drive_bookings
++  add column if not exists dealer_id uuid;
++
++alter table public.test_drive_bookings
++  add column if not exists customer_name text;
++
++alter table public.test_drive_bookings
++  add column if not exists booking_time timestamptz;
++
++alter table public.test_drive_bookings
++  add column if not exists status text default 'pending';
++
++alter table public.test_drive_bookings
++  drop constraint if exists test_drive_bookings_status_check;
++
++alter table public.test_drive_bookings
++  add constraint test_drive_bookings_status_check
++  check (status in ('pending', 'confirmed', 'completed', 'cancelled', 'no_show'));
++
++create index if not exists test_drive_bookings_vehicle_id_idx
++  on public.test_drive_bookings(vehicle_id);
++
++create index if not exists test_drive_bookings_dealer_id_idx
++  on public.test_drive_bookings(dealer_id, booking_time);
++
++create index if not exists test_drive_bookings_status_idx
++  on public.test_drive_bookings(status);
++
++alter table public.test_drive_bookings enable row level security;
++
++drop policy if exists "Dealers can manage own test_drive_bookings"
++  on public.test_drive_bookings;
++create policy "Dealers can manage own test_drive_bookings"
++  on public.test_drive_bookings
++  for all
++  to authenticated
++  using (auth.uid() = dealer_id)
++  with check (auth.uid() = dealer_id);
++
+ create table if not exists public.payments (
+   id uuid primary key default gen_random_uuid(),
+   user_id uuid references auth.users(id) on delete set null,
+diff --git a/supabase/dealer-leads.sql b/supabase/dealer-leads.sql
+index 9eea6ce..1c5f2d8 100644
+--- a/supabase/dealer-leads.sql
++++ b/supabase/dealer-leads.sql
+@@ -140,3 +140,69 @@ create policy "Dealers can manage own lead_notes"
+         and dealer_leads.dealer_id = auth.uid()
+     )
+   );
++
++create table if not exists public.lead_tasks (
++  id uuid primary key default gen_random_uuid(),
++  lead_id uuid references public.dealer_leads(id) on delete cascade,
++  title text,
++  due_date timestamptz,
++  completed boolean default false
++);
++
++alter table public.lead_tasks
++  add column if not exists lead_id uuid references public.dealer_leads(id) on delete cascade;
++
++alter table public.lead_tasks
++  add column if not exists title text;
++
++alter table public.lead_tasks
++  add column if not exists due_date timestamptz;
++
++alter table public.lead_tasks
++  add column if not exists completed boolean default false;
++
++create index if not exists lead_tasks_lead_id_idx
++  on public.lead_tasks(lead_id, due_date);
++
++create index if not exists lead_tasks_completed_idx
++  on public.lead_tasks(completed);
++
++alter table public.lead_tasks enable row level security;
++
++drop policy if exists "Dealers can view own lead_tasks"
++  on public.lead_tasks;
++create policy "Dealers can view own lead_tasks"
++  on public.lead_tasks
++  for select
++  to authenticated
++  using (
++    exists (
++      select 1
++      from public.dealer_leads
++      where dealer_leads.id = lead_tasks.lead_id
++        and dealer_leads.dealer_id = auth.uid()
++    )
++  );
++
++drop policy if exists "Dealers can manage own lead_tasks"
++  on public.lead_tasks;
++create policy "Dealers can manage own lead_tasks"
++  on public.lead_tasks
++  for all
++  to authenticated
++  using (
++    exists (
++      select 1
++      from public.dealer_leads
++      where dealer_leads.id = lead_tasks.lead_id
++        and dealer_leads.dealer_id = auth.uid()
++    )
++  )
++  with check (
++    exists (
++      select 1
++      from public.dealer_leads
++      where dealer_leads.id = lead_tasks.lead_id
++        and dealer_leads.dealer_id = auth.uid()
++    )
++  );
+diff --git a/supabase/test-drive-bookings.sql b/supabase/test-drive-bookings.sql
+new file mode 100644
+index 0000000..07df47e
+--- /dev/null
++++ b/supabase/test-drive-bookings.sql
+@@ -0,0 +1,51 @@
++-- Dealer test-drive booking requests.
++create table if not exists public.test_drive_bookings (
++  id uuid primary key default gen_random_uuid(),
++  vehicle_id uuid references public.vehicles(id) on delete set null,
++  dealer_id uuid,
++  customer_name text,
++  booking_time timestamptz,
++  status text default 'pending'
++);
++
++alter table public.test_drive_bookings
++  add column if not exists vehicle_id uuid references public.vehicles(id) on delete set null;
++
++alter table public.test_drive_bookings
++  add column if not exists dealer_id uuid;
++
++alter table public.test_drive_bookings
++  add column if not exists customer_name text;
++
++alter table public.test_drive_bookings
++  add column if not exists booking_time timestamptz;
++
++alter table public.test_drive_bookings
++  add column if not exists status text default 'pending';
++
++alter table public.test_drive_bookings
++  drop constraint if exists test_drive_bookings_status_check;
++
++alter table public.test_drive_bookings
++  add constraint test_drive_bookings_status_check
++  check (status in ('pending', 'confirmed', 'completed', 'cancelled', 'no_show'));
++
++create index if not exists test_drive_bookings_vehicle_id_idx
++  on public.test_drive_bookings(vehicle_id);
++
++create index if not exists test_drive_bookings_dealer_id_idx
++  on public.test_drive_bookings(dealer_id, booking_time);
++
++create index if not exists test_drive_bookings_status_idx
++  on public.test_drive_bookings(status);
++
++alter table public.test_drive_bookings enable row level security;
++
++drop policy if exists "Dealers can manage own test_drive_bookings"
++  on public.test_drive_bookings;
++create policy "Dealers can manage own test_drive_bookings"
++  on public.test_drive_bookings
++  for all
++  to authenticated
++  using (auth.uid() = dealer_id)
++  with check (auth.uid() = dealer_id);

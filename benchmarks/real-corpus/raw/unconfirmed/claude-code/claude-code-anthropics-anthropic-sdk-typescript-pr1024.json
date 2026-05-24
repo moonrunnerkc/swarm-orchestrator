@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-typescript-pr1024",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1024,
+    "headSha": "0e59f29ec26f599308b1275b67ed623755240ab2",
+    "baseSha": "d3aff2821ae2e261f67a10779c8a47c3ce24f0e8",
+    "title": "fix(base64): process large arrays in chunks to avoid call stack overflow",
+    "body": "## Summary\n\n- `String.fromCharCode.apply(null, largeArray)` spreads the entire `Uint8Array` as function arguments, which exceeds the JS engine call stack limit for inputs larger than ~100 KB in non-Node environments (browsers, Cloudflare Workers, Deno)\n- Replace with a chunked loop (8 KB per chunk) that stays well within stack limits\n- Round-trip test added covering a 200 KB input in both `Buffer` and `atob` modes\n\nFixes #932",
+    "author": "importpieter",
+    "headRef": "fix-932",
+    "repository": "anthropics/anthropic-sdk-typescript"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-typescript",
+    "headSha": "0e59f29ec26f599308b1275b67ed623755240ab2",
+    "baseSha": "d3aff2821ae2e261f67a10779c8a47c3ce24f0e8"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-typescript-pr1024.diff",
+  "vendoredAt": "2026-05-24T03:16:40.673Z",
+  "collectedAt": "2026-05-24T03:16:40.673Z"
+}

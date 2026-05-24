@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24152",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24152,
+    "headSha": "564ad40646c5b8ec3f36f232115f4ed2d7952465",
+    "baseSha": "7924743c38e9a28795c1533ab5143dceea5ca566",
+    "title": "chore: add JSON schema policy fixture coverage",
+    "body": "## Why\r\n\r\nBefore changing the Codex Bridge JSON schema policy, add integration coverage around real connector-like MCP tool schemas. The existing unit tests cover individual sanitizer behaviors, but they do not make it easy to see whether full fixture schemas keep model-visible guidance, prune only unreachable definitions, drop unsupported JSON Schema fields, and stay within the Responses API schema budget.\r\n\r\n## What Changed\r\n\r\n- Added `tools/tests/json_schema_policy_fixtures.rs`, which converts MCP tool fixtures through `mcp_tool_to_responses_api_tool` and validates the resulting Responses tool parameters.\r\n- Added connector-style fixtures for Slack, Google Calendar, Google Drive, Notion, and Microsoft Outlook Email under `tools/tests/fixtures/json_schema_policy/`.\r\n- Added fixture assertions for preserved guidance, pruned definitions, expected field drops after `JsonSchema` conversion, marker count baselines, and dangling local `$ref` prevention.\r\n- Added a real oversized golden Notion `create_page` input schema fixture to exercise the compaction path that strips descriptions, drops root `$defs`, rewrites local refs, and fits the compacted schema under the budget.",
+    "author": "celia-oai",
+    "headRef": "dev/cc/integration-test",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "564ad40646c5b8ec3f36f232115f4ed2d7952465",
+    "baseSha": "7924743c38e9a28795c1533ab5143dceea5ca566"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24152.diff",
+  "vendoredAt": "2026-05-24T03:20:52.877Z",
+  "collectedAt": "2026-05-24T03:20:52.877Z"
+}

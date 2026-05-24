@@ -1,0 +1,480 @@
+diff --git a/src/data/blog/claude-code-competitors-comparison.ts b/src/data/blog/claude-code-competitors-comparison.ts
+new file mode 100644
+index 0000000..d968fa4
+--- /dev/null
++++ b/src/data/blog/claude-code-competitors-comparison.ts
+@@ -0,0 +1,459 @@
++import { BlogPost } from "@/lib/types";
++
++export const claudeCodeCompetitorsComparison: BlogPost = {
++  slug: "claude-code-competitors-comparison",
++  title:
++    "Claude Code Competitors in 2026: A Complete Compare and Contrast",
++  description:
++    "A practical, no-hype comparison of Claude Code against every serious competitor in 2026 — Cursor, GitHub Copilot, Codex CLI, Aider, Cline, Windsurf, Devin, Replit Agent, Zed AI, and Sourcegraph Cody. Architecture, agentic depth, extensibility, pricing, and when to pick which.",
++  publishedDate: "2026-05-19",
++  tags: [
++    "claude-code",
++    "comparison",
++    "developer-tools",
++    "opinion",
++    "productivity",
++    "ai-coding",
++    "competitors",
++    "seo",
++  ],
++  featured: true,
++  author: {
++    name: "Claude Directory",
++    url: "https://github.com/tmcpa/claudedirectory",
++  },
++  relatedItems: [
++    {
++      type: "blog",
++      slug: "claude-code-vs-cursor-vs-copilot",
++      relationship: "recommends",
++    },
++    {
++      type: "blog",
++      slug: "claude-md-guide",
++      relationship: "recommends",
++    },
++    {
++      type: "blog",
++      slug: "claude-code-hooks-guide",
++      relationship: "recommends",
++    },
++    {
++      type: "blog",
++      slug: "mcp-servers-guide",
++      relationship: "recommends",
++    },
++    {
++      type: "blog",
++      slug: "claude-code-workflows-10x-productivity",
++      relationship: "recommends",
++    },
++    {
++      type: "blog",
++      slug: "best-claude-code-plugins",
++      relationship: "recommends",
++    },
++  ],
++  content: `# Claude Code Competitors in 2026: A Complete Compare and Contrast
++
++The AI coding tool market has fragmented into distinct philosophies. Some tools live in your terminal. Some replace your editor. Some run autonomously on remote machines. Some are just better autocomplete. They all claim to be the "future of software engineering," and they can't all be right.
++
++This guide is a clear-eyed walk through every serious competitor to **Claude Code** in 2026, with an honest take on where each one wins, where each one loses, and how to pick the right tool for the work in front of you.
++
++If you only want the head-to-head against Cursor and Copilot, we have a [dedicated comparison guide](/blog/claude-code-vs-cursor-vs-copilot). This post is wider — it covers the whole field.
++
++---
++
++## The Competitive Landscape at a Glance
++
++The market has roughly split into five categories. Most tools straddle two, but the center of gravity is clear:
++
++| Category | Representative Tools | Core Promise |
++|---|---|---|
++| **Terminal-native agents** | Claude Code, OpenAI Codex CLI, Aider | Lives in the shell, edits files, runs commands |
++| **AI-native IDEs** | Cursor, Windsurf, Zed AI | Replaces your editor with an AI-first one |
++| **Editor extensions** | GitHub Copilot, Cline, Cody, Continue | Adds AI to the editor you already use |
++| **Autonomous cloud agents** | Devin, Replit Agent, Claude Managed Agents | Runs in the cloud on its own VM |
++| **Code search + AI** | Sourcegraph Cody, GitHub Copilot Workspace | AI grounded in repo-wide retrieval |
++
++Claude Code is unusual in that it spans three of these — it's a terminal-native agent by default, can drive cloud-hosted managed agents, and integrates with editor extensions through MCP. That's part of why the comparison is more interesting than a simple feature checklist.
++
++---
++
++## The Full Competitor Comparison Table
++
++| Tool | Interface | Default Model | Agentic Depth | Extensibility | Pricing | Best For |
++|---|---|---|---|---|---|---|
++| **Claude Code** | Terminal CLI | Claude Opus 4.7 / Sonnet 4.6 | Deep, default-on | Hooks, MCP, skills, agents, CLAUDE.md | API usage or $20–$200/mo subscriptions | Power users, agentic workflows, large refactors |
++| **Cursor** | Custom VS Code fork | Claude / GPT / Gemini (selectable) | Medium (Composer Agent) | .cursorrules, VS Code extensions | $20/mo Pro, $40/mo Business | Visual editing with multi-model flexibility |
++| **GitHub Copilot** | VS Code / JetBrains extension | GPT, Claude, Gemini | Medium (Copilot Workspace, Agents) | .github/copilot-instructions.md | $10/mo Individual, $19/mo Business | Autocomplete, GitHub-centric teams |
++| **Windsurf (Codeium)** | Custom IDE | Cascade (proprietary) + Claude/GPT | Medium-Deep (Cascade Flows) | Local indexing, MCP | $15/mo Pro, $30/mo Teams | Long-running agentic flows in a visual IDE |
++| **OpenAI Codex CLI** | Terminal CLI | GPT-5 / o-series | Deep, default-on | MCP, custom prompts, AGENTS.md | API usage-based | OpenAI-stack developers wanting a terminal agent |
++| **Aider** | Terminal CLI | BYOK (Claude, GPT, Gemini, local) | Medium (git-loop) | Conventions file, custom commands | Free (BYOK) | Git-native pair programming with any model |
++| **Cline** | VS Code extension | BYOK (Claude, GPT, local, etc.) | Deep (Plan + Act modes) | MCP, custom instructions | Free (BYOK) | Open-source agent inside VS Code |
++| **Devin** | Web app + Slack | Proprietary (Cognition) | Very deep, fully autonomous | Limited, sandbox-bound | $500/mo Team and up | Long-horizon tickets, hands-off delegation |
++| **Replit Agent** | Replit web IDE | Multiple (Claude, GPT) | Deep, in-browser | Replit ecosystem | Replit Core $20/mo + usage | Building and shipping projects from a browser |
++| **Zed AI** | Native Rust editor (Zed) | Claude, GPT, others | Medium (Assistant + Threads) | MCP, slash commands | $20/mo Pro (Zed Pro) | Performance-obsessed devs wanting speed + AI |
++| **Sourcegraph Cody** | VS Code, JetBrains, web | Claude, GPT, others | Medium (Agent, with retrieval) | Repo-wide context, custom recipes | $9/mo Pro, $19/mo Enterprise | Large monorepos needing repo-aware AI |
++
++The pricing column is where the lines are most likely to shift between when this was written and when you read it. Treat the values as a snapshot, not a quote.
++
++---
++
++## How to Read This Comparison
++
++There are three honest axes that separate these tools — and pricing isn't the most important one.
++
++1. **Where it lives.** Terminal, IDE, or cloud. This determines what it can touch and how it composes with the rest of your workflow.
++2. **How agentic it is by default.** Some tools wait for you to click "Apply" on each diff. Others read the codebase, write code, run tests, fix failures, and only stop when the task is done. The depth of the default loop matters more than the marketing.
++3. **What you can plug into it.** Hooks, MCP servers, skills, custom agents. The ceiling on each tool is set by how deeply you can customize it, not by the model it shipped with on launch day.
++
++Most reviews focus on which model is "smarter." That ranking flips every six months. The architectural choices flip much less often, and they have a far bigger impact on whether the tool actually fits your workflow.
++
++---
++
++## Claude Code: The Baseline
++
++Before comparing, a quick recap. Claude Code is:
++
++- A **terminal-native** application. It runs in your shell, edits files on disk, and runs commands directly.
++- **Agentic by default.** Give it a task and it plans, executes, verifies, and iterates without intervention.
++- **Deeply extensible** through CLAUDE.md, hooks, MCP servers, skills, and custom subagents.
++- Powered by **Claude Opus 4.7** (1M context) and **Sonnet 4.6** (default for speed), shipped first-party by Anthropic.
++
++That last point matters more than it looks. Because Claude Code is an Anthropic product, every new Claude capability — extended thinking, prompt caching, 1M context windows, computer use, Skills — ships in Claude Code on day one. Third-party tools always lag.
++
++Now to the competitors.
++
++---
++
++## Cursor: The Visual AI-Native IDE
++
++**What it is:** A VS Code fork rebuilt around AI. Inline editing with Cmd+K, a Composer panel for multi-file changes, tab autocomplete, and a chat sidebar.
++
++**Where it wins:**
++
++- **Visual diff workflow.** Every AI edit shows up as an inline diff you accept or reject. If you're the kind of developer who wants eyes on every change, this is the most satisfying experience on the market.
++- **Model flexibility.** You can switch between Claude, GPT, and Gemini per-task. Sometimes GPT writes better SQL; sometimes Claude refactors better. Cursor lets you pick.
++- **VS Code compatibility.** All your VS Code extensions, themes, and keybindings carry over.
++
++**Where it loses to Claude Code:**
++
++- **Agentic depth.** Cursor's Composer Agent is capable, but it's still oriented around "propose a change, you approve, you continue." Claude Code's default loop runs autonomously through plan → edit → test → fix → retry without intervention.
++- **No hooks.** There's no equivalent to Claude Code's hook system for pre/post tool-use automation. If you want Claude to lint every file it touches, that's a one-line hook. In Cursor, it's a manual habit.
++- **Terminal composition.** Cursor has a terminal, but it's a panel inside the editor. Claude Code *is* the terminal — pipe \`git diff\` into it, run it in CI, SSH into a server and use it there.
++
++**Pick Cursor if:** you want AI tightly integrated with a visual editor and want fine-grained control over each diff.
++
++**Pick Claude Code if:** you want autonomous multi-step execution and want to script the workflow itself.
++
++---
++
++## GitHub Copilot: The Universal Autocomplete
++
++**What it is:** An extension that adds AI to VS Code, JetBrains, Neovim, and Visual Studio. Started as autocomplete; now includes chat, inline editing, and Copilot Workspace (a more agentic mode).
++
++**Where it wins:**
++
++- **Lowest friction.** Install the extension, sign in, get suggestions. No new editor, no CLI, no config.
++- **GitHub-native workflows.** PR review summaries, issue-to-PR drafts, Actions integration. If your engineering org runs on GitHub, Copilot slots in without surface-area friction.
++- **JetBrains support.** Copilot has the most mature JetBrains integration of any AI tool. If you live in IntelliJ or PyCharm, this is often decisive.
++- **Lowest individual price.** $10/month is the cheapest serious option.
++
++**Where it loses to Claude Code:**
++
++- **Autocomplete-first, agent-second.** Copilot Workspace is improving, but it's still a younger system than Claude Code's agentic loop. The depth of automation isn't comparable yet.
++- **No hooks, thin MCP support.** You can't pin lint-on-edit, test-on-save, or scan-for-secrets to the AI's lifecycle the way Claude Code lets you.
++- **Less customizable per-project context.** \`.github/copilot-instructions.md\` is fine but doesn't approach CLAUDE.md's hierarchical, multi-scope model.
++
++**Pick Copilot if:** you want autocomplete + light chat in your existing editor with the smallest possible behavior change for your team.
++
++**Pick Claude Code if:** you want an agent that finishes tasks, not a tool that helps you type faster.
++
++---
++
++## Windsurf (Codeium): Cascade Flows in an AI-First IDE
++
++**What it is:** Codeium's AI-native IDE, organized around "Cascade" — a flow system that lets the AI propose multi-step, multi-file work that you can approve in chunks.
++
++**Where it wins:**
++
++- **Long-running flows in a visual UI.** Cascade can run for many turns, edit dozens of files, and run commands, while keeping a clear visual timeline of what it did. This is the closest visual analog to Claude Code's agentic loop.
++- **Local indexing.** Windsurf builds a fast local index of your repo, giving Cascade strong repo-wide context without round-tripping every file.
++- **Lower price point than Cursor.** $15/month Pro is competitive.
++
++**Where it loses to Claude Code:**
++
++- **IDE-bound.** Cascade is a UI-driven flow inside Windsurf. Claude Code runs in any terminal, any CI pipeline, any SSH session.
++- **Less mature plugin ecosystem.** Claude Code has a deeper bench of community hooks, agents, and skills, plus a thriving MCP server ecosystem.
++- **Single model story.** Windsurf uses Codeium's models and selected partner models; Claude Code is built specifically around Claude's strengths (long context, extended thinking, computer use).
++
++**Pick Windsurf if:** you want a Cursor-style visual IDE with stronger long-running agentic flows.
++
++**Pick Claude Code if:** you want the same depth without being tied to a specific IDE.
++
++---
++
++## OpenAI Codex CLI: The Closest Direct Analog
++
++**What it is:** OpenAI's terminal-native coding agent. Runs in your shell, reads files, edits files, runs commands. Uses GPT-5 and the o-series reasoning models. Reads an \`AGENTS.md\` file for per-project instructions.
++
++This is the only competitor that is architecturally similar to Claude Code rather than philosophically different.
++
++**Where it wins:**
++
++- **OpenAI model access.** If you're already paying for OpenAI API credits or want to use GPT-5 specifically, Codex CLI is the natural pick.
++- **Familiar to OpenAI-stack developers.** AGENTS.md mirrors CLAUDE.md closely enough that switching is mostly muscle memory.
++
++**Where it loses to Claude Code:**
++
++- **Hooks and skills are thinner.** Claude Code's hook system (PreToolUse, PostToolUse, Notification, Stop) and the Skills system don't have a direct equivalent.
++- **Smaller plugin and agent ecosystem.** The community around Claude Code — agents, prompts, hooks, MCP servers — is meaningfully larger today.
++- **Context window.** Claude Opus 4.7 ships with a 1M token context window in Claude Code. GPT-5 in Codex CLI uses a smaller default context, though OpenAI is closing the gap.
++
++**Pick Codex CLI if:** your stack is already OpenAI-centric and you want the closest equivalent experience.
++
++**Pick Claude Code if:** you want the deeper extensibility surface and the larger community library.
++
++---
++
++## Aider: The Open-Source, Git-Native Pair Programmer
++
++**What it is:** A terminal CLI that pair-programs with an AI of your choice (Claude, GPT, Gemini, local models via Ollama). Aider operates on a git repo, makes edits, and commits them automatically with descriptive messages.
++
++**Where it wins:**
++
++- **Free and open source.** Bring your own API key. No subscription, no platform lock-in.
++- **Git-as-state.** Every change is a commit. Rollback is \`git reset\`. The mental model is dead simple.
++- **Model agnostic.** Use it with any model — including local ones via Ollama. Privacy-conscious devs and teams running in air-gapped environments often pick Aider for this reason.
++- **Conventions file.** Aider's conventions are a lightweight equivalent to CLAUDE.md.
++
++**Where it loses to Claude Code:**
++
++- **Less agentic by default.** Aider is more of a pair programmer than an autonomous agent. It edits well; it iterates less aggressively.
++- **No hook system.** No MCP. No skills. The extensibility ceiling is much lower.
++- **Smaller surface.** Aider is excellent at what it does — focused, git-native code editing — but it isn't trying to be a full automation platform.
++
++**Pick Aider if:** you want a free, open-source, model-agnostic CLI pair programmer with bulletproof git semantics.
++
++**Pick Claude Code if:** you want autonomous task completion, deep extensibility, and a more comprehensive automation platform.
++
++---
++
++## Cline: The Open-Source Agent Inside VS Code
++
++**What it is:** A VS Code extension (formerly Claude Dev) that brings a Claude Code-style agentic loop into the editor. Has a Plan/Act distinction similar to Claude Code's plan mode, supports MCP servers, and lets you bring your own API key for any major model.
++
++**Where it wins:**
++
++- **Open source.** You can read, fork, and modify the agent itself.
++- **Inside VS Code.** If you're not willing to leave VS Code, Cline is one of the only ways to get a truly agentic experience without changing editors.
++- **MCP support.** Cline has surprisingly strong MCP server integration for a community project.
++
++**Where it loses to Claude Code:**
++
++- **Less mature loop.** Cline's agent is solid but doesn't yet match Claude Code's polish on multi-step plans, recovery from failures, and verification.
++- **No native hook system.** You can approximate behavior with MCP servers, but it's more friction than Claude Code's hooks.
++- **Smaller ecosystem.** Fewer skills, fewer prebuilt agents, fewer community plugins.
++
++**Pick Cline if:** you want an open-source agent inside VS Code with your own API key.
++
++**Pick Claude Code if:** you want the most refined agentic loop in the market and the largest plugin ecosystem.
++
++---
++
++## Devin: The Fully Autonomous Cloud Engineer
++
++**What it is:** Cognition Labs' autonomous coding agent. Lives in the cloud on its own sandboxed VM with a browser, terminal, and editor. You file tickets to Devin in Slack or its web app; Devin works through them, pushes PRs, and reports back.
++
++**Where it wins:**
++
++- **Genuine autonomy on long-horizon tasks.** Devin can take a vague ticket, plan, research, implement across files, run tests, and open a PR — over hours, without supervision.
++- **No local setup needed.** Everything runs in Devin's VM. The reviewer just looks at the PR.
++- **Slack-native delegation.** Filing a ticket is as easy as messaging in a channel.
++
++**Where it loses to Claude Code:**
++
++- **Slower.** Devin's autonomy comes from taking its time. For small or interactive tasks, Claude Code is dramatically faster.
++- **Less control.** Devin runs in its sandbox; you don't see every step in real time the way you do with Claude Code.
++- **Much more expensive.** Devin's team plan starts at $500/month. Claude Code at the Max tier is $200/month and supports much heavier interactive use.
++- **No deep customization of the runtime.** You can't add hooks, skills, or MCP servers to Devin's loop the way you can with Claude Code.
++
++**Pick Devin if:** you want to *delegate tickets* the way you'd delegate to a junior engineer and check back in hours later.
++
++**Pick Claude Code if:** you want a tool that works *with* you in real time and finishes most tasks in minutes. (Note: Claude Code now offers Managed Agents for the delegate-style workflow — see our [Managed Agents guide](/blog/blog-claude-managed-agents).)
++
++---
++
++## Replit Agent: From Idea to Deployed in a Browser
++
++**What it is:** Replit's in-browser AI agent. Builds full applications from a natural language description, manages dependencies, runs the app in Replit's hosting, and deploys it — all without leaving the browser.
++
++**Where it wins:**
++
++- **End-to-end in one tab.** Idea → working app → public URL in minutes. No local setup at all.
++- **Excellent for non-engineers.** Replit Agent is the most accessible of any tool here for someone who can describe an app but can't set up a dev environment.
++- **Built-in hosting and DB.** Persistence, secrets, deploys, and a Postgres database are first-class.
++
++**Where it loses to Claude Code:**
++
++- **Locked to Replit.** Your code lives on Replit's platform; the agent runs on Replit's infrastructure. Portability is limited.
++- **Less suited to existing codebases.** Replit Agent shines when starting from scratch. Claude Code shines when navigating and modifying a large existing repo.
++- **Less control over the loop.** Hooks, MCP, custom agents — none of this depth exists in Replit Agent.
++
++**Pick Replit Agent if:** you're building something net-new and want zero setup.
++
++**Pick Claude Code if:** you're working in an existing codebase and want maximum control.
++
++---
++
++## Zed AI: Performance-First with AI Built In
++
++**What it is:** A native, GPU-accelerated editor written in Rust. AI is built into the editor (Assistant panel, AI threads, slash commands, MCP support) rather than bolted on.
++
++**Where it wins:**
++
++- **Speed.** Zed is the fastest editor in this list. Open a 200K-line file and it feels like a toy. The AI sits inside an editor that doesn't lag.
++- **Native MCP.** Zed treats MCP as a first-class extension surface, much like Claude Code does.
++- **Collaboration.** Zed's CRDT-based multiplayer editing is unmatched. Pairs well with an AI you're also collaborating with.
++
++**Where it loses to Claude Code:**
++
++- **Less agentic.** Zed's Assistant is closer in spirit to Cursor than to Claude Code — it's about AI inside the editor, not an agent that runs to completion.
++- **Smaller plugin and extension ecosystem.** Zed is younger and the extensions library is still maturing.
++
++**Pick Zed if:** you want the fastest editor possible with thoughtful AI integration.
++
++**Pick Claude Code if:** you want the deepest autonomous agent, regardless of editor.
++
++---
++
++## Sourcegraph Cody: Repo-Aware AI for Monorepos
++
++**What it is:** Sourcegraph's AI assistant. The killer feature is repo-wide retrieval: Cody is grounded in Sourcegraph's code search index, so it understands large monorepos with millions of lines.
++
++**Where it wins:**
++
++- **Best retrieval for huge codebases.** If your monorepo is 5M+ lines, Cody's grounding is meaningfully better than a tool relying purely on prompt context.
++- **Multi-editor.** VS Code, JetBrains, and a web app.
++- **Enterprise integration.** SSO, audit logs, policy controls, deploy on-prem.
++
++**Where it loses to Claude Code:**
++
++- **Less agentic.** Cody's Agent is improving but still trails Claude Code on autonomous execution depth.
++- **More retrieval, less action.** Cody is excellent at *answering questions about* your code. Claude Code is excellent at *changing* your code.
++
++**Pick Cody if:** your problem is understanding and navigating a huge codebase.
++
++**Pick Claude Code if:** your problem is shipping code in one. (And: Claude Code's 1M context window in Opus 4.7 has narrowed Cody's retrieval advantage substantially for repos that fit in context.)
++
++---
++
++## Side-by-Side: The Five Decisions That Matter
++
++Forget feature checklists. Here are the five questions that actually decide which tool is right for you.
++
++### 1. Do I want an autocomplete or an agent?
++
++- **Autocomplete:** Copilot, Tabnine, Codeium's free tier
++- **Agent:** Claude Code, Codex CLI, Devin, Cline, Cursor's Composer, Windsurf's Cascade
++
++If you want suggestions while you type, the autocomplete category is fine. If you want the AI to actually *finish tasks*, you need the agent category — and Claude Code sits at the deep end of that pool.
++
++### 2. Where do I want the AI to live?
++
++- **In my terminal:** Claude Code, Codex CLI, Aider
++- **In my editor:** Copilot, Cline, Cody (as extensions); Cursor, Windsurf, Zed (as IDEs)
++- **In the cloud, fully delegated:** Devin, Claude Managed Agents, Replit Agent
++
++The "where it lives" question constrains a lot of downstream choices. Terminal-native tools compose with shell pipelines and CI. IDE tools give you visual diffs and inline editing. Cloud agents give you delegation.
++
++### 3. How much do I want to customize the AI itself?
++
++- **Heavy customization:** Claude Code (hooks, skills, agents, MCP, CLAUDE.md), Cline (MCP-driven)
++- **Medium customization:** Cursor (.cursorrules + extensions), Windsurf, Codex CLI
++- **Light customization:** Copilot, Cody, Replit Agent
++
++If you want the AI to lint after every edit, run your test suite after every commit, or refuse to touch files in a specific directory, you need a tool with a real hook system. Claude Code is the leader here.
++
++### 4. How important is model choice?
++
++- **Want first-party Claude integration:** Claude Code
++- **Want OpenAI-first:** Codex CLI, Copilot
++- **Want to mix and match:** Cursor, Windsurf, Aider, Cline
++- **Want to use local models:** Aider, Cline, Continue
++
++Different models have different strengths. If swapping models per task is important to you, the "mix and match" tools win. If you've decided Claude is the best model for your work, going first-party with Claude Code removes a layer of indirection.
++
++### 5. How much does my team need governance?
++
++- **Strong enterprise governance:** Copilot Enterprise, Cody Enterprise, Devin
++- **Solid team controls:** Claude Code (Anthropic Console, audit logs, SSO), Cursor Business, Windsurf Teams
++- **Individual-focused:** Aider, Cline (open source — governance is on you)
++
++The governance gap between consumer and enterprise has narrowed across all major tools, but if you have hard requirements around SSO, audit logging, IP indemnity, and self-hosted deployment, the enterprise editions of the big players are still the strongest.
++
++---
++
++## What Claude Code Does That No Other Tool Does
++
++After all the comparisons, here's the short list of things Claude Code does today that no competitor does with the same depth:
++
++1. **Hooks at every lifecycle event.** PreToolUse, PostToolUse, Notification, and Stop hooks let you attach arbitrary shell commands to the agent's lifecycle. No other tool has anything this granular.
++2. **Skills.** Reusable, parameterized capabilities that the agent can invoke — for spreadsheets, PDFs, presentations, custom workflows. See our [Skills guide](/blog/how-to-create-claude-skills).
++3. **Hierarchical CLAUDE.md.** Project, directory, and user-level instructions that compose automatically. Closest analog is Cursor's .cursorrules, but it's flat.
++4. **First-party model access.** Day-one access to every new Claude capability — 1M context, extended thinking, computer use, prompt caching.
++5. **Plan mode.** A deliberate read-only research phase before any edits. Most agents jump straight to action; [Plan mode](/blog/claude-code-plan-mode-guide) lets you separate thinking from doing.
++6. **Subagent system.** Spawn specialized agents from the main loop with their own context — for review, exploration, or focused work. See the [subagents guide](/blog/claude-code-subagents-guide).
++7. **Worktrees as a first-class workflow.** Run parallel agents in isolated [git worktrees](/blog/claude-code-worktrees-guide).
++
++You can replicate pieces of this elsewhere. You can't replicate the whole stack in any single competitor today.
++
++---
++
++## What the Competitors Do That Claude Code Doesn't (Yet)
++
++Honest version:
++
++- **Cursor's inline Cmd+K diff workflow.** It's genuinely good. Claude Code's terminal interface is not as visually immediate.
++- **Copilot's JetBrains integration.** Claude Code's IntelliJ/PyCharm story exists but isn't as polished.
++- **Devin's "file a ticket and walk away" delegation.** Claude Managed Agents close this gap, but Devin's Slack-native UX is hard to beat for pure delegation.
++- **Replit Agent's zero-setup browser experience.** If you don't have a dev environment at all, Replit beats every CLI.
++- **Aider's "any model, anywhere" portability.** Bring-your-own-key with local model support is a real win for privacy-conscious teams.
++- **Sourcegraph Cody's enterprise retrieval over huge monorepos.** For 10M+ line codebases, Cody's index still has an edge.
++
++A reasonable team often runs two or three of these together — for example, Claude Code as the primary agent, Copilot for autocomplete in JetBrains, and Cody for repo-wide search. That's not redundancy; that's specialization.
++
++---
++
++## A Buying Guide By Persona
++
++- **Solo developer, terminal-native:** Claude Code (primary) + Aider (free fallback)
++- **VS Code power user, visual-first:** Cursor (primary) + Claude Code (for agentic work)
++- **JetBrains team:** Copilot (primary) + Claude Code (for refactors)
++- **Non-engineer building apps:** Replit Agent
++- **Engineering manager delegating tickets:** Devin or Claude Managed Agents
++- **Enterprise team on a massive monorepo:** Sourcegraph Cody + Claude Code
++- **Privacy-conscious team, air-gapped:** Aider + local model (Ollama)
++- **Speed-obsessed dev who hates IDE lag:** Zed + Claude Code
++
++The point of this guide isn't to declare one winner. It's to make the choice deliberate. Pick the tool that matches *how* you want to work, not the one with the most marketing.
++
++---
++
++## The Honest Take
++
++Claude Code is the most capable agentic coding tool available in 2026, full stop. The combination of first-party Claude integration, hooks, skills, MCP, plan mode, subagents, and worktrees creates a customization surface that no competitor matches today.
++
++But "most capable" is not the same as "best for everyone." If you want to type and have suggestions appear, Copilot is faster. If you want to delegate tickets to a cloud agent and check back tomorrow, Devin is more autonomous. If you want a visual diff for every change, Cursor is more satisfying. If you can't or won't leave VS Code, Cline is the closest local analog.
++
++The question worth asking yourself isn't *which tool is best?* — it's *which tool fits the way I actually work?* If that turns out to be Claude Code, dive in:
++
++1. **[Set up CLAUDE.md](/blog/claude-md-guide)** — the single highest-leverage configuration step.
++2. **[Configure hooks](/blog/claude-code-hooks-guide)** — make Claude verify its own work.
++3. **[Browse plugins](/blog/best-claude-code-plugins)** — the ecosystem advantage is real.
++4. **[Build compound workflows](/blog/claude-code-workflows-10x-productivity)** — where the magic compounds.
++
++The best tool is the one you use deliberately. Pick on purpose.
++`,
++};
+diff --git a/src/data/blog/index.ts b/src/data/blog/index.ts
+index 9889bf7..8bea708 100644
+--- a/src/data/blog/index.ts
++++ b/src/data/blog/index.ts
+@@ -31,8 +31,10 @@ import { claudeCodeStatuslineGuide } from "./claude-code-statusline-guide";
+ import { claudeCodeRoutinesGuide } from "./claude-code-routines-guide";
+ import { claudeCodeSlashCommandsGuide } from "./claude-code-slash-commands-guide";
+ import { claudeCodePermissionsGuide } from "./claude-code-permissions-guide";
++import { claudeCodeCompetitorsComparison } from "./claude-code-competitors-comparison";
+ 
+ export const blogPosts: BlogPost[] = [
++  claudeCodeCompetitorsComparison,
+   claudeCodePermissionsGuide,
+   claudeCodeSlashCommandsGuide,
+   claudeCodeRoutinesGuide,

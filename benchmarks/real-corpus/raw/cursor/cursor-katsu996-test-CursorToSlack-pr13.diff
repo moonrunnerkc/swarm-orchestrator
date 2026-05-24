@@ -1,0 +1,317 @@
+diff --git a/README.md b/README.md
+index 00cfbf4..1d7e99d 100644
+--- a/README.md
++++ b/README.md
+@@ -90,6 +90,26 @@ beatoraja の `songdata.db` と難易度表 JSON を組み合わせ、GitHub Act
+   - **`sql_where`** に合わない BPM の譜面も落ちます  
+ - **トップの表が空:** 上記の「フィルタスキップ」や `filtered_data.json` 未生成の状態で `browser_rows.json` が空になっている可能性があります
+ 
++### 10. 元表ごとにレベルを「独自難易度」へ写す（`custom_level_mapping`）
++
++複数の元難易度表を `source_header_urls` に並べているとき、**配列の何番目の表か**に応じて「元のレベル値 → 独自レベル」の対応表を持てます（例: 1 番目の表のレベル 12 は独自 12、2 番目の表のレベル 1 は独自 13）。
++
++1. **`tools/table-filter/filter_config.json`** を開く  
++2. **`custom_level_mapping`** に、**`source_header_urls` と同じ長さの配列**を用意する（短い場合は足りない分だけマップ無し、長い場合は余りは無視。警告が Actions ログに出ます）  
++3. 各要素は JSON オブジェクトで、**キーが元表のレベル（文字列）**、**値が独自レベル**（数値でも文字列でも可）  
++4. 出力される列名は既定で **`custom_level`**。変えたい場合は **`custom_level_field`**（英数字とアンダースコアのみ）  
++5. 元表から読む列名が `level` 以外のときは **`custom_level_source_key`** を合わせる  
++6. マップに無いレベルが来たときは **`custom_level_unmapped`** で制御する  
++   - **`omit`（既定）:** `custom_level` 列を付けない（その行だけ欠損）  
++   - **`source`** または **`original`:** 元のレベル値をそのまま `custom_level` にコピー  
++   - **`null`:** JSON の `null` を入れる  
++
++**重複譜面:** 複数表で同じ `md5` / `sha256` が出た場合は **先に列挙したヘッダー側の行だけが残り**、独自レベルもそのソースのマップだけが使われます。
++
++**beatoraja の Table JSON:** `filtered_data.json` の各行に `custom_level` が載ります。beatoraja が未知のキーをどう表示するかは本体・スキン次第です。Pages のトップ表では「独自レベル」列として表示されます。
++
++詳細なデータフローは [docs/github-actions-songdata-table-filter.md](docs/github-actions-songdata-table-filter.md) を参照してください。
++
+ ---
+ 
+ ## ドキュメント（仕様・裏側の処理）
+diff --git a/docs/README.md b/docs/README.md
+index 15c983f..7375f4d 100644
+--- a/docs/README.md
++++ b/docs/README.md
+@@ -2,7 +2,7 @@
+ 
+ ここに置いたファイルが `https://<ユーザー>.github.io/<リポジトリ名>/` から配信されます。
+ 
+-- **トップページ**（`index.html`）: Actions 実行後、`table/browser_rows.json` を読み込み、難易度表＋`songdata.db` の列を表形式で表示します。
++- **トップページ**（`index.html`）: Actions 実行後、`table/browser_rows.json` を読み込み、難易度表＋`songdata.db` の列を表形式で表示します（`filter_config.json` の `custom_level_mapping` で付与した独自レベル列も含みます）。
+ - **Jekyll を無効にする:** `.nojekyll`
+ 
+ ## 運用（手動作業）
+diff --git a/docs/github-actions-songdata-table-filter.md b/docs/github-actions-songdata-table-filter.md
+index b977b54..a1291ca 100644
+--- a/docs/github-actions-songdata-table-filter.md
++++ b/docs/github-actions-songdata-table-filter.md
+@@ -35,6 +35,18 @@
+ 3. ヘッダーの **`data_url`** を取得（相対ならヘッダー URL に `urljoin`）。単一ソースかつ **`source_data_url`** があればそちらを優先。
+ 4. データ配列の各行について **`md5` / `sha256`** が許可集合に含まれる行だけ残す。
+ 5. **複数ヘッダー**のときは、通過行を **`md5` / `sha256` で重複除去**して 1 本のデータ配列にマージ。`course` は各ヘッダー由来を **配列として連結**。合成ヘッダーは **先頭ヘッダーをベース**にし、`data_url` だけ `SITE_BASE_URL` 上の `filtered_data.json` に差し替え。
++6. **`custom_level_mapping` が設定されているとき**は、重複除去で採用された各行について、**その行がどの元ヘッダー由来か**（マージループのインデックス）に対応するマップオブジェクトで、元のレベル列（既定: `level`）を引き、**`custom_level` 列（名前は `custom_level_field`）**に書き込む。
++
++## 独自レベル（`custom_level_mapping`）
++
++**目的:** 難易度表 A の「レベル 12」と難易度表 B の「レベル 1」を、**同じ独自スケール上の数値（またはラベル）**に揃えたい場合に使います。
++
++- **`custom_level_mapping`:** `source_header_urls`（または正規化後のヘッダー列）と **同じ順・同じ長さを推奨**の配列。`custom_level_mapping[i]` はオブジェクトで、**キー = 元表のレベルの文字列表現**、**値 = 独自レベル**（数値・文字列・`null` の値側は JSON 任意）。
++- **`custom_level_field`:** 出力 JSON に載せるキー名（既定 `custom_level`）。英字または `_` で始まり英数字と `_` のみ。
++- **`custom_level_source_key`:** 元表の行から読むレベル列名（既定 `level`）。
++- **`custom_level_unmapped`:** マップにキーが無かったとき。`omit`（既定） / `source` または `original` / `null`。
++- **重複行:** 複数ソースで同一ハッシュが出た場合は **先勝ち**のソースインデックスだけがマップに使われます。
++- **`course` 内のチャート行**には現状マップを適用していません（データ配列のメイン行のみ）。
+ 
+ ## 例: Satellite Recommend（stellabms）
+ 
+diff --git a/docs/index.html b/docs/index.html
+index 8d178aa..2fecabd 100644
+--- a/docs/index.html
++++ b/docs/index.html
+@@ -156,7 +156,7 @@ <h1>難易度表（songdata 突合・一覧）</h1>
+ 
+   var LABELS = {
+     id: "表 ID", md5: "MD5", sha256: "SHA256", title: "表タイトル", artist: "表アーティスト",
+-    level: "表レベル", url: "リンク", url_diff: "差分URL",
++    level: "表レベル", custom_level: "独自レベル", url: "リンク", url_diff: "差分URL",
+     subtitle: "サブタイトル", genre: "ジャンル", subartist: "サブアーティスト",
+     folder: "フォルダID", difficulty: "difficulty", maxbpm: "max BPM", minbpm: "min BPM",
+     length: "長さ(秒?)", notes: "ノーツ数", charthash: "charthash", date: "ファイル日時"
+@@ -197,7 +197,7 @@ <h1>難易度表（songdata 突合・一覧）</h1>
+         }
+       }
+     }
+-    var tablePri = ["id", "title", "artist", "level", "md5", "sha256", "url", "url_diff"];
++    var tablePri = ["id", "title", "artist", "level", "custom_level", "md5", "sha256", "url", "url_diff"];
+     var dbPriFull = [
+       "title", "subtitle", "artist", "genre", "path", "minbpm", "maxbpm", "notes", "length", "level",
+       "difficulty", "md5", "sha256", "folder", "preview", "banner", "stagefile", "backbmp", "tag",
+@@ -282,13 +282,22 @@ <h1>難易度表（songdata 突合・一覧）</h1>
+       } else if (meta.source_header_url) {
+         urlLine = String(meta.source_header_url);
+       }
+-      [
++      var pairs = [
+         ["行数", meta.row_count],
+         ["songdata と一致", meta.matched_songdata],
+         ["SQL 条件", meta.sql_where],
+-        ["元ヘッダー URL", urlLine],
+-        ["備考", meta.reason]
+-      ].forEach(function (pair) {
++        ["元ヘッダー URL", urlLine]
++      ];
++      if (meta.custom_level_mapping_count) {
++        pairs.push(
++          ["独自レベル列", meta.custom_level_field],
++          ["独自レベル元列", meta.custom_level_source_key],
++          ["独自レベル未マップ時", meta.custom_level_unmapped],
++          ["独自レベル マップ数（配列要素数）", meta.custom_level_mapping_count]
++        );
++      }
++      pairs.push(["備考", meta.reason]);
++      pairs.forEach(function (pair) {
+         if (pair[1] === undefined || pair[1] === null || pair[1] === "") return;
+         var dt = document.createElement("dt");
+         dt.textContent = pair[0];
+diff --git a/tools/table-filter/README.md b/tools/table-filter/README.md
+index 3beb4af..6e82472 100644
+--- a/tools/table-filter/README.md
++++ b/tools/table-filter/README.md
+@@ -18,6 +18,7 @@
+ - **`source_data_url`**: **単一ヘッダー時のみ**有効。データ JSON の URL でヘッダー内 `data_url` を上書き。**複数ヘッダー時は無視**（警告あり）。
+ - **`sql_where`**: `SELECT ... FROM song WHERE (` の直後に連結される条件式。`minbpm` / `maxbpm` は `song` の列名。
+ - **`site_base_url`**: ローカル実行時は `https://<owner>.github.io/<repo>/table` のような **ディレクトリ URL（末尾スラッシュなし）** を書く。GitHub Actions では **`SITE_BASE_URL` 環境変数**をワークフローが渡すため空でよい。
++- **`custom_level_mapping`**, **`custom_level_field`**, **`custom_level_source_key`**, **`custom_level_unmapped`**: 元表ごとのレベルを独自列に写す（詳細は [docs/github-actions-songdata-table-filter.md](../../docs/github-actions-songdata-table-filter.md)）。
+ - **`enabled`**, **`skip_if_no_songdata`**: フィルタのスキップ挙動。詳細は [docs/github-actions-songdata-table-filter.md](../../docs/github-actions-songdata-table-filter.md)。
+ 
+ ## ローカル実行
+diff --git a/tools/table-filter/build_pages_table.py b/tools/table-filter/build_pages_table.py
+index 211b780..6881362 100644
+--- a/tools/table-filter/build_pages_table.py
++++ b/tools/table-filter/build_pages_table.py
+@@ -146,6 +146,12 @@ def main() -> None:
+         "sql_where": str(cfg.get("sql_where", "")).strip(),
+         "source_header_url": header_urls[0] if header_urls else "",
+         "source_header_urls": header_urls,
++        "custom_level_field": str(cfg.get("custom_level_field") or "custom_level").strip() or "custom_level",
++        "custom_level_source_key": str(cfg.get("custom_level_source_key") or "level").strip() or "level",
++        "custom_level_unmapped": str(cfg.get("custom_level_unmapped") or "omit").strip() or "omit",
++        "custom_level_mapping_count": len(cfg["custom_level_mapping"])
++        if isinstance(cfg.get("custom_level_mapping"), list)
++        else 0,
+     }
+     _save_json(browser_path, {"meta": meta, "rows": rows_out})
+     print(f"書き出し: {browser_path} （{len(rows_out)} 行、DB 一致 {meta['matched_songdata']}）")
+diff --git a/tools/table-filter/filter_config.example.json b/tools/table-filter/filter_config.example.json
+index f919d73..0801101 100644
+--- a/tools/table-filter/filter_config.example.json
++++ b/tools/table-filter/filter_config.example.json
+@@ -13,5 +13,12 @@
+   "output_dir": "docs/table",
+   "output_data_filename": "filtered_data.json",
+   "output_header_filename": "filtered_header.json",
+-  "site_base_url": ""
++  "site_base_url": "",
++  "custom_level_mapping": [
++    { "12": 12, "11": 11, "10": 10 },
++    { "1": 13, "2": 14, "3": 15 }
++  ],
++  "custom_level_field": "custom_level",
++  "custom_level_source_key": "level",
++  "custom_level_unmapped": "omit"
+ }
+diff --git a/tools/table-filter/filter_config.json b/tools/table-filter/filter_config.json
+index 44aa4fa..18e6ca2 100644
+--- a/tools/table-filter/filter_config.json
++++ b/tools/table-filter/filter_config.json
+@@ -12,5 +12,9 @@
+   "output_dir": "docs/table",
+   "output_data_filename": "filtered_data.json",
+   "output_header_filename": "filtered_header.json",
+-  "site_base_url": ""
++  "site_base_url": "",
++  "custom_level_mapping": [],
++  "custom_level_field": "custom_level",
++  "custom_level_source_key": "level",
++  "custom_level_unmapped": "omit"
+ }
+diff --git a/tools/table-filter/filter_table.py b/tools/table-filter/filter_table.py
+index 78aa78c..6d79a6b 100644
+--- a/tools/table-filter/filter_table.py
++++ b/tools/table-filter/filter_table.py
+@@ -15,7 +15,7 @@
+ import sqlite3
+ import sys
+ import urllib.request
+-from typing import Any, Mapping, MutableMapping
++from typing import Any, Mapping, MutableMapping, Sequence
+ from urllib.parse import urljoin
+ 
+ DEFAULT_CONFIG = "tools/table-filter/filter_config.json"
+@@ -201,6 +201,94 @@ def _filter_course_object(obj: MutableMapping[str, Any], md5s: set[str], sha256s
+     return new_obj
+ 
+ 
++def _validate_json_field_name(name: str, label: str) -> None:
++    if not name:
++        _die(f"{label} が空です。")
++    if len(name) > 64:
++        _die(f"{label} が長すぎます（上限 64 文字）。")
++    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
++        _die(f"{label} は英字またはアンダースコアで始まり、英数字とアンダースコアのみ使えます: {name!r}")
++
++
++def _normalize_level_map(raw: Any) -> dict[str, Any]:
++    """custom_level_mapping の各要素（オブジェクト）をレベル文字列キーへ正規化する。"""
++    if not isinstance(raw, dict):
++        return {}
++    out: dict[str, Any] = {}
++    for k, v in raw.items():
++        key = str(k).strip()
++        if key:
++            out[key] = v
++    return out
++
++
++def _row_level_lookup_keys(raw_lvl: Any) -> list[str]:
++    """表 JSON のレベル値からマップ検索用キーの候補（型の揺れを吸収）。"""
++    if raw_lvl is None:
++        return []
++    keys: list[str] = []
++    if isinstance(raw_lvl, bool):
++        keys.append(str(raw_lvl).lower())
++        return keys
++    if isinstance(raw_lvl, int):
++        keys.append(str(raw_lvl))
++        return keys
++    if isinstance(raw_lvl, float):
++        if raw_lvl.is_integer():
++            keys.append(str(int(raw_lvl)))
++        else:
++            keys.append(str(raw_lvl).strip())
++        return keys
++    s = str(raw_lvl).strip()
++    if s:
++        keys.append(s)
++        try:
++            f = float(s)
++            if f.is_integer():
++                keys.append(str(int(f)))
++        except ValueError:
++            pass
++    out: list[str] = []
++    seen: set[str] = set()
++    for k in keys:
++        if k and k not in seen:
++            seen.add(k)
++            out.append(k)
++    return out
++
++
++def _apply_custom_level(row: MutableMapping[str, Any], source_idx: int, cfg: Mapping[str, Any]) -> None:
++    """
++    source_header_urls の並びと同じインデックスのマップで、元表のレベルを独自レベル列に書き込む。
++    custom_level_mapping[i] は {元レベル文字列: 独自レベル（数値または文字列）} 形式のオブジェクト。
++    """
++    maps_raw = cfg.get("custom_level_mapping")
++    if not isinstance(maps_raw, Sequence) or isinstance(maps_raw, (str, bytes)):
++        return
++    if source_idx < 0 or source_idx >= len(maps_raw):
++        return
++    m = _normalize_level_map(maps_raw[source_idx])
++    if not m:
++        return
++
++    out_key = str(cfg.get("custom_level_field") or "custom_level").strip() or "custom_level"
++    src_key = str(cfg.get("custom_level_source_key") or "level").strip() or "level"
++    _validate_json_field_name(out_key, "custom_level_field")
++    _validate_json_field_name(src_key, "custom_level_source_key")
++
++    raw_lvl = row.get(src_key)
++    for lk in _row_level_lookup_keys(raw_lvl):
++        if lk in m:
++            row[out_key] = m[lk]
++            return
++
++    fallback = str(cfg.get("custom_level_unmapped") or "omit").strip().lower()
++    if fallback in ("source", "original"):
++        row[out_key] = raw_lvl
++    elif fallback == "null":
++        row[out_key] = None
++
++
+ def _filter_course_structure(course: Any, md5s: set[str], sha256s: set[str]) -> Any:
+     """course は配列の配列や単一配列など差異があるため、dict で charts を持つノードだけを対象に再帰する。"""
+     if isinstance(course, list):
+@@ -253,6 +341,19 @@ def main() -> None:
+     resolved_json_urls = [_resolve_bmstable_header_url(u) for u in header_urls_cfg]
+     multi_source = len(resolved_json_urls) > 1
+ 
++    maps_raw_warn = cfg.get("custom_level_mapping")
++    if isinstance(maps_raw_warn, list) and len(maps_raw_warn) > 0 and resolved_json_urls:
++        if len(maps_raw_warn) < len(resolved_json_urls):
++            print(
++                "警告: custom_level_mapping の要素数が元ヘッダー数より少ないです（足りないインデックスはマップ無し）。",
++                file=sys.stderr,
++            )
++        if len(maps_raw_warn) > len(resolved_json_urls):
++            print(
++                "警告: custom_level_mapping の要素数が元ヘッダー数より多いです（余った要素は無視されます）。",
++                file=sys.stderr,
++            )
++
+     site_base = (cfg.get("site_base_url") or os.environ.get("SITE_BASE_URL") or "").strip().rstrip("/")
+     if not site_base:
+         _die("site_base_url（設定）または環境変数 SITE_BASE_URL が必要です（data_url を書き換えるため）。")
+@@ -320,7 +421,9 @@ def main() -> None:
+             if dk is None or dk in seen_keys:
+                 continue
+             seen_keys.add(dk)
+-            merged_rows.append(row)
++            row_copy: dict[str, Any] = dict(row)
++            _apply_custom_level(row_copy, idx, cfg)
++            merged_rows.append(row_copy)
+ 
+         if "course" in header_obj:
+             course_parts.append(_filter_course_structure(header_obj["course"], md5s, sha256s))

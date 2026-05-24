@@ -1,0 +1,26 @@
+{
+  "id": "aider-paul-gauthier-aider-pr5154",
+  "agent": {
+    "vendor": "aider",
+    "confidence": "high",
+    "source": "repo-owner=paul-gauthier"
+  },
+  "pr": {
+    "number": 5154,
+    "headSha": "a265aa02728c0b6f06989381619d4878ea97192c",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1",
+    "title": "onboarding: write ~/.aider/oauth-keys.env at 0o600 instead of default umask (0o644)",
+    "body": "The OpenRouter OAuth flow in `aider/onboarding.py` (around line 366) saves the user's API key to `~/.aider/oauth-keys.env` via plain `open(path, \"a\")`. Python's `open()` honours the process umask, which on standard Linux/macOS installs (umask 022) creates the file at mode `0o644` — world-readable. Any local UID on the same host — another user account, a cron job running as another user, a container sharing the home volume, a sandboxed CI runner mounting the home dir, a co-tenant on a multi-user dev box — can read the `OPENROUTER_API_KEY` value by walking through the also-default-`0o755` `~/.aider/` directory.\n\nThe OAuth token granted by OpenRouter is the user's bearer credential against the OpenRouter API. A local reader can quietly use it to make OpenRouter calls under the victim's account (consuming their credit, running prompts under their auditable identity, etc.). This is the same class of issue that `gh`, `aws`, `gcloud`, `stripe`, `docker`, and most other vendor CLIs explicitly defend against by writing OAuth/credential files at `0o600` inside a `0o700` directory.\n\nEmpirically reproduced before the fix (umask 022, macOS 14):\n```\n$ python3 -c '\nimport os\nconfig_dir = os.path.expanduser(\"/tmp/aider_poc\")\nos.makedirs(config_dir, exist_ok=True)\nkey_file = os.path.join(config_dir, \"oauth-keys.env\")\nwith open(key_file, \"a\", encoding=\"utf-8\") as f:\n    f.write(\"OPENROUTER_API_KEY=\\\"sk-or-FAKE\\\"\\n\")\n'\n$ ls -ld /tmp/aider_poc /tmp/aider_poc/oauth-keys.env\ndrwxr-xr-x  3 user staff   96 .../tmp/aider_poc\n-rw-r--r--  1 user staff   59 .../tmp/aider_poc/oauth-keys.env\n```\n\nAfter the fix the same flow produces `drwx------` on the directory and `-rw-------` on the credential file.\n\nThree pieces of hardening land together in this PR:\n\n1. The directory is explicitly `chmod`ed to `0o700` even if it already exists. `os.makedirs(exist_ok=True)` does not tighten the mode of an already-existing directory, so a `~/.aider/` previously laid down at `0o755` by another tool (or by a prior aider release) keeps the wider mode without an explicit tightening step.\n\n2. When the credential file does not yet exist, it is created via `os.open(... O_WRONLY|O_CREAT|O_TRUNC, 0o600)` and then wrapped in `os.fdopen` for the actual write. This avoids the TOCTOU window where the file would otherwise be briefly visible at the default `0o644` mode between the create-at-default and a follow-up chmod.\n\n3. When the credential file already exists (a re-run of the OAuth flow against the same install), the append semantics are preserved but an explicit `os.chmod(key_file, 0o600)` follows the write so the mode is corrected even on the re-run path.\n\nWindows / non-Unix platforms swallow the `chmod` errors via `except (OSError, NotImplementedError)`, so the behaviour matches the prior code on those platforms while gaining hardening on Unix-like hosts.\n\nThis is the same class of finding I've reported privately against several other vendor CLIs that store credentials with the default Python `open()` mode — most recently against `huggingface/huggingface_hub` (PR #4234, approved by `@Wauplin` with a refactor request that landed the `_write_secret` helper using `os.open(O_CREAT, 0o600)`), `eosphoros-ai/DB-GPT` (#3077, same pattern), and several Node-ecosystem CLIs (cline `GHSA-58hj-8g5g-q689`, replicate `GHSA-9g42-hx86-3ppm`, prisma `GHSA-cgq2-43wx-qgpq`, cloudflare workers-sdk `GHSA-hfj5-88mp-26jq` today). The aider instance is structurally identical, just in Python with the OpenRouter token specifically.\n\nI filed this as a PR rather than a private vulnerability report because the repo doesn't have Private Vulnerability Reporting enabled and no SECURITY.md / direct security contact. If you'd prefer a private channel for future reports, enabling `Settings → Security → Private vulnerability reporting` adds a private intake on this repo without any other process change. Happy to coordinate timeline / hold a public advisory until after the fix releases if that's preferable to a PR-as-disclosure flow.\n\n— Jaeyoung Yun (`JAE0Y2N`)",
+    "author": "JAE0Y2N",
+    "headRef": "harden-oauth-keys-file-perms",
+    "repository": "paul-gauthier/aider"
+  },
+  "diffRef": {
+    "repository": "paul-gauthier/aider",
+    "headSha": "a265aa02728c0b6f06989381619d4878ea97192c",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1"
+  },
+  "vendoredDiffPath": "unconfirmed/aider/aider-paul-gauthier-aider-pr5154.diff",
+  "vendoredAt": "2026-05-24T03:19:13.401Z",
+  "collectedAt": "2026-05-24T03:19:13.401Z"
+}

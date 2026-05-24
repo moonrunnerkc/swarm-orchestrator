@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-jdolan-quetoo-pr787",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 787,
+    "headSha": "8f2eb7cbe2e43779e898db99505623ca454880c7",
+    "baseSha": "2b96eddd43490131c90d932458cdef6c434609d8",
+    "title": "Add per-map `min_clients` override support in map list rotation config",
+    "body": "This change adds per-map bot population control via map list entries, so small/large maps can tune minimum clients independently. When a map-level value is present it overrides global `sv_min_clients`; otherwise existing global behavior is unchanged.\n\n- **Map list schema + parsing**\n  - Extended `g_map_list_map_t` with `min_clients`.\n  - Updated map list parser to accept `min_clients` and default to `-1` (no override).\n\n- **Per-level runtime state**\n  - Added `g_level.min_clients_map` to carry the active map override through level lifecycle.\n  - Set during worldspawn from the parsed map entry; defaults to `-1` when unspecified.\n\n- **Bot population selection logic**\n  - Updated AI client balancing to compute min clients from:\n    - `g_level.min_clients_map` when set\n    - otherwise `sv_min_clients`\n  - Existing max-client clamp behavior remains intact.\n\nExample map list entry:\n\n```txt\n{\n  name torn\n  min_clients 3\n}\n\n{\n  name warehouse\n  min_clients 8\n}\n```\n\n<!-- START COPILOT ORIGINAL PROMPT -->\n\n\n\n<details>\n\n<summary>Original prompt</summary>\n\n> Implement support for a per-map `min_clients` value in `maps.list` for repository `jdolan/quetoo`, based on GitHub issue #786.\n> \n> Issue summary:\n> - Today, `sv_min_clients` (bot count) is typically configured globally via `server.cfg`.\n> - Some maps are significantly smaller or larger than others.\n> - The request is to allow `maps.list` to contain a per-level `min_clients` field.\n> - When present for a map, that per-map value should take priority over the global `sv_min_clients` setting.\n> - This enables admins to tune bot counts per map, e.g. smaller maps like Torn Glory using 3 and larger maps like Warehouse using 8.\n> \n> Requested outcome:\n> 1. Update the code that parses and/or represents entries from `maps.list` so that a per-map `min_clients` field is supported.\n> 2. Ensure the game/server logic uses the per-map value when rotating/loading a map, falling back to global `sv_min_clients` when no per-map override is provided.\n> 3. Update any relevant documentation, examples, or sample `maps.list` format if present in the repository.\n> 4. Add or update tests if the repository has a suitable testing pattern for this area.\n> \n> Acceptance criteria:\n> - A `maps.list` entry can specify `min_clients`.\n> - The server honors that value for the current map in preference to the global `sv_min_clients`.\n> - Existing `maps.list` files without `min_clients` continue to work unchanged.\n> - Changes are limited to what is necessary to implement the feature cleanly.\n> \n> Please create a pull request that resolves issue #786.\n> \n> The following is the prior conversation context from the user's chat exploration (may be truncated):\n> \n> User: Create a PR to solve this issue.\n> \n> Assistant: I’m waiting on your response to the GitHub confirmation dialog before I can continue creating the PR.\n> \n> \n\n\n</details>\n\n\n\n<!-- START COPILOT CODING AGENT SUFFIX -->\n\n*This pull request was created from Copilot chat.*\n>",
+    "author": "Copilot",
+    "headRef": "copilot/jdolan-786-support-per-map-min-clients",
+    "repository": "jdolan/quetoo"
+  },
+  "diffRef": {
+    "repository": "jdolan/quetoo",
+    "headSha": "8f2eb7cbe2e43779e898db99505623ca454880c7",
+    "baseSha": "2b96eddd43490131c90d932458cdef6c434609d8"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-jdolan-quetoo-pr787.diff",
+  "vendoredAt": "2026-05-24T03:05:45.919Z",
+  "collectedAt": "2026-05-24T03:05:45.919Z"
+}

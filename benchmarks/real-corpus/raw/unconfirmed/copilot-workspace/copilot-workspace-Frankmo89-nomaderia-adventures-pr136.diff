@@ -1,0 +1,109 @@
+diff --git a/docs/pending-tasks.md b/docs/pending-tasks.md
+index 7ffc8c6..45899f1 100644
+--- a/docs/pending-tasks.md
++++ b/docs/pending-tasks.md
+@@ -82,6 +82,14 @@ https://nomaderia.com/
+ 
+ ## Changelog (completados)
+ 
++### ✅ Componente PermitScarcity — escasez de permisos (Mayo 2026)
++- [x] Creado `src/components/PermitScarcity.tsx` con mapa interno de datos honestos (NPS/Recreation.gov) para parques con sistema de permisos/lotería
++- [x] Soporta `yosemite-valley` y `gran-canon`; retorna `null` para destinos sin sistema de permisos
++- [x] Diseño: card `bg-secondary/5`, ícono `AlertTriangle`, mecanismo como label, dato como body, ventana destacada, footnote de fuente
++- [x] Montado en `DestinationDetail.tsx` en la sidebar, justo arriba del card "Reserva Tu Viaje"
++- [x] TODO incluido para migrar datos a campo jsonb `permit_info` en Supabase
++- [x] Verificaciones ejecutadas: `tsc --noEmit` ✅ y `npm run build` ✅
++
+ ### ✅ Cache tuning de React Query para contenido estático (Mayo 2026)
+ - [x] `src/App.tsx` mantiene el `staleTime` global por defecto en **5 min** (`5 * 60 * 1000`)
+ - [x] `src/hooks/use-destinations.ts` ahora define `staleTime: 30 * 60 * 1000` en `useDestinations`, `useDestinationBySlug` y `useRelatedDestinations`
+diff --git a/src/components/PermitScarcity.tsx b/src/components/PermitScarcity.tsx
+new file mode 100644
+index 0000000..2de9c5f
+--- /dev/null
++++ b/src/components/PermitScarcity.tsx
+@@ -0,0 +1,64 @@
++import { AlertTriangle } from "lucide-react";
++
++interface PermitScarcityProps {
++  destinationSlug: string;
++}
++
++interface PermitInfo {
++  mechanism: string;
++  fact: string;
++  window: string;
++}
++
++// TODO: Migrar este mapa a un campo jsonb 'permit_info' en la tabla 'destinations' de Supabase
++// para que el contenido sea editable desde el panel admin.
++const PERMIT_FACTS: Record<string, PermitInfo> = {
++  "yosemite-valley": {
++    mechanism: "Lotería (Half Dome) + reservas con cupo limitado",
++    fact: "Miles de personas solicitan el permiso de Half Dome cada temporada para unos cientos de lugares diarios.",
++    window: "La preventa de permisos abre meses antes — perder la fecha = esperar un año",
++  },
++  "gran-canon": {
++    mechanism: "Permisos de corredor por sorteo mensual",
++    fact: "Los permisos del corredor (Bright Angel / Phantom Ranch) se agotan apenas se abren.",
++    window: "Sorteo mensual con fecha límite estricta",
++  },
++};
++
++/**
++ * PermitScarcity — muestra información real de escasez de permisos/reservas
++ * SOLO para destinos que usan sistemas de lotería o reserva (parques nacionales).
++ * Para destinos sin sistema de permisos (hikes locales, San Diego, etc.)
++ * el componente retorna null.
++ */
++const PermitScarcity = ({ destinationSlug }: PermitScarcityProps) => {
++  const info = PERMIT_FACTS[destinationSlug];
++
++  // Solo mostrar para parques con sistema de permisos/reservas
++  if (!info) return null;
++
++  return (
++    <div className="rounded-xl border border-secondary/20 bg-secondary/5 p-4 space-y-3">
++      <div className="flex items-center gap-2 text-secondary">
++        <AlertTriangle className="h-5 w-5 shrink-0" />
++        <span className="font-semibold text-sm uppercase tracking-wide">
++          {info.mechanism}
++        </span>
++      </div>
++
++      <p className="text-sm text-foreground/80 leading-relaxed">
++        {info.fact}
++      </p>
++
++      <p className="text-sm font-medium text-primary bg-primary/10 rounded-md px-3 py-2">
++        ⏰ {info.window}
++      </p>
++
++      <p className="text-[11px] text-muted-foreground italic">
++        Datos públicos de NPS / Recreation.gov.
++      </p>
++    </div>
++  );
++};
++
++export default PermitScarcity;
+diff --git a/src/pages/DestinationDetail.tsx b/src/pages/DestinationDetail.tsx
+index 9100039..c2b4cd9 100644
+--- a/src/pages/DestinationDetail.tsx
++++ b/src/pages/DestinationDetail.tsx
+@@ -18,6 +18,7 @@ import ArticleWhatsAppCTA from "@/components/ArticleWhatsAppCTA";
+ import SEO from "@/components/SEO";
+ import JsonLd from "@/components/JsonLd";
+ import ShareButtons from "@/components/ShareButtons";
++import PermitScarcity from "@/components/PermitScarcity";
+ import { SITE_URL, usePageMeta } from "@/hooks/use-seo";
+ import { useDestinationBySlug, useRelatedDestinations } from "@/hooks/use-destinations";
+ import type { Tables } from "@/integrations/supabase/types";
+@@ -341,6 +342,7 @@ const DestinationDetail = () => {
+           </div>
+           <aside className="w-full lg:w-80 shrink-0">
+             <div className="lg:sticky lg:top-24 space-y-4">
++              <PermitScarcity destinationSlug={slug || ""} />
+               <Card className="bg-card border-border">
+                 <CardHeader>
+                   <CardTitle className="font-serif text-xl text-card-foreground">Reserva Tu Viaje</CardTitle>

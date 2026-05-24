@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-python-pr1563",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1563,
+    "headSha": "73071c9bafb3943f1f485ae3f7792d9e4213f069",
+    "baseSha": "9aa85c8a3c099e8a49206aad37ff1e96af69b824",
+    "title": "fix(streaming): wrap from_json in try/except in non-beta message streaming",
+    "body": "## Summary\n\nThe beta streaming path (`_beta_messages.py`) already wraps `from_json` in a `try/except ValueError` that surfaces a clear, actionable error when the model emits malformed partial JSON during tool use. The non-beta path (`_messages.py`) made the same `from_json` call with no error handling, so malformed JSON propagated as a raw `jiter` internal error (`ValueError: expected ident at line 1 column 11`) with no context about what went wrong or what to do.\n\n## Change\n\n`src/anthropic/lib/streaming/_messages.py` — wrap the `from_json(json_buf, partial_mode=True)` call in `try/except ValueError` and re-raise with the raw JSON buffer and a retry suggestion, mirroring `_beta_messages.py` lines 500–510 exactly.\n\n**Before:**\n```python\nif json_buf:\n    content.input = from_json(json_buf, partial_mode=True)\n```\n\n**After:**\n```python\nif json_buf:\n    try:\n        content.input = from_json(json_buf, partial_mode=True)\n    except ValueError as e:\n        raise ValueError(\n            f\"Unable to parse tool parameter JSON from model. Please retry your request or adjust your prompt. Error: {e}. JSON: {json_buf.decode('utf-8')}\"\n        ) from e\n```\n\nThe error message wording is copied verbatim from the beta path so error handling is consistent across both streaming code paths.",
+    "author": "rmotgi1227",
+    "headRef": "fix/streaming-tool-json-parse-error",
+    "repository": "anthropics/anthropic-sdk-python"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-python",
+    "headSha": "73071c9bafb3943f1f485ae3f7792d9e4213f069",
+    "baseSha": "9aa85c8a3c099e8a49206aad37ff1e96af69b824"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-python-pr1563.diff",
+  "vendoredAt": "2026-05-24T03:17:11.976Z",
+  "collectedAt": "2026-05-24T03:17:11.977Z"
+}

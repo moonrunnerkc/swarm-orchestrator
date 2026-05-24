@@ -1,0 +1,26 @@
+{
+  "id": "devin-deblasioluca-sap-ai-consultant-v2-pr47",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 47,
+    "headSha": "3c90ddceb8edda228b5e84fe81b088f1c64a5e33",
+    "baseSha": "e466c061463584f6be31db5348958cb2db2a9cec",
+    "title": "fix: graceful timeout handling for all SAP system requests",
+    "body": "## Summary\n\nReplaces raw httpx exception strings with human-readable error messages across **all** SAP-facing endpoints. Before this change, timeout errors showed cryptic messages like `SAP system request timed out: ReadTimeout('timed out')`. Now they show: *\"SAP system did not respond within the timeout period. The system may be overloaded, unreachable, or processing a large request. Try again or check SAP system availability.\"*\n\n**Files changed (6):**\n- `v1_routes_devtools.py` — Added `_format_sap_error()` utility, updated `_raise_sap_error` and `_safe_adt` catch-all handler\n- `v1_routes_security.py` — Added `_format_sap_error()`, updated `_safe_adt` timeout and catch-all handlers\n- `v1_routes_monitoring.py` — Added `_format_sap_error()` and `_sap_error_with_hints()`, updated 15+ exception handlers across short dumps, jobs, app logs, system logs, HANA metrics, CCDB, overview, transports, ping, and SSE investigation stream\n- `v1_routes_admin.py` — Updated check-status endpoint timeout handling\n- `app.py` — Updated availability check timeout handling\n- `adt_client.py` — Updated SOAP RFC call timeout message\n\n**Error categories handled:**\n- Timeouts → friendly message with retry suggestion\n- Connection refused → check hostname/port/network\n- TABLE_WITHOUT_DATA → \"no data for filter criteria\"\n- HTTP 403 → check authorizations + SICF\n- HTTP 404 → check service activation\n- HTTP 401 → check credentials\n\n## Review & Testing Checklist for Human\n- [ ] After merging, restart the backend and trigger a timeout (e.g., browse a package on a slow/unreachable system) — verify the error message is human-readable, not a raw Python exception\n- [ ] Check that existing SAP system operations (ping, check, browse, FM signature) still work correctly when the system IS responsive\n\n### Notes\nAll 100 backend tests pass. The `_format_sap_error` utility uses string-matching on exception messages to detect timeout patterns, which covers both typed httpx exceptions and generic exceptions that wrap timeout errors.\n\nLink to Devin session: https://app.devin.ai/sessions/92cb07e6d2e046b1b404ad6833e2f5e8\nRequested by: @deblasioluca\n<!-- devin-review-badge-begin -->\n\n---\n\n<a href=\"https://app.devin.ai/review/deblasioluca/sap-ai-consultant-v2/pull/47\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-open-in-devin-review-dark.svg?v=1\">\n    <img src=\"https://static.devin.ai/assets/gh-open-in-devin-review-light.svg?v=1\" alt=\"Open in Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779592521-graceful-timeout",
+    "repository": "deblasioluca/sap-ai-consultant-v2"
+  },
+  "diffRef": {
+    "repository": "deblasioluca/sap-ai-consultant-v2",
+    "headSha": "3c90ddceb8edda228b5e84fe81b088f1c64a5e33",
+    "baseSha": "e466c061463584f6be31db5348958cb2db2a9cec"
+  },
+  "vendoredDiffPath": "devin/devin-deblasioluca-sap-ai-consultant-v2-pr47.diff",
+  "vendoredAt": "2026-05-24T03:34:14.914Z",
+  "collectedAt": "2026-05-24T03:34:14.914Z"
+}

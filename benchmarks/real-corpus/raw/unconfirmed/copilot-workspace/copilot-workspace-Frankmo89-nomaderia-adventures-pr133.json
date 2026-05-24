@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-Frankmo89-nomaderia-adventures-pr133",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 133,
+    "headSha": "d89a645f208132edb7cfedf7c99df7d24f8de0ce",
+    "baseSha": "24997cfd8846305084c4d6f9ce9d6bb7de6d8e8e",
+    "title": "Add Sentinel Leads stat card to Admin Dashboard",
+    "body": "Admin Dashboard tracked key content and engagement tables but omitted `sentinel_leads`, now relevant to revenue operations. This PR adds a single new stat card for Sentinel alert leads without changing existing stat card behavior.\n\n- **Dashboard data model**\n  - Extended `Stats` with `sentinelLeads`.\n  - Initialized `sentinelLeads` in dashboard state.\n\n- **Supabase query integration**\n  - Added exact-count query for `sentinel_leads` using the required typed cast pattern.\n  - Wired count into `setStats(...)` alongside existing dashboard metrics.\n\n- **UI: new stat card placement**\n  - Added card title **“Leads de Alerta”** with `Bell` icon (`lucide-react`).\n  - Inserted card in the stats grid before **Suscriptores** (after quiz-related context), preserving all existing card logic and copy.\n\n- **Project docs**\n  - Updated `docs/pending-tasks.md` changelog with this dashboard addition.\n\n```tsx\nconst [dPub, dDraft, gPub, gDraft, bPub, bDraft, q, sentinelLeads, s, ir, emailsSent, recentD, recentG, recentB] = await Promise.all([\n  // ...\n  supabase.from(\"quiz_responses\").select(\"id\", { count: \"exact\", head: true }),\n  (supabase as unknown as SupabaseClient).from(\"sentinel_leads\").select(\"*\", { count: \"exact\", head: true }),\n  supabase.from(\"newsletter_subscribers\").select(\"id\", { count: \"exact\", head: true }),\n  // ...\n]);\n```",
+    "author": "Copilot",
+    "headRef": "copilot/add-leads-de-alerta-card",
+    "repository": "Frankmo89/nomaderia-adventures"
+  },
+  "diffRef": {
+    "repository": "Frankmo89/nomaderia-adventures",
+    "headSha": "d89a645f208132edb7cfedf7c99df7d24f8de0ce",
+    "baseSha": "24997cfd8846305084c4d6f9ce9d6bb7de6d8e8e"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-Frankmo89-nomaderia-adventures-pr133.diff",
+  "vendoredAt": "2026-05-24T03:06:26.110Z",
+  "collectedAt": "2026-05-24T03:06:26.110Z"
+}

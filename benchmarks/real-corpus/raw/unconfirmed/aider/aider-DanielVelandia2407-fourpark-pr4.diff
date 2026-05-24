@@ -1,0 +1,52 @@
+diff --git a/backend/src/config/database.js b/backend/src/config/database.js
+index eec0f85..a0ac75f 100644
+--- a/backend/src/config/database.js
++++ b/backend/src/config/database.js
+@@ -1,16 +1,26 @@
+ const { Pool } = require('pg');
+ 
+-const pool = new Pool({
+-  host:     process.env.DB_HOST     || 'localhost',
+-  port:     parseInt(process.env.DB_PORT) || 5432,
+-  database: process.env.DB_NAME     || 'fourpark',
+-  user:     process.env.DB_USER     || 'postgres',
+-  password: process.env.DB_PASSWORD || '',
+-  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+-  max: 10,
+-  idleTimeoutMillis: 30000,
+-  connectionTimeoutMillis: 3000,
+-});
++const pool = new Pool(
++  process.env.DATABASE_URL
++    ? {
++        connectionString: process.env.DATABASE_URL,
++        ssl: { rejectUnauthorized: false },
++        max: 10,
++        idleTimeoutMillis: 30000,
++        connectionTimeoutMillis: 10000,
++      }
++    : {
++        host:     process.env.DB_HOST     || 'localhost',
++        port:     parseInt(process.env.DB_PORT) || 5432,
++        database: process.env.DB_NAME     || 'fourpark',
++        user:     process.env.DB_USER     || 'postgres',
++        password: process.env.DB_PASSWORD || '',
++        ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
++        max: 10,
++        idleTimeoutMillis: 30000,
++        connectionTimeoutMillis: 10000,
++      }
++);
+ 
+ pool.on('error', (err) => {
+   console.error('[DB] Error inesperado en el pool:', err.message);
+diff --git a/frontend/src/environments/environment.ts b/frontend/src/environments/environment.ts
+index a625025..9d912b7 100644
+--- a/frontend/src/environments/environment.ts
++++ b/frontend/src/environments/environment.ts
+@@ -1,4 +1,4 @@
+ export const environment = {
+     production: false,
+-    apiUrl: 'https://fourparkscolombia.onrender.com/api'
++    apiUrl: 'https://fourpark.onrender.com/api'
+   };

@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-python-pr1521",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1521,
+    "headSha": "1e9f9e07980b84f63b1d018db60c08de052b9358",
+    "baseSha": "04b468daf76e4b95a949cecb03e29f4a1374d3b5",
+    "title": "fix(bedrock): pass aws_profile to boto3.Session in _infer_region",
+    "body": "## Problem\n\nWhen a user passes `aws_profile` to `AnthropicBedrock` or `AsyncAnthropicBedrock` without an explicit `aws_region`, `_infer_region()` is called to look up the region. However `_infer_region()` creates `boto3.Session()` with no arguments, so the named profile's configured region is silently ignored. The client then falls back to `AWS_REGION` env var or hard-coded `us-east-1`.\n\nMinimal reproduction:\n```python\n# ~/.aws/config has [profile my-profile] with region = eu-west-1\nclient = AnthropicBedrock(aws_profile=\"my-profile\")\nprint(client.aws_region)  # prints \"us-east-1\" instead of \"eu-west-1\"\n```\n\nFixes #892.\n\n## Fix\n\nAdd `aws_profile: str | None = None` to `_infer_region()` and forward it to `boto3.Session(profile_name=aws_profile)`. Update both `AnthropicBedrock.__init__` and `AsyncAnthropicBedrock.__init__` call sites from `_infer_region()` to `_infer_region(aws_profile)`.\n\n```python\n# before\nsession = boto3.Session()\n\n# after\nsession = boto3.Session(profile_name=aws_profile)\n```\n\nThe change is backward-compatible: when `aws_profile` is `None` (the default), `boto3.Session(profile_name=None)` behaves identically to `boto3.Session()`.\n",
+    "author": "nileshpatil6",
+    "headRef": "fix/bedrock-infer-region-aws-profile",
+    "repository": "anthropics/anthropic-sdk-python"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-python",
+    "headSha": "1e9f9e07980b84f63b1d018db60c08de052b9358",
+    "baseSha": "04b468daf76e4b95a949cecb03e29f4a1374d3b5"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-python-pr1521.diff",
+  "vendoredAt": "2026-05-24T03:17:38.407Z",
+  "collectedAt": "2026-05-24T03:17:38.407Z"
+}

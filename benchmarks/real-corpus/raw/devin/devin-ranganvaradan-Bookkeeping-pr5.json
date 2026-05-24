@@ -1,0 +1,26 @@
+{
+  "id": "devin-ranganvaradan-Bookkeeping-pr5",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 5,
+    "headSha": "77055b2d99e8454e3d3a58149b8c3935957ca451",
+    "baseSha": "e6fa494149dcc6bdc1609ff3c8e2bab62634875f",
+    "title": "Fix: Use container names (bt-postgres, bt-redis) for Docker backend env vars",
+    "body": "## Summary\n\nUpdates `docker-compose.yml` to use Docker container names (`bt-postgres`, `bt-redis`) instead of service names (`postgres`, `redis`) for the backend's `DB_URL` and `REDIS_URL` environment variables. These are hardcoded in docker-compose.yml so they always resolve correctly inside the Docker network, regardless of what `.env` contains.\n\nAlso adds clarifying comments to `.env.example` explaining that `DB_URL` and `REDIS_URL` in `.env` are for local dev only — Docker Compose overrides them with container-name-based URLs.\n\n**Changes:**\n- `docker-compose.yml`: `DB_URL` → `jdbc:postgresql://bt-postgres:5432/billiontech`, `REDIS_URL` → `redis://bt-redis:6379`\n- `.env.example`: Added notes explaining local vs Docker networking for DB and Redis URLs\n\n## Review & Testing Checklist for Human\n\n- [ ] Run `docker compose down -v && docker compose up --build` and verify the backend connects to Postgres and Redis (check logs for successful Flyway migrations and no connection errors)\n- [ ] Run backend locally with `./mvnw spring-boot:run` using `.env` values to confirm local dev still works with `localhost:5433` / `localhost:6380`\n\n### Notes\n\nBoth service names (`postgres`, `redis`) and container names (`bt-postgres`, `bt-redis`) are resolvable on the Docker Compose default network. This change aligns the URLs with the explicit `container_name` values for consistency and clarity.\n\nLink to Devin session: https://app.devin.ai/sessions/28f22dd6a7d44cc8b0cd820ac982a0cf\nRequested by: @ranganvaradan",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779587635-fix-docker-env-urls",
+    "repository": "ranganvaradan/Bookkeeping"
+  },
+  "diffRef": {
+    "repository": "ranganvaradan/Bookkeeping",
+    "headSha": "77055b2d99e8454e3d3a58149b8c3935957ca451",
+    "baseSha": "e6fa494149dcc6bdc1609ff3c8e2bab62634875f"
+  },
+  "vendoredDiffPath": "devin/devin-ranganvaradan-Bookkeeping-pr5.diff",
+  "vendoredAt": "2026-05-24T03:04:10.074Z",
+  "collectedAt": "2026-05-24T03:04:10.074Z"
+}

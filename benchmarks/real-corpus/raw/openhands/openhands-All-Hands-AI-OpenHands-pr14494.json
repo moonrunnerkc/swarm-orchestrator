@@ -1,0 +1,26 @@
+{
+  "id": "openhands-All-Hands-AI-OpenHands-pr14494",
+  "agent": {
+    "vendor": "openhands",
+    "confidence": "high",
+    "source": "repo-owner=All-Hands-AI+body=openhands-attribution"
+  },
+  "pr": {
+    "number": 14494,
+    "headSha": "410f628c234415c1696276bbc9466e88c45aa605",
+    "baseSha": "ac596597ec4e226f196c2ff9e53c0184ba80ac8e",
+    "title": "Fix Slack message for critic API key startup errors",
+    "body": "- [ ] A human has tested these changes.\n\n---\n\n## Why\n\nSlack jobs currently fall back to the generic unexpected-error message when V1 conversation startup fails with a nested critic API key validation error. That hides the actual action the user needs to take and makes issue #14480 harder to diagnose.\n\n## Summary\n\n- detect the specific V1 startup `RuntimeError` detail for nested `agent.critic` API key validation failures\n- surface a Slack-specific, actionable message telling the user to configure the critic agent's LLM API key\n- add regression tests for both the critic-specific message and the generic fallback path\n\n## Issue Number\n\nCloses #14480\n\n## How to Test\n\n- `cd enterprise && PYTHONPATH=\".:..:$PYTHONPATH\" poetry run pytest tests/unit/test_slack_integration.py`\n- `cd /workspace/project/OpenHands && poetry run pre-commit run --config ./dev_config/python/.pre-commit-config.yaml --files enterprise/integrations/slack/slack_manager.py enterprise/tests/unit/test_slack_integration.py`\n\n## Video/Screenshots\n\n- Not applicable; this is backend Slack error-handling only.\n\n## Type\n\n- [x] Bug fix\n- [ ] Feature\n- [ ] Refactor\n- [ ] Breaking change\n- [ ] Docs / chore\n\n## Notes\n\n- I investigated the current installed `openhands-sdk` / `openhands-agent-server` path as well. In the locally pinned versions, missing or empty `LLM.api_key` already normalizes to `None`, and critic construction is skipped when the main LLM key is absent. This fix therefore maps the runtime failure coming back from V1 startup without adding an early blanket key check that could break local-model or non-key-auth setups.\n- This PR description was created by an AI agent (OpenHands) on behalf of the user.\n\n\n@enyst can click here to [continue refining the PR](https://app.all-hands.dev/conversations/12fc5419-c3d5-421b-b14e-4c5c9377efe7)\n\n---\n\nTo run this PR locally, use the following command:\n\nGUI with Docker:\n```\ndocker run -it --rm   -p 3000:3000   -v /var/run/docker.sock:/var/run/docker.sock   --add-host host.docker.internal:host-gateway   --name openhands-app-410f628   docker.openhands.dev/openhands/openhands:410f628\n```",
+    "author": "enyst",
+    "headRef": "openhands/fix-slack-critic-key-message",
+    "repository": "All-Hands-AI/OpenHands"
+  },
+  "diffRef": {
+    "repository": "All-Hands-AI/OpenHands",
+    "headSha": "410f628c234415c1696276bbc9466e88c45aa605",
+    "baseSha": "ac596597ec4e226f196c2ff9e53c0184ba80ac8e"
+  },
+  "vendoredDiffPath": "openhands/openhands-All-Hands-AI-OpenHands-pr14494.diff",
+  "vendoredAt": "2026-05-24T03:18:33.523Z",
+  "collectedAt": "2026-05-24T03:18:33.523Z"
+}

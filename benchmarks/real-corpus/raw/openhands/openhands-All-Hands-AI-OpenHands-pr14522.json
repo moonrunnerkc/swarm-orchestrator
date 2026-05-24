@@ -1,0 +1,26 @@
+{
+  "id": "openhands-All-Hands-AI-OpenHands-pr14522",
+  "agent": {
+    "vendor": "openhands",
+    "confidence": "high",
+    "source": "repo-owner=All-Hands-AI+body=openhands-attribution"
+  },
+  "pr": {
+    "number": 14522,
+    "headSha": "987b13c90bb8391c7447e8474194a4127bee01c0",
+    "baseSha": "448873519a9952b11140ba2e2bcef6c46ca72d58",
+    "title": "Support Jira Data Center automation forwarding",
+    "body": "## Summary\n\nAdds first-class Jira Data Center webhook forwarding into the automations service path.\n\n- adds migration `114_add_org_id_to_jira_dc_workspaces.py` to persist/backfill `jira_dc_workspaces.org_id`\n- stores the OpenHands org on Jira DC workspaces\n- forwards verified Jira DC webhook payloads to the built-in `jira_dc` automation source when automation event forwarding is enabled\n- keeps the existing resolver/background processing path intact\n\n## Validation\n\n- `env PYTHONPATH=enterprise:. uv run --with python-keycloak --with pytest-asyncio --with aiosqlite --with limits --with coredis pytest enterprise/tests/unit/integrations/jira_dc/test_jira_dc_manager.py enterprise/tests/unit/server/routes/test_jira_dc_integration_routes.py enterprise/tests/unit/server/services/test_automation_event_service.py tests/unit/test_issue_good_first_issue_check_openhands.py -q` -> 152 passed\n- `env PYTHONPATH=enterprise:. uv run ruff check --config enterprise/dev_config/python/ruff.toml ...` on affected automations-forwarding files/tests\n- `env PYTHONPATH=enterprise:. uv run ruff format --check --config enterprise/dev_config/python/ruff.toml ...` on affected automations-forwarding files/tests\n- `env PYTHONPATH=enterprise:. uv run --with types-requests mypy --config-file enterprise/dev_config/python/mypy.ini enterprise/integrations/jira_dc/jira_dc_manager.py enterprise/server/routes/integration/jira_dc.py enterprise/server/services/automation_event_service.py enterprise/storage/jira_dc_integration_store.py enterprise/storage/jira_dc_workspace.py`\n- OHE E2E on `replicated-02`: deployed `enterprise-server:sha-2f59489` with `automation:sha-24c8074`; verified `AUTOMATION_SERVICE_URL=http://automation/api/automation` and `AUTOMATION_EVENT_FORWARDING_ENABLED=true`\n- OHE E2E on `replicated-02`: Jira DC `comment_created` produced built-in `jira_dc` automation run `17b66b18-8e16-4660-9fa4-5510cc0ca8e7`\n- OHE E2E on `replicated-02`: Jira DC `jira:issue_updated` on `KAN-18` produced built-in `jira_dc` automation run `4c17c4b2-e7e1-4c37-a11a-39c06cc49258`\n\n---\n\nTo run this PR locally, use the following command:\n\nGUI with Docker:\n```\ndocker run -it --rm   -p 3000:3000   -v /var/run/docker.sock:/var/run/docker.sock   --add-host host.docker.internal:host-gateway   --name openhands-app-987b13c   docker.openhands.dev/openhands/openhands:987b13c\n```",
+    "author": "ak684",
+    "headRef": "alona/jira-dc-automations",
+    "repository": "All-Hands-AI/OpenHands"
+  },
+  "diffRef": {
+    "repository": "All-Hands-AI/OpenHands",
+    "headSha": "987b13c90bb8391c7447e8474194a4127bee01c0",
+    "baseSha": "448873519a9952b11140ba2e2bcef6c46ca72d58"
+  },
+  "vendoredDiffPath": "openhands/openhands-All-Hands-AI-OpenHands-pr14522.diff",
+  "vendoredAt": "2026-05-24T03:18:00.130Z",
+  "collectedAt": "2026-05-24T03:18:00.130Z"
+}

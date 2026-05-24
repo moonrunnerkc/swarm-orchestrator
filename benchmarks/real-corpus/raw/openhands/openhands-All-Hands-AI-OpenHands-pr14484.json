@@ -1,0 +1,26 @@
+{
+  "id": "openhands-All-Hands-AI-OpenHands-pr14484",
+  "agent": {
+    "vendor": "openhands",
+    "confidence": "high",
+    "source": "author=openhands-agent+body=openhands-attribution"
+  },
+  "pr": {
+    "number": 14484,
+    "headSha": "00cef69b5994fd4c9cc5540a0e5a8837f9036438",
+    "baseSha": "332b6d14e689dc630a558b56f17c90613938fb1e",
+    "title": "Fix CVE-2026-44289: Pin protobufjs to 7.5.6",
+    "body": "## Security Fix: CVE-2026-44289\n\nThis PR addresses **CVE-2026-44289** in the `protobufjs` package.\n\n### Details\n- **Package:** `protobufjs`\n- **Vulnerable version:** `7.5.5`\n- **Fixed versions:** `7.5.6`, `8.0.2`\n- **Resolved version:** `7.5.6` (the minimum patched 7.x release)\n\n### Dependency type\n`protobufjs` is a **transitive dependency** pulled in by `@opentelemetry/otlp-transformer` (which requires `protobufjs: ^7.3.0`). It is not listed directly in `frontend/package.json`.\n\n### Changes\n- `frontend/package-lock.json`: pinned `protobufjs` from `7.5.5` → `7.5.6` (matches the patched version exactly).\n\nWe initially bumped to `7.6.0` (the latest 7.x), but per reviewer feedback we pinned back to `7.5.6` — `7.6.0` was only two days old and did not pass the supply-chain maturity guardrail. `7.5.6` is the exact upstream patch for the CVE, so it is sufficient to resolve the advisory without taking on a brand-new minor release.\n\nNo `package.json` changes were necessary — the pin is purely at the lockfile level, keeping the dependency set minimal.\n\n### Verification\n```\n$ grep -A2 '\"node_modules/protobufjs\"' frontend/package-lock.json | head -3\n\"node_modules/protobufjs\": {\n  \"version\": \"7.5.6\",\n  \"resolved\": \"https://registry.npmjs.org/protobufjs/-/protobufjs-7.5.6.tgz\",\n```\n\n---\n_This PR was created by an AI agent (OpenHands) on behalf of the maintainers as part of automated CVE remediation._\n\n---\n\nTo run this PR locally, use the following command:\n\nGUI with Docker:\n```\ndocker run -it --rm   -p 3000:3000   -v /var/run/docker.sock:/var/run/docker.sock   --add-host host.docker.internal:host-gateway   --name openhands-app-00cef69   docker.openhands.dev/openhands/openhands:00cef69\n```",
+    "author": "aivong-openhands",
+    "headRef": "fix-cve-2026-44289",
+    "repository": "All-Hands-AI/OpenHands"
+  },
+  "diffRef": {
+    "repository": "All-Hands-AI/OpenHands",
+    "headSha": "00cef69b5994fd4c9cc5540a0e5a8837f9036438",
+    "baseSha": "332b6d14e689dc630a558b56f17c90613938fb1e"
+  },
+  "vendoredDiffPath": "openhands/openhands-All-Hands-AI-OpenHands-pr14484.diff",
+  "vendoredAt": "2026-05-24T03:18:48.729Z",
+  "collectedAt": "2026-05-24T03:18:48.729Z"
+}

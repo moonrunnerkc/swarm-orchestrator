@@ -1,0 +1,26 @@
+{
+  "id": "devin-zawceo-stocks_app-pr1",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 1,
+    "headSha": "8076ee1a7ba3d85a39d34c2f527e218781a6e6e3",
+    "baseSha": "4f8753fd0766d7063648625ab20360c099117faa",
+    "title": "Persist API keys in SQLite",
+    "body": "## Summary\n- Added an `ApiKey` SQLAlchemy model plus helper functions to save and load provider keys from SQLite.\n- Replaced the hard-coded IEX sandbox token with database lookup and `IEX_API_KEY` environment fallback.\n- Added `manage_api_keys.py` CLI and README instructions for saving/listing API keys so they persist across server restarts.\n\n## Review & Testing Checklist for Human\n- [ ] Run `python manage_api_keys.py set iex YOUR_IEX_API_KEY`, restart the server, and verify stock info still loads.\n- [ ] Confirm `python manage_api_keys.py list` shows `iex` without printing the secret value.\n- [ ] Verify the stock info page redirects with an error message if no IEX API key exists.\n\n### Notes\nValidated with Python 3.9 dependency install, `py_compile`, and a smoke test that stores/reads/removes a temporary API key in SQLite. Python 3.12 dependency install is not compatible with the pinned `greenlet==1.1.2`, so Python 3.9 was used.\n\nLink to Devin session: https://app.devin.ai/sessions/e7545c5491764fc3818a977f4a314ac9\nRequested by: @zawceo",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779525900-persist-api-keys",
+    "repository": "zawceo/stocks_app"
+  },
+  "diffRef": {
+    "repository": "zawceo/stocks_app",
+    "headSha": "8076ee1a7ba3d85a39d34c2f527e218781a6e6e3",
+    "baseSha": "4f8753fd0766d7063648625ab20360c099117faa"
+  },
+  "vendoredDiffPath": "negatives/closed-without-merge/devin/devin-zawceo-stocks_app-pr1.diff",
+  "vendoredAt": "2026-05-24T04:27:48.418Z",
+  "collectedAt": "2026-05-24T04:27:48.418Z"
+}

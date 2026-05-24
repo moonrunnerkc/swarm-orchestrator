@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-raoufchebri-devhub-pr1",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "body=claude-code-footer"
+  },
+  "pr": {
+    "number": 1,
+    "headSha": "6f6af1c6b833f41abc1c58b399f2cfc8751be2df",
+    "baseSha": "5b05cb846044f0427bca491eb0c20b4bcce3c25d",
+    "title": "Add replit template",
+    "body": "## Summary\r\n\r\nAdds a **Build it on Replit** action to DevHub templates and ships Replit-Agent prompts for the launch set of examples, cookbooks, and recipes.\r\n\r\n<img width=\"839\" height=\"520\" alt=\"Screenshot 2026-05-08 at 10 01 54 AM\" src=\"https://github.com/user-attachments/assets/46b2e3e7-76ed-4063-8446-e0ef0016d34f\" />\r\n\r\n\r\nWhen a template has a `replit-prompt.md`, the template usage banner renders a second action that opens `replit.com` with the prompt preloaded as an `lz-string`-compressed query param plus DevHub UTM tags. Templates without a `replit-prompt.md` are unchanged.\r\n\r\n<img width=\"1719\" height=\"992\" alt=\"Screenshot 2026-05-08 at 10 02 09 AM\" src=\"https://github.com/user-attachments/assets/654e297f-7cc0-49b9-9cb5-45faa8b27828\" />\r\n\r\n## Plumbing\r\n\r\n- **Examples** (already wired in `c191572`): `content/examples/<slug>/replit-prompt.md` is read by `content-markdown.ts` and forwarded to `TemplateUsageBanner` from `example-detail.tsx`.\r\n- **Cookbooks** (new in `7de8fa3`): added `readCookbookReplitPrompt()`, exposed `replitPromptsBySlug` from the cookbooks plugin, added a `useCookbookReplitPrompt()` hook, and threaded `replitPrompt` through `useCookbookMarkdown` → `CookbookDetail` → `TemplateUsageBanner`. `validate-content.mjs` now allows `replit-prompt.md` inside cookbook folders.\r\n- **Recipes** (new in `7de8fa3`): the file plumbing already supported `replit-prompt.md`; added `useRecipeSections()` and forwarded `sections.replitPrompt` from `recipe-detail.tsx` to the banner.\r\n\r\n## Replit prompts added\r\n\r\n| Tier | Slug |\r\n| --- | --- |\r\n| Example | `saas-tracker` (updated to add Genie analytics) |\r\n| Example | `vacation-rentals` |\r\n| Example | `inventory-intelligence` |\r\n| Example | `content-moderator` |\r\n| Cookbook | `genie-analytics-app` |\r\n| Cookbook | `operational-data-analytics` |\r\n| Recipe | `genie-conversational-analytics` |\r\n| Recipe | `genie-multi-space` |\r\n| Recipe | `medallion-architecture-from-cdc` |\r\n| Recipe | `volume-file-upload` (Volume File Manager) |\r\n\r\nEach prompt follows the same structure: connector-first / PAT fallback decision tree, table or schema setup, app requirements, permission handling, build order, and scope notes.\r\n\r\n## Test plan\r\n\r\n- [x] `npm run fmt`\r\n- [x] `npm run validate:content`\r\n- [x] `npm run typecheck`\r\n- [x] `npm run build`\r\n- [x] `npm run dev` — server compiles cleanly, all 10 template routes load\r\n- [ ] Manually click **Build it on Replit** on one example, one cookbook, and one recipe page and confirm the URL decompresses to the expected prompt\r\n- [ ] Verify pages without a `replit-prompt.md` still render only the **Copy prompt** action\r\n\r\n🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+    "author": "raoufchebri",
+    "headRef": "add-replit-template",
+    "repository": "raoufchebri/devhub"
+  },
+  "diffRef": {
+    "repository": "raoufchebri/devhub",
+    "headSha": "6f6af1c6b833f41abc1c58b399f2cfc8751be2df",
+    "baseSha": "5b05cb846044f0427bca491eb0c20b4bcce3c25d"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-raoufchebri-devhub-pr1.diff",
+  "vendoredAt": "2026-05-24T03:14:11.678Z",
+  "collectedAt": "2026-05-24T03:14:11.678Z"
+}

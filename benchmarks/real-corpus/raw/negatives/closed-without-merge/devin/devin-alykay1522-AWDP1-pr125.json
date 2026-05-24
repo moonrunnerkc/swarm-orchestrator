@@ -1,0 +1,26 @@
+{
+  "id": "devin-alykay1522-AWDP1-pr125",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 125,
+    "headSha": "453bbdc2904bf4ac5579d25630e0ab19812c66f0",
+    "baseSha": "320b0252cfe03f6a511d2873892e0b8c7239d4e1",
+    "title": "Fix Vercel deployment: remove functions block from awdp-site config",
+    "body": "## Summary\n\nThe root `vercel.json` was already fixed (PR #122), but the Vercel project root is likely set to `artifacts/awdp-site/` — making `artifacts/awdp-site/vercel.json` the **active** config. That file still had a `functions` block causing:\n\n> Function Runtimes must have a valid version, for example `now-php@1.0.0`\n\nThis PR removes the `functions` block from `artifacts/awdp-site/vercel.json` and adds:\n- `installCommand: \"node vercel-install.cjs\"` for proper pnpm workspace install\n- `/api/*` and `/sitemap.xml` rewrites\n- Cache headers for `/assets/*` (immutable) and `/resources/*`\n- Removed legacy `\"version\": 2`\n\n## Review & Testing Checklist for Human\n\n- [ ] Verify Vercel deployment succeeds after merge\n- [ ] Verify `https://www.allwindowdoorparts.com/api/healthz` returns `{\"status\":\"ok\"}`\n- [ ] Close PRs #123 and #124 (superseded)\n\n### Notes\n- If the deployment still fails after merging, the issue is in the Vercel project dashboard settings (Settings → General → Root Directory or Settings → Functions). Please check there and share the build logs so I can help further.\n\nLink to Devin session: https://app.devin.ai/sessions/9bd3cd88f5fd44588b47c179eb66930f\nRequested by: @alykay1522\n\n<!-- This is an auto-generated description by cubic. -->\n---\n## Summary by cubic\nFix Vercel deploy for the AWDP site by updating the active `artifacts/awdp-site/vercel.json`. Removes the bad `functions` block and adds correct install, rewrites, and caching for stable builds and routing.\n\n- **Bug Fixes**\n  - Removed `functions` block that caused the Vercel runtime error.\n  - Dropped legacy `\"version\": 2`.\n\n- **Refactors**\n  - Added `installCommand: \"node vercel-install.cjs\"` to run a `pnpm` workspace install.\n  - Added rewrites for `/api/*`, `/sitemap.xml`, `/admin`, and SPA catch‑all (excluding `/api`, `/_next`, `assets/`).\n  - Added cache headers: `/assets/*` (1 year, immutable) and `/resources/*` (1 day).\n\n<sup>Written for commit 453bbdc2904bf4ac5579d25630e0ab19812c66f0. Summary will update on new commits. <a href=\"https://cubic.dev/pr/alykay1522/AWDP1/pull/125?utm_source=github\">Review in cubic</a></sup>\n\n<!-- End of auto-generated description by cubic. -->\n\n",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779516299-fix-awdp-site-vercel",
+    "repository": "alykay1522/AWDP1"
+  },
+  "diffRef": {
+    "repository": "alykay1522/AWDP1",
+    "headSha": "453bbdc2904bf4ac5579d25630e0ab19812c66f0",
+    "baseSha": "320b0252cfe03f6a511d2873892e0b8c7239d4e1"
+  },
+  "vendoredDiffPath": "negatives/closed-without-merge/devin/devin-alykay1522-AWDP1-pr125.diff",
+  "vendoredAt": "2026-05-24T04:27:50.708Z",
+  "collectedAt": "2026-05-24T04:27:50.708Z"
+}

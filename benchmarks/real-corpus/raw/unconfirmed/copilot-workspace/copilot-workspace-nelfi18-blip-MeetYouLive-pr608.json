@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-nelfi18-blip-MeetYouLive-pr608",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 608,
+    "headSha": "1abee1cf0c573f83d03cb980a97f6cd3c38a03c7",
+    "baseSha": "78a476069e48bc769c50f830fcd57d5dd3fa114f",
+    "title": "Fix /feed hard-refresh layout scale",
+    "body": "Hard-refreshing `/feed` could render the mobile UI smaller than the client-navigation layout. The feed shell should keep the same sizing across direct loads and in-app navigation without changing feed design or behavior.\n\n- **Feed shell sizing**\n  - Remove the global `.main-content` max-width, padding, margin, and page animation only when rendering `.feed-page`.\n  - Keeps `/feed` full-width on direct refresh while leaving other routes unchanged.\n\n```css\nmain.main-content:has(.feed-page) {\n  max-width: none;\n  width: 100%;\n  margin: 0;\n  padding: 0;\n  animation: none;\n}\n```\n\n- **Service worker cache**\n  - Bump the service worker cache version so stale cached feed shell assets are evicted after deploy.",
+    "author": "Copilot",
+    "headRef": "copilot/fix-feed-ui-render-size",
+    "repository": "nelfi18-blip/MeetYouLive"
+  },
+  "diffRef": {
+    "repository": "nelfi18-blip/MeetYouLive",
+    "headSha": "1abee1cf0c573f83d03cb980a97f6cd3c38a03c7",
+    "baseSha": "78a476069e48bc769c50f830fcd57d5dd3fa114f"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-nelfi18-blip-MeetYouLive-pr608.diff",
+  "vendoredAt": "2026-05-24T03:05:40.768Z",
+  "collectedAt": "2026-05-24T03:05:40.768Z"
+}

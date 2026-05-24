@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-AmberCowled-probably-fine-pr1",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "body=claude-code-footer"
+  },
+  "pr": {
+    "number": 1,
+    "headSha": "01ec3759816d60af1b34b358bac8bbd4b2b2805a",
+    "baseSha": "ad933afbbdaa1758118d1412c96f91ef00015cee",
+    "title": "Replace Aider with custom agent, reflection loop, and DRM",
+    "body": "## Summary\n\n- **Custom agent** (`agent.py`): Streams Ollama responses, parses SEARCH/REPLACE edit blocks, applies them atomically with 3-tier error recovery (exact match → fuzzy retry with error context → whole-file fallback)\n- **Task interpreter** (`interpreter.py`): Classifies intent (bug fix, feature, refactor, question), assesses complexity/clarity, decomposes tasks into dependency-ordered steps with topological sort validation\n- **Reflection loop** (`reflection.py` + `checker.py`): Maker-checker review cycle where a second model reviews diffs for bugs and logic errors, with auto-triggering based on diff size and deletion ratio\n- **Dynamic Resource Manager** (`drm/`): 6-module subsystem for VRAM monitoring via nvidia-smi, model lifecycle management, swap scheduling, OOM detection, and automatic fallback to smaller models\n- **18 quality-gap features** implemented from feature scout analysis: edit confidence scoring, context budget tracking, plan templates, structured error categorization, few-shot prompt examples, dynamic token budgets, pre-checker sanity checks, cross-file consistency verification, cascading failure prevention, continuation rounds, misbehavior observer, and more\n- **4 rounds of refactoring** (16 fixes): deduplicated shared utilities to `ollama_utils.py`/`console.py`/`log_utils.py`, introduced `StepContext` parameter object, encapsulated DRM state, removed ~170 lines of dead code, extracted magic numbers to named constants\n- **Removed Aider dependency** entirely — `aider_session.py` deleted, all references removed\n- **Removed tracked `__pycache__/`** files, updated README to reflect new architecture\n\n## Stats\n- 32 files changed, ~7,700 insertions, ~265 deletions\n- 22 Python modules across `probablyfine/` and `probablyfine/drm/`\n- 15 dataclasses in `models.py`\n\n## Test plan\n- [x] `python -m py_compile probablyfine/<module>.py` passes for all modules\n- [x] `probablyfine` launches, shows TUI with mode/VRAM status bar\n- [x] Basic task execution: type a coding task, verify agent streams edits and applies them\n- [x] `/reflect on` then run a task — verify checker reviews the diff\n- [x] `/drm status` — verify VRAM monitoring output\n- [x] `/mode auto` then run a task — verify auto-classification routes correctly\n- [x] `/undo` rolls back the last agent checkpoint\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+    "author": "AmberCowled",
+    "headRef": "Reflection",
+    "repository": "AmberCowled/probably-fine"
+  },
+  "diffRef": {
+    "repository": "AmberCowled/probably-fine",
+    "headSha": "01ec3759816d60af1b34b358bac8bbd4b2b2805a",
+    "baseSha": "ad933afbbdaa1758118d1412c96f91ef00015cee"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-AmberCowled-probably-fine-pr1.diff",
+  "vendoredAt": "2026-05-24T03:10:51.481Z",
+  "collectedAt": "2026-05-24T03:10:51.481Z"
+}

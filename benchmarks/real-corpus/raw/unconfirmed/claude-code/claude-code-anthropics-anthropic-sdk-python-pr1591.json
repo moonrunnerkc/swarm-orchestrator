@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-python-pr1591",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1591,
+    "headSha": "e9bc49b2362728a74975fb9e6e78180ec0514841",
+    "baseSha": "5db69c6d5f3e7e39023973ca4b235046e5661157",
+    "title": "docs(_files): replace dead README anchor with platform.claude.com link",
+    "body": "## Summary\n\nThe `assert_is_file_content` helper in `src/anthropic/_files.py` raises a `RuntimeError` whose message ends with a link to a now-dead README anchor:\n\n```\nSee https://github.com/anthropics/anthropic-sdk-python/tree/main#file-uploads\n```\n\nThe README has since been reduced to a stub pointing at `platform.claude.com`, so the `#file-uploads` anchor no longer exists. Users hitting this error and clicking the link land at the top of the README with no guidance. (Sibling broken anchor `#long-requests` was reported in #1430.)\n\n## Fix\n\nRepoint the URL to the live docs site (same target the new README and `CONTRIBUTING.md` recommend):\n\n```diff\n-            f\"... received {type(obj)} instead. See https://github.com/anthropics/anthropic-sdk-python/tree/main#file-uploads\"\n+            f\"... received {type(obj)} instead. See https://platform.claude.com/docs/en/api/sdks/python for more details on file uploads.\"\n```\n\n## Notes\n\n- Helper file (manual, not Stainless-generated). Pure docstring/error-message fix, no runtime behavior change.\n- Verified: `import anthropic` succeeds; `assert_is_file_content(12345)` raises `RuntimeError` whose message now contains `platform.claude.com` and no longer contains `#file-uploads`; `ruff check src/anthropic/_files.py` passes.\n\n## Test plan\n\n- [x] `ruff check src/anthropic/_files.py` passes\n- [x] Manual repro: `assert_is_file_content(12345)` raises with updated message\n- [x] No behavior change beyond the URL string\n",
+    "author": "Zeffut",
+    "headRef": "fix/files-broken-anchor-link",
+    "repository": "anthropics/anthropic-sdk-python"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-python",
+    "headSha": "e9bc49b2362728a74975fb9e6e78180ec0514841",
+    "baseSha": "5db69c6d5f3e7e39023973ca4b235046e5661157"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-python-pr1591.diff",
+  "vendoredAt": "2026-05-24T03:16:54.000Z",
+  "collectedAt": "2026-05-24T03:16:54.000Z"
+}

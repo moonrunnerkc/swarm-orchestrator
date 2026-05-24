@@ -1,0 +1,17 @@
+diff --git a/src/main/resources/doc/io.kestra.plugin.ansible.md b/src/main/resources/doc/io.kestra.plugin.ansible.md
+new file mode 100644
+index 0000000..b1c008e
+--- /dev/null
++++ b/src/main/resources/doc/io.kestra.plugin.ansible.md
+@@ -0,0 +1,11 @@
++# How to use the Ansible plugin
++
++Run Ansible playbooks and ad-hoc commands from Kestra flows inside a container with the Ansible CLI pre-installed.
++
++## Common properties
++
++`containerImage` defaults to `cytopia/ansible:latest-tools`. `taskRunner` controls where the container runs — defaults to Docker. Pass inventory files, playbooks, and other supporting files via `inputFiles` (inline content) or pull them from [namespace files](https://kestra.io/docs/concepts/namespace-files). Target host credentials (SSH keys, passwords) are supplied through the inventory file using standard Ansible inventory variables rather than plugin-level properties.
++
++## Tasks
++
++`cli.AnsibleCLI` runs one or more Ansible CLI commands set in `commands` (e.g. `ansible-playbook site.yml -i inventory.ini`). Use `beforeCommands` to run setup steps before the main commands, `env` to inject environment variables, and `outputFiles` to capture files produced during execution. Set `ansibleConfig` to supply a custom `ansible.cfg`; if omitted, Kestra generates one automatically with its structured output callback enabled.

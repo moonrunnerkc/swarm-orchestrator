@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24112",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24112,
+    "headSha": "06dc516b6ffbc84006c6996287123e0d642c8fff",
+    "baseSha": "a787408a06cc7b4d10138d53c355237206427bbe",
+    "title": "[runtime] add progress and cancellation apis",
+    "body": "## Summary\n\n- Add the app-facing `runtime/install/progress` notification and `runtime/install/cancel` request for the single active runtime installation, without introducing installation IDs.\n- Move install orchestration into `RuntimeInstallRequestProcessor`, forward download/install phases to the requesting connection, support cancellation, and reuse an already-current runtime without downloading it again.\n- Update the generated protocol surface and route runtime progress as a global notification in the TUI.\n- The dependent remote-transport PR completes these lifecycle semantics for separated exec-server deployments and should land with this PR.\n\n## Test Plan\n\n- Regenerated app-server schema fixtures; formatting and scoped Clippy checks passed.\n- `codex-app-server-protocol`, `codex-exec-server`, and focused `codex-app-server` runtime-install tests passed.\n- Focused `codex-tui` validation confirmed runtime progress notifications are routed globally.\n\n## Stack\n\n1. [#24111](https://github.com/openai/codex/pull/24111) - Introduce `runtime/install` API\n2. **[#24112](https://github.com/openai/codex/pull/24112) - Add progress and cancellation APIs**\n3. [#24113](https://github.com/openai/codex/pull/24113) - Forward runtime APIs from app-server to exec-server\n",
+    "author": "acrognale-oai",
+    "headRef": "acrognale/runtime-install-lifecycle",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "06dc516b6ffbc84006c6996287123e0d642c8fff",
+    "baseSha": "a787408a06cc7b4d10138d53c355237206427bbe"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24112.diff",
+  "vendoredAt": "2026-05-24T03:21:13.521Z",
+  "collectedAt": "2026-05-24T03:21:13.521Z"
+}

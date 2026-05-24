@@ -1,0 +1,1633 @@
+diff --git a/codex-cli-24-04/README.md b/codex-cli-24-04/README.md
+new file mode 100644
+index 0000000..7bb598c
+--- /dev/null
++++ b/codex-cli-24-04/README.md
+@@ -0,0 +1,115 @@
++# Codex CLI 1-Click Droplet Builder
++
++This directory contains the Packer builder configuration for creating a Codex CLI 1-Click DigitalOcean Droplet image.
++
++## Overview
++
++Codex CLI is OpenAI's terminal-based coding agent. Users SSH into the droplet and run `codex` to get AI-assisted coding directly in their shell. This builder creates a fully configured Ubuntu 24.04 LTS Droplet with Codex CLI pre-installed and DigitalOcean Gradient AI pre-configured as the inference provider.
++
++## Directory Structure
++
++```
++codex-cli-24-04/
++├── template.json                    # Packer build configuration
++├── README.md                        # This file
++├── listing.md                       # Marketplace catalog copy
++├── scripts/
++│   └── 010-codex-cli.sh            # Main installation script
++└── files/
++    ├── etc/
++    │   └── update-motd.d/
++    │       └── 99-one-click         # Message of the Day
++    ├── opt/
++    │   ├── apply-gradient-from-env.sh  # Apply GRADIENT_KEY from env on boot
++    │   ├── codex-cli.env           # Droplet env template (GRADIENT_KEY/MODEL)
++    │   ├── setup-codex-cli.sh      # First-login setup wizard (Gradient key)
++    │   ├── update-codex-cli.sh     # Update to latest version
++    │   └── codex-cli-version.sh    # Display installed version
++    ├── root/
++    │   └── .codex/
++    │       └── config.toml         # Pre-configured Gradient AI provider
++    └── var/
++        └── lib/
++            └── cloud/
++                └── scripts/
++                    └── per-instance/
++                        └── 001_onboot  # First-boot configuration script
++```
++
++## Build Requirements
++
++### Prerequisites
++
++1. **Packer**: Install from https://www.packer.io/downloads
++2. **DigitalOcean API Token**: Generate with write access from https://cloud.digitalocean.com/account/api/tokens
++
++### Environment Setup
++
++```bash
++export DIGITALOCEAN_API_TOKEN="your_api_token_here"
++```
++
++## Building the Image
++
++```bash
++# Initialize Packer plugins (first time only)
++packer init config/plugins.pkr.hcl
++
++# Validate the template
++packer validate codex-cli-24-04/template.json
++
++# Build the image
++make build-codex-cli-24-04
++# or: packer build codex-cli-24-04/template.json
++```
++
++## What Gets Installed
++
++- **Codex CLI** (version from `application_version` in template.json)
++- **bwrap** sandbox helper (bundled with Codex releases)
++- **DigitalOcean Gradient AI config** – Pre-configured provider in `/root/.codex/config.toml`
++- **Git**, **curl**, **jq**, **unzip** – utilities
++- **UFW** – Firewall (SSH only, rate-limited)
++
++Codex CLI is installed to `/usr/local/bin/codex`. Authentication uses your Gradient model access key stored in `/root/.codex/env` as `MODEL_ACCESS_KEY`.
++
++## First Boot Behavior
++
++1. Removes SSH force-logout (allows normal login)
++2. Sources `/etc/environment` and runs `/opt/apply-gradient-from-env.sh`
++3. If `GRADIENT_KEY` is set (droplet env or `/opt/codex-cli.env`), configures Codex and skips the wizard
++4. Otherwise hooks the Gradient setup wizard (`/opt/setup-codex-cli.sh`) into `.bashrc` for first login
++5. Creates `/root/codex_cli_info.txt` with getting-started instructions
++
++### Environment Variables
++
++| Variable | Description |
++|----------|-------------|
++| `GRADIENT_KEY` | DigitalOcean Gradient model access key |
++| `GRADIENT_MODEL` | Optional model id (default: `openai-gpt-5.5`) |
++
++These can be set as droplet environment variables at create time (written to `/etc/environment`) or in `/opt/codex-cli.env`.
++
++## First Login Experience
++
++On first SSH login, the setup wizard runs and:
++
++1. Prompts the user for their DigitalOcean Gradient model access key
++2. Writes the key to `/root/.codex/env` as `MODEL_ACCESS_KEY`
++3. Tests the connection to `https://inference.do-ai.run/v1/models`
++4. Self-removes from `.bashrc` (one-time only)
++
++Default model: **GPT-5.5** (`openai-gpt-5.5` via DigitalOcean Gradient).
++
++Alternatively, users can run `codex login` for ChatGPT subscription OAuth instead of Gradient.
++
++## Version Pinning
++
++The `application_version` variable in `template.json` pins the Codex CLI version. To bump:
++
++1. Edit `application_version` in `template.json` (e.g., `"0.134.0"`)
++2. Rebuild the image
++
++## License
++
++This builder configuration follows the same license as the droplet-1-clicks repository. Codex CLI is open source (Apache-2.0).
+diff --git a/codex-cli-24-04/files/etc/update-motd.d/99-one-click b/codex-cli-24-04/files/etc/update-motd.d/99-one-click
+new file mode 100644
+index 0000000..9621f33
+--- /dev/null
++++ b/codex-cli-24-04/files/etc/update-motd.d/99-one-click
+@@ -0,0 +1,42 @@
++#!/bin/sh
++#
++# Configured as part of the DigitalOcean 1-Click Image build process
++
++cat <<EOF
++********************************************************************************
++
++Welcome to DigitalOcean's One-Click Codex CLI Droplet.
++
++Codex CLI is OpenAI's terminal-based coding agent. Use natural language to
++write, debug, and refactor code. This droplet is pre-configured to use
++DigitalOcean Gradient AI for inference.
++
++PRE-CONFIGURED MODELS (via DigitalOcean Gradient):
++  Default: GPT-5.5
++  Also available: GPT-5.2, GPT-5.1 Codex Max, GPT-5, GPT-4.1, o3, DeepSeek R1 70B, Qwen3 32B,
++  Llama 3.3 70B, Kimi K2.5, glm-5, MiniMax M2.5, Claude Opus/Sonnet models
++
++GETTING STARTED:
++
++  1. Configure your Gradient model access key:
++     - Set GRADIENT_KEY (optional GRADIENT_MODEL) as droplet env vars, or
++     - Edit /opt/codex-cli.env and reboot, or
++     - On first login, run the setup wizard when prompted
++     Create a key at: https://cloud.digitalocean.com/gen-ai
++     (API Keys > Model Access Keys)
++
++  2. Run Codex CLI:
++     cd /path/to/your/project
++     codex
++
++Helper Commands:
++  Check version:    /opt/codex-cli-version.sh
++  Update Codex CLI: /opt/update-codex-cli.sh
++  Re-run setup:     /opt/setup-codex-cli.sh
++
++Configuration:  /root/.codex/config.toml
++Documentation:  https://developers.openai.com/codex/cli
++
++********************************************************************************
++To delete this message of the day: rm -rf $(readlink -f ${0})
++EOF
+diff --git a/codex-cli-24-04/files/opt/apply-gradient-from-env.sh b/codex-cli-24-04/files/opt/apply-gradient-from-env.sh
+new file mode 100644
+index 0000000..3b2e691
+--- /dev/null
++++ b/codex-cli-24-04/files/opt/apply-gradient-from-env.sh
+@@ -0,0 +1,151 @@
++#!/bin/bash
++# Apply DigitalOcean Gradient from droplet env or /opt/codex-cli.env (GRADIENT_KEY, GRADIENT_MODEL).
++# Returns 0 when a key was applied; 1 when skipped (empty or unset placeholder).
++set -euo pipefail
++
++ENV_FILE=/opt/codex-cli.env
++CODEX_ENV=/root/.codex/env
++CODEX_PROFILED=/etc/profile.d/codex-gradient.sh
++CODEX_CONFIG=/root/.codex/config.toml
++SETUP_MARKER=/root/.codex_setup_complete
++DEFAULT_MODEL=openai-gpt-5.5
++BASHRC_BEGIN='# codex-cli-24-04-gradient-env BEGIN'
++BASHRC_END='# codex-cli-24-04-gradient-env END'
++BASHRC_RANGE_BEGIN='codex-cli-24-04-gradient-env BEGIN'
++BASHRC_RANGE_END='codex-cli-24-04-gradient-env END'
++
++remove_setup_wizard_bashrc_hook() {
++    [ -f /root/.bashrc ] || return 0
++    sed -i '/\/opt\/setup-codex-cli\.sh/d' /root/.bashrc
++}
++
++ensure_codex_env_sourced() {
++    touch /root/.bashrc
++    if ! grep -qF "$BASHRC_RANGE_BEGIN" /root/.bashrc 2>/dev/null; then
++        {
++            echo ""
++            echo "$BASHRC_BEGIN"
++            echo "[ -f $CODEX_PROFILED ] && . $CODEX_PROFILED"
++            echo "$BASHRC_END"
++        } >> /root/.bashrc
++    fi
++}
++
++write_codex_profiled() {
++    local key="$1"
++    umask 077
++    mkdir -p /etc/profile.d
++    printf 'export MODEL_ACCESS_KEY=%q\n' "$key" > "$CODEX_PROFILED"
++    chmod 600 "$CODEX_PROFILED"
++}
++
++read_file_kv() {
++    local key="$1"
++    local line val
++    line=$(grep -E "^${key}=" "$ENV_FILE" 2>/dev/null | tail -n 1) || return 1
++    val="${line#${key}=}"
++    val="${val#\"}"; val="${val%\"}"
++    val="${val#\'}"; val="${val%\'}"
++    printf '%s' "$val"
++}
++
++read_config_value() {
++    local key="$1"
++    local env_val="${!key-}"
++    if env_value_usable "$env_val"; then
++        printf '%s' "$env_val"
++        return 0
++    fi
++    read_file_kv "$key"
++}
++
++write_env_file_kv() {
++    local key="$1" val="$2" tmp="${ENV_FILE}.tmp"
++    touch "$ENV_FILE"
++    grep -v "^${key}=" "$ENV_FILE" >"$tmp" 2>/dev/null || : >"$tmp"
++    printf '%s=%q\n' "$key" "$val" >>"$tmp"
++    mv "$tmp" "$ENV_FILE"
++    chmod 600 "$ENV_FILE"
++}
++
++env_value_usable() {
++    local v="$1"
++    [ -n "$v" ] || return 1
++    case "$v" in
++        *'${'*|PLACEHOLDER*|your_*_here) return 1 ;;
++    esac
++    return 0
++}
++
++normalize_gradient_model() {
++    local m="$1"
++    case "$m" in
++        '') printf '%s' "$DEFAULT_MODEL" ;;
++        *) printf '%s' "$m" ;;
++    esac
++}
++
++write_codex_env() {
++    local key="$1"
++    umask 077
++    printf 'export MODEL_ACCESS_KEY=%q\n' "$key" > "$CODEX_ENV"
++    chmod 600 "$CODEX_ENV"
++}
++
++redact_gradient_secrets_from_system_environment() {
++    local env_file=/etc/environment
++    [ -f "$env_file" ] || return 0
++    grep -Ev '^(GRADIENT_KEY|GRADIENT_MODEL)=' "$env_file" >"${env_file}.tmp" 2>/dev/null || : >"${env_file}.tmp"
++    mv "${env_file}.tmp" "$env_file"
++    chmod 644 "$env_file"
++}
++
++GRADIENT_KEY=$(read_config_value GRADIENT_KEY || true)
++GRADIENT_MODEL=$(read_config_value GRADIENT_MODEL || true)
++
++if ! env_value_usable "$GRADIENT_KEY"; then
++    exit 1
++fi
++
++if ! env_value_usable "$GRADIENT_MODEL"; then
++    GRADIENT_MODEL="$DEFAULT_MODEL"
++fi
++
++PRIMARY_MODEL=$(normalize_gradient_model "$GRADIENT_MODEL")
++write_env_file_kv GRADIENT_KEY "$GRADIENT_KEY"
++write_env_file_kv GRADIENT_MODEL "$PRIMARY_MODEL"
++
++mkdir -p /root/.codex
++write_codex_profiled "$GRADIENT_KEY"
++write_codex_env "$GRADIENT_KEY"
++# shellcheck source=/dev/null
++. "$CODEX_PROFILED"
++
++if [ -f "$CODEX_CONFIG" ]; then
++    if grep -q '^model = ' "$CODEX_CONFIG"; then
++        sed -i "s|^model = .*|model = \"${PRIMARY_MODEL}\"|" "$CODEX_CONFIG"
++    else
++        echo "model = \"${PRIMARY_MODEL}\"" >> "$CODEX_CONFIG"
++    fi
++    chmod 600 "$CODEX_CONFIG"
++fi
++
++ensure_codex_env_sourced
++remove_setup_wizard_bashrc_hook
++redact_gradient_secrets_from_system_environment
++touch "$SETUP_MARKER"
++
++echo "Testing connection to DigitalOcean Gradient..."
++HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
++    -H "Authorization: Bearer ${GRADIENT_KEY}" \
++    -H "Content-Type: application/json" \
++    https://inference.do-ai.run/v1/models 2>/dev/null || true)
++
++if [ "$HTTP_STATUS" = "200" ]; then
++    echo "Gradient configured from ${ENV_FILE}: model ${PRIMARY_MODEL}"
++else
++    echo "Gradient configured from ${ENV_FILE}: model ${PRIMARY_MODEL}"
++    echo "Warning: Received HTTP ${HTTP_STATUS:-000} from the Gradient API." >&2
++fi
++
++exit 0
+diff --git a/codex-cli-24-04/files/opt/codex-cli-download.sh b/codex-cli-24-04/files/opt/codex-cli-download.sh
+new file mode 100644
+index 0000000..0ad49f7
+--- /dev/null
++++ b/codex-cli-24-04/files/opt/codex-cli-download.sh
+@@ -0,0 +1,61 @@
++#!/bin/bash
++# Shared download + SHA256 verification for Codex CLI GitHub release assets.
++set -euo pipefail
++
++ARCH="${CODEX_ARCH:-x86_64-unknown-linux-musl}"
++CODEX_LIB_DIR="${CODEX_LIB_DIR:-/usr/local/lib/codex}"
++
++verify_sha256() {
++    local file="$1" expected="$2"
++    local actual
++    actual=$(sha256sum "$file" | awk '{print $1}')
++    if [ "$actual" != "$expected" ]; then
++        echo "Error: SHA256 mismatch for $(basename "$file")" >&2
++        echo "  expected: $expected" >&2
++        echo "  actual:   $actual" >&2
++        return 1
++    fi
++}
++
++fetch_release_asset_digest() {
++    local tag="$1" asset_name="$2"
++    curl -fsSL "https://api.github.com/repos/openai/codex/releases/tags/${tag}" \
++        | jq -r --arg name "$asset_name" '.assets[] | select(.name == $name) | .digest | sub("^sha256:"; "")'
++}
++
++download_codex_release_asset() {
++    local tag="$1" asset_name="$2" dest="$3" expected_sha256="${4:-}"
++
++    local url="https://github.com/openai/codex/releases/download/${tag}/${asset_name}"
++    curl -fsSL "$url" -o "$dest"
++
++    if [ -z "$expected_sha256" ]; then
++        expected_sha256=$(fetch_release_asset_digest "$tag" "$asset_name")
++    fi
++
++    if [ -z "$expected_sha256" ] || [ "$expected_sha256" = "null" ]; then
++        echo "Error: Could not determine SHA256 for ${asset_name}" >&2
++        return 1
++    fi
++
++    verify_sha256 "$dest" "$expected_sha256"
++}
++
++install_codex_binaries() {
++    local tag="$1" tmpdir="$2"
++    local codex_sha="${3:-}" bwrap_sha="${4:-}"
++    local codex_asset="codex-${ARCH}.tar.gz"
++    local bwrap_asset="bwrap-${ARCH}.tar.gz"
++
++    mkdir -p "$CODEX_LIB_DIR"
++
++    echo "Downloading ${codex_asset}..."
++    download_codex_release_asset "$tag" "$codex_asset" "${tmpdir}/codex.tar.gz" "$codex_sha"
++    tar -xzf "${tmpdir}/codex.tar.gz" -C "${tmpdir}"
++    install -m 0755 "${tmpdir}/codex-${ARCH}" "${CODEX_LIB_DIR}/codex"
++
++    echo "Downloading ${bwrap_asset}..."
++    download_codex_release_asset "$tag" "$bwrap_asset" "${tmpdir}/bwrap.tar.gz" "$bwrap_sha"
++    tar -xzf "${tmpdir}/bwrap.tar.gz" -C "${tmpdir}"
++    install -m 0755 "${tmpdir}/bwrap-${ARCH}" /usr/local/bin/bwrap
++}
+diff --git a/codex-cli-24-04/files/opt/codex-cli-version.sh b/codex-cli-24-04/files/opt/codex-cli-version.sh
+new file mode 100644
+index 0000000..b378e89
+--- /dev/null
++++ b/codex-cli-24-04/files/opt/codex-cli-version.sh
+@@ -0,0 +1,12 @@
++#!/bin/bash
++
++# Display the installed Codex CLI version
++
++if command -v codex >/dev/null 2>&1; then
++  codex --version
++else
++  echo "Codex CLI not found in PATH. Check /usr/local/bin/codex"
++  if [ -f /usr/local/bin/codex ]; then
++    /usr/local/bin/codex --version 2>/dev/null || echo "Version check failed"
++  fi
++fi
+diff --git a/codex-cli-24-04/files/opt/codex-cli.env b/codex-cli-24-04/files/opt/codex-cli.env
+new file mode 100644
+index 0000000..91d28d9
+--- /dev/null
++++ b/codex-cli-24-04/files/opt/codex-cli.env
+@@ -0,0 +1,15 @@
++# Codex CLI Environment Configuration
++#
++# DigitalOcean Gradient (optional):
++#   GRADIENT_KEY    Gradient model access key (Gen AI / Gradient in the control panel)
++#   GRADIENT_MODEL  Inference model id, e.g. openai-gpt-5.5, openai-gpt-5.2
++#
++# On first boot, 001_onboot reads /etc/environment first, then /opt/codex-cli.env.
++# If GRADIENT_KEY is set in either place, Codex is configured and the interactive
++# setup wizard is skipped.
++#
++# Or run the interactive setup on first SSH login:
++#   /opt/setup-codex-cli.sh
++
++GRADIENT_KEY=
++GRADIENT_MODEL=openai-gpt-5.5
+diff --git a/codex-cli-24-04/files/opt/setup-codex-cli.sh b/codex-cli-24-04/files/opt/setup-codex-cli.sh
+new file mode 100644
+index 0000000..2c5e566
+--- /dev/null
++++ b/codex-cli-24-04/files/opt/setup-codex-cli.sh
+@@ -0,0 +1,79 @@
++#!/bin/bash
++
++# Codex CLI First-Login Setup Wizard
++# Prompts for a DigitalOcean Gradient model access key and configures Codex.
++
++SETUP_MARKER="/root/.codex_setup_complete"
++ENV_FILE="/opt/codex-cli.env"
++
++if [ -f "$SETUP_MARKER" ] && [ "$1" != "--force" ]; then
++  if ! grep -q '/opt/setup-codex-cli.sh' /root/.bashrc 2>/dev/null; then
++    exit 0
++  fi
++  rm -f "$SETUP_MARKER"
++fi
++
++if [ "$1" != "--force" ] && [ -x /opt/apply-gradient-from-env.sh ]; then
++  if /opt/apply-gradient-from-env.sh; then
++    exit 0
++  fi
++fi
++
++echo ""
++echo "========================================================================"
++echo "  Codex CLI Setup - DigitalOcean Gradient AI"
++echo "========================================================================"
++echo ""
++echo "This droplet is pre-configured with DigitalOcean Gradient AI for inference."
++echo "Codex CLI routes requests through https://inference.do-ai.run/v1."
++echo ""
++echo "Available models include GPT-5.5 (default), GPT-5.2, GPT-5.1 Codex Max, GPT-5,"
++echo "GPT-4.1, o3, DeepSeek R1 70B, Qwen3 32B, Llama 3.3 70B, Kimi K2.5,"
++echo "glm-5, MiniMax M2.5, and Claude Opus/Sonnet models."
++echo ""
++echo "To create a Gradient model access key:"
++echo "  1. Go to https://cloud.digitalocean.com/gen-ai"
++echo "  2. Navigate to API Keys > Model Access Keys"
++echo "  3. Click 'Create Model Access Key'"
++echo ""
++echo "Alternatively, set GRADIENT_KEY in /opt/codex-cli.env or as a droplet"
++echo "environment variable and reboot, or run: /opt/apply-gradient-from-env.sh"
++echo ""
++
++old_histfile="${HISTFILE-}"
++unset HISTFILE
++read -rsp "Enter your Gradient model access key (or press Enter to skip): " MODEL_KEY
++echo ""
++[ -n "${old_histfile:-}" ] && export HISTFILE="$old_histfile"
++
++if [ -z "$MODEL_KEY" ]; then
++  echo ""
++  echo "Setup skipped. You can configure your key later by running:"
++  echo "  /opt/setup-codex-cli.sh"
++  echo "  or set GRADIENT_KEY in /opt/codex-cli.env and run /opt/apply-gradient-from-env.sh"
++  echo ""
++  exit 0
++fi
++
++touch "$ENV_FILE"
++grep -v '^GRADIENT_KEY=' "$ENV_FILE" > "${ENV_FILE}.tmp" 2>/dev/null || : > "${ENV_FILE}.tmp"
++printf 'GRADIENT_KEY=%q\n' "$MODEL_KEY" >> "${ENV_FILE}.tmp"
++mv "${ENV_FILE}.tmp" "$ENV_FILE"
++chmod 600 "$ENV_FILE"
++
++/opt/apply-gradient-from-env.sh
++
++echo ""
++echo "========================================================================"
++echo "  Setup complete! Codex CLI is ready to use."
++echo ""
++echo "  Default model: GPT-5.5 (openai-gpt-5.5)"
++echo ""
++echo "  To start:  cd /path/to/your/project && codex"
++echo "  Config:    /root/.codex/config.toml"
++echo "  API key:   /etc/profile.d/codex-gradient.sh (MODEL_ACCESS_KEY)"
++echo "  Switch models:  codex -m \"openai-gpt-5.1-codex-max\" or /model inside Codex"
++echo ""
++echo "  ChatGPT subscription auth: run 'codex login' for OAuth instead."
++echo "========================================================================"
++echo ""
+diff --git a/codex-cli-24-04/files/opt/update-codex-cli.sh b/codex-cli-24-04/files/opt/update-codex-cli.sh
+new file mode 100644
+index 0000000..ccfd9f3
+--- /dev/null
++++ b/codex-cli-24-04/files/opt/update-codex-cli.sh
+@@ -0,0 +1,28 @@
++#!/bin/bash
++
++# Codex CLI Update Script
++# Updates Codex CLI to the latest GitHub release binary
++
++set -e
++
++echo "Fetching latest Codex CLI release..."
++
++LATEST_TAG=$(curl -fsSL https://api.github.com/repos/openai/codex/releases/latest | jq -r '.tag_name')
++if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "null" ]; then
++  echo "Error: Could not determine latest Codex CLI version"
++  exit 1
++fi
++
++VERSION="${LATEST_TAG#rust-v}"
++
++tmpdir=$(mktemp -d)
++trap 'rm -rf "$tmpdir"' EXIT
++
++# shellcheck source=/dev/null
++source /opt/codex-cli-download.sh
++
++echo "Updating Codex CLI to ${VERSION}..."
++install_codex_binaries "$LATEST_TAG" "$tmpdir"
++
++echo "Codex CLI updated successfully!"
++codex --version 2>/dev/null || echo "Version check failed"
+diff --git a/codex-cli-24-04/files/root/.codex/config.toml b/codex-cli-24-04/files/root/.codex/config.toml
+new file mode 100644
+index 0000000..94f61b1
+--- /dev/null
++++ b/codex-cli-24-04/files/root/.codex/config.toml
+@@ -0,0 +1,22 @@
++# Pre-configured for DigitalOcean Gradient AI inference.
++# Set GRADIENT_KEY via droplet env, /opt/codex-cli.env, or /opt/setup-codex-cli.sh.
++
++model_provider = "openai_custom"
++model = "openai-gpt-5.5"
++model_catalog_json = "/root/.codex/gradient-models.json"
++preferred_auth_method = "apikey"
++model_reasoning_effort = "high"
++web_search = "disabled"
++
++# Gradient only accepts function tools over the Responses API (not tool_search
++# or namespace-wrapped tools such as multi_agent).
++[features]
++tool_search = false
++multi_agent = false
++
++[model_providers.openai_custom]
++name = "DigitalOcean Gradient"
++base_url = "https://inference.do-ai.run/v1"
++env_key = "MODEL_ACCESS_KEY"
++wire_api = "responses"
++query_params = {}
+diff --git a/codex-cli-24-04/files/root/.codex/gradient-models.json b/codex-cli-24-04/files/root/.codex/gradient-models.json
+new file mode 100644
+index 0000000..fe368dd
+--- /dev/null
++++ b/codex-cli-24-04/files/root/.codex/gradient-models.json
+@@ -0,0 +1,572 @@
++{
++  "models": [
++    {
++      "slug": "openai-gpt-5.5",
++      "display_name": "GPT-5.5",
++      "description": null,
++      "supported_reasoning_levels": [
++        {
++          "effort": "low",
++          "description": "Fast responses"
++        },
++        {
++          "effort": "medium",
++          "description": "Balanced speed and depth"
++        },
++        {
++          "effort": "high",
++          "description": "Greater reasoning depth"
++        }
++      ],
++      "shell_type": "shell_command",
++      "visibility": "list",
++      "supported_in_api": true,
++      "priority": 0,
++      "availability_nux": null,
++      "upgrade": null,
++      "base_instructions": "You are Codex, a coding agent. Use the tools available to help the user with their software engineering tasks.",
++      "supports_reasoning_summaries": false,
++      "default_reasoning_summary": "auto",
++      "support_verbosity": false,
++      "default_verbosity": null,
++      "apply_patch_tool_type": null,
++      "web_search_tool_type": "text",
++      "truncation_policy": {
++        "mode": "tokens",
++        "limit": 10000
++      },
++      "supports_parallel_tool_calls": true,
++      "supports_image_detail_original": false,
++      "context_window": 272000,
++      "max_context_window": 272000,
++      "auto_compact_token_limit": null,
++      "effective_context_window_percent": 95,
++      "experimental_supported_tools": [],
++      "input_modalities": [
++        "text",
++        "image"
++      ],
++      "supports_search_tool": false
++    },
++    {
++      "slug": "openai-gpt-5.2",
++      "display_name": "GPT-5.2",
++      "description": null,
++      "supported_reasoning_levels": [
++        {
++          "effort": "low",
++          "description": "Fast responses"
++        },
++        {
++          "effort": "medium",
++          "description": "Balanced speed and depth"
++        },
++        {
++          "effort": "high",
++          "description": "Greater reasoning depth"
++        }
++      ],
++      "shell_type": "shell_command",
++      "visibility": "list",
++      "supported_in_api": true,
++      "priority": 1,
++      "availability_nux": null,
++      "upgrade": null,
++      "base_instructions": "You are Codex, a coding agent. Use the tools available to help the user with their software engineering tasks.",
++      "supports_reasoning_summaries": false,
++      "default_reasoning_summary": "auto",
++      "support_verbosity": false,
++      "default_verbosity": null,
++      "apply_patch_tool_type": null,
++      "web_search_tool_type": "text",
++      "truncation_policy": {
++        "mode": "tokens",
++        "limit": 10000
++      },
++      "supports_parallel_tool_calls": true,
++      "supports_image_detail_original": false,
++      "context_window": 272000,
++      "max_context_window": 272000,
++      "auto_compact_token_limit": null,
++      "effective_context_window_percent": 95,
++      "experimental_supported_tools": [],
++      "input_modalities": [
++        "text",
++        "image"
++      ],
++      "supports_search_tool": false
++    },
++    {
++      "slug": "openai-gpt-5.1-codex-max",
++      "display_name": "GPT-5.1 Codex Max",
++      "description": null,
++      "supported_reasoning_levels": [
++        {
++          "effort": "low",
++          "description": "Fast responses"
++        },
++        {
++          "effort": "medium",
++          "description": "Balanced speed and depth"
++        },
++        {
++          "effort": "high",
++          "description": "Greater reasoning depth"
++        }
++      ],
++      "shell_type": "shell_command",
++      "visibility": "list",
++      "supported_in_api": true,
++      "priority": 2,
++      "availability_nux": null,
++      "upgrade": null,
++      "base_instructions": "You are Codex, a coding agent. Use the tools available to help the user with their software engineering tasks.",
++      "supports_reasoning_summaries": false,
++      "default_reasoning_summary": "auto",
++      "support_verbosity": false,
++      "default_verbosity": null,
++      "apply_patch_tool_type": null,
++      "web_search_tool_type": "text",
++      "truncation_policy": {
++        "mode": "tokens",
++        "limit": 10000
++      },
++      "supports_parallel_tool_calls": true,
++      "supports_image_detail_original": false,
++      "context_window": 272000,
++      "max_context_window": 272000,
++      "auto_compact_token_limit": null,
++      "effective_context_window_percent": 95,
++      "experimental_supported_tools": [],
++      "input_modalities": [
++        "text",
++        "image"
++      ],
++      "supports_search_tool": false
++    },
++    {
++      "slug": "openai-gpt-5",
++      "display_name": "GPT-5",
++      "description": null,
++      "supported_reasoning_levels": [
++        {
++          "effort": "low",
++          "description": "Fast responses"
++        },
++        {
++          "effort": "medium",
++          "description": "Balanced speed and depth"
++        },
++        {
++          "effort": "high",
++          "description": "Greater reasoning depth"
++        }
++      ],
++      "shell_type": "shell_command",
++      "visibility": "list",
++      "supported_in_api": true,
++      "priority": 3,
++      "availability_nux": null,
++      "upgrade": null,
++      "base_instructions": "You are Codex, a coding agent. Use the tools available to help the user with their software engineering tasks.",
++      "supports_reasoning_summaries": false,
++      "default_reasoning_summary": "auto",
++      "support_verbosity": false,
++      "default_verbosity": null,
++      "apply_patch_tool_type": null,
++      "web_search_tool_type": "text",
++      "truncation_policy": {
++        "mode": "tokens",
++        "limit": 10000
++      },
++      "supports_parallel_tool_calls": true,
++      "supports_image_detail_original": false,
++      "context_window": 272000,
++      "max_context_window": 272000,
++      "auto_compact_token_limit": null,
++      "effective_context_window_percent": 95,
++      "experimental_supported_tools": [],
++      "input_modalities": [
++        "text",
++        "image"
++      ],
++      "supports_search_tool": false
++    },
++    {
++      "slug": "openai-gpt-4.1",
++      "display_name": "GPT-4.1",
++      "description": null,
++      "supported_reasoning_levels": [
++        {
++          "effort": "low",
++          "description": "Fast responses"
++        },
++        {
++          "effort": "medium",
++          "description": "Balanced speed and depth"
++        },
++        {
++          "effort": "high",
++          "description": "Greater reasoning depth"
++        }
++      ],
++      "shell_type": "shell_command",
++      "visibility": "list",
++      "supported_in_api": true,
++      "priority": 4,
++      "availability_nux": null,
++      "upgrade": null,
++      "base_instructions": "You are Codex, a coding agent. Use the tools available to help the user with their software engineering tasks.",
++      "supports_reasoning_summaries": false,
++      "default_reasoning_summary": "auto",
++      "support_verbosity": false,
++      "default_verbosity": null,
++      "apply_patch_tool_type": null,
++      "web_search_tool_type": "text",
++      "truncation_policy": {
++        "mode": "tokens",
++        "limit": 10000
++      },
++      "supports_parallel_tool_calls": true,
++      "supports_image_detail_original": false,
++      "context_window": 272000,
++      "max_context_window": 272000,
++      "auto_compact_token_limit": null,
++      "effective_context_window_percent": 95,
++      "experimental_supported_tools": [],
++      "input_modalities": [
++        "text",
++        "image"
++      ],
++      "supports_search_tool": false
++    },
++    {
++      "slug": "openai-o3",
++      "display_name": "OpenAI o3",
++      "description": null,
++      "supported_reasoning_levels": [
++        {
++          "effort": "low",
++          "description": "Fast responses"
++        },
++        {
++          "effort": "medium",
++          "description": "Balanced speed and depth"
++        },
++        {
++          "effort": "high",
++          "description": "Greater reasoning depth"
++        }
++      ],
++      "shell_type": "shell_command",
++      "visibility": "list",
++      "supported_in_api": true,
++      "priority": 5,
++      "availability_nux": null,
++      "upgrade": null,
++      "base_instructions": "You are Codex, a coding agent. Use the tools available to help the user with their software engineering tasks.",
++      "supports_reasoning_summaries": false,
++      "default_reasoning_summary": "auto",
++      "support_verbosity": false,
++      "default_verbosity": null,
++      "apply_patch_tool_type": null,
++      "web_search_tool_type": "text",
++      "truncation_policy": {
++        "mode": "tokens",
++        "limit": 10000
++      },
++      "supports_parallel_tool_calls": true,
++      "supports_image_detail_original": false,
++      "context_window": 272000,
++      "max_context_window": 272000,
++      "auto_compact_token_limit": null,
++      "effective_context_window_percent": 95,
++      "experimental_supported_tools": [],
++      "input_modalities": [
++        "text",
++        "image"
++      ],
++      "supports_search_tool": false
++    },
++    {
++      "slug": "deepseek-r1-distill-llama-70b",
++      "display_name": "DeepSeek R1 Distill Llama 70B",
++      "description": null,
++      "supported_reasoning_levels": [],
++      "shell_type": "shell_command",
++      "visibility": "list",
++      "supported_in_api": true,
++      "priority": 10,
++      "availability_nux": null,
++      "upgrade": null,
++      "base_instructions": "You are Codex, a coding agent. Use the tools available to help the user with their software engineering tasks.",
++      "supports_reasoning_summaries": false,
++      "default_reasoning_summary": "auto",
++      "support_verbosity": false,
++      "default_verbosity": null,
++      "apply_patch_tool_type": null,
++      "web_search_tool_type": "text",
++      "truncation_policy": {
++        "mode": "tokens",
++        "limit": 10000
++      },
++      "supports_parallel_tool_calls": true,
++      "supports_image_detail_original": false,
++      "context_window": 272000,
++      "max_context_window": 272000,
++      "auto_compact_token_limit": null,
++      "effective_context_window_percent": 95,
++      "experimental_supported_tools": [],
++      "input_modalities": [
++        "text",
++        "image"
++      ],
++      "supports_search_tool": false
++    },
++    {
++      "slug": "alibaba-qwen3-32b",
++      "display_name": "Qwen3 32B",
++      "description": null,
++      "supported_reasoning_levels": [],
++      "shell_type": "shell_command",
++      "visibility": "list",
++      "supported_in_api": true,
++      "priority": 11,
++      "availability_nux": null,
++      "upgrade": null,
++      "base_instructions": "You are Codex, a coding agent. Use the tools available to help the user with their software engineering tasks.",
++      "supports_reasoning_summaries": false,
++      "default_reasoning_summary": "auto",
++      "support_verbosity": false,
++      "default_verbosity": null,
++      "apply_patch_tool_type": null,
++      "web_search_tool_type": "text",
++      "truncation_policy": {
++        "mode": "tokens",
++        "limit": 10000
++      },
++      "supports_parallel_tool_calls": true,
++      "supports_image_detail_original": false,
++      "context_window": 272000,
++      "max_context_window": 272000,
++      "auto_compact_token_limit": null,
++      "effective_context_window_percent": 95,
++      "experimental_supported_tools": [],
++      "input_modalities": [
++        "text",
++        "image"
++      ],
++      "supports_search_tool": false
++    },
++    {
++      "slug": "llama3.3-70b-instruct",
++      "display_name": "Llama 3.3 70B Instruct",
++      "description": null,
++      "supported_reasoning_levels": [],
++      "shell_type": "shell_command",
++      "visibility": "list",
++      "supported_in_api": true,
++      "priority": 12,
++      "availability_nux": null,
++      "upgrade": null,
++      "base_instructions": "You are Codex, a coding agent. Use the tools available to help the user with their software engineering tasks.",
++      "supports_reasoning_summaries": false,
++      "default_reasoning_summary": "auto",
++      "support_verbosity": false,
++      "default_verbosity": null,
++      "apply_patch_tool_type": null,
++      "web_search_tool_type": "text",
++      "truncation_policy": {
++        "mode": "tokens",
++        "limit": 10000
++      },
++      "supports_parallel_tool_calls": true,
++      "supports_image_detail_original": false,
++      "context_window": 272000,
++      "max_context_window": 272000,
++      "auto_compact_token_limit": null,
++      "effective_context_window_percent": 95,
++      "experimental_supported_tools": [],
++      "input_modalities": [
++        "text",
++        "image"
++      ],
++      "supports_search_tool": false
++    },
++    {
++      "slug": "kimi-k2.5",
++      "display_name": "Kimi K2.5",
++      "description": null,
++      "supported_reasoning_levels": [],
++      "shell_type": "shell_command",
++      "visibility": "list",
++      "supported_in_api": true,
++      "priority": 13,
++      "availability_nux": null,
++      "upgrade": null,
++      "base_instructions": "You are Codex, a coding agent. Use the tools available to help the user with their software engineering tasks.",
++      "supports_reasoning_summaries": false,
++      "default_reasoning_summary": "auto",
++      "support_verbosity": false,
++      "default_verbosity": null,
++      "apply_patch_tool_type": null,
++      "web_search_tool_type": "text",
++      "truncation_policy": {
++        "mode": "tokens",
++        "limit": 10000
++      },
++      "supports_parallel_tool_calls": true,
++      "supports_image_detail_original": false,
++      "context_window": 272000,
++      "max_context_window": 272000,
++      "auto_compact_token_limit": null,
++      "effective_context_window_percent": 95,
++      "experimental_supported_tools": [],
++      "input_modalities": [
++        "text",
++        "image"
++      ],
++      "supports_search_tool": false
++    },
++    {
++      "slug": "glm-5",
++      "display_name": "glm-5",
++      "description": null,
++      "supported_reasoning_levels": [],
++      "shell_type": "shell_command",
++      "visibility": "list",
++      "supported_in_api": true,
++      "priority": 14,
++      "availability_nux": null,
++      "upgrade": null,
++      "base_instructions": "You are Codex, a coding agent. Use the tools available to help the user with their software engineering tasks.",
++      "supports_reasoning_summaries": false,
++      "default_reasoning_summary": "auto",
++      "support_verbosity": false,
++      "default_verbosity": null,
++      "apply_patch_tool_type": null,
++      "web_search_tool_type": "text",
++      "truncation_policy": {
++        "mode": "tokens",
++        "limit": 10000
++      },
++      "supports_parallel_tool_calls": true,
++      "supports_image_detail_original": false,
++      "context_window": 272000,
++      "max_context_window": 272000,
++      "auto_compact_token_limit": null,
++      "effective_context_window_percent": 95,
++      "experimental_supported_tools": [],
++      "input_modalities": [
++        "text",
++        "image"
++      ],
++      "supports_search_tool": false
++    },
++    {
++      "slug": "minimax-m2.5",
++      "display_name": "MiniMax M2.5",
++      "description": null,
++      "supported_reasoning_levels": [],
++      "shell_type": "shell_command",
++      "visibility": "list",
++      "supported_in_api": true,
++      "priority": 15,
++      "availability_nux": null,
++      "upgrade": null,
++      "base_instructions": "You are Codex, a coding agent. Use the tools available to help the user with their software engineering tasks.",
++      "supports_reasoning_summaries": false,
++      "default_reasoning_summary": "auto",
++      "support_verbosity": false,
++      "default_verbosity": null,
++      "apply_patch_tool_type": null,
++      "web_search_tool_type": "text",
++      "truncation_policy": {
++        "mode": "tokens",
++        "limit": 10000
++      },
++      "supports_parallel_tool_calls": true,
++      "supports_image_detail_original": false,
++      "context_window": 272000,
++      "max_context_window": 272000,
++      "auto_compact_token_limit": null,
++      "effective_context_window_percent": 95,
++      "experimental_supported_tools": [],
++      "input_modalities": [
++        "text",
++        "image"
++      ],
++      "supports_search_tool": false
++    },
++    {
++      "slug": "anthropic-claude-opus-4-6",
++      "display_name": "Claude Opus 4.6",
++      "description": null,
++      "supported_reasoning_levels": [],
++      "shell_type": "shell_command",
++      "visibility": "list",
++      "supported_in_api": true,
++      "priority": 20,
++      "availability_nux": null,
++      "upgrade": null,
++      "base_instructions": "You are Codex, a coding agent. Use the tools available to help the user with their software engineering tasks.",
++      "supports_reasoning_summaries": false,
++      "default_reasoning_summary": "auto",
++      "support_verbosity": false,
++      "default_verbosity": null,
++      "apply_patch_tool_type": null,
++      "web_search_tool_type": "text",
++      "truncation_policy": {
++        "mode": "tokens",
++        "limit": 10000
++      },
++      "supports_parallel_tool_calls": true,
++      "supports_image_detail_original": false,
++      "context_window": 272000,
++      "max_context_window": 272000,
++      "auto_compact_token_limit": null,
++      "effective_context_window_percent": 95,
++      "experimental_supported_tools": [],
++      "input_modalities": [
++        "text",
++        "image"
++      ],
++      "supports_search_tool": false
++    },
++    {
++      "slug": "anthropic-claude-4.5-sonnet",
++      "display_name": "Claude Sonnet 4.5",
++      "description": null,
++      "supported_reasoning_levels": [],
++      "shell_type": "shell_command",
++      "visibility": "list",
++      "supported_in_api": true,
++      "priority": 21,
++      "availability_nux": null,
++      "upgrade": null,
++      "base_instructions": "You are Codex, a coding agent. Use the tools available to help the user with their software engineering tasks.",
++      "supports_reasoning_summaries": false,
++      "default_reasoning_summary": "auto",
++      "support_verbosity": false,
++      "default_verbosity": null,
++      "apply_patch_tool_type": null,
++      "web_search_tool_type": "text",
++      "truncation_policy": {
++        "mode": "tokens",
++        "limit": 10000
++      },
++      "supports_parallel_tool_calls": true,
++      "supports_image_detail_original": false,
++      "context_window": 272000,
++      "max_context_window": 272000,
++      "auto_compact_token_limit": null,
++      "effective_context_window_percent": 95,
++      "experimental_supported_tools": [],
++      "input_modalities": [
++        "text",
++        "image"
++      ],
++      "supports_search_tool": false
++    }
++  ]
++}
+diff --git a/codex-cli-24-04/files/var/lib/cloud/scripts/per-instance/001_onboot b/codex-cli-24-04/files/var/lib/cloud/scripts/per-instance/001_onboot
+new file mode 100644
+index 0000000..a45a201
+--- /dev/null
++++ b/codex-cli-24-04/files/var/lib/cloud/scripts/per-instance/001_onboot
+@@ -0,0 +1,126 @@
++#!/bin/bash
++
++set -e
++
++set -a
++source /etc/environment 2>/dev/null || true
++set +a
++
++# Remove the ssh force logout command
++sed -e '/Match User root/d' \
++    -e '/.*ForceCommand.*droplet.*/d' \
++    -i /etc/ssh/sshd_config
++
++systemctl restart ssh
++
++# Ensure Codex config directory exists
++mkdir -p /root/.codex
++
++chmod +x /opt/apply-gradient-from-env.sh
++
++GRADIENT_APPLIED=0
++if /opt/apply-gradient-from-env.sh; then
++    GRADIENT_APPLIED=1
++    echo "Gradient pre-configured from droplet environment."
++else
++    # Hook setup wizard to run on first SSH login
++    if ! grep -q '/opt/setup-codex-cli.sh' /root/.bashrc 2>/dev/null; then
++        cat >> /root/.bashrc <<EOM
++/opt/setup-codex-cli.sh
++EOM
++    fi
++fi
++
++# Create a getting started file for first-time users
++if [ "$GRADIENT_APPLIED" -eq 1 ]; then
++    cat > /root/codex_cli_info.txt << 'EOF'
++================================================================================
++Codex CLI 1-Click Droplet - Getting Started
++================================================================================
++
++Codex CLI is OpenAI's terminal-based coding agent, pre-configured to use
++DigitalOcean Gradient AI for inference.
++
++Gradient was configured automatically from droplet environment variables
++(GRADIENT_KEY / GRADIENT_MODEL) or /opt/codex-cli.env.
++
++PRE-CONFIGURED MODELS (via DigitalOcean Gradient):
++
++  Default: openai-gpt-5.5 (GPT-5.5)
++  Also available: GPT-5.2, GPT-5.1 Codex Max, GPT-5, GPT-4.1, o3, DeepSeek R1 70B, Qwen3 32B,
++  Llama 3.3 70B, Kimi K2.5, glm-5, MiniMax M2.5, Claude Opus/Sonnet models
++
++NEXT STEPS:
++
++1. Run Codex CLI:
++   cd /path/to/your/project
++   codex
++
++2. Helper commands:
++   Check version:    /opt/codex-cli-version.sh
++   Update Codex CLI: /opt/update-codex-cli.sh
++   Re-run setup:     /opt/setup-codex-cli.sh
++
++Switch models:  codex -m "openai-gpt-5.1-codex-max"  or use /model inside Codex
++
++Configuration:  /root/.codex/config.toml
++API key:        /root/.codex/env (MODEL_ACCESS_KEY)
++
++ChatGPT subscription: run 'codex login' for OAuth instead of Gradient.
++
++For documentation: https://developers.openai.com/codex/cli
++
++================================================================================
++EOF
++else
++    cat > /root/codex_cli_info.txt << 'EOF'
++================================================================================
++Codex CLI 1-Click Droplet - Getting Started
++================================================================================
++
++Codex CLI is OpenAI's terminal-based coding agent, pre-configured to use
++DigitalOcean Gradient AI for inference.
++
++PRE-CONFIGURED MODELS (via DigitalOcean Gradient):
++
++  Default: openai-gpt-5.5 (GPT-5.5)
++  Also available: GPT-5.2, GPT-5.1 Codex Max, GPT-5, GPT-4.1, o3, DeepSeek R1 70B, Qwen3 32B,
++  Llama 3.3 70B, Kimi K2.5, glm-5, MiniMax M2.5, Claude Opus/Sonnet models
++
++NEXT STEPS:
++
++1. Configure your Gradient model access key using one of:
++   - Set GRADIENT_KEY (and optional GRADIENT_MODEL) as droplet environment
++     variables at create time, or edit /opt/codex-cli.env and reboot
++   - Run the setup wizard on first login (prompts for your key)
++
++   To create a key:
++     https://cloud.digitalocean.com/gen-ai
++     Navigate to API Keys > Model Access Keys
++
++2. Run Codex CLI:
++   cd /path/to/your/project
++   codex
++
++3. Helper commands:
++   Check version:    /opt/codex-cli-version.sh
++   Update Codex CLI: /opt/update-codex-cli.sh
++   Re-run setup:     /opt/setup-codex-cli.sh
++
++Switch models:  codex -m "openai-gpt-5.1-codex-max"  or use /model inside Codex
++
++Configuration:  /root/.codex/config.toml
++API key:        /root/.codex/env (MODEL_ACCESS_KEY)
++
++ChatGPT subscription: run 'codex login' for OAuth instead of Gradient.
++
++For documentation: https://developers.openai.com/codex/cli
++
++================================================================================
++EOF
++fi
++
++chmod 600 /root/codex_cli_info.txt
++
++echo "Codex CLI first-boot initialization complete!"
++echo "Getting started info saved to /root/codex_cli_info.txt"
+diff --git a/codex-cli-24-04/listing.md b/codex-cli-24-04/listing.md
+new file mode 100644
+index 0000000..2ac54db
+--- /dev/null
++++ b/codex-cli-24-04/listing.md
+@@ -0,0 +1,206 @@
++# Codex CLI 1-Click Application
++
++Deploy Codex CLI, OpenAI's terminal-based coding agent, pre-configured to use DigitalOcean Gradient AI for inference. Use natural language to write, debug, and refactor code. Code and context stay on your server.
++
++## What is Codex CLI?
++
++Codex CLI brings OpenAI's coding agent into your terminal. It can read, edit, and run code in your project directory. This droplet is pre-configured with DigitalOcean Gradient AI, giving you access to GPT, Claude, DeepSeek, Llama, Kimi, and more using a single Gradient model access key.
++
++- **Terminal-first** – Native TUI in your shell, no web interface required
++- **DigitalOcean Gradient AI** – Pre-configured inference via Gradient
++- **Subagents** – Parallelize complex tasks with subagents
++- **Sandboxed execution** – Controlled filesystem and network access
++- **MCP support** – Connect third-party tools via Model Context Protocol
++- **Scriptable** – Automate workflows with `codex exec`
++
++## Key Features
++
++- Natural language coding assistance in the terminal
++- Pre-configured with DigitalOcean Gradient AI
++- Works with existing projects—navigate, edit, and run code
++- No IDE required—pure terminal workflow
++- Optional ChatGPT subscription auth via `codex login`
++
++## System Requirements
++
++Codex CLI is lightweight; most compute happens at the inference provider.
++
++| Use Case | RAM | CPU | Storage |
++|----------|-----|-----|---------|
++| Minimum | 1 GB | 1 vCPU | 25 GB |
++| Recommended | 2 GB | 2 vCPU | 50 GB |
++
++## Included System Components
++
++- **Ubuntu 24.04 LTS** – Base operating system
++- **Codex CLI** – OpenAI terminal coding agent (version 0.133.0)
++- **DigitalOcean Gradient AI** – Pre-configured inference provider
++- **Git** – Version control
++- **UFW Firewall** – SSH only (rate-limited)
++
++## Getting Started
++
++### 1. Deploy the Droplet
++
++1. Select this 1-Click App from the DigitalOcean Marketplace
++2. Choose a Droplet size (1 GB RAM minimum)
++3. Add your SSH key for secure access
++4. Create the Droplet
++
++### 2. SSH In
++
++```bash
++ssh root@your-droplet-ip
++```
++
++### 3. Configure Your Gradient Key
++
++Choose one of these options:
++
++**Option A — Droplet environment variables (recommended for automation)**
++
++Set at droplet create time:
++
++- `GRADIENT_KEY` — your Gradient model access key (required)
++- `GRADIENT_MODEL` — optional model id (default: `openai-gpt-5.5`)
++
++Codex CLI is configured automatically on first boot; no wizard required.
++
++**Option B — Edit `/opt/codex-cli.env`**
++
++Set `GRADIENT_KEY` and optionally `GRADIENT_MODEL`, then reboot or run:
++
++```bash
++/opt/apply-gradient-from-env.sh
++```
++
++**Option C — First-login setup wizard**
++
++On first SSH login, the wizard prompts for your key if it was not pre-configured.
++
++To create a key:
++
++1. Go to https://cloud.digitalocean.com/gen-ai/model-access-keys
++2. Click **Create Model Access Key**
++3. Copy the new key and use it with one of the options above
++
++### 4. Run Codex CLI
++
++```bash
++cd /path/to/your/project
++codex
++```
++
++The default model is **GPT-5.5** (`openai-gpt-5.5`). Change it with `codex -m "openai-gpt-5.1-codex-max"` or the `/model` command inside Codex.
++
++## Managing Codex CLI
++
++### Helper Scripts
++
++| Action | Command |
++|--------|---------|
++| Check version | `/opt/codex-cli-version.sh` |
++| Update to latest | `/opt/update-codex-cli.sh` |
++| Re-run setup wizard | `/opt/setup-codex-cli.sh` |
++
++### Configuration
++
++- **Codex config**: `/root/.codex/config.toml`
++- **API key**: `/root/.codex/env` (`MODEL_ACCESS_KEY`)
++- **Droplet env template**: `/opt/codex-cli.env` (`GRADIENT_KEY`, `GRADIENT_MODEL`)
++- **Getting started guide**: `cat /root/codex_cli_info.txt`
++
++### Available Models
++
++Use model IDs from the Gradient Model Catalog with `codex -m "<model-id>"` or edit `model` in `/root/.codex/config.toml`.
++
++| Model | Model ID |
++|-------|----------|
++| GPT-5.5 (default) | `openai-gpt-5.5` |
++| GPT-5.2 | `openai-gpt-5.2` |
++| GPT-5.1 Codex Max | `openai-gpt-5.1-codex-max` |
++| GPT-5 | `openai-gpt-5` |
++| GPT-4.1 | `openai-gpt-4.1` |
++| OpenAI o3 | `openai-o3` |
++| DeepSeek R1 Distill Llama 70B | `deepseek-r1-distill-llama-70b` |
++| Qwen3 32B | `alibaba-qwen3-32b` |
++| Llama 3.3 70B Instruct | `llama3.3-70b-instruct` |
++| Kimi K2.5 | `kimi-k2.5` |
++| glm-5 | `glm-5` |
++| MiniMax M2.5 | `minimax-m2.5` |
++| Claude Opus 4.6 | `anthropic-claude-opus-4-6` |
++| Claude Sonnet 4.5 | `anthropic-claude-4.5-sonnet` |
++
++List all available models:
++
++```bash
++curl -s -H "Authorization: Bearer $MODEL_ACCESS_KEY" \
++  https://inference.do-ai.run/v1/models | jq '.data[].id'
++```
++
++### Using ChatGPT Subscription Auth
++
++If you prefer ChatGPT Plus/Pro/Business subscription auth instead of Gradient:
++
++1. Skip the setup wizard (press Enter)
++2. Run `codex login` and follow the OAuth flow
++
++## Updating
++
++To update Codex CLI to the latest version:
++
++```bash
++/opt/update-codex-cli.sh
++```
++
++## Troubleshooting
++
++### Codex not found in PATH
++
++Run directly:
++
++```bash
++/usr/local/bin/codex
++```
++
++### Auth error or 401
++
++Re-run the setup wizard:
++
++```bash
++/opt/setup-codex-cli.sh
++```
++
++Or verify your key is exported:
++
++```bash
++echo $MODEL_ACCESS_KEY
++source /root/.codex/env
++```
++
++### Model not found or 404
++
++Retrieve current model IDs from the Gradient API and update `model` in `/root/.codex/config.toml`.
++
++## Additional Resources
++
++- **Documentation**: https://developers.openai.com/codex/cli
++- **Config reference**: https://developers.openai.com/codex/config-basic
++- **Gradient + Codex guide**: https://docs.digitalocean.com/products/inference/how-to/use-with-coding-agents/
++- **GitHub**: https://github.com/openai/codex
++
++## Support
++
++For Codex CLI-specific issues:
++
++- Documentation: https://developers.openai.com/codex/cli
++- GitHub: https://github.com/openai/codex
++
++For DigitalOcean Droplet issues:
++
++- DigitalOcean Support: https://www.digitalocean.com/support
++- Community Tutorials: https://www.digitalocean.com/community
++
++---
++
++**Note**: This 1-Click installs Codex CLI from official GitHub releases and pre-configures DigitalOcean Gradient AI as the inference provider. SSH is the only exposed port; there is no web interface.
+diff --git a/codex-cli-24-04/scripts/010-codex-cli.sh b/codex-cli-24-04/scripts/010-codex-cli.sh
+new file mode 100644
+index 0000000..714eef7
+--- /dev/null
++++ b/codex-cli-24-04/scripts/010-codex-cli.sh
+@@ -0,0 +1,60 @@
++#!/bin/bash
++
++set -e
++
++# Configure UFW firewall - SSH only (no web interface)
++ufw limit ssh/tcp
++ufw --force enable
++echo "Firewall configured successfully."
++
++CODEX_VERSION="${application_version}"
++CODEX_RELEASE="rust-v${CODEX_VERSION}"
++
++tmpdir=$(mktemp -d)
++trap 'rm -rf "$tmpdir"' EXIT
++
++# shellcheck source=/dev/null
++source /opt/codex-cli-download.sh
++
++echo "Installing Codex CLI ${CODEX_VERSION} from GitHub release..."
++install_codex_binaries "$CODEX_RELEASE" "$tmpdir" \
++  "${codex_tarball_sha256:-}" "${bwrap_tarball_sha256:-}"
++
++cat > /usr/local/bin/codex << 'EOF'
++#!/bin/bash
++# Load Gradient model access key when the shell profile has not been sourced yet.
++if [ -f /etc/profile.d/codex-gradient.sh ]; then
++  # shellcheck source=/dev/null
++  . /etc/profile.d/codex-gradient.sh
++elif [ -f /root/.codex/env ]; then
++  # shellcheck source=/dev/null
++  . /root/.codex/env
++fi
++exec /usr/local/lib/codex/codex "$@"
++EOF
++chmod 0755 /usr/local/bin/codex
++
++# Verify installation
++if command -v codex >/dev/null 2>&1; then
++  echo "Codex CLI installed successfully: $(codex --version 2>/dev/null || echo 'version check skipped')"
++else
++  echo "Error: Codex CLI installation failed"
++  exit 1
++fi
++
++# Ensure Codex config directory exists
++mkdir -p /root/.codex
++chmod 600 /root/.codex/config.toml
++chmod 600 /root/.codex/gradient-models.json
++
++# Make helper scripts, MOTD, and onboot script executable (copied by Packer)
++chmod +x /opt/codex-cli-download.sh
++chmod +x /opt/update-codex-cli.sh
++chmod +x /opt/codex-cli-version.sh
++chmod +x /opt/setup-codex-cli.sh
++chmod +x /opt/apply-gradient-from-env.sh
++chmod 600 /opt/codex-cli.env
++chmod +x /etc/update-motd.d/99-one-click
++chmod +x /var/lib/cloud/scripts/per-instance/001_onboot
++
++echo "Codex CLI installation complete."
+diff --git a/codex-cli-24-04/template.json b/codex-cli-24-04/template.json
+new file mode 100644
+index 0000000..6b035f1
+--- /dev/null
++++ b/codex-cli-24-04/template.json
+@@ -0,0 +1,60 @@
++{
++  "variables": {
++    "do_api_token": "{{env `DIGITALOCEAN_API_TOKEN`}}",
++    "image_name": "codex-cli-24-04-snapshot-{{timestamp}}",
++    "apt_packages": "apt-transport-https ca-certificates curl software-properties-common git jq unzip ufw",
++    "application_name": "Codex CLI",
++    "application_version": "0.133.0",
++    "codex_tarball_sha256": "d06019ab9c35d281b78dc2ebb2ae55c2bb97ea11bf7f452bafe390eddb0034ef",
++    "bwrap_tarball_sha256": "03398bc3cf462d693ed38c331c05565db21d8fc1f891378ab8c17672ffd53c14"
++  },
++  "sensitive-variables": ["do_api_token"],
++  "builders": [
++    {
++      "type": "digitalocean",
++      "api_token": "{{user `do_api_token`}}",
++      "image": "ubuntu-24-04-x64",
++      "region": "nyc3",
++      "size": "s-1vcpu-1gb",
++      "ssh_username": "root",
++      "snapshot_name": "{{user `image_name`}}"
++    }
++  ],
++  "provisioners": [
++    {"type": "shell", "inline": ["cloud-init status --wait"]},
++    {"type": "file", "source": "common/files/var/", "destination": "/var/"},
++    {"type": "file", "source": "codex-cli-24-04/files/etc/", "destination": "/etc/"},
++    {"type": "file", "source": "codex-cli-24-04/files/opt/", "destination": "/opt/"},
++    {"type": "file", "source": "codex-cli-24-04/files/root/", "destination": "/root/"},
++    {"type": "file", "source": "codex-cli-24-04/files/var/", "destination": "/var/"},
++    {
++      "type": "shell",
++      "environment_vars": ["DEBIAN_FRONTEND=noninteractive", "LC_ALL=C", "LANG=en_US.UTF-8", "LC_CTYPE=en_US.UTF-8"],
++      "inline": [
++        "apt -qqy update",
++        "apt -qqy -o Dpkg::Options::='--force-confdef' -o Dpkg::Options::='--force-confold' full-upgrade",
++        "apt -qqy -o Dpkg::Options::='--force-confdef' -o Dpkg::Options::='--force-confold' install {{user `apt_packages`}}",
++        "apt-get -qqy clean"
++      ]
++    },
++    {
++      "type": "shell",
++      "environment_vars": [
++        "application_name={{user `application_name`}}",
++        "application_version={{user `application_version`}}",
++        "codex_tarball_sha256={{user `codex_tarball_sha256`}}",
++        "bwrap_tarball_sha256={{user `bwrap_tarball_sha256`}}",
++        "DEBIAN_FRONTEND=noninteractive",
++        "LC_ALL=C",
++        "LANG=en_US.UTF-8",
++        "LC_CTYPE=en_US.UTF-8"
++      ],
++      "scripts": [
++        "codex-cli-24-04/scripts/010-codex-cli.sh",
++        "common/scripts/018-force-ssh-logout.sh",
++        "common/scripts/020-application-tag.sh",
++        "common/scripts/900-cleanup.sh"
++      ]
++    }
++  ]
++}

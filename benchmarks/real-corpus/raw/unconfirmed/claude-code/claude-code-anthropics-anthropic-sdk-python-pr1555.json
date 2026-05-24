@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-python-pr1555",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1555,
+    "headSha": "002af394521781b430ecdcf3c5fbdea53614f533",
+    "baseSha": "9aa85c8a3c099e8a49206aad37ff1e96af69b824",
+    "title": "fix(bedrock): convert non-200 SSE error events to APIStatusError",
+    "body": "## Problem\n\nWhen Bedrock returns a non-200 status code inside an SSE event frame (for example `internalServerException` with `status_code: 400` or `internalServerException` with `status_code: 500`), `AWSEventStreamDecoder._parse_message_from_event` raises a raw `ValueError`:\n\n```\nValueError: Bad response code, expected 200: {'status_code': 400, 'headers': {':exception-type': 'internalServerException', ...}, 'body': b'{\"message\":\"The system encountered an unexpected error...\"}'}\n```\n\nThis `ValueError` is not part of the SDK error hierarchy, so user code that catches `anthropic.APIError` / `anthropic.InternalServerError` / etc. silently misses the error and has to special-case a raw Python built-in exception type.\n\nFixes #1477\n\n## Root cause\n\n`_parse_message_from_event` used `raise ValueError(...)` directly instead of routing the error through the existing SSE error path.\n\n## Fix\n\nInstead of raising `ValueError`, the method now returns a `ServerSentEvent(event=\"error\", data=<json>)`. The existing `Stream.__stream__` and `AsyncStream.__stream__` already handle `event == \"error\"` by calling `self._client._make_status_error(...)`, which maps the exception to the correct `APIStatusError` subclass (`InternalServerError`, `BadRequestError`, etc.).\n\nThe error body is constructed from the Bedrock event headers (`:exception-type`) and the JSON body (`message` field), giving callers the full context they need.\n\n## What changed\n\n- `src/anthropic/lib/bedrock/_stream_decoder.py`: replace `raise ValueError(...)` with a yielded `ServerSentEvent(event=\"error\", ...)` containing the Bedrock exception type and message. Also changed the return type of `_parse_message_from_event` from `str | None` to `ServerSentEvent | None` (the callers already just checked truthiness and yielded the result), and updated `iter_bytes` / `aiter_bytes` to yield the returned `ServerSentEvent` directly rather than constructing a new one.\n\n## Before / after\n\nBefore:\n```python\nexcept ValueError:\n    # uncatchable via anthropic.APIError\n```\n\nAfter:\n```python\nexcept anthropic.InternalServerError:\n    # properly caught, e.message contains Bedrock's error detail\n```",
+    "author": "nileshpatil6",
+    "headRef": "fix/bedrock-sse-error-as-api-error",
+    "repository": "anthropics/anthropic-sdk-python"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-python",
+    "headSha": "002af394521781b430ecdcf3c5fbdea53614f533",
+    "baseSha": "9aa85c8a3c099e8a49206aad37ff1e96af69b824"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-python-pr1555.diff",
+  "vendoredAt": "2026-05-24T03:17:17.898Z",
+  "collectedAt": "2026-05-24T03:17:17.898Z"
+}

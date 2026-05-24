@@ -1,0 +1,84 @@
+diff --git a/src/core/diagnostic/AnchorPingProbe.cpp b/src/core/diagnostic/AnchorPingProbe.cpp
+index ccd50d2..f8cc298 100644
+--- a/src/core/diagnostic/AnchorPingProbe.cpp
++++ b/src/core/diagnostic/AnchorPingProbe.cpp
+@@ -46,14 +46,14 @@ bool AnchorPingProbe::start() {
+     if (!gatewayIp.isEmpty()) {
+         targets.push_back({gatewayIp, QString(), 0, false, false, false, gpd::platform::UdpProbePayload::Auto});
+     }
+-    targets.push_back({QStringLiteral("1.1.1.1"), QString(), 53, false, false, true, gpd::platform::UdpProbePayload::DnsQuery});
+-    targets.push_back({QStringLiteral("8.8.8.8"), QString(), 53, false, false, true, gpd::platform::UdpProbePayload::DnsQuery});
+-    targets.push_back({QStringLiteral("9.9.9.9"), QString(), 53, false, false, true, gpd::platform::UdpProbePayload::DnsQuery});
+-    targets.push_back({QStringLiteral("1.0.0.1"), QString(), 53, false, false, true, gpd::platform::UdpProbePayload::DnsQuery});
++    targets.push_back({QStringLiteral("1.1.1.1"), QString(), 443, false, true, false, gpd::platform::UdpProbePayload::Auto});
++    targets.push_back({QStringLiteral("8.8.8.8"), QString(), 443, false, true, false, gpd::platform::UdpProbePayload::Auto});
++    targets.push_back({QStringLiteral("9.9.9.9"), QString(), 443, false, true, false, gpd::platform::UdpProbePayload::Auto});
++    targets.push_back({QStringLiteral("1.0.0.1"), QString(), 443, false, true, false, gpd::platform::UdpProbePayload::Auto});
+     if (!targetIp_.isEmpty()) {
+         targets.push_back({targetIp_, targetLocalAddress_, static_cast<std::uint16_t>(targetPort_), false, false, true,
+                            gpd::platform::UdpProbePayload::SourceA2sInfo});
+-        targets.push_back({targetIp_, QString(), 1, false, false, true, gpd::platform::UdpProbePayload::ClosedPortProbe});
++        targets.push_back({targetIp_, QString(), 1, false, true, false, gpd::platform::UdpProbePayload::Auto});
+     }
+     scheduler_->updateAnchorTargets(targets);
+     return true;
+diff --git a/src/core/diagnostic/DiagnosticRuleEngine.cpp b/src/core/diagnostic/DiagnosticRuleEngine.cpp
+index 9b02329..d899f5d 100644
+--- a/src/core/diagnostic/DiagnosticRuleEngine.cpp
++++ b/src/core/diagnostic/DiagnosticRuleEngine.cpp
+@@ -371,22 +371,23 @@ DiagnosticSection DiagnosticRuleEngine::evaluateGameServer(const QHash<QString,
+         if (jitter > 30.0) {
+             section.findings.push_back(makeFinding(section.id, QStringLiteral("Высокий джиттер"), QStringLiteral("Джиттер: %1 ms").arg(QString::number(jitter, 'f', 1)), DiagnosticStatus::Problem));
+         }
+-        if (pathLossPct >= 0.0) {
+-            const double pathSamples = mapNumber(pathLossMap, QStringLiteral("samples"), 0.0);
++        const double pathSamples = mapNumber(pathLossMap, QStringLiteral("samples"), 0.0);
++        const bool pathLossValid = pathLossPct >= 0.0 && pathSamples > 0.0;
++        if (pathLossValid) {
+             const DiagnosticStatus lossStatus = pathLossPct > 1.0 ? DiagnosticStatus::Problem : (pathLossPct > 0.3 ? DiagnosticStatus::Warning : DiagnosticStatus::Ok);
+             section.findings.push_back(makeFinding(section.id,
+                                                    QStringLiteral("Реальный path loss до сервера"),
+-                                                   QStringLiteral("ICMP Port Unreachable: %1% loss (%2 проб)")
++                                                   QStringLiteral("TCP-SYN closed port: %1% loss (%2 проб)")
+                                                        .arg(QString::number(pathLossPct, 'f', 1), QString::number(pathSamples, 'f', 0)),
+                                                    lossStatus,
+                                                    pathLossPct > 1.0 ? QStringLiteral("Реальные потери пакетов до игрового сервера.") : QString()));
+         }
+-        if (a2sLoss > 30.0 && (pathLossPct < 5.0 || pathLossPct < 0.0)) {
++        if (a2sLoss > 30.0 && (!pathLossValid || pathLossPct < 5.0)) {
+             section.findings.push_back(makeFinding(section.id,
+                                                    QStringLiteral("A2S query loss выше реального"),
+                                                    QStringLiteral("A2S: %1%, реальный path: %2% — Source 2 сервер выборочно отвечает на A2S")
+                                                        .arg(QString::number(a2sLoss, 'f', 1),
+-                                                            pathLossPct < 0.0 ? QStringLiteral("n/a") : QString::number(pathLossPct, 'f', 1)),
++                                                            pathLossValid ? QString::number(pathLossPct, 'f', 1) : QStringLiteral("n/a")),
+                                                    DiagnosticStatus::Info,
+                                                    QStringLiteral("Loss по A2S может быть завышен; сверяйте с in-game net_graph.")));
+         } else if (a2sLoss > 1.0 && a2sLoss <= 30.0) {
+@@ -394,6 +395,13 @@ DiagnosticSection DiagnosticRuleEngine::evaluateGameServer(const QHash<QString,
+                                                    QStringLiteral("A2S loss"),
+                                                    QStringLiteral("Потери A2S: %1%").arg(QString::number(a2sLoss, 'f', 1)),
+                                                    DiagnosticStatus::Problem));
++        } else if (a2sLoss <= 1.0 && pathLossValid) {
++            // Path loss already shown; do not duplicate.
++        } else if (a2sLoss <= 1.0 && !pathLossValid) {
++            section.findings.push_back(makeFinding(section.id,
++                                                   QStringLiteral("A2S loss"),
++                                                   QStringLiteral("Потери A2S: %1%").arg(QString::number(a2sLoss, 'f', 1)),
++                                                   DiagnosticStatus::Ok));
+         }
+     }
+ 
+@@ -408,12 +416,6 @@ DiagnosticSection DiagnosticRuleEngine::evaluateGameServer(const QHash<QString,
+                                                    directLoss >= 1.0 ? DiagnosticStatus::Problem : DiagnosticStatus::Ok,
+                                                    directLoss >= 1.0 ? QStringLiteral("Есть потери до сервера; проверьте маршрут/VPN/канал.") : QString()));
+         }
+-    } else {
+-        section.findings.push_back(makeFinding(section.id,
+-                                               QStringLiteral("Потери игрового потока не измерены напрямую"),
+-                                               QStringLiteral("Loss-проба недоступна"),
+-                                               DiagnosticStatus::Info,
+-                                               QStringLiteral("Запустите полную диагностику для активной игровой сессии.")));
+     }
+     QVector<DiagnosticStatus> statuses;
+     for (const auto& f : section.findings) {

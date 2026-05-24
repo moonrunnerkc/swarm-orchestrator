@@ -1,0 +1,26 @@
+{
+  "id": "aider-Aider-AI-aider-pr5171",
+  "agent": {
+    "vendor": "aider",
+    "confidence": "high",
+    "source": "repo-owner=Aider-AI"
+  },
+  "pr": {
+    "number": 5171,
+    "headSha": "f9f42059a0a05925b2683874a37776eddc5d3e9e",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1",
+    "title": "Add gemini-3.1-pro-preview and flash-lite-3.1 model aliases",
+    "body": "## Summary\n\nAdds two short CLI aliases to \\`MODEL_ALIASES\\` in \\`aider/models.py\\` for the recently-released Gemini 3.1 family:\n\n| Alias | Target |\n|---|---|\n| \\`gemini-3.1-pro-preview\\` | \\`gemini/gemini-3.1-pro-preview\\` |\n| \\`flash-lite-3.1\\` | \\`gemini/gemini-3.1-flash-lite\\` |\n\nMirrors the existing \\`gemini-3-pro-preview\\` -> \\`gemini/gemini-3-pro-preview\\` alias pattern.\n\n## Why short aliases\n\nUsers typically pass aliases on the CLI (\\`aider --model flash-lite\\`) rather than the full provider-prefixed name. The Gemini 3.1 family had no short alias, so the new variants weren't reachable without typing the full \\`gemini/gemini-3.1-*\\` name.\n\n## Existing behaviour preserved\n\n- \\`flash-lite\\` (existing) still points at \\`gemini/gemini-2.5-flash-lite\\`. Bumping it would silently switch users from 2.5 to 3.1, which is a behaviour change for anyone scripted around the current alias. Users opt in to 3.1 via the new explicit \\`flash-lite-3.1\\` alias.\n- The \\`gemini\\` umbrella alias is intentionally left at \\`gemini/gemini-3-pro-preview\\`. Same reasoning.\n\n## Test plan\n\n- Python: \\`python -c \\\"from aider.models import MODEL_ALIASES; print(MODEL_ALIASES['gemini-3.1-pro-preview'], MODEL_ALIASES['flash-lite-3.1'])\\\"\\` resolves both new aliases.\n- Diff: 2 lines added in models.py + 1 line added in HISTORY.md. No existing behaviour modified.",
+    "author": "Cyberfilo",
+    "headRef": "feat/add-gemini-3-1-aliases",
+    "repository": "Aider-AI/aider"
+  },
+  "diffRef": {
+    "repository": "Aider-AI/aider",
+    "headSha": "f9f42059a0a05925b2683874a37776eddc5d3e9e",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1"
+  },
+  "vendoredDiffPath": "unconfirmed/aider/aider-Aider-AI-aider-pr5171.diff",
+  "vendoredAt": "2026-05-24T03:19:58.703Z",
+  "collectedAt": "2026-05-24T03:19:58.703Z"
+}

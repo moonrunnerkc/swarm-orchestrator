@@ -1,0 +1,26 @@
+{
+  "id": "cursor-getum06-LaundromatFacilityBuy-pr8",
+  "agent": {
+    "vendor": "cursor",
+    "confidence": "medium",
+    "source": "branch=cursor/+body=cursor-session-url"
+  },
+  "pr": {
+    "number": 8,
+    "headSha": "f8a8df8b04015fd858dc68d17718758dc9c916d3",
+    "baseSha": "cd16b7a99fdc3e25e872b956a58aa77e3eb86907",
+    "title": "feat: Google Places API competitor auto-fetch in Demographics module",
+    "body": "<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\nAdds a \"Search Laundromats via Google\" button to the Demographics trade area form that automatically fetches nearby competitor laundromats using the Google Places API (New) and populates the competitor count field.\n\n## How it works\n\n1. **ZIP → coordinates** — Uses the free [Zippopotam.us](https://api.zippopotam.us) API (no key required) to convert the entered ZIP code to a lat/lng centroid. If the user has already entered manual coordinates, those are used instead.\n\n2. **Nearby search** — Calls the [Google Places API (New) Nearby Search](https://developers.google.com/maps/documentation/places/web-service/nearby-search) endpoint (`POST https://places.googleapis.com/v1/places:searchNearby`) with `includedTypes: [\"laundry\"]` and the selected trade area radius (1, 3, or 5 miles converted to meters).\n\n3. **Auto-populate** — The competitor count field is instantly filled with the count of laundromat results. The names and star ratings of each found competitor are shown in a scrollable list inside the form.\n\n4. **Competitor chart** — The `CompetitorChart` component now shows the Google-fetched competitor names and ratings when available, replacing the \"enter manually\" prompt.\n\n## Files changed\n\n| File | Change |\n|------|--------|\n| `src/utils/placesApi.js` | New — `geocodeZip()`, `searchNearbyLaundromats()`, `fetchCompetitorCount()` |\n| `src/components/demographics/AddressForm.jsx` | Added Google Places panel with key field, search button, result list |\n| `src/components/demographics/DemographicCharts.jsx` | `CompetitorChart` shows fetched place names + ratings |\n| `src/components/demographics/DemographicsModule.jsx` | Passes `competitorPlaces` through to chart |\n\n## Getting a Google Maps API key\n\n1. Go to [console.cloud.google.com](https://console.cloud.google.com)\n2. Create or select a project\n3. Enable **Places API (New)** under APIs & Services\n4. Create an API key under Credentials\n5. (Recommended) Add an HTTP referrer restriction to your domain\n\nFree tier: Google provides **$200/month** in free credit, which covers approximately **5,000+ Nearby Search requests** per month.\n\n> Note: The Google Places API (New) supports CORS from browser requests — no backend proxy is needed.\n<!-- CURSOR_AGENT_PR_BODY_END -->\n\n<div><a href=\"https://cursor.com/agents/bc-ff437440-91c7-4411-b908-40a51a8b401d\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/background-agent?bcId=bc-ff437440-91c7-4411-b908-40a51a8b401d\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-light.png\"><img alt=\"Open in Cursor\" width=\"131\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"></picture></a>&nbsp;</div>\n\n",
+    "author": "getum06",
+    "headRef": "cursor/laundromat-evaluation-platform-401d",
+    "repository": "getum06/LaundromatFacilityBuy"
+  },
+  "diffRef": {
+    "repository": "getum06/LaundromatFacilityBuy",
+    "headSha": "f8a8df8b04015fd858dc68d17718758dc9c916d3",
+    "baseSha": "cd16b7a99fdc3e25e872b956a58aa77e3eb86907"
+  },
+  "vendoredDiffPath": "cursor/cursor-getum06-LaundromatFacilityBuy-pr8.diff",
+  "vendoredAt": "2026-05-24T03:11:40.964Z",
+  "collectedAt": "2026-05-24T03:11:40.964Z"
+}

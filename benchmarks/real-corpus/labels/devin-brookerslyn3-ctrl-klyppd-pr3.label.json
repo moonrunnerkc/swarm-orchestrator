@@ -1,0 +1,7 @@
+{
+  "verdict": "broken",
+  "rationale": "Adds a bare empty catch block around the new check_dependencies invocation: `try { const missing = await invoke<string[]>(\"check_dependencies\"); ... } catch {}`. The error-swallow detector correctly fired at block severity (Phase 1.5 specifically kept blocking this pattern because it is the cheat shape, distinct from the comment-explained pattern downgraded to info). The PR was closed without merge by the reviewer. The empty catch obscures failures of the new Tauri command without surfacing them to the user — the very behavior the detector exists to prevent. This is a true-positive for error-swallow: external evidence (rejected by reviewer) anchors the broken verdict to a fact outside this project's opinion.",
+  "brokenCategories": ["cheat-exception-swallowing"],
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T05:00:00.000Z"
+}

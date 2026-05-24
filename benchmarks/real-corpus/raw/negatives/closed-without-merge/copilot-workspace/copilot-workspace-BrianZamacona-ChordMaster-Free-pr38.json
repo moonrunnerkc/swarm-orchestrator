@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-BrianZamacona-ChordMaster-Free-pr38",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 38,
+    "headSha": "a9189d240d564cfd95bb0c0f2c6d979eae981a5f",
+    "baseSha": "fabb16cd12e5e3ae8e77e19a7e338a7e0e1336d3",
+    "title": "feat: fix chord back-navigation + add ScaleDetailScreen (Scales expansion)",
+    "body": "All chord detail transitions used `context.go` (stack-replacing), breaking the back button. Related scales chips navigated to `/scales` with no context. Scales had no detail view — `relatedChords` data was loaded but never surfaced in the UI.\n\n## Navigation fixes\n- `ChordLibraryScreen._ChordCard`, `ChordDetailScreen` related voicings and style-match chips: `context.go` → `context.push` to preserve back-stack\n- Related scales chips: `context.go('/scales')` → `context.push('/scales/${Uri.encodeComponent(scale)}')` — deep-links to the specific scale\n\n## Scales expansion\n- **New `ScaleDetailScreen`** at `/scales/:id` (URL-encoded scale name): name + type header, play button, notes chips, interval chips, description, common usage, related chords chips\n- `/scales` route in `navigation.dart` gains a `/scales/:id` sub-route\n- `ScalesViewModel` gains a `_nameIndex` Map (built at load) + `findByName()` for O(1) lookup — same pattern as `ChordViewModel._nameIndex`\n- `_ScaleCard` converted to `StatelessWidget`; inline expand removed in favour of navigate-on-tap; `_PlayScaleButton` moved to the detail screen\n- `AppStrings`: added `scaleNotes`, `scaleDescription`, `scaleIntervals`",
+    "author": "Copilot",
+    "headRef": "copilot/fix-global-navigation-issues",
+    "repository": "BrianZamacona/ChordMaster-Free"
+  },
+  "diffRef": {
+    "repository": "BrianZamacona/ChordMaster-Free",
+    "headSha": "a9189d240d564cfd95bb0c0f2c6d979eae981a5f",
+    "baseSha": "fabb16cd12e5e3ae8e77e19a7e338a7e0e1336d3"
+  },
+  "vendoredDiffPath": "negatives/closed-without-merge/copilot-workspace/copilot-workspace-BrianZamacona-ChordMaster-Free-pr38.diff",
+  "vendoredAt": "2026-05-24T04:28:26.012Z",
+  "collectedAt": "2026-05-24T04:28:26.012Z"
+}

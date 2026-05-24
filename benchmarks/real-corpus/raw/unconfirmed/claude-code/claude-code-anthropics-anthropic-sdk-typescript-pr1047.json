@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-typescript-pr1047",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1047,
+    "headSha": "83416369ee4ee54dc4b6b9a7d3a23ebe8c9ef518",
+    "baseSha": "a53f60d59ca904f3e79296586642aac3ce68ae02",
+    "title": "fix(memory): reject malformed memories paths",
+    "body": "## Summary\n\n- require local filesystem memory paths to be exactly `/memories` or start with `/memories/`\n- reject prefix-sharing paths such as `/memories_backup/file.txt` instead of silently remapping them under the memory root\n- add regression coverage that the malformed path fails and does not create files\n\n## Context\n\nA prior upstream hardening fixed resolved filesystem path boundaries. This patch closes the remaining user-input path boundary: malformed tool paths that merely share the `/memories` string prefix should not be accepted as memory paths.\n\n## Validation\n\n- `git diff --check` -> passed\n- `./node_modules/.bin/jest tests/lib/tools/BetaLocalFilesystemMemoryTool.test.ts --runInBand` -> 38 passed\n- `./node_modules/.bin/prettier --check src/tools/memory/node.ts tests/lib/tools/BetaLocalFilesystemMemoryTool.test.ts` -> passed\n- `./node_modules/.bin/eslint src/tools/memory/node.ts tests/lib/tools/BetaLocalFilesystemMemoryTool.test.ts` -> passed\n- `./node_modules/typescript/bin/tsc --noEmit` -> passed",
+    "author": "pragnyanramtha",
+    "headRef": "pragnyan/fix-memory-path-prefix",
+    "repository": "anthropics/anthropic-sdk-typescript"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-typescript",
+    "headSha": "83416369ee4ee54dc4b6b9a7d3a23ebe8c9ef518",
+    "baseSha": "a53f60d59ca904f3e79296586642aac3ce68ae02"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-typescript-pr1047.diff",
+  "vendoredAt": "2026-05-24T03:16:25.495Z",
+  "collectedAt": "2026-05-24T03:16:25.495Z"
+}

@@ -1,0 +1,6 @@
+{
+  "verdict": "clean",
+  "rationale": "Refactors `src/storage.ts` to support native (iOS/Android) porting while preserving the public API. Introduces a `STORAGE_KEYS` const map (typed via `StorageKey`), renames `ChromeStorageArea` to a more general `StorageAreaAdapter`, splits `createChromeStorageAdapter` so it now delegates to a generic `createStorageAdapter`, and replaces the eager `export const storage = createChromeStorageAdapter(chrome.storage.local)` with a lazy resolver: `configureStorageAdapter()` lets native platforms inject an adapter, `createDefaultChromeStorageAdapter()` falls back to `chrome.storage.local` (throwing when chrome is absent), and the exported `storage` object now delegates each call through `getStorageAdapter()`. The detector flagged this as `fake-refactor` but the rename and indirection serve a real porting goal documented in the matching `docs/PORTING.md` additions; existing `WORD_LIST_STORAGE_KEY` / `PREMIUM_STATUS_STORAGE_KEY` exports are preserved for backward compatibility. False positive for fake-refactor.",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T13:40:00.000Z"
+}

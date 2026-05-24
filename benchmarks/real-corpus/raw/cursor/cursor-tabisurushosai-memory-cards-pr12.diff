@@ -1,0 +1,164 @@
+diff --git a/docs/PORTING.md b/docs/PORTING.md
+index 8e0ae7b..b379284 100644
+--- a/docs/PORTING.md
++++ b/docs/PORTING.md
+@@ -15,12 +15,20 @@ The persisted state remains under the `memoryCardsState` key and has the `AppSta
+ 
+ When adding a platform:
+ 
+-1. Implement the `AppStorage` interface with local device storage.
+-2. Return `StoredAppState | undefined` from `load()` without changing the stored shape.
+-3. Pass loaded data through `normalizeAppState()` before use.
+-4. Keep saves local-only unless the product requirement explicitly changes.
++1. Implement `StorageAdapter` with local device storage, or implement `AppStorage` directly if the platform already exposes app-state persistence.
++2. Keep the `memoryCardsState` key and stored `AppState` shape unchanged.
++3. Return `StoredAppState | undefined` from `load()` without adding platform metadata to the stored value.
++4. Pass loaded data through `normalizeAppState()` before use.
++5. Keep saves local-only unless the product requirement explicitly changes.
+ 
+-For Chrome, `ChromeAppStorage` receives a minimal `KeyValueStorageArea`, currently backed by `chrome.storage.local`. Native iOS or Android shells should provide an equivalent adapter backed by their local persistence APIs.
++For Chrome, `ChromeStorageAdapter` wraps the minimal `chrome.storage.local` `get`/`set` surface and `AdapterAppStorage` applies the shared app-state key. Native iOS or Android shells should provide an equivalent `StorageAdapter` backed by their local persistence APIs.
++
++## Native shell checklist
++
++- Treat `src/core/` as a one-way dependency: UI, storage, and platform shells may import it, but `src/core/` must not import `src/storage/`, `src/platform/`, DOM APIs, `chrome.*`, or native SDK APIs.
++- Put iOS/Android persistence bridges behind `StorageAdapter` and keep them in `src/storage/` or the native shell layer.
++- Keep UI decisions platform-neutral where practical: call pure functions from `src/core/`, then render with the current platform's view layer.
++- If a native target needs platform probes such as locale detection, add them outside `src/core/` and pass the result in.
+ 
+ ## Platform rules
+ 
+diff --git a/src/storage/AppStorage.ts b/src/storage/AppStorage.ts
+index 299c68a..798c640 100644
+--- a/src/storage/AppStorage.ts
++++ b/src/storage/AppStorage.ts
+@@ -4,12 +4,24 @@ export const APP_STORAGE_KEY = "memoryCardsState";
+ 
+ export type StoredAppState = Partial<AppState>;
+ 
+-export interface KeyValueStorageArea {
+-  get(key: string): Promise<Record<string, unknown>>;
+-  set(items: Record<string, unknown>): Promise<void>;
+-}
+-
+ export interface AppStorage {
+   load(): Promise<StoredAppState | undefined>;
+   save(state: AppState): Promise<void>;
+ }
++
++export interface StorageAdapter {
++  get<TValue>(key: string): Promise<TValue | undefined>;
++  set<TValue>(key: string, value: TValue): Promise<void>;
++}
++
++export class AdapterAppStorage implements AppStorage {
++  constructor(private readonly adapter: StorageAdapter) {}
++
++  async load(): Promise<StoredAppState | undefined> {
++    return this.adapter.get<StoredAppState>(APP_STORAGE_KEY);
++  }
++
++  async save(state: AppState): Promise<void> {
++    await this.adapter.set(APP_STORAGE_KEY, state);
++  }
++}
+diff --git a/src/storage/chromeStorage.ts b/src/storage/chromeStorage.ts
+index ed2a180..512a717 100644
+--- a/src/storage/chromeStorage.ts
++++ b/src/storage/chromeStorage.ts
+@@ -1,20 +1,19 @@
+-import type { AppState } from "../core/appState";
+-import {
+-  APP_STORAGE_KEY,
+-  type AppStorage,
+-  type KeyValueStorageArea,
+-  type StoredAppState
+-} from "./AppStorage";
++import type { StorageAdapter } from "./AppStorage";
+ 
+-export class ChromeAppStorage implements AppStorage {
+-  constructor(private readonly storageArea: KeyValueStorageArea) {}
++export interface ChromeStorageArea {
++  get(key: string): Promise<Record<string, unknown>>;
++  set(items: Record<string, unknown>): Promise<void>;
++}
++
++export class ChromeStorageAdapter implements StorageAdapter {
++  constructor(private readonly storageArea: ChromeStorageArea) {}
+ 
+-  async load(): Promise<StoredAppState | undefined> {
+-    const result = await this.storageArea.get(APP_STORAGE_KEY);
+-    return result[APP_STORAGE_KEY] as StoredAppState | undefined;
++  async get<TValue>(key: string): Promise<TValue | undefined> {
++    const result = await this.storageArea.get(key);
++    return result[key] as TValue | undefined;
+   }
+ 
+-  async save(state: AppState): Promise<void> {
+-    await this.storageArea.set({ [APP_STORAGE_KEY]: state });
++  async set<TValue>(key: string, value: TValue): Promise<void> {
++    await this.storageArea.set({ [key]: value });
+   }
+ }
+diff --git a/src/storage/index.ts b/src/storage/index.ts
+index 00d30b5..2e3611a 100644
+--- a/src/storage/index.ts
++++ b/src/storage/index.ts
+@@ -1,10 +1,10 @@
+-import { type AppStorage, type KeyValueStorageArea } from "./AppStorage";
+-import { ChromeAppStorage } from "./chromeStorage";
+-import { MemoryAppStorage } from "./memoryStorage";
++import { AdapterAppStorage, type AppStorage } from "./AppStorage";
++import { ChromeStorageAdapter, type ChromeStorageArea } from "./chromeStorage";
++import { MemoryStorageAdapter } from "./memoryStorage";
+ 
+ interface ChromeStorageGlobal {
+   storage?: {
+-    local?: KeyValueStorageArea;
++    local?: ChromeStorageArea;
+   };
+ }
+ 
+@@ -12,13 +12,13 @@ export function createAppStorage(): AppStorage {
+   const chromeStorageArea = getChromeLocalStorageArea();
+ 
+   if (chromeStorageArea) {
+-    return new ChromeAppStorage(chromeStorageArea);
++    return new AdapterAppStorage(new ChromeStorageAdapter(chromeStorageArea));
+   }
+ 
+-  return new MemoryAppStorage();
++  return new AdapterAppStorage(new MemoryStorageAdapter());
+ }
+ 
+-function getChromeLocalStorageArea(): KeyValueStorageArea | undefined {
++function getChromeLocalStorageArea(): ChromeStorageArea | undefined {
+   const chromeGlobal = (globalThis as typeof globalThis & { chrome?: ChromeStorageGlobal }).chrome;
+   return chromeGlobal?.storage?.local;
+ }
+diff --git a/src/storage/memoryStorage.ts b/src/storage/memoryStorage.ts
+index b81af02..376d150 100644
+--- a/src/storage/memoryStorage.ts
++++ b/src/storage/memoryStorage.ts
+@@ -1,14 +1,13 @@
+-import type { AppState } from "../core/appState";
+-import { type AppStorage, type StoredAppState } from "./AppStorage";
++import type { StorageAdapter } from "./AppStorage";
+ 
+-export class MemoryAppStorage implements AppStorage {
+-  private state: StoredAppState | undefined;
++export class MemoryStorageAdapter implements StorageAdapter {
++  private readonly values = new Map<string, unknown>();
+ 
+-  async load(): Promise<StoredAppState | undefined> {
+-    return this.state;
++  async get<TValue>(key: string): Promise<TValue | undefined> {
++    return this.values.get(key) as TValue | undefined;
+   }
+ 
+-  async save(state: AppState): Promise<void> {
+-    this.state = state;
++  async set<TValue>(key: string, value: TValue): Promise<void> {
++    this.values.set(key, value);
+   }
+ }

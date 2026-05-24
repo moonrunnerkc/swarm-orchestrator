@@ -1,0 +1,26 @@
+{
+  "id": "cursor-keiito888-bom-selector-pr1",
+  "agent": {
+    "vendor": "cursor",
+    "confidence": "medium",
+    "source": "branch=cursor/+body=cursor-session-url"
+  },
+  "pr": {
+    "number": 1,
+    "headSha": "399780d1610ed4abde44fc8f95d422e98824579d",
+    "baseSha": "5361072c03f353ddd51d9076bc9f340894119618",
+    "title": "feat: モバイルレスポンシブ対応",
+    "body": "<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n## 概要\n\nスマートフォン（768px 未満）でワークスペースを操作できるようにモバイルレスポンシブ対応を実装しました。\n\n## 変更内容\n\n### レイアウト切り替え（Workspace.tsx）\n\n| 幅 | 表示 |\n|----|------|\n| `md` 以上（768px+） | 従来の3ペイン横並びレイアウト |\n| `md` 未満 | タブ切り替え（部品一覧 / 部品詳細 / BOM）|\n\nCSS の `hidden md:flex` / `flex md:hidden` で切り替えるため、JS 判定不要でhydration mismatch も起きません。\n\n### Pane 1（プロジェクト一覧）アクセス修正（GlobalHeader.tsx）\n\n- モバイル時のみ表示される `PanelLeft` ボタンを GlobalHeader に追加\n- `useSidebar().toggleSidebar` で shadcn Sidebar の Sheet を開閉できるようになりました\n- 従来はプロジェクト一覧の Sheet が「内部にしか開閉ボタンがない」状態で、初回表示で到達不能でした\n\n### タッチ操作 DnD（CandidateDetailPane.tsx）\n\n- `@dnd-kit/core` の `TouchSensor` を追加\n- スマートフォンでも BOM の並び替えドラッグが機能します\n- Desktop / Mobile の DnD コンテキスト ID を分離（`dndContextId` prop）\n\n### コンポーネント props 追加\n\n各ペインにモバイルタブレイアウト用の props を追加（`twMerge` で安全に上書き）:\n\n- `CandidateListPane`: `className?` — モバイルでは `w-full border-r-0`\n- `CandidateDashboardPane`: `className?`\n- `CandidateDetailPane`: `className?`, `showToggle?`, `dndContextId?`\n\n### ProjectFormDialog 修正（React 19 規約対応）\n\n- Effect+setState でフォームの初期値をリセットしていたパターンを、`key` によるリマウント方式に変更\n- CLAUDE.md「派生 state を Effect で複製しない」規律に準拠\n\n### shadcn Tabs コンポーネント追加\n\n- `npx shadcn@latest add tabs` で `components/ui/tabs.tsx` を追加（base-ui 実装）\n\n## テスト\n\n- `npm run lint`: ✅ エラーなし\n- `npm run build`: ✅ 成功（Supabase env 設定時）\n\n<!-- CURSOR_AGENT_PR_BODY_END -->\n\n<div><a href=\"https://cursor.com/agents/bc-f078c03a-1a29-47e7-ae03-e443ea386d4e\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/background-agent?bcId=bc-f078c03a-1a29-47e7-ae03-e443ea386d4e\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-light.png\"><img alt=\"Open in Cursor\" width=\"131\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"></picture></a>&nbsp;</div>\n\n",
+    "author": "keiito888",
+    "headRef": "cursor/mobile-responsive-6d4e",
+    "repository": "keiito888/bom-selector"
+  },
+  "diffRef": {
+    "repository": "keiito888/bom-selector",
+    "headSha": "399780d1610ed4abde44fc8f95d422e98824579d",
+    "baseSha": "5361072c03f353ddd51d9076bc9f340894119618"
+  },
+  "vendoredDiffPath": "cursor/cursor-keiito888-bom-selector-pr1.diff",
+  "vendoredAt": "2026-05-24T03:11:20.555Z",
+  "collectedAt": "2026-05-24T03:11:20.555Z"
+}

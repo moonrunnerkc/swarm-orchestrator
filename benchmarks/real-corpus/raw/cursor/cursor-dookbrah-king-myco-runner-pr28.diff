@@ -1,0 +1,164 @@
+diff --git a/public/myco-quest-game.html b/public/myco-quest-game.html
+index cff8e09..0e7ff23 100644
+--- a/public/myco-quest-game.html
++++ b/public/myco-quest-game.html
+@@ -4498,7 +4498,7 @@ <h3 style="color:${profile.colors.primary}">${profile.bannerTitle}</h3>
+ 
+         const battleRect = battleCanvas.getBoundingClientRect();
+         const battleW = Math.max(260, Math.round(battleRect.width * dpr));
+-        const battleH = Math.max(140, Math.round((battleRect.width * 0.5) * dpr));
++        const battleH = Math.max(180, Math.round((battleRect.width * 0.62) * dpr));
+         if (battleCanvas.width !== battleW || battleCanvas.height !== battleH) {
+           battleCanvas.width = battleW;
+           battleCanvas.height = battleH;
+@@ -11226,7 +11226,7 @@ <h3 style="color:${profile.colors.primary}">${profile.bannerTitle}</h3>
+         const now = Date.now();
+         const direction = side === "player" ? 1 : -1;
+         const isPlayer = side === "player";
+-        const actorScale = stage.actorScale * 1.18;
++        const actorScale = stage.actorScale * (isPlayer ? 1.34 : 1.28);
+         const isBoss = Boolean(actor?.boss || getEnemyBattleKind(battle) === "dark-mycelius");
+ 
+         ctx.save();
+@@ -11278,7 +11278,7 @@ <h3 style="color:${profile.colors.primary}">${profile.bannerTitle}</h3>
+         if (isPlayer) {
+           ctx.fillStyle = `${palette.aura}44`;
+           ctx.beginPath();
+-          ctx.arc(-2, 8, 34, 0, Math.PI * 2);
++          ctx.arc(-2, 8, 38, 0, Math.PI * 2);
+           ctx.fill();
+ 
+           ctx.fillStyle = palette.trim;
+@@ -11293,29 +11293,37 @@ <h3 style="color:${profile.colors.primary}">${profile.bannerTitle}</h3>
+           ctx.fill();
+ 
+           ctx.fillStyle = "#0f172a";
+-          ctx.fillRect(-18, 24, 36, 22);
++          ctx.fillRect(-20, 24, 40, 22);
+           ctx.fillStyle = palette.robe;
+-          ctx.fillRect(-16, 8, 32, 28);
++          ctx.fillRect(-18, 7, 36, 30);
+           ctx.fillStyle = palette.trim;
+-          ctx.fillRect(-12, 14, 24, 16);
++          ctx.fillRect(-13, 13, 26, 18);
++          ctx.strokeStyle = "#e2e8f0";
++          ctx.lineWidth = 1;
++          ctx.strokeRect(-18, 7, 36, 30);
++          ctx.strokeRect(-20, 24, 40, 22);
+ 
+           ctx.fillStyle = palette.skin;
+           ctx.beginPath();
+-          ctx.arc(0, -2, 13, 0, Math.PI * 2);
++          ctx.arc(0, -2, 14, 0, Math.PI * 2);
+           ctx.fill();
++          ctx.strokeStyle = "#cbd5e1";
++          ctx.stroke();
+           ctx.fillStyle = palette.eye;
+-          ctx.fillRect(-6, -5, 4, 3);
+-          ctx.fillRect(2, -5, 4, 3);
++          ctx.fillRect(-7, -5, 5, 4);
++          ctx.fillRect(2, -5, 5, 4);
+           ctx.fillStyle = "#86efac";
+-          ctx.fillRect(-5, -3, 2, 1);
+-          ctx.fillRect(3, -3, 2, 1);
++          ctx.fillRect(-5, -3, 2, 2);
++          ctx.fillRect(4, -3, 2, 2);
+ 
+           ctx.fillStyle = palette.cap;
+           ctx.beginPath();
+-          ctx.ellipse(0, -13, 21, 10, 0, 0, Math.PI * 2);
++          ctx.ellipse(0, -14, 23, 11, 0, 0, Math.PI * 2);
+           ctx.fill();
++          ctx.strokeStyle = "#f1f5f9";
++          ctx.stroke();
+           ctx.fillStyle = palette.trim;
+-          ctx.fillRect(-14, -14, 28, 4);
++          ctx.fillRect(-15, -14, 30, 4);
+           ctx.fillStyle = "#facc15";
+           ctx.fillRect(-8, -20, 16, 4);
+           ctx.fillRect(-2, -24, 4, 5);
+@@ -11331,28 +11339,35 @@ <h3 style="color:${profile.colors.primary}">${profile.bannerTitle}</h3>
+           ctx.lineTo(26, -8 + staffWobble);
+           ctx.closePath();
+           ctx.fill();
++          ctx.strokeStyle = "#dcfce7";
++          ctx.stroke();
+         } else {
+           ctx.fillStyle = `${palette.aura}33`;
+           ctx.beginPath();
+-          ctx.arc(0, 10, isBoss ? 38 : 30, 0, Math.PI * 2);
++          ctx.arc(0, 10, isBoss ? 42 : 34, 0, Math.PI * 2);
+           ctx.fill();
+ 
+           ctx.fillStyle = palette.body;
+           ctx.beginPath();
+-          ctx.ellipse(0, 12, isBoss ? 26 : 22, isBoss ? 28 : 24, 0, 0, Math.PI * 2);
++          ctx.ellipse(0, 12, isBoss ? 30 : 25, isBoss ? 34 : 29, 0, 0, Math.PI * 2);
+           ctx.fill();
+           ctx.fillStyle = palette.trim;
+-          ctx.fillRect(-16, 10, 32, 10);
++          ctx.fillRect(-17, 10, 34, 11);
++          ctx.strokeStyle = "#f1f5f9";
++          ctx.lineWidth = 1;
++          ctx.strokeRect(-17, 10, 34, 11);
+           ctx.fillStyle = "#111827";
+           ctx.beginPath();
+-          ctx.arc(0, -8, isBoss ? 16 : 13, 0, Math.PI * 2);
++          ctx.arc(0, -8, isBoss ? 18 : 15, 0, Math.PI * 2);
+           ctx.fill();
++          ctx.strokeStyle = "#cbd5e1";
++          ctx.stroke();
+           ctx.fillStyle = palette.eye;
+-          ctx.fillRect(-7, -10, 4, 3);
+-          ctx.fillRect(3, -10, 4, 3);
++          ctx.fillRect(-8, -10, 5, 4);
++          ctx.fillRect(3, -10, 5, 4);
+           ctx.fillStyle = "#fef3c7";
+-          ctx.fillRect(-6, -8, 2, 1);
+-          ctx.fillRect(4, -8, 2, 1);
++          ctx.fillRect(-6, -8, 2, 2);
++          ctx.fillRect(5, -8, 2, 2);
+ 
+           ctx.fillStyle = palette.trim;
+           ctx.beginPath();
+@@ -11369,8 +11384,8 @@ <h3 style="color:${profile.colors.primary}">${profile.bannerTitle}</h3>
+           ctx.fill();
+ 
+           ctx.fillStyle = palette.body;
+-          ctx.fillRect(-28, 8, 10, 8);
+-          ctx.fillRect(18, 8, 10, 8);
++          ctx.fillRect(-32, 8, 12, 10);
++          ctx.fillRect(20, 8, 12, 10);
+           if (isBoss) {
+             ctx.strokeStyle = `${palette.aura}aa`;
+             ctx.lineWidth = 2;
+@@ -11552,7 +11567,7 @@ <h3 style="color:${profile.colors.primary}">${profile.bannerTitle}</h3>
+           battleCtx.fillRect(sx, sy, 2, 2);
+         }
+ 
+-        const floorY = Math.round(battleCanvas.height * 0.76);
++        const floorY = Math.round(battleCanvas.height * 0.79);
+         battleCtx.fillStyle = "rgba(56, 189, 248, 0.09)";
+         battleCtx.fillRect(0, floorY - 6, battleCanvas.width, battleCanvas.height - floorY + 12);
+         battleCtx.strokeStyle = "rgba(125, 211, 252, 0.22)";
+@@ -11571,15 +11586,16 @@ <h3 style="color:${profile.colors.primary}">${profile.bannerTitle}</h3>
+         }
+ 
+         const battle = state.battle;
++        const actorScale = clamp(battleCanvas.width / 500, 1.3, 2.7);
+         const stage = {
+           floorY,
+-          actorScale: clamp(battleCanvas.width / 620, 1.08, 1.9),
+-          panelY: Math.round(battleCanvas.height * 0.18),
++          actorScale,
++          panelY: Math.round(battleCanvas.height * 0.15),
+           panelW: Math.round(battleCanvas.width * 0.24),
+-          panelH: Math.round(battleCanvas.height * 0.34),
++          panelH: Math.round(battleCanvas.height * 0.38),
+           playerPanelX: Math.round(battleCanvas.width * 0.05),
+           enemyPanelX: Math.round(battleCanvas.width * 0.71),
+-          actorCenterY: floorY - 18,
++          actorCenterY: floorY - Math.round(44 * actorScale),
+           playerCenterX: Math.round(battleCanvas.width * 0.23),
+           enemyCenterX: Math.round(battleCanvas.width * 0.77),
+         };

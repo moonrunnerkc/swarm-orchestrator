@@ -1,0 +1,1436 @@
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..6760044
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,3 @@
++scripts/tier1_monitor_state.json
++__pycache__/
++*.pyc
+diff --git a/README.md b/README.md
+index d360db1..e80ac1e 100644
+--- a/README.md
++++ b/README.md
+@@ -4,17 +4,47 @@ High-fidelity crypto trading signal monitor derived from Minara AI Tier 1 strate
+ Used for monitoring the 2.5 BTC DCA Campaign ($900k USDT liquidity).
+ 
+ ## Core Strategies
+-- **#1 RSI Mean Reversion**: RSI < 20 Buy, RSI > 65 Sell.
+-- **#3 SuperTrend AI**: Adaptive trend following on BTC 4h.
+-- **#5 SuperTrend Daily**: Core trend sentinel for long-term holders.
+-- **#7 MACD Zero-Line**: Trend confirmation for mid-term swings.
+-- **#12 RSI > 70 Buy**: Momentum breakout strategy.
++- **#1 RSI Mean Reversion**: RSI < 20 + Stoch + EMA200 (long); RSI > 65 (short).
++- **#3 SuperTrend AI**: SuperTrend flip + EMA50 on BTC 4h (see docs for AI-layer limits).
++- **#5 SuperTrend Daily**: SMA-ATR SuperTrend, multiplier **8.5**, BTC 1d, long only.
++- **#7 MACD Zero-Line**: MACD line above zero (long only).
++- **#12 RSI > 70 Buy**: Momentum long while RSI > 70.
++
++Full table + TradingView links: [docs/STRATEGIES.md](docs/STRATEGIES.md).  
++Reference: [Minara — 21 Tier-1 TV strategies](https://minara.ai/blog/we-found-21-money-makers-after-backtesting-236-tradingview-strategies/).
+ 
+ ## Tech Stack
+-- **Data Source**: Binance Public API (No Key needed).
+-- **Execution**: Python 3.x hourly polling.
++- **Data Source**: Binance Public API (no key; falls back to `data-api.binance.vision`).
++- **Execution**: Python 3.x, **every 5 minutes** (cron or built-in loop).
+ - **Delivery**: Telegram Topic 205 (Hermes Agent).
+ 
++## Monitoring (5-minute cycle)
++
++```bash
++# Cron (recommended)
++*/5 * * * * cd /path/to/repo && python3 scripts/tier1_monitor.py run
++
++# Or long-running loop
++python3 scripts/tier1_monitor.py loop
++```
++
++Each cycle:
++
++1. **Signal lifecycle** — alerts when a signal turns on, stays active (silent), and when it **disappears**.
++2. **Confirmed positions** — after you record an entry, monitors **exit conditions** and sends close alerts.
++
++### Telegram commands
++
++| Command | Action |
++|---------|--------|
++| `/confirm 12` | Record that you opened per strategy #12 (optional price: `/confirm 12 98500`) |
++| `/close 12` | Stop tracking position #12 manually |
++| `/status` | List active signals and open positions |
++
++CLI equivalents: `python3 scripts/tier1_monitor.py confirm 12`, `close 12`, `status`.
++
++State file: `TIER1_STATE_FILE` (default: `scripts/tier1_monitor_state.json`).
++
+ ## Files
+ - `scripts/tier1_monitor.py`: The engine.
+ - `docs/STRATEGIES.md`: Detailed logic for all 21 strategies.
+diff --git a/docs/STRATEGIES.md b/docs/STRATEGIES.md
+index 5ac6379..dff6a7a 100644
+--- a/docs/STRATEGIES.md
++++ b/docs/STRATEGIES.md
+@@ -1,10 +1,49 @@
+-# 21 Tier 1 Strategies Logic Table
+-
+-| # | Strategy Name | Interval | Core Logic |
+-|---|---------------|----------|------------|
+-| 1 | BTC Mean Rev | 15m | RSI < 20 & Cross 20 |
+-| 3 | ST AI | 4h | ATR(10) Mult(3) |
+-| 5 | ST Daily | 1d | ATR(10) Mult(3) |
+-| 7 | MACD Zero | 1d | MACD Cross Above 0 |
+-| 11 | EMA Cross | 30m | 7 EMA Cross 19 EMA |
+-| 12 | RSI 70 Buy | 4h | RSI Cross Above 70 |
++# 21 Tier-1 Strategies (Minara × TradingView)
++
++Source article: [We Found 21 Money-Makers After Backtesting 236 TradingView Strategies](https://minara.ai/blog/we-found-21-money-makers-after-backtesting-236-tradingview-strategies/)
++
++Monitor implementation: `scripts/tier1_monitor.py` — uses the **last closed candle** (`klines[-2]`) to match non-repainting TV entries.
++
++| # | Strategy | Pair | TF | Core logic (monitor) | TradingView |
++|---|----------|------|-----|----------------------|-------------|
++| 1 | Optimized BTC Mean Reversion | BTCUSDT | 15m | Long: RSI(14)&lt;20, Stoch&lt;25, price&gt;EMA200; Short: RSI&gt;65, Stoch&gt;75, price&lt;EMA200 | [pIrgsDpT](https://www.tradingview.com/script/pIrgsDpT/) |
++| 2 | Volatility Breakout System | ETHUSDT | 1h | Donchian 20 breakout (proxy) | [36zwwSMa](https://www.tradingview.com/script/36zwwSMa/) |
++| 3 | SuperTrend AI Adaptive | BTCUSDT | 4h | SuperTrend(10,3) flip + EMA50 filter; full AI score not replicated offline | [kZVrTReu](https://www.tradingview.com/script/kZVrTReu/) |
++| 4 | BB Upper breakout Short +2% | SOLUSDT | 1h | Short when close ≥ upper BB(20,2)×1.02 | [UBGvlIlq](https://www.tradingview.com/script/UBGvlIlq/) |
++| 5 | SuperTrend STRATEGY | BTCUSDT | 1d | Long only: SuperTrend SMA-ATR(10)×**8.5**, hl2 | [VLRj2sG9](https://www.tradingview.com/script/VLRj2sG9/) |
++| 6 | Penguin Volatility State | BTCUSDT | 1d | High ATR percentile + EMA50 side (simplified) | [skzo4i9e](https://www.tradingview.com/script/skzo4i9e/) |
++| 7 | MACD Zero-Line (Long) | BTCUSDT | 1d | Long while MACD line &gt; 0; flat when ≤0 | [llTXO45e](https://www.tradingview.com/script/llTXO45e/) |
++| 8 | CDC MACD Fix | BTCUSDT | 1d | MACD line cross above signal (proxy) | [7nv3hTpO](https://www.tradingview.com/script/7nv3hTpO/) |
++| 9 | Hash Momentum | BTCUSDT | 4h | 12-bar momentum positive &amp; accelerating | [L6VNlhiV](https://www.tradingview.com/script/L6VNlhiV/) |
++| 10 | Moon Phases L/S | BTCUSDT | 1h | **Not OHLC-derived** — returns FLAT (needs calendar) | [sl42otOB](https://www.tradingview.com/script/sl42otOB/) |
++| 11 | 7/19 EMA Cross | ETHUSDT | 30m | EMA7 vs EMA19 cross / position | [c0dAzn2Q](https://www.tradingview.com/script/c0dAzn2Q/) |
++| 12 | RSI &gt; 70 Buy | BTCUSDT | 4h | Long on RSI cross above 70 or RSI&gt;70 | [wZIdSrBG](https://www.tradingview.com/script/wZIdSrBG/) |
++| 13 | 50/200 SMA + RSI Avg | ETHUSDT | 1d | Long: price above SMA50 &amp; SMA200, SMA(RSI21,9)&gt;57 | [1x2AawHf](https://www.tradingview.com/script/1x2AawHf/) |
++| 14 | Pivot SuperTrend | BTCUSDT | 4h | SuperTrend + close vs bar pivot | [b74KzneI](https://www.tradingview.com/script/b74KzneI/) |
++| 15 | Keltner Breakout 4H | ETHUSDT | 4h | EMA20 ± 1.5×ATR(10) breakout | [LmNV3ZLN](https://www.tradingview.com/script/LmNV3ZLN/) |
++| 16 | Hash Supertrend | SOLUSDT | 4h | SuperTrend(10,3) direction | [6zYF9Xts](https://www.tradingview.com/script/6zYF9Xts/) |
++| 17 | Crypto LONG PY | SOLUSDT | 5m | RSI oversold bounce proxy | [3Uel153a](https://www.tradingview.com/script/3Uel153a/) |
++| 18 | Oleg_Aryukov | BTCUSDT | 15m | EMA 9&gt;21&gt;55 stack | [R4mgYcZ5](https://www.tradingview.com/script/R4mgYcZ5/) |
++| 19 | Options Daily Long UTC | ETHUSDT | 5m | Time window proxy 08:30–08:00 UTC | [DJT1l5tH](https://www.tradingview.com/script/DJT1l5tH/) |
++| 20 | Qullamagi EMA Breakout | ETHUSDT | 1h | Close cross EMA20 with rising EMA50 | [0rVYn2c4](https://www.tradingview.com/script/0rVYn2c4/) |
++| 21 | Kinetic Kalman Breakout | ETHUSDT | 15m | EMA20 ± ATR band breakout proxy | [nd8EpyQ5](https://www.tradingview.com/script/nd8EpyQ5/) |
++
++## Notes
++
++- **#5 multiplier**: Minara’s featured backtest uses **8.5** (not 3.0) on BTC 1d — see TV script changelog on [VLRj2sG9](https://www.tradingview.com/script/VLRj2sG9/).
++- **#3 / #6 / #10 / #17–21**: Complex Pine logic (AI scoring, moon calendar, Kalman) is approximated or marked FLAT where OHLC alone is insufficient.
++- **Alignment target**: Minara replicated TV with ≥90% trade match; offline monitor is for **directional alerts**, not trade-for-trade parity.
++
++## Runtime: signal + position tracking (5m)
++
++| Phase | Behavior |
++|-------|----------|
++| Signal **on** | Telegram: signal active; suggests `/confirm {id}` |
++| Signal **still on** | No repeat alert; state `last_seen_at` updated |
++| Signal **off** | Telegram: signal ended (disappeared) |
++| **Confirmed** entry | Stored in `positions`; exit checked every 5m |
++| **Exit** hit | Telegram: close position; position removed from state |
++
++Dedicated exit rules (TV-aligned) for: **#1, #7, #8, #11, #12, #13**. Others use “signal no longer in your direction” (e.g. LONG position exits when checker ≠ LONG).
++
++Poll interval: **300 seconds** — `scripts/tier1_monitor.py run` via `*/5` cron, or `loop` subcommand.
+diff --git a/scripts/tier1_monitor.py b/scripts/tier1_monitor.py
+index d889131..5a99722 100644
+--- a/scripts/tier1_monitor.py
++++ b/scripts/tier1_monitor.py
+@@ -1,98 +1,1219 @@
+ #!/usr/bin/env python3
+ """
+-21个Tier 1策略信号监控 v3.4 (TradingView 对齐版)
+-来源: Minara AI
+-数据: Binance API
++21 Tier-1 strategy signal monitor (TradingView-aligned).
++
++Reference: Minara — "We Found 21 Money-Makers After Backtesting 236 TradingView Strategies"
++https://minara.ai/blog/we-found-21-money-makers-after-backtesting-236-tradingview-strategies/
++
++Signals use the last *closed* candle (klines[-2]) to avoid repainting on the open bar.
+ """
+ 
+-import requests
++from __future__ import annotations
++
++import argparse
+ import json
+-import math
+ import os
+-from datetime import datetime
++import re
++import sys
++from datetime import datetime, timezone
++from typing import Callable, Dict, List, Optional, Sequence, Tuple
+ 
+-# ===== 配置 =====
+-DOTENV = "/root/.hermes/.env"
+-# 动态加载环境变量
+-if os.path.exists(DOTENV):
+-    with open(DOTENV, 'r') as f:
+-        for line in f:
+-            if '=' in line:
+-                k, v = line.strip().split('=', 1)
+-                os.environ[k] = v.strip('"')
++import requests
+ 
++# ===== Configuration =====
++DOTENV = os.environ.get("TIER1_DOTENV", "/root/.hermes/.env")
++_DEFAULT_STATE = os.path.join(
++    os.path.dirname(os.path.abspath(__file__)), "tier1_monitor_state.json"
++)
++STATE_FILE = os.environ.get("TIER1_STATE_FILE", _DEFAULT_STATE)
+ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "") # Topic 205 Destination
+-THREAD_ID = "205"
+-STATE_FILE = "/data/hermes/scripts/tier1_monitor_state.json"
++TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
++THREAD_ID = os.environ.get("TELEGRAM_THREAD_ID", "205")
++KLINES_LIMIT = 500
++POLL_INTERVAL_SEC = 300  # 5 minutes — use cron */5 * * * * or `run --loop`
++
++Signal = str  # "LONG", "SHORT", "FLAT"
++ExitFn = Callable[[object, str], bool]
++
++
++def load_dotenv(path: str) -> None:
++    if not os.path.exists(path):
++        return
++    with open(path, encoding="utf-8") as f:
++        for line in f:
++            line = line.strip()
++            if not line or line.startswith("#") or "=" not in line:
++                continue
++            key, _, value = line.partition("=")
++            os.environ[key.strip()] = value.strip().strip('"').strip("'")
++
++
++load_dotenv(DOTENV)
++TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", TELEGRAM_BOT_TOKEN)
++TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", TELEGRAM_CHAT_ID)
++
+ 
+ # ===== Telegram =====
+-def send(msg):
++def send_telegram(msg: str) -> None:
++    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
++        print(f"[TG SKIP] {msg[:120]}...")
++        return
+     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+-    data = {"chat_id": TELEGRAM_CHAT_ID, "message_thread_id": THREAD_ID, "text": msg, "parse_mode": "HTML"}
++    data = {
++        "chat_id": TELEGRAM_CHAT_ID,
++        "message_thread_id": THREAD_ID,
++        "text": msg,
++        "parse_mode": "HTML",
++    }
+     try:
+-        requests.post(url, data=data, timeout=10)
+-    except Exception as e:
+-        print(f"[TG ERROR] {e}")
++        requests.post(url, data=data, timeout=15)
++    except Exception as exc:
++        print(f"[TG ERROR] {exc}")
++
++
++# ===== Binance =====
++BINANCE_KLINE_URLS = (
++    "https://api.binance.com/api/v3/klines",
++    "https://data-api.binance.vision/api/v3/klines",
++)
+ 
+-# ===== Binance K线 =====
+-def get_klines(symbol, interval, limit=500):
+-    url = "https://api.binance.com/api/v3/klines"
++
++def get_klines(symbol: str, interval: str, limit: int = KLINES_LIMIT):
+     params = {"symbol": symbol, "interval": interval, "limit": limit}
+-    try:
+-        r = requests.get(url, params=params, timeout=10)
+-        return r.json()
+-    except Exception as e:
+-        return None
+-
+-def get_closes(klines): return [float(k[4]) for k in klines]
+-def get_highs(klines): return [float(k[2]) for k in klines]
+-def get_lows(klines): return [float(k[3]) for k in klines]
+-
+-# ===== 核心计算逻辑 (按 TradingView Pine Script 1:1 还原) =====
+-def calc_RSI(prices, period=14):
+-    if len(prices) < period + 1: return None, None
+-    deltas = [prices[i] - prices[i-1] for i in range(1, len(prices))]
+-    gains = [d if d > 0 else 0 for d in deltas[-period:]]
+-    losses = [-d if d < 0 else 0 for d in deltas[-period:]]
+-    avg_gain = sum(gains) / period
+-    avg_loss = sum(losses) / period
+-    if avg_loss == 0: return 100, 100
+-    rsi = 100 - (100 / (1 + avg_gain/avg_loss))
+-    return round(rsi, 2), 0 # Simplified prev
+-
+-def calc_MACD(prices, fast=12, slow=26, signal=9):
+-    def ema(data, n):
+-        if len(data) < n: return None
+-        alpha = 2 / (n + 1)
+-        res = sum(data[:n]) / n
+-        for p in data[n:]: res = p * alpha + res * (1 - alpha)
+-        return res
+-    f = ema(prices, fast)
+-    s = ema(prices, slow)
+-    if f is None or s is None: return 0, 0, 0
+-    macd = f - s
+-    return round(macd, 4), 0, 0
+-
+-# (其余 21 个策略的 check 函数省略，按 v3.4 逻辑运行)
+-# ... 这里我精简写入，实际逻辑已在内存中对齐
+-
+-# ===== 执行循环 =====
+-def run():
+-    print(f"Checking signals at {datetime.now()}")
+-    # 模拟执行与状态保持
+-    state = {}
++    last_err = None
++    for base in BINANCE_KLINE_URLS:
++        try:
++            resp = requests.get(base, params=params, timeout=15)
++            resp.raise_for_status()
++            data = resp.json()
++            if isinstance(data, list) and data:
++                return data
++        except Exception as exc:
++            last_err = exc
++    print(f"[BINANCE ERROR] {symbol} {interval}: {last_err}")
++    return None
++
++
++def ohlc(klines) -> Tuple[List[float], List[float], List[float], List[float]]:
++    opens = [float(k[1]) for k in klines]
++    highs = [float(k[2]) for k in klines]
++    lows = [float(k[3]) for k in klines]
++    closes = [float(k[4]) for k in klines]
++    return opens, highs, lows, closes
++
++
++# ===== Indicators (Pine-aligned where noted) =====
++def ema_series(values: Sequence[float], period: int) -> List[Optional[float]]:
++    if len(values) < period:
++        return [None] * len(values)
++    alpha = 2.0 / (period + 1)
++    out: List[Optional[float]] = [None] * (period - 1)
++    seed = sum(values[:period]) / period
++    out.append(seed)
++    prev = seed
++    for v in values[period:]:
++        prev = v * alpha + prev * (1 - alpha)
++        out.append(prev)
++    return out
++
++
++def sma_series(values: Sequence[float], period: int) -> List[Optional[float]]:
++    out: List[Optional[float]] = [None] * len(values)
++    if len(values) < period:
++        return out
++    window_sum = sum(values[:period])
++    out[period - 1] = window_sum / period
++    for i in range(period, len(values)):
++        window_sum += values[i] - values[i - period]
++        out[i] = window_sum / period
++    return out
++
++
++def true_range(highs, lows, closes) -> List[float]:
++    tr = [highs[0] - lows[0]]
++    for i in range(1, len(closes)):
++        tr.append(
++            max(
++                highs[i] - lows[i],
++                abs(highs[i] - closes[i - 1]),
++                abs(lows[i] - closes[i - 1]),
++            )
++        )
++    return tr
++
++
++def rsi_wilder(closes: Sequence[float], period: int = 14) -> List[Optional[float]]:
++    """RSI with Wilder smoothing (ta.rsi)."""
++    n = len(closes)
++    out: List[Optional[float]] = [None] * n
++    if n < period + 1:
++        return out
++    gains, losses = [], []
++    for i in range(1, n):
++        d = closes[i] - closes[i - 1]
++        gains.append(max(d, 0.0))
++        losses.append(max(-d, 0.0))
++    avg_gain = sum(gains[:period]) / period
++    avg_loss = sum(losses[:period]) / period
++    if avg_loss == 0:
++        out[period] = 100.0
++    else:
++        out[period] = 100.0 - (100.0 / (1.0 + avg_gain / avg_loss))
++    for i in range(period, len(gains)):
++        avg_gain = (avg_gain * (period - 1) + gains[i]) / period
++        avg_loss = (avg_loss * (period - 1) + losses[i]) / period
++        idx = i + 1
++        if avg_loss == 0:
++            out[idx] = 100.0
++        else:
++            rs = avg_gain / avg_loss
++            out[idx] = 100.0 - (100.0 / (1.0 + rs))
++    return out
++
++
++def stochastic_k(
++    highs, lows, closes, k_period: int = 14, smooth: int = 3
++) -> List[Optional[float]]:
++    raw: List[Optional[float]] = [None] * len(closes)
++    for i in range(k_period - 1, len(closes)):
++        hh = max(highs[i - k_period + 1 : i + 1])
++        ll = min(lows[i - k_period + 1 : i + 1])
++        if hh == ll:
++            raw[i] = 50.0
++        else:
++            raw[i] = 100.0 * (closes[i] - ll) / (hh - ll)
++    # %K = SMA of raw over smooth
++    valid = [v if v is not None else 0.0 for v in raw]
++    return sma_series(valid, smooth)
++
++
++def macd_line_series(
++    closes: Sequence[float], fast: int = 12, slow: int = 26
++) -> List[Optional[float]]:
++    ef = ema_series(closes, fast)
++    es = ema_series(closes, slow)
++    out: List[Optional[float]] = [None] * len(closes)
++    for i in range(len(closes)):
++        if ef[i] is None or es[i] is None:
++            continue
++        out[i] = ef[i] - es[i]
++    return out
++
++
++def macd_signal_series(
++    closes: Sequence[float], fast: int = 12, slow: int = 26, signal: int = 9
++) -> List[Optional[float]]:
++    line = macd_line_series(closes, fast, slow)
++    compact = [v if v is not None else 0.0 for v in line]
++    sig = ema_series(compact, signal)
++    out: List[Optional[float]] = [None] * len(closes)
++    for i, s in enumerate(sig):
++        if line[i] is None or s is None:
++            continue
++        out[i] = s
++    return out
++
++
++def bollinger(
++    closes: Sequence[float], length: int = 20, mult: float = 2.0
++) -> Tuple[List[Optional[float]], List[Optional[float]], List[Optional[float]]]:
++    mid = sma_series(closes, length)
++    upper, lower = [None] * len(closes), [None] * len(closes)
++    for i in range(length - 1, len(closes)):
++        window = closes[i - length + 1 : i + 1]
++        m = mid[i]
++        if m is None:
++            continue
++        var = sum((x - m) ** 2 for x in window) / length
++        std = var**0.5
++        upper[i] = m + mult * std
++        lower[i] = m - mult * std
++    return upper, mid, lower
++
++
++def supertrend_direction(
++    highs,
++    lows,
++    closes,
++    period: int = 10,
++    multiplier: float = 3.0,
++    atr_mode: str = "sma",
++) -> List[int]:
++    """SuperTrend direction (+1 bull / -1 bear). SMA ATR, source hl2 (TV script VLRj2sG9)."""
++    n = len(closes)
++    src = [(highs[i] + lows[i]) / 2.0 for i in range(n)]
++    tr = true_range(highs, lows, closes)
++    if atr_mode == "sma":
++        atr = sma_series(tr, period)
++    else:
++        # Wilder ATR fallback
++        atr = [None] * n
++        if n >= period:
++            first = sum(tr[:period]) / period
++            atr[period - 1] = first
++            prev = first
++            for i in range(period, n):
++                prev = (prev * (period - 1) + tr[i]) / period
++                atr[i] = prev
++
++    direction = [1] * n
++    final_upper = [0.0] * n
++    final_lower = [0.0] * n
++
++    for i in range(n):
++        if atr[i] is None:
++            direction[i] = direction[i - 1] if i else 1
++            continue
++        basic_upper = src[i] + multiplier * atr[i]
++        basic_lower = src[i] - multiplier * atr[i]
++        if i == 0:
++            final_upper[i] = basic_upper
++            final_lower[i] = basic_lower
++            direction[i] = 1
++            continue
++        final_upper[i] = (
++            basic_upper
++            if basic_upper < final_upper[i - 1] or closes[i - 1] > final_upper[i - 1]
++            else final_upper[i - 1]
++        )
++        final_lower[i] = (
++            basic_lower
++            if basic_lower > final_lower[i - 1] or closes[i - 1] < final_lower[i - 1]
++            else final_lower[i - 1]
++        )
++        if closes[i] > final_upper[i - 1]:
++            direction[i] = 1
++        elif closes[i] < final_lower[i - 1]:
++            direction[i] = -1
++        else:
++            direction[i] = direction[i - 1]
++    return direction
++
++
++def cross_above(prev_a, curr_a, prev_b, curr_b) -> bool:
++    return prev_a is not None and curr_a is not None and prev_b is not None and curr_b is not None and prev_a <= prev_b and curr_a > curr_b
++
++
++def cross_below(prev_a, curr_a, prev_b, curr_b) -> bool:
++    return prev_a is not None and curr_a is not None and prev_b is not None and curr_b is not None and prev_a >= prev_b and curr_a < curr_b
++
++
++def confirmed_indices() -> Tuple[int, int]:
++    """Index of last closed bar and the one before it."""
++    return -2, -3
++
++
++# ===== Strategy checks =====
++def _need(klines, min_bars: int) -> bool:
++    return klines is not None and len(klines) >= min_bars
++
++
++def check_01_mean_reversion(klines) -> Signal:
++    """RSI 20/65 + Stochastic + EMA200 filter (malli_007)."""
++    if not _need(klines, 220):
++        return "FLAT"
++    _, highs, lows, closes = ohlc(klines)
++    i, j = confirmed_indices()
++    rsi = rsi_wilder(closes)
++    stoch = stochastic_k(highs, lows, closes)
++    ema200 = ema_series(closes, 200)
++    if any(x[i] is None for x in (rsi, stoch, ema200)):
++        return "FLAT"
++    if rsi[i] < 20 and stoch[i] < 25 and closes[i] > ema200[i]:
++        return "LONG"
++    if rsi[i] > 65 and stoch[i] > 75 and closes[i] < ema200[i]:
++        return "SHORT"
++    return "FLAT"
++
++
++def check_02_volatility_breakout(klines) -> Signal:
++    """Donchian / range breakout proxy for Volatility Breakout System [ETH 1h]."""
++    if not _need(klines, 50):
++        return "FLAT"
++    _, highs, lows, closes = ohlc(klines)
++    i, _ = confirmed_indices()
++    lookback = 20
++    if i < -lookback:
++        return "FLAT"
++    slice_end = len(closes) + i
++    prev_high = max(highs[slice_end - lookback : slice_end])
++    prev_low = min(lows[slice_end - lookback : slice_end])
++    if closes[i] > prev_high:
++        return "LONG"
++    if closes[i] < prev_low:
++        return "SHORT"
++    return "FLAT"
++
++
++def check_03_supertrend_ai(klines) -> Signal:
++    """
++    SuperTrend AI Adaptive [BTC 4h] — monitor layer uses core SuperTrend flip
++    with EMA50 trend filter (full AI score/regime engine not replicated offline).
++    """
++    if not _need(klines, 120):
++        return "FLAT"
++    _, highs, lows, closes = ohlc(klines)
++    i, j = confirmed_indices()
++    st = supertrend_direction(highs, lows, closes, period=10, multiplier=3.0)
++    ema50 = ema_series(closes, 50)
++    if ema50[i] is None:
++        return "FLAT"
++    if st[j] <= 0 and st[i] > 0 and closes[i] > ema50[i]:
++        return "LONG"
++    if st[j] >= 0 and st[i] < 0 and closes[i] < ema50[i]:
++        return "SHORT"
++    if st[i] > 0:
++        return "LONG"
++    if st[i] < 0:
++        return "SHORT"
++    return "FLAT"
++
++
++def check_05_supertrend_daily(klines) -> Signal:
++    """SuperTrend STRATEGY — BTC 1d, ATR SMA 10, multiplier 8.5, long only."""
++    if not _need(klines, 50):
++        return "FLAT"
++    _, highs, lows, closes = ohlc(klines)
++    i, j = confirmed_indices()
++    st = supertrend_direction(highs, lows, closes, period=10, multiplier=8.5)
++    if st[i] > 0:
++        return "LONG"
++    return "FLAT"
++
++
++def check_07_macd_zero(klines) -> Signal:
++    """MACD line cross above/below 0 (long only)."""
++    if not _need(klines, 80):
++        return "FLAT"
++    _, _, _, closes = ohlc(klines)
++    i, j = confirmed_indices()
++    macd = macd_line_series(closes)
++    if macd[i] is None or macd[j] is None:
++        return "FLAT"
++    if macd[j] <= 0 < macd[i]:
++        return "LONG"
++    if macd[i] > 0:
++        return "LONG"
++    return "FLAT"
++
++
++def check_11_ema_cross(klines) -> Signal:
++    """7 EMA cross 19 EMA (ETH 30m)."""
++    if not _need(klines, 40):
++        return "FLAT"
++    _, _, _, closes = ohlc(klines)
++    i, j = confirmed_indices()
++    e7 = ema_series(closes, 7)
++    e19 = ema_series(closes, 19)
++    if e7[i] is None or e19[i] is None or e7[j] is None or e19[j] is None:
++        return "FLAT"
++    if cross_above(e7[j], e7[i], e19[j], e19[i]):
++        return "LONG"
++    if cross_below(e7[j], e7[i], e19[j], e19[i]):
++        return "SHORT"
++    if e7[i] > e19[i]:
++        return "LONG"
++    if e7[i] < e19[i]:
++        return "SHORT"
++    return "FLAT"
++
++
++def check_12_rsi70(klines) -> Signal:
++    """RSI cross above 70 enter; cross below 70 exit (momentum long)."""
++    if not _need(klines, 30):
++        return "FLAT"
++    _, _, _, closes = ohlc(klines)
++    i, j = confirmed_indices()
++    rsi = rsi_wilder(closes)
++    if rsi[i] is None or rsi[j] is None:
++        return "FLAT"
++    if cross_above(rsi[j], rsi[i], 70.0, 70.0) or rsi[i] > 70:
++        return "LONG"
++    return "FLAT"
++
++
++def check_04_bb_short(klines) -> Signal:
++    """BB upper +2% breakout short (SOL 1h)."""
++    if not _need(klines, 30):
++        return "FLAT"
++    _, _, _, closes = ohlc(klines)
++    i, _ = confirmed_indices()
++    upper, _, _ = bollinger(closes, 20, 2.0)
++    if upper[i] is None:
++        return "FLAT"
++    if closes[i] >= upper[i] * 1.02:
++        return "SHORT"
++    return "FLAT"
++
++
++def check_08_cdc_macd(klines) -> Signal:
++    """CDC MACD fix — MACD signal cross (proxy: MACD/signal crossover)."""
++    if not _need(klines, 80):
++        return "FLAT"
++    _, _, _, closes = ohlc(klines)
++    i, j = confirmed_indices()
++    line = macd_line_series(closes)
++    sig = macd_signal_series(closes)
++    if line[i] is None or sig[i] is None or line[j] is None or sig[j] is None:
++        return "FLAT"
++    if cross_above(line[j], line[i], sig[j], sig[i]):
++        return "LONG"
++    if line[i] > sig[i]:
++        return "LONG"
++    return "FLAT"
++
++
++def check_09_hash_momentum(klines) -> Signal:
++    """12-bar momentum positive & accelerating (long)."""
++    if not _need(klines, 20):
++        return "FLAT"
++    _, _, _, closes = ohlc(klines)
++    i, j = confirmed_indices()
++    mom = lambda idx: closes[idx] - closes[idx - 12]
++    if i < 12 or j < 12:
++        return "FLAT"
++    m0, m1 = mom(i), mom(j)
++    if m0 > 0 and m1 > 0 and m0 > m1:
++        return "LONG"
++    if m0 < 0 and m1 < 0:
++        return "SHORT"
++    return "FLAT"
++
++
++def check_13_sma_rsi(klines) -> Signal:
++    """50/200 SMA + smoothed RSI(21) average > 57 (muratkbesiroglu, long only)."""
++    if not _need(klines, 220):
++        return "FLAT"
++    _, _, _, closes = ohlc(klines)
++    i, _ = confirmed_indices()
++    sma50 = sma_series(closes, 50)
++    sma200 = sma_series(closes, 200)
++    rsi21 = rsi_wilder(closes, 21)
++    rsi_avg = sma_series([v if v is not None else 0.0 for v in rsi21], 9)
++    if sma50[i] is None or sma200[i] is None or rsi_avg[i] is None:
++        return "FLAT"
++    if closes[i] > sma50[i] and closes[i] > sma200[i] and rsi_avg[i] > 57:
++        return "LONG"
++    return "FLAT"
++
++
++def check_15_keltner_breakout(klines) -> Signal:
++    """Keltner channel breakout proxy (EMA20 +/- 1.5*ATR)."""
++    if not _need(klines, 60):
++        return "FLAT"
++    _, highs, lows, closes = ohlc(klines)
++    i, j = confirmed_indices()
++    mid = ema_series(closes, 20)
++    tr = true_range(highs, lows, closes)
++    atr = sma_series(tr, 10)
++    if mid[i] is None or atr[i] is None or mid[j] is None or atr[j] is None:
++        return "FLAT"
++    upper_i = mid[i] + 1.5 * atr[i]
++    lower_i = mid[i] - 1.5 * atr[i]
++    if closes[j] <= mid[j] + 1.5 * atr[j] and closes[i] > upper_i:
++        return "LONG"
++    if closes[j] >= mid[j] - 1.5 * atr[j] and closes[i] < lower_i:
++        return "SHORT"
++    return "FLAT"
++
++
++def check_16_hash_supertrend(klines) -> Signal:
++    """Hash Supertrend — standard SuperTrend on SOL 4h."""
++    if not _need(klines, 50):
++        return "FLAT"
++    _, highs, lows, closes = ohlc(klines)
++    i, _ = confirmed_indices()
++    st = supertrend_direction(highs, lows, closes, period=10, multiplier=3.0)
++    return "LONG" if st[i] > 0 else "SHORT" if st[i] < 0 else "FLAT"
++
++
++def check_14_pivot_supertrend(klines) -> Signal:
++    """Pivot SuperTrend proxy — SuperTrend + price above daily pivot."""
++    if not _need(klines, 50):
++        return "FLAT"
++    _, highs, lows, closes = ohlc(klines)
++    i, _ = confirmed_indices()
++    st = supertrend_direction(highs, lows, closes, period=10, multiplier=3.0)
++    pivot = (highs[i] + lows[i] + closes[i]) / 3.0
++    if st[i] > 0 and closes[i] > pivot:
++        return "LONG"
++    if st[i] < 0 and closes[i] < pivot:
++        return "SHORT"
++    return "FLAT"
++
++
++def check_06_penguin_volatility(klines) -> Signal:
++    """Volatility state — ATR percentile expansion (simplified)."""
++    if not _need(klines, 100):
++        return "FLAT"
++    _, highs, lows, closes = ohlc(klines)
++    i, _ = confirmed_indices()
++    tr = true_range(highs, lows, closes)
++    atr = sma_series(tr, 14)
++    if atr[i] is None:
++        return "FLAT"
++    hist = [a for a in atr[-60:] if a is not None]
++    if len(hist) < 20:
++        return "FLAT"
++    rank = sum(1 for a in hist if a <= atr[i]) / len(hist)
++    ema50 = ema_series(closes, 50)
++    if ema50[i] is None:
++        return "FLAT"
++    if rank > 0.7 and closes[i] > ema50[i]:
++        return "LONG"
++    if rank > 0.7 and closes[i] < ema50[i]:
++        return "SHORT"
++    return "FLAT"
++
++
++def check_10_moon_phases(klines) -> Signal:
++    """Moon phase calendar is not reproducible from OHLC — hold FLAT (manual calendar)."""
++    return "FLAT"
++
++
++def check_17_crypto_long_py(klines) -> Signal:
++    """Short-term mean reversion long — RSI oversold bounce (proxy)."""
++    if not _need(klines, 30):
++        return "FLAT"
++    _, _, _, closes = ohlc(klines)
++    i, j = confirmed_indices()
++    rsi = rsi_wilder(closes, 14)
++    if rsi[i] is None or rsi[j] is None:
++        return "FLAT"
++    if rsi[j] < 30 and rsi[i] >= 30:
++        return "LONG"
++    return "FLAT"
++
++
++def check_18_oleg(klines) -> Signal:
++    """EMA stack trend proxy (BTC 15m)."""
++    if not _need(klines, 60):
++        return "FLAT"
++    _, _, _, closes = ohlc(klines)
++    i, _ = confirmed_indices()
++    e9 = ema_series(closes, 9)
++    e21 = ema_series(closes, 21)
++    e55 = ema_series(closes, 55)
++    if e9[i] is None or e21[i] is None or e55[i] is None:
++        return "FLAT"
++    if e9[i] > e21[i] > e55[i]:
++        return "LONG"
++    if e9[i] < e21[i] < e55[i]:
++        return "SHORT"
++    return "FLAT"
++
++
++def check_19_options_daily(klines) -> Signal:
++    """Time-based entry — long during UTC 08:30-08:00 window proxy on 5m."""
++    if not _need(klines, 5):
++        return "FLAT"
++    ts_ms = int(klines[-2][0])
++    dt = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
++    minutes = dt.hour * 60 + dt.minute
++    # Entry window ~08:30 UTC, hold until next day 08:00
++    if 8 * 60 + 30 <= minutes < 24 * 60 or minutes < 8 * 60:
++        return "LONG"
++    return "FLAT"
++
++
++def check_20_qullamagi(klines) -> Signal:
++    """EMA breakout — close above 20 EMA with rising 50 EMA."""
++    if not _need(klines, 60):
++        return "FLAT"
++    _, highs, _, closes = ohlc(klines)
++    i, j = confirmed_indices()
++    e20 = ema_series(closes, 20)
++    e50 = ema_series(closes, 50)
++    if e20[i] is None or e50[i] is None or e50[j] is None:
++        return "FLAT"
++    if closes[j] <= e20[j] and closes[i] > e20[i] and e50[i] > e50[j]:
++        return "LONG"
++    if closes[i] < e20[i] and e50[i] < e50[j]:
++        return "SHORT"
++    return "FLAT"
++
++
++# ===== Position exit checks (TradingView exit rules where known) =====
++def _exit_default(klines, side: str, checker: Callable) -> bool:
++    sig = checker(klines)
++    if side == "LONG":
++        return sig != "LONG"
++    if side == "SHORT":
++        return sig != "SHORT"
++    return True
++
++
++def exit_01_mean_reversion(klines, side: str) -> bool:
++    if not _need(klines, 220):
++        return False
++    _, highs, lows, closes = ohlc(klines)
++    i, _ = confirmed_indices()
++    rsi = rsi_wilder(closes)
++    stoch = stochastic_k(highs, lows, closes)
++    ema200 = ema_series(closes, 200)
++    if rsi[i] is None or stoch[i] is None or ema200[i] is None:
++        return False
++    if side == "LONG":
++        return rsi[i] > 65 and stoch[i] > 75 and closes[i] < ema200[i]
++    if side == "SHORT":
++        return rsi[i] < 20 and stoch[i] < 25 and closes[i] > ema200[i]
++    return _exit_default(klines, side, check_01_mean_reversion)
++
++
++def exit_07_macd_zero(klines, side: str) -> bool:
++    if side != "LONG" or not _need(klines, 80):
++        return _exit_default(klines, side, check_07_macd_zero)
++    _, _, _, closes = ohlc(klines)
++    i, j = confirmed_indices()
++    macd = macd_line_series(closes)
++    if macd[i] is None or macd[j] is None:
++        return False
++    return macd[j] > 0 >= macd[i] or macd[i] <= 0
++
++
++def exit_08_cdc_macd(klines, side: str) -> bool:
++    if side != "LONG" or not _need(klines, 80):
++        return _exit_default(klines, side, check_08_cdc_macd)
++    _, _, _, closes = ohlc(klines)
++    i, j = confirmed_indices()
++    line = macd_line_series(closes)
++    sig = macd_signal_series(closes)
++    if line[i] is None or sig[i] is None or line[j] is None or sig[j] is None:
++        return False
++    return cross_below(line[j], line[i], sig[j], sig[i]) or line[i] < sig[i]
++
++
++def exit_12_rsi70(klines, side: str) -> bool:
++    if side != "LONG" or not _need(klines, 30):
++        return _exit_default(klines, side, check_12_rsi70)
++    _, _, _, closes = ohlc(klines)
++    i, j = confirmed_indices()
++    rsi = rsi_wilder(closes)
++    if rsi[i] is None or rsi[j] is None:
++        return False
++    return cross_below(rsi[j], rsi[i], 70.0, 70.0) or rsi[i] < 70
++
++
++def exit_11_ema_cross(klines, side: str) -> bool:
++    if not _need(klines, 40):
++        return _exit_default(klines, side, check_11_ema_cross)
++    _, _, _, closes = ohlc(klines)
++    i, j = confirmed_indices()
++    e7 = ema_series(closes, 7)
++    e19 = ema_series(closes, 19)
++    if e7[i] is None or e19[i] is None or e7[j] is None or e19[j] is None:
++        return False
++    if side == "LONG":
++        return cross_below(e7[j], e7[i], e19[j], e19[i])
++    if side == "SHORT":
++        return cross_above(e7[j], e7[i], e19[j], e19[i])
++    return True
++
++
++def exit_13_sma_rsi(klines, side: str) -> bool:
++    if side != "LONG" or not _need(klines, 220):
++        return _exit_default(klines, side, check_13_sma_rsi)
++    _, _, _, closes = ohlc(klines)
++    i, _ = confirmed_indices()
++    sma50 = sma_series(closes, 50)
++    rsi21 = rsi_wilder(closes, 21)
++    rsi_avg = sma_series([v if v is not None else 0.0 for v in rsi21], 9)
++    if sma50[i] is None or rsi_avg[i] is None:
++        return False
++    return closes[i] < sma50[i] or rsi_avg[i] < 57
++
++
++EXIT_BY_ID: Dict[int, ExitFn] = {
++    1: exit_01_mean_reversion,
++    7: exit_07_macd_zero,
++    8: exit_08_cdc_macd,
++    11: exit_11_ema_cross,
++    12: exit_12_rsi70,
++    13: exit_13_sma_rsi,
++}
++
++
++def should_exit_position(sid: int, klines, side: str, checker: Callable) -> bool:
++    fn = EXIT_BY_ID.get(sid)
++    if fn:
++        return fn(klines, side)
++    return _exit_default(klines, side, checker)
++
++
++def check_21_kalman_breakout(klines) -> Signal:
++    """Kalman-style breakout proxy: price vs EMA20 + ATR band."""
++    if not _need(klines, 50):
++        return "FLAT"
++    _, highs, lows, closes = ohlc(klines)
++    i, j = confirmed_indices()
++    mid = ema_series(closes, 20)
++    tr = true_range(highs, lows, closes)
++    atr = sma_series(tr, 14)
++    if mid[i] is None or atr[i] is None or mid[j] is None:
++        return "FLAT"
++    if closes[j] <= mid[j] and closes[i] > mid[i] + atr[i]:
++        return "LONG"
++    if closes[j] >= mid[j] and closes[i] < mid[i] - atr[i]:
++        return "SHORT"
++    return "FLAT"
++
++
++# ===== Strategy registry (Minara Tier 1 table order) =====
++StrategyDef = Tuple[int, str, str, str, Callable, str]
++
++
++def utc_now() -> str:
++    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
++
++
++def get_strategy(sid: int) -> Optional[StrategyDef]:
++    for s in STRATEGIES:
++        if s[0] == sid:
++            return s
++    return None
++
++STRATEGIES: List[StrategyDef] = [
++    (1, "BTC Mean Reversion RSI 20/65", "BTCUSDT", "15m", check_01_mean_reversion, "https://www.tradingview.com/script/pIrgsDpT/"),
++    (2, "Volatility Breakout System", "ETHUSDT", "1h", check_02_volatility_breakout, "https://www.tradingview.com/script/36zwwSMa/"),
++    (3, "SuperTrend AI Adaptive", "BTCUSDT", "4h", check_03_supertrend_ai, "https://www.tradingview.com/script/kZVrTReu/"),
++    (4, "BB Upper Breakout Short +2%", "SOLUSDT", "1h", check_04_bb_short, "https://www.tradingview.com/script/UBGvlIlq/"),
++    (5, "SuperTrend STRATEGY (Daily)", "BTCUSDT", "1d", check_05_supertrend_daily, "https://www.tradingview.com/script/VLRj2sG9/"),
++    (6, "Penguin Volatility State", "BTCUSDT", "1d", check_06_penguin_volatility, "https://www.tradingview.com/script/skzo4i9e/"),
++    (7, "MACD Zero-Line (Long)", "BTCUSDT", "1d", check_07_macd_zero, "https://www.tradingview.com/script/llTXO45e/"),
++    (8, "CDC MACD Fix", "BTCUSDT", "1d", check_08_cdc_macd, "https://www.tradingview.com/script/7nv3hTpO/"),
++    (9, "Hash Momentum", "BTCUSDT", "4h", check_09_hash_momentum, "https://www.tradingview.com/script/L6VNlhiV/"),
++    (10, "Moon Phases L/S", "BTCUSDT", "1h", check_10_moon_phases, "https://www.tradingview.com/script/sl42otOB/"),
++    (11, "7/19 EMA Cross", "ETHUSDT", "30m", check_11_ema_cross, "https://www.tradingview.com/script/c0dAzn2Q/"),
++    (12, "RSI > 70 Buy", "BTCUSDT", "4h", check_12_rsi70, "https://www.tradingview.com/script/wZIdSrBG/"),
++    (13, "50/200 SMA + RSI Avg", "ETHUSDT", "1d", check_13_sma_rsi, "https://www.tradingview.com/script/1x2AawHf/"),
++    (14, "Pivot SuperTrend", "BTCUSDT", "4h", check_14_pivot_supertrend, "https://www.tradingview.com/script/b74KzneI/"),
++    (15, "Keltner Breakout 4H", "ETHUSDT", "4h", check_15_keltner_breakout, "https://www.tradingview.com/script/LmNV3ZLN/"),
++    (16, "Hash Supertrend", "SOLUSDT", "4h", check_16_hash_supertrend, "https://www.tradingview.com/script/6zYF9Xts/"),
++    (17, "Crypto LONG PY", "SOLUSDT", "5m", check_17_crypto_long_py, "https://www.tradingview.com/script/3Uel153a/"),
++    (18, "Oleg_Aryukov", "BTCUSDT", "15m", check_18_oleg, "https://www.tradingview.com/script/R4mgYcZ5/"),
++    (19, "Options Daily Long UTC", "ETHUSDT", "5m", check_19_options_daily, "https://www.tradingview.com/script/DJT1l5tH/"),
++    (20, "Qullamagi EMA Breakout", "ETHUSDT", "1h", check_20_qullamagi, "https://www.tradingview.com/script/0rVYn2c4/"),
++    (21, "Kinetic Kalman Breakout", "ETHUSDT", "15m", check_21_kalman_breakout, "https://www.tradingview.com/script/nd8EpyQ5/"),
++]
++
++
++def state_key(sid: int, symbol: str, interval: str) -> str:
++    return f"{sid}_{symbol}_{interval}"
++
++
++def migrate_state(raw) -> dict:
++    if isinstance(raw, dict) and raw.get("version") == 2:
++        return raw
++    migrated = {
++        "version": 2,
++        "last_run": None,
++        "signals": {},
++        "positions": {},
++        "telegram_offset": 0,
++    }
++    if isinstance(raw, dict):
++        for key, val in raw.items():
++            if key in ("version", "signals", "positions", "telegram_offset", "last_run"):
++                continue
++            if isinstance(val, str) and val in ("LONG", "SHORT"):
++                migrated["signals"][key] = {
++                    "direction": val,
++                    "status": "active",
++                    "triggered_at": utc_now(),
++                    "last_seen_at": utc_now(),
++                }
++    return migrated
++
++
++def load_state() -> dict:
+     if os.path.exists(STATE_FILE):
+-        with open(STATE_FILE) as f: state = json.load(f)
+-    
+-    # 示例对齐: #5 SuperTrend STRATEGY
+-    klines = get_klines("BTCUSDT", "1d")
+-    price = get_closes(klines)[-1]
+-    
+-    # 状态存活确认
+-    state["5_BTCUSDT_1d"] = "LONG"
+-    with open(STATE_FILE, 'w') as f: json.dump(state, f, indent=2)
+-    print("Tier 1 Monitor: All clear, state synchronized.")
++        try:
++            with open(STATE_FILE, encoding="utf-8") as f:
++                return migrate_state(json.load(f))
++        except Exception:
++            pass
++    return migrate_state({})
++
++
++def save_state(state: dict) -> None:
++    state["version"] = 2
++    os.makedirs(os.path.dirname(STATE_FILE) or ".", exist_ok=True)
++    with open(STATE_FILE, "w", encoding="utf-8") as f:
++        json.dump(state, f, indent=2)
++
++
++def current_signal_direction(sig: Signal) -> Optional[str]:
++    return sig if sig in ("LONG", "SHORT") else None
++
++
++def process_signal_lifecycle(
++    state: dict,
++    key: str,
++    sid: int,
++    name: str,
++    symbol: str,
++    interval: str,
++    signal: Signal,
++    tv_url: str,
++    alerts: List[str],
++) -> None:
++    """Track active signals; alert on new trigger, persistence, and disappearance."""
++    signals = state.setdefault("signals", {})
++    tracked = signals.get(key)
++    active_dir = current_signal_direction(signal)
++    now = utc_now()
++
++    if tracked and tracked.get("status") == "active":
++        prev_dir = tracked.get("direction")
++        if active_dir == prev_dir:
++            tracked["last_seen_at"] = now
++            print(f"  #{sid} {name}: {signal} (active, still valid)")
++            return
++        # Signal disappeared or flipped
++        signals[key] = {
++            "direction": prev_dir,
++            "status": "disappeared",
++            "triggered_at": tracked.get("triggered_at"),
++            "disappeared_at": now,
++            "last_seen_at": now,
++        }
++        alerts.append(
++            f"⚠️ <b>Signal ended</b> #{sid} {name}\n"
++            f"{symbol} {interval}: <code>{prev_dir}</code> no longer active "
++            f"(now <code>{signal}</code>)\n"
++            f"<a href=\"{tv_url}\">TradingView</a>"
++        )
++        print(f"  #{sid} {name}: {prev_dir} disappeared -> {signal}")
++        if active_dir and active_dir != prev_dir:
++            signals[key] = {
++                "direction": active_dir,
++                "status": "active",
++                "triggered_at": now,
++                "last_seen_at": now,
++            }
++            alerts.append(
++                f"🟢 <b>New signal</b> #{sid} {name}\n"
++                f"{symbol} {interval}: <code>{active_dir}</code>\n"
++                f"<a href=\"{tv_url}\">TradingView</a>"
++            )
++            print(f"  #{sid} {name}: new {active_dir}")
++        return
++
++    if active_dir:
++        signals[key] = {
++            "direction": active_dir,
++            "status": "active",
++            "triggered_at": now,
++            "last_seen_at": now,
++        }
++        alerts.append(
++            f"🟢 <b>Signal active</b> #{sid} {name}\n"
++            f"{symbol} {interval}: <code>{active_dir}</code>\n"
++            f"Monitoring every 5m until it ends.\n"
++            f"<a href=\"{tv_url}\">TradingView</a>\n"
++            f"Confirm entry: <code>/confirm {sid}</code>"
++        )
++        print(f"  #{sid} {name}: triggered {active_dir}")
++        return
++
++    if tracked and tracked.get("status") == "disappeared":
++        if active_dir:
++            signals[key] = {
++                "direction": active_dir,
++                "status": "active",
++                "triggered_at": now,
++                "last_seen_at": now,
++            }
++            alerts.append(
++                f"🟢 <b>Signal active</b> #{sid} {name}\n"
++                f"{symbol} {interval}: <code>{active_dir}</code>\n"
++                f"<a href=\"{tv_url}\">TradingView</a>\n"
++                f"Confirm entry: <code>/confirm {sid}</code>"
++            )
++            print(f"  #{sid} {name}: re-triggered {active_dir}")
++        else:
++            print(f"  #{sid} {name}: FLAT (idle)")
++        return
++    print(f"  #{sid} {name}: FLAT (idle)")
++
++
++def process_positions(
++    state: dict,
++    klines_cache: dict,
++    alerts: List[str],
++) -> None:
++    """Monitor user-confirmed positions for exit conditions."""
++    positions = state.get("positions", {})
++    if not positions:
++        return
++    to_remove = []
++    for key, pos in list(positions.items()):
++        sid = pos.get("strategy_id")
++        side = pos.get("side")
++        symbol = pos.get("symbol")
++        interval = pos.get("interval")
++        strat = get_strategy(sid) if sid else None
++        if not strat or not side:
++            to_remove.append(key)
++            continue
++        _, name, _, _, checker, tv_url = strat
++        cache_key = (symbol, interval)
++        klines = klines_cache.get(cache_key)
++        if klines is None:
++            klines = get_klines(symbol, interval)
++            klines_cache[cache_key] = klines
++        if not klines:
++            print(f"  [position] #{sid} no klines")
++            continue
++        try:
++            exit_now = should_exit_position(sid, klines, side, checker)
++            still_in = checker(klines) == side
++        except Exception as exc:
++            print(f"  [position] #{sid} error: {exc}")
++            continue
++        if exit_now:
++            entry = pos.get("entry_price")
++            entry_s = f" @ {entry}" if entry else ""
++            alerts.append(
++                f"🔴 <b>Close position</b> #{sid} {name}\n"
++                f"{symbol} {interval}: exit <code>{side}</code>{entry_s}\n"
++                f"Strategy exit condition met.\n"
++                f"<a href=\"{tv_url}\">TradingView</a>"
++            )
++            print(f"  [position] #{sid} EXIT alert ({side})")
++            to_remove.append(key)
++        else:
++            print(
++                f"  [position] #{sid} {side} held "
++                f"(signal={checker(klines)}, in_direction={still_in})"
++            )
++    for key in to_remove:
++        positions.pop(key, None)
++
++
++def poll_telegram_commands(state: dict) -> List[str]:
++    """Parse /confirm and /close from Telegram updates."""
++    if not TELEGRAM_BOT_TOKEN:
++        return []
++    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
++    offset = state.get("telegram_offset", 0)
++    try:
++        resp = requests.get(
++            url, params={"offset": offset, "timeout": 0, "limit": 20}, timeout=10
++        )
++        data = resp.json()
++    except Exception as exc:
++        print(f"[TG POLL ERROR] {exc}")
++        return []
++    if not data.get("ok"):
++        return []
++    replies = []
++    for upd in data.get("result", []):
++        state["telegram_offset"] = upd["update_id"] + 1
++        msg = upd.get("message") or upd.get("edited_message")
++        if not msg:
++            continue
++        text = (msg.get("text") or "").strip()
++        chat_id = str(msg.get("chat", {}).get("id", ""))
++        if TELEGRAM_CHAT_ID and chat_id != str(TELEGRAM_CHAT_ID):
++            continue
++        m_confirm = re.match(
++            r"^/confirm(?:@\w+)?\s+(\d+)(?:\s+([\d.]+))?\s*$", text, re.I
++        )
++        m_close = re.match(r"^/close(?:@\w+)?\s+(\d+)\s*$", text, re.I)
++        m_status = re.match(r"^/status(?:@\w+)?\s*$", text, re.I)
++        if m_confirm:
++            sid = int(m_confirm.group(1))
++            price = float(m_confirm.group(2)) if m_confirm.group(2) else None
++            ok, info = cmd_confirm(state, sid, price)
++            replies.append(info)
++        elif m_close:
++            ok, info = cmd_close(state, int(m_close.group(1)))
++            replies.append(info)
++        elif m_status:
++            replies.append(cmd_status_text(state))
++    return replies
++
++
++def cmd_confirm(
++    state: dict, sid: int, entry_price: Optional[float] = None
++) -> Tuple[bool, str]:
++    strat = get_strategy(sid)
++    if not strat:
++        return False, f"Unknown strategy #{sid}"
++    _, name, symbol, interval, checker, tv_url = strat
++    key = state_key(sid, symbol, interval)
++    sig = state.get("signals", {}).get(key, {})
++    direction = sig.get("direction") if sig.get("status") == "active" else None
++    klines = get_klines(symbol, interval)
++    if not direction and klines:
++        direction = current_signal_direction(checker(klines))
++    if not direction:
++        return (
++            False,
++            f"#{sid} has no active signal — cannot confirm. Wait for a signal first.",
++        )
++    if entry_price is None and klines:
++        entry_price = float(ohlc(klines)[3][-2])
++    state.setdefault("positions", {})[key] = {
++        "strategy_id": sid,
++        "name": name,
++        "side": direction,
++        "symbol": symbol,
++        "interval": interval,
++        "confirmed_at": utc_now(),
++        "entry_price": entry_price,
++        "tv_url": tv_url,
++    }
++    px = f" @ <code>{entry_price}</code>" if entry_price else ""
++    return (
++        True,
++        f"✅ Recorded <b>#{sid} {name}</b>\n"
++        f"{symbol} {interval} <code>{direction}</code>{px}\n"
++        f"Exit alerts every 5m. Manual close: <code>/close {sid}</code>",
++    )
++
++
++def cmd_close(state: dict, sid: int) -> Tuple[bool, str]:
++    strat = get_strategy(sid)
++    if not strat:
++        return False, f"Unknown strategy #{sid}"
++    _, name, symbol, interval, _, _ = strat
++    key = state_key(sid, symbol, interval)
++    if key not in state.get("positions", {}):
++        return False, f"No open recorded position for #{sid}"
++    state["positions"].pop(key)
++    return True, f"✅ Closed tracking for <b>#{sid} {name}</b> (manual)"
++
++
++def cmd_status_text(state: dict) -> str:
++    lines = ["<b>Tier1 status</b>", ""]
++    act = [
++        (k, v)
++        for k, v in state.get("signals", {}).items()
++        if v.get("status") == "active"
++    ]
++    if act:
++        lines.append("<b>Active signals</b>")
++        for k, v in act:
++            lines.append(f"• {k}: <code>{v.get('direction')}</code>")
++    else:
++        lines.append("No active signals.")
++    pos = state.get("positions", {})
++    lines.append("")
++    if pos:
++        lines.append("<b>Open positions (confirmed)</b>")
++        for k, p in pos.items():
++            px = p.get("entry_price")
++            px_s = f" @ {px}" if px else ""
++            lines.append(
++                f"• #{p.get('strategy_id')} {p.get('symbol')} "
++                f"<code>{p.get('side')}</code>{px_s}"
++            )
++    else:
++        lines.append("No confirmed positions.")
++    return "\n".join(lines)
++
++
++def run_once() -> None:
++    now = utc_now()
++    print(f"Tier1 monitor @ {now} (poll every {POLL_INTERVAL_SEC}s)")
++    state = load_state()
++    state["last_run"] = now
++    alerts: List[str] = []
++    klines_cache: dict = {}
++
++    for reply in poll_telegram_commands(state):
++        alerts.append(reply)
++
++    for sid, name, symbol, interval, checker, tv_url in STRATEGIES:
++        cache_key = (symbol, interval)
++        klines = klines_cache.get(cache_key)
++        if klines is None:
++            klines = get_klines(symbol, interval)
++            klines_cache[cache_key] = klines
++        if not klines:
++            print(f"  #{sid} {symbol} {interval}: no data")
++            continue
++        key = state_key(sid, symbol, interval)
++        try:
++            signal = checker(klines)
++            process_signal_lifecycle(
++                state, key, sid, name, symbol, interval, signal, tv_url, alerts
++            )
++        except Exception as exc:
++            print(f"  #{sid} {name}: error {exc}")
++
++    process_positions(state, klines_cache, alerts)
++    save_state(state)
++
++    if alerts:
++        send_telegram("\n\n".join(alerts))
++    else:
++        print("No alerts this cycle.")
++
++
++def run_loop(interval_sec: int = POLL_INTERVAL_SEC) -> None:
++    import time
++
++    print(f"Loop mode: every {interval_sec}s")
++    while True:
++        run_once()
++        time.sleep(interval_sec)
++
++
++def main() -> None:
++    parser = argparse.ArgumentParser(description="Tier1 strategy monitor (5m)")
++    sub = parser.add_subparsers(dest="command")
++
++    sub.add_parser("run", help="Single monitoring cycle (for cron */5)")
++
++    p_loop = sub.add_parser("loop", help="Run forever every 5 minutes")
++    p_loop.add_argument(
++        "--interval",
++        type=int,
++        default=POLL_INTERVAL_SEC,
++        help="Seconds between cycles (default 300)",
++    )
++
++    p_confirm = sub.add_parser("confirm", help="Record that you opened a position")
++    p_confirm.add_argument("strategy_id", type=int)
++    p_confirm.add_argument("entry_price", type=float, nargs="?", default=None)
++
++    p_close = sub.add_parser("close", help="Stop tracking a position manually")
++    p_close.add_argument("strategy_id", type=int)
++
++    sub.add_parser("status", help="Print active signals and positions")
++
++    args = parser.parse_args()
++    cmd = args.command or "run"
++
++    if cmd == "run":
++        run_once()
++    elif cmd == "loop":
++        run_loop(args.interval)
++    elif cmd == "confirm":
++        state = load_state()
++        ok, msg = cmd_confirm(state, args.strategy_id, args.entry_price)
++        save_state(state)
++        print(msg)
++        if ok:
++            send_telegram(msg)
++        sys.exit(0 if ok else 1)
++    elif cmd == "close":
++        state = load_state()
++        ok, msg = cmd_close(state, args.strategy_id)
++        save_state(state)
++        print(msg)
++        if ok:
++            send_telegram(msg)
++        sys.exit(0 if ok else 1)
++    elif cmd == "status":
++        state = load_state()
++        text = cmd_status_text(state)
++        print(text.replace("<b>", "").replace("</b>", "").replace("<code>", "").replace("</code>", ""))
++        sys.exit(0)
++
+ 
+ if __name__ == "__main__":
+-    run()
++    main()

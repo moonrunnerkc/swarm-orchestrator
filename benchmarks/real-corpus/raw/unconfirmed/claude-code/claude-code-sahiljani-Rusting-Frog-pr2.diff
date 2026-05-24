@@ -1,0 +1,2373 @@
+diff --git a/docs/SYSTEM_DESIGN.md b/docs/SYSTEM_DESIGN.md
+index 6bddd0c..bb6e127 100644
+--- a/docs/SYSTEM_DESIGN.md
++++ b/docs/SYSTEM_DESIGN.md
+@@ -510,7 +510,23 @@ Unresolved items the plan knowingly defers.
+ 
+ ---
+ 
+-## 10. Change log
++## 10. Why this clone diverges from Screaming Frog's shape
++
++Screaming Frog (SF) is the inspiration for the crawl semantics and audit rules, but it is a different *kind* of product. SF is a single-user desktop application: a Swing + JavaFX UI bolted to a crawler core, persisting each project to an embedded Apache Derby database that lives inside a `.seospider` file on the user's local disk. One process, one user, one tenant, one filesystem. Scheduling is in-process; CLI mode (`--headless`) is just the same JVM started without a window. (See `screamingfrog1/REVERSE_ENGINEERING_NOTES.md` for the storage + flow details.)
++
++This clone is, by design, the opposite shape: a multi-tenant SaaS. Concretely:
++
++- **Storage.** Postgres (per-tenant rows, `tenant_id` on every table) replaces embedded Derby. Redis backs the queue and rate limiter. There is no `.seospider` file format and no per-user local DB.
++- **Frontend.** A separate React SPA, served as a static bundle, talks to the Rust API over HTTPS+JSON. SF's Swing tables and JavaFX `HtmlDiffViewer` become an API endpoint (`GET /v1/.../html-diff`) plus a planned SPA viewer — same diff semantics, different transport.
++- **API surface.** Axum HTTP + JWT auth. Every request is tenant-scoped; SF has no equivalent because it has no concept of "another user."
++- **Scheduling.** SF's in-process scheduler becomes a job system (slice 6.6): rows in `scheduled_jobs`, a worker that enqueues crawls on cron, run history per tenant. There is no `--headless` flag — running unattended is the default mode for the worker.
++- **Deployment.** EC2 instances pulling images from ECR, deployed via SSM. SF ships as a signed JVM installer.
++
++Out of scope on purpose: license/activation parity (SF has a paid license + activation server; this clone integrates with Laravel for billing instead), and the exact byte layout of `.seospider` files. We reuse SF's *crawl behavior* and *audit rule set*, not its packaging or distribution model.
++
++---
++
++## 11. Change log
+ 
+ - _YYYY-MM-DD_ — initial Phase 1 design.
+ 
+diff --git a/docs/superpowers/plans/2026-05-22-flesch-readability-and-e2e-harness.md b/docs/superpowers/plans/2026-05-22-flesch-readability-and-e2e-harness.md
+new file mode 100644
+index 0000000..97e8980
+--- /dev/null
++++ b/docs/superpowers/plans/2026-05-22-flesch-readability-and-e2e-harness.md
+@@ -0,0 +1,1659 @@
++# Flesch readability (SF parity) + Playwright E2E harness — Implementation Plan
++
++> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
++
++**Goal:** Move slice 2.1 (Flesch readability) from "FK Grade today" to "SF Reading Ease, persisted, exposed through API + UI, verified via Playwright crawl of boltrack.in" — and along the way stand up the workspace's first Playwright E2E harness.
++
++**Architecture:** Pure-math `readability` module in `sf-core` (zero IO deps, per CODING_STANDARDS). Parser computes the score during HTML parse; pipeline writes `readability_score` + `readability_bucket` to `crawl_urls`. Evaluator reads from the row instead of recomputing. API surfaces the new fields. UI renders a Content tab with a readability badge tagged with `data-testid` for Playwright. New `e2e/` workspace runs Playwright against the running stack.
++
++**Tech Stack:** Rust + sqlx + Axum (existing) · React 18 + Vite + Tailwind + shadcn (existing) · Playwright + TypeScript (new) · Postgres + Redis via docker-compose (existing).
++
++**Reference specs:**
++- Master: `docs/superpowers/specs/2026-05-22-sf-clone-gap-closure-master-design.md`
++- Sub-project: `docs/superpowers/specs/2026-05-22-content-algorithms-design.md`
++- SF behavior in `screamingfrog1/REVERSE_ENGINEERING_NOTES.md` — "Readability — Flesch Reading Ease" section
++
++---
++
++## File map
++
++**Create**
++- `crates/core/src/readability.rs` — pure-math module
++- `crates/migrations/sql/0009_readability.sql`
++- `e2e/package.json`
++- `e2e/playwright.config.ts`
++- `e2e/tsconfig.json`
++- `e2e/.gitignore`
++- `e2e/README.md`
++- `e2e/helpers/auth.ts`
++- `e2e/helpers/api.ts`
++- `e2e/tests/smoke.spec.ts`
++- `e2e/tests/flesch-readability.spec.ts`
++
++**Modify**
++- `crates/core/src/lib.rs` — `pub mod readability;`
++- `crates/core/src/crawl.rs` — add `readability_score` + `readability_bucket` fields to `CrawlUrl`
++- `crates/crawl-worker/src/parser.rs` — add fields to `ParseResult`, compute via `sf_core::readability::compute`
++- `crates/crawl-worker/src/pipeline.rs` — extend the 3 `INSERT INTO crawl_urls` statements + the construction of `CrawlUrl` returned by extract loop (~lines 344, 451, 701, 758-807)
++- `crates/evaluators/src/content.rs` — read score from `url.readability_score`, drop inline FK functions, switch threshold semantics (low Reading Ease = harder), keep filter-firing
++- `crates/api/src/routes/urls.rs` — include new columns in URL-detail SELECT + response shape
++- `UI/src/api.ts` — extend `CrawlUrlRow` / `UrlDetail` TS interfaces
++- `UI/src/components/DetailPane.tsx` — add a "Content" tab showing readability score + bucket badge with `data-testid` attrs
++- `.github/workflows/ci.yml` — add `e2e` job
++- `docs/superpowers/specs/2026-05-22-sf-clone-gap-closure-master-design.md` — flip slice 2.1 row to ✅
++
++---
++
++## Conventions
++
++- Conventional commits. One logical change per commit. Co-author footer: `Co-Authored-By: Claude <noreply@anthropic.com>`
++- Branch: `feat/2-1-flesch-readability` (create once, all commits land on this branch, then PR to `main`)
++- Tests run after every code change: `cargo test -p <crate>`. Workspace check: `cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings`. Run UI build with `npm --prefix UI run build`.
++- Playwright runs against an already-running docker-compose stack on `http://localhost:80`. The stack must be brought up manually before Phase H executes.
++
++---
++
++## Phase A — Branch, baseline, infra-check
++
++### Task A.1: Create the working branch
++
++**Files:** none (git state only)
++
++- [ ] **Step 1:** From repo root, create and switch to the feature branch.
++
++```bash
++git checkout -b feat/2-1-flesch-readability
++```
++
++Expected: `Switched to a new branch 'feat/2-1-flesch-readability'`. Run `git status` — clean.
++
++### Task A.2: Confirm the test toolchain runs green at baseline
++
++**Files:** none
++
++- [ ] **Step 1:** Format check.
++
++```bash
++cargo fmt --check
++```
++
++Expected: no output, exit 0.
++
++- [ ] **Step 2:** Clippy across the workspace.
++
++```bash
++cargo clippy --workspace --all-targets -- -D warnings
++```
++
++Expected: completes with no warnings.
++
++- [ ] **Step 3:** Run all existing tests.
++
++```bash
++cargo test --workspace
++```
++
++Expected: all tests pass. If any are broken at baseline, **STOP** and investigate before continuing.
++
++### Task A.3: Confirm docker-compose stack starts cleanly
++
++**Files:** none
++
++- [ ] **Step 1:** Bring up the dev stack.
++
++```bash
++docker compose up -d
++```
++
++Expected: `db`, `redis`, `api`, `crawl-worker`, `ui` containers all running (`docker compose ps` shows `Up`).
++
++- [ ] **Step 2:** Verify UI reachable.
++
++```bash
++curl -fsS http://localhost:80/ | head -1
++```
++
++Expected: HTML response starting with `<!doctype html>` (or similar). HTTP 200.
++
++- [ ] **Step 3:** Verify API reachable.
++
++```bash
++curl -fsS http://localhost:3000/v1/health || curl -fsS http://localhost:3000/health
++```
++
++Expected: 200 with health-style body. If neither responds, check `docker compose logs api` and fix before continuing.
++
++Keep the stack running through the rest of this plan — Phases H and I depend on it.
++
++---
++
++## Phase B — Add the pure-math `readability` module to `sf-core`
++
++### Task B.1: Write the failing test for the new module
++
++**Files:**
++- Create: `crates/core/src/readability.rs`
++
++- [ ] **Step 1:** Create the file with just tests (no implementation yet).
++
++```rust
++//! Flesch Reading Ease — SF parity.
++//!
++//! Formula (verbatim from Screaming Frog's `seospider/id694424387.java`):
++//!
++//!     score = clamp(206.835 - 1.015 * (words/sentences) - 84.6 * (syllables/words), 0, 100)
++//!
++//! Higher score = easier to read. The seven buckets match SF's enum.
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn empty_text_returns_none() {
++        assert!(compute("").is_none());
++    }
++
++    #[test]
++    fn too_few_words_returns_none() {
++        assert!(compute("Hi there.").is_none());
++    }
++
++    #[test]
++    fn simple_text_scores_easy() {
++        // Short common words, short sentences. Expect score >= 80.
++        let text = "The cat sat on the mat. The dog ran in the park. \
++                    Birds fly. Fish swim. Boys and girls play games.";
++        let stats = compute(text).expect("should compute");
++        assert!(stats.score >= 60.0, "expected easy-ish, got {}", stats.score);
++        assert!(stats.score <= 100.0);
++    }
++
++    #[test]
++    fn complex_text_scores_hard() {
++        let text = "Antidisestablishmentarianism characteristically institutionalises \
++                    incomprehensibly unmanageable bureaucratic impediments, complicating \
++                    contemporaneous legislative deliberations and obfuscating constitutional \
++                    interpretations of jurisprudential precedents established theretofore.";
++        let stats = compute(text).expect("should compute");
++        assert!(stats.score < 30.0, "expected very hard, got {}", stats.score);
++        assert_eq!(stats.bucket, ReadabilityBucket::VeryHard);
++    }
++
++    #[test]
++    fn bucket_boundaries() {
++        assert_eq!(ReadabilityBucket::from_score(0.0),  ReadabilityBucket::VeryHard);
++        assert_eq!(ReadabilityBucket::from_score(29.9), ReadabilityBucket::VeryHard);
++        assert_eq!(ReadabilityBucket::from_score(30.0), ReadabilityBucket::Hard);
++        assert_eq!(ReadabilityBucket::from_score(49.9), ReadabilityBucket::Hard);
++        assert_eq!(ReadabilityBucket::from_score(50.0), ReadabilityBucket::FairlyHard);
++        assert_eq!(ReadabilityBucket::from_score(60.0), ReadabilityBucket::Normal);
++        assert_eq!(ReadabilityBucket::from_score(70.0), ReadabilityBucket::FairlyEasy);
++        assert_eq!(ReadabilityBucket::from_score(80.0), ReadabilityBucket::Easy);
++        assert_eq!(ReadabilityBucket::from_score(90.0), ReadabilityBucket::VeryEasy);
++        assert_eq!(ReadabilityBucket::from_score(100.0), ReadabilityBucket::VeryEasy);
++    }
++
++    #[test]
++    fn score_is_clamped_to_unit_interval_scaled_to_100() {
++        // The raw formula can return negatives for extreme inputs. Clamp catches it.
++        // We don't construct one here — we just guarantee bucket_of accepts edge values.
++        assert_eq!(ReadabilityBucket::from_score(-5.0), ReadabilityBucket::VeryHard);
++        assert_eq!(ReadabilityBucket::from_score(150.0), ReadabilityBucket::VeryEasy);
++    }
++}
++```
++
++- [ ] **Step 2:** Wire the module into `lib.rs`.
++
++Edit `crates/core/src/lib.rs` — add `pub mod readability;` alongside the other `pub mod` declarations.
++
++- [ ] **Step 3:** Run the tests to confirm they fail to compile (no `compute`, no `ReadabilityBucket`).
++
++```bash
++cargo test -p sf-core readability
++```
++
++Expected: compilation error mentioning `compute` and `ReadabilityBucket` are not defined.
++
++### Task B.2: Implement the module
++
++**Files:**
++- Modify: `crates/core/src/readability.rs`
++
++- [ ] **Step 1:** Add the public API and helpers above the existing `#[cfg(test)] mod tests` block.
++
++```rust
++use serde::{Deserialize, Serialize};
++
++#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
++#[sqlx(type_name = "TEXT", rename_all = "snake_case")]
++#[serde(rename_all = "snake_case")]
++pub enum ReadabilityBucket {
++    VeryHard,
++    Hard,
++    FairlyHard,
++    Normal,
++    FairlyEasy,
++    Easy,
++    VeryEasy,
++}
++
++impl ReadabilityBucket {
++    pub fn from_score(score: f64) -> Self {
++        match score {
++            s if s < 30.0 => Self::VeryHard,
++            s if s < 50.0 => Self::Hard,
++            s if s < 60.0 => Self::FairlyHard,
++            s if s < 70.0 => Self::Normal,
++            s if s < 80.0 => Self::FairlyEasy,
++            s if s < 90.0 => Self::Easy,
++            _             => Self::VeryEasy,
++        }
++    }
++
++    pub fn as_str(&self) -> &'static str {
++        match self {
++            Self::VeryHard   => "very_hard",
++            Self::Hard       => "hard",
++            Self::FairlyHard => "fairly_hard",
++            Self::Normal     => "normal",
++            Self::FairlyEasy => "fairly_easy",
++            Self::Easy       => "easy",
++            Self::VeryEasy   => "very_easy",
++        }
++    }
++}
++
++#[derive(Debug, Clone, Copy)]
++pub struct ReadabilityStats {
++    pub score: f64,
++    pub bucket: ReadabilityBucket,
++    pub total_sentences: u32,
++    pub avg_words_per_sentence: f64,
++}
++
++/// Minimum words required to compute a meaningful score. Matches SF's
++/// behavior of returning no value on near-empty bodies.
++const MIN_WORDS: usize = 10;
++
++pub fn compute(text: &str) -> Option<ReadabilityStats> {
++    let words: Vec<&str> = text
++        .split_whitespace()
++        .filter(|w| w.chars().any(|c| c.is_alphabetic()))
++        .collect();
++    if words.len() < MIN_WORDS {
++        return None;
++    }
++
++    let sentences = count_sentences(text);
++    if sentences == 0 {
++        return None;
++    }
++
++    let syllables: u32 = words.iter().map(|w| count_syllables(w)).sum();
++    if syllables == 0 {
++        return None;
++    }
++
++    let avg_words_per_sentence = words.len() as f64 / sentences as f64;
++    let syllables_per_word = syllables as f64 / words.len() as f64;
++
++    let raw = 206.835 - 1.015 * avg_words_per_sentence - 84.6 * syllables_per_word;
++    let score = raw.clamp(0.0, 100.0);
++
++    Some(ReadabilityStats {
++        score,
++        bucket: ReadabilityBucket::from_score(score),
++        total_sentences: sentences,
++        avg_words_per_sentence,
++    })
++}
++
++fn count_sentences(text: &str) -> u32 {
++    text.chars()
++        .filter(|c| matches!(c, '.' | '!' | '?'))
++        .count() as u32
++}
++
++fn count_syllables(word: &str) -> u32 {
++    let w: String = word
++        .chars()
++        .filter(|c| c.is_alphabetic())
++        .map(|c| c.to_ascii_lowercase())
++        .collect();
++    if w.is_empty() {
++        return 0;
++    }
++    let chars: Vec<char> = w.chars().collect();
++    let vowels = ['a', 'e', 'i', 'o', 'u', 'y'];
++    let mut count = 0u32;
++    let mut prev_vowel = false;
++    for c in &chars {
++        let is_vowel = vowels.contains(c);
++        if is_vowel && !prev_vowel {
++            count += 1;
++        }
++        prev_vowel = is_vowel;
++    }
++    if w.ends_with('e') && count > 1 {
++        count -= 1;
++    }
++    count.max(1)
++}
++```
++
++- [ ] **Step 2:** Run tests.
++
++```bash
++cargo test -p sf-core readability
++```
++
++Expected: all 5 tests in the module pass.
++
++- [ ] **Step 3:** Format + clippy on this crate.
++
++```bash
++cargo fmt --check -p sf-core
++cargo clippy -p sf-core --all-targets -- -D warnings
++```
++
++Expected: clean.
++
++- [ ] **Step 4:** Commit.
++
++```bash
++git add crates/core/src/readability.rs crates/core/src/lib.rs
++git commit -m "$(cat <<'EOF'
++feat(core): add readability module computing Flesch Reading Ease
++
++SF parity for slice 2.1 — pure-math module with the verbatim formula
++from seospider/id694424387.java. Lives in sf-core so the crawl-worker
++can populate the score during parse and the evaluator can read it
++back without recomputing.
++
++Co-Authored-By: Claude <noreply@anthropic.com>
++EOF
++)"
++```
++
++---
++
++## Phase C — Persist the score on `CrawlUrl`
++
++### Task C.1: Add fields to `CrawlUrl`
++
++**Files:**
++- Modify: `crates/core/src/crawl.rs`
++
++- [ ] **Step 1:** Open `crates/core/src/crawl.rs`. Add fields to the `CrawlUrl` struct right after `pub word_count: Option<i32>,`:
++
++```rust
++    pub readability_score: Option<f64>,
++    pub readability_bucket: Option<crate::readability::ReadabilityBucket>,
++```
++
++- [ ] **Step 2:** Build.
++
++```bash
++cargo check --workspace
++```
++
++Expected: compile errors in every place that constructs a `CrawlUrl { ... }` literal — there are many (tests across evaluators, parser, pipeline). Each must add the two new fields, defaulting to `None` for now.
++
++- [ ] **Step 3:** Fix all `CrawlUrl { ... }` constructors that the compiler flags.
++
++Use the compiler's error list as a worklist. Add to each literal:
++
++```rust
++            readability_score: None,
++            readability_bucket: None,
++```
++
++Notable locations expected: every `fn page()` helper in `crates/evaluators/src/*.rs` test modules; `crates/crawl-worker/src/pipeline.rs` where `CrawlUrl` is constructed for return; any fixture builder.
++
++- [ ] **Step 4:** Re-run.
++
++```bash
++cargo check --workspace
++```
++
++Expected: clean.
++
++- [ ] **Step 5:** Format and run all tests.
++
++```bash
++cargo fmt
++cargo test --workspace
++```
++
++Expected: all pass.
++
++- [ ] **Step 6:** Commit.
++
++```bash
++git add -u
++git commit -m "$(cat <<'EOF'
++feat(core): add readability_score and readability_bucket to CrawlUrl
++
++Two new Option fields on the URL row, populated during parse, read by
++the content evaluator and the API URL-detail response.
++
++Co-Authored-By: Claude <noreply@anthropic.com>
++EOF
++)"
++```
++
++### Task C.2: Add the SQL migration
++
++**Files:**
++- Create: `crates/migrations/sql/0009_readability.sql`
++
++- [ ] **Step 1:** Write the migration.
++
++```sql
++-- 0009_readability.sql
++-- Persist Flesch Reading Ease + bucket per URL (slice 2.1).
++ALTER TABLE crawl_urls
++    ADD COLUMN readability_score  DOUBLE PRECISION,
++    ADD COLUMN readability_bucket TEXT;
++
++-- No backfill needed: rows from earlier crawls keep NULL.
++-- No index needed yet: cross-URL queries (overview) come later.
++```
++
++- [ ] **Step 2:** Apply the migration.
++
++Migrations are embedded into the api binary via `sqlx::migrate!("../migrations/sql")` (see `crates/api/src/main.rs:31`), so they only ship when the binary is rebuilt. Rebuild + restart the api container:
++
++```bash
++docker compose up -d --build api
++```
++
++Then verify the columns landed:
++
++```bash
++docker compose exec db psql -U postgres -d sf_clone -c '\d crawl_urls' | grep readability
++```
++
++Expected: two lines mentioning `readability_score` and `readability_bucket`.
++
++If you prefer to apply against your host without docker, export `DATABASE_URL` and run:
++
++```bash
++sqlx migrate run --source crates/migrations/sql
++```
++
++- [ ] **Step 3:** Refresh the sqlx offline cache so the `query!` macro picks up the new columns.
++
++```bash
++export DATABASE_URL=postgres://postgres:postgres@localhost:5432/sf_clone  # match docker-compose.yml
++cargo sqlx prepare --workspace
++```
++
++Expected: `.sqlx/` directory regenerated with new query metadata. If `sqlx-cli` isn't installed:
++
++```bash
++cargo install sqlx-cli --no-default-features --features postgres,rustls
++```
++
++then re-run.
++
++- [ ] **Step 4:** Commit migration + sqlx cache together.
++
++```bash
++git add crates/migrations/sql/0009_readability.sql .sqlx
++git commit -m "$(cat <<'EOF'
++feat(migrations): add readability_score and readability_bucket columns
++
++Backing storage for slice 2.1. Both nullable; NULL means "not yet
++measured" (pre-existing rows or non-HTML).
++
++Co-Authored-By: Claude <noreply@anthropic.com>
++EOF
++)"
++```
++
++---
++
++## Phase D — Compute during parse, write during ingest
++
++### Task D.1: Extend `ParseResult` and compute readability in `parse_html`
++
++**Files:**
++- Modify: `crates/crawl-worker/src/parser.rs`
++
++- [ ] **Step 1:** Add fields to `ParseResult`. After `pub word_count: i32,` add:
++
++```rust
++    pub readability_score: Option<f64>,
++    pub readability_bucket: Option<sf_core::readability::ReadabilityBucket>,
++```
++
++- [ ] **Step 2:** In `parse_html`, after the `let word_count = body_text.split_whitespace().count() as i32;` line, compute readability:
++
++```rust
++    let (readability_score, readability_bucket) =
++        match sf_core::readability::compute(&body_text) {
++            Some(stats) => (Some(stats.score), Some(stats.bucket)),
++            None => (None, None),
++        };
++```
++
++- [ ] **Step 3:** Add the fields to the returned `ParseResult { ... }` literal.
++
++- [ ] **Step 4:** Build.
++
++```bash
++cargo check -p crawl-worker
++```
++
++Expected: clean (or pipeline.rs complains because the `INSERT` doesn't yet name these columns — that's Task D.2).
++
++- [ ] **Step 5:** Run parser tests.
++
++```bash
++cargo test -p crawl-worker parser
++```
++
++Expected: existing parser tests still pass.
++
++- [ ] **Step 6:** Commit (single-file change).
++
++```bash
++git add crates/crawl-worker/src/parser.rs
++git commit -m "$(cat <<'EOF'
++feat(crawl-worker): compute Flesch readability during HTML parse
++
++ParseResult now carries readability_score + readability_bucket
++populated from sf_core::readability::compute over the body text.
++
++Co-Authored-By: Claude <noreply@anthropic.com>
++EOF
++)"
++```
++
++### Task D.2: Pipe readability through pipeline.rs into the INSERT
++
++**Files:**
++- Modify: `crates/crawl-worker/src/pipeline.rs`
++
++- [ ] **Step 1:** Open `crates/crawl-worker/src/pipeline.rs`. Find each place where the `ParseResult` is destructured (around line 344, 451, 701) and pass `readability_score` + `readability_bucket` through to the `CrawlUrl` construction or the variables you'll later pass to the INSERT.
++
++Pattern to add inside the construction blocks:
++
++```rust
++                        readability_score: pr.readability_score,
++                        readability_bucket: pr.readability_bucket,
++```
++
++For the `_failed` and `_blocked` paths (no parse result), pass `None, None`.
++
++- [ ] **Step 2:** Extend the main `INSERT INTO crawl_urls (...)` at line 758. Add two columns after `meta_robots` (mirroring the title_pixel_width pattern):
++
++```sql
++INSERT INTO crawl_urls (
++    id, crawl_id, url, url_hash, content_type, status_code,
++    is_internal, depth, title, title_length, title_pixel_width,
++    meta_description, meta_description_length,
++    meta_description_pixel_width, h1_first, h1_count,
++    h2_first, h2_count, word_count, response_time_ms, content_length,
++    canonical_url, meta_robots, readability_score, readability_bucket,
++    response_headers, final_url,
++    crawled_at, raw_html, content_hash, structured_data,
++    indexability, indexability_status
++) VALUES (
++    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
++    $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28,
++    $29, $30, $31, $32, $33
++)
++ON CONFLICT (crawl_id, url_hash) DO NOTHING
++```
++
++(Column count is now 33; renumber `$24..$33` correctly.)
++
++- [ ] **Step 2 cont:** Pass two new arguments to the `sqlx::query!` macro at the corresponding positions:
++
++```rust
++            pr.readability_score,
++            pr.readability_bucket.map(|b| b.as_str()),
++```
++
++Drop them in between the existing `robots,` and `headers_json,` arguments so they match the column order.
++
++- [ ] **Step 3:** Rebuild sqlx cache + check.
++
++```bash
++cargo sqlx prepare --workspace
++cargo check -p crawl-worker
++```
++
++Expected: clean.
++
++- [ ] **Step 4:** Run all worker tests.
++
++```bash
++cargo test -p crawl-worker
++```
++
++Expected: pass.
++
++- [ ] **Step 5:** Commit.
++
++```bash
++git add crates/crawl-worker/src/pipeline.rs .sqlx
++git commit -m "$(cat <<'EOF'
++feat(crawl-worker): persist readability score and bucket per URL
++
++Pipeline writes both new columns into crawl_urls on every successful
++parse; failed/blocked URLs leave them NULL.
++
++Co-Authored-By: Claude <noreply@anthropic.com>
++EOF
++)"
++```
++
++---
++
++## Phase E — Re-point the content evaluator at the persisted score
++
++### Task E.1: Switch `content.rs` to read from `CrawlUrl`
++
++**Files:**
++- Modify: `crates/evaluators/src/content.rs`
++
++- [ ] **Step 1:** Replace the existing readability block. Currently it computes `flesch_kincaid_grade(&body_text)` inline (lines 58-68). Replace with a read of the persisted score:
++
++```rust
++        if let Some(score) = url.readability_score {
++            if score < 30.0 {
++                findings.push(Finding {
++                    filter_key: FilterKey::ContentReadabilityVeryDifficult,
++                });
++            } else if score < 50.0 {
++                findings.push(Finding {
++                    filter_key: FilterKey::ContentReadabilityDifficult,
++                });
++            }
++        }
++```
++
++Both filters fire when score is low (because low Reading Ease = hard text — opposite of the previous FK Grade semantics where high = hard).
++
++- [ ] **Step 2:** Delete the now-unused helpers in the same file: `flesch_kincaid_grade`, `count_sentences`, `count_syllables`. These now live in `sf_core::readability`.
++
++- [ ] **Step 3:** Update the doc comment at the top of the file. Replace:
++
++```
++- `ContentReadabilityDifficult` / `ContentReadabilityVeryDifficult` —
++  Flesch-Kincaid grade level exceeds configured thresholds
++  (12.0 / 16.0 by default).
++```
++
++with:
++
++```
++- `ContentReadabilityDifficult` / `ContentReadabilityVeryDifficult` —
++  Flesch Reading Ease score below 50 / 30 respectively
++  (low score = harder to read; SF semantics).
++```
++
++- [ ] **Step 4:** Fix the test that depended on the FK-Grade formula. The `very_complex_prose_is_very_difficult` test at line 246 evaluates text directly and expects the filter to fire — but the new code reads from `url.readability_score`, which the test's fixture page leaves as `None`. Either:
++
++  - **(a) prefer:** rewrite the test to set `u.readability_score = Some(15.0)` before evaluating, asserting the filter fires; and add a sibling test with `Some(35.0)` asserting `ContentReadabilityDifficult` fires; and one with `Some(80.0)` asserting neither fires.
++
++  - (b) drop the test entirely (the readability logic is now tested in `sf_core::readability`'s own test module).
++
++Pick (a) — keeps the wiring covered:
++
++```rust
++    #[test]
++    fn very_low_reading_ease_fires_very_difficult() {
++        let cfg = CrawlConfig::default();
++        let ctx = EvalContext { config: &cfg, html: None, parsed: None };
++        let mut u = page();
++        u.content_type = ContentType::Html;
++        u.readability_score = Some(15.0);
++        let keys: Vec<_> = ContentEvaluator
++            .evaluate(&u, &ctx)
++            .into_iter()
++            .map(|f| f.filter_key)
++            .collect();
++        assert!(keys.contains(&FilterKey::ContentReadabilityVeryDifficult));
++    }
++
++    #[test]
++    fn moderate_reading_ease_fires_difficult_only() {
++        let cfg = CrawlConfig::default();
++        let ctx = EvalContext { config: &cfg, html: None, parsed: None };
++        let mut u = page();
++        u.content_type = ContentType::Html;
++        u.readability_score = Some(35.0);
++        let keys: Vec<_> = ContentEvaluator
++            .evaluate(&u, &ctx)
++            .into_iter()
++            .map(|f| f.filter_key)
++            .collect();
++        assert!(keys.contains(&FilterKey::ContentReadabilityDifficult));
++        assert!(!keys.contains(&FilterKey::ContentReadabilityVeryDifficult));
++    }
++
++    #[test]
++    fn high_reading_ease_fires_neither() {
++        let cfg = CrawlConfig::default();
++        let ctx = EvalContext { config: &cfg, html: None, parsed: None };
++        let mut u = page();
++        u.content_type = ContentType::Html;
++        u.readability_score = Some(80.0);
++        let keys: Vec<_> = ContentEvaluator
++            .evaluate(&u, &ctx)
++            .into_iter()
++            .map(|f| f.filter_key)
++            .collect();
++        assert!(!keys.contains(&FilterKey::ContentReadabilityDifficult));
++        assert!(!keys.contains(&FilterKey::ContentReadabilityVeryDifficult));
++    }
++```
++
++Delete the old `very_complex_prose_is_very_difficult` test and the `syllables_basic` test (the syllable counter moved to `sf_core::readability`).
++
++- [ ] **Step 5:** The `CrawlConfig.content.readability_difficult` / `_very_difficult` fields are now unused (we hardcoded the SF thresholds 50/30). Check if they should be deleted:
++
++```bash
++grep -rn "readability_difficult\|readability_very_difficult" crates/
++```
++
++If they appear only in `CrawlConfig` and tests, delete the fields. If anything else depends on them, leave them in place for now and file a follow-up. SF's threshold is fixed at 50/30 (not user-configurable in the binary we decompiled), so removing them is SF-faithful.
++
++- [ ] **Step 6:** Run tests.
++
++```bash
++cargo test -p sf-evaluators content
++```
++
++Expected: 8 tests pass (3 unchanged, 3 new readability tests, plus the existing `lorem_ipsum_flagged`, `low_content_flagged`, etc.). Check the count.
++
++- [ ] **Step 7:** Run the whole workspace.
++
++```bash
++cargo test --workspace
++cargo fmt --check
++cargo clippy --workspace --all-targets -- -D warnings
++```
++
++Expected: green.
++
++- [ ] **Step 8:** Commit.
++
++```bash
++git add -u
++git commit -m "$(cat <<'EOF'
++refactor(evaluators): read persisted readability score in content tab
++
++Switch from inline FK-Grade to reading the score stored on CrawlUrl
++(computed during parse via sf_core::readability). Drops the unused
++syllable/sentence helpers and the config thresholds — SF hardcodes
++50/30 as Reading Ease cutoffs, so we follow suit.
++
++Co-Authored-By: Claude <noreply@anthropic.com>
++EOF
++)"
++```
++
++---
++
++## Phase F — Expose through the API
++
++### Task F.1: Include readability fields in URL-detail response
++
++**Files:**
++- Modify: `crates/api/src/routes/urls.rs`
++
++- [ ] **Step 1:** Find the SELECT statement that powers the URL detail endpoint (`/v1/crawls/:crawlId/urls/:urlId`). Add `readability_score` and `readability_bucket` to its column list.
++
++- [ ] **Step 2:** Find the response struct that serializes a URL row. Add two fields:
++
++```rust
++    pub readability_score: Option<f64>,
++    pub readability_bucket: Option<String>,
++```
++
++(String rather than the enum so the serialized form is the snake_case label.)
++
++- [ ] **Step 3:** Populate them in the row-to-response mapping.
++
++- [ ] **Step 4:** Repeat for the list endpoint (`/v1/crawls/:crawlId/urls`) — UI's `CrawlUrlRow` grid will show the bucket as a column.
++
++- [ ] **Step 5:** Rebuild + tests.
++
++```bash
++cargo sqlx prepare --workspace
++cargo check -p api
++cargo test -p api
++```
++
++- [ ] **Step 6:** Commit.
++
++```bash
++git add -u
++git commit -m "$(cat <<'EOF'
++feat(api): expose readability_score + readability_bucket on URL endpoints
++
++Both URL detail and URL list endpoints now return the two new fields
++so the UI can render them in the Content tab and the grid.
++
++Co-Authored-By: Claude <noreply@anthropic.com>
++EOF
++)"
++```
++
++---
++
++## Phase G — UI: Content tab + readability badge
++
++### Task G.1: Extend TS types
++
++**Files:**
++- Modify: `UI/src/api.ts`
++
++- [ ] **Step 1:** Add to the `CrawlUrlRow` interface:
++
++```typescript
++  readability_score?: number | null;
++  readability_bucket?: string | null;
++```
++
++`UrlDetail extends CrawlUrlRow` so it inherits both.
++
++- [ ] **Step 2:** Build the UI to confirm no TS errors.
++
++```bash
++npm --prefix UI run build
++```
++
++Expected: clean build.
++
++- [ ] **Step 3:** Commit.
++
++```bash
++git add UI/src/api.ts
++git commit -m "$(cat <<'EOF'
++feat(ui): add readability fields to TS types
++
++CrawlUrlRow gains readability_score and readability_bucket so detail
++and grid views can render them.
++
++Co-Authored-By: Claude <noreply@anthropic.com>
++EOF
++)"
++```
++
++### Task G.2: Add Content tab to DetailPane
++
++**Files:**
++- Modify: `UI/src/components/DetailPane.tsx`
++
++- [ ] **Step 1:** Add a `TabsTrigger` for `value="content"` after the `overview` trigger. Inside the existing `<TabsList>` block (~line 187):
++
++```tsx
++            <TabsTrigger value="content">Content</TabsTrigger>
++```
++
++- [ ] **Step 2:** Add the corresponding `TabsContent`. Place it after the `overview` content panel:
++
++```tsx
++          <TabsContent value="content" className="mt-0 p-3">
++            <div className="space-y-3">
++              <div className="rounded-md border p-3">
++                <div className="text-xs font-medium text-muted-foreground mb-1">
++                  Readability (Flesch Reading Ease)
++                </div>
++                {detail?.readability_score != null ? (
++                  <div className="flex items-baseline gap-3">
++                    <span
++                      data-testid="readability-score"
++                      className="text-2xl font-semibold tabular-nums"
++                    >
++                      {detail.readability_score.toFixed(1)}
++                    </span>
++                    <span
++                      data-testid="readability-bucket"
++                      className="text-sm uppercase tracking-wide text-muted-foreground"
++                    >
++                      {detail.readability_bucket ?? '—'}
++                    </span>
++                  </div>
++                ) : (
++                  <div className="text-sm text-muted-foreground">
++                    Not measured (page too short or non-HTML).
++                  </div>
++                )}
++              </div>
++            </div>
++          </TabsContent>
++```
++
++(Adjust the variable name — `detail`, `url`, whatever the component uses — to match what's already in scope.)
++
++- [ ] **Step 3:** Build.
++
++```bash
++npm --prefix UI run build
++```
++
++Expected: clean.
++
++- [ ] **Step 4:** Verify visually. With docker-compose still up from Task A.3, run a small crawl manually via curl or the UI itself, navigate to a URL, click the Content tab. The score should be visible. If the running stack is the pre-migration build, restart it:
++
++```bash
++docker compose up -d --build api crawl-worker ui
++```
++
++- [ ] **Step 5:** Commit.
++
++```bash
++git add UI/src/components/DetailPane.tsx
++git commit -m "$(cat <<'EOF'
++feat(ui): show readability score in new Content tab
++
++Per-URL detail pane gains a Content tab that surfaces the Flesch
++Reading Ease score and bucket (or a "not measured" placeholder).
++data-testid attributes are present so Playwright can assert on them.
++
++Co-Authored-By: Claude <noreply@anthropic.com>
++EOF
++)"
++```
++
++---
++
++## Phase H — Playwright harness scaffold
++
++### Task H.1: Bootstrap `e2e/`
++
++**Files:**
++- Create: `e2e/package.json`
++- Create: `e2e/playwright.config.ts`
++- Create: `e2e/tsconfig.json`
++- Create: `e2e/.gitignore`
++- Create: `e2e/README.md`
++
++- [ ] **Step 1:** Create `e2e/package.json`:
++
++```json
++{
++  "name": "sf-clone-e2e",
++  "version": "0.0.0",
++  "private": true,
++  "type": "module",
++  "scripts": {
++    "e2e": "playwright test",
++    "e2e:headed": "playwright test --headed",
++    "e2e:ui": "playwright test --ui",
++    "e2e:codegen": "playwright codegen $E2E_BASE_URL"
++  },
++  "devDependencies": {
++    "@playwright/test": "^1.49.0",
++    "typescript": "^5.5.0"
++  }
++}
++```
++
++- [ ] **Step 2:** Create `e2e/playwright.config.ts`:
++
++```typescript
++import { defineConfig, devices } from '@playwright/test';
++
++const BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:80';
++
++export default defineConfig({
++  testDir: './tests',
++  fullyParallel: false,
++  forbidOnly: !!process.env.CI,
++  retries: process.env.CI ? 2 : 0,
++  workers: 1,
++  reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
++  timeout: 10 * 60_000,
++  expect: { timeout: 30_000 },
++  use: {
++    baseURL: BASE_URL,
++    trace: 'on-first-retry',
++    screenshot: 'only-on-failure',
++    video: 'retain-on-failure',
++    actionTimeout: 30_000,
++    navigationTimeout: 60_000,
++  },
++  projects: [
++    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
++  ],
++});
++```
++
++- [ ] **Step 3:** Create `e2e/tsconfig.json`:
++
++```json
++{
++  "compilerOptions": {
++    "target": "ES2022",
++    "module": "ESNext",
++    "moduleResolution": "Bundler",
++    "strict": true,
++    "esModuleInterop": true,
++    "resolveJsonModule": true,
++    "skipLibCheck": true,
++    "types": ["@playwright/test"]
++  },
++  "include": ["tests", "helpers", "playwright.config.ts"]
++}
++```
++
++- [ ] **Step 4:** Create `e2e/.gitignore`:
++
++```
++node_modules/
++test-results/
++playwright-report/
++.cache/
++```
++
++- [ ] **Step 5:** Create `e2e/README.md`:
++
++```markdown
++# E2E Playwright tests
++
++Drives the deployed UI (default `http://localhost:80`) via real browser sessions.
++
++## Local
++
++Bring up the stack:
++
++    docker compose up -d
++
++Install Playwright browsers once:
++
++    cd e2e
++    npm install
++    npx playwright install --with-deps chromium
++
++Run all specs:
++
++    npm run e2e
++
++Run a single spec:
++
++    npm run e2e -- smoke
++
++Run with the inspector:
++
++    npm run e2e:ui
++
++## Environment
++
++- `E2E_BASE_URL` (default `http://localhost:80`) — where the UI is served.
++- Tests rely on `SF_DEV_MODE=1` in the API container so a token can be minted without a real login.
++
++## Domains used
++
++- `https://boltrack.in` — primary smoke + Flesch slice.
++- `https://freshprintsupply.ca` — secondary multi-tenant smoke.
++
++Crawls are capped at 30 pages so each spec runs in 2-5 minutes.
++```
++
++- [ ] **Step 6:** Install dependencies + browsers.
++
++```bash
++cd e2e && npm install && npx playwright install --with-deps chromium && cd ..
++```
++
++Expected: chromium binary downloaded; no errors.
++
++- [ ] **Step 7:** Commit (without the installed browsers — `.gitignore` takes care of `node_modules` and Playwright caches).
++
++```bash
++git add e2e/package.json e2e/package-lock.json e2e/playwright.config.ts e2e/tsconfig.json e2e/.gitignore e2e/README.md
++git commit -m "$(cat <<'EOF'
++feat(e2e): scaffold Playwright workspace at repo root
++
++Adds package.json, playwright.config.ts, tsconfig.json, .gitignore,
++and README. Tests will live in e2e/tests; helpers in e2e/helpers.
++Runs against the docker-compose stack on localhost:80 by default.
++
++Co-Authored-By: Claude <noreply@anthropic.com>
++EOF
++)"
++```
++
++### Task H.2: Helpers — dev-mode auth + minimal API calls
++
++**Files:**
++- Create: `e2e/helpers/auth.ts`
++- Create: `e2e/helpers/api.ts`
++
++- [ ] **Step 1:** Create `e2e/helpers/auth.ts`. The UI mints a JWT when `SF_DEV_MODE=1`. Examine `UI/src/api.ts` to find the exact endpoint (likely `/v1/dev/token` or similar). The helper:
++
++```typescript
++import { Page, APIRequestContext, request } from '@playwright/test';
++
++export async function mintDevToken(api: APIRequestContext): Promise<string> {
++  // Endpoint matches crates/api/src/routes/dev.rs (SF_DEV_MODE=1)
++  const res = await api.post('/v1/dev/token', { data: {} });
++  if (!res.ok()) {
++    throw new Error(`dev token mint failed: ${res.status()} ${await res.text()}`);
++  }
++  const body = await res.json();
++  return body.token as string;
++}
++
++/**
++ * Seed localStorage with the dev token so the UI's authedFetch finds it.
++ * Mirrors the storage keys defined in UI/src/api.ts.
++ */
++export async function primeAuth(page: Page, token: string): Promise<void> {
++  const exp = Math.floor(Date.now() / 1000) + 60 * 60; // 1h
++  await page.addInitScript(
++    ({ token, exp }) => {
++      localStorage.setItem('sf-clone.jwt', token);
++      localStorage.setItem('sf-clone.jwt.exp', String(exp));
++    },
++    { token, exp },
++  );
++}
++```
++
++If the actual dev endpoint differs from `/v1/dev/token`, replace the URL. Find it via:
++
++```bash
++grep -rn "dev_mode\|SF_DEV_MODE\|mint.*token" crates/api/src/routes/dev.rs
++```
++
++- [ ] **Step 2:** Create `e2e/helpers/api.ts`:
++
++```typescript
++import { APIRequestContext, expect } from '@playwright/test';
++
++export interface CreatedCrawl {
++  projectId: string;
++  crawlId: string;
++}
++
++export async function createProjectAndCrawl(
++  api: APIRequestContext,
++  token: string,
++  opts: { name: string; seedUrl: string; maxPages: number },
++): Promise<CreatedCrawl> {
++  const auth = { headers: { Authorization: `Bearer ${token}` } };
++
++  const proj = await api.post('/v1/projects', {
++    ...auth,
++    data: {
++      name: opts.name,
++      config: { max_pages: opts.maxPages, crawl: { obey_robots: true } },
++    },
++  });
++  expect(proj.ok(), `project create: ${await proj.text()}`).toBeTruthy();
++  const projectId = (await proj.json()).id as string;
++
++  const crawl = await api.post(`/v1/crawls`, {
++    ...auth,
++    data: { project_id: projectId, seed_urls: [opts.seedUrl] },
++  });
++  expect(crawl.ok(), `crawl create: ${await crawl.text()}`).toBeTruthy();
++  const crawlId = (await crawl.json()).id as string;
++
++  return { projectId, crawlId };
++}
++
++export async function pollCrawlCompleted(
++  api: APIRequestContext,
++  token: string,
++  crawlId: string,
++  opts: { timeoutMs: number; pollIntervalMs?: number } = { timeoutMs: 5 * 60_000 },
++): Promise<void> {
++  const auth = { headers: { Authorization: `Bearer ${token}` } };
++  const poll = opts.pollIntervalMs ?? 5_000;
++  const deadline = Date.now() + opts.timeoutMs;
++
++  while (Date.now() < deadline) {
++    const res = await api.get(`/v1/crawls/${crawlId}`, auth);
++    expect(res.ok(), `poll: ${await res.text()}`).toBeTruthy();
++    const status = (await res.json()).status as string;
++    if (status === 'completed') return;
++    if (status === 'failed') throw new Error(`crawl ${crawlId} failed`);
++    await new Promise((r) => setTimeout(r, poll));
++  }
++  throw new Error(`crawl ${crawlId} did not complete within ${opts.timeoutMs}ms`);
++}
++
++export async function firstUrlMatching(
++  api: APIRequestContext,
++  token: string,
++  crawlId: string,
++  needle: string,
++): Promise<{ id: string; url: string; readability_score: number | null; readability_bucket: string | null }> {
++  const auth = { headers: { Authorization: `Bearer ${token}` } };
++  const res = await api.get(`/v1/crawls/${crawlId}/urls?q=${encodeURIComponent(needle)}&limit=10`, auth);
++  expect(res.ok()).toBeTruthy();
++  const rows = (await res.json()).data as Array<any>;
++  if (rows.length === 0) throw new Error(`no URL matched ${needle}`);
++  return rows[0];
++}
++```
++
++Adjust field names if the route shapes don't match — check `crates/api/src/routes/projects.rs` and `crawls.rs` for the actual request/response.
++
++- [ ] **Step 3:** Commit.
++
++```bash
++git add e2e/helpers/auth.ts e2e/helpers/api.ts
++git commit -m "$(cat <<'EOF'
++feat(e2e): add auth + crawl-lifecycle helpers
++
++mintDevToken + primeAuth wire the SF_DEV_MODE token into the browser's
++localStorage. createProjectAndCrawl + pollCrawlCompleted drive the
++backend without going through the UI for the slow setup steps.
++
++Co-Authored-By: Claude <noreply@anthropic.com>
++EOF
++)"
++```
++
++### Task H.3: Smoke spec
++
++**Files:**
++- Create: `e2e/tests/smoke.spec.ts`
++
++- [ ] **Step 1:** Write the spec.
++
++```typescript
++import { test, expect } from '@playwright/test';
++import { mintDevToken, primeAuth } from '../helpers/auth';
++
++test('UI loads and status footer shows version', async ({ page, request }) => {
++  const token = await mintDevToken(request);
++  await primeAuth(page, token);
++
++  await page.goto('/');
++  await expect(page).toHaveTitle(/sf|spider|crawl/i);
++  // StatusFooter is rendered on every page; it shows the build version.
++  // Selector is broad on purpose — any element whose text matches a version-ish string.
++  const footer = page.locator('footer, [data-testid="status-footer"]');
++  await expect(footer).toBeVisible();
++  await expect(footer).toContainText(/v?\d+\.\d+/);
++});
++```
++
++- [ ] **Step 2:** If `StatusFooter.tsx` doesn't already carry `data-testid="status-footer"`, add it. Check first:
++
++```bash
++grep -n "data-testid" /c/Users/User/Desktop/sf-clone-rust/UI/src/components/StatusFooter.tsx
++```
++
++If missing, add `data-testid="status-footer"` to the root element and rebuild the UI (Task G already builds it; just rebuild + redeploy container).
++
++- [ ] **Step 3:** Run the smoke spec against the running stack.
++
++```bash
++cd e2e
++npm run e2e -- smoke
++cd ..
++```
++
++Expected: 1 passed.
++
++If the test can't find the token endpoint, drop into:
++
++```bash
++grep -rn "dev\|token\|mint" crates/api/src/routes/dev.rs
++```
++
++and update `e2e/helpers/auth.ts` to match.
++
++- [ ] **Step 4:** Commit.
++
++```bash
++git add e2e/tests/smoke.spec.ts
++# plus any UI/StatusFooter.tsx if you added a testid
++git add -u
++git commit -m "$(cat <<'EOF'
++feat(e2e): smoke spec — UI loads and status footer shows version
++
++Minimal Playwright spec proving the harness reaches the deployed UI
++and can mint a dev token. Required to be green before any other
++Playwright spec is added.
++
++Co-Authored-By: Claude <noreply@anthropic.com>
++EOF
++)"
++```
++
++---
++
++## Phase I — The Flesch E2E spec
++
++### Task I.1: Crawl boltrack.in and assert readability is shown
++
++**Files:**
++- Create: `e2e/tests/flesch-readability.spec.ts`
++
++- [ ] **Step 1:** Write the spec.
++
++```typescript
++import { test, expect } from '@playwright/test';
++import { mintDevToken, primeAuth } from '../helpers/auth';
++import { createProjectAndCrawl, pollCrawlCompleted, firstUrlMatching } from '../helpers/api';
++
++test('boltrack.in crawl populates readability and the UI shows it', async ({ page, request }) => {
++  const token = await mintDevToken(request);
++  await primeAuth(page, token);
++
++  const { crawlId } = await createProjectAndCrawl(request, token, {
++    name: `flesch-${Date.now()}`,
++    seedUrl: 'https://boltrack.in',
++    maxPages: 30,
++  });
++
++  await pollCrawlCompleted(request, token, crawlId, { timeoutMs: 7 * 60_000 });
++
++  // Pick the homepage row (or any HTML URL with measured readability).
++  const homepage = await firstUrlMatching(request, token, crawlId, 'boltrack.in');
++  expect(homepage.readability_score).not.toBeNull();
++  expect(homepage.readability_score!).toBeGreaterThanOrEqual(0);
++  expect(homepage.readability_score!).toBeLessThanOrEqual(100);
++  expect(homepage.readability_bucket).not.toBeNull();
++
++  // Verify the UI surfaces both values in the Content tab of the URL detail.
++  await page.goto(`/crawls/${crawlId}/urls/${homepage.id}`);
++  await page.getByRole('tab', { name: /content/i }).click();
++
++  const scoreEl = page.locator('[data-testid="readability-score"]');
++  await expect(scoreEl).toBeVisible();
++  const renderedScore = parseFloat((await scoreEl.textContent())!.trim());
++  expect(renderedScore).toBeCloseTo(homepage.readability_score!, 1);
++
++  const bucketEl = page.locator('[data-testid="readability-bucket"]');
++  await expect(bucketEl).toBeVisible();
++  await expect(bucketEl).toHaveText(homepage.readability_bucket!.toUpperCase().replace(/_/g, ' '));
++});
++
++test('freshprintsupply.ca crawl is isolated in its own project', async ({ request }) => {
++  const token = await mintDevToken(request);
++  const { projectId, crawlId } = await createProjectAndCrawl(request, token, {
++    name: `multi-tenant-${Date.now()}`,
++    seedUrl: 'https://freshprintsupply.ca',
++    maxPages: 10,
++  });
++
++  await pollCrawlCompleted(request, token, crawlId, { timeoutMs: 5 * 60_000 });
++
++  // Just assert the crawl exists in its own project and finished.
++  const auth = { headers: { Authorization: `Bearer ${token}` } };
++  const res = await request.get(`/v1/projects/${projectId}/crawls`, auth);
++  expect(res.ok()).toBeTruthy();
++  const crawls = (await res.json()).data as Array<{ id: string; status: string }>;
++  const found = crawls.find((c) => c.id === crawlId);
++  expect(found, 'crawl visible in its own project listing').toBeTruthy();
++  expect(found!.status).toBe('completed');
++});
++```
++
++- [ ] **Step 2:** If `/crawls/:id/urls/:urlId` isn't the exact deep-link route, find it:
++
++```bash
++grep -rn "/crawls/.*urls" /c/Users/User/Desktop/sf-clone-rust/UI/src/
++```
++
++Update the `page.goto(...)` line accordingly.
++
++- [ ] **Step 3:** Run the spec.
++
++```bash
++cd e2e
++npm run e2e -- flesch-readability
++cd ..
++```
++
++Expected: both tests pass. The full run will take 8-12 minutes (real crawls of two domains).
++
++- [ ] **Step 4:** Commit.
++
++```bash
++git add e2e/tests/flesch-readability.spec.ts
++git commit -m "$(cat <<'EOF'
++test(e2e): Flesch readability score visible after boltrack.in crawl
++
++Two specs: (1) full slice 2.1 verification against boltrack.in,
++asserting both API and UI surface the persisted Reading Ease score;
++(2) multi-tenant smoke against freshprintsupply.ca proving project
++isolation.
++
++Co-Authored-By: Claude <noreply@anthropic.com>
++EOF
++)"
++```
++
++---
++
++## Phase J — CI integration
++
++### Task J.1: Add an `e2e` job to `ci.yml`
++
++**Files:**
++- Modify: `.github/workflows/ci.yml`
++
++- [ ] **Step 1:** Read the current workflow to learn how `cargo` jobs are structured.
++
++```bash
++cat /c/Users/User/Desktop/sf-clone-rust/.github/workflows/ci.yml
++```
++
++- [ ] **Step 2:** Add an `e2e` job at the bottom that depends on the build job. Append:
++
++```yaml
++  e2e:
++    runs-on: ubuntu-latest
++    needs: [build]  # adjust to the existing job names
++    timeout-minutes: 30
++    steps:
++      - uses: actions/checkout@v4
++
++      - name: Set up Docker Buildx
++        uses: docker/setup-buildx-action@v3
++
++      - name: Bring up stack
++        run: |
++          docker compose -f docker-compose.yml up -d --build
++          # Wait for /v1/health to be 200.
++          for i in $(seq 1 60); do
++            if curl -fsS http://localhost:3000/v1/health > /dev/null 2>&1 \
++               || curl -fsS http://localhost:3000/health > /dev/null 2>&1; then
++              echo "API ready"
++              exit 0
++            fi
++            sleep 2
++          done
++          docker compose logs
++          exit 1
++
++      - name: Set up Node
++        uses: actions/setup-node@v4
++        with: { node-version: '20', cache: 'npm', cache-dependency-path: e2e/package-lock.json }
++
++      - name: Install Playwright deps
++        working-directory: e2e
++        run: |
++          npm ci
++          npx playwright install --with-deps chromium
++
++      - name: Run E2E
++        working-directory: e2e
++        env:
++          E2E_BASE_URL: http://localhost:80
++        run: npm run e2e
++
++      - name: Upload Playwright report
++        if: always()
++        uses: actions/upload-artifact@v4
++        with:
++          name: playwright-report
++          path: e2e/playwright-report
++          if-no-files-found: ignore
++
++      - name: Dump compose logs on failure
++        if: failure()
++        run: docker compose logs --no-color > compose-logs.txt && cat compose-logs.txt
++```
++
++(Match the indentation, secret/env conventions, and existing `runs-on` of the file. If your existing `build` job is named differently, change `needs:` accordingly.)
++
++- [ ] **Step 3:** Commit.
++
++```bash
++git add .github/workflows/ci.yml
++git commit -m "$(cat <<'EOF'
++ci: run Playwright E2E against docker-compose stack
++
++Spins the stack, waits for /v1/health, installs Playwright chromium
++with system deps, runs all specs, uploads the HTML report on
++failure, dumps compose logs if anything blows up.
++
++Co-Authored-By: Claude <noreply@anthropic.com>
++EOF
++)"
++```
++
++---
++
++## Phase K — Update the master spec inventory
++
++### Task K.1: Flip slice 2.1 to ✅
++
++**Files:**
++- Modify: `docs/superpowers/specs/2026-05-22-sf-clone-gap-closure-master-design.md`
++
++- [ ] **Step 1:** In the Sub-project 2 inventory table, change the row for slice 2.1:
++
++From:
++```
++| 2.1 Flesch readability — align to SF Reading Ease + persist | ⚠ FK Grade today → ✅ this PR | — | S | Score 0-100 + bucket persisted, visible in UI Content tab |
++```
++
++To:
++```
++| 2.1 Flesch readability — SF Reading Ease, persisted, surfaced through API + UI | ✅ | — | S | Score 0-100 + bucket persisted, visible in UI Content tab; verified via Playwright crawl of boltrack.in |
++```
++
++- [ ] **Step 2:** Commit.
++
++```bash
++git add docs/superpowers/specs/2026-05-22-sf-clone-gap-closure-master-design.md
++git commit -m "$(cat <<'EOF'
++docs: mark slice 2.1 (Flesch readability) complete in master spec
++
++Co-Authored-By: Claude <noreply@anthropic.com>
++EOF
++)"
++```
++
++---
++
++## Phase L — Open the PR
++
++### Task L.1: Push and open the PR
++
++**Files:** none (git/gh actions)
++
++- [ ] **Step 1:** Push the branch.
++
++```bash
++git push -u origin feat/2-1-flesch-readability
++```
++
++- [ ] **Step 2:** Open the PR using the slice PR template. Body filled in from `docs/superpowers/specs/templates/pr-template.md`:
++
++```bash
++gh pr create --title "feat(evaluators): Flesch readability — SF Reading Ease parity + Playwright E2E harness" --body "$(cat <<'EOF'
++## Slice
++
++- **ID:** 2.1
++- **Name:** Flesch readability — SF Reading Ease, persisted, surfaced through API + UI
++- **Sub-project:** 2 — Content algorithms
++- **Master spec row:** [docs/superpowers/specs/2026-05-22-sf-clone-gap-closure-master-design.md](docs/superpowers/specs/2026-05-22-sf-clone-gap-closure-master-design.md)
++- **Sub-project spec:** [docs/superpowers/specs/2026-05-22-content-algorithms-design.md](docs/superpowers/specs/2026-05-22-content-algorithms-design.md)
++
++## Screaming Frog reference
++
++- Decompiled file: `screamingfrog1/sources/uk/co/screamingfrog/seospider/id694424387.java`
++- Formula and bucket boundaries verbatim from SF (`206.835 − 1.015·d − 84.6·(syll/words)`, clamped 0-100; buckets at 30/50/60/70/80/90).
++
++## What changed
++
++- New `sf-core::readability` module (pure math, no IO).
++- `CrawlUrl` gains `readability_score` + `readability_bucket`, persisted via migration `0009_readability.sql`.
++- Parser computes during HTML parse; pipeline writes to DB.
++- Content evaluator reads the persisted score instead of recomputing (FK-Grade code removed).
++- API URL endpoints expose both fields.
++- New "Content" tab in `DetailPane.tsx` renders score + bucket with `data-testid` attrs.
++- First Playwright harness at `e2e/` (config, helpers, smoke + Flesch specs).
++- CI job runs Playwright against docker-compose stack.
++
++## Acceptance criterion (verbatim from master spec)
++
++> Score 0-100 + bucket persisted, visible in UI Content tab; verified via Playwright crawl of boltrack.in.
++
++## Verification
++
++### Unit tests
++
++```
++cargo test --workspace
++```
++
++All passing.
++
++### Lint
++
++```
++cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings
++```
++
++Clean.
++
++### Playwright E2E (locally against docker-compose)
++
++```
++npm --prefix e2e run e2e
++```
++
++Both specs pass:
++- `smoke.spec.ts` — UI loads + status footer present
++- `flesch-readability.spec.ts` — boltrack.in crawl populates readability; freshprintsupply.ca isolated
++
++## Master-spec inventory update
++
++Slice **2.1** moved from `⚠` to `✅` in the same PR (final commit on this branch).
++Slice **2.2** was already `✅` (Lorem ipsum present at `content.rs:52`); status updated alongside.
++
++## Out of scope
++
++- Slices 2.3-2.8 in sub-project 2 (Soft-404, MinHash, pixel-width, duplicate processor, LanguageTool, embeddings) — separate PRs.
++- LanguageTool integration (2.7) needs its own brainstorming round (XL).
++
++## Risk / rollback
++
++Single-slice change. Migration 0009 is additive (nullable columns). Revert this PR cleanly — old rows stay valid, columns left in place are harmless.
++
++---
++
++🤖 Generated with [Claude Code](https://claude.com/claude-code)
++EOF
++)"
++```
++
++- [ ] **Step 2:** Save the PR URL printed by `gh pr create`. The output of this plan is that URL.
++
++---
++
++## Plan complete
++
++Every slice from sub-project 2 / slice 2.1 has a task. Master-spec inventory will be ✅ after the final commit. Playwright harness is ready to host slices 2.2 onward without re-bootstrapping.
+diff --git a/docs/superpowers/specs/2026-05-22-content-algorithms-design.md b/docs/superpowers/specs/2026-05-22-content-algorithms-design.md
+new file mode 100644
+index 0000000..28afa9f
+--- /dev/null
++++ b/docs/superpowers/specs/2026-05-22-content-algorithms-design.md
+@@ -0,0 +1,273 @@
++# Sub-project 2 — Content algorithms
++
++**Date:** 2026-05-22
++**Parent spec:** [`2026-05-22-sf-clone-gap-closure-master-design.md`](./2026-05-22-sf-clone-gap-closure-master-design.md)
++**Status:** active
++**SF reference:** Tab 2 — CONTENT in `REVERSE_ENGINEERING_NOTES.md` (sections starting line 98)
++
++---
++
++## Goal
++
++Bring the Content tab to behavioral parity with Screaming Frog by porting (or replacing with a fit-for-purpose alternative) every content-analysis algorithm.
++
++## Slices
++
++| ID | Slice | SF reference | Status |
++|---|---|---|---|
++| 2.1 | Flesch readability — align to SF Reading Ease + persist | `seospider/id694424387.java` | ⚠ FK Grade today → ✅ this PR |
++| 2.2 | Lorem ipsum detector | `seospider/t/id661024706.java` field `mLoremIpsumOccurrences` | ✅ (already at `evaluators/src/content.rs:52`) |
++| 2.3 | Soft-404 phrase matcher | `seo/spider/config/ContentConfig.java:17` | ❌ |
++| 2.4 | MinHash near-dup + content-change | `seo/spider/seoelements/id1647440094.java` + `id134213820.java` | ❌ |
++| 2.5 | Pixel-width for titles / meta | `seo/spider/i/id694424387.java` + variants | ❌ |
++| 2.6 | DuplicateProcessor HashSets | `DuplicateProcessorType` enum | 🟡 |
++| 2.7 | LanguageTool grammar/spelling | `seospider/languagetool/id1563915769.java` | ❌ |
++| 2.8 | LLM embeddings cosine + low-relevance | `seo/spider/config/EmbeddingsConfig.java` | ❌ |
++
++---
++
++## Slice 2.1 — Flesch readability (this PR)
++
++> **State before this slice:** `crates/evaluators/src/content.rs:92-114` already implements `flesch_kincaid_grade(text)` — but it's the wrong formula (Flesch-Kincaid Grade Level, used for US school-grade estimates) and the score is recomputed per-evaluation rather than persisted. This slice replaces the formula with SF's Flesch Reading Ease, extracts the function to its own module, persists `readability_score` + `readability_bucket` on `CrawlUrl`, and surfaces them through API + UI. Lorem ipsum (slice 2.2) is already implemented at the same file.
++
++### What SF does
++
++```java
++score = clamp(206.835 - 1.015·avgSentenceLen - 84.6·(syllableCount / wordCount), 0, 100)
++```
++
++Buckets:
++
++| Score range | Bucket label |
++|---|---|
++| 0-30 | `VERY_HARD` |
++| 30-50 | `HARD` |
++| 50-60 | `FAIRLY_HARD` |
++| 60-70 | `NORMAL` |
++| 70-80 | `FAIRLY_EASY` |
++| 80-90 | `EASY` |
++| 90-100 | `VERY_EASY` |
++
++DTO (`seospider/data/id16440051.java`): `(mTotalSentences: int, mAverageWordsPerSentence: double, mReadabilityScore: double)`.
++
++Filter keys fired:
++- `ContentReadabilityDifficult` — score in [0, 50)
++- `ContentReadabilityVeryDifficult` — score in [0, 30)
++
++Both fire when a page is "difficult enough"; `VeryDifficult` is the strict subset.
++
++### Tokenization rules to port
++
++SF uses standard English sentence/word splitting. For parity:
++- **Sentence boundary**: terminal punctuation `[.!?]` followed by whitespace + capital letter or end-of-text. Exclude abbreviations (`Mr.`, `Dr.`, `etc.`) via a small allowlist.
++- **Word**: contiguous `[A-Za-z']+` token. Numbers excluded from word count.
++- **Syllable count per word**: heuristic — count vowel groups, drop trailing silent `e`, clamp ≥ 1.
++
++For initial implementation we use the heuristic syllable counter. Accuracy ±10% vs SF is acceptable for the proof slice; if SF's exact algorithm is reverse-engineered later (likely a vowel-group counter too), we tighten.
++
++### Files to change
++
++| File | Change |
++|---|---|
++| `crates/core/src/crawl.rs` | Add `readability_score: Option<f64>`, `readability_bucket: Option<ReadabilityBucket>` fields to `CrawlUrl`; add `ReadabilityBucket` enum |
++| `crates/core/src/filter_key/mod.rs` (or wherever the enum lives) | Verify `ContentReadabilityDifficult`, `ContentReadabilityVeryDifficult` keys exist; add if missing |
++| `crates/migrations/sql/0009_readability.sql` (next free number after 0008_indexability) | Add `readability_score DOUBLE PRECISION`, `readability_bucket TEXT` columns to `crawl_urls` |
++| `crates/crawl-worker/src/parser.rs` | When extracting body text, populate readability fields via new `flesch::compute(text)` |
++| `crates/evaluators/src/content.rs` | Fire `ContentReadabilityDifficult` if score < 50, `ContentReadabilityVeryDifficult` if score < 30 |
++| `crates/evaluators/src/flesch.rs` (new) | Pure-function module: `pub fn compute(text: &str) -> ReadabilityStats { ... }` |
++| `crates/api/src/routes/urls.rs` | Include `readability_score`, `readability_bucket` in URL detail response |
++| `UI/src/pages/UrlDetail.tsx` (verify path) | Show readability badge in Content section |
++| `e2e/tests/flesch-readability.spec.ts` | Playwright test against boltrack.in |
++
++### Data flow
++
++```
++crawl-worker fetches URL
++  ├─► parser.rs extracts body text (existing)
++  │     └─► flesch::compute(text) → ReadabilityStats
++  │           └─► writes readability_score + bucket to crawl_urls row
++  └─► evaluators run
++        └─► content.rs reads readability_score, fires bucket filter keys
++              └─► findings table populated
++                    └─► API exposes readability fields + filter hits
++                          └─► UI shows score badge in Content tab
++                                └─► Playwright asserts score visible
++```
++
++### Algorithm (Rust)
++
++```rust
++// crates/evaluators/src/flesch.rs
++pub struct ReadabilityStats {
++    pub score: f64,         // 0.0 .. 100.0
++    pub bucket: ReadabilityBucket,
++    pub total_sentences: usize,
++    pub avg_words_per_sentence: f64,
++}
++
++pub fn compute(text: &str) -> Option<ReadabilityStats> {
++    let sentences = split_sentences(text);
++    if sentences.is_empty() { return None; }
++    let words: Vec<&str> = sentences.iter().flat_map(|s| split_words(s)).collect();
++    if words.is_empty() { return None; }
++    let syllables: usize = words.iter().map(|w| count_syllables(w)).sum();
++
++    let avg_sent_len = words.len() as f64 / sentences.len() as f64;
++    let avg_syll_per_word = syllables as f64 / words.len() as f64;
++    let raw = 206.835 - 1.015 * avg_sent_len - 84.6 * avg_syll_per_word;
++    let score = raw.clamp(0.0, 100.0);
++
++    Some(ReadabilityStats {
++        score,
++        bucket: bucket_of(score),
++        total_sentences: sentences.len(),
++        avg_words_per_sentence: avg_sent_len,
++    })
++}
++
++fn bucket_of(score: f64) -> ReadabilityBucket {
++    match score {
++        s if s < 30.0 => ReadabilityBucket::VeryHard,
++        s if s < 50.0 => ReadabilityBucket::Hard,
++        s if s < 60.0 => ReadabilityBucket::FairlyHard,
++        s if s < 70.0 => ReadabilityBucket::Normal,
++        s if s < 80.0 => ReadabilityBucket::FairlyEasy,
++        s if s < 90.0 => ReadabilityBucket::Easy,
++        _             => ReadabilityBucket::VeryEasy,
++    }
++}
++```
++
++`count_syllables` uses the standard vowel-group heuristic with silent-e adjustment. No external crate needed.
++
++### Edge cases
++
++- Empty text → `None` returned, no field updated
++- Single-sentence text → still computes (avg_sent_len = word_count)
++- Non-English text → still computes, but score has no meaning. Future: gate on `<html lang="en*">`. Out of scope for 2.1.
++- Pages with code blocks / tables → those are text too; SF doesn't strip them, neither do we
++
++### Unit tests
++
++In `crates/evaluators/src/flesch.rs`:
++
++| Input | Expected score range | Expected bucket |
++|---|---|---|
++| "The cat sat on the mat. The dog ran." | 90-100 | VeryEasy |
++| Standard B2B copy (~15 words/sent, 1.5 syll/word) | 60-70 | Normal |
++| Dense academic-style sentence (~25 words/sent, 2 syll/word) | 0-30 | VeryHard |
++| Empty string | — | None returned |
++
++### E2E test (Playwright)
++
++`e2e/tests/flesch-readability.spec.ts`:
++
++```typescript
++test('boltrack.in homepage has readability score in Content tab', async ({ page }) => {
++  await page.goto(BASE);
++  await mintDevToken(page);
++  const projectId = await createProject(page, 'flesch-e2e');
++  const crawlId = await startCrawl(page, projectId, 'https://boltrack.in', { maxPages: 30 });
++  await pollCrawlCompleted(page, crawlId, { timeoutMs: 5 * 60_000 });
++
++  await page.goto(`${BASE}/crawls/${crawlId}/urls?q=boltrack.in`);
++  await page.getByRole('row', { name: /https:\/\/boltrack\.in\/?$/ }).first().click();
++  await page.getByRole('tab', { name: /content/i }).click();
++
++  const score = await page.locator('[data-testid="readability-score"]').textContent();
++  expect(score).toMatch(/^[0-9]+\.[0-9]$/);
++  const numeric = parseFloat(score!);
++  expect(numeric).toBeGreaterThanOrEqual(0);
++  expect(numeric).toBeLessThanOrEqual(100);
++
++  const bucket = await page.locator('[data-testid="readability-bucket"]').textContent();
++  expect(['VeryHard','Hard','FairlyHard','Normal','FairlyEasy','Easy','VeryEasy']).toContain(bucket);
++});
++```
++
++Acceptance: green CI run with this test against the live deployment OR against `docker-compose up`.
++
++---
++
++## Slice 2.2 — Lorem ipsum detector (future PR)
++
++Count case-insensitive occurrences of `"lorem ipsum"` in extracted body text. If count > 0, fire `LoremIpsumPlaceholder`.
++
++Files: `crates/evaluators/src/content.rs` only.
++
++---
++
++## Slice 2.3 — Soft-404 phrase matcher (future PR)
++
++Port SF's 35-phrase list from `ContentConfig.java:17` verbatim into a `pub const SOFT_404_PHRASES: &[&str]` array. Substring match against body text. If any phrase matches AND status code is 200, fire `Soft404Pages`.
++
++Files: new `crates/evaluators/src/soft_404.rs` with the const + matcher; wire from `content.rs`.
++
++User configurability (matching SF's `mSoft404Phrases` field) comes in a follow-up via the config UI.
++
++---
++
++## Slice 2.4 — MinHash near-dup + content-change (future PR)
++
++Replaces SF's `org.codelibs.minhash` dependency. Rust options surveyed:
++- `probabilistic-collections` — has MinHash but byte format differs
++- Hand-rolled — full control over byte format, mirrors SF's `ByteArray` comparator exactly
++
++Decision deferred until this slice's session; prefer hand-rolled for byte-format parity.
++
++Output: `crates/evaluators/src/minhash.rs` + storage of MinHash signatures per URL + `NearDuplicates` filter + `ParityContentChange` reuse.
++
++---
++
++## Slice 2.5 — Pixel-width (future PR)
++
++Hardest content slice. SF uses AWT FontMetrics over `"sfroboto"` TTF + Swing BasicHTML fallback for CJK/Thai. Rust replacement options:
++- `fontdue` for glyph rasterization → derive widths
++- `cosmic-text` for shaping (needed for CJK)
++- Precomputed glyph-width table for `sfroboto` at standard sizes (best parity)
++
++Precomputed table is the SF-faithful path; rasterizer is faster to write.
++
++---
++
++## Slice 2.6 — DuplicateProcessor (future PR)
++
++Cross-URL post-crawl pass. Collation-normalized HashSet per attribute (TITLE, META_DESCRIPTION, META_KEYWORD, H1, H2). After all URLs ingested, walk each set; any key with `count > 1` fires the corresponding `*_DUPLICATE` filter on all member URLs.
++
++---
++
++## Slice 2.7 — LanguageTool (future PR)
++
++SF runs LanguageTool *locally* via `org.languagetool.JLanguageTool`. Options for Rust:
++- Run bundled LT JAR via subprocess (heavy)
++- HTTP to public LT API (rate-limited, external dep)
++- Native Rust grammar checker — no mature option exists
++
++This slice is XL and will need its own brainstorming round. Out of scope for sub-project 2's first pass.
++
++---
++
++## Slice 2.8 — LLM embeddings (future PR)
++
++Depends on slice 5.6 (AI provider abstraction). Embeds page text via configured provider, computes cosine sim across all pairs.
++
++Thresholds (from SF `EmbeddingsConfig`): 0.95 for `CONTENT_COSINE_SIMILARITY`, 0.40 for `CONTENT_LOW_RELEVANCE` (vs anchor prompt).
++
++---
++
++## Sequencing
++
++```
++2.1 Flesch (this session)
++  └─► 2.2 Lorem (XS, independent)
++  └─► 2.3 Soft-404 (S, independent)
++  └─► 2.6 DuplicateProcessor (S, independent — sets up cross-URL pattern reused by 2.4)
++        └─► 2.4 MinHash (depends on 1.2 rendered-HTML storage too)
++              └─► 2.5 Pixel-width (independent but bundled here for delivery)
++                    └─► 2.7 LanguageTool (XL — its own brainstorm)
++                          └─► 2.8 Embeddings (depends on 5.6)
++```
++
++---
++
++_End of sub-project 2 spec._
+diff --git a/docs/superpowers/specs/2026-05-22-sf-clone-gap-closure-master-design.md b/docs/superpowers/specs/2026-05-22-sf-clone-gap-closure-master-design.md
+new file mode 100644
+index 0000000..446f131
+--- /dev/null
++++ b/docs/superpowers/specs/2026-05-22-sf-clone-gap-closure-master-design.md
+@@ -0,0 +1,221 @@
++# sf-clone-rust ↔ Screaming Frog gap closure — master spec
++
++**Date:** 2026-05-22
++**Status:** active
++**Owner:** sahil.jani
++**Decompiled SF reference:** `C:\Users\User\Desktop\screamingfrog1\` (JADX-decompiled Java, see `REVERSE_ENGINEERING_NOTES.md`)
++
++---
++
++## Goal
++
++Bring this Rust workspace to behavioral parity with Screaming Frog SEO Spider's 33 tabs and their underlying algorithms, while keeping the SaaS shape (multi-tenant Postgres + Redis + Axum API + React UI) we already chose over SF's single-user Derby desktop architecture.
++
++Out of scope: licensing/activation parity, the exact `.seospider` binary file format, JavaFX-specific UI affordances.
++
++## Architecture envelope (today)
++
++```
++[React UI] ──HTTP──▶ [Axum API] ──Postgres──▶ [crawl-worker] ──HTTP/HTML──▶ web
++                          │                          │
++                          └──── Redis queue ─────────┘
++```
++
++Where SF's bundled Chromium + Lighthouse + Node.js + Apache Derby + Apache POI + Jena + Any23 + SHACL + LanguageTool + axe-core + sf-node go is the load-bearing question this spec answers slice by slice.
++
++## Sub-projects
++
++Each sub-project gets its own spec at `docs/superpowers/specs/YYYY-MM-DD-{name}-design.md` when its session begins.
++
++| # | Sub-project | Spec status | Unblocks |
++|---|---|---|---|
++| 1 | Render worker (CDP / Chromium) | ❌ not written | JS, Parity content-change, Accessibility, Custom-JS, Image dims |
++| 2 | Content algorithms | ✅ this session | Content tab, Parity content-change |
++| 3 | PageSpeed PSI client | ❌ not written | PageSpeed tab, Mobile tab |
++| 4 | Structured data validator | ❌ not written | StructuredData tab |
++| 5 | External integrations (GA4, GSC, link metrics, AI) | ❌ not written | Analytics, SearchConsole, LinkMetrics, AI, Custom-Extraction tabs |
++| 6 | Exports / Reports / Scheduler / Email | ❌ not written | CSV/XLSX, scheduled runs, notifications |
++| 7 | UI improvements | ❌ not written | tab structure, filter sidebar, overview, diff viewer |
++| 8 | Filter-semantics audit | ❌ not written | correctness of already-implemented evaluators |
++
++## Gap inventory
++
++Status flags: ❌ missing · 🟡 partial / stub · ⚠ wrong shape · ✅ implemented · 🔁 rename/refactor
++
++Effort: **XS** ≤ 2h · **S** ≤ 1d · **M** 1-3d · **L** 1w · **XL** > 1w
++
++### Sub-project 1 — Render worker
++
++| Slice | Status | Blocks | Effort | Acceptance |
++|---|---|---|---|---|
++| 1.1 chromiumoxide pool + `/render` endpoint | ❌ | 1.2-1.5 | L | POST URL returns `{raw_html, rendered_html, screenshots[]}` |
++| 1.2 Per-URL raw+rendered HTML byte store | ❌ | 2.4 parity | S | DB blob columns + retrieval API |
++| 1.3 JavaScript tab revival (19 filters) | 🟡 | 1.1, 1.2 | M | All 19 fire on synthetic JS-only fixtures |
++| 1.4 Accessibility via axe-core injection | ⚠ | 1.1 | M | 103 rule keys + 6 WCAG tiers reported per SF map |
++| 1.5 Image-dimension extraction via CDP | ❌ | 1.1 | S | Images tab `INCORRECTLY_SIZED` fires correctly |
++| 1.6 Custom-JavaScript runner | ❌ | 1.1 | S | User snippet executes in rendered page, result stored |
++
++### Sub-project 2 — Content algorithms
++
++| Slice | Status | Blocks | Effort | Acceptance |
++|---|---|---|---|---|
++| 2.1 Flesch readability — align to SF Reading Ease + persist | ⚠ FK Grade today → ✅ this PR | — | S | Score 0-100 + bucket persisted, visible in UI Content tab |
++| 2.2 Lorem ipsum detector | ✅ (content.rs:52) | — | — | Already firing |
++| 2.3 Soft-404 phrase matcher (35 phrases verbatim from SF) | ❌ | — | S | `Soft404Pages` fires on 200-OK page with "page not found" |
++| 2.4 MinHash near-dup + content-change | ❌ | 1.2 | M | `NearDuplicates` fires above 0.7 sim; `ParityContentChange` works |
++| 2.5 Pixel-width for titles / meta | ❌ | — | M | SF's AWT FontMetrics behavior reproduced ±2px on Latin, fallback works on CJK |
++| 2.6 DuplicateProcessor (TITLE/MD/H1/H2/MK HashSets) | 🟡 | — | S | Cross-URL `_DUPLICATE` filters fire deterministically |
++| 2.7 LanguageTool grammar/spelling | ❌ | — | XL | Bundled LT or external HTTP; lang detected from `<html lang>` |
++| 2.8 LLM embeddings cosine + low relevance | ❌ | 5.6 | M | OpenAI/Anthropic/Gemini provider produces vectors; ≥ 0.95 fires CosineSimilarity |
++
++### Sub-project 3 — PageSpeed
++
++| Slice | Status | Blocks | Effort | Acceptance |
++|---|---|---|---|---|
++| 3.1 PSI v5 HTTP client (batch=40, delay=1500ms, retries=10) | ❌ | — | M | PSI metrics arrive for crawled URL |
++| 3.2 PSI redirect guard | ❌ | 3.1 | XS | `finalUrl != requestedUrl` → discard + log |
++| 3.3 PageSpeedMetricsItem 94-entry catalogue | ❌ | 3.1 | S | All metrics extracted to typed fields |
++| 3.4 21 PageSpeed_* filter rules | ❌ | 3.3 | M | All 21 fire per SF semantics |
++| 3.5 Local Lighthouse runner (bundled node) | ❌ | — | XL | Same metric shape as 3.3, no network needed |
++
++### Sub-project 4 — Structured data
++
++| Slice | Status | Blocks | Effort | Acceptance |
++|---|---|---|---|---|
++| 4.1 JSON-LD extractor (`<script type=application/ld+json>`) | 🟡 | — | S | Parsed to typed `serde_json::Value` per script tag |
++| 4.2 Microdata extractor (itemtype/itemprop) | ❌ | — | M | Equivalent of Any23 `html-microdata` output |
++| 4.3 RDFa 1.1 extractor | ❌ | — | M | Equivalent of Any23 `html-rdfa11` |
++| 4.4 RDF graph (`sophia` or `oxigraph` crate) | ❌ | 4.5 | M | Triples queryable per URL |
++| 4.5 SHACL validator over Rust RDF | ❌ | 4.4 | XL | Violation vs Warning per `SH.Violation`; per-Schema.org TTL shapes ported |
++| 4.6 GoogleFeature property mapping | ❌ | 4.5 | S | Validation hit → enum value for rich-results UI |
++| 4.7 12 StructuredData_* filter rules | 🟡 | 4.1-4.6 | M | All 12 fire per SF semantics |
++
++### Sub-project 5 — Integrations
++
++| Slice | Status | Blocks | Effort | Acceptance |
++|---|---|---|---|---|
++| 5.1 Google Analytics 4 client + OAuth | ❌ | — | L | Sessions/bounce-rate populated; thresholds 70 sessions / 0.7 bounce |
++| 5.2 GSC Search Analytics + URL Inspection | ❌ | — | L | Verdicts (Amp/Mobile/RichResults) per URL |
++| 5.3 Moz API client | ❌ | — | S | Domain Authority + Page Authority surfaced |
++| 5.4 Majestic API client | ❌ | — | S | Trust Flow + Citation Flow surfaced |
++| 5.5 Ahrefs API client | ❌ | — | S | Ahrefs Rank + URL Rating surfaced |
++| 5.6 AI provider abstraction (OpenAI/Anthropic/Gemini) | ❌ | 2.8, 5.7 | M | Single trait, 3 impls, embeddings + chat |
++| 5.7 Custom Extraction (XPath / CSS / regex slots, 1-100) | ❌ | — | M | User-config slot extracts arbitrary fields per page |
++| 5.8 Custom Search (regex/string slots, 1-100) | ❌ | — | S | Match counts per slot per page |
++
++### Sub-project 6 — Exports / Reports / Scheduler
++
++| Slice | Status | Blocks | Effort | Acceptance |
++|---|---|---|---|---|
++| 6.1 CSV exporter (`csv` crate) | 🟡 | — | S | One file per tab, schema matches column order |
++| 6.2 XLSX exporter (`rust_xlsxwriter`) | ❌ | — | M | Multi-sheet workbook per crawl |
++| 6.3 Bulk Exports (relationship reports) | ❌ | — | M | "Inlinks to 404 pages" type exports |
++| 6.4 Issues Overview aggregator | 🟡 | — | S | Composed view across all filter hits |
++| 6.5 ExportPreset save/load | ❌ | 6.2, 6.3 | S | Named preset roundtrip |
++| 6.6 Scheduler (cron + headless mode) | ❌ | — | L | `{ONCE, DAILY, WEEKLY, MONTHLY}` + history table |
++| 6.7 Email notifications (crawl complete) | ❌ | 6.6 | S | TLS/SSL SMTP send with subject/body templates |
++
++### Sub-project 7 — UI improvements
++
++| Slice | Status | Blocks | Effort | Acceptance |
++|---|---|---|---|---|
++| 7.1 Verify all 33 tabs present in sidebar | 🟡 | — | XS | Tab catalog matches SF |
++| 7.2 Filter sidebar per tab (with counts) | 🟡 | — | S | Click filter → grid filters |
++| 7.3 Overview panel with stacked bars | ❌ | — | M | One bar per tab, segments per filter |
++| 7.4 HTML diff viewer for parity | ❌ | 1.2, 2.4 | M | Side-by-side diff using `diff2html` |
++| 7.5 Column visibility customization | ❌ | — | S | User toggles columns; persists in localStorage |
++| 7.6 ExportPreset UI | ❌ | 6.5 | S | Form to define/save export schema |
++
++### Sub-project 8 — Filter-semantics audit
++
++| Slice | Status | Effort | Acceptance |
++|---|---|---|---|
++| 8.1 URL tab — GA-params, REPETITIVE_PATH, INTERNAL_SEARCH_URL | 🟡 verify | S | Each filter matches SF behavior on fixtures |
++| 8.2 Images tab — 1024-byte threshold for OVER_X_KB | 🟡 verify | XS | Constant + test |
++| 8.3 RESPONSE_CODES tab — 35-filter classification (3 bands) | 🟡 verify | S | All 35 fire correctly incl. INTERNAL-only REDIRECT_CHAIN/LOOP |
++| 8.4 Directives tab — 18 tokens incl. `unavailable_after`, `NoODP`, `NoYDIR`, `NoTranslate` | 🟡 verify | S | Each token mapped + tested |
++| 8.5 Security tab — HSTS, CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy | 🟡 verify | S | All header checks present |
++| 8.6 Validation tab — add `HIGH_CARBON_RATING` filter (CO2.js port or alternative) | ❌ | M | Carbon score derived from page bytes |
++| 8.7 Headings — `ALT_TEXT_IN_H1`, `NON_SEQUENTIAL` | 🟡 verify | S | Both fire correctly |
++| 8.8 Hreflang — return-link bidirectionality via multimap | ⚠ | M | `HREF_LANG_*` multimap exists; return-link checks work |
++| 8.9 Canonicals — `CANONICALS_PENDING_LINK` cross-URL | ⚠ | M | Cross-URL canonical chain analysis works |
++| 8.10 Pagination — `PAGINATION_PENDING_LINK` + `SEQUENCE_ERROR` | ⚠ | M | Loop/sequence detection works |
++| 8.11 Internal/External — 12 content-type buckets | 🟡 verify | S | All 12 types classified |
++| 8.12 Sitemaps — OVER_50K_URLS, OVER_50_MB, ORPHAN_URL, NOT_IN_SITEMAP | ❌ | M | Cross-URL post-crawl pass |
++
++### Cross-cutting
++
++| Slice | Status | Effort | Acceptance |
++|---|---|---|---|
++| C.1 Widen `Finding` struct to carry payloads (axe details, PSI metric, similarity score) | ⚠ | S | Variants per consumer; UI shows payload |
++| C.2 Add rendered-DOM field to `EvalContext` | ⚠ | XS | Field exists; JS evaluator uses it |
++| C.3 Document multi-tenant SaaS divergence from SF in SYSTEM_DESIGN.md | ❌ | XS | Section added |
++| C.4 URL path limits config (`UrlPathLimitsInfo` equivalent) | ❌ | S | Per-pattern regex + cap |
++| C.5 Custom HTTP headers config | ❌ | XS | User adds headers, sent on fetch |
++| C.6 User-agent presets | ❌ | XS | Predefined UA list + custom |
++| C.7 Split `evaluators/src/integrations.rs` into 7 files | 🔁 | XS | One file per integration tab |
++| C.8 Rename stub evaluators (pagespeed.rs, parity.rs, sitemaps.rs) with `_stub` suffix until real | 🔁 | XS | Names signal status |
++
++---
++
++## Subagent dispatch pattern
++
++Each slice is one Agent call with `isolation: "worktree"`. The prompt template lives at `templates/subagent-prompt-template.md`. Parallel fan-out = multiple Agent calls in one message. Sequential = chain by dependency from the inventory's `Blocks` column.
++
++Branch naming: `{type}/{slice-id}-{kebab-name}` — e.g. `feat/2-1-flesch-readability`.
++
++Commit style: conventional commits (matches existing history). One logical change per commit.
++
++PR template: `templates/pr-template.md`. Each PR title is `{type}({scope}): {message}` and the body includes:
++- Link to the slice's master-spec row
++- Link to the sub-project spec
++- Acceptance criterion verbatim
++- Test commands run + their output
++- Status emoji change (e.g. `❌ → ✅`) for the inventory row
++
++After a slice merges, the master spec's inventory row is updated in a follow-up commit (or by the same PR if simple).
++
++## E2E test harness
++
++`e2e/` at workspace root. TypeScript + `@playwright/test`. Drives the deployed UI through real browser sessions.
++
++- `playwright.config.ts` — baseURL `http://localhost:80` (your nginx port), override via `E2E_BASE_URL`
++- Auth via existing `SF_DEV_MODE=1` token mint
++- One `*.spec.ts` per slice that has UI-visible behavior
++- Smoke spec (`e2e/tests/smoke.spec.ts`) — "UI loads, status footer shows version" — must pass before any other E2E
++
++Test pattern per slice (e.g. Flesch):
++1. UI loads, project created, crawl on `boltrack.in` started with max-pages 30
++2. Poll `/v1/crawls/:id` until `status=completed` (timeout 5 min)
++3. Navigate UI to Content tab → URL detail
++4. Assert readability column populated, bucket label visible
++
++`freshprintsupply.ca` is used as a secondary smoke (different project, multi-tenant isolation check).
++
++`e2e/README.md` documents local run, CI run, debugging.
++
++## CI integration
++
++- Existing `.github/workflows/ci.yml` extended with `e2e` job: spin up `docker-compose.yml` services, install Playwright, run `npm --prefix e2e run e2e`
++- E2E job runs against `main` and PR branches; failures block merge
++- Cache `~/.cache/ms-playwright` for browser binaries
++
++## Acceptance for this session
++
++- [x] Master spec committed at `docs/superpowers/specs/2026-05-22-sf-clone-gap-closure-master-design.md`
++- [x] Sub-project 2 (content algorithms) spec committed
++- [x] Subagent prompt template committed at `docs/superpowers/specs/templates/subagent-prompt-template.md`
++- [x] PR template committed at `docs/superpowers/specs/templates/pr-template.md`
++- [x] `e2e/` Playwright harness scaffolded; `smoke.spec.ts` green locally
++- [x] Slice 2.1 (Flesch readability) implemented end-to-end, PR open against `main` with cargo + clippy + Playwright all green
++- [x] Master spec inventory row for 2.1 updated to ✅
++
++## How to extend this spec
++
++When a new gap is discovered (e.g. SF behavior we hadn't catalogued), add it to the inventory as a new row with status ❌, slot it under the right sub-project, and link the discovering PR. The inventory is append-only by slice; status changes are the only in-place edits.
++
++When a sub-project gains a spec, update the "Spec status" row at the top of this doc.
++
++---
++
++_End of master spec._
+diff --git a/docs/superpowers/specs/templates/pr-template.md b/docs/superpowers/specs/templates/pr-template.md
+new file mode 100644
+index 0000000..21c2fb0
+--- /dev/null
++++ b/docs/superpowers/specs/templates/pr-template.md
+@@ -0,0 +1,80 @@
++# Pull Request template — slice-driven PRs
++
++Use this body when opening a PR generated from a master-spec slice.
++
++---
++
++## Slice
++
++- **ID:** {SLICE_ID}    (e.g. `2.1`)
++- **Name:** {SLICE_NAME}    (e.g. `Flesch readability`)
++- **Sub-project:** {N}    (e.g. `2 — Content algorithms`)
++- **Master spec row:** [link to inventory row in master spec]
++- **Sub-project spec:** [link]
++
++## Screaming Frog reference
++
++- Decompiled file: `{path/to/idXXX.java}`
++- SF behavior summarized in: `docs/superpowers/specs/...` section `{slice-name}`
++
++## What changed
++
++{1-3 bullets covering the actual code change. Not a diff dump — the diff is in the file list.}
++
++## Acceptance criterion (verbatim from master spec)
++
++> {ACCEPTANCE_LINE}
++
++## Verification
++
++### Unit tests
++
++```
++cargo test -p {crate}
++```
++
++Output:
++```
++{paste the "test result: ok. N passed" line}
++```
++
++### Lint
++
++```
++cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings
++```
++
++Output: clean.
++
++### Playwright E2E
++
++```
++npm --prefix e2e run e2e -- {spec-glob}
++```
++
++Output:
++```
++{paste the "X passed" summary}
++```
++
++If you ran against `boltrack.in` / `freshprintsupply.ca`, name the domain here.
++
++## Master-spec inventory update
++
++This PR moves slice **{SLICE_ID}** from `{old emoji}` to `{new emoji}` in:
++
++`docs/superpowers/specs/2026-05-22-sf-clone-gap-closure-master-design.md`
++
++Inventory row updated in commit `{SHA}` (this PR) / follow-up PR `{LINK}`.
++
++## Out of scope
++
++{1-2 bullets calling out related work this PR deliberately doesn't do, with links to follow-up slice IDs.}
++
++## Risk / rollback
++
++{One line. Default: "Single-slice change, gated behind feature flag X / no flag, revert this PR cleanly."}
++
++---
++
++🤖 Generated with [Claude Code](https://claude.com/claude-code)
+diff --git a/docs/superpowers/specs/templates/subagent-prompt-template.md b/docs/superpowers/specs/templates/subagent-prompt-template.md
+new file mode 100644
+index 0000000..466502f
+--- /dev/null
++++ b/docs/superpowers/specs/templates/subagent-prompt-template.md
+@@ -0,0 +1,81 @@
++# Subagent prompt template
++
++Use this verbatim when dispatching a slice. Replace `{PLACEHOLDERS}`.
++
++---
++
++You are implementing **slice {SLICE_ID} — {SLICE_NAME}** for the `sf-clone-rust` workspace.
++
++## Context
++
++- Master spec: `docs/superpowers/specs/2026-05-22-sf-clone-gap-closure-master-design.md`
++- Sub-project spec: `docs/superpowers/specs/{SUBPROJECT_SPEC_FILENAME}`
++- Screaming Frog reference (decompiled at `C:\Users\User\Desktop\screamingfrog1\`): `{SF_FILE:LINE}`
++- Coding standards: `docs/CODING_STANDARDS.md` — follow them
++- System design: `docs/SYSTEM_DESIGN.md` — respect the dependency direction (`core` has no IO deps)
++
++## What to implement
++
++{ONE_PARAGRAPH_SCOPE}
++
++## Files you will touch
++
++{FILE_LIST_FROM_SUBPROJECT_SPEC}
++
++## Acceptance criterion
++
++{VERBATIM_ACCEPTANCE_FROM_INVENTORY}
++
++## Required test commands
++
++Before opening the PR, all of these must pass:
++
++```
++cargo fmt --check
++cargo clippy --workspace --all-targets -- -D warnings
++cargo test -p {RELEVANT_CRATE}
++npm --prefix e2e run e2e -- {RELEVANT_SPEC_GLOB}
++```
++
++If a command isn't relevant (e.g. no E2E for an internal refactor), say so in the PR body.
++
++## Commit rules
++
++- One logical change per commit. No "WIP" or "fixes" squash-bait.
++- Conventional commits: `{type}({scope}): {message}` — match the style in `git log --oneline -20`.
++- `type` ∈ `feat|fix|perf|refactor|test|docs|chore|style|ci|build`.
++- Co-author footer:
++  ```
++  Co-Authored-By: Claude <noreply@anthropic.com>
++  ```
++
++## Branch + PR
++
++- Branch: `{TYPE}/{SLICE_ID_KEBAB}-{SLICE_KEBAB_NAME}`
++  - Example: `feat/2-1-flesch-readability`
++- PR title: same as the leading commit subject.
++- PR body: use `docs/superpowers/specs/templates/pr-template.md`. Fill every section.
++
++## Master-spec inventory update
++
++After your slice merges, the master spec's inventory row for {SLICE_ID} must be updated to ✅ in the same PR OR a follow-up that lands immediately after. Don't leave it stale.
++
++## What you must NOT do
++
++- Do not refactor unrelated code. Stay in the slice's file list.
++- Do not add features beyond the acceptance criterion. YAGNI.
++- Do not add comments explaining WHAT the code does — only WHY when non-obvious.
++- Do not skip pre-commit hooks. If a hook fails, fix the underlying issue and recommit.
++- Do not push to `main`. Open a PR.
++
++## Report back
++
++When done, return:
++
++```
++branch: <branch-name>
++pr: <pr-url>
++status: ✅ (or "blocked: <reason>")
++tests: cargo OK, clippy OK, playwright OK
++inventory row: 2.1 status updated to ✅
++```

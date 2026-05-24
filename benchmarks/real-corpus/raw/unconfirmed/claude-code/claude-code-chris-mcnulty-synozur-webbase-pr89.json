@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-chris-mcnulty-synozur-webbase-pr89",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "branch=claude/"
+  },
+  "pr": {
+    "number": 89,
+    "headSha": "4eaa5cfa077b88e8deec499241da91d7cb3b4a63",
+    "baseSha": "29f5768296ae51544fe3983da7665c26e95b324b",
+    "title": "P2 page-specific fixes: team redesign, solutions consolidation, dark theme",
+    "body": "## Summary\n\nThis PR ships design-review P2 fixes across eight pages (Team, Solutions, Partners, Careers, Polaris, Events, Resources, Clients) plus a platform-aware Cmd-K keyboard shortcut hint. All changes are code-only; follow-up asset and CMS row updates are documented in `docs/replit-agent-integration-brief.md` for the Replit agent to complete.\n\n## Key changes\n\n**Team page**\n- Redesigned member cards: circular headshots (removed outer rounded rectangle), larger name/title/bio text\n- Updated section eyebrow and footer link copy to \"Team\"\n\n**Solutions detail page**\n- Consolidated two separate \"Related Resources\" and \"Related Content\" blocks into a single `RelatedResourcesSection` with fallback auto-tagging\n- Normalized all back-links to point to `/services-overview/default` (removed parent-service conditional routing)\n- Improved method-alignment section: removed opacity dimming on inactive phases, refined text contrast and badge styling\n- Shortened method-alignment lead copy (removed \"This engagement\" preamble)\n- Fixed max-width constraints: prose sections capped at `max-w-4xl`, grids at `max-w-6xl`\n\n**Solutions Overview**\n- Updated GTM nav label from \"Go-to-Market\" to \"GTM Strategy & Execution\" in `lib/synozur-nav/src/index.ts`\n- Fixed consulting card layout to prevent height snap on scroll\n\n**Partners page**\n- Switched from white background to dark theme (`bg-white` → `bg-background`)\n- Updated text colors to use semantic tokens (`text-gray-900` → `text-foreground`, etc.)\n\n**Polaris page**\n- Removed Libsyn embed iframe block (featured episodes cards remain)\n\n**Events page**\n- Added new \"Bring Synozur to your next event\" section with three cards (Speaking, Workshops, Sponsorships) and CTA\n- Moved contact CTA into the new section\n\n**Clients page**\n- Added new \"Industries served\" 8-card grid between logo rotator and case-studies\n\n**White Papers page**\n- Aligned listing container width to match Webinars and Library (`max-w-7xl`)\n\n**Header**\n- Platform-aware Cmd-K shortcut hint: displays `⌘K` on macOS/iOS, `Ctrl+K` on Windows/Linux\n- Handler accepts both `metaKey` and `ctrlKey` for consistent behavior across platforms\n\n## Notable implementation details\n\n- The consolidated `RelatedResourcesSection` now accepts an optional `fallback` prop; if no manually-pinned items exist, it renders the fallback (auto-tagged `RelatedContent`)\n- Method-alignment phase cards use conditional styling: active phases get `bg-primary/10` and full text contrast; inactive phases use `bg-card` and reduced opacity\n- Platform detection uses `navigator.userAgentData?.platform` with fallback to deprecated `navigator.platform`; SSR defaults to Ctrl variant, client-side hydration switches to ⌘ on Apple hardware\n- All dark-theme color updates use existing semantic tokens (`bg-background`, `text-foreground`, `text-muted-foreground`) for consistency\n\n## Follow-ups (documented in integration brief)\n\nThe Replit agent will handle:\n1. Solution icon replacements (PNG → transparent SVG)\n2. Application logo upgrades (low-res JPEG → crisp PNG/SVG)\n3. Service pillar icon updates (if any remain as PNG)\n4. GTM solution row title alignment with nav label\n5. Company OS capability copy rewrite (tone/structure consistency)\n\nSee `docs/replit-agent-integration-brief.md` and `docs/replit-agent-prompt.md` for full context, verification checklist, and read-only prod queries.\n\nhttps://claude.ai/code/session_01VJ24qrzdYNdo4kYoJu5y3y",
+    "author": "chris-mcnulty",
+    "headRef": "claude/website-redesign-page-fixes-0Plnv",
+    "repository": "chris-mcnulty/synozur-webbase"
+  },
+  "diffRef": {
+    "repository": "chris-mcnulty/synozur-webbase",
+    "headSha": "4eaa5cfa077b88e8deec499241da91d7cb3b4a63",
+    "baseSha": "29f5768296ae51544fe3983da7665c26e95b324b"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-chris-mcnulty-synozur-webbase-pr89.diff",
+  "vendoredAt": "2026-05-24T03:14:18.124Z",
+  "collectedAt": "2026-05-24T03:14:18.124Z"
+}

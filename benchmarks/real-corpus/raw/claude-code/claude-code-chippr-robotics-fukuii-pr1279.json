@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-chippr-robotics-fukuii-pr1279",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "commit=claude-coauthor+branch=claude/"
+  },
+  "pr": {
+    "number": 1279,
+    "headSha": "29e439bf6c15d0876c401e88bce275e155ce3e74",
+    "baseSha": "a272e5b7908991164d6ad2e1dcf11d72fecfdafd",
+    "title": "fix(snapserver): 2 MiB response cap + 4s per-request time budget (#1145)",
+    "body": "* fix(snapserver): 2 MiB response cap; 4s per-request time budget\n\nCap GetAccountRange, GetStorageRanges, GetByteCodes, and GetTrieNodes\nresponses at 2 MiB. The SNAP spec (EIP-2124) permits servers to truncate\nresponses at a soft limit; without a cap, large trie responses caused\nmemory spikes and exceeded the RLPx frame size, causing peer disconnects.\n\nAdd a 4-second per-request time budget to GetTrieNodes. Trie node lookups\ntraverse RocksDB non-linearly; a malformed or overly broad request can\nhold the serving goroutine indefinitely. The budget applies per request,\nnot per node, allowing legitimate large requests while bounding worst-case\nlatency.\n\nBoth limits match the go-ethereum snap server implementation.\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>\n\n* style: scalafmtAll on SnapServer.scala (CI fix)\n\nUnblocks Compile/scalafmtCheck. Formatting-only change.\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Sonnet 4.6 <noreply@anthropic.com>\nCo-authored-by: realcodywburns <cody.w.burns@gmail.com>",
+    "author": "realcodywburns",
+    "headRef": "claude/implement-todo-item-5waZ7",
+    "repository": "chippr-robotics/fukuii"
+  },
+  "diffRef": {
+    "repository": "chippr-robotics/fukuii",
+    "headSha": "29e439bf6c15d0876c401e88bce275e155ce3e74",
+    "baseSha": "a272e5b7908991164d6ad2e1dcf11d72fecfdafd"
+  },
+  "vendoredDiffPath": "claude-code/claude-code-chippr-robotics-fukuii-pr1279.diff",
+  "vendoredAt": "2026-05-24T03:09:12.107Z",
+  "collectedAt": "2026-05-24T03:09:12.107Z"
+}

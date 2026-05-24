@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24149",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24149,
+    "headSha": "3d89cacc13616d8da1718c1331ea79e0683d50af",
+    "baseSha": "d70a0bc76729689f863a5a0a95183058f476e42e",
+    "title": "Add Agent matcher alias for spawn_agent hooks",
+    "body": "# Why\n\n`#23757` defaults function tools into tool hooks, but sub-agent spawning has one compatibility wrinkle: hook configs may refer to that tool as `Agent`.\n\nThis keeps the hook payload's canonical tool name as `spawn_agent` while accepting `Agent` as a matcher alias for the built-in plain and v1 namespaced spawn-agent tool surfaces.\n\n# What\n\n- Add `HookToolName::spawn_agent()` with `Agent` as a matcher alias.\n- Normalize only the built-in `spawn_agent` function tools onto that hook identity.\n- Add focused coverage for both plain and v1 namespaced `spawn_agent`.\n\nValidation:\n\n- `just fmt`\n- `cargo test -p codex-core spawn_agent_function_tools_use_agent_matcher_alias`\n\nNote: `cargo test -p codex-core` built successfully but aborted in unrelated existing coverage with a stack overflow in `mcp_tool_call::tests::guardian_mode_mcp_denial_returns_rationale_message`.\n",
+    "author": "abhinav-oai",
+    "headRef": "abhinav/spawn-agent-agent-alias-on-23757",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "3d89cacc13616d8da1718c1331ea79e0683d50af",
+    "baseSha": "d70a0bc76729689f863a5a0a95183058f476e42e"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24149.diff",
+  "vendoredAt": "2026-05-24T03:20:54.308Z",
+  "collectedAt": "2026-05-24T03:20:54.308Z"
+}

@@ -1,0 +1,133 @@
+diff --git a/src/anthropic/lib/bedrock/_client.py b/src/anthropic/lib/bedrock/_client.py
+index cda0690df..d2dfe889a 100644
+--- a/src/anthropic/lib/bedrock/_client.py
++++ b/src/anthropic/lib/bedrock/_client.py
+@@ -35,6 +35,30 @@
+ _DefaultStreamT = TypeVar("_DefaultStreamT", bound=Union[Stream[Any], AsyncStream[Any]])
+ 
+ 
++def _strip_null_caller_from_tool_use(json_data: dict[object, object]) -> None:
++    # Bedrock rejects `"caller": null` in tool_use / server_tool_use content blocks
++    # with HTTP 400.  ToolUseBlock (response) has `caller: Optional[Caller]`, so
++    # `.to_dict()` includes the key when the value is None.  ToolUseBlockParam
++    # (request) treats `caller` as absent-or-valid, never null, so drop the key
++    # before the payload reaches the Bedrock endpoint.
++    messages = json_data.get("messages")
++    if not isinstance(messages, list):
++        return
++    for message in messages:
++        if not isinstance(message, dict):
++            continue
++        content = message.get("content")
++        if not isinstance(content, list):
++            continue
++        for block in content:
++            if (
++                isinstance(block, dict)
++                and block.get("type") in {"tool_use", "server_tool_use"}
++                and block.get("caller") is None
++            ):
++                block.pop("caller", None)
++
++
+ def _prepare_options(input_options: FinalRequestOptions) -> FinalRequestOptions:
+     options = model_copy(input_options, deep=True)
+ 
+@@ -58,6 +82,8 @@ def _prepare_options(input_options: FinalRequestOptions) -> FinalRequestOptions:
+         else:
+             options.url = f"/model/{model}/invoke"
+ 
++        _strip_null_caller_from_tool_use(options.json_data)
++
+     if options.url.startswith("/v1/messages/batches"):
+         raise AnthropicError("The Batch API is not supported in Bedrock yet")
+ 
+diff --git a/tests/lib/test_bedrock.py b/tests/lib/test_bedrock.py
+index 6e45c27f7..4b26da80b 100644
+--- a/tests/lib/test_bedrock.py
++++ b/tests/lib/test_bedrock.py
+@@ -1,4 +1,5 @@
+ import re
++import json
+ import typing as t
+ import tempfile
+ from typing import TypedDict, cast
+@@ -275,3 +276,78 @@ def test_region_infer_from_specified_profile(
+     client = AnthropicBedrock()
+ 
+     assert client.aws_region == next(profile for profile in profiles if profile["name"] == aws_profile)["region"]
++
++
++@pytest.mark.filterwarnings("ignore::DeprecationWarning")
++@pytest.mark.respx()
++def test_tool_use_null_caller_stripped(respx_mock: MockRouter) -> None:
++    """Bedrock rejects `"caller": null` in tool_use blocks; verify it is dropped."""
++    respx_mock.post(re.compile(r"https://bedrock-runtime\.us-east-1\.amazonaws\.com/model/.*/invoke")).mock(
++        return_value=httpx.Response(200, json={"foo": "bar"}),
++    )
++
++    sync_client.messages.create(
++        max_tokens=1024,
++        messages=[
++            {
++                "role": "assistant",
++                "content": [
++                    {
++                        "type": "tool_use",
++                        "id": "toolu_01",
++                        "name": "get_weather",
++                        "input": {"location": "SF"},
++                        "caller": None,
++                    }
++                ],
++            }
++        ],
++        model="anthropic.claude-3-5-sonnet-20241022-v2:0",
++    )
++
++    calls = cast("list[MockRequestCall]", respx_mock.calls)
++    assert len(calls) == 1
++
++    body = json.loads(calls[0].request.content)
++    tool_use_block = body["messages"][0]["content"][0]
++    assert "caller" not in tool_use_block, (
++        "Bedrock request must not contain 'caller: null' in tool_use blocks"
++    )
++
++
++@pytest.mark.filterwarnings("ignore::DeprecationWarning")
++@pytest.mark.respx()
++@pytest.mark.asyncio()
++async def test_tool_use_null_caller_stripped_async(respx_mock: MockRouter) -> None:
++    """Bedrock rejects `"caller": null` in tool_use blocks; verify it is dropped (async)."""
++    respx_mock.post(re.compile(r"https://bedrock-runtime\.us-east-1\.amazonaws\.com/model/.*/invoke")).mock(
++        return_value=httpx.Response(200, json={"foo": "bar"}),
++    )
++
++    await async_client.messages.create(
++        max_tokens=1024,
++        messages=[
++            {
++                "role": "assistant",
++                "content": [
++                    {
++                        "type": "tool_use",
++                        "id": "toolu_01",
++                        "name": "get_weather",
++                        "input": {"location": "SF"},
++                        "caller": None,
++                    }
++                ],
++            }
++        ],
++        model="anthropic.claude-3-5-sonnet-20241022-v2:0",
++    )
++
++    calls = cast("list[MockRequestCall]", respx_mock.calls)
++    assert len(calls) == 1
++
++    body = json.loads(calls[0].request.content)
++    tool_use_block = body["messages"][0]["content"][0]
++    assert "caller" not in tool_use_block, (
++        "Bedrock request must not contain 'caller: null' in tool_use blocks"
++    )

@@ -1,0 +1,26 @@
+{
+  "id": "openhands-All-Hands-AI-OpenHands-pr14518",
+  "agent": {
+    "vendor": "openhands",
+    "confidence": "high",
+    "source": "repo-owner=All-Hands-AI+body=openhands-attribution"
+  },
+  "pr": {
+    "number": 14518,
+    "headSha": "49d3583a01c7659e88fe21adcfc9da45665cabfa",
+    "baseSha": "f4c76596fc2c0a2641fa384351a7c8d2514f956c",
+    "title": "Fix binaryornot Python 3 crash on binary reads",
+    "body": "<!-- Keep this PR as draft until it is ready for review. -->\n\n<!-- AI/LLM agents: be concise and specific. Do not check the box below. -->\n\n- [ ] A human has tested these changes.\n\n---\n\n## Why\n\n`binaryornot==0.4.4` raises `NameError: name 'unicode' is not defined` under Python 3 when checking some non-ASCII binary files. Although the direct `pyproject.toml` pin had already been removed, the lockfiles still resolved `binaryornot` to 0.4.4 because `openhands-aci==0.3.3` required `binaryornot>=0.4.4,<0.5.0`.\n\nFixes #14136.\n\n## Summary\n\n- Add an explicit `binaryornot>=0.5.0,<1` dependency constraint.\n- Remove the unused `openhands-aci` dependency that forced `binaryornot<0.5.0` in the lockfiles.\n- Regenerate root/enterprise Poetry locks and `uv.lock`, and add a regression test for non-ASCII binary file detection.\n\n## Issue Number\n\nFixes #14136\n\n## How to Test\n\n- `poetry run pytest tests/unit/test_binaryornot_dependency.py -q`\n- `poetry run pre-commit run --config ./dev_config/python/.pre-commit-config.yaml`\n\n## Video/Screenshots\n\nN/A — dependency/runtime crash fix with automated test coverage.\n\n## Type\n\n- [x] Bug fix\n- [ ] Feature\n- [ ] Refactor\n- [ ] Breaking change\n- [ ] Docs / chore\n\n## Notes\n\nI verified there are no repository imports of `openhands_aci`; the action execution server file editor path uses `openhands-tools`, which only requires `binaryornot>=0.4.4` and works with the updated `binaryornot` lock.\n\n_This PR was created by an AI agent (OpenHands) on behalf of the user._\n\n@enyst can click here to [continue refining the PR](https://app.all-hands.dev/conversations/07da71b6-2628-423a-ad1c-e175bed21d17)\n\n---\n\nTo run this PR locally, use the following command:\n\nGUI with Docker:\n```\ndocker run -it --rm   -p 3000:3000   -v /var/run/docker.sock:/var/run/docker.sock   --add-host host.docker.internal:host-gateway   --name openhands-app-49d3583   docker.openhands.dev/openhands/openhands:49d3583\n```",
+    "author": "enyst",
+    "headRef": "openhands/fix-binaryornot-python3",
+    "repository": "All-Hands-AI/OpenHands"
+  },
+  "diffRef": {
+    "repository": "All-Hands-AI/OpenHands",
+    "headSha": "49d3583a01c7659e88fe21adcfc9da45665cabfa",
+    "baseSha": "f4c76596fc2c0a2641fa384351a7c8d2514f956c"
+  },
+  "vendoredDiffPath": "openhands/openhands-All-Hands-AI-OpenHands-pr14518.diff",
+  "vendoredAt": "2026-05-24T03:18:06.413Z",
+  "collectedAt": "2026-05-24T03:18:06.413Z"
+}

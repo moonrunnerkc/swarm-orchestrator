@@ -1,0 +1,26 @@
+{
+  "id": "aider-paul-gauthier-aider-pr5173",
+  "agent": {
+    "vendor": "aider",
+    "confidence": "high",
+    "source": "repo-owner=paul-gauthier"
+  },
+  "pr": {
+    "number": 5173,
+    "headSha": "a7a54a9367fefb46fa576840e97f4479c46c7771",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1",
+    "title": "Expand ANTHROPIC_MODELS list with recent Claude model names",
+    "body": "## Summary\n\n\\`ANTHROPIC_MODELS\\` in \\`aider/models.py\\` is used by \\`sanity_check_models\\` to map a bare Claude model name (no provider prefix) to the \\`ANTHROPIC_API_KEY\\` environment variable. Models not in this list fall through to the keymap provider lookup, which fails when the user passes the name without a provider prefix.\n\nThe list was stale — it had \\`claude-2\\`, the 3.x family, \\`claude-3-5-*\\`, \\`claude-sonnet-4-20250514\\`, \\`claude-opus-4-20250514\\`, plus the 4.5/4.6/4.7 unrounded names — but was missing several recent Anthropic models:\n\n- \\`claude-3-7-sonnet-20250219\\`\n- \\`claude-opus-4-1\\` / \\`claude-opus-4-1-20250805\\`\n- \\`claude-opus-4-5\\` / \\`claude-opus-4-5-20251101\\`\n- \\`claude-opus-4-6-20260205\\` (dated variant for Opus 4.6)\n- \\`claude-opus-4-7-20260416\\` (dated variant for Opus 4.7)\n\nAll added names have corresponding entries in \\`aider/resources/model-settings.yml\\`, so the list now matches the rest of the project. Companion to the OPENAI_MODELS list expansion PR.\n\n## Effect\n\nBefore this change, \\`aider --model claude-opus-4-5\\` with \\`ANTHROPIC_API_KEY\\` set in the environment would show \\\"ANTHROPIC_API_KEY: Not set\\\" because the bare name didn't match the list. After this change, the API key is correctly detected.\n\n## Test plan\n\n- Diff is purely additive: 9 lines added to the ANTHROPIC_MODELS string + 1 line in HISTORY.md.",
+    "author": "Cyberfilo",
+    "headRef": "feat/anthropic_models-list-add-opus-4-5",
+    "repository": "paul-gauthier/aider"
+  },
+  "diffRef": {
+    "repository": "paul-gauthier/aider",
+    "headSha": "a7a54a9367fefb46fa576840e97f4479c46c7771",
+    "baseSha": "6435cb8b1e885d7275327d4b61206b1b1618dfe1"
+  },
+  "vendoredDiffPath": "unconfirmed/aider/aider-paul-gauthier-aider-pr5173.diff",
+  "vendoredAt": "2026-05-24T03:18:57.260Z",
+  "collectedAt": "2026-05-24T03:18:57.260Z"
+}

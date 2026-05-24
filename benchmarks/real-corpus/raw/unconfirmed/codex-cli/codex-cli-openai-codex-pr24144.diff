@@ -1,0 +1,858 @@
+diff --git a/codex-rs/analytics/src/analytics_client_tests.rs b/codex-rs/analytics/src/analytics_client_tests.rs
+index 895c0962cd6..49f579f10f5 100644
+--- a/codex-rs/analytics/src/analytics_client_tests.rs
++++ b/codex-rs/analytics/src/analytics_client_tests.rs
+@@ -17,6 +17,7 @@ use crate::events::CodexReviewEventParams;
+ use crate::events::CodexReviewEventRequest;
+ use crate::events::CodexRuntimeMetadata;
+ use crate::events::CodexToolItemEventBase;
++use crate::events::CodexTurnEventParams;
+ use crate::events::CodexTurnEventRequest;
+ use crate::events::FinalApprovalOutcome;
+ use crate::events::GuardianApprovalRequestSource;
+@@ -70,6 +71,7 @@ use crate::facts::TrackEventsContext;
+ use crate::facts::TurnResolvedConfigFact;
+ use crate::facts::TurnStatus;
+ use crate::facts::TurnSteerRequestError;
++use crate::facts::TurnTimingBreakdownFact;
+ use crate::facts::TurnTokenUsageFact;
+ use crate::reducer::AnalyticsReducer;
+ use crate::reducer::normalize_path_for_skill_id;
+@@ -336,6 +338,16 @@ fn sample_turn_token_usage_fact(thread_id: &str, turn_id: &str) -> TurnTokenUsag
+     }
+ }
+ 
++fn sample_turn_timing_breakdown_fact(thread_id: &str, turn_id: &str) -> TurnTimingBreakdownFact {
++    TurnTimingBreakdownFact {
++        turn_id: turn_id.to_string(),
++        thread_id: thread_id.to_string(),
++        request_start_delay_ms: Some(120),
++        sampling_duration_ms: 900,
++        blocking_tool_critical_path_duration_ms: 140,
++    }
++}
++
+ fn sample_turn_completed_notification(
+     thread_id: &str,
+     turn_id: &str,
+@@ -3344,7 +3356,7 @@ async fn reducer_ingests_plugin_state_changed_fact() {
+ fn turn_event_serializes_expected_shape() {
+     let event = TrackEventRequest::TurnEvent(Box::new(CodexTurnEventRequest {
+         event_type: "codex_turn_event",
+-        event_params: crate::events::CodexTurnEventParams {
++        event_params: CodexTurnEventParams {
+             thread_id: "thread-2".to_string(),
+             turn_id: "turn-2".to_string(),
+             app_server_client: sample_app_server_client_metadata(),
+@@ -3385,6 +3397,11 @@ fn turn_event_serializes_expected_shape() {
+             reasoning_output_tokens: None,
+             total_tokens: None,
+             duration_ms: Some(1234),
++            request_start_delay_ms: Some(120),
++            sampling_duration_ms: Some(900),
++            blocking_tool_critical_path_duration_ms: Some(140),
++            approval_wait_duration_ms: Some(0),
++            finalize_duration_ms: Some(74),
+             started_at: Some(455),
+             completed_at: Some(456),
+         },
+@@ -3446,6 +3463,11 @@ fn turn_event_serializes_expected_shape() {
+                 "reasoning_output_tokens": null,
+                 "total_tokens": null,
+                 "duration_ms": 1234,
++                "request_start_delay_ms": 120,
++                "sampling_duration_ms": 900,
++                "blocking_tool_critical_path_duration_ms": 140,
++                "approval_wait_duration_ms": 0,
++                "finalize_duration_ms": 74,
+                 "started_at": 455,
+                 "completed_at": 456
+             }
+@@ -3761,6 +3783,164 @@ async fn turn_lifecycle_emits_turn_event() {
+         json!(13)
+     );
+     assert_eq!(payload["event_params"]["total_tokens"], json!(321));
++    assert_eq!(
++        payload["event_params"]["request_start_delay_ms"],
++        json!(null)
++    );
++    assert_eq!(payload["event_params"]["sampling_duration_ms"], json!(null));
++    assert_eq!(
++        payload["event_params"]["blocking_tool_critical_path_duration_ms"],
++        json!(null)
++    );
++    assert_eq!(
++        payload["event_params"]["approval_wait_duration_ms"],
++        json!(null)
++    );
++    assert_eq!(payload["event_params"]["finalize_duration_ms"], json!(null));
++}
++
++#[tokio::test]
++async fn turn_timing_breakdown_fact_enriches_turn_event() {
++    let mut reducer = AnalyticsReducer::default();
++    let mut out = Vec::new();
++
++    ingest_turn_prerequisites(
++        &mut reducer,
++        &mut out,
++        /*include_initialize*/ true,
++        /*include_resolved_config*/ true,
++        /*include_started*/ true,
++        /*include_token_usage*/ false,
++    )
++    .await;
++    reducer
++        .ingest(
++            AnalyticsFact::Custom(CustomAnalyticsFact::TurnTimingBreakdown(Box::new(
++                sample_turn_timing_breakdown_fact("thread-2", "turn-2"),
++            ))),
++            &mut out,
++        )
++        .await;
++    reducer
++        .ingest(
++            AnalyticsFact::Notification(Box::new(sample_turn_completed_notification(
++                "thread-2",
++                "turn-2",
++                AppServerTurnStatus::Completed,
++                /*codex_error_info*/ None,
++            ))),
++            &mut out,
++        )
++        .await;
++
++    let payload = serde_json::to_value(&out[0]).expect("serialize turn event");
++    assert_eq!(
++        payload["event_params"]["request_start_delay_ms"],
++        json!(120)
++    );
++    assert_eq!(payload["event_params"]["sampling_duration_ms"], json!(900));
++    assert_eq!(
++        payload["event_params"]["blocking_tool_critical_path_duration_ms"],
++        json!(140)
++    );
++    assert_eq!(
++        payload["event_params"]["approval_wait_duration_ms"],
++        json!(0)
++    );
++    assert_eq!(payload["event_params"]["finalize_duration_ms"], json!(74));
++}
++
++#[tokio::test]
++async fn review_durations_roll_up_into_turn_approval_wait() {
++    let mut reducer = AnalyticsReducer::default();
++    let mut out = Vec::new();
++
++    ingest_turn_prerequisites(
++        &mut reducer,
++        &mut out,
++        /*include_initialize*/ true,
++        /*include_resolved_config*/ true,
++        /*include_started*/ true,
++        /*include_token_usage*/ false,
++    )
++    .await;
++    reducer
++        .ingest(
++            AnalyticsFact::Custom(CustomAnalyticsFact::TurnTimingBreakdown(Box::new(
++                TurnTimingBreakdownFact {
++                    turn_id: "turn-2".to_string(),
++                    thread_id: "thread-2".to_string(),
++                    request_start_delay_ms: Some(100),
++                    sampling_duration_ms: 400,
++                    blocking_tool_critical_path_duration_ms: 700,
++                },
++            ))),
++            &mut out,
++        )
++        .await;
++    reducer
++        .ingest(
++            AnalyticsFact::ServerRequest {
++                connection_id: 7,
++                request: Box::new(ServerRequest::CommandExecutionRequestApproval {
++                    request_id: RequestId::Integer(99),
++                    params: CommandExecutionRequestApprovalParams {
++                        thread_id: "thread-2".to_string(),
++                        turn_id: "turn-2".to_string(),
++                        item_id: "item-1".to_string(),
++                        started_at_ms: 1_000,
++                        approval_id: None,
++                        reason: None,
++                        network_approval_context: None,
++                        command: Some("echo hi".to_string()),
++                        cwd: None,
++                        command_actions: None,
++                        additional_permissions: None,
++                        proposed_execpolicy_amendment: None,
++                        proposed_network_policy_amendments: None,
++                        available_decisions: None,
++                    },
++                }),
++            },
++            &mut out,
++        )
++        .await;
++    reducer
++        .ingest(
++            AnalyticsFact::ServerResponse {
++                completed_at_ms: 1_600,
++                response: Box::new(ServerResponse::CommandExecutionRequestApproval {
++                    request_id: RequestId::Integer(99),
++                    response: CommandExecutionRequestApprovalResponse {
++                        decision: CommandExecutionApprovalDecision::Accept,
++                    },
++                }),
++            },
++            &mut out,
++        )
++        .await;
++    reducer
++        .ingest(
++            AnalyticsFact::Notification(Box::new(sample_turn_completed_notification(
++                "thread-2",
++                "turn-2",
++                AppServerTurnStatus::Completed,
++                /*codex_error_info*/ None,
++            ))),
++            &mut out,
++        )
++        .await;
++
++    let turn_event = out
++        .iter()
++        .find(|event| matches!(event, TrackEventRequest::TurnEvent(_)))
++        .expect("turn event should be emitted");
++    let payload = serde_json::to_value(turn_event).expect("serialize turn event");
++    assert_eq!(
++        payload["event_params"]["approval_wait_duration_ms"],
++        json!(600)
++    );
++    assert_eq!(payload["event_params"]["finalize_duration_ms"], json!(34));
+ }
+ 
+ #[tokio::test]
+diff --git a/codex-rs/analytics/src/client.rs b/codex-rs/analytics/src/client.rs
+index 3124ecc2565..58550031a9e 100644
+--- a/codex-rs/analytics/src/client.rs
++++ b/codex-rs/analytics/src/client.rs
+@@ -21,6 +21,7 @@ use crate::facts::SubAgentThreadStartedInput;
+ use crate::facts::ThreadStartTimingFact;
+ use crate::facts::TrackEventsContext;
+ use crate::facts::TurnResolvedConfigFact;
++use crate::facts::TurnTimingBreakdownFact;
+ use crate::facts::TurnTokenUsageFact;
+ use crate::now_unix_seconds;
+ use crate::reducer::AnalyticsReducer;
+@@ -212,6 +213,12 @@ impl AnalyticsEventsClient {
+         ));
+     }
+ 
++    pub fn track_turn_timing(&self, fact: TurnTimingBreakdownFact) {
++        self.record_fact(AnalyticsFact::Custom(
++            CustomAnalyticsFact::TurnTimingBreakdown(Box::new(fact)),
++        ));
++    }
++
+     pub fn track_guardian_review(
+         &self,
+         tracking: &GuardianReviewTrackContext,
+diff --git a/codex-rs/analytics/src/events.rs b/codex-rs/analytics/src/events.rs
+index 870de097c6d..3b9d9de33cb 100644
+--- a/codex-rs/analytics/src/events.rs
++++ b/codex-rs/analytics/src/events.rs
+@@ -833,6 +833,11 @@ pub(crate) struct CodexTurnEventParams {
+     pub(crate) reasoning_output_tokens: Option<i64>,
+     pub(crate) total_tokens: Option<i64>,
+     pub(crate) duration_ms: Option<u64>,
++    pub(crate) request_start_delay_ms: Option<u64>,
++    pub(crate) sampling_duration_ms: Option<u64>,
++    pub(crate) blocking_tool_critical_path_duration_ms: Option<u64>,
++    pub(crate) approval_wait_duration_ms: Option<u64>,
++    pub(crate) finalize_duration_ms: Option<u64>,
+     pub(crate) started_at: Option<u64>,
+     pub(crate) completed_at: Option<u64>,
+ }
+diff --git a/codex-rs/analytics/src/facts.rs b/codex-rs/analytics/src/facts.rs
+index e22e6d241ee..8ee7b708e1e 100644
+--- a/codex-rs/analytics/src/facts.rs
++++ b/codex-rs/analytics/src/facts.rs
+@@ -99,6 +99,15 @@ pub struct TurnTokenUsageFact {
+     pub token_usage: TokenUsage,
+ }
+ 
++#[derive(Clone)]
++pub struct TurnTimingBreakdownFact {
++    pub turn_id: String,
++    pub thread_id: String,
++    pub request_start_delay_ms: Option<u64>,
++    pub sampling_duration_ms: u64,
++    pub blocking_tool_critical_path_duration_ms: u64,
++}
++
+ #[derive(Clone, Copy, Debug, Serialize)]
+ #[serde(rename_all = "snake_case")]
+ pub enum TurnStatus {
+@@ -344,6 +353,7 @@ pub(crate) enum CustomAnalyticsFact {
+     Compaction(Box<CodexCompactionEvent>),
+     GuardianReview(Box<GuardianReviewEventParams>),
+     TurnResolvedConfig(Box<TurnResolvedConfigFact>),
++    TurnTimingBreakdown(Box<TurnTimingBreakdownFact>),
+     TurnTokenUsage(Box<TurnTokenUsageFact>),
+     SkillInvoked(SkillInvokedInput),
+     AppMentioned(AppMentionedInput),
+diff --git a/codex-rs/analytics/src/lib.rs b/codex-rs/analytics/src/lib.rs
+index d4bbcabc11c..c01c6677832 100644
+--- a/codex-rs/analytics/src/lib.rs
++++ b/codex-rs/analytics/src/lib.rs
+@@ -45,6 +45,7 @@ pub use facts::TurnStatus;
+ pub use facts::TurnSteerRejectionReason;
+ pub use facts::TurnSteerRequestError;
+ pub use facts::TurnSteerResult;
++pub use facts::TurnTimingBreakdownFact;
+ pub use facts::TurnTokenUsageFact;
+ pub use facts::build_track_events_context;
+ 
+diff --git a/codex-rs/analytics/src/reducer.rs b/codex-rs/analytics/src/reducer.rs
+index 1476dc5f3e7..2b29ff147ba 100644
+--- a/codex-rs/analytics/src/reducer.rs
++++ b/codex-rs/analytics/src/reducer.rs
+@@ -80,6 +80,7 @@ use crate::facts::TurnResolvedConfigFact;
+ use crate::facts::TurnStatus;
+ use crate::facts::TurnSteerRejectionReason;
+ use crate::facts::TurnSteerResult;
++use crate::facts::TurnTimingBreakdownFact;
+ use crate::facts::TurnTokenUsageFact;
+ use crate::now_unix_seconds;
+ use crate::option_i64_to_u64;
+@@ -328,6 +329,14 @@ struct CompletedTurnState {
+     duration_ms: Option<u64>,
+ }
+ 
++#[derive(Clone, Default)]
++struct TurnTimingState {
++    request_start_delay_ms: Option<u64>,
++    sampling_duration_ms: Option<u64>,
++    blocking_tool_critical_path_duration_ms: Option<u64>,
++    approval_wait_duration_ms: u64,
++}
++
+ struct TurnState {
+     connection_id: Option<u64>,
+     thread_id: Option<String>,
+@@ -339,6 +348,7 @@ struct TurnState {
+     latest_diff: Option<String>,
+     steer_count: usize,
+     tool_counts: TurnToolCounts,
++    timing: TurnTimingState,
+ }
+ 
+ #[derive(Hash, Eq, PartialEq)]
+@@ -478,6 +488,9 @@ impl AnalyticsReducer {
+                 CustomAnalyticsFact::TurnResolvedConfig(input) => {
+                     self.ingest_turn_resolved_config(*input, out).await;
+                 }
++                CustomAnalyticsFact::TurnTimingBreakdown(input) => {
++                    self.ingest_turn_timing_breakdown(*input, out).await;
++                }
+                 CustomAnalyticsFact::TurnTokenUsage(input) => {
+                     self.ingest_turn_token_usage(*input, out).await;
+                 }
+@@ -661,6 +674,7 @@ impl AnalyticsReducer {
+             latest_diff: None,
+             steer_count: 0,
+             tool_counts: TurnToolCounts::default(),
++            timing: TurnTimingState::default(),
+         });
+         turn_state.thread_id = Some(thread_id);
+         turn_state.num_input_images = Some(num_input_images);
+@@ -685,12 +699,40 @@ impl AnalyticsReducer {
+             latest_diff: None,
+             steer_count: 0,
+             tool_counts: TurnToolCounts::default(),
++            timing: TurnTimingState::default(),
+         });
+         turn_state.thread_id = Some(input.thread_id);
+         turn_state.token_usage = Some(input.token_usage);
+         self.maybe_emit_turn_event(&turn_id, out).await;
+     }
+ 
++    async fn ingest_turn_timing_breakdown(
++        &mut self,
++        input: TurnTimingBreakdownFact,
++        out: &mut Vec<TrackEventRequest>,
++    ) {
++        let turn_id = input.turn_id.clone();
++        let turn_state = self.turns.entry(turn_id.clone()).or_insert(TurnState {
++            connection_id: None,
++            thread_id: None,
++            num_input_images: None,
++            resolved_config: None,
++            started_at: None,
++            token_usage: None,
++            completed: None,
++            latest_diff: None,
++            steer_count: 0,
++            tool_counts: TurnToolCounts::default(),
++            timing: TurnTimingState::default(),
++        });
++        turn_state.thread_id = Some(input.thread_id);
++        turn_state.timing.request_start_delay_ms = input.request_start_delay_ms;
++        turn_state.timing.sampling_duration_ms = Some(input.sampling_duration_ms);
++        turn_state.timing.blocking_tool_critical_path_duration_ms =
++            Some(input.blocking_tool_critical_path_duration_ms);
++        self.maybe_emit_turn_event(&turn_id, out).await;
++    }
++
+     async fn ingest_skill_invoked(
+         &mut self,
+         input: SkillInvokedInput,
+@@ -850,6 +892,7 @@ impl AnalyticsReducer {
+                     latest_diff: None,
+                     steer_count: 0,
+                     tool_counts: TurnToolCounts::default(),
++                    timing: TurnTimingState::default(),
+                 });
+                 turn_state.connection_id = Some(connection_id);
+                 turn_state.thread_id = Some(pending_request.thread_id);
+@@ -1209,6 +1252,7 @@ impl AnalyticsReducer {
+                     latest_diff: None,
+                     steer_count: 0,
+                     tool_counts: TurnToolCounts::default(),
++                    timing: TurnTimingState::default(),
+                 });
+                 turn_state.started_at = notification
+                     .turn
+@@ -1230,6 +1274,7 @@ impl AnalyticsReducer {
+                             latest_diff: None,
+                             steer_count: 0,
+                             tool_counts: TurnToolCounts::default(),
++                            timing: TurnTimingState::default(),
+                         });
+                 turn_state.thread_id = Some(notification.thread_id);
+                 turn_state.latest_diff = Some(notification.diff);
+@@ -1249,6 +1294,7 @@ impl AnalyticsReducer {
+                             latest_diff: None,
+                             steer_count: 0,
+                             tool_counts: TurnToolCounts::default(),
++                            timing: TurnTimingState::default(),
+                         });
+                 turn_state.completed = Some(CompletedTurnState {
+                     status: analytics_turn_status(notification.turn.status),
+@@ -1462,6 +1508,7 @@ impl AnalyticsReducer {
+         completed_at_ms: u64,
+         out: &mut Vec<TrackEventRequest>,
+     ) {
++        let duration_ms = observed_duration_ms(pending_review.started_at_ms, completed_at_ms);
+         if let Some(item_key) = item_review_summary_key(&pending_review) {
+             self.record_item_review_summary(
+                 item_key,
+@@ -1471,6 +1518,28 @@ impl AnalyticsReducer {
+                 &pending_review,
+             );
+         }
++        if let Some(duration_ms) = duration_ms {
++            let turn_state =
++                self.turns
++                    .entry(pending_review.turn_id.clone())
++                    .or_insert(TurnState {
++                        connection_id: None,
++                        thread_id: None,
++                        num_input_images: None,
++                        resolved_config: None,
++                        started_at: None,
++                        token_usage: None,
++                        completed: None,
++                        latest_diff: None,
++                        steer_count: 0,
++                        tool_counts: TurnToolCounts::default(),
++                        timing: TurnTimingState::default(),
++                    });
++            turn_state.timing.approval_wait_duration_ms = turn_state
++                .timing
++                .approval_wait_duration_ms
++                .saturating_add(duration_ms);
++        }
+         let Some((connection_state, thread_metadata)) =
+             self.thread_context_or_warn(AnalyticsDropSite::review(&pending_review))
+         else {
+@@ -1496,7 +1565,7 @@ impl AnalyticsReducer {
+                 resolution,
+                 started_at_ms: pending_review.started_at_ms,
+                 completed_at_ms,
+-                duration_ms: observed_duration_ms(pending_review.started_at_ms, completed_at_ms),
++                duration_ms,
+             },
+         }));
+     }
+@@ -2504,6 +2573,26 @@ fn codex_turn_event_params(
+         is_first_turn,
+     } = resolved_config;
+     let token_usage = turn_state.token_usage.clone();
++    let timing = &turn_state.timing;
++    let has_turn_timing = timing.request_start_delay_ms.is_some()
++        || timing.sampling_duration_ms.is_some()
++        || timing.blocking_tool_critical_path_duration_ms.is_some();
++    let approval_wait_duration_ms = has_turn_timing.then_some(timing.approval_wait_duration_ms);
++    let finalize_duration_ms = completed.duration_ms.and_then(|duration_ms| {
++        has_turn_timing.then_some(
++            duration_ms.saturating_sub(
++                timing
++                    .request_start_delay_ms
++                    .unwrap_or_default()
++                    .saturating_add(timing.sampling_duration_ms.unwrap_or_default())
++                    .saturating_add(
++                        timing
++                            .blocking_tool_critical_path_duration_ms
++                            .unwrap_or_default(),
++                    ),
++            ),
++        )
++    });
+     CodexTurnEventParams {
+         thread_id,
+         turn_id,
+@@ -2560,6 +2649,11 @@ fn codex_turn_event_params(
+             .as_ref()
+             .map(|token_usage| token_usage.total_tokens),
+         duration_ms: completed.duration_ms,
++        request_start_delay_ms: timing.request_start_delay_ms,
++        sampling_duration_ms: timing.sampling_duration_ms,
++        blocking_tool_critical_path_duration_ms: timing.blocking_tool_critical_path_duration_ms,
++        approval_wait_duration_ms,
++        finalize_duration_ms,
+         started_at,
+         completed_at: Some(completed.completed_at),
+     }
+diff --git a/codex-rs/core/src/session/turn.rs b/codex-rs/core/src/session/turn.rs
+index f81b2b1f742..eadc4502567 100644
+--- a/codex-rs/core/src/session/turn.rs
++++ b/codex-rs/core/src/session/turn.rs
+@@ -1735,7 +1735,12 @@ async fn try_run_sampling_request(
+         turn_context.model_info.slug.as_str(),
+         turn_context.provider.info().name.as_str(),
+     );
+-    let mut stream = client_session
++    turn_context
++        .turn_timing_state
++        .mark_model_request_started()
++        .await;
++    turn_context.turn_timing_state.mark_sampling_started().await;
++    let stream_result = client_session
+         .stream(
+             prompt,
+             &turn_context.model_info,
+@@ -1748,7 +1753,24 @@ async fn try_run_sampling_request(
+         )
+         .instrument(trace_span!("stream_request"))
+         .or_cancel(&cancellation_token)
+-        .await??;
++        .await;
++    let mut stream = match stream_result {
++        Ok(Ok(stream)) => stream,
++        Ok(Err(err)) => {
++            turn_context
++                .turn_timing_state
++                .mark_sampling_completed()
++                .await;
++            return Err(err);
++        }
++        Err(codex_async_utils::CancelErr::Cancelled) => {
++            turn_context
++                .turn_timing_state
++                .mark_sampling_completed()
++                .await;
++            return Err(CodexErr::TurnAborted);
++        }
++    };
+     let mut in_flight: FuturesOrdered<BoxFuture<'static, CodexResult<ResponseInputItem>>> =
+         FuturesOrdered::new();
+     let mut needs_follow_up = false;
+@@ -2153,6 +2175,10 @@ async fn try_run_sampling_request(
+         &mut assistant_message_stream_parsers,
+     )
+     .await;
++    turn_context
++        .turn_timing_state
++        .mark_sampling_completed()
++        .await;
+ 
+     if sess
+         .features
+@@ -2163,7 +2189,17 @@ async fn try_run_sampling_request(
+         client_session.send_response_processed(response_id).await;
+     }
+ 
+-    drain_in_flight(&mut in_flight, sess.clone(), turn_context.clone()).await?;
++    turn_context
++        .turn_timing_state
++        .mark_blocking_tool_critical_path_started()
++        .await;
++    let drain_in_flight_result =
++        drain_in_flight(&mut in_flight, sess.clone(), turn_context.clone()).await;
++    turn_context
++        .turn_timing_state
++        .mark_blocking_tool_critical_path_completed()
++        .await;
++    drain_in_flight_result?;
+ 
+     if should_emit_token_count {
+         // A tool call such as request_user_input can intentionally pause the turn. Emit token
+diff --git a/codex-rs/core/src/tasks/mod.rs b/codex-rs/core/src/tasks/mod.rs
+index 4d6db8acf22..5bf177e4c6a 100644
+--- a/codex-rs/core/src/tasks/mod.rs
++++ b/codex-rs/core/src/tasks/mod.rs
+@@ -6,8 +6,9 @@ mod user_shell;
+ 
+ use std::sync::Arc;
+ use std::time::Duration;
+-use std::time::Instant;
+ 
++use codex_analytics::TurnTimingBreakdownFact;
++use codex_analytics::TurnTokenUsageFact;
+ use codex_extension_api::ExtensionData;
+ use futures::future::BoxFuture;
+ use tokio::select;
+@@ -33,7 +34,6 @@ use crate::session::turn_context::TurnContext;
+ use crate::state::ActiveTurn;
+ use crate::state::RunningTask;
+ use crate::state::TaskKind;
+-use codex_analytics::TurnTokenUsageFact;
+ use codex_login::AuthManager;
+ use codex_models_manager::manager::SharedModelsManager;
+ use codex_otel::SessionTelemetry;
+@@ -318,11 +318,7 @@ impl Session {
+         let task: Arc<dyn AnySessionTask> = Arc::new(task);
+         let task_kind = task.kind();
+         let span_name = task.span_name();
+-        let started_at = Instant::now();
+-        let turn_started_at_unix_ms = turn_context
+-            .turn_timing_state
+-            .mark_turn_started(started_at)
+-            .await;
++        let turn_started_at_unix_ms = turn_context.turn_timing_state.mark_turn_started().await;
+         turn_context
+             .turn_metadata_state
+             .set_turn_started_at_unix_ms(turn_started_at_unix_ms);
+@@ -773,10 +769,21 @@ impl Session {
+             .turn_timing_state
+             .completed_at_and_duration_ms()
+             .await;
++        let turn_timing_breakdown = turn_context.turn_timing_state.timing_breakdown().await;
+         let time_to_first_token_ms = turn_context
+             .turn_timing_state
+             .time_to_first_token_ms()
+             .await;
++        self.services
++            .analytics_events_client
++            .track_turn_timing(TurnTimingBreakdownFact {
++                turn_id: turn_context.sub_id.clone(),
++                thread_id: self.conversation_id.to_string(),
++                request_start_delay_ms: turn_timing_breakdown.request_start_delay_ms,
++                sampling_duration_ms: turn_timing_breakdown.sampling_duration_ms,
++                blocking_tool_critical_path_duration_ms: turn_timing_breakdown
++                    .blocking_tool_critical_path_duration_ms,
++            });
+         if should_clear_active_turn {
+             self.emit_turn_stop_lifecycle(turn_context.extension_data.as_ref())
+                 .await;
+diff --git a/codex-rs/core/src/turn_timing.rs b/codex-rs/core/src/turn_timing.rs
+index 570e4a6e322..9b85829ec3e 100644
+--- a/codex-rs/core/src/turn_timing.rs
++++ b/codex-rs/core/src/turn_timing.rs
+@@ -36,6 +36,13 @@ pub(crate) async fn record_turn_ttfm_metric(turn_context: &TurnContext, item: &T
+         .record_duration(TURN_TTFM_DURATION_METRIC, duration, &[]);
+ }
+ 
++#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
++pub(crate) struct TurnTimingBreakdown {
++    pub(crate) request_start_delay_ms: Option<u64>,
++    pub(crate) sampling_duration_ms: u64,
++    pub(crate) blocking_tool_critical_path_duration_ms: u64,
++}
++
+ #[derive(Debug, Default)]
+ pub(crate) struct TurnTimingState {
+     state: Mutex<TurnTimingStateInner>,
+@@ -47,16 +54,27 @@ struct TurnTimingStateInner {
+     started_at_unix_secs: Option<i64>,
+     first_token_at: Option<Instant>,
+     first_message_at: Option<Instant>,
++    first_request_started_at: Option<Instant>,
++    sampling_started_at: Option<Instant>,
++    sampling_duration: Duration,
++    blocking_tool_critical_path_started_at: Option<Instant>,
++    blocking_tool_critical_path_duration: Duration,
+ }
+ 
+ impl TurnTimingState {
+-    pub(crate) async fn mark_turn_started(&self, started_at: Instant) -> i64 {
++    pub(crate) async fn mark_turn_started(&self) -> i64 {
++        let started_at = Instant::now();
+         let started_at_unix_ms = now_unix_timestamp_ms();
+         let mut state = self.state.lock().await;
+         state.started_at = Some(started_at);
+         state.started_at_unix_secs = Some(started_at_unix_ms / 1000);
+         state.first_token_at = None;
+         state.first_message_at = None;
++        state.first_request_started_at = None;
++        state.sampling_started_at = None;
++        state.sampling_duration = Duration::default();
++        state.blocking_tool_critical_path_started_at = None;
++        state.blocking_tool_critical_path_duration = Duration::default();
+         started_at_unix_ms
+     }
+ 
+@@ -98,6 +116,54 @@ impl TurnTimingState {
+         let mut state = self.state.lock().await;
+         state.record_turn_ttfm()
+     }
++
++    pub(crate) async fn mark_model_request_started(&self) {
++        let mut state = self.state.lock().await;
++        if state.first_request_started_at.is_none() {
++            state.first_request_started_at = Some(Instant::now());
++        }
++    }
++
++    pub(crate) async fn mark_sampling_started(&self) {
++        let mut state = self.state.lock().await;
++        if state.sampling_started_at.is_none() {
++            state.sampling_started_at = Some(Instant::now());
++        }
++    }
++
++    pub(crate) async fn mark_sampling_completed(&self) {
++        let mut state = self.state.lock().await;
++        if let Some(started_at) = state.sampling_started_at.take() {
++            state.sampling_duration = state.sampling_duration.saturating_add(started_at.elapsed());
++        }
++    }
++
++    pub(crate) async fn mark_blocking_tool_critical_path_started(&self) {
++        let mut state = self.state.lock().await;
++        if state.blocking_tool_critical_path_started_at.is_none() {
++            state.blocking_tool_critical_path_started_at = Some(Instant::now());
++        }
++    }
++
++    pub(crate) async fn mark_blocking_tool_critical_path_completed(&self) {
++        let mut state = self.state.lock().await;
++        if let Some(started_at) = state.blocking_tool_critical_path_started_at.take() {
++            state.blocking_tool_critical_path_duration = state
++                .blocking_tool_critical_path_duration
++                .saturating_add(started_at.elapsed());
++        }
++    }
++
++    pub(crate) async fn timing_breakdown(&self) -> TurnTimingBreakdown {
++        let state = self.state.lock().await;
++        TurnTimingBreakdown {
++            request_start_delay_ms: state.request_start_delay_ms(),
++            sampling_duration_ms: duration_to_u64_millis(state.sampling_duration),
++            blocking_tool_critical_path_duration_ms: duration_to_u64_millis(
++                state.blocking_tool_critical_path_duration,
++            ),
++        }
++    }
+ }
+ 
+ fn now_unix_timestamp_secs() -> i64 {
+@@ -112,6 +178,13 @@ pub(crate) fn now_unix_timestamp_ms() -> i64 {
+ }
+ 
+ impl TurnTimingStateInner {
++    fn request_start_delay_ms(&self) -> Option<u64> {
++        let duration = self
++            .first_request_started_at?
++            .duration_since(self.started_at?);
++        Some(duration_to_u64_millis(duration))
++    }
++
+     fn time_to_first_token(&self) -> Option<Duration> {
+         Some(self.first_token_at?.duration_since(self.started_at?))
+     }
+@@ -136,6 +209,10 @@ impl TurnTimingStateInner {
+     }
+ }
+ 
++fn duration_to_u64_millis(duration: Duration) -> u64 {
++    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
++}
++
+ fn response_event_records_turn_ttft(event: &ResponseEvent) -> bool {
+     match event {
+         ResponseEvent::OutputItemDone(item) | ResponseEvent::OutputItemAdded(item) => {
+diff --git a/codex-rs/core/src/turn_timing_tests.rs b/codex-rs/core/src/turn_timing_tests.rs
+index a6675aea8eb..87bce0e2844 100644
+--- a/codex-rs/core/src/turn_timing_tests.rs
++++ b/codex-rs/core/src/turn_timing_tests.rs
+@@ -4,9 +4,10 @@ use codex_protocol::models::ContentItem;
+ use codex_protocol::models::FunctionCallOutputPayload;
+ use codex_protocol::models::ResponseItem;
+ use pretty_assertions::assert_eq;
+-use std::time::Instant;
++use std::time::Duration;
+ use std::time::SystemTime;
+ use std::time::UNIX_EPOCH;
++use tokio::time::sleep;
+ 
+ use super::TurnTimingState;
+ use super::response_item_records_turn_ttft;
+@@ -22,7 +23,7 @@ async fn turn_timing_state_records_ttft_only_once_per_turn() {
+         None
+     );
+ 
+-    state.mark_turn_started(Instant::now()).await;
++    state.mark_turn_started().await;
+     assert_eq!(
+         state
+             .record_ttft_for_response_event(&ResponseEvent::Created)
+@@ -46,7 +47,7 @@ async fn turn_timing_state_records_ttft_only_once_per_turn() {
+ #[tokio::test]
+ async fn turn_timing_state_records_ttfm_independently_of_ttft() {
+     let state = TurnTimingState::default();
+-    state.mark_turn_started(Instant::now()).await;
++    state.mark_turn_started().await;
+ 
+     assert!(
+         state
+@@ -86,7 +87,7 @@ async fn turn_timing_state_records_turn_started_epoch_millis() {
+         .expect("system time should be after unix epoch")
+         .as_millis();
+ 
+-    let started_at_unix_ms = state.mark_turn_started(Instant::now()).await;
++    let started_at_unix_ms = state.mark_turn_started().await;
+ 
+     let after = SystemTime::now()
+         .duration_since(UNIX_EPOCH)
+@@ -99,6 +100,28 @@ async fn turn_timing_state_records_turn_started_epoch_millis() {
+     );
+ }
+ 
++#[tokio::test]
++async fn turn_timing_state_tracks_request_start_and_duration_breakdown() {
++    let state = TurnTimingState::default();
++    state.mark_turn_started().await;
++    state.mark_model_request_started().await;
++    state.mark_sampling_started().await;
++    sleep(Duration::from_millis(10)).await;
++    state.mark_sampling_completed().await;
++    state.mark_sampling_started().await;
++    sleep(Duration::from_millis(5)).await;
++    state.mark_sampling_completed().await;
++    state.mark_blocking_tool_critical_path_started().await;
++    sleep(Duration::from_millis(5)).await;
++    state.mark_blocking_tool_critical_path_completed().await;
++
++    let breakdown = state.timing_breakdown().await;
++
++    assert!(breakdown.sampling_duration_ms >= 15);
++    assert!(breakdown.blocking_tool_critical_path_duration_ms >= 5);
++    assert!(breakdown.request_start_delay_ms.is_some());
++}
++
+ #[test]
+ fn response_item_records_turn_ttft_for_first_output_signals() {
+     assert!(response_item_records_turn_ttft(

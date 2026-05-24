@@ -1,0 +1,88 @@
+diff --git a/src/lib/tools/BetaToolRunner.ts b/src/lib/tools/BetaToolRunner.ts
+index 3ca54ac1..c39261ae 100644
+--- a/src/lib/tools/BetaToolRunner.ts
++++ b/src/lib/tools/BetaToolRunner.ts
+@@ -6,7 +6,12 @@ import { BetaMessage, BetaMessageParam, BetaToolUnion, MessageCreateParams } fro
+ import { BetaMessageStream } from '../BetaMessageStream';
+ import { RequestOptions } from '../../internal/request-options';
+ import { buildHeaders } from '../../internal/headers';
+-import { CompactionControl, DEFAULT_SUMMARY_PROMPT, DEFAULT_TOKEN_THRESHOLD } from './CompactionControl';
++import {
++  CompactionControl,
++  COMPACTION_SUMMARY_MAX_TOKENS,
++  DEFAULT_SUMMARY_PROMPT,
++  DEFAULT_TOKEN_THRESHOLD,
++} from './CompactionControl';
+ import { collectStainlessHelpers } from '../stainless-helper-header';
+ 
+ /**
+@@ -149,7 +154,10 @@ export class BetaToolRunner<Stream extends boolean> {
+             ],
+           },
+         ],
+-        max_tokens: this.#state.params.max_tokens,
++        // Cap max_tokens for the summary request. The SDK throws "Streaming is
++        // required" when max_tokens implies a response > 10 min without streaming.
++        // Summaries need far fewer tokens than a full tool-runner response.
++        max_tokens: Math.min(this.#state.params.max_tokens, COMPACTION_SUMMARY_MAX_TOKENS),
+       },
+       {
+         signal: this.#options.signal,
+diff --git a/src/lib/tools/CompactionControl.ts b/src/lib/tools/CompactionControl.ts
+index df538ae3..62df2fdd 100644
+--- a/src/lib/tools/CompactionControl.ts
++++ b/src/lib/tools/CompactionControl.ts
+@@ -2,6 +2,16 @@ import { Model } from '../../resources';
+ 
+ export const DEFAULT_TOKEN_THRESHOLD = 100_000;
+ 
++/**
++ * Maximum tokens for the compaction summary request.
++ *
++ * The summary API call is non-streaming. The SDK's pre-flight timeout check
++ * throws "Streaming is required" when max_tokens implies a response that could
++ * take longer than 10 minutes. Capping at 4096 keeps the call well within the
++ * allowed range for all models while still allowing a thorough summary.
++ */
++export const COMPACTION_SUMMARY_MAX_TOKENS = 4096;
++
+ export const DEFAULT_SUMMARY_PROMPT = `You have been working on the task described above but have not yet completed it. Write a continuation summary that will allow you (or another instance of yourself) to resume work efficiently in a future context window where the conversation history will be replaced with this summary. Your summary should be structured, concise, and actionable. Include:
+ 1. Task Overview
+ The user's core request and success criteria
+diff --git a/src/resources/beta/agents/agents.ts b/src/resources/beta/agents/agents.ts
+index bb765ef2..7ea0879f 100644
+--- a/src/resources/beta/agents/agents.ts
++++ b/src/resources/beta/agents/agents.ts
+@@ -9,6 +9,7 @@ import { PageCursor, type PageCursorParams, PagePromise } from '../../../core/pa
+ import { buildHeaders } from '../../../internal/headers';
+ import { RequestOptions } from '../../../internal/request-options';
+ import { path } from '../../../internal/utils/path';
++import type { BetaThinkingConfigParam, BetaOutputConfig } from '../messages/messages';
+ 
+ export class Agents extends APIResource {
+   versions: VersionsAPI.Versions = new VersionsAPI.Versions(this._client);
+@@ -587,6 +588,24 @@ export interface BetaManagedAgentsModelConfigParams {
+    * combinations are rejected at create time.
+    */
+   speed?: 'standard' | 'fast' | null;
++
++  /**
++   * Configuration for enabling Claude's extended thinking.
++   *
++   * When enabled, responses include `thinking` content blocks showing Claude's
++   * thinking process before the final answer. Requires a minimum budget of 1,024
++   * tokens and counts towards your `max_tokens` limit.
++   *
++   * See
++   * [extended thinking](https://docs.claude.com/en/docs/build-with-claude/extended-thinking)
++   * for details.
++   */
++  thinking?: BetaThinkingConfigParam | null;
++
++  /**
++   * Controls output options like effort level, format, and task token budget.
++   */
++  output_config?: BetaOutputConfig | null;
+ }
+ 
+ /**

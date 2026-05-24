@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-luciangreen-plop-pr15",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 15,
+    "headSha": "4f767e6165d292590370337cd5566b3e68bb578a",
+    "baseSha": "3467627870fe1126d5e29986407a2e9fd4d43503",
+    "title": "Implement stage 10: shortcut and splicing optimisation",
+    "body": "Adds stage 10 from pr3.txt — single-use arithmetic variable inlining. Detects `Var is Expr` goals where `Var` is used exactly once downstream and not exposed in the clause head, removes the assignment, and substitutes `Expr` at the use site.\n\n```prolog\n% Input\np(X, Y) :- A is X+1, Y is A*2.\n\n% Output\np(X, Y) :- Y is (X+1)*2.\n```\n\n### New: `splice.pl`\n- `splice_program/3` — iterates `splice_once/3` to fixpoint per clause\n- Safety guards: skip if variable appears in head, appears before the assignment, or has multiple uses\n- Reports `spliced(Name/Arity)` for each rewritten predicate\n\n### `unfold.pl`\n- Removed the `splice_arithmetic` family (and its helpers) that previously ran splicing inline during unfolding\n- This was causing a pipeline bug: premature splicing of `N1 is N-1` prevented stage 3 from recognising the `sum_to_n` accumulator pattern, breaking the formula rewrite\n\n### `list_formula.pl`\n- Added missing `term_contains_var/2` definition that was referenced but never defined, fixing all stage 9 tests\n\n### `optimiser.pl`\n- Wired `splice_program` into both `optimise_program/3` and `optimise_predicate/4`, positioned after `optimise_recursive_index_loops` so all upstream analytical stages see un-spliced IR\n\n### Tests\n- Five new tests in `begin_tests(splice)`: basic splice, chain splice (`A→B→Y`), multi-use guard, head-variable guard, and `optimise_program` integration",
+    "author": "Copilot",
+    "headRef": "copilot/implement-stage-10",
+    "repository": "luciangreen/plop"
+  },
+  "diffRef": {
+    "repository": "luciangreen/plop",
+    "headSha": "4f767e6165d292590370337cd5566b3e68bb578a",
+    "baseSha": "3467627870fe1126d5e29986407a2e9fd4d43503"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-luciangreen-plop-pr15.diff",
+  "vendoredAt": "2026-05-24T03:05:30.472Z",
+  "collectedAt": "2026-05-24T03:05:30.472Z"
+}

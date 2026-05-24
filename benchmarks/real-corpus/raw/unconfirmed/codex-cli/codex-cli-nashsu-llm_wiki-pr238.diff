@@ -1,0 +1,454 @@
+diff --git a/src-tauri/src/commands/codex_cli.rs b/src-tauri/src/commands/codex_cli.rs
+index d8183b52..fa9276e7 100644
+--- a/src-tauri/src/commands/codex_cli.rs
++++ b/src-tauri/src/commands/codex_cli.rs
+@@ -34,6 +34,7 @@ pub struct DetectResult {
+ 
+ const CODEX_SPAWN_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+ const STDERR_LIMIT_BYTES: usize = 1024 * 1024;
++const STDOUT_LIMIT_BYTES: usize = 1024 * 1024;
+ 
+ fn find_codex_command() -> Result<PathBuf, String> {
+     #[cfg(windows)]
+@@ -210,9 +211,21 @@ pub async fn codex_cli_spawn(
+             collected
+         });
+ 
++        let mut stdout_text = String::new();
+         loop {
+             match reader.next_line().await {
+                 Ok(Some(line)) => {
++                    if stdout_text.len() < STDOUT_LIMIT_BYTES {
++                        for ch in line.chars() {
++                            if stdout_text.len() + ch.len_utf8() > STDOUT_LIMIT_BYTES {
++                                break;
++                            }
++                            stdout_text.push(ch);
++                        }
++                        if stdout_text.len() < STDOUT_LIMIT_BYTES {
++                            stdout_text.push('\n');
++                        }
++                    }
+                     if app.emit(&topic, line).is_err() {
+                         break;
+                     }
+@@ -244,6 +257,9 @@ pub async fn codex_cli_spawn(
+         } else if stderr_text.len() >= STDERR_LIMIT_BYTES {
+             stderr_text.push_str("\n[stderr truncated]");
+         }
++        if stdout_text.len() >= STDOUT_LIMIT_BYTES {
++            stdout_text.push_str("\n[stdout truncated]");
++        }
+ 
+         let code = if timed_out.load(Ordering::SeqCst) {
+             Some(-1)
+@@ -256,6 +272,7 @@ pub async fn codex_cli_spawn(
+             serde_json::json!({
+                 "code": code,
+                 "stderr": stderr_text,
++                "stdout": stdout_text,
+             }),
+         );
+     });
+diff --git a/src/lib/codex-cli-transport.test.ts b/src/lib/codex-cli-transport.test.ts
+index 6fa0454f..7d53a2c0 100644
+--- a/src/lib/codex-cli-transport.test.ts
++++ b/src/lib/codex-cli-transport.test.ts
+@@ -1,5 +1,39 @@
+-import { describe, expect, it } from "vitest"
+-import { buildPrompt, parseCodexCliLine } from "./codex-cli-transport"
++import { beforeEach, describe, expect, it, vi } from "vitest"
++
++const tauriMocks = vi.hoisted(() => {
++  const listeners: Record<string, (event: { payload: unknown }) => void> = {}
++  return {
++    invoke: vi.fn(async (_command: string, _payload?: unknown): Promise<unknown> => undefined),
++    listen: vi.fn(async (event: string, cb: (event: { payload: unknown }) => void) => {
++      listeners[event] = cb
++      return vi.fn(() => {
++        delete listeners[event]
++      })
++    }),
++    emit: (event: string, payload: unknown) => listeners[event]?.({ payload }),
++    reset: () => {
++      for (const event of Object.keys(listeners)) {
++        delete listeners[event]
++      }
++    },
++  }
++})
++
++vi.mock("@tauri-apps/api/core", () => ({
++  invoke: tauriMocks.invoke,
++}))
++
++vi.mock("@tauri-apps/api/event", () => ({
++  listen: tauriMocks.listen,
++}))
++
++import { buildPrompt, parseCodexCliLine, streamCodexCli } from "./codex-cli-transport"
++
++beforeEach(() => {
++  vi.clearAllMocks()
++  tauriMocks.reset()
++  tauriMocks.invoke.mockResolvedValue(undefined)
++})
+ 
+ describe("parseCodexCliLine", () => {
+   it("extracts completed agent messages from Codex JSONL", () => {
+@@ -50,3 +84,236 @@ describe("buildPrompt", () => {
+     expect(prompt).not.toContain("abc")
+   })
+ })
++
++describe("streamCodexCli", () => {
++  it("does not resolve until the Codex CLI done event arrives", async () => {
++    const callbacks = {
++      onToken: vi.fn(),
++      onDone: vi.fn(),
++      onError: vi.fn(),
++    }
++    let settled = false
++    let resolveSpawn: (() => void) | undefined
++    tauriMocks.invoke.mockImplementationOnce(() => new Promise<void>((resolve) => {
++      resolveSpawn = resolve
++    }))
++
++    const stream = streamCodexCli(
++      {
++        provider: "codex-cli",
++        apiKey: "",
++        model: "gpt-5.1-codex-mini",
++        ollamaUrl: "",
++        customEndpoint: "",
++        maxContextSize: 128000,
++      },
++      [{ role: "user", content: "Analyze this source." }],
++      callbacks,
++    ).finally(() => {
++      settled = true
++    })
++
++    await vi.waitFor(() => {
++      expect(tauriMocks.invoke).toHaveBeenCalledTimes(1)
++    })
++    expect(tauriMocks.invoke).toHaveBeenCalledWith(
++      "codex_cli_spawn",
++      expect.objectContaining({
++        model: "gpt-5.1-codex-mini",
++        prompt: expect.stringContaining("Analyze this source."),
++      }),
++    )
++
++    expect(resolveSpawn).toBeTypeOf("function")
++    let spawnSettled = false
++    void Promise.resolve(tauriMocks.invoke.mock.results[0]?.value).then(() => {
++      spawnSettled = true
++    })
++    resolveSpawn?.()
++    await new Promise((resolve) => setTimeout(resolve, 10))
++    expect(spawnSettled).toBe(true)
++    expect(settled).toBe(false)
++
++    const payload = tauriMocks.invoke.mock.calls[0]?.[1] as { streamId: string }
++    tauriMocks.emit(
++      `codex-cli:${payload.streamId}`,
++      JSON.stringify({
++        type: "item.completed",
++        item: { type: "agent_message", text: "structured analysis" },
++      }),
++    )
++    tauriMocks.emit(`codex-cli:${payload.streamId}:done`, { code: 0, stderr: "" })
++
++    await stream
++
++    expect(callbacks.onToken).toHaveBeenCalledWith("structured analysis")
++    expect(callbacks.onDone).toHaveBeenCalledTimes(1)
++    expect(callbacks.onError).not.toHaveBeenCalled()
++  })
++
++  it("replays agent messages from done stdout when live events were missed", async () => {
++    const callbacks = {
++      onToken: vi.fn(),
++      onDone: vi.fn(),
++      onError: vi.fn(),
++    }
++
++    const stream = streamCodexCli(
++      {
++        provider: "codex-cli",
++        apiKey: "",
++        model: "gpt-5.1-codex-mini",
++        ollamaUrl: "",
++        customEndpoint: "",
++        maxContextSize: 128000,
++      },
++      [{ role: "user", content: "Analyze this source." }],
++      callbacks,
++    )
++
++    await vi.waitFor(() => {
++      expect(tauriMocks.invoke).toHaveBeenCalledTimes(1)
++    })
++
++    const payload = tauriMocks.invoke.mock.calls[0]?.[1] as { streamId: string }
++    tauriMocks.emit(`codex-cli:${payload.streamId}:done`, {
++      code: 0,
++      stderr: "",
++      stdout: [
++        JSON.stringify({ type: "turn.started" }),
++        JSON.stringify({
++          type: "item.completed",
++          item: { type: "agent_message", text: "fallback analysis" },
++        }),
++      ].join("\n"),
++    })
++
++    await stream
++
++    expect(callbacks.onToken).toHaveBeenCalledWith("fallback analysis")
++    expect(callbacks.onDone).toHaveBeenCalledTimes(1)
++    expect(callbacks.onError).not.toHaveBeenCalled()
++  })
++
++  it("does not replay done stdout when a live agent message was already emitted", async () => {
++    const callbacks = {
++      onToken: vi.fn(),
++      onDone: vi.fn(),
++      onError: vi.fn(),
++    }
++
++    const stream = streamCodexCli(
++      {
++        provider: "codex-cli",
++        apiKey: "",
++        model: "gpt-5.1-codex-mini",
++        ollamaUrl: "",
++        customEndpoint: "",
++        maxContextSize: 128000,
++      },
++      [{ role: "user", content: "Analyze this source." }],
++      callbacks,
++    )
++
++    await vi.waitFor(() => {
++      expect(tauriMocks.invoke).toHaveBeenCalledTimes(1)
++    })
++
++    const payload = tauriMocks.invoke.mock.calls[0]?.[1] as { streamId: string }
++    const line = JSON.stringify({
++      type: "item.completed",
++      item: { type: "agent_message", text: "live analysis" },
++    })
++    tauriMocks.emit(`codex-cli:${payload.streamId}`, line)
++    tauriMocks.emit(`codex-cli:${payload.streamId}:done`, {
++      code: 0,
++      stderr: "",
++      stdout: line,
++    })
++
++    await stream
++
++    expect(callbacks.onToken).toHaveBeenCalledTimes(1)
++    expect(callbacks.onToken).toHaveBeenCalledWith("live analysis")
++    expect(callbacks.onDone).toHaveBeenCalledTimes(1)
++    expect(callbacks.onError).not.toHaveBeenCalled()
++  })
++
++  it("does not spawn when the signal is already aborted", async () => {
++    const controller = new AbortController()
++    controller.abort()
++    const callbacks = {
++      onToken: vi.fn(),
++      onDone: vi.fn(),
++      onError: vi.fn(),
++    }
++
++    await streamCodexCli(
++      {
++        provider: "codex-cli",
++        apiKey: "",
++        model: "gpt-5.1-codex-mini",
++        ollamaUrl: "",
++        customEndpoint: "",
++        maxContextSize: 128000,
++      },
++      [{ role: "user", content: "Analyze this source." }],
++      callbacks,
++      controller.signal,
++    )
++
++    expect(tauriMocks.invoke).not.toHaveBeenCalled()
++    expect(tauriMocks.listen).not.toHaveBeenCalled()
++    expect(callbacks.onDone).toHaveBeenCalledTimes(1)
++    expect(callbacks.onError).not.toHaveBeenCalled()
++  })
++
++  it("kills again after spawn resolves when abort races with spawn", async () => {
++    const controller = new AbortController()
++    const callbacks = {
++      onToken: vi.fn(),
++      onDone: vi.fn(),
++      onError: vi.fn(),
++    }
++    let resolveSpawn: (() => void) | undefined
++    tauriMocks.invoke.mockImplementation((command: string) => {
++      if (command === "codex_cli_spawn") {
++        return new Promise<void>((resolve) => {
++          resolveSpawn = resolve
++        })
++      }
++      return Promise.resolve(undefined)
++    })
++
++    const stream = streamCodexCli(
++      {
++        provider: "codex-cli",
++        apiKey: "",
++        model: "gpt-5.1-codex-mini",
++        ollamaUrl: "",
++        customEndpoint: "",
++        maxContextSize: 128000,
++      },
++      [{ role: "user", content: "Analyze this source." }],
++      callbacks,
++      controller.signal,
++    )
++
++    await vi.waitFor(() => {
++      expect(tauriMocks.invoke).toHaveBeenCalledWith("codex_cli_spawn", expect.anything())
++    })
++    controller.abort()
++    await vi.waitFor(() => {
++      expect(tauriMocks.invoke).toHaveBeenCalledWith("codex_cli_kill", expect.anything())
++    })
++
++    expect(resolveSpawn).toBeTypeOf("function")
++    resolveSpawn?.()
++    await stream
++
++    const killCalls = tauriMocks.invoke.mock.calls.filter(([command]) => command === "codex_cli_kill")
++    expect(killCalls).toHaveLength(2)
++    expect(callbacks.onDone).toHaveBeenCalledTimes(1)
++    expect(callbacks.onError).not.toHaveBeenCalled()
++  })
++})
+diff --git a/src/lib/codex-cli-transport.ts b/src/lib/codex-cli-transport.ts
+index 3b3cc045..da9b1edf 100644
+--- a/src/lib/codex-cli-transport.ts
++++ b/src/lib/codex-cli-transport.ts
+@@ -85,6 +85,12 @@ export async function streamCodexCli(
+   let unlistenData: UnlistenFn | undefined
+   let unlistenDone: UnlistenFn | undefined
+   let finished = false
++  let aborted = signal?.aborted ?? false
++  let emittedAgentMessage = false
++  let resolveCompletion: () => void = () => {}
++  const completion = new Promise<void>((resolve) => {
++    resolveCompletion = resolve
++  })
+ 
+   const unparsedLines: string[] = []
+   let unparsedSize = 0
+@@ -106,31 +112,55 @@ export async function streamCodexCli(
+     finished = true
+     cleanup()
+     cb()
++    resolveCompletion()
++  }
++
++  const replayAgentMessagesFromStdout = (stdout: string | undefined) => {
++    if (!stdout) return
++
++    for (const line of stdout.split(/\r?\n/)) {
++      const token = parseCodexCliLine(line)
++      if (token !== null) {
++        emittedAgentMessage = true
++        onToken(token)
++      }
++    }
+   }
+ 
+   const abortListener = () => {
++    aborted = true
+     void invoke("codex_cli_kill", { streamId }).catch(() => {})
+     finishWith(onDone)
+   }
++  if (aborted) {
++    finishWith(onDone)
++    return
++  }
+   signal?.addEventListener("abort", abortListener)
+ 
+   try {
+     unlistenData = await listen<string>(`codex-cli:${streamId}`, (event) => {
+       const token = parseCodexCliLine(event.payload)
+       if (token !== null) {
++        emittedAgentMessage = true
+         onToken(token)
+       } else {
+         captureUnparsed(event.payload)
+       }
+     })
++    if (aborted || finished) {
++      cleanup()
++      return
++    }
+ 
+-    unlistenDone = await listen<{ code: number | null; stderr: string }>(
++    unlistenDone = await listen<{ code: number | null; stderr: string; stdout?: string }>(
+       `codex-cli:${streamId}:done`,
+       (event) => {
+         const code = event.payload?.code
+         const stderr = event.payload?.stderr?.trim() ?? ""
++        const stdout = event.payload?.stdout ?? ""
+         if (code !== null && code !== undefined && code !== 0) {
+-          const details = stderr || unparsedLines.join("\n")
++          const details = stderr || stdout.trim() || unparsedLines.join("\n")
+           finishWith(() =>
+             onError(new Error(
+               details
+@@ -139,10 +169,28 @@ export async function streamCodexCli(
+             )),
+           )
+         } else {
+-          finishWith(onDone)
++          if (!emittedAgentMessage) replayAgentMessagesFromStdout(stdout)
++          if (!emittedAgentMessage) {
++            const details = stdout.trim() || unparsedLines.join("\n").trim()
++            finishWith(() =>
++              onError(new Error(
++                details
++                  ? `Codex CLI completed but did not emit an agent_message. Raw output:\n${details}`
++                  : "Codex CLI completed but did not emit an agent_message. Run `codex exec --json` in a terminal to inspect the provider output.",
++              )),
++            )
++          } else {
++            finishWith(onDone)
++          }
+         }
+       },
+     )
++    if (aborted || finished) {
++      cleanup()
++      return
++    }
++
++    if (aborted) return
+ 
+     const payload: SpawnPayload = {
+       streamId,
+@@ -150,6 +198,13 @@ export async function streamCodexCli(
+       prompt: buildPrompt(messages),
+     }
+     await invoke("codex_cli_spawn", payload)
++    if (aborted || signal?.aborted) {
++      aborted = true
++      await invoke("codex_cli_kill", { streamId }).catch(() => {})
++      finishWith(onDone)
++      return
++    }
++    await completion
+   } catch (err) {
+     finishWith(() => {
+       const message = err instanceof Error ? err.message : String(err)

@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24114",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24114,
+    "headSha": "5b6c77df2882190615b49fc95e0b5cc186103bf9",
+    "baseSha": "7924743c38e9a28795c1533ab5143dceea5ca566",
+    "title": "Display workspace usage limit error copy from response header",
+    "body": "## Why\n\n`openai/openai#947613` adds `X-Codex-Rate-Limit-Reached-Type` for Codex workspace credit-depletion and spend-cap responses. The CLI currently reads the adjacent promo header but otherwise renders generic usage-limit copy, so those responses do not explain the workspace-specific action the user needs to take.\n\nBackend dependency: https://github.com/openai/openai/pull/947613\n\n## What Changed\n\n- Parse `X-Codex-Rate-Limit-Reached-Type` in the usage-limit error handling path alongside `x-codex-promo-message`.\n- Keep the header value parsing with the shared `RateLimitReachedType` enum.\n- Carry the parsed type on `UsageLimitReachedError` and render client-owned copy for the four workspace owner/member credit and spend-cap values.\n- Preserve existing promo and plan-based text for absent, generic, or unknown header values.\n- Keep the existing TUI workspace-owner nudge state path unchanged; the response header only selects the displayed error string.\n- Add focused display coverage for all specific type values and the generic fallback case.\n\n## Test Plan\n\n- Added `usage_limit_reached_error_formats_rate_limit_reached_types` coverage.\n- Not run manually, per request; CI runs validation on the pushed commit.",
+    "author": "dhruvgupta-oai",
+    "headRef": "dev/dhruvgupta/usage-limit-type-error-copy",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "5b6c77df2882190615b49fc95e0b5cc186103bf9",
+    "baseSha": "7924743c38e9a28795c1533ab5143dceea5ca566"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24114.diff",
+  "vendoredAt": "2026-05-24T03:21:11.859Z",
+  "collectedAt": "2026-05-24T03:21:11.859Z"
+}

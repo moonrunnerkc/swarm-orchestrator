@@ -1,0 +1,68 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 43155e8..9789ebb 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -28,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
+ ### Changed
+ - Updated to Rust 2024 edition.
+ - Updated Trippy integration to `trippy`/`trippy-tui` 0.13.0.
+-- Updated documentation and roadmap to reflect delivered v2.0 capabilities.
++- Updated documentation and roadmap to reflect delivered v1.1.3 capabilities.
+ 
+ ### Fixed
+ - Fixed `--ui enhanced` handling for bundled Trippy 0.13.0: stop passing unsupported `--tui-*` flags and return a clear unavailable-with-action message.
+diff --git a/README.md b/README.md
+index 88d858b..ce40076 100644
+--- a/README.md
++++ b/README.md
+@@ -137,13 +137,13 @@ See [docs/security/rest-api.md](docs/security/rest-api.md) for the full threat m
+ 
+ ```bash
+ # Pull a release-tagged Windows MTR container (GHCR)
+-docker pull ghcr.io/benjisho/windows-mtr:v1.0.0
++docker pull ghcr.io/benjisho/windows-mtr:v1.2.6
+ 
+ # Pull a release-tagged Windows MTR container (Docker Hub)
+-docker pull benjisho/windows-mtr:v1.0.0
++docker pull benjisho/windows-mtr:v1.2.6
+ 
+ # Run with direct networking (pin to a specific release tag)
+-docker run --network host ghcr.io/benjisho/windows-mtr:v1.0.0 -c 5 -r 8.8.8.8
++docker run --network host ghcr.io/benjisho/windows-mtr:v1.2.6 -c 5 -r 8.8.8.8
+ ```
+ 
+ Container images are published from the `Release` workflow to both GHCR (`ghcr.io/benjisho/windows-mtr`) and Docker Hub (`benjisho/windows-mtr`) from explicit release tags like `v1.2.3` for `linux/amd64` and `linux/arm64`.
+diff --git a/docs/ROADMAP.md b/docs/ROADMAP.md
+index 3050374..0081346 100644
+--- a/docs/ROADMAP.md
++++ b/docs/ROADMAP.md
+@@ -16,7 +16,7 @@ For release-by-release details, see the [changelog](../CHANGELOG.md).
+ | Feature | Status | Timeline |
+ |---|---|---|
+ | Core MTR Functionality | ✅ Released | v1.0.0 |
+-| MSI Installer | ✅ Released | v1.0.0 |
++| MSI Installer | ✅ Released (superseded by portable ZIP in v1.1.3+) | v1.0.0 |
+ | IPv6 Support | ✅ Released | v1.0.0 |
+ | Docker Support | ✅ Released | v1.0.0 |
+ | Single portable executable | ✅ Released | v1.1.3 |
+@@ -30,7 +30,7 @@ For release-by-release details, see the [changelog](../CHANGELOG.md).
+ | Dashboard UI (tabs, hop table, charts) | 🚧 In Progress (experimental preview via `--ui dashboard`, with deprecated alias `--ui native`) | H2 2026 |
+ | Dashboard fallback UI improvements | 🚧 In Progress / Next | H2 2026 |
+ | ETW + Windows observability integrations (optional) | 🛣️ Long-term roadmap | 2027+ |
+-| Versioned JSON & CSV export | 🚧 In Progress / Next | H2 2026 |
++| Versioned JSON schema & CSV export | 📅 Planned (JSON output released; versioned schema and CSV not yet implemented) | H2 2026 |
+ | Security hardening gates (cargo-deny + cargo-audit + fuzz smoke in CI) | ✅ Released | v1.2.x |
+ | Advanced security hardening (long-running/scheduled fuzzing, advisory cleanup) | 🛣️ Roadmap | H2 2026 |
+ | Cross-platform probe parity/privilege smoke tests | ✅ Released (CI `Probe parity (windows-latest\|ubuntu-latest)` + privilege smoke lanes: `Privilege probe smoke (ubuntu-latest\|windows-latest, non-elevated)`, `Privilege probe smoke (ubuntu-latest, elevated)`, and optional `Privilege probe smoke (windows, elevated self-hosted)`; coverage includes non-elevated failures on Windows/Ubuntu and elevated success on Ubuntu + Windows self-hosted; constraint: elevated Windows lane requires self-hosted runner because GitHub-hosted `windows-latest` cannot be interactively elevated.) | H2 2026 |
+diff --git a/docs/STATUS.md b/docs/STATUS.md
+index 0c1f91d..17fd611 100644
+--- a/docs/STATUS.md
++++ b/docs/STATUS.md
+@@ -28,5 +28,5 @@ This document serves as the single source of truth for feature delivery status.
+ - **Notes**: Planned for future release. This integration is critical for observability.
+ 
+ ## Security Hardening (cargo-audit + fuzz CI)
+-- **Status**: 🚧 In Progress
+-- **Notes**: Security hardening initiatives are underway. cargo-audit is live, while fuzz harness is pending. More information can be found in the [Security Documentation](security/rest-api.md).
++- **Status**: ✅ Released in v1.2.x
++- **Notes**: `cargo-deny`, `cargo-audit`, and fuzz smoke regression gates are active in CI (`security.yml` and `ci.yml`). See the [Security Documentation](security/rest-api.md) for more details. Advanced/scheduled long-running fuzz campaigns remain on the roadmap.

@@ -1,0 +1,31 @@
+diff --git a/.github/dotslash-zsh-config.json b/.github/dotslash-zsh-config.json
+index db2c41640154..37285f19e24c 100644
+--- a/.github/dotslash-zsh-config.json
++++ b/.github/dotslash-zsh-config.json
+@@ -7,6 +7,11 @@
+           "format": "tar.gz",
+           "path": "codex-zsh/bin/zsh"
+         },
++        "macos-x86_64": {
++          "name": "codex-zsh-x86_64-apple-darwin.tar.gz",
++          "format": "tar.gz",
++          "path": "codex-zsh/bin/zsh"
++        },
+         "linux-x86_64": {
+           "name": "codex-zsh-x86_64-unknown-linux-musl.tar.gz",
+           "format": "tar.gz",
+diff --git a/.github/workflows/rust-release-zsh.yml b/.github/workflows/rust-release-zsh.yml
+index 492b8dc5e75d..b55d2e714bcf 100644
+--- a/.github/workflows/rust-release-zsh.yml
++++ b/.github/workflows/rust-release-zsh.yml
+@@ -69,6 +69,10 @@ jobs:
+       fail-fast: false
+       matrix:
+         include:
++          - runner: macos-15-large
++            target: x86_64-apple-darwin
++            variant: macos-15
++            archive_name: codex-zsh-x86_64-apple-darwin.tar.gz
+           - runner: macos-15-xlarge
+             target: aarch64-apple-darwin
+             variant: macos-15

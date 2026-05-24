@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-F1R3FLY-io-f1r3node-rust-pr57",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "commit=claude-coauthor"
+  },
+  "pr": {
+    "number": 57,
+    "headSha": "021397c542c474b366844d077d3500e2a17781d6",
+    "baseSha": "ff76624ba2a309a63c7db12630c31c91473516c4",
+    "title": "diag: trace multi-Datum writes for test_shard_degradation",
+    "body": "- Adds info-level [TRACE-*] log lines across the merge, storage, classification,\n  and bonds-validation paths to empirically pinpoint where multi-Datum lands on\n  a single-value channel.\n- Re-enables test_shard_degradation in CI to trigger the bug under instrumentation.\n- Branch base: staging (no other functional changes).\n\nGrep targets after a failing CI run (filter by `[TRACE-*]`):\n\n- `[TRACE-TRIE-WRITE].*channel=<7a7b7766f9...>` — every storage write on the\n  channel of interest, with data_len\n- `[TRACE-TRIE-WRITE-MULTI]` — explicit flag for any multi-Datum write\n- `[TRACE-MERGE-FOLD-*]` / `[TRACE-PRE-STATE-READ]` /\n  `[TRACE-PRE-STATE-VIOLATION]` — fold path and pre-state read\n- `[TRACE-MAKE-TRIE-ACTION*]` — fallback path\n- `[TRACE-DISPATCHER*]` — channel classification decision per merge\n- `[TRACE-COMPUTE-MERGED-STATE-*]` / `[TRACE-MERGE-CHANNEL-COMBINE]` —\n  per-channel diff aggregation across chains\n- `[TRACE-GET-NUMBER-CHANNEL*]` / `[TRACE-GET-NUMBER-CHANNELS-DATA-*]` /\n  `[TRACE-UPDATE-MERGEABLE-CHANNELS]` — runtime classification\n- `[TRACE-SAVE-MERGEABLE-CHANNELS-*]` / `[TRACE-LOAD-MERGEABLE-CHANNELS-*]` /\n  `[TRACE-REPLAY-CACHE-HIT]` — mergeable_store interactions\n- `[TRACE-LFS-*]` — LFS state import paths\n- `[TRACE-BONDS-CACHE-VALIDATE-*]` / `[TRACE-COMPUTE-BONDS-*]` — bonds\n  validation cascade source\n\nDiagnostic only; revert before merging anything functional.\n\nCo-Authored-By: Claude <noreply@anthropic.com>",
+    "author": "spreston8",
+    "headRef": "diag/multi-datum-trace",
+    "repository": "F1R3FLY-io/f1r3node-rust"
+  },
+  "diffRef": {
+    "repository": "F1R3FLY-io/f1r3node-rust",
+    "headSha": "021397c542c474b366844d077d3500e2a17781d6",
+    "baseSha": "ff76624ba2a309a63c7db12630c31c91473516c4"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-F1R3FLY-io-f1r3node-rust-pr57.diff",
+  "vendoredAt": "2026-05-24T03:09:27.652Z",
+  "collectedAt": "2026-05-24T03:09:27.652Z"
+}

@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-Norfolk-Group-H-Analytics-pr113",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "body=claude-code-footer"
+  },
+  "pr": {
+    "number": 113,
+    "headSha": "a994e78b709002392239c6ec6c72a087da7d7b0e",
+    "baseSha": "b36fca4cdebfb966877cc026f4ab67bed0dad867",
+    "title": "docs(solutions): compound learnings — branch hygiene WIP-file collision, squash-merge with failing CI, variant graduation, Replit-without-origin merging, missing source-data alerts",
+    "body": "## Summary\n\nCompound documentation pass capturing five learnings from the recent Factory v2 slide-factory work and adjacent incidents. Single commit, mixed authorship (CC + Replit Agent) — see \"Authorship\" below.\n\n### Documents\n\n**Updated:**\n- `docs/solutions/workflow-issues/cc-replit-branch-hygiene-2026-05-10.md` — added \"Sub-pattern: Replit Agent edits CC's in-flight WIP file mid-session\" section covering the `*-DIRTY-with-replit` branch-rename recovery procedure, plus a worked example from the 2026-05-11 U1 spike where Replit Agent overwrote CC's actively-being-authored `scripts/src/pptx-substitution-spike.ts`. New tags: `wip-file-collision`, `dirty-branch-rename`.\n\n**New:**\n- `docs/solutions/workflow-issues/squash-merge-with-failing-required-check-2026-05-11.md` — captures the PR #111 incident where a squash-merge proceeded despite `Typecheck + Gates` reporting FAILURE on the rollup, poisoning `main` and forcing the U1 downstream PR (#112) to cherry-pick the fix as a drive-by. Pre-merge `gh pr checks` rule + post-merge `git diff` verification + tactical vs. strategic recovery paths.\n- `docs/solutions/architecture-patterns/variant-graduation-shared-component-pattern-2026-05-11.md` — graduating an approved canvas mockup into a shared production component via a `variant` prop instead of mutating the default. Drawn from the Swiss-Minimal KPI hero work in `feat/u1-spike-DIRTY-with-replit` (commit `27e10979`). Covers per-instance theming, dark-mode safety, and additive prop extension.\n- `docs/solutions/workflow-issues/merging-github-prs-from-replit-agent-without-origin-2026-05-11.md` — how Replit Agent merges GitHub PRs when the local repo has no `origin` remote. Uses `GITHUB_PAT` + GitHub REST API instead of `gh` CLI.\n- `docs/solutions/documentation-gaps/rewritetax-and-best-practices-source-files-missing-2026-05-11.md` — surfaces a gap where referenced source files are missing.\n\n### Authorship\n\nThis branch ships a single commit (`f82155f9`) authored by the Replit Agent's auto-checkpoint mechanism — the checkpoint snapshotted the working tree when both CC and Replit Agent had compound docs in flight, capturing all 5 files together. Per the CC/Replit branch-hygiene discipline, acknowledging mixed authorship explicitly:\n\n- **CC-authored content:** the `cc-replit-branch-hygiene-2026-05-10.md` updates (WIP-file-collision sub-pattern + U1 worked example) and the new `squash-merge-with-failing-required-check-2026-05-11.md`\n- **Replit-authored content:** `variant-graduation-shared-component-pattern-2026-05-11.md`, `merging-github-prs-from-replit-agent-without-origin-2026-05-11.md`, and `rewritetax-and-best-practices-source-files-missing-2026-05-11.md`\n\nThe cherry-pick **is** the in-scope acknowledgement; this PR body makes it visible. No review skipped — this PR is the review.\n\n## Validation\n\n- [x] `python3 .../validate-frontmatter.py` — PASS on all 5 docs\n- [x] No code paths touched; pure docs\n- [x] All cross-references between docs verified (Related sections in `cc-replit-branch-hygiene` and `squash-merge-with-failing-required-check` link to each other and to `slide-factory-pre-merge-shipping-gates-2026-05-08.md`)\n\n## Why this PR is separate from #112\n\nPR #112 ships U1 (Factory v2 substitution library spike). Bundling 5 compound docs into it would expand its scope and trigger the same branch-hygiene rule the docs document. Splitting keeps both PRs focused.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+    "author": "ricardo-cidale-personal",
+    "headRef": "docs/compound-learnings-2026-05-11",
+    "repository": "Norfolk-Group/H-Analytics"
+  },
+  "diffRef": {
+    "repository": "Norfolk-Group/H-Analytics",
+    "headSha": "a994e78b709002392239c6ec6c72a087da7d7b0e",
+    "baseSha": "b36fca4cdebfb966877cc026f4ab67bed0dad867"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-Norfolk-Group-H-Analytics-pr113.diff",
+  "vendoredAt": "2026-05-24T03:14:20.579Z",
+  "collectedAt": "2026-05-24T03:14:20.579Z"
+}

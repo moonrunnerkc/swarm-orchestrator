@@ -1,0 +1,167 @@
+diff --git a/aider/repo.py b/aider/repo.py
+index 92b5e3bf5b8..5a6b69f7e24 100644
+--- a/aider/repo.py
++++ b/aider/repo.py
+@@ -80,6 +80,8 @@ def __init__(
+ 
+         self.normalized_path = {}
+         self.tree_files = {}
++        self.index_stat = None
++        self.index_files = None
+ 
+         self.attribute_author = attribute_author
+         self.attribute_committer = attribute_committer
+@@ -447,7 +449,7 @@ def get_tracked_files(self):
+         files = set()
+         if commit:
+             if commit in self.tree_files:
+-                files = self.tree_files[commit]
++                files = set(self.tree_files[commit])
+             else:
+                 try:
+                     iterator = commit.tree.traverse()
+@@ -475,11 +477,11 @@ def get_tracked_files(self):
+                 files = set(self.normalize_path(path) for path in files)
+                 self.tree_files[commit] = set(files)
+ 
+-        # Add staged files
+-        index = self.repo.index
++        # Add files from the index without parsing .git/index through GitPython. GitPython
++        # only understands older index formats, while git itself handles newer versions.
+         try:
+-            staged_files = [path for path, _ in index.entries.keys()]
+-            files.update(self.normalize_path(path) for path in staged_files)
++            staged_files = self.get_index_files()
++            files.update(self.normalize_path(path) for path in staged_files if path)
+         except ANY_GIT_ERROR as err:
+             self.io.tool_error(f"Unable to read staged files: {err}")
+ 
+@@ -487,6 +489,33 @@ def get_tracked_files(self):
+ 
+         return res
+ 
++    def get_index_files(self):
++        index_stat = self.get_index_stat()
++        if self.index_files is not None and self.index_stat == index_stat:
++            return self.index_files
++
++        index_files = self.get_index_file_output()
++        if isinstance(index_files, bytes):
++            index_files = index_files.decode(self.io.encoding, "replace")
++        elif index_files is None:
++            index_files = ""
++        else:
++            index_files = str(index_files)
++
++        self.index_stat = index_stat
++        self.index_files = index_files.split("\0")
++        return self.index_files
++
++    def get_index_file_output(self):
++        return self.repo.git.ls_files("-z", "--cached", "--full-name", stdout_as_string=False)
++
++    def get_index_stat(self):
++        try:
++            stat = (Path(self.repo.git_dir) / "index").stat()
++            return (stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size)
++        except OSError:
++            return None
++
+     def normalize_path(self, path):
+         orig_path = path
+         res = self.normalized_path.get(orig_path)
+diff --git a/tests/basic/test_repo.py b/tests/basic/test_repo.py
+index 71ba9479830..cc40e36e5cc 100644
+--- a/tests/basic/test_repo.py
++++ b/tests/basic/test_repo.py
+@@ -510,6 +510,90 @@ def test_get_tracked_files_with_new_staged_file(self):
+             self.assertIn(str(fname), fnames)
+             self.assertIn(str(fname2), fnames)
+ 
++    def test_get_tracked_files_without_gitpython_index_parser(self):
++        with GitTemporaryDirectory():
++            raw_repo = git.Repo()
++
++            fname = Path("tracked.txt")
++            fname.touch()
++            raw_repo.git.add(str(fname))
++            raw_repo.git.commit("-m", "tracked")
++
++            staged_fname = Path("intent-to-add.txt")
++            staged_fname.touch()
++            raw_repo.git.add("-N", str(staged_fname))
++
++            io = InputOutput()
++            io.tool_error = MagicMock()
++            git_repo = GitRepo(io, None, None)
++
++            def broken_index(_repo):
++                raise AssertionError("index version in (1, 2) is required")
++
++            with patch.object(git.Repo, "index", property(broken_index)):
++                fnames = git_repo.get_tracked_files()
++
++            self.assertIn(str(fname), fnames)
++            self.assertIn(str(staged_fname), fnames)
++            io.tool_error.assert_not_called()
++
++    def test_get_tracked_files_handles_string_index_output(self):
++        with GitTemporaryDirectory():
++            raw_repo = git.Repo()
++
++            fname = Path("tracked.txt")
++            fname.touch()
++            raw_repo.git.add(str(fname))
++            raw_repo.git.commit("-m", "tracked")
++
++            staged_fname = Path("staged.txt")
++            staged_fname.touch()
++            raw_repo.git.add(str(staged_fname))
++
++            git_repo = GitRepo(InputOutput(), None, None)
++            with patch.object(git_repo, "get_index_file_output", return_value=f"{staged_fname}\0"):
++                fnames = git_repo.get_tracked_files()
++
++            self.assertIn(str(fname), fnames)
++            self.assertIn(str(staged_fname), fnames)
++
++    def test_get_tracked_files_caches_unchanged_index(self):
++        with GitTemporaryDirectory():
++            raw_repo = git.Repo()
++
++            fname = Path("tracked.txt")
++            fname.touch()
++            raw_repo.git.add(str(fname))
++            raw_repo.git.commit("-m", "tracked")
++
++            git_repo = GitRepo(InputOutput(), None, None)
++            with patch.object(
++                git_repo,
++                "get_index_file_output",
++                wraps=git_repo.get_index_file_output,
++            ) as mock_ls_files:
++                self.assertIn(str(fname), git_repo.get_tracked_files())
++                self.assertIn(str(fname), git_repo.get_tracked_files())
++
++            self.assertEqual(1, mock_ls_files.call_count)
++
++    def test_get_tracked_files_refreshes_changed_index(self):
++        with GitTemporaryDirectory():
++            git.Repo()
++
++            git_repo = GitRepo(InputOutput(), None, None)
++            with patch.object(git_repo, "get_index_stat", side_effect=[1, 1, 2]):
++                with patch.object(
++                    git_repo,
++                    "get_index_file_output",
++                    side_effect=["first.txt\0", "second.txt\0"],
++                ) as mock_ls_files:
++                    self.assertEqual(["first.txt", ""], git_repo.get_index_files())
++                    self.assertEqual(["first.txt", ""], git_repo.get_index_files())
++                    self.assertEqual(["second.txt", ""], git_repo.get_index_files())
++
++            self.assertEqual(2, mock_ls_files.call_count)
++
+     def test_get_tracked_files_with_aiderignore(self):
+         with GitTemporaryDirectory():
+             # new repo

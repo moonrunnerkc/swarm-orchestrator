@@ -1,0 +1,26 @@
+{
+  "id": "devin-thompalex-superset-pr167",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 167,
+    "headSha": "bd75f213ed477fcf7cadb3cc3445d4b588db3e19",
+    "baseSha": "b906ac41bb912cdc8528c38ca5bd31997c34db41",
+    "title": "fix(deps): bump python-multipart from 0.0.20 to 0.0.27 (closes #92)",
+    "body": "### SUMMARY\n\nBumps `python-multipart` from 0.0.20 to 0.0.27 to fix the following CVEs:\n\n- **CVE-2026-40347** / **CVE-2026-42561** / **CVE-2026-24486** (HIGH severity)\n- **OSV ID**: [GHSA-mj87-hwqh-73pj](https://github.com/advisories/GHSA-mj87-hwqh-73pj)\n- **Summary**: python-multipart has Denial of Service via unbounded multipart part headers\n\n`python-multipart` is a transitive dependency (via `mcp`). The version pin in `requirements/development.txt` was updated from `==0.0.20` to `==0.0.27`.\n\n**Files changed:**\n- `requirements/development.txt` — updated `python-multipart==0.0.20` → `python-multipart==0.0.27`\n\n### BEFORE/AFTER SCREENSHOTS OR ANIMATED GIF\nNot applicable — dependency version bump only.\n\n### TESTING INSTRUCTIONS\n\n1. `pip install -r requirements/development.txt --no-deps` — verify install completes\n2. `pip show python-multipart` — confirm version is 0.0.27\n3. `pytest tests/unit_tests/ -x -q` — verify all unit tests pass\n\n**Unit test output (actual):**\n```\n7008 passed, 4 skipped, 2 deselected in 368.29s (0:06:08)\n```\nAll 7008 unit tests pass. The 2 deselected tests are **pre-existing failures on master** unrelated to this change (both are `PlaywrightTimeout` constructor issues in `test_screenshot_utils.py` and `webdriver_test.py`).\n\n**Integration test output (actual):**\n```\nERROR tests/integration_tests/access_tests.py::test_get_user_id[None-None]\n1 skipped, 1 error in 5.19s\n```\nIntegration tests fail at setup with a **pre-existing** SQLite schema error (`no such table: css_templates`). This error reproduces identically on the `master` branch without any changes, confirming it is not caused by this bump. Integration tests require a fully migrated database (`superset db upgrade`) which is not available in the local test environment.\n\n### ADDITIONAL INFORMATION\n- [x] Has associated issue: Fixes #92\n- [ ] Required feature flags:\n- [ ] Changes UI\n- [ ] Includes DB Migration\n- [ ] Introduces new feature or API\n- [ ] Removes existing feature or API\n\nLink to Devin session: https://app.devin.ai/sessions/733034e2c6d74bc59d572e4d5b22695a",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779574373-bump-python-multipart",
+    "repository": "thompalex/superset"
+  },
+  "diffRef": {
+    "repository": "thompalex/superset",
+    "headSha": "bd75f213ed477fcf7cadb3cc3445d4b588db3e19",
+    "baseSha": "b906ac41bb912cdc8528c38ca5bd31997c34db41"
+  },
+  "vendoredDiffPath": "devin/devin-thompalex-superset-pr167.diff",
+  "vendoredAt": "2026-05-24T03:04:55.844Z",
+  "collectedAt": "2026-05-24T03:04:55.844Z"
+}

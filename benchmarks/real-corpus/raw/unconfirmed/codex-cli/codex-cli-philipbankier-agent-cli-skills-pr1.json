@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-philipbankier-agent-cli-skills-pr1",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "commit=codex-cli-footer"
+  },
+  "pr": {
+    "number": 1,
+    "headSha": "ea732df546b079054a084a4891babae4450c364d",
+    "baseSha": "a7de4b779c76c9552517645a8f3bee7be154d9ec",
+    "title": "Add Linux server gotchas and bwrap sandbox failure docs",
+    "body": "## What\n\nFour new verified known issues for Codex CLI on Linux servers, from first-hand experience running Codex exec on an Ubuntu homelab server (April 2026).\n\n## New known issues\n\n### 1. Default bwrap sandbox fails on many Linux servers\n- **Severity: High** — exec mode silently hangs or errors with no useful output\n- bwrap fails with `RTM_NEWADDR: Operation not permitted` on VPS/homelab machines without `sys_admin` capability\n- Fix: `--dangerously-bypass-approvals-and-sandbox`\n\n### 2. Old CLI versions silently fail on newer models (gpt-5.5)\n- **Severity: High** — v0.27.0 and earlier hang for 10+ minutes or return 400 with no output\n- Fix: upgrade to 0.125.0+, smoke-test before long runs\n\n### 3. Codex OAuth token can't be used with raw OpenAI Python SDK\n- **Severity: Medium** — `~/.codex/auth.json` tokens are scoped to Codex CLI\n- Returns 403/500 when used with `openai` Python SDK\n- Fix: use `codex exec` with `--output-last-message` or separate API key\n\n### 4. Long prompts via CLI argument can hang\n- **Severity: Medium** — pipe via stdin instead for prompts over ~4K chars\n- Fix: `cat prompt.md | codex exec ... -`\n\n## Also added\n\n- **Linux Server Quickstart** section in `guides/automate-cli.md` with the recommended flag pattern and timeout protection\n- Three new entries in the **Critical Gotchas** section of `SKILL.md`\n\n## Files changed\n\n| File | Change |\n|------|--------|\n| `skills/codex-cli/reference/known-issues.md` | +115 lines: 4 new verified issues with workarounds |\n| `skills/codex-cli/guides/automate-cli.md` | +41 lines: Linux Server Quickstart section |\n| `skills/codex-cli/SKILL.md` | +14 lines: 3 new Critical Gotchas entries |",
+    "author": "pbans-agent",
+    "headRef": "codex-cli-linux-server-gotchas",
+    "repository": "philipbankier/agent-cli-skills"
+  },
+  "diffRef": {
+    "repository": "philipbankier/agent-cli-skills",
+    "headSha": "ea732df546b079054a084a4891babae4450c364d",
+    "baseSha": "a7de4b779c76c9552517645a8f3bee7be154d9ec"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-philipbankier-agent-cli-skills-pr1.diff",
+  "vendoredAt": "2026-05-24T03:13:42.380Z",
+  "collectedAt": "2026-05-24T03:13:42.380Z"
+}

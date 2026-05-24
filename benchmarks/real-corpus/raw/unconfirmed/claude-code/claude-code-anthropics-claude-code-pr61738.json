@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-claude-code-pr61738",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 61738,
+    "headSha": "71bc6a0df2e2d42fd2f538997a1b06c8eb7bb12c",
+    "baseSha": "39e853e4074d90f27afdfb7ea601e0fc378bd0c5",
+    "title": "[docs] Add troubleshooting for Sonnet 4.6 context window meter showing 200K instead of 1M (#61734)",
+    "body": "## Summary\n\nAdds a troubleshooting entry for the Sonnet 4.6 context window display/limit bug ? **a regression in v2.1.150**. The status bar shows 200K and the actual context is capped to 200K, even though Sonnet 4.6 supports 1M tokens per the API.\n\n**Root cause:** v2.1.150's \"internal infrastructure improvements\" likely reset Sonnet 4.6's `max_input_tokens` from 1M back to the default 200K in the model capabilities config. This is the same class of bug as the Opus 4.7 fix in v2.1.117. No user-side workaround exists ? requires a CLI patch to restore the correct value.\n\nCloses #61734",
+    "author": "giruuuuj",
+    "headRef": "fix/context-window-display-61734",
+    "repository": "anthropics/claude-code"
+  },
+  "diffRef": {
+    "repository": "anthropics/claude-code",
+    "headSha": "71bc6a0df2e2d42fd2f538997a1b06c8eb7bb12c",
+    "baseSha": "39e853e4074d90f27afdfb7ea601e0fc378bd0c5"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-claude-code-pr61738.diff",
+  "vendoredAt": "2026-05-24T03:15:20.053Z",
+  "collectedAt": "2026-05-24T03:15:20.053Z"
+}

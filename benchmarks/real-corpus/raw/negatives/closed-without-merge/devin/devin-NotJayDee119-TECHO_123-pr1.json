@@ -1,0 +1,26 @@
+{
+  "id": "devin-NotJayDee119-TECHO_123-pr1",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 1,
+    "headSha": "e31af30f3b3b3c0b283ae09ca411f4e559861c7d",
+    "baseSha": "7ca4f4b93e9e6fb44734e31bb52c35576510a786",
+    "title": "feat: set up BANTAY-TB tuberculosis surveillance platform",
+    "body": "## Summary\n\nSets up the complete BANTAY-TB GIS-based tuberculosis surveillance platform in TECHO_123 with a working Supabase backend.\n\n**What's included:**\n- Full React + TypeScript + Vite frontend with Tailwind CSS styling\n- 10 Supabase migration files creating all tables, RLS policies, RBAC functions, and triggers\n- GIS hotspot detection using DBSCAN spatial clustering algorithm\n- DOTS Center locator with interactive Leaflet maps (12 seeded centers)\n- Multilingual health education content (English, Filipino, Bisaya — 105 articles)\n- Role-based access control: system_admin, tb_coordinator, barangay_admin, health_worker, patient\n- Adherence monitoring, SMS pipeline, and AI chatbot edge functions\n- Database seeded with 182 barangays, 12 DOTS centers, 105 health articles, 1,351 synthetic TB cases\n\n**Fixes applied:**\n- Split `system_admin` enum migration into two files for PostgreSQL compatibility (enum values must be committed before use in functions)\n- Extended `disease` enum to include `influenza`, `bronchitis`, `copd` for health education content\n- Updated `supabase/config.toml` to match remote DB version (17)\n- Removed unused `eslint-disable` directive in i18n test\n- Updated `database.types.ts` to include all disease types\n\n**All checks pass:** TypeScript 0 errors, ESLint 0 errors, Vite build success, 4/4 tests passing.\n\n## Review & Testing Checklist for Human\n\n- [ ] Copy `.env.example` to `.env` and fill in your Supabase credentials (URL + anon key + staff invite code)\n- [ ] Run `npm install && npm run dev` and verify the landing page loads at localhost:5173\n- [ ] Visit `/dots-locator` and confirm 12 DOTS centers appear on the map with distances\n- [ ] Visit `/learn` and browse health articles in all 3 languages\n- [ ] Visit `/login` and verify the sign-in form renders correctly\n- [ ] Try creating a staff account at `/register` with the invite code to test auth flow\n\n### Notes\n\n- The `.env` file is gitignored — credentials are not committed\n- The Supabase Edge Functions (chatbot, detect-hotspots, send-adherence-sms) need to be deployed separately via `supabase functions deploy`\n- The chatbot edge function requires an `OPENAI_API_KEY` secret in Supabase\n- Database migrations have already been applied to the linked Supabase project (bxvxtaseugsbhzwgceqi)\n\nLink to Devin session: https://app.devin.ai/sessions/56092946289b42f68254638aa3efa407\nRequested by: @NotJayDee119",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779558296-setup-bantay-tb",
+    "repository": "NotJayDee119/TECHO_123"
+  },
+  "diffRef": {
+    "repository": "NotJayDee119/TECHO_123",
+    "headSha": "e31af30f3b3b3c0b283ae09ca411f4e559861c7d",
+    "baseSha": "7ca4f4b93e9e6fb44734e31bb52c35576510a786"
+  },
+  "vendoredDiffPath": "negatives/closed-without-merge/devin/devin-NotJayDee119-TECHO_123-pr1.diff",
+  "vendoredAt": "2026-05-24T04:27:43.480Z",
+  "collectedAt": "2026-05-24T04:27:43.480Z"
+}

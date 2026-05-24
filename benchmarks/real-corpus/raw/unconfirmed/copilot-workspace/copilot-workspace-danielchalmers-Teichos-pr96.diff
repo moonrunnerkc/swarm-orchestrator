@@ -1,0 +1,151 @@
+diff --git a/src/background/rulesProvider.ts b/src/background/rulesProvider.ts
+index 3464a50..f2ed7b5 100644
+--- a/src/background/rulesProvider.ts
++++ b/src/background/rulesProvider.ts
+@@ -18,6 +18,7 @@ export class RulesProvider {
+   private cachedRules: CurrentRules | null = null;
+   private cachedSignature: string | null = null;
+   private loadingRules: Promise<CurrentRules> | null = null;
++  private invalidationVersion = 0;
+ 
+   constructor(options: RulesProviderOptions = {}) {
+     this.loadStorageData = options.loadStorageData ?? loadData;
+@@ -25,14 +26,22 @@ export class RulesProvider {
+   }
+ 
+   invalidate(): void {
++    this.invalidationVersion += 1;
+     this.cachedRules = null;
+     this.cachedSignature = null;
++    this.loadingRules = null;
+   }
+ 
+   async loadCurrentRules(): Promise<CurrentRules> {
+-    this.loadingRules ??= this.loadStorageData()
++    if (this.loadingRules) {
++      return this.loadingRules;
++    }
++
++    const loadVersion = this.invalidationVersion;
++    const loadPromise = this.loadStorageData()
+       .then((data) => {
+         const signature = serializeRulesData(data);
++        const cacheCanBeUpdated = this.invalidationVersion === loadVersion;
+ 
+         if (this.cachedRules && this.cachedSignature === signature) {
+           return this.cachedRules;
+@@ -43,15 +52,21 @@ export class RulesProvider {
+           engine: this.createEngine(data),
+         };
+ 
+-        this.cachedRules = currentRules;
+-        this.cachedSignature = signature;
++        if (cacheCanBeUpdated) {
++          this.cachedRules = currentRules;
++          this.cachedSignature = signature;
++        }
++
+         return currentRules;
+       })
+       .finally(() => {
+-        this.loadingRules = null;
++        if (this.loadingRules === loadPromise) {
++          this.loadingRules = null;
++        }
+       });
+ 
+-    return this.loadingRules;
++    this.loadingRules = loadPromise;
++    return loadPromise;
+   }
+ }
+ 
+diff --git a/test/unit/background/rulesProvider.test.ts b/test/unit/background/rulesProvider.test.ts
+index d1ae3e9..941403a 100644
+--- a/test/unit/background/rulesProvider.test.ts
++++ b/test/unit/background/rulesProvider.test.ts
+@@ -96,6 +96,84 @@ describe('RulesProvider', () => {
+     expect(second).toBe(first);
+   });
+ 
++  it('starts a fresh load after invalidate during an in-flight read', async () => {
++    const resolves: ((data: StorageData) => void)[] = [];
++    const loadStorageData = vi.fn(
++      () =>
++        new Promise<StorageData>((resolve) => {
++          resolves.push(resolve);
++        })
++    );
++    const createEngine = vi.fn((data: StorageData) => createFilteringEngine(data));
++    const provider = new RulesProvider({ loadStorageData, createEngine });
++
++    const staleLoad = provider.loadCurrentRules();
++    provider.invalidate();
++    const refreshedLoad = provider.loadCurrentRules();
++
++    expect(loadStorageData).toHaveBeenCalledTimes(2);
++
++    resolves[0]?.(
++      createStorageData({
++        filters: [
++          {
++            id: 'stale-filter',
++            pattern: 'stale.example',
++            groupId: DEFAULT_GROUP_ID,
++            enabled: true,
++            matchMode: 'contains',
++          },
++        ],
++        rulesVersion: 1,
++      })
++    );
++    resolves[1]?.(
++      createStorageData({
++        filters: [
++          {
++            id: 'fresh-filter',
++            pattern: 'fresh.example',
++            groupId: DEFAULT_GROUP_ID,
++            enabled: true,
++            matchMode: 'contains',
++          },
++        ],
++        rulesVersion: 2,
++      })
++    );
++
++    const [staleRules, refreshedRules, cachedRules] = await Promise.all([
++      staleLoad,
++      refreshedLoad,
++      provider.loadCurrentRules(),
++    ]);
++
++    expect(loadStorageData).toHaveBeenCalledTimes(2);
++    expect(createEngine).toHaveBeenCalledTimes(2);
++    expect(staleRules.engine.evaluate('https://stale.example')).toEqual({
++      action: 'block',
++      filterId: 'stale-filter',
++      groupId: DEFAULT_GROUP_ID,
++      reason: 'matched-filter',
++    });
++    expect(refreshedRules.engine.evaluate('https://fresh.example')).toEqual({
++      action: 'block',
++      filterId: 'fresh-filter',
++      groupId: DEFAULT_GROUP_ID,
++      reason: 'matched-filter',
++    });
++    expect(cachedRules.engine.evaluate('https://fresh.example')).toEqual({
++      action: 'block',
++      filterId: 'fresh-filter',
++      groupId: DEFAULT_GROUP_ID,
++      reason: 'matched-filter',
++    });
++    expect(cachedRules.engine.evaluate('https://stale.example')).toEqual({
++      action: 'allow',
++      reason: 'no-match',
++    });
++  });
++
+   it('reloads rules when storage changes', async () => {
+     const chromeMock = getChromeMock();
+     chromeMock.storage.sync._data.set(STORAGE_KEY, createStorageData({ rulesVersion: 1 }));

@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-ryanmshannon-discovery-pr16",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 16,
+    "headSha": "cad7b513f9155f7d524a79719226d696568f909f",
+    "baseSha": "72b90c6f59ae7a3640b23359938f2bcf5cf878a5",
+    "title": "Fix sampling not starting: eliminate double likelihood eval and fix kwargs passing",
+    "body": "NUTS sampling hangs on startup when using `gpu_logL(use_pmap=True)` with numpyro because the model evaluates the likelihood twice per step through `pure_callback`, doubling Python↔XLA round-trips.\n\n## Changes\n\n- **Eliminate redundant likelihood call** — `numpyro_model()` called `logx(pars)` which internally recomputes `logL(pars)` (already computed for the deterministic). Replaced with `logl + logx.logprior(pars)` to reuse the result:\n\n```python\n# Before: evaluates likelihood twice per step\nlogl = logx.logL(pars)\nnumpyro.deterministic('log_likelihood', logl)\nnumpyro.factor('logl', logx(pars))  # logx() calls logL() again internally\n\n# After: single evaluation\nlogl = logx.logL(pars)\nnumpyro.deterministic('log_likelihood', logl)\nnumpyro.factor('logl', logl + logx.logprior(pars))\n```\n\n- **Fix broken kwargs forwarding in `makesampler_nuts`** — Dict comprehensions used `for arg in kwargs.items()` with undefined `val`. Fixed tuple unpacking and kwargs now properly override defaults:\n\n```python\n# Before: NameError on any kwarg usage\n**{arg: val for arg in kwargs.items() if arg in ...}\n\n# After:\nnuts_valid = {arg: val for arg, val in kwargs.items() if arg in ...}\nnutsargs = {**nuts_defaults, **nuts_valid}\n```",
+    "author": "Copilot",
+    "headRef": "copilot/fix-sampling-not-starting",
+    "repository": "ryanmshannon/discovery"
+  },
+  "diffRef": {
+    "repository": "ryanmshannon/discovery",
+    "headSha": "cad7b513f9155f7d524a79719226d696568f909f",
+    "baseSha": "72b90c6f59ae7a3640b23359938f2bcf5cf878a5"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-ryanmshannon-discovery-pr16.diff",
+  "vendoredAt": "2026-05-24T03:05:49.398Z",
+  "collectedAt": "2026-05-24T03:05:49.398Z"
+}

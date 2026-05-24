@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-python-pr1584",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1584,
+    "headSha": "3feab2c0d000e4a9602798078d0a7366a75822b3",
+    "baseSha": "28cdc33644bfb3f8310d51867619cafb5dd8cf23",
+    "title": "use 'is not None' for max_nonstreaming_tokens check in timeout calculation",
+    "body": "## Problem\n\n`_calculate_nonstreaming_timeout` uses a truthiness guard on `max_nonstreaming_tokens`:\n\n```python\n# _base_client.py line 736\nif expected_time > default_time or (max_nonstreaming_tokens and max_tokens > max_nonstreaming_tokens):\n```\n\nThe parameter is typed `int | None`. Checking truthiness silently skips the guard when the value is `0` — a value that would mean \"streaming is always required regardless of token count.\" The condition evaluates to `False` and no `ValueError` is raised.\n\n## Fix\n\n```python\nif expected_time > default_time or (max_nonstreaming_tokens is not None and max_tokens > max_nonstreaming_tokens):\n```\n\n`is not None` matches the type annotation, makes the intent explicit, and correctly handles a hypothetical `max_nonstreaming_tokens=0` entry in `MODEL_NONSTREAMING_TOKENS`.",
+    "author": "rmotgi1227",
+    "headRef": "fix/nonstreaming-timeout-is-not-none",
+    "repository": "anthropics/anthropic-sdk-python"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-python",
+    "headSha": "3feab2c0d000e4a9602798078d0a7366a75822b3",
+    "baseSha": "28cdc33644bfb3f8310d51867619cafb5dd8cf23"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-python-pr1584.diff",
+  "vendoredAt": "2026-05-24T03:16:59.545Z",
+  "collectedAt": "2026-05-24T03:16:59.545Z"
+}

@@ -1,0 +1,106 @@
+diff --git a/pkg/roachprod/cloud/BUILD.bazel b/pkg/roachprod/cloud/BUILD.bazel
+index cbfc00092d39..1de1ce91acc0 100644
+--- a/pkg/roachprod/cloud/BUILD.bazel
++++ b/pkg/roachprod/cloud/BUILD.bazel
+@@ -44,6 +44,8 @@ go_test(
+     srcs = ["cloud_test.go"],
+     embed = [":cloud"],
+     deps = [
++        "//pkg/roachprod/cloud/types",
++        "//pkg/roachprod/vm",
+         "@com_github_aws_aws_sdk_go_v2_service_ec2//types",
+         "@com_github_stretchr_testify//assert",
+     ],
+diff --git a/pkg/roachprod/cloud/cloud_test.go b/pkg/roachprod/cloud/cloud_test.go
+index 8a5383b39127..23849caed7f5 100644
+--- a/pkg/roachprod/cloud/cloud_test.go
++++ b/pkg/roachprod/cloud/cloud_test.go
+@@ -7,8 +7,11 @@ package cloud
+ 
+ import (
+ 	"testing"
++	"time"
+ 
+ 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
++	cloudcluster "github.com/cockroachdb/cockroach/pkg/roachprod/cloud/types"
++	"github.com/cockroachdb/cockroach/pkg/roachprod/vm"
+ 	"github.com/stretchr/testify/assert"
+ )
+ 
+@@ -61,6 +64,48 @@ func TestGetTagsValues(t *testing.T) {
+ 	}
+ }
+ 
++func TestStatusAddEmptyManagedCluster(t *testing.T) {
++	now := time.Now()
++
++	managedEmptyCluster := &cloudcluster.Cluster{
++		Name: "user-test",
++		User: "user",
++		VMs: vm.List{
++			{
++				Name:         "user-test-0000",
++				Provider:     "aws",
++				Zone:         "us-east-2a",
++				Labels:       map[string]string{"cluster": "user-test", "managed": "true", "roachprod": "true"},
++				EmptyCluster: true,
++			},
++		},
++	}
++
++	recentManagedEmptyCluster := &cloudcluster.Cluster{
++		Name:      "user-recent",
++		User:      "user",
++		CreatedAt: now.Add(-30 * time.Minute),
++		VMs: vm.List{
++			{
++				Name:         "user-recent-0000",
++				Provider:     "aws",
++				Zone:         "us-east-2a",
++				Labels:       map[string]string{"cluster": "user-recent", "managed": "true", "roachprod": "true"},
++				EmptyCluster: true,
++			},
++		},
++	}
++
++	var s status
++	s.add(managedEmptyCluster, now)
++	s.add(recentManagedEmptyCluster, now)
++
++	assert.Len(t, s.destroy, 1, "empty cluster with zero CreatedAt should be destroyed")
++	assert.Equal(t, "user-test", s.destroy[0].Name)
++	assert.Len(t, s.good, 1, "recently created empty cluster should be in grace period")
++	assert.Equal(t, "user-recent", s.good[0].Name)
++}
++
+ func TestGetIAMUserNameFromKeyname(t *testing.T) {
+ 	// expected format: ${username}-${28 characters hash}
+ 	testCases := []struct {
+diff --git a/pkg/roachprod/vm/aws/aws.go b/pkg/roachprod/vm/aws/aws.go
+index cdc9e4c4615d..88cd579214ba 100644
+--- a/pkg/roachprod/vm/aws/aws.go
++++ b/pkg/roachprod/vm/aws/aws.go
+@@ -1577,17 +1577,16 @@ func (p *Provider) deleteManagedCluster(l *logger.Logger, vms vm.List) error {
+ 
+ 	for region := range byRegion {
+ 		g.GoCtx(func(ctx context.Context) error {
+-			// Delete the ASG first (this terminates instances)
++			var combinedErr error
+ 			if err := p.deleteAutoScalingGroup(ctx, l, clusterName, region); err != nil {
+-				l.Printf("Warning: failed to delete ASG: %v", err)
++				combinedErr = errors.CombineErrors(combinedErr,
++					errors.Wrapf(err, "failed to delete ASG in region %s", region))
+ 			}
+-
+-			// Delete the launch template
+ 			if err := p.deleteLaunchTemplate(ctx, l, clusterName, region); err != nil {
+-				l.Printf("Warning: failed to delete launch template: %v", err)
++				combinedErr = errors.CombineErrors(combinedErr,
++					errors.Wrapf(err, "failed to delete launch template in region %s", region))
+ 			}
+-
+-			return nil
++			return combinedErr
+ 		})
+ 	}
+ 

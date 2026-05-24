@@ -1,0 +1,771 @@
+diff --git a/backend/supabase/migrations/20260524000002_resource_access_rpcs.sql b/backend/supabase/migrations/20260524000002_resource_access_rpcs.sql
+new file mode 100644
+index 0000000..d69f479
+--- /dev/null
++++ b/backend/supabase/migrations/20260524000002_resource_access_rpcs.sql
+@@ -0,0 +1,96 @@
++-- Migration: 20260524000002_resource_access_rpcs.sql
++-- Adds RPC functions for querying resource access approval state.
++
++-- ---------------------------------------------------------------------------
++-- get_my_resource_approvals
++-- ---------------------------------------------------------------------------
++-- Returns the current user's resource_access_approvals rows for all resources
++-- belonging to the given club. Used by the frontend to determine which
++-- resources the user may book and which require an approval request.
++
++create or replace function public.get_my_resource_approvals(p_club_id uuid)
++returns table (
++  id          uuid,
++  resource_id uuid,
++  status      public.resource_access_status
++)
++language plpgsql
++stable
++security definer
++set search_path = ''
++as $$
++declare
++  v_caller_id uuid;
++begin
++  v_caller_id := (select auth.uid());
++
++  if v_caller_id is null then
++    raise exception 'Not authenticated';
++  end if;
++
++  return query
++    select raa.id, raa.resource_id, raa.status
++    from public.resource_access_approvals raa
++    join public.memberships m on m.id = raa.membership_id
++    join public.resources   r on r.id = raa.resource_id
++    where r.club_id   = p_club_id
++      and m.user_id   = v_caller_id;
++end;
++$$;
++
++-- ---------------------------------------------------------------------------
++-- list_club_resource_access_requests
++-- ---------------------------------------------------------------------------
++-- Returns all resource_access_approvals rows for resources in the given club,
++-- enriched with the resource name and the requesting user's display_name and
++-- callsign. Only approved club admins may call this function.
++
++create or replace function public.list_club_resource_access_requests(p_club_id uuid)
++returns table (
++  id                uuid,
++  resource_id       uuid,
++  resource_name     text,
++  membership_id     uuid,
++  user_display_name text,
++  user_callsign     text,
++  status            public.resource_access_status,
++  created_at        timestamptz,
++  updated_at        timestamptz
++)
++language plpgsql
++stable
++security definer
++set search_path = ''
++as $$
++declare
++  v_caller_id uuid;
++begin
++  v_caller_id := (select auth.uid());
++
++  if v_caller_id is null then
++    raise exception 'Not authenticated';
++  end if;
++
++  if not public.is_club_admin(p_club_id) then
++    raise exception 'Only a club admin may view resource access requests';
++  end if;
++
++  return query
++    select
++      raa.id,
++      raa.resource_id,
++      res.name          as resource_name,
++      raa.membership_id,
++      u.display_name    as user_display_name,
++      u.callsign        as user_callsign,
++      raa.status,
++      raa.created_at,
++      raa.updated_at
++    from public.resource_access_approvals raa
++    join public.resources   res on res.id  = raa.resource_id
++    join public.memberships m   on m.id    = raa.membership_id
++    join public.users       u   on u.id    = m.user_id
++    where res.club_id = p_club_id
++    order by raa.created_at asc;
++end;
++$$;
+diff --git a/web/package-lock.json b/web/package-lock.json
+index 637533f..6b7b6ab 100644
+--- a/web/package-lock.json
++++ b/web/package-lock.json
+@@ -1159,43 +1159,6 @@
+         "node": ">=20.19.0"
+       }
+     },
+-    "node_modules/@emnapi/core": {
+-      "version": "1.10.0",
+-      "resolved": "https://registry.npmjs.org/@emnapi/core/-/core-1.10.0.tgz",
+-      "integrity": "sha512-yq6OkJ4p82CAfPl0u9mQebQHKPJkY7WrIuk205cTYnYe+k2Z8YBh11FrbRG/H6ihirqcacOgl2BIO8oyMQLeXw==",
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "peer": true,
+-      "dependencies": {
+-        "@emnapi/wasi-threads": "1.2.1",
+-        "tslib": "^2.4.0"
+-      }
+-    },
+-    "node_modules/@emnapi/runtime": {
+-      "version": "1.10.0",
+-      "resolved": "https://registry.npmjs.org/@emnapi/runtime/-/runtime-1.10.0.tgz",
+-      "integrity": "sha512-ewvYlk86xUoGI0zQRNq/mC+16R1QeDlKQy21Ki3oSYXNgLb45GV1P6A0M+/s6nyCuNDqe5VpaY84BzXGwVbwFA==",
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "peer": true,
+-      "dependencies": {
+-        "tslib": "^2.4.0"
+-      }
+-    },
+-    "node_modules/@emnapi/wasi-threads": {
+-      "version": "1.2.1",
+-      "resolved": "https://registry.npmjs.org/@emnapi/wasi-threads/-/wasi-threads-1.2.1.tgz",
+-      "integrity": "sha512-uTII7OYF+/Mes/MrcIOYp5yOtSMLBWSIoLPpcgwipoiKbli6k322tcoFsxoIIxPDqW01SQGAgko4EzZi2BNv2w==",
+-      "dev": true,
+-      "license": "MIT",
+-      "optional": true,
+-      "peer": true,
+-      "dependencies": {
+-        "tslib": "^2.4.0"
+-      }
+-    },
+     "node_modules/@esbuild/aix-ppc64": {
+       "version": "0.27.3",
+       "resolved": "https://registry.npmjs.org/@esbuild/aix-ppc64/-/aix-ppc64-0.27.3.tgz",
+diff --git a/web/src/app/app/clubs/club-detail/club-detail.html b/web/src/app/app/clubs/club-detail/club-detail.html
+index cdf4399..19b1c57 100644
+--- a/web/src/app/app/clubs/club-detail/club-detail.html
++++ b/web/src/app/app/clubs/club-detail/club-detail.html
+@@ -33,6 +33,7 @@ <h2>Schedule</h2>
+         [reservations]="reservations() ?? []"
+         [selectedDate]="selectedDate()"
+         [isSubmitting]="isCreatingReservation()"
++        [approvedResourceIds]="approvedResourceIds()"
+         (slotClick)="onSlotClick($event)"
+       />
+     </section>
+@@ -46,61 +47,140 @@ <h2>Resources / Stations</h2>
+         <p class="app-page__status">No resources found for this club yet.</p>
+       } @else {
+         <mat-list>
+-          @for (resource of resources(); track resource.id) {
+-            <mat-list-item lines="3">
+-              <div matListItemTitle>{{ resource.name }}</div>
+-              <div matListItemLine>
+-                Block size: {{ resource.block_size_minutes }} minutes
+-              </div>
+-              @if (resource.description) {
+-                <div matListItemLine>{{ resource.description }}</div>
+-              }
+-            </mat-list-item>
+-          }
++            @for (resource of resources(); track resource.id) {
++              <mat-list-item lines="3">
++                <div matListItemTitle>{{ resource.name }}</div>
++                <div matListItemLine>
++                  Block size: {{ resource.block_size_minutes }} minutes
++                </div>
++                @if (resource.description) {
++                  <div matListItemLine>{{ resource.description }}</div>
++                }
++                <div matListItemMeta class="resource-access-status">
++                  @if (getApprovalStatus(resource.id) === 'approved') {
++                    <span class="approval-badge approved">Approved</span>
++                  } @else if (getApprovalStatus(resource.id) === 'pending') {
++                    <span class="approval-badge pending">Pending approval</span>
++                  } @else if (userMembership()?.status === 'approved') {
++                    <button
++                      matButton
++                      [disabled]="applyingForResourceId() === resource.id"
++                      (click)="applyForAccess(resource.id)"
++                    >
++                      @if (applyingForResourceId() === resource.id) {
++                        <mat-spinner diameter="16" />
++                      } @else {
++                        Apply for access
++                      }
++                    </button>
++                    @if (applyError().get(resource.id); as err) {
++                      <span class="error-message" role="alert">{{ err }}</span>
++                    }
++                  }
++                </div>
++              </mat-list-item>
++            }
+         </mat-list>
+       }
+     </section>
+ 
+     @if (isClubAdmin()) {
+-      <section class="create-resource-section">
+-        <h2>Create resource / station</h2>
++      <section class="admin-section">
++        <h2>Admin</h2>
+ 
+-        <form class="create-resource-form" [formGroup]="form" (ngSubmit)="submitResource()">
+-          <mat-form-field>
+-            <mat-label>Resource name</mat-label>
+-            <input matInput formControlName="name" autocomplete="off" />
+-            @if (form.controls.name.hasError('required')) {
+-              <mat-error>Resource name is required.</mat-error>
+-            }
+-          </mat-form-field>
++        <mat-card class="admin-card">
++            <mat-card-header>
++              <mat-card-title>Create Resource / Station</mat-card-title>
++            </mat-card-header>
++            <mat-card-content>
++              <form class="create-resource-form" [formGroup]="form" (ngSubmit)="submitResource()">
++                <mat-form-field>
++                  <mat-label>Resource name</mat-label>
++                  <input matInput formControlName="name" autocomplete="off" />
++                  @if (form.controls.name.hasError('required')) {
++                    <mat-error>Resource name is required.</mat-error>
++                  }
++                </mat-form-field>
+ 
+-          <mat-form-field>
+-            <mat-label>Description</mat-label>
+-            <input matInput formControlName="description" autocomplete="off" />
+-          </mat-form-field>
++                <mat-form-field>
++                  <mat-label>Description</mat-label>
++                  <input matInput formControlName="description" autocomplete="off" />
++                </mat-form-field>
+ 
+-          <mat-form-field>
+-            <mat-label>Block size (minutes)</mat-label>
+-            <input matInput type="number" min="1" formControlName="blockSizeMinutes" />
+-            @if (form.controls.blockSizeMinutes.hasError('required')) {
+-              <mat-error>Block size is required.</mat-error>
+-            } @else if (form.controls.blockSizeMinutes.hasError('min')) {
+-              <mat-error>Block size must be greater than 0.</mat-error>
+-            }
+-          </mat-form-field>
++                <mat-form-field>
++                  <mat-label>Block size (minutes)</mat-label>
++                  <input matInput type="number" min="1" formControlName="blockSizeMinutes" />
++                  @if (form.controls.blockSizeMinutes.hasError('required')) {
++                    <mat-error>Block size is required.</mat-error>
++                  } @else if (form.controls.blockSizeMinutes.hasError('min')) {
++                    <mat-error>Block size must be greater than 0.</mat-error>
++                  }
++                </mat-form-field>
+ 
+-          <button matButton="filled" type="submit" [disabled]="isSubmittingResource()">
+-            @if (isSubmittingResource()) {
+-              <mat-spinner diameter="18" />
+-            } @else {
+-              Create resource
+-            }
+-          </button>
+-        </form>
++                <button matButton="filled" type="submit" [disabled]="isSubmittingResource()">
++                  @if (isSubmittingResource()) {
++                    <mat-spinner diameter="18" />
++                  } @else {
++                    Create resource
++                  }
++                </button>
++              </form>
++
++              @if (createResourceError(); as createResourceError) {
++                <p class="error-message" role="alert">{{ createResourceError }}</p>
++              }
++            </mat-card-content>
++        </mat-card>
+ 
+-        @if (createResourceError(); as createResourceError) {
+-          <p class="error-message" role="alert">{{ createResourceError }}</p>
+-        }
++        <mat-card class="admin-card">
++            <mat-card-header>
++              <mat-card-title>Resource Access Requests</mat-card-title>
++            </mat-card-header>
++            <mat-card-content>
++              @if (accessRequestsError(); as err) {
++                <p role="alert" class="error-message">{{ err }}</p>
++              } @else if (!accessRequests()?.length) {
++                <p class="app-page__status">No resource access requests.</p>
++              } @else {
++                @if (approvalActionError(); as err) {
++                  <p role="alert" class="error-message">{{ err }}</p>
++                }
++                <mat-list>
++                  @for (req of accessRequests(); track req.id) {
++                    <mat-list-item lines="2">
++                      <div matListItemTitle>
++                        {{ req.user_display_name ?? req.user_callsign ?? req.membership_id }}
++                        &rarr; {{ req.resource_name }}
++                      </div>
++                      <div matListItemLine class="request-status-badge {{ req.status }}">
++                        {{ req.status | titlecase }}
++                      </div>
++                      <div matListItemMeta class="request-actions">
++                        <button
++                          matButton="filled"
++                          [disabled]="actioningApprovalId() === req.id"
++                          (click)="approveRequest(req.id)"
++                        >
++                          @if (actioningApprovalId() === req.id) {
++                            <mat-spinner diameter="16" />
++                          } @else {
++                            Approve
++                          }
++                        </button>
++                        <button
++                          matButton
++                          [disabled]="actioningApprovalId() === req.id"
++                          (click)="denyRequest(req.id)"
++                        >
++                          Deny
++                        </button>
++                      </div>
++                    </mat-list-item>
++                  }
++                </mat-list>
++              }
++            </mat-card-content>
++        </mat-card>
+       </section>
+     }
+   } @else {
+diff --git a/web/src/app/app/clubs/club-detail/club-detail.scss b/web/src/app/app/clubs/club-detail/club-detail.scss
+index ad7267b..7d07b00 100644
+--- a/web/src/app/app/clubs/club-detail/club-detail.scss
++++ b/web/src/app/app/clubs/club-detail/club-detail.scss
+@@ -5,7 +5,7 @@
+ 
+ .schedule-section,
+ .resources-section,
+-.create-resource-section {
++.admin-section {
+   margin-top: 1.5rem;
+ }
+ 
+@@ -30,3 +30,51 @@
+ .error-message {
+   color: var(--mat-sys-error);
+ }
++
++.admin-card {
++  margin-top: 1rem;
++}
++
++.resource-access-status {
++  display: flex;
++  align-items: center;
++  gap: 0.5rem;
++}
++
++.approval-badge {
++  font: var(--mat-sys-label-small);
++  padding: 0.2rem 0.6rem;
++  border-radius: 999px;
++
++  &.approved {
++    background-color: var(--mat-sys-secondary-container);
++    color: var(--mat-sys-on-secondary-container);
++  }
++
++  &.pending {
++    background-color: var(--mat-sys-surface-variant);
++    color: var(--mat-sys-on-surface-variant);
++  }
++}
++
++.request-status-badge {
++  font: var(--mat-sys-label-small);
++
++  &.pending {
++    color: var(--mat-sys-on-surface-variant);
++  }
++
++  &.approved {
++    color: var(--mat-sys-secondary);
++  }
++
++  &.denied {
++    color: var(--mat-sys-error);
++  }
++}
++
++.request-actions {
++  display: flex;
++  gap: 0.5rem;
++  align-items: center;
++}
+diff --git a/web/src/app/app/clubs/club-detail/club-detail.ts b/web/src/app/app/clubs/club-detail/club-detail.ts
+index 827afe4..a924dbb 100644
+--- a/web/src/app/app/clubs/club-detail/club-detail.ts
++++ b/web/src/app/app/clubs/club-detail/club-detail.ts
+@@ -1,19 +1,31 @@
++import { TitleCasePipe } from '@angular/common';
+ import { ChangeDetectionStrategy, Component, computed, inject, OnInit, signal } from '@angular/core';
+ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+ import { MatButtonModule } from '@angular/material/button';
++import { MatCardModule } from '@angular/material/card';
+ import { MatFormFieldModule } from '@angular/material/form-field';
+ import { MatInputModule } from '@angular/material/input';
+ import { MatListModule } from '@angular/material/list';
+ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+ import { ActivatedRoute, RouterLink } from '@angular/router';
+-import { Club, ClubReservation, ClubService, Resource } from '../../../club.service';
++import {
++  Club,
++  ClubReservation,
++  ClubService,
++  Membership,
++  Resource,
++  ResourceAccessApproval,
++  ResourceAccessRequest,
++} from '../../../club.service';
+ import { ReservationGridComponent } from './reservation-grid/reservation-grid';
+ 
+ @Component({
+   selector: 'app-club-detail',
+   imports: [
++    TitleCasePipe,
+     ReactiveFormsModule,
+     MatButtonModule,
++    MatCardModule,
+     MatFormFieldModule,
+     MatInputModule,
+     MatListModule,
+@@ -41,6 +53,22 @@ export class ClubDetailPage implements OnInit {
+   protected readonly isCreatingReservation = signal(false);
+   protected readonly reservationError = signal<string | null>(null);
+ 
++  /** The current user's membership in this club (null if not a member). */
++  protected readonly userMembership = signal<Membership | null>(null);
++  /** Map of resourceId → approval status for the current user. */
++  protected readonly userApprovals = signal<Map<string, ResourceAccessApproval>>(new Map());
++  /** Which resource ID is currently being applied for (null if none). */
++  protected readonly applyingForResourceId = signal<string | null>(null);
++  /** Per-resource apply errors, keyed by resource ID. */
++  protected readonly applyError = signal<Map<string, string>>(new Map());
++
++  /** Pending/all resource access requests visible to admins. */
++  protected readonly accessRequests = signal<ResourceAccessRequest[] | null>(null);
++  protected readonly accessRequestsError = signal<string | null>(null);
++  /** Which approval ID is being actioned (approve/deny) right now. */
++  protected readonly actioningApprovalId = signal<string | null>(null);
++  protected readonly approvalActionError = signal<string | null>(null);
++
+   protected readonly selectedDateLabel = computed(() => {
+     return this.selectedDate().toLocaleDateString(undefined, {
+       weekday: 'long',
+@@ -53,6 +81,17 @@ export class ClubDetailPage implements OnInit {
+   /** Active resources only, for display in the reservation grid. */
+   protected readonly activeResources = computed(() => (this.resources() ?? []).filter((r) => r.is_active));
+ 
++  /** Set of resource IDs the current user has been approved for. */
++  protected readonly approvedResourceIds = computed(() => {
++    const ids = new Set<string>();
++    this.userApprovals().forEach((approval) => {
++      if (approval.status === 'approved') {
++        ids.add(approval.resource_id);
++      }
++    });
++    return ids;
++  });
++
+   protected readonly form = new FormGroup({
+     name: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
+     description: new FormControl('', { nonNullable: true }),
+@@ -66,10 +105,11 @@ export class ClubDetailPage implements OnInit {
+   async ngOnInit(): Promise<void> {
+     this.clubId = this.route.snapshot.paramMap.get('id') ?? '';
+ 
+-    const [clubResult, resourcesResult, isAdminResult] = await Promise.all([
++    const [clubResult, resourcesResult, isAdminResult, membershipResult] = await Promise.all([
+       this.clubService.getClub(this.clubId),
+       this.clubService.listClubResources(this.clubId),
+       this.clubService.isClubAdmin(this.clubId),
++      this.clubService.getUserMembership(this.clubId),
+     ]);
+ 
+     this.club.set(clubResult.data);
+@@ -77,10 +117,16 @@ export class ClubDetailPage implements OnInit {
+     this.resources.set(resourcesResult.data);
+     this.resourcesError.set(resourcesResult.error);
+     this.isClubAdmin.set(isAdminResult.data);
++    this.userMembership.set(membershipResult.data);
+ 
+     this.isLoading.set(false);
+ 
+-    await this.loadReservations();
++    // Load reservations, user approvals, and (for admins) access requests in parallel.
++    const parallelLoads: Promise<void>[] = [this.loadReservations(), this.loadUserApprovals()];
++    if (isAdminResult.data) {
++      parallelLoads.push(this.loadAccessRequests());
++    }
++    await Promise.all(parallelLoads);
+   }
+ 
+   protected prevDay(): void {
+@@ -148,6 +194,66 @@ export class ClubDetailPage implements OnInit {
+     }
+   }
+ 
++  protected getApprovalStatus(resourceId: string): 'pending' | 'approved' | 'denied' | null {
++    return this.userApprovals().get(resourceId)?.status ?? null;
++  }
++
++  protected async applyForAccess(resourceId: string): Promise<void> {
++    const membership = this.userMembership();
++    if (!membership) return;
++
++    this.applyingForResourceId.set(resourceId);
++    this.applyError.update((m) => {
++      const next = new Map(m);
++      next.delete(resourceId);
++      return next;
++    });
++
++    const { data, error } = await this.clubService.applyForResourceAccess(membership.id, resourceId);
++    this.applyingForResourceId.set(null);
++
++    if (error) {
++      this.applyError.update((m) => {
++        const next = new Map(m);
++        next.set(resourceId, error);
++        return next;
++      });
++      return;
++    }
++
++    if (data) {
++      this.userApprovals.update((m) => {
++        const next = new Map(m);
++        next.set(resourceId, data);
++        return next;
++      });
++    }
++  }
++
++  protected async approveRequest(approvalId: string): Promise<void> {
++    await this.setRequestStatus(approvalId, 'approved');
++  }
++
++  protected async denyRequest(approvalId: string): Promise<void> {
++    await this.setRequestStatus(approvalId, 'denied');
++  }
++
++  private async setRequestStatus(approvalId: string, status: 'approved' | 'denied'): Promise<void> {
++    this.actioningApprovalId.set(approvalId);
++    this.approvalActionError.set(null);
++
++    const { error } = await this.clubService.setResourceAccessStatus(approvalId, status);
++    this.actioningApprovalId.set(null);
++
++    if (error) {
++      this.approvalActionError.set(error);
++      return;
++    }
++
++    // Refresh the requests list and (if the user is the one being actioned) their own approvals.
++    await Promise.all([this.loadAccessRequests(), this.loadUserApprovals()]);
++  }
++
+   private async loadReservations(): Promise<void> {
+     const date = this.selectedDate();
+     const from = new Date(date.getFullYear(), date.getMonth(), date.getDate()); // local midnight
+@@ -157,6 +263,21 @@ export class ClubDetailPage implements OnInit {
+     this.reservationsError.set(result.error);
+   }
+ 
++  private async loadUserApprovals(): Promise<void> {
++    const { data } = await this.clubService.getMyResourceApprovals(this.clubId);
++    if (data) {
++      const map = new Map<string, ResourceAccessApproval>();
++      data.forEach((a) => map.set(a.resource_id, a));
++      this.userApprovals.set(map);
++    }
++  }
++
++  private async loadAccessRequests(): Promise<void> {
++    const { data, error } = await this.clubService.listClubResourceAccessRequests(this.clubId);
++    this.accessRequests.set(data);
++    this.accessRequestsError.set(error);
++  }
++
+   private localMidnightToday(): Date {
+     const now = new Date();
+     return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+diff --git a/web/src/app/app/clubs/club-detail/reservation-grid/reservation-grid.html b/web/src/app/app/clubs/club-detail/reservation-grid/reservation-grid.html
+index f338ea3..1e861ea 100644
+--- a/web/src/app/app/clubs/club-detail/reservation-grid/reservation-grid.html
++++ b/web/src/app/app/clubs/club-detail/reservation-grid/reservation-grid.html
+@@ -19,7 +19,7 @@
+               <td class="slot-cell" [class.unaligned]="!isSlotAligned(resource, slot)">
+                 @if (getReservationForCell(resource, slot); as reservation) {
+                   <span class="reservation-chip">{{ getOwnerLabel(reservation) }}</span>
+-                } @else if (isSlotAligned(resource, slot) && isSlotFuture(slot)) {
++                } @else if (isSlotAligned(resource, slot) && isSlotFuture(slot) && isApprovedForResource(resource)) {
+                   <button matButton (click)="onSlotClick(resource, slot)" [disabled]="isSubmitting()" class="open-slot-btn">
+                     open
+                   </button>
+diff --git a/web/src/app/app/clubs/club-detail/reservation-grid/reservation-grid.ts b/web/src/app/app/clubs/club-detail/reservation-grid/reservation-grid.ts
+index a2bef02..3577adc 100644
+--- a/web/src/app/app/clubs/club-detail/reservation-grid/reservation-grid.ts
++++ b/web/src/app/app/clubs/club-detail/reservation-grid/reservation-grid.ts
+@@ -20,6 +20,8 @@ export class ReservationGridComponent {
+   /** Local midnight of the day to display. */
+   readonly selectedDate = input.required<Date>();
+   readonly isSubmitting = input(false);
++  /** Set of resource IDs the current user has approved access to. */
++  readonly approvedResourceIds = input.required<Set<string>>();
+   readonly slotClick = output<{ resourceId: string; startsAt: Date; endsAt: Date }>();
+ 
+   /**
+@@ -84,6 +86,10 @@ export class ReservationGridComponent {
+     return reservation.callsign ?? reservation.display_name ?? 'Reserved';
+   }
+ 
++  protected isApprovedForResource(resource: Resource): boolean {
++    return this.approvedResourceIds().has(resource.id);
++  }
++
+   protected onSlotClick(resource: Resource, slot: TimeSlot): void {
+     const startsAt = slot.startsAt;
+     const endsAt = new Date(startsAt.getTime() + resource.block_size_minutes * 60 * 1000);
+diff --git a/web/src/app/club.service.ts b/web/src/app/club.service.ts
+index c1be5bb..569ae56 100644
+--- a/web/src/app/club.service.ts
++++ b/web/src/app/club.service.ts
+@@ -18,6 +18,34 @@ export interface Resource {
+   updated_at: string;
+ }
+ 
++export interface Membership {
++  id: string;
++  club_id: string;
++  user_id: string;
++  role: 'admin' | 'member';
++  status: 'pending' | 'approved' | 'denied';
++  created_at: string;
++  updated_at: string;
++}
++
++export interface ResourceAccessApproval {
++  id: string;
++  resource_id: string;
++  status: 'pending' | 'approved' | 'denied';
++}
++
++export interface ResourceAccessRequest {
++  id: string;
++  resource_id: string;
++  resource_name: string;
++  membership_id: string;
++  user_display_name: string | null;
++  user_callsign: string | null;
++  status: 'pending' | 'approved' | 'denied';
++  created_at: string;
++  updated_at: string;
++}
++
+ export interface CreateResourceInput {
+   clubId: string;
+   name: string;
+@@ -155,4 +183,83 @@ export class ClubService {
+ 
+     return { data: data as { id: string } | null, error: error?.message ?? null };
+   }
++
++  async getUserMembership(clubId: string): Promise<{ data: Membership | null; error: string | null }> {
++    if (!this.supabase) {
++      return { data: null, error: 'Supabase is not configured.' };
++    }
++
++    const userId = this.auth.user()?.id;
++    if (!userId) {
++      return { data: null, error: 'Not authenticated.' };
++    }
++
++    const { data, error } = await this.supabase
++      .from('memberships')
++      .select('*')
++      .eq('club_id', clubId)
++      .eq('user_id', userId)
++      .maybeSingle();
++
++    return { data: data as Membership | null, error: error?.message ?? null };
++  }
++
++  async getMyResourceApprovals(clubId: string): Promise<{ data: ResourceAccessApproval[] | null; error: string | null }> {
++    if (!this.supabase) {
++      return { data: null, error: 'Supabase is not configured.' };
++    }
++
++    const { data, error } = await this.supabase.rpc('get_my_resource_approvals', {
++      p_club_id: clubId,
++    });
++
++    return { data: data as ResourceAccessApproval[] | null, error: error?.message ?? null };
++  }
++
++  async applyForResourceAccess(
++    membershipId: string,
++    resourceId: string,
++  ): Promise<{ data: ResourceAccessApproval | null; error: string | null }> {
++    if (!this.supabase) {
++      return { data: null, error: 'Supabase is not configured.' };
++    }
++
++    const { data, error } = await this.supabase
++      .from('resource_access_approvals')
++      .insert({ membership_id: membershipId, resource_id: resourceId, status: 'pending' })
++      .select('id, resource_id, status')
++      .single();
++
++    return { data: data as ResourceAccessApproval | null, error: error?.message ?? null };
++  }
++
++  async listClubResourceAccessRequests(
++    clubId: string,
++  ): Promise<{ data: ResourceAccessRequest[] | null; error: string | null }> {
++    if (!this.supabase) {
++      return { data: null, error: 'Supabase is not configured.' };
++    }
++
++    const { data, error } = await this.supabase.rpc('list_club_resource_access_requests', {
++      p_club_id: clubId,
++    });
++
++    return { data: data as ResourceAccessRequest[] | null, error: error?.message ?? null };
++  }
++
++  async setResourceAccessStatus(
++    approvalId: string,
++    status: 'approved' | 'denied',
++  ): Promise<{ data: ResourceAccessApproval | null; error: string | null }> {
++    if (!this.supabase) {
++      return { data: null, error: 'Supabase is not configured.' };
++    }
++
++    const { data, error } = await this.supabase.rpc('set_resource_access_status', {
++      p_approval_id: approvalId,
++      p_new_status: status,
++    });
++
++    return { data: data as ResourceAccessApproval | null, error: error?.message ?? null };
++  }
+ }

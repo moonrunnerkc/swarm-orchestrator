@@ -1,0 +1,195 @@
+diff --git a/netlify.toml b/netlify.toml
+index c7b8596..307d396 100644
+--- a/netlify.toml
++++ b/netlify.toml
+@@ -9,7 +9,7 @@
+ # ── Function configuration ──────────────────────────────────────
+ [functions]
+   node_bundler          = "esbuild"
+-  external_node_modules = ["sharp", "fluent-ffmpeg"]
++  external_node_modules = ["sharp"]
+ 
+ # ── API routes → Netlify Function ──────────────────────────────
+ [[redirects]]
+diff --git a/package.json b/package.json
+index bfcf44a..f072cfa 100644
+--- a/package.json
++++ b/package.json
+@@ -13,11 +13,18 @@
+   "dependencies": {
+     "@supabase/supabase-js": "^2.43.4",
+     "@tanstack/react-query": "catalog:",
++    "cors": "^2.8.5",
+     "date-fns": "^4.1.0",
++    "express": "^4.19.2",
++    "multer": "^1.4.5-lts.1",
++    "nodemailer": "^8.0.7",
++    "openai": "^4.52.7",
+     "react": "^18.3.1",
+     "react-dom": "^18.3.1",
+     "react-router-dom": "^6.23.1",
++    "replicate": "^1.4.0",
+     "serverless-http": "^3.2.0",
++    "uuid": "^10.0.0",
+     "zustand": "^5.0.12"
+   },
+   "devDependencies": {
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index c0775b3..260e7ca 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -118,9 +118,24 @@ importers:
+       '@tanstack/react-query':
+         specifier: 'catalog:'
+         version: 5.99.1(react@18.3.1)
++      cors:
++        specifier: ^2.8.5
++        version: 2.8.6
+       date-fns:
+         specifier: ^4.1.0
+         version: 4.1.0
++      express:
++        specifier: ^4.19.2
++        version: 4.22.1
++      multer:
++        specifier: ^1.4.5-lts.1
++        version: 1.4.5-lts.2
++      nodemailer:
++        specifier: ^8.0.7
++        version: 8.0.7
++      openai:
++        specifier: ^4.52.7
++        version: 4.104.0(ws@8.20.0)(zod@3.25.76)
+       react:
+         specifier: ^18.3.1
+         version: 18.3.1
+@@ -130,9 +145,15 @@ importers:
+       react-router-dom:
+         specifier: ^6.23.1
+         version: 6.30.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
++      replicate:
++        specifier: ^1.4.0
++        version: 1.4.0
+       serverless-http:
+         specifier: ^3.2.0
+         version: 3.2.0
++      uuid:
++        specifier: ^10.0.0
++        version: 10.0.0
+       zustand:
+         specifier: ^5.0.12
+         version: 5.0.12(react@18.3.1)
+@@ -159,98 +180,6 @@ importers:
+         specifier: ^5.2.0
+         version: 5.4.21(@types/node@25.6.0)(lightningcss@1.32.0)
+ 
+-  lib/api-client-react:
+-    dependencies:
+-      '@tanstack/react-query':
+-        specifier: 'catalog:'
+-        version: 5.99.1(react@18.3.1)
+-
+-  lib/api-spec:
+-    devDependencies:
+-      orval:
+-        specifier: ^8.5.2
+-        version: 8.8.0(typescript@5.9.3)
+-
+-  lib/api-zod:
+-    dependencies:
+-      zod:
+-        specifier: 'catalog:'
+-        version: 3.25.76
+-
+-  lib/db:
+-    dependencies:
+-      drizzle-orm:
+-        specifier: 'catalog:'
+-        version: 0.45.2(@types/pg@8.20.0)(pg@8.20.0)
+-      drizzle-zod:
+-        specifier: ^0.8.3
+-        version: 0.8.3(drizzle-orm@0.45.2(@types/pg@8.20.0)(pg@8.20.0))(zod@3.25.76)
+-      pg:
+-        specifier: ^8.20.0
+-        version: 8.20.0
+-      zod:
+-        specifier: 'catalog:'
+-        version: 3.25.76
+-    devDependencies:
+-      '@types/node':
+-        specifier: 'catalog:'
+-        version: 25.6.0
+-      '@types/pg':
+-        specifier: ^8.18.0
+-        version: 8.20.0
+-      drizzle-kit:
+-        specifier: ^0.31.9
+-        version: 0.31.10
+-
+-  scripts:
+-    dependencies:
+-      '@supabase/supabase-js':
+-        specifier: ^2.43.4
+-        version: 2.103.3
+-    devDependencies:
+-      '@types/node':
+-        specifier: 'catalog:'
+-        version: 25.6.0
+-      tsx:
+-        specifier: 'catalog:'
+-        version: 4.21.0
+-
+-  server:
+-    dependencies:
+-      '@supabase/supabase-js':
+-        specifier: ^2.43.4
+-        version: 2.103.3
+-      cors:
+-        specifier: ^2.8.5
+-        version: 2.8.6
+-      express:
+-        specifier: ^4.19.2
+-        version: 4.22.1
+-      fluent-ffmpeg:
+-        specifier: ^2.1.3
+-        version: 2.1.3
+-      multer:
+-        specifier: ^1.4.5-lts.1
+-        version: 1.4.5-lts.2
+-      nodemailer:
+-        specifier: ^8.0.7
+-        version: 8.0.7
+-      openai:
+-        specifier: ^4.52.7
+-        version: 4.104.0(ws@8.20.0)(zod@3.25.76)
+-      replicate:
+-        specifier: ^1.4.0
+-        version: 1.4.0
+-      serverless-http:
+-        specifier: ^3.2.0
+-        version: 3.2.0
+-      sharp:
+-        specifier: ^0.34.5
+-        version: 0.34.5
+-      uuid:
+-        specifier: ^10.0.0
+-        version: 10.0.0
+-
+ packages:
+ 
+   '@alloc/quick-lru@5.2.0':
+diff --git a/pnpm-workspace.yaml b/pnpm-workspace.yaml
+index b95d6fc..59c3280 100644
+--- a/pnpm-workspace.yaml
++++ b/pnpm-workspace.yaml
+@@ -1,10 +1,3 @@
+-packages:
+-  - artifacts/*
+-  - lib/*
+-  - lib/integrations/*
+-  - scripts
+-  - server
+-
+ autoInstallPeers: false
+ 
+ catalog:

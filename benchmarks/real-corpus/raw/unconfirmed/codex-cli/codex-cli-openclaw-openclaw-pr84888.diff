@@ -1,0 +1,246 @@
+diff --git a/src/commands/doctor-config-flow.ts b/src/commands/doctor-config-flow.ts
+index 626032c4208c1..e1e44e5c0ce3b 100644
+--- a/src/commands/doctor-config-flow.ts
++++ b/src/commands/doctor-config-flow.ts
+@@ -250,7 +250,8 @@ export async function loadAndMaybeMigrateDoctorConfig(params: {
+       warningNotes: repairSequence.warningNotes,
+     });
+   } else {
+-    const { collectDoctorPreviewWarnings } = await import("./doctor/shared/preview-warnings.js");
++    const { collectDoctorPreviewWarnings, collectDoctorPreviewInfoNotes } =
++      await import("./doctor/shared/preview-warnings.js");
+     emitDoctorNotes({
+       note,
+       warningNotes: await collectDoctorPreviewWarnings({
+@@ -258,6 +259,10 @@ export async function loadAndMaybeMigrateDoctorConfig(params: {
+         doctorFixCommand,
+         env: process.env,
+       }),
++      infoNotes: await collectDoctorPreviewInfoNotes({
++        cfg: candidate,
++        env: process.env,
++      }),
+     });
+   }
+ 
+diff --git a/src/commands/doctor/emit-notes.test.ts b/src/commands/doctor/emit-notes.test.ts
+index ecf05ee0b3e50..b526e53d471ac 100644
+--- a/src/commands/doctor/emit-notes.test.ts
++++ b/src/commands/doctor/emit-notes.test.ts
+@@ -48,11 +48,42 @@ describe("doctor note emission", () => {
+     ]);
+   });
+ 
++  it("emits info notes with the Doctor info title", () => {
++    const note = vi.fn();
++
++    emitDoctorNotes({
++      note,
++      infoNotes: ["info one", "info two"],
++    });
++
++    expect(note.mock.calls).toEqual([
++      ["info one", "Doctor info"],
++      ["info two", "Doctor info"],
++    ]);
++  });
++
++  it("emits change, warning, and info notes in order", () => {
++    const note = vi.fn();
++
++    emitDoctorNotes({
++      note,
++      changeNotes: ["change one"],
++      warningNotes: ["warning one"],
++      infoNotes: ["info one"],
++    });
++
++    expect(note.mock.calls).toEqual([
++      ["change one", "Doctor changes"],
++      ["warning one", "Doctor warnings"],
++      ["info one", "Doctor info"],
++    ]);
++  });
++
+   it("emits nothing when note groups are omitted or empty", () => {
+     const note = vi.fn();
+ 
+     emitDoctorNotes({ note });
+-    emitDoctorNotes({ note, changeNotes: [], warningNotes: [] });
++    emitDoctorNotes({ note, changeNotes: [], warningNotes: [], infoNotes: [] });
+ 
+     expect(note).not.toHaveBeenCalled();
+   });
+diff --git a/src/commands/doctor/emit-notes.ts b/src/commands/doctor/emit-notes.ts
+index 5a51e9a1a0f41..96c77bbc77d05 100644
+--- a/src/commands/doctor/emit-notes.ts
++++ b/src/commands/doctor/emit-notes.ts
+@@ -11,6 +11,7 @@ export function emitDoctorNotes(params: {
+   note: (message: string, title?: string) => void;
+   changeNotes?: string[];
+   warningNotes?: string[];
++  infoNotes?: string[];
+ }): void {
+   for (const change of params.changeNotes ?? []) {
+     params.note(sanitizeDoctorNote(change), "Doctor changes");
+@@ -18,4 +19,7 @@ export function emitDoctorNotes(params: {
+   for (const warning of params.warningNotes ?? []) {
+     params.note(sanitizeDoctorNote(warning), "Doctor warnings");
+   }
++  for (const info of params.infoNotes ?? []) {
++    params.note(sanitizeDoctorNote(info), "Doctor info");
++  }
+ }
+diff --git a/src/commands/doctor/shared/codex-native-assets.test.ts b/src/commands/doctor/shared/codex-native-assets.test.ts
+index a0c0411acfae0..8bba6522436be 100644
+--- a/src/commands/doctor/shared/codex-native-assets.test.ts
++++ b/src/commands/doctor/shared/codex-native-assets.test.ts
+@@ -3,7 +3,11 @@ import os from "node:os";
+ import path from "node:path";
+ import { afterEach, describe, expect, it } from "vitest";
+ import type { OpenClawConfig } from "../../../config/types.openclaw.js";
+-import { collectCodexNativeAssetWarnings, scanCodexNativeAssets } from "./codex-native-assets.js";
++import {
++  collectCodexNativeAssetInfoNotes,
++  collectCodexNativeAssetWarnings,
++  scanCodexNativeAssets,
++} from "./codex-native-assets.js";
+ 
+ const tempRoots = new Set<string>();
+ 
+@@ -107,24 +111,56 @@ describe("scanCodexNativeAssets", () => {
+   });
+ });
+ 
+-describe("collectCodexNativeAssetWarnings", () => {
++const expectedCodexAssetMessage = (codexHome: string, agentsSkillsDir: string) =>
++  [
++    "- Personal Codex CLI assets were found, but native Codex-mode OpenClaw agents use isolated per-agent Codex homes.",
++    `- Sources: ${codexHome} and ${agentsSkillsDir} (1 skill, 0 plugins, 0 config files, 0 hook files).`,
++    "- These assets will not be loaded by the Codex app-server child unless you intentionally promote them.",
++    "- Run `openclaw migrate codex --dry-run` to inventory them. Applying that migration copies skills into the current OpenClaw agent workspace; Codex plugins, hooks, and config stay manual-review only.",
++  ].join("\n");
++
++describe("collectCodexNativeAssetInfoNotes", () => {
+   it("points users at explicit Codex migration instead of auto-copying native assets", async () => {
+     const root = await makeTempRoot();
+     const codexHome = path.join(root, ".codex");
+     await writeFile(path.join(root, ".agents", "skills", "agent-helper", "SKILL.md"));
+ 
++    const infoNotes = await collectCodexNativeAssetInfoNotes({
++      cfg: codexConfig(),
++      env: { CODEX_HOME: codexHome, HOME: root },
++    });
++
++    expect(infoNotes).toStrictEqual([
++      expectedCodexAssetMessage(codexHome, path.join(root, ".agents", "skills")),
++    ]);
++  });
++
++  it("returns empty when no Codex assets are found", async () => {
++    const root = await makeTempRoot();
++    const codexHome = path.join(root, ".codex");
++
++    const infoNotes = await collectCodexNativeAssetInfoNotes({
++      cfg: codexConfig(),
++      env: { CODEX_HOME: codexHome, HOME: root },
++    });
++
++    expect(infoNotes).toStrictEqual([]);
++  });
++});
++
++describe("collectCodexNativeAssetWarnings", () => {
++  it("delegates to the same logic as collectCodexNativeAssetInfoNotes (deprecated alias)", async () => {
++    const root = await makeTempRoot();
++    const codexHome = path.join(root, ".codex");
++    await writeFile(path.join(root, ".agents", "skills", "agent-helper", "SKILL.md"));
++
+     const warnings = await collectCodexNativeAssetWarnings({
+       cfg: codexConfig(),
+       env: { CODEX_HOME: codexHome, HOME: root },
+     });
+ 
+     expect(warnings).toStrictEqual([
+-      [
+-        "- Personal Codex CLI assets were found, but native Codex-mode OpenClaw agents use isolated per-agent Codex homes.",
+-        `- Sources: ${codexHome} and ${path.join(root, ".agents", "skills")} (1 skill, 0 plugins, 0 config files, 0 hook files).`,
+-        "- These assets will not be loaded by the Codex app-server child unless you intentionally promote them.",
+-        "- Run `openclaw migrate codex --dry-run` to inventory them. Applying that migration copies skills into the current OpenClaw agent workspace; Codex plugins, hooks, and config stay manual-review only.",
+-      ].join("\n"),
++      expectedCodexAssetMessage(codexHome, path.join(root, ".agents", "skills")),
+     ]);
+   });
+ });
+diff --git a/src/commands/doctor/shared/codex-native-assets.ts b/src/commands/doctor/shared/codex-native-assets.ts
+index 298203a5cae3e..9ead1ec6add92 100644
+--- a/src/commands/doctor/shared/codex-native-assets.ts
++++ b/src/commands/doctor/shared/codex-native-assets.ts
+@@ -181,12 +181,11 @@ function plural(count: number, singular: string): string {
+   return `${count} ${singular}${count === 1 ? "" : "s"}`;
+ }
+ 
+-export async function collectCodexNativeAssetWarnings(params: {
++async function buildCodexNativeAssetMessages(params: {
+   cfg: OpenClawConfig;
+-  env?: NodeJS.ProcessEnv;
++  env: NodeJS.ProcessEnv;
+ }): Promise<string[]> {
+-  const env = params.env ?? process.env;
+-  const hits = await scanCodexNativeAssets({ cfg: params.cfg, env });
++  const hits = await scanCodexNativeAssets({ cfg: params.cfg, env: params.env });
+   if (hits.length === 0) {
+     return [];
+   }
+@@ -199,9 +198,24 @@ export async function collectCodexNativeAssetWarnings(params: {
+   return [
+     [
+       "- Personal Codex CLI assets were found, but native Codex-mode OpenClaw agents use isolated per-agent Codex homes.",
+-      `- Sources: ${resolveCodexHome(env)} and ${resolvePersonalAgentSkillsDir(env)} (${counts.join(", ")}).`,
++      `- Sources: ${resolveCodexHome(params.env)} and ${resolvePersonalAgentSkillsDir(params.env)} (${counts.join(", ")}).`,
+       "- These assets will not be loaded by the Codex app-server child unless you intentionally promote them.",
+       "- Run `openclaw migrate codex --dry-run` to inventory them. Applying that migration copies skills into the current OpenClaw agent workspace; Codex plugins, hooks, and config stay manual-review only.",
+     ].join("\n"),
+   ];
+ }
++
++/** @deprecated Use {@link collectCodexNativeAssetInfoNotes} instead. */
++export async function collectCodexNativeAssetWarnings(params: {
++  cfg: OpenClawConfig;
++  env?: NodeJS.ProcessEnv;
++}): Promise<string[]> {
++  return buildCodexNativeAssetMessages({ cfg: params.cfg, env: params.env ?? process.env });
++}
++
++export async function collectCodexNativeAssetInfoNotes(params: {
++  cfg: OpenClawConfig;
++  env?: NodeJS.ProcessEnv;
++}): Promise<string[]> {
++  return buildCodexNativeAssetMessages({ cfg: params.cfg, env: params.env ?? process.env });
++}
+diff --git a/src/commands/doctor/shared/preview-warnings.ts b/src/commands/doctor/shared/preview-warnings.ts
+index 103ff318add76..d645bb9e6bf2c 100644
+--- a/src/commands/doctor/shared/preview-warnings.ts
++++ b/src/commands/doctor/shared/preview-warnings.ts
+@@ -436,8 +436,6 @@ export async function collectDoctorPreviewWarnings(params: {
+     const { collectCodexRouteWarnings } = await import("./codex-route-warnings.js");
+     warnings.push(...collectCodexRouteWarnings({ cfg: params.cfg, env }));
+   }
+-  const { collectCodexNativeAssetWarnings } = await import("./codex-native-assets.js");
+-  warnings.push(...(await collectCodexNativeAssetWarnings({ cfg: params.cfg, env })));
+ 
+   if (hasPluginLoadPaths(params.cfg)) {
+     const { collectBundledPluginLoadPathWarnings, scanBundledPluginLoadPathMigrations } =
+@@ -534,3 +532,12 @@ export async function collectDoctorPreviewWarnings(params: {
+ 
+   return warnings;
+ }
++
++export async function collectDoctorPreviewInfoNotes(params: {
++  cfg: OpenClawConfig;
++  env?: NodeJS.ProcessEnv;
++}): Promise<string[]> {
++  const env = params.env ?? process.env;
++  const { collectCodexNativeAssetInfoNotes } = await import("./codex-native-assets.js");
++  return collectCodexNativeAssetInfoNotes({ cfg: params.cfg, env });
++}

@@ -1,0 +1,27 @@
+diff --git a/src/main/resources/doc/io.kestra.plugin.todoist.md b/src/main/resources/doc/io.kestra.plugin.todoist.md
+new file mode 100644
+index 0000000..870f671
+--- /dev/null
++++ b/src/main/resources/doc/io.kestra.plugin.todoist.md
+@@ -0,0 +1,21 @@
++# How to use the Todoist plugin
++
++Manage tasks in Todoist from Kestra flows.
++
++## Authentication
++
++Set `apiToken` to your Todoist personal API token. Store it in a [secret](https://kestra.io/docs/concepts/secret) and apply it globally with [plugin defaults](https://kestra.io/docs/workflow-components/plugin-defaults).
++
++## Tasks
++
++`CreateTask` creates a task — set `content` (the task title, required) plus optional `taskDescription`, `priority` (1–4), `projectId`, and `dueString` (natural-language date, e.g. `tomorrow at 10am`). The output includes the new `taskId`.
++
++`GetTask` retrieves a task by `taskId`.
++
++`ListTasks` returns tasks — filter by `projectId` or a Todoist `filter` query. Control result handling with `fetchType` (default `FETCH`) and bound results with `limit`.
++
++`UpdateTask` updates a task by `taskId` — set any of `content`, `taskDescription`, `priority`, or `dueString`.
++
++`CompleteTask` marks a task as complete by `taskId`.
++
++`DeleteTask` permanently removes a task by `taskId`.

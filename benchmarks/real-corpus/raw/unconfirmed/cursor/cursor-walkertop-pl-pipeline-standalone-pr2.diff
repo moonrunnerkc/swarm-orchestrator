@@ -1,0 +1,3443 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 48bed6b..73ded14 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -357,7 +357,9 @@ jobs:
+     steps:
+       - uses: actions/checkout@v4
+       - name: Run pl CLI dispatcher tests
+-        run: bash tests/cli/test-pl.sh
++        run: |
++          bash tests/cli/test-pl.sh
++          bash tests/cli/test-pl-agent.sh
+ 
+   # -----------------------------------------------------------------
+   # Job 8：CDC 真实场景端到端（v1.8.3+）
+@@ -405,4 +407,3 @@ jobs:
+       - uses: actions/checkout@v4
+       - name: Run pl detect tests
+         run: bash tests/cli/test-pl-detect.sh
+-
+diff --git a/.gitignore b/.gitignore
+index fb30232..2e553fc 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -64,6 +64,10 @@ coverage/
+ /playwright-report/
+ /playwright/.cache/
+ 
++# ---- Python ----
++__pycache__/
++*.py[cod]
++
+ # ---- pl-pipeline runtime outputs ----
+ # 运行时产物不入版本控制（每个宿主项目自己产出）
+ pipeline-output/
+@@ -90,6 +94,9 @@ examples/*/build/
+ examples/*/.pytest_cache/
+ examples/*/.mypy_cache/
+ examples/*/.ruff_cache/
++examples/*/.tmp-bin/
++examples/*/codex-invocation.log
++examples/demo-agent-codex-cli/app/codex-result.txt
+ 
+ # 以下必须提交（作为 pl-pipeline 真实运行过的证据）
+ !examples/*/pl/
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 1e49f60..badd663 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -7,6 +7,18 @@
+ 
+ ---
+ 
++## [Unreleased]
++
++### 新增
++
++- `pl agent run`：Agent Execution Loop MVP，本地 executor 执行命令后可调用 gate 验证，失败时生成 repair context，并在 retry 预算内执行修复命令。
++- `agent.repair.strategy`：可在 `pl/config.yaml` 按 `failure_kind` 配置 repair policy，替代每次手写 `--repair-cmd`。
++- `pl agent run` trace metadata：新增 `--provider` / `--model` / `--prompt-path` / `--input-artifact` / `--output-artifact` / `--tool-call` / `--tokens-*`，为外部 executor adapter 预留统一观测模型。
++- `pl agent run --executor codex-cli`：支持通过 `codex exec` 调用本机 Codex CLI，并新增 fake Codex demo 验证 executor 协议。
++- `examples/demo-agent-loop`：可验证 demo，故意写入错误 Python 实现，再通过 gate 失败上下文修复到 `unittest` 通过。
++- `examples/demo-agent-crud-service`：更接近业务任务的 CRUD demo，展示 `policy:test_failure` 自动修复闭环。
++- `tests/cli/test-pl-agent.sh`：覆盖 agent loop 的执行、repair context、trace 事件和最终 gate 通过路径。
++
+ ## [pl-v1.12.0] - 2026-04-24
+ 
+ ### 新增
+diff --git a/README.md b/README.md
+index f4da977..4bd2ba1 100644
+--- a/README.md
++++ b/README.md
+@@ -3,7 +3,7 @@
+ > **让 AI 编码不再是 "vibe coding"，而是可审计、可恢复、可验证的工程过程。**
+ 
+ <p align="center">
+-  <img alt="version" src="https://img.shields.io/badge/version-v1.10.0-blue">
++  <img alt="version" src="https://img.shields.io/badge/version-v1.12.0-blue">
+   <img alt="stage" src="https://img.shields.io/badge/stage-stable-brightgreen">
+   <img alt="license" src="https://img.shields.io/badge/license-Apache%202.0-blue">
+   <img alt="retro" src="https://img.shields.io/badge/retro--v2-4%2F4%20closed-success">
+@@ -47,9 +47,9 @@ pl-pipeline 负责让它们输出的代码**可审计、可恢复、可验证**
+ 
+ ---
+ 
+-## 30 秒上手（v1.10）
++## 30 秒上手（v1.12）
+ 
+-**当前稳定版：`pl-v1.10.0`（2026-04-24 · 加 `pl detect` 扫描+建议；`pl new --here` 默认改为只读 dry-run）**。
++**当前稳定版：`pl-v1.12.0`（2026-04-24 · 多 IDE sync 扩展到 Cursor / CodeBuddy / Claude Code / Codex）**。
+ 形态：bash 脚本 + Python 协作库，**零 npm/pip 依赖**，macOS bash 3.2 / Linux 都能跑。
+ 
+ ### 第一步：装工具（30 秒）
+@@ -156,14 +156,16 @@ direnv allow
+ ```
+ 
+ > **多模块项目？** 用 `--stack monorepo-trio`，详细见 [`docs/guides/monorepo-quickstart.md`](./docs/guides/monorepo-quickstart.md)。
++> **新项目如何导入？** 见 [`docs/guides/new-project-adoption.md`](./docs/guides/new-project-adoption.md)。
+ > **完整 CLI 清单**：`pl help` 或 [`docs/cli-reference.md`](./docs/cli-reference.md)。
+ > **不喜欢 `pl new`？** 老的"手动 cp config + adapter install"流程 100% 仍可用。
+ 
+-### 四件核心机器门禁（v1.2 起稳定）
++### 核心机器闭环（v1.2 起稳定，Agent Loop 为分支预览）
+ 
+ | 命令 | 作用 | 对应能力 | 产物 |
+ |---|---|---|---|
+ | `pl run --gate D` | 按 check 结果自动派生 gate 通过/阻塞 | **E1** 可执行契约层 | `trace` 事件 `gate.eval` |
++| `pl agent run` | 执行 agent 命令 → gate 验证 → repair 重试 | **Agent Loop MVP** 控制平面闭环 | `agent.*` trace + repair context |
+ | `pl smoke` | boot 应用 → 轮询 ready → HTTP probe → 关停 | **E2** SMOKE 阶段 | `trace` 事件 `smoke.{boot,ready,probe,shutdown}` |
+ | `pl piao contract-drift` | adapter 声明 vs 宿主实况 diff | **E4** 契约-现实漂移 | `drift/<change>-contract.yaml` |
+ | `pl rule-scan` | 消费 rule 的 YAML frontmatter 做 CI-grade linter | **E3** rule-as-code | `rule-scan/<change>.yaml` |
+@@ -171,6 +173,48 @@ direnv allow
+ 事件都合流到 **同一条** `pipeline-output/trace/<change>.events.jsonl`，
+ dashboard / CI 只需消费一个通道。
+ 
++### Agent Execution Loop MVP（分支预览）
++
++`pl agent run` 把外部 coding agent 的一次执行接入 PL 控制平面。它目前只内置本地 shell executor，定位是 **control plane MVP**，不是另一个 coding agent。
++
++```bash
++PL_PROJECT=/path/to/project pl agent run \
++  --change add-search \
++  --task T03 \
++  --executor local \
++  --provider openai \
++  --model codex-local-test \
++  --input-artifact pl/changes/add-search/taskdag.md \
++  --output-artifact app/search.py \
++  --cmd "./scripts/agent-implement.sh" \
++  --verify-gate D \
++  --repair-cmd "./scripts/agent-repair.sh" \
++  --max-retries 1
++```
++
++失败时会生成 `pipeline-output/agent-runs/<change>/<run-id>/repair-context-attempt-*.md`，并把 `agent.run.*` / `agent.gate.*` / `agent.repair.*` 写入同一条 trace。
++
++稳定项目也可以在 `pl/config.yaml` 中声明 repair policy：
++
++```yaml
++agent:
++  repair:
++    max_retries: 1
++    strategy:
++      test_failure: "./scripts/repair_test_failure.sh"
++      default: "./scripts/repair_default.sh"
++```
++
++可运行 demo：
++
++```bash
++bash examples/demo-agent-loop/run-demo.sh
++bash examples/demo-agent-codex-cli/run-demo.sh
++bash examples/demo-agent-crud-service/run-demo.sh
++```
++
++完整说明见 [`docs/agent-execution-loop.md`](./docs/agent-execution-loop.md)。
++
+ ### 后续 CDC 闭环（v1.7+）
+ 
+ | 命令 | 作用 |
+@@ -191,15 +235,17 @@ dashboard 首页有 pact 角标，详情页可下钻看 violation 源文件路
+ 
+ 升级路径见 [`MIGRATION.md`](./MIGRATION.md)，每一步都是 opt-in 增量。
+ 
+-### v1.11+ 路线（未承诺）
++### v1.13+ 路线（未承诺）
+ 
+ v1.10 已经把"AI-First R&D 操作系统"的最小可用闭环交付完整：
+ **6 阶段 + 7 门禁 + 7 产物 + CDC 双向闭环 + 统一 CLI + 可视面板 + 一键安装 + 智能 detect**。
+ 
+ 下一步可能方向（按 issue 排优先级，**未承诺时间**）：
+ 
++- 外部 executor adapter：Codex / Claude Code / Cursor 的后台任务接入 `pl agent run`
++- trace OTEL 化：给 agent/model/provider/tool/token 等维度留标准观测面
++- gate repair policy：从单一 `--repair-cmd` 演进到结构化失败分类与修复策略
+ - 阶段语义糖：`pl proposal/plan/implement/verify/archive` 包装 `pl init + pl run --gate <X>`
+-- 多 IDE adapter：`pl init --ide cursor|claude-code|codex` 自动生成各 IDE 的提示词布局
+ - adapter 生态扩展：Go / Rust / Android / KMP-Kuikly
+ - retro-miner 上真实 trace（B→C→D 链路，依赖 v1.7 CDC pact 积累）
+ - MCP Server：让任何 MCP 兼容 IDE 直连 pl-pipeline
+@@ -340,7 +386,7 @@ commands:
+ 
+ ---
+ 
+-## 现状（v1.10.0 · 2026-04-24）
++## 现状（v1.12.0 · 2026-04-24）
+ 
+ **pl-pipeline 已进入 stable，自吃狗粮中**。
+ 
+@@ -351,9 +397,11 @@ commands:
+ - ✅ 统一 CLI `pl <subcmd>` 收口 34 个脚本（v1.8.0）
+ - ✅ 一键 `curl | bash` 安装器 + `pl new` 项目脚手架（v1.9.0）
+ - ✅ `pl detect` / `pl new --here` 智能识别 + 安全 dry-run（v1.10.0）
++- ✅ `pl ide sync` 支持 Cursor / CodeBuddy / Claude Code / Codex（v1.11.0 → v1.12.0）
++- 🧪 `pl agent run` 最小执行闭环已在本分支 dogfood，外部 executor 接入仍未承诺
+ - ✅ CI 全绿，已落地"打 tag 前 CI 必须绿"纪律（v1.7.3.1 教训）
+ - ✅ 已有 adapter：Next.js / FastAPI / Kotlin KMM（前两个完整 CDC dogfood）
+-- 🚧 v1.11+ 路线见 [Issues](https://github.com/walkertop/pl-pipeline-standalone/issues)，未承诺时间
++- 🚧 v1.13+ 路线见 [Issues](https://github.com/walkertop/pl-pipeline-standalone/issues)，未承诺时间
+ 
+ ### Adapter 全家桶
+ 
+diff --git a/ROADMAP.md b/ROADMAP.md
+index 3e952c6..26b0054 100644
+--- a/ROADMAP.md
++++ b/ROADMAP.md
+@@ -7,6 +7,9 @@
+ 
+ ## 当前版本
+ 
++- **分支预览（2026-05-04）**：`pl agent run` Agent Execution Loop MVP — 本地 executor → gate 验证 → repair context → retry → trace；用于验证“Agentic Coding Control Plane”方向
++- **v1.12.0**（2026-04-24）：`pl ide sync` 扩展到 Claude Code / Codex；`requires.pl_version` 启动自检；adapter 注入层 canonical 化
++- **v1.11.0**（2026-04-24）：IDE sync 首发 Cursor / CodeBuddy；manifest 化 IDE 集成
+ - **v1.10.0**（2026-04-24）：`pl detect` / `pl scan` 扫描已有项目给出建议，`pl new --here` 默认改为只读 dry-run（不再硬塞模板）
+ - **v1.9.x**（2026-04-24）：zero-friction 上手 — `install.sh` 一行装到 `~/.pl-pipeline`，`pl new my-app --stack <stack>` 10 秒起项目
+ - **v1.8.x**（2026-04-24）：`bin/pl` 统一 CLI 入口收口 34 个 scripts；自吃狗粮（agent/文档/CI 全切到 `pl xxx` 形式）；首批 29 个 CLI 单元测试
+@@ -44,6 +47,8 @@
+ | **v1.8** | 统一 CLI + 自吃狗粮 + 测试 | `bin/pl` 收口 34 个脚本；agent/docs/CI 全切 `pl xxx`；29 个 CLI 单测 | ✅ 已完成（pl-v1.8.0~1.8.4） |
+ | **v1.9** | zero-friction 上手 | `install.sh` 一行装；`pl new --stack` 10 秒起项目 | ✅ 已完成（pl-v1.9.0~1.9.1） |
+ | **v1.10** | `pl detect` + `--here` 安全化 | 已有项目接入：先扫描后建议，不再硬塞模板 | ✅ 已完成（pl-v1.10.0） |
++| **v1.11-v1.12** | 多 IDE sync | Cursor / CodeBuddy / Claude Code / Codex 资产 fan-out | ✅ 已完成（pl-v1.11.0~1.12.0） |
++| **Agent Loop MVP** | Agentic Coding Control Plane | executor 命令 → gate → repair context → retry → trace | 🧪 分支预览 |
+ | F | 扩充 adapter 生态（android / kmp-kuikly / go） | 证明栈级 adapter 机制可复用 | 🟡 未做 |
+ | H | retro-miner 真实 trace 挖掘链路（B→C→D） | 闭合"观察-挖掘-反馈"飞轮 | 🟡 未做（被 v1.7 CDC 替代部分动机） |
+ 
+diff --git a/bin/pl b/bin/pl
+index f8fafa4..b362c3b 100755
+--- a/bin/pl
++++ b/bin/pl
+@@ -82,6 +82,7 @@ ${C_BLD}核心命令:${C_OFF}
+   ${C_GRN}init${C_OFF}             创建 change 骨架（.state.md + workflow.start 事件）
+   ${C_GRN}status${C_OFF}           查看 pipeline 状态（人读表 / --json / --self-check）
+   ${C_GRN}run${C_OFF}              执行 gate / check（统一执行器）
++  ${C_GRN}agent run${C_OFF}        执行 agent 命令 → gate 验证 → repair 重试 → trace
+   ${C_GRN}phase${C_OFF}            手动推进阶段并写 trace 事件
+   ${C_GRN}orchestrator${C_OFF}     Agentic workflow 全流程编排
+   ${C_GRN}dashboard${C_OFF}        启动可视化面板（live SSE）
+@@ -148,6 +149,7 @@ _pl_subcmd_to_script() {
+     init)               echo "pl-state-init.sh" ;;
+     status)             echo "pl-status.sh" ;;
+     run)                echo "pl-runner.sh" ;;
++    agent)              echo "pl-agent-run.sh" ;;
+     phase)              echo "pl-phase.sh" ;;
+     orchestrator)       echo "pipeline-orchestrator.sh" ;;
+     dashboard)          echo "pl-dashboard.sh" ;;
+@@ -367,7 +369,7 @@ case "$cmd" in
+     sub="$1"; shift || true
+     # help <sub> [<verb>]：翻译后透传 -h
+     case "$sub" in
+-      contract|trace|adapter|piao|dashboard|observe|ide)
++      contract|trace|adapter|piao|dashboard|observe|ide|agent)
+         if [[ $# -eq 0 ]]; then
+           echo "用法: pl $sub <verb> [args...]"
+           echo "用 'pl help' 看可用 verb。"
+@@ -395,6 +397,7 @@ case "$cmd" in
+           observe:check)          _pl_exec pl-observe-check.sh --help ;;
+           ide:detect|ide:sync|ide:unsync|ide:list|ide:help)
+                                   _pl_exec pl-ide.sh "$verb" --help ;;
++          agent:run)              _pl_exec pl-agent-run.sh --help ;;
+           *) _pl_die "未知子命令: pl ${sub} ${verb}（用 'pl help' 看清单）" ;;
+         esac
+         ;;
+@@ -496,6 +499,16 @@ case "$cmd" in
+     _pl_exec pl-ide.sh "$@"
+     ;;
+ 
++  # ---- 命名空间：agent ----------------------------------------------------
++  agent)
++    [[ $# -eq 0 ]] && _pl_die "缺少子动词。用法: pl agent <run> [args...]"
++    verb="$1"; shift
++    case "$verb" in
++      run)        _pl_exec pl-agent-run.sh "$@" ;;
++      *)          _pl_die "未知 agent verb: ${verb}（run）" ;;
++    esac
++    ;;
++
+   # ---- 顶层 1:1 映射 ------------------------------------------------------
+   new)                _pl_exec pl-new-project.sh       "$@" ;;
+   detect|scan)        _pl_exec pl-detect.sh            "$@" ;;
+diff --git a/docs/agent-execution-loop.md b/docs/agent-execution-loop.md
+new file mode 100644
+index 0000000..66b6f46
+--- /dev/null
++++ b/docs/agent-execution-loop.md
+@@ -0,0 +1,221 @@
++# Agent Execution Loop
++
++`pl agent run` 是 pl-pipeline 的 agent 控制面入口。它不实现 coding agent，而是把任意 executor 的一次代码尝试纳入 PL-Pipeline：
++
++```text
++executor command -> gate verification -> failure classification -> repair context -> repair retry -> trace
++```
++
++## Basic Usage
++
++```bash
++pl agent run \
++  --change add-search \
++  --task T03 \
++  --executor local \
++  --cmd "./scripts/agent-implement.sh" \
++  --verify-gate D \
++  --repair-cmd "./scripts/agent-repair.sh" \
++  --max-retries 1
++```
++
++`--repair-cmd` 是显式 override，适合一次性调试。
++
++## Executors
++
++### `local`
++
++默认 executor。它直接在 `PL_PROJECT` 下执行 `--cmd`：
++
++```bash
++pl agent run \
++  --change add-search \
++  --task T03 \
++  --executor local \
++  --cmd "./scripts/agent-implement.sh" \
++  --verify-gate D
++```
++
++### `codex-cli`
++
++`codex-cli` executor 调用本机 Codex CLI 的非交互模式。它适合把 Codex 作为外部 coding agent 纳入 PL 控制面。
++
++```bash
++pl agent run \
++  --change add-search \
++  --task T03 \
++  --executor codex-cli \
++  --model codex-local-test \
++  --prompt-path prompts/implement.md \
++  --input-artifact pl/changes/add-search/spec.md \
++  --output-artifact app/search.py \
++  --verify-gate D
++```
++
++默认命令形态：
++
++```bash
++codex exec \
++  --cd "$PL_PROJECT" \
++  --sandbox workspace-write \
++  --ask-for-approval never \
++  -m "$MODEL" \
++  - < "$PL_PROJECT/$PROMPT_PATH"
++```
++
++可选参数：
++
++| Option | Meaning |
++|---|---|
++| `--codex-bin <path>` | Codex binary，默认 `codex`，也可用 `CODEX_BIN` 环境变量 |
++| `--codex-sandbox <mode>` | 传给 `codex exec --sandbox`，默认 `workspace-write` |
++| `--codex-approval <policy>` | 传给 `codex exec --ask-for-approval`，默认 `never` |
++| `--codex-arg <arg>` | 额外传给 `codex exec` 的参数，可重复 |
++
++`codex-cli` 会自动补 trace metadata：
++
++- `provider=openai`
++- `tool_calls=["codex.exec"]`
++
++测试和 demo 使用 fake Codex binary，不要求真实登录态：
++
++```bash
++bash examples/demo-agent-codex-cli/run-demo.sh
++```
++
++## Agent Trace Metadata
++
++外部 executor adapter 可以把 agent 身份、prompt、产物、工具和 token 用量一起写进 trace：
++
++```bash
++pl agent run \
++  --change add-search \
++  --task T03 \
++  --executor codex-cli \
++  --provider openai \
++  --model codex-local-test \
++  --prompt-path prompts/implement.md \
++  --input-artifact specs/spec.md \
++  --input-artifact pl/changes/add-search/taskdag.md \
++  --output-artifact app/search.py \
++  --tool-call shell \
++  --tool-call apply_patch \
++  --tokens-input 1200 \
++  --tokens-output 450 \
++  --cmd "./scripts/agent-implement.sh" \
++  --verify-gate D
++```
++
++这些字段会合并进 `task.start`、`agent.run.start`、`agent.run.result`、`agent.repair.result`、`agent.run.complete` 和 `--json` 输出：
++
++| Field | Meaning |
++|---|---|
++| `provider` | 模型或 agent 服务提供方，例如 `openai` / `anthropic` / `local` |
++| `model` | executor 使用的模型或 agent id |
++| `prompt_path` | 本次执行的主要 prompt 文件 |
++| `input_artifacts[]` | 输入上下文产物，例如 spec / plan / taskdag |
++| `output_artifacts[]` | 期望或实际输出产物 |
++| `tool_calls[]` | executor 使用的工具名 |
++| `tokens.input` | 输入 token 数 |
++| `tokens.output` | 输出 token 数 |
++| `tokens.total` | 输入 + 输出 |
++
++字段为空时不会写入 trace。当前不会自动统计 token；外部 executor adapter 负责传入真实数值。
++
++## Repair Policy
++
++稳定项目建议把 repair 策略放进 `pl/config.yaml`：
++
++```yaml
++agent:
++  repair:
++    max_retries: 1
++    strategy:
++      test_failure: "./scripts/repair_test_failure.sh"
++      syntax_error: "./scripts/repair_syntax_error.sh"
++      missing_file: "./scripts/repair_missing_file.sh"
++      default: "./scripts/repair_default.sh"
++```
++
++优先级：
++
++1. CLI `--repair-cmd`
++2. `agent.repair.strategy.<failure_kind>`
++3. `agent.repair.strategy.default`
++4. 无 repair，停止为 blocked
++
++`--max-retries` 同样优先于 `agent.repair.max_retries`。
++
++## Failure Kinds
++
++当前内置分类是保守文本分类：
++
++| failure_kind | 典型信号 |
++|---|---|
++| `test_failure` | `AssertionError`, `FAIL:`, `FAILED`, `unittest`, `pytest` |
++| `syntax_error` | `SyntaxError`, `IndentationError`, `syntax error` |
++| `missing_file` | `ModuleNotFoundError`, `ImportError`, `No such file` |
++| `timeout` | `timeout`, `timed out` |
++| `contract_violation` | `contract`, `pact`, `schema`, `violation` |
++| `unknown` | 其他无法识别的 gate 失败 |
++
++## Repair Context
++
++每次 repair 前会生成：
++
++```text
++pipeline-output/agent-runs/<change>/<run-id>/repair-context-attempt-<n>.md
++```
++
++repair 命令会收到这些环境变量：
++
++| Variable | Meaning |
++|---|---|
++| `PL_CHANGE` | change id |
++| `PL_TASK_ID` | task id |
++| `PL_RUN_ID` | agent run id |
++| `PL_RUN_DIR` | 当前 run 目录 |
++| `PL_AGENT_EXECUTOR` | executor id |
++| `PL_AGENT_ATTEMPT` | 当前 attempt |
++| `PL_FAILURE_KIND` | gate 失败分类 |
++| `PL_REPAIR_SOURCE` | `cli` / `policy:<kind>` / `policy:default` |
++| `PL_REPAIR_CONTEXT` | repair context Markdown 路径 |
++
++## Trace Events
++
++`pl agent run` 写入同一条 trace：
++
++- `agent.run.start`
++- `agent.run.result`
++- `agent.gate.start`
++- `agent.gate.result`
++- `agent.repair.context`
++- `agent.repair.result`
++- `agent.run.complete`
++
++关键字段：
++
++- `failure_kind`
++- `repair_source`
++- `provider`
++- `model`
++- `prompt_path`
++- `input_artifacts`
++- `output_artifacts`
++- `tool_calls`
++- `tokens`
++- `run_id`
++- `task_id`
++- `executor`
++- `attempt`
++
++## Demos
++
++```bash
++bash examples/demo-agent-loop/run-demo.sh
++bash examples/demo-agent-codex-cli/run-demo.sh
++bash examples/demo-agent-crud-service/run-demo.sh
++```
++
++`demo-agent-loop` 是最小计算器闭环；`demo-agent-crud-service` 展示通过 `agent.repair.strategy.test_failure` 自动选择修复脚本。
++`demo-agent-codex-cli` 展示 `codex-cli` executor 的参数组装、stdin prompt 和 trace 记录。
+diff --git a/docs/cli-reference.md b/docs/cli-reference.md
+index ac30450..7ecdd5f 100644
+--- a/docs/cli-reference.md
++++ b/docs/cli-reference.md
+@@ -1,4 +1,4 @@
+-# pl CLI Reference (v1.10.0+)
++# pl CLI Reference (v1.12.0+)
+ 
+ > 单入口 `pl <subcmd>` 取代散落的 `bash $PL_HOME/scripts/*.sh`。
+ > dispatcher 0 业务逻辑，**所有 flag 透传给底层脚本**，老路径 100% 向后兼容。
+@@ -54,6 +54,7 @@ pl doctor
+ | `pl init <change-id> [...]` | `pl-state-init.sh` | 创建 change 骨架（`.state.md` + 初始 `workflow.start` 事件） |
+ | `pl status [<change-id>]` | `pl-status.sh` | 状态总览 / 单 change 详情 / `--json` / `--self-check` |
+ | `pl run --change <id> --gate <g>` | `pl-runner.sh` | 统一 gate / check 执行器，`--dry-run` / `--json` |
++| `pl agent run --change <id> --cmd <cmd>` | `pl-agent-run.sh` | Agent 执行闭环：命令 → gate → failure kind → repair policy/context → retry → trace |
+ | `pl phase <change-id> <action> ...` | `pl-phase.sh` | 手动推进阶段，自动写 trace + 更新 `.state.md` |
+ | `pl orchestrator --page <id>` | `pipeline-orchestrator.sh` | Agentic workflow 全流程编排 |
+ | `pl smoke --change <id>` | `pl-smoke.sh` | 端到端冒烟（boot → ready → probe → shutdown） |
+@@ -128,6 +129,7 @@ dispatcher 不解析 flag，子命令的所有参数原样转交底层脚本。
+ - `pl piao <verb>`      ← 快照 / 内核演进
+ - `pl dashboard [refresh]` ← dashboard 主/辅
+ - `pl observe [check]`     ← observer fs vs 校验
++- `pl agent run`           ← agent/executor 执行闭环
+ 
+ 其余直接 1:1 顶层暴露（`pl init / status / run / smoke / phase / ...`）。
+ 
+@@ -191,6 +193,26 @@ pl contract query --capability auth.session.read
+ # 看看 adapter 有谁在用
+ pl contract query --adapter adapter-nextjs-web --kind capability
+ 
++# Agent execution loop MVP：执行、验收、失败后给 repair 命令上下文
++pl agent run \
++  --change add-search \
++  --task T03 \
++  --executor local \
++  --provider openai \
++  --model codex-local-test \
++  --input-artifact pl/changes/add-search/taskdag.md \
++  --output-artifact app/search.py \
++  --cmd "./scripts/agent-implement.sh" \
++  --verify-gate D \
++  --repair-cmd "./scripts/agent-repair.sh" \
++  --max-retries 1
++
++# 或在 pl/config.yaml 写 agent.repair.strategy，让 pl 按 failure_kind 自动选 repair
++bash examples/demo-agent-crud-service/run-demo.sh
++
++# Codex CLI executor（demo 使用 fake codex，不要求登录态）
++bash examples/demo-agent-codex-cli/run-demo.sh
++
+ # 一键 dashboard
+ pl dashboard --open --port 8889
+ 
+diff --git a/docs/guides/new-project-adoption.md b/docs/guides/new-project-adoption.md
+new file mode 100644
+index 0000000..b5af6b0
+--- /dev/null
++++ b/docs/guides/new-project-adoption.md
+@@ -0,0 +1,397 @@
++# 在新项目中导入和使用 pl-pipeline
++
++这份文档说明如何把 pl-pipeline 接入一个新项目或已有项目，并把它用成一个 AI Coding 控制面。
++
++pl-pipeline 的定位不是替代 Claude Code、Codex、Cursor、CodeBuddy 或其他 IDE。它更像项目里的工程操作层：把需求、计划、任务、执行、验证、修复和证据沉淀成一条可重复的链路。
++
++```text
++SPEC -> PLAN -> TASKDAG -> agent run -> gate -> repair -> trace -> archive
++```
++
++## 适用场景
++
++适合接入 pl-pipeline 的项目通常有这些特征：
++
++| 场景 | pl-pipeline 提供的价值 |
++|---|---|
++| 新项目从 0 到 1 | 先生成规范骨架，避免直接进入随意编码 |
++| 已有项目要引入 AI Coding | 用 `pl detect` 先扫描，再低侵入接入 |
++| 多人或多 Agent 协作 | `.state.md`、`spec.md`、`plan.md`、`taskdag.md` 成为交接上下文 |
++| 需要可验证交付 | gate、smoke、CDC、trace 形成证据链 |
++| 想接 Codex / Claude 等外部 coding agent | 用 `pl agent run` 统一执行、验证、修复和记录 |
++
++不适合的情况：
++
++- 一次性脚本，没有长期维护价值。
++- 完全不需要需求记录、任务拆解或验收证据。
++- 项目没有任何可自动化验证手段，且短期也不准备补。
++
++## 核心概念
++
++接入前先理解 5 个对象：
++
++| 对象 | 路径或命令 | 作用 |
++|---|---|---|
++| 项目配置 | `pl/config.yaml` | 声明项目命名空间、adapter、agent repair 策略等 |
++| Change | `pl/changes/<change-id>/` | 一次需求或改动的工作单元 |
++| 状态源 | `.state.md` | 当前阶段、gate 状态、任务进度 |
++| 任务拆解 | `taskdag.md` | Agent 或人要逐个完成的任务 |
++| 证据流 | `pipeline-output/trace/*.events.jsonl` | gate、smoke、agent、contract 等事件 |
++
++推荐把 pl-pipeline 当作项目内的控制面：
++
++```text
++开发者 / Agent
++  -> 读取 spec / plan / taskdag
++  -> 执行具体代码改动
++  -> 通过 pl run / pl agent run / pl smoke 验证
++  -> 把结果写入 trace
++```
++
++## 方式一：创建全新项目
++
++先安装全局 `pl`：
++
++```bash
++curl -fsSL https://raw.githubusercontent.com/walkertop/pl-pipeline-standalone/main/install.sh | bash
++source ~/.zshrc
++pl --version
++pl doctor
++```
++
++创建项目：
++
++```bash
++pl new my-app --stack nextjs
++cd my-app
++export PL_PROJECT="$PWD"
++```
++
++可选 stack：
++
++| Stack | 适合项目 |
++|---|---|
++| `nextjs` | Next.js Web 应用 |
++| `fastapi` | Python FastAPI 服务 |
++| `crawler` | 爬虫或数据采集项目 |
++| `monorepo-trio` | 前端 + API + 爬虫的多模块项目 |
++| `bare` | 任意技术栈，只接入 pl-core |
++
++创建后先跑自检：
++
++```bash
++pl status
++pl status --self-check
++```
++
++然后创建或继续第一个 change：
++
++```bash
++pl init add-first-feature --name "Add first feature" --domain core
++pl run --change add-first-feature --gate B1
++```
++
++## 方式二：导入已有项目
++
++已有项目不要直接强行安装 adapter，先只读扫描：
++
++```bash
++cd /path/to/existing-project
++pl detect
++```
++
++根据扫描结果选择接入方式：
++
++```bash
++# 最低侵入：只放 pl 骨架
++pl new whatever --here --stack bare
++
++# Next.js 项目
++pl new whatever --here --stack nextjs
++
++# FastAPI 项目
++pl new whatever --here --stack fastapi
++```
++
++`--here` 会尽量保守：
++
++- 保留已有 `.git`。
++- 保留已有 `README.md`、源码和配置。
++- 已有 `.gitignore` 时只追加 pl 规则。
++- 已有 `pl/config.yaml` 时不会重复安装。
++
++导入后建议马上做一次 baseline：
++
++```bash
++export PL_PROJECT="$PWD"
++pl status --self-check
++pl init baseline-adoption --name "Adopt pl-pipeline" --domain infra
++```
++
++在 `baseline-adoption/spec.md` 里记录：
++
++- 当前项目技术栈。
++- 当前已有测试命令。
++- 当前已知风险。
++- 本次只接入控制面，不做业务重构。
++
++## 推荐目录结构
++
++接入后的关键目录如下：
++
++```text
++your-project/
++  pl/
++    config.yaml
++    changes/
++      add-search/
++        .state.md
++        spec.md
++        plan.md
++        taskdag.md
++  pipeline-output/
++    trace/
++    agent-runs/
++  .codebuddy/              # 如果安装了 adapter，可能出现
++  scripts/                 # 推荐放 gate / repair / smoke 脚本
++```
++
++建议约定：
++
++- `pl/changes/<id>/spec.md` 写“要解决什么问题”。
++- `pl/changes/<id>/plan.md` 写“怎么做”。
++- `pl/changes/<id>/taskdag.md` 写“拆成哪些可执行任务”。
++- `scripts/verify.sh` 或 adapter 脚本负责机器验证。
++- `scripts/repair_*.sh` 负责 agent repair policy。
++
++## 标准工作流
++
++一个 change 推荐按这个顺序跑：
++
++```bash
++pl init add-search --name "Add search" --domain product
++
++# 1. 补 spec，明确范围
++$EDITOR pl/changes/add-search/spec.md
++pl run --change add-search --gate A0
++
++# 2. 补 plan / taskdag
++$EDITOR pl/changes/add-search/plan.md
++$EDITOR pl/changes/add-search/taskdag.md
++pl run --change add-search --gate B1
++
++# 3. 执行实现，可以由人、Codex、Claude 或本地脚本完成
++pl agent run \
++  --change add-search \
++  --task T03 \
++  --executor local \
++  --cmd "./scripts/agent-implement.sh" \
++  --verify-gate D \
++  --max-retries 1
++
++# 4. 验证
++pl run --change add-search --gate D --json
++pl smoke --change add-search --json
++
++# 5. 观察与归档
++pl trace tree --change add-search
++pl status add-search
++```
++
++## 接入 Codex CLI
++
++如果本机有 Codex CLI，可以把 Codex 作为外部 coding agent 接入：
++
++```bash
++pl agent run \
++  --change add-search \
++  --task T03 \
++  --executor codex-cli \
++  --model codex-local-test \
++  --prompt-path prompts/implement.md \
++  --input-artifact pl/changes/add-search/spec.md \
++  --input-artifact pl/changes/add-search/taskdag.md \
++  --output-artifact app/search.py \
++  --verify-gate D
++```
++
++默认会执行：
++
++```bash
++codex exec \
++  --cd "$PL_PROJECT" \
++  --sandbox workspace-write \
++  --ask-for-approval never \
++  -m "$MODEL" \
++  - < "$PL_PROJECT/$PROMPT_PATH"
++```
++
++推荐 prompt 文件里包含：
++
++```text
++You are implementing task T03 for this project.
++
++Read:
++- pl/changes/add-search/spec.md
++- pl/changes/add-search/plan.md
++- pl/changes/add-search/taskdag.md
++
++Modify only the files needed for T03.
++Run or respect the verification command used by gate D.
++Leave unrelated files unchanged.
++```
++
++如果要改 Codex 参数：
++
++```bash
++pl agent run \
++  --change add-search \
++  --task T03 \
++  --executor codex-cli \
++  --codex-sandbox workspace-write \
++  --codex-approval never \
++  --codex-arg "--json" \
++  --prompt-path prompts/implement.md
++```
++
++先用内置 fake demo 验证控制面：
++
++```bash
++bash examples/demo-agent-codex-cli/run-demo.sh
++```
++
++## 配置 repair policy
++
++稳定项目建议把修复策略放进 `pl/config.yaml`：
++
++```yaml
++agent:
++  repair:
++    max_retries: 1
++    strategy:
++      test_failure: "./scripts/repair_test_failure.sh"
++      syntax_error: "./scripts/repair_syntax_error.sh"
++      missing_file: "./scripts/repair_missing_file.sh"
++      default: "./scripts/repair_default.sh"
++```
++
++这样 `pl agent run` 在 gate 失败后会按失败类型选择修复脚本。
++
++repair 脚本会收到关键环境变量：
++
++| Variable | Meaning |
++|---|---|
++| `PL_CHANGE` | change id |
++| `PL_TASK_ID` | task id |
++| `PL_RUN_ID` | agent run id |
++| `PL_RUN_DIR` | 本次 agent run 目录 |
++| `PL_FAILURE_KIND` | 失败分类 |
++| `PL_REPAIR_CONTEXT` | 自动生成的 repair context 路径 |
++
++可参考：
++
++```bash
++bash examples/demo-agent-loop/run-demo.sh
++bash examples/demo-agent-crud-service/run-demo.sh
++```
++
++## 验证接入是否成功
++
++新项目接入后至少跑：
++
++```bash
++pl status --self-check
++pl status
++```
++
++如果使用 agent loop，再跑：
++
++```bash
++bash examples/demo-agent-loop/run-demo.sh
++bash examples/demo-agent-codex-cli/run-demo.sh
++```
++
++如果是具体业务项目，建议补一个项目本地验证脚本：
++
++```bash
++mkdir -p scripts
++$EDITOR scripts/verify.sh
++chmod +x scripts/verify.sh
++```
++
++然后在 agent run 里绑定 gate：
++
++```bash
++pl agent run \
++  --change add-search \
++  --task T03 \
++  --executor local \
++  --cmd "./scripts/agent-implement.sh" \
++  --verify-gate D \
++  --repair-cmd "./scripts/repair_default.sh" \
++  --max-retries 1
++```
++
++## 最小落地原则
++
++第一次接入不要追求全功能。建议按这 4 步走：
++
++1. 只接入 `pl/config.yaml` 和第一个 change。
++2. 先让 `pl status --self-check` 通过。
++3. 再把现有测试命令接成 gate 或 `scripts/verify.sh`。
++4. 最后再接 `pl agent run`、repair policy、Codex CLI executor。
++
++也就是说，先建立控制面，再扩大自动化范围。
++
++## 常见问题
++
++### `PL_PROJECT` 要不要设置？
++
++建议设置：
++
++```bash
++export PL_PROJECT="$PWD"
++```
++
++没有设置时，很多命令会以当前目录推断项目根，但在脚本、CI、多模块项目里显式设置更稳。
++
++### 新项目应该选 `bare` 还是具体 stack？
++
++如果技术栈明确，优先选具体 stack。
++如果项目结构特殊，先用 `bare`，再手动接 adapter 或自定义脚本。
++
++### Codex CLI executor 是否要求真实 Codex 登录？
++
++真实运行要求本机 Codex CLI 可用。
++仓库内 demo 和测试使用 fake `codex`，只验证 PL 控制面协议，不依赖登录态。
++
++### pl-pipeline 会不会覆盖我的文件？
++
++`pl new --here` 设计成保守接入：已有源码、README、package.json、pyproject.toml 等不会被覆盖。已有 `.gitignore` 只追加规则。
++
++### 什么时候使用 `pl agent run`？
++
++当你希望一次 coding agent 执行被纳入控制面时使用。
++如果只是手动开发，然后跑 gate，使用 `pl run --change <id> --gate D` 就够。
++
++## 推荐新项目模板
++
++新项目可以从这个骨架开始：
++
++```text
++pl/
++  config.yaml
++  changes/
++    add-first-feature/
++      .state.md
++      spec.md
++      plan.md
++      taskdag.md
++prompts/
++  implement.md
++scripts/
++  verify.sh
++  repair_default.sh
++```
++
++`prompts/implement.md` 负责约束 agent；`scripts/verify.sh` 负责机器判断；`scripts/repair_default.sh` 负责失败后的最小修复入口。三者配合后，一个新项目就具备了最小的全链路 AI Coding 闭环。
+diff --git a/examples/demo-agent-codex-cli/README.md b/examples/demo-agent-codex-cli/README.md
+new file mode 100644
+index 0000000..b7097bf
+--- /dev/null
++++ b/examples/demo-agent-codex-cli/README.md
+@@ -0,0 +1,19 @@
++# demo-agent-codex-cli
++
++这个 demo 验证 `pl agent run --executor codex-cli` 的控制面集成。
++
++它不依赖真实 Codex 登录态：`run-demo.sh` 会把 `scripts/fake-codex.sh` 放到临时 PATH 前面，用 fake binary 记录 `codex exec` 参数、读取 stdin prompt，并生成一个产物文件。
++
++## Run
++
++```bash
++bash examples/demo-agent-codex-cli/run-demo.sh
++```
++
++验证点：
++
++- `pl agent run` 自动构造 `codex exec --cd <project> --sandbox workspace-write --ask-for-approval never - < prompt`
++- trace 中记录 `executor=codex-cli`
++- trace 中默认记录 `provider=openai`
++- trace 中记录 `tool_calls=["codex.exec"]`
++- demo 产物 `app/codex-result.txt` 被 fake Codex 写出
+diff --git a/examples/demo-agent-codex-cli/app/.gitkeep b/examples/demo-agent-codex-cli/app/.gitkeep
+new file mode 100644
+index 0000000..8b13789
+--- /dev/null
++++ b/examples/demo-agent-codex-cli/app/.gitkeep
+@@ -0,0 +1 @@
++
+diff --git a/examples/demo-agent-codex-cli/pl/changes/codex-cli-demo/.state.md b/examples/demo-agent-codex-cli/pl/changes/codex-cli-demo/.state.md
+new file mode 100644
+index 0000000..9aabf35
+--- /dev/null
++++ b/examples/demo-agent-codex-cli/pl/changes/codex-cli-demo/.state.md
+@@ -0,0 +1,24 @@
++<!-- pl-pipeline state | 最后更新: 2026-05-06 00:00 -->
++
++- change_id: codex-cli-demo
++- change_name: Codex CLI Demo
++- stage: IMPLEMENT
++- gate_status: PENDING
++- next_gate: D
++- complexity: S
++- business_domain: demo
++
++## Task Progress
++
++| ID | Name | Owner | Depends | Estimate | Status | Notes |
++|---|---|---|---|---|---|---|
++| T01 | Prepare prompt | codex | - | 0.1d | DONE | `prompts/implement.md` |
++| T02 | Invoke codex-cli executor | pl-agent | T01 | 0.1d | TODO | fake Codex |
++| T03 | Verify fake Codex output | pl-agent | T02 | 0.1d | TODO | `app/codex-result.txt` |
++| T04 | Verify trace metadata | pl-agent | T03 | 0.1d | TODO | `codex.exec` |
++
++## Open Questions
++
++| ID | Question | Status | Impact | Resolution |
++|---|---|---|---|---|
++| Q01 | 是否调用真实 Codex CLI | RESOLVED | HIGH | 本 demo 用 fake binary；真实调用由用户环境决定 |
+diff --git a/examples/demo-agent-codex-cli/pl/changes/codex-cli-demo/plan.md b/examples/demo-agent-codex-cli/pl/changes/codex-cli-demo/plan.md
+new file mode 100644
+index 0000000..5297550
+--- /dev/null
++++ b/examples/demo-agent-codex-cli/pl/changes/codex-cli-demo/plan.md
+@@ -0,0 +1,7 @@
++# PLAN: Codex CLI Demo
++
++1. 将 fake Codex binary 放入 PATH。
++2. 调用 `pl agent run --executor codex-cli --prompt-path prompts/implement.md`。
++3. fake Codex 记录参数和 stdin prompt。
++4. fake Codex 写出 `app/codex-result.txt`。
++5. demo 校验产物和 trace。
+diff --git a/examples/demo-agent-codex-cli/pl/changes/codex-cli-demo/spec.md b/examples/demo-agent-codex-cli/pl/changes/codex-cli-demo/spec.md
+new file mode 100644
+index 0000000..94ab15a
+--- /dev/null
++++ b/examples/demo-agent-codex-cli/pl/changes/codex-cli-demo/spec.md
+@@ -0,0 +1,5 @@
++# SPEC: Codex CLI Demo
++
++验证 `pl agent run --executor codex-cli` 可以把 Codex CLI 当作 executor 调用，并把调用过程写入 PL trace。
++
++本 demo 使用 fake Codex binary，不依赖真实登录态或网络。
+diff --git a/examples/demo-agent-codex-cli/pl/changes/codex-cli-demo/taskdag.md b/examples/demo-agent-codex-cli/pl/changes/codex-cli-demo/taskdag.md
+new file mode 100644
+index 0000000..b71b8a3
+--- /dev/null
++++ b/examples/demo-agent-codex-cli/pl/changes/codex-cli-demo/taskdag.md
+@@ -0,0 +1,8 @@
++# TASKDAG: Codex CLI Demo
++
++| ID | Task | Status |
++|---|---|---|
++| T01 | Prepare prompt | DONE |
++| T02 | Invoke codex-cli executor | TODO |
++| T03 | Verify fake Codex output | TODO |
++| T04 | Verify trace metadata | TODO |
+diff --git a/examples/demo-agent-codex-cli/pl/config.yaml b/examples/demo-agent-codex-cli/pl/config.yaml
+new file mode 100644
+index 0000000..3ae3e83
+--- /dev/null
++++ b/examples/demo-agent-codex-cli/pl/config.yaml
+@@ -0,0 +1,4 @@
++version: pl@v1.1
++namespace: demo-agent-codex-cli
++requires:
++  pl_version: ">=1.12"
+diff --git a/examples/demo-agent-codex-cli/prompts/implement.md b/examples/demo-agent-codex-cli/prompts/implement.md
+new file mode 100644
+index 0000000..f67f0e2
+--- /dev/null
++++ b/examples/demo-agent-codex-cli/prompts/implement.md
+@@ -0,0 +1 @@
++Create `app/codex-result.txt` with the text `codex fake ok`.
+diff --git a/examples/demo-agent-codex-cli/run-demo.sh b/examples/demo-agent-codex-cli/run-demo.sh
+new file mode 100755
+index 0000000..15878f1
+--- /dev/null
++++ b/examples/demo-agent-codex-cli/run-demo.sh
+@@ -0,0 +1,40 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++REPO_ROOT="$(cd "$HERE/../.." && pwd)"
++FAKE_BIN="$HERE/.tmp-bin"
++
++rm -rf "$FAKE_BIN"
++mkdir -p "$FAKE_BIN"
++ln -s "$HERE/scripts/fake-codex.sh" "$FAKE_BIN/codex"
++
++export PL_HOME="${PL_HOME:-$REPO_ROOT}"
++export PL_PROJECT="$HERE"
++export PATH="$FAKE_BIN:$PATH"
++
++"$PL_HOME/bin/pl" agent run \
++  --change codex-cli-demo \
++  --task T02 \
++  --executor codex-cli \
++  --model codex-fake-model \
++  --prompt-path prompts/implement.md \
++  --output-artifact app/codex-result.txt \
++  --json
++
++grep -Fq 'args: [exec]' "$HERE/codex-invocation.log"
++grep -Fq '[--cd]' "$HERE/codex-invocation.log"
++grep -Fq '[--sandbox] [workspace-write]' "$HERE/codex-invocation.log"
++grep -Fq '[--ask-for-approval] [never]' "$HERE/codex-invocation.log"
++grep -Fq '[-m] [codex-fake-model]' "$HERE/codex-invocation.log"
++grep -Fq 'Create `app/codex-result.txt`' "$HERE/codex-invocation.log"
++grep -q 'codex fake ok' "$HERE/app/codex-result.txt"
++
++TRACE_FILE="$HERE/pipeline-output/trace/codex-cli-demo.events.jsonl"
++grep -q '"executor":"codex-cli"' "$TRACE_FILE"
++grep -q '"provider":"openai"' "$TRACE_FILE"
++grep -Fq '"tool_calls":["codex.exec"]' "$TRACE_FILE"
++grep -Fq '"output_artifacts":["app/codex-result.txt"]' "$TRACE_FILE"
++
++printf '\nCodex CLI Demo OK\n'
++printf 'Trace: %s\n' "$TRACE_FILE"
+diff --git a/examples/demo-agent-codex-cli/scripts/fake-codex.sh b/examples/demo-agent-codex-cli/scripts/fake-codex.sh
+new file mode 100755
+index 0000000..8174e82
+--- /dev/null
++++ b/examples/demo-agent-codex-cli/scripts/fake-codex.sh
+@@ -0,0 +1,16 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++{
++  printf 'args:'
++  for arg in "$@"; do
++    printf ' [%s]' "$arg"
++  done
++  printf '\n'
++  printf 'stdin:\n'
++  cat
++} > codex-invocation.log
++
++mkdir -p app
++printf 'codex fake ok\n' > app/codex-result.txt
++printf '{"event":"fake-codex","tokens":{"input":11,"output":7}}\n'
+diff --git a/examples/demo-agent-crud-service/README.md b/examples/demo-agent-crud-service/README.md
+new file mode 100644
+index 0000000..fcaa5df
+--- /dev/null
++++ b/examples/demo-agent-crud-service/README.md
+@@ -0,0 +1,23 @@
++# demo-agent-crud-service
++
++这个 demo 展示 `pl agent run` 的 hardening 路径：不传 `--repair-cmd`，而是由 `pl/config.yaml` 的 `agent.repair.strategy` 按失败类型选择修复脚本。
++
++## Run
++
++```bash
++bash examples/demo-agent-crud-service/run-demo.sh
++```
++
++流程：
++
++1. `write_bad_impl.sh` 写入一个不完整的用户 CRUD 实现。
++2. gate D 运行 `python3 -m unittest discover -s tests` 并失败。
++3. `pl agent run` 分类为 `test_failure`。
++4. repair policy 选择 `./scripts/repair_test_failure.sh`。
++5. repair 脚本读取 `PL_REPAIR_CONTEXT` / `PL_FAILURE_KIND`，写回完整实现。
++6. gate D 再次通过。
++
++核心验证产物：
++
++- `pipeline-output/trace/crud-service-demo.events.jsonl`
++- `pipeline-output/agent-runs/crud-service-demo/<run-id>/repair-context-attempt-0.md`
+diff --git a/examples/demo-agent-crud-service/app/__init__.py b/examples/demo-agent-crud-service/app/__init__.py
+new file mode 100644
+index 0000000..8b13789
+--- /dev/null
++++ b/examples/demo-agent-crud-service/app/__init__.py
+@@ -0,0 +1 @@
++
+diff --git a/examples/demo-agent-crud-service/app/users.py b/examples/demo-agent-crud-service/app/users.py
+new file mode 100644
+index 0000000..baeab79
+--- /dev/null
++++ b/examples/demo-agent-crud-service/app/users.py
+@@ -0,0 +1,34 @@
++class UserStore:
++    def __init__(self):
++        self._users = {}
++        self._next_id = 1
++
++    def create_user(self, name, email):
++        user = {
++            "id": self._next_id,
++            "name": name,
++            "email": email,
++            "active": True,
++        }
++        self._users[self._next_id] = user
++        self._next_id += 1
++        return dict(user)
++
++    def get_user(self, user_id):
++        user = self._users.get(user_id)
++        return dict(user) if user else None
++
++    def update_user(self, user_id, **changes):
++        user = self._users.get(user_id)
++        if not user:
++            return None
++        for key in ("name", "email", "active"):
++            if key in changes:
++                user[key] = changes[key]
++        return dict(user)
++
++    def delete_user(self, user_id):
++        return self._users.pop(user_id, None) is not None
++
++    def list_users(self):
++        return [dict(user) for user in self._users.values()]
+diff --git a/examples/demo-agent-crud-service/pl/changes/crud-service-demo/.state.md b/examples/demo-agent-crud-service/pl/changes/crud-service-demo/.state.md
+new file mode 100644
+index 0000000..53abdcd
+--- /dev/null
++++ b/examples/demo-agent-crud-service/pl/changes/crud-service-demo/.state.md
+@@ -0,0 +1,25 @@
++<!-- pl-pipeline state | 最后更新: 2026-05-05 00:00 -->
++
++- change_id: crud-service-demo
++- change_name: CRUD Service Demo
++- stage: IMPLEMENT
++- gate_status: PENDING
++- next_gate: D
++- complexity: M
++- business_domain: demo
++
++## Task Progress
++
++| ID | Name | Owner | Depends | Estimate | Status | Notes |
++|---|---|---|---|---|---|---|
++| T01 | Define CRUD unit tests | codex | - | 0.1d | DONE | `tests/test_users.py` |
++| T02 | Run incomplete implementation | pl-agent | T01 | 0.1d | TODO | `write_bad_impl.sh` |
++| T03 | Classify gate failure | pl-agent | T02 | 0.1d | TODO | `test_failure` |
++| T04 | Repair via policy | pl-agent | T03 | 0.1d | TODO | `repair_test_failure.sh` |
++| T05 | Verify gate D passes | pl-runner | T04 | 0.1d | TODO | gate D |
++
++## Open Questions
++
++| ID | Question | Status | Impact | Resolution |
++|---|---|---|---|---|
++| Q01 | 是否引入 FastAPI 依赖 | RESOLVED | MEDIUM | 本 demo 不引入第三方依赖，先验证业务 CRUD 闭环 |
+diff --git a/examples/demo-agent-crud-service/pl/changes/crud-service-demo/plan.md b/examples/demo-agent-crud-service/pl/changes/crud-service-demo/plan.md
+new file mode 100644
+index 0000000..d96e1ac
+--- /dev/null
++++ b/examples/demo-agent-crud-service/pl/changes/crud-service-demo/plan.md
+@@ -0,0 +1,8 @@
++# PLAN: CRUD Service Demo
++
++1. 写入不完整 CRUD 实现。
++2. 运行 gate D。
++3. 根据 gate 输出分类失败。
++4. 使用 `agent.repair.strategy.test_failure` 选择修复脚本。
++5. 写回完整实现。
++6. 重跑 gate D。
+diff --git a/examples/demo-agent-crud-service/pl/changes/crud-service-demo/spec.md b/examples/demo-agent-crud-service/pl/changes/crud-service-demo/spec.md
+new file mode 100644
+index 0000000..35227db
+--- /dev/null
++++ b/examples/demo-agent-crud-service/pl/changes/crud-service-demo/spec.md
+@@ -0,0 +1,15 @@
++# SPEC: CRUD Service Demo
++
++实现一个内存版用户 CRUD 服务，满足：
++
++- 创建用户时自动分配递增 id。
++- 可以读取、更新、删除用户。
++- `get_user` / `list_users` 返回副本，避免外部突变内部状态。
++- 删除不存在的用户返回 `False`。
++
++这个 demo 用于验证 `pl agent run` 的 repair policy：
++
++- 初始实现故意不完整。
++- gate D 由单测捕获失败。
++- agent loop 分类为 `test_failure`。
++- policy 自动选择 `repair_test_failure.sh`。
+diff --git a/examples/demo-agent-crud-service/pl/changes/crud-service-demo/taskdag.md b/examples/demo-agent-crud-service/pl/changes/crud-service-demo/taskdag.md
+new file mode 100644
+index 0000000..2ca5135
+--- /dev/null
++++ b/examples/demo-agent-crud-service/pl/changes/crud-service-demo/taskdag.md
+@@ -0,0 +1,9 @@
++# TASKDAG: CRUD Service Demo
++
++| ID | Task | Status |
++|---|---|---|
++| T01 | Define CRUD unit tests | DONE |
++| T02 | Run incomplete implementation | TODO |
++| T03 | Classify gate failure | TODO |
++| T04 | Repair via policy | TODO |
++| T05 | Verify gate D passes | TODO |
+diff --git a/examples/demo-agent-crud-service/pl/config.yaml b/examples/demo-agent-crud-service/pl/config.yaml
+new file mode 100644
+index 0000000..3d86d87
+--- /dev/null
++++ b/examples/demo-agent-crud-service/pl/config.yaml
+@@ -0,0 +1,23 @@
++version: pl@v1.1
++namespace: demo-agent-crud-service
++requires:
++  pl_version: ">=1.12"
++agent:
++  repair:
++    max_retries: 1
++    strategy:
++      test_failure: "./scripts/repair_test_failure.sh"
++      default: "./scripts/repair_default.sh"
++checks:
++  - id: unit_tests
++    label: "Python unit tests"
++    cmd: "python3 -m unittest discover -s tests"
++    cwd: "."
++    required: true
++gates:
++  D:
++    from: IMPLEMENT
++    to: VERIFY
++    eval: all_checks.pass
++    on_failure: block
++    checks: [unit_tests]
+diff --git a/examples/demo-agent-crud-service/run-demo.sh b/examples/demo-agent-crud-service/run-demo.sh
+new file mode 100755
+index 0000000..a2a676d
+--- /dev/null
++++ b/examples/demo-agent-crud-service/run-demo.sh
+@@ -0,0 +1,25 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++REPO_ROOT="$(cd "$HERE/../.." && pwd)"
++
++export PL_HOME="${PL_HOME:-$REPO_ROOT}"
++export PL_PROJECT="$HERE"
++
++"$PL_HOME/bin/pl" agent run \
++  --change crud-service-demo \
++  --task T04 \
++  --executor local \
++  --cmd "./scripts/write_bad_impl.sh" \
++  --verify-gate D
++
++(cd "$HERE" && python3 -m unittest discover -s tests)
++
++TRACE_FILE="$HERE/pipeline-output/trace/crud-service-demo.events.jsonl"
++grep -q '"failure_kind":"test_failure"' "$TRACE_FILE"
++grep -q '"repair_source":"policy:test_failure"' "$TRACE_FILE"
++grep -q '"event":"agent.run.complete"' "$TRACE_FILE"
++
++printf '\nCRUD Demo OK\n'
++printf 'Trace: %s\n' "$TRACE_FILE"
+diff --git a/examples/demo-agent-crud-service/scripts/repair_default.sh b/examples/demo-agent-crud-service/scripts/repair_default.sh
+new file mode 100755
+index 0000000..84f9491
+--- /dev/null
++++ b/examples/demo-agent-crud-service/scripts/repair_default.sh
+@@ -0,0 +1,5 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++echo "default repair should not be used for this demo" >&2
++exit 1
+diff --git a/examples/demo-agent-crud-service/scripts/repair_test_failure.sh b/examples/demo-agent-crud-service/scripts/repair_test_failure.sh
+new file mode 100755
+index 0000000..5a56818
+--- /dev/null
++++ b/examples/demo-agent-crud-service/scripts/repair_test_failure.sh
+@@ -0,0 +1,44 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++test "${PL_FAILURE_KIND:-}" = "test_failure"
++test -f "${PL_REPAIR_CONTEXT:-}"
++grep -q "failure_kind: \`test_failure\`" "$PL_REPAIR_CONTEXT"
++grep -q "Gate output" "$PL_REPAIR_CONTEXT"
++
++cat > app/users.py <<'PY'
++class UserStore:
++    def __init__(self):
++        self._users = {}
++        self._next_id = 1
++
++    def create_user(self, name, email):
++        user = {
++            "id": self._next_id,
++            "name": name,
++            "email": email,
++            "active": True,
++        }
++        self._users[self._next_id] = user
++        self._next_id += 1
++        return dict(user)
++
++    def get_user(self, user_id):
++        user = self._users.get(user_id)
++        return dict(user) if user else None
++
++    def update_user(self, user_id, **changes):
++        user = self._users.get(user_id)
++        if not user:
++            return None
++        for key in ("name", "email", "active"):
++            if key in changes:
++                user[key] = changes[key]
++        return dict(user)
++
++    def delete_user(self, user_id):
++        return self._users.pop(user_id, None) is not None
++
++    def list_users(self):
++        return [dict(user) for user in self._users.values()]
++PY
+diff --git a/examples/demo-agent-crud-service/scripts/write_bad_impl.sh b/examples/demo-agent-crud-service/scripts/write_bad_impl.sh
+new file mode 100755
+index 0000000..cca3fc4
+--- /dev/null
++++ b/examples/demo-agent-crud-service/scripts/write_bad_impl.sh
+@@ -0,0 +1,36 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++cat > app/users.py <<'PY'
++class UserStore:
++    def __init__(self):
++        self._users = {}
++        self._next_id = 1
++
++    def create_user(self, name, email):
++        user = {
++            "id": self._next_id,
++            "name": name,
++            "email": email,
++            "active": True,
++        }
++        self._users[self._next_id] = user
++        self._next_id += 1
++        return user
++
++    def get_user(self, user_id):
++        return self._users.get(user_id)
++
++    def update_user(self, user_id, **changes):
++        user = self._users.get(user_id)
++        if not user:
++            return None
++        user.update(changes)
++        return user
++
++    def delete_user(self, user_id):
++        return False
++
++    def list_users(self):
++        return list(self._users.values())
++PY
+diff --git a/examples/demo-agent-crud-service/tests/test_users.py b/examples/demo-agent-crud-service/tests/test_users.py
+new file mode 100644
+index 0000000..a167668
+--- /dev/null
++++ b/examples/demo-agent-crud-service/tests/test_users.py
+@@ -0,0 +1,46 @@
++import unittest
++
++from app.users import UserStore
++
++
++class UserStoreTest(unittest.TestCase):
++    def test_create_and_get_user(self):
++        store = UserStore()
++
++        user = store.create_user("Ada", "ada@example.com")
++
++        self.assertEqual(user["id"], 1)
++        self.assertEqual(user["name"], "Ada")
++        self.assertTrue(user["active"])
++        self.assertEqual(store.get_user(1)["email"], "ada@example.com")
++
++    def test_update_user(self):
++        store = UserStore()
++        user = store.create_user("Ada", "ada@example.com")
++
++        updated = store.update_user(user["id"], name="Ada Lovelace", active=False)
++
++        self.assertEqual(updated["name"], "Ada Lovelace")
++        self.assertFalse(updated["active"])
++        self.assertEqual(store.get_user(user["id"])["name"], "Ada Lovelace")
++
++    def test_delete_user(self):
++        store = UserStore()
++        user = store.create_user("Ada", "ada@example.com")
++
++        self.assertTrue(store.delete_user(user["id"]))
++        self.assertIsNone(store.get_user(user["id"]))
++        self.assertFalse(store.delete_user(user["id"]))
++
++    def test_list_users_returns_copies(self):
++        store = UserStore()
++        store.create_user("Ada", "ada@example.com")
++        users = store.list_users()
++
++        users[0]["name"] = "mutated"
++
++        self.assertEqual(store.get_user(1)["name"], "Ada")
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/examples/demo-agent-loop/README.md b/examples/demo-agent-loop/README.md
+new file mode 100644
+index 0000000..cf39894
+--- /dev/null
++++ b/examples/demo-agent-loop/README.md
+@@ -0,0 +1,23 @@
++# demo-agent-loop
++
++一个最小可验证 demo：展示 `pl agent run` 如何把错误代码尝试修复到 gate 通过。
++
++## Run
++
++```bash
++bash examples/demo-agent-loop/run-demo.sh
++```
++
++脚本会执行：
++
++1. `write_bad_impl.sh` 写入错误实现：`return a - b`。
++2. `pl agent run` 调用 gate D，运行 `python3 -m unittest discover -s tests`。
++3. gate 失败后生成 `PL_REPAIR_CONTEXT`。
++4. `repair_impl.sh` 读取修复上下文并写回正确实现：`return a + b`。
++5. gate D 再跑一次并通过。
++
++可验证输出：
++
++- `pipeline-output/trace/agent-loop-demo.events.jsonl`
++- `pipeline-output/agent-runs/agent-loop-demo/<run-id>/repair-context-attempt-0.md`
++- `python3 -m unittest discover -s tests`
+diff --git a/examples/demo-agent-loop/app/__init__.py b/examples/demo-agent-loop/app/__init__.py
+new file mode 100644
+index 0000000..8b13789
+--- /dev/null
++++ b/examples/demo-agent-loop/app/__init__.py
+@@ -0,0 +1 @@
++
+diff --git a/examples/demo-agent-loop/app/calc.py b/examples/demo-agent-loop/app/calc.py
+new file mode 100644
+index 0000000..4693ad3
+--- /dev/null
++++ b/examples/demo-agent-loop/app/calc.py
+@@ -0,0 +1,2 @@
++def add(a, b):
++    return a + b
+diff --git a/examples/demo-agent-loop/pl/changes/agent-loop-demo/.state.md b/examples/demo-agent-loop/pl/changes/agent-loop-demo/.state.md
+new file mode 100644
+index 0000000..af55916
+--- /dev/null
++++ b/examples/demo-agent-loop/pl/changes/agent-loop-demo/.state.md
+@@ -0,0 +1,24 @@
++<!-- pl-pipeline state | 最后更新: 2026-05-04 00:00 -->
++
++- change_id: agent-loop-demo
++- change_name: Agent Loop Demo
++- stage: IMPLEMENT
++- gate_status: PENDING
++- next_gate: D
++- complexity: S
++- business_domain: demo
++
++## Task Progress
++
++| ID | Name | Owner | Depends | Estimate | Status | Notes |
++|---|---|---|---|---|---|---|
++| T01 | Define unittest contract | codex | - | 0.1d | DONE | `tests/test_calc.py` |
++| T02 | Run bad implementation command | pl-agent | T01 | 0.1d | TODO | `write_bad_impl.sh` |
++| T03 | Repair from gate context | pl-agent | T02 | 0.1d | TODO | `repair_impl.sh` |
++| T04 | Verify gate D passes | pl-runner | T03 | 0.1d | TODO | gate D |
++
++## Open Questions
++
++| ID | Question | Status | Impact | Resolution |
++|---|---|---|---|---|
++| Q01 | 是否依赖第三方测试框架 | RESOLVED | LOW | 不依赖，只用 Python stdlib unittest |
+diff --git a/examples/demo-agent-loop/pl/changes/agent-loop-demo/plan.md b/examples/demo-agent-loop/pl/changes/agent-loop-demo/plan.md
+new file mode 100644
+index 0000000..e8fa3e0
+--- /dev/null
++++ b/examples/demo-agent-loop/pl/changes/agent-loop-demo/plan.md
+@@ -0,0 +1,8 @@
++# PLAN: Agent Loop Demo
++
++1. 写入错误实现。
++2. 运行 gate D。
++3. 收集 gate 失败输出。
++4. 生成 repair context。
++5. 执行 repair 命令。
++6. 重跑 gate D。
+diff --git a/examples/demo-agent-loop/pl/changes/agent-loop-demo/spec.md b/examples/demo-agent-loop/pl/changes/agent-loop-demo/spec.md
+new file mode 100644
+index 0000000..7d28870
+--- /dev/null
++++ b/examples/demo-agent-loop/pl/changes/agent-loop-demo/spec.md
+@@ -0,0 +1,11 @@
++# SPEC: Agent Loop Demo
++
++实现一个 `add(a, b)` 函数，并通过 Python `unittest`。
++
++这个 demo 的真实目标不是计算器本身，而是证明：
++
++- agent/executor 可以先产出错误实现；
++- gate 能捕获失败；
++- PL-Pipeline 能生成 repair context；
++- repair 命令能消费上下文并修正代码；
++- 最终 gate 通过，trace 留痕。
+diff --git a/examples/demo-agent-loop/pl/changes/agent-loop-demo/taskdag.md b/examples/demo-agent-loop/pl/changes/agent-loop-demo/taskdag.md
+new file mode 100644
+index 0000000..6321c98
+--- /dev/null
++++ b/examples/demo-agent-loop/pl/changes/agent-loop-demo/taskdag.md
+@@ -0,0 +1,8 @@
++# TASKDAG: Agent Loop Demo
++
++| ID | Task | Status |
++|---|---|---|
++| T01 | Define unittest contract | DONE |
++| T02 | Run bad implementation command | TODO |
++| T03 | Repair from gate context | TODO |
++| T04 | Verify gate D passes | TODO |
+diff --git a/examples/demo-agent-loop/pl/config.yaml b/examples/demo-agent-loop/pl/config.yaml
+new file mode 100644
+index 0000000..2d275fa
+--- /dev/null
++++ b/examples/demo-agent-loop/pl/config.yaml
+@@ -0,0 +1,17 @@
++version: pl@v1.1
++namespace: demo-agent-loop
++requires:
++  pl_version: ">=1.12"
++checks:
++  - id: unit_tests
++    label: "Python unit tests"
++    cmd: "python3 -m unittest discover -s tests"
++    cwd: "."
++    required: true
++gates:
++  D:
++    from: IMPLEMENT
++    to: VERIFY
++    eval: all_checks.pass
++    on_failure: block
++    checks: [unit_tests]
+diff --git a/examples/demo-agent-loop/run-demo.sh b/examples/demo-agent-loop/run-demo.sh
+new file mode 100755
+index 0000000..21e54e5
+--- /dev/null
++++ b/examples/demo-agent-loop/run-demo.sh
+@@ -0,0 +1,27 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++REPO_ROOT="$(cd "$HERE/../.." && pwd)"
++
++export PL_HOME="$REPO_ROOT"
++export PL_PROJECT="$HERE"
++
++"$REPO_ROOT/bin/pl" agent run \
++  --change agent-loop-demo \
++  --task T03 \
++  --executor local \
++  --cmd "./scripts/write_bad_impl.sh" \
++  --verify-gate D \
++  --repair-cmd "./scripts/repair_impl.sh" \
++  --max-retries 1
++
++(cd "$HERE" && python3 -m unittest discover -s tests)
++
++TRACE_FILE="$HERE/pipeline-output/trace/agent-loop-demo.events.jsonl"
++grep -q '"event":"agent.run.start"' "$TRACE_FILE"
++grep -q '"event":"agent.repair.context"' "$TRACE_FILE"
++grep -q '"event":"agent.run.complete"' "$TRACE_FILE"
++
++printf '\nDemo OK\n'
++printf 'Trace: %s\n' "$TRACE_FILE"
+diff --git a/examples/demo-agent-loop/scripts/repair_impl.sh b/examples/demo-agent-loop/scripts/repair_impl.sh
+new file mode 100755
+index 0000000..59603a4
+--- /dev/null
++++ b/examples/demo-agent-loop/scripts/repair_impl.sh
+@@ -0,0 +1,14 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++if [[ -z "${PL_REPAIR_CONTEXT:-}" || ! -f "$PL_REPAIR_CONTEXT" ]]; then
++  echo "missing PL_REPAIR_CONTEXT" >&2
++  exit 1
++fi
++
++grep -E "Gate output|FAILED|AssertionError" "$PL_REPAIR_CONTEXT" >/dev/null
++
++cat > app/calc.py <<'PY'
++def add(a, b):
++    return a + b
++PY
+diff --git a/examples/demo-agent-loop/scripts/write_bad_impl.sh b/examples/demo-agent-loop/scripts/write_bad_impl.sh
+new file mode 100755
+index 0000000..99ba7db
+--- /dev/null
++++ b/examples/demo-agent-loop/scripts/write_bad_impl.sh
+@@ -0,0 +1,7 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++cat > app/calc.py <<'PY'
++def add(a, b):
++    return a - b
++PY
+diff --git a/examples/demo-agent-loop/tests/test_calc.py b/examples/demo-agent-loop/tests/test_calc.py
+new file mode 100644
+index 0000000..f5d9149
+--- /dev/null
++++ b/examples/demo-agent-loop/tests/test_calc.py
+@@ -0,0 +1,13 @@
++import unittest
++
++from app.calc import add
++
++
++class CalcTest(unittest.TestCase):
++    def test_adds_two_numbers(self):
++        self.assertEqual(add(2, 3), 5)
++        self.assertEqual(add(-1, 1), 0)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/pl/changes/agent-execution-loop-mvp/.state.md b/pl/changes/agent-execution-loop-mvp/.state.md
+new file mode 100644
+index 0000000..333ccc9
+--- /dev/null
++++ b/pl/changes/agent-execution-loop-mvp/.state.md
+@@ -0,0 +1,26 @@
++<!-- pl-pipeline state | 最后更新: 2026-05-04 00:00 -->
++
++- change_id: agent-execution-loop-mvp
++- change_name: Agent Execution Loop MVP
++- stage: VERIFY
++- gate_status: PASSED
++- next_gate: G
++- complexity: M
++- business_domain: pl-core
++
++## Task Progress
++
++| ID | Name | Owner | Depends | Estimate | Status | Notes |
++|---|---|---|---|---|---|---|
++| T01 | Write failing CLI test | codex | - | 0.2d | DONE | Red test confirmed missing command |
++| T02 | Implement agent loop runner | codex | T01 | 0.4d | DONE | Local executor MVP |
++| T03 | Wire dispatcher route | codex | T02 | 0.1d | DONE | `pl agent run` |
++| T04 | Add demo project | codex | T02 | 0.3d | DONE | Python unittest demo |
++| T05 | Update docs | codex | T03 | 0.2d | DONE | README / CLI / Roadmap |
++| T06 | Verify and commit | codex | T04,T05 | 0.3d | DONE | Full local commands passed |
++
++## Open Questions
++
++| ID | Question | Status | Impact | Resolution |
++|---|---|---|---|---|
++| Q01 | 是否接外部 coding agent API | RESOLVED | MEDIUM | 本次不接，先做本地 executor 控制面 |
+diff --git a/pl/changes/agent-execution-loop-mvp/plan.md b/pl/changes/agent-execution-loop-mvp/plan.md
+new file mode 100644
+index 0000000..4cac254
+--- /dev/null
++++ b/pl/changes/agent-execution-loop-mvp/plan.md
+@@ -0,0 +1,43 @@
++# PLAN: Agent Execution Loop MVP
++
++## PL Pipeline Mapping
++
++| Stage | Output |
++|---|---|
++| SPEC | 明确项目方向：控制平面补执行闭环，而不是重做 coding agent |
++| PLAN | 将执行闭环切成 CLI、trace、demo、docs、tests |
++| IMPLEMENT | 新增 `scripts/pl-agent-run.sh` 和 `bin/pl agent run` 路由 |
++| VERIFY | 新增 CLI 测试和 demo 自测，复用 `pl-runner.sh` gate |
++| OBSERVE | 统一写入 `pipeline-output/trace/<change>.events.jsonl` |
++| ARCHIVE | 文档化下一步外部 executor/OTel/gate repair 演进方向 |
++
++## Design
++
++`pl agent run` 是编排器，不是 gate runner：
++
++1. 在宿主项目根目录执行 `--cmd`。
++2. 如配置 `--verify-gate`，调用 `pl-runner.sh`。
++3. gate 失败时，把命令输出和 gate 输出写成 repair context。
++4. 设置 `PL_REPAIR_CONTEXT` 等环境变量，执行 `--repair-cmd`。
++5. 重试 gate，直到通过或超过 `--max-retries`。
++
++## Trace Events
++
++- `agent.run.start`
++- `agent.run.result`
++- `agent.gate.start`
++- `agent.gate.result`
++- `agent.repair.context`
++- `agent.repair.result`
++- `agent.run.complete`
++
++## Demo Strategy
++
++`examples/demo-agent-loop` 使用 Python `unittest`：
++
++- `write_bad_impl.sh` 写入错误的 `add(a, b) = a - b`。
++- gate D 执行单测并失败。
++- `repair_impl.sh` 读取 `PL_REPAIR_CONTEXT`，写回 `a + b`。
++- gate D 再次执行并通过。
++
++这样可以证明 PL-Pipeline 能把一次失败的 AI 代码尝试变成可观测、可修复、可验证的闭环。
+diff --git a/pl/changes/agent-execution-loop-mvp/spec.md b/pl/changes/agent-execution-loop-mvp/spec.md
+new file mode 100644
+index 0000000..04de530
+--- /dev/null
++++ b/pl/changes/agent-execution-loop-mvp/spec.md
+@@ -0,0 +1,44 @@
++# SPEC: Agent Execution Loop MVP
++
++## Intent
++
++把 pl-pipeline 从“AI 编码流程治理文档/门禁工具”推进到一个最小可执行的 **Agentic Coding Control Plane**：
++
++- 不自研完整 coding agent。
++- 不替代 Codex / Claude Code / Cursor 等执行器。
++- 先补上控制平面最薄但最关键的一环：`任务命令 -> gate 验证 -> 失败上下文 -> repair retry -> trace 归档`。
++
++## Problem
++
++现有项目已经具备 6 阶段、gate、trace、CDC、adapter 和 IDE sync，但“AI 写代码”的实际执行环节仍在工具外部。
++
++这会造成三个断点：
++
++- gate 失败后，失败信息没有被整理成下一轮 agent 可消费的修复上下文。
++- trace 能记录脚本/gate，但不能表达一次 agent 执行尝试、repair 尝试和最终结果。
++- demo 侧缺少一个小而完整的可验证闭环，无法证明 PL-Pipeline 能约束真实代码产出。
++
++## Scope
++
++本次只做 MVP：
++
++- 新增 `pl agent run`。
++- 使用本地 shell executor 作为最小执行器。
++- 调用现有 `pl run --gate <gate>` 做机器验证。
++- gate 失败时生成 Markdown repair context，并在 `--max-retries` 预算内执行 `--repair-cmd`。
++- 将 agent/gate/repair 事件写入同一条 trace。
++- 新增一个 Python stdlib demo，无 npm/pip 依赖。
++
++## Non-Goals
++
++- 不接入外部 Codex / Claude / Cursor API。
++- 不实现模型选择、token 统计、沙箱权限策略。
++- 不重写 trace 到 OpenTelemetry。
++- 不替代已有 `pl-runner.sh` 的 gate 判定职责。
++
++## Success Criteria
++
++- `bash tests/cli/test-pl-agent.sh` 通过。
++- `bash examples/demo-agent-loop/run-demo.sh` 能从错误实现修复到单测通过。
++- trace 文件中存在 `agent.run.start`、`agent.repair.context`、`agent.run.complete`。
++- README / CLI reference 能说明该能力的边界。
+diff --git a/pl/changes/agent-execution-loop-mvp/taskdag.md b/pl/changes/agent-execution-loop-mvp/taskdag.md
+new file mode 100644
+index 0000000..4b14a24
+--- /dev/null
++++ b/pl/changes/agent-execution-loop-mvp/taskdag.md
+@@ -0,0 +1,14 @@
++# TASKDAG: Agent Execution Loop MVP
++
++| ID | Task | Files | Depends | Status |
++|---|---|---|---|---|
++| T01 | 写失败测试锁定 agent loop 行为 | `tests/cli/test-pl-agent.sh` | - | DONE |
++| T02 | 新增 agent loop CLI 执行器 | `scripts/pl-agent-run.sh` | T01 | DONE |
++| T03 | 接入 `bin/pl agent run` 路由 | `bin/pl` | T02 | DONE |
++| T04 | 新增可跑 demo 项目 | `examples/demo-agent-loop/` | T02 | DONE |
++| T05 | 更新 README / CLI / Roadmap | `README.md`, `docs/cli-reference.md`, `ROADMAP.md` | T03 | DONE |
++| T06 | 跑完整验证并提交 | tests + demo + git | T04,T05 | DONE |
++
++## Ownership
++
++本次变更只触碰 CLI 控制面、demo、文档和测试，不改 adapter 协议、不改 gate runner 的判定逻辑。
+diff --git a/pl/changes/agent-loop-hardening/.state.md b/pl/changes/agent-loop-hardening/.state.md
+new file mode 100644
+index 0000000..1c6648a
+--- /dev/null
++++ b/pl/changes/agent-loop-hardening/.state.md
+@@ -0,0 +1,26 @@
++<!-- pl-pipeline state | 最后更新: 2026-05-05 00:00 -->
++
++- change_id: agent-loop-hardening
++- change_name: Agent Loop Hardening
++- stage: VERIFY
++- gate_status: PASSED
++- next_gate: G
++- complexity: M
++- business_domain: pl-core
++
++## Task Progress
++
++| ID | Name | Owner | Depends | Estimate | Status | Notes |
++|---|---|---|---|---|---|---|
++| T01 | Write policy repair red test | codex | - | 0.1d | DONE | Config policy initially failed |
++| T02 | Implement config repair policy | codex | T01 | 0.3d | DONE | `agent.repair.strategy` |
++| T03 | Write CRUD demo red test | codex | T02 | 0.1d | DONE | Missing demo initially failed |
++| T04 | Add CRUD service demo | codex | T03 | 0.3d | DONE | Real CRUD unit tests |
++| T05 | Document agent loop policy | codex | T02,T04 | 0.2d | DONE | `docs/agent-execution-loop.md` |
++| T06 | Verify and commit | codex | T05 | 0.3d | DONE | Full local commands passed |
++
++## Open Questions
++
++| ID | Question | Status | Impact | Resolution |
++|---|---|---|---|---|
++| Q01 | 是否把 failure classification 做成完整 schema | RESOLVED | MEDIUM | 本轮只做保守内置分类，后续进入 agent trace model |
+diff --git a/pl/changes/agent-loop-hardening/plan.md b/pl/changes/agent-loop-hardening/plan.md
+new file mode 100644
+index 0000000..5b42a3a
+--- /dev/null
++++ b/pl/changes/agent-loop-hardening/plan.md
+@@ -0,0 +1,50 @@
++# PLAN: Agent Loop Hardening
++
++## PL Pipeline Mapping
++
++| Stage | Output |
++|---|---|
++| SPEC | 明确 hardening 边界：repair policy + failure classification + CRUD demo |
++| PLAN | 以 TDD 增量推进 policy 与 demo |
++| IMPLEMENT | 更新 `pl-agent-run.sh`，新增 demo 和文档 |
++| VERIFY | agent CLI 测试、demo 自测、shell 语法检查、核心回归 |
++| OBSERVE | trace 中出现 `failure_kind` / `repair_source` |
++| ARCHIVE | 下一步进入外部 executor adapter 和 agent trace model |
++
++## Design
++
++`pl/config.yaml` 新增可选配置：
++
++```yaml
++agent:
++  repair:
++    max_retries: 1
++    strategy:
++      test_failure: "./scripts/repair_test_failure.sh"
++      default: "./scripts/repair_default.sh"
++```
++
++优先级：
++
++1. CLI `--repair-cmd` 显式指定时优先。
++2. 否则读取 `strategy.<failure_kind>`。
++3. 否则读取 `strategy.default`。
++4. 都没有则停止并返回 blocked。
++
++## Failure Classification
++
++先用保守文本分类：
++
++- 语法/解析错误 -> `syntax_error`
++- import/file 缺失 -> `missing_file`
++- unittest/pytest/assertion 失败 -> `test_failure`
++- timeout 关键词 -> `timeout`
++- contract/schema/pact 关键词 -> `contract_violation`
++- 其他 -> `unknown`
++
++分类结果写入：
++
++- `agent.gate.result`
++- `agent.repair.context`
++- repair context Markdown
++- `agent.run.complete`
+diff --git a/pl/changes/agent-loop-hardening/spec.md b/pl/changes/agent-loop-hardening/spec.md
+new file mode 100644
+index 0000000..2c33629
+--- /dev/null
++++ b/pl/changes/agent-loop-hardening/spec.md
+@@ -0,0 +1,45 @@
++# SPEC: Agent Loop Hardening
++
++## Intent
++
++把上一阶段的 `Agent Execution Loop MVP` 从“命令 + repair-cmd demo”打磨成更接近真实项目控制面的闭环：
++
++- gate 失败后能给出粗粒度失败类型。
++- repair 命令可以从 `pl/config.yaml` 的策略表自动选择。
++- demo 从计算器提升到业务 CRUD 服务。
++
++## Problem
++
++MVP 已经证明 `cmd -> gate -> repair context -> retry -> trace` 能跑通，但仍有两个缺口：
++
++- 修复动作必须在 CLI 上手写 `--repair-cmd`，不适合稳定项目复用。
++- trace/context 没有失败分类，后续无法统计“哪类失败最多”“哪类 repair 最有效”。
++
++## Scope
++
++本次增强：
++
++- 支持 `agent.repair.max_retries`。
++- 支持 `agent.repair.strategy.<failure_kind>`。
++- 支持内置失败分类：
++  - `test_failure`
++  - `syntax_error`
++  - `missing_file`
++  - `timeout`
++  - `contract_violation`
++  - `unknown`
++- 将 `failure_kind` / `repair_source` 写入 trace 和 repair context。
++- 新增 `examples/demo-agent-crud-service`。
++
++## Non-Goals
++
++- 不接外部 Codex / Claude / Cursor。
++- 不做复杂 LLM prompt 生成。
++- 不引入第三方 Python / Node 依赖。
++- 不把失败分类做成机器学习或完整错误本体。
++
++## Success Criteria
++
++- `bash tests/cli/test-pl-agent.sh` 通过。
++- `bash examples/demo-agent-crud-service/run-demo.sh` 能跑出 `policy:test_failure`。
++- 文档解释 `agent.repair` 配置格式和 CLI override 关系。
+diff --git a/pl/changes/agent-loop-hardening/taskdag.md b/pl/changes/agent-loop-hardening/taskdag.md
+new file mode 100644
+index 0000000..63760ef
+--- /dev/null
++++ b/pl/changes/agent-loop-hardening/taskdag.md
+@@ -0,0 +1,10 @@
++# TASKDAG: Agent Loop Hardening
++
++| ID | Task | Files | Depends | Status |
++|---|---|---|---|---|
++| T01 | 写 policy repair 红灯测试 | `tests/cli/test-pl-agent.sh` | - | DONE |
++| T02 | 实现 config repair policy | `scripts/pl-agent-run.sh` | T01 | DONE |
++| T03 | 写 CRUD demo 红灯测试 | `tests/cli/test-pl-agent.sh` | T02 | DONE |
++| T04 | 新增 CRUD service demo | `examples/demo-agent-crud-service/` | T03 | DONE |
++| T05 | 补 agent loop 文档 | `docs/agent-execution-loop.md` | T02,T04 | DONE |
++| T06 | 跑完整验证并提交 | tests + demo + git | T05 | DONE |
+diff --git a/pl/changes/agent-trace-model/.state.md b/pl/changes/agent-trace-model/.state.md
+new file mode 100644
+index 0000000..55b0c94
+--- /dev/null
++++ b/pl/changes/agent-trace-model/.state.md
+@@ -0,0 +1,25 @@
++<!-- pl-pipeline state | 最后更新: 2026-05-05 00:00 -->
++
++- change_id: agent-trace-model
++- change_name: Agent Trace Model
++- stage: VERIFY
++- gate_status: PASSED
++- next_gate: G
++- complexity: M
++- business_domain: pl-core
++
++## Task Progress
++
++| ID | Name | Owner | Depends | Estimate | Status | Notes |
++|---|---|---|---|---|---|---|
++| T01 | Write trace metadata red test | codex | - | 0.1d | DONE | Unknown option red |
++| T02 | Add metadata CLI args | codex | T01 | 0.2d | DONE | provider/model/artifacts/tools/tokens |
++| T03 | Merge metadata into trace | codex | T02 | 0.3d | DONE | agent events + JSON output |
++| T04 | Document trace model | codex | T03 | 0.2d | DONE | `docs/agent-execution-loop.md` |
++| T05 | Verify and commit | codex | T04 | 0.3d | DONE | Full local commands passed |
++
++## Open Questions
++
++| ID | Question | Status | Impact | Resolution |
++|---|---|---|---|---|
++| Q01 | 是否此轮切到 OTel schema | RESOLVED | HIGH | 不切；本轮先加兼容字段，后续单独迁移 |
+diff --git a/pl/changes/agent-trace-model/plan.md b/pl/changes/agent-trace-model/plan.md
+new file mode 100644
+index 0000000..c23e3ba
+--- /dev/null
++++ b/pl/changes/agent-trace-model/plan.md
+@@ -0,0 +1,41 @@
++# PLAN: Agent Trace Model
++
++## PL Pipeline Mapping
++
++| Stage | Output |
++|---|---|
++| SPEC | 明确 agent trace metadata 字段 |
++| PLAN | 先 CLI 参数，后 trace 写入，最后文档 |
++| IMPLEMENT | 更新 `pl-agent-run.sh` 和测试 |
++| VERIFY | agent tests + demos + CLI regression |
++| OBSERVE | 新 trace 字段出现在 JSONL |
++| ARCHIVE | 下一阶段接外部 executor adapter |
++
++## Design
++
++新增的字段统一构造成 `AGENT_TRACE_META`，再合并到 agent 相关事件里：
++
++```json
++{
++  "provider": "openai",
++  "model": "codex-local-test",
++  "prompt_path": "prompts/implement.md",
++  "input_artifacts": ["specs/spec.md"],
++  "output_artifacts": ["app/result.txt"],
++  "tool_calls": ["shell"],
++  "tokens": {
++    "input": 123,
++    "output": 45,
++    "total": 168
++  }
++}
++```
++
++字段为空时不写入，保持现有 trace 简洁。
++
++## Compatibility
++
++- 不改变现有参数语义。
++- 不要求 provider/model 必填。
++- 不要求 token 采集真实准确，允许 executor adapter 后续填充。
++- 旧 `pl agent run --repair-cmd ...` 和 `agent.repair.strategy` 继续可用。
+diff --git a/pl/changes/agent-trace-model/spec.md b/pl/changes/agent-trace-model/spec.md
+new file mode 100644
+index 0000000..b52dd4a
+--- /dev/null
++++ b/pl/changes/agent-trace-model/spec.md
+@@ -0,0 +1,61 @@
++# SPEC: Agent Trace Model
++
++## Intent
++
++在 `pl agent run` 已具备执行、验证、repair policy 的基础上，补齐 agent 观测模型，让后续 Codex / Claude Code / Cursor executor 可以复用同一套 trace 字段。
++
++## Problem
++
++当前 trace 已能表达：
++
++- run id
++- executor
++- task id
++- attempt
++- failure_kind
++- repair_source
++
++但外部 agent 接入还需要回答：
++
++- 谁提供了 agent？provider 是什么？
++- 使用了哪个模型？
++- prompt / spec / taskdag / 产物路径是什么？
++- 这次执行调用了哪些工具？
++- token 用量是多少？
++
++如果这些字段不标准化，后续每接一个 executor 都会产生一套私有 trace。
++
++## Scope
++
++本次新增 `pl agent run` 可选参数：
++
++- `--provider <id>`
++- `--model <id>`
++- `--prompt-path <path>`
++- `--input-artifact <path>`，可重复
++- `--output-artifact <path>`，可重复
++- `--tool-call <name>`，可重复
++- `--tokens-input <n>`
++- `--tokens-output <n>`
++
++并将这些字段写入：
++
++- `task.start`
++- `agent.run.start`
++- `agent.run.result`
++- `agent.repair.result`
++- `agent.run.complete`
++- `--json` 输出
++
++## Non-Goals
++
++- 不改写全局 trace schema 到 OpenTelemetry。
++- 不实现真实 token 统计采集。
++- 不接外部 agent API。
++- 不实现 trace report UI。
++
++## Success Criteria
++
++- `bash tests/cli/test-pl-agent.sh` 通过。
++- trace 中能看到 `provider`、`model`、`prompt_path`、`input_artifacts`、`output_artifacts`、`tool_calls`、`tokens`。
++- 旧 demo 和 policy repair 不回归。
+diff --git a/pl/changes/agent-trace-model/taskdag.md b/pl/changes/agent-trace-model/taskdag.md
+new file mode 100644
+index 0000000..a405be8
+--- /dev/null
++++ b/pl/changes/agent-trace-model/taskdag.md
+@@ -0,0 +1,9 @@
++# TASKDAG: Agent Trace Model
++
++| ID | Task | Files | Depends | Status |
++|---|---|---|---|---|
++| T01 | 写 agent trace metadata 红灯测试 | `tests/cli/test-pl-agent.sh` | - | DONE |
++| T02 | 新增 metadata CLI 参数 | `scripts/pl-agent-run.sh` | T01 | DONE |
++| T03 | 将 metadata 合入 trace / JSON 输出 | `scripts/pl-agent-run.sh` | T02 | DONE |
++| T04 | 补文档 | `docs/agent-execution-loop.md` | T03 | DONE |
++| T05 | 跑完整验证并提交 | tests + demo + git | T04 | DONE |
+diff --git a/pl/changes/codex-cli-executor/.state.md b/pl/changes/codex-cli-executor/.state.md
+new file mode 100644
+index 0000000..4c9c382
+--- /dev/null
++++ b/pl/changes/codex-cli-executor/.state.md
+@@ -0,0 +1,26 @@
++<!-- pl-pipeline state | 最后更新: 2026-05-06 00:00 -->
++
++- change_id: codex-cli-executor
++- change_name: Codex CLI Executor
++- stage: VERIFY
++- gate_status: PASSED
++- next_gate: G
++- complexity: M
++- business_domain: pl-core
++
++## Task Progress
++
++| ID | Name | Owner | Depends | Estimate | Status | Notes |
++|---|---|---|---|---|---|---|
++| T01 | Write codex-cli executor red test | codex | - | 0.1d | DONE | Missing `--cmd` red |
++| T02 | Implement codex-cli command builder | codex | T01 | 0.3d | DONE | `codex exec ... - < prompt` |
++| T03 | Write fake Codex demo red test | codex | T02 | 0.1d | DONE | Missing demo red |
++| T04 | Add fake Codex demo | codex | T03 | 0.2d | DONE | `examples/demo-agent-codex-cli` |
++| T05 | Update docs and ignores | codex | T04 | 0.2d | DONE | README / docs / .gitignore |
++| T06 | Verify and commit | codex | T05 | 0.3d | DONE | Full local commands |
++
++## Open Questions
++
++| ID | Question | Status | Impact | Resolution |
++|---|---|---|---|---|
++| Q01 | 是否在 CI 里调用真实 Codex | RESOLVED | HIGH | 不调用；fake binary 验证控制面协议 |
+diff --git a/pl/changes/codex-cli-executor/plan.md b/pl/changes/codex-cli-executor/plan.md
+new file mode 100644
+index 0000000..655c3f4
+--- /dev/null
++++ b/pl/changes/codex-cli-executor/plan.md
+@@ -0,0 +1,44 @@
++# PLAN: Codex CLI Executor
++
++## PL Pipeline Mapping
++
++| Stage | Output |
++|---|---|
++| SPEC | 明确 Codex CLI executor 的命令协议 |
++| PLAN | 先 fake Codex 测试，再实现 executor，再补 demo |
++| IMPLEMENT | 更新 `pl-agent-run.sh` 和 demo |
++| VERIFY | agent tests + fake demo + existing regressions |
++| OBSERVE | trace 中出现 `codex-cli` / `codex.exec` |
++| ARCHIVE | 下一步可接真实 Codex smoke 或 Claude executor |
++
++## Design
++
++`codex-cli` 是 executor adapter，不是内置 agent：
++
++```text
++PL prompt/artifacts -> pl agent run -> codex exec -> repo patch/output -> gate -> trace
++```
++
++当前实现使用 prompt 文件作为 stdin：
++
++```bash
++codex exec \
++  --cd "$PL_PROJECT" \
++  --sandbox workspace-write \
++  --ask-for-approval never \
++  -m "$MODEL" \
++  - < "$PL_PROJECT/$PROMPT_PATH"
++```
++
++`--cmd` 仍可覆盖，用于调试或自定义 Codex 命令。
++
++## Verification Strategy
++
++不在测试中调用真实 Codex CLI，而是：
++
++- 在临时 PATH 中放 fake `codex`。
++- fake binary 记录 argv 和 stdin。
++- fake binary 写出一个产物文件。
++- 测试检查 argv / stdin / output artifact / trace。
++
++这样 CI 不需要 Codex 登录态，也不需要网络。
+diff --git a/pl/changes/codex-cli-executor/spec.md b/pl/changes/codex-cli-executor/spec.md
+new file mode 100644
+index 0000000..1fea2fb
+--- /dev/null
++++ b/pl/changes/codex-cli-executor/spec.md
+@@ -0,0 +1,53 @@
++# SPEC: Codex CLI Executor
++
++## Intent
++
++把 `pl agent run` 从本地 shell executor 推进到第一个外部 coding agent executor：`codex-cli`。
++
++本次目标不是依赖真实登录态跑在线 Codex，而是先把控制面协议打通：
++
++- `pl agent run --executor codex-cli`
++- 从 `--prompt-path` 读取 prompt
++- 构造 `codex exec ... - < prompt`
++- 写入统一 agent trace
++- 保持 fake Codex demo 可离线验证
++
++## Problem
++
++上一阶段已经补齐 agent trace metadata，但 executor 仍然本质上是 `bash -c --cmd`。如果不先抽象出 Codex CLI executor，后续接 Claude Code / Cursor 会继续散落成临时脚本。
++
++## Scope
++
++新增：
++
++- `--executor codex-cli`
++- `--codex-bin <path>`，默认 `codex`，也可用 `CODEX_BIN` 环境变量
++- `--codex-sandbox <mode>`，默认 `workspace-write`
++- `--codex-approval <policy>`，默认 `never`
++- `--codex-arg <arg>`，可重复
++
++行为：
++
++- `codex-cli` executor 在未传 `--cmd` 时要求 `--prompt-path`。
++- 默认构造：
++
++```bash
++codex exec --cd "$PL_PROJECT" --sandbox workspace-write --ask-for-approval never - < "$prompt"
++```
++
++- 如果传了 `--model`，追加 `-m <model>`。
++- 自动补 trace metadata：`provider=openai`、`tool_calls=["codex.exec"]`。
++
++## Non-Goals
++
++- 不自动登录 Codex。
++- 不调用真实网络服务作为 CI 前提。
++- 不解析 Codex JSONL 事件来自动统计 token。
++- 不启用 `--dangerously-bypass-approvals-and-sandbox`。
++
++## Success Criteria
++
++- `bash tests/cli/test-pl-agent.sh` 通过。
++- `bash examples/demo-agent-codex-cli/run-demo.sh` 通过。
++- demo 能证明 prompt 通过 stdin 传给 `codex exec`。
++- trace 中能看到 `executor=codex-cli`、`provider=openai`、`tool_calls=["codex.exec"]`。
+diff --git a/pl/changes/codex-cli-executor/taskdag.md b/pl/changes/codex-cli-executor/taskdag.md
+new file mode 100644
+index 0000000..cf2c375
+--- /dev/null
++++ b/pl/changes/codex-cli-executor/taskdag.md
+@@ -0,0 +1,10 @@
++# TASKDAG: Codex CLI Executor
++
++| ID | Task | Files | Depends | Status |
++|---|---|---|---|---|
++| T01 | 写 codex-cli executor 红灯测试 | `tests/cli/test-pl-agent.sh` | - | DONE |
++| T02 | 实现 codex-cli 命令构造 | `scripts/pl-agent-run.sh` | T01 | DONE |
++| T03 | 写 fake Codex demo 红灯测试 | `tests/cli/test-pl-agent.sh` | T02 | DONE |
++| T04 | 新增 fake Codex demo | `examples/demo-agent-codex-cli/` | T03 | DONE |
++| T05 | 更新文档与忽略规则 | docs + `.gitignore` | T04 | DONE |
++| T06 | 跑完整验证并提交 | tests + demo + git | T05 | DONE |
+diff --git a/scripts/pl-agent-run.sh b/scripts/pl-agent-run.sh
+new file mode 100755
+index 0000000..3379b1a
+--- /dev/null
++++ b/scripts/pl-agent-run.sh
+@@ -0,0 +1,644 @@
++#!/usr/bin/env bash
++# =============================================================================
++# pl-agent-run.sh — Agent Execution Loop MVP
++# =============================================================================
++#
++# 用法:
++#   pl-agent-run.sh --change <id> --cmd <command> [--task <id>]
++#   pl-agent-run.sh --change <id> --executor codex-cli --prompt-path <file>
++#   pl-agent-run.sh --change <id> --cmd <command> --verify-gate D \
++#     --repair-cmd <command> --max-retries 1 [--json]
++#   # 或在 pl/config.yaml 配置 agent.repair.strategy.<failure_kind>
++#   # 可选 agent trace metadata: --provider / --model / --prompt-path /
++#   #   --input-artifact / --output-artifact / --tool-call / --tokens-input / --tokens-output
++#
++# 职责：
++#   1. 执行一个 agent/executor 命令
++#   2. 可选调用 pl-runner gate 验证
++#   3. gate 失败时生成 repair context，并在预算内执行 repair 命令
++#   4. 将 agent/gate/repair 全部写入同一条 trace
++#
++# 退出码:
++#   0 = 最终命令或 gate 通过
++#   1 = 命令或 gate 阻塞，且无法修复
++#   2 = 参数错误
++# =============================================================================
++
++# shellcheck source=./_env.sh
++source "$(dirname "${BASH_SOURCE[0]}")/_env.sh"
++# shellcheck source=./trace-emit.sh
++source "$(dirname "${BASH_SOURCE[0]}")/trace-emit.sh"
++set +e
++set -uo pipefail
++
++if [[ -t 1 ]]; then
++  RED=$'\033[0;31m'; GREEN=$'\033[0;32m'; YELLOW=$'\033[0;33m'
++  BLUE=$'\033[0;34m'; BOLD=$'\033[1m'; DIM=$'\033[2m'; NC=$'\033[0m'
++else
++  RED=; GREEN=; YELLOW=; BLUE=; BOLD=; DIM=; NC=
++fi
++
++log_info()  { echo "${BLUE}ℹ${NC} $*"; }
++log_ok()    { echo "${GREEN}✅${NC} $*"; }
++log_warn()  { echo "${YELLOW}⚠${NC}  $*"; }
++log_error() { echo "${RED}✗${NC}  $*" >&2; }
++
++CHANGE=""
++TASK_ID="manual"
++EXECUTOR="local"
++PROVIDER=""
++MODEL=""
++PROMPT_PATH=""
++INPUT_ARTIFACTS=()
++OUTPUT_ARTIFACTS=()
++TOOL_CALLS=()
++TOKENS_INPUT=""
++TOKENS_OUTPUT=""
++CODEX_BIN="${CODEX_BIN:-codex}"
++CODEX_SANDBOX="workspace-write"
++CODEX_APPROVAL="never"
++CODEX_ARGS=()
++CMD=""
++VERIFY_GATE=""
++REPAIR_CMD=""
++REPAIR_CMD_SOURCE=""
++MAX_RETRIES=0
++MAX_RETRIES_SET=false
++JSON_OUT=false
++POLICY_MAX_RETRIES=""
++POLICY_STRATEGIES=""
++LAST_FAILURE_KIND=""
++SELECTED_REPAIR_SOURCE=""
++SELECTED_REPAIR_CMD=""
++
++usage() {
++  sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
++  exit "${1:-2}"
++}
++
++require_value() {
++  local opt="$1"
++  local val="${2:-}"
++  [[ -n "$val" ]] || { log_error "Missing value for $opt"; usage; }
++}
++
++while [[ $# -gt 0 ]]; do
++  case "$1" in
++    --change)      require_value "$1" "${2:-}"; CHANGE="$2"; shift 2 ;;
++    --task)        require_value "$1" "${2:-}"; TASK_ID="$2"; shift 2 ;;
++    --executor)    require_value "$1" "${2:-}"; EXECUTOR="$2"; shift 2 ;;
++    --provider)    require_value "$1" "${2:-}"; PROVIDER="$2"; shift 2 ;;
++    --model)       require_value "$1" "${2:-}"; MODEL="$2"; shift 2 ;;
++    --prompt-path) require_value "$1" "${2:-}"; PROMPT_PATH="$2"; shift 2 ;;
++    --input-artifact)  require_value "$1" "${2:-}"; INPUT_ARTIFACTS+=("$2"); shift 2 ;;
++    --output-artifact) require_value "$1" "${2:-}"; OUTPUT_ARTIFACTS+=("$2"); shift 2 ;;
++    --tool-call)   require_value "$1" "${2:-}"; TOOL_CALLS+=("$2"); shift 2 ;;
++    --tokens-input)  require_value "$1" "${2:-}"; TOKENS_INPUT="$2"; shift 2 ;;
++    --tokens-output) require_value "$1" "${2:-}"; TOKENS_OUTPUT="$2"; shift 2 ;;
++    --codex-bin)   require_value "$1" "${2:-}"; CODEX_BIN="$2"; shift 2 ;;
++    --codex-sandbox) require_value "$1" "${2:-}"; CODEX_SANDBOX="$2"; shift 2 ;;
++    --codex-approval) require_value "$1" "${2:-}"; CODEX_APPROVAL="$2"; shift 2 ;;
++    --codex-arg)   require_value "$1" "${2:-}"; CODEX_ARGS+=("$2"); shift 2 ;;
++    --cmd)         require_value "$1" "${2:-}"; CMD="$2"; shift 2 ;;
++    --verify-gate) require_value "$1" "${2:-}"; VERIFY_GATE="$2"; shift 2 ;;
++    --repair-cmd)  require_value "$1" "${2:-}"; REPAIR_CMD="$2"; REPAIR_CMD_SOURCE="cli"; shift 2 ;;
++    --max-retries) require_value "$1" "${2:-}"; MAX_RETRIES="$2"; MAX_RETRIES_SET=true; shift 2 ;;
++    --json)        JSON_OUT=true; shift ;;
++    -h|--help)     usage 0 ;;
++    *)             log_error "Unknown option: $1"; usage ;;
++  esac
++done
++
++[[ -n "$CHANGE" ]] || { log_error "Missing --change <id>"; usage; }
++
++shell_quote() {
++  printf '%q' "$1"
++}
++
++shell_join() {
++  local joined="" part quoted
++  for part in "$@"; do
++    quoted=$(shell_quote "$part")
++    if [[ -z "$joined" ]]; then
++      joined="$quoted"
++    else
++      joined="$joined $quoted"
++    fi
++  done
++  printf '%s' "$joined"
++}
++
++array_contains() {
++  local needle="$1" item
++  shift
++  for item in "$@"; do
++    [[ "$item" == "$needle" ]] && return 0
++  done
++  return 1
++}
++
++build_codex_cli_command() {
++  if [[ -z "$PROMPT_PATH" ]]; then
++    log_error "--executor codex-cli requires --prompt-path <file>"
++    exit 2
++  fi
++
++  local prompt_abs
++  case "$PROMPT_PATH" in
++    /*) prompt_abs="$PROMPT_PATH" ;;
++    *)  prompt_abs="$PL_PROJECT/$PROMPT_PATH" ;;
++  esac
++  if [[ ! -f "$prompt_abs" ]]; then
++    log_error "prompt file not found: $prompt_abs"
++    exit 2
++  fi
++
++  [[ -n "$PROVIDER" ]] || PROVIDER="openai"
++  if ! array_contains "codex.exec" "${TOOL_CALLS[@]:-}"; then
++    TOOL_CALLS+=("codex.exec")
++  fi
++
++  local args=("$CODEX_BIN" "exec" "--cd" "$PL_PROJECT" "--sandbox" "$CODEX_SANDBOX" "--ask-for-approval" "$CODEX_APPROVAL")
++  if [[ -n "$MODEL" ]]; then
++    args+=("-m" "$MODEL")
++  fi
++  if [[ ${#CODEX_ARGS[@]} -gt 0 ]]; then
++    args+=("${CODEX_ARGS[@]}")
++  fi
++  args+=("-")
++
++  CMD="$(shell_join "${args[@]}") < $(shell_quote "$prompt_abs")"
++}
++
++case "$EXECUTOR" in
++  local)
++    : ;;
++  codex-cli)
++    if [[ -z "$CMD" ]]; then
++      build_codex_cli_command
++    fi
++    [[ -n "$PROVIDER" ]] || PROVIDER="openai"
++    if ! array_contains "codex.exec" "${TOOL_CALLS[@]:-}"; then
++      TOOL_CALLS+=("codex.exec")
++    fi
++    ;;
++  *)
++    if [[ -z "$CMD" ]]; then
++      log_error "--executor $EXECUTOR requires --cmd <command>"
++      exit 2
++    fi
++    ;;
++esac
++
++[[ -n "$CMD" ]] || { log_error "Missing --cmd <command>"; usage; }
++if ! [[ "$MAX_RETRIES" =~ ^[0-9]+$ ]]; then
++  log_error "--max-retries must be a non-negative integer"
++  exit 2
++fi
++if [[ -n "$TOKENS_INPUT" && ! "$TOKENS_INPUT" =~ ^[0-9]+$ ]]; then
++  log_error "--tokens-input must be a non-negative integer"
++  exit 2
++fi
++if [[ -n "$TOKENS_OUTPUT" && ! "$TOKENS_OUTPUT" =~ ^[0-9]+$ ]]; then
++  log_error "--tokens-output must be a non-negative integer"
++  exit 2
++fi
++
++json_array_from_lines() {
++  jq -Rsc 'split("\n") | map(select(length > 0))'
++}
++
++agent_trace_meta_json() {
++  local input_json output_json tool_json token_in token_out token_total
++  input_json=$(printf '%s\n' "${INPUT_ARTIFACTS[@]:-}" | json_array_from_lines)
++  output_json=$(printf '%s\n' "${OUTPUT_ARTIFACTS[@]:-}" | json_array_from_lines)
++  tool_json=$(printf '%s\n' "${TOOL_CALLS[@]:-}" | json_array_from_lines)
++  token_in="${TOKENS_INPUT:-0}"
++  token_out="${TOKENS_OUTPUT:-0}"
++  token_total=$((token_in + token_out))
++
++  jq -nc \
++    --arg provider "$PROVIDER" \
++    --arg model "$MODEL" \
++    --arg prompt "$PROMPT_PATH" \
++    --argjson input_artifacts "$input_json" \
++    --argjson output_artifacts "$output_json" \
++    --argjson tool_calls "$tool_json" \
++    --argjson token_in "$token_in" \
++    --argjson token_out "$token_out" \
++    --argjson token_total "$token_total" \
++    '{}
++     + (if $provider != "" then {provider:$provider} else {} end)
++     + (if $model != "" then {model:$model} else {} end)
++     + (if $prompt != "" then {prompt_path:$prompt} else {} end)
++     + (if ($input_artifacts|length) > 0 then {input_artifacts:$input_artifacts} else {} end)
++     + (if ($output_artifacts|length) > 0 then {output_artifacts:$output_artifacts} else {} end)
++     + (if ($tool_calls|length) > 0 then {tool_calls:$tool_calls} else {} end)
++     + (if ($token_in + $token_out) > 0 then {tokens:{input:$token_in,output:$token_out,total:$token_total}} else {} end)'
++}
++
++AGENT_TRACE_META="$(agent_trace_meta_json)"
++
++merge_agent_trace_meta() {
++  local base="$1"
++  jq -cn --argjson base "$base" --argjson meta "$AGENT_TRACE_META" '$base + $meta'
++}
++
++load_repair_policy() {
++  local cfg="$PL_PROJECT/pl/config.yaml"
++  [[ -f "$cfg" ]] || return 0
++
++  local line kind key value
++  while IFS=$'\t' read -r kind key value; do
++    [[ -n "$kind" ]] || continue
++    case "$kind" in
++      max_retries)
++        POLICY_MAX_RETRIES="$key"
++        ;;
++      strategy)
++        POLICY_STRATEGIES="${POLICY_STRATEGIES}${key}"$'\t'"${value}"$'\n'
++        ;;
++    esac
++  done < <(python3 - "$cfg" <<'PY'
++import re
++import sys
++
++path = sys.argv[1]
++
++def strip_comment(line):
++    out = []
++    quote = None
++    i = 0
++    while i < len(line):
++        ch = line[i]
++        if quote:
++            out.append(ch)
++            if ch == quote:
++                quote = None
++        else:
++            if ch in ("'", '"'):
++                quote = ch
++                out.append(ch)
++            elif ch == "#":
++                break
++            else:
++                out.append(ch)
++        i += 1
++    return "".join(out).rstrip()
++
++def scalar(value):
++    value = value.strip()
++    if not value:
++        return ""
++    if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
++        value = value[1:-1]
++    return value
++
++stack = []
++with open(path, encoding="utf-8") as f:
++    for raw in f:
++        line = strip_comment(raw.rstrip("\n"))
++        if not line.strip() or line.lstrip().startswith("- "):
++            continue
++        indent = len(line) - len(line.lstrip(" "))
++        text = line.strip()
++        if ":" not in text:
++            continue
++        key, value = text.split(":", 1)
++        key = key.strip()
++        value = scalar(value)
++        while stack and stack[-1][0] >= indent:
++            stack.pop()
++        current = [item[1] for item in stack] + [key]
++        if current == ["agent", "repair", "max_retries"] and value:
++            print(f"max_retries\t{value}")
++        elif len(current) == 4 and current[:3] == ["agent", "repair", "strategy"] and value:
++            print(f"strategy\t{current[3]}\t{value}")
++        if not value:
++            stack.append((indent, key))
++PY
++  )
++
++  if [[ "$MAX_RETRIES_SET" == false && -n "$POLICY_MAX_RETRIES" ]]; then
++    if [[ "$POLICY_MAX_RETRIES" =~ ^[0-9]+$ ]]; then
++      MAX_RETRIES="$POLICY_MAX_RETRIES"
++    else
++      log_warn "agent.repair.max_retries ignored; expected integer, got: $POLICY_MAX_RETRIES"
++    fi
++  fi
++}
++
++policy_command_for() {
++  local key="$1"
++  printf '%s' "$POLICY_STRATEGIES" | awk -F '\t' -v k="$key" '$1 == k { print $2; exit }'
++}
++
++classify_failure() {
++  local log_file="$1"
++  if [[ ! -f "$log_file" ]]; then
++    echo "unknown"
++  elif grep -Eqi 'SyntaxError|IndentationError|parse error|syntax error' "$log_file"; then
++    echo "syntax_error"
++  elif grep -Eqi 'ModuleNotFoundError|ImportError|No such file|No such file or directory|file not found|cannot find' "$log_file"; then
++    echo "missing_file"
++  elif grep -Eqi 'AssertionError|FAIL:|FAILED \(|FAILED|unittest|pytest|expected .* got' "$log_file"; then
++    echo "test_failure"
++  elif grep -Eqi 'timed out|timeout' "$log_file"; then
++    echo "timeout"
++  elif grep -Eqi 'contract|pact|violation|schema' "$log_file"; then
++    echo "contract_violation"
++  else
++    echo "unknown"
++  fi
++}
++
++select_repair_command() {
++  local cmd=""
++  SELECTED_REPAIR_CMD=""
++  SELECTED_REPAIR_SOURCE=""
++  if [[ -n "$REPAIR_CMD" ]]; then
++    SELECTED_REPAIR_SOURCE="${REPAIR_CMD_SOURCE:-cli}"
++    SELECTED_REPAIR_CMD="$REPAIR_CMD"
++    return 0
++  fi
++
++  cmd=$(policy_command_for "$LAST_FAILURE_KIND")
++  if [[ -n "$cmd" ]]; then
++    SELECTED_REPAIR_SOURCE="policy:$LAST_FAILURE_KIND"
++    SELECTED_REPAIR_CMD="$cmd"
++    return 0
++  fi
++
++  cmd=$(policy_command_for "default")
++  if [[ -n "$cmd" ]]; then
++    SELECTED_REPAIR_SOURCE="policy:default"
++    SELECTED_REPAIR_CMD="$cmd"
++    return 0
++  fi
++
++  return 1
++}
++
++load_repair_policy
++
++RUN_ID="$(date +%Y%m%d_%H%M%S)_$$"
++RUN_DIR="$PL_OUTPUT/agent-runs/$CHANGE/$RUN_ID"
++mkdir -p "$RUN_DIR"
++
++RUN_CMD_LOG=""
++GATE_LOG=""
++REPAIR_CONTEXT=""
++LAST_GATE_RESULT=""
++LAST_CMD_RC=0
++LAST_GATE_RC=0
++
++run_executor_command() {
++  local kind="$1"
++  local attempt="$2"
++  local command="$3"
++  local log_file="$RUN_DIR/attempt-${attempt}-${kind}.log"
++  local start_ts end_ts duration rc
++
++  RUN_CMD_LOG="$log_file"
++  start_ts=$(date +%s)
++
++  log_info "agent $kind attempt=$attempt executor=$EXECUTOR"
++  echo "  ${DIM}\$ $command${NC}"
++
++  trace_emit "agent.run.start" "$(jq -nc \
++    --arg run_id "$RUN_ID" --arg executor "$EXECUTOR" --arg task "$TASK_ID" \
++    --arg kind "$kind" --arg cmd "$command" --argjson attempt "$attempt" \
++    '{run_id:$run_id,executor:$executor,task_id:$task,kind:$kind,attempt:$attempt,cmd:$cmd}' \
++    | jq -c --argjson meta "$AGENT_TRACE_META" '. + $meta')"
++
++  (
++    cd "$PL_PROJECT" || exit 1
++    export PL_CHANGE="$CHANGE"
++    export PL_TASK_ID="$TASK_ID"
++    export PL_RUN_ID="$RUN_ID"
++    export PL_RUN_DIR="$RUN_DIR"
++    export PL_AGENT_EXECUTOR="$EXECUTOR"
++    export PL_AGENT_ATTEMPT="$attempt"
++    if [[ -n "$LAST_FAILURE_KIND" ]]; then
++      export PL_FAILURE_KIND="$LAST_FAILURE_KIND"
++    fi
++    if [[ -n "$SELECTED_REPAIR_SOURCE" ]]; then
++      export PL_REPAIR_SOURCE="$SELECTED_REPAIR_SOURCE"
++    fi
++    if [[ -n "$REPAIR_CONTEXT" ]]; then
++      export PL_REPAIR_CONTEXT="$REPAIR_CONTEXT"
++    fi
++    bash -c "$command"
++  ) > "$log_file" 2>&1
++  rc=$?
++  end_ts=$(date +%s)
++  duration=$((end_ts - start_ts))
++  LAST_CMD_RC=$rc
++
++  trace_emit "agent.run.result" "$(jq -nc \
++    --arg run_id "$RUN_ID" --arg executor "$EXECUTOR" --arg task "$TASK_ID" \
++    --arg kind "$kind" --arg log "$log_file" --argjson attempt "$attempt" \
++    --argjson exit_code "$rc" --argjson duration "$duration" \
++    '{run_id:$run_id,executor:$executor,task_id:$task,kind:$kind,attempt:$attempt,exit_code:$exit_code,duration_sec:$duration,log:$log}' \
++    | jq -c --argjson meta "$AGENT_TRACE_META" '. + $meta')"
++
++  if [[ "$kind" == "repair" ]]; then
++    trace_emit "agent.repair.result" "$(jq -nc \
++      --arg run_id "$RUN_ID" --arg context "$REPAIR_CONTEXT" --arg log "$log_file" \
++      --argjson attempt "$attempt" --argjson exit_code "$rc" \
++      '{run_id:$run_id,attempt:$attempt,exit_code:$exit_code,context:$context,log:$log}' \
++      | jq -c --argjson meta "$AGENT_TRACE_META" '. + $meta')"
++  fi
++
++  if [[ $rc -eq 0 ]]; then
++    log_ok "agent $kind command passed"
++  else
++    log_warn "agent $kind command exited $rc (log: $log_file)"
++  fi
++  return "$rc"
++}
++
++run_verify_gate() {
++  local attempt="$1"
++  local log_file="$RUN_DIR/attempt-${attempt}-gate-${VERIFY_GATE}.log"
++  local gate_json result rc
++
++  GATE_LOG="$log_file"
++  log_info "verify gate $VERIFY_GATE attempt=$attempt"
++  trace_emit "agent.gate.start" "$(jq -nc \
++    --arg run_id "$RUN_ID" --arg gate "$VERIFY_GATE" --argjson attempt "$attempt" \
++    '{run_id:$run_id,gate:$gate,attempt:$attempt}')"
++
++  (
++    cd "$PL_PROJECT" || exit 1
++    PL_HOME="$PL_HOME" PL_PROJECT="$PL_PROJECT" \
++      bash "$PL_HOME/scripts/pl-runner.sh" --change "$CHANGE" --gate "$VERIFY_GATE" --json
++  ) > "$log_file" 2>&1
++  rc=$?
++
++  gate_json=$(grep -E '^\{' "$log_file" | tail -1)
++  if [[ -n "$gate_json" ]] && echo "$gate_json" | jq empty >/dev/null 2>&1; then
++    result=$(echo "$gate_json" | jq -r '.result // "unknown"')
++  elif [[ $rc -eq 0 ]]; then
++    result="passed"
++  else
++    result="blocked"
++  fi
++
++  LAST_GATE_RC=$rc
++  LAST_GATE_RESULT="$result"
++  if [[ $rc -eq 0 ]]; then
++    LAST_FAILURE_KIND=""
++  else
++    LAST_FAILURE_KIND=$(classify_failure "$log_file")
++  fi
++  trace_emit "agent.gate.result" "$(jq -nc \
++    --arg run_id "$RUN_ID" --arg gate "$VERIFY_GATE" --arg result "$result" \
++    --arg log "$log_file" --arg failure_kind "$LAST_FAILURE_KIND" \
++    --argjson attempt "$attempt" --argjson exit_code "$rc" \
++    '{run_id:$run_id,gate:$gate,attempt:$attempt,result:$result,exit_code:$exit_code,log:$log}
++     + (if $failure_kind != "" then {failure_kind:$failure_kind} else {} end)')"
++
++  if [[ $rc -eq 0 ]]; then
++    log_ok "gate $VERIFY_GATE passed"
++  else
++    log_warn "gate $VERIFY_GATE blocked (log: $log_file)"
++  fi
++  return "$rc"
++}
++
++write_repair_context() {
++  local attempt="$1"
++  local command_log="$2"
++  local gate_log="$3"
++  local next_command="$4"
++  local context_file="$RUN_DIR/repair-context-attempt-${attempt}.md"
++
++  {
++    printf '# PL Agent Repair Context\n\n'
++    printf -- '- change: `%s`\n' "$CHANGE"
++    printf -- '- task: `%s`\n' "$TASK_ID"
++    printf -- '- executor: `%s`\n' "$EXECUTOR"
++    printf -- '- run_id: `%s`\n' "$RUN_ID"
++    printf -- '- failed_attempt: `%s`\n' "$attempt"
++    printf -- '- failure_kind: `%s`\n' "${LAST_FAILURE_KIND:-unknown}"
++    printf -- '- repair_source: `%s`\n' "${SELECTED_REPAIR_SOURCE:-unknown}"
++    printf -- '- next_attempt_command: `%s`\n\n' "$next_command"
++
++    printf '## Agent command output\n\n```text\n'
++    if [[ -f "$command_log" ]]; then
++      sed -n '1,180p' "$command_log"
++    else
++      printf 'missing command log: %s\n' "$command_log"
++    fi
++    printf '\n```\n\n'
++
++    printf '## Gate output\n\n```text\n'
++    if [[ -f "$gate_log" ]]; then
++      sed -n '1,220p' "$gate_log"
++    else
++      printf 'missing gate log: %s\n' "$gate_log"
++    fi
++    printf '\n```\n'
++  } > "$context_file"
++
++  REPAIR_CONTEXT="$context_file"
++  trace_artifact create "$context_file" "$(jq -nc \
++    --arg run_id "$RUN_ID" --arg kind "repair_context" --arg gate "$VERIFY_GATE" \
++    --arg failure_kind "${LAST_FAILURE_KIND:-unknown}" --arg repair_source "${SELECTED_REPAIR_SOURCE:-unknown}" \
++    --argjson attempt "$attempt" \
++    '{run_id:$run_id,kind:$kind,gate:$gate,failed_attempt:$attempt,failure_kind:$failure_kind,repair_source:$repair_source}')"
++  trace_emit "agent.repair.context" "$(jq -nc \
++    --arg run_id "$RUN_ID" --arg path "$context_file" --arg gate "$VERIFY_GATE" \
++    --arg failure_kind "${LAST_FAILURE_KIND:-unknown}" --arg repair_source "${SELECTED_REPAIR_SOURCE:-unknown}" \
++    --argjson attempt "$attempt" \
++    '{run_id:$run_id,path:$path,gate:$gate,failed_attempt:$attempt,failure_kind:$failure_kind,repair_source:$repair_source}')"
++
++  log_info "repair context: $context_file"
++}
++
++trace_init "$CHANGE" "IMPLEMENT" "agent:$EXECUTOR"
++trace_task start "$TASK_ID" "$(jq -nc \
++  --arg run_id "$RUN_ID" --arg executor "$EXECUTOR" \
++  '{run_id:$run_id,executor:$executor,loop:"agent_execution"}' \
++  | jq -c --argjson meta "$AGENT_TRACE_META" '. + $meta')"
++
++echo "${BOLD}━━━ Agent Execution Loop ━━━${NC}"
++echo "  change:   $CHANGE"
++echo "  task:     $TASK_ID"
++echo "  executor: $EXECUTOR"
++echo "  run_dir:  $RUN_DIR"
++if [[ -n "$VERIFY_GATE" ]]; then
++  echo "  gate:     $VERIFY_GATE"
++fi
++echo ""
++
++STATUS="blocked"
++ATTEMPT=0
++KIND="implement"
++COMMAND="$CMD"
++
++while :; do
++  run_executor_command "$KIND" "$ATTEMPT" "$COMMAND"
++  cmd_rc=$?
++
++  if [[ -n "$VERIFY_GATE" ]]; then
++    run_verify_gate "$ATTEMPT"
++    gate_rc=$?
++    if [[ $gate_rc -eq 0 ]]; then
++      STATUS="passed"
++      break
++    fi
++  else
++    if [[ $cmd_rc -eq 0 ]]; then
++      STATUS="passed"
++    fi
++    break
++  fi
++
++  select_repair_command
++  if [[ -z "$SELECTED_REPAIR_CMD" ]]; then
++    log_warn "no repair command available for failure_kind=${LAST_FAILURE_KIND:-unknown}; stopping after blocked gate"
++    break
++  fi
++  if [[ "$ATTEMPT" -ge "$MAX_RETRIES" ]]; then
++    log_warn "repair budget exhausted: attempt=$ATTEMPT max_retries=$MAX_RETRIES"
++    break
++  fi
++
++  write_repair_context "$ATTEMPT" "$RUN_CMD_LOG" "$GATE_LOG" "$SELECTED_REPAIR_CMD"
++  ATTEMPT=$((ATTEMPT + 1))
++  KIND="repair"
++  COMMAND="$SELECTED_REPAIR_CMD"
++done
++
++trace_emit "agent.run.complete" "$(jq -nc \
++  --arg run_id "$RUN_ID" --arg status "$STATUS" --arg gate "$VERIFY_GATE" \
++  --arg gate_result "$LAST_GATE_RESULT" --arg run_dir "$RUN_DIR" \
++  --arg failure_kind "$LAST_FAILURE_KIND" --arg repair_source "$SELECTED_REPAIR_SOURCE" \
++  --argjson attempts "$((ATTEMPT + 1))" --argjson command_exit "$LAST_CMD_RC" --argjson gate_exit "$LAST_GATE_RC" \
++  '{run_id:$run_id,status:$status,attempts:$attempts,command_exit_code:$command_exit,gate_exit_code:$gate_exit,run_dir:$run_dir}
++   + (if $gate != "" then {gate:$gate,gate_result:$gate_result} else {} end)
++   + (if $failure_kind != "" then {failure_kind:$failure_kind} else {} end)
++   + (if $repair_source != "" then {repair_source:$repair_source} else {} end)' \
++  | jq -c --argjson meta "$AGENT_TRACE_META" '. + $meta')"
++
++trace_task end "$TASK_ID" "$(jq -nc --arg status "$STATUS" --arg run_id "$RUN_ID" '{status:$status,run_id:$run_id}')"
++
++echo ""
++echo "${BOLD}━━━ Summary ━━━${NC}"
++echo "  status: $STATUS"
++echo "  run:    $RUN_DIR"
++echo "  trace:  $PL_OUTPUT/trace/$CHANGE.events.jsonl"
++
++if $JSON_OUT; then
++  jq -nc --arg status "$STATUS" --arg run_id "$RUN_ID" --arg run_dir "$RUN_DIR" \
++    --arg trace "$PL_OUTPUT/trace/$CHANGE.events.jsonl" \
++    '{status:$status,run_id:$run_id,run_dir:$run_dir,trace:$trace}' \
++    | jq -c --argjson meta "$AGENT_TRACE_META" '. + $meta'
++fi
++
++if [[ "$STATUS" == "passed" ]]; then
++  exit 0
++fi
++exit 1
+diff --git a/scripts/pl-status.sh b/scripts/pl-status.sh
+index ae4e94f..cf026ea 100755
+--- a/scripts/pl-status.sh
++++ b/scripts/pl-status.sh
+@@ -254,7 +254,7 @@ emit_json() {
+     exit 1
+   fi
+   local py
+-  py=$(mktemp /tmp/pl-status.XXXXXX.py)
++  py=$(mktemp /tmp/pl-status.XXXXXX)
+   # 安装 EXIT 兜底清理（避免异常时残留 /tmp 文件）
+   trap "rm -f '$py'" EXIT
+   cat > "$py" <<'PY'
+@@ -332,7 +332,7 @@ PY
+ schema_check() {
+   local json_content="$1"
+   local py
+-  py=$(mktemp /tmp/pl-schema-check.XXXXXX.py)
++  py=$(mktemp /tmp/pl-schema-check.XXXXXX)
+   trap "rm -f '$py'" RETURN
+   cat > "$py" <<'PY'
+ import json, sys
+@@ -399,7 +399,7 @@ human_table() {
+   local json_out
+   json_out=$(emit_json)
+   local py
+-  py=$(mktemp /tmp/pl-human.XXXXXX.py)
++  py=$(mktemp /tmp/pl-human.XXXXXX)
+   trap "rm -f '$py'" RETURN
+   cat > "$py" <<'PY'
+ import json, os, sys
+diff --git a/tests/cli/test-pl-agent.sh b/tests/cli/test-pl-agent.sh
+new file mode 100755
+index 0000000..8574da5
+--- /dev/null
++++ b/tests/cli/test-pl-agent.sh
+@@ -0,0 +1,387 @@
++#!/usr/bin/env bash
++# tests/cli/test-pl-agent.sh — pl agent execution loop tests
++
++set -uo pipefail
++
++HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++REPO_ROOT="$(cd "$HERE/../.." && pwd)"
++PL="$REPO_ROOT/bin/pl"
++
++# shellcheck source=tests/_lib/runner.sh
++source "$REPO_ROOT/tests/_lib/runner.sh"
++
++export PL_HOME="$REPO_ROOT"
++unset PL_PROJECT 2>/dev/null || true
++
++tc_suite "agent-execution-loop"
++
++tc_case "pl agent run executes, repairs a failed gate, and records trace"
++TMPDIR_AGENT=$(mktemp -d)
++mkdir -p "$TMPDIR_AGENT/app" "$TMPDIR_AGENT/tests" "$TMPDIR_AGENT/scripts" "$TMPDIR_AGENT/pl/changes/agent-loop-demo"
++
++cat > "$TMPDIR_AGENT/pl/config.yaml" <<'YML'
++version: pl@v1.1
++namespace: demo-agent-loop
++checks:
++  - id: unit_tests
++    label: "Python unit tests"
++    cmd: "python3 -m unittest discover -s tests"
++    cwd: "."
++    required: true
++gates:
++  D:
++    from: IMPLEMENT
++    to: VERIFY
++    eval: all_checks.pass
++    on_failure: block
++    checks: [unit_tests]
++YML
++
++touch "$TMPDIR_AGENT/app/__init__.py"
++cat > "$TMPDIR_AGENT/app/calc.py" <<'PY'
++def add(a, b):
++    return a + b
++PY
++cat > "$TMPDIR_AGENT/tests/test_calc.py" <<'PY'
++import unittest
++
++from app.calc import add
++
++
++class CalcTest(unittest.TestCase):
++    def test_adds_two_numbers(self):
++        self.assertEqual(add(2, 3), 5)
++        self.assertEqual(add(-1, 1), 0)
++
++
++if __name__ == "__main__":
++    unittest.main()
++PY
++cat > "$TMPDIR_AGENT/scripts/write_bad_impl.sh" <<'SH'
++#!/usr/bin/env bash
++set -euo pipefail
++cat > app/calc.py <<'PY'
++def add(a, b):
++    return a - b
++PY
++SH
++cat > "$TMPDIR_AGENT/scripts/repair_impl.sh" <<'SH'
++#!/usr/bin/env bash
++set -euo pipefail
++if [[ -z "${PL_REPAIR_CONTEXT:-}" || ! -f "$PL_REPAIR_CONTEXT" ]]; then
++  echo "missing PL_REPAIR_CONTEXT" >&2
++  exit 1
++fi
++grep -q "Gate output" "$PL_REPAIR_CONTEXT"
++cat > app/calc.py <<'PY'
++def add(a, b):
++    return a + b
++PY
++SH
++chmod +x "$TMPDIR_AGENT/scripts/write_bad_impl.sh" "$TMPDIR_AGENT/scripts/repair_impl.sh"
++
++set +e
++out=$(cd "$TMPDIR_AGENT" && PL_PROJECT="$TMPDIR_AGENT" PL_HOME="$REPO_ROOT" "$PL" agent run \
++  --change agent-loop-demo \
++  --task T03 \
++  --executor local \
++  --cmd "./scripts/write_bad_impl.sh" \
++  --verify-gate D \
++  --repair-cmd "./scripts/repair_impl.sh" \
++  --max-retries 1 2>&1)
++rc=$?
++set -e
++
++trace_file="$TMPDIR_AGENT/pipeline-output/trace/agent-loop-demo.events.jsonl"
++context_file=""
++context_dir="$TMPDIR_AGENT/pipeline-output/agent-runs/agent-loop-demo"
++if [[ -d "$context_dir" ]]; then
++  context_file=$(find "$context_dir" -name 'repair-context-attempt-0.md' -print 2>/dev/null | head -1)
++fi
++
++if [[ $rc -eq 0 ]] \
++   && [[ -f "$trace_file" ]] \
++   && [[ -f "$context_file" ]] \
++   && grep -q '"event":"agent.run.start"' "$trace_file" \
++   && grep -q '"event":"agent.repair.context"' "$trace_file" \
++   && grep -q '"event":"agent.run.complete"' "$trace_file" \
++   && grep -q "return a + b" "$TMPDIR_AGENT/app/calc.py" \
++   && (cd "$TMPDIR_AGENT" && python3 -m unittest discover -s tests >/dev/null 2>&1); then
++  tc_ok
++else
++  tc_fail "expected repaired implementation + trace; rc=$rc context=$context_file output:
++    $out"
++fi
++
++rm -rf "$TMPDIR_AGENT"
++
++tc_case "pl agent run can choose repair command from config policy"
++TMPDIR_POLICY=$(mktemp -d)
++mkdir -p "$TMPDIR_POLICY/app" "$TMPDIR_POLICY/tests" "$TMPDIR_POLICY/scripts" "$TMPDIR_POLICY/pl/changes/agent-loop-policy"
++
++cat > "$TMPDIR_POLICY/pl/config.yaml" <<'YML'
++version: pl@v1.1
++namespace: demo-agent-policy
++agent:
++  repair:
++    max_retries: 1
++    strategy:
++      test_failure: "./scripts/repair_from_policy.sh"
++      default: "./scripts/repair_default.sh"
++checks:
++  - id: unit_tests
++    label: "Python unit tests"
++    cmd: "python3 -m unittest discover -s tests"
++    cwd: "."
++    required: true
++gates:
++  D:
++    from: IMPLEMENT
++    to: VERIFY
++    eval: all_checks.pass
++    on_failure: block
++    checks: [unit_tests]
++YML
++
++touch "$TMPDIR_POLICY/app/__init__.py"
++cat > "$TMPDIR_POLICY/app/calc.py" <<'PY'
++def add(a, b):
++    return a + b
++PY
++cat > "$TMPDIR_POLICY/tests/test_calc.py" <<'PY'
++import unittest
++
++from app.calc import add
++
++
++class CalcPolicyTest(unittest.TestCase):
++    def test_adds_two_numbers(self):
++        self.assertEqual(add(2, 3), 5)
++
++
++if __name__ == "__main__":
++    unittest.main()
++PY
++cat > "$TMPDIR_POLICY/scripts/write_bad_impl.sh" <<'SH'
++#!/usr/bin/env bash
++set -euo pipefail
++cat > app/calc.py <<'PY'
++def add(a, b):
++    return a - b
++PY
++SH
++cat > "$TMPDIR_POLICY/scripts/repair_from_policy.sh" <<'SH'
++#!/usr/bin/env bash
++set -euo pipefail
++test "${PL_FAILURE_KIND:-}" = "test_failure"
++grep -q "failure_kind: \`test_failure\`" "$PL_REPAIR_CONTEXT"
++cat > app/calc.py <<'PY'
++def add(a, b):
++    return a + b
++PY
++SH
++cat > "$TMPDIR_POLICY/scripts/repair_default.sh" <<'SH'
++#!/usr/bin/env bash
++set -euo pipefail
++echo "default repair should not be used" >&2
++exit 1
++SH
++chmod +x "$TMPDIR_POLICY/scripts/write_bad_impl.sh" "$TMPDIR_POLICY/scripts/repair_from_policy.sh" "$TMPDIR_POLICY/scripts/repair_default.sh"
++
++set +e
++out=$(cd "$TMPDIR_POLICY" && PL_PROJECT="$TMPDIR_POLICY" PL_HOME="$REPO_ROOT" "$PL" agent run \
++  --change agent-loop-policy \
++  --task T04 \
++  --executor local \
++  --cmd "./scripts/write_bad_impl.sh" \
++  --verify-gate D 2>&1)
++rc=$?
++set -e
++
++policy_trace="$TMPDIR_POLICY/pipeline-output/trace/agent-loop-policy.events.jsonl"
++policy_context=""
++policy_context_dir="$TMPDIR_POLICY/pipeline-output/agent-runs/agent-loop-policy"
++if [[ -d "$policy_context_dir" ]]; then
++  policy_context=$(find "$policy_context_dir" -name 'repair-context-attempt-0.md' -print 2>/dev/null | head -1)
++fi
++
++if [[ $rc -eq 0 ]] \
++   && [[ -f "$policy_trace" ]] \
++   && [[ -f "$policy_context" ]] \
++   && grep -q '"failure_kind":"test_failure"' "$policy_trace" \
++   && grep -q '"repair_source":"policy:test_failure"' "$policy_trace" \
++   && grep -q "return a + b" "$TMPDIR_POLICY/app/calc.py"; then
++  tc_ok
++else
++  tc_fail "expected config policy repair to run; rc=$rc context=$policy_context output:
++    $out"
++fi
++
++rm -rf "$TMPDIR_POLICY"
++
++tc_case "pl agent run records agent trace metadata"
++TMPDIR_TRACE=$(mktemp -d)
++mkdir -p "$TMPDIR_TRACE/scripts" "$TMPDIR_TRACE/prompts" "$TMPDIR_TRACE/specs" "$TMPDIR_TRACE/app" "$TMPDIR_TRACE/pl/changes/agent-trace-demo"
++
++cat > "$TMPDIR_TRACE/pl/config.yaml" <<'YML'
++version: pl@v1.1
++namespace: demo-agent-trace
++YML
++
++cat > "$TMPDIR_TRACE/prompts/implement.md" <<'MD'
++Implement the trace demo.
++MD
++cat > "$TMPDIR_TRACE/specs/spec.md" <<'MD'
++# Trace Demo Spec
++MD
++cat > "$TMPDIR_TRACE/scripts/write_output.sh" <<'SH'
++#!/usr/bin/env bash
++set -euo pipefail
++cat > app/result.txt <<'TXT'
++trace metadata ok
++TXT
++SH
++chmod +x "$TMPDIR_TRACE/scripts/write_output.sh"
++
++set +e
++out=$(cd "$TMPDIR_TRACE" && PL_PROJECT="$TMPDIR_TRACE" PL_HOME="$REPO_ROOT" "$PL" agent run \
++  --change agent-trace-demo \
++  --task T01 \
++  --executor local \
++  --provider openai \
++  --model codex-local-test \
++  --prompt-path prompts/implement.md \
++  --input-artifact specs/spec.md \
++  --output-artifact app/result.txt \
++  --tool-call shell \
++  --tokens-input 123 \
++  --tokens-output 45 \
++  --cmd "./scripts/write_output.sh" \
++  --json 2>&1)
++rc=$?
++set -e
++
++trace_meta="$TMPDIR_TRACE/pipeline-output/trace/agent-trace-demo.events.jsonl"
++if [[ $rc -eq 0 ]] \
++   && [[ -f "$trace_meta" ]] \
++   && grep -q '"provider":"openai"' "$trace_meta" \
++   && grep -q '"model":"codex-local-test"' "$trace_meta" \
++   && grep -q '"prompt_path":"prompts/implement.md"' "$trace_meta" \
++   && grep -Fq '"input_artifacts":["specs/spec.md"]' "$trace_meta" \
++   && grep -Fq '"output_artifacts":["app/result.txt"]' "$trace_meta" \
++   && grep -Fq '"tool_calls":["shell"]' "$trace_meta" \
++   && grep -Fq '"tokens":{"input":123,"output":45,"total":168}' "$trace_meta" \
++   && grep -q '"status":"passed"' "$trace_meta"; then
++  tc_ok
++else
++  tc_fail "expected agent trace metadata in trace; rc=$rc output:
++    $out"
++fi
++
++rm -rf "$TMPDIR_TRACE"
++
++tc_case "pl agent run can invoke codex-cli executor from prompt"
++TMPDIR_CODEX=$(mktemp -d)
++mkdir -p "$TMPDIR_CODEX/bin" "$TMPDIR_CODEX/prompts" "$TMPDIR_CODEX/app" "$TMPDIR_CODEX/pl/changes/codex-exec-demo"
++
++cat > "$TMPDIR_CODEX/pl/config.yaml" <<'YML'
++version: pl@v1.1
++namespace: demo-codex-cli
++YML
++
++cat > "$TMPDIR_CODEX/prompts/implement.md" <<'MD'
++Create app/codex-result.txt with the text codex fake ok.
++MD
++cat > "$TMPDIR_CODEX/bin/codex" <<'SH'
++#!/usr/bin/env bash
++set -euo pipefail
++{
++  printf 'args:'
++  for arg in "$@"; do printf ' [%s]' "$arg"; done
++  printf '\n'
++  printf 'stdin:\n'
++  cat
++} > codex-invocation.log
++
++mkdir -p app
++printf 'codex fake ok\n' > app/codex-result.txt
++printf '{"event":"fake-codex","tokens":{"input":11,"output":7}}\n'
++SH
++chmod +x "$TMPDIR_CODEX/bin/codex"
++
++set +e
++out=$(cd "$TMPDIR_CODEX" && PATH="$TMPDIR_CODEX/bin:$PATH" PL_PROJECT="$TMPDIR_CODEX" PL_HOME="$REPO_ROOT" "$PL" agent run \
++  --change codex-exec-demo \
++  --task T02 \
++  --executor codex-cli \
++  --model codex-fake-model \
++  --prompt-path prompts/implement.md \
++  --output-artifact app/codex-result.txt \
++  --json 2>&1)
++rc=$?
++set -e
++
++codex_trace="$TMPDIR_CODEX/pipeline-output/trace/codex-exec-demo.events.jsonl"
++codex_log="$TMPDIR_CODEX/codex-invocation.log"
++if [[ $rc -eq 0 ]] \
++   && [[ -f "$codex_log" ]] \
++   && grep -Fq 'args: [exec]' "$codex_log" \
++   && grep -Fq '[--cd]' "$codex_log" \
++   && grep -Fq '[--sandbox] [workspace-write]' "$codex_log" \
++   && grep -Fq '[--ask-for-approval] [never]' "$codex_log" \
++   && grep -Fq '[-m] [codex-fake-model]' "$codex_log" \
++   && grep -Fq '[-]' "$codex_log" \
++   && grep -Fq 'Create app/codex-result.txt' "$codex_log" \
++   && grep -q 'codex fake ok' "$TMPDIR_CODEX/app/codex-result.txt" \
++   && [[ -f "$codex_trace" ]] \
++   && grep -q '"executor":"codex-cli"' "$codex_trace" \
++   && grep -q '"provider":"openai"' "$codex_trace" \
++   && grep -q '"model":"codex-fake-model"' "$codex_trace" \
++   && grep -Fq '"tool_calls":["codex.exec"]' "$codex_trace" \
++   && grep -Fq '"output_artifacts":["app/codex-result.txt"]' "$codex_trace"; then
++  tc_ok
++else
++  tc_fail "expected codex-cli executor invocation + trace; rc=$rc output:
++    $out"
++fi
++
++rm -rf "$TMPDIR_CODEX"
++
++tc_case "demo-agent-codex-cli runs fake codex executor"
++set +e
++out=$(PL_HOME="$REPO_ROOT" bash "$REPO_ROOT/examples/demo-agent-codex-cli/run-demo.sh" 2>&1)
++rc=$?
++set -e
++
++codex_demo_trace="$REPO_ROOT/examples/demo-agent-codex-cli/pipeline-output/trace/codex-cli-demo.events.jsonl"
++if [[ $rc -eq 0 ]] \
++   && [[ -f "$codex_demo_trace" ]] \
++   && grep -q '"executor":"codex-cli"' "$codex_demo_trace" \
++   && grep -q '"provider":"openai"' "$codex_demo_trace" \
++   && grep -Fq '"tool_calls":["codex.exec"]' "$codex_demo_trace" \
++   && grep -q '"status":"passed"' "$codex_demo_trace"; then
++  tc_ok
++else
++  tc_fail "expected fake codex-cli demo to pass; rc=$rc output:
++    $out"
++fi
++
++tc_case "demo-agent-crud-service runs a real CRUD repair loop"
++set +e
++out=$(PL_HOME="$REPO_ROOT" bash "$REPO_ROOT/examples/demo-agent-crud-service/run-demo.sh" 2>&1)
++rc=$?
++set -e
++
++crud_trace="$REPO_ROOT/examples/demo-agent-crud-service/pipeline-output/trace/crud-service-demo.events.jsonl"
++if [[ $rc -eq 0 ]] \
++   && [[ -f "$crud_trace" ]] \
++   && grep -q '"failure_kind":"test_failure"' "$crud_trace" \
++   && grep -q '"repair_source":"policy:test_failure"' "$crud_trace" \
++   && grep -q '"event":"agent.run.complete"' "$crud_trace"; then
++  tc_ok
++else
++  tc_fail "expected CRUD demo to pass through policy repair loop; rc=$rc output:
++    $out"
++fi
++
++tc_summary

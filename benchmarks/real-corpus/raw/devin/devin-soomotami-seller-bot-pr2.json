@@ -1,0 +1,26 @@
+{
+  "id": "devin-soomotami-seller-bot-pr2",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 2,
+    "headSha": "56a7c4606720c1efd639ba3f0dd7e06677babb63",
+    "baseSha": "5bcc5a306850f47f8495b205764264f67af49f8b",
+    "title": "feat(api): Pass 1 — minimal API with /health/live and /health/ready (Postgres SELECT 1)",
+    "body": "## Summary\n\nCombined Pass 1 (repo/context audit + local API/Postgres health proof) for SellerNerve, per `DEVIN_PROMPT.md` and `docs/devin/PASS_PLAN.md`.\n\nThe repo at HEAD was a documentation-only handoff pack — no `package.json`, no `src/`, no Dockerfile, no migration handoff. Per the prompt's \"implement the smallest possible endpoints\" directive, this PR scaffolds the smallest viable Node.js + Express service driven entirely by env vars from the pre-existing `.env.example.sellernerve` (`NODE_ENV=development` selected the stack).\n\n### What ships\n\n- `package.json`, `package-lock.json` — `express` + `pg` only.\n- `src/server.js` — ~110-line Express service, no other deps. Implements:\n  - `GET /health/live` → 200, K8s-style liveness (does not depend on DB).\n  - `GET /health/ready` → 200/503 based on `SELECT 1 AS ok` through a `pg.Pool` against `DATABASE_URL`.\n  - 404 envelope + central error handler that never leaks internals.\n  - Graceful SIGINT/SIGTERM shutdown that closes the pool.\n- `docker-compose.yml` — local Postgres 16 (alpine) with `pg_isready` healthcheck. Dev-only credentials are local-container-only and explicitly documented as such.\n- `.gitignore` — keeps `.env*` and `node_modules/` out of the tree.\n- `docs/devin/PASS_1_REPO_API_DB_REPORT.md` — full report with raw evidence, PASS/FAIL/BLOCKED breakdown, run commands, and blockers.\n\n### Live evidence captured on this run (full output is in the report)\n\n| ID | Scenario | HTTP | Body indicator |\n|----|----------|------|----------------|\n| L1 | `/health/live` (DB up) | **200** | `status=ok` |\n| R1 | `/health/ready` (DB up) | **200** | `checks.db.status=ok`, `latencyMs=12` |\n| L2 | `/health/live` (DB stopped) | **200** | liveness intentionally unaffected |\n| R2 | `/health/ready` (DB stopped) | **503** | `status=not_ready`, `detail=ECONNREFUSED` |\n| R3 | `/health/ready` (DB recovered) | **200** | pool self-heals, no API restart |\n| N1 | unknown path | **404** | `{ \"status\": \"not_found\" }` |\n| D1 | `docker compose up -d db` reaches `healthy` | n/a | `t+3s: healthy` |\n\n### Active repo / remote (information, not error)\n\nWorked in the active session repo (the soomotami fork of `rvmitts/seller-bot`). Both `main` branches are byte-identical; direct push to the upstream returned 403 from the auth proxy. If you want this landed on the upstream directly, say the word and I'll open a cross-fork PR without touching the commit.\n\n### Blockers documented in the report\n\n- **B1:** SellerNerve migration handoff (`docs/migration/`) is **not present** in the repo even though `DEVIN_PROMPT.md` lists it as required reading. Does not block Pass 1; will affect Pass 2 / Pass 3 context.\n- **B2:** No write access to the upstream remote from this session. Does not block Pass 1.\n\n### Out of scope (explicit)\n\nNo Telegram, no WB token implementation, no dashboard, no billing, no Ozon, no marketplace abstraction. The earlier WB docs PR (#1) remains Pass 3 *preparation only*.\n\n## Review & Testing Checklist for Human\n\n- [ ] Reproduce the smoke probes locally: `docker compose up -d db` → `npm install` → `export DATABASE_URL=...` → `npm start` → `curl -sS -w 'HTTP %{http_code}\\n' http://127.0.0.1:3000/health/live` and `/health/ready`.\n- [ ] Confirm the env-name set (`DATABASE_URL`, `NODE_ENV`, `LOG_LEVEL`, optional `PORT`/`HOST`) matches what you want carried forward into Pass 2 / Pass 3.\n- [ ] Confirm the docs-only-to-runnable jump is acceptable, i.e. that you do not have a pre-existing internal SellerNerve codebase you'd rather integrate into.\n- [ ] Decide whether to drop the SellerNerve migration handoff into `docs/migration/` before Pass 2 starts, or to continue under `DEVIN_PROMPT.md` constraints alone.\n\n### Notes\n\n- Local dev Postgres credentials (`sellernerve` / `sellernerve` / `sellernerve`) are not secrets — they're local-container-only defaults in `docker-compose.yml`. Production deployments must override them via env + a real secret store.\n- No `.env` is committed; only the pre-existing `.env.example.sellernerve` ships in the repo.\n- Confirmation: **Secrets were not exposed.**\n\n\nLink to Devin session: https://app.devin.ai/sessions/f653dc73d03542ea933535078dbe1d9b\nRequested by: @soomotami",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779575364-pass-1-api-db-health",
+    "repository": "soomotami/seller-bot"
+  },
+  "diffRef": {
+    "repository": "soomotami/seller-bot",
+    "headSha": "56a7c4606720c1efd639ba3f0dd7e06677babb63",
+    "baseSha": "5bcc5a306850f47f8495b205764264f67af49f8b"
+  },
+  "vendoredDiffPath": "devin/devin-soomotami-seller-bot-pr2.diff",
+  "vendoredAt": "2026-05-24T03:05:02.613Z",
+  "collectedAt": "2026-05-24T03:05:02.613Z"
+}

@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-superapp-labs-django-superapp-default-project-pr15",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "body=claude-code-footer"
+  },
+  "pr": {
+    "number": 15,
+    "headSha": "9dc5c881f47c2e45ec6b1c01ab34c126987d6908",
+    "baseSha": "aa7e52979e9d82ce1ad4f2ac0065c4126c104e75",
+    "title": "chore: drop deprecated .aider.conf.yml + add CLAUDE.md / AGENTS.md",
+    "body": "## Summary\n\n- **Remove `.aider.conf.yml`** — deprecated in current Aider releases; ships as dead weight in every freshly bootstrapped project. Agent configuration moves to `CLAUDE.md` / `AGENTS.md`.\n- **Add `CLAUDE.md` + `AGENTS.md`** (symlink) documenting:\n  - this template is the project shell — admin classes come from `admin_portal`, do not introduce a non-Unfold admin entrypoint here\n  - `DATABASE_URL` is the only DB config knob (downstream projects override freely; per-project port convention lives in their CLAUDE.md)\n  - sidebar nav ships empty (`UNFOLD['SIDEBAR']['navigation'] = []`) and downstream apps mutate it via their own `extend_superapp_settings`\n  - the one-class-per-file rule (referenced from the parent toolkit's `CONVENTIONS.md`)\n\n## Why\n\nEvery change here ships to thousands of generated projects, so the file structure has to be intentional. The CLAUDE.md spells that out so structural drift gets caught in review, not in the wild. Dropping the deprecated Aider config keeps the template lean.\n\n## Test plan\n\n- [x] Files load cleanly\n- [x] No `.aider*` files remain\n- [x] Downstream bootstrap (`django_superapp bootstrap-project ./test`) still works (the template's auto-discovery / settings wiring is untouched)\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+    "author": "iosifnicolae2",
+    "headRef": "chore/claude-md-and-conventions",
+    "repository": "superapp-labs/django-superapp-default-project"
+  },
+  "diffRef": {
+    "repository": "superapp-labs/django-superapp-default-project",
+    "headSha": "9dc5c881f47c2e45ec6b1c01ab34c126987d6908",
+    "baseSha": "aa7e52979e9d82ce1ad4f2ac0065c4126c104e75"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-superapp-labs-django-superapp-default-project-pr15.diff",
+  "vendoredAt": "2026-05-24T03:10:16.143Z",
+  "collectedAt": "2026-05-24T03:10:16.143Z"
+}

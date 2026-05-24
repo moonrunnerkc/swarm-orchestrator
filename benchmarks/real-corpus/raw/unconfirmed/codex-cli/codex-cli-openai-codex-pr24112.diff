@@ -1,0 +1,1773 @@
+diff --git a/codex-rs/app-server-protocol/schema/json/ClientRequest.json b/codex-rs/app-server-protocol/schema/json/ClientRequest.json
+index eb9ef2ae7262..21291a62ec6f 100644
+--- a/codex-rs/app-server-protocol/schema/json/ClientRequest.json
++++ b/codex-rs/app-server-protocol/schema/json/ClientRequest.json
+@@ -2765,7 +2765,7 @@
+         }
+       ]
+     },
+-    "RuntimeInstallManifest": {
++    "RuntimeInstallManifestParams": {
+       "properties": {
+         "archiveName": {
+           "type": [
+@@ -2829,7 +2829,7 @@
+           ]
+         },
+         "manifest": {
+-          "$ref": "#/definitions/RuntimeInstallManifest"
++          "$ref": "#/definitions/RuntimeInstallManifestParams"
+         },
+         "release": {
+           "type": "string"
+@@ -5409,6 +5409,29 @@
+       "title": "Runtime/installRequest",
+       "type": "object"
+     },
++    {
++      "properties": {
++        "id": {
++          "$ref": "#/definitions/RequestId"
++        },
++        "method": {
++          "enum": [
++            "runtime/install/cancel"
++          ],
++          "title": "Runtime/install/cancelRequestMethod",
++          "type": "string"
++        },
++        "params": {
++          "type": "null"
++        }
++      },
++      "required": [
++        "id",
++        "method"
++      ],
++      "title": "Runtime/install/cancelRequest",
++      "type": "object"
++    },
+     {
+       "properties": {
+         "id": {
+diff --git a/codex-rs/app-server-protocol/schema/json/ServerNotification.json b/codex-rs/app-server-protocol/schema/json/ServerNotification.json
+index 90899cb15278..e50e56e97229 100644
+--- a/codex-rs/app-server-protocol/schema/json/ServerNotification.json
++++ b/codex-rs/app-server-protocol/schema/json/ServerNotification.json
+@@ -2946,6 +2946,51 @@
+       },
+       "type": "object"
+     },
++    "RuntimeInstallProgressNotification": {
++      "properties": {
++        "bundleVersion": {
++          "type": [
++            "string",
++            "null"
++          ]
++        },
++        "downloadedBytes": {
++          "format": "uint64",
++          "minimum": 0.0,
++          "type": [
++            "integer",
++            "null"
++          ]
++        },
++        "phase": {
++          "$ref": "#/definitions/RuntimeInstallProgressPhase"
++        },
++        "totalBytes": {
++          "format": "uint64",
++          "minimum": 0.0,
++          "type": [
++            "integer",
++            "null"
++          ]
++        }
++      },
++      "required": [
++        "phase"
++      ],
++      "type": "object"
++    },
++    "RuntimeInstallProgressPhase": {
++      "enum": [
++        "checking",
++        "downloading",
++        "verifying",
++        "extracting",
++        "validating",
++        "installed",
++        "configuring"
++      ],
++      "type": "string"
++    },
+     "SandboxPolicy": {
+       "oneOf": [
+         {
+@@ -5397,6 +5442,26 @@
+       "title": "Skills/changedNotification",
+       "type": "object"
+     },
++    {
++      "properties": {
++        "method": {
++          "enum": [
++            "runtime/install/progress"
++          ],
++          "title": "Runtime/install/progressNotificationMethod",
++          "type": "string"
++        },
++        "params": {
++          "$ref": "#/definitions/RuntimeInstallProgressNotification"
++        }
++      },
++      "required": [
++        "method",
++        "params"
++      ],
++      "title": "Runtime/install/progressNotification",
++      "type": "object"
++    },
+     {
+       "properties": {
+         "method": {
+diff --git a/codex-rs/app-server-protocol/schema/json/codex_app_server_protocol.schemas.json b/codex-rs/app-server-protocol/schema/json/codex_app_server_protocol.schemas.json
+index 60cc12bbabfb..c649b03da3c6 100644
+--- a/codex-rs/app-server-protocol/schema/json/codex_app_server_protocol.schemas.json
++++ b/codex-rs/app-server-protocol/schema/json/codex_app_server_protocol.schemas.json
+@@ -1333,6 +1333,29 @@
+           "title": "Runtime/installRequest",
+           "type": "object"
+         },
++        {
++          "properties": {
++            "id": {
++              "$ref": "#/definitions/v2/RequestId"
++            },
++            "method": {
++              "enum": [
++                "runtime/install/cancel"
++              ],
++              "title": "Runtime/install/cancelRequestMethod",
++              "type": "string"
++            },
++            "params": {
++              "type": "null"
++            }
++          },
++          "required": [
++            "id",
++            "method"
++          ],
++          "title": "Runtime/install/cancelRequest",
++          "type": "object"
++        },
+         {
+           "properties": {
+             "id": {
+@@ -4091,6 +4114,26 @@
+           "title": "Skills/changedNotification",
+           "type": "object"
+         },
++        {
++          "properties": {
++            "method": {
++              "enum": [
++                "runtime/install/progress"
++              ],
++              "title": "Runtime/install/progressNotificationMethod",
++              "type": "string"
++            },
++            "params": {
++              "$ref": "#/definitions/v2/RuntimeInstallProgressNotification"
++            }
++          },
++          "required": [
++            "method",
++            "params"
++          ],
++          "title": "Runtime/install/progressNotification",
++          "type": "object"
++        },
+         {
+           "properties": {
+             "method": {
+@@ -14637,7 +14680,27 @@
+           }
+         ]
+       },
+-      "RuntimeInstallManifest": {
++      "RuntimeInstallCancelResponse": {
++        "$schema": "http://json-schema.org/draft-07/schema#",
++        "properties": {
++          "status": {
++            "$ref": "#/definitions/v2/RuntimeInstallCancelStatus"
++          }
++        },
++        "required": [
++          "status"
++        ],
++        "title": "RuntimeInstallCancelResponse",
++        "type": "object"
++      },
++      "RuntimeInstallCancelStatus": {
++        "enum": [
++          "canceled",
++          "not-found"
++        ],
++        "type": "string"
++      },
++      "RuntimeInstallManifestParams": {
+         "properties": {
+           "archiveName": {
+             "type": [
+@@ -14702,7 +14765,7 @@
+             ]
+           },
+           "manifest": {
+-            "$ref": "#/definitions/v2/RuntimeInstallManifest"
++            "$ref": "#/definitions/v2/RuntimeInstallManifestParams"
+           },
+           "release": {
+             "type": "string"
+@@ -14755,6 +14818,53 @@
+         ],
+         "type": "object"
+       },
++      "RuntimeInstallProgressNotification": {
++        "$schema": "http://json-schema.org/draft-07/schema#",
++        "properties": {
++          "bundleVersion": {
++            "type": [
++              "string",
++              "null"
++            ]
++          },
++          "downloadedBytes": {
++            "format": "uint64",
++            "minimum": 0.0,
++            "type": [
++              "integer",
++              "null"
++            ]
++          },
++          "phase": {
++            "$ref": "#/definitions/v2/RuntimeInstallProgressPhase"
++          },
++          "totalBytes": {
++            "format": "uint64",
++            "minimum": 0.0,
++            "type": [
++              "integer",
++              "null"
++            ]
++          }
++        },
++        "required": [
++          "phase"
++        ],
++        "title": "RuntimeInstallProgressNotification",
++        "type": "object"
++      },
++      "RuntimeInstallProgressPhase": {
++        "enum": [
++          "checking",
++          "downloading",
++          "verifying",
++          "extracting",
++          "validating",
++          "installed",
++          "configuring"
++        ],
++        "type": "string"
++      },
+       "RuntimeInstallResponse": {
+         "$schema": "http://json-schema.org/draft-07/schema#",
+         "properties": {
+diff --git a/codex-rs/app-server-protocol/schema/json/codex_app_server_protocol.v2.schemas.json b/codex-rs/app-server-protocol/schema/json/codex_app_server_protocol.v2.schemas.json
+index dd49a575eb1f..29d164f69da6 100644
+--- a/codex-rs/app-server-protocol/schema/json/codex_app_server_protocol.v2.schemas.json
++++ b/codex-rs/app-server-protocol/schema/json/codex_app_server_protocol.v2.schemas.json
+@@ -2059,6 +2059,29 @@
+           "title": "Runtime/installRequest",
+           "type": "object"
+         },
++        {
++          "properties": {
++            "id": {
++              "$ref": "#/definitions/RequestId"
++            },
++            "method": {
++              "enum": [
++                "runtime/install/cancel"
++              ],
++              "title": "Runtime/install/cancelRequestMethod",
++              "type": "string"
++            },
++            "params": {
++              "type": "null"
++            }
++          },
++          "required": [
++            "id",
++            "method"
++          ],
++          "title": "Runtime/install/cancelRequest",
++          "type": "object"
++        },
+         {
+           "properties": {
+             "id": {
+@@ -11166,7 +11189,27 @@
+         }
+       ]
+     },
+-    "RuntimeInstallManifest": {
++    "RuntimeInstallCancelResponse": {
++      "$schema": "http://json-schema.org/draft-07/schema#",
++      "properties": {
++        "status": {
++          "$ref": "#/definitions/RuntimeInstallCancelStatus"
++        }
++      },
++      "required": [
++        "status"
++      ],
++      "title": "RuntimeInstallCancelResponse",
++      "type": "object"
++    },
++    "RuntimeInstallCancelStatus": {
++      "enum": [
++        "canceled",
++        "not-found"
++      ],
++      "type": "string"
++    },
++    "RuntimeInstallManifestParams": {
+       "properties": {
+         "archiveName": {
+           "type": [
+@@ -11231,7 +11274,7 @@
+           ]
+         },
+         "manifest": {
+-          "$ref": "#/definitions/RuntimeInstallManifest"
++          "$ref": "#/definitions/RuntimeInstallManifestParams"
+         },
+         "release": {
+           "type": "string"
+@@ -11284,6 +11327,53 @@
+       ],
+       "type": "object"
+     },
++    "RuntimeInstallProgressNotification": {
++      "$schema": "http://json-schema.org/draft-07/schema#",
++      "properties": {
++        "bundleVersion": {
++          "type": [
++            "string",
++            "null"
++          ]
++        },
++        "downloadedBytes": {
++          "format": "uint64",
++          "minimum": 0.0,
++          "type": [
++            "integer",
++            "null"
++          ]
++        },
++        "phase": {
++          "$ref": "#/definitions/RuntimeInstallProgressPhase"
++        },
++        "totalBytes": {
++          "format": "uint64",
++          "minimum": 0.0,
++          "type": [
++            "integer",
++            "null"
++          ]
++        }
++      },
++      "required": [
++        "phase"
++      ],
++      "title": "RuntimeInstallProgressNotification",
++      "type": "object"
++    },
++    "RuntimeInstallProgressPhase": {
++      "enum": [
++        "checking",
++        "downloading",
++        "verifying",
++        "extracting",
++        "validating",
++        "installed",
++        "configuring"
++      ],
++      "type": "string"
++    },
+     "RuntimeInstallResponse": {
+       "$schema": "http://json-schema.org/draft-07/schema#",
+       "properties": {
+@@ -11616,6 +11706,26 @@
+           "title": "Skills/changedNotification",
+           "type": "object"
+         },
++        {
++          "properties": {
++            "method": {
++              "enum": [
++                "runtime/install/progress"
++              ],
++              "title": "Runtime/install/progressNotificationMethod",
++              "type": "string"
++            },
++            "params": {
++              "$ref": "#/definitions/RuntimeInstallProgressNotification"
++            }
++          },
++          "required": [
++            "method",
++            "params"
++          ],
++          "title": "Runtime/install/progressNotification",
++          "type": "object"
++        },
+         {
+           "properties": {
+             "method": {
+diff --git a/codex-rs/app-server-protocol/schema/json/v2/RuntimeInstallCancelResponse.json b/codex-rs/app-server-protocol/schema/json/v2/RuntimeInstallCancelResponse.json
+new file mode 100644
+index 000000000000..c7ba89ef08ea
+--- /dev/null
++++ b/codex-rs/app-server-protocol/schema/json/v2/RuntimeInstallCancelResponse.json
+@@ -0,0 +1,22 @@
++{
++  "$schema": "http://json-schema.org/draft-07/schema#",
++  "definitions": {
++    "RuntimeInstallCancelStatus": {
++      "enum": [
++        "canceled",
++        "not-found"
++      ],
++      "type": "string"
++    }
++  },
++  "properties": {
++    "status": {
++      "$ref": "#/definitions/RuntimeInstallCancelStatus"
++    }
++  },
++  "required": [
++    "status"
++  ],
++  "title": "RuntimeInstallCancelResponse",
++  "type": "object"
++}
+\ No newline at end of file
+diff --git a/codex-rs/app-server-protocol/schema/json/v2/RuntimeInstallParams.json b/codex-rs/app-server-protocol/schema/json/v2/RuntimeInstallParams.json
+index 975795f17853..6fa843ec9e83 100644
+--- a/codex-rs/app-server-protocol/schema/json/v2/RuntimeInstallParams.json
++++ b/codex-rs/app-server-protocol/schema/json/v2/RuntimeInstallParams.json
+@@ -1,7 +1,7 @@
+ {
+   "$schema": "http://json-schema.org/draft-07/schema#",
+   "definitions": {
+-    "RuntimeInstallManifest": {
++    "RuntimeInstallManifestParams": {
+       "properties": {
+         "archiveName": {
+           "type": [
+@@ -65,7 +65,7 @@
+       ]
+     },
+     "manifest": {
+-      "$ref": "#/definitions/RuntimeInstallManifest"
++      "$ref": "#/definitions/RuntimeInstallManifestParams"
+     },
+     "release": {
+       "type": "string"
+diff --git a/codex-rs/app-server-protocol/schema/json/v2/RuntimeInstallProgressNotification.json b/codex-rs/app-server-protocol/schema/json/v2/RuntimeInstallProgressNotification.json
+new file mode 100644
+index 000000000000..34f50716179c
+--- /dev/null
++++ b/codex-rs/app-server-protocol/schema/json/v2/RuntimeInstallProgressNotification.json
+@@ -0,0 +1,49 @@
++{
++  "$schema": "http://json-schema.org/draft-07/schema#",
++  "definitions": {
++    "RuntimeInstallProgressPhase": {
++      "enum": [
++        "checking",
++        "downloading",
++        "verifying",
++        "extracting",
++        "validating",
++        "installed",
++        "configuring"
++      ],
++      "type": "string"
++    }
++  },
++  "properties": {
++    "bundleVersion": {
++      "type": [
++        "string",
++        "null"
++      ]
++    },
++    "downloadedBytes": {
++      "format": "uint64",
++      "minimum": 0.0,
++      "type": [
++        "integer",
++        "null"
++      ]
++    },
++    "phase": {
++      "$ref": "#/definitions/RuntimeInstallProgressPhase"
++    },
++    "totalBytes": {
++      "format": "uint64",
++      "minimum": 0.0,
++      "type": [
++        "integer",
++        "null"
++      ]
++    }
++  },
++  "required": [
++    "phase"
++  ],
++  "title": "RuntimeInstallProgressNotification",
++  "type": "object"
++}
+\ No newline at end of file
+diff --git a/codex-rs/app-server-protocol/schema/typescript/ClientRequest.ts b/codex-rs/app-server-protocol/schema/typescript/ClientRequest.ts
+index f6688157970b..37779a802d2a 100644
+--- a/codex-rs/app-server-protocol/schema/typescript/ClientRequest.ts
++++ b/codex-rs/app-server-protocol/schema/typescript/ClientRequest.ts
+@@ -86,4 +86,4 @@ import type { WindowsSandboxSetupStartParams } from "./v2/WindowsSandboxSetupSta
+ /**
+  * Request from the client to the server.
+  */
+-export type ClientRequest ={ "method": "initialize", id: RequestId, params: InitializeParams, } | { "method": "thread/start", id: RequestId, params: ThreadStartParams, } | { "method": "thread/resume", id: RequestId, params: ThreadResumeParams, } | { "method": "thread/fork", id: RequestId, params: ThreadForkParams, } | { "method": "thread/archive", id: RequestId, params: ThreadArchiveParams, } | { "method": "thread/unsubscribe", id: RequestId, params: ThreadUnsubscribeParams, } | { "method": "thread/name/set", id: RequestId, params: ThreadSetNameParams, } | { "method": "thread/goal/set", id: RequestId, params: ThreadGoalSetParams, } | { "method": "thread/goal/get", id: RequestId, params: ThreadGoalGetParams, } | { "method": "thread/goal/clear", id: RequestId, params: ThreadGoalClearParams, } | { "method": "thread/metadata/update", id: RequestId, params: ThreadMetadataUpdateParams, } | { "method": "thread/unarchive", id: RequestId, params: ThreadUnarchiveParams, } | { "method": "thread/compact/start", id: RequestId, params: ThreadCompactStartParams, } | { "method": "thread/shellCommand", id: RequestId, params: ThreadShellCommandParams, } | { "method": "thread/approveGuardianDeniedAction", id: RequestId, params: ThreadApproveGuardianDeniedActionParams, } | { "method": "thread/rollback", id: RequestId, params: ThreadRollbackParams, } | { "method": "thread/list", id: RequestId, params: ThreadListParams, } | { "method": "thread/loaded/list", id: RequestId, params: ThreadLoadedListParams, } | { "method": "thread/read", id: RequestId, params: ThreadReadParams, } | { "method": "thread/inject_items", id: RequestId, params: ThreadInjectItemsParams, } | { "method": "skills/list", id: RequestId, params: SkillsListParams, } | { "method": "hooks/list", id: RequestId, params: HooksListParams, } | { "method": "marketplace/add", id: RequestId, params: MarketplaceAddParams, } | { "method": "marketplace/remove", id: RequestId, params: MarketplaceRemoveParams, } | { "method": "marketplace/upgrade", id: RequestId, params: MarketplaceUpgradeParams, } | { "method": "plugin/list", id: RequestId, params: PluginListParams, } | { "method": "plugin/installed", id: RequestId, params: PluginInstalledParams, } | { "method": "plugin/read", id: RequestId, params: PluginReadParams, } | { "method": "plugin/skill/read", id: RequestId, params: PluginSkillReadParams, } | { "method": "plugin/share/save", id: RequestId, params: PluginShareSaveParams, } | { "method": "plugin/share/updateTargets", id: RequestId, params: PluginShareUpdateTargetsParams, } | { "method": "plugin/share/list", id: RequestId, params: PluginShareListParams, } | { "method": "plugin/share/checkout", id: RequestId, params: PluginShareCheckoutParams, } | { "method": "plugin/share/delete", id: RequestId, params: PluginShareDeleteParams, } | { "method": "app/list", id: RequestId, params: AppsListParams, } | { "method": "fs/readFile", id: RequestId, params: FsReadFileParams, } | { "method": "fs/writeFile", id: RequestId, params: FsWriteFileParams, } | { "method": "fs/createDirectory", id: RequestId, params: FsCreateDirectoryParams, } | { "method": "fs/getMetadata", id: RequestId, params: FsGetMetadataParams, } | { "method": "fs/readDirectory", id: RequestId, params: FsReadDirectoryParams, } | { "method": "fs/remove", id: RequestId, params: FsRemoveParams, } | { "method": "fs/copy", id: RequestId, params: FsCopyParams, } | { "method": "fs/watch", id: RequestId, params: FsWatchParams, } | { "method": "fs/unwatch", id: RequestId, params: FsUnwatchParams, } | { "method": "skills/config/write", id: RequestId, params: SkillsConfigWriteParams, } | { "method": "plugin/install", id: RequestId, params: PluginInstallParams, } | { "method": "runtime/install", id: RequestId, params: RuntimeInstallParams, } | { "method": "plugin/uninstall", id: RequestId, params: PluginUninstallParams, } | { "method": "turn/start", id: RequestId, params: TurnStartParams, } | { "method": "turn/steer", id: RequestId, params: TurnSteerParams, } | { "method": "turn/interrupt", id: RequestId, params: TurnInterruptParams, } | { "method": "review/start", id: RequestId, params: ReviewStartParams, } | { "method": "model/list", id: RequestId, params: ModelListParams, } | { "method": "modelProvider/capabilities/read", id: RequestId, params: ModelProviderCapabilitiesReadParams, } | { "method": "experimentalFeature/list", id: RequestId, params: ExperimentalFeatureListParams, } | { "method": "permissionProfile/list", id: RequestId, params: PermissionProfileListParams, } | { "method": "experimentalFeature/enablement/set", id: RequestId, params: ExperimentalFeatureEnablementSetParams, } | { "method": "mcpServer/oauth/login", id: RequestId, params: McpServerOauthLoginParams, } | { "method": "config/mcpServer/reload", id: RequestId, params: undefined, } | { "method": "mcpServerStatus/list", id: RequestId, params: ListMcpServerStatusParams, } | { "method": "mcpServer/resource/read", id: RequestId, params: McpResourceReadParams, } | { "method": "mcpServer/tool/call", id: RequestId, params: McpServerToolCallParams, } | { "method": "windowsSandbox/setupStart", id: RequestId, params: WindowsSandboxSetupStartParams, } | { "method": "windowsSandbox/readiness", id: RequestId, params: undefined, } | { "method": "account/login/start", id: RequestId, params: LoginAccountParams, } | { "method": "account/login/cancel", id: RequestId, params: CancelLoginAccountParams, } | { "method": "account/logout", id: RequestId, params: undefined, } | { "method": "account/rateLimits/read", id: RequestId, params: undefined, } | { "method": "account/sendAddCreditsNudgeEmail", id: RequestId, params: SendAddCreditsNudgeEmailParams, } | { "method": "feedback/upload", id: RequestId, params: FeedbackUploadParams, } | { "method": "command/exec", id: RequestId, params: CommandExecParams, } | { "method": "command/exec/write", id: RequestId, params: CommandExecWriteParams, } | { "method": "command/exec/terminate", id: RequestId, params: CommandExecTerminateParams, } | { "method": "command/exec/resize", id: RequestId, params: CommandExecResizeParams, } | { "method": "config/read", id: RequestId, params: ConfigReadParams, } | { "method": "externalAgentConfig/detect", id: RequestId, params: ExternalAgentConfigDetectParams, } | { "method": "externalAgentConfig/import", id: RequestId, params: ExternalAgentConfigImportParams, } | { "method": "config/value/write", id: RequestId, params: ConfigValueWriteParams, } | { "method": "config/batchWrite", id: RequestId, params: ConfigBatchWriteParams, } | { "method": "configRequirements/read", id: RequestId, params: undefined, } | { "method": "account/read", id: RequestId, params: GetAccountParams, } | { "method": "getConversationSummary", id: RequestId, params: GetConversationSummaryParams, } | { "method": "gitDiffToRemote", id: RequestId, params: GitDiffToRemoteParams, } | { "method": "getAuthStatus", id: RequestId, params: GetAuthStatusParams, } | { "method": "fuzzyFileSearch", id: RequestId, params: FuzzyFileSearchParams, };
++export type ClientRequest ={ "method": "initialize", id: RequestId, params: InitializeParams, } | { "method": "thread/start", id: RequestId, params: ThreadStartParams, } | { "method": "thread/resume", id: RequestId, params: ThreadResumeParams, } | { "method": "thread/fork", id: RequestId, params: ThreadForkParams, } | { "method": "thread/archive", id: RequestId, params: ThreadArchiveParams, } | { "method": "thread/unsubscribe", id: RequestId, params: ThreadUnsubscribeParams, } | { "method": "thread/name/set", id: RequestId, params: ThreadSetNameParams, } | { "method": "thread/goal/set", id: RequestId, params: ThreadGoalSetParams, } | { "method": "thread/goal/get", id: RequestId, params: ThreadGoalGetParams, } | { "method": "thread/goal/clear", id: RequestId, params: ThreadGoalClearParams, } | { "method": "thread/metadata/update", id: RequestId, params: ThreadMetadataUpdateParams, } | { "method": "thread/unarchive", id: RequestId, params: ThreadUnarchiveParams, } | { "method": "thread/compact/start", id: RequestId, params: ThreadCompactStartParams, } | { "method": "thread/shellCommand", id: RequestId, params: ThreadShellCommandParams, } | { "method": "thread/approveGuardianDeniedAction", id: RequestId, params: ThreadApproveGuardianDeniedActionParams, } | { "method": "thread/rollback", id: RequestId, params: ThreadRollbackParams, } | { "method": "thread/list", id: RequestId, params: ThreadListParams, } | { "method": "thread/loaded/list", id: RequestId, params: ThreadLoadedListParams, } | { "method": "thread/read", id: RequestId, params: ThreadReadParams, } | { "method": "thread/inject_items", id: RequestId, params: ThreadInjectItemsParams, } | { "method": "skills/list", id: RequestId, params: SkillsListParams, } | { "method": "hooks/list", id: RequestId, params: HooksListParams, } | { "method": "marketplace/add", id: RequestId, params: MarketplaceAddParams, } | { "method": "marketplace/remove", id: RequestId, params: MarketplaceRemoveParams, } | { "method": "marketplace/upgrade", id: RequestId, params: MarketplaceUpgradeParams, } | { "method": "plugin/list", id: RequestId, params: PluginListParams, } | { "method": "plugin/installed", id: RequestId, params: PluginInstalledParams, } | { "method": "plugin/read", id: RequestId, params: PluginReadParams, } | { "method": "plugin/skill/read", id: RequestId, params: PluginSkillReadParams, } | { "method": "plugin/share/save", id: RequestId, params: PluginShareSaveParams, } | { "method": "plugin/share/updateTargets", id: RequestId, params: PluginShareUpdateTargetsParams, } | { "method": "plugin/share/list", id: RequestId, params: PluginShareListParams, } | { "method": "plugin/share/checkout", id: RequestId, params: PluginShareCheckoutParams, } | { "method": "plugin/share/delete", id: RequestId, params: PluginShareDeleteParams, } | { "method": "app/list", id: RequestId, params: AppsListParams, } | { "method": "fs/readFile", id: RequestId, params: FsReadFileParams, } | { "method": "fs/writeFile", id: RequestId, params: FsWriteFileParams, } | { "method": "fs/createDirectory", id: RequestId, params: FsCreateDirectoryParams, } | { "method": "fs/getMetadata", id: RequestId, params: FsGetMetadataParams, } | { "method": "fs/readDirectory", id: RequestId, params: FsReadDirectoryParams, } | { "method": "fs/remove", id: RequestId, params: FsRemoveParams, } | { "method": "fs/copy", id: RequestId, params: FsCopyParams, } | { "method": "fs/watch", id: RequestId, params: FsWatchParams, } | { "method": "fs/unwatch", id: RequestId, params: FsUnwatchParams, } | { "method": "skills/config/write", id: RequestId, params: SkillsConfigWriteParams, } | { "method": "plugin/install", id: RequestId, params: PluginInstallParams, } | { "method": "runtime/install", id: RequestId, params: RuntimeInstallParams, } | { "method": "runtime/install/cancel", id: RequestId, params: undefined, } | { "method": "plugin/uninstall", id: RequestId, params: PluginUninstallParams, } | { "method": "turn/start", id: RequestId, params: TurnStartParams, } | { "method": "turn/steer", id: RequestId, params: TurnSteerParams, } | { "method": "turn/interrupt", id: RequestId, params: TurnInterruptParams, } | { "method": "review/start", id: RequestId, params: ReviewStartParams, } | { "method": "model/list", id: RequestId, params: ModelListParams, } | { "method": "modelProvider/capabilities/read", id: RequestId, params: ModelProviderCapabilitiesReadParams, } | { "method": "experimentalFeature/list", id: RequestId, params: ExperimentalFeatureListParams, } | { "method": "permissionProfile/list", id: RequestId, params: PermissionProfileListParams, } | { "method": "experimentalFeature/enablement/set", id: RequestId, params: ExperimentalFeatureEnablementSetParams, } | { "method": "mcpServer/oauth/login", id: RequestId, params: McpServerOauthLoginParams, } | { "method": "config/mcpServer/reload", id: RequestId, params: undefined, } | { "method": "mcpServerStatus/list", id: RequestId, params: ListMcpServerStatusParams, } | { "method": "mcpServer/resource/read", id: RequestId, params: McpResourceReadParams, } | { "method": "mcpServer/tool/call", id: RequestId, params: McpServerToolCallParams, } | { "method": "windowsSandbox/setupStart", id: RequestId, params: WindowsSandboxSetupStartParams, } | { "method": "windowsSandbox/readiness", id: RequestId, params: undefined, } | { "method": "account/login/start", id: RequestId, params: LoginAccountParams, } | { "method": "account/login/cancel", id: RequestId, params: CancelLoginAccountParams, } | { "method": "account/logout", id: RequestId, params: undefined, } | { "method": "account/rateLimits/read", id: RequestId, params: undefined, } | { "method": "account/sendAddCreditsNudgeEmail", id: RequestId, params: SendAddCreditsNudgeEmailParams, } | { "method": "feedback/upload", id: RequestId, params: FeedbackUploadParams, } | { "method": "command/exec", id: RequestId, params: CommandExecParams, } | { "method": "command/exec/write", id: RequestId, params: CommandExecWriteParams, } | { "method": "command/exec/terminate", id: RequestId, params: CommandExecTerminateParams, } | { "method": "command/exec/resize", id: RequestId, params: CommandExecResizeParams, } | { "method": "config/read", id: RequestId, params: ConfigReadParams, } | { "method": "externalAgentConfig/detect", id: RequestId, params: ExternalAgentConfigDetectParams, } | { "method": "externalAgentConfig/import", id: RequestId, params: ExternalAgentConfigImportParams, } | { "method": "config/value/write", id: RequestId, params: ConfigValueWriteParams, } | { "method": "config/batchWrite", id: RequestId, params: ConfigBatchWriteParams, } | { "method": "configRequirements/read", id: RequestId, params: undefined, } | { "method": "account/read", id: RequestId, params: GetAccountParams, } | { "method": "getConversationSummary", id: RequestId, params: GetConversationSummaryParams, } | { "method": "gitDiffToRemote", id: RequestId, params: GitDiffToRemoteParams, } | { "method": "getAuthStatus", id: RequestId, params: GetAuthStatusParams, } | { "method": "fuzzyFileSearch", id: RequestId, params: FuzzyFileSearchParams, };
+diff --git a/codex-rs/app-server-protocol/schema/typescript/ServerNotification.ts b/codex-rs/app-server-protocol/schema/typescript/ServerNotification.ts
+index 3ed710efc0a3..26d43d8b6acb 100644
+--- a/codex-rs/app-server-protocol/schema/typescript/ServerNotification.ts
++++ b/codex-rs/app-server-protocol/schema/typescript/ServerNotification.ts
+@@ -38,6 +38,7 @@ import type { ReasoningSummaryPartAddedNotification } from "./v2/ReasoningSummar
+ import type { ReasoningSummaryTextDeltaNotification } from "./v2/ReasoningSummaryTextDeltaNotification";
+ import type { ReasoningTextDeltaNotification } from "./v2/ReasoningTextDeltaNotification";
+ import type { RemoteControlStatusChangedNotification } from "./v2/RemoteControlStatusChangedNotification";
++import type { RuntimeInstallProgressNotification } from "./v2/RuntimeInstallProgressNotification";
+ import type { ServerRequestResolvedNotification } from "./v2/ServerRequestResolvedNotification";
+ import type { SkillsChangedNotification } from "./v2/SkillsChangedNotification";
+ import type { TerminalInteractionNotification } from "./v2/TerminalInteractionNotification";
+@@ -70,4 +71,4 @@ import type { WindowsWorldWritableWarningNotification } from "./v2/WindowsWorldW
+ /**
+  * Notification sent from the server to the client.
+  */
+-export type ServerNotification = { "method": "error", "params": ErrorNotification } | { "method": "thread/started", "params": ThreadStartedNotification } | { "method": "thread/status/changed", "params": ThreadStatusChangedNotification } | { "method": "thread/archived", "params": ThreadArchivedNotification } | { "method": "thread/unarchived", "params": ThreadUnarchivedNotification } | { "method": "thread/closed", "params": ThreadClosedNotification } | { "method": "skills/changed", "params": SkillsChangedNotification } | { "method": "thread/name/updated", "params": ThreadNameUpdatedNotification } | { "method": "thread/goal/updated", "params": ThreadGoalUpdatedNotification } | { "method": "thread/goal/cleared", "params": ThreadGoalClearedNotification } | { "method": "thread/settings/updated", "params": ThreadSettingsUpdatedNotification } | { "method": "thread/tokenUsage/updated", "params": ThreadTokenUsageUpdatedNotification } | { "method": "turn/started", "params": TurnStartedNotification } | { "method": "hook/started", "params": HookStartedNotification } | { "method": "turn/completed", "params": TurnCompletedNotification } | { "method": "hook/completed", "params": HookCompletedNotification } | { "method": "turn/diff/updated", "params": TurnDiffUpdatedNotification } | { "method": "turn/plan/updated", "params": TurnPlanUpdatedNotification } | { "method": "item/started", "params": ItemStartedNotification } | { "method": "item/autoApprovalReview/started", "params": ItemGuardianApprovalReviewStartedNotification } | { "method": "item/autoApprovalReview/completed", "params": ItemGuardianApprovalReviewCompletedNotification } | { "method": "item/completed", "params": ItemCompletedNotification } | { "method": "rawResponseItem/completed", "params": RawResponseItemCompletedNotification } | { "method": "item/agentMessage/delta", "params": AgentMessageDeltaNotification } | { "method": "item/plan/delta", "params": PlanDeltaNotification } | { "method": "command/exec/outputDelta", "params": CommandExecOutputDeltaNotification } | { "method": "process/outputDelta", "params": ProcessOutputDeltaNotification } | { "method": "process/exited", "params": ProcessExitedNotification } | { "method": "item/commandExecution/outputDelta", "params": CommandExecutionOutputDeltaNotification } | { "method": "item/commandExecution/terminalInteraction", "params": TerminalInteractionNotification } | { "method": "item/fileChange/outputDelta", "params": FileChangeOutputDeltaNotification } | { "method": "item/fileChange/patchUpdated", "params": FileChangePatchUpdatedNotification } | { "method": "serverRequest/resolved", "params": ServerRequestResolvedNotification } | { "method": "item/mcpToolCall/progress", "params": McpToolCallProgressNotification } | { "method": "mcpServer/oauthLogin/completed", "params": McpServerOauthLoginCompletedNotification } | { "method": "mcpServer/startupStatus/updated", "params": McpServerStatusUpdatedNotification } | { "method": "account/updated", "params": AccountUpdatedNotification } | { "method": "account/rateLimits/updated", "params": AccountRateLimitsUpdatedNotification } | { "method": "app/list/updated", "params": AppListUpdatedNotification } | { "method": "remoteControl/status/changed", "params": RemoteControlStatusChangedNotification } | { "method": "externalAgentConfig/import/completed", "params": ExternalAgentConfigImportCompletedNotification } | { "method": "fs/changed", "params": FsChangedNotification } | { "method": "item/reasoning/summaryTextDelta", "params": ReasoningSummaryTextDeltaNotification } | { "method": "item/reasoning/summaryPartAdded", "params": ReasoningSummaryPartAddedNotification } | { "method": "item/reasoning/textDelta", "params": ReasoningTextDeltaNotification } | { "method": "thread/compacted", "params": ContextCompactedNotification } | { "method": "model/rerouted", "params": ModelReroutedNotification } | { "method": "model/verification", "params": ModelVerificationNotification } | { "method": "warning", "params": WarningNotification } | { "method": "guardianWarning", "params": GuardianWarningNotification } | { "method": "deprecationNotice", "params": DeprecationNoticeNotification } | { "method": "configWarning", "params": ConfigWarningNotification } | { "method": "fuzzyFileSearch/sessionUpdated", "params": FuzzyFileSearchSessionUpdatedNotification } | { "method": "fuzzyFileSearch/sessionCompleted", "params": FuzzyFileSearchSessionCompletedNotification } | { "method": "thread/realtime/started", "params": ThreadRealtimeStartedNotification } | { "method": "thread/realtime/itemAdded", "params": ThreadRealtimeItemAddedNotification } | { "method": "thread/realtime/transcript/delta", "params": ThreadRealtimeTranscriptDeltaNotification } | { "method": "thread/realtime/transcript/done", "params": ThreadRealtimeTranscriptDoneNotification } | { "method": "thread/realtime/outputAudio/delta", "params": ThreadRealtimeOutputAudioDeltaNotification } | { "method": "thread/realtime/sdp", "params": ThreadRealtimeSdpNotification } | { "method": "thread/realtime/error", "params": ThreadRealtimeErrorNotification } | { "method": "thread/realtime/closed", "params": ThreadRealtimeClosedNotification } | { "method": "windows/worldWritableWarning", "params": WindowsWorldWritableWarningNotification } | { "method": "windowsSandbox/setupCompleted", "params": WindowsSandboxSetupCompletedNotification } | { "method": "account/login/completed", "params": AccountLoginCompletedNotification };
++export type ServerNotification = { "method": "error", "params": ErrorNotification } | { "method": "thread/started", "params": ThreadStartedNotification } | { "method": "thread/status/changed", "params": ThreadStatusChangedNotification } | { "method": "thread/archived", "params": ThreadArchivedNotification } | { "method": "thread/unarchived", "params": ThreadUnarchivedNotification } | { "method": "thread/closed", "params": ThreadClosedNotification } | { "method": "skills/changed", "params": SkillsChangedNotification } | { "method": "runtime/install/progress", "params": RuntimeInstallProgressNotification } | { "method": "thread/name/updated", "params": ThreadNameUpdatedNotification } | { "method": "thread/goal/updated", "params": ThreadGoalUpdatedNotification } | { "method": "thread/goal/cleared", "params": ThreadGoalClearedNotification } | { "method": "thread/settings/updated", "params": ThreadSettingsUpdatedNotification } | { "method": "thread/tokenUsage/updated", "params": ThreadTokenUsageUpdatedNotification } | { "method": "turn/started", "params": TurnStartedNotification } | { "method": "hook/started", "params": HookStartedNotification } | { "method": "turn/completed", "params": TurnCompletedNotification } | { "method": "hook/completed", "params": HookCompletedNotification } | { "method": "turn/diff/updated", "params": TurnDiffUpdatedNotification } | { "method": "turn/plan/updated", "params": TurnPlanUpdatedNotification } | { "method": "item/started", "params": ItemStartedNotification } | { "method": "item/autoApprovalReview/started", "params": ItemGuardianApprovalReviewStartedNotification } | { "method": "item/autoApprovalReview/completed", "params": ItemGuardianApprovalReviewCompletedNotification } | { "method": "item/completed", "params": ItemCompletedNotification } | { "method": "rawResponseItem/completed", "params": RawResponseItemCompletedNotification } | { "method": "item/agentMessage/delta", "params": AgentMessageDeltaNotification } | { "method": "item/plan/delta", "params": PlanDeltaNotification } | { "method": "command/exec/outputDelta", "params": CommandExecOutputDeltaNotification } | { "method": "process/outputDelta", "params": ProcessOutputDeltaNotification } | { "method": "process/exited", "params": ProcessExitedNotification } | { "method": "item/commandExecution/outputDelta", "params": CommandExecutionOutputDeltaNotification } | { "method": "item/commandExecution/terminalInteraction", "params": TerminalInteractionNotification } | { "method": "item/fileChange/outputDelta", "params": FileChangeOutputDeltaNotification } | { "method": "item/fileChange/patchUpdated", "params": FileChangePatchUpdatedNotification } | { "method": "serverRequest/resolved", "params": ServerRequestResolvedNotification } | { "method": "item/mcpToolCall/progress", "params": McpToolCallProgressNotification } | { "method": "mcpServer/oauthLogin/completed", "params": McpServerOauthLoginCompletedNotification } | { "method": "mcpServer/startupStatus/updated", "params": McpServerStatusUpdatedNotification } | { "method": "account/updated", "params": AccountUpdatedNotification } | { "method": "account/rateLimits/updated", "params": AccountRateLimitsUpdatedNotification } | { "method": "app/list/updated", "params": AppListUpdatedNotification } | { "method": "remoteControl/status/changed", "params": RemoteControlStatusChangedNotification } | { "method": "externalAgentConfig/import/completed", "params": ExternalAgentConfigImportCompletedNotification } | { "method": "fs/changed", "params": FsChangedNotification } | { "method": "item/reasoning/summaryTextDelta", "params": ReasoningSummaryTextDeltaNotification } | { "method": "item/reasoning/summaryPartAdded", "params": ReasoningSummaryPartAddedNotification } | { "method": "item/reasoning/textDelta", "params": ReasoningTextDeltaNotification } | { "method": "thread/compacted", "params": ContextCompactedNotification } | { "method": "model/rerouted", "params": ModelReroutedNotification } | { "method": "model/verification", "params": ModelVerificationNotification } | { "method": "warning", "params": WarningNotification } | { "method": "guardianWarning", "params": GuardianWarningNotification } | { "method": "deprecationNotice", "params": DeprecationNoticeNotification } | { "method": "configWarning", "params": ConfigWarningNotification } | { "method": "fuzzyFileSearch/sessionUpdated", "params": FuzzyFileSearchSessionUpdatedNotification } | { "method": "fuzzyFileSearch/sessionCompleted", "params": FuzzyFileSearchSessionCompletedNotification } | { "method": "thread/realtime/started", "params": ThreadRealtimeStartedNotification } | { "method": "thread/realtime/itemAdded", "params": ThreadRealtimeItemAddedNotification } | { "method": "thread/realtime/transcript/delta", "params": ThreadRealtimeTranscriptDeltaNotification } | { "method": "thread/realtime/transcript/done", "params": ThreadRealtimeTranscriptDoneNotification } | { "method": "thread/realtime/outputAudio/delta", "params": ThreadRealtimeOutputAudioDeltaNotification } | { "method": "thread/realtime/sdp", "params": ThreadRealtimeSdpNotification } | { "method": "thread/realtime/error", "params": ThreadRealtimeErrorNotification } | { "method": "thread/realtime/closed", "params": ThreadRealtimeClosedNotification } | { "method": "windows/worldWritableWarning", "params": WindowsWorldWritableWarningNotification } | { "method": "windowsSandbox/setupCompleted", "params": WindowsSandboxSetupCompletedNotification } | { "method": "account/login/completed", "params": AccountLoginCompletedNotification };
+diff --git a/codex-rs/app-server-protocol/schema/typescript/v2/RuntimeInstallCancelResponse.ts b/codex-rs/app-server-protocol/schema/typescript/v2/RuntimeInstallCancelResponse.ts
+new file mode 100644
+index 000000000000..47dd42e9e49b
+--- /dev/null
++++ b/codex-rs/app-server-protocol/schema/typescript/v2/RuntimeInstallCancelResponse.ts
+@@ -0,0 +1,6 @@
++// GENERATED CODE! DO NOT MODIFY BY HAND!
++
++// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
++import type { RuntimeInstallCancelStatus } from "./RuntimeInstallCancelStatus";
++
++export type RuntimeInstallCancelResponse = { status: RuntimeInstallCancelStatus, };
+diff --git a/codex-rs/app-server-protocol/schema/typescript/v2/RuntimeInstallCancelStatus.ts b/codex-rs/app-server-protocol/schema/typescript/v2/RuntimeInstallCancelStatus.ts
+new file mode 100644
+index 000000000000..8c530d3912b1
+--- /dev/null
++++ b/codex-rs/app-server-protocol/schema/typescript/v2/RuntimeInstallCancelStatus.ts
+@@ -0,0 +1,5 @@
++// GENERATED CODE! DO NOT MODIFY BY HAND!
++
++// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
++
++export type RuntimeInstallCancelStatus = "canceled" | "not-found";
+diff --git a/codex-rs/app-server-protocol/schema/typescript/v2/RuntimeInstallManifest.ts b/codex-rs/app-server-protocol/schema/typescript/v2/RuntimeInstallManifest.ts
+deleted file mode 100644
+index 7bf37ad8c5eb..000000000000
+--- a/codex-rs/app-server-protocol/schema/typescript/v2/RuntimeInstallManifest.ts
++++ /dev/null
+@@ -1,5 +0,0 @@
+-// GENERATED CODE! DO NOT MODIFY BY HAND!
+-
+-// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
+-
+-export type RuntimeInstallManifest = { archiveName: string | null, archiveSha256: string, archiveSizeBytes: bigint | null, archiveUrl: string, bundleFormatVersion: number | null, bundleVersion: string | null, format: string | null, runtimeRootDirectoryName: string | null, };
+diff --git a/codex-rs/app-server-protocol/schema/typescript/v2/RuntimeInstallManifestParams.ts b/codex-rs/app-server-protocol/schema/typescript/v2/RuntimeInstallManifestParams.ts
+new file mode 100644
+index 000000000000..e0ee37ddbba2
+--- /dev/null
++++ b/codex-rs/app-server-protocol/schema/typescript/v2/RuntimeInstallManifestParams.ts
+@@ -0,0 +1,5 @@
++// GENERATED CODE! DO NOT MODIFY BY HAND!
++
++// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
++
++export type RuntimeInstallManifestParams = { archiveName?: string | null, archiveSha256: string, archiveSizeBytes?: bigint | null, archiveUrl: string, bundleFormatVersion?: number | null, bundleVersion?: string | null, format?: string | null, runtimeRootDirectoryName?: string | null, };
+diff --git a/codex-rs/app-server-protocol/schema/typescript/v2/RuntimeInstallParams.ts b/codex-rs/app-server-protocol/schema/typescript/v2/RuntimeInstallParams.ts
+index d3386dea72c7..f0cb81cb743f 100644
+--- a/codex-rs/app-server-protocol/schema/typescript/v2/RuntimeInstallParams.ts
++++ b/codex-rs/app-server-protocol/schema/typescript/v2/RuntimeInstallParams.ts
+@@ -1,6 +1,6 @@
+ // GENERATED CODE! DO NOT MODIFY BY HAND!
+ 
+ // This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
+-import type { RuntimeInstallManifest } from "./RuntimeInstallManifest";
++import type { RuntimeInstallManifestParams } from "./RuntimeInstallManifestParams";
+ 
+-export type RuntimeInstallParams = { environmentId?: string | null, manifest: RuntimeInstallManifest, release: string, };
++export type RuntimeInstallParams = { environmentId?: string | null, manifest: RuntimeInstallManifestParams, release: string, };
+diff --git a/codex-rs/app-server-protocol/schema/typescript/v2/RuntimeInstallProgressNotification.ts b/codex-rs/app-server-protocol/schema/typescript/v2/RuntimeInstallProgressNotification.ts
+new file mode 100644
+index 000000000000..16bd7467ecfb
+--- /dev/null
++++ b/codex-rs/app-server-protocol/schema/typescript/v2/RuntimeInstallProgressNotification.ts
+@@ -0,0 +1,6 @@
++// GENERATED CODE! DO NOT MODIFY BY HAND!
++
++// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
++import type { RuntimeInstallProgressPhase } from "./RuntimeInstallProgressPhase";
++
++export type RuntimeInstallProgressNotification = { bundleVersion: string | null, downloadedBytes: bigint | null, phase: RuntimeInstallProgressPhase, totalBytes: bigint | null, };
+diff --git a/codex-rs/app-server-protocol/schema/typescript/v2/RuntimeInstallProgressPhase.ts b/codex-rs/app-server-protocol/schema/typescript/v2/RuntimeInstallProgressPhase.ts
+new file mode 100644
+index 000000000000..561d3b1cd493
+--- /dev/null
++++ b/codex-rs/app-server-protocol/schema/typescript/v2/RuntimeInstallProgressPhase.ts
+@@ -0,0 +1,5 @@
++// GENERATED CODE! DO NOT MODIFY BY HAND!
++
++// This file was generated by [ts-rs](https://github.com/Aleph-Alpha/ts-rs). Do not edit this file manually.
++
++export type RuntimeInstallProgressPhase = "checking" | "downloading" | "verifying" | "extracting" | "validating" | "installed" | "configuring";
+diff --git a/codex-rs/app-server-protocol/schema/typescript/v2/index.ts b/codex-rs/app-server-protocol/schema/typescript/v2/index.ts
+index 6920e05bd776..98bdfff12d89 100644
+--- a/codex-rs/app-server-protocol/schema/typescript/v2/index.ts
++++ b/codex-rs/app-server-protocol/schema/typescript/v2/index.ts
+@@ -325,9 +325,13 @@ export type { ReviewDelivery } from "./ReviewDelivery";
+ export type { ReviewStartParams } from "./ReviewStartParams";
+ export type { ReviewStartResponse } from "./ReviewStartResponse";
+ export type { ReviewTarget } from "./ReviewTarget";
+-export type { RuntimeInstallManifest } from "./RuntimeInstallManifest";
++export type { RuntimeInstallCancelResponse } from "./RuntimeInstallCancelResponse";
++export type { RuntimeInstallCancelStatus } from "./RuntimeInstallCancelStatus";
++export type { RuntimeInstallManifestParams } from "./RuntimeInstallManifestParams";
+ export type { RuntimeInstallParams } from "./RuntimeInstallParams";
+ export type { RuntimeInstallPaths } from "./RuntimeInstallPaths";
++export type { RuntimeInstallProgressNotification } from "./RuntimeInstallProgressNotification";
++export type { RuntimeInstallProgressPhase } from "./RuntimeInstallProgressPhase";
+ export type { RuntimeInstallResponse } from "./RuntimeInstallResponse";
+ export type { RuntimeInstallStatus } from "./RuntimeInstallStatus";
+ export type { SandboxMode } from "./SandboxMode";
+diff --git a/codex-rs/app-server-protocol/src/protocol/common.rs b/codex-rs/app-server-protocol/src/protocol/common.rs
+index ea63e3e0fc30..668cd1f20e55 100644
+--- a/codex-rs/app-server-protocol/src/protocol/common.rs
++++ b/codex-rs/app-server-protocol/src/protocol/common.rs
+@@ -742,6 +742,11 @@ client_request_definitions! {
+         serialization: global("runtime-install"),
+         response: v2::RuntimeInstallResponse,
+     },
++    RuntimeInstallCancel => "runtime/install/cancel" {
++        params: #[ts(type = "undefined")] #[serde(skip_serializing_if = "Option::is_none")] Option<()>,
++        serialization: None,
++        response: v2::RuntimeInstallCancelResponse,
++    },
+     PluginUninstall => "plugin/uninstall" {
+         params: v2::PluginUninstallParams,
+         serialization: global("config"),
+@@ -1480,6 +1485,7 @@ server_notification_definitions! {
+     ThreadUnarchived => "thread/unarchived" (v2::ThreadUnarchivedNotification),
+     ThreadClosed => "thread/closed" (v2::ThreadClosedNotification),
+     SkillsChanged => "skills/changed" (v2::SkillsChangedNotification),
++    RuntimeInstallProgress => "runtime/install/progress" (v2::RuntimeInstallProgressNotification),
+     ThreadNameUpdated => "thread/name/updated" (v2::ThreadNameUpdatedNotification),
+     ThreadGoalUpdated => "thread/goal/updated" (v2::ThreadGoalUpdatedNotification),
+     ThreadGoalCleared => "thread/goal/cleared" (v2::ThreadGoalClearedNotification),
+diff --git a/codex-rs/app-server-protocol/src/protocol/v2/runtime.rs b/codex-rs/app-server-protocol/src/protocol/v2/runtime.rs
+index a6831bd63905..40fe0deb2285 100644
+--- a/codex-rs/app-server-protocol/src/protocol/v2/runtime.rs
++++ b/codex-rs/app-server-protocol/src/protocol/v2/runtime.rs
+@@ -7,14 +7,20 @@ use ts_rs::TS;
+ #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+ #[serde(rename_all = "camelCase")]
+ #[ts(export_to = "v2/")]
+-pub struct RuntimeInstallManifest {
++pub struct RuntimeInstallManifestParams {
++    #[ts(optional = nullable)]
+     pub archive_name: Option<String>,
+     pub archive_sha256: String,
++    #[ts(optional = nullable)]
+     pub archive_size_bytes: Option<u64>,
+     pub archive_url: String,
++    #[ts(optional = nullable)]
+     pub bundle_format_version: Option<u32>,
++    #[ts(optional = nullable)]
+     pub bundle_version: Option<String>,
++    #[ts(optional = nullable)]
+     pub format: Option<String>,
++    #[ts(optional = nullable)]
+     pub runtime_root_directory_name: Option<String>,
+ }
+ 
+@@ -24,10 +30,25 @@ pub struct RuntimeInstallManifest {
+ pub struct RuntimeInstallParams {
+     #[ts(optional = nullable)]
+     pub environment_id: Option<String>,
+-    pub manifest: Box<RuntimeInstallManifest>,
++    pub manifest: Box<RuntimeInstallManifestParams>,
+     pub release: String,
+ }
+ 
++#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
++#[serde(rename_all = "kebab-case")]
++#[ts(export_to = "v2/")]
++pub enum RuntimeInstallCancelStatus {
++    Canceled,
++    NotFound,
++}
++
++#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
++#[serde(rename_all = "camelCase")]
++#[ts(export_to = "v2/")]
++pub struct RuntimeInstallCancelResponse {
++    pub status: RuntimeInstallCancelStatus,
++}
++
+ #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+ #[serde(rename_all = "kebab-case")]
+ #[ts(export_to = "v2/")]
+@@ -56,3 +77,26 @@ pub struct RuntimeInstallResponse {
+     pub paths: RuntimeInstallPaths,
+     pub status: RuntimeInstallStatus,
+ }
++
++#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
++#[serde(rename_all = "kebab-case")]
++#[ts(export_to = "v2/")]
++pub enum RuntimeInstallProgressPhase {
++    Checking,
++    Downloading,
++    Verifying,
++    Extracting,
++    Validating,
++    Installed,
++    Configuring,
++}
++
++#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
++#[serde(rename_all = "camelCase")]
++#[ts(export_to = "v2/")]
++pub struct RuntimeInstallProgressNotification {
++    pub bundle_version: Option<String>,
++    pub downloaded_bytes: Option<u64>,
++    pub phase: RuntimeInstallProgressPhase,
++    pub total_bytes: Option<u64>,
++}
+diff --git a/codex-rs/app-server/README.md b/codex-rs/app-server/README.md
+index 2ceffc86fec4..41f6f0449823 100644
+--- a/codex-rs/app-server/README.md
++++ b/codex-rs/app-server/README.md
+@@ -212,6 +212,9 @@ Example with notification opt-out:
+ - `remoteControl/status/changed` — notification emitted when the remote-control status or client-visible environment id changes. `status` is one of `disabled`, `connecting`, `connected`, or `errored`; `serverName` is the local machine name used by this app-server process; `environmentId` is a string when the app-server has a current enrollment and `null` when that enrollment is cleared, invalidated, or remote control is disabled. Newly initialized app-server clients always receive the current status snapshot.
+ - `skills/config/write` — write user-level skill config by name or absolute path.
+ - `plugin/install` — install a plugin from a discovered marketplace entry, rejecting marketplace entries marked unavailable for install, install MCPs if any, and return the effective plugin auth policy plus any apps that still need auth (**under development; do not call from production clients yet**).
++- `runtime/install` — install the selected primary runtime bundle and return its executable, dependency, bundled-skill, and bundled-marketplace paths after app-server config synchronization. Runtime installs are process-wide and serialized.
++- `runtime/install/progress` — notification sent to the connection that requested `runtime/install` as the active install moves through checking, downloading, verifying, extracting, validating, installed, and configuring phases. Download notifications include byte counts when available.
++- `runtime/install/cancel` — cancel the one active `runtime/install` request for this app-server process and report whether an install was found.
+ - `plugin/uninstall` — uninstall a local plugin by `pluginId` in `<plugin>@<marketplace>` form by removing its cached files and clearing its user-level config entry, or uninstall a remote ChatGPT plugin by backend `pluginId` by forwarding the uninstall to the ChatGPT plugin backend and removing any downloaded remote-plugin cache (**under development; do not call from production clients yet**).
+ - `mcpServer/oauth/login` — start an OAuth login for a configured MCP server; returns an `authorization_url` and later emits `mcpServer/oauthLogin/completed` once the browser flow finishes.
+ - `tool/requestUserInput` — prompt the user with 1–3 short questions for a tool call and return their answers (experimental).
+diff --git a/codex-rs/app-server/src/message_processor.rs b/codex-rs/app-server/src/message_processor.rs
+index e135c9b2456d..de380c548df0 100644
+--- a/codex-rs/app-server/src/message_processor.rs
++++ b/codex-rs/app-server/src/message_processor.rs
+@@ -7,7 +7,6 @@ use std::sync::atomic::AtomicBool;
+ use crate::attestation::app_server_attestation_provider;
+ use crate::config_manager::ConfigManager;
+ use crate::connection_rpc_gate::ConnectionRpcGate;
+-use crate::error_code::internal_error;
+ use crate::error_code::invalid_request;
+ use crate::extensions::guardian_agent_spawner;
+ use crate::extensions::thread_extensions;
+@@ -32,6 +31,7 @@ use crate::request_processors::McpRequestProcessor;
+ use crate::request_processors::PluginRequestProcessor;
+ use crate::request_processors::ProcessExecRequestProcessor;
+ use crate::request_processors::RemoteControlRequestProcessor;
++use crate::request_processors::RuntimeInstallRequestProcessor;
+ use crate::request_processors::SearchRequestProcessor;
+ use crate::request_processors::ThreadGoalRequestProcessor;
+ use crate::request_processors::ThreadRequestProcessor;
+@@ -168,7 +168,6 @@ pub(crate) struct MessageProcessor {
+     command_exec_processor: CommandExecRequestProcessor,
+     process_exec_processor: ProcessExecRequestProcessor,
+     config_processor: ConfigRequestProcessor,
+-    environment_manager: Arc<EnvironmentManager>,
+     environment_processor: EnvironmentRequestProcessor,
+     external_agent_config_processor: ExternalAgentConfigRequestProcessor,
+     feedback_processor: FeedbackRequestProcessor,
+@@ -179,8 +178,8 @@ pub(crate) struct MessageProcessor {
+     mcp_processor: McpRequestProcessor,
+     plugin_processor: PluginRequestProcessor,
+     remote_control_processor: RemoteControlRequestProcessor,
++    runtime_install_processor: RuntimeInstallRequestProcessor,
+     search_processor: SearchRequestProcessor,
+-    thread_manager: Arc<ThreadManager>,
+     thread_goal_processor: ThreadGoalRequestProcessor,
+     thread_processor: ThreadRequestProcessor,
+     turn_processor: TurnRequestProcessor,
+@@ -405,6 +404,11 @@ impl MessageProcessor {
+             workspace_settings_cache,
+         );
+         let remote_control_processor = RemoteControlRequestProcessor::new(remote_control_handle);
++        let runtime_install_processor = RuntimeInstallRequestProcessor::new(
++            Arc::clone(&environment_manager_for_requests),
++            outgoing.clone(),
++            Arc::clone(&thread_manager),
++        );
+         let search_processor = SearchRequestProcessor::new(outgoing.clone());
+         let thread_goal_processor = ThreadGoalRequestProcessor::new(
+             Arc::clone(&thread_manager),
+@@ -491,7 +495,6 @@ impl MessageProcessor {
+             command_exec_processor,
+             process_exec_processor,
+             config_processor,
+-            environment_manager: thread_manager.environment_manager(),
+             environment_processor,
+             external_agent_config_processor,
+             feedback_processor,
+@@ -502,8 +505,8 @@ impl MessageProcessor {
+             mcp_processor,
+             plugin_processor,
+             remote_control_processor,
++            runtime_install_processor,
+             search_processor,
+-            thread_manager,
+             thread_goal_processor,
+             thread_processor,
+             turn_processor,
+@@ -974,29 +977,14 @@ impl MessageProcessor {
+                 .await
+                 .map(|response| Some(response.into())),
+             ClientRequest::RuntimeInstall { params, .. } => {
+-                let mut params = params;
+-                let environment = if let Some(environment_id) = params.environment_id.take() {
+-                    self.environment_manager
+-                        .get_environment(&environment_id)
+-                        .ok_or_else(|| {
+-                            invalid_request(format!(
+-                                "unknown runtime install environment id `{environment_id}`"
+-                            ))
+-                        })?
+-                } else {
+-                    self.environment_manager
+-                        .default_or_local_environment()
+-                        .ok_or_else(|| {
+-                            internal_error("runtime install environment is not configured")
+-                        })?
+-                };
+-                let response = environment.install_runtime(params).await?;
+-                let response =
+-                    crate::runtime_install::finalize_runtime_install(&environment, response)
+-                        .await?;
+-                self.thread_manager.plugins_manager().clear_cache();
+-                self.thread_manager.skills_manager().clear_cache();
+-                Ok(Some(response.into()))
++                self.runtime_install_processor
++                    .install_runtime(connection_id, params)
++                    .await
++            }
++            ClientRequest::RuntimeInstallCancel { .. } => {
++                self.runtime_install_processor
++                    .cancel_runtime_install()
++                    .await
+             }
+             ClientRequest::ThreadStart { params, .. } => {
+                 self.thread_processor
+diff --git a/codex-rs/app-server/src/request_processors.rs b/codex-rs/app-server/src/request_processors.rs
+index d0958e80ab95..94d4a468dc4e 100644
+--- a/codex-rs/app-server/src/request_processors.rs
++++ b/codex-rs/app-server/src/request_processors.rs
+@@ -466,6 +466,7 @@ mod mcp_processor;
+ mod plugins;
+ mod process_exec_processor;
+ mod remote_control_processor;
++mod runtime_install_processor;
+ mod search;
+ mod thread_processor;
+ mod token_usage_replay;
+@@ -488,6 +489,7 @@ pub(crate) use mcp_processor::McpRequestProcessor;
+ pub(crate) use plugins::PluginRequestProcessor;
+ pub(crate) use process_exec_processor::ProcessExecRequestProcessor;
+ pub(crate) use remote_control_processor::RemoteControlRequestProcessor;
++pub(crate) use runtime_install_processor::RuntimeInstallRequestProcessor;
+ pub(crate) use search::SearchRequestProcessor;
+ pub(crate) use thread_goal_processor::ThreadGoalRequestProcessor;
+ pub(crate) use thread_processor::ThreadRequestProcessor;
+diff --git a/codex-rs/app-server/src/request_processors/runtime_install_processor.rs b/codex-rs/app-server/src/request_processors/runtime_install_processor.rs
+new file mode 100644
+index 000000000000..03bf0cb2a47d
+--- /dev/null
++++ b/codex-rs/app-server/src/request_processors/runtime_install_processor.rs
+@@ -0,0 +1,152 @@
++use super::*;
++use codex_app_server_protocol::RuntimeInstallCancelResponse;
++use codex_app_server_protocol::RuntimeInstallCancelStatus;
++use codex_app_server_protocol::RuntimeInstallParams;
++use codex_app_server_protocol::RuntimeInstallProgressNotification;
++use codex_app_server_protocol::RuntimeInstallProgressPhase;
++use std::sync::Mutex as StdMutex;
++
++#[derive(Clone)]
++pub(crate) struct RuntimeInstallRequestProcessor {
++    environment_manager: Arc<EnvironmentManager>,
++    outgoing: Arc<OutgoingMessageSender>,
++    thread_manager: Arc<ThreadManager>,
++    active_install: Arc<StdMutex<Option<CancellationToken>>>,
++}
++
++impl RuntimeInstallRequestProcessor {
++    pub(crate) fn new(
++        environment_manager: Arc<EnvironmentManager>,
++        outgoing: Arc<OutgoingMessageSender>,
++        thread_manager: Arc<ThreadManager>,
++    ) -> Self {
++        Self {
++            environment_manager,
++            outgoing,
++            thread_manager,
++            active_install: Arc::new(StdMutex::new(None)),
++        }
++    }
++
++    pub(crate) async fn install_runtime(
++        &self,
++        connection_id: ConnectionId,
++        mut params: RuntimeInstallParams,
++    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
++        let (cancellation, _active_install) = self.begin_install()?;
++        let environment = if let Some(environment_id) = params.environment_id.take() {
++            self.environment_manager
++                .get_environment(&environment_id)
++                .ok_or_else(|| {
++                    invalid_request(format!(
++                        "unknown runtime install environment id `{environment_id}`"
++                    ))
++                })?
++        } else {
++            self.environment_manager
++                .default_or_local_environment()
++                .ok_or_else(|| internal_error("runtime install environment is not configured"))?
++        };
++
++        let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel();
++        let outgoing = Arc::clone(&self.outgoing);
++        let progress_forwarder = tokio::spawn(async move {
++            while let Some(progress) = progress_rx.recv().await {
++                outgoing
++                    .send_server_notification_to_connections(
++                        &[connection_id],
++                        ServerNotification::RuntimeInstallProgress(progress),
++                    )
++                    .await;
++            }
++        });
++
++        let install_result = environment
++            .install_runtime_with_progress(params, progress_tx, cancellation)
++            .await;
++        if let Err(error) = progress_forwarder.await {
++            warn!("runtime install progress forwarder failed: {error}");
++        }
++
++        let response = install_result?;
++        self.send_progress(
++            connection_id,
++            RuntimeInstallProgressNotification {
++                bundle_version: response.bundle_version.clone(),
++                downloaded_bytes: None,
++                phase: RuntimeInstallProgressPhase::Configuring,
++                total_bytes: None,
++            },
++        )
++        .await;
++        let response =
++            crate::runtime_install::finalize_runtime_install(&environment, response).await?;
++        self.thread_manager.plugins_manager().clear_cache();
++        self.thread_manager.skills_manager().clear_cache();
++        Ok(Some(response.into()))
++    }
++
++    pub(crate) async fn cancel_runtime_install(
++        &self,
++    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
++        let status = {
++            let active_install = self.active_install();
++            match active_install.as_ref() {
++                Some(cancellation) => {
++                    cancellation.cancel();
++                    RuntimeInstallCancelStatus::Canceled
++                }
++                None => RuntimeInstallCancelStatus::NotFound,
++            }
++        };
++        Ok(Some(RuntimeInstallCancelResponse { status }.into()))
++    }
++
++    fn begin_install(&self) -> Result<(CancellationToken, ActiveInstallGuard), JSONRPCErrorError> {
++        let cancellation = CancellationToken::new();
++        let mut active_install = self.active_install();
++        if active_install.is_some() {
++            return Err(invalid_request("runtime install is already in progress"));
++        }
++        *active_install = Some(cancellation.clone());
++        drop(active_install);
++        Ok((
++            cancellation,
++            ActiveInstallGuard {
++                active_install: Arc::clone(&self.active_install),
++            },
++        ))
++    }
++
++    fn active_install(&self) -> std::sync::MutexGuard<'_, Option<CancellationToken>> {
++        self.active_install
++            .lock()
++            .unwrap_or_else(std::sync::PoisonError::into_inner)
++    }
++
++    async fn send_progress(
++        &self,
++        connection_id: ConnectionId,
++        progress: RuntimeInstallProgressNotification,
++    ) {
++        self.outgoing
++            .send_server_notification_to_connections(
++                &[connection_id],
++                ServerNotification::RuntimeInstallProgress(progress),
++            )
++            .await;
++    }
++}
++
++struct ActiveInstallGuard {
++    active_install: Arc<StdMutex<Option<CancellationToken>>>,
++}
++
++impl Drop for ActiveInstallGuard {
++    fn drop(&mut self) {
++        self.active_install
++            .lock()
++            .unwrap_or_else(std::sync::PoisonError::into_inner)
++            .take();
++    }
++}
+diff --git a/codex-rs/exec-server/src/environment.rs b/codex-rs/exec-server/src/environment.rs
+index 5566acb1a2b6..15e5a13bae2a 100644
+--- a/codex-rs/exec-server/src/environment.rs
++++ b/codex-rs/exec-server/src/environment.rs
+@@ -6,6 +6,7 @@ use codex_app_server_protocol::JSONRPCErrorError;
+ use codex_app_server_protocol::RuntimeInstallParams;
+ use codex_app_server_protocol::RuntimeInstallResponse;
+ use codex_utils_absolute_path::AbsolutePathBuf;
++use tokio_util::sync::CancellationToken;
+ 
+ use crate::ExecServerError;
+ use crate::ExecServerRuntimePaths;
+@@ -332,15 +333,37 @@ impl RuntimeInstaller {
+     async fn install_runtime(
+         &self,
+         params: RuntimeInstallParams,
++    ) -> Result<RuntimeInstallResponse, JSONRPCErrorError> {
++        self.install_runtime_with_progress(params, /*progress*/ None, CancellationToken::new())
++            .await
++    }
++
++    async fn install_runtime_with_progress(
++        &self,
++        params: RuntimeInstallParams,
++        progress: Option<crate::runtime_install::RuntimeInstallProgressSender>,
++        cancellation: CancellationToken,
+     ) -> Result<RuntimeInstallResponse, JSONRPCErrorError> {
+         match self {
+-            RuntimeInstaller::Local => crate::runtime_install::install_runtime(params).await,
++            RuntimeInstaller::Local => match progress {
++                Some(progress) => {
++                    crate::runtime_install::install_runtime_with_progress(
++                        params,
++                        progress,
++                        cancellation,
++                    )
++                    .await
++                }
++                None => crate::runtime_install::install_runtime(params).await,
++            },
+             RuntimeInstaller::Remote(client) => {
+                 let client = client.get().await.map_err(exec_server_error_to_jsonrpc)?;
+-                client
+-                    .runtime_install(params)
+-                    .await
+-                    .map_err(exec_server_error_to_jsonrpc)
++                tokio::select! {
++                    _ = cancellation.cancelled() => Err(internal_error("runtime install canceled")),
++                    response = client.runtime_install(params) => {
++                        response.map_err(exec_server_error_to_jsonrpc)
++                    }
++                }
+             }
+         }
+     }
+@@ -510,6 +533,17 @@ impl Environment {
+         self.runtime_installer.install_runtime(params).await
+     }
+ 
++    pub async fn install_runtime_with_progress(
++        &self,
++        params: RuntimeInstallParams,
++        progress: crate::runtime_install::RuntimeInstallProgressSender,
++        cancellation: CancellationToken,
++    ) -> Result<RuntimeInstallResponse, JSONRPCErrorError> {
++        self.runtime_installer
++            .install_runtime_with_progress(params, Some(progress), cancellation)
++            .await
++    }
++
+     pub async fn codex_home(&self) -> Result<AbsolutePathBuf, JSONRPCErrorError> {
+         if let Some(codex_home) = self.codex_home.clone() {
+             return Ok(codex_home);
+diff --git a/codex-rs/exec-server/src/runtime_install.rs b/codex-rs/exec-server/src/runtime_install.rs
+index 565d56602973..ff6cbd5056d4 100644
+--- a/codex-rs/exec-server/src/runtime_install.rs
++++ b/codex-rs/exec-server/src/runtime_install.rs
+@@ -5,9 +5,11 @@ use std::path::PathBuf;
+ use std::process::Stdio;
+ 
+ use codex_app_server_protocol::JSONRPCErrorError;
+-use codex_app_server_protocol::RuntimeInstallManifest;
++use codex_app_server_protocol::RuntimeInstallManifestParams;
+ use codex_app_server_protocol::RuntimeInstallParams;
+ use codex_app_server_protocol::RuntimeInstallPaths;
++use codex_app_server_protocol::RuntimeInstallProgressNotification;
++use codex_app_server_protocol::RuntimeInstallProgressPhase;
+ use codex_app_server_protocol::RuntimeInstallResponse;
+ use codex_app_server_protocol::RuntimeInstallStatus;
+ use codex_utils_absolute_path::AbsolutePathBuf;
+@@ -19,6 +21,8 @@ use tokio::fs;
+ use tokio::io::AsyncReadExt;
+ use tokio::io::AsyncWriteExt;
+ use tokio::process::Command;
++use tokio::sync::mpsc;
++use tokio_util::sync::CancellationToken;
+ 
+ use crate::rpc::internal_error;
+ use crate::rpc::invalid_params;
+@@ -42,6 +46,54 @@ struct InstalledRuntimeMetadata {
+     skills_to_remove: Option<Vec<String>>,
+ }
+ 
++pub type RuntimeInstallProgressSender = mpsc::UnboundedSender<RuntimeInstallProgressNotification>;
++
++#[derive(Clone)]
++struct RuntimeInstallProgressReporter {
++    bundle_version: Option<String>,
++    sender: Option<RuntimeInstallProgressSender>,
++}
++
++impl RuntimeInstallProgressReporter {
++    fn new(bundle_version: Option<String>, sender: Option<RuntimeInstallProgressSender>) -> Self {
++        Self {
++            bundle_version,
++            sender,
++        }
++    }
++
++    fn phase(&self, phase: RuntimeInstallProgressPhase) {
++        self.send(
++            phase, /*downloaded_bytes*/ None, /*total_bytes*/ None,
++        );
++    }
++
++    fn download_progress(&self, downloaded_bytes: u64, total_bytes: Option<u64>) {
++        self.send(
++            RuntimeInstallProgressPhase::Downloading,
++            Some(downloaded_bytes),
++            total_bytes,
++        );
++    }
++
++    fn send(
++        &self,
++        phase: RuntimeInstallProgressPhase,
++        downloaded_bytes: Option<u64>,
++        total_bytes: Option<u64>,
++    ) {
++        let Some(sender) = self.sender.as_ref() else {
++            return;
++        };
++        let _ = sender.send(RuntimeInstallProgressNotification {
++            bundle_version: self.bundle_version.clone(),
++            downloaded_bytes,
++            phase,
++            total_bytes,
++        });
++    }
++}
++
+ pub(crate) async fn install_runtime(
+     params: RuntimeInstallParams,
+ ) -> Result<RuntimeInstallResponse, JSONRPCErrorError> {
+@@ -49,9 +101,33 @@ pub(crate) async fn install_runtime(
+     install_runtime_with_root(params, install_root).await
+ }
+ 
++pub(crate) async fn install_runtime_with_progress(
++    params: RuntimeInstallParams,
++    progress: RuntimeInstallProgressSender,
++    cancellation: CancellationToken,
++) -> Result<RuntimeInstallResponse, JSONRPCErrorError> {
++    let install_root = default_install_root()?;
++    install_runtime_with_root_and_control(params, install_root, Some(progress), cancellation).await
++}
++
+ async fn install_runtime_with_root(
+     params: RuntimeInstallParams,
+     install_root: PathBuf,
++) -> Result<RuntimeInstallResponse, JSONRPCErrorError> {
++    install_runtime_with_root_and_control(
++        params,
++        install_root,
++        /*progress*/ None,
++        CancellationToken::new(),
++    )
++    .await
++}
++
++async fn install_runtime_with_root_and_control(
++    params: RuntimeInstallParams,
++    install_root: PathBuf,
++    progress: Option<RuntimeInstallProgressSender>,
++    cancellation: CancellationToken,
+ ) -> Result<RuntimeInstallResponse, JSONRPCErrorError> {
+     validate_manifest(&params.manifest)?;
+     let archive_format = runtime_archive_format(&params.manifest)?;
+@@ -62,11 +138,38 @@ async fn install_runtime_with_root(
+         .unwrap_or_else(|| default_archive_name(archive_format).to_string());
+     validate_path_segment(&archive_name, "archiveName")?;
+ 
++    let progress =
++        RuntimeInstallProgressReporter::new(params.manifest.bundle_version.clone(), progress);
++    progress.phase(RuntimeInstallProgressPhase::Checking);
++    ensure_not_cancelled(&cancellation)?;
++    if let Some(response) =
++        reuse_current_runtime(&params.manifest, &install_root, &progress, &cancellation).await?
++    {
++        return Ok(response);
++    }
+     let staging_dir = make_staging_dir(&install_root).await?;
+     let archive_path = staging_dir.join(archive_name);
+     let result = async {
+-        download_archive(&params.manifest.archive_url, &archive_path).await?;
+-        install_runtime_from_archive(&params.manifest, &archive_path, &install_root).await
++        progress.download_progress(
++            /*downloaded_bytes*/ 0,
++            params.manifest.archive_size_bytes,
++        );
++        download_archive(
++            &params.manifest.archive_url,
++            &archive_path,
++            params.manifest.archive_size_bytes,
++            &progress,
++            &cancellation,
++        )
++        .await?;
++        install_runtime_from_archive_with_control(
++            &params.manifest,
++            &archive_path,
++            &install_root,
++            &progress,
++            &cancellation,
++        )
++        .await
+     }
+     .await;
+     let cleanup_result = fs::remove_dir_all(&staging_dir).await;
+@@ -81,44 +184,54 @@ async fn install_runtime_with_root(
+     result
+ }
+ 
++#[cfg(test)]
+ async fn install_runtime_from_archive(
+-    manifest: &RuntimeInstallManifest,
++    manifest: &RuntimeInstallManifestParams,
++    archive_path: &Path,
++    install_root: &Path,
++) -> Result<RuntimeInstallResponse, JSONRPCErrorError> {
++    install_runtime_from_archive_with_control(
++        manifest,
++        archive_path,
++        install_root,
++        &RuntimeInstallProgressReporter::new(manifest.bundle_version.clone(), None),
++        &CancellationToken::new(),
++    )
++    .await
++}
++
++async fn install_runtime_from_archive_with_control(
++    manifest: &RuntimeInstallManifestParams,
+     archive_path: &Path,
+     install_root: &Path,
++    progress: &RuntimeInstallProgressReporter,
++    cancellation: &CancellationToken,
+ ) -> Result<RuntimeInstallResponse, JSONRPCErrorError> {
+     let runtime_root_directory_name = runtime_root_directory_name(manifest)?;
+     let installed_runtime_root = install_root.join(&runtime_root_directory_name);
+     let target_platform = target_platform();
+ 
+-    if let Some(bundle_version) = manifest.bundle_version.as_ref()
+-        && let Ok(Some(metadata)) = read_installed_runtime_metadata(&installed_runtime_root).await
+-        && metadata.bundle_version.as_ref() == Some(bundle_version)
+-        && let Ok(paths) = validate_runtime_root(
+-            &installed_runtime_root,
+-            manifest.bundle_format_version,
+-            target_platform,
+-        )
+-        .await
++    if let Some(response) =
++        reuse_current_runtime(manifest, install_root, progress, cancellation).await?
+     {
+-        return Ok(RuntimeInstallResponse {
+-            bundle_version: Some(bundle_version.clone()),
+-            paths,
+-            status: RuntimeInstallStatus::AlreadyCurrent,
+-        });
++        return Ok(response);
+     }
+ 
+     fs::create_dir_all(install_root)
+         .await
+         .map_err(|err| internal_error(format!("failed to create runtime install root: {err}")))?;
+ 
++    progress.phase(RuntimeInstallProgressPhase::Verifying);
+     verify_archive_checksum(
+         archive_path,
+         &manifest.archive_sha256,
+         &manifest.archive_url,
++        cancellation,
+     )
+     .await?;
+ 
+     let archive_format = runtime_archive_format(manifest)?;
++    ensure_not_cancelled(cancellation)?;
+     let staging_dir = make_staging_dir(install_root).await?;
+     let result = async {
+         let extract_dir = staging_dir.join("payload");
+@@ -126,17 +239,23 @@ async fn install_runtime_from_archive(
+             internal_error(format!("failed to create runtime extract dir: {err}"))
+         })?;
+ 
++        progress.phase(RuntimeInstallProgressPhase::Extracting);
++        ensure_not_cancelled(cancellation)?;
+         let entries = list_archive_entries(archive_format, archive_path).await?;
+         assert_archive_entries_stay_within_directory(&entries, &extract_dir)?;
++        ensure_not_cancelled(cancellation)?;
+         extract_archive(archive_format, archive_path, &extract_dir).await?;
+ 
+         let extracted_runtime_root = extract_dir.join(&runtime_root_directory_name);
++        progress.phase(RuntimeInstallProgressPhase::Validating);
++        ensure_not_cancelled(cancellation)?;
+         validate_runtime_root(
+             &extracted_runtime_root,
+             manifest.bundle_format_version,
+             target_platform,
+         )
+         .await?;
++        ensure_not_cancelled(cancellation)?;
+ 
+         let previous_runtime_root =
+             install_root.join(format!("{runtime_root_directory_name}.previous"));
+@@ -193,9 +312,40 @@ async fn install_runtime_from_archive(
+             staging_dir.display()
+         );
+     }
++    if result.is_ok() {
++        progress.phase(RuntimeInstallProgressPhase::Installed);
++    }
+     result
+ }
+ 
++async fn reuse_current_runtime(
++    manifest: &RuntimeInstallManifestParams,
++    install_root: &Path,
++    progress: &RuntimeInstallProgressReporter,
++    cancellation: &CancellationToken,
++) -> Result<Option<RuntimeInstallResponse>, JSONRPCErrorError> {
++    let installed_runtime_root = install_root.join(runtime_root_directory_name(manifest)?);
++    ensure_not_cancelled(cancellation)?;
++    if let Some(bundle_version) = manifest.bundle_version.as_ref()
++        && let Ok(Some(metadata)) = read_installed_runtime_metadata(&installed_runtime_root).await
++        && metadata.bundle_version.as_ref() == Some(bundle_version)
++        && let Ok(paths) = validate_runtime_root(
++            &installed_runtime_root,
++            manifest.bundle_format_version,
++            target_platform(),
++        )
++        .await
++    {
++        progress.phase(RuntimeInstallProgressPhase::Installed);
++        return Ok(Some(RuntimeInstallResponse {
++            bundle_version: Some(bundle_version.clone()),
++            paths,
++            status: RuntimeInstallStatus::AlreadyCurrent,
++        }));
++    }
++    Ok(None)
++}
++
+ fn default_install_root() -> Result<PathBuf, JSONRPCErrorError> {
+     let home = std::env::var_os("HOME")
+         .or_else(|| std::env::var_os("USERPROFILE"))
+@@ -219,7 +369,7 @@ async fn make_staging_dir(install_root: &Path) -> Result<PathBuf, JSONRPCErrorEr
+         })
+ }
+ 
+-fn validate_manifest(manifest: &RuntimeInstallManifest) -> Result<(), JSONRPCErrorError> {
++fn validate_manifest(manifest: &RuntimeInstallManifestParams) -> Result<(), JSONRPCErrorError> {
+     if manifest.archive_url.trim().is_empty() {
+         return Err(invalid_params(
+             "runtime manifest archiveUrl must not be empty",
+@@ -259,7 +409,7 @@ fn validate_path_segment(value: &str, field_name: &str) -> Result<(), JSONRPCErr
+ }
+ 
+ fn runtime_root_directory_name(
+-    manifest: &RuntimeInstallManifest,
++    manifest: &RuntimeInstallManifestParams,
+ ) -> Result<String, JSONRPCErrorError> {
+     let runtime_root_directory_name = manifest
+         .runtime_root_directory_name
+@@ -270,7 +420,7 @@ fn runtime_root_directory_name(
+ }
+ 
+ fn runtime_archive_format(
+-    manifest: &RuntimeInstallManifest,
++    manifest: &RuntimeInstallManifestParams,
+ ) -> Result<RuntimeArchiveFormat, JSONRPCErrorError> {
+     if let Some(format) = manifest.format.as_deref() {
+         match format.to_ascii_lowercase().as_str() {
+@@ -301,13 +451,21 @@ fn default_archive_name(format: RuntimeArchiveFormat) -> &'static str {
+     }
+ }
+ 
+-async fn download_archive(url: &str, destination: &Path) -> Result<(), JSONRPCErrorError> {
+-    let response = reqwest::Client::new()
+-        .get(url)
+-        .header(reqwest::header::USER_AGENT, USER_AGENT)
+-        .send()
+-        .await
+-        .map_err(|err| internal_error(format!("failed to download runtime archive: {err}")))?;
++async fn download_archive(
++    url: &str,
++    destination: &Path,
++    expected_size_bytes: Option<u64>,
++    progress: &RuntimeInstallProgressReporter,
++    cancellation: &CancellationToken,
++) -> Result<(), JSONRPCErrorError> {
++    let response = tokio::select! {
++        _ = cancellation.cancelled() => return Err(runtime_install_canceled()),
++        response = reqwest::Client::new()
++            .get(url)
++            .header(reqwest::header::USER_AGENT, USER_AGENT)
++            .send() => response
++    }
++    .map_err(|err| internal_error(format!("failed to download runtime archive: {err}")))?;
+     if !response.status().is_success() {
+         return Err(internal_error(format!(
+             "failed to download runtime archive ({} {})",
+@@ -322,14 +480,27 @@ async fn download_archive(url: &str, destination: &Path) -> Result<(), JSONRPCEr
+     let mut file = fs::File::create(destination)
+         .await
+         .map_err(|err| internal_error(format!("failed to create runtime archive file: {err}")))?;
++    let total_bytes = response.content_length().or(expected_size_bytes);
++    let mut downloaded_bytes = 0_u64;
+     let mut stream = response.bytes_stream();
+-    while let Some(chunk) = stream.next().await {
++    loop {
++        let chunk = tokio::select! {
++            _ = cancellation.cancelled() => return Err(runtime_install_canceled()),
++            chunk = stream.next() => chunk
++        };
++        let Some(chunk) = chunk else {
++            break;
++        };
+         let chunk = chunk.map_err(|err| {
+             internal_error(format!("failed to read runtime archive bytes: {err}"))
+         })?;
+-        file.write_all(&chunk)
+-            .await
+-            .map_err(|err| internal_error(format!("failed to write runtime archive: {err}")))?;
++        tokio::select! {
++            _ = cancellation.cancelled() => return Err(runtime_install_canceled()),
++            result = file.write_all(&chunk) => result
++        }
++        .map_err(|err| internal_error(format!("failed to write runtime archive: {err}")))?;
++        downloaded_bytes += chunk.len() as u64;
++        progress.download_progress(downloaded_bytes, total_bytes);
+     }
+     file.flush()
+         .await
+@@ -341,8 +512,9 @@ async fn verify_archive_checksum(
+     archive_path: &Path,
+     expected_sha256: &str,
+     source_url: &str,
++    cancellation: &CancellationToken,
+ ) -> Result<(), JSONRPCErrorError> {
+-    let actual_sha256 = compute_sha256(archive_path).await?;
++    let actual_sha256 = compute_sha256_with_cancellation(archive_path, cancellation).await?;
+     if !actual_sha256.eq_ignore_ascii_case(expected_sha256) {
+         return Err(invalid_params(format!(
+             "checksum mismatch for '{source_url}': expected {expected_sha256}, got {actual_sha256}"
+@@ -351,17 +523,26 @@ async fn verify_archive_checksum(
+     Ok(())
+ }
+ 
++#[cfg(test)]
+ async fn compute_sha256(path: &Path) -> Result<String, JSONRPCErrorError> {
++    compute_sha256_with_cancellation(path, &CancellationToken::new()).await
++}
++
++async fn compute_sha256_with_cancellation(
++    path: &Path,
++    cancellation: &CancellationToken,
++) -> Result<String, JSONRPCErrorError> {
+     let mut file = fs::File::open(path)
+         .await
+         .map_err(|err| internal_error(format!("failed to open runtime archive: {err}")))?;
+     let mut digest = Sha256::new();
+     let mut buffer = [0_u8; 64 * 1024];
+     loop {
+-        let bytes_read = file
+-            .read(&mut buffer)
+-            .await
+-            .map_err(|err| internal_error(format!("failed to read runtime archive: {err}")))?;
++        let bytes_read = tokio::select! {
++            _ = cancellation.cancelled() => return Err(runtime_install_canceled()),
++            bytes_read = file.read(&mut buffer) => bytes_read
++        }
++        .map_err(|err| internal_error(format!("failed to read runtime archive: {err}")))?;
+         if bytes_read == 0 {
+             break;
+         }
+@@ -370,6 +551,18 @@ async fn compute_sha256(path: &Path) -> Result<String, JSONRPCErrorError> {
+     Ok(format!("{:x}", digest.finalize()))
+ }
+ 
++fn ensure_not_cancelled(cancellation: &CancellationToken) -> Result<(), JSONRPCErrorError> {
++    if cancellation.is_cancelled() {
++        Err(runtime_install_canceled())
++    } else {
++        Ok(())
++    }
++}
++
++fn runtime_install_canceled() -> JSONRPCErrorError {
++    internal_error("runtime install canceled")
++}
++
+ async fn list_archive_entries(
+     format: RuntimeArchiveFormat,
+     archive_path: &Path,
+@@ -788,6 +981,35 @@ mod tests {
+         );
+     }
+ 
++    #[tokio::test]
++    async fn install_runtime_reuses_current_runtime_without_downloading_archive() {
++        let temp_dir = tempfile::tempdir().expect("tempdir");
++        let install_root = temp_dir.path().join("install");
++        let runtime_root = install_root.join(PUBLISHED_ARTIFACT_NAME);
++        create_runtime_root(&runtime_root, "v1").await;
++        let archive_path = temp_dir.path().join("unused.tar.xz");
++        fs::write(&archive_path, b"not used")
++            .await
++            .expect("write archive");
++        let mut manifest = manifest_for_archive(&archive_path, "v1").await;
++        manifest.archive_url = "not a valid archive URL".to_string();
++
++        let response = install_runtime_with_root_and_control(
++            RuntimeInstallParams {
++                environment_id: None,
++                manifest: Box::new(manifest),
++                release: "primary".to_string(),
++            },
++            install_root,
++            /*progress*/ None,
++            CancellationToken::new(),
++        )
++        .await
++        .expect("installed runtime should be reused without downloading");
++
++        assert_eq!(response.status, RuntimeInstallStatus::AlreadyCurrent);
++    }
++
+     #[tokio::test]
+     async fn install_from_archive_uses_runtime_metadata_bundle_format_when_manifest_omits_it() {
+         let temp_dir = tempfile::tempdir().expect("tempdir");
+@@ -900,7 +1122,7 @@ mod tests {
+         fs::write(&archive_path, b"archive")
+             .await
+             .expect("write archive");
+-        let manifest = RuntimeInstallManifest {
++        let manifest = RuntimeInstallManifestParams {
+             archive_name: None,
+             archive_sha256: "0".repeat(64),
+             archive_size_bytes: None,
+@@ -955,6 +1177,70 @@ mod tests {
+         assert_eq!(metadata.bundle_version.as_deref(), Some("old"));
+     }
+ 
++    #[tokio::test]
++    async fn install_from_archive_reports_install_progress() {
++        let temp_dir = tempfile::tempdir().expect("tempdir");
++        let payload_root = temp_dir
++            .path()
++            .join("payload")
++            .join(PUBLISHED_ARTIFACT_NAME);
++        create_runtime_root(&payload_root, "v1").await;
++        let archive_path = temp_dir.path().join("archive.tar.xz");
++        create_tar_xz(temp_dir.path().join("payload").as_path(), &archive_path).await;
++        let manifest = manifest_for_archive(&archive_path, "v1").await;
++        let (progress_tx, mut progress_rx) = mpsc::unbounded_channel();
++        let progress =
++            RuntimeInstallProgressReporter::new(manifest.bundle_version.clone(), Some(progress_tx));
++
++        install_runtime_from_archive_with_control(
++            &manifest,
++            &archive_path,
++            &temp_dir.path().join("install"),
++            &progress,
++            &CancellationToken::new(),
++        )
++        .await
++        .expect("install should succeed");
++
++        let mut phases = Vec::new();
++        while let Ok(notification) = progress_rx.try_recv() {
++            phases.push(notification.phase);
++        }
++        assert_eq!(
++            phases,
++            vec![
++                RuntimeInstallProgressPhase::Verifying,
++                RuntimeInstallProgressPhase::Extracting,
++                RuntimeInstallProgressPhase::Validating,
++                RuntimeInstallProgressPhase::Installed,
++            ]
++        );
++    }
++
++    #[tokio::test]
++    async fn install_from_archive_stops_when_canceled() {
++        let temp_dir = tempfile::tempdir().expect("tempdir");
++        let archive_path = temp_dir.path().join("unused.tar.xz");
++        fs::write(&archive_path, b"unused")
++            .await
++            .expect("write archive");
++        let manifest = manifest_for_archive(&archive_path, "v1").await;
++        let cancellation = CancellationToken::new();
++        cancellation.cancel();
++
++        let error = install_runtime_from_archive_with_control(
++            &manifest,
++            &archive_path,
++            &temp_dir.path().join("install"),
++            &RuntimeInstallProgressReporter::new(manifest.bundle_version.clone(), None),
++            &cancellation,
++        )
++        .await
++        .expect_err("canceled install should fail");
++
++        assert_eq!(error.message, "runtime install canceled");
++    }
++
+     async fn create_runtime_root(runtime_root: &Path, bundle_version: &str) {
+         let node_bin = runtime_root.join("dependencies").join("node").join("bin");
+         let python_bin = runtime_root.join("dependencies").join("python").join("bin");
+@@ -991,8 +1277,8 @@ mod tests {
+     async fn manifest_for_archive(
+         archive_path: &Path,
+         bundle_version: &str,
+-    ) -> RuntimeInstallManifest {
+-        RuntimeInstallManifest {
++    ) -> RuntimeInstallManifestParams {
++        RuntimeInstallManifestParams {
+             archive_name: None,
+             archive_sha256: compute_sha256(archive_path).await.expect("sha256"),
+             archive_size_bytes: None,
+diff --git a/codex-rs/tui/src/app/app_server_event_targets.rs b/codex-rs/tui/src/app/app_server_event_targets.rs
+index 0b2143b429b9..0b676c5c4f60 100644
+--- a/codex-rs/tui/src/app/app_server_event_targets.rs
++++ b/codex-rs/tui/src/app/app_server_event_targets.rs
+@@ -162,6 +162,7 @@ pub(super) fn server_notification_thread_target(
+         | ServerNotification::FsChanged(_)
+         | ServerNotification::WindowsWorldWritableWarning(_)
+         | ServerNotification::WindowsSandboxSetupCompleted(_)
++        | ServerNotification::RuntimeInstallProgress(_)
+         | ServerNotification::AccountLoginCompleted(_) => None,
+     };
+ 
+@@ -181,6 +182,8 @@ mod tests {
+     use crate::test_support::PathBufExt;
+     use crate::test_support::test_path_buf;
+     use codex_app_server_protocol::GuardianWarningNotification;
++    use codex_app_server_protocol::RuntimeInstallProgressNotification;
++    use codex_app_server_protocol::RuntimeInstallProgressPhase;
+     use codex_app_server_protocol::ServerNotification;
+     use codex_app_server_protocol::ThreadSettings;
+     use codex_app_server_protocol::ThreadSettingsUpdatedNotification;
+@@ -230,6 +233,21 @@ mod tests {
+         assert_eq!(target, ServerNotificationThreadTarget::Global);
+     }
+ 
++    #[test]
++    fn runtime_install_progress_notifications_are_global() {
++        let notification =
++            ServerNotification::RuntimeInstallProgress(RuntimeInstallProgressNotification {
++                bundle_version: Some("v1".to_string()),
++                downloaded_bytes: None,
++                phase: RuntimeInstallProgressPhase::Checking,
++                total_bytes: None,
++            });
++
++        let target = server_notification_thread_target(&notification);
++
++        assert_eq!(target, ServerNotificationThreadTarget::Global);
++    }
++
+     #[test]
+     fn warning_notifications_route_to_threads_when_thread_id_is_present() {
+         let thread_id = ThreadId::new();
+diff --git a/codex-rs/tui/src/chatwidget/protocol.rs b/codex-rs/tui/src/chatwidget/protocol.rs
+index b3b58cbc8243..8faa67c26594 100644
+--- a/codex-rs/tui/src/chatwidget/protocol.rs
++++ b/codex-rs/tui/src/chatwidget/protocol.rs
+@@ -239,6 +239,7 @@ impl ChatWidget {
+             | ServerNotification::ThreadRealtimeTranscriptDone(_)
+             | ServerNotification::WindowsWorldWritableWarning(_)
+             | ServerNotification::WindowsSandboxSetupCompleted(_)
++            | ServerNotification::RuntimeInstallProgress(_)
+             | ServerNotification::AccountLoginCompleted(_) => {}
+             ServerNotification::ContextCompacted(_) => {}
+         }

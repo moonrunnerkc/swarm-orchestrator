@@ -1,0 +1,2024 @@
+diff --git a/codex-rs/app-server/src/request_processors/windows_sandbox_processor.rs b/codex-rs/app-server/src/request_processors/windows_sandbox_processor.rs
+index c507bf8ddf43..aa82ea951325 100644
+--- a/codex-rs/app-server/src/request_processors/windows_sandbox_processor.rs
++++ b/codex-rs/app-server/src/request_processors/windows_sandbox_processor.rs
+@@ -77,7 +77,7 @@ impl WindowsSandboxRequestProcessor {
+                     let setup_request = WindowsSandboxSetupRequest {
+                         mode,
+                         permission_profile: config.permissions.effective_permission_profile(),
+-                        permission_profile_cwd: config.cwd.to_path_buf(),
++                        workspace_roots: config.effective_workspace_roots(),
+                         command_cwd,
+                         env_map: std::env::vars().collect(),
+                         codex_home: config.codex_home.to_path_buf(),
+diff --git a/codex-rs/cli/src/debug_sandbox.rs b/codex-rs/cli/src/debug_sandbox.rs
+index 36c5e683b2a6..1cf32bdf5164 100644
+--- a/codex-rs/cli/src/debug_sandbox.rs
++++ b/codex-rs/cli/src/debug_sandbox.rs
+@@ -208,10 +208,11 @@ async fn run_command_under_sandbox(
+     // In practice, this should be `std::env::current_dir()` because this CLI
+     // does not support `--cwd`, but let's use the config value for consistency.
+     let cwd = config.cwd.clone();
+-    // For now, we always use the same cwd for both the command and the
+-    // permission profile. In the future, we could add a CLI option to set them
+-    // separately.
+-    let permission_profile_cwd = cwd.clone();
++    // Non-Windows sandbox launchers still materialize profile-relative entries
++    // against the command cwd.
++    let sandbox_policy_cwd = cwd.clone();
++    #[cfg(target_os = "windows")]
++    let workspace_roots = config.effective_workspace_roots();
+ 
+     let env = create_env(
+         &config.permissions.shell_environment_policy,
+@@ -222,8 +223,7 @@ async fn run_command_under_sandbox(
+     if let SandboxType::Windows = sandbox_type {
+         #[cfg(target_os = "windows")]
+         {
+-            run_command_under_windows_session(&config, command, cwd, permission_profile_cwd, env)
+-                .await;
++            run_command_under_windows_session(&config, command, cwd, workspace_roots, env).await;
+         }
+         #[cfg(not(target_os = "windows"))]
+         {
+@@ -266,7 +266,7 @@ async fn run_command_under_sandbox(
+                 command,
+                 file_system_sandbox_policy: &file_system_sandbox_policy,
+                 network_sandbox_policy,
+-                sandbox_policy_cwd: permission_profile_cwd.as_path(),
++                sandbox_policy_cwd: sandbox_policy_cwd.as_path(),
+                 enforce_managed_network: false,
+                 network: network.as_ref(),
+                 extra_allow_unix_sockets: allow_unix_sockets,
+@@ -298,7 +298,7 @@ async fn run_command_under_sandbox(
+                 command,
+                 cwd.as_path(),
+                 &config.permissions.effective_permission_profile(),
+-                permission_profile_cwd.as_path(),
++                sandbox_policy_cwd.as_path(),
+                 use_legacy_landlock,
+                 allow_network_for_proxy(managed_network_requirements_enabled),
+             );
+@@ -350,7 +350,7 @@ async fn run_command_under_windows_session(
+     config: &Config,
+     command: Vec<String>,
+     cwd: AbsolutePathBuf,
+-    permission_profile_cwd: AbsolutePathBuf,
++    workspace_roots: Vec<AbsolutePathBuf>,
+     env: std::collections::HashMap<String, String>,
+ ) -> ! {
+     use codex_core::windows_sandbox::WindowsSandboxLevelExt;
+@@ -368,7 +368,7 @@ async fn run_command_under_windows_session(
+     let spawned = if use_elevated {
+         spawn_windows_sandbox_session_elevated_for_permission_profile(
+             &permission_profile,
+-            permission_profile_cwd.as_path(),
++            workspace_roots.as_slice(),
+             config.codex_home.as_path(),
+             command,
+             cwd.as_path(),
+@@ -387,7 +387,7 @@ async fn run_command_under_windows_session(
+     } else {
+         spawn_windows_sandbox_session_legacy(
+             &permission_profile,
+-            permission_profile_cwd.as_path(),
++            workspace_roots.as_slice(),
+             config.codex_home.as_path(),
+             command,
+             cwd.as_path(),
+@@ -1125,7 +1125,7 @@ mod tests {
+     }
+ 
+     #[tokio::test]
+-    async fn debug_sandbox_uses_explicit_profile_cwd() -> anyhow::Result<()> {
++    async fn debug_sandbox_uses_explicit_cwd() -> anyhow::Result<()> {
+         let codex_home = TempDir::new()?;
+         let cwd = TempDir::new()?;
+ 
+diff --git a/codex-rs/core/src/exec.rs b/codex-rs/core/src/exec.rs
+index 5cec3b49bb00..5a1046ee35c0 100644
+--- a/codex-rs/core/src/exec.rs
++++ b/codex-rs/core/src/exec.rs
+@@ -387,7 +387,13 @@ pub fn build_exec_request(
+         .map(|request| {
+             let windows_sandbox_policy_cwd = AbsolutePathBuf::try_from(sandbox_cwd.to_path_buf())
+                 .unwrap_or_else(|_| request.cwd.clone());
+-            ExecRequest::from_sandbox_exec_request(request, options, windows_sandbox_policy_cwd)
++            let windows_sandbox_workspace_roots = vec![windows_sandbox_policy_cwd.clone()];
++            ExecRequest::from_sandbox_exec_request(
++                request,
++                options,
++                windows_sandbox_policy_cwd,
++                windows_sandbox_workspace_roots,
++            )
+         })
+         .map_err(CodexErr::from)?;
+     let use_windows_elevated_backend = windows_sandbox_uses_elevated_backend(
+@@ -433,6 +439,7 @@ pub(crate) async fn execute_exec_request(
+         capture_policy,
+         sandbox,
+         windows_sandbox_policy_cwd,
++        windows_sandbox_workspace_roots,
+         windows_sandbox_level,
+         windows_sandbox_private_desktop,
+         permission_profile,
+@@ -465,6 +472,7 @@ pub(crate) async fn execute_exec_request(
+         sandbox,
+         &permission_profile,
+         &windows_sandbox_policy_cwd,
++        &windows_sandbox_workspace_roots,
+         windows_sandbox_filesystem_overrides.as_ref(),
+     )
+     .await;
+@@ -481,6 +489,8 @@ async fn get_raw_output_result(
+     #[cfg_attr(not(windows), allow(unused_variables))] sandbox: SandboxType,
+     #[cfg_attr(not(windows), allow(unused_variables))] permission_profile: &PermissionProfile,
+     #[cfg_attr(not(windows), allow(unused_variables))] windows_sandbox_policy_cwd: &AbsolutePathBuf,
++    #[cfg_attr(not(windows), allow(unused_variables))]
++    windows_sandbox_workspace_roots: &[AbsolutePathBuf],
+     #[cfg_attr(not(windows), allow(unused_variables))] windows_sandbox_filesystem_overrides: Option<
+         &WindowsSandboxFilesystemOverrides,
+     >,
+@@ -491,6 +501,7 @@ async fn get_raw_output_result(
+             params,
+             permission_profile,
+             windows_sandbox_policy_cwd,
++            windows_sandbox_workspace_roots,
+             windows_sandbox_filesystem_overrides,
+         )
+         .await;
+@@ -570,6 +581,7 @@ async fn exec_windows_sandbox(
+     params: ExecParams,
+     permission_profile: &PermissionProfile,
+     windows_sandbox_policy_cwd: &AbsolutePathBuf,
++    windows_sandbox_workspace_roots: &[AbsolutePathBuf],
+     windows_sandbox_filesystem_overrides: Option<&WindowsSandboxFilesystemOverrides>,
+ ) -> Result<RawExecToolCallOutput> {
+     use crate::config::find_codex_home;
+@@ -599,7 +611,11 @@ async fn exec_windows_sandbox(
+         None
+     };
+ 
+-    let sandbox_cwd = windows_sandbox_policy_cwd.clone();
++    let workspace_roots = if windows_sandbox_workspace_roots.is_empty() {
++        vec![windows_sandbox_policy_cwd.clone()]
++    } else {
++        windows_sandbox_workspace_roots.to_vec()
++    };
+     let permission_profile = permission_profile.clone();
+     let codex_home = find_codex_home().map_err(|err| {
+         CodexErr::Io(io::Error::other(format!(
+@@ -627,7 +643,7 @@ async fn exec_windows_sandbox(
+             run_windows_sandbox_capture_for_permission_profile_elevated(
+                 codex_windows_sandbox::ElevatedSandboxProfileCaptureRequest {
+                     permission_profile: &permission_profile,
+-                    permission_profile_cwd: &sandbox_cwd,
++                    workspace_roots: workspace_roots.as_slice(),
+                     codex_home: codex_home.as_ref(),
+                     command,
+                     cwd: &cwd,
+@@ -646,7 +662,7 @@ async fn exec_windows_sandbox(
+         } else {
+             run_windows_sandbox_capture_with_filesystem_overrides(
+                 &permission_profile,
+-                &sandbox_cwd,
++                workspace_roots.as_slice(),
+                 codex_home.as_ref(),
+                 command,
+                 &cwd,
+diff --git a/codex-rs/core/src/sandboxing/mod.rs b/codex-rs/core/src/sandboxing/mod.rs
+index 5070d8da3a5c..45f885c89700 100644
+--- a/codex-rs/core/src/sandboxing/mod.rs
++++ b/codex-rs/core/src/sandboxing/mod.rs
+@@ -52,6 +52,7 @@ pub struct ExecRequest {
+     pub capture_policy: ExecCapturePolicy,
+     pub sandbox: SandboxType,
+     pub windows_sandbox_policy_cwd: AbsolutePathBuf,
++    pub windows_sandbox_workspace_roots: Vec<AbsolutePathBuf>,
+     pub windows_sandbox_level: WindowsSandboxLevel,
+     pub windows_sandbox_private_desktop: bool,
+     pub permission_profile: PermissionProfile,
+@@ -77,6 +78,7 @@ impl ExecRequest {
+         arg0: Option<String>,
+     ) -> Self {
+         let windows_sandbox_policy_cwd = cwd.clone();
++        let windows_sandbox_workspace_roots = vec![cwd.clone()];
+         let (file_system_sandbox_policy, network_sandbox_policy) =
+             permission_profile.to_runtime_permissions();
+         Self {
+@@ -89,6 +91,7 @@ impl ExecRequest {
+             capture_policy,
+             sandbox,
+             windows_sandbox_policy_cwd,
++            windows_sandbox_workspace_roots,
+             windows_sandbox_level,
+             windows_sandbox_private_desktop,
+             permission_profile,
+@@ -112,6 +115,7 @@ impl ExecRequest {
+         request: SandboxExecRequest,
+         options: ExecOptions,
+         windows_sandbox_policy_cwd: AbsolutePathBuf,
++        windows_sandbox_workspace_roots: Vec<AbsolutePathBuf>,
+     ) -> Self {
+         let SandboxExecRequest {
+             command,
+@@ -150,6 +154,7 @@ impl ExecRequest {
+             capture_policy,
+             sandbox,
+             windows_sandbox_policy_cwd,
++            windows_sandbox_workspace_roots,
+             windows_sandbox_level,
+             windows_sandbox_private_desktop,
+             permission_profile,
+diff --git a/codex-rs/core/src/tasks/user_shell.rs b/codex-rs/core/src/tasks/user_shell.rs
+index 2ce4056957ee..7728770661c7 100644
+--- a/codex-rs/core/src/tasks/user_shell.rs
++++ b/codex-rs/core/src/tasks/user_shell.rs
+@@ -193,6 +193,7 @@ pub(crate) async fn execute_user_shell_command(
+         capture_policy: ExecCapturePolicy::ShellTool,
+         sandbox: SandboxType::None,
+         windows_sandbox_policy_cwd: cwd.clone(),
++        windows_sandbox_workspace_roots: turn_context.config.effective_workspace_roots(),
+         windows_sandbox_level: turn_context.windows_sandbox_level,
+         windows_sandbox_private_desktop: turn_context
+             .config
+diff --git a/codex-rs/core/src/tools/orchestrator.rs b/codex-rs/core/src/tools/orchestrator.rs
+index deb9ae596e10..dc9f3f33b585 100644
+--- a/codex-rs/core/src/tools/orchestrator.rs
++++ b/codex-rs/core/src/tools/orchestrator.rs
+@@ -85,6 +85,7 @@ impl ToolOrchestrator {
+             enforce_managed_network: attempt.enforce_managed_network,
+             manager: attempt.manager,
+             sandbox_cwd: attempt.sandbox_cwd,
++            workspace_roots: attempt.workspace_roots,
+             codex_linux_sandbox_exe: attempt.codex_linux_sandbox_exe,
+             use_legacy_landlock: attempt.use_legacy_landlock,
+             windows_sandbox_level: attempt.windows_sandbox_level,
+@@ -236,12 +237,14 @@ impl ToolOrchestrator {
+         let use_legacy_landlock = turn_ctx.features.use_legacy_landlock();
+         #[allow(deprecated)]
+         let sandbox_cwd = tool.sandbox_cwd(req).unwrap_or(&turn_ctx.cwd);
++        let workspace_roots = turn_ctx.config.effective_workspace_roots();
+         let initial_attempt = SandboxAttempt {
+             sandbox: initial_sandbox,
+             permissions: &turn_ctx.permission_profile,
+             enforce_managed_network: managed_network_active,
+             manager: &self.sandbox,
+             sandbox_cwd,
++            workspace_roots: workspace_roots.as_slice(),
+             codex_linux_sandbox_exe: turn_ctx.codex_linux_sandbox_exe.as_ref(),
+             use_legacy_landlock,
+             windows_sandbox_level: turn_ctx.windows_sandbox_level,
+@@ -360,6 +363,7 @@ impl ToolOrchestrator {
+                     enforce_managed_network: managed_network_active,
+                     manager: &self.sandbox,
+                     sandbox_cwd,
++                    workspace_roots: workspace_roots.as_slice(),
+                     codex_linux_sandbox_exe: None,
+                     use_legacy_landlock,
+                     windows_sandbox_level: turn_ctx.windows_sandbox_level,
+diff --git a/codex-rs/core/src/tools/runtimes/apply_patch_tests.rs b/codex-rs/core/src/tools/runtimes/apply_patch_tests.rs
+index f4d8d461b221..0a741861fc96 100644
+--- a/codex-rs/core/src/tools/runtimes/apply_patch_tests.rs
++++ b/codex-rs/core/src/tools/runtimes/apply_patch_tests.rs
+@@ -212,6 +212,7 @@ async fn file_system_sandbox_context_uses_active_attempt() {
+         enforce_managed_network: false,
+         manager: &manager,
+         sandbox_cwd: &path,
++        workspace_roots: std::slice::from_ref(&path),
+         codex_linux_sandbox_exe: None,
+         use_legacy_landlock: true,
+         windows_sandbox_level: WindowsSandboxLevel::RestrictedToken,
+@@ -265,6 +266,7 @@ async fn no_sandbox_attempt_has_no_file_system_context() {
+         enforce_managed_network: false,
+         manager: &manager,
+         sandbox_cwd: &path,
++        workspace_roots: std::slice::from_ref(&path),
+         codex_linux_sandbox_exe: None,
+         use_legacy_landlock: false,
+         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+diff --git a/codex-rs/core/src/tools/runtimes/mod_tests.rs b/codex-rs/core/src/tools/runtimes/mod_tests.rs
+index fd10f2224213..83669a36cb8f 100644
+--- a/codex-rs/core/src/tools/runtimes/mod_tests.rs
++++ b/codex-rs/core/src/tools/runtimes/mod_tests.rs
+@@ -111,6 +111,7 @@ async fn explicit_escalation_prepares_exec_without_managed_network() -> anyhow::
+         enforce_managed_network: false,
+         manager: &manager,
+         sandbox_cwd: &cwd,
++        workspace_roots: std::slice::from_ref(&cwd),
+         codex_linux_sandbox_exe: None,
+         use_legacy_landlock: false,
+         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+diff --git a/codex-rs/core/src/tools/runtimes/shell/unix_escalation.rs b/codex-rs/core/src/tools/runtimes/shell/unix_escalation.rs
+index fef8db5ca9e5..2ae6c7f3bd29 100644
+--- a/codex-rs/core/src/tools/runtimes/shell/unix_escalation.rs
++++ b/codex-rs/core/src/tools/runtimes/shell/unix_escalation.rs
+@@ -140,6 +140,7 @@ pub(super) async fn try_run_zsh_fork(
+         capture_policy: _capture_policy,
+         sandbox,
+         windows_sandbox_policy_cwd: sandbox_policy_cwd,
++        windows_sandbox_workspace_roots: _windows_sandbox_workspace_roots,
+         windows_sandbox_level,
+         windows_sandbox_private_desktop: _windows_sandbox_private_desktop,
+         permission_profile,
+@@ -795,6 +796,7 @@ impl ShellCommandExecutor for CoreShellCommandExecutor {
+                 capture_policy: ExecCapturePolicy::ShellTool,
+                 sandbox: self.sandbox,
+                 windows_sandbox_policy_cwd: self.sandbox_policy_cwd.clone(),
++                windows_sandbox_workspace_roots: vec![self.sandbox_policy_cwd.clone()],
+                 windows_sandbox_level: self.windows_sandbox_level,
+                 windows_sandbox_private_desktop: false,
+                 permission_profile: self.permission_profile.clone(),
+@@ -932,6 +934,7 @@ impl CoreShellCommandExecutor {
+             exec_request,
+             options,
+             self.sandbox_policy_cwd.clone(),
++            vec![self.sandbox_policy_cwd.clone()],
+         );
+         if let Some(network) = exec_request.network.as_ref() {
+             network.apply_to_env(&mut exec_request.env);
+diff --git a/codex-rs/core/src/tools/sandboxing.rs b/codex-rs/core/src/tools/sandboxing.rs
+index 1ca589a5f9d2..90060fed5029 100644
+--- a/codex-rs/core/src/tools/sandboxing.rs
++++ b/codex-rs/core/src/tools/sandboxing.rs
+@@ -383,6 +383,7 @@ pub(crate) struct SandboxAttempt<'a> {
+     pub enforce_managed_network: bool,
+     pub(crate) manager: &'a SandboxManager,
+     pub(crate) sandbox_cwd: &'a AbsolutePathBuf,
++    pub(crate) workspace_roots: &'a [AbsolutePathBuf],
+     pub codex_linux_sandbox_exe: Option<&'a std::path::PathBuf>,
+     pub use_legacy_landlock: bool,
+     pub windows_sandbox_level: codex_protocol::config_types::WindowsSandboxLevel,
+@@ -422,6 +423,7 @@ impl<'a> SandboxAttempt<'a> {
+                     request,
+                     options,
+                     windows_sandbox_policy_cwd,
++                    self.workspace_roots.to_vec(),
+                 )
+             })
+     }
+diff --git a/codex-rs/core/src/unified_exec/process_manager.rs b/codex-rs/core/src/unified_exec/process_manager.rs
+index 08cd92ba536d..83c750ebc4cd 100644
+--- a/codex-rs/core/src/unified_exec/process_manager.rs
++++ b/codex-rs/core/src/unified_exec/process_manager.rs
+@@ -897,7 +897,7 @@ impl UnifiedExecProcessManager {
+                 codex_protocol::config_types::WindowsSandboxLevel::Elevated => {
+                     codex_windows_sandbox::spawn_windows_sandbox_session_elevated_for_permission_profile(
+                         &request.permission_profile,
+-                        request.windows_sandbox_policy_cwd.as_path(),
++                        request.windows_sandbox_workspace_roots.as_slice(),
+                         codex_home.as_ref(),
+                         request.command.clone(),
+                         request.cwd.as_path(),
+@@ -918,7 +918,7 @@ impl UnifiedExecProcessManager {
+                 | codex_protocol::config_types::WindowsSandboxLevel::Disabled => {
+                     codex_windows_sandbox::spawn_windows_sandbox_session_legacy(
+                         &request.permission_profile,
+-                        request.windows_sandbox_policy_cwd.as_path(),
++                        request.windows_sandbox_workspace_roots.as_slice(),
+                         codex_home.as_ref(),
+                         request.command.clone(),
+                         request.cwd.as_path(),
+diff --git a/codex-rs/core/src/unified_exec/process_manager_tests.rs b/codex-rs/core/src/unified_exec/process_manager_tests.rs
+index cd83ce7a9cf2..4d0597a84414 100644
+--- a/codex-rs/core/src/unified_exec/process_manager_tests.rs
++++ b/codex-rs/core/src/unified_exec/process_manager_tests.rs
+@@ -100,7 +100,8 @@ fn exec_server_params_use_env_policy_overlay_contract() {
+         expiration: crate::exec::ExecExpiration::DefaultTimeout,
+         capture_policy: crate::exec::ExecCapturePolicy::ShellTool,
+         sandbox: codex_sandboxing::SandboxType::None,
+-        windows_sandbox_policy_cwd: cwd,
++        windows_sandbox_policy_cwd: cwd.clone(),
++        windows_sandbox_workspace_roots: vec![cwd],
+         windows_sandbox_level: codex_protocol::config_types::WindowsSandboxLevel::Disabled,
+         windows_sandbox_private_desktop: false,
+         permission_profile,
+diff --git a/codex-rs/core/src/windows_sandbox.rs b/codex-rs/core/src/windows_sandbox.rs
+index b2ac8bf1f02d..19b404fb71e8 100644
+--- a/codex-rs/core/src/windows_sandbox.rs
++++ b/codex-rs/core/src/windows_sandbox.rs
+@@ -9,6 +9,7 @@ use codex_login::default_client::originator;
+ use codex_otel::sanitize_metric_tag_value;
+ use codex_protocol::config_types::WindowsSandboxLevel;
+ use codex_protocol::models::PermissionProfile;
++use codex_utils_absolute_path::AbsolutePathBuf;
+ use std::collections::BTreeMap;
+ use std::collections::HashMap;
+ use std::path::Path;
+@@ -146,15 +147,15 @@ pub fn elevated_setup_failure_metric_name(_err: &anyhow::Error) -> &'static str
+ #[cfg(target_os = "windows")]
+ pub fn run_elevated_setup(
+     permission_profile: &PermissionProfile,
+-    permission_profile_cwd: &Path,
++    workspace_roots: &[AbsolutePathBuf],
+     command_cwd: &Path,
+     env_map: &HashMap<String, String>,
+     codex_home: &Path,
+ ) -> anyhow::Result<()> {
+     let permissions =
+-        codex_windows_sandbox::ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_cwd(
++        codex_windows_sandbox::ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_workspace_roots(
+             permission_profile,
+-            permission_profile_cwd,
++            workspace_roots,
+         )?;
+     codex_windows_sandbox::run_elevated_setup(
+         codex_windows_sandbox::SandboxSetupRequest {
+@@ -171,7 +172,7 @@ pub fn run_elevated_setup(
+ #[cfg(not(target_os = "windows"))]
+ pub fn run_elevated_setup(
+     _permission_profile: &PermissionProfile,
+-    _permission_profile_cwd: &Path,
++    _workspace_roots: &[AbsolutePathBuf],
+     _command_cwd: &Path,
+     _env_map: &HashMap<String, String>,
+     _codex_home: &Path,
+@@ -182,14 +183,14 @@ pub fn run_elevated_setup(
+ #[cfg(target_os = "windows")]
+ pub fn run_legacy_setup_preflight(
+     permission_profile: &PermissionProfile,
+-    permission_profile_cwd: &Path,
++    workspace_roots: &[AbsolutePathBuf],
+     command_cwd: &Path,
+     env_map: &HashMap<String, String>,
+     codex_home: &Path,
+ ) -> anyhow::Result<()> {
+     codex_windows_sandbox::run_windows_sandbox_legacy_preflight(
+         permission_profile,
+-        permission_profile_cwd,
++        workspace_roots,
+         codex_home,
+         command_cwd,
+         env_map,
+@@ -199,7 +200,7 @@ pub fn run_legacy_setup_preflight(
+ #[cfg(target_os = "windows")]
+ pub fn run_setup_refresh_with_extra_read_roots(
+     permission_profile: &PermissionProfile,
+-    permission_profile_cwd: &Path,
++    workspace_roots: &[AbsolutePathBuf],
+     command_cwd: &Path,
+     env_map: &HashMap<String, String>,
+     codex_home: &Path,
+@@ -207,7 +208,7 @@ pub fn run_setup_refresh_with_extra_read_roots(
+ ) -> anyhow::Result<()> {
+     codex_windows_sandbox::run_setup_refresh_with_extra_read_roots(
+         permission_profile,
+-        permission_profile_cwd,
++        workspace_roots,
+         command_cwd,
+         env_map,
+         codex_home,
+@@ -219,7 +220,7 @@ pub fn run_setup_refresh_with_extra_read_roots(
+ #[cfg(not(target_os = "windows"))]
+ pub fn run_legacy_setup_preflight(
+     _permission_profile: &PermissionProfile,
+-    _permission_profile_cwd: &Path,
++    _workspace_roots: &[AbsolutePathBuf],
+     _command_cwd: &Path,
+     _env_map: &HashMap<String, String>,
+     _codex_home: &Path,
+@@ -230,7 +231,7 @@ pub fn run_legacy_setup_preflight(
+ #[cfg(not(target_os = "windows"))]
+ pub fn run_setup_refresh_with_extra_read_roots(
+     _permission_profile: &PermissionProfile,
+-    _permission_profile_cwd: &Path,
++    _workspace_roots: &[AbsolutePathBuf],
+     _command_cwd: &Path,
+     _env_map: &HashMap<String, String>,
+     _codex_home: &Path,
+@@ -249,7 +250,7 @@ pub enum WindowsSandboxSetupMode {
+ pub struct WindowsSandboxSetupRequest {
+     pub mode: WindowsSandboxSetupMode,
+     pub permission_profile: PermissionProfile,
+-    pub permission_profile_cwd: PathBuf,
++    pub workspace_roots: Vec<AbsolutePathBuf>,
+     pub command_cwd: PathBuf,
+     pub env_map: HashMap<String, String>,
+     pub codex_home: PathBuf,
+@@ -287,7 +288,7 @@ async fn run_windows_sandbox_setup_and_persist(
+ ) -> anyhow::Result<()> {
+     let mode = request.mode;
+     let permission_profile = request.permission_profile;
+-    let permission_profile_cwd = request.permission_profile_cwd;
++    let workspace_roots = request.workspace_roots;
+     let command_cwd = request.command_cwd;
+     let env_map = request.env_map;
+     let codex_home = request.codex_home;
+@@ -299,7 +300,7 @@ async fn run_windows_sandbox_setup_and_persist(
+                 if !sandbox_setup_is_complete(setup_codex_home.as_path()) {
+                     run_elevated_setup(
+                         &permission_profile,
+-                        permission_profile_cwd.as_path(),
++                        workspace_roots.as_slice(),
+                         command_cwd.as_path(),
+                         &env_map,
+                         setup_codex_home.as_path(),
+@@ -309,7 +310,7 @@ async fn run_windows_sandbox_setup_and_persist(
+             WindowsSandboxSetupMode::Unelevated => {
+                 run_legacy_setup_preflight(
+                     &permission_profile,
+-                    permission_profile_cwd.as_path(),
++                    workspace_roots.as_slice(),
+                     command_cwd.as_path(),
+                     &env_map,
+                     setup_codex_home.as_path(),
+diff --git a/codex-rs/core/src/windows_sandbox_read_grants.rs b/codex-rs/core/src/windows_sandbox_read_grants.rs
+index a9561372cec8..af87b6e6bccd 100644
+--- a/codex-rs/core/src/windows_sandbox_read_grants.rs
++++ b/codex-rs/core/src/windows_sandbox_read_grants.rs
+@@ -1,13 +1,14 @@
+ use crate::windows_sandbox::run_setup_refresh_with_extra_read_roots;
+ use anyhow::Result;
+ use codex_protocol::models::PermissionProfile;
++use codex_utils_absolute_path::AbsolutePathBuf;
+ use std::collections::HashMap;
+ use std::path::Path;
+ use std::path::PathBuf;
+ 
+ pub fn grant_read_root_non_elevated(
+     permission_profile: &PermissionProfile,
+-    permission_profile_cwd: &Path,
++    workspace_roots: &[AbsolutePathBuf],
+     command_cwd: &Path,
+     env_map: &HashMap<String, String>,
+     codex_home: &Path,
+@@ -26,7 +27,7 @@ pub fn grant_read_root_non_elevated(
+     let canonical_root = dunce::canonicalize(read_root)?;
+     run_setup_refresh_with_extra_read_roots(
+         permission_profile,
+-        permission_profile_cwd,
++        workspace_roots,
+         command_cwd,
+         env_map,
+         codex_home,
+diff --git a/codex-rs/core/src/windows_sandbox_read_grants_tests.rs b/codex-rs/core/src/windows_sandbox_read_grants_tests.rs
+index 93cbcddfe328..cc714f38c51f 100644
+--- a/codex-rs/core/src/windows_sandbox_read_grants_tests.rs
++++ b/codex-rs/core/src/windows_sandbox_read_grants_tests.rs
+@@ -1,19 +1,21 @@
+ use super::grant_read_root_non_elevated;
+ use codex_protocol::models::PermissionProfile;
++use codex_utils_absolute_path::AbsolutePathBuf;
+ use std::collections::HashMap;
+ use std::path::Path;
+ use tempfile::TempDir;
+ 
+-fn permission_profile() -> PermissionProfile {
+-    PermissionProfile::workspace_write()
++fn workspace_roots_for(root: &Path) -> Vec<AbsolutePathBuf> {
++    vec![AbsolutePathBuf::from_absolute_path(root).expect("absolute workspace root")]
+ }
+ 
+ #[test]
+ fn rejects_relative_path() {
+     let tmp = TempDir::new().expect("tempdir");
++    let workspace_roots = workspace_roots_for(tmp.path());
+     let err = grant_read_root_non_elevated(
+-        &permission_profile(),
+-        tmp.path(),
++        &PermissionProfile::workspace_write(),
++        workspace_roots.as_slice(),
+         tmp.path(),
+         &HashMap::new(),
+         tmp.path(),
+@@ -27,9 +29,10 @@ fn rejects_relative_path() {
+ fn rejects_missing_path() {
+     let tmp = TempDir::new().expect("tempdir");
+     let missing = tmp.path().join("does-not-exist");
++    let workspace_roots = workspace_roots_for(tmp.path());
+     let err = grant_read_root_non_elevated(
+-        &permission_profile(),
+-        tmp.path(),
++        &PermissionProfile::workspace_write(),
++        workspace_roots.as_slice(),
+         tmp.path(),
+         &HashMap::new(),
+         tmp.path(),
+@@ -44,9 +47,10 @@ fn rejects_file_path() {
+     let tmp = TempDir::new().expect("tempdir");
+     let file_path = tmp.path().join("file.txt");
+     std::fs::write(&file_path, "hello").expect("write file");
++    let workspace_roots = workspace_roots_for(tmp.path());
+     let err = grant_read_root_non_elevated(
+-        &permission_profile(),
+-        tmp.path(),
++        &PermissionProfile::workspace_write(),
++        workspace_roots.as_slice(),
+         tmp.path(),
+         &HashMap::new(),
+         tmp.path(),
+diff --git a/codex-rs/tui/src/app.rs b/codex-rs/tui/src/app.rs
+index 3c3d15086f85..d37cb8819c91 100644
+--- a/codex-rs/tui/src/app.rs
++++ b/codex-rs/tui/src/app.rs
+@@ -1040,11 +1040,13 @@ See the Codex keymap documentation for supported actions and examples."
+                     .unwrap_or(false);
+             if should_check {
+                 let cwd = app.config.cwd.clone();
++                let workspace_roots = app.config.effective_workspace_roots();
+                 let env_map: std::collections::HashMap<String, String> = std::env::vars().collect();
+                 let tx = app.app_event_tx.clone();
+                 let logs_base_dir = app.config.codex_home.clone();
+                 Self::spawn_world_writable_scan(
+                     cwd,
++                    workspace_roots,
+                     env_map,
+                     logs_base_dir,
+                     startup_permission_profile,
+diff --git a/codex-rs/tui/src/app/config_persistence.rs b/codex-rs/tui/src/app/config_persistence.rs
+index e83662c2a25c..8c80230cdfcd 100644
+--- a/codex-rs/tui/src/app/config_persistence.rs
++++ b/codex-rs/tui/src/app/config_persistence.rs
+@@ -8,6 +8,12 @@ use super::*;
+ #[cfg(target_os = "windows")]
+ use codex_utils_approval_presets::ApprovalPreset;
+ 
++#[cfg(target_os = "windows")]
++pub(super) struct WindowsSetupPermissions {
++    pub(super) permission_profile: PermissionProfile,
++    pub(super) workspace_roots: Vec<AbsolutePathBuf>,
++}
++
+ impl App {
+     pub(super) async fn rebuild_config_for_cwd(&self, cwd: PathBuf) -> Result<Config> {
+         let mut overrides = self.harness_overrides.clone();
+@@ -45,19 +51,25 @@ impl App {
+     }
+ 
+     #[cfg(target_os = "windows")]
+-    pub(super) async fn permission_profile_for_windows_setup(
++    pub(super) async fn windows_setup_permissions(
+         &self,
+         preset: &ApprovalPreset,
+         profile_selection: Option<&PermissionProfileSelection>,
+-    ) -> Result<PermissionProfile> {
++    ) -> Result<WindowsSetupPermissions> {
+         match profile_selection {
+-            Some(selection) => Ok(self
+-                .rebuild_config_for_permission_profile(selection.profile_id.as_str())
+-                .await?
+-                .permissions
+-                .permission_profile()
+-                .clone()),
+-            None => Ok(preset.permission_profile.clone()),
++            Some(selection) => {
++                let selected_config = self
++                    .rebuild_config_for_permission_profile(selection.profile_id.as_str())
++                    .await?;
++                Ok(WindowsSetupPermissions {
++                    permission_profile: selected_config.permissions.permission_profile().clone(),
++                    workspace_roots: selected_config.effective_workspace_roots(),
++                })
++            }
++            None => Ok(WindowsSetupPermissions {
++                permission_profile: preset.permission_profile.clone(),
++                workspace_roots: self.config.effective_workspace_roots(),
++            }),
+         }
+     }
+ 
+diff --git a/codex-rs/tui/src/app/event_dispatch.rs b/codex-rs/tui/src/app/event_dispatch.rs
+index 3189c6dc2370..2752953b613d 100644
+--- a/codex-rs/tui/src/app/event_dispatch.rs
++++ b/codex-rs/tui/src/app/event_dispatch.rs
+@@ -887,11 +887,11 @@ impl App {
+             } => {
+                 #[cfg(target_os = "windows")]
+                 {
+-                    let permission_profile = match self
+-                        .permission_profile_for_windows_setup(&preset, profile_selection.as_ref())
++                    let setup_permissions = match self
++                        .windows_setup_permissions(&preset, profile_selection.as_ref())
+                         .await
+                     {
+-                        Ok(permission_profile) => permission_profile,
++                        Ok(setup_permissions) => setup_permissions,
+                         Err(err) => {
+                             tracing::warn!(
+                                 error = %err,
+@@ -903,8 +903,9 @@ impl App {
+                             return Ok(AppRunControl::Continue);
+                         }
+                     };
+-                    let permission_profile_cwd = self.config.cwd.clone();
+-                    let command_cwd = permission_profile_cwd.clone();
++                    let permission_profile = setup_permissions.permission_profile;
++                    let workspace_roots = setup_permissions.workspace_roots;
++                    let command_cwd = self.config.cwd.clone();
+                     let env_map: std::collections::HashMap<String, String> =
+                         std::env::vars().collect();
+                     let codex_home = self.config.codex_home.clone();
+@@ -929,7 +930,7 @@ impl App {
+                     tokio::task::spawn_blocking(move || {
+                         let result = crate::legacy_core::windows_sandbox::run_elevated_setup(
+                             &permission_profile,
+-                            permission_profile_cwd.as_path(),
++                            workspace_roots.as_slice(),
+                             command_cwd.as_path(),
+                             &env_map,
+                             codex_home.as_path(),
+@@ -996,11 +997,11 @@ impl App {
+             } => {
+                 #[cfg(target_os = "windows")]
+                 {
+-                    let permission_profile = match self
+-                        .permission_profile_for_windows_setup(&preset, profile_selection.as_ref())
++                    let setup_permissions = match self
++                        .windows_setup_permissions(&preset, profile_selection.as_ref())
+                         .await
+                     {
+-                        Ok(permission_profile) => permission_profile,
++                        Ok(setup_permissions) => setup_permissions,
+                         Err(err) => {
+                             tracing::warn!(
+                                 error = %err,
+@@ -1012,8 +1013,9 @@ impl App {
+                             return Ok(AppRunControl::Continue);
+                         }
+                     };
+-                    let permission_profile_cwd = self.config.cwd.clone();
+-                    let command_cwd = permission_profile_cwd.clone();
++                    let permission_profile = setup_permissions.permission_profile;
++                    let workspace_roots = setup_permissions.workspace_roots;
++                    let command_cwd = self.config.cwd.clone();
+                     let env_map: std::collections::HashMap<String, String> =
+                         std::env::vars().collect();
+                     let codex_home = self.config.codex_home.clone();
+@@ -1025,7 +1027,7 @@ impl App {
+                         if let Err(err) =
+                             crate::legacy_core::windows_sandbox::run_legacy_setup_preflight(
+                                 &permission_profile,
+-                                permission_profile_cwd.as_path(),
++                                workspace_roots.as_slice(),
+                                 command_cwd.as_path(),
+                                 &env_map,
+                                 codex_home.as_path(),
+@@ -1063,7 +1065,7 @@ impl App {
+                         ));
+ 
+                     let permission_profile = self.config.permissions.effective_permission_profile();
+-                    let permission_profile_cwd = self.config.cwd.clone();
++                    let workspace_roots = self.config.effective_workspace_roots();
+                     let command_cwd = self.config.cwd.clone();
+                     let env_map: std::collections::HashMap<String, String> =
+                         std::env::vars().collect();
+@@ -1074,7 +1076,7 @@ impl App {
+                         let requested_path = PathBuf::from(path);
+                         let event = match crate::legacy_core::grant_read_root_non_elevated(
+                             &permission_profile,
+-                            permission_profile_cwd.as_path(),
++                            workspace_roots.as_slice(),
+                             command_cwd.as_path(),
+                             &env_map,
+                             codex_home.as_path(),
+@@ -1502,6 +1504,7 @@ impl App {
+                         && !self.chat_widget.world_writable_warning_hidden();
+                     if should_check {
+                         let cwd = self.config.cwd.clone();
++                        let workspace_roots = self.config.effective_workspace_roots();
+                         let env_map: std::collections::HashMap<String, String> =
+                             std::env::vars().collect();
+                         let tx = self.app_event_tx.clone();
+@@ -1510,6 +1513,7 @@ impl App {
+                             self.config.permissions.effective_permission_profile();
+                         Self::spawn_world_writable_scan(
+                             cwd,
++                            workspace_roots,
+                             env_map,
+                             logs_base_dir,
+                             permission_profile,
+diff --git a/codex-rs/tui/src/app/platform_actions.rs b/codex-rs/tui/src/app/platform_actions.rs
+index d11e41088410..f4a708a0263c 100644
+--- a/codex-rs/tui/src/app/platform_actions.rs
++++ b/codex-rs/tui/src/app/platform_actions.rs
+@@ -16,15 +16,16 @@ impl App {
+     #[cfg(target_os = "windows")]
+     pub(super) fn spawn_world_writable_scan(
+         cwd: AbsolutePathBuf,
++        workspace_roots: Vec<AbsolutePathBuf>,
+         env_map: std::collections::HashMap<String, String>,
+         logs_base_dir: AbsolutePathBuf,
+         permission_profile: PermissionProfile,
+         tx: AppEventSender,
+     ) {
+         let Ok(permissions) =
+-            codex_windows_sandbox::ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_cwd(
++            codex_windows_sandbox::ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_workspace_roots(
+                 &permission_profile,
+-                cwd.as_path(),
++                workspace_roots.as_slice(),
+             )
+         else {
+             return;
+diff --git a/codex-rs/tui/src/chatwidget/windows_sandbox_prompts.rs b/codex-rs/tui/src/chatwidget/windows_sandbox_prompts.rs
+index 3b8dfce200e5..ebeb23429ca7 100644
+--- a/codex-rs/tui/src/chatwidget/windows_sandbox_prompts.rs
++++ b/codex-rs/tui/src/chatwidget/windows_sandbox_prompts.rs
+@@ -14,12 +14,13 @@ impl ChatWidget {
+             return None;
+         }
+         let cwd = self.config.cwd.clone();
++        let workspace_roots = self.config.effective_workspace_roots();
+         let env_map: std::collections::HashMap<String, String> = std::env::vars().collect();
+         let permission_profile = self.config.permissions.effective_permission_profile();
+         let Ok(permissions) =
+-            codex_windows_sandbox::ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_cwd(
++            codex_windows_sandbox::ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_workspace_roots(
+                 &permission_profile,
+-                cwd.as_path(),
++                workspace_roots.as_slice(),
+             )
+         else {
+             return None;
+diff --git a/codex-rs/windows-sandbox-rs/src/allow.rs b/codex-rs/windows-sandbox-rs/src/allow.rs
+index 59ed2468c63b..5a10261d0c5e 100644
+--- a/codex-rs/windows-sandbox-rs/src/allow.rs
++++ b/codex-rs/windows-sandbox-rs/src/allow.rs
+@@ -63,17 +63,22 @@ mod tests {
+         )
+     }
+ 
++    fn workspace_roots_for(root: &Path) -> Vec<AbsolutePathBuf> {
++        vec![AbsolutePathBuf::from_absolute_path(root).expect("absolute workspace root")]
++    }
++
+     fn compute_allow_paths(
+         permission_profile: &PermissionProfile,
+-        permission_profile_cwd: &Path,
++        workspace_roots: &[AbsolutePathBuf],
+         command_cwd: &Path,
+         env_map: &HashMap<String, String>,
+     ) -> AllowDenyPaths {
+-        let permissions = ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_cwd(
+-            permission_profile,
+-            permission_profile_cwd,
+-        )
+-        .expect("managed permission profile");
++        let permissions =
++            ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_workspace_roots(
++                permission_profile,
++                workspace_roots,
++            )
++            .expect("managed permission profile");
+         compute_allow_paths_for_permissions(&permissions, command_cwd, env_map)
+     }
+ 
+@@ -91,10 +96,11 @@ mod tests {
+             /*exclude_tmpdir_env_var*/ false,
+             /*exclude_slash_tmp*/ false,
+         );
++        let workspace_roots = workspace_roots_for(command_cwd.as_path());
+ 
+         let paths = compute_allow_paths(
+             &permission_profile,
+-            &command_cwd,
++            workspace_roots.as_slice(),
+             &command_cwd,
+             &HashMap::new(),
+         );
+@@ -113,10 +119,10 @@ mod tests {
+     }
+ 
+     #[test]
+-    fn uses_profile_cwd_for_workspace_root() {
++    fn uses_runtime_workspace_roots_for_workspace_root() {
+         let tmp = TempDir::new().expect("tempdir");
+-        let permission_profile_cwd = tmp.path().join("workspace");
+-        let command_cwd = permission_profile_cwd.join("subdir");
++        let workspace_root = tmp.path().join("workspace");
++        let command_cwd = workspace_root.join("subdir");
+         fs::create_dir_all(&command_cwd).expect("create command cwd");
+ 
+         let permission_profile = workspace_write_profile(
+@@ -124,10 +130,11 @@ mod tests {
+             /*exclude_tmpdir_env_var*/ true,
+             /*exclude_slash_tmp*/ true,
+         );
++        let workspace_roots = workspace_roots_for(workspace_root.as_path());
+ 
+         let paths = compute_allow_paths(
+             &permission_profile,
+-            &permission_profile_cwd,
++            workspace_roots.as_slice(),
+             &command_cwd,
+             &HashMap::new(),
+         );
+@@ -135,7 +142,7 @@ mod tests {
+         assert!(
+             paths
+                 .allow
+-                .contains(&dunce::canonicalize(&permission_profile_cwd).unwrap())
++                .contains(&dunce::canonicalize(&workspace_root).unwrap())
+         );
+         assert!(
+             !paths
+@@ -161,8 +168,14 @@ mod tests {
+         let mut env_map = HashMap::new();
+         env_map.insert("TEMP".into(), temp_dir.to_string_lossy().to_string());
+         env_map.insert("TMP".into(), temp_dir.to_string_lossy().to_string());
++        let workspace_roots = workspace_roots_for(command_cwd.as_path());
+ 
+-        let paths = compute_allow_paths(&permission_profile, &command_cwd, &command_cwd, &env_map);
++        let paths = compute_allow_paths(
++            &permission_profile,
++            workspace_roots.as_slice(),
++            &command_cwd,
++            &env_map,
++        );
+ 
+         assert!(
+             paths
+@@ -193,8 +206,14 @@ mod tests {
+         let mut env_map = HashMap::new();
+         env_map.insert("TEMP".into(), temp_dir.to_string_lossy().to_string());
+         env_map.insert("TMP".into(), temp_dir.to_string_lossy().to_string());
++        let workspace_roots = workspace_roots_for(command_cwd.as_path());
+ 
+-        let paths = compute_allow_paths(&permission_profile, &command_cwd, &command_cwd, &env_map);
++        let paths = compute_allow_paths(
++            &permission_profile,
++            workspace_roots.as_slice(),
++            &command_cwd,
++            &env_map,
++        );
+ 
+         let expected_allow: HashSet<PathBuf> = [
+             dunce::canonicalize(&command_cwd).unwrap(),
+@@ -218,10 +237,11 @@ mod tests {
+             /*exclude_tmpdir_env_var*/ true,
+             /*exclude_slash_tmp*/ false,
+         );
++        let workspace_roots = workspace_roots_for(command_cwd.as_path());
+ 
+         let paths = compute_allow_paths(
+             &permission_profile,
+-            &command_cwd,
++            workspace_roots.as_slice(),
+             &command_cwd,
+             &HashMap::new(),
+         );
+@@ -245,10 +265,11 @@ mod tests {
+             /*exclude_tmpdir_env_var*/ true,
+             /*exclude_slash_tmp*/ false,
+         );
++        let workspace_roots = workspace_roots_for(command_cwd.as_path());
+ 
+         let paths = compute_allow_paths(
+             &permission_profile,
+-            &command_cwd,
++            workspace_roots.as_slice(),
+             &command_cwd,
+             &HashMap::new(),
+         );
+@@ -276,10 +297,11 @@ mod tests {
+             /*exclude_tmpdir_env_var*/ true,
+             /*exclude_slash_tmp*/ false,
+         );
++        let workspace_roots = workspace_roots_for(command_cwd.as_path());
+ 
+         let paths = compute_allow_paths(
+             &permission_profile,
+-            &command_cwd,
++            workspace_roots.as_slice(),
+             &command_cwd,
+             &HashMap::new(),
+         );
+@@ -308,10 +330,11 @@ mod tests {
+             /*exclude_tmpdir_env_var*/ true,
+             /*exclude_slash_tmp*/ false,
+         );
++        let workspace_roots = workspace_roots_for(command_cwd.as_path());
+ 
+         let paths = compute_allow_paths(
+             &permission_profile,
+-            &command_cwd,
++            workspace_roots.as_slice(),
+             &command_cwd,
+             &HashMap::new(),
+         );
+@@ -340,10 +363,11 @@ mod tests {
+             /*exclude_tmpdir_env_var*/ true,
+             /*exclude_slash_tmp*/ false,
+         );
++        let workspace_roots = workspace_roots_for(command_cwd.as_path());
+ 
+         let paths = compute_allow_paths(
+             &permission_profile,
+-            &command_cwd,
++            workspace_roots.as_slice(),
+             &command_cwd,
+             &HashMap::new(),
+         );
+diff --git a/codex-rs/windows-sandbox-rs/src/bin/command_runner/win.rs b/codex-rs/windows-sandbox-rs/src/bin/command_runner/win.rs
+index afdbdd5813d1..682dc06191f1 100644
+--- a/codex-rs/windows-sandbox-rs/src/bin/command_runner/win.rs
++++ b/codex-rs/windows-sandbox-rs/src/bin/command_runner/win.rs
+@@ -238,7 +238,8 @@ fn spawn_ipc_process(req: &SpawnRequest) -> Result<IpcSpawnedProcess> {
+     hide_current_user_profile_dir(req.codex_home.as_path());
+     let token_mode = token_mode_for_permission_profile(
+         &req.permission_profile,
+-        &req.permission_profile_cwd,
++        &req.workspace_roots,
++        &req.cwd,
+         &req.env,
+     )
+     .context("resolve permission profile token mode")?;
+diff --git a/codex-rs/windows-sandbox-rs/src/elevated/ipc_framed.rs b/codex-rs/windows-sandbox-rs/src/elevated/ipc_framed.rs
+index 5512ebefb4ca..efd3299a0fe6 100644
+--- a/codex-rs/windows-sandbox-rs/src/elevated/ipc_framed.rs
++++ b/codex-rs/windows-sandbox-rs/src/elevated/ipc_framed.rs
+@@ -11,6 +11,7 @@ use anyhow::Result;
+ use base64::Engine as _;
+ use base64::engine::general_purpose::STANDARD;
+ use codex_protocol::models::PermissionProfile;
++use codex_utils_absolute_path::AbsolutePathBuf;
+ use serde::Deserialize;
+ use serde::Serialize;
+ use std::collections::HashMap;
+@@ -25,7 +26,7 @@ use std::path::PathBuf;
+ const MAX_FRAME_LEN: usize = 8 * 1024 * 1024;
+ 
+ /// Protocol version shared by the parent process and elevated command runner.
+-pub const IPC_PROTOCOL_VERSION: u8 = 2;
++pub const IPC_PROTOCOL_VERSION: u8 = 3;
+ 
+ /// Length-prefixed, JSON-encoded frame.
+ #[derive(Debug, Serialize, Deserialize, Clone)]
+@@ -60,7 +61,7 @@ pub struct SpawnRequest {
+     pub cwd: PathBuf,
+     pub env: HashMap<String, String>,
+     pub permission_profile: PermissionProfile,
+-    pub permission_profile_cwd: PathBuf,
++    pub workspace_roots: Vec<AbsolutePathBuf>,
+     pub codex_home: PathBuf,
+     pub real_codex_home: PathBuf,
+     pub cap_sids: Vec<String>,
+@@ -197,6 +198,9 @@ mod tests {
+ 
+     #[test]
+     fn spawn_request_serializes_permission_profile() {
++        let workspace_roots = vec![
++            AbsolutePathBuf::from_absolute_path("workspace").expect("absolute workspace root"),
++        ];
+         let msg = FramedMessage {
+             version: IPC_PROTOCOL_VERSION,
+             message: Message::SpawnRequest {
+@@ -205,7 +209,7 @@ mod tests {
+                     cwd: PathBuf::from(r"C:\workspace"),
+                     env: HashMap::new(),
+                     permission_profile: PermissionProfile::read_only(),
+-                    permission_profile_cwd: PathBuf::from(r"C:\workspace"),
++                    workspace_roots: workspace_roots.clone(),
+                     codex_home: PathBuf::from(r"C:\codex"),
+                     real_codex_home: PathBuf::from(r"C:\Users\codex"),
+                     cap_sids: vec!["S-1-15-3-1024-1".to_string()],
+@@ -222,15 +226,13 @@ mod tests {
+         assert_eq!("managed", encoded["payload"]["permission_profile"]["type"]);
+         assert_eq!(None, encoded["payload"].get("policy_json_or_preset"));
+         assert_eq!(None, encoded["payload"].get("sandbox_policy_cwd"));
++        assert_eq!(None, encoded["payload"].get("permission_profile_cwd"));
+ 
+         let decoded: FramedMessage = serde_json::from_value(encoded).expect("deserialize");
+         let Message::SpawnRequest { payload } = decoded.message else {
+             panic!("unexpected message");
+         };
+         assert_eq!(PermissionProfile::read_only(), payload.permission_profile);
+-        assert_eq!(
+-            PathBuf::from(r"C:\workspace"),
+-            payload.permission_profile_cwd
+-        );
++        assert_eq!(workspace_roots, payload.workspace_roots);
+     }
+ }
+diff --git a/codex-rs/windows-sandbox-rs/src/elevated_impl.rs b/codex-rs/windows-sandbox-rs/src/elevated_impl.rs
+index 6038a2413fbc..3c598a3a9058 100644
+--- a/codex-rs/windows-sandbox-rs/src/elevated_impl.rs
++++ b/codex-rs/windows-sandbox-rs/src/elevated_impl.rs
+@@ -6,7 +6,7 @@ use std::path::PathBuf;
+ 
+ pub struct ElevatedSandboxProfileCaptureRequest<'a> {
+     pub permission_profile: &'a PermissionProfile,
+-    pub permission_profile_cwd: &'a Path,
++    pub workspace_roots: &'a [AbsolutePathBuf],
+     pub codex_home: &'a Path,
+     pub command: Vec<String>,
+     pub cwd: &'a Path,
+@@ -57,7 +57,7 @@ mod windows_impl {
+     ) -> Result<CaptureResult> {
+         let ElevatedSandboxProfileCaptureRequest {
+             permission_profile,
+-            permission_profile_cwd,
++            workspace_roots,
+             codex_home,
+             command,
+             cwd,
+@@ -71,10 +71,11 @@ mod windows_impl {
+             deny_read_paths_override,
+             deny_write_paths_override,
+         } = request;
+-        let permissions = ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_cwd(
+-            permission_profile,
+-            permission_profile_cwd,
+-        )?;
++        let permissions =
++            ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_workspace_roots(
++                permission_profile,
++                workspace_roots,
++            )?;
+         let deny_read_paths_override = deny_read_paths_override
+             .iter()
+             .map(AbsolutePathBuf::to_path_buf)
+@@ -139,7 +140,7 @@ mod windows_impl {
+                 cwd: cwd.to_path_buf(),
+                 env: env_map.clone(),
+                 permission_profile: permission_profile.clone(),
+-                permission_profile_cwd: permission_profile_cwd.to_path_buf(),
++                workspace_roots: workspace_roots.to_vec(),
+                 codex_home: sandbox_base.clone(),
+                 real_codex_home: codex_home.to_path_buf(),
+                 cap_sids,
+diff --git a/codex-rs/windows-sandbox-rs/src/lib.rs b/codex-rs/windows-sandbox-rs/src/lib.rs
+index 03d2393ed855..2d5069a03961 100644
+--- a/codex-rs/windows-sandbox-rs/src/lib.rs
++++ b/codex-rs/windows-sandbox-rs/src/lib.rs
+@@ -354,7 +354,7 @@ mod windows_impl {
+     #[allow(clippy::too_many_arguments)]
+     pub fn run_windows_sandbox_capture(
+         permission_profile: &PermissionProfile,
+-        permission_profile_cwd: &Path,
++        workspace_roots: &[AbsolutePathBuf],
+         codex_home: &Path,
+         command: Vec<String>,
+         cwd: &Path,
+@@ -364,7 +364,7 @@ mod windows_impl {
+     ) -> Result<CaptureResult> {
+         run_windows_sandbox_capture_with_filesystem_overrides(
+             permission_profile,
+-            permission_profile_cwd,
++            workspace_roots,
+             codex_home,
+             command,
+             cwd,
+@@ -379,7 +379,7 @@ mod windows_impl {
+     #[allow(clippy::too_many_arguments)]
+     pub fn run_windows_sandbox_capture_with_filesystem_overrides(
+         permission_profile: &PermissionProfile,
+-        permission_profile_cwd: &Path,
++        workspace_roots: &[AbsolutePathBuf],
+         codex_home: &Path,
+         command: Vec<String>,
+         cwd: &Path,
+@@ -399,7 +399,7 @@ mod windows_impl {
+             .collect::<Vec<_>>();
+         let common = prepare_legacy_spawn_context(
+             permission_profile,
+-            permission_profile_cwd,
++            workspace_roots,
+             codex_home,
+             cwd,
+             &mut env_map,
+@@ -578,14 +578,14 @@ mod windows_impl {
+ 
+     pub fn run_windows_sandbox_legacy_preflight(
+         permission_profile: &PermissionProfile,
+-        permission_profile_cwd: &Path,
++        workspace_roots: &[AbsolutePathBuf],
+         codex_home: &Path,
+         cwd: &Path,
+         env_map: &HashMap<String, String>,
+     ) -> Result<()> {
+-        let Ok(permissions) = super::resolved_permissions::ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_cwd(
++        let Ok(permissions) = super::resolved_permissions::ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_workspace_roots(
+             permission_profile,
+-            permission_profile_cwd,
++            workspace_roots,
+         ) else {
+             return Ok(());
+         };
+@@ -633,9 +633,9 @@ mod windows_impl {
+         }
+ 
+         fn should_apply_network_block(permission_profile: &PermissionProfile) -> bool {
+-            ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_cwd(
++            ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_workspace_roots(
+                 permission_profile,
+-                Path::new("."),
++                &[],
+             )
+             .expect("managed permissions")
+             .should_apply_network_block()
+@@ -670,7 +670,7 @@ mod windows_impl {
+             ] {
+                 super::run_windows_sandbox_legacy_preflight(
+                     &permission_profile,
+-                    Path::new("."),
++                    &[],
+                     Path::new("."),
+                     Path::new("."),
+                     &HashMap::new(),
+@@ -686,6 +686,7 @@ mod stub {
+     use anyhow::Result;
+     use anyhow::bail;
+     use codex_protocol::models::PermissionProfile;
++    use codex_utils_absolute_path::AbsolutePathBuf;
+     use std::collections::HashMap;
+     use std::path::Path;
+ 
+@@ -700,7 +701,7 @@ mod stub {
+     #[allow(clippy::too_many_arguments)]
+     pub fn run_windows_sandbox_capture(
+         _permission_profile: &PermissionProfile,
+-        _permission_profile_cwd: &Path,
++        _workspace_roots: &[AbsolutePathBuf],
+         _codex_home: &Path,
+         _command: Vec<String>,
+         _cwd: &Path,
+@@ -713,7 +714,7 @@ mod stub {
+ 
+     pub fn run_windows_sandbox_legacy_preflight(
+         _permission_profile: &PermissionProfile,
+-        _permission_profile_cwd: &Path,
++        _workspace_roots: &[AbsolutePathBuf],
+         _codex_home: &Path,
+         _cwd: &Path,
+         _env_map: &HashMap<String, String>,
+diff --git a/codex-rs/windows-sandbox-rs/src/resolved_permissions.rs b/codex-rs/windows-sandbox-rs/src/resolved_permissions.rs
+index 75c4c216a3b5..712a80aadea5 100644
+--- a/codex-rs/windows-sandbox-rs/src/resolved_permissions.rs
++++ b/codex-rs/windows-sandbox-rs/src/resolved_permissions.rs
+@@ -37,13 +37,15 @@ pub enum WindowsSandboxTokenMode {
+ /// Chooses the restricted-token family needed for a managed permission profile.
+ pub fn token_mode_for_permission_profile(
+     permission_profile: &PermissionProfile,
++    workspace_roots: &[AbsolutePathBuf],
+     cwd: &Path,
+     env_map: &HashMap<String, String>,
+ ) -> Result<WindowsSandboxTokenMode> {
+-    let permissions = ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_cwd(
+-        permission_profile,
+-        cwd,
+-    )?;
++    let permissions =
++        ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_workspace_roots(
++            permission_profile,
++            workspace_roots,
++        )?;
+     if permissions.file_system.has_full_disk_write_access() {
+         anyhow::bail!(
+             "permission profile requests full-disk filesystem writes, which cannot be enforced by the Windows sandbox"
+@@ -76,15 +78,15 @@ impl ResolvedWindowsSandboxPermissions {
+     }
+ 
+     /// Resolves a managed permission profile and binds symbolic `:workspace_roots`
+-    /// entries to the permission root supplied by the caller.
+-    pub fn try_from_permission_profile_for_cwd(
++    /// entries to the workspace roots supplied by the caller.
++    pub fn try_from_permission_profile_for_workspace_roots(
+         permission_profile: &PermissionProfile,
+-        cwd: &Path,
++        workspace_roots: &[AbsolutePathBuf],
+     ) -> Result<Self> {
+         let mut permissions = Self::try_from_permission_profile(permission_profile)?;
+         permissions.file_system = permissions
+             .file_system
+-            .materialize_project_roots_with_cwd(cwd);
++            .materialize_project_roots_with_workspace_roots(workspace_roots);
+         Ok(permissions)
+     }
+ 
+@@ -202,9 +204,14 @@ mod tests {
+     use codex_protocol::permissions::FileSystemAccessMode;
+     use codex_protocol::permissions::FileSystemSandboxEntry;
+     use codex_protocol::permissions::FileSystemSpecialPath;
++    use codex_protocol::permissions::project_roots_glob_pattern;
+     use pretty_assertions::assert_eq;
+     use tempfile::TempDir;
+ 
++    fn workspace_roots_for(root: &Path) -> Vec<AbsolutePathBuf> {
++        vec![AbsolutePathBuf::from_absolute_path(root).expect("absolute workspace root")]
++    }
++
+     #[test]
+     fn permission_profile_workspace_write_uses_windows_temp_env_vars() {
+         let tmp = TempDir::new().expect("tempdir");
+@@ -238,10 +245,10 @@ mod tests {
+     }
+ 
+     #[test]
+-    fn permission_profile_workspace_root_stays_bound_to_profile_cwd() {
++    fn permission_profile_workspace_root_uses_runtime_workspace_roots() {
+         let tmp = TempDir::new().expect("tempdir");
+-        let profile_cwd = tmp.path().join("workspace");
+-        let command_cwd = profile_cwd.join("subdir");
++        let workspace_root = tmp.path().join("workspace");
++        let command_cwd = workspace_root.join("subdir");
+         std::fs::create_dir_all(&command_cwd).expect("create command cwd");
+ 
+         let permission_profile = PermissionProfile::Managed {
+@@ -256,11 +263,13 @@ mod tests {
+             },
+             network: NetworkSandboxPolicy::Restricted,
+         };
+-        let permissions = ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_cwd(
+-            &permission_profile,
+-            &profile_cwd,
+-        )
+-        .expect("managed permission profile");
++        let workspace_roots = workspace_roots_for(workspace_root.as_path());
++        let permissions =
++            ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_workspace_roots(
++                &permission_profile,
++                workspace_roots.as_slice(),
++            )
++            .expect("managed permission profile");
+ 
+         let roots = permissions
+             .writable_roots_for_cwd(&command_cwd, &HashMap::new())
+@@ -270,7 +279,101 @@ mod tests {
+ 
+         assert_eq!(
+             roots,
+-            vec![dunce::canonicalize(&profile_cwd).expect("canonical profile cwd")]
++            vec![dunce::canonicalize(&workspace_root).expect("canonical workspace root")]
++        );
++    }
++
++    #[test]
++    fn permission_profile_workspace_roots_expand_all_runtime_workspace_roots() {
++        let tmp = TempDir::new().expect("tempdir");
++        let first = AbsolutePathBuf::from_absolute_path(tmp.path().join("first"))
++            .expect("absolute first root");
++        let second = AbsolutePathBuf::from_absolute_path(tmp.path().join("second"))
++            .expect("absolute second root");
++        let permission_profile = PermissionProfile::Managed {
++            file_system: ManagedFileSystemPermissions::Restricted {
++                entries: vec![
++                    FileSystemSandboxEntry {
++                        path: FileSystemPath::Special {
++                            value: FileSystemSpecialPath::project_roots(/*subpath*/ None),
++                        },
++                        access: FileSystemAccessMode::Write,
++                    },
++                    FileSystemSandboxEntry {
++                        path: FileSystemPath::Special {
++                            value: FileSystemSpecialPath::project_roots(Some(".git".into())),
++                        },
++                        access: FileSystemAccessMode::Deny,
++                    },
++                    FileSystemSandboxEntry {
++                        path: FileSystemPath::GlobPattern {
++                            pattern: project_roots_glob_pattern(Path::new("**/*.env")),
++                        },
++                        access: FileSystemAccessMode::Deny,
++                    },
++                ],
++                glob_scan_max_depth: None,
++            },
++            network: NetworkSandboxPolicy::Restricted,
++        };
++
++        let permissions =
++            ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_workspace_roots(
++                &permission_profile,
++                &[first.clone(), second.clone()],
++            )
++            .expect("managed permission profile");
++
++        assert_eq!(
++            permissions.file_system,
++            FileSystemSandboxPolicy::restricted(vec![
++                FileSystemSandboxEntry {
++                    path: FileSystemPath::Path {
++                        path: first.clone(),
++                    },
++                    access: FileSystemAccessMode::Write,
++                },
++                FileSystemSandboxEntry {
++                    path: FileSystemPath::Path {
++                        path: second.clone(),
++                    },
++                    access: FileSystemAccessMode::Write,
++                },
++                FileSystemSandboxEntry {
++                    path: FileSystemPath::Path {
++                        path: first.join(".git"),
++                    },
++                    access: FileSystemAccessMode::Deny,
++                },
++                FileSystemSandboxEntry {
++                    path: FileSystemPath::Path {
++                        path: second.join(".git"),
++                    },
++                    access: FileSystemAccessMode::Deny,
++                },
++                FileSystemSandboxEntry {
++                    path: FileSystemPath::GlobPattern {
++                        pattern: AbsolutePathBuf::resolve_path_against_base(
++                            "**/*.env",
++                            first.as_path(),
++                        )
++                        .to_string_lossy()
++                        .into_owned(),
++                    },
++                    access: FileSystemAccessMode::Deny,
++                },
++                FileSystemSandboxEntry {
++                    path: FileSystemPath::GlobPattern {
++                        pattern: AbsolutePathBuf::resolve_path_against_base(
++                            "**/*.env",
++                            second.as_path(),
++                        )
++                        .to_string_lossy()
++                        .into_owned(),
++                    },
++                    access: FileSystemAccessMode::Deny,
++                },
++            ])
+         );
+     }
+ 
+@@ -279,9 +382,11 @@ mod tests {
+         let tmp = TempDir::new().expect("tempdir");
+         let cwd = tmp.path().join("workspace");
+         std::fs::create_dir_all(&cwd).expect("create cwd");
++        let workspace_roots = workspace_roots_for(cwd.as_path());
+ 
+         let token_mode = token_mode_for_permission_profile(
+             &PermissionProfile::read_only(),
++            workspace_roots.as_slice(),
+             &cwd,
+             &HashMap::new(),
+         )
+@@ -295,9 +400,11 @@ mod tests {
+         let tmp = TempDir::new().expect("tempdir");
+         let cwd = tmp.path().join("workspace");
+         std::fs::create_dir_all(&cwd).expect("create cwd");
++        let workspace_roots = workspace_roots_for(cwd.as_path());
+ 
+         let token_mode = token_mode_for_permission_profile(
+             &PermissionProfile::workspace_write(),
++            workspace_roots.as_slice(),
+             &cwd,
+             &HashMap::new(),
+         )
+@@ -353,9 +460,15 @@ mod tests {
+             },
+             network: NetworkSandboxPolicy::Restricted,
+         };
++        let workspace_roots = workspace_roots_for(cwd.as_path());
+ 
+-        let err = token_mode_for_permission_profile(&permission_profile, &cwd, &HashMap::new())
+-            .expect_err("full disk writes should not resolve to a token mode");
++        let err = token_mode_for_permission_profile(
++            &permission_profile,
++            workspace_roots.as_slice(),
++            &cwd,
++            &HashMap::new(),
++        )
++        .expect_err("full disk writes should not resolve to a token mode");
+ 
+         assert!(
+             err.to_string()
+diff --git a/codex-rs/windows-sandbox-rs/src/setup.rs b/codex-rs/windows-sandbox-rs/src/setup.rs
+index cc600b85ac4d..a5de246f643e 100644
+--- a/codex-rs/windows-sandbox-rs/src/setup.rs
++++ b/codex-rs/windows-sandbox-rs/src/setup.rs
+@@ -30,6 +30,7 @@ use anyhow::anyhow;
+ use base64::Engine;
+ use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+ use codex_protocol::models::PermissionProfile;
++use codex_utils_absolute_path::AbsolutePathBuf;
+ 
+ use windows_sys::Win32::Foundation::CloseHandle;
+ use windows_sys::Win32::Foundation::GetLastError;
+@@ -105,16 +106,18 @@ pub struct SetupRootOverrides {
+ 
+ pub fn run_setup_refresh(
+     permission_profile: &PermissionProfile,
+-    permission_profile_cwd: &Path,
++    workspace_roots: &[AbsolutePathBuf],
+     command_cwd: &Path,
+     env_map: &HashMap<String, String>,
+     codex_home: &Path,
+     proxy_enforced: bool,
+ ) -> Result<()> {
+-    let Ok(permissions) = ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_cwd(
+-        permission_profile,
+-        permission_profile_cwd,
+-    ) else {
++    let Ok(permissions) =
++        ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_workspace_roots(
++            permission_profile,
++            workspace_roots,
++        )
++    else {
+         return Ok(());
+     };
+     run_setup_refresh_inner(
+@@ -138,17 +141,19 @@ pub fn run_setup_refresh_with_overrides(
+ 
+ pub fn run_setup_refresh_with_extra_read_roots(
+     permission_profile: &PermissionProfile,
+-    permission_profile_cwd: &Path,
++    workspace_roots: &[AbsolutePathBuf],
+     command_cwd: &Path,
+     env_map: &HashMap<String, String>,
+     codex_home: &Path,
+     extra_read_roots: Vec<PathBuf>,
+     proxy_enforced: bool,
+ ) -> Result<()> {
+-    let Ok(permissions) = ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_cwd(
+-        permission_profile,
+-        permission_profile_cwd,
+-    ) else {
++    let Ok(permissions) =
++        ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_workspace_roots(
++            permission_profile,
++            workspace_roots,
++        )
++    else {
+         return Ok(());
+     };
+     let mut read_roots = gather_read_roots(command_cwd, &permissions, env_map, codex_home);
+@@ -1037,15 +1042,19 @@ mod tests {
+ 
+     fn permissions_for(
+         permission_profile: &PermissionProfile,
+-        permission_profile_cwd: &Path,
++        workspace_roots: &[AbsolutePathBuf],
+     ) -> ResolvedWindowsSandboxPermissions {
+-        ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_cwd(
++        ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_workspace_roots(
+             permission_profile,
+-            permission_profile_cwd,
++            workspace_roots,
+         )
+         .expect("managed permission profile")
+     }
+ 
++    fn workspace_roots_for(root: &Path) -> Vec<AbsolutePathBuf> {
++        vec![AbsolutePathBuf::from_absolute_path(root).expect("absolute workspace root")]
++    }
++
+     fn workspace_write_profile(
+         writable_roots: &[AbsolutePathBuf],
+         exclude_tmpdir_env_var: bool,
+@@ -1413,7 +1422,8 @@ mod tests {
+         let command_cwd = tmp.path().join("workspace");
+         fs::create_dir_all(&command_cwd).expect("create workspace");
+         let permission_profile = PermissionProfile::read_only();
+-        let permissions = permissions_for(&permission_profile, &command_cwd);
++        let workspace_roots = workspace_roots_for(command_cwd.as_path());
++        let permissions = permissions_for(&permission_profile, workspace_roots.as_slice());
+ 
+         let roots = gather_read_roots(&command_cwd, &permissions, &HashMap::new(), &codex_home);
+         let expected =
+@@ -1438,7 +1448,8 @@ mod tests {
+             /*exclude_tmpdir_env_var*/ true,
+             /*exclude_slash_tmp*/ true,
+         );
+-        let permissions = permissions_for(&permission_profile, &command_cwd);
++        let workspace_roots = workspace_roots_for(command_cwd.as_path());
++        let permissions = permissions_for(&permission_profile, workspace_roots.as_slice());
+ 
+         let roots = gather_read_roots(&command_cwd, &permissions, &HashMap::new(), &codex_home);
+         let expected_writable =
+@@ -1451,14 +1462,15 @@ mod tests {
+     fn build_payload_roots_preserves_helper_roots_when_read_override_is_provided() {
+         let tmp = TempDir::new().expect("tempdir");
+         let codex_home = tmp.path().join("codex-home");
+-        let permission_profile_cwd = tmp.path().join("permission-profile-cwd");
++        let workspace_root = tmp.path().join("workspace-root");
+         let command_cwd = tmp.path().join("workspace");
+         let readable_root = tmp.path().join("docs");
+-        fs::create_dir_all(&permission_profile_cwd).expect("create permission profile cwd");
++        fs::create_dir_all(&workspace_root).expect("create workspace root");
+         fs::create_dir_all(&command_cwd).expect("create workspace");
+         fs::create_dir_all(&readable_root).expect("create readable root");
+         let permission_profile = PermissionProfile::read_only();
+-        let permissions = permissions_for(&permission_profile, &permission_profile_cwd);
++        let workspace_roots = workspace_roots_for(workspace_root.as_path());
++        let permissions = permissions_for(&permission_profile, workspace_roots.as_slice());
+ 
+         let (read_roots, write_roots) = build_payload_roots(
+             &super::SandboxSetupRequest {
+@@ -1497,14 +1509,15 @@ mod tests {
+     fn build_payload_roots_replaces_full_read_policy_when_read_override_is_provided() {
+         let tmp = TempDir::new().expect("tempdir");
+         let codex_home = tmp.path().join("codex-home");
+-        let permission_profile_cwd = tmp.path().join("permission-profile-cwd");
++        let workspace_root = tmp.path().join("workspace-root");
+         let command_cwd = tmp.path().join("workspace");
+         let readable_root = tmp.path().join("docs");
+-        fs::create_dir_all(&permission_profile_cwd).expect("create permission profile cwd");
++        fs::create_dir_all(&workspace_root).expect("create workspace root");
+         fs::create_dir_all(&command_cwd).expect("create workspace");
+         fs::create_dir_all(&readable_root).expect("create readable root");
+         let permission_profile = PermissionProfile::read_only();
+-        let permissions = permissions_for(&permission_profile, &permission_profile_cwd);
++        let workspace_roots = workspace_roots_for(workspace_root.as_path());
++        let permissions = permissions_for(&permission_profile, workspace_roots.as_slice());
+ 
+         let (read_roots, write_roots) = build_payload_roots(
+             &super::SandboxSetupRequest {
+@@ -1555,7 +1568,8 @@ mod tests {
+             /*exclude_tmpdir_env_var*/ true,
+             /*exclude_slash_tmp*/ true,
+         );
+-        let permissions = permissions_for(&permission_profile, &command_cwd);
++        let workspace_roots = workspace_roots_for(command_cwd.as_path());
++        let permissions = permissions_for(&permission_profile, workspace_roots.as_slice());
+         let override_roots = vec![
+             command_cwd.clone(),
+             extra_root.clone(),
+@@ -1598,11 +1612,11 @@ mod tests {
+     }
+ 
+     #[test]
+-    fn effective_write_roots_use_profile_cwd_for_workspace_root() {
++    fn effective_write_roots_use_runtime_workspace_roots_for_workspace_root() {
+         let tmp = TempDir::new().expect("tempdir");
+         let codex_home = tmp.path().join("codex-home");
+-        let permission_profile_cwd = tmp.path().join("workspace");
+-        let command_cwd = permission_profile_cwd.join("subdir");
++        let workspace_root = tmp.path().join("workspace");
++        let command_cwd = workspace_root.join("subdir");
+         fs::create_dir_all(&codex_home).expect("create codex home");
+         fs::create_dir_all(&command_cwd).expect("create command cwd");
+ 
+@@ -1611,7 +1625,8 @@ mod tests {
+             /*exclude_tmpdir_env_var*/ true,
+             /*exclude_slash_tmp*/ true,
+         );
+-        let permissions = permissions_for(&permission_profile, &permission_profile_cwd);
++        let workspace_roots = workspace_roots_for(workspace_root.as_path());
++        let permissions = permissions_for(&permission_profile, workspace_roots.as_slice());
+ 
+         let effective_write_roots = super::effective_write_roots_for_setup(
+             &permissions,
+@@ -1623,7 +1638,7 @@ mod tests {
+ 
+         assert_eq!(
+             effective_write_roots,
+-            vec![dunce::canonicalize(&permission_profile_cwd).expect("canonical profile cwd")]
++            vec![dunce::canonicalize(&workspace_root).expect("canonical workspace root")]
+         );
+     }
+ 
+@@ -1646,7 +1661,8 @@ mod tests {
+             /*exclude_tmpdir_env_var*/ true,
+             /*exclude_slash_tmp*/ true,
+         );
+-        let permissions = permissions_for(&permission_profile, &command_cwd);
++        let workspace_roots = workspace_roots_for(command_cwd.as_path());
++        let permissions = permissions_for(&permission_profile, workspace_roots.as_slice());
+         let request = super::SandboxSetupRequest {
+             permissions: &permissions,
+             command_cwd: &command_cwd,
+@@ -1677,7 +1693,8 @@ mod tests {
+         let command_cwd = tmp.path().join("workspace");
+         fs::create_dir_all(&command_cwd).expect("create workspace");
+         let permission_profile = PermissionProfile::read_only();
+-        let permissions = permissions_for(&permission_profile, &command_cwd);
++        let workspace_roots = workspace_roots_for(command_cwd.as_path());
++        let permissions = permissions_for(&permission_profile, workspace_roots.as_slice());
+ 
+         let roots = gather_full_read_roots_for_permissions(
+             &command_cwd,
+diff --git a/codex-rs/windows-sandbox-rs/src/spawn_prep.rs b/codex-rs/windows-sandbox-rs/src/spawn_prep.rs
+index b68cc57a8104..7bdd59bf537c 100644
+--- a/codex-rs/windows-sandbox-rs/src/spawn_prep.rs
++++ b/codex-rs/windows-sandbox-rs/src/spawn_prep.rs
+@@ -32,6 +32,7 @@ use crate::workspace_acl::protect_workspace_codex_dir;
+ use anyhow::Context;
+ use anyhow::Result;
+ use codex_protocol::models::PermissionProfile;
++use codex_utils_absolute_path::AbsolutePathBuf;
+ use std::collections::HashMap;
+ use std::ffi::c_void;
+ use std::path::Path;
+@@ -80,17 +81,18 @@ pub(crate) struct LegacyAclSids<'a> {
+ 
+ fn prepare_spawn_context_common(
+     permission_profile: &PermissionProfile,
+-    permission_profile_cwd: &Path,
++    workspace_roots: &[AbsolutePathBuf],
+     codex_home: &Path,
+     cwd: &Path,
+     env_map: &mut HashMap<String, String>,
+     command: &[String],
+     options: SpawnPrepOptions,
+ ) -> Result<SpawnContext> {
+-    let permissions = ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_cwd(
+-        permission_profile,
+-        permission_profile_cwd,
+-    )?;
++    let permissions =
++        ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_workspace_roots(
++            permission_profile,
++            workspace_roots,
++        )?;
+ 
+     normalize_null_device_env(env_map);
+     ensure_non_interactive_pager(env_map);
+@@ -119,7 +121,7 @@ fn prepare_spawn_context_common(
+ 
+ pub(crate) fn prepare_legacy_spawn_context(
+     permission_profile: &PermissionProfile,
+-    permission_profile_cwd: &Path,
++    workspace_roots: &[AbsolutePathBuf],
+     codex_home: &Path,
+     cwd: &Path,
+     env_map: &mut HashMap<String, String>,
+@@ -128,7 +130,7 @@ pub(crate) fn prepare_legacy_spawn_context(
+ ) -> Result<SpawnContext> {
+     let common = prepare_spawn_context_common(
+         permission_profile,
+-        permission_profile_cwd,
++        workspace_roots,
+         codex_home,
+         cwd,
+         env_map,
+@@ -472,10 +474,14 @@ mod tests {
+         )
+     }
+ 
++    fn workspace_roots_for(root: &Path) -> Vec<AbsolutePathBuf> {
++        vec![AbsolutePathBuf::from_absolute_path(root).expect("absolute workspace root")]
++    }
++
+     fn should_apply_network_block(permission_profile: &PermissionProfile) -> bool {
+-        ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_cwd(
++        ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_workspace_roots(
+             permission_profile,
+-            Path::new("."),
++            &[],
+         )
+         .expect("managed permission profile")
+         .should_apply_network_block()
+@@ -503,10 +509,11 @@ mod tests {
+         let codex_home = TempDir::new().expect("tempdir");
+         let cwd = TempDir::new().expect("tempdir");
+         let mut env_map = HashMap::new();
++        let workspace_roots = workspace_roots_for(cwd.path());
+ 
+         let _context = prepare_legacy_spawn_context(
+             &PermissionProfile::workspace_write(),
+-            cwd.path(),
++            workspace_roots.as_slice(),
+             codex_home.path(),
+             cwd.path(),
+             &mut env_map,
+@@ -533,10 +540,11 @@ mod tests {
+             "HTTP_PROXY".to_string(),
+             "http://user.proxy:8080".to_string(),
+         )]);
++        let workspace_roots = workspace_roots_for(cwd.path());
+ 
+         let context = prepare_spawn_context_common(
+             &PermissionProfile::workspace_write(),
+-            cwd.path(),
++            workspace_roots.as_slice(),
+             codex_home.path(),
+             cwd.path(),
+             &mut env_map,
+@@ -557,11 +565,11 @@ mod tests {
+     }
+ 
+     #[test]
+-    fn legacy_session_capability_roots_use_profile_cwd_for_workspace_root() {
++    fn legacy_session_capability_roots_use_runtime_workspace_roots_for_workspace_root() {
+         let tmp = TempDir::new().expect("tempdir");
+         let codex_home = tmp.path().join("codex-home");
+-        let permission_profile_cwd = tmp.path().join("workspace");
+-        let command_cwd = permission_profile_cwd.join("subdir");
++        let workspace_root = tmp.path().join("workspace");
++        let command_cwd = workspace_root.join("subdir");
+         std::fs::create_dir_all(&codex_home).expect("create codex home");
+         std::fs::create_dir_all(&command_cwd).expect("create command cwd");
+ 
+@@ -571,11 +579,13 @@ mod tests {
+             /*exclude_tmpdir_env_var*/ true,
+             /*exclude_slash_tmp*/ true,
+         );
+-        let permissions = ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_cwd(
+-            &permission_profile,
+-            &permission_profile_cwd,
+-        )
+-        .expect("managed permission profile");
++        let workspace_roots = workspace_roots_for(workspace_root.as_path());
++        let permissions =
++            ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_workspace_roots(
++                &permission_profile,
++                workspace_roots.as_slice(),
++            )
++            .expect("managed permission profile");
+ 
+         let roots = legacy_session_capability_roots(
+             &permissions,
+@@ -586,7 +596,7 @@ mod tests {
+ 
+         assert_eq!(
+             roots,
+-            vec![dunce::canonicalize(&permission_profile_cwd).expect("canonical profile cwd")]
++            vec![dunce::canonicalize(&workspace_root).expect("canonical workspace root")]
+         );
+     }
+ 
+@@ -686,11 +696,13 @@ mod tests {
+             /*exclude_tmpdir_env_var*/ true,
+             /*exclude_slash_tmp*/ true,
+         );
+-        let permissions = ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_cwd(
+-            &permission_profile,
+-            &workspace,
+-        )
+-        .expect("managed permission profile");
++        let workspace_roots = workspace_roots_for(workspace.as_path());
++        let permissions =
++            ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_workspace_roots(
++                &permission_profile,
++                workspace_roots.as_slice(),
++            )
++            .expect("managed permission profile");
+ 
+         let roots =
+             legacy_session_capability_roots(&permissions, &workspace, &HashMap::new(), &codex_home);
+diff --git a/codex-rs/windows-sandbox-rs/src/unified_exec/backends/elevated.rs b/codex-rs/windows-sandbox-rs/src/unified_exec/backends/elevated.rs
+index 09ac7862389b..0a2af6d7ad48 100644
+--- a/codex-rs/windows-sandbox-rs/src/unified_exec/backends/elevated.rs
++++ b/codex-rs/windows-sandbox-rs/src/unified_exec/backends/elevated.rs
+@@ -26,7 +26,7 @@ use tokio::sync::oneshot;
+ #[allow(clippy::too_many_arguments)]
+ pub(crate) async fn spawn_windows_sandbox_session_elevated_for_permission_profile(
+     permission_profile: &PermissionProfile,
+-    permission_profile_cwd: &Path,
++    workspace_roots: &[AbsolutePathBuf],
+     codex_home: &Path,
+     command: Vec<String>,
+     cwd: &Path,
+@@ -49,10 +49,11 @@ pub(crate) async fn spawn_windows_sandbox_session_elevated_for_permission_profil
+         .iter()
+         .map(AbsolutePathBuf::to_path_buf)
+         .collect::<Vec<_>>();
+-    let permissions = ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_cwd(
+-        permission_profile,
+-        permission_profile_cwd,
+-    )?;
++    let permissions =
++        ResolvedWindowsSandboxPermissions::try_from_permission_profile_for_workspace_roots(
++            permission_profile,
++            workspace_roots,
++        )?;
+     let elevated = prepare_elevated_spawn_context_for_permissions(
+         permissions,
+         codex_home,
+@@ -71,7 +72,7 @@ pub(crate) async fn spawn_windows_sandbox_session_elevated_for_permission_profil
+         cwd: cwd.to_path_buf(),
+         env: env_map.clone(),
+         permission_profile: permission_profile.clone(),
+-        permission_profile_cwd: permission_profile_cwd.to_path_buf(),
++        workspace_roots: workspace_roots.to_vec(),
+         codex_home: elevated.sandbox_base.clone(),
+         real_codex_home: codex_home.to_path_buf(),
+         cap_sids: elevated.cap_sids.clone(),
+diff --git a/codex-rs/windows-sandbox-rs/src/unified_exec/backends/legacy.rs b/codex-rs/windows-sandbox-rs/src/unified_exec/backends/legacy.rs
+index 2fc8c12e00d9..abd0c020d3c9 100644
+--- a/codex-rs/windows-sandbox-rs/src/unified_exec/backends/legacy.rs
++++ b/codex-rs/windows-sandbox-rs/src/unified_exec/backends/legacy.rs
+@@ -271,7 +271,7 @@ fn resize_conpty_handle(hpc: &Arc<StdMutex<Option<HANDLE>>>, size: TerminalSize)
+ #[allow(clippy::too_many_arguments)]
+ pub(crate) async fn spawn_windows_sandbox_session_legacy(
+     permission_profile: &PermissionProfile,
+-    permission_profile_cwd: &Path,
++    workspace_roots: &[AbsolutePathBuf],
+     codex_home: &Path,
+     command: Vec<String>,
+     cwd: &Path,
+@@ -285,7 +285,7 @@ pub(crate) async fn spawn_windows_sandbox_session_legacy(
+ ) -> Result<SpawnedProcess> {
+     let common = prepare_legacy_spawn_context(
+         permission_profile,
+-        permission_profile_cwd,
++        workspace_roots,
+         codex_home,
+         cwd,
+         &mut env_map,
+diff --git a/codex-rs/windows-sandbox-rs/src/unified_exec/mod.rs b/codex-rs/windows-sandbox-rs/src/unified_exec/mod.rs
+index e327200426a0..2fe8b80ee14c 100644
+--- a/codex-rs/windows-sandbox-rs/src/unified_exec/mod.rs
++++ b/codex-rs/windows-sandbox-rs/src/unified_exec/mod.rs
+@@ -20,7 +20,7 @@ use std::path::PathBuf;
+ #[allow(clippy::too_many_arguments)]
+ pub async fn spawn_windows_sandbox_session_legacy(
+     permission_profile: &PermissionProfile,
+-    permission_profile_cwd: &Path,
++    workspace_roots: &[AbsolutePathBuf],
+     codex_home: &Path,
+     command: Vec<String>,
+     cwd: &Path,
+@@ -34,7 +34,7 @@ pub async fn spawn_windows_sandbox_session_legacy(
+ ) -> Result<SpawnedProcess> {
+     backends::legacy::spawn_windows_sandbox_session_legacy(
+         permission_profile,
+-        permission_profile_cwd,
++        workspace_roots,
+         codex_home,
+         command,
+         cwd,
+@@ -52,7 +52,7 @@ pub async fn spawn_windows_sandbox_session_legacy(
+ #[allow(clippy::too_many_arguments)]
+ pub async fn spawn_windows_sandbox_session_elevated_for_permission_profile(
+     permission_profile: &PermissionProfile,
+-    permission_profile_cwd: &Path,
++    workspace_roots: &[AbsolutePathBuf],
+     codex_home: &Path,
+     command: Vec<String>,
+     cwd: &Path,
+@@ -69,7 +69,7 @@ pub async fn spawn_windows_sandbox_session_elevated_for_permission_profile(
+ ) -> Result<SpawnedProcess> {
+     backends::elevated::spawn_windows_sandbox_session_elevated_for_permission_profile(
+         permission_profile,
+-        permission_profile_cwd,
++        workspace_roots,
+         codex_home,
+         command,
+         cwd,
+diff --git a/codex-rs/windows-sandbox-rs/src/unified_exec/tests.rs b/codex-rs/windows-sandbox-rs/src/unified_exec/tests.rs
+index b08d7a6b2f40..ed5857bb2e65 100644
+--- a/codex-rs/windows-sandbox-rs/src/unified_exec/tests.rs
++++ b/codex-rs/windows-sandbox-rs/src/unified_exec/tests.rs
+@@ -76,6 +76,10 @@ fn sandbox_log(codex_home: &Path) -> String {
+         .unwrap_or_else(|err| format!("failed to read {}: {err}", log_path.display()))
+ }
+ 
++fn workspace_roots_for(root: &Path) -> Vec<AbsolutePathBuf> {
++    vec![AbsolutePathBuf::from_absolute_path(root).expect("absolute workspace root")]
++}
++
+ fn wait_for_frame_count(frames_path: &Path, expected_frames: usize) -> Vec<Message> {
+     let deadline = Instant::now() + Duration::from_secs(2);
+     loop {
+@@ -153,7 +157,7 @@ fn legacy_non_tty_cmd_emits_output() {
+         let permission_profile = PermissionProfile::workspace_write();
+         let spawned = spawn_windows_sandbox_session_legacy(
+             &permission_profile,
+-            cwd.as_path(),
++            workspace_roots_for(cwd.as_path()).as_slice(),
+             codex_home.path(),
+             vec![
+                 "C:\\Windows\\System32\\cmd.exe".to_string(),
+@@ -194,7 +198,7 @@ fn legacy_non_tty_cmd_rejects_deny_read_overrides() {
+         let permission_profile = PermissionProfile::workspace_write();
+         let err = spawn_windows_sandbox_session_legacy(
+             &permission_profile,
+-            cwd.as_path(),
++            workspace_roots_for(cwd.as_path()).as_slice(),
+             codex_home.path(),
+             vec![
+                 "C:\\Windows\\System32\\cmd.exe".to_string(),
+@@ -234,7 +238,7 @@ fn legacy_non_tty_powershell_emits_output() {
+         let permission_profile = PermissionProfile::workspace_write();
+         let spawned = spawn_windows_sandbox_session_legacy(
+             &permission_profile,
+-            cwd.as_path(),
++            workspace_roots_for(cwd.as_path()).as_slice(),
+             codex_home.path(),
+             vec![
+                 pwsh.display().to_string(),
+@@ -420,7 +424,7 @@ fn legacy_capture_powershell_emits_output() {
+     let permission_profile = PermissionProfile::workspace_write();
+     let result = run_windows_sandbox_capture(
+         &permission_profile,
+-        cwd.as_path(),
++        workspace_roots_for(cwd.as_path()).as_slice(),
+         codex_home.path(),
+         vec![
+             pwsh.display().to_string(),
+@@ -460,7 +464,7 @@ fn legacy_tty_powershell_emits_output_and_accepts_input() {
+         let permission_profile = PermissionProfile::workspace_write();
+         let spawned = spawn_windows_sandbox_session_legacy(
+             &permission_profile,
+-            cwd.as_path(),
++            workspace_roots_for(cwd.as_path()).as_slice(),
+             codex_home.path(),
+             vec![
+                 pwsh.display().to_string(),
+@@ -514,7 +518,7 @@ fn legacy_tty_cmd_emits_output_and_accepts_input() {
+         let permission_profile = PermissionProfile::workspace_write();
+         let spawned = spawn_windows_sandbox_session_legacy(
+             &permission_profile,
+-            cwd.as_path(),
++            workspace_roots_for(cwd.as_path()).as_slice(),
+             codex_home.path(),
+             vec![
+                 "C:\\Windows\\System32\\cmd.exe".to_string(),
+@@ -568,7 +572,7 @@ fn legacy_tty_cmd_default_desktop_emits_output_and_accepts_input() {
+         let permission_profile = PermissionProfile::workspace_write();
+         let spawned = spawn_windows_sandbox_session_legacy(
+             &permission_profile,
+-            cwd.as_path(),
++            workspace_roots_for(cwd.as_path()).as_slice(),
+             codex_home.path(),
+             vec![
+                 "C:\\Windows\\System32\\cmd.exe".to_string(),

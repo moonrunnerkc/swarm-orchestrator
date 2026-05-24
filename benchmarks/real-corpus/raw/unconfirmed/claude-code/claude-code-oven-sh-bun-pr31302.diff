@@ -1,0 +1,215 @@
+diff --git a/packages/bun-uws/src/App.h b/packages/bun-uws/src/App.h
+index 574758c6a2a..7eda4afdbf2 100644
+--- a/packages/bun-uws/src/App.h
++++ b/packages/bun-uws/src/App.h
+@@ -370,6 +370,18 @@ struct TemplatedApp {
+         return std::move(*this);
+     }
+ 
++    /** Closes all connections (idle and in-flight) connected to this server. Does not close the listen socket. */
++    TemplatedApp &&closeAllConnections() {
++        auto *group = httpContext->getSocketGroup();
++        struct us_socket_t *s = group->head_sockets;
++        while (s) {
++            struct us_socket_t *next = s->next;
++            us_socket_close(s, LIBUS_SOCKET_CLOSE_CODE_CLEAN_SHUTDOWN, 0);
++            s = next;
++        }
++        return std::move(*this);
++    }
++
+     template <typename UserData>
+     TemplatedApp &&ws(std::string_view pattern, WebSocketBehavior<UserData> &&behavior) {
+         /* Don't compile if alignment rules cannot be satisfied */
+diff --git a/src/js/node/_http_server.ts b/src/js/node/_http_server.ts
+index c7c54c5582c..b8ea699c0a2 100644
+--- a/src/js/node/_http_server.ts
++++ b/src/js/node/_http_server.ts
+@@ -310,14 +310,10 @@ Server.prototype.closeAllConnections = function () {
+   if (!server) {
+     return;
+   }
+-  this[serverSymbol] = undefined;
+-  const connectionsCheckingInterval = this[kConnectionsCheckingInterval];
+-  if (connectionsCheckingInterval) {
+-    connectionsCheckingInterval._destroyed = true;
+-  }
+-  this.listening = false;
+-
+-  server.stop(true);
++  // Per Node, this only closes established HTTP(S) connections (idle and
++  // in-flight). The listening socket must stay open so subsequent requests
++  // can still be accepted — see https://nodejs.org/api/http.html#serverclosealllconnections.
++  server.closeAllConnections?.();
+ };
+ 
+ Server.prototype.closeIdleConnections = function () {
+diff --git a/src/runtime/server/server.classes.ts b/src/runtime/server/server.classes.ts
+index 08cc34caf0c..1c88367be1b 100644
+--- a/src/runtime/server/server.classes.ts
++++ b/src/runtime/server/server.classes.ts
+@@ -36,6 +36,10 @@ function generate(name) {
+         fn: "closeIdleConnections",
+         length: 0,
+       },
++      closeAllConnections: {
++        fn: "closeAllConnections",
++        length: 0,
++      },
+       stop: {
+         fn: "doStop",
+         length: 1,
+diff --git a/src/runtime/server/server_body.rs b/src/runtime/server/server_body.rs
+index 45949392b25..33abf5029f6 100644
+--- a/src/runtime/server/server_body.rs
++++ b/src/runtime/server/server_body.rs
+@@ -2518,6 +2518,19 @@ where
+         Ok(JSValue::UNDEFINED)
+     }
+ 
++    #[bun_jsc::host_fn(method)]
++    pub fn close_all_connections(
++        &mut self,
++        _global: &JSGlobalObject,
++        _callframe: &CallFrame,
++    ) -> JsResult<JSValue> {
++        if self.app.is_none() {
++            return Ok(JSValue::UNDEFINED);
++        }
++        self.app_mut().close_all_connections();
++        Ok(JSValue::UNDEFINED)
++    }
++
+     pub fn stop_from_js(&mut self, abruptly: Option<JSValue>) -> JSValue {
+         let rc = self.get_all_closed_promise(&self.global());
+ 
+diff --git a/src/uws_sys/App.rs b/src/uws_sys/App.rs
+index d4e4443866b..1b24b3cf478 100644
+--- a/src/uws_sys/App.rs
++++ b/src/uws_sys/App.rs
+@@ -104,6 +104,12 @@ impl<const SSL: bool> App<SSL> {
+         c::uws_app_close_idle(Self::SSL_FLAG, self.as_raw())
+     }
+ 
++    /// Closes all client connections (idle and in-flight) without touching
++    /// the listening socket. Equivalent to Node's `Server#closeAllConnections`.
++    pub fn close_all_connections(&mut self) {
++        c::uws_app_close_all_connections(Self::SSL_FLAG, self.as_raw())
++    }
++
+     pub fn create(opts: &BunSocketContextOptions) -> Option<*mut Self> {
+         // SAFETY: FFI call; uws_create_app returns null on failure.
+         let app = unsafe { c::uws_create_app(Self::SSL_FLAG, *opts) };
+@@ -515,6 +521,7 @@ pub mod c {
+     unsafe extern "C" {
+         pub safe fn uws_app_close(ssl: i32, app: &mut uws_app_s);
+         pub safe fn uws_app_close_idle(ssl: i32, app: &mut uws_app_s);
++        pub safe fn uws_app_close_all_connections(ssl: i32, app: &mut uws_app_s);
+         // safe: `&mut uws_app_s` is ABI-identical to a non-null `*mut`;
+         // `handler`/`user_data` are stored opaquely (never dereferenced by the
+         // C++ shim itself) — no preconditions on this call.
+diff --git a/src/uws_sys/libuwsockets.cpp b/src/uws_sys/libuwsockets.cpp
+index f858aed1c90..b7b60be8378 100644
+--- a/src/uws_sys/libuwsockets.cpp
++++ b/src/uws_sys/libuwsockets.cpp
+@@ -394,6 +394,20 @@ extern "C"
+     }
+   }
+ 
++  void uws_app_close_all_connections(int ssl, uws_app_t *app)
++  {
++    if (ssl)
++    {
++      uWS::SSLApp *uwsApp = (uWS::SSLApp *)app;
++      uwsApp->closeAllConnections();
++    }
++    else
++    {
++      uWS::App *uwsApp = (uWS::App *)app;
++      uwsApp->closeAllConnections();
++    }
++  }
++
+   void uws_app_set_on_clienterror(int ssl, uws_app_t *app, void (*handler)(void *user_data, int is_ssl, struct us_socket_t *rawSocket, uint8_t errorCode, char *rawPacket, int rawPacketLength), void *user_data)
+   {
+     if (ssl)
+diff --git a/test/js/node/http/node-http.test.ts b/test/js/node/http/node-http.test.ts
+index e7fac011c64..6c66599725f 100644
+--- a/test/js/node/http/node-http.test.ts
++++ b/test/js/node/http/node-http.test.ts
+@@ -1369,6 +1369,75 @@ it.skip("should be able to stream huge amounts of data", async () => {
+   }
+ }, 30_000);
+ 
++describe("Server.closeAllConnections", () => {
++  // Per https://nodejs.org/api/http.html#serverclosealllconnections this should
++  // forcefully close every established connection but leave the listener open.
++  it("closes established connections but keeps the listener accepting new ones", async () => {
++    const handlerCalls: number[] = [];
++    const server = http.createServer((req, res) => {
++      handlerCalls.push(1);
++      res.end("ok");
++    });
++    try {
++      server.listen(0);
++      await once(server, "listening");
++      const port = (server.address() as AddressInfo).port;
++
++      // Open a keep-alive connection and finish one request so the socket
++      // is established and idle.
++      const keepAlive = connect(port);
++      await once(keepAlive, "connect");
++      const firstResponse = new Promise<string>(resolve => {
++        let buf = "";
++        keepAlive.setEncoding("utf8");
++        keepAlive.on("data", chunk => {
++          buf += chunk;
++          if (buf.endsWith("ok")) resolve(buf);
++        });
++      });
++      keepAlive.write("GET / HTTP/1.1\r\nHost: localhost\r\nConnection: keep-alive\r\n\r\n");
++      await firstResponse;
++
++      // Sanity: the socket is still open from the client's view.
++      expect(keepAlive.destroyed).toBe(false);
++      expect(server.listening).toBe(true);
++
++      const closed = once(keepAlive, "close");
++      server.closeAllConnections();
++      await closed;
++      expect(keepAlive.destroyed).toBe(true);
++
++      // Listener must still accept new connections after closeAllConnections.
++      expect(server.listening).toBe(true);
++      const followup = await fetch(`http://localhost:${port}/`);
++      expect(followup.status).toBe(200);
++      expect(await followup.text()).toBe("ok");
++      expect(handlerCalls.length).toBe(2);
++    } finally {
++      server.close();
++    }
++  });
++
++  it("is a no-op when no connections are established", async () => {
++    const server = http.createServer((req, res) => res.end("ok"));
++    try {
++      server.listen(0);
++      await once(server, "listening");
++      const port = (server.address() as AddressInfo).port;
++
++      // No client has connected yet — must not throw and must not affect the listener.
++      expect(() => server.closeAllConnections()).not.toThrow();
++      expect(server.listening).toBe(true);
++
++      const res = await fetch(`http://localhost:${port}/`);
++      expect(res.status).toBe(200);
++      expect(await res.text()).toBe("ok");
++    } finally {
++      server.close();
++    }
++  });
++});
++
+ describe("HTTP Server Security Tests - Advanced", () => {
+   // Setup and teardown utilities
+   let server;

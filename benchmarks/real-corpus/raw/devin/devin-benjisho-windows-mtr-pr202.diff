@@ -1,0 +1,313 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 1c84a5a..aecc1f7 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -691,17 +691,20 @@ jobs:
+       - name: Run cargo audit
+         run: cargo audit --deny warnings --deny unmaintained --deny unsound --deny yanked
+ 
++      - name: Install pinned nightly toolchain for fuzzing
++        run: rustup toolchain install nightly-2025-06-23 --profile minimal
++
+       - name: Install cargo-fuzz
+-        run: cargo install cargo-fuzz --locked
++        run: cargo +nightly-2025-06-23 install cargo-fuzz --locked
+ 
+       - name: Build fuzz targets
+-        run: cargo fuzz build --fuzz-dir fuzz
++        run: cargo +nightly-2025-06-23 fuzz build --fuzz-dir fuzz
+ 
+       - name: Run fuzz targets (short regression lane)
+         shell: bash
+         run: |
+           set -euo pipefail
+-          targets=$(cargo fuzz list --fuzz-dir fuzz)
++          targets=$(cargo +nightly-2025-06-23 fuzz list --fuzz-dir fuzz)
+           if [ -z "$targets" ]; then
+             echo "No fuzz targets found under fuzz/." >&2
+             exit 1
+@@ -710,7 +713,7 @@ jobs:
+           while IFS= read -r target; do
+             [ -z "$target" ] && continue
+             echo "Running fuzz target: $target"
+-            timeout --preserve-status 30s cargo fuzz run "$target" --fuzz-dir fuzz -- -max_total_time=20
++            timeout --preserve-status 30s cargo +nightly-2025-06-23 fuzz run "$target" --fuzz-dir fuzz -- -max_total_time=20
+             status=$?
+             if [ "$status" -eq 124 ]; then
+               echo "Target $target reached CI timeout as expected; continuing."
+diff --git a/DEVELOPMENT.md b/DEVELOPMENT.md
+index 108fa7b..3c392e6 100644
+--- a/DEVELOPMENT.md
++++ b/DEVELOPMENT.md
+@@ -125,7 +125,6 @@ SKIP=hadolint pre-commit run --all-files
+ - [Usage Guide](docs/USAGE.md)
+ - [API Reference](docs/API.md)
+ 
+-
+ ## Security & Fuzzing
+ 
+ - `cargo audit` runs in CI on every push/PR and fails on known vulnerability advisories.
+diff --git a/src/api_error.rs b/src/api_error.rs
+index 0b267f4..029ab1e 100644
+--- a/src/api_error.rs
++++ b/src/api_error.rs
+@@ -60,13 +60,6 @@ impl ApiError {
+             "invalid_option" => "https://windows-mtr.dev/problems/invalid-option",
+             "missing_port" => "https://windows-mtr.dev/problems/missing-port",
+             "insufficient_privileges" => "https://windows-mtr.dev/problems/insufficient-privileges",
+-            "probe_backend_unavailable" => {
+-                "https://windows-mtr.dev/problems/probe-backend-unavailable"
+-            }
+-            "probe_backend_install_failed" => {
+-                "https://windows-mtr.dev/problems/probe-backend-install-failed"
+-            }
+-            "probe_execution_failed" => "https://windows-mtr.dev/problems/probe-execution-failed",
+             "internal_io_error" => "https://windows-mtr.dev/problems/internal-io-error",
+             _ => "https://windows-mtr.dev/problems/internal-error",
+         }
+@@ -153,24 +146,6 @@ impl From<MtrError> for ApiError {
+                 "Insufficient privileges",
+                 value.to_string(),
+             ),
+-            MtrError::TrippyNotFound => Self::new(
+-                StatusCode::BAD_GATEWAY,
+-                "probe_backend_unavailable",
+-                "Probe backend unavailable",
+-                value.to_string(),
+-            ),
+-            MtrError::TrippyInstallFailed(_) => Self::new(
+-                StatusCode::BAD_GATEWAY,
+-                "probe_backend_install_failed",
+-                "Probe backend failure",
+-                value.to_string(),
+-            ),
+-            MtrError::TrippyExecutionFailed(_) => Self::new(
+-                StatusCode::BAD_GATEWAY,
+-                "probe_execution_failed",
+-                "Probe execution failure",
+-                value.to_string(),
+-            ),
+             MtrError::IoError(_) => Self::new(
+                 StatusCode::INTERNAL_SERVER_ERROR,
+                 "internal_io_error",
+@@ -272,20 +247,20 @@ mod tests {
+     }
+ 
+     #[test]
+-    fn runtime_probe_failure_maps_to_bad_gateway() {
+-        let api_error = ApiError::from(MtrError::TrippyExecutionFailed("spawn failed".to_string()));
++    fn io_error_maps_to_internal_server_error() {
++        let api_error = ApiError::from(MtrError::IoError(std::io::Error::other("disk full")));
+ 
+-        assert_eq!(api_error.status, StatusCode::BAD_GATEWAY);
+-        assert_eq!(api_error.code, "probe_execution_failed");
++        assert_eq!(api_error.status, StatusCode::INTERNAL_SERVER_ERROR);
++        assert_eq!(api_error.code, "internal_io_error");
+ 
+         let body = api_error.response();
+         assert_eq!(body.meta.schema_version, "v1");
+         assert_eq!(body.meta.request_id, None);
+-        assert_eq!(body.error.status, 502);
+-        assert_eq!(body.error.code, "probe_execution_failed");
++        assert_eq!(body.error.status, 500);
++        assert_eq!(body.error.code, "internal_io_error");
+         assert_eq!(
+             body.error.type_url,
+-            "https://windows-mtr.dev/problems/probe-execution-failed"
++            "https://windows-mtr.dev/problems/internal-io-error"
+         );
+     }
+ }
+diff --git a/src/native_ui.rs b/src/dashboard_ui.rs
+similarity index 97%
+rename from src/native_ui.rs
+rename to src/dashboard_ui.rs
+index 3af7800..1d60ca8 100644
+--- a/src/native_ui.rs
++++ b/src/dashboard_ui.rs
+@@ -35,7 +35,7 @@ struct HopStat {
+     worst_ms: f64,
+ }
+ 
+-pub struct NativeUiApp {
++pub struct DashboardApp {
+     target: String,
+     tab_index: usize,
+     hops: Vec<HopStat>,
+@@ -46,7 +46,7 @@ pub struct NativeUiApp {
+     consecutive_poll_failures: u32,
+ }
+ 
+-impl NativeUiApp {
++impl DashboardApp {
+     fn new(target: &str) -> Self {
+         Self {
+             target: target.to_string(),
+@@ -100,7 +100,7 @@ impl NativeUiApp {
+     }
+ }
+ 
+-pub fn run_native_ui(target: &str, snapshot_args: &[String]) -> anyhow::Result<i32> {
++pub fn run_dashboard_ui(target: &str, snapshot_args: &[String]) -> anyhow::Result<i32> {
+     enable_raw_mode().context("failed to enable raw mode for dashboard UI")?;
+     let mut stdout = io::stdout();
+     execute!(stdout, EnterAlternateScreen).context("failed to enter alternate screen")?;
+@@ -140,7 +140,7 @@ fn run_ui_loop(
+     target: &str,
+     snapshot_args: &[String],
+ ) -> anyhow::Result<i32> {
+-    let mut app = NativeUiApp::new(target);
++    let mut app = DashboardApp::new(target);
+     let tick_rate = Duration::from_millis(250);
+     let poll_rate = Duration::from_millis(900);
+     let (snapshot_tx, snapshot_rx) = mpsc::channel::<anyhow::Result<Vec<HopStat>>>();
+@@ -338,7 +338,7 @@ fn read_f64(item: &Value, keys: &[&str]) -> Option<f64> {
+     None
+ }
+ 
+-fn draw_ui(frame: &mut ratatui::Frame<'_>, app: &NativeUiApp) {
++fn draw_ui(frame: &mut ratatui::Frame<'_>, app: &DashboardApp) {
+     let chunks = Layout::default()
+         .direction(Direction::Vertical)
+         .constraints([
+@@ -384,7 +384,7 @@ fn draw_ui(frame: &mut ratatui::Frame<'_>, app: &NativeUiApp) {
+     frame.render_widget(help, chunks[2]);
+ }
+ 
+-fn build_help_text(app: &NativeUiApp) -> String {
++fn build_help_text(app: &DashboardApp) -> String {
+     let base = "Fallback dashboard: JSON snapshot polling, limited fields. For full UI use default mode. • Controls: ←/→ or Tab switch tabs • q quits";
+     let mut notes = Vec::new();
+ 
+@@ -422,7 +422,7 @@ fn build_help_text(app: &NativeUiApp) -> String {
+ 
+ fn render_hop_table(
+     frame: &mut ratatui::Frame<'_>,
+-    app: &NativeUiApp,
++    app: &DashboardApp,
+     area: ratatui::layout::Rect,
+ ) {
+     let rows = app.hops.iter().map(|hop| {
+@@ -461,7 +461,7 @@ fn render_hop_table(
+ 
+ fn render_latency_chart(
+     frame: &mut ratatui::Frame<'_>,
+-    app: &NativeUiApp,
++    app: &DashboardApp,
+     area: ratatui::layout::Rect,
+ ) {
+     let inner = Layout::default()
+@@ -530,7 +530,7 @@ fn render_latency_chart(
+ 
+ fn render_loss_chart(
+     frame: &mut ratatui::Frame<'_>,
+-    app: &NativeUiApp,
++    app: &DashboardApp,
+     area: ratatui::layout::Rect,
+ ) {
+     let dataset = Dataset::default()
+@@ -636,7 +636,7 @@ mod tests {
+ 
+     #[test]
+     fn build_help_text_includes_live_troubleshooting_when_ui_has_no_data() {
+-        let mut app = NativeUiApp::new("example.com");
++        let mut app = DashboardApp::new("example.com");
+         app.started_at = Instant::now() - Duration::from_secs(16);
+         app.ingest_error(anyhow!("poll failed"));
+         app.ingest_error(anyhow!("poll failed"));
+@@ -652,7 +652,7 @@ mod tests {
+ 
+     #[test]
+     fn build_help_text_is_compact_when_data_stream_is_healthy() {
+-        let mut app = NativeUiApp::new("example.com");
++        let mut app = DashboardApp::new("example.com");
+         app.ingest_snapshot(vec![HopStat {
+             hop: 1,
+             host: "1.1.1.1".to_string(),
+diff --git a/src/error.rs b/src/error.rs
+index c8935bb..65460c6 100644
+--- a/src/error.rs
++++ b/src/error.rs
+@@ -3,7 +3,6 @@ use thiserror::Error;
+ 
+ /// Custom error types for Windows MTR
+ #[derive(Error, Debug)]
+-#[allow(dead_code)] // Some variants are planned for future use
+ pub enum MtrError {
+     /// Error resolving hostname
+     #[error("Failed to resolve hostname: {0}")]
+@@ -13,19 +12,8 @@ pub enum MtrError {
+     #[error("Invalid IP address: {0}")]
+     InvalidIpAddress(#[from] AddrParseError),
+ 
+-    /// Trippy binary not found
+-    #[error("Trippy binary not found at any of the expected locations")]
+-    TrippyNotFound,
+-
+-    /// Trippy installation failed
+-    #[error("Failed to install trippy: {0}")]
+-    TrippyInstallFailed(String),
+-
+-    /// Trippy execution failed
+-    #[error("Failed to execute trippy: {0}")]
+-    TrippyExecutionFailed(String),
+-
+-    /// Insufficient privileges
++    /// Insufficient privileges (used in API error contract and diagnostic tests)
++    #[allow(dead_code)]
+     #[error(
+         "Administrator privileges are required to run traceroute\n\nPlease right-click on the command prompt/terminal and select 'Run as administrator' before running windows-mtr."
+     )]
+@@ -45,7 +33,8 @@ pub enum MtrError {
+     #[error("I/O error: {0}")]
+     IoError(#[from] std::io::Error),
+ 
+-    /// Other errors
++    /// Catch-all for unexpected failures (used in API error contract)
++    #[allow(dead_code)]
+     #[error("Error: {0}")]
+     Other(String),
+ }
+diff --git a/src/main.rs b/src/main.rs
+index a479648..68f75fe 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -11,8 +11,8 @@ use windows_mtr::service::{
+     run_embedded_trippy,
+ };
+ 
++mod dashboard_ui;
+ mod error;
+-mod native_ui;
+ use error::MtrError;
+ 
+ const EMBEDDED_TRIPPY_ENV: &str = "WINDOWS_MTR_EMBEDDED_TRIPPY";
+@@ -467,7 +467,7 @@ fn main() -> anyhow::Result<()> {
+                 .map_err(to_cli_error)
+                 .map_err(|error| anyhow::anyhow!(error.to_string()))
+                 .context("invalid --ui dashboard configuration")?;
+-        let code = native_ui::run_native_ui(&plan.validated_host, &dashboard_args)?;
++        let code = dashboard_ui::run_dashboard_ui(&plan.validated_host, &dashboard_args)?;
+         process::exit(code);
+     }
+ 
+@@ -642,6 +642,19 @@ mod tests {
+         assert!(matches!(alias.trace.ui, UiPreset::Dashboard));
+     }
+ 
++    #[test]
++    fn default_ui_is_the_default_preset() {
++        let cli = Cli::try_parse_from(["mtr", "8.8.8.8"]).expect("default should parse");
++        assert!(matches!(cli.trace.ui, UiPreset::Default));
++    }
++
++    #[test]
++    fn ui_mode_from_cli_maps_all_presets() {
++        assert_eq!(ui_mode_from_cli(UiPreset::Default), UiMode::Default);
++        assert_eq!(ui_mode_from_cli(UiPreset::Enhanced), UiMode::Enhanced);
++        assert_eq!(ui_mode_from_cli(UiPreset::Dashboard), UiMode::Dashboard);
++    }
++
+     #[test]
+     fn cli_parses_api_auth_with_api_key_env() {
+         let cli = Cli::try_parse_from([

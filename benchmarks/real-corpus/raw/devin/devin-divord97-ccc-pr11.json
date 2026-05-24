@@ -1,0 +1,26 @@
+{
+  "id": "devin-divord97-ccc-pr11",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 11,
+    "headSha": "e9b0dc7654cacf18b66a35eb0be179546988c45a",
+    "baseSha": "77e63fc9871090aa24ac0702a54aa8e353795074",
+    "title": "Phase 9: AI + Intelligent Features (DDD/TDD)",
+    "body": "## Summary\n\nPhase 9 implements the AI + Intelligence layer for the CCC platform, adding 8 new aggregate roots and 41 new API endpoints following DDD + Clean Architecture + TDD.\n\n**Domain Layer (AI BC - 8 new aggregates):**\n- `DigitalEmployee` / `DigitalEmployeeScene` — AI bot with intent/FAQ matching and transfer-to-human triggers\n- `QARule` — 11 rule types: keyword, regex, silence, speed, interruption, energy, duration, entity, role, abnormal_hangup, LLM\n- `QAScheme` — Multi-rule weighted combination for quality inspection\n- `QAResult` — Inspection results with appeal/review workflow (completed → appealed → reviewed)\n- `ASRHotwords` — Custom speech recognition vocabulary management\n- `PerformanceScorecard` — Agent performance metrics (QA 30%, CSAT 30%, FCR 20%, Adherence 20%)\n\n**LLM Provider Interface (pluggable architecture):**\n- 13 operations: Summarize, AnalyzeSentiment, ExtractTags, PredictSatisfaction, AnalyzeIVRPath, JudgeCompletion, ExtractPostCallActions, AutoFillTicket, RecommendScript, QAInspectLLM + Phase 8 Correct/Expand/Optimize\n- ASR/TTS provider interfaces for Tongyi integration\n- StubProvider for development/testing\n\n**Application Layer:**\n- AI Analysis Service: summary, sentiment, tags, satisfaction prediction, IVR path analysis, completion score, post-call actions, auto-fill ticket, script recommendation, batch tag analysis, hotword analysis\n\n**Infrastructure:**\n- 7 MySQL repos (DigitalEmployee, Scene, QARule, QAScheme, QAResult, ASRHotwords, PerformanceScorecard)\n\n**41 new API endpoints:**\n- Digital Employees: POST/GET/GET{id}/PUT{id} + scenes CRUD + publish + test intent (8)\n- QA Rules: POST/GET/GET{id}/PUT{id}/DELETE{id} (5)\n- QA Schemes: POST/GET/GET{id}/PUT{id}/DELETE{id} (5)\n- QA Execution: POST /run, GET /results, GET /results/{id}, POST appeal, POST review (5)\n- AI Call Analysis: summary, sentiment, tags, satisfaction, IVR analysis, completion, post-actions, auto-fill, script-recommend (9)\n- Batch: session-tag-analysis, hotword-analysis (2)\n- ASR Hotwords: POST/GET/GET{id}/PUT{id}/DELETE{id} (5)\n- Performance: GET list, POST generate (2)\n\n**26 TDD tests (15 domain + 11 application):**\n- Digital Employee: create, intent match, transfer trigger, publish scene, invalid intents, no match\n- Quality Inspection: keyword/silence/speed/LLM rules, scheme score calculation, appeal/review flow, empty transcript, invalid rule type\n- ASR Hotwords: CRUD\n- Performance: generate with weighted score\n- AI Analysis: transcription, script recommend, auto-fill, session tags, satisfaction, sentiment, IVR analysis, completion, post-call actions, batch tags, hotwords\n\n## Review & Testing Checklist for Human\n- [ ] Verify keyword QA rule properly matches Chinese characters in transcripts (Unicode handling in `containsIgnoreCase`)\n- [ ] Verify QA appeal flow: only `completed` → `appealed` → `reviewed` transitions are allowed\n- [ ] Verify weighted scheme score calculation: rule1_score * weight1 + rule2_score * weight2 / total_weight\n- [ ] Verify LLM Provider interface is pluggable — StubProvider can be replaced with real Tongyi provider without code changes\n- [ ] Run `go test -race ./internal/domain/ai/... ./internal/application/aianalysis/...` to confirm all 26 new tests pass\n\n### Notes\n- LLM operations use StubProvider (echoes/defaults) — replace with real Aliyun Tongyi provider in production\n- ASR/TTS provider interfaces defined but not yet connected to real services\n- Frontend tasks (9.24-9.29, 9.33) are deferred per plan\n- Total test count: 155 (129 existing + 26 new)\n\nLink to Devin session: https://app.devin.ai/sessions/35e328fa681447e98fa82466c8f69b99\nRequested by: @divord97\n<!-- devin-review-badge-begin -->\n\n---\n\n<a href=\"https://app.devin.ai/review/divord97/ccc/pull/11\" target=\"_blank\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://static.devin.ai/assets/gh-open-in-devin-review-dark.svg?v=1\">\n    <img src=\"https://static.devin.ai/assets/gh-open-in-devin-review-light.svg?v=1\" alt=\"Open in Devin Review\">\n  </picture>\n</a>\n<!-- devin-review-badge-end -->",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779575243-phase9-ai-intelligence",
+    "repository": "divord97/ccc"
+  },
+  "diffRef": {
+    "repository": "divord97/ccc",
+    "headSha": "e9b0dc7654cacf18b66a35eb0be179546988c45a",
+    "baseSha": "77e63fc9871090aa24ac0702a54aa8e353795074"
+  },
+  "vendoredDiffPath": "devin/devin-divord97-ccc-pr11.diff",
+  "vendoredAt": "2026-05-24T03:05:04.327Z",
+  "collectedAt": "2026-05-24T03:05:04.327Z"
+}

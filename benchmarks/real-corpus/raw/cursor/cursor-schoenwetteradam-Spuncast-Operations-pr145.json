@@ -1,0 +1,26 @@
+{
+  "id": "cursor-schoenwetteradam-Spuncast-Operations-pr145",
+  "agent": {
+    "vendor": "cursor",
+    "confidence": "medium",
+    "source": "branch=cursor/+body=cursor-session-url"
+  },
+  "pr": {
+    "number": 145,
+    "headSha": "4c4aedeb807cf223e06010c56bf94f3615e03fda",
+    "baseSha": "6bca1ba50f91e648b72c4d8850acd1552e3a53c1",
+    "title": "Add audit_spec_mapping.py for chemistry spec mapping audits",
+    "body": "<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n## Summary\n\nAdds `scripts/audit_spec_mapping.py`, a read-first auditor for chemistry spec resolution and compliance gaps, aligned with the current schema and `v_chem_compliance` / `094` behavior.\n\n## What it does\n\n- **Phase 1:** Aggregates from `v_chem_compliance_summary` (heat counts, `no_spec_count` / `missing_spec_count`, UNKNOWN grade heats).\n- **Phase 2:** Top `NO_SPEC` / `MISSING_SPEC` rows from `v_chem_compliance`, plus `grade_spec_map` and `chem_spec_code_alias` inventory.\n- **Phase 3:** Sample of old `chem_readings` with no `lot_tracking` row (18+ months by `COALESCE(tested_at, imported_at)`), with distinct-heat count.\n- **Phase 4:** `grade_spec_map.spec_code` values with no matching `chem_element_specs` row (case/trim normalized join).\n\nOptional flags (documented in the script header): `--fix` (runs `build_grade_spec_map.py`), `--delete-orphans` (narrow delete by `chem_readings.id`), `--refresh-alerts` (subprocess to `refresh_chem_compliance_alerts.py`), with `--yes` or interactive confirmation for destructive paths.\n\n## Docs\n\n- `docs/chem_pipeline.md` — example invocations and a short note that **`chem_spec_code_alias` maps product spec strings** as used in the compliance view, not raw lab grade text, unless the view is changed.\n- `scripts/README.md` — one-line pointer under chemistry automation.\n\n## Note on the earlier “Layer 1” grade→alias idea\n\nBulk-inserting `(source_spec = grade, target_spec = spec)` from `grade_spec_map` does **not** match the current `094` join (`chem_spec_code_alias` is matched to `psc.spec_code`). The script docstring states this explicitly so operators do not expect that SQL to fix unmapped grades without a view change.\n<!-- CURSOR_AGENT_PR_BODY_END -->\n\n<div><a href=\"https://cursor.com/agents/bc-f405a5b7-f93d-482a-986d-f35780b8040f\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/background-agent?bcId=bc-f405a5b7-f93d-482a-986d-f35780b8040f\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-light.png\"><img alt=\"Open in Cursor\" width=\"131\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"></picture></a>&nbsp;</div>\n\n",
+    "author": "schoenwetteradam",
+    "headRef": "cursor/audit-spec-mapping-040f",
+    "repository": "schoenwetteradam/Spuncast-Operations"
+  },
+  "diffRef": {
+    "repository": "schoenwetteradam/Spuncast-Operations",
+    "headSha": "4c4aedeb807cf223e06010c56bf94f3615e03fda",
+    "baseSha": "6bca1ba50f91e648b72c4d8850acd1552e3a53c1"
+  },
+  "vendoredDiffPath": "cursor/cursor-schoenwetteradam-Spuncast-Operations-pr145.diff",
+  "vendoredAt": "2026-05-24T03:11:53.528Z",
+  "collectedAt": "2026-05-24T03:11:53.528Z"
+}

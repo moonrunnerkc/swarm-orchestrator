@@ -1,0 +1,77 @@
+diff --git a/.agentic/extensions.yml b/.agentic/extensions.yml
+index 359837f..59eccbe 100644
+--- a/.agentic/extensions.yml
++++ b/.agentic/extensions.yml
+@@ -32,6 +32,7 @@ extensions:
+       - ".github/workflows/sync-wiki-on-merge.yml"
+       - "docs/wiki/**"
+     default_enabled: false
++    human_approval_required: true
+     enablement_variable: "PLATE_WIKI_SYNC_ENABLED"
+     required_secret: "WIKI_TOKEN"
+     rollback: "Disable the repository variable and revert the wiki sync commit if needed."
+diff --git a/.github/workflows/sync-wiki-on-merge.yml b/.github/workflows/sync-wiki-on-merge.yml
+index 9fbd86b..93405ed 100644
+--- a/.github/workflows/sync-wiki-on-merge.yml
++++ b/.github/workflows/sync-wiki-on-merge.yml
+@@ -48,6 +48,7 @@ jobs:
+         uses: actions/checkout@v4
+         with:
+           fetch-depth: 0
++          persist-credentials: false
+       - name: Capture PR context
+         if: steps.gate.outputs.is_feature == 'true' && steps.gate.outputs.enabled == 'true'
+         env:
+@@ -77,9 +78,8 @@ jobs:
+         if: steps.gate.outputs.is_feature == 'true' && steps.gate.outputs.enabled == 'true'
+         run: |
+           set -euo pipefail
+-          cp tmp_wiki_context/Last-Feature-Merge.md tmp_wiki/Last-Feature-Merge.md
+           if [ -d docs/wiki ]; then
+-            rsync -av --delete docs/wiki/ tmp_wiki/
++            rsync -av --delete --exclude='.git' docs/wiki/ tmp_wiki/
+           fi
+           if [ -d docs/features ]; then
+             mkdir -p tmp_wiki/Features
+@@ -88,6 +88,7 @@ jobs:
+           if [ -f CURRENT.md ]; then
+             cp CURRENT.md tmp_wiki/Current-State.md
+           fi
++          cp tmp_wiki_context/Last-Feature-Merge.md tmp_wiki/Last-Feature-Merge.md
+       - name: Commit and push wiki updates
+         if: steps.gate.outputs.is_feature == 'true' && steps.gate.outputs.enabled == 'true'
+         run: |
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index ab5b568..2619441 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -6,4 +6,4 @@ All notable changes to this project should be recorded here. Each release entry
+ 
+ | Type | Change | Issue | PR | Evidence |
+ |---|---|---|---|---|
+-| Process | Establish PLATE template artifact baseline. | TBD | TBD | Repository files, labels, templates, and workflow scaffolds. |
++| Process | Establish PLATE template artifact baseline. | — | #2 | Repository files, labels, templates, and workflow scaffolds. |
+diff --git a/CURRENT.md b/CURRENT.md
+index 6b632ce..61fdcfe 100644
+--- a/CURRENT.md
++++ b/CURRENT.md
+@@ -1,8 +1,8 @@
+ ---
+ current_state_version: "0.1"
+ process_version: "PLATE 0.6"
+-last_verified_at: "TBD"
+-last_verified_commit: "TBD"
++last_verified_at: "2026-05-24"
++last_verified_commit: "pending-merge"
+ ---
+ 
+ # Current Project State
+@@ -13,7 +13,7 @@ last_verified_commit: "TBD"
+ 
+ | Feature | Status | Issue | Pull Request | Tests / Evidence | Wiki / Docs | Release | Last Verified |
+ |---|---|---|---|---|---|---|---|
+-| Template process baseline | Implemented | TBD | TBD | Repository files and workflow scaffolds | `README.md`, `AGENTS.md` | Unreleased | TBD |
++| Template process baseline | Implemented | — | #2 | Repository files and workflow scaffolds | `README.md`, `AGENTS.md` | Unreleased | 2026-05-24 |
+ 
+ ## Operational Behavior
+ 

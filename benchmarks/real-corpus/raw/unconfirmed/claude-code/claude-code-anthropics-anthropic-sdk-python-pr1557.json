@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-python-pr1557",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1557,
+    "headSha": "499a1f30141e14e32a1a1d319e92b60707b87833",
+    "baseSha": "28cdc33644bfb3f8310d51867619cafb5dd8cf23",
+    "title": "fix: let copied credentials replace inherited static auth",
+    "body": "## Summary\n- stop `copy(credentials=...)`, `copy(config=...)`, and `copy(profile=...)` from carrying over an inherited `api_key` or `auth_token` unless the caller explicitly passes a static credential again\n- keep explicit static credentials shadowing copied/inherited credential providers unchanged\n- add sync and async regression coverage for `copy(credentials=...)` from a statically-authenticated client\n\n## Root cause\n`Anthropic.copy()` and `AsyncAnthropic.copy()` always passed `api_key=api_key or self.api_key` and `auth_token=auth_token or self.auth_token` into the new client. When a caller tried to replace a parent API key client with a credentials provider, the copied client still sent the parent `X-Api-Key`, so `AccessTokenAuth` short-circuited and the requested provider was silently disabled.\n\n## Validation\n- `uv run --frozen pytest tests/lib/test_credentials.py -q -n0 -k \"copy_with_credentials_replaces_inherited_api_key or copy_with_explicit_api_key_shadows_inherited_credentials or copy_propagates_credentials\"`\n- `uv run --frozen pytest tests/lib/test_credentials.py -q -n0`\n- `uv run --frozen pytest tests/test_client.py -q -n0 -k \"copy\"`\n- `uv run --frozen ruff check src/anthropic/_client.py tests/lib/test_credentials.py`\n- `uv run --frozen ruff format --check src/anthropic/_client.py tests/lib/test_credentials.py`\n- `git diff --check`\n",
+    "author": "pragnyanramtha",
+    "headRef": "fix-copy-credentials-static-auth",
+    "repository": "anthropics/anthropic-sdk-python"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-python",
+    "headSha": "499a1f30141e14e32a1a1d319e92b60707b87833",
+    "baseSha": "28cdc33644bfb3f8310d51867619cafb5dd8cf23"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-python-pr1557.diff",
+  "vendoredAt": "2026-05-24T03:17:15.372Z",
+  "collectedAt": "2026-05-24T03:17:15.372Z"
+}

@@ -1,0 +1,548 @@
+diff --git a/PROJECT_CONTEXT.md b/PROJECT_CONTEXT.md
+index 72768af..d7f333c 100644
+--- a/PROJECT_CONTEXT.md
++++ b/PROJECT_CONTEXT.md
+@@ -54,14 +54,14 @@ Build a reliable semi-automated trading tool for the Steam Market that helps gen
+ - Steam Market Price Overview API client (`steam_api.py`)
+ - Technical indicators (RSI, EMA20, Bollinger Bands)
+ - Basic monitoring loop (`monitor.py`)
+-- Paper Trading (BUY only)
++- Paper Trading (BUY + SELL with full PnL tracking)
+ - Telegram notifications with chart images
+ - Streamlit dashboard (`web/dashboard.py`)
+ - Basic logging and configuration system
+ 
+ **In Progress / High Priority:**
+ - Full implementation of new "High-Quality Rare Trades" strategy
+-- Complete Paper Trading (SELL + full PnL tracking)
++- ~~Complete Paper Trading (SELL + full PnL tracking)~~ ✅ Done
+ - Advanced signal filters and profit calculation
+ - Smart Item management (`items.json` + scoring)
+ - Risk management & position sizing module
+@@ -159,7 +159,7 @@ text
+ ## Next Development Steps (Priority)
+ 
+ 1. ~~Update trading strategy with new strict filters (Prompt 1)~~ ✅ Done
+-2. Implement full Paper SELL + improved PnL tracking (Prompt 2)
++2. ~~Implement full Paper SELL + improved PnL tracking (Prompt 2)~~ ✅ Done
+ 3. Smart items management + `items.json` (Prompt 3)
+ 4. Risk management module (`app/risk.py`)
+ 5. Enhanced dashboard with statistics and indicators
+@@ -169,4 +169,4 @@ text
+ ---
+ 
+ **Last Updated:** May 22, 2026  
+-**Project Phase:** High-Quality Mean Reversion Strategy (Prompt 1 implemented)
++**Project Phase:** High-Quality Mean Reversion Strategy (Prompts 1–2 implemented)
+diff --git a/app/database.py b/app/database.py
+index 2233bb1..6473ee6 100644
+--- a/app/database.py
++++ b/app/database.py
+@@ -1,8 +1,12 @@
+-from sqlalchemy import create_engine
++import logging
++
++from sqlalchemy import create_engine, inspect, text
+ from sqlalchemy.orm import declarative_base, sessionmaker
+ 
+ from app.config import DATABASE_URL
+ 
++log = logging.getLogger("database")
++
+ engine = create_engine(
+     DATABASE_URL,
+     connect_args={"check_same_thread": False},
+@@ -11,3 +15,24 @@
+ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+ 
+ Base = declarative_base()
++
++
++def migrate_open_positions() -> None:
++    """Add new columns to open_positions if they are missing (SQLite safe)."""
++    inspector = inspect(engine)
++    if "open_positions" not in inspector.get_table_names():
++        return
++    existing = {col["name"] for col in inspector.get_columns("open_positions")}
++    new_columns = {
++        "exit_price": "FLOAT",
++        "closed_at": "DATETIME",
++        "pnl_rub": "FLOAT",
++        "pnl_pct": "FLOAT",
++    }
++    with engine.begin() as conn:
++        for col_name, col_type in new_columns.items():
++            if col_name not in existing:
++                conn.execute(
++                    text(f"ALTER TABLE open_positions ADD COLUMN {col_name} {col_type}")
++                )
++                log.info("Migrated open_positions: added column %s", col_name)
+diff --git a/app/models.py b/app/models.py
+index 65bade9..a8c670c 100644
+--- a/app/models.py
++++ b/app/models.py
+@@ -40,7 +40,7 @@ class Wallet(Base):
+ 
+ 
+ class OpenPosition(Base):
+-    """Paper trade position (BUY only until SELL is implemented)."""
++    """Paper trade position (BUY → SELL with full PnL tracking)."""
+ 
+     __tablename__ = "open_positions"
+ 
+@@ -53,3 +53,7 @@ class OpenPosition(Base):
+     status = Column(String, index=True, default="open")
+     signal = Column(String, default="BUY")
+     opened_at = Column(DateTime, default=datetime.utcnow, index=True)
++    exit_price = Column(Float, nullable=True)
++    closed_at = Column(DateTime, nullable=True)
++    pnl_rub = Column(Float, nullable=True)
++    pnl_pct = Column(Float, nullable=True)
+diff --git a/app/notifier.py b/app/notifier.py
+index 50f880a..a8ad6ea 100644
+--- a/app/notifier.py
++++ b/app/notifier.py
+@@ -178,6 +178,40 @@ def send_startup_test() -> bool:
+     return ok
+ 
+ 
++def send_sell_alert(trade: dict) -> bool:
++    """Send a Telegram alert for a closed paper trade."""
++    if not is_telegram_configured():
++        log.debug("Telegram not configured, skipping sell alert for %s", trade.get("item_name"))
++        return False
++
++    from app.wallet import get_balance
++
++    balance = get_balance()
++    pnl_sign = "+" if trade["pnl_rub"] >= 0 else ""
++    text = (
++        "\U0001f534 <b>ЗАКРЫТО:</b> {item_name}\n"
++        "Вход: {entry:.0f}₽ → Выход: {exit:.0f}₽\n"
++        "PnL: {pnl_sign}{pnl_rub:.0f}₽ ({pnl_sign}{pnl_pct:.1f}%)\n"
++        "Баланс: {balance:.0f}₽"
++    ).format(
++        item_name=trade["item_name"],
++        entry=trade["entry_price"],
++        exit=trade["exit_price"],
++        pnl_sign=pnl_sign,
++        pnl_rub=trade["pnl_rub"],
++        pnl_pct=trade["pnl_pct"],
++        balance=balance,
++    )
++
++    log.info("Sending Telegram SELL close alert for %s", trade["item_name"])
++    ok = send_raw_message(text)
++    if ok:
++        log.info("Telegram SELL close alert for %s: DELIVERED", trade["item_name"])
++    else:
++        log.error("Telegram SELL close alert for %s: FAILED", trade["item_name"])
++    return ok
++
++
+ def send_signal_alert(
+     signal: str,
+     item_name: str,
+diff --git a/app/paper_trading.py b/app/paper_trading.py
+index 79ffc41..16b1562 100644
+--- a/app/paper_trading.py
++++ b/app/paper_trading.py
+@@ -1,18 +1,19 @@
+-"""Paper BUY execution: open positions backed by the virtual wallet."""
++"""Paper trading: BUY → SELL with full PnL tracking, backed by virtual wallet."""
+ 
+ from datetime import datetime
+ 
+ from sqlalchemy.orm import Session
+ 
+-from app.config import MAX_POSITION_PCT, PAPER_TRADING_ENABLED
++from app.config import MAX_POSITION_PCT, PAPER_TRADING_ENABLED, STEAM_MARKET_FEE_PCT
+ from app.database import SessionLocal
+ from app.logger import setup_logging
+ from app.models import OpenPosition
+-from app.wallet import InsufficientBalanceError, get_balance, withdraw
++from app.wallet import InsufficientBalanceError, deposit, get_balance, withdraw
+ 
+ log = setup_logging("paper_trading")
+ 
+ POSITION_STATUS_OPEN = "open"
++POSITION_STATUS_CLOSED = "closed"
+ 
+ 
+ def max_position_cost(balance: float) -> float:
+@@ -67,6 +68,35 @@ def get_open_positions() -> list[dict]:
+         db.close()
+ 
+ 
++def get_closed_positions() -> list[dict]:
++    """Return all closed positions ordered by close time (newest first)."""
++    db = SessionLocal()
++    try:
++        rows = (
++            db.query(OpenPosition)
++            .filter(OpenPosition.status == POSITION_STATUS_CLOSED)
++            .order_by(OpenPosition.closed_at.desc())
++            .all()
++        )
++        return [
++            {
++                "id": r.id,
++                "item_name": r.item_name,
++                "entry_price": float(r.entry_price),
++                "exit_price": float(r.exit_price) if r.exit_price is not None else None,
++                "quantity": float(r.quantity),
++                "cost": float(r.cost),
++                "pnl_rub": float(r.pnl_rub) if r.pnl_rub is not None else None,
++                "pnl_pct": float(r.pnl_pct) if r.pnl_pct is not None else None,
++                "opened_at": r.opened_at,
++                "closed_at": r.closed_at,
++            }
++            for r in rows
++        ]
++    finally:
++        db.close()
++
++
+ def execute_paper_buy(
+     item_name: str,
+     entry_price: float,
+@@ -147,3 +177,80 @@ def execute_paper_buy(
+         raise
+     finally:
+         db.close()
++
++
++def execute_paper_sell(
++    item_name: str,
++    current_price: float,
++    fee_pct: float = STEAM_MARKET_FEE_PCT,
++) -> dict | None:
++    """
++    Close an open paper position on SELL: calculate PnL, deposit net revenue,
++    update position in SQLite.
++
++    Returns a trade summary dict, or None if no open position was found.
++    """
++    if not PAPER_TRADING_ENABLED:
++        log.debug("Paper trading disabled, skipping SELL for %s", item_name)
++        return None
++
++    if current_price <= 0:
++        log.warning("Invalid SELL price for %s: %s", item_name, current_price)
++        return None
++
++    db = SessionLocal()
++    try:
++        position = (
++            db.query(OpenPosition)
++            .filter(
++                OpenPosition.item_name == item_name,
++                OpenPosition.status == POSITION_STATUS_OPEN,
++            )
++            .first()
++        )
++
++        if position is None:
++            log.warning("Paper SELL skipped %s: no open position found", item_name)
++            return None
++
++        quantity = float(position.quantity)
++        entry_price = float(position.entry_price)
++
++        net_revenue = current_price * (1 - fee_pct / 100.0)
++        pnl_rub = round((net_revenue - entry_price) * quantity, 2)
++        pnl_pct = round((pnl_rub / (entry_price * quantity)) * 100, 2) if entry_price > 0 else 0.0
++
++        position.status = POSITION_STATUS_CLOSED
++        position.exit_price = current_price
++        position.closed_at = datetime.utcnow()
++        position.pnl_rub = pnl_rub
++        position.pnl_pct = pnl_pct
++
++        deposit_amount = round(net_revenue * quantity, 2)
++        deposit(deposit_amount, note=f"paper SELL {item_name}")
++
++        db.commit()
++
++        log.info(
++            "Paper SELL closed id=%s %s @ %.2f pnl=%.2f₽ (%.1f%%) balance_after=%.2f",
++            position.id,
++            item_name,
++            current_price,
++            pnl_rub,
++            pnl_pct,
++            get_balance(),
++        )
++
++        return {
++            "item_name": item_name,
++            "entry_price": entry_price,
++            "exit_price": current_price,
++            "pnl_rub": pnl_rub,
++            "pnl_pct": pnl_pct,
++            "quantity": quantity,
++        }
++    except Exception:
++        db.rollback()
++        raise
++    finally:
++        db.close()
+diff --git a/app/signals.py b/app/signals.py
+index db89fc5..2f6ad39 100644
+--- a/app/signals.py
++++ b/app/signals.py
+@@ -12,8 +12,8 @@
+ from app.indicators import add_indicators
+ from app.logger import setup_logging
+ from app.models import PriceHistory
+-from app.notifier import is_telegram_configured, send_signal_alert
+-from app.paper_trading import execute_paper_buy, has_open_position, get_open_positions
++from app.notifier import is_telegram_configured, send_sell_alert, send_signal_alert
++from app.paper_trading import execute_paper_buy, execute_paper_sell, get_open_positions
+ from app.roi import calc_buy_metrics, calc_sell_metrics
+ from app.trading_engine import get_detailed_trade_signal
+ 
+@@ -120,6 +120,23 @@ def evaluate_and_notify(
+         if position:
+             log.info("Paper position opened for %s (id=%s)", item_name, position.id)
+ 
++    if signal == "SELL":
++        trade = execute_paper_sell(item_name, current_price, fee_pct=STEAM_MARKET_FEE_PCT)
++        if trade:
++            log.info(
++                "Paper position closed for %s: pnl=%.2f₽ (%.1f%%)",
++                item_name,
++                trade["pnl_rub"],
++                trade["pnl_pct"],
++            )
++            if is_telegram_configured():
++                send_sell_alert(trade)
++            record_alert(item_name, signal)
++            log.info("Alert recorded: %s %s", item_name, signal)
++            return signal
++        else:
++            log.warning("SELL signal for %s but no open position to close", item_name)
++
+     if not is_telegram_configured():
+         return signal
+ 
+@@ -129,22 +146,19 @@ def evaluate_and_notify(
+     if signal == "BUY":
+         target = float(median_price or latest["upper_band"] or latest["ema20"])
+         metrics = calc_buy_metrics(current_price, target, STEAM_MARKET_FEE_PCT)
+-    else:
+-        entry = entry_price if entry_price is not None else float(df["price"].tail(20).min())
+-        metrics = calc_sell_metrics(entry, current_price, STEAM_MARKET_FEE_PCT)
+-
+-    chart_path = save_signal_chart(df, item_name, signal, CHARTS_DIR)
+-
+-    if send_signal_alert(
+-        signal=signal,
+-        item_name=item_name,
+-        price=current_price,
+-        rsi=rsi,
+-        metrics=metrics,
+-        volume=volume,
+-        chart_path=chart_path,
+-    ):
+-        record_alert(item_name, signal)
+-        log.info("Alert recorded: %s %s", item_name, signal)
++
++        chart_path = save_signal_chart(df, item_name, signal, CHARTS_DIR)
++
++        if send_signal_alert(
++            signal=signal,
++            item_name=item_name,
++            price=current_price,
++            rsi=rsi,
++            metrics=metrics,
++            volume=volume,
++            chart_path=chart_path,
++        ):
++            record_alert(item_name, signal)
++            log.info("Alert recorded: %s %s", item_name, signal)
+ 
+     return signal
+diff --git a/main.py b/main.py
+index 6655cdd..a63ad7a 100644
+--- a/main.py
++++ b/main.py
+@@ -43,10 +43,11 @@ def main() -> None:
+     try:
+         ensure_directories()
+ 
+-        from app.database import engine
++        from app.database import engine, migrate_open_positions
+         from app.models import Base
+ 
+         Base.metadata.create_all(bind=engine)
++        migrate_open_positions()
+         log.info("Database ready at %s", DATA_DIR / "steam_cards.db")
+ 
+         from app.wallet import init_wallet
+diff --git a/web/dashboard.py b/web/dashboard.py
+index 6c9263d..ad0801c 100644
+--- a/web/dashboard.py
++++ b/web/dashboard.py
+@@ -9,7 +9,8 @@
+ # Allow imports from project root when Streamlit runs web/dashboard.py
+ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+ 
+-from app.paper_trading import get_open_positions
++from app.config import STEAM_MARKET_FEE_PCT
++from app.paper_trading import get_closed_positions, get_open_positions
+ from app.wallet import (
+     InsufficientBalanceError,
+     deposit,
+@@ -30,19 +31,24 @@
+ st.caption("Live prices from Steam Community Market API")
+ 
+ 
++def _total_closed_pnl() -> float:
++    """Sum of realized PnL across all closed positions."""
++    closed = get_closed_positions()
++    return sum(p["pnl_rub"] for p in closed if p["pnl_rub"] is not None)
++
++
+ def render_wallet_section() -> None:
+     st.subheader("Virtual wallet")
+     snap = get_wallet_snapshot()
+-    pnl = snap["pnl_placeholder"]
+-    pnl_delta = f"{pnl:+.2f} ₽" if pnl != 0 else "0.00 ₽"
++    realized_pnl = _total_closed_pnl()
++    pnl_delta = f"{realized_pnl:+.2f} ₽" if realized_pnl != 0 else "0.00 ₽"
+ 
+     col1, col2, col3 = st.columns(3)
+     col1.metric("Current balance", f"{snap['balance']:,.2f} ₽".replace(",", " "))
+     col2.metric("Starting balance", f"{snap['starting_balance']:,.2f} ₽".replace(",", " "))
+-    col3.metric("Total PnL", f"{pnl:,.2f} ₽".replace(",", " "), delta=pnl_delta)
++    col3.metric("Total PnL (realized)", f"{realized_pnl:,.2f} ₽".replace(",", " "), delta=pnl_delta)
+     st.caption(
+-        "Paper wallet — PnL placeholder (balance − starting). "
+-        "Open positions reduce available balance until SELL is implemented."
++        "Paper wallet — Total PnL shows sum of realized profits from closed positions."
+     )
+ 
+     with st.expander("Adjust balance (testing)"):
+@@ -69,6 +75,29 @@ def render_wallet_section() -> None:
+                 st.error(str(exc))
+ 
+ 
++@st.cache_data(ttl=30)
++def _load_latest_prices() -> dict[str, float]:
++    """Load latest price per item from DB for unrealized PnL calculation."""
++    if not DB_PATH.exists():
++        return {}
++
++    import sqlite3
++
++    conn = sqlite3.connect(DB_PATH)
++    try:
++        df = pd.read_sql(
++            "SELECT item_name, price FROM price_history "
++            "WHERE id IN (SELECT MAX(id) FROM price_history GROUP BY item_name)",
++            conn,
++        )
++    finally:
++        conn.close()
++
++    if df.empty:
++        return {}
++    return dict(zip(df["item_name"], df["price"]))
++
++
+ def render_open_positions_section() -> None:
+     st.subheader("Open positions (paper)")
+     positions = get_open_positions()
+@@ -76,14 +105,31 @@ def render_open_positions_section() -> None:
+         st.info("No open paper positions. BUY signals open positions when balance allows.")
+         return
+ 
++    latest_prices = _load_latest_prices()
++    fee_mult = 1 - STEAM_MARKET_FEE_PCT / 100.0
++
+     df = pd.DataFrame(positions)
+     df["opened_at"] = pd.to_datetime(df["opened_at"], errors="coerce")
++
++    df["current_price"] = df["item_name"].map(latest_prices)
++    df["unrealized_pnl"] = df.apply(
++        lambda r: round(
++            (r["current_price"] * fee_mult - r["entry_price"]) * r["quantity"], 2
++        )
++        if pd.notna(r.get("current_price"))
++        else None,
++        axis=1,
++    )
++
+     display = df[
+-        ["item_name", "entry_price", "quantity", "cost", "signal", "opened_at", "status"]
++        ["item_name", "entry_price", "current_price", "unrealized_pnl",
++         "quantity", "cost", "signal", "opened_at", "status"]
+     ].copy()
+     display.columns = [
+         "Item",
+         "Entry (₽)",
++        "Current (₽)",
++        "Unrealized PnL (₽)",
+         "Qty",
+         "Cost (₽)",
+         "Signal",
+@@ -91,7 +137,49 @@ def render_open_positions_section() -> None:
+         "Status",
+     ]
+     st.dataframe(display, use_container_width=True, hide_index=True)
+-    st.caption(f"{len(positions)} open position(s). SELL / close not implemented yet.")
++
++    total_unrealized = df["unrealized_pnl"].dropna().sum()
++    st.caption(
++        f"{len(positions)} open position(s). "
++        f"Total unrealized PnL: {total_unrealized:+.2f} ₽ (after {STEAM_MARKET_FEE_PCT:.0f}% fee)"
++    )
++
++
++def render_closed_positions_section() -> None:
++    st.subheader("Closed positions (paper)")
++    closed = get_closed_positions()
++    if not closed:
++        st.info("No closed positions yet. SELL signals will close open positions.")
++        return
++
++    df = pd.DataFrame(closed)
++    df["opened_at"] = pd.to_datetime(df["opened_at"], errors="coerce")
++    df["closed_at"] = pd.to_datetime(df["closed_at"], errors="coerce")
++
++    display = df[
++        ["item_name", "entry_price", "exit_price", "pnl_rub", "pnl_pct",
++         "quantity", "opened_at", "closed_at"]
++    ].copy()
++    display.columns = [
++        "Item",
++        "Entry (₽)",
++        "Exit (₽)",
++        "PnL (₽)",
++        "PnL (%)",
++        "Qty",
++        "Opened (UTC)",
++        "Closed (UTC)",
++    ]
++    st.dataframe(display, use_container_width=True, hide_index=True)
++
++    total_pnl = sum(p["pnl_rub"] for p in closed if p["pnl_rub"] is not None)
++    wins = sum(1 for p in closed if p["pnl_rub"] is not None and p["pnl_rub"] > 0)
++    win_rate = (wins / len(closed) * 100) if closed else 0
++
++    c1, c2, c3 = st.columns(3)
++    c1.metric("Total realized PnL", f"{total_pnl:+.2f} ₽")
++    c2.metric("Trades", str(len(closed)))
++    c3.metric("Win rate", f"{win_rate:.0f}%")
+ 
+ 
+ @st.cache_data(ttl=30)
+@@ -158,6 +246,7 @@ def render_chart(card_df: pd.DataFrame, item_name: str) -> None:
+ 
+ render_wallet_section()
+ render_open_positions_section()
++render_closed_positions_section()
+ st.divider()
+ 
+ df = load_prices()

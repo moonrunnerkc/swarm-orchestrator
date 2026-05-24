@@ -1,0 +1,59 @@
+diff --git a/src/components/HourlyRow/index.tsx b/src/components/HourlyRow/index.tsx
+index fa4e1bf..d4bb90f 100644
+--- a/src/components/HourlyRow/index.tsx
++++ b/src/components/HourlyRow/index.tsx
+@@ -13,22 +13,20 @@ export const HourlyRow: React.FC<HourlyRowProps> = ({ hourly, timezone }) => {
+   const targetHours = [6, 9, 12, 15, 18, 21, 0];
+   
+   const getHourlyData = () => {
+-    const todayStr = new Date().toISOString().split('T')[0];
++    const todayStr = hourly.time[0]?.split('T')[0] ?? '';
++    const tomorrowDate = new Date(todayStr + 'T00:00:00');
++    tomorrowDate.setDate(tomorrowDate.getDate() + 1);
++    const tomorrowStr = tomorrowDate.toISOString().split('T')[0];
+ 
+     return targetHours.map(targetHour => {
+       let bestIndex = 0;
+       let bestDiff = Infinity;
+ 
+       for (let i = 0; i < hourly.time.length; i++) {
+-        const entryDate = new Date(hourly.time[i]);
+         const entryDateStr = hourly.time[i].split('T')[0];
+-        const entryHour = entryDate.getHours();
++        const entryHour = new Date(hourly.time[i]).getHours();
+ 
+         if (targetHour === 0) {
+-          // For midnight, look for 00:00 on the day after today
+-          const tomorrow = new Date(todayStr);
+-          tomorrow.setDate(tomorrow.getDate() + 1);
+-          const tomorrowStr = tomorrow.toISOString().split('T')[0];
+           if (entryDateStr === tomorrowStr && entryHour === 0) {
+             bestIndex = i;
+             break;
+diff --git a/src/components/TimeOfDayGrid/index.tsx b/src/components/TimeOfDayGrid/index.tsx
+index 137b842..177cafb 100644
+--- a/src/components/TimeOfDayGrid/index.tsx
++++ b/src/components/TimeOfDayGrid/index.tsx
+@@ -22,7 +22,10 @@ export const TimeOfDayGrid: React.FC<TimeOfDayGridProps> = ({ hourly, timezone }
+       { label: 'NIGHT', hour: 2, periodEnd: 6 }
+     ];
+ 
+-    const todayStr = new Date().toISOString().split('T')[0];
++    const todayStr = hourly.time[0]?.split('T')[0] ?? '';
++    const tomorrowDate = new Date(todayStr + 'T00:00:00');
++    tomorrowDate.setDate(tomorrowDate.getDate() + 1);
++    const tomorrowStr = tomorrowDate.toISOString().split('T')[0];
+ 
+     return timeSlots.map(slot => {
+       let dataIndex = 0;
+@@ -33,10 +36,6 @@ export const TimeOfDayGrid: React.FC<TimeOfDayGridProps> = ({ hourly, timezone }
+         const entryHour = new Date(hourly.time[i]).getHours();
+ 
+         if (slot.label === 'NIGHT') {
+-          // NIGHT data: look for the next night period (tomorrow early morning)
+-          const tomorrow = new Date(todayStr);
+-          tomorrow.setDate(tomorrow.getDate() + 1);
+-          const tomorrowStr = tomorrow.toISOString().split('T')[0];
+           if (entryDateStr === tomorrowStr) {
+             const diff = Math.abs(entryHour - slot.hour);
+             if (diff < bestDiff) {

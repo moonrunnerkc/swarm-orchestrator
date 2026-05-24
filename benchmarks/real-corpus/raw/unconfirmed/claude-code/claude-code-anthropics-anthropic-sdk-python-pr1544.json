@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-python-pr1544",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1544,
+    "headSha": "3346ce6a7885fb2879964bd81edc0d50601286fc",
+    "baseSha": "9aa85c8a3c099e8a49206aad37ff1e96af69b824",
+    "title": "fix(bedrock,vertex): map 413/529 to typed exceptions, matching canonical client",
+    "body": "## What's happening\n\nThe Bedrock and Vertex clients' `_make_status_error` methods are missing two status codes that the canonical `Anthropic` / `AsyncAnthropic` clients already map (and that the newer Mantle client also maps):\n\n- **413** → `RequestTooLargeError`\n- **529** → `OverloadedError`\n\nSo for users running on Bedrock or Vertex:\n\n- A `413` from the upstream API comes back as a generic `APIStatusError` — no `RequestTooLargeError` handler ever fires.\n- A `529` \"Overloaded\" falls into the `>= 500` branch as `InternalServerError` — so retry / backoff code that keys off `OverloadedError` is silently broken on these platforms.\n\nThis is purely a drift bug — the canonical client added both mappings ages ago and the platform-specific clients didn't get the same update.\n\n## Comparison\n\n| Code | `_client.py` | `lib/bedrock/_client.py` (before) | `lib/vertex/_client.py` (before) | `lib/bedrock/_mantle.py` |\n|------|--------------|-----------------------------------|----------------------------------|--------------------------|\n| 400 | ✓ | ✓ | ✓ | ✓ |\n| 401 | ✓ | ✓ | ✓ | ✓ |\n| 403 | ✓ | ✓ | ✓ | ✓ |\n| 404 | ✓ | ✓ | ✓ | ✓ |\n| 409 | ✓ | ✓ | ✓ | ✓ |\n| **413** | ✓ | **—** | **—** | ✓ |\n| 422 | ✓ | ✓ | ✓ | ✓ |\n| 429 | ✓ | ✓ | ✓ | ✓ |\n| 503 | — | ✓ | ✓ | — |\n| 504 | — | — | ✓ | — |\n| **529** | ✓ | **—** | **—** | ✓ |\n| ≥500 | ✓ | ✓ | ✓ | ✓ |\n\nBold cells are what this PR adds.\n\n## What this PR does\n\nAdds the missing `413` and `529` mappings to both `lib/bedrock/_client.py` and `lib/vertex/_client.py`. The Bedrock-specific `503` and Vertex-specific `503`/`504` mappings are preserved — those are real platform-frontend statuses and removing them would be a breaking change for users who catch them specifically.\n\n## Tests\n\nModeled on the existing `test_make_status_error_sync_async_parity` in `tests/test_client.py`, this PR adds parametrized tests that pin the full status-code mapping for both platforms — both sync and async variants:\n\n- `tests/lib/test_bedrock.py::test_bedrock_make_status_error_maps_codes_to_typed_exceptions` — 11 status codes\n- `tests/lib/test_vertex.py::test_vertex_make_status_error_maps_codes_to_typed_exceptions` — 12 status codes\n\n```\n$ uv run pytest tests/lib/test_bedrock.py tests/lib/test_vertex.py -k make_status_error\n======================= 23 passed, 34 deselected in 0.21s ======================\n```\n\nThe parametrized form will fail loudly the next time someone forgets to add a mapping in just one of the three places.",
+    "author": "Zawwarsami16",
+    "headRef": "fix/bedrock-vertex-status-error-parity",
+    "repository": "anthropics/anthropic-sdk-python"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-python",
+    "headSha": "3346ce6a7885fb2879964bd81edc0d50601286fc",
+    "baseSha": "9aa85c8a3c099e8a49206aad37ff1e96af69b824"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-python-pr1544.diff",
+  "vendoredAt": "2026-05-24T03:17:28.991Z",
+  "collectedAt": "2026-05-24T03:17:28.991Z"
+}

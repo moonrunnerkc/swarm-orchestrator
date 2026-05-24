@@ -1,0 +1,213 @@
+diff --git a/src/main/java/ti4/discord/interactions/buttons/handlers/actioncards/ActionCardDeck2ButtonHandler.java b/src/main/java/ti4/discord/interactions/buttons/handlers/actioncards/ActionCardDeck2ButtonHandler.java
+index 7b0995128c..0f63830234 100644
+--- a/src/main/java/ti4/discord/interactions/buttons/handlers/actioncards/ActionCardDeck2ButtonHandler.java
++++ b/src/main/java/ti4/discord/interactions/buttons/handlers/actioncards/ActionCardDeck2ButtonHandler.java
+@@ -24,6 +24,7 @@
+ import ti4.helpers.ButtonHelperAbilities;
+ import ti4.helpers.ButtonHelperAgents;
+ import ti4.helpers.ButtonHelperFactionSpecific;
++import ti4.helpers.CommandCounterHelper;
+ import ti4.helpers.Constants;
+ import ti4.helpers.FoWHelper;
+ import ti4.helpers.Helper;
+@@ -32,6 +33,7 @@
+ import ti4.logging.BotLogger;
+ import ti4.message.MessageHelper;
+ import ti4.model.ExploreModel;
++import ti4.service.RemoveCommandCounterService;
+ import ti4.service.emoji.CardEmojis;
+ import ti4.service.emoji.MiscEmojis;
+ import ti4.service.emoji.UnitEmojis;
+@@ -47,6 +49,58 @@ class ActionCardDeck2ButtonHandler {
+     private static final String ALLIANCE_RIDER_CURRENT_ALLY = "allianceRiderCurrentAlly";
+     private static final String ALLIANCE_RIDER_PURGED_ALLIES = "allianceRiderPurgedAllies";
+ 
++    private static List<Button> getPlayersForFalseFlag(Player player, Game game) {
++        List<Button> buttons = new ArrayList<>();
++        for (Player p2 : game.getRealPlayers()) {
++            if (p2 == player || getTilesWithCommandTokens(p2, game).isEmpty()) {
++                continue;
++            }
++            if (game.isFowMode()) {
++                buttons.add(Buttons.gray("falseFlagStep2_" + p2.getFaction(), p2.getColor()));
++            } else {
++                Button button = Buttons.gray("falseFlagStep2_" + p2.getFaction(), p2.getFactionModel().getShortName());
++                buttons.add(button.withEmoji(Emoji.fromFormatted(p2.getFactionEmoji())));
++            }
++        }
++        return buttons;
++    }
++
++    private static List<Tile> getTilesWithCommandTokens(Player player, Game game) {
++        List<Tile> tiles = new ArrayList<>();
++        for (Tile tile : game.getTileMap().values()) {
++            if (CommandCounterHelper.hasCC(player, tile)) {
++                tiles.add(tile);
++            }
++        }
++        return tiles;
++    }
++
++    private static List<Button> getButtonsToRemoveFalseFlag(Player player, Player target, Game game) {
++        List<Button> buttons = new ArrayList<>();
++        for (Tile tile : getTilesWithCommandTokens(target, game)) {
++            buttons.add(Buttons.gray(
++                    "falseFlagStep3_" + target.getFaction() + "_" + tile.getPosition(),
++                    tile.getRepresentationForButtons(game, player)));
++        }
++        return buttons;
++    }
++
++    private static List<Button> getTilesToPlaceFalseFlag(Player player, Player target, Game game, String sourcePos) {
++        List<Button> buttons = new ArrayList<>();
++        for (Tile tile : game.getTileMap().values()) {
++            if (!FoWHelper.playerHasUnitsInSystem(player, tile)) {
++                continue;
++            }
++            if (!sourcePos.equals(tile.getPosition()) && CommandCounterHelper.hasCC(target, tile)) {
++                continue;
++            }
++            buttons.add(Buttons.gray(
++                    "falseFlagStep4_" + target.getFaction() + "_" + sourcePos + "_" + tile.getPosition(),
++                    tile.getRepresentationForButtons(game, player)));
++        }
++        return buttons;
++    }
++
+     @ButtonHandler("resolveOracle")
+     public static void resolveOracle(Player player, Game game, ButtonInteractionEvent event) {
+         List<MessageEmbed> embeds = new ArrayList<>();
+@@ -145,6 +199,116 @@ public static void resolveRapidFulfillment(Player player, Game game, ButtonInter
+         MessageHelper.sendMessageToChannelWithButtons(event.getChannel(), message, buttons);
+     }
+ 
++    @ButtonHandler("resolveFalseFlagStep1")
++    public static void resolveFalseFlagStep1(Player player, Game game, ButtonInteractionEvent event) {
++        List<Button> buttons = getPlayersForFalseFlag(player, game);
++        if (buttons.isEmpty()) {
++            MessageHelper.sendMessageToChannel(
++                    player.getCorrectChannel(),
++                    player.getRepresentationUnfogged()
++                            + ", no other players have command tokens on the board for _False Flag_.");
++            ButtonHelper.deleteMessage(event);
++            return;
++        }
++        MessageHelper.sendMessageToChannelWithButtons(
++                player.getCorrectChannel(),
++                player.getRepresentationUnfogged()
++                        + ", please choose which player's command token you wish to move with _False Flag_.",
++                buttons);
++        ButtonHelper.deleteMessage(event);
++    }
++
++    @ButtonHandler("falseFlagStep2_")
++    public static void resolveFalseFlagStep2(Player player, Game game, ButtonInteractionEvent event, String buttonID) {
++        Player target = game.getPlayerFromColorOrFaction(buttonID.split("_")[1]);
++        List<Button> buttons = getButtonsToRemoveFalseFlag(player, target, game);
++        if (buttons.isEmpty()) {
++            MessageHelper.sendMessageToChannel(
++                    player.getCorrectChannel(),
++                    player.getRepresentationUnfogged()
++                            + ", that player no longer has any command tokens on the board for _False Flag_.");
++            ButtonHelper.deleteMessage(event);
++            return;
++        }
++        MessageHelper.sendMessageToChannelWithButtons(
++                player.getCorrectChannel(),
++                player.getRepresentationUnfogged()
++                        + ", please choose which system to remove "
++                        + target.getRepresentationUnfogged()
++                        + "'s command token from.",
++                buttons);
++        ButtonHelper.deleteMessage(event);
++    }
++
++    @ButtonHandler("falseFlagStep3_")
++    public static void resolveFalseFlagStep3(Player player, Game game, ButtonInteractionEvent event, String buttonID) {
++        Player target = game.getPlayerFromColorOrFaction(buttonID.split("_")[1]);
++        String sourcePos = buttonID.split("_")[2];
++        List<Button> buttons = getTilesToPlaceFalseFlag(player, target, game, sourcePos);
++        if (buttons.isEmpty()) {
++            MessageHelper.sendMessageToChannel(
++                    player.getCorrectChannel(),
++                    player.getRepresentationUnfogged()
++                            + ", you do not have any valid systems containing your units for _False Flag_.");
++            ButtonHelper.deleteMessage(event);
++            return;
++        }
++        MessageHelper.sendMessageToChannelWithButtons(
++                player.getCorrectChannel(),
++                player.getRepresentationUnfogged()
++                        + ", please choose which system containing your units will receive the moved command token.",
++                buttons);
++        ButtonHelper.deleteMessage(event);
++    }
++
++    @ButtonHandler("falseFlagStep4_")
++    public static void resolveFalseFlagStep4(Player player, Game game, ButtonInteractionEvent event, String buttonID) {
++        Player target = game.getPlayerFromColorOrFaction(buttonID.split("_")[1]);
++        String sourcePos = buttonID.split("_")[2];
++        String destinationPos = buttonID.split("_")[3];
++        Tile sourceTile = game.getTileByPosition(sourcePos);
++        Tile destinationTile = game.getTileByPosition(destinationPos);
++        if (sourceTile == null || destinationTile == null || !CommandCounterHelper.hasCC(target, sourceTile)) {
++            MessageHelper.sendMessageToChannel(
++                    player.getCorrectChannel(),
++                    player.getRepresentationUnfogged() + ", _False Flag_ could not find the selected command token.");
++            ButtonHelper.deleteMessage(event);
++            return;
++        }
++        if (!FoWHelper.playerHasUnitsInSystem(player, destinationTile)) {
++            MessageHelper.sendMessageToChannel(
++                    player.getCorrectChannel(),
++                    player.getRepresentationUnfogged()
++                            + ", the destination no longer contains your units, so _False Flag_ was not resolved.");
++            ButtonHelper.deleteMessage(event);
++            return;
++        }
++
++        RemoveCommandCounterService.fromTile(target.getColor(), sourceTile, game);
++        CommandCounterHelper.addCC(event, target, destinationTile);
++
++        ButtonHelper.deleteMessage(event);
++        if (game.isFowMode()) {
++            MessageHelper.sendMessageToChannel(
++                    player.getCorrectChannel(),
++                    player.getRepresentationUnfogged() + ", you moved "
++                            + target.getFactionEmojiOrColor() + "'s command token from "
++                            + sourceTile.getRepresentationForButtons(game, player) + " to "
++                            + destinationTile.getRepresentationForButtons(game, player) + " with _False Flag_.");
++            MessageHelper.sendMessageToChannel(
++                    target.getCorrectChannel(),
++                    target.getRepresentationUnfogged() + ", your command token was moved from "
++                            + sourceTile.getRepresentationForButtons(game, target) + " to "
++                            + destinationTile.getRepresentationForButtons(game, target) + " by _False Flag_.");
++        } else {
++            MessageHelper.sendMessageToChannel(
++                    player.getCorrectChannel(),
++                    player.getRepresentationUnfogged() + " moved " + target.getRepresentationUnfogged()
++                            + "'s command token from " + sourceTile.getRepresentationForButtons(game, player) + " to "
++                            + destinationTile.getRepresentationForButtons(game, player) + " with _False Flag_.");
++        }
++    }
++
+     @ButtonHandler("resolveSisterShip")
+     public static void resolveSisterShip(Player player, Game game, ButtonInteractionEvent event) {
+         event.getMessage().delete().queue(Consumers.nop(), BotLogger::catchRestError);
+diff --git a/src/main/java/ti4/helpers/ActionCardHelper.java b/src/main/java/ti4/helpers/ActionCardHelper.java
+index 588a253e76..1b5eb0e735 100644
+--- a/src/main/java/ti4/helpers/ActionCardHelper.java
++++ b/src/main/java/ti4/helpers/ActionCardHelper.java
+@@ -1327,6 +1327,12 @@ public static String resolveActionCard(
+                         channel2, introMsg + String.format(targetMsg, "ship"), codedButtons);
+             }
+ 
++            if ("false_flag".equals(automationID)) {
++                codedButtons.add(Buttons.green(player.factionButtonChecker() + "resolveFalseFlagStep1", buttonLabel));
++                MessageHelper.sendMessageToChannelWithButtons(
++                        channel2, introMsg + String.format(targetMsg, "player and systems"), codedButtons);
++            }
++
+             if ("refit".equals(automationID)) {
+                 codedButtons.add(Buttons.green(player.factionButtonChecker() + "resolveRefitTroops", buttonLabel));
+                 MessageHelper.sendMessageToChannelWithButtons(

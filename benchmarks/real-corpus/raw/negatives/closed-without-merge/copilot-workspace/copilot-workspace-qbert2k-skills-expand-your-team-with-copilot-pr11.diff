@@ -1,0 +1,64 @@
+diff --git a/.github/copilot-instructions.md b/.github/copilot-instructions.md
+index 22bfd39..2265196 100644
+--- a/.github/copilot-instructions.md
++++ b/.github/copilot-instructions.md
+@@ -1,3 +1,18 @@
+-### Copilot Instructions
++## Development Environment
+ 
+-Replace this text to customize Copilot.
++For detailed setup and development instructions, please refer to our [Development Guide](../docs/how-to-develop.md).
++
++### User Interaction
++
++Consider the following when communicating with the staff.
++
++- The staff is not technical. Explain in simple terms as much as possible and avoid software jargon.
++- Any new code must be easy to maintain and understand, without significant coding experience.
++
++## Program architecture
++
++- The website users are the students and teachers. Make sure the user experience is simple.
++- Do not make additional apps or services.
++- Do not make command line tools.
++- Do not create a long single file application. Always use an easy-to-understand directory structure.
++- Only use HTML, CSS, Javascript, and Python. No other languages.
+diff --git a/.github/workflows/copilot-setup-steps.yml b/.github/workflows/copilot-setup-steps.yml
+new file mode 100644
+index 0000000..f5bdd35
+--- /dev/null
++++ b/.github/workflows/copilot-setup-steps.yml
+@@ -0,0 +1,33 @@
++name: "Copilot Setup Steps"
++
++on: workflow_dispatch
++jobs:
++  # This is the required job name. If different, Copilot will ignore it.
++  copilot-setup-steps:
++    runs-on: ubuntu-latest
++
++    # Starts a MongoDB service for Copilot to use during its session.
++    services:
++      mongo:
++        image: mongo:7
++        ports:
++          - 27017:27017
++
++    # Grant Copilot early access to read the repository content.
++    permissions:
++      contents: read
++
++    steps:
++      - name: Checkout code
++        uses: actions/checkout@v5
++
++      - name: Set up Python
++        uses: actions/setup-python@v6
++        with:
++          python-version: "3.13"
++          cache: "pip"
++
++      - name: Install Python dependencies
++        run: |
++          python -m pip install --upgrade pip
++          pip install -r src/requirements.txt

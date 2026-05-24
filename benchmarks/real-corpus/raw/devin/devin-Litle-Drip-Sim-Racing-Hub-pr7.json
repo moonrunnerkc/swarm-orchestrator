@@ -1,0 +1,26 @@
+{
+  "id": "devin-Litle-Drip-Sim-Racing-Hub-pr7",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 7,
+    "headSha": "45d1b941cd7d65146417065e1ed3d6e529654cdd",
+    "baseSha": "68c96c1d184db63a77afb2c188c8d57fe27df5cf",
+    "title": "fix: security hardening and bug fixes across API server",
+    "body": "## Summary\n\nFull codebase review of Sim-Racing-Hub focusing on bugs and security concerns. This PR addresses:\n\n**Security fixes:**\n- **CORS wide-open with credentials** — `origin: true` reflected any origin. Now configurable via `CORS_ORIGINS` env var (comma-separated). Falls back to open for backward compat.\n- **No body size limit** — `express.json()` had no limit, allowing arbitrarily large payloads (DoS vector). Added `1mb` limit.\n- **Fractional star ratings accepted** — rating endpoint accepted `1.5`, `2.7` etc. Now requires integer via `Number.isInteger()`.\n- **LIKE injection in community car search** — `%` and `_` characters in user input acted as SQL wildcards. Now properly escaped.\n\n**Bug fixes:**\n- **CREATE_TABLES_SQL missing 4 columns** — `penalty`, `is_public`, `shared_at`, and `laps` columns were missing from the sessions table init SQL. Fresh databases would crash on any session create/read.\n- **Redundant dynamic import** — `community/sessions` route used `await import(\"@clerk/express\")` despite `getAuth` already being statically imported at the top of the file.\n- **Null safety after insert→select** — All routes that INSERT then SELECT to return the created record had no null check on the select result. If the select returned empty (race condition), the server would crash with a TypeError. Added guards in sessions, setups, hardware, trackNotes, and community import routes.\n- **Mobile typecheck error** — `log-session.tsx` was missing the required `penalty` field in `createSession` call (pre-existing TS error on `main`).\n\n## Review & Testing Checklist for Human\n- [ ] Deploy to a fresh database and confirm all tables are created correctly (the CREATE_TABLES_SQL change is critical)\n- [ ] Verify community car search with special characters like `%` and `_` returns expected results\n- [ ] If restricting CORS origins, set `CORS_ORIGINS` env var (e.g. `https://yourdomain.com`) and verify cross-origin requests work from allowed origins only\n- [ ] Test the mobile app session logging to confirm the penalty field fix doesn't regress anything\n\n### Notes\n- The `CORS_ORIGINS` env var is optional. If unset, behavior is unchanged (all origins allowed). Set it to a comma-separated list of allowed origins for production hardening.\n- The existing `rejectUnauthorized: false` in `lib/db/src/index.ts` for SSL database connections is still present. This disables certificate verification and should be addressed when the database setup supports proper certs.\n- No rate limiting is implemented yet — consider adding `express-rate-limit` for production to protect against brute-force and abuse.\n\nLink to Devin session: https://app.devin.ai/sessions/e8416ddf4add4559914b0965c29d237d\nRequested by: @Litle-Drip",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779586901-bugfix-security-review",
+    "repository": "Litle-Drip/Sim-Racing-Hub"
+  },
+  "diffRef": {
+    "repository": "Litle-Drip/Sim-Racing-Hub",
+    "headSha": "45d1b941cd7d65146417065e1ed3d6e529654cdd",
+    "baseSha": "68c96c1d184db63a77afb2c188c8d57fe27df5cf"
+  },
+  "vendoredDiffPath": "devin/devin-Litle-Drip-Sim-Racing-Hub-pr7.diff",
+  "vendoredAt": "2026-05-24T03:04:11.337Z",
+  "collectedAt": "2026-05-24T03:04:11.337Z"
+}

@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24146",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24146,
+    "headSha": "73d4160c57aa44f3c345236817406a4f22e68e39",
+    "baseSha": "423488480fa8b4502d1813f5fefe2292dd0f6bf7",
+    "title": "[codex-analytics] split compaction v2 analytics implementation",
+    "body": "## What changed\n\n- Add a distinct `responses_compaction_v2` value for `CodexCompactionEvent.implementation`.\n- Emit that value from the remote compaction v2 path.\n- Keep local compaction as `responses` and legacy `/responses/compact` as `responses_compact`.\n\n## Why\n\nRemote compaction v2 and local prompt-based compaction were both reported as `responses`, which made the analytics table collapse two different compaction mechanisms into one implementation bucket.\n\n## Validation\n\n- `just fmt`\n- `just test -p codex-analytics`\n\n`just test -p codex-core` was started locally, but this PR is intentionally being pushed for CI to finish the remaining validation.",
+    "author": "rhan-oai",
+    "headRef": "rhan/compaction-v2-analytics",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "73d4160c57aa44f3c345236817406a4f22e68e39",
+    "baseSha": "423488480fa8b4502d1813f5fefe2292dd0f6bf7"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24146.diff",
+  "vendoredAt": "2026-05-24T03:20:55.022Z",
+  "collectedAt": "2026-05-24T03:20:55.022Z"
+}

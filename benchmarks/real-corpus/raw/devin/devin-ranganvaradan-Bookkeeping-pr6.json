@@ -1,0 +1,26 @@
+{
+  "id": "devin-ranganvaradan-Bookkeeping-pr6",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 6,
+    "headSha": "fc106bf2af8454be8e9448d185417ff930c857b4",
+    "baseSha": "b94a8b4caddf2ca0c9fd2d2f8359d81850f8ba93",
+    "title": "T-03: JWT authentication with Spring Security 6 + multi-tenant context",
+    "body": "## Summary\n\nImplements JWT-based authentication with Spring Security 6, refresh token flow, and per-request tenant isolation via ThreadLocal.\n\n### What's included:\n\n| Component | Details |\n|-----------|---------|\n| **Dependencies** | `spring-boot-starter-security`, `spring-security-test`, JJWT 0.12.3 (api + impl + jackson) |\n| **Flyway V3** | `refresh_tokens` table (token, user_id, expires_at 7d, CASCADE on user delete) |\n| **JPA Entities** | `Tenant`, `User`, `Client`, `RefreshToken` — mapped to existing V1/V3 schema |\n| **JwtService** | Generates access tokens (24h TTL) with userId/tenantId/role claims; validates signature via `JWT_SECRET` |\n| **AuthService** | Login (BCrypt verify), refresh (validate + reissue), logout (delete refresh token) |\n| **TenantContext** | ThreadLocal holding current tenant UUID — set by JwtFilter, cleared in finally block |\n| **JwtFilter** | `OncePerRequestFilter` — extracts Bearer token, validates JWT, sets SecurityContext + TenantContext |\n| **SecurityConfig** | `/api/auth/**` + `/api/health` + `/actuator/**` = public. `/api/**` = JWT required. Stateless sessions. 401 JSON on auth failure. |\n| **AuthController** | `POST /api/auth/login` → access + refresh token (httpOnly cookie). `POST /api/auth/refresh` → new access token from cookie. `POST /api/auth/logout` → delete refresh token + clear cookie. |\n| **ClientController** | `GET /api/clients` — returns only clients belonging to the authenticated user's tenant |\n| **GlobalExceptionHandler** | Maps `AuthException` → 401 JSON |\n| **Config** | `jwt.secret` in application.yml (from `JWT_SECRET` env var), test profile includes a test secret |\n\n### Files created (22 new, 3 modified):\n\n**New:**\n- `V3__refresh_tokens.sql` — migration\n- `Tenant.java`, `User.java`, `Client.java`, `RefreshToken.java` — entities\n- `TenantRepository`, `UserRepository`, `ClientRepository`, `RefreshTokenRepository` — repositories\n- `JwtService.java`, `AuthService.java` — services\n- `TenantContext.java`, `JwtFilter.java`, `SecurityConfig.java` — security\n- `AuthController.java`, `ClientController.java`, `GlobalExceptionHandler.java` — controllers\n- `LoginRequest.java`, `LoginResponse.java`, `TokenResponse.java`, `ClientResponse.java` — DTOs\n- `MultiTenantAuthTest.java` — integration test (6 test cases)\n\n**Modified:**\n- `pom.xml` — security + JJWT dependencies\n- `application.yml` — `jwt.secret` property\n- `application-test.yml` — test JWT secret\n\n## Review & Testing Checklist for Human\n\n- [ ] **Multi-tenant isolation**: Log in as the demo admin (`admin@demo.com` / `Admin123!`), call `GET /api/clients` with the access token. Verify it only returns clients from the demo tenant and not from other tenants.\n- [ ] **Auth flow end-to-end**: Test login → get tokens → use access token → refresh → logout → verify token no longer works\n- [ ] **401 enforcement**: Call `GET /api/clients` without a token and verify you get `{\"error\":\"Unauthorized\"}`\n- [ ] **Health endpoint still public**: Verify `GET /api/health` returns `{\"status\":\"ok\"}` without any token\n\n**Test plan:**\n1. Start with Docker: `docker compose down -v && docker compose up --build`\n2. Login: `curl -X POST http://localhost:8085/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@demo.com\",\"password\":\"Admin123!\"}'`\n3. Use the returned `accessToken` to call: `curl http://localhost:8085/api/clients -H 'Authorization: Bearer <token>'`\n4. Verify health still works without auth: `curl http://localhost:8085/api/health`\n5. Verify 401 without token: `curl http://localhost:8085/api/clients`\n\n### Notes\n\n- The `JWT_SECRET` env var must be at least 32 characters. A default dev-only secret is provided for local development.\n- Refresh tokens are stored in the DB (not Redis) with 7-day TTL, returned as httpOnly cookie + in the login response body.\n- The `CorsFilter` bean from the existing `CorsConfig` is injected into the Spring Security filter chain to ensure CORS headers are applied before auth checks.\n- All 6 unit tests pass: multi-tenant client isolation for both tenants, 401 without token, health endpoint public access, wrong password rejection.\n\nLink to Devin session: https://app.devin.ai/sessions/28f22dd6a7d44cc8b0cd820ac982a0cf\nRequested by: @ranganvaradan",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779588015-t03-jwt-auth",
+    "repository": "ranganvaradan/Bookkeeping"
+  },
+  "diffRef": {
+    "repository": "ranganvaradan/Bookkeeping",
+    "headSha": "fc106bf2af8454be8e9448d185417ff930c857b4",
+    "baseSha": "b94a8b4caddf2ca0c9fd2d2f8359d81850f8ba93"
+  },
+  "vendoredDiffPath": "devin/devin-ranganvaradan-Bookkeeping-pr6.diff",
+  "vendoredAt": "2026-05-24T03:04:09.057Z",
+  "collectedAt": "2026-05-24T03:04:09.057Z"
+}

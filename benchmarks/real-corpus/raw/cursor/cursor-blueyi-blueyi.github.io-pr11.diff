@@ -1,0 +1,109 @@
+diff --git a/index.html b/index.html
+index 7eefdbf..af691e9 100644
+--- a/index.html
++++ b/index.html
+@@ -105,8 +105,32 @@
+             0%, 100% { opacity: 1; transform: scale(1); }
+             50%      { opacity: 0.6; transform: scale(0.85); }
+         }
+-        .status-pill { color: var(--fg-mute); }
+-        .status-pill .live { color: var(--good); }
++        .status-pill {
++            color: var(--fg-mute);
++            --state-color: var(--good);
++            display: inline-flex;
++            align-items: center;
++            gap: 6px;
++            cursor: default;
++        }
++        .status-pill.s-green  { --state-color: var(--good); }
++        .status-pill.s-cyan   { --state-color: var(--accent-2); }
++        .status-pill.s-amber  { --state-color: var(--accent-4); }
++        .status-pill.s-purple { --state-color: var(--accent); }
++        .status-pill.s-gray   { --state-color: var(--fg-mute); }
++        .status-pill .live {
++            color: var(--state-color);
++            display: inline-block;
++            line-height: 1;
++            text-shadow: 0 0 6px var(--state-color);
++            animation: pulse 2.4s ease-in-out infinite;
++            transition: color 0.35s ease, text-shadow 0.35s ease;
++        }
++        .status-pill .status-text {
++            transition: opacity 0.35s ease;
++            display: inline-block;
++        }
++        .status-pill.swap .status-text { opacity: 0; }
+ 
+         main {
+             display: flex;
+@@ -958,7 +982,10 @@
+             <span class="dot" aria-hidden="true"></span>
+             <span>yulong.wang</span>
+         </div>
+-        <div class="status-pill"><span class="live">●</span> available for work</div>
++        <div class="status-pill s-green" id="status-pill" title="status follows Hong Kong wall-clock time, refreshed every minute">
++            <span class="live" aria-hidden="true">●</span>
++            <span class="status-text" id="status-text">available for work</span>
++        </div>
+     </header>
+ 
+     <main>
+@@ -1360,6 +1387,57 @@ <h3><span class="blip" aria-hidden="true"></span> currently building</h3>
+     var y = document.getElementById('year');
+     if (y) y.textContent = new Date().getFullYear();
+ 
++    /* ---------------- Schedule-aware status pill (HKT) ---------------- */
++    (function () {
++        var pill = document.getElementById('status-pill');
++        var text = document.getElementById('status-text');
++        if (!pill || !text) return;
++
++        var WAKE_WEEKDAY_HM = '08:00';
++        var WAKE_WEEKEND_HM = '09:00';
++
++        function hktNow() {
++            /* Hong Kong is UTC+8 year-round (no DST). Shift UTC by +8h and read UTC accessors. */
++            var shifted = new Date(Date.now() + 8 * 3600 * 1000);
++            return {
++                hour:   shifted.getUTCHours(),
++                minute: shifted.getUTCMinutes(),
++                day:    shifted.getUTCDay()  /* 0=Sun, 1=Mon, ..., 6=Sat */
++            };
++        }
++
++        function pickState(h) {
++            var weekend = (h.day === 0 || h.day === 6);
++            if (weekend) {
++                if (h.hour >= 9 && h.hour < 22)        return { text: 'weekend · slow replies',    cls: 's-amber' };
++                if (h.day === 0 && h.hour >= 22)       return { text: 'offline · back monday',     cls: 's-gray'  };
++                return { text: 'offline · back ' + WAKE_WEEKEND_HM + ' HKT', cls: 's-gray' };
++            }
++            if (h.hour >= 8 && h.hour < 22)            return { text: 'online · HKT',              cls: 's-green' };
++            if (h.hour >= 22)                          return { text: 'wrapping up · HKT',         cls: 's-cyan'  };
++            return { text: 'offline · back ' + WAKE_WEEKDAY_HM + ' HKT', cls: 's-gray' };
++        }
++
++        var lastText = null;
++        function apply() {
++            var state = pickState(hktNow());
++            if (state.text === lastText) return;
++            lastText = state.text;
++            /* Brief fade-swap so changes feel intentional, not jumpy. */
++            pill.classList.add('swap');
++            setTimeout(function () {
++                pill.classList.remove('s-green','s-cyan','s-amber','s-purple','s-gray');
++                pill.classList.add(state.cls);
++                text.textContent = state.text;
++                pill.classList.remove('swap');
++            }, 280);
++        }
++
++        apply();
++        setInterval(apply, 60 * 1000); /* re-evaluate every minute */
++    })();
++
++
+     /* Scroll reveal for AI section */
+     var section = document.querySelector('.afterlinks');
+     if (section) {

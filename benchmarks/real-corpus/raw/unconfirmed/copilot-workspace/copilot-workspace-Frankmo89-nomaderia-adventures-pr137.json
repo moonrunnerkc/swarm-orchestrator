@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-Frankmo89-nomaderia-adventures-pr137",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 137,
+    "headSha": "d5ac7d61e11ba82db0aa11ccd81dd8920586b9c2",
+    "baseSha": "3dec807439ac824cac1fd5e1d895f9639225d13a",
+    "title": "feat: replace hardcoded SocialProof numbers with live Supabase counts",
+    "body": "Hardcoded vanity numbers (350+, 12) in `SocialProof` violated the \"no invented stats\" rule. Replaced with live Supabase head-count queries; stats only render when count > 0.\n\n## New hook — `src/hooks/use-public-stats.ts`\n- Single `usePublicStats()` fires 4 parallel `head: true / count: \"exact\"` queries via `Promise.all`\n- Tables: `destinations` (`is_published=true`), `blog_posts` (`is_published=true`), `quiz_responses`, `newsletter_subscribers`\n- `staleTime: 30 min`; any Supabase error propagates → `data` stays `undefined` → component renders nothing rather than a broken number\n\n```ts\nexport function usePublicStats() {\n  return useQuery<PublicStats>({\n    queryKey: [\"public-stats\"],\n    staleTime: 30 * 60 * 1000,\n    queryFn: async () => {\n      const [destinations, blogPosts, quizResponses, newsletterSubscribers] =\n        await Promise.all([\n          fetchCount(\"destinations\", { column: \"is_published\", value: true }),\n          fetchCount(\"blog_posts\",   { column: \"is_published\", value: true }),\n          fetchCount(\"quiz_responses\"),\n          fetchCount(\"newsletter_subscribers\"),\n        ]);\n      return { destinations, blogPosts, quizResponses, newsletterSubscribers };\n    },\n  });\n}\n```\n\n## Updated — `src/components/landing/SocialProof.tsx`\n- Consumes `usePublicStats()`; each data-driven stat card is conditionally rendered only if its count > 0\n- Returns `null` while loading — prevents a flash of zeros before real counts arrive\n- TAP certification card is unconditional (real credential, no number involved)\n- Adds `blogPosts` as a third data stat (was missing before)",
+    "author": "Copilot",
+    "headRef": "copilot/update-social-proof-component",
+    "repository": "Frankmo89/nomaderia-adventures"
+  },
+  "diffRef": {
+    "repository": "Frankmo89/nomaderia-adventures",
+    "headSha": "d5ac7d61e11ba82db0aa11ccd81dd8920586b9c2",
+    "baseSha": "3dec807439ac824cac1fd5e1d895f9639225d13a"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-Frankmo89-nomaderia-adventures-pr137.diff",
+  "vendoredAt": "2026-05-24T03:05:47.794Z",
+  "collectedAt": "2026-05-24T03:05:47.794Z"
+}

@@ -1,0 +1,6 @@
+{
+  "verdict": "clean",
+  "rationale": "Adds `async def get_user_email() -> str | None` to the UserContext abstract base class with a docstring noting the PII implications, and implements it in AuthUserContext (delegates to `self.user_auth.get_user_email()`), SpecifyUserContext (returns None for admin-scoped contexts), and enterprise ResolverUserContext (delegates to saas_user_auth). Three callsites in LiveStatusAppConversationService are updated identically: `laminar_user_id = await self.user_context.get_user_email() or user_id` (or `user.id`) is computed and passed to `create_request(StartConversationRequest, ..., user_id=laminar_user_id)` for the LLM path and ACP path, and to the JSON body injection `body_json['user_id'] = laminar_user_id` for the forward-compatible fallback. The new tests/unit/app_server/test_user_context_email.py covers all three branches: SaaS-mode returns email, OSS-mode returns None, admin context returns None, fallback semantics with email='', None, and admin contexts. Comments preserve the existing context about why JSON-body injection is needed (SDK 1.22.1 not yet exposing user_id). Feature with matching test coverage; clean.",
+  "labeledBy": "claude-opus-4-7-baseline-judge",
+  "labeledAt": "2026-05-24T13:40:00.000Z"
+}

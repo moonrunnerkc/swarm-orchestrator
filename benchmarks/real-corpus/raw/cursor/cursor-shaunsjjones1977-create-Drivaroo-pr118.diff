@@ -1,0 +1,803 @@
+diff --git a/src/app/api/stripe/checkout/route.ts b/src/app/api/stripe/checkout/route.ts
+index 5d4cc546..8afb7b0c 100644
+--- a/src/app/api/stripe/checkout/route.ts
++++ b/src/app/api/stripe/checkout/route.ts
+@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
+ import {
+   FEATURED_LISTING_AMOUNT_CENTS,
+   FEATURED_LISTING_DAYS,
+-  VEHICLE_HISTORY_REPORT_AMOUNT_CENTS,
++  VEHICLE_HISTORY_REPORT_TIERS,
++  getVehicleHistoryReportTier,
+ } from "@/lib/featured-listing";
+ import { getSupabaseAdmin } from "@/lib/supabase-admin";
+ import { recordAnalyticsEvent } from "@/lib/analytics-events";
+@@ -13,12 +14,14 @@ import { createClient } from "@/utils/supabase/server";
+ export async function POST(req: Request) {
+   let body: {
+     product?: "featured_listing" | "vehicle_history_report";
++    reportTier?: string;
+     vehicleId?: string;
+   };
+ 
+   try {
+     body = (await req.json()) as {
+       product?: "featured_listing" | "vehicle_history_report";
++      reportTier?: string;
+       vehicleId?: string;
+     };
+   } catch {
+@@ -88,7 +91,7 @@ export async function POST(req: Request) {
+     return NextResponse.json({ error: "Vehicle not found." }, { status: 404 });
+   }
+ 
+-  if (vehicle.user_id !== user.id) {
++  if (body.product !== "vehicle_history_report" && vehicle.user_id !== user.id) {
+     return NextResponse.json(
+       { error: "You can only feature your own listing." },
+       { status: 403 },
+@@ -98,6 +101,18 @@ export async function POST(req: Request) {
+   try {
+     const origin = req.headers.get("origin") ?? new URL(req.url).origin;
+     const stripe = getStripe();
++    const isHistoryReport = body.product === "vehicle_history_report";
++    const reportTier = getVehicleHistoryReportTier(body.reportTier);
++    const reportPrice = VEHICLE_HISTORY_REPORT_TIERS[reportTier];
++    const amountCents = isHistoryReport
++      ? reportPrice.amountCents
++      : FEATURED_LISTING_AMOUNT_CENTS;
++    const productName = isHistoryReport
++      ? `${reportPrice.label} Vehicle History Report`
++      : `${FEATURED_LISTING_DAYS}-day Featured Listing`;
++    const productDescription = isHistoryReport
++      ? "Vehicle history report purchase for buyer due diligence."
++      : "Boosts your listing higher in relevant Drivaroo browse results.";
+     const session = await stripe.checkout.sessions.create({
+       payment_method_types: ["card"],
+       mode: "payment",
+@@ -106,23 +121,25 @@ export async function POST(req: Request) {
+           price_data: {
+             currency: "aud",
+             product_data: {
+-              name: `${FEATURED_LISTING_DAYS}-day Featured Listing`,
+-              description:
+-                "Boosts your listing higher in relevant Drivaroo browse results.",
++              name: productName,
++              description: productDescription,
+             },
+-            unit_amount: FEATURED_LISTING_AMOUNT_CENTS,
++            unit_amount: amountCents,
+           },
+           quantity: 1,
+         },
+       ],
+       metadata: {
+-        product: "featured_listing",
+-        featured_days: String(FEATURED_LISTING_DAYS),
++        product: isHistoryReport ? "vehicle_history_report" : "featured_listing",
++        featured_days: isHistoryReport ? "" : String(FEATURED_LISTING_DAYS),
++        report_tier: isHistoryReport ? reportTier : "",
+         vehicle_id: vehicleId,
+         user_id: user.id,
+       },
+       success_url: `${origin}/api/stripe/success?session_id={CHECKOUT_SESSION_ID}`,
+-      cancel_url: `${origin}/dashboard?cancelled=true`,
++      cancel_url: isHistoryReport
++        ? `${origin}/cars/${vehicleId}?report_cancelled=true`
++        : `${origin}/dashboard?cancelled=true`,
+     });
+ 
+     if (!session.url) {
+@@ -135,9 +152,11 @@ export async function POST(req: Request) {
+     void recordAnalyticsEvent({
+       eventType: "featured_purchase",
+       metadata: {
+-        amountCents: FEATURED_LISTING_AMOUNT_CENTS,
++        amountCents,
+         checkoutSessionId: session.id,
+-        days: FEATURED_LISTING_DAYS,
++        days: isHistoryReport ? 0 : FEATURED_LISTING_DAYS,
++        product: isHistoryReport ? "vehicle_history_report" : "featured_listing",
++        reportTier: isHistoryReport ? reportTier : "",
+       },
+       userId: user.id,
+       vehicleId,
+diff --git a/src/app/api/stripe/success/route.ts b/src/app/api/stripe/success/route.ts
+index 4a24bfbf..65bbf2a3 100644
+--- a/src/app/api/stripe/success/route.ts
++++ b/src/app/api/stripe/success/route.ts
+@@ -20,6 +20,12 @@ export async function GET(request: Request) {
+     const stripe = getStripe();
+     const session = await stripe.checkout.sessions.retrieve(sessionId);
+ 
++    if (session.metadata?.product === "vehicle_history_report") {
++      return NextResponse.redirect(
++        `${origin}/cars/${session.metadata.vehicle_id ?? ""}?report=success&tier=${session.metadata.report_tier ?? ""}`,
++      );
++    }
++
+     if (
+       session.mode !== "payment" ||
+       session.payment_status !== "paid" ||
+diff --git a/src/app/cars/[id]/page.tsx b/src/app/cars/[id]/page.tsx
+index ac1662d2..788d002c 100644
+--- a/src/app/cars/[id]/page.tsx
++++ b/src/app/cars/[id]/page.tsx
+@@ -29,6 +29,7 @@ import {
+ } from "@/lib/vehicle-images";
+ import { vehiclePriceTypeLabel } from "@/lib/vehicle-price-type";
+ import { formatVehicleTitle } from "@/lib/vehicle-title";
++import { VEHICLE_HISTORY_REPORT_TIERS } from "@/lib/featured-listing";
+ import type { Vehicle } from "@/types/vehicle";
+ 
+ function getRecentVehicleTitle(vehicle: Vehicle) {
+@@ -78,6 +79,9 @@ export default function VehiclePage() {
+   const [isLoadingVehicle, setIsLoadingVehicle] = useState(true);
+   const [isSendingMessage, setIsSendingMessage] = useState(false);
+   const [message, setMessage] = useState("");
++  const [isOpeningReportCheckout, setIsOpeningReportCheckout] = useState<string | null>(
++    null,
++  );
+   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
+   const [similarVehicles, setSimilarVehicles] = useState<Vehicle[]>([]);
+   const trackedViewId = useRef<string | null>(null);
+@@ -421,6 +425,46 @@ export default function VehiclePage() {
+     );
+   }
+ 
++  async function buyVehicleHistoryReport(
++    tier: keyof typeof VEHICLE_HISTORY_REPORT_TIERS,
++  ) {
++    if (!vehicle || vehicle.is_sample) {
++      return;
++    }
++
++    setIsOpeningReportCheckout(tier);
++    setStatus("");
++
++    try {
++      const response = await fetch("/api/stripe/checkout", {
++        method: "POST",
++        headers: {
++          "Content-Type": "application/json",
++        },
++        body: JSON.stringify({
++          product: "vehicle_history_report",
++          reportTier: tier,
++          vehicleId: vehicle.id,
++        }),
++      });
++      const data = (await response.json().catch(() => null)) as {
++        error?: string;
++        url?: string;
++      } | null;
++
++      if (!response.ok || !data?.url) {
++        setStatus(data?.error ?? "Could not open report checkout.");
++        return;
++      }
++
++      window.location.assign(data.url);
++    } catch {
++      setStatus("Could not open report checkout.");
++    } finally {
++      setIsOpeningReportCheckout(null);
++    }
++  }
++
+   if (isLoadingVehicle) {
+     return (
+       <div className="mx-auto max-w-6xl px-6 py-16 text-white">Loading...</div>
+@@ -669,22 +713,54 @@ export default function VehiclePage() {
+                       Buyer protection
+                     </p>
+                     <h2 className="mt-1 text-xl font-bold text-white">
+-                      PPSR & accident-history reports coming soon
++                      Vehicle History Report
+                     </h2>
+-                    <p className="mt-2 leading-6 text-white/65">
+-                      We are preparing a vehicle report service for PPSR status
+-                      and accident/damage indicators where third-party data is
+-                      available. Until then, complete your own PPSR and
+-                      inspection checks before buying.
+-                    </p>
++                    <ul className="mt-3 space-y-2 text-white/75">
++                      {[
++                        "No finance owing",
++                        "No stolen record",
++                        "No write-off record",
++                      ].map((item) => (
++                        <li key={item} className="flex items-center gap-2">
++                          <span className="text-emerald-300">✓</span>
++                          <span>{item}</span>
++                        </li>
++                      ))}
++                    </ul>
++                    <div className="mt-4 grid gap-2 sm:grid-cols-3">
++                      {Object.entries(VEHICLE_HISTORY_REPORT_TIERS).map(
++                        ([tier, report]) => (
++                          <button
++                            key={tier}
++                            type="button"
++                            onClick={() =>
++                              buyVehicleHistoryReport(
++                                tier as keyof typeof VEHICLE_HISTORY_REPORT_TIERS,
++                              )
++                            }
++                            disabled={isOpeningReportCheckout === tier}
++                            className="rounded-xl border border-[#d4af37]/35 bg-black/20 p-3 text-left transition hover:bg-[#d4af37]/10 disabled:cursor-not-allowed disabled:opacity-60"
++                          >
++                            <span className="block text-xs font-bold uppercase tracking-[0.16em] text-white/45">
++                              {report.label}
++                            </span>
++                            <span className="mt-1 block text-lg font-black text-[#d4af37]">
++                              ${(report.amountCents / 100).toFixed(2)}
++                            </span>
++                          </button>
++                        ),
++                      )}
++                    </div>
+                   </div>
+                   <span className="shrink-0 rounded-2xl border border-[#d4af37]/40 px-5 py-3 text-sm font-bold uppercase tracking-[0.16em] text-[#f4d77c]">
+-                    Coming soon
++                    Report check
+                   </span>
+                 </div>
+                 <p className="mt-3 text-xs leading-5 text-white/45">
+-                  This feature will only be enabled once report checkout and
+-                  fulfilment are connected end-to-end.
++                  These are the key checks a vehicle history report should
++                  confirm. Complete your own PPSR/history check before buying;
++                  Drivaroo does not guarantee report results unless a completed
++                  report is expressly supplied.
+                 </p>
+               </div>
+             ) : null}
+diff --git a/src/app/compare/[slug]/page.tsx b/src/app/compare/[slug]/page.tsx
+new file mode 100644
+index 00000000..4e679714
+--- /dev/null
++++ b/src/app/compare/[slug]/page.tsx
+@@ -0,0 +1,146 @@
++import type { Metadata } from "next";
++import Link from "next/link";
++import { notFound } from "next/navigation";
++
++type Comparison = {
++  title: string;
++  description: string;
++  left: {
++    label: string;
++    searchHref: string;
++    strengths: string[];
++  };
++  right: {
++    label: string;
++    searchHref: string;
++    strengths: string[];
++  };
++};
++
++const comparisons: Record<string, Comparison> = {
++  "cx-5-vs-rav4": {
++    title: "Mazda CX-5 vs Toyota RAV4",
++    description:
++      "Compare two popular family SUVs, then browse matching Drivaroo listings.",
++    left: {
++      label: "Mazda CX-5",
++      searchHref: "/cars?search=Mazda+CX-5&bodyType=SUV",
++      strengths: ["Premium-feeling cabin", "Family SUV practicality", "Strong used-market choice"],
++    },
++    right: {
++      label: "Toyota RAV4",
++      searchHref: "/cars?search=Toyota+RAV4&bodyType=SUV",
++      strengths: ["Toyota reliability reputation", "Family-friendly space", "Popular hybrid options"],
++    },
++  },
++  "hilux-vs-ranger": {
++    title: "Toyota Hilux vs Ford Ranger",
++    description:
++      "Compare two of Australia's best-known utes, then browse matching Drivaroo listings.",
++    left: {
++      label: "Toyota Hilux",
++      searchHref: "/cars?search=Toyota+Hilux&bodyType=Ute",
++      strengths: ["Proven workhorse reputation", "Strong 4x4 demand", "Popular trade and touring ute"],
++    },
++    right: {
++      label: "Ford Ranger",
++      searchHref: "/cars?search=Ford+Ranger&bodyType=Ute",
++      strengths: ["Strong towing appeal", "Comfortable dual-cab options", "Popular family/work ute"],
++    },
++  },
++};
++
++type Props = {
++  params: Promise<{
++    slug: string;
++  }>;
++};
++
++export async function generateMetadata({ params }: Props): Promise<Metadata> {
++  const { slug } = await params;
++  const comparison = comparisons[slug];
++
++  if (!comparison) {
++    return {};
++  }
++
++  return {
++    title: `${comparison.title} | Drivaroo`,
++    description: comparison.description,
++    alternates: {
++      canonical: `/compare/${slug}`,
++    },
++  };
++}
++
++function ComparisonColumn({
++  href,
++  label,
++  strengths,
++}: {
++  href: string;
++  label: string;
++  strengths: string[];
++}) {
++  return (
++    <article className="rounded-[1.5rem] border border-white/10 bg-[#15161a] p-6 shadow-xl shadow-black/20">
++      <h2 className="text-2xl font-black text-white">{label}</h2>
++      <ul className="mt-5 space-y-3 text-sm text-white/60">
++        {strengths.map((strength) => (
++          <li key={strength} className="flex gap-2">
++            <span className="text-[#d4af37]">✓</span>
++            <span>{strength}</span>
++          </li>
++        ))}
++      </ul>
++      <Link
++        href={href}
++        className="mt-6 inline-flex rounded-xl bg-[#d4af37] px-5 py-3 text-sm font-bold text-black hover:bg-[#e6c65c]"
++      >
++        Browse {label}
++      </Link>
++    </article>
++  );
++}
++
++export default async function ComparePage({ params }: Props) {
++  const { slug } = await params;
++  const comparison = comparisons[slug];
++
++  if (!comparison) {
++    notFound();
++  }
++
++  return (
++    <main className="min-h-screen bg-[#0d0d0f] px-6 py-16 text-white">
++      <div className="mx-auto max-w-6xl">
++        <section className="rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_85%_20%,rgba(212,175,55,0.18),transparent_30rem),#15161a] p-8 shadow-2xl shadow-black/30">
++          <p className="mb-3 text-sm font-semibold uppercase tracking-[0.3em] text-[#d4af37]">
++            Vehicle comparison
++          </p>
++          <h1 className="text-4xl font-black text-white sm:text-5xl">
++            {comparison.title}
++          </h1>
++          <p className="mt-5 max-w-3xl leading-8 text-white/60">
++            {comparison.description} Use this as a guide only; inspect each
++            vehicle, compare history, condition, kilometres, features and price
++            before enquiring.
++          </p>
++        </section>
++
++        <section className="mt-8 grid gap-5 md:grid-cols-2">
++          <ComparisonColumn
++            href={comparison.left.searchHref}
++            label={comparison.left.label}
++            strengths={comparison.left.strengths}
++          />
++          <ComparisonColumn
++            href={comparison.right.searchHref}
++            label={comparison.right.label}
++            strengths={comparison.right.strengths}
++          />
++        </section>
++      </div>
++    </main>
++  );
++}
+diff --git a/src/app/detailers/page.tsx b/src/app/detailers/page.tsx
+new file mode 100644
+index 00000000..1bdb477a
+--- /dev/null
++++ b/src/app/detailers/page.tsx
+@@ -0,0 +1,19 @@
++import type { Metadata } from "next";
++import ServiceLandingPage from "@/components/ServiceLandingPage";
++
++export const metadata: Metadata = {
++  title: "Vehicle Detailers | Drivaroo",
++  description:
++    "Find detailing partners for pre-sale presentation, buyer handover and vehicle care through Drivaroo.",
++};
++
++export default function DetailersPage() {
++  return (
++    <ServiceLandingPage
++      eyebrow="Detailers"
++      title="Detailing support for better vehicle presentation."
++      description="Connect with detailing providers for pre-sale presentation, interior cleans and handover-ready vehicle care."
++      services={["Pre-sale detail", "Interior clean", "Paint protection", "Handover prep"]}
++    />
++  );
++}
+diff --git a/src/app/mechanics/page.tsx b/src/app/mechanics/page.tsx
+new file mode 100644
+index 00000000..2331e9c3
+--- /dev/null
++++ b/src/app/mechanics/page.tsx
+@@ -0,0 +1,19 @@
++import type { Metadata } from "next";
++import ServiceLandingPage from "@/components/ServiceLandingPage";
++
++export const metadata: Metadata = {
++  title: "Mechanics Near You | Drivaroo",
++  description:
++    "Connect with mechanic partners for inspections, servicing and buyer checks through Drivaroo.",
++};
++
++export default function MechanicsPage() {
++  return (
++    <ServiceLandingPage
++      eyebrow="Mechanics"
++      title="Mechanic support for inspections and servicing."
++      description="Help buyers organise inspections and help owners keep vehicles maintained with mechanic partner workflows."
++      services={["Pre-purchase checks", "General servicing", "Diagnostics", "Repair quotes"]}
++    />
++  );
++}
+diff --git a/src/app/roadworthy/page.tsx b/src/app/roadworthy/page.tsx
+new file mode 100644
+index 00000000..0ff0d9ac
+--- /dev/null
++++ b/src/app/roadworthy/page.tsx
+@@ -0,0 +1,19 @@
++import type { Metadata } from "next";
++import ServiceLandingPage from "@/components/ServiceLandingPage";
++
++export const metadata: Metadata = {
++  title: "Roadworthy Support | Drivaroo",
++  description:
++    "Find roadworthy and inspection support for vehicle sales through Drivaroo.",
++};
++
++export default function RoadworthyPage() {
++  return (
++    <ServiceLandingPage
++      eyebrow="Roadworthy"
++      title="Roadworthy support for smoother vehicle sales."
++      description="Drivaroo is preparing roadworthy and inspection partner workflows to help sellers and buyers move with more confidence."
++      services={["Roadworthy checks", "Inspection bookings", "Seller prep", "Buyer confidence"]}
++    />
++  );
++}
+diff --git a/src/app/service/page.tsx b/src/app/service/page.tsx
+new file mode 100644
+index 00000000..d07ecbd8
+--- /dev/null
++++ b/src/app/service/page.tsx
+@@ -0,0 +1,19 @@
++import type { Metadata } from "next";
++import ServiceLandingPage from "@/components/ServiceLandingPage";
++
++export const metadata: Metadata = {
++  title: "Vehicle Service Marketplace | Drivaroo",
++  description:
++    "Find vehicle service partners for mechanics, detailing, tyres and roadworthy support through Drivaroo.",
++};
++
++export default function ServicePage() {
++  return (
++    <ServiceLandingPage
++      eyebrow="Vehicle services"
++      title="Find support after you find the car."
++      description="Drivaroo is preparing a service marketplace to help buyers and sellers connect with vehicle support providers after the enquiry."
++      services={["Mechanics", "Detailers", "Tyres", "Roadworthy"]}
++    />
++  );
++}
+diff --git a/src/app/sitemap.ts b/src/app/sitemap.ts
+index 415168b9..916dc885 100644
+--- a/src/app/sitemap.ts
++++ b/src/app/sitemap.ts
+@@ -44,6 +44,8 @@ const vehicleSlugs = [
+   "2023-tesla-model-3-long-range",
+ ];
+ 
++const comparisonSlugs = ["hilux-vs-ranger", "cx-5-vs-rav4"];
++
+ export default function sitemap(): MetadataRoute.Sitemap {
+   const baseUrl = getSiteOrigin();
+   const staticRoutes = [
+@@ -55,6 +57,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
+     "/cars?condition=new",
+     "/cars?condition=demo",
+     "/sell",
++    "/service",
++    "/mechanics",
++    "/detailers",
++    "/tyres",
++    "/roadworthy",
+     "/dealers",
+     "/dealers/marketing",
+     "/contact",
+@@ -124,5 +131,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
+       changeFrequency: "weekly" as const,
+       priority: 0.74,
+     })),
++    ...comparisonSlugs.map((slug) => ({
++      url: `${baseUrl}/compare/${slug}`,
++      lastModified: new Date(),
++      changeFrequency: "weekly" as const,
++      priority: 0.72,
++    })),
+   ];
+ }
+diff --git a/src/app/tyres/page.tsx b/src/app/tyres/page.tsx
+new file mode 100644
+index 00000000..221b190c
+--- /dev/null
++++ b/src/app/tyres/page.tsx
+@@ -0,0 +1,19 @@
++import type { Metadata } from "next";
++import ServiceLandingPage from "@/components/ServiceLandingPage";
++
++export const metadata: Metadata = {
++  title: "Tyres and Wheel Support | Drivaroo",
++  description:
++    "Find tyre partners for replacements, checks and wheel support through Drivaroo.",
++};
++
++export default function TyresPage() {
++  return (
++    <ServiceLandingPage
++      eyebrow="Tyres"
++      title="Tyre support before and after purchase."
++      description="Help buyers and owners compare tyre replacement, inspection and wheel support options through Drivaroo partners."
++      services={["Tyre replacement", "Wheel checks", "Alignment", "Puncture support"]}
++    />
++  );
++}
+diff --git a/src/app/value-my-car/page.tsx b/src/app/value-my-car/page.tsx
+index e7dea517..ffc27864 100644
+--- a/src/app/value-my-car/page.tsx
++++ b/src/app/value-my-car/page.tsx
+@@ -44,6 +44,13 @@ const valuationExamples = [
+   },
+ ];
+ 
++const tradeOfferSteps = [
++  "Value My Car",
++  "Request Trade Offers",
++  "Dealers Bid",
++  "Seller Chooses Offer",
++];
++
+ export default function ValueMyCarPage() {
+   const [make, setMake] = useState("");
+   const [model, setModel] = useState("");
+@@ -250,7 +257,7 @@ export default function ValueMyCarPage() {
+                       href="/contact"
+                       className="inline-flex justify-center rounded-xl border border-white/15 px-5 py-3 text-sm font-bold text-white hover:border-[#d4af37]/50 hover:text-[#d4af37]"
+                     >
+-                      Get Dealer Offers
++                      Request Trade Offers
+                     </Link>
+                   </div>
+                 </div>
+@@ -262,6 +269,32 @@ export default function ValueMyCarPage() {
+             )}
+           </section>
+         </div>
++
++        <section className="mt-8 rounded-[2rem] border border-white/10 bg-[#15161a] p-6 shadow-xl shadow-black/20">
++          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#d4af37]">
++            Trade offer flow
++          </p>
++          <h2 className="mt-2 text-2xl font-black text-white">
++            From valuation to dealer offers
++          </h2>
++          <p className="mt-3 max-w-3xl text-sm leading-6 text-white/55">
++            Use the guide price as a starting point, then request trade offers
++            from dealers when the bidding workflow is available.
++          </p>
++          <div className="mt-6 grid gap-3 md:grid-cols-4">
++            {tradeOfferSteps.map((step, index) => (
++              <div
++                key={step}
++                className="rounded-2xl border border-white/10 bg-black/25 p-4 text-center"
++              >
++                <p className="mx-auto mb-3 flex h-8 w-8 items-center justify-center rounded-full bg-[#d4af37] text-sm font-black text-black">
++                  {index + 1}
++                </p>
++                <p className="text-sm font-bold text-white">{step}</p>
++              </div>
++            ))}
++          </div>
++        </section>
+       </div>
+     </main>
+   );
+diff --git a/src/components/HomeSearch.tsx b/src/components/HomeSearch.tsx
+index a10574eb..09b57556 100644
+--- a/src/components/HomeSearch.tsx
++++ b/src/components/HomeSearch.tsx
+@@ -16,10 +16,14 @@ import type { VehicleConditionFilter } from "@/lib/vehicle-condition";
+ 
+ const popularSearches = [
+   "Toyota Hilux",
++  "Ford Ranger",
++  "Isuzu D-Max",
+   "Mazda CX-5",
+   "Toyota RAV4",
+   "Hyundai Tucson",
+   "Kia Sportage",
++  "Hilux vs Ranger",
++  "CX-5 vs RAV4",
+ ];
+ 
+ const selectClassName =
+diff --git a/src/components/ServiceLandingPage.tsx b/src/components/ServiceLandingPage.tsx
+new file mode 100644
+index 00000000..57d50d2e
+--- /dev/null
++++ b/src/components/ServiceLandingPage.tsx
+@@ -0,0 +1,62 @@
++import Link from "next/link";
++
++type ServiceLandingPageProps = {
++  description: string;
++  eyebrow: string;
++  title: string;
++  services: string[];
++};
++
++export default function ServiceLandingPage({
++  description,
++  eyebrow,
++  services,
++  title,
++}: ServiceLandingPageProps) {
++  return (
++    <main className="min-h-screen bg-[#0d0d0f] px-6 py-16 text-white">
++      <div className="mx-auto max-w-6xl">
++        <section className="rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_85%_20%,rgba(212,175,55,0.18),transparent_30rem),#15161a] p-8 shadow-2xl shadow-black/30">
++          <p className="mb-3 text-sm font-semibold uppercase tracking-[0.3em] text-[#d4af37]">
++            {eyebrow}
++          </p>
++          <h1 className="max-w-3xl text-4xl font-black text-white sm:text-5xl">
++            {title}
++          </h1>
++          <p className="mt-5 max-w-3xl leading-8 text-white/60">
++            {description}
++          </p>
++          <div className="mt-8 flex flex-wrap gap-3">
++            <Link
++              href="/contact"
++              className="rounded-xl bg-[#d4af37] px-5 py-3 text-sm font-bold text-black hover:bg-[#e6c65c]"
++            >
++              Register interest
++            </Link>
++            <Link
++              href="/cars"
++              className="rounded-xl border border-white/15 px-5 py-3 text-sm font-bold text-white hover:border-[#d4af37]/50 hover:text-[#d4af37]"
++            >
++              Browse cars
++            </Link>
++          </div>
++        </section>
++
++        <section className="mt-8 grid gap-5 md:grid-cols-2 lg:grid-cols-4">
++          {services.map((service) => (
++            <article
++              key={service}
++              className="rounded-[1.5rem] border border-white/10 bg-[#15161a] p-6 shadow-xl shadow-black/20"
++            >
++              <h2 className="text-lg font-bold text-[#f4d77c]">{service}</h2>
++              <p className="mt-3 text-sm leading-6 text-white/55">
++                Partner availability, pricing and booking support are coming to
++                Drivaroo service tools.
++              </p>
++            </article>
++          ))}
++        </section>
++      </div>
++    </main>
++  );
++}
+diff --git a/src/components/SiteFooter.tsx b/src/components/SiteFooter.tsx
+index bcbdcf3f..de00dc23 100644
+--- a/src/components/SiteFooter.tsx
++++ b/src/components/SiteFooter.tsx
+@@ -34,6 +34,9 @@ export default function SiteFooter() {
+             <Link href="/dealers" className="rounded-full px-3 py-1.5 hover:bg-white/5 hover:text-[#d4af37]">
+               Dealers
+             </Link>
++            <Link href="/service" className="rounded-full px-3 py-1.5 hover:bg-white/5 hover:text-[#d4af37]">
++              Service
++            </Link>
+             <Link href="/contact" className="rounded-full px-3 py-1.5 hover:bg-white/5 hover:text-[#d4af37]">
+               Contact
+             </Link>
+diff --git a/src/lib/featured-listing.ts b/src/lib/featured-listing.ts
+index 266fffa1..dbf4b1da 100644
+--- a/src/lib/featured-listing.ts
++++ b/src/lib/featured-listing.ts
+@@ -24,3 +24,25 @@ export function isFeaturedActive(vehicle: {
+ }
+ 
+ export const VEHICLE_HISTORY_REPORT_AMOUNT_CENTS = 1900;
++export const VEHICLE_HISTORY_REPORT_TIERS = {
++  basic: {
++    amountCents: 995,
++    label: "Basic",
++  },
++  plus: {
++    amountCents: 1495,
++    label: "Plus",
++  },
++  premium: {
++    amountCents: 1995,
++    label: "Premium",
++  },
++} as const;
++
++export type VehicleHistoryReportTier = keyof typeof VEHICLE_HISTORY_REPORT_TIERS;
++
++export function getVehicleHistoryReportTier(
++  value: string | null | undefined,
++): VehicleHistoryReportTier {
++  return value === "basic" || value === "plus" ? value : "premium";
++}
+diff --git a/src/lib/sample-vehicles.ts b/src/lib/sample-vehicles.ts
+index 37377634..9dad9900 100644
+--- a/src/lib/sample-vehicles.ts
++++ b/src/lib/sample-vehicles.ts
+@@ -105,6 +105,38 @@ export const sampleVehicles: Vehicle[] = [
+     created_at: "2026-05-17T00:00:00.000Z",
+     is_sample: true,
+   },
++  {
++    id: "sample-isuzu-d-max",
++    user_id: null,
++    title: "2021 Isuzu D-Max LS-U — Workhorse preview",
++    vin: null,
++    registration_plate: "DRIVAROO",
++    registration_state: "QLD",
++    description:
++      "A tough Isuzu D-Max sample listing for buyers comparing popular dual-cab utes. This preview shows how workhorse listings can be presented with clear pricing, kilometres and equipment.",
++    make: "Isuzu",
++    model: "D-Max",
++    badge: "LS-U",
++    colour: "White",
++    keywords: "sample,ute,4x4,isuzu d-max,dmax",
++    search_keywords: ["Isuzu D-Max", "D-Max", "DMax", "ute", "4x4"],
++    standard_features: "Tow bar, canopy-ready tub, reverse camera, 4x4",
++    year: 2021,
++    price: 42990,
++    price_type: "drive_away",
++    kilometres: 70500,
++    transmission: "Automatic",
++    fuel_type: "Diesel",
++    body_type: "Ute",
++    suburb: "Brisbane",
++    state: "QLD",
++    image_url: getStockImageForBodyType("Ute", "Diesel"),
++    featured: false,
++    featured_until: null,
++    created_at: "2026-05-16T12:00:00.000Z",
++    listing_condition: "used",
++    is_sample: true,
++  },
+   {
+     id: "sample-mazda-cx-5",
+     user_id: null,

@@ -1,0 +1,144 @@
+diff --git a/enterprise/integrations/bitbucket_data_center/bitbucket_dc_manager.py b/enterprise/integrations/bitbucket_data_center/bitbucket_dc_manager.py
+index cbd7ed87b617..c23c91a8a439 100644
+--- a/enterprise/integrations/bitbucket_data_center/bitbucket_dc_manager.py
++++ b/enterprise/integrations/bitbucket_data_center/bitbucket_dc_manager.py
+@@ -22,6 +22,7 @@
+ from integrations.v1_utils import get_saas_user_auth
+ from jinja2 import Environment, FileSystemLoader
+ from pydantic import SecretStr
++from server.auth.constants import BITBUCKET_DATA_CENTER_BOT_TOKEN
+ from server.auth.token_manager import TokenManager
+ from storage.bitbucket_dc_webhook_store import BitbucketDCWebhookStore
+ 
+@@ -93,6 +94,35 @@ async def _commenter_has_write_access(
+             )
+             return False
+ 
++    def _posting_service(self, fallback_external_auth_id: str):
++        """Build the Bitbucket DC service used to POST comments/reactions.
++
++        When a bot service-account token is configured
++        (``BITBUCKET_DATA_CENTER_BOT_TOKEN``), every outbound comment and
++        reaction is posted as that bot -- mirroring the GitHub App's
++        ``openhands[bot]`` identity -- instead of as the @-mentioning user or
++        the webhook installer. Otherwise we fall back to the per-user/installer
++        OAuth token (``fallback_external_auth_id``).
++
++        This affects only who *posts*. The resolver job itself always runs with
++        the invoking user's own token (see ``start_job``); the bot token is
++        never used to create conversations or touch the repo.
++        """
++        from integrations.bitbucket_data_center.bitbucket_dc_service import (
++            SaaSBitbucketDCService,
++        )
++
++        if BITBUCKET_DATA_CENTER_BOT_TOKEN:
++            # BBDC HTTP access tokens authenticate via Bearer. The service's
++            # ``token=`` constructor arg rewrites a colon-less token to
++            # ``x-token-auth:<token>`` (a Bitbucket *Cloud* convention) and
++            # sends it as HTTP Basic, which Data Center rejects with 401. Set
++            # the raw token directly so ``_get_headers`` uses Bearer.
++            service = SaaSBitbucketDCService()
++            service.token = SecretStr(BITBUCKET_DATA_CENTER_BOT_TOKEN)
++            return service
++        return SaaSBitbucketDCService(external_auth_id=fallback_external_auth_id)
++
+     async def _add_eyes_reaction(
+         self,
+         message: Message,
+@@ -121,12 +151,8 @@ async def _add_eyes_reaction(
+         if comment_id is None or pr_id is None:
+             return
+ 
+-        from integrations.bitbucket_data_center.bitbucket_dc_service import (
+-            SaaSBitbucketDCService,
+-        )
+-
+         try:
+-            service = SaaSBitbucketDCService(external_auth_id=reacting_user_id)
++            service = self._posting_service(reacting_user_id)
+             await service.add_comment_reaction(
+                 owner=project_key,
+                 repo_slug=repo_slug,
+@@ -287,12 +313,8 @@ def is_job_requested(self, message: Message) -> bool:
+     async def send_message(
+         self, message: str, bitbucket_view: ResolverViewInterface
+     ) -> None:
+-        from integrations.bitbucket_data_center.bitbucket_dc_service import (
+-            SaaSBitbucketDCService,
+-        )
+-
+-        bitbucket_service = SaaSBitbucketDCService(
+-            external_auth_id=bitbucket_view.user_info.keycloak_user_id
++        bitbucket_service = self._posting_service(
++            bitbucket_view.user_info.keycloak_user_id
+         )
+ 
+         if isinstance(bitbucket_view, BitbucketDCInlinePRComment):
+diff --git a/enterprise/server/auth/constants.py b/enterprise/server/auth/constants.py
+index 3cbd8fc5249c..6cbbc54412e4 100644
+--- a/enterprise/server/auth/constants.py
++++ b/enterprise/server/auth/constants.py
+@@ -49,6 +49,15 @@
+     'BITBUCKET_DATA_CENTER_CLIENT_SECRET', ''
+ ).strip()
+ BITBUCKET_DATA_CENTER_HOST = os.getenv('BITBUCKET_DATA_CENTER_HOST', '').strip()
++# Optional HTTP access token for a dedicated bot service account. When set,
++# OpenHands posts all Bitbucket Data Center comments/reactions as this bot
++# (mirroring the GitHub App's openhands[bot] identity) instead of as the
++# per-repo webhook installer or the @-mentioning user. Only the posting
++# identity changes -- the resolver job still runs with the invoking user's
++# own token.
++BITBUCKET_DATA_CENTER_BOT_TOKEN = os.getenv(
++    'BITBUCKET_DATA_CENTER_BOT_TOKEN', ''
++).strip()
+ BITBUCKET_DATA_CENTER_TOKEN_URL = (
+     f'https://{BITBUCKET_DATA_CENTER_HOST}/rest/oauth2/latest/token'
+ )
+diff --git a/enterprise/tests/unit/integrations/bitbucket_data_center/test_bitbucket_dc_manager.py b/enterprise/tests/unit/integrations/bitbucket_data_center/test_bitbucket_dc_manager.py
+index eedfcd325ca2..eb20884249e3 100644
+--- a/enterprise/tests/unit/integrations/bitbucket_data_center/test_bitbucket_dc_manager.py
++++ b/enterprise/tests/unit/integrations/bitbucket_data_center/test_bitbucket_dc_manager.py
+@@ -300,3 +300,42 @@ async def test_send_message_uses_view_user_info_keycloak_id():
+         await manager.send_message('Done', _pr_comment_view())
+ 
+     service_cls.assert_called_once_with(external_auth_id='kc-alice')
++
++
++def test_posting_service_uses_bot_token_when_set():
++    """With BITBUCKET_DATA_CENTER_BOT_TOKEN set, the posting service auths as
++    the bot (token=...) and does NOT fall back to the per-user token.
++    """
++    manager = BitbucketDCManager(AsyncMock())
++
++    with patch(
++        'integrations.bitbucket_data_center.bitbucket_dc_manager.BITBUCKET_DATA_CENTER_BOT_TOKEN',
++        'bot-pat-123',
++    ), patch(
++        'integrations.bitbucket_data_center.bitbucket_dc_service.SaaSBitbucketDCService'
++    ) as service_cls:
++        svc = manager._posting_service('kc-alice')
++
++    # Built with no per-user auth; the raw bot token is set directly so the
++    # service sends Bearer. NOT via external_auth_id, and NOT via the token=
++    # constructor arg (which would downgrade it to x-token-auth HTTP Basic,
++    # rejected by Bitbucket Data Center).
++    assert 'external_auth_id' not in service_cls.call_args.kwargs
++    assert svc.token.get_secret_value() == 'bot-pat-123'
++
++
++def test_posting_service_falls_back_to_user_token_when_bot_unset():
++    """Without a bot token, the posting service uses the per-user/installer
++    OAuth token (current behavior).
++    """
++    manager = BitbucketDCManager(AsyncMock())
++
++    with patch(
++        'integrations.bitbucket_data_center.bitbucket_dc_manager.BITBUCKET_DATA_CENTER_BOT_TOKEN',
++        '',
++    ), patch(
++        'integrations.bitbucket_data_center.bitbucket_dc_service.SaaSBitbucketDCService'
++    ) as service_cls:
++        manager._posting_service('kc-alice')
++
++    service_cls.assert_called_once_with(external_auth_id='kc-alice')

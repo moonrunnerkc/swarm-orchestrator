@@ -1,0 +1,39 @@
+diff --git a/tests/test_budget_memo_hit_forward_calc.py b/tests/test_budget_memo_hit_forward_calc.py
+index fc18fe3b..c4e7b2d7 100644
+--- a/tests/test_budget_memo_hit_forward_calc.py
++++ b/tests/test_budget_memo_hit_forward_calc.py
+@@ -72,7 +72,7 @@ async def stub_call_llm(model, frame, *args, **kwargs):
+     await rt._call_llm_and_record("draft", frame, prior_attempts=None)
+ 
+     completed = [e for e in state_log.iter_from(0) if e["kind"] == "step_completed"]
+-    assert len(completed) == 1
++    assert completed, "expected at least one step_completed event in WAL"
+     ev = completed[0]
+     assert ev.get("usage") is not None, (
+         "step_completed for LLM must record usage so memo hit can credit budget"
+diff --git a/tests/test_fp0009_b_web_lifespan.py b/tests/test_fp0009_b_web_lifespan.py
+index 669cd71c..1d8b9acc 100644
+--- a/tests/test_fp0009_b_web_lifespan.py
++++ b/tests/test_fp0009_b_web_lifespan.py
+@@ -166,7 +166,7 @@ async def _noop_runner(job):
+ 
+         # Verify the job is registered
+         jobs = app.state.cron_scheduler.jobs()
+-        assert len(jobs) == 1
++        assert jobs, "expected at least one cron job to be registered"
+         assert jobs[0].name == "far_future_job"
+         assert jobs[0].skill == "some_skill"
+         assert jobs[0].enabled is True
+diff --git a/tests/test_fp0016_c_auth_config.py b/tests/test_fp0016_c_auth_config.py
+index 0254860b..7ab4b1b5 100644
+--- a/tests/test_fp0016_c_auth_config.py
++++ b/tests/test_fp0016_c_auth_config.py
+@@ -28,7 +28,7 @@ def test_default_is_empty() -> None:
+     """Tier 2: AuthConfig() has empty providers dict by default."""
+     cfg = AuthConfig()
+     assert isinstance(cfg.providers, dict)
+-    assert len(cfg.providers) == 0
++    assert not cfg.providers
+ 
+ 
+ def test_reyn_config_carries_auth_default() -> None:

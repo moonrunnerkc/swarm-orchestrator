@@ -1,0 +1,97 @@
+diff --git a/src/components/auth/AuthGuard.tsx b/src/components/auth/AuthGuard.tsx
+index 321b944..f575010 100644
+--- a/src/components/auth/AuthGuard.tsx
++++ b/src/components/auth/AuthGuard.tsx
+@@ -35,8 +35,8 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
+     // If convexUser is undefined, it's still loading
+     if (convexUser === undefined) return;
+ 
+-    // Allow access to the agreement page to avoid redirect loops
+-    if (pathname === "/agreement") return;
++    // Allow access to onboarding and agreement pages to avoid redirect loops
++    if (pathname === "/agreement" || pathname === "/onboarding") return;
+     
+     // Allow access to sign out or other auth related pages if needed
+     if (
+diff --git a/src/components/auth/OnboardingPage.tsx b/src/components/auth/OnboardingPage.tsx
+index 7e33197..8969447 100644
+--- a/src/components/auth/OnboardingPage.tsx
++++ b/src/components/auth/OnboardingPage.tsx
+@@ -2,7 +2,7 @@
+ 
+ import React, { useState } from "react";
+ import { useUser } from "@clerk/nextjs";
+-import { useMutation } from "convex/react";
++import { useMutation, useQuery } from "convex/react";
+ import { api } from "../../../convex/_generated/api";
+ import { motion } from "framer-motion";
+ import { toast } from "sonner";
+@@ -25,6 +25,7 @@ export function OnboardingPage() {
+   const router = useRouter();
+   const [hebrewName, setHebrewName] = useState("");
+   const [isLoading, setIsLoading] = useState(false);
++  const convexUser = useQuery(api.users.getUser);
+   
+   // Create a mutation in Convex to update the user
+   const updateProfile = useMutation(api.users.updateProfile);
+@@ -47,14 +48,22 @@ export function OnboardingPage() {
+           console.error("Error updating Clerk metadata:", clerkError);
+           toast.warning("Profile saved, but sync with authentication failed.");
+           // Still navigate since Convex update succeeded
+-          router.push("/");
++          if (convexUser && !convexUser.hasAgreedToTerms) {
++            router.push("/agreement");
++          } else {
++            router.push("/");
++          }
+           return;
+         }
+       }
+ 
+       toast.success("Onboarding completed successfully!");
+-      // 3. Redirect to real dashboard/home
+-      router.push("/");
++      // 3. Redirect to agreement if terms not yet accepted, otherwise home
++      if (convexUser && !convexUser.hasAgreedToTerms) {
++        router.push("/agreement");
++      } else {
++        router.push("/");
++      }
+     } catch (error) {
+       console.error("Error updating onboarding:", error);
+       toast.error("Failed to update onboarding. Please try again.");
+@@ -64,7 +73,11 @@ export function OnboardingPage() {
+   };
+ 
+   const handleSkip = () => {
+-    router.push("/");
++    if (convexUser && !convexUser.hasAgreedToTerms) {
++      router.push("/agreement");
++    } else {
++      router.push("/");
++    }
+   };
+ 
+   return (
+diff --git a/src/components/auth/SignUpPage.tsx b/src/components/auth/SignUpPage.tsx
+index 027cae8..3ceb92d 100644
+--- a/src/components/auth/SignUpPage.tsx
++++ b/src/components/auth/SignUpPage.tsx
+@@ -68,7 +68,7 @@ export function SignUpPage() {
+         }
+         await clerk.setActive({ session: newSignUp.createdSessionId });
+         toast.success("Account created successfully!");
+-        router.push("/");
++        router.push("/onboarding");
+       } else if (
+         newSignUp.unverifiedFields?.includes("email_address") ||
+         (newSignUp.status as string | null) === "needs_email_verification"
+@@ -126,7 +126,7 @@ export function SignUpPage() {
+ 
+       await clerk.setActive({ session: completeSignUp.createdSessionId });
+       toast.success("Account created successfully!");
+-      router.push("/");
++      router.push("/onboarding");
+     } catch (err: unknown) {
+       const message =
+         err &&

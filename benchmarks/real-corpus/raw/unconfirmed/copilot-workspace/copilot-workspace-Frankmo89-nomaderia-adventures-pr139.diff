@@ -1,0 +1,77 @@
+diff --git a/docs/pending-tasks.md b/docs/pending-tasks.md
+index 570658d..7304205 100644
+--- a/docs/pending-tasks.md
++++ b/docs/pending-tasks.md
+@@ -29,6 +29,7 @@
+ - [ ] Descargar WhatsApp Business y configurar el número de Nomaderia
+ - [ ] Reemplazar `VITE_WHATSAPP_NUMBER` en el archivo `.env` con el número real
+ - [ ] Subir la foto/video estrella a la carpeta `/public` y actualizar el `src` en `HeroSection.tsx`
++- [ ] Proveer iconos PWA dedicados en `/public` con tamaños `192x192` y `512x512` para reemplazar el fallback actual del manifest
+ - [ ] Entrar al panel de admin y subir imágenes de portada (hero images) a los destinos que falten
+ - [ ] Guardar las 4 Respuestas Rápidas en la configuración de WhatsApp Business
+ - [ ] Agregar hero images a destinos sin imagen
+@@ -82,6 +83,13 @@ https://nomaderia.com/
+ 
+ ## Changelog (completados)
+ 
++### ✅ PWA mínima instalable — manifest + meta (Mayo 2026)
++- [x] Creado `public/manifest.webmanifest` con nombre, descripción, colores base y `display: "standalone"` para habilitar "agregar a inicio" sin service worker ni cache offline
++- [x] `index.html` ahora usa assets locales de `/public` para icono/manifest y agrega meta tags mínimas de installability (`theme-color`, `application-name`, `mobile-web-app-capable`, `apple-mobile-web-app-*`)
++- [x] Reutilizados assets existentes en `/public`: `favicon.ico` (256x256) y `placeholder.svg`; no se generaron nuevos binarios PNG
++- [x] Verificaciones ejecutadas: `node node_modules/typescript/bin/tsc --noEmit` ✅, `npm run test` ✅ y `npm run build` ✅
++- [x] Nota: `npm run lint` sigue fallando por issues preexistentes no relacionados en `src/components/ui/*`, `DidYouKnowSection.tsx` y `AdminGallery.tsx`
++
+ ### ✅ Componente PermitScarcity — escasez de permisos (Mayo 2026)
+ - [x] Creado `src/components/PermitScarcity.tsx` con mapa interno de datos honestos (NPS/Recreation.gov) para parques con sistema de permisos/lotería
+ - [x] Soporta `yosemite-valley` y `gran-canon`; retorna `null` para destinos sin sistema de permisos
+diff --git a/index.html b/index.html
+index 8bd170c..351cc94 100644
+--- a/index.html
++++ b/index.html
+@@ -2,8 +2,16 @@
+ <html lang="es">
+   <head>
+     <meta charset="UTF-8" />
+-    <link rel="icon" href="https://emojicdn.elk.sh/%F0%9F%8F%94%EF%B8%8F" type="image/png" sizes="32x32" />
++    <link rel="icon" href="/favicon.ico" sizes="256x256" />
++    <link rel="icon" href="/placeholder.svg" type="image/svg+xml" />
++    <link rel="manifest" href="/manifest.webmanifest" />
+     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
++    <meta name="application-name" content="Nomaderia" />
++    <meta name="theme-color" content="#D97706" />
++    <meta name="mobile-web-app-capable" content="yes" />
++    <meta name="apple-mobile-web-app-capable" content="yes" />
++    <meta name="apple-mobile-web-app-title" content="Nomaderia" />
++    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+     <title>Nomadería - Aventuras y Senderismo</title>
+     <meta name="description" content="Descubre destinos de aventura, itinerarios personalizados y guías de senderismo para explorar Parques Nacionales. Planifica tu próxima aventura con Nomadería." />
+     <meta name="author" content="Nomadería" />
+diff --git a/public/manifest.webmanifest b/public/manifest.webmanifest
+new file mode 100644
+index 0000000..2a7c61c
+--- /dev/null
++++ b/public/manifest.webmanifest
+@@ -0,0 +1,23 @@
++{
++  "name": "Nomaderia Adventures",
++  "short_name": "Nomaderia",
++  "description": "Tu concierge de aventuras en español para parques nacionales.",
++  "start_url": "/",
++  "display": "standalone",
++  "background_color": "#FAFAFA",
++  "theme_color": "#D97706",
++  "icons": [
++    {
++      "src": "/favicon.ico",
++      "sizes": "256x256",
++      "type": "image/x-icon",
++      "purpose": "any"
++    },
++    {
++      "src": "/placeholder.svg",
++      "sizes": "any",
++      "type": "image/svg+xml",
++      "purpose": "any"
++    }
++  ]
++}

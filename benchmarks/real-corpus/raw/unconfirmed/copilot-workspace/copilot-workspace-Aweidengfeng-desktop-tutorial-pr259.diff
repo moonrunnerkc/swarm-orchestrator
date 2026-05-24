@@ -1,0 +1,605 @@
+diff --git a/.env.example b/.env.example
+index fa97183..f9c6c85 100644
+--- a/.env.example
++++ b/.env.example
+@@ -86,6 +86,11 @@ STRIPE_PUBLISHABLE_KEY=
+ STRIPE_WEBHOOK_SECRET=
+ # Stripe Connect（向导提现）：复用 STRIPE_SECRET_KEY，无需单独配置
+ 
++# ── 保险公司 Webhook 验签密钥（接入保险公司时必填）──────────────
++# 生成方式：openssl rand -hex 32
++# 保险公司发来的每个 Webhook 请求头携带 X-Insurance-Signature: HMAC-SHA256(body, 此密钥)
++INSURANCE_WEBHOOK_SECRET=
++
+ # ── 可选：Google / Apple 登录 ──────────────────────────────────
+ # Google OAuth 客户端 ID（在 Google Cloud Console 创建）
+ GOOGLE_CLIENT_ID=
+diff --git a/backend/.env.example b/backend/.env.example
+index 35e49c0..ea29bae 100644
+--- a/backend/.env.example
++++ b/backend/.env.example
+@@ -95,6 +95,10 @@ STRIPE_PUBLISHABLE_KEY=
+ # Webhook 签名密钥：在 Stripe Dashboard → Webhooks → 端点 → 签名密钥中获取
+ # 接收事件路径：POST /api/payment/stripe-webhook
+ STRIPE_WEBHOOK_SECRET=
++# ── 保险公司 Webhook 验签密钥（接入保险公司时必填）──────────────
++# 生成方式：openssl rand -hex 32
++# 保险公司发来的每个 Webhook 请求头携带 X-Insurance-Signature: HMAC-SHA256(body, 此密钥)
++INSURANCE_WEBHOOK_SECRET=
+ # Stripe 优雅降级开关
+ # 设为 true 时跳过 Stripe SDK 初始化，所有 /api/payment/* 返回 503
+ # 用于 Stripe Live 密钥尚未就绪时临时让生产恢复运行
+diff --git a/backend/app.js b/backend/app.js
+index cc1b051..aad64b0 100644
+--- a/backend/app.js
++++ b/backend/app.js
+@@ -185,7 +185,11 @@ app.use((req, res, next) => {
+ });
+ // Stripe webhook 需要 raw body（必须在 express.json() 之前注册）
+ app.use('/api/payment/stripe-webhook', express.raw({ type: 'application/json' }));
+-app.use(express.json());
++app.use(express.json({
++  verify: (req, _res, buf) => {
++    req.rawBody = buf.toString('utf8');
++  },
++}));
+ 
+ app.use(pinoHttp({
+   logger,
+@@ -636,6 +640,14 @@ async function runStartupMigrations(prisma) {
+       await prisma.$executeRawUnsafe(`ALTER TABLE "posts" ADD COLUMN IF NOT EXISTS "video_url" TEXT`);
+       await prisma.$executeRawUnsafe(`ALTER TABLE "posts" ADD COLUMN IF NOT EXISTS "tags" TEXT`);
+       await prisma.$executeRawUnsafe(`ALTER TABLE "posts" ADD COLUMN IF NOT EXISTS "emojis" TEXT`);
++      await prisma.$executeRawUnsafe(`ALTER TABLE "insurance_inquiries" ADD COLUMN IF NOT EXISTS "policy_no" TEXT`);
++      await prisma.$executeRawUnsafe(`ALTER TABLE "insurance_inquiries" ADD COLUMN IF NOT EXISTS "status" TEXT DEFAULT 'pending'`);
++      await prisma.$executeRawUnsafe(`ALTER TABLE "insurance_inquiries" ADD COLUMN IF NOT EXISTS "issued_at" TIMESTAMPTZ`);
++      await prisma.$executeRawUnsafe(`ALTER TABLE "insurance_inquiries" ADD COLUMN IF NOT EXISTS "policy_pdf_url" TEXT`);
++      await prisma.$executeRawUnsafe(`ALTER TABLE "insurance_inquiries" ADD COLUMN IF NOT EXISTS "provider_ref" TEXT`);
++      await prisma.$executeRawUnsafe(`ALTER TABLE "insurance_inquiries" ADD COLUMN IF NOT EXISTS "claim_status" TEXT`);
++      await prisma.$executeRawUnsafe(`ALTER TABLE "insurance_inquiries" ADD COLUMN IF NOT EXISTS "claim_updated_at" TIMESTAMPTZ`);
++      await prisma.$executeRawUnsafe(`ALTER TABLE "insurance_inquiries" ADD COLUMN IF NOT EXISTS "claim_note" TEXT`);
+     } else {
+       // SQLite does not support IF NOT EXISTS on ALTER TABLE; use individual try/catch
+       for (const sql of [
+@@ -644,6 +656,14 @@ async function runStartupMigrations(prisma) {
+         'ALTER TABLE "posts" ADD COLUMN "video_url" TEXT',
+         'ALTER TABLE "posts" ADD COLUMN "tags" TEXT',
+         'ALTER TABLE "posts" ADD COLUMN "emojis" TEXT',
++        'ALTER TABLE "insurance_inquiries" ADD COLUMN "policy_no" TEXT',
++        'ALTER TABLE "insurance_inquiries" ADD COLUMN "status" TEXT DEFAULT \'pending\'',
++        'ALTER TABLE "insurance_inquiries" ADD COLUMN "issued_at" TEXT',
++        'ALTER TABLE "insurance_inquiries" ADD COLUMN "policy_pdf_url" TEXT',
++        'ALTER TABLE "insurance_inquiries" ADD COLUMN "provider_ref" TEXT',
++        'ALTER TABLE "insurance_inquiries" ADD COLUMN "claim_status" TEXT',
++        'ALTER TABLE "insurance_inquiries" ADD COLUMN "claim_updated_at" TEXT',
++        'ALTER TABLE "insurance_inquiries" ADD COLUMN "claim_note" TEXT',
+       ]) {
+         try { await prisma.$executeRawUnsafe(sql); } catch (err) {
+           // Ignore "duplicate column" errors; warn on anything unexpected
+@@ -660,9 +680,9 @@ async function runStartupMigrations(prisma) {
+ }
+ 
+ (async () => {
++  const prisma = require('./db/prisma');
+   // PostgreSQL 模式：在启动 HTTP 服务器之前等待 Prisma 连接就绪
+   if (process.env.DATABASE_PROVIDER === 'postgresql') {
+-    const prisma = require('./db/prisma');
+     try {
+       await prisma.$connect();
+       console.log('✅ Prisma 已连接到 PostgreSQL');
+@@ -670,8 +690,8 @@ async function runStartupMigrations(prisma) {
+       console.error('❌ Prisma 连接 PostgreSQL 失败，退出:', e.message);
+       process.exit(1);
+     }
+-    await runStartupMigrations(prisma);
+   }
++  await runStartupMigrations(prisma);
+ 
+   server.listen(PORT, '0.0.0.0', () => {
+     logger.info({ port: PORT, env: process.env.NODE_ENV }, `SummitLink API started, listening on port ${PORT}`);
+diff --git a/backend/db/database.js b/backend/db/database.js
+index 5fb9330..14e7769 100644
+--- a/backend/db/database.js
++++ b/backend/db/database.js
+@@ -610,7 +610,14 @@ CREATE TABLE IF NOT EXISTS insurance_inquiries (
+   phone TEXT NOT NULL,
+   peak_name TEXT,
+   departure_date TEXT,
++  policy_no TEXT,
+   status TEXT DEFAULT 'pending',
++  issued_at TEXT,
++  policy_pdf_url TEXT,
++  provider_ref TEXT,
++  claim_status TEXT,
++  claim_updated_at TEXT,
++  claim_note TEXT,
+   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+ );
+ 
+@@ -629,6 +636,34 @@ CREATE TABLE IF NOT EXISTS banners (
+ );
+ `);
+ 
++const existingInsuranceCols = db.pragma('table_info(insurance_inquiries)').map(c => c.name);
++if (!existingInsuranceCols.includes('policy_no')) {
++  db.exec('ALTER TABLE insurance_inquiries ADD COLUMN policy_no TEXT');
++}
++if (!existingInsuranceCols.includes('status')) {
++  db.exec('ALTER TABLE insurance_inquiries ADD COLUMN status TEXT DEFAULT \'pending\'');
++}
++if (!existingInsuranceCols.includes('issued_at')) {
++  db.exec('ALTER TABLE insurance_inquiries ADD COLUMN issued_at TEXT');
++}
++if (!existingInsuranceCols.includes('policy_pdf_url')) {
++  db.exec('ALTER TABLE insurance_inquiries ADD COLUMN policy_pdf_url TEXT');
++}
++if (!existingInsuranceCols.includes('provider_ref')) {
++  db.exec('ALTER TABLE insurance_inquiries ADD COLUMN provider_ref TEXT');
++}
++if (!existingInsuranceCols.includes('claim_status')) {
++  db.exec('ALTER TABLE insurance_inquiries ADD COLUMN claim_status TEXT');
++}
++if (!existingInsuranceCols.includes('claim_updated_at')) {
++  db.exec('ALTER TABLE insurance_inquiries ADD COLUMN claim_updated_at TEXT');
++}
++if (!existingInsuranceCols.includes('claim_note')) {
++  db.exec('ALTER TABLE insurance_inquiries ADD COLUMN claim_note TEXT');
++}
++db.exec('CREATE INDEX IF NOT EXISTS idx_insurance_inquiries_user_id ON insurance_inquiries(user_id)');
++db.exec('CREATE INDEX IF NOT EXISTS idx_insurance_inquiries_policy_no ON insurance_inquiries(policy_no)');
++
+ // 迁移：tracks 表补充字段（新架构需要）
+ const existingTrackCols = db.pragma('table_info(tracks)').map(c => c.name);
+ if (!existingTrackCols.includes('peak_name')) {
+diff --git a/backend/prisma/schema.prisma b/backend/prisma/schema.prisma
+index 1dec0bb..b709cb1 100644
+--- a/backend/prisma/schema.prisma
++++ b/backend/prisma/schema.prisma
+@@ -1147,12 +1147,21 @@ model InsuranceInquiry {
+   phone         String
+   peakName      String?  @map("peak_name")
+   departureDate String?  @map("departure_date")
++  policyNo      String?  @map("policy_no")
+   status        String   @default("pending")
++  issuedAt      DateTime? @map("issued_at")
++  policyPdfUrl  String?  @map("policy_pdf_url")
++  providerRef   String?  @map("provider_ref")
++  claimStatus   String?  @map("claim_status")
++  claimUpdatedAt DateTime? @map("claim_updated_at")
++  claimNote     String?  @map("claim_note")
+   createdAt     DateTime @default(now()) @map("created_at")
+ 
+   user User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+   plan InsurancePlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
+ 
++  @@index([userId])
++  @@index([policyNo])
+   @@map("insurance_inquiries")
+ }
+ 
+diff --git a/backend/routes/admin.js b/backend/routes/admin.js
+index b30fc97..b690093 100644
+--- a/backend/routes/admin.js
++++ b/backend/routes/admin.js
+@@ -48,6 +48,7 @@ const SAFE_TABLES = new Set([
+   'disputes',
+   'merchant_kyc',
+ ]);
++const INSURANCE_INQUIRY_STATUS_VALUES = new Set(['pending', 'issued', 'cancelled', 'claimed', 'claim_settled']);
+ const INVITE_CODE_OPTIONAL_COLUMNS = {
+   max_uses: true,
+   used_count: true,
+@@ -633,6 +634,41 @@ router.get('/orders', adminAuth, async (req, res) => {
+   }
+ });
+ 
++// GET /api/admin/insurance-inquiries
++router.get('/insurance-inquiries', adminAuth, async (req, res) => {
++  try {
++    const page = parsePositiveInt(req.query.page, 1);
++    const limit = Math.min(parsePositiveInt(req.query.limit, 20), 100);
++    const offset = (page - 1) * limit;
++    const status = String(req.query.status || '').trim();
++    if (status && !INSURANCE_INQUIRY_STATUS_VALUES.has(status)) {
++      return res.status(400).json({ error: '无效 status' });
++    }
++
++    const whereClause = status ? 'WHERE status = ?' : '';
++    const params = status ? [status, limit, offset] : [limit, offset];
++    const inquiries = await prisma.$queryRawUnsafe(`
++      SELECT
++        id, user_id, plan_name, name, phone, peak_name, departure_date,
++        status, policy_no, issued_at, provider_ref, claim_status, created_at
++      FROM insurance_inquiries
++      ${whereClause}
++      ORDER BY created_at DESC
++      LIMIT ? OFFSET ?
++    `, ...params);
++
++    const totalSql = status
++      ? 'SELECT COUNT(*) as c FROM insurance_inquiries WHERE status = ?'
++      : 'SELECT COUNT(*) as c FROM insurance_inquiries';
++    const totalRow = (await prisma.$queryRawUnsafe(totalSql, ...(status ? [status] : [])))[0];
++    const total = Number(totalRow?.c || 0);
++
++    res.json({ inquiries, total, page, limit });
++  } catch (e) {
++    res.status(500).json({ error: '服务器错误' });
++  }
++});
++
+ // GET /api/admin/clubs
+ router.get('/clubs', adminAuth, async (req, res) => {
+   try {
+diff --git a/backend/routes/insurance.js b/backend/routes/insurance.js
+index ceaf63b..d8b66a0 100644
+--- a/backend/routes/insurance.js
++++ b/backend/routes/insurance.js
+@@ -1,5 +1,6 @@
+ const express = require('express');
+ const router = express.Router();
++const crypto = require('crypto');
+ const prisma = require('../db/prisma');
+ const auth = require('../middleware/auth');
+ const rateLimit = require('express-rate-limit');
+@@ -7,6 +8,64 @@ const rateLimit = require('express-rate-limit');
+ const insuranceReadLimiter = rateLimit({ windowMs: 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false, message: { error: '请求过于频繁' } });
+ const insuranceWriteLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, message: { error: '操作过于频繁' } });
+ 
++const CLAIM_STATUS_VALUES = new Set(['filed', 'processing', 'approved', 'rejected', 'paid']);
++
++function signBody(bodyString, secret) {
++  return crypto.createHmac('sha256', secret).update(bodyString).digest('hex');
++}
++
++function getRequestBodyForSignature(req) {
++  if (typeof req.rawBody === 'string') return req.rawBody;
++  return JSON.stringify(req.body || {});
++}
++
++function isTimingSafeMatch(a, b) {
++  const left = Buffer.from(String(a || ''));
++  const right = Buffer.from(String(b || ''));
++  if (left.length !== right.length) return false;
++  return crypto.timingSafeEqual(left, right);
++}
++
++function isValidIsoDate(value) {
++  if (!value) return false;
++  const date = new Date(value);
++  return !Number.isNaN(date.getTime());
++}
++
++function mapClaimStatusToInquiryStatus(claimStatus, currentStatus) {
++  if (claimStatus === 'filed' || claimStatus === 'processing') return 'claimed';
++  if (claimStatus === 'approved' || claimStatus === 'paid') return 'claim_settled';
++  return currentStatus;
++}
++
++function verifyInsuranceWebhookSignature(req, res) {
++  const secret = (process.env.INSURANCE_WEBHOOK_SECRET || '').trim();
++  if (!secret) {
++    console.warn('[insurance webhook] INSURANCE_WEBHOOK_SECRET 未配置，已跳过验签（仅建议开发环境使用）');
++    return true;
++  }
++  const headerSignature = String(req.get('X-Insurance-Signature') || '').trim().replace(/^sha256=/i, '');
++  const expectedSignature = signBody(getRequestBodyForSignature(req), secret);
++  if (!headerSignature || !isTimingSafeMatch(headerSignature, expectedSignature)) {
++    console.warn('[insurance webhook] 签名验证失败');
++    res.status(401).json({ error: '签名验证失败' });
++    return false;
++  }
++  return true;
++}
++
++async function tryCreateInsuranceNotification(userId, content, relatedId) {
++  if (!userId) return;
++  try {
++    await prisma.$executeRaw`
++      INSERT INTO notifications (user_id, type, content, related_id)
++      VALUES (${userId}, 'insurance', ${content}, ${relatedId})
++    `;
++  } catch (error) {
++    console.warn('[insurance] 写入通知失败:', error?.message || error);
++  }
++}
++
+ // GET /api/insurance/plans
+ router.get('/plans', insuranceReadLimiter, async (req, res) => {
+   try {
+@@ -55,4 +114,111 @@ router.post('/inquire', insuranceWriteLimiter, auth, async (req, res) => {
+   }
+ });
+ 
++// GET /api/insurance/my-policies — 查询当前用户保单列表
++router.get('/my-policies', insuranceReadLimiter, auth, async (req, res) => {
++  try {
++    const policies = await prisma.$queryRaw`
++      SELECT
++        id, plan_name, name, phone, peak_name, departure_date, status, policy_no, issued_at, policy_pdf_url, claim_status, created_at
++      FROM insurance_inquiries
++      WHERE user_id = ${req.user.id}
++      ORDER BY created_at DESC
++    `;
++    res.json(policies);
++  } catch (e) {
++    res.status(500).json({ error: '服务器错误' });
++  }
++});
++
++// POST /api/insurance/webhook/policy-issued — 出单回调
++router.post('/webhook/policy-issued', insuranceWriteLimiter, async (req, res) => {
++  try {
++    if (!verifyInsuranceWebhookSignature(req, res)) return;
++
++    const { inquiry_id, policy_no, provider_ref, policy_pdf_url, issued_at } = req.body || {};
++    if (!inquiry_id || !policy_no) {
++      return res.status(400).json({ error: '缺少必填字段' });
++    }
++    if (issued_at && !isValidIsoDate(issued_at)) {
++      return res.status(400).json({ error: 'issued_at 格式无效' });
++    }
++
++    const inquiry = (await prisma.$queryRaw`
++      SELECT id, user_id FROM insurance_inquiries WHERE id = ${Number(inquiry_id)}
++    `)?.[0];
++    if (!inquiry) return res.status(404).json({ error: '询价记录不存在' });
++
++    await prisma.$executeRaw`
++      UPDATE insurance_inquiries
++      SET status = 'issued',
++          policy_no = ${String(policy_no)},
++          provider_ref = ${provider_ref || null},
++          policy_pdf_url = ${policy_pdf_url || null},
++          issued_at = ${issued_at || null}
++      WHERE id = ${Number(inquiry_id)}
++    `;
++
++    await tryCreateInsuranceNotification(inquiry.user_id, `您的攀登保险已出单，保单号：${policy_no}`, Number(inquiry_id));
++    res.json({ success: true });
++  } catch (e) {
++    res.status(500).json({ error: '服务器错误' });
++  }
++});
++
++// POST /api/insurance/webhook/claim-update — 理赔状态更新
++router.post('/webhook/claim-update', insuranceWriteLimiter, async (req, res) => {
++  try {
++    if (!verifyInsuranceWebhookSignature(req, res)) return;
++
++    const { policy_no, claim_status, claim_note, claim_updated_at } = req.body || {};
++    if (!policy_no || !claim_status) {
++      return res.status(400).json({ error: '缺少必填字段' });
++    }
++    if (!CLAIM_STATUS_VALUES.has(claim_status)) {
++      return res.status(400).json({ error: 'claim_status 无效' });
++    }
++    if (claim_updated_at && !isValidIsoDate(claim_updated_at)) {
++      return res.status(400).json({ error: 'claim_updated_at 格式无效' });
++    }
++
++    const inquiry = (await prisma.$queryRaw`
++      SELECT id, user_id, status FROM insurance_inquiries WHERE policy_no = ${String(policy_no)}
++    `)?.[0];
++    if (!inquiry) return res.status(404).json({ error: '保单不存在' });
++
++    await prisma.$executeRaw`
++      UPDATE insurance_inquiries
++      SET claim_status = ${claim_status},
++          claim_note = ${claim_note || null},
++          claim_updated_at = ${claim_updated_at || null},
++          status = ${mapClaimStatusToInquiryStatus(claim_status, inquiry.status)}
++      WHERE id = ${inquiry.id}
++    `;
++
++    await tryCreateInsuranceNotification(inquiry.user_id, `您的保险理赔状态已更新：${claim_status}`, inquiry.id);
++    res.json({ success: true });
++  } catch (e) {
++    res.status(500).json({ error: '服务器错误' });
++  }
++});
++
++// GET /api/insurance/policy/:policyNo — 查询当前用户指定保单
++router.get('/policy/:policyNo', insuranceReadLimiter, auth, async (req, res) => {
++  try {
++    const policy = (await prisma.$queryRaw`
++      SELECT
++        id, user_id, plan_id, plan_name, name, peak_name, departure_date,
++        policy_no, status, issued_at, policy_pdf_url, provider_ref,
++        claim_status, claim_updated_at, claim_note, created_at
++      FROM insurance_inquiries
++      WHERE policy_no = ${String(req.params.policyNo)} AND user_id = ${req.user.id}
++      LIMIT 1
++    `)?.[0];
++    if (!policy) return res.status(404).json({ error: '保单不存在' });
++    res.json(policy);
++  } catch (e) {
++    res.status(500).json({ error: '服务器错误' });
++  }
++});
++
+ module.exports = router;
+diff --git a/backend/tests/admin-missing-apis.test.js b/backend/tests/admin-missing-apis.test.js
+index 4917ade..7e501f6 100644
+--- a/backend/tests/admin-missing-apis.test.js
++++ b/backend/tests/admin-missing-apis.test.js
+@@ -346,6 +346,41 @@ describe('admin missing backend APIs', () => {
+     expect(db.prepare('SELECT status FROM sos_alerts WHERE id = ?').get(alertId).status).toBe('resolved');
+   });
+ 
++  test('supports insurance inquiry list with pagination and status filter', async () => {
++    const user = createTestUser(db, { phone: '13800002011', name: '保险用户' });
++    db.prepare(`
++      INSERT INTO insurance_inquiries (
++        user_id, plan_id, plan_name, name, phone, peak_name, departure_date,
++        status, policy_no, issued_at, provider_ref, claim_status, created_at
++      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
++    `).run(user.id, 1, '西藏高原综合险', '保险用户', '13800002011', '珠峰', '2026-06-01', 'issued', 'POLICY-001', new Date().toISOString(), 'REF-001', null, new Date().toISOString());
++    db.prepare(`
++      INSERT INTO insurance_inquiries (
++        user_id, plan_id, plan_name, name, phone, peak_name, departure_date,
++        status, policy_no, issued_at, provider_ref, claim_status, created_at
++      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
++    `).run(user.id, 1, '国际高山险', '保险用户', '13800002011', '安纳普尔纳', '2026-07-01', 'pending', null, null, null, null, new Date().toISOString());
++
++    const allRes = await request(app)
++      .get('/api/admin/insurance-inquiries?page=1&limit=20')
++      .set(authHeader(adminToken));
++    expect(allRes.status).toBe(200);
++    expect(allRes.body.total).toBeGreaterThanOrEqual(2);
++    expect(allRes.body.inquiries[0]).toEqual(expect.objectContaining({
++      id: expect.any(Number),
++      user_id: user.id,
++      plan_name: expect.any(String),
++      status: expect.any(String),
++      created_at: expect.any(String),
++    }));
++
++    const issuedRes = await request(app)
++      .get('/api/admin/insurance-inquiries?page=1&limit=20&status=issued')
++      .set(authHeader(adminToken));
++    expect(issuedRes.status).toBe(200);
++    expect(issuedRes.body.inquiries.every((item) => item.status === 'issued')).toBe(true);
++  });
++
+   test('supports admin message center and broadcast notifications', async () => {
+     const user = createTestUser(db, { phone: '13800002001', name: '工单用户' });
+ 
+diff --git a/tests/api-coverage.test.js b/tests/api-coverage.test.js
+index 94c9631..5784f08 100644
+--- a/tests/api-coverage.test.js
++++ b/tests/api-coverage.test.js
+@@ -17,6 +17,7 @@ process.env.NODE_ENV       = 'test';
+ process.env.INVESTOR_TOKEN = 'test-investor-token';
+ 
+ const request = require('supertest');
++const crypto = require('crypto');
+ const { createApp }       = require('./helpers/testApp');
+ const { createTestUser, createAdminToken } = require('./helpers/auth');
+ const { clearDbCache, createTestDb } = require('./helpers/db');
+@@ -473,13 +474,14 @@ describe('七、救援模块 /api/rescue', () => {
+ 
+ // ── 8. /api/insurance ────────────────────────────────────────────────────────
+ describe('八、保险模块 /api/insurance', () => {
+-  let app, db, user;
++  let app, db, user, otherUser;
+ 
+   beforeAll(() => {
+     clearDbCache();
+     app = createApp();
+     db  = createTestDb();
+     user = createTestUser(db, { phone: '13800001800' });
++    otherUser = createTestUser(db, { phone: '13800001801' });
+   });
+ 
+   test('GET /api/insurance/plans — 公开', async () => {
+@@ -507,6 +509,109 @@ describe('八、保险模块 /api/insurance', () => {
+       .send({ name: '张三' }); // 缺少 phone 和 plan_id
+     expect(res.status).toBe(400);
+   });
++
++  test('GET /api/insurance/my-policies — 已登录返回当前用户保单列表', async () => {
++    const createRes = await request(app)
++      .post('/api/insurance/inquire')
++      .set('Authorization', `Bearer ${user.token}`)
++      .send({ name: '张三', phone: '13900000001', plan_id: 1, peak_name: '珠峰' });
++    expect(createRes.status).toBe(200);
++
++    const res = await request(app)
++      .get('/api/insurance/my-policies')
++      .set('Authorization', `Bearer ${user.token}`);
++    expect(res.status).toBe(200);
++    expect(Array.isArray(res.body)).toBe(true);
++    expect(res.body[0]).toEqual(expect.objectContaining({
++      id: expect.any(Number),
++      plan_name: expect.any(String),
++      name: '张三',
++      phone: '13900000001',
++      peak_name: '珠峰',
++      status: expect.any(String),
++      created_at: expect.any(String),
++    }));
++  });
++
++  test('POST /api/insurance/webhook/policy-issued — 验签失败 → 401', async () => {
++    process.env.INSURANCE_WEBHOOK_SECRET = 'insurance-secret-test';
++    const payload = { inquiry_id: 999999, policy_no: 'PICC-FAIL' };
++    const res = await request(app)
++      .post('/api/insurance/webhook/policy-issued')
++      .set('X-Insurance-Signature', 'bad-signature')
++      .send(payload);
++    expect(res.status).toBe(401);
++  });
++
++  test('POST /api/insurance/webhook/policy-issued + claim-update + GET /policy/:policyNo', async () => {
++    process.env.INSURANCE_WEBHOOK_SECRET = 'insurance-secret-test';
++    const insert = db.prepare(`
++      INSERT INTO insurance_inquiries (user_id, plan_id, plan_name, name, phone, peak_name, departure_date, status)
++      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
++    `).run(user.id, 1, '西藏高原综合险', '李雷', '13900001111', '洛子峰', '2026-06-01', 'pending');
++    const inquiryId = Number(insert.lastInsertRowid);
++
++    const issuePayload = {
++      inquiry_id: inquiryId,
++      policy_no: 'PICC-2026-UNIT-001',
++      provider_ref: 'PROVIDER-001',
++      policy_pdf_url: 'https://cdn.insurer.com/policy.pdf',
++      issued_at: '2026-05-24T10:00:00Z',
++      provider: '平安保险',
++    };
++    const issueSignature = crypto.createHmac('sha256', process.env.INSURANCE_WEBHOOK_SECRET)
++      .update(JSON.stringify(issuePayload))
++      .digest('hex');
++    const issueRes = await request(app)
++      .post('/api/insurance/webhook/policy-issued')
++      .set('X-Insurance-Signature', issueSignature)
++      .send(issuePayload);
++    expect(issueRes.status).toBe(200);
++    expect(issueRes.body.success).toBe(true);
++
++    const afterIssue = db.prepare('SELECT status, policy_no, provider_ref FROM insurance_inquiries WHERE id = ?').get(inquiryId);
++    expect(afterIssue).toEqual(expect.objectContaining({
++      status: 'issued',
++      policy_no: 'PICC-2026-UNIT-001',
++      provider_ref: 'PROVIDER-001',
++    }));
++
++    const claimPayload = {
++      policy_no: 'PICC-2026-UNIT-001',
++      claim_status: 'processing',
++      claim_note: '材料审核中',
++      claim_updated_at: '2026-05-24T15:00:00Z',
++    };
++    const claimSignature = crypto.createHmac('sha256', process.env.INSURANCE_WEBHOOK_SECRET)
++      .update(JSON.stringify(claimPayload))
++      .digest('hex');
++    const claimRes = await request(app)
++      .post('/api/insurance/webhook/claim-update')
++      .set('X-Insurance-Signature', claimSignature)
++      .send(claimPayload);
++    expect(claimRes.status).toBe(200);
++    expect(claimRes.body.success).toBe(true);
++
++    const afterClaim = db.prepare('SELECT status, claim_status, claim_note FROM insurance_inquiries WHERE id = ?').get(inquiryId);
++    expect(afterClaim).toEqual(expect.objectContaining({
++      status: 'claimed',
++      claim_status: 'processing',
++      claim_note: '材料审核中',
++    }));
++
++    const ownPolicyRes = await request(app)
++      .get('/api/insurance/policy/PICC-2026-UNIT-001')
++      .set('Authorization', `Bearer ${user.token}`);
++    expect(ownPolicyRes.status).toBe(200);
++    expect(ownPolicyRes.body.phone).toBeUndefined();
++    expect(ownPolicyRes.body.policy_no).toBe('PICC-2026-UNIT-001');
++    expect(ownPolicyRes.body.user_id).toBe(user.id);
++
++    const otherUserRes = await request(app)
++      .get('/api/insurance/policy/PICC-2026-UNIT-001')
++      .set('Authorization', `Bearer ${otherUser.token}`);
++    expect(otherUserRes.status).toBe(404);
++  });
+ });
+ 
+ // ── 9. /api/altitude ─────────────────────────────────────────────────────────

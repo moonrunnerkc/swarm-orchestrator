@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-Creator-Mario-Forschen-pr193",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 193,
+    "headSha": "57e3e023318b7d0865c390d61237bc397373e94f",
+    "baseSha": "78ae38c9286c1cde2a46506b475de438893038df",
+    "title": "fix: dynamic calendar month and real liturgical readings in sermon prompt",
+    "body": "Homepage calendar was hardcoded to May 2026 and the sermon generation prompt had no scripture references, letting the model invent Bible verses unrelated to the actual liturgical day.\n\n## Changes\n\n### Homepage – dynamic calendar month\n- Replaced module-level `const may2026 = getMonthData(2026, 5)` with a runtime computation inside the async component, derived from `publicationDate`\n- Month heading `Mai 2026` and the hardcoded week-label fallback `KW ${18 + index}/2026` are now computed from the current publication year/month\n\n```ts\n// before\nconst may2026 = getMonthData(2026, 5);        // frozen at build time\n// <h2>Mai 2026</h2>                           // hardcoded\n// KW ${18 + index}/2026                       // hardcoded fallback\n\n// after (inside async component)\nconst [pubYear, pubMonth] = publicationDate.split('-').map(Number);\nconst currentMonthData = getMonthData(pubYear, pubMonth);\n```\n\n### Homepage – dynamic sermon loading + `force-dynamic`\n- Replaced static `import dailySermon from '…/daily-sermon.json'` with a runtime `loadCurrentSermon()` call so the page immediately reflects the sermon CI commits to `main` without a redeploy\n- Added `export const dynamic = 'force-dynamic'`; static import kept as fallback\n\n### Sermon generation – liturgically grounded prompt\n- Imports `getLiturgicalReadings(date)` and injects the day's assigned Lesung / Psalm / Evangelium into the prompt\n- System message now explicitly instructs the model to use only the provided references (e.g. Pfingstsonntag → Apg 2,1-11 · Ps 104 · Joh 20,19-23) and not invent others",
+    "author": "Copilot",
+    "headRef": "copilot/cleanup-yesterday-data",
+    "repository": "Creator-Mario/Forschen"
+  },
+  "diffRef": {
+    "repository": "Creator-Mario/Forschen",
+    "headSha": "57e3e023318b7d0865c390d61237bc397373e94f",
+    "baseSha": "78ae38c9286c1cde2a46506b475de438893038df"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-Creator-Mario-Forschen-pr193.diff",
+  "vendoredAt": "2026-05-24T03:35:46.050Z",
+  "collectedAt": "2026-05-24T03:35:46.050Z"
+}

@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-Panther114-GChat-pr72",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 72,
+    "headSha": "f54bf9ff6534dbc8c6842164a487a272c97f4dfa",
+    "baseSha": "8e0f138b791cf3633aeef26e9af3aafd67d50d88",
+    "title": "Omit unsupported `presence_penalty` for Grok requests via GetGoAPI",
+    "body": "Ask AI requests for Grok were failing because the GetGoAPI Grok endpoint does not accept `presence_penalty`. This change keeps the existing provider routing intact and only adjusts the outbound payload for that provider.\n\n- **Problem**\n  - Grok requests routed through GetGoAPI inherited the generic chat payload, including `presence_penalty`.\n  - GetGoAPI rejects that parameter, causing Grok Ask AI calls to fail before completion.\n\n- **Change**\n  - Keep the shared request shape for OpenRouter-backed models.\n  - Conditionally exclude `presence_penalty` when the selected provider is `getgoapi`.\n  - Leave all other request fields and provider selection behavior unchanged.\n\n- **Result**\n  - Grok continues to use GetGoAPI.\n  - OpenRouter requests still receive `presence_penalty`.\n  - The provider-specific incompatibility is handled at payload construction time instead of changing model routing.\n\n```js\nbody: JSON.stringify({\n  model: selectedModel,\n  temperature: OPENROUTER_TEMPERATURE,\n  top_p: OPENROUTER_TOP_P,\n  frequency_penalty: OPENROUTER_FREQUENCY_PENALTY,\n  ...(apiConfig.provider === 'getgoapi'\n    ? {}\n    : { presence_penalty: OPENROUTER_PRESENCE_PENALTY }),\n  max_tokens: OPENROUTER_MAX_TOKENS,\n  messages,\n  ...(apiConfig.provider === 'getgoapi' ? { stream: false } : {}),\n})\n```",
+    "author": "Copilot",
+    "headRef": "copilot/fix-grok-system-error",
+    "repository": "Panther114/GChat"
+  },
+  "diffRef": {
+    "repository": "Panther114/GChat",
+    "headSha": "f54bf9ff6534dbc8c6842164a487a272c97f4dfa",
+    "baseSha": "8e0f138b791cf3633aeef26e9af3aafd67d50d88"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-Panther114-GChat-pr72.diff",
+  "vendoredAt": "2026-05-24T03:05:49.962Z",
+  "collectedAt": "2026-05-24T03:05:49.962Z"
+}

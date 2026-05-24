@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24142",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24142,
+    "headSha": "efab4dc64cdf687b2eede3c7f1b2ae681934d5d6",
+    "baseSha": "c7bcb90f9b705f556ed0fb1bde13d836cbf71924",
+    "title": "Track app-server start in ChatGPT telemetry",
+    "body": "## Why\nWe want ChatGPT telemetry to receive app-server startup timing as its own signal instead of folding it into thread or turn telemetry. Keeping startup separate makes the later turn timing breakdown cleaner and gives us a direct measure of process start-to-ready latency.\n\n## What changed\n- add a dedicated `codex_app_server_started` analytics event and reducer/client plumbing in `codex-rs/analytics`\n- measure startup duration and completion time in `codex-rs/app-server/src/lib.rs`\n- add serialization and reducer coverage for the new event\n\n## Verification\n- `cargo check -p codex-analytics -p codex-app-server -p codex-core`\n- `just fix -p codex-analytics -p codex-core`\n",
+    "author": "aibrahim-oai",
+    "headRef": "aibrahim/telemetry-app-server-start",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "efab4dc64cdf687b2eede3c7f1b2ae681934d5d6",
+    "baseSha": "c7bcb90f9b705f556ed0fb1bde13d836cbf71924"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24142.diff",
+  "vendoredAt": "2026-05-24T03:20:57.568Z",
+  "collectedAt": "2026-05-24T03:20:57.568Z"
+}

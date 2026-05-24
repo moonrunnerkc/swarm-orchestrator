@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-opendatahub-io-opendatahub-operator-pr3548",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "commit=claude-coauthor"
+  },
+  "pr": {
+    "number": 3548,
+    "headSha": "7687768b70159dd9eab68d020e7bb0b21ef3f03a",
+    "baseSha": "5729edc134f1da0e29ae75fa66b4eb4b39e24aac",
+    "title": "RHOAIENG-62691: [upgrade] kube-auth-proxy oauth client and secret not updated after 3.3 to 3.4 upgrade",
+    "body": "After upgrading from RHOAI 3.3 to 3.4, the gateway controller's\ngetAuthProxySecretValues function short-circuited when the\nkube-auth-proxy-creds secret already existed, preserving the stale\n\"odh\" client ID instead of updating it to \"data-science\". This caused\nOAuth authentication failures because kube-auth-proxy presented the old\nclient ID with the new redirect URI.\n\nTwo changes fix this:\n\n1. getAuthProxySecretValues now always uses the desired client ID for the\n   current auth mode (AuthClientID for integrated OAuth, oidcConfig.ClientID\n   for OIDC) instead of reading it back from the existing secret. The client\n   secret and cookie secret are still preserved to avoid session invalidation.\n\n2. A new deleteLegacyOAuthClient function removes the orphaned \"odh\"\n   OAuthClient left from 3.3, but only if its redirect URI contains\n   /oauth2/callback (confirming it was created by the gateway controller,\n   not by an unrelated user workload).\n\nCloses RHOAIENG-62691\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nSigned-off-by: James Tanner <jtanner@redhat.com>\n\n<!-- This is an auto-generated comment: release notes by coderabbit.ai -->\n## Summary by CodeRabbit\n\n* **Bug Fixes**\n  * Automatic cleanup of legacy OAuth client during auth setup; failures are logged and retried without aborting.\n  * Safer client ID/secret handling: stale client IDs are updated while preserving existing client secrets and cookie secrets when possible; cookie secrets are reused if present.\n* **Tests**\n  * Added unit tests for client-ID migration, OIDC config error handling, and secret-preservation.\n<!-- end of auto-generated comment: release notes by coderabbit.ai -->",
+    "author": "jira-autofix[bot]",
+    "headRef": "jira-autofix/RHOAIENG-62691",
+    "repository": "opendatahub-io/opendatahub-operator"
+  },
+  "diffRef": {
+    "repository": "opendatahub-io/opendatahub-operator",
+    "headSha": "7687768b70159dd9eab68d020e7bb0b21ef3f03a",
+    "baseSha": "5729edc134f1da0e29ae75fa66b4eb4b39e24aac"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-opendatahub-io-opendatahub-operator-pr3548.diff",
+  "vendoredAt": "2026-05-24T03:09:51.217Z",
+  "collectedAt": "2026-05-24T03:09:51.217Z"
+}

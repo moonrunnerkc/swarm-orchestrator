@@ -1,0 +1,78 @@
+diff --git a/src/app/__tests__/page.test.tsx b/src/app/__tests__/page.test.tsx
+index 236ecd8..e0efe54 100644
+--- a/src/app/__tests__/page.test.tsx
++++ b/src/app/__tests__/page.test.tsx
+@@ -69,6 +69,11 @@ describe("LandingPage", () => {
+     expect(screen.getByLabelText("I want to")).toBeInTheDocument();
+     expect(screen.getByText(/Use this when you need clearer evidence that the problem is painful/i)).toBeInTheDocument();
+     expect(screen.getByText(/Press Enter to continue/i)).toBeInTheDocument();
++    expect(screen.getByText(/What happens next/i)).toBeInTheDocument();
++    expect(screen.getByText(/Turn one founder prompt into a usable decision\./i)).toBeInTheDocument();
++    expect(screen.getByText(/Share the messy draft/i)).toBeInTheDocument();
++    expect(screen.getByText(/Review the founder output/i)).toBeInTheDocument();
++    expect(screen.getByText(/Choose the next move/i)).toBeInTheDocument();
+     expect(screen.getByText(/Session outputs/i)).toBeInTheDocument();
+     expect(screen.getByRole("button", { name: "Send" })).toBeInTheDocument();
+   });
+diff --git a/src/app/page.tsx b/src/app/page.tsx
+index f2f5bdc..24dc495 100644
+--- a/src/app/page.tsx
++++ b/src/app/page.tsx
+@@ -81,6 +81,27 @@ const firstSessionTimeline = [
+   },
+ ];
+ 
++const heroWorkflowSteps = [
++  {
++    eyebrow: "Input",
++    title: "Share the messy draft",
++    body: "Start with the founder question, homepage copy, or customer notes that still feel too soft to trust.",
++    artifact: "Starting point: your raw prompt",
++  },
++  {
++    eyebrow: "Output",
++    title: "Review the founder output",
++    body: "AI Cofounder turns that draft into a working brief with a tighter claim, sharper buyer language, and the evidence gaps still blocking conviction.",
++    artifact: "First artifact: founder brief",
++  },
++  {
++    eyebrow: "Next move",
++    title: "Choose the next move",
++    body: "Leave knowing whether to rewrite the homepage, run validation interviews, or narrow the MVP before you build more.",
++    artifact: "Decision: one concrete test",
++  },
++] as const;
++
+ const sampleArtifactRows = [
+   {
+     label: "Core buyer",
+@@ -429,6 +450,29 @@ export default function LandingPage() {
+                   </div>
+                 </form>
+ 
++                <div className="mt-6 rounded-[1.75rem] border border-stone-200 bg-[#f7f1e7] p-5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]">
++                  <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
++                    <div>
++                      <div className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-stone-500">What happens next</div>
++                      <h2 className="mt-3 text-[1.45rem] font-semibold tracking-[-0.04em] text-stone-950">Turn one founder prompt into a usable decision.</h2>
++                    </div>
++                    <p className="max-w-xl text-sm leading-7 text-stone-600">
++                      The first session should move from a raw founder question to one clear artifact and the next test worth running.
++                    </p>
++                  </div>
++
++                  <div className="mt-5 grid gap-3 lg:grid-cols-3">
++                    {heroWorkflowSteps.map((step) => (
++                      <div key={step.title} className="rounded-[1.45rem] border border-stone-200 bg-white px-4 py-4 shadow-[0_10px_30px_rgba(28,25,23,0.05)]">
++                        <div className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-stone-500">{step.eyebrow}</div>
++                        <h3 className="mt-3 text-base font-semibold tracking-[-0.03em] text-stone-950">{step.title}</h3>
++                        <p className="mt-2 text-sm leading-6 text-stone-600">{step.body}</p>
++                        <div className="mt-4 inline-flex rounded-full bg-[#faf7f2] px-3 py-1 text-xs font-medium text-stone-700">{step.artifact}</div>
++                      </div>
++                    ))}
++                  </div>
++                </div>
++
+                 <div className="mt-6 grid gap-4 text-left lg:grid-cols-[1.05fr_0.95fr]">
+                   <div className="rounded-[1.6rem] border border-stone-200 bg-stone-950 p-5 text-stone-50">
+                     <div className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-stone-400">{activePreset.insightTitle}</div>

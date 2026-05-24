@@ -1,0 +1,26 @@
+{
+  "id": "openhands-All-Hands-AI-OpenHands-pr14521",
+  "agent": {
+    "vendor": "openhands",
+    "confidence": "high",
+    "source": "repo-owner=All-Hands-AI+body=openhands-attribution"
+  },
+  "pr": {
+    "number": 14521,
+    "headSha": "a8aaf4e268363f7eaa49b7cac9cef5fc12d1a1c6",
+    "baseSha": "3515cb085834623d9d0ef9d6977d1bcfa2b6eb57",
+    "title": "fix(resolver): use literal placeholders in branch/PR naming instructions",
+    "body": "## What\n\nThe Jira, Jira DC, and Linear resolver instruction templates wrote the branch/PR naming convention with Jinja placeholders (`{{ issue_key }}`, `{{ description_in_kebab_case }}`, `{{ pr_title }}`), but the views render these `*_instructions.j2` templates with **no context** (`instructions_template.render()` with no args). So the placeholders rendered as empty strings and the agent's system message actually read:\n\n```\n*   Branch: `-`\n*   PR Title: `[] `\n```\n\nThis replaces the placeholders with literal illustrative text so the convention reads correctly regardless of render context — mirroring the GitHub resolver, which uses literal examples (e.g. `` `openhands/` as a prefix ``) rather than unfilled template variables.\n\n```\n*   Branch: `<ISSUE-KEY>-<short-description-in-kebab-case>`\n*   PR Title: `[<ISSUE-KEY>] <title>`\n```\n\n## Scope\n\n- Behavior-neutral / cosmetic — the agent already gets the real issue key from the user message; only the convention examples in the system message were degraded.\n- Pre-existing and shared across all three project-management integrations (the templates are byte-identical copies).\n\n## Noticed but not addressed here\n\n`linear_instructions.j2` still opens with \"You have been assigned an issue from **Jira**\" (copy-paste leftover) — left for a separate follow-up to keep this focused.\n\n---\n\nTo run this PR locally, use the following command:\n\nGUI with Docker:\n```\ndocker run -it --rm   -p 3000:3000   -v /var/run/docker.sock:/var/run/docker.sock   --add-host host.docker.internal:host-gateway   --name openhands-app-a8aaf4e   docker.openhands.dev/openhands/openhands:a8aaf4e\n```",
+    "author": "ak684",
+    "headRef": "alona/fix-resolver-naming-convention-placeholders",
+    "repository": "All-Hands-AI/OpenHands"
+  },
+  "diffRef": {
+    "repository": "All-Hands-AI/OpenHands",
+    "headSha": "a8aaf4e268363f7eaa49b7cac9cef5fc12d1a1c6",
+    "baseSha": "3515cb085834623d9d0ef9d6977d1bcfa2b6eb57"
+  },
+  "vendoredDiffPath": "openhands/openhands-All-Hands-AI-OpenHands-pr14521.diff",
+  "vendoredAt": "2026-05-24T03:18:01.248Z",
+  "collectedAt": "2026-05-24T03:18:01.248Z"
+}

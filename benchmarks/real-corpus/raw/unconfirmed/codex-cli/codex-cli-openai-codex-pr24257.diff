@@ -1,0 +1,365 @@
+diff --git a/codex-rs/tui/src/app/background_requests.rs b/codex-rs/tui/src/app/background_requests.rs
+index dcf1f672bee5..8e15c342c06b 100644
+--- a/codex-rs/tui/src/app/background_requests.rs
++++ b/codex-rs/tui/src/app/background_requests.rs
+@@ -384,16 +384,16 @@ impl App {
+     }
+ 
+     pub(super) fn refresh_plugin_mentions(&mut self, app_server: &AppServerSession) {
+-        let config = self.config.clone();
++        let cwd = self.config.cwd.to_path_buf();
+         let request_handle = app_server.request_handle();
+         let app_event_tx = self.app_event_tx.clone();
+-        if !config.features.enabled(Feature::Plugins) {
++        if !self.config.features.enabled(Feature::Plugins) {
+             app_event_tx.send(AppEvent::PluginMentionsLoaded { plugins: None });
+             return;
+         }
+ 
+         tokio::spawn(async move {
+-            match fetch_plugin_mentions(request_handle, config).await {
++            match fetch_plugin_mentions(request_handle, cwd).await {
+                 Ok(plugins) => {
+                     app_event_tx.send(AppEvent::PluginMentionsLoaded {
+                         plugins: Some(plugins),
+diff --git a/codex-rs/tui/src/app/event_dispatch.rs b/codex-rs/tui/src/app/event_dispatch.rs
+index e150dbccd21b..337ac4449b30 100644
+--- a/codex-rs/tui/src/app/event_dispatch.rs
++++ b/codex-rs/tui/src/app/event_dispatch.rs
+@@ -506,9 +506,6 @@ impl App {
+                 self.chat_widget
+                     .on_marketplace_add_loaded(cwd.clone(), source, result);
+                 if add_succeeded && self.chat_widget.config_ref().cwd.as_path() == cwd.as_path() {
+-                    if let Err(err) = self.refresh_in_memory_config_from_disk().await {
+-                        tracing::warn!(error = %err, "failed to refresh config after marketplace add");
+-                    }
+                     self.fetch_plugins_list(app_server, cwd);
+                 }
+             }
+@@ -516,14 +513,7 @@ impl App {
+                 let marketplace_contents_changed =
+                     matches!(&result, Ok(response) if !response.upgraded_roots.is_empty());
+                 if marketplace_contents_changed {
+-                    if let Err(err) = self.refresh_in_memory_config_from_disk().await {
+-                        tracing::warn!(
+-                            error = %err,
+-                            "failed to refresh config after marketplace upgrade"
+-                        );
+-                    }
+-                    self.chat_widget.refresh_plugin_mentions();
+-                    self.chat_widget.submit_op(AppCommand::reload_user_config());
++                    self.refresh_plugin_mentions_after_config_write();
+                 }
+                 self.chat_widget
+                     .on_marketplace_upgrade_loaded(cwd.clone(), result);
+@@ -558,11 +548,7 @@ impl App {
+                 );
+                 if remove_succeeded && self.chat_widget.config_ref().cwd.as_path() == cwd.as_path()
+                 {
+-                    if let Err(err) = self.refresh_in_memory_config_from_disk().await {
+-                        tracing::warn!(error = %err, "failed to refresh config after marketplace remove");
+-                    }
+-                    self.chat_widget.refresh_plugin_mentions();
+-                    self.chat_widget.submit_op(AppCommand::reload_user_config());
++                    self.refresh_plugin_mentions_after_config_write();
+                     self.fetch_plugins_list(app_server, cwd);
+                 }
+             }
+@@ -609,11 +595,7 @@ impl App {
+             } => {
+                 let install_succeeded = result.is_ok();
+                 if install_succeeded {
+-                    if let Err(err) = self.refresh_in_memory_config_from_disk().await {
+-                        tracing::warn!(error = %err, "failed to refresh config after plugin install");
+-                    }
+-                    self.chat_widget.refresh_plugin_mentions();
+-                    self.chat_widget.submit_op(AppCommand::reload_user_config());
++                    self.refresh_plugin_mentions_after_config_write();
+                 }
+                 let should_refresh_plugin_detail = self.chat_widget.on_plugin_install_loaded(
+                     cwd.clone(),
+@@ -665,14 +647,7 @@ impl App {
+                     self.pending_plugin_enabled_writes.remove(&plugin_id);
+                     let update_succeeded = result.is_ok();
+                     if update_succeeded {
+-                        if let Err(err) = self.refresh_in_memory_config_from_disk().await {
+-                            tracing::warn!(
+-                                error = %err,
+-                                "failed to refresh config after plugin toggle"
+-                            );
+-                        }
+-                        self.chat_widget.refresh_plugin_mentions();
+-                        self.chat_widget.submit_op(AppCommand::reload_user_config());
++                        self.refresh_plugin_mentions_after_config_write();
+                     }
+                     self.chat_widget
+                         .on_plugin_enabled_set(cwd, plugin_id, enabled, result);
+@@ -1332,14 +1307,7 @@ impl App {
+             } => {
+                 let uninstall_succeeded = result.is_ok();
+                 if uninstall_succeeded {
+-                    if let Err(err) = self.refresh_in_memory_config_from_disk().await {
+-                        tracing::warn!(
+-                            error = %err,
+-                            "failed to refresh config after plugin uninstall"
+-                        );
+-                    }
+-                    self.chat_widget.refresh_plugin_mentions();
+-                    self.chat_widget.submit_op(AppCommand::reload_user_config());
++                    self.refresh_plugin_mentions_after_config_write();
+                 }
+                 self.chat_widget.on_plugin_uninstall_loaded(
+                     cwd.clone(),
+@@ -1734,14 +1702,6 @@ impl App {
+                 {
+                     Ok(()) => {
+                         self.chat_widget.update_skill_enabled(path, enabled);
+-                        if !app_server.uses_remote_workspace()
+-                            && let Err(err) = self.refresh_in_memory_config_from_disk().await
+-                        {
+-                            tracing::warn!(
+-                                error = %err,
+-                                "failed to refresh config after skill toggle"
+-                            );
+-                        }
+                     }
+                     Err(err) => {
+                         let path_display = path.display();
+@@ -1778,11 +1738,6 @@ impl App {
+                 {
+                     Ok(_) => {
+                         self.chat_widget.update_connector_enabled(&id, enabled);
+-                        if !app_server.uses_remote_workspace()
+-                            && let Err(err) = self.refresh_in_memory_config_from_disk().await
+-                        {
+-                            tracing::warn!(error = %err, "failed to refresh config after app toggle");
+-                        }
+                     }
+                     Err(err) => {
+                         self.chat_widget.add_error_message(format!(
+@@ -2127,6 +2082,11 @@ impl App {
+         }
+     }
+ 
++    fn refresh_plugin_mentions_after_config_write(&mut self) {
++        self.chat_widget.refresh_plugin_mentions();
++        self.chat_widget.submit_op(AppCommand::reload_user_config());
++    }
++
+     async fn apply_keymap_clear(&mut self, context: String, action: String) {
+         let keymap_config = match crate::keymap_setup::keymap_without_custom_binding(
+             &self.config.tui_keymap,
+diff --git a/codex-rs/tui/src/app/plugin_mentions.rs b/codex-rs/tui/src/app/plugin_mentions.rs
+index ef300896bc71..29fcc2b8e17e 100644
+--- a/codex-rs/tui/src/app/plugin_mentions.rs
++++ b/codex-rs/tui/src/app/plugin_mentions.rs
+@@ -1,123 +1,95 @@
+ //! Plugin mention capability enrichment for the TUI.
+ //!
+-//! Mention inventory comes from app-server `plugin/list`, while mention eligibility still reuses
+-//! the older local bulk capability summaries. That keeps the feature app-server-shaped without
+-//! paying for a `plugin/read` per plugin.
++//! Mention inventory and capability details come from app-server `plugin/list` and `plugin/read`.
+ 
++use super::background_requests::fetch_plugin_detail;
+ use super::background_requests::request_plugin_list;
+ use super::*;
+-use codex_app_server_protocol::PluginListResponse;
+-use codex_app_server_protocol::PluginMarketplaceEntry;
++use codex_app_server_protocol::PluginDetail;
++use codex_app_server_protocol::PluginReadParams;
+ use codex_app_server_protocol::PluginSummary;
+-use codex_core_plugins::PluginsManager;
++use codex_plugin::AppConnectorId;
+ use codex_plugin::PluginCapabilitySummary;
+-use std::collections::HashMap;
+-
+-#[derive(Debug, Clone)]
+-struct PluginMentionEntry {
+-    config_name: String,
+-    display_name: String,
+-    description: Option<String>,
+-}
+-
+-impl PluginMentionEntry {
+-    fn capability_summary(
+-        self,
+-        capabilities_by_config_name: &HashMap<String, PluginCapabilitySummary>,
+-    ) -> Option<PluginCapabilitySummary> {
+-        let capabilities = capabilities_by_config_name.get(&self.config_name)?;
+-        Some(PluginCapabilitySummary {
+-            config_name: self.config_name,
+-            display_name: self.display_name,
+-            description: self.description,
+-            has_skills: capabilities.has_skills,
+-            mcp_server_names: capabilities.mcp_server_names.clone(),
+-            app_connector_ids: capabilities.app_connector_ids.clone(),
+-        })
+-    }
+-}
+ 
+ pub(super) async fn fetch_plugin_mentions(
+     request_handle: AppServerRequestHandle,
+-    config: crate::legacy_core::config::Config,
++    cwd: PathBuf,
+ ) -> Result<Vec<PluginCapabilitySummary>> {
+-    let response = request_plugin_list(request_handle, config.cwd.to_path_buf()).await?;
+-    let mention_entries = plugin_mention_entries_from_list_response(response);
+-    let capabilities_by_config_name = load_plugin_mention_capabilities(&config).await;
+-
+-    Ok(mention_entries
+-        .into_iter()
+-        .filter_map(|entry| entry.capability_summary(&capabilities_by_config_name))
+-        .collect())
+-}
+-
+-async fn load_plugin_mention_capabilities(
+-    config: &crate::legacy_core::config::Config,
+-) -> HashMap<String, PluginCapabilitySummary> {
+-    let plugins_input = config.plugins_config_input();
+-    PluginsManager::new(config.codex_home.to_path_buf())
+-        .plugins_for_config(&plugins_input)
+-        .await
+-        .capability_summaries()
+-        .iter()
+-        .cloned()
+-        .map(|summary| (summary.config_name.clone(), summary))
+-        .collect()
+-}
+-
+-fn plugin_mention_entries_from_list_response(
+-    response: PluginListResponse,
+-) -> Vec<PluginMentionEntry> {
+-    response
+-        .marketplaces
+-        .into_iter()
+-        .flat_map(plugin_mention_entries_from_marketplace)
+-        .collect()
++    let response = request_plugin_list(request_handle.clone(), cwd).await?;
++    let mut summaries = Vec::new();
++    for marketplace in response.marketplaces {
++        let marketplace_name = marketplace.name;
++        let marketplace_path = marketplace.path;
++        for plugin in marketplace.plugins {
++            if !plugin.installed || !plugin.enabled {
++                continue;
++            }
++            let Some(read_params) =
++                plugin_mention_read_params(&marketplace_name, marketplace_path.clone(), &plugin)
++            else {
++                continue;
++            };
++            match fetch_plugin_detail(request_handle.clone(), read_params).await {
++                Ok(response) => {
++                    if let Some(summary) = plugin_capability_summary_from_detail(response.plugin) {
++                        summaries.push(summary);
++                    }
++                }
++                Err(err) => {
++                    tracing::warn!(
++                        error = %err,
++                        plugin = plugin.id,
++                        "plugin/read failed while refreshing plugin mention capabilities"
++                    );
++                }
++            }
++        }
++    }
++    Ok(summaries)
+ }
+ 
+-fn plugin_mention_entries_from_marketplace(
+-    marketplace: PluginMarketplaceEntry,
+-) -> Vec<PluginMentionEntry> {
+-    let marketplace_name = marketplace.name;
+-    marketplace
+-        .plugins
++fn plugin_capability_summary_from_detail(detail: PluginDetail) -> Option<PluginCapabilitySummary> {
++    let summary = detail.summary;
++    let display_name = plugin_mention_display_name(&summary);
++    let description = plugin_mention_description(&summary);
++    let mcp_server_names = detail.mcp_servers;
++    let app_connector_ids = detail
++        .apps
+         .into_iter()
+-        .filter_map(|plugin| plugin_mention_entry(&marketplace_name, plugin))
+-        .collect()
++        .map(|app| AppConnectorId(app.id))
++        .collect::<Vec<_>>();
++    let has_skills = detail.skills.iter().any(|skill| skill.enabled);
++    let summary = PluginCapabilitySummary {
++        config_name: summary.id,
++        display_name,
++        description,
++        has_skills,
++        mcp_server_names,
++        app_connector_ids,
++    };
++    (summary.has_skills
++        || !summary.mcp_server_names.is_empty()
++        || !summary.app_connector_ids.is_empty())
++    .then_some(summary)
+ }
+ 
+-fn plugin_mention_entry(
++fn plugin_mention_read_params(
+     marketplace_name: &str,
+-    plugin: PluginSummary,
+-) -> Option<PluginMentionEntry> {
+-    if !plugin_is_eligible_for_mentions(&plugin) {
+-        return None;
++    marketplace_path: Option<AbsolutePathBuf>,
++    plugin: &PluginSummary,
++) -> Option<PluginReadParams> {
++    match marketplace_path {
++        Some(marketplace_path) => Some(PluginReadParams {
++            marketplace_path: Some(marketplace_path),
++            remote_marketplace_name: None,
++            plugin_name: plugin.name.clone(),
++        }),
++        None => Some(PluginReadParams {
++            marketplace_path: None,
++            remote_marketplace_name: Some(marketplace_name.to_string()),
++            plugin_name: plugin.remote_plugin_id.clone()?,
++        }),
+     }
+-
+-    let config_name = plugin_mention_config_name(marketplace_name, &plugin)?;
+-    Some(PluginMentionEntry {
+-        config_name,
+-        display_name: plugin_mention_display_name(&plugin),
+-        description: plugin_mention_description(&plugin),
+-    })
+-}
+-
+-fn plugin_is_eligible_for_mentions(plugin: &PluginSummary) -> bool {
+-    plugin.installed && plugin.enabled
+-}
+-
+-fn plugin_mention_config_name(marketplace_name: &str, plugin: &PluginSummary) -> Option<String> {
+-    codex_plugin::PluginId::new(plugin.name.clone(), marketplace_name.to_string())
+-        .map(|plugin_id| plugin_id.as_key())
+-        .map_err(|err| {
+-            tracing::warn!(
+-                plugin_name = plugin.name,
+-                marketplace_name,
+-                error = %err,
+-                "skipping plugin mention with invalid identity"
+-            );
+-        })
+-        .ok()
+ }
+ 
+ fn plugin_mention_display_name(plugin: &PluginSummary) -> String {
+diff --git a/codex-rs/tui/src/app/thread_routing.rs b/codex-rs/tui/src/app/thread_routing.rs
+index 8f15aed79a38..a403dc232c59 100644
+--- a/codex-rs/tui/src/app/thread_routing.rs
++++ b/codex-rs/tui/src/app/thread_routing.rs
+@@ -684,7 +684,6 @@ impl App {
+             }
+             AppCommand::ReloadUserConfig => {
+                 app_server.reload_user_config().await?;
+-                self.refresh_in_memory_config_from_disk().await?;
+                 Ok(true)
+             }
+             AppCommand::OverrideTurnContext { .. } => {

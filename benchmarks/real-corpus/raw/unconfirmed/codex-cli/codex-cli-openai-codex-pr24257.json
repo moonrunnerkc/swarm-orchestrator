@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24257",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24257,
+    "headSha": "5e451ef55a241a9695e9b31e40581f64b9f44b9a",
+    "baseSha": "7d47056ea42636271ac020b86347fbbef49490aa",
+    "title": "TUI config cleanup: plugin marketplace",
+    "body": "## Why\n\nPlugin and marketplace mutations are applied by the app server, but several TUI follow-up paths still refreshed state from the TUI host config. In remote workspace mode, that can leave plugin UI state tied to stale client-local `config.toml` after the server has already applied the mutation.\n\n## What\n\n- Stop reloading the TUI host config after app-server-owned plugin, marketplace, skill, and app mutations.\n- Use the same app-server-owned refresh path for local and remote sessions: ask the app server to reload user config where the running session needs it, then refetch plugin list/detail state from the app server.\n- Build plugin mention candidates from existing app-server `plugin/list` and `plugin/read` data in both local and remote sessions instead of TUI-host plugin config.\n- Avoid the duplicate local config reload after `ReloadUserConfig` asks the app server to reload config.\n\n## Verification\n\nManually launched a local WebSocket app-server with a temp server `CODEX_HOME`, launched the TUI with a separate temp host `CODEX_HOME` and `--remote`, installed a sample plugin from a temp local marketplace through `/plugins`, and confirmed the TUI refreshed to installed state while only the server config gained `[plugins.\"sample@debug\"]`. Trace logs showed the TUI using app-server `plugin/list` and `plugin/read` for the refresh path.",
+    "author": "etraut-openai",
+    "headRef": "etraut/tui-remote-config-refresh",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "5e451ef55a241a9695e9b31e40581f64b9f44b9a",
+    "baseSha": "7d47056ea42636271ac020b86347fbbef49490aa"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24257.diff",
+  "vendoredAt": "2026-05-24T03:20:35.877Z",
+  "collectedAt": "2026-05-24T03:20:35.877Z"
+}

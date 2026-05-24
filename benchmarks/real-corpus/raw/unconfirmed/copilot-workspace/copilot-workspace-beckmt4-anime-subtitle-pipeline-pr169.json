@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-beckmt4-anime-subtitle-pipeline-pr169",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 169,
+    "headSha": "f817c51a38ca35900f49835e7355d28aeb92bfad",
+    "baseSha": "6d65f1bb16de858fa2dfb2ef845897a6e2e9555c",
+    "title": "Phase 4c: remove flat-file compatibility shims and switch call sites to core modules",
+    "body": "## Summary\n\nCompletes Phase 4c by removing root flat-file compatibility shims and moving all remaining imports to canonical `core.*` modules. This resolves lint failures caused by CI still targeting deleted shim paths.\n\n## Linked issue\n\nIssue linking is handled automatically by the system.\n\n## What changed\n\n- **Import graph cleanup (repo-wide)**\n  - Repointed call sites from shim modules (`models`, `media_inspect`, `audio_utils`, `subtitle_utils`, `srt_writer`, `asr`, `mt`, `llm_polish`, `compare_core`, `tracing`, `benchmark`) to `core.*` equivalents across runtime code, packs, utilities, and tests.\n  - Example import migration:\n    ```python\n    # before\n    from models import SubtitleCandidate\n    from mt import translate_candidate_jp_to_en_workflow\n\n    # after\n    from core.subtitles import SubtitleCandidate\n    from core.mt import translate_candidate_jp_to_en_workflow\n    ```\n\n- **Shim deletion**\n  - Removed root shim files:\n    - `models.py`, `media_inspect.py`, `tracing.py`, `compare_core.py`\n    - `audio_utils.py`, `subtitle_utils.py`, `srt_writer.py`\n    - `asr.py`, `mt.py`, `llm_polish.py`, `benchmark.py`\n\n- **CI/lint target updates**\n  - Updated lint file list in `.github/workflows/ci.yml` to target current `core/*` module files rather than deleted shim files.\n  - Synced local contributor command docs (`CLAUDE.md`, `CONTRIBUTING.md`) with the new lint targets.\n\n- **Migration-note cleanup**\n  - Removed stale “root shim during migration” references in affected core module docstrings where paths are now canonicalized.\n\n## Tests\n\n- [ ] New tests added for new behavior\n- [x] Existing tests updated where behavior changed\n- [x] All tests pass locally (`pytest`)\n- [ ] If no tests apply, reason documented here: N/A — tests apply and were run.\n\n## Acceptance checklist\n\n- [x] Acceptance criteria for the linked issue are met (reference `acceptance/` doc or paste criteria inline below)\n- [ ] `docs/` updated if architecture, module boundaries, or design decisions changed\n- [ ] `specs/` updated or created if this implements a spec\n- [ ] `prompts/` updated if this introduces or changes a reusable AI prompt\n- [ ] `acceptance/` updated if this changes or defines acceptance criteria for a feature\n\n**Acceptance criteria status:**\n\n- Root flat-file shims targeted in Phase 4c are removed.\n- Imports are redirected to `core.*` module paths.\n- CI lint references removed shim paths no longer and points at current core modules.\n\nNotes on unchecked items:\n- `docs/`: no architecture/design change; this is execution of existing migration plan (only command references were updated in contributor docs).\n- `specs/`, `prompts/`, `acceptance/`: no new feature contract or acceptance definition introduced.\n\n## AI usage disclosure\n\n- [ ] AI tooling was NOT used for this change\n- [x] AI tooling WAS used — details below:\n\n**Tool(s) used:**\n- GitHub Copilot coding agent\n\n**What was generated:**\n- Bulk import-path refactors, shim file removals, CI lint target updates, and minor docstring cleanup.\n\n**How it was validated (tests run, diff reviewed, etc.):**\n- Reviewed resulting diff for module-path correctness and executed repository test suite/lint checks locally in the task environment.\n\n**Assumptions made by the AI that affect design or scope:**\n- Phase 4c scope is limited to shim removal + import redirection + CI lint path alignment; no behavioral changes intended.\n\n## Risks and follow-up\n\n- Remaining docs outside contributor workflow docs may still reference removed root modules; optional follow-up sweep can normalize those references.",
+    "author": "Copilot",
+    "headRef": "copilot/refactor-delete-root-flat-file-shims",
+    "repository": "beckmt4/anime-subtitle-pipeline"
+  },
+  "diffRef": {
+    "repository": "beckmt4/anime-subtitle-pipeline",
+    "headSha": "f817c51a38ca35900f49835e7355d28aeb92bfad",
+    "baseSha": "6d65f1bb16de858fa2dfb2ef845897a6e2e9555c"
+  },
+  "vendoredDiffPath": "unconfirmed/copilot-workspace/copilot-workspace-beckmt4-anime-subtitle-pipeline-pr169.diff",
+  "vendoredAt": "2026-05-24T03:05:25.650Z",
+  "collectedAt": "2026-05-24T03:05:25.650Z"
+}

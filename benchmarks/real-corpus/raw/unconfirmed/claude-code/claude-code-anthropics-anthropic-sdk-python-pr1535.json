@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-python-pr1535",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1535,
+    "headSha": "af4390a5298614525441b6dfb169a1028198ee2b",
+    "baseSha": "e8e6f6692632b5fdbea5df1e44cdbd0193fac521",
+    "title": "fix(tools): raise clear error for duplicate tool names in tool_runner",
+    "body": "I was poking around `tool_runner` and noticed that the runner accepts duplicate tool names without complaining. If you pass two tools that happen to share a name (say, two different `get_weather` impls imported from different modules), the second silently overwrites the first in `_tools_by_name = {tool.name: tool for tool in tools}`, and your first tool is gone before the request is even built. The API would reject the duplicate, but only with a generic 400 after the round trip, and by then you have no idea which side of your code was wrong.\n\nThis patch adds an upfront check in `BaseToolRunner.__init__` that walks the tools, collects any names that show up more than once, and raises a `ValueError` listing them. It runs before any HTTP work, so you get the error at the call site of `tool_runner(...)` instead of inside a request handler. Behaviour for unique names is unchanged. I left the `_tools_by_name` dict comprehension in place and just added the validation pass above it.\n\nThree new tests in `tests/lib/tools/test_runners.py` cover the sync runner, the async runner, and the case where multiple distinct names each have duplicates (the error should list all of them). `uv run pytest tests/lib/ -n auto` reports 496 passed, 1 skipped, 1 xfailed, and `uv run ruff check . && uv run pyright && uv run mypy .` are clean.",
+    "author": "Zawwarsami16",
+    "headRef": "fix/tool-runner-duplicate-name-error",
+    "repository": "anthropics/anthropic-sdk-python"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-python",
+    "headSha": "af4390a5298614525441b6dfb169a1028198ee2b",
+    "baseSha": "e8e6f6692632b5fdbea5df1e44cdbd0193fac521"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-python-pr1535.diff",
+  "vendoredAt": "2026-05-24T03:17:35.034Z",
+  "collectedAt": "2026-05-24T03:17:35.034Z"
+}

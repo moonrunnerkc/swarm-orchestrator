@@ -1,0 +1,45 @@
+diff --git a/attached_assets/image_1778438992961.png b/attached_assets/image_1778438992961.png
+new file mode 100644
+index 0000000..ad8f1dc
+Binary files /dev/null and b/attached_assets/image_1778438992961.png differ
+diff --git a/attached_assets/image_1778439211039.png b/attached_assets/image_1778439211039.png
+new file mode 100644
+index 0000000..ee74fc8
+Binary files /dev/null and b/attached_assets/image_1778439211039.png differ
+diff --git a/client/public/sw.js b/client/public/sw.js
+index 1c914ab..bc5d6c1 100644
+--- a/client/public/sw.js
++++ b/client/public/sw.js
+@@ -1,4 +1,4 @@
+-const CACHE_NAME = "spiningebi-v10";
++const CACHE_NAME = "spiningebi-v11";
+ const STATIC_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp", ".svg", ".ico", ".woff", ".woff2", ".ttf"];
+ 
+ self.addEventListener("install", () => {
+diff --git a/client/src/components/RichTextDisplay.tsx b/client/src/components/RichTextDisplay.tsx
+index 23fd09b..69a521a 100644
+--- a/client/src/components/RichTextDisplay.tsx
++++ b/client/src/components/RichTextDisplay.tsx
+@@ -58,6 +58,8 @@ export default function RichTextDisplay({ html, className, testId }: RichTextDis
+     <div
+       className={className}
+       data-testid={testId}
++      lang="ka"
++      style={{ wordBreak: "normal", overflowWrap: "break-word", hyphens: "none" }}
+       dangerouslySetInnerHTML={{ __html: safeHtml }}
+     />
+   );
+diff --git a/client/src/components/RichTextEditor.tsx b/client/src/components/RichTextEditor.tsx
+index 3871788..2f5ba27 100644
+--- a/client/src/components/RichTextEditor.tsx
++++ b/client/src/components/RichTextEditor.tsx
+@@ -94,6 +94,9 @@ export default function RichTextEditor({
+         .rich-text-editor .ql-editor {
+           min-height: ${minHeight}px;
+           color: #111827;
++          word-break: normal;
++          overflow-wrap: break-word;
++          hyphens: none;
+         }
+         .rich-text-editor .ql-editor.ql-blank::before {
+           color: #9ca3af;

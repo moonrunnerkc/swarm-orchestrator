@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-python-pr1556",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1556,
+    "headSha": "e9706634920294e5f5a90624bb00e64ffe608e7a",
+    "baseSha": "28cdc33644bfb3f8310d51867619cafb5dd8cf23",
+    "title": "fix(bedrock): preserve aws_profile in copied clients",
+    "body": "## Summary\n- preserve aws_profile when copying sync and async Bedrock clients\n- allow copy()/with_options() callers to override aws_profile explicitly\n- add regression coverage for sync preserve, sync override, and async preserve cases\n\n## Why\nA Bedrock client configured with aws_profile would lose that profile after copy()/with_options(). The copied client still preserved region and other credential options, but request signing would use aws_profile=None and could fall back to the default AWS profile.\n\n## Tests\n- uv run --frozen --extra bedrock pytest tests/lib/test_bedrock.py -q\n- uv run --frozen ruff check src/anthropic/lib/bedrock/_client.py tests/lib/test_bedrock.py\n- uv run --frozen ruff format --check src/anthropic/lib/bedrock/_client.py tests/lib/test_bedrock.py\n- git diff --check",
+    "author": "pragnyanramtha",
+    "headRef": "pragnyan/fix-bedrock-copy-aws-profile",
+    "repository": "anthropics/anthropic-sdk-python"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-python",
+    "headSha": "e9706634920294e5f5a90624bb00e64ffe608e7a",
+    "baseSha": "28cdc33644bfb3f8310d51867619cafb5dd8cf23"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-python-pr1556.diff",
+  "vendoredAt": "2026-05-24T03:17:16.617Z",
+  "collectedAt": "2026-05-24T03:17:16.617Z"
+}

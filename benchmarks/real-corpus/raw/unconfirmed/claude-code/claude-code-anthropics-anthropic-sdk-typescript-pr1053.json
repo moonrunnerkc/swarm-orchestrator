@@ -1,0 +1,26 @@
+{
+  "id": "claude-code-anthropics-anthropic-sdk-typescript-pr1053",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "repo-owner=anthropics"
+  },
+  "pr": {
+    "number": 1053,
+    "headSha": "e72cdba3902f92a48355bf98831b96777392a1bc",
+    "baseSha": "ac9ece3c566b4488dcf73849c17b656ec2d7d17d",
+    "title": "feat(bedrock-sdk): expose `.models` resource for parity with the main client (#704)",
+    "body": "Closes #704.\n\n## Why\n\nThe Bedrock SDK extends `BaseAnthropic` (not the resourceful `Anthropic` class), so it never inherited the `.models` resource that the main client exposes. Issue #704 asks for parity so callers can type against a unified Anthropic-style interface across the main / Vertex / Bedrock variants.\n\n## What\n\nIn `packages/bedrock-sdk/src/client.ts`, add the property alongside the existing `messages` / `completions` / `beta` declarations:\n\n```ts\nmodels: Resources.Models = new Resources.Models(this);\n```\n\n`/v1/models` is intentionally **not** added to `MODEL_ENDPOINTS`. That set only matches POSTs that need the AWS-style `/model/<id>/invoke` rewrite. A GET to `/v1/models` (or `/v1/models/{id}`) passes through `buildRequest` unchanged, so the request actually targets the Anthropic Models path against the configured Bedrock base URL.\n\n## Honest caveat on runtime behavior\n\nWhether `bedrock-runtime.<region>.amazonaws.com/v1/models` is honored by AWS at runtime is up to AWS. This PR is concerned with **SDK surface parity** so callers can write:\n\n```ts\nconst models = await client.models.list();\n```\n\nagainst either `Anthropic` or `AnthropicBedrock` and have the call typecheck identically. If maintainers would prefer the foundry-sdk pattern (`override models = undefined` with a doc comment) instead, I'm happy to switch — `bedrock-sdk` extends `BaseAnthropic` so there's no parent property to literally `override`, but the sentinel can be added as a top-level `models: undefined = undefined` field with a clear comment instead. Let me know which direction you'd like.\n\n## Tests\n\nNew `describe('Resource surface parity with the main Anthropic client (#704)')` block in `packages/bedrock-sdk/tests/client.test.ts`:\n\n1. **`exposes a 'models' resource`** — constructs `AnthropicBedrock`, asserts `client.models` is defined and exposes both `list` and `retrieve` as functions.\n2. **`does not put '/v1/models' into the AWS path-rewrite set`** — mocks global `fetch`, calls `client.models.list()`, asserts the request URL ends in `/v1/models` (no `/model/<id>/invoke` rewrite, confirming the rewrite logic stays scoped to POSTs in `MODEL_ENDPOINTS`).\n\nLocal run: **10/10 tests pass** in `packages/bedrock-sdk` (8 pre-existing + 2 new).\n\n## Files changed\n\n- `packages/bedrock-sdk/src/client.ts` (+10 lines): added `models: Resources.Models = new Resources.Models(this)` with JSDoc.\n- `packages/bedrock-sdk/tests/client.test.ts` (+56 lines): added the parity describe block with 2 tests.\n\n## Checklist\n\n- [x] Hand-written SDK code only (`src/lib`-style); no codegen edits.\n- [x] Linked the originating issue (`Closes #704`).\n- [x] Tests added and passing locally.\n- [x] Conventional `feat(bedrock-sdk):` title and commit.\n- [x] No behavior change to existing paths.",
+    "author": "naumanAhmed3",
+    "headRef": "feat/704-bedrock-models-property",
+    "repository": "anthropics/anthropic-sdk-typescript"
+  },
+  "diffRef": {
+    "repository": "anthropics/anthropic-sdk-typescript",
+    "headSha": "e72cdba3902f92a48355bf98831b96777392a1bc",
+    "baseSha": "ac9ece3c566b4488dcf73849c17b656ec2d7d17d"
+  },
+  "vendoredDiffPath": "unconfirmed/claude-code/claude-code-anthropics-anthropic-sdk-typescript-pr1053.diff",
+  "vendoredAt": "2026-05-24T03:16:18.961Z",
+  "collectedAt": "2026-05-24T03:16:18.961Z"
+}

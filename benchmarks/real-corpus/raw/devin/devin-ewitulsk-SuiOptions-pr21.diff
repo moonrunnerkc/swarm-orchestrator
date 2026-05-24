@@ -1,0 +1,533 @@
+diff --git a/rust-backend/services/api-service/src/bucket.rs b/rust-backend/services/api-service/src/bucket.rs
+new file mode 100644
+index 0000000..3881d75
+--- /dev/null
++++ b/rust-backend/services/api-service/src/bucket.rs
+@@ -0,0 +1,12 @@
++use shared::protocol_types::asset::AssetType;
++
++#[derive(Clone, Debug)]
++pub struct Bucket {
++    pub asset_type: AssetType,
++    pub settlement_type: AssetType,
++    pub strike: u64,
++    pub expiry_ms: u64,
++    pub total_written: u128,
++    pub exercise_cursor: u128,
++    pub cleaned: bool,
++}
+diff --git a/rust-backend/services/api-service/src/handlers/buckets.rs b/rust-backend/services/api-service/src/handlers/buckets.rs
+new file mode 100644
+index 0000000..3c97f54
+--- /dev/null
++++ b/rust-backend/services/api-service/src/handlers/buckets.rs
+@@ -0,0 +1,40 @@
++use std::sync::Arc;
++
++use axum::{extract::State, Json};
++use serde::Serialize;
++
++use crate::state::AppState;
++
++#[derive(Serialize)]
++pub struct BucketDto {
++    pub bucket_id: String,
++    pub asset_type: String,
++    pub settlement_type: String,
++    /// Stringified to avoid JSON precision loss on u64.
++    pub strike: String,
++    pub expiry_ms: String,
++    pub total_written: String,
++    pub exercise_cursor: String,
++}
++
++#[derive(Serialize)]
++pub struct BucketsResponse {
++    pub buckets: Vec<BucketDto>,
++}
++
++pub async fn list_buckets(State(state): State<Arc<AppState>>) -> Json<BucketsResponse> {
++    let buckets = state
++        .active_buckets()
++        .into_iter()
++        .map(|(id, b)| BucketDto {
++            bucket_id: id.to_hex(),
++            asset_type: b.asset_type.as_str().to_string(),
++            settlement_type: b.settlement_type.as_str().to_string(),
++            strike: b.strike.to_string(),
++            expiry_ms: b.expiry_ms.to_string(),
++            total_written: b.total_written.to_string(),
++            exercise_cursor: b.exercise_cursor.to_string(),
++        })
++        .collect();
++    Json(BucketsResponse { buckets })
++}
+diff --git a/rust-backend/services/api-service/src/handlers/mod.rs b/rust-backend/services/api-service/src/handlers/mod.rs
+new file mode 100644
+index 0000000..0abce3b
+--- /dev/null
++++ b/rust-backend/services/api-service/src/handlers/mod.rs
+@@ -0,0 +1 @@
++pub mod buckets;
+diff --git a/rust-backend/services/api-service/src/lib.rs b/rust-backend/services/api-service/src/lib.rs
+index 978edaf..61e9878 100644
+--- a/rust-backend/services/api-service/src/lib.rs
++++ b/rust-backend/services/api-service/src/lib.rs
+@@ -4,9 +4,10 @@
+ //! protocol state (currently just buckets), and serves it over HTTP.
+ //! Holds no funds, signs nothing — strictly a read/query layer.
+ 
++pub mod bucket;
+ pub mod config;
+-pub mod http;
+-pub mod indexer_client;
++pub mod handlers;
++pub mod router;
+ pub mod state;
+ 
+ pub use config::Config;
+diff --git a/rust-backend/services/api-service/src/main.rs b/rust-backend/services/api-service/src/main.rs
+index b6e7e4a..95fb78d 100644
+--- a/rust-backend/services/api-service/src/main.rs
++++ b/rust-backend/services/api-service/src/main.rs
+@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
+ use clap::Parser;
+ use tracing::info;
+ 
+-use api_service::{http, indexer_client, AppState, Cli, Config};
++use api_service::{router, AppState, Cli, Config};
+ 
+ #[tokio::main]
+ async fn main() -> Result<()> {
+@@ -13,17 +13,16 @@ async fn main() -> Result<()> {
+     let cli = Cli::parse();
+     let cfg_path = cli.config.to_string_lossy().into_owned();
+     info!(cfg_path, "loading config");
+-    let cfg = Config::load(&cfg_path)
+-        .with_context(|| format!("loading config from {cfg_path}"))?;
++    let cfg = Config::load(&cfg_path).with_context(|| format!("loading config from {cfg_path}"))?;
+     let state = Arc::new(AppState::new());
+ 
+     let url = cfg.indexer_url.clone();
+     let state_for_indexer = Arc::clone(&state);
+     tokio::spawn(async move {
+-        if let Err(e) = indexer_client::run(url, state_for_indexer).await {
++        if let Err(e) = shared::indexer_client::run(url, state_for_indexer).await {
+             tracing::error!(error = %e, "indexer subscriber exited");
+         }
+     });
+ 
+-    http::serve(cfg.bind_addr, state, &cfg.allowed_origins).await
++    router::serve(cfg.bind_addr, state, &cfg.allowed_origins).await
+ }
+diff --git a/rust-backend/services/api-service/src/http.rs b/rust-backend/services/api-service/src/router.rs
+similarity index 51%
+rename from rust-backend/services/api-service/src/http.rs
+rename to rust-backend/services/api-service/src/router.rs
+index 6dca24f..e3ff1bc 100644
+--- a/rust-backend/services/api-service/src/http.rs
++++ b/rust-backend/services/api-service/src/router.rs
+@@ -4,30 +4,13 @@ use std::net::SocketAddr;
+ use std::sync::Arc;
+ 
+ use anyhow::Result;
+-use axum::{extract::State, routing::get, Json, Router};
+-use serde::Serialize;
++use axum::{routing::get, Router};
+ use tower_http::cors::{Any, CorsLayer};
+ use tracing::info;
+ 
++use crate::handlers;
+ use crate::state::AppState;
+ 
+-#[derive(Serialize)]
+-pub struct BucketDto {
+-    pub bucket_id: String,
+-    pub asset_type: String,
+-    pub settlement_type: String,
+-    /// Stringified to avoid JSON precision loss on u64.
+-    pub strike: String,
+-    pub expiry_ms: String,
+-    pub total_written: String,
+-    pub exercise_cursor: String,
+-}
+-
+-#[derive(Serialize)]
+-pub struct BucketsResponse {
+-    pub buckets: Vec<BucketDto>,
+-}
+-
+ pub async fn serve(
+     addr: SocketAddr,
+     state: Arc<AppState>,
+@@ -37,7 +20,7 @@ pub async fn serve(
+ 
+     let app = Router::new()
+         .route("/health", get(health))
+-        .route("/buckets", get(list_buckets))
++        .route("/buckets", get(handlers::buckets::list_buckets))
+         .with_state(state)
+         .layer(cors);
+ 
+@@ -51,23 +34,6 @@ async fn health() -> &'static str {
+     "ok"
+ }
+ 
+-async fn list_buckets(State(state): State<Arc<AppState>>) -> Json<BucketsResponse> {
+-    let buckets = state
+-        .active_buckets()
+-        .into_iter()
+-        .map(|(id, b)| BucketDto {
+-            bucket_id: id.to_hex(),
+-            asset_type: b.asset_type.as_str().to_string(),
+-            settlement_type: b.settlement_type.as_str().to_string(),
+-            strike: b.strike.to_string(),
+-            expiry_ms: b.expiry_ms.to_string(),
+-            total_written: b.total_written.to_string(),
+-            exercise_cursor: b.exercise_cursor.to_string(),
+-        })
+-        .collect();
+-    Json(BucketsResponse { buckets })
+-}
+-
+ fn build_cors(allowed_origins: &[String]) -> Result<CorsLayer> {
+     if allowed_origins.iter().any(|o| o == "*") {
+         return Ok(CorsLayer::new()
+diff --git a/rust-backend/services/api-service/src/state.rs b/rust-backend/services/api-service/src/state.rs
+index ed152ca..51fac09 100644
+--- a/rust-backend/services/api-service/src/state.rs
++++ b/rust-backend/services/api-service/src/state.rs
+@@ -5,20 +5,10 @@ use std::collections::BTreeMap;
+ use parking_lot::RwLock;
+ use tracing::{debug, trace};
+ 
+-use shared::protocol_types::asset::AssetType;
+ use shared::protocol_types::events::{ChainEvent, IndexedEvent};
+ use shared::protocol_types::ids::ObjectId;
+ 
+-#[derive(Clone, Debug)]
+-pub struct Bucket {
+-    pub asset_type: AssetType,
+-    pub settlement_type: AssetType,
+-    pub strike: u64,
+-    pub expiry_ms: u64,
+-    pub total_written: u128,
+-    pub exercise_cursor: u128,
+-    pub cleaned: bool,
+-}
++use crate::bucket::Bucket;
+ 
+ #[derive(Default)]
+ pub struct AppState {
+@@ -30,7 +20,18 @@ impl AppState {
+         Self::default()
+     }
+ 
+-    pub fn ingest_event(&self, indexed: &IndexedEvent) {
++    pub fn active_buckets(&self) -> Vec<(ObjectId, Bucket)> {
++        self.buckets
++            .read()
++            .iter()
++            .filter(|(_, v)| !v.cleaned)
++            .map(|(k, v)| (*k, v.clone()))
++            .collect()
++    }
++}
++
++impl shared::indexer_client::EventSink for AppState {
++    fn ingest_event(&self, indexed: &IndexedEvent) {
+         trace!(sequence = indexed.sequence, "ingesting indexer event");
+         match &indexed.event {
+             ChainEvent::BucketCreated(b) => {
+@@ -66,20 +67,13 @@ impl AppState {
+             _ => {}
+         }
+     }
+-
+-    pub fn active_buckets(&self) -> Vec<(ObjectId, Bucket)> {
+-        self.buckets
+-            .read()
+-            .iter()
+-            .filter(|(_, v)| !v.cleaned)
+-            .map(|(k, v)| (*k, v.clone()))
+-            .collect()
+-    }
+ }
+ 
+ #[cfg(test)]
+ mod tests {
+     use super::*;
++    use shared::indexer_client::EventSink;
++    use shared::protocol_types::asset::AssetType;
+     use shared::protocol_types::events::{BucketCleaned, BucketCreated};
+ 
+     fn evt(seq: u64, ev: ChainEvent) -> IndexedEvent {
+@@ -105,7 +99,10 @@ mod tests {
+             }),
+         ));
+         assert_eq!(s.active_buckets().len(), 1);
+-        s.ingest_event(&evt(2, ChainEvent::BucketCleaned(BucketCleaned { bucket_id: id })));
++        s.ingest_event(&evt(
++            2,
++            ChainEvent::BucketCleaned(BucketCleaned { bucket_id: id }),
++        ));
+         assert_eq!(s.active_buckets().len(), 0);
+     }
+ }
+diff --git a/rust-backend/services/quoting-service/src/indexer_client.rs b/rust-backend/services/quoting-service/src/indexer_client.rs
+deleted file mode 100644
+index b01fa9e..0000000
+--- a/rust-backend/services/quoting-service/src/indexer_client.rs
++++ /dev/null
+@@ -1,86 +0,0 @@
+-//! Indexer subscriber.
+-//!
+-//! Connects to the indexer's WS, sends one `Subscribe { after_sequence: 0 }`
+-//! at startup, then pumps `Snapshot` / `Event` frames into the shared
+-//! [`AppState`]. Reconnects forever on disconnect — the indexer's
+-//! `Snapshot` catch-up handles missed sequences during downtime.
+-
+-use std::sync::Arc;
+-use std::time::Duration;
+-
+-use anyhow::Result;
+-use futures_util::{SinkExt, StreamExt};
+-use tokio::time::sleep;
+-use tokio_tungstenite::tungstenite::Message;
+-use tracing::{debug, info, warn};
+-
+-use shared::protocol_types::events::IndexedEvent;
+-use shared::protocol_types::messages::{IndexerStream, IndexerSubscribe};
+-
+-use crate::state::AppState;
+-
+-/// Connect to `url`, then drive events into `state` forever. Returns only on
+-/// fatal config error (which currently can't happen — bad URLs become
+-/// connect errors and we retry).
+-pub async fn run(url: String, state: Arc<AppState>) -> Result<()> {
+-    let mut after = 0u64;
+-    loop {
+-        match tokio_tungstenite::connect_async(&url).await {
+-            Ok((mut ws, _)) => {
+-                info!(%url, after_sequence = after, "indexer subscriber connected");
+-                let sub = IndexerSubscribe::Subscribe { after_sequence: after };
+-                if let Err(e) = ws.send(Message::Text(serde_json::to_string(&sub)?)).await {
+-                    warn!(error = %e, "indexer subscribe send failed; reconnecting");
+-                    sleep(Duration::from_secs(1)).await;
+-                    continue;
+-                }
+-                while let Some(frame) = ws.next().await {
+-                    let frame = match frame {
+-                        Ok(f) => f,
+-                        Err(e) => {
+-                            warn!(error = %e, "indexer ws read failed; reconnecting");
+-                            break;
+-                        }
+-                    };
+-                    let text = match frame {
+-                        Message::Text(t) => t,
+-                        Message::Binary(b) => match String::from_utf8(b) {
+-                            Ok(s) => s,
+-                            Err(_) => continue,
+-                        },
+-                        Message::Close(_) => break,
+-                        _ => continue,
+-                    };
+-                    match serde_json::from_str::<IndexerStream>(&text) {
+-                        Ok(IndexerStream::Snapshot { payload }) => {
+-                            debug!(events = payload.events.len(), "snapshot");
+-                            for e in &payload.events {
+-                                apply(&state, e, &mut after);
+-                            }
+-                            // If the snapshot's `latest_sequence` is ahead of
+-                            // what we observed, jump forward so heartbeats
+-                            // don't look like gaps.
+-                            after = after.max(payload.latest_sequence);
+-                        }
+-                        Ok(IndexerStream::Event { payload }) => apply(&state, &payload, &mut after),
+-                        Ok(IndexerStream::Heartbeat { latest_sequence }) => {
+-                            debug!(latest_sequence, "indexer heartbeat");
+-                        }
+-                        Err(e) => {
+-                            warn!(error = %e, frame = %text, "bad indexer frame");
+-                        }
+-                    }
+-                }
+-            }
+-            Err(e) => {
+-                warn!(error = %e, %url, "indexer connect failed");
+-            }
+-        }
+-        sleep(Duration::from_secs(1)).await;
+-    }
+-}
+-
+-fn apply(state: &AppState, ev: &IndexedEvent, after: &mut u64) {
+-    state.ingest_event(ev);
+-    *after = (*after).max(ev.sequence);
+-}
+diff --git a/rust-backend/services/quoting-service/src/lib.rs b/rust-backend/services/quoting-service/src/lib.rs
+index f8912e8..9e1c369 100644
+--- a/rust-backend/services/quoting-service/src/lib.rs
++++ b/rust-backend/services/quoting-service/src/lib.rs
+@@ -19,7 +19,6 @@
+ 
+ pub mod config;
+ pub mod errors;
+-pub mod indexer_client;
+ pub mod rfq;
+ pub mod state;
+ pub mod ws;
+diff --git a/rust-backend/services/quoting-service/src/main.rs b/rust-backend/services/quoting-service/src/main.rs
+index c5af0cd..b1436f9 100644
+--- a/rust-backend/services/quoting-service/src/main.rs
++++ b/rust-backend/services/quoting-service/src/main.rs
+@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
+ use clap::Parser;
+ use tracing::info;
+ 
+-use quoting_service::{indexer_client, state, AppState, Cli, Config};
++use quoting_service::{state, AppState, Cli, Config};
+ 
+ #[tokio::main]
+ async fn main() -> Result<()> {
+@@ -24,7 +24,7 @@ async fn main() -> Result<()> {
+     let url = cfg.indexer_url.clone();
+     let app_for_indexer = Arc::clone(&app);
+     tokio::spawn(async move {
+-        if let Err(e) = indexer_client::run(url, app_for_indexer).await {
++        if let Err(e) = shared::indexer_client::run(url, app_for_indexer).await {
+             tracing::error!(error = %e, "indexer subscriber exited");
+         }
+     });
+diff --git a/rust-backend/services/quoting-service/src/state/mod.rs b/rust-backend/services/quoting-service/src/state/mod.rs
+index f5a68c2..4da851d 100644
+--- a/rust-backend/services/quoting-service/src/state/mod.rs
++++ b/rust-backend/services/quoting-service/src/state/mod.rs
+@@ -125,6 +125,12 @@ impl AppState {
+     }
+ }
+ 
++impl shared::indexer_client::EventSink for AppState {
++    fn ingest_event(&self, event: &IndexedEvent) {
++        AppState::ingest_event(self, event);
++    }
++}
++
+ /// Background task: evict expired reservations every `tick`.
+ pub fn spawn_reservation_evictor(state: Arc<AppState>, tick: Duration) {
+     tokio::spawn(async move {
+diff --git a/rust-backend/services/api-service/src/indexer_client.rs b/rust-backend/shared/src/indexer_client.rs
+similarity index 68%
+rename from rust-backend/services/api-service/src/indexer_client.rs
+rename to rust-backend/shared/src/indexer_client.rs
+index 09bcda8..fb3af57 100644
+--- a/rust-backend/services/api-service/src/indexer_client.rs
++++ b/rust-backend/shared/src/indexer_client.rs
+@@ -1,9 +1,9 @@
+-//! Subscribes to the indexer's WS fanout and feeds events into [`AppState`].
++//! Generic indexer WS subscriber.
+ //!
+-//! Mirrors `quoting-service::indexer_client` — on connect, sends one
+-//! `Subscribe { after_sequence }`, drains the `Snapshot`, then pumps live
+-//! `Event` frames. Reconnects forever on disconnect; the indexer's snapshot
+-//! catch-up covers missed sequences within its ring-buffer window.
++//! Connects to the indexer's WS fanout, sends one `Subscribe { after_sequence }`
++//! at startup, then pumps `Snapshot` / `Event` frames into any type that
++//! implements [`EventSink`]. Reconnects forever on disconnect — the indexer's
++//! snapshot catch-up handles missed sequences during downtime.
+ 
+ use std::sync::Arc;
+ use std::time::Duration;
+@@ -14,18 +14,26 @@ use tokio::time::sleep;
+ use tokio_tungstenite::tungstenite::Message;
+ use tracing::{debug, info, warn};
+ 
+-use shared::protocol_types::events::IndexedEvent;
+-use shared::protocol_types::messages::{IndexerStream, IndexerSubscribe};
++use crate::protocol_types::events::IndexedEvent;
++use crate::protocol_types::messages::{IndexerStream, IndexerSubscribe};
+ 
+-use crate::state::AppState;
++/// Trait implemented by any service's state that can ingest indexer events.
++pub trait EventSink: Send + Sync + 'static {
++    fn ingest_event(&self, event: &IndexedEvent);
++}
+ 
+-pub async fn run(url: String, state: Arc<AppState>) -> Result<()> {
++/// Connect to `url`, then drive events into `sink` forever. Returns only on
++/// fatal config error (which currently can't happen — bad URLs become
++/// connect errors and we retry).
++pub async fn run<S: EventSink>(url: String, sink: Arc<S>) -> Result<()> {
+     let mut after = 0u64;
+     loop {
+         match tokio_tungstenite::connect_async(&url).await {
+             Ok((mut ws, _)) => {
+                 info!(%url, after_sequence = after, "indexer subscriber connected");
+-                let sub = IndexerSubscribe::Subscribe { after_sequence: after };
++                let sub = IndexerSubscribe::Subscribe {
++                    after_sequence: after,
++                };
+                 if let Err(e) = ws.send(Message::Text(serde_json::to_string(&sub)?)).await {
+                     warn!(error = %e, "indexer subscribe send failed; reconnecting");
+                     sleep(Duration::from_secs(1)).await;
+@@ -50,22 +58,18 @@ pub async fn run(url: String, state: Arc<AppState>) -> Result<()> {
+                     };
+                     match serde_json::from_str::<IndexerStream>(&text) {
+                         Ok(IndexerStream::Snapshot { payload }) => {
+-                            // TODO(SO-?): indexer fanout snapshot is bounded by
+-                            // `recent_log_capacity` (default 1024). If the gap
+-                            // between payload.latest_sequence and events.len()
+-                            // is large, we silently miss state. Track via Jira.
+                             debug!(
+                                 events = payload.events.len(),
+                                 latest_sequence = payload.latest_sequence,
+                                 "indexer snapshot"
+                             );
+                             for e in &payload.events {
+-                                apply(&state, e, &mut after);
++                                apply(&*sink, e, &mut after);
+                             }
+                             after = after.max(payload.latest_sequence);
+                         }
+                         Ok(IndexerStream::Event { payload }) => {
+-                            apply(&state, &payload, &mut after);
++                            apply(&*sink, &payload, &mut after);
+                         }
+                         Ok(IndexerStream::Heartbeat { latest_sequence }) => {
+                             debug!(latest_sequence, "indexer heartbeat");
+@@ -84,7 +88,7 @@ pub async fn run(url: String, state: Arc<AppState>) -> Result<()> {
+     }
+ }
+ 
+-fn apply(state: &AppState, ev: &IndexedEvent, after: &mut u64) {
+-    state.ingest_event(ev);
++fn apply<S: EventSink>(sink: &S, ev: &IndexedEvent, after: &mut u64) {
++    sink.ingest_event(ev);
+     *after = (*after).max(ev.sequence);
+ }
+diff --git a/rust-backend/shared/src/lib.rs b/rust-backend/shared/src/lib.rs
+index 63ee4a1..4dc76b7 100644
+--- a/rust-backend/shared/src/lib.rs
++++ b/rust-backend/shared/src/lib.rs
+@@ -23,6 +23,7 @@
+ 
+ pub mod config_load;
+ pub mod deployments;
++pub mod indexer_client;
+ pub mod logging;
+ pub mod pricing;
+ pub mod program_spec;
+diff --git a/rust-backend/tests/src/lib.rs b/rust-backend/tests/src/lib.rs
+index aed7e71..af4581c 100644
+--- a/rust-backend/tests/src/lib.rs
++++ b/rust-backend/tests/src/lib.rs
+@@ -115,7 +115,7 @@ impl Harness {
+         let app_clone = Arc::clone(&app);
+         let url = cfg.indexer_url.clone();
+         tokio::spawn(async move {
+-            let _ = quoting_service::indexer_client::run(url, app_clone).await;
++            let _ = shared::indexer_client::run(url, app_clone).await;
+         });
+ 
+         // Quoting WS server: rebind on ephemeral.

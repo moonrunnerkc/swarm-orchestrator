@@ -1,0 +1,105 @@
+diff --git a/.github/workflows/Maven.yml b/.github/workflows/Maven.yml
+index 16e5cf3..10b5737 100644
+--- a/.github/workflows/Maven.yml
++++ b/.github/workflows/Maven.yml
+@@ -34,6 +34,9 @@ jobs:
+       - name: Install dependencies
+         run: npm install
+ 
++      - name: Link Frontend directory for contract tests
++        run: ln -s "$(pwd)/Frontend" ../Frontend
++
+       - name: Validate JavaScript syntax
+         run: |
+           find . \
+diff --git a/Frontend/src/services/api.js b/Frontend/src/services/api.js
+new file mode 100644
+index 0000000..6de1d22
+--- /dev/null
++++ b/Frontend/src/services/api.js
+@@ -0,0 +1,85 @@
++import axios from 'axios';
++
++const api = axios.create({
++  baseURL: '/api',
++  timeout: 10000,
++  headers: {
++    'Content-Type': 'application/json',
++  },
++});
++
++api.interceptors.request.use(
++  (config) => {
++    const token = localStorage.getItem('token');
++    if (token) {
++      config.headers.Authorization = `Bearer ${token}`;
++    }
++    return config;
++  },
++  (error) => Promise.reject(error),
++);
++
++// Health
++export const checkHealth = () => api.get('/health');
++
++// Auth
++export const login = (data) => api.post('/auth/login', data);
++export const register = (data) => api.post('/auth/register', data);
++export const loginGoogle = (data) => api.post('/auth/google', data);
++export const loginFacebook = (data) => api.post('/auth/facebook', data);
++export const getPerfil = () => api.get('/auth/perfil');
++export const actualizarPerfil = (data) => api.patch('/auth/perfil', data);
++export const actualizarAvatar = (data) => api.patch('/auth/avatar', data);
++export const cambiarContrasena = (data) => api.patch('/auth/cambiar-contrasena', data);
++export const actualizarNotificacionesPerfil = (data) => api.patch('/auth/notificaciones', data);
++export const forgotPassword = (data) => api.post('/auth/forgot-password', data);
++export const resetPassword = (data) => api.post('/auth/reset-password', data);
++export const enviarVerificacion = () => api.post('/auth/enviar-verificacion');
++export const verificarEmail = (data) => api.post('/auth/verificar-email', data);
++
++// Categorías
++export const getCategorias = () => api.get('/categorias');
++export const getCategoria = (codigo) => api.get(`/categorias/${codigo}`);
++
++// Reportes – estadísticas
++export const getReportesStats = () => api.get('/reportes/stats');
++export const getReportesStatsPorCategoria = () => api.get('/reportes/stats/categoria');
++export const getReportesStatsTimeline = () => api.get('/reportes/stats/timeline');
++export const getReportesStatsHeatmap = () => api.get('/reportes/stats/heatmap');
++export const getReportesStatsIA = () => api.get('/reportes/stats/ia');
++
++// Reportes – CRUD
++export const crearReporte = (data) => api.post('/reportes', data);
++export const getReportes = (params) => api.get('/reportes', { params });
++export const getReporte = (id) => api.get(`/reportes/${id}`);
++export const analizarImagen = (data) => api.post('/reportes/analizar-imagen', data);
++export const actualizarReporte = (id, data) => api.patch(`/reportes/${id}`, data);
++export const eliminarReporte = (id) => api.delete(`/reportes/${id}`);
++export const exportarReportes = (params) => api.get('/reportes/export', { params });
++export const likeReporte = (id) => api.post(`/reportes/${id}/like`);
++export const getReportesTrending = () => api.get('/reportes/trending');
++export const getZonasRiesgo = () => api.get('/reportes/zonas-riesgo');
++export const getAlertasPredictivas = () => api.get('/reportes/alertas-predictivas');
++export const getMisReportes = () => api.get('/reportes/mis-reportes');
++
++// Admin – usuarios
++export const getAdminUsuariosStats = () => api.get('/admin/usuarios/stats');
++export const getAdminUsuarios = (params) => api.get('/admin/usuarios', { params });
++export const getAdminUsuario = (id) => api.get(`/admin/usuarios/${id}`);
++export const cambiarRolUsuario = (id, data) => api.patch(`/admin/usuarios/${id}/rol`, data);
++export const cambiarEstadoUsuario = (id, data) => api.patch(`/admin/usuarios/${id}/estado`, data);
++export const eliminarUsuario = (id) => api.delete(`/admin/usuarios/${id}`);
++
++// Chatbot
++export const enviarMensajeChatbot = (data) => api.post('/chatbot/mensaje', data);
++export const getFaqsChatbot = () => api.get('/chatbot/faqs');
++
++// Notificaciones
++export const getNotificaciones = () => api.get('/notificaciones');
++export const getContadorNotificaciones = () => api.get('/notificaciones/contador');
++export const registrarFcmToken = (data) => api.post('/notificaciones/fcm-token', data);
++export const marcarNotificacionLeida = (uuid) => api.patch(`/notificaciones/${uuid}/leida`);
++export const marcarTodasLeidas = () => api.patch('/notificaciones/marcar-todas');
++export const eliminarNotificacion = (uuid) => api.delete(`/notificaciones/${uuid}`);
++
++export default api;

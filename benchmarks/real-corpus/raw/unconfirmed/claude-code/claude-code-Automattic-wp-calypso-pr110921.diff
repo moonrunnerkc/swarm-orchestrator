@@ -1,0 +1,484 @@
+diff --git a/client/a8c-for-agencies/sections/agent-studio/data/use-agent-studio-variant-html.ts b/client/a8c-for-agencies/sections/agent-studio/data/use-agent-studio-variant-html.ts
+index c5841ab122fc..808c873b1a2d 100644
+--- a/client/a8c-for-agencies/sections/agent-studio/data/use-agent-studio-variant-html.ts
++++ b/client/a8c-for-agencies/sections/agent-studio/data/use-agent-studio-variant-html.ts
+@@ -13,7 +13,15 @@ export const getAgentStudioVariantHtmlQueryKey = ( htmlUrl: string | undefined )
+ 
+ export const fetchAgentStudioVariantHtml = async ( htmlUrl: string ): Promise< string > => {
+ 	const token = oauthToken.getToken();
++	// `cache: 'no-cache'` forces a conditional request against the origin
++	// on every fetch. Refine writes new HTML to the same html_url, so
++	// without revalidation the browser's HTTP cache can serve the pre-
++	// refine body even after React Query has invalidated its in-memory
++	// entry — the symptom is "I refined page 5 but the iframe still
++	// shows the old layout." A 304 round-trip is cheap; a stale render
++	// is not.
+ 	const response = await fetch( htmlUrl, {
++		cache: 'no-cache',
+ 		headers: {
+ 			Accept: 'text/html',
+ 			...( typeof token === 'string' ? { Authorization: `Bearer ${ token }` } : {} ),
+diff --git a/client/a8c-for-agencies/sections/agent-studio/data/use-refine-collateral-page.ts b/client/a8c-for-agencies/sections/agent-studio/data/use-refine-collateral-page.ts
+new file mode 100644
+index 000000000000..d72aafc6b8f1
+--- /dev/null
++++ b/client/a8c-for-agencies/sections/agent-studio/data/use-refine-collateral-page.ts
+@@ -0,0 +1,118 @@
++/**
++ * `POST /agency/<id>/a4a/collaterals/<post_id>/refine` — dispatches a
++ * page-scoped refinement run against an existing collateral. The
++ * wpcom endpoint parses the page number out of the natural-language
++ * `instruction` server-side, so callers only pass the raw text.
++ *
++ * Two distinct outcomes the chat UI needs to distinguish:
++ *
++ *   - Success: `{ run_id, status, page, page_index }`. The UI starts
++ *     polling `/a4a/runs/<run_id>` and bumps a thinking indicator.
++ *   - Clarification: `400` with `data.kind === 'clarification_needed'`.
++ *     The error's `message` is suitable for rendering inline as an
++ *     assistant reply ("Which page?", "Page 99 doesn't exist…",
++ *     "Page 1 is the cover…"). The UI surfaces this message and lets
++ *     the user retry — no run was created.
++ *
++ * Hard errors (auth, server, network) come through as rejected
++ * mutations and the UI shows a brief generic fallback message.
++ */
++import { useMutation } from '@tanstack/react-query';
++import wpcom from 'calypso/lib/wp';
++import { useSelector } from 'calypso/state';
++import { getActiveAgencyId } from 'calypso/state/a8c-for-agencies/agency/selectors';
++
++export interface RefineCollateralPageInput {
++	collateralPostId: number;
++	instruction: string;
++}
++
++export interface RefineCollateralPageResponse {
++	run_id: number;
++	status: string;
++	page: number;
++	page_index: number;
++}
++
++export interface RefineCollateralPageClarification {
++	kind: 'clarification_needed';
++	message: string;
++}
++
++/**
++ * Shape wpcom.req raises for a WP_Error response. `error` carries the
++ * WP_Error code; `data` carries the `[ 'status' => …, 'kind' => … ]`
++ * payload the endpoint attached.
++ */
++interface WpcomReqError {
++	error?: string;
++	message?: string;
++	data?: { status?: number; kind?: string; [ key: string ]: unknown };
++}
++
++const isClarification = (
++	err: unknown
++): err is WpcomReqError & { data: { kind: 'clarification_needed' } } => {
++	if ( ! err || typeof err !== 'object' ) {
++		return false;
++	}
++	const data = ( err as WpcomReqError ).data;
++	if ( ! data || typeof data !== 'object' ) {
++		return false;
++	}
++	if ( data.kind === 'clarification_needed' ) {
++		return true;
++	}
++	// Fall back to inspecting the WP_Error code in case `data.kind` is
++	// dropped by a transport layer. The endpoint uses the code
++	// `a4a_clarification_needed` for the same condition.
++	return ( err as WpcomReqError ).error === 'a4a_clarification_needed';
++};
++
++export default function useRefineCollateralPage() {
++	const agencyId = useSelector( getActiveAgencyId );
++
++	return useMutation<
++		RefineCollateralPageResponse,
++		RefineCollateralPageClarification | Error,
++		RefineCollateralPageInput
++	>( {
++		mutationFn: async ( { collateralPostId, instruction } ) => {
++			if ( ! agencyId ) {
++				throw new Error( 'useRefineCollateralPage: no active agency.' );
++			}
++			try {
++				const response: RefineCollateralPageResponse = await wpcom.req.post( {
++					apiNamespace: 'wpcom/v2',
++					path: `/agency/${ agencyId }/a4a/collaterals/${ collateralPostId }/refine`,
++					body: { instruction },
++				} );
++				return response;
++			} catch ( err: unknown ) {
++				if ( isClarification( err ) ) {
++					const message =
++						typeof ( err as WpcomReqError ).message === 'string'
++							? ( ( err as WpcomReqError ).message as string )
++							: 'I need more detail to do that.';
++					// Throw a typed clarification so the caller's
++					// `onError` branch can render the message as an
++					// assistant chat reply without surfacing a generic
++					// hard-error banner.
++					const clarification: RefineCollateralPageClarification = {
++						kind: 'clarification_needed',
++						message,
++					};
++					throw clarification;
++				}
++				throw err instanceof Error ? err : new Error( 'Refine request failed.' );
++			}
++		},
++	} );
++}
++
++export const isRefineClarification = ( err: unknown ): err is RefineCollateralPageClarification => {
++	if ( ! err || typeof err !== 'object' ) {
++		return false;
++	}
++	return ( err as RefineCollateralPageClarification ).kind === 'clarification_needed';
++};
+diff --git a/client/a8c-for-agencies/sections/agent-studio/primary/output-detail/output-detail-content.tsx b/client/a8c-for-agencies/sections/agent-studio/primary/output-detail/output-detail-content.tsx
+index 5fe7ec95dd4a..43661b00f1dc 100644
+--- a/client/a8c-for-agencies/sections/agent-studio/primary/output-detail/output-detail-content.tsx
++++ b/client/a8c-for-agencies/sections/agent-studio/primary/output-detail/output-detail-content.tsx
+@@ -7,6 +7,7 @@ import {
+ 	__experimentalVStack as VStack,
+ } from '@wordpress/components';
+ import { __ } from '@wordpress/i18n';
++import { sparkles } from '@wordpress/icons';
+ import { useMemo, useState, type ReactNode } from 'react';
+ import useAgentStudioCollateral, {
+ 	type AgentStudioCollateralVariant,
+@@ -15,6 +16,7 @@ import useAgentStudioRun, { type AgentStudioRunPayload } from '../../data/use-ag
+ import useAgentStudioVariantHtml from '../../data/use-agent-studio-variant-html';
+ import usePrefetchAgentStudioVariantHtml from '../../data/use-prefetch-agent-studio-variant-html';
+ import PdfViewer, { type PdfViewerPage } from './pdf-viewer';
++import RefineWithAiDock from './refine-with-ai-dock';
+ import { splitIntoPages, wrapAsDocument } from './split-pages';
+ import type { AgentStudioOutput } from '../../types';
+ 
+@@ -54,6 +56,7 @@ export default function OutputDetailContent( { output }: Props ) {
+ 	const run = useAgentStudioRun( output.id );
+ 	const postId = extractPostId( run.data?.payload );
+ 	const collateral = useAgentStudioCollateral( postId );
++	const [ isRefineOpen, setIsRefineOpen ] = useState( false );
+ 
+ 	const variants = useMemo< AgentStudioCollateralVariant[] >(
+ 		() => collateral.data?.variants ?? [],
+@@ -148,6 +151,14 @@ export default function OutputDetailContent( { output }: Props ) {
+ 	return (
+ 		<VStack spacing={ 4 } className="a4a-agent-studio-output-detail__content">
+ 			<HStack className="a4a-agent-studio-output-detail__actions" justify="flex-end" spacing={ 2 }>
++				<Button
++					variant="secondary"
++					icon={ sparkles }
++					onClick={ () => setIsRefineOpen( ( open ) => ! open ) }
++					aria-pressed={ isRefineOpen }
++				>
++					{ __( 'Refine with AI' ) }
++				</Button>
+ 				{ selectedVariant?.pdf_download_url && (
+ 					<Button
+ 						variant="primary"
+@@ -177,6 +188,13 @@ export default function OutputDetailContent( { output }: Props ) {
+ 					}
+ 				/>
+ 			) }
++			{ isRefineOpen && postId && (
++				<RefineWithAiDock
++					collateralPostId={ postId }
++					totalPages={ pages.length }
++					onClose={ () => setIsRefineOpen( false ) }
++				/>
++			) }
+ 		</VStack>
+ 	);
+ }
+diff --git a/client/a8c-for-agencies/sections/agent-studio/primary/output-detail/refine-with-ai-dock.scss b/client/a8c-for-agencies/sections/agent-studio/primary/output-detail/refine-with-ai-dock.scss
+new file mode 100644
+index 000000000000..89c43b0c7eaf
+--- /dev/null
++++ b/client/a8c-for-agencies/sections/agent-studio/primary/output-detail/refine-with-ai-dock.scss
+@@ -0,0 +1,30 @@
++@use '@wordpress/base-styles/colors' as colors;
++
++.a4a-refine-with-ai-dock {
++	display: flex;
++	flex-direction: column;
++	position: fixed;
++	right: 0;
++	top: 0;
++	bottom: 0;
++	width: min(380px, 100vw);
++	z-index: 100;
++	background: #fff;
++	border-left: 1px solid var(--wp-admin-theme-color, #1e1e1e);
++	box-shadow: -2px 0 12px rgba(0, 0, 0, 0.08);
++
++	&__header {
++		flex-shrink: 0;
++		padding: 12px 16px;
++		border-bottom: 1px solid #eee;
++		background: #fafafa;
++	}
++
++	&__body {
++		flex: 1 1 auto;
++		min-height: 0;
++		display: flex;
++		flex-direction: column;
++		overflow: hidden;
++	}
++}
+diff --git a/client/a8c-for-agencies/sections/agent-studio/primary/output-detail/refine-with-ai-dock.tsx b/client/a8c-for-agencies/sections/agent-studio/primary/output-detail/refine-with-ai-dock.tsx
+new file mode 100644
+index 000000000000..2c08231ba150
+--- /dev/null
++++ b/client/a8c-for-agencies/sections/agent-studio/primary/output-detail/refine-with-ai-dock.tsx
+@@ -0,0 +1,241 @@
++/**
++ * Refine-with-AI dock attached to the output-detail screen.
++ *
++ * Conversational refinement layer over the existing
++ * `compose-one-pager-ela-v2` pipeline. The user looks at a rendered
++ * one-pager, opens this dock, and says something like "page 5 is
++ * clipped". The wpcom endpoint
++ * `/agency/<id>/a4a/collaterals/<post_id>/refine` parses the page
++ * number out of the instruction, validates it, and dispatches the
++ * `refine-one-pager-ela-v2` recipe. We poll the run and re-render
++ * the preview iframe on completion.
++ *
++ * The chat surface is `AgentUI` from `@automattic/agenttic-ui` — the
++ * framework-agnostic pure-UI primitive that `AgentChat` wraps. We
++ * use it directly so we can drive everything from local React state
++ * without dragging in `AGENTS_MANAGER_STORE`, `AgentsManagerContext`,
++ * `agenttic-client`'s agent registry, or React Router.
++ *
++ * Thread state is ephemeral by design — closing the dock or
++ * refreshing the page resets the transcript. The collateral itself
++ * persists with the latest body_pages; the conversation about it
++ * doesn't. See `~/Projects/wpcom-specs/one-pager-refinement-chat/`.
++ */
++import { AgentUI } from '@automattic/agenttic-ui';
++import { useQueryClient } from '@tanstack/react-query';
++import { Button, __experimentalHStack as HStack } from '@wordpress/components';
++import { useEffect, useMemo, useRef, useState } from '@wordpress/element';
++import { __, sprintf } from '@wordpress/i18n';
++import { close } from '@wordpress/icons';
++import { getAgentStudioCollateralQueryKey } from '../../data/use-agent-studio-collateral';
++import useAgentStudioRun from '../../data/use-agent-studio-run';
++import { getAgentStudioVariantHtmlQueryKey } from '../../data/use-agent-studio-variant-html';
++import useRefineCollateralPage, {
++	isRefineClarification,
++} from '../../data/use-refine-collateral-page';
++import type { Message } from '@automattic/agenttic-ui/dist/types';
++
++import './refine-with-ai-dock.scss';
++
++interface Props {
++	collateralPostId: number;
++	/** Total visible pages (cover + body pages). Used in the empty-state hint. */
++	totalPages: number;
++	onClose: () => void;
++}
++
++interface ActiveRun {
++	runId: string;
++	userFacingPage: number;
++}
++
++/**
++ * Stable message id factory — `crypto.randomUUID` when available,
++ * monotonic counter fallback for older environments. agenttic-ui keys
++ * its list off `Message.id`, so collisions cause React reconciliation
++ * bugs in long threads.
++ */
++let messageIdCounter = 0;
++const newMessageId = (): string => {
++	if ( typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ) {
++		return crypto.randomUUID();
++	}
++	messageIdCounter += 1;
++	return `refine-msg-${ Date.now() }-${ messageIdCounter }`;
++};
++
++const userMessage = ( text: string ): Message => ( {
++	id: newMessageId(),
++	role: 'user',
++	content: [ { type: 'text', text } ],
++	timestamp: Date.now(),
++	archived: false,
++	showIcon: false,
++} );
++
++const agentMessage = ( text: string ): Message => ( {
++	id: newMessageId(),
++	role: 'agent',
++	content: [ { type: 'text', text } ],
++	timestamp: Date.now(),
++	archived: false,
++	showIcon: true,
++} );
++
++export default function RefineWithAiDock( { collateralPostId, totalPages, onClose }: Props ) {
++	const [ messages, setMessages ] = useState< Message[] >( [] );
++	const [ activeRun, setActiveRun ] = useState< ActiveRun | null >( null );
++	const queryClient = useQueryClient();
++	const refine = useRefineCollateralPage();
++
++	// Poll the active refine run. `useAgentStudioRun` is the existing
++	// runs poll hook; passing undefined keeps it idle.
++	const run = useAgentStudioRun( activeRun?.runId );
++
++	// React-Query polls on a default interval when `refetchInterval` is
++	// set. The runs hook doesn't set one — opt in here while a run is
++	// in-flight, then turn it off on terminal status. `run.refetch` is
++	// stable across renders in react-query v5; depending only on
++	// `activeRun` keeps the interval from restarting every render.
++	const refetch = run.refetch;
++	useEffect( () => {
++		if ( ! activeRun ) {
++			return;
++		}
++		const interval = setInterval( () => {
++			void refetch();
++		}, 2000 );
++		return () => clearInterval( interval );
++	}, [ activeRun, refetch ] );
++
++	// Track terminal transitions so we only post the success/failure
++	// message once per run. Without this the polling-driven re-render
++	// would repeatedly append the same "Updated page N." reply.
++	const handledRunIdRef = useRef< string | null >( null );
++	useEffect( () => {
++		if ( ! activeRun || ! run.data ) {
++			return;
++		}
++		const status = run.data.status;
++		const isTerminal =
++			status === 'a4a_completed' || status === 'a4a_failed' || status === 'a4a_cancelled';
++		if ( ! isTerminal ) {
++			return;
++		}
++		if ( handledRunIdRef.current === activeRun.runId ) {
++			return;
++		}
++		handledRunIdRef.current = activeRun.runId;
++
++		if ( status === 'a4a_completed' ) {
++			setMessages( ( current ) => [
++				...current,
++				agentMessage(
++					sprintf(
++						/* translators: %d is the 1-based page number the user pointed at. */
++						__( 'Updated page %d.' ),
++						activeRun.userFacingPage
++					)
++				),
++			] );
++			// Refresh the rendered preview. Two caches sit between us
++			// and the new HTML:
++			//   1. The variant-html query (keyed on html_url). Invalidate
++			//      by prefix so every variant's entry refetches; the
++			//      fetch itself uses `cache: 'no-cache'` to bypass the
++			//      browser's HTTP cache for the same URL.
++			//   2. The collateral query (keyed on agencyId + postId).
++			//      Refine may bump variant.html_url to a new versioned
++			//      path; without invalidating the collateral we'd keep
++			//      rendering the pre-refine URL.
++			void queryClient.invalidateQueries( {
++				queryKey: getAgentStudioVariantHtmlQueryKey( undefined ).slice( 0, 1 ),
++			} );
++			void queryClient.invalidateQueries( {
++				queryKey: getAgentStudioCollateralQueryKey( undefined, undefined ).slice( 0, 1 ),
++			} );
++		} else {
++			setMessages( ( current ) => [
++				...current,
++				agentMessage( __( "I couldn't update that page. Try rephrasing your request." ) ),
++			] );
++		}
++		setActiveRun( null );
++	}, [ activeRun, run.data, queryClient ] );
++
++	const handleSubmit = async ( instruction: string ): Promise< void > => {
++		const trimmed = instruction.trim();
++		if ( '' === trimmed || activeRun ) {
++			return;
++		}
++		setMessages( ( current ) => [ ...current, userMessage( trimmed ) ] );
++
++		try {
++			const response = await refine.mutateAsync( {
++				collateralPostId,
++				instruction: trimmed,
++			} );
++			setActiveRun( {
++				runId: String( response.run_id ),
++				userFacingPage: response.page,
++			} );
++		} catch ( err: unknown ) {
++			if ( isRefineClarification( err ) ) {
++				// Server told us what to ask for. Render the message as
++				// an assistant reply; user retries with a clearer
++				// instruction. No run was created.
++				setMessages( ( current ) => [ ...current, agentMessage( err.message ) ] );
++				return;
++			}
++			setMessages( ( current ) => [
++				...current,
++				agentMessage( __( 'Something went wrong. Please try again in a moment.' ) ),
++			] );
++		}
++	};
++
++	const isProcessing = activeRun !== null || refine.isPending;
++	const thinkingMessage = useMemo( () => {
++		if ( ! activeRun ) {
++			return undefined;
++		}
++		return sprintf(
++			/* translators: %d is the 1-based page number being refined. */
++			__( 'Updating page %d…' ),
++			activeRun.userFacingPage
++		);
++	}, [ activeRun ] );
++
++	const placeholderHint = useMemo( () => {
++		// totalPages includes the cover; the lowest refinable page is 2.
++		return sprintf(
++			/* translators: %d is the highest body page number, 1-based with cover. */
++			__( 'Tell me what to change. e.g. "page %d is clipped".' ),
++			Math.max( 2, totalPages )
++		);
++	}, [ totalPages ] );
++
++	return (
++		<aside className="a4a-refine-with-ai-dock" aria-label={ __( 'Refine with AI' ) }>
++			<HStack className="a4a-refine-with-ai-dock__header" justify="space-between" spacing={ 2 }>
++				<strong>{ __( 'Refine with AI' ) }</strong>
++				<Button
++					icon={ close }
++					label={ __( 'Close refine panel' ) }
++					onClick={ onClose }
++					size="small"
++				/>
++			</HStack>
++			<div className="a4a-refine-with-ai-dock__body">
++				<AgentUI
++					variant="embedded"
++					messages={ messages }
++					isProcessing={ isProcessing }
++					thinkingMessage={ thinkingMessage }
++					placeholder={ placeholderHint }
++					onSubmit={ handleSubmit }
++				/>
++			</div>
++		</aside>
++	);
++}

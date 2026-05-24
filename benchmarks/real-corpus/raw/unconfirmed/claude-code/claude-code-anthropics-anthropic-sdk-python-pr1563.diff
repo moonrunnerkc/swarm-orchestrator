@@ -1,0 +1,18 @@
+diff --git a/src/anthropic/lib/streaming/_messages.py b/src/anthropic/lib/streaming/_messages.py
+index 5c0da9992..004182e6e 100644
+--- a/src/anthropic/lib/streaming/_messages.py
++++ b/src/anthropic/lib/streaming/_messages.py
+@@ -477,7 +477,12 @@ def accumulate_event(
+                 json_buf += bytes(event.delta.partial_json, "utf-8")
+ 
+                 if json_buf:
+-                    content.input = from_json(json_buf, partial_mode=True)
++                    try:
++                        content.input = from_json(json_buf, partial_mode=True)
++                    except ValueError as e:
++                        raise ValueError(
++                            f"Unable to parse tool parameter JSON from model. Please retry your request or adjust your prompt. Error: {e}. JSON: {json_buf.decode('utf-8')}"
++                        ) from e
+ 
+                 setattr(content, JSON_BUF_PROPERTY, json_buf)
+         elif event.delta.type == "citations_delta":

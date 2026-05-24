@@ -1,0 +1,26 @@
+{
+  "id": "codex-cli-openai-codex-pr24113",
+  "agent": {
+    "vendor": "codex-cli",
+    "confidence": "medium",
+    "source": "repo-owner=openai"
+  },
+  "pr": {
+    "number": 24113,
+    "headSha": "c0d1bb6a198de8fce29ae0e01377528cd9f1f231",
+    "baseSha": "06dc516b6ffbc84006c6996287123e0d642c8fff",
+    "title": "[runtime] forward runtime apis from app server to exec server",
+    "body": "## Summary\n\n- Forward runtime install progress and cancellation between app-server and a separately running exec-server, preserving the public lifecycle introduced by the parent PR.\n- Keep the install request active while processing progress notifications and cancellation requests, with process-wide singleton install ownership on exec-server.\n- Add transport-level coverage for remote progress and cancellation forwarding.\n\n## Test Plan\n\n- Formatting and scoped Clippy checks passed for `codex-exec-server`.\n- `cargo test -p codex-exec-server` passed, including the remote progress-and-cancel transport test.\n- An isolated two-process harness launched separate app-server and exec-server instances, observed progress and cancellation across the transport, then completed installation and verified resource publication under the exec-server `CODEX_HOME`.\n\n## Stack\n\n1. [#24111](https://github.com/openai/codex/pull/24111) - Introduce `runtime/install` API\n2. [#24112](https://github.com/openai/codex/pull/24112) - Add progress and cancellation APIs\n3. **[#24113](https://github.com/openai/codex/pull/24113) - Forward runtime APIs from app-server to exec-server**\n",
+    "author": "acrognale-oai",
+    "headRef": "acrognale/runtime-install-remote",
+    "repository": "openai/codex"
+  },
+  "diffRef": {
+    "repository": "openai/codex",
+    "headSha": "c0d1bb6a198de8fce29ae0e01377528cd9f1f231",
+    "baseSha": "06dc516b6ffbc84006c6996287123e0d642c8fff"
+  },
+  "vendoredDiffPath": "unconfirmed/codex-cli/codex-cli-openai-codex-pr24113.diff",
+  "vendoredAt": "2026-05-24T03:21:12.518Z",
+  "collectedAt": "2026-05-24T03:21:12.518Z"
+}

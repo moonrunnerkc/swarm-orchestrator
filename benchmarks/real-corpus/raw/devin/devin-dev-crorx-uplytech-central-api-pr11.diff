@@ -1,0 +1,106 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index cff47d3..293556d 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -13,10 +13,10 @@ jobs:
+ 
+     steps:
+       - name: Checkout
+-        uses: actions/checkout@v4
++        uses: actions/checkout@v6
+ 
+       - name: Setup Node.js
+-        uses: actions/setup-node@v4
++        uses: actions/setup-node@v6
+         with:
+           node-version: '20'
+           cache: 'npm'
+@@ -40,10 +40,10 @@ jobs:
+ 
+     steps:
+       - name: Checkout
+-        uses: actions/checkout@v4
++        uses: actions/checkout@v6
+ 
+       - name: Setup Node.js
+-        uses: actions/setup-node@v4
++        uses: actions/setup-node@v6
+         with:
+           node-version: '20'
+           cache: 'npm'
+@@ -88,10 +88,10 @@ jobs:
+ 
+     steps:
+       - name: Checkout
+-        uses: actions/checkout@v4
++        uses: actions/checkout@v6
+ 
+       - name: Setup Node.js
+-        uses: actions/setup-node@v4
++        uses: actions/setup-node@v6
+         with:
+           node-version: '20'
+           cache: 'npm'
+@@ -119,7 +119,7 @@ jobs:
+ 
+     steps:
+       - name: Checkout
+-        uses: actions/checkout@v4
++        uses: actions/checkout@v6
+ 
+       - name: Build Docker image
+         run: docker build -t uplytech-central-api .
+diff --git a/.github/workflows/docker-publish.yml b/.github/workflows/docker-publish.yml
+index c13faa4..8f8ad16 100644
+--- a/.github/workflows/docker-publish.yml
++++ b/.github/workflows/docker-publish.yml
+@@ -19,10 +19,10 @@ jobs:
+ 
+     steps:
+       - name: Checkout
+-        uses: actions/checkout@v4
++        uses: actions/checkout@v6
+ 
+       - name: Log in to Container Registry
+-        uses: docker/login-action@v3
++        uses: docker/login-action@v4
+         with:
+           registry: ${{ env.REGISTRY }}
+           username: ${{ github.actor }}
+@@ -30,7 +30,7 @@ jobs:
+ 
+       - name: Extract metadata
+         id: meta
+-        uses: docker/metadata-action@v5
++        uses: docker/metadata-action@v6
+         with:
+           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+           tags: |
+@@ -40,7 +40,7 @@ jobs:
+             type=raw,value=latest,enable={{is_default_branch}}
+ 
+       - name: Build and push
+-        uses: docker/build-push-action@v5
++        uses: docker/build-push-action@v7
+         with:
+           context: .
+           push: true
+diff --git a/Dockerfile b/Dockerfile
+index d0c8366..f7f4cd4 100644
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -1,4 +1,4 @@
+-FROM node:20-alpine AS builder
++FROM node:26-alpine AS builder
+ 
+ WORKDIR /app
+ 
+@@ -13,7 +13,7 @@ COPY src ./src/
+ RUN npx prisma generate
+ RUN npm run build
+ 
+-FROM node:20-alpine AS runner
++FROM node:26-alpine AS runner
+ 
+ WORKDIR /app
+ 

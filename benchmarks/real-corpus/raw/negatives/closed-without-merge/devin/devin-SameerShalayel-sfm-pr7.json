@@ -1,0 +1,26 @@
+{
+  "id": "devin-SameerShalayel-sfm-pr7",
+  "agent": {
+    "vendor": "devin",
+    "confidence": "high",
+    "source": "author=devin-ai-integration[bot]+body=devin-session-url"
+  },
+  "pr": {
+    "number": 7,
+    "headSha": "95a8fc225b947da252adb91f7dd982fc897b3015",
+    "baseSha": "5ef3726cce51c53382c1530746d988bc02d680ba",
+    "title": "fix: إصلاح أسماء Docker images — lowercase مطلوب لـ GHCR",
+    "body": "## Summary\n\nالـ CI workflow فشل لأن `github.repository_owner` يرجع `SameerShalayel` بحروف كبيرة، و Docker registry يتطلب lowercase فقط.\n\n**الإصلاح:**\n- أضاف خطوة تحويل اسم المالك لـ lowercase باستخدام `${OWNER,,}` (bash parameter expansion)\n- أضاف `workflow_dispatch` trigger عشان تقدر تشغّل الـ workflow يدوياً من GitHub Actions tab\n\n**الخطأ السابق:**\n```\nERROR: invalid tag \"ghcr.io/SameerShalayel/sfm/backend:latest\": repository name must be lowercase\n```\n\n## Review & Testing Checklist for Human\n\n- [ ] ادمج الـ PR وتحقق إن GitHub Actions workflow ينجح هالمرة (Actions tab)\n- [ ] تأكد إن الـ images ظهرت في https://github.com/orgs/SameerShalayel/packages أو https://github.com/SameerShalayel/sfm/pkgs/container\n\n### Notes\n- بعد نجاح الـ workflow، ارجع لـ Portainer وانشر الـ Stack كما شرحت سابقاً\n\nLink to Devin session: https://app.devin.ai/sessions/f4344a246a6d4fe4ac45b9036476e449\nRequested by: @SameerShalayel",
+    "author": "devin-ai-integration[bot]",
+    "headRef": "devin/1779537264-fix-ghcr-lowercase",
+    "repository": "SameerShalayel/sfm"
+  },
+  "diffRef": {
+    "repository": "SameerShalayel/sfm",
+    "headSha": "95a8fc225b947da252adb91f7dd982fc897b3015",
+    "baseSha": "5ef3726cce51c53382c1530746d988bc02d680ba"
+  },
+  "vendoredDiffPath": "negatives/closed-without-merge/devin/devin-SameerShalayel-sfm-pr7.diff",
+  "vendoredAt": "2026-05-24T04:27:45.958Z",
+  "collectedAt": "2026-05-24T04:27:45.958Z"
+}

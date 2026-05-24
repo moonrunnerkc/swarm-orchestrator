@@ -1,0 +1,26 @@
+{
+  "id": "copilot-workspace-qbert2k-skills-expand-your-team-with-copilot-pr11",
+  "agent": {
+    "vendor": "copilot-workspace",
+    "confidence": "high",
+    "source": "author=copilot-swe-agent[bot]"
+  },
+  "pr": {
+    "number": 11,
+    "headSha": "a05dd1419444e46d72a181d871331fa93a5658c1",
+    "baseSha": "20fff26cad81d7e1f624b01a18d17db6cba168e0",
+    "title": "Prepare Copilot cloud agent context for Step 3 progression",
+    "body": "This exercise step expects repository-level Copilot guidance and a `copilot-setup-steps` workflow before progressing. The current repo still had placeholder instructions and no setup workflow, so Copilot task/feedback sessions lacked the expected environment bootstrap.\n\n- **Copilot instructions**\n  - Replaced placeholder content in `.github/copilot-instructions.md` with repository-specific guidance:\n    - Development guide reference\n    - Non-technical communication expectations for staff\n    - Architecture constraints (single web app, supported languages, maintainability focus)\n\n- **Copilot cloud-agent setup workflow**\n  - Added `.github/workflows/copilot-setup-steps.yml` with the required `copilot-setup-steps` job.\n  - Prepares agent runtime by:\n    - Starting MongoDB service (`mongo:7`)\n    - Setting up Python `3.13`\n    - Installing backend dependencies from `src/requirements.txt`\n\n```yaml\njobs:\n  copilot-setup-steps:\n    runs-on: ubuntu-latest\n    services:\n      mongo:\n        image: mongo:7\n    steps:\n      - uses: actions/checkout@v5\n      - uses: actions/setup-python@v6\n        with:\n          python-version: \"3.13\"\n      - run: pip install -r src/requirements.txt\n```",
+    "author": "Copilot",
+    "headRef": "copilot/expand-team-with-copilot-cloud-agent",
+    "repository": "qbert2k/skills-expand-your-team-with-copilot"
+  },
+  "diffRef": {
+    "repository": "qbert2k/skills-expand-your-team-with-copilot",
+    "headSha": "a05dd1419444e46d72a181d871331fa93a5658c1",
+    "baseSha": "20fff26cad81d7e1f624b01a18d17db6cba168e0"
+  },
+  "vendoredDiffPath": "negatives/closed-without-merge/copilot-workspace/copilot-workspace-qbert2k-skills-expand-your-team-with-copilot-pr11.diff",
+  "vendoredAt": "2026-05-24T04:28:28.562Z",
+  "collectedAt": "2026-05-24T04:28:28.562Z"
+}

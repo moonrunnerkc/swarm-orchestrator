@@ -1,0 +1,26 @@
+{
+  "id": "openhands-All-Hands-AI-OpenHands-pr14505",
+  "agent": {
+    "vendor": "openhands",
+    "confidence": "high",
+    "source": "repo-owner=All-Hands-AI+body=openhands-attribution"
+  },
+  "pr": {
+    "number": 14505,
+    "headSha": "e46f38aa439c10f41f2c35d54fb15e7425c56000",
+    "baseSha": "8350c498aa6557d6e7e5c6f3c1385808191b1500",
+    "title": "fix: show raw llm_model on OpenHands conversation chip",
+    "body": "## Summary\n\n- The conversation model chip showed every OpenHands conversation as the literal string `\"OpenHands\"` regardless of `llm_model` — a regression introduced in #14401 (commit `9aa772b9`), which added `agentDisplayLabel(...)` to render ACP provider brands but also rewrote the OpenHands branch to a hard-coded harness label.\n- This restores the pre-#14401 behavior for the OpenHands agent branch: the chip displays the raw `llm_model` string (e.g. `anthropic/claude-sonnet-4-5-20250929`). ACP behavior is unchanged — ACP conversations still resolve to provider brand (`Claude Code`, `Codex`, `Gemini CLI`, …) and fall back to `\"ACP\"`.\n- The sidebar tooltip (`ConversationCardFooter`, `title={llmModel}`) is also fixed as a side effect — it now shows the underlying model rather than `\"OpenHands\"`.\n\nThe harness-brand-vs-model conflation in the chip is a separate design question (the chip uses a `CircuitIcon` and the `*-llm-model` test-ids — it was originally a model indicator). We'll address that as a follow-up.\n\n## Test plan\n\n- [x] `npm test` passes for the three touched component test files (56 tests)\n- [x] `npm run lint` passes (pre-existing warnings only)\n- [ ] Eyeball the model chip in the sidebar, the home page Recent Conversations, and an open conversation header for an OpenHands+Anthropic conversation (should now show `anthropic/...` instead of `OpenHands`)\n- [ ] Eyeball an ACP (Claude Code) conversation (chip should still show `Claude Code`)\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\n---\n\nTo run this PR locally, use the following command:\n\nGUI with Docker:\n```\ndocker run -it --rm   -p 3000:3000   -v /var/run/docker.sock:/var/run/docker.sock   --add-host host.docker.internal:host-gateway   --name openhands-app-e46f38a   docker.openhands.dev/openhands/openhands:e46f38a\n```",
+    "author": "simonrosenberg",
+    "headRef": "fix-openhands-agent-display-label",
+    "repository": "All-Hands-AI/OpenHands"
+  },
+  "diffRef": {
+    "repository": "All-Hands-AI/OpenHands",
+    "headSha": "e46f38aa439c10f41f2c35d54fb15e7425c56000",
+    "baseSha": "8350c498aa6557d6e7e5c6f3c1385808191b1500"
+  },
+  "vendoredDiffPath": "openhands/openhands-All-Hands-AI-OpenHands-pr14505.diff",
+  "vendoredAt": "2026-05-24T03:18:21.834Z",
+  "collectedAt": "2026-05-24T03:18:21.834Z"
+}

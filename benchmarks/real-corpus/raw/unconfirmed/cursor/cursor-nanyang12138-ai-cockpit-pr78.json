@@ -1,0 +1,26 @@
+{
+  "id": "cursor-nanyang12138-ai-cockpit-pr78",
+  "agent": {
+    "vendor": "cursor",
+    "confidence": "medium",
+    "source": "branch=cursor/"
+  },
+  "pr": {
+    "number": 78,
+    "headSha": "999dfebe859eab552ba904c98aea127049bb9413",
+    "baseSha": "d0dc3be509c7bc1a0fa8b6fa589331d36e0e248c",
+    "title": "fix(aider-worker): accept aider 0.86 single-line 'Tokens: ... Cost: ...' stdout",
+    "body": "Bug C surfaced by the 2026-05-17 v0.4 exit-gate attempt 3\n(thread 57f6d9576cc9): aider 0.86.2 prints\n\n    Tokens: 13k sent, 173 received. Cost: $0.07 message, $0.07 session.\n\n— both halves on a SINGLE line. PR #35 (A.3) shipped regexes that\nonly matched a two-line variant:\n\n    _TOKENS_RE: ... received\\.?\\\\s*$        # requires LINE END after 'received.'\n    _COST_RE:   ^\\\\s*Cost: ...                # requires LINE START before 'Cost:'\n\nResult on the real gate run: both regexes failed, metrics dict was\nempty, coder.py's 'if result.metrics' skipped the propagation, the\ncheckpoint DB had no metrics keys, and 'ai-cockpit cost' reported\n'tokens=N/A cost=N/A coverage=0/8'. Q4(1) <= $1 became\nunfalsifiable: the gate could never produce its own cost evidence.\n\nThe PR #35 unit tests all used multi-line fixtures\n('Tokens: ... received.\\\\nCost: ...'), so CI stayed green even\nthough no real aider invocation ever round-tripped through the\nregex. docs/V0_3_MILESTONES.md 'Cost / token signal' actually\nquoted the correct single-line form verbatim\n('Tokens: 11k sent, 566 received. Cost: $0.07.'), but the\nimplementation drifted from the milestone notes.\n\nFix:\n\n- aider_worker.py: drop the tail '\\\\s*$' anchor from _TOKENS_RE so\n  the Tokens half can be followed by ' Cost: ...' on the same line;\n  drop the head '^\\\\s*' anchor from _COST_RE so 'Cost:' can appear\n  anywhere on a line (preceded by 'received.' or on its own line).\n  Both variants — single-line AND legacy two-line — now match.\n  Inline comment cites the 2026-05-17 gate as the surfacing event\n  and explains why the anchors were dropped.\n\n- test_aider_worker.py: add 3 regression fixtures using the real\n  single-line aider 0.86.2 output captured from the gate run:\n  (1) one-turn single-line, (2) multi-turn single-line (last-turn\n  values win, mirroring the existing multi-line last-wins test),\n  (3) single-line with leading indent (matches the actual indented\n  form inside ai-cockpit's Run Summary block).\n\nAll existing 6 parametrized fixtures + 4 silent-fallback fixtures\nstill pass — backward compatibility preserved.\n\nOut of scope:\n\n- aider 0.87+ output format changes (none observed yet; the fix\n  remains version-agnostic).\n- WorkerResult.metrics schema (unchanged: same four keys).\n- cost.py aggregator (unchanged: same keys read from checkpoint).\n- B.5 contract / scripts/v0_4_exit_gate.sh (Bug A and Bug B follow\n  in separate PRs; this PR is the smallest of the three and\n  unblocks Q4(1) evidence regardless of the other two).\n\nBugs A (test_demo_fixture guard) and B (planner test-command path)\nwill land as PR-after-this. They surfaced together on the same gate\nattempt but are independent fixes.\n\nPre-push: pytest 288 passed (was 285; +3 new aider fixtures), ruff\nclean, mypy clean (78 source files), smoke command prints summary.\n\nCo-authored-by: nanyang12138 <nanyang12138@users.noreply.github.com>",
+    "author": "github-actions[bot]",
+    "headRef": "cursor/aider-metrics-regex-single-line-de7a",
+    "repository": "nanyang12138/ai-cockpit"
+  },
+  "diffRef": {
+    "repository": "nanyang12138/ai-cockpit",
+    "headSha": "999dfebe859eab552ba904c98aea127049bb9413",
+    "baseSha": "d0dc3be509c7bc1a0fa8b6fa589331d36e0e248c"
+  },
+  "vendoredDiffPath": "unconfirmed/cursor/cursor-nanyang12138-ai-cockpit-pr78.diff",
+  "vendoredAt": "2026-05-24T03:10:35.278Z",
+  "collectedAt": "2026-05-24T03:10:35.278Z"
+}

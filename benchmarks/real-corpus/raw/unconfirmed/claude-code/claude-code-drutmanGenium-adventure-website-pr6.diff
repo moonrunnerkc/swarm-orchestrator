@@ -1,0 +1,809 @@
+diff --git a/app/layout.tsx b/app/layout.tsx
+index 05f819d..72a8dd0 100644
+--- a/app/layout.tsx
++++ b/app/layout.tsx
+@@ -3,6 +3,7 @@ import type { Metadata } from "next"
+ import { Montserrat, Lato } from "next/font/google"
+ import { Analytics } from "@vercel/analytics/next"
+ import { LanguageProvider } from "@/contexts/language-context"
++import { AuthProvider } from "@/contexts/auth-context"
+ import { ScrollToTop } from "@/components/scroll-to-top"
+ import "./globals.css"
+ 
+@@ -52,7 +53,9 @@ export default function RootLayout({
+     <html lang="es">
+       <body className={`${montserrat.variable} ${lato.variable} font-sans antialiased`}>
+         <ScrollToTop />
+-        <LanguageProvider>{children}</LanguageProvider>
++        <AuthProvider>
++          <LanguageProvider>{children}</LanguageProvider>
++        </AuthProvider>
+         <Analytics />
+       </body>
+     </html>
+diff --git a/app/login/page.tsx b/app/login/page.tsx
+new file mode 100644
+index 0000000..c6a1d35
+--- /dev/null
++++ b/app/login/page.tsx
+@@ -0,0 +1,21 @@
++import { Navigation } from "@/components/navigation"
++import { Footer } from "@/components/footer"
++import { LoginForm } from "@/components/login-form"
++import type { Metadata } from "next"
++
++export const metadata: Metadata = {
++  title: "Iniciar Sesión — Patagonia Trekking",
++  description: "Iniciá sesión en tu cuenta de Patagonia Trekking para gestionar tus reservas y aventuras.",
++}
++
++export default function LoginPage() {
++  return (
++    <main className="min-h-screen">
++      <Navigation />
++      <div className="pt-16">
++        <LoginForm />
++      </div>
++      <Footer />
++    </main>
++  )
++}
+diff --git a/app/registro/page.tsx b/app/registro/page.tsx
+new file mode 100644
+index 0000000..4d7d1ca
+--- /dev/null
++++ b/app/registro/page.tsx
+@@ -0,0 +1,21 @@
++import { Navigation } from "@/components/navigation"
++import { Footer } from "@/components/footer"
++import { RegisterForm } from "@/components/register-form"
++import type { Metadata } from "next"
++
++export const metadata: Metadata = {
++  title: "Crear Cuenta — Patagonia Trekking",
++  description: "Creá tu cuenta en Patagonia Trekking para reservar tus próximas aventuras en la Patagonia.",
++}
++
++export default function RegistroPage() {
++  return (
++    <main className="min-h-screen">
++      <Navigation />
++      <div className="pt-16">
++        <RegisterForm />
++      </div>
++      <Footer />
++    </main>
++  )
++}
+diff --git a/components/login-form.tsx b/components/login-form.tsx
+new file mode 100644
+index 0000000..ff7ee90
+--- /dev/null
++++ b/components/login-form.tsx
+@@ -0,0 +1,155 @@
++"use client"
++
++import type React from "react"
++import { useState } from "react"
++import Link from "next/link"
++import { useRouter } from "next/navigation"
++import { Badge } from "@/components/ui/badge"
++import { Button } from "@/components/ui/button"
++import { Card } from "@/components/ui/card"
++import { Input } from "@/components/ui/input"
++import { Label } from "@/components/ui/label"
++import { Mail, Lock, LogIn, Eye, EyeOff } from "lucide-react"
++import { useAuth } from "@/contexts/auth-context"
++import { useLanguage } from "@/contexts/language-context"
++
++export function LoginForm() {
++  const { login } = useAuth()
++  const { t } = useLanguage()
++  const router = useRouter()
++
++  const [formData, setFormData] = useState({
++    email: "",
++    password: "",
++  })
++  const [showPassword, setShowPassword] = useState(false)
++  const [error, setError] = useState("")
++  const [isSubmitting, setIsSubmitting] = useState(false)
++
++  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
++    setFormData({
++      ...formData,
++      [e.target.name]: e.target.value,
++    })
++    if (error) setError("")
++  }
++
++  const handleSubmit = async (e: React.FormEvent) => {
++    e.preventDefault()
++    setError("")
++    setIsSubmitting(true)
++
++    const result = await login({
++      email: formData.email,
++      password: formData.password,
++    })
++
++    setIsSubmitting(false)
++
++    if (result.success) {
++      router.push("/")
++    } else {
++      setError(result.error || t("Error al iniciar sesión", "Login error"))
++    }
++  }
++
++  return (
++    <section className="py-20 px-4 min-h-screen bg-background flex items-center justify-center">
++      <div className="w-full max-w-md">
++        {/* Header */}
++        <div className="text-center mb-8">
++          <Badge className="mb-4 bg-primary/10 text-primary border-primary/20">
++            {t("Bienvenido", "Welcome")}
++          </Badge>
++          <h1 className="text-3xl md:text-4xl font-bold mb-2">
++            {t("Iniciar Sesión", "Sign In")}
++          </h1>
++          <p className="text-muted-foreground">
++            {t(
++              "Accedé a tu cuenta para gestionar tus reservas",
++              "Access your account to manage your bookings"
++            )}
++          </p>
++        </div>
++
++        <Card className="p-8 border-2">
++          <form onSubmit={handleSubmit} className="space-y-6">
++            {error && (
++              <div className="p-3 rounded-md bg-destructive/10 border border-destructive/20 text-destructive text-sm">
++                {error}
++              </div>
++            )}
++
++            <div className="space-y-2">
++              <Label htmlFor="email">{t("Email", "Email")}</Label>
++              <div className="relative">
++                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
++                <Input
++                  id="email"
++                  name="email"
++                  type="email"
++                  placeholder="juan@ejemplo.com"
++                  value={formData.email}
++                  onChange={handleChange}
++                  className="pl-10"
++                  required
++                />
++              </div>
++            </div>
++
++            <div className="space-y-2">
++              <Label htmlFor="password">{t("Contraseña", "Password")}</Label>
++              <div className="relative">
++                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
++                <Input
++                  id="password"
++                  name="password"
++                  type={showPassword ? "text" : "password"}
++                  placeholder="••••••••"
++                  value={formData.password}
++                  onChange={handleChange}
++                  className="pl-10 pr-10"
++                  required
++                  minLength={6}
++                />
++                <button
++                  type="button"
++                  onClick={() => setShowPassword(!showPassword)}
++                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
++                >
++                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
++                </button>
++              </div>
++            </div>
++
++            <Button
++              type="submit"
++              size="lg"
++              className="w-full bg-primary text-primary-foreground"
++              disabled={isSubmitting}
++            >
++              {isSubmitting ? (
++                <span className="flex items-center gap-2">
++                  <span className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
++                  {t("Iniciando sesión...", "Signing in...")}
++                </span>
++              ) : (
++                <span className="flex items-center gap-2">
++                  <LogIn className="h-5 w-5" />
++                  {t("Iniciar Sesión", "Sign In")}
++                </span>
++              )}
++            </Button>
++          </form>
++
++          <div className="mt-6 text-center text-sm text-muted-foreground">
++            {t("¿No tenés cuenta?", "Don't have an account?")}{" "}
++            <Link href="/registro" className="text-primary font-medium hover:underline">
++              {t("Registrate", "Sign Up")}
++            </Link>
++          </div>
++        </Card>
++      </div>
++    </section>
++  )
++}
+diff --git a/components/navigation.tsx b/components/navigation.tsx
+index 460061a..bc3e921 100644
+--- a/components/navigation.tsx
++++ b/components/navigation.tsx
+@@ -2,14 +2,19 @@
+ 
+ import { useState } from "react"
+ import Link from "next/link"
+-import { Menu, X, Globe } from "lucide-react"
++import { useRouter } from "next/navigation"
++import { Menu, X, Globe, User, LogOut, LogIn } from "lucide-react"
+ import { Button } from "@/components/ui/button"
+ import { useLanguage } from "@/contexts/language-context"
++import { useAuth } from "@/contexts/auth-context"
+ import { createWhatsAppHref } from "@/lib/whatsapp"
+ 
+ export function Navigation() {
+   const [isOpen, setIsOpen] = useState(false)
++  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
+   const { language, toggleLanguage } = useLanguage()
++  const { user, logout } = useAuth()
++  const router = useRouter()
+ 
+   const navItems =
+     language === "es"
+@@ -24,6 +29,13 @@ export function Navigation() {
+           { label: "Contact", href: createWhatsAppHref(), isExternal: true },
+         ]
+ 
++  const handleLogout = async () => {
++    await logout()
++    setIsUserMenuOpen(false)
++    setIsOpen(false)
++    router.push("/")
++  }
++
+   return (
+     <nav className="fixed top-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-b border-border">
+       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+@@ -62,6 +74,62 @@ export function Navigation() {
+               <Globe className="h-5 w-5" />
+               <span className="sr-only">Change language</span>
+             </Button>
++
++            {/* Auth - Desktop */}
++            {user ? (
++              <div className="relative">
++                <Button
++                  variant="ghost"
++                  size="sm"
++                  className="flex items-center gap-2"
++                  onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
++                >
++                  <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center">
++                    <User className="h-4 w-4 text-primary" />
++                  </div>
++                  <span className="text-sm font-medium max-w-[120px] truncate">
++                    {user.firstName}
++                  </span>
++                </Button>
++                {isUserMenuOpen && (
++                  <>
++                    <div
++                      className="fixed inset-0 z-40"
++                      onClick={() => setIsUserMenuOpen(false)}
++                    />
++                    <div className="absolute right-0 top-full mt-1 w-56 bg-background border border-border rounded-md shadow-lg z-50">
++                      <div className="px-4 py-3 border-b border-border">
++                        <p className="text-sm font-medium">{user.firstName} {user.lastName}</p>
++                        <p className="text-xs text-muted-foreground truncate">{user.email}</p>
++                      </div>
++                      <div className="py-1">
++                        <button
++                          onClick={handleLogout}
++                          className="flex items-center gap-2 w-full px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
++                        >
++                          <LogOut className="h-4 w-4" />
++                          {language === "es" ? "Cerrar sesión" : "Sign Out"}
++                        </button>
++                      </div>
++                    </div>
++                  </>
++                )}
++              </div>
++            ) : (
++              <div className="flex items-center gap-2">
++                <Link href="/login">
++                  <Button variant="ghost" size="sm" className="flex items-center gap-1.5">
++                    <LogIn className="h-4 w-4" />
++                    {language === "es" ? "Ingresar" : "Sign In"}
++                  </Button>
++                </Link>
++                <Link href="/registro">
++                  <Button size="sm" className="bg-primary text-primary-foreground">
++                    {language === "es" ? "Registrarse" : "Sign Up"}
++                  </Button>
++                </Link>
++              </div>
++            )}
+           </div>
+ 
+           {/* Mobile menu button */}
+@@ -103,9 +171,47 @@ export function Navigation() {
+                 </Link>
+               )
+             ))}
++
++            {/* Auth - Mobile */}
++            <div className="border-t border-border mt-2 pt-2">
++              {user ? (
++                <>
++                  <div className="px-3 py-2">
++                    <p className="text-sm font-medium">{user.firstName} {user.lastName}</p>
++                    <p className="text-xs text-muted-foreground">{user.email}</p>
++                  </div>
++                  <button
++                    onClick={handleLogout}
++                    className="flex items-center gap-2 w-full px-3 py-2 text-base font-medium text-muted-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors"
++                  >
++                    <LogOut className="h-4 w-4" />
++                    {language === "es" ? "Cerrar sesión" : "Sign Out"}
++                  </button>
++                </>
++              ) : (
++                <div className="space-y-1">
++                  <Link
++                    href="/login"
++                    className="flex items-center gap-2 px-3 py-2 text-base font-medium text-blue-600 hover:text-primary hover:bg-accent rounded-md transition-colors"
++                    onClick={() => setIsOpen(false)}
++                  >
++                    <LogIn className="h-4 w-4" />
++                    {language === "es" ? "Ingresar" : "Sign In"}
++                  </Link>
++                  <Link
++                    href="/registro"
++                    className="flex items-center gap-2 px-3 py-2 text-base font-medium text-primary hover:bg-accent rounded-md transition-colors"
++                    onClick={() => setIsOpen(false)}
++                  >
++                    <User className="h-4 w-4" />
++                    {language === "es" ? "Registrarse" : "Sign Up"}
++                  </Link>
++                </div>
++              )}
++            </div>
+           </div>
+         </div>
+       )}
+     </nav>
+   )
+-}
+\ No newline at end of file
++}
+diff --git a/components/register-form.tsx b/components/register-form.tsx
+new file mode 100644
+index 0000000..0167508
+--- /dev/null
++++ b/components/register-form.tsx
+@@ -0,0 +1,246 @@
++"use client"
++
++import type React from "react"
++import { useState } from "react"
++import Link from "next/link"
++import { useRouter } from "next/navigation"
++import { Badge } from "@/components/ui/badge"
++import { Button } from "@/components/ui/button"
++import { Card } from "@/components/ui/card"
++import { Input } from "@/components/ui/input"
++import { Label } from "@/components/ui/label"
++import { Mail, Lock, User, Phone, UserPlus, Eye, EyeOff } from "lucide-react"
++import { useAuth } from "@/contexts/auth-context"
++import { useLanguage } from "@/contexts/language-context"
++
++export function RegisterForm() {
++  const { register } = useAuth()
++  const { t } = useLanguage()
++  const router = useRouter()
++
++  const [formData, setFormData] = useState({
++    firstName: "",
++    lastName: "",
++    email: "",
++    phone: "",
++    password: "",
++    confirmPassword: "",
++  })
++  const [showPassword, setShowPassword] = useState(false)
++  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
++  const [error, setError] = useState("")
++  const [isSubmitting, setIsSubmitting] = useState(false)
++
++  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
++    setFormData({
++      ...formData,
++      [e.target.name]: e.target.value,
++    })
++    if (error) setError("")
++  }
++
++  const handleSubmit = async (e: React.FormEvent) => {
++    e.preventDefault()
++    setError("")
++
++    // Validar que las contraseñas coincidan
++    if (formData.password !== formData.confirmPassword) {
++      setError(t("Las contraseñas no coinciden", "Passwords do not match"))
++      return
++    }
++
++    setIsSubmitting(true)
++
++    const result = await register({
++      firstName: formData.firstName,
++      lastName: formData.lastName,
++      email: formData.email,
++      phone: formData.phone,
++      password: formData.password,
++    })
++
++    setIsSubmitting(false)
++
++    if (result.success) {
++      router.push("/")
++    } else {
++      setError(result.error || t("Error al crear la cuenta", "Registration error"))
++    }
++  }
++
++  return (
++    <section className="py-20 px-4 min-h-screen bg-background flex items-center justify-center">
++      <div className="w-full max-w-md">
++        {/* Header */}
++        <div className="text-center mb-8">
++          <Badge className="mb-4 bg-primary/10 text-primary border-primary/20">
++            {t("Nuevo usuario", "New user")}
++          </Badge>
++          <h1 className="text-3xl md:text-4xl font-bold mb-2">
++            {t("Crear Cuenta", "Create Account")}
++          </h1>
++          <p className="text-muted-foreground">
++            {t(
++              "Registrate para reservar tus próximas aventuras",
++              "Sign up to book your next adventures"
++            )}
++          </p>
++        </div>
++
++        <Card className="p-8 border-2">
++          <form onSubmit={handleSubmit} className="space-y-5">
++            {error && (
++              <div className="p-3 rounded-md bg-destructive/10 border border-destructive/20 text-destructive text-sm">
++                {error}
++              </div>
++            )}
++
++            <div className="grid grid-cols-2 gap-4">
++              <div className="space-y-2">
++                <Label htmlFor="firstName">{t("Nombre", "First Name")} *</Label>
++                <div className="relative">
++                  <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
++                  <Input
++                    id="firstName"
++                    name="firstName"
++                    placeholder="Juan"
++                    value={formData.firstName}
++                    onChange={handleChange}
++                    className="pl-10"
++                    required
++                  />
++                </div>
++              </div>
++
++              <div className="space-y-2">
++                <Label htmlFor="lastName">{t("Apellido", "Last Name")} *</Label>
++                <Input
++                  id="lastName"
++                  name="lastName"
++                  placeholder="Pérez"
++                  value={formData.lastName}
++                  onChange={handleChange}
++                  required
++                />
++              </div>
++            </div>
++
++            <div className="space-y-2">
++              <Label htmlFor="email">{t("Email", "Email")} *</Label>
++              <div className="relative">
++                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
++                <Input
++                  id="email"
++                  name="email"
++                  type="email"
++                  placeholder="juan@ejemplo.com"
++                  value={formData.email}
++                  onChange={handleChange}
++                  className="pl-10"
++                  required
++                />
++              </div>
++            </div>
++
++            <div className="space-y-2">
++              <Label htmlFor="phone">{t("Teléfono", "Phone")} *</Label>
++              <div className="relative">
++                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
++                <Input
++                  id="phone"
++                  name="phone"
++                  type="tel"
++                  placeholder="+54 9 11 2345-6789"
++                  value={formData.phone}
++                  onChange={handleChange}
++                  className="pl-10"
++                  required
++                  minLength={7}
++                />
++              </div>
++            </div>
++
++            <div className="space-y-2">
++              <Label htmlFor="password">{t("Contraseña", "Password")} *</Label>
++              <div className="relative">
++                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
++                <Input
++                  id="password"
++                  name="password"
++                  type={showPassword ? "text" : "password"}
++                  placeholder="••••••••"
++                  value={formData.password}
++                  onChange={handleChange}
++                  className="pl-10 pr-10"
++                  required
++                  minLength={6}
++                />
++                <button
++                  type="button"
++                  onClick={() => setShowPassword(!showPassword)}
++                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
++                >
++                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
++                </button>
++              </div>
++              <p className="text-xs text-muted-foreground">
++                {t("Mínimo 6 caracteres", "Minimum 6 characters")}
++              </p>
++            </div>
++
++            <div className="space-y-2">
++              <Label htmlFor="confirmPassword">{t("Confirmar Contraseña", "Confirm Password")} *</Label>
++              <div className="relative">
++                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
++                <Input
++                  id="confirmPassword"
++                  name="confirmPassword"
++                  type={showConfirmPassword ? "text" : "password"}
++                  placeholder="••••••••"
++                  value={formData.confirmPassword}
++                  onChange={handleChange}
++                  className="pl-10 pr-10"
++                  required
++                  minLength={6}
++                />
++                <button
++                  type="button"
++                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
++                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
++                >
++                  {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
++                </button>
++              </div>
++            </div>
++
++            <Button
++              type="submit"
++              size="lg"
++              className="w-full bg-primary text-primary-foreground"
++              disabled={isSubmitting}
++            >
++              {isSubmitting ? (
++                <span className="flex items-center gap-2">
++                  <span className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
++                  {t("Creando cuenta...", "Creating account...")}
++                </span>
++              ) : (
++                <span className="flex items-center gap-2">
++                  <UserPlus className="h-5 w-5" />
++                  {t("Crear Cuenta", "Create Account")}
++                </span>
++              )}
++            </Button>
++          </form>
++
++          <div className="mt-6 text-center text-sm text-muted-foreground">
++            {t("¿Ya tenés cuenta?", "Already have an account?")}{" "}
++            <Link href="/login" className="text-primary font-medium hover:underline">
++              {t("Iniciá sesión", "Sign In")}
++            </Link>
++          </div>
++        </Card>
++      </div>
++    </section>
++  )
++}
+diff --git a/contexts/auth-context.tsx b/contexts/auth-context.tsx
+new file mode 100644
+index 0000000..a0d5ed5
+--- /dev/null
++++ b/contexts/auth-context.tsx
+@@ -0,0 +1,124 @@
++"use client"
++
++import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react"
++import type { AuthUser, LoginRequest, RegisterRequest } from "@/lib/types"
++
++const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
++
++type AuthContextType = {
++  user: AuthUser | null
++  isLoading: boolean
++  login: (data: LoginRequest) => Promise<{ success: boolean; error?: string }>
++  register: (data: RegisterRequest) => Promise<{ success: boolean; error?: string }>
++  logout: () => Promise<void>
++}
++
++const AuthContext = createContext<AuthContextType | undefined>(undefined)
++
++export function AuthProvider({ children }: { children: ReactNode }) {
++  const [user, setUser] = useState<AuthUser | null>(null)
++  const [isLoading, setIsLoading] = useState(true)
++
++  // Restaurar sesion al cargar
++  useEffect(() => {
++    const token = localStorage.getItem("auth_token")
++    if (token) {
++      fetch(`${API_URL}/api/auth/me`, {
++        headers: { Authorization: `Bearer ${token}` },
++      })
++        .then((res) => {
++          if (res.ok) return res.json()
++          // Token invalido, limpiar
++          localStorage.removeItem("auth_token")
++          return null
++        })
++        .then((data) => {
++          if (data?.user) {
++            setUser(data.user)
++          }
++        })
++        .catch(() => {
++          localStorage.removeItem("auth_token")
++        })
++        .finally(() => {
++          setIsLoading(false)
++        })
++    } else {
++      setIsLoading(false)
++    }
++  }, [])
++
++  const login = useCallback(async (data: LoginRequest) => {
++    try {
++      const res = await fetch(`${API_URL}/api/auth/login`, {
++        method: "POST",
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify(data),
++      })
++
++      const json = await res.json()
++
++      if (!res.ok) {
++        return { success: false, error: json.error || "Error al iniciar sesión" }
++      }
++
++      localStorage.setItem("auth_token", json.token)
++      setUser(json.user)
++      return { success: true }
++    } catch {
++      return { success: false, error: "Error de conexión con el servidor" }
++    }
++  }, [])
++
++  const register = useCallback(async (data: RegisterRequest) => {
++    try {
++      const res = await fetch(`${API_URL}/api/auth/register`, {
++        method: "POST",
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify(data),
++      })
++
++      const json = await res.json()
++
++      if (!res.ok) {
++        return { success: false, error: json.error || "Error al crear la cuenta" }
++      }
++
++      localStorage.setItem("auth_token", json.token)
++      setUser(json.user)
++      return { success: true }
++    } catch {
++      return { success: false, error: "Error de conexión con el servidor" }
++    }
++  }, [])
++
++  const logout = useCallback(async () => {
++    const token = localStorage.getItem("auth_token")
++    if (token) {
++      try {
++        await fetch(`${API_URL}/api/auth/logout`, {
++          method: "POST",
++          headers: { Authorization: `Bearer ${token}` },
++        })
++      } catch {
++        // Ignorar errores de red al cerrar sesion
++      }
++    }
++    localStorage.removeItem("auth_token")
++    setUser(null)
++  }, [])
++
++  return (
++    <AuthContext.Provider value={{ user, isLoading, login, register, logout }}>
++      {children}
++    </AuthContext.Provider>
++  )
++}
++
++export function useAuth() {
++  const context = useContext(AuthContext)
++  if (context === undefined) {
++    throw new Error("useAuth must be used within an AuthProvider")
++  }
++  return context
++}
+diff --git a/lib/types.ts b/lib/types.ts
+index 3998223..ae6cce4 100644
+--- a/lib/types.ts
++++ b/lib/types.ts
+@@ -95,3 +95,32 @@ export interface ContactRequest {
+   subject: string
+   message: string
+ }
++
++// ─── Auth types ──────────────────────────────────────────────────────────────
++
++export interface AuthUser {
++  id: string
++  firstName: string
++  lastName: string
++  email: string
++  phone: string
++}
++
++export interface LoginRequest {
++  email: string
++  password: string
++}
++
++export interface RegisterRequest {
++  firstName: string
++  lastName: string
++  email: string
++  phone: string
++  password: string
++}
++
++export interface AuthResponse {
++  message: string
++  token: string
++  user: AuthUser
++}
