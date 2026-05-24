@@ -1,6 +1,6 @@
-// Shadow-mode persistence. v10.2-advisory Phase 3 records audit
-// verdicts to disk without posting a comment so operators can compare
-// the tool's signal against the human merge decision over time.
+// Shadow-mode persistence. Records audit verdicts to disk without
+// posting a comment so operators can compare the tool's signal
+// against the human merge decision over time.
 //
 // Layout: `<shadowDir>/<repo>/<run-id>.json`. Each file is one audit
 // run; the repo segment is the literal label passed on `--shadow`
@@ -10,8 +10,7 @@
 // The shape is intentionally JSON-serializable and stable. A
 // downstream analyzer reads the directory, joins each entry against
 // the upstream PR's merge / revert / review-flag history, and reports
-// top-decile suspicion-score concentration as described in the v10.2
-// Phase 3 plan.
+// top-decile suspicion-score concentration.
 
 import * as fs from 'fs';
 import * as path from 'path';

@@ -13,10 +13,9 @@
 //   - the threshold the gate decision was made against
 //   - the corpus identifier the numbers came from
 //
-// Phase 4 of the v10.2-advisory plan calls this script after the
-// labels-v2 corpus is final and re-ran through the scorer. The
-// downstream consumer is the gate-mode CLI and the README's "what
-// gates today" table.
+// Run this after the labels-v2 corpus is final and re-ran through the
+// scorer; the downstream consumer is the gate-mode CLI and the
+// README's "what gates today" table.
 
 import * as fs from 'fs';
 import * as path from 'path';

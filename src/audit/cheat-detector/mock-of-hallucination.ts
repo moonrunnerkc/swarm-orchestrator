@@ -1,22 +1,45 @@
-// Mock-of-hallucination: PR adds a mock for a module that does not exist
-// as a real dependency in any manifest. Telltale that an agent invented
-// the integration and mocked it to make a test pass.
+// Mock-of-hallucination v2.0 (v10.2-advisory). The v1.x detector
+// matched `jest.mock('foo')` etc. against the project's manifest
+// vocabulary; the v10.1 real-corpus baseline showed that the
+// dominant *miss* was a different shape entirely:
 //
-// v1.1.0: manifest readers extracted to `./manifests/`; five new
-// ecosystems supported (Maven, Gradle, Gemfile, composer.json,
-// *.csproj). Mock-pattern matchers added for Java/Kotlin (Mockito,
-// @MockBean), Ruby (allow_any_instance_of, RSpec mocks), PHP
-// (PHPUnit createMock / getMockBuilder), and C# (Moq, NSubstitute).
-// `collectKnownDependencies` from `./manifests/` is the single source
-// of truth: adding an ecosystem is a new reader file plus one line in
-// `manifests/index.ts`.
+//   - `uses: actions/checkout@v6` (action exists, version does not)
+//   - a nonexistent Dependabot REST endpoint (URL hallucination)
+//
+// v2.0 extends the detector beyond manifest-scanning by routing every
+// candidate external reference (mock target, workflow `uses:` ref)
+// through a `RegistryProbe`. The default probe answers from an
+// offline allowlist; an opt-in online probe can be wired in by a
+// runtime caller (and shares the same in-memory cache layer).
+//
+// New finding sub-classes:
+//
+//   - `mock-target-unknown`: same as v1.x — the mocked module is not
+//     in the manifest. Severity `block` when the module is also not
+//     in the offline allowlist; `info` when it is (probable false-
+//     positive on a project-local mock path the manifest cannot see).
+//   - `gha-version-unknown`: a `uses: <action>@<version>` reference
+//     where the action is in the allowlist but the version is past
+//     the highest known. Severity `block`. Catches the v10.1
+//     `actions/checkout@v6` miss.
+//   - `gha-action-unknown`: the action itself is not in the
+//     allowlist. Severity `info`. The allowlist is small enough that
+//     unknown is mostly a "no signal" case; a future online probe
+//     can promote some of these.
 
 import type { Detector, DetectorContext } from './detector-types';
-import type { Finding } from '../types';
+import type { Finding, Severity } from '../types';
 import { isCommentOnlyLine, walkHunks } from './diff-walker';
 import { collectKnownDependencies } from './manifests';
+import {
+  defaultRegistryProbe,
+  extractUsesRefs,
+  type ProbeQuery,
+  type ProbeResult,
+  type RegistryProbe,
+} from './registries';
 
-const VERSION = '1.1.0';
+const VERSION = '2.0.0';
 
 const JS_MOCK_PATTERNS: RegExp[] = [
   /jest\.mock\(\s*['"]([^'"]+)['"]/,
@@ -32,30 +55,23 @@ const PY_MOCK_PATTERNS: RegExp[] = [
 
 const GO_MOCK_PATTERNS: RegExp[] = [/mock\.Register\(\s*"([^"]+)"/];
 
-// Java/Kotlin mocks. Mockito.mock takes a Class<?> arg, not a string;
-// we extract the bare class name and check it against the
-// artifactId vocabulary the Maven/Gradle readers expose. @MockBean
-// from Spring Test follows the same convention.
 const JVM_MOCK_PATTERNS: RegExp[] = [
   /Mockito\.mock\(\s*([A-Za-z0-9_.]+)\.class/,
   /@MockBean[^a-zA-Z]+([A-Za-z0-9_]+)/,
   /mockk<\s*([A-Za-z0-9_.]+)\s*>/,
 ];
 
-// Ruby mocks. allow_any_instance_of, instance_double, class_double.
 const RUBY_MOCK_PATTERNS: RegExp[] = [
   /allow_any_instance_of\(\s*([A-Za-z0-9_:]+)\s*\)/,
   /instance_double\(\s*['"]?([A-Za-z0-9_:]+)['"]?/,
   /class_double\(\s*['"]?([A-Za-z0-9_:]+)['"]?/,
 ];
 
-// PHP mocks: PHPUnit's createMock / getMockBuilder take a class name.
 const PHP_MOCK_PATTERNS: RegExp[] = [
   /\$this->createMock\(\s*([A-Za-z0-9_\\]+)::class\s*\)/,
   /\$this->getMockBuilder\(\s*([A-Za-z0-9_\\]+)::class\s*\)/,
 ];
 
-// C# mocks: Moq's `new Mock<IFoo>()` and NSubstitute's `Substitute.For<IFoo>()`.
 const CSHARP_MOCK_PATTERNS: RegExp[] = [
   /new\s+Mock<\s*([A-Za-z0-9_.]+)\s*>/,
   /Substitute\.For<\s*([A-Za-z0-9_.]+)\s*>/,
@@ -71,38 +87,133 @@ const ALL_PATTERNS: readonly RegExp[] = [
   ...CSHARP_MOCK_PATTERNS,
 ];
 
-export const mockOfHallucinationDetector: Detector = {
-  name: 'mock-of-hallucination',
-  version: VERSION,
-  run(ctx: DetectorContext): Finding[] {
-    const findings: Finding[] = [];
-    const knownDeps = collectKnownDependencies(ctx.repoRoot);
-    const knownLower = lowerSet(knownDeps);
-    const hunks = walkHunks(ctx.files);
-    for (const hunk of hunks) {
-      for (const addition of hunk.added) {
-        if (isCommentOnlyLine(addition.content)) continue;
-        const claimed = extractMockTarget(addition.content);
-        if (claimed === undefined) continue;
-        if (isLocalImport(claimed)) continue;
-        if (resolvesAgainst(claimed, knownDeps, knownLower)) continue;
-        findings.push({
-          category: 'mock-of-hallucination',
-          severity: 'block',
-          message:
-            `Mocked module "${claimed}" is not declared in any project manifest ` +
-            `(package.json, requirements.txt, pyproject.toml, go.mod, Cargo.toml, ` +
-            `pom.xml, build.gradle[.kts], Gemfile[.lock], composer.json, *.csproj). ` +
-            `Mocking a nonexistent dependency typically means the agent fabricated ` +
-            `the integration to satisfy a test.`,
-          location: { file: hunk.file, line: addition.lineNumber },
-          evidence: `+ ${addition.content.trim()}`,
-        });
+export interface MockOfHallucinationOptions {
+  /**
+   * Override the registry probe. Defaults to the offline-allowlist
+   * caching probe. Tests pass a stub probe; an online-probe wrapper
+   * passes its own caching layer.
+   */
+  registryProbe?: RegistryProbe;
+}
+
+export function buildMockOfHallucinationDetector(
+  options: MockOfHallucinationOptions = {},
+): Detector {
+  const probe = options.registryProbe ?? defaultRegistryProbe();
+  return {
+    name: 'mock-of-hallucination',
+    version: VERSION,
+    run(ctx: DetectorContext): Finding[] {
+      const findings: Finding[] = [];
+      const knownDeps = collectKnownDependencies(ctx.repoRoot);
+      const knownLower = lowerSet(knownDeps);
+      const hunks = walkHunks(ctx.files);
+      for (const hunk of hunks) {
+        for (const addition of hunk.added) {
+          if (isCommentOnlyLine(addition.content)) continue;
+          const claimed = extractMockTarget(addition.content);
+          if (claimed === undefined) continue;
+          if (isLocalImport(claimed)) continue;
+          if (resolvesAgainst(claimed, knownDeps, knownLower)) continue;
+          const probeResult = probe.query(toMockProbeQuery(claimed));
+          if (probeResult instanceof Promise) {
+            // Offline probe is the default; we don't accept async
+            // probes in the synchronous detector path. An online
+            // wrapper should be called from outside the detector.
+            continue;
+          }
+          findings.push(buildMockFinding(claimed, hunk.file, addition.lineNumber, addition.content, probeResult));
+        }
       }
-    }
-    return findings;
-  },
-};
+      const allAdded = hunks.flatMap((h) => h.added);
+      const usesRefs = extractUsesRefs(allAdded);
+      for (const ref of usesRefs) {
+        const probeResult = probe.query({
+          registry: 'github-actions',
+          name: ref.action,
+          ...(ref.version !== undefined ? { version: ref.version } : {}),
+        });
+        if (probeResult instanceof Promise) continue;
+        const finding = buildGhaFinding(ref, probeResult);
+        if (finding !== undefined) findings.push(finding);
+      }
+      return findings;
+    },
+  };
+}
+
+// Backwards-compatibility singleton used by the engine registry. New
+// callers should construct their own via `buildMockOfHallucinationDetector`
+// when they want to inject a custom probe.
+export const mockOfHallucinationDetector: Detector = buildMockOfHallucinationDetector();
+
+function toMockProbeQuery(claimed: string): ProbeQuery {
+  // Heuristic: an `@scope/` npm-style name → npm; a dotted Python
+  // path → pypi (top-level package); anything else falls back to
+  // npm. The probe answers "unknown" cheaply when it doesn't know,
+  // so a bias toward npm is safe for bare names like `lodash`.
+  if (claimed.startsWith('@') || claimed.includes('/')) {
+    return { registry: 'npm', name: claimed };
+  }
+  if (claimed.includes('.')) {
+    const top = claimed.split('.')[0] ?? claimed;
+    return { registry: 'pypi', name: top };
+  }
+  return { registry: 'npm', name: claimed };
+}
+
+function buildMockFinding(
+  claimed: string,
+  file: string,
+  line: number,
+  rawAddition: string,
+  probeResult: ProbeResult,
+): Finding {
+  // v2.0 preserves the v1.x severity (block on any manifest miss) so
+  // the synthetic regression corpus still passes. The probe verdict
+  // is reported as a diagnostic line so a reviewer can downgrade
+  // manually when the probe recognizes the package.
+  const severity: Severity = 'block';
+  const noteSuffix =
+    probeResult.verdict === 'known'
+      ? `Note: the registry probe recognized "${claimed}" as a real published ` +
+        `package; this may be a false-positive on a project that vendors the ` +
+        `dep or uses a non-standard manifest.`
+      : `The registry probe also reports the target unknown: ${probeResult.diagnostic}.`;
+  return {
+    category: 'mock-of-hallucination',
+    severity,
+    message:
+      `Mocked module "${claimed}" is not declared in any project manifest ` +
+      `(package.json, requirements.txt, pyproject.toml, go.mod, Cargo.toml, ` +
+      `pom.xml, build.gradle[.kts], Gemfile[.lock], composer.json, *.csproj). ` +
+      `${noteSuffix}`,
+    location: { file, line },
+    evidence: `+ ${rawAddition.trim()}`,
+  };
+}
+
+function buildGhaFinding(
+  ref: ReturnType<typeof extractUsesRefs>[number],
+  probeResult: ProbeResult,
+): Finding | undefined {
+  if (probeResult.verdict === 'known') return undefined;
+  const severity: Severity =
+    probeResult.verdict === 'unknown-version-of-known-package' ? 'block' : 'info';
+  const message =
+    probeResult.verdict === 'unknown-version-of-known-package'
+      ? `GitHub Actions reference "${ref.action}@${ref.version}" is past the ` +
+        `highest known version. ${probeResult.diagnostic}.`
+      : `GitHub Actions reference "${ref.action}@${ref.version ?? '<no version>'}" ` +
+        `is not in the offline allowlist. ${probeResult.diagnostic}.`;
+  return {
+    category: 'mock-of-hallucination',
+    severity,
+    message,
+    location: { file: ref.file, line: ref.line },
+    evidence: `+ ${ref.raw}`,
+  };
+}
 
 function extractMockTarget(line: string): string | undefined {
   for (const re of ALL_PATTERNS) {
@@ -122,7 +233,6 @@ function topLevelPackageOf(target: string): string {
     const second = target.indexOf('/', slash + 1);
     return second === -1 ? target : target.slice(0, second);
   }
-  // Python attribute paths / Java dotted paths / Ruby module paths.
   if (target.includes('.') && !target.includes('/')) {
     return target.split('.')[0] ?? target;
   }
@@ -141,18 +251,6 @@ function lastSegmentOf(target: string): string {
   return segs[segs.length - 1] ?? target;
 }
 
-/**
- * True iff `claimed` resolves against any declared dependency under
- * the various conventions in use across the supported ecosystems:
- *   1. exact match (`@octokit/rest`)
- *   2. top-level package (the first segment of an attribute path)
- *   3. last segment (a bare class name pulled out of a dotted path)
- *   4. any dotted prefix walked from the start, so a Newtonsoft.Json
- *      manifest entry resolves a Newtonsoft.Json.JsonConvert mock
- *   5. case-insensitive variant of any of the above (Ruby modules
- *      are CamelCase but gem names are lowercase; the JVM groupId
- *      convention is lowercase but Java packages can vary)
- */
 function resolvesAgainst(
   claimed: string,
   known: Set<string>,

@@ -1,4 +1,4 @@
-// Tests for the v1.1.0 error-swallow severity split. Bare empty catches
+// Tests for the error-swallow severity split. Bare empty catches
 // stay severity 'block' (the real cheat pattern); comment-only catches
 // downgrade to severity 'info' (legitimate intentional-swallow idioms
 // the v10.1 real-corpus baseline showed produce a 23% FP rate).
@@ -28,9 +28,9 @@ function diffOf(body: string): string {
   );
 }
 
-describe('error-swallow v1.1.0 severity split', () => {
-  it('declares version 1.1.0 so downstream artifacts pin the new behavior', () => {
-    assert.equal(errorSwallowDetector.version, '1.1.0');
+describe('error-swallow severity split (bare vs. comment-only)', () => {
+  it('declares a 2.x detector version', () => {
+    assert.ok(errorSwallowDetector.version.startsWith('2.'));
   });
 
   describe('bare empty catch (cheat pattern) → block', () => {
