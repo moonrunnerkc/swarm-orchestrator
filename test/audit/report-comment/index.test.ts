@@ -75,4 +75,47 @@ describe('audit / report-comment', () => {
     const b = renderPrComment(BLOCK_RESULT);
     assert.equal(a, b);
   });
+
+  // PR-intent layer: top-of-comment note appears only when at least
+  // one finding was upgraded by the layer.
+
+  it('omits the intent-upgrade note when no finding was upgraded', () => {
+    const md = renderPrComment(BLOCK_RESULT);
+    assert.equal(md.includes('Severity raised by PR-intent layer'), false);
+  });
+
+  it('renders the intent-upgrade note when a finding has intentUpgraded:true', () => {
+    const result: AuditResult = {
+      ...BLOCK_RESULT,
+      findings: [
+        {
+          ...BLOCK_RESULT.findings[0]!,
+          intentUpgraded: true,
+          message: 'Strict matcher swapped for loose. Severity raised because the PR claims a fix ("fix: x").',
+        },
+        BLOCK_RESULT.findings[1]!,
+      ],
+    };
+    const md = renderPrComment(result);
+    assert.ok(md.includes('Severity raised by PR-intent layer'));
+    assert.ok(md.includes('`test-relaxation`'));
+    assert.ok(md.includes('intentSeverityPolicy: off'));
+  });
+
+  it('intent-upgrade note lists every upgraded category exactly once', () => {
+    const result: AuditResult = {
+      ...BLOCK_RESULT,
+      findings: [
+        { ...BLOCK_RESULT.findings[0]!, intentUpgraded: true },
+        { ...BLOCK_RESULT.findings[0]!, intentUpgraded: true }, // duplicate cat
+        { ...BLOCK_RESULT.findings[1]!, intentUpgraded: true },
+      ],
+    };
+    const md = renderPrComment(result);
+    const noteLine = md.split('\n').find((l) => l.includes('Severity raised by PR-intent layer'));
+    assert.ok(noteLine);
+    assert.ok(/3 finding\(s\)/.test(noteLine!));
+    assert.ok(/`test-relaxation`/.test(noteLine!));
+    assert.ok(/`no-op-fix`/.test(noteLine!));
+  });
 });

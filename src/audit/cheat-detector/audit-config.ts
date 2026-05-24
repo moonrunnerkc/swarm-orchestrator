@@ -1,16 +1,21 @@
 // Project-level audit configuration. Read from `.swarm/audit-config.yaml`
-// at the repo root (when present); silently absent otherwise. The single
-// supported field is `excludePaths`, a list of glob patterns that should
-// be exempted from cheat detection on top of the engine's built-in
-// subject-path filter.
+// at the repo root (when present); silently absent otherwise. Two
+// supported fields:
+//   - `excludePaths`: list of glob patterns exempted from cheat detection
+//     on top of the engine's built-in subject-path filter.
+//   - `intentSeverityPolicy`: 'strict' | 'lenient' | 'off' (default
+//     'strict'), controls the PR-intent severity-upgrade layer that
+//     escalates findings when the agent's PR body claims a fix. See
+//     pr-intent.ts and docs/audit-config.md.
 //
-// The intended use is for repos whose own source code legitimately
-// contains literal cheat patterns: detector tests with embedded
-// fixture diffs, rule packs that quote `if (false)` as documentation,
-// generator scripts that emit broken patches by design. Without this
-// hook those files force the dogfood audit to self-block on every
-// commit and there is no way to fix the root cause without rewriting
-// the detector to be AST-aware (out of scope for the regex engine).
+// The intended use of excludePaths is for repos whose own source code
+// legitimately contains literal cheat patterns: detector tests with
+// embedded fixture diffs, rule packs that quote `if (false)` as
+// documentation, generator scripts that emit broken patches by design.
+// Without this hook those files force the dogfood audit to self-block
+// on every commit and there is no way to fix the root cause without
+// rewriting the detector to be AST-aware (out of scope for the regex
+// engine).
 //
 // The glob syntax is minimal on purpose: `*` matches a path segment
 // except `/`, `**` matches any number of segments. Anchored at the
@@ -20,21 +25,49 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import type { IntentSeverityPolicy } from './pr-intent';
 
 const CONFIG_FILE = path.join('.swarm', 'audit-config.yaml');
+const DEFAULT_INTENT_POLICY: IntentSeverityPolicy = 'strict';
 
 export interface AuditConfig {
   excludePaths: readonly string[];
+  intentSeverityPolicy: IntentSeverityPolicy;
 }
 
-const EMPTY_CONFIG: AuditConfig = { excludePaths: [] };
+const EMPTY_CONFIG: AuditConfig = {
+  excludePaths: [],
+  intentSeverityPolicy: DEFAULT_INTENT_POLICY,
+};
 
 export function loadAuditConfig(repoRoot: string): AuditConfig {
   const file = path.join(repoRoot, CONFIG_FILE);
   if (!fs.existsSync(file)) return EMPTY_CONFIG;
   const text = fs.readFileSync(file, 'utf8');
   const excludePaths = parseExcludePaths(text);
-  return { excludePaths };
+  const intentSeverityPolicy = parseIntentSeverityPolicy(text);
+  return { excludePaths, intentSeverityPolicy };
+}
+
+// Parses the optional `intentSeverityPolicy:` scalar. Accepts
+// 'strict' | 'lenient' | 'off' (case-insensitive, optional quotes).
+// Any other value or absent key falls back to the default 'strict'.
+// We do not throw on a bad value here — silently defaulting matches
+// the existing excludePaths behavior and keeps a typo from breaking
+// the audit run on a repo where the user is just experimenting.
+function parseIntentSeverityPolicy(text: string): IntentSeverityPolicy {
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.replace(/#.*$/, '').trim();
+    const m = line.match(/^intentSeverityPolicy\s*:\s*(['"]?)([A-Za-z]+)\1\s*$/);
+    if (m && m[2] !== undefined) {
+      const value = m[2].toLowerCase();
+      if (value === 'strict' || value === 'lenient' || value === 'off') {
+        return value;
+      }
+      return DEFAULT_INTENT_POLICY;
+    }
+  }
+  return DEFAULT_INTENT_POLICY;
 }
 
 // Hand-rolled tiny YAML scan for the one supported field. Avoids a
