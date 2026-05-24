@@ -36,9 +36,19 @@ export async function runCheatDetectors(input: AuditInput): Promise<AuditResult>
     if (p && excludeFromConfig(p)) return false;
     return true;
   });
-  const ctx = input.pr !== undefined
-    ? { files, repoRoot: input.repoRoot, pr: input.pr }
-    : { files, repoRoot: input.repoRoot };
+  const ctx: import('./detector-types').DetectorContext = {
+    files,
+    repoRoot: input.repoRoot,
+  };
+  if (input.pr !== undefined) ctx.pr = input.pr;
+  if (input.judgeEnabled === true) {
+    const judgeConfig: import('./detector-types').DetectorJudgeConfig = {
+      enabled: true,
+      unifiedDiff: input.unifiedDiff,
+    };
+    if (input.judgeLedger !== undefined) judgeConfig.ledger = input.judgeLedger;
+    ctx.judgeConfig = judgeConfig;
+  }
   const findings: Finding[] = [];
   const detectorVersions: Record<string, string> = {};
   const detectorSet: DetectorSet = input.detectorSet ?? 'default';

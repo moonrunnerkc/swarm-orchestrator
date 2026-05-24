@@ -157,17 +157,22 @@ function renderFinding(finding: Finding): string {
     ? `\`${finding.location.file}\`:${finding.location.line}-${finding.location.endLine}`
     : `\`${finding.location.file}\`:${finding.location.line}`;
   const badge = formatPrecisionBadge(finding.category);
-  return [
+  const lines: string[] = [
     `### \`${finding.category}\` — ${fileLine}`,
     '',
     `*Detector precision badge:* ${badge}.`,
     '',
     finding.message,
     '',
-    '```diff',
-    finding.evidence,
-    '```',
-  ].join('\n');
+  ];
+  if (finding.judgeReasoning !== undefined && finding.judgeModelId !== undefined) {
+    lines.push(
+      `*LLM judge (\`${finding.judgeModelId}\`):* ${finding.judgeReasoning}`,
+      '',
+    );
+  }
+  lines.push('```diff', finding.evidence, '```');
+  return lines.join('\n');
 }
 
 function renderFooter(result: AuditResult, options: RenderOptions): string {
