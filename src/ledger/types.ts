@@ -260,6 +260,19 @@ export interface LedgerEntryPayloadMap {
     wallTimeMs: number;
     detail: string;
   };
+  // v10.3 LLM-judge invocation record. One entry per judge call (cache
+  // hit or live). Pinned `modelId` makes replay deterministic: rerunning
+  // an audit against the same (diffSha, titleSha, modelId) tuple must
+  // produce the recorded answer.
+  'llm-judge-result': {
+    detector: string;
+    modelId: string;
+    cacheHit: boolean;
+    diffSha: string;
+    titleSha: string;
+    answer: 'yes' | 'no' | 'unavailable';
+    reason?: string;
+  };
 }
 
 export type LedgerEntryType = keyof LedgerEntryPayloadMap;
@@ -298,3 +311,4 @@ export type ObligationRolledBackEntry = LedgerEntry<'obligation-rolled-back'>;
 export type PrAuditStartedEntry = LedgerEntry<'pr-audit-started'>;
 export type PrAuditFindingEntry = LedgerEntry<'pr-audit-finding'>;
 export type PrAuditCompletedEntry = LedgerEntry<'pr-audit-completed'>;
+export type LlmJudgeResultEntry = LedgerEntry<'llm-judge-result'>;
