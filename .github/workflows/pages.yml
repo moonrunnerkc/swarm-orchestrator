@@ -31,6 +31,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+        with:
+          # Auto-enable Pages on first run so this workflow doesn't fail
+          # with "Pages site not found" the first time it lands on main.
+          # Requires the workflow's GITHUB_TOKEN to have the repo
+          # admin-equivalent permission this action needs; if your org's
+          # settings forbid that, enable Pages manually in repo
+          # settings (Source: GitHub Actions) and drop this flag.
+          enablement: true
       - name: Stage Pages artifact
         run: |
           mkdir -p _site/docs _site/benchmarks
