@@ -44,9 +44,12 @@ import type {
   AuditResult,
   AuditAgentAttribution,
   DetectorSetName,
+  JudgeLedgerEntry,
+  JudgeLedgerSink,
 } from '../../audit/types';
 import type {
   LedgerAgentAttribution,
+  LlmJudgeResultEntry,
   PrAuditStartedEntry,
   PrAuditFindingEntry,
   PrAuditCompletedEntry,
@@ -70,6 +73,7 @@ interface AuditFlags {
   detectorSet: DetectorSetName;
   shadow?: string;
   shadowDir: string;
+  enableLlmJudge: boolean;
 }
 
 const AUDIT_SCHEMA: ParseArgsOptions = {
@@ -85,6 +89,7 @@ const AUDIT_SCHEMA: ParseArgsOptions = {
   detectors: { type: 'string' },
   shadow: { type: 'string' },
   'shadow-dir': { type: 'string' },
+  'enable-llm-judge': { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
 };
 
@@ -109,6 +114,8 @@ const USAGE = [
   '  --ledger-path <path>      override audit ledger file (default: .swarm/ledger/audit-<runId>.jsonl)',
   '  --shadow <repo-label>     shadow-mode dogfood: record findings to disk, no comment, no gate',
   '  --shadow-dir <path>       shadow output directory (default: .swarm/shadow)',
+  '  --enable-llm-judge        opt into the Anthropic Haiku judge for detectors that integrate it',
+  '                            (also enabled by SWARM_AUDIT_LLM_JUDGE=1). Requires ANTHROPIC_API_KEY.',
   '  --help, -h                show this message',
   '',
   'exit codes:',
@@ -126,6 +133,8 @@ function parseFlags(argv: string[]): AuditFlags {
     return makeMinimalFlags(true);
   }
 
+  const judgeFromEnv = (process.env.SWARM_AUDIT_LLM_JUDGE ?? '').trim() === '1';
+  const judgeFromFlag = readBoolean(values, 'enable-llm-judge');
   const flags: AuditFlags = {
     diffStdin: readBoolean(values, 'diff-stdin'),
     repoRoot: readString(values, 'repo-root') ?? process.cwd(),
@@ -135,6 +144,7 @@ function parseFlags(argv: string[]): AuditFlags {
     mode: parseMode(readString(values, 'mode')),
     detectorSet: parseDetectorsFlag(readString(values, 'detectors')),
     shadowDir: readString(values, 'shadow-dir') ?? '.swarm/shadow',
+    enableLlmJudge: judgeFromFlag || judgeFromEnv,
   };
   const diffFile = readString(values, 'diff-file');
   if (diffFile !== undefined) flags.diffFile = diffFile;
@@ -162,6 +172,7 @@ function makeMinimalFlags(helpRequested: boolean): AuditFlags {
     mode: 'advise',
     detectorSet: 'default',
     shadowDir: '.swarm/shadow',
+    enableLlmJudge: false,
   };
 }
 
@@ -240,17 +251,10 @@ async function runAudit(flags: AuditFlags): Promise<number> {
   const prContext = await loadPrContext(flags);
   const agent = prContext !== undefined ? detectAgent(prContext.fingerprintInput) : undefined;
 
-  const auditInput: AuditInput = {
-    unifiedDiff,
-    repoRoot: flags.repoRoot,
-    detectorSet: flags.detectorSet,
-  };
-  if (agent !== undefined) auditInput.agent = agent;
-  if (prContext !== undefined) auditInput.pr = prContext.prMetadata;
-
-  const result = await runCheatDetectors(auditInput);
-  const wallTimeMs = Date.now() - startedAt;
-
+  // Ledger is created up-front so the judge can write
+  // `llm-judge-result` entries onto the same hash chain as the audit
+  // metadata. We capture the started entry once we know the detector
+  // versions; the judge entries are appended in between by the engine.
   const runId = `audit-${crypto.randomUUID()}`;
   const ledgerPath =
     flags.ledgerPath !== undefined
@@ -258,6 +262,40 @@ async function runAudit(flags: AuditFlags): Promise<number> {
       : path.join('.swarm', 'ledger', `${runId}.jsonl`);
   const ledger = new HashChainedLedger(ledgerPath, runId);
   const attribution = agentToLedger(agent);
+
+  const judgeLedgerSink: JudgeLedgerSink = {
+    appendJudgeEntry(entry: JudgeLedgerEntry): void {
+      const payload: Omit<
+        LlmJudgeResultEntry,
+        'ts' | 'runId' | 'seq' | 'prevHash' | 'entryHash' | 'aiAgent'
+      > = {
+        type: 'llm-judge-result',
+        detector: entry.detector,
+        modelId: entry.modelId,
+        cacheHit: entry.cacheHit,
+        diffSha: entry.diffSha,
+        titleSha: entry.titleSha,
+        answer: entry.answer,
+      };
+      if (entry.reason !== undefined) {
+        (payload as LlmJudgeResultEntry).reason = entry.reason;
+      }
+      ledger.append<LlmJudgeResultEntry>(payload);
+    },
+  };
+
+  const auditInput: AuditInput = {
+    unifiedDiff,
+    repoRoot: flags.repoRoot,
+    detectorSet: flags.detectorSet,
+    judgeEnabled: flags.enableLlmJudge,
+    judgeLedger: judgeLedgerSink,
+  };
+  if (agent !== undefined) auditInput.agent = agent;
+  if (prContext !== undefined) auditInput.pr = prContext.prMetadata;
+
+  const result = await runCheatDetectors(auditInput);
+  const wallTimeMs = Date.now() - startedAt;
 
   ledger.append<PrAuditStartedEntry>(
     {
